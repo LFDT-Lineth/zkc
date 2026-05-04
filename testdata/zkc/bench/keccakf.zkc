@@ -1,0 +1,71 @@
+type lane = u64
+const n:u5 = 24
+pub input b0_init_state(address:u3) -> (state:lane)
+pub input b1_init_state(address:u3) -> (state:lane)
+pub input b2_init_state(address:u3) -> (state:lane)
+pub input b3_init_state(address:u3) -> (state:lane)
+pub input b4_init_state(address:u3) -> (state:lane)
+memory b0_state(address:u3) -> (state:lane)
+memory b1_state(address:u3) -> (state:lane)
+memory b2_state(address:u3) -> (state:lane)
+memory b3_state(address:u3) -> (state:lane)
+memory b4_state(address:u3) -> (state:lane)
+pub output b0_final_state(address:u3) -> (state:lane)
+pub output b1_final_state(address:u3) -> (state:lane)
+pub output b2_final_state(address:u3) -> (state:lane)
+pub output b3_final_state(address:u3) -> (state:lane)
+pub output b4_final_state(address:u3) -> (state:lane)
+
+static RC(address:u5) -> (rc:u64) {
+    0x0000000000000001,
+    0x0000000000008082,
+    0x800000000000808A,
+    0x8000000080008000,
+    0x000000000000808B,
+    0x0000000080000001,
+    0x8000000080008081,
+    0x8000000000008009,
+    0x000000000000008A,
+    0x0000000000000088,
+    0x0000000080008009,
+    0x000000008000000A,
+    0x000000008000808B,
+    0x800000000000008B,
+    0x8000000000008089,
+    0x8000000000008003,
+    0x8000000000008002,
+    0x8000000000000080,
+    0x000000000000800A,
+    0x800000008000000A,
+    0x8000000080008081,
+    0x8000000000008080,
+    0x0000000080000001,
+    0x8000000080008008
+}
+
+static rot_offset(x:u3, y:u3) -> (offset:u6) {
+     0, 36,  3, 41, 18,
+     1, 44, 10, 45,  2,
+    62,  6, 43, 15, 61,
+    28, 55, 25, 21, 56,
+    27, 20, 39,  8, 14
+}
+
+
+
+fn main<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+    for i:u5 = 0; i <= n; i = i + 1 {
+        keccakf_round()
+    }
+    for j:u3 = 0; j <= 4; j = j + 1 {
+        b0_final_state[j] = b0_state[j]
+        b1_final_state[j] = b1_state[j]
+        b2_final_state[j] = b2_state[j]
+        b3_final_state[j] = b3_state[j]
+        b4_final_state[j] = b4_state[j]
+    }
+
+}
+
+fn keccakf_round<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+}
