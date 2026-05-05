@@ -72,23 +72,7 @@ fn main<b0_state, b1_state, b2_state, b3_state, b4_state>() {
 
 fn absorbing_phase<b0_state, b1_state, b2_state, b3_state, b4_state>() {
     for i:u64 = 0; i < n_blocks[0]; i = i + 1 {
-        var c16:u64
-        var c15:u64
-        var c14:u64
-        var c13:u64
-        var c12:u64
-        var c11:u64
-        var c10:u64
-        var c9:u64
-        var c8:u64
-        var c7:u64
-        var c6:u64
-        var c5:u64
-        var c4:u64
-        var c3:u64
-        var c2:u64
-        var c1:u64
-        var c0:u64
+        var c16:u64, c15:u64, c14:u64, c13:u64, c12:u64, c11:u64, c10:u64, c9:u64, c8:u64, c7:u64, c6:u64, c5:u64, c4:u64, c3:u64, c2:u64, c1:u64, c0:u64
         c16::c15::c14::c13::c12::c11::c10::c9::c8::c7::c6::c5::c4::c3::c2::c1::c0 = blocks[i]
         b0_state[0] = b0_state[0] ^ c16
         b0_state[1] = b0_state[1] ^ c15
