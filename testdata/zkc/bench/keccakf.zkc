@@ -1,10 +1,9 @@
 type lane = u64
+const bitrate:u11 = 1088
+type bitrate_type =u1088
 const n:u5 = 24
-pub input b0_init_state(address:u3) -> (state:lane)
-pub input b1_init_state(address:u3) -> (state:lane)
-pub input b2_init_state(address:u3) -> (state:lane)
-pub input b3_init_state(address:u3) -> (state:lane)
-pub input b4_init_state(address:u3) -> (state:lane)
+pub input n_blocks(address:u1) -> (length:u64)
+pub input blocks(address:u64) -> (block:bitrate_type)
 memory b0_state(address:u3) -> (state:lane)
 memory b1_state(address:u3) -> (state:lane)
 memory b2_state(address:u3) -> (state:lane)
@@ -54,9 +53,13 @@ static rot_offset(x:u3, y:u3) -> (offset:u6) {
 
 
 fn main<b0_state, b1_state, b2_state, b3_state, b4_state>() {
-    for i:u5 = 0; i <= n; i = i + 1 {
-        keccakf_round()
-    }
+
+    // no initialization as the state is already filled with 0
+
+    absorbing_phase()
+
+    squeezing_phase()
+
     for j:u3 = 0; j <= 4; j = j + 1 {
         b0_final_state[j] = b0_state[j]
         b1_final_state[j] = b1_state[j]
@@ -67,5 +70,55 @@ fn main<b0_state, b1_state, b2_state, b3_state, b4_state>() {
 
 }
 
+fn absorbing_phase<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+    for i:u64 = 0; i < n_blocks[0]; i = i + 1 {
+        var c16:u64
+        var c15:u64
+        var c14:u64
+        var c13:u64
+        var c12:u64
+        var c11:u64
+        var c10:u64
+        var c9:u64
+        var c8:u64
+        var c7:u64
+        var c6:u64
+        var c5:u64
+        var c4:u64
+        var c3:u64
+        var c2:u64
+        var c1:u64
+        var c0:u64
+        c16::c15::c14::c13::c12::c11::c10::c9::c8::c7::c6::c5::c4::c3::c2::c1::c0 = blocks[i]
+        b0_state[0] = b0_state[0] ^ c16
+        b0_state[1] = b0_state[1] ^ c15
+        b0_state[2] = b0_state[2] ^ c14
+        b0_state[3] = b0_state[3] ^ c13
+        b0_state[4] = b0_state[4] ^ c12
+        b1_state[0] = b1_state[0] ^ c11
+        b1_state[1] = b1_state[1] ^ c10
+        b1_state[2] = b1_state[2] ^ c9
+        b1_state[3] = b1_state[3] ^ c8
+        b1_state[4] = b1_state[4] ^ c7
+        b2_state[0] = b2_state[0] ^ c6
+        b2_state[1] = b2_state[1] ^ c5
+        b2_state[2] = b2_state[2] ^ c4
+        b2_state[3] = b2_state[3] ^ c3
+        b2_state[4] = b2_state[4] ^ c2
+        b3_state[0] = b3_state[0] ^ c1
+        b3_state[1] = b3_state[1] ^ c0
+    }
+    for j:u5 = 0; j <= n; j = j + 1 {
+        keccakf_round()
+    }
+
+}
+
+fn squeezing_phase<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+
+}
+
 fn keccakf_round<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+
+
 }
