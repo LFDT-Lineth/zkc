@@ -52,6 +52,10 @@ static rot_offset(x:u3, y:u3) -> (offset:u6) {
     27, 20, 39,  8, 14
 }
 
+static mod5(address:u5) -> (result:u3) {
+    0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4
+}
+
 
 
 fn main<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>() {
@@ -119,20 +123,14 @@ fn theta<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>() {
         c[i]= b0_state[i] ^ b1_state[i] ^ b2_state[i] ^ b3_state[i] ^ b4_state[i]
     }
 
-    for i_minus_one:u3 = 0; i_minus_one< 5 ; i_minus_one= i_minus_one + 1 {
+    for i_minus_one:u3 = 0; i_minus_one < 5 ; i_minus_one = i_minus_one + 1 {
         var i:u3 = i_minus_one + 1
-        var i_plus_one:u3 = i + 1
-        // deal with modulo 5
-        if i_minus_one == 4 {
-            i = 0
-            i_plus_one = 1
-        }
         var hi:u63
         var lo:u1
-        hi::lo = c[i_plus_one]
+        hi::lo = c[mod5((i+1) as u5)]
         var c_i_plus_one_rotated:u64
         c_i_plus_one_rotated = lo::hi 
-        d[i] = c[i_minus_one] ^ c_i_plus_one_rotated
+        d[mod5(i as u5)] = c[i_minus_one] ^ c_i_plus_one_rotated
     }
 
     for l:u3 = 0; l < 5 ; l = l + 1 {
