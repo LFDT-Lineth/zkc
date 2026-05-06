@@ -9,6 +9,11 @@ memory b1_state(address:u3) -> (state:lane)
 memory b2_state(address:u3) -> (state:lane)
 memory b3_state(address:u3) -> (state:lane)
 memory b4_state(address:u3) -> (state:lane)
+memory b0(address:u3) -> (state:lane)
+memory b1(address:u3) -> (state:lane)
+memory b2(address:u3) -> (state:lane)
+memory b3(address:u3) -> (state:lane)
+memory b4(address:u3) -> (state:lane)
 memory c(address:u3) -> (state:lane)
 memory d(address:u3) -> (state:lane)
 pub output b0_final_state(address:u3) -> (state:lane)
@@ -58,7 +63,7 @@ static mod5(address:u5) -> (result:u3) {
 
 
 
-fn main<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>() {
+fn main<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4, c, d>() {
 
     // no initialization as the state is already filled with 0
 
@@ -76,7 +81,7 @@ fn main<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>() {
 
 }
 
-fn absorbing_phase<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>() {
+fn absorbing_phase<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4, c, d>() {
     for i:u64 = 0; i < n_blocks[0]; i = i + 1 {
         var c16:u64, c15:u64, c14:u64, c13:u64, c12:u64, c11:u64, c10:u64, c9:u64, c8:u64, c7:u64, c6:u64, c5:u64, c4:u64, c3:u64, c2:u64, c1:u64, c0:u64
         c16::c15::c14::c13::c12::c11::c10::c9::c8::c7::c6::c5::c4::c3::c2::c1::c0 = blocks[i]
@@ -109,7 +114,7 @@ fn squeezing_phase<b0_state, b1_state, b2_state, b3_state, b4_state>() {
 
 }
 
-fn keccakf_round<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>(round_constant:u64) {
+fn keccakf_round<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4, c, d>(round_constant:u64) {
     theta()
     rho()
     pi()
@@ -146,16 +151,48 @@ fn theta<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>() {
 fn rho<b0_state, b1_state, b2_state, b3_state, b4_state>() {
 
     for i:u3 = 0; i < 5 ; i = i + 1 {
-        for j:u3 = 0; j < 5 ; j = j + 1 {
-            b0_state[i] = b0_state[i] ^ (b0_state[j] >> rot_offset(i, j))
-        }
+        
     }
 }
 
-fn pi<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+fn pi<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4>() {
+    b0[mod5((2*0)+(3*0) as u5)] = b0_state[0]
+    b0[mod5((2*0)+(3*1) as u5)] = b0_state[1]
+    b0[mod5((2*0)+(3*2) as u5)] = b0_state[2]
+    b0[mod5((2*0)+(3*3) as u5)] = b0_state[3]
+    b0[mod5((2*0)+(3*4) as u5)] = b0_state[4]
+    b1[mod5((2*1)+(3*0) as u5)] = b1_state[0]
+    b1[mod5((2*1)+(3*1) as u5)] = b1_state[1]
+    b1[mod5((2*1)+(3*2) as u5)] = b1_state[2]
+    b1[mod5((2*1)+(3*3) as u5)] = b1_state[3]
+    b1[mod5((2*1)+(3*4) as u5)] = b1_state[4]
+    b2[mod5((2*2)+(3*0) as u5)] = b2_state[0]   
+    b2[mod5((2*2)+(3*1) as u5)] = b2_state[1]
+    b2[mod5((2*2)+(3*2) as u5)] = b2_state[2]
+    b2[mod5((2*2)+(3*3) as u5)] = b2_state[3]
+    b2[mod5((2*2)+(3*4) as u5)] = b2_state[4]
+    b3[mod5((2*3)+(3*0) as u5)] = b3_state[0]
+    b3[mod5((2*3)+(3*1) as u5)] = b3_state[1]
+    b3[mod5((2*3)+(3*2) as u5)] = b3_state[2]
+    b3[mod5((2*3)+(3*3) as u5)] = b3_state[3]
+    b3[mod5((2*3)+(3*4) as u5)] = b3_state[4]
+    b4[mod5((2*4)+(3*0) as u5)] = b4_state[0]
+    b4[mod5((2*4)+(3*1) as u5)] = b4_state[1]
+    b4[mod5((2*4)+(3*2) as u5)] = b4_state[2]
+    b4[mod5((2*4)+(3*3) as u5)] = b4_state[3]
+    b4[mod5((2*4)+(3*4) as u5)] = b4_state[4]
 }
 
-fn chi<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+fn chi<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4>() {
+
+    for j:u3 = 0; j < 5 ; j = j + 1 {
+        b0_state[j] = b0[j] ^ ((~b1[j]) & b2[j])
+        b1_state[j] = b1[j] ^ ((~b2[j]) & b3[j])
+        b2_state[j] = b2[j] ^ ((~b3[j]) & b4[j])
+        b3_state[j] = b3[j] ^ ((~b4[j]) & b0[j])
+        b4_state[j] = b4[j] ^ ((~b0[j]) & b1[j])
+    }
+    
 }
 
 fn iota<b0_state, b1_state, b2_state, b3_state, b4_state>(round_constant:u64) {
