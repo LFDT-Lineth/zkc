@@ -9,6 +9,8 @@ memory b1_state(address:u3) -> (state:lane)
 memory b2_state(address:u3) -> (state:lane)
 memory b3_state(address:u3) -> (state:lane)
 memory b4_state(address:u3) -> (state:lane)
+memory c(address:u3) -> (state:lane)
+memory d(address:u3) -> (state:lane)
 pub output b0_final_state(address:u3) -> (state:lane)
 pub output b1_final_state(address:u3) -> (state:lane)
 pub output b2_final_state(address:u3) -> (state:lane)
@@ -52,7 +54,7 @@ static rot_offset(x:u3, y:u3) -> (offset:u6) {
 
 
 
-fn main<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+fn main<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>() {
 
     // no initialization as the state is already filled with 0
 
@@ -70,7 +72,7 @@ fn main<b0_state, b1_state, b2_state, b3_state, b4_state>() {
 
 }
 
-fn absorbing_phase<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+fn absorbing_phase<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>() {
     for i:u64 = 0; i < n_blocks[0]; i = i + 1 {
         var c16:u64, c15:u64, c14:u64, c13:u64, c12:u64, c11:u64, c10:u64, c9:u64, c8:u64, c7:u64, c6:u64, c5:u64, c4:u64, c3:u64, c2:u64, c1:u64, c0:u64
         c16::c15::c14::c13::c12::c11::c10::c9::c8::c7::c6::c5::c4::c3::c2::c1::c0 = blocks[i]
@@ -92,8 +94,9 @@ fn absorbing_phase<b0_state, b1_state, b2_state, b3_state, b4_state>() {
         b3_state[0] = b3_state[0] ^ c1
         b3_state[1] = b3_state[1] ^ c0
     }
-    for j:u5 = 0; j <= n; j = j + 1 {
-        keccakf_round()
+    for j:u5 = 0; j < n; j = j + 1 {
+        var round_constant:u64 = RC[j]
+        keccakf_round(round_constant)
     }
 
 }
@@ -102,7 +105,61 @@ fn squeezing_phase<b0_state, b1_state, b2_state, b3_state, b4_state>() {
 
 }
 
-fn keccakf_round<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+fn keccakf_round<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>(round_constant:u64) {
+    theta()
+    rho()
+    pi()
+    chi()
+    iota(round_constant)
+}
 
+fn theta<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>() {
 
+    for i:u3 = 0; i < 5 ; i = i + 1 {
+        c[i]= b0_state[i] ^ b1_state[i] ^ b2_state[i] ^ b3_state[i] ^ b4_state[i]
+    }
+
+    for i_minus_one:u3 = 0; i_minus_one< 5 ; i_minus_one= i_minus_one + 1 {
+        var i:u3 = i_minus_one + 1
+        var i_plus_one:u3 = i + 1
+        // deal with modulo 5
+        if i_minus_one == 4 {
+            i = 0
+            i_plus_one = 1
+        }
+        var hi:u63
+        var lo:u1
+        hi::lo = c[i_plus_one]
+        var c_i_plus_one_rotated:u64
+        c_i_plus_one_rotated = lo::hi 
+        d[i] = c[i_minus_one] ^ c_i_plus_one_rotated
+    }
+
+    for l:u3 = 0; l < 5 ; l = l + 1 {
+        b0_state[l] = b0_state[l] ^ d[l]
+        b1_state[l] = b1_state[l] ^ d[l]
+        b2_state[l] = b2_state[l] ^ d[l]
+        b3_state[l] = b3_state[l] ^ d[l]
+        b4_state[l] = b4_state[l] ^ d[l]
+    }
+
+}
+
+fn rho<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+
+    for i:u3 = 0; i < 5 ; i = i + 1 {
+        for j:u3 = 0; j < 5 ; j = j + 1 {
+            b0_state[i] = b0_state[i] ^ (b0_state[j] >> rot_offset(i, j))
+        }
+    }
+}
+
+fn pi<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+}
+
+fn chi<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+}
+
+fn iota<b0_state, b1_state, b2_state, b3_state, b4_state>(round_constant:u64) {
+    b0_state[0] = b0_state[0] ^ round_constant
 }
