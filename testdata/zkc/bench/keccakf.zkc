@@ -5,11 +5,11 @@ type bitrate_type =u1088
 const n:u5 = 24
 pub input n_blocks(address:u1) -> (length:u64)
 pub input blocks(address:u64) -> (block:bitrate_type)
-memory b0_state(address:u3) -> (state:lane)
-memory b1_state(address:u3) -> (state:lane)
-memory b2_state(address:u3) -> (state:lane)
-memory b3_state(address:u3) -> (state:lane)
-memory b4_state(address:u3) -> (state:lane)
+memory state_row0(address:u3) -> (state:lane)
+memory state_row1(address:u3) -> (state:lane)
+memory state_row2(address:u3) -> (state:lane)
+memory state_row3(address:u3) -> (state:lane)
+memory state_row4(address:u3) -> (state:lane)
 memory b0(address:u3) -> (state:lane)
 memory b1(address:u3) -> (state:lane)
 memory b2(address:u3) -> (state:lane)
@@ -17,11 +17,7 @@ memory b3(address:u3) -> (state:lane)
 memory b4(address:u3) -> (state:lane)
 memory c(address:u3) -> (state:lane)
 memory d(address:u3) -> (state:lane)
-pub output b0_final_state(address:u3) -> (state:lane)
-pub output b1_final_state(address:u3) -> (state:lane)
-pub output b2_final_state(address:u3) -> (state:lane)
-pub output b3_final_state(address:u3) -> (state:lane)
-pub output b4_final_state(address:u3) -> (state:lane)
+pub output result(address:u1) -> (out:u256)
 
 static RC(address:u5) -> (rc:u64) {
     0x0000000000000001,
@@ -63,8 +59,7 @@ static mod5(address:u5) -> (result:u3) {
 }
 
 
-
-fn main<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4, c, d>() {
+fn main<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
 
     // no initialization as the state is already filled with 0
 
@@ -72,50 +67,46 @@ fn main<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4, c,
 
     squeezing_phase()
 
-    for j:u3 = 0; j <= 4; j = j + 1 {
-        b0_final_state[j] = b0_state[j]
-        b1_final_state[j] = b1_state[j]
-        b2_final_state[j] = b2_state[j]
-        b3_final_state[j] = b3_state[j]
-        b4_final_state[j] = b4_state[j]
-    }
-
 }
 
-fn absorbing_phase<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4, c, d>() {
+fn absorbing_phase<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
     for i:u64 = 0; i < n_blocks[0]; i = i + 1 {
         var c16:u64, c15:u64, c14:u64, c13:u64, c12:u64, c11:u64, c10:u64, c9:u64, c8:u64, c7:u64, c6:u64, c5:u64, c4:u64, c3:u64, c2:u64, c1:u64, c0:u64
         c16::c15::c14::c13::c12::c11::c10::c9::c8::c7::c6::c5::c4::c3::c2::c1::c0 = blocks[i]
-        b0_state[0] = b0_state[0] ^ c16
-        b0_state[1] = b0_state[1] ^ c15
-        b0_state[2] = b0_state[2] ^ c14
-        b0_state[3] = b0_state[3] ^ c13
-        b0_state[4] = b0_state[4] ^ c12
-        b1_state[0] = b1_state[0] ^ c11
-        b1_state[1] = b1_state[1] ^ c10
-        b1_state[2] = b1_state[2] ^ c9
-        b1_state[3] = b1_state[3] ^ c8
-        b1_state[4] = b1_state[4] ^ c7
-        b2_state[0] = b2_state[0] ^ c6
-        b2_state[1] = b2_state[1] ^ c5
-        b2_state[2] = b2_state[2] ^ c4
-        b2_state[3] = b2_state[3] ^ c3
-        b2_state[4] = b2_state[4] ^ c2
-        b3_state[0] = b3_state[0] ^ c1
-        b3_state[1] = b3_state[1] ^ c0
+        state_row0[0] = state_row0[0] ^ c16
+        state_row0[1] = state_row0[1] ^ c15
+        state_row0[2] = state_row0[2] ^ c14
+        state_row0[3] = state_row0[3] ^ c13
+        state_row0[4] = state_row0[4] ^ c12
+        state_row1[0] = state_row1[0] ^ c11
+        state_row1[1] = state_row1[1] ^ c10
+        state_row1[2] = state_row1[2] ^ c9
+        state_row1[3] = state_row1[3] ^ c8
+        state_row1[4] = state_row1[4] ^ c7
+        state_row2[0] = state_row2[0] ^ c6
+        state_row2[1] = state_row2[1] ^ c5
+        state_row2[2] = state_row2[2] ^ c4
+        state_row2[3] = state_row2[3] ^ c3
+        state_row2[4] = state_row2[4] ^ c2
+        state_row3[0] = state_row3[0] ^ c1
+        state_row3[1] = state_row3[1] ^ c0
     }
+    keccakf()
+
+}
+
+fn squeezing_phase<state_row0, state_row1, state_row2, state_row3, state_row4>() {
+    result[0] = state_row0[0]::state_row0[1]::state_row0[2]::state_row0[3]
+}
+
+fn keccakf<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
     for j:u5 = 0; j < n; j = j + 1 {
         var round_constant:u64 = RC[j]
         keccakf_round(round_constant)
     }
-
 }
 
-fn squeezing_phase<b0_state, b1_state, b2_state, b3_state, b4_state>() {
-
-}
-
-fn keccakf_round<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4, c, d>(round_constant:u64) {
+fn keccakf_round<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>(round_constant:u64) {
     theta()
     rho()
     pi()
@@ -123,80 +114,87 @@ fn keccakf_round<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b
     iota(round_constant)
 }
 
-fn theta<b0_state, b1_state, b2_state, b3_state, b4_state, c, d>() {
+// column parity mixing step
+fn theta<state_row0, state_row1, state_row2, state_row3, state_row4, c, d>() {
 
-    for i:u3 = 0; i < 5 ; i = i + 1 {
-        c[i]= b0_state[i] ^ b1_state[i] ^ b2_state[i] ^ b3_state[i] ^ b4_state[i]
-    }
+    c[0] = state_row0[0] ^ state_row0[1] ^ state_row0[2] ^ state_row0[3] ^ state_row0[4]
+    c[1] = state_row1[0] ^ state_row1[1] ^ state_row1[2] ^ state_row1[3] ^ state_row1[4]
+    c[2] = state_row2[0] ^ state_row2[1] ^ state_row2[2] ^ state_row2[3] ^ state_row2[4]
+    c[3] = state_row3[0] ^ state_row3[1] ^ state_row3[2] ^ state_row3[3] ^ state_row3[4]
+    c[4] = state_row4[0] ^ state_row4[1] ^ state_row4[2] ^ state_row4[3] ^ state_row4[4]
 
     for i_minus_one:u3 = 0; i_minus_one < 5 ; i_minus_one = i_minus_one + 1 {
         var i:u3 = i_minus_one + 1
         d[mod5(i as u5)] = c[i_minus_one] ^ bit_ror64(c[mod5((i+1) as u5)], 1)
     }
 
-    for l:u3 = 0; l < 5 ; l = l + 1 {
-        b0_state[l] = b0_state[l] ^ d[l]
-        b1_state[l] = b1_state[l] ^ d[l]
-        b2_state[l] = b2_state[l] ^ d[l]
-        b3_state[l] = b3_state[l] ^ d[l]
-        b4_state[l] = b4_state[l] ^ d[l]
+    for j:u3 = 0; j < 5 ; j = j + 1 {
+        state_row0[j] = state_row0[j] ^ d[j]
+        state_row1[j] = state_row1[j] ^ d[j]
+        state_row2[j] = state_row2[j] ^ d[j]
+        state_row3[j] = state_row3[j] ^ d[j]
+        state_row4[j] = state_row4[j] ^ d[j]
     }
 
 }
 
-fn rho<b0_state, b1_state, b2_state, b3_state, b4_state>() {
+// lane rotations step
+fn rho<state_row0, state_row1, state_row2, state_row3, state_row4>() {
 
     for j:u3 = 0; j < 5 ; j = j + 1 {
-        b0_state[j] = bit_ror64(b0_state[j], rot_offset(0, j))
-        b1_state[j] = bit_ror64(b1_state[j], rot_offset(1, j))
-        b2_state[j] = bit_ror64(b2_state[j], rot_offset(2, j))
-        b3_state[j] = bit_ror64(b3_state[j], rot_offset(3, j))
-        b4_state[j] = bit_ror64(b4_state[j], rot_offset(4, j))
+        state_row0[j] = bit_ror64(state_row0[j], rot_offset(0, j))
+        state_row1[j] = bit_ror64(state_row1[j], rot_offset(1, j))
+        state_row2[j] = bit_ror64(state_row2[j], rot_offset(2, j))
+        state_row3[j] = bit_ror64(state_row3[j], rot_offset(3, j))
+        state_row4[j] = bit_ror64(state_row4[j], rot_offset(4, j))
     }
 }
 
-fn pi<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4>() {
-    b0[mod5((2*0)+(3*0) as u5)] = b0_state[0]
-    b0[mod5((2*0)+(3*1) as u5)] = b0_state[1]
-    b0[mod5((2*0)+(3*2) as u5)] = b0_state[2]
-    b0[mod5((2*0)+(3*3) as u5)] = b0_state[3]
-    b0[mod5((2*0)+(3*4) as u5)] = b0_state[4]
-    b1[mod5((2*1)+(3*0) as u5)] = b1_state[0]
-    b1[mod5((2*1)+(3*1) as u5)] = b1_state[1]
-    b1[mod5((2*1)+(3*2) as u5)] = b1_state[2]
-    b1[mod5((2*1)+(3*3) as u5)] = b1_state[3]
-    b1[mod5((2*1)+(3*4) as u5)] = b1_state[4]
-    b2[mod5((2*2)+(3*0) as u5)] = b2_state[0]   
-    b2[mod5((2*2)+(3*1) as u5)] = b2_state[1]
-    b2[mod5((2*2)+(3*2) as u5)] = b2_state[2]
-    b2[mod5((2*2)+(3*3) as u5)] = b2_state[3]
-    b2[mod5((2*2)+(3*4) as u5)] = b2_state[4]
-    b3[mod5((2*3)+(3*0) as u5)] = b3_state[0]
-    b3[mod5((2*3)+(3*1) as u5)] = b3_state[1]
-    b3[mod5((2*3)+(3*2) as u5)] = b3_state[2]
-    b3[mod5((2*3)+(3*3) as u5)] = b3_state[3]
-    b3[mod5((2*3)+(3*4) as u5)] = b3_state[4]
-    b4[mod5((2*4)+(3*0) as u5)] = b4_state[0]
-    b4[mod5((2*4)+(3*1) as u5)] = b4_state[1]
-    b4[mod5((2*4)+(3*2) as u5)] = b4_state[2]
-    b4[mod5((2*4)+(3*3) as u5)] = b4_state[3]
-    b4[mod5((2*4)+(3*4) as u5)] = b4_state[4]
+// lane permutation step
+fn pi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4>() {
+    b0[mod5((2*0)+(3*0) as u5)] = state_row0[0]
+    b0[mod5((2*0)+(3*1) as u5)] = state_row0[1]
+    b0[mod5((2*0)+(3*2) as u5)] = state_row0[2]
+    b0[mod5((2*0)+(3*3) as u5)] = state_row0[3]
+    b0[mod5((2*0)+(3*4) as u5)] = state_row0[4]
+    b1[mod5((2*1)+(3*0) as u5)] = state_row1[0]
+    b1[mod5((2*1)+(3*1) as u5)] = state_row1[1]
+    b1[mod5((2*1)+(3*2) as u5)] = state_row1[2]
+    b1[mod5((2*1)+(3*3) as u5)] = state_row1[3]
+    b1[mod5((2*1)+(3*4) as u5)] = state_row1[4]
+    b2[mod5((2*2)+(3*0) as u5)] = state_row2[0]   
+    b2[mod5((2*2)+(3*1) as u5)] = state_row2[1]
+    b2[mod5((2*2)+(3*2) as u5)] = state_row2[2]
+    b2[mod5((2*2)+(3*3) as u5)] = state_row2[3]
+    b2[mod5((2*2)+(3*4) as u5)] = state_row2[4]
+    b3[mod5((2*3)+(3*0) as u5)] = state_row3[0]
+    b3[mod5((2*3)+(3*1) as u5)] = state_row3[1]
+    b3[mod5((2*3)+(3*2) as u5)] = state_row3[2]
+    b3[mod5((2*3)+(3*3) as u5)] = state_row3[3]
+    b3[mod5((2*3)+(3*4) as u5)] = state_row3[4]
+    b4[mod5((2*4)+(3*0) as u5)] = state_row4[0]
+    b4[mod5((2*4)+(3*1) as u5)] = state_row4[1]
+    b4[mod5((2*4)+(3*2) as u5)] = state_row4[2]
+    b4[mod5((2*4)+(3*3) as u5)] = state_row4[3]
+    b4[mod5((2*4)+(3*4) as u5)] = state_row4[4]
 }
 
-fn chi<b0_state, b1_state, b2_state, b3_state, b4_state, b0, b1, b2, b3, b4>() {
+// non-linear step
+fn chi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4>() {
 
     for j:u3 = 0; j < 5 ; j = j + 1 {
-        b0_state[j] = b0[j] ^ ((~b1[j]) & b2[j])
-        b1_state[j] = b1[j] ^ ((~b2[j]) & b3[j])
-        b2_state[j] = b2[j] ^ ((~b3[j]) & b4[j])
-        b3_state[j] = b3[j] ^ ((~b4[j]) & b0[j])
-        b4_state[j] = b4[j] ^ ((~b0[j]) & b1[j])
+        state_row0[j] = b0[j] ^ ((~b1[j]) & b2[j])
+        state_row1[j] = b1[j] ^ ((~b2[j]) & b3[j])
+        state_row2[j] = b2[j] ^ ((~b3[j]) & b4[j])
+        state_row3[j] = b3[j] ^ ((~b4[j]) & b0[j])
+        state_row4[j] = b4[j] ^ ((~b0[j]) & b1[j])
     }
     
 }
 
-fn iota<b0_state, b1_state, b2_state, b3_state, b4_state>(round_constant:u64) {
-    b0_state[0] = b0_state[0] ^ round_constant
+// round constant step
+fn iota<state_row0>(round_constant:u64) {
+    state_row0[0] = state_row0[0] ^ round_constant
 }
 
 
