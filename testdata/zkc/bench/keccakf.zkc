@@ -1,10 +1,14 @@
-// include "../unit/bit_ror64.zkc"
+
 type lane = u64
 const bitrate:u11 = 1088
 type bitrate_type =u1088
 const n:u5 = 24
-pub input n_blocks(address:u1) -> (length:u64)
-pub input blocks(address:u64) -> (block:bitrate_type)
+const suffix:u8 = 1
+const padding_byte:u1088 = 128
+pub input message(address:u1) -> (data:u5440)
+pub input message_length(address:u1) -> (length:u64)
+memory n_blocks(address:u1) -> (length:u64)
+memory blocks(address:u64) -> (block:bitrate_type)
 memory state_row0(address:u3) -> (state:lane)
 memory state_row1(address:u3) -> (state:lane)
 memory state_row2(address:u3) -> (state:lane)
@@ -59,8 +63,13 @@ static mod5(address:u5) -> (result:u3) {
     0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4
 }
 
+// ===================================================================
+// Main function
+// ===================================================================
 
-fn main<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
+fn main<n_blocks, blocks, state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
+
+    padding()
 
     // no initialization as the state is already filled with 0
 
@@ -70,7 +79,56 @@ fn main<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, 
 
 }
 
-fn absorbing_phase<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
+fn padding<blocks, n_blocks>() {
+    var raw_message:u5440 = message[0]
+    var msg_bits:u64 = message_length[0]
+    var index:u64 = 0
+    var msg_start:u64 = 5440 - msg_bits
+
+    // Fill complete blocks (message larger than one block)
+    while ((index + 1) * 1088) < msg_bits {
+        blocks[index] = extract_136_bytes_from_u5440(raw_message, msg_start + (index * 1088))
+        index = index + 1
+    }
+
+    // Remaining message bits for the last block
+    var len_last:u64 = msg_bits - (index * 1088)
+    var last_block:u1088 = extract_136_bytes_from_u5440(raw_message, msg_start + (index * 1088))
+
+    // Suffix 0x01 at byte (len_last/8): sets bit (1080 - len_last) of the u1088
+    // Terminator 0x80 at byte 135: value 128 in u1088 (padding_byte constant)
+    // Combined suffix+terminator when they share byte 135: 0x81 = 129
+
+    if (len_last + 16) <= 1088 {
+        // Normal case: both suffix and terminator fit in this block
+        var shift_amount:u1088 = (1080 - len_last) as u1088
+        var suffix_block:u1088 = (1 as u1088) << shift_amount
+        blocks[index] = last_block | suffix_block | padding_byte
+        n_blocks[0] = index + 1
+    } else {
+        if (len_last + 8) <= 1088 {
+            // Tight case: suffix is at byte 135, same as terminator
+            // byte 135 = 0x01 | 0x80 = 0x81 = 129
+            var combined:u1088 = 129
+            blocks[index] = last_block | combined
+            n_blocks[0] = index + 1
+        } else {
+            // Overflow case: message fills the block entirely, no room for suffix
+            // Current block = message only
+            blocks[index] = last_block
+            // Next block = suffix 0x01 at byte 0 + terminator 0x80 at byte 135
+            var next_block:u1088 = ((1 as u1088) << (1080 as u1088)) | padding_byte
+            blocks[index + 1] = next_block
+            n_blocks[0] = index + 2
+        }
+    }
+}
+
+// ===================================================================
+// Sponge absorption and squeezing phases
+// ===================================================================
+
+fn absorbing_phase<n_blocks, blocks, state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
     for i:u64 = 0; i < n_blocks[0]; i = i + 1 {
         var c16:u64, c15:u64, c14:u64, c13:u64, c12:u64, c11:u64, c10:u64, c9:u64, c8:u64, c7:u64, c6:u64, c5:u64, c4:u64, c3:u64, c2:u64, c1:u64, c0:u64
         c16::c15::c14::c13::c12::c11::c10::c9::c8::c7::c6::c5::c4::c3::c2::c1::c0 = blocks[i]
@@ -101,6 +159,10 @@ fn squeezing_phase<state_row0, state_row1, state_row2, state_row3, state_row4>()
     result[0] = switch_endian_u64(state_row0[0])::switch_endian_u64(state_row1[0])::switch_endian_u64(state_row2[0])::switch_endian_u64(state_row3[0])
 }
 
+// ===================================================================
+// The Keccak-f permutation
+// ===================================================================
+
 fn keccakf<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
     for j:u5 = 0; j < n; j = j + 1 {
         var round_constant:u64 = RC[j]
@@ -116,7 +178,7 @@ fn keccakf_round<state_row0, state_row1, state_row2, state_row3, state_row4, b0,
     iota(round_constant)
 }
 
-// column parity mixing step
+// THETA: column parity mixing step
 // C[x] = A[x,0] ^ A[x,1] ^ A[x,2] ^ A[x,3] ^ A[x,4]
 // D[x] = C[x-1] ^ rot(C[x+1], 1)
 // A[x,y] = A[x,y] ^ D[x]
@@ -143,7 +205,7 @@ fn theta<state_row0, state_row1, state_row2, state_row3, state_row4, c, d>() {
 
 }
 
-// lane rotations step
+// RHO: lane rotations step
 // B[y, (2x+3y) mod 5] = rot(A[x,y], r[x,y])
 fn rho<state_row0, state_row1, state_row2, state_row3, state_row4>() {
 
@@ -156,7 +218,7 @@ fn rho<state_row0, state_row1, state_row2, state_row3, state_row4>() {
     }
 }
 
-// lane permutation step
+// PI: lane permutation step
 // A[x,y] → B[y, (2x+3y) mod 5]
 fn pi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4>() {
     b0[mod5((2*0)+(3*0))] = state_row0[0]
@@ -186,7 +248,7 @@ fn pi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3
     b4[mod5((2*4)+(3*4))] = state_row4[4]   
 }
 
-// non-linear step
+// CHI: non-linear step
 // A[x,y] = B[x,y] ^ ((not B[x+1,y]) and B[x+2,y])
 fn chi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4>() {
 
@@ -200,11 +262,15 @@ fn chi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b
     
 }
 
-// round constant step
+// IOTA: round constant step
 // A[0,0] = A[0,0] ^ RC
 fn iota<state_row0>(round_constant:u64) {
     state_row0[0] = state_row0[0] ^ round_constant
 }
+
+// ===================================================================
+// Helper functions
+// ===================================================================
 
 // rotate left by n bits
 fn bit_rol64(word:u64, n:u6) -> (res:u64) {
@@ -261,6 +327,8 @@ fn bit_rol64(word:u64, n:u6) -> (res:u64) {
     res = w
 }
 
+// Convert u64 input from big-endian to little-endian
+// and reverse
 fn switch_endian_u64(val:u64) -> (res:u64) {
     var hi:u32
     var lo:u32
@@ -284,4 +352,10 @@ fn switch_endian_u16(val:u16) -> (res:u16) {
     var lo:u8
     hi::lo = val
     res = lo::hi
+}
+
+fn extract_136_bytes_from_u5440(val:u5440, start_bits:u64) -> (res:u1088) {
+    var shifted:u5440 = val << (start_bits as u5440)
+    var bottom:u4352
+    res::bottom = shifted
 }
