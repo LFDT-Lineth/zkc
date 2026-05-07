@@ -74,23 +74,23 @@ fn absorbing_phase<state_row0, state_row1, state_row2, state_row3, state_row4, b
     for i:u64 = 0; i < n_blocks[0]; i = i + 1 {
         var c16:u64, c15:u64, c14:u64, c13:u64, c12:u64, c11:u64, c10:u64, c9:u64, c8:u64, c7:u64, c6:u64, c5:u64, c4:u64, c3:u64, c2:u64, c1:u64, c0:u64
         c16::c15::c14::c13::c12::c11::c10::c9::c8::c7::c6::c5::c4::c3::c2::c1::c0 = blocks[i]
-        state_row0[0] = state_row0[0] ^ c16
-        state_row1[0] = state_row1[0] ^ c15
-        state_row2[0] = state_row2[0] ^ c14
-        state_row3[0] = state_row3[0] ^ c13
-        state_row4[0] = state_row4[0] ^ c12
-        state_row0[1] = state_row0[1] ^ c11
-        state_row1[1] = state_row1[1] ^ c10
-        state_row2[1] = state_row2[1] ^ c9
-        state_row3[1] = state_row3[1] ^ c8
-        state_row4[1] = state_row4[1] ^ c7
-        state_row0[2] = state_row0[2] ^ c6
-        state_row1[2] = state_row1[2] ^ c5
-        state_row2[2] = state_row2[2] ^ c4
-        state_row3[2] = state_row3[2] ^ c3
-        state_row4[2] = state_row4[2] ^ c2
-        state_row0[3] = state_row0[3] ^ c1
-        state_row1[3] = state_row1[3] ^ c0
+        state_row0[0] = state_row0[0] ^ switch_endian_u64(c16)
+        state_row1[0] = state_row1[0] ^ switch_endian_u64(c15)
+        state_row2[0] = state_row2[0] ^ switch_endian_u64(c14)
+        state_row3[0] = state_row3[0] ^ switch_endian_u64(c13)
+        state_row4[0] = state_row4[0] ^ switch_endian_u64(c12)
+        state_row0[1] = state_row0[1] ^ switch_endian_u64(c11)
+        state_row1[1] = state_row1[1] ^ switch_endian_u64(c10)          
+        state_row2[1] = state_row2[1] ^ switch_endian_u64(c9)
+        state_row3[1] = state_row3[1] ^ switch_endian_u64(c8)
+        state_row4[1] = state_row4[1] ^ switch_endian_u64(c7)
+        state_row0[2] = state_row0[2] ^ switch_endian_u64(c6)
+        state_row1[2] = state_row1[2] ^ switch_endian_u64(c5)
+        state_row2[2] = state_row2[2] ^ switch_endian_u64(c4)
+        state_row3[2] = state_row3[2] ^ switch_endian_u64(c3)
+        state_row4[2] = state_row4[2] ^ switch_endian_u64(c2)
+        state_row0[3] = state_row0[3] ^ switch_endian_u64(c1)   
+        state_row1[3] = state_row1[3] ^ switch_endian_u64(c0)
 
         keccakf()
     }
@@ -98,7 +98,7 @@ fn absorbing_phase<state_row0, state_row1, state_row2, state_row3, state_row4, b
 }
 
 fn squeezing_phase<state_row0, state_row1, state_row2, state_row3, state_row4>() {
-    result[0] = state_row0[0]::state_row1[0]::state_row2[0]::state_row3[0]
+    result[0] = switch_endian_u64(state_row0[0])::switch_endian_u64(state_row1[0])::switch_endian_u64(state_row2[0])::switch_endian_u64(state_row3[0])
 }
 
 fn keccakf<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
@@ -259,4 +259,29 @@ fn bit_rol64(word:u64, n:u6) -> (res:u64) {
         w = lo::hi
     }
     res = w
+}
+
+fn switch_endian_u64(val:u64) -> (res:u64) {
+    var hi:u32
+    var lo:u32
+    hi::lo = val
+    var sw_hi:u32 = switch_endian_u32(hi)
+    var sw_lo:u32 = switch_endian_u32(lo)
+    res = sw_lo::sw_hi
+}
+
+fn switch_endian_u32(val:u32) -> (res:u32) {
+    var hi:u16
+    var lo:u16
+    hi::lo = val
+    var sw_hi:u16 = switch_endian_u16(hi)
+    var sw_lo:u16 = switch_endian_u16(lo)
+    res = sw_lo::sw_hi
+}
+
+fn switch_endian_u16(val:u16) -> (res:u16) {
+    var hi:u8
+    var lo:u8
+    hi::lo = val
+    res = lo::hi
 }
