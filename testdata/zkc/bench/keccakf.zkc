@@ -46,12 +46,13 @@ static RC(address:u5) -> (rc:u64) {
     0x8000000080008008
 }
 
+// column 5 to 7 are unused and filled with 0
 static rot_offset(x:u3, y:u3) -> (offset:u6) {
-     0, 36,  3, 41, 18,
-     1, 44, 10, 45,  2,
-    62,  6, 43, 15, 61,
-    28, 55, 25, 21, 56,
-    27, 20, 39,  8, 14
+     0, 36,  3, 41, 18, 0, 0, 0,
+     1, 44, 10, 45,  2, 0, 0, 0,
+    62,  6, 43, 15, 61, 0, 0, 0,
+    28, 55, 25, 21, 56, 0, 0, 0,
+    27, 20, 39,  8, 14, 0, 0, 0
 }
 
 static mod5(address:u5) -> (result:u3) {
@@ -116,6 +117,9 @@ fn keccakf_round<state_row0, state_row1, state_row2, state_row3, state_row4, b0,
 }
 
 // column parity mixing step
+// C[x] = A[x,0] ^ A[x,1] ^ A[x,2] ^ A[x,3] ^ A[x,4]
+// D[x] = C[x-1] ^ rot(C[x+1], 1)
+// A[x,y] = A[x,y] ^ D[x]
 fn theta<state_row0, state_row1, state_row2, state_row3, state_row4, c, d>() {
 
     c[0] = state_row0[0] ^ state_row0[1] ^ state_row0[2] ^ state_row0[3] ^ state_row0[4]
@@ -130,16 +134,17 @@ fn theta<state_row0, state_row1, state_row2, state_row3, state_row4, c, d>() {
     }
 
     for j:u3 = 0; j < 5 ; j = j + 1 {
-        state_row0[j] = state_row0[j] ^ d[j]
-        state_row1[j] = state_row1[j] ^ d[j]
-        state_row2[j] = state_row2[j] ^ d[j]
-        state_row3[j] = state_row3[j] ^ d[j]
-        state_row4[j] = state_row4[j] ^ d[j]
+        state_row0[j] = state_row0[j] ^ d[0]
+        state_row1[j] = state_row1[j] ^ d[1]
+        state_row2[j] = state_row2[j] ^ d[2]
+        state_row3[j] = state_row3[j] ^ d[3]
+        state_row4[j] = state_row4[j] ^ d[4]
     }
 
 }
 
 // lane rotations step
+// B[y, (2x+3y) mod 5] = rot(A[x,y], r[x,y])
 fn rho<state_row0, state_row1, state_row2, state_row3, state_row4>() {
 
     for j:u3 = 0; j < 5 ; j = j + 1 {
@@ -152,35 +157,37 @@ fn rho<state_row0, state_row1, state_row2, state_row3, state_row4>() {
 }
 
 // lane permutation step
+// A[x,y] → B[y, (2x+3y) mod 5]
 fn pi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4>() {
-    b0[mod5((2*0)+(3*0) as u5)] = state_row0[0]
-    b1[mod5((2*0)+(3*1) as u5)] = state_row0[1]
-    b2[mod5((2*0)+(3*2) as u5)] = state_row0[2]
-    b3[mod5((2*0)+(3*3) as u5)] = state_row0[3]
-    b4[mod5((2*0)+(3*4) as u5)] = state_row0[4]
-    b0[mod5((2*1)+(3*0) as u5)] = state_row1[0]
-    b1[mod5((2*1)+(3*1) as u5)] = state_row1[1]
-    b2[mod5((2*1)+(3*2) as u5)] = state_row1[2]
-    b3[mod5((2*1)+(3*3) as u5)] = state_row1[3]
-    b4[mod5((2*1)+(3*4) as u5)] = state_row1[4]
-    b0[mod5((2*2)+(3*0) as u5)] = state_row2[0]
-    b1[mod5((2*2)+(3*1) as u5)] = state_row2[1]
-    b2[mod5((2*2)+(3*2) as u5)] = state_row2[2]
-    b3[mod5((2*2)+(3*3) as u5)] = state_row2[3]
-    b4[mod5((2*2)+(3*4) as u5)] = state_row2[4]
-    b0[mod5((2*3)+(3*0) as u5)] = state_row3[0]
-    b1[mod5((2*3)+(3*1) as u5)] = state_row3[1]
-    b2[mod5((2*3)+(3*2) as u5)] = state_row3[2]
-    b3[mod5((2*3)+(3*3) as u5)] = state_row3[3]
-    b4[mod5((2*3)+(3*4) as u5)] = state_row3[4]
-    b0[mod5((2*4)+(3*0) as u5)] = state_row4[0]
-    b1[mod5((2*4)+(3*1) as u5)] = state_row4[1]
-    b2[mod5((2*4)+(3*2) as u5)] = state_row4[2]
-    b3[mod5((2*4)+(3*3) as u5)] = state_row4[3]
-    b4[mod5((2*4)+(3*4) as u5)] = state_row4[4]
+    b0[mod5((2*0)+(3*0))] = state_row0[0]
+    b1[mod5((2*0)+(3*1))] = state_row0[1]
+    b2[mod5((2*0)+(3*2))] = state_row0[2]
+    b3[mod5((2*0)+(3*3))] = state_row0[3]
+    b4[mod5((2*0)+(3*4))] = state_row0[4]
+    b0[mod5((2*1)+(3*0))] = state_row1[0]
+    b1[mod5((2*1)+(3*1))] = state_row1[1]
+    b2[mod5((2*1)+(3*2))] = state_row1[2]
+    b3[mod5((2*1)+(3*3))] = state_row1[3]
+    b4[mod5((2*1)+(3*4))] = state_row1[4]
+    b0[mod5((2*2)+(3*0))] = state_row2[0]
+    b1[mod5((2*2)+(3*1))] = state_row2[1]
+    b2[mod5((2*2)+(3*2))] = state_row2[2]
+    b3[mod5((2*2)+(3*3))] = state_row2[3]
+    b4[mod5((2*2)+(3*4))] = state_row2[4]
+    b0[mod5((2*3)+(3*0))] = state_row3[0]
+    b1[mod5((2*3)+(3*1))] = state_row3[1]
+    b2[mod5((2*3)+(3*2))] = state_row3[2]
+    b3[mod5((2*3)+(3*3))] = state_row3[3]
+    b4[mod5((2*3)+(3*4))] = state_row3[4]
+    b0[mod5((2*4)+(3*0))] = state_row4[0]
+    b1[mod5((2*4)+(3*1))] = state_row4[1]
+    b2[mod5((2*4)+(3*2))] = state_row4[2]
+    b3[mod5((2*4)+(3*3))] = state_row4[3]
+    b4[mod5((2*4)+(3*4))] = state_row4[4]   
 }
 
 // non-linear step
+// A[x,y] = B[x,y] ^ ((not B[x+1,y]) and B[x+2,y])
 fn chi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4>() {
 
     for j:u3 = 0; j < 5 ; j = j + 1 {
@@ -194,10 +201,12 @@ fn chi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b
 }
 
 // round constant step
+// A[0,0] = A[0,0] ^ RC
 fn iota<state_row0>(round_constant:u64) {
     state_row0[0] = state_row0[0] ^ round_constant
 }
 
+// rotate left by n bits
 fn bit_rol64(word:u64, n:u6) -> (res:u64) {
     var b5:u1
     var b4:u1

@@ -37,6 +37,10 @@ func Test_ZkcBench_Fnv1aHash(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/fnv1a_hash", field.BLS12_377, field.KOALABEAR_16)
 }
 
+func Test_ZkcBench_Keccakf(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/keccakf")
+}
+
 func Test_ZkcBench_Sort(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/sort", field.BLS12_377, field.KOALABEAR_16)
 }
