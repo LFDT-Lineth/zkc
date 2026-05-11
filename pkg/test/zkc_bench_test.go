@@ -57,6 +57,115 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 /*func Test_ZkcBench_KeccakfBatched(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/keccakf_batched", field.BLS12_377, field.KOALABEAR_16)
 }*/
+// ===================================================================
+// Poseidon utils tests
+// ===================================================================
+
+func Test_ZkcBench_Poseidon_u32_utils_01(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/u32/utils_01", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_u32_utils_02(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/u32/utils_02", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_u32_utils_03(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/u32/utils_03", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_u32_utils_04(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/u32/utils_04", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_u32_utils_05(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/u32/utils_05", field.KOALABEAR_16)
+}
+
+// ===================================================================
+// Poseidon u32 tests
+// ===================================================================
+
+func Test_ZkcBench_Poseidon_u32_Permutation_01(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/u32/permutation_01", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_u32_Range_01(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/u32/poseidon_range_01", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_u32_Range_02(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/u32/poseidon_range_02", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_u32_Range_03(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/u32/poseidon_range_03", field.KOALABEAR_16)
+}
+
+func Test_ZkcBench_Poseidon_u32_Zeros_Big_01(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/u32/poseidon_zeros_big_01", field.KOALABEAR_16)
+}
+
+// // these tests are long: > 1min
+// func Test_ZkcBench_Poseidon_u32_Zeros_Big_02(t *testing.T) {
+// 	checkZkcBench(t, "zkc/bench/poseidon/test/u32/poseidon_zeros_big_02", field.KOALABEAR_16)
+// }
+// func Test_ZkcBench_Poseidon_u32_Zeros_Big_03(t *testing.T) {
+// 	checkZkcBench(t, "zkc/bench/poseidon/test/u32/poseidon_zeros_big_03", field.KOALABEAR_16)
+// }
+
+// ===================================================================
+// Poseidon utils tests
+// ===================================================================
+
+func Test_ZkcBench_Poseidon_felt_utils_01(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/utils_01", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_utils_02(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/utils_02", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_utils_03(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/utils_03", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_utils_04(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/utils_04", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_utils_05(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/utils_05", field.KOALABEAR_16)
+}
+
+// ===================================================================
+// Poseidon felt tests
+// ===================================================================
+
+func Test_ZkcBench_Poseidon_felt_Permutation_01(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/permutation_01", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_Range_01(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_range_01", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_Range_02(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_range_02", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_Range_03(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_range_03", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_Zeros_01(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_zeros_01", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_Zeros_02(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_zeros_02", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_Zeros_03(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_zeros_03", field.KOALABEAR_16)
+}
+func Test_ZkcBench_Poseidon_felt_Zeros_Big_01(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_zeros_big_01", field.KOALABEAR_16)
+}
+
+// // these tests are long: > 1min
+// func Test_ZkcBench_Poseidon_felt_Zeros_Big_02(t *testing.T) {
+// 	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_zeros_big_02", field.KOALABEAR_16)
+// }
+// func Test_ZkcBench_Poseidon_felt_Zeros_Big_03(t *testing.T) {
+// 	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_zeros_big_03", field.KOALABEAR_16)
+// }
+
+// ===================================================================
+// Other tests
+// ===================================================================
 
 func Test_ZkcBench_Sort(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/sort", field.BLS12_377, field.KOALABEAR_16)

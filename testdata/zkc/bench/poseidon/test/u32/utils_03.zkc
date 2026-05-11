@@ -1,0 +1,21 @@
+include "../../impl/u32/poseidon.zkc"
+include "../../impl/u32/state.zkc"
+include "../../utils/memory.zkc"
+
+// ===================================================================
+// read_from_state and write_to_state test
+// ===================================================================
+
+fn main<ram, u32_state>() {
+    // we write the message 0x00 01 02 ... fe ff into memory
+    var zero:u32 = read_from_state(0)
+    write_to_state(1, 1)
+    var one:u32 = read_from_state(1)
+
+    if zero != 0 {
+        fail
+    }
+    if one != 1 {
+        fail
+    }
+}

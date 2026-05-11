@@ -804,7 +804,3 @@ func Test_ZkcUnit_SkipIf_05(t *testing.T) {
 func checkZkcUnit(t *testing.T, test string, config util.Config) {
 	util.CheckValid(t, test, "zkc", config.Words(vm.WORD_UINT, vm.WORD_UINT64))
 }
-
-// ===================================================================
-// Field element
-// ===================================================================

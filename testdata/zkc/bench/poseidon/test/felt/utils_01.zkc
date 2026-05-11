@@ -1,0 +1,17 @@
+include "../../impl/felt/poseidon.zkc"
+include "../../impl/felt/state.zkc"
+include "../../utils/memory.zkc"
+
+// ===================================================================
+// write_8 test
+// ===================================================================
+
+fn main<ram, felt_state>() {
+    for i:u8 = 0; i<16; i = i + 1 {
+        write_8((i * 4) as Address, i as u8)
+    }
+    var one:u8 = ram[4]
+    if one != 1 {
+        fail
+    }
+}

@@ -1,0 +1,21 @@
+include "../../impl/felt/poseidon.zkc"
+include "../../impl/felt/state.zkc"
+include "../../utils/memory.zkc"
+
+// ===================================================================
+// read_from_tmp and write_to_tmp test
+// ===================================================================
+
+fn main<ram, felt_state>() {
+    var zero:𝔽 = read_from_tmp(1)
+    write_to_tmp(1, 1)
+    var one:𝔽 = read_from_tmp(1)
+
+    // zero should hold 0, one should hold 1
+    if zero != 0 {
+        fail
+    }
+    if one != 1 {
+        fail
+    }
+}

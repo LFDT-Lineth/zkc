@@ -1,0 +1,39 @@
+include "../../impl/u32/poseidon.zkc"
+include "../../impl/u32/state.zkc"
+
+// ===================================================================
+// poseidon
+// ===================================================================
+
+input expected_output_state(index:u8) -> (res:u32)
+
+const FALSE:u1 = 0
+
+fn main<ram, u32_state>() {
+
+    // we write the message
+    //
+    // 0x00 01 02 ... fe ff
+    //
+    // into the state
+    for i:u8 = 0; i<16; i = i + 1 {
+        write_to_state(i, 0)
+    }
+    var message_size:u32 = 16
+    var message_offset:Address = 0
+
+    print_state()
+
+    permutation(FALSE)
+
+    print_state()
+
+    // print_expected_output()
+}
+
+fn print_expected_output() {
+    printf "\nExpected output\n"
+    for i:u8 = 0; i<STATE_WIDTH; i = i + 1 {
+        printf "ω[%x] = %x\n", i, expected_output_state(i)
+    }
+}
