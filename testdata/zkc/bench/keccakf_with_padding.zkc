@@ -57,8 +57,8 @@ static rot_offset(x:u3, y:u3) -> (offset:u6) {
 }
 
 // Padding constants
-const suffix:u8 = 1
-const padding_byte:u1088 = 128
+const suffix:u1088 = 1
+const terminator_block:u1088 = 128 // 0b10000000
 type message_type = u5440
 const message_bits:u64 = 5440
 type message_minus_bitrate = u4352
@@ -128,20 +128,20 @@ fn multi_rate_padding<blocks, n_blocks>() {
     // For multi-rate padding, we need to append a single bit 1 (suffix) followed by the
     // minimum number of bits 0 followed by a single bit 1 (terminator) such that the length of
     // the result is a multiple of the block length.
-    // Suffix 0x01 at byte (len_last/8): sets bit (1080 - len_last) of the bitrate_type u1088
-    // Terminator 0x80 at byte 135: value 128 in bitrate_type (padding_byte constant)
-    // Combined suffix+terminator when they share the same byte 135: 0x81 (binary 10000001)
+    // Suffix : sets bit (1080 - len_last)
+    // Terminator : sets bit 1080 (terminator_block constant)
+    // Combined suffix+terminator when they share the same byte, at bit 1080: 0x10000001
 
     if (len_last + (2 * byte_length)) <= bitrate {
         // Normal case: both suffix and terminator fit in this block
         var shift_amount:u1088 = (1080 - len_last) as u1088
-        var suffix_block:u1088 = (1 as u1088) << shift_amount
-        blocks[index] = last_block | suffix_block | padding_byte
+        var suffix_block:u1088 =  suffix << shift_amount
+        blocks[index] = last_block | suffix_block | terminator_block
         n_blocks[0] = index + 1
     } else {
         if (len_last + byte_length) <= bitrate {
-            // Tight case: suffix is at byte 135, same as terminator
-            // byte 135 = 0x01 | 0x80 = 0x81 = 129
+            // Combined case: suffix and terminator share the same byte
+            // At bit 1080 = 0b00000001 | 0b10000000 = 0x81 = 129
             var combined:bitrate_type = 129
             blocks[index] = last_block | combined
             n_blocks[0] = index + 1
@@ -149,9 +149,9 @@ fn multi_rate_padding<blocks, n_blocks>() {
             // Overflow case: message fills the block entirely, no room for suffix
             // Current block = message only
             blocks[index] = last_block
-            // Next block = suffix 0x01 at byte 0 + terminator 0x80 at byte 135
-            var next_block:u1088 = ((1 as u1088) << (1080 as bitrate_type)) | padding_byte
-            blocks[index + 1] = next_block
+            // Suffix and terminator block = suffix at bit 0 + terminator at bit 1080
+            var suffix_and_terminator_block:u1088 = (suffix << (1080 as bitrate_type)) | terminator_block
+            blocks[index + 1] = suffix_and_terminator_block
             n_blocks[0] = index + 2
         }
     }
