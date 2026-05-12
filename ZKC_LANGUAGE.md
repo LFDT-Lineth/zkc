@@ -8,8 +8,8 @@ integer types and explicit memory declarations. ZkC programs are
 compiled and executed by the `zkc` toolchain.
 
 The overall model of a ZkC program is that it reads some number of
-*inputs*, performs a *computation* and writes some number of
-*outputs*. The computation may additionally fail (e.g. if the inputs
+_inputs_, performs a _computation_ and writes some number of
+_outputs_. The computation may additionally fail (e.g. if the inputs
 were malformed). A ZkC program cannot perform other forms of I/O and
 cannot, for example, interact with the operating system (e.g. to read
 files, etc).
@@ -19,13 +19,13 @@ files, etc).
 To introduce the ZkC language, we consider a straightforward example
 which showcases various features: namely, the classical
 [quicksort](https://en.wikipedia.org/wiki/Quicksort) algorithm. This
-program *reads in* a set of zero or more bytes, *sorts* them and then
-*writes out* the sorted bytes.
+program _reads in_ a set of zero or more bytes, _sorts_ them and then
+_writes out_ the sorted bytes.
 
 ### Memory
 
 The first aspect of our quicksort implementation is to define the
-various forms of *memory* required:
+various forms of _memory_ required:
 
 ```zkc
 // Input which identifies how many bytes to sort
@@ -41,12 +41,12 @@ output data_out(address:u32)->(bytes:u8)
 memory buffer(address:u32)->(bytes:u8)
 ```
 
-Here, `input data_len` indicates `data_len` is an *input memory*.
-This is a form of *read-only memory* which cannot be written during
+Here, `input data_len` indicates `data_len` is an _input memory_.
+This is a form of _read-only memory_ which cannot be written during
 execution. Likewise, `output data_out` indicates that `data_out` is a
-*write once* output memory. This means two things: firstly, each
+_write once_ output memory. This means two things: firstly, each
 location of an output memory can only be written once; secondly,
-locations of an output memory must be written *consecutively*
+locations of an output memory must be written _consecutively_
 (i.e. location `0` is written first, then location `1`, etc). In
 contrast, `memory buffer` indicates that `buffer` is a read-write
 (i.e. random access) memory. A read-write memory can be read and
@@ -55,9 +55,9 @@ default. Furthermore, observe that data written into a read/write
 memory is lost once execution completes. Hence, read/write memories
 are typically used as a form of scratch space during the computation.
 
-The *geometry* of a memory determines its maximum size and
-organisation. For `data_len` the *address space* is a `u1` whilst the
-*data space* is a `u32`. This means we can have at most two entries
+The _geometry_ of a memory determines its maximum size and
+organisation. For `data_len` the _address space_ is a `u1` whilst the
+_data space_ is a `u32`. This means we can have at most two entries
 of `u32` (i.e. four byte) data values. In our example, we'll assume
 there is always exactly one entry for `data_len` and that this
 determines the length of `data_in` (i.e. the number of bytes to be
@@ -90,8 +90,8 @@ reads / writes to the data. Once the sort is completed, the sorted
 bytes are written from `buffer` into the output memory. **This is a
 typical structure for ZkC programs**.
 
-The declaration of `main<buffer>` includes `buffer` as a *memory
-effect*. This is a declaration that the `main` function may access
+The declaration of `main<buffer>` includes `buffer` as a _memory
+effect_. This is a declaration that the `main` function may access
 the `buffer` memory. Whenever a function `f(...)` accesses read/write
 memory `M` (inc. calling a function which accesses `M`), it must
 declare this explicitly (e.g. `f<M>(...)`). Note that functions can
@@ -122,11 +122,11 @@ For example, parameters `n` and `m` are declared to be `u32` --- but,
 unlike many languages, ZkC supports types of arbitrary bitwidth
 (e.g. `u2`, `u3`, `u11`, `u15`, `u48`, `u160`, etc). Also, parameters
 cannot be assigned and are immutable throughout a function. Finally,
-unlike C, return values and local variables must be *defined* before
-being *used* (i.e. ZkC enforces [definite
+unlike C, return values and local variables must be _defined_ before
+being _used_ (i.e. ZkC enforces [definite
 assignment](https://en.wikipedia.org/wiki/Definite_assignment_analysis)).
 
-Functions can be *recursive* and this provides an efficient way to
+Functions can be _recursive_ and this provides an efficient way to
 encode unbounded computation. For example, the `sort_slice()`
 function is defined like so:
 
@@ -207,17 +207,17 @@ private inputs form part of [the
 witness](https://en.wikipedia.org/wiki/Zero-knowledge_proof). For
 example, consider a computation over some array of data. To avoid
 committing to the entire set of data, we may prefer to commit only to
-a *hash* of the data which, consequently, would be a public input.
+a _hash_ of the data which, consequently, would be a public input.
 However, to open the hash (i.e. access its contents), we would need
 one or more [Merkle proofs](https://en.wikipedia.org/wiki/Merkle_tree)
 to establish that values of interest are indeed contained within.
 Such proofs could be provided as private inputs and, hence, would be
 part of.
 
-*Static inputs* are a form of memory whose contents is fixed in the
+_Static inputs_ are a form of memory whose contents is fixed in the
 program source. For example, one can implement the input vectors for
 the [BLAKE2 hashing
-algorithm](https://en.wikipedia.org/wiki/BLAKE_(hash_function)#BLAKE2)
+algorithm](<https://en.wikipedia.org/wiki/BLAKE_(hash_function)#BLAKE2>)
 using a static input as follows:
 
 ```
@@ -264,7 +264,7 @@ Only a single variable may carry an initialiser per declaration statement.
 target(s) = expression
 ```
 
-Expressions have a notion called their *arity* which determine how
+Expressions have a notion called their _arity_ which determine how
 many values they produce. In most cases, the arity of an expression
 is `1` --- meaning it produces exactly one value. For example, the
 expression `a + b` has arity `1`. In contrast, a function call has an
@@ -325,7 +325,7 @@ for i:u8 = 0; i < 10; i = i + 1 {
 ```
 
 **NOTE**: loops in a function necessarily force it to be a so-called
-*multi-line function* (see below). As such, in many cases, it can be
+_multi-line function_ (see below). As such, in many cases, it can be
 more efficient (in terms of generated constraints) to use recursion.
 
 ### Exceptions
@@ -357,9 +357,8 @@ printf "format string", expr1, expr2, ...
 ```
 
 The format string is a double-quoted string literal containing literal text
-and zero or more *format specifiers*. Each specifier consumes one argument
+and zero or more _format specifiers_. Each specifier consumes one argument
 from the comma-separated list that follows:
-
 
 | Specifier | Output format             |
 | --------- | ------------------------- |
@@ -367,9 +366,7 @@ from the comma-separated list that follows:
 | `%x`      | hexadecimal (e.g. `0x2a`) |
 | `%b`      | binary (e.g. `0b101010`)  |
 
-
 The following escape sequences are recognised inside format strings:
-
 
 | Sequence | Meaning           |
 | -------- | ----------------- |
@@ -377,7 +374,6 @@ The following escape sequences are recognised inside format strings:
 | `\t`     | horizontal tab    |
 | `\r`     | carriage return   |
 | `\\`     | literal backslash |
-
 
 Arguments must be expressions that produce a concrete unsigned integer type.
 Local variables, constants, and arithmetic/bitwise sub-expressions are all
@@ -424,26 +420,22 @@ fn f(x:word) -> (r:u8) {
 
 ZkC supports the following arithmetic operators:
 
-
 | Operator | Meaning        |
 | -------- | -------------- |
 | `a + b`  | addition       |
 | `a - b`  | subtraction    |
 | `a * b`  | multiplication |
 
-
 Bitwise operators:
-
 
 | Operator | Meaning                               |
 | -------- | ------------------------------------- |
 | `a & b`  | bitwise AND                           |
-| `a | b`  | bitwise OR                            |
+| `a \| b` | bitwise OR                            |
 | `a ^ b`  | bitwise XOR                           |
 | `~a`     | bitwise NOT (complement within width) |
 | `a << b` | left shift (result masked to width)   |
 | `a >> b` | right shift                           |
-
 
 All operands of a binary bitwise or shift expression must have the same
 type. The result type equals the operand type. For shifts, the shift
@@ -451,7 +443,7 @@ amount must be the same type as the value being shifted; left-shift
 results are masked to the declared bit width of the target.
 
 **Parentheses are required** when mixing operators of different kinds.
-Chains of the *same* operator are permitted without extra parentheses:
+Chains of the _same_ operator are permitted without extra parentheses:
 
 ```zkc
 // OK — same operator chained
@@ -469,7 +461,6 @@ var bad2:u8 = x << y >> z
 
 Comparison operators (used in conditions only):
 
-
 | Operator | Meaning               |
 | -------- | --------------------- |
 | `a == b` | equal                 |
@@ -478,7 +469,6 @@ Comparison operators (used in conditions only):
 | `a <= b` | less than or equal    |
 | `a > b`  | greater than          |
 | `a >= b` | greater than or equal |
-
 
 **Bitwise Concatenation.** Small values can be concatenated together
 to form larger bitwise values. As for destructuring assignments, the
@@ -529,7 +519,7 @@ constraint systems used by ZK provers which consist of: **vanishing
 constraints**, **lookup arguments**, and **permutation arguments**.
 
 The underlying arithmetic constraint system is broken up into
-*modules*, each of which is composed of one or more columns.
+_modules_, each of which is composed of one or more columns.
 Polynomial constraints can be enforced on modules, whilst lookup
 arguments can hold between columns either in the same module, or
 between different modules. Finally, permutation arguments hold
@@ -559,6 +549,5 @@ Available fields: `BLS12_377` (default), `KOALABEAR_16`, `GF_8209`, `GF_251`.
 
 - Source code lives under `pkg/zkc/` (compiler, AST, VM).
 - Test fixtures are in `testdata/zkc/` (valid programs under `unit/`, expected
-errors under `invalid/`).
+  errors under `invalid/`).
 - The broader `go-corset` compilation pipeline is described in `CLAUDE.md`.
-
