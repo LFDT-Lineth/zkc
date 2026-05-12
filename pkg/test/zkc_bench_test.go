@@ -41,6 +41,17 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/keccakf")
 }
 
+// Keccakf with padding and little-endian input and output
+// Will be used for later benchmarks
+
+// func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {
+// 	checkZkcBench(t, "zkc/bench/keccakf_with_padding")
+// }
+
+// func Test_ZkcBench_KeccakfLe(t *testing.T) {
+// 	checkZkcBench(t, "zkc/bench/keccakf_le")
+// }
+
 func Test_ZkcBench_Sort(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/sort", field.BLS12_377, field.KOALABEAR_16)
 }
@@ -86,6 +97,18 @@ func Test_ZkcBench_DivRem32(t *testing.T) {
 
 func Test_ZkcBench_LeftShiftAndTypeBug(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/left_shift_and_type_bug", field.BLS12_377, field.KOALABEAR_16)
+}
+
+func Benchmark_ZkcBench_Keccakf(b *testing.B) {
+	util.BenchZkcAccepts(b, "zkc/bench/keccakf")
+}
+
+func Benchmark_ZkcBench_KeccakfLe(b *testing.B) {
+	util.BenchZkcAccepts(b, "zkc/bench/keccakf_le")
+}
+
+func Benchmark_ZkcBench_KeccakfWithPadding(b *testing.B) {
+	util.BenchZkcAccepts(b, "zkc/bench/keccakf_with_padding")
 }
 
 // ===================================================================

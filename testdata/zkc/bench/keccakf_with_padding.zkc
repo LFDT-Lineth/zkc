@@ -1,6 +1,6 @@
 // Implementation of the Keccak-f[1600] permutation
 // State size is 1600 bits
-// Version with big-endian input and output with pre-padded blocks
+// Version with multi-rate padding
 
 // ===================================================================
 // Keccak-f[1600] parameters and constants
@@ -56,11 +56,18 @@ static rot_offset(x:u3, y:u3) -> (offset:u6) {
     27, 20, 39,  8, 14, 0, 0, 0
 }
 
-
-// In this implementation, we use blocks as input
-// Multi-rate padding has already been applied to the input
-pub input n_blocks(address:u1) -> (length:u64)
-pub input blocks(address:u64) -> (block:bitrate_type)
+// Padding constants
+const suffix:u8 = 1
+const padding_byte:u1088 = 128
+type message_type = u5440
+const message_bits:u64 = 5440
+type message_minus_bitrate = u4352
+// In this implementation, the input is the raw message
+// The message can be of any length up to 5440 bits
+pub input message(address:u1) -> (data:message_type)
+pub input message_length(address:u1) -> (length:u64)
+memory n_blocks(address:u1) -> (length:u64)
+memory blocks(address:u64) -> (block:bitrate_type)
 memory state_row0(address:u3) -> (state:lane)
 memory state_row1(address:u3) -> (state:lane)
 memory state_row2(address:u3) -> (state:lane)
@@ -86,7 +93,9 @@ const byte_length:u64 = 8
 // Main function
 // ===================================================================
 
-fn main<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
+fn main<n_blocks, blocks, state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
+
+    multi_rate_padding()
 
     // no initialization as the state is already filled with 0
 
@@ -97,11 +106,63 @@ fn main<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, 
 }
 
 // ===================================================================
+// Multi-rate padding function
+// ===================================================================
+
+fn multi_rate_padding<blocks, n_blocks>() {
+    var raw_message:message_type = message[0]
+    var message_length:u64 = message_length[0]
+    var index:u64 = 0
+    var message_start:u64 = message_bits - message_length
+
+    // If message is larger than one block, fill complete blocks
+    while ((index + 1) * bitrate) < message_length {
+        blocks[index] = extract_bitrate_from_msg(raw_message, message_start + (index * bitrate))
+        index = index + 1
+    }
+
+    // Remaining message bits for the last block
+    var len_last:u64 = message_length - (index * bitrate)
+    var last_block:u1088 = extract_bitrate_from_msg(raw_message, message_start + (index * bitrate))
+
+    // For multi-rate padding, we need to append a single bit 1 (suffix) followed by the
+    // minimum number of bits 0 followed by a single bit 1 (terminator) such that the length of
+    // the result is a multiple of the block length.
+    // Suffix 0x01 at byte (len_last/8): sets bit (1080 - len_last) of the bitrate_type u1088
+    // Terminator 0x80 at byte 135: value 128 in bitrate_type (padding_byte constant)
+    // Combined suffix+terminator when they share the same byte 135: 0x81 (binary 10000001)
+
+    if (len_last + (2 * byte_length)) <= bitrate {
+        // Normal case: both suffix and terminator fit in this block
+        var shift_amount:u1088 = (1080 - len_last) as u1088
+        var suffix_block:u1088 = (1 as u1088) << shift_amount
+        blocks[index] = last_block | suffix_block | padding_byte
+        n_blocks[0] = index + 1
+    } else {
+        if (len_last + byte_length) <= bitrate {
+            // Tight case: suffix is at byte 135, same as terminator
+            // byte 135 = 0x01 | 0x80 = 0x81 = 129
+            var combined:bitrate_type = 129
+            blocks[index] = last_block | combined
+            n_blocks[0] = index + 1
+        } else {
+            // Overflow case: message fills the block entirely, no room for suffix
+            // Current block = message only
+            blocks[index] = last_block
+            // Next block = suffix 0x01 at byte 0 + terminator 0x80 at byte 135
+            var next_block:u1088 = ((1 as u1088) << (1080 as bitrate_type)) | padding_byte
+            blocks[index + 1] = next_block
+            n_blocks[0] = index + 2
+        }
+    }
+}
+
+// ===================================================================
 // Sponge absorption and squeezing phases
 // ===================================================================
 
 // Xor the input blocks into the state
-fn absorbing_phase<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
+fn absorbing_phase<n_blocks, blocks, state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
     for i:u64 = 0; i < n_blocks[0]; i = i + 1 {
         var c16:u64, c15:u64, c14:u64, c13:u64, c12:u64, c11:u64, c10:u64, c9:u64, c8:u64, c7:u64, c6:u64, c5:u64, c4:u64, c3:u64, c2:u64, c1:u64, c0:u64
         c16::c15::c14::c13::c12::c11::c10::c9::c8::c7::c6::c5::c4::c3::c2::c1::c0 = blocks[i]
@@ -218,7 +279,7 @@ fn pi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3
     b1[mod5((2*4)+(3*1))] = state_row4[1]
     b2[mod5((2*4)+(3*2))] = state_row4[2]
     b3[mod5((2*4)+(3*3))] = state_row4[3]
-    b4[mod5((2*4)+(3*4))] = state_row4[4]
+    b4[mod5((2*4)+(3*4))] = state_row4[4]   
 }
 
 // CHI: non-linear step
@@ -325,4 +386,10 @@ fn switch_endian_u16(val:u16) -> (res:u16) {
     var lo:u8
     hi::lo = val
     res = lo::hi
+}
+
+fn extract_bitrate_from_msg(val:message_type, start_bits:u64) -> (res:bitrate_type) {
+    var shifted:message_type = val << (start_bits as message_type)
+    var message_leftover:message_minus_bitrate
+    res::message_leftover = shifted
 }
