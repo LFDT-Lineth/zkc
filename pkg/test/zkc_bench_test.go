@@ -41,6 +41,13 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/keccakf", field.BLS12_377, field.KOALABEAR_16)
 }
 
+// Same Keccak-f[1600] permutation as Test_ZkcBench_Keccakf, but the vector
+// loop is hoisted into ZkC: a single .accepts line packs all per-vector
+// inputs/outputs and the program iterates over them in one boot.
+func Test_ZkcBench_KeccakfBatched(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/keccakf_batched", field.BLS12_377, field.KOALABEAR_16)
+}
+
 // Keccakf with padding and little-endian input and output
 // Will be used for later benchmarks
 
