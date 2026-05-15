@@ -132,7 +132,7 @@ func flatten[W any](tf lt.TraceFile, splits [][][]lt.Column[W]) []lt.Module[W] {
 		modules = make([]lt.Module[W], len(splits))
 		index   = 0
 	)
-	// Flattern all columns
+	// Flatten all columns
 	for i, ith := range splits {
 		var columns []lt.Column[W]
 		//

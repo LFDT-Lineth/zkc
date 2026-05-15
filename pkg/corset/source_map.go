@@ -42,9 +42,9 @@ func (p *SourceMap) AttributeName() string {
 	return "CorsetSourceMap"
 }
 
-// Flattern modules in this tree matching a given criteria
-func (p *SourceMap) Flattern(predicate func(*SourceModule) bool) []SourceModule {
-	return p.Root.Flattern(predicate)
+// Flatten modules in this tree matching a given criteria
+func (p *SourceMap) Flatten(predicate func(*SourceModule) bool) []SourceModule {
+	return p.Root.Flatten(predicate)
 }
 
 // SubstituteConstants updates the recorded value of constants within this
@@ -108,15 +108,15 @@ func (p *SourceModule) Registers(nModules uint) []SourceColumn {
 	return determineRegisters(*p, nModules, &visited)
 }
 
-// Flattern modules in this tree either including (or excluding) virtual
+// Flatten modules in this tree either including (or excluding) virtual
 // modules.
-func (p *SourceModule) Flattern(predicate func(*SourceModule) bool) []SourceModule {
+func (p *SourceModule) Flatten(predicate func(*SourceModule) bool) []SourceModule {
 	var modules []SourceModule
 
 	if predicate(p) {
 		modules = append(modules, *p)
 		for _, child := range p.Submodules {
-			modules = append(modules, child.Flattern(predicate)...)
+			modules = append(modules, child.Flatten(predicate)...)
 		}
 	}
 

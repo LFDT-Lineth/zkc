@@ -1,0 +1,13 @@
+//error:12:5-15:field overflow
+
+// ===================================================================
+// felt static table test:
+//
+// static felt table contains both valid and overflowing values
+// ===================================================================
+
+static felt_static(address:u8) -> (felt:𝔽) {
+    0,          // ok
+    0x7f000000, // ok
+    0x7f000001, // overflows koalabear modulus
+}

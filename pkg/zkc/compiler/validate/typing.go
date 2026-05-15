@@ -745,10 +745,11 @@ func (p *TypeChecker) typeCastExpression(_ Type, e *expr.Cast[symbol.Resolved], 
 	var (
 		srcType, errors = p.typeExpression(nil, e.Expr, env, effects)
 	)
-	// Sanity check whether the cast makes sense (or not).
-	if len(errors) == 0 {
-		errors = p.checkCastType(e.CastType, srcType, e.Expr)
+	if len(errors) > 0 {
+		return e.CastType, errors
 	}
+	// Sanity check whether the cast makes sense (or not).
+	errors = p.checkCastType(e.CastType, srcType, e.Expr)
 	//
 	return e.CastType, errors
 }

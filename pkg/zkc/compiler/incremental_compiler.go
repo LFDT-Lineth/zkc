@@ -95,6 +95,7 @@ func (p *IncrementalCompiler) SourceMaps() source.Maps[any] {
 // empty program.
 func NewIncrementalCompiler() *IncrementalCompiler {
 	return &IncrementalCompiler{
+		field: field.KOALABEAR_16,
 		files: make(map[string]string),
 	}
 }

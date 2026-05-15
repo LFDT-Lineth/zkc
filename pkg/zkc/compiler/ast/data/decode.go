@@ -50,7 +50,7 @@ func DecodeAll[S symbol.Symbol[S]](datatype Type[S], bytes []byte, env Environme
 		// Done
 		return ints
 	})
-	// Flattern decoded tuples
+	// Flatten decoded tuples
 	return array.FlatMap(values, func(ints []big.Int) []vm.Uint {
 		var words = make([]vm.Uint, len(ints))
 		//

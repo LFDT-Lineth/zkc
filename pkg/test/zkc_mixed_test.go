@@ -56,6 +56,18 @@ func Test_ZkcMixed_Basic_08(t *testing.T) {
 }
 
 // ===================================================================
+// Others
+// ===================================================================
+
+func Test_ZkcUnit_Felt_Memory_01(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_memory_01", field.BLS12_377, field.KOALABEAR_16)
+}
+
+func Test_ZkcUnit_Felt_Casting_01(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_casting_01", field.KOALABEAR_16)
+}
+
+// ===================================================================
 // Test Helpers
 // ===================================================================
 
