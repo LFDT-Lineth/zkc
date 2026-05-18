@@ -30,6 +30,8 @@ type Memory[W util.Uinter64] interface {
 	base.Module
 	// Geometry defines the geometry of this RAM.
 	Geometry() Geometry[W]
+	// Kind returns the underlying kind of memory
+	Kind() Kind
 	// IsPublic indicates whether this is a public input or output.
 	IsPublic() bool
 	// IsStatic indicates a static (read-only) memory.  That is a ROM which never
