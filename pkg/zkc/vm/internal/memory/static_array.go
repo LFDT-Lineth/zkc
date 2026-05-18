@@ -44,6 +44,11 @@ func NewStaticArray[W util.Uinter64](name string, kind Kind, registers []registe
 	return StaticArray[W]{kind, geometry, name, init}
 }
 
+// Kind implementation for memory interface.
+func (p *StaticArray[W]) Kind() Kind {
+	return p.kind
+}
+
 // IsPublic implementation for memory interface.
 func (p *StaticArray[W]) IsPublic() bool {
 	return p.kind.IsPublic()

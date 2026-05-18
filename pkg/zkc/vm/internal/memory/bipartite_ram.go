@@ -70,6 +70,11 @@ func NewBiPartiteRandomAccess[W util.Uinter64](name string, registers []register
 	}
 }
 
+// Kind implementation for memory interface.
+func (p *BiPartiteRandomAccess[W]) Kind() Kind {
+	return p.kind
+}
+
 // IsPublic implementation for memory interface.
 func (p *BiPartiteRandomAccess[W]) IsPublic() bool {
 	return p.kind.IsPublic()

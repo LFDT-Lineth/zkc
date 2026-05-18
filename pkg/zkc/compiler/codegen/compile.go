@@ -177,8 +177,14 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	if len(errors) == 0 && p.config.vectorize {
 		Vectorize(modules, p.srcmaps)
 	}
+	//
+	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)
+	// Apply register splitting (for now)
+	if len(errors) == 0 && p.config.splitting {
+		wm = vm.Subdivide(p.config.field, wm)
+	}
 	// Construct machine
-	return vm.NewWordMachine[vm.Uint](p.config.field, modules...), errors
+	return wm, errors
 }
 
 // compileStaticInitialise evaluates the compile-time constant expressions from a static
