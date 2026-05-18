@@ -278,31 +278,14 @@ func countVarsOfKind(vars []variable.ResolvedDescriptor, kind variable.Kind) uin
 }
 
 // expandArrayAssign rewrites an assignment whose left-hand side is a bare
-// fixed-size array variable into a form the rewriting phase can lower to
-// scalars.  Two regimes are handled, dispatching on the source kind:
+// fixed-size array variable. Two cases are handled:
+//  1. Bare array variable read (a = b), source is LocalAccess
+//  2. Function call returning an array (a = f(...)), source is ExternAccess
 //
-//  1. Bare array variable read (a = b).  The source is side-effect-free, so
-//     the statement is split into n element-wise statements
-//
-//	a[0] = b[0]; ...; a[n-1] = b[n-1]
-//
-//     each of which the rewrite phase trivially remaps to a scalar copy.
-//
-//  2. Function call returning an array (a = f(...)).  The call must be
-//     evaluated exactly once, so the statement is kept as a single assignment
-//     with n Array lvals as targets and the call as a single source
-//
-//	(a[0], ..., a[n-1]) = f(...)
-//
-//     The argument list is splatted in place so that any bare array arguments
-//     are turned into per-element accesses; the rewrite phase then remaps the
-//     n Array targets to n scalar Variable targets and the args to scalar
-//     reads, yielding the destructuring form codegen already supports for
-//     multi-return calls (see mapLVals in codegen/statement.go).
-//
-// Returns nil when no rewrite applies (lhs is not a bare array variable, or
-// the source shape isn't supported).  All returned statements still reference
-// the original variable IDs; the rewriting phase remaps them.
+// Result : a[0] = b[0]; ...; a[n-1] = b[n-1]
+// Returns nil when the source shape is not supported
+// All returned statements still reference the original variable IDs; 
+// the rewriting phase remaps them.
 func expandArrayAssign(
 	s *stmt.Assign[symbol.Resolved], mapping []varMapping, env ast.Environment,
 ) []stmt.Resolved {
@@ -321,8 +304,7 @@ func expandArrayAssign(
 	if !lm.isArray {
 		return nil
 	}
-	// Resolve through any type aliases (the rhs of e.g. `actual = rev(before)`
-	// where `rev` returns a named alias for `[u8;4]`).
+
 	srcArr := s.Source.Type().AsFixedArray(env)
 	if srcArr == nil || !srcArr.Size.HasFirst() || srcArr.Size.First() != lm.size {
 		return nil
