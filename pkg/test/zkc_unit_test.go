@@ -487,8 +487,8 @@ func Test_ZkcUnit_SwitchEndian(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_endian", util.DEFAULT_CONFIG)
 }
 
-func Test_ZkcUnit_BitRor64(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bit_ror64")
+func Test_ZkcUnit_BitRotr64(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bit_rotr64", util.DEFAULT_CONFIG)
 }
 
 // ===================================================================

@@ -10,13 +10,13 @@ fn main() {
     var word:u64 = data[0]
     var n:u6 = data[1] as u6
     var expected:u64 = data[2]
-    var res:u64 = bit_ror64(word, n)
+    var res:u64 = bit_rotr64(word, n)
     if res != expected {
         fail
     }
 }
 
-fn bit_ror64(word:u64, n:u6) -> (res:u64) {
+fn bit_rotr64(word:u64, n:u6) -> (res:u64) {
     var b5:u1
     var b4:u1
     var b3:u1

@@ -12,7 +12,6 @@
 type lane = u64
 // The output is 256 bits, so capacity is 2 * 256 = 512 bits
 // Rate = State size - Capacity = 1600 - 512 = 1088 bits
-const bitrate:u64 = 1088
 type bitrate_type = u1088
 // n is the number of rounds
 // n = 12 + 2 * l with 2^l = W
@@ -162,9 +161,9 @@ fn theta<state_row0, state_row1, state_row2, state_row3, state_row4, c, d>() {
     c[3] = state_row3[0] ^ state_row3[1] ^ state_row3[2] ^ state_row3[3] ^ state_row3[4]
     c[4] = state_row4[0] ^ state_row4[1] ^ state_row4[2] ^ state_row4[3] ^ state_row4[4]
 
-    for i_minus_one:u3 = 0; i_minus_one<5; i_minus_one = i_minus_one + 1 {
-        var i:u3 = i_minus_one + 1
-        d[mod5(i as u5)] = c[i_minus_one] ^ bit_rol64(c[mod5((i + 1) as u5)], 1)
+    for i_minus_one:u5 = 0; i_minus_one<5; i_minus_one = i_minus_one + 1 {
+        var i:u5 = i_minus_one + 1
+        d[mod5(i)] = c[i_minus_one as u3] ^ bit_rotl64(c[mod5(i + 1)], 1)
     }
 
     for j:u3 = 0; j<5; j = j + 1 {
@@ -182,42 +181,42 @@ fn theta<state_row0, state_row1, state_row2, state_row3, state_row4, c, d>() {
 fn rho<state_row0, state_row1, state_row2, state_row3, state_row4>() {
 
     for j:u3 = 0; j<5; j = j + 1 {
-        state_row0[j] = bit_rol64(state_row0[j], rot_offset(0, j))
-        state_row1[j] = bit_rol64(state_row1[j], rot_offset(1, j))
-        state_row2[j] = bit_rol64(state_row2[j], rot_offset(2, j))
-        state_row3[j] = bit_rol64(state_row3[j], rot_offset(3, j))
-        state_row4[j] = bit_rol64(state_row4[j], rot_offset(4, j))
+        state_row0[j] = bit_rotl64(state_row0[j], rot_offset(0, j))
+        state_row1[j] = bit_rotl64(state_row1[j], rot_offset(1, j))
+        state_row2[j] = bit_rotl64(state_row2[j], rot_offset(2, j))
+        state_row3[j] = bit_rotl64(state_row3[j], rot_offset(3, j))
+        state_row4[j] = bit_rotl64(state_row4[j], rot_offset(4, j))
     }
 }
 
 // PI: lane permutation step
 // A[x,y] → B[y, (2x+3y) mod 5]
 fn pi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4>() {
-    b0[mod5((2 * 0) + (3 * 0))] = state_row0[0]
-    b1[mod5((2 * 0) + (3 * 1))] = state_row0[1]
-    b2[mod5((2 * 0) + (3 * 2))] = state_row0[2]
-    b3[mod5((2 * 0) + (3 * 3))] = state_row0[3]
-    b4[mod5((2 * 0) + (3 * 4))] = state_row0[4]
-    b0[mod5((2 * 1) + (3 * 0))] = state_row1[0]
-    b1[mod5((2 * 1) + (3 * 1))] = state_row1[1]
-    b2[mod5((2 * 1) + (3 * 2))] = state_row1[2]
-    b3[mod5((2 * 1) + (3 * 3))] = state_row1[3]
-    b4[mod5((2 * 1) + (3 * 4))] = state_row1[4]
-    b0[mod5((2 * 2) + (3 * 0))] = state_row2[0]
-    b1[mod5((2 * 2) + (3 * 1))] = state_row2[1]
-    b2[mod5((2 * 2) + (3 * 2))] = state_row2[2]
-    b3[mod5((2 * 2) + (3 * 3))] = state_row2[3]
-    b4[mod5((2 * 2) + (3 * 4))] = state_row2[4]
-    b0[mod5((2 * 3) + (3 * 0))] = state_row3[0]
-    b1[mod5((2 * 3) + (3 * 1))] = state_row3[1]
-    b2[mod5((2 * 3) + (3 * 2))] = state_row3[2]
-    b3[mod5((2 * 3) + (3 * 3))] = state_row3[3]
-    b4[mod5((2 * 3) + (3 * 4))] = state_row3[4]
-    b0[mod5((2 * 4) + (3 * 0))] = state_row4[0]
-    b1[mod5((2 * 4) + (3 * 1))] = state_row4[1]
-    b2[mod5((2 * 4) + (3 * 2))] = state_row4[2]
-    b3[mod5((2 * 4) + (3 * 3))] = state_row4[3]
-    b4[mod5((2 * 4) + (3 * 4))] = state_row4[4]
+    b0[0] = state_row0[0] // (2*0 + 3*0) mod 5
+    b1[3] = state_row0[1] // (2*0 + 3*1) mod 5
+    b2[1] = state_row0[2] // (2*0 + 3*2) mod 5
+    b3[4] = state_row0[3] // (2*0 + 3*3) mod 5
+    b4[2] = state_row0[4] // (2*0 + 3*4) mod 5
+    b0[2] = state_row1[0] // (2*1 + 3*0) mod 5
+    b1[0] = state_row1[1] // (2*1 + 3*1) mod 5
+    b2[3] = state_row1[2] // (2*1 + 3*2) mod 5
+    b3[1] = state_row1[3] // (2*1 + 3*3) mod 5
+    b4[4] = state_row1[4] // (2*1 + 3*4) mod 5
+    b0[4] = state_row2[0] // (2*2 + 3*0) mod 5
+    b1[2] = state_row2[1] // (2*2 + 3*1) mod 5
+    b2[0] = state_row2[2] // (2*2 + 3*2) mod 5
+    b3[3] = state_row2[3] // (2*2 + 3*3) mod 5
+    b4[1] = state_row2[4] // (2*2 + 3*4) mod 5
+    b0[1] = state_row3[0] // (2*3 + 3*0) mod 5
+    b1[4] = state_row3[1] // (2*3 + 3*1) mod 5
+    b2[2] = state_row3[2] // (2*3 + 3*2) mod 5
+    b3[0] = state_row3[3] // (2*3 + 3*3) mod 5
+    b4[3] = state_row3[4] // (2*3 + 3*4) mod 5
+    b0[3] = state_row4[0] // (2*4 + 3*0) mod 5
+    b1[1] = state_row4[1] // (2*4 + 3*1) mod 5
+    b2[4] = state_row4[2] // (2*4 + 3*2) mod 5
+    b3[2] = state_row4[3] // (2*4 + 3*3) mod 5
+    b4[0] = state_row4[4] // (2*4 + 3*4) mod 5
 }
 
 // CHI: non-linear step
@@ -245,7 +244,7 @@ fn iota<state_row0>(round_constant:u64) {
 // ===================================================================
 
 // rotate left by n bits
-fn bit_rol64(word:u64, n:u6) -> (res:u64) {
+fn bit_rotl64(word:u64, n:u6) -> (res:u64) {
     var b5:u1
     var b4:u1
     var b3:u1
