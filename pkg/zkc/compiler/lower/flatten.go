@@ -80,24 +80,25 @@ func expandFixedArrays(
 	fn *decl.ResolvedFunction, mapping []varMapping, env ast.Environment,
 ) (expandedVars []variable.ResolvedDescriptor, expandedCode []stmt.Resolved, hasArray bool) {
 	for oldID, v := range fn.Variables {
-		switch vType := v.DataType.(type) {
-		case *data.ResolvedFixedArray:
+		// Resolve through any type aliases so that e.g. `var ys: ARR` with
+		// `type ARR = [u8;4]` is expanded the same way as `var ys: [u8;4]`.
+		if vType := v.DataType.AsFixedArray(env); vType != nil {
 			var (
 				size = vType.Size.First()
 				base = uint(len(expandedVars))
 			)
-			//
+
 			hasArray = true
-			//
+
 			for j := range size {
 				name := v.Name + "$" + strconv.FormatUint(uint64(j), 10)
 				bitwidth, _ := data.BitWidthOf(vType, env)
 				elemType := data.NewUnsignedInt[symbol.Resolved](bitwidth, false)
 				expandedVars = append(expandedVars, variable.New[symbol.Resolved](v.Kind, name, elemType))
 			}
-			//
+
 			mapping[oldID] = varMapping{newBase: base, isArray: true, size: size}
-		default:
+		} else {
 			mapping[oldID] = varMapping{newBase: uint(len(expandedVars))}
 			expandedVars = append(expandedVars, v)
 		}
@@ -110,7 +111,7 @@ func expandFixedArrays(
 	for _, s := range fn.Code {
 		switch s := s.(type) {
 		case *stmt.Assign[symbol.Resolved]:
-			if expanded := expandWholeArrayAssign(s, mapping); expanded != nil {
+			if expanded := expandArrayAssign(s, mapping, env); expanded != nil {
 				expandedCode = append(expandedCode, expanded...)
 				continue
 			}
@@ -280,12 +281,34 @@ func countVarsOfKind(vars []variable.ResolvedDescriptor, kind variable.Kind) uin
 	return n
 }
 
-// expandWholeArrayAssign detects assignments of the form `r = x` where both
-// sides are bare array variables and expands them into element-wise array
-// access assignments (r[0] = x[0], r[1] = x[1], ...) using the original
-// variable IDs.  The rewriting phase will then remap these into scalar accesses.
-func expandWholeArrayAssign(
-	s *stmt.Assign[symbol.Resolved], mapping []varMapping,
+// expandArrayAssign rewrites an assignment whose left-hand side is a bare
+// fixed-size array variable into a form the rewriting phase can lower to
+// scalars.  Two regimes are handled, dispatching on the source kind:
+//
+//  1. Bare array variable read (a = b).  The source is side-effect-free, so
+//     the statement is split into n element-wise statements
+//
+//	a[0] = b[0]; ...; a[n-1] = b[n-1]
+//
+//     each of which the rewrite phase trivially remaps to a scalar copy.
+//
+//  2. Function call returning an array (a = f(...)).  The call must be
+//     evaluated exactly once, so the statement is kept as a single assignment
+//     with n Array lvals as targets and the call as a single source
+//
+//	(a[0], ..., a[n-1]) = f(...)
+//
+//     The argument list is splatted in place so that any bare array arguments
+//     are turned into per-element accesses; the rewrite phase then remaps the
+//     n Array targets to n scalar Variable targets and the args to scalar
+//     reads, yielding the destructuring form codegen already supports for
+//     multi-return calls (see mapLVals in codegen/statement.go).
+//
+// Returns nil when no rewrite applies (lhs is not a bare array variable, or
+// the source shape isn't supported).  All returned statements still reference
+// the original variable IDs; the rewriting phase remaps them.
+func expandArrayAssign(
+	s *stmt.Assign[symbol.Resolved], mapping []varMapping, env ast.Environment,
 ) []stmt.Resolved {
 	if len(s.Targets) != 1 {
 		return nil
@@ -296,39 +319,54 @@ func expandWholeArrayAssign(
 		return nil
 	}
 
-	src, ok := s.Source.(*expr.LocalAccess[symbol.Resolved])
-	if !ok {
+	lhsID := lv.Ids[0]
+	lm := mapping[lhsID]
+
+	if !lm.isArray {
+		return nil
+	}
+	// Resolve through any type aliases (the rhs of e.g. `actual = rev(before)`
+	// where `rev` returns a named alias for `[u8;4]`).
+	srcArr := s.Source.Type().AsFixedArray(env)
+	if srcArr == nil || !srcArr.Size.HasFirst() || srcArr.Size.First() != lm.size {
 		return nil
 	}
 
-	lm := mapping[lv.Ids[0]]
-	rm := mapping[src.Variable]
-
-	if !lm.isArray || !rm.isArray || lm.size != rm.size {
-		return nil
-	}
-
-	arrayType := src.Type().(*data.FixedArray[symbol.Resolved])
-	result := make([]stmt.Resolved, lm.size)
-
+	elemTargets := make([]lval.LVal[symbol.Resolved], lm.size)
 	for i := range lm.size {
 		idx := *big.NewInt(int64(i))
-
-		access := &expr.ArrayAccess[symbol.Resolved]{
-			Id:       src.Variable,
-			Arg:      expr.NewConstant[symbol.Resolved](idx, 10),
-			Datatype: arrayType.DataType,
-		}
-
-		target := lval.NewArray[symbol.Resolved](lv.Ids[0], expr.NewConstant[symbol.Resolved](idx, 10))
-
-		result[i] = &stmt.Assign[symbol.Resolved]{
-			Targets: []lval.LVal[symbol.Resolved]{target},
-			Source:  access,
-		}
+		elemTargets[i] = lval.NewArray[symbol.Resolved](
+			lhsID, expr.NewConstant[symbol.Resolved](idx, 10),
+		)
 	}
 
-	return result
+	switch src := s.Source.(type) {
+	case *expr.LocalAccess[symbol.Resolved]:
+		result := make([]stmt.Resolved, lm.size)
+
+		for i := range lm.size {
+			idx := *big.NewInt(int64(i))
+			result[i] = &stmt.Assign[symbol.Resolved]{
+				Targets: []lval.LVal[symbol.Resolved]{elemTargets[i]},
+				Source: &expr.ArrayAccess[symbol.Resolved]{
+					Id:       src.Variable,
+					Arg:      expr.NewConstant[symbol.Resolved](idx, 10),
+					Datatype: srcArr.DataType,
+				},
+			}
+		}
+
+		return result
+	case *expr.ExternAccess[symbol.Resolved]:
+		src.Args = expandArrayArgs(src.Args, mapping)
+
+		return []stmt.Resolved{&stmt.Assign[symbol.Resolved]{
+			Targets: elemTargets,
+			Source:  src,
+		}}
+	}
+
+	return nil
 }
 
 func rewriteFixedArrayStmt(
@@ -493,10 +531,6 @@ func rewriteFixedArrayLVal(
 	case *lval.Variable[symbol.Resolved]:
 		for i, id := range l.Ids {
 			m := mapping[id]
-			if m.isArray {
-				panic(fmt.Sprintf("bare assignment to array variable %d without index", id))
-			}
-
 			l.Ids[i] = m.newBase
 		}
 
