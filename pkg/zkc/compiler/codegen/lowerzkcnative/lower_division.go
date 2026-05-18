@@ -94,7 +94,7 @@ func lowerDivisionCode[W vm.Word[W]](
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
 func expandDivision[W vm.Word[W]](q, x, y register.Id, registers *[]register.Register) []vm.WordInstruction {
 	var (
-		nX      = resolveRegisterWidth(*registers, x, 0)
+		nX      = resolveRegisterWidth(*registers, x)
 		zero    = vm.Uint64[W](0)
 		one     = vm.Uint64[W](1)
 		wideQ   = allocTmp(registers, 2*nX)
@@ -121,7 +121,7 @@ func expandDivision[W vm.Word[W]](q, x, y register.Id, registers *[]register.Reg
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
 func expandRemainder[W vm.Word[W]](r, x, y register.Id, registers *[]register.Register) []vm.WordInstruction {
 	var (
-		nX      = resolveRegisterWidth(*registers, x, 0)
+		nX      = resolveRegisterWidth(*registers, x)
 		zero    = vm.Uint64[W](0)
 		one     = vm.Uint64[W](1)
 		qTmp    = allocTmp(registers, 2*nX)
