@@ -224,9 +224,7 @@ func expandLValArrayArgs(l lval.Resolved, mapping []varMapping, env ast.Environm
 }
 
 // expandArrayArgs expands bare array variable arguments into individual
-// ArrayAccess expressions using the original variable IDs.  env is used to
-// resolve through type aliases (e.g. `type ARR = [u8;4]`) so that a bare
-// alias-typed array variable is splatted the same way as a directly-typed one.
+// ArrayAccess expressions using the original variable IDs.
 func expandArrayArgs(args []expr.Resolved, mapping []varMapping, env ast.Environment) []expr.Resolved {
 	var result []expr.Resolved
 
