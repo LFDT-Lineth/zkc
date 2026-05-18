@@ -27,7 +27,6 @@ fn main() {
     }
 }
 
-
 fn rev(xs:ARR) -> (ys:[u8;4]) {
     ys[0] = xs[3]
     ys[1] = xs[2]

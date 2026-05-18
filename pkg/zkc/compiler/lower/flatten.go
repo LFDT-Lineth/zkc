@@ -113,15 +113,15 @@ func expandFixedArrays(
 			}
 
 			for i, lv := range s.Targets {
-				s.Targets[i] = expandLValArrayArgs(lv, mapping)
+				s.Targets[i] = expandLValArrayArgs(lv, mapping, env)
 			}
 
-			s.Source = expandExprArrayArgs(s.Source, mapping)
+			s.Source = expandExprArrayArgs(s.Source, mapping, env)
 		case *stmt.IfGoto[symbol.Resolved]:
-			expandCondArrayArgs(s.Cond, mapping)
+			expandCondArrayArgs(s.Cond, mapping, env)
 		case *stmt.Printf[symbol.Resolved]:
 			for i, arg := range s.Arguments {
-				s.Arguments[i] = expandExprArrayArgs(arg, mapping)
+				s.Arguments[i] = expandExprArrayArgs(arg, mapping, env)
 			}
 		}
 
@@ -131,68 +131,68 @@ func expandFixedArrays(
 	return
 }
 
-func expandExprArrayArgs(e expr.Resolved, mapping []varMapping) expr.Resolved {
+func expandExprArrayArgs(e expr.Resolved, mapping []varMapping, env ast.Environment) expr.Resolved {
 	switch e := e.(type) {
 	case *expr.ExternAccess[symbol.Resolved]:
-		e.Args = expandArrayArgs(e.Args, mapping)
+		e.Args = expandArrayArgs(e.Args, mapping, env)
 		return e
 	case *expr.Add[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.Sub[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.Mul[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.Div[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.Rem[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.Shl[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.Shr[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.BitwiseAnd[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.BitwiseOr[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.Xor[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.BitwiseNot[symbol.Resolved]:
-		e.Expr = expandExprArrayArgs(e.Expr, mapping)
+		e.Expr = expandExprArrayArgs(e.Expr, mapping, env)
 		return e
 	case *expr.LogicalAnd[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.LogicalOr[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.LogicalNot[symbol.Resolved]:
-		e.Expr = expandExprArrayArgs(e.Expr, mapping)
+		e.Expr = expandExprArrayArgs(e.Expr, mapping, env)
 		return e
 	case *expr.Cast[symbol.Resolved]:
-		e.Expr = expandExprArrayArgs(e.Expr, mapping)
+		e.Expr = expandExprArrayArgs(e.Expr, mapping, env)
 		return e
 	case *expr.Concat[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping)
+		expandExprSliceArrayArgs(e.Exprs, mapping, env)
 		return e
 	case *expr.Cmp[symbol.Resolved]:
-		e.Left = expandExprArrayArgs(e.Left, mapping)
-		e.Right = expandExprArrayArgs(e.Right, mapping)
+		e.Left = expandExprArrayArgs(e.Left, mapping, env)
+		e.Right = expandExprArrayArgs(e.Right, mapping, env)
 
 		return e
 	case *expr.Ternary[symbol.Resolved]:
-		e.Cond = expandExprArrayArgs(e.Cond, mapping)
-		e.IfTrue = expandExprArrayArgs(e.IfTrue, mapping)
-		e.IfFalse = expandExprArrayArgs(e.IfFalse, mapping)
+		e.Cond = expandExprArrayArgs(e.Cond, mapping, env)
+		e.IfTrue = expandExprArrayArgs(e.IfTrue, mapping, env)
+		e.IfFalse = expandExprArrayArgs(e.IfFalse, mapping, env)
 
 		return e
 	default:
@@ -200,23 +200,23 @@ func expandExprArrayArgs(e expr.Resolved, mapping []varMapping) expr.Resolved {
 	}
 }
 
-func expandExprSliceArrayArgs(exprs []expr.Resolved, mapping []varMapping) {
+func expandExprSliceArrayArgs(exprs []expr.Resolved, mapping []varMapping, env ast.Environment) {
 	for i, e := range exprs {
-		exprs[i] = expandExprArrayArgs(e, mapping)
+		exprs[i] = expandExprArrayArgs(e, mapping, env)
 	}
 }
 
-func expandCondArrayArgs(c expr.ResolvedCondition, mapping []varMapping) {
+func expandCondArrayArgs(c expr.ResolvedCondition, mapping []varMapping, env ast.Environment) {
 	if cmp, ok := c.(*expr.Cmp[symbol.Resolved]); ok {
-		cmp.Left = expandExprArrayArgs(cmp.Left, mapping)
-		cmp.Right = expandExprArrayArgs(cmp.Right, mapping)
+		cmp.Left = expandExprArrayArgs(cmp.Left, mapping, env)
+		cmp.Right = expandExprArrayArgs(cmp.Right, mapping, env)
 	}
 }
 
-func expandLValArrayArgs(l lval.Resolved, mapping []varMapping) lval.Resolved {
+func expandLValArrayArgs(l lval.Resolved, mapping []varMapping, env ast.Environment) lval.Resolved {
 	switch l := l.(type) {
 	case *lval.MemAccess[symbol.Resolved]:
-		expandExprSliceArrayArgs(l.Args, mapping)
+		expandExprSliceArrayArgs(l.Args, mapping, env)
 		return l
 	default:
 		return l
@@ -224,15 +224,17 @@ func expandLValArrayArgs(l lval.Resolved, mapping []varMapping) lval.Resolved {
 }
 
 // expandArrayArgs expands bare array variable arguments into individual
-// ArrayAccess expressions using the original variable IDs.
-func expandArrayArgs(args []expr.Resolved, mapping []varMapping) []expr.Resolved {
+// ArrayAccess expressions using the original variable IDs.  env is used to
+// resolve through type aliases (e.g. `type ARR = [u8;4]`) so that a bare
+// alias-typed array variable is splatted the same way as a directly-typed one.
+func expandArrayArgs(args []expr.Resolved, mapping []varMapping, env ast.Environment) []expr.Resolved {
 	var result []expr.Resolved
 
 	for _, arg := range args {
 		if la, ok := arg.(*expr.LocalAccess[symbol.Resolved]); ok {
 			m := mapping[la.Variable]
 			if m.isArray {
-				arrayType := la.Type().(*data.FixedArray[symbol.Resolved])
+				arrayType := la.Type().AsFixedArray(env)
 
 				for i := range m.size {
 					idx := *big.NewInt(int64(i))
@@ -248,7 +250,7 @@ func expandArrayArgs(args []expr.Resolved, mapping []varMapping) []expr.Resolved
 			}
 		}
 
-		result = append(result, expandExprArrayArgs(arg, mapping))
+		result = append(result, expandExprArrayArgs(arg, mapping, env))
 	}
 
 	return result
@@ -354,7 +356,7 @@ func expandArrayAssign(
 
 		return result
 	case *expr.ExternAccess[symbol.Resolved]:
-		src.Args = expandArrayArgs(src.Args, mapping)
+		src.Args = expandArrayArgs(src.Args, mapping, env)
 
 		return []stmt.Resolved{&stmt.Assign[symbol.Resolved]{
 			Targets: elemTargets,
