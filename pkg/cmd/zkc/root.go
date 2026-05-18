@@ -108,6 +108,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	build.config = codegen.DEFAULT_CONFIG.
 		LowerZkcNative(GetFlag(cmd, "lower-native")).
 		Vectorize(GetFlag(cmd, "vectorize")).
+		SplitRegisters(GetFlag(cmd, "split")).
 		Field(field)
 	// Configure build targets
 	build.ast = GetFlag(cmd, "ast")
@@ -128,5 +129,6 @@ func init() {
 	rootCmd.PersistentFlags().Bool("lower-native", false, "Lower ZkC native functions into arithmetic instructions")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
+	rootCmd.PersistentFlags().Bool("split", false, "Apply register splitting")
 	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")
 }
