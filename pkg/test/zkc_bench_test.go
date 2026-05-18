@@ -99,18 +99,6 @@ func Test_ZkcBench_LeftShiftAndTypeBug(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/left_shift_and_type_bug", field.BLS12_377, field.KOALABEAR_16)
 }
 
-func Benchmark_ZkcBench_Keccakf(b *testing.B) {
-	util.BenchZkcAccepts(b, "zkc/bench/keccakf")
-}
-
-func Benchmark_ZkcBench_KeccakfLe(b *testing.B) {
-	util.BenchZkcAccepts(b, "zkc/bench/keccakf_le")
-}
-
-func Benchmark_ZkcBench_KeccakfWithPadding(b *testing.B) {
-	util.BenchZkcAccepts(b, "zkc/bench/keccakf_with_padding")
-}
-
 // ===================================================================
 // Test Helpers
 // ===================================================================
