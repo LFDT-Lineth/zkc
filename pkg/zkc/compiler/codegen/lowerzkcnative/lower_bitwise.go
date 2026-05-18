@@ -17,7 +17,6 @@ import (
 	"math/big"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
@@ -29,11 +28,11 @@ type vectorInstruction = vm.Vector[vm.WordInstruction]
 // helper functions. The helper modules are appended to the returned module
 // slice.
 // We assume this lowering happens BEFORE vectorization and register splitting
-func LowerBitwise[W vm.Word[W]](modules []vm.Module, cfg field.Config) []vm.Module {
+func LowerBitwise[W vm.Word[W]](modules []vm.Module) []vm.Module {
 	var (
 		out          = append([]vm.Module{}, modules...)
-		amountWidths = scanShiftAmountWidths[W](out, cfg.BandWidth)
-		helpers      = newBitwiseHelpers[W](uint(len(out)), cfg, amountWidths)
+		amountWidths = scanShiftAmountWidths[W](out)
+		helpers      = newBitwiseHelpers[W](uint(len(out)), amountWidths)
 	)
 
 	for i, mod := range out {
@@ -84,7 +83,7 @@ func lowerBitwiseCode[W vm.Word[W]](
 		return []vm.WordInstruction{code}
 	}
 
-	origWidth, isPowerOfTwo := lowerableWidth(*registers, code.Definitions()[0], helpers.field.BandWidth)
+	origWidth, isPowerOfTwo := lowerableWidth(*registers, code.Definitions()[0])
 
 	p := origWidth
 	if !isPowerOfTwo {
@@ -198,15 +197,14 @@ func nextPowerOfTwo(w uint) uint {
 	return p
 }
 
-func lowerableWidth(registers []register.Register, target register.Id, bandWidth uint) (uint, bool) {
+func lowerableWidth(registers []register.Register, target register.Id) (uint, bool) {
 	reg := registers[target.Unwrap()]
 
-	var w uint
 	if reg.IsNative() {
-		w = bandWidth
-	} else {
-		w = reg.Width()
+		panic("unexpected native register in bitwise lowering")
 	}
+
+	w := reg.Width()
 
 	if w == 0 {
 		panic(fmt.Sprintf("zero-width register: %s", reg.Name()))
@@ -224,18 +222,16 @@ type bitwiseHelperKey struct {
 
 type bitwiseHelpers[W vm.Word[W]] struct {
 	baseID       uint
-	field        field.Config
 	ids          map[bitwiseHelperKey]uint
 	items        []vm.Module
 	amountWidths map[shiftKey]uint
 }
 
 func newBitwiseHelpers[W vm.Word[W]](
-	baseID uint, cfg field.Config, amountWidths map[shiftKey]uint,
+	baseID uint, amountWidths map[shiftKey]uint,
 ) *bitwiseHelpers[W] {
 	return &bitwiseHelpers[W]{
 		baseID:       baseID,
-		field:        cfg,
 		ids:          make(map[bitwiseHelperKey]uint),
 		amountWidths: amountWidths,
 	}

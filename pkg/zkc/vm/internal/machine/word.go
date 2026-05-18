@@ -158,6 +158,14 @@ func (p WordExecutor[W]) Execute(insn instruction.Word, frame []W, regs []regist
 		// Fall thru
 
 	// ==============================================================
+	// Field Instructions (executable in word machine)
+	// ==============================================================
+	case opcode.HINT_DIVISION:
+		insn := insn.(*instruction.FieldHint)
+		err = executeDivHint(insn.Targets, insn.Sources, frame, regs)
+		// Fall thru
+
+	// ==============================================================
 	// Misc Instructions
 	// ==============================================================
 
@@ -437,6 +445,32 @@ func executeShr[W word.Word[W]](target register.Id, sources []register.Id, frame
 	)
 	//
 	frame[target.Unwrap()] = lhs.Shr(bitwidth, rhs)
+	//
+	return nil
+}
+
+// ==============================================================
+// Hint Instructions (executable in word machine)
+// ==============================================================
+
+// executeDivHint computes quotient and remainder for a division hint.
+// targets[0] = sources[0] / sources[1], targets[1] = sources[0] % sources[1].
+func executeDivHint[W word.Word[W]](targets []register.Id, sources []register.Id, frame []W,
+	regs []register.Register) error {
+	//
+	var (
+		qWidth   = regs[targets[0].Unwrap()].Width()
+		rWidth   = regs[targets[1].Unwrap()].Width()
+		dividend = frame[sources[0].Unwrap()]
+		divisor  = frame[sources[1].Unwrap()]
+	)
+	//
+	if divisor.BigInt().Sign() == 0 {
+		return errors.New("division by zero")
+	}
+	//
+	frame[targets[0].Unwrap()] = dividend.Div(qWidth, divisor)
+	frame[targets[1].Unwrap()] = dividend.Rem(rWidth, divisor)
 	//
 	return nil
 }

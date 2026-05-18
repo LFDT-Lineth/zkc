@@ -572,8 +572,47 @@ func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target regis
 
 func (p *StmtCompiler) compileIntDiv(args []Expr, mapping []uint, target register.Id,
 ) []Instruction {
+	// Fold constant divisors: a/b/2/c/3 == a/b/c/6.
+	var (
+		product = big.NewInt(1)
+		width   = p.registers[target.Unwrap()].Width()
+		nargs   = []Expr{args[0]}
+	)
+	// args[0] is the dividend — never fold it.
+	for _, e := range args[1:] {
+		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
+			product.Mul(product, &c.Constant)
+
+			if uint(product.BitLen()) > width {
+				msg := fmt.Sprintf("constant divisors overflow u%d", width)
+				p.errors = append(p.errors, p.srcmaps.SyntaxErrors(c, msg)...)
+
+				break
+			}
+		} else if p.isConstantAccess(e) {
+			product.Mul(product, p.evalConstant(e, false).BigInt())
+
+			if uint(product.BitLen()) > width {
+				msg := fmt.Sprintf("constant divisors overflow u%d", width)
+				p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e, msg)...)
+
+				break
+			}
+		} else {
+			nargs = append(nargs, e)
+		}
+	}
+
+	if product.Cmp(big.NewInt(1)) != 0 {
+		nargs = append(nargs, &expr.Const[symbol.Resolved]{Constant: *product})
+	}
+
+	if len(nargs) < 2 {
+		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[0], "division has no divisor")...)
+	}
+
 	// Compile all operands upfront.
-	sources, insns := p.compileArgs(mapping, args...)
+	sources, insns := p.compileArgs(mapping, nargs...)
 	// Chain divisions left-to-right: (((a / b) / c) / ...).
 	value := sources[0]
 	//

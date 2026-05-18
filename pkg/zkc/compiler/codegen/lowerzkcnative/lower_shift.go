@@ -32,7 +32,7 @@ type shiftKey struct {
 // (opcode, value-width) pair, the maximum shift-amount register width seen
 // across all call sites.  The helper's arg2 is built with this width so every
 // call site can pass its amount register with an upcast (never a downcast).
-func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module, bandWidth uint) map[shiftKey]uint {
+func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module) map[shiftKey]uint {
 	result := make(map[shiftKey]uint)
 
 	for _, mod := range modules {
@@ -59,7 +59,7 @@ func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module, bandWidth uint) ma
 					continue
 				}
 
-				origWidth, _ := lowerableWidth(regs, targetID, bandWidth)
+				origWidth, _ := lowerableWidth(regs, targetID)
 				key := shiftKey{opcode: op, width: origWidth}
 				amountWidth := regs[amountID.Unwrap()].Width()
 

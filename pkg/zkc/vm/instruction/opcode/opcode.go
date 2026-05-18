@@ -86,4 +86,12 @@ const (
 
 	// FIELD_ASSIGN represents a field assignment instruction.
 	FIELD_ASSIGN
+
+	// ========================================================================
+	// Hint Instructions
+	// ========================================================================
+
+	// HINT_DIVISION represents a non-deterministic register assignment with no
+	// polynomial constraint.
+	HINT_DIVISION
 )

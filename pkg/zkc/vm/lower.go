@@ -176,6 +176,8 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 	case opcode.BIT_CONCAT:
 		var insn = wi.(*instruction.BitConcat[W])
 		return p.lowerBitwiseConcatenation(insn.Target, insn.Sources, mapping)
+	case opcode.HINT_DIVISION:
+		return wi.(*instruction.FieldHint)
 	case opcode.INT_CAST:
 		var insn = wi.(*instruction.Cast)
 		//

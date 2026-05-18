@@ -1,0 +1,4 @@
+//error:3:7-8:division has no divisor
+fn f(a:u8) -> (r:u8) {
+  r = a / 1
+}

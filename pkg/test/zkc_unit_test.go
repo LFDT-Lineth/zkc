@@ -523,6 +523,10 @@ func Test_ZkcUnit_Div_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_02", util.DEFAULT_CONFIG)
 }
 
+func Test_ZkcUnit_Div_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/div_03", util.DEFAULT_CONFIG)
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================
@@ -533,6 +537,10 @@ func Test_ZkcUnit_Rem_01(t *testing.T) {
 
 func Test_ZkcUnit_Rem_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/rem_02", util.DEFAULT_CONFIG)
+}
+
+func Test_ZkcUnit_Rem_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/rem_03", util.DEFAULT_CONFIG)
 }
 
 // ===================================================================
