@@ -93,3 +93,10 @@ func checkZkcBench(t *testing.T, test string, fields ...field.Config) {
 	//
 	util.CheckValid(t, test, "zkc", config)
 }
+
+// ===================================================================
+// Ternary operator
+// ===================================================================
+func Test_ZkcBench_Ternary_01(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/ternary_01", field.BLS12_377, field.KOALABEAR_16)
+}

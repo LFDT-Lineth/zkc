@@ -1,0 +1,8 @@
+pub input data(address:u1) -> (data:u64)
+pub output casted(address:u1) -> (casted:u32)
+
+fn main() {
+    // the second branch of the ternary operator should not be evaluated at all, as data[0] = 0x00000000_FFFFFFFF, but we get cast overflow instead
+    casted[0] = data[0] <= 0xFFFFFFFF ? (data[0] as u32) : (0x000000FF_FFFFFFFF as u32)
+    return
+}
