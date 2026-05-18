@@ -77,7 +77,7 @@ func Compile(field field.Config, files ...source.File) (ast.Program, source.Maps
 	errors = append(errors, validateProgram(program, field, srcmaps)...)
 	// Lower fixed-size arrays into flat local access registers
 	if len(errors) == 0 {
-		lower.FlattenFixedArrays(program, srcmaps)
+		lower.FlattenFixedArrays(program)
 	}
 	// Done
 	return program, srcmaps, errors

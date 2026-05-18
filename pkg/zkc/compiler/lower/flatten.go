@@ -32,10 +32,10 @@ import (
 
 // FlattenFixedArrays expands
 // fixed-size array variables into individual scalar variables.  A variable
-// arrayName of type uM[n] is replaced by n scalars arrayName$0 .. arrayName$(n-1),
+// arrayName of type [uM;n] is replaced by n scalars arrayName$0 .. arrayName$(n-1),
 // each of type uM.  Corresponding expr.ArrayAccess and lval.Array nodes are
 // rewritten to plain LocalAccess / lval.Variable references.
-func FlattenFixedArrays(program ast.Program, srcmaps source.Maps[any]) {
+func FlattenFixedArrays(program ast.Program) {
 	env := program.Environment()
 
 	for _, d := range program.Components() {
@@ -70,9 +70,9 @@ type varMapping struct {
 	size    uint
 }
 
-// expandFixedArrays expands fixed-size array variables into
-// scalars, expands whole-array assignment statements into element-wise array
-// access assignments, and expands bare array arguments in ExternAccess calls
+// expandFixedArrays builds the old→new id mapping and expands fixed-size array 
+// variables into scalars, expands whole-array assignment statements into element-wise 
+// array access assignments, and expands bare array arguments in ExternAccess calls
 // into individual indexed accesses (e.g. sum(items) becomes
 // sum(items[0], items[1], items[2])).  All expanded nodes use the original
 // variable IDs so that the subsequent rewriting phase can remap them.
@@ -80,13 +80,9 @@ func expandFixedArrays(
 	fn *decl.ResolvedFunction, mapping []varMapping, env ast.Environment,
 ) (expandedVars []variable.ResolvedDescriptor, expandedCode []stmt.Resolved, hasArray bool) {
 	for oldID, v := range fn.Variables {
-		// Resolve through any type aliases so that e.g. `var ys: ARR` with
-		// `type ARR = [u8;4]` is expanded the same way as `var ys: [u8;4]`.
+		base := uint(len(expandedVars))
 		if vType := v.DataType.AsFixedArray(env); vType != nil {
-			var (
-				size = vType.Size.First()
-				base = uint(len(expandedVars))
-			)
+			size := vType.Size.First()
 
 			hasArray = true
 
@@ -99,7 +95,7 @@ func expandFixedArrays(
 
 			mapping[oldID] = varMapping{newBase: base, isArray: true, size: size}
 		} else {
-			mapping[oldID] = varMapping{newBase: uint(len(expandedVars))}
+			mapping[oldID] = varMapping{newBase: base}
 			expandedVars = append(expandedVars, v)
 		}
 	}
