@@ -334,32 +334,13 @@ func (p *StmtCompiler) isFieldOperation(target register.Id) bool {
 	return p.registers[target.Unwrap()].IsNative()
 }
 
-func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], mapping []uint, target register.Id,
+func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], _ []uint, _ register.Id,
 ) []Instruction {
-	cmp := e.Cond.(*expr.Cmp[symbol.Resolved])
-	// Lazily compile both arms — their instructions are placed inside the
-	// conditionally-skipped regions below, so only the taken arm runs.
-	trueRegs, trueInsns := p.compileArgs(mapping, e.IfTrue)
-	falseRegs, falseInsns := p.compileArgs(mapping, e.IfFalse)
-	// Evaluate condition operands (always runs).
-	condRegs, condInsns := p.compileArgs(mapping, cmp.Left, cmp.Right)
-	// Selection sequence:
-	//   condInsns                                  always
-	//   skip_if(cond, lhs, rhs, |falseInsns|+2)    if TRUE skip false arm
-	//   falseInsns                                 (skipped on TRUE)
-	//   add(target, [falseReg], 0)
-	//   skip(|trueInsns|+1)                        jump past true arm
-	//   trueInsns                                  (skipped on FALSE)
-	//   add(target, [trueReg], 0)
-	insns := append([]Instruction{}, condInsns...)
-	insns = append(insns, instruction.NewSkipIf(
-		opcode.Condition(cmp.Operator), condRegs[0], condRegs[1], uint(len(falseInsns))+2))
-	insns = append(insns, falseInsns...)
-	insns = append(insns, p.newLoad(target, []register.Id{falseRegs[0]}))
-	insns = append(insns, &instruction.Skip{Skip: uint(len(trueInsns)) + 1})
-	insns = append(insns, trueInsns...)
-	//
-	return append(insns, p.newLoad(target, []register.Id{trueRegs[0]}))
+	// Ternary expressions are desugared into IfElse statements + fresh temps
+	// by lower.desugarTernaries during the Flatten pass.  Reaching codegen
+	// with a Ternary still in the tree indicates the desugaring missed a
+	// case — a compiler bug.
+	panic(fmt.Sprintf("unexpected ternary at codegen: %s", e.String(nil)))
 }
 
 func (p *StmtCompiler) compileTupleInitialiser(e *expr.TupleInitialiser[symbol.Resolved], mapping []uint,
