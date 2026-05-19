@@ -117,7 +117,6 @@ func Test_ZkcUnit_Basic_22(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_23(t *testing.T) {
-	// TODO: bitwise destruct
 	checkZkcUnit(t, "zkc/unit/basic_23", util.DEFAULT_CONFIG.Constraints(true))
 }
 
