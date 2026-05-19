@@ -37,6 +37,21 @@ func Test_ZkcBench_Fnv1aHash(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/fnv1a_hash", field.BLS12_377, field.KOALABEAR_16)
 }
 
+func Test_ZkcBench_Keccakf(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/keccakf", field.BLS12_377, field.KOALABEAR_16)
+}
+
+// Keccakf with padding and little-endian input and output
+// Will be used for later benchmarks
+
+// func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {
+// 	checkZkcBench(t, "zkc/bench/keccakf_with_padding", field.BLS12_377, field.KOALABEAR_16)
+// }
+
+// func Test_ZkcBench_KeccakfLe(t *testing.T) {
+// 	checkZkcBench(t, "zkc/bench/keccakf_le", field.BLS12_377, field.KOALABEAR_16)
+// }
+
 func Test_ZkcBench_Sort(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/sort", field.BLS12_377, field.KOALABEAR_16)
 }
