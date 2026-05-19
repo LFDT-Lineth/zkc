@@ -35,6 +35,6 @@ type Field interface {
 type FieldAssign[F field.Element[F]] = finsn.Assign[F]
 
 // NewFieldAssign constructs a new field assignment instruction.
-func NewFieldAssign[F field.Element[F]](target register.Id, source finsn.Polynomial) *FieldAssign[F] {
-	return &FieldAssign[F]{Target: target, Source: source}
+func NewFieldAssign[F field.Element[F]](targets register.Vector, source finsn.Polynomial) *FieldAssign[F] {
+	return &FieldAssign[F]{Target: targets, Source: source}
 }

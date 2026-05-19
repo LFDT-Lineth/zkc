@@ -33,7 +33,7 @@ type Monomial = poly.Monomial[register.Id]
 // registers.
 type Assign[F field.Element[F]] struct {
 	// Target register for assignment
-	Target register.Id
+	Target register.Vector
 	// Source registers for assignment
 	Source Polynomial
 }
@@ -59,12 +59,12 @@ func (p *Assign[F]) Uses() []register.Id {
 
 // Definitions implementation for Instruction interface.
 func (p *Assign[F]) Definitions() []register.Id {
-	return []register.Id{p.Target}
+	return p.Target.Registers()
 }
 
 func (p *Assign[F]) String(mapping base.SystemMap) string {
 	var (
-		lhs = base.RegistersToString(mapping, p.Target)
+		lhs = base.RegistersToString(mapping, p.Target.Registers()...)
 		rhs = poly.String(p.Source, func(r register.Id) string {
 			return mapping.Register(r).Name()
 		})

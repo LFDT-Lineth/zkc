@@ -176,6 +176,9 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 	case opcode.BIT_CONCAT:
 		var insn = wi.(*instruction.BitConcat[W])
 		return p.lowerBitwiseConcatenation(insn.Target, insn.Sources, mapping)
+	case opcode.BIT_DESTRUCT:
+		var insn = wi.(*instruction.Destruct)
+		return p.lowerBitwiseDestruct(insn.Targets, insn.Source, mapping)
 	case opcode.HINT_DIVISION:
 		return wi.(*instruction.FieldHint)
 	case opcode.INT_CAST:
@@ -230,7 +233,7 @@ func (p wordToField[W, F]) lowerArithInstruction(lhs register.Id, rhs []register
 		terms = append(terms, poly.NewMonomial[register.Id](*n))
 	}
 	// Done
-	return instruction.NewFieldAssign[F](lhs, f(terms...))
+	return instruction.NewFieldAssign[F](register.NewVector(lhs), f(terms...))
 }
 
 func (p wordToField[W, F]) lowerFieldInstruction(lhs register.Id, rhs []register.Id, c W,
@@ -257,7 +260,7 @@ func (p wordToField[W, F]) lowerFieldInstruction(lhs register.Id, rhs []register
 		terms = append(terms, poly.NewMonomial[register.Id](*n))
 	}
 	// Done
-	return instruction.NewFieldAssign[F](lhs, f(terms...))
+	return instruction.NewFieldAssign[F](register.NewVector(lhs), f(terms...))
 }
 
 func (p wordToField[W, F]) lowerBitwiseConcatenation(lhs register.Id, rhs []register.Id, mapping instruction.SystemMap,
@@ -281,7 +284,19 @@ func (p wordToField[W, F]) lowerBitwiseConcatenation(lhs register.Id, rhs []regi
 		acc = acc.Lsh(acc, width)
 	}
 	//
-	return instruction.NewFieldAssign[F](lhs, sum(terms...))
+	return instruction.NewFieldAssign[F](register.NewVector(lhs), sum(terms...))
+}
+
+func (p wordToField[W, F]) lowerBitwiseDestruct(lhs []register.Id, rhs register.Id, mapping instruction.SystemMap,
+) (fi FieldInstruction) {
+	var (
+		one = big.NewInt(1)
+		r   Polynomial
+	)
+	//
+	r = r.Set(poly.NewMonomial(*one, rhs))
+	//
+	return instruction.NewFieldAssign[F](register.NewVector(lhs...), r)
 }
 
 func (p wordToField[W, F]) lowerCastInstruction(lhs register.Id, rhs register.Id) (fi FieldInstruction) {
@@ -290,7 +305,7 @@ func (p wordToField[W, F]) lowerCastInstruction(lhs register.Id, rhs register.Id
 		e   Polynomial
 	)
 	//
-	return instruction.NewFieldAssign[F](lhs, e.Set(poly.NewMonomial(*one, rhs)))
+	return instruction.NewFieldAssign[F](register.NewVector(lhs), e.Set(poly.NewMonomial(*one, rhs)))
 }
 
 func checkRegisterWidths(registerWidth uint, regs ...register.Register) {
@@ -311,7 +326,17 @@ func sum(terms ...Monomial) Polynomial {
 }
 
 func subtract(terms ...Monomial) Polynomial {
-	panic("todo")
+	var p Polynomial
+	//
+	for i, m := range terms {
+		if i == 0 {
+			p = p.Set(m)
+		} else {
+			p.SubTerm(m)
+		}
+	}
+	//
+	return p
 }
 
 func product(terms ...Monomial) Polynomial {
