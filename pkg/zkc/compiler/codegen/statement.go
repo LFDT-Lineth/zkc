@@ -853,20 +853,6 @@ func (p *StmtCompiler) allocate(bitwidth uint) register.Id {
 	return register.NewId(uint(n))
 }
 
-// newLoad emits either an integer or field addition instruction depending on
-// whether the target register is native (field-typed) or has a fixed bit
-// width.  Used by the compileX helpers that fall back on addition to copy or
-// load values into the target register.
-func (p *StmtCompiler) newLoad(target register.Id, sources []register.Id) Instruction {
-	var zero vm.Uint
-	//
-	if p.registers[target.Unwrap()].IsNative() {
-		return instruction.NewIntAddModP(target, sources, zero)
-	}
-	//
-	return instruction.NewIntAdd(target, sources, zero)
-}
-
 // addBitWidth returns the bit-width to use when folding compile-time
 // constants into a target register.  For integer-typed targets this is the
 // register's declared width; for field-typed (native) targets this is the

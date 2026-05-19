@@ -542,11 +542,12 @@ func (c *desugarCtx) inferType(e expr.Resolved) data.ResolvedType {
 		for _, ee := range t.Exprs {
 			it := c.inferType(ee)
 			//
-			if u, ok := it.(*data.UnsignedInt[symbol.Resolved]); ok {
-				bw += u.BitWidth()
-			} else {
+			u, ok := it.(*data.UnsignedInt[symbol.Resolved])
+			if !ok {
 				return nil
 			}
+			//
+			bw += u.BitWidth()
 		}
 		//
 		return data.NewUnsignedInt[symbol.Resolved](bw, false)
