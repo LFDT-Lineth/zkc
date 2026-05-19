@@ -106,6 +106,12 @@ func (p *VectorInsnTranslator[F]) translate() Expr[F] {
 		case *instruction.Return:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()
+		case *instruction.FieldHint:
+			// Non-deterministic assignment: the target registers are already
+			// recorded in the write map for constancy analysis; no polynomial
+			// constraint is generated here, since correctness is enforced by
+			// subsequent arithmetic checks.
+			continue
 		case *instruction.SkipIf, *instruction.Skip:
 			// do nothing
 			continue
