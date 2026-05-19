@@ -21,16 +21,24 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 )
 
-// SkipIf microcode performs a conditional skip over a given number of codes. The
-// condition is either that two registers are equal, or that they are not equal.
-// This has two variants: register-register; and, register-constant.  The latter
-// is indiciated when the right register is marked as UNUSED.
+// SkipIf microcode performs a conditional skip over a given number of codes.
+// This is a *vectored* instruction, meaning the condition compares two register
+// *vectors*.  For evaluating the condition, the interpretation of a vector is
+// that the least significant register has the least index in the vector.  Two
+// compare two vectors "left" and "right" of equal length, we find the highest
+// index i where left[i] != right[i].  If no such index exists, the vectors are
+// equal. Otherwise, if left[i] < right[i] the left vector is "less than" the
+// right, otherwise it is "greater than" the right.  Then, the skip is taken or
+// not depending on the condition opcode.
+//
+// NOTE: currently their is an assumption that both vectors have the same
+// length.  This assumption could be relaxed in the future.
 type SkipIf struct {
 	Cond opcode.Condition
-	// Left and right comparisons
-	Left register.Id
-	//
-	Right register.Id
+	// Left vector
+	Left register.Vector
+	// Right vector
+	Right register.Vector
 	// Skip
 	Skip uint
 }
@@ -54,9 +62,9 @@ func (p *SkipIf) OpCode() opcode.OpCode {
 func (p *SkipIf) Uses() []register.Id {
 	var regs []io.RegisterId
 	// Add all registers on the left-hand side
-	regs = append(regs, p.Left)
+	regs = append(regs, p.Left.Registers()...)
 	// Add all registers on the right-hand side (if applicable)
-	regs = append(regs, p.Right)
+	regs = append(regs, p.Right.Registers()...)
 	//
 	return regs
 }
@@ -68,8 +76,8 @@ func (p *SkipIf) Definitions() []io.RegisterId {
 
 func (p *SkipIf) String(mapping SystemMap) string {
 	var (
-		l = mapping.Register(p.Left).Name()
-		r = mapping.Register(p.Right).Name()
+		l = p.Left.String(mapping)
+		r = p.Right.String(mapping)
 		o string
 	)
 	//
@@ -97,8 +105,8 @@ func (p *SkipIf) String(mapping SystemMap) string {
 func (p *SkipIf) MicroValidate(n uint, _ field.Config, fn SystemMap) []error {
 	var (
 		errors []error
-		lw     = fn.Register(p.Left).Width()
-		rw     = fn.Register(p.Right).Width()
+		lw     = p.Left.BitWidth(fn)
+		rw     = p.Right.BitWidth(fn)
 	)
 	//
 	if lw < rw {

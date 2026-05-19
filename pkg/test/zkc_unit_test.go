@@ -31,7 +31,7 @@ func Test_ZkcUnit_Basic_02(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_03", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/basic_03", util.DEFAULT_CONFIG.Constraints(true).Splitting(true))
 }
 func Test_ZkcUnit_Basic_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_04", util.DEFAULT_CONFIG.Constraints(true))
@@ -157,6 +157,15 @@ func Test_ZkcUnit_Basic_31(t *testing.T) {
 
 func Test_ZkcUnit_Basic_32(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_32", util.DEFAULT_CONFIG.Constraints(true))
+}
+
+func Test_ZkcUnit_Basic_33(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_33", util.DEFAULT_CONFIG.Constraints(true).Splitting(true))
+}
+
+func Test_ZkcUnit_Basic_34(t *testing.T) {
+	// TODO: register splitting
+	checkZkcUnit(t, "zkc/unit/basic_34", util.DEFAULT_CONFIG)
 }
 
 // ===================================================================

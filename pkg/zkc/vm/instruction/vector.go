@@ -259,9 +259,11 @@ func branchTableTransfer[I Instruction](writeMap dfa.Result[dfa.Writes]) dfa.Bra
 
 func extendSkipIf(tail dfa.Branch, sign bool, code *SkipIf, writes dfa.Writes) dfa.Branch {
 	var (
+		lhs      = code.Left.Registers()
+		rhs      = code.Right.Registers()
 		head     dfa.BranchEquality
 		tailc    = tail.Condition
-		left     = dfa.NewBranchId(writes.MayAnybeAssigned(code.Left), code.Left)
+		left     = dfa.NewBranchId(writes.MayAnybeAssigned(lhs...), lhs...)
 		equality bool
 	)
 	// normalise condition
@@ -275,9 +277,9 @@ func extendSkipIf(tail dfa.Branch, sign bool, code *SkipIf, writes dfa.Writes) d
 	}
 	// Translate operation
 	if equality {
-		head = logical.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(code.Right), code.Right))
+		head = logical.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	} else {
-		head = logical.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(code.Right), code.Right))
+		head = logical.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	}
 	// NOTE: the reason this method is needed is because we have no implicit
 	// rerpesentation of logical truth or falsehood.  This means an empty path

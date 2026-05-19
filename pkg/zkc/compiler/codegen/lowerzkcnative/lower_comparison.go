@@ -104,8 +104,8 @@ func lowerRelationalSkipIf[W vm.Word[W]](
 ) []vm.WordInstruction {
 	lhs, rhs, skipOnZero := normalizeRelational(si)
 
-	lhsWidth := resolveRegisterWidth(*registers, lhs)
-	rhsWidth := resolveRegisterWidth(*registers, rhs)
+	lhsWidth := (*registers)[lhs.Unwrap()].Width()
+	rhsWidth := (*registers)[rhs.Unwrap()].Width()
 
 	castBandWidth := max(lhsWidth, rhsWidth) + 1
 
@@ -165,29 +165,23 @@ func lowerRelationalSkipIf[W vm.Word[W]](
 //	GT(a,b)   → lhs=b, rhs=a, skipOnZero=true  (sign==0 iff b < a iff a > b)
 //	LTEQ(a,b) → lhs=b, rhs=a, skipOnZero=false (sign==1 iff b >= a iff a <= b)
 func normalizeRelational(si *instruction.SkipIf) (lhs, rhs register.Id, skipOnZero bool) {
+	if len(si.Left.Registers()) != 1 || len(si.Right.Registers()) != 1 {
+		panic("cannot lower comparisons after register splitting")
+	}
+	//
+	lhs = si.Left.Registers()[0]
+	rhs = si.Right.Registers()[0]
+	//
 	switch si.Cond {
 	case opcode.LT:
-		return si.Left, si.Right, true
+		return lhs, rhs, true
 	case opcode.GTEQ:
-		return si.Left, si.Right, false
+		return lhs, rhs, false
 	case opcode.GT:
-		return si.Right, si.Left, true
+		return rhs, lhs, true
 	case opcode.LTEQ:
-		return si.Right, si.Left, false
+		return rhs, lhs, false
 	default:
 		panic("normalizeRelational called with non-relational condition")
 	}
-}
-
-// resolveRegisterWidth returns the width of a register.  Native (field-sized)
-// registers must never appear as division or comparison operands — the type
-// checker rejects field elements for both — so reaching this branch indicates
-// a compiler bug.
-func resolveRegisterWidth(registers []register.Register, id register.Id) uint {
-	reg := registers[id.Unwrap()]
-	if reg.IsNative() {
-		panic("unexpected native register in comparison/division lowering")
-	}
-
-	return reg.Width()
 }

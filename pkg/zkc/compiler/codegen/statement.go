@@ -180,13 +180,13 @@ func (p *StmtCompiler) compileFormattedChunks(mapping []uint, chunks []stmt.Form
 	for _, chunk := range chunks {
 		if chunk.Format.HasFormat() {
 			nchunks = append(nchunks, instruction.FormattedChunk{
-				Text: chunk.Text, Format: chunk.Format, Argument: regs[index],
+				Text: chunk.Text, Format: chunk.Format, Argument: register.NewVector(regs[index]),
 			})
 			//
 			index++
 		} else {
 			nchunks = append(nchunks, instruction.FormattedChunk{
-				Text: chunk.Text, Format: util.EMPTY_FORMAT, Argument: register.UnusedId(),
+				Text: chunk.Text, Format: util.EMPTY_FORMAT, Argument: register.NewVector(),
 			})
 		}
 	}
@@ -196,22 +196,20 @@ func (p *StmtCompiler) compileFormattedChunks(mapping []uint, chunks []stmt.Form
 
 func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, target uint,
 ) VectorInstruction {
-	var (
-		insns []Instruction
-		args  []register.Id
-	)
-	//
 	switch e := e.(type) {
 	case *expr.Cmp[symbol.Resolved]:
-		args, insns = p.compileArgs(mapping, e.Left, e.Right)
+		var (
+			args, insns = p.compileArgs(mapping, e.Left, e.Right)
+		)
+		//
 		insns = append(insns, instruction.NewSkipIf(opcode.Condition(e.Operator), args[0], args[1], 1))
 		insns = append(insns, instruction.NewJump(pc+1))
 		insns = append(insns, instruction.NewJump(target))
+		//
+		return instruction.NewVector(insns...)
 	default:
 		panic("unknown condition encountered")
 	}
-	//
-	return instruction.NewVector(insns...)
 }
 
 func (p *StmtCompiler) compileExpr(e Expr, mapping []uint, targets ...register.Id) []Instruction {
