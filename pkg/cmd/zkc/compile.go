@@ -83,7 +83,7 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig[F], a
 		// Write to disk
 		WriteBinaryFile(binfile, filename)
 	} else {
-		log.Error("must use --wir/fir/air to write binary file")
+		log.Error("must use --wir to write binary file")
 		os.Exit(5)
 	}
 }

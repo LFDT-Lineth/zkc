@@ -92,24 +92,29 @@ func lowerBitwiseCode[W vm.Word[W]](
 
 	switch t := code.(type) {
 	case *instruction.BitAnd[W]:
-		id := helpers.ensure(t.OpCode(), p, len(t.Sources), t.Constant)
+		// After BinarizeBitwise, any non-identity constant has been
+		// materialised as a source register, so we can drop the constant
+		// argument here: at the (possibly widened) helper width the original
+		// identity mask is redundant because the cast already zero-extends
+		// inputs.
+		id := helpers.ensure(t.OpCode(), p, len(t.Sources))
 		return bitwiseCall(id, t.Target, t.Sources, origWidth, p, registers)
 	case *instruction.BitOr[W]:
-		id := helpers.ensure(t.OpCode(), p, len(t.Sources), t.Constant)
+		id := helpers.ensure(t.OpCode(), p, len(t.Sources))
 		return bitwiseCall(id, t.Target, t.Sources, origWidth, p, registers)
 	case *instruction.BitXor[W]:
-		id := helpers.ensure(t.OpCode(), p, len(t.Sources), t.Constant)
+		id := helpers.ensure(t.OpCode(), p, len(t.Sources))
 		return bitwiseCall(id, t.Target, t.Sources, origWidth, p, registers)
 	case *instruction.BitNot[W]:
 		// Inline ~x as (MASK - x) directly in the caller; no helper module needed.
 		return bitwiseInlineNot[W](t.Target, t.Sources[0], origWidth, registers)
 	case *instruction.BitShl[W]:
-		id := helpers.ensure(t.OpCode(), origWidth, len(t.Sources), zeroWord[W]())
+		id := helpers.ensure(t.OpCode(), origWidth, len(t.Sources))
 		amtWidth := helpers.shiftAmountWidth(t.OpCode(), origWidth)
 
 		return bitwiseShiftCall(id, t.Target, t.Sources[0], t.Sources[1], amtWidth, registers)
 	case *instruction.BitShr[W]:
-		id := helpers.ensure(t.OpCode(), origWidth, len(t.Sources), zeroWord[W]())
+		id := helpers.ensure(t.OpCode(), origWidth, len(t.Sources))
 		amtWidth := helpers.shiftAmountWidth(t.OpCode(), origWidth)
 
 		return bitwiseShiftCall(id, t.Target, t.Sources[0], t.Sources[1], amtWidth, registers)
@@ -183,11 +188,6 @@ func allocTmp(registers *[]register.Register, width uint) register.Id {
 	return id
 }
 
-func zeroWord[W vm.Word[W]]() W {
-	var z W
-	return z
-}
-
 func nextPowerOfTwo(w uint) uint {
 	p := uint(1)
 	for p < w {
@@ -214,10 +214,9 @@ func lowerableWidth(registers []register.Register, target register.Id) (uint, bo
 }
 
 type bitwiseHelperKey struct {
-	opcode   instruction.OpCode
-	width    uint
-	arity    int
-	constant string
+	opcode instruction.OpCode
+	width  uint
+	arity  int
 }
 
 type bitwiseHelpers[W vm.Word[W]] struct {
@@ -252,12 +251,11 @@ func (p *bitwiseHelpers[W]) modules() []vm.Module {
 	return p.items
 }
 
-func (p *bitwiseHelpers[W]) ensure(op instruction.OpCode, width uint, arity int, constant W) uint {
+func (p *bitwiseHelpers[W]) ensure(op instruction.OpCode, width uint, arity int) uint {
 	key := bitwiseHelperKey{
-		opcode:   op,
-		width:    width,
-		arity:    arity,
-		constant: helperConstant(op, constant),
+		opcode: op,
+		width:  width,
+		arity:  arity,
 	}
 
 	if id, ok := p.ids[key]; ok {
@@ -288,7 +286,7 @@ func (p *bitwiseHelpers[W]) ensure(op instruction.OpCode, width uint, arity int,
 	// which appends them to p.items.  The current module must occupy the slot
 	// AFTER all its sub-helpers (callees before callers), so its ID is derived
 	// from len(p.items) only after the factory returns.
-	mod := newDecomposedNaryHelper(p, key, constant)
+	mod := newDecomposedNaryHelper[W](p, key)
 
 	id := p.baseID + uint(len(p.items))
 	p.items = append(p.items, mod)
@@ -297,26 +295,16 @@ func (p *bitwiseHelpers[W]) ensure(op instruction.OpCode, width uint, arity int,
 	return id
 }
 
-func helperConstant[W vm.Word[W]](op instruction.OpCode, constant W) string {
-	switch op {
-	case opcode.BIT_AND, opcode.BIT_OR, opcode.BIT_XOR:
-		return constant.BigInt().Text(16)
-	default:
-		return ""
-	}
-}
-
 // newDecomposedNaryHelper builds a helper module for bitwise AND/OR/XOR using
 // recursive halving.  Each module body is O(arity) instructions: it splits
-// every source and the constant into two half-wide pieces, calls the
-// half-wide sub-helpers for each piece, and recombines.  Sub-helpers are
-// shared across call sites via the helpers cache, so the total number of
-// unique modules is O(log(width)) when the constant is uniform across halves
-// (e.g. all-zeros or all-ones masks).
+// every source into two half-wide pieces, calls a single half-wide sub-helper
+// for each piece, and recombines.  The body is independent of any caller-side
+// constant — non-identity constants are materialised as register sources by
+// BinarizeBitwise before lowering reaches here, so a single helper per (op,
+// width, arity) is sufficient and shared across all call sites.
 func newDecomposedNaryHelper[W vm.Word[W]](
 	helpers *bitwiseHelpers[W],
 	key bitwiseHelperKey,
-	constant W,
 ) vm.Module {
 	b := newHelperBuilder[W](key.width, key.arity)
 
@@ -325,15 +313,16 @@ func newDecomposedNaryHelper[W vm.Word[W]](
 
 	// TODO: we will want to stop before width == 1 to reduce the number of tiny modules.
 	if key.width == 1 {
-		// Base case: single-bit operation.  Seed agg with the constant bit then
-		// fold each source in using the appropriate pairwise identity.
-		one := vm.Uint64[W](1)
+		// Base case: single-bit operation.  Seed agg with the op's identity
+		// (1 for AND, 0 for OR/XOR) then fold each source in via the
+		// appropriate pairwise combinator.
 		agg := b.newComputed("agg")
 
-		if constant.BigInt().Bit(0) == 0 {
-			b.emit(instruction.NewIntAdd(agg, nil, zero))
-		} else {
+		if key.opcode == opcode.BIT_AND {
+			one := vm.Uint64[W](1)
 			b.emit(instruction.NewIntAdd(agg, nil, one))
+		} else {
+			b.emit(instruction.NewIntAdd(agg, nil, zero))
 		}
 
 		for _, inp := range b.inputs {
@@ -342,19 +331,10 @@ func newDecomposedNaryHelper[W vm.Word[W]](
 
 		b.emit(instruction.NewIntAdd(out, []register.Id{agg}, zero))
 	} else {
-		// Recursive case.
+		// Recursive case: low and high halves share the same sub-helper
+		// because the body no longer depends on a caller-side constant.
 		half := key.width / 2
-
-		// Split the constant at generation time.
-		constBig := constant.BigInt()
-		splitBig := new(big.Int).Lsh(big.NewInt(1), half)
-		constLow := constant.SetBigInt(new(big.Int).Mod(constBig, splitBig))
-		constHigh := constant.SetBigInt(new(big.Int).Rsh(constBig, half))
-
-		// Ensure sub-helpers for each constant half (may be the same module
-		// when constLow == constHigh, e.g. all-zeros or all-ones masks).
-		subIDlow := helpers.ensure(key.opcode, half, key.arity, constLow)
-		subIDhigh := helpers.ensure(key.opcode, half, key.arity, constHigh)
+		subID := helpers.ensure(key.opcode, half, key.arity)
 
 		lowSrcs := make([]register.Id, key.arity)
 		highSrcs := make([]register.Id, key.arity)
@@ -370,8 +350,8 @@ func newDecomposedNaryHelper[W vm.Word[W]](
 		resLow := b.newComputedNamed(half)
 		resHigh := b.newComputedNamed(half)
 
-		b.emit(instruction.NewCall(subIDlow, lowSrcs, []register.Id{resLow}))
-		b.emit(instruction.NewCall(subIDhigh, highSrcs, []register.Id{resHigh}))
+		b.emit(instruction.NewCall(subID, lowSrcs, []register.Id{resLow}))
+		b.emit(instruction.NewCall(subID, highSrcs, []register.Id{resHigh}))
 
 		b.emit(instruction.NewBitConcat[W](out, []register.Id{resLow, resHigh}))
 	}
