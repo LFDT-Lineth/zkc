@@ -14,7 +14,6 @@ package lowerzkcnative
 
 import (
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
@@ -24,19 +23,19 @@ import (
 // into arithmetic-only sequences using biased subtraction and sign-bit extraction.
 // EQ and NEQ conditions are left unchanged.
 // This pass must run after LowerBitwise.
-func LowerComparisons[W vm.Word[W]](modules []vm.Module, cfg field.Config) []vm.Module {
+func LowerComparisons[W vm.Word[W]](modules []vm.Module) []vm.Module {
 	out := append([]vm.Module{}, modules...)
 
 	for i, mod := range out {
 		if fn, ok := mod.(*vm.WordFunction); ok {
-			out[i] = lowerComparisonFunction[W](fn, cfg.BandWidth)
+			out[i] = lowerComparisonFunction[W](fn)
 		}
 	}
 
 	return out
 }
 
-func lowerComparisonFunction[W vm.Word[W]](fn *vm.WordFunction, bandWidth uint) *vm.WordFunction {
+func lowerComparisonFunction[W vm.Word[W]](fn *vm.WordFunction) *vm.WordFunction {
 	var (
 		code      = fn.Code()
 		ncode     = make([]vectorInstruction, len(code))
@@ -44,7 +43,7 @@ func lowerComparisonFunction[W vm.Word[W]](fn *vm.WordFunction, bandWidth uint) 
 	)
 
 	for i, insn := range code {
-		ncodes := lowerComparisonCodes[W](insn.Codes, &registers, bandWidth)
+		ncodes := lowerComparisonCodes[W](insn.Codes, &registers)
 		ncode[i] = vectorInstruction{Codes: ncodes}
 	}
 
@@ -54,12 +53,11 @@ func lowerComparisonFunction[W vm.Word[W]](fn *vm.WordFunction, bandWidth uint) 
 func lowerComparisonCodes[W vm.Word[W]](
 	codes []vm.WordInstruction,
 	registers *[]register.Register,
-	bandWidth uint,
 ) []vm.WordInstruction {
 	ncodes := make([]vm.WordInstruction, 0, len(codes))
 
 	for _, code := range codes {
-		ncodes = append(ncodes, lowerComparisonCode[W](code, registers, bandWidth)...)
+		ncodes = append(ncodes, lowerComparisonCode[W](code, registers)...)
 	}
 
 	return ncodes
@@ -68,14 +66,13 @@ func lowerComparisonCodes[W vm.Word[W]](
 func lowerComparisonCode[W vm.Word[W]](
 	code vm.WordInstruction,
 	registers *[]register.Register,
-	bandWidth uint,
 ) []vm.WordInstruction {
 	si, ok := code.(*instruction.SkipIf)
 	if !ok || !isRelationalCondition(si.Cond) {
 		return []vm.WordInstruction{code}
 	}
 
-	return lowerRelationalSkipIf[W](si, registers, bandWidth)
+	return lowerRelationalSkipIf[W](si, registers)
 }
 
 func isRelationalCondition(cond opcode.Condition) bool {
@@ -104,12 +101,11 @@ func isRelationalCondition(cond opcode.Condition) bool {
 func lowerRelationalSkipIf[W vm.Word[W]](
 	si *instruction.SkipIf,
 	registers *[]register.Register,
-	bandWidth uint,
 ) []vm.WordInstruction {
 	lhs, rhs, skipOnZero := normalizeRelational(si)
 
-	lhsWidth := resolveRegisterWidth(*registers, lhs, bandWidth)
-	rhsWidth := resolveRegisterWidth(*registers, rhs, bandWidth)
+	lhsWidth := resolveRegisterWidth(*registers, lhs)
+	rhsWidth := resolveRegisterWidth(*registers, rhs)
 
 	castBandWidth := max(lhsWidth, rhsWidth) + 1
 
@@ -183,12 +179,14 @@ func normalizeRelational(si *instruction.SkipIf) (lhs, rhs register.Id, skipOnZe
 	}
 }
 
-// resolveRegisterWidth returns the effective width of a register, using
-// bandWidth for native (field-sized) registers.
-func resolveRegisterWidth(registers []register.Register, id register.Id, bandWidth uint) uint {
+// resolveRegisterWidth returns the width of a register.  Native (field-sized)
+// registers must never appear as division or comparison operands — the type
+// checker rejects field elements for both — so reaching this branch indicates
+// a compiler bug.
+func resolveRegisterWidth(registers []register.Register, id register.Id) uint {
 	reg := registers[id.Unwrap()]
 	if reg.IsNative() {
-		return bandWidth
+		panic("unexpected native register in comparison/division lowering")
 	}
 
 	return reg.Width()

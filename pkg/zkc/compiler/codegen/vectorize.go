@@ -161,19 +161,37 @@ func prepareCode(code []VectorInstruction) []VectorInstruction {
 	return prepared
 }
 
-// endsInTerminator reports whether the last code unconditionally fixes the
-// next program counter (Jmp, Return or Fail).
+// endsInTerminator reports whether all micro-paths through codes terminate
+// without falling off the end: the last code must be a Jmp/Return/Fail, AND
+// no Skip/SkipIf anywhere in the vector has a skip target past the end (which
+// would create a second exit path not visible from the last instruction).
 func endsInTerminator(codes []Instruction) bool {
-	if len(codes) == 0 {
+	n := uint(len(codes))
+	//
+	if n == 0 {
 		return false
 	}
 	//
-	switch codes[len(codes)-1].OpCode() {
+	switch codes[n-1].OpCode() {
 	case opcode.JUMP, opcode.RETURN, opcode.FAIL:
-		return true
+	default:
+		return false
+	}
+	// Verify no skip-instruction can reach past the end of the vector.
+	for i, code := range codes {
+		switch code := code.(type) {
+		case *instruction.Skip:
+			if uint(i)+code.Skip+1 >= n {
+				return false
+			}
+		case *instruction.SkipIf:
+			if uint(i)+code.Skip+1 >= n {
+				return false
+			}
+		}
 	}
 	//
-	return false
+	return true
 }
 
 // vectorizeInstruction greedily absorbs the targets of jumps in the vector at

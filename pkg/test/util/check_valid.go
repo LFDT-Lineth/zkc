@@ -55,6 +55,10 @@ func (p Config) Fields(fields ...field.Config) Config {
 // Constraints determines whether or not to check constraints.
 func (p Config) Constraints(flag bool) Config {
 	p.constraints = flag
+	// One needs to lower zkc native to enable constraints checks
+	if flag {
+		p.nativeLowering = true
+	}
 	//
 	return p
 }
@@ -77,9 +81,10 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 	}
 	// Check for each field requested
 	for _, f := range config.fields {
-		checkValidInternal(t, test, ext, codegen.DEFAULT_CONFIG, config.constraints, f)
-		// check whether to enable lowering as well.
-		if config.nativeLowering {
+		// check wo lowering and wo constraints check
+		checkValidInternal(t, test, ext, codegen.DEFAULT_CONFIG.LowerZkcNative(false), false, f)
+		// check whether to enable lowering as well. If constraints enable, must enable lowering as well.
+		if config.nativeLowering || config.constraints {
 			checkValidInternal(t, test, ext, codegen.DEFAULT_CONFIG.LowerZkcNative(true), config.constraints, f)
 		}
 	}

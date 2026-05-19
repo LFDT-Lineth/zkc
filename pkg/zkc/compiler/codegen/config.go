@@ -21,6 +21,7 @@ var DEFAULT_CONFIG = Config{
 	field:          field.KOALABEAR_16,
 	lowerZkcNative: false,
 	vectorize:      true,
+	splitting:      false,
 }
 
 // Config captures the tunable aspects of the ZkC code generator.  Instances
@@ -44,6 +45,8 @@ type Config struct {
 	// the codegen output, which is useful when debugging the codegen or
 	// inspecting the un-merged IR.
 	vectorize bool
+	// splitting controls whether or not register splitting is enabled.
+	splitting bool
 }
 
 // Field sets the target field configuration to use for this compiler.
@@ -51,6 +54,16 @@ func (p Config) Field(field field.Config) Config {
 	var q = p
 	//
 	q.field = field
+	//
+	return q
+}
+
+// SplitRegisters returns a copy of this Config in which register splitting is
+// either enabled (flag=true) or disabled (flag=false).
+func (p Config) SplitRegisters(flag bool) Config {
+	var q = p
+	//
+	q.splitting = flag
 	//
 	return q
 }
