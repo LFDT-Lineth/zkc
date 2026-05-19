@@ -531,10 +531,11 @@ func rewriteFixedArrayLVal(
 // Break, Continue) in each function of the program into the flat if-goto form
 // expected by subsequent validation and code generation passes.  Source map
 // entries for generated nodes are inherited from the original block node.
-func Flatten(program ast.Program, srcmaps source.Maps[any]) {
+func Flatten(program ast.Program, srcmaps source.Maps[any]) []source.SyntaxError {
 	var (
-		env   = program.Environment()
-		decls = program.Components()
+		env    = program.Environment()
+		decls  = program.Components()
+		errors []source.SyntaxError
 	)
 	//
 	for _, d := range decls {
@@ -542,13 +543,15 @@ func Flatten(program ast.Program, srcmaps source.Maps[any]) {
 			// Stage 1: hoist every Ternary expression into an IfElse + temp at
 			// the AST level so the existing block-construct lowering handles
 			// ternaries uniformly with if/else.
-			desugarTernaries(fn, env, decls, srcmaps)
+			errors = append(errors, desugarTernaries(fn, env, decls, srcmaps)...)
 			// Stage 2: lower block constructs (IfElse, Switch, While, For, ...)
 			// — including the new IfElse statements produced by Stage 1 — into
 			// flat IfGoto/Goto form.
 			fn.Code = lowerStatements(0, fn.Code, newLowerEnv(), srcmaps)
 		}
 	}
+	//
+	return errors
 }
 
 // lowerEnv tracks state needed during the lowering pass.

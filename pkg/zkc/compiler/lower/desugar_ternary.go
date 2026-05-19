@@ -33,6 +33,7 @@ type desugarCtx struct {
 	env     ast.Environment
 	decls   []decl.Resolved
 	srcmaps source.Maps[any]
+	errors  []source.SyntaxError
 }
 
 // desugarTernaries replaces every Ternary expression in fn's body with an
@@ -46,10 +47,15 @@ type desugarCtx struct {
 // variable's type either from a propagated "expected" type (from enclosing
 // context — e.g. the LHS target's declared type) or, when no context is
 // available, from operand types via inferType.
+//
+// Returns any syntax errors found (e.g. a ternary in a position where
+// hoisting would change semantics, such as a loop condition).
 func desugarTernaries(fn *decl.ResolvedFunction, env ast.Environment, decls []decl.Resolved,
-	srcmaps source.Maps[any]) {
+	srcmaps source.Maps[any]) []source.SyntaxError {
 	ctx := &desugarCtx{fn: fn, env: env, decls: decls, srcmaps: srcmaps}
 	fn.Code = ctx.desugarStmts(fn.Code)
+	//
+	return ctx.errors
 }
 
 func (c *desugarCtx) desugarStmts(stmts []stmt.Resolved) []stmt.Resolved {
@@ -113,25 +119,37 @@ func (c *desugarCtx) desugarStmt(s stmt.Resolved) ([]stmt.Resolved, stmt.Resolve
 	case *stmt.While[symbol.Resolved]:
 		// Hoisting a ternary out of the condition would put the temp-init
 		// IfElse before the loop, but the cond is re-evaluated each
-		// iteration.  Reject for now — none of the existing tests hit this.
-		c.assertNoTernary(t.Cond, "while condition")
+		// iteration — semantics would change.
+		c.rejectTernary(t.Cond, "while condition")
 		//
 		ns := &stmt.While[symbol.Resolved]{Cond: t.Cond, Body: c.desugarStmts(t.Body)}
 		c.srcmaps.Copy(s, ns)
 		//
 		return nil, ns
 	case *stmt.For[symbol.Resolved]:
-		// Same reason as While — cond/post run per iteration.
-		c.assertNoTernary(t.Cond, "for condition")
-		_, initS := c.desugarStmt(t.Init)
-		_, postS := c.desugarStmt(t.Post)
+		// Cond and Post run per iteration, so we cannot hoist temps out of
+		// them — reject any ternary there.  Init runs once before the loop,
+		// so its pre-statements can safely be returned as the For's
+		// pre-statements.
+		c.rejectTernary(t.Cond, "for condition")
+		//
+		postS := t.Post
+		// Only desugar Post when it contains no ternary; otherwise we'd
+		// allocate a temp that's set before the loop but consumed each
+		// iteration — a broken AST that crashes downstream passes.
+		if !c.rejectTernaryInStmt(t.Post, "for post-iterator") {
+			_, postS = c.desugarStmt(t.Post)
+		}
+		//
+		initPre, initS := c.desugarStmt(t.Init)
+		//
 		ns := &stmt.For[symbol.Resolved]{
 			Init: initS, Cond: t.Cond, Post: postS,
 			Body: c.desugarStmts(t.Body),
 		}
 		c.srcmaps.Copy(s, ns)
 		//
-		return nil, ns
+		return initPre, ns
 	case *stmt.VarDecl[symbol.Resolved]:
 		if !t.Init.HasValue() {
 			return nil, s
@@ -259,73 +277,73 @@ func (c *desugarCtx) desugarExpr(e expr.Resolved,
 		anchor := c.cmpAnchor(t.Left, t.Right)
 		lpre, l := c.desugarExpr(t.Left, anchor)
 		rpre, r := c.desugarExpr(t.Right, anchor)
-		ne := expr.NewCmp[symbol.Resolved](t.Operator, l, r)
+		ne := expr.NewCmp(t.Operator, l, r)
 		c.srcmaps.Copy(e, ne)
 		//
 		return append(lpre, rpre...), ne
 	case *expr.LogicalAnd[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, nil)
-		ne := expr.NewLogicalAnd[symbol.Resolved](ns...)
+		ne := expr.NewLogicalAnd(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.LogicalOr[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, nil)
-		ne := expr.NewLogicalOr[symbol.Resolved](ns...)
+		ne := expr.NewLogicalOr(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.LogicalNot[symbol.Resolved]:
 		pre, ns := c.desugarExpr(t.Expr, nil)
-		ne := expr.NewLogicalNot[symbol.Resolved](ns)
+		ne := expr.NewLogicalNot(ns)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.Add[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, expected)
-		ne := expr.NewAdd[symbol.Resolved](ns...)
+		ne := expr.NewAdd(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.Sub[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, expected)
-		ne := expr.NewSub[symbol.Resolved](ns...)
+		ne := expr.NewSub(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.Mul[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, expected)
-		ne := expr.NewMul[symbol.Resolved](ns...)
+		ne := expr.NewMul(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.Div[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, expected)
-		ne := expr.NewDiv[symbol.Resolved](ns...)
+		ne := expr.NewDiv(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.Rem[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, expected)
-		ne := expr.NewRem[symbol.Resolved](ns...)
+		ne := expr.NewRem(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.BitwiseAnd[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, expected)
-		ne := expr.NewBitwiseAnd[symbol.Resolved](ns...)
+		ne := expr.NewBitwiseAnd(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.BitwiseOr[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, expected)
-		ne := expr.NewBitwiseOr[symbol.Resolved](ns...)
+		ne := expr.NewBitwiseOr(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.Xor[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, expected)
-		ne := expr.NewXor[symbol.Resolved](ns...)
+		ne := expr.NewXor(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
@@ -333,19 +351,19 @@ func (c *desugarCtx) desugarExpr(e expr.Resolved,
 		// `a << b << c …` is variadic with heterogeneous operand widths;
 		// no clean expected-type to propagate.
 		pre, ns := c.desugarExprs(t.Exprs, nil)
-		ne := expr.NewShl[symbol.Resolved](ns...)
+		ne := expr.NewShl(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.Shr[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, nil)
-		ne := expr.NewShr[symbol.Resolved](ns...)
+		ne := expr.NewShr(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.BitwiseNot[symbol.Resolved]:
 		pre, ns := c.desugarExpr(t.Expr, expected)
-		ne := expr.NewBitwiseNot[symbol.Resolved](ns)
+		ne := expr.NewBitwiseNot(ns)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
@@ -353,14 +371,14 @@ func (c *desugarCtx) desugarExpr(e expr.Resolved,
 		// The cast normalises whatever the inner produces; don't propagate
 		// the outer expected through it.
 		pre, ns := c.desugarExpr(t.Expr, nil)
-		ne := expr.NewCast[symbol.Resolved](ns, t.CastType)
+		ne := expr.NewCast(ns, t.CastType)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.Concat[symbol.Resolved]:
 		// Each fragment carries its own width.
 		pre, ns := c.desugarExprs(t.Exprs, nil)
-		ne := expr.NewConcat[symbol.Resolved](ns...)
+		ne := expr.NewConcat(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
@@ -372,13 +390,13 @@ func (c *desugarCtx) desugarExpr(e expr.Resolved,
 		return pre, ne
 	case *expr.ExternAccess[symbol.Resolved]:
 		pre, nargs := c.desugarExternArgs(t)
-		ne := expr.NewExternAccess[symbol.Resolved](t.Name, nargs...)
+		ne := expr.NewExternAccess(t.Name, nargs...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
 	case *expr.TupleInitialiser[symbol.Resolved]:
 		pre, ns := c.desugarExprs(t.Exprs, nil)
-		ne := expr.NewTupleInitialiser[symbol.Resolved](ns...)
+		ne := expr.NewTupleInitialiser(ns...)
 		c.srcmaps.Copy(e, ne)
 		//
 		return pre, ne
@@ -487,7 +505,7 @@ func (c *desugarCtx) hoistTernary(t *expr.Ternary[symbol.Resolved],
 	//
 	tempID := variable.Id(len(c.fn.Variables))
 	tempName := fmt.Sprintf("$tern_%d", tempID)
-	c.fn.Variables = append(c.fn.Variables, variable.New[symbol.Resolved](variable.LOCAL, tempName, tempType))
+	c.fn.Variables = append(c.fn.Variables, variable.New(variable.LOCAL, tempName, tempType))
 	//
 	targets := []lval.LVal[symbol.Resolved]{lval.NewVariable[symbol.Resolved](tempID)}
 	pre, ifelse := c.expandTernaryAssign(t, targets, t)
@@ -627,71 +645,126 @@ func closeType(t data.ResolvedType) data.ResolvedType {
 	return t
 }
 
-// assertNoTernary panics if the expression sub-tree contains any Ternary node.
-// Used for contexts (loop conditions, post-iterators) where hoisting via a
-// pre-statement would break re-evaluation semantics.
-func (c *desugarCtx) assertNoTernary(e expr.Resolved, where string) {
-	if containsTernary(e) {
-		panic(fmt.Sprintf("ternary expressions are not yet supported inside %s", where))
-	}
-}
-
-//nolint:gocyclo
-func containsTernary(e expr.Resolved) bool {
-	switch t := e.(type) {
-	case *expr.Ternary[symbol.Resolved]:
-		return true
-	case *expr.Cmp[symbol.Resolved]:
-		return containsTernary(t.Left) || containsTernary(t.Right)
-	case *expr.LogicalAnd[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.LogicalOr[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.LogicalNot[symbol.Resolved]:
-		return containsTernary(t.Expr)
-	case *expr.Add[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.Sub[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.Mul[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.Div[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.Rem[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.BitwiseAnd[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.BitwiseOr[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.Xor[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.Shl[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.Shr[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.BitwiseNot[symbol.Resolved]:
-		return containsTernary(t.Expr)
-	case *expr.Cast[symbol.Resolved]:
-		return containsTernary(t.Expr)
-	case *expr.Concat[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
-	case *expr.ArrayAccess[symbol.Resolved]:
-		return containsTernary(t.Arg)
-	case *expr.ExternAccess[symbol.Resolved]:
-		return anyContainsTernary(t.Args)
-	case *expr.TupleInitialiser[symbol.Resolved]:
-		return anyContainsTernary(t.Exprs)
+// rejectTernary records a syntax error if the expression sub-tree contains
+// any Ternary node.  Used for contexts (loop conditions, post-iterators)
+// where hoisting via a pre-statement would break re-evaluation semantics.
+// Returns true if a ternary was found (and an error recorded).
+func (c *desugarCtx) rejectTernary(e expr.Resolved, where string) bool {
+	t := findTernary(e)
+	//
+	if t == nil {
+		return false
 	}
 	//
-	return false
+	c.errors = append(c.errors, *c.srcmaps.SyntaxError(t,
+		fmt.Sprintf("ternary expressions are not yet supported inside %s", where)))
+	//
+	return true
 }
 
-func anyContainsTernary(exprs []expr.Resolved) bool {
-	for _, e := range exprs {
-		if containsTernary(e) {
-			return true
+// rejectTernaryInStmt is the statement-level counterpart of rejectTernary: it
+// records a syntax error if any expression reachable from s contains a
+// Ternary node.  Returns true if a ternary was found.
+func (c *desugarCtx) rejectTernaryInStmt(s stmt.Resolved, where string) bool {
+	var found bool
+	//
+	for _, e := range stmtExprs(s) {
+		if c.rejectTernary(e, where) {
+			found = true
 		}
 	}
 	//
-	return false
+	return found
+}
+
+// stmtExprs returns the top-level expressions carried by s.  Used for the
+// few callers (rejectTernaryInStmt) that need to scan a Stmt for ternaries
+// without recursing through nested statements.
+func stmtExprs(s stmt.Resolved) []expr.Resolved {
+	switch t := s.(type) {
+	case *stmt.Assign[symbol.Resolved]:
+		return []expr.Resolved{t.Source}
+	case *stmt.VarDecl[symbol.Resolved]:
+		if t.Init.HasValue() {
+			return []expr.Resolved{t.Init.Unwrap()}
+		}
+	case *stmt.Printf[symbol.Resolved]:
+		return t.Arguments
+	case *stmt.Fail[symbol.Resolved]:
+		return t.Arguments
+	}
+	//
+	return nil
+}
+
+// findTernary walks an expression sub-tree and returns the first Ternary node
+// found, or nil.  Used both as a containment test (nil ⇔ no ternary) and to
+// pin syntax errors to the offending source location.
+//
+//nolint:gocyclo
+func findTernary(e expr.Resolved) *expr.Ternary[symbol.Resolved] {
+	switch t := e.(type) {
+	case *expr.Ternary[symbol.Resolved]:
+		return t
+	case *expr.Cmp[symbol.Resolved]:
+		if r := findTernary(t.Left); r != nil {
+			return r
+		}
+		//
+		return findTernary(t.Right)
+	case *expr.LogicalAnd[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.LogicalOr[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.LogicalNot[symbol.Resolved]:
+		return findTernary(t.Expr)
+	case *expr.Add[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.Sub[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.Mul[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.Div[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.Rem[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.BitwiseAnd[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.BitwiseOr[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.Xor[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.Shl[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.Shr[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.BitwiseNot[symbol.Resolved]:
+		return findTernary(t.Expr)
+	case *expr.Cast[symbol.Resolved]:
+		return findTernary(t.Expr)
+	case *expr.Concat[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	case *expr.ArrayAccess[symbol.Resolved]:
+		return findTernary(t.Arg)
+	case *expr.ExternAccess[symbol.Resolved]:
+		return findTernaryInList(t.Args)
+	case *expr.TupleInitialiser[symbol.Resolved]:
+		return findTernaryInList(t.Exprs)
+	}
+	//
+	return nil
+}
+
+func findTernaryInList(exprs []expr.Resolved) *expr.Ternary[symbol.Resolved] {
+	for _, e := range exprs {
+		if r := findTernary(e); r != nil {
+			return r
+		}
+	}
+	//
+	return nil
+}
+
+func containsTernary(e expr.Resolved) bool {
+	return findTernary(e) != nil
 }

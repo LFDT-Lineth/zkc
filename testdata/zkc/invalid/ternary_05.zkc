@@ -1,0 +1,8 @@
+//error:5:16-29:ternary expressions are not yet supported inside while condition
+fn main() {
+    var i:u8 = 0
+    var n:u8 = 10
+    while i < (n > 5 ? 6 : n) {
+        i = i + 1
+    }
+}

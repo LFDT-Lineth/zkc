@@ -1,0 +1,6 @@
+//error:4:35-48:ternary expressions are not yet supported inside for post-iterator
+fn main() {
+    var n:u8 = 10
+    for i:u8 = 0; i < n; i = i + (n > 5 ? 1 : 2) {
+    }
+}

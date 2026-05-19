@@ -71,8 +71,9 @@ func Compile(field field.Config, files ...source.File) (ast.Program, source.Maps
 	program, srcmaps, linkErrs = Link(items...)
 	//
 	errors = append(errors, linkErrs...)
-	// Flatten block-level constructs (if/else, switch, while, for) into flat if-goto form
-	lower.Flatten(program, srcmaps)
+	// Flatten block-level constructs (ternary, if/else, switch, while, for) into flat if-goto form
+	flattenErrs := lower.Flatten(program, srcmaps)
+	errors = append(errors, flattenErrs...)
 	// Well-formedness checks (assuming unlimited field width).
 	errors = append(errors, validateProgram(program, field, srcmaps)...)
 	// Lower fixed-size arrays into flat local access registers
