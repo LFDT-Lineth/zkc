@@ -17,7 +17,6 @@ import (
 
 	mirc "github.com/consensys/go-corset/pkg/asm/compiler"
 	"github.com/consensys/go-corset/pkg/asm/io/micro/dfa"
-	"github.com/consensys/go-corset/pkg/schema/agnostic"
 	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
@@ -66,19 +65,11 @@ func (p *InstructionTranslator[F]) WriteAndShiftRegisters(targets ...register.Id
 
 func (p *InstructionTranslator[F]) translateAssignment(insn instruction.FieldAssign[F]) Expr[F] {
 	var (
-		// Determine sign of polynomial
-		_, signed = agnostic.WidthOfPolynomial(insn.Source, func(r register.Id) uint {
-			return p.reader.Register(r).Width()
-		})
 		// build rhs
 		rhs = p.translatePolynomial(insn.Source)
 		// build lhs (must be after rhs)
-		lhs = p.WriteAndShiftRegisters(insn.Target)
+		lhs = p.WriteAndShiftRegisters(insn.Target.Registers()...)
 	)
-	// Construct equation
-	if signed {
-		panic("signed assignments not implemented")
-	}
 	//
 	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
 }
