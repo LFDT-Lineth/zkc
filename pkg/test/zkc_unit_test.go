@@ -196,6 +196,10 @@ func Test_ZkcUnit_IfElse_07(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/ifelse_07", util.DEFAULT_CONFIG)
 }
 
+func Test_ZkcUnit_IfElse_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ifelse_08", util.DEFAULT_CONFIG.Constraints(true))
+}
+
 // ===================================================================
 // Constant Tests
 // ===================================================================
@@ -598,6 +602,10 @@ func Test_ZkcUnit_Ternary_04(t *testing.T) {
 
 func Test_ZkcUnit_Ternary_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/ternary_05", util.DEFAULT_CONFIG.Constraints(true))
+}
+
+func Test_ZkcUnit_Ternary_06(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ternary_06", util.DEFAULT_CONFIG.Constraints(true))
 }
 
 // ===================================================================
