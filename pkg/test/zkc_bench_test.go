@@ -52,8 +52,8 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 // 	checkZkcBench(t, "zkc/bench/keccakf_le", field.BLS12_377, field.KOALABEAR_16)
 // }
 
-// Same as Test_ZkcBench_Keccakf, but the loop is in Zkc : a single line in .accepts that
-// packs all test vectors
+// Same as Test_ZkcBench_Keccakf, but the loop is in Zkc and we have 20k test vectors
+// a single line in .accepts that packs all test vectors
 /*func Test_ZkcBench_KeccakfBatched(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/keccakf_batched", field.BLS12_377, field.KOALABEAR_16)
 }*/
