@@ -117,19 +117,27 @@ func (p *OpIo) String(mapping SystemMap) string {
 			builder.WriteString(" = ")
 		}
 		//
-		fmt.Fprintf(&builder, "%s(%s)", mapping.Module(p.Id).Name(),
+		fmt.Fprintf(&builder, "%s(%s)", getModuleName(mapping, p.Id),
 			RegistersToString(mapping, p.Arguments...))
 	case opcode.MEMORY_READ:
 		builder.WriteString(RegistersToString(mapping, array.Reverse(p.Returns)...))
 		builder.WriteString(" = ")
 		//
-		fmt.Fprintf(&builder, "%s[%s]", mapping.Module(p.Id).Name(),
+		fmt.Fprintf(&builder, "%s[%s]", getModuleName(mapping, p.Id),
 			RegistersToString(mapping, p.Arguments...))
 	case opcode.MEMORY_WRITE:
-		fmt.Fprintf(&builder, "%s[%s] = %s", mapping.Module(p.Id).Name(),
+		fmt.Fprintf(&builder, "%s[%s] = %s", getModuleName(mapping, p.Id),
 			RegistersToString(mapping, array.Reverse(p.Arguments)...),
 			RegistersToString(mapping, p.Returns...))
 	}
 	//
 	return builder.String()
+}
+
+func getModuleName(mapping SystemMap, id uint) string {
+	if mapping == nil {
+		return "??"
+	}
+	//
+	return mapping.Module(id).Name()
 }

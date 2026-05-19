@@ -92,8 +92,7 @@ func (p *TraceObserver[W]) writeState(machine *vm.WordMachine[W]) {
 	var (
 		n      = machine.Depth()
 		frame  = machine.StackFrame(n - 1)
-		name   = trace.ModuleName{Name: p.fun.Name(), Multiplier: 1}
-		base   = instruction.NewSystemMap(register.ArrayMap(name, p.fun.Registers()...), machine.Modules())
+		base   = instruction.NewSystemMap(p.fun.RegisterMap(), machine.Modules())
 		values = make(map[uint]string)
 	)
 	// Collect register values. In PostExecution, sources still hold their pre-execution values

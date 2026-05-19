@@ -83,7 +83,7 @@ func (p *OpArith[W]) String(mapping base.SystemMap) string {
 	builder.WriteString(base.RegistersToString(mapping, p.Target))
 	builder.WriteString(" = ")
 	//
-	if p.Constant.Cmp(zero) == 0 &&
+	if p.Constant.Cmp(zero) == 0 && len(p.Sources) > 0 &&
 		(p.Op == opcode.INT_ADD || p.Op == opcode.INT_SUB ||
 			p.Op == opcode.INT_ADDMOD_P || p.Op == opcode.INT_SUBMOD_P ||
 			p.Op == opcode.BIT_CONCAT) {

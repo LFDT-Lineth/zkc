@@ -37,35 +37,23 @@ func LowerComparisons[W vm.Word[W]](modules []vm.Module) []vm.Module {
 
 func lowerComparisonFunction[W vm.Word[W]](fn *vm.WordFunction) *vm.WordFunction {
 	var (
-		code      = fn.Code()
-		ncode     = make([]vectorInstruction, len(code))
-		registers = append([]register.Register{}, fn.Registers()...)
+		code  = fn.Code()
+		ncode = make([]vectorInstruction, len(code))
+		alloc = register.NewAllocator[int](fn.RegisterMap())
 	)
 
 	for i, insn := range code {
-		ncodes := lowerComparisonCodes[W](insn.Codes, &registers)
-		ncode[i] = vectorInstruction{Codes: ncodes}
+		ncode[i] = insn.Map(func(_ uint, ith vm.WordInstruction) []vm.WordInstruction {
+			return lowerComparisonCode[W](ith, alloc)
+		})
 	}
 
-	return vm.NewFunction(fn.Name(), fn.IsNative(), registers, ncode)
-}
-
-func lowerComparisonCodes[W vm.Word[W]](
-	codes []vm.WordInstruction,
-	registers *[]register.Register,
-) []vm.WordInstruction {
-	ncodes := make([]vm.WordInstruction, 0, len(codes))
-
-	for _, code := range codes {
-		ncodes = append(ncodes, lowerComparisonCode[W](code, registers)...)
-	}
-
-	return ncodes
+	return vm.NewFunction(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
 }
 
 func lowerComparisonCode[W vm.Word[W]](
 	code vm.WordInstruction,
-	registers *[]register.Register,
+	registers RegisterAllocator,
 ) []vm.WordInstruction {
 	si, ok := code.(*instruction.SkipIf)
 	if !ok || !isRelationalCondition(si.Cond) {
@@ -100,25 +88,24 @@ func isRelationalCondition(cond opcode.Condition) bool {
 //	SkipIf(EQ/NEQ, sign, zero, skip)
 func lowerRelationalSkipIf[W vm.Word[W]](
 	si *instruction.SkipIf,
-	registers *[]register.Register,
+	registers RegisterAllocator,
 ) []vm.WordInstruction {
 	lhs, rhs, skipOnZero := normalizeRelational(si)
-
-	lhsWidth := (*registers)[lhs.Unwrap()].Width()
-	rhsWidth := (*registers)[rhs.Unwrap()].Width()
+	lhsWidth := registers.Register(lhs).Width()
+	rhsWidth := registers.Register(rhs).Width()
 
 	castBandWidth := max(lhsWidth, rhsWidth) + 1
 
 	zero := vm.Uint64[W](0)
 	one := vm.Uint64[W](1)
 
-	bWide := allocTmp(registers, castBandWidth)
-	oneReg := allocTmp(registers, 1)
-	biased := allocTmp(registers, castBandWidth)
-	diff := allocTmp(registers, castBandWidth)
-	lo := allocTmp(registers, castBandWidth-1)
-	sign := allocTmp(registers, 1)
-	zeroReg := allocTmp(registers, 1)
+	bWide := registers.Allocate("", castBandWidth)
+	oneReg := registers.Allocate("", 1)
+	biased := registers.Allocate("", castBandWidth)
+	diff := registers.Allocate("", castBandWidth)
+	lo := registers.Allocate("", castBandWidth-1)
+	sign := registers.Allocate("", 1)
+	zeroReg := registers.Allocate("", 1)
 
 	// rhs is always cast to castBandWidth
 	castRhs := []vm.WordInstruction{
@@ -133,7 +120,7 @@ func lowerRelationalSkipIf[W vm.Word[W]](
 			instruction.NewBitConcat[W](biased, []register.Id{lhs, oneReg}),
 		}
 	} else {
-		aBase := allocTmp(registers, castBandWidth-1)
+		aBase := registers.Allocate("", castBandWidth-1)
 		castLhs = []vm.WordInstruction{
 			instruction.NewCast(aBase, lhs, castBandWidth-1),
 			instruction.NewBitConcat[W](biased, []register.Id{aBase, oneReg}),

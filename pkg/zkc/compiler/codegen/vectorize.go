@@ -17,8 +17,6 @@ import (
 	"math"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
 	"github.com/consensys/go-corset/pkg/util/collection/array"
 	"github.com/consensys/go-corset/pkg/util/collection/stack"
 	"github.com/consensys/go-corset/pkg/util/source"
@@ -113,8 +111,7 @@ func vectorizeFunction(fn *Function, modules []vm.Module) *Function {
 	// control-flow explicit so that LastJump can drive the merge loop.
 	prepared := prepareCode(original)
 	// Build a system map for register-conflict reporting.
-	name := trace.ModuleName{Name: fn.Name(), Multiplier: 1}
-	mapping := instruction.NewSystemMap(register.ArrayMap(name, fn.Registers()...), modules)
+	mapping := instruction.NewSystemMap(fn.RegisterMap(), modules)
 	//
 	var (
 		insns    = make([]VectorInstruction, n)
