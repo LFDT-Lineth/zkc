@@ -192,31 +192,34 @@ fn rho<state_row0, state_row1, state_row2, state_row3, state_row4>() {
 // PI: lane permutation step
 // A[x,y] → B[y, (2x+3y) mod 5]
 fn pi<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4>() {
-    b0[0] = state_row0[0] // (2*0 + 3*0) mod 5
-    b1[3] = state_row0[1] // (2*0 + 3*1) mod 5
-    b2[1] = state_row0[2] // (2*0 + 3*2) mod 5
-    b3[4] = state_row0[3] // (2*0 + 3*3) mod 5
-    b4[2] = state_row0[4] // (2*0 + 3*4) mod 5
-    b0[2] = state_row1[0] // (2*1 + 3*0) mod 5
-    b1[0] = state_row1[1] // (2*1 + 3*1) mod 5
-    b2[3] = state_row1[2] // (2*1 + 3*2) mod 5
-    b3[1] = state_row1[3] // (2*1 + 3*3) mod 5
-    b4[4] = state_row1[4] // (2*1 + 3*4) mod 5
-    b0[4] = state_row2[0] // (2*2 + 3*0) mod 5
-    b1[2] = state_row2[1] // (2*2 + 3*1) mod 5
-    b2[0] = state_row2[2] // (2*2 + 3*2) mod 5
-    b3[3] = state_row2[3] // (2*2 + 3*3) mod 5
-    b4[1] = state_row2[4] // (2*2 + 3*4) mod 5
-    b0[1] = state_row3[0] // (2*3 + 3*0) mod 5
-    b1[4] = state_row3[1] // (2*3 + 3*1) mod 5
-    b2[2] = state_row3[2] // (2*3 + 3*2) mod 5
-    b3[0] = state_row3[3] // (2*3 + 3*3) mod 5
-    b4[3] = state_row3[4] // (2*3 + 3*4) mod 5
-    b0[3] = state_row4[0] // (2*4 + 3*0) mod 5
-    b1[1] = state_row4[1] // (2*4 + 3*1) mod 5
-    b2[4] = state_row4[2] // (2*4 + 3*2) mod 5
-    b3[2] = state_row4[3] // (2*4 + 3*3) mod 5
-    b4[0] = state_row4[4] // (2*4 + 3*4) mod 5
+
+    // bY[Z] = state_rowX[Y] with Z = (2*X + 3*Y) mod 5
+    
+    b0[0] = state_row0[0]   // Z = (2*0 + 3*0) mod 5
+    b1[3] = state_row0[1]   // Z = (2*0 + 3*1) mod 5
+    b2[1] = state_row0[2]   // Z = (2*0 + 3*2) mod 5
+    b3[4] = state_row0[3]   // Z = (2*0 + 3*3) mod 5
+    b4[2] = state_row0[4]   // Z = (2*0 + 3*4) mod 5
+    b0[2] = state_row1[0]   // Z = (2*1 + 3*0) mod 5
+    b1[0] = state_row1[1]   // Z = (2*1 + 3*1) mod 5
+    b2[3] = state_row1[2]   // Z = (2*1 + 3*2) mod 5
+    b3[1] = state_row1[3]   // Z = (2*1 + 3*3) mod 5
+    b4[4] = state_row1[4]   // Z = (2*1 + 3*4) mod 5
+    b0[4] = state_row2[0]   // Z = (2*2 + 3*0) mod 5
+    b1[2] = state_row2[1]   // Z = (2*2 + 3*1) mod 5
+    b2[0] = state_row2[2]   // Z = (2*2 + 3*2) mod 5
+    b3[3] = state_row2[3]   // Z = (2*2 + 3*3) mod 5
+    b4[1] = state_row2[4]   // Z = (2*2 + 3*4) mod 5
+    b0[1] = state_row3[0]   // Z = (2*3 + 3*0) mod 5
+    b1[4] = state_row3[1]   // Z = (2*3 + 3*1) mod 5
+    b2[2] = state_row3[2]   // Z = (2*3 + 3*2) mod 5
+    b3[0] = state_row3[3]   // Z = (2*3 + 3*3) mod 5
+    b4[3] = state_row3[4]   // Z = (2*3 + 3*4) mod 5
+    b0[3] = state_row4[0]   // Z = (2*4 + 3*0) mod 5
+    b1[1] = state_row4[1]   // Z = (2*4 + 3*1) mod 5
+    b2[4] = state_row4[2]   // Z = (2*4 + 3*2) mod 5
+    b3[2] = state_row4[3]   // Z = (2*4 + 3*3) mod 5
+    b4[0] = state_row4[4]   // Z = (2*4 + 3*4) mod 5
 }
 
 // CHI: non-linear step
