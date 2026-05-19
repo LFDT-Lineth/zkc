@@ -41,8 +41,6 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/keccakf", field.BLS12_377, field.KOALABEAR_16)
 }
 
-
-
 // Keccakf with padding, little-endian input and output, and batched
 // Will be used for later benchmarks
 
