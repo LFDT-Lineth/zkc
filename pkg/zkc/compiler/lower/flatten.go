@@ -107,24 +107,27 @@ func expandFixedArrays(
 	for _, s := range fn.Code {
 		switch s := s.(type) {
 		case *stmt.Assign[symbol.Resolved]:
-			// Check if the source is a bare array variable
-			if expanded := expandArrayAssign(s, mapping, env); expanded != nil {
+			// Break whole-array assignments into per-element assignments if any
+			if expanded := expandWholeArrayAssign(s, mapping, env); expanded != nil {
 				expandedCode = append(expandedCode, expanded...)
 				continue
 			}
 
 			// Expand the targets
 			for i, lv := range s.Targets {
-				s.Targets[i] = expandLValArrayArgs(lv, mapping, env)
+				s.Targets[i] = expandLValArray(lv, mapping, env)
 			}
 
 			// Expand the source
-			s.Source = expandExprArrayArgs(s.Source, mapping, env)
+			s.Source = expandArrayExpression(s.Source, mapping, env)
 		case *stmt.IfGoto[symbol.Resolved]:
-			expandCondArrayArgs(s.Cond, mapping, env)
+			if cmp, ok := s.Cond.(*expr.Cmp[symbol.Resolved]); ok {
+				cmp.Left = expandArrayExpression(cmp.Left, mapping, env)
+				cmp.Right = expandArrayExpression(cmp.Right, mapping, env)
+			}
 		case *stmt.Printf[symbol.Resolved]:
 			for i, arg := range s.Arguments {
-				s.Arguments[i] = expandExprArrayArgs(arg, mapping, env)
+				s.Arguments[i] = expandArrayExpression(arg, mapping, env)
 			}
 		}
 
@@ -134,68 +137,68 @@ func expandFixedArrays(
 	return
 }
 
-func expandExprArrayArgs(e expr.Resolved, mapping []varMapping, env ast.Environment) expr.Resolved {
+func expandArrayExpression(e expr.Resolved, mapping []varMapping, env ast.Environment) expr.Resolved {
 	switch e := e.(type) {
 	case *expr.ExternAccess[symbol.Resolved]:
-		e.Args = expandArrayArgs(e.Args, mapping, env)
+		e.Args = expandBareArray(e.Args, mapping, env)
 		return e
 	case *expr.Add[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.Sub[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.Mul[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.Div[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.Rem[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.Shl[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.Shr[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.BitwiseAnd[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.BitwiseOr[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.Xor[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.BitwiseNot[symbol.Resolved]:
-		e.Expr = expandExprArrayArgs(e.Expr, mapping, env)
+		e.Expr = expandArrayExpression(e.Expr, mapping, env)
 		return e
 	case *expr.LogicalAnd[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.LogicalOr[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.LogicalNot[symbol.Resolved]:
-		e.Expr = expandExprArrayArgs(e.Expr, mapping, env)
+		e.Expr = expandArrayExpression(e.Expr, mapping, env)
 		return e
 	case *expr.Cast[symbol.Resolved]:
-		e.Expr = expandExprArrayArgs(e.Expr, mapping, env)
+		e.Expr = expandArrayExpression(e.Expr, mapping, env)
 		return e
 	case *expr.Concat[symbol.Resolved]:
-		expandExprSliceArrayArgs(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, mapping, env)
 		return e
 	case *expr.Cmp[symbol.Resolved]:
-		e.Left = expandExprArrayArgs(e.Left, mapping, env)
-		e.Right = expandExprArrayArgs(e.Right, mapping, env)
+		e.Left = expandArrayExpression(e.Left, mapping, env)
+		e.Right = expandArrayExpression(e.Right, mapping, env)
 
 		return e
 	case *expr.Ternary[symbol.Resolved]:
-		e.Cond = expandExprArrayArgs(e.Cond, mapping, env)
-		e.IfTrue = expandExprArrayArgs(e.IfTrue, mapping, env)
-		e.IfFalse = expandExprArrayArgs(e.IfFalse, mapping, env)
+		e.Cond = expandArrayExpression(e.Cond, mapping, env)
+		e.IfTrue = expandArrayExpression(e.IfTrue, mapping, env)
+		e.IfFalse = expandArrayExpression(e.IfFalse, mapping, env)
 
 		return e
 	default:
@@ -203,32 +206,26 @@ func expandExprArrayArgs(e expr.Resolved, mapping []varMapping, env ast.Environm
 	}
 }
 
-func expandExprSliceArrayArgs(exprs []expr.Resolved, mapping []varMapping, env ast.Environment) {
+func expandArrayExpressions(exprs []expr.Resolved, mapping []varMapping, env ast.Environment) {
 	for i, e := range exprs {
-		exprs[i] = expandExprArrayArgs(e, mapping, env)
+		exprs[i] = expandArrayExpression(e, mapping, env)
 	}
 }
 
-func expandCondArrayArgs(c expr.ResolvedCondition, mapping []varMapping, env ast.Environment) {
-	if cmp, ok := c.(*expr.Cmp[symbol.Resolved]); ok {
-		cmp.Left = expandExprArrayArgs(cmp.Left, mapping, env)
-		cmp.Right = expandExprArrayArgs(cmp.Right, mapping, env)
-	}
-}
-
-func expandLValArrayArgs(l lval.Resolved, mapping []varMapping, env ast.Environment) lval.Resolved {
+func expandLValArray(l lval.Resolved, mapping []varMapping, env ast.Environment) lval.Resolved {
 	switch l := l.(type) {
 	case *lval.MemAccess[symbol.Resolved]:
-		expandExprSliceArrayArgs(l.Args, mapping, env)
+		expandArrayExpressions(l.Args, mapping, env)
 		return l
 	default:
 		return l
 	}
 }
 
-// expandArrayArgs expands bare array variable arguments into individual
-// ArrayAccess expressions using the original variable IDs.
-func expandArrayArgs(args []expr.Resolved, mapping []varMapping, env ast.Environment) []expr.Resolved {
+// expandBareArray expands bare array variable arguments into individual
+// ArrayAccess expressions
+// e.g. sum(items) becomes sum(items[0], items[1], items[2])
+func expandBareArray(args []expr.Resolved, mapping []varMapping, env ast.Environment) []expr.Resolved {
 	var result []expr.Resolved
 
 	for _, arg := range args {
@@ -251,7 +248,7 @@ func expandArrayArgs(args []expr.Resolved, mapping []varMapping, env ast.Environ
 			}
 		}
 
-		result = append(result, expandExprArrayArgs(arg, mapping, env))
+		result = append(result, expandArrayExpression(arg, mapping, env))
 	}
 
 	return result
@@ -285,12 +282,12 @@ type arrayTarget struct {
 	size uint
 }
 
-// expandArrayAssign expands whole-array to per-element assignments.
+// expandWholeArrayAssign expands whole-array to per-element assignments.
 // Supported cases:
 //   - a = b (one target, LocalAccess source)
 //   - a = f(...) (one target, function returns one array)
 //   - a, b, ... = f(...) (several targets, function returns a matching tuple of arrays)
-func expandArrayAssign(
+func expandWholeArrayAssign(
 	s *stmt.Assign[symbol.Resolved], mapping []varMapping, env ast.Environment,
 ) []stmt.Resolved {
 	var targets []arrayTarget
@@ -357,7 +354,7 @@ func expandArrayAssign(
 			}
 		}
 
-		src.Args = expandArrayArgs(src.Args, mapping, env)
+		src.Args = expandBareArray(src.Args, mapping, env)
 
 		return []stmt.Resolved{&stmt.Assign[symbol.Resolved]{
 			Targets: elemTargets,
