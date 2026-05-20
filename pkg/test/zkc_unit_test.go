@@ -272,7 +272,7 @@ func Test_ZkcUnit_FixedArray_09(t *testing.T) {
 }
 
 func Test_ZkcUnit_FixedArray_10(t *testing.T) {
- 	checkZkcUnit(t, "zkc/unit/fixed_array_10", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/fixed_array_10", util.DEFAULT_CONFIG)
 }
 
 func Test_ZkcUnit_FixedArray_11(t *testing.T) {
@@ -285,6 +285,14 @@ func Test_ZkcUnit_FixedArray_12(t *testing.T) {
 
 func Test_ZkcUnit_FixedArray_13(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/fixed_array_13", util.DEFAULT_CONFIG)
+}
+
+func Test_ZkcUnit_FixedArray_14(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/fixed_array_14", util.DEFAULT_CONFIG)
+}
+
+func Test_ZkcUnit_FixedArray_15(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/fixed_array_15", util.DEFAULT_CONFIG)
 }
 
 // ===================================================================

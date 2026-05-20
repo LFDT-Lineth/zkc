@@ -107,15 +107,18 @@ func expandFixedArrays(
 	for _, s := range fn.Code {
 		switch s := s.(type) {
 		case *stmt.Assign[symbol.Resolved]:
+			// Check if the source is a bare array variable
 			if expanded := expandArrayAssign(s, mapping, env); expanded != nil {
 				expandedCode = append(expandedCode, expanded...)
 				continue
 			}
 
+			// Expand the targets
 			for i, lv := range s.Targets {
 				s.Targets[i] = expandLValArrayArgs(lv, mapping, env)
 			}
 
+			// Expand the source
 			s.Source = expandExprArrayArgs(s.Source, mapping, env)
 		case *stmt.IfGoto[symbol.Resolved]:
 			expandCondArrayArgs(s.Cond, mapping, env)
@@ -277,55 +280,101 @@ func countVarsOfKind(vars []variable.ResolvedDescriptor, kind variable.Kind) uin
 	return n
 }
 
-// expandArrayAssign rewrites an assignment whose left-hand side is a bare
-// fixed-size array variable. Two cases are handled:
-//  1. Bare array variable read (a = b), source is LocalAccess
-//  2. Function call returning an array (a = f(...)), source is ExternAccess
-//
-// Result : a[0] = b[0]; ...; a[n-1] = b[n-1]
-// Returns nil when the source shape is not supported
-// All returned statements still reference the original variable IDs; 
-// the rewriting phase remaps them.
-func expandArrayAssign(
-	s *stmt.Assign[symbol.Resolved], mapping []varMapping, env ast.Environment,
-) []stmt.Resolved {
-	if len(s.Targets) != 1 {
-		return nil
-	}
+type arrayTarget struct {
+	id   variable.Id
+	size uint
+}
 
-	lv, ok := s.Targets[0].(*lval.Variable[symbol.Resolved])
-	if !ok || len(lv.Ids) != 1 {
-		return nil
-	}
-
-	lhsID := lv.Ids[0]
-	lm := mapping[lhsID]
-
-	if !lm.isArray {
-		return nil
-	}
-
-	srcArr := s.Source.Type().AsFixedArray(env)
-	if srcArr == nil || !srcArr.Size.HasFirst() || srcArr.Size.First() != lm.size {
-		return nil
-	}
-
-	elemTargets := make([]lval.LVal[symbol.Resolved], lm.size)
-	for i := range lm.size {
+// arrayElemTargets builds itemss[0]..itemss[n-1] lvals using the original array variable id.
+func arrayElemTargets(lhsID variable.Id, size uint) []lval.LVal[symbol.Resolved] {
+	elemTargets := make([]lval.LVal[symbol.Resolved], size)
+	for i := range size {
 		idx := *big.NewInt(int64(i))
 		elemTargets[i] = lval.NewArray[symbol.Resolved](
 			lhsID, expr.NewConstant[symbol.Resolved](idx, 10),
 		)
 	}
 
+	return elemTargets
+}
+
+// sourceArrayTypes returns the per-target source array types for a call result.
+func sourceArrayTypes(
+	srcType data.Type[symbol.Resolved], n int, env ast.Environment,
+) ([]data.Type[symbol.Resolved], bool) {
+	if n == 1 {
+		srcArr := srcType.AsFixedArray(env)
+		if srcArr == nil {
+			return nil, false
+		}
+
+		return []data.Type[symbol.Resolved]{srcArr}, true
+	}
+
+	srcTuple := srcType.AsTuple(env)
+	if srcTuple == nil || len(srcTuple.Types()) != n {
+		return nil, false
+	}
+
+	return srcTuple.Types(), true
+}
+
+// expandArrayAssign rewrites whole-array assignments into per-element targets.
+// Supported shapes:
+//   - a = b (one target, LocalAccess source)
+//   - a = f(...) (one target, function returns one array)
+//   - a, b, ... = f(...) (several targets, function returns a matching tuple of arrays)
+//
+// All returned statements still reference the original variable IDs;
+// the rewriting phase remaps them.
+func expandArrayAssign(
+	s *stmt.Assign[symbol.Resolved], mapping []varMapping, env ast.Environment,
+) []stmt.Resolved {
+	var targets []arrayTarget
+
+	for _, t := range s.Targets {
+		switch lv := t.(type) {
+		case *lval.Variable[symbol.Resolved]:
+			// Destructuring is checked in the typing phase, so len(lv.Ids) must be 1
+			lhsID := lv.Ids[0]
+			lm := mapping[lhsID]
+			// if lm is not an array, we don't need the expansion
+			if !lm.isArray {
+				return nil
+			}
+
+			targets = append(targets, arrayTarget{id: lhsID, size: lm.size})
+		default:
+			return nil
+		}
+	}
+
+	if len(targets) == 0 {
+		return nil
+	}
+
 	switch src := s.Source.(type) {
 	case *expr.LocalAccess[symbol.Resolved]:
-		result := make([]stmt.Resolved, lm.size)
+		// Case a = b
+		// Does not support tuple assignments a, b = b, c
+		if len(targets) != 1 {
+			return nil
+		}
 
-		for i := range lm.size {
+		tgt := targets[0]
+		srcArr := s.Source.Type().AsFixedArray(env)
+		if srcArr == nil || !srcArr.Size.HasFirst() || srcArr.Size.First() != tgt.size {
+			return nil
+		}
+
+		result := make([]stmt.Resolved, tgt.size)
+
+		for i := range tgt.size {
 			idx := *big.NewInt(int64(i))
 			result[i] = &stmt.Assign[symbol.Resolved]{
-				Targets: []lval.LVal[symbol.Resolved]{elemTargets[i]},
+				Targets: []lval.LVal[symbol.Resolved]{
+					lval.NewArray[symbol.Resolved](tgt.id, expr.NewConstant[symbol.Resolved](idx, 10)),
+				},
 				Source: &expr.ArrayAccess[symbol.Resolved]{
 					Id:       src.Variable,
 					Arg:      expr.NewConstant[symbol.Resolved](idx, 10),
@@ -336,6 +385,23 @@ func expandArrayAssign(
 
 		return result
 	case *expr.ExternAccess[symbol.Resolved]:
+		// Case a, b, ... = f(...)
+		srcTypes, ok := sourceArrayTypes(s.Source.Type(), len(targets), env)
+		if !ok {
+			return nil
+		}
+
+		var elemTargets []lval.LVal[symbol.Resolved]
+
+		for i, tgt := range targets {
+			srcArr := srcTypes[i].AsFixedArray(env)
+			if srcArr == nil || !srcArr.Size.HasFirst() || srcArr.Size.First() != tgt.size {
+				return nil
+			}
+
+			elemTargets = append(elemTargets, arrayElemTargets(tgt.id, tgt.size)...)
+		}
+
 		src.Args = expandArrayArgs(src.Args, mapping, env)
 
 		return []stmt.Resolved{&stmt.Assign[symbol.Resolved]{
