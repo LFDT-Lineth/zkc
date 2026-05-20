@@ -285,40 +285,6 @@ type arrayTarget struct {
 	size uint
 }
 
-// arrayElemTargets builds itemss[0]..itemss[n-1] lvals using the original array variable id.
-func arrayElemTargets(lhsID variable.Id, size uint) []lval.LVal[symbol.Resolved] {
-	elemTargets := make([]lval.LVal[symbol.Resolved], size)
-	for i := range size {
-		idx := *big.NewInt(int64(i))
-		elemTargets[i] = lval.NewArray[symbol.Resolved](
-			lhsID, expr.NewConstant[symbol.Resolved](idx, 10),
-		)
-	}
-
-	return elemTargets
-}
-
-// sourceArrayTypes returns the per-target source array types for a call result.
-func sourceArrayTypes(
-	srcType data.Type[symbol.Resolved], n int, env ast.Environment,
-) ([]data.Type[symbol.Resolved], bool) {
-	if n == 1 {
-		srcArr := srcType.AsFixedArray(env)
-		if srcArr == nil {
-			return nil, false
-		}
-
-		return []data.Type[symbol.Resolved]{srcArr}, true
-	}
-
-	srcTuple := srcType.AsTuple(env)
-	if srcTuple == nil || len(srcTuple.Types()) != n {
-		return nil, false
-	}
-
-	return srcTuple.Types(), true
-}
-
 // expandArrayAssign rewrites whole-array assignments into per-element targets.
 // Supported shapes:
 //   - a = b (one target, LocalAccess source)
@@ -363,9 +329,6 @@ func expandArrayAssign(
 
 		tgt := targets[0]
 		srcArr := s.Source.Type().AsFixedArray(env)
-		if srcArr == nil || !srcArr.Size.HasFirst() || srcArr.Size.First() != tgt.size {
-			return nil
-		}
 
 		result := make([]stmt.Resolved, tgt.size)
 
@@ -386,20 +349,15 @@ func expandArrayAssign(
 		return result
 	case *expr.ExternAccess[symbol.Resolved]:
 		// Case a, b, ... = f(...)
-		srcTypes, ok := sourceArrayTypes(s.Source.Type(), len(targets), env)
-		if !ok {
-			return nil
-		}
-
 		var elemTargets []lval.LVal[symbol.Resolved]
-
-		for i, tgt := range targets {
-			srcArr := srcTypes[i].AsFixedArray(env)
-			if srcArr == nil || !srcArr.Size.HasFirst() || srcArr.Size.First() != tgt.size {
-				return nil
+		for _, tgt := range targets {
+			for i := range tgt.size {
+				idx := *big.NewInt(int64(i))
+				elemTarget := lval.NewArray[symbol.Resolved](
+					tgt.id, expr.NewConstant[symbol.Resolved](idx, 10),
+				)
+				elemTargets = append(elemTargets, elemTarget)
 			}
-
-			elemTargets = append(elemTargets, arrayElemTargets(tgt.id, tgt.size)...)
 		}
 
 		src.Args = expandArrayArgs(src.Args, mapping, env)
