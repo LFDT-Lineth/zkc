@@ -244,7 +244,15 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		})
 	}
 	//
-	compiler := StmtCompiler{program, fn.Variables, registers, p.env, p.config.field, p.srcmaps, nil}
+	compiler := StmtCompiler{
+		components:  program,
+		variables:   fn.Variables,
+		registers:   registers,
+		environment: p.env,
+		field:       p.config.field,
+		srcmaps:     p.srcmaps,
+		quiet:       p.config.quiet,
+	}
 	//
 	for i, stmt := range fn.Code {
 		bootCode[i] = compiler.compileStatement(uint(i), mapping, stmt)

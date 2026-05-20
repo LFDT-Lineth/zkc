@@ -42,6 +42,8 @@ type StmtCompiler struct {
 	field       field.Config
 	srcmaps     source.Maps[any]
 	errors      []source.SyntaxError
+	// quiet suppresses printf output
+	quiet bool
 }
 
 func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorInstruction {
@@ -62,6 +64,10 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorI
 	case *stmt.Fail[symbol.Resolved]:
 		return p.compileFail(mapping, s.Chunks, s.Arguments)
 	case *stmt.Printf[symbol.Resolved]:
+		if p.quiet {
+			return instruction.NewVector[Instruction]()
+		}
+		//
 		return p.compilePrintf(mapping, s.Chunks, s.Arguments)
 	case *stmt.Return[symbol.Resolved]:
 		return instruction.NewVector[Instruction](instruction.NewReturn())

@@ -48,7 +48,10 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	var (
 		build    = GetBuildConfig[F](cmd, field)
 		observer = debug.TraceObserver[vm.Uint]{}
+		quiet    = GetFlag(cmd, "quiet")
 	)
+	// Suppress printf debug instructions when quiet mode is enabled.
+	build.config = build.config.Quiet(quiet)
 	// Force compilation of the word machine, which is what we execute.
 	build.wir = true
 	//
@@ -84,4 +87,5 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 //nolint:errcheck
 func init() {
 	rootCmd.AddCommand(debugCmd)
+	debugCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
 }
