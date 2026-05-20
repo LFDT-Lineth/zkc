@@ -4,7 +4,7 @@ pub output result(address:u8) -> (byte:u8)
 fn main() {
     var items:[u8;3]
     var items2:[u8;2]
-    items, items2  = fn_two_arrays()
+    items, items2 = fn_two_arrays()
     result[0] = items[0] + items2[0]
     result[1] = items[1] + items2[1]
     result[2] = items[2]

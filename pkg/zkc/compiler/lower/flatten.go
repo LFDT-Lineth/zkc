@@ -70,8 +70,8 @@ type varMapping struct {
 	size    uint
 }
 
-// expandFixedArrays builds the old→new id mapping and expands fixed-size array 
-// variables into scalars, expands whole-array assignment statements into element-wise 
+// expandFixedArrays builds the old→new id mapping and expands fixed-size array
+// variables into scalars, expands whole-array assignment statements into element-wise
 // array access assignments, and expands bare array arguments in ExternAccess calls
 // into individual indexed accesses (e.g. sum(items) becomes
 // sum(items[0], items[1], items[2])).  All expanded nodes use the original
@@ -81,6 +81,7 @@ func expandFixedArrays(
 ) (expandedVars []variable.ResolvedDescriptor, expandedCode []stmt.Resolved, hasArray bool) {
 	for oldID, v := range fn.Variables {
 		base := uint(len(expandedVars))
+
 		if vType := v.DataType.AsFixedArray(env); vType != nil {
 			size := vType.Size.First()
 
@@ -96,6 +97,7 @@ func expandFixedArrays(
 			mapping[oldID] = varMapping{newBase: base, isArray: true, size: size}
 		} else {
 			mapping[oldID] = varMapping{newBase: base}
+
 			expandedVars = append(expandedVars, v)
 		}
 	}
@@ -344,6 +346,7 @@ func expandWholeArrayAssign(
 	case *expr.ExternAccess[symbol.Resolved]:
 		// Case a, b, ... = f(...)
 		var elemTargets []lval.LVal[symbol.Resolved]
+
 		for _, tgt := range targets {
 			for i := range tgt.size {
 				idx := *big.NewInt(int64(i))
@@ -379,12 +382,13 @@ func rewriteFixedArrayStmt(
 
 		return s
 	case *stmt.IfGoto[symbol.Resolved]:
-		if c, ok := s.Cond.(*expr.Cmp[symbol.Resolved]); ok {
-			c.Left = rewriteArrayExpression(c.Left, mapping, declarations, env)
-			c.Right = rewriteArrayExpression(c.Right, mapping, declarations, env)
-		} else {
+		c, ok := s.Cond.(*expr.Cmp[symbol.Resolved])
+		if !ok {
 			panic(fmt.Sprintf("unknown condition encountered during fixed-array lowering: %T", s.Cond))
 		}
+
+		c.Left = rewriteArrayExpression(c.Left, mapping, declarations, env)
+		c.Right = rewriteArrayExpression(c.Right, mapping, declarations, env)
 
 		return s
 	case *stmt.Printf[symbol.Resolved]:
