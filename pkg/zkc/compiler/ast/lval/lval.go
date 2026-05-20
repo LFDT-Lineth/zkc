@@ -110,8 +110,6 @@ func String[S symbol.Symbol[S]](e LVal[S], mapping variable.Map[S]) string {
 		return fmt.Sprintf("%s[%s]", e.Name.String(), builder.String())
 	case *Array[S]:
 		return fmt.Sprintf("%s[%s]", mapping.Variable(e.Id).Name, e.Arg.String(mapping))
-	case *BitDestruct[S]:
-		return e.String(mapping)
 	default:
 		panic("unknown lval")
 	}
