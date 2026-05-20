@@ -285,14 +285,11 @@ type arrayTarget struct {
 	size uint
 }
 
-// expandArrayAssign rewrites whole-array assignments into per-element targets.
-// Supported shapes:
+// expandArrayAssign expands whole-array to per-element assignments.
+// Supported cases:
 //   - a = b (one target, LocalAccess source)
 //   - a = f(...) (one target, function returns one array)
 //   - a, b, ... = f(...) (several targets, function returns a matching tuple of arrays)
-//
-// All returned statements still reference the original variable IDs;
-// the rewriting phase remaps them.
 func expandArrayAssign(
 	s *stmt.Assign[symbol.Resolved], mapping []varMapping, env ast.Environment,
 ) []stmt.Resolved {
