@@ -18,7 +18,7 @@ import (
 
 // Observer is a generic interface for extract information before and after an
 // execution step of the VM.  For example, to generate debugging information.
-type Observer[W any, M Machine[W]] = trace.Observer[W, M]
+type Observer[W MachineWord[W], M Machine[W]] = trace.Observer[W, M]
 
 // BaseObserver is an observer for a base machin
 type BaseObserver[W Word[W]] = trace.Observer[W, *WordMachine[W]]

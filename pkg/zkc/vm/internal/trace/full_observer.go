@@ -54,29 +54,30 @@ func (p *FullObserver[W, M]) Initialise(machine M) {
 
 // PreExecution implementation for Observer interface
 func (p *FullObserver[W, M]) PreExecution(machine M) {
-	var depth = p.callstack.Len()
-	//
-	if machine.Depth() > depth {
-		p.enterFunction(machine)
-	} else if machine.Depth() < depth {
-		p.leaveFunction(machine)
-	} else if depth != 0 {
-		// Extract enclosing frame
-		var frame = machine.StackFrame(depth - 1)
-		// Check whether enclosing vector is finishing (i.e. about to execute a
-		// terminal instruction which either terminates the enclosing function, or
-		// moves the program counter to the next vector instruction).
-		if next, end := isVectorTerminal(frame, machine); next || end {
-			var (
-				contents = loadWords(0, frame.Width(), frame)
-				state    = NewState(frame.PC().Macro(), end, frame.Width(), contents)
-			)
-			// Record state
-			sf := p.callstack.Pop()
-			sf.states = append(sf.states, state)
-			p.callstack.Push(sf)
-		}
-	}
+	// var depth = p.callstack.Len()
+	// //
+	// if machine.Depth() > depth {
+	// 	p.enterFunction(machine)
+	// } else if machine.Depth() < depth {
+	// 	p.leaveFunction(machine)
+	// } else if depth != 0 {
+	// 	// Extract enclosing frame
+	// 	var frame = machine.StackFrame(depth - 1)
+	// 	// Check whether enclosing vector is finishing (i.e. about to execute a
+	// 	// terminal instruction which either terminates the enclosing function, or
+	// 	// moves the program counter to the next vector instruction).
+	// 	if next, end := isVectorTerminal(frame, machine); next || end {
+	// 		var (
+	// 			contents = loadWords(0, frame.Width(), frame)
+	// 			state    = NewState(frame.PC().Macro(), end, frame.Width(), contents)
+	// 		)
+	// 		// Record state
+	// 		sf := p.callstack.Pop()
+	// 		sf.states = append(sf.states, state)
+	// 		p.callstack.Push(sf)
+	// 	}
+	// }
+	panic("todo")
 }
 
 // PostExecution implementation for Observer interface
@@ -175,17 +176,18 @@ func (p *FullObserver[W, M]) assignControlRegisters(m *function.Function[instruc
 }
 
 func (p *FullObserver[W, M]) enterFunction(machine M) {
-	var (
-		depth = p.callstack.Len()
-		// Extract machine frame
-		frame = machine.StackFrame(depth)
-	)
-	// initialise empty stack frame
-	p.callstack.Push(StackFrame[W]{id: frame.Function()})
-	// sanity check
-	if depth+1 != machine.Depth() {
-		panic("incorrect machine depth")
-	}
+	// var (
+	// 	depth = p.callstack.Len()
+	// 	// Extract machine frame
+	// 	frame = machine.StackFrame(depth)
+	// )
+	// // initialise empty stack frame
+	// p.callstack.Push(StackFrame[W]{id: frame.Function()})
+	// // sanity check
+	// if depth+1 != machine.Depth() {
+	// 	panic("incorrect machine depth")
+	// }
+	panic("todo")
 }
 
 func (p *FullObserver[W, M]) leaveFunction(machine M) {
@@ -235,19 +237,6 @@ func NewState[W any](pc uint, terminal bool, width uint, values []W) State[W] {
 // Helpers
 // ============================================================================
 
-func loadWords[W any](start, end uint, frame machine.Frame[W]) []W {
-	var (
-		n     = end - start
-		words = make([]W, n)
-	)
-	// Read words
-	for i := range n {
-		words[i] = frame.Load(i + start)
-	}
-	// Done
-	return words
-}
-
 func isMultiLineFunction(m machine.Module) bool {
 	if f, ok := m.(*function.Function[instruction.Word]); ok {
 		return !f.IsAtomic()
@@ -260,27 +249,29 @@ func isMultiLineFunction(m machine.Module) bool {
 // vector instruction.  There are two ways a vector instruction can terminate.
 // Either it returns entirely from the enclosing function, or its jumps to the
 // next instruction.
-func isVectorTerminal[W any](frame machine.Frame[W], m machine.Core[W]) (next, end bool) {
-	var (
-		pc = frame.PC()
-		// Determine enclosing function
-		fun = m.Module(frame.Function()).(*function.Function[instruction.Word])
-		// Determine enclosing vector
-		vector = fun.CodeAt(pc.Macro())
-		// Determine specific (micro) instruction
-		insn = vector.Codes[pc.Micro()]
-	)
-	// See what we've got.
-	switch insn.(type) {
-	case *instruction.Return,
-		*instruction.Fail:
-		return false, true
-	case *instruction.Jump:
-		return true, false
-	default:
-		return false, false
-	}
-}
+//
+// func isVectorTerminal[W machine.BaseWord[W], I instruction.Instruction](frame machine.StackFrame[W, I],
+// m machine.Core[W]) (next, end bool) {
+// 	var (
+// 		pc = frame.PC()
+// 		// Determine enclosing function
+// 		fun = m.Module(frame.Function()).(*function.Function[instruction.Word])
+// 		// Determine enclosing vector
+// 		vector = fun.CodeAt(pc.Macro())
+// 		// Determine specific (micro) instruction
+// 		insn = vector.Codes[pc.Micro()]
+// 	)
+// 	// See what we've got.
+// 	switch insn.(type) {
+// 	case *instruction.Return,
+// 		*instruction.Fail:
+// 		return false, true
+// 	case *instruction.Jump:
+// 		return true, false
+// 	default:
+// 		return false, false
+// 	}
+// }
 
 func traceColumns[W any](regs []register.Register, cols []array.MutArray[W]) []lt.Column[W] {
 	var ltcols = make([]lt.Column[W], len(cols))

@@ -14,19 +14,16 @@ package machine
 
 import (
 	"fmt"
-	"strings"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
 )
 
 // Executor --- see documentation on vm.Executor
-type Executor[W any, I any] interface {
+type Executor[W BaseWord[W], I Instruction] interface {
 	// Execute the given instruction in the given frame with the given register
 	// descriptors, possibly returning an error if something goes wrong (e.g. an
 	// overflow).
-	Execute(insn I, frame []W, regs []register.Register) error
+	Execute(insn I, frame StackFrame[W, I]) error
 }
 
 // Core represents the state of an executing machine, including the state of
@@ -37,7 +34,7 @@ type Executor[W any, I any] interface {
 // machine may be operating over instructions compiled into bytes (for efficient
 // execution), or instructions represented at a higher level (e.g. for analysis
 // or compilation).
-type Core[W any] interface {
+type Core[W BaseWord[W]] interface {
 	// Boot this machine by starting the given function with the given inputs.  This
 	// function assumes the given inputs are correctly formed, and will: (1) ingore
 	// unknown inputs; (2) initialise empty memories when no input is given for
@@ -53,122 +50,18 @@ type Core[W any] interface {
 	Modules() []Module
 	// Depth returns the depth of the call stack.
 	Depth() uint
-	// StackFrame returns the nth stack frame, where n==0 returns the root frame.
-	StackFrame(n uint) Frame[W]
-	// Enter a new function on the call-stack, whilst initialising its arguments
-	// with those values in the current frame taken from the given argument
-	// registers.  In addition, the return registers are saved for when (if) the
-	// function returns.  Specifically, the return registers will be assigned
-	// the return values from the callee.
-	Enter(id uint, frame []W, args, returns []register.Id) error
-	// Leave pops the current stack frame off the stack, whilst ensuring the
-	// return values are written into the return registers.  This also returns
-	// true if the last frame was popped off the stack (i.e. the machine has
-	// terminated).
-	Leave() (bool, error)
 }
 
 // Module represents an either a function or memory within the machine.
 type Module = base.Module
 
 // ============================================================================
-// Frame
-// ============================================================================
-
-// Frame represents an executing function on the call stack.  Specifically,
-// it contains the state of all registers at the current point of execution for
-// that function.
-type Frame[W any] struct {
-	// Function identifier
-	functionId uint
-	// Program Counter
-	pc ProgramCounter
-	// Number of inputs (i.e. arguments)
-	args uint
-	// Registers
-	registers []W
-	// Returns identifies those registers in the target frame which should be
-	// assigned the return values of this call.
-	returns []register.Id
-}
-
-// NewFrame constructs an initially empty frame for a function with a given
-// number of registers.
-func NewFrame[W any](fid, width, args uint, returns []register.Id) Frame[W] {
-	return Frame[W]{
-		functionId: fid,
-		pc:         ProgramCounter{0, 0},
-		registers:  make([]W, width),
-		args:       args,
-		returns:    returns,
-	}
-}
-
-// Function identifies the function to which this stack frame corresponds.
-func (p *Frame[W]) Function() uint {
-	return p.functionId
-}
-
-// PC returns the current Program Counter position.
-func (p *Frame[W]) PC() ProgramCounter {
-	return p.pc
-}
-
-// Goto sets the Program Counter to a given position.
-func (p *Frame[W]) Goto(pc ProgramCounter) {
-	p.pc = pc
-}
-
-// Load the value of the ith register from this stack frame.
-func (p *Frame[W]) Load(reg uint) W {
-	return p.registers[reg]
-}
-
-// Return the value of the ith return (i.e. output) register from this stack
-// frame.
-func (p *Frame[W]) Return(reg uint) W {
-	return p.registers[p.args+reg]
-}
-
-// Store a given value into the ith register of this stack frame, overwriting
-// its previous contents.
-func (p *Frame[W]) Store(reg uint, value W) {
-	p.registers[reg] = value
-}
-
-// Width returns the number of values in this stack frame.
-func (p *Frame[W]) Width() uint {
-	return uint(len(p.registers))
-}
-
-// SignatureOf returns a simple string representation of the enclosing function
-// for the given frame, including its arguments and PC position.
-func SignatureOf[W BaseWord[W], I Instruction](frame Frame[W], modules []Module) string {
-	var (
-		builder strings.Builder
-		fn      = modules[frame.Function()].(*function.Function[I])
-	)
-	//
-	builder.WriteString(fn.Name())
-	builder.WriteString("(")
-
-	for i := 0; i != int(fn.NumInputs()); i++ {
-		if i != 0 {
-			builder.WriteString(",")
-		}
-
-		builder.WriteString("0x")
-		builder.WriteString(frame.registers[i].Text(16))
-	}
-
-	builder.WriteString(")")
-	//
-	return builder.String()
-}
-
-// ============================================================================
 // Program Counter
 // ============================================================================
+
+// PC_UNUSED represents the location 0,0.  It is intended to clarify situations
+// where the given PC value is not actually used.
+var PC_UNUSED = ProgramCounter{}
 
 // ProgramCounter --- see vm.ProgramCounter for documentation.
 type ProgramCounter struct {

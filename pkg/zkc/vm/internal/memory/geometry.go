@@ -67,33 +67,29 @@ func (p Geometry[W]) Registers() []register.Register {
 	return p.registers
 }
 
-// Decode maps address (a tuple of words representing a logical memory address)
-// to the half-open index range [start, end) within the backing flat slice.  The
-// length end-start always equals dataGeometry, i.e. the number of data words
-// per row.
+// AddressRegisters returns the subset of registers used for this memory's
+// address lines.
+func (p Geometry[W]) AddressRegisters() []register.Register {
+	return p.registers[:p.numInputs]
+}
+
+// DataRegisters returns the subset of registers used for this memory's
+// data lines.
+func (p Geometry[W]) DataRegisters() []register.Register {
+	return p.registers[p.numInputs:]
+}
+
+// Decode maps address (a tuple of words representing a logical memory
+// address) to the half-open index range [start, end) within the backing flat
+// slice.  The length end-start always equals dataGeometry, i.e. the number of
+// data words per row.
 //
 // The linear row index is computed by packing the address components
 // big-endian: each component is shifted left by the total bit width of all
 // subsequent components, then OR-ed in.  For a scalar address this reduces to
 // index = address[0]; for a tuple (u8, u16) it gives index = address[0]<<16 |
 // address[1].
-func (p Geometry[W]) Decode(address []W) (start, end uint64) {
-	var index uint64
-
-	for i, component := range address {
-		var bitwidth = uint64(p.registers[i].Width())
-
-		index = (index << bitwidth) | component.Uint64()
-	}
-
-	start = index * uint64(p.numOutputs)
-
-	return start, start + uint64(p.numOutputs)
-}
-
-// FrameDecode operates like Decode, but reads the address values indirectly
-// from the enclosing frame.
-func (p Geometry[W]) FrameDecode(frame []W, address []register.Id) (start, end uint64) {
+func (p Geometry[W]) Decode(frame []W, address []register.Id) (start, end uint64) {
 	var index uint64
 
 	for i, r := range address {

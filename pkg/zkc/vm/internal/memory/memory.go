@@ -16,7 +16,6 @@ import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/util"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
 )
@@ -49,16 +48,12 @@ type Memory[W util.Uinter64] interface {
 	// Initialise this memory with the given contents.  This will overwrite any
 	// existing contents.
 	Initialise(contents []W)
-	// Read (indirect) a given data-tuple from a given address-tuple. The
-	// address tuple is formed from the "frame" (i.e. the register-file) using
-	// the given register identifiers and, likewise, the target registers are
-	// given in data.
-	Read(frame []W, address []register.Id, data []register.Id) error
-	// Write (indirect) a given data-tuple at a given address-tuple.  The
-	// address tuple is formed from the "frame" (i.e. the register-file) using
-	// the given register identifiers and, likewise, the source registers are
-	// given in data.
-	Write(frame []W, address []register.Id, data []register.Id) error
+	// Read the value at a given physical address within this memory, possibly
+	// producing an error (e.g. for an out-of-bounds access).
+	Read(address uint64) (W, error)
+	// Write to a given physical address within this memory, possibly
+	// producing an error (e.g. for an out-of-bounds access).
+	Write(address uint64, value W) error
 }
 
 // InputOutput identifiers memory used to represent inputs or outputs.  The main

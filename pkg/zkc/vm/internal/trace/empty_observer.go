@@ -15,7 +15,7 @@ package trace
 import "github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
 
 // EmptyObserver does nothing
-type EmptyObserver[W any, M machine.Core[W]] struct {
+type EmptyObserver[W machine.BaseWord[W], M machine.Core[W]] struct {
 }
 
 // Initialise implementation for Observer interface

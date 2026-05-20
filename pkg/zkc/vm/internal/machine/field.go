@@ -13,7 +13,6 @@
 package machine
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 )
@@ -36,7 +35,7 @@ type FieldExecutor[F field.Element[F]] struct {
 }
 
 // Execute implementation for Executor interface.
-func (p FieldExecutor[F]) Execute(insn instruction.Field, frame []F, regs []register.Register) (err error) {
+func (p FieldExecutor[F]) Execute(insn instruction.Field, frame StackFrame[F, instruction.Field]) (err error) {
 	panic("got here")
 }
 

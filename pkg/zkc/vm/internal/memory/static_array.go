@@ -96,25 +96,16 @@ func (p *StaticArray[W]) Geometry() Geometry[W] {
 }
 
 // Read implementation for Memory interface.
-func (p *StaticArray[W]) Read(frame []W, address []register.Id, data []register.Id) error {
-	var start, _ = p.geometry.FrameDecode(frame, address)
-	//
-	for i := range data {
-		frame[data[i].Unwrap()] = p.data[uint64(i)+start]
-	}
-	//
-	return nil
+func (p *StaticArray[W]) Read(address uint64) (W, error) {
+	return p.data[address], nil
 }
 
 // Write implementation for Memory interface.
-func (p *StaticArray[W]) Write(frame []W, address []register.Id, data []register.Id) error {
-	var start, end = p.geometry.FrameDecode(frame, address)
-	// expand memory if needed
-	p.data = expand(p.data, end)
-	// copy over data
-	for i := range data {
-		p.data[uint64(i)+start] = frame[data[i].Unwrap()]
-	}
+func (p *StaticArray[W]) Write(address uint64, value W) error {
+	// ensure sufficient space
+	p.data = expand(p.data, address+1)
+	//
+	p.data[address] = value
 	//
 	return nil
 }
@@ -149,13 +140,14 @@ func (p *StaticArray[W]) Width() uint {
 // at least n elements it is returned as-is.  Otherwise capacity is grown if
 // needed (via slices.Grow, which uses the runtime's append-style growth
 // heuristic) and the length is extended to n.
-func expand[T any](slice []T, n uint64) []T {
-	m := uint64(len(slice))
-	if n <= m {
-		return slice
+func expand[W any](data []W, n uint64) []W {
+	m := uint64(len(data))
+	if n > m {
+		//
+		return slices.Grow(data, int(n-m))[:n]
 	}
 	//
-	return slices.Grow(slice, int(n-m))[:n]
+	return data
 }
 
 // ============================================================================

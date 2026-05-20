@@ -30,26 +30,15 @@ type RandomAccess[W util.Uinter64] struct {
 	StaticArray[W]
 }
 
-// Read implementation for Memory interface.
-func (p *RandomAccess[W]) Read(frame []W, address []register.Id, data []register.Id) error {
-	var start, _ = p.geometry.FrameDecode(frame, address)
-	//
-	for i := range data {
-		frame[data[i].Unwrap()] = p.read(uint64(i) + start)
-	}
-	//
-	return nil
-}
-
 // Internal read function handles out-of-bounds accesses.
-func (p *RandomAccess[W]) read(address uint64) W {
-	if address < uint64(len(p.data)) {
-		return p.data[address]
-	}
-	// out-of-bounds access
-	var zero W
+func (p *RandomAccess[W]) Read(address uint64) (W, error) {
+	var val W
 	//
-	return zero
+	if address < uint64(len(p.data)) {
+		val = p.data[address]
+	}
+	//
+	return val, nil
 }
 
 // NewRandomAccess constructs an empty random-access memory which employs a

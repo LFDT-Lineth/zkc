@@ -31,7 +31,7 @@ import (
 // field elements directly.  Furthermore, a machine may be operating over
 // instructions compiled into bytes (for efficient execution), or instructions
 // represented at a higher level (e.g. for analysis or compilation).
-type Machine[W any] = machine.Core[W]
+type Machine[W MachineWord[W]] = machine.Core[W]
 
 // Executor captures the notion of an instruction-specific executor.  That is,
 // an executor designed for executing certain instructions over a given type of
@@ -39,12 +39,12 @@ type Machine[W any] = machine.Core[W]
 // executor is that its really only intended for straight-line instructions, and
 // other control-flow instructions (e.g. skipping, calling, etc) are handled by
 // the base machine (since they are common to all machines).
-type Executor[W any, I any] = machine.Executor[W, I]
+type Executor[W MachineWord[W], I Instruction] = machine.Executor[W, I]
 
 // StackFrame captures the state of an executing function on the call stack.
 // Specifically, it contains the state of all registers at the current point of
 // execution.
-type StackFrame[W any] = machine.Frame[W]
+type StackFrame[W MachineWord[W], I Instruction] = machine.StackFrame[W, I]
 
 // ProgramCounter abstracts the notion of a program counter in a machine.  A key
 // aspect is that it two dimensional to account for so-called "vector"
@@ -52,14 +52,14 @@ type StackFrame[W any] = machine.Frame[W]
 // it identifies the (micro) instruction within that being executed.
 type ProgramCounter = machine.ProgramCounter
 
-// BaseWord captures the minimal set of requirements for a word used in the base
+// MachineWord captures the minimal set of requirements for a word used in the base
 // machine.
-type BaseWord[W any] = machine.BaseWord[W]
+type MachineWord[W any] = machine.BaseWord[W]
 
 // BaseMachine provides a fundamental machine implementation.  The intention is
 // that other machine variations build off this by providing executors specific
 // to their instruction set.
-type BaseMachine[W BaseWord[W], I Instruction, E Executor[W, I]] = machine.Base[W, I, E]
+type BaseMachine[W MachineWord[W], I Instruction, E Executor[W, I]] = machine.Base[W, I, E]
 
 // ============================================================================
 // Word Machine
@@ -139,7 +139,7 @@ func BootAndExecute[W Word[W], M Machine[W]](m M, input map[string][]byte, n uin
 
 // ExecuteAll executes a given machine to completion in chunks of n steps,
 // returning the number of steps executed and/or any error arising.
-func ExecuteAll[W any, M Machine[W]](machine M, n uint) (uint, error) {
+func ExecuteAll[W MachineWord[W], M Machine[W]](machine M, n uint) (uint, error) {
 	var nsteps uint
 	//
 	for {

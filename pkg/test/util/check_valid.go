@@ -162,10 +162,12 @@ func runExecutionTest[W vm.Word[W]](t *testing.T, wm vm.Machine[W], test TestCas
 		// decode inputs / outputs
 		inputs, outputs = decodeInputsOutputs(t, wm, test.data)
 	)
+	//
+	//t.Logf("[%s]%s:%d", cfg.Name, test.filename, test.line)
 	// Execute machine
 	if err = wm.Boot("main", inputs); err == nil {
 		// Execute it
-		if _, err = vm.ExecuteAll(wm, 1024); err == nil && test.expected {
+		if _, err = vm.ExecuteAll(wm, 131072); err == nil && test.expected {
 			// Check outputs match
 			errs = append(errs, checkExpectedOutputs(outputs, wm)...)
 		} else if err == nil && !test.expected {

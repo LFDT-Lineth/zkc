@@ -75,17 +75,19 @@ func (p *TraceObserver[W]) enterFunction(machine *vm.WordMachine[W]) {
 	)
 	//
 	p.depth = n
-	p.fun = machine.Module(frame.Function()).(*vm.Function[vm.WordInstruction])
+	p.fun = frame.Function()
 	p.insn = nil
 }
 
 func (p *TraceObserver[W]) writeInstruction(machine *vm.WordMachine[W]) {
 	var (
 		frame = machine.StackFrame(p.depth - 1)
+		pc    = frame.PC()
+		vec   = frame.Vector(pc.Macro())
 	)
 	//
-	p.insn = decode(frame, p.fun)
-	p.pc = frame.PC()
+	p.pc = pc
+	p.insn = vec.Codes[pc.Micro()]
 }
 
 func (p *TraceObserver[W]) writeState(machine *vm.WordMachine[W]) {
@@ -100,11 +102,11 @@ func (p *TraceObserver[W]) writeState(machine *vm.WordMachine[W]) {
 	// Definitions are added last so that when a register appears on both sides, the
 	// post-execution value is shown.
 	for _, r := range p.insn.Uses() {
-		values[r.Unwrap()] = frame.Load(r.Unwrap()).Text(16)
+		values[r.Unwrap()] = frame.Load(r).Text(16)
 	}
 
 	for _, r := range p.insn.Definitions() {
-		values[r.Unwrap()] = frame.Load(r.Unwrap()).Text(16)
+		values[r.Unwrap()] = frame.Load(r).Text(16)
 	}
 	//
 	annotated := &annotatedMap[W]{base: base, values: values}
@@ -115,53 +117,45 @@ func (p *TraceObserver[W]) writeState(machine *vm.WordMachine[W]) {
 func (p *TraceObserver[W]) callStack(machine *vm.WordMachine[W]) string {
 	var builder strings.Builder
 	//
-	for i := uint(0); i < p.depth; i++ {
-		var (
-			ith = machine.StackFrame(i)
-			fun = machine.Module(ith.Function()).(*vm.Function[vm.WordInstruction])
-		)
+	for i := p.depth; i > 0; i = i - 1 {
+		var ith = machine.StackFrame(i - 1)
 		//
-		if i+1 == p.depth {
-			inputs := functionInputs(ith, fun)
-			fmt.Fprintf(&builder, "> %s(%s) ", fun.Name(), inputs)
-		} else {
-			fmt.Fprintf(&builder, "> %s ", fun.Name())
-		}
+		fmt.Fprintf(&builder, "> %s ", ith.Signature())
 	}
 	//
 	return builder.String()
 }
 
-func functionInputs[W vm.Word[W], I vm.Instruction](frame vm.StackFrame[W],
-	fun *vm.Function[I]) string {
-	//
-	var builder strings.Builder
+// func functionInputs[W vm.Word[W], I vm.Instruction](frame vm.StackFrame[W],
+// 	fun *vm.Function[I]) string {
+// 	//
+// 	var builder strings.Builder
 
-	for i, r := range fun.Registers() {
-		var ith = frame.Load(uint(i))
-		//
-		if !r.IsInput() {
-			break
-		} else if i != 0 {
-			builder.WriteString(", ")
-		}
-		//
-		fmt.Fprintf(&builder, "%s=0x%s", r.Name(), ith.Text(16))
-	}
+// 	for i, r := range fun.Registers() {
+// 		var ith = frame.Load(uint(i))
+// 		//
+// 		if !r.IsInput() {
+// 			break
+// 		} else if i != 0 {
+// 			builder.WriteString(", ")
+// 		}
+// 		//
+// 		fmt.Fprintf(&builder, "%s=0x%s", r.Name(), ith.Text(16))
+// 	}
 
-	return builder.String()
-}
+// 	return builder.String()
+// }
 
-func decode[W vm.Word[W]](frame vm.StackFrame[W],
-	fn *vm.Function[vm.WordInstruction]) vm.WordInstruction {
-	//
-	var (
-		pc   = frame.PC()
-		insn = fn.CodeAt(pc.Macro())
-	)
-	// nolint
-	return insn.Codes[pc.Micro()]
-}
+// func decode[W vm.Word[W]](frame vm.StackFrame[W],
+// 	fn *vm.Function[vm.WordInstruction]) vm.WordInstruction {
+// 	//
+// 	var (
+// 		pc   = frame.PC()
+// 		insn = fn.CodeAt(pc.Macro())
+// 	)
+// 	// nolint
+// 	return insn.Codes[pc.Micro()]
+// }
 
 // annotatedMap wraps a SystemMap and annotates each register name with its
 // current value as "[0xVAL]", producing inline value display in instruction strings.
