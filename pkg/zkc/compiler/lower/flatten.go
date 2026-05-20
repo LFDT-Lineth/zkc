@@ -372,19 +372,24 @@ func rewriteFixedArrayStmt(
 	switch s := s.(type) {
 	case *stmt.Assign[symbol.Resolved]:
 		for i, lv := range s.Targets {
-			s.Targets[i] = rewriteFixedArrayLVal(lv, mapping, declarations, env)
+			s.Targets[i] = rewriteLValArray(lv, mapping, declarations, env)
 		}
 
-		s.Source = rewriteFixedArrayExpr(s.Source, mapping, declarations, env)
+		s.Source = rewriteArrayExpression(s.Source, mapping, declarations, env)
 
 		return s
 	case *stmt.IfGoto[symbol.Resolved]:
-		s.Cond = rewriteFixedArrayCondition(s.Cond, mapping, declarations, env)
+		if c, ok := s.Cond.(*expr.Cmp[symbol.Resolved]); ok {
+			c.Left = rewriteArrayExpression(c.Left, mapping, declarations, env)
+			c.Right = rewriteArrayExpression(c.Right, mapping, declarations, env)
+		} else {
+			panic(fmt.Sprintf("unknown condition encountered during fixed-array lowering: %T", s.Cond))
+		}
 
 		return s
 	case *stmt.Printf[symbol.Resolved]:
 		for i, arg := range s.Arguments {
-			s.Arguments[i] = rewriteFixedArrayExpr(arg, mapping, declarations, env)
+			s.Arguments[i] = rewriteArrayExpression(arg, mapping, declarations, env)
 		}
 
 		return s
@@ -395,7 +400,7 @@ func rewriteFixedArrayStmt(
 	}
 }
 
-func rewriteFixedArrayExpr(
+func rewriteArrayExpression(
 	e expr.Resolved, mapping []varMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) expr.Resolved {
@@ -405,7 +410,7 @@ func rewriteFixedArrayExpr(
 		//
 		return e
 	case *expr.ArrayAccess[symbol.Resolved]:
-		rewriteFixedArrayExpr(e.Arg, mapping, declarations, env)
+		rewriteArrayExpression(e.Arg, mapping, declarations, env)
 
 		m := mapping[e.Id]
 		if !m.isArray {
@@ -426,67 +431,67 @@ func rewriteFixedArrayExpr(
 
 		return result
 	case *expr.Add[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.Sub[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.Mul[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.Div[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.Rem[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.Shl[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.Shr[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.BitwiseAnd[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.BitwiseOr[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.Xor[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.BitwiseNot[symbol.Resolved]:
-		e.Expr = rewriteFixedArrayExpr(e.Expr, mapping, declarations, env)
+		e.Expr = rewriteArrayExpression(e.Expr, mapping, declarations, env)
 		return e
 	case *expr.LogicalAnd[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.LogicalOr[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 		return e
 	case *expr.LogicalNot[symbol.Resolved]:
-		e.Expr = rewriteFixedArrayExpr(e.Expr, mapping, declarations, env)
+		e.Expr = rewriteArrayExpression(e.Expr, mapping, declarations, env)
 		return e
 	case *expr.Cast[symbol.Resolved]:
-		e.Expr = rewriteFixedArrayExpr(e.Expr, mapping, declarations, env)
+		e.Expr = rewriteArrayExpression(e.Expr, mapping, declarations, env)
 		return e
 	case *expr.Concat[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
 
 		return e
 	case *expr.Cmp[symbol.Resolved]:
-		e.Left = rewriteFixedArrayExpr(e.Left, mapping, declarations, env)
-		e.Right = rewriteFixedArrayExpr(e.Right, mapping, declarations, env)
+		e.Left = rewriteArrayExpression(e.Left, mapping, declarations, env)
+		e.Right = rewriteArrayExpression(e.Right, mapping, declarations, env)
 
 		return e
 	case *expr.Ternary[symbol.Resolved]:
-		e.Cond = rewriteFixedArrayExpr(e.Cond, mapping, declarations, env)
-		e.IfTrue = rewriteFixedArrayExpr(e.IfTrue, mapping, declarations, env)
-		e.IfFalse = rewriteFixedArrayExpr(e.IfFalse, mapping, declarations, env)
+		e.Cond = rewriteArrayExpression(e.Cond, mapping, declarations, env)
+		e.IfTrue = rewriteArrayExpression(e.IfTrue, mapping, declarations, env)
+		e.IfFalse = rewriteArrayExpression(e.IfFalse, mapping, declarations, env)
 
 		return e
 	case *expr.ExternAccess[symbol.Resolved]:
-		rewriteFixedArrayExprs(e.Args, mapping, declarations, env)
+		rewriteArrayExpressions(e.Args, mapping, declarations, env)
 		return e
 	case *expr.Const[symbol.Resolved]:
 		return e
@@ -495,31 +500,16 @@ func rewriteFixedArrayExpr(
 	}
 }
 
-func rewriteFixedArrayExprs(
+func rewriteArrayExpressions(
 	exprs []expr.Resolved, mapping []varMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) {
 	for i, e := range exprs {
-		exprs[i] = rewriteFixedArrayExpr(e, mapping, declarations, env)
+		exprs[i] = rewriteArrayExpression(e, mapping, declarations, env)
 	}
 }
 
-func rewriteFixedArrayCondition(
-	c expr.ResolvedCondition, mapping []varMapping,
-	declarations []codegen.Declaration, env ast.Environment,
-) expr.ResolvedCondition {
-	switch c := c.(type) {
-	case *expr.Cmp[symbol.Resolved]:
-		c.Left = rewriteFixedArrayExpr(c.Left, mapping, declarations, env)
-		c.Right = rewriteFixedArrayExpr(c.Right, mapping, declarations, env)
-
-		return c
-	default:
-		panic(fmt.Sprintf("unknown condition encountered during fixed-array lowering: %T", c))
-	}
-}
-
-func rewriteFixedArrayLVal(
+func rewriteLValArray(
 	l lval.Resolved, mapping []varMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) lval.Resolved {
@@ -532,7 +522,7 @@ func rewriteFixedArrayLVal(
 
 		return l
 	case *lval.Array[symbol.Resolved]:
-		rewriteFixedArrayExpr(l.Arg, mapping, declarations, env)
+		rewriteArrayExpression(l.Arg, mapping, declarations, env)
 
 		m := mapping[l.Id]
 		if !m.isArray {
@@ -550,7 +540,7 @@ func rewriteFixedArrayLVal(
 
 		return &lval.Variable[symbol.Resolved]{Ids: []variable.Id{m.newBase + idx}}
 	case *lval.MemAccess[symbol.Resolved]:
-		rewriteFixedArrayExprs(l.Args, mapping, declarations, env)
+		rewriteArrayExpressions(l.Args, mapping, declarations, env)
 		return l
 	default:
 		panic(fmt.Sprintf("unknown lval encountered during fixed-array lowering: %T", l))

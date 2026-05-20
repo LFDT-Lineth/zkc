@@ -415,6 +415,14 @@ func (p *Linker) linkLVal(lv lval.Unresolved) (lval.Resolved, []source.SyntaxErr
 		nlval = lval.NewMemAccess(name, index)
 		//
 		errs = append(errs1, errs2...)
+	case *lval.BitDestruct[symbol.Unresolved]:
+		parts := make([]lval.Resolved, len(lv.Parts))
+		for i, part := range lv.Parts {
+			var errs1 []source.SyntaxError
+			parts[i], errs1 = p.linkLVal(part)
+			errs = append(errs, errs1...)
+		}
+		nlval = lval.NewBitDestruct(parts...)
 	default:
 		return nil, p.srcmap.SyntaxErrors(lv, "unknown lval encountered")
 	}

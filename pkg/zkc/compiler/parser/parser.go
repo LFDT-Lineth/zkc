@@ -2029,6 +2029,51 @@ func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
 	return lv, nil
 }
 
+func mergeBareVariableParts(parts []LVal) (LVal, bool) {
+	ids := make([]variable.Id, 0, len(parts))
+	for _, part := range parts {
+		v, ok := part.(*lval.Variable[symbol.Unresolved])
+		if !ok || len(v.Ids) != 1 {
+			return nil, false
+		}
+		ids = append(ids, v.Ids[0])
+	}
+	return lval.NewVariable[symbol.Unresolved](ids...), true
+}
+
+func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
+	var (
+		start = p.index
+		errs  []source.SyntaxError
+	)
+	//
+	part, errs := p.parseLValPart(env)
+	if len(errs) > 0 {
+		return nil, errs
+	}
+	//
+	parts := []LVal{part}
+	for p.match(COLONCOLON) {
+		part, errs = p.parseLValPart(env)
+		if len(errs) > 0 {
+			return nil, errs
+		}
+		parts = append(parts, part)
+	}
+	//
+	if len(parts) == 1 {
+		return parts[0], nil
+	}
+	if lv, ok := mergeBareVariableParts(parts); ok {
+		p.srcmap.Put(lv, p.spanOf(start, p.index-1))
+		return lv, nil
+	}
+	lv := lval.NewBitDestruct[symbol.Unresolved](parts...)
+	p.srcmap.Put(lv, p.spanOf(start, p.index-1))
+	//
+	return lv, nil
+}
+
 // parseIdentifier expects an IDENTIFIER token
 func (p *Parser) parseIdentifier() (string, []source.SyntaxError) {
 	tok, errs := p.expect(IDENTIFIER)

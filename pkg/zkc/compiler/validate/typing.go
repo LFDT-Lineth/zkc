@@ -286,6 +286,8 @@ func (p *TypeChecker) typeLval(target LVal, env VariableMap, effects bit.Set) (T
 		return p.typeDestructuringLval(t, env)
 	case *lval.Array[symbol.Resolved]:
 		return p.typeArrayAccess(t.Id, t.Arg, env, effects)
+	case *lval.BitDestruct[symbol.Resolved]:
+		return p.typeBitDestructLval(t, env, effects)
 	case *lval.MemAccess[symbol.Resolved]:
 		// Unknown external access cannot be typed.  This case handles some kind of
 		// linking error earlier in the compilation pipeline.
@@ -344,6 +346,32 @@ func (p *TypeChecker) typeDestructuringLval(target *lval.Variable[symbol.Resolve
 		return nil, errors
 	}
 	//
+	return data.NewUnsignedInt[symbol.Resolved](bitwidth, false), nil
+}
+
+func (p *TypeChecker) typeBitDestructLval(target *lval.BitDestruct[symbol.Resolved], env VariableMap,
+	effects bit.Set,
+) (Type, []source.SyntaxError) {
+	var (
+		bitwidth uint
+		ok       bool = true
+		errors   []source.SyntaxError
+	)
+	for _, part := range target.Parts {
+		part_t, errs := p.typeLval(part, env, effects)
+		errors = append(errors, errs...)
+		if !wellFormed(part_t, p.env) {
+			ok = false
+		} else if t := part_t.AsUint(p.env); t != nil {
+			bitwidth += t.BitWidth()
+		} else {
+			ok = false
+			errors = append(errors, *p.srcmaps.SyntaxError(part, "expected integer type"))
+		}
+	}
+	if !ok {
+		return nil, errors
+	}
 	return data.NewUnsignedInt[symbol.Resolved](bitwidth, false), nil
 }
 
