@@ -40,17 +40,17 @@ func FlattenFixedArrays(program ast.Program) {
 
 	for _, d := range program.Components() {
 		if fn, ok := d.(*decl.ResolvedFunction); ok {
-			mapping := make([]VarMapping, len(fn.Variables))
+			varMapping := make([]VarMapping, len(fn.Variables))
 
 			// Expand for variables and assignments
-			expandedVars, expandedCode, hasArray := expandFixedArrays(fn, mapping, env)
+			expandedVars, expandedCode, hasArray := expandFixedArrays(fn, varMapping, env)
 			// If no fixed-size array variables were found, skip the rewrite
 			if !hasArray {
 				continue
 			}
 
 			// Rewrite the expanded code to replace array accesses with scalar references
-			rewrittenCode := rewriteFixedArrays(expandedCode, mapping, program.Components(), env)
+			rewrittenCode := rewriteFixedArrays(expandedCode, varMapping, program.Components(), env)
 
 			// After rewriting, update fn's code, variables, input and output counts to reflect the expanded scalars
 			fn.Code = rewrittenCode
@@ -89,15 +89,15 @@ type PcMapping struct {
 // sum(items[0], items[1], items[2])).  All expanded nodes use the original
 // variable IDs so that the subsequent rewriting phase can remap them.
 func expandFixedArrays(
-	fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment,
+	fn *decl.ResolvedFunction, varMapping []VarMapping, env ast.Environment,
 ) (expandedVars []variable.ResolvedDescriptor, expandedCode []stmt.Resolved, hasArray bool) {
-	expandedVars, hasArray = expandFnVariables(fn, mapping, env)
+	expandedVars, hasArray = expandFnVariables(fn, varMapping, env)
 
 	if !hasArray {
 		return
 	}
 	//
-	expandedCode, pcMapping := expandFnCode(fn, mapping, env)
+	expandedCode, pcMapping := expandFnCode(fn, varMapping, env)
 
 	// remap the PC of the expanded code for
 	if len(pcMapping) > 0 {
@@ -115,7 +115,7 @@ func expandFixedArrays(
 }
 
 func expandFnVariables(
-	fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment,
+	fn *decl.ResolvedFunction, varMapping []VarMapping, env ast.Environment,
 ) (expandedVars []variable.ResolvedDescriptor, hasArray bool) {
 	for oldID, v := range fn.Variables {
 		base := uint(len(expandedVars))
@@ -137,9 +137,9 @@ func expandFnVariables(
 				expandedVars = append(expandedVars, variable.New[symbol.Resolved](v.Kind, name, elemType))
 			}
 
-			mapping[oldID] = VarMapping{newBase: base, isArray: true, size: size, elemType: elemType}
+			varMapping[oldID] = VarMapping{newBase: base, isArray: true, size: size, elemType: elemType}
 		} else {
-			mapping[oldID] = VarMapping{newBase: base}
+			varMapping[oldID] = VarMapping{newBase: base}
 
 			expandedVars = append(expandedVars, v)
 		}
@@ -149,7 +149,7 @@ func expandFnVariables(
 }
 
 func expandFnCode(
-	fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment,
+	fn *decl.ResolvedFunction, varMapping []VarMapping, env ast.Environment,
 ) (expandedCode []stmt.Resolved, pcMapping []PcMapping) {
 	var origPC uint
 	//
@@ -157,7 +157,7 @@ func expandFnCode(
 		switch s := s.(type) {
 		case *stmt.Assign[symbol.Resolved]:
 			// Break whole-array assignments into per-element assignments if any
-			if expanded := expandWholeArrayAssign(s, mapping, env); expanded != nil {
+			if expanded := expandWholeArrayAssign(s, varMapping, env); expanded != nil {
 				expandedCode = append(expandedCode, expanded...)
 
 				if expLength := uint(len(expanded)); expLength > 1 {
@@ -171,15 +171,15 @@ func expandFnCode(
 
 			// Expand the targets
 			for i, lv := range s.Targets {
-				s.Targets[i] = expandLValArray(lv, mapping, env)
+				s.Targets[i] = expandLValArray(lv, varMapping, env)
 			}
 
 			// Expand the source
-			s.Source = expandArrayExpression(s.Source, mapping, env)
+			s.Source = expandArrayExpression(s.Source, varMapping, env)
 		case *stmt.IfGoto[symbol.Resolved]:
 			if cmp, ok := s.Cond.(*expr.Cmp[symbol.Resolved]); ok {
 				// Break whole-array equality/inequality: expand into per-element IfGotos.
-				if expanded := expandWholeArrayCmp(s, cmp, mapping, origPC); expanded != nil {
+				if expanded := expandWholeArrayCmp(s, cmp, varMapping, origPC); expanded != nil {
 					expandedCode = append(expandedCode, expanded...)
 
 					if expLength := uint(len(expanded)); expLength > 1 {
@@ -191,12 +191,12 @@ func expandFnCode(
 					continue
 				}
 
-				cmp.Left = expandArrayExpression(cmp.Left, mapping, env)
-				cmp.Right = expandArrayExpression(cmp.Right, mapping, env)
+				cmp.Left = expandArrayExpression(cmp.Left, varMapping, env)
+				cmp.Right = expandArrayExpression(cmp.Right, varMapping, env)
 			}
 		case *stmt.Printf[symbol.Resolved]:
 			for i, arg := range s.Arguments {
-				s.Arguments[i] = expandArrayExpression(arg, mapping, env)
+				s.Arguments[i] = expandArrayExpression(arg, varMapping, env)
 			}
 		}
 
@@ -208,75 +208,75 @@ func expandFnCode(
 }
 
 
-func expandArrayExpression(e expr.Resolved, mapping []VarMapping, env ast.Environment) expr.Resolved {
+func expandArrayExpression(e expr.Resolved, varMapping []VarMapping, env ast.Environment) expr.Resolved {
 	switch e := e.(type) {
 	case *expr.ExternAccess[symbol.Resolved]:
-		e.Args = expandBareArray(e.Args, mapping, env)
+		e.Args = expandBareArray(e.Args, varMapping, env)
 		return e
 	case *expr.Add[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.Sub[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.Mul[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.Div[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.Rem[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.Shl[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.Shr[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.BitwiseAnd[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.BitwiseOr[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.Xor[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.BitwiseNot[symbol.Resolved]:
-		e.Expr = expandArrayExpression(e.Expr, mapping, env)
+		e.Expr = expandArrayExpression(e.Expr, varMapping, env)
 		return e
 	case *expr.LogicalAnd[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.LogicalOr[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.LogicalNot[symbol.Resolved]:
-		e.Expr = expandArrayExpression(e.Expr, mapping, env)
+		e.Expr = expandArrayExpression(e.Expr, varMapping, env)
 		return e
 	case *expr.Cast[symbol.Resolved]:
-		e.Expr = expandArrayExpression(e.Expr, mapping, env)
+		e.Expr = expandArrayExpression(e.Expr, varMapping, env)
 		return e
 	case *expr.Concat[symbol.Resolved]:
-		expandArrayExpressions(e.Exprs, mapping, env)
+		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
 	case *expr.Cmp[symbol.Resolved]:
-		e.Left = expandArrayExpression(e.Left, mapping, env)
-		e.Right = expandArrayExpression(e.Right, mapping, env)
+		e.Left = expandArrayExpression(e.Left, varMapping, env)
+		e.Right = expandArrayExpression(e.Right, varMapping, env)
 
 		return e
 	case *expr.Ternary[symbol.Resolved]:
 		// Break the condition if it is a whole-array comparison
 		if cmp, ok := e.Cond.(*expr.Cmp[symbol.Resolved]); ok {
-			if expanded := expandArrayCmpTernary(e, cmp, mapping, env); expanded != nil {
+			if expanded := expandArrayCmpTernary(e, cmp, varMapping, env); expanded != nil {
 				return expanded
 			}
 		}
 
-		e.Cond = expandArrayExpression(e.Cond, mapping, env)
-		e.IfTrue = expandArrayExpression(e.IfTrue, mapping, env)
-		e.IfFalse = expandArrayExpression(e.IfFalse, mapping, env)
+		e.Cond = expandArrayExpression(e.Cond, varMapping, env)
+		e.IfTrue = expandArrayExpression(e.IfTrue, varMapping, env)
+		e.IfFalse = expandArrayExpression(e.IfFalse, varMapping, env)
 
 		return e
 	default:
@@ -284,16 +284,16 @@ func expandArrayExpression(e expr.Resolved, mapping []VarMapping, env ast.Enviro
 	}
 }
 
-func expandArrayExpressions(exprs []expr.Resolved, mapping []VarMapping, env ast.Environment) {
+func expandArrayExpressions(exprs []expr.Resolved, varMapping []VarMapping, env ast.Environment) {
 	for i, e := range exprs {
-		exprs[i] = expandArrayExpression(e, mapping, env)
+		exprs[i] = expandArrayExpression(e, varMapping, env)
 	}
 }
 
-func expandLValArray(l lval.Resolved, mapping []VarMapping, env ast.Environment) lval.Resolved {
+func expandLValArray(l lval.Resolved, varMapping []VarMapping, env ast.Environment) lval.Resolved {
 	switch l := l.(type) {
 	case *lval.MemAccess[symbol.Resolved]:
-		expandArrayExpressions(l.Args, mapping, env)
+		expandArrayExpressions(l.Args, varMapping, env)
 		return l
 	default:
 		return l
@@ -303,12 +303,12 @@ func expandLValArray(l lval.Resolved, mapping []VarMapping, env ast.Environment)
 // expandBareArray expands bare array variable arguments into individual
 // ArrayAccess expressions
 // e.g. sum(items) becomes sum(items[0], items[1], items[2])
-func expandBareArray(args []expr.Resolved, mapping []VarMapping, env ast.Environment) []expr.Resolved {
+func expandBareArray(args []expr.Resolved, varMapping []VarMapping, env ast.Environment) []expr.Resolved {
 	var result []expr.Resolved
 
 	for _, arg := range args {
 		if la, ok := arg.(*expr.LocalAccess[symbol.Resolved]); ok {
-			m := mapping[la.Variable]
+			m := varMapping[la.Variable]
 			if m.isArray {
 				arrayType := la.Type().AsFixedArray(env)
 
@@ -326,18 +326,18 @@ func expandBareArray(args []expr.Resolved, mapping []VarMapping, env ast.Environ
 			}
 		}
 
-		result = append(result, expandArrayExpression(arg, mapping, env))
+		result = append(result, expandArrayExpression(arg, varMapping, env))
 	}
 
 	return result
 }
 
 func rewriteFixedArrays(
-	expandedCode []stmt.Resolved, mapping []VarMapping,
+	expandedCode []stmt.Resolved, varMapping []VarMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) (newCode []stmt.Resolved) {
 	for _, s := range expandedCode {
-		newCode = append(newCode, rewriteFixedArrayStmt(s, mapping, declarations, env))
+		newCode = append(newCode, rewriteFixedArrayStmt(s, varMapping, declarations, env))
 	}
 
 	return
@@ -366,7 +366,7 @@ type arrayTarget struct {
 //   - a = f(...) (one target, function returns one array)
 //   - a, b, ... = f(...) (several targets, function returns a matching tuple of arrays)
 func expandWholeArrayAssign(
-	s *stmt.Assign[symbol.Resolved], mapping []VarMapping, env ast.Environment,
+	s *stmt.Assign[symbol.Resolved], varMapping []VarMapping, env ast.Environment,
 ) []stmt.Resolved {
 	var targets []arrayTarget
 
@@ -375,7 +375,7 @@ func expandWholeArrayAssign(
 		case *lval.Variable[symbol.Resolved]:
 			// Destructuring is checked in the typing phase, so len(lv.Ids) must be 1
 			lhsID := lv.Ids[0]
-			lm := mapping[lhsID]
+			lm := varMapping[lhsID]
 			// if lm is not an array, we don't need the expansion
 			if !lm.isArray {
 				return nil
@@ -400,7 +400,7 @@ func expandWholeArrayAssign(
 		}
 
 		tgt := targets[0]
-		elemType := mapping[src.Variable].elemType
+		elemType := varMapping[src.Variable].elemType
 
 		splitAssignments := make([]stmt.Resolved, tgt.size)
 
@@ -433,7 +433,7 @@ func expandWholeArrayAssign(
 			}
 		}
 
-		src.Args = expandBareArray(src.Args, mapping, env)
+		src.Args = expandBareArray(src.Args, varMapping, env)
 
 		return []stmt.Resolved{&stmt.Assign[symbol.Resolved]{
 			Targets: elemTargets,
@@ -451,7 +451,7 @@ func expandWholeArrayAssign(
 // Targets emitted by this helper are with the old PC. 
 func expandWholeArrayCmp(
 	ifg *stmt.IfGoto[symbol.Resolved], cmp *expr.Cmp[symbol.Resolved],
-	mapping []VarMapping, origPC uint,
+	varMapping []VarMapping, origPC uint,
 ) []stmt.Resolved {
 	// We only expand whole-array comparisons else we return nil
 	l, lok := cmp.Left.(*expr.LocalAccess[symbol.Resolved])
@@ -461,7 +461,7 @@ func expandWholeArrayCmp(
 		return nil
 	}
 	//
-	lm, rm := mapping[l.Variable], mapping[r.Variable]
+	lm, rm := varMapping[l.Variable], varMapping[r.Variable]
 	if !lm.isArray || !rm.isArray {
 		return nil
 	}
@@ -510,7 +510,7 @@ func expandWholeArrayCmp(
 //	LHS[0] != RHS[0] ? T : (LHS[1] != RHS[1] ? T : ... : F)
 func expandArrayCmpTernary(
 	tern *expr.Ternary[symbol.Resolved], cmp *expr.Cmp[symbol.Resolved],
-	mapping []VarMapping, env ast.Environment,
+	varMapping []VarMapping, env ast.Environment,
 ) expr.Resolved {
 	// We only expand whole-array comparisons else we return nil
 	l, lok := cmp.Left.(*expr.LocalAccess[symbol.Resolved])
@@ -520,14 +520,14 @@ func expandArrayCmpTernary(
 		return nil
 	}
 	//
-	lm, rm := mapping[l.Variable], mapping[r.Variable]
+	lm, rm := varMapping[l.Variable], varMapping[r.Variable]
 	if !lm.isArray || !rm.isArray {
 		return nil
 	}
 	// Recursively expand the two branches first; they may themselves contain
 	// whole-array operations.
-	ifTrue := expandArrayExpression(tern.IfTrue, mapping, env)
-	ifFalse := expandArrayExpression(tern.IfFalse, mapping, env)
+	ifTrue := expandArrayExpression(tern.IfTrue, varMapping, env)
+	ifFalse := expandArrayExpression(tern.IfFalse, varMapping, env)
 	//
 	elemType := lm.elemType
 	//
@@ -738,16 +738,16 @@ func remapPC(oldPC uint, pcMapping []PcMapping) uint {
 }
 
 func rewriteFixedArrayStmt(
-	s stmt.Resolved, mapping []VarMapping,
+	s stmt.Resolved, varMapping []VarMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) stmt.Resolved {
 	switch s := s.(type) {
 	case *stmt.Assign[symbol.Resolved]:
 		for i, lv := range s.Targets {
-			s.Targets[i] = rewriteLValArray(lv, mapping, declarations, env)
+			s.Targets[i] = rewriteLValArray(lv, varMapping, declarations, env)
 		}
 
-		s.Source = rewriteArrayExpression(s.Source, mapping, declarations, env)
+		s.Source = rewriteArrayExpression(s.Source, varMapping, declarations, env)
 
 		return s
 	case *stmt.IfGoto[symbol.Resolved]:
@@ -756,13 +756,13 @@ func rewriteFixedArrayStmt(
 			panic(fmt.Sprintf("unknown condition encountered during fixed-array lowering: %T", s.Cond))
 		}
 
-		c.Left = rewriteArrayExpression(c.Left, mapping, declarations, env)
-		c.Right = rewriteArrayExpression(c.Right, mapping, declarations, env)
+		c.Left = rewriteArrayExpression(c.Left, varMapping, declarations, env)
+		c.Right = rewriteArrayExpression(c.Right, varMapping, declarations, env)
 
 		return s
 	case *stmt.Printf[symbol.Resolved]:
 		for i, arg := range s.Arguments {
-			s.Arguments[i] = rewriteArrayExpression(arg, mapping, declarations, env)
+			s.Arguments[i] = rewriteArrayExpression(arg, varMapping, declarations, env)
 		}
 
 		return s
@@ -774,18 +774,18 @@ func rewriteFixedArrayStmt(
 }
 
 func rewriteArrayExpression(
-	e expr.Resolved, mapping []VarMapping,
+	e expr.Resolved, varMapping []VarMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) expr.Resolved {
 	switch e := e.(type) {
 	case *expr.LocalAccess[symbol.Resolved]:
-		e.Variable = mapping[e.Variable].newBase
+		e.Variable = varMapping[e.Variable].newBase
 		//
 		return e
 	case *expr.ArrayAccess[symbol.Resolved]:
-		rewriteArrayExpression(e.Arg, mapping, declarations, env)
+		rewriteArrayExpression(e.Arg, varMapping, declarations, env)
 
-		m := mapping[e.Id]
+		m := varMapping[e.Id]
 		if !m.isArray {
 			e.Id = m.newBase
 			return e
@@ -804,67 +804,67 @@ func rewriteArrayExpression(
 
 		return result
 	case *expr.Add[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.Sub[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.Mul[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.Div[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.Rem[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.Shl[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.Shr[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.BitwiseAnd[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.BitwiseOr[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.Xor[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.BitwiseNot[symbol.Resolved]:
-		e.Expr = rewriteArrayExpression(e.Expr, mapping, declarations, env)
+		e.Expr = rewriteArrayExpression(e.Expr, varMapping, declarations, env)
 		return e
 	case *expr.LogicalAnd[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.LogicalOr[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 		return e
 	case *expr.LogicalNot[symbol.Resolved]:
-		e.Expr = rewriteArrayExpression(e.Expr, mapping, declarations, env)
+		e.Expr = rewriteArrayExpression(e.Expr, varMapping, declarations, env)
 		return e
 	case *expr.Cast[symbol.Resolved]:
-		e.Expr = rewriteArrayExpression(e.Expr, mapping, declarations, env)
+		e.Expr = rewriteArrayExpression(e.Expr, varMapping, declarations, env)
 		return e
 	case *expr.Concat[symbol.Resolved]:
-		rewriteArrayExpressions(e.Exprs, mapping, declarations, env)
+		rewriteArrayExpressions(e.Exprs, varMapping, declarations, env)
 
 		return e
 	case *expr.Cmp[symbol.Resolved]:
-		e.Left = rewriteArrayExpression(e.Left, mapping, declarations, env)
-		e.Right = rewriteArrayExpression(e.Right, mapping, declarations, env)
+		e.Left = rewriteArrayExpression(e.Left, varMapping, declarations, env)
+		e.Right = rewriteArrayExpression(e.Right, varMapping, declarations, env)
 
 		return e
 	case *expr.Ternary[symbol.Resolved]:
-		e.Cond = rewriteArrayExpression(e.Cond, mapping, declarations, env)
-		e.IfTrue = rewriteArrayExpression(e.IfTrue, mapping, declarations, env)
-		e.IfFalse = rewriteArrayExpression(e.IfFalse, mapping, declarations, env)
+		e.Cond = rewriteArrayExpression(e.Cond, varMapping, declarations, env)
+		e.IfTrue = rewriteArrayExpression(e.IfTrue, varMapping, declarations, env)
+		e.IfFalse = rewriteArrayExpression(e.IfFalse, varMapping, declarations, env)
 
 		return e
 	case *expr.ExternAccess[symbol.Resolved]:
-		rewriteArrayExpressions(e.Args, mapping, declarations, env)
+		rewriteArrayExpressions(e.Args, varMapping, declarations, env)
 		return e
 	case *expr.Const[symbol.Resolved]:
 		return e
@@ -874,30 +874,30 @@ func rewriteArrayExpression(
 }
 
 func rewriteArrayExpressions(
-	exprs []expr.Resolved, mapping []VarMapping,
+	exprs []expr.Resolved, varMapping []VarMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) {
 	for i, e := range exprs {
-		exprs[i] = rewriteArrayExpression(e, mapping, declarations, env)
+		exprs[i] = rewriteArrayExpression(e, varMapping, declarations, env)
 	}
 }
 
 func rewriteLValArray(
-	l lval.Resolved, mapping []VarMapping,
+	l lval.Resolved, varMapping []VarMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) lval.Resolved {
 	switch l := l.(type) {
 	case *lval.Variable[symbol.Resolved]:
 		for i, id := range l.Ids {
-			m := mapping[id]
+			m := varMapping[id]
 			l.Ids[i] = m.newBase
 		}
 
 		return l
 	case *lval.Array[symbol.Resolved]:
-		rewriteArrayExpression(l.Arg, mapping, declarations, env)
+		rewriteArrayExpression(l.Arg, varMapping, declarations, env)
 
-		m := mapping[l.Id]
+		m := varMapping[l.Id]
 		if !m.isArray {
 			l.Id = m.newBase
 			return l
@@ -913,7 +913,7 @@ func rewriteLValArray(
 
 		return &lval.Variable[symbol.Resolved]{Ids: []variable.Id{m.newBase + idx}}
 	case *lval.MemAccess[symbol.Resolved]:
-		rewriteArrayExpressions(l.Args, mapping, declarations, env)
+		rewriteArrayExpressions(l.Args, varMapping, declarations, env)
 		return l
 	default:
 		panic(fmt.Sprintf("unknown lval encountered during fixed-array lowering: %T", l))
