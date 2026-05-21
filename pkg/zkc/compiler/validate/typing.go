@@ -522,6 +522,7 @@ func (p *TypeChecker) typeArrayComparison(e *expr.Cmp[symbol.Resolved],
 	if len(lerrs) == 0 && wellFormed(lhs, p.env) && lhs.AsFixedArray(p.env) == nil {
 		lerrs = p.srcmaps.SyntaxErrors(e.Left, "expected fixed array")
 	}
+	//
 	if len(rerrs) == 0 && wellFormed(rhs, p.env) && rhs.AsFixedArray(p.env) == nil {
 		rerrs = p.srcmaps.SyntaxErrors(e.Right, "expected fixed array")
 	}

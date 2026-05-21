@@ -91,7 +91,6 @@ type PcMapping struct {
 func expandFixedArrays(
 	fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment,
 ) (expandedVars []variable.ResolvedDescriptor, expandedCode []stmt.Resolved, hasArray bool) {
-
 	expandedVars, hasArray = expandFnVariables(fn, mapping, env)
 
 	if !hasArray {
@@ -100,7 +99,7 @@ func expandFixedArrays(
 	//
 	expandedCode, pcMapping := expandFnCode(fn, mapping, env)
 
-	// remap the PC of the expanded code for 
+	// remap the PC of the expanded code for
 	if len(pcMapping) > 0 {
 		for _, s := range expandedCode {
 			switch s := s.(type) {
@@ -115,7 +114,9 @@ func expandFixedArrays(
 	return
 }
 
-func expandFnVariables(fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment) (expandedVars []variable.ResolvedDescriptor, hasArray bool) {
+func expandFnVariables(
+	fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment,
+) (expandedVars []variable.ResolvedDescriptor, hasArray bool) {
 	for oldID, v := range fn.Variables {
 		base := uint(len(expandedVars))
 
@@ -128,6 +129,7 @@ func expandFnVariables(fn *decl.ResolvedFunction, mapping []VarMapping, env ast.
 			if !ok {
 				panic("expected bitwidth to be resolved for the fixed array")
 			}
+			//
 			elemType := data.NewUnsignedInt[symbol.Resolved](bitwidth, false)
 
 			for j := range size {
@@ -146,8 +148,11 @@ func expandFnVariables(fn *decl.ResolvedFunction, mapping []VarMapping, env ast.
 	return
 }
 
-func expandFnCode(fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment) (expandedCode []stmt.Resolved, pcMapping []PcMapping) {
+func expandFnCode(
+	fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment,
+) (expandedCode []stmt.Resolved, pcMapping []PcMapping) {
 	var origPC uint
+	//
 	for _, s := range fn.Code {
 		switch s := s.(type) {
 		case *stmt.Assign[symbol.Resolved]:
@@ -198,6 +203,7 @@ func expandFnCode(fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Envir
 		expandedCode = append(expandedCode, s)
 		origPC++
 	}
+	//
 	return
 }
 
@@ -450,9 +456,11 @@ func expandWholeArrayCmp(
 	// We only expand whole-array comparisons else we return nil
 	l, lok := cmp.Left.(*expr.LocalAccess[symbol.Resolved])
 	r, rok := cmp.Right.(*expr.LocalAccess[symbol.Resolved])
+	//
 	if !lok || !rok {
 		return nil
 	}
+	//
 	lm, rm := mapping[l.Variable], mapping[r.Variable]
 	if !lm.isArray || !rm.isArray {
 		return nil
@@ -507,6 +515,7 @@ func expandArrayCmpTernary(
 	// We only expand whole-array comparisons else we return nil
 	l, lok := cmp.Left.(*expr.LocalAccess[symbol.Resolved])
 	r, rok := cmp.Right.(*expr.LocalAccess[symbol.Resolved])
+	//
 	if !lok || !rok {
 		return nil
 	}
@@ -572,16 +581,14 @@ func remapPC(oldPC uint, pcMapping []PcMapping) uint {
 	var acc uint
 	//
 	for _, s := range pcMapping {
-		if oldPC > s.afterOldPC {
-			acc += s.shift
-		} else {
+		if oldPC <= s.afterOldPC {
 			break
 		}
+
+		acc += s.shift
 	}
 	//
 	return oldPC + acc
-	
-
 }
 
 func rewriteFixedArrayStmt(
