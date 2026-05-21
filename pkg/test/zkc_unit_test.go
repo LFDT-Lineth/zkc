@@ -296,8 +296,8 @@ func Test_ZkcUnit_FixedArray_15(t *testing.T) {
 }
 
 // Destructuring test, issue #1818
-/*func Test_ZkcUnit_FixedArray_17(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/fixed_array_17", util.DEFAULT_CONFIG)
+/*func Test_ZkcUnit_FixedArray_16(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/fixed_array_16", util.DEFAULT_CONFIG)
 }*/
 
 func Test_ZkcUnit_FixedArray_17(t *testing.T) {
