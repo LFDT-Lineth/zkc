@@ -92,6 +92,7 @@ func (p *VectorInsnTranslator[F]) translate() Expr[F] {
 			// respected selector line (i.e. to enable the conditional lookup).
 			continue
 		case *instruction.Fail:
+			assignments = joinAssignments(assignments, localWrites)
 			local = mirc.False[register.Id, Expr[F]]()
 		case *instruction.Jump:
 			assignments = joinAssignments(assignments, localWrites)

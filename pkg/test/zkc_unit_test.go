@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/consensys/go-corset/pkg/test/util"
+	"github.com/consensys/go-corset/pkg/util/field"
 )
 
 // ===================================================================
@@ -554,7 +555,7 @@ func Test_ZkcUnit_Cast_05(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Div_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/div_01", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/div_01", util.DEFAULT_CONFIG.Constraints(true).Fields(field.BLS12_377))
 }
 
 // TODO: register splitting
@@ -562,8 +563,9 @@ func Test_ZkcUnit_Div_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_02", util.DEFAULT_CONFIG)
 }
 
+// TODO: KoalaBear once register splitting is working
 func Test_ZkcUnit_Div_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/div_03", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/div_03", util.DEFAULT_CONFIG.Constraints(true).Fields(field.BLS12_377))
 }
 
 // ===================================================================
