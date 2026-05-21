@@ -295,6 +295,27 @@ func Test_ZkcUnit_FixedArray_15(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/fixed_array_15", util.DEFAULT_CONFIG)
 }
 
+// Destructuring test, issue #1818
+/*func Test_ZkcUnit_FixedArray_17(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/fixed_array_17", util.DEFAULT_CONFIG)
+}*/
+
+func Test_ZkcUnit_FixedArray_17(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/fixed_array_17", util.DEFAULT_CONFIG)
+}
+
+func Test_ZkcUnit_FixedArray_18(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/fixed_array_18", util.DEFAULT_CONFIG)
+}
+
+func Test_ZkcUnit_FixedArray_19(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/fixed_array_19", util.DEFAULT_CONFIG)
+}
+
+func Test_ZkcUnit_FixedArray_20(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/fixed_array_20", util.DEFAULT_CONFIG)
+}
+
 // ===================================================================
 // Type Tests
 // ===================================================================

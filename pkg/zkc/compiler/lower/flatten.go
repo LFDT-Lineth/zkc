@@ -463,12 +463,6 @@ func expandWholeArrayCmp(
 	var splitIfGotos []stmt.Resolved
 	//
 	for i := uint(0); i < lm.size; i++ {
-		lhsAcc := expr.NewLocalAccess[symbol.Resolved](lm.newBase + i)
-		lhsAcc.SetType(elemType)
-		//
-		rhsAcc := expr.NewLocalAccess[symbol.Resolved](rm.newBase + i)
-		rhsAcc.SetType(elemType)
-		//
 		// EQ: any element differs -> SKIP (fall through, do not take branch).
 		// NEQ: any element differs -> take branch.
 		var elemTarget uint
@@ -479,7 +473,7 @@ func expandWholeArrayCmp(
 		}
 		//
 		splitIfGotos = append(splitIfGotos, &stmt.IfGoto[symbol.Resolved]{
-			Cond:   expr.NewCmp(expr.NEQ, lhsAcc, rhsAcc),
+			Cond:   newElementCmp(expr.NEQ, l.Variable, r.Variable, i, elemType),
 			Target: elemTarget,
 		})
 	}
