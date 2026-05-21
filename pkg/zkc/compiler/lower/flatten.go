@@ -63,11 +63,14 @@ func FlattenFixedArrays(program ast.Program) {
 
 // VarMapping records how an old variable ID maps into the expanded variable
 // list.  For scalar variables newBase is the single new ID.  For fixed arrays
-// newBase..newBase+size-1 are the individual element variables.
+// newBase..newBase+size-1 are the individual element variables and elemType
+// is the canonical element type used by the lowering helpers.  elemType
+// is nil for non-array entries.
 type VarMapping struct {
-	newBase uint
-	isArray bool
-	size    uint
+	newBase  uint
+	isArray  bool
+	size     uint
+	elemType data.Type[symbol.Resolved]
 }
 
 // PcMapping records that `shift` statements were inserted at the original PC
@@ -126,14 +129,18 @@ func expandFnVariables(fn *decl.ResolvedFunction, mapping []VarMapping, env ast.
 
 			hasArray = true
 
+			bitwidth, ok := data.BitWidthOf(vType, env)
+			if !ok {
+				panic("expected bitwidth for the variable")
+			}
+			elemType := data.NewUnsignedInt[symbol.Resolved](bitwidth, false)
+
 			for j := range size {
 				name := v.Name + "$" + strconv.FormatUint(uint64(j), 10)
-				bitwidth, _ := data.BitWidthOf(vType, env)
-				elemType := data.NewUnsignedInt[symbol.Resolved](bitwidth, false)
 				expandedVars = append(expandedVars, variable.New[symbol.Resolved](v.Kind, name, elemType))
 			}
 
-			mapping[oldID] = VarMapping{newBase: base, isArray: true, size: size}
+			mapping[oldID] = VarMapping{newBase: base, isArray: true, size: size, elemType: elemType}
 		} else {
 			mapping[oldID] = VarMapping{newBase: base}
 
@@ -171,7 +178,7 @@ func expandFnCode(fn *decl.ResolvedFunction, pcMapping []PcMapping, origPC uint,
 		case *stmt.IfGoto[symbol.Resolved]:
 			if cmp, ok := s.Cond.(*expr.Cmp[symbol.Resolved]); ok {
 				// Break whole-array equality/inequality: expand into per-element IfGotos.
-				if expanded := expandWholeArrayCmp(s, cmp, mapping, env, origPC); expanded != nil {
+				if expanded := expandWholeArrayCmp(s, cmp, mapping, origPC); expanded != nil {
 					expandedCode = append(expandedCode, expanded...)
 
 					if expLength := uint(len(expanded)); expLength > 1 {
@@ -384,7 +391,7 @@ func expandWholeArrayAssign(
 		}
 
 		tgt := targets[0]
-		srcArr := s.Source.Type().AsFixedArray(env)
+		elemType := mapping[src.Variable].elemType
 
 		splitAssignments := make([]stmt.Resolved, tgt.size)
 
@@ -397,7 +404,7 @@ func expandWholeArrayAssign(
 				Source: &expr.ArrayAccess[symbol.Resolved]{
 					Id:       src.Variable,
 					Arg:      expr.NewConstant[symbol.Resolved](idx, 10),
-					Datatype: srcArr.DataType,
+					Datatype: elemType,
 				},
 			}
 		}
@@ -435,7 +442,7 @@ func expandWholeArrayAssign(
 // Targets emitted by this helper are with the old PC. 
 func expandWholeArrayCmp(
 	ifg *stmt.IfGoto[symbol.Resolved], cmp *expr.Cmp[symbol.Resolved],
-	mapping []VarMapping, env ast.Environment, origPC uint,
+	mapping []VarMapping, origPC uint,
 ) []stmt.Resolved {
 	// We only expand whole-array comparisons else we return nil
 	l, lok := cmp.Left.(*expr.LocalAccess[symbol.Resolved])
@@ -447,21 +454,10 @@ func expandWholeArrayCmp(
 	if !lm.isArray || !rm.isArray {
 		return nil
 	}
-	// 
-	arrType := l.Type().AsFixedArray(env)
-	if arrType == nil {
-		panic("expected FixedArray type on the LocalAccess")
-	}
 	//
-	bitwidth, ok := data.BitWidthOf(arrType, env)
-	if !ok {
-		return nil
-	}
+	elemType := lm.elemType
 	//
-	var (
-		elemType       = data.NewUnsignedInt[symbol.Resolved](bitwidth, false)
-		splitIfGotos   []stmt.Resolved
-	)
+	var splitIfGotos []stmt.Resolved
 	//
 	for i := uint(0); i < lm.size; i++ {
 		lhsAcc := expr.NewLocalAccess[symbol.Resolved](lm.newBase + i)
