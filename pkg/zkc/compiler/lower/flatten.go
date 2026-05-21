@@ -98,12 +98,7 @@ func expandFixedArrays(
 		return
 	}
 	//
-	var (
-		pcMapping []PcMapping
-		origPC uint
-	)
-	//
-	expandedCode = expandFnCode(fn, pcMapping, origPC, mapping, env)
+	expandedCode, pcMapping := expandFnCode(fn, mapping, env)
 
 	// remap the PC of the expanded code for 
 	if len(pcMapping) > 0 {
@@ -151,7 +146,8 @@ func expandFnVariables(fn *decl.ResolvedFunction, mapping []VarMapping, env ast.
 	return
 }
 
-func expandFnCode(fn *decl.ResolvedFunction, pcMapping []PcMapping, origPC uint, mapping []VarMapping, env ast.Environment) (expandedCode []stmt.Resolved) {
+func expandFnCode(fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment) (expandedCode []stmt.Resolved, pcMapping []PcMapping) {
+	var origPC uint
 	for _, s := range fn.Code {
 		switch s := s.(type) {
 		case *stmt.Assign[symbol.Resolved]:
