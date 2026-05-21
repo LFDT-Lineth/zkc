@@ -73,12 +73,12 @@ type VarMapping struct {
 	elemType data.Type[symbol.Resolved]
 }
 
-// PcMapping records that `shift` statements were inserted at the original PC
-// `afterOldPC` during fixed-array expansion.  When remapping branch targets,
-// any original PC strictly greater than `afterOldPC` is shifted forward by
-// `added`.
+// PcMapping records that `shift` statements were inserted at the PC
+// `pivotPC` during fixed-array expansion.  When remapping branch targets,
+// any PC strictly greater than `pivotPC` is shifted forward by `shift`
+// statements.
 type PcMapping struct {
-	afterOldPC uint
+	pivotPC uint
 	shift      uint
 }
 
@@ -161,7 +161,7 @@ func expandFnCode(
 				expandedCode = append(expandedCode, expanded...)
 
 				if expLength := uint(len(expanded)); expLength > 1 {
-					pcMapping = append(pcMapping, PcMapping{afterOldPC: origPC, shift: expLength - 1})
+					pcMapping = append(pcMapping, PcMapping{pivotPC: origPC, shift: expLength - 1})
 				}
 
 				origPC++
@@ -183,7 +183,7 @@ func expandFnCode(
 					expandedCode = append(expandedCode, expanded...)
 
 					if expLength := uint(len(expanded)); expLength > 1 {
-						pcMapping = append(pcMapping, PcMapping{afterOldPC: origPC, shift: expLength - 1})
+						pcMapping = append(pcMapping, PcMapping{pivotPC: origPC, shift: expLength - 1})
 					}
 
 					origPC++
@@ -727,7 +727,8 @@ func remapPC(oldPC uint, pcMapping []PcMapping) uint {
 	var acc uint
 	//
 	for _, s := range pcMapping {
-		if oldPC <= s.afterOldPC {
+		// if the PC is before the pivot, we don't apply the shift
+		if oldPC <= s.pivotPC {
 			break
 		}
 
