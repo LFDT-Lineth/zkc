@@ -410,7 +410,7 @@ func extendSkipIf(tail dfa.Branch, sign bool, code *SkipIf, writes dfa.Writes) d
 		head = logical.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	}
 	// NOTE: the reason this method is needed is because we have no implicit
-	// rerpesentation of logical truth or falsehood.  This means an empty path
+	// representation of logical truth or falsehood.  This means an empty path
 	// does not behave in the expected manner.
 	if len(tailc.Conjuncts()) == 0 {
 		return dfa.Branch{Condition: logical.NewProposition(head)}
