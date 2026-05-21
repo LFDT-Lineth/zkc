@@ -531,34 +531,180 @@ func expandArrayCmpTernary(
 	//
 	elemType := lm.elemType
 	//
+	// The "constant" branch is the one that occupies the same slot in every
+	// level of the nested chain (IfFalse for EQ, IfTrue for NEQ).  Since the
+	// subsequent rewrite phase mutates expression nodes in place (notably the
+	// LocalAccess.Variable remap), we cannot let any node be referenced from
+	// multiple positions in the resulting tree -- it would be remapped more
+	// than once,
+	//
+	// We therefore use the original constBranch node on the deepest level and
+	// a fresh deep copy of it for every shallower level.
 	var inner expr.Resolved
+	//
 	if cmp.Operator == expr.EQ {
 		inner = ifTrue
-
+		constBranch := ifFalse
+		//
 		for i := int(lm.size) - 1; i >= 0; i-- {
 			t := &expr.Ternary[symbol.Resolved]{
 				Cond:    newElementCmp(cmp.Operator, l.Variable, r.Variable, uint(i), elemType),
 				IfTrue:  inner,
-				IfFalse: ifFalse,
+				IfFalse: constBranch,
 			}
 			t.SetType(tern.Type())
 			inner = t
+			constBranch = cloneExpr(constBranch)
 		}
 	} else {
 		inner = ifFalse
-
+		constBranch := ifTrue
+		//
 		for i := int(lm.size) - 1; i >= 0; i-- {
 			t := &expr.Ternary[symbol.Resolved]{
 				Cond:    newElementCmp(cmp.Operator, l.Variable, r.Variable, uint(i), elemType),
-				IfTrue:  ifTrue,
+				IfTrue:  constBranch,
 				IfFalse: inner,
 			}
 			t.SetType(tern.Type())
 			inner = t
+			constBranch = cloneExpr(ifTrue)
 		}
 	}
 	//
 	return inner
+}
+
+// cloneExpr returns a deep copy of e.
+func cloneExpr(e expr.Resolved) expr.Resolved {
+	switch e := e.(type) {
+	case *expr.Const[symbol.Resolved]:
+		return e
+	case *expr.LocalAccess[symbol.Resolved]:
+		c := *e
+		return &c
+	case *expr.ArrayAccess[symbol.Resolved]:
+		c := *e
+		c.Arg = cloneExpr(e.Arg)
+
+		return &c
+	case *expr.Add[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.Sub[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.Mul[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.Div[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.Rem[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.Shl[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.Shr[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.BitwiseAnd[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.BitwiseOr[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.Xor[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.BitwiseNot[symbol.Resolved]:
+		c := *e
+		c.Expr = cloneExpr(e.Expr)
+
+		return &c
+	case *expr.LogicalAnd[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.LogicalOr[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.LogicalNot[symbol.Resolved]:
+		c := *e
+		c.Expr = cloneExpr(e.Expr)
+
+		return &c
+	case *expr.Cast[symbol.Resolved]:
+		c := *e
+		c.Expr = cloneExpr(e.Expr)
+
+		return &c
+	case *expr.Concat[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	case *expr.Cmp[symbol.Resolved]:
+		c := *e
+		c.Left = cloneExpr(e.Left)
+		c.Right = cloneExpr(e.Right)
+
+		return &c
+	case *expr.Ternary[symbol.Resolved]:
+		c := *e
+		c.Cond = cloneExpr(e.Cond)
+		c.IfTrue = cloneExpr(e.IfTrue)
+		c.IfFalse = cloneExpr(e.IfFalse)
+
+		return &c
+	case *expr.ExternAccess[symbol.Resolved]:
+		c := *e
+		c.Args = cloneExprs(e.Args)
+
+		return &c
+	case *expr.TupleInitialiser[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
+	default:
+		panic(fmt.Sprintf("unhandled expression in cloneExpr: %T", e))
+	}
+}
+
+// cloneExprs returns a fresh slice containing deep copies of every element
+// of exprs.
+func cloneExprs(exprs []expr.Resolved) []expr.Resolved {
+	clonedExpressions := make([]expr.Resolved, len(exprs))
+	for i, e := range exprs {
+		clonedExpressions[i] = cloneExpr(e)
+	}
+
+	return clonedExpressions
 }
 
 // newElementCmp builds an element-wise comparison `lhsID[i] op rhsID[i]`
