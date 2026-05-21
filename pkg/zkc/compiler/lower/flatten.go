@@ -40,7 +40,7 @@ func FlattenFixedArrays(program ast.Program) {
 
 	for _, d := range program.Components() {
 		if fn, ok := d.(*decl.ResolvedFunction); ok {
-			mapping := make([]varMapping, len(fn.Variables))
+			mapping := make([]VarMapping, len(fn.Variables))
 
 			// Expand for variables and assignments
 			expandedVars, expandedCode, hasArray := expandFixedArrays(fn, mapping, env)
@@ -61,13 +61,22 @@ func FlattenFixedArrays(program ast.Program) {
 	}
 }
 
-// varMapping records how an old variable ID maps into the expanded variable
+// VarMapping records how an old variable ID maps into the expanded variable
 // list.  For scalar variables newBase is the single new ID.  For fixed arrays
 // newBase..newBase+size-1 are the individual element variables.
-type varMapping struct {
+type VarMapping struct {
 	newBase uint
 	isArray bool
 	size    uint
+}
+
+// PcMapping records that `shift` statements were inserted at the original PC
+// `afterOldPC` during fixed-array expansion.  When remapping branch targets,
+// any original PC strictly greater than `afterOldPC` is shifted forward by
+// `added`.
+type PcMapping struct {
+	afterOldPC uint
+	shift      uint
 }
 
 // expandFixedArrays builds the old→new id mapping and expands fixed-size array
@@ -77,8 +86,38 @@ type varMapping struct {
 // sum(items[0], items[1], items[2])).  All expanded nodes use the original
 // variable IDs so that the subsequent rewriting phase can remap them.
 func expandFixedArrays(
-	fn *decl.ResolvedFunction, mapping []varMapping, env ast.Environment,
+	fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment,
 ) (expandedVars []variable.ResolvedDescriptor, expandedCode []stmt.Resolved, hasArray bool) {
+
+	expandedVars, hasArray = expandFnVariables(fn, mapping, env)
+
+	if !hasArray {
+		return
+	}
+	//
+	var (
+		pcMapping []PcMapping
+		origPC uint
+	)
+	//
+	expandedCode = expandFnCode(fn, pcMapping, origPC, mapping, env)
+
+	// remap the PC of the expanded code for 
+	if len(pcMapping) > 0 {
+		for _, s := range expandedCode {
+			switch s := s.(type) {
+			case *stmt.IfGoto[symbol.Resolved]:
+				s.Target = remapPC(s.Target, pcMapping)
+			case *stmt.Goto[symbol.Resolved]:
+				s.Target = remapPC(s.Target, pcMapping)
+			}
+		}
+	}
+
+	return
+}
+
+func expandFnVariables(fn *decl.ResolvedFunction, mapping []VarMapping, env ast.Environment) (expandedVars []variable.ResolvedDescriptor, hasArray bool) {
 	for oldID, v := range fn.Variables {
 		base := uint(len(expandedVars))
 
@@ -94,24 +133,31 @@ func expandFixedArrays(
 				expandedVars = append(expandedVars, variable.New[symbol.Resolved](v.Kind, name, elemType))
 			}
 
-			mapping[oldID] = varMapping{newBase: base, isArray: true, size: size}
+			mapping[oldID] = VarMapping{newBase: base, isArray: true, size: size}
 		} else {
-			mapping[oldID] = varMapping{newBase: base}
+			mapping[oldID] = VarMapping{newBase: base}
 
 			expandedVars = append(expandedVars, v)
 		}
 	}
 
-	if !hasArray {
-		return
-	}
+	return
+}
 
+func expandFnCode(fn *decl.ResolvedFunction, pcMapping []PcMapping, origPC uint, mapping []VarMapping, env ast.Environment) (expandedCode []stmt.Resolved) {
 	for _, s := range fn.Code {
 		switch s := s.(type) {
 		case *stmt.Assign[symbol.Resolved]:
 			// Break whole-array assignments into per-element assignments if any
 			if expanded := expandWholeArrayAssign(s, mapping, env); expanded != nil {
 				expandedCode = append(expandedCode, expanded...)
+
+				if expLength := uint(len(expanded)); expLength > 1 {
+					pcMapping = append(pcMapping, PcMapping{afterOldPC: origPC, shift: expLength - 1})
+				}
+
+				origPC++
+
 				continue
 			}
 
@@ -124,6 +170,19 @@ func expandFixedArrays(
 			s.Source = expandArrayExpression(s.Source, mapping, env)
 		case *stmt.IfGoto[symbol.Resolved]:
 			if cmp, ok := s.Cond.(*expr.Cmp[symbol.Resolved]); ok {
+				// Break whole-array equality/inequality: expand into per-element IfGotos.
+				if expanded := expandWholeArrayCmp(s, cmp, mapping, env, origPC); expanded != nil {
+					expandedCode = append(expandedCode, expanded...)
+
+					if expLength := uint(len(expanded)); expLength > 1 {
+						pcMapping = append(pcMapping, PcMapping{afterOldPC: origPC, shift: expLength - 1})
+					}
+
+					origPC++
+
+					continue
+				}
+
 				cmp.Left = expandArrayExpression(cmp.Left, mapping, env)
 				cmp.Right = expandArrayExpression(cmp.Right, mapping, env)
 			}
@@ -134,12 +193,13 @@ func expandFixedArrays(
 		}
 
 		expandedCode = append(expandedCode, s)
+		origPC++
 	}
-
 	return
 }
 
-func expandArrayExpression(e expr.Resolved, mapping []varMapping, env ast.Environment) expr.Resolved {
+
+func expandArrayExpression(e expr.Resolved, mapping []VarMapping, env ast.Environment) expr.Resolved {
 	switch e := e.(type) {
 	case *expr.ExternAccess[symbol.Resolved]:
 		e.Args = expandBareArray(e.Args, mapping, env)
@@ -208,13 +268,13 @@ func expandArrayExpression(e expr.Resolved, mapping []varMapping, env ast.Enviro
 	}
 }
 
-func expandArrayExpressions(exprs []expr.Resolved, mapping []varMapping, env ast.Environment) {
+func expandArrayExpressions(exprs []expr.Resolved, mapping []VarMapping, env ast.Environment) {
 	for i, e := range exprs {
 		exprs[i] = expandArrayExpression(e, mapping, env)
 	}
 }
 
-func expandLValArray(l lval.Resolved, mapping []varMapping, env ast.Environment) lval.Resolved {
+func expandLValArray(l lval.Resolved, mapping []VarMapping, env ast.Environment) lval.Resolved {
 	switch l := l.(type) {
 	case *lval.MemAccess[symbol.Resolved]:
 		expandArrayExpressions(l.Args, mapping, env)
@@ -227,7 +287,7 @@ func expandLValArray(l lval.Resolved, mapping []varMapping, env ast.Environment)
 // expandBareArray expands bare array variable arguments into individual
 // ArrayAccess expressions
 // e.g. sum(items) becomes sum(items[0], items[1], items[2])
-func expandBareArray(args []expr.Resolved, mapping []varMapping, env ast.Environment) []expr.Resolved {
+func expandBareArray(args []expr.Resolved, mapping []VarMapping, env ast.Environment) []expr.Resolved {
 	var result []expr.Resolved
 
 	for _, arg := range args {
@@ -257,7 +317,7 @@ func expandBareArray(args []expr.Resolved, mapping []varMapping, env ast.Environ
 }
 
 func rewriteFixedArrays(
-	expandedCode []stmt.Resolved, mapping []varMapping,
+	expandedCode []stmt.Resolved, mapping []VarMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) (newCode []stmt.Resolved) {
 	for _, s := range expandedCode {
@@ -290,7 +350,7 @@ type arrayTarget struct {
 //   - a = f(...) (one target, function returns one array)
 //   - a, b, ... = f(...) (several targets, function returns a matching tuple of arrays)
 func expandWholeArrayAssign(
-	s *stmt.Assign[symbol.Resolved], mapping []varMapping, env ast.Environment,
+	s *stmt.Assign[symbol.Resolved], mapping []VarMapping, env ast.Environment,
 ) []stmt.Resolved {
 	var targets []arrayTarget
 
@@ -326,11 +386,11 @@ func expandWholeArrayAssign(
 		tgt := targets[0]
 		srcArr := s.Source.Type().AsFixedArray(env)
 
-		result := make([]stmt.Resolved, tgt.size)
+		splitAssignments := make([]stmt.Resolved, tgt.size)
 
 		for i := range tgt.size {
 			idx := *big.NewInt(int64(i))
-			result[i] = &stmt.Assign[symbol.Resolved]{
+			splitAssignments[i] = &stmt.Assign[symbol.Resolved]{
 				Targets: []lval.LVal[symbol.Resolved]{
 					lval.NewArray[symbol.Resolved](tgt.id, expr.NewConstant[symbol.Resolved](idx, 10)),
 				},
@@ -342,7 +402,7 @@ func expandWholeArrayAssign(
 			}
 		}
 
-		return result
+		return splitAssignments
 	case *expr.ExternAccess[symbol.Resolved]:
 		// Case a, b, ... = f(...)
 		var elemTargets []lval.LVal[symbol.Resolved]
@@ -368,8 +428,90 @@ func expandWholeArrayAssign(
 	return nil
 }
 
+// expandWholeArrayCmp expands an IfGoto whose condition is a whole-array
+// equality comparison (== or !=) on two bare-array LocalAccess operands into
+// a sequence of element-wise IfGotos.
+//
+// Targets emitted by this helper are with the old PC. 
+func expandWholeArrayCmp(
+	ifg *stmt.IfGoto[symbol.Resolved], cmp *expr.Cmp[symbol.Resolved],
+	mapping []VarMapping, env ast.Environment, origPC uint,
+) []stmt.Resolved {
+	// We only expand whole-array comparisons else we return nil
+	l, lok := cmp.Left.(*expr.LocalAccess[symbol.Resolved])
+	r, rok := cmp.Right.(*expr.LocalAccess[symbol.Resolved])
+	if !lok || !rok {
+		return nil
+	}
+	lm, rm := mapping[l.Variable], mapping[r.Variable]
+	if !lm.isArray || !rm.isArray {
+		return nil
+	}
+	// 
+	arrType := l.Type().AsFixedArray(env)
+	if arrType == nil {
+		panic("expected FixedArray type on the LocalAccess")
+	}
+	//
+	bitwidth, ok := data.BitWidthOf(arrType, env)
+	if !ok {
+		return nil
+	}
+	//
+	var (
+		elemType       = data.NewUnsignedInt[symbol.Resolved](bitwidth, false)
+		splitIfGotos   []stmt.Resolved
+	)
+	//
+	for i := uint(0); i < lm.size; i++ {
+		lhsAcc := expr.NewLocalAccess[symbol.Resolved](lm.newBase + i)
+		lhsAcc.SetType(elemType)
+		//
+		rhsAcc := expr.NewLocalAccess[symbol.Resolved](rm.newBase + i)
+		rhsAcc.SetType(elemType)
+		//
+		// EQ: any element differs -> SKIP (fall through, do not take branch).
+		// NEQ: any element differs -> take branch.
+		var elemTarget uint
+		if cmp.Operator == expr.EQ {
+			elemTarget = origPC + 1
+		} else {
+			elemTarget = ifg.Target
+		}
+		//
+		splitIfGotos = append(splitIfGotos, &stmt.IfGoto[symbol.Resolved]{
+			Cond:   expr.NewCmp(expr.NEQ, lhsAcc, rhsAcc),
+			Target: elemTarget,
+		})
+	}
+	//
+	if cmp.Operator == expr.EQ {
+		// All elements matched -> take the branch.
+		splitIfGotos = append(splitIfGotos, &stmt.Goto[symbol.Resolved]{Target: ifg.Target})
+	}
+	//
+	return splitIfGotos
+}
+
+// remapPC rewrites the PC of a statement from old to new PC space based on the recorded shifts.
+func remapPC(oldPC uint, pcMapping []PcMapping) uint {
+	var acc uint
+	//
+	for _, s := range pcMapping {
+		if oldPC > s.afterOldPC {
+			acc += s.shift
+		} else {
+			break
+		}
+	}
+	//
+	return oldPC + acc
+	
+
+}
+
 func rewriteFixedArrayStmt(
-	s stmt.Resolved, mapping []varMapping,
+	s stmt.Resolved, mapping []VarMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) stmt.Resolved {
 	switch s := s.(type) {
@@ -405,7 +547,7 @@ func rewriteFixedArrayStmt(
 }
 
 func rewriteArrayExpression(
-	e expr.Resolved, mapping []varMapping,
+	e expr.Resolved, mapping []VarMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) expr.Resolved {
 	switch e := e.(type) {
@@ -505,7 +647,7 @@ func rewriteArrayExpression(
 }
 
 func rewriteArrayExpressions(
-	exprs []expr.Resolved, mapping []varMapping,
+	exprs []expr.Resolved, mapping []VarMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) {
 	for i, e := range exprs {
@@ -514,7 +656,7 @@ func rewriteArrayExpressions(
 }
 
 func rewriteLValArray(
-	l lval.Resolved, mapping []varMapping,
+	l lval.Resolved, mapping []VarMapping,
 	declarations []codegen.Declaration, env ast.Environment,
 ) lval.Resolved {
 	switch l := l.(type) {
