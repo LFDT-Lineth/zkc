@@ -51,8 +51,12 @@ type SystemMap interface {
 func RegistersToString(env register.Map, regs ...register.Id) string {
 	var (
 		builder strings.Builder
-		n       = uint(len(env.Registers()))
+		n       uint
 	)
+	// support nil environment (for debugging)
+	if env != nil {
+		n = uint(len(env.Registers()))
+	}
 	//
 	for i := 0; i < len(regs); i++ {
 		var rid = regs[i]
@@ -78,7 +82,7 @@ func ExpressionToString[W word.Word[W]](op string, regs []register.Id, constant 
 	for i := 0; i < len(regs); i++ {
 		var rid = regs[i]
 		//
-		builder.WriteString(env.Register(rid).Name())
+		builder.WriteString(RegistersToString(env, rid))
 		builder.WriteString(" ")
 		builder.WriteString(op)
 		builder.WriteString(" ")
@@ -102,7 +106,7 @@ func ExpressionToStringWithoutConst(op string, regs []register.Id, env register.
 			builder.WriteString(" ")
 		}
 		//
-		builder.WriteString(env.Register(rid).Name())
+		builder.WriteString(RegistersToString(env, rid))
 	}
 	//
 	return builder.String()

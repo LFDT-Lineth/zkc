@@ -47,43 +47,30 @@ func LowerBitwise[W vm.Word[W]](modules []vm.Module) []vm.Module {
 func lowerBitwiseFunction[W vm.Word[W]](fn *vm.WordFunction, helpers *bitwiseHelpers[W],
 ) *vm.WordFunction {
 	var (
-		code      = fn.Code()
-		ncode     = make([]vectorInstruction, len(code))
-		registers = append([]register.Register{}, fn.Registers()...)
+		code  = fn.Code()
+		ncode = make([]vectorInstruction, len(code))
+		alloc = register.NewAllocator[int](fn.RegisterMap())
 	)
 
 	for i, insn := range code {
-		ncodes := lowerBitwiseCodes(insn.Codes, &registers, helpers)
-		ncode[i] = vectorInstruction{Codes: ncodes}
+		ncode[i] = insn.Map(func(_ uint, ith vm.WordInstruction) []vm.WordInstruction {
+			return lowerBitwiseCode(ith, alloc, helpers)
+		})
 	}
 
-	return vm.NewFunction(fn.Name(), fn.IsNative(), registers, ncode)
-}
-
-func lowerBitwiseCodes[W vm.Word[W]](
-	codes []vm.WordInstruction,
-	registers *[]register.Register,
-	helpers *bitwiseHelpers[W],
-) []vm.WordInstruction {
-	ncodes := make([]vm.WordInstruction, 0, len(codes))
-
-	for _, code := range codes {
-		ncodes = append(ncodes, lowerBitwiseCode(code, registers, helpers)...)
-	}
-
-	return ncodes
+	return vm.NewFunction(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
 }
 
 func lowerBitwiseCode[W vm.Word[W]](
 	code vm.WordInstruction,
-	registers *[]register.Register,
+	registers RegisterAllocator,
 	helpers *bitwiseHelpers[W],
 ) []vm.WordInstruction {
 	if !isBitwiseOpcode(code.OpCode()) {
 		return []vm.WordInstruction{code}
 	}
 
-	origWidth, isPowerOfTwo := lowerableWidth(*registers, code.Definitions()[0])
+	origWidth, isPowerOfTwo := lowerableWidth(registers, code.Definitions()[0])
 
 	p := origWidth
 	if !isPowerOfTwo {
@@ -132,7 +119,7 @@ func bitwiseCall(
 	target register.Id,
 	sources []register.Id,
 	origWidth, p uint,
-	registers *[]register.Register,
+	registers RegisterAllocator,
 ) []vm.WordInstruction {
 	if origWidth == p {
 		return []vm.WordInstruction{
@@ -144,12 +131,12 @@ func bitwiseCall(
 
 	pSources := make([]register.Id, len(sources))
 	for i, src := range sources {
-		pTmp := allocTmp(registers, p)
+		pTmp := registers.Allocate("", p)
 		insns = append(insns, instruction.NewCast(pTmp, src, p))
 		pSources[i] = pTmp
 	}
 
-	pResult := allocTmp(registers, p)
+	pResult := registers.Allocate("", p)
 	insns = append(insns, instruction.NewCall(id, pSources, []register.Id{pResult}))
 	insns = append(insns, instruction.NewCast(target, pResult, origWidth))
 
@@ -161,7 +148,7 @@ func bitwiseCall(
 func bitwiseInlineNot[W vm.Word[W]](
 	target, source register.Id,
 	width uint,
-	registers *[]register.Register,
+	registers RegisterAllocator,
 ) []vm.WordInstruction {
 	maskBig := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))
 
@@ -170,22 +157,12 @@ func bitwiseInlineNot[W vm.Word[W]](
 	mask := zeroW.SetBigInt(maskBig)
 	zero := vm.Uint64[W](0)
 
-	maskReg := allocTmp(registers, width)
+	maskReg := registers.Allocate("", width)
 
 	return []vm.WordInstruction{
 		instruction.NewIntAdd(maskReg, nil, mask),
 		instruction.NewIntSub(target, []register.Id{maskReg, source}, zero),
 	}
-}
-
-func allocTmp(registers *[]register.Register, width uint) register.Id {
-	var padding big.Int
-
-	id := register.NewId(uint(len(*registers)))
-	name := fmt.Sprintf("$%d", len(*registers))
-	*registers = append(*registers, register.NewComputed(name, width, padding))
-
-	return id
 }
 
 func nextPowerOfTwo(w uint) uint {
@@ -197,8 +174,8 @@ func nextPowerOfTwo(w uint) uint {
 	return p
 }
 
-func lowerableWidth(registers []register.Register, target register.Id) (uint, bool) {
-	reg := registers[target.Unwrap()]
+func lowerableWidth(registers register.Map, target register.Id) (uint, bool) {
+	reg := registers.Register(target)
 
 	if reg.IsNative() {
 		panic("unexpected native register in bitwise lowering")

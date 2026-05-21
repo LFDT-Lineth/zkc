@@ -13,6 +13,7 @@
 package register
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -78,7 +79,11 @@ func (p Vector) String(fn Map) string {
 			builder.WriteString("::")
 		}
 		//
-		builder.WriteString(fn.Register(ith).Name())
+		if fn == nil {
+			fmt.Fprintf(&builder, "?%d", ith.Unwrap())
+		} else {
+			builder.WriteString(fn.Register(ith).Name())
+		}
 	}
 	//
 	return builder.String()

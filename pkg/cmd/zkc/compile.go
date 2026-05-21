@@ -18,7 +18,6 @@ import (
 
 	"github.com/consensys/go-corset/pkg/cmd/corset/debug"
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
 	"github.com/consensys/go-corset/pkg/util/field/gf251"
@@ -305,8 +304,7 @@ func writeIntermediateRepresentation[W vm.BaseWord[W], I vm.Instruction, T vm.Ex
 		case vm.Memory[W]:
 			writeIrMemory(m)
 		case *vm.Function[I]:
-			name := trace.ModuleName{Name: m.Name(), Multiplier: 1}
-			mapping := instruction.NewSystemMap(register.ArrayMap(name, m.Registers()...), machine.Modules())
+			mapping := instruction.NewSystemMap(m.RegisterMap(), machine.Modules())
 			writeIrFunction[W](m, mapping)
 		}
 	}

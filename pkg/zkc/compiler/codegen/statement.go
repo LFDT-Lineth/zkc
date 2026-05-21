@@ -341,22 +341,27 @@ func (p *StmtCompiler) isFieldOperation(target register.Id) bool {
 func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], mapping []uint, target register.Id,
 ) []Instruction {
 	cmp := e.Cond.(*expr.Cmp[symbol.Resolved])
-	// Eagerly evaluate both branches into temporaries.
+	// Lazily compile both arms — their instructions are placed inside the
+	// conditionally-skipped regions below, so only the taken arm runs.
 	trueRegs, trueInsns := p.compileArgs(mapping, e.IfTrue)
 	falseRegs, falseInsns := p.compileArgs(mapping, e.IfFalse)
-	// Evaluate condition operands.
+	// Evaluate condition operands (always runs).
 	condRegs, condInsns := p.compileArgs(mapping, cmp.Left, cmp.Right)
 	// Selection sequence:
-	//   skip_if(cond, lhs, rhs, 2)      if TRUE skip false-copy + skip(1)
-	//   add(target, [falseReg], 0)       false branch (skipped when TRUE)
-	//   skip(1)                          skip over true branch
-	//   add(target, [trueReg], 0)        true branch  (returned as final insn)
-	insns := append(trueInsns, falseInsns...)
-	insns = append(insns, condInsns...)
+	//   condInsns                                  always
+	//   skip_if(cond, lhs, rhs, |falseInsns|+2)    if TRUE skip false arm
+	//   falseInsns                                 (skipped on TRUE)
+	//   add(target, [falseReg], 0)
+	//   skip(|trueInsns|+1)                        jump past true arm
+	//   trueInsns                                  (skipped on FALSE)
+	//   add(target, [trueReg], 0)
+	insns := append([]Instruction{}, condInsns...)
 	insns = append(insns, instruction.NewSkipIf(
-		opcode.Condition(cmp.Operator), condRegs[0], condRegs[1], 2))
+		opcode.Condition(cmp.Operator), condRegs[0], condRegs[1], uint(len(falseInsns))+2))
+	insns = append(insns, falseInsns...)
 	insns = append(insns, p.newLoad(target, []register.Id{falseRegs[0]}))
-	insns = append(insns, &instruction.Skip{Skip: 1})
+	insns = append(insns, &instruction.Skip{Skip: uint(len(trueInsns)) + 1})
+	insns = append(insns, trueInsns...)
 	//
 	return append(insns, p.newLoad(target, []register.Id{trueRegs[0]}))
 }
