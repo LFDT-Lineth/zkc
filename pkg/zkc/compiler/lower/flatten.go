@@ -126,7 +126,7 @@ func expandFnVariables(fn *decl.ResolvedFunction, mapping []VarMapping, env ast.
 
 			bitwidth, ok := data.BitWidthOf(vType, env)
 			if !ok {
-				panic("expected bitwidth for the variable")
+				panic("expected bitwidth to be resolved for the fixed array")
 			}
 			elemType := data.NewUnsignedInt[symbol.Resolved](bitwidth, false)
 
@@ -261,6 +261,13 @@ func expandArrayExpression(e expr.Resolved, mapping []VarMapping, env ast.Enviro
 
 		return e
 	case *expr.Ternary[symbol.Resolved]:
+		// Break the condition if it is a whole-array comparison
+		if cmp, ok := e.Cond.(*expr.Cmp[symbol.Resolved]); ok {
+			if expanded := expandArrayCmpTernary(e, cmp, mapping, env); expanded != nil {
+				return expanded
+			}
+		}
+
 		e.Cond = expandArrayExpression(e.Cond, mapping, env)
 		e.IfTrue = expandArrayExpression(e.IfTrue, mapping, env)
 		e.IfFalse = expandArrayExpression(e.IfFalse, mapping, env)
@@ -483,6 +490,87 @@ func expandWholeArrayCmp(
 	}
 	//
 	return splitIfGotos
+}
+
+// expandArrayCmpTernary rewrites a Ternary whose condition is a whole-array
+// equality comparison (== or !=) on two bare-array LocalAccess operands into
+// a right-nested chain of scalar ternaries.  Returns nil if the Ternary does
+// not match this shape;
+//
+// EQ semantics: take T iff every element matches.  Build a right-nested chain
+// in the IfTrue slot; IfFalse stays constant:
+//
+//	LHS[0] == RHS[0] ? (LHS[1] == RHS[1] ? ... ? T : F) : F
+//
+// NEQ semantics: take T iff any element differs.  Build the dual chain in the
+// IfFalse slot; IfTrue stays constant:
+//
+//	LHS[0] != RHS[0] ? T : (LHS[1] != RHS[1] ? T : ... : F)
+func expandArrayCmpTernary(
+	tern *expr.Ternary[symbol.Resolved], cmp *expr.Cmp[symbol.Resolved],
+	mapping []VarMapping, env ast.Environment,
+) expr.Resolved {
+	// We only expand whole-array comparisons else we return nil
+	l, lok := cmp.Left.(*expr.LocalAccess[symbol.Resolved])
+	r, rok := cmp.Right.(*expr.LocalAccess[symbol.Resolved])
+	if !lok || !rok {
+		return nil
+	}
+	//
+	lm, rm := mapping[l.Variable], mapping[r.Variable]
+	if !lm.isArray || !rm.isArray {
+		return nil
+	}
+	// Recursively expand the two branches first; they may themselves contain
+	// whole-array operations.
+	ifTrue := expandArrayExpression(tern.IfTrue, mapping, env)
+	ifFalse := expandArrayExpression(tern.IfFalse, mapping, env)
+	//
+	elemType := lm.elemType
+	//
+	var inner expr.Resolved
+	if cmp.Operator == expr.EQ {
+		inner = ifTrue
+
+		for i := int(lm.size) - 1; i >= 0; i-- {
+			t := &expr.Ternary[symbol.Resolved]{
+				Cond:    newElementCmp(cmp.Operator, l.Variable, r.Variable, uint(i), elemType),
+				IfTrue:  inner,
+				IfFalse: ifFalse,
+			}
+			t.SetType(tern.Type())
+			inner = t
+		}
+	} else {
+		inner = ifFalse
+
+		for i := int(lm.size) - 1; i >= 0; i-- {
+			t := &expr.Ternary[symbol.Resolved]{
+				Cond:    newElementCmp(cmp.Operator, l.Variable, r.Variable, uint(i), elemType),
+				IfTrue:  ifTrue,
+				IfFalse: inner,
+			}
+			t.SetType(tern.Type())
+			inner = t
+		}
+	}
+	//
+	return inner
+}
+
+// newElementCmp builds an element-wise comparison `lhsID[i] op rhsID[i]`
+func newElementCmp(
+	op expr.CmpOp, lhsID, rhsID variable.Id, i uint, elemType data.Type[symbol.Resolved],
+) *expr.Cmp[symbol.Resolved] {
+	idx := *big.NewInt(int64(i))
+	lhs := &expr.ArrayAccess[symbol.Resolved]{
+		Id: lhsID, Arg: expr.NewConstant[symbol.Resolved](idx, 10), Datatype: elemType,
+	}
+	rhs := &expr.ArrayAccess[symbol.Resolved]{
+		Id: rhsID, Arg: expr.NewConstant[symbol.Resolved](idx, 10), Datatype: elemType,
+	}
+
+	return expr.NewCmp(op, lhs, rhs)
 }
 
 // remapPC rewrites the PC of a statement from old to new PC space based on the recorded shifts.
