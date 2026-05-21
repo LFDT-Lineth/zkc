@@ -41,7 +41,7 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/keccakf", field.BLS12_377, field.KOALABEAR_16)
 }
 
-// Keccakf with padding and little-endian input and output
+// Keccakf with padding, little-endian input and output, and batched
 // Will be used for later benchmarks
 
 // func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {
@@ -51,6 +51,12 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 // func Test_ZkcBench_KeccakfLe(t *testing.T) {
 // 	checkZkcBench(t, "zkc/bench/keccakf_le", field.BLS12_377, field.KOALABEAR_16)
 // }
+
+// Same as Test_ZkcBench_Keccakf, but the loop is in Zkc and we have 20k test vectors
+// a single line in .accepts that packs all test vectors
+/*func Test_ZkcBench_KeccakfBatched(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/keccakf_batched", field.BLS12_377, field.KOALABEAR_16)
+}*/
 
 func Test_ZkcBench_Sort(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/sort", field.BLS12_377, field.KOALABEAR_16)
