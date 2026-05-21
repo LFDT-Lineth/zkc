@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+
+	"github.com/consensys/go-corset/pkg/schema/register"
 )
 
 // EscapeFormattedText takes a string and escapes any characters which need to
@@ -48,6 +50,8 @@ const (
 type Formattable interface {
 	// Text returns the given word formated in the given base
 	Text(base int) string
+	// BigInt returns big integer representation of value.
+	BigInt() *big.Int
 }
 
 // Format simply encodes the set of permitted formatting strings in a printf
@@ -125,18 +129,27 @@ func (p Format) String() string {
 }
 
 // FormatWord applies a given format to a given word to generate a formatted string.
-func FormatWord[W Formattable](format Format, word W) string {
+func FormatWord[W Formattable](format Format, regs []register.Register, words ...W) string {
 	var (
 		digits string
+		value  big.Int
 	)
+	//
+	for i := len(words); i > 0; i-- {
+		var ith = words[i-1]
+		// Shift left
+		value.Lsh(&value, regs[i-1].Width())
+		// Add next word
+		value.Add(&value, ith.BigInt())
+	}
 	//
 	switch format.Code {
 	case FORMAT_DEC:
-		digits = word.Text(10)
+		digits = value.Text(10)
 	case FORMAT_HEX:
-		digits = word.Text(16)
+		digits = value.Text(16)
 	case FORMAT_BIN:
-		digits = word.Text(2)
+		digits = value.Text(2)
 	case FORMAT_CHR:
 		// Render the value as a single ASCII character.  Type-checking
 		// (in the zkc compiler) enforces that the argument is a concrete
@@ -144,12 +157,12 @@ func FormatWord[W Formattable](format Format, word W) string {
 		// the low 8 bits defensively in case this is called outside
 		// that path (e.g. by future Unicode work, or by tests that
 		// bypass the type checker).
-		if w, ok := any(word).(interface{ BigInt() *big.Int }); ok {
+		if w, ok := any(value).(interface{ BigInt() *big.Int }); ok {
 			return string([]byte{byte(w.BigInt().Uint64() & 0xff)})
 		}
 		//
 		var v big.Int
-		v.SetString(word.Text(10), 10)
+		v.SetString(value.Text(10), 10)
 		//
 		return string([]byte{byte(v.Uint64() & 0xff)})
 	default:

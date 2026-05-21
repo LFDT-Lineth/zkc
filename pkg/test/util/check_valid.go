@@ -32,7 +32,7 @@ var (
 	// DEFAULT_FIELDS set default fields for testing
 	DEFAULT_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_16}
 	// DEFAULT_CONFIG sets a default testing configuration
-	DEFAULT_CONFIG = Config{fields: DEFAULT_FIELDS, constraints: false, nativeLowering: true}
+	DEFAULT_CONFIG = Config{fields: DEFAULT_FIELDS, constraints: false, nativeLowering: true, splitting: false}
 )
 
 // Config for testing
@@ -43,6 +43,8 @@ type Config struct {
 	constraints bool
 	// enable testing for native lowering
 	nativeLowering bool
+	// enable register splitting
+	splitting bool
 }
 
 // Fields determines which fields to test over.
@@ -70,6 +72,13 @@ func (p Config) NativeLowering(flag bool) Config {
 	return p
 }
 
+// Splitting determines whether or not to apply register splitting.
+func (p Config) Splitting(flag bool) Config {
+	p.splitting = flag
+	//
+	return p
+}
+
 // CheckValid checks that a given source file compiles without any errors.
 // nolint
 func CheckValid(t *testing.T, test, ext string, config Config) {
@@ -81,11 +90,12 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 	}
 	// Check for each field requested
 	for _, f := range config.fields {
+		cfg := codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting)
 		// check wo lowering and wo constraints check
-		checkValidInternal(t, test, ext, codegen.DEFAULT_CONFIG.LowerZkcNative(false), false, f)
+		checkValidInternal(t, test, ext, cfg.LowerZkcNative(false), false, f)
 		// check whether to enable lowering as well. If constraints enable, must enable lowering as well.
 		if config.nativeLowering || config.constraints {
-			checkValidInternal(t, test, ext, codegen.DEFAULT_CONFIG.LowerZkcNative(true), config.constraints, f)
+			checkValidInternal(t, test, ext, cfg.LowerZkcNative(true), config.constraints, f)
 		}
 	}
 }

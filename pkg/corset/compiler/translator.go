@@ -675,7 +675,7 @@ func (t *translator) checkLookupVector(extern bool, vector lookup.Vector[word.Bi
 func isConstantRegister(term hir.Term) bool {
 	switch t := term.(type) {
 	case *hir.Constant:
-		val := t.Value.AsBigInt()
+		val := t.Value.BigInt()
 		// Check whether valid constant
 		return val.IsUint64() && (val.Uint64() == 0 || val.Uint64() == 1)
 	case *hir.RegisterAccess:

@@ -47,6 +47,11 @@ func (p Vector) BitWidth(fn Map) uint {
 	return bitwidth
 }
 
+// Len returns the length of this vector
+func (p Vector) Len() uint {
+	return uint(len(p.regs))
+}
+
 // Registers provides raw access to the underlying register array wrapped in
 // this vector.
 func (p Vector) Registers() []Id {

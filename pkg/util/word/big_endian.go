@@ -38,9 +38,9 @@ func NewBigEndian(bytes []byte) BigEndian {
 	return BigEndian{val}
 }
 
-// AsBigInt returns a freshly allocated big integer from the given bytes.
-func (p BigEndian) AsBigInt() big.Int {
-	return p.val
+// BigInt implementation for word.Word interface.
+func (p BigEndian) BigInt() *big.Int {
+	return &p.val
 }
 
 // Add implementation for field.Element interface
