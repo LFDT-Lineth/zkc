@@ -66,12 +66,15 @@ func binarizeBitwiseCode[W vm.Word[W]](code vm.WordInstruction, registers Regist
 		constant W
 	)
 
-	switch t := code.(type) {
-	case *instruction.BitAnd[W]:
+	switch code.OpCode() {
+	case opcode.BIT_AND:
+		t := code.(*instruction.WordTypeB[W])
 		op, target, sources, constant = t.OpCode(), t.Target, t.Sources, t.Constant
-	case *instruction.BitOr[W]:
+	case opcode.BIT_OR:
+		t := code.(*instruction.WordTypeB[W])
 		op, target, sources, constant = t.OpCode(), t.Target, t.Sources, t.Constant
-	case *instruction.BitXor[W]:
+	case opcode.BIT_XOR:
+		t := code.(*instruction.WordTypeB[W])
 		op, target, sources, constant = t.OpCode(), t.Target, t.Sources, t.Constant
 	default:
 		return []vm.WordInstruction{code}
@@ -85,7 +88,7 @@ func binarizeBitwiseCode[W vm.Word[W]](code vm.WordInstruction, registers Regist
 	// If the constant is not the identity, materialise it as a register and add it to sources.
 	if constant.Cmp(identity) != 0 {
 		cstReg := registers.Allocate("", width)
-		insns = append(insns, instruction.NewIntAdd(cstReg, nil, constant))
+		insns = append(insns, instruction.UintAdd(cstReg, nil, constant))
 		sources = append(sources, cstReg)
 	}
 
@@ -94,8 +97,7 @@ func binarizeBitwiseCode[W vm.Word[W]](code vm.WordInstruction, registers Regist
 		panic(fmt.Sprintf("unexpected bitwise instruction with no sources: %T", code))
 	case 1:
 		// Trivial assignment: target = sources[0]
-		var zero W
-		return append(insns, instruction.NewIntAdd(target, sources, zero))
+		return append(insns, instruction.UintAssign[W](target, sources[0]))
 	case 2:
 		// Happy path: just one binary op, possibly with a constant.
 		return append(insns, newBinaryBitOp(op, target, sources[0], sources[1], identity))
@@ -130,11 +132,11 @@ func newBinaryBitOp[W vm.Word[W]](op instruction.OpCode, target, lhs, rhs regist
 
 	switch op {
 	case opcode.BIT_AND:
-		return instruction.NewBitAnd[W](target, sources, constant)
+		return instruction.BitAnd[W](target, sources, constant)
 	case opcode.BIT_OR:
-		return instruction.NewBitOr[W](target, sources, constant)
+		return instruction.BitOr[W](target, sources, constant)
 	case opcode.BIT_XOR:
-		return instruction.NewBitXor[W](target, sources, constant)
+		return instruction.BitXor[W](target, sources, constant)
 	default:
 		panic(fmt.Sprintf("unexpected bitwise opcode: %d", op))
 	}

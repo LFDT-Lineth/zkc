@@ -99,41 +99,26 @@ func lowerRelationalSkipIf[W vm.Word[W]](
 	zero := vm.Uint64[W](0)
 	one := vm.Uint64[W](1)
 
-	bWide := registers.Allocate("", castBandWidth)
+	//bWide := registers.Allocate("", castBandWidth)
 	oneReg := registers.Allocate("", 1)
 	biased := registers.Allocate("", castBandWidth)
-	diff := registers.Allocate("", castBandWidth)
 	lo := registers.Allocate("", castBandWidth-1)
 	sign := registers.Allocate("", 1)
 	zeroReg := registers.Allocate("", 1)
 
 	// rhs is always cast to castBandWidth
 	castRhs := []vm.WordInstruction{
-		instruction.NewCast(bWide, rhs, castBandWidth),
-		instruction.NewIntAdd(oneReg, nil, one),
+		instruction.UintConst(oneReg, one),
 	}
-
 	// when creating 1::lhs, we don't need to cast lhs if it's of size castBandWidth-1 already.
-	var castLhs []vm.WordInstruction
-	if lhsWidth == castBandWidth-1 {
-		castLhs = []vm.WordInstruction{
-			instruction.NewBitConcat[W](biased, []register.Id{lhs, oneReg}),
-		}
-	} else {
-		aBase := registers.Allocate("", castBandWidth-1)
-		castLhs = []vm.WordInstruction{
-			instruction.NewCast(aBase, lhs, castBandWidth-1),
-			instruction.NewBitConcat[W](biased, []register.Id{aBase, oneReg}),
-		}
-	}
+	var castLhs = instruction.BitConcat[W](biased, []register.Id{lhs, oneReg})
 
 	subtractAnsDestruct := []vm.WordInstruction{
-		instruction.NewIntSub(diff, []register.Id{biased, bWide}, zero),
-		instruction.NewDestruct([]register.Id{lo, sign}, diff),
-		instruction.NewIntAdd(zeroReg, nil, zero),
+		instruction.UintSubV(register.NewVector(lo, sign), []register.Id{biased, rhs}, zero),
+		instruction.UintConst(zeroReg, zero),
 	}
 
-	insns := append(append(castRhs, castLhs...), subtractAnsDestruct...)
+	insns := append(append(castRhs, castLhs), subtractAnsDestruct...)
 
 	// Finally emit the SkipIf with the appropriate condition on the sign bit
 	finalCond := opcode.EQ

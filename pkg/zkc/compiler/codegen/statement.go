@@ -93,37 +93,24 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorI
 //
 // Here, we have compiled out variable tmp into two registers, one for each
 // field.
-func (p *StmtCompiler) mapLVals(mapping []uint, lvals []LVal) ([]register.Id, []Instruction, []Instruction) {
+func (p *StmtCompiler) mapLVals(mapping []uint, lvals []LVal) ([]register.Vector, []Instruction, []Instruction) {
 	var (
-		regs                []register.Id
+		regs                []register.Vector
 		preInsns, postInsns []Instruction
 	)
 	//
 	for _, lv := range lvals {
 		switch lv := lv.(type) {
 		case *lval.Variable[symbol.Resolved]:
-			// Check for destructuring case
-			if len(lv.Ids) == 1 {
-				// not destructuring
-				regs = append(regs, register.NewId(lv.Ids[0]))
-			} else {
-				var (
-					ids      = make([]register.Id, len(lv.Ids))
-					bitwidth uint
-				)
-				//
-				for j, id := range lv.Ids {
-					ids[j] = register.NewId(id)
-					bitwidth += p.registers[id].Width()
-				}
-				// allocate temporary register to store result
-				rid := p.allocate(bitwidth)
-				regs = append(regs, rid)
-				// reverse ids as NewDestruct expects them in little endian order
-				ids = array.Reverse(ids)
-				// include write to temporary after its assigned
-				postInsns = append(postInsns, instruction.NewDestruct(ids, rid))
+			var ids = make([]register.Id, len(lv.Ids))
+
+			for j, id := range lv.Ids {
+				ids[j] = register.NewId(id)
 			}
+			// reverse ids as NewDestruct expects them in little endian order
+			ids = array.Reverse(ids)
+			//
+			regs = append(regs, register.NewVector(ids...))
 		case *lval.MemAccess[symbol.Resolved]:
 			var (
 				ext = p.components[lv.Name.Index].(*decl.ResolvedMemory)
@@ -140,7 +127,7 @@ func (p *StmtCompiler) mapLVals(mapping []uint, lvals []LVal) ([]register.Id, []
 			for j, t := range ext.Data {
 				bitwidth, _ := data.BitWidthOf(t.DataType, p.environment)
 				dataLines[j] = p.allocate(bitwidth)
-				regs = append(regs, dataLines[j])
+				regs = append(regs, register.NewVector(dataLines[j]))
 			}
 			//
 			preInsns = append(preInsns, pre...)
@@ -218,7 +205,7 @@ func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, ta
 	}
 }
 
-func (p *StmtCompiler) compileExpr(e Expr, mapping []uint, targets ...register.Id) []Instruction {
+func (p *StmtCompiler) compileExpr(e Expr, mapping []uint, targets ...register.Vector) []Instruction {
 	var (
 		insns    []Instruction
 		unitExpr = false
@@ -227,28 +214,28 @@ func (p *StmtCompiler) compileExpr(e Expr, mapping []uint, targets ...register.I
 	switch e := e.(type) {
 	case *expr.Add[symbol.Resolved]:
 		if p.isFieldOperation(targets[0]) {
-			insns = p.compileFieldAdd(e.Exprs, mapping, targets[0])
+			insns = p.compileFieldAdd(e.Exprs, mapping, targets[0].AsRegister())
 		} else {
 			insns = p.compileIntAdd(e.Exprs, mapping, targets[0])
 		}
 
 		unitExpr = true
 	case *expr.Cast[symbol.Resolved]:
-		insns = p.compileCast(e, mapping, targets[0])
+		insns = p.compileExpr(e.Expr, mapping, targets...)
 		unitExpr = true
 	case *expr.Concat[symbol.Resolved]:
 		insns = p.compileConcat(e.Exprs, mapping, targets[0])
 		unitExpr = true
 	case *expr.BitwiseAnd[symbol.Resolved]:
-		insns = p.compileBitwiseAnd(e.Exprs, mapping, targets[0])
+		insns = destructUnit(p, e.Exprs, mapping, targets[0], p.compileBitwiseAnd)
 		unitExpr = true
 	case *expr.Const[symbol.Resolved]:
 		var c vm.Uint
 		//
 		if p.isFieldOperation(targets[0]) {
-			insns = p.compileFieldConst(c.SetBigInt(&e.Constant), mapping, targets[0])
+			insns = p.compileFieldConst(c.SetBigInt(e.Constant()), mapping, targets[0].AsRegister())
 		} else {
-			insns = p.compileIntConst(c.SetBigInt(&e.Constant), mapping, targets[0])
+			insns = p.compileIntConst(c.SetBigInt(e.Constant()), mapping, targets[0])
 		}
 		//
 		unitExpr = true
@@ -256,22 +243,22 @@ func (p *StmtCompiler) compileExpr(e Expr, mapping []uint, targets ...register.I
 		//
 		switch ext := p.components[e.Name.Index].(type) {
 		case *decl.ResolvedConstant:
-			insns = p.compileIntConst(p.evalConstant(e, false), mapping, targets[0])
+			insns = p.compileIntConst(p.evalConstant(e), mapping, targets[0])
 			unitExpr = true
 		case *decl.ResolvedMemory:
 			if !ext.IsReadable() {
 				panic(fmt.Sprintf("unreadable memory \"%s\" encountered", e.Name.String()))
 			}
 			//
-			insns = p.compileMemoryRead(e, mapping, targets...)
+			insns = destructMultiway(p, e, mapping, targets, p.compileMemoryRead)
 		case *decl.ResolvedFunction:
-			insns = p.compileFunctionCall(e, mapping, targets...)
+			insns = destructMultiway(p, e, mapping, targets, p.compileFunctionCall)
 		default:
 			panic(fmt.Sprintf("unknown symbol \"%s\" encountered", e.Name.String()))
 		}
 	case *expr.LocalAccess[symbol.Resolved]:
 		if p.isFieldOperation(targets[0]) {
-			insns = p.compileFieldAccess(e, mapping, targets[0])
+			insns = p.compileFieldAccess(e, mapping, targets[0].AsRegister())
 		} else {
 			insns = p.compileLocalAccess(e, mapping, targets[0])
 		}
@@ -282,40 +269,40 @@ func (p *StmtCompiler) compileExpr(e Expr, mapping []uint, targets ...register.I
 		unitExpr = true
 	case *expr.Mul[symbol.Resolved]:
 		if p.isFieldOperation(targets[0]) {
-			insns = p.compileFieldMul(e.Exprs, mapping, targets[0])
+			insns = p.compileFieldMul(e.Exprs, mapping, targets[0].AsRegister())
 		} else {
 			insns = p.compileIntMul(e.Exprs, mapping, targets[0])
 		}
 
 		unitExpr = true
 	case *expr.BitwiseNot[symbol.Resolved]:
-		insns = p.compileBitwiseNot(e, mapping, targets[0])
+		insns = destructUnit(p, e, mapping, targets[0], p.compileBitwiseNot)
 		unitExpr = true
 	case *expr.BitwiseOr[symbol.Resolved]:
-		insns = p.compileBitwiseOr(e.Exprs, mapping, targets[0])
+		insns = destructUnit(p, e.Exprs, mapping, targets[0], p.compileBitwiseOr)
 		unitExpr = true
 	case *expr.Div[symbol.Resolved]:
-		insns = p.compileIntDiv(e.Exprs, mapping, targets[0])
+		insns = destructUnit(p, e.Exprs, mapping, targets[0], p.compileIntDiv)
 		unitExpr = true
 	case *expr.Rem[symbol.Resolved]:
-		insns = p.compileIntRem(e.Exprs, mapping, targets[0])
+		insns = destructUnit(p, e.Exprs, mapping, targets[0], p.compileIntRem)
 		unitExpr = true
 	case *expr.Shl[symbol.Resolved]:
-		insns = p.compileBitwiseShl(e.Exprs, mapping, targets[0])
+		insns = destructUnit(p, e.Exprs, mapping, targets[0], p.compileBitwiseShl)
 		unitExpr = true
 	case *expr.Shr[symbol.Resolved]:
-		insns = p.compileBitwiseShr(e.Exprs, mapping, targets[0])
+		insns = destructUnit(p, e.Exprs, mapping, targets[0], p.compileBitwiseShr)
 		unitExpr = true
 	case *expr.Sub[symbol.Resolved]:
 		if p.isFieldOperation(targets[0]) {
-			insns = p.compileFieldSub(e.Exprs, mapping, targets[0])
+			insns = p.compileFieldSub(e.Exprs, mapping, targets[0].AsRegister())
 		} else {
 			insns = p.compileIntSub(e.Exprs, mapping, targets[0])
 		}
-
+		//
 		unitExpr = true
 	case *expr.Xor[symbol.Resolved]:
-		insns = p.compileBitwiseXor(e.Exprs, mapping, targets[0])
+		insns = destructUnit(p, e.Exprs, mapping, targets[0], p.compileBitwiseXor)
 		unitExpr = true
 	case *expr.Ternary[symbol.Resolved]:
 		insns = p.compileTernary(e, mapping, targets[0])
@@ -333,41 +320,95 @@ func (p *StmtCompiler) compileExpr(e Expr, mapping []uint, targets ...register.I
 	return insns
 }
 
-// check whether this is a field operation, or not.
-func (p *StmtCompiler) isFieldOperation(target register.Id) bool {
-	return p.registers[target.Unwrap()].IsNative()
+// UnitTranslator is for unit instructions which cannot target a vector
+// instruction.
+type UnitTranslator[T any] = func(T, []uint, register.Id) []Instruction
+
+// MultiTranslator is for multi-way instructions which cannot target a vector
+// instruction.
+type MultiTranslator[T any] = func(T, []uint, []register.Id) []Instruction
+
+// Wrap a translator for a unit instruction which cannot target vectors (for
+// whatever reason).  Essentially, this allocates fresh registers as required to
+// handle any destructs encountered.
+func destructUnit[T any](p *StmtCompiler, args T, mapping []uint, target register.Vector, fn UnitTranslator[T],
+) []Instruction {
+	var bitwidth = p.bitwidthOf(target)
+	// Check for non-vector situation
+	if target.Len() == 1 {
+		return fn(args, mapping, target.AsRegister())
+	}
+	// Allocate temporary
+	tmp := p.allocate(bitwidth)
+	// Translate expression
+	insns := fn(args, mapping, tmp)
+	// Generate destruct
+	return append(insns, instruction.UintDestruct[vm.Uint](target, tmp))
 }
 
-func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], mapping []uint, target register.Id,
+func destructMultiway[T any](p *StmtCompiler, args T, mapping []uint, targets []register.Vector, fn MultiTranslator[T],
+) []Instruction {
+	var tmps = make([]register.Id, len(targets))
+	//
+	for i, v := range targets {
+		var bitwidth = p.bitwidthOf(v)
+		//
+		if v.Len() == 1 {
+			tmps[i] = v.AsRegister()
+		} else {
+			// Allocate temporary
+			tmps[i] = p.allocate(bitwidth)
+		}
+	}
+	// Translate expression
+	insns := fn(args, mapping, tmps)
+	//  Generate destruct(s)
+	for i, v := range targets {
+		if v.Len() != 1 {
+			insns = append(insns, instruction.UintDestruct[vm.Uint](v, tmps[i]))
+		}
+	}
+	//
+	return insns
+}
+
+// check whether this is a field operation, or not.
+func (p *StmtCompiler) isFieldOperation(target register.Vector) bool {
+	for _, r := range target.Registers() {
+		if p.registers[r.Unwrap()].IsNative() {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], mapping []uint, target register.Vector,
 ) []Instruction {
 	cmp := e.Cond.(*expr.Cmp[symbol.Resolved])
 	// Lazily compile both arms — their instructions are placed inside the
 	// conditionally-skipped regions below, so only the taken arm runs.
-	trueRegs, trueInsns := p.compileArgs(mapping, e.IfTrue)
-	falseRegs, falseInsns := p.compileArgs(mapping, e.IfFalse)
+	trueInsns := p.compileExpr(e.IfTrue, mapping, target)
+	falseInsns := p.compileExpr(e.IfFalse, mapping, target)
 	// Evaluate condition operands (always runs).
 	condRegs, condInsns := p.compileArgs(mapping, cmp.Left, cmp.Right)
 	// Selection sequence:
 	//   condInsns                                  always
 	//   skip_if(cond, lhs, rhs, |falseInsns|+2)    if TRUE skip false arm
 	//   falseInsns                                 (skipped on TRUE)
-	//   add(target, [falseReg], 0)
 	//   skip(|trueInsns|+1)                        jump past true arm
 	//   trueInsns                                  (skipped on FALSE)
-	//   add(target, [trueReg], 0)
 	insns := append([]Instruction{}, condInsns...)
 	insns = append(insns, instruction.NewSkipIf(
-		opcode.Condition(cmp.Operator), condRegs[0], condRegs[1], uint(len(falseInsns))+2))
+		opcode.Condition(cmp.Operator), condRegs[0], condRegs[1], uint(len(falseInsns))+1))
 	insns = append(insns, falseInsns...)
-	insns = append(insns, p.newLoad(target, []register.Id{falseRegs[0]}))
-	insns = append(insns, &instruction.Skip{Skip: uint(len(trueInsns)) + 1})
-	insns = append(insns, trueInsns...)
+	insns = append(insns, &instruction.Skip{Skip: uint(len(trueInsns))})
 	//
-	return append(insns, p.newLoad(target, []register.Id{trueRegs[0]}))
+	return append(insns, trueInsns...)
 }
 
 func (p *StmtCompiler) compileTupleInitialiser(e *expr.TupleInitialiser[symbol.Resolved], mapping []uint,
-	targets ...register.Id) (insns []Instruction) {
+	targets ...register.Vector) (insns []Instruction) {
 	// NOTE: we assume the right number of targets for the initialiser here, and
 	// that this was checked earlier in the pipeline.
 	for i, target := range targets {
@@ -377,33 +418,19 @@ func (p *StmtCompiler) compileTupleInitialiser(e *expr.TupleInitialiser[symbol.R
 	return insns
 }
 
-func (p *StmtCompiler) compileIntConst(c vm.Uint, _ []uint, target register.Id,
+func (p *StmtCompiler) compileIntConst(c vm.Uint, _ []uint, target register.Vector,
 ) []Instruction {
 	//
-	return []Instruction{instruction.NewIntAdd(target, nil, c)}
+	return []Instruction{instruction.UintAddV(target, nil, c)}
 }
 
 func (p *StmtCompiler) compileFieldConst(c vm.Uint, _ []uint, target register.Id,
 ) []Instruction {
 	//
-	return []Instruction{instruction.NewIntAddModP(target, nil, c)}
+	return []Instruction{instruction.UintAddModP(target, nil, c)}
 }
 
-func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], mapping []uint, target register.Id,
-) []Instruction {
-	var (
-		sources, insns = p.compileArgs(mapping, e.Expr)
-	)
-	//
-	if t := e.CastType.AsUint(p.environment); t != nil {
-		// uint cast
-		return append(insns, instruction.NewCast(target, sources[0], t.BitWidth()))
-	}
-	// field cast
-	return append(insns, instruction.NewCast(target, sources[0], math.MaxUint))
-}
-
-func (p *StmtCompiler) compileConcat(args []Expr, mapping []uint, target register.Id) []Instruction {
+func (p *StmtCompiler) compileConcat(args []Expr, mapping []uint, target register.Vector) []Instruction {
 	var nargs []Expr
 	//
 	nargs = append(nargs, args...)
@@ -412,25 +439,25 @@ func (p *StmtCompiler) compileConcat(args []Expr, mapping []uint, target registe
 	// Reverse sources (as NewBitConcat requires them in little endian order)
 	sources = array.Reverse(sources)
 	// Done
-	return append(insns, instruction.NewBitConcat[vm.Uint](target, sources))
+	return append(insns, instruction.BitConcatV[vm.Uint](target, sources))
 }
 
-func (p *StmtCompiler) compileIntAdd(args []Expr, mapping []uint, target register.Id) []Instruction {
+func (p *StmtCompiler) compileIntAdd(args []Expr, mapping []uint, target register.Vector) []Instruction {
 	//
 	var (
 		constant vm.Uint
 		nargs    []Expr
 		w        vm.Uint
-		bitwidth = p.addBitWidth(target)
+		bitwidth = p.bitwidthOf(target)
 	)
 	//
 	for _, e := range args {
 		var overflow bool
 		//
 		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant, overflow = constant.Add(bitwidth, w.SetBigInt(&c.Constant))
+			constant, overflow = constant.Add(bitwidth, w.SetBigInt(c.Constant()))
 		} else if p.isConstantAccess(e) {
-			constant, overflow = constant.Add(bitwidth, p.evalConstant(e, false))
+			constant, overflow = constant.Add(bitwidth, p.evalConstant(e))
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -443,7 +470,7 @@ func (p *StmtCompiler) compileIntAdd(args []Expr, mapping []uint, target registe
 	// Compile arguments
 	sources, insns := p.compileArgs(mapping, nargs...)
 	// Done
-	return append(insns, instruction.NewIntAdd(target, sources, constant))
+	return append(insns, instruction.UintAddV(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileFieldAdd(args []Expr, mapping []uint, target register.Id) []Instruction {
@@ -459,9 +486,9 @@ func (p *StmtCompiler) compileFieldAdd(args []Expr, mapping []uint, target regis
 	//
 	for _, e := range args {
 		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant = constant.AddMod(w.SetBigInt(&c.Constant), modulus)
+			constant = constant.AddMod(w.SetBigInt(c.Constant()), modulus)
 		} else if p.isConstantAccess(e) {
-			constant = constant.AddMod(p.evalConstant(e, false), modulus)
+			constant = constant.AddMod(p.evalConstant(e), modulus)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -469,11 +496,11 @@ func (p *StmtCompiler) compileFieldAdd(args []Expr, mapping []uint, target regis
 	// Compile arguments
 	sources, insns := p.compileArgs(mapping, nargs...)
 	// Done
-	return append(insns, instruction.NewIntAddModP(target, sources, constant))
+	return append(insns, instruction.UintAddModP(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved], mapping []uint,
-	returns ...register.Id) []Instruction {
+	returns []register.Id) []Instruction {
 	var (
 		// Determine vm module identifier
 		id = mapping[e.Name.Index]
@@ -484,14 +511,9 @@ func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved]
 	return append(insns, instruction.NewCall(id, arguments, returns))
 }
 
-func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target register.Id,
+func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target register.Vector,
 ) []Instruction {
-	var (
-		zero vm.Uint
-		reg  = []register.Id{register.NewId(e.Variable)}
-	)
-	//
-	return []Instruction{instruction.NewIntAdd(target, reg, zero)}
+	return []Instruction{instruction.UintAssignV[vm.Uint](target, register.NewId(e.Variable))}
 }
 
 func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target register.Id,
@@ -501,16 +523,16 @@ func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], 
 		reg  = []register.Id{register.NewId(e.Variable)}
 	)
 	//
-	return []Instruction{instruction.NewIntAddModP(target, reg, zero)}
+	return []Instruction{instruction.UintAddModP(target, reg, zero)}
 }
 
-func (p *StmtCompiler) compileArrayAccess(e *expr.ArrayAccess[symbol.Resolved], mapping []uint, target register.Id,
+func (p *StmtCompiler) compileArrayAccess(e *expr.ArrayAccess[symbol.Resolved], mapping []uint, target register.Vector,
 ) []Instruction {
 	panic(fmt.Sprintf("unexpected ArrayAccess node reached codegen (variable %d)", e.Id))
 }
 
 func (p *StmtCompiler) compileMemoryRead(e *expr.ExternAccess[symbol.Resolved], mapping []uint,
-	data ...register.Id) []Instruction {
+	data []register.Id) []Instruction {
 	var (
 		// Determine vm module identifier
 		id = mapping[e.Name.Index]
@@ -521,23 +543,23 @@ func (p *StmtCompiler) compileMemoryRead(e *expr.ExternAccess[symbol.Resolved], 
 	return append(insns, instruction.NewMemRead(id, address, data))
 }
 
-func (p *StmtCompiler) compileIntMul(args []Expr, mapping []uint, target register.Id,
+func (p *StmtCompiler) compileIntMul(args []Expr, mapping []uint, target register.Vector,
 ) []Instruction {
 	//
 	var (
 		constant vm.Uint = vm.Uint64[vm.Uint](1)
 		nargs    []Expr
 		w        vm.Uint
-		bitwidth = p.addBitWidth(target)
+		bitwidth = p.bitwidthOf(target)
 	)
 	//
 	for _, e := range args {
 		var overflow bool
 		//
 		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant, overflow = constant.Mul(bitwidth, w.SetBigInt(&c.Constant))
+			constant, overflow = constant.Mul(bitwidth, w.SetBigInt(c.Constant()))
 		} else if p.isConstantAccess(e) {
-			constant, overflow = constant.Mul(bitwidth, p.evalConstant(e, false))
+			constant, overflow = constant.Mul(bitwidth, p.evalConstant(e))
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -550,7 +572,7 @@ func (p *StmtCompiler) compileIntMul(args []Expr, mapping []uint, target registe
 	// Compile arguments
 	sources, insns := p.compileArgs(mapping, nargs...)
 	//
-	return append(insns, instruction.NewIntMul(target, sources, constant))
+	return append(insns, instruction.UintMulV(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target register.Id,
@@ -566,9 +588,9 @@ func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target regis
 	//
 	for _, e := range args {
 		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant = constant.MulMod(w.SetBigInt(&c.Constant), modulus)
+			constant = constant.MulMod(w.SetBigInt(c.Constant()), modulus)
 		} else if p.isConstantAccess(e) {
-			constant = constant.MulMod(p.evalConstant(e, false), modulus)
+			constant = constant.MulMod(p.evalConstant(e), modulus)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -576,7 +598,7 @@ func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target regis
 	// Compile arguments
 	sources, insns := p.compileArgs(mapping, nargs...)
 	// Done
-	return append(insns, instruction.NewIntMulModP(target, sources, constant))
+	return append(insns, instruction.UintMulModP(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileIntDiv(args []Expr, mapping []uint, target register.Id,
@@ -590,7 +612,7 @@ func (p *StmtCompiler) compileIntDiv(args []Expr, mapping []uint, target registe
 	// args[0] is the dividend — never fold it.
 	for _, e := range args[1:] {
 		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			product.Mul(product, &c.Constant)
+			product.Mul(product, c.Constant())
 
 			if uint(product.BitLen()) > width {
 				msg := fmt.Sprintf("constant divisors overflow u%d", width)
@@ -599,7 +621,7 @@ func (p *StmtCompiler) compileIntDiv(args []Expr, mapping []uint, target registe
 				break
 			}
 		} else if p.isConstantAccess(e) {
-			product.Mul(product, p.evalConstant(e, false).BigInt())
+			product.Mul(product, p.evalConstant(e).BigInt())
 
 			if uint(product.BitLen()) > width {
 				msg := fmt.Sprintf("constant divisors overflow u%d", width)
@@ -613,7 +635,7 @@ func (p *StmtCompiler) compileIntDiv(args []Expr, mapping []uint, target registe
 	}
 
 	if product.Cmp(big.NewInt(1)) != 0 {
-		nargs = append(nargs, &expr.Const[symbol.Resolved]{Constant: *product})
+		nargs = append(nargs, expr.NewTypedConstant[symbol.Resolved](*product, 10, width))
 	}
 
 	if len(nargs) < 2 {
@@ -627,11 +649,11 @@ func (p *StmtCompiler) compileIntDiv(args []Expr, mapping []uint, target registe
 	//
 	for i := 1; i < len(sources)-1; i++ {
 		tmp := p.allocate(p.registers[target.Unwrap()].Width())
-		insns = append(insns, instruction.NewIntDiv[vm.Uint](tmp, value, sources[i]))
+		insns = append(insns, instruction.UintDiv[vm.Uint](tmp, value, sources[i]))
 		value = tmp
 	}
 	//
-	return append(insns, instruction.NewIntDiv[vm.Uint](target, value, sources[len(sources)-1]))
+	return append(insns, instruction.UintDiv[vm.Uint](target, value, sources[len(sources)-1]))
 }
 
 func (p *StmtCompiler) compileIntRem(args []Expr, mapping []uint, target register.Id,
@@ -643,11 +665,11 @@ func (p *StmtCompiler) compileIntRem(args []Expr, mapping []uint, target registe
 	//
 	for i := 1; i < len(sources)-1; i++ {
 		tmp := p.allocate(p.registers[target.Unwrap()].Width())
-		insns = append(insns, instruction.NewIntRem[vm.Uint](tmp, value, sources[i]))
+		insns = append(insns, instruction.UintRem[vm.Uint](tmp, value, sources[i]))
 		value = tmp
 	}
 	//
-	return append(insns, instruction.NewIntRem[vm.Uint](target, value, sources[len(sources)-1]))
+	return append(insns, instruction.UintRem[vm.Uint](target, value, sources[len(sources)-1]))
 }
 
 func (p *StmtCompiler) compileBitwiseShl(args []Expr, mapping []uint, target register.Id,
@@ -659,11 +681,11 @@ func (p *StmtCompiler) compileBitwiseShl(args []Expr, mapping []uint, target reg
 	//
 	for i := 1; i < len(sources)-1; i++ {
 		tmp := p.allocate(p.registers[target.Unwrap()].Width())
-		insns = append(insns, instruction.NewBitShl[vm.Uint](tmp, value, sources[i]))
+		insns = append(insns, instruction.BitShl[vm.Uint](tmp, value, sources[i]))
 		value = tmp
 	}
 	//
-	return append(insns, instruction.NewBitShl[vm.Uint](target, value, sources[len(sources)-1]))
+	return append(insns, instruction.BitShl[vm.Uint](target, value, sources[len(sources)-1]))
 }
 
 func (p *StmtCompiler) compileBitwiseShr(args []Expr, mapping []uint, target register.Id,
@@ -675,30 +697,30 @@ func (p *StmtCompiler) compileBitwiseShr(args []Expr, mapping []uint, target reg
 	//
 	for i := 1; i < len(sources)-1; i++ {
 		tmp := p.allocate(p.registers[target.Unwrap()].Width())
-		insns = append(insns, instruction.NewBitShr[vm.Uint](tmp, value, sources[i]))
+		insns = append(insns, instruction.BitShr[vm.Uint](tmp, value, sources[i]))
 		value = tmp
 	}
 	//
-	return append(insns, instruction.NewBitShr[vm.Uint](target, value, sources[len(sources)-1]))
+	return append(insns, instruction.BitShr[vm.Uint](target, value, sources[len(sources)-1]))
 }
 
-func (p *StmtCompiler) compileIntSub(args []Expr, mapping []uint, target register.Id,
+func (p *StmtCompiler) compileIntSub(args []Expr, mapping []uint, target register.Vector,
 ) []Instruction {
 	//
 	var (
 		constant vm.Uint
 		nargs    []Expr
 		w        vm.Uint
-		bitwidth = p.addBitWidth(target)
+		bitwidth = p.bitwidthOf(target)
 	)
 	//
 	for i, e := range args {
 		var overflow bool
 
 		if c, ok := e.(*expr.Const[symbol.Resolved]); ok && i > 0 {
-			constant, overflow = constant.Add(bitwidth, w.SetBigInt(&c.Constant))
+			constant, overflow = constant.Add(bitwidth, w.SetBigInt(c.Constant()))
 		} else if p.isConstantAccess(e) && i > 0 {
-			constant, overflow = constant.Add(bitwidth, p.evalConstant(e, false))
+			constant, overflow = constant.Add(bitwidth, p.evalConstant(e))
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -711,7 +733,7 @@ func (p *StmtCompiler) compileIntSub(args []Expr, mapping []uint, target registe
 	// Compile arguments
 	sources, insns := p.compileArgs(mapping, nargs...)
 	// Done
-	return append(insns, instruction.NewIntSub(target, sources, constant))
+	return append(insns, instruction.UintSubV(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target register.Id,
@@ -727,9 +749,9 @@ func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target regis
 	//
 	for i, e := range args {
 		if c, ok := e.(*expr.Const[symbol.Resolved]); ok && i > 0 {
-			constant = constant.AddMod(w.SetBigInt(&c.Constant), modulus)
+			constant = constant.AddMod(w.SetBigInt(c.Constant()), modulus)
 		} else if p.isConstantAccess(e) && i > 0 {
-			constant = constant.AddMod(p.evalConstant(e, false), modulus)
+			constant = constant.AddMod(p.evalConstant(e), modulus)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -737,7 +759,7 @@ func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target regis
 	// Compile arguments
 	sources, insns := p.compileArgs(mapping, nargs...)
 	// Done
-	return append(insns, instruction.NewIntSubModP(target, sources, constant))
+	return append(insns, instruction.UintSubModP(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileBitwiseAnd(args []Expr, mapping []uint, target register.Id,
@@ -755,9 +777,9 @@ func (p *StmtCompiler) compileBitwiseAnd(args []Expr, mapping []uint, target reg
 		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
 			var w vm.Uint
 
-			constant = constant.And(bitwidth, w.SetBigInt(&c.Constant))
+			constant = constant.And(bitwidth, w.SetBigInt(c.Constant()))
 		} else if p.isConstantAccess(e) {
-			constant = constant.And(bitwidth, p.evalConstant(e, false))
+			constant = constant.And(bitwidth, p.evalConstant(e))
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -765,7 +787,7 @@ func (p *StmtCompiler) compileBitwiseAnd(args []Expr, mapping []uint, target reg
 	// Compile arguments
 	sources, insns := p.compileArgs(mapping, nargs...)
 	//
-	return append(insns, instruction.NewBitAnd(target, sources, constant))
+	return append(insns, instruction.BitAnd(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileBitwiseNot(e *expr.BitwiseNot[symbol.Resolved], mapping []uint, target register.Id,
@@ -773,7 +795,7 @@ func (p *StmtCompiler) compileBitwiseNot(e *expr.BitwiseNot[symbol.Resolved], ma
 	//
 	sources, insns := p.compileArgs(mapping, e.Expr)
 	//
-	return append(insns, instruction.NewBitNot[vm.Uint](target, sources[0]))
+	return append(insns, instruction.BitNot[vm.Uint](target, sources[0]))
 }
 
 func (p *StmtCompiler) compileBitwiseOr(args []Expr, mapping []uint, target register.Id,
@@ -788,9 +810,9 @@ func (p *StmtCompiler) compileBitwiseOr(args []Expr, mapping []uint, target regi
 		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
 			var w vm.Uint
 
-			constant = constant.Or(bitwidth, w.SetBigInt(&c.Constant))
+			constant = constant.Or(bitwidth, w.SetBigInt(c.Constant()))
 		} else if p.isConstantAccess(e) {
-			constant = constant.Or(bitwidth, p.evalConstant(e, false))
+			constant = constant.Or(bitwidth, p.evalConstant(e))
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -798,7 +820,7 @@ func (p *StmtCompiler) compileBitwiseOr(args []Expr, mapping []uint, target regi
 	// Compile arguments
 	sources, insns := p.compileArgs(mapping, nargs...)
 	//
-	return append(insns, instruction.NewBitOr(target, sources, constant))
+	return append(insns, instruction.BitOr(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileBitwiseXor(args []Expr, mapping []uint, target register.Id,
@@ -813,9 +835,9 @@ func (p *StmtCompiler) compileBitwiseXor(args []Expr, mapping []uint, target reg
 		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
 			var w vm.Uint
 
-			constant = constant.Xor(bitwidth, w.SetBigInt(&c.Constant))
+			constant = constant.Xor(bitwidth, w.SetBigInt(c.Constant()))
 		} else if p.isConstantAccess(e) {
-			constant = constant.Xor(bitwidth, p.evalConstant(e, false))
+			constant = constant.Xor(bitwidth, p.evalConstant(e))
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -823,7 +845,7 @@ func (p *StmtCompiler) compileBitwiseXor(args []Expr, mapping []uint, target reg
 	// Compile arguments
 	sources, insns := p.compileArgs(mapping, nargs...)
 	//
-	return append(insns, instruction.NewBitXor(target, sources, constant))
+	return append(insns, instruction.BitXor(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileArgs(mapping []uint, exprs ...Expr) ([]register.Id, []Instruction) {
@@ -848,19 +870,23 @@ func (p *StmtCompiler) compileArgs(mapping []uint, exprs ...Expr) ([]register.Id
 			// Allocate temporary variable
 			targets[i] = p.allocate(bitwidth)
 			// Compile expression, storing result in temporary
-			insns = append(insns, p.compileExpr(e, mapping, targets[i])...)
+			insns = append(insns, p.compileExpr(e, mapping, register.NewVector(targets[i]))...)
 		}
 	}
 	//
 	return targets, insns
 }
 
-func (p *StmtCompiler) evalConstant(e Expr, definition bool) vm.Uint {
-	res, errMsg := EvalConstant(e, definition, p.components, p.environment)
+func (p *StmtCompiler) evalConstant(e Expr) vm.Uint {
+	var (
+		evaluator   = NewConstantEvaluator(p.field, p.environment, p.components...)
+		res, errMsg = evaluator.Eval(e, false)
+	)
+	//
 	if errMsg != "" {
 		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e, errMsg)...)
 	}
-
+	//
 	return res
 }
 
@@ -876,31 +902,27 @@ func (p *StmtCompiler) allocate(bitwidth uint) register.Id {
 	return register.NewId(uint(n))
 }
 
-// newLoad emits either an integer or field addition instruction depending on
-// whether the target register is native (field-typed) or has a fixed bit
-// width.  Used by the compileX helpers that fall back on addition to copy or
-// load values into the target register.
-func (p *StmtCompiler) newLoad(target register.Id, sources []register.Id) Instruction {
-	var zero vm.Uint
-	//
-	if p.registers[target.Unwrap()].IsNative() {
-		return instruction.NewIntAddModP(target, sources, zero)
-	}
-	//
-	return instruction.NewIntAdd(target, sources, zero)
-}
-
-// addBitWidth returns the bit-width to use when folding compile-time
+// bitwidthOf returns the bit-width to use when folding compile-time
 // constants into a target register.  For integer-typed targets this is the
 // register's declared width; for field-typed (native) targets this is the
 // configured field bandwidth, since field elements have no fixed bit-width
 // and only need enough room to hold a representative.
-func (p *StmtCompiler) addBitWidth(target register.Id) uint {
-	if p.registers[target.Unwrap()].IsNative() {
-		return p.field.BandWidth
+func (p *StmtCompiler) bitwidthOf(target register.Vector) uint {
+	var bitwidth uint
+	//
+	for _, r := range target.Registers() {
+		ith := p.registers[r.Unwrap()]
+		//
+		if ith.IsNative() && target.Len() == 1 {
+			return math.MaxUint
+		} else if ith.IsNative() {
+			panic("cannot destructure field elements")
+		}
+		//
+		bitwidth += ith.Width()
 	}
 	//
-	return p.registers[target.Unwrap()].Width()
+	return bitwidth
 }
 
 func (p *StmtCompiler) isConstantAccess(e Expr) bool {

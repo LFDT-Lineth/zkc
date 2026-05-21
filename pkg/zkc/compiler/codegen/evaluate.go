@@ -13,6 +13,9 @@
 package codegen
 
 import (
+	"fmt"
+
+	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
@@ -20,17 +23,49 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/vm"
 )
 
-func evalConstants(
-	es []Expr, definition bool, declarations []Declaration, env data.ResolvedEnvironment,
-) ([]vm.Uint, string) {
-	words := make([]vm.Uint, len(es))
+// ConstantEvaluator provides machinery for evaluating compile-time constant
+// expression using the provided declaration list and type environment.  It is
+// used during function code generation and when initialising static memory
+// contents, and also during typing (for array type size expressions).  As a
+// result of the latter, it must be robust against error.  That is, it may be
+// called on a malformed expression and, hence, it must handle this gracefully.
+type ConstantEvaluator struct {
+	field        field.Config
+	env          data.ResolvedEnvironment
+	declarations []Declaration
+}
 
-	var errorMessage string
+// NewConstantEvaluator constructs a new constant evaluator.
+func NewConstantEvaluator(field field.Config, env data.ResolvedEnvironment, declarations ...Declaration,
+) ConstantEvaluator {
+	//
+	return ConstantEvaluator{field, env, declarations}
+}
+
+// Eval attempts to evaluate a given expression to a constant.
+func (p ConstantEvaluator) Eval(e Expr, definition bool) (res vm.Uint, errorMessage string) {
+	var e_t = e.Type()
+	// sanity check whether this is a field operation, or not.
+	if !p.env.WellFormed(e_t) {
+		return res, ""
+	} else if ft := e.Type().AsField(p.env); ft != nil {
+		// field expression
+		return p.evalFieldConstant(e, definition)
+	}
+	// uint expression
+	return p.evalIntConstant(e, definition)
+}
+
+func (p ConstantEvaluator) evalConstants(es []Expr, definition bool) ([]vm.Uint, string) {
+	var (
+		words        = make([]vm.Uint, len(es))
+		errorMessage string
+	)
 
 	for i, e := range es {
 		var errorMsg string
 
-		words[i], errorMsg = EvalConstant(e, definition, declarations, env)
+		words[i], errorMsg = p.Eval(e, definition)
 
 		if errorMsg != "" {
 			errorMessage = errorMsg
@@ -40,105 +75,166 @@ func evalConstants(
 	return words, errorMessage
 }
 
-// EvalConstant evaluates a compile-time constant expression using the provided
-// declaration list and type environment.  It is used during function code
-// generation and when initialising static memory contents, and also during
-// typing (for array type size expressions).  As a result of the latter, it must
-// be robust against error.  That is, it may be called on a malformed expression
-// and, hence, it must handle this gracefully.
-func EvalConstant(
-	e Expr, definition bool, declarations []Declaration, env data.ResolvedEnvironment,
-) (res vm.Uint, errorMessage string) {
+func (p ConstantEvaluator) evalIntConstant(e Expr, definition bool) (res vm.Uint, err string) {
 	var (
 		overflow, ok bool
 		bitwidth     uint
+		args         []vm.Uint
 	)
 	// NOTE: we must sanity check the bitwidth identified is valid in order to
 	// ensure this function is robust against errors.  This is necessary because
 	// it is used during typing and, thus, could be called on a malformed
 	// expression as a result.
-	if bitwidth, ok = data.BitWidthOf(e.Type(), env); !ok {
+	if bitwidth, ok = data.BitWidthOf(e.Type(), p.env); !ok {
 		return res, "invalid constant"
 	}
 	//
 	switch e := e.(type) {
 	case *expr.Add[symbol.Resolved]:
-		args, _ := evalConstants(e.Exprs, definition, declarations, env)
+		args, err = p.evalConstants(e.Exprs, definition)
 		res, overflow = Sum(bitwidth, args...)
 
 		if overflow && definition {
-			errorMessage = "arithmetic overflow"
+			err = "arithmetic overflow"
 		}
 
 		return
 	case *expr.Sub[symbol.Resolved]:
-		args, _ := evalConstants(e.Exprs, definition, declarations, env)
+		args, err = p.evalConstants(e.Exprs, definition)
 		res, overflow = Subtract(bitwidth, args...)
 
 		if overflow && definition {
-			errorMessage = "arithmetic underflow"
+			err = "arithmetic underflow"
 		}
 
 		return
 
 	case *expr.BitwiseAnd[symbol.Resolved]:
-		args, _ := evalConstants(e.Exprs, definition, declarations, env)
-		return BitwiseAnd(bitwidth, args...), ""
+		args, err = p.evalConstants(e.Exprs, definition)
+		return BitwiseAnd(bitwidth, args...), err
 	case *expr.Const[symbol.Resolved]:
 		var c vm.Uint
 		//
-		return c.SetBigInt(&e.Constant), ""
+		return c.SetBigInt(e.Constant()), ""
 	case *expr.Mul[symbol.Resolved]:
-		args, _ := evalConstants(e.Exprs, definition, declarations, env)
+		args, err = p.evalConstants(e.Exprs, definition)
 		res, overflow = Product(bitwidth, args...)
 
 		if overflow && definition {
-			errorMessage = "arithmetic overflow"
+			err = "arithmetic overflow"
 		}
 
-		return
+		return res, err
 	case *expr.Div[symbol.Resolved]:
-		args, _ := evalConstants(e.Exprs, definition, declarations, env)
+		args, err = p.evalConstants(e.Exprs, definition)
 		res = Quotient(bitwidth, args...)
 
-		return
+		return res, err
 	case *expr.Rem[symbol.Resolved]:
-		args, _ := evalConstants(e.Exprs, definition, declarations, env)
+		args, err = p.evalConstants(e.Exprs, definition)
 		res = Remainder(bitwidth, args...)
 
-		return
+		return res, err
 	case *expr.BitwiseNot[symbol.Resolved]:
-		arg, _ := EvalConstant(e.Expr, definition, declarations, env)
-		return arg.Not(bitwidth), ""
+		arg, err := p.Eval(e.Expr, definition)
+		return arg.Not(bitwidth), err
 	case *expr.BitwiseOr[symbol.Resolved]:
-		args, _ := evalConstants(e.Exprs, definition, declarations, env)
-		return BitwiseOr(bitwidth, args...), ""
+		args, err := p.evalConstants(e.Exprs, definition)
+		return BitwiseOr(bitwidth, args...), err
 	case *expr.Shl[symbol.Resolved]:
-		args, _ := evalConstants(e.Exprs, definition, declarations, env)
-		return BitwiseShl(bitwidth, args...), ""
+		args, err := p.evalConstants(e.Exprs, definition)
+		return BitwiseShl(bitwidth, args...), err
 	case *expr.Shr[symbol.Resolved]:
-		args, _ := evalConstants(e.Exprs, definition, declarations, env)
-		return BitwiseShr(bitwidth, args...), ""
+		args, err = p.evalConstants(e.Exprs, definition)
+		return BitwiseShr(bitwidth, args...), err
 	case *expr.Xor[symbol.Resolved]:
-		args, _ := evalConstants(e.Exprs, definition, declarations, env)
-		return BitwiseXor(bitwidth, args...), ""
+		args, err = p.evalConstants(e.Exprs, definition)
+		return BitwiseXor(bitwidth, args...), err
 	case *expr.Cast[symbol.Resolved]:
-		inner, _ := EvalConstant(e.Expr, definition, declarations, env)
-		width := e.CastType.AsUint(env).BitWidth()
+		inner, err := p.Eval(e.Expr, definition)
+		width := e.CastType.AsUint(p.env).BitWidth()
 		sliced := inner.Slice(width)
 
 		if inner.Cmp(sliced) != 0 && definition {
-			errorMessage = "cast overflow"
+			err = "cast overflow"
 		}
 
-		return sliced, errorMessage
+		return sliced, err
 	case *expr.ExternAccess[symbol.Resolved]:
-		c, ok := declarations[e.Name.Index].(*decl.ResolvedConstant)
+		c, ok := p.declarations[e.Name.Index].(*decl.ResolvedConstant)
 		if !ok {
 			return res, "not a constant expression"
 		}
 
-		res, _ = EvalConstant(c.ConstExpr, false, declarations, env)
+		res, _ = p.Eval(c.ConstExpr, false)
+
+		return res, ""
+	default:
+		return res, "not a constant expression"
+	}
+}
+
+func (p ConstantEvaluator) evalFieldConstant(e Expr, definition bool) (res vm.Uint, errorMessage string) {
+	var (
+		fmod    = p.field.Modulus()
+		modulus vm.Uint
+	)
+	//
+	modulus = modulus.SetBigInt(fmod)
+	//
+	switch e := e.(type) {
+	case *expr.Const[symbol.Resolved]:
+		var c vm.Uint
+		// sanity check for overflow
+		if e.Constant().Cmp(fmod) >= 0 {
+			return res, fmt.Sprintf("constant overflows field \"%s\"", p.field.Name)
+		}
+		//
+		return c.SetBigInt(e.Constant()), ""
+	case *expr.Add[symbol.Resolved]:
+		var (
+			val       = vm.Uint64[vm.Uint](0)
+			args, err = p.evalConstants(e.Exprs, definition)
+		)
+		//
+		for _, arg := range args {
+			val = val.AddMod(arg, modulus)
+		}
+		//
+		return val, err
+	case *expr.Sub[symbol.Resolved]:
+		var (
+			val       vm.Uint
+			args, err = p.evalConstants(e.Exprs, definition)
+		)
+		//
+		for i, arg := range args {
+			if i == 0 {
+				val = arg
+			} else {
+				val = val.SubMod(arg, modulus)
+			}
+		}
+		//
+		return val, err
+	case *expr.Mul[symbol.Resolved]:
+		var (
+			val       = vm.Uint64[vm.Uint](1)
+			args, err = p.evalConstants(e.Exprs, definition)
+		)
+		//
+		for _, arg := range args {
+			val = val.MulMod(arg, modulus)
+		}
+		//
+		return val, err
+	case *expr.ExternAccess[symbol.Resolved]:
+		c, ok := p.declarations[e.Name.Index].(*decl.ResolvedConstant)
+		if !ok {
+			return res, "not a constant expression"
+		}
+
+		res, _ = p.Eval(c.ConstExpr, false)
 
 		return res, ""
 	default:

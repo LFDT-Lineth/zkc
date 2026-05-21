@@ -32,6 +32,16 @@ func NewVector(regs ...Id) Vector {
 	return Vector{regs}
 }
 
+// AsRegister returns this vector as a single register.  Observe that this will
+// panic if the vector contains more than one register.
+func (p Vector) AsRegister() Id {
+	if len(p.regs) != 1 {
+		panic("cannot coerce vector into single register")
+	}
+	//
+	return p.regs[0]
+}
+
 // Clone this vector producing an identical but physically disjoint vector.
 func (p Vector) Clone() Vector {
 	return Vector{slices.Clone(p.regs)}

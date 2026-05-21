@@ -153,6 +153,7 @@ func (p *TypeChecker) finaliseDeclaredType(datatype data.ResolvedType) (errors [
 }
 
 func (p *TypeChecker) finaliseDeclaredArrayType(datatype *data.ResolvedFixedArray) (errors []source.SyntaxError) {
+	var evaluator = codegen.NewConstantEvaluator(p.field, p.env, p.program.Components()...)
 	// Finalise datatype itself
 	errors = p.finaliseDeclaredType(datatype.DataType)
 	// Check whether we have a symbolic bound (or not)
@@ -161,7 +162,7 @@ func (p *TypeChecker) finaliseDeclaredArrayType(datatype *data.ResolvedFixedArra
 			// resolve symbolic bound
 			expr = p.env.ConstOf(datatype.Size.Second())
 			// evaluate symbolic bound
-			valSize, errMsg = codegen.EvalConstant(expr, false, p.program.Components(), p.env)
+			valSize, errMsg = evaluator.Eval(expr, false)
 		)
 		// check for errors arising
 		if errMsg != "" {
@@ -266,7 +267,7 @@ func (p *TypeChecker) typeAssignment(s *stmt.Assign[symbol.Resolved], env Variab
 	// Account for rhs errrors
 	errors = append(errors, rhsErrs...)
 	// accumulate errors
-	if wellFormed(lhs_t, p.env) && wellFormed(rhs_t, p.env) {
+	if p.env.WellFormed(lhs_t) && p.env.WellFormed(rhs_t) {
 		// resolve fixed-array size in whole assignments
 		errors = append(errors, p.checkEquiTypes(rhs_t, lhs_t, s.Source)...)
 	}
@@ -324,7 +325,7 @@ func (p *TypeChecker) typeDestructuringLval(target *lval.Variable[symbol.Resolve
 			// Extract type of this variable
 			ith_t = env.Variable(id).DataType
 			// Check well-formedness of this variable
-			ith_ok = wellFormed(ith_t, p.env)
+			ith_ok = p.env.WellFormed(ith_t)
 		)
 		//
 		if !ith_ok {
@@ -421,7 +422,7 @@ func (p *TypeChecker) typeFormatArgs(chunks []stmt.FormattedChunk, args []expr.R
 		switch {
 		case len(ierrs) > 0:
 			errs = append(errs, ierrs...)
-		case !wellFormed(ith, p.env):
+		case !p.env.WellFormed(ith):
 			// silently skip - error already reported earlier in pipeline
 		case i < len(formats) && formats[i].Code == zkc_util.FORMAT_CHR:
 			// %c is the one specifier that constrains the argument
@@ -483,15 +484,15 @@ func (p *TypeChecker) typeComparison(e *expr.Cmp[symbol.Resolved], env VariableM
 		anchor, _  = p.determineTypeAnchor(lhs, rhs)
 	)
 	// disambiguate field comparison from other
-	if wellFormed(anchor, p.env) && anchor.AsField(p.env) != nil && e.Operator.Fieldable() {
+	if p.env.WellFormed(anchor) && anchor.AsField(p.env) != nil && e.Operator.Fieldable() {
 		return p.typeFieldComparison(e, env, effects)
 	}
 	// Check left-hand side
-	if len(lerrs) == 0 && wellFormed(lhs, p.env) && lhs.AsUint(p.env) == nil {
+	if len(lerrs) == 0 && p.env.WellFormed(lhs) && lhs.AsUint(p.env) == nil {
 		lerrs = p.srcmaps.SyntaxErrors(e.Left, "expected uint")
 	}
 	// Check right-hand side
-	if len(rerrs) == 0 && wellFormed(rhs, p.env) && rhs.AsUint(p.env) == nil {
+	if len(rerrs) == 0 && p.env.WellFormed(rhs) && rhs.AsUint(p.env) == nil {
 		rerrs = p.srcmaps.SyntaxErrors(e.Right, "expected uint")
 	}
 	// Check matching types
@@ -512,11 +513,11 @@ func (p *TypeChecker) typeFieldComparison(e *expr.Cmp[symbol.Resolved], env Vari
 		rhs, rerrs = p.typeExpression(field_t, e.Right, env, effects)
 	)
 	// Check left-hand side
-	if len(lerrs) == 0 && wellFormed(lhs, p.env) && lhs.AsField(p.env) == nil {
+	if len(lerrs) == 0 && p.env.WellFormed(lhs) && lhs.AsField(p.env) == nil {
 		lerrs = p.srcmaps.SyntaxErrors(e.Left, "expected field")
 	}
 	// Check right-hand side
-	if len(rerrs) == 0 && wellFormed(rhs, p.env) && rhs.AsField(p.env) == nil {
+	if len(rerrs) == 0 && p.env.WellFormed(rhs) && rhs.AsField(p.env) == nil {
 		rerrs = p.srcmaps.SyntaxErrors(e.Right, "expected field")
 	}
 	// Check matching types
@@ -596,7 +597,7 @@ func (p *TypeChecker) typeUintExpressions(t Type, exprs []expr.Resolved, env Var
 	for i, e := range exprs {
 		ith_t, errs := p.typeExpression(t, e, env, effects)
 		//
-		if len(errs) > 0 || !wellFormed(ith_t, p.env) {
+		if len(errs) > 0 || !p.env.WellFormed(ith_t) {
 			errors = append(errors, errs...)
 		} else if i == 0 && ith_t.AsUint(p.env) == nil {
 			return nil, append(errors, *p.srcmaps.SyntaxError(exprs[i], "expected uint"))
@@ -636,7 +637,7 @@ func (p *TypeChecker) typeUintOrFieldExpression(t Type, exprs []expr.Resolved, e
 		types, errors = p.typeExpressions(data.NewFieldElement[symbol.Resolved](), exprs, env, effects)
 		// Check arguments compatible with anchor
 		for i, ith_t := range types {
-			if i != index && wellFormed(ith_t, p.env) {
+			if i != index && p.env.WellFormed(ith_t) {
 				if errs := p.checkEquiTypes(ith_t, anchor, exprs[i]); len(errs) > 0 {
 					errors = append(errors, errs...)
 				}
@@ -650,7 +651,7 @@ func (p *TypeChecker) typeUintOrFieldExpression(t Type, exprs []expr.Resolved, e
 func (p *TypeChecker) determineTypeAnchor(types ...Type) (Type, int) {
 	//
 	for i, t := range types {
-		if wellFormed(t, p.env) {
+		if p.env.WellFormed(t) {
 			// Constants cannot be anchors.
 			if ut := t.AsUint(p.env); ut == nil || !ut.IsOpen() {
 				return t, i
@@ -688,7 +689,7 @@ func (p *TypeChecker) typeConcatExpression(t Type, e *expr.Concat[symbol.Resolve
 		//
 		if len(errs) > 0 {
 			errors = append(errors, errs...)
-		} else if !wellFormed(ith_t, p.env) {
+		} else if !p.env.WellFormed(ith_t) {
 			// This expression is untypeable because it contains a component
 			// which is untypeable due to some earlier error in the pipeline.
 			untypeable = true
@@ -734,7 +735,7 @@ func (p *TypeChecker) typeShiftExpression(t Type, exprs []expr.Resolved, env Var
 	// Sanity check argument
 	if len(errors) > 0 {
 		// don't type check as other problems
-	} else if !wellFormed(arg_t, p.env) {
+	} else if !p.env.WellFormed(arg_t) {
 		// silently skip - error already reported earlier in pipeline
 	} else if res = arg_t.AsUint(p.env); res == nil {
 		return nil, append(errors, *p.srcmaps.SyntaxError(exprs[0], "expected uint"))
@@ -753,7 +754,7 @@ func (p *TypeChecker) typeBitwiseNot(t Type, e *expr.BitwiseNot[symbol.Resolved]
 	//
 	if len(errs) > 0 {
 		return nil, errs
-	} else if !wellFormed(t, p.env) {
+	} else if !p.env.WellFormed(t) {
 		// silently skip - error already reported earlier in pipeline
 		return nil, nil
 	} else if t.AsUint(p.env) == nil {
@@ -765,13 +766,14 @@ func (p *TypeChecker) typeBitwiseNot(t Type, e *expr.BitwiseNot[symbol.Resolved]
 
 func (p *TypeChecker) typeConst(t Type, e *expr.Const[symbol.Resolved], env VariableMap) (Type, []source.SyntaxError) {
 	var (
-		bitwidth = uint(e.Constant.BitLen())
+		bitwidth = uint(e.Constant().BitLen())
 		actual   = data.NewUnsignedInt[symbol.Resolved](bitwidth, true)
 	)
+	//
 	// Sanity check for field type
-	if wellFormed(t, p.env) && t.AsField(p.env) != nil {
+	if p.env.WellFormed(t) && t.AsField(p.env) != nil {
 		// Sanity check for overflow
-		if mod := p.field.Modulus(); e.Constant.Cmp(mod) >= 0 {
+		if mod := p.field.Modulus(); e.Constant().Cmp(mod) >= 0 {
 			return nil, p.srcmaps.SyntaxErrors(e, "field overflow")
 		}
 		//
@@ -795,14 +797,13 @@ func (p *TypeChecker) typeArrayAccess(id variable.Id, arg expr.Resolved, env Var
 
 	varType := env.Variable(id).DataType
 	// Check well-formedness of this variable
-	varType_ok := wellFormed(varType, p.env)
+	varType_ok := p.env.WellFormed(varType)
 
 	// Check argument is unsigned integers and well-formed
 	arg_t, errs := p.typeExpression(nil, arg, env, effects)
-	arg_t_ok := wellFormed(arg_t, p.env)
+	arg_t_ok := p.env.WellFormed(arg_t)
 
 	errors = append(errors, errs...)
-
 	//
 	if !varType_ok {
 		return nil, errors
@@ -926,7 +927,7 @@ func (p *TypeChecker) typeTernaryExpr(expected Type, e *expr.Ternary[symbol.Reso
 	// Combine all errors
 	errs = append(append(errs, terrs...), ferrs...)
 	//
-	if wellFormed(ft, p.env) && wellFormed(tt, p.env) {
+	if p.env.WellFormed(ft) && p.env.WellFormed(tt) {
 		errs = append(errs, p.checkEquiTypes(ft, tt, e.IfFalse)...)
 		if len(errs) == 0 {
 			ttu := tt.AsUint(p.env)
@@ -969,7 +970,7 @@ func (p *TypeChecker) typeTupleExpr(expected Type, e *expr.TupleInitialiser[symb
 // DestructTupleTypes attempts to break the given type into a tuple.  If it
 // cannot do this, then it simple returns an empty array.
 func (p *TypeChecker) destructTupleType(t Type) []Type {
-	if wellFormed(t, p.env) {
+	if p.env.WellFormed(t) {
 		if tt := t.AsTuple(p.env); tt != nil {
 			return tt.Types()
 		}
@@ -985,7 +986,7 @@ func (p *TypeChecker) destructTupleType(t Type) []Type {
 // reported upstream for this.
 func (p *TypeChecker) checkCastType(to, from Type, node any) []source.SyntaxError {
 	//
-	if !wellFormed(to, p.env) || !wellFormed(from, p.env) {
+	if !p.env.WellFormed(to) || !p.env.WellFormed(from) {
 		return nil
 	} else if data.SubtypeOf(to, from, p.env) || data.SubtypeOf(from, to, p.env) {
 		return nil
@@ -996,8 +997,9 @@ func (p *TypeChecker) checkCastType(to, from Type, node any) []source.SyntaxErro
 
 func (p *TypeChecker) checkArrayBounds(arg expr.Resolved, fixedArray *data.ResolvedFixedArray,
 ) []source.SyntaxError {
+	var evaluator = codegen.NewConstantEvaluator(p.field, p.env, p.program.Components()...)
 	// Evaluate argument as a comptime expression.
-	val, errMsg := codegen.EvalConstant(arg, false, p.program.Components(), p.env)
+	val, errMsg := evaluator.Eval(arg, false)
 	// Check for any errors (e.g. arithmetic overflow)
 	if errMsg != "" {
 		return p.srcmaps.SyntaxErrors(arg, errMsg)
@@ -1018,38 +1020,9 @@ func (p *TypeChecker) checkArrayBounds(arg expr.Resolved, fixedArray *data.Resol
 // that, if either type is not well-formed, some error was already reported
 // upstream for this.
 func (p *TypeChecker) checkEquiTypes(lhs, rhs Type, node any) []source.SyntaxError {
-	if wellFormed(lhs, p.env) && wellFormed(rhs, p.env) && !data.EquiTypes(lhs, rhs, p.env) {
+	if p.env.WellFormed(lhs) && p.env.WellFormed(rhs) && !data.EquiTypes(lhs, rhs, p.env) {
 		return p.srcmaps.SyntaxErrors(node, fmt.Sprintf("expected type %s", rhs.String(p.env)))
 	}
 	//
 	return nil
-}
-
-// WellFormed is used to check whether a given type is well-formed under the
-// given environment.  This is necessary to protected against various problems
-// in methods such as Bitwidth, SubtypeOf and EquiTypes.
-func wellFormed(t data.ResolvedType, env ast.Environment) bool {
-	//
-	switch t := t.(type) {
-	case nil:
-		return false
-	case *data.UnsignedInt[symbol.Resolved]:
-		return true
-	case *data.Alias[symbol.Resolved]:
-		return wellFormed(env.TypeOf(t.Name), env)
-	case *data.FixedArray[symbol.Resolved]:
-		return wellFormed(t.DataType, env)
-	case *data.Tuple[symbol.Resolved]:
-		for i := range t.Width() {
-			if !wellFormed(t.Ith(i), env) {
-				return false
-			}
-		}
-		//
-		return true
-	case *data.FieldElement[symbol.Resolved]:
-		return true
-	}
-	//
-	panic(fmt.Sprintf("unknown type encountered (%s)", t.String(env)))
 }

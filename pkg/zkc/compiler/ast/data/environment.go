@@ -27,4 +27,8 @@ type UnresolvedEnvironment = Environment[symbol.Unresolved]
 type Environment[S symbol.Symbol[S]] interface {
 	// TypeOf resolves the type of an external identifier.
 	TypeOf(S) Type[S]
+	// WellFormed is used to check whether a given type is well-formed under the
+	// given environment.  This is necessary to protected against various problems
+	// in methods such as Bitwidth, SubtypeOf and EquiTypes.
+	WellFormed(t Type[S]) bool
 }

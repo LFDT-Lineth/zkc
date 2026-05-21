@@ -1796,7 +1796,7 @@ func (p *Parser) parseUnitExpr(env Environment) (Expr, []source.SyntaxError) {
 		val, errors = p.number(lookahead)
 		base := p.baserOfNumber(lookahead)
 		//
-		nexpr = expr.NewConstant[symbol.Unresolved](val, base)
+		nexpr = expr.NewUntypedConstant[symbol.Unresolved](val, base)
 	case BITWISE_NOT:
 		p.match(BITWISE_NOT)
 

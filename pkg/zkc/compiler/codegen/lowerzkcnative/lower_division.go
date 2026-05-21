@@ -67,10 +67,10 @@ func lowerDivisionCode[W vm.Word[W]](
 ) []vm.WordInstruction {
 	switch code.OpCode() {
 	case opcode.INT_DIV:
-		insn := code.(*instruction.IntDiv[W])
+		insn := code.(*instruction.WordTypeB[W])
 		return expandDivision[W](insn.Target, insn.Sources[0], insn.Sources[1], registers)
 	case opcode.INT_REM:
-		insn := code.(*instruction.IntRem[W])
+		insn := code.(*instruction.WordTypeB[W])
 		return expandRemainder[W](insn.Target, insn.Sources[0], insn.Sources[1], registers)
 	default:
 		return []vm.WordInstruction{code}
@@ -83,23 +83,27 @@ func lowerDivisionCode[W vm.Word[W]](
 func expandDivision[W vm.Word[W]](q, x, y register.Id, registers RegisterAllocator) []vm.WordInstruction {
 	var (
 		nX      = registers.Register(x).Width()
+		nY      = registers.Register(y).Width()
+		r       = registers.Allocate("", nY)
+		w       = registers.Allocate("", nY)
 		zero    = vm.Uint64[W](0)
 		one     = vm.Uint64[W](1)
-		wideQ   = registers.Allocate("", 2*nX)
-		rTmp    = registers.Allocate("", 2*nX)
-		wideX   = registers.Allocate("", 2*nX)
-		wideY   = registers.Allocate("", 2*nX)
-		product = registers.Allocate("", 2*nX)
+		qy      = registers.Allocate("", nX)
+		qy_r    = registers.Allocate("", nX)
+		y_r_w_1 = registers.Allocate("", nY)
+		// NOTE: deprecate following when skip_if supports constants
+		z = registers.Allocate("", 0)
 	)
-
+	//
 	return []vm.WordInstruction{
-		instruction.NewFieldHint([]register.Id{wideQ, rTmp}, []register.Id{x, y}),
-		instruction.NewCast(q, wideQ, nX),
-		instruction.NewCast(wideX, x, 2*nX),
-		instruction.NewCast(wideY, y, 2*nX),
-		instruction.NewIntMul(product, []register.Id{wideQ, wideY}, one),
-		instruction.NewIntAdd(wideX, []register.Id{product, rTmp}, zero),
-		instruction.NewSkipIf(opcode.LT, rTmp, y, 1),
+		instruction.NewFieldHint([]register.Id{q, r, w}, []register.Id{x, y}),
+		instruction.UintMul(qy, []register.Id{q, y}, one),
+		instruction.UintAdd(qy_r, []register.Id{qy, r}, zero),
+		instruction.NewSkipIf(opcode.EQ, qy_r, x, 1),
+		instruction.NewFail(),
+		instruction.UintSub(y_r_w_1, []register.Id{y, r, w}, one),
+		instruction.UintConst(z, zero),
+		instruction.NewSkipIf(opcode.EQ, y_r_w_1, z, 1),
 		instruction.NewFail(),
 	}
 }
@@ -110,23 +114,27 @@ func expandDivision[W vm.Word[W]](q, x, y register.Id, registers RegisterAllocat
 func expandRemainder[W vm.Word[W]](r, x, y register.Id, registers RegisterAllocator) []vm.WordInstruction {
 	var (
 		nX      = registers.Register(x).Width()
+		nY      = registers.Register(y).Width()
+		q       = registers.Allocate("", nX)
+		w       = registers.Allocate("", nY)
 		zero    = vm.Uint64[W](0)
 		one     = vm.Uint64[W](1)
-		qTmp    = registers.Allocate("", 2*nX)
-		wideR   = registers.Allocate("", 2*nX)
-		wideX   = registers.Allocate("", 2*nX)
-		wideY   = registers.Allocate("", 2*nX)
-		product = registers.Allocate("", 2*nX)
+		qy      = registers.Allocate("", nX)
+		qy_r    = registers.Allocate("", nX)
+		y_r_w_1 = registers.Allocate("", nY)
+		// NOTE: deprecate following when skip_if supports constants
+		z = registers.Allocate("", 0)
 	)
-
+	//
 	return []vm.WordInstruction{
-		instruction.NewFieldHint([]register.Id{qTmp, wideR}, []register.Id{x, y}),
-		instruction.NewCast(r, wideR, nX),
-		instruction.NewCast(wideX, x, 2*nX),
-		instruction.NewCast(wideY, y, 2*nX),
-		instruction.NewIntMul(product, []register.Id{qTmp, wideY}, one),
-		instruction.NewIntAdd(wideX, []register.Id{product, wideR}, zero),
-		instruction.NewSkipIf(opcode.LT, wideR, y, 1),
+		instruction.NewFieldHint([]register.Id{q, r, w}, []register.Id{x, y}),
+		instruction.UintMul(qy, []register.Id{q, y}, one),
+		instruction.UintAdd(qy_r, []register.Id{qy, r}, zero),
+		instruction.NewSkipIf(opcode.EQ, qy_r, x, 1),
+		instruction.NewFail(),
+		instruction.UintSub(y_r_w_1, []register.Id{y, r, w}, one),
+		instruction.UintConst(z, zero),
+		instruction.NewSkipIf(opcode.EQ, y_r_w_1, z, 1),
 		instruction.NewFail(),
 	}
 }

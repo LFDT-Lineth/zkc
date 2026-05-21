@@ -10,9 +10,11 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package word
+package instruction
 
 import (
+	"fmt"
+	"math"
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -21,60 +23,64 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 )
 
-// Destruct represents an instruction of the following form:
+// WordTypeC represents a truncating cast instruction of the following form:
 //
-// tn::t0 := r0
+//	t := (uN)s
 //
-// Here, t0 .. tn are the *target registers*, of which tn is the *most
-// significant*.  These must be disjoint as we cannot assign simultaneously to
-// the same register.  Likewise, r0 is the source register which are.
-type Destruct struct {
-	// Target registers for assignment
-	Targets []register.Id
-	// Source register for assignment
+// Here, t is the target register, s is the source register, and N is the cast
+// bit width.  The N low-order bits of s are retained and written to t.
+type WordTypeC struct {
+	// Target register for assignment
+	Target register.Id
+	// Source register
 	Source register.Id
+	// Width is the target bit width for truncation, where MaxUint signals field
+	// cast.
+	Width uint
 }
 
 // OpCode implementation for Instruction interface
-func (p *Destruct) OpCode() opcode.OpCode {
-	return opcode.BIT_DESTRUCT
+func (p *WordTypeC) OpCode() opcode.OpCode {
+	if p.Width == math.MaxUint {
+		return opcode.INT_CASTMOD_P
+	}
+	//
+	return opcode.INT_CAST
 }
 
 // IsWord implementation for instruction.Word interface
-func (p *Destruct) IsWord() bool {
+func (p *WordTypeC) IsWord() bool {
 	return true
 }
 
-// Uses implementation for Instruction interface
-func (p *Destruct) Uses() []register.Id {
+// Uses implementation for Instruction interface.
+func (p *WordTypeC) Uses() []register.Id {
 	return []register.Id{p.Source}
 }
 
-// Definitions implementation for Instruction interface
-func (p *Destruct) Definitions() []register.Id {
-	return p.Targets
+// Definitions implementation for Instruction interface.
+func (p *WordTypeC) Definitions() []register.Id {
+	return []register.Id{p.Target}
 }
 
-func (p *Destruct) String(mapping base.SystemMap) string {
+// String implementation for Instruction interface.
+func (p *WordTypeC) String(mapping base.SystemMap) string {
 	var builder strings.Builder
 	//
-	for i := len(p.Targets); i > 0; i-- {
-		var rid = p.Targets[i-1]
-		//
-		if i != len(p.Targets) {
-			builder.WriteString("::")
-		}
-		//
-		builder.WriteString(base.RegistersToString(mapping, rid))
+	builder.WriteString(base.RegistersToString(mapping, p.Target))
+	//
+	if p.Width != math.MaxUint {
+		fmt.Fprintf(&builder, " = (u%d) ", p.Width)
+	} else {
+		fmt.Fprintf(&builder, " = (𝔽) ")
 	}
 	//
-	builder.WriteString(" = ")
 	builder.WriteString(base.RegistersToString(mapping, p.Source))
 	//
 	return builder.String()
 }
 
 // MicroValidate implementation for MicroInstruction interface.
-func (p *Destruct) MicroValidate(_ uint, field field.Config, _ base.SystemMap) []error {
+func (p *WordTypeC) MicroValidate(_ uint, _ field.Config, _ base.SystemMap) []error {
 	return nil
 }

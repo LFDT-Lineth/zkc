@@ -10,9 +10,10 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package word
+package instruction
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -26,74 +27,82 @@ import (
 // Opcode-Register-Registers-Constant instruction type
 // ============================================================================
 
-// OpArith represents an instruction of the following form:
+// WordTypeA represents an instruction of the following form:
 //
-// t0 := r0 # ... # rn + c
+// tn::..::t0 := r0 # ... # rn + c
 //
 // Here, t0 is the *target register*, whilst r0 .. rn are the source registers
 // and c is a constant (which can be 0).  Finally, "#" represents whatever
 // operation the given opcode indicates.
-type OpArith[W word.Word[W]] struct {
+type WordTypeA[W word.Word[W]] struct {
 	Op opcode.OpCode
 	// Target register for assignment
-	Target register.Id
+	Target register.Vector
 	// Source registers for assignment
 	Sources []register.Id
 	// Constant for assignment
 	Constant W
 }
 
-// NewOpArith constructs a new arithmetic instruction
-func NewOpArith[W word.Word[W]](op opcode.OpCode, target register.Id, sources []register.Id, constant W) OpArith[W] {
-	return OpArith[W]{op, target, sources, constant}
+// NewWordTypeA constructs a new arithmetic instruction
+func NewWordTypeA[W word.Word[W]](op opcode.OpCode, target register.Vector, sources []register.Id, constant W,
+) *WordTypeA[W] {
+	//
+	if !slices.Contains(opcode.ARITH_OPCODES, op) {
+		panic("invalid arithmetic operation")
+	}
+	//
+	return &WordTypeA[W]{op, target, sources, constant}
 }
 
 // OpCode implementation for Instruction interface
-func (p *OpArith[W]) OpCode() opcode.OpCode {
+func (p *WordTypeA[W]) OpCode() opcode.OpCode {
 	return p.Op
 }
 
 // IsWord implementation for instruction.Word interface
-func (p *OpArith[W]) IsWord() bool {
+func (p *WordTypeA[W]) IsWord() bool {
 	return true
 }
 
 // Uses implementation for Instruction interface
-func (p *OpArith[W]) Uses() []register.Id {
+func (p *WordTypeA[W]) Uses() []register.Id {
 	return p.Sources
 }
 
 // Definitions implementation for Instruction interface
-func (p *OpArith[W]) Definitions() []register.Id {
-	return []register.Id{p.Target}
+func (p *WordTypeA[W]) Definitions() []register.Id {
+	return p.Target.Registers()
 }
 
 // MicroValidate implementation for MicroInstruction interface.
-func (p *OpArith[W]) MicroValidate(_ uint, field field.Config, _ base.SystemMap) []error {
+func (p *WordTypeA[W]) MicroValidate(_ uint, field field.Config, _ base.SystemMap) []error {
 	return nil
 }
 
-func (p *OpArith[W]) String(mapping base.SystemMap) string {
-	var (
-		builder strings.Builder
-		op      = aType2Operation(p.Op)
-		zero    W
-	)
-	//
-	builder.WriteString(base.RegistersToString(mapping, p.Target))
-	builder.WriteString(" = ")
-	//
-	if p.Constant.Cmp(zero) == 0 && len(p.Sources) > 0 &&
-		(p.Op == opcode.INT_ADD || p.Op == opcode.INT_SUB ||
-			p.Op == opcode.INT_ADDMOD_P || p.Op == opcode.INT_SUBMOD_P ||
-			p.Op == opcode.BIT_CONCAT) {
-		//
-		builder.WriteString(base.ExpressionToStringWithoutConst(op, p.Sources, mapping))
+func (p *WordTypeA[W]) String(mapping base.SystemMap) string {
+	if p.Op == opcode.BIT_CONCAT {
+		return bitconcat2str(p, mapping)
 	} else {
-		builder.WriteString(base.ExpressionToString(op, p.Sources, p.Constant, mapping))
+		var (
+			builder strings.Builder
+			op      = aType2Operation(p.Op)
+			zero    W
+		)
+		//
+		builder.WriteString(p.Target.String(mapping))
+		builder.WriteString(" = ")
+		//
+		if p.Constant.Cmp(zero) == 0 && len(p.Sources) > 0 &&
+			(p.Op == opcode.INT_ADD || p.Op == opcode.INT_SUB) {
+			//
+			builder.WriteString(base.ExpressionToStringWithoutConst(op, p.Sources, mapping))
+		} else {
+			builder.WriteString(base.ExpressionToString(op, p.Sources, p.Constant, mapping))
+		}
+		//
+		return builder.String()
 	}
-	//
-	return builder.String()
 }
 
 func aType2Operation(op opcode.OpCode) string {
@@ -104,31 +113,34 @@ func aType2Operation(op opcode.OpCode) string {
 		return "-"
 	case opcode.INT_MUL:
 		return "*"
-	case opcode.INT_DIV:
-		return "/"
-	case opcode.INT_REM:
-		return "%"
-	case opcode.INT_ADDMOD_P:
-		return "+f"
-	case opcode.INT_SUBMOD_P:
-		return "-f"
-	case opcode.INT_MULMOD_P:
-		return "*f"
-	case opcode.BIT_AND:
-		return "&"
-	case opcode.BIT_NOT:
-		return "~"
-	case opcode.BIT_OR:
-		return "|"
-	case opcode.BIT_XOR:
-		return "^"
-	case opcode.BIT_SHL:
-		return "<<"
-	case opcode.BIT_SHR:
-		return ">>"
 	case opcode.BIT_CONCAT:
 		return "::"
 	default:
 		panic("unknown type A instruction")
 	}
+}
+
+func bitconcat2str[W word.Word[W]](p *WordTypeA[W], mapping base.SystemMap) string {
+	var (
+		zero    W
+		builder strings.Builder
+	)
+	// Sanity check
+	if p.Constant.Cmp(zero) != 0 {
+		panic("constant given for bit concatenation")
+	}
+	//
+	builder.WriteString(p.Target.String(mapping))
+	builder.WriteString(" = ")
+	//
+	for i := len(p.Sources); i > 0; i-- {
+		ith := base.RegistersToString(mapping, p.Sources[i-1])
+		if i != len(p.Sources) {
+			builder.WriteString("::")
+		}
+		//
+		builder.WriteString(ith)
+	}
+	//
+	return builder.String()
 }

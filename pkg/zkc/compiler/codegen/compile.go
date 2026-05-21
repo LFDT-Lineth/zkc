@@ -195,14 +195,15 @@ func (p *Compiler) compileStaticInitialisers(
 ) ([]vm.Uint, []source.SyntaxError) {
 	//
 	var (
-		words  = make([]vm.Uint, len(contents))
-		errors []source.SyntaxError
+		words     = make([]vm.Uint, len(contents))
+		errors    []source.SyntaxError
+		evaluator = NewConstantEvaluator(p.config.field, env, components...)
 	)
 	//
 	for i, v := range contents {
 		var errMsg string
 
-		words[i], errMsg = EvalConstant(v, true, components, env)
+		words[i], errMsg = evaluator.Eval(v, true)
 		if errMsg != "" {
 			errors = append(errors, srcmaps.SyntaxErrors(v, errMsg)...)
 		}

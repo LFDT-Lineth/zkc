@@ -174,34 +174,31 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 		// Done
 		return insn
 	case opcode.BIT_CONCAT:
-		var insn = wi.(*instruction.BitConcat[W])
+		var insn = wi.(*instruction.WordTypeA[W])
 		return p.lowerBitwiseConcatenation(insn.Target, insn.Sources, mapping)
-	case opcode.BIT_DESTRUCT:
-		var insn = wi.(*instruction.Destruct)
-		return p.lowerBitwiseDestruct(insn.Targets, insn.Source, mapping)
 	case opcode.HINT_DIVISION:
 		return wi.(*instruction.FieldHint)
 	case opcode.INT_CAST:
-		var insn = wi.(*instruction.Cast)
+		var insn = wi.(*instruction.WordTypeC)
 		//
 		return p.lowerCastInstruction(insn.Target, insn.Source)
 	case opcode.INT_ADD:
-		var insn = wi.(*instruction.IntAdd[W])
+		var insn = wi.(*instruction.WordTypeA[W])
 		return p.lowerArithInstruction(insn.Target, insn.Sources, insn.Constant, sum)
 	case opcode.INT_SUB:
-		var insn = wi.(*instruction.IntSub[W])
+		var insn = wi.(*instruction.WordTypeA[W])
 		return p.lowerArithInstruction(insn.Target, insn.Sources, insn.Constant, subtract)
 	case opcode.INT_MUL:
-		var insn = wi.(*instruction.IntMul[W])
+		var insn = wi.(*instruction.WordTypeA[W])
 		return p.lowerArithInstruction(insn.Target, insn.Sources, insn.Constant, product)
 	case opcode.INT_ADDMOD_P:
-		var insn = wi.(*instruction.IntAddModP[W])
+		var insn = wi.(*instruction.WordTypeB[W])
 		return p.lowerFieldInstruction(insn.Target, insn.Sources, insn.Constant, sum)
 	case opcode.INT_SUBMOD_P:
-		var insn = wi.(*instruction.IntSubModP[W])
+		var insn = wi.(*instruction.WordTypeB[W])
 		return p.lowerFieldInstruction(insn.Target, insn.Sources, insn.Constant, subtract)
 	case opcode.INT_MULMOD_P:
-		var insn = wi.(*instruction.IntMulModP[W])
+		var insn = wi.(*instruction.WordTypeB[W])
 		return p.lowerFieldInstruction(insn.Target, insn.Sources, insn.Constant, product)
 	default:
 		panic(fmt.Sprintf("unknown instruction encountered (%s)", wi.String(mapping)))
@@ -210,7 +207,7 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 
 type airConstructor[F field.Element[F]] func(...Monomial) Polynomial
 
-func (p wordToField[W, F]) lowerArithInstruction(lhs register.Id, rhs []register.Id, c W,
+func (p wordToField[W, F]) lowerArithInstruction(lhs register.Vector, rhs []register.Id, c W,
 	f airConstructor[F]) (fi FieldInstruction) {
 	//
 	var (
@@ -233,7 +230,7 @@ func (p wordToField[W, F]) lowerArithInstruction(lhs register.Id, rhs []register
 		terms = append(terms, poly.NewMonomial[register.Id](*n))
 	}
 	// Done
-	return instruction.NewFieldAssign[F](register.NewVector(lhs), f(terms...))
+	return instruction.NewFieldAssign[F](lhs, f(terms...))
 }
 
 func (p wordToField[W, F]) lowerFieldInstruction(lhs register.Id, rhs []register.Id, c W,
@@ -263,8 +260,8 @@ func (p wordToField[W, F]) lowerFieldInstruction(lhs register.Id, rhs []register
 	return instruction.NewFieldAssign[F](register.NewVector(lhs), f(terms...))
 }
 
-func (p wordToField[W, F]) lowerBitwiseConcatenation(lhs register.Id, rhs []register.Id, mapping instruction.SystemMap,
-) (fi FieldInstruction) {
+func (p wordToField[W, F]) lowerBitwiseConcatenation(lhs register.Vector, rhs []register.Id,
+	mapping instruction.SystemMap) (fi FieldInstruction) {
 	var (
 		terms = make([]Monomial, len(rhs))
 		acc   = big.NewInt(1)
@@ -284,19 +281,7 @@ func (p wordToField[W, F]) lowerBitwiseConcatenation(lhs register.Id, rhs []regi
 		acc = acc.Lsh(acc, width)
 	}
 	//
-	return instruction.NewFieldAssign[F](register.NewVector(lhs), sum(terms...))
-}
-
-func (p wordToField[W, F]) lowerBitwiseDestruct(lhs []register.Id, rhs register.Id, mapping instruction.SystemMap,
-) (fi FieldInstruction) {
-	var (
-		one = big.NewInt(1)
-		r   Polynomial
-	)
-	//
-	r = r.Set(poly.NewMonomial(*one, rhs))
-	//
-	return instruction.NewFieldAssign[F](register.NewVector(lhs...), r)
+	return instruction.NewFieldAssign[F](lhs, sum(terms...))
 }
 
 func (p wordToField[W, F]) lowerCastInstruction(lhs register.Id, rhs register.Id) (fi FieldInstruction) {
