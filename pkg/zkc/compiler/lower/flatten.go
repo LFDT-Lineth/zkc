@@ -79,7 +79,7 @@ type VarMapping struct {
 // statements.
 type PcMapping struct {
 	pivotPC uint
-	shift      uint
+	shift   uint
 }
 
 // expandFixedArrays builds the old→new id mapping and expands fixed-size array
@@ -206,7 +206,6 @@ func expandFnCode(
 	//
 	return
 }
-
 
 func expandArrayExpression(e expr.Resolved, varMapping []VarMapping, env ast.Environment) expr.Resolved {
 	switch e := e.(type) {
@@ -448,7 +447,7 @@ func expandWholeArrayAssign(
 // equality comparison (== or !=) on two bare-array LocalAccess operands into
 // a sequence of element-wise IfGotos.
 //
-// Targets emitted by this helper are with the old PC. 
+// Targets emitted by this helper are with the old PC.
 func expandWholeArrayCmp(
 	ifg *stmt.IfGoto[symbol.Resolved], cmp *expr.Cmp[symbol.Resolved],
 	varMapping []VarMapping, origPC uint,
