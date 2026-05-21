@@ -13,6 +13,7 @@
 package register
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -47,6 +48,11 @@ func (p Vector) BitWidth(fn Map) uint {
 	return bitwidth
 }
 
+// Len returns the length of this vector
+func (p Vector) Len() uint {
+	return uint(len(p.regs))
+}
+
 // Registers provides raw access to the underlying register array wrapped in
 // this vector.
 func (p Vector) Registers() []Id {
@@ -73,7 +79,11 @@ func (p Vector) String(fn Map) string {
 			builder.WriteString("::")
 		}
 		//
-		builder.WriteString(fn.Register(ith).Name())
+		if fn == nil {
+			fmt.Fprintf(&builder, "?%d", ith.Unwrap())
+		} else {
+			builder.WriteString(fn.Register(ith).Name())
+		}
 	}
 	//
 	return builder.String()

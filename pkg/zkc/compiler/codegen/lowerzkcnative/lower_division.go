@@ -47,35 +47,23 @@ func LowerDivisions[W vm.Word[W]](modules []vm.Module) []vm.Module {
 
 func lowerDivisionFunction[W vm.Word[W]](fn *vm.WordFunction) *vm.WordFunction {
 	var (
-		code      = fn.Code()
-		ncode     = make([]vectorInstruction, len(code))
-		registers = append([]register.Register{}, fn.Registers()...)
+		code  = fn.Code()
+		ncode = make([]vectorInstruction, len(code))
+		alloc = register.NewAllocator[int](fn.RegisterMap())
 	)
 
 	for i, insn := range code {
-		ncodes := lowerDivisionCodes[W](insn.Codes, &registers)
-		ncode[i] = vectorInstruction{Codes: ncodes}
+		ncode[i] = insn.Map(func(_ uint, ith vm.WordInstruction) []vm.WordInstruction {
+			return lowerDivisionCode[W](ith, alloc)
+		})
 	}
 
-	return vm.NewFunction(fn.Name(), fn.IsNative(), registers, ncode)
-}
-
-func lowerDivisionCodes[W vm.Word[W]](
-	codes []vm.WordInstruction,
-	registers *[]register.Register,
-) []vm.WordInstruction {
-	ncodes := make([]vm.WordInstruction, 0, len(codes))
-
-	for _, code := range codes {
-		ncodes = append(ncodes, lowerDivisionCode[W](code, registers)...)
-	}
-
-	return ncodes
+	return vm.NewFunction(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
 }
 
 func lowerDivisionCode[W vm.Word[W]](
 	code vm.WordInstruction,
-	registers *[]register.Register,
+	registers RegisterAllocator,
 ) []vm.WordInstruction {
 	switch code.OpCode() {
 	case opcode.INT_DIV:
@@ -92,16 +80,16 @@ func lowerDivisionCode[W vm.Word[W]](
 // expandDivision replaces INT_DIV(q, x, y) with the hint+validation sequence.
 // sum holds q*y and must be 2*nX bits so the product is exact: a cheating prover
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
-func expandDivision[W vm.Word[W]](q, x, y register.Id, registers *[]register.Register) []vm.WordInstruction {
+func expandDivision[W vm.Word[W]](q, x, y register.Id, registers RegisterAllocator) []vm.WordInstruction {
 	var (
-		nX      = resolveRegisterWidth(*registers, x)
+		nX      = registers.Register(x).Width()
 		zero    = vm.Uint64[W](0)
 		one     = vm.Uint64[W](1)
-		wideQ   = allocTmp(registers, 2*nX)
-		rTmp    = allocTmp(registers, 2*nX)
-		wideX   = allocTmp(registers, 2*nX)
-		wideY   = allocTmp(registers, 2*nX)
-		product = allocTmp(registers, 2*nX)
+		wideQ   = registers.Allocate("", 2*nX)
+		rTmp    = registers.Allocate("", 2*nX)
+		wideX   = registers.Allocate("", 2*nX)
+		wideY   = registers.Allocate("", 2*nX)
+		product = registers.Allocate("", 2*nX)
 	)
 
 	return []vm.WordInstruction{
@@ -119,16 +107,16 @@ func expandDivision[W vm.Word[W]](q, x, y register.Id, registers *[]register.Reg
 // expandRemainder replaces INT_REM(r, x, y) with the hint+validation sequence.
 // sum holds qTmp*y and must be 2*nX bits so the product is exact: a cheating prover
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
-func expandRemainder[W vm.Word[W]](r, x, y register.Id, registers *[]register.Register) []vm.WordInstruction {
+func expandRemainder[W vm.Word[W]](r, x, y register.Id, registers RegisterAllocator) []vm.WordInstruction {
 	var (
-		nX      = resolveRegisterWidth(*registers, x)
+		nX      = registers.Register(x).Width()
 		zero    = vm.Uint64[W](0)
 		one     = vm.Uint64[W](1)
-		qTmp    = allocTmp(registers, 2*nX)
-		wideR   = allocTmp(registers, 2*nX)
-		wideX   = allocTmp(registers, 2*nX)
-		wideY   = allocTmp(registers, 2*nX)
-		product = allocTmp(registers, 2*nX)
+		qTmp    = registers.Allocate("", 2*nX)
+		wideR   = registers.Allocate("", 2*nX)
+		wideX   = registers.Allocate("", 2*nX)
+		wideY   = registers.Allocate("", 2*nX)
+		product = registers.Allocate("", 2*nX)
 	)
 
 	return []vm.WordInstruction{

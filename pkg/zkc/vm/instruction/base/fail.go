@@ -55,7 +55,7 @@ func (p *Fail) Uses() []register.Id {
 	//
 	for _, c := range p.Chunks {
 		if c.Format.HasFormat() {
-			uses = append(uses, c.Argument)
+			uses = append(uses, c.Argument.Registers()...)
 		}
 	}
 	//
@@ -85,12 +85,12 @@ func (p *Fail) String(mapping SystemMap) string {
 			tBuilder.WriteString(c.Format.String())
 
 			if !firstTime {
-				builder.WriteString(",")
+				builder.WriteString(", ")
 			}
 			//
 			firstTime = false
 			//
-			builder.WriteString(mapping.Register(c.Argument.Id()).Name())
+			builder.WriteString(c.Argument.String(mapping))
 		}
 	}
 	//

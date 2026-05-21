@@ -17,6 +17,7 @@ import (
 	"encoding/gob"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
+	"github.com/consensys/go-corset/pkg/trace"
 	"github.com/consensys/go-corset/pkg/util/collection/array"
 	"github.com/consensys/go-corset/pkg/util/collection/set"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
@@ -129,6 +130,13 @@ func (p *Function[I]) Register(id register.Id) register.Register {
 // function.
 func (p *Function[I]) Registers() []register.Register {
 	return p.registers
+}
+
+// RegisterMap returns a register map view of the registers declared by this
+// function.
+func (p *Function[I]) RegisterMap() register.Map {
+	name := trace.ModuleName{Name: p.Name(), Multiplier: 1}
+	return register.ArrayMap(name, p.Registers()...)
 }
 
 // Width returns the number of registers in this module.'

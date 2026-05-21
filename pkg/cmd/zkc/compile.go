@@ -18,7 +18,6 @@ import (
 
 	"github.com/consensys/go-corset/pkg/cmd/corset/debug"
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
 	"github.com/consensys/go-corset/pkg/util/field/gf251"
@@ -58,11 +57,11 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	var (
 		build  = GetBuildConfig[F](cmd, field)
 		output = GetString(cmd, "output")
+		quiet  = GetFlag(cmd, "quiet")
 	)
-	// Set default target (if non specified)
-	if !build.HasTarget() {
-		build.ast = true
-	}
+	// Suppress printf debug instructions when quiet mode is enabled.
+	build.config = build.config.Quiet(quiet)
+	applyCompileDefaults(&build, output)
 	// Build all artifacts
 	artifacts := build.Build(args...)
 	//
@@ -71,6 +70,17 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	} else {
 		// Print out requested artifacts
 		printArtifacts(artifacts)
+	}
+}
+
+func applyCompileDefaults[F field.Element[F]](build *BuildConfig[F], output string) {
+	// Writing a binary file requires a word-level machine artifact.
+	if output != "" {
+		build.wir = true
+	}
+	// Set default target (if none specified).
+	if !build.HasTarget() {
+		build.ast = true
 	}
 }
 
@@ -83,7 +93,7 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig[F], a
 		// Write to disk
 		WriteBinaryFile(binfile, filename)
 	} else {
-		log.Error("must use --wir/fir/air to write binary file")
+		log.Error("must use --wir to write binary file")
 		os.Exit(5)
 	}
 }
@@ -294,8 +304,7 @@ func writeIntermediateRepresentation[W vm.BaseWord[W], I vm.Instruction, T vm.Ex
 		case vm.Memory[W]:
 			writeIrMemory(m)
 		case *vm.Function[I]:
-			name := trace.ModuleName{Name: m.Name(), Multiplier: 1}
-			mapping := instruction.NewSystemMap(register.ArrayMap(name, m.Registers()...), machine.Modules())
+			mapping := instruction.NewSystemMap(m.RegisterMap(), machine.Modules())
 			writeIrFunction[W](m, mapping)
 		}
 	}
@@ -400,4 +409,5 @@ func registerType(r register.Register) string {
 func init() {
 	rootCmd.AddCommand(compileCmd)
 	compileCmd.Flags().StringP("output", "o", "", "specify output file for writing binary constraints")
+	compileCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
 }

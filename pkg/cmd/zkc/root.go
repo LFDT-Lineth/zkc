@@ -98,6 +98,8 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 // mechanism for compiling constraint files across the various sub-commands.
 func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig[F] {
 	var build BuildConfig[F]
+
+	lowerNative := GetFlag(cmd, "lower-native") || GetFlag(cmd, "mir") || GetFlag(cmd, "air")
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
 		log.SetLevel(log.DebugLevel)
@@ -106,7 +108,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	build.field = field
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
-		LowerZkcNative(GetFlag(cmd, "lower-native")).
+		LowerZkcNative(lowerNative).
 		Vectorize(GetFlag(cmd, "vectorize")).
 		SplitRegisters(GetFlag(cmd, "split")).
 		Field(field)

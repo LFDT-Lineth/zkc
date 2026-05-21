@@ -62,6 +62,11 @@ type Instruction interface {
 // Debug is a convenient alias
 type Debug = base.Debug
 
+// NewDebug constructs a new debug instruction.
+func NewDebug(chunks ...FormattedChunk) *Debug {
+	return &Debug{Chunks: chunks}
+}
+
 // ============================================================================
 
 // Call invokes the function module identified by Id, passing the values of
@@ -162,6 +167,11 @@ type SkipIf = base.SkipIf
 
 // NewSkipIf constructs a fresh conditional skip instruction.
 func NewSkipIf(condition opcode.Condition, left, right register.Id, skip uint) *SkipIf {
+	return NewSkipIfVec(condition, register.NewVector(left), register.NewVector(right), skip)
+}
+
+// NewSkipIfVec constructs a fresh (vectored) conditional skip instruction.
+func NewSkipIfVec(condition opcode.Condition, left, right register.Vector, skip uint) *SkipIf {
 	return &SkipIf{Cond: condition, Left: left, Right: right, Skip: skip}
 }
 

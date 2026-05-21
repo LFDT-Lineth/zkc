@@ -101,21 +101,48 @@ func subdivideInstructions[W word.Word[W]](mapping register.LimbsMap, code []Vec
 	return ncode
 }
 
-func subdivideInstruction[W word.Word[W]](_ register.LimbsMap, vec VectorInstruction) VectorInstruction {
+func subdivideInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec VectorInstruction) VectorInstruction {
 	var (
 		insns []instruction.Word
 	)
+	// skipif
 	//
 	for _, c := range vec.Codes {
 		switch c := c.(type) {
+		// =======================================================
+		// Base instructions
+		// =======================================================
+		case *instruction.Call:
+			insns = append(insns, subdivideRegisters(limbsMap, c))
+		case *instruction.Debug:
+			insns = append(insns, subdivideFormatting(limbsMap, false, c.Chunks))
+		case *instruction.Destruct:
+			insns = append(insns, subdivideRegisters(limbsMap, c))
 		case *instruction.Fail:
-			insns = append(insns, c)
+			insns = append(insns, subdivideFormatting(limbsMap, true, c.Chunks))
 		case *instruction.Jump:
+			insns = append(insns, c)
+		case *instruction.MemRead:
+			insns = append(insns, subdivideRegisters(limbsMap, c))
+		case *instruction.MemWrite:
+			insns = append(insns, subdivideRegisters(limbsMap, c))
+		case *instruction.Return:
 			insns = append(insns, c)
 		case *instruction.Skip:
 			insns = append(insns, c)
-		case *instruction.Return:
-			insns = append(insns, c)
+		case *instruction.SkipIf:
+			insns = append(insns, subdivideRegisters(limbsMap, c))
+
+		// =======================================================
+		// Arithmetic instructions
+		// =======================================================
+
+		case *instruction.IntAdd[W]:
+			insns = append(insns, subdivideAddition(limbsMap, c)...)
+		case *instruction.IntSub[W]:
+			insns = append(insns, subdivideSubtraction(limbsMap, c)...)
+		case *instruction.IntMul[W]:
+			insns = append(insns, subdivideMultiplication(limbsMap, c)...)
 		default:
 			panic("unsupported instruction")
 		}
@@ -123,4 +150,82 @@ func subdivideInstruction[W word.Word[W]](_ register.LimbsMap, vec VectorInstruc
 
 	//
 	return instruction.NewVector(insns...)
+}
+
+func subdivideRegisters(limbsMap register.LimbsMap, insn instruction.Word) instruction.Word {
+	switch c := insn.(type) {
+	case *instruction.Call:
+		args := register.ApplyLimbsMap(limbsMap, c.Arguments...)
+		rets := register.ApplyLimbsMap(limbsMap, c.Returns...)
+		//
+		return instruction.NewCall(c.Id, args, rets)
+	case *instruction.Destruct:
+		// addr := register.ApplyLimbsMap(limbsMap, c.Targets...)
+		// //
+		// return instruction.NewDestruct(addr, data)
+		panic("todo")
+	case *instruction.MemRead:
+		addr := register.ApplyLimbsMap(limbsMap, c.Arguments...)
+		data := register.ApplyLimbsMap(limbsMap, c.Returns...)
+		//
+		return instruction.NewMemRead(c.Id, addr, data)
+	case *instruction.MemWrite:
+		addr := register.ApplyLimbsMap(limbsMap, c.Arguments...)
+		data := register.ApplyLimbsMap(limbsMap, c.Returns...)
+		//
+		return instruction.NewMemWrite(c.Id, addr, data)
+	case *instruction.SkipIf:
+		left := register.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
+		right := register.ApplyLimbsMap(limbsMap, c.Right.Registers()...)
+		// Construct vectored form of skip_if
+		return instruction.NewSkipIfVec(c.Cond, register.NewVector(left...), register.NewVector(right...), c.Skip)
+	default:
+		panic("unsupported instruction")
+	}
+}
+
+func subdivideFormatting(limbsMap register.LimbsMap, fail bool, chunks []instruction.FormattedChunk) instruction.Word {
+	var (
+		nchunks = make([]instruction.FormattedChunk, len(chunks))
+	)
+	//
+	for i, chunk := range chunks {
+		// split registers
+		arg := register.ApplyLimbsMap(limbsMap, chunk.Argument.Registers()...)
+		//
+		nchunks[i] = instruction.FormattedChunk{
+			Text:     chunk.Text,
+			Format:   chunk.Format,
+			Argument: register.NewVector(arg...),
+		}
+	}
+	//
+	if fail {
+		return instruction.NewFail(nchunks...)
+	}
+	//
+	return instruction.NewDebug(nchunks...)
+}
+
+func subdivideAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruction.IntAdd[W]) []instruction.Word {
+	var (
+		target  = register.ApplyLimbsMap(limbsMap, insn.Target)
+		sources = register.ApplyLimbsMap(limbsMap, insn.Sources...)
+	)
+	// FIXME: this is a temporary place holder to allow some tests to actually
+	// run.  It is not a proper implementation of this function.
+	if len(target) > 1 {
+		// TODO: this is where we actually need to do something
+		panic("todo")
+	}
+	//
+	return []instruction.Word{instruction.NewIntAdd(target[0], sources, insn.Constant)}
+}
+
+func subdivideSubtraction(limbsMap register.LimbsMap, insn instruction.Word) []instruction.Word {
+	panic("todo")
+}
+
+func subdivideMultiplication(limbsMap register.LimbsMap, insn instruction.Word) []instruction.Word {
+	panic("todo")
 }

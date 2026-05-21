@@ -14,11 +14,14 @@ package word
 
 import (
 	"fmt"
+	"math/big"
 )
 
 // Word abstracts a sequence of n bits.
 type Word[T any] interface {
 	fmt.Stringer
+	// Return the value of this word as a big integer.
+	BigInt() *big.Int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 	Cmp(y T) int
 	// Check whether two items are equal (or not).

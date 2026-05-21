@@ -23,6 +23,7 @@ import (
 	"github.com/consensys/go-corset/pkg/util"
 	zkc_util "github.com/consensys/go-corset/pkg/zkc/util"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
+	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
@@ -278,7 +279,7 @@ func (p *Base[W, I, T]) executeInstruction(insn I, width uint, regs []register.R
 		var (
 			insn = binsn.(*instruction.Fail)
 			//
-			msg = executeFormattedChunks(insn.Chunks, frame)
+			msg = executeFormattedChunks(insn.Chunks, regs, frame)
 		)
 		// check whether to include msg or not
 		if len(insn.Chunks) == 0 {
@@ -341,7 +342,7 @@ func (p *Base[W, I, T]) executeInstruction(insn I, width uint, regs []register.R
 		// Fall thru
 	case opcode.DEBUG:
 		insn := binsn.(*instruction.Debug)
-		fmt.Print(executeFormattedChunks(insn.Chunks, frame))
+		fmt.Print(executeFormattedChunks[W](insn.Chunks, regs, frame))
 	default:
 		// Call provided executor
 		err = p.executor.Execute(insn, frame, regs)
@@ -354,14 +355,16 @@ func (p *Base[W, I, T]) executeInstruction(insn I, width uint, regs []register.R
 	return err
 }
 
-func executeFormattedChunks[W zkc_util.Formattable](chunks []instruction.FormattedChunk, frame []W) string {
+func executeFormattedChunks[W BaseWord[W]](chunks []base.FormattedChunk, regs []register.Register, frame []W) string {
 	var builder strings.Builder
 	//
 	for _, chunk := range chunks {
 		builder.WriteString(chunk.Text)
 		//
 		if chunk.Format.HasFormat() {
-			builder.WriteString(zkc_util.FormatWord(chunk.Format, frame[chunk.Argument.Unwrap()]))
+			words := loadAll(frame, chunk.Argument)
+			regs := loadAll(regs, chunk.Argument)
+			builder.WriteString(zkc_util.FormatWord(chunk.Format, regs, words...))
 		}
 	}
 	//
@@ -371,26 +374,57 @@ func executeFormattedChunks[W zkc_util.Formattable](chunks []instruction.Formatt
 // ==============================================================
 // Conditions
 // ==============================================================
-func executeCondition[T util.Comparable[T]](frame []T, cond opcode.Condition, left, right register.Id) bool {
+func executeCondition[T util.Comparable[T]](frame []T, cond opcode.Condition, left, right register.Vector) bool {
 	var (
-		lhs = frame[left.Unwrap()]
-		rhs = frame[right.Unwrap()]
+		lhs = loadAll(frame, left)
+		rhs = loadAll(frame, right)
 	)
+	// TODO: for now, we make this assumption.  However, it can be releaxed in
+	// order to allow comparisons involving registers of different width.  It
+	// should be fairly easy to support this though.
+	if left.Len() != right.Len() {
+		panic("support non-uniform vector comparisons")
+	}
 	//
 	switch cond {
 	case opcode.EQ:
-		return lhs.Cmp(rhs) == 0
+		return cmp(lhs, rhs) == 0
 	case opcode.NEQ:
-		return lhs.Cmp(rhs) != 0
+		return cmp(lhs, rhs) != 0
 	case opcode.LT:
-		return lhs.Cmp(rhs) < 0
+		return cmp(lhs, rhs) < 0
 	case opcode.LTEQ:
-		return lhs.Cmp(rhs) <= 0
+		return cmp(lhs, rhs) <= 0
 	case opcode.GT:
-		return lhs.Cmp(rhs) > 0
+		return cmp(lhs, rhs) > 0
 	case opcode.GTEQ:
-		return lhs.Cmp(rhs) >= 0
+		return cmp(lhs, rhs) >= 0
 	default:
 		panic("unreachable")
 	}
+}
+
+// LoadAll values value of a set of registers from this stack frame.
+func loadAll[W any](frame []W, regs register.Vector) []W {
+	var words = make([]W, regs.Len())
+	//
+	for i, reg := range regs.Registers() {
+		words[i] = frame[reg.Unwrap()]
+	}
+	//
+	return words
+}
+
+// Perform lexicographic comparison of two (equally sized) arrays.  In each
+// array, the least significant word is at index 0.
+func cmp[T util.Comparable[T]](lhs []T, rhs []T) int {
+	for i := len(lhs); i > 0; i-- {
+		c := lhs[i-1].Cmp(rhs[i-1])
+		//
+		if c != 0 {
+			return c
+		}
+	}
+	// lhs == rhs
+	return 0
 }

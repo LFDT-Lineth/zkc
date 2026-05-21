@@ -41,7 +41,7 @@ func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module) map[shiftKey]uint 
 			continue
 		}
 
-		regs := fn.Registers()
+		regs := fn.RegisterMap()
 
 		for _, vec := range fn.Code() {
 			for _, insn := range vec.Codes {
@@ -61,7 +61,7 @@ func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module) map[shiftKey]uint 
 
 				origWidth, _ := lowerableWidth(regs, targetID)
 				key := shiftKey{opcode: op, width: origWidth}
-				amountWidth := regs[amountID.Unwrap()].Width()
+				amountWidth := regs.Register(amountID).Width()
 
 				if existing, seen := result[key]; !seen || amountWidth > existing {
 					result[key] = amountWidth
@@ -82,15 +82,15 @@ func bitwiseShiftCall(
 	id uint,
 	target, value, amount register.Id,
 	amtWidth uint,
-	registers *[]register.Register,
+	registers RegisterAllocator,
 ) []vm.WordInstruction {
-	if (*registers)[amount.Unwrap()].Width() == amtWidth {
+	if registers.Register(amount).Width() == amtWidth {
 		return []vm.WordInstruction{
 			instruction.NewCall(id, []register.Id{value, amount}, []register.Id{target}),
 		}
 	}
 
-	wAmount := allocTmp(registers, amtWidth)
+	wAmount := registers.Allocate("", amtWidth)
 
 	return []vm.WordInstruction{
 		instruction.NewCast(wAmount, amount, amtWidth),

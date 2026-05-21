@@ -31,7 +31,7 @@ func Test_ZkcUnit_Basic_02(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_03", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/basic_03", util.DEFAULT_CONFIG.Constraints(true).Splitting(true))
 }
 func Test_ZkcUnit_Basic_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_04", util.DEFAULT_CONFIG.Constraints(true))
@@ -117,7 +117,6 @@ func Test_ZkcUnit_Basic_22(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_23(t *testing.T) {
-	// TODO: bitwise destruct
 	checkZkcUnit(t, "zkc/unit/basic_23", util.DEFAULT_CONFIG.Constraints(true))
 }
 
@@ -160,6 +159,15 @@ func Test_ZkcUnit_Basic_32(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_32", util.DEFAULT_CONFIG.Constraints(true))
 }
 
+func Test_ZkcUnit_Basic_33(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_33", util.DEFAULT_CONFIG.Constraints(true).Splitting(true))
+}
+
+func Test_ZkcUnit_Basic_34(t *testing.T) {
+	// TODO: register splitting
+	checkZkcUnit(t, "zkc/unit/basic_34", util.DEFAULT_CONFIG)
+}
+
 // ===================================================================
 // If-Else-If Tests
 // ===================================================================
@@ -195,6 +203,10 @@ func Test_ZkcUnit_IfElse_06(t *testing.T) {
 func Test_ZkcUnit_IfElse_07(t *testing.T) {
 	// TODO: register splitting
 	checkZkcUnit(t, "zkc/unit/ifelse_07", util.DEFAULT_CONFIG)
+}
+
+func Test_ZkcUnit_IfElse_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ifelse_08", util.DEFAULT_CONFIG.Constraints(true))
 }
 
 // ===================================================================
@@ -509,6 +521,10 @@ func Test_ZkcUnit_SwitchEndian(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_endian", util.DEFAULT_CONFIG)
 }
 
+func Test_ZkcUnit_BitRotr64(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bit_rotr64", util.DEFAULT_CONFIG)
+}
+
 // ===================================================================
 // Cast Tests
 // ===================================================================
@@ -600,6 +616,10 @@ func Test_ZkcUnit_Ternary_04(t *testing.T) {
 
 func Test_ZkcUnit_Ternary_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/ternary_05", util.DEFAULT_CONFIG.Constraints(true))
+}
+
+func Test_ZkcUnit_Ternary_06(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ternary_06", util.DEFAULT_CONFIG.Constraints(true))
 }
 
 // ===================================================================

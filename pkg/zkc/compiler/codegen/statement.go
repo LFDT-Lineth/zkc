@@ -42,6 +42,8 @@ type StmtCompiler struct {
 	field       field.Config
 	srcmaps     source.Maps[any]
 	errors      []source.SyntaxError
+	// quiet suppresses printf output
+	quiet bool
 }
 
 func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorInstruction {
@@ -62,6 +64,10 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorI
 	case *stmt.Fail[symbol.Resolved]:
 		return p.compileFail(mapping, s.Chunks, s.Arguments)
 	case *stmt.Printf[symbol.Resolved]:
+		if p.quiet {
+			return instruction.NewVector[Instruction]()
+		}
+		//
 		return p.compilePrintf(mapping, s.Chunks, s.Arguments)
 	case *stmt.Return[symbol.Resolved]:
 		return instruction.NewVector[Instruction](instruction.NewReturn())
@@ -180,13 +186,13 @@ func (p *StmtCompiler) compileFormattedChunks(mapping []uint, chunks []stmt.Form
 	for _, chunk := range chunks {
 		if chunk.Format.HasFormat() {
 			nchunks = append(nchunks, instruction.FormattedChunk{
-				Text: chunk.Text, Format: chunk.Format, Argument: regs[index],
+				Text: chunk.Text, Format: chunk.Format, Argument: register.NewVector(regs[index]),
 			})
 			//
 			index++
 		} else {
 			nchunks = append(nchunks, instruction.FormattedChunk{
-				Text: chunk.Text, Format: util.EMPTY_FORMAT, Argument: register.UnusedId(),
+				Text: chunk.Text, Format: util.EMPTY_FORMAT, Argument: register.NewVector(),
 			})
 		}
 	}
@@ -196,22 +202,20 @@ func (p *StmtCompiler) compileFormattedChunks(mapping []uint, chunks []stmt.Form
 
 func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, target uint,
 ) VectorInstruction {
-	var (
-		insns []Instruction
-		args  []register.Id
-	)
-	//
 	switch e := e.(type) {
 	case *expr.Cmp[symbol.Resolved]:
-		args, insns = p.compileArgs(mapping, e.Left, e.Right)
+		var (
+			args, insns = p.compileArgs(mapping, e.Left, e.Right)
+		)
+		//
 		insns = append(insns, instruction.NewSkipIf(opcode.Condition(e.Operator), args[0], args[1], 1))
 		insns = append(insns, instruction.NewJump(pc+1))
 		insns = append(insns, instruction.NewJump(target))
+		//
+		return instruction.NewVector(insns...)
 	default:
 		panic("unknown condition encountered")
 	}
-	//
-	return instruction.NewVector(insns...)
 }
 
 func (p *StmtCompiler) compileExpr(e Expr, mapping []uint, targets ...register.Id) []Instruction {
@@ -337,22 +341,27 @@ func (p *StmtCompiler) isFieldOperation(target register.Id) bool {
 func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], mapping []uint, target register.Id,
 ) []Instruction {
 	cmp := e.Cond.(*expr.Cmp[symbol.Resolved])
-	// Eagerly evaluate both branches into temporaries.
+	// Lazily compile both arms — their instructions are placed inside the
+	// conditionally-skipped regions below, so only the taken arm runs.
 	trueRegs, trueInsns := p.compileArgs(mapping, e.IfTrue)
 	falseRegs, falseInsns := p.compileArgs(mapping, e.IfFalse)
-	// Evaluate condition operands.
+	// Evaluate condition operands (always runs).
 	condRegs, condInsns := p.compileArgs(mapping, cmp.Left, cmp.Right)
 	// Selection sequence:
-	//   skip_if(cond, lhs, rhs, 2)      if TRUE skip false-copy + skip(1)
-	//   add(target, [falseReg], 0)       false branch (skipped when TRUE)
-	//   skip(1)                          skip over true branch
-	//   add(target, [trueReg], 0)        true branch  (returned as final insn)
-	insns := append(trueInsns, falseInsns...)
-	insns = append(insns, condInsns...)
+	//   condInsns                                  always
+	//   skip_if(cond, lhs, rhs, |falseInsns|+2)    if TRUE skip false arm
+	//   falseInsns                                 (skipped on TRUE)
+	//   add(target, [falseReg], 0)
+	//   skip(|trueInsns|+1)                        jump past true arm
+	//   trueInsns                                  (skipped on FALSE)
+	//   add(target, [trueReg], 0)
+	insns := append([]Instruction{}, condInsns...)
 	insns = append(insns, instruction.NewSkipIf(
-		opcode.Condition(cmp.Operator), condRegs[0], condRegs[1], 2))
+		opcode.Condition(cmp.Operator), condRegs[0], condRegs[1], uint(len(falseInsns))+2))
+	insns = append(insns, falseInsns...)
 	insns = append(insns, p.newLoad(target, []register.Id{falseRegs[0]}))
-	insns = append(insns, &instruction.Skip{Skip: 1})
+	insns = append(insns, &instruction.Skip{Skip: uint(len(trueInsns)) + 1})
+	insns = append(insns, trueInsns...)
 	//
 	return append(insns, p.newLoad(target, []register.Id{trueRegs[0]}))
 }

@@ -65,7 +65,7 @@ func (p *Destruct) String(mapping base.SystemMap) string {
 			builder.WriteString("::")
 		}
 		//
-		builder.WriteString(mapping.Register(rid).Name())
+		builder.WriteString(base.RegistersToString(mapping, rid))
 	}
 	//
 	builder.WriteString(" = ")

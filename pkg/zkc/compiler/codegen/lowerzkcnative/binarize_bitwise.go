@@ -22,6 +22,9 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 )
 
+// RegisterAllocator provides a simple means of allocating new registers
+type RegisterAllocator = register.Allocator[int]
+
 // BinarizeBitwise splits any AND/OR/XOR instruction with more than two source
 // registers into a left-fold chain of binary instructions.  This must run
 // before LowerBitwise so that the helper modules it generates never need more
@@ -40,31 +43,21 @@ func BinarizeBitwise[W vm.Word[W]](modules []vm.Module) []vm.Module {
 
 func binarizeBitwiseFunction[W vm.Word[W]](fn *vm.WordFunction) *vm.WordFunction {
 	var (
-		code      = fn.Code()
-		ncode     = make([]vectorInstruction, len(code))
-		registers = append([]register.Register{}, fn.Registers()...)
+		code  = fn.Code()
+		ncode = make([]vectorInstruction, len(code))
+		alloc = register.NewAllocator[int](fn.RegisterMap())
 	)
 
 	for i, insn := range code {
-		ncodes := binarizeBitwiseCodes[W](insn.Codes, &registers)
-		ncode[i] = vectorInstruction{Codes: ncodes}
+		ncode[i] = insn.Map(func(_ uint, ith vm.WordInstruction) []vm.WordInstruction {
+			return binarizeBitwiseCode[W](ith, alloc)
+		})
 	}
 
-	return vm.NewFunction(fn.Name(), fn.IsNative(), registers, ncode)
+	return vm.NewFunction(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
 }
 
-func binarizeBitwiseCodes[W vm.Word[W]](codes []vm.WordInstruction, registers *[]register.Register,
-) []vm.WordInstruction {
-	ncodes := make([]vm.WordInstruction, 0, len(codes))
-
-	for _, code := range codes {
-		ncodes = append(ncodes, binarizeBitwiseCode[W](code, registers)...)
-	}
-
-	return ncodes
-}
-
-func binarizeBitwiseCode[W vm.Word[W]](code vm.WordInstruction, registers *[]register.Register,
+func binarizeBitwiseCode[W vm.Word[W]](code vm.WordInstruction, registers RegisterAllocator,
 ) []vm.WordInstruction {
 	var (
 		op       instruction.OpCode
@@ -84,14 +77,14 @@ func binarizeBitwiseCode[W vm.Word[W]](code vm.WordInstruction, registers *[]reg
 		return []vm.WordInstruction{code}
 	}
 
-	width := (*registers)[target.Unwrap()].Width()
+	width := registers.Register(target).Width()
 	identity := bitwiseIdentity[W](op, width)
 
 	insns := make([]vm.WordInstruction, 0, len(sources))
 
 	// If the constant is not the identity, materialise it as a register and add it to sources.
 	if constant.Cmp(identity) != 0 {
-		cstReg := allocTmp(registers, width)
+		cstReg := registers.Allocate("", width)
 		insns = append(insns, instruction.NewIntAdd(cstReg, nil, constant))
 		sources = append(sources, cstReg)
 	}
@@ -109,7 +102,7 @@ func binarizeBitwiseCode[W vm.Word[W]](code vm.WordInstruction, registers *[]reg
 	default:
 		acc := sources[0]
 		for _, src := range sources[1 : len(sources)-1] {
-			tmp := allocTmp(registers, width)
+			tmp := registers.Allocate("", width)
 			insns = append(insns, newBinaryBitOp(op, tmp, acc, src, identity))
 			acc = tmp
 		}
