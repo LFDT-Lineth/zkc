@@ -58,14 +58,15 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		outputFile = GetString(cmd, "output")
 		// check constraints
 		check = GetFlag(cmd, "check")
+		// suppress printf output
+		quiet = GetFlag(cmd, "quiet")
 		// identify whether tracing required or not.
 		tracing = check || outputFile != ""
 		//
 		trace   trace.Trace[F]
 		outputs map[string][]byte
 	)
-	// Force compilation of the word machine, which is what we execute.
-	build.wir = true
+	applyExecuteDefaults(&build, check, quiet)
 	//
 	input := ParseInputFile(args[0])
 	// Build artifacts (compiles source files or loads a prebuilt binary).
@@ -113,6 +114,17 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	}
 }
 
+func applyExecuteDefaults[F field.Element[F]](build *BuildConfig[F], check, quiet bool) {
+	// Constraint checking requires native ZkC operations to be lowered.
+	if check {
+		build.config = build.config.LowerZkcNative(true)
+	}
+	// Suppress printf debug instructions when quiet mode is enabled.
+	build.config = build.config.Quiet(quiet)
+	// Force compilation of the word machine, which is what we execute.
+	build.wir = true
+}
+
 func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F], tr trace.Trace[F],
 	cfg constraints.TraceConfig) {
 	//
@@ -142,4 +154,5 @@ func init() {
 	rootCmd.AddCommand(executeCmd)
 	executeCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
 	executeCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
+	executeCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
 }

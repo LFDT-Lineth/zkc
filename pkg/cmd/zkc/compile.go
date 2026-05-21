@@ -58,11 +58,11 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	var (
 		build  = GetBuildConfig[F](cmd, field)
 		output = GetString(cmd, "output")
+		quiet  = GetFlag(cmd, "quiet")
 	)
-	// Set default target (if non specified)
-	if !build.HasTarget() {
-		build.ast = true
-	}
+	// Suppress printf debug instructions when quiet mode is enabled.
+	build.config = build.config.Quiet(quiet)
+	applyCompileDefaults(&build, output)
 	// Build all artifacts
 	artifacts := build.Build(args...)
 	//
@@ -71,6 +71,17 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	} else {
 		// Print out requested artifacts
 		printArtifacts(artifacts)
+	}
+}
+
+func applyCompileDefaults[F field.Element[F]](build *BuildConfig[F], output string) {
+	// Writing a binary file requires a word-level machine artifact.
+	if output != "" {
+		build.wir = true
+	}
+	// Set default target (if none specified).
+	if !build.HasTarget() {
+		build.ast = true
 	}
 }
 
@@ -400,4 +411,5 @@ func registerType(r register.Register) string {
 func init() {
 	rootCmd.AddCommand(compileCmd)
 	compileCmd.Flags().StringP("output", "o", "", "specify output file for writing binary constraints")
+	compileCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
 }
