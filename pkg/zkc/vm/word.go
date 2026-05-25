@@ -28,7 +28,6 @@ import (
 func init() {
 	gob.Register(instruction.Word(&instruction.WordTypeA[Uint]{}))
 	gob.Register(instruction.Word(&instruction.WordTypeB[Uint]{}))
-	gob.Register(instruction.Word(&instruction.WordTypeC{}))
 	gob.Register(instruction.Module(&function.Function[instruction.Word]{}))
 	gob.Register(instruction.Module(&memory.RandomAccess[Uint]{}))
 	gob.Register(instruction.Module(&memory.ReadOnly[Uint]{}))

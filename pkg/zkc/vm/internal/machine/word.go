@@ -100,11 +100,6 @@ func (p WordExecutor[W]) Execute(insn instruction.Word, frame []W, regs []regist
 		insn := insn.(*instruction.WordTypeA[W])
 		err = executeSub(insn.Target, insn.Sources, insn.Constant, frame, regs)
 		// Fall thru
-	case opcode.INT_CAST:
-		insn := insn.(*instruction.WordTypeC)
-		err = executeCast(*insn, frame, regs)
-		// Fall thru
-
 	case opcode.INT_ADDMOD_P:
 		insn := insn.(*instruction.WordTypeB[W])
 		err = executeFieldAdd(insn.Target, insn.Sources, insn.Constant, p.modulus, frame)
@@ -117,9 +112,6 @@ func (p WordExecutor[W]) Execute(insn instruction.Word, frame []W, regs []regist
 		insn := insn.(*instruction.WordTypeB[W])
 		err = executeFieldMul(insn.Target, insn.Sources, insn.Constant, p.modulus, frame)
 		// Fall thru
-	case opcode.INT_CASTMOD_P:
-		insn := insn.(*instruction.WordTypeC)
-		err = executeFieldCast(*insn, p.modulus, frame)
 
 	// ==============================================================
 	// Bitwise Instructions
@@ -310,18 +302,6 @@ func executeFieldMul[W word.Word[W]](target register.Id, sources []register.Id, 
 	return nil
 }
 
-func executeFieldCast[W word.Word[W]](insn instruction.WordTypeC, modulus W, frame []W) error {
-	src := frame[insn.Source.Unwrap()]
-	// Panic if the source value doesn't fit within the field.
-	if src.Cmp(modulus) >= 0 {
-		return errors.New("cast overflow")
-	}
-	//
-	frame[insn.Target.Unwrap()] = src
-	//
-	return nil
-}
-
 func executeDiv[W word.Word[W]](target register.Id, sources []register.Id, frame []W,
 	regs []register.Register) error {
 	//
@@ -496,19 +476,6 @@ func executeDivHint[W word.Word[W]](targets []register.Id, sources []register.Id
 // Misc Instructions
 // ==============================================================
 
-func executeCast[W word.Word[W]](insn instruction.WordTypeC, frame []W, _ []register.Register) error {
-	src := frame[insn.Source.Unwrap()]
-	sliced := src.Slice(insn.Width)
-	// Panic if the source value doesn't fit within the target bit width.
-	if src.Cmp(sliced) != 0 {
-		return errors.New("cast overflow")
-	}
-	//
-	frame[insn.Target.Unwrap()] = sliced
-	//
-	return nil
-}
-
 func executeConcat[W word.Word[W]](target register.Vector, sources []register.Id, frame []W,
 	regs []register.Register) error {
 	//
@@ -537,15 +504,22 @@ func executeConcat[W word.Word[W]](target register.Vector, sources []register.Id
 }
 
 func storeAcross[W word.Word[W]](targets register.Vector, val W, frame []W, regs []register.Register) {
+	var tRegIds = targets.Registers()
 	//
-	for _, rid := range targets.Registers() {
-		var (
-			id    = rid.Unwrap()
-			width = regs[id].Width()
-		)
+	if targets.Len() == 1 {
+		var id = tRegIds[0].Unwrap()
 		//
-		frame[id] = val.Slice(width)
-		//
-		val = val.Shr64(uint64(width))
+		frame[id] = val
+	} else {
+		for _, rid := range targets.Registers() {
+			var (
+				id    = rid.Unwrap()
+				width = regs[id].Width()
+			)
+			//
+			frame[id] = val.Slice(width)
+			//
+			val = val.Shr64(uint64(width))
+		}
 	}
 }

@@ -178,10 +178,6 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 		return p.lowerBitwiseConcatenation(insn.Target, insn.Sources, mapping)
 	case opcode.HINT_DIVISION:
 		return wi.(*instruction.FieldHint)
-	case opcode.INT_CAST:
-		var insn = wi.(*instruction.WordTypeC)
-		//
-		return p.lowerCastInstruction(insn.Target, insn.Source)
 	case opcode.INT_ADD:
 		var insn = wi.(*instruction.WordTypeA[W])
 		return p.lowerArithInstruction(insn.Target, insn.Sources, insn.Constant, sum)
@@ -282,15 +278,6 @@ func (p wordToField[W, F]) lowerBitwiseConcatenation(lhs register.Vector, rhs []
 	}
 	//
 	return instruction.NewFieldAssign[F](lhs, sum(terms...))
-}
-
-func (p wordToField[W, F]) lowerCastInstruction(lhs register.Id, rhs register.Id) (fi FieldInstruction) {
-	var (
-		one = big.NewInt(1)
-		e   Polynomial
-	)
-	//
-	return instruction.NewFieldAssign[F](register.NewVector(lhs), e.Set(poly.NewMonomial(*one, rhs)))
 }
 
 func checkRegisterWidths(registerWidth uint, regs ...register.Register) {

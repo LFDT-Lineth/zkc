@@ -173,6 +173,10 @@ func Test_ZkcUnit_Basic_35(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_35", util.DEFAULT_CONFIG)
 }
 
+func Test_ZkcUnit_Basic_36(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_36", util.DEFAULT_CONFIG)
+}
+
 // ===================================================================
 // If-Else-If Tests
 // ===================================================================
@@ -458,6 +462,14 @@ func Test_ZkcUnit_Bitwise_12(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/bitwise_12", util.DEFAULT_CONFIG.Constraints(true))
 }
 
+func Test_ZkcUnit_Bitwise_13(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bitwise_13", util.DEFAULT_CONFIG)
+}
+
+func Test_ZkcUnit_Bitwise_14(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bitwise_14", util.DEFAULT_CONFIG)
+}
+
 // ===================================================================
 // Shift Tests
 // ===================================================================
@@ -520,14 +532,6 @@ func Test_ZkcUnit_Static_01(t *testing.T) {
 
 func Test_ZkcUnit_Static_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/static_02", util.DEFAULT_CONFIG)
-}
-
-func Test_ZkcUnit_SwitchEndian(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/switch_endian", util.DEFAULT_CONFIG)
-}
-
-func Test_ZkcUnit_BitRotr64(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bit_rotr64", util.DEFAULT_CONFIG)
 }
 
 // ===================================================================
