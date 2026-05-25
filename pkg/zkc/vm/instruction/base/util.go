@@ -14,6 +14,7 @@ package base
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -44,6 +45,18 @@ type SystemMap interface {
 	register.Map
 	//
 	Module(id uint) Module
+}
+
+// RegisterBitwidth returns the bitwidth of a register.  This function is
+// resilient to situations where, for example, the environment is missing or the
+// register Id is invalid.
+func RegisterBitwidth(env register.Map, reg register.Id) uint {
+	// support nil environment (for debugging)
+	if env != nil && reg.Unwrap() < uint(len(env.Registers())) {
+		return env.Register(reg).Width()
+	}
+	//
+	return math.MaxUint
 }
 
 // RegistersToString returns a string representation for zero or more registers

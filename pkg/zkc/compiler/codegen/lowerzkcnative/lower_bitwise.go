@@ -22,6 +22,9 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 )
 
+// RegisterAllocator provides a simple means of allocating new registers
+type RegisterAllocator = register.Allocator[int]
+
 type vectorInstruction = vm.Vector[vm.WordInstruction]
 
 // LowerBitwise rewrites VM-level bitwise micro-instructions into CALLs to
@@ -69,13 +72,13 @@ func lowerBitwiseCode[W vm.Word[W]](
 	//
 	switch code.OpCode() {
 	case opcode.BIT_AND, opcode.BIT_OR, opcode.BIT_XOR:
-		t := code.(*instruction.WordTypeB[W])
+		t := code.(*instruction.WordTypeB)
 		return lowerBitwiseAndOrXor(t, registers, helpers)
 	case opcode.BIT_NOT:
-		t := code.(*instruction.WordTypeB[W])
+		t := code.(*instruction.WordTypeB)
 		return inlineBitwiseNot[W](t, registers)
 	case opcode.BIT_SHL, opcode.BIT_SHR:
-		t := code.(*instruction.WordTypeB[W])
+		t := code.(*instruction.WordTypeB)
 		return lowerBitwiseShlShr(t, registers, helpers)
 	default:
 		return []vm.WordInstruction{code}
@@ -83,7 +86,7 @@ func lowerBitwiseCode[W vm.Word[W]](
 }
 
 func lowerBitwiseAndOrXor[W vm.Word[W]](
-	code *instruction.WordTypeB[W],
+	code *instruction.WordTypeB,
 	registers RegisterAllocator,
 	helpers *bitwiseHelpers[W],
 ) []vm.WordInstruction {
@@ -98,15 +101,15 @@ func lowerBitwiseAndOrXor[W vm.Word[W]](
 	// argument here: at the (possibly widened) helper width the original
 	// identity mask is redundant because the cast already zero-extends
 	// inputs.
-	id := helpers.ensure(code.OpCode(), p, len(code.Sources))
+	id := helpers.ensure(code.OpCode(), p, 2)
 	//
 	return []vm.WordInstruction{
-		instruction.NewCall(id, append([]register.Id{}, code.Sources...), []register.Id{code.Target}),
+		instruction.NewCall(id, []register.Id{code.LeftSource, code.RightSource}, []register.Id{code.Target}),
 	}
 }
 
 func lowerBitwiseShlShr[W vm.Word[W]](
-	code *instruction.WordTypeB[W],
+	code *instruction.WordTypeB,
 	registers RegisterAllocator,
 	helpers *bitwiseHelpers[W],
 ) []vm.WordInstruction {
@@ -114,17 +117,17 @@ func lowerBitwiseShlShr[W vm.Word[W]](
 		// NOTE: bitwidth of shift (e.g. "x << y") determined by width of first
 		// argument only (i.e. "x").
 		width, _ = maxBitwidthOf(registers, code.Uses()[0])
-		id       = helpers.ensure(code.OpCode(), width, len(code.Sources))
+		id       = helpers.ensure(code.OpCode(), width, 2)
 	)
 	//
 	return []vm.WordInstruction{
-		instruction.NewCall(id, []register.Id{code.Sources[0], code.Sources[1]}, []register.Id{code.Target}),
+		instruction.NewCall(id, []register.Id{code.LeftSource, code.RightSource}, []register.Id{code.Target}),
 	}
 }
 
 // inlineBitwiseNot emits ~x as (MASK - x) directly into the caller's
 // instruction stream, where MASK = 2^width - 1.  No helper module is created.
-func inlineBitwiseNot[W vm.Word[W]](code *instruction.WordTypeB[W], registers RegisterAllocator) []vm.WordInstruction {
+func inlineBitwiseNot[W vm.Word[W]](code *instruction.WordTypeB, registers RegisterAllocator) []vm.WordInstruction {
 	var (
 		width, _ = maxBitwidthOf(registers, code.Uses()...)
 		maskBig  = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))
@@ -137,7 +140,7 @@ func inlineBitwiseNot[W vm.Word[W]](code *instruction.WordTypeB[W], registers Re
 
 	return []vm.WordInstruction{
 		instruction.UintConst(maskReg, mask),
-		instruction.UintSub(code.Target, []register.Id{maskReg, code.Sources[0]}, zero),
+		instruction.UintSub(code.Target, []register.Id{maskReg, code.LeftSource}, zero),
 	}
 }
 

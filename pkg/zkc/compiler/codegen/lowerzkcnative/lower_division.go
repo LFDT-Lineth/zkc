@@ -67,11 +67,11 @@ func lowerDivisionCode[W vm.Word[W]](
 ) []vm.WordInstruction {
 	switch code.OpCode() {
 	case opcode.INT_DIV:
-		insn := code.(*instruction.WordTypeB[W])
-		return expandDivision[W](insn.Target, insn.Sources[0], insn.Sources[1], registers)
+		insn := code.(*instruction.WordTypeB)
+		return expandDivision[W](insn.Target, insn.LeftSource, insn.RightSource, registers)
 	case opcode.INT_REM:
-		insn := code.(*instruction.WordTypeB[W])
-		return expandRemainder[W](insn.Target, insn.Sources[0], insn.Sources[1], registers)
+		insn := code.(*instruction.WordTypeB)
+		return expandRemainder[W](insn.Target, insn.LeftSource, insn.RightSource, registers)
 	default:
 		return []vm.WordInstruction{code}
 	}

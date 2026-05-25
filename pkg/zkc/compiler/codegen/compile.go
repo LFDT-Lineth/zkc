@@ -163,8 +163,6 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	}
 	// Lower VM-level zkc-native instructions into arithmetic instructions.
 	if len(errors) == 0 && p.config.lowerZkcNative {
-		// Reduce chain bitwise operation in order to prepare the VM instructions for bitwise lowering.
-		modules = lowerzkcnative.BinarizeBitwise[vm.Uint](modules)
 		// Lower Bitwise operations into arithmetic instructions.
 		modules = lowerzkcnative.LowerBitwise[vm.Uint](modules)
 		// Lower INT_DIV/INT_REM into hint + arithmetic validation sequences.

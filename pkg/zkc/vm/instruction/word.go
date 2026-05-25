@@ -129,9 +129,8 @@ func UintMulV[W vmWord[W]](target register.Vector, sources []register.Id, consta
 // assigning the result to the target register.  Specifically, sources[0] is
 // the dividend and sources[1] is the divisor; division by zero aborts
 // execution with a division-by-zero error.  The constant operand is unused.
-func UintDiv[W vmWord[W]](target, dividend, divisor register.Id) *WordTypeB[W] {
-	var zero W
-	return NewWordTypeB(opcode.INT_DIV, target, []register.Id{dividend, divisor}, zero)
+func UintDiv[W vmWord[W]](bitwidth uint, target, dividend, divisor register.Id) *WordTypeB {
+	return NewWordTypeB(opcode.INT_DIV, bitwidth, target, dividend, divisor)
 }
 
 // UintRem computes the remainder of the integer division of two source
@@ -139,9 +138,8 @@ func UintDiv[W vmWord[W]](target, dividend, divisor register.Id) *WordTypeB[W] {
 // sources[0] is the dividend and sources[1] is the divisor; division by zero
 // aborts execution with a division-by-zero error.  The constant operand is
 // unused.
-func UintRem[W vmWord[W]](target, dividend, divisor register.Id) *WordTypeB[W] {
-	var zero W
-	return NewWordTypeB(opcode.INT_REM, target, []register.Id{dividend, divisor}, zero)
+func UintRem(bitwidth uint, target, dividend, divisor register.Id) *WordTypeB {
+	return NewWordTypeB(opcode.INT_REM, bitwidth, target, dividend, divisor)
 }
 
 // UintAddModP computes the sum of the source registers and a constant within
@@ -149,8 +147,8 @@ func UintRem[W vmWord[W]](target, dividend, divisor register.Id) *WordTypeB[W] {
 // target register.  The value assigned is sources[0] + ... + sources[n-1] +
 // constant, reduced modulo the field's prime characteristic.  The source slice
 // may be empty, in which case the instruction simply loads the constant.
-func UintAddModP[W vmWord[W]](target register.Id, sources []register.Id, constant W) *WordTypeB[W] {
-	return NewWordTypeB(opcode.INT_ADDMOD_P, target, sources, constant)
+func UintAddModP[W vmWord[W]](target register.Id, sources []register.Id, constant W) *WordTypeF[W] {
+	return NewWordTypeF(opcode.INT_ADDMOD_P, target, sources, constant)
 }
 
 // UintSubModP computes a chained subtraction of the source registers and a
@@ -158,16 +156,16 @@ func UintAddModP[W vmWord[W]](target register.Id, sources []register.Id, constan
 // result to the target register.  The value assigned is sources[0] - sources[1]
 // - ... - sources[n-1] - constant, reduced modulo the field's prime
 // characteristic.
-func UintSubModP[W vmWord[W]](target register.Id, sources []register.Id, constant W) *WordTypeB[W] {
-	return NewWordTypeB(opcode.INT_SUBMOD_P, target, sources, constant)
+func UintSubModP[W vmWord[W]](target register.Id, sources []register.Id, constant W) *WordTypeF[W] {
+	return NewWordTypeF(opcode.INT_SUBMOD_P, target, sources, constant)
 }
 
 // UintMulModP computes the product of the source registers and a constant
 // within the prime field of the surrounding machine, assigning the result to
 // the target register.  The value assigned is constant * sources[0] * ... *
 // sources[n-1], reduced modulo the field's prime characteristic.
-func UintMulModP[W vmWord[W]](target register.Id, sources []register.Id, constant W) *WordTypeB[W] {
-	return NewWordTypeB(opcode.INT_MULMOD_P, target, sources, constant)
+func UintMulModP[W vmWord[W]](target register.Id, sources []register.Id, constant W) *WordTypeF[W] {
+	return NewWordTypeF(opcode.INT_MULMOD_P, target, sources, constant)
 }
 
 // BitAnd computes the bitwise AND of the source registers and a constant,
@@ -175,30 +173,29 @@ func UintMulModP[W vmWord[W]](target register.Id, sources []register.Id, constan
 // & sources[0] & ... & sources[n-1].  Callers needing AND with no constant
 // contribution should pass the AND identity (all-ones within the target
 // bit-width) as the constant.
-func BitAnd[W vmWord[W]](target register.Id, sources []register.Id, constant W) *WordTypeB[W] {
-	return NewWordTypeB(opcode.BIT_AND, target, sources, constant)
+func BitAnd(bitwidth uint, target, lhs, rhs register.Id) *WordTypeB {
+	return NewWordTypeB(opcode.BIT_AND, bitwidth, target, lhs, rhs)
 }
 
 // BitNot computes the bitwise complement of a single source register and
 // assigns the result to the target register.  The complement is taken within
 // the bit-width of the target register.  The constant operand is unused.
-func BitNot[W vmWord[W]](target, source register.Id) *WordTypeB[W] {
-	var zero W
-	return NewWordTypeB(opcode.BIT_NOT, target, []register.Id{source}, zero)
+func BitNot(bitwidth uint, target, lhs register.Id) *WordTypeB {
+	return NewWordTypeB(opcode.BIT_NOT, bitwidth, target, lhs, lhs)
 }
 
 // BitOr computes the bitwise OR of the source registers and a constant,
 // assigning the result to the target register.  The value assigned is constant
 // | sources[0] | ... | sources[n-1].
-func BitOr[W vmWord[W]](target register.Id, sources []register.Id, constant W) *WordTypeB[W] {
-	return NewWordTypeB(opcode.BIT_OR, target, sources, constant)
+func BitOr(bitwidth uint, target, lhs, rhs register.Id) *WordTypeB {
+	return NewWordTypeB(opcode.BIT_OR, bitwidth, target, lhs, rhs)
 }
 
 // BitXor computes the bitwise exclusive-OR of the source registers and a
 // constant, assigning the result to the target register.  The value assigned is
 // constant ^ sources[0] ^ ... ^ sources[n-1].
-func BitXor[W vmWord[W]](target register.Id, sources []register.Id, constant W) *WordTypeB[W] {
-	return NewWordTypeB(opcode.BIT_XOR, target, sources, constant)
+func BitXor(bitwidth uint, target, lhs, rhs register.Id) *WordTypeB {
+	return NewWordTypeB(opcode.BIT_XOR, bitwidth, target, lhs, rhs)
 }
 
 // BitShl computes the bitwise left-shift of one source register by another,
@@ -206,18 +203,16 @@ func BitXor[W vmWord[W]](target register.Id, sources []register.Id, constant W) 
 // value to be shifted and sources[1] is the shift amount, with the result
 // evaluated within the bit-width of the target register.  The constant operand
 // is unused.
-func BitShl[W vmWord[W]](target, value, amount register.Id) *WordTypeB[W] {
-	var zero W
-	return NewWordTypeB(opcode.BIT_SHL, target, []register.Id{value, amount}, zero)
+func BitShl(bitwidth uint, target, value, amount register.Id) *WordTypeB {
+	return NewWordTypeB(opcode.BIT_SHL, bitwidth, target, value, amount)
 }
 
 // BitShr computes the bitwise (logical) right-shift of one source register
 // by another, assigning the result to the target register.  Specifically,
 // sources[0] is the value to be shifted and sources[1] is the shift amount. The
 // constant operand is unused.
-func BitShr[W vmWord[W]](target, value, amount register.Id) *WordTypeB[W] {
-	var zero W
-	return NewWordTypeB(opcode.BIT_SHR, target, []register.Id{value, amount}, zero)
+func BitShr(bitwidth uint, target, value, amount register.Id) *WordTypeB {
+	return NewWordTypeB(opcode.BIT_SHR, bitwidth, target, value, amount)
 }
 
 // BitConcat constructs a new concatenation instruction which concatenates

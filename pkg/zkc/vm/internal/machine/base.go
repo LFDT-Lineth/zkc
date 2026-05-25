@@ -38,6 +38,8 @@ type BaseWord[W any] interface {
 	util.Comparable[W]
 	util.Uinter64
 	zkc_util.Formattable
+	// Check whether this value fits within the given bitwidth.
+	FitsWithin(uint) bool
 }
 
 // ============================================================================
@@ -76,9 +78,7 @@ func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
 				// Initialise memory
 				p.initialise(input)
 				// Boot the frame
-				p.Enter(uint(i), nil, nil, nil)
-				//
-				return nil
+				return p.Enter(uint(i), nil, nil, nil)
 			}
 		}
 	}
@@ -106,37 +106,61 @@ func (p *Base[W, I, T]) Execute(steps uint) (uint, error) {
 }
 
 // Enter implementation for the machine.Core interface.
-func (p *Base[W, I, T]) Enter(id uint, frame []W, args []register.Id, returns []register.Id) {
+func (p *Base[W, I, T]) Enter(id uint, frame []W, args []register.Id, returns []register.Id) error {
 	var (
-		mainFn    = p.modules[id].(*function.Function[I])
-		bootFrame = NewFrame[W](id, mainFn.Width(), uint(len(args)), returns)
+		fn       = p.modules[id].(*function.Function[I])
+		newFrame = NewFrame[W](id, fn.Width(), uint(len(args)), returns)
 	)
 	// Initialise arguments
 	for i, arg := range args {
-		bootFrame.Store(uint(i), frame[arg.Unwrap()])
+		var (
+			val    = frame[arg.Unwrap()]
+			target = fn.Register(register.NewId(uint(i)))
+		)
+		//
+		if !target.IsNative() && !val.FitsWithin(target.Width()) {
+			return fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), target.Width())
+		}
+		//
+		newFrame.Store(uint(i), frame[arg.Unwrap()])
 	}
 	// Push frame onto call stack
-	p.callstack = append(p.callstack, bootFrame)
+	p.callstack = append(p.callstack, newFrame)
+	//
+	return nil
 }
 
 // Leave implementation for the machine.Core interface.
-func (p *Base[W, I, T]) Leave() bool {
+func (p *Base[W, I, T]) Leave() (bool, error) {
 	var (
-		n     = len(p.callstack) - 1
-		frame = p.callstack[n]
+		n           = len(p.callstack) - 1
+		calleeFrame = p.callstack[n]
 	)
 	// pop call stack
 	p.callstack = p.callstack[:n]
 	// write returns (if applicable)
 	if n >= 1 {
+		// identify caller function
+		var (
+			callerFrame = p.callstack[n-1]
+			caller      = p.modules[callerFrame.functionId].(*function.Function[I])
+		)
 		//
-		for i, r := range frame.returns {
-			val := frame.Return(uint(i))
-			p.callstack[n-1].Store(r.Unwrap(), val)
+		for i, r := range calleeFrame.returns {
+			var (
+				val    = calleeFrame.Return(uint(i))
+				target = caller.Register(r)
+			)
+			//
+			if !target.IsNative() && !val.FitsWithin(target.Width()) {
+				return true, errors.New("bit overflow")
+			}
+			//
+			callerFrame.Store(r.Unwrap(), val)
 		}
 	}
 	//
-	return n == 0
+	return n == 0, nil
 }
 
 // Module implementation for the machine.Core interface.
@@ -226,6 +250,10 @@ func (p *Base[W, I, T]) execute() error {
 		err = p.executeInstruction(uInsn, width, regs)
 	}
 	//
+	if err != nil {
+		err = p.extendError(err)
+	}
+	//
 	return err
 }
 
@@ -253,6 +281,22 @@ func (p *Base[W, I, T]) decode() (I, uint, []register.Register, error) {
 	return uInsn, width, fn.Registers(), nil
 }
 
+func (p *Base[W, I, T]) extendError(err error) (exterr error) {
+	var builder strings.Builder
+	//
+	for i, frame := range p.callstack {
+		if i != 0 {
+			builder.WriteString(" > ")
+		}
+		//
+		builder.WriteString(SignatureOf[W, I](frame, p.modules))
+		builder.WriteString("@")
+		builder.WriteString(frame.pc.String())
+	}
+	//
+	return fmt.Errorf("%w [%s]", err, builder.String())
+}
+
 func (p *Base[W, I, T]) executeInstruction(insn I, width uint, regs []register.Register,
 ) (err error) {
 	//
@@ -272,9 +316,7 @@ func (p *Base[W, I, T]) executeInstruction(insn I, width uint, regs []register.R
 	case opcode.CALL:
 		insn := binsn.(*instruction.Call)
 		// Enter callee stack frame
-		p.Enter(insn.Id, frame, insn.Arguments, insn.Returns)
-		// Don't fall thru
-		return nil
+		return p.Enter(insn.Id, frame, insn.Arguments, insn.Returns)
 	case opcode.FAIL:
 		var (
 			insn = binsn.(*instruction.Fail)
@@ -293,8 +335,8 @@ func (p *Base[W, I, T]) executeInstruction(insn I, width uint, regs []register.R
 		p.callstack[fp].Goto(pc.Goto(uint(insn.Immediate)))
 		return nil
 	case opcode.RETURN:
-		if done := p.Leave(); done {
-			return nil
+		if done, err := p.Leave(); done {
+			return err
 		}
 		// adjust frame pointer
 		fp = fp - 1

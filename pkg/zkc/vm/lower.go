@@ -188,13 +188,13 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 		var insn = wi.(*instruction.WordTypeA[W])
 		return p.lowerArithInstruction(insn.Target, insn.Sources, insn.Constant, product)
 	case opcode.INT_ADDMOD_P:
-		var insn = wi.(*instruction.WordTypeB[W])
+		var insn = wi.(*instruction.WordTypeF[W])
 		return p.lowerFieldInstruction(insn.Target, insn.Sources, insn.Constant, sum)
 	case opcode.INT_SUBMOD_P:
-		var insn = wi.(*instruction.WordTypeB[W])
+		var insn = wi.(*instruction.WordTypeF[W])
 		return p.lowerFieldInstruction(insn.Target, insn.Sources, insn.Constant, subtract)
 	case opcode.INT_MULMOD_P:
-		var insn = wi.(*instruction.WordTypeB[W])
+		var insn = wi.(*instruction.WordTypeF[W])
 		return p.lowerFieldInstruction(insn.Target, insn.Sources, insn.Constant, product)
 	default:
 		panic(fmt.Sprintf("unknown instruction encountered (%s)", wi.String(mapping)))

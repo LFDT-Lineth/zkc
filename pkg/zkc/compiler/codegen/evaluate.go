@@ -102,16 +102,15 @@ func (p ConstantEvaluator) evalIntConstant(e Expr, definition bool) (res vm.Uint
 	case *expr.Sub[symbol.Resolved]:
 		args, err = p.evalConstants(e.Exprs, definition)
 		res, overflow = Subtract(bitwidth, args...)
-
+		//
 		if overflow && definition {
 			err = "arithmetic underflow"
 		}
-
+		//
 		return
-
 	case *expr.BitwiseAnd[symbol.Resolved]:
 		args, err = p.evalConstants(e.Exprs, definition)
-		return BitwiseAnd(bitwidth, args...), err
+		return BitwiseAnd(args...), err
 	case *expr.Const[symbol.Resolved]:
 		var c vm.Uint
 		//
@@ -127,12 +126,12 @@ func (p ConstantEvaluator) evalIntConstant(e Expr, definition bool) (res vm.Uint
 		return res, err
 	case *expr.Div[symbol.Resolved]:
 		args, err = p.evalConstants(e.Exprs, definition)
-		res = Quotient(bitwidth, args...)
+		res = Quotient(args...)
 
 		return res, err
 	case *expr.Rem[symbol.Resolved]:
 		args, err = p.evalConstants(e.Exprs, definition)
-		res = Remainder(bitwidth, args...)
+		res = Remainder(args...)
 
 		return res, err
 	case *expr.BitwiseNot[symbol.Resolved]:
@@ -140,16 +139,16 @@ func (p ConstantEvaluator) evalIntConstant(e Expr, definition bool) (res vm.Uint
 		return arg.Not(bitwidth), err
 	case *expr.BitwiseOr[symbol.Resolved]:
 		args, err := p.evalConstants(e.Exprs, definition)
-		return BitwiseOr(bitwidth, args...), err
+		return BitwiseOr(args...), err
 	case *expr.Shl[symbol.Resolved]:
 		args, err := p.evalConstants(e.Exprs, definition)
 		return BitwiseShl(bitwidth, args...), err
 	case *expr.Shr[symbol.Resolved]:
 		args, err = p.evalConstants(e.Exprs, definition)
-		return BitwiseShr(bitwidth, args...), err
+		return BitwiseShr(args...), err
 	case *expr.Xor[symbol.Resolved]:
 		args, err = p.evalConstants(e.Exprs, definition)
-		return BitwiseXor(bitwidth, args...), err
+		return BitwiseXor(args...), err
 	case *expr.Cast[symbol.Resolved]:
 		inner, err := p.Eval(e.Expr, definition)
 		width := e.CastType.AsUint(p.env).BitWidth()
@@ -255,11 +254,13 @@ func Sum[W vm.Word[W]](bitwidth uint, values ...W) (W, bool) {
 		if i == 0 {
 			res = v
 		} else {
-			res, carry = res.Add(bitwidth, v)
+			res, carry = res.Add(v)
 			//
 			overflow = overflow || carry
 		}
 	}
+	//
+	overflow = overflow || !res.FitsWithin(bitwidth)
 	//
 	return res, overflow
 }
@@ -278,24 +279,80 @@ func Subtract[W vm.Word[W]](bitwidth uint, values ...W) (W, bool) {
 		if i == 0 {
 			res = v
 		} else {
-			res, borrow = res.Sub(bitwidth, v)
+			res, borrow = res.Sub(v)
 			//
 			underflow = underflow || borrow
 		}
 	}
 	//
+	underflow = underflow || !res.FitsWithin(bitwidth)
+	//
 	return res, underflow
 }
 
-// BitwiseAnd computes the bitwise AND of a set of words.
-func BitwiseAnd[W vm.Word[W]](bitwidth uint, values ...W) W {
+// Product mulitplies a given set of words together.
+func Product[W vm.Word[W]](bitwidth uint, values ...W) (W, bool) {
+	var (
+		res      W
+		overflow bool
+	)
+	//
+	for i, v := range values {
+		var carry bool
+
+		if i == 0 {
+			res = v
+		} else {
+			res, carry = res.Mul(v)
+			//
+			overflow = overflow || carry
+		}
+	}
+	//
+	overflow = overflow || !res.FitsWithin(bitwidth)
+	//
+	return res, overflow
+}
+
+// Quotient divides a sequence of words left-to-right.
+func Quotient[W vm.Word[W]](values ...W) W {
 	var res W
 	//
 	for i, v := range values {
 		if i == 0 {
 			res = v
 		} else {
-			res = res.And(bitwidth, v)
+			res = res.Div(v)
+		}
+	}
+	//
+	return res
+}
+
+// Remainder computes the remainder of dividing a sequence of words left-to-right.
+func Remainder[W vm.Word[W]](values ...W) W {
+	var res W
+	//
+	for i, v := range values {
+		if i == 0 {
+			res = v
+		} else {
+			res = res.Rem(v)
+		}
+	}
+	//
+	return res
+}
+
+// BitwiseAnd computes the bitwise AND of a set of words.
+func BitwiseAnd[W vm.Word[W]](values ...W) W {
+	var res W
+	//
+	for i, v := range values {
+		if i == 0 {
+			res = v
+		} else {
+			res = res.And(v)
 		}
 	}
 	//
@@ -303,14 +360,14 @@ func BitwiseAnd[W vm.Word[W]](bitwidth uint, values ...W) W {
 }
 
 // BitwiseOr computes the bitwise OR of a set of words.
-func BitwiseOr[W vm.Word[W]](bitwidth uint, values ...W) W {
+func BitwiseOr[W vm.Word[W]](values ...W) W {
 	var res W
 	//
 	for i, v := range values {
 		if i == 0 {
 			res = v
 		} else {
-			res = res.Or(bitwidth, v)
+			res = res.Or(v)
 		}
 	}
 	//
@@ -318,14 +375,14 @@ func BitwiseOr[W vm.Word[W]](bitwidth uint, values ...W) W {
 }
 
 // BitwiseXor computes the bitwise XOR of a set of words.
-func BitwiseXor[W vm.Word[W]](bitwidth uint, values ...W) W {
+func BitwiseXor[W vm.Word[W]](values ...W) W {
 	var res W
 	//
 	for i, v := range values {
 		if i == 0 {
 			res = v
 		} else {
-			res = res.Xor(bitwidth, v)
+			res = res.Xor(v)
 		}
 	}
 	//
@@ -348,68 +405,16 @@ func BitwiseShl[W vm.Word[W]](bitwidth uint, values ...W) W {
 }
 
 // BitwiseShr computes a right-shift chain over a set of words.
-func BitwiseShr[W vm.Word[W]](bitwidth uint, values ...W) W {
+func BitwiseShr[W vm.Word[W]](values ...W) W {
 	var res W
 	//
 	for i, v := range values {
 		if i == 0 {
 			res = v
 		} else {
-			res = res.Shr(bitwidth, v)
+			res = res.Shr(v)
 		}
 	}
 	//
 	return res
-}
-
-// Quotient divides a sequence of words left-to-right.
-func Quotient[W vm.Word[W]](bitwidth uint, values ...W) W {
-	var res W
-	//
-	for i, v := range values {
-		if i == 0 {
-			res = v
-		} else {
-			res = res.Div(bitwidth, v)
-		}
-	}
-	//
-	return res
-}
-
-// Remainder computes the remainder of dividing a sequence of words left-to-right.
-func Remainder[W vm.Word[W]](bitwidth uint, values ...W) W {
-	var res W
-	//
-	for i, v := range values {
-		if i == 0 {
-			res = v
-		} else {
-			res = res.Rem(bitwidth, v)
-		}
-	}
-	//
-	return res
-}
-
-// Product mulitplies a given set of words together.
-func Product[W vm.Word[W]](bitwidth uint, values ...W) (W, bool) {
-	var (
-		res      W
-		overflow bool
-	)
-	//
-	for i, v := range values {
-		var carry bool
-
-		if i == 0 {
-			res = v
-		} else {
-			res, carry = res.Mul(bitwidth, v)
-			//
-			overflow = overflow || carry
-		}
-	}
-	//
-	return res, overflow
 }

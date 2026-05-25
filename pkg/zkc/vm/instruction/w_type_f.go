@@ -13,7 +13,6 @@
 package instruction
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 
@@ -21,103 +20,104 @@ import (
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
 // ============================================================================
 // Opcode-Register-Registers-Constant instruction type
 // ============================================================================
 
-// WordTypeB represents an instruction of the following form:
+// WordTypeF represents an instruction of the following form:
 //
 // t0 := r0 # ... # rn # c
 //
 // Here, t0 is the *target register*, whilst r0 .. rn are the source registers
 // and c is a constant (which can be 0).  Finally, "#" represents whatever
 // operation the given opcode indicates.
-type WordTypeB struct {
+type WordTypeF[W word.Word[W]] struct {
 	Op opcode.OpCode
-	// Bitwidth for the operation.  Observe that this does not have to match the
-	// widths of either the source or target operands.
-	Bitwidth uint
+	// // Bitwidth for the operation.  Observe that this does not have to match the
+	// // widths of either the source or target operands.
+	// Bitwidth uint
 	// Target register for assignment
 	Target register.Id
-	// Source register (left) for assignment
-	LeftSource register.Id
-	// Source register (right) for assignment
-	RightSource register.Id
+	// Source registers for assignment
+	Sources []register.Id
+	// Constant for assignment
+	Constant W
 }
 
-// NewWordTypeB constructs a new bitwise instruction
-func NewWordTypeB(op opcode.OpCode, bitwidth uint, target, lhs, rhs register.Id) *WordTypeB {
-	if !slices.Contains(opcode.TYPE_B_OPCODES, op) {
-		panic("invalid bitwise operation")
+// NewWordTypeF constructs a new bitwise instruction
+func NewWordTypeF[W word.Word[W]](op opcode.OpCode, target register.Id, sources []register.Id, constant W,
+) *WordTypeF[W] {
+	if !slices.Contains(opcode.TYPE_F_OPCODES, op) {
+		panic("invalid field operation")
 	}
 	//
-	return &WordTypeB{op, bitwidth, target, lhs, rhs}
+	return &WordTypeF[W]{op, target, sources, constant}
 }
 
 // OpCode implementation for Instruction interface
-func (p *WordTypeB) OpCode() opcode.OpCode {
+func (p *WordTypeF[W]) OpCode() opcode.OpCode {
 	return p.Op
 }
 
 // IsWord implementation for instruction.Word interface
-func (p *WordTypeB) IsWord() bool {
+func (p *WordTypeF[W]) IsWord() bool {
 	return true
 }
 
 // Uses implementation for Instruction interface
-func (p *WordTypeB) Uses() []register.Id {
-	return []register.Id{p.LeftSource, p.RightSource}
+func (p *WordTypeF[W]) Uses() []register.Id {
+	return p.Sources
 }
 
 // Definitions implementation for Instruction interface
-func (p *WordTypeB) Definitions() []register.Id {
+func (p *WordTypeF[W]) Definitions() []register.Id {
 	return []register.Id{p.Target}
 }
 
 // MicroValidate implementation for MicroInstruction interface.
-func (p *WordTypeB) MicroValidate(_ uint, field field.Config, _ base.SystemMap) []error {
+func (p *WordTypeF[W]) MicroValidate(_ uint, field field.Config, _ base.SystemMap) []error {
 	return nil
 }
 
-func (p *WordTypeB) String(mapping base.SystemMap) string {
+func (p *WordTypeF[W]) String(mapping base.SystemMap) string {
 	var (
-		builder  strings.Builder
-		op            = bType2Operation(p.Op)
-		bitwidth uint = base.RegisterBitwidth(mapping, p.Target)
+		builder strings.Builder
+		op      = fType2Operation(p.Op)
+		zero    W
+		one     W
 	)
+	//
+	one = one.SetUint64(1)
 	//
 	builder.WriteString(base.RegistersToString(mapping, p.Target))
 	builder.WriteString(" = ")
-	builder.WriteString(base.ExpressionToStringWithoutConst(op, p.Uses(), mapping))
 	//
-	if bitwidth != p.Bitwidth {
-		fmt.Fprintf(&builder, " [u%d] ", p.Bitwidth)
+	if p.Constant.Cmp(zero) == 0 && len(p.Sources) > 0 &&
+		(p.Op == opcode.INT_ADDMOD_P || p.Op == opcode.INT_SUBMOD_P) {
+		//
+		builder.WriteString(base.ExpressionToStringWithoutConst(op, p.Sources, mapping))
+	} else if p.Constant.Cmp(one) == 0 && len(p.Sources) > 0 && p.Op == opcode.INT_MULMOD_P {
+		//
+		builder.WriteString(base.ExpressionToStringWithoutConst(op, p.Sources, mapping))
+	} else {
+		builder.WriteString(base.ExpressionToString(op, p.Sources, p.Constant, mapping))
 	}
 	//
 	return builder.String()
 }
 
-func bType2Operation(op opcode.OpCode) string {
+func fType2Operation(op opcode.OpCode) string {
 	switch op {
-	case opcode.INT_DIV:
-		return "/"
-	case opcode.INT_REM:
-		return "%"
-	case opcode.BIT_AND:
-		return "&"
-	case opcode.BIT_NOT:
-		return "~"
-	case opcode.BIT_OR:
-		return "|"
-	case opcode.BIT_XOR:
-		return "^"
-	case opcode.BIT_SHL:
-		return "<<"
-	case opcode.BIT_SHR:
-		return ">>"
+	case opcode.INT_ADDMOD_P:
+		return "⊕"
+	case opcode.INT_SUBMOD_P:
+		return "⊖"
+	case opcode.INT_MULMOD_P:
+		return "⊗"
 	default:
-		panic("unknown type B instruction")
+		panic("unknown type F instruction")
 	}
 }

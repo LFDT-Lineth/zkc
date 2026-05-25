@@ -14,7 +14,6 @@ package lowerzkcnative
 
 import (
 	"math/big"
-	"math/bits"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/zkc/vm"
@@ -52,11 +51,11 @@ func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module) map[shiftKey]uint 
 
 				switch insn.OpCode() {
 				case opcode.BIT_SHL:
-					t := insn.(*instruction.WordTypeB[W])
-					op, targetID, amountID = t.OpCode(), t.Target, t.Sources[1]
+					t := insn.(*instruction.WordTypeB)
+					op, targetID, amountID = t.OpCode(), t.Target, t.RightSource
 				case opcode.BIT_SHR:
-					t := insn.(*instruction.WordTypeB[W])
-					op, targetID, amountID = t.OpCode(), t.Target, t.Sources[1]
+					t := insn.(*instruction.WordTypeB)
+					op, targetID, amountID = t.OpCode(), t.Target, t.RightSource
 				default:
 					continue
 				}
@@ -94,39 +93,15 @@ func newShlHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 
 	a, n, out := b.inputs[0], b.inputs[1], b.output
 	width := key.width
-
 	zero := vm.Uint64[W](0)
 	one := vm.Uint64[W](1)
-	wmax := vm.Uint64[W](uint64(width - 1))
-
-	// wmaxReg needs enough bits to hold wmax = width-1; nWide needs enough bits
-	// to hold any shift amount n (up to 2^amtWidth-1).  Take the larger of the
-	// two so a single width covers both registers.
-	wmaxWidth := amtWidth
-	if needed := uint(bits.Len(width - 1)); needed > wmaxWidth {
-		wmaxWidth = needed
-	}
-
-	if wmaxWidth == 0 {
-		wmaxWidth = 1
-	}
 
 	zeroReg := b.newComputedNamed(amtWidth)
-	wmaxReg := b.newComputedNamed(wmaxWidth)
 	b.emit(instruction.UintConst(zeroReg, zero))
-	b.emit(instruction.UintConst(wmaxReg, wmax))
 
 	// if n == 0: return a
 	b.emit(instruction.NewSkipIf(opcode.NEQ, n, zeroReg, 2))
 	b.emit(instruction.UintAdd(out, []register.Id{a}, zero))
-	b.emit(instruction.NewReturn())
-
-	// if n >= width: return 0
-	// Zero-extend n to wmaxWidth so both sides of LTEQ share the same register width.
-	nWide := b.newComputedNamed(wmaxWidth)
-	b.emit(instruction.UintAdd(nWide, []register.Id{n}, zero))
-	b.emit(instruction.NewSkipIf(opcode.LTEQ, nWide, wmaxReg, 2))
-	b.emit(instruction.UintConst(out, zero))
 	b.emit(instruction.NewReturn())
 
 	// doubled = 2*a mod 2^width: strip the top bit via Destruct, add low+low.
@@ -164,39 +139,15 @@ func newShrHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 
 	a, n, out := b.inputs[0], b.inputs[1], b.output
 	width := key.width
-
 	zero := vm.Uint64[W](0)
 	one := vm.Uint64[W](1)
-	wmax := vm.Uint64[W](uint64(width - 1))
-
-	// wmaxReg needs enough bits to hold wmax = width-1; nWide needs enough bits
-	// to hold any shift amount n (up to 2^amtWidth-1).  Take the larger of the
-	// two so a single width covers both registers.
-	wmaxWidth := amtWidth
-	if needed := uint(bits.Len(width - 1)); needed > wmaxWidth {
-		wmaxWidth = needed
-	}
-
-	if wmaxWidth == 0 {
-		wmaxWidth = 1
-	}
 
 	zeroReg := b.newComputedNamed(amtWidth)
-	wmaxReg := b.newComputedNamed(wmaxWidth)
 	b.emit(instruction.UintConst(zeroReg, zero))
-	b.emit(instruction.UintConst(wmaxReg, wmax))
 
 	// if n == 0: return a
 	b.emit(instruction.NewSkipIf(opcode.NEQ, n, zeroReg, 2))
 	b.emit(instruction.UintAdd(out, []register.Id{a}, zero))
-	b.emit(instruction.NewReturn())
-
-	// if n >= width: return 0
-	// Zero-extend n to wmaxWidth so both sides of LTEQ share the same register width.
-	nWide := b.newComputedNamed(wmaxWidth)
-	b.emit(instruction.UintAdd(nWide, []register.Id{n}, zero))
-	b.emit(instruction.NewSkipIf(opcode.LTEQ, nWide, wmaxReg, 2))
-	b.emit(instruction.UintConst(out, zero))
 	b.emit(instruction.NewReturn())
 
 	// floor(a/2) via Destruct: split a into [lsb:u1, rest:u(width-1)].

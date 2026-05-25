@@ -102,13 +102,17 @@ var ARITH_OPCODES = []OpCode{
 var TYPE_B_OPCODES = []OpCode{
 	INT_DIV,
 	INT_REM,
-	INT_ADDMOD_P,
-	INT_SUBMOD_P,
-	INT_MULMOD_P,
 	BIT_AND,
 	BIT_OR,
 	BIT_XOR,
 	BIT_NOT,
 	BIT_SHL,
 	BIT_SHR,
+}
+
+// TYPE_F_OPCODES captures those opcodes that are known as "field operations"
+var TYPE_F_OPCODES = []OpCode{
+	INT_ADDMOD_P,
+	INT_SUBMOD_P,
+	INT_MULMOD_P,
 }

@@ -12,7 +12,9 @@
 // SPDX-License-Identifier: Apache-2.0
 package bls12_377
 
-import "math/big"
+import (
+	"math/big"
+)
 
 const (
 	offset64 uint64 = 14695981039346656037
@@ -35,6 +37,11 @@ func (x Element) Hash() uint64 {
 	hash = (hash ^ x.Element[3]) * prime64
 	//
 	return hash
+}
+
+// FitsWithin implementation for word.Word interface.
+func (x Element) FitsWithin(bitwidth uint) bool {
+	return uint(x.BitLen()) <= bitwidth
 }
 
 // SetBytes implementation for word.Word interface.

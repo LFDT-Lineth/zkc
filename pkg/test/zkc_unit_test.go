@@ -177,6 +177,21 @@ func Test_ZkcUnit_Basic_36(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_36", util.DEFAULT_CONFIG)
 }
 
+func Test_ZkcUnit_Basic_37(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_37", util.DEFAULT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_38(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_38", util.DEFAULT_CONFIG)
+}
+
+// NOTE: this is a tricky test case.  Its not clear whether we want to support
+// this test case or not.
+//
+// func Test_ZkcUnit_Basic_39(t *testing.T) {
+// 	checkZkcUnit(t, "zkc/unit/basic_39", util.DEFAULT_CONFIG)
+// }
+
 // ===================================================================
 // If-Else-If Tests
 // ===================================================================

@@ -114,6 +114,11 @@ func (p BigEndian) Equals(o BigEndian) bool {
 	return p.Cmp(o) == 0
 }
 
+// FitsWithin implementation for Word interface.
+func (p BigEndian) FitsWithin(bitwidth uint) bool {
+	return uint(p.val.BitLen()) <= bitwidth
+}
+
 // Hash implementation for the hash.Hasher interface.
 func (p BigEndian) Hash() uint64 {
 	// FNV1a hash implementation
