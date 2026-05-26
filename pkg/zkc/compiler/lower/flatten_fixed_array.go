@@ -710,12 +710,11 @@ func newElementCmp(
 	op expr.CmpOp, lhsID, rhsID variable.Id, i uint, elemType data.Type[symbol.Resolved],
 ) *expr.Cmp[symbol.Resolved] {
 	idx := *big.NewInt(int64(i))
-	index := expr.NewTypedConstant[symbol.Resolved](idx, 10, uint(idx.BitLen()))
 	lhs := &expr.ArrayAccess[symbol.Resolved]{
-		Id: lhsID, Arg: index, Datatype: elemType,
+		Id: lhsID, Arg: expr.NewTypedConstant[symbol.Resolved](idx, 10, uint(idx.BitLen())), Datatype: elemType,
 	}
 	rhs := &expr.ArrayAccess[symbol.Resolved]{
-		Id: rhsID, Arg: index, Datatype: elemType,
+		Id: rhsID, Arg: expr.NewTypedConstant[symbol.Resolved](idx, 10, uint(idx.BitLen())), Datatype: elemType,
 	}
 
 	return expr.NewCmp(op, lhs, rhs)
