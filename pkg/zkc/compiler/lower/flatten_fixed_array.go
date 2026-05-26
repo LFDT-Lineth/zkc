@@ -771,6 +771,7 @@ func (p *Rewriter) rewriteFixedArrayStmt(s stmt.Resolved) stmt.Resolved {
 
 func (p *Rewriter) rewriteArrayExpression(e expr.Resolved) expr.Resolved {
 	var evaluator = codegen.NewConstantEvaluator(p.field, p.env, p.declarations...)
+
 	switch e := e.(type) {
 	case *expr.LocalAccess[symbol.Resolved]:
 		e.Variable = p.varMapping[e.Variable].newBase
@@ -875,6 +876,7 @@ func (p *Rewriter) rewriteArrayExpressions(exprs []expr.Resolved) {
 
 func (p *Rewriter) rewriteLValArray(l lval.Resolved) lval.Resolved {
 	evaluator := codegen.NewConstantEvaluator(p.field, p.env, p.declarations...)
+
 	switch l := l.(type) {
 	case *lval.Variable[symbol.Resolved]:
 		for i, id := range l.Ids {
