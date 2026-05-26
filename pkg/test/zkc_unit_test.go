@@ -320,6 +320,14 @@ func Test_ZkcUnit_FixedArray_21(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/fixed_array_21", util.DEFAULT_CONFIG)
 }
 
+func Test_ZkcUnit_FixedArray_22(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/fixed_array_22", util.DEFAULT_CONFIG)
+}
+
+func Test_ZkcUnit_FixedArray_23(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/fixed_array_23", util.DEFAULT_CONFIG)
+}
+
 // ===================================================================
 // Type Tests
 // ===================================================================
