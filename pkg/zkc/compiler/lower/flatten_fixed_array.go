@@ -887,6 +887,9 @@ func (p *Rewriter) rewriteLValArray(l lval.Resolved) lval.Resolved {
 	case *lval.Variable[symbol.Resolved]:
 		for i, id := range l.Ids {
 			m := p.varMapping[id]
+			if m.isArray {
+				panic("bare assignment to array variable unsupported")
+			}
 			l.Ids[i] = m.newBase
 		}
 
