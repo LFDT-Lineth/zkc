@@ -84,7 +84,7 @@ func NewPermutationConstraint(handle string, context schema.ModuleId, targets []
 	return Constraint{permutation.NewConstraint[word.BigEndian](handle, context, targets, sources)}
 }
 
-// NewRangeConstraint constructs a new Range constraint!
+// NewRangeConstraint constructs a new Range constraint
 func NewRangeConstraint(handle string, ctx schema.ModuleId, expr Term,
 	bitwidth uint) Constraint {
 	//

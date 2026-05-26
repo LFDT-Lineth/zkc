@@ -18,6 +18,10 @@ import (
 	"github.com/consensys/go-corset/pkg/test/util"
 )
 
+func Test_ZkcUnit_Example(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/_example", util.DEFAULT_CONFIG)
+}
+
 // ===================================================================
 // Basic Tests
 // ===================================================================

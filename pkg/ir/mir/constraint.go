@@ -64,13 +64,27 @@ func NewLookupConstraint[F field.Element[F]](handle string, targets []LookupVect
 	return Constraint[F]{lookup.NewConstraint(handle, targets, sources)}
 }
 
+// NewSendConstraint creates a new "send to logUpBus" constraint; it doesn't take into account
+// the potential Id of the logup bus, which would for instance determine what shared randomness to use.
+func NewSendConstraint[F field.Element[F]](handle string, sources []register.Id) Constraint[F] {
+	// TODO
+	return Constraint[F]{}
+}
+
+// NewReceiveConstraint creates a new "receive from logUpBus" constraint; it doesn't take into account
+// the potential Id of the logup bus, which would for instance determine what shared randomness to use.
+func NewReceiveConstraint[F field.Element[F]](handle string, sources []register.Id) Constraint[F] {
+	// TODO
+	return Constraint[F]{}
+}
+
 // NewPermutationConstraint creates a new permutation
 func NewPermutationConstraint[F field.Element[F]](handle string, context schema.ModuleId, targets []register.Id,
 	sources []register.Id) Constraint[F] {
 	return Constraint[F]{permutation.NewConstraint[F](handle, context, targets, sources)}
 }
 
-// NewRangeConstraint constructs a new Range constraint!
+// NewRangeConstraint constructs a new Range constraint
 func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, registers []*RegisterAccess[F],
 	bitwidths []uint) Constraint[F] {
 	//

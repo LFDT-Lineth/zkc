@@ -1,0 +1,23 @@
+memory RAM(address :u4) -> (value :u4)
+input  ROM(address :u4, bis :u8) -> (value :u4)
+output WOM(address :u4) -> (value :u4)
+
+fn main<RAM>() {
+    var r :u4
+    r = f(7)
+
+    // WOM[0] = ROM[0, 0]
+    //
+    // if ROM[1,1] != 0xf { fail }
+}
+
+fn f<RAM>(x:u4) -> (r:u4) {
+
+    r = x + RAM[0]
+    if r == 12 {
+        r = r + 1
+    // } else {
+    //     r = r + 3
+    }
+    return
+}

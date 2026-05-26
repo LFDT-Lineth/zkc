@@ -25,8 +25,12 @@ type Resolved = Declaration[symbol.Resolved]
 // reference to an external component (e.g. function, RAM, ROM, etc).
 type Unresolved = Declaration[symbol.Unresolved]
 
-// Declaration represents something declared within a source file, such as a
-// function or constant, etc.
+// Declaration represents something declared within a source file, in particular
+// - includes
+// - constants
+// - input / output / memory / static "memories"
+// - functions
+// - type aliases
 type Declaration[S any] interface {
 	// Arity returns the number of inputs/outputs for this declaration.
 	Arity() (inputs uint, outputs uint)
