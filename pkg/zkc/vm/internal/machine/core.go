@@ -13,8 +13,12 @@
 package machine
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
 )
 
 // Executor --- see documentation on vm.Executor
@@ -50,12 +54,12 @@ type Core[W any] interface {
 	// registers.  In addition, the return registers are saved for when (if) the
 	// function returns.  Specifically, the return registers will be assigned
 	// the return values from the callee.
-	Enter(id uint, frame []W, args, returns []register.Id)
+	Enter(id uint, frame []W, args, returns []register.Id) error
 	// Leave pops the current stack frame off the stack, whilst ensuring the
 	// return values are written into the return registers.  This also returns
 	// true if the last frame was popped off the stack (i.e. the machine has
 	// terminated).
-	Leave() bool
+	Leave() (bool, error)
 }
 
 // Module represents an either a function or memory within the machine.
@@ -131,6 +135,31 @@ func (p *Frame[W]) Width() uint {
 	return uint(len(p.registers))
 }
 
+// SignatureOf returns a simple string representation of the enclosing function
+// for the given frame, including its arguments and PC position.
+func SignatureOf[W BaseWord[W], I Instruction](frame Frame[W], modules []Module) string {
+	var (
+		builder strings.Builder
+		fn      = modules[frame.Function()].(*function.Function[I])
+	)
+	//
+	builder.WriteString(fn.Name())
+	builder.WriteString("(")
+
+	for i := 0; i != int(fn.NumInputs()); i++ {
+		if i != 0 {
+			builder.WriteString(",")
+		}
+
+		builder.WriteString("0x")
+		builder.WriteString(frame.registers[i].Text(16))
+	}
+
+	builder.WriteString(")")
+	//
+	return builder.String()
+}
+
 // ============================================================================
 // Program Counter
 // ============================================================================
@@ -193,4 +222,8 @@ func (p ProgramCounter) Skip(n uint) (q ProgramCounter) {
 	q.microCounter = p.microCounter + n
 	//
 	return q
+}
+
+func (p ProgramCounter) String() string {
+	return fmt.Sprintf("%02d.%02d", p.macroCounter, p.microCounter)
 }

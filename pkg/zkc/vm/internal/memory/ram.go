@@ -51,3 +51,12 @@ func (p *RandomAccess[W]) read(address uint64) W {
 	//
 	return zero
 }
+
+// NewRandomAccess constructs an empty random-access memory which employs a
+// non-sparse implementation.  Thus, this is not suitable for very large
+// memories.
+func NewRandomAccess[W util.Uinter64](name string, registers []register.Register) Memory[W] {
+	return &RandomAccess[W]{
+		StaticArray: NewStaticArray[W](name, RANDOM_ACCESS_MEMORY, registers),
+	}
+}

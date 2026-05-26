@@ -448,7 +448,7 @@ func (p *Linker) linkExpr(e expr.Unresolved) (expr.Resolved, []source.SyntaxErro
 		args, errors = p.linkExprs(e.Exprs...)
 		nexpr = expr.NewBitwiseAnd[symbol.Resolved](args...)
 	case *expr.Const[symbol.Unresolved]:
-		nexpr = expr.NewConstant[symbol.Resolved](e.Constant, e.Base)
+		nexpr = expr.NewUntypedConstant[symbol.Resolved](*e.Constant(), e.Base())
 	case *expr.ExternAccess[symbol.Unresolved]:
 		// resolve arguments
 		args, errors = p.linkExprs(e.Args...)

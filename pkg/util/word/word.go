@@ -26,6 +26,8 @@ type Word[T any] interface {
 	Cmp(y T) int
 	// Check whether two items are equal (or not).
 	Equals(T) bool
+	// Check whether this value fits within the given bitwidth.
+	FitsWithin(uint) bool
 	// Return a suitable hashcode.
 	Hash() uint64
 	// Returns the raw bytes of this word.  Observe that, if the word is encoded

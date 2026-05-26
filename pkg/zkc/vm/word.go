@@ -26,23 +26,9 @@ import (
 )
 
 func init() {
-	gob.Register(instruction.Word(&instruction.IntAdd[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntSub[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntMul[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntDiv[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntRem[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntAddModP[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntSubModP[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntMulModP[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitAnd[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitNot[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitOr[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitXor[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitShl[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitShr[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitConcat[Uint]{}))
-	gob.Register(instruction.Word(&instruction.Destruct{}))
-	gob.Register(instruction.Word(&instruction.Cast{}))
+	gob.Register(instruction.Word(&instruction.WordTypeA[Uint]{}))
+	gob.Register(instruction.Word(&instruction.WordTypeB{}))
+	gob.Register(instruction.Word(&instruction.WordTypeF[Uint]{}))
 	gob.Register(instruction.Module(&function.Function[instruction.Word]{}))
 	gob.Register(instruction.Module(&memory.RandomAccess[Uint]{}))
 	gob.Register(instruction.Module(&memory.ReadOnly[Uint]{}))
@@ -70,8 +56,7 @@ type Uint = word.Uint
 // Uint64 initialises a given word with a 64bit value.  This will panic if the
 // given value exceeds the available bandwidth of the word in question.
 func Uint64[W Word[W]](val uint64) W {
-	var w W
-	return w.SetUint64(val)
+	return word.Uint64[W](val)
 }
 
 // ============================================================================

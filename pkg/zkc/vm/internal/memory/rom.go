@@ -41,3 +41,20 @@ func (p *ReadOnly[W]) Write(frame []W, address []register.Id, data []register.Id
 func (p *ReadOnly[W]) Contents() []W {
 	return p.data
 }
+
+// NewReadOnly constructs a new read-only memory initialised with a given set of values.
+func NewReadOnly[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
+) InputOutput[W] {
+	//
+	var kind Kind
+	//
+	if public {
+		kind = PUBLIC_READ_ONLY_MEMORY
+	} else {
+		kind = PRIVATE_READ_ONLY_MEMORY
+	}
+	//
+	return &ReadOnly[W]{
+		StaticArray: NewStaticArray[W](name, kind, registers, init...),
+	}
+}

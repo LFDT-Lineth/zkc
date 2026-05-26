@@ -36,6 +36,11 @@ func (x Element) Hash() uint64 {
 	return (hash ^ uint64(x[0])) * prime64
 }
 
+// FitsWithin implementation for word.Word interface.
+func (x Element) FitsWithin(bitwidth uint) bool {
+	return (x[0] >> bitwidth) == 0
+}
+
 // SetBytes implementation for word.Word interface.
 func (x Element) SetBytes(bs []byte) Element {
 	var v uint32

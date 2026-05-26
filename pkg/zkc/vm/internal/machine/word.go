@@ -81,80 +81,73 @@ func (p WordExecutor[W]) Execute(insn instruction.Word, frame []W, regs []regist
 	// Arithmetic Instructions
 	// ==============================================================
 	case opcode.INT_ADD:
-		insn := insn.(*instruction.IntAdd[W])
+		insn := insn.(*instruction.WordTypeA[W])
 		err = executeAdd(insn.Target, insn.Sources, insn.Constant, frame, regs)
 		// Fall thru
 	case opcode.INT_DIV:
-		insn := insn.(*instruction.IntDiv[W])
-		err = executeDiv(insn.Target, insn.Sources, frame, regs)
+		insn := insn.(*instruction.WordTypeB)
+		err = executeDiv(insn, frame, regs)
 		// Fall thru
 	case opcode.INT_MUL:
-		insn := insn.(*instruction.IntMul[W])
+		insn := insn.(*instruction.WordTypeA[W])
 		err = executeMul(insn.Target, insn.Sources, insn.Constant, frame, regs)
 		// Fall thru
 	case opcode.INT_REM:
-		insn := insn.(*instruction.IntRem[W])
-		err = executeRem(insn.Target, insn.Sources, frame, regs)
+		insn := insn.(*instruction.WordTypeB)
+		err = executeRem(insn, frame, regs)
 		// Fall thru
 	case opcode.INT_SUB:
-		insn := insn.(*instruction.IntSub[W])
+		insn := insn.(*instruction.WordTypeA[W])
 		err = executeSub(insn.Target, insn.Sources, insn.Constant, frame, regs)
 		// Fall thru
-	case opcode.INT_CAST:
-		insn := insn.(*instruction.Cast)
-		err = executeCast(*insn, frame, regs)
-		// Fall thru
+
+	// ==============================================================
+	// Field Instructions
+	// ==============================================================
 
 	case opcode.INT_ADDMOD_P:
-		insn := insn.(*instruction.IntAddModP[W])
+		insn := insn.(*instruction.WordTypeF[W])
 		err = executeFieldAdd(insn.Target, insn.Sources, insn.Constant, p.modulus, frame)
 		// Fall thru
 	case opcode.INT_SUBMOD_P:
-		insn := insn.(*instruction.IntSubModP[W])
+		insn := insn.(*instruction.WordTypeF[W])
 		err = executeFieldSub(insn.Target, insn.Sources, insn.Constant, p.modulus, frame)
 		// Fall thru
 	case opcode.INT_MULMOD_P:
-		insn := insn.(*instruction.IntMulModP[W])
+		insn := insn.(*instruction.WordTypeF[W])
 		err = executeFieldMul(insn.Target, insn.Sources, insn.Constant, p.modulus, frame)
 		// Fall thru
-	case opcode.INT_CASTMOD_P:
-		insn := insn.(*instruction.Cast)
-		err = executeFieldCast(*insn, p.modulus, frame)
 
 	// ==============================================================
 	// Bitwise Instructions
 	// ==============================================================
 	case opcode.BIT_AND:
-		insn := insn.(*instruction.BitAnd[W])
-		err = executeAnd(insn.Target, insn.Sources, insn.Constant, frame, regs)
+		insn := insn.(*instruction.WordTypeB)
+		err = executeAnd(insn, frame, regs)
 		// Fall thru
 	case opcode.BIT_NOT:
-		insn := insn.(*instruction.BitNot[W])
-		err = executeNot(insn.Target, insn.Sources, frame, regs)
+		insn := insn.(*instruction.WordTypeB)
+		err = executeNot(insn, frame, regs)
 		// Fall thru
 	case opcode.BIT_OR:
-		insn := insn.(*instruction.BitOr[W])
-		err = executeOr(insn.Target, insn.Sources, insn.Constant, frame, regs)
+		insn := insn.(*instruction.WordTypeB)
+		err = executeOr(insn, frame, regs)
 		// Fall thru
 	case opcode.BIT_XOR:
-		insn := insn.(*instruction.BitXor[W])
-		err = executeXor(insn.Target, insn.Sources, insn.Constant, frame, regs)
+		insn := insn.(*instruction.WordTypeB)
+		err = executeXor(insn, frame, regs)
 		// Fall thru
 	case opcode.BIT_SHL:
-		insn := insn.(*instruction.BitShl[W])
-		err = executeShl(insn.Target, insn.Sources, frame, regs)
+		insn := insn.(*instruction.WordTypeB)
+		err = executeShl(insn, frame, regs)
 		// Fall thru
 	case opcode.BIT_SHR:
-		insn := insn.(*instruction.BitShr[W])
-		err = executeShr(insn.Target, insn.Sources, frame, regs)
+		insn := insn.(*instruction.WordTypeB)
+		err = executeShr(insn, frame, regs)
 		// Fall thru
 	case opcode.BIT_CONCAT:
-		insn := insn.(*instruction.BitConcat[W])
+		insn := insn.(*instruction.WordTypeA[W])
 		err = executeConcat(insn.Target, insn.Sources, frame, regs)
-		// Fall thru
-	case opcode.BIT_DESTRUCT:
-		insn := insn.(*instruction.Destruct)
-		err = executeDestruct(*insn, frame, regs)
 		// Fall thru
 
 	// ==============================================================
@@ -180,55 +173,54 @@ func (p WordExecutor[W]) Execute(insn instruction.Word, frame []W, regs []regist
 // Arithmetic Instructions
 // ==============================================================
 
-func executeAdd[W word.Word[W]](target register.Id, sources []register.Id, constant W, frame []W,
+func executeAdd[W word.Word[W]](target register.Vector, sources []register.Id, constant W, frame []W,
 	regs []register.Register) error {
 	//
 	var (
-		bitwidth = regs[target.Unwrap()].Width()
+		val      = constant
 		overflow bool
 	)
 	//
 	for _, arg := range sources {
-		constant, overflow = constant.Add(bitwidth, frame[arg.Unwrap()])
+		val, overflow = val.Add(frame[arg.Unwrap()])
 		//
 		if overflow {
-			return errors.New("executeAdd arithmetic overflow")
+			return errors.New("arithmetic overflow")
 		}
 	}
 	//
-	frame[target.Unwrap()] = constant
-	//
-	return nil
+	return storeAcross(target, val, frame, regs)
 }
 
-func executeMul[W word.Word[W]](target register.Id, sources []register.Id, constant W, frame []W,
+func executeMul[W word.Word[W]](target register.Vector, sources []register.Id, constant W, frame []W,
 	regs []register.Register) error {
 	//
 	var (
 		val      W = constant
-		bitwidth   = regs[target.Unwrap()].Width()
 		overflow bool
 	)
 	//
 	for _, arg := range sources {
-		val, overflow = val.Mul(bitwidth, frame[arg.Unwrap()])
+		var of bool
 		//
-		if overflow {
-			return errors.New("executeMul arithmetic overflow")
-		}
+		val, of = val.Mul(frame[arg.Unwrap()])
+		//
+		overflow = overflow || of
 	}
 	//
-	frame[target.Unwrap()] = val
+	if overflow && val.Cmp64(0) != 0 {
+		// overflow is real
+		return errors.New("arithmetic overflow")
+	}
 	//
-	return nil
+	return storeAcross(target, val, frame, regs)
 }
 
-func executeSub[W word.Word[W]](target register.Id, sources []register.Id, constant W, frame []W,
+func executeSub[W word.Word[W]](target register.Vector, sources []register.Id, constant W, frame []W,
 	regs []register.Register) error {
 	//
 	var (
 		val       W
-		bitwidth  = regs[target.Unwrap()].Width()
 		underflow bool
 	)
 	//
@@ -236,19 +228,17 @@ func executeSub[W word.Word[W]](target register.Id, sources []register.Id, const
 		if i == 0 {
 			val = frame[arg.Unwrap()]
 		} else {
-			if val, underflow = val.Sub(bitwidth, frame[arg.Unwrap()]); underflow {
+			if val, underflow = val.Sub(frame[arg.Unwrap()]); underflow {
 				return errors.New("arithmetic underflow")
 			}
 		}
 	}
 	// Subtract constant
-	if val, underflow = val.Sub(bitwidth, constant); underflow {
+	if val, underflow = val.Sub(constant); underflow {
 		return errors.New("arithmetic underflow")
 	}
 	//
-	frame[target.Unwrap()] = val
-	//
-	return nil
+	return storeAcross(target, val, frame, regs)
 }
 
 // executeFieldAdd computes the field sum of the source registers and the
@@ -270,6 +260,7 @@ func executeFieldAdd[W word.Word[W]](target register.Id, sources []register.Id, 
 // registers minus the given constant, storing the result in the target
 // register.
 func executeFieldSub[W word.Word[W]](target register.Id, sources []register.Id, constant, modulus W, frame []W) error {
+	//
 	var val W
 	//
 	for i, arg := range sources {
@@ -302,151 +293,103 @@ func executeFieldMul[W word.Word[W]](target register.Id, sources []register.Id, 
 	return nil
 }
 
-func executeFieldCast[W word.Word[W]](insn instruction.Cast, modulus W, frame []W) error {
-	src := frame[insn.Source.Unwrap()]
-	// Panic if the source value doesn't fit within the field.
-	if src.Cmp(modulus) >= 0 {
-		return errors.New("cast overflow")
-	}
-	//
-	frame[insn.Target.Unwrap()] = src
-	//
-	return nil
-}
-
-func executeDiv[W word.Word[W]](target register.Id, sources []register.Id, frame []W,
-	regs []register.Register) error {
+func executeDiv[W word.Word[W]](insn *instruction.WordTypeB, frame []W, regs []register.Register) error {
 	//
 	var (
-		bitwidth = regs[target.Unwrap()].Width()
-		dividend = frame[sources[0].Unwrap()]
-		divisor  = frame[sources[1].Unwrap()]
+		dividend = frame[insn.LeftSource.Unwrap()]
+		divisor  = frame[insn.RightSource.Unwrap()]
 	)
 	//
-	if divisor.BigInt().Sign() == 0 {
+	if divisor.Cmp64(0) == 0 {
 		return errors.New("division by zero")
 	}
 	//
-	frame[target.Unwrap()] = dividend.Div(bitwidth, divisor)
+	val := dividend.Div(divisor)
 	//
-	return nil
+	return store(insn.Target, val, frame, regs)
 }
 
-func executeRem[W word.Word[W]](target register.Id, sources []register.Id, frame []W,
-	regs []register.Register) error {
+func executeRem[W word.Word[W]](insn *instruction.WordTypeB, frame []W, regs []register.Register) error {
 	//
 	var (
-		bitwidth = regs[target.Unwrap()].Width()
-		dividend = frame[sources[0].Unwrap()]
-		divisor  = frame[sources[1].Unwrap()]
+		dividend = frame[insn.LeftSource.Unwrap()]
+		divisor  = frame[insn.RightSource.Unwrap()]
 	)
 	//
-	if divisor.BigInt().Sign() == 0 {
+	if divisor.Cmp64(0) == 0 {
 		return errors.New("division by zero")
 	}
 	//
-	frame[target.Unwrap()] = dividend.Rem(bitwidth, divisor)
+	val := dividend.Rem(divisor)
 	//
-	return nil
+	return store(insn.Target, val, frame, regs)
 }
 
 // ==============================================================
 // Bitwise Instructions
 // ==============================================================
 
-func executeAnd[W word.Word[W]](target register.Id, sources []register.Id, constant W, frame []W,
-	regs []register.Register) error {
-	//
+func executeAnd[W word.Word[W]](insn *instruction.WordTypeB, frame []W, regs []register.Register) error {
 	var (
-		val      W = constant
-		bitwidth   = regs[target.Unwrap()].Width()
+		lhs = frame[insn.LeftSource.Unwrap()]
+		rhs = frame[insn.RightSource.Unwrap()]
+		val = lhs.And(rhs)
 	)
 	//
-	for _, arg := range sources {
-		val = val.And(bitwidth, frame[arg.Unwrap()])
-	}
-	//
-	frame[target.Unwrap()] = val
-	//
-	return nil
-}
-func executeOr[W word.Word[W]](target register.Id, sources []register.Id, constant W, frame []W,
-	regs []register.Register) error {
-	//
-	var (
-		val      W = constant
-		bitwidth   = regs[target.Unwrap()].Width()
-	)
-	//
-	for _, arg := range sources {
-		val = val.Or(bitwidth, frame[arg.Unwrap()])
-	}
-	//
-	frame[target.Unwrap()] = val
-	//
-	return nil
+	return store(insn.Target, val, frame, regs)
 }
 
-func executeXor[W word.Word[W]](target register.Id, sources []register.Id, constant W, frame []W,
-	regs []register.Register) error {
-	//
+func executeOr[W word.Word[W]](insn *instruction.WordTypeB, frame []W, regs []register.Register) error {
 	var (
-		val      W = constant
-		bitwidth   = regs[target.Unwrap()].Width()
+		lhs = frame[insn.LeftSource.Unwrap()]
+		rhs = frame[insn.RightSource.Unwrap()]
+		val = lhs.Or(rhs)
 	)
 	//
-	for _, arg := range sources {
-		val = val.Xor(bitwidth, frame[arg.Unwrap()])
-	}
-	//
-	frame[target.Unwrap()] = val
-	//
-	return nil
+	return store(insn.Target, val, frame, regs)
 }
 
-func executeNot[W word.Word[W]](target register.Id, sources []register.Id, frame []W,
-	regs []register.Register) error {
-	//
+func executeXor[W word.Word[W]](insn *instruction.WordTypeB, frame []W, regs []register.Register) error {
 	var (
-		bitwidth = regs[target.Unwrap()].Width()
-		arg      = frame[sources[0].Unwrap()]
+		lhs = frame[insn.LeftSource.Unwrap()]
+		rhs = frame[insn.RightSource.Unwrap()]
+		val = lhs.Xor(rhs)
 	)
 	//
-	frame[target.Unwrap()] = arg.Not(bitwidth)
+	return store(insn.Target, val, frame, regs)
+}
+
+func executeNot[W word.Word[W]](insn *instruction.WordTypeB, frame []W, regs []register.Register) error {
+	var (
+		lhs = frame[insn.LeftSource.Unwrap()]
+		val = lhs.Not(insn.Bitwidth)
+	)
 	//
-	return nil
+	return store(insn.Target, val, frame, regs)
 }
 
 // ==============================================================
 // Shift Instructions
 // ==============================================================
 
-func executeShl[W word.Word[W]](target register.Id, sources []register.Id, frame []W,
-	regs []register.Register) error {
-	//
+func executeShl[W word.Word[W]](insn *instruction.WordTypeB, frame []W, regs []register.Register) error {
 	var (
-		bitwidth = regs[target.Unwrap()].Width()
-		lhs      = frame[sources[0].Unwrap()]
-		rhs      = frame[sources[1].Unwrap()]
+		lhs = frame[insn.LeftSource.Unwrap()]
+		rhs = frame[insn.RightSource.Unwrap()]
+		val = lhs.Shl(insn.Bitwidth, rhs)
 	)
 	//
-	frame[target.Unwrap()] = lhs.Shl(bitwidth, rhs)
-	//
-	return nil
+	return store(insn.Target, val, frame, regs)
 }
 
-func executeShr[W word.Word[W]](target register.Id, sources []register.Id, frame []W,
-	regs []register.Register) error {
-	//
+func executeShr[W word.Word[W]](insn *instruction.WordTypeB, frame []W, regs []register.Register) error {
 	var (
-		bitwidth = regs[target.Unwrap()].Width()
-		lhs      = frame[sources[0].Unwrap()]
-		rhs      = frame[sources[1].Unwrap()]
+		lhs = frame[insn.LeftSource.Unwrap()]
+		rhs = frame[insn.RightSource.Unwrap()]
+		val = lhs.Shr(rhs)
 	)
 	//
-	frame[target.Unwrap()] = lhs.Shr(bitwidth, rhs)
-	//
-	return nil
+	return store(insn.Target, val, frame, regs)
 }
 
 // ==============================================================
@@ -459,18 +402,38 @@ func executeDivHint[W word.Word[W]](targets []register.Id, sources []register.Id
 	regs []register.Register) error {
 	//
 	var (
-		qWidth   = regs[targets[0].Unwrap()].Width()
-		rWidth   = regs[targets[1].Unwrap()].Width()
 		dividend = frame[sources[0].Unwrap()]
 		divisor  = frame[sources[1].Unwrap()]
+		one      W
+		uf2      bool
 	)
 	//
-	if divisor.BigInt().Sign() == 0 {
+	one = one.SetUint64(1)
+	//
+	if divisor.Cmp64(0) == 0 {
 		return errors.New("division by zero")
 	}
 	//
-	frame[targets[0].Unwrap()] = dividend.Div(qWidth, divisor)
-	frame[targets[1].Unwrap()] = dividend.Rem(rWidth, divisor)
+	q := dividend.Div(divisor)
+	r := dividend.Rem(divisor)
+	w, uf1 := divisor.Sub(r)
+	w, uf2 = w.Sub(one)
+	//
+	if uf1 || uf2 {
+		return errors.New("arithmetic underflow")
+	}
+	// assign q
+	if err := store(targets[0], q, frame, regs); err != nil {
+		return err
+	}
+	// assign r
+	if err := store(targets[1], r, frame, regs); err != nil {
+		return err
+	}
+	// assign w
+	if err := store(targets[2], w, frame, regs); err != nil {
+		return err
+	}
 	//
 	return nil
 }
@@ -479,26 +442,14 @@ func executeDivHint[W word.Word[W]](targets []register.Id, sources []register.Id
 // Misc Instructions
 // ==============================================================
 
-func executeCast[W word.Word[W]](insn instruction.Cast, frame []W, _ []register.Register) error {
-	src := frame[insn.Source.Unwrap()]
-	sliced := src.Slice(insn.Width)
-	// Panic if the source value doesn't fit within the target bit width.
-	if src.Cmp(sliced) != 0 {
-		return errors.New("cast overflow")
-	}
-	//
-	frame[insn.Target.Unwrap()] = sliced
-	//
-	return nil
-}
-
-func executeConcat[W word.Word[W]](target register.Id, sources []register.Id, frame []W,
+func executeConcat[W word.Word[W]](target register.Vector, sources []register.Id, frame []W,
 	regs []register.Register) error {
 	//
 	var (
-		val    W
-		offset uint64
-		width  = regs[target.Unwrap()].Width()
+		val       W
+		offset    uint64
+		registers = target.Registers()
+		width     = register.WidthOfRegisters(regs, registers)
 	)
 	//
 	for _, reg := range sources {
@@ -508,27 +459,52 @@ func executeConcat[W word.Word[W]](target register.Id, sources []register.Id, fr
 			reg_val   = frame[reg.Unwrap()]
 		)
 		// Merge bits from value at the correct position
-		val = val.Or(width, reg_val.Shl64(width, offset))
+		val = val.Or(reg_val.Shl64(width, offset))
 		// Update width accumulate
 		offset += uint64(reg_width)
 	}
 	//
-	frame[target.Unwrap()] = val
+	return storeAcross(target, val, frame, regs)
+}
+
+func store[W word.Word[W]](target register.Id, value W, frame []W, regs []register.Register) error {
+	var (
+		tid      = target.Unwrap()
+		bitwidth = regs[tid].Width()
+	)
+	// cast check
+	if !value.FitsWithin(bitwidth) {
+		return fmt.Errorf("bit overflow (0x%s not u%d)", value.Text(16), bitwidth)
+	}
+	//
+	frame[tid] = value
 	//
 	return nil
 }
 
-func executeDestruct[W word.Word[W]](insn instruction.Destruct, frame []W, regs []register.Register) error {
-	var val = frame[insn.Source.Unwrap()]
+func storeAcross[W word.Word[W]](targets register.Vector, val W, frame []W, regs []register.Register) error {
+	var tRegIds = targets.Registers()
 	//
-	for _, reg := range insn.Targets {
-		// determine register width
-		var reg_width = regs[reg.Unwrap()].Width()
+	if targets.Len() == 1 {
+		return store(tRegIds[0], val, frame, regs)
+	} else {
+		var bitwidth uint
 		//
-		frame[reg.Unwrap()] = val.Slice(reg_width)
-		// Shift val
-		val = val.Shr64(uint64(reg_width))
+		for _, rid := range targets.Registers() {
+			var (
+				id    = rid.Unwrap()
+				width = regs[id].Width()
+			)
+			//
+			frame[id] = val.Slice(width)
+			val = val.Shr64(uint64(width))
+			bitwidth += width
+		}
+		//
+		if val.Cmp64(0) != 0 {
+			return fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), bitwidth)
+		}
+		//
+		return nil
 	}
-	//
-	return nil
 }

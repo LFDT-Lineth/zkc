@@ -10,24 +10,25 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package lowerzkcnative
+package lowering
 
 import (
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
 // LowerComparisons rewrites SkipIf instructions with LT/GT/LTEQ/GTEQ conditions
 // into arithmetic-only sequences using biased subtraction and sign-bit extraction.
 // EQ and NEQ conditions are left unchanged.
 // This pass must run after LowerBitwise.
-func LowerComparisons[W vm.Word[W]](modules []vm.Module) []vm.Module {
-	out := append([]vm.Module{}, modules...)
+func LowerComparisons[W word.Word[W]](modules []Module) []Module {
+	out := append([]Module{}, modules...)
 
 	for i, mod := range out {
-		if fn, ok := mod.(*vm.WordFunction); ok {
+		if fn, ok := mod.(*WordFunction); ok {
 			out[i] = lowerComparisonFunction[W](fn)
 		}
 	}
@@ -35,7 +36,7 @@ func LowerComparisons[W vm.Word[W]](modules []vm.Module) []vm.Module {
 	return out
 }
 
-func lowerComparisonFunction[W vm.Word[W]](fn *vm.WordFunction) *vm.WordFunction {
+func lowerComparisonFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
 	var (
 		code  = fn.Code()
 		ncode = make([]vectorInstruction, len(code))
@@ -43,21 +44,21 @@ func lowerComparisonFunction[W vm.Word[W]](fn *vm.WordFunction) *vm.WordFunction
 	)
 
 	for i, insn := range code {
-		ncode[i] = insn.Map(func(_ uint, ith vm.WordInstruction) []vm.WordInstruction {
+		ncode[i] = insn.Map(func(_ uint, ith instruction.Word) []instruction.Word {
 			return lowerComparisonCode[W](ith, alloc)
 		})
 	}
 
-	return vm.NewFunction(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
+	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
 }
 
-func lowerComparisonCode[W vm.Word[W]](
-	code vm.WordInstruction,
+func lowerComparisonCode[W word.Word[W]](
+	code instruction.Word,
 	registers RegisterAllocator,
-) []vm.WordInstruction {
+) []instruction.Word {
 	si, ok := code.(*instruction.SkipIf)
 	if !ok || !isRelationalCondition(si.Cond) {
-		return []vm.WordInstruction{code}
+		return []instruction.Word{code}
 	}
 
 	return lowerRelationalSkipIf[W](si, registers)
@@ -86,54 +87,39 @@ func isRelationalCondition(cond opcode.Condition) bool {
 //	lo, sign = Destruct(diff)               // sign=1 iff lhs >= rhs
 //	zero   = 0
 //	SkipIf(EQ/NEQ, sign, zero, skip)
-func lowerRelationalSkipIf[W vm.Word[W]](
+func lowerRelationalSkipIf[W word.Word[W]](
 	si *instruction.SkipIf,
 	registers RegisterAllocator,
-) []vm.WordInstruction {
+) []instruction.Word {
 	lhs, rhs, skipOnZero := normalizeRelational(si)
 	lhsWidth := registers.Register(lhs).Width()
 	rhsWidth := registers.Register(rhs).Width()
 
 	castBandWidth := max(lhsWidth, rhsWidth) + 1
 
-	zero := vm.Uint64[W](0)
-	one := vm.Uint64[W](1)
+	zero := word.Uint64[W](0)
+	one := word.Uint64[W](1)
 
-	bWide := registers.Allocate("", castBandWidth)
+	//bWide := registers.Allocate("", castBandWidth)
 	oneReg := registers.Allocate("", 1)
 	biased := registers.Allocate("", castBandWidth)
-	diff := registers.Allocate("", castBandWidth)
 	lo := registers.Allocate("", castBandWidth-1)
 	sign := registers.Allocate("", 1)
 	zeroReg := registers.Allocate("", 1)
 
 	// rhs is always cast to castBandWidth
-	castRhs := []vm.WordInstruction{
-		instruction.NewCast(bWide, rhs, castBandWidth),
-		instruction.NewIntAdd(oneReg, nil, one),
+	castRhs := []instruction.Word{
+		instruction.UintConst(oneReg, one),
 	}
-
 	// when creating 1::lhs, we don't need to cast lhs if it's of size castBandWidth-1 already.
-	var castLhs []vm.WordInstruction
-	if lhsWidth == castBandWidth-1 {
-		castLhs = []vm.WordInstruction{
-			instruction.NewBitConcat[W](biased, []register.Id{lhs, oneReg}),
-		}
-	} else {
-		aBase := registers.Allocate("", castBandWidth-1)
-		castLhs = []vm.WordInstruction{
-			instruction.NewCast(aBase, lhs, castBandWidth-1),
-			instruction.NewBitConcat[W](biased, []register.Id{aBase, oneReg}),
-		}
+	var castLhs = instruction.BitConcat[W](biased, []register.Id{lhs, oneReg})
+
+	subtractAnsDestruct := []instruction.Word{
+		instruction.UintSubV(register.NewVector(lo, sign), []register.Id{biased, rhs}, zero),
+		instruction.UintConst(zeroReg, zero),
 	}
 
-	subtractAnsDestruct := []vm.WordInstruction{
-		instruction.NewIntSub(diff, []register.Id{biased, bWide}, zero),
-		instruction.NewDestruct([]register.Id{lo, sign}, diff),
-		instruction.NewIntAdd(zeroReg, nil, zero),
-	}
-
-	insns := append(append(castRhs, castLhs...), subtractAnsDestruct...)
+	insns := append(append(castRhs, castLhs), subtractAnsDestruct...)
 
 	// Finally emit the SkipIf with the appropriate condition on the sign bit
 	finalCond := opcode.EQ
