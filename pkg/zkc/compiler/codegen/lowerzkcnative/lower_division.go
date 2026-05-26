@@ -82,29 +82,23 @@ func lowerDivisionCode[W vm.Word[W]](
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
 func expandDivision[W vm.Word[W]](q, x, y register.Id, registers RegisterAllocator) []vm.WordInstruction {
 	var (
-		nX      = registers.Register(x).Width()
-		nY      = registers.Register(y).Width()
-		r       = registers.Allocate("", nY)
-		w       = registers.Allocate("", nY)
-		zero    = vm.Uint64[W](0)
-		one     = vm.Uint64[W](1)
-		qy      = registers.Allocate("", nX)
-		qy_r    = registers.Allocate("", nX)
-		y_r_w_1 = registers.Allocate("", nY)
-		// NOTE: deprecate following when skip_if supports constants
-		z = registers.Allocate("", 0)
+		nX   = registers.Register(x).Width()
+		nY   = registers.Register(y).Width()
+		r    = registers.Allocate("", nY)
+		w    = registers.Allocate("", nY)
+		zero = vm.Uint64[W](0)
+		one  = vm.Uint64[W](1)
+		qy   = registers.Allocate("", nX)
+		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
+		z0 = registers.Allocate("", 0)
+		z1 = registers.Allocate("", 0)
 	)
 	//
 	return []vm.WordInstruction{
 		instruction.NewFieldHint([]register.Id{q, r, w}, []register.Id{x, y}),
 		instruction.UintMul(qy, []register.Id{q, y}, one),
-		instruction.UintAdd(qy_r, []register.Id{qy, r}, zero),
-		instruction.NewSkipIf(opcode.EQ, qy_r, x, 1),
-		instruction.NewFail(),
-		instruction.UintSub(y_r_w_1, []register.Id{y, r, w}, one),
-		instruction.UintConst(z, zero),
-		instruction.NewSkipIf(opcode.EQ, y_r_w_1, z, 1),
-		instruction.NewFail(),
+		instruction.UintSub(z0, []register.Id{x, qy, r}, zero),
+		instruction.UintSub(z1, []register.Id{y, r, w}, one),
 	}
 }
 
@@ -113,28 +107,22 @@ func expandDivision[W vm.Word[W]](q, x, y register.Id, registers RegisterAllocat
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
 func expandRemainder[W vm.Word[W]](r, x, y register.Id, registers RegisterAllocator) []vm.WordInstruction {
 	var (
-		nX      = registers.Register(x).Width()
-		nY      = registers.Register(y).Width()
-		q       = registers.Allocate("", nX)
-		w       = registers.Allocate("", nY)
-		zero    = vm.Uint64[W](0)
-		one     = vm.Uint64[W](1)
-		qy      = registers.Allocate("", nX)
-		qy_r    = registers.Allocate("", nX)
-		y_r_w_1 = registers.Allocate("", nY)
-		// NOTE: deprecate following when skip_if supports constants
-		z = registers.Allocate("", 0)
+		nX   = registers.Register(x).Width()
+		nY   = registers.Register(y).Width()
+		q    = registers.Allocate("", nX)
+		w    = registers.Allocate("", nY)
+		zero = vm.Uint64[W](0)
+		one  = vm.Uint64[W](1)
+		qy   = registers.Allocate("", nX)
+		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
+		z0 = registers.Allocate("", 0)
+		z1 = registers.Allocate("", 0)
 	)
 	//
 	return []vm.WordInstruction{
 		instruction.NewFieldHint([]register.Id{q, r, w}, []register.Id{x, y}),
 		instruction.UintMul(qy, []register.Id{q, y}, one),
-		instruction.UintAdd(qy_r, []register.Id{qy, r}, zero),
-		instruction.NewSkipIf(opcode.EQ, qy_r, x, 1),
-		instruction.NewFail(),
-		instruction.UintSub(y_r_w_1, []register.Id{y, r, w}, one),
-		instruction.UintConst(z, zero),
-		instruction.NewSkipIf(opcode.EQ, y_r_w_1, z, 1),
-		instruction.NewFail(),
+		instruction.UintSub(z0, []register.Id{x, qy, r}, zero),
+		instruction.UintSub(z1, []register.Id{y, r, w}, one),
 	}
 }

@@ -410,7 +410,7 @@ func executeDivHint[W word.Word[W]](targets []register.Id, sources []register.Id
 	//
 	one = one.SetUint64(1)
 	//
-	if divisor.BigInt().Sign() == 0 {
+	if divisor.Cmp64(0) == 0 {
 		return errors.New("division by zero")
 	}
 	//
@@ -419,12 +419,20 @@ func executeDivHint[W word.Word[W]](targets []register.Id, sources []register.Id
 	w, uf1 := divisor.Sub(r)
 	w, uf2 = w.Sub(one)
 	//
-	frame[targets[0].Unwrap()] = q
-	frame[targets[1].Unwrap()] = r
-	frame[targets[2].Unwrap()] = w
-	//
 	if uf1 || uf2 {
 		return errors.New("arithmetic underflow")
+	}
+	// assign q
+	if err := store(targets[0], q, frame, regs); err != nil {
+		return err
+	}
+	// assign r
+	if err := store(targets[1], r, frame, regs); err != nil {
+		return err
+	}
+	// assign w
+	if err := store(targets[2], w, frame, regs); err != nil {
+		return err
 	}
 	//
 	return nil
