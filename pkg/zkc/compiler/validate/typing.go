@@ -487,6 +487,10 @@ func (p *TypeChecker) typeComparison(e *expr.Cmp[symbol.Resolved], env VariableM
 	if p.env.WellFormed(anchor) && anchor.AsField(p.env) != nil && e.Operator.Fieldable() {
 		return p.typeFieldComparison(e, env, effects)
 	}
+	// whole-array equality (==, !=) on matching fixed arrays
+	if p.env.WellFormed(anchor) && anchor.AsFixedArray(p.env) != nil {
+		return p.typeArrayComparison(e, lhs, rhs, lerrs, rerrs)
+	}
 	// Check left-hand side
 	if len(lerrs) == 0 && p.env.WellFormed(lhs) && lhs.AsUint(p.env) == nil {
 		lerrs = p.srcmaps.SyntaxErrors(e.Left, "expected uint")
@@ -498,6 +502,33 @@ func (p *TypeChecker) typeComparison(e *expr.Cmp[symbol.Resolved], env VariableM
 	// Check matching types
 	if len(lerrs)+len(rerrs) == 0 {
 		// Equivalence check
+		return p.checkEquiTypes(rhs, lhs, e.Right)
+	}
+	//
+	return append(lerrs, rerrs...)
+}
+
+// typeArrayComparison type-checks a comparison whose operands are fixed
+// arrays.  Only `==` and `!=` are supported; both sides must be fixed arrays
+// of equal size and element type.
+func (p *TypeChecker) typeArrayComparison(e *expr.Cmp[symbol.Resolved],
+	lhs, rhs Type, lerrs, rerrs []source.SyntaxError,
+) []source.SyntaxError {
+	// Only == and != make sense element-wise on whole arrays.
+	if !e.Operator.Fieldable() {
+		return append(append(lerrs, rerrs...),
+			*p.srcmaps.SyntaxError(e, "only == and != are supported on fixed arrays"))
+	}
+	// Both sides must be fixed arrays.
+	if len(lerrs) == 0 && p.env.WellFormed(lhs) && lhs.AsFixedArray(p.env) == nil {
+		lerrs = p.srcmaps.SyntaxErrors(e.Left, "expected fixed array")
+	}
+	//
+	if len(rerrs) == 0 && p.env.WellFormed(rhs) && rhs.AsFixedArray(p.env) == nil {
+		rerrs = p.srcmaps.SyntaxErrors(e.Right, "expected fixed array")
+	}
+	// Same size + same element type (recursive via EquiTypes).
+	if len(lerrs)+len(rerrs) == 0 {
 		return p.checkEquiTypes(rhs, lhs, e.Right)
 	}
 	//
