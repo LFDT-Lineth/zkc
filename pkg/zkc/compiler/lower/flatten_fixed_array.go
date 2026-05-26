@@ -267,6 +267,9 @@ func expandArrayExpression(e expr.Resolved, varMapping []VarMapping, env ast.Env
 		e.IfFalse = expandArrayExpression(e.IfFalse, varMapping, env)
 
 		return e
+	case *expr.TupleInitialiser[symbol.Resolved]:
+		expandArrayExpressions(e.Exprs, varMapping, env)
+		return e
 	default:
 		return e
 	}
@@ -860,6 +863,9 @@ func (p *Rewriter) rewriteArrayExpression(e expr.Resolved) expr.Resolved {
 		return e
 	case *expr.ExternAccess[symbol.Resolved]:
 		p.rewriteArrayExpressions(e.Args)
+		return e
+	case *expr.TupleInitialiser[symbol.Resolved]:
+		p.rewriteArrayExpressions(e.Exprs)
 		return e
 	case *expr.Const[symbol.Resolved]:
 		return e
