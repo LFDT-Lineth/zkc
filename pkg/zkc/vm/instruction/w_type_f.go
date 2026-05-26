@@ -10,9 +10,10 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package word
+package instruction
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -26,15 +27,18 @@ import (
 // Opcode-Register-Registers-Constant instruction type
 // ============================================================================
 
-// OpArith represents an instruction of the following form:
+// WordTypeF represents an instruction of the following form:
 //
-// t0 := r0 # ... # rn + c
+// t0 := r0 # ... # rn # c
 //
 // Here, t0 is the *target register*, whilst r0 .. rn are the source registers
 // and c is a constant (which can be 0).  Finally, "#" represents whatever
 // operation the given opcode indicates.
-type OpArith[W word.Word[W]] struct {
+type WordTypeF[W word.Word[W]] struct {
 	Op opcode.OpCode
+	// // Bitwidth for the operation.  Observe that this does not have to match the
+	// // widths of either the source or target operands.
+	// Bitwidth uint
 	// Target register for assignment
 	Target register.Id
 	// Source registers for assignment
@@ -43,50 +47,59 @@ type OpArith[W word.Word[W]] struct {
 	Constant W
 }
 
-// NewOpArith constructs a new arithmetic instruction
-func NewOpArith[W word.Word[W]](op opcode.OpCode, target register.Id, sources []register.Id, constant W) OpArith[W] {
-	return OpArith[W]{op, target, sources, constant}
+// NewWordTypeF constructs a new bitwise instruction
+func NewWordTypeF[W word.Word[W]](op opcode.OpCode, target register.Id, sources []register.Id, constant W,
+) *WordTypeF[W] {
+	if !slices.Contains(opcode.TYPE_F_OPCODES, op) {
+		panic("invalid field operation")
+	}
+	//
+	return &WordTypeF[W]{op, target, sources, constant}
 }
 
 // OpCode implementation for Instruction interface
-func (p *OpArith[W]) OpCode() opcode.OpCode {
+func (p *WordTypeF[W]) OpCode() opcode.OpCode {
 	return p.Op
 }
 
 // IsWord implementation for instruction.Word interface
-func (p *OpArith[W]) IsWord() bool {
+func (p *WordTypeF[W]) IsWord() bool {
 	return true
 }
 
 // Uses implementation for Instruction interface
-func (p *OpArith[W]) Uses() []register.Id {
+func (p *WordTypeF[W]) Uses() []register.Id {
 	return p.Sources
 }
 
 // Definitions implementation for Instruction interface
-func (p *OpArith[W]) Definitions() []register.Id {
+func (p *WordTypeF[W]) Definitions() []register.Id {
 	return []register.Id{p.Target}
 }
 
 // MicroValidate implementation for MicroInstruction interface.
-func (p *OpArith[W]) MicroValidate(_ uint, field field.Config, _ base.SystemMap) []error {
+func (p *WordTypeF[W]) MicroValidate(_ uint, field field.Config, _ base.SystemMap) []error {
 	return nil
 }
 
-func (p *OpArith[W]) String(mapping base.SystemMap) string {
+func (p *WordTypeF[W]) String(mapping base.SystemMap) string {
 	var (
 		builder strings.Builder
-		op      = aType2Operation(p.Op)
+		op      = fType2Operation(p.Op)
 		zero    W
+		one     W
 	)
+	//
+	one = one.SetUint64(1)
 	//
 	builder.WriteString(base.RegistersToString(mapping, p.Target))
 	builder.WriteString(" = ")
 	//
 	if p.Constant.Cmp(zero) == 0 && len(p.Sources) > 0 &&
-		(p.Op == opcode.INT_ADD || p.Op == opcode.INT_SUB ||
-			p.Op == opcode.INT_ADDMOD_P || p.Op == opcode.INT_SUBMOD_P ||
-			p.Op == opcode.BIT_CONCAT) {
+		(p.Op == opcode.INT_ADDMOD_P || p.Op == opcode.INT_SUBMOD_P) {
+		//
+		builder.WriteString(base.ExpressionToStringWithoutConst(op, p.Sources, mapping))
+	} else if p.Constant.Cmp(one) == 0 && len(p.Sources) > 0 && p.Op == opcode.INT_MULMOD_P {
 		//
 		builder.WriteString(base.ExpressionToStringWithoutConst(op, p.Sources, mapping))
 	} else {
@@ -96,39 +109,15 @@ func (p *OpArith[W]) String(mapping base.SystemMap) string {
 	return builder.String()
 }
 
-func aType2Operation(op opcode.OpCode) string {
+func fType2Operation(op opcode.OpCode) string {
 	switch op {
-	case opcode.INT_ADD:
-		return "+"
-	case opcode.INT_SUB:
-		return "-"
-	case opcode.INT_MUL:
-		return "*"
-	case opcode.INT_DIV:
-		return "/"
-	case opcode.INT_REM:
-		return "%"
 	case opcode.INT_ADDMOD_P:
-		return "+f"
+		return "⊕"
 	case opcode.INT_SUBMOD_P:
-		return "-f"
+		return "⊖"
 	case opcode.INT_MULMOD_P:
-		return "*f"
-	case opcode.BIT_AND:
-		return "&"
-	case opcode.BIT_NOT:
-		return "~"
-	case opcode.BIT_OR:
-		return "|"
-	case opcode.BIT_XOR:
-		return "^"
-	case opcode.BIT_SHL:
-		return "<<"
-	case opcode.BIT_SHR:
-		return ">>"
-	case opcode.BIT_CONCAT:
-		return "::"
+		return "⊗"
 	default:
-		panic("unknown type A instruction")
+		panic("unknown type F instruction")
 	}
 }

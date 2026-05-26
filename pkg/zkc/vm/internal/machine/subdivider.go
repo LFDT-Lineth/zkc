@@ -18,6 +18,7 @@ import (
 	"github.com/consensys/go-corset/pkg/schema/module"
 	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
+	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
@@ -108,40 +109,41 @@ func subdivideInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec Vector
 	// skipif
 	//
 	for _, c := range vec.Codes {
-		switch c := c.(type) {
+		switch c.OpCode() {
 		// =======================================================
 		// Base instructions
 		// =======================================================
-		case *instruction.Call:
+		case opcode.CALL:
 			insns = append(insns, subdivideRegisters(limbsMap, c))
-		case *instruction.Debug:
+		case opcode.DEBUG:
+			c := c.(*instruction.Debug)
 			insns = append(insns, subdivideFormatting(limbsMap, false, c.Chunks))
-		case *instruction.Destruct:
-			insns = append(insns, subdivideRegisters(limbsMap, c))
-		case *instruction.Fail:
+		case opcode.FAIL:
+			c := c.(*instruction.Fail)
 			insns = append(insns, subdivideFormatting(limbsMap, true, c.Chunks))
-		case *instruction.Jump:
+		case opcode.JUMP:
 			insns = append(insns, c)
-		case *instruction.MemRead:
+		case opcode.MEMORY_READ:
 			insns = append(insns, subdivideRegisters(limbsMap, c))
-		case *instruction.MemWrite:
+		case opcode.MEMORY_WRITE:
 			insns = append(insns, subdivideRegisters(limbsMap, c))
-		case *instruction.Return:
+		case opcode.RETURN:
 			insns = append(insns, c)
-		case *instruction.Skip:
+		case opcode.SKIP:
 			insns = append(insns, c)
-		case *instruction.SkipIf:
+		case opcode.SKIP_IF:
 			insns = append(insns, subdivideRegisters(limbsMap, c))
 
 		// =======================================================
 		// Arithmetic instructions
 		// =======================================================
 
-		case *instruction.IntAdd[W]:
+		case opcode.INT_ADD:
+			c := c.(*instruction.WordTypeA[W])
 			insns = append(insns, subdivideAddition(limbsMap, c)...)
-		case *instruction.IntSub[W]:
+		case opcode.INT_SUB:
 			insns = append(insns, subdivideSubtraction(limbsMap, c)...)
-		case *instruction.IntMul[W]:
+		case opcode.INT_MUL:
 			insns = append(insns, subdivideMultiplication(limbsMap, c)...)
 		default:
 			panic("unsupported instruction")
@@ -159,11 +161,6 @@ func subdivideRegisters(limbsMap register.LimbsMap, insn instruction.Word) instr
 		rets := register.ApplyLimbsMap(limbsMap, c.Returns...)
 		//
 		return instruction.NewCall(c.Id, args, rets)
-	case *instruction.Destruct:
-		// addr := register.ApplyLimbsMap(limbsMap, c.Targets...)
-		// //
-		// return instruction.NewDestruct(addr, data)
-		panic("todo")
 	case *instruction.MemRead:
 		addr := register.ApplyLimbsMap(limbsMap, c.Arguments...)
 		data := register.ApplyLimbsMap(limbsMap, c.Returns...)
@@ -207,9 +204,9 @@ func subdivideFormatting(limbsMap register.LimbsMap, fail bool, chunks []instruc
 	return instruction.NewDebug(nchunks...)
 }
 
-func subdivideAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruction.IntAdd[W]) []instruction.Word {
+func subdivideAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruction.WordTypeA[W]) []instruction.Word {
 	var (
-		target  = register.ApplyLimbsMap(limbsMap, insn.Target)
+		target  = register.ApplyLimbsMap(limbsMap, insn.Target.Registers()...)
 		sources = register.ApplyLimbsMap(limbsMap, insn.Sources...)
 	)
 	// FIXME: this is a temporary place holder to allow some tests to actually
@@ -219,7 +216,7 @@ func subdivideAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruc
 		panic("todo")
 	}
 	//
-	return []instruction.Word{instruction.NewIntAdd(target[0], sources, insn.Constant)}
+	return []instruction.Word{instruction.UintAdd(target[0], sources, insn.Constant)}
 }
 
 func subdivideSubtraction(limbsMap register.LimbsMap, insn instruction.Word) []instruction.Word {

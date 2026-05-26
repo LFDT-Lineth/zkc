@@ -13,6 +13,7 @@
 package memory
 
 import (
+	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/util"
 )
 
@@ -29,5 +30,25 @@ type StaticReadOnly[W util.Uinter64] struct {
 func (p *StaticReadOnly[W]) Initialise(contents []W) {
 	if len(contents) > 0 {
 		panic("cannot initialise static read only memory")
+	}
+}
+
+// NewStatic constructs a static read-only memory pre-loaded with the
+// given values.
+func NewStatic[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
+) InputOutput[W] {
+	//
+	var kind Kind
+	//
+	if public {
+		kind = PUBLIC_STATIC_MEMORY
+	} else {
+		kind = PRIVATE_STATIC_MEMORY
+	}
+	//
+	return &StaticReadOnly[W]{
+		ReadOnly: ReadOnly[W]{
+			StaticArray: NewStaticArray(name, kind, registers, init...),
+		},
 	}
 }

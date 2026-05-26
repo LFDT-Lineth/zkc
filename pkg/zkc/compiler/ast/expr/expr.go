@@ -109,7 +109,7 @@ func String[S symbol.Symbol[S]](e Expr[S], mapping variable.Map[S]) string {
 		operator = "::"
 		exprs = e.Exprs
 	case *Const[S]:
-		return stringOfConstant(e.Constant, e.Base)
+		return stringOfConstant(e.constant, e.base)
 	case *Div[S]:
 		exprs = e.Exprs
 		operator = "/"

@@ -10,16 +10,16 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package lowerzkcnative
+package lowering
 
 import (
 	"math/big"
-	"math/bits"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
 // shiftKey identifies a shift helper by opcode and value width.
@@ -32,11 +32,11 @@ type shiftKey struct {
 // (opcode, value-width) pair, the maximum shift-amount register width seen
 // across all call sites.  The helper's arg2 is built with this width so every
 // call site can pass its amount register with an upcast (never a downcast).
-func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module) map[shiftKey]uint {
+func scanShiftAmountWidths[W word.Word[W]](modules []Module) map[shiftKey]uint {
 	result := make(map[shiftKey]uint)
 
 	for _, mod := range modules {
-		fn, ok := mod.(*vm.WordFunction)
+		fn, ok := mod.(*WordFunction)
 		if !ok {
 			continue
 		}
@@ -50,16 +50,18 @@ func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module) map[shiftKey]uint 
 					targetID, amountID register.Id
 				)
 
-				switch t := insn.(type) {
-				case *instruction.BitShl[W]:
-					op, targetID, amountID = t.OpCode(), t.Target, t.Sources[1]
-				case *instruction.BitShr[W]:
-					op, targetID, amountID = t.OpCode(), t.Target, t.Sources[1]
+				switch insn.OpCode() {
+				case opcode.BIT_SHL:
+					t := insn.(*instruction.WordTypeB)
+					op, targetID, amountID = t.OpCode(), t.Target, t.RightSource
+				case opcode.BIT_SHR:
+					t := insn.(*instruction.WordTypeB)
+					op, targetID, amountID = t.OpCode(), t.Target, t.RightSource
 				default:
 					continue
 				}
 
-				origWidth, _ := lowerableWidth(regs, targetID)
+				origWidth, _ := maxBitwidthOf(regs, targetID)
 				key := shiftKey{opcode: op, width: origWidth}
 				amountWidth := regs.Register(amountID).Width()
 
@@ -73,31 +75,6 @@ func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module) map[shiftKey]uint 
 	return result
 }
 
-// bitwiseShiftCall emits a call to a SHL/SHR helper module.  The value
-// register is passed directly (its width matches the helper's arg1 by
-// construction).  The amount register is cast up to amtWidth when its width
-// is narrower (upcasting never fails); a call site with the widest amount type
-// passes it directly without any cast.
-func bitwiseShiftCall(
-	id uint,
-	target, value, amount register.Id,
-	amtWidth uint,
-	registers RegisterAllocator,
-) []vm.WordInstruction {
-	if registers.Register(amount).Width() == amtWidth {
-		return []vm.WordInstruction{
-			instruction.NewCall(id, []register.Id{value, amount}, []register.Id{target}),
-		}
-	}
-
-	wAmount := registers.Allocate("", amtWidth)
-
-	return []vm.WordInstruction{
-		instruction.NewCast(wAmount, amount, amtWidth),
-		instruction.NewCall(id, []register.Id{value, wAmount}, []register.Id{target}),
-	}
-}
-
 // newShlHelper builds a self-recursive module for left shift:
 //
 //	shl(a, 0)    = a
@@ -109,7 +86,7 @@ func bitwiseShiftCall(
 // amtWidth is the register width of arg2 (the shift amount); it equals the
 // maximum shift-amount width seen across all call sites for this value width.
 // selfID must be the module slot that will be assigned to this module.
-func newShlHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint) vm.Module {
+func newShlHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint) Module {
 	var padding big.Int
 
 	b := newHelperBuilder[W](key.width, key.arity)
@@ -117,54 +94,31 @@ func newShlHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 
 	a, n, out := b.inputs[0], b.inputs[1], b.output
 	width := key.width
-
-	zero := vm.Uint64[W](0)
-	one := vm.Uint64[W](1)
-	wmax := vm.Uint64[W](uint64(width - 1))
-
-	// wmaxReg needs enough bits to hold wmax = width-1; nWide needs enough bits
-	// to hold any shift amount n (up to 2^amtWidth-1).  Take the larger of the
-	// two so a single width covers both registers.
-	wmaxWidth := amtWidth
-	if needed := uint(bits.Len(width - 1)); needed > wmaxWidth {
-		wmaxWidth = needed
-	}
-
-	if wmaxWidth == 0 {
-		wmaxWidth = 1
-	}
+	zero := word.Uint64[W](0)
+	one := word.Uint64[W](1)
 
 	zeroReg := b.newComputedNamed(amtWidth)
-	wmaxReg := b.newComputedNamed(wmaxWidth)
-	b.emit(instruction.NewIntAdd(zeroReg, nil, zero))
-	b.emit(instruction.NewIntAdd(wmaxReg, nil, wmax))
+	b.emit(instruction.UintConst(zeroReg, zero))
 
 	// if n == 0: return a
 	b.emit(instruction.NewSkipIf(opcode.NEQ, n, zeroReg, 2))
-	b.emit(instruction.NewIntAdd(out, []register.Id{a}, zero))
-	b.emit(instruction.NewReturn())
-
-	// if n >= width: return 0
-	// Zero-extend n to wmaxWidth so both sides of LTEQ share the same register width.
-	nWide := b.newComputedNamed(wmaxWidth)
-	b.emit(instruction.NewIntAdd(nWide, []register.Id{n}, zero))
-	b.emit(instruction.NewSkipIf(opcode.LTEQ, nWide, wmaxReg, 2))
-	b.emit(instruction.NewIntAdd(out, nil, zero))
+	b.emit(instruction.UintAdd(out, []register.Id{a}, zero))
 	b.emit(instruction.NewReturn())
 
 	// doubled = 2*a mod 2^width: strip the top bit via Destruct, add low+low.
 	// low < 2^(width-1) so low+low < 2^width — no IntAdd overflow.
 	low := b.newComputedNamed(width - 1)
-	b.emit(instruction.NewDestruct([]register.Id{low}, a))
+	carry := b.newComputedNamed(1)
+	b.emit(instruction.UintDestruct[W](register.NewVector(low, carry), a))
 	doubled := b.newComputedNamed(width)
-	b.emit(instruction.NewIntAdd(doubled, []register.Id{low, low}, zero))
+	b.emit(instruction.UintAdd(doubled, []register.Id{low, low}, zero))
 
 	n1 := b.newComputedNamed(amtWidth)
-	b.emit(instruction.NewIntSub(n1, []register.Id{n}, one))
+	b.emit(instruction.UintSub(n1, []register.Id{n}, one))
 	b.emit(instruction.NewCall(selfID, []register.Id{doubled, n1}, []register.Id{out}))
 	b.emit(instruction.NewReturn())
 
-	return vm.NewFunction(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
+	return function.New(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
 }
 
 // newShrHelper builds a self-recursive module for logical right shift:
@@ -178,7 +132,7 @@ func newShlHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 // field arithmetic — works for any field modulus.
 // amtWidth is the register width of arg2; see newShlHelper for details.
 // selfID must be the module slot that will be assigned to this module.
-func newShrHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint) vm.Module {
+func newShrHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint) Module {
 	var padding big.Int
 
 	b := newHelperBuilder[W](key.width, key.arity)
@@ -186,39 +140,15 @@ func newShrHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 
 	a, n, out := b.inputs[0], b.inputs[1], b.output
 	width := key.width
-
-	zero := vm.Uint64[W](0)
-	one := vm.Uint64[W](1)
-	wmax := vm.Uint64[W](uint64(width - 1))
-
-	// wmaxReg needs enough bits to hold wmax = width-1; nWide needs enough bits
-	// to hold any shift amount n (up to 2^amtWidth-1).  Take the larger of the
-	// two so a single width covers both registers.
-	wmaxWidth := amtWidth
-	if needed := uint(bits.Len(width - 1)); needed > wmaxWidth {
-		wmaxWidth = needed
-	}
-
-	if wmaxWidth == 0 {
-		wmaxWidth = 1
-	}
+	zero := word.Uint64[W](0)
+	one := word.Uint64[W](1)
 
 	zeroReg := b.newComputedNamed(amtWidth)
-	wmaxReg := b.newComputedNamed(wmaxWidth)
-	b.emit(instruction.NewIntAdd(zeroReg, nil, zero))
-	b.emit(instruction.NewIntAdd(wmaxReg, nil, wmax))
+	b.emit(instruction.UintConst(zeroReg, zero))
 
 	// if n == 0: return a
 	b.emit(instruction.NewSkipIf(opcode.NEQ, n, zeroReg, 2))
-	b.emit(instruction.NewIntAdd(out, []register.Id{a}, zero))
-	b.emit(instruction.NewReturn())
-
-	// if n >= width: return 0
-	// Zero-extend n to wmaxWidth so both sides of LTEQ share the same register width.
-	nWide := b.newComputedNamed(wmaxWidth)
-	b.emit(instruction.NewIntAdd(nWide, []register.Id{n}, zero))
-	b.emit(instruction.NewSkipIf(opcode.LTEQ, nWide, wmaxReg, 2))
-	b.emit(instruction.NewIntAdd(out, nil, zero))
+	b.emit(instruction.UintAdd(out, []register.Id{a}, zero))
 	b.emit(instruction.NewReturn())
 
 	// floor(a/2) via Destruct: split a into [lsb:u1, rest:u(width-1)].
@@ -226,14 +156,14 @@ func newShrHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 	// field arithmetic — works for any field modulus.
 	lsb := b.newComputedNamed(1)
 	rest := b.newComputedNamed(width - 1)
-	b.emit(instruction.NewDestruct([]register.Id{lsb, rest}, a))
+	b.emit(instruction.UintDestruct[W](register.NewVector(lsb, rest), a))
 	// Zero-extend rest from u(width-1) to u(width); safe since rest < 2^(width-1).
 	half := b.newComputedNamed(width)
-	b.emit(instruction.NewIntAdd(half, []register.Id{rest}, zero))
+	b.emit(instruction.UintAdd(half, []register.Id{rest}, zero))
 	n1 := b.newComputedNamed(amtWidth)
-	b.emit(instruction.NewIntSub(n1, []register.Id{n}, one))
+	b.emit(instruction.UintSub(n1, []register.Id{n}, one))
 	b.emit(instruction.NewCall(selfID, []register.Id{half, n1}, []register.Id{out}))
 	b.emit(instruction.NewReturn())
 
-	return vm.NewFunction(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
+	return function.New(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
 }

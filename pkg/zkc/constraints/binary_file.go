@@ -152,6 +152,7 @@ func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Fa
 // it simply extracts the outputs at the end.
 func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[string][]byte, errs []error) {
 	var (
+		steps  uint
 		inputs map[string][]vm.Uint
 		stats  = util.NewPerfStats()
 	)
@@ -160,13 +161,13 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[str
 		return nil, errs
 	} else if err := p.machine.Boot("main", inputs); err != nil {
 		errs = append(errs, err)
-	} else if _, err := vm.ExecuteAll(&p.machine, n); err != nil {
+	} else if steps, err = vm.ExecuteAll(&p.machine, n); err != nil {
 		errs = append(errs, err)
 	} else {
 		output = vm.EncodeOutputs(&p.machine)
 	}
 	// Log stats
-	stats.Log("Constraint execution")
+	stats.Log(fmt.Sprintf("Constraint execution (%d steps)", steps))
 	//
 	return output, errs
 }

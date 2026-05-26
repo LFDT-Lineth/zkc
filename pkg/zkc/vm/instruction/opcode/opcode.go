@@ -53,16 +53,12 @@ const (
 	INT_DIV
 	// INT_REM instruction
 	INT_REM
-	// INT_CAST instruction
-	INT_CAST
 	// INT_ADDMOD_P instruction
 	INT_ADDMOD_P
 	// INT_SUBMOD_P instruction
 	INT_SUBMOD_P
 	// INT_MULMOD_P instruction
 	INT_MULMOD_P
-	// INT_CASTMOD_P instruction
-	INT_CASTMOD_P
 	// BIT_AND instruction
 	BIT_AND
 	// BIT_OR instruction
@@ -77,8 +73,6 @@ const (
 	BIT_SHR
 	// BIT_CONCAT (concatenation) instruction
 	BIT_CONCAT
-	// BIT_DESTRUCT (destructuring) instruction
-	BIT_DESTRUCT
 
 	// ========================================================================
 	// Field Instructions
@@ -95,3 +89,30 @@ const (
 	// polynomial constraint.
 	HINT_DIVISION
 )
+
+// ARITH_OPCODES captures those opcodes that are known as "arithmetic operations"
+var ARITH_OPCODES = []OpCode{
+	INT_ADD,
+	INT_SUB,
+	INT_MUL,
+	BIT_CONCAT,
+}
+
+// TYPE_B_OPCODES captures those opcodes that are known as "bitwise operations"
+var TYPE_B_OPCODES = []OpCode{
+	INT_DIV,
+	INT_REM,
+	BIT_AND,
+	BIT_OR,
+	BIT_XOR,
+	BIT_NOT,
+	BIT_SHL,
+	BIT_SHR,
+}
+
+// TYPE_F_OPCODES captures those opcodes that are known as "field operations"
+var TYPE_F_OPCODES = []OpCode{
+	INT_ADDMOD_P,
+	INT_SUBMOD_P,
+	INT_MULMOD_P,
+}

@@ -24,15 +24,35 @@ import (
 
 // Const represents a constant value within an expresion.
 type Const[S symbol.Symbol[S]] struct {
-	Label    string
-	Constant big.Int
-	Base     uint
+	constant big.Int
+	base     uint
+	datatype data.Type[S]
 }
 
-// NewConstant constructs an expression representing a constant value, along with a
-// base (which is used for pretty printing, etc).
-func NewConstant[S symbol.Symbol[S]](constant big.Int, base uint) Expr[S] {
-	return &Const[S]{Constant: constant, Base: base}
+// NewUntypedConstant constructs an expression representing a constant value,
+// along with a base (which is used for pretty printing, etc).  This can be used
+// to construct a constant expression prior to typing, but should not be used to
+// construct an expression after typing has been performed.
+func NewUntypedConstant[S symbol.Symbol[S]](constant big.Int, base uint) Expr[S] {
+	return &Const[S]{constant, base, nil}
+}
+
+// NewTypedConstant constructs an expression representing a constant value with
+// a given bitwidth, along with a base (which is used for pretty printing, etc).
+// This can be used to construct a constant expression after typing has been
+// performed (i.e. because it includes an appropriate type)
+func NewTypedConstant[S symbol.Symbol[S]](constant big.Int, base uint, bitwidth uint) Expr[S] {
+	return &Const[S]{constant, base, data.NewUnsignedInt[S](bitwidth, false)}
+}
+
+// Base returns the based representation for this constant
+func (p *Const[S]) Base() uint {
+	return p.base
+}
+
+// Constant returns the constant value this represents
+func (p *Const[S]) Constant() *big.Int {
+	return &p.constant
 }
 
 // ExternUses implementation for the Expr interface.
@@ -47,16 +67,15 @@ func (p *Const[S]) LocalUses() bit.Set {
 }
 
 func (p *Const[S]) String(mapping variable.Map[S]) string {
-	return String[S](p, mapping)
+	return String(p, mapping)
 }
 
 // SetType implementation for Expr interface
 func (p *Const[S]) SetType(t data.Type[S]) {
-
+	p.datatype = t
 }
 
 // Type implementation for Expr interface
 func (p *Const[S]) Type() data.Type[S] {
-	bitwidth := uint(p.Constant.BitLen())
-	return data.NewUnsignedInt[S](bitwidth, true)
+	return p.datatype
 }
