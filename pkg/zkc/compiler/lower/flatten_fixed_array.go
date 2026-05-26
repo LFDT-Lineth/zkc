@@ -40,15 +40,11 @@ func FlattenFixedArrays(field field.Config, program ast.Program) {
 	for _, d := range program.Components() {
 		if fn, ok := d.(*decl.ResolvedFunction); ok {
 			var (
-				varMapping  = make([]VarMapping, len(fn.Variables))
-				rewriter = &Rewriter{field, varMapping, program.Components(), env}
+				varMapping = make([]VarMapping, len(fn.Variables))
+				rewriter   = &Rewriter{field, varMapping, program.Components(), env}
 			)
 			// Expand for variables and assignments
-			expandedVars, expandedCode, hasArray := expandFixedArrays(fn, varMapping, env)
-			// If no fixed-size array variables were found, skip the rewrite
-			if !hasArray {
-				continue
-			}
+			expandedVars, expandedCode := expandFixedArrays(fn, varMapping, env)
 			// Rewrite the expanded code to replace array accesses with scalar references
 			rewrittenCode := rewriter.rewriteFixedArrays(expandedCode)
 			// After rewriting, update fn's code, variables, input and output counts to reflect the expanded scalars
@@ -89,12 +85,8 @@ type PcMapping struct {
 // variable IDs so that the subsequent rewriting phase can remap them.
 func expandFixedArrays(
 	fn *decl.ResolvedFunction, varMapping []VarMapping, env ast.Environment,
-) (expandedVars []variable.ResolvedDescriptor, expandedCode []stmt.Resolved, hasArray bool) {
-	expandedVars, hasArray = expandFnVariables(fn, varMapping, env)
-
-	if !hasArray {
-		return
-	}
+) (expandedVars []variable.ResolvedDescriptor, expandedCode []stmt.Resolved) {
+	expandedVars = expandFnVariables(fn, varMapping, env)
 	//
 	expandedCode, pcMapping := expandFnCode(fn, varMapping, env)
 
@@ -115,14 +107,12 @@ func expandFixedArrays(
 
 func expandFnVariables(
 	fn *decl.ResolvedFunction, varMapping []VarMapping, env ast.Environment,
-) (expandedVars []variable.ResolvedDescriptor, hasArray bool) {
+) (expandedVars []variable.ResolvedDescriptor) {
 	for oldID, v := range fn.Variables {
 		base := uint(len(expandedVars))
 
 		if vType := v.DataType.AsFixedArray(env); vType != nil {
 			size := vType.Size.First()
-
-			hasArray = true
 
 			bitwidth, ok := data.BitWidthOf(vType, env)
 			if !ok {

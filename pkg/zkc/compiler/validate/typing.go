@@ -488,7 +488,7 @@ func (p *TypeChecker) typeComparison(e *expr.Cmp[symbol.Resolved], env VariableM
 		return p.typeFieldComparison(e, env, effects)
 	}
 	// whole-array equality (==, !=) on matching fixed arrays
-	if wellFormed(anchor, p.env) && anchor.AsFixedArray(p.env) != nil {
+	if p.env.WellFormed(anchor) && anchor.AsFixedArray(p.env) != nil {
 		return p.typeArrayComparison(e, lhs, rhs, lerrs, rerrs)
 	}
 	// Check left-hand side
@@ -520,11 +520,11 @@ func (p *TypeChecker) typeArrayComparison(e *expr.Cmp[symbol.Resolved],
 			*p.srcmaps.SyntaxError(e, "only == and != are supported on fixed arrays"))
 	}
 	// Both sides must be fixed arrays.
-	if len(lerrs) == 0 && wellFormed(lhs, p.env) && lhs.AsFixedArray(p.env) == nil {
+	if len(lerrs) == 0 && p.env.WellFormed(lhs) && lhs.AsFixedArray(p.env) == nil {
 		lerrs = p.srcmaps.SyntaxErrors(e.Left, "expected fixed array")
 	}
 	//
-	if len(rerrs) == 0 && wellFormed(rhs, p.env) && rhs.AsFixedArray(p.env) == nil {
+	if len(rerrs) == 0 && p.env.WellFormed(rhs) && rhs.AsFixedArray(p.env) == nil {
 		rerrs = p.srcmaps.SyntaxErrors(e.Right, "expected fixed array")
 	}
 	// Same size + same element type (recursive via EquiTypes).
