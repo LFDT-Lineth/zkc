@@ -10,36 +10,37 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package lowerzkcnative
+package lowering
 
 import (
 	"fmt"
 	"math/big"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
 // RegisterAllocator provides a simple means of allocating new registers
 type RegisterAllocator = register.Allocator[int]
 
-type vectorInstruction = vm.Vector[vm.WordInstruction]
+type vectorInstruction = instruction.Vector[instruction.Word]
 
 // LowerBitwise rewrites VM-level bitwise micro-instructions into CALLs to
 // helper functions. The helper modules are appended to the returned module
 // slice.
 // We assume this lowering happens BEFORE vectorization and register splitting
-func LowerBitwise[W vm.Word[W]](modules []vm.Module) []vm.Module {
+func LowerBitwise[W word.Word[W]](modules []Module) []Module {
 	var (
-		out          = append([]vm.Module{}, modules...)
+		out          = append([]Module{}, modules...)
 		amountWidths = scanShiftAmountWidths[W](out)
 		helpers      = newBitwiseHelpers[W](uint(len(out)), amountWidths)
 	)
 
 	for i, mod := range out {
-		if fn, ok := mod.(*vm.WordFunction); ok {
+		if fn, ok := mod.(*WordFunction); ok {
 			out[i] = lowerBitwiseFunction(fn, helpers)
 		}
 	}
@@ -47,8 +48,8 @@ func LowerBitwise[W vm.Word[W]](modules []vm.Module) []vm.Module {
 	return append(out, helpers.modules()...)
 }
 
-func lowerBitwiseFunction[W vm.Word[W]](fn *vm.WordFunction, helpers *bitwiseHelpers[W],
-) *vm.WordFunction {
+func lowerBitwiseFunction[W word.Word[W]](fn *WordFunction, helpers *bitwiseHelpers[W],
+) *WordFunction {
 	var (
 		code  = fn.Code()
 		ncode = make([]vectorInstruction, len(code))
@@ -56,19 +57,19 @@ func lowerBitwiseFunction[W vm.Word[W]](fn *vm.WordFunction, helpers *bitwiseHel
 	)
 
 	for i, insn := range code {
-		ncode[i] = insn.Map(func(_ uint, ith vm.WordInstruction) []vm.WordInstruction {
+		ncode[i] = insn.Map(func(_ uint, ith instruction.Word) []instruction.Word {
 			return lowerBitwiseCode(ith, alloc, helpers)
 		})
 	}
 
-	return vm.NewFunction(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
+	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
 }
 
-func lowerBitwiseCode[W vm.Word[W]](
-	code vm.WordInstruction,
+func lowerBitwiseCode[W word.Word[W]](
+	code instruction.Word,
 	registers RegisterAllocator,
 	helpers *bitwiseHelpers[W],
-) []vm.WordInstruction {
+) []instruction.Word {
 	//
 	switch code.OpCode() {
 	case opcode.BIT_AND, opcode.BIT_OR, opcode.BIT_XOR:
@@ -81,15 +82,15 @@ func lowerBitwiseCode[W vm.Word[W]](
 		t := code.(*instruction.WordTypeB)
 		return lowerBitwiseShlShr(t, registers, helpers)
 	default:
-		return []vm.WordInstruction{code}
+		return []instruction.Word{code}
 	}
 }
 
-func lowerBitwiseAndOrXor[W vm.Word[W]](
+func lowerBitwiseAndOrXor[W word.Word[W]](
 	code *instruction.WordTypeB,
 	registers RegisterAllocator,
 	helpers *bitwiseHelpers[W],
-) []vm.WordInstruction {
+) []instruction.Word {
 	origWidth, isPowerOfTwo := maxBitwidthOf(registers, code.Uses()...)
 	//
 	p := origWidth
@@ -103,16 +104,16 @@ func lowerBitwiseAndOrXor[W vm.Word[W]](
 	// inputs.
 	id := helpers.ensure(code.OpCode(), p, 2)
 	//
-	return []vm.WordInstruction{
+	return []instruction.Word{
 		instruction.NewCall(id, []register.Id{code.LeftSource, code.RightSource}, []register.Id{code.Target}),
 	}
 }
 
-func lowerBitwiseShlShr[W vm.Word[W]](
+func lowerBitwiseShlShr[W word.Word[W]](
 	code *instruction.WordTypeB,
 	registers RegisterAllocator,
 	helpers *bitwiseHelpers[W],
-) []vm.WordInstruction {
+) []instruction.Word {
 	var (
 		// NOTE: bitwidth of shift (e.g. "x << y") determined by width of first
 		// argument only (i.e. "x").
@@ -120,25 +121,25 @@ func lowerBitwiseShlShr[W vm.Word[W]](
 		id       = helpers.ensure(code.OpCode(), width, 2)
 	)
 	//
-	return []vm.WordInstruction{
+	return []instruction.Word{
 		instruction.NewCall(id, []register.Id{code.LeftSource, code.RightSource}, []register.Id{code.Target}),
 	}
 }
 
 // inlineBitwiseNot emits ~x as (MASK - x) directly into the caller's
 // instruction stream, where MASK = 2^width - 1.  No helper module is created.
-func inlineBitwiseNot[W vm.Word[W]](code *instruction.WordTypeB, registers RegisterAllocator) []vm.WordInstruction {
+func inlineBitwiseNot[W word.Word[W]](code *instruction.WordTypeB, registers RegisterAllocator) []instruction.Word {
 	var (
 		width, _ = maxBitwidthOf(registers, code.Uses()...)
 		maskBig  = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))
 		zeroW    W
 		mask     = zeroW.SetBigInt(maskBig)
-		zero     = vm.Uint64[W](0)
+		zero     W
 	)
 
 	maskReg := registers.Allocate("", width)
 
-	return []vm.WordInstruction{
+	return []instruction.Word{
 		instruction.UintConst(maskReg, mask),
 		instruction.UintSub(code.Target, []register.Id{maskReg, code.LeftSource}, zero),
 	}
@@ -177,14 +178,14 @@ type bitwiseHelperKey struct {
 	arity  int
 }
 
-type bitwiseHelpers[W vm.Word[W]] struct {
+type bitwiseHelpers[W word.Word[W]] struct {
 	baseID       uint
 	ids          map[bitwiseHelperKey]uint
-	items        []vm.Module
+	items        []Module
 	amountWidths map[shiftKey]uint
 }
 
-func newBitwiseHelpers[W vm.Word[W]](
+func newBitwiseHelpers[W word.Word[W]](
 	baseID uint, amountWidths map[shiftKey]uint,
 ) *bitwiseHelpers[W] {
 	return &bitwiseHelpers[W]{
@@ -205,7 +206,7 @@ func (p *bitwiseHelpers[W]) shiftAmountWidth(op instruction.OpCode, valueWidth u
 	return valueWidth
 }
 
-func (p *bitwiseHelpers[W]) modules() []vm.Module {
+func (p *bitwiseHelpers[W]) modules() []Module {
 	return p.items
 }
 
@@ -228,7 +229,7 @@ func (p *bitwiseHelpers[W]) ensure(op instruction.OpCode, width uint, arity int)
 
 		amtWidth := p.shiftAmountWidth(op, width)
 
-		var mod vm.Module
+		var mod Module
 		if op == opcode.BIT_SHL {
 			mod = newShlHelper[W](key, id, amtWidth)
 		} else {
@@ -260,14 +261,14 @@ func (p *bitwiseHelpers[W]) ensure(op instruction.OpCode, width uint, arity int)
 // constant — non-identity constants are materialised as register sources by
 // BinarizeBitwise before lowering reaches here, so a single helper per (op,
 // width, arity) is sufficient and shared across all call sites.
-func newDecomposedNaryHelper[W vm.Word[W]](
+func newDecomposedNaryHelper[W word.Word[W]](
 	helpers *bitwiseHelpers[W],
 	key bitwiseHelperKey,
-) vm.Module {
+) Module {
 	b := newHelperBuilder[W](key.width, key.arity)
 
 	out := b.output
-	zero := vm.Uint64[W](0)
+	zero := word.Uint64[W](0)
 
 	// TODO: we will want to stop before width == 1 to reduce the number of tiny modules.
 	if key.width == 1 {
@@ -277,7 +278,7 @@ func newDecomposedNaryHelper[W vm.Word[W]](
 		agg := b.newComputed("agg")
 
 		if key.opcode == opcode.BIT_AND {
-			one := vm.Uint64[W](1)
+			one := word.Uint64[W](1)
 			b.emit(instruction.UintConst(agg, one))
 		} else {
 			b.emit(instruction.UintConst(agg, zero))
@@ -316,19 +317,19 @@ func newDecomposedNaryHelper[W vm.Word[W]](
 
 	b.emit(instruction.NewReturn())
 
-	return vm.NewFunction(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
+	return function.New(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
 }
 
-type helperBuilder[W vm.Word[W]] struct {
+type helperBuilder[W word.Word[W]] struct {
 	width   uint
 	inputs  []register.Id
 	output  register.Id
 	base    []register.Register
-	code    []vm.WordInstruction
+	code    []instruction.Word
 	nextTmp uint
 }
 
-func newHelperBuilder[W vm.Word[W]](width uint, arity int) *helperBuilder[W] {
+func newHelperBuilder[W word.Word[W]](width uint, arity int) *helperBuilder[W] {
 	var (
 		padding big.Int
 		base    = make([]register.Register, 0, arity+1)
@@ -356,7 +357,7 @@ func (p *helperBuilder[W]) regs() []register.Register {
 	return p.base
 }
 
-func (p *helperBuilder[W]) emit(insn vm.WordInstruction) {
+func (p *helperBuilder[W]) emit(insn instruction.Word) {
 	p.code = append(p.code, insn)
 }
 
@@ -387,8 +388,8 @@ func (p *helperBuilder[W]) newComputedNamed(width uint) register.Id {
 }
 
 func (p *helperBuilder[W]) combineBit(op instruction.OpCode, lhs, rhs register.Id) register.Id {
-	zero := vm.Uint64[W](0)
-	one := vm.Uint64[W](1)
+	zero := word.Uint64[W](0)
+	one := word.Uint64[W](1)
 
 	switch op {
 	case opcode.BIT_AND:

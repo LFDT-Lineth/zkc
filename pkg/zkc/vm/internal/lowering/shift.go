@@ -10,15 +10,16 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package lowerzkcnative
+package lowering
 
 import (
 	"math/big"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
 // shiftKey identifies a shift helper by opcode and value width.
@@ -31,11 +32,11 @@ type shiftKey struct {
 // (opcode, value-width) pair, the maximum shift-amount register width seen
 // across all call sites.  The helper's arg2 is built with this width so every
 // call site can pass its amount register with an upcast (never a downcast).
-func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module) map[shiftKey]uint {
+func scanShiftAmountWidths[W word.Word[W]](modules []Module) map[shiftKey]uint {
 	result := make(map[shiftKey]uint)
 
 	for _, mod := range modules {
-		fn, ok := mod.(*vm.WordFunction)
+		fn, ok := mod.(*WordFunction)
 		if !ok {
 			continue
 		}
@@ -85,7 +86,7 @@ func scanShiftAmountWidths[W vm.Word[W]](modules []vm.Module) map[shiftKey]uint 
 // amtWidth is the register width of arg2 (the shift amount); it equals the
 // maximum shift-amount width seen across all call sites for this value width.
 // selfID must be the module slot that will be assigned to this module.
-func newShlHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint) vm.Module {
+func newShlHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint) Module {
 	var padding big.Int
 
 	b := newHelperBuilder[W](key.width, key.arity)
@@ -93,8 +94,8 @@ func newShlHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 
 	a, n, out := b.inputs[0], b.inputs[1], b.output
 	width := key.width
-	zero := vm.Uint64[W](0)
-	one := vm.Uint64[W](1)
+	zero := word.Uint64[W](0)
+	one := word.Uint64[W](1)
 
 	zeroReg := b.newComputedNamed(amtWidth)
 	b.emit(instruction.UintConst(zeroReg, zero))
@@ -117,7 +118,7 @@ func newShlHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 	b.emit(instruction.NewCall(selfID, []register.Id{doubled, n1}, []register.Id{out}))
 	b.emit(instruction.NewReturn())
 
-	return vm.NewFunction(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
+	return function.New(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
 }
 
 // newShrHelper builds a self-recursive module for logical right shift:
@@ -131,7 +132,7 @@ func newShlHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 // field arithmetic — works for any field modulus.
 // amtWidth is the register width of arg2; see newShlHelper for details.
 // selfID must be the module slot that will be assigned to this module.
-func newShrHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint) vm.Module {
+func newShrHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint) Module {
 	var padding big.Int
 
 	b := newHelperBuilder[W](key.width, key.arity)
@@ -139,8 +140,8 @@ func newShrHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 
 	a, n, out := b.inputs[0], b.inputs[1], b.output
 	width := key.width
-	zero := vm.Uint64[W](0)
-	one := vm.Uint64[W](1)
+	zero := word.Uint64[W](0)
+	one := word.Uint64[W](1)
 
 	zeroReg := b.newComputedNamed(amtWidth)
 	b.emit(instruction.UintConst(zeroReg, zero))
@@ -164,5 +165,5 @@ func newShrHelper[W vm.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth uint
 	b.emit(instruction.NewCall(selfID, []register.Id{half, n1}, []register.Id{out}))
 	b.emit(instruction.NewReturn())
 
-	return vm.NewFunction(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
+	return function.New(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
 }

@@ -10,13 +10,14 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package lowerzkcnative
+package lowering
 
 import (
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
 // LowerDivisions rewrites INT_DIV and INT_REM instructions into a
@@ -33,11 +34,11 @@ import (
 //	Fail
 //
 // This pass must run before LowerComparisons.
-func LowerDivisions[W vm.Word[W]](modules []vm.Module) []vm.Module {
-	out := append([]vm.Module{}, modules...)
+func LowerDivisions[W word.Word[W]](modules []Module) []Module {
+	out := append([]Module{}, modules...)
 
 	for i, mod := range out {
-		if fn, ok := mod.(*vm.WordFunction); ok {
+		if fn, ok := mod.(*WordFunction); ok {
 			out[i] = lowerDivisionFunction[W](fn)
 		}
 	}
@@ -45,7 +46,7 @@ func LowerDivisions[W vm.Word[W]](modules []vm.Module) []vm.Module {
 	return out
 }
 
-func lowerDivisionFunction[W vm.Word[W]](fn *vm.WordFunction) *vm.WordFunction {
+func lowerDivisionFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
 	var (
 		code  = fn.Code()
 		ncode = make([]vectorInstruction, len(code))
@@ -53,18 +54,18 @@ func lowerDivisionFunction[W vm.Word[W]](fn *vm.WordFunction) *vm.WordFunction {
 	)
 
 	for i, insn := range code {
-		ncode[i] = insn.Map(func(_ uint, ith vm.WordInstruction) []vm.WordInstruction {
+		ncode[i] = insn.Map(func(_ uint, ith instruction.Word) []instruction.Word {
 			return lowerDivisionCode[W](ith, alloc)
 		})
 	}
 
-	return vm.NewFunction(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
+	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
 }
 
-func lowerDivisionCode[W vm.Word[W]](
-	code vm.WordInstruction,
+func lowerDivisionCode[W word.Word[W]](
+	code instruction.Word,
 	registers RegisterAllocator,
-) []vm.WordInstruction {
+) []instruction.Word {
 	switch code.OpCode() {
 	case opcode.INT_DIV:
 		insn := code.(*instruction.WordTypeB)
@@ -73,28 +74,28 @@ func lowerDivisionCode[W vm.Word[W]](
 		insn := code.(*instruction.WordTypeB)
 		return expandRemainder[W](insn.Target, insn.LeftSource, insn.RightSource, registers)
 	default:
-		return []vm.WordInstruction{code}
+		return []instruction.Word{code}
 	}
 }
 
 // expandDivision replaces INT_DIV(q, x, y) with the hint+validation sequence.
 // sum holds q*y and must be 2*nX bits so the product is exact: a cheating prover
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
-func expandDivision[W vm.Word[W]](q, x, y register.Id, registers RegisterAllocator) []vm.WordInstruction {
+func expandDivision[W word.Word[W]](q, x, y register.Id, registers RegisterAllocator) []instruction.Word {
 	var (
 		nX   = registers.Register(x).Width()
 		nY   = registers.Register(y).Width()
 		r    = registers.Allocate("", nY)
 		w    = registers.Allocate("", nY)
-		zero = vm.Uint64[W](0)
-		one  = vm.Uint64[W](1)
+		zero = word.Uint64[W](0)
+		one  = word.Uint64[W](1)
 		qy   = registers.Allocate("", nX)
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", 0)
 		z1 = registers.Allocate("", 0)
 	)
 	//
-	return []vm.WordInstruction{
+	return []instruction.Word{
 		instruction.NewFieldHint([]register.Id{q, r, w}, []register.Id{x, y}),
 		instruction.UintMul(qy, []register.Id{q, y}, one),
 		instruction.UintSub(z0, []register.Id{x, qy, r}, zero),
@@ -105,21 +106,21 @@ func expandDivision[W vm.Word[W]](q, x, y register.Id, registers RegisterAllocat
 // expandRemainder replaces INT_REM(r, x, y) with the hint+validation sequence.
 // sum holds qTmp*y and must be 2*nX bits so the product is exact: a cheating prover
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
-func expandRemainder[W vm.Word[W]](r, x, y register.Id, registers RegisterAllocator) []vm.WordInstruction {
+func expandRemainder[W word.Word[W]](r, x, y register.Id, registers RegisterAllocator) []instruction.Word {
 	var (
 		nX   = registers.Register(x).Width()
 		nY   = registers.Register(y).Width()
 		q    = registers.Allocate("", nX)
 		w    = registers.Allocate("", nY)
-		zero = vm.Uint64[W](0)
-		one  = vm.Uint64[W](1)
+		zero = word.Uint64[W](0)
+		one  = word.Uint64[W](1)
 		qy   = registers.Allocate("", nX)
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", 0)
 		z1 = registers.Allocate("", 0)
 	)
 	//
-	return []vm.WordInstruction{
+	return []instruction.Word{
 		instruction.NewFieldHint([]register.Id{q, r, w}, []register.Id{x, y}),
 		instruction.UintMul(qy, []register.Id{q, y}, one),
 		instruction.UintSub(z0, []register.Id{x, qy, r}, zero),

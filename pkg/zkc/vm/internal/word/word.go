@@ -78,3 +78,10 @@ type Word[W any] interface {
 	// Text returns the given word formated in the given base
 	Text(base int) string
 }
+
+// Uint64 initialises a given word with a 64bit value.  This will panic if the
+// given value exceeds the available bandwidth of the word in question.
+func Uint64[W Word[W]](val uint64) W {
+	var w W
+	return w.SetUint64(val)
+}

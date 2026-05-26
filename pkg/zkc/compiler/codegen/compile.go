@@ -26,8 +26,6 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
 	"github.com/consensys/go-corset/pkg/zkc/vm"
-
-	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen/lowerzkcnative"
 )
 
 // Declaration represents a declaration which can contain macro
@@ -164,12 +162,12 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	// Lower VM-level zkc-native instructions into arithmetic instructions.
 	if len(errors) == 0 && p.config.lowerZkcNative {
 		// Lower Bitwise operations into arithmetic instructions.
-		modules = lowerzkcnative.LowerBitwise[vm.Uint](modules)
+		modules = vm.LowerBitwise[vm.Uint](modules)
 		// Lower INT_DIV/INT_REM into hint + arithmetic validation sequences.
-		modules = lowerzkcnative.LowerDivisions[vm.Uint](modules)
+		modules = vm.LowerDivisions[vm.Uint](modules)
 		// Lower relational SkipIf (LT/GT/LTEQ/GTEQ) into sign-bit extraction sequences.
 		// Must run after LowerBitwise and LowerDivisions, which may generate new relational SkipIf instructions.
-		modules = lowerzkcnative.LowerComparisons[vm.Uint](modules)
+		modules = vm.LowerComparisons[vm.Uint](modules)
 	}
 	// Vectorize modules (if no errors)
 	if len(errors) == 0 && p.config.vectorize {
