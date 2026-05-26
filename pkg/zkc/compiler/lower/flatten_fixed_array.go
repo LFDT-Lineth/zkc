@@ -890,6 +890,7 @@ func (p *Rewriter) rewriteLValArray(l lval.Resolved) lval.Resolved {
 			if m.isArray {
 				panic("bare assignment to array variable unsupported")
 			}
+
 			l.Ids[i] = m.newBase
 		}
 
