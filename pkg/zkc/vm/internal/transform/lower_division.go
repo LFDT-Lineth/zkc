@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package lowering
+package transform
 
 import (
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -49,12 +49,12 @@ func LowerDivisions[W word.Word[W]](modules []Module) []Module {
 func lowerDivisionFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
 	var (
 		code  = fn.Code()
-		ncode = make([]vectorInstruction, len(code))
+		ncode = make([]VectorInstruction, len(code))
 		alloc = register.NewAllocator[int](fn.RegisterMap())
 	)
 
 	for i, insn := range code {
-		ncode[i] = insn.Map(func(_ uint, ith instruction.Word) []instruction.Word {
+		ncode[i] = insn.Map(func(_ uint, ith WordInstruction) []WordInstruction {
 			return lowerDivisionCode[W](ith, alloc)
 		})
 	}
@@ -63,9 +63,9 @@ func lowerDivisionFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
 }
 
 func lowerDivisionCode[W word.Word[W]](
-	code instruction.Word,
+	code WordInstruction,
 	registers RegisterAllocator,
-) []instruction.Word {
+) []WordInstruction {
 	switch code.OpCode() {
 	case opcode.INT_DIV:
 		insn := code.(*instruction.WordTypeB)
@@ -74,28 +74,28 @@ func lowerDivisionCode[W word.Word[W]](
 		insn := code.(*instruction.WordTypeB)
 		return expandRemainder[W](insn.Target, insn.LeftSource, insn.RightSource, registers)
 	default:
-		return []instruction.Word{code}
+		return []WordInstruction{code}
 	}
 }
 
 // expandDivision replaces INT_DIV(q, x, y) with the hint+validation sequence.
 // sum holds q*y and must be 2*nX bits so the product is exact: a cheating prover
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
-func expandDivision[W word.Word[W]](q, x, y register.Id, registers RegisterAllocator) []instruction.Word {
+func expandDivision[W word.Word[W]](q, x, y register.Id, registers RegisterAllocator) []WordInstruction {
 	var (
 		nX   = registers.Register(x).Width()
 		nY   = registers.Register(y).Width()
 		r    = registers.Allocate("", nY)
 		w    = registers.Allocate("", nY)
-		zero = word.Uint64[W](0)
-		one  = word.Uint64[W](1)
+		zero = word.Const64[W](0)
+		one  = word.Const64[W](1)
 		qy   = registers.Allocate("", nX)
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", 0)
 		z1 = registers.Allocate("", 0)
 	)
 	//
-	return []instruction.Word{
+	return []WordInstruction{
 		instruction.NewFieldHint([]register.Id{q, r, w}, []register.Id{x, y}),
 		instruction.UintMul(qy, []register.Id{q, y}, one),
 		instruction.UintSub(z0, []register.Id{x, qy, r}, zero),
@@ -106,21 +106,21 @@ func expandDivision[W word.Word[W]](q, x, y register.Id, registers RegisterAlloc
 // expandRemainder replaces INT_REM(r, x, y) with the hint+validation sequence.
 // sum holds qTmp*y and must be 2*nX bits so the product is exact: a cheating prover
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
-func expandRemainder[W word.Word[W]](r, x, y register.Id, registers RegisterAllocator) []instruction.Word {
+func expandRemainder[W word.Word[W]](r, x, y register.Id, registers RegisterAllocator) []WordInstruction {
 	var (
 		nX   = registers.Register(x).Width()
 		nY   = registers.Register(y).Width()
 		q    = registers.Allocate("", nX)
 		w    = registers.Allocate("", nY)
-		zero = word.Uint64[W](0)
-		one  = word.Uint64[W](1)
+		zero = word.Const64[W](0)
+		one  = word.Const64[W](1)
 		qy   = registers.Allocate("", nX)
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", 0)
 		z1 = registers.Allocate("", 0)
 	)
 	//
-	return []instruction.Word{
+	return []WordInstruction{
 		instruction.NewFieldHint([]register.Id{q, r, w}, []register.Id{x, y}),
 		instruction.UintMul(qy, []register.Id{q, y}, one),
 		instruction.UintSub(z0, []register.Id{x, qy, r}, zero),

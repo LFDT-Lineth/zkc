@@ -145,9 +145,15 @@ func writeDeclaration(d decl.Resolved, env data.ResolvedEnvironment) {
 		writeFunction(d, env)
 	case *decl.ResolvedMemory:
 		writeMemory(d, env)
+	case *decl.ResolvedTypeAlias:
+		writeTypeAlias(d, env)
 	default:
-		panic("unknown declaration encountered")
+		panic(fmt.Sprintf("unknown declaration encountered (%v)", d))
 	}
+}
+
+func writeTypeAlias(t *decl.ResolvedTypeAlias, env data.ResolvedEnvironment) {
+	fmt.Printf("type %s = %s\n", t.Name(), t.DataType.String(env))
 }
 
 func writeConstant(m *decl.ResolvedConstant, env data.ResolvedEnvironment) {
@@ -274,7 +280,7 @@ func writeFunctionArgs(kind variable.Kind, variables []variable.ResolvedDescript
 				first = false
 			}
 			//
-			fmt.Printf("%s %s", r.DataType.String(env), r.Name)
+			fmt.Printf("%s:%s", r.Name, r.DataType.String(env))
 		}
 	}
 }
@@ -282,7 +288,7 @@ func writeFunctionArgs(kind variable.Kind, variables []variable.ResolvedDescript
 func writeFunctionVariables(f *decl.ResolvedFunction, env data.ResolvedEnvironment) {
 	for _, r := range f.Variables {
 		if r.IsLocal() {
-			fmt.Printf("\t%s %s\n", r.DataType.String(env), r.Name)
+			fmt.Printf("\tvar %s:%s\n", r.Name, r.DataType.String(env))
 		}
 	}
 }

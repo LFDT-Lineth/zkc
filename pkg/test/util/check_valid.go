@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"testing"
 
-	cmd_util "github.com/consensys/go-corset/pkg/cmd/zkc"
 	"github.com/consensys/go-corset/pkg/util/collection/array"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
@@ -29,20 +28,28 @@ import (
 )
 
 var (
+	// ALL_FIELDS defines the set of all known fields for testing
+	ALL_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_16, field.GF_8209}
 	// DEFAULT_FIELDS set default fields for testing
 	DEFAULT_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_16}
+	// DEFAULT_WORDS set default words for testing
+	DEFAULT_WORDS = []vm.WordConfig{vm.WORD_UINT}
 	// DEFAULT_CONFIG sets a default testing configuration
-	DEFAULT_CONFIG = Config{fields: DEFAULT_FIELDS, constraints: false, nativeLowering: true, splitting: false}
+	DEFAULT_CONFIG = Config{
+		fields:      DEFAULT_FIELDS,
+		words:       DEFAULT_WORDS,
+		constraints: false,
+		splitting:   false}
 )
 
 // Config for testing
 type Config struct {
 	// Fields to test over
 	fields []field.Config
+	// Words to test over
+	words []vm.WordConfig
 	// enable constraints checking, or not.
 	constraints bool
-	// enable testing for native lowering
-	nativeLowering bool
 	// enable register splitting
 	splitting bool
 }
@@ -54,20 +61,16 @@ func (p Config) Fields(fields ...field.Config) Config {
 	return p
 }
 
-// Constraints determines whether or not to check constraints.
-func (p Config) Constraints(flag bool) Config {
-	p.constraints = flag
-	// One needs to lower zkc native to enable constraints checks
-	if flag {
-		p.nativeLowering = true
-	}
+// Words determines which words to test over.
+func (p Config) Words(words ...vm.WordConfig) Config {
+	p.words = words
 	//
 	return p
 }
 
-// NativeLowering determines whether or not to test native lowerings as well.
-func (p Config) NativeLowering(flag bool) Config {
-	p.nativeLowering = flag
+// Constraints determines whether or not to check constraints.
+func (p Config) Constraints(flag bool) Config {
+	p.constraints = flag
 	//
 	return p
 }
@@ -82,71 +85,81 @@ func (p Config) Splitting(flag bool) Config {
 // CheckValid checks that a given source file compiles without any errors.
 // nolint
 func CheckValid(t *testing.T, test, ext string, config Config) {
+	var (
+		// Parse all JSON tests
+		testcases = readTestCases(t, test)
+	)
 	// Enable testing each trace in parallel
 	t.Parallel()
-	//
-	if len(config.fields) == 0 {
-		panic("at least one target field is required")
-	}
 	// Check for each field requested
 	for _, f := range config.fields {
-		cfg := codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting)
-		// check wo lowering and wo constraints check
-		checkValidInternal(t, test, ext, cfg.LowerZkcNative(false), false, f)
-		// check whether to enable lowering as well. If constraints enable, must enable lowering as well.
-		if config.nativeLowering || config.constraints {
-			checkValidInternal(t, test, ext, cfg.LowerZkcNative(true), config.constraints, f)
-		}
+		var (
+			testfile = fmt.Sprintf("%s.%s", test, ext)
+			// Setup default config
+			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Field(f)
+		)
+		// Run all tests without lowering (and preventing the constraints check)
+		checkValidInternal(t, testfile, cfg.LowerNatives(false), config.Constraints(false), testcases[f])
+		// Run all tests with lowering
+		checkValidInternal(t, testfile, cfg.LowerNatives(true), config, testcases[f])
 	}
 }
 
-func checkValidInternal(t *testing.T, test, ext string, codeCfg codegen.Config, constraints bool, field field.Config) {
-	var filename = fmt.Sprintf("%s/%s.%s", TestDir, test, ext)
-	// Compile source file into Abstract Syntax Tree form.
-	program := cmd_util.CompileSourceFiles(field, filename)
-	// Compile program into boot machine
-	vm, errs := program.Compile(codeCfg.Field(field))
-	for _, err := range errs {
-		t.Errorf("%s", err.Error())
+func checkValidInternal(t *testing.T, testfile string, cfg codegen.Config, config Config, testcases []TestCase) {
+	var (
+		// Compile test program
+		machine = compileTestProgram(t, testfile, cfg)
+	)
+	// Run execution tests
+	for _, testcase := range testcases {
+		runExecutionTests(t, machine, testcase, cfg.GetField(), config.words)
 	}
-	//
-	if len(errs) > 0 {
-		return
-	}
-	// Search for tests
-	for _, cfg := range TESTFILE_EXTENSIONS {
-		// Check suitable field
-		if cfg.field == nil || *cfg.field == field {
-			// Read tests from file
-			tests := ReadTestsFile(t, cfg, field, test, vm)
-			// Run execution tests
-			for _, test := range tests {
-				runExecutionTest(t, vm, test)
-			}
-			// Run constraint tests
-			if constraints {
-				for _, test := range tests {
-					// FIXME: support reject tests
-					if test.expected {
-						runConstraintTest(t, vm, test)
-					}
-				}
+	// Run constraint tests
+	if config.constraints {
+		for _, test := range testcases {
+			// FIXME: support reject tests
+			if test.expected {
+				runConstraintTest(t, machine, test, cfg)
 			}
 		}
 	}
 }
 
-func runExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase) {
+func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f field.Config, words []vm.WordConfig) {
+	for _, w := range words {
+		// Check for incompatible field/word combinations.  For example, we
+		// cannot emulate a 254bit field using a 64bit word.
+		if w.Bandwidth <= f.BandWidth {
+			continue
+		}
+		// Run the test
+		switch w {
+		case vm.WORD_UINT:
+			runExecutionTest(t, m, tc, w)
+		case vm.WORD_UINT64:
+			// Lower to 64bit machine
+			m64 := vm.WordToWordMachine[vm.Uint, vm.Uint64](m)
+			// Run execution test
+			runExecutionTest(t, m64, tc, w)
+		default:
+			panic(fmt.Sprintf("unknown machine word: %s", w.Name))
+		}
+	}
+}
+
+func runExecutionTest[W vm.Word[W]](t *testing.T, wm vm.Machine[W], test TestCase, cfg vm.WordConfig) {
 	var (
 		err  error
 		errs []error
+		// decode inputs / outputs
+		inputs, outputs = decodeInputsOutputs(t, wm, test.data)
 	)
 	// Execute machine
-	if err = wm.Boot("main", test.inputs); err == nil {
+	if err = wm.Boot("main", inputs); err == nil {
 		// Execute it
 		if _, err = vm.ExecuteAll(wm, 1024); err == nil && test.expected {
 			// Check outputs match
-			errs = append(errs, checkExpectedOutputs(test.outputs, wm)...)
+			errs = append(errs, checkExpectedOutputs(outputs, wm)...)
 		} else if err == nil && !test.expected {
 			errs = append(errs, fmt.Errorf("test accepted incorrectly"))
 		} else if !test.expected {
@@ -160,33 +173,37 @@ func runExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase) 
 	}
 	// Fail if errors found
 	for _, err := range errs {
-		t.Errorf("%s:%d %v", test.filename, test.line, err)
+		t.Errorf("[%s]%s:%d %v", cfg.Name, test.filename, test.line, err)
 	}
 }
 
-func runConstraintTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase) {
+func runConstraintTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase, cfg codegen.Config) {
+	var f = cfg.GetField()
 	// Dispatch based on field config
-	switch test.field {
+	switch f {
 	case field.GF_251:
-		testConstraintsWithField[gf251.Element](t, wm, test)
+		testConstraintsWithField[gf251.Element](t, wm, test, f)
 	case field.GF_8209:
-		testConstraintsWithField[gf8209.Element](t, wm, test)
+		testConstraintsWithField[gf8209.Element](t, wm, test, f)
 	case field.KOALABEAR_16:
-		testConstraintsWithField[koalabear.Element](t, wm, test)
+		testConstraintsWithField[koalabear.Element](t, wm, test, f)
 	case field.BLS12_377:
-		testConstraintsWithField[bls12_377.Element](t, wm, test)
+		testConstraintsWithField[bls12_377.Element](t, wm, test, f)
 	default:
-		panic(fmt.Sprintf("unknown field configuration: %s", test.field.Name))
+		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
 	}
 }
 
-func testConstraintsWithField[F field.Element[F]](t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase) {
+func testConstraintsWithField[F field.Element[F]](t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase,
+	f field.Config) {
 	//
 	var (
 		// construct binary file
-		binf = constraints.NewBinaryFile[F](nil, nil, test.field, *wm)
+		binf = constraints.NewBinaryFile[F](nil, nil, f, *wm)
+		// decode inputs / outputs
+		inputs, _ = decodeInputsOutputs(t, wm, test.data)
 		// generate trace
-		tr, errs = constraints.Trace(binf, test.inputs, constraints.DEFAULT_TRACE_CONFIG)
+		tr, errs = constraints.Trace(binf, inputs, constraints.DEFAULT_TRACE_CONFIG)
 	)
 	//
 	if test.expected {
@@ -207,12 +224,12 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, wm *vm.WordMachi
 	}
 }
 
-func checkExpectedOutputs(outputs map[string][]vm.Uint, wm *vm.WordMachine[vm.Uint]) []error {
+func checkExpectedOutputs[W vm.Word[W]](outputs map[string][]W, wm vm.Machine[W]) []error {
 	var errors []error
 	//
 	for _, m := range wm.Modules() {
 		// Check whether this is an output memory or not.
-		if m, ok := m.(vm.InputOutputMemory[vm.Uint]); ok && m.IsWriteOnly() {
+		if m, ok := m.(vm.InputOutputMemory[W]); ok && m.IsWriteOnly() {
 			if output, ok := outputs[m.Name()]; ok {
 				if c := array.Compare(output, m.Contents()); c != 0 {
 					errors = append(errors, fmt.Errorf("incorrect output (expected %v, actual %v)", output, m.Contents()))
@@ -222,6 +239,30 @@ func checkExpectedOutputs(outputs map[string][]vm.Uint, wm *vm.WordMachine[vm.Ui
 	}
 	//
 	return errors
+}
+
+func readTestCases(t *testing.T, test string) map[field.Config][]TestCase {
+	var tests = make(map[field.Config][]TestCase)
+	// Search for tests
+	for _, cfg := range TESTFILE_EXTENSIONS {
+		var fields []field.Config
+		// Read tests from file
+		tc := ReadTestsFile(t, cfg, test)
+		//
+		if cfg.field == nil {
+			// all fields supported
+			fields = ALL_FIELDS
+		} else {
+			// only specific field supported
+			fields = []field.Config{*cfg.field}
+		}
+		// associate tests with appropriate fields
+		for _, f := range fields {
+			tests[f] = append(tests[f], tc...)
+		}
+	}
+	//
+	return tests
 }
 
 // TestConfig provides a simple mechanism for searching for testfiles.

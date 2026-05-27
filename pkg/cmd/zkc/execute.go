@@ -26,6 +26,7 @@ import (
 	"github.com/consensys/go-corset/pkg/util/field/gf8209"
 	"github.com/consensys/go-corset/pkg/util/field/koalabear"
 	"github.com/consensys/go-corset/pkg/zkc/constraints"
+	"github.com/consensys/go-corset/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -60,6 +61,8 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		check = GetFlag(cmd, "check")
 		// suppress printf output
 		quiet = GetFlag(cmd, "quiet")
+		// fast mode flag
+		fast = GetFlag(cmd, "fast")
 		// identify whether tracing required or not.
 		tracing = check || outputFile != ""
 		//
@@ -79,6 +82,14 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// =====================================================
 	if tracing {
 		trace, errors = binfile.Trace(input, traceConfig)
+	} else if fast {
+		var (
+			m = binfile.WordMachine()
+			// lower to a 64bit machine
+			m64 = vm.WordToWordMachine[vm.Uint, vm.Uint64](&m)
+		)
+		//
+		outputs, errors = vm.BootAndExecute(m64, input, 1024)
 	} else {
 		outputs, errors = binfile.Execute(input, 1024)
 	}
@@ -117,7 +128,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 func applyExecuteDefaults[F field.Element[F]](build *BuildConfig[F], check, quiet bool) {
 	// Constraint checking requires native ZkC operations to be lowered.
 	if check {
-		build.config = build.config.LowerZkcNative(true)
+		build.config = build.config.LowerNatives(true)
 	}
 	// Suppress printf debug instructions when quiet mode is enabled.
 	build.config = build.config.Quiet(quiet)
@@ -155,4 +166,5 @@ func init() {
 	executeCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
 	executeCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	executeCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
+	executeCmd.Flags().BoolP("fast", "f", false, "enable fast execution")
 }

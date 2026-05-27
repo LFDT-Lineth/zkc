@@ -62,6 +62,11 @@ func (p Config) Field(field field.Config) Config {
 	return q
 }
 
+// GetField returns the specified field configuration.
+func (p Config) GetField() field.Config {
+	return p.field
+}
+
 // SplitRegisters returns a copy of this Config in which register splitting is
 // either enabled (flag=true) or disabled (flag=false).
 func (p Config) SplitRegisters(flag bool) Config {
@@ -83,9 +88,9 @@ func (p Config) Vectorize(flag bool) Config {
 	return q
 }
 
-// LowerZkcNative returns a copy of this Config with VM-level bitwise lowering
+// LowerNatives returns a copy of this Config with VM-level bitwise lowering
 // enabled (flag=true) or disabled (flag=false).
-func (p Config) LowerZkcNative(flag bool) Config {
+func (p Config) LowerNatives(flag bool) Config {
 	var q = p
 	//
 	q.lowerZkcNative = flag

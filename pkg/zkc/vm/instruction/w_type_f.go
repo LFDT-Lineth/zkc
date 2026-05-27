@@ -86,20 +86,16 @@ func (p *WordTypeF[W]) String(mapping base.SystemMap) string {
 	var (
 		builder strings.Builder
 		op      = fType2Operation(p.Op)
-		zero    W
-		one     W
 	)
-	//
-	one = one.SetUint64(1)
 	//
 	builder.WriteString(base.RegistersToString(mapping, p.Target))
 	builder.WriteString(" = ")
 	//
-	if p.Constant.Cmp(zero) == 0 && len(p.Sources) > 0 &&
+	if p.Constant.Cmp64(0) == 0 && len(p.Sources) > 0 &&
 		(p.Op == opcode.INT_ADDMOD_P || p.Op == opcode.INT_SUBMOD_P) {
 		//
 		builder.WriteString(base.ExpressionToStringWithoutConst(op, p.Sources, mapping))
-	} else if p.Constant.Cmp(one) == 0 && len(p.Sources) > 0 && p.Op == opcode.INT_MULMOD_P {
+	} else if p.Constant.Cmp64(1) == 0 && len(p.Sources) > 0 && p.Op == opcode.INT_MULMOD_P {
 		//
 		builder.WriteString(base.ExpressionToStringWithoutConst(op, p.Sources, mapping))
 	} else {

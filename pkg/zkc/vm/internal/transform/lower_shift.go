@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package lowering
+package transform
 
 import (
 	"math/big"
@@ -94,8 +94,8 @@ func newShlHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 
 	a, n, out := b.inputs[0], b.inputs[1], b.output
 	width := key.width
-	zero := word.Uint64[W](0)
-	one := word.Uint64[W](1)
+	zero := word.Const64[W](0)
+	one := word.Const64[W](1)
 
 	zeroReg := b.newComputedNamed(amtWidth)
 	b.emit(instruction.UintConst(zeroReg, zero))
@@ -118,7 +118,7 @@ func newShlHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	b.emit(instruction.NewCall(selfID, []register.Id{doubled, n1}, []register.Id{out}))
 	b.emit(instruction.NewReturn())
 
-	return function.New(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
+	return function.New(helperName(key), false, b.regs(), []VectorInstruction{{Codes: b.code}})
 }
 
 // newShrHelper builds a self-recursive module for logical right shift:
@@ -140,8 +140,8 @@ func newShrHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 
 	a, n, out := b.inputs[0], b.inputs[1], b.output
 	width := key.width
-	zero := word.Uint64[W](0)
-	one := word.Uint64[W](1)
+	zero := word.Const64[W](0)
+	one := word.Const64[W](1)
 
 	zeroReg := b.newComputedNamed(amtWidth)
 	b.emit(instruction.UintConst(zeroReg, zero))
@@ -165,5 +165,5 @@ func newShrHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	b.emit(instruction.NewCall(selfID, []register.Id{half, n1}, []register.Id{out}))
 	b.emit(instruction.NewReturn())
 
-	return function.New(helperName(key), false, b.regs(), []vectorInstruction{{Codes: b.code}})
+	return function.New(helperName(key), false, b.regs(), []VectorInstruction{{Codes: b.code}})
 }

@@ -38,6 +38,12 @@ type Executor[W any, I any] interface {
 // execution), or instructions represented at a higher level (e.g. for analysis
 // or compilation).
 type Core[W any] interface {
+	// Boot this machine by starting the given function with the given inputs.  This
+	// function assumes the given inputs are correctly formed, and will: (1) ingore
+	// unknown inputs; (2) initialise empty memories when no input is given for
+	// them.  Thus, it is recommended to perform sanity checking on input prior to
+	// calling this function.
+	Boot(fun string, input map[string][]W) error
 	// Execute the machine for the given number of steps, returning the actual
 	// number of steps executed and an error (if execution failed).
 	Execute(steps uint) (uint, error)

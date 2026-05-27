@@ -177,7 +177,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)
 	// Apply register splitting (for now)
 	if len(errors) == 0 && p.config.splitting {
-		wm = vm.Subdivide(p.config.field, wm)
+		wm = vm.SplitRegisters(p.config.field, wm)
 	}
 	// Construct machine
 	return wm, errors
