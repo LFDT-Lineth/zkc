@@ -155,6 +155,12 @@ func (p *Proposition[I, A]) Or(other Proposition[I, A]) Proposition[I, A] {
 func (p *Proposition[I, A]) Negate() Proposition[I, A] {
 	var q Proposition[I, A]
 	//
+	if p.IsTrue() {
+		return Truth[I, A](false)
+	} else if p.IsFalse() {
+		return Truth[I, A](true)
+	}
+	//
 	for i, d := range p.conjuncts {
 		ith := negateConjunct(d)
 		//

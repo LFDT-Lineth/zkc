@@ -103,7 +103,7 @@ func (p *Set[T]) String() string {
 
 			first = false
 
-			r.WriteString(fmt.Sprintf("%v", any(i)))
+			fmt.Fprintf(&r, "%v", any(i))
 		}
 	}
 	// Write closing brace

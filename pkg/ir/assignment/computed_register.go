@@ -16,21 +16,59 @@ import (
 	"encoding/gob"
 	"fmt"
 	"math"
+	"runtime"
 	"slices"
+	"sync"
 
 	"github.com/consensys/go-corset/pkg/ir/term"
 	"github.com/consensys/go-corset/pkg/schema"
 	sc "github.com/consensys/go-corset/pkg/schema"
+	"github.com/consensys/go-corset/pkg/schema/agnostic"
 	"github.com/consensys/go-corset/pkg/schema/constraint"
 	"github.com/consensys/go-corset/pkg/schema/module"
 	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/trace"
 	"github.com/consensys/go-corset/pkg/util"
 	"github.com/consensys/go-corset/pkg/util/collection/array"
+	"github.com/consensys/go-corset/pkg/util/collection/bit"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/source/sexp"
 	"github.com/consensys/go-corset/pkg/util/word"
 )
+
+const (
+	// minParallelHeight is the minimum number of rows before enabling
+	// row-parallel computation within a single assignment.
+	minParallelHeight = 4096
+	// minRowsPerWorker ensures each goroutine processes a meaningful amount
+	// of work to avoid goroutine scheduling overhead dominating.
+	minRowsPerWorker = 1024
+)
+
+// INNER_WORKERS controls the number of goroutines for row-parallel computation
+// within a single computed register assignment. A value of 0 (default) means
+// auto-detect from runtime.GOMAXPROCS(0). This can be set from the CLI to
+// coordinate with outer-level parallelism in ParallelTraceExpansion.
+var INNER_WORKERS uint
+
+// innerWorkers returns the effective number of workers, capped to ensure each
+// goroutine processes at least minRowsPerWorker rows.
+func innerWorkers(height uint) uint {
+	workers := INNER_WORKERS
+	if workers == 0 {
+		workers = uint(runtime.GOMAXPROCS(0))
+	}
+
+	if workers > height/minRowsPerWorker {
+		workers = height / minRowsPerWorker
+	}
+
+	if workers < 1 {
+		workers = 1
+	}
+
+	return workers
+}
 
 // ComputedRegister describes a column whose values are computed on-demand, rather
 // than being stored in a data array.  Typically computed columns read values
@@ -87,28 +125,50 @@ func (p *ComputedRegister[F]) Compute(tr trace.Trace[F], schema schema.AnySchema
 	var (
 		trModule = trace.ModuleAdapter[F, word.BigEndian](tr.Module(p.Module))
 		scModule = schema.Module(p.Module)
-		wrapper  = recursiveModule{p.Targets, nil, trModule}
 		err      error
 	)
 	// Determine multiplied height
 	height := trModule.Height()
 	bitwidths := make([]uint, len(p.Targets))
-	wrapper.data = make([][]word.BigEndian, len(p.Targets))
 	//
 	for i, target := range p.Targets {
-		wrapper.data[i] = make([]word.BigEndian, height)
-		// Record bitwidth information
 		bitwidths[i] = scModule.Register(target).Width()
 	}
-	// Expand the trace
+	// Non-recursive computations can be parallelised across rows since each
+	// row's evaluation is independent.
 	if !p.IsRecursive() {
-		// Non-recursive computation
-		err = fwdComputation(height, wrapper.data, bitwidths, p.Expr, trModule, scModule, p.Module)
-	} else if p.Direction {
-		// Forwards recursive computation
+		data := make([][]F, len(p.Targets))
+		for i := range p.Targets {
+			data[i] = make([]F, height)
+		}
+
+		if polyFil, ok := p.Expr.(*agnostic.PolyFil); ok {
+			err = fwdCompiledPolyFilParallel(height, data, bitwidths, newCompiledPolyFil(polyFil, trModule))
+		} else {
+			err = fwdComputationParallelDirect(height, data, bitwidths, p.Expr, trModule, scModule, p.Module)
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		return materializeFieldColumns(data, tr), nil
+	}
+	// Recursive computations must remain sequential since each row depends on
+	// previous rows.
+	wrapper := recursiveModule{
+		col:      p.Targets,
+		data:     make([][]word.BigEndian, len(p.Targets)),
+		trModule: trModule,
+	}
+
+	for i := range p.Targets {
+		wrapper.data[i] = make([]word.BigEndian, height)
+	}
+
+	if p.Direction {
 		err = fwdComputation(height, wrapper.data, bitwidths, p.Expr, &wrapper, scModule, p.Module)
 	} else {
-		// Backwards recursive computation
 		err = bwdComputation(height, wrapper.data, bitwidths, p.Expr, &wrapper, scModule, p.Module)
 	}
 	// Sanity check
@@ -117,6 +177,130 @@ func (p *ComputedRegister[F]) Compute(tr trace.Trace[F], schema schema.AnySchema
 	}
 	// Done
 	return concretizeColumns(wrapper.data, tr), err
+}
+
+// fieldWordSplitter splits a word.BigEndian value into per-limb field elements
+// according to the given bitwidths.
+type fieldWordSplitter[F field.Element[F]] struct {
+	widths     []uint
+	limit      word.BigEndian
+	workingSet []byte
+	limbBuf    [32]byte
+}
+
+func newFieldWordSplitter[F field.Element[F]](widths []uint) fieldWordSplitter[F] {
+	totalBits := uint(0)
+	for _, width := range widths {
+		totalBits += width
+	}
+
+	return fieldWordSplitter[F]{
+		widths:     widths,
+		limit:      field.TwoPowN[word.BigEndian](totalBits),
+		workingSet: make([]byte, word.ByteWidth(totalBits)),
+	}
+}
+
+func (s *fieldWordSplitter[F]) write(row uint, val word.BigEndian, data [][]F) bool {
+	if val.Cmp(s.limit) >= 0 {
+		return false
+	}
+
+	val.PutBytes(s.workingSet)
+	array.ReverseInPlace(s.workingSet)
+
+	reader := bit.NewReader(s.workingSet)
+
+	for i, width := range s.widths {
+		n := reader.LittleEndianReadInto(width, s.limbBuf[:])
+		array.ReverseInPlace(s.limbBuf[:n])
+
+		var element F
+
+		data[i][row] = element.SetBytes(s.limbBuf[:n])
+	}
+
+	return true
+}
+
+// compiledPolyFil pre-resolves column references for a PolyFil expression,
+// avoiding repeated lookups during per-row evaluation.
+type compiledPolyFil struct {
+	rightShift uint
+	terms      []compiledPolyFilTerm
+}
+
+type compiledPolyFilTerm struct {
+	coefficient word.BigEndian
+	accesses    []compiledPolyFilAccess
+}
+
+type compiledPolyFilAccess struct {
+	column trace.Column[word.BigEndian]
+	shift  int
+}
+
+func newCompiledPolyFil(polyFil *agnostic.PolyFil, mod trace.Module[word.BigEndian]) compiledPolyFil {
+	poly := polyFil.Polynomial()
+	terms := make([]compiledPolyFilTerm, poly.Len())
+
+	for i := range poly.Len() {
+		monomial := poly.Term(i)
+		coefficient := monomial.Coefficient()
+		terms[i].coefficient = word.BigEndian{}.SetBytes(coefficient.Bytes())
+		terms[i].accesses = make([]compiledPolyFilAccess, monomial.Len())
+
+		for j := range monomial.Len() {
+			access := monomial.Nth(j)
+			terms[i].accesses[j] = compiledPolyFilAccess{
+				column: mod.Column(access.Unwrap()),
+				shift:  access.RelativeShift(),
+			}
+		}
+	}
+
+	return compiledPolyFil{
+		rightShift: polyFil.RightShift(),
+		terms:      terms,
+	}
+}
+
+func (p compiledPolyFil) evalAt(row uint) word.BigEndian {
+	var result word.BigEndian
+
+	for i, term := range p.terms {
+		value := term.coefficient
+		for _, access := range term.accesses {
+			value = value.Mul(access.column.Get(int(row) + access.shift))
+		}
+
+		if i == 0 {
+			result = value
+		} else {
+			result = result.Add(value)
+		}
+	}
+
+	if p.rightShift != 0 {
+		return result.Rsh(p.rightShift)
+	}
+
+	return result
+}
+
+func materializeFieldColumns[F field.Element[F]](data [][]F, tr trace.Trace[F]) []array.MutArray[F] {
+	cols := make([]array.MutArray[F], len(data))
+
+	for i, d := range data {
+		col := tr.Builder().NewArray(uint(len(d)), math.MaxUint)
+		for j, value := range d {
+			col = col.Set(uint(j), value)
+		}
+
+		cols[i] = col
+	}
+
+	return cols
 }
 
 func concretizeColumns[F field.Element[F]](data [][]word.BigEndian, tr trace.Trace[F]) []array.MutArray[F] {
@@ -242,7 +426,7 @@ func (p *ComputedRegister[F]) Lisp(schema sc.AnySchema[F]) sexp.SExp {
 			datatype = "𝔽"
 			ith      = module.Register(t)
 		)
-		if ith.Width() != math.MaxUint {
+		if !ith.IsNative() {
 			datatype = fmt.Sprintf("u%d", ith.Width())
 		}
 
@@ -272,6 +456,127 @@ func fwdComputation(height uint, data [][]word.BigEndian, widths []uint, expr te
 		write(i, val, data, widths)
 	}
 	//
+	return nil
+}
+
+// fwdComputationParallelDirect splits the row range into chunks and evaluates
+// them concurrently, writing results directly to field elements. This is safe
+// for non-recursive computations where each row's evaluation is independent.
+func fwdComputationParallelDirect[F field.Element[F]](height uint, data [][]F, widths []uint,
+	expr term.Evaluable[word.BigEndian], trMod trace.Module[word.BigEndian], scMod register.Map,
+	ctx schema.ModuleId) error {
+	//
+	if height < minParallelHeight {
+		return fwdComputationDirect(height, data, widths, expr, trMod, scMod, ctx)
+	}
+
+	numWorkers := innerWorkers(height)
+	chunkSize := (height + numWorkers - 1) / numWorkers
+
+	var (
+		firstErr error
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+	)
+
+	for w := uint(0); w < numWorkers; w++ {
+		start := w * chunkSize
+		end := min(start+chunkSize, height)
+
+		wg.Add(1)
+
+		go func(start, end uint) {
+			defer wg.Done()
+
+			splitter := newFieldWordSplitter[F](widths)
+
+			for i := start; i < end; i++ {
+				val, err := expr.EvalAt(int(i), trMod, scMod)
+				if err != nil {
+					mu.Lock()
+
+					if firstErr == nil {
+						e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
+						firstErr = constraint.NewInternalFailure[word.BigEndian](scMod.Name().String(), ctx, i, expr, e)
+					}
+
+					mu.Unlock()
+
+					return
+				}
+
+				splitter.write(i, val, data)
+			}
+		}(start, end)
+	}
+
+	wg.Wait()
+
+	return firstErr
+}
+
+// fwdCompiledPolyFilParallel evaluates a pre-compiled PolyFil expression in
+// parallel across row chunks.
+func fwdCompiledPolyFilParallel[F field.Element[F]](height uint, data [][]F, widths []uint,
+	poly compiledPolyFil) error {
+	//
+	if height < minParallelHeight {
+		return fwdCompiledPolyFil(height, data, widths, poly)
+	}
+
+	numWorkers := innerWorkers(height)
+	chunkSize := (height + numWorkers - 1) / numWorkers
+
+	var wg sync.WaitGroup
+
+	for w := uint(0); w < numWorkers; w++ {
+		start := w * chunkSize
+		end := min(start+chunkSize, height)
+
+		wg.Add(1)
+
+		go func(start, end uint) {
+			defer wg.Done()
+
+			splitter := newFieldWordSplitter[F](widths)
+
+			for i := start; i < end; i++ {
+				splitter.write(i, poly.evalAt(i), data)
+			}
+		}(start, end)
+	}
+
+	wg.Wait()
+
+	return nil
+}
+
+func fwdCompiledPolyFil[F field.Element[F]](height uint, data [][]F, widths []uint,
+	poly compiledPolyFil) error {
+	splitter := newFieldWordSplitter[F](widths)
+
+	for i := range height {
+		splitter.write(i, poly.evalAt(i), data)
+	}
+
+	return nil
+}
+
+func fwdComputationDirect[F field.Element[F]](height uint, data [][]F, widths []uint,
+	expr term.Evaluable[word.BigEndian], trMod trace.Module[word.BigEndian], scMod register.Map,
+	ctx schema.ModuleId) error {
+	splitter := newFieldWordSplitter[F](widths)
+
+	for i := range height {
+		val, err := expr.EvalAt(int(i), trMod, scMod)
+		if err != nil {
+			e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
+			return constraint.NewInternalFailure[word.BigEndian](scMod.Name().String(), ctx, i, expr, e)
+		}
+
+		splitter.write(i, val, data)
+	}
+
 	return nil
 }
 

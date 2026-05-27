@@ -14,7 +14,6 @@ package debug
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/consensys/go-corset/pkg/asm"
 	"github.com/consensys/go-corset/pkg/asm/io"
@@ -33,16 +32,16 @@ import (
 func PrintSchemas[F field.Element[F]](stack cmd_util.SchemaStack[F], textwidth uint) {
 	//
 	for _, schema := range stack.AbstractSchemas() {
-		printSchema(schema, textwidth)
+		PrintAnySchema(schema, textwidth)
 	}
 	//
 	if stack.HasConcreteSchema() {
-		printSchema(stack.ConcreteSchema(), textwidth)
+		PrintAnySchema(stack.ConcreteSchema(), textwidth)
 	}
 }
 
-// Print out all declarations included in a given
-func printSchema[F field.Element[F]](schema schema.AnySchema[F], width uint) {
+// PrintAnySchema prints out all declarations included in a given schema
+func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint) {
 	first := true
 	// Print out each module, one by one.
 	for i := schema.Modules(); i.HasNext(); {
@@ -94,7 +93,15 @@ func printModule[F field.Element[F]](module schema.Module[F], sc schema.AnySchem
 	}
 
 	if module.IsSynthetic() {
-		postfix = fmt.Sprintf("%s synthetic", postfix)
+		postfix = fmt.Sprintf("%s :synthetic", postfix)
+	}
+
+	if module.IsNative() {
+		postfix = fmt.Sprintf("%s :native", postfix)
+	}
+
+	if module.IsStatic() {
+		postfix = fmt.Sprintf("%s :static", postfix)
 	}
 	//
 	fmt.Printf("(module%s)\n", postfix)
@@ -104,6 +111,8 @@ func printModule[F field.Element[F]](module schema.Module[F], sc schema.AnySchem
 	printRegisters(module, "inputs", func(r register.Register) bool { return r.IsInput() })
 	printRegisters(module, "outputs", func(r register.Register) bool { return r.IsOutput() })
 	printRegisters(module, "computed", func(r register.Register) bool { return r.IsComputed() })
+	// Print static contents (if applicable)
+	printStaticContents(module)
 	// Print computations
 	for i := module.Assignments(); i.HasNext(); {
 		ith := i.Next()
@@ -123,6 +132,34 @@ func printModule[F field.Element[F]](module schema.Module[F], sc schema.AnySchem
 	}
 }
 
+func printStaticContents[F field.Element[F]](module schema.Module[F]) {
+	if module.IsStatic() {
+		var contents = module.StaticContents()
+		//
+		fmt.Println("(contents")
+		//
+		for i, row := range contents {
+			fmt.Print("   (")
+			//
+			for j, v := range row {
+				if j != 0 {
+					fmt.Print(", ")
+				}
+				//
+				fmt.Printf("0x%s", v.Text(16))
+			}
+			//
+			if i+1 != len(contents) {
+				fmt.Println("),")
+			} else {
+				fmt.Println(")")
+			}
+		}
+		//
+		fmt.Println(")")
+	}
+}
+
 func printRegisters[F any](module schema.Module[F], prefix string, filter func(register.Register) bool) {
 	var (
 		regT string
@@ -134,10 +171,10 @@ func printRegisters[F any](module schema.Module[F], prefix string, filter func(r
 		//
 		for _, r := range module.Registers() {
 			if filter(r) {
-				if r.Width() != math.MaxUint {
-					regT = fmt.Sprintf("u%d", r.Width())
-				} else {
+				if r.IsNative() {
 					regT = "𝔽"
+				} else {
+					regT = fmt.Sprintf("u%d", r.Width())
 				}
 				// construct name string whilst applying quotes when necessary.
 				name := sexp.NewSymbol(r.Name()).String(true)

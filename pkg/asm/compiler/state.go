@@ -56,9 +56,10 @@ type Translator[F field.Element[F], T any, E Expr[T, E], M Module[F, T, E, M]] s
 // constraint.
 func (p *Translator[F, T, E, M]) Translate(pc uint, insn micro.Instruction) E {
 	var (
-		nCodes              = uint(len(insn.Codes))
-		writes, branchTable = constructBranchTable[T, E](insn, p)
-		constraint          = True[T, E]()
+		nCodes      = uint(len(insn.Codes))
+		writes      = insn.Writes()
+		branchTable = insn.BranchTable()
+		constraint  = True[T, E]()
 		// Assignments determines whether the given instruction definitely
 		// assignments, may assign or does not assign any given registers.  This
 		// is necessary to apply constancy information.
@@ -94,7 +95,7 @@ func (p *Translator[F, T, E, M]) Translate(pc uint, insn micro.Instruction) E {
 			panic("unreachable")
 		}
 		// Add control-flow requirements
-		local = If(translateBranchCondition(branchTable[cc], p), local)
+		local = If(TranslateBranchCondition(branchTable.StateOf(cc).Condition, p), local)
 		// Include local constraint
 		constraint = constraint.And(local)
 	}
@@ -121,7 +122,7 @@ func (p *Translator[F, T, E, M]) Translate(pc uint, insn micro.Instruction) E {
 //
 // NOTE: it is possible to further optimise this process by taking into account
 // which registers are actually used (i.e. live) after this instruction.
-func (p *Translator[F, T, E, M]) WithConstancyConstraints(writes dfa.Writes, branchTable []BranchCondition,
+func (p *Translator[F, T, E, M]) WithConstancyConstraints(writes dfa.Writes, branchTable dfa.Result[dfa.Branch],
 	insn micro.Instruction, condition E) E {
 	//
 	for i, reg := range p.Registers {
@@ -151,7 +152,7 @@ func (p *Translator[F, T, E, M]) WithConstancyConstraints(writes dfa.Writes, bra
 			// Next, negate condition to determine when it is **not** assigned
 			wCondition = wCondition.Negate()
 			// Finally translate condition and include constancy constraint
-			condition = condition.And(If(translateBranchCondition(wCondition, p), r_i.Equals(r_im1)))
+			condition = condition.And(If(TranslateBranchCondition(wCondition, p), r_i.Equals(r_im1)))
 		}
 	}
 	//
@@ -297,12 +298,14 @@ func joinAssignments(lhs util.Option[dfa.Writes], rhs dfa.Writes) util.Option[df
 // required to execute every instruction.  Therefore, we just need to identify
 // all instructions which can assign the given register and take the disjunction
 // of all their entry conditions.
-func determineWriteConditions(reg register.Id, branchTable []BranchCondition, insn micro.Instruction) BranchCondition {
-	var condition = FALSE
+func determineWriteConditions(reg register.Id, branchTable dfa.Result[dfa.Branch], insn micro.Instruction,
+) dfa.BranchCondition {
+	//
+	var condition = dfa.FALSE
 	//
 	for i, c := range insn.Codes {
 		if slices.Contains(c.RegistersWritten(), reg) {
-			condition = condition.Or(branchTable[i])
+			condition = condition.Or(branchTable.StateOf(uint(i)).Condition)
 		}
 	}
 	//

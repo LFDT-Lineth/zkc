@@ -86,7 +86,8 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	cfg.trace = GetFlag(cmd, "print")
 	cfg.stats = GetFlag(cmd, "stats")
 	cfg.includes = GetStringArray(cmd, "include")
-	cfg.maxCellWidth = GetUint(cmd, "max-width")
+	cfg.maxCellWidth = GetUint(cmd, "cell-width")
+	cfg.maxTitleWidth = GetUint(cmd, "title-width")
 	cfg.showLimbs = GetFlag(cmd, "show-limbs")
 	cfg.showComputed = GetFlag(cmd, "show-computed")
 	cfg.startRow = GetUint(cmd, "start")
@@ -172,7 +173,8 @@ func init() {
 	traceCmd.Flags().Uint("sort", 0, "sort table column")
 	traceCmd.Flags().Uint("start", 0, "filter out rows below this")
 	traceCmd.Flags().Uint("end", math.MaxUint, "filter out this and all following rows")
-	traceCmd.Flags().Uint("max-width", 32, "specify maximum display width for a column")
+	traceCmd.Flags().Uint("cell-width", 32, "specify maximum display width for a cell")
+	traceCmd.Flags().Uint("title-width", 32, "specify maximum display width for a column title")
 	traceCmd.Flags().Bool("show-computed", false, "show (low-level) computed registers")
 	traceCmd.Flags().BoolP("show-limbs", "l", false, "show register limbs")
 	traceCmd.Flags().Uint("padding", 0, "specify amount of (front) padding to apply")
@@ -319,6 +321,7 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {
 	// Construct trace window
 	view := view.NewBuilder[F](cfg.mapping).
 		WithCellWidth(cfg.maxCellWidth).
+		WithTitleWidth(cfg.maxTitleWidth).
 		WithLimbs(cfg.showLimbs).
 		WithComputed(cfg.showComputed)
 	// Add source map (if applicable)
@@ -861,6 +864,7 @@ func trWidthSummariser(lowWidth uint, highWidth uint) traceSummariser {
 		name: fmt.Sprintf("Columns (%d..%d bits)", lowWidth, highWidth),
 		summary: func(tr view.TraceView) string {
 			count := 0
+
 			for i := range tr.Width() {
 				var (
 					mod     = tr.Module(i)
@@ -875,6 +879,7 @@ func trWidthSummariser(lowWidth uint, highWidth uint) traceSummariser {
 					}
 				}
 			}
+
 			return fmt.Sprintf("%d", count)
 		},
 	}

@@ -13,18 +13,19 @@
 package zkc
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 
+	"github.com/consensys/go-corset/pkg/cmd/corset"
+	"github.com/consensys/go-corset/pkg/trace"
+	"github.com/consensys/go-corset/pkg/trace/lt"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
 	"github.com/consensys/go-corset/pkg/util/field/gf251"
 	"github.com/consensys/go-corset/pkg/util/field/gf8209"
 	"github.com/consensys/go-corset/pkg/util/field/koalabear"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
-	"github.com/consensys/go-corset/pkg/zkc/vm/machine"
-	"github.com/consensys/go-corset/pkg/zkc/vm/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/word"
+	"github.com/consensys/go-corset/pkg/zkc/constraints"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -47,41 +48,62 @@ var executeCmds = []FieldAgnosticCmd{
 	{field.BLS12_377, runExecuteCmd[bls12_377.Element]},
 }
 
-func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
-	//
-	ir := GetFlag(cmd, "ir")
+func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
+	var (
+		errors []error
+		build  = GetBuildConfig[F](cmd, field)
+		//
+		traceConfig = constraints.DEFAULT_TRACE_CONFIG
+		// outputFile file for trace
+		outputFile = GetString(cmd, "output")
+		// check constraints
+		check = GetFlag(cmd, "check")
+		// suppress printf output
+		quiet = GetFlag(cmd, "quiet")
+		// identify whether tracing required or not.
+		tracing = check || outputFile != ""
+		//
+		trace   trace.Trace[F]
+		outputs map[string][]byte
+	)
+	applyExecuteDefaults(&build, check, quiet)
 	//
 	input := ParseInputFile(args[0])
-	// Compile source files, or print errors
-	program := CompileSourceFiles(args[1:]...)
-	//
-	if ir {
-		executeIrProgram("main", program, input)
+	// Build artifacts (compiles source files or loads a prebuilt binary).
+	artifacts := build.Build(args[1:]...)
+	wm := artifacts.wir.Unwrap()
+	// Wrap the word machine in a binary file for execution / tracing / checking.
+	binfile := constraints.NewBinaryFile[F](nil, nil, field, wm)
+	// =====================================================
+	// Trace / Execute
+	// =====================================================
+	if tracing {
+		trace, errors = binfile.Trace(input, traceConfig)
+	} else {
+		outputs, errors = binfile.Execute(input, 1024)
 	}
-}
-
-func executeIrProgram(mainFn string, program ast.Program, input map[string][]byte) {
-	var (
-		vm        *machine.Base[word.Uint]
-		bigInputs map[string][]word.Uint
-		errors    []error
-	)
-	// Execute machine in chunks of 1K steps
-	if bigInputs, _, errors = program.MapInputsOutputs(input); len(errors) == 0 {
-		// Build our machine
-		vm = program.Compile()
-		//
-		if err := vm.Boot(mainFn, bigInputs); err == nil {
-			// Execute it
-			if _, err := machine.ExecuteAll(vm, 1024); err != nil {
-				// NOTE: determine stack trace!
-				errors = append(errors, err)
-			}
-		} else {
-			errors = append(errors, err)
+	// =====================================================
+	// Generate output
+	// =====================================================
+	if outputFile == "" {
+		for name, bytes := range outputs {
+			fmt.Printf("%s = 0x%s\n", name, hex.EncodeToString(bytes))
 		}
+	} else if outputFile != "" {
+		// Construct trace file
+		ltf := lt.FromRawTrace(nil, trace)
+		// Write out trace file
+		WriteTraceFile(outputFile, ltf)
 	}
-	// Exit with failure (if errors)
+	// =====================================================
+	// Check Constraints
+	// =====================================================
+	if check && len(errors) == 0 {
+		checkConstraints(binfile, trace, traceConfig)
+	}
+	// =====================================================
+	// Report Execution Failures
+	// =====================================================
 	if len(errors) > 0 {
 		// Log errors
 		for _, e := range errors {
@@ -90,27 +112,47 @@ func executeIrProgram(mainFn string, program ast.Program, input map[string][]byt
 		//
 		os.Exit(4)
 	}
-	// Write output
-	for _, m := range vm.Modules() {
-		if output, ok := m.(*memory.WriteOnce[word.Uint]); ok {
-			//
-			fmt.Printf("%s = {", output.Name())
-			//
-			for i, val := range output.Contents() {
-				if i != 0 {
-					fmt.Printf(", ")
-				}
-				//
-				fmt.Printf("0x%s", val.Text(16))
-			}
-			//
-			fmt.Println("}")
-		}
+}
+
+func applyExecuteDefaults[F field.Element[F]](build *BuildConfig[F], check, quiet bool) {
+	// Constraint checking requires native ZkC operations to be lowered.
+	if check {
+		build.config = build.config.LowerZkcNative(true)
+	}
+	// Suppress printf debug instructions when quiet mode is enabled.
+	build.config = build.config.Quiet(quiet)
+	// Force compilation of the word machine, which is what we execute.
+	build.wir = true
+}
+
+func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F], tr trace.Trace[F],
+	cfg constraints.TraceConfig) {
+	//
+	var checkConfig corset.CheckConfig
+	// Set sensible defaults (for now)
+	checkConfig.Report = true
+	checkConfig.ReportCellWidth = 32
+	checkConfig.ReportTitleWidth = 40
+	checkConfig.ReportPadding = 2
+	checkConfig.ReportLimbs = true
+	checkConfig.ReportComputed = true
+	checkConfig.AnsiEscapes = true
+	// Construct limbs map
+	mapping := binfile.LimbsMap()
+	// Run the check
+	if failures := binfile.Check(tr, cfg); len(failures) > 0 {
+		corset.ReportFailures("AIR", failures, tr, mapping, checkConfig)
 	}
 }
+
+// ============================================================================
+// Misc
+// ============================================================================
 
 //nolint:errcheck
 func init() {
 	rootCmd.AddCommand(executeCmd)
-	executeCmd.Flags().Bool("ir", false, "execute intermediate representation (IR)")
+	executeCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
+	executeCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
+	executeCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
 }

@@ -95,22 +95,34 @@ func parseExpectedErrorSpan(span_str string) (start, end int, err error) {
 // to.  We need the line offsets so that the computed span includes the starting
 // offset of the relevant line.
 func determineFileSpan(lineno, start, end int, lines []source.Line) (source.Span, error) {
+	var (
+		lineStart  int
+		lineLength int
+	)
 	// Sanity checks
-	if lineno > len(lines) {
+	if len(lines) > 0 && lineno == len(lines)+1 && start == 1 && end == 1 {
+		// Special case to handle errors on the imaginary EOF terminator.
+		line := lines[lineno-2]
+		lineStart = line.Start() + line.Length() + 1
+		lineLength = 1
+	} else if lineno > len(lines) {
 		return source.Span{}, fmt.Errorf("invalid span \"%d:%d-%d\" (non-existent line)", lineno, start, end)
+	} else {
+		// Normal case
+		line := lines[lineno-1]
+		lineStart = line.Start()
+		lineLength = line.Length()
 	}
-	//
-	line := lines[lineno-1]
 	// Subtract one from each since column numbering starts from 1.
 	start--
 	end--
 	//
-	if start >= line.Length() || end > line.Length() {
+	if start >= lineLength || end > lineLength {
 		return source.Span{}, fmt.Errorf("invalid span \"%d:%d-%d\" (overflows to following line)", lineno, start, end)
 	}
 	// Add line offset
-	start += line.Start()
-	end += line.Start()
+	start += lineStart
+	end += lineStart
 	// Create span, recalling that span's start from zero whereas column numbers
 	// start from 1.
 	return source.NewSpan(start, end), nil

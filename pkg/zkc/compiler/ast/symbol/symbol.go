@@ -17,10 +17,14 @@ import (
 )
 
 // Symbol represents a reference to some declared entity, such as a function,
-// constant or memory.
+// constant, memory or alias.
 type Symbol[S any] interface {
 	fmt.Stringer
 	set.Comparable[S]
+	// IsMemory determines whether this refers to a form of memory (or not)
+	IsMemory() bool
+	// IsFunction determines whether this refers to a function (or not)
+	IsFunction() bool
 }
 
 // Kind determines the symbol kind (e.g. constant, function, input, output,
@@ -28,6 +32,8 @@ type Symbol[S any] interface {
 type Kind uint8
 
 const (
+	// UNKNOWN indicates an unidentified external access which results due to some kind of linking failure.
+	UNKNOWN = 0
 	// READABLE_MEMORY identifies a memory which can be read (i.e. an input memory, or a static memory, etc).
 	READABLE_MEMORY = 1
 	// WRITEABLE_MEMORY identifies a memory which can be written (i.e. an
@@ -37,4 +43,8 @@ const (
 	FUNCTION = 3
 	// CONSTANT identifies a constant symbol.
 	CONSTANT = 4
+	// TYPE_ALIAS identifies a alias symbol.
+	TYPE_ALIAS = 5
+	// MEMORY_EFFECT indicates a declared effect on some memory.
+	MEMORY_EFFECT = 6
 )

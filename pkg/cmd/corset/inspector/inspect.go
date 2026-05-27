@@ -230,6 +230,22 @@ func (p *Inspector) changeCellWidth(direction bool) {
 	p.SetStatus(termio.NewColouredText(fmt.Sprintf("Cell width now %d", width), termio.TERM_GREEN))
 }
 
+// change cell width in current module
+func (p *Inspector) changeTitleWidth(direction bool) {
+	// Action change
+	width := p.CurrentModule().view.Config().TitleWidth()
+	//
+	if direction {
+		width++
+	} else if width > 2 {
+		width--
+	}
+	//
+	p.CurrentModule().view.Config().SetTitleWidth(width)
+	//
+	p.SetStatus(termio.NewColouredText(fmt.Sprintf("Title width now %d", width), termio.TERM_GREEN))
+}
+
 // Actions goto row mode
 func (p *Inspector) gotoRow(row uint) termio.FormattedText {
 	// Action change

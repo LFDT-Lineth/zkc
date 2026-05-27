@@ -15,6 +15,7 @@ package util
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"strings"
 )
@@ -38,9 +39,12 @@ func ParseJsonInputFile(bytes []byte) (map[string][]byte, error) {
 			//
 			if strings.HasPrefix(w, "0x") {
 				data[k], err = hex.DecodeString(w[2:])
-			} else {
+			} else if w != "" {
 				var val big.Int
-				val.SetString(w, 10)
+				if _, ok := val.SetString(w, 10); !ok {
+					return nil, fmt.Errorf("malformed numeric literal \"%s\"", w)
+				}
+				//
 				data[k] = val.Bytes()
 			}
 			//

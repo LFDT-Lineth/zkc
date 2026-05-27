@@ -69,7 +69,11 @@ func lispOfLogicalTerms[F any, T Logical[F, T]](global bool, mapping register.Ma
 	arr[0] = sexp.NewSymbol(op)
 	// Translate arguments
 	for i, e := range exprs {
-		arr[i+1] = e.Lisp(global, mapping)
+		if any(e) != nil {
+			arr[i+1] = e.Lisp(global, mapping)
+		} else {
+			arr[i+1] = sexp.NewSymbol("??")
+		}
 	}
 	// Done
 	return sexp.NewList(arr)

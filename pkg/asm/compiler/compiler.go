@@ -263,14 +263,18 @@ func (p *Compiler[F, T, E, M]) initMultLineFunctionFraming(busId uint, fn MicroF
 	pc_i := Variable[T, E](pc, bus.pcWidth, 0)
 	pc_im1 := Variable[T, E](pc, bus.pcWidth, -1)
 	ret_i := Variable[T, E](ret, bus.retWidth, 0)
+	ret_im1 := Variable[T, E](ret, bus.retWidth, -1)
 	zero := Number[T, E](0)
 	one := Number[T, E](1)
 	// PC[i]==0 ==> RET[i]==0 (prevents lookup in padding)
 	module.NewConstraint("padding", util.None[int](),
 		If(pc_i.Equals(zero), ret_i.Equals(zero)))
 	// PC[i-1]==0 && PC[i]!=0 ==> PC[i]==1
-	module.NewConstraint("reset", util.None[int](),
+	module.NewConstraint("init", util.None[int](),
 		If(pc_im1.Equals(zero), If(pc_i.NotEquals(zero), pc_i.Equals(one))))
+	// RET[i-1]!=0 ==> PC[i]==1
+	module.NewConstraint("reset", util.None[int](),
+		If(ret_im1.NotEquals(zero), pc_i.Equals(one)))
 	// PC[0] != 0 ==> PC[0] == 1
 	module.NewConstraint("first", util.Some(0),
 		If(pc_i.NotEquals(zero), pc_i.Equals(one)))

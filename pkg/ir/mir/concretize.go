@@ -59,11 +59,15 @@ func concretizeModule[F1 Element[F1], F2 Element[F2]](m Module[F1]) Module[F2] {
 		constraints = concretizeConstraints[F1, F2](m.RawConstraints())
 	)
 	// Initialise new module
-	r = r.Init(m.Name(), m.AllowPadding(), m.IsPublic(), m.IsSynthetic(), m.Keys())
+	r = r.Init(m.Name(), m.AllowPadding(), m.IsPublic(), m.IsSynthetic(), m.IsNative(), m.IsStatic(), m.Keys())
 	// Add concretized components
 	r.AddRegisters(m.Registers()...)
 	r.AddAssignments(assignments...)
 	r.AddConstraints(constraints...)
+	// Propagate static contents (if any)
+	if m.IsStatic() {
+		panic("concretizing static modules not supported")
+	}
 	// Done
 	return r
 }

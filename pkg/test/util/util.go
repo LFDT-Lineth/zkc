@@ -15,11 +15,15 @@ package util
 import (
 	"fmt"
 	"strings"
+	"testing"
 
+	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/file"
 	"github.com/consensys/go-corset/pkg/util/source"
 	"github.com/consensys/go-corset/pkg/zkc/compiler"
+	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen"
 	"github.com/consensys/go-corset/pkg/zkc/util"
+	"github.com/consensys/go-corset/pkg/zkc/vm"
 )
 
 // TestCase simply packages together a filename, a line number and the
@@ -32,28 +36,36 @@ type TestCase struct {
 	line uint
 	// indicates whether this test is expected to pass or fail.
 	expected bool
-	// input/output data of test
-	data map[string][]byte
+	// field on which to execute test
+	field field.Config
+	// input data of test
+	inputs map[string][]vm.Uint
+	// expected output data of test
+	outputs map[string][]vm.Uint
 }
 
 // CompileMachine compiles one or more zkc source files into a base machine for
 // executing tests with.
-func CompileMachine(srcfiles ...source.File) []source.SyntaxError {
-	_, _, errors := compiler.Compile(srcfiles...)
+func CompileMachine(field field.Config, srcfiles ...source.File) []source.SyntaxError {
+	_, _, errors := compiler.Compile(field, srcfiles...)
 	//
 	return errors
 }
 
 // CompileZkc compiles a single zkc source file, potentially producing errors.
-func CompileZkc(srcfile source.File) []source.SyntaxError {
-	_, _, errors := compiler.Compile(srcfile)
+// This includes both the validation phase and the code generation phase.
+func CompileZkc(field field.Config, srcfile source.File) []source.SyntaxError {
+	program, _, errors := compiler.Compile(field, srcfile)
+	if len(errors) == 0 {
+		_, errors = program.Compile(codegen.DEFAULT_CONFIG)
+	}
 	//
 	return errors
 }
 
 // ReadTestsFile reads a file containing zero or more tests expressed as JSON,
 // where each test is on a separate line.
-func ReadTestsFile(cfg TestConfig, test string) []TestCase {
+func ReadTestsFile(t *testing.T, cfg TestConfig, f field.Config, test string, wm *vm.WordMachine[vm.Uint]) []TestCase {
 	var (
 		// Construct test filename
 		filename = fmt.Sprintf("%s/%s.%s", TestDir, test, cfg.extension)
@@ -66,16 +78,31 @@ func ReadTestsFile(cfg TestConfig, test string) []TestCase {
 		// Parse input line as JSON
 		if line != "" && !strings.HasPrefix(line, ";;") {
 			// Read inputs / outputs
-			inputs, err := util.ParseJsonInputFile([]byte(line))
+			data, err := util.ParseJsonInputFile([]byte(line))
 			//
 			if err != nil {
 				msg := fmt.Sprintf("%s:%d: %s", filename, i+1, err)
 				panic(msg)
 			}
-
-			tests = append(tests, TestCase{filename, uint(i + 1), cfg.expected, inputs})
+			// split data into inputs and (expected) outputs
+			inputs, outputs, errs := vm.DecodeInputsOutputs(wm, data)
+			//
+			failIfErrors(t, errs...)
+			//
+			tests = append(tests, TestCase{filename, uint(i + 1), cfg.expected, f, inputs, outputs})
 		}
 	}
 
 	return tests
+}
+
+func failIfErrors(t *testing.T, errs ...error) {
+	//
+	if len(errs) > 0 {
+		for _, err := range errs {
+			t.Errorf("unexpected tracing failure: %v", err)
+		}
+		// Don't continue
+		t.FailNow()
+	}
 }

@@ -113,7 +113,7 @@ func (p *Cast) String(fn register.Map) string {
 	var builder strings.Builder
 	//
 	builder.WriteString(io.RegistersReversedToString(p.Targets, fn.Registers()))
-	builder.WriteString(fmt.Sprintf(" = (u%d)", p.CastWidth))
+	fmt.Fprintf(&builder, " = (u%d)", p.CastWidth)
 	builder.WriteString(fn.Register(p.Source).Name())
 	//
 	return builder.String()

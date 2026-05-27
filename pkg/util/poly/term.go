@@ -20,9 +20,13 @@ type Term[S any, T any] interface {
 	Coefficient() big.Int
 	// Len returns the number of variables in this polynomial term.
 	Len() uint
+	// Negate this term
+	Negate() T
 	// Nth returns the nth variable in this polynomial term.
 	Nth(uint) S
 	// Matches determines whether or not the variables of this term match those
 	// of the other.
 	Matches(other T) bool
+	// Check whether this term has a negative coefficient (or not)
+	IsNegative() bool
 }

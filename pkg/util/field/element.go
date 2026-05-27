@@ -25,6 +25,8 @@ type Element[Operand any] interface {
 	word.Word[Operand]
 	// Add x+y
 	Add(y Operand) Operand
+	// Return the value of this word as a big integer.
+	BigInt() *big.Int
 	// Check whether this value is zero (or not).
 	IsZero() bool
 	// Check whether this value is one (or not).

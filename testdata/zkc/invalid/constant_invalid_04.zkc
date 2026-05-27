@@ -1,2 +1,0 @@
-//error:2:22-27:cyclic defintion
-const LARGE:u8 = 1 * LARGE

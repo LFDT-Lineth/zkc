@@ -43,11 +43,6 @@ type Assign[S symbol.Symbol[S]] struct {
 	Source expr.Expr[S]
 }
 
-// Buses implementation for Instruction interface
-func (p *Assign[S]) Buses() []S {
-	panic("todo")
-}
-
 // Uses implementation for Instruction interface.
 func (p *Assign[S]) Uses() []variable.Id {
 	return expr.Uses[S](p.Source)
@@ -61,8 +56,11 @@ func (p *Assign[S]) Definitions() []variable.Id {
 func (p *Assign[S]) String(env variable.Map[S]) string {
 	var builder strings.Builder
 	//
-	builder.WriteString(lvalsToString[S](env, p.Targets...))
-	builder.WriteString(" = ")
+	if len(p.Targets) > 0 {
+		builder.WriteString(lvalsToString[S](env, p.Targets...))
+		builder.WriteString(" = ")
+	}
+	//
 	builder.WriteString(p.Source.String(env))
 	//
 	return builder.String()

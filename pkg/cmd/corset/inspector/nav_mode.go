@@ -120,6 +120,10 @@ func (p *NavigationMode) KeyPressed(parent *Inspector, key uint16) bool {
 		parent.changeCellWidth(true)
 	case '-':
 		parent.changeCellWidth(false)
+	case ']':
+		parent.changeTitleWidth(true)
+	case '[':
+		parent.changeTitleWidth(false)
 	}
 	//
 	return false

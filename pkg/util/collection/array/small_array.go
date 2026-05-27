@@ -127,7 +127,7 @@ func (p *SmallArray[K, T]) String() string {
 			sb.WriteString(",")
 		}
 
-		sb.WriteString(fmt.Sprintf("%v", p.data[i]))
+		fmt.Fprintf(&sb, "%v", p.data[i])
 	}
 
 	sb.WriteString("]")

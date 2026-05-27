@@ -13,15 +13,20 @@
 package zkc
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path"
 	"strings"
 
+	"github.com/consensys/go-corset/pkg/trace/json"
+	"github.com/consensys/go-corset/pkg/trace/lt"
+	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/file"
 	"github.com/consensys/go-corset/pkg/util/source"
 	"github.com/consensys/go-corset/pkg/zkc/compiler"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
+	"github.com/consensys/go-corset/pkg/zkc/constraints"
 	"github.com/consensys/go-corset/pkg/zkc/util"
 	log "github.com/sirupsen/logrus"
 )
@@ -57,7 +62,7 @@ func ParseInputFile(filename string) map[string][]byte {
 
 // CompileSourceFiles accepts a set of source files and compiles them into a
 // program.  This can result, for example, in one or more syntax errors, etc.
-func CompileSourceFiles(filenames ...string) ast.Program {
+func CompileSourceFiles(field field.Config, filenames ...string) ast.Program {
 	//
 	var (
 		errors   []source.SyntaxError
@@ -77,7 +82,7 @@ func CompileSourceFiles(filenames ...string) ast.Program {
 		srcfiles[i] = *source.NewSourceFile(n, bytes)
 	}
 	// Compile source files
-	macroProgram, _, errors := compiler.Compile(srcfiles...)
+	macroProgram, _, errors := compiler.Compile(field, srcfiles...)
 	// Check for errors
 	if len(errors) != 0 {
 		// Report errors
@@ -109,4 +114,81 @@ func printSyntaxError(err *source.SyntaxError) {
 	fmt.Print(strings.Repeat(" ", lineOffset))
 	// Print highlight
 	fmt.Println(strings.Repeat("^", length))
+}
+
+// WriteTraceFile writes a given lt trace file to disk, either in JSON or LT
+// formats.
+func WriteTraceFile(filename string, tracefile lt.TraceFile) {
+	var (
+		err   error
+		bytes []byte
+	)
+	// Check file extension
+	ext := path.Ext(filename)
+	//
+	switch ext {
+	case ".json":
+		js := json.ToJsonString(tracefile.RawModules())
+		//
+		if err = os.WriteFile(filename, []byte(js), 0644); err == nil {
+			return
+		}
+	case ".lt":
+		bytes, err = tracefile.MarshalBinary()
+		//
+		if err == nil {
+			if err = os.WriteFile(filename, bytes, 0644); err == nil {
+				return
+			}
+		}
+	default:
+		err = fmt.Errorf("unknown trace file format: %s", ext)
+	}
+	// Handle error
+	fmt.Println(err)
+	os.Exit(4)
+}
+
+// WriteBinaryFile writes a binary file (e.g. zkvm.bin) to disk using the given
+// binfile versioning defined in the binfile package.
+//
+//nolint:errcheck
+func WriteBinaryFile[F field.Element[F]](binfile *constraints.BinaryFile[F], filename string) {
+	var (
+		bytes []byte
+		err   error
+	)
+	// Encode binary file as bytes
+	if bytes, err = binfile.MarshalBinary(); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	} else if path.Ext(filename) == ".hex" {
+		h := fmt.Sprintf("0x%s", hex.EncodeToString(bytes))
+		bytes = []byte(h)
+	}
+	// Write file
+	if err := os.WriteFile(filename, bytes, 0644); err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+}
+
+// ReadBinaryFile reads a binary constraints file from disk
+func ReadBinaryFile[F field.Element[F]](filename string) *constraints.BinaryFile[F] {
+	var binf constraints.BinaryFile[F]
+	// Read schema file
+	data, err := os.ReadFile(filename)
+	// Handle errors
+	if err == nil {
+		err = binf.UnmarshalBinary(data)
+	}
+	// Return if no errors
+	if err == nil {
+		return &binf
+	}
+	// Handle error & exit
+	fmt.Println(err)
+	os.Exit(2)
+	// unreachable
+	return &binf
 }

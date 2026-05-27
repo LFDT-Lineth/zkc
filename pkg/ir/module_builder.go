@@ -62,6 +62,12 @@ type ModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 	// which is always zero.  If no such register exists already, one is
 	// created.
 	ConstRegister(constant uint8) register.Id
+	// SetStaticContents sets the contents of this static reference table.  It
+	// panics if invoked on a non-static module.
+	SetStaticContents(contents [][]F)
+	// StaticContents returns the static contents for a static reference table.  It
+	// panics if invoked on a non-static module.
+	StaticContents() (contents [][]F)
 }
 
 // ============================================================================
@@ -70,10 +76,12 @@ type ModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 
 // NewModuleBuilder constructs a new builder for a module with the given name.
 func NewModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]](name module.Name,
-	mid schema.ModuleId, padding, public, synthetic bool, keys uint) ModuleBuilder[F, C, T] {
+	mid schema.ModuleId, padding, public, synthetic, static, native bool, keys uint) ModuleBuilder[F, C, T] {
 	//
 	regmap := make(map[string]uint, 0)
-	return &internalModuleBuilder[F, C, T]{name, mid, padding, public, synthetic, keys, regmap, nil, nil, nil}
+
+	return &internalModuleBuilder[F, C, T]{name, mid, padding, public, synthetic, static, native,
+		keys, regmap, nil, nil, nil, nil}
 }
 
 type internalModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]] struct {
@@ -87,6 +95,10 @@ type internalModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Ex
 	public bool
 	// Indicates whether this is a synthetic module or not
 	synthetic bool
+	// Indicates whether this is a static module or not
+	static bool
+	// Indicates whether this is a native module or not
+	native bool
 	// Number of key columns
 	keys uint
 	// Maps register names (including aliases) to the register number.
@@ -97,6 +109,8 @@ type internalModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Ex
 	constraints []C
 	// Assignments for computed registers
 	assignments []schema.Assignment[F]
+	// Static contents for ref tables
+	staticContents [][]F
 }
 
 // AddAssignment implementation for ModuleBuilder interface.
@@ -147,6 +161,20 @@ func (p *internalModuleBuilder[F, C, T]) IsPublic() bool {
 // IsSynthetic implementation for schema.ModuleView interface.
 func (p *internalModuleBuilder[F, C, T]) IsSynthetic() bool {
 	return p.synthetic
+}
+
+// IsNative implementation for schema.ModuleView interface.  Modules built via
+// this builder are never native; only the ZkC pipeline produces native
+// modules and it does not go through this builder.
+func (p *internalModuleBuilder[F, C, T]) IsNative() bool {
+	return p.native
+}
+
+// IsStatic implementation for schema.ModuleView interface.  Modules built via
+// this builder are never static; static modules are produced directly by the
+// ZkC pipeline.
+func (p *internalModuleBuilder[F, C, T]) IsStatic() bool {
+	return p.static
 }
 
 // Width implementation for schema.ModuleView interface.
@@ -229,6 +257,24 @@ func (p *internalModuleBuilder[F, C, T]) ConstRegister(constant uint8) register.
 	return p.NewRegister(register.NewConst(constant))
 }
 
+func (p *internalModuleBuilder[F, C, T]) SetStaticContents(contents [][]F) {
+	if !p.IsStatic() {
+		panic("cannot set static contents for non-static module")
+	} else if p.staticContents != nil {
+		panic("cannot reassign static-contents")
+	}
+	//
+	p.staticContents = contents
+}
+
+func (p *internalModuleBuilder[F, C, T]) StaticContents() (contents [][]F) {
+	if !p.IsStatic() {
+		panic("cannot set static contents for non-static module")
+	}
+	//
+	return p.staticContents
+}
+
 // ============================================================================
 // External Module Builder
 // ============================================================================
@@ -300,6 +346,18 @@ func (p *externalModuleBuilder[F, C, T]) IsSynthetic() bool {
 	return false
 }
 
+// IsNative implementation for schema.ModuleView interface.  External modules
+// are never native.
+func (p *externalModuleBuilder[F, C, T]) IsNative() bool {
+	return false
+}
+
+// IsStatic implementation for schema.ModuleView interface.  External modules
+// are never static.
+func (p *externalModuleBuilder[F, C, T]) IsStatic() bool {
+	return false
+}
+
 // Width implementation for schema.ModuleView interface.
 func (p *externalModuleBuilder[F, C, T]) Width() uint {
 	return uint(len(p.module.Registers()))
@@ -339,6 +397,14 @@ func (p *externalModuleBuilder[F, C, T]) Register(rid register.Id) register.Regi
 // Registers implementation for register.Map interface.
 func (p *externalModuleBuilder[F, C, T]) Registers() []register.Register {
 	return p.module.Registers()
+}
+
+func (p *externalModuleBuilder[F, C, T]) SetStaticContents(contents [][]F) {
+	panic("cannot set static contents for external module")
+}
+
+func (p *externalModuleBuilder[F, C, T]) StaticContents() (contents [][]F) {
+	panic("cannot get static contents for external module")
 }
 
 func (p *externalModuleBuilder[F, C, T]) String() string {

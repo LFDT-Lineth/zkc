@@ -165,7 +165,7 @@ func (p *Set) String() string {
 				//
 				first = false
 				//
-				builder.WriteString(fmt.Sprintf("%d", value))
+				fmt.Fprintf(&builder, "%d", value)
 			}
 		}
 	}

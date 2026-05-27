@@ -45,7 +45,7 @@ const COMMA uint = 7
 // COLON signals ":"
 const COLON uint = 8
 
-// SEMICOLON signals ":"
+// SEMICOLON signals ";"
 const SEMICOLON uint = 9
 
 // NUMBER signals an integer number

@@ -13,6 +13,9 @@
 package lval
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/consensys/go-corset/pkg/util/collection/bit"
 	"github.com/consensys/go-corset/pkg/util/collection/set"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
@@ -90,5 +93,24 @@ func Definitions[S symbol.Symbol[S]](lvals ...LVal[S]) []variable.Id {
 // String provides a generic facility for converting an expression into a
 // suitable string.
 func String[S symbol.Symbol[S]](e LVal[S], mapping variable.Map[S]) string {
-	panic("todo")
+	switch e := e.(type) {
+	case *Variable[S]:
+		return e.String(mapping)
+	case *MemAccess[S]:
+		var builder strings.Builder
+		//
+		for i, arg := range e.Args {
+			if i != 0 {
+				builder.WriteString(",")
+			}
+			//
+			builder.WriteString(arg.String(mapping))
+		}
+		//
+		return fmt.Sprintf("%s[%s]", e.Name.String(), builder.String())
+	case *Array[S]:
+		return fmt.Sprintf("%s[%s]", mapping.Variable(e.Id).Name, e.Arg.String(mapping))
+	default:
+		panic("unknown lval")
+	}
 }

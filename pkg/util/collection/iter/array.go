@@ -94,3 +94,69 @@ func (p *arrayIterator[T]) Nth(n uint) T {
 	p.index = n
 	return p.items[n]
 }
+
+// reverseArrayIterator iterates over a slice in reverse order (last element
+// first).
+type reverseArrayIterator[T any] struct {
+	items []T
+	index int // decrements from len-1 to -1
+}
+
+// NewReverseArrayIterator constructs an iterator that yields the elements of
+// items in reverse order, starting from the last element.
+func NewReverseArrayIterator[T any](items []T) Iterator[T] {
+	return &reverseArrayIterator[T]{items, len(items) - 1}
+}
+
+//nolint:revive
+func (p *reverseArrayIterator[T]) HasNext() bool {
+	return p.index >= 0
+}
+
+//nolint:revive
+func (p *reverseArrayIterator[T]) Next() T {
+	item := p.items[p.index]
+	p.index--
+
+	return item
+}
+
+//nolint:revive
+func (p *reverseArrayIterator[T]) Nth(n uint) T {
+	return enum.Nth(p, n)
+}
+
+//nolint:revive
+func (p *reverseArrayIterator[T]) Append(iter Iterator[T]) Iterator[T] {
+	return NewAppendIterator(p, iter)
+}
+
+//nolint:revive
+func (p *reverseArrayIterator[T]) Clone() Iterator[T] {
+	return &reverseArrayIterator[T]{p.items, p.index}
+}
+
+//nolint:revive
+func (p *reverseArrayIterator[T]) Collect() []T {
+	result := make([]T, 0, p.index+1)
+	for p.index >= 0 {
+		result = append(result, p.items[p.index])
+		p.index--
+	}
+
+	return result
+}
+
+//nolint:revive
+func (p *reverseArrayIterator[T]) Count() uint {
+	if p.index < 0 {
+		return 0
+	}
+
+	return uint(p.index + 1)
+}
+
+//nolint:revive
+func (p *reverseArrayIterator[T]) Find(predicate Predicate[T]) (uint, bool) {
+	return enum.Find(p, predicate)
+}

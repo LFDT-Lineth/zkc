@@ -63,10 +63,66 @@ func lowerFunction(vectorize bool, f MacroFunction) MicroFunction {
 	return fn
 }
 
-// Vectorize a given function by merging as many instructions together as
-// possible.  For example, consider two micro instructions "x = y" and "a = b".
-// Since this instructions do not conflict over any assigned register, they can
-// be combined into a vector instruction "x=y;a=b".
+// Vectorize a given function by merging as many micro-codes as possible into
+// each (vector) micro-instruction.  The strategy is greedy: walking the
+// function, we repeatedly try to absorb the target of a jump back into the
+// instruction containing that jump, effectively pulling a successor
+// instruction up into its predecessor until no further merging is legal.  For
+// example, given two micro instructions "x = y" and "a = b", neither writes a
+// register the other touches and so they can be combined into the single
+// vector instruction "x=y ; a=b" whose codes execute "in parallel".
+//
+// The principal obstacle to merging is the appearance of *register conflicts*
+// between micro-codes — that is, data hazards in the classical sense from
+// computer architecture.  All three textbook hazards (RAW, WAW, WAR) arise
+// here, where "earlier" and "later" refer to the position of two codes within
+// the same vector instruction:
+//
+//   - RAW (Read-After-Write).  A later code reads a register that an earlier
+//     code writes.  This is the "true" data dependency.  Within a vector
+//     instruction it is normally resolved by *register forwarding* (described
+//     below): the later code simply observes the freshly-written value.
+//     However, when the upstream write is *conditional* — i.e. it occurs on
+//     some intra-instruction control-flow paths but not others
+//     (Writes.MaybeAssigned without Writes.DefinitelyAssigned) — the value to
+//     forward is not well-defined and the merge is rejected.  This is what
+//     Instruction.Validate reports as a "conflicting read".
+//
+//   - WAW (Write-After-Write).  Two codes in the same vector instruction both
+//     write the same register.  The resulting register value would be
+//     ambiguous, so the merge is rejected.  This is what Instruction.Validate
+//     reports as a "conflicting write", and is the most common form of
+//     register conflict in practice.
+//
+//   - WAR (Write-After-Read).  A later code writes a register that an earlier
+//     code reads.  This is *not* a hazard in this setting, because forwarding
+//     flows strictly forward: the earlier read always observes the
+//     pre-instruction value, while the later write only takes effect once the
+//     whole vector instruction completes.  No check is required, and no merge
+//     is blocked on this account.
+//
+// Register forwarding is the mechanism that makes RAW dependencies tractable
+// inside a vector instruction.  When one micro-code writes a register, every
+// subsequent code in the same instruction observes the freshly-written value
+// rather than the value held at the start of the instruction.  Forwarding is
+// precisely what makes vectorisation useful (a downstream code can
+// immediately consume an upstream code's result) but it is also what gives
+// rise to RAW conflicts: if the upstream write only happens on some
+// intra-instruction paths there is no single well-defined source to forward
+// from.
+//
+// In addition to data hazards, two further conditions block a merge:
+//
+//   - Other validation failures.  The merged instruction must continue to
+//     satisfy every micro-instruction invariant (balance, no field overflow,
+//     allocated temporaries, etc.) as checked by Instruction.Validate.
+//
+//   - Back-edges.  A jump whose target would bring control back into the
+//     instruction being built (a loop) is left alone; otherwise the inliner
+//     would unfold it indefinitely.
+//
+// After greedy merging, any micro-instructions left unreachable from the
+// entry point are pruned and remaining jump targets rewritten accordingly.
 func vectorizeFunction(f MicroFunction) MicroFunction {
 	var (
 		insns    = make([]micro.Instruction, len(f.Code()))

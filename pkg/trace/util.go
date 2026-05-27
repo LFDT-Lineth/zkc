@@ -107,10 +107,16 @@ func (p *columnAdapter[F1, F2]) Name() string {
 // Get implementation for trace.Column interface.
 func (p *columnAdapter[F1, F2]) Get(row int) F2 {
 	var (
-		from = p.col.Get(row)
-		to   F2
+		from  = p.col.Get(row)
+		to    F2
+		check F1
 	)
-	//
+	// Fast path: avoid expensive SetBytes round-trip for small values.
+	u := from.Uint64()
+	if from.Equals(check.SetUint64(u)) {
+		return to.SetUint64(u)
+	}
+
 	return to.SetBytes(from.Bytes())
 }
 

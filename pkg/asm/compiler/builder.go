@@ -133,6 +133,11 @@ func Number[T any, E Expr[T, E]](c uint) E {
 	return BigNumber[T, E](big.NewInt(int64(c)))
 }
 
+// Or constructs a disjunction.
+func Or[T any, E Expr[T, E]](first E, rest ...E) E {
+	return first.Or(rest...)
+}
+
 // Sum constructs a sum over one or more expressions.
 func Sum[T any, E Expr[T, E]](exprs []E) E {
 	if len(exprs) == 0 {

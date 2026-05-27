@@ -18,155 +18,161 @@ import (
 	"github.com/consensys/go-corset/pkg/util/source/lex"
 )
 
-// END_OF signals "end of file"
-const END_OF uint = 0
+const (
+	// EOF signals "end of file"
+	EOF uint = iota
+	// WHITESPACE signals whitespace
+	WHITESPACE
+	// NEWLINE signals a newline character
+	NEWLINE
+	// COMMENT signals "// ... \n"
+	COMMENT
+	// LBRACE signals "("
+	LBRACE
+	// RBRACE signals ")"
+	RBRACE
+	// LCURLY signals "{"
+	LCURLY
+	// RCURLY signals "}"
+	RCURLY
+	// LSQUARE signals "["
+	LSQUARE
+	// RSQUARE signals "]"
+	RSQUARE
+	// COMMA signals ","
+	COMMA
+	// COLON signals ":"
+	COLON
+	// COLONCOLON signals "::"
+	COLONCOLON
+	// SEMICOLON signals ";"
+	SEMICOLON
+	// NUMBER signals an integer number
+	NUMBER
+	// STRING signals a quoted string
+	STRING
+	// IDENTIFIER signals a column variable
+	IDENTIFIER
+	// KEYWORD_AS signals a type cast expression (e.g. "x as u8")
+	KEYWORD_AS
+	// KEYWORD_BREAK signals a break statement
+	KEYWORD_BREAK
+	// KEYWORD_CONTINUE signals a continue statement
+	KEYWORD_CONTINUE
+	// KEYWORD_CONST signals a constant declaration
+	KEYWORD_CONST
+	// KEYWORD_ELSE signals an else branch
+	KEYWORD_ELSE
+	// KEYWORD_FAIL signals a return statement
+	KEYWORD_FAIL
+	// KEYWORD_FN signals a function declaration
+	KEYWORD_FN
+	// KEYWORD_FOR signals a for loop
+	KEYWORD_FOR
+	// KEYWORD_IF signals a return statement
+	KEYWORD_IF
+	// KEYWORD_INCLUDE signals an include declaration
+	KEYWORD_INCLUDE
+	// KEYWORD_INPUT signals a read-only memory
+	KEYWORD_INPUT
+	// KEYWORD_MEMORY signals a random-access memory declaration
+	KEYWORD_MEMORY
+	// KEYWORD_RETURN signals a return statement
+	KEYWORD_RETURN
+	// KEYWORD_STATIC signals a static read-only memory
+	KEYWORD_STATIC
+	// KEYWORD_OUTPUT signals a write-once memory
+	KEYWORD_OUTPUT
+	// KEYWORD_PRINTF signals a printf statement
+	KEYWORD_PRINTF
+	// KEYWORD_PUB signals a public input / output
+	KEYWORD_PUB
+	// KEYWORD_WHILE signals a while loop
+	KEYWORD_WHILE
+	// KEYWORD_VAR signals a local variable declaration
+	KEYWORD_VAR
+	// KEYWORD_TYPE signals a type alias declaration
+	KEYWORD_TYPE
+	// KEYWORD_SWITCH signals the beginning of a switch statement
+	KEYWORD_SWITCH
+	// KEYWORD_CASE signals a case in a switch statement
+	KEYWORD_CASE
+	// KEYWORD_DEFAULT signals the default case in a switch statement
+	KEYWORD_DEFAULT
+	// RIGHTARROW signals "->"
+	RIGHTARROW
+	// EQUALS signals "="
+	EQUALS
+	// EQUALS_EQUALS signals "=="
+	EQUALS_EQUALS
+	// NOT_EQUALS signals "!="
+	NOT_EQUALS
+	// LESS_THAN signals "<"
+	LESS_THAN
+	// LESS_THAN_EQUALS signals "<="
+	LESS_THAN_EQUALS
+	// GREATER_THAN signals ">"
+	GREATER_THAN
+	// GREATER_THAN_EQUALS signals ">="
+	GREATER_THAN_EQUALS
+	// LOGICAL_AND signals "&&"
+	LOGICAL_AND
+	// LOGICAL_OR signals "||"
+	LOGICAL_OR
+	// LOGICAL_NOT signals "!"
+	LOGICAL_NOT
+	// ADD signals "+"
+	ADD
+	// SUB signals "-"
+	SUB
+	// MUL signals "*"
+	MUL
+	// DIV signals "/"
+	DIV
+	// BITWISE_AND signals "&"
+	BITWISE_AND
+	// BITWISE_OR signals "|"
+	BITWISE_OR
+	// BITWISE_XOR signals "^"
+	BITWISE_XOR
+	// BITWISE_NOT signals "~"
+	BITWISE_NOT
+	// BITWISE_SHL signals "<<"
+	BITWISE_SHL
+	// BITWISE_SHR signals ">>"
+	BITWISE_SHR
+	// REM signals "%"
+	REM
+	// QMARK signals "?"
+	QMARK
+	// HASH signals "#"
+	HASH
+	// AT signals "@"
+	AT
+	// UNKNOWN signals an unknown chunk of text
+	UNKNOWN
+	// SPACES signal a set of one or more spaces.  This is a virtual token only
+	// used by the formatter.
+	SPACES
+	// TABS signal a set of one or more tabs.  This is a virtual token only used
+	// by the formatter.
+	TABS
+	// FIELD_ELEMENT signals the "𝔽" field element type token.
+	FIELD_ELEMENT
+	// MAX_TOKEN signals the maximum token index
+	MAX_TOKEN
+)
 
-// WHITESPACE signals whitespace
-const WHITESPACE uint = 1
+// Rule for describing whitespace (spaces and tabs only, not newlines)
+var whitespace lex.Scanner[rune] = lex.Many(lex.Or(lex.Unit(' '), lex.Unit('\t')))
 
-// COMMENT signals "// ... \n"
-const COMMENT uint = 2
+// Rule for describing a newline
+var newline lex.Scanner[rune] = lex.Unit('\n')
 
-// LBRACE signals "("
-const LBRACE uint = 3
-
-// RBRACE signals ")"
-const RBRACE uint = 4
-
-// LCURLY signals "{"
-const LCURLY uint = 5
-
-// RCURLY signals "}"
-const RCURLY uint = 6
-
-// LSQUARE signals "["
-const LSQUARE uint = 7
-
-// RSQUARE signals "]"
-const RSQUARE uint = 8
-
-// COMMA signals ","
-const COMMA uint = 9
-
-// COLON signals ":"
-const COLON uint = 10
-
-// SEMICOLON signals ":"
-const SEMICOLON uint = 11
-
-// NUMBER signals an integer number
-const NUMBER uint = 12
-
-// STRING signals a quoted string
-const STRING uint = 13
-
-// IDENTIFIER signals a column variable
-const IDENTIFIER uint = 20
-
-// KEYWORD_CONST signals a constant declaration
-const KEYWORD_CONST uint = 21
-
-// KEYWORD_INCLUDE signals an include declaration
-const KEYWORD_INCLUDE uint = 22
-
-// KEYWORD_FN signals a function declaration
-const KEYWORD_FN uint = 23
-
-// KEYWORD_MEMORY signals a random-access memory declaration
-const KEYWORD_MEMORY uint = 24
-
-// KEYWORD_STATIC signals a static read-only memory
-const KEYWORD_STATIC uint = 25
-
-// KEYWORD_INPUT signals a read-only memory
-const KEYWORD_INPUT uint = 26
-
-// KEYWORD_OUTPUT signals a write-once memory
-const KEYWORD_OUTPUT uint = 27
-
-// KEYWORD_RETURN signals a return statement
-const KEYWORD_RETURN uint = 28
-
-// KEYWORD_FAIL signals a return statement
-const KEYWORD_FAIL uint = 29
-
-// KEYWORD_IF signals a return statement
-const KEYWORD_IF uint = 30
-
-// KEYWORD_ELSE signals an else branch
-const KEYWORD_ELSE uint = 31
-
-// KEYWORD_PUB signals a public input / output
-const KEYWORD_PUB uint = 32
-
-// KEYWORD_WHILE signals a while loop
-const KEYWORD_WHILE uint = 34
-
-// KEYWORD_FOR signals a for loop
-const KEYWORD_FOR uint = 35
-
-// KEYWORD_VAR signals a local variable declaration
-const KEYWORD_VAR uint = 36
-
-// RIGHTARROW signals "->"
-const RIGHTARROW uint = 60
-
-// EQUALS signals "="
-const EQUALS uint = 61
-
-// EQUALS_EQUALS signals "=="
-const EQUALS_EQUALS uint = 62
-
-// NOT_EQUALS signals "!="
-const NOT_EQUALS uint = 63
-
-// LESS_THAN signals "<"
-const LESS_THAN uint = 64
-
-// LESS_THAN_EQUALS signals "<="
-const LESS_THAN_EQUALS uint = 65
-
-// GREATER_THAN signals ">"
-const GREATER_THAN uint = 66
-
-// GREATER_THAN_EQUALS signals ">="
-const GREATER_THAN_EQUALS uint = 67
-
-// ADD signals "+"
-const ADD uint = 68
-
-// SUB signals "-"
-const SUB uint = 69
-
-// MUL signals "*"
-const MUL uint = 70
-
-// DIV signals "/"
-const DIV uint = 71
-
-// BITAND signals "&"
-const BITAND uint = 72
-
-// BITOR signals "|"
-const BITOR uint = 73
-
-// BITXOR signals "^"
-const BITXOR uint = 74
-
-// BITNOT signals "~"
-const BITNOT uint = 75
-
-// BITSHL signals "<<"
-const BITSHL uint = 76
-
-// BITSHR signals ">>"
-const BITSHR uint = 77
-
-// QMARK signals "?"
-const QMARK uint = 80
-
-// Rule for describing whitespace
-var whitespace lex.Scanner[rune] = lex.Many(lex.Or(lex.Unit(' '), lex.Unit('\t'), lex.Unit('\n')))
+// Rule for capturing everything upto the next bit of whitespace.  This is
+// useful as it allows lexing to continue even when encountering something not
+// matched by any rule.
+var notWhitespaceOrNewline lex.Scanner[rune] = lex.Many(lex.And(lex.Not(' '), lex.Not('\t'), lex.Not('\n')))
 
 // Rule for describing numbers
 // A number is either a hexadecimal, binary, or decimal one.
@@ -224,6 +230,7 @@ var rules []lex.LexRule[rune] = []lex.LexRule[rune]{
 	lex.Rule(lex.Unit('['), LSQUARE),
 	lex.Rule(lex.Unit(']'), RSQUARE),
 	lex.Rule(lex.Unit(','), COMMA),
+	lex.Rule(lex.Unit(':', ':'), COLONCOLON),
 	lex.Rule(lex.Unit(':'), COLON),
 	lex.Rule(lex.Unit(';'), SEMICOLON),
 	lex.Rule(lex.Unit('-', '>'), RIGHTARROW),
@@ -231,8 +238,8 @@ var rules []lex.LexRule[rune] = []lex.LexRule[rune]{
 	lex.Rule(lex.Unit('!', '='), NOT_EQUALS),
 	lex.Rule(lex.Unit('<', '='), LESS_THAN_EQUALS),
 	lex.Rule(lex.Unit('>', '='), GREATER_THAN_EQUALS),
-	lex.Rule(lex.Unit('<', '<'), BITSHL),
-	lex.Rule(lex.Unit('>', '>'), BITSHR),
+	lex.Rule(lex.Unit('<', '<'), BITWISE_SHL),
+	lex.Rule(lex.Unit('>', '>'), BITWISE_SHR),
 	lex.Rule(lex.Unit('<'), LESS_THAN),
 	lex.Rule(lex.Unit('>'), GREATER_THAN),
 	lex.Rule(lex.Unit('='), EQUALS),
@@ -240,52 +247,122 @@ var rules []lex.LexRule[rune] = []lex.LexRule[rune]{
 	lex.Rule(lex.Unit('-'), SUB),
 	lex.Rule(lex.Unit('*'), MUL),
 	lex.Rule(lex.Unit('/'), DIV),
-	lex.Rule(lex.Unit('&'), BITAND),
-	lex.Rule(lex.Unit('|'), BITOR),
-	lex.Rule(lex.Unit('^'), BITXOR),
-	lex.Rule(lex.Unit('~'), BITNOT),
+	lex.Rule(lex.Unit('%'), REM),
+	lex.Rule(lex.Unit('!'), LOGICAL_NOT),
+	lex.Rule(lex.Unit('&', '&'), LOGICAL_AND),
+	lex.Rule(lex.Unit('|', '|'), LOGICAL_OR),
+	lex.Rule(lex.Unit('&'), BITWISE_AND),
+	lex.Rule(lex.Unit('|'), BITWISE_OR),
+	lex.Rule(lex.Unit('^'), BITWISE_XOR),
+	lex.Rule(lex.Unit('~'), BITWISE_NOT),
 	lex.Rule(lex.Unit('?'), QMARK),
+	lex.Rule(lex.Unit('#'), HASH),
+	lex.Rule(lex.Unit('@'), AT),
 	lex.Rule(whitespace, WHITESPACE),
+	lex.Rule(newline, NEWLINE),
 	lex.Rule(number, NUMBER),
 	lex.Rule(strung, STRING),
-	lex.Rule(lex.String("const"), KEYWORD_CONST),
-	lex.Rule(lex.String("else"), KEYWORD_ELSE),
-	lex.Rule(lex.String("fail"), KEYWORD_FAIL),
-	lex.Rule(lex.String("fn"), KEYWORD_FN),
-	lex.Rule(lex.String("if"), KEYWORD_IF),
-	lex.Rule(lex.String("include"), KEYWORD_INCLUDE),
-	lex.Rule(lex.String("input"), KEYWORD_INPUT),
-	lex.Rule(lex.String("output"), KEYWORD_OUTPUT),
-	lex.Rule(lex.String("pub"), KEYWORD_PUB),
-	lex.Rule(lex.String("return"), KEYWORD_RETURN),
-	lex.Rule(lex.String("static"), KEYWORD_STATIC),
-	lex.Rule(lex.String("memory"), KEYWORD_MEMORY),
-	lex.Rule(lex.String("for"), KEYWORD_FOR),
-	lex.Rule(lex.String("var"), KEYWORD_VAR),
-	lex.Rule(lex.String("while"), KEYWORD_WHILE),
 	lex.Rule(identifier, IDENTIFIER),
-	lex.Rule(lex.Eof[rune](), END_OF),
+	lex.Rule(lex.Unit('𝔽'), FIELD_ELEMENT),
+	lex.Rule(notWhitespaceOrNewline, UNKNOWN),
+	lex.Rule(lex.Eof[rune](), EOF),
 }
 
+// keywords maps exact identifier strings to their keyword token kinds.
+// Reclassification happens as a post-processing step in Lex so that
+// identifiers that merely start with a keyword (e.g. "as_X") are never
+// misidentified: the identifier rule always consumes the full token, and
+// only an exact match triggers reclassification.
+var keywords = map[string]uint{
+	"as":       KEYWORD_AS,
+	"break":    KEYWORD_BREAK,
+	"const":    KEYWORD_CONST,
+	"continue": KEYWORD_CONTINUE,
+	"else":     KEYWORD_ELSE,
+	"fail":     KEYWORD_FAIL,
+	"fn":       KEYWORD_FN,
+	"for":      KEYWORD_FOR,
+	"if":       KEYWORD_IF,
+	"include":  KEYWORD_INCLUDE,
+	"input":    KEYWORD_INPUT,
+	"memory":   KEYWORD_MEMORY,
+	"output":   KEYWORD_OUTPUT,
+	"printf":   KEYWORD_PRINTF,
+	"pub":      KEYWORD_PUB,
+	"return":   KEYWORD_RETURN,
+	"static":   KEYWORD_STATIC,
+	"type":     KEYWORD_TYPE,
+	"var":      KEYWORD_VAR,
+	"while":    KEYWORD_WHILE,
+	"switch":   KEYWORD_SWITCH,
+	"case":     KEYWORD_CASE,
+	"default":  KEYWORD_DEFAULT,
+}
+
+// MAX_KEYWORD_LENGTH is used to optimise lexing of keywords.
+var MAX_KEYWORD_LENGTH int
+
 // Lex a given source file into a sequence of zero or more tokens, along with
-// any syntax errors arising.
-func Lex(srcfile source.File) ([]lex.Token, []source.SyntaxError) {
+// any syntax errors arising.  This can be configured to retain whitespace
+// and/or comments.
+func Lex(srcfile source.File, whitespace, comments bool) []lex.Token {
 	var (
 		lexer = lex.NewLexer(srcfile.Contents(), rules...)
 		// Lex as many tokens as possible
 		tokens = lexer.Collect()
 	)
-	// Check whether anything was left (if so this is an error)
-	if lexer.Remaining() != 0 {
-		start, end := lexer.Index(), lexer.Index()+lexer.Remaining()
-		err := srcfile.SyntaxError(source.NewSpan(int(start), int(end)), "unknown text encountered")
-		// errors
-		return nil, []source.SyntaxError{*err}
+	// Remove whitespace and/or comments unless the caller wants them (e.g. for
+	// syntax highlighting)
+	if !whitespace || !comments {
+		// Remove any whitespace, newlines or comments
+		tokens = array.RemoveMatching(tokens, func(t lex.Token) bool {
+			switch t.Kind {
+			case WHITESPACE, NEWLINE:
+				return !whitespace
+			case COMMENT:
+				return !comments
+			}
+
+			return false
+		})
 	}
-	// Remove any whitespace
-	tokens = array.RemoveMatching(tokens, func(t lex.Token) bool { return t.Kind == WHITESPACE })
-	// Remove any comments (for not)
-	tokens = array.RemoveMatching(tokens, func(t lex.Token) bool { return t.Kind == COMMENT })
+	// Reclassify identifiers whose full text is an exact keyword match.
+	contents := srcfile.Contents()
+
+	for i, tok := range tokens {
+		// Check whether the given identifier is a keyword, or not.
+		if tok.Kind == IDENTIFIER && tok.Span.Length() <= MAX_KEYWORD_LENGTH {
+			text := string(contents[tok.Span.Start():tok.Span.End()])
+			if kind, ok := keywords[text]; ok {
+				tokens[i].Kind = kind
+			}
+		}
+	}
 	// Done
-	return tokens, nil
+	return tokens
+}
+
+// IsValidIdentifier reports whether s parses as a single IDENTIFIER token,
+// rejecting empty strings, keywords, and anything containing whitespace or
+// punctuation.
+func IsValidIdentifier(s string) bool {
+	var (
+		runes = []rune(s)
+		n     = identifier(runes)
+	)
+	//
+	if n != uint(len(runes)) || len(runes) == 0 {
+		return false
+	}
+	//
+	_, isKeyword := keywords[s]
+
+	return !isKeyword
+}
+
+func init() {
+	// Statically compute maximum length of any keyword
+	for k := range keywords {
+		MAX_KEYWORD_LENGTH = max(MAX_KEYWORD_LENGTH, len(k))
+	}
 }

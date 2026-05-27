@@ -18,6 +18,8 @@ import (
 	"runtime/debug"
 
 	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -33,6 +35,7 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		if GetFlag(cmd, "version") {
 			fmt.Print("zkc ")
+
 			if Version != "" {
 				// Built via "make"
 				fmt.Printf("%s", Version)
@@ -43,6 +46,7 @@ var rootCmd = &cobra.Command{
 				// Unknown, perhaps "go run"
 				fmt.Printf("(unknown version)")
 			}
+
 			fmt.Println()
 		}
 	},
@@ -60,7 +64,7 @@ func Execute() {
 // FieldAgnosticCmd represents a command to be executed for a given field.
 type FieldAgnosticCmd struct {
 	Field    field.Config
-	Function func(*cobra.Command, []string)
+	Function func(*cobra.Command, []string, field.Config)
 }
 
 // Run a field agnostic top-level command.
@@ -79,7 +83,7 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 	for _, c := range cmds {
 		if c.Field == *config {
 			// Match
-			c.Function(cmd, args)
+			c.Function(cmd, args, c.Field)
 			// Done
 			return
 		}
@@ -89,8 +93,44 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 	os.Exit(2)
 }
 
+// GetBuildConfig constructs a build configuration from the provided
+// command-line arguments.  The purpose of this is to provide a consistent
+// mechanism for compiling constraint files across the various sub-commands.
+func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig[F] {
+	var build BuildConfig[F]
+
+	lowerNative := GetFlag(cmd, "lower-native") || GetFlag(cmd, "mir") || GetFlag(cmd, "air")
+	// Configure log level
+	if GetFlag(cmd, "verbose") {
+		log.SetLevel(log.DebugLevel)
+	}
+	// Configure target field
+	build.field = field
+	// Configure compiler config
+	build.config = codegen.DEFAULT_CONFIG.
+		LowerZkcNative(lowerNative).
+		Vectorize(GetFlag(cmd, "vectorize")).
+		SplitRegisters(GetFlag(cmd, "split")).
+		Field(field)
+	// Configure build targets
+	build.ast = GetFlag(cmd, "ast")
+	build.wir = GetFlag(cmd, "wir")
+	build.fir = GetFlag(cmd, "fir")
+	build.mir = GetFlag(cmd, "mir")
+	build.air = GetFlag(cmd, "air")
+	//
+	return build
+}
+
 func init() {
+	rootCmd.PersistentFlags().Bool("ast", false, "Output Abstract Syntax Tree (AST)")
+	rootCmd.PersistentFlags().Bool("wir", false, "Output Word-level Intermediate Representation (WIR)")
+	rootCmd.PersistentFlags().Bool("fir", false, "Output Field-level Intermediate Representation (FIR)")
+	rootCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
+	rootCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
+	rootCmd.PersistentFlags().Bool("lower-native", false, "Lower ZkC native functions into arithmetic instructions")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
-	rootCmd.PersistentFlags().String("field", "BLS12_377", "prime field to use throughout")
+	rootCmd.PersistentFlags().Bool("split", false, "Apply register splitting")
+	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")
 }

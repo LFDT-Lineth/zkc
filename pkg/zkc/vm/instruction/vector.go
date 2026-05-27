@@ -17,11 +17,10 @@ import (
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/asm/io/micro/dfa"
-	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
 	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm/word"
+	"github.com/consensys/go-corset/pkg/util/logical"
+	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 )
 
 // Vector instructions are instructions composed of some number of micro
@@ -67,85 +66,30 @@ import (
 // Here, the value of x written in the instruction is "forwarded" to the
 // assignment for y.  This process is, roughly speaking, analoguous to register
 // forwarding as found in CPU architectures.
-type Vector[W word.Word[W]] struct {
-	Codes []MicroInstruction[W]
-}
-
-// MicroInstruction characterises the kinds of instructions which can be
-// vectorized.  They key is that, whilst many instructions are also micro
-// instructions, this is not always the case.  Specifically, there are
-// instructions which are not valid micro-instructions and, likewise,
-// micro-instructions which are not valid instructions.
-type MicroInstruction[W word.Word[W]] interface {
-	// Uses returns the set of variables used (i.e. read) by this instruction.
-	Uses() []register.Id
-	// Definitions returns the set of variables registers defined (i.e. written)
-	// by this instruction.
-	Definitions() []register.Id
-	// Validate that this micro-instruction is well-formed.  For example, that
-	// it is balanced, that there are no conflicting writes, that all
-	// temporaries have been allocated, etc.
-	MicroValidate(width uint, field field.Config, env register.Map) []error
-	// Provide human readable form of instruction
-	String(env register.Map) string
+type Vector[I Instruction] struct {
+	Codes []I
 }
 
 // NewVector constructs a new vector instruction composed of zero or more
 // micro-instructions.  Observe that an empty vector instruction is a no-op.
-func NewVector[W word.Word[W], I MicroInstruction[W]](insns ...I) *Vector[W] {
-	// Map array of I to array of MicroInstruction
-	array := array.Map(insns, func(_ uint, insn I) MicroInstruction[W] { return insn })
-	//
-	return &Vector[W]{array}
+func NewVector[I Instruction](insns ...I) Vector[I] {
+	return Vector[I]{insns}
 }
 
-// Uses implementation for Instruction interface
-func (p *Vector[W]) Uses() []register.Id {
-	var (
-		regs bit.Set
-		read []register.Id
-	)
-	//
-	for _, c := range p.Codes {
-		for _, id := range c.Uses() {
-			if !regs.Contains(id.Unwrap()) {
-				regs.Insert(id.Unwrap())
-				read = append(read, id)
-			}
-		}
-	}
-	//
-	return read
-}
-
-// Definitions implementation for Instruction interface
-func (p *Vector[W]) Definitions() []register.Id {
-	var (
-		regs    bit.Set
-		written []register.Id
-	)
-	//
-	for _, c := range p.Codes {
-		for _, id := range c.Definitions() {
-			if !regs.Contains(id.Unwrap()) {
-				regs.Insert(id.Unwrap())
-				written = append(written, id)
-			}
-		}
-	}
-	//
-	return written
+// IsEmpty simply identifies whether this instruction is a no-op (or not).
+func (p *Vector[I]) IsEmpty() bool {
+	return len(p.Codes) == 0
 }
 
 // Validate that this micro-instruction is well-formed.  For example, each
 // micro-instruction contained within must be well-formed, and the overall
 // requirements for a vector instruction must be met, etc.
-func (p *Vector[W]) Validate(field field.Config, mapping register.Map) []error {
+func (p *Vector[I]) Validate(field field.Config, mapping SystemMap) []error {
 	// Construct write map
 	var (
 		errors   []error
 		nCodes   = uint(len(p.Codes))
-		writeMap = p.Writes()
+		writeMap = p.WriteMap()
 	)
 	// Validate individual instructions
 	for _, r := range p.Codes {
@@ -179,8 +123,135 @@ func (p *Vector[W]) Validate(field field.Config, mapping register.Map) []error {
 	return errors
 }
 
+// Map applies a function over each instruction in the vector which returns zero
+// or more registers.  For example, the function could return nothing whenever
+// it sees a "skip 0" operation (since this is a no-op).  A key feature of this
+// function, however, is that it updates skip offsets correctly account the
+// changes in width of instructions.  For example, consider this scenario:
+//
+// > skip_if x == 0 2 ; skip 0 ; ret ; jmp 1
+//
+// Then applying a map to remove "skip 0" instructions yields the following:
+//
+// > skip_if x == 0 1 ; ret ; jmp 1
+//
+// Specifically, we that the offset for the skip_if has been updated to reflect
+// its new branch destination.  Observer, however, that the mapping process can
+// fail if the mapping function is ill-behaved.  Consider this simple example:
+//
+// > skip 1 ; ret ; jmp 1
+//
+// Applying a mapping function which removed the "jmp 1" (for whatever reason)
+// would lead to an invalid instruction and, hence, a mapping failure.
+// Currently, mapping failures simply result in panics.
+func (p *Vector[I]) Map(fun func(uint, I) []I) Vector[I] {
+	var (
+		packets [][]I  = make([][]I, len(p.Codes))
+		mapping []uint = make([]uint, len(p.Codes)+1)
+		offset         = uint(0)
+	)
+	// first, build all packets and the offset map
+	for i, insn := range p.Codes {
+		ith := fun(uint(i), insn)
+		// record package
+		packets[i] = ith
+		// update mapping
+		mapping[i] = offset
+		// update offset
+		offset += uint(len(ith))
+	}
+	// assign offset to end-of-vector to support instructions which "skip of the
+	// end".  Such instructions can arise before vectorisation is applied.
+	mapping[len(p.Codes)] = offset
+	// reset offset
+	offset = 0
+	// recalculate skip offsets
+	for i, pkt := range packets {
+		// remap any skips which "escape" the packet.
+		remapPacket(uint(i), offset, pkt, mapping)
+		//
+		offset += uint(len(pkt))
+	}
+	// flatten packets
+	insns := array.FlatMap(packets, func(pkt []I) []I { return pkt })
+	// done
+	return NewVector(insns...)
+}
+
+// Remap all skip instructions within given "packet" of instructions.  There are
+// two cases to consider: an internal or external skip.  Here, the latter are
+// subject to remapping whilst the former are not. To understand this consider a
+// mapping to remove "skip 0" in the following:
+//
+// > skip_if x == 0 2 ; skip 0 ; ret ; jmp 1
+//
+// The packets generated for this would be:
+//
+// > [skip_if x == 0 2][][ret][jmp 1]
+//
+// You can see the second packet is empty, which is how the "skip 0" ends up
+// being removed.  Now, looking at the first packet.  This contains only a
+// single skip instruction and, hence, the target of that skip lies outside the
+// packet itself.  In such case, we refer to the skip as an "external" skip.
+//
+// Finally, to understand internal skips.  These are skips introduced by the
+// mapping function itself to implement conditional logic within the new
+// instructions.  As such, they should not be remapped as they should already
+// have correct skip offsets.
+func remapPacket[I Instruction](oldOffset, newOffset uint, packet []I, mapping []uint) {
+	var (
+		n = uint(len(packet))
+	)
+	//
+	for i, insn := range packet {
+		if skip, ok := isExternalSkip(n-uint(i), insn); ok {
+			// determine new target
+			target := mapping[oldOffset+skip+1]
+			// Remap
+			packet[i] = remapSkip(target, newOffset+uint(i), insn)
+		}
+	}
+}
+
+func isExternalSkip[I Instruction](n uint, insn I) (uint, bool) {
+	var (
+		c    any = insn
+		skip uint
+	)
+	// extract skip offset
+	switch insn := c.(type) {
+	case *Skip:
+		skip = insn.Skip
+	case *SkipIf:
+		skip = insn.Skip
+	default:
+		return 0, false
+	}
+	//
+	return skip, skip >= n
+}
+
+func remapSkip[I Instruction](target, offset uint, insn I) I {
+	var (
+		c     any = insn
+		skip      = target - offset - 1
+		ninsn any
+	)
+	// reconstruct skip
+	switch insn := c.(type) {
+	case *Skip:
+		ninsn = &Skip{Skip: skip}
+	case *SkipIf:
+		ninsn = &SkipIf{Cond: insn.Cond, Left: insn.Left, Right: insn.Right, Skip: skip}
+	default:
+		panic("unreachable")
+	}
+	// unsafe cast
+	return ninsn.(I)
+}
+
 // String implementation for Instruction interface
-func (p *Vector[W]) String(env register.Map) string {
+func (p *Vector[I]) String(mapping SystemMap) string {
 	var builder strings.Builder
 	//
 	for i, code := range p.Codes {
@@ -188,38 +259,162 @@ func (p *Vector[W]) String(env register.Map) string {
 			builder.WriteString(" ; ")
 		}
 		//
-		builder.WriteString(code.String(env))
+		builder.WriteString(code.String(mapping))
 	}
 	//
 	return builder.String()
 }
 
-// Writes constructs the write map for this micro instruction.
-func (p *Vector[W]) Writes() dfa.Result[dfa.Writes] {
-	return dfa.Construct(dfa.Writes{}, p.Codes, writeDfaTransfer[W])
+// WriteMap constructs the write map for this vector instruction.
+//
+// For each instruction, the write map records — on entry to that instruction —
+// which registers have been written by preceding instructions (on any path to
+// this point). This identifies: (1) whether a register _may_ have been written
+// on some path; (2) or, whether it was _definitely_ written along all paths.
+// For example, consider the following sequence:
+//
+// x = 0; skip_if ... 1; y = 0; ret
+//
+// When execution reaches the return instruction, we know that x was definitely
+// written but only that y may have been written (i.e. depending on which path
+// was taken).
+//
+// The write map serves two purposes:  firstly, it allows conflict detection;
+// secondly, it identifies where register forwarding should be used.  A write
+// conflict arises when a register is written which _may_ have already been
+// written; likewise a read conflict arises when a register is read that _may_
+// (but not _definitely_) have been written.  Finally, register forwarding
+// arises when a register has _definitely_ been written by an earlier
+// instruction in the vector and, hence, subsequent reads use the new value
+// (rather than the previous value).
+func (p *Vector[I]) WriteMap() dfa.Result[dfa.Writes] {
+	return dfa.Construct(dfa.Writes{}, p.Codes, writeDfaTransfer)
+}
+
+// BranchTable returns the branch table for this instruction vector, and also
+// its write map (since this is needed to compute the branch table anway). The
+// branch table maps a _branch condition_ to each instruction in the vector.
+// This identifies the conditions under which the given instruction will
+// execute.  For example, consider the following sequence:
+//
+// skip_if x!=0 1; y=0; skip_if x!=1 2; y=1; ret; y = 2; ret
+// --------------+----+---------------+----+----+------+----
+// 0             | 1  | 2             | 3  | 4  | 5    | 6
+//
+// This sequence gives rise to the following branch table:
+//
+// --+-------------+-----------------------
+// 0 | skip_if ... | TRUE
+// 1 | y=0         | x==0
+// 2 | skip_if ... | x!=0
+// 3 | y=1         | x!=0 && x==1 ==> x==1
+// 4 | ret         | x!=0 && x==1 ==> x==1
+// 5 | y=2         | x!=0 && x!=1
+// 6 | ret         | x!=0 && x!=1
+// --+-------------+-----------------------
+//
+// Observe that the optimiser automatically reduces "x!=0 && x==1" to just x==1
+// (this is why it is sometimes called _branch table optimisation_).
+func (p *Vector[I]) BranchTable() (dfa.Result[dfa.Writes], dfa.Result[dfa.Branch]) {
+	// Construct suitable branch table for this instruction vector.
+	var (
+		writeMap = p.WriteMap()
+		btf      = branchTableTransfer[I](writeMap)
+	)
+	//
+	return writeMap, dfa.Construct(dfa.Branch{Condition: dfa.TRUE}, p.Codes, btf)
 }
 
 // Data-flow transfer function for the writes analysis
-func writeDfaTransfer[W word.Word[W]](offset uint, code MicroInstruction[W], state dfa.Writes,
-) []dfa.Transfer[dfa.Writes] {
+func writeDfaTransfer[I Instruction](offset uint, code I, state dfa.Writes) []dfa.Transfer[dfa.Writes] {
 	//
-	var arcs []dfa.Transfer[dfa.Writes]
+	var (
+		arcs []dfa.Transfer[dfa.Writes]
+		insn Instruction = code
+	)
 	//
-	switch code := code.(type) {
-	case *Fail, *Return, *Jmp:
+	switch code.OpCode() {
+	case opcode.FAIL, opcode.RETURN, opcode.JUMP:
 		return nil
-	case *Skip:
+	case opcode.SKIP:
+		code := insn.(*Skip)
 		// join into branch target
 		return append(arcs, dfa.NewTransfer(state, offset+code.Skip+1))
-	case *SkipIf:
+	case opcode.SKIP_IF:
+		code := insn.(*SkipIf)
 		// join into branch target
 		arcs = append(arcs, dfa.NewTransfer(state, offset+code.Skip+1))
 		// fall through
 	}
 	// Construct state after this code
-	nState := state.Write(code.Uses()...)
+	nState := state.Write(code.Definitions()...)
 	// Transfer to following instruction
 	arcs = append(arcs, dfa.NewTransfer(nState, offset+1))
 	// Done
 	return arcs
+}
+
+func branchTableTransfer[I Instruction](writeMap dfa.Result[dfa.Writes]) dfa.BranchTransferFunction[I] {
+	return func(offset uint, insn I, state dfa.Branch) []dfa.Transfer[dfa.Branch] {
+		var (
+			arcs   []dfa.Transfer[dfa.Branch]
+			writes             = writeMap.StateOf(offset)
+			code   Instruction = insn
+		)
+		//
+		switch code := code.(type) {
+		case *Fail, *Return, *Jump:
+			return nil
+		case *Skip:
+			// join into branch target
+			return append(arcs, dfa.NewTransfer(state, offset+code.Skip+1))
+		case *SkipIf:
+			var (
+				// Determine true branch
+				trueBranch = extendSkipIf(state, true, code, writes)
+				// Determine false branch
+				falseBranch = extendSkipIf(state, false, code, writes)
+			)
+			// join into branch target
+			arcs = append(arcs, dfa.NewTransfer(trueBranch, offset+code.Skip+1))
+			// join into following instruction
+			return append(arcs, dfa.NewTransfer(falseBranch, offset+1))
+		}
+		// Transfer to following instruction
+		return append(arcs, dfa.NewTransfer(state, offset+1))
+	}
+}
+
+func extendSkipIf(tail dfa.Branch, sign bool, code *SkipIf, writes dfa.Writes) dfa.Branch {
+	var (
+		lhs      = code.Left.Registers()
+		rhs      = code.Right.Registers()
+		head     dfa.BranchEquality
+		tailc    = tail.Condition
+		left     = dfa.NewBranchId(writes.MayAnybeAssigned(lhs...), lhs...)
+		equality bool
+	)
+	// normalise condition
+	switch code.Cond {
+	case opcode.EQ:
+		equality = sign
+	case opcode.NEQ:
+		equality = !sign
+	default:
+		panic(fmt.Sprintf("unsupported skip condition (0x%x)", code.Cond))
+	}
+	// Translate operation
+	if equality {
+		head = logical.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
+	} else {
+		head = logical.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
+	}
+	// NOTE: the reason this method is needed is because we have no implicit
+	// representation of logical truth or falsehood.  This means an empty path
+	// does not behave in the expected manner.
+	if len(tailc.Conjuncts()) == 0 {
+		return dfa.Branch{Condition: logical.NewProposition(head)}
+	}
+	//
+	return dfa.Branch{Condition: tailc.And(logical.NewProposition(head))}
 }

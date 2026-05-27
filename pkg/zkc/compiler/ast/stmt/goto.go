@@ -24,11 +24,6 @@ type Goto[S symbol.Symbol[S]] struct {
 	Target uint
 }
 
-// Buses implementation for Instruction interface
-func (p *Goto[S]) Buses() []S {
-	return nil
-}
-
 // Uses implementation for Instruction interface.
 func (p *Goto[S]) Uses() []variable.Id {
 	return nil

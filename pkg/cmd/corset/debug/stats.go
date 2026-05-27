@@ -145,11 +145,13 @@ func constraintCounter[F any](title string, includes func(schema.Constraint[F]) 
 		name: title,
 		summary: func(schema sc.AnySchema[F]) int {
 			sum := 0
+
 			for iter := schema.Constraints(); iter.HasNext(); {
 				if includes(iter.Next()) {
 					sum++
 				}
 			}
+
 			return sum
 		},
 	}
@@ -163,6 +165,7 @@ func assignmentCounter[F field.Element[F]](title string, types ...reflect.Type) 
 			for _, t := range types {
 				sum += typeOfCounter(schema, t)
 			}
+
 			return sum
 		},
 	}
@@ -191,6 +194,7 @@ func columnCounter[F field.Element[F]]() schemaSummariser[F] {
 			for m := range schema.Width() {
 				count += int(schema.Module(m).Width())
 			}
+
 			return count
 		},
 	}
@@ -201,16 +205,23 @@ func columnWidthSummariser[F field.Element[F]](lowWidth uint, highWidth uint) sc
 		name: fmt.Sprintf("Columns (%d..%d bits)", lowWidth, highWidth),
 		summary: func(schema sc.AnySchema[F]) int {
 			count := 0
+
 			for i := schema.Modules(); i.HasNext(); {
 				m := i.Next()
 				for c := uint(0); c < m.Width(); c++ {
 					ith := m.Register(register.NewId(c))
+					//
+					if ith.IsNative() {
+						continue
+					}
+					//
 					ithWidth := ith.Width()
 					if ithWidth >= lowWidth && ithWidth <= highWidth {
 						count++
 					}
 				}
 			}
+
 			return count
 		},
 	}

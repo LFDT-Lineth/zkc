@@ -71,7 +71,7 @@ func (p *Assignment) String(env register.Map) string {
 	builder.WriteString(" := ")
 	builder.WriteString(StaticPoly2String(p.RightHandSide, env))
 	//
-	builder.WriteString(fmt.Sprintf("]^%d", width))
+	fmt.Fprintf(&builder, "]^%d", width)
 	//
 	return builder.String()
 }
@@ -807,7 +807,7 @@ func (p *RegisterSplitter) String(mapping register.Map) string {
 			}
 			//
 			name := mapping.Register(rid).Name()
-			builder.WriteString(fmt.Sprintf("%s/%d", name, div))
+			fmt.Fprintf(&builder, "%s/%d", name, div)
 			//
 			first = false
 		}

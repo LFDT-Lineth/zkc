@@ -34,4 +34,8 @@ type Declaration[S any] interface {
 	Name() string
 	// Determine all reference external symbols
 	Externs() []S
+	// Annotations returns the annotations associated with this declaration.
+	Annotations() []string
+	// SetAnnotations sets the annotations associated with this declaration.
+	SetAnnotations(annotations []string)
 }

@@ -63,7 +63,7 @@ func NewAirLowering[F field.Element[F]](fieldBandwidth uint, mirSchema Schema[F]
 	)
 	// Initialise AIR modules
 	for _, m := range mirSchema.RawModules() {
-		airSchema.NewModule(m.Name(), m.AllowPadding(), m.IsPublic(), m.IsSynthetic(), m.Keys())
+		airSchema.NewModule(m.Name(), m.AllowPadding(), m.IsPublic(), m.IsSynthetic(), m.IsStatic(), m.IsNative(), m.Keys())
 	}
 	//
 	return AirLowering[F]{
@@ -106,6 +106,10 @@ func (p *AirLowering[F]) InitialiseModule(index uint) {
 	)
 	// Initialise registers in AIR module
 	airModule.NewRegisters(mirModule.Registers()...)
+	// Initialise static contents (if applicable)
+	if mirModule.IsStatic() {
+		airModule.SetStaticContents(mirModule.StaticContents())
+	}
 }
 
 // LowerModule lowers the given MIR module into the corresponding AIR module.

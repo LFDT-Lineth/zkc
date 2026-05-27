@@ -218,7 +218,7 @@ func (p *Header) IsCompatible() bool {
 // Regardless of version, the file always begins with the ZKBINARY identifier
 // followed by a hand-rolled binary Header.  The encoding of everything after
 // the header is determined by the major version.
-const BINFILE_MAJOR_VERSION uint16 = 10
+const BINFILE_MAJOR_VERSION uint16 = 11
 
 // BINFILE_MINOR_VERSION is the minor version of the binary file format.  Files
 // with a lower minor version remain readable by this implementation, but files

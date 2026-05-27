@@ -87,7 +87,7 @@ func (p Writes) MaybeAssigned(reg register.Id) bool {
 
 // MayAnybeAssigned determines whether or not any of the given registers may have been
 // assigned.
-func (p Writes) MayAnybeAssigned(regs []register.Id) bool {
+func (p Writes) MayAnybeAssigned(regs ...register.Id) bool {
 	for _, r := range regs {
 		if p.maybeWrites.Contains(r.Unwrap()) {
 			return true

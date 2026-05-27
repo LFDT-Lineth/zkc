@@ -39,7 +39,11 @@ func ControlFlow(program ast.Program, srcmaps source.Maps[any]) []source.SyntaxE
 			// ignore
 		case *decl.ResolvedFunction:
 			errors = append(errors, validateFunctionFlow(*d, srcmaps)...)
+		case *decl.ResolvedInclude:
+			// ignore
 		case *decl.ResolvedMemory:
+			// ignore
+		case *decl.ResolvedTypeAlias:
 			// ignore
 		default:
 			panic(fmt.Sprintf("unknown component: %s", reflect.TypeOf(d).String()))
@@ -73,6 +77,10 @@ func validateFunctionFlow(fn decl.ResolvedFunction, srcmaps source.Maps[any]) []
 	// Sanity check all instructions reachable.
 	for pc, stmt := range fn.Code {
 		if !worklist.Visited(uint(pc)) {
+			if stmt == nil {
+				continue
+			}
+
 			errors = append(errors, *srcmaps.SyntaxError(stmt, "unreachable"))
 		}
 	}
@@ -108,13 +116,8 @@ func applyInstructionSemantics(worklist *Worklist, fn decl.ResolvedFunction, src
 	case *stmt.Fail[symbol.Resolved]:
 		// Nothing to do here
 	default:
-		// Check not falling off the end
-		if pc+1 == uint(len(fn.Code)) {
-			errors = append(errors, *srcmaps.SyntaxError(insn, "missing return"))
-		} else {
-			// fall through cases
-			worklist.Join(pc+1, state)
-		}
+		// fall through cases
+		worklist.Join(pc+1, state)
 	}
 	//
 	return errors
@@ -124,6 +127,9 @@ func applyInstructionSemantics(worklist *Worklist, fn decl.ResolvedFunction, src
 // on the record of which registesr are definitely assigned).
 func applyInstructionFlow(stmt stmt.Resolved, state bit.Set, fn decl.ResolvedFunction,
 	srcmaps source.Maps[any]) (bit.Set, []source.SyntaxError) {
+	if stmt == nil {
+		return state, nil
+	}
 	//
 	var errors []source.SyntaxError
 	// Ensure every register read has been defined.

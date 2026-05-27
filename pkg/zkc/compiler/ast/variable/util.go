@@ -23,10 +23,6 @@ func DescriptorsToType[S symbol.Symbol[S]](vars ...Descriptor[S]) data.Type[S] {
 	for i, vd := range vars {
 		types[i] = vd.DataType
 	}
-	//
-	if len(types) == 1 {
-		return types[0]
-	}
 	// construct tuple type
-	return data.NewTuple(types...)
+	return data.FromTypes(types...)
 }

@@ -20,38 +20,38 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
 )
 
-// Not represents a bitwise-not (complement) of a single expression.
-type Not[S symbol.Symbol[S]] struct {
+// BitwiseNot represents a bitwise-not (complement) of a single expression.
+type BitwiseNot[S symbol.Symbol[S]] struct {
 	Expr     Expr[S]
 	datatype data.Type[S]
 }
 
-// NewNot constructs an expression representing the bitwise complement of a
+// NewBitwiseNot constructs an expression representing the bitwise complement of a
 // value.
-func NewNot[S symbol.Symbol[S]](e Expr[S]) Expr[S] {
-	return &Not[S]{Expr: e}
+func NewBitwiseNot[S symbol.Symbol[S]](e Expr[S]) Expr[S] {
+	return &BitwiseNot[S]{Expr: e}
 }
 
 // ExternUses implementation for the Expr interface.
-func (p *Not[S]) ExternUses() set.AnySortedSet[S] {
+func (p *BitwiseNot[S]) ExternUses() set.AnySortedSet[S] {
 	return p.Expr.ExternUses()
 }
 
 // LocalUses implementation for the Expr interface.
-func (p *Not[S]) LocalUses() bit.Set {
+func (p *BitwiseNot[S]) LocalUses() bit.Set {
 	return p.Expr.LocalUses()
 }
 
-func (p *Not[S]) String(mapping variable.Map[S]) string {
+func (p *BitwiseNot[S]) String(mapping variable.Map[S]) string {
 	return String[S](p, mapping)
 }
 
 // SetType implementation for Expr interface
-func (p *Not[S]) SetType(t data.Type[S]) {
+func (p *BitwiseNot[S]) SetType(t data.Type[S]) {
 	p.datatype = t
 }
 
 // Type implementation for Expr interface
-func (p *Not[S]) Type() data.Type[S] {
+func (p *BitwiseNot[S]) Type() data.Type[S] {
 	return p.datatype
 }

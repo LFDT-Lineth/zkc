@@ -34,6 +34,9 @@ type Polynomial[S util.Comparable[S], T Term[S, T], P any] interface {
 	// Initialise this polynomial from a 64bit constant.
 	Const64(uint64) P
 
+	// Cmp provides an ordering over polynomials.
+	Cmp(o P) int
+
 	// IsZero returns an indication as to whether this polynomial is equivalent
 	// to zero (or not).  This is a three valued logic system which can return
 	// either "yes", "no" or "maybe" where: (i) "yes" means the polynomial
@@ -54,6 +57,9 @@ type Polynomial[S util.Comparable[S], T Term[S, T], P any] interface {
 	// Multiply this polynomial by another polynomial, such that this polynomial
 	// is updated in place.
 	Mul(P) P
+
+	// Negate each mononial in this polynomial.
+	Negate() P
 
 	// For a given bitwidth n, divide a polynomial by 2^n produces a quotient and
 	// remainder.  For example, dividing 256*x1+x0 by 2^8 gives x1 remainder x0.
@@ -117,8 +123,11 @@ func String[S util.Comparable[S], T Term[S, T], P Polynomial[S, T, P]](poly P, e
 		ith := poly.Term(i)
 		coeff := ith.Coefficient()
 		//
-		if i != 0 {
+		if i != 0 && coeff.Sign() >= 0 {
 			buf.WriteString("+")
+		} else if i != 0 {
+			buf.WriteString("-")
+			coeff.Neg(&coeff)
 		}
 		// Various cases to improve readability
 		if ith.Len() == 0 {

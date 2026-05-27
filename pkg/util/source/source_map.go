@@ -78,6 +78,19 @@ func (p *Maps[T]) Has(node T) bool {
 	return false
 }
 
+// Lookup returns the source file and span for a given node. If the node is
+// found in any of the contained source maps, it returns the corresponding File
+// and Span with ok=true; otherwise it returns zero values with ok=false.
+func (p *Maps[T]) Lookup(node T) (File, Span, bool) {
+	for i := range p.maps {
+		if p.maps[i].Has(node) {
+			return p.maps[i].Source(), p.maps[i].Get(node), true
+		}
+	}
+	//
+	return File{}, Span{}, false
+}
+
 // SyntaxError constructs a syntax error for a given node contained within one
 // of the source files managed by this set of source maps.
 //

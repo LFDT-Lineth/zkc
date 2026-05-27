@@ -194,6 +194,18 @@ func FindMatching[T any](items []T, predicate Predicate[T]) uint {
 	return math.MaxUint
 }
 
+// Filter a given slice by retaing only those elements where the given predicate
+// holds.
+func Filter[T any](items []T, predicate Predicate[T]) (nitems []T) {
+	for _, item := range items {
+		if predicate(item) {
+			nitems = append(nitems, item)
+		}
+	}
+	//
+	return nitems
+}
+
 // ContainsMatching checks whether a given array contains an item matching a given predicate.
 func ContainsMatching[T any](items []T, predicate Predicate[T]) bool {
 	for _, item := range items {

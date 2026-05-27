@@ -43,6 +43,11 @@ type UnresolvedFunction = Function[symbol.Unresolved]
 type Function[S symbol.Symbol[S]] struct {
 	// Unique name of this function.
 	name string
+	// Annotations associated with this declaration.
+	annotations []string
+	// Effects describes zero or more external memories which this function is
+	// permitted to access.
+	Effects []*S
 	// Registers describes zero or more variables of a given width.  Each
 	// register can be designated as an input / output or temporary.
 	Variables []variable.Descriptor[S]
@@ -55,18 +60,37 @@ type Function[S symbol.Symbol[S]] struct {
 }
 
 // NewFunction constructs a new function with the given variables and code
-func NewFunction[S symbol.Symbol[S]](name string, vars []variable.Descriptor[S], code []stmt.Stmt[S]) *Function[S] {
+func NewFunction[S symbol.Symbol[S]](name string, effects []*S, vars []variable.Descriptor[S],
+	code []stmt.Stmt[S]) *Function[S] {
+	//
 	var (
 		numInputs  = array.CountMatching(vars, func(r variable.Descriptor[S]) bool { return r.IsParameter() })
 		numOutputs = array.CountMatching(vars, func(r variable.Descriptor[S]) bool { return r.IsReturn() })
 	)
 	//
-	return &Function[S]{name, vars, numInputs, numOutputs, code}
+	return &Function[S]{
+		name:       name,
+		Effects:    effects,
+		Variables:  vars,
+		NumInputs:  numInputs,
+		NumOutputs: numOutputs,
+		Code:       code,
+	}
 }
 
 // Arity implementation for Declaration interface
 func (p *Function[S]) Arity() (nInputs, nOutputs uint) {
 	return p.NumInputs, p.NumOutputs
+}
+
+// Annotations implementation for Declaration interface
+func (p *Function[S]) Annotations() []string {
+	return p.annotations
+}
+
+// SetAnnotations implementation for Declaration interface
+func (p *Function[S]) SetAnnotations(annotations []string) {
+	p.annotations = annotations
 }
 
 // Name implementation for Declaration interface
@@ -82,4 +106,19 @@ func (p *Function[S]) Externs() []S {
 // Variable implementation for variable.Map interface
 func (p *Function[S]) Variable(id variable.Id) variable.Descriptor[S] {
 	return p.Variables[id]
+}
+
+// Inputs returns an array containing the output variables of this function
+func (p *Function[S]) Inputs() []variable.Descriptor[S] {
+	return p.Variables[:p.NumInputs]
+}
+
+// Outputs returns an array containing the output variables of this function
+func (p *Function[S]) Outputs() []variable.Descriptor[S] {
+	var (
+		n = p.NumInputs
+		m = n + p.NumOutputs
+	)
+	//
+	return p.Variables[n:m]
 }

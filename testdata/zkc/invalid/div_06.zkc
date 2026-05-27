@@ -1,0 +1,4 @@
+//error:3:15-18:constant divisors overflow u8
+fn f(a:u8) -> (r:u8) {
+  r = a / 2 / 200
+}

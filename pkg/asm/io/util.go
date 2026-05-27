@@ -55,7 +55,7 @@ func RegistersToString(rids []RegisterId, regs []Register) string {
 		if i < len(regs) {
 			builder.WriteString(regs[rid.Unwrap()].Name())
 		} else {
-			builder.WriteString(fmt.Sprintf("?%d", rid))
+			fmt.Fprintf(&builder, "?%d", rid)
 		}
 	}
 	//

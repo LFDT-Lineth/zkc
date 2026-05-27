@@ -52,6 +52,36 @@ func (p *UnsignedInt[S]) AsTuple(Environment[S]) *Tuple[S] {
 	return nil
 }
 
+// Join combines to uint types together
+func (p *UnsignedInt[S]) Join(q *UnsignedInt[S]) *UnsignedInt[S] {
+	if p.open && q.open {
+		return &UnsignedInt[S]{max(p.bitwidth, q.bitwidth), true}
+	} else if p.open {
+		return q
+	} else if q.open {
+		return p
+	} else if p.bitwidth != q.bitwidth {
+		panic(fmt.Sprintf("cannot join u%d ⊔ u%d", p.bitwidth, q.bitwidth))
+	}
+	//
+	return p
+}
+
+// AsAlias implementation for Type interface
+func (p *UnsignedInt[S]) AsAlias(Environment[S]) *Alias[S] {
+	return nil
+}
+
+// AsField implementation for Type interface
+func (p *UnsignedInt[S]) AsField(Environment[S]) *FieldElement[S] {
+	return nil
+}
+
+// AsFixedArray implementation for Type interface
+func (p *UnsignedInt[S]) AsFixedArray(Environment[S]) *FixedArray[S] {
+	return nil
+}
+
 func (p *UnsignedInt[S]) String(_ Environment[S]) string {
 	if p.open {
 		return fmt.Sprintf("u%d+", p.bitwidth)

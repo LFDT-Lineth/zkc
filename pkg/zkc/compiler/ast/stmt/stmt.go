@@ -32,10 +32,6 @@ type Unresolved = Stmt[symbol.Unresolved]
 // Here, macro is intended to imply that the instruction may break down into
 // multiple underlying "micro instructions".
 type Stmt[S symbol.Symbol[S]] interface {
-	// Buses identifies any external components (i.e. functions, memories,
-	// types) used by this instruction.  For example, a function call will
-	// return the identifier of the function being called, etc.
-	Buses() []S
 	// Uses returns the set of variables used (i.e. read) by this instruction.
 	Uses() []variable.Id
 	// Definitions returns the set of variables registers defined (i.e. written)

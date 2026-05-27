@@ -10,7 +10,9 @@
 // SPDX-License-Identifier: Apache-2.0
 package data
 
-import "github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+import (
+	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+)
 
 // ResolvedEnvironment represents a typing environment which contains only
 // resolved identifiers.
@@ -25,18 +27,8 @@ type UnresolvedEnvironment = Environment[symbol.Unresolved]
 type Environment[S symbol.Symbol[S]] interface {
 	// TypeOf resolves the type of an external identifier.
 	TypeOf(S) Type[S]
-}
-
-// NewEnvironment constructs a new typing environment which wraps a "mapper"
-// function which maps type indices to types.
-func NewEnvironment[S symbol.Symbol[S]](fn func(id S) Type[S]) Environment[S] {
-	return fnEnv[S]{fn}
-}
-
-type fnEnv[S symbol.Symbol[S]] struct {
-	fn func(id S) Type[S]
-}
-
-func (p fnEnv[S]) TypeOf(id S) Type[S] {
-	return p.fn(id)
+	// WellFormed is used to check whether a given type is well-formed under the
+	// given environment.  This is necessary to protected against various problems
+	// in methods such as Bitwidth, SubtypeOf and EquiTypes.
+	WellFormed(t Type[S]) bool
 }

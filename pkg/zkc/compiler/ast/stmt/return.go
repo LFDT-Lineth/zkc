@@ -24,11 +24,6 @@ type Return[S symbol.Symbol[S]] struct {
 	Dummy uint
 }
 
-// Buses implementation for Instruction interface
-func (p *Return[S]) Buses() []S {
-	return nil
-}
-
 // Uses implementation for Instruction interface.
 func (p *Return[S]) Uses() []variable.Id {
 	return nil

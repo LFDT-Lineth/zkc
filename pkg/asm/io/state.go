@@ -273,7 +273,7 @@ func (p *State) String() string {
 		builder.WriteString(" ")
 	}
 	//
-	builder.WriteString(fmt.Sprintf(" (pc=%02x) ", p.pc))
+	fmt.Fprintf(&builder, " (pc=%02x) ", p.pc)
 	//
 	for i := range p.registers {
 		if i != 0 {
@@ -282,7 +282,7 @@ func (p *State) String() string {
 		//
 		val := p.Load(register.NewId(uint(i))).Text(16)
 		reg := p.registers[i].Name()
-		builder.WriteString(fmt.Sprintf("%s=0x%s", reg, val))
+		fmt.Fprintf(&builder, "%s=0x%s", reg, val)
 	}
 	//
 	return builder.String()

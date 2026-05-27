@@ -147,7 +147,7 @@ func (p *SortedSet[T]) String() string {
 
 		first = false
 
-		r.WriteString(fmt.Sprintf("%v", any(item)))
+		fmt.Fprintf(&r, "%v", any(item))
 	}
 	// Write closing brace
 	r.WriteString("]")

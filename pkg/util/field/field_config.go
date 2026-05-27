@@ -12,6 +12,13 @@
 // SPDX-License-Identifier: Apache-2.0
 package field
 
+import (
+	"math/big"
+
+	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
+	"github.com/consensys/go-corset/pkg/util/field/koalabear"
+)
+
 // GF_251 is teany tiny prime field used exclusively for testing.
 var GF_251 = Config{"GF_251", 7, 4}
 
@@ -42,6 +49,22 @@ type Config struct {
 	BandWidth uint
 	// Maximum register width to use with this field.
 	RegisterWidth uint
+}
+
+// Modulus returns the (prime) modulus used for this field.
+func (p Config) Modulus() *big.Int {
+	switch p {
+	case GF_251:
+		return big.NewInt(251)
+	case GF_8209:
+		return big.NewInt(8209)
+	case KOALABEAR_16:
+		return big.NewInt(koalabear.Modulus)
+	case BLS12_377:
+		return bls12_377.Modulus
+	default:
+		panic("unsupported field configuration")
+	}
 }
 
 // GetConfig returns the field configuration corresponding with the given

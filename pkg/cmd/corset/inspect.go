@@ -14,7 +14,6 @@ package corset
 
 import (
 	"fmt"
-	"math"
 	"os"
 
 	"github.com/consensys/go-corset/pkg/asm"
@@ -69,6 +68,8 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	//
 	validate := GetFlag(cmd, "validate")
 	showLimbs := GetFlag(cmd, "show-limbs")
+	cellWidth := GetUint(cmd, "cell-width")
+	titleWidth := GetUint(cmd, "title-width")
 	// Read in constraint files
 	stacker := *getSchemaStack[F](cmd, SCHEMA_DEFAULT_AIR, args[1:]...)
 	stack := stacker.Build()
@@ -107,7 +108,7 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	//
 	if len(errors) == 0 {
 		// Run the inspector.
-		errors = inspect(stack.TraceBuilder().Mapping(), srcmap, trace, showLimbs)
+		errors = inspect(stack.TraceBuilder().Mapping(), srcmap, trace, showLimbs, cellWidth, titleWidth)
 	}
 	// Sanity check what happened
 	if len(errors) > 0 {
@@ -121,9 +122,9 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 
 // Inspect a given trace using a given schema.
 func inspect[F field.Element[F]](mapping module.LimbsMap, srcmap *corset.SourceMap, trace tr.Trace[F],
-	limbs bool) []error {
+	limbs bool, cellWidth, titleWidth uint) []error {
 	// Construct inspector window
-	inspector := construct(mapping, trace, srcmap, limbs)
+	inspector := construct(mapping, trace, srcmap, limbs, cellWidth, titleWidth)
 	// Render inspector
 	if err := inspector.Render(); err != nil {
 		return []error{err}
@@ -133,14 +134,15 @@ func inspect[F field.Element[F]](mapping module.LimbsMap, srcmap *corset.SourceM
 }
 
 func construct[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F], srcmap *corset.SourceMap, limbs bool,
-) *inspector.Inspector {
+	cellWidth, titleWidth uint) *inspector.Inspector {
 	//
 	term, err := termio.NewTerminal()
 	// Check whether successful
 	if err == nil {
 		window := view.NewBuilder[F](mapping).
 			WithSourceMap(*srcmap).
-			WithTitleWidth(math.MaxUint).
+			WithTitleWidth(titleWidth).
+			WithCellWidth(cellWidth).
 			WithFormatting(inspector.NewFormatter()).
 			WithLimbs(limbs).
 			WithComputed(true).
@@ -159,4 +161,6 @@ func construct[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F], s
 func init() {
 	rootCmd.AddCommand(inspectCmd)
 	inspectCmd.Flags().Bool("show-limbs", false, "specify whether to show register limbs")
+	inspectCmd.Flags().Uint("cell-width", 32, "specify maximum display width for a cell")
+	inspectCmd.Flags().Uint("title-width", 128, "specify maximum display width for a column title")
 }

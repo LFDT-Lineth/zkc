@@ -23,17 +23,25 @@ make install
 
 ### Running specific test subsets
 
+The test targets vary widely in runtime — pick the smallest set that covers
+your change to keep the iteration loop tight. The slow targets (`asm-unit`,
+`asm-bench`, `corset-test`) will exceed the default 2-minute `go test`
+timeout if invoked directly, which is why the Makefile passes `--timeout 0`.
+
 ```shell
-# Corset constraint tests (valid/invalid/agnostic)
+# ZkC compiler/VM tests — Test_ZkcBench|Test_ZkcUnit|Test_ZkcInvalid (fast)
+make zkc-test
+
+# Cheap "everything else" — skips Asm/Bench/Corset/Zkc system tests (fast)
+make unit-test
+
+# Corset constraint tests (valid/invalid/agnostic) — slow (minutes)
 make corset-test   # go test -run "Test_Agnostic|Test_Valid|Test_Invalid"
 
-# Assembly tests
+# Assembly tests — slow; Test_AsmUnit_ByteShift alone takes ~2+ min
 make asm-unit      # go test -run "Test_AsmInvalid|Test_AsmUnit"
 make asm-util      # go test -run "Test_AsmUtil"
-make asm-bench     # go test -run "Test_AsmBench"
-
-# All tests except Asm/Bench/Corset system tests
-make unit-test
+make asm-bench     # go test -run "Test_AsmBench"  (slowest; -p 1)
 
 # Run a single named test
 go test --timeout 0 -run "Test_Valid_Basic_01" ./pkg/test/...
@@ -41,6 +49,11 @@ go test --timeout 0 -run "Test_Valid_Basic_01" ./pkg/test/...
 # Run tests with race detection
 make asm-racer
 ```
+
+When iterating on ZkC changes (e.g. `pkg/zkc/...`), `make zkc-test` is the
+relevant target — `make asm-unit` will not exercise ZkC code and is too slow
+for a quick check. Combining `Test_ZkcUnit|Test_AsmUnit` in a single
+`go test -run` invocation will time out at the default 2-minute limit.
 
 ### CLI usage
 
@@ -100,29 +113,29 @@ Layer constants (defined in `schema_stacker.go`):
 
 ### Key packages
 
-| Package | Role |
-|---|---|
-| `pkg/corset/` | Corset DSL compiler: parses `.lisp`, resolves symbols, type-checks, and emits a `MacroHirProgram`. Standard library embedded as `stdlib.lisp`. |
-| `pkg/corset/ast/` | AST nodes for Corset: declarations, expressions, types, bindings |
-| `pkg/corset/compiler/` | Compiler internals: parser, resolver, type-checker, preprocessor, translator, register allocator |
-| `pkg/asm/` | Assembly layer: `MacroProgram` / `MicroProgram` types, lowering (macro→micro), vectorisation, concretisation to MIR |
-| `pkg/asm/io/` | Core abstractions: `Instruction`, `Function`, `Component`, `Program`, bus interface (Map) |
-| `pkg/asm/io/macro/` | Macro instruction set (high-level: assign, call, cast, divide, if/goto, …) |
-| `pkg/asm/io/micro/` | Micro instruction set (low-level: polynomial, skip_if, jmp, …); includes DFA for analysis |
-| `pkg/asm/assembler/` | Parser/linker for `.zkasm` assembly text format |
-| `pkg/ir/hir/` | High-level IR: `LowerToMir()` — HIR modules → MIR modules |
-| `pkg/ir/mir/` | Mid-level IR: `LowerToAir()` — MIR modules → AIR schema, optimiser |
-| `pkg/ir/air/` | AIR schema: final vanishing polynomials + gadgets |
-| `pkg/schema/` | Core schema interfaces (`Schema`, `Module`, `Assignment`, `Constraint`) parameterised over field element type `F` |
-| `pkg/schema/constraint/` | Constraint types: vanishing, lookup, permutation, range |
-| `pkg/trace/` | Trace representation; `json/` and `lt/` (binary) format readers/writers |
-| `pkg/binfile/` | Binary `.bin` file serialisation (gob-encoded) |
-| `pkg/zkc/` | ZK compiler / VM: a separate compiler+virtual machine (`pkg/zkc/vm/`) with ROM, RAM, WOM memories and a call stack |
-| `pkg/util/field/` | Field element implementations: `bls12_377`, `koalabear`, `gf251`, `gf8209`, `mersenne31` |
-| `pkg/util/` | General utilities: collections, iterators, source maps, math, word types |
-| `cmd/go-corset/` | Main entry point |
-| `pkg/cmd/corset/` | CLI commands: check, compile, debug, inspect, trace, generate |
-| `pkg/cmd/zkc/` | CLI commands for the ZK compiler toolchain |
+| Package                  | Role                                                                                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pkg/corset/`            | Corset DSL compiler: parses `.lisp`, resolves symbols, type-checks, and emits a `MacroHirProgram`. Standard library embedded as `stdlib.lisp`. |
+| `pkg/corset/ast/`        | AST nodes for Corset: declarations, expressions, types, bindings                                                                               |
+| `pkg/corset/compiler/`   | Compiler internals: parser, resolver, type-checker, preprocessor, translator, register allocator                                               |
+| `pkg/asm/`               | Assembly layer: `MacroProgram` / `MicroProgram` types, lowering (macro→micro), vectorisation, concretisation to MIR                            |
+| `pkg/asm/io/`            | Core abstractions: `Instruction`, `Function`, `Component`, `Program`, bus interface (Map)                                                      |
+| `pkg/asm/io/macro/`      | Macro instruction set (high-level: assign, call, cast, divide, if/goto, …)                                                                     |
+| `pkg/asm/io/micro/`      | Micro instruction set (low-level: polynomial, skip_if, jmp, …); includes DFA for analysis                                                      |
+| `pkg/asm/assembler/`     | Parser/linker for `.zkasm` assembly text format                                                                                                |
+| `pkg/ir/hir/`            | High-level IR: `LowerToMir()` — HIR modules → MIR modules                                                                                      |
+| `pkg/ir/mir/`            | Mid-level IR: `LowerToAir()` — MIR modules → AIR schema, optimiser                                                                             |
+| `pkg/ir/air/`            | AIR schema: final vanishing polynomials + gadgets                                                                                              |
+| `pkg/schema/`            | Core schema interfaces (`Schema`, `Module`, `Assignment`, `Constraint`) parameterised over field element type `F`                              |
+| `pkg/schema/constraint/` | Constraint types: vanishing, lookup, permutation, range                                                                                        |
+| `pkg/trace/`             | Trace representation; `json/` and `lt/` (binary) format readers/writers                                                                        |
+| `pkg/binfile/`           | Binary `.bin` file serialisation (gob-encoded)                                                                                                 |
+| `pkg/zkc/`               | ZK compiler / VM: a separate compiler+virtual machine (`pkg/zkc/vm/`) with ROM, RAM, WOM memories and a call stack                             |
+| `pkg/util/field/`        | Field element implementations: `bls12_377`, `koalabear`, `gf251`, `gf8209`, `mersenne31`                                                       |
+| `pkg/util/`              | General utilities: collections, iterators, source maps, math, word types                                                                       |
+| `cmd/go-corset/`         | Main entry point                                                                                                                               |
+| `pkg/cmd/corset/`        | CLI commands: check, compile, debug, inspect, trace, generate                                                                                  |
+| `pkg/cmd/zkc/`           | CLI commands for the ZK compiler toolchain                                                                                                     |
 
 ### Schema and field polymorphism
 

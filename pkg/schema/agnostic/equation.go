@@ -107,7 +107,7 @@ func (p *Equation) String(mapping register.Map) string {
 	// write right-hand side
 	builder.WriteString(DynamicPoly2String(p.RightHandSide, mapping))
 	//
-	builder.WriteString(fmt.Sprintf("]^%s", width))
+	fmt.Fprintf(&builder, "]^%s", width)
 	//
 	return builder.String()
 }

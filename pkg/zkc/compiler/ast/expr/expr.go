@@ -41,7 +41,7 @@ type Expr[S symbol.Symbol[S]] interface {
 	// ExternUses returns the set of non-local declarations accessed by this
 	// expression.  For example, external constants or memories used within.
 	ExternUses() set.AnySortedSet[S]
-	// RegistersRead returns the set of variables used (i.e. read) by this expression
+	// LocalUses returns the set of variables used (i.e. read) by this expression
 	LocalUses() bit.Set
 	// String returns a string representation of this expression.
 	String(mapping variable.Map[S]) string
@@ -61,7 +61,9 @@ func Uses[S symbol.Symbol[S]](exprs ...Expr[S]) []variable.Id {
 	)
 	// extract all usages
 	for _, e := range exprs {
-		bits.Union(e.LocalUses())
+		if e != nil {
+			bits.Union(e.LocalUses())
+		}
 	}
 	// Collect them all up
 	for iter := bits.Iter(); iter.HasNext(); {
@@ -83,33 +85,58 @@ func String[S symbol.Symbol[S]](e Expr[S], mapping variable.Map[S]) string {
 	)
 	//
 	switch e := e.(type) {
+	case *Cast[S]:
+		inner := String(e.Expr, mapping)
+		if needsBraces(e.Expr) {
+			inner = "(" + inner + ")"
+		}
+
+		var env data.Environment[S]
+
+		return inner + " as " + e.CastType.String(env)
 	case *Add[S]:
 		operator = "+"
 		exprs = e.Exprs
-	case *And[S]:
+	case *ArrayAccess[S]:
+		return fmt.Sprintf("%s[%s]", mapping.Variable(e.Id).Name, e.Arg.String(mapping))
+	case *BitwiseAnd[S]:
 		operator = "&"
 		exprs = e.Exprs
-	case *Or[S]:
+	case *BitwiseOr[S]:
 		operator = "|"
 		exprs = e.Exprs
-	case *Xor[S]:
-		operator = "^"
+	case *Concat[S]:
+		operator = "::"
 		exprs = e.Exprs
 	case *Const[S]:
-		return stringOfConstant(e.Constant, e.Base)
+		return stringOfConstant(e.constant, e.base)
+	case *Div[S]:
+		exprs = e.Exprs
+		operator = "/"
 	case *LocalAccess[S]:
 		return mapping.Variable(e.Variable).Name
 	case *Mul[S]:
 		exprs = e.Exprs
 		operator = "*"
-	case *Not[S]:
+	case *BitwiseNot[S]:
 		if needsBraces[S](e.Expr) {
 			return "~(" + String[S](e.Expr, mapping) + ")"
 		}
 
-		return "~" + String[S](e.Expr, mapping)
+		return "~" + String(e.Expr, mapping)
 	case *ExternAccess[S]:
-		return e.Name.String()
+		args := stringOfArguments(e.Args, mapping)
+		name := e.Name.String()
+		//
+		switch {
+		case e.Name.IsFunction():
+			return fmt.Sprintf("%s(%s)", name, args)
+		case e.Name.IsMemory():
+			return fmt.Sprintf("%s[%s]", name, args)
+		default:
+			return name
+		}
+
 	case *Shl[S]:
 		operator = "<<"
 		exprs = e.Exprs
@@ -119,6 +146,18 @@ func String[S symbol.Symbol[S]](e Expr[S], mapping variable.Map[S]) string {
 	case *Sub[S]:
 		exprs = e.Exprs
 		operator = "-"
+	case *TupleInitialiser[S]:
+		args := stringOfArguments(e.Exprs, mapping)
+		return fmt.Sprintf("(%s)", args)
+	case *Rem[S]:
+		exprs = e.Exprs
+		operator = "%"
+	case *Ternary[S]:
+		return e.String(mapping)
+	case *Xor[S]:
+		operator = "^"
+		exprs = e.Exprs
+
 	default:
 		panic("unreachable")
 	}
@@ -130,13 +169,27 @@ func String[S symbol.Symbol[S]](e Expr[S], mapping variable.Map[S]) string {
 			builder.WriteString(" ")
 		}
 		//
-		if needsBraces[S](e) {
+		if needsBraces(e) {
 			builder.WriteString("(")
-			builder.WriteString(String[S](e, mapping))
+			builder.WriteString(String(e, mapping))
 			builder.WriteString(")")
 		} else {
-			builder.WriteString(String[S](e, mapping))
+			builder.WriteString(String(e, mapping))
 		}
+	}
+	//
+	return builder.String()
+}
+
+func stringOfArguments[S symbol.Symbol[S]](args []Expr[S], mapping variable.Map[S]) string {
+	var builder strings.Builder
+	//
+	for i, arg := range args {
+		if i != 0 {
+			builder.WriteString(",")
+		}
+
+		builder.WriteString(String[S](arg, mapping))
 	}
 	//
 	return builder.String()
@@ -155,9 +208,13 @@ func stringOfConstant(val big.Int, base uint) string {
 
 func needsBraces[S symbol.Symbol[S]](e Expr[S]) bool {
 	switch e.(type) {
+	case *Cast[S]:
+		return false
 	case *Const[S]:
 		return false
 	case *LocalAccess[S]:
+		return false
+	case *ArrayAccess[S]:
 		return false
 	case *ExternAccess[S]:
 		return false

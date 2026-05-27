@@ -20,42 +20,42 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
 )
 
-// Or represents a bitwise-or of one or more terms.
-type Or[S symbol.Symbol[S]] struct {
+// BitwiseOr represents a bitwise-or of one or more terms.
+type BitwiseOr[S symbol.Symbol[S]] struct {
 	Exprs    []Expr[S]
 	datatype data.Type[S]
 }
 
-// NewOr constructs an expression representing the bitwise-or of one or more
+// NewBitwiseOr constructs an expression representing the bitwise-or of one or more
 // values.
-func NewOr[S symbol.Symbol[S]](exprs ...Expr[S]) Expr[S] {
+func NewBitwiseOr[S symbol.Symbol[S]](exprs ...Expr[S]) Expr[S] {
 	if len(exprs) == 0 {
 		panic("one or more subexpressions required")
 	}
 	//
-	return &Or[S]{Exprs: exprs}
+	return &BitwiseOr[S]{Exprs: exprs}
 }
 
 // ExternUses implementation for the Expr interface.
-func (p *Or[S]) ExternUses() set.AnySortedSet[S] {
+func (p *BitwiseOr[S]) ExternUses() set.AnySortedSet[S] {
 	return externUses(p.Exprs...)
 }
 
 // LocalUses implementation for the Expr interface.
-func (p *Or[S]) LocalUses() bit.Set {
+func (p *BitwiseOr[S]) LocalUses() bit.Set {
 	return localUses(p.Exprs...)
 }
 
-func (p *Or[S]) String(mapping variable.Map[S]) string {
+func (p *BitwiseOr[S]) String(mapping variable.Map[S]) string {
 	return String[S](p, mapping)
 }
 
 // SetType implementation for Expr interface
-func (p *Or[S]) SetType(t data.Type[S]) {
+func (p *BitwiseOr[S]) SetType(t data.Type[S]) {
 	p.datatype = t
 }
 
 // Type implementation for Expr interface
-func (p *Or[S]) Type() data.Type[S] {
+func (p *BitwiseOr[S]) Type() data.Type[S] {
 	return p.datatype
 }

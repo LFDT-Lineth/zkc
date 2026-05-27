@@ -13,6 +13,8 @@
 package lval
 
 import (
+	"strings"
+
 	"github.com/consensys/go-corset/pkg/util/collection/bit"
 	"github.com/consensys/go-corset/pkg/util/collection/set"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
@@ -21,12 +23,12 @@ import (
 
 // Variable represents a register access within an expresion.
 type Variable[S symbol.Symbol[S]] struct {
-	Id variable.Id
+	Ids []variable.Id
 }
 
 // NewVariable constructs an expression representing a register access.
-func NewVariable[S symbol.Symbol[S]](variable variable.Id) LVal[S] {
-	return &Variable[S]{Id: variable}
+func NewVariable[S symbol.Symbol[S]](variable ...variable.Id) LVal[S] {
+	return &Variable[S]{Ids: variable}
 }
 
 // ExternUses implementation for the LVal interface.
@@ -42,11 +44,24 @@ func (p *Variable[S]) LocalUses() bit.Set {
 // LocalDefs implementation for the LVal interface.
 func (p *Variable[S]) LocalDefs() bit.Set {
 	var read bit.Set
-	read.Insert(p.Id)
+	//
+	for _, id := range p.Ids {
+		read.Insert(id)
+	}
 	//
 	return read
 }
 
 func (p *Variable[S]) String(mapping variable.Map[S]) string {
-	return mapping.Variable(p.Id).Name
+	var builder strings.Builder
+	//
+	for i, id := range p.Ids {
+		if i != 0 {
+			builder.WriteString("::")
+		}
+		//
+		builder.WriteString(mapping.Variable(id).Name)
+	}
+	//
+	return builder.String()
 }

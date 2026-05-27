@@ -1,3 +1,0 @@
-//error:2:18-21:bit overflow (u9 into u8)
-const LARGE:u8 = 255
-const LARGEPO:u8 = LARGE+1

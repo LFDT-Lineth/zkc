@@ -601,7 +601,7 @@ func (p *RegisterGroup) String() string {
 			builder.WriteString(",")
 		}
 		//
-		builder.WriteString(fmt.Sprintf("%d:=%d", r.slot, r.register))
+		fmt.Fprintf(&builder, "%d:=%d", r.slot, r.register)
 	}
 	//
 	builder.WriteString("}")

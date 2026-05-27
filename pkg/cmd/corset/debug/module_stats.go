@@ -97,11 +97,13 @@ func moduleConstraintCounter[F any](title string, includes func(schema.Constrain
 		name: title,
 		summary: func(schema sc.Module[F]) int {
 			sum := 0
+
 			for iter := schema.Constraints(); iter.HasNext(); {
 				if includes(iter.Next()) {
 					sum++
 				}
 			}
+
 			return sum
 		},
 	}

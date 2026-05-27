@@ -374,7 +374,7 @@ func (p *ArrayColumn[W]) String() string {
 				id.WriteString(",")
 			}
 
-			id.WriteString(fmt.Sprintf("%v", jth))
+			fmt.Fprintf(&id, "%v", jth)
 		}
 		//
 		id.WriteString("}")

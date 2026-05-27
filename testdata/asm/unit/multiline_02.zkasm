@@ -1,0 +1,10 @@
+fn main(x u8) -> (r u8) {
+   var c u1
+   if x == 0 goto exit_0
+   r = x
+   c,r = r + 1
+   return
+exit_0:
+   r = 0
+   return
+}

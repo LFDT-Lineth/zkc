@@ -12,7 +12,11 @@
 // SPDX-License-Identifier: Apache-2.0
 package koalabear
 
-import "github.com/consensys/go-corset/pkg/util/word"
+import (
+	"math/big"
+
+	"github.com/consensys/go-corset/pkg/util/word"
+)
 
 const (
 	offset64 uint64 = 14695981039346656037
@@ -30,6 +34,11 @@ func (x Element) Hash() uint64 {
 	hash := offset64
 	//
 	return (hash ^ uint64(x[0])) * prime64
+}
+
+// FitsWithin implementation for word.Word interface.
+func (x Element) FitsWithin(bitwidth uint) bool {
+	return (x[0] >> bitwidth) == 0
 }
 
 // SetBytes implementation for word.Word interface.
@@ -53,4 +62,11 @@ func (x Element) SetUint64(val uint64) Element {
 // Uint64 implementation for word.Word interface.
 func (x Element) Uint64() uint64 {
 	return uint64(x.ToUint32())
+}
+
+// BigInt implementation for word.Word interface.
+func (x Element) BigInt() *big.Int {
+	var val big.Int
+	//
+	return val.SetUint64(x.Uint64())
 }

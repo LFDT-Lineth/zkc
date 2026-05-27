@@ -82,9 +82,9 @@ func (p *Bus) Split(mapping register.LimbsMap, _ agnostic.RegisterAllocator) Bus
 func (p *Bus) String() string {
 	var builder strings.Builder
 	//
-	builder.WriteString(fmt.Sprintf("%s(%d)", p.Name, p.BusId))
-	builder.WriteString(fmt.Sprintf("%v", p.AddressLines))
-	builder.WriteString(fmt.Sprintf("%v", p.DataLines))
+	fmt.Fprintf(&builder, "%s(%d)", p.Name, p.BusId)
+	fmt.Fprintf(&builder, "%v", p.AddressLines)
+	fmt.Fprintf(&builder, "%v", p.DataLines)
 	//
 	return builder.String()
 }

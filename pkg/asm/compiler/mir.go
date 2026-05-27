@@ -40,7 +40,7 @@ type MirModule[F field.Element[F]] struct {
 // Initialise this module
 func (p MirModule[F]) Initialise(mid uint, fn MicroComponent) MirModule[F] {
 	builder := ir.NewModuleBuilder[F, mir.Constraint[F], mir.Term[F]](
-		fn.Name(), mid, false, fn.IsPublic(), false, fn.NumInputs())
+		fn.Name(), mid, false, fn.IsPublic(), false, false, false, fn.NumInputs())
 	//
 	switch fn := fn.(type) {
 	case *MicroFunction:
@@ -133,7 +133,7 @@ func (p MirModule[F]) String() string {
 	var builder strings.Builder
 	//
 	for _, r := range p.Module.Registers() {
-		builder.WriteString(fmt.Sprintf("var %s\n", r.String()))
+		fmt.Fprintf(&builder, "var %s\n", r.String())
 	}
 	//
 	return builder.String()
@@ -153,6 +153,11 @@ func (p MirModule[F]) addConstantConstraint(value uint64, rid register.Id, bitwi
 type MirExpr[F field.Element[F]] struct {
 	expr    mir.Term[F]
 	logical mir.LogicalTerm[F]
+}
+
+// AsLogical extracts a logical constraint from this expression.
+func (p MirExpr[F]) AsLogical() mir.LogicalTerm[F] {
+	return p.logical.Simplify(false)
 }
 
 // Add constructs a sum between this expression and zero or more

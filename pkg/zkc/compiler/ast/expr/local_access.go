@@ -20,7 +20,7 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
 )
 
-// LocalAccess represents a register access within an expresion.
+// LocalAccess represents a register access within an expression.
 type LocalAccess[S symbol.Symbol[S]] struct {
 	Variable variable.Id
 	datatype data.Type[S]

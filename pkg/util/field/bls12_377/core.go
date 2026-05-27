@@ -19,6 +19,11 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 )
 
+var (
+	// Modulus defines the prime used for this finite field.
+	Modulus = fr.Modulus()
+)
+
 // Element wraps fr.Element to conform
 // to the field.Element interface.
 type Element struct {

@@ -30,19 +30,30 @@ type UnresolvedConstant = Constant[symbol.Unresolved]
 
 // Constant represents a named constant at the source level.
 type Constant[S symbol.Symbol[S]] struct {
-	name      string
-	DataType  data.Type[S]
-	ConstExpr expr.Expr[S]
+	name        string
+	annotations []string
+	DataType    data.Type[S]
+	ConstExpr   expr.Expr[S]
 }
 
 // NewConstant creates a new named constant in a given base
 func NewConstant[S symbol.Symbol[S]](name string, datatype data.Type[S], constexpr expr.Expr[S]) *Constant[S] {
-	return &Constant[S]{name, datatype, constexpr}
+	return &Constant[S]{name: name, DataType: datatype, ConstExpr: constexpr}
 }
 
 // Arity implementation for Declaration interface
 func (p *Constant[S]) Arity() (nInputs, nOutputs uint) {
 	return 0, 0
+}
+
+// Annotations implementation for Declaration interface
+func (p *Constant[S]) Annotations() []string {
+	return p.annotations
+}
+
+// SetAnnotations implementation for Declaration interface
+func (p *Constant[S]) SetAnnotations(annotations []string) {
+	p.annotations = annotations
 }
 
 // Name implementation for AssemblyComponent interface

@@ -27,6 +27,22 @@ type Type[S symbol.Symbol[S]] interface {
 	AsUint(Environment[S]) *UnsignedInt[S]
 	// AsTuple determines whether or not this is a tuple
 	AsTuple(Environment[S]) *Tuple[S]
+	// AsAlias determines whether or not this is an alias.
+	AsAlias(Environment[S]) *Alias[S]
+	// AsField determines whether or not this is a field element.
+	AsField(Environment[S]) *FieldElement[S]
+	// AsFixedArray determines whether or not this is a fixed-size array.
+	AsFixedArray(Environment[S]) *FixedArray[S]
 	// String returns a string representation of this type.
 	String(Environment[S]) string
+}
+
+// FromTypes constructs a single type representing the combination of
+// potentially one or more types.
+func FromTypes[S symbol.Symbol[S]](types ...Type[S]) Type[S] {
+	if len(types) == 1 {
+		return types[0]
+	}
+	//
+	return &Tuple[S]{types}
 }

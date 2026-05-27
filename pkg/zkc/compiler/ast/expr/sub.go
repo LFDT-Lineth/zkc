@@ -20,7 +20,7 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
 )
 
-// Sub represents an expresion which subtracts zero or more terms from a given term.
+// Sub represents an expression which subtracts zero or more terms from a given term.
 type Sub[S symbol.Symbol[S]] struct {
 	Exprs    []Expr[S]
 	datatype data.Type[S]

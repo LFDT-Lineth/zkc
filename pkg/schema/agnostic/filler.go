@@ -47,6 +47,16 @@ func NewPolyFil(rshift uint, poly DynamicPolynomial) *PolyFil {
 	return &PolyFil{rshift, poly}
 }
 
+// Polynomial returns the underlying polynomial.
+func (p *PolyFil) Polynomial() DynamicPolynomial {
+	return p.poly
+}
+
+// RightShift returns the post-evaluation right shift.
+func (p *PolyFil) RightShift() uint {
+	return p.rshift
+}
+
 // ApplyShift implementation for Term interface.
 func (p *PolyFil) ApplyShift(shift int) Computation {
 	panic("unsupported operation")

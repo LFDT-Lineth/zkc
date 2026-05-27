@@ -19,6 +19,7 @@ import (
 	"github.com/consensys/go-corset/pkg/schema/agnostic"
 	"github.com/consensys/go-corset/pkg/schema/register"
 	"github.com/consensys/go-corset/pkg/util/collection/bit"
+	"github.com/consensys/go-corset/pkg/util/logical"
 )
 
 // Code provides an abstract notion of an atomic "machine operation", where a
@@ -267,6 +268,98 @@ func (p Instruction) Validate(fieldWidth uint, fn register.Map) error {
 // Writes constructs the write map for this micro instruction.
 func (p Instruction) Writes() dfa.Result[dfa.Writes] {
 	return dfa.Construct(dfa.Writes{}, p.Codes, writeDfaTransfer)
+}
+
+// BranchTable constructs a per-micro-code slice giving, for each constituent
+// micro-code, the condition under which control reaches it.  The condition is
+// expressed in terms of the values of registers as observed _on entry to the
+// vector instruction_: it is a disjunction (over execution paths) of
+// conjunctions (the SkipIf comparisons taken — or not taken — along the path).
+// The entry micro-code therefore always has condition TRUE, while later
+// micro-codes accumulate the SkipIf guards of the path that reaches them.
+//
+// The table is built by a forward data-flow analysis over the micro-codes.
+// Unconditional terminators (Fail, Ret, Jmp) propagate nothing; an
+// unconditional Skip propagates the incoming condition to its target; SkipIf
+// splits into the "skip taken" condition (joined into the skip target) and the
+// "skip not taken" condition (joined into the following micro-code).  Where
+// multiple paths converge on the same micro-code, their conditions are
+// or-joined.
+//
+// The pre-computed write map is needed because the conditions reference
+// registers which may have been freshly written earlier in the same vector;
+// each BranchGroupId records whether forwarding is in effect for that
+// reference, which is determined by consulting the write state at the SkipIf's
+// offset.
+func (p Instruction) BranchTable() dfa.Result[dfa.Branch] {
+	// Construct suitable branch table for this instruction vector.
+	var btf = branchTableTransfer(p.Writes())
+	//
+	return dfa.Construct(dfa.Branch{Condition: dfa.TRUE}, p.Codes, btf)
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+func branchTableTransfer(writeMap dfa.Result[dfa.Writes]) dfa.BranchTransferFunction[Code] {
+	return func(offset uint, code Code, state dfa.Branch) []dfa.Transfer[dfa.Branch] {
+		var (
+			arcs   []dfa.Transfer[dfa.Branch]
+			writes = writeMap.StateOf(offset)
+		)
+		//
+		switch code := code.(type) {
+		case *Fail, *Ret, *Jmp:
+			return nil
+		case *Skip:
+			// join into branch target
+			return append(arcs, dfa.NewTransfer(state, offset+code.Skip+1))
+		case *SkipIf:
+			var (
+				// Determine true branch
+				trueBranch = extendSkipIf(state, true, code, writes)
+				// Determine false branch
+				falseBranch = extendSkipIf(state, false, code, writes)
+			)
+			// join into branch target
+			arcs = append(arcs, dfa.NewTransfer(trueBranch, offset+code.Skip+1))
+			// join into following instruction
+			return append(arcs, dfa.NewTransfer(falseBranch, offset+1))
+		}
+		// Transfer to following instruction
+		return append(arcs, dfa.NewTransfer(state, offset+1))
+	}
+}
+
+func extendSkipIf(tail dfa.Branch, sign bool, code *SkipIf, writes dfa.Writes) dfa.Branch {
+	var (
+		head      dfa.BranchEquality
+		rightUsed = code.Right.HasFirst()
+		tailc     = tail.Condition
+		left      = dfa.NewBranchId(writes.MayAnybeAssigned(code.Left.Registers()...), code.Left.Registers()...)
+	)
+	//
+	switch {
+	case !sign && rightUsed:
+		right := code.Right.First()
+		head = logical.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(right.Registers()...), right.Registers()...))
+	case !sign && !rightUsed:
+		head = logical.EqualsConst(left, code.Right.Second())
+	case sign && rightUsed:
+		right := code.Right.First()
+		head = logical.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(right.Registers()...), right.Registers()...))
+	case sign && !rightUsed:
+		head = logical.NotEqualsConst(left, code.Right.Second())
+	}
+	// NOTE: the reason this method is needed is because we have no implicit
+	// rerpesentation of logical truth or falsehood.  This means an empty path
+	// does not behave in the expected manner.
+	if len(tailc.Conjuncts()) == 0 {
+		return dfa.Branch{Condition: logical.NewProposition(head)}
+	}
+	//
+	return dfa.Branch{Condition: tailc.And(logical.NewProposition(head))}
 }
 
 // Data-flow transfer function for the writes analysis

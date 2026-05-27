@@ -48,11 +48,6 @@ type IfGoto[S symbol.Symbol[S]] struct {
 	Target uint
 }
 
-// Buses implementation for Instruction interface
-func (p *IfGoto[S]) Buses() []S {
-	panic("todo")
-}
-
 // Uses implementation for Instruction interface.
 func (p *IfGoto[S]) Uses() []variable.Id {
 	var (

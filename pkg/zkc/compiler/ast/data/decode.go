@@ -17,7 +17,7 @@ import (
 	"github.com/consensys/go-corset/pkg/util/collection/array"
 	"github.com/consensys/go-corset/pkg/util/collection/bit"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/vm/word"
+	"github.com/consensys/go-corset/pkg/zkc/vm"
 )
 
 // DecodeAll decodes the given set of bytes as big integer values according to
@@ -35,15 +35,15 @@ import (
 // | 0x3 | 0x1 | 0xf | 0x0 | 0x0 | 0xe | 0x1 | 0xd |
 //
 // If the input array is not a multiple of the bitwidth
-func DecodeAll[S symbol.Symbol[S]](datatype Type[S], bytes []byte, env Environment[S]) []word.Uint {
+func DecodeAll[S symbol.Symbol[S]](datatype Type[S], bytes []byte, env Environment[S]) []vm.Uint {
 	var (
-		bitwidth = BitWidthOf(datatype, env)
+		bitwidth, _ = BitWidthOf(datatype, env)
 		// Initially empty buffer which is expanded as necessary to accommodate
 		// reading bits of the given data types.
 		buffer []byte
 	)
 	// Decode array into
-	values, _ := bit.DecodeArray[[]big.Int](bitwidth, bytes, func(bytes []byte) (ints []big.Int) {
+	values, _ := bit.DecodeArray(bitwidth, bytes, func(bytes []byte) (ints []big.Int) {
 		var reader = bit.NewReader(bytes)
 		// Decode the type using the given buffer
 		ints, buffer = decodeType(datatype, &reader, buffer, env)
@@ -51,11 +51,11 @@ func DecodeAll[S symbol.Symbol[S]](datatype Type[S], bytes []byte, env Environme
 		return ints
 	})
 	// Flattern decoded tuples
-	return array.FlatMap[[]big.Int, word.Uint](values, func(ints []big.Int) []word.Uint {
-		var words = make([]word.Uint, len(ints))
+	return array.FlatMap(values, func(ints []big.Int) []vm.Uint {
+		var words = make([]vm.Uint, len(ints))
 		//
 		for i, v := range ints {
-			var ith word.Uint
+			var ith vm.Uint
 			//
 			words[i] = ith.SetBigInt(&v)
 		}
@@ -67,35 +67,34 @@ func DecodeAll[S symbol.Symbol[S]](datatype Type[S], bytes []byte, env Environme
 func decodeType[S symbol.Symbol[S]](datatype Type[S], reader *bit.Reader, buffer []byte,
 	env Environment[S]) ([]big.Int, []byte) {
 	//
-	switch t := datatype.(type) {
+	switch dt := datatype.(type) {
+	case *Alias[S]:
+		return decodeType(dt.Resolve(env), reader, buffer, env)
+	case *FieldElement[S]:
+		panic(fmt.Sprintf("field element type cannot be decoded from bytes: %s", datatype.String(env)))
 	case *UnsignedInt[S]:
-		return decodeUnsignedInt(t.bitwidth, reader, buffer)
+		return vm.DecodeUnsignedInt(dt.bitwidth, reader, buffer)
+	case *Tuple[S]:
+		return decodeTuple(dt.elements, reader, buffer, env)
 	default:
 		panic(fmt.Sprintf("unknown type \"%s\"", datatype.String(env)))
 	}
 }
 
-func decodeUnsignedInt(bitwidth uint, reader *bit.Reader, buffer []byte) ([]big.Int, []byte) {
+func decodeTuple[S symbol.Symbol[S]](types []Type[S], reader *bit.Reader, buffer []byte,
+	env Environment[S]) ([]big.Int, []byte) {
+	//
 	var (
-		val big.Int
-		n   = bit.BytesRequiredFor(bitwidth)
+		vals []big.Int
 	)
-	// Expand buffer to ensure enough space
-	buffer = expandBufferAsNeeded(bitwidth, buffer)
-	// Read bitwidth bits out
-	reader.BigEndianReadInto(bitwidth, buffer)
-	// FIXME: broken!!!
-	val.SetBytes(buffer[:n])
 	//
-	return []big.Int{val}, buffer
-}
-
-func expandBufferAsNeeded(bitwidth uint, buffer []byte) []byte {
-	var n = bit.BytesRequiredFor(bitwidth)
-	//
-	if uint(len(buffer)) >= n {
-		return buffer
+	for _, t := range types {
+		var vs []big.Int
+		//
+		vs, buffer = decodeType(t, reader, buffer, env)
+		//
+		vals = append(vals, vs...)
 	}
 	//
-	return make([]byte, n)
+	return vals, buffer
 }

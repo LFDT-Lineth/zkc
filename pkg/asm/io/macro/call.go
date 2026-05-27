@@ -129,7 +129,7 @@ func (p *Call) String(fn register.Map) string {
 	)
 	//
 	builder.WriteString(io.RegistersReversedToString(p.Targets, regs))
-	builder.WriteString(fmt.Sprintf(" = %s(", p.IoBus.Name))
+	fmt.Fprintf(&builder, " = %s(", p.IoBus.Name)
 	//
 	for i, e := range p.Sources {
 		if i != 0 {

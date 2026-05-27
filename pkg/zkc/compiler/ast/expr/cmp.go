@@ -17,6 +17,7 @@ import (
 
 	"github.com/consensys/go-corset/pkg/util/collection/bit"
 	"github.com/consensys/go-corset/pkg/util/collection/set"
+	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
 )
@@ -38,6 +39,12 @@ const (
 
 // CmpOp represents the set of possible operators for a comparison condition.
 type CmpOp uint8
+
+// Fieldable returns true for operators which are permitted on the field element
+// type.
+func (p CmpOp) Fieldable() bool {
+	return p == EQ || p == NEQ
+}
 
 // Cmp represents a comparison, such as "==", ">=", etc.
 type Cmp[S symbol.Symbol[S]] struct {
@@ -91,6 +98,16 @@ func (p *Cmp[S]) LocalUses() bit.Set {
 	reads.Union(p.Right.LocalUses())
 	//
 	return reads
+}
+
+// SetType implementation for Expr interface
+func (p *Cmp[S]) SetType(t data.Type[S]) {
+	panic("unreachable")
+}
+
+// Type implementation for Expr interface
+func (p *Cmp[S]) Type() data.Type[S] {
+	panic("unreachable")
 }
 
 func (p *Cmp[S]) String(env variable.Map[S]) string {

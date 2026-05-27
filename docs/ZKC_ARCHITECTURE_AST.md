@@ -5,7 +5,7 @@ Tree_ (AST) — a structured, in-memory representation of the program
 that subsequent compiler phases can analyse and transform. The AST is
 a tree where each node represents a syntactic construct. The root of
 the tree is a **program**, which is a list of top-level
-**declarations** (functions, memories, constants). A function
+**declarations** (functions, memories, constants, type_alias). A function
 declaration carries a list of typed **variables** (parameters, return
 values, and locals) together with a sequence **statements** which
 constitute its body.
@@ -13,7 +13,7 @@ constitute its body.
 The concrete node types are:
 
 - **Declarations** (`pkg/zkc/compiler/ast/decl/`) — `Function`, `Memory`
-  (read-only input, write-once output, or read/write RAM), and `Constant`.
+  (read-only input, write-once output, or read/write RAM), `Constant` and `TypeAlias`.
 - **Statements** (`pkg/zkc/compiler/ast/stmt/`) — `Assign`, `IfGoto`
   (conditional branch), `Goto` (unconditional branch), `Return`, and `Fail`.
 - **Expressions** (`pkg/zkc/compiler/ast/expr/`) — `Add`, `Sub`, `Mul`,
@@ -77,7 +77,7 @@ usual fashion using two phases:
 1. **Lexing** — the source text is tokenised into a flat token stream.
    Whitespace and comments are discarded. The lexer recognises keywords
    (`fn`, `const`, `pub`, `memory`, `input`, `output`, `if`, `while`,
-   `for`, `return`, `fail`, `var`, `include`, …), identifiers, numeric literals (decimal,
+   `for`, `return`, `fail`, `var`, `include`, `type` …), identifiers, numeric literals (decimal,
    hex, binary, and `2^N` exponent form), and operator symbols.
 
 1. **Recursive-descent parsing** — the token stream is consumed

@@ -318,7 +318,7 @@ func displayBytes(val big.Int) string {
 			builder.WriteString(" ")
 		}
 		//
-		builder.WriteString(fmt.Sprintf("%02x", b))
+		fmt.Fprintf(&builder, "%02x", b)
 	}
 	//
 	return builder.String()

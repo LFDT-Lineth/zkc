@@ -24,6 +24,7 @@ import (
 	cmd_util "github.com/consensys/go-corset/pkg/cmd/corset/util"
 	"github.com/consensys/go-corset/pkg/cmd/corset/view"
 	"github.com/consensys/go-corset/pkg/corset"
+	"github.com/consensys/go-corset/pkg/ir"
 	sc "github.com/consensys/go-corset/pkg/schema"
 	"github.com/consensys/go-corset/pkg/schema/constraint"
 	"github.com/consensys/go-corset/pkg/schema/constraint/lookup"
@@ -65,7 +66,7 @@ var checkCmds = []FieldAgnosticCmd{
 }
 
 func runCheckCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
-	var cfg checkConfig
+	var cfg CheckConfig
 
 	if len(args) < 2 {
 		fmt.Println(cmd.UsageString())
@@ -80,21 +81,21 @@ func runCheckCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	//
 	batched := GetFlag(cmd, "batched")
 	//
-	cfg.padding.Right = GetUint(cmd, "padding")
-	cfg.report = GetFlag(cmd, "report")
-	cfg.reportPadding = GetUint(cmd, "report-context")
-	cfg.reportLimbs = GetFlag(cmd, "show-limbs")
-	cfg.reportComputed = GetFlag(cmd, "show-computed")
-	cfg.reportCellWidth = GetUint(cmd, "report-cellwidth")
-	cfg.reportTitleWidth = GetUint(cmd, "report-titlewidth")
-	cfg.ansiEscapes = GetFlag(cmd, "ansi-escapes")
+	cfg.Padding.Right = GetUint(cmd, "padding")
+	cfg.Report = GetFlag(cmd, "report")
+	cfg.ReportPadding = GetUint(cmd, "report-context")
+	cfg.ReportLimbs = GetFlag(cmd, "show-limbs")
+	cfg.ReportComputed = GetFlag(cmd, "show-computed")
+	cfg.ReportCellWidth = GetUint(cmd, "report-cellwidth")
+	cfg.ReportTitleWidth = GetUint(cmd, "report-titlewidth")
+	cfg.AnsiEscapes = GetFlag(cmd, "ansi-escapes")
 	// TODO: support true ranges
-	cfg.padding.Left = cfg.padding.Right
+	cfg.Padding.Left = cfg.Padding.Right
 	// Read in constraint files
 	schemas := *getSchemaStack[F](cmd, SCHEMA_DEFAULT_AIR, args[1:]...)
 	// enable / disable coverage
 	if covfile := GetString(cmd, "coverage"); covfile != "" {
-		cfg.coverage = util.Some(covfile)
+		cfg.Coverage = util.Some(covfile)
 	}
 	//
 	tracefile := args[0]
@@ -142,36 +143,35 @@ func writeMemProfile(cmd *cobra.Command) {
 	}
 }
 
-// check config encapsulates certain parameters to be used when
-// checking traces.
-type checkConfig struct {
+// CheckConfig encapsulates certain parameters to be used when checking traces.
+type CheckConfig struct {
 	// Corset source mapping (maybe nil if non available).
-	corsetSourceMap *corset.SourceMap
-	// Specifies whether to use coverage testing and, if so, where to write the
-	// coverage data.
-	coverage util.Option[string]
-	// Specifies the range of padding values to check
-	padding util.Pair[uint, uint]
-	// Specifies whether or not to report details of the failure (e.g. for
+	CorsetSourceMap *corset.SourceMap
+	// Specifies whether to use Coverage testing and, if so, where to write the
+	// Coverage data.
+	Coverage util.Option[string]
+	// Specifies the range of Padding values to check
+	Padding util.Pair[uint, uint]
+	// Specifies whether or not to Report details of the failure (e.g. for
 	// debugging purposes).
-	report bool
+	Report bool
 	// Specifies the number of additional rows to show eitherside of the failing
 	// area. This essentially allows more contextual information to be shown.
-	reportPadding uint
+	ReportPadding uint
 	// Specifies the width of a cell to show.
-	reportCellWidth uint
+	ReportCellWidth uint
 	// Specifies the width of a column title to show.
-	reportTitleWidth uint
+	ReportTitleWidth uint
 	// Specifies whether or not to show raw limbs
-	reportLimbs bool
+	ReportLimbs bool
 	// Specifies whether or not to show raw computed registers
-	reportComputed bool
+	ReportComputed bool
 	// Enable ansi escape codes in reports
-	ansiEscapes bool
+	AnsiEscapes bool
 }
 
 // Check raw constraints using the legacy pipeline.
-func checkWithLegacyPipeline[F field.Element[F]](cfg checkConfig, batched bool, tracefile string,
+func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, tracefile string,
 	schemas cmd_util.SchemaStacker[F]) {
 	//
 	var (
@@ -183,7 +183,7 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg checkConfig, batched bool, 
 	//
 	stats := util.NewPerfStats()
 	// Extract debug information (if available)
-	cfg.corsetSourceMap, _ = binfile.GetAttribute[*corset.SourceMap](schemas.BinaryFile())
+	cfg.CorsetSourceMap, _ = binfile.GetAttribute[*corset.SourceMap](schemas.BinaryFile())
 	//
 	stats.Log("Reading constraints file")
 	// Parse trace file(s)
@@ -218,11 +218,11 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg checkConfig, batched bool, 
 	}
 }
 
-func checkTraces[F field.Element[F]](traces []lt.TraceFile, stacker cmd_util.SchemaStacker[F], cfg checkConfig) bool {
+func checkTraces[F field.Element[F]](traces []lt.TraceFile, stacker cmd_util.SchemaStacker[F], cfg CheckConfig) bool {
 	//
 	for _, tf := range traces {
 		//
-		for n := cfg.padding.Left; n <= cfg.padding.Right; n++ {
+		for n := cfg.Padding.Left; n <= cfg.Padding.Right; n++ {
 			// Configure stack.  This is important to ensure true separation
 			// between runs (e.g. for the io.Executor).
 			stack := stacker.Build()
@@ -232,35 +232,48 @@ func checkTraces[F field.Element[F]](traces []lt.TraceFile, stacker cmd_util.Sch
 			schema := stack.ConcreteSchema()
 			// identify schema name
 			ir := stack.ConcreteIrName()
-			// begin performance measurement
-			stats := util.NewPerfStats()
-			trace, errs := builder.Build(schema, tf)
-			// Log cost of expansion
-			stats.Log("Expanding trace columns")
-			// Report any errors
-			reportErrors(ir, errs)
-			// Check whether considered unrecoverable
-			if trace == nil || len(errs) > 0 {
-				return false
-			}
 			//
-			stats = util.NewPerfStats()
-			// Check constraints
-			if errs := sc.Accepts(builder.Parallelism(), builder.BatchSize(), schema, trace); len(errs) > 0 {
-				reportFailures(ir, errs, trace, builder.Mapping(), cfg)
+			if ok := CheckTrace(ir, schema, tf, builder, cfg); !ok {
 				return false
 			}
-
-			stats.Log("Checking constraints")
 		}
 	}
 	// Done
 	return true
 }
 
-// Report constraint failures, whilst providing contextual information (when requested).
-func reportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace tr.Trace[F], mapping module.LimbsMap,
-	cfg checkConfig) {
+// CheckTrace checks a given set of constraints against a given trace file using
+// a configured trace builder and check configuration.
+func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], tf lt.TraceFile, builder ir.TraceBuilder[F],
+	cfg CheckConfig) bool {
+	// begin performance measurement
+	stats := util.NewPerfStats()
+	trace, errs := builder.Build(schema, tf)
+	// Log cost of expansion
+	stats.Log("Expanding trace columns")
+	// Report any errors
+	reportErrors(ir, errs)
+	// Check whether considered unrecoverable
+	if trace == nil || len(errs) > 0 {
+		return false
+	}
+	//
+	stats = util.NewPerfStats()
+	// Check constraints
+	if errs := sc.Accepts(builder.Parallelism(), builder.BatchSize(), schema, trace); len(errs) > 0 {
+		ReportFailures(ir, errs, trace, builder.Mapping(), cfg)
+		return false
+	}
+	//
+	stats.Log("Checking constraints")
+	//
+	return true
+}
+
+// ReportFailures reports constraint failures, whilst providing contextual
+// information (when requested).
+func ReportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace tr.Trace[F], mapping module.LimbsMap,
+	cfg CheckConfig) {
 	//
 	var (
 		errs = make([]error, len(failures))
@@ -272,7 +285,7 @@ func reportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace 
 	// First, log errors
 	reportErrors(ir, errs)
 	// Second, produce report (if requested)
-	if cfg.report {
+	if cfg.Report {
 		for _, f := range failures {
 			reportFailure(f, trace, mapping, cfg)
 		}
@@ -281,7 +294,7 @@ func reportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace 
 
 // Print a human-readable report detailing the given failure
 func reportFailure[F field.Element[F]](failure sc.Failure, trace tr.Trace[F], mapping module.LimbsMap,
-	cfg checkConfig) {
+	cfg CheckConfig) {
 	//
 	if f, ok := failure.(*vanishing.Failure[F]); ok {
 		cells := f.RequiredCells(trace)
@@ -308,18 +321,22 @@ func reportFailure[F field.Element[F]](failure sc.Failure, trace tr.Trace[F], ma
 
 // Print a human-readable report detailing the given failure with a vanishing constraint.
 func reportRelevantCells[F field.Element[F]](cells *set.AnySortedSet[tr.CellRef], trace tr.Trace[F],
-	mapping module.LimbsMap, cfg checkConfig) {
+	mapping module.LimbsMap, cfg CheckConfig) {
 	// Construct trace window
-	window := view.NewBuilder[F](mapping).
-		WithLimbs(cfg.reportLimbs).
-		WithComputed(cfg.reportComputed).
-		WithCellWidth(cfg.reportCellWidth).
-		WithTitleWidth(cfg.reportTitleWidth).
-		WithSourceMap(*cfg.corsetSourceMap).
-		WithFormatting(view.NewCellFormatter(*cells, cfg.ansiEscapes)).
-		Build(trace)
+	builder := view.NewBuilder[F](mapping).
+		WithLimbs(cfg.ReportLimbs).
+		WithComputed(cfg.ReportComputed).
+		WithCellWidth(cfg.ReportCellWidth).
+		WithTitleWidth(cfg.ReportTitleWidth).
+		WithFormatting(view.NewCellFormatter(*cells, cfg.AnsiEscapes))
+		//
+	if cfg.CorsetSourceMap != nil {
+		builder = builder.WithSourceMap(*cfg.CorsetSourceMap)
+	}
+	// Build window
+	window := builder.Build(trace)
 	// Focus window on those cells relevant to the failure
-	window = window.Filter(view.FilterForCells(*cells, cfg.reportPadding))
+	window = window.Filter(view.FilterForCells(*cells, cfg.ReportPadding))
 	// Print all windows
 	for i := range window.Width() {
 		var (

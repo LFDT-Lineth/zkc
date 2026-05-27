@@ -136,7 +136,7 @@ func (p *Map[K, V]) String() string {
 
 			first = false
 
-			r.WriteString(fmt.Sprintf("%v:=%v", any(k), any(b.values[i])))
+			fmt.Fprintf(&r, "%v:=%v", any(k), any(b.values[i]))
 		}
 	}
 	// Write closing brace

@@ -14,6 +14,7 @@ package poly
 
 import (
 	"math/big"
+	"slices"
 
 	"github.com/consensys/go-corset/pkg/util"
 	"github.com/consensys/go-corset/pkg/util/collection/array"
@@ -40,6 +41,14 @@ func (p *ArrayPoly[S]) Len() uint {
 // Term returns the ith term in this polynomial.
 func (p *ArrayPoly[S]) Term(ith uint) Monomial[S] {
 	return p.terms[ith]
+}
+
+// Cmp implementation for Comparable interface
+func (p *ArrayPoly[S]) Cmp(other *ArrayPoly[S]) int {
+	//
+	return slices.CompareFunc(p.terms, other.terms, func(l Monomial[S], r Monomial[S]) int {
+		return l.Cmp(r)
+	})
 }
 
 // Set initialises this polynomial from zero or more terms.
@@ -119,6 +128,17 @@ func (p *ArrayPoly[S]) Signed() bool {
 // Otherwise, the result is maybe.
 func (p *ArrayPoly[S]) IsZero() (res bool, ok bool) {
 	panic("todo")
+}
+
+// Negate polynomial
+func (p *ArrayPoly[S]) Negate() *ArrayPoly[S] {
+	var res ArrayPoly[S]
+	//
+	for _, t := range p.terms {
+		res.AddTerm(t.Negate())
+	}
+	//
+	return &res
 }
 
 // Add another polynomial onto this polynomial.

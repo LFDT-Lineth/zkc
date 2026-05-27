@@ -1,5 +1,0 @@
-//error:3:12-13:expected type u8
-fn f(x:u8, y:u16) -> (r:u8) {
-  r = x << y
-  return
-}

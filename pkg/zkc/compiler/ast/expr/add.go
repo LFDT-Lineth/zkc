@@ -20,7 +20,7 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
 )
 
-// Add represents an expresion which adds one or more terms together.
+// Add represents an expression which adds one or more terms together.
 type Add[S symbol.Symbol[S]] struct {
 	Exprs    []Expr[S]
 	datatype data.Type[S]
@@ -46,7 +46,7 @@ func (p *Add[S]) LocalUses() bit.Set {
 }
 
 func (p *Add[S]) String(mapping variable.Map[S]) string {
-	return String[S](p, mapping)
+	return String(p, mapping)
 }
 
 // SetType implementation for Expr interface

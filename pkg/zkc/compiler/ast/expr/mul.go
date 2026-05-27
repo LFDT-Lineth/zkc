@@ -20,7 +20,7 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
 )
 
-// Mul represents an expresion which computes the product of one or more terms.
+// Mul represents an expression which computes the product of one or more terms.
 type Mul[S symbol.Symbol[S]] struct {
 	Exprs    []Expr[S]
 	datatype data.Type[S]

@@ -24,3 +24,7 @@ bin
 *.after
 *.bombs
 tmp
+
+# ai-tools
+.cursor
+.claude

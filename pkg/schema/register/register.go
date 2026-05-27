@@ -17,6 +17,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 )
 
@@ -42,6 +43,14 @@ type Register struct {
 // computed) with the given name and bitwidth.
 func New(kind Type, name string, bitwidth uint, padding big.Int) Register {
 	return Register{kind, name, bitwidth, padding}
+}
+
+// NewNative constructs a new "native" register.  That is, a register backed by
+// a field element rather than a fixed-width unsigned integer.  Such registers
+// have no fixed bitwidth and can hold any value representable in the
+// underlying field.
+func NewNative(kind Type, name string, padding big.Int) Register {
+	return New(kind, name, math.MaxUint, padding)
 }
 
 // NewInput constructs a new input register with the given name and
@@ -81,6 +90,10 @@ func NewConst(value uint8) Register {
 // Bound returns the first value which cannot be represented by the given
 // bitwidth.  For example, the bound of an 8bit register is 256.
 func (p *Register) Bound() *big.Int {
+	if p.IsNative() {
+		panic(fmt.Sprintf("Bound() called on native register %q", p.name))
+	}
+	//
 	var (
 		bound = big.NewInt(2)
 		width = big.NewInt(int64(p.width))
@@ -116,6 +129,13 @@ func (p *Register) IsConst() bool {
 	return p.kind == ZERO_REGISTER || p.kind == ONE_REGISTER
 }
 
+// IsNative determines whether or not this is a "native" register.  That is, a
+// register backed by a field element rather than a fixed-width unsigned
+// integer.
+func (p *Register) IsNative() bool {
+	return p.width == math.MaxUint
+}
+
 // ConstValue determines the constant value for a given constant register.
 func (p *Register) ConstValue() uint8 {
 	switch p.kind {
@@ -131,6 +151,10 @@ func (p *Register) ConstValue() uint8 {
 // MaxValue returns the largest value expressible in this register (i.e. Bound() -
 // 1).  For example, the max value of an 8bit register is 255.
 func (p *Register) MaxValue() *big.Int {
+	if p.IsNative() {
+		panic(fmt.Sprintf("MaxValue() called on native register %q", p.name))
+	}
+	//
 	max := p.Bound()
 	max.Sub(max, &one)
 	//
@@ -182,11 +206,21 @@ func (p *Register) SetPadding(padding *big.Int) {
 }
 
 func (p Register) String() string {
+	if p.IsNative() {
+		return fmt.Sprintf("%s:𝔽:0x%s", p.name, p.padding.Text(16))
+	}
+	//
 	return fmt.Sprintf("%s:u%d:0x%s", p.name, p.width, p.padding.Text(16))
 }
 
-// Width determines the bitwidth of this register.
+// Width determines the bitwidth of this register.  This panics if called on a
+// native register, since such registers have no fixed bitwidth.  Callers should
+// guard with IsNative() if the register may be native.
 func (p Register) Width() uint {
+	if p.IsNative() {
+		panic(fmt.Sprintf("Width() called on native register %q", p.name))
+	}
+	//
 	return p.width
 }
 
@@ -194,17 +228,29 @@ func (p Register) Width() uint {
 // Encoding / Decoding
 // ============================================================================
 
+// nativeWidthSentinel is written in place of the bitwidth field when
+// serialising a native register.  It is the maximum representable value of the
+// uint16 wire format, and is mapped back to math.MaxUint on unmarshal.
+const nativeWidthSentinel uint16 = 0xFFFF
+
 // MarshalBinary converts a register into binary data
 func (p *Register) MarshalBinary() (data []byte, err error) {
 	var (
 		buffer = bytes.NewBuffer(data)
+		width  uint16
 	)
 	// Register kind
 	if err := binary.Write(buffer, binary.BigEndian, p.kind); err != nil {
 		return nil, err
 	}
 	// Register bitwidth
-	if err := binary.Write(buffer, binary.BigEndian, uint16(p.width)); err != nil {
+	if p.IsNative() {
+		width = nativeWidthSentinel
+	} else {
+		width = uint16(p.width)
+	}
+	//
+	if err := binary.Write(buffer, binary.BigEndian, width); err != nil {
 		return nil, err
 	}
 	// Write register name
@@ -246,7 +292,12 @@ func (p *Register) UnmarshalBinary(data []byte) error {
 	}
 	//
 	p.kind = Type{kind}
-	p.width = uint(width)
+	if width == nativeWidthSentinel {
+		p.width = math.MaxUint
+	} else {
+		p.width = uint(width)
+	}
+	//
 	p.name = string(name)
 	p.padding.SetBytes(padding)
 	// Success!

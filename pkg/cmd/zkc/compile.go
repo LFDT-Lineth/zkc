@@ -14,10 +14,10 @@ package zkc
 
 import (
 	"fmt"
-	"math/big"
+	"os"
 
+	"github.com/consensys/go-corset/pkg/cmd/corset/debug"
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
 	"github.com/consensys/go-corset/pkg/util/field/gf251"
@@ -26,12 +26,12 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
+	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
-	"github.com/consensys/go-corset/pkg/zkc/vm/function"
-	"github.com/consensys/go-corset/pkg/zkc/vm/machine"
-	"github.com/consensys/go-corset/pkg/zkc/vm/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/word"
+	"github.com/consensys/go-corset/pkg/zkc/constraints"
+	"github.com/consensys/go-corset/pkg/zkc/vm"
+	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -53,24 +53,71 @@ var compileCmds = []FieldAgnosticCmd{
 	{field.BLS12_377, runCompileCmd[bls12_377.Element]},
 }
 
-func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
-	// Configure log level
-	if GetFlag(cmd, "verbose") {
-		log.SetLevel(log.DebugLevel)
+func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
+	var (
+		build  = GetBuildConfig[F](cmd, field)
+		output = GetString(cmd, "output")
+		quiet  = GetFlag(cmd, "quiet")
+	)
+	// Suppress printf debug instructions when quiet mode is enabled.
+	build.config = build.config.Quiet(quiet)
+	applyCompileDefaults(&build, output)
+	// Build all artifacts
+	artifacts := build.Build(args...)
+	//
+	if output != "" {
+		writeArtifacts(output, build, artifacts)
+	} else {
+		// Print out requested artifacts
+		printArtifacts(artifacts)
 	}
-	//
-	ir := GetFlag(cmd, "ir")
-	as := GetFlag(cmd, "ast")
-	// Compile source files, or print errors
-	program := CompileSourceFiles(args...)
-	//
-	if as {
-		writeAbstractSyntaxTree(program)
+}
+
+func applyCompileDefaults[F field.Element[F]](build *BuildConfig[F], output string) {
+	// Writing a binary file requires a word-level machine artifact.
+	if output != "" {
+		build.wir = true
 	}
-	//
-	if ir {
-		vm := program.Compile()
-		writeIntermediateRepresentation[word.Uint](vm)
+	// Set default target (if none specified).
+	if !build.HasTarget() {
+		build.ast = true
+	}
+}
+
+func writeArtifacts[F field.Element[F]](filename string, build BuildConfig[F], artifacts BuildArtifacts[F]) {
+	// Word-level Intermediate Representation
+	//nolint
+	if artifacts.wir.HasValue() {
+		// Construct binary file
+		var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.field, artifacts.wir.Unwrap())
+		// Write to disk
+		WriteBinaryFile(binfile, filename)
+	} else {
+		log.Error("must use --wir to write binary file")
+		os.Exit(5)
+	}
+}
+
+func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F]) {
+	// Abstract Sytnax Tree
+	if artifacts.ast.HasValue() {
+		writeAbstractSyntaxTree(artifacts.ast.Unwrap())
+	}
+	// Word-level Intermediate Representation
+	if artifacts.wir.HasValue() {
+		writeIntermediateRepresentation(artifacts.wir.Unwrap())
+	}
+	// Field-level Intermediate Representation
+	if artifacts.fir.HasValue() {
+		writeIntermediateRepresentation(artifacts.fir.Unwrap())
+	}
+	// Mid-level Intermediate Representation
+	if artifacts.mir.HasValue() {
+		debug.PrintAnySchema(artifacts.mir.Unwrap(), 80)
+	}
+	// Arithmetic Intermediate Representation
+	if artifacts.air.HasValue() {
+		debug.PrintAnySchema(artifacts.air.Unwrap(), 80)
 	}
 }
 
@@ -79,11 +126,7 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 // ============================================================================
 
 func writeAbstractSyntaxTree(program ast.Program) {
-	var (
-		env = data.NewEnvironment(func(id symbol.Resolved) data.ResolvedType {
-			return nil
-		})
-	)
+	var env = ast.NewEnvironment()
 	//
 	for i, d := range program.Components() {
 		if i != 0 {
@@ -162,14 +205,14 @@ func writeMemoryParams(params []variable.ResolvedDescriptor, env data.ResolvedEn
 	}
 }
 
-func writeMemoryContents(values []big.Int) {
+func writeMemoryContents(values []expr.Resolved) {
 	var N = 20
 	//
 	for i := 0; i < len(values); i += N {
 		var left = len(values) - i
 		//
 		for j := range min(N, left) {
-			fmt.Printf("0x%s", values[i+j].Text(16))
+			fmt.Printf("%s", values[i+j].String(variable.ArrayMap[symbol.Resolved]()))
 			//
 			if i+j+1 != len(values) {
 				fmt.Printf(", ")
@@ -181,7 +224,13 @@ func writeMemoryContents(values []big.Int) {
 }
 
 func writeFunction(f *decl.ResolvedFunction, env data.ResolvedEnvironment) {
-	fmt.Printf("fn %s(", f.Name())
+	fmt.Printf("fn %s", f.Name())
+	// Write optional effects
+	if len(f.Effects) > 0 {
+		writeEffects(f.Effects)
+	}
+	//
+	fmt.Printf("(")
 	// parameters
 	writeFunctionArgs(variable.PARAMETER, f.Variables, env)
 	//
@@ -198,6 +247,20 @@ func writeFunction(f *decl.ResolvedFunction, env data.ResolvedEnvironment) {
 	}
 	// Done
 	fmt.Println("}")
+}
+
+func writeEffects(effects []*symbol.Resolved) {
+	fmt.Print("<")
+	//
+	for i, effect := range effects {
+		if i != 0 {
+			fmt.Print(",")
+		}
+		//
+		fmt.Print(effect)
+	}
+	//
+	fmt.Print(">")
 }
 
 func writeFunctionArgs(kind variable.Kind, variables []variable.ResolvedDescriptor, env data.ResolvedEnvironment) {
@@ -228,27 +291,45 @@ func writeFunctionVariables(f *decl.ResolvedFunction, env data.ResolvedEnvironme
 // Intermediate Representation (IR)
 // ============================================================================
 
-func writeIntermediateRepresentation[W word.Word[W]](machine *machine.Base[W]) {
+func writeIntermediateRepresentation[W vm.BaseWord[W], I vm.Instruction, T vm.Executor[W, I]](
+	machine vm.BaseMachine[W, I, T]) {
+	//
 	// Write memories
-	for _, m := range machine.Modules() {
+	for i, m := range machine.Modules() {
+		if i != 0 {
+			fmt.Println()
+		}
+		//
 		switch m := m.(type) {
-		case memory.Memory[W]:
+		case vm.Memory[W]:
 			writeIrMemory(m)
-		case *function.Boot[W]:
-			writeIrFunction[W](m)
+		case *vm.Function[I]:
+			mapping := instruction.NewSystemMap(m.RegisterMap(), machine.Modules())
+			writeIrFunction[W](m, mapping)
 		}
 	}
 }
 
-func writeIrMemory[W word.Word[W]](m memory.Memory[W]) {
-	fmt.Printf("memory? %s(?) -> (?)\n", m.Name())
+func writeIrMemory[W vm.BaseWord[W]](m vm.Memory[W]) {
+	var (
+		regs = m.Geometry().Registers()
+		kind = memoryKind(m)
+	)
+	//
+	fmt.Printf("%s %s(", kind, m.Name())
+	// parameters
+	writeIrFunctionArgs(register.INPUT_REGISTER, regs)
+	//
+	fmt.Printf(")")
+	//
+	fmt.Printf(" -> (")
+	// returns
+	writeIrFunctionArgs(register.OUTPUT_REGISTER, regs)
+	//
+	fmt.Println(")")
 }
 
-func writeIrFunction[W word.Word[W]](f *function.Boot[W]) {
-	var (
-		name   = trace.ModuleName{Name: f.Name(), Multiplier: 1}
-		regMap = register.ArrayMap(name, f.Registers()...)
-	)
+func writeIrFunction[W vm.BaseWord[W], I vm.Instruction](f *vm.Function[I], mapping instruction.SystemMap) {
 	fmt.Printf("fn %s(", f.Name())
 	// parameters
 	writeIrFunctionArgs(register.INPUT_REGISTER, f.Registers())
@@ -269,7 +350,7 @@ func writeIrFunction[W word.Word[W]](f *function.Boot[W]) {
 	writeIrFunctionVariables[W](f)
 	//
 	for pc, insn := range f.Code() {
-		fmt.Printf("[%d]\t%s\n", pc, insn.String(regMap))
+		fmt.Printf("[%d]\t%s\n", pc, insn.String(mapping))
 	}
 	// Done
 	fmt.Println("}")
@@ -286,17 +367,38 @@ func writeIrFunctionArgs(kind register.Type, regs []register.Register) {
 				first = false
 			}
 			//
-			fmt.Printf("u%d %s", r.Width(), r.Name())
+			fmt.Printf("%s %s", registerType(r), r.Name())
 		}
 	}
 }
 
-func writeIrFunctionVariables[W word.Word[W]](f *function.Boot[W]) {
+func writeIrFunctionVariables[W vm.BaseWord[W], I vm.Instruction](f *vm.Function[I]) {
 	for _, r := range f.Registers() {
 		if !r.IsInputOutput() {
-			fmt.Printf("\tu%d %s\n", r.Width(), r.Name())
+			fmt.Printf("\t%s %s\n", registerType(r), r.Name())
 		}
 	}
+}
+
+func memoryKind[W vm.BaseWord[W]](m vm.Memory[W]) string {
+	switch {
+	case m.IsStatic():
+		return "static"
+	case m.IsReadOnly():
+		return "input"
+	case m.IsWriteOnly():
+		return "output"
+	default:
+		return "memory"
+	}
+}
+
+func registerType(r register.Register) string {
+	if r.IsNative() {
+		return "𝔽"
+	}
+	//
+	return fmt.Sprintf("u%d", r.Width())
 }
 
 // ============================================================================
@@ -306,6 +408,6 @@ func writeIrFunctionVariables[W word.Word[W]](f *function.Boot[W]) {
 //nolint:errcheck
 func init() {
 	rootCmd.AddCommand(compileCmd)
-	compileCmd.Flags().Bool("ast", false, "Output abstract syntax tree (AST)")
-	compileCmd.Flags().Bool("ir", false, "Output intermediate representation (IR)")
+	compileCmd.Flags().StringP("output", "o", "", "specify output file for writing binary constraints")
+	compileCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
 }

@@ -20,10 +20,14 @@ import (
 
 // ModuleConfig encapsulates various configuration settings for a ModuleView.
 type ModuleConfig interface {
-	// CellWidth reads the current maximum width of any cell in the table.
+	// CellWidth returns the current maximum width of any cell in the table.
 	CellWidth() uint
-	// SetCellWidth determines the maximum width of any cells in the table.
+	// TitleWidth returns the current maximum width of any title in the table.
+	TitleWidth() uint
+	// SetCellWidth sets the maximum width of any cells in the table.
 	SetCellWidth(cellWidth uint)
+	// SetTitleWidth set the maximum width of any title in the table.
+	SetTitleWidth(titleWidth uint)
 }
 
 // ModuleView abstracts an underlying trace module.  For example, it manages the
@@ -104,14 +108,24 @@ func (p *moduleView[F]) Window() Window {
 // ModuleConfig
 // ============================================================================
 
-// Offset returns the current offset position within module
+// CellWidth implementation for ModuleComfig interface
 func (p *moduleView[F]) CellWidth() uint {
 	return p.cellWidth
 }
 
-// SetCellWidth determines the maximum width of any cells in the table.
+// SetCellWidth implementation for ModuleConfig interface
 func (p *moduleView[F]) SetCellWidth(cellWidth uint) {
 	p.cellWidth = cellWidth
+}
+
+// CellWidth implementation for ModuleComfig interface
+func (p *moduleView[F]) TitleWidth() uint {
+	return p.titleWidth
+}
+
+// SetCellWidth implementation for ModuleComfig interface
+func (p *moduleView[F]) SetTitleWidth(titleWidth uint) {
+	p.titleWidth = titleWidth
 }
 
 // ============================================================================
@@ -129,7 +143,7 @@ func (p *moduleView[F]) CellAt(col uint, row uint) termio.FormattedText {
 		return termio.NewText("")
 	} else if col == 0 {
 		reg := p.window.Row(row - 1)
-		text := p.data.RowTitle(reg)
+		text := clipValue(p.data.RowTitle(reg), p.titleWidth)
 		formatted = p.formatting.RowTitle(reg, text)
 	} else if row == 0 {
 		text := p.data.ColumnTitle(col + x - 1)

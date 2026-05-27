@@ -14,7 +14,6 @@ package builder
 
 import (
 	"fmt"
-	"math"
 
 	sc "github.com/consensys/go-corset/pkg/schema"
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -97,7 +96,7 @@ func ParallelTraceValidation[F field.Element[F]](schema sc.AnySchema[F], trace t
 			// Check elements
 			go func(reg register.Register, data tr.Column[F]) {
 				// Send outcome back
-				c <- validateColumnBitWidth(reg.Width(), data, scMod)
+				c <- validateColumnBitWidth(reg, data, scMod)
 			}(scMod.Register(rid), trMod.Column(i))
 			//
 			ntodo++
@@ -140,7 +139,7 @@ func sequentialModuleValidation[F field.Element[F]](scMod sc.Module[F], trMod tr
 					data = trMod.Column(i)
 				)
 				// Sanity check data has expected bitwidth
-				if err := validateColumnBitWidth(reg.Width(), data, scMod); err != nil {
+				if err := validateColumnBitWidth(reg, data, scMod); err != nil {
 					errors = append(errors, err)
 				}
 			}
@@ -151,9 +150,9 @@ func sequentialModuleValidation[F field.Element[F]](scMod sc.Module[F], trMod tr
 }
 
 // Validate that all elements of a given column fit within a given bitwidth.
-func validateColumnBitWidth[F field.Element[F]](bitwidth uint, col tr.Column[F], mod sc.Module[F]) error {
+func validateColumnBitWidth[F field.Element[F]](reg register.Register, col tr.Column[F], mod sc.Module[F]) error {
 	// Sanity check bitwidth can be checked.
-	if bitwidth == math.MaxUint {
+	if reg.IsNative() {
 		// This indicates a column which has no fixed bitwidth but, rather, uses
 		// the entire field element.  The only situation this arises in practice
 		// is for columns holding the multiplicative inverse of some other
@@ -163,7 +162,7 @@ func validateColumnBitWidth[F field.Element[F]](bitwidth uint, col tr.Column[F],
 		panic(fmt.Sprintf("column %s is unassigned in module %s", col.Name(), mod.Name()))
 	}
 	// FIXME: this will fail for small fields!!!!!
-	var bound = field.TwoPowN[F](bitwidth)
+	var bound = field.TwoPowN[F](reg.Width())
 	//
 	for j := 0; j < int(col.Data().Len()); j++ {
 		var jth = col.Get(j)

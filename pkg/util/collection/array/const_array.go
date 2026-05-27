@@ -113,7 +113,7 @@ func (p *ConstantArray[T]) String() string {
 			sb.WriteString(",")
 		}
 
-		sb.WriteString(fmt.Sprintf("%v", p.Get(i)))
+		fmt.Fprintf(&sb, "%v", p.Get(i))
 	}
 
 	sb.WriteString("]")

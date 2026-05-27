@@ -12,8 +12,12 @@ package symbol
 
 import (
 	"cmp"
+	"math"
 	"strings"
 )
+
+// ANY_INPUTS is used as a wildcard for the number of inputs expected.
+const ANY_INPUTS uint = math.MaxUint
 
 // Unresolved symbols represented expected records in the symbol table.  For
 // functions, this includes their "arity" --- that is, the number of expected
@@ -27,6 +31,21 @@ type Unresolved struct {
 // NewUnresolved constructs a new unresolved symbol with a given arity.
 func NewUnresolved(name string, kind Kind, inputs uint) Unresolved {
 	return Unresolved{name, kind, inputs}
+}
+
+// HasAnyArity checks whether or not this symbol will match any arity or not.
+func (p Unresolved) HasAnyArity() bool {
+	return p.Inputs == ANY_INPUTS
+}
+
+// IsMemory implementation for Symbol interface
+func (p Unresolved) IsMemory() bool {
+	return p.Kind == READABLE_MEMORY || p.Kind == WRITEABLE_MEMORY
+}
+
+// IsFunction implementation for Symbol interface
+func (p Unresolved) IsFunction() bool {
+	return p.Kind == FUNCTION
 }
 
 // Cmp implementation for set.Comparable interface

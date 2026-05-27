@@ -13,25 +13,25 @@
 package stmt
 
 import (
+	"strings"
+
+	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
+	"github.com/consensys/go-corset/pkg/zkc/util"
 )
 
-// Fail signals an exceptional return from the enclosing function.
+// Fail signals an exceptional return from the enclosing function.  An optional
+// formatted error message can be supplied using the same chunked
+// representation as Printf.
 type Fail[S symbol.Symbol[S]] struct {
-	// dummy is included to force Return structs to be stored in the heap.
-	//nolint
-	Dummy uint
-}
-
-// Buses implementation for Instruction interface
-func (p *Fail[S]) Buses() []S {
-	return nil
+	Chunks    []FormattedChunk
+	Arguments []expr.Expr[S]
 }
 
 // Uses implementation for Instruction interface.
 func (p *Fail[S]) Uses() []variable.Id {
-	return nil
+	return expr.Uses(p.Arguments...)
 }
 
 // Definitions implementation for Instruction interface.
@@ -39,6 +39,28 @@ func (p *Fail[S]) Definitions() []variable.Id {
 	return nil
 }
 
-func (p *Fail[S]) String(_ variable.Map[S]) string {
-	return "fail"
+func (p *Fail[S]) String(env variable.Map[S]) string {
+	var builder strings.Builder
+	builder.WriteString("fail")
+	//
+	if len(p.Chunks) > 0 {
+		builder.WriteString(" \"")
+		//
+		for _, chunk := range p.Chunks {
+			builder.WriteString(util.EscapeFormattedText(chunk.Text))
+			//
+			if chunk.Format.HasFormat() {
+				builder.WriteString(chunk.Format.String())
+			}
+		}
+		//
+		builder.WriteString("\"")
+	}
+	//
+	for _, e := range p.Arguments {
+		builder.WriteString(",")
+		builder.WriteString(e.String(env))
+	}
+	//
+	return builder.String()
 }

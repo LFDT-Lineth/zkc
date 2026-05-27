@@ -21,6 +21,7 @@ import (
 	cmd_util "github.com/consensys/go-corset/pkg/cmd/corset/util"
 	"github.com/consensys/go-corset/pkg/corset"
 	"github.com/consensys/go-corset/pkg/ir"
+	"github.com/consensys/go-corset/pkg/ir/assignment"
 	"github.com/consensys/go-corset/pkg/ir/mir"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/spf13/cobra"
@@ -38,6 +39,7 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		if GetFlag(cmd, "version") {
 			fmt.Print("go-corset ")
+
 			if Version != "" {
 				// Built via "make"
 				fmt.Printf("%s", Version)
@@ -48,6 +50,7 @@ var rootCmd = &cobra.Command{
 				// Unknown, perhaps "go run"
 				fmt.Printf("(unknown version)")
 			}
+
 			fmt.Println()
 		}
 	},
@@ -93,6 +96,8 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 	}
 	// Manage exploding multiplier
 	mir.EXPLODING_MULTIPLIER = GetUint(cmd, "exploding-multiplier")
+	// Configure inner parallelism for computed register expansion
+	assignment.INNER_WORKERS = GetUint(cmd, "workers")
 	// Find command to dispatch
 	for _, c := range cmds {
 		if c.Field == *config {
@@ -253,6 +258,8 @@ func init() {
 	rootCmd.PersistentFlags().Bool("defensive", true, "defensively pad modules")
 	rootCmd.PersistentFlags().Bool("validate", true, "apply trace validation")
 	rootCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
+	rootCmd.PersistentFlags().Uint("workers", 0,
+		"number of inner parallel workers per assignment during trace expansion (0=auto from GOMAXPROCS)")
 	// Misc
 	rootCmd.PersistentFlags().StringArrayP("set", "S", []string{}, "set value of externalised constant.")
 	rootCmd.PersistentFlags().Uint("exploding-multiplier", 10,
