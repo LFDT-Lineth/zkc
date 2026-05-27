@@ -84,8 +84,20 @@ func SplitRegisters[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachin
 // WordToWordMachine transforms a machine operating over a given word type (W1)
 // into an identical machine which operates over a different word type (W2).
 // Generally speaking, we are going from a larger word (e.g. word.Uint) to a
-// smaller word (e.g. word.Uint64).  This function will panic if it encounters a
-// register or constant which exceeds the bandwidth of the given word.
+// smaller word (e.g. word.Uint64).
+//
+// The transformation is purely structural: instructions are re-typed but not
+// rewritten or lowered, register declarations are preserved verbatim (no
+// splitting or width changes), and constants are not reduced modulo the field.
+// The source machine's prime modulus is re-expressed in W2 so the new machine
+// retains the same field semantics; this means the modulus itself must also
+// fit in W2's bandwidth.  ROM/SROM contents are converted element-wise;
+// WOM/RAM/Bipartite memories start empty in the new machine.
+//
+// This function will panic if it encounters a register, constant, modulus or
+// memory cell which exceeds the bandwidth of W2.  Callers needing to target a
+// narrower word size than some source register widths should run
+// SplitRegisters first.
 func WordToWordMachine[W1 word.Word[W1], W2 word.Word[W2]](m1 *machine.Word[W1]) (m2 *machine.Word[W2]) {
 	return transform.WordToWordMachine[W1, W2](m1)
 }

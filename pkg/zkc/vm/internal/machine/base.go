@@ -163,6 +163,13 @@ func (p *Base[W, I, T]) Leave() (bool, error) {
 	return n == 0, nil
 }
 
+// Executor returns the executor for this machine.  This is primarily useful
+// for transformations which need to inspect machine-specific executor state
+// (e.g. a word machine's prime modulus) when constructing a derived machine.
+func (p *Base[W, I, T]) Executor() T {
+	return p.executor
+}
+
 // Module implementation for the machine.Core interface.
 func (p *Base[W, I, T]) Module(id uint) Module {
 	return p.modules[id]
