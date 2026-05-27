@@ -151,25 +151,7 @@ func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Fa
 // trace because it does not record any internal information about the trace ---
 // it simply extracts the outputs at the end.
 func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[string][]byte, errs []error) {
-	var (
-		steps  uint
-		inputs map[string][]vm.Uint
-		stats  = util.NewPerfStats()
-	)
-	// Execute machine in chunks of 1K steps
-	if inputs, errs = vm.DecodeInputs(&p.machine, input); len(errs) != 0 {
-		return nil, errs
-	} else if err := p.machine.Boot("main", inputs); err != nil {
-		errs = append(errs, err)
-	} else if steps, err = vm.ExecuteAll(&p.machine, n); err != nil {
-		errs = append(errs, err)
-	} else {
-		output = vm.EncodeOutputs(&p.machine)
-	}
-	// Log stats
-	stats.Log(fmt.Sprintf("Constraint execution (%d steps)", steps))
-	//
-	return output, errs
+	return vm.BootAndExecute(&p.machine, input, n)
 }
 
 // Trace generates a suitable trace from the given inputs for the contraints

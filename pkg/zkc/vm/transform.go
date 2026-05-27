@@ -20,6 +20,7 @@ import (
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	finsn "github.com/consensys/go-corset/pkg/zkc/vm/instruction/field"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/transform"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
@@ -78,6 +79,15 @@ func SplitRegisters[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachin
 	var limbsMap = newLimbsMap(cfg, wm.Modules()...)
 	// Invoke subdivision algorithm
 	return transform.SplitRegisters(limbsMap, wm)
+}
+
+// WordToWordMachine transforms a machine operating over a given word type (W1)
+// into an identical machine which operates over a different word type (W2).
+// Generally speaking, we are going from a larger word (e.g. word.Uint) to a
+// smaller word (e.g. word.Uint64).  This function will panic if it encounters a
+// register or constant which exceeds the bandwidth of the given word.
+func WordToWordMachine[W1 word.Word[W1], W2 word.Word[W2]](m1 *machine.Word[W1]) (m2 *machine.Word[W2]) {
+	return transform.WordToWordMachine[W1, W2](m1)
 }
 
 // WordToFieldMachine translates a machine over integer words into a machine over
