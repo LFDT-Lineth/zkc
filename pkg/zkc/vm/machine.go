@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
+	"github.com/consensys/go-corset/pkg/util"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
@@ -102,6 +103,34 @@ func NewFunction[I instruction.Instruction](name string, native bool, registers 
 // a given field configuration (for native field instructions).
 func NewWordMachine[W Word[W]](field field.Config, modules ...Module) *WordMachine[W] {
 	return machine.NewWord[W](field, modules...)
+}
+
+// BootAndExecute executes the program embodied by these constraints in chunks
+// of n steps at a time, producing any outputs arising.  Execution is faster
+// than trace because it does not record any internal information about the
+// trace --- it simply extracts the outputs at the end.
+func BootAndExecute[W Word[W], M Machine[W]](m M, input map[string][]byte, n uint,
+) (output map[string][]byte, errs []error) {
+	//
+	var (
+		steps  uint
+		inputs map[string][]W
+		stats  = util.NewPerfStats()
+	)
+	// Execute machine in chunks of 1K steps
+	if inputs, errs = DecodeInputs(m, input); len(errs) != 0 {
+		return nil, errs
+	} else if err := m.Boot("main", inputs); err != nil {
+		errs = append(errs, err)
+	} else if steps, err = ExecuteAll(m, n); err != nil {
+		errs = append(errs, err)
+	} else {
+		output = EncodeOutputs(m)
+	}
+	// Log stats
+	stats.Log(fmt.Sprintf("Machine execution (%d steps)", steps))
+	//
+	return output, errs
 }
 
 // ============================================================================

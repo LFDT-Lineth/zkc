@@ -39,6 +39,12 @@ func NewWord[W word.Word[W]](field field.Config, modules ...Module) *Word[W] {
 	return NewBase(executor, modules...)
 }
 
+// NewWordFromModulus constructs a new empty word machine directly from a given
+// prime modulus (already expressed in the target word type).
+func NewWordFromModulus[W word.Word[W]](modulus W, modules ...Module) *Word[W] {
+	return NewBase(WordExecutor[W]{modulus}, modules...)
+}
+
 // ==============================================================
 // Word Executor
 // ==============================================================
@@ -49,6 +55,12 @@ type WordExecutor[W word.Word[W]] struct {
 	// Prime modulus is needed only for simulating the execution of native field
 	// instructions.
 	modulus W
+}
+
+// Modulus returns the prime modulus this executor was constructed with.  This
+// is primarily of use when deriving a new word machine from an existing one.
+func (p WordExecutor[W]) Modulus() W {
+	return p.modulus
 }
 
 // nolint

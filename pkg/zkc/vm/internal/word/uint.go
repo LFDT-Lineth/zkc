@@ -15,6 +15,7 @@ package word
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"math/big"
 
 	util_math "github.com/consensys/go-corset/pkg/util/math"
@@ -50,6 +51,11 @@ func (p Uint) AddMod(w, m Uint) Uint {
 	res.Mod(&res, &m.value)
 	//
 	return Uint{res}
+}
+
+// Bandwidth implementation for Word interface.
+func (p Uint) Bandwidth() uint {
+	return math.MaxUint
 }
 
 // Div implementation for Word interface.

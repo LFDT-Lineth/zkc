@@ -558,7 +558,7 @@ func (p *StmtCompiler) compileIntMul(args []Expr, bitwidth uint, mapping []uint,
 ) []Instruction {
 	//
 	var (
-		constant vm.Uint = vm.Uint64[vm.Uint](1)
+		constant vm.Uint = vm.Const64[vm.Uint](1)
 		nargs    []Expr
 		w        vm.Uint
 	)
@@ -589,7 +589,7 @@ func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target regis
 ) []Instruction {
 	//
 	var (
-		constant   vm.Uint = vm.Uint64[vm.Uint](1)
+		constant   vm.Uint = vm.Const64[vm.Uint](1)
 		nargs      []Expr
 		w, modulus vm.Uint
 	)

@@ -14,6 +14,7 @@ package vm
 
 import (
 	"encoding/gob"
+	"math"
 	"math/big"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -37,6 +38,19 @@ func init() {
 	gob.Register(instruction.Module(&memory.BiPartiteRandomAccess[Uint]{}))
 }
 
+// WordConfig provides a minimal amount of information about a machine word
+// type.
+type WordConfig struct {
+	Name      string
+	Bandwidth uint
+}
+
+// WORD_UINT64 provides metadata about the Uint64 word type.
+var WORD_UINT64 = WordConfig{Name: "Uint64", Bandwidth: 64}
+
+// WORD_UINT provides metadata about the Uint word type.
+var WORD_UINT = WordConfig{Name: "Uint", Bandwidth: math.MaxUint}
+
 // Word abstracts the data type (a.k.a the "machine word") used for holding
 // values within the machine.  The reason for abstracting this concept is to
 // allow a machine compiled for a larger word size to be automatically lowered
@@ -49,14 +63,17 @@ type Word[W any] = word.Word[W]
 // Uint represents an unbound unsigned integer.
 type Uint = word.Uint
 
+// Uint64 represents an 64-bit unsigned integer.
+type Uint64 = word.Uint64
+
 // ============================================================================
 // Constructors
 // ============================================================================
 
-// Uint64 initialises a given word with a 64bit value.  This will panic if the
+// Const64 initialises a given word with a 64bit value.  This will panic if the
 // given value exceeds the available bandwidth of the word in question.
-func Uint64[W Word[W]](val uint64) W {
-	return word.Uint64[W](val)
+func Const64[W Word[W]](val uint64) W {
+	return word.Const64[W](val)
 }
 
 // ============================================================================

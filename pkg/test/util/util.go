@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	cmd_util "github.com/consensys/go-corset/pkg/cmd/zkc"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/file"
 	"github.com/consensys/go-corset/pkg/util/source"
@@ -26,9 +27,7 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/vm"
 )
 
-// TestCase simply packages together a filename, a line number and the
-// corresponding test on that line.  This is primiarly useful for error
-// reporting when a test fails.
+// TestCase represents a line in a file
 type TestCase struct {
 	// name of enclosing file
 	filename string
@@ -36,12 +35,8 @@ type TestCase struct {
 	line uint
 	// indicates whether this test is expected to pass or fail.
 	expected bool
-	// field on which to execute test
-	field field.Config
-	// input data of test
-	inputs map[string][]vm.Uint
-	// expected output data of test
-	outputs map[string][]vm.Uint
+	// raw data obtained from JSON
+	data map[string][]byte
 }
 
 // CompileMachine compiles one or more zkc source files into a base machine for
@@ -65,12 +60,14 @@ func CompileZkc(field field.Config, srcfile source.File) []source.SyntaxError {
 
 // ReadTestsFile reads a file containing zero or more tests expressed as JSON,
 // where each test is on a separate line.
-func ReadTestsFile(t *testing.T, cfg TestConfig, f field.Config, test string, wm *vm.WordMachine[vm.Uint]) []TestCase {
+func ReadTestsFile(t *testing.T, cfg TestConfig, test string) []TestCase {
+	//
 	var (
 		// Construct test filename
 		filename = fmt.Sprintf("%s/%s.%s", TestDir, test, cfg.extension)
 		// Read input file
 		lines = file.ReadInputFileAsLines(filename)
+		//
 		tests []TestCase
 	)
 	// Read constraints line by line
@@ -84,12 +81,8 @@ func ReadTestsFile(t *testing.T, cfg TestConfig, f field.Config, test string, wm
 				msg := fmt.Sprintf("%s:%d: %s", filename, i+1, err)
 				panic(msg)
 			}
-			// split data into inputs and (expected) outputs
-			inputs, outputs, errs := vm.DecodeInputsOutputs(wm, data)
 			//
-			failIfErrors(t, errs...)
-			//
-			tests = append(tests, TestCase{filename, uint(i + 1), cfg.expected, f, inputs, outputs})
+			tests = append(tests, TestCase{filename, uint(i + 1), cfg.expected, data})
 		}
 	}
 
@@ -105,4 +98,38 @@ func failIfErrors(t *testing.T, errs ...error) {
 		// Don't continue
 		t.FailNow()
 	}
+}
+
+func compileTestProgram(t *testing.T, testfile string, cfg codegen.Config) (vm *vm.WordMachine[vm.Uint]) {
+	var filename = fmt.Sprintf("%s/%s", TestDir, testfile)
+	// Compile source file into Abstract Syntax Tree form.
+	program := cmd_util.CompileSourceFiles(cfg.GetField(), filename)
+	// Compile program into boot machine
+	vm, errs := program.Compile(cfg)
+	//
+	//
+	if len(errs) > 0 {
+		for _, err := range errs {
+			t.Errorf("%s", err.Error())
+		}
+
+		t.FailNow()
+	}
+	//
+	return vm
+}
+
+func decodeInputsOutputs[W vm.Word[W]](t *testing.T, m vm.Machine[W], data map[string][]byte,
+) (inputs map[string][]W, outputs map[string][]W) {
+	inputs, outputs, errs := vm.DecodeInputsOutputs(m, data)
+	//
+	if len(errs) > 0 {
+		for _, err := range errs {
+			t.Errorf("%s", err.Error())
+		}
+
+		t.FailNow()
+	}
+	//
+	return inputs, outputs
 }

@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package lowering
+package transform
 
 import (
 	"fmt"
@@ -22,7 +22,6 @@ import (
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/poly"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	finsn "github.com/consensys/go-corset/pkg/zkc/vm/instruction/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
@@ -30,32 +29,11 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
-// Monomial is a useful alias
-type Monomial = finsn.Monomial
-
-// Polynomial is a useful alias
-type Polynomial = finsn.Polynomial
-
-// SystemMap is a useful alias
-type SystemMap = instruction.SystemMap
-
-// Module is a useful alias
-type Module = machine.Module
-
-// WordFunction is a useful alias
-type WordFunction = function.Function[instruction.Word]
-
-// FieldFunction is a useful alias
-type FieldFunction = function.Function[instruction.Field]
-
-// Vector is a useful alias
-type Vector[I instruction.Instruction] = instruction.Vector[I]
-
-// LowerWordMachine translates a machine over integer words into a machine over
+// WordToFieldMachine translates a machine over integer words into a machine over
 // field elements.  In order to do this, it must "compile out" various
 // high-level word operations (e.g. bitwise operations, division, etc) which
 // have no direct correspondance within a field machine.
-func LowerWordMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm *machine.Word[W],
+func WordToFieldMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm *machine.Word[W],
 ) (fm *machine.Field[F]) {
 	//
 	var (
@@ -151,7 +129,7 @@ func (p wordToField[W, F]) lowerWordFunction(wf *WordFunction, mapping SystemMap
 	return function.New(wf.Name(), wf.IsNative(), regs, insns)
 }
 
-func (p wordToField[W, F]) lowerWordVector(wi Vector[instruction.Word], mapping SystemMap) Vector[instruction.Field] {
+func (p wordToField[W, F]) lowerWordVector(wi Vector[WordInstruction], mapping SystemMap) Vector[instruction.Field] {
 	var (
 		insns = make([]instruction.Field, len(wi.Codes))
 	)
@@ -163,7 +141,7 @@ func (p wordToField[W, F]) lowerWordVector(wi Vector[instruction.Word], mapping 
 	return instruction.NewVector(insns...)
 }
 
-func (p wordToField[W, F]) lowerWordInstruction(wi instruction.Word, mapping SystemMap) instruction.Field {
+func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping SystemMap) instruction.Field {
 	switch wi.OpCode() {
 	// Base instructions translate directly as is.
 	case opcode.CALL:
@@ -223,7 +201,6 @@ func (p wordToField[W, F]) lowerArithInstruction(lhs register.Vector, rhs []regi
 	//
 	var (
 		one   = big.NewInt(1)
-		zero  W
 		terms = make([]Monomial, len(rhs))
 	)
 	// Construct register accesses as necessary
@@ -233,7 +210,7 @@ func (p wordToField[W, F]) lowerArithInstruction(lhs register.Vector, rhs []regi
 	// Add constant (if applicable)
 	if n := c.BigInt(); n.BitLen() > int(p.field.RegisterWidth) {
 		panic(fmt.Sprintf("constant exceeds max register width (u%d vs u%d)", n.BitLen(), p.field.RegisterWidth))
-	} else if c.Cmp(zero) != 0 {
+	} else if c.Cmp64(0) != 0 {
 		// var c F
 		// // Convert from word value to field element
 		// c = c.SetBytes(n.Bytes())
@@ -250,7 +227,6 @@ func (p wordToField[W, F]) lowerFieldInstruction(lhs register.Id, rhs []register
 	var (
 		one   = big.NewInt(1)
 		mod   F
-		zero  W
 		terms = make([]Monomial, len(rhs))
 	)
 	// Construct register accesses as necessary
@@ -260,7 +236,7 @@ func (p wordToField[W, F]) lowerFieldInstruction(lhs register.Id, rhs []register
 	// Add constant (if applicable)
 	if n := c.BigInt(); n.Cmp(mod.Modulus()) >= 0 {
 		panic(fmt.Sprintf("constant exceeds field prime (0x%s vs 0x%s)", n.Text(16), mod.Modulus().Text(16)))
-	} else if c.Cmp(zero) != 0 {
+	} else if c.Cmp64(0) != 0 {
 		//var c F
 		// Convert from word value to field element
 		//c = c.SetBytes(n.Bytes())

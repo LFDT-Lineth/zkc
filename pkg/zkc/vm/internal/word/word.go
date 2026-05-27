@@ -30,6 +30,9 @@ type Word[W any] interface {
 	AddMod(W, W) W
 	// Bitwise AND of two words.
 	And(W) W
+	// Returns the maximum number of bits of information a word this type can
+	// hold.
+	Bandwidth() uint
 	// Return the value of this word as a big integer.
 	BigInt() *big.Int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
@@ -79,9 +82,9 @@ type Word[W any] interface {
 	Text(base int) string
 }
 
-// Uint64 initialises a given word with a 64bit value.  This will panic if the
-// given value exceeds the available bandwidth of the word in question.
-func Uint64[W Word[W]](val uint64) W {
+// Const64 initialises a given word with a 64bit value.  This will panic if
+// the given value exceeds the available bandwidth of the word in question.
+func Const64[W Word[W]](val uint64) W {
 	var w W
 	return w.SetUint64(val)
 }

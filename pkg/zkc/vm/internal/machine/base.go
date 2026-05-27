@@ -71,6 +71,8 @@ func NewBase[W BaseWord[W], I Instruction, T Executor[W, I]](executor T, modules
 // them.  Thus, it is recommended to perform sanity checking on input prior to
 // calling this function.
 func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
+	// Reset call stack
+	p.callstack = nil
 	// Look for function with the machine name
 	for i, m := range p.modules {
 		if _, ok := m.(*function.Function[I]); ok {
@@ -161,6 +163,13 @@ func (p *Base[W, I, T]) Leave() (bool, error) {
 	}
 	//
 	return n == 0, nil
+}
+
+// Executor returns the executor for this machine.  This is primarily useful
+// for transformations which need to inspect machine-specific executor state
+// (e.g. a word machine's prime modulus) when constructing a derived machine.
+func (p *Base[W, I, T]) Executor() T {
+	return p.executor
 }
 
 // Module implementation for the machine.Core interface.
