@@ -66,6 +66,10 @@ type Uint = word.Uint
 // Uint64 represents an 64-bit unsigned integer.
 type Uint64 = word.Uint64
 
+// WordVec represents a vector of zero or more words.  Typically, this is used
+// for storing constants after register splitting.
+type WordVec[W Word[W]] = word.Vector[W]
+
 // ============================================================================
 // Constructors
 // ============================================================================
@@ -74,6 +78,11 @@ type Uint64 = word.Uint64
 // given value exceeds the available bandwidth of the word in question.
 func Const64[W Word[W]](val uint64) W {
 	return word.Const64[W](val)
+}
+
+// NewWordVector constructs a new word vector from a given array of words.
+func NewWordVector[W Word[W]](words ...W) WordVec[W] {
+	return word.NewVector(words...)
 }
 
 // ============================================================================
