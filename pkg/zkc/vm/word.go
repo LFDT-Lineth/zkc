@@ -14,6 +14,7 @@ package vm
 
 import (
 	"encoding/gob"
+	"math"
 	"math/big"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -36,6 +37,19 @@ func init() {
 	gob.Register(instruction.Module(&memory.StaticReadOnly[Uint]{}))
 	gob.Register(instruction.Module(&memory.BiPartiteRandomAccess[Uint]{}))
 }
+
+// WordConfig provides a minimal amount of information about a machine word
+// type.
+type WordConfig struct {
+	Name      string
+	Bandwidth uint
+}
+
+// WORD_UINT64 provides metadata about the Uint64 word type.
+var WORD_UINT64 = WordConfig{Name: "Uint64", Bandwidth: 64}
+
+// WORD_UINT provides metadata about the Uint word type.
+var WORD_UINT = WordConfig{Name: "Uint", Bandwidth: math.MaxUint}
 
 // Word abstracts the data type (a.k.a the "machine word") used for holding
 // values within the machine.  The reason for abstracting this concept is to

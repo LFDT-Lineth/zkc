@@ -108,7 +108,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	build.field = field
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
-		LowerZkcNative(lowerNative).
+		LowerNatives(lowerNative).
 		Vectorize(GetFlag(cmd, "vectorize")).
 		SplitRegisters(GetFlag(cmd, "split")).
 		Field(field)

@@ -128,7 +128,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 func applyExecuteDefaults[F field.Element[F]](build *BuildConfig[F], check, quiet bool) {
 	// Constraint checking requires native ZkC operations to be lowered.
 	if check {
-		build.config = build.config.LowerZkcNative(true)
+		build.config = build.config.LowerNatives(true)
 	}
 	// Suppress printf debug instructions when quiet mode is enabled.
 	build.config = build.config.Quiet(quiet)

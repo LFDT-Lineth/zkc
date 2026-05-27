@@ -71,6 +71,8 @@ func NewBase[W BaseWord[W], I Instruction, T Executor[W, I]](executor T, modules
 // them.  Thus, it is recommended to perform sanity checking on input prior to
 // calling this function.
 func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
+	// Reset call stack
+	p.callstack = nil
 	// Look for function with the machine name
 	for i, m := range p.modules {
 		if _, ok := m.(*function.Function[I]); ok {
