@@ -128,7 +128,7 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 	}
 	// Field-level Intermediate Representation
 	if deps.fir {
-		fir = vm.LowerWordMachine[vm.Uint, F](p.field, wir)
+		fir = vm.WordToFieldMachine[vm.Uint, F](p.field, wir)
 	}
 	// Mid-level Intermediate Representation
 	if deps.mir {

@@ -30,6 +30,9 @@ type Word[W any] interface {
 	AddMod(W, W) W
 	// Bitwise AND of two words.
 	And(W) W
+	// Returns the maximum number of bits of information a word this type can
+	// hold.
+	Bandwidth() uint
 	// Return the value of this word as a big integer.
 	BigInt() *big.Int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.

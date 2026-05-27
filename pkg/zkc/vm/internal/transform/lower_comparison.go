@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package lowering
+package transform
 
 import (
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -39,12 +39,12 @@ func LowerComparisons[W word.Word[W]](modules []Module) []Module {
 func lowerComparisonFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
 	var (
 		code  = fn.Code()
-		ncode = make([]vectorInstruction, len(code))
+		ncode = make([]VectorInstruction, len(code))
 		alloc = register.NewAllocator[int](fn.RegisterMap())
 	)
 
 	for i, insn := range code {
-		ncode[i] = insn.Map(func(_ uint, ith instruction.Word) []instruction.Word {
+		ncode[i] = insn.Map(func(_ uint, ith WordInstruction) []WordInstruction {
 			return lowerComparisonCode[W](ith, alloc)
 		})
 	}
@@ -53,12 +53,12 @@ func lowerComparisonFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
 }
 
 func lowerComparisonCode[W word.Word[W]](
-	code instruction.Word,
+	code WordInstruction,
 	registers RegisterAllocator,
-) []instruction.Word {
+) []WordInstruction {
 	si, ok := code.(*instruction.SkipIf)
 	if !ok || !isRelationalCondition(si.Cond) {
-		return []instruction.Word{code}
+		return []WordInstruction{code}
 	}
 
 	return lowerRelationalSkipIf[W](si, registers)
@@ -90,7 +90,7 @@ func isRelationalCondition(cond opcode.Condition) bool {
 func lowerRelationalSkipIf[W word.Word[W]](
 	si *instruction.SkipIf,
 	registers RegisterAllocator,
-) []instruction.Word {
+) []WordInstruction {
 	lhs, rhs, skipOnZero := normalizeRelational(si)
 	lhsWidth := registers.Register(lhs).Width()
 	rhsWidth := registers.Register(rhs).Width()
@@ -108,13 +108,13 @@ func lowerRelationalSkipIf[W word.Word[W]](
 	zeroReg := registers.Allocate("", 1)
 
 	// rhs is always cast to castBandWidth
-	castRhs := []instruction.Word{
+	castRhs := []WordInstruction{
 		instruction.UintConst(oneReg, one),
 	}
 	// when creating 1::lhs, we don't need to cast lhs if it's of size castBandWidth-1 already.
 	var castLhs = instruction.BitConcat[W](biased, []register.Id{lhs, oneReg})
 
-	subtractAnsDestruct := []instruction.Word{
+	subtractAnsDestruct := []WordInstruction{
 		instruction.UintSubV(register.NewVector(lo, sign), []register.Id{biased, rhs}, zero),
 		instruction.UintConst(zeroReg, zero),
 	}

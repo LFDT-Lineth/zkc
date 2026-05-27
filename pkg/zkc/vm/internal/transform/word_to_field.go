@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package lowering
+package transform
 
 import (
 	"fmt"
@@ -22,7 +22,6 @@ import (
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/poly"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	finsn "github.com/consensys/go-corset/pkg/zkc/vm/instruction/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
@@ -30,32 +29,11 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
-// Monomial is a useful alias
-type Monomial = finsn.Monomial
-
-// Polynomial is a useful alias
-type Polynomial = finsn.Polynomial
-
-// SystemMap is a useful alias
-type SystemMap = instruction.SystemMap
-
-// Module is a useful alias
-type Module = machine.Module
-
-// WordFunction is a useful alias
-type WordFunction = function.Function[instruction.Word]
-
-// FieldFunction is a useful alias
-type FieldFunction = function.Function[instruction.Field]
-
-// Vector is a useful alias
-type Vector[I instruction.Instruction] = instruction.Vector[I]
-
-// LowerWordMachine translates a machine over integer words into a machine over
+// WordToFieldMachine translates a machine over integer words into a machine over
 // field elements.  In order to do this, it must "compile out" various
 // high-level word operations (e.g. bitwise operations, division, etc) which
 // have no direct correspondance within a field machine.
-func LowerWordMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm *machine.Word[W],
+func WordToFieldMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm *machine.Word[W],
 ) (fm *machine.Field[F]) {
 	//
 	var (
@@ -151,7 +129,7 @@ func (p wordToField[W, F]) lowerWordFunction(wf *WordFunction, mapping SystemMap
 	return function.New(wf.Name(), wf.IsNative(), regs, insns)
 }
 
-func (p wordToField[W, F]) lowerWordVector(wi Vector[instruction.Word], mapping SystemMap) Vector[instruction.Field] {
+func (p wordToField[W, F]) lowerWordVector(wi Vector[WordInstruction], mapping SystemMap) Vector[instruction.Field] {
 	var (
 		insns = make([]instruction.Field, len(wi.Codes))
 	)
@@ -163,7 +141,7 @@ func (p wordToField[W, F]) lowerWordVector(wi Vector[instruction.Word], mapping 
 	return instruction.NewVector(insns...)
 }
 
-func (p wordToField[W, F]) lowerWordInstruction(wi instruction.Word, mapping SystemMap) instruction.Field {
+func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping SystemMap) instruction.Field {
 	switch wi.OpCode() {
 	// Base instructions translate directly as is.
 	case opcode.CALL:

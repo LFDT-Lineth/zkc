@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package machine
+package transform
 
 import (
 	"fmt"
@@ -20,23 +20,18 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
-// WordInstruction is a useful alias
-type WordInstruction = instruction.Word
-
-// VectorInstruction is a useful alias
-type VectorInstruction = instruction.Vector[WordInstruction]
-
-// Subdivide all modules to meet a given bandwidth and maximum register width.
+// SplitRegisters all modules to meet a given bandwidth and maximum register width.
 // This will split all registers wider than the maximum permitted width into two
 // or more "limbs" (i.e. subregisters which do not exceeded the permitted
 // width). For example, consider a register "r" of width u32. Subdividing this
 // register into registers of at most 8bits will result in four limbs: r'0, r'1,
 // r'2 and r'3 where (by convention) r'0 is the least significant.
-func Subdivide[W word.Word[W]](mapping module.LimbsMap, m *Word[W]) *Word[W] {
+func SplitRegisters[W word.Word[W]](mapping module.LimbsMap, m *machine.Word[W]) *machine.Word[W] {
 	var (
 		mods = make([]Module, len(m.Modules()))
 	)
@@ -45,24 +40,24 @@ func Subdivide[W word.Word[W]](mapping module.LimbsMap, m *Word[W]) *Word[W] {
 		// Determine limb mapping for this module
 		limbsMap := mapping.Module(uint(i))
 		//
-		mods[i] = subdivideModule[W](limbsMap, ith)
+		mods[i] = splitModule[W](limbsMap, ith)
 	}
 	//
-	return NewWord[W](mapping.Field(), mods...)
+	return machine.NewWord[W](mapping.Field(), mods...)
 }
 
-func subdivideModule[W word.Word[W]](mapping register.LimbsMap, m Module) Module {
+func splitModule[W word.Word[W]](mapping register.LimbsMap, m Module) Module {
 	switch m := m.(type) {
-	case *function.Function[instruction.Word]:
-		return subdivideFunction[W](mapping, *m)
+	case *function.Function[WordInstruction]:
+		return splitFunction[W](mapping, *m)
 	case memory.Memory[W]:
-		return subdivideMemory(mapping, m)
+		return splitMemory(mapping, m)
 	default:
 		panic("unknown module encountered")
 	}
 }
 
-func subdivideMemory[W word.Word[W]](mapping register.LimbsMap, m memory.Memory[W]) Module {
+func splitMemory[W word.Word[W]](mapping register.LimbsMap, m memory.Memory[W]) Module {
 	var (
 		registers = mapping.Limbs()
 	)
@@ -83,28 +78,28 @@ func subdivideMemory[W word.Word[W]](mapping register.LimbsMap, m memory.Memory[
 	}
 }
 
-func subdivideFunction[W word.Word[W]](mapping register.LimbsMap, m function.Function[instruction.Word]) Module {
+func splitFunction[W word.Word[W]](mapping register.LimbsMap, m function.Function[WordInstruction]) Module {
 	var (
 		registers = mapping.Limbs()
-		code      = subdivideInstructions[W](mapping, m.Code())
+		code      = splitInstructions[W](mapping, m.Code())
 	)
 	//
 	return function.New(m.Name(), m.IsNative(), registers, code)
 }
 
-func subdivideInstructions[W word.Word[W]](mapping register.LimbsMap, code []VectorInstruction) []VectorInstruction {
-	var ncode = make([]instruction.Vector[instruction.Word], len(code))
+func splitInstructions[W word.Word[W]](mapping register.LimbsMap, code []VectorInstruction) []VectorInstruction {
+	var ncode = make([]VectorInstruction, len(code))
 	//
 	for i, c := range code {
-		ncode[i] = subdivideInstruction[W](mapping, c)
+		ncode[i] = splitInstruction[W](mapping, c)
 	}
 	//
 	return ncode
 }
 
-func subdivideInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec VectorInstruction) VectorInstruction {
+func splitInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec VectorInstruction) VectorInstruction {
 	var (
-		insns []instruction.Word
+		insns []WordInstruction
 	)
 	// skipif
 	//
@@ -114,25 +109,25 @@ func subdivideInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec Vector
 		// Base instructions
 		// =======================================================
 		case opcode.CALL:
-			insns = append(insns, subdivideRegisters(limbsMap, c))
+			insns = append(insns, splitRegisters(limbsMap, c))
 		case opcode.DEBUG:
 			c := c.(*instruction.Debug)
-			insns = append(insns, subdivideFormatting(limbsMap, false, c.Chunks))
+			insns = append(insns, splitFormatting(limbsMap, false, c.Chunks))
 		case opcode.FAIL:
 			c := c.(*instruction.Fail)
-			insns = append(insns, subdivideFormatting(limbsMap, true, c.Chunks))
+			insns = append(insns, splitFormatting(limbsMap, true, c.Chunks))
 		case opcode.JUMP:
 			insns = append(insns, c)
 		case opcode.MEMORY_READ:
-			insns = append(insns, subdivideRegisters(limbsMap, c))
+			insns = append(insns, splitRegisters(limbsMap, c))
 		case opcode.MEMORY_WRITE:
-			insns = append(insns, subdivideRegisters(limbsMap, c))
+			insns = append(insns, splitRegisters(limbsMap, c))
 		case opcode.RETURN:
 			insns = append(insns, c)
 		case opcode.SKIP:
 			insns = append(insns, c)
 		case opcode.SKIP_IF:
-			insns = append(insns, subdivideRegisters(limbsMap, c))
+			insns = append(insns, splitRegisters(limbsMap, c))
 
 		// =======================================================
 		// Arithmetic instructions
@@ -140,11 +135,11 @@ func subdivideInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec Vector
 
 		case opcode.INT_ADD:
 			c := c.(*instruction.WordTypeA[W])
-			insns = append(insns, subdivideAddition(limbsMap, c)...)
+			insns = append(insns, splitAddition(limbsMap, c)...)
 		case opcode.INT_SUB:
-			insns = append(insns, subdivideSubtraction(limbsMap, c)...)
+			insns = append(insns, splitSubtraction(limbsMap, c)...)
 		case opcode.INT_MUL:
-			insns = append(insns, subdivideMultiplication(limbsMap, c)...)
+			insns = append(insns, splitMultiplication(limbsMap, c)...)
 		default:
 			panic("unsupported instruction")
 		}
@@ -154,7 +149,7 @@ func subdivideInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec Vector
 	return instruction.NewVector(insns...)
 }
 
-func subdivideRegisters(limbsMap register.LimbsMap, insn instruction.Word) instruction.Word {
+func splitRegisters(limbsMap register.LimbsMap, insn WordInstruction) WordInstruction {
 	switch c := insn.(type) {
 	case *instruction.Call:
 		args := register.ApplyLimbsMap(limbsMap, c.Arguments...)
@@ -181,7 +176,7 @@ func subdivideRegisters(limbsMap register.LimbsMap, insn instruction.Word) instr
 	}
 }
 
-func subdivideFormatting(limbsMap register.LimbsMap, fail bool, chunks []instruction.FormattedChunk) instruction.Word {
+func splitFormatting(limbsMap register.LimbsMap, fail bool, chunks []instruction.FormattedChunk) WordInstruction {
 	var (
 		nchunks = make([]instruction.FormattedChunk, len(chunks))
 	)
@@ -204,7 +199,7 @@ func subdivideFormatting(limbsMap register.LimbsMap, fail bool, chunks []instruc
 	return instruction.NewDebug(nchunks...)
 }
 
-func subdivideAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruction.WordTypeA[W]) []instruction.Word {
+func splitAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruction.WordTypeA[W]) []WordInstruction {
 	var (
 		target  = register.ApplyLimbsMap(limbsMap, insn.Target.Registers()...)
 		sources = register.ApplyLimbsMap(limbsMap, insn.Sources...)
@@ -216,13 +211,13 @@ func subdivideAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruc
 		panic("todo")
 	}
 	//
-	return []instruction.Word{instruction.UintAdd(target[0], sources, insn.Constant)}
+	return []WordInstruction{instruction.UintAdd(target[0], sources, insn.Constant)}
 }
 
-func subdivideSubtraction(limbsMap register.LimbsMap, insn instruction.Word) []instruction.Word {
+func splitSubtraction(limbsMap register.LimbsMap, insn WordInstruction) []WordInstruction {
 	panic("todo")
 }
 
-func subdivideMultiplication(limbsMap register.LimbsMap, insn instruction.Word) []instruction.Word {
+func splitMultiplication(limbsMap register.LimbsMap, insn WordInstruction) []WordInstruction {
 	panic("todo")
 }
