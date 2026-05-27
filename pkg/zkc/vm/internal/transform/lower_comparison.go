@@ -97,8 +97,8 @@ func lowerRelationalSkipIf[W word.Word[W]](
 
 	castBandWidth := max(lhsWidth, rhsWidth) + 1
 
-	zero := word.Uint64[W](0)
-	one := word.Uint64[W](1)
+	zero := word.Const64[W](0)
+	one := word.Const64[W](1)
 
 	//bWide := registers.Allocate("", castBandWidth)
 	oneReg := registers.Allocate("", 1)

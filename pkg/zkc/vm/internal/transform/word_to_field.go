@@ -201,7 +201,6 @@ func (p wordToField[W, F]) lowerArithInstruction(lhs register.Vector, rhs []regi
 	//
 	var (
 		one   = big.NewInt(1)
-		zero  W
 		terms = make([]Monomial, len(rhs))
 	)
 	// Construct register accesses as necessary
@@ -211,7 +210,7 @@ func (p wordToField[W, F]) lowerArithInstruction(lhs register.Vector, rhs []regi
 	// Add constant (if applicable)
 	if n := c.BigInt(); n.BitLen() > int(p.field.RegisterWidth) {
 		panic(fmt.Sprintf("constant exceeds max register width (u%d vs u%d)", n.BitLen(), p.field.RegisterWidth))
-	} else if c.Cmp(zero) != 0 {
+	} else if c.Cmp64(0) != 0 {
 		// var c F
 		// // Convert from word value to field element
 		// c = c.SetBytes(n.Bytes())
@@ -228,7 +227,6 @@ func (p wordToField[W, F]) lowerFieldInstruction(lhs register.Id, rhs []register
 	var (
 		one   = big.NewInt(1)
 		mod   F
-		zero  W
 		terms = make([]Monomial, len(rhs))
 	)
 	// Construct register accesses as necessary
@@ -238,7 +236,7 @@ func (p wordToField[W, F]) lowerFieldInstruction(lhs register.Id, rhs []register
 	// Add constant (if applicable)
 	if n := c.BigInt(); n.Cmp(mod.Modulus()) >= 0 {
 		panic(fmt.Sprintf("constant exceeds field prime (0x%s vs 0x%s)", n.Text(16), mod.Modulus().Text(16)))
-	} else if c.Cmp(zero) != 0 {
+	} else if c.Cmp64(0) != 0 {
 		//var c F
 		// Convert from word value to field element
 		//c = c.SetBytes(n.Bytes())

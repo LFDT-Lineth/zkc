@@ -87,8 +87,8 @@ func expandDivision[W word.Word[W]](q, x, y register.Id, registers RegisterAlloc
 		nY   = registers.Register(y).Width()
 		r    = registers.Allocate("", nY)
 		w    = registers.Allocate("", nY)
-		zero = word.Uint64[W](0)
-		one  = word.Uint64[W](1)
+		zero = word.Const64[W](0)
+		one  = word.Const64[W](1)
 		qy   = registers.Allocate("", nX)
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", 0)
@@ -112,8 +112,8 @@ func expandRemainder[W word.Word[W]](r, x, y register.Id, registers RegisterAllo
 		nY   = registers.Register(y).Width()
 		q    = registers.Allocate("", nX)
 		w    = registers.Allocate("", nY)
-		zero = word.Uint64[W](0)
-		one  = word.Uint64[W](1)
+		zero = word.Const64[W](0)
+		one  = word.Const64[W](1)
 		qy   = registers.Allocate("", nX)
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", 0)

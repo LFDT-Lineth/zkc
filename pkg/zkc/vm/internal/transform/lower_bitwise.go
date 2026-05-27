@@ -263,7 +263,7 @@ func newDecomposedNaryHelper[W word.Word[W]](
 	b := newHelperBuilder[W](key.width, key.arity)
 
 	out := b.output
-	zero := word.Uint64[W](0)
+	zero := word.Const64[W](0)
 
 	// TODO: we will want to stop before width == 1 to reduce the number of tiny modules.
 	if key.width == 1 {
@@ -273,7 +273,7 @@ func newDecomposedNaryHelper[W word.Word[W]](
 		agg := b.newComputed("agg")
 
 		if key.opcode == opcode.BIT_AND {
-			one := word.Uint64[W](1)
+			one := word.Const64[W](1)
 			b.emit(instruction.UintConst(agg, one))
 		} else {
 			b.emit(instruction.UintConst(agg, zero))
@@ -383,8 +383,8 @@ func (p *helperBuilder[W]) newComputedNamed(width uint) register.Id {
 }
 
 func (p *helperBuilder[W]) combineBit(op instruction.OpCode, lhs, rhs register.Id) register.Id {
-	zero := word.Uint64[W](0)
-	one := word.Uint64[W](1)
+	zero := word.Const64[W](0)
+	one := word.Const64[W](1)
 
 	switch op {
 	case opcode.BIT_AND:

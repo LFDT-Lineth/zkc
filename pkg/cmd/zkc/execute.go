@@ -84,8 +84,9 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		trace, errors = binfile.Trace(input, traceConfig)
 	} else if fast {
 		var (
-			m   = binfile.WordMachine()
-			m64 = vm.WordToWordMachine[vm.Uint, vm.Uint](&m)
+			m = binfile.WordMachine()
+			// lower to a 64bit machine
+			m64 = vm.WordToWordMachine[vm.Uint, vm.Uint64](&m)
 		)
 		//
 		outputs, errors = vm.BootAndExecute(m64, input, 1024)

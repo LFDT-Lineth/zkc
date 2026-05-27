@@ -192,7 +192,7 @@ func (p ConstantEvaluator) evalFieldConstant(e Expr, definition bool) (res vm.Ui
 		return c.SetBigInt(e.Constant()), ""
 	case *expr.Add[symbol.Resolved]:
 		var (
-			val       = vm.Uint64[vm.Uint](0)
+			val       = vm.Const64[vm.Uint](0)
 			args, err = p.evalConstants(e.Exprs, definition)
 		)
 		//
@@ -218,7 +218,7 @@ func (p ConstantEvaluator) evalFieldConstant(e Expr, definition bool) (res vm.Ui
 		return val, err
 	case *expr.Mul[symbol.Resolved]:
 		var (
-			val       = vm.Uint64[vm.Uint](1)
+			val       = vm.Const64[vm.Uint](1)
 			args, err = p.evalConstants(e.Exprs, definition)
 		)
 		//

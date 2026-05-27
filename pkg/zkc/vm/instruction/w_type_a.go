@@ -87,13 +87,12 @@ func (p *WordTypeA[W]) String(mapping base.SystemMap) string {
 		var (
 			builder strings.Builder
 			op      = aType2Operation(p.Op)
-			zero    W
 		)
 		//
 		builder.WriteString(p.Target.String(mapping))
 		builder.WriteString(" = ")
 		//
-		if p.Constant.Cmp(zero) == 0 && len(p.Sources) > 0 &&
+		if p.Constant.Cmp64(0) == 0 && len(p.Sources) > 0 &&
 			(p.Op == opcode.INT_ADD || p.Op == opcode.INT_SUB) {
 			//
 			builder.WriteString(base.ExpressionToStringWithoutConst(op, p.Sources, mapping))
@@ -122,11 +121,10 @@ func aType2Operation(op opcode.OpCode) string {
 
 func bitconcat2str[W word.Word[W]](p *WordTypeA[W], mapping base.SystemMap) string {
 	var (
-		zero    W
 		builder strings.Builder
 	)
 	// Sanity check
-	if p.Constant.Cmp(zero) != 0 {
+	if p.Constant.Cmp64(0) != 0 {
 		panic("constant given for bit concatenation")
 	}
 	//

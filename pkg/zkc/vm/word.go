@@ -49,14 +49,17 @@ type Word[W any] = word.Word[W]
 // Uint represents an unbound unsigned integer.
 type Uint = word.Uint
 
+// Uint64 represents an 64-bit unsigned integer.
+type Uint64 = word.Uint64
+
 // ============================================================================
 // Constructors
 // ============================================================================
 
-// Uint64 initialises a given word with a 64bit value.  This will panic if the
+// Const64 initialises a given word with a 64bit value.  This will panic if the
 // given value exceeds the available bandwidth of the word in question.
-func Uint64[W Word[W]](val uint64) W {
-	return word.Uint64[W](val)
+func Const64[W Word[W]](val uint64) W {
+	return word.Const64[W](val)
 }
 
 // ============================================================================
