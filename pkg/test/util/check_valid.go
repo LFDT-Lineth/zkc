@@ -108,18 +108,26 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 func checkValidInternal(t *testing.T, testfile string, cfg codegen.Config, config Config, testcases []TestCase) {
 	var (
 		// Compile test program
-		machine = compileTestProgram(t, testfile, cfg)
+		m1 = compileTestProgram(t, testfile, cfg)
+		m2 = marshallUnmarshallMachine(m1, cfg.GetField())
 	)
+	// check for original machine
+	checkValidMachine(t, m1, cfg, config, testcases)
+	// check for marshalled / unmarshalled machine
+	checkValidMachine(t, m2, cfg, config, testcases)
+}
+
+func checkValidMachine(t *testing.T, m *vm.WordMachine[vm.Uint], cfg codegen.Config, config Config, tests []TestCase) {
 	// Run execution tests
-	for _, testcase := range testcases {
-		runExecutionTests(t, machine, testcase, cfg.GetField(), config.words)
+	for _, testcase := range tests {
+		runExecutionTests(t, m, testcase, cfg.GetField(), config.words)
 	}
 	// Run constraint tests
 	if config.constraints {
-		for _, test := range testcases {
+		for _, test := range tests {
 			// FIXME: support reject tests
 			if test.expected {
-				runConstraintTest(t, machine, test, cfg)
+				runConstraintTest(t, m, test, cfg)
 			}
 		}
 	}

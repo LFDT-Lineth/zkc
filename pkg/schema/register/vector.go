@@ -13,6 +13,8 @@
 package register
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"slices"
 	"strings"
@@ -97,4 +99,65 @@ func (p Vector) String(fn Map) string {
 	}
 	//
 	return builder.String()
+}
+
+// ============================================================================
+// Encoding / Decoding
+// ============================================================================
+
+// unusedIdSentinel is written in place of a register id when serialising an
+// unused id (i.e. the null-reference produced by UnusedId).  It is the maximum
+// representable value of the uint32 wire format.
+const unusedIdSentinel uint32 = 0xFFFFFFFF
+
+// MarshalBinary converts a vector into binary data.
+func (p *Vector) MarshalBinary() (data []byte, err error) {
+	buffer := bytes.NewBuffer(data)
+	// Number of register ids
+	if err := binary.Write(buffer, binary.BigEndian, uint16(len(p.regs))); err != nil {
+		return nil, err
+	}
+	// Each register id
+	for _, id := range p.regs {
+		v := unusedIdSentinel
+		if id.IsUsed() {
+			v = uint32(id.Unwrap())
+		}
+		//
+		if err := binary.Write(buffer, binary.BigEndian, v); err != nil {
+			return nil, err
+		}
+	}
+	// Success
+	return buffer.Bytes(), nil
+}
+
+// UnmarshalBinary unmarshals a vector.
+func (p *Vector) UnmarshalBinary(data []byte) error {
+	var (
+		buffer = bytes.NewBuffer(data)
+		n      uint16
+	)
+	// Number of register ids
+	if err := binary.Read(buffer, binary.BigEndian, &n); err != nil {
+		return err
+	}
+	//
+	p.regs = make([]Id, n)
+	// Each register id
+	for i := range p.regs {
+		var v uint32
+		//
+		if err := binary.Read(buffer, binary.BigEndian, &v); err != nil {
+			return err
+		}
+		//
+		if v == unusedIdSentinel {
+			p.regs[i] = UnusedId()
+		} else {
+			p.regs[i] = NewId(uint(v))
+		}
+	}
+	// Success
+	return nil
 }
