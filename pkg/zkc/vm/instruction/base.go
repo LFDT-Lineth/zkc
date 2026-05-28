@@ -217,6 +217,7 @@ func init() {
 	gob.Register(Instruction(&Call{}))
 	gob.Register(Instruction(&Debug{}))
 	gob.Register(Instruction(&Fail{}))
+	gob.Register(Instruction(&FieldHint{}))
 	gob.Register(Instruction(&Jump{}))
 	gob.Register(Instruction(&MemRead{}))
 	gob.Register(Instruction(&MemWrite{}))

@@ -19,10 +19,15 @@ import (
 
 	cmd_util "github.com/consensys/go-corset/pkg/cmd/zkc"
 	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
+	"github.com/consensys/go-corset/pkg/util/field/gf251"
+	"github.com/consensys/go-corset/pkg/util/field/gf8209"
+	"github.com/consensys/go-corset/pkg/util/field/koalabear"
 	"github.com/consensys/go-corset/pkg/util/file"
 	"github.com/consensys/go-corset/pkg/util/source"
 	"github.com/consensys/go-corset/pkg/zkc/compiler"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen"
+	"github.com/consensys/go-corset/pkg/zkc/constraints"
 	"github.com/consensys/go-corset/pkg/zkc/util"
 	"github.com/consensys/go-corset/pkg/zkc/vm"
 )
@@ -132,4 +137,44 @@ func decodeInputsOutputs[W vm.Word[W]](t *testing.T, m vm.Machine[W], data map[s
 	}
 	//
 	return inputs, outputs
+}
+
+// Marshall / Unmarshall takes a machine and constructs a suitable BinaryFile
+// for the given field configuration, and then marshalls it into a byte sequence
+// and the unmarshalls this sequence back into a fresh machine.  The purpose of
+// this is to ensure that the marshalling / unmarshalling process: (a) actually
+// works; (b) does not change the machine internals in some subtle way.
+func marshallUnmarshallMachine(m *vm.WordMachine[vm.Uint], f field.Config) *vm.WordMachine[vm.Uint] {
+	switch f {
+	case field.GF_251:
+		return roundTripMachine[gf251.Element](m, f)
+	case field.GF_8209:
+		return roundTripMachine[gf8209.Element](m, f)
+	case field.KOALABEAR_16:
+		return roundTripMachine[koalabear.Element](m, f)
+	case field.BLS12_377:
+		return roundTripMachine[bls12_377.Element](m, f)
+	default:
+		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
+	}
+}
+
+func roundTripMachine[F field.Element[F]](m *vm.WordMachine[vm.Uint], f field.Config) *vm.WordMachine[vm.Uint] {
+	var (
+		original = constraints.NewBinaryFile[F](nil, nil, f, *m)
+		decoded  constraints.BinaryFile[F]
+	)
+	//
+	data, err := original.MarshalBinary()
+	if err != nil {
+		panic(fmt.Sprintf("marshalling machine failed: %s", err))
+	}
+	//
+	if err := decoded.UnmarshalBinary(data); err != nil {
+		panic(fmt.Sprintf("unmarshalling machine failed: %s", err))
+	}
+	//
+	nm := decoded.WordMachine()
+	//
+	return &nm
 }
