@@ -30,7 +30,7 @@ type RandomAccess[W util.Uinter64] struct {
 	StaticArray[W]
 }
 
-// Internal read function handles out-of-bounds accesses.
+// Read function handles out-of-bounds accesses.
 func (p *RandomAccess[W]) Read(address uint64) (W, error) {
 	var val W
 	//

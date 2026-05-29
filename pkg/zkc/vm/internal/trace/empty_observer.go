@@ -12,23 +12,26 @@
 // SPDX-License-Identifier: Apache-2.0
 package trace
 
-import "github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
+import (
+	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
+)
 
 // EmptyObserver does nothing
-type EmptyObserver[W machine.BaseWord[W], M machine.Core[W]] struct {
+type EmptyObserver[W machine.BaseWord[W], I instruction.Instruction, M machine.Core[W, I]] struct {
 }
 
 // Initialise implementation for Observer interface
-func (p EmptyObserver[W, M]) Initialise(machine M) {
+func (p EmptyObserver[W, I, M]) Initialise(machine M) {
 	// do nothing
 }
 
 // PreExecution implementation for Observer interface
-func (p EmptyObserver[W, M]) PreExecution(machine M) {
+func (p EmptyObserver[W, I, M]) PreExecution(machine M) {
 	// do nothing
 }
 
 // PostExecution implementation for Observer interface
-func (p EmptyObserver[W, M]) PostExecution(machine M) {
+func (p EmptyObserver[W, I, M]) PostExecution(machine M) {
 	// do nothing
 }

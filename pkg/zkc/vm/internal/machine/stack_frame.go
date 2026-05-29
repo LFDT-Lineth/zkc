@@ -28,6 +28,8 @@ import (
 // the program counter identifying the next instruction to run.  When a function
 // calls another, a new frame is pushed; when it returns, its frame is popped.
 type StackFrame[W BaseWord[W], I Instruction] struct {
+	// module identifier of function
+	id uint
 	// pc identifies the next instruction to execute within fn's code.
 	pc ProgramCounter
 	// values holds the current contents of this frame's registers, indexed by
@@ -38,6 +40,11 @@ type StackFrame[W BaseWord[W], I Instruction] struct {
 	// register declarations and signature information used to interpret pc and
 	// values.
 	fn *function.Function[I]
+}
+
+// FunctionId returns the module Id for the enclosing function.
+func (p *StackFrame[W, I]) FunctionId() uint {
+	return p.id
 }
 
 // BitwidthOf returns the bitwidth of the given register in this frame.
@@ -137,30 +144,3 @@ func StoreAcross[W word.Word[W], I Instruction](frame StackFrame[W, I], vec regi
 		return nil
 	}
 }
-
-// func storeAcross[W word.Word[W]](targets register.Vector, val W, frame WordFrame[W]) error {
-// 	var tRegIds = targets.Registers()
-// 	//
-// 	if targets.Len() == 1 {
-// 		return store(tRegIds[0], val, frame, regs)
-// 	} else {
-// 		var bitwidth uint
-// 		//
-// 		for _, rid := range targets.Registers() {
-// 			var (
-// 				id    = rid.Unwrap()
-// 				width = regs[id].Width()
-// 			)
-// 			//
-// 			frame[id] = val.Slice(width)
-// 			val = val.Shr64(uint64(width))
-// 			bitwidth += width
-// 		}
-// 		//
-// 		if val.Cmp64(0) != 0 {
-// 			return fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), bitwidth)
-// 		}
-// 		//
-// 		return nil
-// 	}
-// }

@@ -155,7 +155,9 @@ func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f 
 	}
 }
 
-func runExecutionTest[W vm.Word[W]](t *testing.T, wm vm.Machine[W], test TestCase, cfg vm.WordConfig) {
+func runExecutionTest[W vm.Word[W], I vm.Instruction](t *testing.T, wm vm.Machine[W, I], test TestCase,
+	cfg vm.WordConfig) {
+	//
 	var (
 		err  error
 		errs []error
@@ -234,7 +236,7 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, wm *vm.WordMachi
 	}
 }
 
-func checkExpectedOutputs[W vm.Word[W]](outputs map[string][]W, wm vm.Machine[W]) []error {
+func checkExpectedOutputs[W vm.Word[W], I vm.Instruction](outputs map[string][]W, wm vm.Machine[W, I]) []error {
 	var errors []error
 	//
 	for _, m := range wm.Modules() {

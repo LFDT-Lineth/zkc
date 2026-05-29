@@ -34,7 +34,7 @@ type Executor[W BaseWord[W], I Instruction] interface {
 // machine may be operating over instructions compiled into bytes (for efficient
 // execution), or instructions represented at a higher level (e.g. for analysis
 // or compilation).
-type Core[W BaseWord[W]] interface {
+type Core[W BaseWord[W], I Instruction] interface {
 	// Boot this machine by starting the given function with the given inputs.  This
 	// function assumes the given inputs are correctly formed, and will: (1) ingore
 	// unknown inputs; (2) initialise empty memories when no input is given for
@@ -50,6 +50,8 @@ type Core[W BaseWord[W]] interface {
 	Modules() []Module
 	// Depth returns the depth of the call stack.
 	Depth() uint
+	// StackFrame returns the nth stack frame, where n==0 returns the root frame.
+	StackFrame(n uint) StackFrame[W, I]
 }
 
 // Module represents an either a function or memory within the machine.

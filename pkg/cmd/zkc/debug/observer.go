@@ -71,7 +71,7 @@ func (p *TraceObserver[W]) PostExecution(machine *vm.WordMachine[W]) {
 func (p *TraceObserver[W]) enterFunction(machine *vm.WordMachine[W]) {
 	var (
 		n     = machine.Depth()
-		frame = machine.StackFrame(n - 1)
+		frame = machine.StackFrame(0)
 	)
 	//
 	p.depth = n
@@ -81,7 +81,7 @@ func (p *TraceObserver[W]) enterFunction(machine *vm.WordMachine[W]) {
 
 func (p *TraceObserver[W]) writeInstruction(machine *vm.WordMachine[W]) {
 	var (
-		frame = machine.StackFrame(p.depth - 1)
+		frame = machine.StackFrame(0)
 		pc    = frame.PC()
 		vec   = frame.Vector(pc.Macro())
 	)
@@ -92,8 +92,7 @@ func (p *TraceObserver[W]) writeInstruction(machine *vm.WordMachine[W]) {
 
 func (p *TraceObserver[W]) writeState(machine *vm.WordMachine[W]) {
 	var (
-		n      = machine.Depth()
-		frame  = machine.StackFrame(n - 1)
+		frame  = machine.StackFrame(0)
 		base   = instruction.NewSystemMap(p.fun.RegisterMap(), machine.Modules())
 		values = make(map[uint]string)
 	)

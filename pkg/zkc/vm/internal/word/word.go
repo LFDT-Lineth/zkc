@@ -14,7 +14,21 @@ package word
 
 import (
 	"math/big"
+
+	"github.com/consensys/go-corset/pkg/util"
+	zkc_util "github.com/consensys/go-corset/pkg/zkc/util"
 )
+
+// Base captures the minimal set of requirements for a word used in the base
+// machine.
+type Base[W any] interface {
+	util.Comparable[W]
+	util.ComparableUint64
+	util.Uinter64
+	zkc_util.Formattable
+	// Check whether this value fits within the given bitwidth.
+	FitsWithin(uint) bool
+}
 
 // Word abstracts the data type (a.k.a the "machine word") used for holding
 // values within the machine.  The reason for abstracting this concept is to

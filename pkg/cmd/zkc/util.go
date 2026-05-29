@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
+	"runtime/pprof"
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/trace/json"
@@ -29,7 +31,44 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/constraints"
 	"github.com/consensys/go-corset/pkg/zkc/util"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
+
+func startCpuProfiling(cmd *cobra.Command) {
+	if filename := GetString(cmd, "cpuprof"); filename != "" {
+		f, err := os.Create(filename)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		//
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+	}
+}
+
+func stopCpuProfiling(cmd *cobra.Command) {
+	if filename := GetString(cmd, "cpuprof"); filename != "" {
+		pprof.StopCPUProfile()
+	}
+}
+
+func writeMemProfile(cmd *cobra.Command) {
+	if filename := GetString(cmd, "memprof"); filename != "" {
+		f, err := os.Create(filename)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		//nolint
+		defer f.Close()
+		//
+		runtime.GC()
+		//
+		if err := pprof.Lookup("allocs").WriteTo(f, 0); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+	}
+}
 
 // ParseInputFile parses a given input file (which is currently assumed to be
 // JSON).  An input file contains the input bytes for each ROM in the given

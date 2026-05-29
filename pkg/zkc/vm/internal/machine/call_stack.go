@@ -43,17 +43,14 @@ func (p *CallStack[W, I]) Depth() uint {
 // Boot the call stack by allocating an initial frame on the stack.  Since the
 // boot function never accepts arguments nothing is copied and, hence, no
 // failure can arise (i.e. contrasting with Enter).
-func (p *CallStack[W, I]) Boot(fn *function.Function[I]) {
-	var (
-		fp = p.values.Size()
-		pc = ProgramCounter{}
-	)
+func (p *CallStack[W, I]) Boot(id uint, fn *function.Function[I]) {
+	var pc = ProgramCounter{}
 	// Boot stack
 	p.Reset()
 	// Allocate space for entry function
 	p.values.Alloc(fn.Width())
 	// Push record
-	p.frames.Push(FrameRecord[I]{fp, pc, fn})
+	p.frames.Push(FrameRecord[I]{0, pc, id, fn})
 }
 
 // Enter a given function by allocating a new frame on the stack.  The caller's
@@ -61,7 +58,7 @@ func (p *CallStack[W, I]) Boot(fn *function.Function[I]) {
 // input registers for this frame are initialised from the caller's frame using
 // the argument registers (extracted from the call instruction itself).  This
 // will produce an error if input values do not fit the parameter widths.
-func (p *CallStack[W, I]) Enter(fn *function.Function[I]) error {
+func (p *CallStack[W, I]) Enter(id uint, fn *function.Function[I]) error {
 	var (
 		fp         = p.values.Size()
 		pc         = ProgramCounter{}
@@ -72,7 +69,7 @@ func (p *CallStack[W, I]) Enter(fn *function.Function[I]) error {
 	// Allocate space for function
 	p.values.Alloc(fn.Width())
 	// Push record
-	p.frames.Push(FrameRecord[I]{fp, pc, fn})
+	p.frames.Push(FrameRecord[I]{fp, pc, id, fn})
 	// extract callee frame
 	callee := p.Frame(0)
 	// Copy and check
@@ -99,6 +96,7 @@ func (p *CallStack[W, I]) Frame(m uint) StackFrame[W, I] {
 	//
 	return StackFrame[W, I]{
 		pc:     record.pc,
+		id:     record.fid,
 		values: p.values.Slice(first, last),
 		fn:     record.fn,
 	}
@@ -159,6 +157,8 @@ type FrameRecord[I Instruction] struct {
 	// if this frame has called another function then it identifies the call
 	// instruction itself.
 	pc ProgramCounter
+	// Module ID for enclosing function.
+	fid uint
 	// instructions being executed in this frame
 	fn *function.Function[I]
 }
