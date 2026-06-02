@@ -95,9 +95,10 @@ func Const64[W Word[W]](val uint64) W {
 // | 0x3 | 0x1 | 0xf | 0x0 | 0x0 | 0xe | 0x1 | 0xd |
 //
 // If the input array is not a multiple of the bitwidth
-func DecodeBytes[W Word[W]](bytes []byte, registers []register.Register) []W {
+func DecodeBytes[W Word[W]](bytes []byte, geometry memory.Geometry[W]) []W {
 	var (
-		bitwidth = bitwidthOf(registers)
+		registers = geometry.DataRegisters()
+		bitwidth  = bitwidthOf(registers)
 		// Initially empty buffer which is expanded as necessary to accommodate
 		// reading bits of the given data types.
 		buffer []byte
@@ -145,8 +146,9 @@ func DecodeBytes[W Word[W]](bytes []byte, registers []register.Register) []W {
 // |  00  |  01  |  02  |  03  |
 // +------+------+------+------+
 // | 0x31 | 0xf0 | 0x0e | 0x1d |
-func EncodeBytes[W Word[W]](values []W, registers []register.Register) []byte {
+func EncodeBytes[W Word[W]](values []W, geometry memory.Geometry[W]) []byte {
 	var (
+		registers = geometry.DataRegisters()
 		nRegs     = uint(len(registers))
 		nElems    = uint(len(values))
 		bitOffset uint
@@ -176,6 +178,7 @@ func EncodeBytes[W Word[W]](values []W, registers []register.Register) []byte {
 				reg = registers[j]
 				val = values[i]
 			)
+			//
 			EncodeUnsignedInt(reg.Width(), val.BigInt(), buf)
 			bit.BigEndianCopy(buf, 0, result, bitOffset, reg.Width())
 			bitOffset += reg.Width()

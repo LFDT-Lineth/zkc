@@ -18,7 +18,7 @@ import (
 )
 
 // EmptyObserver does nothing
-type EmptyObserver[W machine.BaseWord[W], I instruction.Instruction, M machine.Core[W, I]] struct {
+type EmptyObserver[W machine.BaseWord[W], I instruction.Instruction, M machine.Machine[W, I]] struct {
 }
 
 // Initialise implementation for Observer interface

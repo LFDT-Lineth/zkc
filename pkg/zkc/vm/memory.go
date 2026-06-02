@@ -23,11 +23,6 @@ import (
 // its contents are fixed for all executions of a machine).
 type Memory[W util.Uinter64] = memory.Memory[W]
 
-// InputOutputMemory identifiers memory used to represent inputs or outputs.
-// The main purpose of this is to enable inspection of said memory to ensure
-// e.g. the correct outputs are produced.
-type InputOutputMemory[W util.Uinter64] = memory.InputOutput[W]
-
 // ============================================================================
 // Constructors
 // ============================================================================
@@ -35,18 +30,18 @@ type InputOutputMemory[W util.Uinter64] = memory.InputOutput[W]
 // NewStaticMemory constructs a static read-only memory pre-loaded with the
 // given values.
 func NewStaticMemory[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
-) InputOutputMemory[W] {
+) Memory[W] {
 	return memory.NewStatic[W](name, public, registers, init...)
 }
 
 // NewInputMemory constructs a new read-only memory initialised with a given set of values.
 func NewInputMemory[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
-) InputOutputMemory[W] {
+) Memory[W] {
 	return memory.NewReadOnly[W](name, public, registers, init...)
 }
 
 // NewOutputMemory constructs an empty write-once memory.
-func NewOutputMemory[W util.Uinter64](name string, public bool, registers []register.Register) InputOutputMemory[W] {
+func NewOutputMemory[W util.Uinter64](name string, public bool, registers []register.Register) Memory[W] {
 	return memory.NewWriteOnce[W](name, public, registers)
 }
 

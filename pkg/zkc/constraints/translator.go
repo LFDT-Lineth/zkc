@@ -58,22 +58,22 @@ func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module) mir.
 	switch fm := fm.(type) {
 	case *vm.FieldFunction:
 		return translateFunction[F](ctx, *fm)
-	case vm.InputOutputMemory[F]:
+	case vm.Memory[F]:
 		if fm.IsStatic() {
 			return translateStaticMemory(ctx, fm)
 		} else if fm.IsReadOnly() {
 			return translateReadOnlyMemory(ctx, fm)
+		} else if fm.IsWriteOnly() {
+			return translateWriteOnceMemory(ctx, fm)
 		}
 		//
-		return translateWriteOnceMemory(ctx, fm)
-	case vm.Memory[F]:
 		return translateReadWriteMemory(ctx, fm)
 	default:
 		panic(fmt.Sprintf("unknown module \"%s\" encountered", fm.Name()))
 	}
 }
 
-func translateStaticMemory[F field.Element[F]](_ schema.ModuleId, m vm.InputOutputMemory[F]) mir.Module[F] {
+func translateStaticMemory[F field.Element[F]](_ schema.ModuleId, m vm.Memory[F]) mir.Module[F] {
 	var (
 		mod      *schema.Table[F, mir.Constraint[F]]
 		name     = trace.ModuleName{Name: m.Name(), Multiplier: 1}
@@ -92,7 +92,7 @@ func translateStaticMemory[F field.Element[F]](_ schema.ModuleId, m vm.InputOutp
 	return mod
 }
 
-func translateReadOnlyMemory[F field.Element[F]](_ schema.ModuleId, fm vm.InputOutputMemory[F]) mir.Module[F] {
+func translateReadOnlyMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
 	var (
 		mod  *schema.Table[F, mir.Constraint[F]]
 		name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
@@ -105,7 +105,7 @@ func translateReadOnlyMemory[F field.Element[F]](_ schema.ModuleId, fm vm.InputO
 	return mod
 }
 
-func translateWriteOnceMemory[F field.Element[F]](_ schema.ModuleId, fm vm.InputOutputMemory[F]) mir.Module[F] {
+func translateWriteOnceMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
 	var (
 		mod  *schema.Table[F, mir.Constraint[F]]
 		name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}

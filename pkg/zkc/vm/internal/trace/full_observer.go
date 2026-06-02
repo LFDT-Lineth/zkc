@@ -30,7 +30,7 @@ import (
 )
 
 // FullObserver is an observer which can be used to extract a trace.
-type FullObserver[W word.Word[W], I instruction.Instruction, M machine.Core[W, I]] struct {
+type FullObserver[W word.Word[W], I instruction.Instruction, M machine.Machine[W, I]] struct {
 	// Contains complete frames for the trace data being constructed during
 	// execution.
 	trace [][]State[W]
