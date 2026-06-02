@@ -550,18 +550,59 @@ func (p *AirLowering[F]) lowerEqualityTo(e *Equal[F], airModule air.ModuleBuilde
 
 func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.ModuleBuilder[F], bitwidths []uint,
 ) []air.Term[F] {
-	// //
 	var (
 		lhs air.Term[F] = p.lowerTermTo(e.Lhs, airModule)
 		rhs air.Term[F] = p.lowerTermTo(e.Rhs, airModule)
 		eq              = term.Subtract(lhs, rhs)
 	)
 	//
-	one := term.Const64[F, air.Term[F]](1)
-	// construct norm(eq)
-	norm_eq := p.normalise(eq, airModule)
-	// construct 1 - norm(eq)
-	return []air.Term[F]{term.Subtract(one, norm_eq)}
+	return []air.Term[F]{p.lowerIsZeroIndicator(eq, airModule)}
+}
+
+// lowerIsZeroIndicator returns an AIR term that evaluates to 1 when arg is
+// zero and 0 otherwise.  This is the value that lowerNonEqualityTo asserts
+// must vanish: 0 means "arg is non-zero", which encodes  lhs != rhs.
+//
+// When arg's value range is small enough we use a cheap arithmetic form
+// instead of materialising a column:
+//
+//	arg ∈ {0,1}    ⇒  1 - arg
+//	arg ∈ {-1,0,1} ⇒  1 - arg*arg
+//
+// Otherwise we delegate to air_gadgets.IsZeroIndicator, which CSEs the
+// indicator as a shared computed column so every NotEqual over the same
+// arg returns a single FieldAccess instead of rebuilding the
+// 1 - arg*inv(arg)  subtree.
+func (p *AirLowering[F]) lowerIsZeroIndicator(arg air.Term[F], airModule air.ModuleBuilder[F]) air.Term[F] {
+	var (
+		bounds = arg.ValueRange()
+		one    = term.Const64[F, air.Term[F]](1)
+	)
+	// Cheap shortcuts when no inverse is needed.
+	if p.config.InverseEliminiationLevel > 0 && bounds.Within(util_math.NewInterval64(0, 1)) {
+		return term.Subtract(one, arg)
+	} else if p.config.InverseEliminiationLevel > 0 && bounds.Within(util_math.NewInterval64(-1, 1)) {
+		return term.Subtract(one, term.Product(arg, arg))
+	}
+	// Determine an appropriate row-shift so the column is keyed on the
+	// canonical (shift-zero) form of arg; this keeps CSE working when the
+	// same expression appears at different relative shifts.
+	shift := 0
+	//
+	if p.config.ShiftNormalisation {
+		minS, maxS := arg.ShiftRange()
+		//
+		if maxS < 0 {
+			shift = maxS
+		} else if minS > 0 {
+			shift = minS
+		}
+	}
+	//
+	shifted := arg.ApplyShift(-shift).Simplify(false)
+	iz := air_gadgets.IsZeroIndicator(shifted, airModule)
+	//
+	return iz.ApplyShift(shift)
 }
 
 // Inner form is used for recursive calls and does not repeat the constant
