@@ -82,11 +82,11 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 	// find command to dispatch
 	c := findFieldAgnosticCmd(*config, cmds)
 	// start CPU profiling (if requested)
-	startCpuProfiling(cmd)
+	f := startCpuProfiling(cmd)
 	// run field agnostic command
 	c.Function(cmd, args, *config)
 	// Stop cpu profiling (if was requested)
-	stopCpuProfiling(cmd)
+	stopCpuProfiling(cmd, f)
 	// Write memory profiling (if requested)
 	writeMemProfile(cmd)
 }

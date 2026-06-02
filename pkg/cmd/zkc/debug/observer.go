@@ -125,37 +125,6 @@ func (p *TraceObserver[W]) callStack(machine *vm.WordMachine[W]) string {
 	return builder.String()
 }
 
-// func functionInputs[W vm.Word[W], I vm.Instruction](frame vm.StackFrame[W],
-// 	fun *vm.Function[I]) string {
-// 	//
-// 	var builder strings.Builder
-
-// 	for i, r := range fun.Registers() {
-// 		var ith = frame.Load(uint(i))
-// 		//
-// 		if !r.IsInput() {
-// 			break
-// 		} else if i != 0 {
-// 			builder.WriteString(", ")
-// 		}
-// 		//
-// 		fmt.Fprintf(&builder, "%s=0x%s", r.Name(), ith.Text(16))
-// 	}
-
-// 	return builder.String()
-// }
-
-// func decode[W vm.Word[W]](frame vm.StackFrame[W],
-// 	fn *vm.Function[vm.WordInstruction]) vm.WordInstruction {
-// 	//
-// 	var (
-// 		pc   = frame.PC()
-// 		insn = fn.CodeAt(pc.Macro())
-// 	)
-// 	// nolint
-// 	return insn.Codes[pc.Micro()]
-// }
-
 // annotatedMap wraps a SystemMap and annotates each register name with its
 // current value as "[0xVAL]", producing inline value display in instruction strings.
 type annotatedMap[W vm.Word[W]] struct {

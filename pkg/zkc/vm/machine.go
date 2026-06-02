@@ -149,6 +149,7 @@ func ExecuteAll[W MachineWord[W], I Instruction, M Machine[W, I]](machine M, n u
 		nsteps += m
 		// check for termination
 		if err != nil || m < n {
+			//
 			return nsteps, err
 		}
 	}

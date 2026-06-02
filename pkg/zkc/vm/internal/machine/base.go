@@ -217,7 +217,7 @@ func (p *Base[W, I, T]) execute(n uint) (uint, error) {
 			return n, err
 		case depth == 0:
 			// termination
-			return n, nil
+			return n - 1, nil
 		case depth > odepth:
 			// call
 			frame = p.callstack.Frame(0)
@@ -244,7 +244,6 @@ func (p *Base[W, I, T]) execute(n uint) (uint, error) {
 	//
 	return n, nil
 }
-
 func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 ) (npc ProgramCounter, jmp bool, err error) {
 	//nolint

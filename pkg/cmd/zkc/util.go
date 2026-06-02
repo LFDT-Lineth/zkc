@@ -34,7 +34,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func startCpuProfiling(cmd *cobra.Command) {
+func startCpuProfiling(cmd *cobra.Command) *os.File {
 	if filename := GetString(cmd, "cpuprof"); filename != "" {
 		f, err := os.Create(filename)
 		if err != nil {
@@ -44,12 +44,22 @@ func startCpuProfiling(cmd *cobra.Command) {
 		if err := pprof.StartCPUProfile(f); err != nil {
 			log.Fatal("could not start CPU profile: ", err)
 		}
+		//
+		return f
 	}
+	//
+	return nil
 }
 
-func stopCpuProfiling(cmd *cobra.Command) {
+func stopCpuProfiling(cmd *cobra.Command, f *os.File) {
 	if filename := GetString(cmd, "cpuprof"); filename != "" {
 		pprof.StopCPUProfile()
+	}
+	// Close file hand (if opened)
+	if f != nil {
+		if err := f.Close(); err != nil {
+			panic(err)
+		}
 	}
 }
 
