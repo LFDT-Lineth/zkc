@@ -14,6 +14,7 @@ package machine
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -49,7 +50,13 @@ func (p *StackFrame[W, I]) FunctionId() uint {
 
 // BitwidthOf returns the bitwidth of the given register in this frame.
 func (p *StackFrame[W, I]) BitwidthOf(v register.Id) uint {
-	return p.fn.Register(v).Width()
+	var reg = p.fn.Register(v)
+	//
+	if reg.IsNative() {
+		return math.MaxUint
+	}
+	//
+	return reg.Width()
 }
 
 // Vector returns the vector instruction at a given pc within the code

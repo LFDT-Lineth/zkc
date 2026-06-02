@@ -207,33 +207,36 @@ func (p *Base[W, I, T]) execute(n uint) (uint, error) {
 			insn   = codes[frame.pc.Micro()]
 		)
 		// Execute the current instruction
-		npc, jump, err := p.executeInstruction(insn, frame)
-		// Reload depth
-		depth = p.callstack.Depth()
-		// Decide what happened
-		switch {
-		case err != nil:
+		npc, nonseq, err := p.executeInstruction(insn, frame)
+		//
+		if err != nil {
 			// machine panic
 			return n, err
-		case depth == 0:
-			// termination
-			return n - 1, nil
-		case depth > odepth:
-			// call
-			frame = p.callstack.Frame(0)
-			codes = frame.Vector(frame.pc.Macro()).Codes
-		case depth < odepth:
-			// return
-			frame = p.callstack.Frame(0)
-			codes = frame.Vector(frame.pc.Macro()).Codes
-			// Fall through
-			frame.pc = frame.PC().Next(uint(len(codes)))
-		case jump:
-			// jump
-			frame.pc = npc
-			codes = frame.Vector(npc.Macro()).Codes
-		default:
-			// fall thru
+		} else if nonseq {
+			// Reload depth
+			depth = p.callstack.Depth()
+			// Decide what happened
+			switch {
+			case depth == 0:
+				// termination
+				return n - 1, nil
+			case depth > odepth:
+				// enter
+				frame = p.callstack.Frame(0)
+				codes = frame.Vector(frame.pc.Macro()).Codes
+			case depth < odepth:
+				// return
+				frame = p.callstack.Frame(0)
+				codes = frame.Vector(frame.pc.Macro()).Codes
+				// Fall through
+				frame.pc = frame.PC().Next(uint(len(codes)))
+			default:
+				// jump
+				frame.pc = npc
+				codes = frame.Vector(npc.Macro()).Codes
+			}
+		} else {
+			// sequential instruction
 			frame.pc = npc.Next(uint(len(codes)))
 		}
 		//
@@ -264,7 +267,7 @@ func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 		return frame.pc.Goto(uint(insn.Immediate)), true, nil
 	case opcode.RETURN:
 		err := p.callstack.Leave()
-		return PC_UNUSED, false, err
+		return PC_UNUSED, true, err
 
 	// ==============================================================
 	// Memory Instructions
@@ -311,7 +314,7 @@ func (p *Base[W, I, T]) executeCall(insn *instruction.Call, frame StackFrame[W, 
 	// Save caller PC
 	p.callstack.Goto(frame.pc)
 	// Enter callee stack frame
-	return PC_UNUSED, false, p.callstack.Enter(insn.Id, p.Function(insn.Id))
+	return PC_UNUSED, true, p.callstack.Enter(insn.Id, p.Function(insn.Id))
 }
 
 func (p *Base[W, I, T]) executeFail(insn *instruction.Fail, frame StackFrame[W, I]) (ProgramCounter, bool, error) {
