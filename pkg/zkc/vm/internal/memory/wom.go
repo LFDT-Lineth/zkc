@@ -26,7 +26,7 @@ type WriteOnce[W util.Uinter64] struct {
 }
 
 // Read implementation for Memory interface.
-func (p *WriteOnce[W]) Read(frame []W, address []register.Id, data []register.Id) error {
+func (p *WriteOnce[W]) Read(address uint64) (W, error) {
 	panic("unsupported operation for write-once memory")
 }
 

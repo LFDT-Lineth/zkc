@@ -89,7 +89,7 @@ func RegistersToString(env register.Map, regs ...register.Id) string {
 }
 
 // ExpressionToString returns a string representation for an arithmetic expression involving a constant
-func ExpressionToString[W word.Word[W]](op string, regs []register.Id, constant W, env register.Map) string {
+func ExpressionToString[W word.Base[W]](op string, regs []register.Id, constant W, env register.Map) string {
 	var builder strings.Builder
 	//
 	for i := 0; i < len(regs); i++ {

@@ -128,12 +128,12 @@ func (p Uint64) Rem(w Uint64) Uint64 {
 
 // Shl implementation for Word interface.
 func (p Uint64) Shl(width uint, n Uint64) Uint64 {
-	return p.Shl64(width, n.value)
+	return Uint64{(p.value << n.value) & mask64(width)}
 }
 
 // Shl64 implementation for Word interface.
-func (p Uint64) Shl64(width uint, n uint64) Uint64 {
-	return Uint64{(p.value << n) & mask64(width)}
+func (p Uint64) Shl64(n uint64) Uint64 {
+	return Uint64{(p.value << n)}
 }
 
 // Shr implementation for Word interface.

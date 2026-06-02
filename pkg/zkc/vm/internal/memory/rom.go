@@ -33,7 +33,7 @@ type ReadOnly[W util.Uinter64] struct {
 }
 
 // Write implementation for Memory interface.
-func (p *ReadOnly[W]) Write(frame []W, address []register.Id, data []register.Id) error {
+func (p *ReadOnly[W]) Write(address uint64, value W) error {
 	panic("unsupported operation for read-only memory")
 }
 

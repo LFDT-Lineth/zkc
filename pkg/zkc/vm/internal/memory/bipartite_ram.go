@@ -124,61 +124,37 @@ func (p *BiPartiteRandomAccess[W]) Initialise(contents []W) {
 }
 
 // Read implementation for Memory interface.
-func (p *BiPartiteRandomAccess[W]) Read(frame []W, address []register.Id, data []register.Id) error {
-	var start, _ = p.geometry.FrameDecode(frame, address)
+func (p *BiPartiteRandomAccess[W]) Read(address uint64) (W, error) {
+	var val W
 	//
-	if start < HALF_START {
-		for i := range data {
-			frame[data[i].Unwrap()] = p.readLower(start + uint64(i))
+	if address < HALF_START {
+		if address < uint64(len(p.lower)) {
+			val = p.lower[address]
 		}
 	} else {
-		// Cap addressable cells at TOP_POS-start+1; positions beyond TOP_POS
-		// are out of range and yield zero (avoids relying on uint64
-		// wraparound in start+i).
-		var (
-			needed = TOP_POS - start + 1
-			zero   W
-		)
+		var idx = TOP_POS - address
 		//
-		for i := range data {
-			if uint64(i) < needed {
-				frame[data[i].Unwrap()] = p.readUpper(start + uint64(i))
-			} else {
-				frame[data[i].Unwrap()] = zero
-			}
+		if idx < uint64(len(p.upper)) {
+			val = p.upper[idx]
 		}
 	}
 	//
-	return nil
+	return val, nil
 }
 
 // Write implementation for Memory interface.
-func (p *BiPartiteRandomAccess[W]) Write(frame []W, address []register.Id, data []register.Id) error {
-	var start, end = p.geometry.FrameDecode(frame, address)
-	//
-	if start < HALF_START {
+func (p *BiPartiteRandomAccess[W]) Write(address uint64, value W) error {
+	if address < HALF_START {
 		// extend lower partition if needed
-		p.lower = expand(p.lower, end)
+		p.lower = expand(p.lower, address+1)
 		// copy over values
-		for i := range data {
-			p.lower[start+uint64(i)] = frame[data[i].Unwrap()]
-		}
+		p.lower[address] = value
 	} else {
-		// In upper, the largest slice index touched is TOP_POS-start (when
-		// i==0) so the upper partition must have at least TOP_POS-start+1
-		// elements.
-		var needed = TOP_POS - start + 1
+		var needed = TOP_POS - address + 1
 		// extend upper partition if needed
 		p.upper = expand(p.upper, needed)
-		// Cap iteration at `needed`: any cell whose position would exceed
-		// TOP_POS lies outside the addressable range (start+i would wrap
-		// uint64) and is silently dropped, mirroring the zero returned by
-		// readUpper for the same positions.
-		n := min(uint64(len(data)), needed)
 		//
-		for i := range n {
-			p.upper[TOP_POS-(start+i)] = frame[data[i].Unwrap()]
-		}
+		p.upper[TOP_POS-address] = value
 	}
 	//
 	return nil
@@ -208,34 +184,6 @@ func (p *BiPartiteRandomAccess[W]) Registers() []register.Register {
 // Width implementation for Module interface.
 func (p *BiPartiteRandomAccess[W]) Width() uint {
 	return uint(len(p.geometry.registers))
-}
-
-// readLower returns the word at the given absolute position in the lower
-// partition, returning zero for out-of-bounds accesses.
-func (p *BiPartiteRandomAccess[W]) readLower(pos uint64) W {
-	var zero W
-	//
-	if pos < uint64(len(p.lower)) {
-		return p.lower[pos]
-	}
-	//
-	return zero
-}
-
-// readUpper returns the word at the given absolute position in the upper
-// partition, returning zero for out-of-bounds accesses.
-func (p *BiPartiteRandomAccess[W]) readUpper(pos uint64) W {
-	var (
-		idx  = TOP_POS - pos
-		zero W
-	)
-
-	//
-	if idx < uint64(len(p.upper)) {
-		return p.upper[idx]
-	}
-	//
-	return zero
 }
 
 // ============================================================================

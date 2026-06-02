@@ -12,11 +12,14 @@
 // SPDX-License-Identifier: Apache-2.0
 package trace
 
-import "github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
+import (
+	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
+)
 
 // Observer is a generic interface for extract information before and after an
 // execution step of the VM.  For example, to generate debugging information.
-type Observer[W any, M machine.Core[W]] interface {
+type Observer[W machine.BaseWord[W], I instruction.Instruction, M machine.Core[W, I]] interface {
 	Initialise(machine M)
 	// PreExecution is called directly before each instruction is executed
 	PreExecution(machine M)

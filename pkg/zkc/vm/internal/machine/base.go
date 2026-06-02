@@ -17,30 +17,25 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
 	zkc_util "github.com/consensys/go-corset/pkg/zkc/util"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
 	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
 // Instruction is a convenient alias
-type Instruction instruction.Instruction
+type Instruction = instruction.Instruction
 
 // BaseWord captures the minimal set of requirements for a word used in the base
 // machine.
-type BaseWord[W any] interface {
-	util.Comparable[W]
-	util.Uinter64
-	zkc_util.Formattable
-	// Check whether this value fits within the given bitwidth.
-	FitsWithin(uint) bool
-}
+type BaseWord[W any] = word.Base[W]
 
 // ============================================================================
 // Base Machine
@@ -51,7 +46,7 @@ type BaseWord[W any] interface {
 // to their instruction set.
 type Base[W BaseWord[W], I Instruction, T Executor[W, I]] struct {
 	modules   []Module
-	callstack []Frame[W]
+	callstack CallStack[W, I]
 	executor  T
 }
 
@@ -59,9 +54,8 @@ type Base[W BaseWord[W], I Instruction, T Executor[W, I]] struct {
 func NewBase[W BaseWord[W], I Instruction, T Executor[W, I]](executor T, modules ...Module) *Base[W, I, T] {
 	//
 	return &Base[W, I, T]{
-		modules:   modules,
-		callstack: nil,
-		executor:  executor,
+		modules:  modules,
+		executor: executor,
 	}
 }
 
@@ -72,15 +66,18 @@ func NewBase[W BaseWord[W], I Instruction, T Executor[W, I]](executor T, modules
 // calling this function.
 func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
 	// Reset call stack
-	p.callstack = nil
+	p.callstack.Reset()
 	// Look for function with the machine name
 	for i, m := range p.modules {
 		if _, ok := m.(*function.Function[I]); ok {
 			if m.Name() == fun {
+				fid := uint(i)
 				// Initialise memory
 				p.initialise(input)
-				// Boot the frame
-				return p.Enter(uint(i), nil, nil, nil)
+				// Boot the call stack
+				p.callstack.Boot(fid, p.Function(fid))
+				//
+				return nil
 			}
 		}
 	}
@@ -88,81 +85,25 @@ func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
 	return fmt.Errorf("missing boot function \"%s\"", fun)
 }
 
+// Function returns the function with the corresponding ID (or panics if the ID
+// does not correspond to a function).
+func (p *Base[W, I, T]) Function(id uint) *function.Function[I] {
+	return p.modules[id].(*function.Function[I])
+}
+
 // Execute the machine for the given number of steps, returning the actual
 // number of steps executed and an error (if execution failed).
 func (p *Base[W, I, T]) Execute(steps uint) (uint, error) {
 	var (
-		nsteps uint
+		nsteps = steps
 		err    error
 	)
 	//
-	for len(p.callstack) > 0 && nsteps < steps {
-		if err = p.execute(); err != nil {
-			return nsteps, err
-		}
-		//
-		nsteps++
+	for !p.callstack.IsEmpty() && nsteps > 0 && err == nil {
+		nsteps, err = p.execute(nsteps)
 	}
 	//
-	return nsteps, nil
-}
-
-// Enter implementation for the machine.Core interface.
-func (p *Base[W, I, T]) Enter(id uint, frame []W, args []register.Id, returns []register.Id) error {
-	var (
-		fn       = p.modules[id].(*function.Function[I])
-		newFrame = NewFrame[W](id, fn.Width(), uint(len(args)), returns)
-	)
-	// Initialise arguments
-	for i, arg := range args {
-		var (
-			val    = frame[arg.Unwrap()]
-			target = fn.Register(register.NewId(uint(i)))
-		)
-		//
-		if !target.IsNative() && !val.FitsWithin(target.Width()) {
-			return fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), target.Width())
-		}
-		//
-		newFrame.Store(uint(i), frame[arg.Unwrap()])
-	}
-	// Push frame onto call stack
-	p.callstack = append(p.callstack, newFrame)
-	//
-	return nil
-}
-
-// Leave implementation for the machine.Core interface.
-func (p *Base[W, I, T]) Leave() (bool, error) {
-	var (
-		n           = len(p.callstack) - 1
-		calleeFrame = p.callstack[n]
-	)
-	// pop call stack
-	p.callstack = p.callstack[:n]
-	// write returns (if applicable)
-	if n >= 1 {
-		// identify caller function
-		var (
-			callerFrame = p.callstack[n-1]
-			caller      = p.modules[callerFrame.functionId].(*function.Function[I])
-		)
-		//
-		for i, r := range calleeFrame.returns {
-			var (
-				val    = calleeFrame.Return(uint(i))
-				target = caller.Register(r)
-			)
-			//
-			if !target.IsNative() && !val.FitsWithin(target.Width()) {
-				return true, errors.New("bit overflow")
-			}
-			//
-			callerFrame.Store(r.Unwrap(), val)
-		}
-	}
-	//
-	return n == 0, nil
+	return (steps - nsteps), err
 }
 
 // Executor returns the executor for this machine.  This is primarily useful
@@ -184,12 +125,12 @@ func (p *Base[W, I, T]) Modules() []Module {
 
 // Depth returns the depth of the call stack.
 func (p *Base[W, I, T]) Depth() uint {
-	return uint(len(p.callstack))
+	return p.callstack.Depth()
 }
 
-// StackFrame returns the nth stack frame, where n==0 returns the root frame.
-func (p *Base[W, I, T]) StackFrame(n uint) Frame[W] {
-	return p.callstack[n]
+// StackFrame returns the nth stack frame, where n==0 returns the active frame.
+func (p *Base[W, I, T]) StackFrame(n uint) StackFrame[W, I] {
+	return p.callstack.Frame(n)
 }
 
 // ============================================================================
@@ -227,7 +168,7 @@ func (p *Base[W, I, T]) GobDecode(data []byte) error {
 		return err
 	}
 	// Callstack starts empty; populated only by Boot/Enter at execution time.
-	p.callstack = nil
+	p.callstack.Reset()
 	//
 	return nil
 }
@@ -249,228 +190,305 @@ func (p *Base[W, I, T]) initialise(input map[string][]W) {
 	}
 }
 
-// Execute implementation for the Executor interface
-func (p *Base[W, I, T]) execute() error {
-	// Decode
-	var uInsn, width, regs, err = p.decode()
-	//
-	if err == nil {
-		// Execute
-		err = p.executeInstruction(uInsn, width, regs)
-	}
-	//
-	if err != nil {
-		err = p.extendError(err)
-	}
-	//
-	return err
-}
-
-// nolint
-func (p *Base[W, I, T]) decode() (I, uint, []register.Register, error) {
+// Execute at most n steps of the machine, returning the number of steps
+// actually remaining along with an optional error.
+func (p *Base[W, I, T]) execute(n uint) (uint, error) {
 	var (
-		n = len(p.callstack) - 1
-		// Extract executing frame
-		frame = p.callstack[n]
-		// Identify enclosing function
-		fn = p.modules[frame.Function()].(*function.Function[I])
-		// Determine current PC position
-		pc = frame.PC()
-		// Lookup instruction to execute
-		insn = fn.CodeAt(pc.Macro())
-		//
-		uInsn I
-		//
-		width = uint(1)
+		depth = p.callstack.Depth()
+		frame = p.callstack.Frame(0)
+		codes = frame.Vector(frame.pc.Macro()).Codes
 	)
-	// Decode vector instruction
-	uInsn = insn.Codes[pc.Micro()]
-	width = uint(len(insn.Codes))
-	// Done
-	return uInsn, width, fn.Registers(), nil
-}
-
-func (p *Base[W, I, T]) extendError(err error) (exterr error) {
-	var builder strings.Builder
-	//
-	for i, frame := range p.callstack {
-		if i != 0 {
-			builder.WriteString(" > ")
+	// continue executing until either all requested instructions are completed,
+	// the program is completed, or an error is hit.  This is a hot loop, and
+	// the goal is to minimise unnecessary accesses to the call stack.
+	for n > 0 && depth > 0 {
+		var (
+			odepth = depth
+			insn   = codes[frame.pc.Micro()]
+		)
+		// Execute the current instruction
+		npc, nonseq, err := p.executeInstruction(insn, frame)
+		//
+		if err != nil {
+			// machine panic
+			return n, err
+		} else if nonseq {
+			// Reload depth
+			depth = p.callstack.Depth()
+			// Decide what happened
+			switch {
+			case depth == 0:
+				// termination
+				return n - 1, nil
+			case depth > odepth:
+				// enter
+				frame = p.callstack.Frame(0)
+				codes = frame.Vector(frame.pc.Macro()).Codes
+			case depth < odepth:
+				// return
+				frame = p.callstack.Frame(0)
+				codes = frame.Vector(frame.pc.Macro()).Codes
+				// Fall through
+				frame.pc = frame.PC().Next(uint(len(codes)))
+			default:
+				// jump
+				frame.pc = npc
+				codes = frame.Vector(npc.Macro()).Codes
+			}
+		} else {
+			// sequential instruction
+			frame.pc = npc.Next(uint(len(codes)))
 		}
 		//
-		builder.WriteString(SignatureOf[W, I](frame, p.modules))
-		builder.WriteString("@")
-		builder.WriteString(frame.pc.String())
+		n = n - 1
 	}
 	//
-	return fmt.Errorf("%w [%s]", err, builder.String())
+	p.callstack.Goto(frame.pc)
+	//
+	return n, nil
 }
-
-func (p *Base[W, I, T]) executeInstruction(insn I, width uint, regs []register.Register,
-) (err error) {
-	//
-	var (
-		fp                                 = len(p.callstack) - 1
-		stackframe                         = p.callstack[fp]
-		frame                              = stackframe.registers
-		pc                                 = stackframe.PC()
-		binsn      instruction.Instruction = insn
-	)
-	//
+func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
+) (npc ProgramCounter, jmp bool, err error) {
 	//nolint
 	switch insn.OpCode() {
 	// ==============================================================
 	// Control-Flow Instructions
 	// ==============================================================
 	case opcode.CALL:
-		insn := binsn.(*instruction.Call)
-		// Enter callee stack frame
-		return p.Enter(insn.Id, frame, insn.Arguments, insn.Returns)
+		var binsn any = insn
+		return p.executeCall(binsn.(*instruction.Call), frame)
 	case opcode.FAIL:
-		var (
-			insn = binsn.(*instruction.Fail)
-			//
-			msg = executeFormattedChunks(insn.Chunks, regs, frame)
-		)
-		// check whether to include msg or not
-		if len(insn.Chunks) == 0 {
-			return errors.New("machine panic")
-		}
-		// include msg in error
-		return fmt.Errorf("machine panic: %s", msg)
+		var binsn any = insn
+		return p.executeFail(binsn.(*instruction.Fail), frame)
 	case opcode.JUMP:
+		var binsn any = insn
 		insn := binsn.(*instruction.Jump)
 		// Goto target instruction in current frame
-		p.callstack[fp].Goto(pc.Goto(uint(insn.Immediate)))
-		return nil
+		return frame.pc.Goto(uint(insn.Immediate)), true, nil
 	case opcode.RETURN:
-		if done, err := p.Leave(); done {
-			return err
-		}
-		// adjust frame pointer
-		fp = fp - 1
-		// redecode instruction to update width
-		_, width, _, err = p.decode()
-		// reload pc
-		pc = p.callstack[fp].PC()
-		// fall thru
+		err := p.callstack.Leave()
+		return PC_UNUSED, true, err
 
 	// ==============================================================
 	// Memory Instructions
 	// ==============================================================
 	case opcode.MEMORY_READ:
-		var (
-			insn = binsn.(*instruction.MemRead)
-			rom  = p.modules[insn.Id].(memory.Memory[W])
-		)
-		// Read data words from tiven address
-		err = rom.Read(frame, insn.Address(), insn.Data())
+		var binsn any = insn
+		err = p.executeMemRead(binsn.(*instruction.MemRead), frame)
 		// Fall thru
 	case opcode.MEMORY_WRITE:
-		var (
-			insn = binsn.(*instruction.MemWrite)
-			rom  = p.modules[insn.Id].(memory.Memory[W])
-		)
-		// Read data words from tiven address
-		err = rom.Write(frame, insn.Address(), insn.Data())
+		var binsn any = insn
+		err = p.executeMemWrite(binsn.(*instruction.MemWrite), frame)
 		// Fall thru
-
 	// ==============================================================
 	// Misc Instructions
 	// ==============================================================
 
 	case opcode.SKIP:
+		var binsn any = insn
 		insn := binsn.(*instruction.Skip)
 		// Skip some micro-instructions
-		pc = pc.Skip(insn.Skip)
+		frame.pc = frame.pc.Skip(insn.Skip)
 		// Fall thru
 	case opcode.SKIP_IF:
+		var binsn any = insn
 		insn := binsn.(*instruction.SkipIf)
 		// Skip (conditionally) micro-instructions
 		if executeCondition(frame, insn.Cond, insn.Left, insn.Right) {
-			pc = pc.Skip(insn.Skip)
+			frame.pc = frame.pc.Skip(insn.Skip)
 		}
 		// Fall thru
 	case opcode.DEBUG:
+		var binsn any = insn
 		insn := binsn.(*instruction.Debug)
-		fmt.Print(executeFormattedChunks[W](insn.Chunks, regs, frame))
+		fmt.Print(executeFormattedChunks(insn.Chunks, frame))
 	default:
 		// Call provided executor
-		err = p.executor.Execute(insn, frame, regs)
+		err = p.executor.Execute(insn, frame)
 	}
 	// Fall through to next instruction if no error.
-	if err == nil {
-		p.callstack[fp].Goto(pc.Next(width))
+	return frame.pc, false, err
+}
+
+func (p *Base[W, I, T]) executeCall(insn *instruction.Call, frame StackFrame[W, I]) (ProgramCounter, bool, error) {
+	// Save caller PC
+	p.callstack.Goto(frame.pc)
+	// Enter callee stack frame
+	return PC_UNUSED, true, p.callstack.Enter(insn.Id, p.Function(insn.Id))
+}
+
+func (p *Base[W, I, T]) executeFail(insn *instruction.Fail, frame StackFrame[W, I]) (ProgramCounter, bool, error) {
+	var msg = executeFormattedChunks(insn.Chunks, frame)
+	// check whether to include msg or not
+	if len(insn.Chunks) == 0 {
+		return frame.pc, false, errors.New("machine panic")
 	}
-	// Done
+	// include msg in error
+	return PC_UNUSED, false, fmt.Errorf("machine panic: %s", msg)
+}
+
+func (p *Base[W, I, T]) executeMemRead(insn *instruction.MemRead, frame StackFrame[W, I]) (err error) {
+	var (
+		mem        = p.modules[insn.Id].(memory.Memory[W])
+		address, _ = mem.Geometry().Decode(frame.values, insn.Address())
+		targets    = insn.Data()
+		val        W
+	)
+	// Read data words from tiven address
+	for i := 0; i < len(targets) && err == nil; i++ {
+		val, err = mem.Read(address)
+		//
+		if err == nil {
+			err = frame.Store(targets[i], val)
+		}
+		//
+		address++
+	}
+	//
 	return err
 }
 
-func executeFormattedChunks[W BaseWord[W]](chunks []base.FormattedChunk, regs []register.Register, frame []W) string {
+func (p *Base[W, I, T]) executeMemWrite(insn *instruction.MemWrite, frame StackFrame[W, I]) (err error) {
+	var (
+		mem        = p.modules[insn.Id].(memory.Memory[W])
+		address, _ = mem.Geometry().Decode(frame.values, insn.Address())
+		targetRegs = mem.Geometry().DataRegisters()
+		sourceRegs = insn.Data()
+	)
+	// Write data words to the given address range
+	for i := 0; i < len(sourceRegs) && err == nil; i++ {
+		var (
+			bitwidth = targetRegs[i].Width()
+			val      = frame.Load(sourceRegs[i])
+		)
+		// bitwidth check
+		if val.FitsWithin(bitwidth) {
+			err = mem.Write(address, val)
+		} else {
+			// failed
+			err = fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), bitwidth)
+		}
+		//
+		address++
+	}
+	// Fall thru
+	return err
+}
+
+func executeFormattedChunks[W BaseWord[W], I Instruction](chunks []base.FormattedChunk, frame StackFrame[W, I]) string {
 	var builder strings.Builder
 	//
 	for _, chunk := range chunks {
 		builder.WriteString(chunk.Text)
 		//
 		if chunk.Format.HasFormat() {
-			words := loadAll(frame, chunk.Argument)
-			regs := loadAll(regs, chunk.Argument)
-			builder.WriteString(zkc_util.FormatWord(chunk.Format, regs, words...))
+			builder.WriteString(formatWord(chunk.Format, chunk.Argument, frame))
 		}
 	}
 	//
 	return builder.String()
 }
 
-// ==============================================================
-// Conditions
-// ==============================================================
-func executeCondition[T util.Comparable[T]](frame []T, cond opcode.Condition, left, right register.Vector) bool {
-	var (
-		lhs = loadAll(frame, left)
-		rhs = loadAll(frame, right)
-	)
+func executeCondition[W BaseWord[W], I Instruction](frame StackFrame[W, I], cond opcode.Condition,
+	lhs, rhs register.Vector) bool {
 	// TODO: for now, we make this assumption.  However, it can be releaxed in
 	// order to allow comparisons involving registers of different width.  It
 	// should be fairly easy to support this though.
-	if left.Len() != right.Len() {
+	if lhs.Len() != rhs.Len() {
 		panic("support non-uniform vector comparisons")
 	}
 	//
 	switch cond {
 	case opcode.EQ:
-		return cmp(lhs, rhs) == 0
+		return cmp(lhs, rhs, frame) == 0
 	case opcode.NEQ:
-		return cmp(lhs, rhs) != 0
+		return cmp(lhs, rhs, frame) != 0
 	case opcode.LT:
-		return cmp(lhs, rhs) < 0
+		return cmp(lhs, rhs, frame) < 0
 	case opcode.LTEQ:
-		return cmp(lhs, rhs) <= 0
+		return cmp(lhs, rhs, frame) <= 0
 	case opcode.GT:
-		return cmp(lhs, rhs) > 0
+		return cmp(lhs, rhs, frame) > 0
 	case opcode.GTEQ:
-		return cmp(lhs, rhs) >= 0
+		return cmp(lhs, rhs, frame) >= 0
 	default:
 		panic("unreachable")
 	}
 }
 
-// LoadAll values value of a set of registers from this stack frame.
-func loadAll[W any](frame []W, regs register.Vector) []W {
-	var words = make([]W, regs.Len())
-	//
-	for i, reg := range regs.Registers() {
-		words[i] = frame[reg.Unwrap()]
+// ==============================================================
+// Helpers
+// ==============================================================
+
+// FormatWord applies a given format to a given word to generate a formatted string.
+func formatWord[W BaseWord[W], I Instruction](fmt zkc_util.Format, vec register.Vector, frame StackFrame[W, I]) string {
+	var (
+		digits string
+		value  big.Int
+		regs   = vec.Registers()
+	)
+	// Loop from most-significant word to least significant.
+	for i := vec.Len(); i > 0; i-- {
+		var reg = regs[i-1]
+		// Shift left
+		value.Lsh(&value, frame.BitwidthOf(reg))
+		// Add next word
+		value.Add(&value, frame.Load(reg).BigInt())
 	}
 	//
-	return words
+	switch fmt.Code {
+	case zkc_util.FORMAT_DEC:
+		digits = value.Text(10)
+	case zkc_util.FORMAT_HEX:
+		digits = value.Text(16)
+	case zkc_util.FORMAT_BIN:
+		digits = value.Text(2)
+	case zkc_util.FORMAT_CHR:
+		// Render the value as a single ASCII character.  Type-checking
+		// (in the zkc compiler) enforces that the argument is a concrete
+		// u8, so the value fits in a single byte; nonetheless we mask
+		// the low 8 bits defensively in case this is called outside
+		// that path (e.g. by future Unicode work, or by tests that
+		// bypass the type checker).
+		if w, ok := any(value).(interface{ BigInt() *big.Int }); ok {
+			return string([]byte{byte(w.BigInt().Uint64() & 0xff)})
+		}
+		//
+		var v big.Int
+		v.SetString(value.Text(10), 10)
+		//
+		return string([]byte{byte(v.Uint64() & 0xff)})
+	default:
+		panic("invalid format")
+	}
+	// Apply any padding to the digit portion.
+	if uint(len(digits)) < fmt.Width {
+		padding := int(fmt.Width) - len(digits)
+		//
+		if fmt.ZeroPad {
+			digits = strings.Repeat("0", padding) + digits
+		} else {
+			digits = strings.Repeat(" ", padding) + digits
+		}
+	}
+	//
+	return digits
 }
 
 // Perform lexicographic comparison of two (equally sized) arrays.  In each
 // array, the least significant word is at index 0.
-func cmp[T util.Comparable[T]](lhs []T, rhs []T) int {
+func cmp[W BaseWord[W], I Instruction](left, right register.Vector, frame StackFrame[W, I]) int {
+	var (
+		lhs = left.Registers()
+		rhs = right.Registers()
+	)
 	for i := len(lhs); i > 0; i-- {
-		c := lhs[i-1].Cmp(rhs[i-1])
+		var (
+			l = frame.Load(lhs[i-1])
+			r = frame.Load(rhs[i-1])
+		)
+
+		c := l.Cmp(r)
 		//
 		if c != 0 {
 			return c

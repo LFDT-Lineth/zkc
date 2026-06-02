@@ -297,7 +297,7 @@ func writeFunctionVariables(f *decl.ResolvedFunction, env data.ResolvedEnvironme
 // Intermediate Representation (IR)
 // ============================================================================
 
-func writeIntermediateRepresentation[W vm.BaseWord[W], I vm.Instruction, T vm.Executor[W, I]](
+func writeIntermediateRepresentation[W vm.MachineWord[W], I vm.Instruction, T vm.Executor[W, I]](
 	machine vm.BaseMachine[W, I, T]) {
 	//
 	// Write memories
@@ -316,7 +316,7 @@ func writeIntermediateRepresentation[W vm.BaseWord[W], I vm.Instruction, T vm.Ex
 	}
 }
 
-func writeIrMemory[W vm.BaseWord[W]](m vm.Memory[W]) {
+func writeIrMemory[W vm.MachineWord[W]](m vm.Memory[W]) {
 	var (
 		regs = m.Geometry().Registers()
 		kind = memoryKind(m)
@@ -335,7 +335,7 @@ func writeIrMemory[W vm.BaseWord[W]](m vm.Memory[W]) {
 	fmt.Println(")")
 }
 
-func writeIrFunction[W vm.BaseWord[W], I vm.Instruction](f *vm.Function[I], mapping instruction.SystemMap) {
+func writeIrFunction[W vm.MachineWord[W], I vm.Instruction](f *vm.Function[I], mapping instruction.SystemMap) {
 	fmt.Printf("fn %s(", f.Name())
 	// parameters
 	writeIrFunctionArgs(register.INPUT_REGISTER, f.Registers())
@@ -378,7 +378,7 @@ func writeIrFunctionArgs(kind register.Type, regs []register.Register) {
 	}
 }
 
-func writeIrFunctionVariables[W vm.BaseWord[W], I vm.Instruction](f *vm.Function[I]) {
+func writeIrFunctionVariables[W vm.MachineWord[W], I vm.Instruction](f *vm.Function[I]) {
 	for _, r := range f.Registers() {
 		if !r.IsInputOutput() {
 			fmt.Printf("\t%s %s\n", registerType(r), r.Name())
@@ -386,7 +386,7 @@ func writeIrFunctionVariables[W vm.BaseWord[W], I vm.Instruction](f *vm.Function
 	}
 }
 
-func memoryKind[W vm.BaseWord[W]](m vm.Memory[W]) string {
+func memoryKind[W vm.MachineWord[W]](m vm.Memory[W]) string {
 	switch {
 	case m.IsStatic():
 		return "static"
