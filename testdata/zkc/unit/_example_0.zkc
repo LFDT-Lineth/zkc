@@ -5,6 +5,7 @@ output WOM(address :u4) -> (value :u4)
 fn main<RAM>() {
     var r :u4
     r = f(7)
+    WOM[0] = 12
 
     // WOM[0] = ROM[0, 0]
     //
