@@ -48,6 +48,8 @@ const (
 type Formattable interface {
 	// Text returns the given word formated in the given base
 	Text(base int) string
+	// BigInt returns big integer representation of value.
+	BigInt() *big.Int
 }
 
 // Format simply encodes the set of permitted formatting strings in a printf
@@ -122,49 +124,4 @@ func (p Format) String() string {
 	builder.WriteByte(typeChar)
 	//
 	return builder.String()
-}
-
-// FormatWord applies a given format to a given word to generate a formatted string.
-func FormatWord[W Formattable](format Format, word W) string {
-	var (
-		digits string
-	)
-	//
-	switch format.Code {
-	case FORMAT_DEC:
-		digits = word.Text(10)
-	case FORMAT_HEX:
-		digits = word.Text(16)
-	case FORMAT_BIN:
-		digits = word.Text(2)
-	case FORMAT_CHR:
-		// Render the value as a single ASCII character.  Type-checking
-		// (in the zkc compiler) enforces that the argument is a concrete
-		// u8, so the value fits in a single byte; nonetheless we mask
-		// the low 8 bits defensively in case this is called outside
-		// that path (e.g. by future Unicode work, or by tests that
-		// bypass the type checker).
-		if w, ok := any(word).(interface{ BigInt() *big.Int }); ok {
-			return string([]byte{byte(w.BigInt().Uint64() & 0xff)})
-		}
-		//
-		var v big.Int
-		v.SetString(word.Text(10), 10)
-		//
-		return string([]byte{byte(v.Uint64() & 0xff)})
-	default:
-		panic("invalid format")
-	}
-	// Apply any padding to the digit portion.
-	if uint(len(digits)) < format.Width {
-		padding := int(format.Width) - len(digits)
-		//
-		if format.ZeroPad {
-			digits = strings.Repeat("0", padding) + digits
-		} else {
-			digits = strings.Repeat(" ", padding) + digits
-		}
-	}
-	//
-	return digits
 }

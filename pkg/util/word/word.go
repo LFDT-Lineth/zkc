@@ -14,15 +14,22 @@ package word
 
 import (
 	"fmt"
+	"math/big"
 )
 
 // Word abstracts a sequence of n bits.
 type Word[T any] interface {
 	fmt.Stringer
+	// Return the value of this word as a big integer.
+	BigInt() *big.Int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 	Cmp(y T) int
+	// Cmp64 returns 1 if x > y, 0 if x = y, and -1 if x < y.
+	Cmp64(y uint64) int
 	// Check whether two items are equal (or not).
 	Equals(T) bool
+	// Check whether this value fits within the given bitwidth.
+	FitsWithin(uint) bool
 	// Return a suitable hashcode.
 	Hash() uint64
 	// Returns the raw bytes of this word.  Observe that, if the word is encoded

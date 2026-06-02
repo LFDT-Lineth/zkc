@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/asm/io/micro/dfa"
+	"github.com/consensys/go-corset/pkg/util/collection/array"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/util/logical"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
@@ -76,14 +77,14 @@ func NewVector[I Instruction](insns ...I) Vector[I] {
 }
 
 // IsEmpty simply identifies whether this instruction is a no-op (or not).
-func (p *Vector[W]) IsEmpty() bool {
+func (p *Vector[I]) IsEmpty() bool {
 	return len(p.Codes) == 0
 }
 
 // Validate that this micro-instruction is well-formed.  For example, each
 // micro-instruction contained within must be well-formed, and the overall
 // requirements for a vector instruction must be met, etc.
-func (p *Vector[W]) Validate(field field.Config, mapping SystemMap) []error {
+func (p *Vector[I]) Validate(field field.Config, mapping SystemMap) []error {
 	// Construct write map
 	var (
 		errors   []error
@@ -122,8 +123,135 @@ func (p *Vector[W]) Validate(field field.Config, mapping SystemMap) []error {
 	return errors
 }
 
+// Map applies a function over each instruction in the vector which returns zero
+// or more registers.  For example, the function could return nothing whenever
+// it sees a "skip 0" operation (since this is a no-op).  A key feature of this
+// function, however, is that it updates skip offsets correctly account the
+// changes in width of instructions.  For example, consider this scenario:
+//
+// > skip_if x == 0 2 ; skip 0 ; ret ; jmp 1
+//
+// Then applying a map to remove "skip 0" instructions yields the following:
+//
+// > skip_if x == 0 1 ; ret ; jmp 1
+//
+// Specifically, we that the offset for the skip_if has been updated to reflect
+// its new branch destination.  Observer, however, that the mapping process can
+// fail if the mapping function is ill-behaved.  Consider this simple example:
+//
+// > skip 1 ; ret ; jmp 1
+//
+// Applying a mapping function which removed the "jmp 1" (for whatever reason)
+// would lead to an invalid instruction and, hence, a mapping failure.
+// Currently, mapping failures simply result in panics.
+func (p *Vector[I]) Map(fun func(uint, I) []I) Vector[I] {
+	var (
+		packets [][]I  = make([][]I, len(p.Codes))
+		mapping []uint = make([]uint, len(p.Codes)+1)
+		offset         = uint(0)
+	)
+	// first, build all packets and the offset map
+	for i, insn := range p.Codes {
+		ith := fun(uint(i), insn)
+		// record package
+		packets[i] = ith
+		// update mapping
+		mapping[i] = offset
+		// update offset
+		offset += uint(len(ith))
+	}
+	// assign offset to end-of-vector to support instructions which "skip of the
+	// end".  Such instructions can arise before vectorisation is applied.
+	mapping[len(p.Codes)] = offset
+	// reset offset
+	offset = 0
+	// recalculate skip offsets
+	for i, pkt := range packets {
+		// remap any skips which "escape" the packet.
+		remapPacket(uint(i), offset, pkt, mapping)
+		//
+		offset += uint(len(pkt))
+	}
+	// flatten packets
+	insns := array.FlatMap(packets, func(pkt []I) []I { return pkt })
+	// done
+	return NewVector(insns...)
+}
+
+// Remap all skip instructions within given "packet" of instructions.  There are
+// two cases to consider: an internal or external skip.  Here, the latter are
+// subject to remapping whilst the former are not. To understand this consider a
+// mapping to remove "skip 0" in the following:
+//
+// > skip_if x == 0 2 ; skip 0 ; ret ; jmp 1
+//
+// The packets generated for this would be:
+//
+// > [skip_if x == 0 2][][ret][jmp 1]
+//
+// You can see the second packet is empty, which is how the "skip 0" ends up
+// being removed.  Now, looking at the first packet.  This contains only a
+// single skip instruction and, hence, the target of that skip lies outside the
+// packet itself.  In such case, we refer to the skip as an "external" skip.
+//
+// Finally, to understand internal skips.  These are skips introduced by the
+// mapping function itself to implement conditional logic within the new
+// instructions.  As such, they should not be remapped as they should already
+// have correct skip offsets.
+func remapPacket[I Instruction](oldOffset, newOffset uint, packet []I, mapping []uint) {
+	var (
+		n = uint(len(packet))
+	)
+	//
+	for i, insn := range packet {
+		if skip, ok := isExternalSkip(n-uint(i), insn); ok {
+			// determine new target
+			target := mapping[oldOffset+skip+1]
+			// Remap
+			packet[i] = remapSkip(target, newOffset+uint(i), insn)
+		}
+	}
+}
+
+func isExternalSkip[I Instruction](n uint, insn I) (uint, bool) {
+	var (
+		c    any = insn
+		skip uint
+	)
+	// extract skip offset
+	switch insn := c.(type) {
+	case *Skip:
+		skip = insn.Skip
+	case *SkipIf:
+		skip = insn.Skip
+	default:
+		return 0, false
+	}
+	//
+	return skip, skip >= n
+}
+
+func remapSkip[I Instruction](target, offset uint, insn I) I {
+	var (
+		c     any = insn
+		skip      = target - offset - 1
+		ninsn any
+	)
+	// reconstruct skip
+	switch insn := c.(type) {
+	case *Skip:
+		ninsn = &Skip{Skip: skip}
+	case *SkipIf:
+		ninsn = &SkipIf{Cond: insn.Cond, Left: insn.Left, Right: insn.Right, Skip: skip}
+	default:
+		panic("unreachable")
+	}
+	// unsafe cast
+	return ninsn.(I)
+}
+
 // String implementation for Instruction interface
-func (p *Vector[W]) String(mapping SystemMap) string {
+func (p *Vector[I]) String(mapping SystemMap) string {
 	var builder strings.Builder
 	//
 	for i, code := range p.Codes {
@@ -159,7 +287,7 @@ func (p *Vector[W]) String(mapping SystemMap) string {
 // arises when a register has _definitely_ been written by an earlier
 // instruction in the vector and, hence, subsequent reads use the new value
 // (rather than the previous value).
-func (p *Vector[W]) WriteMap() dfa.Result[dfa.Writes] {
+func (p *Vector[I]) WriteMap() dfa.Result[dfa.Writes] {
 	return dfa.Construct(dfa.Writes{}, p.Codes, writeDfaTransfer)
 }
 
@@ -187,11 +315,11 @@ func (p *Vector[W]) WriteMap() dfa.Result[dfa.Writes] {
 //
 // Observe that the optimiser automatically reduces "x!=0 && x==1" to just x==1
 // (this is why it is sometimes called _branch table optimisation_).
-func (p *Vector[W]) BranchTable() (dfa.Result[dfa.Writes], dfa.Result[dfa.Branch]) {
+func (p *Vector[I]) BranchTable() (dfa.Result[dfa.Writes], dfa.Result[dfa.Branch]) {
 	// Construct suitable branch table for this instruction vector.
 	var (
 		writeMap = p.WriteMap()
-		btf      = branchTableTransfer[W](writeMap)
+		btf      = branchTableTransfer[I](writeMap)
 	)
 	//
 	return writeMap, dfa.Construct(dfa.Branch{Condition: dfa.TRUE}, p.Codes, btf)
@@ -259,9 +387,11 @@ func branchTableTransfer[I Instruction](writeMap dfa.Result[dfa.Writes]) dfa.Bra
 
 func extendSkipIf(tail dfa.Branch, sign bool, code *SkipIf, writes dfa.Writes) dfa.Branch {
 	var (
+		lhs      = code.Left.Registers()
+		rhs      = code.Right.Registers()
 		head     dfa.BranchEquality
 		tailc    = tail.Condition
-		left     = dfa.NewBranchId(writes.MayAnybeAssigned(code.Left), code.Left)
+		left     = dfa.NewBranchId(writes.MayAnybeAssigned(lhs...), lhs...)
 		equality bool
 	)
 	// normalise condition
@@ -275,12 +405,12 @@ func extendSkipIf(tail dfa.Branch, sign bool, code *SkipIf, writes dfa.Writes) d
 	}
 	// Translate operation
 	if equality {
-		head = logical.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(code.Right), code.Right))
+		head = logical.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	} else {
-		head = logical.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(code.Right), code.Right))
+		head = logical.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	}
 	// NOTE: the reason this method is needed is because we have no implicit
-	// rerpesentation of logical truth or falsehood.  This means an empty path
+	// representation of logical truth or falsehood.  This means an empty path
 	// does not behave in the expected manner.
 	if len(tailc.Conjuncts()) == 0 {
 		return dfa.Branch{Condition: logical.NewProposition(head)}

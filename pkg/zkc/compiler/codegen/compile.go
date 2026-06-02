@@ -26,8 +26,6 @@ import (
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
 	"github.com/consensys/go-corset/pkg/zkc/vm"
-
-	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen/lowerzkcnative"
 )
 
 // Declaration represents a declaration which can contain macro
@@ -163,15 +161,13 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	}
 	// Lower VM-level zkc-native instructions into arithmetic instructions.
 	if len(errors) == 0 && p.config.lowerZkcNative {
-		// Reduce chain bitwise operation in order to prepare the VM instructions for bitwise lowering.
-		modules = lowerzkcnative.BinarizeBitwise[vm.Uint](modules)
 		// Lower Bitwise operations into arithmetic instructions.
-		modules = lowerzkcnative.LowerBitwise[vm.Uint](modules)
+		modules = vm.LowerBitwise[vm.Uint](modules)
 		// Lower INT_DIV/INT_REM into hint + arithmetic validation sequences.
-		modules = lowerzkcnative.LowerDivisions[vm.Uint](modules)
+		modules = vm.LowerDivisions[vm.Uint](modules)
 		// Lower relational SkipIf (LT/GT/LTEQ/GTEQ) into sign-bit extraction sequences.
 		// Must run after LowerBitwise and LowerDivisions, which may generate new relational SkipIf instructions.
-		modules = lowerzkcnative.LowerComparisons[vm.Uint](modules)
+		modules = vm.LowerComparisons[vm.Uint](modules)
 	}
 	// Vectorize modules (if no errors)
 	if len(errors) == 0 && p.config.vectorize {
@@ -181,7 +177,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)
 	// Apply register splitting (for now)
 	if len(errors) == 0 && p.config.splitting {
-		wm = vm.Subdivide(p.config.field, wm)
+		wm = vm.SplitRegisters(p.config.field, wm)
 	}
 	// Construct machine
 	return wm, errors
@@ -195,14 +191,15 @@ func (p *Compiler) compileStaticInitialisers(
 ) ([]vm.Uint, []source.SyntaxError) {
 	//
 	var (
-		words  = make([]vm.Uint, len(contents))
-		errors []source.SyntaxError
+		words     = make([]vm.Uint, len(contents))
+		errors    []source.SyntaxError
+		evaluator = NewConstantEvaluator(p.config.field, env, components...)
 	)
 	//
 	for i, v := range contents {
 		var errMsg string
 
-		words[i], errMsg = EvalConstant(v, true, components, env)
+		words[i], errMsg = evaluator.Eval(v, true)
 		if errMsg != "" {
 			errors = append(errors, srcmaps.SyntaxErrors(v, errMsg)...)
 		}
@@ -244,7 +241,15 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		})
 	}
 	//
-	compiler := StmtCompiler{program, fn.Variables, registers, p.env, p.config.field, p.srcmaps, nil}
+	compiler := StmtCompiler{
+		components:  program,
+		variables:   fn.Variables,
+		registers:   registers,
+		environment: p.env,
+		field:       p.config.field,
+		srcmaps:     p.srcmaps,
+		quiet:       p.config.quiet,
+	}
 	//
 	for i, stmt := range fn.Code {
 		bootCode[i] = compiler.compileStatement(uint(i), mapping, stmt)

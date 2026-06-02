@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
 	"github.com/consensys/go-corset/pkg/util/collection/set"
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
@@ -113,23 +112,31 @@ func (p *OpIo) String(mapping SystemMap) string {
 	case opcode.CALL:
 		//
 		if len(p.Returns) > 0 {
-			builder.WriteString(RegistersToString(mapping, array.Reverse(p.Returns)...))
+			builder.WriteString(RegistersToString(mapping, p.Returns...))
 			builder.WriteString(" = ")
 		}
 		//
-		fmt.Fprintf(&builder, "%s(%s)", mapping.Module(p.Id).Name(),
+		fmt.Fprintf(&builder, "%s(%s)", getModuleName(mapping, p.Id),
 			RegistersToString(mapping, p.Arguments...))
 	case opcode.MEMORY_READ:
-		builder.WriteString(RegistersToString(mapping, array.Reverse(p.Returns)...))
+		builder.WriteString(RegistersToString(mapping, p.Returns...))
 		builder.WriteString(" = ")
 		//
-		fmt.Fprintf(&builder, "%s[%s]", mapping.Module(p.Id).Name(),
+		fmt.Fprintf(&builder, "%s[%s]", getModuleName(mapping, p.Id),
 			RegistersToString(mapping, p.Arguments...))
 	case opcode.MEMORY_WRITE:
-		fmt.Fprintf(&builder, "%s[%s] = %s", mapping.Module(p.Id).Name(),
-			RegistersToString(mapping, array.Reverse(p.Arguments)...),
+		fmt.Fprintf(&builder, "%s[%s] = %s", getModuleName(mapping, p.Id),
+			RegistersToString(mapping, p.Arguments...),
 			RegistersToString(mapping, p.Returns...))
 	}
 	//
 	return builder.String()
+}
+
+func getModuleName(mapping SystemMap, id uint) string {
+	if mapping == nil {
+		return "??"
+	}
+	//
+	return mapping.Module(id).Name()
 }

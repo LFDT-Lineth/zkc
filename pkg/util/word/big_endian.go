@@ -38,9 +38,9 @@ func NewBigEndian(bytes []byte) BigEndian {
 	return BigEndian{val}
 }
 
-// AsBigInt returns a freshly allocated big integer from the given bytes.
-func (p BigEndian) AsBigInt() big.Int {
-	return p.val
+// BigInt implementation for word.Word interface.
+func (p BigEndian) BigInt() *big.Int {
+	return &p.val
 }
 
 // Add implementation for field.Element interface
@@ -112,6 +112,11 @@ func (p BigEndian) Cmp(o BigEndian) int {
 // Equals implementation for the hash.Hasher interface.
 func (p BigEndian) Equals(o BigEndian) bool {
 	return p.Cmp(o) == 0
+}
+
+// FitsWithin implementation for Word interface.
+func (p BigEndian) FitsWithin(bitwidth uint) bool {
+	return uint(p.val.BitLen()) <= bitwidth
 }
 
 // Hash implementation for the hash.Hasher interface.

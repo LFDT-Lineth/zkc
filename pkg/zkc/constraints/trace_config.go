@@ -107,7 +107,7 @@ func (tb TraceConfig) BatchSize() uint {
 // unexpected fields).
 func Trace[F field.Element[F]](bf *BinaryFile[F], in map[string][]vm.Uint, cfg TraceConfig) (trace.Trace[F], []error) {
 	var (
-		observer vm.TraceObserver[vm.Uint, *vm.WordMachine[vm.Uint]]
+		observer vm.TraceObserver[vm.Uint, vm.WordInstruction, *vm.WordMachine[vm.Uint]]
 		stats    = util.NewPerfStats()
 		errs     []error
 		tr       trace.Trace[F]

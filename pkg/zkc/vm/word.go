@@ -14,6 +14,7 @@ package vm
 
 import (
 	"encoding/gob"
+	"math"
 	"math/big"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -26,23 +27,9 @@ import (
 )
 
 func init() {
-	gob.Register(instruction.Word(&instruction.IntAdd[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntSub[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntMul[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntDiv[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntRem[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntAddModP[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntSubModP[Uint]{}))
-	gob.Register(instruction.Word(&instruction.IntMulModP[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitAnd[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitNot[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitOr[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitXor[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitShl[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitShr[Uint]{}))
-	gob.Register(instruction.Word(&instruction.BitConcat[Uint]{}))
-	gob.Register(instruction.Word(&instruction.Destruct{}))
-	gob.Register(instruction.Word(&instruction.Cast{}))
+	gob.Register(instruction.Word(&instruction.WordTypeA[Uint]{}))
+	gob.Register(instruction.Word(&instruction.WordTypeB{}))
+	gob.Register(instruction.Word(&instruction.WordTypeF[Uint]{}))
 	gob.Register(instruction.Module(&function.Function[instruction.Word]{}))
 	gob.Register(instruction.Module(&memory.RandomAccess[Uint]{}))
 	gob.Register(instruction.Module(&memory.ReadOnly[Uint]{}))
@@ -50,6 +37,19 @@ func init() {
 	gob.Register(instruction.Module(&memory.StaticReadOnly[Uint]{}))
 	gob.Register(instruction.Module(&memory.BiPartiteRandomAccess[Uint]{}))
 }
+
+// WordConfig provides a minimal amount of information about a machine word
+// type.
+type WordConfig struct {
+	Name      string
+	Bandwidth uint
+}
+
+// WORD_UINT64 provides metadata about the Uint64 word type.
+var WORD_UINT64 = WordConfig{Name: "Uint64", Bandwidth: 64}
+
+// WORD_UINT provides metadata about the Uint word type.
+var WORD_UINT = WordConfig{Name: "Uint", Bandwidth: math.MaxUint}
 
 // Word abstracts the data type (a.k.a the "machine word") used for holding
 // values within the machine.  The reason for abstracting this concept is to
@@ -63,15 +63,17 @@ type Word[W any] = word.Word[W]
 // Uint represents an unbound unsigned integer.
 type Uint = word.Uint
 
+// Uint64 represents an 64-bit unsigned integer.
+type Uint64 = word.Uint64
+
 // ============================================================================
 // Constructors
 // ============================================================================
 
-// Uint64 initialises a given word with a 64bit value.  This will panic if the
+// Const64 initialises a given word with a 64bit value.  This will panic if the
 // given value exceeds the available bandwidth of the word in question.
-func Uint64[W Word[W]](val uint64) W {
-	var w W
-	return w.SetUint64(val)
+func Const64[W Word[W]](val uint64) W {
+	return word.Const64[W](val)
 }
 
 // ============================================================================

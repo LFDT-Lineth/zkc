@@ -13,7 +13,9 @@
 package word
 
 import (
+	"cmp"
 	"fmt"
+	"math"
 	"math/big"
 
 	util_math "github.com/consensys/go-corset/pkg/util/math"
@@ -25,7 +27,7 @@ type Uint struct {
 }
 
 // And implementation for Word interface.
-func (p Uint) And(_ uint, w Uint) Uint {
+func (p Uint) And(w Uint) Uint {
 	var res big.Int
 	res.And(&p.value, &w.value)
 	//
@@ -33,21 +35,12 @@ func (p Uint) And(_ uint, w Uint) Uint {
 }
 
 // Add implementation for Word interface.
-func (p Uint) Add(width uint, w Uint) (Uint, bool) {
-	var (
-		res   big.Int
-		carry bool
-	)
+func (p Uint) Add(w Uint) (Uint, bool) {
+	var res big.Int
+	//
 	res.Add(&p.value, &w.value)
 	//
-	for uint(res.BitLen()) > width {
-		// Normalise negative value
-		res.Sub(&res, util_math.Pow2(width))
-		//
-		carry = true
-	}
-	//
-	return Uint{res}, carry
+	return Uint{res}, false
 }
 
 // AddMod implementation for Word interface.
@@ -60,8 +53,13 @@ func (p Uint) AddMod(w, m Uint) Uint {
 	return Uint{res}
 }
 
+// Bandwidth implementation for Word interface.
+func (p Uint) Bandwidth() uint {
+	return math.MaxUint
+}
+
 // Div implementation for Word interface.
-func (p Uint) Div(_ uint, w Uint) Uint {
+func (p Uint) Div(w Uint) Uint {
 	if w.value.Sign() == 0 {
 		panic("division by zero")
 	}
@@ -77,24 +75,43 @@ func (p Uint) Cmp(o Uint) int {
 	return p.value.Cmp(&o.value)
 }
 
+// Cmp64 implementation for Word interface.
+func (p Uint) Cmp64(o uint64) int {
+	if p.value.IsUint64() {
+		return cmp.Compare(p.value.Uint64(), o)
+	}
+	//
+	return 1
+}
+
 // BigInt implementation for Word interface.
 func (p Uint) BigInt() *big.Int {
 	return &p.value
 }
 
-// Not implementation for Word interface.
-func (p Uint) Not(width uint) Uint {
-	// Compute bitwise complement within width: (2^width - 1) XOR value
-	mask := new(big.Int).Sub(util_math.Pow2(width), big.NewInt(1))
+// FitsWithin implementation for Word interface.
+func (p Uint) FitsWithin(bitwidth uint) bool {
+	return uint(p.value.BitLen()) <= bitwidth
+}
 
-	var res big.Int
+// Not implementation for Word interface.
+func (p Uint) Not(bitwidth uint) Uint {
+	// Compute bitwise complement within width: (2^width - 1) XOR value
+	var (
+		mask = new(big.Int)
+		res  big.Int
+	)
+	// (1 << 2^n) - 1
+	mask.Lsh(&one, bitwidth)
+	mask.Sub(mask, &one)
+	//
 	res.Xor(&p.value, mask)
 	//
 	return Uint{res}
 }
 
 // Or implementation for Word interface.
-func (p Uint) Or(_ uint, w Uint) Uint {
+func (p Uint) Or(w Uint) Uint {
 	var res big.Int
 	res.Or(&p.value, &w.value)
 	//
@@ -102,21 +119,13 @@ func (p Uint) Or(_ uint, w Uint) Uint {
 }
 
 // Mul implementation for Word interface.
-func (p Uint) Mul(width uint, w Uint) (Uint, bool) {
+func (p Uint) Mul(w Uint) (Uint, bool) {
 	var (
-		res      big.Int
-		overflow bool
+		res big.Int
 	)
 	res.Mul(&p.value, &w.value)
 	//
-	if uint(res.BitLen()) > width {
-		mask := new(big.Int).Sub(util_math.Pow2(width), big.NewInt(1))
-		res.And(&res, mask)
-		//
-		overflow = true
-	}
-	//
-	return Uint{res}, overflow
+	return Uint{res}, false
 }
 
 // MulMod implementation for Word interface.
@@ -130,7 +139,7 @@ func (p Uint) MulMod(w, m Uint) Uint {
 }
 
 // Rem implementation for Word interface.
-func (p Uint) Rem(_ uint, w Uint) Uint {
+func (p Uint) Rem(w Uint) Uint {
 	if w.value.Sign() == 0 {
 		panic("division by zero")
 	}
@@ -153,18 +162,15 @@ func (p Uint) Shl(width uint, n Uint) Uint {
 }
 
 // Shl64 implementation for Word interface.
-func (p Uint) Shl64(width uint, n uint64) Uint {
+func (p Uint) Shl64(n uint64) Uint {
 	var res big.Int
 	res.Lsh(&p.value, uint(n))
-	// Mask result to width bits.
-	mask := new(big.Int).Sub(util_math.Pow2(width), big.NewInt(1))
-	res.And(&res, mask)
 	//
 	return Uint{res}
 }
 
 // Shr implementation for Word interface.
-func (p Uint) Shr(_ uint, n Uint) Uint {
+func (p Uint) Shr(n Uint) Uint {
 	var res big.Int
 	res.Rsh(&p.value, uint(n.Uint64()))
 	//
@@ -216,21 +222,14 @@ func (p Uint) SetBigInt(val *big.Int) Uint {
 }
 
 // Sub implementation for Word interface.
-func (p Uint) Sub(width uint, w Uint) (Uint, bool) {
+func (p Uint) Sub(w Uint) (Uint, bool) {
 	var (
-		res       big.Int
-		underflow bool
+		res big.Int
 	)
+	//
 	res.Sub(&p.value, &w.value)
 	//
-	if res.Sign() < 0 {
-		// Normalise negative value
-		res.Add(&res, util_math.Pow2(width))
-		//
-		underflow = true
-	}
-	//
-	return Uint{res}, underflow
+	return Uint{res}, res.Sign() < 0
 }
 
 // SubMod implementation for Word interface.
@@ -244,7 +243,7 @@ func (p Uint) SubMod(w, m Uint) Uint {
 }
 
 // Xor implementation for Word interface.
-func (p Uint) Xor(_ uint, w Uint) Uint {
+func (p Uint) Xor(w Uint) Uint {
 	var res big.Int
 	res.Xor(&p.value, &w.value)
 	//
@@ -299,4 +298,10 @@ func readBitSlice(offset uint, width uint, value big.Int, sign bool) big.Int {
 	}
 	//
 	return slice
+}
+
+var one big.Int
+
+func init() {
+	one = *big.NewInt(1)
 }

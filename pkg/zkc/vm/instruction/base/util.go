@@ -14,6 +14,7 @@ package base
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/consensys/go-corset/pkg/schema/register"
@@ -46,13 +47,29 @@ type SystemMap interface {
 	Module(id uint) Module
 }
 
+// RegisterBitwidth returns the bitwidth of a register.  This function is
+// resilient to situations where, for example, the environment is missing or the
+// register Id is invalid.
+func RegisterBitwidth(env register.Map, reg register.Id) uint {
+	// support nil environment (for debugging)
+	if env != nil && reg.Unwrap() < uint(len(env.Registers())) {
+		return env.Register(reg).Width()
+	}
+	//
+	return math.MaxUint
+}
+
 // RegistersToString returns a string representation for zero or more registers
 // separated by a comma.
 func RegistersToString(env register.Map, regs ...register.Id) string {
 	var (
 		builder strings.Builder
-		n       = uint(len(env.Registers()))
+		n       uint
 	)
+	// support nil environment (for debugging)
+	if env != nil {
+		n = uint(len(env.Registers()))
+	}
 	//
 	for i := 0; i < len(regs); i++ {
 		var rid = regs[i]
@@ -72,13 +89,13 @@ func RegistersToString(env register.Map, regs ...register.Id) string {
 }
 
 // ExpressionToString returns a string representation for an arithmetic expression involving a constant
-func ExpressionToString[W word.Word[W]](op string, regs []register.Id, constant W, env register.Map) string {
+func ExpressionToString[W word.Base[W]](op string, regs []register.Id, constant W, env register.Map) string {
 	var builder strings.Builder
 	//
 	for i := 0; i < len(regs); i++ {
 		var rid = regs[i]
 		//
-		builder.WriteString(env.Register(rid).Name())
+		builder.WriteString(RegistersToString(env, rid))
 		builder.WriteString(" ")
 		builder.WriteString(op)
 		builder.WriteString(" ")
@@ -102,7 +119,7 @@ func ExpressionToStringWithoutConst(op string, regs []register.Id, env register.
 			builder.WriteString(" ")
 		}
 		//
-		builder.WriteString(env.Register(rid).Name())
+		builder.WriteString(RegistersToString(env, rid))
 	}
 	//
 	return builder.String()

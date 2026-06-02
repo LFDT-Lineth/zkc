@@ -79,18 +79,16 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 		fmt.Printf("unknown field \"%s\"\n", fieldName)
 		os.Exit(3)
 	}
-	// Find command to dispatch
-	for _, c := range cmds {
-		if c.Field == *config {
-			// Match
-			c.Function(cmd, args, c.Field)
-			// Done
-			return
-		}
-	}
-	//
-	fmt.Printf("field %s unsupported for command '%s'\n", fieldName, cmd.Name())
-	os.Exit(2)
+	// find command to dispatch
+	c := findFieldAgnosticCmd(*config, cmds)
+	// start CPU profiling (if requested)
+	f := startCpuProfiling(cmd)
+	// run field agnostic command
+	c.Function(cmd, args, *config)
+	// Stop cpu profiling (if was requested)
+	stopCpuProfiling(cmd, f)
+	// Write memory profiling (if requested)
+	writeMemProfile(cmd)
 }
 
 // GetBuildConfig constructs a build configuration from the provided
@@ -98,6 +96,8 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 // mechanism for compiling constraint files across the various sub-commands.
 func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig[F] {
 	var build BuildConfig[F]
+
+	lowerNative := GetFlag(cmd, "lower-native") || GetFlag(cmd, "mir") || GetFlag(cmd, "air")
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
 		log.SetLevel(log.DebugLevel)
@@ -106,7 +106,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	build.field = field
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
-		LowerZkcNative(GetFlag(cmd, "lower-native")).
+		LowerNatives(lowerNative).
 		Vectorize(GetFlag(cmd, "vectorize")).
 		SplitRegisters(GetFlag(cmd, "split")).
 		Field(field)
@@ -120,6 +120,20 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	return build
 }
 
+func findFieldAgnosticCmd(config field.Config, cmds []FieldAgnosticCmd) (cmd FieldAgnosticCmd) {
+	//
+	for _, c := range cmds {
+		if c.Field == config {
+			return c
+		}
+	}
+	//
+	fmt.Printf("field %s unsupported\n", config.Name)
+	os.Exit(2)
+	//
+	return cmd
+}
+
 func init() {
 	rootCmd.PersistentFlags().Bool("ast", false, "Output Abstract Syntax Tree (AST)")
 	rootCmd.PersistentFlags().Bool("wir", false, "Output Word-level Intermediate Representation (WIR)")
@@ -131,4 +145,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().Bool("split", false, "Apply register splitting")
 	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")
+	// profiling commands'
+	rootCmd.PersistentFlags().String("cpuprof", "", "write cpu profile to `file`")
+	rootCmd.PersistentFlags().String("memprof", "", "write memory profile to `file`")
 }

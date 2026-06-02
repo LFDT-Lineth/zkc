@@ -14,7 +14,21 @@ package word
 
 import (
 	"math/big"
+
+	"github.com/consensys/go-corset/pkg/util"
+	zkc_util "github.com/consensys/go-corset/pkg/zkc/util"
 )
+
+// Base captures the minimal set of requirements for a word used in the base
+// machine.
+type Base[W any] interface {
+	util.Comparable[W]
+	util.ComparableUint64
+	util.Uinter64
+	zkc_util.Formattable
+	// Check whether this value fits within the given bitwidth.
+	FitsWithin(uint) bool
+}
 
 // Word abstracts the data type (a.k.a the "machine word") used for holding
 // values within the machine.  The reason for abstracting this concept is to
@@ -25,35 +39,41 @@ import (
 // 16bits).
 type Word[W any] interface {
 	// Add two words together, producing another (along with an overflow bit).
-	Add(uint, W) (W, bool)
+	Add(W) (W, bool)
 	// AddMod adds two words together modulus a third.
 	AddMod(W, W) W
 	// Bitwise AND of two words.
-	And(uint, W) W
-	// Div divides this word by another within the given bit width.  Panics on
-	// division by zero.
-	Div(uint, W) W
+	And(W) W
+	// Returns the maximum number of bits of information a word this type can
+	// hold.
+	Bandwidth() uint
 	// Return the value of this word as a big integer.
 	BigInt() *big.Int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 	Cmp(y W) int
+	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
+	Cmp64(y uint64) int
+	// Div divides this word by another.  Panics on division by zero.
+	Div(W) W
+	// Check whether this value fits within the given bitwidth.
+	FitsWithin(uint) bool
 	// Multiply two words together, producing another (along with an overflow bit).
-	Mul(uint, W) (W, bool)
+	Mul(W) (W, bool)
 	// MulMod multiplies two words together modulus a third.
 	MulMod(W, W) W
 	// Bitwise NOT of this word within the given bit width.
 	Not(uint) W
 	// Bitwise OR of two words.
-	Or(uint, W) W
-	// Rem computes the remainder of dividing this word by another within the
-	// given bit width.  Panics on division by zero.
-	Rem(uint, W) W
+	Or(W) W
+	// Rem computes the remainder of dividing this word by another.  Panics on
+	// division by zero.
+	Rem(W) W
 	// Shift left word by the amount given in another word, masking to width bits.
 	Shl(uint, W) W
-	// Shift left word by the amount given in another word, masking to width bits.
-	Shl64(uint, uint64) W
+	// Shift left word by the amount given.
+	Shl64(uint64) W
 	// Shift right word by the amount given in another word.
-	Shr(uint, W) W
+	Shr(W) W
 	// Shift right word by a given number of bits.
 	Shr64(uint64) W
 	// Slice number of bits from this word.
@@ -64,14 +84,21 @@ type Word[W any] interface {
 	// value does not fit).
 	SetUint64(uint64) W
 	// Sub two words together, producing another (along with an underflow bit).
-	Sub(uint, W) (W, bool)
+	Sub(W) (W, bool)
 	// SubMod subtracts two words together modulus a third.
 	SubMod(W, W) W
 	// Returns value of word as an unsigned integer and will panic if the value
 	// does not fit.
 	Uint64() uint64
 	// Bitwise XOR of two words.
-	Xor(uint, W) W
+	Xor(W) W
 	// Text returns the given word formated in the given base
 	Text(base int) string
+}
+
+// Const64 initialises a given word with a 64bit value.  This will panic if
+// the given value exceeds the available bandwidth of the word in question.
+func Const64[W Word[W]](val uint64) W {
+	var w W
+	return w.SetUint64(val)
 }

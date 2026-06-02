@@ -11,6 +11,8 @@
 package ast
 
 import (
+	"fmt"
+
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
 	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
@@ -43,4 +45,31 @@ func (p *environment) ConstOf(id symbol.Resolved) expr.Resolved {
 // TypeOf implementation for data.Environment interface
 func (p *environment) TypeOf(id symbol.Resolved) data.ResolvedType {
 	return p.declarations[id.Index].(*decl.ResolvedTypeAlias).DataType
+}
+
+// WellFormed implementation for data.Environment interface
+func (p *environment) WellFormed(t data.ResolvedType) bool {
+	//
+	switch t := t.(type) {
+	case nil:
+		return false
+	case *data.UnsignedInt[symbol.Resolved]:
+		return true
+	case *data.Alias[symbol.Resolved]:
+		return p.WellFormed(p.TypeOf(t.Name))
+	case *data.FixedArray[symbol.Resolved]:
+		return p.WellFormed(t.DataType)
+	case *data.Tuple[symbol.Resolved]:
+		for i := range t.Width() {
+			if !p.WellFormed(t.Ith(i)) {
+				return false
+			}
+		}
+		//
+		return true
+	case *data.FieldElement[symbol.Resolved]:
+		return true
+	}
+	//
+	panic(fmt.Sprintf("unknown type encountered (%s)", t.String(p)))
 }

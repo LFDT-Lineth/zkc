@@ -36,61 +36,25 @@ type InputOutputMemory[W util.Uinter64] = memory.InputOutput[W]
 // given values.
 func NewStaticMemory[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
 ) InputOutputMemory[W] {
-	//
-	var kind memory.Kind
-	//
-	if public {
-		kind = memory.PUBLIC_STATIC_MEMORY
-	} else {
-		kind = memory.PRIVATE_STATIC_MEMORY
-	}
-	//
-	return &memory.StaticReadOnly[W]{
-		ReadOnly: memory.ReadOnly[W]{
-			StaticArray: memory.NewStaticArray[W](name, kind, registers, init...),
-		},
-	}
+	return memory.NewStatic[W](name, public, registers, init...)
 }
 
 // NewInputMemory constructs a new read-only memory initialised with a given set of values.
 func NewInputMemory[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
 ) InputOutputMemory[W] {
-	//
-	var kind memory.Kind
-	//
-	if public {
-		kind = memory.PUBLIC_READ_ONLY_MEMORY
-	} else {
-		kind = memory.PRIVATE_READ_ONLY_MEMORY
-	}
-	//
-	return &memory.ReadOnly[W]{
-		StaticArray: memory.NewStaticArray[W](name, kind, registers, init...),
-	}
+	return memory.NewReadOnly[W](name, public, registers, init...)
 }
 
 // NewOutputMemory constructs an empty write-once memory.
 func NewOutputMemory[W util.Uinter64](name string, public bool, registers []register.Register) InputOutputMemory[W] {
-	var kind memory.Kind
-	//
-	if public {
-		kind = memory.PUBLIC_WRITE_ONCE_MEMORY
-	} else {
-		kind = memory.PRIVATE_WRITE_ONCE_MEMORY
-	}
-	//
-	return &memory.WriteOnce[W]{
-		StaticArray: memory.NewStaticArray[W](name, kind, registers),
-	}
+	return memory.NewWriteOnce[W](name, public, registers)
 }
 
 // NewReadWriteMemory constructs an empty random-access memory which employs a
 // non-sparse implementation.  Thus, this is not suitable for very large
 // memories.
 func NewReadWriteMemory[W util.Uinter64](name string, registers []register.Register) Memory[W] {
-	return &memory.RandomAccess[W]{
-		StaticArray: memory.NewStaticArray[W](name, memory.RANDOM_ACCESS_MEMORY, registers),
-	}
+	return memory.NewRandomAccess[W](name, registers)
 }
 
 // NewLargeReadWriteMemory constructs an empty random-access memory which

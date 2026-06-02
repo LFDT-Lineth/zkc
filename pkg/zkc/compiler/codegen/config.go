@@ -20,6 +20,7 @@ import "github.com/consensys/go-corset/pkg/util/field"
 var DEFAULT_CONFIG = Config{
 	field:          field.KOALABEAR_16,
 	lowerZkcNative: false,
+	quiet:          false,
 	vectorize:      true,
 	splitting:      false,
 }
@@ -36,6 +37,9 @@ type Config struct {
 	// lower ZkC native functions (such as bitwise ops) into arithmetic instructions.
 	// This is required to generate arithmetic constraints. It happens before vectorization and register splitting.
 	lowerZkcNative bool
+	// quiet controls whether printf statements are emitted as VM debug
+	// instructions or skipped during code generation.
+	quiet bool
 	// vectorize controls whether the codegen pipeline runs the
 	// instruction-vectorisation pass in pkg/zkc/compiler/codegen/vectorize.go.
 	// Vectorisation merges sequences of micro-instructions that have no
@@ -56,6 +60,11 @@ func (p Config) Field(field field.Config) Config {
 	q.field = field
 	//
 	return q
+}
+
+// GetField returns the specified field configuration.
+func (p Config) GetField() field.Config {
+	return p.field
 }
 
 // SplitRegisters returns a copy of this Config in which register splitting is
@@ -79,12 +88,22 @@ func (p Config) Vectorize(flag bool) Config {
 	return q
 }
 
-// LowerZkcNative returns a copy of this Config with VM-level bitwise lowering
+// LowerNatives returns a copy of this Config with VM-level bitwise lowering
 // enabled (flag=true) or disabled (flag=false).
-func (p Config) LowerZkcNative(flag bool) Config {
+func (p Config) LowerNatives(flag bool) Config {
 	var q = p
 	//
 	q.lowerZkcNative = flag
+	//
+	return q
+}
+
+// Quiet returns a copy of this Config where printf statements are skipped
+// during code generation when flag=true.
+func (p Config) Quiet(flag bool) Config {
+	var q = p
+	//
+	q.quiet = flag
 	//
 	return q
 }

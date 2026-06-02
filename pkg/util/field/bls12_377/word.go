@@ -12,10 +12,24 @@
 // SPDX-License-Identifier: Apache-2.0
 package bls12_377
 
+import (
+	"cmp"
+	"math/big"
+)
+
 const (
 	offset64 uint64 = 14695981039346656037
 	prime64  uint64 = 1099511628211
 )
+
+// Cmp64 returns 1 if x > y, 0 if x = y, and -1 if x < y.
+func (x Element) Cmp64(y uint64) int {
+	if x.IsUint64() {
+		return cmp.Compare(x.Uint64(), y)
+	}
+	//
+	return 1
+}
 
 // Equals implementation for hash.Hasher interface
 func (x Element) Equals(o Element) bool {
@@ -35,6 +49,11 @@ func (x Element) Hash() uint64 {
 	return hash
 }
 
+// FitsWithin implementation for word.Word interface.
+func (x Element) FitsWithin(bitwidth uint) bool {
+	return uint(x.BitLen()) <= bitwidth
+}
+
 // SetBytes implementation for word.Word interface.
 func (x Element) SetBytes(bytes []byte) Element {
 	x.Element.SetBytes(bytes)
@@ -52,4 +71,14 @@ func (x Element) SetUint64(val uint64) Element {
 // Uint64 implementation for word.Word interface.
 func (x Element) Uint64() uint64 {
 	return x.Element.Uint64()
+}
+
+// BigInt implementation for word.Word interface.
+func (x Element) BigInt() *big.Int {
+	var (
+		val   big.Int
+		bytes = x.Element.Bytes()
+	)
+	//
+	return val.SetBytes(bytes[:])
 }
