@@ -13,6 +13,7 @@
 package koalabear
 
 import (
+	"cmp"
 	"math/big"
 
 	"github.com/consensys/go-corset/pkg/util/word"
@@ -22,6 +23,11 @@ const (
 	offset64 uint64 = 14695981039346656037
 	prime64  uint64 = 1099511628211
 )
+
+// Cmp64 returns 1 if x > y, 0 if x = y, and -1 if x < y.
+func (x Element) Cmp64(y uint64) int {
+	return cmp.Compare(uint64(x.ToUint32()), y)
+}
 
 // Equals implementation for hash.Hasher interface
 func (x Element) Equals(o Element) bool {

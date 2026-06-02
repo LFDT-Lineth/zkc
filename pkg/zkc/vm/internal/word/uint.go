@@ -162,12 +162,9 @@ func (p Uint) Shl(width uint, n Uint) Uint {
 }
 
 // Shl64 implementation for Word interface.
-func (p Uint) Shl64(width uint, n uint64) Uint {
+func (p Uint) Shl64(n uint64) Uint {
 	var res big.Int
 	res.Lsh(&p.value, uint(n))
-	// Mask result to width bits.
-	mask := new(big.Int).Sub(util_math.Pow2(width), big.NewInt(1))
-	res.And(&res, mask)
 	//
 	return Uint{res}
 }

@@ -24,6 +24,8 @@ type Word[T any] interface {
 	BigInt() *big.Int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 	Cmp(y T) int
+	// Cmp64 returns 1 if x > y, 0 if x = y, and -1 if x < y.
+	Cmp64(y uint64) int
 	// Check whether two items are equal (or not).
 	Equals(T) bool
 	// Check whether this value fits within the given bitwidth.

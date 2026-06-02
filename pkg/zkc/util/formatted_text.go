@@ -16,8 +16,6 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
-
-	"github.com/consensys/go-corset/pkg/schema/register"
 )
 
 // EscapeFormattedText takes a string and escapes any characters which need to
@@ -126,58 +124,4 @@ func (p Format) String() string {
 	builder.WriteByte(typeChar)
 	//
 	return builder.String()
-}
-
-// FormatWord applies a given format to a given word to generate a formatted string.
-func FormatWord[W Formattable](format Format, regs []register.Register, words ...W) string {
-	var (
-		digits string
-		value  big.Int
-	)
-	//
-	for i := len(words); i > 0; i-- {
-		var ith = words[i-1]
-		// Shift left
-		value.Lsh(&value, regs[i-1].Width())
-		// Add next word
-		value.Add(&value, ith.BigInt())
-	}
-	//
-	switch format.Code {
-	case FORMAT_DEC:
-		digits = value.Text(10)
-	case FORMAT_HEX:
-		digits = value.Text(16)
-	case FORMAT_BIN:
-		digits = value.Text(2)
-	case FORMAT_CHR:
-		// Render the value as a single ASCII character.  Type-checking
-		// (in the zkc compiler) enforces that the argument is a concrete
-		// u8, so the value fits in a single byte; nonetheless we mask
-		// the low 8 bits defensively in case this is called outside
-		// that path (e.g. by future Unicode work, or by tests that
-		// bypass the type checker).
-		if w, ok := any(value).(interface{ BigInt() *big.Int }); ok {
-			return string([]byte{byte(w.BigInt().Uint64() & 0xff)})
-		}
-		//
-		var v big.Int
-		v.SetString(value.Text(10), 10)
-		//
-		return string([]byte{byte(v.Uint64() & 0xff)})
-	default:
-		panic("invalid format")
-	}
-	// Apply any padding to the digit portion.
-	if uint(len(digits)) < format.Width {
-		padding := int(format.Width) - len(digits)
-		//
-		if format.ZeroPad {
-			digits = strings.Repeat("0", padding) + digits
-		} else {
-			digits = strings.Repeat(" ", padding) + digits
-		}
-	}
-	//
-	return digits
 }

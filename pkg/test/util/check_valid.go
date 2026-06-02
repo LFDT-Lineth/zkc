@@ -155,17 +155,21 @@ func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f 
 	}
 }
 
-func runExecutionTest[W vm.Word[W]](t *testing.T, wm vm.Machine[W], test TestCase, cfg vm.WordConfig) {
+func runExecutionTest[W vm.Word[W], I vm.Instruction](t *testing.T, wm vm.Machine[W, I], test TestCase,
+	cfg vm.WordConfig) {
+	//
 	var (
 		err  error
 		errs []error
 		// decode inputs / outputs
 		inputs, outputs = decodeInputsOutputs(t, wm, test.data)
 	)
+	//
+	//t.Logf("[%s]%s:%d", cfg.Name, test.filename, test.line)
 	// Execute machine
 	if err = wm.Boot("main", inputs); err == nil {
 		// Execute it
-		if _, err = vm.ExecuteAll(wm, 1024); err == nil && test.expected {
+		if _, err = vm.ExecuteAll(wm, 131072); err == nil && test.expected {
 			// Check outputs match
 			errs = append(errs, checkExpectedOutputs(outputs, wm)...)
 		} else if err == nil && !test.expected {
@@ -232,7 +236,7 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, wm *vm.WordMachi
 	}
 }
 
-func checkExpectedOutputs[W vm.Word[W]](outputs map[string][]W, wm vm.Machine[W]) []error {
+func checkExpectedOutputs[W vm.Word[W], I vm.Instruction](outputs map[string][]W, wm vm.Machine[W, I]) []error {
 	var errors []error
 	//
 	for _, m := range wm.Modules() {

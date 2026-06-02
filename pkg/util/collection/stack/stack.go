@@ -27,6 +27,12 @@ func (p *Stack[T]) AsArray() []T {
 	return p.items
 }
 
+// Clear resets the heap to an empty state whilst retaining any allocated
+// capacity.
+func (p *Stack[T]) Clear() {
+	p.items = p.items[:0]
+}
+
 // IsEmpty checks whether or not there are still items on the stack
 func (p *Stack[T]) IsEmpty() bool {
 	return p.Len() == 0
@@ -58,16 +64,6 @@ func (p *Stack[T]) PushAll(item []T) {
 	p.items = append(p.items, item...)
 }
 
-// PushReversed pushes zero or more items in reverse order the stack
-func (p *Stack[T]) PushReversed(items []T) {
-	var n = len(items) - 1
-	//
-	for i := range len(items) {
-		ith := items[n-i]
-		p.items = append(p.items, ith)
-	}
-}
-
 // Pop the last item off the stack
 func (p *Stack[T]) Pop() T {
 	var n = len(p.items)
@@ -84,6 +80,12 @@ func (p *Stack[T]) Pop() T {
 }
 
 // Top peeks at the last item on the stack.
-func (p *Stack[T]) Top() T {
-	return p.Peek(0)
+func (p *Stack[T]) Top() *T {
+	var n = len(p.items) - 1
+	//
+	if n < 0 {
+		panic("top out-of-bounds")
+	}
+	// Get last item
+	return &p.items[n]
 }

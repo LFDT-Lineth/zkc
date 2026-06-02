@@ -19,6 +19,13 @@ type Comparable[T any] interface {
 	Cmp(other T) int
 }
 
+// ComparableUint64 interface which can be implemented by non-primitive types.
+type ComparableUint64 interface {
+	// Cmp returns < 0 if this is less than other, or 0 if they are equal, or >
+	// 0 if this is greater than other.
+	Cmp64(other uint64) int
+}
+
 // Union represents a value which is either of the first type or of the second
 // type.
 type Union[S, T any] struct {

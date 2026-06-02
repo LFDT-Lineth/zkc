@@ -34,7 +34,7 @@ import (
 // Here, t0 is the *target register*, whilst r0 .. rn are the source registers
 // and c is a constant (which can be 0).  Finally, "#" represents whatever
 // operation the given opcode indicates.
-type WordTypeA[W word.Word[W]] struct {
+type WordTypeA[W word.Base[W]] struct {
 	Op opcode.OpCode
 	// Target register for assignment
 	Target register.Vector
@@ -119,7 +119,7 @@ func aType2Operation(op opcode.OpCode) string {
 	}
 }
 
-func bitconcat2str[W word.Word[W]](p *WordTypeA[W], mapping base.SystemMap) string {
+func bitconcat2str[W word.Base[W]](p *WordTypeA[W], mapping base.SystemMap) string {
 	var (
 		builder strings.Builder
 	)

@@ -30,7 +30,7 @@ import (
 )
 
 // FullObserver is an observer which can be used to extract a trace.
-type FullObserver[W word.Word[W], M machine.Core[W]] struct {
+type FullObserver[W word.Word[W], I instruction.Instruction, M machine.Core[W, I]] struct {
 	// Contains complete frames for the trace data being constructed during
 	// execution.
 	trace [][]State[W]
@@ -39,7 +39,7 @@ type FullObserver[W word.Word[W], M machine.Core[W]] struct {
 }
 
 // Initialise implementation for Observer interface
-func (p *FullObserver[W, M]) Initialise(machine M) {
+func (p *FullObserver[W, I, M]) Initialise(machine M) {
 	// initialise data structures
 	p.trace = make([][]State[W], len(machine.Modules()))
 	p.callstack = stack.Stack[StackFrame[W]]{}
@@ -53,7 +53,7 @@ func (p *FullObserver[W, M]) Initialise(machine M) {
 }
 
 // PreExecution implementation for Observer interface
-func (p *FullObserver[W, M]) PreExecution(machine M) {
+func (p *FullObserver[W, I, M]) PreExecution(machine M) {
 	var depth = p.callstack.Len()
 	//
 	if machine.Depth() > depth {
@@ -62,14 +62,15 @@ func (p *FullObserver[W, M]) PreExecution(machine M) {
 		p.leaveFunction(machine)
 	} else if depth != 0 {
 		// Extract enclosing frame
-		var frame = machine.StackFrame(depth - 1)
+		var frame = machine.StackFrame(0)
 		// Check whether enclosing vector is finishing (i.e. about to execute a
 		// terminal instruction which either terminates the enclosing function, or
 		// moves the program counter to the next vector instruction).
-		if next, end := isVectorTerminal(frame, machine); next || end {
+		if next, end := isVectorTerminal(frame); next || end {
 			var (
-				contents = loadWords(0, frame.Width(), frame)
-				state    = NewState(frame.PC().Macro(), end, frame.Width(), contents)
+				width    = frame.Function().Width()
+				contents = loadWords(0, width, frame)
+				state    = NewState(frame.PC().Macro(), end, width, contents)
 			)
 			// Record state
 			sf := p.callstack.Pop()
@@ -80,11 +81,11 @@ func (p *FullObserver[W, M]) PreExecution(machine M) {
 }
 
 // PostExecution implementation for Observer interface
-func (p *FullObserver[W, M]) PostExecution(machine M) {
+func (p *FullObserver[W, I, M]) PostExecution(machine M) {
 }
 
 // Trace returns an lt.TraceFile representing the given trace.
-func (p *FullObserver[W, M]) Trace(machine M) lt.TraceFile {
+func (p *FullObserver[W, I, M]) Trace(machine M) lt.TraceFile {
 	var (
 		heap    = pool.NewLocalHeap[util_word.BigEndian]()
 		builder = array.NewDynamicBuilder(heap)
@@ -100,7 +101,7 @@ func (p *FullObserver[W, M]) Trace(machine M) lt.TraceFile {
 	return lt.NewTraceFile(nil, *heap, modules)
 }
 
-func (p *FullObserver[W, M]) traceModule(m machine.Module, states []State[W],
+func (p *FullObserver[W, I, M]) traceModule(m machine.Module, states []State[W],
 	builder array.Builder[util_word.BigEndian]) lt.Module[util_word.BigEndian] {
 	//
 	var (
@@ -145,7 +146,7 @@ func (p *FullObserver[W, M]) traceModule(m machine.Module, states []State[W],
 	return lt.NewModule(name, traceColumns(m.Registers(), cols))
 }
 
-func (p *FullObserver[W, M]) assignControlRegisters(m *function.Function[instruction.Word],
+func (p *FullObserver[W, I, M]) assignControlRegisters(m *function.Function[instruction.Word],
 	cols []array.MutArray[util_word.BigEndian], states []State[W], builder array.Builder[util_word.BigEndian]) {
 	//
 	var (
@@ -174,21 +175,21 @@ func (p *FullObserver[W, M]) assignControlRegisters(m *function.Function[instruc
 	}
 }
 
-func (p *FullObserver[W, M]) enterFunction(machine M) {
+func (p *FullObserver[W, I, M]) enterFunction(machine M) {
 	var (
 		depth = p.callstack.Len()
 		// Extract machine frame
-		frame = machine.StackFrame(depth)
+		frame = machine.StackFrame(0)
 	)
 	// initialise empty stack frame
-	p.callstack.Push(StackFrame[W]{id: frame.Function()})
+	p.callstack.Push(StackFrame[W]{id: frame.FunctionId()})
 	// sanity check
 	if depth+1 != machine.Depth() {
 		panic("incorrect machine depth")
 	}
 }
 
-func (p *FullObserver[W, M]) leaveFunction(machine M) {
+func (p *FullObserver[W, I, M]) leaveFunction(machine M) {
 	// Pop executing stack frame
 	frame := p.callstack.Pop()
 	// Append all rows to the given trace
@@ -235,19 +236,21 @@ func NewState[W any](pc uint, terminal bool, width uint, values []W) State[W] {
 // Helpers
 // ============================================================================
 
-func loadWords[W any](start, end uint, frame machine.Frame[W]) []W {
+func loadWords[W word.Word[W], I instruction.Instruction](start, end uint, frame machine.StackFrame[W, I]) []W {
 	var (
 		n     = end - start
 		words = make([]W, n)
 	)
 	// Read words
 	for i := range n {
-		words[i] = frame.Load(i + start)
+		// construct register ID
+		var rid = register.NewId(i + start)
+		// Read ith word
+		words[i] = frame.Load(rid)
 	}
 	// Done
 	return words
 }
-
 func isMultiLineFunction(m machine.Module) bool {
 	if f, ok := m.(*function.Function[instruction.Word]); ok {
 		return !f.IsAtomic()
@@ -260,15 +263,16 @@ func isMultiLineFunction(m machine.Module) bool {
 // vector instruction.  There are two ways a vector instruction can terminate.
 // Either it returns entirely from the enclosing function, or its jumps to the
 // next instruction.
-func isVectorTerminal[W any](frame machine.Frame[W], m machine.Core[W]) (next, end bool) {
+func isVectorTerminal[W machine.BaseWord[W], I instruction.Instruction](frame machine.StackFrame[W, I],
+) (next, end bool) {
 	var (
 		pc = frame.PC()
 		// Determine enclosing function
-		fun = m.Module(frame.Function()).(*function.Function[instruction.Word])
+		fun = frame.Function()
 		// Determine enclosing vector
 		vector = fun.CodeAt(pc.Macro())
 		// Determine specific (micro) instruction
-		insn = vector.Codes[pc.Micro()]
+		insn any = vector.Codes[pc.Micro()]
 	)
 	// See what we've got.
 	switch insn.(type) {

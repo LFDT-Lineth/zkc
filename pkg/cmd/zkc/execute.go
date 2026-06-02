@@ -89,9 +89,9 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 			m64 = vm.WordToWordMachine[vm.Uint, vm.Uint64](&m)
 		)
 		//
-		outputs, errors = vm.BootAndExecute(m64, input, 1024)
+		outputs, errors = vm.BootAndExecute(m64, input, 131072)
 	} else {
-		outputs, errors = binfile.Execute(input, 1024)
+		outputs, errors = binfile.Execute(input, 131072)
 	}
 	// =====================================================
 	// Generate output

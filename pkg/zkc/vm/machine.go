@@ -31,7 +31,7 @@ import (
 // field elements directly.  Furthermore, a machine may be operating over
 // instructions compiled into bytes (for efficient execution), or instructions
 // represented at a higher level (e.g. for analysis or compilation).
-type Machine[W any] = machine.Core[W]
+type Machine[W MachineWord[W], I Instruction] = machine.Core[W, I]
 
 // Executor captures the notion of an instruction-specific executor.  That is,
 // an executor designed for executing certain instructions over a given type of
@@ -39,12 +39,12 @@ type Machine[W any] = machine.Core[W]
 // executor is that its really only intended for straight-line instructions, and
 // other control-flow instructions (e.g. skipping, calling, etc) are handled by
 // the base machine (since they are common to all machines).
-type Executor[W any, I any] = machine.Executor[W, I]
+type Executor[W MachineWord[W], I Instruction] = machine.Executor[W, I]
 
 // StackFrame captures the state of an executing function on the call stack.
 // Specifically, it contains the state of all registers at the current point of
 // execution.
-type StackFrame[W any] = machine.Frame[W]
+type StackFrame[W MachineWord[W], I Instruction] = machine.StackFrame[W, I]
 
 // ProgramCounter abstracts the notion of a program counter in a machine.  A key
 // aspect is that it two dimensional to account for so-called "vector"
@@ -52,14 +52,14 @@ type StackFrame[W any] = machine.Frame[W]
 // it identifies the (micro) instruction within that being executed.
 type ProgramCounter = machine.ProgramCounter
 
-// BaseWord captures the minimal set of requirements for a word used in the base
+// MachineWord captures the minimal set of requirements for a word used in the base
 // machine.
-type BaseWord[W any] = machine.BaseWord[W]
+type MachineWord[W any] = machine.BaseWord[W]
 
 // BaseMachine provides a fundamental machine implementation.  The intention is
 // that other machine variations build off this by providing executors specific
 // to their instruction set.
-type BaseMachine[W BaseWord[W], I Instruction, E Executor[W, I]] = machine.Base[W, I, E]
+type BaseMachine[W MachineWord[W], I Instruction, E Executor[W, I]] = machine.Base[W, I, E]
 
 // ============================================================================
 // Word Machine
@@ -94,7 +94,7 @@ type FieldInstruction = instruction.Field
 // NewFunction constructs a new function with the given components.  The native
 // flag indicates whether this function is backed by a native circuit (i.e.
 // declared with the @native annotation) rather than by code.
-func NewFunction[I instruction.Instruction](name string, native bool, registers []register.Register,
+func NewFunction[I Instruction](name string, native bool, registers []register.Register,
 	code []instruction.Vector[I]) *Function[I] {
 	return function.New(name, native, registers, code)
 }
@@ -109,7 +109,7 @@ func NewWordMachine[W Word[W]](field field.Config, modules ...Module) *WordMachi
 // of n steps at a time, producing any outputs arising.  Execution is faster
 // than trace because it does not record any internal information about the
 // trace --- it simply extracts the outputs at the end.
-func BootAndExecute[W Word[W], M Machine[W]](m M, input map[string][]byte, n uint,
+func BootAndExecute[W Word[W], I Instruction, M Machine[W, I]](m M, input map[string][]byte, n uint,
 ) (output map[string][]byte, errs []error) {
 	//
 	var (
@@ -139,7 +139,7 @@ func BootAndExecute[W Word[W], M Machine[W]](m M, input map[string][]byte, n uin
 
 // ExecuteAll executes a given machine to completion in chunks of n steps,
 // returning the number of steps executed and/or any error arising.
-func ExecuteAll[W any, M Machine[W]](machine M, n uint) (uint, error) {
+func ExecuteAll[W MachineWord[W], I Instruction, M Machine[W, I]](machine M, n uint) (uint, error) {
 	var nsteps uint
 	//
 	for {
@@ -149,6 +149,7 @@ func ExecuteAll[W any, M Machine[W]](machine M, n uint) (uint, error) {
 		nsteps += m
 		// check for termination
 		if err != nil || m < n {
+			//
 			return nsteps, err
 		}
 	}
@@ -157,7 +158,8 @@ func ExecuteAll[W any, M Machine[W]](machine M, n uint) (uint, error) {
 // ExecuteAndObserve executes a given machine for n steps with a supplied
 // observer.  The purpose of this is that it provides a way to extract
 // information (as desired) from an executing machine.
-func ExecuteAndObserve[W Word[W], M Machine[W], V Observer[W, M]](machine M, n uint, observer V) (uint, error) {
+func ExecuteAndObserve[W Word[W], I Instruction, M Machine[W, I], V Observer[W, I, M]](machine M, n uint, observer V,
+) (uint, error) {
 	var (
 		nsteps uint
 	)
@@ -183,7 +185,7 @@ func ExecuteAndObserve[W Word[W], M Machine[W], V Observer[W, M]](machine M, n u
 // DecodeInputsOutputs decodes  given set of input and output bytes
 // appropriately for the given machine.  If there are unknown or conflicting
 // inputs, then errors are returned.
-func DecodeInputsOutputs[W Word[W], M Machine[W]](m M, data map[string][]byte,
+func DecodeInputsOutputs[W Word[W], I Instruction, M Machine[W, I]](m M, data map[string][]byte,
 ) (inputs, outputs map[string][]W, errs []error) {
 	//
 	var visited = make(map[string]bool)
@@ -226,7 +228,7 @@ func DecodeInputsOutputs[W Word[W], M Machine[W]](m M, data map[string][]byte,
 // DecodeInputs configures a given set of input bytes appropriately for the
 // given machine.  If there are unknown or conflicting inputs, then errors are
 // returned.
-func DecodeInputs[W Word[W], M Machine[W]](m M, input map[string][]byte) (map[string][]W, []error) {
+func DecodeInputs[W Word[W], I Instruction, M Machine[W, I]](m M, input map[string][]byte) (map[string][]W, []error) {
 	var (
 		visited = make(map[string]bool)
 		inputs  = make(map[string][]W)
@@ -263,7 +265,7 @@ func DecodeInputs[W Word[W], M Machine[W]](m M, input map[string][]byte) (map[st
 
 // EncodeOutputs extract the output from a given machine and encodes it into
 // byte arrays.
-func EncodeOutputs[W Word[W], M Machine[W]](m M) map[string][]byte {
+func EncodeOutputs[W Word[W], I Instruction, M Machine[W, I]](m M) map[string][]byte {
 	var output = make(map[string][]byte)
 	// scan modules
 	for _, c := range m.Modules() {

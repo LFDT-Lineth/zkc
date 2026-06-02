@@ -13,6 +13,7 @@
 package bls12_377
 
 import (
+	"cmp"
 	"math/big"
 )
 
@@ -20,6 +21,15 @@ const (
 	offset64 uint64 = 14695981039346656037
 	prime64  uint64 = 1099511628211
 )
+
+// Cmp64 returns 1 if x > y, 0 if x = y, and -1 if x < y.
+func (x Element) Cmp64(y uint64) int {
+	if x.IsUint64() {
+		return cmp.Compare(x.Uint64(), y)
+	}
+	//
+	return 1
+}
 
 // Equals implementation for hash.Hasher interface
 func (x Element) Equals(o Element) bool {
