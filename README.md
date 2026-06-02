@@ -1,5 +1,6 @@
 # Go Corset
 
+
 The `go-corset` tool is a compiler for arithmetic constraints written
 in a lisp-like [domain-specific
 language](https://en.wikipedia.org/wiki/Domain-specific_language)
