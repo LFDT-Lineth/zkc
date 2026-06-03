@@ -29,7 +29,7 @@ type Mul[F field.Element[F], T Expr[F, T]] struct{ Args []T }
 // Product returns the product of zero or more multiplications.
 func Product[F field.Element[F], T Expr[F, T]](terms ...T) T {
 	// flatten any nested products
-	terms = array.Flatten(terms, flatternMul[F])
+	terms = array.Flatten(terms, flattenMul[F])
 	// Remove all multiplications by one
 	terms = array.RemoveMatching(terms, isOne)
 	// Check for zero
@@ -122,7 +122,7 @@ func (p *Mul[F, T]) Simplify(casts bool) T {
 	//
 	terms := simplifyTerms(p.Args, mulBinOp, one, casts)
 	// Flatten any nested products
-	terms = array.Flatten(terms, flatternMul[F])
+	terms = array.Flatten(terms, flattenMul[F])
 	// Check for zero
 	if array.ContainsMatching(terms, isZero) {
 		// Yes, is zero
@@ -161,7 +161,7 @@ func (p *Mul[F, T]) ValueRange() math.Interval {
 	return res
 }
 
-func flatternMul[F field.Element[F], T Expr[F, T]](term T) []T {
+func flattenMul[F field.Element[F], T Expr[F, T]](term T) []T {
 	var e Expr[F, T] = term
 	if t, ok := e.(*Mul[F, T]); ok {
 		return t.Args

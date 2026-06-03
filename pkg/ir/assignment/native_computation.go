@@ -168,7 +168,7 @@ func computeNative[F field.Element[F]](sources []register.Refs, fn NativeComputa
 	inputs := ReadRegisterRefs(trace, sources...)
 	// Apply native function
 	targets := fn(inputs, trace.Builder())
-	// Flattern targets
+	// Flatten targets
 	return array.FlatMap(targets, func(arrs array.MutVector[F]) []array.MutArray[F] {
 		return arrs.Unwrap()
 	})

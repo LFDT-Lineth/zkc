@@ -491,7 +491,7 @@ func (p *AirLowering[F]) lowerConjunct(e *Conjunct[F], airMod air.ModuleBuilder[
 		worklist []air.Term[F]
 		sums     []air.Term[F]
 	)
-	// flattern conjuncts
+	// flatten conjuncts
 	for _, ts := range p.lowerLogicals(e.Args, airMod, bitwidths) {
 		worklist = array.AppendAll(worklist, ts...)
 	}

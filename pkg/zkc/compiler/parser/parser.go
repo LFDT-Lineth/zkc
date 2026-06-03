@@ -246,6 +246,13 @@ func (p *Parser) tokenStrings(toks []lex.Token) []string {
 	return names
 }
 
+// parseConstant parses a constants declation which must be of the form
+//
+//	const cdef (, cdef)*
+//
+// with cdef of the form
+//
+//	identifier : type = expr
 func (p *Parser) parseConstant() ([]decl.Unresolved, []source.SyntaxError) {
 	var (
 		start    = p.index
@@ -337,7 +344,7 @@ func (p *Parser) parseFunction() (decl.Unresolved, []source.SyntaxError) {
 		returned bool
 	)
 	// Parse function declaration
-	if _, errs := p.expect(KEYWORD_FN); len(errs) > 0 {
+	if _, errs = p.expect(KEYWORD_FN); len(errs) > 0 {
 		return nil, errs
 	}
 	// Parse function name
@@ -346,7 +353,7 @@ func (p *Parser) parseFunction() (decl.Unresolved, []source.SyntaxError) {
 	}
 	// Check for any effects
 	if p.match(LESS_THAN) {
-		if errs := p.parseMemoryEffects(env); len(errs) > 0 {
+		if errs = p.parseMemoryEffects(env); len(errs) > 0 {
 			return nil, errs
 		}
 	}
@@ -420,6 +427,8 @@ func (p *Parser) parseMemoryEffects(env Environment) []source.SyntaxError {
 	//
 	return nil
 }
+
+// parseArgsList parses a list of the form (name :type, name' :type', ...)
 func (p *Parser) parseArgsList(kind variable.Kind, env Environment) []source.SyntaxError {
 	var (
 		arg      string
@@ -2119,7 +2128,8 @@ func (p *Parser) expect(kind uint) (lex.Token, []source.SyntaxError) {
 	return lookahead, nil
 }
 
-// Match attempts to match the given token.
+// Match attempts to match the given token: if the current token matches
+// the argument of match(...) it is consumed.
 func (p *Parser) match(kind uint) bool {
 	if p.lookahead().Kind == kind {
 		p.index++
@@ -2146,7 +2156,7 @@ func (p *Parser) syntaxErrors(token lex.Token, msg string) []source.SyntaxError 
 	return []source.SyntaxError{*p.srcfile.SyntaxError(token.Span, msg)}
 }
 
-// Flattern a given condition starting at a given program counter position into
+// Flatten a given condition starting at a given program counter position into
 // a sequence of one or more instructions.  The intention is: (1) for positive
 // sign, branch to target label if condition holds (otherwise fall through); (2)
 // for negative sign, branch to target label if condition does not hold

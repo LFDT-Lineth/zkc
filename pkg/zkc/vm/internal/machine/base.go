@@ -358,15 +358,15 @@ func (p *Base[W, I, T]) executeMemWrite(insn *instruction.MemWrite, frame StackF
 	// Write data words to the given address range
 	for i := 0; i < len(sourceRegs) && err == nil; i++ {
 		var (
-			bitwidth = targetRegs[i].Width()
-			val      = frame.Load(sourceRegs[i])
+			ith = targetRegs[i]
+			val = frame.Load(sourceRegs[i])
 		)
 		// bitwidth check
-		if val.FitsWithin(bitwidth) {
+		if ith.IsNative() || val.FitsWithin(ith.Width()) {
 			err = mem.Write(address, val)
 		} else {
 			// failed
-			err = fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), bitwidth)
+			err = fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), ith.Width())
 		}
 		//
 		address++

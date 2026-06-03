@@ -453,13 +453,13 @@ func (p *ModuleScope) setDefinition(status bool, symbol ast.SymbolDefinition) {
 	panic(fmt.Sprintf("unknown symbol definition \"%s\"", symbol.Path().String()))
 }
 
-// Flattern flatterns the tree into a flat array of modules, such that a module
+// Flatten flattens the tree into a flat array of modules, such that a module
 // always comes before its own submodules.
-func (p *ModuleScope) Flattern() []*ModuleScope {
+func (p *ModuleScope) Flatten() []*ModuleScope {
 	modules := []*ModuleScope{p}
 	//
 	for _, m := range p.submodules {
-		modules = append(modules, m.Flattern()...)
+		modules = append(modules, m.Flatten()...)
 	}
 	//
 	return modules
