@@ -61,7 +61,7 @@ func NewGlobalEnvironment(root *ModuleScope, allocator func(RegisterAllocation))
 		panic("root scope required")
 	}
 	// Construct top-level module list.
-	modules := root.Flattern()
+	modules := root.Flatten()
 	// Initialise the environment
 	env := GlobalEnvironment{nil, nil, nil, nil}
 	env.initModules(modules)

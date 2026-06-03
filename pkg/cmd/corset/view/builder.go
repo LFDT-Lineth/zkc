@@ -149,7 +149,7 @@ func extractSourceMap(optSrcmap util.Option[corset.SourceMap]) (map[string]corse
 	if optSrcmap.HasValue() {
 		var srcmap = optSrcmap.Unwrap()
 		//
-		for _, module := range srcmap.Flattern(concreteModules) {
+		for _, module := range srcmap.Flatten(concreteModules) {
 			mapping[module.Name] = module
 		}
 		//

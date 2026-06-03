@@ -107,7 +107,7 @@ func (p *Subdivider[F]) splitLookupVector(geometry lookup.Geometry, vector looku
 	}
 	// Check alignment
 	for i, ith := range vector.Terms {
-		// Pad & flattern
+		// Pad & flatten
 		limbs = append(limbs, p.padLookupLimb(uint(i), ith, geometry, vector.Module)...)
 	}
 	// Done

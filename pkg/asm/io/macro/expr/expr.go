@@ -36,7 +36,7 @@ type Expr interface {
 	Equals(e Expr) bool
 	// Evaluate this expression in a given environment producing a given value.
 	Eval([]big.Int) big.Int
-	// Polynomial returns this expression flatterned into a polynomial form.
+	// Polynomial returns this expression flattened into a polynomial form.
 	Polynomial() agnostic.StaticPolynomial
 	// RegistersRead returns the set of registers read by this expression
 	RegistersRead() bit.Set

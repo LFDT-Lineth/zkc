@@ -125,7 +125,7 @@ func (p *Disjunct[F, T]) Simplify(casts bool) T {
 	// Simplify terms
 	terms := simplifyLogicalTerms(p.Args, casts)
 	// Flatten any nested disjuncts
-	terms = array.Flatten(terms, flatternDisjunct[F, T])
+	terms = array.Flatten(terms, flattenDisjunct[F, T])
 	// True if contains True
 	if array.ContainsMatching(terms, IsTrue[F, T]) {
 		return True[F, T]()
@@ -148,7 +148,7 @@ func (p *Disjunct[F, T]) Substitute(mapping map[string]F) {
 	substituteTerms(mapping, p.Args...)
 }
 
-func flatternDisjunct[F field.Element[F], T Logical[F, T]](term T) []T {
+func flattenDisjunct[F field.Element[F], T Logical[F, T]](term T) []T {
 	var e Logical[F, T] = term
 	if t, ok := e.(*Disjunct[F, T]); ok {
 		return t.Args

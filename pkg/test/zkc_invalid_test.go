@@ -595,6 +595,31 @@ func Test_ZkcInvalid_Memory_16(t *testing.T) {
 }
 
 // ===================================================================
+// Felt assignment Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Felt_Assignment_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_assignment_01")
+}
+
+// ===================================================================
+// Felt static table Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Felt_Static_Table_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_01")
+}
+func Test_ZkcInvalid_Felt_Static_Table_02(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_02")
+}
+func Test_ZkcInvalid_Felt_Static_Table_03(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_03")
+}
+func Test_ZkcInvalid_Felt_Static_Table_04(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_04")
+}
+
+// ===================================================================
 // Static Tests
 // ===================================================================
 
