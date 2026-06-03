@@ -13,9 +13,9 @@
 package vm
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 )
 
 // Memory captures the familiar notion of a "machine memory" which can be

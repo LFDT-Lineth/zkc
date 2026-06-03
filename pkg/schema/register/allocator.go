@@ -17,9 +17,9 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/poly"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/poly"
 )
 
 // Polynomial defines the type of polynomials over which packets (and register

@@ -18,7 +18,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // HEAP_POOL_INIT_BUCKETS determines the initial number of buckets to use for

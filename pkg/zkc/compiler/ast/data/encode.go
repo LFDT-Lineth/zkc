@@ -13,9 +13,9 @@ package data
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // EncodeAll encodes the given set of word values as packed bytes according to

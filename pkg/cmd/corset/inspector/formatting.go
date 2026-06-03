@@ -15,8 +15,8 @@ package inspector
 import (
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/cmd/corset/view"
-	"github.com/consensys/go-corset/pkg/util/termio"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // NewFormatter constructs a new cell formatter

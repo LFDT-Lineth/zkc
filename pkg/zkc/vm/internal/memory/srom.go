@@ -13,8 +13,8 @@
 package memory
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 // StaticReadOnly is a ReadOnly memory whose contents are fixed at construction

@@ -17,12 +17,12 @@ import (
 	"math"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/iter"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/util/source/lex"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/parser"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/lex"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/parser"
 )
 
 // DEFAULT_INDENTATION sets the default level of indentation (in spaces).

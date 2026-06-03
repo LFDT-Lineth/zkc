@@ -20,14 +20,14 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	zkc_util "github.com/consensys/go-corset/pkg/zkc/util"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Instruction is a convenient alias

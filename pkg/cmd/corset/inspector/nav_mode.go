@@ -13,8 +13,8 @@
 package inspector
 
 import (
-	"github.com/consensys/go-corset/pkg/util/collection/set"
-	"github.com/consensys/go-corset/pkg/util/termio"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // NavigationMode is the default mode of the inspector.  In this mode, the user

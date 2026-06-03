@@ -16,11 +16,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/asm/io/micro/dfa"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/logical"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
 // Vector instructions are instructions composed of some number of micro

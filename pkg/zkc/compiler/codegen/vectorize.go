@@ -17,12 +17,12 @@ import (
 	"math"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/stack"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/stack"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
 // Vectorize a given function by merging as many instructions as possible into

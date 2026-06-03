@@ -16,7 +16,7 @@ import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/consensys/go-corset/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 )
 
 // Ref abstracts a complete (i.e. global) register identifier.

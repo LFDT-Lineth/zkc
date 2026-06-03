@@ -15,10 +15,10 @@ package stmt
 import (
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
-	"github.com/consensys/go-corset/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 )
 
 // FormattedChunk represents a chunk of a printf string which consists of some

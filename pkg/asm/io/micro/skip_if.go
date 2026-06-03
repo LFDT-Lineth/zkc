@@ -17,9 +17,9 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/schema/agnostic"
-	"github.com/consensys/go-corset/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/agnostic"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 )
 
 // SkipIf microcode performs a conditional skip over a given number of codes. The

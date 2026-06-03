@@ -15,10 +15,10 @@ package stmt
 import (
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/lval"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/lval"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 )
 
 // Assign represents a generic assignment of the following form:

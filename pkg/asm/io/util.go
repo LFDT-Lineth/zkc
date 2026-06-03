@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 )
 
 // CheckTargetRegisters performs some simple checks on a set of target registers

@@ -13,14 +13,14 @@
 package lower
 
 import (
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/lval"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/lval"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // Flatten flattens all block-level statements (IfElse, Switch, While, For,

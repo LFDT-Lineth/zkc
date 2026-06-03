@@ -15,8 +15,8 @@ package trace
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // QualifiedColumnName returns the fully qualified name of a given column.

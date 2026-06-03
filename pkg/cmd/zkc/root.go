@@ -17,8 +17,8 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

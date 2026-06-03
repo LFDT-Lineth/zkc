@@ -15,7 +15,7 @@ package widget
 import (
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/termio"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // Separator is intended to be something like a horizontal rule, where the

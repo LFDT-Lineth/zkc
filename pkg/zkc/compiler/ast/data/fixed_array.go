@@ -13,8 +13,8 @@ package data
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // ResolvedFixedArray represents a fixed-size array which contains only resolved identifiers.

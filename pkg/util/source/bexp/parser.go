@@ -16,9 +16,9 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/util/source/lex"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/lex"
 )
 
 // Parse a given input string into logical proposition.  The environment
