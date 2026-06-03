@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/consensys/go-corset/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 )
 
 // Context represents the evaluation context in which an expression can be

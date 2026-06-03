@@ -18,14 +18,14 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 
 	// Side-effect import: registers concrete memory[Uint] types as
 	// base.Module so they can be encoded through the Module interface.
-	_ "github.com/consensys/go-corset/pkg/zkc/vm"
+	_ "github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 func sampleRegs() []register.Register {

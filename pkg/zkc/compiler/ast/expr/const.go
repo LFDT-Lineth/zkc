@@ -15,11 +15,11 @@ package expr
 import (
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 )
 
 // Const represents a constant value within an expresion.

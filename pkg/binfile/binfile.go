@@ -19,8 +19,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/asm"
-	"github.com/consensys/go-corset/pkg/util/collection/typed"
+	"github.com/LFDT-Lineth/zkc/pkg/asm"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
 )
 
 // ============================================================================

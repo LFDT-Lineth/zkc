@@ -13,11 +13,11 @@
 package compiler
 
 import (
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/lower"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/parser"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/lower"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/parser"
 )
 
 // FileUpdate indicates that some change has been made to a given file

@@ -13,9 +13,9 @@
 package macro
 
 import (
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/asm/io/micro"
-	"github.com/consensys/go-corset/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 )
 
 // Return signals a return from the enclosing function.

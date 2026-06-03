@@ -13,9 +13,9 @@
 package ast
 
 import (
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/file"
-	"github.com/consensys/go-corset/pkg/util/source/sexp"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/file"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // NON_FUNCTION is used to signal a symbol which does not represent a function.

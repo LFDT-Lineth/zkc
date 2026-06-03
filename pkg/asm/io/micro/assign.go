@@ -18,10 +18,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/schema/agnostic"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/poly"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/agnostic"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/poly"
 )
 
 // Polynomial provides a useful alias which captures the fact that all

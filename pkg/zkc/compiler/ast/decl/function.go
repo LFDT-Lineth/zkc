@@ -11,10 +11,10 @@
 package decl
 
 import (
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 )
 
 // ResolvedFunction represents a function which contains instructions whose

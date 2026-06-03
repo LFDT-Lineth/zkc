@@ -16,13 +16,13 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/math"
-	"github.com/consensys/go-corset/pkg/util/source/sexp"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // Cast attempts to narrow the width a given expression.

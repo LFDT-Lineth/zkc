@@ -18,8 +18,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 )
 
 // Trace describes a set of named columns.  Columns are not required to have the

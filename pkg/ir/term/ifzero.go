@@ -13,13 +13,13 @@
 package term
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/math"
-	"github.com/consensys/go-corset/pkg/util/source/sexp"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // IfZero returns the true branch when the condition evaluates to zero, and the

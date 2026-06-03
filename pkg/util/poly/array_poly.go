@@ -16,9 +16,9 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 )
 
 // ArrayPoly is the simpliest (and least efficient) polynomial implementation.

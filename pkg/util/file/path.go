@@ -19,7 +19,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 )
 
 // Path is a construct for describing paths through trees.  A path can be either

@@ -19,7 +19,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // LocalHeap maintains a heap of bytes representing the words which is *not* thread

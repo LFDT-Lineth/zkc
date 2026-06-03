@@ -15,16 +15,16 @@ package debug
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/asm"
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/asm/io/macro"
-	"github.com/consensys/go-corset/pkg/asm/io/micro"
-	cmd_util "github.com/consensys/go-corset/pkg/cmd/corset/util"
-	"github.com/consensys/go-corset/pkg/ir/mir"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source/sexp"
+	"github.com/LFDT-Lineth/zkc/pkg/asm"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/macro"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro"
+	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // PrintSchemas is responsible for printing out a human-readable description of

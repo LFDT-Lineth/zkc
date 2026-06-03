@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/collection/pool"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/pool"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // PoolArray implements an array of elements simply using an underlying array.

@@ -15,14 +15,14 @@ package transform
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/schema/module"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // SplitRegisters all modules to meet a given bandwidth and maximum register width.
