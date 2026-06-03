@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/cmd/corset/verify/picus/pcl"
-	"github.com/consensys/go-corset/pkg/ir/air"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/verify/picus/pcl"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // AirPicusTranslator captures any state needed to lower an AIR schema

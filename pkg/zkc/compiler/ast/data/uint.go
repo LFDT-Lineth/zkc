@@ -13,7 +13,7 @@ package data
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // UnsignedInt captures the fundamental data type of the language.

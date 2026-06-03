@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/consensys/go-corset/pkg/corset"
+	"github.com/LFDT-Lineth/zkc/pkg/corset"
 )
 
 // PrintSourceMap provides a suitable human-readable view of the internal source

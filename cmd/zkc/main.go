@@ -12,7 +12,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package main
 
-import "github.com/consensys/go-corset/pkg/cmd/zkc"
+import "github.com/LFDT-Lineth/zkc/pkg/cmd/zkc"
 
 func main() {
 	zkc.Execute()

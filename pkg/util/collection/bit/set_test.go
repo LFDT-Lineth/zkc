@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 func Test_BitSet_00(t *testing.T) {

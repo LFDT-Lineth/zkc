@@ -14,7 +14,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // Tuple represents the composition of zero or more types together.  For

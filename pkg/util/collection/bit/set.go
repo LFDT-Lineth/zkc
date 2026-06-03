@@ -17,8 +17,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/collection/enum"
-	"github.com/consensys/go-corset/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/enum"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 )
 
 // Predicate abstracts the notion of a function which identifies something.

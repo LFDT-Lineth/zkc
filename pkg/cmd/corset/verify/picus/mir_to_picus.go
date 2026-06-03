@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/cmd/corset/verify/picus/pcl"
-	"github.com/consensys/go-corset/pkg/ir/mir"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/verify/picus/pcl"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // MirPicusTranslator captures any state needed to lower an MIR schema to a program in PCL (Picus Constraint Language).
