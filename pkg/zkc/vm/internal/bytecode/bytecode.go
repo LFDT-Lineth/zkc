@@ -118,22 +118,3 @@ const (
 	CAT = uint32(29)
 	//
 )
-
-// Condition represents the set of permission comparitors for a Jc
-// instruction.
-type Condition uint
-
-const (
-	// EQ indicates an equality condition
-	EQ Condition = 0
-	// NEQ indicates a non-equality condition
-	NEQ Condition = 1
-	// LT indicates a less-than condition
-	LT Condition = 2
-	// GT indicates a greater-than condition
-	GT Condition = 3
-	// LTEQ indicates a less-than-or-equals condition
-	LTEQ Condition = 4
-	// GTEQ indicates a greater-than-or-equals condition
-	GTEQ Condition = 5
-)

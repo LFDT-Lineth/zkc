@@ -14,67 +14,109 @@ package bytecode
 
 import (
 	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
+	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
 )
 
-type Encoder struct {
+type Encoder[T comparable] struct {
 	bytecodes []uint32
 	//
-	labels []uint
+	labels map[T]uint
+	//
+	marks []uint
 }
 
-// Label marks a jump label.
-func (p *Encoder) Label(label uint) {
-	p.labels = array.Expand(p.labels, label+1)
-	p.labels[label] = uint(len(p.bytecodes))
+// Encode returns the final encoded bytecode sequence.  Observe that, once this
+// is done, the internal bytecode sequence is reset.
+func (p *Encoder[T]) Encode() []uint32 {
+	var bytecodes = p.bytecodes
+	// TODO: patch labels
+	// Reset internal buffers
+	p.bytecodes = nil
+	p.labels = nil
+	// Done
+	return bytecodes
+}
+
+// Mark current position with given label.
+func (p *Encoder[T]) Mark(label T) {
+	var (
+		index uint = p.getLabelIndex(label)
+	)
+	//
+	p.marks[index] = uint(len(p.bytecodes))
+}
+
+// Len returns the length of the bytecode sequence encoded thus far.
+func (p *Encoder[T]) Len() uint {
+	return uint(len(p.bytecodes))
 }
 
 // Fail encodes a FAIL instruction to a given label.
-func (p *Encoder) Fail() {
+func (p *Encoder[T]) Fail() {
 	p.bytecodes = append(p.bytecodes, FAIL)
 }
 
 // Jmp encodes a JMP instruction to a given label.
-func (p *Encoder) Jmp(label uint) {
-	var insn uint32
+func (p *Encoder[T]) Jmp(label T) {
+	var (
+		insn  uint32
+		index uint = p.getLabelIndex(label)
+	)
 	//
-	if label >= 0x8000000 {
-		panic("jump label out of bounds")
-	}
-	//
-	insn = (uint32(label) << 5) | JMP
+	insn = (uint32(index) << 5) | JMP
 	//
 	p.bytecodes = append(p.bytecodes, insn)
 }
 
 // JmpIf encodes a JIF instruction to a given label.
-func (p *Encoder) JmpIf(label uint, condition Condition, left, right register.Id) {
+func (p *Encoder[T]) JmpIf(label T, condition opcode.Condition, left, right register.Id) {
 	var (
 		insn, opcode uint32
-		l            = uint32(left.Unwrap())
-		r            = uint32(right.Unwrap())
+		l                 = uint32(left.Unwrap())
+		r                 = uint32(right.Unwrap())
+		index        uint = p.getLabelIndex(label)
 	)
 	// sanity checks
-	if label >= 256 {
-		panic("jump label out of bounds")
-	} else if l >= 256 {
+	if l >= 256 {
 		panic("left register out of bounds")
 	} else if r >= 256 {
 		panic("right register out of bounds")
 	}
 	//
 	opcode = (uint32(condition) << 5) | JIF
-	insn = (uint32(label) << 24) | (l << 16) | (r << 8) | opcode
+	insn = (uint32(index) << 24) | (l << 16) | (r << 8) | opcode
 	//
 	p.bytecodes = append(p.bytecodes, insn)
 }
 
 // Call encodes a CALL instruction to a given label.
-func (p *Encoder) Call(label uint, inputs uint) {
+func (p *Encoder[T]) Call(label uint, inputs uint) {
 	panic("todo")
 }
 
 // Ret encodes a RET instruction from a given function call.
-func (p *Encoder) Ret(ninputs, width uint) {
+func (p *Encoder[T]) Ret(ninputs, width uint) {
 	panic("todo")
+}
+
+func (p *Encoder[T]) getLabelIndex(label T) uint {
+	var (
+		index uint
+		ok    bool
+	)
+	// Initialise labels (if not done already)
+	if p.labels == nil {
+		p.labels = make(map[T]uint)
+	}
+	// Check whether label encountered already
+	if index, ok = p.labels[label]; !ok {
+		// No, first time so allocate new label
+		index = uint(len(p.labels))
+		// Ensure space for the mark
+		p.marks = append(p.marks, 0)
+		// Record index to avoid reallocation
+		p.labels[label] = index
+	}
+	//
+	return index
 }
