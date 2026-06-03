@@ -236,7 +236,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 			panic(fmt.Sprintf("unexpected variable kind %d", v.Kind))
 		}
 
-		flattern(v.DataType, v.Name, p.env, func(name string, bitwidth uint) {
+		flatten(v.DataType, v.Name, p.env, func(name string, bitwidth uint) {
 			registers = append(registers, register.New(kind, name, bitwidth, padding))
 		})
 	}
@@ -266,15 +266,15 @@ func toMemoryRegisters(address []VariableDescriptor, datas []VariableDescriptor,
 		registers []register.Register
 		padding   big.Int
 	)
-	// Flattern address lines
+	// Flatten address lines
 	for _, v := range address {
-		flattern(v.DataType, v.Name, env, func(name string, bitwidth uint) {
+		flatten(v.DataType, v.Name, env, func(name string, bitwidth uint) {
 			registers = append(registers, register.NewInput(name, bitwidth, padding))
 		})
 	}
-	// Flattern data lines
+	// Flatten data lines
 	for _, v := range datas {
-		flattern(v.DataType, v.Name, env, func(name string, bitwidth uint) {
+		flatten(v.DataType, v.Name, env, func(name string, bitwidth uint) {
 			registers = append(registers, register.NewOutput(name, bitwidth, padding))
 		})
 	}

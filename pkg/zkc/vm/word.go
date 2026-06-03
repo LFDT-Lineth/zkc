@@ -118,7 +118,7 @@ func DecodeBytes[W Word[W]](bytes []byte, registers []register.Register) []W {
 		// Done
 		return ints
 	})
-	// Flattern decoded tuples
+	// Flatten decoded tuples
 	return array.FlatMap(values, func(ints []big.Int) []W {
 		var words = make([]W, len(ints))
 		//

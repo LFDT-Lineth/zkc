@@ -125,7 +125,7 @@ func (p *Conjunct[F, T]) Simplify(casts bool) T {
 	// Simplify terms
 	terms := simplifyLogicalTerms(p.Args, casts)
 	// Flatten any nested conjuncts
-	terms = array.Flatten(terms, flatternConjunct[F, T])
+	terms = array.Flatten(terms, flattenConjunct[F, T])
 	// False if contains false
 	if array.ContainsMatching(terms, IsFalse) {
 		return False[F, T]()
@@ -148,7 +148,7 @@ func (p *Conjunct[F, T]) Substitute(mapping map[string]F) {
 	substituteTerms(mapping, p.Args...)
 }
 
-func flatternConjunct[F field.Element[F], T Logical[F, T]](term T) []T {
+func flattenConjunct[F field.Element[F], T Logical[F, T]](term T) []T {
 	var e Logical[F, T] = term
 	if t, ok := e.(*Conjunct[F, T]); ok {
 		return t.Args

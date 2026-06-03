@@ -66,8 +66,8 @@ func (p *Tuple[S]) Types() []Type[S] {
 	return slices.Clone(p.elements)
 }
 
-// Flattern implementation for Type interface
-func (p *Tuple[S]) Flattern(prefix string, env Environment[S], constructor func(name string, bitwidth uint)) {
+// Flatten implementation for Type interface
+func (p *Tuple[S]) Flatten(prefix string, env Environment[S], constructor func(name string, bitwidth uint)) {
 
 }
 
