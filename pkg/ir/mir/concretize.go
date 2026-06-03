@@ -16,14 +16,14 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/consensys/go-corset/pkg/ir/assignment"
-	"github.com/consensys/go-corset/pkg/ir/term"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/constraint/lookup"
-	"github.com/consensys/go-corset/pkg/schema/module"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Element provides a convenient shorthand.

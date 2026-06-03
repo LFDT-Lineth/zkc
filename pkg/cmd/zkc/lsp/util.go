@@ -13,10 +13,10 @@
 package lsp
 
 import (
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/util/source/lex"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/lex"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 	"go.lsp.dev/protocol"
 )
 

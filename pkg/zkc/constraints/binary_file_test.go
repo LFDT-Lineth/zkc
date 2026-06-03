@@ -18,12 +18,12 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/field/koalabear"
-	"github.com/consensys/go-corset/pkg/zkc/constraints"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 )
 
 // Smoke test for the Base machine round-trip: encode an empty WordMachine,

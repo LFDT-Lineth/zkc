@@ -15,10 +15,10 @@ package constraint
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/ir/term"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 )
 
 // InternalFailure is a generic mechanism for reporting failures, particularly

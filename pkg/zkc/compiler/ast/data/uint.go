@@ -13,7 +13,7 @@ package data
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // UnsignedInt captures the fundamental data type of the language.
@@ -42,8 +42,8 @@ func (p *UnsignedInt[S]) BitWidth() uint {
 	return p.bitwidth
 }
 
-// Flattern implementation for Type interface
-func (p *UnsignedInt[S]) Flattern(prefix string, env Environment[S], constructor func(name string, bitwidth uint)) {
+// Flatten implementation for Type interface
+func (p *UnsignedInt[S]) Flatten(prefix string, env Environment[S], constructor func(name string, bitwidth uint)) {
 
 }
 

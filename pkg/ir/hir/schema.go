@@ -15,16 +15,16 @@ package hir
 import (
 	"encoding/gob"
 
-	"github.com/consensys/go-corset/pkg/ir/term"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/constraint"
-	"github.com/consensys/go-corset/pkg/schema/constraint/interleaving"
-	"github.com/consensys/go-corset/pkg/schema/constraint/lookup"
-	"github.com/consensys/go-corset/pkg/schema/constraint/permutation"
-	"github.com/consensys/go-corset/pkg/schema/constraint/ranged"
-	"github.com/consensys/go-corset/pkg/schema/constraint/sorted"
-	"github.com/consensys/go-corset/pkg/schema/constraint/vanishing"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/interleaving"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/sorted"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // Following types capture top-level abstractions at the HIR level.

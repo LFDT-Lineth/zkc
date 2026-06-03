@@ -15,8 +15,8 @@ package test
 import (
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/test/util"
-	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/test/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // ===================================================================
@@ -53,6 +53,18 @@ func Test_ZkcMixed_Basic_07(t *testing.T) {
 
 func Test_ZkcMixed_Basic_08(t *testing.T) {
 	checkZkcMixed(t, "zkc/mixed/basic_08", field.BLS12_377, field.KOALABEAR_16)
+}
+
+// ===================================================================
+// Others
+// ===================================================================
+
+func Test_ZkcUnit_Felt_Memory_01(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_memory_01", field.BLS12_377, field.KOALABEAR_16)
+}
+
+func Test_ZkcUnit_Felt_Casting_01(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_casting_01", field.KOALABEAR_16)
 }
 
 // ===================================================================

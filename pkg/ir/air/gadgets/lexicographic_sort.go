@@ -15,13 +15,13 @@ package gadgets
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/ir/air"
-	"github.com/consensys/go-corset/pkg/ir/assignment"
-	"github.com/consensys/go-corset/pkg/ir/term"
-	sc "github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // LexicographicSortingGadget adds sorting constraints for a sequence of one or

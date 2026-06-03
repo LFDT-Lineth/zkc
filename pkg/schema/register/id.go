@@ -12,7 +12,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package register
 
-import "github.com/consensys/go-corset/pkg/trace"
+import "github.com/LFDT-Lineth/zkc/pkg/trace"
 
 // Id captures the notion of a register index.  That is, for each
 // module, every register is allocated a given index starting from 0.  The

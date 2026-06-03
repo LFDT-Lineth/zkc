@@ -17,7 +17,7 @@ import (
 	"encoding/gob"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 )
 
 // Program encapsulates one of more functions together, such that one may call

@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // Extract the syntax error from a given line in the source file, or return nil

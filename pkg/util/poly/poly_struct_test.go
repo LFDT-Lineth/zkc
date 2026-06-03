@@ -15,7 +15,7 @@ package poly
 import (
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 func Test_PolyStruct_0(t *testing.T) {

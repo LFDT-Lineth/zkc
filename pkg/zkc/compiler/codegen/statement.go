@@ -15,20 +15,20 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/lval"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/util"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/lval"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
 // StmtCompiler provides a working environment for compiling individual statements
@@ -118,14 +118,20 @@ func (p *StmtCompiler) mapLVals(mapping []uint, lvals []LVal) ([]register.Vector
 				id = mapping[lv.Name.Index]
 			)
 			if !ext.IsWriteable() {
-				panic(fmt.Sprintf("unreadable memory \"%s\" encountered", ext.Name()))
+				panic(fmt.Sprintf("unwritable memory \"%s\" encountered", ext.Name()))
 			}
 			//
 			dataLines := make([]register.Id, len(ext.Data))
 			addressLines, pre := p.compileNonUniformArgs(mapping, lv.Args...)
 			// Allocate data lines as needed
 			for j, t := range ext.Data {
-				bitwidth, _ := data.BitWidthOf(t.DataType, p.environment)
+				var bitwidth uint
+				if t.DataType.AsField(p.environment) != nil {
+					bitwidth = math.MaxUint
+				} else {
+					bitwidth, _ = data.BitWidthOf(t.DataType, p.environment)
+				}
+
 				dataLines[j] = p.allocate(bitwidth)
 				regs = append(regs, register.NewVector(dataLines[j]))
 			}

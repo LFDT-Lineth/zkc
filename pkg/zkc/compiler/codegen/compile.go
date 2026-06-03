@@ -16,16 +16,16 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/lval"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/lval"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // Declaration represents a declaration which can contain macro
@@ -236,7 +236,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 			panic(fmt.Sprintf("unexpected variable kind %d", v.Kind))
 		}
 
-		flattern(v.DataType, v.Name, p.env, func(name string, bitwidth uint) {
+		flatten(v.DataType, v.Name, p.env, func(name string, bitwidth uint) {
 			registers = append(registers, register.New(kind, name, bitwidth, padding))
 		})
 	}
@@ -266,15 +266,15 @@ func toMemoryRegisters(address []VariableDescriptor, datas []VariableDescriptor,
 		registers []register.Register
 		padding   big.Int
 	)
-	// Flattern address lines
+	// Flatten address lines
 	for _, v := range address {
-		flattern(v.DataType, v.Name, env, func(name string, bitwidth uint) {
+		flatten(v.DataType, v.Name, env, func(name string, bitwidth uint) {
 			registers = append(registers, register.NewInput(name, bitwidth, padding))
 		})
 	}
-	// Flattern data lines
+	// Flatten data lines
 	for _, v := range datas {
-		flattern(v.DataType, v.Name, env, func(name string, bitwidth uint) {
+		flatten(v.DataType, v.Name, env, func(name string, bitwidth uint) {
 			registers = append(registers, register.NewOutput(name, bitwidth, padding))
 		})
 	}

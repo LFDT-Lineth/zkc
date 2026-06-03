@@ -15,9 +15,9 @@ package test
 import (
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/test/util"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/test/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // ===================================================================
@@ -592,6 +592,31 @@ func Test_ZkcInvalid_Memory_15(t *testing.T) {
 }
 func Test_ZkcInvalid_Memory_16(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/memory_16")
+}
+
+// ===================================================================
+// Felt assignment Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Felt_Assignment_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_assignment_01")
+}
+
+// ===================================================================
+// Felt static table Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Felt_Static_Table_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_01")
+}
+func Test_ZkcInvalid_Felt_Static_Table_02(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_02")
+}
+func Test_ZkcInvalid_Felt_Static_Table_03(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_03")
+}
+func Test_ZkcInvalid_Felt_Static_Table_04(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_04")
 }
 
 // ===================================================================

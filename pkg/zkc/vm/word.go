@@ -17,13 +17,13 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 func init() {
@@ -118,7 +118,7 @@ func DecodeBytes[W Word[W]](bytes []byte, registers []register.Register) []W {
 		// Done
 		return ints
 	})
-	// Flattern decoded tuples
+	// Flatten decoded tuples
 	return array.FlatMap(values, func(ints []big.Int) []W {
 		var words = make([]W, len(ints))
 		//

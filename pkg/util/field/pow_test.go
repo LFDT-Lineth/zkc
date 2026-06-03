@@ -16,8 +16,8 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
-	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
 )
 
 const POW_BASE_MAX uint = 65536

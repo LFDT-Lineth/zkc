@@ -17,8 +17,8 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/poly"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/poly"
 )
 
 var xRegId = register.NewId(0)

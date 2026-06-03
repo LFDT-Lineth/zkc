@@ -13,9 +13,9 @@
 package instruction
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/field"
-	finsn "github.com/consensys/go-corset/pkg/zkc/vm/instruction/field"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	finsn "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/field"
 )
 
 // Field captures the notion of a "field instruction".  That is, a machine
