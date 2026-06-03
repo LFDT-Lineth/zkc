@@ -20,6 +20,7 @@ import (
 	"github.com/consensys/go-corset/pkg/util/field"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
 	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
 )
 
 // FormattedChunk is a convenient alias
@@ -159,10 +160,9 @@ type Skip = base.Skip
 
 // ============================================================================
 
-// SkipIf microcode performs a conditional skip over a given number of codes. The
-// condition is either that two registers are equal, or that they are not equal.
-// This has two variants: register-register; and, register-constant.  The latter
-// is indiciated when the right register is marked as UNUSED.
+// SkipIf microcode performs a conditional skip over a given number of codes.
+// The condition is either that two registers are equal, not equal, less than,
+// greater than, etc.
 type SkipIf = base.SkipIf
 
 // NewSkipIf constructs a fresh conditional skip instruction.
@@ -173,6 +173,24 @@ func NewSkipIf(condition opcode.Condition, left, right register.Id, skip uint) *
 // NewSkipIfVec constructs a fresh (vectored) conditional skip instruction.
 func NewSkipIfVec(condition opcode.Condition, left, right register.Vector, skip uint) *SkipIf {
 	return &SkipIf{Cond: condition, Left: left, Right: right, Skip: skip}
+}
+
+// ============================================================================
+
+// SkipIfConst microcode performs a conditional skip over a given number of
+// codes. The condition is either that a register and a constant are equal, not
+// equal, less than, greater than, etc.
+type SkipIfConst[W word.Word[W]] = base.SkipIfConst[W]
+
+// NewSkipIfConst constructs a fresh conditional skip instruction.
+func NewSkipIfConst[W word.Word[W]](condition opcode.Condition, left register.Id, right W, skip uint) *SkipIfConst[W] {
+	return NewSkipIfConstVec(condition, register.NewVector(left), word.NewVector(right), skip)
+}
+
+// NewSkipIfConstVec constructs a fresh (vectored) conditional skip instruction.
+func NewSkipIfConstVec[W word.Word[W]](condition opcode.Condition, left register.Vector, right word.Vector[W],
+	skip uint) *SkipIfConst[W] {
+	return &SkipIfConst[W]{Cond: condition, Left: left, Right: right, Skip: skip}
 }
 
 // ============================================================================

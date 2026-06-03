@@ -121,6 +121,8 @@ func (p wordToWord[W1, W2]) lowerInstruction(insn instruction.Word) instruction.
 		return insn.(*instruction.Skip)
 	case opcode.SKIP_IF:
 		return insn.(*instruction.SkipIf)
+	case opcode.SKIP_IFC:
+		panic("todo")
 	case opcode.HINT_DIVISION:
 		return insn.(*instruction.FieldHint)
 	// Type-A instructions carry a W-typed constant and must be re-typed.

@@ -192,12 +192,29 @@ func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, ta
 	switch e := e.(type) {
 	case *expr.Cmp[symbol.Resolved]:
 		var (
-			args, insns = p.compileNonUniformArgs(mapping, e.Left, e.Right)
+			insns         []Instruction
+			args          []register.Id
+			left, lok     = p.tryAsConstant(e.Left)
+			right, rConst = p.tryAsConstant(e.Right)
 		)
 		//
-		insns = append(insns, instruction.NewSkipIf(opcode.Condition(e.Operator), args[0], args[1], 1))
-		insns = append(insns, instruction.NewJump(pc+1))
-		insns = append(insns, instruction.NewJump(target))
+		if lok {
+			args, insns = p.compileNonUniformArgs(mapping, e.Right)
+			insns = append(insns, instruction.NewSkipIfConst(opcode.Condition(e.NegatedOp()), args[1], left, 1))
+			insns = append(insns, instruction.NewJump(pc+1))
+			insns = append(insns, instruction.NewJump(target))
+		} else if rConst {
+			args, insns = p.compileNonUniformArgs(mapping, e.Left)
+			insns = append(insns, instruction.NewSkipIfConst(opcode.Condition(e.Operator), args[0], right, 1))
+			insns = append(insns, instruction.NewJump(pc+1))
+			insns = append(insns, instruction.NewJump(target))
+		} else {
+			//
+			args, insns = p.compileNonUniformArgs(mapping, e.Left, e.Right)
+			insns = append(insns, instruction.NewSkipIf(opcode.Condition(e.Operator), args[0], args[1], 1))
+			insns = append(insns, instruction.NewJump(pc+1))
+			insns = append(insns, instruction.NewJump(target))
+		}
 		//
 		return instruction.NewVector(insns...)
 	default:
@@ -934,4 +951,21 @@ func (p *StmtCompiler) isConstantAccess(e Expr) bool {
 	_, ok = p.components[ne.Name.Index].(*decl.ResolvedConstant)
 	//
 	return ok
+}
+
+func (p *StmtCompiler) tryAsConstant(e Expr) (vm.Uint, bool) {
+	var w vm.Uint
+	//
+	switch e := e.(type) {
+	case *expr.ExternAccess[symbol.Resolved]:
+		// Check whethe ris constant
+		if _, ok := p.components[e.Name.Index].(*decl.ResolvedConstant); ok {
+			return p.evalConstant(e), true
+		}
+		//
+	case *expr.Const[symbol.Resolved]:
+		return w.SetBigInt(e.Constant()), true
+	}
+	//
+	return w, false
 }

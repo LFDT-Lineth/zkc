@@ -345,6 +345,8 @@ func writeDfaTransfer[I Instruction](offset uint, code I, state dfa.Writes) []df
 		// join into branch target
 		arcs = append(arcs, dfa.NewTransfer(state, offset+code.Skip+1))
 		// fall through
+	case opcode.SKIP_IFC:
+		panic("GOT HERE")
 	}
 	// Construct state after this code
 	nState := state.Write(code.Definitions()...)

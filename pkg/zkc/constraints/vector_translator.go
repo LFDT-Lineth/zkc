@@ -113,7 +113,7 @@ func (p *VectorInsnTranslator[F]) translate() Expr[F] {
 			// constraint is generated here, since correctness is enforced by
 			// subsequent arithmetic checks.
 			continue
-		case *instruction.SkipIf, *instruction.Skip:
+		case *instruction.Skip, *instruction.SkipIf:
 			// do nothing
 			continue
 		default:

@@ -63,26 +63,27 @@ func NewCmp[S symbol.Symbol[S]](op CmpOp, lhs, rhs Expr[S]) *Cmp[S] {
 
 // Negate implementation for Condition interface.
 func (p *Cmp[S]) Negate() Condition[S] {
-	var op CmpOp
-	//
+	return &Cmp[S]{p.NegatedOp(), p.Left, p.Right}
+}
+
+// NegatedOp returns this condition's comparator negated.
+func (p *Cmp[S]) NegatedOp() CmpOp {
 	switch p.Operator {
 	case EQ:
-		op = NEQ
+		return NEQ
 	case NEQ:
-		op = EQ
+		return EQ
 	case LT:
-		op = GTEQ
+		return GTEQ
 	case LTEQ:
-		op = GT
+		return GT
 	case GT:
-		op = LTEQ
+		return LTEQ
 	case GTEQ:
-		op = LT
+		return LT
 	default:
 		panic("unreachable")
 	}
-	//
-	return &Cmp[S]{op, p.Left, p.Right}
 }
 
 // ExternUses implementation for the Condition interface.

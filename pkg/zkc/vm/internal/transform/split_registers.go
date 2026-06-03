@@ -109,7 +109,7 @@ func splitInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec VectorInst
 		// Base instructions
 		// =======================================================
 		case opcode.CALL:
-			insns = append(insns, splitRegisters(limbsMap, c))
+			insns = append(insns, splitRegisters[W](limbsMap, c))
 		case opcode.DEBUG:
 			c := c.(*instruction.Debug)
 			insns = append(insns, splitFormatting(limbsMap, false, c.Chunks))
@@ -119,15 +119,15 @@ func splitInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec VectorInst
 		case opcode.JUMP:
 			insns = append(insns, c)
 		case opcode.MEMORY_READ:
-			insns = append(insns, splitRegisters(limbsMap, c))
+			insns = append(insns, splitRegisters[W](limbsMap, c))
 		case opcode.MEMORY_WRITE:
-			insns = append(insns, splitRegisters(limbsMap, c))
+			insns = append(insns, splitRegisters[W](limbsMap, c))
 		case opcode.RETURN:
 			insns = append(insns, c)
 		case opcode.SKIP:
 			insns = append(insns, c)
 		case opcode.SKIP_IF:
-			insns = append(insns, splitRegisters(limbsMap, c))
+			insns = append(insns, splitRegisters[W](limbsMap, c))
 
 		// =======================================================
 		// Arithmetic instructions
@@ -149,7 +149,7 @@ func splitInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec VectorInst
 	return instruction.NewVector(insns...)
 }
 
-func splitRegisters(limbsMap register.LimbsMap, insn WordInstruction) WordInstruction {
+func splitRegisters[W word.Word[W]](limbsMap register.LimbsMap, insn WordInstruction) WordInstruction {
 	switch c := insn.(type) {
 	case *instruction.Call:
 		args := register.ApplyLimbsMap(limbsMap, c.Arguments...)
@@ -171,6 +171,8 @@ func splitRegisters(limbsMap register.LimbsMap, insn WordInstruction) WordInstru
 		right := register.ApplyLimbsMap(limbsMap, c.Right.Registers()...)
 		// Construct vectored form of skip_if
 		return instruction.NewSkipIfVec(c.Cond, register.NewVector(left...), register.NewVector(right...), c.Skip)
+	case *instruction.SkipIfConst[W]:
+		panic("todo")
 	default:
 		panic("unsupported instruction")
 	}

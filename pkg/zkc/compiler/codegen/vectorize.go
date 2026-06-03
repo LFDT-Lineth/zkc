@@ -185,6 +185,10 @@ func endsInTerminator(codes []Instruction) bool {
 			if uint(i)+code.Skip+1 >= n {
 				return false
 			}
+		case *instruction.SkipIfConst[vm.Uint]:
+			if uint(i)+code.Skip+1 >= n {
+				return false
+			}
 		}
 	}
 	//
@@ -351,6 +355,14 @@ func inlineJump(vec VectorInstruction, jmpIndex uint, targetCodes []Instruction)
 		case *instruction.SkipIf:
 			target := mapping[cc+1+c.Skip]
 			code = &instruction.SkipIf{
+				Cond:  c.Cond,
+				Left:  c.Left,
+				Right: c.Right,
+				Skip:  target - npc - 1,
+			}
+		case *instruction.SkipIfConst[vm.Uint]:
+			target := mapping[cc+1+c.Skip]
+			code = &instruction.SkipIfConst[vm.Uint]{
 				Cond:  c.Cond,
 				Left:  c.Left,
 				Right: c.Right,

@@ -32,6 +32,8 @@ const (
 	MEMORY_WRITE
 	// SKIP_IF instruction
 	SKIP_IF
+	// SKIP_IFC instruction
+	SKIP_IFC
 	// SKIP instruction
 	SKIP
 	// RETURN instruction

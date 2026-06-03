@@ -56,12 +56,18 @@ func lowerComparisonCode[W word.Word[W]](
 	code WordInstruction,
 	registers RegisterAllocator,
 ) []WordInstruction {
-	si, ok := code.(*instruction.SkipIf)
-	if !ok || !isRelationalCondition(si.Cond) {
-		return []WordInstruction{code}
+	switch si := code.(type) {
+	case *instruction.SkipIf:
+		if isRelationalCondition(si.Cond) {
+			return lowerRelationalSkipIf[W](si, registers)
+		}
+	case *instruction.SkipIfConst[W]:
+		if isRelationalCondition(si.Cond) {
+			panic("todo")
+		}
 	}
-
-	return lowerRelationalSkipIf[W](si, registers)
+	//
+	return []WordInstruction{code}
 }
 
 func isRelationalCondition(cond opcode.Condition) bool {
