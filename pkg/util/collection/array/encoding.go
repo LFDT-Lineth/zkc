@@ -17,8 +17,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/consensys/go-corset/pkg/util/collection/pool"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/pool"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // ENCODING_STATIC_CONSTANT is for arrays which hold constant values.

@@ -15,7 +15,7 @@ package machine
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 )
 
 // Executor --- see documentation on vm.Executor

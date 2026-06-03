@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package variable
 
-import "github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+import "github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 
 // Map defines an abstract notion of mapping a variable identifier to a
 // variable description.

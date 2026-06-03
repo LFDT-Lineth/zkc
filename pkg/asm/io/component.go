@@ -13,8 +13,8 @@
 package io
 
 import (
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 )
 
 // Component defines a distinct entity within the system, such as a

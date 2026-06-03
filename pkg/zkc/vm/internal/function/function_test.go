@@ -18,13 +18,13 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 
 	// Side-effect import: registers concrete Word[Uint] instruction types with
 	// gob so that gob.Register-dependent encode paths work.
-	_ "github.com/consensys/go-corset/pkg/zkc/vm"
+	_ "github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 func Test_ZkcFunction_GobRoundTrip(t *testing.T) {

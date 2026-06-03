@@ -13,9 +13,9 @@
 package view
 
 import (
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/termio"
-	"github.com/consensys/go-corset/pkg/util/termio/widget"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio/widget"
 )
 
 // ModuleConfig encapsulates various configuration settings for a ModuleView.

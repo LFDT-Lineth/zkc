@@ -15,8 +15,8 @@ package word
 import (
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/util"
-	zkc_util "github.com/consensys/go-corset/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 )
 
 // Base captures the minimal set of requirements for a word used in the base

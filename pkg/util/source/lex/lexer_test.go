@@ -16,8 +16,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/util/assert"
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/assert"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 func TestLexer_00(t *testing.T) {

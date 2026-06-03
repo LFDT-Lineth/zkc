@@ -20,10 +20,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/binfile"
-	"github.com/consensys/go-corset/pkg/corset"
-	sc "github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/util/collection/typed"
+	"github.com/LFDT-Lineth/zkc/pkg/binfile"
+	"github.com/LFDT-Lineth/zkc/pkg/corset"
+	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
 )
 
 // JavaTraceClass generates a suitable trace class for Java integration.

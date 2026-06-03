@@ -15,7 +15,7 @@ package view
 import (
 	"slices"
 
-	sc "github.com/consensys/go-corset/pkg/schema"
+	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 )
 
 // TraceView provides an abstract view of a trace.  As such, it may not include

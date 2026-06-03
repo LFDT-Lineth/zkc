@@ -17,12 +17,12 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/consensys/go-corset/pkg/cmd/corset/view"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/module"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/termio"
-	"github.com/consensys/go-corset/pkg/util/termio/widget"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio/widget"
 )
 
 // ==================================================================

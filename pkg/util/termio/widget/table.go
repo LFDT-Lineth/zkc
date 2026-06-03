@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/consensys/go-corset/pkg/util/termio"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // TableSource is an abstraction used by a table to determine what values to put in each cell.

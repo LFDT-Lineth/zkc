@@ -17,7 +17,7 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 )
 
 // Register defines the notion of a register within a function.

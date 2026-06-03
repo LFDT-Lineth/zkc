@@ -19,10 +19,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/binfile"
-	cmd_util "github.com/consensys/go-corset/pkg/cmd/corset/util"
-	"github.com/consensys/go-corset/pkg/corset"
-	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/binfile"
+	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
+	"github.com/LFDT-Lineth/zkc/pkg/corset"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // JavaTraceInterfaceUnion generates a suitable interface capturing the given schema,

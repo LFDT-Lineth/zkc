@@ -16,8 +16,8 @@ import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 )
 
 // Memory represents (in many ways) the simplest form of memory

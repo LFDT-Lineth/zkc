@@ -17,8 +17,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/source/lex"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/parser"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/lex"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/parser"
 )
 
 // TokenWriter is a simple mechanism for writing tokens to an output stream.

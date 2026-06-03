@@ -16,8 +16,8 @@ import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 // HALF_START is the smallest absolute word position belonging to the upper

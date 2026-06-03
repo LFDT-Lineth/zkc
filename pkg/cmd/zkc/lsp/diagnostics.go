@@ -13,7 +13,7 @@
 package lsp
 
 import (
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
 )
