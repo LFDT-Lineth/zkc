@@ -18,32 +18,48 @@ import (
 )
 
 type Encoder[T comparable] struct {
-	bytecodes []uint32
+	bytecodes []Bytecode
 	//
 	labels map[T]uint
 	//
 	marks []uint
+	//
+	symbols map[uint]string
 }
 
 // Encode returns the final encoded bytecode sequence.  Observe that, once this
 // is done, the internal bytecode sequence is reset.
-func (p *Encoder[T]) Encode() []uint32 {
-	var bytecodes = p.bytecodes
-	// TODO: patch labels
+func (p *Encoder[T]) Encode() Program {
+	var symbols = p.symbols
+	// patch branch targets
+	patchBranchTargets(p.bytecodes, p.marks)
+	// encode bytecodes
+	bytecodes := encode(p.bytecodes)
 	// Reset internal buffers
 	p.bytecodes = nil
 	p.labels = nil
+	p.symbols = nil
+	p.marks = nil
 	// Done
-	return bytecodes
+	return Program{bytecodes, symbols}
 }
 
-// Mark current position with given label.
-func (p *Encoder[T]) Mark(label T) {
-	var (
-		index uint = p.getLabelIndex(label)
-	)
+// MarkLabel current position with given label.
+func (p *Encoder[T]) MarkLabel(label T) {
+	var index uint = p.getLabelIndex(label)
 	//
 	p.marks[index] = uint(len(p.bytecodes))
+}
+
+// MarkSymbol marks a given symbol at the current position.
+func (p *Encoder[T]) MarkSymbol(symbol string) {
+	var offset = uint(len(p.bytecodes))
+	//
+	if p.symbols == nil {
+		p.symbols = make(map[uint]string)
+	}
+	//
+	p.symbols[offset] = symbol
 }
 
 // Len returns the length of the bytecode sequence encoded thus far.
@@ -53,28 +69,22 @@ func (p *Encoder[T]) Len() uint {
 
 // Fail encodes a FAIL instruction to a given label.
 func (p *Encoder[T]) Fail() {
-	p.bytecodes = append(p.bytecodes, FAIL)
+	p.bytecodes = append(p.bytecodes, &Fail{})
 }
 
 // Jmp encodes a JMP instruction to a given label.
 func (p *Encoder[T]) Jmp(label T) {
-	var (
-		insn  uint32
-		index uint = p.getLabelIndex(label)
-	)
+	var index uint = p.getLabelIndex(label)
 	//
-	insn = (uint32(index) << 5) | JMP
-	//
-	p.bytecodes = append(p.bytecodes, insn)
+	p.bytecodes = append(p.bytecodes, &Jmp{index})
 }
 
 // JmpIf encodes a JIF instruction to a given label.
-func (p *Encoder[T]) JmpIf(label T, condition opcode.Condition, left, right register.Id) {
+func (p *Encoder[T]) JmpIf(label T, op opcode.Condition, left, right register.Id) {
 	var (
-		insn, opcode uint32
-		l                 = uint32(left.Unwrap())
-		r                 = uint32(right.Unwrap())
-		index        uint = p.getLabelIndex(label)
+		l          = left.Unwrap()
+		r          = right.Unwrap()
+		index uint = p.getLabelIndex(label)
 	)
 	// sanity checks
 	if l >= 256 {
@@ -83,10 +93,7 @@ func (p *Encoder[T]) JmpIf(label T, condition opcode.Condition, left, right regi
 		panic("right register out of bounds")
 	}
 	//
-	opcode = (uint32(condition) << 5) | JIF
-	insn = (uint32(index) << 24) | (l << 16) | (r << 8) | opcode
-	//
-	p.bytecodes = append(p.bytecodes, insn)
+	p.bytecodes = append(p.bytecodes, &Jif{op, l, r, index})
 }
 
 // Call encodes a CALL instruction to a given label.
@@ -96,7 +103,7 @@ func (p *Encoder[T]) Call(label uint, inputs uint) {
 
 // Ret encodes a RET instruction from a given function call.
 func (p *Encoder[T]) Ret(ninputs, width uint) {
-	panic("todo")
+	p.bytecodes = append(p.bytecodes, &Ret{})
 }
 
 func (p *Encoder[T]) getLabelIndex(label T) uint {
@@ -119,4 +126,23 @@ func (p *Encoder[T]) getLabelIndex(label T) uint {
 	}
 	//
 	return index
+}
+
+func patchBranchTargets(bytecodes []Bytecode, labels []uint) {
+	for i := range bytecodes {
+		bytecodes[i].Patch(labels)
+	}
+}
+
+func encode(bytecodes []Bytecode) (codes []uint32) {
+	var offset uint
+	//
+	for _, bytecode := range bytecodes {
+		var cs = bytecode.Codes(offset)
+		//
+		codes = append(codes, cs...)
+		offset += uint(len(cs))
+	}
+	//
+	return codes
 }

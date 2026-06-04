@@ -99,6 +99,10 @@ type FieldInstruction = instruction.Field
 // instructions.
 type BytecodeInterpreter[W Word[W]] = bytecode.Interpreter[W]
 
+// BytecodeProgram represents a compiled bytecode program, along with
+// accompanying symbolic information.
+type BytecodeProgram = bytecode.Program
+
 // ============================================================================
 // Constructors
 // ============================================================================

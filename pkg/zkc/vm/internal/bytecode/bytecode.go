@@ -12,6 +12,12 @@
 // SPDX-License-Identifier: Apache-2.0
 package bytecode
 
+import (
+	"fmt"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+)
+
 // Every instruction occupies 32 bits, where the first byte is as follows:
 //
 //	7   5 4       0
@@ -26,26 +32,9 @@ package bytecode
 const (
 	// FAIL instruction
 	FAIL = uint32(0)
-	// JMP (jump unconditional) instruction.  Format of this instruction is:
-	//
-	//	31                       8 7    5 4       0
-	// +--------------------------+------+---------+
-	// |        offset            | n/a  | opcode  |
-	// +--------------------------+------+---------+
-	//
-	// Here, offset is a signed u16 relative offset, where the following
-	// instruction is considered to be at offset 0.
+	// JMP instruction
 	JMP = uint32(1)
-	// JIF (jump conditional) instruction.  Format of this instruction is:
-	//
-	//	31                                0
-	// +--------+--------+--------+------+--------+
-	// | offset |  rs0   |  rs1   |  op  | opcode |
-	// +--------+--------+--------+------+--------+
-	//
-	// Here, offset is a signed u8 relative offset, where the following
-	// instruction is considered to be at offset 0.  Likewise, rs0 and rs1 are
-	// u8 source registers, whilst op identifies the operation.
+	// JIF instruction
 	JIF = uint32(2)
 	// CALL instruction
 	CALL = uint32(3)
@@ -118,3 +107,173 @@ const (
 	CAT = uint32(29)
 	//
 )
+
+// Bytecode encapsulates a single bytecode instruction.
+type Bytecode interface {
+	String() string
+	Codes(uint) []uint32
+	Patch(labels []uint)
+}
+
+// Fail instruction
+type Fail struct{}
+
+func (p *Fail) String() string {
+	return "fail"
+}
+
+// Codes implementation for Bytecode interface
+func (p *Fail) Codes(_ uint) []uint32 {
+	return []uint32{FAIL}
+}
+
+// Patch implementation for Bytecode interface
+func (p *Fail) Patch(_ []uint) {
+	// do nothing
+}
+
+// ============================================================================
+// Ret
+// ============================================================================
+
+// Ret (return from function call) instruction.
+type Ret struct{}
+
+func (p *Ret) String() string {
+	return "ret"
+}
+
+// Codes implementation for Bytecode interface
+func (p *Ret) Codes(_ uint) []uint32 {
+	return []uint32{RET}
+}
+
+// Patch implementation for Bytecode interface
+func (p *Ret) Patch(_ []uint) {
+	// do nothing
+}
+
+// Jmp (jump unconditional) instruction.  Format of this instruction is:
+//
+// +--------------------------+------+---------+
+// |        offset            | n/a  | opcode  |
+// +--------------------------+------+---------+
+//
+//	31                       8 7    5 4       0
+//
+// Here, offset is a signed u16 relative offset, where the following
+// instruction is considered to be at offset 0.
+type Jmp struct{ Target uint }
+
+func (p *Jmp) String() string {
+	//
+	return fmt.Sprintf("jmp 0x%04x", p.Target)
+}
+
+// Codes implementation for Bytecode interface
+func (p *Jmp) Codes(offset uint) []uint32 {
+	var roff = getRelativeOffset(offset, p.Target, 24) << 8
+	//
+	return []uint32{
+		roff | JMP,
+	}
+}
+
+// Patch implementation for Bytecode interface
+func (p *Jmp) Patch(labels []uint) {
+	p.Target = labels[p.Target]
+}
+
+// ============================================================================
+// Jif
+// ============================================================================
+
+// Jif (jump conditional) instruction.  Format of this instruction is:
+//
+//	31                                0
+//
+// +--------+--------+--------+------+--------+
+// | offset |  rs0   |  rs1   |  op  | opcode |
+// +--------+--------+--------+------+--------+
+//
+// Here, offset is a signed u8 relative offset, where the following
+// instruction is considered to be at offset 0.  Likewise, rs0 and rs1 are
+// u8 source registers, whilst op identifies the operation.
+type Jif struct {
+	Op     opcode.Condition
+	Src1   uint
+	Src0   uint
+	Target uint
+}
+
+func (p *Jif) String() string {
+	var ops string
+	//
+	switch p.Op {
+	case opcode.EQ:
+		ops = "=="
+	case opcode.NEQ:
+		ops = "!="
+	case opcode.LT:
+		ops = "<"
+	case opcode.LTEQ:
+		ops = "<="
+	case opcode.GT:
+		ops = ">"
+	case opcode.GTEQ:
+		ops = ">="
+	default:
+		ops = "??"
+	}
+	//
+	return fmt.Sprintf("jif ?? %s ?? 0x%04x", ops, p.Target)
+}
+
+// Codes implementation for Bytecode interface
+func (p *Jif) Codes(offset uint) []uint32 {
+	var (
+		op   = uint32(p.Op) << 5
+		r    = uint32(p.Src1) << 8
+		l    = uint32(p.Src0) << 16
+		roff = getRelativeOffset(offset, p.Target, 8) << 24
+	)
+	//
+	return []uint32{
+		roff | l | r | op | JIF,
+	}
+}
+
+// Patch implementation for Bytecode interface
+func (p *Jif) Patch(labels []uint) {
+	p.Target = labels[p.Target]
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+func getBranchTarget(offset uint, relOffset uint, width uint) uint {
+	var sign = uint(0x1) << (width - 1)
+	//
+	if relOffset < sign {
+		return offset + 1 + relOffset
+	}
+	//
+	return offset + 2 + (relOffset - sign)
+}
+
+func getRelativeOffset(offset uint, target uint, width uint) uint32 {
+	var sign_bit = uint32(0x1) << width
+	//
+	if target > offset {
+		return uint32(target - offset - 1)
+	}
+	//
+	roff := uint32(1 + offset - target)
+	//
+	if roff >= sign_bit {
+		panic("branch target overflow")
+	}
+	//
+	return sign_bit - roff
+}

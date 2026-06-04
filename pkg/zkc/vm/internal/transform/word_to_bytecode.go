@@ -26,14 +26,15 @@ import (
 // can be executed by an interpreter.
 func WordToBytecodeMachine[W word.Word[W]](wm *machine.Word[W]) *bytecode.Interpreter[W] {
 	var (
-		program = CompileWordFunctions(wm)
+		program = WordToBytecodeProgram(wm)
 	)
 	//
 	return bytecode.NewInterpreter[W](program)
 }
 
-// CompileWordFunctions compiles a
-func CompileWordFunctions[W word.Word[W]](wm *machine.Word[W]) bytecode.Program {
+// WordToBytecodeProgram compiles the various components of a word machine into
+// a bytecode program.
+func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) bytecode.Program {
 	var (
 		encoder bytecode.Encoder[Label]
 	)
@@ -45,19 +46,20 @@ func CompileWordFunctions[W word.Word[W]](wm *machine.Word[W]) bytecode.Program 
 		}
 	}
 	//
-	return bytecode.NewProgram(encoder.Encode())
+	return encoder.Encode()
 }
 
 func compileWordFunction[W word.Word[W]](encoder *bytecode.Encoder[Label], fid uint, f *WordFunction) {
 	// mark entry point of this function
-	encoder.Mark(Label{fid, 0, 0})
+	encoder.MarkLabel(Label{fid, 0, 0})
+	encoder.MarkSymbol(f.Name())
 	//
 	for i, vec := range f.Code() {
 		for j, insn := range vec.Codes {
 			var label = Label{fid, uint(i), uint(j)}
 			// Mark instruction position in case it is the target of a skip or
 			// jump instruction.
-			encoder.Mark(label)
+			encoder.MarkLabel(label)
 			// Compile instruction into sequence of bytecodes as required.
 			compileWordInstruction[W](encoder, label, insn)
 		}
@@ -81,7 +83,7 @@ func compileWordInstruction[W word.Word[W]](encoder *bytecode.Encoder[Label], po
 	case opcode.MEMORY_WRITE:
 		panic("todo")
 	case opcode.RETURN:
-		panic("todo")
+		encoder.Ret(0, 0)
 	case opcode.SKIP:
 		var (
 			i      = insn.(*instruction.Skip)
