@@ -15,8 +15,8 @@ package lsp
 import (
 	"bytes"
 
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/format"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/format"
 	"go.lsp.dev/protocol"
 )
 

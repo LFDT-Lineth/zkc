@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package codegen
 
-import "github.com/consensys/go-corset/pkg/util/field"
+import "github.com/LFDT-Lineth/zkc/pkg/util/field"
 
 // DEFAULT_CONFIG is the configuration used when no overrides are supplied.
 // Vectorisation is enabled, which matches the behaviour expected by the

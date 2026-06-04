@@ -17,20 +17,20 @@ import (
 	"math"
 	"reflect"
 
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/lval"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen"
-	zkc_util "github.com/consensys/go-corset/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/lval"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 )
 
 // Stmt is a convenient alias.
@@ -745,10 +745,11 @@ func (p *TypeChecker) typeCastExpression(_ Type, e *expr.Cast[symbol.Resolved], 
 	var (
 		srcType, errors = p.typeExpression(nil, e.Expr, env, effects)
 	)
-	// Sanity check whether the cast makes sense (or not).
-	if len(errors) == 0 {
-		errors = p.checkCastType(e.CastType, srcType, e.Expr)
+	if len(errors) > 0 {
+		return e.CastType, errors
 	}
+	// Sanity check whether the cast makes sense (or not).
+	errors = p.checkCastType(e.CastType, srcType, e.Expr)
 	//
 	return e.CastType, errors
 }

@@ -14,8 +14,8 @@ import (
 	"cmp"
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/logical"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
 )
 
 // BranchCondition abstracts the possible conditions under which a given branch

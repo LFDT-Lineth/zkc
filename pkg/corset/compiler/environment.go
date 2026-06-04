@@ -13,8 +13,8 @@
 package compiler
 
 import (
-	"github.com/consensys/go-corset/pkg/corset/ast"
-	"github.com/consensys/go-corset/pkg/util/file"
+	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
 // Environment provides an interface into the global scope which can be used for
@@ -61,7 +61,7 @@ func NewGlobalEnvironment(root *ModuleScope, allocator func(RegisterAllocation))
 		panic("root scope required")
 	}
 	// Construct top-level module list.
-	modules := root.Flattern()
+	modules := root.Flatten()
 	// Initialise the environment
 	env := GlobalEnvironment{nil, nil, nil, nil}
 	env.initModules(modules)

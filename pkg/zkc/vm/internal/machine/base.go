@@ -20,14 +20,14 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	zkc_util "github.com/consensys/go-corset/pkg/zkc/util"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Instruction is a convenient alias
@@ -358,15 +358,15 @@ func (p *Base[W, I, T]) executeMemWrite(insn *instruction.MemWrite, frame StackF
 	// Write data words to the given address range
 	for i := 0; i < len(sourceRegs) && err == nil; i++ {
 		var (
-			bitwidth = targetRegs[i].Width()
-			val      = frame.Load(sourceRegs[i])
+			ith = targetRegs[i]
+			val = frame.Load(sourceRegs[i])
 		)
 		// bitwidth check
-		if val.FitsWithin(bitwidth) {
+		if ith.IsNative() || val.FitsWithin(ith.Width()) {
 			err = mem.Write(address, val)
 		} else {
 			// failed
-			err = fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), bitwidth)
+			err = fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), ith.Width())
 		}
 		//
 		address++

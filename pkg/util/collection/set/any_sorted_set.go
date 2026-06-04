@@ -18,8 +18,8 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 )
 
 // Comparable provides an interface which types used in a AnySortedSet must implement.

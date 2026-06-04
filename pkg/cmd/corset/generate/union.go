@@ -17,8 +17,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/corset"
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/corset"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 // Intersect two source modules, producing one source module which contains only

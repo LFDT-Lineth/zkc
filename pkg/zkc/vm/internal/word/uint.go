@@ -18,7 +18,7 @@ import (
 	"math"
 	"math/big"
 
-	util_math "github.com/consensys/go-corset/pkg/util/math"
+	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
 
 // Uint represents an unbound unsigned integer.

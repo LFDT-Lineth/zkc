@@ -17,8 +17,8 @@ import (
 	"encoding/gob"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 // StaticArray is a memory implementation backed by a fixed-size []W, meaning

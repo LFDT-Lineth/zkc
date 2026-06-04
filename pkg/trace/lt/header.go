@@ -17,7 +17,7 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/consensys/go-corset/pkg/util/collection/typed"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
 )
 
 // Header provides a structured header for the binary file format.  In

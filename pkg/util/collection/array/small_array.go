@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // SmallArray implements an array of elements simply using an underlying array.

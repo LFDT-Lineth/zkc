@@ -15,14 +15,14 @@ package compiler
 import (
 	"path/filepath"
 
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/lower"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/parser"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/validate"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/lower"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/parser"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/validate"
 )
 
 // Compile takes a given set of source files, and parses them into a given set

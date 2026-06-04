@@ -15,9 +15,9 @@ package view
 import (
 	"math"
 
-	sc "github.com/consensys/go-corset/pkg/schema"
-	tr "github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
+	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 )
 
 // TraceFilter is used to filter a given TraceView to focus on key aspects of the

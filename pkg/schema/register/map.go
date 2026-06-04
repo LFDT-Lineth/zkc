@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 )
 
 // Map provides a generic interface for entities which hold information

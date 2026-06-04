@@ -15,12 +15,12 @@ package codegen
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // ConstantEvaluator provides machinery for evaluating compile-time constant
@@ -154,7 +154,7 @@ func (p ConstantEvaluator) evalIntConstant(e Expr, definition bool) (res vm.Uint
 		width := e.CastType.AsUint(p.env).BitWidth()
 		sliced := inner.Slice(width)
 
-		if inner.Cmp(sliced) != 0 && definition {
+		if err == "" && inner.Cmp(sliced) != 0 && definition {
 			err = "cast overflow"
 		}
 
@@ -182,11 +182,18 @@ func (p ConstantEvaluator) evalFieldConstant(e Expr, definition bool) (res vm.Ui
 	modulus = modulus.SetBigInt(fmod)
 	//
 	switch e := e.(type) {
+	case *expr.Cast[symbol.Resolved]:
+		res, errorMessage = p.Eval(e.Expr, definition)
+		if res.BigInt().Cmp(fmod) >= 0 {
+			return res, fmt.Sprintf("cast overflows field modulus \"%s\"", p.field.Name)
+		}
+
+		return
 	case *expr.Const[symbol.Resolved]:
 		var c vm.Uint
 		// sanity check for overflow
 		if e.Constant().Cmp(fmod) >= 0 {
-			return res, fmt.Sprintf("constant overflows field \"%s\"", p.field.Name)
+			return res, fmt.Sprintf("constant overflows field modulus %q", p.field.Name)
 		}
 		//
 		return c.SetBigInt(e.Constant()), ""

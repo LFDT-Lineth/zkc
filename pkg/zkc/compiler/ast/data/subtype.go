@@ -11,8 +11,8 @@
 package data
 
 import (
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // SubtypeOf performs a subtype check, denoted "t1 <: t2", in a given typing

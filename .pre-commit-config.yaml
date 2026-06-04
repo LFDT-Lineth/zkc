@@ -22,3 +22,7 @@ repos:
       - id: mdformat
         additional_dependencies:
           - mdformat-gfm # GitHub Flavored Markdown
+  - repo: https://github.com/commit-check/commit-check
+    rev: v2.6.0
+    hooks:
+      - id: check-message
