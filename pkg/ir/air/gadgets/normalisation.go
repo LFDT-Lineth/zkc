@@ -127,6 +127,7 @@ func applyIsZeroGadget[F field.Element[F]](
 		module.AddAssignment(assignment.NewPseudoIz(target, e))
 		// Defining vanishing:  iz + e*inv - 1 == 0
 		var iz_access air.Term[F] = term.FieldAccess[F, air.Term[F]](index, 0)
+
 		e_inv := term.Product[F, air.Term[F]](e, inv_e)
 		defn := term.Subtract(
 			term.Sum[F, air.Term[F]](iz_access, e_inv),
@@ -160,6 +161,7 @@ func (e *pseudoIz[F]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, err
 	}
 	//
 	var zero F
+
 	return zero, nil
 }
 

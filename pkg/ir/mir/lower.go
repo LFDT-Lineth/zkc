@@ -675,39 +675,6 @@ func shiftTerm[F field.Element[F]](expr air.Term[F], width uint) air.Term[F] {
 	return term.Product(term.Const[F, air.Term[F]](n), expr)
 }
 
-func (p *AirLowering[F]) normalise(arg air.Term[F], airModule air.ModuleBuilder[F]) air.Term[F] {
-	bounds := arg.ValueRange()
-	// Check whether normalisation actually required.  For example, if the
-	// argument is just a binary column then a normalisation is not actually
-	// required.
-	if p.config.InverseEliminiationLevel > 0 && bounds.Within(util_math.NewInterval64(0, 1)) {
-		// arg ∈ {0,1} ==> normalised already :)
-		return arg
-	} else if p.config.InverseEliminiationLevel > 0 && bounds.Within(util_math.NewInterval64(-1, 1)) {
-		// arg ∈ {-1,0,1} ==> (arg*arg) ∈ {0,1}
-		return term.Product(arg, arg)
-	}
-	// Determine appropriate shift
-	shift := 0
-	// Apply shift normalisation (if enabled)
-	if p.config.ShiftNormalisation {
-		// Determine shift ranges
-		min, max := arg.ShiftRange()
-		// determine shift amount
-		if max < 0 {
-			shift = max
-		} else if min > 0 {
-			shift = min
-		}
-	}
-	// Construct an expression representing the normalised value of e.  That is,
-	// an expression which is 0 when e is 0, and 1 when e is non-zero.
-	arg = arg.ApplyShift(-shift).Simplify(false)
-	norm := air_gadgets.Normalise(arg, airModule)
-	//
-	return norm.ApplyShift(shift)
-}
-
 // Simplify a bunch of logical terms
 func simplify[F field.Element[F]](terms []air.Term[F]) []air.Term[F] {
 	var nterms []air.Term[F] = make([]air.Term[F], len(terms))
