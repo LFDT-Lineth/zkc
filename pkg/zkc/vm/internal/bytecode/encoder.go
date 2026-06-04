@@ -106,6 +106,11 @@ func (p *Encoder[T]) Ret(ninputs, width uint) {
 	p.bytecodes = append(p.bytecodes, &Ret{})
 }
 
+// IntAdd encodes an integer addition instruction.
+func (p *Encoder[T]) IntAdd(rs0, rs1, rd register.Id) {
+	panic("todo")
+}
+
 func (p *Encoder[T]) getLabelIndex(label T) uint {
 	var (
 		index uint

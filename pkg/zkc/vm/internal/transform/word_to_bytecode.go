@@ -76,8 +76,7 @@ func compileWordInstruction[W word.Word[W]](encoder *bytecode.Encoder[Label], po
 	case opcode.FAIL:
 		encoder.Fail()
 	case opcode.JUMP:
-		var i = insn.(*instruction.Jump)
-		encoder.Jmp(Label{pos.fun, i.Immediate, 0})
+		compileJump(encoder, pos, insn.(*instruction.Jump))
 	case opcode.MEMORY_READ:
 		panic("todo")
 	case opcode.MEMORY_WRITE:
@@ -85,22 +84,13 @@ func compileWordInstruction[W word.Word[W]](encoder *bytecode.Encoder[Label], po
 	case opcode.RETURN:
 		encoder.Ret(0, 0)
 	case opcode.SKIP:
-		var (
-			i      = insn.(*instruction.Skip)
-			target = Label{pos.fun, pos.macro, pos.micro + i.Skip + 1}
-		)
-		encoder.Jmp(target)
+		compileSkip(encoder, pos, insn.(*instruction.Skip))
 	case opcode.SKIP_IF:
-		var (
-			i      = insn.(*instruction.SkipIf)
-			target = Label{pos.fun, pos.macro, pos.micro + i.Skip + 1}
-		)
-		// TODO: sort out vectored skip if
-		encoder.JmpIf(target, i.Cond, i.Left.AsRegister(), i.Right.AsRegister())
+		compileSkipIf(encoder, pos, insn.(*instruction.SkipIf))
 	case opcode.HINT_DIVISION:
 		panic("todo")
 	case opcode.INT_ADD:
-		panic("todo")
+		compileAdd(encoder, pos, insn.(*instruction.WordTypeA[W]))
 	case opcode.INT_SUB:
 		panic("todo")
 	case opcode.INT_MUL:
@@ -132,6 +122,34 @@ func compileWordInstruction[W word.Word[W]](encoder *bytecode.Encoder[Label], po
 	default:
 		panic(fmt.Sprintf("unknown instruction opcode (0x%x)", insn.OpCode()))
 	}
+}
+
+func compileAdd[W word.Word[W]](encoder *bytecode.Encoder[Label], pos Label, insn *instruction.WordTypeA[W]) {
+	//nolint
+	if len(insn.Sources) == 2 && insn.Target.Len() == 1 && insn.Constant.Cmp64(0) == 0 {
+		encoder.IntAdd(insn.Sources[0], insn.Sources[1], insn.Target.AsRegister())
+	} else {
+		panic("todo")
+	}
+}
+
+func compileJump(encoder *bytecode.Encoder[Label], pos Label, insn *instruction.Jump) {
+	encoder.Jmp(Label{pos.fun, insn.Immediate, 0})
+}
+
+func compileSkip(encoder *bytecode.Encoder[Label], pos Label, insn *instruction.Skip) {
+	var (
+		target = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
+	)
+	encoder.Jmp(target)
+}
+
+func compileSkipIf(encoder *bytecode.Encoder[Label], pos Label, insn *instruction.SkipIf) {
+	var (
+		target = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
+	)
+	// TODO: sort out vectored skip if
+	encoder.JmpIf(target, insn.Cond, insn.Left.AsRegister(), insn.Right.AsRegister())
 }
 
 // Label uniquely identifies an instruction within a given module.

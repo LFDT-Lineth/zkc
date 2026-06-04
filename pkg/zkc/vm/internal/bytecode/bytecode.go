@@ -226,7 +226,7 @@ func (p *Jif) String() string {
 		ops = "??"
 	}
 	//
-	return fmt.Sprintf("jif ?? %s ?? 0x%04x", ops, p.Target)
+	return fmt.Sprintf("jif r%d %s r%d 0x%04x", p.Src0, ops, p.Src1, p.Target)
 }
 
 // Codes implementation for Bytecode interface
@@ -253,13 +253,16 @@ func (p *Jif) Patch(labels []uint) {
 // ============================================================================
 
 func getBranchTarget(offset uint, relOffset uint, width uint) uint {
-	var sign = uint(0x1) << (width - 1)
+	var (
+		sign = uint(0x1) << (width - 1)
+		max  = uint(0x1) << width
+	)
 	//
 	if relOffset < sign {
 		return offset + 1 + relOffset
 	}
 	//
-	return offset + 2 + (relOffset - sign)
+	return offset + 1 - max + relOffset
 }
 
 func getRelativeOffset(offset uint, target uint, width uint) uint32 {

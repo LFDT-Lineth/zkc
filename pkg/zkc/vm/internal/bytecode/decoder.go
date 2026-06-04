@@ -55,7 +55,7 @@ func decodeJmp(offset uint, codes []uint32) (Bytecode, uint) {
 
 func decodeJif(offset uint, codes []uint32) (Bytecode, uint) {
 	var (
-		op     = opcode.Condition((codes[0] >> 5) & 0x3)
+		op     = opcode.Condition((codes[0] >> 5) & 0x7)
 		rs1    = uint((codes[0] >> 8) & 0xff)
 		rs0    = uint((codes[0] >> 16) & 0xff)
 		target = getBranchTarget(offset, uint(codes[0]>>24), 8)
