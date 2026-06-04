@@ -112,8 +112,12 @@ func Trace[F field.Element[F]](bf *BinaryFile[F], in map[string][]vm.Uint, cfg T
 		errs     []error
 		tr       trace.Trace[F]
 	)
+	// Initialise inputs
+	for _, input := range bf.machine.Inputs() {
+		input.Initialise(in[input.Name()])
+	}
 	// Execute machine
-	if err := bf.machine.Boot("main", in); err != nil {
+	if err := bf.machine.Boot("main"); err != nil {
 		errs = append(errs, err)
 	} else if _, err := vm.ExecuteAndObserve(&bf.machine, 1, &observer); err != nil {
 		errs = append(errs, err)

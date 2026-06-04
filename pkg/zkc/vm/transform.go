@@ -111,6 +111,12 @@ func WordToFieldMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm
 	return transform.WordToFieldMachine[W, F](cfg, wm)
 }
 
+// WordToBytecodeInterpreter compiles a word machine into a bytecode sequence which
+// can be executed by an interpreter.
+func WordToBytecodeInterpreter[W word.Word[W]](wm *machine.Word[W]) *BytecodeInterpreter[W] {
+	return transform.WordToBytecodeMachine(wm)
+}
+
 func newLimbsMap(config field.Config, modules ...Module) module.LimbsMap {
 	var ms []register.Map = array.Map(modules, func(_ uint, m Module) register.Map {
 		name := trace.ModuleName{Name: m.Name(), Multiplier: 1}

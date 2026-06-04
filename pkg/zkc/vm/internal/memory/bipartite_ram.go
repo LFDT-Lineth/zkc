@@ -160,6 +160,11 @@ func (p *BiPartiteRandomAccess[W]) Write(address uint64, value W) error {
 	return nil
 }
 
+// Contents implementation for Memory interface.
+func (p *BiPartiteRandomAccess[W]) Contents() []W {
+	panic("unsupported operation")
+}
+
 // HasRegister implementation for vm.Module interface.
 func (p *BiPartiteRandomAccess[W]) HasRegister(name string) (register.Id, bool) {
 	for i, r := range p.geometry.registers {

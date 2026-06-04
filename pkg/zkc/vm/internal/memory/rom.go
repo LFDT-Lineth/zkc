@@ -37,14 +37,9 @@ func (p *ReadOnly[W]) Write(address uint64, value W) error {
 	panic("unsupported operation for read-only memory")
 }
 
-// Contents implementation for Memory interface.
-func (p *ReadOnly[W]) Contents() []W {
-	return p.data
-}
-
 // NewReadOnly constructs a new read-only memory initialised with a given set of values.
 func NewReadOnly[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
-) InputOutput[W] {
+) *ReadOnly[W] {
 	//
 	var kind Kind
 	//

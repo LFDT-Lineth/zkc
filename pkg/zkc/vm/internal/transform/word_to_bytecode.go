@@ -15,39 +15,37 @@ package transform
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/bytecode"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // WordToBytecodeMachine compiles a word machine into a bytecode sequence which
 // can be executed by an interpreter.
 func WordToBytecodeMachine[W word.Word[W]](wm *machine.Word[W]) *bytecode.Interpreter[W] {
-	panic("todo")
+	var (
+		program = CompileWordFunctions(wm)
+	)
+	//
+	return bytecode.NewInterpreter[W](program)
 }
 
 // CompileWordFunctions compiles a
-func CompileWordFunctions[W word.Word[W]](fun string, wm *machine.Word[W]) bytecode.Program {
+func CompileWordFunctions[W word.Word[W]](wm *machine.Word[W]) bytecode.Program {
 	var (
-		entry   uint
 		encoder bytecode.Encoder[Label]
 	)
 	//
 	for i, m := range wm.Modules() {
 		if f, ok := m.(*WordFunction); ok {
-			// Check for the entry function
-			if f.Name() == fun {
-				// Yes, its the entry function
-				entry = encoder.Len()
-			}
 			//
 			compileWordFunction[W](&encoder, uint(i), f)
 		}
 	}
 	//
-	return bytecode.NewProgram(entry, encoder.Encode())
+	return bytecode.NewProgram(encoder.Encode())
 }
 
 func compileWordFunction[W word.Word[W]](encoder *bytecode.Encoder[Label], fid uint, f *WordFunction) {

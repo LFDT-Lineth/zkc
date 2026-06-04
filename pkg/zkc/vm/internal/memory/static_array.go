@@ -110,6 +110,11 @@ func (p *StaticArray[W]) Write(address uint64, value W) error {
 	return nil
 }
 
+// Contents implementation for Memory interface.
+func (p *StaticArray[W]) Contents() []W {
+	return p.data
+}
+
 // HasRegister implementation for vm.Module interface.
 func (p *StaticArray[W]) HasRegister(name string) (register.Id, bool) {
 	for i, r := range p.geometry.registers {

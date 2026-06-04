@@ -15,16 +15,13 @@ package bytecode
 // Program represents a self-contained bytecode program with a given entry
 // point.
 type Program struct {
-	// Determines the initial program counter position when executing the given
-	// bytecode sequence.
-	entry uint
 	// The bytecode sequence itself.
 	bytecodes []uint32
 }
 
 // NewProgram constructs a new bytecode program with a given entry point.
-func NewProgram(entry uint, bytecodes []uint32) Program {
+func NewProgram(bytecodes []uint32) Program {
 	return Program{
-		entry, bytecodes,
+		bytecodes,
 	}
 }

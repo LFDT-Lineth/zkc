@@ -76,7 +76,12 @@ func (p Geometry[W]) AddressRegisters() []register.Register {
 // DataRegisters returns the subset of registers used for this memory's
 // data lines.
 func (p Geometry[W]) DataRegisters() []register.Register {
-	return p.registers[p.numInputs:]
+	var (
+		n = p.numInputs
+		m = n + p.numOutputs
+	)
+	//
+	return p.registers[n:m]
 }
 
 // Decode maps address (a tuple of words representing a logical memory

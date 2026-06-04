@@ -13,8 +13,9 @@
 package bytecode
 
 import (
-	"github.com/consensys/go-corset/pkg/util/collection/heap"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/heap"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 type Interpreter[W word.Word[W]] struct {
@@ -27,4 +28,31 @@ type Interpreter[W word.Word[W]] struct {
 	wordStack heap.Heap[W]
 	// call stack
 	callStack heap.Heap[uint32]
+}
+
+// NewInterpreter constructs a new bytecode interpreter for the given program.
+func NewInterpreter[W word.Word[W]](program Program) *Interpreter[W] {
+	return &Interpreter[W]{
+		bytecode: program.bytecodes,
+	}
+}
+
+// Boot implementation of Core interface
+func (p *Interpreter[W]) Boot(fun string) error {
+	panic("todo")
+}
+
+// Execute implementation of Core interface
+func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
+	panic("todo")
+}
+
+// Inputs implementation of Core interface
+func (p *Interpreter[W]) Inputs() []memory.InputOutput[W] {
+	panic("todo")
+}
+
+// Outputs implementation of Core interface
+func (p *Interpreter[W]) Outputs() []memory.InputOutput[W] {
+	panic("todo")
 }

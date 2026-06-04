@@ -19,7 +19,7 @@ import (
 
 // Observer is a generic interface for extract information before and after an
 // execution step of the VM.  For example, to generate debugging information.
-type Observer[W machine.BaseWord[W], I instruction.Instruction, M machine.Core[W, I]] interface {
+type Observer[W machine.BaseWord[W], I instruction.Instruction, M machine.Machine[W, I]] interface {
 	Initialise(machine M)
 	// PreExecution is called directly before each instruction is executed
 	PreExecution(machine M)

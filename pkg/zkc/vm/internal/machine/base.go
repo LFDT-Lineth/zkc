@@ -59,12 +59,8 @@ func NewBase[W BaseWord[W], I Instruction, T Executor[W, I]](executor T, modules
 	}
 }
 
-// Boot this machine by starting the given function with the given inputs.  This
-// function assumes the given inputs are correctly formed, and will: (1) ingore
-// unknown inputs; (2) initialise empty memories when no input is given for
-// them.  Thus, it is recommended to perform sanity checking on input prior to
-// calling this function.
-func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
+// Boot implementation for Core interface.
+func (p *Base[W, I, T]) Boot(fun string) error {
 	// Reset call stack
 	p.callstack.Reset()
 	// Look for function with the machine name
@@ -72,8 +68,6 @@ func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
 		if _, ok := m.(*function.Function[I]); ok {
 			if m.Name() == fun {
 				fid := uint(i)
-				// Initialise memory
-				p.initialise(input)
 				// Boot the call stack
 				p.callstack.Boot(fid, p.Function(fid))
 				//
@@ -85,10 +79,26 @@ func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
 	return fmt.Errorf("missing boot function \"%s\"", fun)
 }
 
-// Function returns the function with the corresponding ID (or panics if the ID
-// does not correspond to a function).
-func (p *Base[W, I, T]) Function(id uint) *function.Function[I] {
-	return p.modules[id].(*function.Function[I])
+// Inputs implementation for Core interface.
+func (p *Base[W, I, T]) Inputs() (inputs []memory.InputOutput[W]) {
+	for _, m := range p.modules {
+		if m, ok := m.(memory.Memory[W]); ok && m.IsReadOnly() && !m.IsStatic() {
+			inputs = append(inputs, m)
+		}
+	}
+	//
+	return inputs
+}
+
+// Outputs implementation for Core interface.
+func (p *Base[W, I, T]) Outputs() (outputs []memory.InputOutput[W]) {
+	for _, m := range p.modules {
+		if m, ok := m.(memory.Memory[W]); ok && m.IsWriteOnly() {
+			outputs = append(outputs, m)
+		}
+	}
+	//
+	return outputs
 }
 
 // Execute the machine for the given number of steps, returning the actual
@@ -104,6 +114,12 @@ func (p *Base[W, I, T]) Execute(steps uint) (uint, error) {
 	}
 	//
 	return (steps - nsteps), err
+}
+
+// Function returns the function with the corresponding ID (or panics if the ID
+// does not correspond to a function).
+func (p *Base[W, I, T]) Function(id uint) *function.Function[I] {
+	return p.modules[id].(*function.Function[I])
 }
 
 // Executor returns the executor for this machine.  This is primarily useful
@@ -176,19 +192,6 @@ func (p *Base[W, I, T]) GobDecode(data []byte) error {
 // ========================================================
 // Helpers
 // =======================================================
-
-func (p *Base[W, I, T]) initialise(input map[string][]W) {
-	// Initialise stack input memories
-	for _, m := range p.modules {
-		// Check module is a memory
-		mem, ok := m.(memory.Memory[W])
-		if !ok {
-			continue
-		}
-		// Initialise with provided contents, or reset to empty if not supplied.
-		mem.Initialise(input[m.Name()])
-	}
-}
 
 // Execute at most n steps of the machine, returning the number of steps
 // actually remaining along with an optional error.

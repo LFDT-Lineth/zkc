@@ -164,10 +164,13 @@ func runExecutionTest[W vm.Word[W], I vm.Instruction](t *testing.T, wm vm.Machin
 		// decode inputs / outputs
 		inputs, outputs = decodeInputsOutputs(t, wm, test.data)
 	)
-	//
+	// Initialise inputs
+	for _, input := range wm.Inputs() {
+		input.Initialise(inputs[input.Name()])
+	}
 	//t.Logf("[%s]%s:%d", cfg.Name, test.filename, test.line)
-	// Execute machine
-	if err = wm.Boot("main", inputs); err == nil {
+	// Boot & Execute machine
+	if err = wm.Boot("main"); err == nil {
 		// Execute it
 		if _, err = vm.ExecuteAll(wm, 131072); err == nil && test.expected {
 			// Check outputs match
@@ -241,7 +244,7 @@ func checkExpectedOutputs[W vm.Word[W], I vm.Instruction](outputs map[string][]W
 	//
 	for _, m := range wm.Modules() {
 		// Check whether this is an output memory or not.
-		if m, ok := m.(vm.InputOutputMemory[W]); ok && m.IsWriteOnly() {
+		if m, ok := m.(vm.Memory[W]); ok && m.IsWriteOnly() {
 			if output, ok := outputs[m.Name()]; ok {
 				if c := array.Compare(output, m.Contents()); c != 0 {
 					errors = append(errors, fmt.Errorf("incorrect output (expected %v, actual %v)", output, m.Contents()))

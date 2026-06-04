@@ -62,7 +62,12 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Decode inputs against the compiled machine.
 	inputs, errs := vm.DecodeInputs(&wm, input)
 	if len(errs) == 0 {
-		if err := wm.Boot("main", inputs); err != nil {
+		// initialise inputs
+		for _, input := range wm.Inputs() {
+			input.Initialise(inputs[input.Name()])
+		}
+		// boot & execute
+		if err := wm.Boot("main"); err != nil {
 			errs = append(errs, err)
 		} else if _, err := vm.ExecuteAndObserve(&wm, 1, &observer); err != nil {
 			errs = append(errs, err)

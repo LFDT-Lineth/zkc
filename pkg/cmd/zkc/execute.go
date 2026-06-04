@@ -63,6 +63,8 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		quiet = GetFlag(cmd, "quiet")
 		// fast mode flag
 		fast = GetFlag(cmd, "fast")
+		// ultra fast mode flag
+		ultra_fast = GetFlag(cmd, "ultra-fast")
 		// identify whether tracing required or not.
 		tracing = check || outputFile != ""
 		//
@@ -82,14 +84,22 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// =====================================================
 	if tracing {
 		trace, errors = binfile.Trace(input, traceConfig)
-	} else if fast {
+	} else if fast || ultra_fast {
 		var (
 			m = binfile.WordMachine()
 			// lower to a 64bit machine
 			m64 = vm.WordToWordMachine[vm.Uint, vm.Uint64](&m)
 		)
 		//
-		outputs, errors = vm.BootAndExecute(m64, input, 131072)
+		if ultra_fast {
+			// Compile bytecode interpreter
+			bci := vm.WordToBytecodeInterpreter(m64)
+			// Execute bytecode
+			outputs, errors = vm.BootAndExecute(bci, input, 131072)
+		} else {
+			// Execute directly
+			outputs, errors = vm.BootAndExecute(m64, input, 131072)
+		}
 	} else {
 		outputs, errors = binfile.Execute(input, 131072)
 	}
@@ -167,4 +177,5 @@ func init() {
 	executeCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	executeCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
 	executeCmd.Flags().BoolP("fast", "f", false, "enable fast execution")
+	executeCmd.Flags().BoolP("ultra-fast", "u", false, "enable ultra-fast execution")
 }
