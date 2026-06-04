@@ -216,7 +216,7 @@ func DecodeInputsOutputs[W Word[W], M Core[W]](m M, data map[string][]byte,
 		visited[c.Name()] = true
 		//
 		if bytes, ok := data[c.Name()]; ok {
-			inputs[c.Name()] = DecodeBytes[W](bytes, c.Geometry())
+			inputs[c.Name()] = DecodeBytes(bytes, c.Geometry())
 		} else {
 			errs = append(errs, fmt.Errorf("missing input \"%s\"", c.Name()))
 		}
@@ -227,7 +227,7 @@ func DecodeInputsOutputs[W Word[W], M Core[W]](m M, data map[string][]byte,
 		visited[c.Name()] = true
 		//
 		if bytes, ok := data[c.Name()]; ok {
-			outputs[c.Name()] = DecodeBytes[W](bytes, c.Geometry())
+			outputs[c.Name()] = DecodeBytes(bytes, c.Geometry())
 		} else {
 			errs = append(errs, fmt.Errorf("missing input/output \"%s\"", c.Name()))
 		}
@@ -257,7 +257,7 @@ func DecodeInputs[W Word[W], C Core[W]](m C, input map[string][]byte) (map[strin
 		visited[c.Name()] = true
 		//
 		if bytes, ok := input[c.Name()]; ok {
-			inputs[c.Name()] = DecodeBytes[W](bytes, c.Geometry())
+			inputs[c.Name()] = DecodeBytes(bytes, c.Geometry())
 		} else {
 			errs = append(errs, fmt.Errorf("missing input \"%s\"", c.Name()))
 		}
