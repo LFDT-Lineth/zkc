@@ -12,7 +12,10 @@
 // SPDX-License-Identifier: Apache-2.0
 package bytecode
 
-import "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+import (
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+)
 
 func decode(codes []uint32) (bytecodes []Bytecode) {
 	var (
@@ -35,12 +38,20 @@ func decodeBytecode(offset uint, codes []uint32) (Bytecode, uint) {
 	)
 	//
 	switch code & 0x1f {
+	case ADD:
+		c, n := decodeAdd(codes)
+		return &c, n
 	case FAIL:
 		return &Fail{}, 1
 	case JMP:
-		return decodeJmp(offset, codes)
+		c, n := decodeJmp(offset, codes)
+		return &c, n
 	case JIF:
-		return decodeJif(offset, codes)
+		c, n := decodeJif(offset, codes)
+		return &c, n
+	case MOVE:
+		c, n := decodeMove(codes)
+		return &c, n
 	case RET:
 		return &Ret{}, 1
 	default:
@@ -48,18 +59,41 @@ func decodeBytecode(offset uint, codes []uint32) (Bytecode, uint) {
 	}
 }
 
-func decodeJmp(offset uint, codes []uint32) (Bytecode, uint) {
+func decodeAdd(codes []uint32) (Add, uint) {
+	var (
+		rd  = register.NewId(uint((codes[0] >> 8) & 0xff))
+		rs1 = register.NewId(uint((codes[0] >> 16) & 0xff))
+		rs0 = register.NewId(uint((codes[0] >> 24) & 0xff))
+	)
+	//
+	return Add{Dst: rd, Src1: rs1, Src0: rs0}, 1
+}
+func decodeJmp(offset uint, codes []uint32) (Jmp, uint) {
 	var target = getBranchTarget(offset, uint(codes[0]>>8), 24)
-	return &Jmp{target}, 1
+	return Jmp{target}, 1
 }
 
-func decodeJif(offset uint, codes []uint32) (Bytecode, uint) {
+func decodeJif(offset uint, codes []uint32) (Jif, uint) {
 	var (
 		op     = opcode.Condition((codes[0] >> 5) & 0x7)
-		rs1    = uint((codes[0] >> 8) & 0xff)
-		rs0    = uint((codes[0] >> 16) & 0xff)
+		rs1    = register.NewId(uint((codes[0] >> 8) & 0xff))
+		rs0    = register.NewId(uint((codes[0] >> 16) & 0xff))
 		target = getBranchTarget(offset, uint(codes[0]>>24), 8)
 	)
 	//
-	return &Jif{op, rs1, rs0, target}, 1
+	return Jif{
+		Op:     op,
+		Src1:   rs1,
+		Src0:   rs0,
+		Target: target,
+	}, 1
+}
+
+func decodeMove(codes []uint32) (Move, uint) {
+	var (
+		rd = register.NewId(uint((codes[0] >> 8) & 0xff))
+		rs = register.NewId(uint((codes[0] >> 16) & 0xff))
+	)
+	//
+	return Move{Dst: rd, Src: rs}, 1
 }

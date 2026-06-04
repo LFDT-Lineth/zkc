@@ -15,6 +15,7 @@ package bytecode
 import (
 	"fmt"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
@@ -48,28 +49,13 @@ const (
 	PUSH = uint32(7)
 	// POP instruction
 	POP = uint32(8)
-	// MOVE instruction.  Format of this instruction is:
-	//
-	//  31                                       0
-	// +--------+--------+--------+------+--------+
-	// |   n/a  |   rs   |   rd   | n/a  | opcode |
-	// +--------+--------+--------+------+--------+
-	//
-	// Here, rs is a u8 source register whilst rd is a u8 destination register.
+	// MOVE instruction
 	MOVE = uint32(9)
 	// DESTRUCT instruction
 	DESTRUCT = uint32(10)
 	// CAST instruction
 	CAST = uint32(11)
-	// ADD instruction.  Format of this instruction is:
-	//
-	//  31                                       0
-	// +--------+--------+--------+------+--------+
-	// |  rs0   |  rs1   |   rd   | n/a  | opcode |
-	// +--------+--------+--------+------+--------+
-	//
-	// Here, rs0 and rs1 are u8 source registers, whilst rd is a u8 destination
-	// register.
+	// ADD instruction
 	ADD = uint32(12)
 	// ADDC (add with constant) instruction
 	ADDC = uint32(13)
@@ -113,6 +99,44 @@ type Bytecode interface {
 	String() string
 	Codes(uint) []uint32
 	Patch(labels []uint)
+}
+
+// Add instruction.  Format of this instruction is:
+//
+//	31                                       0
+//
+// +--------+--------+--------+------+--------+
+// |  rs0   |  rs1   |   rd   | n/a  | opcode |
+// +--------+--------+--------+------+--------+
+//
+// Here, rs0 and rs1 are u8 source registers, whilst rd is a u8 destination
+// register.
+type Add struct {
+	Dst  register.Id
+	Src1 register.Id
+	Src0 register.Id
+}
+
+func (p *Add) String() string {
+	return fmt.Sprintf("add r%d = r%d + r%d ", p.Dst, p.Src0, p.Src1)
+}
+
+// Codes implementation for Bytecode interface
+func (p *Add) Codes(offset uint) []uint32 {
+	var (
+		rd  = uint32(p.Dst.Unwrap()) << 8
+		rs1 = uint32(p.Src1.Unwrap()) << 16
+		rs0 = uint32(p.Src0.Unwrap()) << 24
+	)
+	//
+	return []uint32{
+		rs0 | rs1 | rd | ADD,
+	}
+}
+
+// Patch implementation for Bytecode interface
+func (p *Add) Patch(labels []uint) {
+	// no op
 }
 
 // Fail instruction
@@ -201,8 +225,8 @@ func (p *Jmp) Patch(labels []uint) {
 // u8 source registers, whilst op identifies the operation.
 type Jif struct {
 	Op     opcode.Condition
-	Src1   uint
-	Src0   uint
+	Src1   register.Id
+	Src0   register.Id
 	Target uint
 }
 
@@ -233,19 +257,54 @@ func (p *Jif) String() string {
 func (p *Jif) Codes(offset uint) []uint32 {
 	var (
 		op   = uint32(p.Op) << 5
-		r    = uint32(p.Src1) << 8
-		l    = uint32(p.Src0) << 16
+		rs1  = uint32(p.Src1.Unwrap()) << 8
+		rs0  = uint32(p.Src0.Unwrap()) << 16
 		roff = getRelativeOffset(offset, p.Target, 8) << 24
 	)
 	//
 	return []uint32{
-		roff | l | r | op | JIF,
+		roff | rs0 | rs1 | op | JIF,
 	}
 }
 
 // Patch implementation for Bytecode interface
 func (p *Jif) Patch(labels []uint) {
 	p.Target = labels[p.Target]
+}
+
+// Move instruction.  Format of this instruction is:
+//
+//	31                                       0
+//
+// +--------+--------+--------+------+--------+
+// |   n/a  |   rs   |   rd   | n/a  | opcode |
+// +--------+--------+--------+------+--------+
+//
+// Here, rs is a u8 source register whilst rd is a u8 destination register.
+type Move struct {
+	Dst register.Id
+	Src register.Id
+}
+
+func (p *Move) String() string {
+	return fmt.Sprintf("mv r%d r%d", p.Dst, p.Src)
+}
+
+// Codes implementation for Bytecode interface
+func (p *Move) Codes(offset uint) []uint32 {
+	var (
+		rd = uint32(p.Dst.Unwrap()) << 8
+		rs = uint32(p.Src.Unwrap()) << 16
+	)
+	//
+	return []uint32{
+		rs | rd | MOVE,
+	}
+}
+
+// Patch implementation for Bytecode interface
+func (p *Move) Patch(labels []uint) {
+	// no op
 }
 
 // ============================================================================

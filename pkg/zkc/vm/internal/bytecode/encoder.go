@@ -13,6 +13,8 @@
 package bytecode
 
 import (
+	"fmt"
+
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
@@ -67,6 +69,16 @@ func (p *Encoder[T]) Len() uint {
 	return uint(len(p.bytecodes))
 }
 
+// Add encodes an integer addition instruction.
+func (p *Encoder[T]) Add(rs0, rs1, rd register.Id) {
+	panic("todo")
+}
+
+// Call encodes a CALL instruction to a given label.
+func (p *Encoder[T]) Call(label uint, inputs uint) {
+	panic("todo")
+}
+
 // Fail encodes a FAIL instruction to a given label.
 func (p *Encoder[T]) Fail() {
 	p.bytecodes = append(p.bytecodes, &Fail{})
@@ -80,35 +92,29 @@ func (p *Encoder[T]) Jmp(label T) {
 }
 
 // JmpIf encodes a JIF instruction to a given label.
-func (p *Encoder[T]) JmpIf(label T, op opcode.Condition, left, right register.Id) {
+func (p *Encoder[T]) JmpIf(label T, op opcode.Condition, rs0, rs1 register.Id) {
 	var (
-		l          = left.Unwrap()
-		r          = right.Unwrap()
 		index uint = p.getLabelIndex(label)
 	)
 	// sanity checks
-	if l >= 256 {
-		panic("left register out of bounds")
-	} else if r >= 256 {
-		panic("right register out of bounds")
-	}
+	checkRegisterId(rs0, "rs0")
+	checkRegisterId(rs1, "rs1")
 	//
-	p.bytecodes = append(p.bytecodes, &Jif{op, l, r, index})
+	p.bytecodes = append(p.bytecodes, &Jif{op, rs0, rs1, index})
 }
 
-// Call encodes a CALL instruction to a given label.
-func (p *Encoder[T]) Call(label uint, inputs uint) {
-	panic("todo")
+// Move encodes an register move instruction.
+func (p *Encoder[T]) Move(rs, rd register.Id) {
+	// sanity checks
+	checkRegisterId(rs, "rs")
+	checkRegisterId(rd, "rd")
+	//
+	p.bytecodes = append(p.bytecodes, &Move{rs, rd})
 }
 
 // Ret encodes a RET instruction from a given function call.
 func (p *Encoder[T]) Ret(ninputs, width uint) {
 	p.bytecodes = append(p.bytecodes, &Ret{})
-}
-
-// IntAdd encodes an integer addition instruction.
-func (p *Encoder[T]) IntAdd(rs0, rs1, rd register.Id) {
-	panic("todo")
 }
 
 func (p *Encoder[T]) getLabelIndex(label T) uint {
@@ -131,6 +137,13 @@ func (p *Encoder[T]) getLabelIndex(label T) uint {
 	}
 	//
 	return index
+}
+
+func checkRegisterId(id register.Id, name string) {
+	// sanity checks
+	if id.Unwrap() >= 256 {
+		panic(fmt.Sprintf("%s register out of bounds", name))
+	}
 }
 
 func patchBranchTargets(bytecodes []Bytecode, labels []uint) {

@@ -90,7 +90,7 @@ func compileWordInstruction[W word.Word[W]](encoder *bytecode.Encoder[Label], po
 	case opcode.HINT_DIVISION:
 		panic("todo")
 	case opcode.INT_ADD:
-		compileAdd(encoder, pos, insn.(*instruction.WordTypeA[W]))
+		compileAdd(encoder, insn.(*instruction.WordTypeA[W]))
 	case opcode.INT_SUB:
 		panic("todo")
 	case opcode.INT_MUL:
@@ -124,10 +124,14 @@ func compileWordInstruction[W word.Word[W]](encoder *bytecode.Encoder[Label], po
 	}
 }
 
-func compileAdd[W word.Word[W]](encoder *bytecode.Encoder[Label], pos Label, insn *instruction.WordTypeA[W]) {
+func compileAdd[W word.Word[W]](encoder *bytecode.Encoder[Label], insn *instruction.WordTypeA[W]) {
 	//nolint
-	if len(insn.Sources) == 2 && insn.Target.Len() == 1 && insn.Constant.Cmp64(0) == 0 {
-		encoder.IntAdd(insn.Sources[0], insn.Sources[1], insn.Target.AsRegister())
+	if insn.Target.Len() != 1 || insn.Constant.Cmp64(0) != 0 {
+		panic("todo")
+	} else if len(insn.Sources) == 2 {
+		encoder.Add(insn.Sources[0], insn.Sources[1], insn.Target.AsRegister())
+	} else if len(insn.Sources) == 1 {
+		encoder.Move(insn.Sources[0], insn.Target.AsRegister())
 	} else {
 		panic("todo")
 	}
