@@ -435,6 +435,10 @@ func Test_ZkcUnit_While_03(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/while_03", util.DEFAULT_CONFIG.Fields(field.BLS12_377).Constraints(true))
 }
 
+func Test_ZkcUnit_While_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/while_04", util.DEFAULT_CONFIG.Constraints(true))
+}
+
 func Test_ZkcUnit_For_01(t *testing.T) {
 	// TODO: bitwise destruct
 	checkZkcUnit(t, "zkc/unit/for_01", util.DEFAULT_CONFIG.Constraints(true))
