@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"math/bits"
 
 	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
@@ -187,8 +188,7 @@ func (p Uint) Shr64(n uint64) Uint {
 
 // Slice implementation for Word interface.
 func (p Uint) Slice(width uint) Uint {
-	val := readBitSlice(0, width, p.value, true)
-	return Uint{val}
+	return Uint{lowBits(width, p.value)}
 }
 
 // Uint64 implementation for Word interface.
@@ -269,33 +269,27 @@ func (p *Uint) GobDecode(data []byte) error {
 	return p.value.GobDecode(data)
 }
 
-// ReadBitSlice reads a slice of bits starting at a given offset in a give
-// value.  For example, consider the value is 10111000 and we have offset=1 and
-// width=4, then the result is 1100.
-func readBitSlice(offset uint, width uint, value big.Int, sign bool) big.Int {
-	var (
-		slice big.Int
-		bit   uint
-		n     = int(offset + width)
-		m     = value.BitLen()
-		i     = int(offset)
-		j     = 0
-	)
-	// Read bits upto end
-	for ; i < min(n, m); i, j = i+1, j+1 {
-		// Read appropriate bit
-		bit = value.Bit(i)
-		// set appropriate bit
-		slice.SetBit(&slice, j, bit)
-	}
-	// Sign extend (negative values)
-	if !sign {
-		// Negative value
-		for ; i < n; i, j = i+1, j+1 {
-			// set appropriate bit
-			slice.SetBit(&slice, j, 1)
+// lowBits returns the low `width` bits of value (i.e. value mod 2^width).
+// For example, given value 10111000 and width=4 the result is 1000.
+func lowBits(width uint, value big.Int) big.Int {
+	var slice big.Int
+	// Fast paths: the result fits within a single uint64.
+	if width <= 64 {
+		if value.IsUint64() {
+			slice.SetUint64(value.Uint64() & mask64(width))
+			return slice
+		}
+		// For a multi-word value, the least-significant machine word already
+		// holds every bit we keep, so there's no need to touch the high words.
+		if width <= bits.UintSize {
+			slice.SetUint64(uint64(value.Bits()[0]) & mask64(width))
+			return slice
 		}
 	}
+	// General path: mask off everything at or above bit `width`.
+	mask := new(big.Int).Lsh(&one, width)
+	mask.Sub(mask, &one)
+	slice.And(&value, mask)
 	//
 	return slice
 }
