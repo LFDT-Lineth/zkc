@@ -15,23 +15,22 @@ package bytecode
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-type Encoder[T comparable] struct {
+type Encoder[W word.Word[W], T comparable] struct {
 	bytecodes []Bytecode
 	//
-	labels map[T]uint
+	labels map[T]uint32
 	//
-	marks []uint
+	marks []Address
 	//
-	symbols map[uint]string
+	symbols map[uint32]string
 }
 
 // Encode returns the final encoded bytecode sequence.  Observe that, once this
 // is done, the internal bytecode sequence is reset.
-func (p *Encoder[T]) Encode() Program {
+func (p *Encoder[W, T]) Encode() Program {
 	var symbols = p.symbols
 	// patch branch targets
 	patchBranchTargets(p.bytecodes, p.marks)
@@ -47,89 +46,102 @@ func (p *Encoder[T]) Encode() Program {
 }
 
 // MarkLabel current position with given label.
-func (p *Encoder[T]) MarkLabel(label T) {
-	var index uint = p.getLabelIndex(label)
+func (p *Encoder[W, T]) MarkLabel(label T) {
+	var index = p.getLabelIndex(label)
 	//
-	p.marks[index] = uint(len(p.bytecodes))
+	p.marks[index] = uint32(len(p.bytecodes))
 }
 
 // MarkSymbol marks a given symbol at the current position.
-func (p *Encoder[T]) MarkSymbol(symbol string) {
-	var offset = uint(len(p.bytecodes))
+func (p *Encoder[W, T]) MarkSymbol(symbol string) {
+	var offset = uint32(len(p.bytecodes))
 	//
 	if p.symbols == nil {
-		p.symbols = make(map[uint]string)
+		p.symbols = make(map[uint32]string)
 	}
 	//
 	p.symbols[offset] = symbol
 }
 
 // Len returns the length of the bytecode sequence encoded thus far.
-func (p *Encoder[T]) Len() uint {
+func (p *Encoder[W, T]) Len() uint {
 	return uint(len(p.bytecodes))
 }
 
 // Add encodes an integer addition instruction.
-func (p *Encoder[T]) Add(rs0, rs1, rd register.Id) {
-	panic("todo")
+func (p *Encoder[W, T]) Add(src []Reg, dst []Reg) {
+	var zero W
+	p.AddConst(zero, src, dst)
+}
+
+// AddConst encodes an integer addition instruction involving a constant and
+// register.
+func (p *Encoder[W, T]) AddConst(constant W, src []Reg, dst []Reg) {
+	p.bytecodes = append(p.bytecodes, &Add[W]{Constant: constant, Source: src, Target: dst})
 }
 
 // Call encodes a CALL instruction to a given label.
-func (p *Encoder[T]) Call(label uint, inputs uint) {
+func (p *Encoder[W, T]) Call(label uint, inputs uint) {
 	panic("todo")
 }
 
 // Fail encodes a FAIL instruction to a given label.
-func (p *Encoder[T]) Fail() {
+func (p *Encoder[W, T]) Fail() {
 	p.bytecodes = append(p.bytecodes, &Fail{})
 }
 
+// LoadConst encodes an LDC instruction.
+func (p *Encoder[W, T]) LoadConst(constant W, rd Reg) {
+	p.AddConst(constant, nil, []Reg{rd})
+}
+
 // Jmp encodes a JMP instruction to a given label.
-func (p *Encoder[T]) Jmp(label T) {
-	var index uint = p.getLabelIndex(label)
+func (p *Encoder[W, T]) Jmp(label T) {
+	var index = p.getLabelIndex(label)
 	//
 	p.bytecodes = append(p.bytecodes, &Jmp{index})
 }
 
 // JmpIf encodes a JIF instruction to a given label.
-func (p *Encoder[T]) JmpIf(label T, op opcode.Condition, rs0, rs1 register.Id) {
+func (p *Encoder[W, T]) JmpIf(label T, op Cond, rs0, rs1 Reg) {
 	var (
-		index uint = p.getLabelIndex(label)
+		index uint32 = p.getLabelIndex(label)
 	)
 	// sanity checks
 	checkRegisterId(rs0, "rs0")
 	checkRegisterId(rs1, "rs1")
 	//
-	p.bytecodes = append(p.bytecodes, &Jif{op, rs0, rs1, index})
+	p.bytecodes = append(p.bytecodes, &Jif{Target: index, Src0: rs0, Src1: rs1, Op: op})
 }
 
-// Move encodes an register move instruction.
-func (p *Encoder[T]) Move(rs, rd register.Id) {
-	// sanity checks
-	checkRegisterId(rs, "rs")
-	checkRegisterId(rd, "rd")
-	//
-	p.bytecodes = append(p.bytecodes, &Move{rs, rd})
+// ReadRam encodes a LDRAM instruction from a given function call.
+func (p *Encoder[W, T]) ReadRam(mid uint16, rs Reg, slot uint8, rd Reg) {
+	panic("todo")
+}
+
+// ReadRom encodes a LDROM instruction from a given function call.
+func (p *Encoder[W, T]) ReadRom(mid uint16, rs Reg, slot uint8, rd Reg) {
+	panic("todo")
 }
 
 // Ret encodes a RET instruction from a given function call.
-func (p *Encoder[T]) Ret(ninputs, width uint) {
+func (p *Encoder[W, T]) Ret(ninputs, width uint) {
 	p.bytecodes = append(p.bytecodes, &Ret{})
 }
 
-func (p *Encoder[T]) getLabelIndex(label T) uint {
+func (p *Encoder[W, T]) getLabelIndex(label T) uint32 {
 	var (
-		index uint
+		index uint32
 		ok    bool
 	)
 	// Initialise labels (if not done already)
 	if p.labels == nil {
-		p.labels = make(map[T]uint)
+		p.labels = make(map[T]Address)
 	}
 	// Check whether label encountered already
 	if index, ok = p.labels[label]; !ok {
 		// No, first time so allocate new label
-		index = uint(len(p.labels))
+		index = uint32(len(p.labels))
 		// Ensure space for the mark
 		p.marks = append(p.marks, 0)
 		// Record index to avoid reallocation
@@ -139,27 +151,29 @@ func (p *Encoder[T]) getLabelIndex(label T) uint {
 	return index
 }
 
-func checkRegisterId(id register.Id, name string) {
+func checkRegisterId(id Reg, name string) {
 	// sanity checks
-	if id.Unwrap() >= 256 {
+	if id >= 256 {
 		panic(fmt.Sprintf("%s register out of bounds", name))
 	}
 }
 
-func patchBranchTargets(bytecodes []Bytecode, labels []uint) {
-	for i := range bytecodes {
-		bytecodes[i].Patch(labels)
+func patchBranchTargets(bytecodes []Bytecode, labels []Address) {
+	for _, b := range bytecodes {
+		if b, ok := b.(Patchable); ok {
+			b.Patch(labels)
+		}
 	}
 }
 
 func encode(bytecodes []Bytecode) (codes []uint32) {
-	var offset uint
+	var offset uint32
 	//
 	for _, bytecode := range bytecodes {
 		var cs = bytecode.Codes(offset)
 		//
 		codes = append(codes, cs...)
-		offset += uint(len(cs))
+		offset += uint32(len(cs))
 	}
 	//
 	return codes

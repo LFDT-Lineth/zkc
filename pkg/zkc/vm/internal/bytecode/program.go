@@ -20,11 +20,11 @@ type Program struct {
 	// The bytecode sequence itself.
 	bytecodes []uint32
 	// Symbols associated with bytecode offsets
-	symbols map[uint]string
+	symbols map[uint32]string
 }
 
 // NewProgram constructs a new bytecode program with a given entry point.
-func NewProgram(bytecodes []uint32, symbols map[uint]string) Program {
+func NewProgram(bytecodes []uint32, symbols map[uint32]string) Program {
 	return Program{
 		bytecodes,
 		symbols,
@@ -37,9 +37,9 @@ func (p Program) Bytecodes() (codes []Bytecode) {
 }
 
 // SymbolAt determines whether or not there is a symbol associated with a given
-// instruction offset.
-func (p Program) SymbolAt(offset uint) util.Option[string] {
-	if sym, ok := p.symbols[offset]; ok {
+// instruction address.
+func (p Program) SymbolAt(address Address) util.Option[string] {
+	if sym, ok := p.symbols[address]; ok {
 		return util.Some(sym)
 	}
 	//

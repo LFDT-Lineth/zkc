@@ -417,7 +417,7 @@ func registerType(r register.Register) string {
 
 func writeBytecodeInterpreter(program vm.BytecodeProgram) {
 	var (
-		address uint
+		address uint32
 	)
 	for _, bytecode := range program.Bytecodes() {
 		var codes = bytecode.Codes(address)
@@ -428,7 +428,7 @@ func writeBytecodeInterpreter(program vm.BytecodeProgram) {
 		//
 		fmt.Printf("0x%04x\t%08x\t%s\n", address, codes, bytecode.String())
 		//
-		address += uint(len(codes))
+		address += uint32(len(codes))
 	}
 }
 

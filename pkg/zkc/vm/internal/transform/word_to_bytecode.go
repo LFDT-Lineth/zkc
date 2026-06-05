@@ -14,11 +14,14 @@ package transform
 
 import (
 	"fmt"
+	"math"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -36,37 +39,43 @@ func WordToBytecodeMachine[W word.Word[W]](wm *machine.Word[W]) *bytecode.Interp
 // a bytecode program.
 func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) bytecode.Program {
 	var (
-		encoder bytecode.Encoder[Label]
+		compiler = &bytecodeCompiler[W]{machine: wm}
 	)
 	//
 	for i, m := range wm.Modules() {
 		if f, ok := m.(*WordFunction); ok {
 			//
-			compileWordFunction[W](&encoder, uint(i), f)
+			compiler.compileWordFunction(uint(i), f)
 		}
 	}
 	//
-	return encoder.Encode()
+	return compiler.encoder.Encode()
 }
 
-func compileWordFunction[W word.Word[W]](encoder *bytecode.Encoder[Label], fid uint, f *WordFunction) {
+type bytecodeCompiler[W word.Word[W]] struct {
+	machine *machine.Word[W]
+	encoder bytecode.Encoder[Label]
+	memmap  []uint16
+}
+
+func (p *bytecodeCompiler[W]) compileWordFunction(fid uint, f *WordFunction) {
 	// mark entry point of this function
-	encoder.MarkLabel(Label{fid, 0, 0})
-	encoder.MarkSymbol(f.Name())
+	p.encoder.MarkLabel(Label{fid, 0, 0})
+	p.encoder.MarkSymbol(f.Name())
 	//
 	for i, vec := range f.Code() {
 		for j, insn := range vec.Codes {
 			var label = Label{fid, uint(i), uint(j)}
 			// Mark instruction position in case it is the target of a skip or
 			// jump instruction.
-			encoder.MarkLabel(label)
+			p.encoder.MarkLabel(label)
 			// Compile instruction into sequence of bytecodes as required.
-			compileWordInstruction[W](encoder, label, insn)
+			p.compileWordInstruction(label, insn)
 		}
 	}
 }
 
-func compileWordInstruction[W word.Word[W]](encoder *bytecode.Encoder[Label], pos Label, insn WordInstruction) {
+func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruction) {
 	switch insn.OpCode() {
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
@@ -74,23 +83,23 @@ func compileWordInstruction[W word.Word[W]](encoder *bytecode.Encoder[Label], po
 	case opcode.DEBUG:
 		panic("todo")
 	case opcode.FAIL:
-		encoder.Fail()
+		p.encoder.Fail()
 	case opcode.JUMP:
-		compileJump(encoder, pos, insn.(*instruction.Jump))
+		p.compileJump(pos, insn.(*instruction.Jump))
 	case opcode.MEMORY_READ:
-		panic("todo")
+		p.compileMemRead(insn.(*instruction.MemRead))
 	case opcode.MEMORY_WRITE:
 		panic("todo")
 	case opcode.RETURN:
-		encoder.Ret(0, 0)
+		p.encoder.Ret(0, 0)
 	case opcode.SKIP:
-		compileSkip(encoder, pos, insn.(*instruction.Skip))
+		p.compileSkip(pos, insn.(*instruction.Skip))
 	case opcode.SKIP_IF:
-		compileSkipIf(encoder, pos, insn.(*instruction.SkipIf))
+		p.compileSkipIf(pos, insn.(*instruction.SkipIf))
 	case opcode.HINT_DIVISION:
 		panic("todo")
 	case opcode.INT_ADD:
-		compileAdd(encoder, insn.(*instruction.WordTypeA[W]))
+		p.compileAdd(insn.(*instruction.WordTypeA[W]))
 	case opcode.INT_SUB:
 		panic("todo")
 	case opcode.INT_MUL:
@@ -124,36 +133,81 @@ func compileWordInstruction[W word.Word[W]](encoder *bytecode.Encoder[Label], po
 	}
 }
 
-func compileAdd[W word.Word[W]](encoder *bytecode.Encoder[Label], insn *instruction.WordTypeA[W]) {
+func (p *bytecodeCompiler[W]) compileAdd(insn *instruction.WordTypeA[W]) {
 	//nolint
-	if insn.Target.Len() != 1 || insn.Constant.Cmp64(0) != 0 {
+	switch {
+	case insn.Target.Len() != 1:
 		panic("todo")
-	} else if len(insn.Sources) == 2 {
-		encoder.Add(insn.Sources[0], insn.Sources[1], insn.Target.AsRegister())
-	} else if len(insn.Sources) == 1 {
-		encoder.Move(insn.Sources[0], insn.Target.AsRegister())
-	} else {
-		panic("todo")
+	case len(insn.Sources) == 0:
+		p.encoder.LoadConst(insn.Constant.BigInt().Bytes(), asReg(insn.Target.AsRegister()))
+	case len(insn.Sources) == 1 && insn.Constant.Cmp64(0) == 0:
+		var (
+			rs = asReg(insn.Sources[0])
+			rd = asReg(insn.Target.AsRegister())
+		)
+		p.encoder.Move(rs, rd)
+	default:
+		var (
+			rs0 = asReg(insn.Sources[0])
+			rs1 = asReg(insn.Sources[1])
+			rd  = asReg(insn.Target.AsRegister())
+		)
+		p.encoder.Add(rs0, rs1, rd)
+		//
+		for i := 2; i < len(insn.Sources); i = i + 1 {
+			var rsi = asReg(insn.Sources[i])
+			p.encoder.Add(rsi, rd, rd)
+		}
+		//
+		if insn.Constant.Cmp64(0) != 0 {
+			p.encoder.AddConst(insn.Constant.BigInt().Bytes(), rd, rd)
+		}
 	}
 }
 
-func compileJump(encoder *bytecode.Encoder[Label], pos Label, insn *instruction.Jump) {
-	encoder.Jmp(Label{pos.fun, insn.Immediate, 0})
+func (p *bytecodeCompiler[W]) compileJump(pos Label, insn *instruction.Jump) {
+	p.encoder.Jmp(Label{pos.fun, insn.Immediate, 0})
 }
 
-func compileSkip(encoder *bytecode.Encoder[Label], pos Label, insn *instruction.Skip) {
+func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead) {
+	var (
+		args    = insn.Arguments
+		returns = insn.Returns
+		mem     = p.machine.Module(insn.Id).(memory.Memory[W])
+		mid     = p.memmap[insn.Id]
+	)
+	// sanity checks
+	if len(args) != 1 {
+		panic("todo: reads with multiple arguments?")
+	}
+	//
+	for i, r := range returns {
+		switch {
+		case mem.IsReadOnly():
+			p.encoder.ReadRom(mid, asReg(args[0]), uint8(i), asReg(r))
+		case mem.IsReadWrite():
+			p.encoder.ReadRam(mid, asReg(args[0]), uint8(i), asReg(r))
+		default:
+			panic("todo")
+		}
+	}
+}
+
+func (p *bytecodeCompiler[W]) compileSkip(pos Label, insn *instruction.Skip) {
 	var (
 		target = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
 	)
-	encoder.Jmp(target)
+	p.encoder.Jmp(target)
 }
 
-func compileSkipIf(encoder *bytecode.Encoder[Label], pos Label, insn *instruction.SkipIf) {
+func (p *bytecodeCompiler[W]) compileSkipIf(pos Label, insn *instruction.SkipIf) {
 	var (
 		target = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
+		l      = uint16(insn.Left.AsRegister().Unwrap())
+		r      = uint16(insn.Right.AsRegister().Unwrap())
 	)
 	// TODO: sort out vectored skip if
-	encoder.JmpIf(target, insn.Cond, insn.Left.AsRegister(), insn.Right.AsRegister())
+	p.encoder.JmpIf(target, insn.Cond, l, r)
 }
 
 // Label uniquely identifies an instruction within a given module.
@@ -164,4 +218,12 @@ type Label struct {
 	macro uint
 	// Vector position
 	micro uint
+}
+
+func asReg(rid register.Id) uint16 {
+	if rid.Unwrap() >= math.MaxUint16 {
+		panic("invalid register")
+	}
+	//
+	return uint16(rid.Unwrap())
 }

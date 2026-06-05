@@ -13,11 +13,17 @@
 package bytecode
 
 import (
-	"fmt"
-
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
+
+// Cond provides a convenient alias to make the code more readable.
+type Cond = opcode.Condition
+
+// Reg just provides a convenient alias to make the code more readable.
+type Reg = uint16
+
+// Address just provides a convenient alias to make the code more readable.
+type Address = uint32
 
 // Every instruction occupies 32 bits, where the first byte is as follows:
 //
@@ -41,16 +47,18 @@ const (
 	CALL = uint32(3)
 	// RET instruction
 	RET = uint32(4)
-	// LOAD instruction
-	LOAD = uint32(5)
-	// STORE instruction
-	STORE = uint32(6)
+	// READ instruction
+	READ = uint32(5)
+	// WRITE instruction
+	WRITE = uint32(6)
 	// PUSH instruction
 	PUSH = uint32(7)
 	// POP instruction
 	POP = uint32(8)
 	// MOVE instruction
 	MOVE = uint32(9)
+	// LDC (load constant) instruction
+	LDC = uint32(9)
 	// DESTRUCT instruction
 	DESTRUCT = uint32(10)
 	// CAST instruction
@@ -97,47 +105,18 @@ const (
 // Bytecode encapsulates a single bytecode instruction.
 type Bytecode interface {
 	String() string
-	Codes(uint) []uint32
-	Patch(labels []uint)
+	Codes(uint32) []uint32
 }
 
-// Add instruction.  Format of this instruction is:
-//
-//	31                                       0
-//
-// +--------+--------+--------+------+--------+
-// |  rs0   |  rs1   |   rd   | n/a  | opcode |
-// +--------+--------+--------+------+--------+
-//
-// Here, rs0 and rs1 are u8 source registers, whilst rd is a u8 destination
-// register.
-type Add struct {
-	Dst  register.Id
-	Src1 register.Id
-	Src0 register.Id
+// Patchable bytecodes support the patch method.
+type Patchable interface {
+	Bytecode
+	Patch(labels []Address)
 }
 
-func (p *Add) String() string {
-	return fmt.Sprintf("add r%d = r%d + r%d ", p.Dst, p.Src0, p.Src1)
-}
-
-// Codes implementation for Bytecode interface
-func (p *Add) Codes(offset uint) []uint32 {
-	var (
-		rd  = uint32(p.Dst.Unwrap()) << 8
-		rs1 = uint32(p.Src1.Unwrap()) << 16
-		rs0 = uint32(p.Src0.Unwrap()) << 24
-	)
-	//
-	return []uint32{
-		rs0 | rs1 | rd | ADD,
-	}
-}
-
-// Patch implementation for Bytecode interface
-func (p *Add) Patch(labels []uint) {
-	// no op
-}
+// ============================================================================
+// Fail
+// ============================================================================
 
 // Fail instruction
 type Fail struct{}
@@ -147,13 +126,8 @@ func (p *Fail) String() string {
 }
 
 // Codes implementation for Bytecode interface
-func (p *Fail) Codes(_ uint) []uint32 {
+func (p *Fail) Codes(_ uint32) []uint32 {
 	return []uint32{FAIL}
-}
-
-// Patch implementation for Bytecode interface
-func (p *Fail) Patch(_ []uint) {
-	// do nothing
 }
 
 // ============================================================================
@@ -168,153 +142,27 @@ func (p *Ret) String() string {
 }
 
 // Codes implementation for Bytecode interface
-func (p *Ret) Codes(_ uint) []uint32 {
+func (p *Ret) Codes(_ uint32) []uint32 {
 	return []uint32{RET}
 }
 
 // Patch implementation for Bytecode interface
-func (p *Ret) Patch(_ []uint) {
+func (p *Ret) Patch(_ []Address) {
 	// do nothing
-}
-
-// Jmp (jump unconditional) instruction.  Format of this instruction is:
-//
-// +--------------------------+------+---------+
-// |        offset            | n/a  | opcode  |
-// +--------------------------+------+---------+
-//
-//	31                       8 7    5 4       0
-//
-// Here, offset is a signed u16 relative offset, where the following
-// instruction is considered to be at offset 0.
-type Jmp struct{ Target uint }
-
-func (p *Jmp) String() string {
-	//
-	return fmt.Sprintf("jmp 0x%04x", p.Target)
-}
-
-// Codes implementation for Bytecode interface
-func (p *Jmp) Codes(offset uint) []uint32 {
-	var roff = getRelativeOffset(offset, p.Target, 24) << 8
-	//
-	return []uint32{
-		roff | JMP,
-	}
-}
-
-// Patch implementation for Bytecode interface
-func (p *Jmp) Patch(labels []uint) {
-	p.Target = labels[p.Target]
 }
 
 // ============================================================================
 // Jif
 // ============================================================================
 
-// Jif (jump conditional) instruction.  Format of this instruction is:
-//
-//	31                                0
-//
-// +--------+--------+--------+------+--------+
-// | offset |  rs0   |  rs1   |  op  | opcode |
-// +--------+--------+--------+------+--------+
-//
-// Here, offset is a signed u8 relative offset, where the following
-// instruction is considered to be at offset 0.  Likewise, rs0 and rs1 are
-// u8 source registers, whilst op identifies the operation.
-type Jif struct {
-	Op     opcode.Condition
-	Src1   register.Id
-	Src0   register.Id
-	Target uint
-}
-
-func (p *Jif) String() string {
-	var ops string
-	//
-	switch p.Op {
-	case opcode.EQ:
-		ops = "=="
-	case opcode.NEQ:
-		ops = "!="
-	case opcode.LT:
-		ops = "<"
-	case opcode.LTEQ:
-		ops = "<="
-	case opcode.GT:
-		ops = ">"
-	case opcode.GTEQ:
-		ops = ">="
-	default:
-		ops = "??"
-	}
-	//
-	return fmt.Sprintf("jif r%d %s r%d 0x%04x", p.Src0, ops, p.Src1, p.Target)
-}
-
-// Codes implementation for Bytecode interface
-func (p *Jif) Codes(offset uint) []uint32 {
-	var (
-		op   = uint32(p.Op) << 5
-		rs1  = uint32(p.Src1.Unwrap()) << 8
-		rs0  = uint32(p.Src0.Unwrap()) << 16
-		roff = getRelativeOffset(offset, p.Target, 8) << 24
-	)
-	//
-	return []uint32{
-		roff | rs0 | rs1 | op | JIF,
-	}
-}
-
-// Patch implementation for Bytecode interface
-func (p *Jif) Patch(labels []uint) {
-	p.Target = labels[p.Target]
-}
-
-// Move instruction.  Format of this instruction is:
-//
-//	31                                       0
-//
-// +--------+--------+--------+------+--------+
-// |   n/a  |   rs   |   rd   | n/a  | opcode |
-// +--------+--------+--------+------+--------+
-//
-// Here, rs is a u8 source register whilst rd is a u8 destination register.
-type Move struct {
-	Dst register.Id
-	Src register.Id
-}
-
-func (p *Move) String() string {
-	return fmt.Sprintf("mv r%d r%d", p.Dst, p.Src)
-}
-
-// Codes implementation for Bytecode interface
-func (p *Move) Codes(offset uint) []uint32 {
-	var (
-		rd = uint32(p.Dst.Unwrap()) << 8
-		rs = uint32(p.Src.Unwrap()) << 16
-	)
-	//
-	return []uint32{
-		rs | rd | MOVE,
-	}
-}
-
-// Patch implementation for Bytecode interface
-func (p *Move) Patch(labels []uint) {
-	// no op
-}
-
 // ============================================================================
 // Helpers
 // ============================================================================
 
-func getBranchTarget(offset uint, relOffset uint, width uint) uint {
+func getBranchTarget(offset uint32, relOffset uint32, width uint) Address {
 	var (
-		sign = uint(0x1) << (width - 1)
-		max  = uint(0x1) << width
+		sign = uint32(0x1) << (width - 1)
+		max  = uint32(0x1) << width
 	)
 	//
 	if relOffset < sign {
@@ -324,14 +172,14 @@ func getBranchTarget(offset uint, relOffset uint, width uint) uint {
 	return offset + 1 - max + relOffset
 }
 
-func getRelativeOffset(offset uint, target uint, width uint) uint32 {
+func getRelativeOffset(offset uint32, target Address, width uint) uint32 {
 	var sign_bit = uint32(0x1) << width
 	//
 	if target > offset {
-		return uint32(target - offset - 1)
+		return target - offset - 1
 	}
 	//
-	roff := uint32(1 + offset - target)
+	roff := 1 + offset - target
 	//
 	if roff >= sign_bit {
 		panic("branch target overflow")
