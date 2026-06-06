@@ -50,3 +50,17 @@ func (p RegVec) String() string {
 		return fmt.Sprintf("r%d;,,;r%d", p.Base, p.Base+p.Len-1)
 	}
 }
+
+// Pack an array of (small) registers into an array of bytes.  This will panic
+// if any register is encountered which does not fit into a byte.
+func regsAsBytes(regs []Reg) []byte {
+	var bytes = make([]byte, len(regs))
+	// sanity checks
+	checkSmallArgs(regs)
+	//
+	for i, r := range regs {
+		bytes[i] = uint8(r & 0xff)
+	}
+	//
+	return bytes
+}

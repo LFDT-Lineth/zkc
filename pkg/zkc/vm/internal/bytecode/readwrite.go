@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // ROM_READ representing reading from a read-only memory.
@@ -78,10 +79,14 @@ func (p *ReadWrite) String() string {
 
 // Codes implementation for Bytecode interface
 func (p *ReadWrite) Codes(_ uint32) []uint32 {
-	checkArgsSmall(p.Address)
-	checkArgsSmall(p.Data)
 	//
 	return encodeReadWrite_sn(p.Mode, p.Id, p.Address, p.Data)
+}
+
+func decodeReadWrite[W word.Word[W]](codes []uint32) (Bytecode[W], uint32) {
+	m, id, addr, data, n := decodeReadWrite_sn(codes)
+	//
+	return &ReadWrite{m, id, addr, data}, n
 }
 
 // ============================================================================
@@ -98,21 +103,58 @@ func (p *ReadWrite) Codes(_ uint32) []uint32 {
 // +--------+--------+--------+--------+
 // |  ra3   |  ra2   |  ra1   |  ra0   |
 // +--------+--------+--------+--------+
-
+// |  ...   |  ...   |  ...   |  ...   |
+// +--------+--------+--------+--------+
+// |  rd2   |  rd1   |  rd0   |  ...   |
+// +--------+--------+--------+--------+
+// |  ...   |  ...   |  ...   |  ...   |
+// +--------+--------+--------+--------+
 //
-// Here, rs0 and rs1 are u8 source registers, whilst rd is a u8 destination
-// register.
+//
+// Here, ra0...raN are u8 address registers, whilst rd0..rdN are u8 data
+// registers.
 // ============================================================================
 
 func encodeReadWrite_sn(m RwMode, id uint16, addr []Reg, data []Reg) []uint32 {
+	var (
+		opcode = RD_ROM + uint32(m.tag)
+		_id    = uint32(id) << 8
+		naddr  = uint32(len(addr)) << 16
+		ndata  = uint32(len(data)) << 24
+		codes  = []uint32{
+			ndata | naddr | _id | opcode,
+		}
+	)
+	// construct register bytes
+	bytes := append(regsAsBytes(addr), regsAsBytes(data)...)
+	// pack bytes into bytecodes
+	return append(codes, packRegsIntoCodes(bytes)...)
+}
 
+func decodeReadWrite_sn(codes []uint32) (m RwMode, id uint16, addr []Reg, data []Reg, n uint32) {
+	var (
+		naddr    = (codes[0] >> 16) & 0xff
+		ndata    = (codes[0] >> 24) & 0xff
+		regs, ns = unpackCodesToSmallRegs(naddr+ndata, codes[1:])
+	)
+	//
+	id = uint16((codes[0] >> 8) & 0xff)
+	addr = regs[:naddr]
+	data = regs[naddr:]
+	//
+	return m, id, addr, data, ns
 }
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
-func checkArgsSmall(args []Reg) {
+func checkSmallArgs(args []Reg) {
+	//
+	if len(args) > math.MaxUint8 {
+		panic("too many arguments")
+	}
+	//
 	for _, r := range args {
 		if r > math.MaxUint8 {
 			panic("support wide read/write instructions")

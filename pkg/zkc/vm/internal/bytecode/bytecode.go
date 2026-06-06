@@ -26,6 +26,10 @@ type Reg = uint16
 // Address just provides a convenient alias to make the code more readable.
 type Address = uint32
 
+// OPCODE_MASK determines how many bits of the opcode byte are used for the
+// opcode itself.
+const OPCODE_MASK = 0x1f
+
 // Every instruction occupies 32 bits, where the first byte is as follows:
 //
 //	7   5 4       0
@@ -39,68 +43,73 @@ type Address = uint32
 // Currently, n is instruction specific.
 const (
 	// FAIL instruction
-	FAIL = uint32(0)
+	FAIL uint32 = iota
 	// JMP instruction
-	JMP = uint32(1)
+	JMP
 	// JIF instruction
-	JIF = uint32(2)
+	JIF
 	// CALL instruction
-	CALL = uint32(3)
+	CALL
 	// RET instruction
-	RET = uint32(4)
-	// READ instruction
-	READ = uint32(5)
-	// WRITE instruction
-	WRITE = uint32(6)
+	RET
+	// RD_ROM instruction
+	RD_ROM
+	// WR_WOM instruction
+	WR_WOM
+	// WR_SRAM instruction
+	RD_SRAM
+	// WR_SRAM instruction
+	WR_SRAM
 	// PUSH instruction
-	PUSH = uint32(7)
+	PUSH
 	// POP instruction
-	POP = uint32(8)
+	POP
 	// MOVE instruction
-	MOVE = uint32(9)
+	MOVE
 	// LDC (load constant) instruction
-	LDC = uint32(10)
+	LDC
 	// DESTRUCT instruction
-	DESTRUCT = uint32(11)
+	DESTRUCT
 	// CAST instruction
-	CAST = uint32(13)
+	CAST
 	// ADD instruction
-	ADD = uint32(14)
+	ADD
 	// ADDC (add with constant) instruction
-	ADDC = uint32(15)
+	ADDC
 	// SUB instruction
-	SUB = uint32(16)
+	SUB
 	// SUBC (subtract with constant) instruction
-	SUBC = uint32(16)
+	SUBC
 	// CSUB (subtract from constant) instruction
-	CSUB = uint32(17)
+	CSUB
 	// MUL instruction
-	MUL = uint32(18)
+	MUL
 	// MULC (multiply with constant) instruction
-	MULC = uint32(19)
+	MULC
 	// DIV instruction
-	DIV = uint32(20)
+	DIV
 	// ADDMOD_P instruction
-	ADDMOD_P = uint32(21)
+	ADDMOD_P
 	// SUBMOD_P instruction
-	SUBMOD_P = uint32(22)
+	SUBMOD_P
 	// MULMOD_P instruction
-	MULMOD_P = uint32(23)
+	MULMOD_P
 	// AND instruction
-	AND = uint32(24)
+	AND
 	// OR instruction
-	OR = uint32(25)
+	OR
 	// XOR instruction
-	XOR = uint32(26)
+	XOR
 	// NOT instruction
-	NOT = uint32(27)
+	NOT
 	// SHL instruction
-	SHL = uint32(28)
+	SHL
 	// SHR instruction
-	SHR = uint32(29)
+	SHR
 	// CAT instruction
-	CAT = uint32(30)
+	CAT
 	//
+	MAX_BYTECODE
 )
 
 // Bytecode encapsulates a single bytecode instruction.
@@ -167,4 +176,71 @@ func getRelativeOffset(offset uint32, target Address, width uint) uint32 {
 	}
 	//
 	return sign_bit - roff
+}
+
+// Unpackage a given array of codes packed as n (small) registers.
+func unpackCodesToSmallRegs(n uint32, codes []uint32) ([]Reg, uint32) {
+	var (
+		regs   = make([]Reg, n)
+		ncodes = nCodesPackedSmall(n)
+		code   uint32
+	)
+	//
+	for i := range n {
+		if i%4 == 0 {
+			code = codes[i/4]
+		}
+		//
+		regs[i] = uint16(code & 0xff)
+		code = code >> 8
+	}
+	//
+	return regs, ncodes
+}
+
+// Pack a given array of bytes into an array of codes, such that the last code
+// is padded with 0xff.
+func packRegsIntoCodes(bytes []byte) []uint32 {
+	var (
+		nBytes = uint32(len(bytes))
+		ncodes = nCodesPackedSmall(nBytes)
+		//
+		codes = make([]uint32, ncodes)
+	)
+	//
+	for i := range ncodes {
+		var ith uint32
+		for j := range uint32(4) {
+			var jth uint32 = 0xff
+			//
+			if k := (i * 4) + j; k < nBytes {
+				jth = uint32(bytes[k])
+			}
+			//
+			ith = ith | (jth << (j * 8))
+		}
+		//
+		codes[i] = ith
+	}
+	//
+	return codes
+}
+
+func nCodesPackedSmall(n uint32) uint32 {
+	var (
+		// 4 bytes per code
+		ncodes = n / 4
+	)
+	// Round up if necessary
+	if n%4 != 0 {
+		ncodes++
+	}
+	//
+	return ncodes
+}
+
+func init() {
+	if MAX_BYTECODE > OPCODE_MASK {
+		panic("overflowing opcodes")
+	}
 }

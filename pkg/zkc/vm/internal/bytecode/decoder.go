@@ -45,6 +45,8 @@ func decodeBytecode[W word.Word[W]](offset uint32, codes []uint32) (Bytecode[W],
 		return &c, n
 	case JIF:
 		return decodeJif[W](offset, codes)
+	case RD_ROM, WR_WOM, RD_SRAM, WR_SRAM:
+		return decodeReadWrite[W](codes)
 	case RET:
 		return decodeRet[W](codes)
 	default:
