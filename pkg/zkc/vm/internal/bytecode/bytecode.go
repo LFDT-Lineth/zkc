@@ -58,47 +58,47 @@ const (
 	// MOVE instruction
 	MOVE = uint32(9)
 	// LDC (load constant) instruction
-	LDC = uint32(9)
+	LDC = uint32(10)
 	// DESTRUCT instruction
-	DESTRUCT = uint32(10)
+	DESTRUCT = uint32(11)
 	// CAST instruction
-	CAST = uint32(11)
+	CAST = uint32(13)
 	// ADD instruction
-	ADD = uint32(12)
+	ADD = uint32(14)
 	// ADDC (add with constant) instruction
-	ADDC = uint32(13)
+	ADDC = uint32(15)
 	// SUB instruction
-	SUB = uint32(14)
+	SUB = uint32(16)
 	// SUBC (subtract with constant) instruction
-	SUBC = uint32(15)
+	SUBC = uint32(16)
 	// CSUB (subtract from constant) instruction
-	CSUB = uint32(16)
+	CSUB = uint32(17)
 	// MUL instruction
-	MUL = uint32(17)
+	MUL = uint32(18)
 	// MULC (multiply with constant) instruction
-	MULC = uint32(18)
+	MULC = uint32(19)
 	// DIV instruction
-	DIV = uint32(19)
+	DIV = uint32(20)
 	// ADDMOD_P instruction
-	ADDMOD_P = uint32(20)
+	ADDMOD_P = uint32(21)
 	// SUBMOD_P instruction
-	SUBMOD_P = uint32(21)
+	SUBMOD_P = uint32(22)
 	// MULMOD_P instruction
-	MULMOD_P = uint32(22)
+	MULMOD_P = uint32(23)
 	// AND instruction
-	AND = uint32(23)
+	AND = uint32(24)
 	// OR instruction
-	OR = uint32(24)
+	OR = uint32(25)
 	// XOR instruction
-	XOR = uint32(25)
+	XOR = uint32(26)
 	// NOT instruction
-	NOT = uint32(26)
+	NOT = uint32(27)
 	// SHL instruction
-	SHL = uint32(27)
+	SHL = uint32(28)
 	// SHR instruction
-	SHR = uint32(28)
+	SHR = uint32(29)
 	// CAT instruction
-	CAT = uint32(29)
+	CAT = uint32(30)
 	//
 )
 
@@ -121,6 +121,11 @@ type Patchable interface {
 // Fail instruction
 type Fail struct{}
 
+// NewFail constructs a new fail instruction.
+func NewFail() *Fail {
+	return &Fail{}
+}
+
 func (p *Fail) String() string {
 	return "fail"
 }
@@ -129,31 +134,6 @@ func (p *Fail) String() string {
 func (p *Fail) Codes(_ uint32) []uint32 {
 	return []uint32{FAIL}
 }
-
-// ============================================================================
-// Ret
-// ============================================================================
-
-// Ret (return from function call) instruction.
-type Ret struct{}
-
-func (p *Ret) String() string {
-	return "ret"
-}
-
-// Codes implementation for Bytecode interface
-func (p *Ret) Codes(_ uint32) []uint32 {
-	return []uint32{RET}
-}
-
-// Patch implementation for Bytecode interface
-func (p *Ret) Patch(_ []Address) {
-	// do nothing
-}
-
-// ============================================================================
-// Jif
-// ============================================================================
 
 // ============================================================================
 // Helpers

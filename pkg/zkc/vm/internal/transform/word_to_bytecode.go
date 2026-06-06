@@ -21,7 +21,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -54,7 +53,7 @@ func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) bytecode.Program
 
 type bytecodeCompiler[W word.Word[W]] struct {
 	machine *machine.Word[W]
-	encoder bytecode.Encoder[Label]
+	encoder bytecode.Encoder[W, Label]
 	memmap  []uint16
 }
 
@@ -70,12 +69,12 @@ func (p *bytecodeCompiler[W]) compileWordFunction(fid uint, f *WordFunction) {
 			// jump instruction.
 			p.encoder.MarkLabel(label)
 			// Compile instruction into sequence of bytecodes as required.
-			p.compileWordInstruction(label, insn)
+			p.compileWordInstruction(label, insn, f)
 		}
 	}
 }
 
-func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruction) {
+func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruction, f *WordFunction) {
 	switch insn.OpCode() {
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
@@ -83,7 +82,7 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.DEBUG:
 		panic("todo")
 	case opcode.FAIL:
-		p.encoder.Fail()
+		p.encoder.Add(bytecode.NewFail())
 	case opcode.JUMP:
 		p.compileJump(pos, insn.(*instruction.Jump))
 	case opcode.MEMORY_READ:
@@ -91,7 +90,7 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.MEMORY_WRITE:
 		panic("todo")
 	case opcode.RETURN:
-		p.encoder.Ret(0, 0)
+		p.encoder.Add(bytecode.NewRet(f.Width()))
 	case opcode.SKIP:
 		p.compileSkip(pos, insn.(*instruction.Skip))
 	case opcode.SKIP_IF:
@@ -134,80 +133,58 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 }
 
 func (p *bytecodeCompiler[W]) compileAdd(insn *instruction.WordTypeA[W]) {
-	//nolint
-	switch {
-	case insn.Target.Len() != 1:
-		panic("todo")
-	case len(insn.Sources) == 0:
-		p.encoder.LoadConst(insn.Constant.BigInt().Bytes(), asReg(insn.Target.AsRegister()))
-	case len(insn.Sources) == 1 && insn.Constant.Cmp64(0) == 0:
-		var (
-			rs = asReg(insn.Sources[0])
-			rd = asReg(insn.Target.AsRegister())
-		)
-		p.encoder.Move(rs, rd)
-	default:
-		var (
-			rs0 = asReg(insn.Sources[0])
-			rs1 = asReg(insn.Sources[1])
-			rd  = asReg(insn.Target.AsRegister())
-		)
-		p.encoder.Add(rs0, rs1, rd)
-		//
-		for i := 2; i < len(insn.Sources); i = i + 1 {
-			var rsi = asReg(insn.Sources[i])
-			p.encoder.Add(rsi, rd, rd)
-		}
-		//
-		if insn.Constant.Cmp64(0) != 0 {
-			p.encoder.AddConst(insn.Constant.BigInt().Bytes(), rd, rd)
-		}
-	}
+	p.encoder.Add(bytecode.NewAddVecConst(insn.Target.Registers(), insn.Sources, insn.Constant))
 }
 
 func (p *bytecodeCompiler[W]) compileJump(pos Label, insn *instruction.Jump) {
-	p.encoder.Jmp(Label{pos.fun, insn.Immediate, 0})
+	var (
+		index = p.encoder.Label(Label{pos.fun, insn.Immediate, 0})
+	)
+	p.encoder.Add(bytecode.NewJmp(index))
 }
 
 func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead) {
-	var (
-		args    = insn.Arguments
-		returns = insn.Returns
-		mem     = p.machine.Module(insn.Id).(memory.Memory[W])
-		mid     = p.memmap[insn.Id]
-	)
-	// sanity checks
-	if len(args) != 1 {
-		panic("todo: reads with multiple arguments?")
-	}
-	//
-	for i, r := range returns {
-		switch {
-		case mem.IsReadOnly():
-			p.encoder.ReadRom(mid, asReg(args[0]), uint8(i), asReg(r))
-		case mem.IsReadWrite():
-			p.encoder.ReadRam(mid, asReg(args[0]), uint8(i), asReg(r))
-		default:
-			panic("todo")
-		}
-	}
+	// var (
+	// 	args    = insn.Arguments
+	// 	returns = insn.Returns
+	// 	mem     = p.machine.Module(insn.Id).(memory.Memory[W])
+	// 	mid     = p.memmap[insn.Id]
+	// )
+	// // sanity checks
+	// if len(args) != 1 {
+	// 	panic("todo: reads with multiple arguments?")
+	// }
+	// //
+	// for i, r := range returns {
+	// 	switch {
+	// 	case mem.IsReadOnly():
+	// 		p.encoder.ReadRom(mid, asReg(args[0]), uint8(i), asReg(r))
+	// 	case mem.IsReadWrite():
+	// 		p.encoder.ReadRam(mid, asReg(args[0]), uint8(i), asReg(r))
+	// 	default:
+	// 		panic("todo")
+	// 	}
+	// }
+	panic("todo")
 }
 
 func (p *bytecodeCompiler[W]) compileSkip(pos Label, insn *instruction.Skip) {
 	var (
-		target = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
+		label = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
+		index = p.encoder.Label(label)
 	)
-	p.encoder.Jmp(target)
+	p.encoder.Add(bytecode.NewJmp(index))
 }
 
 func (p *bytecodeCompiler[W]) compileSkipIf(pos Label, insn *instruction.SkipIf) {
 	var (
-		target = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
-		l      = uint16(insn.Left.AsRegister().Unwrap())
-		r      = uint16(insn.Right.AsRegister().Unwrap())
+		label = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
+		index = p.encoder.Label(label)
+		l     = insn.Left
+		r     = insn.Right
 	)
-	// TODO: sort out vectored skip if
-	p.encoder.JmpIf(target, insn.Cond, l, r)
+	//
+	p.encoder.Add(bytecode.NewJifVec(insn.Cond, index, l, r))
 }
 
 // Label uniquely identifies an instruction within a given module.

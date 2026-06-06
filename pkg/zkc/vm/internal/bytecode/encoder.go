@@ -13,8 +13,10 @@
 package bytecode
 
 import (
-	"fmt"
+	"math"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -63,70 +65,20 @@ func (p *Encoder[W, T]) MarkSymbol(symbol string) {
 	p.symbols[offset] = symbol
 }
 
+// Label returns a suitable index for representing the given label within a
+// branching instruction.
+func (p *Encoder[W, T]) Label(label T) uint32 {
+	return p.getLabelIndex(label)
+}
+
 // Len returns the length of the bytecode sequence encoded thus far.
 func (p *Encoder[W, T]) Len() uint {
 	return uint(len(p.bytecodes))
 }
 
 // Add encodes an integer addition instruction.
-func (p *Encoder[W, T]) Add(src []Reg, dst []Reg) {
-	var zero W
-	p.AddConst(zero, src, dst)
-}
-
-// AddConst encodes an integer addition instruction involving a constant and
-// register.
-func (p *Encoder[W, T]) AddConst(constant W, src []Reg, dst []Reg) {
-	p.bytecodes = append(p.bytecodes, &Add[W]{Constant: constant, Source: src, Target: dst})
-}
-
-// Call encodes a CALL instruction to a given label.
-func (p *Encoder[W, T]) Call(label uint, inputs uint) {
-	panic("todo")
-}
-
-// Fail encodes a FAIL instruction to a given label.
-func (p *Encoder[W, T]) Fail() {
-	p.bytecodes = append(p.bytecodes, &Fail{})
-}
-
-// LoadConst encodes an LDC instruction.
-func (p *Encoder[W, T]) LoadConst(constant W, rd Reg) {
-	p.AddConst(constant, nil, []Reg{rd})
-}
-
-// Jmp encodes a JMP instruction to a given label.
-func (p *Encoder[W, T]) Jmp(label T) {
-	var index = p.getLabelIndex(label)
-	//
-	p.bytecodes = append(p.bytecodes, &Jmp{index})
-}
-
-// JmpIf encodes a JIF instruction to a given label.
-func (p *Encoder[W, T]) JmpIf(label T, op Cond, rs0, rs1 Reg) {
-	var (
-		index uint32 = p.getLabelIndex(label)
-	)
-	// sanity checks
-	checkRegisterId(rs0, "rs0")
-	checkRegisterId(rs1, "rs1")
-	//
-	p.bytecodes = append(p.bytecodes, &Jif{Target: index, Src0: rs0, Src1: rs1, Op: op})
-}
-
-// ReadRam encodes a LDRAM instruction from a given function call.
-func (p *Encoder[W, T]) ReadRam(mid uint16, rs Reg, slot uint8, rd Reg) {
-	panic("todo")
-}
-
-// ReadRom encodes a LDROM instruction from a given function call.
-func (p *Encoder[W, T]) ReadRom(mid uint16, rs Reg, slot uint8, rd Reg) {
-	panic("todo")
-}
-
-// Ret encodes a RET instruction from a given function call.
-func (p *Encoder[W, T]) Ret(ninputs, width uint) {
-	p.bytecodes = append(p.bytecodes, &Ret{})
+func (p *Encoder[W, T]) Add(bc Bytecode) {
+	p.bytecodes = append(p.bytecodes, bc)
 }
 
 func (p *Encoder[W, T]) getLabelIndex(label T) uint32 {
@@ -151,13 +103,6 @@ func (p *Encoder[W, T]) getLabelIndex(label T) uint32 {
 	return index
 }
 
-func checkRegisterId(id Reg, name string) {
-	// sanity checks
-	if id >= 256 {
-		panic(fmt.Sprintf("%s register out of bounds", name))
-	}
-}
-
 func patchBranchTargets(bytecodes []Bytecode, labels []Address) {
 	for _, b := range bytecodes {
 		if b, ok := b.(Patchable); ok {
@@ -177,4 +122,18 @@ func encode(bytecodes []Bytecode) (codes []uint32) {
 	}
 	//
 	return codes
+}
+
+func asReg(rid register.Id) Reg {
+	if rid.Unwrap() > math.MaxUint16 {
+		panic("invalid register id")
+	}
+	//
+	return uint16(rid.Unwrap())
+}
+
+func asRegs(rids ...register.Id) []Reg {
+	return array.Map(rids, func(_ uint, r register.Id) Reg {
+		return asReg(r)
+	})
 }

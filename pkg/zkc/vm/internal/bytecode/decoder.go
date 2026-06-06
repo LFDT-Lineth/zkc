@@ -12,14 +12,16 @@
 // SPDX-License-Identifier: Apache-2.0
 package bytecode
 
-func decode(codes []uint32) (bytecodes []Bytecode) {
+import "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
+
+func decode[W word.Word[W]](codes []uint32) (bytecodes []Bytecode) {
 	var (
 		ncodes = uint32(len(codes))
 		offset uint32
 	)
 	//
 	for offset < ncodes {
-		bc, n := decodeBytecode(offset, codes[offset:])
+		bc, n := decodeBytecode[W](offset, codes[offset:])
 		bytecodes = append(bytecodes, bc)
 		offset += n
 	}
@@ -27,24 +29,23 @@ func decode(codes []uint32) (bytecodes []Bytecode) {
 	return bytecodes
 }
 
-func decodeBytecode(offset uint32, codes []uint32) (Bytecode, uint32) {
+func decodeBytecode[W word.Word[W]](offset uint32, codes []uint32) (Bytecode, uint32) {
 	var (
 		code = codes[0]
 	)
 	//
 	switch code & 0x1f {
 	case ADD:
-		return decodeAdd(codes)
+		return decodeAdd[W](codes)
 	case FAIL:
 		return &Fail{}, 1
 	case JMP:
 		c, n := decodeJmp1(offset, codes)
 		return &c, n
 	case JIF:
-		c, n := decodeJif(offset, codes)
-		return &c, n
+		return decodeJif(offset, codes)
 	case RET:
-		return &Ret{}, 1
+		return decodeRet(codes)
 	default:
 		panic("unknown bytecode encountered")
 	}
