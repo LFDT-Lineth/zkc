@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -144,28 +145,26 @@ func (p *bytecodeCompiler[W]) compileJump(pos Label, insn *instruction.Jump) {
 }
 
 func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead) {
-	// var (
-	// 	args    = insn.Arguments
-	// 	returns = insn.Returns
-	// 	mem     = p.machine.Module(insn.Id).(memory.Memory[W])
-	// 	mid     = p.memmap[insn.Id]
-	// )
-	// // sanity checks
-	// if len(args) != 1 {
-	// 	panic("todo: reads with multiple arguments?")
-	// }
-	// //
-	// for i, r := range returns {
-	// 	switch {
-	// 	case mem.IsReadOnly():
-	// 		p.encoder.ReadRom(mid, asReg(args[0]), uint8(i), asReg(r))
-	// 	case mem.IsReadWrite():
-	// 		p.encoder.ReadRam(mid, asReg(args[0]), uint8(i), asReg(r))
-	// 	default:
-	// 		panic("todo")
-	// 	}
-	// }
-	panic("todo")
+	var (
+		mem  = p.machine.Module(insn.Id).(memory.Memory[W])
+		mid  = p.memmap[insn.Id]
+		mode bytecode.RwMode
+	)
+	//
+	switch {
+	case mem.IsReadOnly():
+		mode = bytecode.ROM_READ
+	case mem.IsReadWrite():
+		mode = bytecode.SRAM_READ
+		// Sanity check
+		if _, ok := mem.(*memory.BiPartiteRandomAccess[W]); ok {
+			panic("todo")
+		}
+	default:
+		panic("todo")
+	}
+	//
+	p.encoder.Add(bytecode.NewReadWrite(mode, mid, insn.Arguments, insn.Returns))
 }
 
 func (p *bytecodeCompiler[W]) compileSkip(pos Label, insn *instruction.Skip) {
