@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Jif (jump conditional) instruction.
@@ -67,7 +68,7 @@ func (p *Jif) String() string {
 		ops = "??"
 	}
 	//
-	return fmt.Sprintf("jif %s %s %s 0x%04x", p.Src0, ops, p.Src1, p.Target)
+	return fmt.Sprintf("if %s %s %s goto 0x%08x", p.Src0, ops, p.Src1, p.Target)
 }
 
 // Codes implementation for Bytecode interface
@@ -90,7 +91,7 @@ func (p *Jif) Patch(labels []Address) {
 	p.Target = labels[p.Target]
 }
 
-func decodeJif(offset uint32, codes []uint32) (bc Bytecode, n uint32) {
+func decodeJif[W word.Word[W]](offset uint32, codes []uint32) (bc Bytecode[W], n uint32) {
 	var (
 		code   = codes[0]
 		target Address

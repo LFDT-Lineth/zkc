@@ -14,8 +14,10 @@ package bytecode
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -58,7 +60,38 @@ func NewAddVecConst[W word.Word[W]](targets []register.Id, sources []register.Id
 }
 
 func (p *Add[W]) String() string {
-	return fmt.Sprintf("add ???")
+	var (
+		builder strings.Builder
+		cz      = p.Constant.Cmp64(0) == 0
+		cstr    = fmt.Sprintf("0x%s", p.Constant.Text(16))
+	)
+	//
+	for i, r := range array.Reverse(p.Target) {
+		if i != 0 {
+			builder.WriteString("::")
+		}
+		//
+		builder.WriteString(fmt.Sprintf("r%d", r))
+	}
+	//
+	builder.WriteString(" = ")
+	//
+	for i, r := range p.Source {
+		if i != 0 {
+			builder.WriteString(" + ")
+		}
+		//
+		builder.WriteString(fmt.Sprintf("r%d", r))
+	}
+	//
+	if len(p.Source) == 0 {
+		builder.WriteString(cstr)
+	} else if !cz {
+		builder.WriteString(" + ")
+		builder.WriteString(cstr)
+	}
+	//
+	return builder.String()
 }
 
 // Codes implementation for Bytecode interface
@@ -80,28 +113,26 @@ func (p *Add[W]) Codes(_ uint32) []uint32 {
 	}
 }
 
-func decodeAdd[W word.Word[W]](codes []uint32) (Bytecode, uint32) {
+func decodeAdd[W word.Word[W]](codes []uint32) (Bytecode[W], uint32) {
 	var (
-		code     = codes[0]
-		constant W
-		sources  []Reg
-		targets  []Reg
-		n        uint32
+		rs0, rs1, rd Reg
+		code         = codes[0] & 0x1f
+		constant     W
+		sources      []Reg
+		targets      []Reg
+		n            uint32
 	)
 	switch code {
 	case ADD:
-		var rs0, rs1, rd Reg
 		rs0, rs1, rd, n = decodeAdd_2s1(codes)
 		sources = []Reg{rs0, rs1}
 		targets = []Reg{rd}
 	case MOVE:
-		var rs, rd Reg
-		rs, rd, n = decodeMove_1s1(codes)
-		sources = []Reg{rs}
+		rs0, rd, n = decodeMove_1s1(codes)
+		sources = []Reg{rs0}
 		targets = []Reg{rd}
 	case LDC:
-		var rd Reg
-		constant, rd, n = decodeLdc_1(codes)
+		constant, rd, n = decodeLdc_1[W](codes)
 		targets = []Reg{rd}
 	default:
 		panic("unsupported instruction form")
@@ -164,18 +195,27 @@ func decodeAdd_2s1(codes []uint32) (rs0, rs1, rd uint16, n uint32) {
 
 func encodeLdc_1[W word.Word[W]](constant W, rd uint16) []uint32 {
 	// Sanity checks
-	if rd >= 256 || constant.Cmp64(16777216) > 1 {
+	if rd >= 256 || constant.Cmp64(65536) > 1 {
 		// NOTE: this corresponds to a WIDE instruction, but these are not
 		// supported at this time.
 		panic("wide instructions not supported")
 	}
 	// Encoding
 	_rd := uint32(rd) << 8
-	c := uint32(constant.Uint64()) << 8
+	c := uint32(constant.Uint64()) << 16
 	//
 	return []uint32{
 		c | _rd | LDC,
 	}
+}
+
+func decodeLdc_1[W word.Word[W]](codes []uint32) (constant W, rd uint16, n uint32) {
+	var c W
+	//
+	rd = Reg((codes[0] >> 8) & 0xff)
+	c = c.SetUint64(uint64(codes[0] >> 16))
+	//
+	return c, rd, 1
 }
 
 // ============================================================================
@@ -205,4 +245,11 @@ func encodeMove_1s1(rs, rd uint16) []uint32 {
 	return []uint32{
 		_rs | _rd | MOVE,
 	}
+}
+
+func decodeMove_1s1(codes []uint32) (rs, rd uint16, n uint32) {
+	rd = Reg((codes[0] >> 8) & 0xff)
+	rs = Reg((codes[0] >> 16) & 0xff)
+	//
+	return rs, rd, 1
 }

@@ -14,6 +14,7 @@ package bytecode
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Cond provides a convenient alias to make the code more readable.
@@ -103,14 +104,14 @@ const (
 )
 
 // Bytecode encapsulates a single bytecode instruction.
-type Bytecode interface {
+type Bytecode[W word.Word[W]] interface {
 	String() string
 	Codes(uint32) []uint32
 }
 
 // Patchable bytecodes support the patch method.
-type Patchable interface {
-	Bytecode
+type Patchable[W word.Word[W]] interface {
+	Bytecode[W]
 	Patch(labels []Address)
 }
 

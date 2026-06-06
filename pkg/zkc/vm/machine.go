@@ -19,7 +19,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 )
@@ -90,18 +89,6 @@ type FieldMachine[F field.Element[F]] = machine.Field[F]
 
 // FieldInstruction is an instruction which operates over field elements only.
 type FieldInstruction = instruction.Field
-
-// ============================================================================
-// Bytecode Interpreter
-// ============================================================================
-
-// BytecodeInterpreter is an optimised bytecode interpreter for executing word
-// instructions.
-type BytecodeInterpreter[W Word[W]] = bytecode.Interpreter[W]
-
-// BytecodeProgram represents a compiled bytecode program, along with
-// accompanying symbolic information.
-type BytecodeProgram = bytecode.Program
 
 // ============================================================================
 // Constructors

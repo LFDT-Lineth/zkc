@@ -12,7 +12,9 @@
 // SPDX-License-Identifier: Apache-2.0
 package bytecode
 
-import "github.com/LFDT-Lineth/zkc/pkg/util"
+import (
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+)
 
 // Program represents a self-contained bytecode program with a given entry
 // point.
@@ -29,11 +31,6 @@ func NewProgram(bytecodes []uint32, symbols map[uint32]string) Program {
 		bytecodes,
 		symbols,
 	}
-}
-
-// Bytecodes returns the underlying bytecode sequence.
-func (p Program) Bytecodes() (codes []Bytecode) {
-	return decode(p.bytecodes)
 }
 
 // SymbolAt determines whether or not there is a symbol associated with a given

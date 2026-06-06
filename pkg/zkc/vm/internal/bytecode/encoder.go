@@ -21,7 +21,7 @@ import (
 )
 
 type Encoder[W word.Word[W], T comparable] struct {
-	bytecodes []Bytecode
+	bytecodes []Bytecode[W]
 	//
 	labels map[T]uint32
 	//
@@ -77,7 +77,7 @@ func (p *Encoder[W, T]) Len() uint {
 }
 
 // Add encodes an integer addition instruction.
-func (p *Encoder[W, T]) Add(bc Bytecode) {
+func (p *Encoder[W, T]) Add(bc Bytecode[W]) {
 	p.bytecodes = append(p.bytecodes, bc)
 }
 
@@ -103,15 +103,15 @@ func (p *Encoder[W, T]) getLabelIndex(label T) uint32 {
 	return index
 }
 
-func patchBranchTargets(bytecodes []Bytecode, labels []Address) {
+func patchBranchTargets[W word.Word[W]](bytecodes []Bytecode[W], labels []Address) {
 	for _, b := range bytecodes {
-		if b, ok := b.(Patchable); ok {
+		if b, ok := b.(Patchable[W]); ok {
 			b.Patch(labels)
 		}
 	}
 }
 
-func encode(bytecodes []Bytecode) (codes []uint32) {
+func encode[W word.Word[W]](bytecodes []Bytecode[W]) (codes []uint32) {
 	var offset uint32
 	//
 	for _, bytecode := range bytecodes {

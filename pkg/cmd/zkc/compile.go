@@ -109,7 +109,7 @@ func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F]) {
 	}
 	// Word-level Intermediate Representation
 	if artifacts.bci.HasValue() {
-		writeBytecodeInterpreter(artifacts.bci.Unwrap())
+		writeBytecodeInterpreter[vm.Uint](artifacts.bci.Unwrap())
 	}
 	// Field-level Intermediate Representation
 	if artifacts.fir.HasValue() {
@@ -415,11 +415,11 @@ func registerType(r register.Register) string {
 // Bytecode Interpreter
 // ============================================================================
 
-func writeBytecodeInterpreter(program vm.BytecodeProgram) {
+func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram) {
 	var (
 		address uint32
 	)
-	for _, bytecode := range program.Bytecodes() {
+	for _, bytecode := range vm.DecodeBytecodes[W](program) {
 		var codes = bytecode.Codes(address)
 		//
 		if sym := program.SymbolAt(address); sym.HasValue() {

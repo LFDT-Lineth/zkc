@@ -15,6 +15,8 @@ package bytecode
 import (
 	"fmt"
 	"math"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Ret (return from function call) instruction.
@@ -48,7 +50,7 @@ func (p *Ret) Patch(_ []Address) {
 	// do nothing
 }
 
-func decodeRet(codes []uint32) (Bytecode, uint32) {
+func decodeRet[W word.Word[W]](codes []uint32) (Bytecode[W], uint32) {
 	width := decodeRet1(codes[0])
 	//
 	return &Ret{width}, 1

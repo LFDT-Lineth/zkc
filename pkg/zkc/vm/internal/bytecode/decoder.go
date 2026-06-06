@@ -14,14 +14,15 @@ package bytecode
 
 import "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 
-func decode[W word.Word[W]](codes []uint32) (bytecodes []Bytecode) {
+// Decode an encoded bytecode program into a sequence of bytecodes.
+func Decode[W word.Word[W]](p Program) (bytecodes []Bytecode[W]) {
 	var (
-		ncodes = uint32(len(codes))
+		ncodes = uint32(len(p.bytecodes))
 		offset uint32
 	)
 	//
 	for offset < ncodes {
-		bc, n := decodeBytecode[W](offset, codes[offset:])
+		bc, n := decodeBytecode[W](offset, p.bytecodes[offset:])
 		bytecodes = append(bytecodes, bc)
 		offset += n
 	}
@@ -29,13 +30,13 @@ func decode[W word.Word[W]](codes []uint32) (bytecodes []Bytecode) {
 	return bytecodes
 }
 
-func decodeBytecode[W word.Word[W]](offset uint32, codes []uint32) (Bytecode, uint32) {
+func decodeBytecode[W word.Word[W]](offset uint32, codes []uint32) (Bytecode[W], uint32) {
 	var (
 		code = codes[0]
 	)
 	//
 	switch code & 0x1f {
-	case ADD:
+	case ADD, LDC, MOVE:
 		return decodeAdd[W](codes)
 	case FAIL:
 		return &Fail{}, 1
@@ -43,9 +44,9 @@ func decodeBytecode[W word.Word[W]](offset uint32, codes []uint32) (Bytecode, ui
 		c, n := decodeJmp1(offset, codes)
 		return &c, n
 	case JIF:
-		return decodeJif(offset, codes)
+		return decodeJif[W](offset, codes)
 	case RET:
-		return decodeRet(codes)
+		return decodeRet[W](codes)
 	default:
 		panic("unknown bytecode encountered")
 	}
