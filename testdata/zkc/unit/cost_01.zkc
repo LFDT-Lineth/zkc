@@ -1,0 +1,33 @@
+input data(addr:u2) -> (b:u8)
+
+fn main() {
+    var xs:[u8;2]
+
+    #[cost:load_first]
+    xs[0] = data[0]
+
+    #[cost:load_second]
+    xs[1] = data[1]
+
+    var ys:[u8;2]
+
+    #[cost:array_copy]
+    ys = xs
+
+    #[cost:branch]
+    if ys[0] == data[0] {
+        #[cost:leaf]
+        ys[1] = ys[1] + 1
+    } else {
+        fail
+    }
+
+    #[cost:loop]
+    while ys[1] < data[2] {
+        ys[1] = ys[1] + 1
+    }
+
+    if ys[1] != data[2] {
+        fail
+    }
+}

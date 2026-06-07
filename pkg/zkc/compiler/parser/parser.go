@@ -867,20 +867,24 @@ func (p *Parser) parseStatement(env Environment,
 	if insn != nil {
 		insns = append(insns, insn)
 	}
+	// Record source mapping before wrapping so both the original statement and
+	// the metadata wrapper can be used for later source-map copies/errors.
+	span := p.spanOf(start, p.index-1)
+	for _, insn := range insns {
+		// Check whether instruction already added to source map.  This can
+		// arise with recursive calls to parseStatement() (e.g. for blocks).
+		if !p.srcmap.Has(insn) {
+			p.srcmap.Put(insn, span)
+		}
+	}
 	// Attach compile-time cost label to all statements produced by this source
 	// statement. This is metadata only; the wrapper delegates statement
 	// semantics to its body.
 	if cost != "" {
 		for i, insn := range insns {
-			insns[i] = &stmt.Cost[symbol.Unresolved]{Label: cost, Body: insn}
-		}
-	}
-	// Record source mapping
-	for _, insn := range insns {
-		// Check whether instruction already added to source map.  This can
-		// arise with recursive calls to parseStatement() (e.g. for blocks).
-		if !p.srcmap.Has(insn) {
-			p.srcmap.Put(insn, p.spanOf(start, p.index-1))
+			wrapped := &stmt.Cost[symbol.Unresolved]{Label: cost, Body: insn}
+			p.srcmap.Put(wrapped, span)
+			insns[i] = wrapped
 		}
 	}
 	//

@@ -63,7 +63,9 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorI
 		insns = append(insns, post...)
 	case *stmt.Cost[symbol.Resolved]:
 		vec := p.compileStatement(pc, mapping, s.Body)
-		p.costReport.Add(s.Label, p.function, vec)
+		if p.costReport != nil {
+			p.costReport.Add(s.Label, p.function, vec)
+		}
 
 		return vec
 	case *stmt.IfGoto[symbol.Resolved]:

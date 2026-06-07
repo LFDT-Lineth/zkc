@@ -65,7 +65,13 @@ type VariableMap = variable.Map[symbol.Resolved]
 func Typing(program ast.Program, field field.Config, srcmaps source.Maps[any]) []source.SyntaxError {
 	var (
 		errors []source.SyntaxError
-		typer  = TypeChecker{program, field, program.Environment(), srcmaps, make(map[string]costLabelSite)}
+		typer  = TypeChecker{
+			program:    program,
+			field:      field,
+			env:        program.Environment(),
+			srcmaps:    srcmaps,
+			costLabels: make(map[string]costLabelSite),
+		}
 	)
 	// NOTE: finalising constants must be done first to ensure their expressions
 	// are given types.  Otherwise, finalising components could fail.
