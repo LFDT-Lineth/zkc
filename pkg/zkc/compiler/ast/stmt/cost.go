@@ -40,11 +40,15 @@ func (p *Cost[S]) String(env variable.Map[S]) string {
 	return fmt.Sprintf("#[cost:%s] %s", p.Label, p.Body.String(env))
 }
 
-// UnwrapCost returns the body of a cost annotation, or the statement itself.
+// UnwrapCost returns the first non-cost statement inside a cost annotation, or
+// the statement itself.
 func UnwrapCost[S symbol.Symbol[S]](s Stmt[S]) Stmt[S] {
-	if c, ok := s.(*Cost[S]); ok {
-		return c.Body
-	}
+	for {
+		c, ok := s.(*Cost[S])
+		if !ok {
+			return s
+		}
 
-	return s
+		s = c.Body
+	}
 }
