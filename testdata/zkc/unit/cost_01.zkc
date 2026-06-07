@@ -14,6 +14,8 @@ fn main() {
     #[cost:array_copy]
     ys = xs
 
+    // Static cost counts WIR micro-instructions generated for this if/else.
+    // Dynamic cost counts only the WIR micro-instructions on the executed branch.
     #[cost:branch]
     if ys[0] == data[0] {
         #[cost:leaf]
@@ -22,6 +24,8 @@ fn main() {
         fail
     }
 
+    // Static cost counts WIR micro-instructions generated for one lowered while.
+    // Dynamic cost counts the WIR micro-instructions executed across all loop iterations.
     #[cost:loop]
     while ys[1]<data[2] {
         ys[1] = ys[1] + 1
