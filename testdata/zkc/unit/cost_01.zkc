@@ -23,7 +23,7 @@ fn main() {
     }
 
     #[cost:loop]
-    while ys[1] < data[2] {
+    while ys[1]<data[2] {
         ys[1] = ys[1] + 1
     }
 
