@@ -65,7 +65,7 @@ type VariableMap = variable.Map[symbol.Resolved]
 func Typing(program ast.Program, field field.Config, srcmaps source.Maps[any]) []source.SyntaxError {
 	var (
 		errors []source.SyntaxError
-		typer  = TypeChecker{program, field, program.Environment(), srcmaps, make(map[string]struct{})}
+		typer  = TypeChecker{program, field, program.Environment(), srcmaps, make(map[string]costLabelSite)}
 	)
 	// NOTE: finalising constants must be done first to ensure their expressions
 	// are given types.  Otherwise, finalising components could fail.
@@ -114,7 +114,13 @@ type TypeChecker struct {
 	field      field.Config
 	env        ast.Environment
 	srcmaps    source.Maps[any]
-	costLabels map[string]struct{}
+	costLabels map[string]costLabelSite
+}
+
+type costLabelSite struct {
+	filename string
+	start    int
+	end      int
 }
 
 func (p *TypeChecker) lookup(id symbol.Resolved) decl.Resolved {
@@ -239,13 +245,24 @@ func (p *TypeChecker) typeFunctionStatement(s stmt.Resolved, fn *decl.ResolvedFu
 }
 
 func (p *TypeChecker) typeCostLabel(s *stmt.Cost[symbol.Resolved]) []source.SyntaxError {
-	if _, ok := p.costLabels[s.Label]; ok {
+	site := p.costLabelSite(s)
+
+	if previous, ok := p.costLabels[s.Label]; ok && previous != site {
 		return p.srcmaps.SyntaxErrors(s, fmt.Sprintf("duplicate cost label %q", s.Label))
 	}
 
-	p.costLabels[s.Label] = struct{}{}
+	p.costLabels[s.Label] = site
 
 	return nil
+}
+
+func (p *TypeChecker) costLabelSite(s *stmt.Cost[symbol.Resolved]) costLabelSite {
+	file, span, ok := p.srcmaps.Lookup(s)
+	if !ok {
+		panic(fmt.Sprintf("missing source mapping for cost label %q", s.Label))
+	}
+
+	return costLabelSite{file.Filename(), span.Start(), span.End()}
 }
 
 func (p *TypeChecker) typeMemory(c decl.ResolvedMemory) []source.SyntaxError {
