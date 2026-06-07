@@ -823,7 +823,12 @@ func (p *Parser) parseStatement(env Environment,
 		insns    []stmt.Unresolved
 		insn     stmt.Unresolved
 		returned bool
+		cost     string
 	)
+	//
+	if cost, errs = p.parseStatementCostAnnotation(); len(errs) > 0 {
+		return false, nil, errs
+	}
 	//
 	lookahead := p.lookahead()
 	//
@@ -862,6 +867,14 @@ func (p *Parser) parseStatement(env Environment,
 	if insn != nil {
 		insns = append(insns, insn)
 	}
+	// Attach compile-time cost label to all statements produced by this source
+	// statement. This is metadata only; the wrapper delegates statement
+	// semantics to its body.
+	if cost != "" {
+		for i, insn := range insns {
+			insns[i] = &stmt.Cost[symbol.Unresolved]{Label: cost, Body: insn}
+		}
+	}
 	// Record source mapping
 	for _, insn := range insns {
 		// Check whether instruction already added to source map.  This can
@@ -872,6 +885,36 @@ func (p *Parser) parseStatement(env Environment,
 	}
 	//
 	return returned, insns, errs
+}
+
+func (p *Parser) parseStatementCostAnnotation() (string, []source.SyntaxError) {
+	if p.lookahead().Kind != HASH {
+		return "", nil
+	}
+	//
+	if _, errs := p.expect(HASH); len(errs) > 0 {
+		return "", errs
+	} else if _, errs := p.expect(LSQUARE); len(errs) > 0 {
+		return "", errs
+	}
+	//
+	kind, errs := p.expect(IDENTIFIER)
+	if len(errs) > 0 {
+		return "", errs
+	} else if p.string(kind) != "cost" {
+		return "", p.syntaxErrors(kind, "unknown statement annotation")
+	} else if _, errs := p.expect(COLON); len(errs) > 0 {
+		return "", errs
+	}
+	//
+	label, errs := p.expect(IDENTIFIER)
+	if len(errs) > 0 {
+		return "", errs
+	} else if _, errs := p.expect(RSQUARE); len(errs) > 0 {
+		return "", errs
+	}
+	//
+	return p.string(label), nil
 }
 
 func (p *Parser) parseAssignment(env Environment) (stmt.Unresolved, []source.SyntaxError) {

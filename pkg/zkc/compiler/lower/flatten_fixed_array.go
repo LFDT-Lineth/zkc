@@ -93,7 +93,7 @@ func expandFixedArrays(
 	// remap the PC of the expanded code for
 	if len(pcMapping) > 0 {
 		for _, s := range expandedCode {
-			switch s := s.(type) {
+			switch s := stmt.UnwrapCost(s).(type) {
 			case *stmt.IfGoto[symbol.Resolved]:
 				s.Target = remapPC(s.Target, pcMapping)
 			case *stmt.Goto[symbol.Resolved]:
@@ -143,10 +143,19 @@ func expandFnCode(
 	var origPC uint
 	//
 	for _, s := range fn.Code {
-		switch s := s.(type) {
+		cost, hasCost := s.(*stmt.Cost[symbol.Resolved])
+		inner := stmt.UnwrapCost(s)
+
+		switch s := inner.(type) {
 		case *stmt.Assign[symbol.Resolved]:
 			// Break whole-array assignments into per-element assignments if any
 			if expanded := expandWholeArrayAssign(s, varMapping, env); expanded != nil {
+				if hasCost {
+					for i, e := range expanded {
+						expanded[i] = &stmt.Cost[symbol.Resolved]{Label: cost.Label, Body: e}
+					}
+				}
+
 				expandedCode = append(expandedCode, expanded...)
 
 				if expLength := uint(len(expanded)); expLength > 1 {
@@ -747,6 +756,10 @@ func (p *Rewriter) rewriteFixedArrayStmt(s stmt.Resolved) stmt.Resolved {
 		}
 
 		s.Source = p.rewriteArrayExpression(s.Source)
+
+		return s
+	case *stmt.Cost[symbol.Resolved]:
+		s.Body = p.rewriteFixedArrayStmt(s.Body)
 
 		return s
 	case *stmt.IfGoto[symbol.Resolved]:

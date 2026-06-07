@@ -15,6 +15,7 @@ package zkc
 import (
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/debug"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -22,6 +23,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -46,12 +48,16 @@ var debugCmds = []FieldAgnosticCmd{
 
 func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
-		build    = GetBuildConfig[F](cmd, field)
-		observer = debug.TraceObserver[vm.Uint]{}
-		quiet    = GetFlag(cmd, "quiet")
+		build  = GetBuildConfig[F](cmd, field)
+		quiet  = GetFlag(cmd, "quiet")
+		report *codegen.CostReport
 	)
 	// Suppress printf debug instructions when quiet mode is enabled.
 	build.config = build.config.Quiet(quiet)
+	if GetFlag(cmd, "verbose") {
+		report = codegen.NewCostReport()
+		build.config = build.config.CostReport(report)
+	}
 	// Force compilation of the word machine, which is what we execute.
 	build.wir = true
 	//
@@ -59,15 +65,20 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	artifacts := build.Build(args[1:]...)
 	wm := artifacts.wir.Unwrap()
+	printCostReport("Static cost annotations (inclusive WIR micro-instructions):", report.StaticTotals())
 	// Decode inputs against the compiled machine.
 	inputs, errs := vm.DecodeInputs(&wm, input)
 	if len(errs) == 0 {
 		if err := wm.Boot("main", inputs); err != nil {
 			errs = append(errs, err)
-		} else if _, err := vm.ExecuteAndObserve(&wm, 1, &observer); err != nil {
-			errs = append(errs, err)
+		} else {
+			observer := debug.TraceObserver[vm.Uint]{CostReport: report}
+			if _, err := vm.ExecuteAndObserve(&wm, 1, &observer); err != nil {
+				errs = append(errs, err)
+			}
 		}
 	}
+	printCostReport("Dynamic cost annotations (executed WIR micro-instructions):", report.DynamicTotals())
 	//
 	if len(errs) > 0 {
 		for _, e := range errs {
@@ -77,6 +88,27 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		os.Exit(4)
 	}
 	//
+	fmt.Println()
+}
+
+func printCostReport(title string, totals map[string]uint) {
+	if len(totals) == 0 {
+		return
+	}
+	//
+	labels := make([]string, 0, len(totals))
+
+	for label := range totals {
+		labels = append(labels, label)
+	}
+
+	slices.Sort(labels)
+	fmt.Println(title)
+
+	for _, label := range labels {
+		fmt.Printf("  %-32s %d\n", label, totals[label])
+	}
+
 	fmt.Println()
 }
 

@@ -159,6 +159,11 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			panic(fmt.Sprintf("unknown declaration %s", c.Name()))
 		}
 	}
+	// Compute inclusive cost annotations before VM-level lowering/vectorisation
+	// rewrites the function bodies.
+	if len(errors) == 0 && p.config.costReport != nil {
+		p.config.costReport.Finalize(modules)
+	}
 	// Lower VM-level zkc-native instructions into arithmetic instructions.
 	if len(errors) == 0 && p.config.lowerZkcNative {
 		// Lower Bitwise operations into arithmetic instructions.
@@ -249,6 +254,8 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		field:       p.config.field,
 		srcmaps:     p.srcmaps,
 		quiet:       p.config.quiet,
+		costReport:  p.config.costReport,
+		function:    mapping[id],
 	}
 	//
 	for i, stmt := range fn.Code {
