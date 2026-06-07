@@ -51,6 +51,7 @@ func (p *TraceObserver[W]) PreExecution(machine *vm.WordMachine[W]) {
 	//
 	if n > 0 {
 		p.pruneCostLabels(n)
+
 		if n != p.depth {
 			fmt.Println()
 			p.enterFunction(machine)

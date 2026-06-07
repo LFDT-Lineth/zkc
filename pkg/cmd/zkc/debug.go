@@ -54,6 +54,7 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	)
 	// Suppress printf debug instructions when quiet mode is enabled.
 	build.config = build.config.Quiet(quiet)
+
 	if GetFlag(cmd, "verbose") {
 		report = codegen.NewCostReport()
 		build.config = build.config.CostReport(report)
@@ -77,6 +78,7 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 			}
 		}
 	}
+
 	printCostReport("Static cost annotations (inclusive WIR micro-instructions):", report.StaticTotals())
 	printCostReport("Dynamic cost annotations (executed WIR micro-instructions):", report.DynamicTotals())
 	//
