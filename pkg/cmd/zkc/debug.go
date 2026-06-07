@@ -65,7 +65,6 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	artifacts := build.Build(args[1:]...)
 	wm := artifacts.wir.Unwrap()
-	printCostReport("Static cost annotations (inclusive WIR micro-instructions):", report.StaticTotals())
 	// Decode inputs against the compiled machine.
 	inputs, errs := vm.DecodeInputs(&wm, input)
 	if len(errs) == 0 {
@@ -78,6 +77,7 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 			}
 		}
 	}
+	printCostReport("Static cost annotations (inclusive WIR micro-instructions):", report.StaticTotals())
 	printCostReport("Dynamic cost annotations (executed WIR micro-instructions):", report.DynamicTotals())
 	//
 	if len(errs) > 0 {
