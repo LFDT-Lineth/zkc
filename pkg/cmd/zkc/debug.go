@@ -97,16 +97,20 @@ func printCostReport(title string, totals map[string]uint) {
 	}
 	//
 	labels := make([]string, 0, len(totals))
+	width := 0
 
 	for label := range totals {
 		labels = append(labels, label)
+		if len(label) > width {
+			width = len(label)
+		}
 	}
 
 	slices.Sort(labels)
 	fmt.Println(title)
 
 	for _, label := range labels {
-		fmt.Printf("  %-32s %d\n", label, totals[label])
+		fmt.Printf("  %-*s %d\n", width, label, totals[label])
 	}
 
 	fmt.Println()
