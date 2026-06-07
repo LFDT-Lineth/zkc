@@ -14,6 +14,7 @@ package bytecode
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/heap"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -28,6 +29,14 @@ type Interpreter[W word.Word[W]] struct {
 	wordStack heap.Heap[W]
 	// call stack
 	callStack heap.Heap[uint32]
+	// read-only memories
+	roms []memory.StaticArray[W]
+	// write-once memories
+	woms []memory.StaticArray[W]
+	// random-access memories
+	rams []memory.StaticArray[W]
+	// bipartite random-access memories
+	brams []memory.BiPartiteRandomAccess[W]
 }
 
 // NewInterpreter constructs a new bytecode interpreter for the given program.
@@ -48,11 +57,13 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 }
 
 // Inputs implementation of Core interface
-func (p *Interpreter[W]) Inputs() []memory.InputOutput[W] {
-	panic("todo")
+func (p *Interpreter[W]) Inputs() iter.Iterator[memory.InputOutput[W]] {
+	var riter = iter.NewArrayIterator(p.roms)
+	return iter.NewCastIterator[memory.StaticArray[W], memory.InputOutput[W]](riter)
 }
 
 // Outputs implementation of Core interface
-func (p *Interpreter[W]) Outputs() []memory.InputOutput[W] {
-	panic("todo")
+func (p *Interpreter[W]) Outputs() iter.Iterator[memory.InputOutput[W]] {
+	var riter = iter.NewArrayIterator(p.woms)
+	return iter.NewCastIterator[memory.StaticArray[W], memory.InputOutput[W]](riter)
 }

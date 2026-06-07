@@ -417,8 +417,20 @@ func registerType(r register.Register) string {
 
 func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram) {
 	var (
-		address uint32
+		address   uint32
+		bytecodes = vm.DecodeBytecodes[W](program)
+		width     uint
 	)
+	//
+	for _, bytecode := range bytecodes {
+		var codes = bytecode.Codes(address)
+		//
+		width = max(width, uint(len(codes)))
+		address += uint32(len(codes))
+	}
+	// Reset for another sweep
+	address = 0
+	//
 	for _, bytecode := range vm.DecodeBytecodes[W](program) {
 		var codes = bytecode.Codes(address)
 		//
@@ -426,10 +438,19 @@ func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram) {
 			fmt.Printf("%s:\n", sym.Unwrap())
 		}
 		//
-		fmt.Printf("0x%04x\t%08x\t%s\n", address, codes, bytecode.String())
+		fmt.Printf("0x%04x\t%s\t%s\n", address, codeStr(width, codes), bytecode.String())
 		//
 		address += uint32(len(codes))
 	}
+}
+
+func codeStr(width uint, codes []uint32) string {
+	var (
+		n   = (width * 9) + 1
+		str = fmt.Sprintf("%08x", codes)
+	)
+	//
+	return fmt.Sprintf("%-*s", n, str)
 }
 
 // ============================================================================

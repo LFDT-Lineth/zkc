@@ -103,7 +103,26 @@ func (p *Encoder[W, T]) getLabelIndex(label T) uint32 {
 	return index
 }
 
+// Patch branch instructions to target instruction offsets, rather than labels.
+// That is, the target of a branch instruction on entry is an index into the
+// label array.  The corresponding label identifies the (bytecode) offset of the
+// target instruction.  Observe that the bytecode offset must be converted into
+// a true offset.
 func patchBranchTargets[W word.Word[W]](bytecodes []Bytecode[W], labels []Address) {
+	var (
+		patches = make([]Address, len(labels))
+		offset  uint32
+	)
+	// determine true bytecode offsets
+	for i, b := range bytecodes {
+		patches[i] = offset
+		offset += uint32(len(b.Codes(offset)))
+	}
+	// update labels accordingly
+	for i, l := range labels {
+		labels[i] = patches[l]
+	}
+	// patch instructions
 	for _, b := range bytecodes {
 		if b, ok := b.(Patchable[W]); ok {
 			b.Patch(labels)

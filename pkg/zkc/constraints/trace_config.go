@@ -113,7 +113,8 @@ func Trace[F field.Element[F]](bf *BinaryFile[F], in map[string][]vm.Uint, cfg T
 		tr       trace.Trace[F]
 	)
 	// Initialise inputs
-	for _, input := range bf.machine.Inputs() {
+	for iter := bf.machine.Inputs(); iter.HasNext(); {
+		var input = iter.Next()
 		input.Initialise(in[input.Name()])
 	}
 	// Execute machine

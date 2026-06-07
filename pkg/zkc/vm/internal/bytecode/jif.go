@@ -30,6 +30,8 @@ type Jif struct {
 
 // NewJif constructs a new conditional branch instruction.
 func NewJif(op Cond, target Address, left, right register.Id) *Jif {
+	fmt.Printf("LEFT=%d,RIGHT=%d\n", left.Unwrap(), right.Unwrap())
+	//
 	return &Jif{
 		target,
 		NewRegVec(asReg(left)),
@@ -68,7 +70,7 @@ func (p *Jif) String() string {
 		ops = "??"
 	}
 	//
-	return fmt.Sprintf("if %s %s %s goto 0x%08x", p.Src0, ops, p.Src1, p.Target)
+	return fmt.Sprintf("jif %s %s %s 0x%08x", p.Src0, ops, p.Src1, p.Target)
 }
 
 // Codes implementation for Bytecode interface
@@ -100,8 +102,8 @@ func decodeJif[W word.Word[W]](offset uint32, codes []uint32) (bc Bytecode[W], n
 		src1   RegVec
 	)
 	//
-	switch code & 0x1f {
-	case JIF:
+	switch code & OPCODE_MASK {
+	case JEQ_RR, JNE_RR, JLT_RR, JLE_RR, JGT_RR, JGE_RR:
 		var rs0, rs1 Reg
 		//
 		target, rs0, rs1, op = decodeJif_rr(offset, code)
@@ -120,7 +122,8 @@ func decodeJif[W word.Word[W]](offset uint32, codes []uint32) (bc Bytecode[W], n
 }
 
 // ============================================================================
-// jif_rr (jump conditional) instruction with (small) reg-reg operands.  Format is:
+// jeq/jneq/jlt,jleq,jgt,jgeq (jump conditional) instruction with (small)
+// reg-reg operands.  Format is:
 //
 //	31                                0
 //
@@ -135,19 +138,18 @@ func decodeJif[W word.Word[W]](offset uint32, codes []uint32) (bc Bytecode[W], n
 
 func encodeJif_rr(offset uint32, target Address, rs0, rs1 Reg, op Cond) []uint32 {
 	var (
-		_op   = uint32(op) << 5
 		_rs1  = uint32(rs1) << 8
 		_rs0  = uint32(rs0) << 16
 		_roff = getRelativeOffset(offset, target, 8) << 24
 	)
 	//
 	return []uint32{
-		_roff | _rs0 | _rs1 | _op | JIF,
+		_roff | _rs0 | _rs1 | (JEQ_RR + uint32(op)),
 	}
 }
 
 func decodeJif_rr(offset uint32, code uint32) (target Address, rs0, rs1 Reg, op Cond) {
-	op = Cond((code >> 5) & 0x7)
+	op = Cond((code & OPCODE_MASK) - JEQ_RR)
 	rs1 = Reg((code >> 8) & 0xff)
 	rs0 = Reg((code >> 16) & 0xff)
 	target = getBranchTarget(offset, code>>24, 8)

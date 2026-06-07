@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
@@ -80,25 +81,29 @@ func (p *Base[W, I, T]) Boot(fun string) error {
 }
 
 // Inputs implementation for Core interface.
-func (p *Base[W, I, T]) Inputs() (inputs []memory.InputOutput[W]) {
+func (p *Base[W, I, T]) Inputs() iter.Iterator[memory.InputOutput[W]] {
+	var inputs []memory.InputOutput[W]
+	//
 	for _, m := range p.modules {
 		if m, ok := m.(memory.Memory[W]); ok && m.IsReadOnly() && !m.IsStatic() {
 			inputs = append(inputs, m)
 		}
 	}
 	//
-	return inputs
+	return iter.NewArrayIterator(inputs)
 }
 
 // Outputs implementation for Core interface.
-func (p *Base[W, I, T]) Outputs() (outputs []memory.InputOutput[W]) {
+func (p *Base[W, I, T]) Outputs() iter.Iterator[memory.InputOutput[W]] {
+	var outputs []memory.InputOutput[W]
+	//
 	for _, m := range p.modules {
 		if m, ok := m.(memory.Memory[W]); ok && m.IsWriteOnly() {
 			outputs = append(outputs, m)
 		}
 	}
 	//
-	return outputs
+	return iter.NewArrayIterator(outputs)
 }
 
 // Execute the machine for the given number of steps, returning the actual

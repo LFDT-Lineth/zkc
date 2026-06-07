@@ -39,9 +39,34 @@ func WordToBytecodeMachine[W word.Word[W]](wm *machine.Word[W]) *bytecode.Interp
 // a bytecode program.
 func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) bytecode.Program {
 	var (
-		compiler = &bytecodeCompiler[W]{machine: wm}
+		compiler                     = &bytecodeCompiler[W]{machine: wm, memmap: make([]uint16, len(wm.Modules()))}
+		nroms, nwoms, nsrams, nbrams uint
 	)
-	//
+	// construct memory map
+	for i, m := range wm.Modules() {
+		if mem, ok := m.(memory.Memory[W]); ok {
+			switch {
+			case mem.IsReadOnly():
+				compiler.memmap[i] = uint16(nroms)
+				nroms++
+			case mem.IsWriteOnly():
+				compiler.memmap[i] = uint16(nwoms)
+				nwoms++
+			case mem.IsReadWrite():
+				compiler.memmap[i] = uint16(nsrams)
+				nsrams++
+				// Sanity check
+				if _, ok := mem.(*memory.BiPartiteRandomAccess[W]); ok {
+					panic("bipartite memory unsupported")
+				}
+			}
+		}
+	}
+	// More sanity checks
+	if nroms > math.MaxUint16 || nwoms > math.MaxUint16 || nsrams > math.MaxUint16 || nbrams > math.MaxUint16 {
+		panic("too many memory modules")
+	}
+	// translate functions
 	for i, m := range wm.Modules() {
 		if f, ok := m.(*WordFunction); ok {
 			//

@@ -116,7 +116,7 @@ func (p *Add[W]) Codes(_ uint32) []uint32 {
 func decodeAdd[W word.Word[W]](codes []uint32) (Bytecode[W], uint32) {
 	var (
 		rs0, rs1, rd Reg
-		code         = codes[0] & 0x1f
+		code         = codes[0] & OPCODE_MASK
 		constant     W
 		sources      []Reg
 		targets      []Reg

@@ -15,6 +15,7 @@ package machine
 import (
 	"fmt"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 )
@@ -39,9 +40,9 @@ type Core[W BaseWord[W]] interface {
 	// number of steps executed and an error (if execution failed).
 	Execute(steps uint) (uint, error)
 	// Return array of (non-static) input memories
-	Inputs() []memory.InputOutput[W]
+	Inputs() iter.Iterator[memory.InputOutput[W]]
 	// Return array of output memories
-	Outputs() []memory.InputOutput[W]
+	Outputs() iter.Iterator[memory.InputOutput[W]]
 }
 
 // Machine represents the state of an executing machine, including the state of

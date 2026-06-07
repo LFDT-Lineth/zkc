@@ -63,7 +63,8 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	inputs, errs := vm.DecodeInputs(&wm, input)
 	if len(errs) == 0 {
 		// initialise inputs
-		for _, input := range wm.Inputs() {
+		for iter := wm.Inputs(); iter.HasNext(); {
+			var input = iter.Next()
 			input.Initialise(inputs[input.Name()])
 		}
 		// boot & execute

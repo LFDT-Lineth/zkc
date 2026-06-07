@@ -125,7 +125,8 @@ func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint,
 		return nil, errs
 	}
 	// Initialise inputs
-	for _, input := range m.Inputs() {
+	for iter := m.Inputs(); iter.HasNext(); {
+		var input = iter.Next()
 		input.Initialise(inputs[input.Name()])
 	}
 	// Boot & execute
@@ -202,25 +203,27 @@ func DecodeInputsOutputs[W Word[W], M Core[W]](m M, data map[string][]byte,
 	inputs = make(map[string][]W)
 	outputs = make(map[string][]W)
 	// scan input modules
-	for _, c := range m.Inputs() {
+	for iter := m.Inputs(); iter.HasNext(); {
+		var input = iter.Next()
 		// Record visited information
-		visited[c.Name()] = true
+		visited[input.Name()] = true
 		//
-		if bytes, ok := data[c.Name()]; ok {
-			inputs[c.Name()] = DecodeBytes(bytes, c.Geometry())
+		if bytes, ok := data[input.Name()]; ok {
+			inputs[input.Name()] = DecodeBytes(bytes, input.Geometry())
 		} else {
-			errs = append(errs, fmt.Errorf("missing input \"%s\"", c.Name()))
+			errs = append(errs, fmt.Errorf("missing input \"%s\"", input.Name()))
 		}
 	}
 	// scan output modules
-	for _, c := range m.Outputs() {
+	for iter := m.Outputs(); iter.HasNext(); {
+		var output = iter.Next()
 		// Record visited information
-		visited[c.Name()] = true
+		visited[output.Name()] = true
 		//
-		if bytes, ok := data[c.Name()]; ok {
-			outputs[c.Name()] = DecodeBytes(bytes, c.Geometry())
+		if bytes, ok := data[output.Name()]; ok {
+			outputs[output.Name()] = DecodeBytes(bytes, output.Geometry())
 		} else {
-			errs = append(errs, fmt.Errorf("missing input/output \"%s\"", c.Name()))
+			errs = append(errs, fmt.Errorf("missing input/output \"%s\"", output.Name()))
 		}
 	}
 	// sanity check for extraneous inputs
@@ -242,8 +245,9 @@ func DecodeInputs[W Word[W], C Core[W]](m C, input map[string][]byte) (map[strin
 		inputs  = make(map[string][]W)
 		errs    []error
 	)
-	// scan modules
-	for _, c := range m.Inputs() {
+	// scan input modules
+	for iter := m.Inputs(); iter.HasNext(); {
+		var c = iter.Next()
 		// Record visited information
 		visited[c.Name()] = true
 		//
@@ -266,12 +270,14 @@ func DecodeInputs[W Word[W], C Core[W]](m C, input map[string][]byte) (map[strin
 // EncodeOutputs extract the output from a given machine and encodes it into
 // byte arrays.
 func EncodeOutputs[W Word[W], M Core[W]](m M) map[string][]byte {
-	var output = make(map[string][]byte)
+	var outputs = make(map[string][]byte)
 	// scan modules
-	for _, c := range m.Outputs() {
+	// scan output modules
+	for iter := m.Outputs(); iter.HasNext(); {
+		var output = iter.Next()
 		//
-		output[c.Name()] = EncodeBytes(c.Contents(), c.Geometry())
+		outputs[output.Name()] = EncodeBytes(output.Contents(), output.Geometry())
 	}
 	//
-	return output
+	return outputs
 }

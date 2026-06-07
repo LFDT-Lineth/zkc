@@ -28,7 +28,7 @@ type Address = uint32
 
 // OPCODE_MASK determines how many bits of the opcode byte are used for the
 // opcode itself.
-const OPCODE_MASK = 0x1f
+const OPCODE_MASK = 0x3f
 
 // Every instruction occupies 32 bits, where the first byte is as follows:
 //
@@ -46,20 +46,34 @@ const (
 	FAIL uint32 = iota
 	// JMP instruction
 	JMP
-	// JIF instruction
-	JIF
+	// JEQ_RR (jump if equal)
+	JEQ_RR
+	// JNE_RR (jump if not equal)
+	JNE_RR
+	// JLT_RR (jump if less than)
+	JLT_RR
+	// JLE_RR (jump if less than or equal)
+	JGT_RR
+	// JGE_RR (jump if greater than or equal)
+	JLE_RR
+	// JGT_RR (jump if greater than)
+	JGE_RR
 	// CALL instruction
 	CALL
 	// RET instruction
 	RET
-	// RD_ROM instruction
-	RD_ROM
-	// WR_WOM instruction
-	WR_WOM
+	// RD_ROM_N_M instruction
+	RD_ROM_N_M
+	// WR_WOM_N_M instruction
+	WR_WOM_N_M
 	// WR_SRAM instruction
-	RD_SRAM
-	// WR_SRAM instruction
-	WR_SRAM
+	RD_RAM_N_M
+	// WR_RAM_N_M instruction
+	WR_RAM_N_M
+	// WR_BRAM instruction
+	RD_BRAM_N_M
+	// WR_BRAM_N_M instruction
+	WR_BRAM_N_M
 	// PUSH instruction
 	PUSH
 	// POP instruction

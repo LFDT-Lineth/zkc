@@ -165,7 +165,9 @@ func runExecutionTest[W vm.Word[W], I vm.Instruction](t *testing.T, wm vm.Machin
 		inputs, outputs = decodeInputsOutputs(t, wm, test.data)
 	)
 	// Initialise inputs
-	for _, input := range wm.Inputs() {
+	// scan input modules
+	for iter := wm.Inputs(); iter.HasNext(); {
+		var input = iter.Next()
 		input.Initialise(inputs[input.Name()])
 	}
 	//t.Logf("[%s]%s:%d", cfg.Name, test.filename, test.line)

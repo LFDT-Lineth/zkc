@@ -69,9 +69,9 @@ func (p *ReadWrite) String() string {
 	case WOM_WRITE:
 		return rwWriteStr("wom", p.Id, p.Address, p.Data)
 	case SRAM_READ:
-		return rwReadStr("sram", p.Id, p.Address, p.Data)
+		return rwReadStr("ram", p.Id, p.Address, p.Data)
 	case SRAM_WRITE:
-		return rwWriteStr("sram", p.Id, p.Address, p.Data)
+		return rwWriteStr("ram", p.Id, p.Address, p.Data)
 	default:
 		panic("unknown read/write mode")
 	}
@@ -117,7 +117,7 @@ func decodeReadWrite[W word.Word[W]](codes []uint32) (Bytecode[W], uint32) {
 
 func encodeReadWrite_sn(m RwMode, id uint16, addr []Reg, data []Reg) []uint32 {
 	var (
-		opcode = RD_ROM + uint32(m.tag)
+		opcode = RD_ROM_N_M + uint32(m.tag)
 		_id    = uint32(id) << 8
 		naddr  = uint32(len(addr)) << 16
 		ndata  = uint32(len(data)) << 24
@@ -138,11 +138,12 @@ func decodeReadWrite_sn(codes []uint32) (m RwMode, id uint16, addr []Reg, data [
 		regs, ns = unpackCodesToSmallRegs(naddr+ndata, codes[1:])
 	)
 	//
+	m = RwMode{tag: uint8(codes[0] - RD_ROM_N_M)}
 	id = uint16((codes[0] >> 8) & 0xff)
 	addr = regs[:naddr]
 	data = regs[naddr:]
 	//
-	return m, id, addr, data, ns
+	return m, id, addr, data, 1 + ns
 }
 
 // ============================================================================
