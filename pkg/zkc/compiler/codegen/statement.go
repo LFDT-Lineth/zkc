@@ -83,7 +83,8 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorI
 //
 // > struct tmp { x u32, y u32 }
 // > ...
-// > var t tmp > tmp = f(...)
+// > var t tmp
+// > tmp = f(...)
 //
 // In this case, we want to "compile out" the struct, so we end up with this:
 //

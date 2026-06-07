@@ -47,7 +47,7 @@ type Constraint[F field.Element[F], T term.Testable[F]] struct {
 	Constraint T
 }
 
-// NewConstraint constructs a new vanishing constraint!
+// NewConstraint constructs a new vanishing constraint
 func NewConstraint[F field.Element[F], T term.Testable[F]](handle string, context schema.ModuleId,
 	domain util.Option[int], constraint T) Constraint[F, T] {
 	return Constraint[F, T]{handle, context, domain, constraint}

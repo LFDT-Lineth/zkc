@@ -92,43 +92,144 @@ func translateStaticMemory[F field.Element[F]](_ schema.ModuleId, m vm.InputOutp
 	return mod
 }
 
-func translateReadOnlyMemory[F field.Element[F]](_ schema.ModuleId, fm vm.InputOutputMemory[F]) mir.Module[F] {
-	var (
-		mod  *schema.Table[F, mir.Constraint[F]]
-		name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
-	)
-	// Initialise module
-	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
-	// Add all registers
-	mod.AddRegisters(fm.Registers()...)
-	// TODO: implement ROM constraints
-	return mod
+func translateReadOnlyMemory[F field.Element[F]](
+	ctx schema.ModuleId, fm vm.InputOutputMemory[F]) mir.Module[F] {
+	var name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
+	return translateMemoryCommon(ctx, fm, name)
 }
 
-func translateWriteOnceMemory[F field.Element[F]](_ schema.ModuleId, fm vm.InputOutputMemory[F]) mir.Module[F] {
-	var (
-		mod  *schema.Table[F, mir.Constraint[F]]
-		name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
-	)
-	// Initialise module
-	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
-	// Add all registers
-	mod.AddRegisters(fm.Registers()...)
-	// TODO: implement WOM constraints
-	return mod
+// Write once memory and read only memory are equivalent on the constraints level
+func translateWriteOnceMemory[F field.Element[F]](
+	ctx schema.ModuleId, fm vm.InputOutputMemory[F]) mir.Module[F] {
+	var name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
+	return translateMemoryCommon(ctx, fm, name)
 }
 
-func translateReadWriteMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
+func translateReadWriteMemory[F field.Element[F]](
+	ctx schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
+	var name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
+	return translateMemoryCommon(ctx, fm, name)
+}
+
+func translateMemoryCommon[F field.Element[F]](
+	ctx schema.ModuleId, fm vm.Memory[F], name trace.ModuleName) mir.Module[F] {
 	var (
-		mod  *schema.Table[F, mir.Constraint[F]]
-		name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
+		memoryModule   *schema.Table[F, mir.Constraint[F]]
+		padding        big.Int
+		timestampWidth = uint(32)
 	)
-	// Initialise module
-	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
-	// Add all registers
-	mod.AddRegisters(fm.Registers()...)
-	// TODO: implement WOM constraints
-	return mod
+
+	// Initialise module and add all registers
+	memoryModule = memoryModule.Init(name, false, true, false, fm.IsNative(), false, 0)
+	memoryModule.AddRegisters(fm.Registers()...)
+
+	var (
+		timestampRead    = register.NewId(memoryModule.Width() + 0)
+		timestampWritten = register.NewId(memoryModule.Width() + 1)
+		timestampDelta   = register.NewId(memoryModule.Width() + 2)
+	)
+
+	memoryModule.AddRegisters(register.NewComputed("timestamp_read", timestampWidth, padding))
+	memoryModule.AddRegisters(register.NewComputed("timestamp_write", timestampWidth, padding))
+	memoryModule.AddRegisters(register.NewComputed("timestamp_delta", timestampWidth, padding))
+
+	var (
+		addressWidth uint
+		valueWidth   uint
+	)
+
+	for i, l := range fm.Registers() {
+		if uint(i) < fm.Geometry().AddressLines() {
+			addressWidth += l.Width()
+		} else if uint(i) < fm.Geometry().AddressLines()+fm.Geometry().DataLines() {
+			valueWidth += l.Width()
+		}
+	}
+
+	// var address = register.NewId(memoryModule.Width() + 0)
+	// var valueRead   = register.NewId(memoryModule.Width() + 1)
+	memoryModule.AddRegisters(register.NewComputed("address", addressWidth, padding))
+	memoryModule.AddRegisters(register.NewComputed("valueRead", valueWidth, padding))
+
+	var (
+		execPhase = register.NewId(memoryModule.Width() + 0)
+		finlPhase = register.NewId(memoryModule.Width() + 1)
+	)
+
+	memoryModule.AddRegisters(register.NewComputed("exec", 1, padding))
+	memoryModule.AddRegisters(register.NewComputed("finl", 1, padding))
+
+	var (
+		rTime = mirc.Variable[register.Id, Expr[F]](timestampRead, timestampWidth, 0)
+		wTime = mirc.Variable[register.Id, Expr[F]](timestampWritten, timestampWidth, 0)
+		dTime = mirc.Variable[register.Id, Expr[F]](timestampDelta, timestampWidth, 0)
+		// addr     = mirc.Variable[register.Id, Expr[F]](address,           addressWidth,   0)
+		// val      = mirc.Variable[register.Id, Expr[F]](value,             valueWidth,     0)
+		execPrev = mirc.Variable[register.Id, Expr[F]](execPhase, 1, -1)
+		finlPrev = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, -1)
+		exec     = mirc.Variable[register.Id, Expr[F]](execPhase, 1, 0)
+		finl     = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, 0)
+		zero     = mirc.Number[register.Id, Expr[F]](0)
+		one      = mirc.Number[register.Id, Expr[F]](1)
+	)
+
+	// ================================================
+	// constraints
+	// ================================================
+
+	// (non padding) rows are either created during standard execution (exec ≡ true)
+	// or during the finalization phase (finl ≡ true)
+	flagExclusivity := mir.NewVanishingConstraint("flag_exclusivity", ctx, util.None[int](),
+		mirc.Product([]Expr[F]{exec, finl}).Equals(zero).AsLogical())
+
+	// both exec and (exec + finl) should, on any trace segment, look like one of these :
+	//
+	//  ¹ ┼       ┌─────         ¹ ┼
+	//    │       │                │
+	//  ⁰ ┴  ─────┘        or    ⁰ ┴  ───────────
+	//
+	// exec may not be nondecreasing; the (exec, finl) pair may look like so :
+	//
+	//  ¹ ┼       ┌─────┐∙∙∙∙∙∙   ( ∙ ≡ finl)
+	//    │       │     │
+	//  ⁰ ┴  ─────┘∙∙∙∙∙└──────   ( ─ ≡ exec)
+	flagMonotony1 := mir.NewVanishingConstraint("finl_monotony", ctx, util.None[int](),
+		mirc.If(finlPrev.NotEquals(zero), finl.Equals(one)).AsLogical())
+	flagMonotony2 := mir.NewVanishingConstraint("exec+finl_monotony", ctx, util.None[int](),
+		mirc.If(mirc.Sum([]Expr[F]{execPrev, finlPrev}).NotEquals(zero),
+			mirc.Sum([]Expr[F]{exec, finl}).Equals(one)).AsLogical())
+
+	// we want to prove WT - RT = 1 + ΔT (which forces WT > RT given that ΔT is ≥ 0)
+	// instead we prove WT = RT + 1 + ΔT
+	timestampMonotony := mir.NewVanishingConstraint("timestamp_monotony", ctx, util.None[int](),
+		mirc.If(exec.NotEquals(zero), wTime.Equals(rTime.Add(dTime, one))).AsLogical())
+
+	// var isImmutable bool
+	// switch fm.(type) {
+	// case vm.InputOutputMemory[F]: isImmutable = true
+	// case vm.Memory[F]: isImmutable = false
+	// default: panic("unknown memory type")
+	// }
+	//
+	// var valueWritten = register.Id
+	// if isImmutable {
+	// 	valueWritten = valueRead
+	// } else {
+	// 	valueWritten   = register.NewId(memoryModule.Width() + 0)
+	// 	memoryModule.AddRegisters(register.NewComputed("valueWritten", valueWidth, padding))
+	// }
+	//
+	// // we impose value constancy by enforcing that the received value be the same as the sent value
+	// rcvExec := mir.NewReceiveConstraint[F]("reading_in_execution_phase",
+	// []register.Id{address, timestampRead, valueRead})
+	// sndExec := mir.NewSendConstraint[F]("writing_in_execution_phase",
+	// []register.Id{address, timestampWritten, valueWritten})
+
+	constraints := []mir.Constraint[F]{flagExclusivity, flagMonotony1,
+		flagMonotony2, timestampMonotony} // , rcvExec, sndExec}
+	memoryModule.AddConstraints(constraints...)
+
+	return memoryModule
 }
 
 func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction) mir.Module[F] {

@@ -1,0 +1,15 @@
+memory RAM(address :u4) -> (value :u4)
+
+fn main<RAM>() {
+    var r :u4
+    RAM[1] = f(7)
+}
+
+fn f<RAM>(x:u4) -> (r:u4) {
+
+    r = x + RAM[0]
+    if r == 12 {
+        r = r + 1
+    }
+    return
+}
