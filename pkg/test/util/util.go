@@ -124,7 +124,7 @@ func compileTestProgram(t *testing.T, testfile string, cfg codegen.Config) (vm *
 	return vm
 }
 
-func decodeInputsOutputs[W vm.Word[W], I vm.Instruction](t *testing.T, m vm.Machine[W, I], data map[string][]byte,
+func decodeInputsOutputs[W vm.Word[W]](t *testing.T, m vm.Core[W], data map[string][]byte,
 ) (inputs map[string][]W, outputs map[string][]W) {
 	inputs, outputs, errs := vm.DecodeInputsOutputs[W](m, data)
 	//
