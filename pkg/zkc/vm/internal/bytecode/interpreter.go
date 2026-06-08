@@ -124,7 +124,8 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 	var (
 		nsteps    = uint(0)
 		err       error
-		bytecodes = p.program.bytecodes
+		bytecodes     = p.program.bytecodes
+		frame     []W = p.dataStack.SliceEnd(p.fp)
 	)
 	//
 	for nsteps < steps && err == nil {
@@ -135,11 +136,13 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		//
 		switch insn & OPCODE_MASK {
 		case LDC:
-			p.pc = executeLdc_1(p.pc, p.fp, bytecodes, p.dataStack)
+			p.pc = executeLdc_1(p.pc, bytecodes, frame)
 		case MOVE:
-			p.pc = executeMove_1s1(p.pc, p.fp, bytecodes, p.dataStack)
+			p.pc = executeMove_1s1(p.pc, bytecodes, frame)
 		case FAIL:
 			return nsteps, errors.New("machine panic")
+		case CALL:
+			panic("todo")
 		case RET:
 			// check for termination
 			if p.callStack.Size() == 0 {
@@ -150,29 +153,29 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		case JMP:
 			p.pc, _ = decodeJmp1(p.pc, bytecodes)
 		case JEQ_RR:
-			p.pc = executeJeq_rr(p.pc, p.fp, bytecodes, p.dataStack)
+			p.pc = executeJeq_rr(p.pc, bytecodes, frame)
 		case JNE_RR:
-			p.pc = executeJne_rr(p.pc, p.fp, bytecodes, p.dataStack)
+			p.pc = executeJne_rr(p.pc, bytecodes, frame)
 		case JLT_RR:
-			p.pc = executeJlt_rr(p.pc, p.fp, bytecodes, p.dataStack)
+			p.pc = executeJlt_rr(p.pc, bytecodes, frame)
 		case JGT_RR:
-			p.pc = executeJgt_rr(p.pc, p.fp, bytecodes, p.dataStack)
+			p.pc = executeJgt_rr(p.pc, bytecodes, frame)
 		case JLE_RR:
-			p.pc = executeJle_rr(p.pc, p.fp, bytecodes, p.dataStack)
+			p.pc = executeJle_rr(p.pc, bytecodes, frame)
 		case JGE_RR:
-			p.pc = executeJge_rr(p.pc, p.fp, bytecodes, p.dataStack)
+			p.pc = executeJge_rr(p.pc, bytecodes, frame)
 		// Input / Output Operations
 		case RD_ROM_N_M:
-			p.pc = executeReadRom(p.pc, p.fp, bytecodes, p.dataStack, p.roms)
+			p.pc = executeReadRom(p.pc, bytecodes, frame, p.roms)
 		case WR_WOM_N_M:
-			panic("todo")
+			p.pc = executeWriteWom(p.pc, bytecodes, frame, p.woms)
 		case RD_RAM_N_M:
-			panic("todo")
+			p.pc = executeReadRam(p.pc, bytecodes, frame, p.rams)
 		case WR_RAM_N_M:
-			panic("todo")
+			p.pc = executeWriteRam(p.pc, bytecodes, frame, p.rams)
 		// Arithmetic Operations
 		case ADD:
-			p.pc, err = executeAdd_2s1(p.pc, p.fp, bytecodes, p.dataStack)
+			p.pc, err = executeAdd_2s1(p.pc, bytecodes, frame)
 		default:
 			panic("unknown bytecode encountered")
 		}
@@ -181,13 +184,13 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 	return nsteps, nil
 }
 
-func executeAdd_2s1[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack heap.Heap[W]) (uint32, error) {
+func executeAdd_2s1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rs0, rs1, rd, n = decodeAdd_2s1(pc, codes)
 		// Read rs0
-		val0 = stack.Get(fp + uint(rs0))
+		val0 = stack[rs0]
 		// Read rs1
-		val1 = stack.Get(fp + uint(rs1))
+		val1 = stack[rs1]
 		// Add v0 + v1
 		res, carry = val0.Add(val1)
 	)
@@ -196,18 +199,18 @@ func executeAdd_2s1[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack he
 		return pc, errors.New("arithmetic overflow")
 	}
 	//
-	stack.Set(fp+uint(rd), res)
+	stack[rd] = res
 	//
 	return pc + n, nil
 }
 
-func executeJeq_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack heap.Heap[W]) uint32 {
+func executeJeq_rr[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
 	var (
 		npc, rs0, rs1, _, n = decodeJif_rr(pc, codes)
 		// Read rs0
-		val0 = stack.Get(fp + uint(rs0))
+		val0 = stack[rs0]
 		// Read rs1
-		val1 = stack.Get(fp + uint(rs1))
+		val1 = stack[rs1]
 	)
 	//
 	if val0.Cmp(val1) == 0 {
@@ -218,13 +221,13 @@ func executeJeq_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack hea
 	return pc + n
 }
 
-func executeJne_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack heap.Heap[W]) uint32 {
+func executeJne_rr[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
 	var (
 		npc, rs0, rs1, _, n = decodeJif_rr(pc, codes)
 		// Read rs0
-		val0 = stack.Get(fp + uint(rs0))
+		val0 = stack[rs0]
 		// Read rs1
-		val1 = stack.Get(fp + uint(rs1))
+		val1 = stack[rs1]
 	)
 	//
 	if val0.Cmp(val1) != 0 {
@@ -235,13 +238,13 @@ func executeJne_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack hea
 	return pc + n
 }
 
-func executeJlt_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack heap.Heap[W]) uint32 {
+func executeJlt_rr[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
 	var (
 		npc, rs0, rs1, _, n = decodeJif_rr(pc, codes)
 		// Read rs0
-		val0 = stack.Get(fp + uint(rs0))
+		val0 = stack[rs0]
 		// Read rs1
-		val1 = stack.Get(fp + uint(rs1))
+		val1 = stack[rs1]
 	)
 	//
 	if val0.Cmp(val1) < 0 {
@@ -252,13 +255,13 @@ func executeJlt_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack hea
 	return pc + n
 }
 
-func executeJgt_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack heap.Heap[W]) uint32 {
+func executeJgt_rr[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
 	var (
 		npc, rs0, rs1, _, n = decodeJif_rr(pc, codes)
 		// Read rs0
-		val0 = stack.Get(fp + uint(rs0))
+		val0 = stack[rs0]
 		// Read rs1
-		val1 = stack.Get(fp + uint(rs1))
+		val1 = stack[rs1]
 	)
 	//
 	if val0.Cmp(val1) > 0 {
@@ -269,13 +272,13 @@ func executeJgt_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack hea
 	return pc + n
 }
 
-func executeJle_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack heap.Heap[W]) uint32 {
+func executeJle_rr[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
 	var (
 		npc, rs0, rs1, _, n = decodeJif_rr(pc, codes)
 		// Read rs0
-		val0 = stack.Get(fp + uint(rs0))
+		val0 = stack[rs0]
 		// Read rs1
-		val1 = stack.Get(fp + uint(rs1))
+		val1 = stack[rs1]
 	)
 	//
 	if val0.Cmp(val1) <= 0 {
@@ -286,13 +289,13 @@ func executeJle_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack hea
 	return pc + n
 }
 
-func executeJge_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack heap.Heap[W]) uint32 {
+func executeJge_rr[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
 	var (
 		npc, rs0, rs1, _, n = decodeJif_rr(pc, codes)
 		// Read rs0
-		val0 = stack.Get(fp + uint(rs0))
+		val0 = stack[rs0]
 		// Read rs1
-		val1 = stack.Get(fp + uint(rs1))
+		val1 = stack[rs1]
 	)
 	//
 	if val0.Cmp(val1) >= 0 {
@@ -303,48 +306,117 @@ func executeJge_rr[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack hea
 	return pc + n
 }
 
-func executeMove_1s1[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack heap.Heap[W]) uint32 {
+func executeMove_1s1[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
 	var (
 		rs, rd, n = decodeMove_1s1(pc, codes)
 		// Read rs
-		val = stack.Get(fp + uint(rs))
+		val = stack[rs]
 	)
 	// Write rd
-	stack.Set(fp+uint(rd), val)
+	stack[rd] = val
 	//
 	return pc + n
 }
 
-func executeLdc_1[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack heap.Heap[W]) uint32 {
-	c, rd, n := decodeLdc_1[W](pc, codes)
-	stack.Set(fp+uint(rd), c)
+func executeLdc_1[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
+	val, rd, n := decodeLdc_1[W](pc, codes)
+	//
+	stack[rd] = val
 	//
 	return pc + n
 }
 
-func executeReadRom[W word.Word[W]](pc uint32, fp uint, codes []uint32, stack heap.Heap[W],
+func executeReadRom[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	roms []memory.StaticArray[W]) uint32 {
 	//
 	var (
 		_, id, addr, data, n = decodeReadWrite_sn(pc, codes)
 		rom                  = &roms[id]
-		address              = stack.Get(fp + uint(addr[0])).Uint64()
+		address              = decodeAddress(addr, rom.Geometry(), stack)
 	)
-	// sanity check for now
-	if len(addr) != 1 {
-		panic("todo")
-	}
-	//
-	address = (address * uint64(rom.Geometry().DataLines()))
 	//
 	for i := range data {
 		//nolint
-		val, _ := rom.Read(address)
-		//
-		stack.Set(fp+uint(data[i]), val)
+		stack[data[i]], _ = rom.Read(address)
 		//
 		address++
 	}
 	//
 	return pc + n
+}
+
+func executeWriteWom[W word.Word[W]](pc uint32, codes []uint32, stack []W,
+	roms []memory.WriteOnce[W]) uint32 {
+	//
+	var (
+		_, id, addr, data, n = decodeReadWrite_sn(pc, codes)
+		rom                  = &roms[id]
+		address              = decodeAddress(addr, rom.Geometry(), stack)
+	)
+	//
+	for i := range data {
+		//nolint
+		rom.Write(address, stack[data[i]])
+		//
+		address++
+	}
+	//
+	return pc + n
+}
+
+func executeReadRam[W word.Word[W]](pc uint32, codes []uint32, stack []W,
+	roms []memory.RandomAccess[W]) uint32 {
+	//
+	var (
+		_, id, addr, data, n = decodeReadWrite_sn(pc, codes)
+		rom                  = &roms[id]
+		address              = decodeAddress(addr, rom.Geometry(), stack)
+	)
+	//
+	for i := range data {
+		//nolint
+		stack[data[i]], _ = rom.Read(address)
+		//
+		address++
+	}
+	//
+	return pc + n
+}
+
+func executeWriteRam[W word.Word[W]](pc uint32, codes []uint32, stack []W,
+	roms []memory.RandomAccess[W]) uint32 {
+	//
+	var (
+		_, id, addr, data, n = decodeReadWrite_sn(pc, codes)
+		rom                  = &roms[id]
+		address              = decodeAddress(addr, rom.Geometry(), stack)
+	)
+	//
+	for i := range data {
+		//nolint
+		rom.Write(address, stack[data[i]])
+		//
+		address++
+	}
+	//
+	return pc + n
+}
+
+func decodeAddress[W word.Word[W]](addr []Reg, geometry memory.Geometry[W], stack []W) uint64 {
+	var (
+		index      uint64
+		registers  = geometry.Registers()
+		numOutputs = geometry.DataLines()
+	)
+
+	for i, r := range addr {
+		var (
+			bitwidth = uint64(registers[i].Width())
+			val      = stack[r]
+		)
+		//
+		index = (index << bitwidth) | val.Uint64()
+	}
+
+	return index * uint64(numOutputs)
 }
