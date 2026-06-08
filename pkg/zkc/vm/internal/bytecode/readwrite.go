@@ -32,6 +32,12 @@ var SRAM_READ = RwMode{2}
 // SRAM_WRITE representing write to a (small) random-access memory.
 var SRAM_WRITE = RwMode{3}
 
+// BRAM_READ representing reading from a (bipartite) random-access memory.
+var BRAM_READ = RwMode{4}
+
+// BRAM_WRITE representing write to a (bipartite) random-access memory.
+var BRAM_WRITE = RwMode{5}
+
 // RwMode determines whether what kind of memory is being operated on (e.g. ROM
 // or RAM, etc) and what operation is being performed (i.e. READ or WRITE).
 type RwMode struct {

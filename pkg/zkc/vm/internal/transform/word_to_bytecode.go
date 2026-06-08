@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -151,21 +150,19 @@ func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead) {
 		mid  = uint16(insn.Id)
 	)
 	//
-	switch {
-	case mem.IsReadOnly():
-		mode = bytecode.ROM_READ
-	case mem.IsReadWrite():
-		mode = bytecode.SRAM_READ
-		// Sanity check
-		if _, ok := mem.(*memory.BiPartiteRandomAccess[W]); ok {
-			panic("todo")
-		}
-	default:
-		panic("todo")
-	}
+	checkModuleId(insn.Id)
 	//
-	if insn.Id > math.MaxUint16 {
-		panic("too many modules")
+	switch mem.(type) {
+	case *memory.ReadOnly[W]:
+		mode = bytecode.ROM_READ
+	case *memory.StaticReadOnly[W]:
+		mode = bytecode.ROM_READ
+	case *memory.RandomAccess[W]:
+		mode = bytecode.SRAM_READ
+	case *memory.BiPartiteRandomAccess[W]:
+		mode = bytecode.BRAM_READ
+	default:
+		panic("unknown memory type")
 	}
 	//
 	p.encoder.Add(bytecode.NewReadWrite(mode, mid, insn.Arguments, insn.Returns))
@@ -178,21 +175,17 @@ func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite) {
 		mid  = uint16(insn.Id)
 	)
 	//
-	switch {
-	case mem.IsWriteOnly():
-		mode = bytecode.WOM_WRITE
-	case mem.IsReadWrite():
-		mode = bytecode.SRAM_WRITE
-		// Sanity check
-		if _, ok := mem.(*memory.BiPartiteRandomAccess[W]); ok {
-			panic("todo")
-		}
-	default:
-		panic("todo")
-	}
+	checkModuleId(insn.Id)
 	//
-	if insn.Id > math.MaxUint16 {
-		panic("too many modules")
+	switch mem.(type) {
+	case *memory.WriteOnce[W]:
+		mode = bytecode.WOM_WRITE
+	case *memory.RandomAccess[W]:
+		mode = bytecode.SRAM_WRITE
+	case *memory.BiPartiteRandomAccess[W]:
+		mode = bytecode.BRAM_WRITE
+	default:
+		panic("unknown memory type")
 	}
 	//
 	p.encoder.Add(bytecode.NewReadWrite(mode, mid, insn.Arguments, insn.Returns))
@@ -227,10 +220,8 @@ type Label struct {
 	micro uint
 }
 
-func asReg(rid register.Id) uint16 {
-	if rid.Unwrap() >= math.MaxUint16 {
-		panic("invalid register")
+func checkModuleId(mid uint) {
+	if mid > math.MaxUint16 {
+		panic("invalid module identifier (too many modules)")
 	}
-	//
-	return uint16(rid.Unwrap())
 }
