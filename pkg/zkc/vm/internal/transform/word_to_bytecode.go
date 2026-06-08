@@ -89,7 +89,7 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.MEMORY_READ:
 		p.compileMemRead(insn.(*instruction.MemRead))
 	case opcode.MEMORY_WRITE:
-		panic("todo")
+		p.compileMemWrite(insn.(*instruction.MemWrite))
 	case opcode.RETURN:
 		p.encoder.Add(bytecode.NewRet(f.Width()))
 	case opcode.SKIP:
@@ -156,6 +156,33 @@ func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead) {
 		mode = bytecode.ROM_READ
 	case mem.IsReadWrite():
 		mode = bytecode.SRAM_READ
+		// Sanity check
+		if _, ok := mem.(*memory.BiPartiteRandomAccess[W]); ok {
+			panic("todo")
+		}
+	default:
+		panic("todo")
+	}
+	//
+	if insn.Id > math.MaxUint16 {
+		panic("too many modules")
+	}
+	//
+	p.encoder.Add(bytecode.NewReadWrite(mode, mid, insn.Arguments, insn.Returns))
+}
+
+func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite) {
+	var (
+		mem  = p.machine.Module(insn.Id).(memory.Memory[W])
+		mode bytecode.RwMode
+		mid  = uint16(insn.Id)
+	)
+	//
+	switch {
+	case mem.IsWriteOnly():
+		mode = bytecode.WOM_WRITE
+	case mem.IsReadWrite():
+		mode = bytecode.SRAM_WRITE
 		// Sanity check
 		if _, ok := mem.(*memory.BiPartiteRandomAccess[W]); ok {
 			panic("todo")
