@@ -50,8 +50,8 @@ func (p *Ret) Patch(_ []Address) {
 	// do nothing
 }
 
-func decodeRet[W word.Word[W]](codes []uint32) (Bytecode[W], uint32) {
-	width := decodeRet1(codes[0])
+func decodeRet[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
+	width := decodeRet1(codes[pc])
 	//
 	return &Ret{width}, 1
 }

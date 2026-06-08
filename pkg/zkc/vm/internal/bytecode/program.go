@@ -13,7 +13,10 @@
 package bytecode
 
 import (
+	"math"
+
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 )
 
@@ -41,6 +44,34 @@ func NewProgram(modules []Module, bytecodes []uint32, symbols map[uint32]uint) P
 		bytecodes,
 		symbols,
 	}
+}
+
+// HasModule returns the identifier for the module with the given name, or returns
+// false if no such module exists.
+func (p Program) HasModule(name string) (uint, bool) {
+	var mid = array.FindMatching(p.modules, func(m Module) bool {
+		return m.Name() == name
+	})
+	//
+	return mid, mid != math.MaxUint
+}
+
+// Module returns the module with the given identifier.
+func (p Program) Module(mid uint) Module {
+	return p.modules[mid]
+}
+
+// AddressOf determines the address of a given (function) symbol, or returns an
+// error if no such symbol exists.
+func (p Program) AddressOf(mid uint) (uint32, bool) {
+	// Find the symbols address
+	for addr, id := range p.symbols {
+		if id == mid {
+			return addr, true
+		}
+	}
+	// failed
+	return 0, false
 }
 
 // SymbolAt determines whether or not there is a symbol associated with a given

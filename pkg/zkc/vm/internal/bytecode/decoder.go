@@ -24,7 +24,7 @@ func Decode[W word.Word[W]](p Program) (bytecodes []Bytecode[W]) {
 	)
 	//
 	for offset < ncodes {
-		bc, n := decodeBytecode[W](offset, p.bytecodes[offset:])
+		bc, n := decodeBytecode[W](offset, p.bytecodes)
 		bytecodes = append(bytecodes, bc)
 		offset += n
 	}
@@ -32,25 +32,25 @@ func Decode[W word.Word[W]](p Program) (bytecodes []Bytecode[W]) {
 	return bytecodes
 }
 
-func decodeBytecode[W word.Word[W]](offset uint32, codes []uint32) (Bytecode[W], uint32) {
+func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
 	var (
-		code = codes[0]
+		code = codes[pc]
 	)
 	//
 	switch code & OPCODE_MASK {
 	case ADD, LDC, MOVE:
-		return decodeAdd[W](codes)
+		return decodeAdd[W](pc, codes)
 	case FAIL:
 		return &Fail{}, 1
 	case JMP:
-		c, n := decodeJmp1(offset, codes)
-		return &c, n
+		target, n := decodeJmp1(pc, codes)
+		return &Jmp{target}, n
 	case JEQ_RR, JNE_RR, JLT_RR, JLE_RR, JGT_RR, JGE_RR:
-		return decodeJif[W](offset, codes)
+		return decodeJif[W](pc, codes)
 	case RD_ROM_N_M, WR_WOM_N_M, RD_RAM_N_M, WR_RAM_N_M:
-		return decodeReadWrite[W](codes)
+		return decodeReadWrite[W](pc, codes)
 	case RET:
-		return decodeRet[W](codes)
+		return decodeRet[W](pc, codes)
 	default:
 		panic("unknown bytecode encountered")
 	}

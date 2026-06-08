@@ -84,8 +84,8 @@ func (p *ReadWrite) Codes(_ uint32) []uint32 {
 	return encodeReadWrite_sn(p.Mode, p.Id, p.Address, p.Data)
 }
 
-func decodeReadWrite[W word.Word[W]](codes []uint32) (Bytecode[W], uint32) {
-	m, id, addr, data, n := decodeReadWrite_sn(codes)
+func decodeReadWrite[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
+	m, id, addr, data, n := decodeReadWrite_sn(pc, codes)
 	//
 	return &ReadWrite{m, id, addr, data}, n
 }
@@ -132,15 +132,15 @@ func encodeReadWrite_sn(m RwMode, id uint16, addr []Reg, data []Reg) []uint32 {
 	return append(codes, packRegsIntoCodes(bytes)...)
 }
 
-func decodeReadWrite_sn(codes []uint32) (m RwMode, id uint16, addr []Reg, data []Reg, n uint32) {
+func decodeReadWrite_sn(pc uint32, codes []uint32) (m RwMode, id uint16, addr []Reg, data []Reg, n uint32) {
 	var (
-		naddr    = (codes[0] >> 16) & 0xff
-		ndata    = (codes[0] >> 24) & 0xff
-		regs, ns = unpackCodesToSmallRegs(naddr+ndata, codes[1:])
+		naddr    = (codes[pc] >> 16) & 0xff
+		ndata    = (codes[pc] >> 24) & 0xff
+		regs, ns = unpackCodesToSmallRegs(naddr+ndata, codes[pc+1:])
 	)
 	//
-	m = RwMode{tag: uint8(codes[0] - RD_ROM_N_M)}
-	id = uint16((codes[0] >> 8) & 0xff)
+	m = RwMode{tag: uint8(codes[pc] - RD_ROM_N_M)}
+	id = uint16((codes[pc] >> 8) & 0xff)
 	addr = regs[:naddr]
 	data = regs[naddr:]
 	//

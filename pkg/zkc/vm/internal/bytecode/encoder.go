@@ -53,22 +53,22 @@ func NewEncoder[W word.Word[W], T comparable](modules ...Module) *Encoder[W, T] 
 	)
 	// construct memory map
 	for i, m := range modules {
-		if mem, ok := m.(memory.Memory[W]); ok {
-			switch {
-			case mem.IsReadOnly():
-				memmap[i] = uint16(nroms)
-				nroms++
-			case mem.IsWriteOnly():
-				memmap[i] = uint16(nwoms)
-				nwoms++
-			case mem.IsReadWrite():
-				memmap[i] = uint16(nsrams)
-				nsrams++
-				// Sanity check
-				if _, ok := mem.(*memory.BiPartiteRandomAccess[W]); ok {
-					panic("bipartite memory unsupported")
-				}
-			}
+		switch m.(type) {
+		case *memory.ReadOnly[W]:
+			memmap[i] = uint16(nroms)
+			nroms++
+		case *memory.StaticReadOnly[W]:
+			memmap[i] = uint16(nroms)
+			nroms++
+		case *memory.WriteOnce[W]:
+			memmap[i] = uint16(nwoms)
+			nwoms++
+		case *memory.RandomAccess[W]:
+			memmap[i] = uint16(nsrams)
+			nsrams++
+		case *memory.BiPartiteRandomAccess[W]:
+			memmap[i] = uint16(nbrams)
+			nbrams++
 		}
 	}
 	// Sanity checks
@@ -158,10 +158,10 @@ func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint) {
 	patchBranchingBytecodes(mapping, p.bytecodes, p.marks)
 	// patch symbols
 	symbols = patchSymbols(mapping, p.symbols)
-	// patch functions
+	// TODO: patch functions
 	// patch memories
 	patchIoBytecodes(p.memmap, p.bytecodes)
-	//
+	// compile bytecodes into raw words
 	for _, bytecode := range p.bytecodes {
 		var cs = bytecode.Codes(offset)
 		//
@@ -234,19 +234,6 @@ func patchSymbols(mapping []uint32, symbols map[Address]uint) map[Address]uint {
 	}
 	//
 	return nsyms
-}
-
-func encode[W word.Word[W]](bytecodes []Bytecode[W]) (codes []uint32) {
-	var offset uint32
-	//
-	for _, bytecode := range bytecodes {
-		var cs = bytecode.Codes(offset)
-		//
-		codes = append(codes, cs...)
-		offset += uint32(len(cs))
-	}
-	//
-	return codes
 }
 
 func asReg(rid register.Id) Reg {

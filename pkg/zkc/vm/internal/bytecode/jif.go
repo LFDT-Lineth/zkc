@@ -97,9 +97,9 @@ func (p *Jif) Patch(labels []Address) {
 	p.Target = labels[p.Target]
 }
 
-func decodeJif[W word.Word[W]](offset uint32, codes []uint32) (bc Bytecode[W], n uint32) {
+func decodeJif[W word.Word[W]](pc uint32, codes []uint32) (bc Bytecode[W], n uint32) {
 	var (
-		code   = codes[0]
+		code   = codes[pc]
 		target Address
 		op     Cond
 		src0   RegVec
@@ -110,9 +110,8 @@ func decodeJif[W word.Word[W]](offset uint32, codes []uint32) (bc Bytecode[W], n
 	case JEQ_RR, JNE_RR, JLT_RR, JLE_RR, JGT_RR, JGE_RR:
 		var rs0, rs1 Reg
 		//
-		target, rs0, rs1, op = decodeJif_rr(offset, code)
+		target, rs0, rs1, op, n = decodeJif_rr(pc, codes)
 		src0, src1 = RegVec{rs0, 1}, RegVec{rs1, 1}
-		n = 1
 		//
 	default:
 		panic("unsupported instruction")
@@ -152,11 +151,11 @@ func encodeJif_rr(offset uint32, target Address, rs0, rs1 Reg, op Cond) []uint32
 	}
 }
 
-func decodeJif_rr(offset uint32, code uint32) (target Address, rs0, rs1 Reg, op Cond) {
-	op = Cond((code & OPCODE_MASK) - JEQ_RR)
-	rs1 = Reg((code >> 8) & 0xff)
-	rs0 = Reg((code >> 16) & 0xff)
-	target = getBranchTarget(offset, code>>24, 8)
+func decodeJif_rr(pc uint32, codes []uint32) (target Address, rs0, rs1 Reg, op Cond, n uint32) {
+	op = Cond((codes[pc] & OPCODE_MASK) - JEQ_RR)
+	rs1 = Reg((codes[pc] >> 8) & 0xff)
+	rs0 = Reg((codes[pc] >> 16) & 0xff)
+	target = getBranchTarget(pc, codes[pc]>>24, 8)
 	//
-	return target, rs0, rs1, op
+	return target, rs0, rs1, op, 1
 }

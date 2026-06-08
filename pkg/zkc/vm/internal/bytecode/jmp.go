@@ -48,7 +48,7 @@ func (p *Jmp) Patch(labels []Address) {
 //
 // Here, offset is a signed u16 relative offset, where the following
 // instruction is considered to be at offset 0.
-func decodeJmp1(offset uint32, codes []uint32) (Jmp, uint32) {
-	var target = getBranchTarget(offset, codes[0]>>8, 24)
-	return Jmp{target}, 1
+func decodeJmp1(pc uint32, codes []uint32) (uint32, uint32) {
+	var target = getBranchTarget(pc, codes[pc]>>8, 24)
+	return target, 1
 }

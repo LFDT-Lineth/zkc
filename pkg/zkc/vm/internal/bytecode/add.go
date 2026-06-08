@@ -99,7 +99,7 @@ func (p *Add[W]) Codes(_ uint32) []uint32 {
 	}
 }
 
-func decodeAdd[W word.Word[W]](codes []uint32) (Bytecode[W], uint32) {
+func decodeAdd[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
 	var (
 		rs0, rs1, rd Reg
 		code         = codes[0] & OPCODE_MASK
@@ -110,15 +110,15 @@ func decodeAdd[W word.Word[W]](codes []uint32) (Bytecode[W], uint32) {
 	)
 	switch code {
 	case ADD:
-		rs0, rs1, rd, n = decodeAdd_2s1(codes)
+		rs0, rs1, rd, n = decodeAdd_2s1(pc, codes)
 		sources = []Reg{rs0, rs1}
 		targets = []Reg{rd}
 	case MOVE:
-		rs0, rd, n = decodeMove_1s1(codes)
+		rs0, rd, n = decodeMove_1s1(pc, codes)
 		sources = []Reg{rs0}
 		targets = []Reg{rd}
 	case LDC:
-		constant, rd, n = decodeLdc_1[W](codes)
+		constant, rd, n = decodeLdc_1[W](pc, codes)
 		targets = []Reg{rd}
 	default:
 		panic("unsupported instruction form")
@@ -158,10 +158,10 @@ func encodeAdd_2s1(rs0, rs1, rd uint16) []uint32 {
 	}
 }
 
-func decodeAdd_2s1(codes []uint32) (rs0, rs1, rd uint16, n uint32) {
-	rd = Reg((codes[0] >> 8) & 0xff)
-	rs1 = Reg((codes[0] >> 16) & 0xff)
-	rs0 = Reg((codes[0] >> 24) & 0xff)
+func decodeAdd_2s1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) {
+	rd = Reg((codes[pc] >> 8) & 0xff)
+	rs1 = Reg((codes[pc] >> 16) & 0xff)
+	rs0 = Reg((codes[pc] >> 24) & 0xff)
 	//
 	return rs0, rs1, rd, 1
 }
@@ -195,11 +195,11 @@ func encodeLdc_1[W word.Word[W]](constant W, rd uint16) []uint32 {
 	}
 }
 
-func decodeLdc_1[W word.Word[W]](codes []uint32) (constant W, rd uint16, n uint32) {
+func decodeLdc_1[W word.Word[W]](pc uint32, codes []uint32) (constant W, rd uint16, n uint32) {
 	var c W
 	//
-	rd = Reg((codes[0] >> 8) & 0xff)
-	c = c.SetUint64(uint64(codes[0] >> 16))
+	rd = Reg((codes[pc] >> 8) & 0xff)
+	c = c.SetUint64(uint64(codes[pc] >> 16))
 	//
 	return c, rd, 1
 }
@@ -233,9 +233,9 @@ func encodeMove_1s1(rs, rd uint16) []uint32 {
 	}
 }
 
-func decodeMove_1s1(codes []uint32) (rs, rd uint16, n uint32) {
-	rd = Reg((codes[0] >> 8) & 0xff)
-	rs = Reg((codes[0] >> 16) & 0xff)
+func decodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
+	rd = Reg((codes[pc] >> 8) & 0xff)
+	rs = Reg((codes[pc] >> 16) & 0xff)
 	//
 	return rs, rd, 1
 }
