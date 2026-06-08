@@ -39,33 +39,9 @@ func WordToBytecodeMachine[W word.Word[W]](wm *machine.Word[W]) *bytecode.Interp
 // a bytecode program.
 func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) bytecode.Program {
 	var (
-		compiler                     = &bytecodeCompiler[W]{machine: wm, memmap: make([]uint16, len(wm.Modules()))}
-		nroms, nwoms, nsrams, nbrams uint
+		encoder  = bytecode.NewEncoder[W, Label](wm.Modules()...)
+		compiler = &bytecodeCompiler[W]{wm, encoder}
 	)
-	// construct memory map
-	for i, m := range wm.Modules() {
-		if mem, ok := m.(memory.Memory[W]); ok {
-			switch {
-			case mem.IsReadOnly():
-				compiler.memmap[i] = uint16(nroms)
-				nroms++
-			case mem.IsWriteOnly():
-				compiler.memmap[i] = uint16(nwoms)
-				nwoms++
-			case mem.IsReadWrite():
-				compiler.memmap[i] = uint16(nsrams)
-				nsrams++
-				// Sanity check
-				if _, ok := mem.(*memory.BiPartiteRandomAccess[W]); ok {
-					panic("bipartite memory unsupported")
-				}
-			}
-		}
-	}
-	// More sanity checks
-	if nroms > math.MaxUint16 || nwoms > math.MaxUint16 || nsrams > math.MaxUint16 || nbrams > math.MaxUint16 {
-		panic("too many memory modules")
-	}
 	// translate functions
 	for i, m := range wm.Modules() {
 		if f, ok := m.(*WordFunction); ok {
@@ -79,14 +55,13 @@ func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) bytecode.Program
 
 type bytecodeCompiler[W word.Word[W]] struct {
 	machine *machine.Word[W]
-	encoder bytecode.Encoder[W, Label]
-	memmap  []uint16
+	encoder *bytecode.Encoder[W, Label]
 }
 
 func (p *bytecodeCompiler[W]) compileWordFunction(fid uint, f *WordFunction) {
 	// mark entry point of this function
 	p.encoder.MarkLabel(Label{fid, 0, 0})
-	p.encoder.MarkSymbol(f.Name())
+	p.encoder.MarkModule(fid)
 	//
 	for i, vec := range f.Code() {
 		for j, insn := range vec.Codes {
@@ -172,8 +147,8 @@ func (p *bytecodeCompiler[W]) compileJump(pos Label, insn *instruction.Jump) {
 func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead) {
 	var (
 		mem  = p.machine.Module(insn.Id).(memory.Memory[W])
-		mid  = p.memmap[insn.Id]
 		mode bytecode.RwMode
+		mid  = uint16(insn.Id)
 	)
 	//
 	switch {
@@ -187,6 +162,10 @@ func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead) {
 		}
 	default:
 		panic("todo")
+	}
+	//
+	if insn.Id > math.MaxUint16 {
+		panic("too many modules")
 	}
 	//
 	p.encoder.Add(bytecode.NewReadWrite(mode, mid, insn.Arguments, insn.Returns))

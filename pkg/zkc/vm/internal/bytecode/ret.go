@@ -36,7 +36,7 @@ func NewRet(width uint) *Ret {
 	return &Ret{uint16(width)}
 }
 
-func (p *Ret) String() string {
+func (p *Ret) String(_ SystemMap) string {
 	return fmt.Sprintf("ret %d", p.FrameWidth)
 }
 

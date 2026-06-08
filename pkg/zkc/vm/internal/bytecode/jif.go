@@ -50,8 +50,12 @@ func NewJifVec(op Cond, target Address, left, right register.Vector) *Jif {
 	}
 }
 
-func (p *Jif) String() string {
-	var ops string
+func (p *Jif) String(mapping SystemMap) string {
+	var (
+		ops  string
+		src0 = registerVectorToString(p.Src0, mapping)
+		src1 = registerVectorToString(p.Src1, mapping)
+	)
 	//
 	switch p.Op {
 	case opcode.EQ:
@@ -70,7 +74,7 @@ func (p *Jif) String() string {
 		ops = "??"
 	}
 	//
-	return fmt.Sprintf("jif %s %s %s 0x%08x", p.Src0, ops, p.Src1, p.Target)
+	return fmt.Sprintf("jif %s %s %s 0x%08x", src0, ops, src1, p.Target)
 }
 
 // Codes implementation for Bytecode interface

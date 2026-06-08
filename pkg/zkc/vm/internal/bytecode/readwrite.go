@@ -15,7 +15,6 @@ package bytecode
 import (
 	"fmt"
 	"math"
-	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -62,16 +61,18 @@ func NewReadWrite(mode RwMode, id uint16, address []register.Id, data []register
 	}
 }
 
-func (p *ReadWrite) String() string {
+func (p *ReadWrite) String(mapping SystemMap) string {
+	var (
+		name    = mapping.Module(uint(p.Id)).Name()
+		address = registersToString(p.Address, mapping, ",")
+		data    = registersToString(p.Data, mapping, ",")
+	)
+	//
 	switch p.Mode {
-	case ROM_READ:
-		return rwReadStr("rom", p.Id, p.Address, p.Data)
-	case WOM_WRITE:
-		return rwWriteStr("wom", p.Id, p.Address, p.Data)
-	case SRAM_READ:
-		return rwReadStr("ram", p.Id, p.Address, p.Data)
-	case SRAM_WRITE:
-		return rwWriteStr("ram", p.Id, p.Address, p.Data)
+	case ROM_READ, SRAM_READ:
+		return fmt.Sprintf("%s = %s[%s]", data, name, address)
+	case WOM_WRITE, SRAM_WRITE:
+		return fmt.Sprintf("%s[%s] = %s", name, address, data)
 	default:
 		panic("unknown read/write mode")
 	}
@@ -161,36 +162,4 @@ func checkSmallArgs(args []Reg) {
 			panic("support wide read/write instructions")
 		}
 	}
-}
-
-func rwReadStr(prefix string, id uint16, address []Reg, data []Reg) string {
-	var (
-		alines = rwArguments(address)
-		dlines = rwArguments(data)
-	)
-	//
-	return fmt.Sprintf("%s = %s%d[%s]", dlines, prefix, id, alines)
-}
-
-func rwWriteStr(prefix string, id uint16, address []Reg, data []Reg) string {
-	var (
-		alines = rwArguments(address)
-		dlines = rwArguments(data)
-	)
-	//
-	return fmt.Sprintf("%s%d[%s] = %s", prefix, id, alines, dlines)
-}
-
-func rwArguments(args []Reg) string {
-	var builder strings.Builder
-	//
-	for i, r := range args {
-		if i != 0 {
-			builder.WriteString(",")
-		}
-		//
-		builder.WriteString(fmt.Sprintf("r%d", r))
-	}
-	//
-	return builder.String()
 }

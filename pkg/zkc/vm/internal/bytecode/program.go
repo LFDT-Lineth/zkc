@@ -14,20 +14,30 @@ package bytecode
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 )
+
+// Module provides a convenient alias
+type Module = base.Module
+
+// SystemMap provides a convenient alias
+type SystemMap = base.SystemMap
 
 // Program represents a self-contained bytecode program with a given entry
 // point.
 type Program struct {
+	// Modules declaredThe by the program
+	modules []Module
 	// The bytecode sequence itself.
 	bytecodes []uint32
 	// Symbols associated with bytecode offsets
-	symbols map[uint32]string
+	symbols map[uint32]uint
 }
 
 // NewProgram constructs a new bytecode program with a given entry point.
-func NewProgram(bytecodes []uint32, symbols map[uint32]string) Program {
+func NewProgram(modules []Module, bytecodes []uint32, symbols map[uint32]uint) Program {
 	return Program{
+		modules,
 		bytecodes,
 		symbols,
 	}
@@ -35,10 +45,15 @@ func NewProgram(bytecodes []uint32, symbols map[uint32]string) Program {
 
 // SymbolAt determines whether or not there is a symbol associated with a given
 // instruction address.
-func (p Program) SymbolAt(address Address) util.Option[string] {
-	if sym, ok := p.symbols[address]; ok {
-		return util.Some(sym)
+func (p Program) SymbolAt(address Address) util.Option[Module] {
+	if idx, ok := p.symbols[address]; ok {
+		return util.Some(p.modules[idx])
 	}
 	//
-	return util.None[string]()
+	return util.None[Module]()
+}
+
+// Modules returns information about the modules declared within this program.
+func (p Program) Modules() []Module {
+	return p.modules
 }

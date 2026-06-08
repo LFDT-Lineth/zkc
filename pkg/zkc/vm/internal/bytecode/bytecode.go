@@ -128,7 +128,7 @@ const (
 
 // Bytecode encapsulates a single bytecode instruction.
 type Bytecode[W word.Word[W]] interface {
-	String() string
+	String(SystemMap) string
 	Codes(uint32) []uint32
 }
 
@@ -150,7 +150,7 @@ func NewFail() *Fail {
 	return &Fail{}
 }
 
-func (p *Fail) String() string {
+func (p *Fail) String(_ SystemMap) string {
 	return "fail"
 }
 

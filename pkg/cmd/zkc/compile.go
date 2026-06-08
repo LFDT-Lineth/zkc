@@ -15,9 +15,11 @@ package zkc
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -420,6 +422,7 @@ func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram) {
 		address   uint32
 		bytecodes = vm.DecodeBytecodes[W](program)
 		width     uint
+		mapping   vm.SystemMap
 	)
 	//
 	for _, bytecode := range bytecodes {
@@ -431,14 +434,22 @@ func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram) {
 	// Reset for another sweep
 	address = 0
 	//
-	for _, bytecode := range vm.DecodeBytecodes[W](program) {
+	for i, bytecode := range vm.DecodeBytecodes[W](program) {
 		var codes = bytecode.Codes(address)
 		//
 		if sym := program.SymbolAt(address); sym.HasValue() {
-			fmt.Printf("%s:\n", sym.Unwrap())
+			var m = sym.Unwrap()
+			//
+			if i != 0 {
+				fmt.Println()
+			}
+			//
+			fmt.Printf("%s:\n", signatureOf(m))
+			//
+			mapping = instruction.NewSystemMap(m.RegisterMap(), program.Modules())
 		}
 		//
-		fmt.Printf("0x%04x\t%s\t%s\n", address, codeStr(width, codes), bytecode.String())
+		fmt.Printf("0x%04x\t%s\t%s\n", address, codeStr(width, codes), bytecode.String(mapping))
 		//
 		address += uint32(len(codes))
 	}
@@ -451,6 +462,40 @@ func codeStr(width uint, codes []uint32) string {
 	)
 	//
 	return fmt.Sprintf("%-*s", n, str)
+}
+
+func signatureOf(m vm.Module) string {
+	var (
+		args = array.Filter(m.Registers(), func(r register.Register) bool {
+			return r.IsInput()
+		})
+		returns = array.Filter(m.Registers(), func(r register.Register) bool {
+			return r.IsOutput()
+		})
+	)
+	//
+	return fmt.Sprintf("%s(%s) -> (%s)", m.Name(), fnArgs(args), fnArgs(returns))
+}
+
+func fnArgs(regs []register.Register) string {
+	var builder strings.Builder
+	//
+	for i, r := range regs {
+		if i != 0 {
+			builder.WriteString(",")
+		}
+		//
+		builder.WriteString(r.Name())
+		builder.WriteString(":")
+		//
+		if r.IsNative() {
+			builder.WriteString("𝔽")
+		} else {
+			builder.WriteString(fmt.Sprintf("u%d", r.Width()))
+		}
+	}
+	//
+	return builder.String()
 }
 
 // ============================================================================

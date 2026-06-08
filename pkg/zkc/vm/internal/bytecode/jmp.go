@@ -22,7 +22,7 @@ func NewJmp(target Address) *Jmp {
 	return &Jmp{target}
 }
 
-func (p *Jmp) String() string {
+func (p *Jmp) String(_ SystemMap) string {
 	return fmt.Sprintf("jmp 0x%08x", p.Target)
 }
 

@@ -18,6 +18,7 @@ import (
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
@@ -129,6 +130,13 @@ func (p *StaticArray[W]) HasRegister(name string) (register.Id, bool) {
 // Register implementation for vm.Module interface.
 func (p *StaticArray[W]) Register(id register.Id) register.Register {
 	return p.geometry.registers[id.Unwrap()]
+}
+
+// RegisterMap returns a register map view of the registers declared by this
+// function.
+func (p *StaticArray[I]) RegisterMap() register.Map {
+	name := trace.ModuleName{Name: p.Name(), Multiplier: 1}
+	return register.ArrayMap(name, p.Registers()...)
 }
 
 // Registers implementation for vm.Module interface.

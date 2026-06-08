@@ -59,30 +59,16 @@ func NewAddVecConst[W word.Word[W]](targets []register.Id, sources []register.Id
 	}
 }
 
-func (p *Add[W]) String() string {
+func (p *Add[W]) String(mapping SystemMap) string {
 	var (
 		builder strings.Builder
 		cz      = p.Constant.Cmp64(0) == 0
 		cstr    = fmt.Sprintf("0x%s", p.Constant.Text(16))
 	)
 	//
-	for i, r := range array.Reverse(p.Target) {
-		if i != 0 {
-			builder.WriteString("::")
-		}
-		//
-		builder.WriteString(fmt.Sprintf("r%d", r))
-	}
-	//
+	builder.WriteString(registersToString(array.Reverse(p.Target), mapping, "::"))
 	builder.WriteString(" = ")
-	//
-	for i, r := range p.Source {
-		if i != 0 {
-			builder.WriteString(" + ")
-		}
-		//
-		builder.WriteString(fmt.Sprintf("r%d", r))
-	}
+	builder.WriteString(registersToString(p.Source, mapping, " + "))
 	//
 	if len(p.Source) == 0 {
 		builder.WriteString(cstr)
