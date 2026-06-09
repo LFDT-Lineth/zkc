@@ -180,7 +180,9 @@ func (p *bytecodeCompiler[W]) compileConcat(insn *instruction.WordTypeA[W]) {
 }
 
 func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call) {
-	checkModuleId(insn.Id)
+	checkCallModuleId(insn.Id)
+	checkCallOperands(insn.Arguments)
+	checkCallOperands(insn.Returns)
 	//
 	// CALL operands stay in caller register numbering.
 	p.encoder.Add(bytecode.NewCall(uint16(insn.Id), insn.Arguments, insn.Returns))
@@ -306,6 +308,24 @@ type Label struct {
 func checkModuleId(mid uint) {
 	if mid > math.MaxUint16 {
 		panic("invalid module identifier (too many modules)")
+	}
+}
+
+func checkCallModuleId(mid uint) {
+	if mid > math.MaxUint8 {
+		panic("wide call instructions not supported")
+	}
+}
+
+func checkCallOperands(regs []register.Id) {
+	if len(regs) > math.MaxUint8 {
+		panic("wide call instructions not supported")
+	}
+	//
+	for _, reg := range regs {
+		if reg.Unwrap() > math.MaxUint8 {
+			panic("wide call instructions not supported")
+		}
 	}
 }
 

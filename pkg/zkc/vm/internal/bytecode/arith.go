@@ -71,8 +71,6 @@ func (p *Arith[W]) Codes(_ uint32) []uint32 {
 		return encodeMove_1s1(p.Source[0], p.Target[0])
 	case n == 1 && m == 1:
 		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant)
-	case m > 1 && cz:
-		return encodeArith_vec(p.Op, p.Target, p.Source)
 	case n == 2 && m == 1:
 		// x*y*0 is always 0: fold to a constant load so the intermediate
 		// product x*y cannot raise a spurious overflow error.
@@ -89,6 +87,8 @@ func (p *Arith[W]) Codes(_ uint32) []uint32 {
 		}
 		//
 		return codes
+	case m > 0:
+		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant)
 	default:
 		panic(fmt.Sprintf("unsupported arithmetic instruction form (%d, %d, %t)", n, m, cz))
 	}
@@ -123,8 +123,7 @@ func decodeArith[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32
 		targets = []Reg{rd}
 		op = opcodeToArithOp(opcode)
 	case ARITHV:
-		op, targets, sources, n = decodeArith_vec(pc, codes)
-		constant = arithIdentity[W](op)
+		op, targets, sources, constant, n = decodeArith_vec[W](pc, codes)
 	case MOVE:
 		rs0, rd, n = decodeMove_1s1(pc, codes)
 		sources = []Reg{rs0}
@@ -316,6 +315,10 @@ func decodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 // +--------+--------+--------+--------+
 // |   op   |  nsrc  | ntgt   | opcode |
 // +--------+--------+--------+--------+
+// |        constant low 32 bits        |
+// +------------------------------------+
+// |        constant high 32 bits       |
+// +------------------------------------+
 // | tgt3   | tgt2   | tgt1   | tgt0   |
 // +--------+--------+--------+--------+
 // | ... packed source registers ...    |
@@ -324,32 +327,43 @@ func decodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 // Targets are packed first because StoreAcross writes the low limbs first.
 // ============================================================================
 
-func encodeArith_vec(aop arithOp, targets []Reg, sources []Reg) []uint32 {
-	if len(targets) == 0 || len(sources) == 0 || len(targets) >= 256 || len(sources) >= 256 {
+func encodeArith_vec[W word.Word[W]](aop arithOp, targets []Reg, sources []Reg, constant W) []uint32 {
+	if len(targets) == 0 || len(targets) >= 256 || len(sources) >= 256 {
 		panic("wide vector arithmetic instructions not supported")
+	}
+	if constant.Cmp64(^uint64(0)) > 0 {
+		panic("wide vector arithmetic constants not supported")
 	}
 	//
 	var (
-		opcode = uint32(aop.tag) << 24
-		nsrc   = uint32(len(sources)) << 16
-		ntgt   = uint32(len(targets)) << 8
-		codes  = []uint32{opcode | nsrc | ntgt | ARITHV}
-		bytes  = append(regsAsBytes(targets), regsAsBytes(sources)...)
+		opcode   = uint32(aop.tag) << 24
+		nsrc     = uint32(len(sources)) << 16
+		ntgt     = uint32(len(targets)) << 8
+		c        = constant.Uint64()
+		codes    = []uint32{opcode | nsrc | ntgt | ARITHV, uint32(c), uint32(c >> 32)}
+		regBytes = append(regsAsBytes(targets), regsAsBytes(sources)...)
 	)
 	//
-	return append(codes, packRegsIntoCodes(bytes)...)
+	return append(codes, packRegsIntoCodes(regBytes)...)
 }
 
-func decodeArith_vec(pc uint32, codes []uint32) (op arithOp, targets, sources []Reg, n uint32) {
+func decodeArith_vec[W word.Word[W]](pc uint32, codes []uint32) (
+	op arithOp, targets, sources []Reg, constant W, n uint32) {
+	//
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
 		nsources = uint((codes[pc] >> 16) & 0xff)
 		tag      = uint8((codes[pc] >> 24) & 0xff)
-		iter     = NewOp8Iter(0, codes[pc+1:])
+		c        = uint64(codes[pc+1]) | (uint64(codes[pc+2]) << 32)
+		iter     = NewOp8Iter(0, codes[pc+3:])
 		regs     = OpIterToArray[uint16](ntargets+nsources, iter)
 	)
 	//
-	return arithOpFromTag(tag), regs[:ntargets], regs[ntargets:], 1 + nCodesPackedSmall(uint32(ntargets+nsources))
+	op = arithOpFromTag(tag)
+	constant = constant.SetUint64(c)
+	//
+	return op, regs[:ntargets], regs[ntargets:], constant,
+		3 + nCodesPackedSmall(uint32(ntargets+nsources))
 }
 
 // ============================================================================
@@ -383,16 +397,6 @@ func IsUnusedConstant[W word.Word[W]](op arithOp, constant W) bool {
 	default:
 		panic("unknown arithmetic operation")
 	}
-}
-
-func arithIdentity[W word.Word[W]](op arithOp) W {
-	if op == arithop_MUL {
-		return word.Const64[W](1)
-	}
-	//
-	var zero W
-	//
-	return zero
 }
 
 func arithOpFromTag(tag uint8) arithOp {
