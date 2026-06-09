@@ -121,13 +121,17 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 	)
 	//
 	switch code & OPCODE_MASK {
-	case ADD_2n1, ADDC:
+	case ADD_2n1, ADDC, ARITHV:
 		return decodeArith[W](pc, codes)
 	case CALL:
 		return decodeCall[W](pc, codes)
+	case CAT:
+		return decodeCat[W](pc, codes)
 	case CHECKCAST:
 		rd, width, n := decodeCheckCast(pc, codes)
 		return &CheckCast{width, rd}, n
+	case DEBUG:
+		return &Debug{}, 1
 	case FAIL:
 		return &Fail{}, 1
 	case JMP:
@@ -139,6 +143,8 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 		return decodeArith[W](pc, codes)
 	case MUL_2n1, MULC:
 		return decodeArith[W](pc, codes)
+	case NOT:
+		return decodeNot[W](pc, codes)
 	case RD_SROM_nm, RD_ROM_nm, WR_WOM_nm, RD_RAM_nm, WR_RAM_nm:
 		return decodeReadWrite[W](pc, codes, rmap)
 	case RET:

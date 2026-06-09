@@ -103,6 +103,8 @@ const (
 	SUBC
 	// MULC (multiply with constant) instruction
 	MULC
+	// ARITHV (arithmetic with vector target) instruction
+	ARITHV
 	// CSUB (subtract from constant) instruction
 	CSUB
 	// DIV instruction
@@ -127,6 +129,8 @@ const (
 	SHR
 	// CAT instruction
 	CAT
+	// DEBUG instruction
+	DEBUG
 	//
 	MAX_BYTECODE
 )
