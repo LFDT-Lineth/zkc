@@ -14,6 +14,7 @@ package bytecode
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -78,6 +79,10 @@ func decodeCall[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32)
 // ============================================================================
 
 func encodeCall(id uint16, args []Reg, returns []Reg) []uint32 {
+	if id > math.MaxUint8 || len(args) > math.MaxUint8 || len(returns) > math.MaxUint8 {
+		panic("wide call instructions not supported")
+	}
+	//
 	var (
 		_id   = uint32(id) << 8
 		nargs = uint32(len(args)) << 16
@@ -85,10 +90,6 @@ func encodeCall(id uint16, args []Reg, returns []Reg) []uint32 {
 		codes = []uint32{nrets | nargs | _id | CALL}
 		bytes = append(regsAsBytes(args), regsAsBytes(returns)...)
 	)
-	//
-	if id >= 256 {
-		panic("wide call instructions not supported")
-	}
 	//
 	return append(codes, packRegsIntoCodes(bytes)...)
 }
