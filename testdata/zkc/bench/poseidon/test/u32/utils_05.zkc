@@ -1,0 +1,22 @@
+include "../../impl/u32/poseidon.zkc"
+include "../../impl/u32/state.zkc"
+include "../../utils/memory.zkc"
+
+// ===================================================================
+// wipe_tmp test
+// ===================================================================
+
+fn main<ram, u32_state>() {
+    // we write the message 0x00 01 02 ... fe ff into memory
+    write_to_tmp(1, 1)
+    var before_wipe:u32 = read_from_tmp(1)
+    wipe_tmp()
+    var after_wipe:u32 = read_from_tmp(1)
+
+    if before_wipe != 1 {
+        fail
+    }
+    if after_wipe != 0 {
+        fail
+    }
+}

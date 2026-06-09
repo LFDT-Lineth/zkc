@@ -1,0 +1,35 @@
+include "../../impl/u32/poseidon.zkc"
+include "../../impl/u32/state.zkc"
+include "../../impl/u32/_results.zkc"
+include "../../utils/memory.zkc"
+
+// ===================================================================
+// poseidon
+// ===================================================================
+input expected_output_state(index:u8) -> (res:u32)
+
+fn main<ram, u32_state>() {
+
+    // we write a message to RAM that will translate to the felts [0].repeat(16) ∈ 𝔽^16
+    var number_of_felts:u32 = 16
+    for i:Address = 0; i<(number_of_felts as Address); i = i + 1 {
+        // Recall that BYTES_PER_FELT ≡ 3
+        write_8(i * 3, 0)
+    }
+
+    var message_offset:Address = 0
+    var message_size_in_bytes:u32 = number_of_felts * (BYTES_PER_FELT as u32)
+
+    poseidon(message_offset, message_size_in_bytes, 256, 0)
+
+    print_state()
+
+    print_expected_output()
+}
+
+fn print_expected_output() {
+    printf "\nExpected output:\n"
+    for i:u8 = 0; i<STATE_WIDTH; i = i + 1 {
+        printf "\tω[%x] = %x\n", i, expected_output_state(i)
+    }
+}

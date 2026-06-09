@@ -1,0 +1,21 @@
+include "../../impl/felt/poseidon.zkc"
+include "../../impl/felt/state.zkc"
+include "../../utils/memory.zkc"
+
+// ===================================================================
+// wipe_tmp test
+// ===================================================================
+
+fn main<ram, felt_state>() {
+    write_to_tmp(1, 1)
+    var before_wipe:𝔽 = read_from_tmp(1)
+    wipe_tmp()
+    var after_wipe:𝔽 = read_from_tmp(1)
+
+    if before_wipe != 1 {
+        fail
+    }
+    if after_wipe != 0 {
+        fail
+    }
+}

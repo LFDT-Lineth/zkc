@@ -1,0 +1,13 @@
+include "../../impl/felt/poseidon.zkc"
+include "../../impl/felt/state.zkc"
+include "../../utils/memory.zkc"
+
+// ===================================================================
+// write_to_state test
+// ===================================================================
+
+fn main<ram, felt_state>() {
+    for i:u8 = 0; i<16; i = i + 1 {
+        write_to_state(i as u8, i as 𝔽)
+    }
+}

@@ -1,0 +1,28 @@
+include "../../impl/felt/poseidon.zkc"
+include "../../impl/felt/state.zkc"
+
+// ===================================================================
+// poseidon
+// ===================================================================
+
+const FALSE:u1 = 0
+
+fn main<ram, felt_state>() {
+
+    // we write the message
+    //
+    // 0x00 01 02 ... fe ff
+    //
+    // into the state
+    for i:u8 = 0; i<16; i = i + 1 {
+        write_to_state(i, 0)
+    }
+    var message_size:u32 = 16
+    var message_offset:Address = 0
+
+    print_state()
+
+    permutation(FALSE)
+
+    print_state()
+}
