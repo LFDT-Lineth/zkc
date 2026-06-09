@@ -57,7 +57,8 @@ func decodeRet[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) 
 }
 
 func decodeRet1(code uint32) (width uint16) {
-	return uint16(code >> 16)
+	// RET stores frame width in bits 8..23.
+	return uint16((code >> 8) & math.MaxUint16)
 }
 
 func encodeRet1(width uint16) []uint32 {
