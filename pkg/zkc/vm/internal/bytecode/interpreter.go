@@ -15,6 +15,7 @@ package bytecode
 import (
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -213,6 +214,9 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			return nsteps, errors.New("machine panic")
 		case CHECKCAST:
 			p.pc, err = executeCheckCast(p.pc, bytecodes, frame)
+		case DEBUG:
+			// DEBUG is ignored for now; tests only assert program outputs.
+			p.pc++
 		case LDC:
 			p.pc = executeLdc_1(p.pc, bytecodes, frame)
 		case MOVE:
@@ -268,6 +272,12 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = executeMul_2n1(p.pc, bytecodes, frame)
 		case MULC:
 			p.pc, err = executeMul_1n1c(p.pc, bytecodes, frame)
+		case ARITHV:
+			p.pc, err = p.executeArithVec(p.pc, bytecodes, frame)
+		case CAT:
+			p.pc, err = p.executeCat(p.pc, bytecodes, frame)
+		case NOT:
+			p.pc, err = p.executeNot(p.pc, bytecodes, frame)
 		default:
 			err = fmt.Errorf("unknown bytecode encountered (0x%x)", opcode)
 		}
@@ -423,6 +433,91 @@ func countInputs(module Module) int {
 	return len(moduleRegisters(module, func(reg register.Register) bool {
 		return reg.IsInput()
 	}))
+}
+
+// executeArithVec computes one logical arithmetic value and stores it across a
+// vector target using the same low-limb-first rule as the word machine.
+func (p *Interpreter[W]) executeArithVec(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		op, targets, sources, n = decodeArith_vec(pc, codes)
+		val                     W
+	)
+	//
+	switch op {
+	case arithop_ADD:
+		for _, src := range sources {
+			var overflow bool
+			//
+			val, overflow = val.Add(stack[src])
+			//
+			if overflow {
+				return pc, errors.New("arithmetic overflow")
+			}
+		}
+	case arithop_SUB:
+		val = stack[sources[0]]
+		//
+		for _, src := range sources[1:] {
+			var underflow bool
+			//
+			val, underflow = val.Sub(stack[src])
+			//
+			if underflow {
+				return pc, errors.New("arithmetic underflow")
+			}
+		}
+	case arithop_MUL:
+		var overflow bool
+		//
+		val = word.Const64[W](1)
+		//
+		for _, src := range sources {
+			var of bool
+			//
+			val, of = val.Mul(stack[src])
+			overflow = overflow || of
+		}
+		//
+		if overflow && val.Cmp64(0) != 0 {
+			return pc, errors.New("arithmetic overflow")
+		}
+	default:
+		panic("unknown arithmetic operation")
+	}
+	//
+	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
+}
+
+// executeCat matches executeConcat in the slow word machine.
+func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		targets, sources, n = decodeCatOperands(pc, codes)
+		module              = p.program.Module(p.fid)
+		val                 W
+	)
+	//
+	for i := len(sources); i > 0; i-- {
+		var (
+			reg   = sources[i-1]
+			width = bitwidthOf(module, reg)
+		)
+		//
+		val = val.Shl64(uint64(width))
+		// Sources[0] occupies the least-significant bits of the result.
+		val = val.Or(stack[reg])
+	}
+	//
+	return pc + n, storeAcross(module, targets, val, stack)
+}
+
+// executeNot computes a bitwise complement within the encoded mask width.
+func (p *Interpreter[W]) executeNot(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rd, rs, bitwidth, n = decodeNot_1n1(pc, codes)
+		val                 = stack[rs].Not(uint(bitwidth))
+	)
+	//
+	return pc + n, storeReg(p.program.Module(p.fid), rd, val, stack)
 }
 
 // executeAdd_2n1 implements ADD_2n1: stack[rd] = stack[rs0] + stack[rs1],
@@ -753,4 +848,49 @@ func decodeAddress[W word.Word[W]](regs Op8Iter, geometry memory.Geometry[W], st
 	}
 
 	return index * uint64(numOutputs), regs
+}
+
+func bitwidthOf(module Module, reg Reg) uint {
+	var r = module.Register(register.NewId(uint(reg)))
+	//
+	if r.IsNative() {
+		return math.MaxUint
+	}
+	//
+	return r.Width()
+}
+
+func storeReg[W word.Word[W]](module Module, target Reg, value W, stack []W) error {
+	var bitwidth = bitwidthOf(module, target)
+	//
+	if !value.FitsWithin(bitwidth) {
+		return fmt.Errorf("bit overflow (0x%s not u%d)", value.Text(16), bitwidth)
+	}
+	//
+	stack[target] = value
+	//
+	return nil
+}
+
+func storeAcross[W word.Word[W]](module Module, targets []Reg, value W, stack []W) error {
+	if len(targets) == 1 {
+		return storeReg(module, targets[0], value, stack)
+	}
+	//
+	var bitwidth uint
+	//
+	for _, target := range targets {
+		var width = bitwidthOf(module, target)
+		//
+		// Low limbs are written first, matching machine.StoreAcross.
+		stack[target] = value.Slice(width)
+		value = value.Shr64(uint64(width))
+		bitwidth += width
+	}
+	//
+	if value.Cmp64(0) != 0 {
+		return fmt.Errorf("bit overflow (0x%s not u%d)", value.Text(16), bitwidth)
+	}
+	//
+	return nil
 }
