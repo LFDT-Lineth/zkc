@@ -41,7 +41,8 @@ var (
 		words:       DEFAULT_WORDS,
 		constraints: false,
 		splitting:   false,
-		bytecode:    false}
+		bytecode:    false,
+		gogen:       false}
 )
 
 // Config for testing
@@ -56,6 +57,8 @@ type Config struct {
 	splitting bool
 	// enable bytecode interpreter
 	bytecode bool
+	// enable the generated-Go ("native") executor
+	gogen bool
 }
 
 // Fields determines which fields to test over.
@@ -76,6 +79,16 @@ func (p Config) Words(words ...vm.WordConfig) Config {
 // experimental but, in principle, can execute faster.
 func (p Config) Bytecode(flag bool) Config {
 	p.bytecode = flag
+	//
+	return p
+}
+
+// Gogen determines whether or not to additionally run the generated-Go ("native")
+// executor and check its outputs against the test.  This is experimental and only
+// applies to the Uint64 word; programs the generator cannot yet handle are skipped
+// rather than failed (see runGogenExecutionTest).
+func (p Config) Gogen(flag bool) Config {
+	p.gogen = flag
 	//
 	return p
 }
@@ -161,6 +174,10 @@ func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f 
 			m64 := vm.WordToWordMachine[vm.Uint, vm.Uint64](m)
 			// Run execution test
 			runBytecodeExecutionTest(t, m64, tc, w, cfg.bytecode)
+			// Optionally cross-check against the generated-Go executor.
+			if cfg.gogen {
+				runGogenExecutionTest(t, m64, tc, w)
+			}
 		default:
 			panic(fmt.Sprintf("unknown machine word: %s", w.Name))
 		}

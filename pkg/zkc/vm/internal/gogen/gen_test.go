@@ -10,7 +10,10 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package gogen
+// This test lives in an external package (gogen_test) rather than package gogen:
+// it drives the generator through the public vm.WordToGoSource entry point, and
+// vm imports gogen — so an internal test would form an import cycle.
+package gogen_test
 
 import (
 	"bytes"
@@ -169,6 +172,82 @@ fn sum(n:u16) -> (s:u16) {
 }
 `
 
+// ---------------------------------------------------------------------------
+// Phase 7.1 fixtures: bitwise / shift / concat (WordTypeB + BIT_CONCAT).
+// ---------------------------------------------------------------------------
+
+// bitwiseSrc exercises AND/OR/XOR (binary) and NOT (unary, width-masked).
+const bitwiseSrc = `pub input data(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var x:u8 = data[0]
+    var y:u8 = data[1]
+    result[0] = x & y
+    result[1] = x | y
+    result[2] = x ^ y
+    result[3] = ~x
+    return
+}
+`
+
+// shiftSrc exercises SHL (width-masked) and SHR, including shift amounts >= width
+// (Go and the reference word both yield 0 there).
+const shiftSrc = `pub input data(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var x:u8 = data[0]
+    var n:u8 = data[1]
+    result[0] = x << n
+    result[1] = x >> n
+    return
+}
+`
+
+// concatSrc exercises BIT_CONCAT: byte-swap a u16 by destructuring then
+// re-concatenating in the opposite order (sources[0] lands in the low bits).
+const concatSrc = `pub input data(address:u8) -> (w:u16)
+pub output result(address:u8) -> (w:u16)
+fn main() {
+    var w:u16 = data[0]
+    var hi:u8
+    var lo:u8
+    hi::lo = w
+    result[0] = lo::hi
+    return
+}
+`
+
+// endianSrc is an integration fixture combining shifts, AND, OR, concat and calls
+// (a u64 byte-order switch), close to the bit-twiddling keccak performs.
+const endianSrc = `pub input data(address:u1) -> (word:u64)
+pub output result(address:u1) -> (word:u64)
+fn main() {
+    result[0] = switch_endian_u64(data[0])
+}
+fn switch_endian_u64(x:u64) -> (switched_x:u64) {
+    var hi:u32 = (x >> 32) as u32
+    var lo:u32 = (x & 0xFFFFFFFF) as u32
+    var sw_hi:u32 = switch_endian_u32(hi)
+    var sw_lo:u32 = switch_endian_u32(lo)
+    switched_x = ((sw_lo as u64) << 32) | (sw_hi as u64)
+    return
+}
+fn switch_endian_u32(x:u32) -> (switched_x:u32) {
+    var hi:u16 = (x >> 16) as u16
+    var lo:u16 = (x & 0xFFFF) as u16
+    var sw_hi:u16 = switch_endian_u16(hi)
+    var sw_lo:u16 = switch_endian_u16(lo)
+    switched_x = ((sw_lo as u32) << 16) | (sw_hi as u32)
+    return
+}
+fn switch_endian_u16(x:u16) -> (switched_x:u16) {
+    var hi:u8 = (x >> 8) as u8
+    var lo:u8 = (x & 0xFF) as u8
+    switched_x = ((lo as u16) << 8) | (hi as u16)
+    return
+}
+`
+
 // compileU64 compiles a ZkC source string into a fresh, unlowered, vectorised
 // u64 WordMachine (vectorisation is required for execution; LowerNatives is off
 // to keep native integer ops — the codegen start point).  A fresh machine is
@@ -208,7 +287,7 @@ func TestGenTutorialStages(t *testing.T) {
 	program := compileProgram(t, tutorialSrc)
 	wm := compileU64Program(t, program)
 
-	goSrc, err := WordToGoSource(wm)
+	goSrc, err := vm.WordToGoSource(wm)
 	if err != nil {
 		t.Fatalf("WordToGoSource: %v", err)
 	}
@@ -234,10 +313,14 @@ func TestGenValidGo(t *testing.T) {
 		"call":        callSrc,
 		"callFail":    callFailSrc,
 		"recSum":      recSumSrc,
+		"bitwise":     bitwiseSrc,
+		"shift":       shiftSrc,
+		"concat":      concatSrc,
+		"endian":      endianSrc,
 	}
 	for name, src := range srcs {
 		t.Run(name, func(t *testing.T) {
-			out, err := WordToGoSource(compileU64(t, src))
+			out, err := vm.WordToGoSource(compileU64(t, src))
 			if err != nil {
 				t.Fatalf("WordToGoSource: %v", err)
 			}
@@ -350,11 +433,51 @@ func TestGenDifferential(t *testing.T) {
 				{"data": {362}}, // 65703 -> overflow u16 -> error
 			},
 		},
+		{
+			name: "bitwise", // Phase 7.1: AND/OR/XOR/NOT
+			src:  bitwiseSrc,
+			vectors: []map[string][]uint64{
+				{"data": {0x0F, 0x3C}},
+				{"data": {0xFF, 0x00}},
+				{"data": {0xAA, 0x55}},
+				{"data": {0x00, 0x00}},
+			},
+		},
+		{
+			name: "shift", // Phase 7.1: SHL (masked) / SHR, incl. amounts >= width
+			src:  shiftSrc,
+			vectors: []map[string][]uint64{
+				{"data": {0x01, 3}},
+				{"data": {0xFF, 1}},
+				{"data": {0x80, 7}},
+				{"data": {0x12, 8}},  // shift by width -> 0
+				{"data": {0x12, 20}}, // shift beyond width -> 0
+			},
+		},
+		{
+			name: "concat", // Phase 7.1: BIT_CONCAT (byte-swap a u16)
+			src:  concatSrc,
+			vectors: []map[string][]uint64{
+				{"data": {0x1234}},
+				{"data": {0x00FF}},
+				{"data": {0xFF00}},
+				{"data": {0x0000}},
+			},
+		},
+		{
+			name: "endian", // Phase 7.1: shifts + AND + OR + concat + calls
+			src:  endianSrc,
+			vectors: []map[string][]uint64{
+				{"data": {0x0123456789ABCDEF}},
+				{"data": {0x0000000000000001}},
+				{"data": {0xFFFFFFFFFFFFFFFF}},
+			},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			src, err := WordToGoSource(compileU64(t, tc.src))
+			src, err := vm.WordToGoSource(compileU64(t, tc.src))
 			if err != nil {
 				t.Fatalf("WordToGoSource: %v", err)
 			}

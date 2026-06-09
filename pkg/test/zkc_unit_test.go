@@ -29,7 +29,7 @@ func Test_ZkcUnit_Basic_01(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_02", util.DEFAULT_CONFIG.Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_02", util.DEFAULT_CONFIG.Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_03(t *testing.T) {
@@ -61,7 +61,7 @@ func Test_ZkcUnit_Basic_09(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_10(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_10", util.DEFAULT_CONFIG.Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_10", util.DEFAULT_CONFIG.Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_11(t *testing.T) {
@@ -170,15 +170,15 @@ func Test_ZkcUnit_Basic_34(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_35(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_35", util.DEFAULT_CONFIG.Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_35", util.DEFAULT_CONFIG.Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_36(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_36", util.DEFAULT_CONFIG.Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_36", util.DEFAULT_CONFIG.Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_37(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_37", util.DEFAULT_CONFIG.Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_37", util.DEFAULT_CONFIG.Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_38(t *testing.T) {
@@ -197,7 +197,7 @@ func Test_ZkcUnit_Basic_40(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_41(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_41", util.DEFAULT_CONFIG.Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_41", util.DEFAULT_CONFIG.Bytecode(true).Gogen(true))
 }
 
 // ===================================================================
@@ -476,19 +476,19 @@ func Test_ZkcUnit_Continue_01(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Bitwise_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bitwise_01", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/bitwise_01", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Bitwise_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bitwise_02", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/bitwise_02", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Bitwise_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bitwise_03", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/bitwise_03", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Bitwise_04(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bitwise_04", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/bitwise_04", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Bitwise_05(t *testing.T) {
@@ -517,15 +517,15 @@ func Test_ZkcUnit_Bitwise_09(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_10(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bitwise_10", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/bitwise_10", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Bitwise_11(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bitwise_11", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/bitwise_11", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Bitwise_12(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bitwise_12", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/bitwise_12", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Bitwise_13(t *testing.T) {
@@ -541,11 +541,11 @@ func Test_ZkcUnit_Bitwise_14(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Shift_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/shift_01", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/shift_01", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Shift_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/shift_02", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/shift_02", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Shift_03(t *testing.T) {
@@ -559,7 +559,7 @@ func Test_ZkcUnit_Shift_04(t *testing.T) {
 }
 
 func Test_ZkcUnit_Shift_05(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/shift_05", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/shift_05", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Shift_06(t *testing.T) {
@@ -567,7 +567,7 @@ func Test_ZkcUnit_Shift_06(t *testing.T) {
 }
 
 func Test_ZkcUnit_Shift_07(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/shift_07", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/shift_07", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Shift_08(t *testing.T) {
@@ -576,11 +576,11 @@ func Test_ZkcUnit_Shift_08(t *testing.T) {
 }
 
 func Test_ZkcUnit_Shift_09(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/shift_09", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/shift_09", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Shift_10(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/shift_10", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/shift_10", util.DEFAULT_CONFIG.Constraints(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Shift_11(t *testing.T) {
@@ -663,11 +663,11 @@ func Test_ZkcUnit_Rem_03(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Call_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/call_01", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/call_01", util.DEFAULT_CONFIG.Gogen(true))
 }
 
 func Test_ZkcUnit_Call_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/call_02", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/call_02", util.DEFAULT_CONFIG.Gogen(true))
 }
 
 // ===================================================================

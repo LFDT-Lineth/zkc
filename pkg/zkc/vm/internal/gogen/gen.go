@@ -69,8 +69,10 @@ type wordCode = []instruction.Vector[instruction.Word]
 type memRole int
 
 const (
-	romInput memRole = iota
-	womOutput
+	romInput   memRole = iota // non-static read-only: loaded from the program inputs
+	womOutput                 // write-once: forms the program outputs (grow-on-write)
+	sromStatic                // static read-only: fixed contents baked into the program
+	ramScratch                // read-write scratch: zero-initialised, grows on write
 )
 
 type memInfo struct {
@@ -78,6 +80,9 @@ type memInfo struct {
 	varName string
 	role    memRole
 	geom    memory.Geometry[word.Uint64]
+	// contents holds the baked initial values of a static (SROM) memory; nil for
+	// all other roles.
+	contents []uint64
 }
 
 // limb identifies a target register and its bit-width (used by emitStore).
@@ -114,6 +119,10 @@ func WordToGoSource(wm *machine.Word[word.Uint64]) (string, error) {
 				g.inputs = append(g.inputs, info)
 			case womOutput:
 				g.outputs = append(g.outputs, info)
+			case sromStatic:
+				g.sroms = append(g.sroms, info)
+			case ramScratch:
+				g.rams = append(g.rams, info)
 			}
 		case *wordFunction:
 			g.funcByID[uint(id)] = mm
@@ -159,6 +168,8 @@ type generator struct {
 	memByID  map[uint]memInfo
 	inputs   []memInfo
 	outputs  []memInfo
+	sroms    []memInfo // static read-only memories (baked contents)
+	rams     []memInfo // read-write scratch memories
 	modules  []instruction.Module
 	funcByID map[uint]*wordFunction
 	usesBits bool   // whether math/bits is referenced (decides the import)
@@ -306,15 +317,35 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 		c.linef("var %s []uint64", m.varName)
 	}
 
+	for _, m := range g.rams {
+		c.linef("var %s []uint64", m.varName)
+	}
+
+	// Static read-only memories have fixed contents baked in as a literal.
+	for _, m := range g.sroms {
+		c.linef("var %s = %s", m.varName, sromLiteral(m.contents))
+	}
+
 	c.line("")
 
-	if len(g.outputs) > 0 {
-		c.line("// setWOM grows a write-once output slice and stores a value, matching the")
-		c.line("// VM's grow-on-write WriteOnce memory.")
-		c.line("func setWOM(s []uint64, addr uint64, v uint64) []uint64 {")
+	// memGrow backs both write-once (WOM) outputs and read-write (RAM) scratch:
+	// it grows the slice to cover addr and stores v, matching the VM's
+	// grow-on-write memories.
+	if len(g.outputs) > 0 || len(g.rams) > 0 {
+		c.line("func memGrow(s []uint64, addr uint64, v uint64) []uint64 {")
 		c.line("for uint64(len(s)) <= addr { s = append(s, 0) }")
 		c.line("s[addr] = v")
 		c.line("return s")
+		c.line("}")
+		c.line("")
+	}
+
+	// memGet reads RAM scratch: an unwritten cell reads 0, matching the VM's
+	// zero-initialised RandomAccess memory.
+	if len(g.rams) > 0 {
+		c.line("func memGet(s []uint64, addr uint64) uint64 {")
+		c.line("if addr < uint64(len(s)) { return s[addr] }")
+		c.line("return 0")
 		c.line("}")
 		c.line("")
 	}
@@ -326,6 +357,11 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	}
 
 	for _, m := range g.outputs {
+		c.linef("%s = nil", m.varName)
+	}
+
+	// RAM is zero-initialised scratch: reset it on every run.
+	for _, m := range g.rams {
 		c.linef("%s = nil", m.varName)
 	}
 
@@ -477,6 +513,12 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 	switch x := insn.(type) {
 	case *instruction.WordTypeA[word.Uint64]:
 		return g.emitArith(c, fn, x)
+	case *instruction.WordTypeB:
+		return g.emitBitwise(c, fn, x)
+	case *instruction.Debug:
+		// DEBUG only prints diagnostics; it has no effect on program outputs (which
+		// is all the tests assert), so emit nothing — matching the reference machine.
+		return nil
 	case *instruction.MemRead:
 		return g.emitMemRead(c, fn, x)
 	case *instruction.MemWrite:
@@ -589,6 +631,12 @@ func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) err
 // emitArith dispatches the three integer arithmetic opcodes.  Each computes a
 // value into local `v` and then stores it via emitStore.
 func (g *generator) emitArith(c *code, fn *wordFunction, x *instruction.WordTypeA[word.Uint64]) error {
+	// BIT_CONCAT shares the WordTypeA shape (vector target, register sources) but
+	// has its own packing semantics.
+	if x.Op == opcode.BIT_CONCAT {
+		return g.emitConcat(c, fn, x)
+	}
+
 	store, err := g.buildStore(fn, x.Target)
 	if err != nil {
 		return err
@@ -724,12 +772,126 @@ func (g *generator) emitStore(c *code, store storeView) {
 	g.fail(c, "v != 0", "bit overflow (value exceeds total target width)")
 }
 
-// emitMemRead emits a read from an input ROM: decode the address, then load each
-// data word into its target register (bit-width-checked).
+// emitConcat emits a BIT_CONCAT (`tn::…::t0 = sn::…::s0`): it packs the source
+// registers into one value with sources[0] in the least-significant bits, then
+// distributes that value across the (possibly multi-limb) target via StoreAcross.
+// Mirrors executeConcat in the reference word machine.
+func (g *generator) emitConcat(c *code, fn *wordFunction, x *instruction.WordTypeA[word.Uint64]) error {
+	store, err := g.buildStore(fn, x.Target)
+	if err != nil {
+		return err
+	}
+
+	type source struct {
+		expr  string
+		width uint
+	}
+
+	srcs := make([]source, len(x.Sources))
+	for i, id := range x.Sources {
+		expr, err := g.operand(fn, id)
+		if err != nil {
+			return err
+		}
+
+		w, err := g.regWidth(fn, id)
+		if err != nil {
+			return err
+		}
+
+		srcs[i] = source{expr, w}
+	}
+
+	c.block(func() {
+		c.line("var v uint64")
+		// Build from the most-significant source down so sources[0] ends up in the
+		// low bits (each source is shifted in above the ones already placed).
+		for i := len(srcs); i > 0; i-- {
+			c.linef("v = (v << %d) | %s", srcs[i-1].width, srcs[i-1].expr)
+		}
+
+		g.emitStore(c, store)
+	})
+
+	return nil
+}
+
+// emitBitwise emits a WordTypeB bitwise/shift op into its single target register,
+// mirroring executeAnd/Or/Xor/Not/Shl/Shr.  AND/OR/XOR and SHR map to the plain Go
+// operators; NOT and SHL additionally mask to the operation bit-width (matching
+// word.Not / word.Shl).  The result is then bit-width-checked against the target
+// via emitStore (i.e. frame.Store).
+func (g *generator) emitBitwise(c *code, fn *wordFunction, x *instruction.WordTypeB) error {
+	store, err := g.buildStore(fn, register.NewVector(x.Target))
+	if err != nil {
+		return err
+	}
+
+	lhs, err := g.operand(fn, x.LeftSource)
+	if err != nil {
+		return err
+	}
+
+	// BIT_NOT is unary; the rest read a right operand.
+	var rhs string
+	if x.Op != opcode.BIT_NOT {
+		if rhs, err = g.operand(fn, x.RightSource); err != nil {
+			return err
+		}
+	}
+
+	var valExpr string
+
+	switch x.Op {
+	case opcode.BIT_AND:
+		valExpr = fmt.Sprintf("%s & %s", lhs, rhs)
+	case opcode.BIT_OR:
+		valExpr = fmt.Sprintf("%s | %s", lhs, rhs)
+	case opcode.BIT_XOR:
+		valExpr = fmt.Sprintf("%s ^ %s", lhs, rhs)
+	case opcode.BIT_NOT:
+		valExpr = maskExpr(fmt.Sprintf("^%s", lhs), x.Bitwidth)
+	case opcode.BIT_SHL:
+		valExpr = maskExpr(fmt.Sprintf("%s << %s", lhs, rhs), x.Bitwidth)
+	case opcode.BIT_SHR:
+		valExpr = fmt.Sprintf("%s >> %s", lhs, rhs)
+	default:
+		// INT_DIV / INT_REM are not on the supported path yet (§6.5).
+		return fmt.Errorf("gogen: unsupported bitwise op %s", opName(x.Op))
+	}
+
+	c.block(func() {
+		c.linef("v := %s", valExpr)
+		g.emitStore(c, store)
+	})
+
+	return nil
+}
+
+// maskExpr masks expr to the low bitwidth bits, mirroring word.mask64: a width of
+// 64 or more needs no mask (the full word is already in range, and Go's shift
+// already yields 0 when the count reaches the word width).
+func maskExpr(expr string, bitwidth uint) string {
+	if bitwidth >= 64 {
+		return expr
+	}
+
+	return fmt.Sprintf("(%s) & ((1 << %d) - 1)", expr, bitwidth)
+}
+
+// emitMemRead emits a read from a readable memory (input ROM, static ROM or RAM
+// scratch): decode the address, then load each data word into its target register
+// (bit-width-checked).
 func (g *generator) emitMemRead(c *code, fn *wordFunction, x *instruction.MemRead) error {
 	mi, ok := g.memByID[x.Id]
-	if !ok || mi.role != romInput {
-		return fmt.Errorf("gogen: MEMORY_READ from unsupported module id %d (input ROM only)", x.Id)
+	if !ok {
+		return fmt.Errorf("gogen: MEMORY_READ from unknown module id %d", x.Id)
+	}
+
+	switch mi.role {
+	case romInput, sromStatic, ramScratch:
+	default:
+		return fmt.Errorf("gogen: MEMORY_READ from non-readable memory %q", mi.name)
 	}
 
 	start, err := g.addrExpr(fn, mi, x.Address())
@@ -752,8 +914,13 @@ func (g *generator) emitMemRead(c *code, fn *wordFunction, x *instruction.MemRea
 			idx := i
 
 			c.block(func() {
-				// ROM read is data[address]; OOB panics, exactly as StaticArray.Read.
-				c.linef("val := %s[start+%d]", mi.varName, idx)
+				if mi.role == ramScratch {
+					// RAM is zero-initialised: an unwritten cell reads 0.
+					c.linef("val := memGet(%s, start+%d)", mi.varName, idx)
+				} else {
+					// ROM/SROM read is data[address]; OOB panics, like StaticArray.Read.
+					c.linef("val := %s[start+%d]", mi.varName, idx)
+				}
 
 				if w < 64 {
 					g.fail(c, fmt.Sprintf("val >= (1 << %d)", w), fmt.Sprintf("bit overflow (value exceeds u%d)", w))
@@ -767,12 +934,19 @@ func (g *generator) emitMemRead(c *code, fn *wordFunction, x *instruction.MemRea
 	return inner
 }
 
-// emitMemWrite emits a write to an output WOM: decode the address, then store
-// each data word (checked against the memory's data-register width).
+// emitMemWrite emits a write to a writable memory (output WOM or RAM scratch):
+// decode the address, then store each data word (checked against the memory's
+// data-register width).  Both back onto memGrow (grow-on-write).
 func (g *generator) emitMemWrite(c *code, fn *wordFunction, x *instruction.MemWrite) error {
 	mi, ok := g.memByID[x.Id]
-	if !ok || mi.role != womOutput {
-		return fmt.Errorf("gogen: MEMORY_WRITE to unsupported module id %d (output WOM only)", x.Id)
+	if !ok {
+		return fmt.Errorf("gogen: MEMORY_WRITE to unknown module id %d", x.Id)
+	}
+
+	switch mi.role {
+	case womOutput, ramScratch:
+	default:
+		return fmt.Errorf("gogen: MEMORY_WRITE to non-writable memory %q", mi.name)
 	}
 
 	start, err := g.addrExpr(fn, mi, x.Address())
@@ -807,7 +981,7 @@ func (g *generator) emitMemWrite(c *code, fn *wordFunction, x *instruction.MemWr
 					g.fail(c, fmt.Sprintf("val >= (1 << %d)", w), fmt.Sprintf("bit overflow (value exceeds u%d)", w))
 				}
 
-				c.linef("%s = setWOM(%s, start+%d, val)", mi.varName, mi.varName, idx)
+				c.linef("%s = memGrow(%s, start+%d, val)", mi.varName, mi.varName, idx)
 			})
 		}
 	})
@@ -1025,13 +1199,19 @@ func (g *generator) commentNote(fn *wordFunction, insn instruction.Word) string 
 	switch x := insn.(type) {
 	case *instruction.WordTypeA[word.Uint64]:
 		return arithNote(fn, x)
+	case *instruction.WordTypeB:
+		return bitwiseNote(fn, x)
+	case *instruction.Debug:
+		return "DEBUG only prints diagnostics; it has no effect on program outputs."
 	case *instruction.MemRead:
 		if mi, ok := g.memByID[x.Id]; ok {
-			return fmt.Sprintf("read input memory %q; address registers are packed with memory.Geometry.Decode.", mi.name)
+			return fmt.Sprintf("read %s memory %q; address registers are packed with memory.Geometry.Decode.",
+				roleNote(mi.role), mi.name)
 		}
 	case *instruction.MemWrite:
 		if mi, ok := g.memByID[x.Id]; ok {
-			return fmt.Sprintf("write output memory %q; values are checked against the memory data-line widths.", mi.name)
+			return fmt.Sprintf("write %s memory %q; values are checked against the memory data-line widths.",
+				roleNote(mi.role), mi.name)
 		}
 	case *instruction.Call:
 		if callee, ok := g.funcByID[x.Id]; ok {
@@ -1075,6 +1255,42 @@ func arithNote(fn *wordFunction, x *instruction.WordTypeA[word.Uint64]) string {
 		return fmt.Sprintf("subtract into local v with borrow checks, then StoreAcross into %s.", target)
 	case opcode.INT_MUL:
 		return fmt.Sprintf("multiply into local v with 64-bit overflow tracking, then StoreAcross into %s.", target)
+	case opcode.BIT_CONCAT:
+		return fmt.Sprintf("concatenate sources (sources[0] in the low bits) into v, then StoreAcross into %s.", target)
+	default:
+		return ""
+	}
+}
+
+// roleNote describes a memory role for generated comments.
+func roleNote(r memRole) string {
+	switch r {
+	case romInput:
+		return "input ROM"
+	case womOutput:
+		return "output WOM"
+	case sromStatic:
+		return "static ROM"
+	case ramScratch:
+		return "scratch RAM"
+	default:
+		return "memory"
+	}
+}
+
+// bitwiseNote describes a WordTypeB bitwise/shift instruction.
+func bitwiseNote(fn *wordFunction, x *instruction.WordTypeB) string {
+	target := regDebug(fn, x.Target)
+
+	switch x.Op {
+	case opcode.BIT_AND, opcode.BIT_OR, opcode.BIT_XOR:
+		return fmt.Sprintf("%s of two registers into %s, then enforce the target bit width.", opName(x.Op), target)
+	case opcode.BIT_NOT:
+		return fmt.Sprintf("bitwise complement of %s masked to u%d into %s.", regDebug(fn, x.LeftSource), x.Bitwidth, target)
+	case opcode.BIT_SHL:
+		return fmt.Sprintf("shift %s left (masked to u%d) into %s.", regDebug(fn, x.LeftSource), x.Bitwidth, target)
+	case opcode.BIT_SHR:
+		return fmt.Sprintf("shift %s right into %s.", regDebug(fn, x.LeftSource), target)
 	default:
 		return ""
 	}
@@ -1126,15 +1342,41 @@ func nonZero(operands []string) []string {
 func classifyMemory(m memory.Memory[word.Uint64]) (memInfo, error) {
 	info := memInfo{name: m.Name(), varName: "mem_" + sanitize(m.Name()), geom: m.Geometry()}
 	switch {
-	case m.IsReadOnly() && !m.IsStatic():
+	case m.IsStatic():
+		// Static read-only: bake the fixed contents into the generated program.
+		info.role = sromStatic
+		info.contents = toU64s(m.Contents())
+	case m.IsReadOnly():
 		info.role = romInput
 	case m.IsWriteOnly():
 		info.role = womOutput
+	case m.IsReadWrite():
+		info.role = ramScratch
 	default:
-		return info, fmt.Errorf("gogen: unsupported memory %q (input ROM + output WOM only)", m.Name())
+		return info, fmt.Errorf("gogen: unsupported memory %q", m.Name())
 	}
 
 	return info, nil
+}
+
+// toU64s converts a slice of u64 words into plain uint64s (for baking SROM data).
+func toU64s(words []word.Uint64) []uint64 {
+	out := make([]uint64, len(words))
+	for i, w := range words {
+		out[i] = w.Uint64()
+	}
+
+	return out
+}
+
+// sromLiteral renders a Go []uint64 literal for a static memory's baked contents.
+func sromLiteral(contents []uint64) string {
+	parts := make([]string, len(contents))
+	for i, v := range contents {
+		parts[i] = fmt.Sprintf("0x%x", v)
+	}
+
+	return "[]uint64{" + strings.Join(parts, ", ") + "}"
 }
 
 func sanitize(name string) string {
