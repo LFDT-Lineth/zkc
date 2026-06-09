@@ -80,9 +80,9 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	switch insn.OpCode() {
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
-		panic("todo")
+		p.compileCall(insn.(*instruction.Call))
 	case opcode.DEBUG:
-		panic("todo")
+		p.encoder.Add(bytecode.NewDebug())
 	case opcode.FAIL:
 		p.encoder.Add(bytecode.NewFail())
 	case opcode.JUMP:
@@ -106,23 +106,23 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.INT_MUL:
 		p.compileMul(insn.(*instruction.WordTypeA[W]), f)
 	case opcode.BIT_CONCAT:
-		panic("todo")
+		p.compileConcat(insn.(*instruction.WordTypeA[W]))
 	case opcode.INT_DIV:
 		panic("todo")
 	case opcode.INT_REM:
 		panic("todo")
 	case opcode.BIT_AND:
-		panic("todo")
+		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.AND)
 	case opcode.BIT_NOT:
-		panic("todo")
+		p.compileNot(insn.(*instruction.WordTypeB))
 	case opcode.BIT_OR:
-		panic("todo")
+		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.OR)
 	case opcode.BIT_XOR:
-		panic("todo")
+		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.XOR)
 	case opcode.BIT_SHL:
-		panic("todo")
+		p.compileShift(insn.(*instruction.WordTypeB), bytecode.SHL)
 	case opcode.BIT_SHR:
-		panic("todo")
+		p.compileShift(insn.(*instruction.WordTypeB), bytecode.SHR)
 	case opcode.INT_ADDMOD_P:
 		panic("todo")
 	case opcode.INT_SUBMOD_P:
@@ -168,6 +168,40 @@ func (p *bytecodeCompiler[W]) compileMul(insn *instruction.WordTypeA[W], f *Word
 func (p *bytecodeCompiler[W]) compileSub(insn *instruction.WordTypeA[W]) {
 	// NOTE: should we worry about overflow here?
 	p.encoder.Add(bytecode.SubVecConst(insn.Target.Registers(), insn.Sources, insn.Constant))
+}
+
+func (p *bytecodeCompiler[W]) compileConcat(insn *instruction.WordTypeA[W]) {
+	if insn.Constant.Cmp64(0) != 0 {
+		panic("constant given for bit concatenation")
+	}
+	//
+	// CAT keeps source and target vectors in low-limb-first register order.
+	p.encoder.Add(bytecode.Concat(insn.Target.Registers(), insn.Sources))
+}
+
+func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call) {
+	checkCallModuleId(insn.Id)
+	checkCallOperands(insn.Arguments)
+	checkCallOperands(insn.Returns)
+	//
+	// CALL operands stay in caller register numbering.
+	p.encoder.Add(bytecode.NewCall(uint16(insn.Id), insn.Arguments, insn.Returns))
+}
+
+func (p *bytecodeCompiler[W]) compileNot(insn *instruction.WordTypeB) {
+	// NOT uses only the left source; WordTypeB duplicates it as the right source.
+	p.encoder.Add(bytecode.NewNot(insn.Target, insn.LeftSource, insn.Bitwidth))
+}
+
+func (p *bytecodeCompiler[W]) compileBitwise(insn *instruction.WordTypeB, op uint32) {
+	// op selects the bytecode operation (bytecode.AND / OR / XOR).
+	p.encoder.Add(bytecode.NewBitwise(op, insn.Target, insn.LeftSource, insn.RightSource))
+}
+
+func (p *bytecodeCompiler[W]) compileShift(insn *instruction.WordTypeB, op uint32) {
+	// LeftSource is the value shifted; RightSource holds the shift amount.  The
+	// bitwidth masks the result of a left shift and is ignored by a right shift.
+	p.encoder.Add(bytecode.NewShift(op, insn.Target, insn.LeftSource, insn.RightSource, insn.Bitwidth))
 }
 
 func (p *bytecodeCompiler[W]) compileJump(pos Label, insn *instruction.Jump) {
@@ -274,6 +308,24 @@ type Label struct {
 func checkModuleId(mid uint) {
 	if mid > math.MaxUint16 {
 		panic("invalid module identifier (too many modules)")
+	}
+}
+
+func checkCallModuleId(mid uint) {
+	if mid > math.MaxUint8 {
+		panic("wide call instructions not supported")
+	}
+}
+
+func checkCallOperands(regs []register.Id) {
+	if len(regs) > math.MaxUint8 {
+		panic("wide call instructions not supported")
+	}
+	//
+	for _, reg := range regs {
+		if reg.Unwrap() > math.MaxUint8 {
+			panic("wide call instructions not supported")
+		}
 	}
 }
 
