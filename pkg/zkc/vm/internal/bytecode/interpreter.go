@@ -278,6 +278,10 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = p.executeCat(p.pc, bytecodes, frame)
 		case NOT:
 			p.pc, err = p.executeNot(p.pc, bytecodes, frame)
+		case AND, OR, XOR:
+			p.pc, err = p.executeBitwise(p.pc, bytecodes, frame)
+		case SHL, SHR:
+			p.pc, err = p.executeShift(p.pc, bytecodes, frame)
 		default:
 			err = fmt.Errorf("unknown bytecode encountered (0x%x)", opcode)
 		}
@@ -504,6 +508,47 @@ func (p *Interpreter[W]) executeNot(pc uint32, codes []uint32, stack []W) (uint3
 		rd, rs, bitwidth, n = decodeNot_1n1(pc, codes)
 		val                 = stack[rs].Not(uint(bitwidth))
 	)
+	//
+	return pc + n, storeReg(p.program.Module(p.fid), rd, val, stack)
+}
+
+// executeBitwise computes a binary bitwise operation (AND, OR or XOR).
+func (p *Interpreter[W]) executeBitwise(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		op, rd, lhs, rhs, n = decodeBitwise_2n1(pc, codes)
+		val                 W
+	)
+	//
+	switch op {
+	case AND:
+		val = stack[lhs].And(stack[rhs])
+	case OR:
+		val = stack[lhs].Or(stack[rhs])
+	case XOR:
+		val = stack[lhs].Xor(stack[rhs])
+	default:
+		panic("unknown bitwise operation")
+	}
+	//
+	return pc + n, storeReg(p.program.Module(p.fid), rd, val, stack)
+}
+
+// executeShift shifts a value left (SHL, masked to the encoded width) or right
+// (SHR) by the amount held in a register.
+func (p *Interpreter[W]) executeShift(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		op, rd, rs, amt, bitwidth, n = decodeShift_2n1(pc, codes)
+		val                          W
+	)
+	//
+	switch op {
+	case SHL:
+		val = stack[rs].Shl(uint(bitwidth), stack[amt])
+	case SHR:
+		val = stack[rs].Shr(stack[amt])
+	default:
+		panic("unknown shift operation")
+	}
 	//
 	return pc + n, storeReg(p.program.Module(p.fid), rd, val, stack)
 }
