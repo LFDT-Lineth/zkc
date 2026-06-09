@@ -53,6 +53,10 @@ import (
 type Interpreter[W word.Word[W]] struct {
 	// The program (modules, bytecodes, constant pool and symbols) being executed.
 	program Program[W]
+	// Function entry addresses indexed by module identifier.
+	addresses map[uint]uint32
+	// Cached register counts for each module.
+	moduleInfo []moduleInfo
 	// Current function module identifier.
 	fid uint
 	// Program counter: offset into program.bytecodes of the next bytecode to
@@ -91,6 +95,11 @@ type callFrame struct {
 	returns []Reg
 }
 
+type moduleInfo struct {
+	ninputs  int
+	noutputs int
+}
+
 // NewInterpreter constructs a new bytecode interpreter for the given program.
 // The program's memory modules are partitioned by access discipline (static
 // read-only, read-only, write-once, random-access and bipartite random-access)
@@ -99,14 +108,22 @@ type callFrame struct {
 // called to select an entry point and supply inputs before calling Execute.
 func NewInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
 	var (
-		sroms []memory.StaticReadOnly[W]
-		roms  []memory.ReadOnly[W]
-		woms  []memory.WriteOnce[W]
-		rams  []memory.RandomAccess[W]
-		brams []memory.BiPartiteRandomAccess[W]
+		addresses = make(map[uint]uint32, len(program.symbols))
+		modinfo   = make([]moduleInfo, len(program.modules))
+		sroms     []memory.StaticReadOnly[W]
+		roms      []memory.ReadOnly[W]
+		woms      []memory.WriteOnce[W]
+		rams      []memory.RandomAccess[W]
+		brams     []memory.BiPartiteRandomAccess[W]
 	)
 	//
-	for _, m := range program.modules {
+	for addr, mid := range program.symbols {
+		addresses[mid] = addr
+	}
+	//
+	for i, m := range program.modules {
+		modinfo[i] = newModuleInfo(m)
+		//
 		switch m := m.(type) {
 		case *memory.ReadOnly[W]:
 			roms = append(roms, *m)
@@ -122,14 +139,16 @@ func NewInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
 	}
 	//
 	return &Interpreter[W]{
-		program: program,
-		pc:      0,
-		fp:      0,
-		sroms:   sroms,
-		roms:    roms,
-		woms:    woms,
-		rams:    rams,
-		brams:   brams,
+		program:    program,
+		addresses:  addresses,
+		moduleInfo: modinfo,
+		pc:         0,
+		fp:         0,
+		sroms:      sroms,
+		roms:       roms,
+		woms:       woms,
+		rams:       rams,
+		brams:      brams,
 	}
 }
 
@@ -145,7 +164,7 @@ func (p *Interpreter[W]) Boot(fun string, input map[string][]W) (err error) {
 		return fmt.Errorf("unknown function \"%s\"", fun)
 	}
 	// find instruction to boot
-	if p.pc, ok = p.program.AddressOf(fid); !ok {
+	if p.pc, ok = p.addresses[fid]; !ok {
 		return fmt.Errorf("missing symbol for \"%s\"", fun)
 	}
 	//
@@ -336,14 +355,13 @@ func (p *Interpreter[W]) executeCall(pc uint32, codes []uint32, caller []W) (uin
 		ok                    bool
 	)
 	//
-	if address, ok = p.program.AddressOf(uint(mid)); !ok {
+	if address, ok = p.addresses[uint(mid)]; !ok {
 		return pc, fmt.Errorf("missing symbol for function module %d", mid)
 	}
 	//
 	calleeModule := p.program.Module(uint(mid))
-	// Function registers are laid out inputs, then outputs, then locals; CALL
-	// supplies one argument per input register.
-	ninputs := countRegisters(calleeModule, func(reg register.Register) bool { return reg.IsInput() })
+	// Function registers are laid out inputs, then outputs, then locals.
+	ninputs := p.moduleInfo[mid].ninputs
 	//
 	if len(args) != ninputs {
 		return pc, fmt.Errorf("call to %s expects %d arguments, got %d", calleeModule.Name(), ninputs, len(args))
@@ -383,10 +401,11 @@ func (p *Interpreter[W]) executeReturn(pc uint32, _ []uint32) (uint32, error) {
 		callerModule = p.program.Module(frame.fid)
 		callee       = p.dataStack.Slice(p.fp, p.fp+calleeModule.Width())
 		caller       = p.dataStack.Slice(frame.fp, frame.fp+callerModule.Width())
+		info         = p.moduleInfo[p.fid]
 		// Callee outputs follow its inputs in register order, so ninputs is the
 		// offset of the first output; one output is produced per return target.
-		ninputs  = countRegisters(calleeModule, func(reg register.Register) bool { return reg.IsInput() })
-		noutputs = countRegisters(calleeModule, func(reg register.Register) bool { return reg.IsOutput() })
+		ninputs  = info.ninputs
+		noutputs = info.noutputs
 	)
 	//
 	if len(frame.returns) != noutputs {
@@ -410,31 +429,34 @@ func (p *Interpreter[W]) executeReturn(pc uint32, _ []uint32) (uint32, error) {
 	return frame.returnPc, nil
 }
 
-// countRegisters returns how many of the module's registers satisfy keep.  It
-// allocates nothing: call sites only need the count, either to validate
-// argument/return arity or to locate the first output register in a frame.
-func countRegisters(module Module, keep func(register.Register) bool) int {
-	var count int
+func newModuleInfo(module Module) moduleInfo {
+	var info moduleInfo
 	//
 	for _, reg := range module.Registers() {
-		if keep(reg) {
-			count++
+		if reg.IsInput() {
+			info.ninputs++
+		}
+		//
+		if reg.IsOutput() {
+			info.noutputs++
 		}
 	}
 	//
-	return count
+	return info
 }
 
 // executeArithVec computes one logical arithmetic value and stores it across a
 // vector target using the same low-limb-first rule as the word machine.
 func (p *Interpreter[W]) executeArithVec(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
-		op, targets, sources, n = decodeArith_vec(pc, codes)
-		val                     W
+		op, targets, sources, constant, n = decodeArith_vec[W](pc, codes)
+		val                               W
 	)
 	//
 	switch op {
 	case arithop_ADD:
+		val = constant
+		//
 		for _, src := range sources {
 			var overflow bool
 			//
@@ -445,21 +467,24 @@ func (p *Interpreter[W]) executeArithVec(pc uint32, codes []uint32, stack []W) (
 			}
 		}
 	case arithop_SUB:
-		val = stack[sources[0]]
+		var underflow bool
 		//
-		for _, src := range sources[1:] {
-			var underflow bool
-			//
-			val, underflow = val.Sub(stack[src])
-			//
-			if underflow {
+		for i, src := range sources {
+			// The first source seeds the value; the rest are subtracted from it.
+			if i == 0 {
+				val = stack[src]
+			} else if val, underflow = val.Sub(stack[src]); underflow {
 				return pc, errors.New("arithmetic underflow")
 			}
+		}
+		//
+		if val, underflow = val.Sub(constant); underflow {
+			return pc, errors.New("arithmetic underflow")
 		}
 	case arithop_MUL:
 		var overflow bool
 		//
-		val = word.Const64[W](1)
+		val = constant
 		//
 		for _, src := range sources {
 			var of bool
