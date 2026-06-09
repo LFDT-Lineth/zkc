@@ -112,17 +112,17 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.INT_REM:
 		panic("todo")
 	case opcode.BIT_AND:
-		panic("todo")
+		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.AND)
 	case opcode.BIT_NOT:
 		p.compileNot(insn.(*instruction.WordTypeB))
 	case opcode.BIT_OR:
-		panic("todo")
+		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.OR)
 	case opcode.BIT_XOR:
-		panic("todo")
+		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.XOR)
 	case opcode.BIT_SHL:
-		panic("todo")
+		p.compileShift(insn.(*instruction.WordTypeB), bytecode.SHL)
 	case opcode.BIT_SHR:
-		panic("todo")
+		p.compileShift(insn.(*instruction.WordTypeB), bytecode.SHR)
 	case opcode.INT_ADDMOD_P:
 		panic("todo")
 	case opcode.INT_SUBMOD_P:
@@ -189,6 +189,17 @@ func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call) {
 func (p *bytecodeCompiler[W]) compileNot(insn *instruction.WordTypeB) {
 	// NOT uses only the left source; WordTypeB duplicates it as the right source.
 	p.encoder.Add(bytecode.NewNot(insn.Target, insn.LeftSource, insn.Bitwidth))
+}
+
+func (p *bytecodeCompiler[W]) compileBitwise(insn *instruction.WordTypeB, op uint32) {
+	// op selects the bytecode operation (bytecode.AND / OR / XOR).
+	p.encoder.Add(bytecode.NewBitwise(op, insn.Target, insn.LeftSource, insn.RightSource))
+}
+
+func (p *bytecodeCompiler[W]) compileShift(insn *instruction.WordTypeB, op uint32) {
+	// LeftSource is the value shifted; RightSource holds the shift amount.  The
+	// bitwidth masks the result of a left shift and is ignored by a right shift.
+	p.encoder.Add(bytecode.NewShift(op, insn.Target, insn.LeftSource, insn.RightSource, insn.Bitwidth))
 }
 
 func (p *bytecodeCompiler[W]) compileJump(pos Label, insn *instruction.Jump) {

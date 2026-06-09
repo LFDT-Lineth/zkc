@@ -145,6 +145,10 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 		return decodeArith[W](pc, codes)
 	case NOT:
 		return decodeNot[W](pc, codes)
+	case AND, OR, XOR:
+		return decodeBitwise[W](pc, codes)
+	case SHL, SHR:
+		return decodeShift[W](pc, codes)
 	case RD_SROM_nm, RD_ROM_nm, WR_WOM_nm, RD_RAM_nm, WR_RAM_nm:
 		return decodeReadWrite[W](pc, codes, rmap)
 	case RET:
