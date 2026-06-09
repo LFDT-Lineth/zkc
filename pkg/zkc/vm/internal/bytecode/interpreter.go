@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/heap"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
@@ -51,6 +52,8 @@ import (
 type Interpreter[W word.Word[W]] struct {
 	// The program (modules, bytecodes, constant pool and symbols) being executed.
 	program Program[W]
+	// Current function module identifier.
+	fid uint
 	// Program counter: offset into program.bytecodes of the next bytecode to
 	// decode and execute.
 	pc uint32
@@ -60,8 +63,8 @@ type Interpreter[W word.Word[W]] struct {
 	// Data stack holding the activation records (registers) of active function
 	// calls.  The current frame begins at fp.
 	dataStack heap.Heap[W]
-	// Call stack holding return addresses (bytecode offsets) for nested calls.
-	callStack heap.Heap[uint32]
+	// Call stack holding caller state for nested calls.
+	callStack []callFrame
 	// Static read-only memories: read-only memories whose contents are fixed and
 	// not provided as inputs.
 	sroms []memory.StaticReadOnly[W]
@@ -75,6 +78,16 @@ type Interpreter[W word.Word[W]] struct {
 	// (Large) bipartite random-access memories which may be freely read and
 	// written.
 	brams []memory.BiPartiteRandomAccess[W]
+}
+
+type callFrame struct {
+	// fid/fp identify the caller frame to restore after RET.
+	fid uint
+	fp  uint
+	// returnPc is the next bytecode after CALL in the caller.
+	returnPc uint32
+	// returns names the caller registers that receive callee outputs.
+	returns []Reg
 }
 
 // NewInterpreter constructs a new bytecode interpreter for the given program.
@@ -134,6 +147,11 @@ func (p *Interpreter[W]) Boot(fun string, input map[string][]W) (err error) {
 	if p.pc, ok = p.program.AddressOf(fid); !ok {
 		return fmt.Errorf("missing symbol for \"%s\"", fun)
 	}
+	//
+	p.fid = fid
+	p.fp = 0
+	p.callStack = p.callStack[:0]
+	p.dataStack.Clear()
 	// allocate space for the given function
 	p.dataStack.Alloc(p.program.Module(fid).Width())
 	// initialise memory
@@ -200,14 +218,18 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		case MOVE:
 			p.pc = executeMove_1s1(p.pc, bytecodes, frame)
 		case CALL:
-			panic("todo")
+			p.pc, err = p.executeCall(p.pc, bytecodes, frame)
+			// CALL changes the active frame, so refresh the register window.
+			frame = p.dataStack.SliceEnd(p.fp)
 		case RET:
 			// check for termination
-			if p.callStack.Size() == 0 {
+			if len(p.callStack) == 0 {
 				return nsteps, nil
 			}
 			//
-			panic("todo")
+			p.pc, err = p.executeReturn(p.pc, bytecodes)
+			// RET restores the caller frame, so refresh the register window.
+			frame = p.dataStack.SliceEnd(p.fp)
 		case JMP:
 			p.pc, _ = decodeJmp1(p.pc, bytecodes)
 		case JEQ_rr:
@@ -292,6 +314,116 @@ func (p *Interpreter[W]) initialise(input map[string][]W) {
 // pc, performs the operation, and returns the program counter of the following
 // bytecode (pc+n, where n is this bytecode's width, or a branch target).
 // Executors which may fail additionally return an error.
+
+func (p *Interpreter[W]) executeCall(pc uint32, codes []uint32, caller []W) (uint32, error) {
+	var (
+		mid, args, returns, n = decodeCallOperands(pc, codes)
+		address               uint32
+		ok                    bool
+	)
+	//
+	if address, ok = p.program.AddressOf(uint(mid)); !ok {
+		return pc, fmt.Errorf("missing symbol for function module %d", mid)
+	}
+	//
+	calleeModule := p.program.Module(uint(mid))
+	// Function registers are ordered inputs, outputs, then locals.
+	inputs := moduleRegisters(calleeModule, func(reg register.Register) bool {
+		return reg.IsInput()
+	})
+	//
+	if len(args) != len(inputs) {
+		return pc, fmt.Errorf("call to %s expects %d arguments, got %d", calleeModule.Name(), len(inputs), len(args))
+	}
+	//
+	frame := callFrame{
+		fid:      p.fid,
+		fp:       p.fp,
+		returnPc: pc + n,
+		returns:  returns,
+	}
+	calleeFp := p.dataStack.Size()
+	// Allocate the callee frame above the caller frame on the data stack.
+	p.dataStack.Alloc(calleeModule.Width())
+	//
+	callee := p.dataStack.SliceEnd(calleeFp)
+	for i, arg := range args {
+		val := caller[arg]
+		//
+		if !inputs[i].IsNative() && !val.FitsWithin(inputs[i].Width()) {
+			p.dataStack.Free(calleeModule.Width())
+			return pc, fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), inputs[i].Width())
+		}
+		//
+		// Callee inputs occupy the first registers in its frame.
+		callee[i] = val
+	}
+	//
+	p.callStack = append(p.callStack, frame)
+	// Switch execution to the callee frame and entry address.
+	p.fid = uint(mid)
+	p.fp = calleeFp
+	//
+	return address, nil
+}
+
+func (p *Interpreter[W]) executeReturn(pc uint32, _ []uint32) (uint32, error) {
+	var (
+		frame        = p.callStack[len(p.callStack)-1]
+		calleeModule = p.program.Module(p.fid)
+		callerModule = p.program.Module(frame.fid)
+		outputs      = moduleRegisters(calleeModule, func(reg register.Register) bool { return reg.IsOutput() })
+		callee       = p.dataStack.Slice(p.fp, p.fp+calleeModule.Width())
+		caller       = p.dataStack.Slice(frame.fp, frame.fp+callerModule.Width())
+	)
+	//
+	if len(frame.returns) != len(outputs) {
+		return pc, fmt.Errorf("return from %s produces %d values, got %d targets",
+			calleeModule.Name(), len(outputs), len(frame.returns))
+	}
+	//
+	for i, ret := range frame.returns {
+		var (
+			// Callee outputs start immediately after its inputs.
+			val    = callee[i+countInputs(calleeModule)]
+			target = callerModule.Register(register.NewId(uint(ret)))
+		)
+		//
+		if !target.IsNative() && !val.FitsWithin(target.Width()) {
+			return pc, fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), target.Width())
+		}
+		//
+		// Write callee output into the caller register named by CALL.
+		caller[ret] = val
+	}
+	//
+	// Drop the callee frame and restore the saved caller state.
+	p.dataStack.Free(calleeModule.Width())
+	p.callStack = p.callStack[:len(p.callStack)-1]
+	p.fid = frame.fid
+	p.fp = frame.fp
+	//
+	return frame.returnPc, nil
+}
+
+func moduleRegisters(module Module, keep func(register.Register) bool) []register.Register {
+	var kept []register.Register
+	//
+	for _, reg := range module.Registers() {
+		if keep(reg) {
+			kept = append(kept, reg)
+		}
+	}
+	//
+	return kept
+}
+
+func countInputs(module Module) int {
+	// Outputs start after all input registers by construction.
+	return len(moduleRegisters(module, func(reg register.Register) bool {
+		return reg.IsInput()
+	}))
+}
 
 // executeAdd_2n1 implements ADD_2n1: stack[rd] = stack[rs0] + stack[rs1],
 // returning an error if the addition overflows the word type.

@@ -80,7 +80,7 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	switch insn.OpCode() {
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
-		panic("todo")
+		p.compileCall(insn.(*instruction.Call))
 	case opcode.DEBUG:
 		panic("todo")
 	case opcode.FAIL:
@@ -168,6 +168,13 @@ func (p *bytecodeCompiler[W]) compileMul(insn *instruction.WordTypeA[W], f *Word
 func (p *bytecodeCompiler[W]) compileSub(insn *instruction.WordTypeA[W]) {
 	// NOTE: should we worry about overflow here?
 	p.encoder.Add(bytecode.SubVecConst(insn.Target.Registers(), insn.Sources, insn.Constant))
+}
+
+func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call) {
+	checkModuleId(insn.Id)
+	//
+	// CALL operands stay in caller register numbering.
+	p.encoder.Add(bytecode.NewCall(uint16(insn.Id), insn.Arguments, insn.Returns))
 }
 
 func (p *bytecodeCompiler[W]) compileJump(pos Label, insn *instruction.Jump) {
