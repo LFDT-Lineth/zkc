@@ -236,10 +236,16 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		// Arithmetic Operations
 		case ADD_2n1:
 			p.pc, err = executeAdd_2n1(p.pc, bytecodes, frame)
+		case ADDC:
+			p.pc, err = executeAdd_1n1c(p.pc, bytecodes, frame)
 		case SUB_2n1:
 			p.pc, err = executeSub_2n1(p.pc, bytecodes, frame)
+		case SUBC:
+			p.pc, err = executeSub_1n1c(p.pc, bytecodes, frame)
 		case MUL_2n1:
 			p.pc, err = executeMul_2n1(p.pc, bytecodes, frame)
+		case MULC:
+			p.pc, err = executeMul_1n1c(p.pc, bytecodes, frame)
 		default:
 			err = fmt.Errorf("unknown bytecode encountered (0x%x)", opcode)
 		}
@@ -300,6 +306,23 @@ func executeAdd_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 		res, overflow = val0.Add(val1)
 	)
 	// Check for overflow
+	if overflow {
+		return pc, errors.New("arithmetic overflow")
+	}
+	//
+	stack[rd] = res
+	//
+	return pc + n, nil
+}
+
+// executeAdd_1n1c implements ADDC: stack[rd] = stack[rs] + constant.
+func executeAdd_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rs, rd, constant, n = decodeArith_1n1c[W](pc, codes)
+		val                 = stack[rs]
+		res, overflow       = val.Add(constant)
+	)
+	//
 	if overflow {
 		return pc, errors.New("arithmetic overflow")
 	}
@@ -394,6 +417,23 @@ func executeMul_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 	return pc + n, nil
 }
 
+// executeMul_1n1c implements MULC: stack[rd] = stack[rs] * constant.
+func executeMul_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rs, rd, constant, n = decodeArith_1n1c[W](pc, codes)
+		val                 = stack[rs]
+		res, overflow       = val.Mul(constant)
+	)
+	//
+	if overflow {
+		return pc, errors.New("arithmetic overflow")
+	}
+	//
+	stack[rd] = res
+	//
+	return pc + n, nil
+}
+
 // executeReadSrom_sn implements RD_SROM_nm: it reads ndata consecutive words
 // from the static read-only memory identified by id, starting at the address
 // decoded from the operand registers, into successive destination registers.
@@ -440,6 +480,23 @@ func executeReadRom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	}
 	//
 	return pc + n
+}
+
+// executeSub_1n1c implements SUBC: stack[rd] = stack[rs] - constant.
+func executeSub_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rs, rd, constant, n = decodeArith_1n1c[W](pc, codes)
+		val                 = stack[rs]
+		res, underflow      = val.Sub(constant)
+	)
+	//
+	if underflow {
+		return pc, errors.New("arithmetic underflow")
+	}
+	//
+	stack[rd] = res
+	//
+	return pc + n, nil
 }
 
 // executeSub_2n1 implements SUB_2n1: stack[rd] = stack[rs0] - stack[rs1],
