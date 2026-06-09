@@ -103,8 +103,12 @@ const (
 	SUBC
 	// MULC (multiply with constant) instruction
 	MULC
-	// ARITHV (arithmetic with vector target) instruction
-	ARITHV
+	// ADD_nm (addition with vector target) instruction
+	ADD_nm
+	// SUB_nm (subtraction with vector target) instruction [must follow ADD_nm]
+	SUB_nm
+	// MUL_nm (multiplication with vector target) instruction [must follow SUB_nm]
+	MUL_nm
 	// CSUB (subtract from constant) instruction
 	CSUB
 	// DIV instruction

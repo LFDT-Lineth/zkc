@@ -201,7 +201,10 @@ func (p *Shift) Codes(_ uint32) []uint32 {
 }
 
 func decodeShift[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	op, rd, rs, amt, bitwidth, n := decodeShift_2n1(pc, codes)
+	var (
+		op                       = codes[pc] & OPCODE_MASK
+		rd, rs, amt, bitwidth, n = decodeShift_2n1(pc, codes)
+	)
 	//
 	return &Shift{op, bitwidth, rd, rs, amt}, n
 }
@@ -232,14 +235,13 @@ func encodeShift(op uint32, rd, rs, amt Reg, bitwidth uint8) []uint32 {
 	}
 }
 
-func decodeShift_2n1(pc uint32, codes []uint32) (op uint32, rd, rs, amt Reg, bitwidth uint8, n uint32) {
-	op = codes[pc] & OPCODE_MASK
+func decodeShift_2n1(pc uint32, codes []uint32) (rd, rs, amt Reg, bitwidth uint8, n uint32) {
 	rd = Reg((codes[pc] >> 8) & 0xff)
 	rs = Reg((codes[pc] >> 16) & 0xff)
 	amt = Reg((codes[pc] >> 24) & 0xff)
 	bitwidth = uint8(codes[pc+1])
 	//
-	return op, rd, rs, amt, bitwidth, 2
+	return rd, rs, amt, bitwidth, 2
 }
 
 // NewShift constructs a shift bytecode for op (SHL or SHR).

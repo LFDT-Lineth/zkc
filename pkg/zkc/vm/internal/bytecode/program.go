@@ -121,7 +121,7 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 	)
 	//
 	switch code & OPCODE_MASK {
-	case ADD_2n1, ADDC, ARITHV:
+	case ADD_2n1, ADDC, ADD_nm, SUB_nm, MUL_nm:
 		return decodeArith[W](pc, codes)
 	case CALL:
 		return decodeCall[W](pc, codes)

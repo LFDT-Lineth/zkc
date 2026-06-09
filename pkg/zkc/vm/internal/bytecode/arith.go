@@ -122,8 +122,9 @@ func decodeArith[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32
 		sources = []Reg{rs0}
 		targets = []Reg{rd}
 		op = opcodeToArithOp(opcode)
-	case ARITHV:
-		op, targets, sources, constant, n = decodeArith_vec[W](pc, codes)
+	case ADD_nm, SUB_nm, MUL_nm:
+		targets, sources, constant, n = decodeArith_vec[W](pc, codes)
+		op = opcodeToArithOp(opcode)
 	case MOVE:
 		rs0, rd, n = decodeMove_1s1(pc, codes)
 		sources = []Reg{rs0}
@@ -142,11 +143,11 @@ func decodeArith[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32
 
 func opcodeToArithOp(opcode uint32) arithOp {
 	switch opcode {
-	case ADD_2n1, ADDC:
+	case ADD_2n1, ADDC, ADD_nm:
 		return arithop_ADD
-	case SUB_2n1, SUBC:
+	case SUB_2n1, SUBC, SUB_nm:
 		return arithop_SUB
-	case MUL_2n1, MULC:
+	case MUL_2n1, MULC, MUL_nm:
 		return arithop_MUL
 	default:
 		panic("unknown arithmetic operation")
@@ -313,7 +314,7 @@ func decodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 //	31                                0
 //
 // +--------+--------+--------+--------+
-// |   op   |  nsrc  | ntgt   | opcode |
+// |   n/a  |  nsrc  | ntgt   | opcode |
 // +--------+--------+--------+--------+
 // |        constant low 32 bits        |
 // +------------------------------------+
@@ -324,7 +325,9 @@ func decodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 // | ... packed source registers ...    |
 // +------------------------------------+
 //
-// Targets are packed first because StoreAcross writes the low limbs first.
+// The arithmetic operation (add, subtract or multiply) is identified by the
+// opcode itself (ADD_nm, SUB_nm or MUL_nm).  Targets are packed first because
+// StoreAcross writes the low limbs first.
 // ============================================================================
 
 func encodeArith_vec[W word.Word[W]](aop arithOp, targets []Reg, sources []Reg, constant W) []uint32 {
@@ -335,11 +338,11 @@ func encodeArith_vec[W word.Word[W]](aop arithOp, targets []Reg, sources []Reg, 
 	}
 	//
 	var (
-		opcode   = uint32(aop.tag) << 24
+		opcode   = ADD_nm + uint32(aop.tag)
 		nsrc     = uint32(len(sources)) << 16
 		ntgt     = uint32(len(targets)) << 8
 		c        = constant.Uint64()
-		codes    = []uint32{opcode | nsrc | ntgt | ARITHV, uint32(c), uint32(c >> 32)}
+		codes    = []uint32{nsrc | ntgt | opcode, uint32(c), uint32(c >> 32)}
 		regBytes = append(regsAsBytes(targets), regsAsBytes(sources)...)
 	)
 	//
@@ -347,21 +350,19 @@ func encodeArith_vec[W word.Word[W]](aop arithOp, targets []Reg, sources []Reg, 
 }
 
 func decodeArith_vec[W word.Word[W]](pc uint32, codes []uint32) (
-	op arithOp, targets, sources []Reg, constant W, n uint32) {
+	targets, sources []Reg, constant W, n uint32) {
 	//
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
 		nsources = uint((codes[pc] >> 16) & 0xff)
-		tag      = uint8((codes[pc] >> 24) & 0xff)
 		c        = uint64(codes[pc+1]) | (uint64(codes[pc+2]) << 32)
 		iter     = NewOp8Iter(0, codes[pc+3:])
 		regs     = OpIterToArray[uint16](ntargets+nsources, iter)
 	)
 	//
-	op = arithOpFromTag(tag)
 	constant = constant.SetUint64(c)
 	//
-	return op, regs[:ntargets], regs[ntargets:], constant,
+	return regs[:ntargets], regs[ntargets:], constant,
 		3 + nCodesPackedSmall(uint32(ntargets+nsources))
 }
 
@@ -393,19 +394,6 @@ func IsUnusedConstant[W word.Word[W]](op arithOp, constant W) bool {
 		return constant.Cmp64(0) == 0
 	case arithop_MUL:
 		return constant.Cmp64(1) == 0
-	default:
-		panic("unknown arithmetic operation")
-	}
-}
-
-func arithOpFromTag(tag uint8) arithOp {
-	switch tag {
-	case arithop_ADD.tag:
-		return arithop_ADD
-	case arithop_SUB.tag:
-		return arithop_SUB
-	case arithop_MUL.tag:
-		return arithop_MUL
 	default:
 		panic("unknown arithmetic operation")
 	}
