@@ -330,8 +330,7 @@ func decodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 func encodeArith_vec[W word.Word[W]](aop arithOp, targets []Reg, sources []Reg, constant W) []uint32 {
 	if len(targets) == 0 || len(targets) >= 256 || len(sources) >= 256 {
 		panic("wide vector arithmetic instructions not supported")
-	}
-	if constant.Cmp64(^uint64(0)) > 0 {
+	} else if constant.Cmp64(^uint64(0)) > 0 {
 		panic("wide vector arithmetic constants not supported")
 	}
 	//
