@@ -560,12 +560,12 @@ func inputName(in map[string][]uint64) string {
 func referenceRun(t *testing.T, wm *vm.WordMachine[word.Uint64], in map[string][]uint64) (map[string][]uint64, bool) {
 	t.Helper()
 
-	for it := wm.Inputs(); it.HasNext(); {
-		m := it.Next()
-		m.Initialise(toWords(in[m.Name()]))
+	inputs := make(map[string][]word.Uint64, len(in))
+	for name, values := range in {
+		inputs[name] = toWords(values)
 	}
 
-	if err := wm.Boot("main"); err != nil {
+	if err := wm.Boot("main", inputs); err != nil {
 		return nil, true
 	}
 

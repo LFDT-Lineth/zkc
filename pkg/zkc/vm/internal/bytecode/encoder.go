@@ -17,17 +17,16 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Encoder is used for encoding bytecode sequences into compiled bytecode programs.
 type Encoder[W word.Word[W], T comparable] struct {
 	modules []Module
-	// map memory module identifiers to their category identifies (e.g. for ROMs
-	// or WOMs, etc).  For example, if we had modules [fn0,rom0,rom1], then the
-	// memmap would map [0=>0,1=>0,2=>1].
-	memmap []uint16
+	// map memory module identifiers to their memory-specific identifies (e.g.
+	// for ROMs or WOMs, etc).  For example, if we had modules [fn0,rom0,rom1],
+	// then the memmap would map [0=>0,1=>0,2=>1].
+	memmap []MemoryId
 	//
 	bytecodes []Bytecode[W]
 	// Labels maps a given label to a bytecode offset.  These used by the
@@ -46,42 +45,15 @@ type Encoder[W word.Word[W], T comparable] struct {
 
 // NewEncoder constructs a new bytecode encoder.
 func NewEncoder[W word.Word[W], T comparable](modules ...Module) *Encoder[W, T] {
-	var (
-		memmap = make([]uint16, len(modules))
-		//
-		nroms, nwoms, nsrams, nbrams uint
-	)
-	// construct memory map
-	for i, m := range modules {
-		switch m.(type) {
-		case *memory.ReadOnly[W]:
-			memmap[i] = uint16(nroms)
-			nroms++
-		case *memory.StaticReadOnly[W]:
-			memmap[i] = uint16(nroms)
-			nroms++
-		case *memory.WriteOnce[W]:
-			memmap[i] = uint16(nwoms)
-			nwoms++
-		case *memory.RandomAccess[W]:
-			memmap[i] = uint16(nsrams)
-			nsrams++
-		case *memory.BiPartiteRandomAccess[W]:
-			memmap[i] = uint16(nbrams)
-			nbrams++
-		}
-	}
-	// Sanity checks
-	if nroms > math.MaxUint16 || nwoms > math.MaxUint16 || nsrams > math.MaxUint16 || nbrams > math.MaxUint16 {
-		panic("too many memory modules")
-	}
+	// Construct the memory map
+	var memmap = buildMemoryMap[W](modules...)
 	//
 	return &Encoder[W, T]{modules, memmap, nil, nil, nil, nil}
 }
 
 // Encode returns the final encoded bytecode sequence.  Observe that, once this
 // is done, the internal bytecode sequence is reset.
-func (p *Encoder[W, T]) Encode() Program {
+func (p *Encoder[W, T]) Encode() Program[W] {
 	// encode bytecodes
 	bytecodes, symbols := p.compile()
 	// Reset internal buffers
@@ -90,7 +62,7 @@ func (p *Encoder[W, T]) Encode() Program {
 	p.symbols = nil
 	p.marks = nil
 	// Done
-	return Program{p.modules, bytecodes, symbols}
+	return NewProgram[W](p.modules, bytecodes, nil, symbols)
 }
 
 // MarkLabel current position with given label.
@@ -214,11 +186,11 @@ func patchBranchingBytecodes[W word.Word[W]](mapping []uint32, bytecodes []Bytec
 // following symbols [f,ram,rom0,rom1].  For a read/write bytecode which targets
 // rom1, its initial identifier would "3".  However, after patching, its
 // identifier is "1" (i.e. the index in [rom0,rom1]).
-func patchIoBytecodes[W word.Word[W]](memmap []uint16, bytecodes []Bytecode[W]) {
+func patchIoBytecodes[W word.Word[W]](memmap []MemoryId, bytecodes []Bytecode[W]) {
 	// patch instructions
 	for _, b := range bytecodes {
 		if b, ok := b.(*ReadWrite); ok {
-			b.Id = memmap[b.Id]
+			b.Id = memmap[b.Id].index
 		}
 	}
 }

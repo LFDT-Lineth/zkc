@@ -15,7 +15,6 @@ package bytecode
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -26,28 +25,6 @@ type Jif struct {
 	Src0   RegVec
 	Src1   RegVec
 	Op     Cond
-}
-
-// NewJif constructs a new conditional branch instruction.
-func NewJif(op Cond, target Address, left, right register.Id) *Jif {
-	fmt.Printf("LEFT=%d,RIGHT=%d\n", left.Unwrap(), right.Unwrap())
-	//
-	return &Jif{
-		target,
-		NewRegVec(asReg(left)),
-		NewRegVec(asReg(right)),
-		op,
-	}
-}
-
-// NewJifVec constructs a new conditional branch instruction.
-func NewJifVec(op Cond, target Address, left, right register.Vector) *Jif {
-	return &Jif{
-		target,
-		NewRegVec(asRegs(left.Registers()...)...),
-		NewRegVec(asRegs(right.Registers()...)...),
-		op,
-	}
 }
 
 func (p *Jif) String(mapping SystemMap) string {
@@ -107,7 +84,7 @@ func decodeJif[W word.Word[W]](pc uint32, codes []uint32) (bc Bytecode[W], n uin
 	)
 	//
 	switch code & OPCODE_MASK {
-	case JEQ_RR, JNE_RR, JLT_RR, JLE_RR, JGT_RR, JGE_RR:
+	case JEQ_rr, JNE_rr, JLT_rr, JLE_rr, JGT_rr, JGE_rr:
 		var rs0, rs1 Reg
 		//
 		target, rs0, rs1, op, n = decodeJif_rr(pc, codes)
@@ -147,12 +124,12 @@ func encodeJif_rr(offset uint32, target Address, rs0, rs1 Reg, op Cond) []uint32
 	)
 	//
 	return []uint32{
-		_roff | _rs0 | _rs1 | (JEQ_RR + uint32(op)),
+		_roff | _rs0 | _rs1 | (JEQ_rr + uint32(op)),
 	}
 }
 
 func decodeJif_rr(pc uint32, codes []uint32) (target Address, rs0, rs1 Reg, op Cond, n uint32) {
-	op = Cond((codes[pc] & OPCODE_MASK) - JEQ_RR)
+	op = Cond((codes[pc] & OPCODE_MASK) - JEQ_rr)
 	rs1 = Reg((codes[pc] >> 8) & 0xff)
 	rs0 = Reg((codes[pc] >> 16) & 0xff)
 	target = getBranchTarget(pc, codes[pc]>>24, 8)

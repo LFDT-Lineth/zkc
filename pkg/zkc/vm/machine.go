@@ -124,13 +124,8 @@ func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint,
 	if inputs, errs = DecodeInputs(m, input); len(errs) != 0 {
 		return nil, errs
 	}
-	// Initialise inputs
-	for iter := m.Inputs(); iter.HasNext(); {
-		var input = iter.Next()
-		input.Initialise(inputs[input.Name()])
-	}
 	// Boot & execute
-	if err := m.Boot("main"); err != nil {
+	if err := m.Boot("main", inputs); err != nil {
 		errs = append(errs, err)
 	} else if steps, err = ExecuteAll(m, n); err != nil {
 		errs = append(errs, err)

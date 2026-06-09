@@ -61,7 +61,7 @@ func NewBase[W BaseWord[W], I Instruction, T Executor[W, I]](executor T, modules
 }
 
 // Boot implementation for Core interface.
-func (p *Base[W, I, T]) Boot(fun string) error {
+func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
 	// Reset call stack
 	p.callstack.Reset()
 	// Look for function with the machine name
@@ -69,6 +69,8 @@ func (p *Base[W, I, T]) Boot(fun string) error {
 		if _, ok := m.(*function.Function[I]); ok {
 			if m.Name() == fun {
 				fid := uint(i)
+				// Initialise memory
+				p.initialise(input)
 				// Boot the call stack
 				p.callstack.Boot(fid, p.Function(fid))
 				//
@@ -197,6 +199,19 @@ func (p *Base[W, I, T]) GobDecode(data []byte) error {
 // ========================================================
 // Helpers
 // =======================================================
+
+func (p *Base[W, I, T]) initialise(input map[string][]W) {
+	// Initialise stack input memories
+	for _, m := range p.modules {
+		// Check module is a memory
+		mem, ok := m.(memory.Memory[W])
+		if !ok {
+			continue
+		}
+		// Initialise with provided contents, or reset to empty if not supplied.
+		mem.Initialise(input[m.Name()])
+	}
+}
 
 // Execute at most n steps of the machine, returning the number of steps
 // actually remaining along with an optional error.

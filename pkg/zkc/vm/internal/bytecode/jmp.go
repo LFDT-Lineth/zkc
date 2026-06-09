@@ -17,18 +17,13 @@ import "fmt"
 // Jmp (unconditional branch) instruction
 type Jmp struct{ Target Address }
 
-// NewJmp creates a new jump target
-func NewJmp(target Address) *Jmp {
-	return &Jmp{target}
-}
-
 func (p *Jmp) String(_ SystemMap) string {
 	return fmt.Sprintf("jmp 0x%08x", p.Target)
 }
 
 // Codes implementation for Bytecode interface
-func (p *Jmp) Codes(offset uint32) []uint32 {
-	var roff = getRelativeOffset(offset, p.Target, 24) << 8
+func (p *Jmp) Codes(pc uint32) []uint32 {
+	var roff = getRelativeOffset(pc, p.Target, 24) << 8
 	//
 	return []uint32{
 		roff | JMP,

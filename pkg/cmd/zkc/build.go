@@ -40,7 +40,7 @@ type BuildArtifacts[F field.Element[F]] struct {
 	// Word Machine
 	wir util.Option[vm.WordMachine[vm.Uint]]
 	// Bytecode Machine
-	bci util.Option[vm.BytecodeProgram]
+	bci util.Option[vm.BytecodeProgram[vm.Uint64]]
 	// Field Machine
 	fir util.Option[vm.FieldMachine[F]]
 	// MIR Constraints
@@ -91,7 +91,7 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 		// Word Machine
 		wir *vm.WordMachine[vm.Uint]
 		// Bytecode interpreter
-		bci vm.BytecodeProgram
+		bci vm.BytecodeProgram[vm.Uint64]
 		// Field Machine
 		fir *vm.FieldMachine[F]
 		// MIR Constraints

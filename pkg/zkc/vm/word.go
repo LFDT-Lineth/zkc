@@ -178,6 +178,7 @@ func EncodeBytes[W Word[W]](values []W, geometry memory.Geometry[W]) []byte {
 				reg = registers[j]
 				val = values[i]
 			)
+			//
 			EncodeUnsignedInt(reg.Width(), val.BigInt(), buf)
 			bit.BigEndianCopy(buf, 0, result, bitOffset, reg.Width())
 			bitOffset += reg.Width()

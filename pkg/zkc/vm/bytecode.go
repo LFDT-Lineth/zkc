@@ -26,9 +26,9 @@ type BytecodeInterpreter[W Word[W]] = bytecode.Interpreter[W]
 
 // BytecodeProgram represents a compiled bytecode program, along with
 // accompanying symbolic information.
-type BytecodeProgram = bytecode.Program
+type BytecodeProgram[W Word[W]] = bytecode.Program[W]
 
 // DecodeBytecodes decodes a given bytecode program into a bytecode sequence.
-func DecodeBytecodes[W word.Word[W]](p BytecodeProgram) []Bytecode[W] {
-	return bytecode.Decode[W](p)
+func DecodeBytecodes[W word.Word[W]](program BytecodeProgram[W]) []Bytecode[W] {
+	return program.Bytecodes()
 }

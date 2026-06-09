@@ -119,7 +119,7 @@ func WordToBytecodeInterpreter[W word.Word[W]](wm *machine.Word[W]) *BytecodeInt
 
 // WordToBytecodeProgram compiles a word machine into a bytecode sequence which
 // can be executed by an interpreter.
-func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) BytecodeProgram {
+func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) BytecodeProgram[W] {
 	return transform.WordToBytecodeProgram(wm)
 }
 

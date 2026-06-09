@@ -13,6 +13,7 @@
 package bytecode
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -44,36 +45,40 @@ const OPCODE_MASK = 0x3f
 const (
 	// FAIL instruction
 	FAIL uint32 = iota
+	// CHECKCAST instruction
+	CHECKCAST
 	// JMP instruction
 	JMP
-	// JEQ_RR (jump if equal)
-	JEQ_RR
-	// JNE_RR (jump if not equal)
-	JNE_RR
-	// JLT_RR (jump if less than)
-	JLT_RR
+	// JEQ_rr (jump if equal)
+	JEQ_rr
+	// JNE_rr (jump if not equal)
+	JNE_rr
+	// JLT_rr (jump if less than)
+	JLT_rr
 	// JLE_RR (jump if less than or equal)
-	JGT_RR
+	JGT_rr
 	// JGE_RR (jump if greater than or equal)
-	JLE_RR
+	JLE_rr
 	// JGT_RR (jump if greater than)
-	JGE_RR
+	JGE_rr
 	// CALL instruction
 	CALL
 	// RET instruction
 	RET
-	// RD_ROM_N_M instruction
-	RD_ROM_N_M
-	// WR_WOM_N_M instruction
-	WR_WOM_N_M
+	// RD_ROM_nm instruction
+	RD_ROM_nm
+	// RD_SROM_nm instruction
+	RD_SROM_nm
+	// WR_WOM_nm instruction
+	WR_WOM_nm
 	// WR_SRAM instruction
-	RD_RAM_N_M
-	// WR_RAM_N_M instruction
-	WR_RAM_N_M
+	RD_RAM_nm
+	// WR_RAM_nm instruction
+	WR_RAM_nm
 	// WR_BRAM instruction
-	RD_BRAM_N_M
-	// WR_BRAM_N_M instruction
-	WR_BRAM_N_M
+	RD_BRAM_nm
+	// WR_BRAM_nm instruction
+	WR_BRAM_nm
 	// PUSH instruction
 	PUSH
 	// POP instruction
@@ -86,20 +91,22 @@ const (
 	DESTRUCT
 	// CAST instruction
 	CAST
-	// ADD instruction
-	ADD
+	// ADD_2n1 instruction
+	ADD_2n1
+	// SUB_2n1 instruction [must follow ADD_2n1]
+	SUB_2n1
+	// MUL_2n1 instruction [must follow SUB_2n1]
+	MUL_2n1
 	// ADDC (add with constant) instruction
 	ADDC
-	// SUB instruction
-	SUB
 	// SUBC (subtract with constant) instruction
 	SUBC
-	// CSUB (subtract from constant) instruction
-	CSUB
-	// MUL instruction
-	MUL
 	// MULC (multiply with constant) instruction
 	MULC
+	// ARITHV (arithmetic with vector target) instruction
+	ARITHV
+	// CSUB (subtract from constant) instruction
+	CSUB
 	// DIV instruction
 	DIV
 	// ADDMOD_P instruction
@@ -122,6 +129,8 @@ const (
 	SHR
 	// CAT instruction
 	CAT
+	// DEBUG instruction
+	DEBUG
 	//
 	MAX_BYTECODE
 )
@@ -139,118 +148,150 @@ type Patchable[W word.Word[W]] interface {
 }
 
 // ============================================================================
-// Fail
+// Constructors
 // ============================================================================
+//
+// The constructors below provide a more readable way to build bytecode
+// instructions than instantiating the underlying instruction structs directly.
+// Several of them are thin wrappers around the general-purpose Arith
+// instruction, which computes "target = source[0] op source[1] op ... op
+// constant" for some arithmetic operation op (add, subtract or multiply).  The
+// "Vec" variants accept a slice of target registers, allowing a single logical
+// value to be spread across multiple register limbs (e.g. when a value is wider
+// than the underlying word type W).
 
-// Fail instruction
-type Fail struct{}
+// AddConst constructs an addition instruction computing
+// "target = sum(sources) + constant" into a single target register.
+func AddConst[W word.Word[W]](target register.Id, sources []register.Id, constant W) *Arith[W] {
+	return newArith(arithop_ADD, asRegs(target), asRegs(sources...), constant)
+}
 
-// NewFail constructs a new fail instruction.
+// AddVec constructs a vectored addition instruction computing
+// "targets = sum(sources)" (i.e. with no constant addend), where targets is a
+// multi-limb register vector.
+func AddVec[W word.Word[W]](targets []register.Id, sources []register.Id) *Arith[W] {
+	var zero W
+	return newArith(arithop_ADD, asRegs(targets...), asRegs(sources...), zero)
+}
+
+// AddVecConst constructs a vectored addition instruction computing
+// "targets = sum(sources) + constant", where targets is a multi-limb register
+// vector.
+func AddVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, constant W) *Arith[W] {
+	return newArith(arithop_ADD, asRegs(targets...), asRegs(sources...), constant)
+}
+
+// NewFail constructs a fail instruction, which causes the machine to panic when
+// executed.
 func NewFail() *Fail {
 	return &Fail{}
 }
 
-func (p *Fail) String(_ SystemMap) string {
-	return "fail"
+// Jump creates an unconditional jump instruction transferring control to the
+// given target address.
+func Jump(target Address) *Jmp {
+	return &Jmp{target}
 }
 
-// Codes implementation for Bytecode interface
-func (p *Fail) Codes(_ uint32) []uint32 {
-	return []uint32{FAIL}
+// JumpIf constructs a conditional branch instruction which jumps to the target
+// address when "left op right" holds, comparing single registers.
+func JumpIf(op Cond, target Address, left, right register.Id) *Jif {
+	return &Jif{target, NewRegVec(asReg(left)), NewRegVec(asReg(right)), op}
 }
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
-func getBranchTarget(offset uint32, relOffset uint32, width uint) Address {
-	var (
-		sign = uint32(0x1) << (width - 1)
-		max  = uint32(0x1) << width
-	)
-	//
-	if relOffset < sign {
-		return offset + 1 + relOffset
-	}
-	//
-	return offset + 1 - max + relOffset
+// JumpIfVec constructs a conditional branch instruction which jumps to the
+// target address when "left op right" holds, comparing multi-limb register
+// vectors.
+func JumpIfVec(op Cond, target Address, left, right register.Vector) *Jif {
+	return &Jif{target, NewRegVec(asRegs(left.Registers()...)...), NewRegVec(asRegs(right.Registers()...)...), op}
 }
 
-func getRelativeOffset(offset uint32, target Address, width uint) uint32 {
-	var sign_bit = uint32(0x1) << width
-	//
-	if target > offset {
-		return target - offset - 1
-	}
-	//
-	roff := 1 + offset - target
-	//
-	if roff >= sign_bit {
-		panic("branch target overflow")
-	}
-	//
-	return sign_bit - roff
+// LoadConst constructs a load-constant (LDC) instruction which assigns the
+// given constant to the target register.
+func LoadConst[W word.Word[W]](target register.Id, constant W) *Arith[W] {
+	return newArith(arithop_ADD, asRegs(target), nil, constant)
 }
 
-// Unpackage a given array of codes packed as n (small) registers.
-func unpackCodesToSmallRegs(n uint32, codes []uint32) ([]Reg, uint32) {
-	var (
-		regs   = make([]Reg, n)
-		ncodes = nCodesPackedSmall(n)
-		code   uint32
-	)
-	//
-	for i := range n {
-		if i%4 == 0 {
-			code = codes[i/4]
-		}
-		//
-		regs[i] = uint16(code & 0xff)
-		code = code >> 8
-	}
-	//
-	return regs, ncodes
+// Move constructs a move instruction which copies the source register into the
+// target register.
+func Move[W word.Word[W]](target register.Id, source register.Id) *Arith[W] {
+	var zero W
+	return newArith(arithop_ADD, asRegs(target), asRegs(source), zero)
 }
 
-// Pack a given array of bytes into an array of codes, such that the last code
-// is padded with 0xff.
-func packRegsIntoCodes(bytes []byte) []uint32 {
-	var (
-		nBytes = uint32(len(bytes))
-		ncodes = nCodesPackedSmall(nBytes)
-		//
-		codes = make([]uint32, ncodes)
-	)
-	//
-	for i := range ncodes {
-		var ith uint32
-		for j := range uint32(4) {
-			var jth uint32 = 0xff
-			//
-			if k := (i * 4) + j; k < nBytes {
-				jth = uint32(bytes[k])
-			}
-			//
-			ith = ith | (jth << (j * 8))
-		}
-		//
-		codes[i] = ith
-	}
-	//
-	return codes
+// MulConst constructs a multiplication instruction computing
+// "target = product(sources) * constant" into a single target register.
+func MulConst[W word.Word[W]](target register.Id, sources []register.Id, constant W) *Arith[W] {
+	return newArith(arithop_MUL, asRegs(target), asRegs(sources...), constant)
 }
 
-func nCodesPackedSmall(n uint32) uint32 {
-	var (
-		// 4 bytes per code
-		ncodes = n / 4
-	)
-	// Round up if necessary
-	if n%4 != 0 {
-		ncodes++
-	}
-	//
-	return ncodes
+// MulVecConst constructs a vectored multiplication instruction computing
+// "targets = product(sources) * constant", where targets is a multi-limb
+// register vector.
+func MulVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, constant W) *Arith[W] {
+	return newArith(arithop_MUL, asRegs(targets...), asRegs(sources...), constant)
+}
+
+// ReadRom constructs a read instruction for a (non-static) read-only memory.
+// The data registers receive the row located at the address given by the
+// address registers, in the memory identified by id.
+func ReadRom(id uint16, address []register.Id, data []register.Id) *ReadWrite {
+	return &ReadWrite{ROM_READ, id, asRegs(address...), asRegs(data...)}
+}
+
+// ReadStaticRom constructs a read instruction for a static read-only memory.
+// The data registers receive the row located at the address given by the
+// address registers, in the memory identified by id.
+func ReadStaticRom(id uint16, address []register.Id, data []register.Id) *ReadWrite {
+	return &ReadWrite{SROM_READ, id, asRegs(address...), asRegs(data...)}
+}
+
+// ReadRam constructs a read instruction for a (small) random-access memory.
+// The data registers receive the row located at the address given by the
+// address registers, in the memory identified by id.
+func ReadRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
+	return &ReadWrite{SRAM_READ, id, asRegs(address...), asRegs(data...)}
+}
+
+// ReadBigRam constructs a read instruction for a (large) bipartite
+// random-access memory.  The data registers receive the row located at the
+// address given by the address registers, in the memory identified by id.
+func ReadBigRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
+	return &ReadWrite{BRAM_READ, id, asRegs(address...), asRegs(data...)}
+}
+
+// SubConst constructs a subtraction instruction computing
+// "target = sources[0] - ... - constant" into a single target register.
+func SubConst[W word.Word[W]](target register.Id, sources []register.Id, constant W) *Arith[W] {
+	return newArith(arithop_SUB, asRegs(target), asRegs(sources...), constant)
+}
+
+// SubVecConst constructs a vectored subtraction instruction computing
+// "targets = sources[0] - ... - constant", where targets is a multi-limb
+// register vector.
+func SubVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, constant W) *Arith[W] {
+	return newArith(arithop_SUB, asRegs(targets...), asRegs(sources...), constant)
+}
+
+// WriteWom constructs a write instruction for a write-once memory.  The data
+// registers are written to the row located at the address given by the address
+// registers, in the memory identified by id.
+func WriteWom(id uint16, address []register.Id, data []register.Id) *ReadWrite {
+	return &ReadWrite{WOM_WRITE, id, asRegs(address...), asRegs(data...)}
+}
+
+// WriteRam constructs a write instruction for a (small) random-access memory.
+// The data registers are written to the row located at the address given by the
+// address registers, in the memory identified by id.
+func WriteRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
+	return &ReadWrite{SRAM_WRITE, id, asRegs(address...), asRegs(data...)}
+}
+
+// WriteBigRam constructs a write instruction for a (large) bipartite
+// random-access memory.  The data registers are written to the row located at
+// the address given by the address registers, in the memory identified by id.
+func WriteBigRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
+	return &ReadWrite{BRAM_WRITE, id, asRegs(address...), asRegs(data...)}
 }
 
 func init() {

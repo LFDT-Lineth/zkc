@@ -16,32 +16,52 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // ROM_READ representing reading from a read-only memory.
 var ROM_READ = RwMode{0}
 
+// SROM_READ representing reading from a (static) read-only memory.
+var SROM_READ = RwMode{1}
+
 // WOM_WRITE representing writing to a write-once memory.
-var WOM_WRITE = RwMode{1}
+var WOM_WRITE = RwMode{2}
 
 // SRAM_READ representing reading from a (small) random-access memory.
-var SRAM_READ = RwMode{2}
+var SRAM_READ = RwMode{3}
 
 // SRAM_WRITE representing write to a (small) random-access memory.
-var SRAM_WRITE = RwMode{3}
+var SRAM_WRITE = RwMode{4}
 
 // BRAM_READ representing reading from a (bipartite) random-access memory.
-var BRAM_READ = RwMode{4}
+var BRAM_READ = RwMode{5}
 
 // BRAM_WRITE representing write to a (bipartite) random-access memory.
-var BRAM_WRITE = RwMode{5}
+var BRAM_WRITE = RwMode{6}
 
 // RwMode determines whether what kind of memory is being operated on (e.g. ROM
 // or RAM, etc) and what operation is being performed (i.e. READ or WRITE).
 type RwMode struct {
 	tag uint8
+}
+
+// Kind returns the memory kind associated with this read-write mode.
+func (p RwMode) Kind() MemoryKind {
+	switch p {
+	case SROM_READ:
+		return STATIC_READONLY_MEMORY
+	case ROM_READ:
+		return READONLY_MEMORY
+	case WOM_WRITE:
+		return WRITEONCE_MEMORY
+	case SRAM_READ, SRAM_WRITE:
+		return READWRITE_MEMORY
+	case BRAM_READ, BRAM_WRITE:
+		return BIPARTITE_READWRITE_MEMORY
+	default:
+		panic("invalid read/write mode")
+	}
 }
 
 // ReadWrite instruction captures memory read/writes.
@@ -57,16 +77,6 @@ type ReadWrite struct {
 	Data []Reg
 }
 
-// NewReadWrite constructs a new memory read (or write) instruction.
-func NewReadWrite(mode RwMode, id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{
-		mode,
-		id,
-		asRegs(address...),
-		asRegs(data...),
-	}
-}
-
 func (p *ReadWrite) String(mapping SystemMap) string {
 	var (
 		name    = mapping.Module(uint(p.Id)).Name()
@@ -75,9 +85,9 @@ func (p *ReadWrite) String(mapping SystemMap) string {
 	)
 	//
 	switch p.Mode {
-	case ROM_READ, SRAM_READ:
+	case SROM_READ, ROM_READ, SRAM_READ, BRAM_READ:
 		return fmt.Sprintf("%s = %s[%s]", data, name, address)
-	case WOM_WRITE, SRAM_WRITE:
+	case WOM_WRITE, SRAM_WRITE, BRAM_WRITE:
 		return fmt.Sprintf("%s[%s] = %s", name, address, data)
 	default:
 		panic("unknown read/write mode")
@@ -90,10 +100,21 @@ func (p *ReadWrite) Codes(_ uint32) []uint32 {
 	return encodeReadWrite_sn(p.Mode, p.Id, p.Address, p.Data)
 }
 
-func decodeReadWrite[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	m, id, addr, data, n := decodeReadWrite_sn(pc, codes)
-	//
-	return &ReadWrite{m, id, addr, data}, n
+func decodeReadWrite[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId]uint16) (Bytecode[W], uint32) {
+	var (
+		// determine read/write mode
+		m = RwMode{tag: uint8(codes[pc] - RD_ROM_nm)}
+		// decode remainder
+		id, naddr, ndata, iter, n = decodeReadWrite_sn(pc, codes)
+		// flattern iterator
+		regs = OpIterToArray[uint16](naddr+ndata, iter)
+		//
+		mid = MemoryId{m.Kind(), id}
+	)
+	// remap memory identifier to be module-specific
+	id = rmap[mid]
+	// done
+	return &ReadWrite{m, id, regs[:naddr], regs[naddr:]}, n
 }
 
 // ============================================================================
@@ -124,7 +145,7 @@ func decodeReadWrite[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], ui
 
 func encodeReadWrite_sn(m RwMode, id uint16, addr []Reg, data []Reg) []uint32 {
 	var (
-		opcode = RD_ROM_N_M + uint32(m.tag)
+		opcode = RD_ROM_nm + uint32(m.tag)
 		_id    = uint32(id) << 8
 		naddr  = uint32(len(addr)) << 16
 		ndata  = uint32(len(data)) << 24
@@ -138,19 +159,14 @@ func encodeReadWrite_sn(m RwMode, id uint16, addr []Reg, data []Reg) []uint32 {
 	return append(codes, packRegsIntoCodes(bytes)...)
 }
 
-func decodeReadWrite_sn(pc uint32, codes []uint32) (m RwMode, id uint16, addr []Reg, data []Reg, n uint32) {
-	var (
-		naddr    = (codes[pc] >> 16) & 0xff
-		ndata    = (codes[pc] >> 24) & 0xff
-		regs, ns = unpackCodesToSmallRegs(naddr+ndata, codes[pc+1:])
-	)
-	//
-	m = RwMode{tag: uint8(codes[pc] - RD_ROM_N_M)}
+func decodeReadWrite_sn(pc uint32, codes []uint32) (id uint16, naddr, ndata uint, regs Op8Iter, n uint32) {
+	naddr = uint((codes[pc] >> 16) & 0xff)
+	ndata = uint((codes[pc] >> 24) & 0xff)
+	ns := nCodesPackedSmall(uint32(naddr + ndata))
 	id = uint16((codes[pc] >> 8) & 0xff)
-	addr = regs[:naddr]
-	data = regs[naddr:]
+	regs = NewOp8Iter(0, codes[pc+1:])
 	//
-	return m, id, addr, data, 1 + ns
+	return id, naddr, ndata, regs, 1 + ns
 }
 
 // ============================================================================

@@ -23,11 +23,6 @@ import (
 // its contents are fixed for all executions of a machine).
 type Memory[W util.Uinter64] = memory.Memory[W]
 
-// InputOutputMemory identifiers memory used to represent inputs or outputs.
-// The main purpose of this is to enable inspection of said memory to ensure
-// e.g. the correct outputs are produced.
-//type InputOutputMemory[W util.Uinter64] = memory.InputOutput[W]
-
 // ============================================================================
 // Constructors
 // ============================================================================

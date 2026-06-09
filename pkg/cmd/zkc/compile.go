@@ -111,7 +111,7 @@ func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F]) {
 	}
 	// Word-level Intermediate Representation
 	if artifacts.bci.HasValue() {
-		writeBytecodeInterpreter[vm.Uint](artifacts.bci.Unwrap())
+		writeBytecodeInterpreter(artifacts.bci.Unwrap())
 	}
 	// Field-level Intermediate Representation
 	if artifacts.fir.HasValue() {
@@ -417,10 +417,10 @@ func registerType(r register.Register) string {
 // Bytecode Interpreter
 // ============================================================================
 
-func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram) {
+func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram[W]) {
 	var (
 		address   uint32
-		bytecodes = vm.DecodeBytecodes[W](program)
+		bytecodes = vm.DecodeBytecodes(program)
 		width     uint
 		mapping   vm.SystemMap
 	)
@@ -434,7 +434,7 @@ func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram) {
 	// Reset for another sweep
 	address = 0
 	//
-	for i, bytecode := range vm.DecodeBytecodes[W](program) {
+	for i, bytecode := range vm.DecodeBytecodes(program) {
 		var codes = bytecode.Codes(address)
 		//
 		if sym := program.SymbolAt(address); sym.HasValue() {
@@ -491,7 +491,7 @@ func fnArgs(regs []register.Register) string {
 		if r.IsNative() {
 			builder.WriteString("𝔽")
 		} else {
-			builder.WriteString(fmt.Sprintf("u%d", r.Width()))
+			fmt.Fprintf(&builder, "u%d", r.Width())
 		}
 	}
 	//

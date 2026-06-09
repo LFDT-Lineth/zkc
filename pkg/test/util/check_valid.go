@@ -13,6 +13,7 @@
 package util
 
 import (
+	"encoding/hex"
 	"fmt"
 	"testing"
 
@@ -39,7 +40,8 @@ var (
 		fields:      DEFAULT_FIELDS,
 		words:       DEFAULT_WORDS,
 		constraints: false,
-		splitting:   false}
+		splitting:   false,
+		bytecode:    false}
 )
 
 // Config for testing
@@ -188,14 +190,8 @@ func runExecutionTest[W vm.Word[W]](t *testing.T, wm vm.Core[W], test TestCase,
 		// decode inputs / outputs
 		inputs, outputs = decodeInputsOutputs(t, wm, test.data)
 	)
-	// Initialise inputs
-	// scan input modules
-	for iter := wm.Inputs(); iter.HasNext(); {
-		var input = iter.Next()
-		input.Initialise(inputs[input.Name()])
-	}
 	// Boot & Execute machine
-	if err = wm.Boot("main"); err == nil {
+	if err = wm.Boot("main", inputs); err == nil {
 		// Execute it
 		if _, err = vm.ExecuteAll(wm, 131072); err == nil && test.expected {
 			// Check outputs match
@@ -272,7 +268,12 @@ func checkExpectedOutputs[W vm.Word[W]](outputs map[string][]W, wm vm.Core[W]) [
 		//
 		if output, ok := outputs[m.Name()]; ok {
 			if c := array.Compare(output, m.Contents()); c != 0 {
-				errors = append(errors, fmt.Errorf("incorrect output (expected %v, actual %v)", output, m.Contents()))
+				var (
+					expected = hex.EncodeToString(vm.EncodeBytes(output, m.Geometry()))
+					actual   = hex.EncodeToString(vm.EncodeBytes(m.Contents(), m.Geometry()))
+				)
+
+				errors = append(errors, fmt.Errorf("incorrect output (expected 0x%s, actual 0x%s)", expected, actual))
 			}
 		}
 	}
