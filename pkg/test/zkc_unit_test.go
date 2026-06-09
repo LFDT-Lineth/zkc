@@ -25,30 +25,30 @@ import (
 // ===================================================================
 
 func Test_ZkcUnit_Basic_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_01", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_01", util.DEFAULT_CONFIG.Bytecode(true))
 }
 
 func Test_ZkcUnit_Basic_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_02", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_02", util.DEFAULT_CONFIG.Bytecode(true))
 }
 
 func Test_ZkcUnit_Basic_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_03", util.DEFAULT_CONFIG.Constraints(true).Splitting(true))
+	checkZkcUnit(t, "zkc/unit/basic_03", util.DEFAULT_CONFIG.Constraints(true).Splitting(true).Bytecode(true))
 }
 func Test_ZkcUnit_Basic_04(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_04", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/basic_04", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
 }
 
 func Test_ZkcUnit_Basic_05(t *testing.T) {
 	// TODO: support static memory for constraints
-	checkZkcUnit(t, "zkc/unit/basic_05", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_05", util.DEFAULT_CONFIG.Bytecode(true))
 }
 
 func Test_ZkcUnit_Basic_06(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_06", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/basic_06", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
 }
 func Test_ZkcUnit_Basic_07(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_07", util.DEFAULT_CONFIG.Constraints(true))
+	checkZkcUnit(t, "zkc/unit/basic_07", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
 }
 
 func Test_ZkcUnit_Basic_08(t *testing.T) {

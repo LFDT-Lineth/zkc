@@ -113,6 +113,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	// Configure build targets
 	build.ast = GetFlag(cmd, "ast")
 	build.wir = GetFlag(cmd, "wir")
+	build.bci = GetFlag(cmd, "bci")
 	build.fir = GetFlag(cmd, "fir")
 	build.mir = GetFlag(cmd, "mir")
 	build.air = GetFlag(cmd, "air")
@@ -137,6 +138,7 @@ func findFieldAgnosticCmd(config field.Config, cmds []FieldAgnosticCmd) (cmd Fie
 func init() {
 	rootCmd.PersistentFlags().Bool("ast", false, "Output Abstract Syntax Tree (AST)")
 	rootCmd.PersistentFlags().Bool("wir", false, "Output Word-level Intermediate Representation (WIR)")
+	rootCmd.PersistentFlags().Bool("bci", false, "Output Bytecode Representation (BCI)")
 	rootCmd.PersistentFlags().Bool("fir", false, "Output Field-level Intermediate Representation (FIR)")
 	rootCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
 	rootCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")

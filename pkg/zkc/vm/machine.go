@@ -21,8 +21,11 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 )
+
+// Core provides a minimal interface for booting and executing a machine with a
+// given set of inputs, and collecting the outputs afterwards.
+type Core[W MachineWord[W]] = machine.Core[W]
 
 // Machine represents the state of an executing "machine", including all
 // registers, memories and functions.  A machine may be executing or terminated.
@@ -31,7 +34,7 @@ import (
 // field elements directly.  Furthermore, a machine may be operating over
 // instructions compiled into bytes (for efficient execution), or instructions
 // represented at a higher level (e.g. for analysis or compilation).
-type Machine[W MachineWord[W], I Instruction] = machine.Core[W, I]
+type Machine[W MachineWord[W], I Instruction] = machine.Machine[W, I]
 
 // Executor captures the notion of an instruction-specific executor.  That is,
 // an executor designed for executing certain instructions over a given type of
@@ -109,7 +112,7 @@ func NewWordMachine[W Word[W]](field field.Config, modules ...Module) *WordMachi
 // of n steps at a time, producing any outputs arising.  Execution is faster
 // than trace because it does not record any internal information about the
 // trace --- it simply extracts the outputs at the end.
-func BootAndExecute[W Word[W], I Instruction, M Machine[W, I]](m M, input map[string][]byte, n uint,
+func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint,
 ) (output map[string][]byte, errs []error) {
 	//
 	var (
@@ -120,7 +123,9 @@ func BootAndExecute[W Word[W], I Instruction, M Machine[W, I]](m M, input map[st
 	// Execute machine in chunks of 1K steps
 	if inputs, errs = DecodeInputs(m, input); len(errs) != 0 {
 		return nil, errs
-	} else if err := m.Boot("main", inputs); err != nil {
+	}
+	// Boot & execute
+	if err := m.Boot("main", inputs); err != nil {
 		errs = append(errs, err)
 	} else if steps, err = ExecuteAll(m, n); err != nil {
 		errs = append(errs, err)
@@ -139,7 +144,7 @@ func BootAndExecute[W Word[W], I Instruction, M Machine[W, I]](m M, input map[st
 
 // ExecuteAll executes a given machine to completion in chunks of n steps,
 // returning the number of steps executed and/or any error arising.
-func ExecuteAll[W MachineWord[W], I Instruction, M Machine[W, I]](machine M, n uint) (uint, error) {
+func ExecuteAll[W MachineWord[W], M Core[W]](machine M, n uint) (uint, error) {
 	var nsteps uint
 	//
 	for {
@@ -185,34 +190,35 @@ func ExecuteAndObserve[W Word[W], I Instruction, M Machine[W, I], V Observer[W, 
 // DecodeInputsOutputs decodes  given set of input and output bytes
 // appropriately for the given machine.  If there are unknown or conflicting
 // inputs, then errors are returned.
-func DecodeInputsOutputs[W Word[W], I Instruction, M Machine[W, I]](m M, data map[string][]byte,
+func DecodeInputsOutputs[W Word[W], M Core[W]](m M, data map[string][]byte,
 ) (inputs, outputs map[string][]W, errs []error) {
 	//
 	var visited = make(map[string]bool)
 	//
 	inputs = make(map[string][]W)
 	outputs = make(map[string][]W)
-	// scan modules
-	for _, c := range m.Modules() {
-		if mem, ok := c.(memory.InputOutput[W]); ok && !mem.IsStatic() {
-			var (
-				n = mem.Geometry().AddressLines()
-				m = n + mem.Geometry().DataLines()
-				// Filter data lines
-				dataLines = c.Registers()[n:m]
-			)
-			// Record visited information
-			visited[c.Name()] = true
-			//
-			if bytes, ok := data[c.Name()]; ok {
-				if mem.IsReadOnly() {
-					inputs[c.Name()] = DecodeBytes[W](bytes, dataLines)
-				} else {
-					outputs[c.Name()] = DecodeBytes[W](bytes, dataLines)
-				}
-			} else {
-				errs = append(errs, fmt.Errorf("missing input/output \"%s\"", c.Name()))
-			}
+	// scan input modules
+	for iter := m.Inputs(); iter.HasNext(); {
+		var input = iter.Next()
+		// Record visited information
+		visited[input.Name()] = true
+		//
+		if bytes, ok := data[input.Name()]; ok {
+			inputs[input.Name()] = DecodeBytes(bytes, input.Geometry())
+		} else {
+			errs = append(errs, fmt.Errorf("missing input \"%s\"", input.Name()))
+		}
+	}
+	// scan output modules
+	for iter := m.Outputs(); iter.HasNext(); {
+		var output = iter.Next()
+		// Record visited information
+		visited[output.Name()] = true
+		//
+		if bytes, ok := data[output.Name()]; ok {
+			outputs[output.Name()] = DecodeBytes(bytes, output.Geometry())
+		} else {
+			errs = append(errs, fmt.Errorf("missing input/output \"%s\"", output.Name()))
 		}
 	}
 	// sanity check for extraneous inputs
@@ -228,29 +234,22 @@ func DecodeInputsOutputs[W Word[W], I Instruction, M Machine[W, I]](m M, data ma
 // DecodeInputs configures a given set of input bytes appropriately for the
 // given machine.  If there are unknown or conflicting inputs, then errors are
 // returned.
-func DecodeInputs[W Word[W], I Instruction, M Machine[W, I]](m M, input map[string][]byte) (map[string][]W, []error) {
+func DecodeInputs[W Word[W], C Core[W]](m C, input map[string][]byte) (map[string][]W, []error) {
 	var (
 		visited = make(map[string]bool)
 		inputs  = make(map[string][]W)
 		errs    []error
 	)
-	// scan modules
-	for _, c := range m.Modules() {
-		if mem, ok := c.(memory.InputOutput[W]); ok && mem.IsReadOnly() && !mem.IsStatic() {
-			var (
-				n = mem.Geometry().AddressLines()
-				m = n + mem.Geometry().DataLines()
-				// Filter data lines
-				dataLines = c.Registers()[n:m]
-			)
-			// Record visited information
-			visited[c.Name()] = true
-			//
-			if bytes, ok := input[c.Name()]; ok {
-				inputs[c.Name()] = DecodeBytes[W](bytes, dataLines)
-			} else {
-				errs = append(errs, fmt.Errorf("missing input \"%s\"", c.Name()))
-			}
+	// scan input modules
+	for iter := m.Inputs(); iter.HasNext(); {
+		var c = iter.Next()
+		// Record visited information
+		visited[c.Name()] = true
+		//
+		if bytes, ok := input[c.Name()]; ok {
+			inputs[c.Name()] = DecodeBytes(bytes, c.Geometry())
+		} else {
+			errs = append(errs, fmt.Errorf("missing input \"%s\"", c.Name()))
 		}
 	}
 	// sanity check for extraneous inputs
@@ -265,21 +264,15 @@ func DecodeInputs[W Word[W], I Instruction, M Machine[W, I]](m M, input map[stri
 
 // EncodeOutputs extract the output from a given machine and encodes it into
 // byte arrays.
-func EncodeOutputs[W Word[W], I Instruction, M Machine[W, I]](m M) map[string][]byte {
-	var output = make(map[string][]byte)
+func EncodeOutputs[W Word[W], M Core[W]](m M) map[string][]byte {
+	var outputs = make(map[string][]byte)
 	// scan modules
-	for _, c := range m.Modules() {
-		if mem, ok := c.(memory.InputOutput[W]); ok && mem.IsWriteOnly() {
-			var (
-				n = mem.Geometry().AddressLines()
-				m = n + mem.Geometry().DataLines()
-				// Filter data lines
-				dataLines = c.Registers()[n:m]
-			)
-			//
-			output[c.Name()] = EncodeBytes(mem.Contents(), dataLines)
-		}
+	// scan output modules
+	for iter := m.Outputs(); iter.HasNext(); {
+		var output = iter.Next()
+		//
+		outputs[output.Name()] = EncodeBytes(output.Contents(), output.Geometry())
 	}
 	//
-	return output
+	return outputs
 }

@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
@@ -59,11 +60,7 @@ func NewBase[W BaseWord[W], I Instruction, T Executor[W, I]](executor T, modules
 	}
 }
 
-// Boot this machine by starting the given function with the given inputs.  This
-// function assumes the given inputs are correctly formed, and will: (1) ingore
-// unknown inputs; (2) initialise empty memories when no input is given for
-// them.  Thus, it is recommended to perform sanity checking on input prior to
-// calling this function.
+// Boot implementation for Core interface.
 func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
 	// Reset call stack
 	p.callstack.Reset()
@@ -85,10 +82,30 @@ func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
 	return fmt.Errorf("missing boot function \"%s\"", fun)
 }
 
-// Function returns the function with the corresponding ID (or panics if the ID
-// does not correspond to a function).
-func (p *Base[W, I, T]) Function(id uint) *function.Function[I] {
-	return p.modules[id].(*function.Function[I])
+// Inputs implementation for Core interface.
+func (p *Base[W, I, T]) Inputs() iter.Iterator[memory.InputOutput[W]] {
+	var inputs []memory.InputOutput[W]
+	//
+	for _, m := range p.modules {
+		if m, ok := m.(memory.Memory[W]); ok && m.IsReadOnly() && !m.IsStatic() {
+			inputs = append(inputs, m)
+		}
+	}
+	//
+	return iter.NewArrayIterator(inputs)
+}
+
+// Outputs implementation for Core interface.
+func (p *Base[W, I, T]) Outputs() iter.Iterator[memory.InputOutput[W]] {
+	var outputs []memory.InputOutput[W]
+	//
+	for _, m := range p.modules {
+		if m, ok := m.(memory.Memory[W]); ok && m.IsWriteOnly() {
+			outputs = append(outputs, m)
+		}
+	}
+	//
+	return iter.NewArrayIterator(outputs)
 }
 
 // Execute the machine for the given number of steps, returning the actual
@@ -104,6 +121,12 @@ func (p *Base[W, I, T]) Execute(steps uint) (uint, error) {
 	}
 	//
 	return (steps - nsteps), err
+}
+
+// Function returns the function with the corresponding ID (or panics if the ID
+// does not correspond to a function).
+func (p *Base[W, I, T]) Function(id uint) *function.Function[I] {
+	return p.modules[id].(*function.Function[I])
 }
 
 // Executor returns the executor for this machine.  This is primarily useful
