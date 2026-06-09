@@ -337,13 +337,12 @@ func (p *Interpreter[W]) executeCall(pc uint32, codes []uint32, caller []W) (uin
 	}
 	//
 	calleeModule := p.program.Module(uint(mid))
-	// Function registers are ordered inputs, outputs, then locals.
-	inputs := moduleRegisters(calleeModule, func(reg register.Register) bool {
-		return reg.IsInput()
-	})
+	// Function registers are laid out inputs, then outputs, then locals; CALL
+	// supplies one argument per input register.
+	ninputs := countRegisters(calleeModule, func(reg register.Register) bool { return reg.IsInput() })
 	//
-	if len(args) != len(inputs) {
-		return pc, fmt.Errorf("call to %s expects %d arguments, got %d", calleeModule.Name(), len(inputs), len(args))
+	if len(args) != ninputs {
+		return pc, fmt.Errorf("call to %s expects %d arguments, got %d", calleeModule.Name(), ninputs, len(args))
 	}
 	//
 	frame := callFrame{
@@ -357,16 +356,12 @@ func (p *Interpreter[W]) executeCall(pc uint32, codes []uint32, caller []W) (uin
 	p.dataStack.Alloc(calleeModule.Width())
 	//
 	callee := p.dataStack.SliceEnd(calleeFp)
+	// Callee inputs occupy the first registers in its frame, in argument order.
 	for i, arg := range args {
-		val := caller[arg]
-		//
-		if !inputs[i].IsNative() && !val.FitsWithin(inputs[i].Width()) {
+		if err := storeReg(calleeModule, Reg(i), caller[arg], callee); err != nil {
 			p.dataStack.Free(calleeModule.Width())
-			return pc, fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), inputs[i].Width())
+			return pc, err
 		}
-		//
-		// Callee inputs occupy the first registers in its frame.
-		callee[i] = val
 	}
 	//
 	p.callStack = append(p.callStack, frame)
@@ -382,29 +377,24 @@ func (p *Interpreter[W]) executeReturn(pc uint32, _ []uint32) (uint32, error) {
 		frame        = p.callStack[len(p.callStack)-1]
 		calleeModule = p.program.Module(p.fid)
 		callerModule = p.program.Module(frame.fid)
-		outputs      = moduleRegisters(calleeModule, func(reg register.Register) bool { return reg.IsOutput() })
 		callee       = p.dataStack.Slice(p.fp, p.fp+calleeModule.Width())
 		caller       = p.dataStack.Slice(frame.fp, frame.fp+callerModule.Width())
+		// Callee outputs follow its inputs in register order, so ninputs is the
+		// offset of the first output; one output is produced per return target.
+		ninputs  = countRegisters(calleeModule, func(reg register.Register) bool { return reg.IsInput() })
+		noutputs = countRegisters(calleeModule, func(reg register.Register) bool { return reg.IsOutput() })
 	)
 	//
-	if len(frame.returns) != len(outputs) {
+	if len(frame.returns) != noutputs {
 		return pc, fmt.Errorf("return from %s produces %d values, got %d targets",
-			calleeModule.Name(), len(outputs), len(frame.returns))
+			calleeModule.Name(), noutputs, len(frame.returns))
 	}
 	//
 	for i, ret := range frame.returns {
-		var (
-			// Callee outputs start immediately after its inputs.
-			val    = callee[i+countInputs(calleeModule)]
-			target = callerModule.Register(register.NewId(uint(ret)))
-		)
-		//
-		if !target.IsNative() && !val.FitsWithin(target.Width()) {
-			return pc, fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), target.Width())
+		// Write each callee output into the caller register named by CALL.
+		if err := storeReg(callerModule, ret, callee[i+ninputs], caller); err != nil {
+			return pc, err
 		}
-		//
-		// Write callee output into the caller register named by CALL.
-		caller[ret] = val
 	}
 	//
 	// Drop the callee frame and restore the saved caller state.
@@ -416,23 +406,19 @@ func (p *Interpreter[W]) executeReturn(pc uint32, _ []uint32) (uint32, error) {
 	return frame.returnPc, nil
 }
 
-func moduleRegisters(module Module, keep func(register.Register) bool) []register.Register {
-	var kept []register.Register
+// countRegisters returns how many of the module's registers satisfy keep.  It
+// allocates nothing: call sites only need the count, either to validate
+// argument/return arity or to locate the first output register in a frame.
+func countRegisters(module Module, keep func(register.Register) bool) int {
+	var count int
 	//
 	for _, reg := range module.Registers() {
 		if keep(reg) {
-			kept = append(kept, reg)
+			count++
 		}
 	}
 	//
-	return kept
-}
-
-func countInputs(module Module) int {
-	// Outputs start after all input registers by construction.
-	return len(moduleRegisters(module, func(reg register.Register) bool {
-		return reg.IsInput()
-	}))
+	return count
 }
 
 // executeArithVec computes one logical arithmetic value and stores it across a
@@ -478,6 +464,8 @@ func (p *Interpreter[W]) executeArithVec(pc uint32, codes []uint32, stack []W) (
 			overflow = overflow || of
 		}
 		//
+		// A zero result is exact even when an intermediate product overflowed
+		// (matches executeMul in the slow word machine).
 		if overflow && val.Cmp64(0) != 0 {
 			return pc, errors.New("arithmetic overflow")
 		}
