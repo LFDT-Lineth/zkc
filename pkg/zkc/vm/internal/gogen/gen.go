@@ -165,15 +165,29 @@ func WordToGoSource(wm *machine.Word[word.Uint64]) (string, error) {
 }
 
 type generator struct {
-	memByID  map[uint]memInfo
-	inputs   []memInfo
-	outputs  []memInfo
-	sroms    []memInfo // static read-only memories (baked contents)
-	rams     []memInfo // read-write scratch memories
-	modules  []instruction.Module
-	funcByID map[uint]*wordFunction
-	usesBits bool   // whether math/bits is referenced (decides the import)
-	cur      fnView // the function currently being emitted (return shape)
+	memByID            map[uint]memInfo
+	inputs             []memInfo
+	outputs            []memInfo
+	sroms              []memInfo // static read-only memories (baked contents)
+	rams               []memInfo // read-write scratch memories
+	modules            []instruction.Module
+	funcByID           map[uint]*wordFunction
+	usesBits           bool // whether math/bits is referenced (decides the import)
+	usesOverflowCheck  bool
+	usesUnderflowCheck bool
+	cur                fnView    // the function currently being emitted (return shape)
+	curTemps           tempUsage // arithmetic temporaries used by the current function
+}
+
+// tempUsage records which shared arithmetic temporaries the function currently
+// being emitted needs.  The direct (single-register) arithmetic paths accumulate
+// straight into the target register, so their carry/borrow/multiply scratch must
+// be declared once at function scope rather than inside a per-instruction block.
+type tempUsage struct {
+	carry  bool // `carry` for bits.Add64
+	borrow bool // `borrow` for bits.Sub64
+	mulHi  bool // `hi` for bits.Mul64
+	mulOv  bool // `ov` for tracking overflow across a chain of multiplications
 }
 
 // fnView captures the parts of the function currently being emitted that the
@@ -248,14 +262,6 @@ func (c *code) block(body func()) {
 }
 
 func (c *code) String() string { return c.b.String() }
-
-// fail emits `if <cond> { return <zeros>, fmt.Errorf(<msg>) }`, where the return
-// shape matches the function currently being emitted (g.cur).
-func (g *generator) fail(c *code, cond, msg string) {
-	c.linef("if %s {", cond)
-	c.line(g.returnErr(fmt.Sprintf("fmt.Errorf(%q)", msg)))
-	c.line("}")
-}
 
 // returnErr renders a `return` that propagates an error expression, padding with
 // zero values for any output registers the current function declares.
@@ -350,7 +356,22 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 		c.line("")
 	}
 
-	c.line("func run(in map[string][]uint64) (map[string][]uint64, error) {")
+	g.emitCheckHelpers(c)
+
+	c.line("func run(in map[string][]uint64) (out map[string][]uint64, err error) {")
+
+	if g.usesCheckPanic() {
+		c.line("defer func() {")
+		c.line("if r := recover(); r != nil {")
+		c.line("if e, ok := r.(checkError); ok {")
+		c.line("out = nil")
+		c.line("err = e")
+		c.line("return")
+		c.line("}")
+		c.line("panic(r)")
+		c.line("}")
+		c.line("}()")
+	}
 
 	for _, m := range g.inputs {
 		c.linef("%s = in[%q]", m.varName, m.name)
@@ -368,7 +389,7 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	c.line("if err := fn_main(); err != nil {")
 	c.line("return nil, err")
 	c.line("}")
-	c.line("out := map[string][]uint64{}")
+	c.line("out = map[string][]uint64{}")
 
 	for _, m := range g.outputs {
 		c.linef("out[%q] = %s", m.name, m.varName)
@@ -444,7 +465,14 @@ func (g *generator) emitFunction(c *code, fn *wordFunction) error {
 	}
 
 	g.cur = fnView{isBoot: isBoot, outRegs: outRegs, zeros: zeros}
-	//
+	g.curTemps = tempUsage{}
+	// Emit the body first so the set of arithmetic temporaries it needs (g.curTemps)
+	// is known before we write their declarations at the top of the function.
+	var body code
+	if err := g.emitFunctionBody(&body, fn); err != nil {
+		return err
+	}
+
 	c.commentf("%s corresponds to ZkC function %q.", goFuncName(fn), fn.Name())
 	c.linef("func %s(%s) %s {", goFuncName(fn), strings.Join(paramFmt, ", "), retType)
 	// Declare the non-input registers (zero-init matches the VM frame).
@@ -454,14 +482,34 @@ func (g *generator) emitFunction(c *code, fn *wordFunction) error {
 		c.linef("_ = %s", reg(id))
 	}
 
-	if err := g.emitFunctionBody(c, fn); err != nil {
-		return err
-	}
-
+	g.emitTempDecls(c)
+	c.raw(body.String())
 	c.line("}")
 	c.line("")
 
 	return nil
+}
+
+// emitTempDecls declares, at function scope, the shared arithmetic temporaries
+// the direct (single-register) paths accumulate through.  Each is only declared
+// when actually used, and each is always read where used (e.g. `carry != 0`), so
+// no spurious "declared and not used" results.
+func (g *generator) emitTempDecls(c *code) {
+	if g.curTemps.carry {
+		c.line("var carry uint64")
+	}
+
+	if g.curTemps.borrow {
+		c.line("var borrow uint64")
+	}
+
+	if g.curTemps.mulHi {
+		c.line("var hi uint64")
+	}
+
+	if g.curTemps.mulOv {
+		c.line("var ov bool")
+	}
 }
 
 // ===========================================================================
@@ -486,7 +534,7 @@ func (g *generator) emitFunctionBody(c *code, fn *wordFunction) error {
 				c.linef("%s:", labelName(at))
 			}
 
-			c.commentf("gogen input [%d.%d] %s: %s", vi, ci, opName(insn.OpCode()), insn.String(mapping))
+			c.commentf("[%d.%d] %s: %s", vi, ci, opName(insn.OpCode()), insn.String(mapping))
 
 			if note := g.commentNote(fn, insn); note != "" {
 				c.commentf("gogen: %s", note)
@@ -551,549 +599,6 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 	default:
 		return fmt.Errorf("gogen: unsupported instruction %T (op %s)", insn, opName(insn.OpCode()))
 	}
-}
-
-// emitCall emits a Go call to the callee function, mirroring CallStack.Enter /
-// Leave: arguments are width-checked against the callee's input registers, and
-// returns are width-checked against the caller's target registers.
-func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) error {
-	callee, ok := g.funcByID[x.Id]
-	if !ok {
-		return fmt.Errorf("gogen: CALL to non-function module id %d", x.Id)
-	}
-
-	calleeInputs := callee.Inputs()
-	if len(x.Arguments) != len(calleeInputs) {
-		return fmt.Errorf("gogen: CALL argument count mismatch (%d vs %d) for %q",
-			len(x.Arguments), len(calleeInputs), callee.Name())
-	}
-
-	if len(x.Returns) != int(callee.NumOutputs()) {
-		return fmt.Errorf("gogen: CALL return count mismatch (%d vs %d) for %q",
-			len(x.Returns), callee.NumOutputs(), callee.Name())
-	}
-
-	args, err := g.operands(fn, x.Arguments)
-	if err != nil {
-		return err
-	}
-
-	var inner error
-
-	c.block(func() {
-		// Argument width checks against the callee parameter widths.
-		for i, arg := range args {
-			if w := calleeInputs[i].Width(); !calleeInputs[i].IsNative() && w < 64 {
-				g.fail(c, fmt.Sprintf("%s >= (1 << %d)", arg, w),
-					fmt.Sprintf("bit overflow (value exceeds u%d)", w))
-			}
-		}
-
-		call := fmt.Sprintf("%s(%s)", goFuncName(callee), strings.Join(args, ", "))
-		if len(x.Returns) == 0 {
-			c.linef("if e := %s; e != nil {", call)
-			c.line(g.returnErr("e"))
-			c.line("}")
-
-			return
-		}
-		// Capture returns in temporaries, then width-check and assign them into
-		// the caller's target registers.
-		tmps := make([]string, len(x.Returns))
-		for i := range x.Returns {
-			tmps[i] = fmt.Sprintf("ret%d", i)
-		}
-
-		c.linef("%s, e := %s", strings.Join(tmps, ", "), call)
-		c.line("if e != nil {")
-		c.line(g.returnErr("e"))
-		c.line("}")
-
-		for i, target := range x.Returns {
-			w, e := g.regWidth(fn, target)
-			if e != nil {
-				inner = e
-				return
-			}
-
-			if w < 64 {
-				g.fail(c, fmt.Sprintf("%s >= (1 << %d)", tmps[i], w),
-					fmt.Sprintf("bit overflow (value exceeds u%d)", w))
-			}
-
-			c.linef("%s = %s", reg(target), tmps[i])
-		}
-	})
-
-	return inner
-}
-
-// emitArith dispatches the three integer arithmetic opcodes.  Each computes a
-// value into local `v` and then stores it via emitStore.
-func (g *generator) emitArith(c *code, fn *wordFunction, x *instruction.WordTypeA[word.Uint64]) error {
-	// BIT_CONCAT shares the WordTypeA shape (vector target, register sources) but
-	// has its own packing semantics.
-	if x.Op == opcode.BIT_CONCAT {
-		return g.emitConcat(c, fn, x)
-	}
-
-	store, err := g.buildStore(fn, x.Target)
-	if err != nil {
-		return err
-	}
-
-	srcs, err := g.operands(fn, x.Sources)
-	if err != nil {
-		return err
-	}
-
-	konst := x.Constant.Uint64()
-	switch x.Op {
-	case opcode.INT_ADD:
-		g.emitAdd(c, srcs, konst, store)
-	case opcode.INT_SUB:
-		if len(srcs) == 0 {
-			return fmt.Errorf("gogen: INT_SUB with no sources unsupported")
-		}
-
-		g.emitSub(c, srcs, konst, store)
-	case opcode.INT_MUL:
-		g.emitMul(c, srcs, konst, store)
-	default:
-		return fmt.Errorf("gogen: unsupported arithmetic op %s", opName(x.Op))
-	}
-
-	return nil
-}
-
-// emitAdd emits `v = const + Σ sources`, with a carry-out check per addition
-// (matching executeAdd's val.Add), then StoreAcross.  A constant-zero operand
-// adds nothing and is skipped (it can never carry).
-func (g *generator) emitAdd(c *code, sources []string, konst uint64, store storeView) {
-	c.block(func() {
-		c.linef("v := uint64(%d)", konst)
-
-		adds := nonZero(sources)
-		if len(adds) > 0 {
-			g.usesBits = true
-
-			c.line("var carry uint64")
-		}
-
-		for _, s := range adds {
-			c.linef("v, carry = bits.Add64(v, %s, 0)", s)
-			g.fail(c, "carry != 0", "arithmetic overflow")
-		}
-
-		g.emitStore(c, store)
-	})
-}
-
-// emitSub emits `v = sources[0] - sources[1] - … - const`, each step checked for
-// underflow (matching executeSub), then StoreAcross.
-func (g *generator) emitSub(c *code, sources []string, konst uint64, store storeView) {
-	c.block(func() {
-		c.linef("v := %s", sources[0])
-
-		rest := sources[1:]
-		if len(rest) > 0 || konst != 0 {
-			g.usesBits = true
-
-			c.line("var borrow uint64")
-		}
-
-		for _, s := range rest {
-			c.linef("v, borrow = bits.Sub64(v, %s, 0)", s)
-			g.fail(c, "borrow != 0", "arithmetic underflow")
-		}
-
-		if konst != 0 {
-			c.linef("v, borrow = bits.Sub64(v, uint64(%d), 0)", konst)
-			g.fail(c, "borrow != 0", "arithmetic underflow")
-		}
-
-		g.emitStore(c, store)
-	})
-}
-
-// emitMul emits `v = const · Π sources`, flagging overflow when a 64-bit product
-// overflows and the low word is non-zero (matching executeMul), then
-// StoreAcross.
-func (g *generator) emitMul(c *code, sources []string, konst uint64, store storeView) {
-	c.block(func() {
-		c.linef("v := uint64(%d)", konst)
-
-		if len(sources) > 0 {
-			g.usesBits = true
-
-			c.line("var ov bool")
-			c.line("var hi uint64")
-
-			for _, s := range sources {
-				c.linef("hi, v = bits.Mul64(v, %s)", s)
-				c.line("ov = ov || hi != 0")
-			}
-
-			g.fail(c, "ov && v != 0", "arithmetic overflow")
-		}
-
-		g.emitStore(c, store)
-	})
-}
-
-// emitStore writes the accumulated value `v` into the target, mirroring
-// StackFrame.StoreAcross:
-//   - single register: bit-width-check, then assign;
-//   - multi register: distribute v big-endian (lowest register = LSB), masking
-//     each register to its width; any bits left beyond the total width are an
-//     overflow.  This is where carry bits land in the higher registers.
-func (g *generator) emitStore(c *code, store storeView) {
-	if store.single != nil {
-		w := store.single.width
-		if w < 64 {
-			g.fail(c, fmt.Sprintf("v >= (1 << %d)", w), fmt.Sprintf("bit overflow (value exceeds u%d)", w))
-		}
-
-		c.linef("%s = v", store.single.reg)
-
-		return
-	}
-
-	for _, l := range store.limbs {
-		if l.width < 64 {
-			c.linef("%s = v & ((1 << %d) - 1)", l.reg, l.width)
-		} else {
-			c.linef("%s = v", l.reg)
-		}
-
-		c.linef("v >>= %d", l.width)
-	}
-
-	g.fail(c, "v != 0", "bit overflow (value exceeds total target width)")
-}
-
-// emitConcat emits a BIT_CONCAT (`tn::…::t0 = sn::…::s0`): it packs the source
-// registers into one value with sources[0] in the least-significant bits, then
-// distributes that value across the (possibly multi-limb) target via StoreAcross.
-// Mirrors executeConcat in the reference word machine.
-func (g *generator) emitConcat(c *code, fn *wordFunction, x *instruction.WordTypeA[word.Uint64]) error {
-	store, err := g.buildStore(fn, x.Target)
-	if err != nil {
-		return err
-	}
-
-	type source struct {
-		expr  string
-		width uint
-	}
-
-	srcs := make([]source, len(x.Sources))
-	for i, id := range x.Sources {
-		expr, err := g.operand(fn, id)
-		if err != nil {
-			return err
-		}
-
-		w, err := g.regWidth(fn, id)
-		if err != nil {
-			return err
-		}
-
-		srcs[i] = source{expr, w}
-	}
-
-	c.block(func() {
-		c.line("var v uint64")
-		// Build from the most-significant source down so sources[0] ends up in the
-		// low bits (each source is shifted in above the ones already placed).
-		for i := len(srcs); i > 0; i-- {
-			c.linef("v = (v << %d) | %s", srcs[i-1].width, srcs[i-1].expr)
-		}
-
-		g.emitStore(c, store)
-	})
-
-	return nil
-}
-
-// emitBitwise emits a WordTypeB bitwise/shift op into its single target register,
-// mirroring executeAnd/Or/Xor/Not/Shl/Shr.  AND/OR/XOR and SHR map to the plain Go
-// operators; NOT and SHL additionally mask to the operation bit-width (matching
-// word.Not / word.Shl).  The result is then bit-width-checked against the target
-// via emitStore (i.e. frame.Store).
-func (g *generator) emitBitwise(c *code, fn *wordFunction, x *instruction.WordTypeB) error {
-	store, err := g.buildStore(fn, register.NewVector(x.Target))
-	if err != nil {
-		return err
-	}
-
-	lhs, err := g.operand(fn, x.LeftSource)
-	if err != nil {
-		return err
-	}
-
-	// BIT_NOT is unary; the rest read a right operand.
-	var rhs string
-	if x.Op != opcode.BIT_NOT {
-		if rhs, err = g.operand(fn, x.RightSource); err != nil {
-			return err
-		}
-	}
-
-	var valExpr string
-
-	switch x.Op {
-	case opcode.BIT_AND:
-		valExpr = fmt.Sprintf("%s & %s", lhs, rhs)
-	case opcode.BIT_OR:
-		valExpr = fmt.Sprintf("%s | %s", lhs, rhs)
-	case opcode.BIT_XOR:
-		valExpr = fmt.Sprintf("%s ^ %s", lhs, rhs)
-	case opcode.BIT_NOT:
-		valExpr = maskExpr(fmt.Sprintf("^%s", lhs), x.Bitwidth)
-	case opcode.BIT_SHL:
-		valExpr = maskExpr(fmt.Sprintf("%s << %s", lhs, rhs), x.Bitwidth)
-	case opcode.BIT_SHR:
-		valExpr = fmt.Sprintf("%s >> %s", lhs, rhs)
-	default:
-		// INT_DIV / INT_REM are not on the supported path yet (§6.5).
-		return fmt.Errorf("gogen: unsupported bitwise op %s", opName(x.Op))
-	}
-
-	c.block(func() {
-		c.linef("v := %s", valExpr)
-		g.emitStore(c, store)
-	})
-
-	return nil
-}
-
-// maskExpr masks expr to the low bitwidth bits, mirroring word.mask64: a width of
-// 64 or more needs no mask (the full word is already in range, and Go's shift
-// already yields 0 when the count reaches the word width).
-func maskExpr(expr string, bitwidth uint) string {
-	if bitwidth >= 64 {
-		return expr
-	}
-
-	return fmt.Sprintf("(%s) & ((1 << %d) - 1)", expr, bitwidth)
-}
-
-// emitMemRead emits a read from a readable memory (input ROM, static ROM or RAM
-// scratch): decode the address, then load each data word into its target register
-// (bit-width-checked).
-func (g *generator) emitMemRead(c *code, fn *wordFunction, x *instruction.MemRead) error {
-	mi, ok := g.memByID[x.Id]
-	if !ok {
-		return fmt.Errorf("gogen: MEMORY_READ from unknown module id %d", x.Id)
-	}
-
-	switch mi.role {
-	case romInput, sromStatic, ramScratch:
-	default:
-		return fmt.Errorf("gogen: MEMORY_READ from non-readable memory %q", mi.name)
-	}
-
-	start, err := g.addrExpr(fn, mi, x.Address())
-	if err != nil {
-		return err
-	}
-
-	var inner error
-
-	c.block(func() {
-		c.linef("start := %s", start)
-
-		for i, d := range x.Data() {
-			w, e := g.regWidth(fn, d)
-			if e != nil {
-				inner = e
-				return
-			}
-
-			idx := i
-
-			c.block(func() {
-				if mi.role == ramScratch {
-					// RAM is zero-initialised: an unwritten cell reads 0.
-					c.linef("val := memGet(%s, start+%d)", mi.varName, idx)
-				} else {
-					// ROM/SROM read is data[address]; OOB panics, like StaticArray.Read.
-					c.linef("val := %s[start+%d]", mi.varName, idx)
-				}
-
-				if w < 64 {
-					g.fail(c, fmt.Sprintf("val >= (1 << %d)", w), fmt.Sprintf("bit overflow (value exceeds u%d)", w))
-				}
-
-				c.linef("%s = val", reg(d))
-			})
-		}
-	})
-
-	return inner
-}
-
-// emitMemWrite emits a write to a writable memory (output WOM or RAM scratch):
-// decode the address, then store each data word (checked against the memory's
-// data-register width).  Both back onto memGrow (grow-on-write).
-func (g *generator) emitMemWrite(c *code, fn *wordFunction, x *instruction.MemWrite) error {
-	mi, ok := g.memByID[x.Id]
-	if !ok {
-		return fmt.Errorf("gogen: MEMORY_WRITE to unknown module id %d", x.Id)
-	}
-
-	switch mi.role {
-	case womOutput, ramScratch:
-	default:
-		return fmt.Errorf("gogen: MEMORY_WRITE to non-writable memory %q", mi.name)
-	}
-
-	start, err := g.addrExpr(fn, mi, x.Address())
-	if err != nil {
-		return err
-	}
-
-	dataRegs := mi.geom.DataRegisters()
-	if len(x.Data()) != len(dataRegs) {
-		return fmt.Errorf("gogen: MEMORY_WRITE data lines mismatch (%d vs %d)", len(x.Data()), len(dataRegs))
-	}
-
-	var inner error
-
-	c.block(func() {
-		c.linef("start := %s", start)
-
-		for i, s := range x.Data() {
-			src, e := g.operand(fn, s)
-			if e != nil {
-				inner = e
-				return
-			}
-
-			idx := i
-			w := dataRegs[i].Width() // mem write checks the memory data-register width
-
-			c.block(func() {
-				c.linef("val := %s", src)
-
-				if w < 64 {
-					g.fail(c, fmt.Sprintf("val >= (1 << %d)", w), fmt.Sprintf("bit overflow (value exceeds u%d)", w))
-				}
-
-				c.linef("%s = memGrow(%s, start+%d, val)", mi.varName, mi.varName, idx)
-			})
-		}
-	})
-
-	return inner
-}
-
-// ===========================================================================
-// Control-flow helpers
-// ===========================================================================
-
-// labelName renders the Go label for a 2-D PC position.
-func labelName(p pos) string { return fmt.Sprintf("L_%d_%d", p.macro, p.micro) }
-
-// skipTarget computes the destination of a skip/skip_if at (vi, ci) skipping
-// `skip` micro-instructions.  Per the VM (machine/base.go), a skip advances the
-// micro counter to ci+skip and then falls through one step, so the destination
-// is ci+skip+1; if that lands past the end of the vector it falls through to the
-// start of the next macro vector.
-func skipTarget(vi, ci, skip, vecLen uint) pos {
-	micro := ci + skip + 1
-	if micro >= vecLen {
-		return pos{vi + 1, 0}
-	}
-
-	return pos{vi, micro}
-}
-
-// collectLabels gathers every 2-D PC position targeted by a skip or jump, so the
-// emitter knows exactly which positions need a Go label (Go rejects unused
-// labels, so we must not over-emit).
-func collectLabels(code wordCode) map[pos]bool {
-	labels := map[pos]bool{}
-
-	for vi, vec := range code {
-		n := uint(len(vec.Codes))
-		for ci, insn := range vec.Codes {
-			switch x := insn.(type) {
-			case *instruction.Skip:
-				labels[skipTarget(uint(vi), uint(ci), x.Skip, n)] = true
-			case *instruction.SkipIf:
-				labels[skipTarget(uint(vi), uint(ci), x.Skip, n)] = true
-			case *instruction.Jump:
-				labels[pos{x.Immediate, 0}] = true
-			}
-		}
-	}
-
-	return labels
-}
-
-// condExpr renders the boolean Go expression under which a SkipIf takes its
-// skip.  Vectors are compared lexicographically with the most-significant
-// register at the highest index, matching machine/base.go's cmp.
-func (g *generator) condExpr(fn *wordFunction, x *instruction.SkipIf) (string, error) {
-	lhs, err := g.operands(fn, x.Left.Registers())
-	if err != nil {
-		return "", err
-	}
-
-	rhs, err := g.operands(fn, x.Right.Registers())
-	if err != nil {
-		return "", err
-	}
-
-	if len(lhs) != len(rhs) {
-		return "", fmt.Errorf("gogen: skip_if compares vectors of differing length (%d vs %d)", len(lhs), len(rhs))
-	}
-
-	switch x.Cond {
-	case opcode.EQ:
-		return eqExpr(lhs, rhs), nil
-	case opcode.NEQ:
-		return "!(" + eqExpr(lhs, rhs) + ")", nil
-	case opcode.LT:
-		return ordExpr(lhs, rhs, "<"), nil
-	case opcode.GT:
-		return ordExpr(lhs, rhs, ">"), nil
-	case opcode.LTEQ:
-		return "!(" + ordExpr(lhs, rhs, ">") + ")", nil
-	case opcode.GTEQ:
-		return "!(" + ordExpr(lhs, rhs, "<") + ")", nil
-	default:
-		return "", fmt.Errorf("gogen: unsupported skip condition 0x%x", uint(x.Cond))
-	}
-}
-
-// eqExpr renders elementwise equality of two operand lists.
-func eqExpr(lhs, rhs []string) string {
-	parts := make([]string, len(lhs))
-	for i := range lhs {
-		parts[i] = fmt.Sprintf("%s == %s", lhs[i], rhs[i])
-	}
-
-	return strings.Join(parts, " && ")
-}
-
-// ordExpr renders a strict lexicographic comparison (op is "<" or ">") of two
-// operand lists, most significant register first.
-func ordExpr(lhs, rhs []string, op string) string {
-	var build func(i int) string
-
-	build = func(i int) string {
-		if i == 0 {
-			return fmt.Sprintf("(%s %s %s)", lhs[0], op, rhs[0])
-		}
-
-		return fmt.Sprintf("(%s %s %s || (%s == %s && %s))",
-			lhs[i], op, rhs[i], lhs[i], rhs[i], build(i-1))
-	}
-
-	return build(len(lhs) - 1)
 }
 
 // ===========================================================================
@@ -1239,27 +744,42 @@ func (g *generator) commentNote(fn *wordFunction, insn instruction.Word) string 
 func arithNote(fn *wordFunction, x *instruction.WordTypeA[word.Uint64]) string {
 	target := vectorDebug(fn, x.Target)
 	konst := x.Constant.Uint64()
+	// A multi-register target distributes the accumulated value big-endian via
+	// StoreAcross; a single-register target is accumulated into directly and
+	// bit-width-checked.
+	dst := storeNote(fn, x.Target)
 
 	switch x.Op {
 	case opcode.INT_ADD:
 		switch {
 		case len(x.Sources) == 0:
-			return fmt.Sprintf("materialize literal %d into %s; this can look like a no-op, but lowered "+
-				"memory ops and constants need values in registers.", konst, target)
+			return ""
 		case len(x.Sources) == 1 && konst == 0:
 			return fmt.Sprintf("copy %s into %s, then enforce the target bit width.", regDebug(fn, x.Sources[0]), target)
 		default:
-			return fmt.Sprintf("add into local v with carry checks, then StoreAcross into %s.", target)
+			return fmt.Sprintf("add the operands with carry checks %s.", dst)
 		}
 	case opcode.INT_SUB:
-		return fmt.Sprintf("subtract into local v with borrow checks, then StoreAcross into %s.", target)
+		return fmt.Sprintf("subtract with borrow checks %s.", dst)
 	case opcode.INT_MUL:
-		return fmt.Sprintf("multiply into local v with 64-bit overflow tracking, then StoreAcross into %s.", target)
+		return fmt.Sprintf("multiply with 64-bit overflow tracking %s.", dst)
 	case opcode.BIT_CONCAT:
-		return fmt.Sprintf("concatenate sources (sources[0] in the low bits) into v, then StoreAcross into %s.", target)
+		return fmt.Sprintf("concatenate sources (sources[0] in the low bits) %s.", dst)
 	default:
 		return ""
 	}
+}
+
+// storeNote renders the StoreAcross half of an arithmetic note for a target
+// vector: either an accumulate-into-the-register phrase (single register) or a
+// distribute-across phrase (multi register).
+func storeNote(fn *wordFunction, vec register.Vector) string {
+	target := vectorDebug(fn, vec)
+	if len(vec.Registers()) > 1 {
+		return fmt.Sprintf("then distribute the result across %s via StoreAcross", target)
+	}
+
+	return fmt.Sprintf("into %s, enforcing the target bit width", target)
 }
 
 // roleNote describes a memory role for generated comments.

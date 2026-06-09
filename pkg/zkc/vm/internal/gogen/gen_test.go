@@ -39,6 +39,40 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
+const tt = `pub input data(address:u16) -> (word:u16)
+
+// prove that two numbers add up to a third.
+fn main() {
+    var n:u16 = data[0]
+    var k:u16 = data[1]
+    var res:u32 = data[2] as u32
+
+    if pow(n, k) != res {
+        fail
+    }
+}
+
+// compute n^k
+fn pow(n:u16, k:u16) -> (res:u32) {
+    var i:u16, acc:u32, b:u1
+    //
+    res = 1
+    acc = n as u32
+    i = k
+    //
+    while i != 0 {
+        // divide by 2
+        i::b = i as u17
+        // check odd/even
+        if b == 1 {
+            res = res * acc
+        }
+        //
+        acc = acc * acc
+    }
+}
+`
+
 // tutorialSrc mirrors pkg/zkc/tutorial: branchless u16 arithmetic with single
 // register targets (result[0]=a+b, result[1]=(a+b)*c, result[2]=a-b).
 const tutorialSrc = `pub input args(address:u16) -> (word:u16)
@@ -284,7 +318,7 @@ func compileU64Program(t testing.TB, program ast.Program) *vm.WordMachine[word.U
 }
 
 func TestGenTutorialStages(t *testing.T) {
-	program := compileProgram(t, tutorialSrc)
+	program := compileProgram(t, tt)
 	wm := compileU64Program(t, program)
 
 	goSrc, err := vm.WordToGoSource(wm)
