@@ -93,28 +93,18 @@ func encodeCall(id uint16, args []Reg, returns []Reg) []uint32 {
 	return append(codes, packRegsIntoCodes(bytes)...)
 }
 
-func decodeCall_sn(pc uint32, codes []uint32) (id uint16, nargs, nrets uint, regs Op8Iter, n uint32) {
-	nargs = uint((codes[pc] >> 16) & 0xff)
-	nrets = uint((codes[pc] >> 24) & 0xff)
-	id = uint16((codes[pc] >> 8) & 0xff)
-	regs = NewOp8Iter(0, codes[pc+1:])
-	//
-	return id, nargs, nrets, regs, 1 + nCodesPackedSmall(uint32(nargs+nrets))
-}
-
 func decodeCallOperands(pc uint32, codes []uint32) (id uint16, args, returns []Reg, n uint32) {
 	var (
-		nargs uint
-		nrets uint
-		iter  Op8Iter
-		regs  []Reg
+		nargs = uint((codes[pc] >> 16) & 0xff)
+		nrets = uint((codes[pc] >> 24) & 0xff)
+		iter  = NewOp8Iter(0, codes[pc+1:])
+		// Operands are packed args first, then return targets.
+		regs = OpIterToArray[uint16](nargs+nrets, iter)
 	)
 	//
-	id, nargs, nrets, iter, n = decodeCall_sn(pc, codes)
-	// Operands are stored as args first, then return targets.
-	regs = OpIterToArray[uint16](nargs+nrets, iter)
+	id = uint16((codes[pc] >> 8) & 0xff)
 	//
-	return id, regs[:nargs], regs[nargs:], n
+	return id, regs[:nargs], regs[nargs:], 1 + nCodesPackedSmall(uint32(nargs+nrets))
 }
 
 // NewCall constructs a function-call bytecode.

@@ -74,10 +74,14 @@ func (p *Arith[W]) Codes(_ uint32) []uint32 {
 	case m > 1 && cz:
 		return encodeArith_vec(p.Op, p.Target, p.Source)
 	case n == 2 && m == 1:
+		// x*y*0 is always 0: fold to a constant load so the intermediate
+		// product x*y cannot raise a spurious overflow error.
 		if p.Op == arithop_MUL && p.Constant.Cmp64(0) == 0 {
 			return encodeLdc_1(p.Constant, p.Target[0])
 		}
-		//
+		// There is no 2-source-plus-constant instruction form, so compute
+		// "x op y" first, then fold in the constant (when used) with a second
+		// one-source instruction operating in place on the target.
 		codes := encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
 		//
 		if !cz {
@@ -86,7 +90,7 @@ func (p *Arith[W]) Codes(_ uint32) []uint32 {
 		//
 		return codes
 	default:
-		panic(fmt.Sprintf("unsupported add instruction form (%d, %d, %t)", n, m, cz))
+		panic(fmt.Sprintf("unsupported arithmetic instruction form (%d, %d, %t)", n, m, cz))
 	}
 }
 

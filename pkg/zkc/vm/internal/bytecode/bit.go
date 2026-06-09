@@ -30,7 +30,12 @@ type Not struct {
 }
 
 func (p *Not) String(mapping SystemMap) string {
-	return fmt.Sprintf("%s = ~%s [u%d]", registerToString(p.Target, mapping), registerToString(p.Source, mapping), p.Bitwidth)
+	var (
+		target = registerToString(p.Target, mapping)
+		source = registerToString(p.Source, mapping)
+	)
+	//
+	return fmt.Sprintf("%s = ~%s [u%d]", target, source, p.Bitwidth)
 }
 
 // Codes implementation for Bytecode interface.
