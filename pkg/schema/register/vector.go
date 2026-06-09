@@ -60,6 +60,12 @@ func (p Vector) BitWidth(fn Map) uint {
 	return bitwidth
 }
 
+// Last returns the last (i.e. most significant) register in this vector
+func (p Vector) Last() Id {
+	var n = len(p.regs)
+	return p.regs[n-1]
+}
+
 // Len returns the length of this vector
 func (p Vector) Len() uint {
 	return uint(len(p.regs))

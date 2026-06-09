@@ -17,6 +17,7 @@ import (
 	"encoding/gob"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
@@ -160,6 +161,11 @@ func (p *BiPartiteRandomAccess[W]) Write(address uint64, value W) error {
 	return nil
 }
 
+// Contents implementation for Memory interface.
+func (p *BiPartiteRandomAccess[W]) Contents() []W {
+	panic("unsupported operation")
+}
+
 // HasRegister implementation for vm.Module interface.
 func (p *BiPartiteRandomAccess[W]) HasRegister(name string) (register.Id, bool) {
 	for i, r := range p.geometry.registers {
@@ -174,6 +180,13 @@ func (p *BiPartiteRandomAccess[W]) HasRegister(name string) (register.Id, bool) 
 // Register implementation for vm.Module interface.
 func (p *BiPartiteRandomAccess[W]) Register(id register.Id) register.Register {
 	return p.geometry.registers[id.Unwrap()]
+}
+
+// RegisterMap returns a register map view of the registers declared by this
+// function.
+func (p *BiPartiteRandomAccess[W]) RegisterMap() register.Map {
+	name := trace.ModuleName{Name: p.Name(), Multiplier: 1}
+	return register.ArrayMap(name, p.Registers()...)
 }
 
 // Registers implementation for vm.Module interface.

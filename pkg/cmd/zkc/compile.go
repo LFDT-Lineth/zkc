@@ -15,9 +15,11 @@ package zkc
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -106,6 +108,10 @@ func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F]) {
 	// Word-level Intermediate Representation
 	if artifacts.wir.HasValue() {
 		writeIntermediateRepresentation(artifacts.wir.Unwrap())
+	}
+	// Word-level Intermediate Representation
+	if artifacts.bci.HasValue() {
+		writeBytecodeInterpreter(artifacts.bci.Unwrap())
 	}
 	// Field-level Intermediate Representation
 	if artifacts.fir.HasValue() {
@@ -405,6 +411,91 @@ func registerType(r register.Register) string {
 	}
 	//
 	return fmt.Sprintf("u%d", r.Width())
+}
+
+// ============================================================================
+// Bytecode Interpreter
+// ============================================================================
+
+func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram[W]) {
+	var (
+		address   uint32
+		bytecodes = vm.DecodeBytecodes(program)
+		width     uint
+		mapping   vm.SystemMap
+	)
+	//
+	for _, bytecode := range bytecodes {
+		var codes = bytecode.Codes(address)
+		//
+		width = max(width, uint(len(codes)))
+		address += uint32(len(codes))
+	}
+	// Reset for another sweep
+	address = 0
+	//
+	for i, bytecode := range vm.DecodeBytecodes(program) {
+		var codes = bytecode.Codes(address)
+		//
+		if sym := program.SymbolAt(address); sym.HasValue() {
+			var m = sym.Unwrap()
+			//
+			if i != 0 {
+				fmt.Println()
+			}
+			//
+			fmt.Printf("%s:\n", signatureOf(m))
+			//
+			mapping = instruction.NewSystemMap(m.RegisterMap(), program.Modules())
+		}
+		//
+		fmt.Printf("0x%04x\t%s\t%s\n", address, codeStr(width, codes), bytecode.String(mapping))
+		//
+		address += uint32(len(codes))
+	}
+}
+
+func codeStr(width uint, codes []uint32) string {
+	var (
+		n   = (width * 9) + 1
+		str = fmt.Sprintf("%08x", codes)
+	)
+	//
+	return fmt.Sprintf("%-*s", n, str)
+}
+
+func signatureOf(m vm.Module) string {
+	var (
+		args = array.Filter(m.Registers(), func(r register.Register) bool {
+			return r.IsInput()
+		})
+		returns = array.Filter(m.Registers(), func(r register.Register) bool {
+			return r.IsOutput()
+		})
+	)
+	//
+	return fmt.Sprintf("%s(%s) -> (%s)", m.Name(), fnArgs(args), fnArgs(returns))
+}
+
+func fnArgs(regs []register.Register) string {
+	var builder strings.Builder
+	//
+	for i, r := range regs {
+		if i != 0 {
+			builder.WriteString(",")
+		}
+		//
+		builder.WriteString(r.Name())
+		builder.WriteString(":")
+		//
+		if r.IsNative() {
+			builder.WriteString("𝔽")
+		} else {
+			fmt.Fprintf(&builder, "u%d", r.Width())
+		}
+	}
+	//
+	return builder.String()
 }
 
 // ============================================================================

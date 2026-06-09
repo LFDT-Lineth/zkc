@@ -67,3 +67,9 @@ func (p *Heap[T]) Size() uint {
 func (p *Heap[T]) Slice(start, end uint) []T {
 	return p.data[start:end]
 }
+
+// SliceEnd returns a slice of this heap from the given start position upto the
+// end.
+func (p *Heap[T]) SliceEnd(start uint) []T {
+	return p.data[start:]
+}

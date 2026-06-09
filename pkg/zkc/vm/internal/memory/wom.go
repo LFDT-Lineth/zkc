@@ -30,13 +30,8 @@ func (p *WriteOnce[W]) Read(address uint64) (W, error) {
 	panic("unsupported operation for write-once memory")
 }
 
-// Contents implementation for Memory interface.
-func (p *WriteOnce[W]) Contents() []W {
-	return p.data
-}
-
 // NewWriteOnce constructs an empty write-once memory.
-func NewWriteOnce[W util.Uinter64](name string, public bool, registers []register.Register) InputOutput[W] {
+func NewWriteOnce[W util.Uinter64](name string, public bool, registers []register.Register) *WriteOnce[W] {
 	var kind Kind
 	//
 	if public {

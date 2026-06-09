@@ -13,6 +13,7 @@
 package util
 
 import (
+	"encoding/hex"
 	"fmt"
 	"testing"
 
@@ -39,7 +40,8 @@ var (
 		fields:      DEFAULT_FIELDS,
 		words:       DEFAULT_WORDS,
 		constraints: false,
-		splitting:   false}
+		splitting:   false,
+		bytecode:    false}
 )
 
 // Config for testing
@@ -52,6 +54,8 @@ type Config struct {
 	constraints bool
 	// enable register splitting
 	splitting bool
+	// enable bytecode interpreter
+	bytecode bool
 }
 
 // Fields determines which fields to test over.
@@ -64,6 +68,14 @@ func (p Config) Fields(fields ...field.Config) Config {
 // Words determines which words to test over.
 func (p Config) Words(words ...vm.WordConfig) Config {
 	p.words = words
+	//
+	return p
+}
+
+// Bytecode determines whether or not to use the bytecode interpreter.  This is
+// experimental but, in principle, can execute faster.
+func (p Config) Bytecode(flag bool) Config {
+	p.bytecode = flag
 	//
 	return p
 }
@@ -120,7 +132,7 @@ func checkValidInternal(t *testing.T, testfile string, cfg codegen.Config, confi
 func checkValidMachine(t *testing.T, m *vm.WordMachine[vm.Uint], cfg codegen.Config, config Config, tests []TestCase) {
 	// Run execution tests
 	for _, testcase := range tests {
-		runExecutionTests(t, m, testcase, cfg.GetField(), config.words)
+		runExecutionTests(t, m, testcase, cfg.GetField(), config)
 	}
 	// Run constraint tests
 	if config.constraints {
@@ -133,8 +145,8 @@ func checkValidMachine(t *testing.T, m *vm.WordMachine[vm.Uint], cfg codegen.Con
 	}
 }
 
-func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f field.Config, words []vm.WordConfig) {
-	for _, w := range words {
+func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f field.Config, cfg Config) {
+	for _, w := range cfg.words {
 		// Check for incompatible field/word combinations.  For example, we
 		// cannot emulate a 254bit field using a 64bit word.
 		if w.Bandwidth <= f.BandWidth {
@@ -143,19 +155,33 @@ func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f 
 		// Run the test
 		switch w {
 		case vm.WORD_UINT:
-			runExecutionTest(t, m, tc, w)
+			runBytecodeExecutionTest(t, m, tc, w, cfg.bytecode)
 		case vm.WORD_UINT64:
 			// Lower to 64bit machine
 			m64 := vm.WordToWordMachine[vm.Uint, vm.Uint64](m)
 			// Run execution test
-			runExecutionTest(t, m64, tc, w)
+			runBytecodeExecutionTest(t, m64, tc, w, cfg.bytecode)
 		default:
 			panic(fmt.Sprintf("unknown machine word: %s", w.Name))
 		}
 	}
 }
 
-func runExecutionTest[W vm.Word[W], I vm.Instruction](t *testing.T, wm vm.Machine[W, I], test TestCase,
+func runBytecodeExecutionTest[W vm.Word[W]](t *testing.T, wm *vm.WordMachine[W], test TestCase, cfg vm.WordConfig,
+	bytecode bool) {
+	//
+	if bytecode {
+		// Compile bytecode interpreter
+		bci := vm.WordToBytecodeInterpreter(wm)
+		// Execute bytecode
+		runExecutionTest(t, bci, test, cfg)
+	} else {
+		// Run using slow interpreter
+		runExecutionTest(t, wm, test, cfg)
+	}
+}
+
+func runExecutionTest[W vm.Word[W]](t *testing.T, wm vm.Core[W], test TestCase,
 	cfg vm.WordConfig) {
 	//
 	var (
@@ -164,9 +190,7 @@ func runExecutionTest[W vm.Word[W], I vm.Instruction](t *testing.T, wm vm.Machin
 		// decode inputs / outputs
 		inputs, outputs = decodeInputsOutputs(t, wm, test.data)
 	)
-	//
-	//t.Logf("[%s]%s:%d", cfg.Name, test.filename, test.line)
-	// Execute machine
+	// Boot & Execute machine
 	if err = wm.Boot("main", inputs); err == nil {
 		// Execute it
 		if _, err = vm.ExecuteAll(wm, 131072); err == nil && test.expected {
@@ -236,16 +260,20 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, wm *vm.WordMachi
 	}
 }
 
-func checkExpectedOutputs[W vm.Word[W], I vm.Instruction](outputs map[string][]W, wm vm.Machine[W, I]) []error {
+func checkExpectedOutputs[W vm.Word[W]](outputs map[string][]W, wm vm.Core[W]) []error {
 	var errors []error
 	//
-	for _, m := range wm.Modules() {
-		// Check whether this is an output memory or not.
-		if m, ok := m.(vm.InputOutputMemory[W]); ok && m.IsWriteOnly() {
-			if output, ok := outputs[m.Name()]; ok {
-				if c := array.Compare(output, m.Contents()); c != 0 {
-					errors = append(errors, fmt.Errorf("incorrect output (expected %v, actual %v)", output, m.Contents()))
-				}
+	for iter := wm.Outputs(); iter.HasNext(); {
+		m := iter.Next()
+		//
+		if output, ok := outputs[m.Name()]; ok {
+			if c := array.Compare(output, m.Contents()); c != 0 {
+				var (
+					expected = hex.EncodeToString(vm.EncodeBytes(output, m.Geometry()))
+					actual   = hex.EncodeToString(vm.EncodeBytes(m.Contents(), m.Geometry()))
+				)
+
+				errors = append(errors, fmt.Errorf("incorrect output (expected 0x%s, actual 0x%s)", expected, actual))
 			}
 		}
 	}
