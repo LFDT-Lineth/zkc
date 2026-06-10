@@ -53,10 +53,6 @@ import (
 type Interpreter[W word.Word[W]] struct {
 	// The program (modules, bytecodes, constant pool and symbols) being executed.
 	program Program[W]
-	// Function entry addresses indexed by module identifier.
-	addresses map[uint]uint32
-	// Cached register counts for each module.
-	moduleInfo []moduleInfo
 	// Current function module identifier.
 	fid uint
 	// Program counter: offset into program.bytecodes of the next bytecode to
@@ -64,12 +60,14 @@ type Interpreter[W word.Word[W]] struct {
 	pc uint32
 	// Frame pointer: base offset within dataStack of the current function's
 	// activation record.  Registers are addressed relative to this.
-	fp uint
+	fp uint32
+	// return pointer / width (used for function call returns).
+	rp, rw uint32
 	// Data stack holding the activation records (registers) of active function
 	// calls.  The current frame begins at fp.
 	dataStack heap.Heap[W]
 	// Call stack holding caller state for nested calls.
-	callStack []callFrame
+	callStack heap.Heap[StackFrame]
 	// Static read-only memories: read-only memories whose contents are fixed and
 	// not provided as inputs.
 	sroms []memory.StaticReadOnly[W]
@@ -85,19 +83,18 @@ type Interpreter[W word.Word[W]] struct {
 	brams []memory.BiPartiteRandomAccess[W]
 }
 
-type callFrame struct {
-	// fid/fp identify the caller frame to restore after RET.
+// StackFrame captures relevant information about all functions currently
+// executing a CALL.  Such functions are "paused" whilst the active function is
+// being executed.  The purpose of a stack frame is to record the Frame Pointer
+// (FP) and Program Counter (PC) of the relevant function so that these can be
+// restored when it becomes the active function.
+type StackFrame struct {
+	// DEPRECATED
 	fid uint
-	fp  uint
-	// returnPc is the next bytecode after CALL in the caller.
-	returnPc uint32
-	// returns names the caller registers that receive callee outputs.
-	returns []Reg
-}
-
-type moduleInfo struct {
-	ninputs  int
-	noutputs int
+	// frame pointer of the executing function.
+	fp uint32
+	// program counter identifies next bytecode to execute.
+	pc uint32
 }
 
 // NewInterpreter constructs a new bytecode interpreter for the given program.
@@ -108,21 +105,14 @@ type moduleInfo struct {
 // called to select an entry point and supply inputs before calling Execute.
 func NewInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
 	var (
-		addresses = make(map[uint]uint32, len(program.symbols))
-		modinfo   = make([]moduleInfo, len(program.modules))
-		sroms     []memory.StaticReadOnly[W]
-		roms      []memory.ReadOnly[W]
-		woms      []memory.WriteOnce[W]
-		rams      []memory.RandomAccess[W]
-		brams     []memory.BiPartiteRandomAccess[W]
+		sroms []memory.StaticReadOnly[W]
+		roms  []memory.ReadOnly[W]
+		woms  []memory.WriteOnce[W]
+		rams  []memory.RandomAccess[W]
+		brams []memory.BiPartiteRandomAccess[W]
 	)
 	//
-	for addr, mid := range program.symbols {
-		addresses[mid] = addr
-	}
-	//
-	for i, m := range program.modules {
-		modinfo[i] = newModuleInfo(m)
+	for _, m := range program.modules {
 		//
 		switch m := m.(type) {
 		case *memory.ReadOnly[W]:
@@ -139,16 +129,16 @@ func NewInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
 	}
 	//
 	return &Interpreter[W]{
-		program:    program,
-		addresses:  addresses,
-		moduleInfo: modinfo,
-		pc:         0,
-		fp:         0,
-		sroms:      sroms,
-		roms:       roms,
-		woms:       woms,
-		rams:       rams,
-		brams:      brams,
+		program: program,
+		pc:      0,
+		fp:      0,
+		rp:      0,
+		rw:      0,
+		sroms:   sroms,
+		roms:    roms,
+		woms:    woms,
+		rams:    rams,
+		brams:   brams,
 	}
 }
 
@@ -164,13 +154,13 @@ func (p *Interpreter[W]) Boot(fun string, input map[string][]W) (err error) {
 		return fmt.Errorf("unknown function \"%s\"", fun)
 	}
 	// find instruction to boot
-	if p.pc, ok = p.addresses[fid]; !ok {
+	if p.pc, ok = p.program.AddressOf(fid); !ok {
 		return fmt.Errorf("missing symbol for \"%s\"", fun)
 	}
 	//
 	p.fid = fid
 	p.fp = 0
-	p.callStack = p.callStack[:0]
+	p.callStack.Clear()
 	p.dataStack.Clear()
 	// allocate space for the given function
 	p.dataStack.Alloc(p.program.Module(fid).Width())
@@ -219,7 +209,7 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		nsteps    = uint(0)
 		err       error
 		bytecodes     = p.program.bytecodes
-		frame     []W = p.dataStack.SliceEnd(p.fp)
+		frame     []W = p.dataStack.SliceEnd(uint(p.fp))
 	)
 	//
 	for nsteps < steps && err == nil {
@@ -240,19 +230,23 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeLdc_1(p.pc, bytecodes, frame)
 		case MOVE:
 			p.pc = executeMove_1s1(p.pc, bytecodes, frame)
-		case CALL:
-			p.pc, err = p.executeCall(p.pc, bytecodes, frame)
-			// CALL changes the active frame, so refresh the register window.
-			frame = p.dataStack.SliceEnd(p.fp)
+		case ENTER_n:
+			err = p.executeEnter_n(p.pc, bytecodes, frame)
+			// refresh the register window.
+			frame = p.dataStack.SliceEnd(uint(p.fp))
+		case LEAVE_n:
+			p.pc = p.executeLeave_n(p.pc, bytecodes, frame)
+			// refresh the register window.
+			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case RET:
 			// check for termination
-			if len(p.callStack) == 0 {
+			if p.callStack.Size() == 0 {
 				return nsteps, nil
 			}
-			//
+			// normal reutrn
 			p.pc, err = p.executeReturn(p.pc, bytecodes)
-			// RET restores the caller frame, so refresh the register window.
-			frame = p.dataStack.SliceEnd(p.fp)
+			// refresh the register window.
+			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case JMP:
 			p.pc, _ = decodeJmp1(p.pc, bytecodes)
 		case JEQ_rr:
@@ -291,16 +285,26 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = executeMul_2n1(p.pc, bytecodes, frame)
 		case MULC:
 			p.pc, err = executeMul_1n1c(p.pc, bytecodes, frame)
-		case ARITHV:
-			p.pc, err = p.executeArithVec(p.pc, bytecodes, frame)
+		case ADD_nm:
+			p.pc, err = p.executeAdd_nm(p.pc, bytecodes, frame)
+		case SUB_nm:
+			p.pc, err = p.executeSub_nm(p.pc, bytecodes, frame)
+		case MUL_nm:
+			p.pc, err = p.executeMul_nm(p.pc, bytecodes, frame)
 		case CAT:
 			p.pc, err = p.executeCat(p.pc, bytecodes, frame)
 		case NOT:
-			p.pc, err = p.executeNot(p.pc, bytecodes, frame)
-		case AND, OR, XOR:
-			p.pc, err = p.executeBitwise(p.pc, bytecodes, frame)
-		case SHL, SHR:
-			p.pc, err = p.executeShift(p.pc, bytecodes, frame)
+			p.pc, err = executeNot(p.pc, bytecodes, frame)
+		case AND:
+			p.pc, err = executeAnd(p.pc, bytecodes, frame)
+		case OR:
+			p.pc, err = executeOr(p.pc, bytecodes, frame)
+		case XOR:
+			p.pc, err = executeXor(p.pc, bytecodes, frame)
+		case SHL:
+			p.pc, err = executeShl(p.pc, bytecodes, frame)
+		case SHR:
+			p.pc, err = executeShr(p.pc, bytecodes, frame)
 		default:
 			err = fmt.Errorf("unknown bytecode encountered (0x%x)", opcode)
 		}
@@ -348,158 +352,132 @@ func (p *Interpreter[W]) initialise(input map[string][]W) {
 // bytecode (pc+n, where n is this bytecode's width, or a branch target).
 // Executors which may fail additionally return an error.
 
-func (p *Interpreter[W]) executeCall(pc uint32, codes []uint32, caller []W) (uint32, error) {
+func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) error {
 	var (
-		mid, args, returns, n = decodeCallOperands(pc, codes)
-		address               uint32
-		ok                    bool
+		width, target, args, n = decodeEnter_n(pc, codes)
+		// determine callee frame pointer
+		calleeFp = p.fp + uint32(len(stack))
 	)
-	//
-	if address, ok = p.addresses[uint(mid)]; !ok {
-		return pc, fmt.Errorf("missing symbol for function module %d", mid)
+	// allocate callee frame
+	p.dataStack.Alloc(uint(width))
+	// save function pointer and return address
+	p.callStack.Push(StackFrame{p.fid, p.fp, p.pc + n})
+	// copy arguments into callee frame
+	for i := uint(calleeFp); args.HasNext(); i++ {
+		p.dataStack.Set(i, stack[args.Next()])
 	}
-	//
-	calleeModule := p.program.Module(uint(mid))
-	// Function registers are laid out inputs, then outputs, then locals.
-	ninputs := p.moduleInfo[mid].ninputs
-	//
-	if len(args) != ninputs {
-		return pc, fmt.Errorf("call to %s expects %d arguments, got %d", calleeModule.Name(), ninputs, len(args))
-	}
-	//
-	frame := callFrame{
-		fid:      p.fid,
-		fp:       p.fp,
-		returnPc: pc + n,
-		returns:  returns,
-	}
-	calleeFp := p.dataStack.Size()
-	// Allocate the callee frame above the caller frame on the data stack.
-	p.dataStack.Alloc(calleeModule.Width())
-	//
-	callee := p.dataStack.SliceEnd(calleeFp)
-	// Callee inputs occupy the first registers in its frame, in argument order.
-	for i, arg := range args {
-		if err := storeReg(calleeModule, Reg(i), caller[arg], callee); err != nil {
-			p.dataStack.Free(calleeModule.Width())
-			return pc, err
-		}
-	}
-	//
-	p.callStack = append(p.callStack, frame)
-	// Switch execution to the callee frame and entry address.
-	p.fid = uint(mid)
+	// FIXME: following to be deprecated
+	p.fid = p.program.SymbolAt(target).Unwrap()
 	p.fp = calleeFp
+	p.pc = target
 	//
-	return address, nil
+	return nil
 }
 
-func (p *Interpreter[W]) executeReturn(pc uint32, _ []uint32) (uint32, error) {
+func (p *Interpreter[W]) executeLeave_n(pc uint32, codes []uint32, stack []W) uint32 {
 	var (
-		frame        = p.callStack[len(p.callStack)-1]
-		calleeModule = p.program.Module(p.fid)
-		callerModule = p.program.Module(frame.fid)
-		callee       = p.dataStack.Slice(p.fp, p.fp+calleeModule.Width())
-		caller       = p.dataStack.Slice(frame.fp, frame.fp+callerModule.Width())
-		info         = p.moduleInfo[p.fid]
-		// Callee outputs follow its inputs in register order, so ninputs is the
-		// offset of the first output; one output is produced per return target.
-		ninputs  = info.ninputs
-		noutputs = info.noutputs
+		rets, n = decodeLeave_n(pc, codes)
+	)
+	// copy returns from callee frame
+	for i := uint(p.rp); rets.HasNext(); i++ {
+		stack[rets.Next()] = p.dataStack.Get(i)
+	}
+	// drop callee frame
+	p.dataStack.Free(uint(p.rw))
+	//
+	return pc + n
+}
+
+func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error) {
+	var (
+		frame             = p.callStack.Pop()
+		width, roffset, _ = decodeRet1(pc, codes)
 	)
 	//
-	if len(frame.returns) != noutputs {
-		return pc, fmt.Errorf("return from %s produces %d values, got %d targets",
-			calleeModule.Name(), noutputs, len(frame.returns))
-	}
-	//
-	for i, ret := range frame.returns {
-		// Write each callee output into the caller register named by CALL.
-		if err := storeReg(callerModule, ret, callee[i+ninputs], caller); err != nil {
-			return pc, err
-		}
-	}
-	//
-	// Drop the callee frame and restore the saved caller state.
-	p.dataStack.Free(calleeModule.Width())
-	p.callStack = p.callStack[:len(p.callStack)-1]
-	p.fid = frame.fid
+	p.fid = frame.fid // FIXME: remove
+	p.rp = p.fp + uint32(roffset)
+	p.rw = uint32(width)
 	p.fp = frame.fp
 	//
-	return frame.returnPc, nil
+	return frame.pc, nil
 }
 
-func newModuleInfo(module Module) moduleInfo {
-	var info moduleInfo
+// executeAdd_nm implements ADD_nm: it sums the constant and all sources and
+// stores the result across a vector target using the same low-limb-first rule
+// as the word machine, reporting an error on overflow.
+func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		targets, sources, constant, n = decodeArith_nm[W](pc, codes)
+		val                           = constant
+	)
 	//
-	for _, reg := range module.Registers() {
-		if reg.IsInput() {
-			info.ninputs++
-		}
+	for sources.HasNext() {
+		var (
+			overflow bool
+			src      = sources.Next()
+		)
 		//
-		if reg.IsOutput() {
-			info.noutputs++
+		val, overflow = val.Add(stack[src])
+		//
+		if overflow {
+			return pc, errors.New("arithmetic overflow")
 		}
 	}
 	//
-	return info
+	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
 }
 
-// executeArithVec computes one logical arithmetic value and stores it across a
-// vector target using the same low-limb-first rule as the word machine.
-func (p *Interpreter[W]) executeArithVec(pc uint32, codes []uint32, stack []W) (uint32, error) {
+// executeSub_nm implements SUB_nm: it seeds the value from the first source,
+// subtracts the remaining sources and the constant, and stores the result
+// across a vector target using the same low-limb-first rule as the word
+// machine, reporting an error on underflow.
+func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
-		op, targets, sources, constant, n = decodeArith_vec[W](pc, codes)
-		val                               W
+		targets, sources, constant, n = decodeArith_nm[W](pc, codes)
+		val                           W
+		underflow                     bool
 	)
-	//
-	switch op {
-	case arithop_ADD:
-		val = constant
+	// Seed initial value
+	val = stack[sources.Next()]
+	// Subtract rest from it
+	for sources.HasNext() {
+		var src = sources.Next()
 		//
-		for _, src := range sources {
-			var overflow bool
-			//
-			val, overflow = val.Add(stack[src])
-			//
-			if overflow {
-				return pc, errors.New("arithmetic overflow")
-			}
-		}
-	case arithop_SUB:
-		var underflow bool
-		//
-		for i, src := range sources {
-			// The first source seeds the value; the rest are subtracted from it.
-			if i == 0 {
-				val = stack[src]
-			} else if val, underflow = val.Sub(stack[src]); underflow {
-				return pc, errors.New("arithmetic underflow")
-			}
-		}
-		//
-		if val, underflow = val.Sub(constant); underflow {
+		if val, underflow = val.Sub(stack[src]); underflow {
 			return pc, errors.New("arithmetic underflow")
 		}
-	case arithop_MUL:
-		var overflow bool
+	}
+	//
+	if val, underflow = val.Sub(constant); underflow {
+		return pc, errors.New("arithmetic underflow")
+	}
+	//
+	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
+}
+
+// executeMul_nm implements MUL_nm: it multiplies the constant by all sources
+// and stores the result across a vector target using the same low-limb-first
+// rule as the word machine, reporting an error on overflow.
+func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		targets, sources, constant, n = decodeArith_nm[W](pc, codes)
+		val                           = constant
+		overflow                      bool
+	)
+	//
+	for sources.HasNext() {
+		var (
+			of     bool
+			source = uint16(sources.Next())
+		)
 		//
-		val = constant
-		//
-		for _, src := range sources {
-			var of bool
-			//
-			val, of = val.Mul(stack[src])
-			overflow = overflow || of
-		}
-		//
-		// A zero result is exact even when an intermediate product overflowed
-		// (matches executeMul in the slow word machine).
-		if overflow && val.Cmp64(0) != 0 {
-			return pc, errors.New("arithmetic overflow")
-		}
-	default:
-		panic("unknown arithmetic operation")
+		val, of = val.Mul(stack[source])
+		overflow = overflow || of
+	}
+	// A zero result is exact even when an intermediate product overflowed
+	// (matches executeMul in the slow word machine).
+	if overflow && val.Cmp64(0) != 0 {
+		return pc, errors.New("arithmetic overflow")
 	}
 	//
 	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
@@ -511,71 +489,20 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 		targets, sources, n = decodeCatOperands(pc, codes)
 		module              = p.program.Module(p.fid)
 		val                 W
+		width               uint
 	)
 	//
-	for i := len(sources); i > 0; i-- {
+	for sources.HasNext() {
 		var (
-			reg   = sources[i-1]
-			width = bitwidthOf(module, reg)
+			reg = uint16(sources.Next())
 		)
 		//
-		val = val.Shl64(uint64(width))
-		// Sources[0] occupies the least-significant bits of the result.
-		val = val.Or(stack[reg])
+		val = stack[reg].Shl64(uint64(width)).Or(val)
+		//
+		width = width + bitwidthOf(module, reg)
 	}
 	//
 	return pc + n, storeAcross(module, targets, val, stack)
-}
-
-// executeNot computes a bitwise complement within the encoded mask width.
-func (p *Interpreter[W]) executeNot(pc uint32, codes []uint32, stack []W) (uint32, error) {
-	var (
-		rd, rs, bitwidth, n = decodeNot_1n1(pc, codes)
-		val                 = stack[rs].Not(uint(bitwidth))
-	)
-	//
-	return pc + n, storeReg(p.program.Module(p.fid), rd, val, stack)
-}
-
-// executeBitwise computes a binary bitwise operation (AND, OR or XOR).
-func (p *Interpreter[W]) executeBitwise(pc uint32, codes []uint32, stack []W) (uint32, error) {
-	var (
-		op, rd, lhs, rhs, n = decodeBitwise_2n1(pc, codes)
-		val                 W
-	)
-	//
-	switch op {
-	case AND:
-		val = stack[lhs].And(stack[rhs])
-	case OR:
-		val = stack[lhs].Or(stack[rhs])
-	case XOR:
-		val = stack[lhs].Xor(stack[rhs])
-	default:
-		panic("unknown bitwise operation")
-	}
-	//
-	return pc + n, storeReg(p.program.Module(p.fid), rd, val, stack)
-}
-
-// executeShift shifts a value left (SHL, masked to the encoded width) or right
-// (SHR) by the amount held in a register.
-func (p *Interpreter[W]) executeShift(pc uint32, codes []uint32, stack []W) (uint32, error) {
-	var (
-		op, rd, rs, amt, bitwidth, n = decodeShift_2n1(pc, codes)
-		val                          W
-	)
-	//
-	switch op {
-	case SHL:
-		val = stack[rs].Shl(uint(bitwidth), stack[amt])
-	case SHR:
-		val = stack[rs].Shr(stack[amt])
-	default:
-		panic("unknown shift operation")
-	}
-	//
-	return pc + n, storeReg(p.program.Module(p.fid), rd, val, stack)
 }
 
 // executeAdd_2n1 implements ADD_2n1: stack[rd] = stack[rs0] + stack[rs1],
@@ -613,6 +540,33 @@ func executeAdd_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint
 	}
 	//
 	stack[rd] = res
+	//
+	return pc + n, nil
+}
+
+// executeAnd implements AND: stack[rd] = stack[lhs] & stack[rhs].
+func executeAnd[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var rd, lhs, rhs, n = decodeBitwise_2n1(pc, codes)
+	//
+	stack[rd] = stack[lhs].And(stack[rhs])
+	//
+	return pc + n, nil
+}
+
+// executeOr implements OR: stack[rd] = stack[lhs] | stack[rhs].
+func executeOr[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var rd, lhs, rhs, n = decodeBitwise_2n1(pc, codes)
+	//
+	stack[rd] = stack[lhs].Or(stack[rhs])
+	//
+	return pc + n, nil
+}
+
+// executeXor implements XOR: stack[rd] = stack[lhs] ^ stack[rhs].
+func executeXor[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var rd, lhs, rhs, n = decodeBitwise_2n1(pc, codes)
+	//
+	stack[rd] = stack[lhs].Xor(stack[rhs])
 	//
 	return pc + n, nil
 }
@@ -719,6 +673,18 @@ func executeMul_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint
 	return pc + n, nil
 }
 
+// executeNot computes a bitwise complement within the encoded mask width.
+func executeNot[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rd, rs, bitwidth, n = decodeNot_1n1(pc, codes)
+		val                 = stack[rs].Not(uint(bitwidth))
+	)
+	//
+	stack[rd] = val
+	//
+	return pc + n, nil
+}
+
 // executeReadSrom_sn implements RD_SROM_nm: it reads ndata consecutive words
 // from the static read-only memory identified by id, starting at the address
 // decoded from the operand registers, into successive destination registers.
@@ -726,16 +692,16 @@ func executeReadSrom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	sroms []memory.StaticReadOnly[W]) uint32 {
 	//
 	var (
-		id, _, ndata, regs, n = decodeReadWrite_sn(pc, codes)
-		srom                  = &sroms[id]
-		address               uint64
+		id, addr, data, n = decodeReadWrite_sn(pc, codes)
+		srom              = &sroms[id]
+		address           uint64
 	)
 	//
-	address, regs = decodeAddress(regs, srom.Geometry(), stack)
+	address = decodeAddress(addr, srom.Geometry(), stack)
 	//
-	for range ndata {
+	for data.HasNext() {
 		//nolint
-		stack[regs.Next()], _ = srom.Read(address)
+		stack[data.Next()], _ = srom.Read(address)
 		//
 		address++
 	}
@@ -750,21 +716,41 @@ func executeReadRom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	roms []memory.ReadOnly[W]) uint32 {
 	//
 	var (
-		id, _, ndata, regs, n = decodeReadWrite_sn(pc, codes)
-		rom                   = &roms[id]
-		address               uint64
+		id, addr, data, n = decodeReadWrite_sn(pc, codes)
+		rom               = &roms[id]
+		address           uint64
 	)
 	//
-	address, regs = decodeAddress(regs, rom.Geometry(), stack)
+	address = decodeAddress(addr, rom.Geometry(), stack)
 	//
-	for range ndata {
+	for data.HasNext() {
 		//nolint
-		stack[regs.Next()], _ = rom.Read(address)
+		stack[data.Next()], _ = rom.Read(address)
 		//
 		address++
 	}
 	//
 	return pc + n
+}
+
+// executeShl implements SHL: it shifts a value left by the amount held in a
+// register, masking the result to the encoded width.
+func executeShl[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var rd, rs, amt, bitwidth, n = decodeShift_2n1(pc, codes)
+	//
+	stack[rd] = stack[rs].Shl(uint(bitwidth), stack[amt])
+	//
+	return pc + n, nil
+}
+
+// executeShr implements SHR: it shifts a value right by the amount held in a
+// register.
+func executeShr[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var rd, rs, amt, _, n = decodeShift_2n1(pc, codes)
+	//
+	stack[rd] = stack[rs].Shr(stack[amt])
+	//
+	return pc + n, nil
 }
 
 // executeSub_1n1c implements SUBC: stack[rd] = stack[rs] - constant.
@@ -813,16 +799,16 @@ func executeWriteWom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	woms []memory.WriteOnce[W]) uint32 {
 	//
 	var (
-		id, _, ndata, regs, n = decodeReadWrite_sn(pc, codes)
-		wom                   = &woms[id]
-		address               uint64
+		id, addr, data, n = decodeReadWrite_sn(pc, codes)
+		wom               = &woms[id]
+		address           uint64
 	)
 	//
-	address, regs = decodeAddress(regs, wom.Geometry(), stack)
+	address = decodeAddress(addr, wom.Geometry(), stack)
 	//
-	for range ndata {
+	for data.HasNext() {
 		//nolint
-		wom.Write(address, stack[regs.Next()])
+		wom.Write(address, stack[data.Next()])
 		//
 		address++
 	}
@@ -837,16 +823,16 @@ func executeReadRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	rams []memory.RandomAccess[W]) uint32 {
 	//
 	var (
-		id, _, ndata, regs, n = decodeReadWrite_sn(pc, codes)
-		ram                   = &rams[id]
-		address               uint64
+		id, addr, data, n = decodeReadWrite_sn(pc, codes)
+		ram               = &rams[id]
+		address           uint64
 	)
 	//
-	address, regs = decodeAddress(regs, ram.Geometry(), stack)
+	address = decodeAddress(addr, ram.Geometry(), stack)
 	//
-	for range ndata {
+	for data.HasNext() {
 		//nolint
-		stack[regs.Next()], _ = ram.Read(address)
+		stack[data.Next()], _ = ram.Read(address)
 		//
 		address++
 	}
@@ -861,16 +847,16 @@ func executeWriteRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	rams []memory.RandomAccess[W]) uint32 {
 	//
 	var (
-		id, _, ndata, regs, n = decodeReadWrite_sn(pc, codes)
-		rom                   = &rams[id]
-		address               uint64
+		id, addr, data, n = decodeReadWrite_sn(pc, codes)
+		rom               = &rams[id]
+		address           uint64
 	)
 	//
-	address, regs = decodeAddress(regs, rom.Geometry(), stack)
+	address = decodeAddress(addr, rom.Geometry(), stack)
 	//
-	for range ndata {
+	for data.HasNext() {
 		//nolint
-		rom.Write(address, stack[regs.Next()])
+		rom.Write(address, stack[data.Next()])
 		//
 		address++
 	}
@@ -888,7 +874,7 @@ func executeWriteRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 // index, then scales that index by the number of data lines so the result
 // addresses the first word of the selected memory row.  The advanced register
 // iterator is returned so the caller can continue reading the data registers.
-func decodeAddress[W word.Word[W]](regs Op8Iter, geometry memory.Geometry[W], stack []W) (uint64, Op8Iter) {
+func decodeAddress[W word.Word[W]](regs Op8Iter, geometry memory.Geometry[W], stack []W) uint64 {
 	var (
 		index      uint64
 		registers  = geometry.Registers()
@@ -905,7 +891,7 @@ func decodeAddress[W word.Word[W]](regs Op8Iter, geometry memory.Geometry[W], st
 		index = (index << bitwidth) | val.Uint64()
 	}
 
-	return index * uint64(numOutputs), regs
+	return index * uint64(numOutputs)
 }
 
 func bitwidthOf(module Module, reg Reg) uint {
@@ -918,27 +904,14 @@ func bitwidthOf(module Module, reg Reg) uint {
 	return r.Width()
 }
 
-func storeReg[W word.Word[W]](module Module, target Reg, value W, stack []W) error {
-	var bitwidth = bitwidthOf(module, target)
-	//
-	if !value.FitsWithin(bitwidth) {
-		return fmt.Errorf("bit overflow (0x%s not u%d)", value.Text(16), bitwidth)
-	}
-	//
-	stack[target] = value
-	//
-	return nil
-}
-
-func storeAcross[W word.Word[W]](module Module, targets []Reg, value W, stack []W) error {
-	if len(targets) == 1 {
-		return storeReg(module, targets[0], value, stack)
-	}
-	//
+func storeAcross[W word.Word[W]](module Module, targets Op8Iter, value W, stack []W) error {
 	var bitwidth uint
 	//
-	for _, target := range targets {
-		var width = bitwidthOf(module, target)
+	for targets.HasNext() {
+		var (
+			target = uint16(targets.Next())
+			width  = bitwidthOf(module, target)
+		)
 		//
 		// Low limbs are written first, matching machine.StoreAcross.
 		stack[target] = value.Slice(width)

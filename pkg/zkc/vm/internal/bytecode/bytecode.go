@@ -61,8 +61,10 @@ const (
 	JLE_rr
 	// JGT_RR (jump if greater than)
 	JGE_rr
-	// CALL instruction
-	CALL
+	// ENTER_n instruction
+	ENTER_n
+	// LEAVE_n instruction
+	LEAVE_n
 	// RET instruction
 	RET
 	// RD_ROM_nm instruction
@@ -103,8 +105,12 @@ const (
 	SUBC
 	// MULC (multiply with constant) instruction
 	MULC
-	// ARITHV (arithmetic with vector target) instruction
-	ARITHV
+	// ADD_nm (addition with vector target) instruction
+	ADD_nm
+	// SUB_nm (subtraction with vector target) instruction [must follow ADD_nm]
+	SUB_nm
+	// MUL_nm (multiplication with vector target) instruction [must follow SUB_nm]
+	MUL_nm
 	// CSUB (subtract from constant) instruction
 	CSUB
 	// DIV instruction
@@ -179,6 +185,11 @@ func AddVec[W word.Word[W]](targets []register.Id, sources []register.Id) *Arith
 // vector.
 func AddVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, constant W) *Arith[W] {
 	return newArith(arithop_ADD, asRegs(targets...), asRegs(sources...), constant)
+}
+
+// CallFun constructs a function-call bytecode.
+func CallFun(target Address, width uint16, args []register.Id, returns []register.Id) *Call {
+	return &Call{target, width, asRegs(args...), asRegs(returns...)}
 }
 
 // NewFail constructs a fail instruction, which causes the machine to panic when
