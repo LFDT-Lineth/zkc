@@ -17,14 +17,15 @@ import (
 	"math"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Call invokes another function module.
 type Call struct {
-	// Id is the target function module identifier.
-	Id uint16
+	// address of target function
+	Target Address
+	// FrameWidth of target function
+	FrameWidth uint16
 	// Arguments are caller-frame registers copied into callee inputs.
 	Arguments []Reg
 	// Returns are caller-frame registers receiving callee outputs.
@@ -34,81 +35,132 @@ type Call struct {
 func (p *Call) String(mapping SystemMap) string {
 	var builder strings.Builder
 	//
+	builder.WriteString("call ")
+	//
 	if len(p.Returns) > 0 {
 		builder.WriteString(registersToString(p.Returns, mapping, ","))
 		builder.WriteString(" = ")
 	}
 	//
-	name := "??"
-	if mapping != nil {
-		name = mapping.Module(uint(p.Id)).Name()
-	}
-	//
-	fmt.Fprintf(&builder, "%s(%s)", name, registersToString(p.Arguments, mapping, ","))
+	fmt.Fprintf(&builder, "(%s) 0x%08x", registersToString(p.Arguments, mapping, ","), p.Target)
 	//
 	return builder.String()
 }
 
 // Codes implementation for Bytecode interface.
-func (p *Call) Codes(_ uint32) []uint32 {
-	return encodeCall(p.Id, p.Arguments, p.Returns)
+func (p *Call) Codes(pc uint32) (codes []uint32) {
+	// Encode enter
+	codes = append(codes, encodeEnter_n(pc, p.Target, p.FrameWidth, p.Arguments)...)
+	// Encode leave
+	return append(codes, encodeLeave_n(p.Returns)...)
+}
+
+// Patch implementation for Bytecode interface
+func (p *Call) Patch(labels []Address) {
+	p.Target = labels[p.Target]
 }
 
 func decodeCall[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
 	var (
-		id, args, returns, n = decodeCallOperands(pc, codes)
+		// Decode ENTER
+		width, target, argsIter, n = decodeEnter_n(pc, codes)
+		// Decode LEAVE
+		retsIter, m = decodeLeave_n(pc+n, codes)
+		//
+		args []Reg = OpIterToArray[uint16](argsIter)
+		rets []Reg = OpIterToArray[uint16](retsIter)
 	)
-	//
-	return &Call{id, args, returns}, n
+	// //
+	return &Call{target, width, args, rets}, n + m
 }
 
+// NOTE: a call bytecode compiles down into a pair of instructions, ENTER/LEAVE.
+// The ENTER instruction prepares for the call by allocating the frame,
+// assigning the arguments and pushing a stackframe record.  The LEAVE
+// instruction handles the assignment of returns to their destination registers.
+//
 // ============================================================================
-// CALL instruction. Format of this instruction is:
+// ENTER_n instruction. Format is:
 //
 //	31                                0
 //
 // +--------+--------+--------+--------+
-// | nrets  | nargs  |   id   | opcode |
+// |     offset      | width  | opcode |
 // +--------+--------+--------+--------+
-// | arg3   | arg2   | arg1   | arg0   |
+// |  arg2  |  arg1  |  arg0  | nargs  |
 // +--------+--------+--------+--------+
-// | ... packed return registers ...    |
-// +------------------------------------+
+// |  ...   |  ...   |  arg5  |  arg4  |
+// +-----------------------------------+
 //
-// The id, counts and register operands are all small u8 values.
+// Here, nargs determines the number of packed argument registers, whilst width
+// determines the frame width to allocate and offset determines (relative)
+// offset to the target.
 // ============================================================================
 
-func encodeCall(id uint16, args []Reg, returns []Reg) []uint32 {
-	if id > math.MaxUint8 || len(args) > math.MaxUint8 || len(returns) > math.MaxUint8 {
+func encodeEnter_n(pc, target uint32, width uint16, args []Reg) []uint32 {
+	if width > math.MaxUint8 || len(args) > math.MaxUint8 {
 		panic("wide call instructions not supported")
 	}
 	//
 	var (
-		_id   = uint32(id) << 8
-		nargs = uint32(len(args)) << 16
-		nrets = uint32(len(returns)) << 24
-		codes = []uint32{nrets | nargs | _id | CALL}
-		bytes = append(regsAsBytes(args), regsAsBytes(returns)...)
+		roff   = getRelativeOffset(pc, target, 16) << 16
+		_width = uint32(width) << 8
+		codes  = []uint32{roff | _width | ENTER_n}
+		bytes  = []uint8{uint8(len(args))}
+	)
+	//
+	bytes = append(bytes, regsAsBytes(args)...)
+	//
+	return append(codes, packRegsIntoCodes(bytes)...)
+}
+
+func decodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args Op8Iter, n uint32) {
+	var nargs = uint(codes[pc+1] & 0xff)
+	//
+	width = uint16((codes[pc] >> 8) & 0xff)
+	target = getBranchTarget(pc, codes[pc]>>16, 16)
+	args = NewOp8Iter(1, nargs, codes[pc+1:])
+	n = 1 + nCodesPackedSmall(nargs+1)
+	//
+	return
+}
+
+// ============================================================================
+// LEAVE_n instruction. Format is:
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |  n/a   |     nrets       | opcode |
+// +--------+--------+--------+--------+
+// |  ...   |  ...   |  ret1  |  ret0  |
+// +-----------------------------------+
+//
+// Here, nrets determines the number of packed return registers.
+//
+// ============================================================================
+
+func encodeLeave_n(rets []Reg) []uint32 {
+	if len(rets) > math.MaxUint16 {
+		panic("wide call instructions not supported")
+	}
+	//
+	var (
+		nrets = uint32(len(rets)) << 8
+		codes = []uint32{nrets | LEAVE_n}
+		bytes = regsAsBytes(rets)
 	)
 	//
 	return append(codes, packRegsIntoCodes(bytes)...)
 }
 
-func decodeCallOperands(pc uint32, codes []uint32) (id uint16, args, returns []Reg, n uint32) {
+func decodeLeave_n(pc uint32, codes []uint32) (rets Op8Iter, n uint32) {
 	var (
-		nargs = uint((codes[pc] >> 16) & 0xff)
-		nrets = uint((codes[pc] >> 24) & 0xff)
-		iter  = NewOp8Iter(0, codes[pc+1:])
-		// Operands are packed args first, then return targets.
-		regs = OpIterToArray[uint16](nargs+nrets, iter)
+		nrets = uint(codes[pc]>>8) & 0xffff
 	)
 	//
-	id = uint16((codes[pc] >> 8) & 0xff)
+	rets = NewOp8Iter(0, nrets, codes[pc+1:])
+	n = 1 + nCodesPackedSmall(nrets)
 	//
-	return id, regs[:nargs], regs[nargs:], 1 + nCodesPackedSmall(uint32(nargs+nrets))
-}
-
-// NewCall constructs a function-call bytecode.
-func NewCall(id uint16, args []register.Id, returns []register.Id) *Call {
-	return &Call{id, asRegs(args...), asRegs(returns...)}
+	return
 }

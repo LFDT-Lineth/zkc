@@ -19,6 +19,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
@@ -92,7 +93,7 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.MEMORY_WRITE:
 		p.compileMemWrite(insn.(*instruction.MemWrite))
 	case opcode.RETURN:
-		p.encoder.Add(bytecode.NewRet(f.Width()))
+		p.encoder.Add(bytecode.NewRet(f.Width(), f.NumInputs()))
 	case opcode.SKIP:
 		p.compileSkip(pos, insn.(*instruction.Skip))
 	case opcode.SKIP_IF:
@@ -112,13 +113,13 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.INT_REM:
 		panic("todo")
 	case opcode.BIT_AND:
-		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.AND)
+		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.AND, f)
 	case opcode.BIT_NOT:
 		p.compileNot(insn.(*instruction.WordTypeB))
 	case opcode.BIT_OR:
-		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.OR)
+		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.OR, f)
 	case opcode.BIT_XOR:
-		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.XOR)
+		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.XOR, f)
 	case opcode.BIT_SHL:
 		p.compileShift(insn.(*instruction.WordTypeB), bytecode.SHL)
 	case opcode.BIT_SHR:
@@ -180,12 +181,17 @@ func (p *bytecodeCompiler[W]) compileConcat(insn *instruction.WordTypeA[W]) {
 }
 
 func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call) {
-	checkCallModuleId(insn.Id)
-	checkCallOperands(insn.Arguments)
-	checkCallOperands(insn.Returns)
+	var (
+		frameWidth = p.machine.Module(insn.Id).Width()
+		// index identifies first instruction of given function.
+		index = p.encoder.Label(Label{insn.Id, 0, 0})
+	)
+	// sanity chewcks
+	checkUintIs[uint16](frameWidth)
+	checkOperands(insn.Arguments...)
+	checkOperands(insn.Returns...)
 	//
-	// CALL operands stay in caller register numbering.
-	p.encoder.Add(bytecode.NewCall(uint16(insn.Id), insn.Arguments, insn.Returns))
+	p.encoder.Add(bytecode.CallFun(index, uint16(frameWidth), insn.Arguments, insn.Returns))
 }
 
 func (p *bytecodeCompiler[W]) compileNot(insn *instruction.WordTypeB) {
@@ -193,9 +199,15 @@ func (p *bytecodeCompiler[W]) compileNot(insn *instruction.WordTypeB) {
 	p.encoder.Add(bytecode.NewNot(insn.Target, insn.LeftSource, insn.Bitwidth))
 }
 
-func (p *bytecodeCompiler[W]) compileBitwise(insn *instruction.WordTypeB, op uint32) {
+func (p *bytecodeCompiler[W]) compileBitwise(insn *instruction.WordTypeB, op uint32, f *WordFunction) {
+	var bitwidth uint = base.RegisterBitwidth(f.RegisterMap(), insn.Target)
 	// op selects the bytecode operation (bytecode.AND / OR / XOR).
 	p.encoder.Add(bytecode.NewBitwise(op, insn.Target, insn.LeftSource, insn.RightSource))
+	// Check whether cast check is required (or not).
+	if bitwidth < insn.Bitwidth {
+		// yes
+		p.encoder.Add(bytecode.NewCheckCast(insn.Target, bitwidth))
+	}
 }
 
 func (p *bytecodeCompiler[W]) compileShift(insn *instruction.WordTypeB, op uint32) {
@@ -311,20 +323,22 @@ func checkModuleId(mid uint) {
 	}
 }
 
-func checkCallModuleId(mid uint) {
-	if mid > math.MaxUint8 {
-		panic("wide call instructions not supported")
+func checkUintIs[T uint8 | uint16](value uint) {
+	var bound = uint(T(0) - 1)
+	//
+	if value >= bound {
+		panic("wide instructions not supported")
 	}
 }
 
-func checkCallOperands(regs []register.Id) {
+func checkOperands(regs ...register.Id) {
 	if len(regs) > math.MaxUint8 {
-		panic("wide call instructions not supported")
+		panic("wide instructions not supported")
 	}
 	//
 	for _, reg := range regs {
 		if reg.Unwrap() > math.MaxUint8 {
-			panic("wide call instructions not supported")
+			panic("wide instructions not supported")
 		}
 	}
 }

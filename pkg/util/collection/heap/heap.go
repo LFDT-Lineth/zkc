@@ -32,6 +32,27 @@ func (p *Heap[T]) Alloc(n uint) {
 	p.data = data[:nsize]
 }
 
+// Push exactly one item onto the heap.  This allocates space for one item, and
+// sets that item accordingly.
+func (p *Heap[T]) Push(item T) {
+	var offset = len(p.data)
+	p.Alloc(1)
+	p.data[offset] = item
+}
+
+// Pop exactly one off the heap.  This retrieves the top item on the heap, and
+// the frees it.
+func (p *Heap[T]) Pop() T {
+	var (
+		offset = len(p.data) - 1
+		item   = p.data[offset]
+	)
+	//
+	p.Free(1)
+	//
+	return item
+}
+
 // Clear resets the heap to an empty state whilst retaining any allocated
 // capacity.
 func (p *Heap[T]) Clear() {

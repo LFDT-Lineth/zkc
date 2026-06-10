@@ -71,22 +71,10 @@ func (p *Arith[W]) Codes(_ uint32) []uint32 {
 		return encodeMove_1s1(p.Source[0], p.Target[0])
 	case n == 1 && m == 1:
 		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant)
+	case n == 2 && m == 1 && cz:
+		return encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
 	case n == 2 && m == 1:
-		// x*y*0 is always 0: fold to a constant load so the intermediate
-		// product x*y cannot raise a spurious overflow error.
-		if p.Op == arithop_MUL && p.Constant.Cmp64(0) == 0 {
-			return encodeLdc_1(p.Constant, p.Target[0])
-		}
-		// There is no 2-source-plus-constant instruction form, so compute
-		// "x op y" first, then fold in the constant (when used) with a second
-		// one-source instruction operating in place on the target.
-		codes := encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
-		//
-		if !cz {
-			codes = append(codes, encodeArith_1n1c(p.Op, p.Target[0], p.Target[0], p.Constant)...)
-		}
-		//
-		return codes
+		return encodeArith_2n1c(p.Op, p.Source[0], p.Source[1], p.Target[0], p.Constant)
 	case m > 0:
 		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant)
 	default:
@@ -123,7 +111,11 @@ func decodeArith[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32
 		targets = []Reg{rd}
 		op = opcodeToArithOp(opcode)
 	case ADD_nm, SUB_nm, MUL_nm:
-		targets, sources, constant, n = decodeArith_vec[W](pc, codes)
+		var ts, ss Op8Iter
+		//
+		ts, ss, constant, n = decodeArith_nm[W](pc, codes)
+		sources = OpIterToArray[uint16](ss)
+		targets = OpIterToArray[uint16](ts)
 		op = opcodeToArithOp(opcode)
 	case MOVE:
 		rs0, rd, n = decodeMove_1s1(pc, codes)
@@ -206,6 +198,15 @@ func decodeArith_2n1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) 
 // Here, rs is a u8 source register, rd is a u8 destination register, imm8 is
 // the small constant operand and opcode is ADDC, SUBC or MULC.
 // ============================================================================
+
+func encodeArith_2n1c[W word.Word[W]](aop arithOp, rs0, rs1, rd uint16, constant W) []uint32 {
+	// There is no 2-source-plus-constant instruction form, so compute
+	// "x op y" first, then fold in the constant (when used) with a second
+	// one-source instruction operating in place on the target.
+	codes := encodeArith_2n1(aop, rs0, rs1, rd)
+	//
+	return append(codes, encodeArith_1n1c(aop, rd, rd, constant)...)
+}
 
 func encodeArith_1n1c[W word.Word[W]](aop arithOp, rs, rd uint16, constant W) []uint32 {
 	if rs >= 256 || rd >= 256 || constant.Cmp64(256) >= 0 {
@@ -349,21 +350,22 @@ func encodeArith_vec[W word.Word[W]](aop arithOp, targets []Reg, sources []Reg, 
 	return append(codes, packRegsIntoCodes(regBytes)...)
 }
 
-func decodeArith_vec[W word.Word[W]](pc uint32, codes []uint32) (
-	targets, sources []Reg, constant W, n uint32) {
+func decodeArith_nm[W word.Word[W]](pc uint32, codes []uint32) (
+	targets, sources Op8Iter, constant W, n uint32) {
 	//
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
 		nsources = uint((codes[pc] >> 16) & 0xff)
 		c        = uint64(codes[pc+1]) | (uint64(codes[pc+2]) << 32)
-		iter     = NewOp8Iter(0, codes[pc+3:])
-		regs     = OpIterToArray[uint16](ntargets+nsources, iter)
 	)
+	//
+	targets = NewOp8Iter(0, ntargets, codes[pc+3:])
+	sources = NewOp8Iter(ntargets, nsources, codes[pc+3:])
 	//
 	constant = constant.SetUint64(c)
 	//
-	return regs[:ntargets], regs[ntargets:], constant,
-		3 + nCodesPackedSmall(uint32(ntargets+nsources))
+	return targets, sources, constant,
+		3 + nCodesPackedSmall(ntargets+nsources)
 }
 
 // ============================================================================

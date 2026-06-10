@@ -115,7 +115,10 @@ func (p *Bitwise) Codes(_ uint32) []uint32 {
 }
 
 func decodeBitwise[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	op, rd, lhs, rhs, n := decodeBitwise_2n1(pc, codes)
+	var (
+		op              = codes[pc] & OPCODE_MASK
+		rd, lhs, rhs, n = decodeBitwise_2n1(pc, codes)
+	)
 	//
 	return &Bitwise{op, rd, lhs, rhs}, n
 }
@@ -140,13 +143,12 @@ func encodeBitwise(op uint32, rd, lhs, rhs Reg) []uint32 {
 	return []uint32{uint32(rhs)<<24 | uint32(lhs)<<16 | uint32(rd)<<8 | op}
 }
 
-func decodeBitwise_2n1(pc uint32, codes []uint32) (op uint32, rd, lhs, rhs Reg, n uint32) {
-	op = codes[pc] & OPCODE_MASK
+func decodeBitwise_2n1(pc uint32, codes []uint32) (rd, lhs, rhs Reg, n uint32) {
 	rd = Reg((codes[pc] >> 8) & 0xff)
 	lhs = Reg((codes[pc] >> 16) & 0xff)
 	rhs = Reg((codes[pc] >> 24) & 0xff)
 	//
-	return op, rd, lhs, rhs, 1
+	return rd, lhs, rhs, 1
 }
 
 func bitwiseSymbol(op uint32) string {

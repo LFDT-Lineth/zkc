@@ -102,12 +102,12 @@ func (p Program[W]) AddressOf(mid uint) (uint32, bool) {
 
 // SymbolAt determines whether or not there is a symbol associated with a given
 // instruction address.
-func (p Program[W]) SymbolAt(address Address) util.Option[Module] {
+func (p Program[W]) SymbolAt(address Address) util.Option[uint] {
 	if idx, ok := p.symbols[address]; ok {
-		return util.Some(p.modules[idx])
+		return util.Some(idx)
 	}
 	//
-	return util.None[Module]()
+	return util.None[uint]()
 }
 
 // Modules returns information about the modules declared within this program.
@@ -123,7 +123,7 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 	switch code & OPCODE_MASK {
 	case ADD_2n1, ADDC, ADD_nm, SUB_nm, MUL_nm:
 		return decodeArith[W](pc, codes)
-	case CALL:
+	case ENTER_n:
 		return decodeCall[W](pc, codes)
 	case CAT:
 		return decodeCat[W](pc, codes)

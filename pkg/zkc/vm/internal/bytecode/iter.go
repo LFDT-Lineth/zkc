@@ -15,13 +15,14 @@ package bytecode
 // Op8Iter provides a way of iterating u8 operands packed into u32 words without
 // allocating memory.
 type Op8Iter struct {
-	offset uint8
+	count  uint
+	offset uint
 	data   []uint32
 }
 
 // NewOp8Iter constructs a new register iterator from a given array of words and
 // starting position.
-func NewOp8Iter(n uint8, data []uint32) Op8Iter {
+func NewOp8Iter(n, len uint, data []uint32) Op8Iter {
 	var (
 		i = n / 4
 		j = n % 4
@@ -29,14 +30,21 @@ func NewOp8Iter(n uint8, data []uint32) Op8Iter {
 	//
 	return Op8Iter{
 		offset: j,
+		count:  len,
 		data:   data[i:],
 	}
+}
+
+// HasNext determines whether there are any more operands in this iterator.
+func (p *Op8Iter) HasNext() bool {
+	return p.count != 0
 }
 
 // Next returns the next register in this iterator.
 func (p *Op8Iter) Next() (operand uint8) {
 	operand = uint8(p.data[0] >> (p.offset * 8))
 	//
+	p.count--
 	p.offset = (p.offset + 1) % 4
 	//
 	if p.offset == 0 {
@@ -47,10 +55,10 @@ func (p *Op8Iter) Next() (operand uint8) {
 }
 
 // OpIterToArray extracts n elements from the given iterator into an array.
-func OpIterToArray[T uint8 | uint16](n uint, iter Op8Iter) []T {
-	var arr = make([]T, n)
+func OpIterToArray[T uint8 | uint16](iter Op8Iter) []T {
+	var arr = make([]T, iter.count)
 	//
-	for i := range n {
+	for i := range iter.count {
 		arr[i] = T(iter.Next())
 	}
 	///

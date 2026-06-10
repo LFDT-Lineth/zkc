@@ -438,7 +438,7 @@ func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram[W]) {
 		var codes = bytecode.Codes(address)
 		//
 		if sym := program.SymbolAt(address); sym.HasValue() {
-			var m = sym.Unwrap()
+			var m = program.Module(sym.Unwrap())
 			//
 			if i != 0 {
 				fmt.Println()
