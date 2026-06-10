@@ -15,19 +15,21 @@ package gogen
 
 import (
 	"fmt"
+	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
-// emitBitwise emits a WordTypeB bitwise/shift op into its single target register,
-// mirroring executeAnd/Or/Xor/Not/Shl/Shr.  AND/OR/XOR and SHR map to the plain Go
-// operators; NOT and SHL additionally mask to the operation bit-width (matching
-// word.Not / word.Shl).  The result is then bit-width-checked against the target
-// via emitStore (i.e. frame.Store).
-func (g *generator) emitBitwise(c *code, fn *wordFunction, x *instruction.WordTypeB) error {
-	store, err := g.buildStore(fn, register.NewVector(x.Target))
+// emitTypeB emits the single-target WordTypeB ops: bitwise (executeAnd/Or/Xor/
+// Not), shifts (executeShl/Shr) and integer division (executeDiv/Rem).
+// AND/OR/XOR/SHR map to the plain Go operators; NOT and SHL additionally mask
+// to the operation bit width (word.Not / word.Shl).  DIV/REM fail on a zero
+// divisor.  Wide (two-limb) operands compute lane-wise, with runtime shifts
+// going through the shl128/shr128 helpers.  The result is then stored with the
+// usual width check.
+func (g *generator) emitTypeB(c *code, fn *wordFunction, x *instruction.WordTypeB) error {
+	target, err := g.limbOf(fn, x.Target)
 	if err != nil {
 		return err
 	}
@@ -38,45 +40,197 @@ func (g *generator) emitBitwise(c *code, fn *wordFunction, x *instruction.WordTy
 	}
 
 	// BIT_NOT is unary; the rest read a right operand.
-	var rhs string
+	var rhs operand
 	if x.Op != opcode.BIT_NOT {
 		if rhs, err = g.operand(fn, x.RightSource); err != nil {
 			return err
 		}
 	}
 
-	var valExpr string
+	if x.Bitwidth > 128 && (x.Op == opcode.BIT_NOT || x.Op == opcode.BIT_SHL) {
+		return fmt.Errorf("gogen: %s with bit width u%d unsupported (exceeds 128 bits)", opName(x.Op), x.Bitwidth)
+	}
+
+	var val operand
 
 	switch x.Op {
 	case opcode.BIT_AND:
-		valExpr = fmt.Sprintf("%s & %s", lhs, rhs)
+		val = operand{expr: fmt.Sprintf("%s & %s", lhs.expr, rhs.expr), max: bigMin(lhs.max, rhs.max)}
+		if lhs.wide() && rhs.wide() {
+			val.hi = fmt.Sprintf("%s & %s", lhs.hi, rhs.hi)
+		}
 	case opcode.BIT_OR:
-		valExpr = fmt.Sprintf("%s | %s", lhs, rhs)
+		val = wideLanes(lhs, rhs, "|", orMax(lhs.max, rhs.max))
 	case opcode.BIT_XOR:
-		valExpr = fmt.Sprintf("%s ^ %s", lhs, rhs)
+		val = wideLanes(lhs, rhs, "^", orMax(lhs.max, rhs.max))
 	case opcode.BIT_NOT:
-		valExpr = maskExpr(fmt.Sprintf("^%s", lhs), x.Bitwidth)
+		// (^x) mod 2^bw: bits of x above bw are dropped by the mask; bits of a
+		// narrow x in 64..bw-1 are zero and flip to one.
+		if x.Bitwidth <= 64 {
+			val = operand{expr: maskExpr(fmt.Sprintf("^%s", lhs.expr), x.Bitwidth), max: widthMax(x.Bitwidth)}
+		} else {
+			val = operand{
+				expr: fmt.Sprintf("^%s", lhs.expr),
+				hi:   maskExpr(fmt.Sprintf("^%s", lhs.hiOr0()), x.Bitwidth-64),
+				max:  widthMax(x.Bitwidth),
+			}
+		}
 	case opcode.BIT_SHL:
-		valExpr = maskExpr(fmt.Sprintf("%s << %s", lhs, rhs), x.Bitwidth)
+		// (x << n) mod 2^bw.  For bw ≤ 64 only the low limb can contribute
+		// (result bit j < 64 comes from x bit j-n, also below 64); Go's
+		// variable shift already yields 0 once the count reaches 64.
+		if x.Bitwidth <= 64 {
+			val = operand{expr: maskExpr(fmt.Sprintf("%s << %s", lhs.expr, rhs.expr), x.Bitwidth), max: widthMax(x.Bitwidth)}
+			break
+		}
+
+		g.usesShl128 = true
+
+		return g.pairCall(c, "shl128", lhs, rhs, target, func(lo, hi string) operand {
+			return operand{expr: lo, hi: maskExpr(hi, x.Bitwidth-64), max: widthMax(x.Bitwidth)}
+		})
 	case opcode.BIT_SHR:
-		valExpr = fmt.Sprintf("%s >> %s", lhs, rhs)
+		if !lhs.wide() {
+			val = operand{expr: fmt.Sprintf("%s >> %s", lhs.expr, rhs.expr), max: lhs.max}
+			break
+		}
+
+		g.usesShr128 = true
+
+		return g.pairCall(c, "shr128", lhs, rhs, target, func(lo, hi string) operand {
+			return operand{expr: lo, hi: hi, max: lhs.max}
+		})
+	case opcode.INT_DIV, opcode.INT_REM:
+		if lhs.wide() || rhs.wide() {
+			return fmt.Errorf("gogen: division operand wider than 64 bits unsupported")
+		}
+
+		return g.emitDivRem(c, x.Op, target, lhs, rhs)
 	default:
-		// INT_DIV / INT_REM are not on the supported path yet (§6.5).
-		return fmt.Errorf("gogen: unsupported bitwise op %s", opName(x.Op))
+		return fmt.Errorf("gogen: unsupported op %s", opName(x.Op))
 	}
 
-	g.emitStoreExpr(c, store, valExpr)
+	return g.storeValue(c, storeView{single: &target, total: target.width}, val)
+}
+
+// wideLanes builds a lane-wise OR/XOR over possibly-wide operands.
+func wideLanes(lhs, rhs operand, op string, bound *big.Int) operand {
+	val := operand{expr: fmt.Sprintf("%s %s %s", lhs.expr, op, rhs.expr), max: bound}
+
+	switch {
+	case lhs.wide() && rhs.wide():
+		val.hi = fmt.Sprintf("%s %s %s", lhs.hi, op, rhs.hi)
+	case lhs.wide():
+		val.hi = lhs.hi
+	case rhs.wide():
+		val.hi = rhs.hi
+	}
+
+	return val
+}
+
+// pairCall binds a two-result helper call (shl128/shr128) to block-scoped
+// locals and stores the shaped result; the block keeps the temporaries from
+// colliding across instructions.
+func (g *generator) pairCall(c *code, helper string, lhs, rhs operand, target limb,
+	shape func(lo, hi string) operand) error {
+	var inner error
+
+	c.block(func() {
+		c.linef("tlo, thi := %s(%s, %s, %s)", helper, lhs.expr, lhs.hiOr0(), rhs.expr)
+		inner = g.storeValue(c, storeView{single: &target, total: target.width}, shape("tlo", "thi"))
+	})
+
+	return inner
+}
+
+// emitDivRem emits INT_DIV / INT_REM: a zero divisor fails (executeDiv/Rem),
+// otherwise the result is the plain Go quotient/remainder.
+func (g *generator) emitDivRem(c *code, op opcode.OpCode, target limb, lhs, rhs operand) error {
+	switch {
+	case rhs.isZero():
+		c.linef("fail(%q) // divisor is the constant zero", "division by zero")
+		return nil
+	case rhs.val == nil:
+		c.linef("if %s == 0 {", rhs.expr)
+		c.line(`fail("division by zero")`)
+		c.line("}")
+	}
+
+	goOp, bound := "/", lhs.max
+	if op == opcode.INT_REM {
+		// The remainder is below the divisor (and never above the dividend).
+		goOp = "%"
+		bound = bigMin(lhs.max, new(big.Int).Sub(rhs.max, big.NewInt(1)))
+	}
+
+	g.assignSingle(c, target, operand{expr: fmt.Sprintf("%s %s %s", lhs.expr, goOp, rhs.expr), max: bound})
 
 	return nil
 }
 
-// maskExpr masks expr to the low bitwidth bits, mirroring word.mask64: a width of
-// 64 or more needs no mask (the full word is already in range, and Go's shift
-// already yields 0 when the count reaches the word width).
+// maskExpr masks expr to the low bitwidth bits, mirroring word.mask64: a width
+// of 64 or more needs no mask.
 func maskExpr(expr string, bitwidth uint) string {
 	if bitwidth >= 64 {
 		return expr
 	}
 
-	return fmt.Sprintf("(%s) & ((1 << %d) - 1)", expr, bitwidth)
+	return fmt.Sprintf("(%s) & (1<<%d - 1)", expr, bitwidth)
+}
+
+// bigMin returns the smaller of two bounds.
+func bigMin(a, b *big.Int) *big.Int {
+	if a.Cmp(b) <= 0 {
+		return a
+	}
+
+	return b
+}
+
+// orMax bounds `a | b` (and also `a ^ b`): all bits up to the wider operand.
+func orMax(a, b *big.Int) *big.Int {
+	n := a.BitLen()
+	if m := b.BitLen(); m > n {
+		n = m
+	}
+
+	return widthMax(uint(n))
+}
+
+// emitShiftHelpers writes the 128-bit variable shifts, each only when
+// referenced.  Counts of 128 or more clear the value, matching the unbounded
+// word semantics under a ≤128-bit mask.
+func (g *generator) emitShiftHelpers(c *code) {
+	if g.usesShl128 {
+		c.line("func shl128(lo, hi, n uint64) (uint64, uint64) {")
+		c.line("switch {")
+		c.line("case n >= 128:")
+		c.line("return 0, 0")
+		c.line("case n >= 64:")
+		c.line("return 0, lo << (n - 64)")
+		c.line("case n == 0:")
+		c.line("return lo, hi")
+		c.line("default:")
+		c.line("return lo << n, hi<<n | lo>>(64-n)")
+		c.line("}")
+		c.line("}")
+		c.line("")
+	}
+
+	if g.usesShr128 {
+		c.line("func shr128(lo, hi, n uint64) (uint64, uint64) {")
+		c.line("switch {")
+		c.line("case n >= 128:")
+		c.line("return 0, 0")
+		c.line("case n >= 64:")
+		c.line("return hi >> (n - 64), 0")
+		c.line("case n == 0:")
+		c.line("return lo, hi")
+		c.line("default:")
+		c.line("return lo>>n | hi<<(64-n), hi >> n")
+		c.line("}")
+		c.line("}")
+		c.line("")
+	}
 }

@@ -28,24 +28,25 @@ import (
 )
 
 // runGogenExecutionTest cross-checks the generated-Go ("native") executor against
-// a test case: it generates Go from the u64 word machine, compiles it once
-// (cached), runs it on the test inputs as a subprocess, and verifies the outputs
-// and accept/reject verdict match — exactly as runExecutionTest does for a Core.
+// a test case: it generates Go from the word machine (over Uint — the same
+// machine the reference executor interprets), compiles it once (cached), runs it
+// on the test inputs as a subprocess, and verifies the outputs and accept/reject
+// verdict match — exactly as runExecutionTest does for a Core.
 //
-// Programs the generator cannot yet handle (division, field ops, wide registers,
-// …) are skipped rather than failed: gogen coverage is opt-in and grows over time.
+// Programs the generator cannot yet handle (wide registers/constants/moduli, …)
+// are skipped rather than failed: gogen coverage grows over time.
 // Note: runGogenExecutionTest shares its *testing.T with the whole CheckValid run
 // (there is no enclosing t.Run), so it must never call t.Skip / t.Fatal — doing so
 // would abort the surrounding bytecode and constraint checks.  Unsupported programs
 // are logged and skipped; only genuine mismatches use t.Errorf.
-func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint64], test TestCase, cfg vm.WordConfig) {
+func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase, cfg vm.WordConfig) {
 	goBin, err := exec.LookPath("go")
 	if err != nil {
 		// No Go toolchain: silently skip this optional cross-check.
 		return
 	}
 	// Generate native Go for this machine.
-	src, err := vm.WordToGoSource(wm)
+	src, err := vm.GenerateGo(wm, vm.GoGenConfig{})
 	if err != nil {
 		t.Logf("[gogen %s]%s:%d unsupported, skipping: %v", cfg.Name, test.filename, test.line, err)
 		return
@@ -59,7 +60,15 @@ func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint64], test Tes
 	// Decode inputs and expected outputs (in word units, one uint64 per row word).
 	inputs, outputs := decodeInputsOutputs(t, wm, test.data)
 
-	got, errored, runErr := runGogenProgram(prog, toUint64Map(inputs))
+	in, ok := toUint64Map(inputs)
+	if !ok {
+		// An input word beyond 64 bits cannot cross the JSON boundary; such
+		// vectors stay covered by the reference executor.
+		t.Logf("[gogen %s]%s:%d input exceeds 64 bits, skipping", cfg.Name, test.filename, test.line)
+		return
+	}
+
+	got, errored, runErr := runGogenProgram(prog, in)
 	if runErr != nil {
 		t.Errorf("[gogen %s]%s:%d run: %v", cfg.Name, test.filename, test.line, runErr)
 		return
@@ -83,7 +92,7 @@ func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint64], test Tes
 
 // compareGogenOutputs checks each expected output memory against the generated
 // program's output of the same name.
-func compareGogenOutputs(expected map[string][]vm.Uint64, got map[string][]uint64) []error {
+func compareGogenOutputs(expected map[string][]vm.Uint, got map[string][]uint64) []error {
 	var errs []error
 	//
 	for name, want := range expected {
@@ -106,20 +115,24 @@ func compareGogenOutputs(expected map[string][]vm.Uint64, got map[string][]uint6
 }
 
 // toUint64Map converts decoded word inputs into the plain uint64 form the
-// generated program consumes over JSON.
-func toUint64Map(m map[string][]vm.Uint64) map[string][]uint64 {
+// generated program consumes over JSON, reporting whether all words fit.
+func toUint64Map(m map[string][]vm.Uint) (map[string][]uint64, bool) {
 	out := make(map[string][]uint64, len(m))
 	//
 	for name, words := range m {
 		values := make([]uint64, len(words))
 		for i, w := range words {
+			if !w.FitsWithin(64) {
+				return nil, false
+			}
+
 			values[i] = w.Uint64()
 		}
 		//
 		out[name] = values
 	}
 	//
-	return out
+	return out, true
 }
 
 // runGogenProgram runs the compiled program with JSON inputs on stdin, returning
@@ -131,6 +144,13 @@ func runGogenProgram(prog string, in map[string][]uint64) (map[string][]uint64, 
 		return nil, false, err
 	}
 	//
+	return runGogenProgramRaw(prog, inJSON)
+}
+
+// runGogenProgramRaw is runGogenProgram with the inputs already marshalled —
+// benchmarks pre-marshal once so the timed loop measures the executor, not
+// json.Marshal of the inputs.
+func runGogenProgramRaw(prog string, inJSON []byte) (map[string][]uint64, bool, error) {
 	var stdout, stderr bytes.Buffer
 	//
 	cmd := exec.Command(prog)
@@ -170,6 +190,17 @@ func GogenBuild(src string) (string, error) {
 // whether it reported an execution error, and any harness-level error.
 func GogenRun(prog string, in map[string][]uint64) (map[string][]uint64, bool, error) {
 	return runGogenProgram(prog, in)
+}
+
+// GogenMarshalInputs renders inputs to the JSON form GogenRunRaw consumes.
+func GogenMarshalInputs(in map[string][]uint64) ([]byte, error) {
+	return json.Marshal(in)
+}
+
+// GogenRunRaw runs a compiled gogen binary on pre-marshalled JSON inputs (see
+// runGogenProgramRaw).
+func GogenRunRaw(prog string, inJSON []byte) (map[string][]uint64, bool, error) {
+	return runGogenProgramRaw(prog, inJSON)
 }
 
 // ---------------------------------------------------------------------------

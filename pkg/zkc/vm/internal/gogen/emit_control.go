@@ -63,45 +63,64 @@ func collectLabels(code wordCode) map[pos]bool {
 
 // condExpr renders the boolean Go expression under which a SkipIf takes its
 // skip.  Vectors are compared lexicographically with the most-significant
-// register at the highest index, matching machine/base.go's cmp.
+// register at the highest index, matching machine/base.go's cmp; two-limb
+// elements compare their high limbs first.
 func (g *generator) condExpr(fn *wordFunction, x *instruction.SkipIf) (string, error) {
-	lhs, err := g.operands(fn, x.Left.Registers())
+	lhsOps, err := g.operands(fn, x.Left.Registers())
 	if err != nil {
 		return "", err
 	}
 
-	rhs, err := g.operands(fn, x.Right.Registers())
+	rhsOps, err := g.operands(fn, x.Right.Registers())
 	if err != nil {
 		return "", err
 	}
 
-	if len(lhs) != len(rhs) {
-		return "", fmt.Errorf("gogen: skip_if compares vectors of differing length (%d vs %d)", len(lhs), len(rhs))
+	if len(lhsOps) != len(rhsOps) {
+		return "", fmt.Errorf("gogen: skip_if compares vectors of differing length (%d vs %d)", len(lhsOps), len(rhsOps))
 	}
 
 	switch x.Cond {
 	case opcode.EQ:
-		return eqExpr(lhs, rhs), nil
+		return eqExpr(lhsOps, rhsOps), nil
 	case opcode.NEQ:
-		return "!(" + eqExpr(lhs, rhs) + ")", nil
+		return "!(" + eqExpr(lhsOps, rhsOps) + ")", nil
 	case opcode.LT:
-		return ordExpr(lhs, rhs, "<"), nil
+		return ordExpr(lhsOps, rhsOps, "<"), nil
 	case opcode.GT:
-		return ordExpr(lhs, rhs, ">"), nil
+		return ordExpr(lhsOps, rhsOps, ">"), nil
 	case opcode.LTEQ:
-		return "!(" + ordExpr(lhs, rhs, ">") + ")", nil
+		return "!(" + ordExpr(lhsOps, rhsOps, ">") + ")", nil
 	case opcode.GTEQ:
-		return "!(" + ordExpr(lhs, rhs, "<") + ")", nil
+		return "!(" + ordExpr(lhsOps, rhsOps, "<") + ")", nil
 	default:
 		return "", fmt.Errorf("gogen: unsupported skip condition 0x%x", uint(x.Cond))
 	}
 }
 
+// elemEq / elemOrd compare one (possibly two-limb) element pair as full values.
+func elemEq(a, b operand) string {
+	if !a.wide() && !b.wide() {
+		return fmt.Sprintf("%s == %s", a.expr, b.expr)
+	}
+
+	return fmt.Sprintf("(%s == %s && %s == %s)", a.expr, b.expr, a.hiOr0(), b.hiOr0())
+}
+
+func elemOrd(a, b operand, op string) string {
+	if !a.wide() && !b.wide() {
+		return fmt.Sprintf("(%s %s %s)", a.expr, op, b.expr)
+	}
+
+	return fmt.Sprintf("(%s %s %s || (%s == %s && %s %s %s))",
+		a.hiOr0(), op, b.hiOr0(), a.hiOr0(), b.hiOr0(), a.expr, op, b.expr)
+}
+
 // eqExpr renders elementwise equality of two operand lists.
-func eqExpr(lhs, rhs []string) string {
+func eqExpr(lhs, rhs []operand) string {
 	parts := make([]string, len(lhs))
 	for i := range lhs {
-		parts[i] = fmt.Sprintf("%s == %s", lhs[i], rhs[i])
+		parts[i] = elemEq(lhs[i], rhs[i])
 	}
 
 	return strings.Join(parts, " && ")
@@ -109,16 +128,16 @@ func eqExpr(lhs, rhs []string) string {
 
 // ordExpr renders a strict lexicographic comparison (op is "<" or ">") of two
 // operand lists, most significant register first.
-func ordExpr(lhs, rhs []string, op string) string {
+func ordExpr(lhs, rhs []operand, op string) string {
 	var build func(i int) string
 
 	build = func(i int) string {
 		if i == 0 {
-			return fmt.Sprintf("(%s %s %s)", lhs[0], op, rhs[0])
+			return elemOrd(lhs[0], rhs[0], op)
 		}
 
-		return fmt.Sprintf("(%s %s %s || (%s == %s && %s))",
-			lhs[i], op, rhs[i], lhs[i], rhs[i], build(i-1))
+		return fmt.Sprintf("(%s || (%s && %s))",
+			elemOrd(lhs[i], rhs[i], op), elemEq(lhs[i], rhs[i]), build(i-1))
 	}
 
 	return build(len(lhs) - 1)

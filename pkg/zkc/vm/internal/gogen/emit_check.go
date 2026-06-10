@@ -13,149 +13,62 @@
 
 package gogen
 
-import (
-	"fmt"
-	"strconv"
-	"strings"
-)
+import "fmt"
 
-type checkKind uint8
+// Runtime failures (width-check violations, underflow, division by zero, FAIL)
+// are exceptional: generated functions panic with a `failure` value which the
+// Run entry point recovers into its error result.  This keeps every generated
+// signature free of error plumbing.
 
-const (
-	overflowCheck checkKind = iota
-	underflowCheck
-)
-
-type checkExpr struct {
-	expr  string
-	known bool
-	value bool
-}
-
-type valueInfo struct {
-	known bool
-	value uint64
-}
-
-func runtimeCheck(expr string) checkExpr {
-	return checkExpr{expr: expr}
-}
-
-func knownCheck(expr string, value bool) checkExpr {
-	return checkExpr{expr: expr, known: true, value: value}
-}
-
-func unknownValue() valueInfo {
-	return valueInfo{}
-}
-
-func knownValue(value uint64) valueInfo {
-	return valueInfo{known: true, value: value}
-}
-
-func widthCheckExpr(expr string, width uint) checkExpr {
-	cond := fmt.Sprintf("%s >= (1 << %d)", expr, width)
-	if value, ok := uint64Literal(expr); ok {
-		return knownCheck(cond, uint64ExceedsWidth(value, width))
+// checkWidth enforces a store of `op` into a width-w register, mirroring
+// StackFrame.Store, unless the bound proves the check dead (omitted entirely)
+// or the exact value proves it always fires (unconditional failure).  Wide
+// (lo/hi pair) values and wide targets check the relevant limbs.
+func (g *generator) checkWidth(c *code, op operand, w uint) {
+	if w >= 128 || fits(op.max, w) {
+		return // the value provably fits the target
 	}
 
-	return runtimeCheck(cond)
-}
-
-func (v valueInfo) widthCheckExpr(expr string, width uint) checkExpr {
-	if v.known {
-		return knownCheck(fmt.Sprintf("%s >= (1 << %d)", expr, width), uint64ExceedsWidth(v.value, width))
-	}
-
-	return widthCheckExpr(expr, width)
-}
-
-func (g *generator) emitOverflowCheck(c *code, cond checkExpr, msg string) {
-	g.emitCheck(c, overflowCheck, cond, msg)
-}
-
-func (g *generator) emitUnderflowCheck(c *code, cond checkExpr, msg string) {
-	g.emitCheck(c, underflowCheck, cond, msg)
-}
-
-func (g *generator) emitCheck(c *code, kind checkKind, cond checkExpr, msg string) {
-	if cond.known {
-		// The outcome is fixed at generation time: a check that can never fire is
-		// omitted entirely (no runtime test, no dead comment); one that always fires
-		// becomes an unconditional error.
-		if cond.value {
-			c.commentf("compiled optimized: %s is always true, so this %s always fails.",
-				cond.expr, kind.String())
-			c.line(g.returnErr(fmt.Sprintf("fmt.Errorf(%q)", msg)))
-		}
-
+	msg := widthFailMsg(w)
+	if op.val != nil {
+		// Exact value, known too wide: the store always fails.
+		c.linef("fail(%q) // %s never fits u%d", msg, op.expr, w)
 		return
 	}
 
-	helper := "checkOverflow"
-	if kind == underflowCheck {
-		helper = "checkUnderflow"
-		g.usesUnderflowCheck = true
-	} else {
-		g.usesOverflowCheck = true
-	}
+	switch {
+	case !op.wide():
+		// A narrow value always fits a 64-bit-or-wider target.
+		if w >= 64 {
+			return
+		}
 
-	c.linef("%s(%s, %q)", helper, cond.expr, msg)
-}
-
-func (g *generator) emitCheckHelpers(c *code) {
-	if g.usesCheckPanic() {
-		c.line("type checkError string")
-		c.line("")
-		c.line("func (e checkError) Error() string {")
-		c.line("return string(e)")
-		c.line("}")
-		c.line("")
-	}
-
-	if g.usesOverflowCheck {
-		c.line("func checkOverflow(overflow bool, msg string) {")
-		c.line("if overflow {")
-		c.line("panic(checkError(msg))")
-		c.line("}")
-		c.line("}")
-		c.line("")
-	}
-
-	if g.usesUnderflowCheck {
-		c.line("func checkUnderflow(underflow bool, msg string) {")
-		c.line("if underflow {")
-		c.line("panic(checkError(msg))")
-		c.line("}")
-		c.line("}")
-		c.line("")
-	}
-}
-
-func (g *generator) usesCheckPanic() bool {
-	return g.usesOverflowCheck || g.usesUnderflowCheck
-}
-
-func (k checkKind) String() string {
-	switch k {
-	case underflowCheck:
-		return "underflow"
+		c.linef("if %s >= 1<<%d {", op.expr, w)
+	case w > 64:
+		c.linef("if %s >= 1<<%d {", op.hi, w-64)
+	case w == 64:
+		c.linef("if %s != 0 {", op.hi)
 	default:
-		return "overflow"
-	}
-}
-
-func uint64Literal(expr string) (uint64, bool) {
-	expr = strings.TrimSpace(expr)
-	if strings.HasPrefix(expr, "uint64(") && strings.HasSuffix(expr, ")") {
-		expr = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(expr, "uint64("), ")"))
+		c.linef("if %s != 0 || %s >= 1<<%d {", op.hi, op.expr, w)
 	}
 
-	value, err := strconv.ParseUint(expr, 0, 64)
-
-	return value, err == nil
+	c.linef("fail(%q)", msg)
+	c.line("}")
 }
 
-func uint64ExceedsWidth(value uint64, width uint) bool {
-	return width < 64 && value >= (uint64(1)<<width)
+func widthFailMsg(w uint) string {
+	return fmt.Sprintf("bit overflow (value exceeds u%d)", w)
+}
+
+// emitFailureHelpers writes the failure type and the fail helper, which every
+// generated program uses (the fall-off-the-end guard alone guarantees that).
+func emitFailureHelpers(c *code) {
+	c.line("// failure is a ZkC execution failure (a rejected trace, not a bug); Run")
+	c.line("// recovers it into its error result.")
+	c.line("type failure string")
+	c.line("")
+	c.line("func (e failure) Error() string { return string(e) }")
+	c.line("")
+	c.line("func fail(msg string) { panic(failure(msg)) }")
+	c.line("")
 }

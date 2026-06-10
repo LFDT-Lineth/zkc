@@ -174,9 +174,10 @@ func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f 
 			m64 := vm.WordToWordMachine[vm.Uint, vm.Uint64](m)
 			// Run execution test
 			runBytecodeExecutionTest(t, m64, tc, w, cfg.bytecode)
-			// Optionally cross-check against the generated-Go executor.
+			// Optionally cross-check against the generated-Go executor, which
+			// consumes the Uint machine directly (no word narrowing).
 			if cfg.gogen {
-				runGogenExecutionTest(t, m64, tc, w)
+				runGogenExecutionTest(t, m, tc, w)
 			}
 		default:
 			panic(fmt.Sprintf("unknown machine word: %s", w.Name))

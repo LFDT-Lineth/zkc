@@ -11,7 +11,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 // This test lives in an external package (gogen_test) rather than package gogen:
-// it drives the generator through the public vm.WordToGoSource entry point, and
+// it drives the generator through the public vm.GenerateGo entry point, and
 // vm imports gogen — so an internal test would form an import cycle.
 package gogen_test
 
@@ -35,43 +35,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
-
-const tt = `pub input data(address:u16) -> (word:u16)
-
-// prove that two numbers add up to a third.
-fn main() {
-    var n:u16 = data[0]
-    var k:u16 = data[1]
-    var res:u32 = data[2] as u32
-
-    if pow(n, k) != res {
-        fail
-    }
-}
-
-// compute n^k
-fn pow(n:u16, k:u16) -> (res:u32) {
-    var i:u16, acc:u32, b:u1
-    //
-    res = 1
-    acc = n as u32
-    i = k
-    //
-    while i != 0 {
-        // divide by 2
-        i::b = i as u17
-        // check odd/even
-        if b == 1 {
-            res = res * acc
-        }
-        //
-        acc = acc * acc
-    }
-}
-`
 
 // tutorialSrc mirrors pkg/zkc/tutorial: branchless u16 arithmetic with single
 // register targets (result[0]=a+b, result[1]=(a+b)*c, result[2]=a-b).
@@ -282,13 +246,111 @@ fn switch_endian_u16(x:u16) -> (switched_x:u16) {
 }
 `
 
-// compileU64 compiles a ZkC source string into a fresh, unlowered, vectorised
-// u64 WordMachine (vectorisation is required for execution; LowerNatives is off
-// to keep native integer ops — the codegen start point).  A fresh machine is
-// required per reference execution because execution mutates memory state.
-func compileU64(t testing.TB, src string) *vm.WordMachine[word.Uint64] {
+// carrySrc exercises the 128-bit pair path: a u64 + u64 sum destructured into a
+// carry bit and a u64 — exact on the Uint machine (no accumulator trap), which
+// is the RISC-V ADD shape.
+const carrySrc = `pub input data(address:u8) -> (word:u64)
+pub output result(address:u8) -> (word:u64)
+fn main() {
+    var a:u64 = data[0]
+    var b:u64 = data[1]
+    var c:u1
+    var s:u64
+    c::s = (a + b) as u65
+    result[0] = s
+    result[1] = c as u64
+    return
+}
+`
+
+// divModSrc exercises INT_DIV / INT_REM (plain shape) and, under the lowered
+// shape, the HINT_DIVISION + validation sequence LowerDivisions produces.  A
+// zero divisor must error in both shapes.
+const divModSrc = `pub input data(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var x:u8 = data[0]
+    var y:u8 = data[1]
+    result[0] = x / y
+    result[1] = x % y
+    return
+}
+`
+
+// addwSrc is the RISC-V ADDW shape: a u32 + u32 sum widened to u33 and
+// destructured into a carry bit and the low word.
+const addwSrc = `pub input data(address:u8) -> (word:u32)
+pub output result(address:u8) -> (word:u32)
+fn main() {
+    var a:u32 = data[0]
+    var b:u32 = data[1]
+    var c:u1
+    var s:u32
+    c::s = (a + b) as u33
+    result[0] = s
+    result[1] = c as u32
+    return
+}
+`
+
+// mulWideSrc exercises a 128-bit product of two u64s destructured into two
+// u64 limbs (the widening-multiply shape).
+const mulWideSrc = `pub input data(address:u8) -> (word:u64)
+pub output result(address:u8) -> (word:u64)
+fn main() {
+    var a:u64 = data[0]
+    var b:u64 = data[1]
+    var hi:u64
+    var lo:u64
+    hi::lo = (a * b) as u128
+    result[0] = lo
+    result[1] = hi
+    return
+}
+`
+
+// wideRegSrc routes a value through an actual u65 REGISTER (not just a wide
+// destructure): t = a + b at u65, then t - b (= a) destructures back into a
+// dead carry bit and the original u64.
+const wideRegSrc = `pub input data(address:u8) -> (word:u64)
+pub output result(address:u8) -> (word:u64)
+fn main() {
+    var a:u64 = data[0]
+    var b:u64 = data[1]
+    var t:u65 = (a + b) as u65
+    var z:u1
+    var s:u64
+    z::s = t - (b as u65)
+    result[0] = s
+    result[1] = z as u64
+    return
+}
+`
+
+// divMod64Src is u64 division: under the lowered shape this produces a
+// division HINT with u128 quotient/remainder targets and a u128 validation
+// multiply — the prover-shape pattern that needs both intervals and two-limb
+// registers.
+const divMod64Src = `pub input data(address:u8) -> (word:u64)
+pub output result(address:u8) -> (word:u64)
+fn main() {
+    var x:u64 = data[0]
+    var y:u64 = data[1]
+    result[0] = x / y
+    result[1] = x % y
+    return
+}
+`
+
+// compileUint compiles a ZkC source string into a fresh, vectorised
+// WordMachine over vm.Uint — the machine the generator consumes and the
+// reference executor interprets.  `lowered` selects the prover shape
+// (LowerNatives on: bitwise/division/comparisons rewritten into helper calls
+// and hints) versus the plain shape with native integer ops.  A fresh machine
+// is required per reference execution because execution mutates memory state.
+func compileUint(t testing.TB, src string, lowered bool) *vm.WordMachine[vm.Uint] {
 	t.Helper()
-	return compileU64Program(t, compileProgram(t, src))
+	return compileUintProgram(t, compileProgram(t, src), lowered)
 }
 
 func compileProgram(t testing.TB, src string) ast.Program {
@@ -304,37 +366,26 @@ func compileProgram(t testing.TB, src string) ast.Program {
 	return program
 }
 
-func compileU64Program(t testing.TB, program ast.Program) *vm.WordMachine[word.Uint64] {
+func compileUintProgram(t testing.TB, program ast.Program, lowered bool) *vm.WordMachine[vm.Uint] {
 	t.Helper()
 
-	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).LowerNatives(false).Vectorize(true)
+	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).LowerNatives(lowered).Vectorize(true).Quiet(true)
 
-	wmUint, errs := program.Compile(cfg)
+	wm, errs := program.Compile(cfg)
 	if len(errs) > 0 {
 		t.Fatalf("codegen: %v", errs)
 	}
 
-	return vm.WordToWordMachine[vm.Uint, word.Uint64](wmUint)
+	return wm
 }
 
-func TestGenTutorialStages(t *testing.T) {
-	program := compileProgram(t, tt)
-	wm := compileU64Program(t, program)
-
-	goSrc, err := vm.WordToGoSource(wm)
-	if err != nil {
-		t.Fatalf("WordToGoSource: %v", err)
-	}
-
-	if _, err := format.Source([]byte(goSrc)); err != nil {
-		t.Fatalf("generated source not valid Go: %v", err)
-	}
-
-	t.Logf("manual codegen stage dump for tutorialSrc\n\n%s\n\n%s\n\n%s",
-		section("WIR", dumpWIR(program)),
-		section("WORD MACHINE", dumpWordMachine(wm)),
-		section("GENERATED GO", goSrc),
-	)
+// shapes enumerates the two machine shapes every test runs against.
+var shapes = []struct {
+	name    string
+	lowered bool
+}{
+	{"plain", false},
+	{"lowered", true},
 }
 
 func TestGenValidGo(t *testing.T) {
@@ -351,191 +402,270 @@ func TestGenValidGo(t *testing.T) {
 		"shift":       shiftSrc,
 		"concat":      concatSrc,
 		"endian":      endianSrc,
+		"carry":       carrySrc,
+		"divmod":      divModSrc,
+		"addw":        addwSrc,
+		"mulWide":     mulWideSrc,
+		"wideReg":     wideRegSrc,
+		"divmod64":    divMod64Src,
 	}
 	for name, src := range srcs {
-		t.Run(name, func(t *testing.T) {
-			out, err := vm.WordToGoSource(compileU64(t, src))
-			if err != nil {
-				t.Fatalf("WordToGoSource: %v", err)
-			}
+		for _, shape := range shapes {
+			t.Run(name+"/"+shape.name, func(t *testing.T) {
+				out, err := vm.GenerateGo(compileUint(t, src, shape.lowered), vm.GoGenConfig{})
+				if err != nil {
+					t.Fatalf("GenerateGo: %v", err)
+				}
 
-			if _, err := format.Source([]byte(out)); err != nil {
-				t.Fatalf("generated source not valid Go: %v", err)
-			}
+				if _, err := format.Source([]byte(out)); err != nil {
+					t.Fatalf("generated source not valid Go: %v", err)
+				}
 
-			t.Logf("generated %d bytes of Go", len(out))
-		})
+				t.Logf("generated %d bytes of Go", len(out))
+			})
+		}
 	}
 }
 
 // TestGenDifferential compiles each generated program once and checks that, for
 // a range of inputs, it produces outputs identical to the reference executor —
-// and errors exactly when the reference errors.
+// and errors exactly when the reference errors.  The corpus is shared with the
+// fuzzer (fuzz_test.go).
+type diffCase struct {
+	name    string
+	src     string
+	vectors []map[string][]uint64
+}
+
+var diffCases = []diffCase{
+	{
+		name: "tutorial",
+		src:  tutorialSrc,
+		vectors: []map[string][]uint64{
+			{"args": {5, 4, 3}},         // [9, 27, 1]
+			{"args": {0, 0, 0}},         // [0, 0, 0]
+			{"args": {7, 7, 2}},         // [14, 28, 0]
+			{"args": {1, 0, 65535}},     // [1, 65535, 1]
+			{"args": {60000, 60000, 1}}, // a+b overflow -> error
+			{"args": {300, 300, 300}},   // (a+b)*c overflow -> error
+			{"args": {3, 4, 1}},         // a-b underflow -> error
+		},
+	},
+	{
+		name: "destructure", // multi-register target (StoreAcross distribution)
+		src:  destructSrc,
+		vectors: []map[string][]uint64{
+			{"args": {0x12345678}}, // hi=0x1234, lo=0x5678
+			{"args": {0}},          // hi=0, lo=0
+			{"args": {0xFFFFFFFF}}, // hi=0xFFFF, lo=0xFFFF
+			{"args": {0x0000ABCD}}, // hi=0, lo=0xABCD
+		},
+	},
+	{
+		name: "branch", // Phase 2: if/else (SKIP_IF + SKIP)
+		src:  branchSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0}},   // x<=10 -> 1
+			{"data": {10}},  // x<=10 -> 11
+			{"data": {11}},  // x>10  -> 10
+			{"data": {255}}, // x>10  -> 254
+		},
+	},
+	{
+		name: "loop", // Phase 2: JUMP-based loop, acc == n
+		src:  loopSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0}},
+			{"data": {1}},
+			{"data": {17}},
+			{"data": {255}},
+		},
+	},
+	{
+		name: "double", // Phase 2: loop body overflows u8 once x>=8
+		src:  doubleSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0}}, // 1
+			{"data": {3}}, // 8
+			{"data": {7}}, // 128
+			{"data": {8}}, // overflow -> error
+			{"data": {9}}, // overflow -> error
+		},
+	},
+	{
+		name: "call", // Phase 3: simple value-returning call
+		src:  callSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0}},
+			{"data": {41}},
+			{"data": {254}},
+			{"data": {255}}, // inc overflows u8 -> error
+		},
+	},
+	{
+		name: "callFail", // Phase 3: void call that may FAIL (error parity across frames)
+		src:  callFailSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0}}, // check fails -> error
+			{"data": {7}},
+			{"data": {255}},
+		},
+	},
+	{
+		name: "recSum", // Phase 3: recursion; large n overflows u16 -> error
+		src:  recSumSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0}},   // 0
+			{"data": {1}},   // 1
+			{"data": {5}},   // 15
+			{"data": {255}}, // 32640
+			{"data": {361}}, // 65341
+			{"data": {362}}, // 65703 -> overflow u16 -> error
+		},
+	},
+	{
+		name: "bitwise", // Phase 7.1: AND/OR/XOR/NOT
+		src:  bitwiseSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0x0F, 0x3C}},
+			{"data": {0xFF, 0x00}},
+			{"data": {0xAA, 0x55}},
+			{"data": {0x00, 0x00}},
+		},
+	},
+	{
+		name: "shift", // Phase 7.1: SHL (masked) / SHR, incl. amounts >= width
+		src:  shiftSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0x01, 3}},
+			{"data": {0xFF, 1}},
+			{"data": {0x80, 7}},
+			{"data": {0x12, 8}},  // shift by width -> 0
+			{"data": {0x12, 20}}, // shift beyond width -> 0
+		},
+	},
+	{
+		name: "concat", // Phase 7.1: BIT_CONCAT (byte-swap a u16)
+		src:  concatSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0x1234}},
+			{"data": {0x00FF}},
+			{"data": {0xFF00}},
+			{"data": {0x0000}},
+		},
+	},
+	{
+		name: "endian", // Phase 7.1: shifts + AND + OR + concat + calls
+		src:  endianSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0x0123456789ABCDEF}},
+			{"data": {0x0000000000000001}},
+			{"data": {0xFFFFFFFFFFFFFFFF}},
+		},
+	},
+	{
+		name: "carry", // 128-bit pair path: u64+u64 destructured into c::s
+		src:  carrySrc,
+		vectors: []map[string][]uint64{
+			{"data": {0, 0}},                                   // s=0, c=0
+			{"data": {5, 7}},                                   // s=12, c=0
+			{"data": {0xFFFFFFFFFFFFFFFF, 1}},                  // s=0, c=1
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}}, // s=2^64-2, c=1
+			{"data": {0x8000000000000000, 0x8000000000000000}}, // s=0, c=1
+		},
+	},
+	{
+		name: "divmod", // INT_DIV/INT_REM (plain); HINT_DIVISION + validation (lowered)
+		src:  divModSrc,
+		vectors: []map[string][]uint64{
+			{"data": {7, 3}},    // q=2, r=1
+			{"data": {255, 16}}, // q=15, r=15
+			{"data": {0, 9}},    // q=0, r=0
+			{"data": {9, 1}},    // q=9, r=0
+			{"data": {5, 0}},    // division by zero -> error
+		},
+	},
+	{
+		name: "addw", // RISC-V ADDW shape: u33 carry destructure
+		src:  addwSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0, 0}},
+			{"data": {5, 7}},
+			{"data": {0xFFFFFFFF, 1}},          // s=0, c=1
+			{"data": {0xFFFFFFFF, 0xFFFFFFFF}}, // s=2^32-2, c=1
+		},
+	},
+	{
+		name: "mulWide", // u64×u64 → u128 destructure (widening multiply)
+		src:  mulWideSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0, 0}},
+			{"data": {5, 7}},
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}}, // lo=1, hi=2^64-2
+			{"data": {0x8000000000000000, 2}},                  // lo=0, hi=1
+			{"data": {0x0123456789ABCDEF, 0xFEDCBA9876543210}},
+		},
+	},
+	{
+		name: "wideReg", // value through a real u65 register (add then sub)
+		src:  wideRegSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0, 0}},
+			{"data": {5, 7}},
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}},
+			{"data": {0xDEADBEEF, 0xCAFEBABE}},
+		},
+	},
+	{
+		name: "divmod64", // u64 division: u128 hint targets + validation (lowered)
+		src:  divMod64Src,
+		vectors: []map[string][]uint64{
+			{"data": {7, 3}},
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFF}},
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}},
+			{"data": {0, 9}},
+			{"data": {12345678901234567, 1}},
+			{"data": {5, 0}}, // division by zero -> error
+		},
+	},
+}
+
+// TestGenDifferential runs the shared corpus: see the comment on diffCase.
 func TestGenDifferential(t *testing.T) {
 	goBin, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("go toolchain not available")
 	}
 
-	cases := []struct {
-		name    string
-		src     string
-		vectors []map[string][]uint64
-	}{
-		{
-			name: "tutorial",
-			src:  tutorialSrc,
-			vectors: []map[string][]uint64{
-				{"args": {5, 4, 3}},         // [9, 27, 1]
-				{"args": {0, 0, 0}},         // [0, 0, 0]
-				{"args": {7, 7, 2}},         // [14, 28, 0]
-				{"args": {1, 0, 65535}},     // [1, 65535, 1]
-				{"args": {60000, 60000, 1}}, // a+b overflow -> error
-				{"args": {300, 300, 300}},   // (a+b)*c overflow -> error
-				{"args": {3, 4, 1}},         // a-b underflow -> error
-			},
-		},
-		{
-			name: "destructure", // multi-register target (StoreAcross distribution)
-			src:  destructSrc,
-			vectors: []map[string][]uint64{
-				{"args": {0x12345678}}, // hi=0x1234, lo=0x5678
-				{"args": {0}},          // hi=0, lo=0
-				{"args": {0xFFFFFFFF}}, // hi=0xFFFF, lo=0xFFFF
-				{"args": {0x0000ABCD}}, // hi=0, lo=0xABCD
-			},
-		},
-		{
-			name: "branch", // Phase 2: if/else (SKIP_IF + SKIP)
-			src:  branchSrc,
-			vectors: []map[string][]uint64{
-				{"data": {0}},   // x<=10 -> 1
-				{"data": {10}},  // x<=10 -> 11
-				{"data": {11}},  // x>10  -> 10
-				{"data": {255}}, // x>10  -> 254
-			},
-		},
-		{
-			name: "loop", // Phase 2: JUMP-based loop, acc == n
-			src:  loopSrc,
-			vectors: []map[string][]uint64{
-				{"data": {0}},
-				{"data": {1}},
-				{"data": {17}},
-				{"data": {255}},
-			},
-		},
-		{
-			name: "double", // Phase 2: loop body overflows u8 once x>=8
-			src:  doubleSrc,
-			vectors: []map[string][]uint64{
-				{"data": {0}}, // 1
-				{"data": {3}}, // 8
-				{"data": {7}}, // 128
-				{"data": {8}}, // overflow -> error
-				{"data": {9}}, // overflow -> error
-			},
-		},
-		{
-			name: "call", // Phase 3: simple value-returning call
-			src:  callSrc,
-			vectors: []map[string][]uint64{
-				{"data": {0}},
-				{"data": {41}},
-				{"data": {254}},
-				{"data": {255}}, // inc overflows u8 -> error
-			},
-		},
-		{
-			name: "callFail", // Phase 3: void call that may FAIL (error parity across frames)
-			src:  callFailSrc,
-			vectors: []map[string][]uint64{
-				{"data": {0}}, // check fails -> error
-				{"data": {7}},
-				{"data": {255}},
-			},
-		},
-		{
-			name: "recSum", // Phase 3: recursion; large n overflows u16 -> error
-			src:  recSumSrc,
-			vectors: []map[string][]uint64{
-				{"data": {0}},   // 0
-				{"data": {1}},   // 1
-				{"data": {5}},   // 15
-				{"data": {255}}, // 32640
-				{"data": {361}}, // 65341
-				{"data": {362}}, // 65703 -> overflow u16 -> error
-			},
-		},
-		{
-			name: "bitwise", // Phase 7.1: AND/OR/XOR/NOT
-			src:  bitwiseSrc,
-			vectors: []map[string][]uint64{
-				{"data": {0x0F, 0x3C}},
-				{"data": {0xFF, 0x00}},
-				{"data": {0xAA, 0x55}},
-				{"data": {0x00, 0x00}},
-			},
-		},
-		{
-			name: "shift", // Phase 7.1: SHL (masked) / SHR, incl. amounts >= width
-			src:  shiftSrc,
-			vectors: []map[string][]uint64{
-				{"data": {0x01, 3}},
-				{"data": {0xFF, 1}},
-				{"data": {0x80, 7}},
-				{"data": {0x12, 8}},  // shift by width -> 0
-				{"data": {0x12, 20}}, // shift beyond width -> 0
-			},
-		},
-		{
-			name: "concat", // Phase 7.1: BIT_CONCAT (byte-swap a u16)
-			src:  concatSrc,
-			vectors: []map[string][]uint64{
-				{"data": {0x1234}},
-				{"data": {0x00FF}},
-				{"data": {0xFF00}},
-				{"data": {0x0000}},
-			},
-		},
-		{
-			name: "endian", // Phase 7.1: shifts + AND + OR + concat + calls
-			src:  endianSrc,
-			vectors: []map[string][]uint64{
-				{"data": {0x0123456789ABCDEF}},
-				{"data": {0x0000000000000001}},
-				{"data": {0xFFFFFFFFFFFFFFFF}},
-			},
-		},
-	}
+	for _, tc := range diffCases {
+		for _, shape := range shapes {
+			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
+				src, err := vm.GenerateGo(compileUint(t, tc.src, shape.lowered), vm.GoGenConfig{})
+				if err != nil {
+					t.Fatalf("GenerateGo: %v", err)
+				}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			src, err := vm.WordToGoSource(compileU64(t, tc.src))
-			if err != nil {
-				t.Fatalf("WordToGoSource: %v", err)
-			}
+				prog := buildProgram(t, goBin, src)
+				for _, in := range tc.vectors {
+					t.Run(inputName(in), func(t *testing.T) {
+						refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.lowered), in)
 
-			prog := buildProgram(t, goBin, src)
-			for _, in := range tc.vectors {
-				t.Run(inputName(in), func(t *testing.T) {
-					refOut, refErr := referenceRun(t, compileU64(t, tc.src), in)
+						genOut, genErr := runProgram(t, prog, in)
+						if refErr != genErr {
+							t.Fatalf("error mismatch: reference err=%v, generated err=%v (in=%v)", refErr, genErr, in)
+						}
 
-					genOut, genErr := runProgram(t, prog, in)
-					if refErr != genErr {
-						t.Fatalf("error mismatch: reference err=%v, generated err=%v (in=%v)", refErr, genErr, in)
-					}
+						if refErr {
+							return
+						}
 
-					if refErr {
-						return
-					}
-
-					if !reflect.DeepEqual(refOut, genOut) {
-						t.Fatalf("output mismatch (in=%v):\n  reference=%v\n  generated=%v", in, refOut, genOut)
-					}
-				})
-			}
-		})
+						if !reflect.DeepEqual(refOut, genOut) {
+							t.Fatalf("output mismatch (in=%v):\n  reference=%v\n  generated=%v", in, refOut, genOut)
+						}
+					})
+				}
+			})
+		}
 	}
 }
 
@@ -656,42 +786,6 @@ type memoryFlags interface {
 	IsReadWrite() bool
 }
 
-func dumpWordMachine(wm *vm.WordMachine[word.Uint64]) string {
-	var b strings.Builder
-
-	modules := wm.Modules()
-
-	fmt.Fprintf(&b, "modules: %d\n", len(modules))
-
-	for id, module := range modules {
-		fmt.Fprintf(&b, "\n[%d] %s %q\n", id, machineModuleKind(module), module.Name())
-		fmt.Fprintf(&b, "  native: %t\n", module.IsNative())
-
-		if mem, ok := module.(memoryFlags); ok {
-			fmt.Fprintf(&b, "  memory: public=%t static=%t readOnly=%t writeOnly=%t readWrite=%t\n",
-				mem.IsPublic(), mem.IsStatic(), mem.IsReadOnly(), mem.IsWriteOnly(), mem.IsReadWrite())
-		}
-
-		fmt.Fprintf(&b, "  registers:\n")
-
-		for rid, reg := range module.Registers() {
-			fmt.Fprintf(&b, "    r%-2d %s\n", rid, reg.String())
-		}
-
-		if fn, ok := module.(*vm.WordFunction); ok {
-			mapping := instruction.NewSystemMap(fn.RegisterMap(), modules)
-
-			fmt.Fprintf(&b, "  code:\n")
-
-			for pc, vec := range fn.Code() {
-				fmt.Fprintf(&b, "    %02d: %s\n", pc, vec.String(mapping))
-			}
-		}
-	}
-
-	return b.String()
-}
-
 func machineModuleKind(module vm.Module) string {
 	switch module.(type) {
 	case *vm.WordFunction:
@@ -712,12 +806,12 @@ func inputName(in map[string][]uint64) string {
 	return string(b)
 }
 
-// referenceRun executes the program on a fresh reference u64 machine, returning
-// output memories as []uint64 and whether execution errored.
-func referenceRun(t *testing.T, wm *vm.WordMachine[word.Uint64], in map[string][]uint64) (map[string][]uint64, bool) {
+// referenceRun executes the program on a fresh reference Uint machine,
+// returning output memories as []uint64 and whether execution errored.
+func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]uint64) (map[string][]uint64, bool) {
 	t.Helper()
 
-	inputs := make(map[string][]word.Uint64, len(in))
+	inputs := make(map[string][]vm.Uint, len(in))
 	for name, values := range in {
 		inputs[name] = toWords(values)
 	}
@@ -802,8 +896,8 @@ func runProgram(t *testing.T, prog string, in map[string][]uint64) (map[string][
 	return out, false
 }
 
-func toWords(vs []uint64) []word.Uint64 {
-	out := make([]word.Uint64, len(vs))
+func toWords(vs []uint64) []vm.Uint {
+	out := make([]vm.Uint, len(vs))
 	for i, v := range vs {
 		out[i] = out[i].SetUint64(v)
 	}
@@ -811,7 +905,7 @@ func toWords(vs []uint64) []word.Uint64 {
 	return out
 }
 
-func fromWords(ws []word.Uint64) []uint64 {
+func fromWords(ws []vm.Uint) []uint64 {
 	out := make([]uint64, len(ws))
 	for i, w := range ws {
 		out[i] = w.Uint64()

@@ -17,12 +17,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 )
 
 // emitCall emits a Go call to the callee function, mirroring CallStack.Enter /
 // Leave: arguments are width-checked against the callee's input registers, and
-// returns are width-checked against the caller's target registers.
+// returns are width-checked against the caller's target registers.  Checks the
+// bounds prove dead are omitted, so the common case is a plain Go call.  A
+// two-limb register expands to two parameters / results.
 func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) error {
 	callee, ok := g.funcByID[x.Id]
 	if !ok {
@@ -34,8 +37,9 @@ func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) err
 		return fmt.Errorf("gogen: CALL argument count mismatch (%d vs %d) for %q",
 			len(x.Arguments), len(calleeInputs), callee.Name())
 	}
-
-	if len(x.Returns) != int(callee.NumOutputs()) {
+	// A call may take FEWER returns than the callee has outputs: CallStack.Leave
+	// copies per call.Returns entry, silently discarding trailing outputs.
+	if len(x.Returns) > int(callee.NumOutputs()) {
 		return fmt.Errorf("gogen: CALL return count mismatch (%d vs %d) for %q",
 			len(x.Returns), callee.NumOutputs(), callee.Name())
 	}
@@ -44,51 +48,121 @@ func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) err
 	if err != nil {
 		return err
 	}
+	// Argument width checks against the callee parameter widths (Enter), then
+	// expansion: a wide parameter takes both limbs, a narrow one takes the low
+	// limb (the check just proved the high limb empty).
+	argExprs := []string{}
+
+	for i, arg := range args {
+		in := calleeInputs[i]
+		if in.IsNative() {
+			return fmt.Errorf("gogen: native parameter in %q unsupported", callee.Name())
+		}
+
+		g.checkWidth(c, arg, in.Width())
+		argExprs = append(argExprs, arg.expr)
+
+		if in.Width() > 64 {
+			argExprs = append(argExprs, arg.hiOr0())
+		}
+	}
+
+	call := fmt.Sprintf("%s(%s)", goFuncName(callee), strings.Join(argExprs, ", "))
+	if callee.NumOutputs() == 0 {
+		c.line(call)
+		return nil
+	}
+	// Map each taken return onto its caller target; trailing outputs (and the
+	// extra tuple slots of wide outputs feeding narrow logic) are planned
+	// below.  The plain tuple assignment applies only when every taken return
+	// matches its target's shape with no check; anything else routes through
+	// block-scoped temporaries and storeValue.
+	type ret struct {
+		target   limb
+		outWidth uint
+		outWide  bool
+	}
+
+	rets := make([]ret, len(x.Returns))
+	direct := true
+
+	for i, target := range x.Returns {
+		l, err := g.limbOf(fn, target)
+		if err != nil {
+			return err
+		}
+
+		out := callee.Register(calleeOutput(callee, i))
+		if out.IsNative() {
+			return fmt.Errorf("gogen: native output in %q unsupported", callee.Name())
+		}
+
+		ow := out.Width()
+		rets[i] = ret{target: l, outWidth: ow, outWide: ow > 64}
+		// Shape mismatch or a surviving width check forces the temp path.
+		if (ow > 64) != (l.width > 64) || ow > l.width {
+			direct = false
+		}
+	}
+	// Discarded trailing outputs become blanks (one per tuple slot).
+	discards := []string{}
+
+	for i := len(x.Returns); i < int(callee.NumOutputs()); i++ {
+		discards = append(discards, "_")
+		if callee.Register(calleeOutput(callee, i)).Width() > 64 {
+			discards = append(discards, "_")
+		}
+	}
+
+	if direct {
+		targets := []string{}
+
+		for _, r := range rets {
+			targets = append(targets, r.target.lo())
+			if r.target.width > 64 {
+				targets = append(targets, r.target.hiName())
+			}
+
+			g.iv.assign(r.target.id, widthMax(r.outWidth))
+		}
+
+		c.linef("%s = %s", strings.Join(append(targets, discards...), ", "), call)
+
+		return nil
+	}
 
 	var inner error
 
 	c.block(func() {
-		// Argument width checks against the callee parameter widths.
-		for i, arg := range args {
-			if w := calleeInputs[i].Width(); !calleeInputs[i].IsNative() && w < 64 {
-				g.emitOverflowCheck(c, widthCheckExpr(arg, w), fmt.Sprintf("bit overflow (value exceeds u%d)", w))
+		tmps := []string{}
+		vals := make([]operand, len(rets))
+
+		for i, r := range rets {
+			lo := fmt.Sprintf("t%d", i)
+			vals[i] = operand{expr: lo, max: widthMax(r.outWidth)}
+			tmps = append(tmps, lo)
+
+			if r.outWide {
+				hi := fmt.Sprintf("t%d_1", i)
+				vals[i].hi = hi
+				tmps = append(tmps, hi)
 			}
 		}
 
-		call := fmt.Sprintf("%s(%s)", goFuncName(callee), strings.Join(args, ", "))
-		if len(x.Returns) == 0 {
-			c.linef("if e := %s; e != nil {", call)
-			c.line(g.returnErr("e"))
-			c.line("}")
+		c.linef("%s := %s", strings.Join(append(tmps, discards...), ", "), call)
 
-			return
-		}
-		// Capture returns in temporaries, then width-check and assign them into
-		// the caller's target registers.
-		tmps := make([]string, len(x.Returns))
-		for i := range x.Returns {
-			tmps[i] = fmt.Sprintf("ret%d", i)
-		}
-
-		c.linef("%s, e := %s", strings.Join(tmps, ", "), call)
-		c.line("if e != nil {")
-		c.line(g.returnErr("e"))
-		c.line("}")
-
-		for i, target := range x.Returns {
-			w, e := g.regWidth(fn, target)
-			if e != nil {
-				inner = e
+		for i, r := range rets {
+			if inner = g.storeValue(c, storeView{single: &rets[i].target, total: r.target.width}, vals[i]); inner != nil {
 				return
 			}
-
-			if w < 64 {
-				g.emitOverflowCheck(c, widthCheckExpr(tmps[i], w), fmt.Sprintf("bit overflow (value exceeds u%d)", w))
-			}
-
-			c.linef("%s = %s", reg(target), tmps[i])
 		}
 	})
 
 	return inner
+}
+
+// calleeOutput returns the register id of the callee's i-th output register
+// (outputs follow inputs in the register file).
+func calleeOutput(callee *wordFunction, i int) register.Id {
+	return register.NewId(callee.NumInputs() + uint(i))
 }

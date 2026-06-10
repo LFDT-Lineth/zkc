@@ -33,31 +33,32 @@ func Test_ZkcUnit_Basic_02(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_03", util.DEFAULT_CONFIG.Constraints(true).Splitting(true).Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_03", util.DEFAULT_CONFIG.Constraints(true).Splitting(true).Bytecode(true).Gogen(true))
 }
 func Test_ZkcUnit_Basic_04(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_04", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_04", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_05(t *testing.T) {
 	// TODO: support static memory for constraints
-	checkZkcUnit(t, "zkc/unit/basic_05", util.DEFAULT_CONFIG.Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_05", util.DEFAULT_CONFIG.Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_06(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_06", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_06", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true).Gogen(true))
 }
 func Test_ZkcUnit_Basic_07(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_07", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_07", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_08(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_08", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_08", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_09(t *testing.T) {
 	// TODO: register splitting
-	checkZkcUnit(t, "zkc/unit/basic_09", util.DEFAULT_CONFIG.Fields(field.BLS12_377).Constraints(true).Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_09", util.DEFAULT_CONFIG.Fields(field.BLS12_377).
+		Constraints(true).Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_10(t *testing.T) {
@@ -95,15 +96,15 @@ func Test_ZkcUnit_Basic_16(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_17(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_17", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_17", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_18(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_18", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_18", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_19(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_19", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
+	checkZkcUnit(t, "zkc/unit/basic_19", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true).Gogen(true))
 }
 
 func Test_ZkcUnit_Basic_20(t *testing.T) {
@@ -801,5 +802,8 @@ func Test_ZkcUnit_SkipIf_05(t *testing.T) {
 // ===================================================================
 
 func checkZkcUnit(t *testing.T, test string, config util.Config) {
-	util.CheckValid(t, test, "zkc", config.Words(vm.WORD_UINT, vm.WORD_UINT64))
+	// The generated-Go ("native") executor is cross-checked on every unit test:
+	// programs it cannot yet handle (wide registers/constants/moduli) are
+	// logged-and-skipped by the harness, never failed.
+	util.CheckValid(t, test, "zkc", config.Words(vm.WORD_UINT, vm.WORD_UINT64).Gogen(true))
 }

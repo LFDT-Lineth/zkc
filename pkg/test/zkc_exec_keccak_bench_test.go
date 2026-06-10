@@ -12,14 +12,25 @@
 // SPDX-License-Identifier: Apache-2.0
 package test
 
-// Phase 7.3: a three-way comparison of the same compiled ZkC keccak program run by
-//   1. the (uint64-lowered) WordMachine — the slow, analysis-grade interpreter;
+// A three-way comparison of the same compiled ZkC keccak program run by
+//   1. the WordMachine — the slow, analysis-grade interpreter (uint64-narrowed
+//      where possible, over Uint otherwise);
 //   2. the bytecode interpreter — the current "fast" tier;
-//   3. the generated-Go executor — this branch.
+//   3. the generated-Go executor — which consumes the Uint machine directly.
 //
-// The point of the branch is to show (3) is faster than (2) while being lean enough
-// to replace it.  For now the gogen number includes `go build` (reported as a
-// separate metric) and subprocess execution; an in-process AOT path comes later.
+// Two machine shapes are exercised:
+//
+//   - "plain" (native bitwise ops): the fastest execution shape, where all
+//     three tiers can in principle run (the bytecode encoder currently rejects
+//     this program with "branch target overflow");
+//   - "lowered" (LowerNatives on — the prover shape): comparison/division
+//     lowering widens temporaries to u65, so the uint64-narrowed tiers
+//     (WordMachine-u64, bytecode) PANIC during narrowing and gogen rejects the
+//     program until wide-register support lands (M2.2).  Only the Uint
+//     WordMachine runs it today; the test records that honestly.
+//
+// For now the gogen number includes `go build` (reported as a separate metric)
+// and subprocess execution; an in-process AOT path comes later.
 
 import (
 	"bytes"
@@ -55,51 +66,83 @@ var (
 // using the (slow) WordMachine as the reference oracle.  The fixture carries inputs
 // only, so correctness is established differentially — gogen must match the
 // WordMachine exactly.  It is heavy, so it is skipped under -short and is not part
-// of the standard zkc-test selection.
+// of the standard zkc-test selection.  (Plain shape only: interpreting the lowered
+// shape over 50000 blocks is prohibitively slow; the lowered shape is covered by
+// the smoke test below.)
 func TestZkcExecKeccakV2(t *testing.T) {
 	if testing.Short() {
 		t.Skip("keccak v2 cross-check is heavy; skipped in -short")
 	}
 
-	m64 := compileKeccakV2(t)
+	wm := compileKeccakV2(t, false)
 	inputBytes := loadKeccakV2Input(t)
-	inputWords := decodeKeccakInputs(t, m64, inputBytes)
+
+	m64, err := tryNarrowKeccak(wm)
+	if err != nil {
+		t.Fatalf("narrowing the plain shape should succeed: %v", err)
+	}
 
 	// Reference: the slow word machine.
-	want := runKeccakWordCore(t, m64, inputWords)["result"]
+	want := runKeccakCore(t, m64, decodeKeccakInputs(t, m64, inputBytes))["result"]
 
 	// Generated Go must match the reference exactly.
-	if got := runKeccakGogen(t, m64, inputBytes); !bytes.Equal(got, want) {
+	got, err := tryKeccakGogen(t, wm, inputBytes)
+	if err != nil {
+		t.Fatalf("gogen: %v", err)
+	}
+
+	if !bytes.Equal(got, want) {
 		t.Fatalf("gogen result mismatch")
 	}
 
 	// Bytecode interpreter, if it can encode this program (see tryBytecode).
 	if bci, err := tryBytecodeInterpreter(m64); err != nil {
 		t.Logf("bytecode interpreter unavailable for this program: %v", err)
-	} else if got := runKeccakWordCore(t, bci, inputWords)["result"]; !bytes.Equal(got, want) {
+	} else if got := runKeccakCore(t, bci, decodeKeccakInputs(t, bci, inputBytes))["result"]; !bytes.Equal(got, want) {
 		t.Fatalf("bytecode result mismatch")
 	}
 }
 
 // TestZkcExecKeccakV2SmokeAgree is a fast correctness check on a small synthetic
-// input (2 pre-padded blocks): it asserts the three executors agree, without
-// needing the large fixture or a known-good digest.  This exercises gogen's RAM,
-// SROM, bitwise/shift/concat and call support end-to-end.
+// input (2 pre-padded blocks): it asserts the available executors agree on BOTH
+// machine shapes, without needing the large fixture or a known-good digest.  On
+// the plain shape this exercises gogen's RAM, SROM, bitwise/shift/concat and
+// call support end-to-end.  On the lowered (prover) shape only the Uint
+// WordMachine can run today (u65 temporaries); the others are logged-and-skipped.
 func TestZkcExecKeccakV2SmokeAgree(t *testing.T) {
-	m64 := compileKeccakV2(t)
-	inputBytes := syntheticKeccakInput(2)
-	inputWords := decodeKeccakInputs(t, m64, inputBytes)
+	for _, shape := range []struct {
+		name    string
+		lowered bool
+	}{{"plain", false}, {"lowered", true}} {
+		t.Run(shape.name, func(t *testing.T) {
+			wm := compileKeccakV2(t, shape.lowered)
+			inputBytes := syntheticKeccakInput(2)
 
-	want := runKeccakWordCore(t, m64, inputWords)["result"]
+			// Reference: the Uint word machine (always runs).
+			want := runKeccakCore(t, wm, decodeKeccakInputs(t, wm, inputBytes))["result"]
 
-	if bci, err := tryBytecodeInterpreter(m64); err != nil {
-		t.Logf("bytecode interpreter unavailable for this program: %v", err)
-	} else if got := runKeccakWordCore(t, bci, inputWords)["result"]; !bytes.Equal(got, want) {
-		t.Fatalf("bytecode disagrees with wordmachine")
-	}
+			// The uint64-narrowed peers, when the shape permits narrowing.
+			if m64, err := tryNarrowKeccak(compileKeccakV2(t, shape.lowered)); err != nil {
+				t.Logf("uint64 narrowing unavailable for this shape: %v", err)
+			} else {
+				if got := runKeccakCore(t, m64, decodeKeccakInputs(t, m64, inputBytes))["result"]; !bytes.Equal(got, want) {
+					t.Fatalf("wordmachine-u64 disagrees with the Uint reference")
+				}
 
-	if got := runKeccakGogen(t, m64, inputBytes); !bytes.Equal(got, want) {
-		t.Fatalf("gogen disagrees with wordmachine")
+				if bci, err := tryBytecodeInterpreter(m64); err != nil {
+					t.Logf("bytecode interpreter unavailable for this program: %v", err)
+				} else if got := runKeccakCore(t, bci, decodeKeccakInputs(t, bci, inputBytes))["result"]; !bytes.Equal(got, want) {
+					t.Fatalf("bytecode disagrees with the Uint reference")
+				}
+			}
+
+			// Generated Go.
+			if got, err := tryKeccakGogen(t, wm, inputBytes); err != nil {
+				t.Logf("gogen unavailable for this shape: %v", err)
+			} else if !bytes.Equal(got, want) {
+				t.Fatalf("gogen disagrees with the Uint reference")
+			}
+		})
 	}
 }
 
@@ -107,6 +150,7 @@ func TestZkcExecKeccakV2SmokeAgree(t *testing.T) {
 // keccak-f permutation is exercised regardless of the block contents.
 func syntheticKeccakInput(nBlocks int) map[string][]byte {
 	nb := make([]byte, 8)
+	nb[6] = byte(nBlocks >> 8)
 	nb[7] = byte(nBlocks)
 	// Each block is 17 u64 lanes = 136 bytes.
 	blocks := make([]byte, nBlocks*17*8)
@@ -117,44 +161,73 @@ func syntheticKeccakInput(nBlocks int) map[string][]byte {
 	return map[string][]byte{"n_blocks": nb, "blocks": blocks}
 }
 
+// BenchmarkZkcExecKeccakV2 times the three executors on the plain (native
+// bitwise) shape over the full 50000-block fixture.
 func BenchmarkZkcExecKeccakV2(b *testing.B) {
-	inputBytes := loadKeccakV2Input(b)
+	benchmarkKeccakThreeWay(b, false, loadKeccakV2Input(b))
+}
+
+// BenchmarkZkcExecKeccakV2Lowered times the executors on the lowered (prover)
+// shape.  Interpreting lowered bitwise ops is orders of magnitude slower, so a
+// smaller synthetic input keeps the comparison runnable; the u64-narrowed and
+// gogen tiers skip until wide-register support lands.
+func BenchmarkZkcExecKeccakV2Lowered(b *testing.B) {
+	benchmarkKeccakThreeWay(b, true, syntheticKeccakInput(500))
+}
+
+func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][]byte) {
+	b.Helper()
+
 	blockBytes := int64(len(inputBytes["blocks"]))
 
 	b.Run("wordmachine", func(b *testing.B) {
-		m64 := compileKeccakV2(b)
-		inputWords := decodeKeccakInputs(b, m64, inputBytes)
+		// Prefer the uint64-narrowed machine (the historical baseline); fall
+		// back to the Uint machine where narrowing is impossible.
+		wm := compileKeccakV2(b, lowered)
+
+		var run func() map[string][]byte
+
+		if m64, err := tryNarrowKeccak(wm); err == nil {
+			inputWords := decodeKeccakInputs(b, m64, inputBytes)
+			run = func() map[string][]byte { return runKeccakCore(b, m64, inputWords) }
+		} else {
+			inputWords := decodeKeccakInputs(b, wm, inputBytes)
+			run = func() map[string][]byte { return runKeccakCore(b, wm, inputWords) }
+		}
 
 		b.SetBytes(blockBytes)
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			keccakByteSink = runKeccakWordCore(b, m64, inputWords)
+			keccakByteSink = run()
 		}
 	})
 
 	b.Run("bytecode", func(b *testing.B) {
-		m64 := compileKeccakV2(b)
+		m64, err := tryNarrowKeccak(compileKeccakV2(b, lowered))
+		if err != nil {
+			b.Skipf("uint64 narrowing unavailable for this shape: %v", err)
+		}
 		// Compile to bytecode once, mirroring how gogen builds once below.
 		bci, err := tryBytecodeInterpreter(m64)
 		if err != nil {
 			b.Skipf("bytecode interpreter cannot encode this program: %v", err)
 		}
 
-		inputWords := decodeKeccakInputs(b, m64, inputBytes)
+		inputWords := decodeKeccakInputs(b, bci, inputBytes)
 
 		b.SetBytes(blockBytes)
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			keccakByteSink = runKeccakWordCore(b, bci, inputWords)
+			keccakByteSink = runKeccakCore(b, bci, inputWords)
 		}
 	})
 
 	b.Run("gogen", func(b *testing.B) {
-		m64 := compileKeccakV2(b)
+		wm := compileKeccakV2(b, lowered)
 
-		src, err := vm.WordToGoSource(m64)
+		src, err := vm.GenerateGo(wm, vm.GoGenConfig{})
 		if err != nil {
 			b.Skipf("gogen unsupported: %v", err)
 		}
@@ -167,13 +240,18 @@ func BenchmarkZkcExecKeccakV2(b *testing.B) {
 		}
 
 		buildMs := float64(time.Since(start).Milliseconds())
-		inputWords := toKeccakU64Map(decodeKeccakInputs(b, m64, inputBytes))
+		// Pre-marshal the inputs: the timed loop measures the executor
+		// (subprocess + its own JSON decode), not the harness's json.Marshal.
+		inJSON, err := util.GogenMarshalInputs(toKeccakU64Map(b, decodeKeccakInputs(b, wm, inputBytes)))
+		if err != nil {
+			b.Fatal(err)
+		}
 
 		b.SetBytes(blockBytes)
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			out, errored, err := util.GogenRun(prog, inputWords)
+			out, errored, err := util.GogenRunRaw(prog, inJSON)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -194,9 +272,10 @@ func BenchmarkZkcExecKeccakV2(b *testing.B) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// compileKeccakV2 compiles the keccak v2 source into a fresh, unlowered,
-// vectorised u64 word machine (the shared starting point for all three executors).
-func compileKeccakV2(tb testing.TB) *vm.WordMachine[vm.Uint64] {
+// compileKeccakV2 compiles the keccak v2 source into a fresh, vectorised word
+// machine over Uint — the machine gogen consumes and the reference executor
+// interprets.  `lowered` selects the prover shape.
+func compileKeccakV2(tb testing.TB, lowered bool) *vm.WordMachine[vm.Uint] {
 	tb.Helper()
 
 	data, err := os.ReadFile(keccakV2SourcePath)
@@ -211,14 +290,27 @@ func compileKeccakV2(tb testing.TB) *vm.WordMachine[vm.Uint64] {
 		tb.Fatalf("compile: %v", errs)
 	}
 
-	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).LowerNatives(false).Vectorize(true).Quiet(true)
+	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).LowerNatives(lowered).Vectorize(true).Quiet(true)
 
 	wm, errs := program.Compile(cfg)
 	if len(errs) > 0 {
 		tb.Fatalf("codegen: %v", errs)
 	}
 
-	return vm.WordToWordMachine[vm.Uint, vm.Uint64](wm)
+	return wm
+}
+
+// tryNarrowKeccak narrows a Uint machine to uint64 words, recovering the panic
+// WordToWordMachine raises when the machine holds registers beyond 64 bits
+// (which the lowered shape does: comparison lowering widens to u65).
+func tryNarrowKeccak(wm *vm.WordMachine[vm.Uint]) (m64 *vm.WordMachine[vm.Uint64], err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			m64, err = nil, fmt.Errorf("%v", r)
+		}
+	}()
+
+	return vm.WordToWordMachine[vm.Uint, vm.Uint64](wm), nil
 }
 
 // loadKeccakV2Input parses the fixture into the program inputs.  The fixture
@@ -241,10 +333,10 @@ func loadKeccakV2Input(tb testing.TB) map[string][]byte {
 }
 
 // decodeKeccakInputs decodes the raw input bytes into word values for the machine.
-func decodeKeccakInputs(tb testing.TB, m vm.Core[vm.Uint64], inputBytes map[string][]byte) map[string][]vm.Uint64 {
+func decodeKeccakInputs[W vm.Word[W], C vm.Core[W]](tb testing.TB, m C, inputBytes map[string][]byte) map[string][]W {
 	tb.Helper()
 
-	inputs, errs := vm.DecodeInputs(m, inputBytes)
+	inputs, errs := vm.DecodeInputs[W](m, inputBytes)
 	if len(errs) > 0 {
 		tb.Fatalf("decode inputs: %v", errs)
 	}
@@ -266,8 +358,8 @@ func tryBytecodeInterpreter(m64 *vm.WordMachine[vm.Uint64]) (core vm.Core[vm.Uin
 	return vm.WordToBytecodeInterpreter(m64), nil
 }
 
-// runKeccakWordCore boots and runs a Core to completion, returning encoded outputs.
-func runKeccakWordCore(tb testing.TB, m vm.Core[vm.Uint64], inputs map[string][]vm.Uint64) map[string][]byte {
+// runKeccakCore boots and runs a Core to completion, returning encoded outputs.
+func runKeccakCore[W vm.Word[W], C vm.Core[W]](tb testing.TB, m C, inputs map[string][]W) map[string][]byte {
 	tb.Helper()
 
 	if err := m.Boot("main", inputs); err != nil {
@@ -278,17 +370,18 @@ func runKeccakWordCore(tb testing.TB, m vm.Core[vm.Uint64], inputs map[string][]
 		tb.Fatalf("execute: %v", err)
 	}
 
-	return vm.EncodeOutputs(m)
+	return vm.EncodeOutputs[W](m)
 }
 
-// runKeccakGogen generates, builds and runs the gogen executor, returning its
-// "result" output encoded back to bytes for comparison.
-func runKeccakGogen(tb testing.TB, m64 *vm.WordMachine[vm.Uint64], inputBytes map[string][]byte) []byte {
+// tryKeccakGogen generates (from the Uint machine), builds and runs the gogen
+// executor, returning its "result" output encoded back to bytes for comparison
+// — or an error when the generator does not support the program.
+func tryKeccakGogen(tb testing.TB, wm *vm.WordMachine[vm.Uint], inputBytes map[string][]byte) ([]byte, error) {
 	tb.Helper()
 
-	src, err := vm.WordToGoSource(m64)
+	src, err := vm.GenerateGo(wm, vm.GoGenConfig{})
 	if err != nil {
-		tb.Fatalf("gogen generate: %v", err)
+		return nil, err
 	}
 
 	prog, err := util.GogenBuild(src)
@@ -296,7 +389,7 @@ func runKeccakGogen(tb testing.TB, m64 *vm.WordMachine[vm.Uint64], inputBytes ma
 		tb.Fatalf("gogen build: %v", err)
 	}
 
-	inputWords := toKeccakU64Map(decodeKeccakInputs(tb, m64, inputBytes))
+	inputWords := toKeccakU64Map(tb, decodeKeccakInputs(tb, wm, inputBytes))
 
 	out, errored, err := util.GogenRun(prog, inputWords)
 	if err != nil {
@@ -307,17 +400,24 @@ func runKeccakGogen(tb testing.TB, m64 *vm.WordMachine[vm.Uint64], inputBytes ma
 		tb.Fatal("gogen reported an execution error")
 	}
 
-	return encodeKeccakResult(tb, m64, out["result"])
+	return encodeKeccakResult(tb, wm, out["result"]), nil
 }
 
 // toKeccakU64Map converts decoded word inputs into the plain uint64 form the
 // generated program consumes over JSON.
-func toKeccakU64Map(words map[string][]vm.Uint64) map[string][]uint64 {
+func toKeccakU64Map(tb testing.TB, words map[string][]vm.Uint) map[string][]uint64 {
+	tb.Helper()
+
 	out := make(map[string][]uint64, len(words))
 
 	for name, vs := range words {
 		us := make([]uint64, len(vs))
+
 		for i, v := range vs {
+			if !v.FitsWithin(64) {
+				tb.Fatalf("input %q[%d] exceeds 64 bits", name, i)
+			}
+
 			us[i] = v.Uint64()
 		}
 
@@ -330,15 +430,15 @@ func toKeccakU64Map(words map[string][]vm.Uint64) map[string][]uint64 {
 // encodeKeccakResult encodes the gogen "result" words back to bytes using the
 // result memory's geometry, so it can be compared with the fixture's expected
 // bytes.
-func encodeKeccakResult(tb testing.TB, m64 *vm.WordMachine[vm.Uint64], words []uint64) []byte {
+func encodeKeccakResult(tb testing.TB, wm *vm.WordMachine[vm.Uint], words []uint64) []byte {
 	tb.Helper()
 
-	vals := make([]vm.Uint64, len(words))
+	vals := make([]vm.Uint, len(words))
 	for i, v := range words {
 		vals[i] = vals[i].SetUint64(v)
 	}
 
-	for it := m64.Outputs(); it.HasNext(); {
+	for it := wm.Outputs(); it.HasNext(); {
 		o := it.Next()
 		if o.Name() == "result" {
 			return vm.EncodeBytes(vals, o.Geometry())
