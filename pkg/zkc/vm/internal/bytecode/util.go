@@ -91,7 +91,7 @@ func getRelativeOffset(offset uint32, target Address, width uint) uint32 {
 func packRegsIntoCodes(bytes []byte) []uint32 {
 	var (
 		nBytes = uint32(len(bytes))
-		ncodes = nCodesPackedSmall(nBytes)
+		ncodes = nCodesPackedSmall(uint(nBytes))
 		//
 		codes = make([]uint32, ncodes)
 	)
@@ -115,10 +115,10 @@ func packRegsIntoCodes(bytes []byte) []uint32 {
 	return codes
 }
 
-func nCodesPackedSmall(n uint32) uint32 {
+func nCodesPackedSmall(n uint) uint32 {
 	var (
 		// 4 bytes per code
-		ncodes = n / 4
+		ncodes = uint32(n) / 4
 	)
 	// Round up if necessary
 	if n%4 != 0 {

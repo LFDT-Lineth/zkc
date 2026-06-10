@@ -105,16 +105,17 @@ func decodeReadWrite[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryI
 		// determine read/write mode
 		m = RwMode{tag: uint8(codes[pc] - RD_ROM_nm)}
 		// decode remainder
-		id, naddr, ndata, iter, n = decodeReadWrite_sn(pc, codes)
-		// flattern iterator
-		regs = OpIterToArray[uint16](naddr+ndata, iter)
+		id, addrIter, dataIter, n = decodeReadWrite_sn(pc, codes)
+		// flattern iterators
+		addr = OpIterToArray[uint16](addrIter)
+		data = OpIterToArray[uint16](dataIter)
 		//
 		mid = MemoryId{m.Kind(), id}
 	)
 	// remap memory identifier to be module-specific
 	id = rmap[mid]
 	// done
-	return &ReadWrite{m, id, regs[:naddr], regs[naddr:]}, n
+	return &ReadWrite{m, id, addr, data}, n
 }
 
 // ============================================================================
@@ -159,14 +160,16 @@ func encodeReadWrite_sn(m RwMode, id uint16, addr []Reg, data []Reg) []uint32 {
 	return append(codes, packRegsIntoCodes(bytes)...)
 }
 
-func decodeReadWrite_sn(pc uint32, codes []uint32) (id uint16, naddr, ndata uint, regs Op8Iter, n uint32) {
-	naddr = uint((codes[pc] >> 16) & 0xff)
-	ndata = uint((codes[pc] >> 24) & 0xff)
-	ns := nCodesPackedSmall(uint32(naddr + ndata))
+func decodeReadWrite_sn(pc uint32, codes []uint32) (id uint16, addr, data Op8Iter, n uint32) {
+	naddr := uint((codes[pc] >> 16) & 0xff)
+	ndata := uint((codes[pc] >> 24) & 0xff)
+	ns := nCodesPackedSmall(naddr + ndata)
 	id = uint16((codes[pc] >> 8) & 0xff)
-	regs = NewOp8Iter(0, codes[pc+1:])
+	addr = NewOp8Iter(0, naddr, codes[pc+1:])
+	data = NewOp8Iter(naddr, ndata, codes[pc+1:])
+	n = 1 + ns
 	//
-	return id, naddr, ndata, regs, 1 + ns
+	return
 }
 
 // ============================================================================

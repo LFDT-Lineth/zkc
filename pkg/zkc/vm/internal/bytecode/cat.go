@@ -45,7 +45,9 @@ func (p *Cat) Codes(_ uint32) []uint32 {
 
 func decodeCat[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
 	var (
-		targets, sources, n = decodeCatOperands(pc, codes)
+		tIter, sIter, n = decodeCatOperands(pc, codes)
+		targets         = OpIterToArray[uint16](tIter)
+		sources         = OpIterToArray[uint16](sIter)
 	)
 	//
 	return &Cat{targets, sources}, n
@@ -82,15 +84,17 @@ func encodeCat(targets []Reg, sources []Reg) []uint32 {
 	return append(codes, packRegsIntoCodes(bytes)...)
 }
 
-func decodeCatOperands(pc uint32, codes []uint32) (targets, sources []Reg, n uint32) {
+func decodeCatOperands(pc uint32, codes []uint32) (targets, sources Op8Iter, n uint32) {
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
 		nsources = uint((codes[pc] >> 16) & 0xff)
-		iter     = NewOp8Iter(0, codes[pc+1:])
-		regs     = OpIterToArray[uint16](ntargets+nsources, iter)
 	)
 	//
-	return regs[:ntargets], regs[ntargets:], 1 + nCodesPackedSmall(uint32(ntargets+nsources))
+	targets = NewOp8Iter(0, ntargets, codes[pc+1:])
+	sources = NewOp8Iter(ntargets, nsources, codes[pc+1:])
+	n = 1 + nCodesPackedSmall(ntargets+nsources)
+	//
+	return
 }
 
 // Concat constructs a bit-concatenation bytecode.
