@@ -58,7 +58,7 @@ static rot_offset(x:u3, y:u3) -> (offset:u6) {
 // In this implementation, we use blocks as input
 // Multi-rate padding has already been applied to the input
 pub input n_blocks(address:u1) -> (length:u64)
-pub input blocks(address:u64) -> (block:bitrate_type)
+pub input blocks(address:u64) -> (b16:u64, b15:u64, b14:u64, b13:u64, b12:u64, b11:u64, b10:u64, b9:u64, b8:u64, b7:u64, b6:u64, b5:u64, b4:u64, b3:u64, b2:u64, b1:u64, b0:u64)
 memory state_row0(address:u3) -> (state:lane)
 memory state_row1(address:u3) -> (state:lane)
 memory state_row2(address:u3) -> (state:lane)
@@ -71,7 +71,7 @@ memory b3(address:u3) -> (state:lane)
 memory b4(address:u3) -> (state:lane)
 memory c(address:u3) -> (state:lane)
 memory d(address:u3) -> (state:lane)
-pub output result(address:u1) -> (out:u256)
+pub output result(address:u1) -> (out3:u64, out2:u64, out1:u64, out0:u64)
 
 // Accelerator function for modulo 5
 static mod5(address:u5) -> (result:u3) {
@@ -87,11 +87,8 @@ const byte_length:u64 = 8
 fn main<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
 
     // no initialization as the state is already filled with 0
-
     absorbing_phase()
-
     squeezing_phase()
-
 }
 
 // ===================================================================
@@ -102,7 +99,7 @@ fn main<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, 
 fn absorbing_phase<state_row0, state_row1, state_row2, state_row3, state_row4, b0, b1, b2, b3, b4, c, d>() {
     for i:u64 = 0; i<n_blocks[0]; i = i + 1 {
         var c16:u64, c15:u64, c14:u64, c13:u64, c12:u64, c11:u64, c10:u64, c9:u64, c8:u64, c7:u64, c6:u64, c5:u64, c4:u64, c3:u64, c2:u64, c1:u64, c0:u64
-        c16::c15::c14::c13::c12::c11::c10::c9::c8::c7::c6::c5::c4::c3::c2::c1::c0 = blocks[i]
+        c16, c15, c14, c13, c12, c11, c10, c9, c8, c7, c6, c5, c4, c3, c2, c1, c0 = blocks[i]
         state_row0[0] = state_row0[0] ^ switch_endian_u64(c16)
         state_row1[0] = state_row1[0] ^ switch_endian_u64(c15)
         state_row2[0] = state_row2[0] ^ switch_endian_u64(c14)
@@ -127,7 +124,7 @@ fn absorbing_phase<state_row0, state_row1, state_row2, state_row3, state_row4, b
 }
 
 fn squeezing_phase<state_row0, state_row1, state_row2, state_row3, state_row4>() {
-    result[0] = switch_endian_u64(state_row0[0])::switch_endian_u64(state_row1[0])::switch_endian_u64(state_row2[0])::switch_endian_u64(state_row3[0])
+    result[0] = switch_endian_u64(state_row0[0]), switch_endian_u64(state_row1[0]), switch_endian_u64(state_row2[0]), switch_endian_u64(state_row3[0])
 }
 
 // ===================================================================
@@ -246,59 +243,9 @@ fn iota<state_row0>(round_constant:u64) {
 // Helper functions
 // ===================================================================
 
-// rotate left by n bits
-fn bit_rotl64(word:u64, n:u6) -> (res:u64) {
-    var b5:u1
-    var b4:u1
-    var b3:u1
-    var b2:u1
-    var b1:u1
-    var b0:u1
-    b5::b4::b3::b2::b1::b0 = n
-    var w:u64 = word
-    // rotate by 32 if bit 5 is set
-    if b5 == 1 {
-        var hi:u32
-        var lo:u32
-        hi::lo = w
-        w = lo::hi
-    }
-    // rotate by 16 if bit 4 is set
-    if b4 == 1 {
-        var hi:u16
-        var lo:u48
-        hi::lo = w
-        w = lo::hi
-    }
-    // rotate by 8 if bit 3 is set
-    if b3 == 1 {
-        var hi:u8
-        var lo:u56
-        hi::lo = w
-        w = lo::hi
-    }
-    // rotate by 4 if bit 2 is set
-    if b2 == 1 {
-        var hi:u4
-        var lo:u60
-        hi::lo = w
-        w = lo::hi
-    }
-    // rotate by 2 if bit 1 is set
-    if b1 == 1 {
-        var hi:u2
-        var lo:u62
-        hi::lo = w
-        w = lo::hi
-    }
-    // rotate by 1 if bit 0 is set
-    if b0 == 1 {
-        var hi:u1
-        var lo:u63
-        hi::lo = w
-        w = lo::hi
-    }
-    res = w
+fn bit_rotl64(value:u64, n:u6) -> (res:u64) {
+    var shift:u7 = 64 - (n as u7)
+    res = (value << n) | (value >> shift)
 }
 
 // Convert u64 input from big-endian to little-endian

@@ -14,6 +14,7 @@ package bytecode
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -40,8 +41,20 @@ func (p *Arith[W]) String(mapping SystemMap) string {
 		builder strings.Builder
 		cz      = IsUnusedConstant(p.Op, p.Constant)
 		cstr    = fmt.Sprintf("0x%s", p.Constant.Text(16))
+		prefix  string
 	)
 	//
+	switch {
+	case len(p.Source) == 0:
+		prefix = "ldc"
+	case len(p.Source) == 1 && cz:
+		prefix = "mov"
+	default:
+		prefix = p.Op.Prefix()
+	}
+	//
+	builder.WriteString(prefix)
+	builder.WriteString(" ")
 	builder.WriteString(registersToString(array.Reverse(p.Target), mapping, "::"))
 	builder.WriteString(" = ")
 	builder.WriteString(registersToString(p.Source, mapping, p.Op.String()))
@@ -59,21 +72,25 @@ func (p *Arith[W]) String(mapping SystemMap) string {
 // Codes implementation for Bytecode interface
 func (p *Arith[W]) Codes(_ uint32) []uint32 {
 	var (
-		n  = len(p.Source)
-		m  = len(p.Target)
-		cz = IsUnusedConstant(p.Op, p.Constant)
+		n             = len(p.Source)
+		m             = len(p.Target)
+		cz            = IsUnusedConstant(p.Op, p.Constant)
+		constIsUint8  = p.Constant.Cmp64(256) < 0
+		constIsUint16 = p.Constant.Cmp64(65536) < 0
 	)
 	//
 	switch {
-	case n == 0 && m == 1:
+	case n == 0 && m == 1 && constIsUint16:
 		return encodeLdc_1(p.Constant, p.Target[0])
+	case n == 0 && m == 1:
+		return encodeLdc_w(p.Constant, p.Target[0])
 	case n == 1 && m == 1 && cz:
 		return encodeMove_1s1(p.Source[0], p.Target[0])
-	case n == 1 && m == 1:
+	case n == 1 && m == 1 && constIsUint8:
 		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant)
 	case n == 2 && m == 1 && cz:
 		return encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
-	case n == 2 && m == 1:
+	case n == 2 && m == 1 && constIsUint8:
 		return encodeArith_2n1c(p.Op, p.Source[0], p.Source[1], p.Target[0], p.Constant)
 	case m > 0:
 		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant)
@@ -124,6 +141,10 @@ func decodeArith[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32
 		op = arithop_ADD
 	case LDC:
 		constant, rd, n = decodeLdc_1[W](pc, codes)
+		targets = []Reg{rd}
+		op = arithop_ADD
+	case LDC_w:
+		constant, rd, n = decodeLdc_w[W](pc, codes)
 		targets = []Reg{rd}
 		op = arithop_ADD
 	default:
@@ -249,11 +270,10 @@ func decodeArith_1n1c[W word.Word[W]](pc uint32, codes []uint32) (rs, rd uint16,
 // ============================================================================
 
 func encodeLdc_1[W word.Word[W]](constant W, rd uint16) []uint32 {
-	// Sanity checks
-	if rd >= 256 || constant.Cmp64(65536) > 1 {
-		// NOTE: this corresponds to a WIDE instruction, but these are not
-		// supported at this time.
-		panic("wide instructions not supported")
+	// Sanity checks.  Constants which do not fit within 16 bits must use the
+	// wide form (see encodeLdc_w).
+	if rd >= 256 || constant.Cmp64(65536) >= 0 {
+		panic("constant exceeds short load form")
 	}
 	// Encoding
 	_rd := uint32(rd) << 8
@@ -271,6 +291,69 @@ func decodeLdc_1[W word.Word[W]](pc uint32, codes []uint32) (constant W, rd uint
 	c = c.SetUint64(uint64(codes[pc] >> 16))
 	//
 	return c, rd, 1
+}
+
+// ============================================================================
+// Ldc_w (wide load constant) instruction.  Format of this instruction is:
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |      n          |   rd   | opcode |
+// +--------+--------+--------+--------+
+// |     limb 0 (least significant)    |
+// +-----------------------------------+
+// |                ...                |
+// +-----------------------------------+
+// |     limb n-1 (most significant)   |
+// +-----------------------------------+
+//
+// Here, rd is a u8 destination register and the constant is carried inline as
+// n 32-bit limbs (least significant first).  This form supports constants of
+// arbitrary width (e.g. field-sized constants on a Uint machine), in contrast
+// to the short LDC form which carries a single 16-bit immediate.
+// ============================================================================
+
+func encodeLdc_w[W word.Word[W]](constant W, rd uint16) []uint32 {
+	// Sanity checks
+	if rd >= 256 {
+		panic("wide instructions not supported")
+	}
+	//
+	var (
+		// NOTE: big-endian byte ordering
+		bytes  = constant.BigInt().Bytes()
+		nlimbs = max(1, (len(bytes)+3)/4)
+		codes  = make([]uint32, nlimbs+1)
+	)
+	//
+	codes[0] = uint32(nlimbs)<<16 | uint32(rd)<<8 | LDC_w
+	// Pack bytes into limbs, least significant limb first.
+	for i, b := range bytes {
+		var k = len(bytes) - 1 - i
+		//
+		codes[1+(k/4)] |= uint32(b) << (8 * (k % 4))
+	}
+	//
+	return codes
+}
+
+func decodeLdc_w[W word.Word[W]](pc uint32, codes []uint32) (constant W, rd uint16, n uint32) {
+	var (
+		c      big.Int
+		limb   big.Int
+		nlimbs = (codes[pc] >> 16) & 0xffff
+	)
+	//
+	rd = Reg((codes[pc] >> 8) & 0xff)
+	// Unpack limbs, most significant limb first.
+	for i := nlimbs; i > 0; i-- {
+		limb.SetUint64(uint64(codes[pc+i]))
+		c.Lsh(&c, 32)
+		c.Or(&c, &limb)
+	}
+	//
+	return constant.SetBigInt(&c), rd, nlimbs + 1
 }
 
 // ============================================================================
@@ -380,6 +463,19 @@ func (p arithOp) String() string {
 		return " - "
 	case arithop_MUL:
 		return " * "
+	default:
+		panic("unknown arithmetic operation")
+	}
+}
+
+func (p arithOp) Prefix() string {
+	switch p {
+	case arithop_ADD:
+		return "add"
+	case arithop_SUB:
+		return "sub"
+	case arithop_MUL:
+		return "mul"
 	default:
 		panic("unknown arithmetic operation")
 	}

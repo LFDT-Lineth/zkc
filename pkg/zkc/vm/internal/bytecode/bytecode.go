@@ -49,6 +49,8 @@ const (
 	CHECKCAST
 	// JMP instruction
 	JMP
+	// SKIP (unconditional forward branch) instruction
+	SKIP
 	// JEQ_rr (jump if equal)
 	JEQ_rr
 	// JNE_rr (jump if not equal)
@@ -61,6 +63,30 @@ const (
 	JLE_rr
 	// JGT_RR (jump if greater than)
 	JGE_rr
+	// JEQ_rv (vectored jump if equal)
+	JEQ_rv
+	// JNE_rv (vectored jump if not equal)
+	JNE_rv
+	// JLT_rv (vectored jump if less than)
+	JLT_rv
+	// JLE_nm (vectored jump if less than or equal)
+	JGT_rv
+	// JGE_nm (vectored jump if greater than or equal)
+	JLE_rv
+	// JGT_nm (vectored jump if greater than)
+	JGE_rv
+	// SEQ_rr (skip forward if equal)
+	SEQ_rr
+	// SNE_rr (skip forward if not equal)
+	SNE_rr
+	// SLT_rr (skip forward if less than)
+	SLT_rr
+	// SGT_rr (skip forward if greater than)
+	SGT_rr
+	// SLE_rr (skip forward if less than or equal)
+	SLE_rr
+	// SGE_rr (skip forward if greater than or equal)
+	SGE_rr
 	// ENTER_n instruction
 	ENTER_n
 	// LEAVE_n instruction
@@ -89,6 +115,8 @@ const (
 	MOVE
 	// LDC (load constant) instruction
 	LDC
+	// LDC_w (load wide constant) instruction
+	LDC_w
 	// DESTRUCT instruction
 	DESTRUCT
 	// CAST instruction
@@ -115,6 +143,10 @@ const (
 	CSUB
 	// DIV instruction
 	DIV
+	// REM instruction
+	REM
+	// DIVHINT (division hint) instruction
+	DIVHINT
 	// ADDMOD_P instruction
 	ADDMOD_P
 	// SUBMOD_P instruction
@@ -147,10 +179,25 @@ type Bytecode[W word.Word[W]] interface {
 	Codes(uint32) []uint32
 }
 
-// Patchable bytecodes support the patch method.
+// Patchable bytecodes contain a branch target which must be resolved during
+// encoding.  Until resolved, their encoded width is unknown (it can depend on
+// the target), hence MaxWidth provides a conservative bound.
 type Patchable[W word.Word[W]] interface {
 	Bytecode[W]
-	Patch(labels []Address)
+	// Patch returns a copy of this bytecode with its target resolved against
+	// the given label addresses.  The receiver is left untouched.
+	Patch(labels []Address) Patched
+	// MaxWidth returns the largest number of code words this bytecode can
+	// occupy, regardless of where its target resolves.
+	MaxWidth() uint32
+}
+
+// Patched is a bytecode whose branch target has been resolved (i.e. the result
+// of Patchable.Patch).  Its method set matches Bytecode, which is independent
+// of the word type; hence patched bytecodes convert directly into Bytecode[W].
+type Patched interface {
+	String(SystemMap) string
+	Codes(uint32) []uint32
 }
 
 // ============================================================================

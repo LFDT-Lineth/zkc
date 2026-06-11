@@ -64,14 +64,22 @@ func (p *Jif) Codes(offset uint32) []uint32 {
 	switch {
 	case n == 1 && m == 1:
 		return encodeJif_rr(offset, p.Target, p.Src0.Base, p.Src1.Base, p.Op)
+	case n == m:
+		return encodeJif_rv(offset, p.Target, p.Src0, p.Src1, p.Op)
 	default:
 		panic("unsupported instruction form")
 	}
 }
 
-// Patch implementation for Bytecode interface
-func (p *Jif) Patch(labels []Address) {
-	p.Target = labels[p.Target]
+// Patch implementation for Patchable interface
+func (p *Jif) Patch(labels []Address) Patched {
+	return &Jif{Target: labels[p.Target], Src0: p.Src0, Src1: p.Src1, Op: p.Op}
+}
+
+// MaxWidth implementation for Patchable interface: the vectored form always
+// occupies two code words.
+func (p *Jif) MaxWidth() uint32 {
+	return 2
 }
 
 func decodeJif[W word.Word[W]](pc uint32, codes []uint32) (bc Bytecode[W], n uint32) {
@@ -90,6 +98,14 @@ func decodeJif[W word.Word[W]](pc uint32, codes []uint32) (bc Bytecode[W], n uin
 		target, rs0, rs1, op, n = decodeJif_rr(pc, codes)
 		src0, src1 = RegVec{rs0, 1}, RegVec{rs1, 1}
 		//
+	case SEQ_rr, SNE_rr, SLT_rr, SLE_rr, SGT_rr, SGE_rr:
+		var rs0, rs1 Reg
+		//
+		target, rs0, rs1, op, n = decodeSkipIf_rr(pc, codes)
+		src0, src1 = RegVec{rs0, 1}, RegVec{rs1, 1}
+		//
+	case JEQ_rv, JNE_rv, JLT_rv, JLE_rv, JGT_rv, JGE_rv:
+		target, src0, src1, op, n = decodeJif_rv(pc, codes)
 	default:
 		panic("unsupported instruction")
 	}
@@ -116,16 +132,26 @@ func decodeJif[W word.Word[W]](pc uint32, codes []uint32) (bc Bytecode[W], n uin
 // u8 source registers, whilst op identifies the operation.
 // ============================================================================
 
-func encodeJif_rr(offset uint32, target Address, rs0, rs1 Reg, op Cond) []uint32 {
+func encodeJif_rr(pc uint32, target Address, rs0, rs1 Reg, op Cond) []uint32 {
 	var (
-		_rs1  = uint32(rs1) << 8
-		_rs0  = uint32(rs0) << 16
-		_roff = getRelativeOffset(offset, target, 8) << 24
+		_rs1 = uint32(rs1) << 8
+		_rs0 = uint32(rs0) << 16
 	)
-	//
-	return []uint32{
-		_roff | _rs0 | _rs1 | (JEQ_rr + uint32(op)),
+	// Forward branches are preferred as SKIP_IF instructions, whose offset is
+	// unsigned and hence offers a greater forward range.
+	if target > pc {
+		if offset := target - (pc + 1); offset <= 0xff {
+			return []uint32{
+				offset<<24 | _rs0 | _rs1 | (SEQ_rr + uint32(op)),
+			}
+		}
+	} else if offset, ok := getRelativeOffset(pc, target, 8); ok {
+		return []uint32{
+			offset<<24 | _rs0 | _rs1 | (JEQ_rr + uint32(op)),
+		}
 	}
+	// fall back to vectored form which offers longer range.
+	return encodeJif_rv(pc, target, RegVec{rs0, 1}, RegVec{rs1, 1}, op)
 }
 
 func decodeJif_rr(pc uint32, codes []uint32) (target Address, rs0, rs1 Reg, op Cond, n uint32) {
@@ -133,6 +159,73 @@ func decodeJif_rr(pc uint32, codes []uint32) (target Address, rs0, rs1 Reg, op C
 	rs1 = Reg((codes[pc] >> 8) & 0xff)
 	rs0 = Reg((codes[pc] >> 16) & 0xff)
 	target = getBranchTarget(pc, codes[pc]>>24, 8)
+	n = 1
 	//
-	return target, rs0, rs1, op, 1
+	return
+}
+
+// ============================================================================
+// seq/sne/slt,sgt,sle,sge (skip conditional) instruction with (small) reg-reg
+// operands.  This is the forward-branch encoding of a conditional jump, whose
+// format matches the reg-reg form above except that offset is an unsigned u8
+// relative offset, where the following instruction is considered to be at
+// offset 0 (i.e. skip 0 transfers control to the next instruction).
+// ============================================================================
+
+func decodeSkipIf_rr(pc uint32, codes []uint32) (target Address, rs0, rs1 Reg, op Cond, n uint32) {
+	op = Cond((codes[pc] & OPCODE_MASK) - SEQ_rr)
+	rs1 = Reg((codes[pc] >> 8) & 0xff)
+	rs0 = Reg((codes[pc] >> 16) & 0xff)
+	target = pc + 1 + (codes[pc] >> 24)
+	n = 1
+	//
+	return
+}
+
+// ============================================================================
+// jeq/jneq/jlt,jleq,jgt,jgeq (jump conditional) instruction with vectored
+// operands. Format is:
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |   nv   |  rs0   |  rs1   | opcode |
+// +--------+--------+--------+--------+
+// | ............ target ............. |
+// +--------+--------+--------+--------+
+//
+// Here, rs0 and rs1 are the base registers for the left and right vectors
+// whilst nv is the vector length (which assumes both vectors have the same
+// length).  Likewise, target is an absolute u32 target address.
+// ============================================================================
+func encodeJif_rv(_ uint32, target Address, rs0, rs1 RegVec, op Cond) []uint32 {
+	var (
+		rs1b = uint32(rs1.Base) << 8
+		rs0b = uint32(rs0.Base) << 16
+		nv   = uint32(rs1.Len) << 24
+	)
+	// check core invariant
+	if rs0.Len != rs1.Len {
+		panic(fmt.Sprintf("mismatched length for source vectors (%d vs %d)", rs0.Len, rs1.Len))
+	}
+	//
+	return []uint32{
+		nv | rs0b | rs1b | (JEQ_rv + uint32(op)),
+		target,
+	}
+}
+
+func decodeJif_rv(pc uint32, codes []uint32) (target Address, rs0, rs1 RegVec, op Cond, n uint32) {
+	var (
+		rs1b = Reg((codes[pc] >> 8) & 0xff)
+		rs0b = Reg((codes[pc] >> 16) & 0xff)
+		nv   = Reg((codes[pc] >> 24) & 0xff)
+	)
+	//
+	op = Cond((codes[pc] & OPCODE_MASK) - JEQ_rv)
+	target = codes[pc+1]
+	rs0 = RegVec{rs0b, nv}
+	rs1 = RegVec{rs1b, nv}
+	//
+	return target, rs0, rs1, op, 2
 }

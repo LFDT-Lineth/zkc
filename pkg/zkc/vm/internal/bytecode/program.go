@@ -136,10 +136,19 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 		return &Fail{}, 1
 	case JMP:
 		target, n := decodeJmp1(pc, codes)
-		return &Jmp{target}, n
+		return &Jmp{Target: target}, n
+	case SKIP:
+		// SKIP is simply the forward-branch encoding of an unconditional jump,
+		// hence it decodes back to a Jmp.
+		target, n := decodeSkip1(pc, codes)
+		return &Jmp{Target: target}, n
 	case JEQ_rr, JNE_rr, JLT_rr, JLE_rr, JGT_rr, JGE_rr:
 		return decodeJif[W](pc, codes)
-	case LDC, MOVE:
+	case SEQ_rr, SNE_rr, SLT_rr, SLE_rr, SGT_rr, SGE_rr:
+		return decodeJif[W](pc, codes)
+	case JEQ_rv, JNE_rv, JLT_rv, JLE_rv, JGT_rv, JGE_rv:
+		return decodeJif[W](pc, codes)
+	case LDC, LDC_w, MOVE:
 		return decodeArith[W](pc, codes)
 	case MUL_2n1, MULC:
 		return decodeArith[W](pc, codes)
@@ -147,6 +156,10 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 		return decodeNot[W](pc, codes)
 	case AND, OR, XOR:
 		return decodeBitwise[W](pc, codes)
+	case DIV, REM:
+		return decodeDivRem[W](pc, codes)
+	case DIVHINT:
+		return decodeDivHint[W](pc, codes)
 	case SHL, SHR:
 		return decodeShift[W](pc, codes)
 	case RD_SROM_nm, RD_ROM_nm, WR_WOM_nm, RD_RAM_nm, WR_RAM_nm, RD_PRAM_nm, WR_PRAM_nm:

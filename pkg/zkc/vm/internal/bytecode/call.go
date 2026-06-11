@@ -55,9 +55,18 @@ func (p *Call) Codes(pc uint32) (codes []uint32) {
 	return append(codes, encodeLeave_n(p.Returns)...)
 }
 
-// Patch implementation for Bytecode interface
-func (p *Call) Patch(labels []Address) {
-	p.Target = labels[p.Target]
+// Patch implementation for Patchable interface
+func (p *Call) Patch(labels []Address) Patched {
+	return &Call{labels[p.Target], p.FrameWidth, p.Arguments, p.Returns}
+}
+
+// MaxWidth implementation for Patchable interface: the width of a call is
+// independent of where its target resolves (the relative offset always
+// occupies the same field), so it is computed against a dummy nearby target.
+func (p *Call) MaxWidth() uint32 {
+	var enter = encodeEnter_n(0, 1, p.FrameWidth, p.Arguments)
+	//
+	return uint32(len(enter) + len(encodeLeave_n(p.Returns)))
 }
 
 func decodeCall[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
@@ -103,11 +112,15 @@ func encodeEnter_n(pc, target uint32, width uint16, args []Reg) []uint32 {
 	}
 	//
 	var (
-		roff   = getRelativeOffset(pc, target, 16) << 16
-		_width = uint32(width) << 8
-		codes  = []uint32{roff | _width | ENTER_n}
-		bytes  = []uint8{uint8(len(args))}
+		roff, ok = getRelativeOffset(pc, target, 16)
+		_width   = uint32(width) << 8
+		codes    = []uint32{roff<<16 | _width | ENTER_n}
+		bytes    = []uint8{uint8(len(args))}
 	)
+	// sanity check
+	if !ok {
+		panic("branch target overflow")
+	}
 	//
 	bytes = append(bytes, regsAsBytes(args)...)
 	//

@@ -70,20 +70,35 @@ func getBranchTarget(offset uint32, relOffset uint32, width uint) Address {
 	return offset + 1 - max + relOffset
 }
 
-func getRelativeOffset(offset uint32, target Address, width uint) uint32 {
-	var sign_bit = uint32(0x1) << width
+func getRelativeOffset(pc uint32, target Address, width uint) (roff uint32, ok bool) {
+	var (
+		sign = uint32(0x1) << (width - 1)
+		max  = uint32(0x1) << width
+		diff uint32
+	)
 	//
-	if target > offset {
-		return target - offset - 1
+	if width >= 32 {
+		// Should use absolute address here.
+		panic("unsupported relative offset")
+	}
+	// NOTE: the offset is decoded (by getBranchTarget) as a width-bit two's
+	// complement value; hence, forward branches must fit below the sign bit,
+	// whilst backward branches must keep it set.
+	if target > pc {
+		diff = target - (pc + 1)
+		//
+		if diff >= sign {
+			return 0, false
+		}
+	} else {
+		diff = max + target - (pc + 1)
+		//
+		if diff < sign || diff >= max {
+			return 0, false
+		}
 	}
 	//
-	roff := 1 + offset - target
-	//
-	if roff >= sign_bit {
-		panic("branch target overflow")
-	}
-	//
-	return sign_bit - roff
+	return diff, true
 }
 
 // Pack a given array of bytes into an array of codes, such that the last code

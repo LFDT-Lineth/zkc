@@ -35,7 +35,7 @@ func (p *Not) String(mapping SystemMap) string {
 		source = registerToString(p.Source, mapping)
 	)
 	//
-	return fmt.Sprintf("%s = ~%s [u%d]", target, source, p.Bitwidth)
+	return fmt.Sprintf("not %s = ~%s [u%d]", target, source, p.Bitwidth)
 }
 
 // Codes implementation for Bytecode interface.
@@ -104,9 +104,21 @@ func (p *Bitwise) String(mapping SystemMap) string {
 		target = registerToString(p.Target, mapping)
 		left   = registerToString(p.Left, mapping)
 		right  = registerToString(p.Right, mapping)
+		prefix string
 	)
 	//
-	return fmt.Sprintf("%s = %s %s %s", target, left, bitwiseSymbol(p.Opcode), right)
+	switch p.Opcode {
+	case AND:
+		prefix = "and"
+	case OR:
+		prefix = "or"
+	case XOR:
+		prefix = "xor"
+	default:
+		panic("unknown bitwise operator")
+	}
+	//
+	return fmt.Sprintf("%s %s = %s %s %s", prefix, target, left, bitwiseSymbol(p.Opcode), right)
 }
 
 // Codes implementation for Bytecode interface.

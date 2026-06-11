@@ -81,7 +81,7 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	switch insn.OpCode() {
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
-		p.compileCall(insn.(*instruction.Call))
+		p.compileCall(insn.(*instruction.Call), f)
 	case opcode.DEBUG:
 		p.encoder.Add(bytecode.NewDebug())
 	case opcode.FAIL:
@@ -89,9 +89,9 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.JUMP:
 		p.compileJump(pos, insn.(*instruction.Jump))
 	case opcode.MEMORY_READ:
-		p.compileMemRead(insn.(*instruction.MemRead))
+		p.compileMemRead(insn.(*instruction.MemRead), f)
 	case opcode.MEMORY_WRITE:
-		p.compileMemWrite(insn.(*instruction.MemWrite))
+		p.compileMemWrite(insn.(*instruction.MemWrite), f)
 	case opcode.RETURN:
 		p.encoder.Add(bytecode.NewRet(f.Width(), f.NumInputs()))
 	case opcode.SKIP:
@@ -99,7 +99,7 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.SKIP_IF:
 		p.compileSkipIf(pos, insn.(*instruction.SkipIf))
 	case opcode.HINT_DIVISION:
-		panic("todo")
+		p.compileDivHint(insn.(*instruction.FieldHint))
 	case opcode.INT_ADD:
 		p.compileAdd(insn.(*instruction.WordTypeA[W]), f)
 	case opcode.INT_SUB:
@@ -109,9 +109,9 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.BIT_CONCAT:
 		p.compileConcat(insn.(*instruction.WordTypeA[W]))
 	case opcode.INT_DIV:
-		panic("todo")
+		p.compileDivRem(insn.(*instruction.WordTypeB), bytecode.DIV, f)
 	case opcode.INT_REM:
-		panic("todo")
+		p.compileDivRem(insn.(*instruction.WordTypeB), bytecode.REM, f)
 	case opcode.BIT_AND:
 		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.AND, f)
 	case opcode.BIT_NOT:
@@ -180,9 +180,10 @@ func (p *bytecodeCompiler[W]) compileConcat(insn *instruction.WordTypeA[W]) {
 	p.encoder.Add(bytecode.Concat(insn.Target.Registers(), insn.Sources))
 }
 
-func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call) {
+func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call, f *WordFunction) {
 	var (
-		frameWidth = p.machine.Module(insn.Id).Width()
+		callee     = p.machine.Module(insn.Id).(*WordFunction)
+		frameWidth = callee.Width()
 		// index identifies first instruction of given function.
 		index = p.encoder.Label(Label{insn.Id, 0, 0})
 	)
@@ -190,8 +191,14 @@ func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call) {
 	checkUintIs[uint16](frameWidth)
 	checkOperands(insn.Arguments...)
 	checkOperands(insn.Returns...)
+	// Check whether cast checks are required for arguments wider than their
+	// receiving parameter registers, matching the slow machine (frameCopyTo).
+	p.addOutgoingCheckCasts(insn.Arguments, callee.Inputs(), f)
 	//
 	p.encoder.Add(bytecode.CallFun(index, uint16(frameWidth), insn.Arguments, insn.Returns))
+	// Check whether cast checks are required for returns wider than their
+	// receiving target registers, matching the slow machine (frameCopyFrom).
+	p.addIncomingCheckCasts(callee.Outputs(), insn.Returns, f)
 }
 
 func (p *bytecodeCompiler[W]) compileNot(insn *instruction.WordTypeB) {
@@ -203,6 +210,30 @@ func (p *bytecodeCompiler[W]) compileBitwise(insn *instruction.WordTypeB, op uin
 	var bitwidth uint = base.RegisterBitwidth(f.RegisterMap(), insn.Target)
 	// op selects the bytecode operation (bytecode.AND / OR / XOR).
 	p.encoder.Add(bytecode.NewBitwise(op, insn.Target, insn.LeftSource, insn.RightSource))
+	// Check whether cast check is required (or not).
+	if bitwidth < insn.Bitwidth {
+		// yes
+		p.encoder.Add(bytecode.NewCheckCast(insn.Target, bitwidth))
+	}
+}
+
+func (p *bytecodeCompiler[W]) compileDivHint(insn *instruction.FieldHint) {
+	// The only hint form currently generated is the division hint produced by
+	// LowerDivisions, which assigns quotient, remainder and range witness from
+	// a dividend and divisor.
+	if len(insn.Targets) != 3 || len(insn.Sources) != 2 {
+		panic("unsupported hint form")
+	}
+	//
+	p.encoder.Add(bytecode.NewDivHint(
+		insn.Targets[0], insn.Targets[1], insn.Targets[2], insn.Sources[0], insn.Sources[1]))
+}
+
+func (p *bytecodeCompiler[W]) compileDivRem(insn *instruction.WordTypeB, op uint32, f *WordFunction) {
+	var bitwidth uint = base.RegisterBitwidth(f.RegisterMap(), insn.Target)
+	// LeftSource is the dividend; RightSource is the divisor.  op selects the
+	// bytecode operation (bytecode.DIV / REM).
+	p.encoder.Add(bytecode.NewDivRem(op, insn.Target, insn.LeftSource, insn.RightSource))
 	// Check whether cast check is required (or not).
 	if bitwidth < insn.Bitwidth {
 		// yes
@@ -223,7 +254,7 @@ func (p *bytecodeCompiler[W]) compileJump(pos Label, insn *instruction.Jump) {
 	p.encoder.Add(bytecode.Jump(index))
 }
 
-func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead) {
+func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead, f *WordFunction) {
 	var (
 		mem  = p.machine.Module(insn.Id).(memory.Memory[W])
 		mid  = uint16(insn.Id)
@@ -246,9 +277,14 @@ func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead) {
 	}
 	//
 	p.encoder.Add(code)
+	// Check whether cast checks are required (or not).  Values read from a
+	// memory whose data registers are wider than the receiving registers must
+	// be checked, matching the slow machine which validates every register
+	// write (frame.Store).
+	p.addIncomingCheckCasts(mem.Geometry().DataRegisters(), insn.Returns, f)
 }
 
-func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite) {
+func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite, f *WordFunction) {
 	var (
 		mem  = p.machine.Module(insn.Id).(memory.Memory[W])
 		code bytecode.Bytecode[W]
@@ -256,6 +292,10 @@ func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite) {
 	)
 	//
 	checkModuleId(insn.Id)
+	// Check whether cast checks are required (or not).  Values written from
+	// registers wider than the memory's data registers must be checked before
+	// the write, matching the slow machine (executeMemWrite).
+	p.addOutgoingCheckCasts(insn.Returns, mem.Geometry().DataRegisters(), f)
 	//
 	switch mem.(type) {
 	case *memory.WriteOnce[W]:
@@ -271,12 +311,54 @@ func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite) {
 	p.encoder.Add(code)
 }
 
+// addIncomingCheckCasts emits a CHECKCAST for every target register which is
+// narrower than the corresponding source register, where sources are values
+// arriving in this frame from another module (e.g. a memory's data registers,
+// or a callee's return registers).  This mirrors the width check the slow
+// machine performs on every register write (frame.Store / frameCopyFrom).
+func (p *bytecodeCompiler[W]) addIncomingCheckCasts(sources []register.Register, targets []register.Id,
+	f *WordFunction) {
+	//
+	for i, target := range targets {
+		var (
+			src = sources[i]
+			dst = f.Register(target)
+		)
+		//
+		if !dst.IsNative() && (src.IsNative() || src.Width() > dst.Width()) {
+			p.encoder.Add(bytecode.NewCheckCast(target, dst.Width()))
+		}
+	}
+}
+
+// addOutgoingCheckCasts emits a CHECKCAST for every source register in this
+// frame which is wider than the register receiving its value in another module
+// (e.g. a memory's data registers, or a callee's parameter registers).  This
+// mirrors the width check the slow machine performs on memory writes
+// (executeMemWrite) and call arguments (frameCopyTo).
+func (p *bytecodeCompiler[W]) addOutgoingCheckCasts(sources []register.Id, targets []register.Register,
+	f *WordFunction) {
+	//
+	for i, source := range sources {
+		var (
+			src = f.Register(source)
+			dst = targets[i]
+		)
+		//
+		if !dst.IsNative() && (src.IsNative() || src.Width() > dst.Width()) {
+			p.encoder.Add(bytecode.NewCheckCast(source, dst.Width()))
+		}
+	}
+}
+
 func (p *bytecodeCompiler[W]) compileSkip(pos Label, insn *instruction.Skip) {
-	var (
-		label = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
-		index = p.encoder.Label(label)
-	)
-	p.encoder.Add(bytecode.Jump(index))
+	if insn.Skip != 0 {
+		var (
+			label = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
+			index = p.encoder.Label(label)
+		)
+		p.encoder.Add(bytecode.Jump(index))
+	}
 }
 
 func (p *bytecodeCompiler[W]) compileSkipIf(pos Label, insn *instruction.SkipIf) {
