@@ -77,10 +77,10 @@ const (
 	RD_RAM_nm
 	// WR_RAM_nm instruction
 	WR_RAM_nm
-	// WR_BRAM instruction
-	RD_BRAM_nm
-	// WR_BRAM_nm instruction
-	WR_BRAM_nm
+	// RD_PRAM_nm instruction
+	RD_PRAM_nm
+	// WR_PRAM_nm instruction
+	WR_PRAM_nm
 	// PUSH instruction
 	PUSH
 	// POP instruction
@@ -264,11 +264,11 @@ func ReadRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
 	return &ReadWrite{SRAM_READ, id, asRegs(address...), asRegs(data...)}
 }
 
-// ReadBigRam constructs a read instruction for a (large) bipartite
-// random-access memory.  The data registers receive the row located at the
-// address given by the address registers, in the memory identified by id.
-func ReadBigRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{BRAM_READ, id, asRegs(address...), asRegs(data...)}
+// ReadPagedRam constructs a read instruction for a paged random-access memory.
+// The data registers receive the row located at the address given by the
+// address registers, in the memory identified by id.
+func ReadPagedRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
+	return &ReadWrite{PRAM_READ, id, asRegs(address...), asRegs(data...)}
 }
 
 // SubConst constructs a subtraction instruction computing
@@ -298,11 +298,11 @@ func WriteRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
 	return &ReadWrite{SRAM_WRITE, id, asRegs(address...), asRegs(data...)}
 }
 
-// WriteBigRam constructs a write instruction for a (large) bipartite
-// random-access memory.  The data registers are written to the row located at
-// the address given by the address registers, in the memory identified by id.
-func WriteBigRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{BRAM_WRITE, id, asRegs(address...), asRegs(data...)}
+// WritePagedRam constructs a write instruction for a paged random-access
+// memory.  The data registers are written to the row located at the address
+// given by the address registers, in the memory identified by id.
+func WritePagedRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
+	return &ReadWrite{PRAM_WRITE, id, asRegs(address...), asRegs(data...)}
 }
 
 func init() {
