@@ -761,6 +761,29 @@ func Test_ZkcUnit_Printf_04(t *testing.T) {
 }
 
 // ===================================================================
+// Debug Function Tests
+// ===================================================================
+
+func Test_ZkcUnit_Debug_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/debug_01", util.DEFAULT_CONFIG.Bytecode(true))
+}
+
+func Test_ZkcUnit_Debug_02(t *testing.T) {
+	// Quiet mode elides the call to the #[debug] function, whose body would
+	// otherwise fail.
+	checkZkcUnit(t, "zkc/unit/debug_02", util.DEFAULT_CONFIG.Quiet(true).Bytecode(true))
+}
+
+func Test_ZkcUnit_Debug_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/debug_03", util.DEFAULT_CONFIG.Bytecode(true))
+}
+
+func Test_ZkcUnit_Debug_04(t *testing.T) {
+	// As Debug_03, but in quiet mode (all debug calls elided).
+	checkZkcUnit(t, "zkc/unit/debug_03", util.DEFAULT_CONFIG.Quiet(true).Bytecode(true))
+}
+
+// ===================================================================
 // Include Tests
 // ===================================================================
 
