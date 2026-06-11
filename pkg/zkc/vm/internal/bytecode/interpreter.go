@@ -53,6 +53,9 @@ import (
 type Interpreter[W word.Word[W]] struct {
 	// The program (modules, bytecodes, constant pool and symbols) being executed.
 	program Program[W]
+	// Prime modulus of the surrounding field, needed to simulate native field
+	// instructions (ADDMOD_P, SUBMOD_P and MULMOD_P).
+	modulus W
 	// Current function module identifier.
 	fid uint
 	// Program counter: offset into program.bytecodes of the next bytecode to
@@ -101,9 +104,11 @@ type StackFrame struct {
 // The program's memory modules are partitioned by access discipline (static
 // read-only, read-only, write-once, random-access and paged random-access)
 // so that read/write bytecodes can locate them directly by identifier during
-// execution.  The interpreter is created in an unbooted state; Boot must be
-// called to select an entry point and supply inputs before calling Execute.
-func NewInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
+// execution.  The modulus is the prime characteristic of the surrounding field,
+// used when executing native field instructions.  The interpreter is created in
+// an unbooted state; Boot must be called to select an entry point and supply
+// inputs before calling Execute.
+func NewInterpreter[W word.Word[W]](program Program[W], modulus W) *Interpreter[W] {
 	var (
 		sroms []memory.StaticReadOnly[W]
 		roms  []memory.ReadOnly[W]
@@ -130,6 +135,7 @@ func NewInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
 	//
 	return &Interpreter[W]{
 		program: program,
+		modulus: modulus,
 		pc:      0,
 		fp:      0,
 		rp:      0,
@@ -329,6 +335,12 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = executeRem(p.pc, bytecodes, frame)
 		case DIVHINT:
 			p.pc, err = executeDivHint(p.pc, bytecodes, frame)
+		case ADDMOD_P:
+			p.pc, err = p.executeFieldAdd(p.pc, bytecodes, frame)
+		case SUBMOD_P:
+			p.pc, err = p.executeFieldSub(p.pc, bytecodes, frame)
+		case MULMOD_P:
+			p.pc, err = p.executeFieldMul(p.pc, bytecodes, frame)
 		case CAT:
 			p.pc, err = p.executeCat(p.pc, bytecodes, frame)
 		case NOT:
@@ -519,6 +531,67 @@ func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (ui
 	}
 	//
 	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
+}
+
+// executeFieldAdd implements ADDMOD_P: it sums the constant and all sources
+// modulo the field's prime characteristic, storing the (reduced) result in the
+// single target register.  Matches executeFieldAdd in the slow word machine.
+func (p *Interpreter[W]) executeFieldAdd(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rd, sources, constant, n = decodeFieldArithOperands[W](pc, codes)
+		val                      = constant
+	)
+	//
+	for sources.HasNext() {
+		val = val.AddMod(stack[sources.Next()], p.modulus)
+	}
+	//
+	stack[rd] = val
+	//
+	return pc + n, nil
+}
+
+// executeFieldSub implements SUBMOD_P: it seeds the value from the first source,
+// then subtracts the remaining sources and the constant modulo the field's
+// prime characteristic, storing the (reduced) result in the single target
+// register.  Matches executeFieldSub in the slow word machine.
+func (p *Interpreter[W]) executeFieldSub(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rd, sources, constant, n = decodeFieldArithOperands[W](pc, codes)
+		val                      W
+	)
+	//
+	for i := 0; sources.HasNext(); i++ {
+		ith := stack[sources.Next()]
+		//
+		if i == 0 {
+			val = ith
+		} else {
+			val = val.SubMod(ith, p.modulus)
+		}
+	}
+	//
+	stack[rd] = val.SubMod(constant, p.modulus)
+	//
+	return pc + n, nil
+}
+
+// executeFieldMul implements MULMOD_P: it multiplies the constant by all sources
+// modulo the field's prime characteristic, storing the (reduced) result in the
+// single target register.  Matches executeFieldMul in the slow word machine.
+func (p *Interpreter[W]) executeFieldMul(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rd, sources, constant, n = decodeFieldArithOperands[W](pc, codes)
+		val                      = constant
+	)
+	//
+	for sources.HasNext() {
+		val = val.MulMod(stack[sources.Next()], p.modulus)
+	}
+	//
+	stack[rd] = val
+	//
+	return pc + n, nil
 }
 
 // executeCat matches executeConcat in the slow word machine.

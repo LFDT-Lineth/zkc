@@ -48,7 +48,8 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 }
 
 func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/keccakf_with_padding", DEFAULT_BENCH_CONFIG.Words(vm.WORD_UINT))
+	checkZkcBench(t, "zkc/bench/keccakf_with_padding",
+		DEFAULT_BENCH_CONFIG.Words(vm.WORD_UINT).Bytecode(false))
 }
 
 // func Test_ZkcBench_KeccakfLe(t *testing.T) {

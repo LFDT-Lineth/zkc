@@ -34,7 +34,7 @@ func WordToBytecodeMachine[W word.Word[W]](wm *machine.Word[W]) *bytecode.Interp
 		program = WordToBytecodeProgram(wm)
 	)
 	//
-	return bytecode.NewInterpreter[W](program)
+	return bytecode.NewInterpreter(program, wm.Executor().Modulus())
 }
 
 // WordToBytecodeProgram compiles the various components of a word machine into
@@ -125,11 +125,11 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.BIT_SHR:
 		p.compileShift(insn.(*instruction.WordTypeB), bytecode.SHR)
 	case opcode.INT_ADDMOD_P:
-		panic("todo")
+		p.compileFieldArith(insn.(*instruction.WordTypeF[W]), bytecode.ADDMOD_P)
 	case opcode.INT_SUBMOD_P:
-		panic("todo")
+		p.compileFieldArith(insn.(*instruction.WordTypeF[W]), bytecode.SUBMOD_P)
 	case opcode.INT_MULMOD_P:
-		panic("todo")
+		p.compileFieldArith(insn.(*instruction.WordTypeF[W]), bytecode.MULMOD_P)
 	default:
 		panic(fmt.Sprintf("unknown instruction opcode (0x%x)", insn.OpCode()))
 	}
@@ -169,6 +169,15 @@ func (p *bytecodeCompiler[W]) compileMul(insn *instruction.WordTypeA[W], f *Word
 func (p *bytecodeCompiler[W]) compileSub(insn *instruction.WordTypeA[W]) {
 	// NOTE: should we worry about overflow here?
 	p.encoder.Add(bytecode.SubVecConst(insn.Target.Registers(), insn.Sources, insn.Constant))
+}
+
+// compileFieldArith emits a modular field-arithmetic bytecode (ADDMOD_P,
+// SUBMOD_P or MULMOD_P).  Unlike the integer arithmetic forms, the result is
+// always reduced modulo the prime characteristic and so fits within the (native)
+// target register; hence no cast check is ever required, matching the slow
+// machine (executeFieldAdd / executeFieldSub / executeFieldMul).
+func (p *bytecodeCompiler[W]) compileFieldArith(insn *instruction.WordTypeF[W], op uint32) {
+	p.encoder.Add(bytecode.NewFieldArith(op, insn.Target, insn.Sources, insn.Constant))
 }
 
 func (p *bytecodeCompiler[W]) compileConcat(insn *instruction.WordTypeA[W]) {

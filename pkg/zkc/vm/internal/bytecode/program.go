@@ -158,6 +158,8 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 		return decodeBitwise[W](pc, codes)
 	case DIV, REM:
 		return decodeDivRem[W](pc, codes)
+	case ADDMOD_P, SUBMOD_P, MULMOD_P:
+		return decodeFieldArith[W](pc, codes)
 	case DIVHINT:
 		return decodeDivHint[W](pc, codes)
 	case SHL, SHR:
