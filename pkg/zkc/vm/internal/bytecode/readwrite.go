@@ -64,6 +64,27 @@ func (p RwMode) Kind() MemoryKind {
 	}
 }
 
+func (p RwMode) prefix() string {
+	switch p {
+	case SROM_READ:
+		return "rdo"
+	case ROM_READ:
+		return "rdr"
+	case WOM_WRITE:
+		return "wrw"
+	case SRAM_READ:
+		return "rds"
+	case SRAM_WRITE:
+		return "wrs"
+	case BRAM_READ:
+		return "rdp"
+	case BRAM_WRITE:
+		return "wrp"
+	default:
+		panic("invalid read/write mode")
+	}
+}
+
 // ReadWrite instruction captures memory read/writes.
 type ReadWrite struct {
 	// RwMode determines whether this is a read or write operation and,
@@ -82,13 +103,14 @@ func (p *ReadWrite) String(mapping SystemMap) string {
 		name    = mapping.Module(uint(p.Id)).Name()
 		address = registersToString(p.Address, mapping, ",")
 		data    = registersToString(p.Data, mapping, ",")
+		prefix  = p.Mode.prefix()
 	)
 	//
 	switch p.Mode {
 	case SROM_READ, ROM_READ, SRAM_READ, BRAM_READ:
-		return fmt.Sprintf("%s = %s[%s]", data, name, address)
+		return fmt.Sprintf("%s %s = %s[%s]", prefix, data, name, address)
 	case WOM_WRITE, SRAM_WRITE, BRAM_WRITE:
-		return fmt.Sprintf("%s[%s] = %s", name, address, data)
+		return fmt.Sprintf("%s %s[%s] = %s", prefix, name, address, data)
 	default:
 		panic("unknown read/write mode")
 	}

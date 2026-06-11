@@ -50,11 +50,6 @@ func (p *Ret) Codes(_ uint32) []uint32 {
 	return encodeRet1(p.FrameWidth, p.ReturnOffset)
 }
 
-// Patch implementation for Bytecode interface
-func (p *Ret) Patch(_ []Address) {
-	// do nothing
-}
-
 func decodeRet[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
 	width, roffset, n := decodeRet1(pc, codes)
 	//
