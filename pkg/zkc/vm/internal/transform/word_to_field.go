@@ -93,8 +93,8 @@ func (p wordToField[W, F]) lowerWordMemory(wf memory.Memory[W]) (ff memory.Memor
 		return memory.NewWriteOnce[F](wf.Name(), wf.IsPublic(), regs)
 	case *memory.RandomAccess[W]:
 		return memory.NewRandomAccess[F](wf.Name(), regs)
-	case *memory.BiPartiteRandomAccess[W]:
-		return memory.NewBiPartiteRandomAccess[F](wf.Name(), regs)
+	case *memory.PagedRandomAccess[W]:
+		return memory.NewPagedRandomAccess[F](wf.Name(), regs)
 	default:
 		panic(fmt.Sprintf("unknown word memory %s", wf.Name()))
 	}

@@ -29,8 +29,8 @@ const (
 	WRITEONCE_MEMORY
 	// READWRITE_MEMORY identifies the type of RAMs
 	READWRITE_MEMORY
-	// BIPARTITE_READWRITE_MEMORY identifies the type of BRAMs
-	BIPARTITE_READWRITE_MEMORY
+	// PAGED_READWRITE_MEMORY identifies the type of PRAMs
+	PAGED_READWRITE_MEMORY
 )
 
 // MemoryKind identifies the different kinds of memory
@@ -50,7 +50,7 @@ func buildMemoryMap[W word.Word[W]](modules ...Module) []MemoryId {
 	var (
 		memmap = make([]MemoryId, len(modules))
 		//
-		nsroms, nroms, nwoms, nsrams, nbrams uint
+		nsroms, nroms, nwoms, nsrams, nprams uint
 	)
 	// construct memory map
 	for i, m := range modules {
@@ -67,9 +67,9 @@ func buildMemoryMap[W word.Word[W]](modules ...Module) []MemoryId {
 		case *memory.RandomAccess[W]:
 			memmap[i] = MemoryId{READWRITE_MEMORY, uint16(nsrams)}
 			nsrams++
-		case *memory.BiPartiteRandomAccess[W]:
-			memmap[i] = MemoryId{BIPARTITE_READWRITE_MEMORY, uint16(nbrams)}
-			nbrams++
+		case *memory.PagedRandomAccess[W]:
+			memmap[i] = MemoryId{PAGED_READWRITE_MEMORY, uint16(nprams)}
+			nprams++
 		}
 	}
 	// Sanity checks
@@ -77,7 +77,7 @@ func buildMemoryMap[W word.Word[W]](modules ...Module) []MemoryId {
 	checkMemoryCount(nsroms, "static read-only")
 	checkMemoryCount(nwoms, "write once")
 	checkMemoryCount(nsrams, "(small) random access")
-	checkMemoryCount(nbrams, "(bipartite) random access")
+	checkMemoryCount(nprams, "(paged) random access")
 	//
 	return memmap
 }
@@ -88,7 +88,7 @@ func buildReverseMemoryMap[W word.Word[W]](modules ...Module) map[MemoryId]uint1
 	var (
 		rmap = make(map[MemoryId]uint16)
 		//
-		nsroms, nroms, nwoms, nsrams, nbrams uint
+		nsroms, nroms, nwoms, nsrams, nprams uint
 	)
 	// construct memory map
 	for i, m := range modules {
@@ -105,9 +105,9 @@ func buildReverseMemoryMap[W word.Word[W]](modules ...Module) map[MemoryId]uint1
 		case *memory.RandomAccess[W]:
 			rmap[MemoryId{READWRITE_MEMORY, uint16(nsrams)}] = uint16(i)
 			nsrams++
-		case *memory.BiPartiteRandomAccess[W]:
-			rmap[MemoryId{BIPARTITE_READWRITE_MEMORY, uint16(nbrams)}] = uint16(i)
-			nbrams++
+		case *memory.PagedRandomAccess[W]:
+			rmap[MemoryId{PAGED_READWRITE_MEMORY, uint16(nprams)}] = uint16(i)
+			nprams++
 		}
 	}
 	//

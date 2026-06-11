@@ -239,8 +239,8 @@ func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead) {
 		code = bytecode.ReadStaticRom(mid, insn.Arguments, insn.Returns)
 	case *memory.RandomAccess[W]:
 		code = bytecode.ReadRam(mid, insn.Arguments, insn.Returns)
-	case *memory.BiPartiteRandomAccess[W]:
-		code = bytecode.ReadBigRam(mid, insn.Arguments, insn.Returns)
+	case *memory.PagedRandomAccess[W]:
+		code = bytecode.ReadPagedRam(mid, insn.Arguments, insn.Returns)
 	default:
 		panic("unknown memory type")
 	}
@@ -262,8 +262,8 @@ func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite) {
 		code = bytecode.WriteWom(mid, insn.Arguments, insn.Returns)
 	case *memory.RandomAccess[W]:
 		code = bytecode.WriteRam(mid, insn.Arguments, insn.Returns)
-	case *memory.BiPartiteRandomAccess[W]:
-		code = bytecode.WriteBigRam(mid, insn.Arguments, insn.Returns)
+	case *memory.PagedRandomAccess[W]:
+		code = bytecode.WritePagedRam(mid, insn.Arguments, insn.Returns)
 	default:
 		panic("unknown memory type")
 	}
