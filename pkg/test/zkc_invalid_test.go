@@ -875,6 +875,30 @@ func Test_ZkcInvalid_Ternary_04(t *testing.T) {
 }
 
 // ===================================================================
+// Debug Function Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Debug_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/debug_01")
+}
+
+func Test_ZkcInvalid_Debug_02(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/debug_02")
+}
+
+func Test_ZkcInvalid_Debug_03(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/debug_03")
+}
+
+func Test_ZkcInvalid_Debug_04(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/debug_04")
+}
+
+func Test_ZkcInvalid_Debug_05(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/debug_05")
+}
+
+// ===================================================================
 // Test Helpers
 // ===================================================================
 

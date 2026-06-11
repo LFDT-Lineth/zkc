@@ -41,7 +41,8 @@ var (
 		words:       DEFAULT_WORDS,
 		constraints: false,
 		splitting:   false,
-		bytecode:    false}
+		bytecode:    false,
+		quiet:       false}
 )
 
 // Config for testing
@@ -56,6 +57,9 @@ type Config struct {
 	splitting bool
 	// enable bytecode interpreter
 	bytecode bool
+	// enable quiet mode, which elides printf statements and calls to #[debug]
+	// functions during code generation.
+	quiet bool
 }
 
 // Fields determines which fields to test over.
@@ -94,6 +98,14 @@ func (p Config) Splitting(flag bool) Config {
 	return p
 }
 
+// Quiet determines whether or not printf statements and calls to #[debug]
+// functions are elided during code generation.
+func (p Config) Quiet(flag bool) Config {
+	p.quiet = flag
+	//
+	return p
+}
+
 // CheckValid checks that a given source file compiles without any errors.
 // nolint
 func CheckValid(t *testing.T, test, ext string, config Config) {
@@ -108,7 +120,7 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 		var (
 			testfile = fmt.Sprintf("%s.%s", test, ext)
 			// Setup default config
-			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Field(f)
+			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f)
 		)
 		// Run all tests without lowering (and preventing the constraints check)
 		checkValidInternal(t, testfile, cfg.LowerNatives(false), config.Constraints(false), testcases[f])

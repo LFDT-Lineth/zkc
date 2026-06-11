@@ -1,0 +1,10 @@
+//error:3:1-23:debug function cannot return values
+#[debug]
+fn dbg(x:u8) -> (r:u8) {
+    r = x
+    return
+}
+
+fn main() {
+    dbg(0)
+}

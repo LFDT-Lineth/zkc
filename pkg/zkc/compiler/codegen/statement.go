@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -227,6 +228,14 @@ func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...regis
 			//
 			return destructMultiway(p, e, mapping, targets, p.compileMemoryRead)
 		case *decl.ResolvedFunction:
+			// Calls to #[debug] functions are elided in quiet mode, exactly as
+			// printf statements are.  Such functions cannot return values or
+			// write memories (enforced by validate.DebugFunctions), so
+			// dropping the call has no effect on the surrounding computation.
+			if p.quiet && slices.Contains(ext.Annotations(), "debug") {
+				return nil
+			}
+			//
 			return destructMultiway(p, e, mapping, targets, p.compileFunctionCall)
 		default:
 			panic(fmt.Sprintf("unknown symbol \"%s\" encountered", e.Name.String()))
