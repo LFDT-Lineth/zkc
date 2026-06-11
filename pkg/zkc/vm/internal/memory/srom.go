@@ -36,7 +36,7 @@ func (p *StaticReadOnly[W]) Initialise(contents []W) {
 // NewStatic constructs a static read-only memory pre-loaded with the
 // given values.
 func NewStatic[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
-) InputOutput[W] {
+) *StaticReadOnly[W] {
 	//
 	var kind Kind
 	//

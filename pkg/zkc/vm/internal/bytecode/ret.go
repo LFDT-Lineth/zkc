@@ -1,0 +1,89 @@
+// Copyright Consensys Software Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
+package bytecode
+
+import (
+	"fmt"
+	"math"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
+)
+
+// Ret (return from function call) instruction.
+type Ret struct {
+	// FrameWidth determines the number of registers in the corresponding
+	// function's frame.  This many registers are popped from the stack when
+	// this instruction executes.
+	FrameWidth uint16
+	// ReturnOffset (RO) determines the offset from the callee frame pointer
+	// where the return pointer should be set.  That is, rp = fp + ro.
+	ReturnOffset uint8
+}
+
+// NewRet constructs a new return instruction for a given frame width.
+func NewRet(width uint, roffset uint) *Ret {
+	if width > math.MaxUint16 {
+		panic("invalid frame width")
+	} else if roffset > math.MaxUint8 {
+		panic("invalid return offset")
+	}
+	//
+	return &Ret{uint16(width), uint8(roffset)}
+}
+
+func (p *Ret) String(_ SystemMap) string {
+	return fmt.Sprintf("ret %d/%d", p.ReturnOffset, p.FrameWidth)
+}
+
+// Codes implementation for Bytecode interface
+func (p *Ret) Codes(_ uint32) []uint32 {
+	return encodeRet1(p.FrameWidth, p.ReturnOffset)
+}
+
+// Patch implementation for Bytecode interface
+func (p *Ret) Patch(_ []Address) {
+	// do nothing
+}
+
+func decodeRet[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
+	width, roffset, n := decodeRet1(pc, codes)
+	//
+	return &Ret{width, roffset}, n
+}
+
+// ============================================================================
+// RET.  Format of these instruction is:
+//
+//	31                                0
+//
+// +--------+-----------------+--------+
+// | offset |   frame width   | opcode |
+// +--------+-----------------+--------+
+func decodeRet1(pc uint32, codes []uint32) (width uint16, roffset uint8, n uint32) {
+	// RET stores frame width in bits 8..23.
+	width = uint16((codes[pc] >> 8) & 0xffff)
+	roffset = uint8(codes[pc] >> 24)
+	//
+	return width, roffset, 1
+}
+
+func encodeRet1(width uint16, roffset uint8) []uint32 {
+	var (
+		_width   = uint32(width)
+		_roffset = uint32(roffset)
+	)
+
+	return []uint32{
+		_roffset<<24 | _width<<8 | RET,
+	}
+}

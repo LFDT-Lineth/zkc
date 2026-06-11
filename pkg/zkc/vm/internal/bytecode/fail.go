@@ -10,19 +10,16 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package trace
+package bytecode
 
-import (
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
-)
+// Fail instruction
+type Fail struct{}
 
-// Observer is a generic interface for extract information before and after an
-// execution step of the VM.  For example, to generate debugging information.
-type Observer[W machine.BaseWord[W], I instruction.Instruction, M machine.Machine[W, I]] interface {
-	Initialise(machine M)
-	// PreExecution is called directly before each instruction is executed
-	PreExecution(machine M)
-	// PostExecution is called directly after each instruction is executed.
-	PostExecution(machine M)
+func (p *Fail) String(_ SystemMap) string {
+	return "fail"
+}
+
+// Codes implementation for Bytecode interface
+func (p *Fail) Codes(_ uint32) []uint32 {
+	return []uint32{FAIL}
 }

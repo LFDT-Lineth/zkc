@@ -39,6 +39,8 @@ type BuildArtifacts[F field.Element[F]] struct {
 	ast util.Option[ast.Program]
 	// Word Machine
 	wir util.Option[vm.WordMachine[vm.Uint]]
+	// Bytecode Machine
+	bci util.Option[vm.BytecodeProgram[vm.Uint64]]
 	// Field Machine
 	fir util.Option[vm.FieldMachine[F]]
 	// MIR Constraints
@@ -57,12 +59,12 @@ type BuildConfig[F field.Element[F]] struct {
 	// metadata to include in binary output file
 	metadata []byte
 	// flags signal which layers to generate artifacts for.
-	ast, wir, fir, mir, air bool
+	ast, wir, bci, fir, mir, air bool
 }
 
 // HasTarget checks whether or not at least one build target is specified.
 func (p BuildConfig[F]) HasTarget() bool {
-	return p.ast || p.wir || p.fir || p.mir || p.air
+	return p.ast || p.wir || p.bci || p.fir || p.mir || p.air
 }
 
 // Dependencies produces a build configuration with all transitive dependencies
@@ -70,7 +72,7 @@ func (p BuildConfig[F]) HasTarget() bool {
 func (p BuildConfig[F]) Dependencies() BuildConfig[F] {
 	p.mir = p.mir || p.air
 	p.fir = p.fir || p.mir
-	p.wir = p.wir || p.fir
+	p.wir = p.wir || p.fir || p.bci
 	p.ast = p.ast || p.wir
 	//
 	return p
@@ -88,6 +90,8 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 		ast ast.Program
 		// Word Machine
 		wir *vm.WordMachine[vm.Uint]
+		// Bytecode interpreter
+		bci vm.BytecodeProgram[vm.Uint64]
 		// Field Machine
 		fir *vm.FieldMachine[F]
 		// MIR Constraints
@@ -127,6 +131,13 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 		}
 	}
 	// Field-level Intermediate Representation
+	if deps.bci {
+		// lower to a 64bit machine
+		var m64 = vm.WordToWordMachine[vm.Uint, vm.Uint64](wir)
+		// Compile bytecode interpreter
+		bci = vm.WordToBytecodeProgram(m64)
+	}
+	// Field-level Intermediate Representation
 	if deps.fir {
 		fir = vm.WordToFieldMachine[vm.Uint, F](p.field, wir)
 	}
@@ -145,6 +156,10 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 	//
 	if p.wir {
 		artifacts.wir = util.Some(*wir)
+	}
+	//
+	if p.bci {
+		artifacts.bci = util.Some(bci)
 	}
 	//
 	if p.fir {

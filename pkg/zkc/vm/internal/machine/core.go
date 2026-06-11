@@ -15,7 +15,9 @@ package machine
 import (
 	"fmt"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 )
 
 // Executor --- see documentation on vm.Executor
@@ -26,15 +28,9 @@ type Executor[W BaseWord[W], I Instruction] interface {
 	Execute(insn I, frame StackFrame[W, I]) error
 }
 
-// Core represents the state of an executing machine, including the state of
-// all registers, memories and functions.  A machine may be executing or
-// terminated.  Machines are abstracted over a given type of word W, and
-// instruction I.  For example, a machine could be operating over 16bit words or
-// 8bit words, etc (i.e. as determined by the underlying field).  Furthermore, a
-// machine may be operating over instructions compiled into bytes (for efficient
-// execution), or instructions represented at a higher level (e.g. for analysis
-// or compilation).
-type Core[W BaseWord[W], I Instruction] interface {
+// Core provides a minimal interface for booting and executing a machine with a
+// given set of inputs, and collecting the outputs afterwards.
+type Core[W BaseWord[W]] interface {
 	// Boot this machine by starting the given function with the given inputs.  This
 	// function assumes the given inputs are correctly formed, and will: (1) ingore
 	// unknown inputs; (2) initialise empty memories when no input is given for
@@ -44,6 +40,22 @@ type Core[W BaseWord[W], I Instruction] interface {
 	// Execute the machine for the given number of steps, returning the actual
 	// number of steps executed and an error (if execution failed).
 	Execute(steps uint) (uint, error)
+	// Return array of (non-static) input memories
+	Inputs() iter.Iterator[memory.InputOutput[W]]
+	// Return array of output memories
+	Outputs() iter.Iterator[memory.InputOutput[W]]
+}
+
+// Machine represents the state of an executing machine, including the state of
+// all registers, memories and functions.  A machine may be executing or
+// terminated.  Machines are abstracted over a given type of word W, and
+// instruction I.  For example, a machine could be operating over 16bit words or
+// 8bit words, etc (i.e. as determined by the underlying field).  Furthermore, a
+// machine may be operating over instructions compiled into bytes (for efficient
+// execution), or instructions represented at a higher level (e.g. for analysis
+// or compilation).
+type Machine[W BaseWord[W], I Instruction] interface {
+	Core[W]
 	// Return ith module in this machine (either a function or some form of memory).
 	Module(id uint) Module
 	// Return set of modules in this machine.

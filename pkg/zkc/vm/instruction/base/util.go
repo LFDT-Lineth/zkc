@@ -34,6 +34,9 @@ type Module interface {
 	IsNative() bool
 	// Access a given register in this module.
 	Register(register.Id) register.Register
+	// RegisterMap returns a register map view of the registers declared by this
+	// function.
+	RegisterMap() register.Map
 	// Registers providers access to the underlying registers of this map.
 	Registers() []register.Register
 	// Width returns the number of registers declared in this module.

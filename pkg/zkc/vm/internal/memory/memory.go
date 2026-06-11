@@ -54,15 +54,24 @@ type Memory[W util.Uinter64] interface {
 	// Write to a given physical address within this memory, possibly
 	// producing an error (e.g. for an out-of-bounds access).
 	Write(address uint64, value W) error
+	// Contents returns the contents of this memory as an array.
+	Contents() []W
 }
 
 // InputOutput identifiers memory used to represent inputs or outputs.  The main
 // purpose of this is to enable inspection of said memory to ensure e.g. the
 // correct outputs are produced.
 type InputOutput[W util.Uinter64] interface {
-	Memory[W]
 	// Contents returns the contents of this memory as an array.
 	Contents() []W
+	// Geometry defines the geometry of this memory.
+	Geometry() Geometry[W]
+	// Initialise this memory with the given contents.  This will overwrite any
+	// existing contents.
+	Initialise(contents []W)
+	// Name returns the name given to the enclosing entity (i.e. memory or
+	// function).
+	Name() string
 }
 
 // Kind provides relevant information about the underlying memory (e.g. whether
