@@ -425,6 +425,11 @@ ZkC supports the following arithmetic operators:
 | `a + b`  | addition       |
 | `a - b`  | subtraction    |
 | `a * b`  | multiplication |
+| `a / b`  | division       |
+| `a % b`  | remainder      |
+
+All operands of an arithmetic operator must have the same
+type. The result type equals the operand type. If an overflow happens, it will result in failure.
 
 Bitwise operators:
 
