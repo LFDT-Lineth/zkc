@@ -35,7 +35,7 @@ import (
 // The source machine's prime modulus is read from its executor and re-expressed
 // in W2 so the new machine retains the same field semantics; this means the
 // modulus itself must also fit in W2's bandwidth.  ROM/SROM contents are
-// converted element-wise; WOM/RAM/Bipartite memories start empty in the new
+// converted element-wise; WOM/RAM/Paged memories start empty in the new
 // machine, matching their behaviour in the source.
 //
 // This function will panic if it encounters a register, constant, modulus or
@@ -157,8 +157,8 @@ func (p wordToWord[W1, W2]) lowerMemory(m memory.Memory[W1]) memory.Memory[W2] {
 		return memory.NewWriteOnce[W2](m.Name(), m.IsPublic(), regs)
 	case *memory.RandomAccess[W1]:
 		return memory.NewRandomAccess[W2](m.Name(), regs)
-	case *memory.BiPartiteRandomAccess[W1]:
-		return memory.NewBiPartiteRandomAccess[W2](m.Name(), regs)
+	case *memory.PagedRandomAccess[W1]:
+		return memory.NewPagedRandomAccess[W2](m.Name(), regs)
 	default:
 		panic(fmt.Sprintf("unknown memory module \"%s\"", m.Name()))
 	}

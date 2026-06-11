@@ -92,7 +92,7 @@ func SplitRegisters[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachin
 // The source machine's prime modulus is re-expressed in W2 so the new machine
 // retains the same field semantics; this means the modulus itself must also
 // fit in W2's bandwidth.  ROM/SROM contents are converted element-wise;
-// WOM/RAM/Bipartite memories start empty in the new machine.
+// WOM/RAM/Paged memories start empty in the new machine.
 //
 // This function will panic if it encounters a register, constant, modulus or
 // memory cell which exceeds the bandwidth of W2.  Callers needing to target a
