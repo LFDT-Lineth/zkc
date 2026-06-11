@@ -73,7 +73,7 @@ func (g *generator) emitMemRead(c *code, fn *wordFunction, x *instruction.MemRea
 			case ramScratch:
 				expr = fmt.Sprintf("memGet(%s, start+%d)", mi.varName, i)
 				bound = widthMax(dataRegs[i].Width())
-			case bramScratch:
+			case pagedScratch:
 				expr = fmt.Sprintf("%s.get(start + %d)", mi.varName, i)
 				bound = widthMax(dataRegs[i].Width())
 			default: // input ROM: untrusted contents
@@ -98,7 +98,7 @@ func (g *generator) emitMemWrite(c *code, fn *wordFunction, x *instruction.MemWr
 	}
 
 	switch mi.role {
-	case womOutput, ramScratch, bramScratch:
+	case womOutput, ramScratch, pagedScratch:
 	default:
 		return fmt.Errorf("gogen: MEMORY_WRITE to read-only memory %q", mi.name)
 	}
@@ -129,7 +129,7 @@ func (g *generator) emitMemWrite(c *code, fn *wordFunction, x *instruction.MemWr
 				g.checkWidth(c, src, dataRegs[i].Width())
 			}
 
-			if mi.role == bramScratch {
+			if mi.role == pagedScratch {
 				c.linef("%s.set(start+%d, %s)", mi.varName, i, src.expr)
 			} else {
 				c.linef("%s = memGrow(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)

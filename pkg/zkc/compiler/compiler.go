@@ -143,6 +143,8 @@ func validateProgram(program ast.Program, field field.Config, srcmaps source.Map
 	errors = append(errors, validate.Typing(program, field, srcmaps)...)
 	// Perform final validation
 	errors = append(errors, validate.ControlFlow(program, srcmaps)...)
+	// Check #[debug] functions are safe to elide
+	errors = append(errors, validate.DebugFunctions(program, srcmaps)...)
 	//
 	return errors
 }

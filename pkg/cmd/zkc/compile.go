@@ -107,15 +107,15 @@ func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F]) {
 	}
 	// Word-level Intermediate Representation
 	if artifacts.wir.HasValue() {
-		writeIntermediateRepresentation(artifacts.wir.Unwrap())
+		writeIntermediateRepresentation(artifacts.wir.Unwrap(), artifacts.annotations)
 	}
 	// Word-level Intermediate Representation
 	if artifacts.bci.HasValue() {
-		writeBytecodeInterpreter(artifacts.bci.Unwrap())
+		writeBytecodeInterpreter(artifacts.bci.Unwrap(), artifacts.annotations)
 	}
 	// Field-level Intermediate Representation
 	if artifacts.fir.HasValue() {
-		writeIntermediateRepresentation(artifacts.fir.Unwrap())
+		writeIntermediateRepresentation(artifacts.fir.Unwrap(), artifacts.annotations)
 	}
 	// Mid-level Intermediate Representation
 	if artifacts.mir.HasValue() {
@@ -174,7 +174,15 @@ func writeConstant(m *decl.ResolvedConstant, env data.ResolvedEnvironment) {
 	fmt.Println(m.ConstExpr.String(mapping))
 }
 
+func writeAnnotations(annotations []string) {
+	for _, a := range annotations {
+		fmt.Printf("#[%s]\n", a)
+	}
+}
+
 func writeMemory(m *decl.ResolvedMemory, env data.ResolvedEnvironment) {
+	writeAnnotations(m.Annotations())
+	//
 	switch m.Kind {
 	case decl.PUBLIC_READ_ONLY_MEMORY:
 		fmt.Printf("public input")
@@ -236,6 +244,8 @@ func writeMemoryContents(values []expr.Resolved) {
 }
 
 func writeFunction(f *decl.ResolvedFunction, env data.ResolvedEnvironment) {
+	writeAnnotations(f.Annotations())
+	//
 	fmt.Printf("fn %s", f.Name())
 	// Write optional effects
 	if len(f.Effects) > 0 {
@@ -304,13 +314,15 @@ func writeFunctionVariables(f *decl.ResolvedFunction, env data.ResolvedEnvironme
 // ============================================================================
 
 func writeIntermediateRepresentation[W vm.MachineWord[W], I vm.Instruction, T vm.Executor[W, I]](
-	machine vm.BaseMachine[W, I, T]) {
+	machine vm.BaseMachine[W, I, T], annotations map[string][]string) {
 	//
 	// Write memories
 	for i, m := range machine.Modules() {
 		if i != 0 {
 			fmt.Println()
 		}
+		//
+		writeAnnotations(annotations[m.Name()])
 		//
 		switch m := m.(type) {
 		case vm.Memory[W]:
@@ -417,7 +429,7 @@ func registerType(r register.Register) string {
 // Bytecode Interpreter
 // ============================================================================
 
-func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram[W]) {
+func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram[W], annotations map[string][]string) {
 	var (
 		address   uint32
 		bytecodes = vm.DecodeBytecodes(program)
@@ -443,6 +455,8 @@ func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram[W]) {
 			if i != 0 {
 				fmt.Println()
 			}
+			//
+			writeAnnotations(annotations[m.Name()])
 			//
 			fmt.Printf("%s:\n", signatureOf(m))
 			//

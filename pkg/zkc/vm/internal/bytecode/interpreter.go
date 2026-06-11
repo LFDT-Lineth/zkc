@@ -78,9 +78,9 @@ type Interpreter[W word.Word[W]] struct {
 	woms []memory.WriteOnce[W]
 	// (Small) random-access memories which may be freely read and written.
 	rams []memory.RandomAccess[W]
-	// (Large) bipartite random-access memories which may be freely read and
+	// (Large) paged random-access memories which may be freely read and
 	// written.
-	brams []memory.BiPartiteRandomAccess[W]
+	prams []memory.PagedRandomAccess[W]
 }
 
 // StackFrame captures relevant information about all functions currently
@@ -99,7 +99,7 @@ type StackFrame struct {
 
 // NewInterpreter constructs a new bytecode interpreter for the given program.
 // The program's memory modules are partitioned by access discipline (static
-// read-only, read-only, write-once, random-access and bipartite random-access)
+// read-only, read-only, write-once, random-access and paged random-access)
 // so that read/write bytecodes can locate them directly by identifier during
 // execution.  The interpreter is created in an unbooted state; Boot must be
 // called to select an entry point and supply inputs before calling Execute.
@@ -109,7 +109,7 @@ func NewInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
 		roms  []memory.ReadOnly[W]
 		woms  []memory.WriteOnce[W]
 		rams  []memory.RandomAccess[W]
-		brams []memory.BiPartiteRandomAccess[W]
+		prams []memory.PagedRandomAccess[W]
 	)
 	//
 	for _, m := range program.modules {
@@ -123,8 +123,8 @@ func NewInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
 			woms = append(woms, *m)
 		case *memory.RandomAccess[W]:
 			rams = append(rams, *m)
-		case *memory.BiPartiteRandomAccess[W]:
-			brams = append(brams, *m)
+		case *memory.PagedRandomAccess[W]:
+			prams = append(prams, *m)
 		}
 	}
 	//
@@ -138,7 +138,7 @@ func NewInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
 		roms:    roms,
 		woms:    woms,
 		rams:    rams,
-		brams:   brams,
+		prams:   prams,
 	}
 }
 
@@ -272,6 +272,10 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeReadRam_sn(p.pc, bytecodes, frame, p.rams)
 		case WR_RAM_nm:
 			p.pc = executeWriteRam_sn(p.pc, bytecodes, frame, p.rams)
+		case RD_PRAM_nm:
+			p.pc = executeReadPram_sn(p.pc, bytecodes, frame, p.prams)
+		case WR_PRAM_nm:
+			p.pc = executeWritePram_sn(p.pc, bytecodes, frame, p.prams)
 		// Arithmetic Operations
 		case ADD_2n1:
 			p.pc, err = executeAdd_2n1(p.pc, bytecodes, frame)
@@ -316,7 +320,7 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 // initialise prepares all memories for a fresh execution.  Input (read-only and
 // static read-only) memories are loaded with the values supplied for their name
 // in the input map, whilst output and scratch memories (write-once, random-
-// access and bipartite random-access) are reset to empty.
+// access and paged random-access) are reset to empty.
 func (p *Interpreter[W]) initialise(input map[string][]W) {
 	// initialise roms
 	for i, m := range p.roms {
@@ -334,9 +338,9 @@ func (p *Interpreter[W]) initialise(input map[string][]W) {
 	for i := range p.rams {
 		p.rams[i].Initialise(nil)
 	}
-	// reset (big) brams
-	for i := range p.brams {
-		p.brams[i].Initialise(nil)
+	// reset (big) prams
+	for i := range p.prams {
+		p.prams[i].Initialise(nil)
 	}
 }
 
@@ -857,6 +861,54 @@ func executeWriteRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	for data.HasNext() {
 		//nolint
 		rom.Write(address, stack[data.Next()])
+		//
+		address++
+	}
+	//
+	return pc + n
+}
+
+// executeReadPram_sn implements RD_PRAM_nm: it reads ndata consecutive words
+// from the paged random-access memory identified by id, starting at the address
+// decoded from the operand registers, into successive destination registers.
+func executeReadPram_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
+	prams []memory.PagedRandomAccess[W]) uint32 {
+	//
+	var (
+		id, addr, data, n = decodeReadWrite_sn(pc, codes)
+		pram              = &prams[id]
+		address           uint64
+	)
+	//
+	address = decodeAddress(addr, pram.Geometry(), stack)
+	//
+	for data.HasNext() {
+		//nolint
+		stack[data.Next()], _ = pram.Read(address)
+		//
+		address++
+	}
+	//
+	return pc + n
+}
+
+// executeWritePram_sn implements WR_PRAM_nm: it writes ndata consecutive words
+// from successive source registers into the paged random-access memory
+// identified by id, starting at the address decoded from the operand registers.
+func executeWritePram_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
+	prams []memory.PagedRandomAccess[W]) uint32 {
+	//
+	var (
+		id, addr, data, n = decodeReadWrite_sn(pc, codes)
+		pram              = &prams[id]
+		address           uint64
+	)
+	//
+	address = decodeAddress(addr, pram.Geometry(), stack)
+	//
+	for data.HasNext() {
+		//nolint
+		pram.Write(address, stack[data.Next()])
 		//
 		address++
 	}

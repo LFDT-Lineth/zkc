@@ -83,7 +83,7 @@ const (
 	womOutput                  // write-once: forms the program outputs (grow-on-write)
 	sromStatic                 // static read-only: fixed contents baked into the program
 	ramScratch                 // read-write scratch: zero-initialised, grows on write
-	bramScratch                // bipartite read-write scratch (low/high partitions)
+	pagedScratch               // paged read-write scratch (demand-allocated pages)
 )
 
 type memInfo struct {
@@ -140,8 +140,8 @@ func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
 				g.sroms = append(g.sroms, info)
 			case ramScratch:
 				g.rams = append(g.rams, info)
-			case bramScratch:
-				g.brams = append(g.brams, info)
+			case pagedScratch:
+				g.pageds = append(g.pageds, info)
 			}
 		case *wordFunction:
 			g.funcByID[uint(id)] = mm
@@ -191,7 +191,7 @@ type generator struct {
 	outputs     []memInfo
 	sroms       []memInfo // static read-only memories (baked contents)
 	rams        []memInfo // read-write scratch memories
-	brams       []memInfo // bipartite read-write scratch memories
+	pageds      []memInfo // paged read-write scratch memories
 	modules     []instruction.Module
 	funcByID    map[uint]*wordFunction
 	modulus     *big.Int        // the machine's prime modulus (for mod-P ops)
@@ -306,8 +306,8 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 		c.linef("var %s []uint64 // scratch RAM %q", m.varName, m.name)
 	}
 
-	for _, m := range g.brams {
-		c.linef("var %s bram // bipartite RAM %q", m.varName, m.name)
+	for _, m := range g.pageds {
+		c.linef("var %s paged // paged RAM %q", m.varName, m.name)
 	}
 
 	// Static read-only memories have fixed contents baked in as a literal.
@@ -345,8 +345,8 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 		c.linef("%s = nil", m.varName)
 	}
 
-	for _, m := range g.brams {
-		c.linef("%s = bram{}", m.varName)
+	for _, m := range g.pageds {
+		c.linef("%s = paged{}", m.varName)
 	}
 
 	c.line("fn_main()")
@@ -378,6 +378,10 @@ func (g *generator) emitImports(c *code) {
 	if g.usesBits {
 		deps = append(deps, `"math/bits"`)
 	}
+	// memGrow (WOM/RAM) and paged.set both use slices.Grow.
+	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.pageds) > 0 {
+		deps = append(deps, `"slices"`)
+	}
 
 	switch len(deps) {
 	case 0:
@@ -406,8 +410,8 @@ func (g *generator) emitMemHelpers(c *code) {
 	// grow-on-write memories.
 	if len(g.outputs) > 0 || len(g.rams) > 0 {
 		c.line("func memGrow(s []uint64, addr uint64, v uint64) []uint64 {")
-		c.line("for uint64(len(s)) <= addr {")
-		c.line("s = append(s, 0)")
+		c.line("if n := addr + 1; uint64(len(s)) < n {")
+		c.line("s = slices.Grow(s, int(n)-len(s))[:n]")
 		c.line("}")
 		c.line("s[addr] = v")
 		c.line("return s")
@@ -427,38 +431,30 @@ func (g *generator) emitMemHelpers(c *code) {
 		c.line("")
 	}
 
-	// bram mirrors the VM's BiPartiteRandomAccess: addresses below halfStart
-	// grow a lower partition upwards, the rest grow an upper partition
-	// downwards from the top of the address space.
-	if len(g.brams) > 0 {
-		c.line("const bramHalfStart = ^uint64(0) / 2")
+	// paged mirrors the VM's PagedRandomAccess: a page table indexed densely by
+	// address/pageSize, pages allocated on first write, unwritten reads are 0.
+	if len(g.pageds) > 0 {
+		c.line("const pageSize = 1 << 20")
 		c.line("")
-		c.line("type bram struct{ lower, upper []uint64 }")
+		c.line("type paged struct{ pages [][]uint64 }")
 		c.line("")
-		c.line("func (m *bram) get(addr uint64) uint64 {")
-		c.line("if addr < bramHalfStart {")
-		c.line("if addr < uint64(len(m.lower)) {")
-		c.line("return m.lower[addr]")
-		c.line("}")
-		c.line("} else if idx := ^uint64(0) - addr; idx < uint64(len(m.upper)) {")
-		c.line("return m.upper[idx]")
+		c.line("func (m *paged) get(addr uint64) uint64 {")
+		c.line("page, off := addr/pageSize, addr%pageSize")
+		c.line("if page < uint64(len(m.pages)) && m.pages[page] != nil {")
+		c.line("return m.pages[page][off]")
 		c.line("}")
 		c.line("return 0")
 		c.line("}")
 		c.line("")
-		c.line("func (m *bram) set(addr uint64, v uint64) {")
-		c.line("if addr < bramHalfStart {")
-		c.line("for uint64(len(m.lower)) <= addr {")
-		c.line("m.lower = append(m.lower, 0)")
+		c.line("func (m *paged) set(addr uint64, v uint64) {")
+		c.line("page, off := addr/pageSize, addr%pageSize")
+		c.line("if n := page + 1; uint64(len(m.pages)) < n {")
+		c.line("m.pages = slices.Grow(m.pages, int(n)-len(m.pages))[:n]")
 		c.line("}")
-		c.line("m.lower[addr] = v")
-		c.line("return")
+		c.line("if m.pages[page] == nil {")
+		c.line("m.pages[page] = make([]uint64, pageSize)")
 		c.line("}")
-		c.line("idx := ^uint64(0) - addr")
-		c.line("for uint64(len(m.upper)) <= idx {")
-		c.line("m.upper = append(m.upper, 0)")
-		c.line("}")
-		c.line("m.upper[idx] = v")
+		c.line("m.pages[page][off] = v")
 		c.line("}")
 		c.line("")
 	}
@@ -811,8 +807,8 @@ func (g *generator) classifyMemory(m memory.Memory[word.Uint]) (memInfo, error) 
 	}
 
 	switch mm := m.(type) {
-	case *memory.BiPartiteRandomAccess[word.Uint]:
-		info.role = bramScratch
+	case *memory.PagedRandomAccess[word.Uint]:
+		info.role = pagedScratch
 	case *memory.StaticReadOnly[word.Uint]:
 		// Static read-only: bake the fixed contents into the generated program.
 		info.role = sromStatic

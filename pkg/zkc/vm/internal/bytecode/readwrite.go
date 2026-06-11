@@ -34,11 +34,11 @@ var SRAM_READ = RwMode{3}
 // SRAM_WRITE representing write to a (small) random-access memory.
 var SRAM_WRITE = RwMode{4}
 
-// BRAM_READ representing reading from a (bipartite) random-access memory.
-var BRAM_READ = RwMode{5}
+// PRAM_READ representing reading from a (paged) random-access memory.
+var PRAM_READ = RwMode{5}
 
-// BRAM_WRITE representing write to a (bipartite) random-access memory.
-var BRAM_WRITE = RwMode{6}
+// PRAM_WRITE representing write to a (paged) random-access memory.
+var PRAM_WRITE = RwMode{6}
 
 // RwMode determines whether what kind of memory is being operated on (e.g. ROM
 // or RAM, etc) and what operation is being performed (i.e. READ or WRITE).
@@ -57,8 +57,8 @@ func (p RwMode) Kind() MemoryKind {
 		return WRITEONCE_MEMORY
 	case SRAM_READ, SRAM_WRITE:
 		return READWRITE_MEMORY
-	case BRAM_READ, BRAM_WRITE:
-		return BIPARTITE_READWRITE_MEMORY
+	case PRAM_READ, PRAM_WRITE:
+		return PAGED_READWRITE_MEMORY
 	default:
 		panic("invalid read/write mode")
 	}
@@ -85,9 +85,9 @@ func (p *ReadWrite) String(mapping SystemMap) string {
 	)
 	//
 	switch p.Mode {
-	case SROM_READ, ROM_READ, SRAM_READ, BRAM_READ:
+	case SROM_READ, ROM_READ, SRAM_READ, PRAM_READ:
 		return fmt.Sprintf("%s = %s[%s]", data, name, address)
-	case WOM_WRITE, SRAM_WRITE, BRAM_WRITE:
+	case WOM_WRITE, SRAM_WRITE, PRAM_WRITE:
 		return fmt.Sprintf("%s[%s] = %s", name, address, data)
 	default:
 		panic("unknown read/write mode")

@@ -92,7 +92,9 @@ var ANNOTATIONS = []Annotation{
 	NewAnnotation("inline", "marks a function to be inlined at every call site", FUNCTION_KIND),
 	// #[native] is permitted only on function declarations.
 	NewAnnotation("native", "marks a function as backed by a native circuit", FUNCTION_KIND),
-	// #[bipartite] is permitted only on memory declarations.
-	NewAnnotation("bipartite",
-		"marks a read/write memory to use the bipartite (split heap/stack) layout", MEMORY_KIND),
+	NewAnnotation("paged",
+		"marks a read/write memory to use the paged (array of pages) layout", MEMORY_KIND),
+	// #[debug] is permitted only on function declarations.
+	NewAnnotation("debug",
+		"marks a function as debug-only, whose calls are elided (like printf) in quiet mode", FUNCTION_KIND),
 }

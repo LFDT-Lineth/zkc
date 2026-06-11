@@ -149,8 +149,8 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 				// Include all errors
 				errors = append(errors, errs...)
 			case decl.RANDOM_ACCESS_MEMORY:
-				if slices.Contains(c.Annotations(), "bipartite") {
-					modules = append(modules, vm.NewLargeReadWriteMemory[vm.Uint](c.Name(), regs))
+				if slices.Contains(c.Annotations(), "paged") {
+					modules = append(modules, vm.NewPagedReadWriteMemory[vm.Uint](c.Name(), regs))
 				} else {
 					modules = append(modules, vm.NewReadWriteMemory[vm.Uint](c.Name(), regs))
 				}

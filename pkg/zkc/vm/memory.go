@@ -52,10 +52,10 @@ func NewReadWriteMemory[W util.Uinter64](name string, registers []register.Regis
 	return memory.NewRandomAccess[W](name, registers)
 }
 
-// NewLargeReadWriteMemory constructs an empty random-access memory which
-// employs a sparse (bipartite) representation.  This is a read/write
-// implementation of Memory optimised for representing the kind of split
-// heap/stack memory found in typical compute architectures (e.g. RISC-V).
-func NewLargeReadWriteMemory[W util.Uinter64](name string, registers []register.Register) Memory[W] {
-	return memory.NewBiPartiteRandomAccess[W](name, registers)
+// NewPagedReadWriteMemory constructs an empty random-access memory which
+// represents memory as an array of pages, grown on demand.  This is a
+// read/write implementation of Memory suitable for larger memories, provided
+// they do not use very high addresses.
+func NewPagedReadWriteMemory[W util.Uinter64](name string, registers []register.Register) Memory[W] {
+	return memory.NewPagedRandomAccess[W](name, registers)
 }

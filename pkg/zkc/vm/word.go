@@ -35,7 +35,7 @@ func init() {
 	gob.Register(instruction.Module(&memory.ReadOnly[Uint]{}))
 	gob.Register(instruction.Module(&memory.WriteOnce[Uint]{}))
 	gob.Register(instruction.Module(&memory.StaticReadOnly[Uint]{}))
-	gob.Register(instruction.Module(&memory.BiPartiteRandomAccess[Uint]{}))
+	gob.Register(instruction.Module(&memory.PagedRandomAccess[Uint]{}))
 }
 
 // WordConfig provides a minimal amount of information about a machine word
