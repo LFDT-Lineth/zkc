@@ -15,6 +15,7 @@ go.work
 .idea
 .vscode
 .env
+.DS_Store
 
 # go-corset specific
 bin
