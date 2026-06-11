@@ -228,6 +228,8 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc++
 		case LDC:
 			p.pc = executeLdc_1(p.pc, bytecodes, frame)
+		case LDC_w:
+			p.pc = executeLdc_w(p.pc, bytecodes, frame)
 		case MOVE:
 			p.pc = executeMove_1s1(p.pc, bytecodes, frame)
 		case ENTER_n:
@@ -249,6 +251,8 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case JMP:
 			p.pc, _ = decodeJmp1(p.pc, bytecodes)
+		case SKIP:
+			p.pc, _ = decodeSkip1(p.pc, bytecodes)
 		case JEQ_rr:
 			p.pc = executeJif_rr[W, util.Equal[W]](p.pc, bytecodes, frame)
 		case JNE_rr:
@@ -261,6 +265,30 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeJif_rr[W, util.LessThanOrEqual[W]](p.pc, bytecodes, frame)
 		case JGE_rr:
 			p.pc = executeJif_rr[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
+		case SEQ_rr:
+			p.pc = executeSkipIf_rr[W, util.Equal[W]](p.pc, bytecodes, frame)
+		case SNE_rr:
+			p.pc = executeSkipIf_rr[W, util.NotEqual[W]](p.pc, bytecodes, frame)
+		case SLT_rr:
+			p.pc = executeSkipIf_rr[W, util.LessThan[W]](p.pc, bytecodes, frame)
+		case SGT_rr:
+			p.pc = executeSkipIf_rr[W, util.GreaterThan[W]](p.pc, bytecodes, frame)
+		case SLE_rr:
+			p.pc = executeSkipIf_rr[W, util.LessThanOrEqual[W]](p.pc, bytecodes, frame)
+		case SGE_rr:
+			p.pc = executeSkipIf_rr[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
+		case JEQ_rv:
+			p.pc = executeJif_rv[W, util.Equal[W]](p.pc, bytecodes, frame)
+		case JNE_rv:
+			p.pc = executeJif_rv[W, util.NotEqual[W]](p.pc, bytecodes, frame)
+		case JLT_rv:
+			p.pc = executeJif_rv[W, util.LessThan[W]](p.pc, bytecodes, frame)
+		case JGT_rv:
+			p.pc = executeJif_rv[W, util.GreaterThan[W]](p.pc, bytecodes, frame)
+		case JLE_rv:
+			p.pc = executeJif_rv[W, util.LessThanOrEqual[W]](p.pc, bytecodes, frame)
+		case JGE_rv:
+			p.pc = executeJif_rv[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
 			// Input / Output Operations
 		case RD_ROM_nm:
 			p.pc = executeReadRom_sn(p.pc, bytecodes, frame, p.roms)
@@ -273,9 +301,9 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		case WR_RAM_nm:
 			p.pc = executeWriteRam_sn(p.pc, bytecodes, frame, p.rams)
 		case RD_PRAM_nm:
-			p.pc = executeReadPram_sn(p.pc, bytecodes, frame, p.prams)
+			p.pc = executeReadPagedRam_sn(p.pc, bytecodes, frame, p.prams)
 		case WR_PRAM_nm:
-			p.pc = executeWritePram_sn(p.pc, bytecodes, frame, p.prams)
+			p.pc = executeWritePagedRam_sn(p.pc, bytecodes, frame, p.prams)
 		// Arithmetic Operations
 		case ADD_2n1:
 			p.pc, err = executeAdd_2n1(p.pc, bytecodes, frame)
@@ -295,6 +323,12 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = p.executeSub_nm(p.pc, bytecodes, frame)
 		case MUL_nm:
 			p.pc, err = p.executeMul_nm(p.pc, bytecodes, frame)
+		case DIV:
+			p.pc, err = executeDiv(p.pc, bytecodes, frame)
+		case REM:
+			p.pc, err = executeRem(p.pc, bytecodes, frame)
+		case DIVHINT:
+			p.pc, err = executeDivHint(p.pc, bytecodes, frame)
 		case CAT:
 			p.pc, err = p.executeCat(p.pc, bytecodes, frame)
 		case NOT:
@@ -591,6 +625,66 @@ func executeCheckCast[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uin
 	return pc + n, nil
 }
 
+// executeDiv implements DIV: stack[rd] = stack[dividend] / stack[divisor],
+// returning an error if the divisor is zero.
+func executeDiv[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var rd, dividend, divisor, n = decodeDivRem_2n1(pc, codes)
+	//
+	if stack[divisor].Cmp64(0) == 0 {
+		return pc, errors.New("division by zero")
+	}
+	//
+	stack[rd] = stack[dividend].Div(stack[divisor])
+	//
+	return pc + n, nil
+}
+
+// executeRem implements REM: stack[rd] = stack[dividend] % stack[divisor],
+// returning an error if the divisor is zero.
+func executeRem[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var rd, dividend, divisor, n = decodeDivRem_2n1(pc, codes)
+	//
+	if stack[divisor].Cmp64(0) == 0 {
+		return pc, errors.New("division by zero")
+	}
+	//
+	stack[rd] = stack[dividend].Rem(stack[divisor])
+	//
+	return pc + n, nil
+}
+
+// executeDivHint implements DIVHINT: it assigns the quotient, remainder and
+// range witness (divisor - remainder - 1) of a division, returning an error if
+// the divisor is zero.  This matches executeDivHint in the slow word machine.
+func executeDivHint[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rq, rr, rw, rx, ry, n = decodeDivHint_2n3(pc, codes)
+		dividend              = stack[rx]
+		divisor               = stack[ry]
+		w                     W
+		uf1, uf2              bool
+	)
+	//
+	if divisor.Cmp64(0) == 0 {
+		return pc, errors.New("division by zero")
+	}
+	//
+	q := dividend.Div(divisor)
+	r := dividend.Rem(divisor)
+	w, uf1 = divisor.Sub(r)
+	w, uf2 = w.Sub(word.Const64[W](1))
+	//
+	if uf1 || uf2 {
+		return pc, errors.New("arithmetic underflow")
+	}
+	//
+	stack[rq] = q
+	stack[rr] = r
+	stack[rw] = w
+	//
+	return pc + n, nil
+}
+
 // executeJif_rr implements the conditional register-register branch bytecodes
 // (JEQ_rr, JNE_rr, JLT_rr, JGT_rr, JLE_rr, JGE_rr).  The comparison is selected
 // via the Comparator type parameter F.  If stack[rs0] compares to stack[rs1] as
@@ -615,9 +709,75 @@ func executeJif_rr[W word.Word[W], F util.Comparator[W]](pc uint32, codes []uint
 	return pc + n
 }
 
+// executeSkipIf_rr implements the conditional register-register forward branch
+// bytecodes (SEQ_rr, SNE_rr, SLT_rr, SGT_rr, SLE_rr, SGE_rr).  The comparison
+// is selected via the Comparator type parameter F.  If stack[rs0] compares to
+// stack[rs1] as required, execution skips forward to the encoded target;
+// otherwise it falls through to the following bytecode.
+func executeSkipIf_rr[W word.Word[W], F util.Comparator[W]](pc uint32, codes []uint32, stack []W) uint32 {
+	var (
+		c F
+		//
+		npc, rs0, rs1, _, n = decodeSkipIf_rr(pc, codes)
+		// Read rs0
+		val0 = stack[rs0]
+		// Read rs1
+		val1 = stack[rs1]
+	)
+	//
+	if c.Cmp(val0, val1) {
+		// true branch
+		return npc
+	}
+	// false branch
+	return pc + n
+}
+
+// executeJif_rv implements the conditional register-register branch bytecodes
+// (JEQ_rv, JNE_rv, JLT_rv, JGT_rv, JLE_rv, JGE_rv).  The comparison is selected
+// via the Comparator type parameter F.  If stack[rs0] compares to stack[rs1] as
+// required, execution jumps to the encoded target; otherwise it falls through
+// to the following bytecode.
+func executeJif_rv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []uint32, stack []W) uint32 {
+	var (
+		cmp F
+		//
+		npc, rs0, rs1, _, n = decodeJif_rv(pc, codes)
+	)
+	//
+	for i := rs0.Len; i > 0; {
+		i = i - 1
+		// Read rs0
+		val0 := stack[rs0.Base+i]
+		// Read rs1
+		val1 := stack[rs1.Base+i]
+		//
+		if i != 0 && val0.Cmp(val1) == 0 {
+			continue
+		} else if cmp.Cmp(val0, val1) {
+			// true branch
+			return npc
+		}
+		// false branch
+		return pc + n
+	}
+	//
+	panic("unreachable")
+}
+
 // executeLdc_1 implements LDC: it loads a constant value into register rd.
 func executeLdc_1[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
 	val, rd, n := decodeLdc_1[W](pc, codes)
+	//
+	stack[rd] = val
+	//
+	return pc + n
+}
+
+// executeLdc_w implements LDC_w: it loads a wide constant value into register
+// rd.
+func executeLdc_w[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
+	val, rd, n := decodeLdc_w[W](pc, codes)
 	//
 	stack[rd] = val
 	//
@@ -868,10 +1028,10 @@ func executeWriteRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	return pc + n
 }
 
-// executeReadPram_sn implements RD_PRAM_nm: it reads ndata consecutive words
+// executeReadPagedRam_sn implements RD_PRAM_nm: it reads ndata consecutive words
 // from the paged random-access memory identified by id, starting at the address
 // decoded from the operand registers, into successive destination registers.
-func executeReadPram_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
+func executeReadPagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	prams []memory.PagedRandomAccess[W]) uint32 {
 	//
 	var (
@@ -895,7 +1055,7 @@ func executeReadPram_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 // executeWritePram_sn implements WR_PRAM_nm: it writes ndata consecutive words
 // from successive source registers into the paged random-access memory
 // identified by id, starting at the address decoded from the operand registers.
-func executeWritePram_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
+func executeWritePagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	prams []memory.PagedRandomAccess[W]) uint32 {
 	//
 	var (

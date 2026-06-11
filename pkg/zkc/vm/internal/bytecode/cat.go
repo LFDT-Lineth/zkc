@@ -31,6 +31,7 @@ type Cat struct {
 func (p *Cat) String(mapping SystemMap) string {
 	var builder strings.Builder
 	//
+	builder.WriteString("cat ")
 	builder.WriteString(registersToString(array.Reverse(p.Targets), mapping, "::"))
 	builder.WriteString(" = ")
 	builder.WriteString(registersToString(array.Reverse(p.Sources), mapping, "::"))
