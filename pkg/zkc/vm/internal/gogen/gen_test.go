@@ -20,20 +20,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -342,6 +338,27 @@ fn main() {
 }
 `
 
+// pagedSrc exercises the paged scratch memory across page boundaries
+// (PAGE_SIZE = 1M words): writes land in pages 0, 1 and 3, and reads hit both
+// written cells and never-written cells in allocated (page 0) and unallocated
+// (page 2) pages, which must read zero.
+const pagedSrc = `pub input data(address:u8) -> (word:u64)
+#[paged]
+memory ram(address:u32) -> (word:u64)
+pub output result(address:u8) -> (word:u64)
+fn main<ram>() {
+    ram[3] = data[0]
+    ram[1048579] = data[1]
+    ram[3145731] = data[2]
+    result[0] = ram[3]
+    result[1] = ram[1048579]
+    result[2] = ram[3145731]
+    result[3] = ram[2097155]
+    result[4] = ram[7]
+    return
+}
+`
+
 // compileUint compiles a ZkC source string into a fresh, vectorised
 // WordMachine over vm.Uint — the machine the generator consumes and the
 // reference executor interprets.  `lowered` selects the prover shape
@@ -628,15 +645,18 @@ var diffCases = []diffCase{
 			{"data": {5, 0}}, // division by zero -> error
 		},
 	},
+	{
+		name: "paged", // paged scratch RAM: sparse pages, zero on unwritten reads
+		src:  pagedSrc,
+		vectors: []map[string][]uint64{
+			{"data": {1, 2, 3}},
+			{"data": {0xFFFFFFFFFFFFFFFF, 0, 0xDEADBEEF}},
+		},
+	},
 }
 
 // TestGenDifferential runs the shared corpus: see the comment on diffCase.
 func TestGenDifferential(t *testing.T) {
-	goBin, err := exec.LookPath("go")
-	if err != nil {
-		t.Skip("go toolchain not available")
-	}
-
 	for _, tc := range diffCases {
 		for _, shape := range shapes {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
@@ -645,7 +665,7 @@ func TestGenDifferential(t *testing.T) {
 					t.Fatalf("GenerateGo: %v", err)
 				}
 
-				prog := buildProgram(t, goBin, src)
+				prog := buildProgram(t, src)
 				for _, in := range tc.vectors {
 					t.Run(inputName(in), func(t *testing.T) {
 						refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.lowered), in)
@@ -666,134 +686,6 @@ func TestGenDifferential(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func section(name, body string) string {
-	return fmt.Sprintf("==== %s ====\n%s", name, strings.TrimRight(body, "\n"))
-}
-
-func dumpWIR(program ast.Program) string {
-	var b strings.Builder
-
-	env := program.Environment()
-	components := program.Components()
-
-	fmt.Fprintf(&b, "components: %d\n", len(components))
-
-	for i, component := range components {
-		fmt.Fprintf(&b, "\n[%d] %s %q\n", i, wirDeclKind(component), component.Name())
-
-		switch c := component.(type) {
-		case *decl.ResolvedConstant:
-			fmt.Fprintf(&b, "  type: %s\n", c.DataType.String(env))
-			fmt.Fprintf(&b, "  value: %s\n", c.ConstExpr.String(nil))
-		case *decl.ResolvedTypeAlias:
-			fmt.Fprintf(&b, "  type: %s\n", c.DataType.String(env))
-		case *decl.ResolvedMemory:
-			fmt.Fprintf(&b, "  kind: %s\n", wirMemoryKind(c.Kind))
-			fmt.Fprintf(&b, "  address: %s\n", wirVariables(c.Address, env))
-			fmt.Fprintf(&b, "  data: %s\n", wirVariables(c.Data, env))
-		case *decl.ResolvedFunction:
-			fmt.Fprintf(&b, "  inputs: %s\n", wirVariables(c.Inputs(), env))
-			fmt.Fprintf(&b, "  outputs: %s\n", wirVariables(c.Outputs(), env))
-
-			if len(c.Effects) > 0 {
-				fmt.Fprintf(&b, "  effects: %s\n", wirEffects(c))
-			}
-
-			fmt.Fprintf(&b, "  locals: %s\n", wirVariables(c.Variables[c.NumInputs+c.NumOutputs:], env))
-			fmt.Fprintf(&b, "  code:\n")
-
-			for pc, stmt := range c.Code {
-				fmt.Fprintf(&b, "    %02d: %s\n", pc, stmt.String(c))
-			}
-		default:
-			fmt.Fprintf(&b, "  detail: %T\n", c)
-		}
-	}
-
-	return b.String()
-}
-
-func wirDeclKind(d decl.Resolved) string {
-	switch d.(type) {
-	case *decl.ResolvedConstant:
-		return "constant"
-	case *decl.ResolvedTypeAlias:
-		return "type alias"
-	case *decl.ResolvedMemory:
-		return "memory"
-	case *decl.ResolvedFunction:
-		return "function"
-	default:
-		return fmt.Sprintf("%T", d)
-	}
-}
-
-func wirMemoryKind(kind decl.MemoryKind) string {
-	switch kind {
-	case decl.PUBLIC_STATIC_MEMORY:
-		return "public static"
-	case decl.PRIVATE_STATIC_MEMORY:
-		return "private static"
-	case decl.PUBLIC_READ_ONLY_MEMORY:
-		return "public read-only"
-	case decl.PRIVATE_READ_ONLY_MEMORY:
-		return "private read-only"
-	case decl.PUBLIC_WRITE_ONCE_MEMORY:
-		return "public write-once"
-	case decl.PRIVATE_WRITE_ONCE_MEMORY:
-		return "private write-once"
-	case decl.RANDOM_ACCESS_MEMORY:
-		return "random access"
-	default:
-		return fmt.Sprintf("memory kind %d", kind)
-	}
-}
-
-func wirVariables(vars []variable.ResolvedDescriptor, env ast.Environment) string {
-	if len(vars) == 0 {
-		return "<none>"
-	}
-
-	parts := make([]string, len(vars))
-	for i, v := range vars {
-		parts[i] = fmt.Sprintf("%s:%s", v.Name, v.DataType.String(env))
-	}
-
-	return strings.Join(parts, ", ")
-}
-
-func wirEffects(fn *decl.ResolvedFunction) string {
-	parts := make([]string, 0, len(fn.Effects))
-	for _, effect := range fn.Effects {
-		if effect == nil {
-			parts = append(parts, "<nil>")
-		} else {
-			parts = append(parts, effect.String())
-		}
-	}
-
-	return strings.Join(parts, ", ")
-}
-
-type memoryFlags interface {
-	IsPublic() bool
-	IsStatic() bool
-	IsReadOnly() bool
-	IsWriteOnly() bool
-	IsReadWrite() bool
-}
-
-func machineModuleKind(module vm.Module) string {
-	switch module.(type) {
-	case *vm.WordFunction:
-		return "function"
-	case memoryFlags:
-		return "memory"
-	default:
-		return fmt.Sprintf("%T", module)
 	}
 }
 
@@ -834,24 +726,18 @@ func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]uin
 	return out, false
 }
 
-func buildProgram(t *testing.T, goBin, src string) string {
+// buildProgram compiles generated source through the shared build cache
+// (pkg/zkc/gogen), so identical programs across tests build exactly once.
+func buildProgram(t *testing.T, src string) string {
 	t.Helper()
 
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o644); err != nil {
-		t.Fatal(err)
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("go toolchain not available")
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module zkcgen\n\ngo 1.24\n"), 0o644); err != nil {
+	prog, err := gogen.Build(src)
+	if err != nil {
 		t.Fatal(err)
-	}
-
-	prog := filepath.Join(dir, "prog")
-	cmd := exec.Command(goBin, "build", "-o", prog, ".")
-
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("go build failed: %v\n%s\n--- source ---\n%s", err, out, src)
 	}
 
 	return prog

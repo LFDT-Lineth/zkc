@@ -15,7 +15,6 @@ package gogen_test
 import (
 	"math/rand"
 	"os"
-	"os/exec"
 	"reflect"
 	"strconv"
 	"testing"
@@ -34,11 +33,6 @@ import (
 // GOGEN_FUZZ_N sets the vectors per (fixture, shape); e.g. GOGEN_FUZZ_N=320
 // yields ≥ 10^4 total runs (the acceptance bar).
 func TestGenFuzz(t *testing.T) {
-	goBin, err := exec.LookPath("go")
-	if err != nil {
-		t.Skip("go toolchain not available")
-	}
-
 	n := 25
 
 	if s := os.Getenv("GOGEN_FUZZ_N"); s != "" {
@@ -57,7 +51,7 @@ func TestGenFuzz(t *testing.T) {
 					t.Fatalf("GenerateGo: %v", err)
 				}
 
-				prog := buildProgram(t, goBin, src)
+				prog := buildProgram(t, src)
 
 				for i := 0; i < n; i++ {
 					in := randomInputs(rng, tc.vectors[0])

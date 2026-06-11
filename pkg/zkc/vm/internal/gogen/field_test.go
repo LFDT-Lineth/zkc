@@ -14,7 +14,6 @@ package gogen_test
 
 import (
 	"math/big"
-	"os/exec"
 	"reflect"
 	"testing"
 
@@ -109,11 +108,6 @@ func fieldMachine() *vm.WordMachine[vm.Uint] {
 // TestGenFieldOps differentially checks the mod-P chains against the reference
 // executor, including operands at and above the modulus.
 func TestGenFieldOps(t *testing.T) {
-	goBin, err := exec.LookPath("go")
-	if err != nil {
-		t.Skip("go toolchain not available")
-	}
-
 	const koalabear = 0x7f000001 // 2^31 - 2^24 + 1
 
 	src, err := vm.GenerateGo(fieldMachine(), vm.GoGenConfig{})
@@ -121,7 +115,7 @@ func TestGenFieldOps(t *testing.T) {
 		t.Fatalf("GenerateGo: %v", err)
 	}
 
-	prog := buildProgram(t, goBin, src)
+	prog := buildProgram(t, src)
 
 	vectors := []map[string][]uint64{
 		{"data": {0, 0}},

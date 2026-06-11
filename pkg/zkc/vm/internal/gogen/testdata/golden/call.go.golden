@@ -69,7 +69,6 @@ func fn_main() {
 	}
 	// [0.5] RETURN: ret
 	return
-	panic(failure("machine fell off end of function"))
 }
 
 // fn_inc corresponds to ZkC function "inc".
@@ -82,5 +81,4 @@ func fn_inc(r0 uint64) uint64 {
 	}
 	// [0.1] RETURN: ret
 	return r1
-	panic(failure("machine fell off end of function"))
 }

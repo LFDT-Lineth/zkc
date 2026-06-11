@@ -89,5 +89,4 @@ func fn_main() {
 	}
 	// [0.9] RETURN: ret
 	return
-	panic(failure("machine fell off end of function"))
 }

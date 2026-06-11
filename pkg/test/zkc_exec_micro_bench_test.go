@@ -21,13 +21,14 @@ package test
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/test/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -120,12 +121,12 @@ func BenchmarkZkcExecMicro(b *testing.B) {
 				b.Fatalf("GenerateGo: %v", err)
 			}
 
-			prog, err := util.GogenBuild(src)
+			prog, err := gogen.Build(src)
 			if err != nil {
 				b.Fatal(err)
 			}
 
-			inJSON, err := util.GogenMarshalInputs(map[string][]uint64{"data": {microSteps}})
+			inJSON, err := json.Marshal(map[string][]uint64{"data": {microSteps}})
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -133,7 +134,7 @@ func BenchmarkZkcExecMicro(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				out, errored, err := util.GogenRunRaw(prog, inJSON)
+				out, errored, err := gogen.RunRaw(prog, inJSON)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -171,12 +172,12 @@ func TestZkcExecMicroAgree(t *testing.T) {
 				t.Fatalf("%s (lowered=%t): GenerateGo: %v", tc.name, lowered, err)
 			}
 
-			prog, err := util.GogenBuild(src)
+			prog, err := gogen.Build(src)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			out, errored, err := util.GogenRun(prog, map[string][]uint64{"data": {500}})
+			out, errored, err := gogen.Run(prog, map[string][]uint64{"data": {500}})
 			if err != nil || errored {
 				t.Fatalf("%s (lowered=%t): gogen run failed: %v %t", tc.name, lowered, err, errored)
 			}

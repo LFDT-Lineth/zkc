@@ -97,5 +97,4 @@ L_0_7:
 	}
 	// [0.10] RETURN: ret
 	return
-	panic(failure("machine fell off end of function"))
 }

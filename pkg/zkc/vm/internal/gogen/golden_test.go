@@ -26,6 +26,12 @@ var update = flag.Bool("update", false, "rewrite the golden files from current g
 // TestGolden pins the exact generated source for a handful of small fixtures:
 // the leanness regression suite.  Any change to the emitted shape shows up as
 // a reviewable golden diff (regenerate with `go test -run TestGolden -update`).
+//
+// "Golden file" is the conventional Go-testing term for a checked-in file
+// holding a test's expected output, compared byte-for-byte and regenerated
+// via an -update flag (the pattern used throughout the Go standard library);
+// the .golden extension just avoids the toolchain treating the expected
+// output as a Go source file.
 func TestGolden(t *testing.T) {
 	cases := []struct {
 		name string

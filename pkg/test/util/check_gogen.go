@@ -13,17 +13,11 @@
 package util
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"sync"
 	"testing"
 
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -40,8 +34,7 @@ import (
 // would abort the surrounding bytecode and constraint checks.  Unsupported programs
 // are logged and skipped; only genuine mismatches use t.Errorf.
 func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase, cfg vm.WordConfig) {
-	goBin, err := exec.LookPath("go")
-	if err != nil {
+	if _, err := exec.LookPath("go"); err != nil {
 		// No Go toolchain: silently skip this optional cross-check.
 		return
 	}
@@ -52,7 +45,7 @@ func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestC
 		return
 	}
 	// Compile once (binaries are cached by source across test cases / vectors).
-	prog, err := gogenBinary(goBin, src)
+	prog, err := gogen.Build(src)
 	if err != nil {
 		t.Errorf("[gogen %s]%s:%d build: %v", cfg.Name, test.filename, test.line, err)
 		return
@@ -68,7 +61,7 @@ func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestC
 		return
 	}
 
-	got, errored, runErr := runGogenProgram(prog, in)
+	got, errored, runErr := gogen.Run(prog, in)
 	if runErr != nil {
 		t.Errorf("[gogen %s]%s:%d run: %v", cfg.Name, test.filename, test.line, runErr)
 		return
@@ -133,146 +126,4 @@ func toUint64Map(m map[string][]vm.Uint) (map[string][]uint64, bool) {
 	}
 	//
 	return out, true
-}
-
-// runGogenProgram runs the compiled program with JSON inputs on stdin, returning
-// the decoded outputs, whether it reported an execution error (exit 1 — the
-// reference error path), and any harness-level error (other failures).
-func runGogenProgram(prog string, in map[string][]uint64) (map[string][]uint64, bool, error) {
-	inJSON, err := json.Marshal(in)
-	if err != nil {
-		return nil, false, err
-	}
-	//
-	return runGogenProgramRaw(prog, inJSON)
-}
-
-// runGogenProgramRaw is runGogenProgram with the inputs already marshalled —
-// benchmarks pre-marshal once so the timed loop measures the executor, not
-// json.Marshal of the inputs.
-func runGogenProgramRaw(prog string, inJSON []byte) (map[string][]uint64, bool, error) {
-	var stdout, stderr bytes.Buffer
-	//
-	cmd := exec.Command(prog)
-	cmd.Stdin = bytes.NewReader(inJSON)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	//
-	if err := cmd.Run(); err != nil {
-		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
-			return nil, true, nil
-		}
-		//
-		return nil, false, fmt.Errorf("running generated program: %v\n%s", err, stderr.String())
-	}
-	//
-	var out map[string][]uint64
-	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
-		return nil, false, fmt.Errorf("decoding generated output %q: %v", stdout.String(), err)
-	}
-	//
-	return out, false, nil
-}
-
-// GogenBuild generates+compiles (once, cached by source) a binary for the given
-// generated Go source, returning its path.  Exposed for benchmarks that drive the
-// generated executor directly (e.g. the three-way keccak comparison).
-func GogenBuild(src string) (string, error) {
-	goBin, err := exec.LookPath("go")
-	if err != nil {
-		return "", err
-	}
-
-	return gogenBinary(goBin, src)
-}
-
-// GogenRun runs a compiled gogen binary on the given inputs, returning its outputs,
-// whether it reported an execution error, and any harness-level error.
-func GogenRun(prog string, in map[string][]uint64) (map[string][]uint64, bool, error) {
-	return runGogenProgram(prog, in)
-}
-
-// GogenMarshalInputs renders inputs to the JSON form GogenRunRaw consumes.
-func GogenMarshalInputs(in map[string][]uint64) ([]byte, error) {
-	return json.Marshal(in)
-}
-
-// GogenRunRaw runs a compiled gogen binary on pre-marshalled JSON inputs (see
-// runGogenProgramRaw).
-func GogenRunRaw(prog string, inJSON []byte) (map[string][]uint64, bool, error) {
-	return runGogenProgramRaw(prog, inJSON)
-}
-
-// ---------------------------------------------------------------------------
-// Build cache: each distinct generated source is compiled exactly once.
-// ---------------------------------------------------------------------------
-
-type gogenBuild struct {
-	once sync.Once
-	path string
-	err  error
-}
-
-var (
-	gogenCacheMu sync.Mutex
-	gogenCache   = map[string]*gogenBuild{}
-	gogenDirOnce sync.Once
-	gogenDir     string
-	gogenDirErr  error
-)
-
-// gogenBinary returns the path to a compiled binary for src, building it (once)
-// on first request.  Subsequent calls for the same source return the cached path,
-// so repeated test cases / input vectors do not re-invoke the Go compiler.
-func gogenBinary(goBin, src string) (string, error) {
-	gogenCacheMu.Lock()
-
-	b := gogenCache[src]
-	if b == nil {
-		b = &gogenBuild{}
-		gogenCache[src] = b
-	}
-	gogenCacheMu.Unlock()
-
-	b.once.Do(func() { b.path, b.err = buildGogen(goBin, src) })
-
-	return b.path, b.err
-}
-
-func buildGogen(goBin, src string) (string, error) {
-	base, err := gogenBaseDir()
-	if err != nil {
-		return "", err
-	}
-	//
-	sum := sha256.Sum256([]byte(src))
-	dir := filepath.Join(base, hex.EncodeToString(sum[:8]))
-	//
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	//
-	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o644); err != nil {
-		return "", err
-	}
-	//
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module zkcgen\n\ngo 1.24\n"), 0o644); err != nil {
-		return "", err
-	}
-	//
-	prog := filepath.Join(dir, "prog")
-	cmd := exec.Command(goBin, "build", "-o", prog, ".")
-	cmd.Dir = dir
-	//
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("go build failed: %v\n%s\n--- source ---\n%s", err, out, src)
-	}
-	//
-	return prog, nil
-}
-
-// gogenBaseDir creates (once) a shared temporary directory for generated programs.
-func gogenBaseDir() (string, error) {
-	gogenDirOnce.Do(func() { gogenDir, gogenDirErr = os.MkdirTemp("", "zkc-gogen-") })
-	return gogenDir, gogenDirErr
 }

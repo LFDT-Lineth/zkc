@@ -21,36 +21,34 @@ package test
 // Two machine shapes are exercised:
 //
 //   - "plain" (native bitwise ops): the fastest execution shape, where all
-//     three tiers can in principle run (the bytecode encoder currently rejects
-//     this program with "branch target overflow");
+//     three tiers run;
 //   - "lowered" (LowerNatives on — the prover shape): comparison/division
 //     lowering widens temporaries to u65, so the uint64-narrowed tiers
-//     (WordMachine-u64, bytecode) PANIC during narrowing and gogen rejects the
-//     program until wide-register support lands (M2.2).  Only the Uint
-//     WordMachine runs it today; the test records that honestly.
+//     (WordMachine-u64, bytecode) cannot narrow the machine and skip; only
+//     the Uint WordMachine and gogen (which lowers register widths itself)
+//     run it.
 //
 // For now the gogen number includes `go build` (reported as a separate metric)
 // and subprocess execution; an in-process AOT path comes later.
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/LFDT-Lineth/zkc/pkg/test/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
-	zkcutil "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 const (
 	keccakV2SourcePath = "../../testdata/zkc/bench/keccakf_v2.zkc"
-	keccakV2InputPath  = "../../testdata/zkc/bench/keccak_50000_v2.accepts"
 	// keccakExecBudget is the per-Execute chunk size (ExecuteAll loops until the
 	// program returns, so this only bounds chunk granularity, not total steps).
 	keccakExecBudget = 1 << 22
@@ -62,20 +60,20 @@ var (
 	keccakWordSink map[string][]uint64
 )
 
-// TestZkcExecKeccakV2 checks the executors agree on the full 50000-block fixture,
-// using the (slow) WordMachine as the reference oracle.  The fixture carries inputs
-// only, so correctness is established differentially — gogen must match the
-// WordMachine exactly.  It is heavy, so it is skipped under -short and is not part
-// of the standard zkc-test selection.  (Plain shape only: interpreting the lowered
-// shape over 50000 blocks is prohibitively slow; the lowered shape is covered by
-// the smoke test below.)
+// TestZkcExecKeccakV2 checks the executors agree on the full 50000-block input,
+// using the (slow) WordMachine as the reference oracle.  The input carries no
+// expected output, so correctness is established differentially — gogen must
+// match the WordMachine exactly.  It is heavy, so it is skipped under -short and
+// is not part of the standard zkc-test selection.  (Plain shape only:
+// interpreting the lowered shape over 50000 blocks is prohibitively slow; the
+// lowered shape is covered by the smoke test below.)
 func TestZkcExecKeccakV2(t *testing.T) {
 	if testing.Short() {
 		t.Skip("keccak v2 cross-check is heavy; skipped in -short")
 	}
 
 	wm := compileKeccakV2(t, false)
-	inputBytes := loadKeccakV2Input(t)
+	inputBytes := syntheticKeccakInput(50000)
 
 	m64, err := tryNarrowKeccak(wm)
 	if err != nil {
@@ -162,15 +160,16 @@ func syntheticKeccakInput(nBlocks int) map[string][]byte {
 }
 
 // BenchmarkZkcExecKeccakV2 times the three executors on the plain (native
-// bitwise) shape over the full 50000-block fixture.
+// bitwise) shape over 50000 blocks.
 func BenchmarkZkcExecKeccakV2(b *testing.B) {
-	benchmarkKeccakThreeWay(b, false, loadKeccakV2Input(b))
+	benchmarkKeccakThreeWay(b, false, syntheticKeccakInput(50000))
 }
 
 // BenchmarkZkcExecKeccakV2Lowered times the executors on the lowered (prover)
 // shape.  Interpreting lowered bitwise ops is orders of magnitude slower, so a
-// smaller synthetic input keeps the comparison runnable; the u64-narrowed and
-// gogen tiers skip until wide-register support lands.
+// smaller synthetic input keeps the comparison runnable; the u64-narrowed
+// tiers (wordmachine-u64, bytecode) skip — the shape's u65 temporaries cannot
+// narrow.
 func BenchmarkZkcExecKeccakV2Lowered(b *testing.B) {
 	benchmarkKeccakThreeWay(b, true, syntheticKeccakInput(500))
 }
@@ -234,7 +233,7 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 		// Build once; report the compile time as a separate metric.
 		start := time.Now()
 
-		prog, err := util.GogenBuild(src)
+		prog, err := gogen.Build(src)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -242,7 +241,7 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 		buildMs := float64(time.Since(start).Milliseconds())
 		// Pre-marshal the inputs: the timed loop measures the executor
 		// (subprocess + its own JSON decode), not the harness's json.Marshal.
-		inJSON, err := util.GogenMarshalInputs(toKeccakU64Map(b, decodeKeccakInputs(b, wm, inputBytes)))
+		inJSON, err := json.Marshal(toKeccakU64Map(b, decodeKeccakInputs(b, wm, inputBytes)))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -251,7 +250,7 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			out, errored, err := util.GogenRunRaw(prog, inJSON)
+			out, errored, err := gogen.RunRaw(prog, inJSON)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -313,25 +312,6 @@ func tryNarrowKeccak(wm *vm.WordMachine[vm.Uint]) (m64 *vm.WordMachine[vm.Uint64
 	return vm.WordToWordMachine[vm.Uint, vm.Uint64](wm), nil
 }
 
-// loadKeccakV2Input parses the fixture into the program inputs.  The fixture
-// carries inputs only (n_blocks, blocks) — there is no embedded expected output, so
-// correctness is checked differentially against the WordMachine.
-func loadKeccakV2Input(tb testing.TB) map[string][]byte {
-	tb.Helper()
-
-	data, err := os.ReadFile(keccakV2InputPath)
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	inputs, err := zkcutil.ParseJsonInputFile(data)
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	return inputs
-}
-
 // decodeKeccakInputs decodes the raw input bytes into word values for the machine.
 func decodeKeccakInputs[W vm.Word[W], C vm.Core[W]](tb testing.TB, m C, inputBytes map[string][]byte) map[string][]W {
 	tb.Helper()
@@ -345,9 +325,9 @@ func decodeKeccakInputs[W vm.Word[W], C vm.Core[W]](tb testing.TB, m C, inputByt
 }
 
 // tryBytecodeInterpreter builds the bytecode interpreter, recovering from a panic
-// during bytecode encoding (the current encoder rejects long backward branches with
-// "branch target overflow", which large programs like keccak v2 trigger).  This
-// keeps the benchmark/test usable even where the bytecode tier cannot run.
+// during bytecode encoding (the encoder panics with "branch target overflow" on
+// branches its fixed-width offsets cannot reach).  This keeps the benchmark/test
+// usable even where the bytecode tier cannot run.
 func tryBytecodeInterpreter(m64 *vm.WordMachine[vm.Uint64]) (core vm.Core[vm.Uint64], err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -384,14 +364,14 @@ func tryKeccakGogen(tb testing.TB, wm *vm.WordMachine[vm.Uint], inputBytes map[s
 		return nil, err
 	}
 
-	prog, err := util.GogenBuild(src)
+	prog, err := gogen.Build(src)
 	if err != nil {
 		tb.Fatalf("gogen build: %v", err)
 	}
 
 	inputWords := toKeccakU64Map(tb, decodeKeccakInputs(tb, wm, inputBytes))
 
-	out, errored, err := util.GogenRun(prog, inputWords)
+	out, errored, err := gogen.Run(prog, inputWords)
 	if err != nil {
 		tb.Fatalf("gogen run: %v", err)
 	}
