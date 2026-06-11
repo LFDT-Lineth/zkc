@@ -1,0 +1,26 @@
+//error:12:5-25:debug function cannot call non-debug function "sum"
+//error:13:5-13:debug function cannot call non-debug function "helper"
+memory ram(address:u8) -> (byte:u8)
+
+fn main<ram>() {
+    ram[0] = 1
+    report()
+}
+
+#[debug]
+fn report<ram>() {
+    var x:u8 = sum(1, 2)
+    helper()
+}
+
+// non-debug function, hence not callable from a debug function (even though
+// it has no memory effects).
+fn sum(x:u8, y:u8) -> (r:u8) {
+    r = x + y
+}
+
+// non-debug function, hence not callable from a debug function.
+fn helper<ram>() {
+    var x:u8 = ram[0]
+    printf "ram[0] = %d\n", x
+}

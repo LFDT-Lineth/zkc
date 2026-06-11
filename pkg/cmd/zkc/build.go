@@ -47,6 +47,11 @@ type BuildArtifacts[F field.Element[F]] struct {
 	mir util.Option[mir.Schema[F]]
 	// AIR Constraints
 	air util.Option[air.Schema[F]]
+	// Annotations on source-level declarations (functions and memories),
+	// keyed by declaration name.  These are not carried through to the lower
+	// levels, hence they are retained here for printing purposes.  Observe
+	// this is empty when building from a prebuilt binary.
+	annotations map[string][]string
 }
 
 // BuildConfig packages up all the requirements for building the set of target
@@ -116,6 +121,8 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 	} else {
 		// Compile source files, or print errors
 		ast = CompileSourceFiles(p.field, args...)
+		// Record annotations for printing purposes
+		artifacts.annotations = annotationsOf(ast)
 		// Word-level Intermediate Representation
 		if deps.wir {
 			// Compile the AST into the top-level word machine
@@ -175,4 +182,19 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 	}
 	//
 	return artifacts
+}
+
+// annotationsOf extracts the annotations associated with each annotated
+// declaration (i.e. function or memory) in a given program, keyed by the
+// declaration's name.
+func annotationsOf(program ast.Program) map[string][]string {
+	var annotations = make(map[string][]string)
+	//
+	for _, d := range program.Components() {
+		if annots := d.Annotations(); len(annots) > 0 {
+			annotations[d.Name()] = annots
+		}
+	}
+	//
+	return annotations
 }
