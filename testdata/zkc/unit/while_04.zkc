@@ -1,0 +1,17 @@
+pub input in(address:u8) -> (word:u8)
+
+// compute a > b ? a - b : 0
+fn main() {
+    var a0:u8 = in[0]
+    var a:u8 = a0
+    var b:u8 = in[1]
+    var res:u8 = 0
+    //
+    while a>b {
+        a = a - 1
+        res = res + 1
+    }
+    if (res != ((a0>b) ? a0 - b:0)) {
+        fail
+    }
+}

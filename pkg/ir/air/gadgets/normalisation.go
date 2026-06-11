@@ -80,6 +80,122 @@ func applyPseudoInverseGadget[F field.Element[F]](e air.Term[F], module air.Modu
 	return term.FieldAccess[F, air.Term[F]](index, 0)
 }
 
+// IsZeroIndicator returns an AIR term that holds the "is zero" indicator of
+// e — 1 when e evaluates to zero, 0 otherwise.  This is the value
+// 1 - e*inv(e), realised as a shared computed column so that every caller
+// that asks for the same e gets a single FieldAccess back instead of
+// reconstructing a fresh 4-node subtree.
+//
+// The column is constrained by two vanishings:
+//
+//	e * (1 - e*inv) == 0       (the existing inverse constraint, emitted by
+//	                            applyPseudoInverseGadget)
+//	iz + e*inv - 1 == 0        (defining vanishing: iz = 1 - e*inv)
+//
+// Together with iz's 1-bit declared width (range constraint to {0,1}) these
+// force iz to be the correct indicator value: 1 iff e == 0.
+func IsZeroIndicator[F field.Element[F]](e air.Term[F], module air.ModuleBuilder[F]) air.Term[F] {
+	// Ensure the inv column exists (creates it + its defining vanishing on
+	// first call for this e).
+	inv_e := applyPseudoInverseGadget(e, module)
+	//
+	return applyIsZeroGadget(e, inv_e, module)
+}
+
+// applyIsZeroGadget creates (or reuses) the iz column for e and returns a
+// FieldAccess to it.  Sharing-by-name follows the same pattern as
+// applyPseudoInverseGadget.
+func applyIsZeroGadget[F field.Element[F]](
+	e, inv_e air.Term[F], module air.ModuleBuilder[F],
+) air.Term[F] {
+	var (
+		// Construct iz indicator term (used for name + padding only).
+		iz = &pseudoIz[F]{Expr: e}
+		// Determine computed column name.
+		name = iz.Lisp(true, module).String(false)
+		// Look up existing column.
+		index, ok = module.HasRegister(name)
+		// Padding value (0 or 1 depending on whether e is zero in padding).
+		padding = ir.PaddingFor[F](iz, module)
+	)
+	// Add new column (if it does not already exist).
+	if !ok {
+		// iz ∈ {0,1}: width 1 doubles as a range constraint.
+		index = module.NewRegister(register.NewComputed(name, 1, padding))
+		target := register.NewRef(module.Id(), index)
+		// Trace-filling assignment.
+		module.AddAssignment(assignment.NewPseudoIz(target, e))
+		// Defining vanishing:  iz + e*inv - 1 == 0
+		var iz_access air.Term[F] = term.FieldAccess[F, air.Term[F]](index, 0)
+
+		e_inv := term.Product[F, air.Term[F]](e, inv_e)
+		defn := term.Subtract(
+			term.Sum[F, air.Term[F]](iz_access, e_inv),
+			term.Const64[F, air.Term[F]](1),
+		)
+		l_name := fmt.Sprintf("%s <=", name)
+		module.AddConstraint(air.NewVanishingConstraint(l_name, module.Id(), util.None[int](), defn))
+	}
+	//
+	return term.FieldAccess[F, air.Term[F]](index, 0)
+}
+
+// pseudoIz mirrors pseudoInverse but represents the "is zero" indicator
+// (1 if Expr is zero, 0 otherwise).  Used for the column name and for the
+// padding-value computation; the row-by-row trace fill lives in
+// assignment.PseudoIz.
+type pseudoIz[F field.Element[F]] struct {
+	Expr air.Term[F]
+}
+
+// EvalAt returns 1 when Expr evaluates to zero, 0 otherwise.
+func (e *pseudoIz[F]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, error) {
+	val, err := e.Expr.EvalAt(k, tr, sc)
+	if err != nil {
+		return val, err
+	}
+	//
+	var one F
+	if val.IsZero() {
+		return one.SetUint64(1), nil
+	}
+	//
+	var zero F
+
+	return zero, nil
+}
+
+// Bounds delegates to the underlying expression.
+func (e *pseudoIz[F]) Bounds() util.Bounds { return e.Expr.Bounds() }
+
+// RequiredRegisters delegates to the underlying expression.
+func (e *pseudoIz[F]) RequiredRegisters() *set.SortedSet[uint] {
+	return e.Expr.RequiredRegisters()
+}
+
+// RequiredCells delegates to the underlying expression.
+func (e *pseudoIz[F]) RequiredCells(row int, mid trace.ModuleId) *set.AnySortedSet[trace.CellRef] {
+	return e.Expr.RequiredCells(row, mid)
+}
+
+// Lisp encodes the iz indicator as (iz <expr>) for naming purposes.
+func (e *pseudoIz[F]) Lisp(global bool, mapping register.Map) sexp.SExp {
+	return sexp.NewList([]sexp.SExp{
+		sexp.NewSymbol("iz"),
+		e.Expr.Lisp(global, mapping),
+	})
+}
+
+// Substitute implementation for Substitutable interface.
+func (e *pseudoIz[F]) Substitute(mapping map[string]F) {
+	panic("unreachable")
+}
+
+// ValueRange implementation for Term interface.  iz is always in {0,1}.
+func (e *pseudoIz[F]) ValueRange() util_math.Interval {
+	return util_math.NewInterval64(0, 1)
+}
+
 // pseudoInverse represents a computation which computes the multiplicative
 // inverse of a given expression.  This is only needed now for the padding
 // computation.
