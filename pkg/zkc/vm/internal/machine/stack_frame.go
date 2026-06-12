@@ -151,3 +151,34 @@ func StoreAcross[W word.Word[W], I Instruction](frame StackFrame[W, I], vec regi
 		return nil
 	}
 }
+
+// StoreAcrossDw stores a given double-word value across a given register
+// vector.  That means the least significant bits are assigned to the lowest
+// register in the vector, and so on.
+func StoreAcrossDw[W word.Word[W], I Instruction](frame StackFrame[W, I], vec register.Vector,
+	dw word.Double[W]) error {
+	//
+	if vec.Len() == 1 && dw.IsWord() {
+		// Can only assign to a single register when the hi word is empty.
+		return frame.Store(vec.AsRegister(), dw.LoWord())
+	} else {
+		var bitwidth uint
+		//
+		for _, rid := range vec.Registers() {
+			var (
+				id    = rid.Unwrap()
+				width = frame.BitwidthOf(rid)
+			)
+			// Raw write
+			frame.values[id] = dw.LoWord().Slice(width)
+			dw = dw.Shr64(uint64(width))
+			bitwidth += width
+		}
+		//
+		if !dw.IsZero() {
+			return fmt.Errorf("bit overflow (0x%s not u%d)", dw.Text(16), bitwidth)
+		}
+		//
+		return nil
+	}
+}

@@ -65,9 +65,9 @@ func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestC
 	// Mirror runExecutionTest's accept/reject logic.
 	switch {
 	case errored && test.expected:
-		errs = append(errs, fmt.Errorf("rejected accepted trace"))
+		errs = append(errs, fmt.Errorf("rejected accepts trace"))
 	case !errored && !test.expected:
-		errs = append(errs, fmt.Errorf("accepted rejected trace"))
+		errs = append(errs, fmt.Errorf("accepted rejects trace"))
 	case !errored && test.expected:
 		errs = append(errs, compareGogenOutputs(wm, outputs, got)...)
 	}

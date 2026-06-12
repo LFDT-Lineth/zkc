@@ -34,6 +34,12 @@ func (p Uint64) Add(w Uint64) (Uint64, bool) {
 	return Uint64{sum}, carry != 0
 }
 
+// Add64 implementation for Word interface.
+func (p Uint64) Add64(w uint64) (Uint64, bool) {
+	sum, carry := bits.Add64(p.value, w, 0)
+	return Uint64{sum}, carry != 0
+}
+
 // AddMod implementation for Word interface.
 func (p Uint64) AddMod(w, m Uint64) Uint64 {
 	if m.value == 0 {
@@ -78,6 +84,25 @@ func (p Uint64) Div(w Uint64) Uint64 {
 	}
 	//
 	return Uint64{p.value / w.value}
+}
+
+// DwMul implementation for Word interface.
+func (p Uint64) DwMul(w Uint64) (lo, hi Uint64) {
+	h, l := bits.Mul64(p.value, w.value)
+	return Uint64{l}, Uint64{h}
+}
+
+// DwShl64 implementation for Word interface.
+func (p Uint64) DwShl64(n uint64) (hi Uint64, lo Uint64) {
+	//
+	if n >= 64 {
+		hi.value = p.value << (n - 64)
+	} else {
+		hi.value = p.value >> (64 - n)
+		lo.value = p.value << n
+	}
+	//
+	return hi, lo
 }
 
 // FitsWithin implementation for Word interface.
@@ -171,6 +196,12 @@ func (p Uint64) SetUint64(val uint64) Uint64 {
 // Sub implementation for Word interface.
 func (p Uint64) Sub(w Uint64) (Uint64, bool) {
 	diff, borrow := bits.Sub64(p.value, w.value, 0)
+	return Uint64{diff}, borrow != 0
+}
+
+// Sub64 implementation for Word interface.
+func (p Uint64) Sub64(w uint64) (Uint64, bool) {
+	diff, borrow := bits.Sub64(p.value, w, 0)
 	return Uint64{diff}, borrow != 0
 }
 

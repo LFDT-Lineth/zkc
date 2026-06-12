@@ -24,7 +24,8 @@ import (
 var DEFAULT_UNIT_CONFIG = util.DEFAULT_CONFIG.
 	Words(vm.WORD_UINT, vm.WORD_UINT64).
 	Constraints(true).
-	Bytecode(true)
+	Bytecode(true).
+	GoGen(true)
 
 // ===================================================================
 // Basic Tests
@@ -215,11 +216,15 @@ func Test_ZkcUnit_Basic_43(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_44(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNIT_CONFIG.Bytecode(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_45(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.GoGen(false).Bytecode(false).Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_46(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_46", DEFAULT_UNIT_CONFIG.Bytecode(false).Constraints(false))
 }
 
 // ===================================================================
@@ -928,8 +933,5 @@ func Test_ZkcUnit_SkipIf_05(t *testing.T) {
 // ===================================================================
 
 func checkZkcUnit(t *testing.T, test string, config util.Config) {
-	// The generated-Go ("native") executor is cross-checked on every unit test:
-	// programs it cannot yet handle (wide registers/constants/moduli) are
-	// logged-and-skipped by the harness, never failed.
-	util.CheckValid(t, test, "zkc", config.Bytecode(true).Gogen(true))
+	util.CheckValid(t, test, "zkc", config)
 }

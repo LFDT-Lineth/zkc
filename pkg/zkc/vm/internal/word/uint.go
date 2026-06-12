@@ -44,6 +44,12 @@ func (p Uint) Add(w Uint) (Uint, bool) {
 	return Uint{res}, false
 }
 
+// Add64 implementation for Word interface.
+func (p Uint) Add64(w uint64) (Uint, bool) {
+	var tmp Uint
+	return p.Add(tmp.SetUint64(w))
+}
+
 // AddMod implementation for Word interface.
 func (p Uint) AddMod(w, m Uint) Uint {
 	var res big.Int
@@ -59,16 +65,9 @@ func (p Uint) Bandwidth() uint {
 	return math.MaxUint
 }
 
-// Div implementation for Word interface.
-func (p Uint) Div(w Uint) Uint {
-	if w.value.Sign() == 0 {
-		panic("division by zero")
-	}
-	//
-	var res big.Int
-	res.Div(&p.value, &w.value)
-	//
-	return Uint{res}
+// BigInt implementation for Word interface.
+func (p Uint) BigInt() *big.Int {
+	return &p.value
 }
 
 // Cmp implementation for Word interface.
@@ -85,9 +84,35 @@ func (p Uint) Cmp64(o uint64) int {
 	return 1
 }
 
-// BigInt implementation for Word interface.
-func (p Uint) BigInt() *big.Int {
-	return &p.value
+// Div implementation for Word interface.
+func (p Uint) Div(w Uint) Uint {
+	if w.value.Sign() == 0 {
+		panic("division by zero")
+	}
+	//
+	var res big.Int
+	res.Div(&p.value, &w.value)
+	//
+	return Uint{res}
+}
+
+// DwMul implementation for Word interface.
+func (p Uint) DwMul(w Uint) (lo, hi Uint) {
+	var (
+		res big.Int
+	)
+	res.Mul(&p.value, &w.value)
+	//
+	lo = Uint{res}
+	//
+	return lo, hi
+}
+
+// DwShl64 implementation for Word interface.
+func (p Uint) DwShl64(n uint64) (hi Uint, lo Uint) {
+	lo = p.Shl64(n)
+	//
+	return hi, lo
 }
 
 // FitsWithin implementation for Word interface.
@@ -230,6 +255,12 @@ func (p Uint) Sub(w Uint) (Uint, bool) {
 	res.Sub(&p.value, &w.value)
 	//
 	return Uint{res}, res.Sign() < 0
+}
+
+// Sub64 implementation for Word interface.
+func (p Uint) Sub64(w uint64) (Uint, bool) {
+	var tmp Uint
+	return p.Sub(tmp.SetUint64(w))
 }
 
 // SubMod implementation for Word interface.

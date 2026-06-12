@@ -91,7 +91,7 @@ func (p Config) Bytecode(flag bool) Config {
 // executor and check its outputs against the test.  This is experimental and only
 // applies to the Uint64 word; programs the generator cannot yet handle are skipped
 // rather than failed (see runGogenExecutionTest).
-func (p Config) Gogen(flag bool) Config {
+func (p Config) GoGen(flag bool) Config {
 	p.gogen = flag
 	//
 	return p

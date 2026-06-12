@@ -192,70 +192,65 @@ func executeAdd[W word.Word[W]](target register.Vector, sources []register.Id, c
 	frame WordFrame[W]) error {
 	//
 	var (
-		val      = constant
+		dw       = word.AsDouble(constant)
 		overflow bool
 	)
 	//
 	for _, arg := range sources {
-		val, overflow = val.Add(frame.Load(arg))
+		dw, overflow = dw.HalfAdd(frame.Load(arg))
 		//
 		if overflow {
 			return errors.New("arithmetic overflow")
 		}
 	}
 	//
-	return StoreAcross(frame, target, val)
+	return StoreAcrossDw(frame, target, dw)
 }
 
 func executeMul[W word.Word[W]](target register.Vector, sources []register.Id, constant W,
 	frame WordFrame[W]) error {
 	//
 	var (
-		val      W = constant
+		dw       = word.AsDouble(constant)
 		overflow bool
 	)
 	//
 	for _, arg := range sources {
 		var of bool
 		//
-		val, of = val.Mul(frame.Load(arg))
-		//
+		dw, of = dw.HalfMul(frame.Load(arg))
 		overflow = overflow || of
 	}
-	//
-	if overflow && val.Cmp64(0) != 0 {
+	// Sanity check for overflow
+	if overflow && !dw.IsZero() {
 		// overflow is real
 		return errors.New("arithmetic overflow")
 	}
 	//
-	return StoreAcross(frame, target, val)
+	return StoreAcrossDw(frame, target, dw)
 }
 
 func executeSub[W word.Word[W]](target register.Vector, sources []register.Id, constant W,
 	frame WordFrame[W]) error {
-	//
 	var (
-		val       W
-		underflow bool
+		fw       = word.AsDouble(frame.Load(sources[0]))
+		dw       = word.AsDouble(constant)
+		overflow bool
 	)
 	//
-	for i, arg := range sources {
-		ith := frame.Load(arg)
+	for _, arg := range sources[1:] {
+		dw, overflow = dw.HalfAdd(frame.Load(arg))
 		//
-		if i == 0 {
-			val = ith
-		} else {
-			if val, underflow = val.Sub(ith); underflow {
-				return errors.New("arithmetic underflow")
-			}
+		if overflow {
+			return errors.New("arithmetic underflow")
 		}
 	}
-	// Subtract constant
-	if val, underflow = val.Sub(constant); underflow {
-		return errors.New("arithmetic underflow")
-	}
 	//
-	return StoreAcross(frame, target, val)
+	var bitwidth = target.BitWidth(frame.fn.RegisterMap())
+	//
+	dw = fw.Sbb(uint64(bitwidth), dw)
+	//
+	return StoreAcrossDw(frame, target, dw)
 }
 
 // executeFieldAdd computes the field sum of the source registers and the
