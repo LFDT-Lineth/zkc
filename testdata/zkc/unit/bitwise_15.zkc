@@ -1,5 +1,13 @@
 const SGNEXTMASK:u64 = 0xFFFFFFFF_00000000
 
+pub input data(address:u1) -> (data:u32)
+pub output extend(address:u1) -> (extend:u64)
+
+fn main() {
+    extend[0] = sgn_extension_u32_u64(data[0])
+    return
+}
+
 fn sgn_extension_u32_u64(value:u32) -> (ext_value:u64) {
     // cast from u32 to u64
     ext_value = value as u64
