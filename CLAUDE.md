@@ -84,6 +84,15 @@ Key CLI flags (available globally):
 - `-S <module.CONST=val>`: set externalised constant values
 - `-O <n>`: optimisation level for MIR→AIR lowering
 
+## Code navigation
+
+Prefer the LSP tool (gopls) over grep for Go symbol work: `goToDefinition` /
+`hover` for declarations, `findReferences` for call sites, `goToImplementation`
+for interface implementations, and `incomingCalls` / `outgoingCalls` for
+call-graph tracing. The tool schema is deferred, so load it once per session
+via `ToolSearch("select:LSP")` before first use. Grep remains appropriate for
+non-symbol searches (strings, comments, file patterns, test fixtures).
+
 ## Architecture
 
 ### Compilation pipeline
@@ -161,3 +170,11 @@ Test fixtures are in `testdata/`:
 Each test case consists of a `.lisp` (or `.zkasm`) source file plus `.accepts` / `.rejects` JSON trace files. Tests run against multiple fields simultaneously (e.g. `BLS12_377`, `KOALABEAR_16`, `GF_8209`).
 
 The `FIELD_REGEX` environment variable (in `pkg/test/util/check_valid.go`) can restrict which fields are tested — useful in CI pipelines.
+
+When adding tests, always prefer end-to-end tests (a source fixture in
+`testdata/` plus `.accepts` / `.rejects` trace files, registered in the
+corresponding `pkg/test/` test file) over ad-hoc Go unit tests which construct
+machines or schemas programmatically. End-to-end tests exercise the full
+pipeline (parser, type checker, codegen, lowering, execution) and run across
+all configured fields, words and interpreter variants, whereas ad-hoc unit
+tests pin implementation details and miss integration regressions.

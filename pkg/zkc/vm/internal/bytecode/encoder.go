@@ -13,7 +13,9 @@
 package bytecode
 
 import (
+	"fmt"
 	"math"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -123,25 +125,92 @@ func (p *Encoder[W, T]) getLabelIndex(label T) uint32 {
 
 func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint) {
 	var (
-		offset  uint32
-		mapping []uint32 = determineBytecodeMapping(p.bytecodes)
+		offset uint32
+		// Initial mapping assumes every branch at its maximal width.
+		mapping  []uint32 = initialBytecodeMapping(p.bytecodes)
+		resolved []Bytecode[W]
 	)
-	// patch branch targets
-	patchBranchingBytecodes(mapping, p.bytecodes, p.marks)
+	// Patch branch targets.  Observe that the encoded size of a branch can
+	// depend on its target (e.g. a Jif uses its short relative form only when
+	// the target is in range), whilst targets in turn depend on the sizes of
+	// all preceding bytecodes.  Hence, sizing and patching are iterated until
+	// a fixpoint is reached.  Patching is non-destructive: each iteration
+	// resolves the (label-targeted) bytecodes into a fresh slice, which is
+	// what is sized and (ultimately) emitted.  Termination is guaranteed
+	// since branches start at their maximal size, and shrinking a branch only
+	// ever moves targets closer together (i.e. sizes decrease monotonically).
+	for {
+		resolved = patchBranchingBytecodes(mapping, p.bytecodes, p.marks)
+		//
+		next := determineBytecodeMapping(resolved)
+		//
+		if slices.Equal(next, mapping) {
+			break
+		}
+		//
+		mapping = next
+	}
 	// patch symbols
 	symbols = patchSymbols(mapping, p.symbols)
-	// TODO: patch functions
 	// patch memories
-	patchIoBytecodes(p.memmap, p.bytecodes)
+	patchIoBytecodes(p.memmap, resolved)
 	// compile bytecodes into raw words
-	for _, bytecode := range p.bytecodes {
+	for _, bytecode := range resolved {
 		var cs = bytecode.Codes(offset)
 		//
 		codes = append(codes, cs...)
 		offset += uint32(len(cs))
 	}
+	// Sanity check the emitted codes decode consistently with the mapping.
+	verifyAlignment[W](codes, mapping, p.modules)
 	//
 	return codes, symbols
+}
+
+// Decode-walk the emitted codes, checking that every bytecode offset in the
+// mapping -- and every decoded branch target -- falls on an instruction
+// boundary.  This guards against branches transferring control into the middle
+// of an instruction, which would otherwise manifest as arbitrary misbehaviour
+// at execution time.  Note that a single bytecode may legitimately decode as
+// several instructions (e.g. an Arith with two sources and a constant), hence
+// boundaries are checked by inclusion rather than index-by-index.
+func verifyAlignment[W word.Word[W]](codes []uint32, mapping []uint32, modules []Module) {
+	var (
+		rmap       = buildReverseMemoryMap[W](modules...)
+		offset     uint32
+		boundaries = make(map[uint32]bool)
+		targets    = make(map[uint32]uint32)
+	)
+	//
+	for offset < uint32(len(codes)) {
+		boundaries[offset] = true
+		//
+		bc, n := decodeBytecode[W](offset, codes, rmap)
+		//
+		switch bc := bc.(type) {
+		case *Jmp:
+			targets[offset] = bc.Target
+		case *Jif:
+			targets[offset] = bc.Target
+		case *Call:
+			targets[offset] = bc.Target
+		}
+		//
+		offset += n
+	}
+	//
+	for i, m := range mapping {
+		if !boundaries[m] {
+			panic(fmt.Sprintf("bytecode %d mapped to offset %d, which is not an instruction boundary", i, m))
+		}
+	}
+	//
+	for pc, t := range targets {
+		if !boundaries[t] {
+			panic(fmt.Sprintf("branch at offset %d (word 0x%08x) targets 0x%x, which is not an instruction boundary",
+				pc, codes[pc], t))
+		}
+	}
 }
 
 // Determine the mapping from bytecode indices to actual bytecode offsets in the
@@ -160,22 +229,58 @@ func determineBytecodeMapping[W word.Word[W]](bytecodes []Bytecode[W]) []uint32 
 	return mapping
 }
 
+// Determine a conservative mapping from bytecode indices to bytecode offsets,
+// sizing every (unresolved) branch at its maximal width.  This provides the
+// starting point for the fixpoint iteration in compile: branch targets cannot
+// be consulted yet (they still hold label indices), and starting from maximal
+// sizes ensures the iteration only ever shrinks.
+func initialBytecodeMapping[W word.Word[W]](bytecodes []Bytecode[W]) []uint32 {
+	var (
+		mapping = make([]Address, len(bytecodes))
+		offset  uint32
+	)
+	//
+	for i, b := range bytecodes {
+		mapping[i] = offset
+		//
+		if pb, ok := b.(Patchable[W]); ok {
+			offset += pb.MaxWidth()
+		} else {
+			offset += uint32(len(b.Codes(offset)))
+		}
+	}
+	//
+	return mapping
+}
+
 // Patch branch instructions to target instruction offsets, rather than labels.
 // That is, the target of a branch instruction on entry is an index into the
 // label array.  The corresponding label identifies the (bytecode) offset of the
 // target instruction.  Observe that the bytecode offset must be converted into
-// a true offset.
-func patchBranchingBytecodes[W word.Word[W]](mapping []uint32, bytecodes []Bytecode[W], labels []Address) {
-	// update labels accordingly
-	for i, l := range labels {
-		labels[i] = mapping[l]
+// a true offset.  Patching is non-destructive: the given bytecodes (and the
+// marks array) are left untouched, with resolved copies returned in a fresh
+// slice (non-branching bytecodes are simply shared).
+func patchBranchingBytecodes[W word.Word[W]](mapping []uint32, bytecodes []Bytecode[W],
+	marks []Address) []Bytecode[W] {
+	// resolve marks into true offsets
+	var (
+		labels   = make([]Address, len(marks))
+		resolved = make([]Bytecode[W], len(bytecodes))
+	)
+	//
+	for i, m := range marks {
+		labels[i] = mapping[m]
 	}
 	// patch instructions
-	for _, b := range bytecodes {
-		if b, ok := b.(Patchable[W]); ok {
-			b.Patch(labels)
+	for i, b := range bytecodes {
+		if pb, ok := b.(Patchable[W]); ok {
+			resolved[i] = pb.Patch(labels)
+		} else {
+			resolved[i] = b
 		}
 	}
+	//
+	return resolved
 }
 
 // Patch memory identifies used in I/O bytecodes to ensure they are on a

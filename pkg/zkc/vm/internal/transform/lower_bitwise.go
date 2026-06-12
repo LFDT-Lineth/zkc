@@ -75,7 +75,7 @@ func lowerBitwiseCode[W word.Word[W]](
 		return inlineBitwiseNot[W](t, registers)
 	case opcode.BIT_SHL, opcode.BIT_SHR:
 		t := code.(*instruction.WordTypeB)
-		return lowerBitwiseShlShr(t, registers, helpers)
+		return lowerBitwiseShlShr(t, helpers)
 	default:
 		return []WordInstruction{code}
 	}
@@ -106,14 +106,12 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 
 func lowerBitwiseShlShr[W word.Word[W]](
 	code *instruction.WordTypeB,
-	registers RegisterAllocator,
 	helpers *bitwiseHelpers[W],
 ) []WordInstruction {
 	var (
 		// NOTE: bitwidth of shift (e.g. "x << y") determined by width of first
 		// argument only (i.e. "x").
-		width, _ = maxBitwidthOf(registers, code.Uses()[0])
-		id       = helpers.ensure(code.OpCode(), width, 2)
+		id = helpers.ensure(code.OpCode(), code.Bitwidth, 2)
 	)
 	//
 	return []WordInstruction{
