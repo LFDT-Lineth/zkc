@@ -107,12 +107,15 @@
     <span class="pill">gogen</span>
     <span class="pill purple">PR #1860 benchmark audit</span>
     <span class="pill pink">Apple M5 Max · go1.26</span>
-    <span class="pill warn">June 12, 2026</span>
+    <span class="pill warn">June 12, 2026 · rev 2: instruction metrics + workload sweep</span>
   </div>
   <h1>The benchmark is honest — the table is misleading</h1>
   <p class="sub">A forensic pass over <code>BenchmarkZkcExecKeccakV2*</code>: every surprising delta has a
   measured explanation, no caching artefacts inflate gogen, and two cheap changes
-  (binary I/O, PGO) cut gogen wall time roughly in half on both shapes.</p>
+  (binary I/O, PGO) cut gogen wall time roughly in half on both shapes.
+  Rev 2 adds what the benchmarks now report: <b>executed micro-instructions and Minstr/s</b>
+  (§08), a cross-workload sweep — sort, fnv1a, blake2f (§09) — and the interpolation to the
+  production target, a RISC-V interpreter executing an EVM block (§10).</p>
 </div></header>
 
 <div class="wrap">
@@ -133,7 +136,9 @@
 <b>Bottom line.</b> The numbers reproduce on this machine (bytecode 14.2 s, gogen 208 ms plain; gogen 175 ms lowered)
 and the deltas that looked suspicious are exactly what the per-block arithmetic predicts. The one genuine bug found is
 cosmetic: <code>build_ms</code> reports <b>0</b> because the benchmark closure re-runs and the second pass hits the
-process-wide build cache. gogen's true compute speedup over bytecode is <b>~129×</b>, larger than the headline ~70×.
+process-wide build cache (fixed on this branch). gogen's true compute speedup over bytecode is <b>~129×</b>, larger
+than the headline ~70×. And the number to remember from the new workload sweep: <b>gogen executes ~10 billion ZkC
+micro-instructions per second regardless of workload</b> (~0.1 ns/instr), while both interpreters sit at 24–81 million.
 </div>
 
 <h2><span class="n">02</span>Why the deltas surprised you — normalized</h2>
@@ -267,16 +272,16 @@ fn__bit_or/and_*      15%
 <h2><span class="n">06</span>Plan — ordered by leverage</h2>
 
 <div class="next"><div class="hd"><span class="name">1 · Benchmark hygiene</span>
-  <span class="tag effort">effort S</span><span class="tag safe">no semantics</span></div>
-  <div class="bd">Same block count for both benchmarks (or headline µs/block / MB/s); fix <code>build_ms</code> (time inside the cache, once); emit decode/run/encode phase metrics from the harness via stderr; <code>-count 5</code> + benchstat for PR tables. Stops the next reader from drawing the same wrong conclusion.</div></div>
+  <span class="tag gain">✓ done on this branch</span><span class="tag safe">no semantics</span></div>
+  <div class="bd">Every sub-benchmark now reports <code>instrs/op</code> + <code>Minstr/s</code> (the size-independent, cross-tier metric — see §08); <code>build_ms</code> fixed (memoized first real build); gogen cells warm the freshly built binary before the timer; <code>BenchmarkZkcExecSweep</code> adds three contrasting workloads (§09). Still recommended for headline PR tables: <code>-count 5</code> + benchstat.</div></div>
 
 <div class="next"><div class="hd"><span class="name">2 · Binary I/O protocol for the generated harness</span>
-  <span class="tag gain">1.8× plain e2e</span><span class="tag effort">effort S</span><span class="tag safe">no semantics</span></div>
-  <div class="bd">Length-prefixed name + raw LE u64 frames on stdin/stdout (keep <code>--json</code> for debugging). Measured: decode 70 → 1.3 ms. Also the natural wire format for shipping checkpoint snapshots to shard workers later.</div></div>
+  <span class="tag gain">1.8× plain e2e</span><span class="tag effort">effort S</span><span class="tag care">deferred — prod</span></div>
+  <div class="bd">Length-prefixed name + raw LE u64 frames on stdin/stdout. Measured: decode 70 → 1.3 ms. Deferred for now: JSON is the input contract users and tests rely on for CLI/differential work — keep JSON as the default and add the binary path when the prod/tracer harness lands (it is also the natural wire format for checkpoint snapshots to shard workers).</div></div>
 
 <div class="next"><div class="hd"><span class="name">3 · PGO in the build cache</span>
-  <span class="tag gain">2.2× lowered e2e</span><span class="tag effort">effort S–M</span><span class="tag safe">no semantics</span></div>
-  <div class="bd">Teach <code>gogen.Cache</code> an optional two-step build: compile, run once on a small representative input with <code>CPUPROFILE</code>, rebuild with <code>-pgo</code>. Content-addressed like the binary itself. Pure Go-compiler optimisation — generated source untouched.</div></div>
+  <span class="tag gain">2.2× lowered e2e</span><span class="tag effort">effort S–M</span><span class="tag care">deferred — prod</span></div>
+  <div class="bd">Teach <code>gogen.Cache</code> an optional two-step build: compile, run once on a small representative input with <code>CPUPROFILE</code>, rebuild with <code>-pgo</code>. Content-addressed like the binary itself. Pure Go-compiler optimisation — generated source untouched. Not integrated now; the measured 2.05× on the prover shape is banked for the prod build path.</div></div>
 
 <div class="next"><div class="hd"><span class="name">4 · Codegen inlining of leaf helper calls</span>
   <span class="tag gain">≥2× lowered, deterministic</span><span class="tag effort">effort M</span><span class="tag safe">1:1 preserved</span></div>
@@ -294,16 +299,144 @@ fn__bit_or/and_*      15%
   <span class="tag gain">~5× plain ceiling</span><span class="tag effort">effort L</span><span class="tag care">risky</span></div>
   <div class="bd">The residual gap to hand-written keccak is state living in ZkC RAM (memGet/memWrite per lane op). Promoting small fixed-extent memories to locals would close it — but memory contents are machine state that checkpoints must observe, so it needs flush-at-boundary semantics. Revisit after the checkpoint design exists; don't pre-empt it.</div></div>
 
-<h2><span class="n">07</span>Reproduce</h2>
-<pre><code># artefacts: generated Go (both shapes) + input files at 1/500/5k/50k blocks
-go run ./scratch/gogendump /tmp/gogen-perf
+<h2><span class="n">08</span>Counting the real work — instruction metrics</h2>
+<p>“ns/op” depends on input size; what interpolates is <b>executed ZkC micro-instructions per second</b>.
+The interpreter's step counter counts exactly that (one decrement per micro-instruction, verified in
+<code>machine.Base.execute</code>), and keccak-f executes an input-independent constant per block, so counts are
+exactly linear and can be calibrated from 1–2 blocks:</p>
 
-# benchmarks as in the PR (wordmachine excluded)
+<div class="cards">
+  <div class="card"><div class="k">plain · per block</div><div class="v purple">23,348</div>
+    <div class="d">instrs(n) = 131 + 23,348·n — exact at every size measured (1, 2, 500, 5000 blocks).</div></div>
+  <div class="card"><div class="k">plain · 50,000 blocks</div><div class="v purple">1.167 B</div>
+    <div class="d">Your “~1.7B” estimate was the right ballpark — measured 1,167,400,131.</div></div>
+  <div class="card"><div class="k">lowered · per block</div><div class="v warn">4,015,774</div>
+    <div class="d">×172 vs plain. instrs(n) = 135 + 4,015,774·n.</div></div>
+  <div class="card"><div class="k">lowered · 500 blocks</div><div class="v warn">2.008 B</div>
+    <div class="d">The lowered benchmark executes <em>more</em> total instructions than the plain one, despite 100× fewer blocks.</div></div>
+</div>
+
+<p>The benchmarks now report this directly (changes on this branch): every sub-benchmark of
+<code>BenchmarkZkcExecKeccakV2*</code> and the new <code>BenchmarkZkcExecSweep</code> emits
+<code>instrs/op</code> and <code>Minstr/s</code>, computed from a per-shape canonical count
+(all tiers execute the same instruction stream, so rates are comparable across tiers, programs and sizes).
+Also fixed along the way: <code>build_ms</code> no longer reports 0 (first real build is memoized), and gogen
+cells warm the binary once before the timer — the first exec of a freshly built binary pays a one-off
+~300–500 ms macOS verification cost that previously leaked into 1-iteration runs.</p>
+
+<pre><code>BenchmarkZkcExecKeccakV2/bytecode-18        3  15059392556 ns/op   77.52 Minstr/s  1167400131 instrs/op
+BenchmarkZkcExecKeccakV2/gogen-18           3    216142875 ns/op    5401 Minstr/s  1167400131 instrs/op  194.0 build_ms
+BenchmarkZkcExecKeccakV2Lowered/gogen-18    3    178082125 ns/op   11275 Minstr/s  2007887135 instrs/op  187.0 build_ms</code></pre>
+
+<h2><span class="n">09</span>Cross-workload sweep — not just keccak</h2>
+<p>Keccak is the bitwise-rotation extreme. <code>BenchmarkZkcExecSweep</code> (new, committed) adds three
+contrasting instruction mixes with large synthetic inputs, on both shapes × three executors:</p>
+
+<table>
+  <tr><th>Program</th><th>Mix</th><th class="num">Lowering blowup</th><th>Who can run it</th></tr>
+  <tr><td><b>sort</b> (quicksort, 20k bytes)</td><td>memory traffic, compares, recursion</td><td class="num">×1.6</td><td>all tiers, <em>both</em> shapes — its lowered shape still narrows to u64</td></tr>
+  <tr><td><b>fnv1a</b> (hash, 100k bytes)</td><td>u128 multiply + xor per byte</td><td class="num">×306</td><td>wordmachine-Uint + gogen only — u128 registers defeat narrowing even on the <em>plain</em> shape, so bytecode skips everywhere</td></tr>
+  <tr><td><b>blake2f</b> (1,000 rounds)</td><td>64-bit xor/rotate over RAM state</td><td class="num">×232</td><td>wordmachine-Uint + gogen only (u128 constant)</td></tr>
+  <tr><td><b>keccak</b> (reference point)</td><td>64-bit rotate/xor lanes</td><td class="num">×172</td><td>all tiers plain; Uint + gogen lowered</td></tr>
+</table>
+
+<p>Measured rates (Minstr/s, log scale) on the <b>lowered / prover shape</b> — the one that matters:</p>
+
+<div class="bar-chart">
+  <div class="bar-row"><div class="bar-label">gogen · keccak</div>
+    <div class="bar-track"><div class="bar-fill" style="width:99%;background:var(--good)"></div></div>
+    <div class="bar-val">11,275</div></div>
+  <div class="bar-row"><div class="bar-label">gogen · fnv1a</div>
+    <div class="bar-track"><div class="bar-fill" style="width:98.8%;background:var(--good)"></div></div>
+    <div class="bar-val">11,005</div></div>
+  <div class="bar-row"><div class="bar-label">gogen · blake2f</div>
+    <div class="bar-track"><div class="bar-fill" style="width:97.8%;background:var(--good)"></div></div>
+    <div class="bar-val">10,253</div></div>
+  <div class="bar-row"><div class="bar-label">gogen · sort</div>
+    <div class="bar-track"><div class="bar-fill" style="width:78.5%;background:var(--good);opacity:.75"></div></div>
+    <div class="bar-val">2,605 †</div></div>
+  <div class="bar-row"><div class="bar-label">bytecode · sort</div>
+    <div class="bar-track"><div class="bar-fill" style="width:24.6%;background:var(--accent2)"></div></div>
+    <div class="bar-val">57</div></div>
+  <div class="bar-row"><div class="bar-label">wordmachine-Uint · sort</div>
+    <div class="bar-track"><div class="bar-fill" style="width:15.7%;background:var(--accent3)"></div></div>
+    <div class="bar-val">30</div></div>
+  <div class="bar-row"><div class="bar-label">wordmachine-Uint · blake2f</div>
+    <div class="bar-track"><div class="bar-fill" style="width:13.0%;background:var(--accent3)"></div></div>
+    <div class="bar-val">25</div></div>
+  <div class="bar-row"><div class="bar-label">wordmachine-Uint · fnv1a</div>
+    <div class="bar-track"><div class="bar-fill" style="width:12.3%;background:var(--accent3)"></div></div>
+    <div class="bar-val">24</div></div>
+</div>
+<p class="muted" style="font-size:.88rem">† sort's run is only ~10 ms end-to-end, so the ~7 ms subprocess
+floor halves its apparent rate; the same effect caps the tiny plain cells of fnv1a/blake at 96–136 Minstr/s.
+Rates include the full subprocess harness for gogen, in-process pre-decoded inputs for interpreters (the
+skew documented in §04).</p>
+
+<h3>What the sweep establishes</h3>
+<table>
+  <tr><th>Observation</th><th>Evidence</th></tr>
+  <tr class="hl"><td><b>gogen's rate is workload-stable at ~10–11 Ginstr/s</b> on any dense workload — a single number you can interpolate with (~0.1 ns per ZkC micro-instruction).</td>
+      <td>keccak 11.3, fnv1a 11.0, blake 10.3 Ginstr/s on 180M–2B-instruction lowered runs; plain keccak pure-execution rate 9.8.</td></tr>
+  <tr><td>Interpreter rates are also stable — and 2 orders of magnitude lower, regardless of workload.</td>
+      <td>wordmachine-Uint: 24–48 Minstr/s; bytecode: 57–81 Minstr/s across all programs and shapes.</td></tr>
+  <tr><td>The lowering blowup is the workload-dependent variable: ×1.6 to ×306.</td>
+      <td>sort ×1.6 (no native bitwise ops), keccak ×172, blake ×232, fnv1a ×306 (u128 ops).</td></tr>
+  <tr><td>Bytecode-tier coverage is the exception, not the rule: any u128 register (or u65 from lowering) disables it.</td>
+      <td>Of 8 sweep cells, bytecode runs 2 (sort plain + sort lowered). gogen runs all 8.</td></tr>
+  <tr><td>gogen vs the only other tier that runs the prover shape: <b>409–459×</b> on bit-heavy workloads, 86× on sort.</td>
+      <td>fnv1a lowered 11.49 s → 25 ms; blake 7.20 s → 17.6 ms; sort 824 ms → 9.6 ms.</td></tr>
+</table>
+
+<h2><span class="n">10</span>Interpolating to production — the EVM-block scenario</h2>
+<p>The target workload: a RISC-V interpreter (written in ZkC) executing an EVM block — roughly <b>30×</b> the
+keccak-50k benchmark, i.e. <b>~35 B plain-shape micro-instructions</b>. With workload-stable rates, time is just
+<code>instrs × blowup / rate</code>:</p>
+
+<div class="grid2">
+<div>
+<h3>Plain shape — 35 B instrs</h3>
+<table>
+  <tr><th>Tier</th><th class="num">Rate</th><th class="num">Est. time</th></tr>
+  <tr class="hl"><td>gogen</td><td class="num">~10 Ginstr/s</td><td class="num"><b>~3.5 s</b></td></tr>
+  <tr><td>bytecode</td><td class="num">77 Minstr/s</td><td class="num">~7.5 min</td></tr>
+  <tr><td>wordmachine-Uint</td><td class="num">~35 Minstr/s</td><td class="num">~17 min</td></tr>
+</table>
+</div>
+<div>
+<h3>Prover shape — 35 B × blowup M</h3>
+<table>
+  <tr><th class="num">M</th><th>like</th><th class="num">gogen</th><th class="num">Uint interp.</th></tr>
+  <tr><td class="num">×2</td><td>control/memory-bound</td><td class="num">~7 s</td><td class="num">~49 min</td></tr>
+  <tr class="hl"><td class="num">×30</td><td>mixed ALU + memory</td><td class="num">~1.7 min</td><td class="num">~12 h</td></tr>
+  <tr><td class="num">×170</td><td>bit-op-bound (keccak-like)</td><td class="num">~10 min</td><td class="num">~2.9 days</td></tr>
+</table>
+</div>
+</div>
+
+<div class="callout purple">
+<b>Read it this way:</b> on the prover shape, gogen is the only tier in viable territory — and the spread of M
+(×2…×170 depending on instruction mix) moves the answer more than any executor optimisation will. Two
+consequences for the roadmap: (1) measure M for the actual RISC-V interpreter early — it bounds everything;
+(2) the items that shrink M's cost (PGO ~2×, codegen inlining of <code>$bit_*</code> leaves, and ultimately
+sharding the faithful re-execution across checkpoints) are worth more than micro-tuning the plain shape.
+A worked check of the formula: keccak-50k plain = 1.167 B / 9.8 G = 119 ms — exactly the measured run time.
+</div>
+
+<h2><span class="n">11</span>Reproduce</h2>
+<pre><code># artefacts: generated Go (both shapes) + input files at 1/500/5k/50k blocks
+go run ./scratch/gogendump artifacts /tmp/gogen-perf
+
+# micro-instruction counts: keccak linearity check + sweep-size tuning
+go run ./scratch/gogendump keccak-steps
+go run ./scratch/gogendump sweep-steps
+
+# keccak benchmarks as in the PR, now with instrs/op + Minstr/s (wordmachine excluded)
 go test --timeout 0 -run XXX -bench 'BenchmarkZkcExecKeccakV2$/^(bytecode|gogen)$' -benchtime 3x ./pkg/test/
 go test --timeout 0 -run XXX -bench 'BenchmarkZkcExecKeccakV2Lowered/gogen' -benchtime 3x ./pkg/test/
 
-# instruction counts per shape (vectorised macro steps)
-go run ./scratch/gogendump steps</code></pre>
+# cross-workload sweep: sort / fnv1a / blake2f × plain / lowered × all three executors
+go test --timeout 0 -run XXX -bench BenchmarkZkcExecSweep -benchtime 3x ./pkg/test/</code></pre>
 
 <footer>
   Branch <code>perf/gogen-bench-investigation</code> · measurements on Apple M5 Max, go 1.26.2, single run each unless noted ·

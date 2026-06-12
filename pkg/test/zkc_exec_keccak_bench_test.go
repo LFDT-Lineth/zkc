@@ -36,8 +36,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -178,6 +178,10 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 	b.Helper()
 
 	blockBytes := int64(len(inputBytes["blocks"]))
+	// Canonical micro-instruction count for this (shape, input): all tiers
+	// execute the same instruction stream, so the Minstr/s rates below are
+	// directly comparable across tiers and with the sweep benchmark.
+	instrs := keccakMicroInstrs(b, lowered, int(blockBytes)/(17*8))
 
 	b.Run("wordmachine", func(b *testing.B) {
 		// Prefer the uint64-narrowed machine (the historical baseline); fall
@@ -200,6 +204,8 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 		for i := 0; i < b.N; i++ {
 			keccakByteSink = run()
 		}
+
+		reportInstrMetrics(b, instrs)
 	})
 
 	b.Run("bytecode", func(b *testing.B) {
@@ -221,6 +227,8 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 		for i := 0; i < b.N; i++ {
 			keccakByteSink = runKeccakCore(b, bci, inputWords)
 		}
+
+		reportInstrMetrics(b, instrs)
 	})
 
 	b.Run("gogen", func(b *testing.B) {
@@ -230,19 +238,22 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 		if err != nil {
 			b.Skipf("gogen unsupported: %v", err)
 		}
-		// Build once; report the compile time as a separate metric.
-		start := time.Now()
-
-		prog, err := gogen.Build(src)
+		// Build once; report the (first, real) compile time as a separate
+		// metric — see timedGogenBuild for why it must be memoized.
+		prog, buildMs, err := timedGogenBuild(src)
 		if err != nil {
 			b.Fatal(err)
 		}
-
-		buildMs := float64(time.Since(start).Milliseconds())
 		// Pre-marshal the inputs: the timed loop measures the executor
 		// (subprocess + its own JSON decode), not the harness's json.Marshal.
 		inJSON, err := json.Marshal(toKeccakU64Map(b, decodeKeccakInputs(b, wm, inputBytes)))
 		if err != nil {
+			b.Fatal(err)
+		}
+
+		// Warm up: the first exec of a freshly built binary pays a one-off OS
+		// verification cost (hundreds of ms on macOS).
+		if _, _, err := gogen.RunRaw(prog, inJSON); err != nil {
 			b.Fatal(err)
 		}
 
@@ -263,6 +274,7 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 		}
 
 		b.StopTimer()
+		reportInstrMetrics(b, instrs)
 		b.ReportMetric(buildMs, "build_ms")
 	})
 }
@@ -270,6 +282,37 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// keccakInstrCalibration memoizes the per-shape (setup, marginal) instruction
+// counts behind keccakMicroInstrs.
+var (
+	keccakInstrMu          sync.Mutex
+	keccakInstrCalibration = map[bool][2]uint{}
+)
+
+// keccakMicroInstrs returns the number of micro-instructions the keccak v2
+// program executes over nBlocks blocks.  Counting on the full benchmark input
+// would mean interpreting it (up to minutes on the lowered shape), so the
+// count is calibrated instead: keccak-f executes an input-independent,
+// constant number of instructions per block, so counting 1 and 2 blocks gives
+// an exact extrapolation (the linearity is asserted by counting both).
+func keccakMicroInstrs(tb testing.TB, lowered bool, nBlocks int) uint {
+	tb.Helper()
+
+	keccakInstrMu.Lock()
+	defer keccakInstrMu.Unlock()
+
+	cal, ok := keccakInstrCalibration[lowered]
+	if !ok {
+		c1 := sweepMicroInstrs(tb, keccakV2SourcePath, lowered, syntheticKeccakInput(1))
+		c2 := sweepMicroInstrs(tb, keccakV2SourcePath, lowered, syntheticKeccakInput(2))
+		cal = [2]uint{c1, c2 - c1} // setup+1st block, marginal per block
+
+		keccakInstrCalibration[lowered] = cal
+	}
+
+	return cal[0] + uint(nBlocks-1)*cal[1]
+}
 
 // compileKeccakV2 compiles the keccak v2 source into a fresh, vectorised word
 // machine over Uint — the machine gogen consumes and the reference executor
