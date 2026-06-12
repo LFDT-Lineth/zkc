@@ -186,6 +186,15 @@ func (p Uint) Shr64(n uint64) Uint {
 	return Uint{val}
 }
 
+// DwShr64 implementation for Word interface.
+func (p Uint) DwShr64(w Uint, n uint64) (lo, hi Uint) {
+	lo = p.Shr64(n)
+	hi = w.Shr64(n)
+	lo = lo.Or(w.Slice(uint(n)))
+	//
+	return lo, hi
+}
+
 // Slice implementation for Word interface.
 func (p Uint) Slice(width uint) Uint {
 	return Uint{lowBits(width, p.value)}

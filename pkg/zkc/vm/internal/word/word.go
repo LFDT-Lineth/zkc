@@ -55,6 +55,8 @@ type Word[W any] interface {
 	Cmp64(y uint64) int
 	// Div divides this word by another.  Panics on division by zero.
 	Div(W) W
+	// Double-Word shift right by a given number of bits.
+	DwShr64(hi W, width uint64) (rlo W, rhi W)
 	// Check whether this value fits within the given bitwidth.
 	FitsWithin(uint) bool
 	// Multiply two words together, producing another (along with an overflow bit).

@@ -192,19 +192,23 @@ func executeAdd[W word.Word[W]](target register.Vector, sources []register.Id, c
 	frame WordFrame[W]) error {
 	//
 	var (
-		val      = constant
+		w1       = constant
+		w2       W
+		acc      uint64
 		overflow bool
 	)
 	//
 	for _, arg := range sources {
-		val, overflow = val.Add(frame.Load(arg))
+		w1, overflow = w1.Add(frame.Load(arg))
 		//
 		if overflow {
-			return errors.New("arithmetic overflow")
+			acc++
 		}
 	}
 	//
-	return StoreAcross(frame, target, val)
+	w2 = w2.SetUint64(acc)
+	//
+	return StoreAcrossDw(frame, target, w2, w1)
 }
 
 func executeMul[W word.Word[W]](target register.Vector, sources []register.Id, constant W,
