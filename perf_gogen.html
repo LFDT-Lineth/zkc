@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gogen perf — benchmark audit &amp; speedup plan</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg2: #11151f;
+    --card: #151b28;
+    --card2: #1a2233;
+    --border: #2a3550;
+    --text: #d7e0f0;
+    --muted: #8a97b3;
+    --accent: #5eead4;
+    --accent2: #818cf8;
+    --accent3: #f472b6;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --good: #4ade80;
+    --code-bg: #0d1220;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px 120px; }
+  header.hero { padding: 64px 0 36px;
+    background: radial-gradient(1100px 420px at 15% -10%, rgba(129,140,248,.18), transparent 60%),
+                radial-gradient(900px 380px at 90% -20%, rgba(94,234,212,.14), transparent 60%);
+    border-bottom: 1px solid var(--border); }
+  .hero h1 { font-size: 2.3rem; margin: 0 0 6px; letter-spacing: -.02em;
+    background: linear-gradient(90deg, var(--accent), var(--accent2) 55%, var(--accent3));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p.sub { color: var(--muted); font-size: 1.1rem; max-width: 70ch; margin: 8px 0 0; }
+  .pill { display:inline-block; font: 12px/1 var(--mono); color: var(--accent);
+    border: 1px solid rgba(94,234,212,.35); border-radius: 999px; padding: 5px 12px; margin: 0 6px 8px 0;
+    background: rgba(94,234,212,.06); }
+  .pill.purple { color: var(--accent2); border-color: rgba(129,140,248,.4); background: rgba(129,140,248,.07); }
+  .pill.pink { color: var(--accent3); border-color: rgba(244,114,182,.4); background: rgba(244,114,182,.07); }
+  .pill.warn { color: var(--warn); border-color: rgba(251,191,36,.4); background: rgba(251,191,36,.07); }
+  h2 { font-size: 1.5rem; margin: 56px 0 14px; letter-spacing: -.01em; }
+  h2 .n { color: var(--accent2); font: 700 1.05rem var(--mono); margin-right: 10px; }
+  h3 { font-size: 1.08rem; margin: 28px 0 10px; color: var(--accent); }
+  p { max-width: 78ch; }
+  .muted { color: var(--muted); }
+  code { font: 13.5px var(--mono); background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 5px; padding: 1.5px 6px; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; overflow-x: auto; font: 13px/1.55 var(--mono); }
+  pre code { background: none; border: none; padding: 0; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 22px 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+  .card .k { font: 12px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .card .v { font-size: 1.7rem; font-weight: 700; margin: 4px 0 2px; }
+  .card .d { font-size: .88rem; color: var(--muted); }
+  .v.good { color: var(--good); } .v.bad { color: var(--bad); } .v.warn { color: var(--warn); } .v.purple { color: var(--accent2); }
+  table { border-collapse: collapse; width: 100%; margin: 18px 0; font-size: .92rem; }
+  th { text-align: left; font: 12px var(--mono); text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 12px; border-bottom: 1px solid rgba(42,53,80,.5); }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-size: .88rem; }
+  tr.hl td { background: rgba(94,234,212,.05); }
+  .ok { color: var(--good); } .no { color: var(--bad); } .meh { color: var(--warn); }
+  .bar-chart { margin: 20px 0; }
+  .bar-row { display: grid; grid-template-columns: 240px 1fr 110px; align-items: center; gap: 12px; margin: 7px 0; }
+  .bar-label { font: 12.5px var(--mono); color: var(--muted); text-align: right; }
+  .bar-track { background: var(--bg2); border-radius: 5px; height: 22px; position: relative; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 5px; display: flex; align-items: center; min-width: 3px; }
+  .bar-val { font: 12.5px var(--mono); }
+  .seg { height: 100%; display: inline-block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; font-size: .85rem; color: var(--muted); margin: 8px 0 4px; }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .callout { border-left: 3px solid var(--accent); background: rgba(94,234,212,.05);
+    border-radius: 0 10px 10px 0; padding: 14px 18px; margin: 20px 0; max-width: 84ch; }
+  .callout.warn { border-color: var(--warn); background: rgba(251,191,36,.05); }
+  .callout.bad { border-color: var(--bad); background: rgba(248,113,113,.05); }
+  .callout.purple { border-color: var(--accent2); background: rgba(129,140,248,.06); }
+  .flow { display: flex; align-items: stretch; gap: 0; margin: 22px 0; flex-wrap: wrap; }
+  .stage { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; min-width: 130px; flex: 1; }
+  .stage .t { font-weight: 600; font-size: .92rem; }
+  .stage .ms { font: 700 1.15rem var(--mono); margin: 3px 0; }
+  .stage .pc { font: 11.5px var(--mono); color: var(--muted); }
+  .arrow { align-self: center; color: var(--muted); padding: 0 8px; font-size: 1.2rem; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  .next { border: 1px solid var(--border); border-radius: 12px; margin: 14px 0; background: var(--card); overflow: hidden; }
+  .next .hd { display: flex; align-items: baseline; gap: 12px; padding: 14px 20px 0; }
+  .next .hd .name { font-weight: 700; font-size: 1.02rem; }
+  .next .bd { padding: 6px 20px 16px; color: var(--muted); font-size: .93rem; max-width: 90ch; }
+  .tag { font: 11px var(--mono); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .tag.gain { background: rgba(74,222,128,.1); color: var(--good); border: 1px solid rgba(74,222,128,.3); }
+  .tag.effort { background: rgba(129,140,248,.1); color: var(--accent2); border: 1px solid rgba(129,140,248,.3); }
+  .tag.safe { background: rgba(94,234,212,.08); color: var(--accent); border: 1px solid rgba(94,234,212,.3); }
+  .tag.care { background: rgba(251,191,36,.08); color: var(--warn); border: 1px solid rgba(251,191,36,.3); }
+  footer { margin-top: 70px; color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); padding-top: 18px; }
+  svg text { font-family: var(--mono); }
+</style>
+</head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <div>
+    <span class="pill">gogen</span>
+    <span class="pill purple">PR #1860 benchmark audit</span>
+    <span class="pill pink">Apple M5 Max · go1.26</span>
+    <span class="pill warn">June 12, 2026</span>
+  </div>
+  <h1>The benchmark is honest — the table is misleading</h1>
+  <p class="sub">A forensic pass over <code>BenchmarkZkcExecKeccakV2*</code>: every surprising delta has a
+  measured explanation, no caching artefacts inflate gogen, and two cheap changes
+  (binary I/O, PGO) cut gogen wall time roughly in half on both shapes.</p>
+</div></header>
+
+<div class="wrap">
+
+<h2><span class="n">01</span>TL;DR</h2>
+<div class="cards">
+  <div class="card"><div class="k">Correctness</div><div class="v good">✓ sound</div>
+    <div class="d">Every iteration spawns a fresh process and recomputes; outputs are differentially checked against the WordMachine oracle on the full 50k input.</div></div>
+  <div class="card"><div class="k">Cross-bench comparison</div><div class="v bad">✗ apples / oranges</div>
+    <div class="d">Plain runs <b>50,000</b> blocks; Lowered runs <b>500</b>. The ns/op column hides a 100× input gap.</div></div>
+  <div class="card"><div class="k">Lowered blowup</div><div class="v warn">172×</div>
+    <div class="d">Measured steps/block: 23,348 plain → 4,015,774 lowered. The deltas are real work, not noise.</div></div>
+  <div class="card"><div class="k">gogen handicap</div><div class="v purple">~45%</div>
+    <div class="d">Of plain gogen's 218 ms, only ~119 ms is execution. The rest is JSON decode (17 MB!), spawn and pipes — paid only by gogen.</div></div>
+</div>
+
+<div class="callout">
+<b>Bottom line.</b> The numbers reproduce on this machine (bytecode 14.2 s, gogen 208 ms plain; gogen 175 ms lowered)
+and the deltas that looked suspicious are exactly what the per-block arithmetic predicts. The one genuine bug found is
+cosmetic: <code>build_ms</code> reports <b>0</b> because the benchmark closure re-runs and the second pass hits the
+process-wide build cache. gogen's true compute speedup over bytecode is <b>~129×</b>, larger than the headline ~70×.
+</div>
+
+<h2><span class="n">02</span>Why the deltas surprised you — normalized</h2>
+<p>The PR table mixes two input sizes. Normalize to <b>µs per keccak block</b> and everything snaps into place
+(log-scale bars; PR numbers):</p>
+
+<div class="bar-chart">
+  <div class="legend">
+    <span><span class="sw" style="background:var(--accent2)"></span>plain shape (50,000 blocks)</span>
+    <span><span class="sw" style="background:var(--accent3)"></span>lowered / prover shape (500 blocks)</span>
+  </div>
+  <!-- log scale: 1µs..200ms → width % = (log10(v/1) / log10(200000)) -->
+  <div class="bar-row"><div class="bar-label">gogen · plain</div>
+    <div class="bar-track"><div class="bar-fill" style="width:13%;background:var(--accent2)"></div></div>
+    <div class="bar-val">4.4 µs/blk</div></div>
+  <div class="bar-row"><div class="bar-label">bytecode · plain</div>
+    <div class="bar-track"><div class="bar-fill" style="width:47%;background:var(--accent2);opacity:.7"></div></div>
+    <div class="bar-val">307 µs/blk</div></div>
+  <div class="bar-row"><div class="bar-label">wordmachine-u64 · plain</div>
+    <div class="bar-track"><div class="bar-fill" style="width:51%;background:var(--accent2);opacity:.45"></div></div>
+    <div class="bar-val">485 µs/blk</div></div>
+  <div class="bar-row"><div class="bar-label">gogen · lowered</div>
+    <div class="bar-track"><div class="bar-fill" style="width:49%;background:var(--accent3)"></div></div>
+    <div class="bar-val">379 µs/blk</div></div>
+  <div class="bar-row"><div class="bar-label">wordmachine-Uint · lowered</div>
+    <div class="bar-track"><div class="bar-fill" style="width:99%;background:var(--accent3);opacity:.55"></div></div>
+    <div class="bar-val">170,800 µs/blk</div></div>
+</div>
+
+<table>
+  <tr><th>Puzzle from the PR table</th><th>Resolution (measured)</th></tr>
+  <tr><td>WordMachine: 24 s plain → 85 s lowered, “only 3.5×”?</td>
+      <td>Input shrank 100×. Per block it is 485 µs → 170.8 ms = <b>352×</b> ≈ 172× more instructions × ~2× for Uint (big-int) words vs uint64.</td></tr>
+  <tr><td>gogen: 218 ms plain → 189 ms lowered, “lowered is faster”?</td>
+      <td>Same 100× input gap. Per block 4.4 µs → 379 µs = <b>87×</b> slower. On pure execution (harness stripped) it is 2.4 µs → 330 µs = <b>139×</b>, close to the 172× step blowup — the residual gap is Go inlining digesting the helper-call storm better than an interpreter.</td></tr>
+  <tr><td>Why is the lowered baseline so much weaker?</td>
+      <td>Only the <b>Uint</b> (heap big-int) WordMachine can interpret the lowered shape (u65 temporaries); the u64-narrowed tiers skip. So the lowered “oracle” is the slowest possible interpreter — quoting “451×” against it overstates gogen vs a like-for-like u64 tier.</td></tr>
+</table>
+
+<div class="callout purple"><b>Tip:</b> the benchmark already emits a comparable metric — <code>b.SetBytes</code> gives
+<b>MB/s</b> (gogen: 32.6 plain vs 0.39 lowered = the honest 84×). Quote MB/s or µs/block in PR tables, never raw ns/op across these two benchmarks.</div>
+
+<h2><span class="n">03</span>Anatomy of one gogen iteration</h2>
+<p>Each timed iteration is a full subprocess round-trip. Instrumenting the generated harness splits the cost
+(plain shape, 50,000 blocks, 17.2 MB input JSON):</p>
+
+<div class="flow">
+  <div class="stage"><div class="t">spawn + pipe 17 MB</div><div class="ms" style="color:var(--warn)">~18 ms</div><div class="pc">9% · floor ≈ 6–8 ms/proc</div></div>
+  <div class="arrow">→</div>
+  <div class="stage"><div class="t">JSON decode (child)</div><div class="ms" style="color:var(--bad)">~70 ms</div><div class="pc">33% · 850k numbers</div></div>
+  <div class="arrow">→</div>
+  <div class="stage"><div class="t">Run() — keccak</div><div class="ms" style="color:var(--good)">~119 ms</div><div class="pc">57% · the real work</div></div>
+  <div class="arrow">→</div>
+  <div class="stage"><div class="t">encode + parent decode</div><div class="ms">~1 ms</div><div class="pc">&lt;1% · output is tiny</div></div>
+</div>
+
+<p>The interpreter tiers receive <em>pre-decoded, in-process</em> inputs — the decode and spawn columns are a tax only
+gogen pays, inside the timed loop. On the lowered benchmark the input is small, so &gt;95% of its 189 ms is genuine execution.</p>
+
+<div class="grid2">
+<div>
+<h3>Plain profile — where Run() goes</h3>
+<pre><code>fn_chi                36%   ┐
+fn_theta              27%   │ keccak rounds:
+fn_pi / fn_rho        18%   │ 1 Go op per ZkC op,
+fn_iota                9%   ┘ state via memGet/Write
+memGet/memWrite (inl) 18%   ← RAM-backed lanes
+</code></pre>
+<p class="muted" style="font-size:.9rem">Codegen is tight — the ~5× gap to hand-written keccak
+is the <em>program's</em> memory round-trips per lane op (state lives in ZkC RAM, 271 access sites), not emitter slack.</p>
+</div>
+<div>
+<h3>Lowered profile — death by recursion</h3>
+<pre><code>fn__bit_shr_u64       30%  ← 1 bit per CALL (!)
+fn__bit_xor_u1        24%  ┐ binary tree:
+fn__bit_xor_u2/4/8/32 22%  ┘ u64 → 2×u32 → … → 64×u1
+fn__bit_or/and_*      15%
+</code></pre>
+<p class="muted" style="font-size:.9rem">A 63-bit rotate = 63 recursive call frames; one u64 XOR ≈ 63 calls
+× ~16 instructions each. Inherited from <code>LowerNatives</code>, faithfully compiled.</p>
+</div>
+</div>
+
+<h2><span class="n">04</span>Fairness scorecard</h2>
+<table>
+  <tr><th>Check</th><th>Verdict</th><th>Detail</th></tr>
+  <tr><td>Work recomputed every iteration</td><td class="ok">PASS</td><td>Fresh subprocess; outputs flow back through stdout and are decoded; sink prevents elision.</td></tr>
+  <tr><td>Caching artefacts in the timed loop</td><td class="ok">PASS</td><td><code>gogen.Build</code> (content-addressed sha256 cache) runs before <code>ResetTimer</code> — deliberate and reported separately.</td></tr>
+  <tr><td>Output correctness</td><td class="ok">PASS</td><td><code>TestZkcExecKeccakV2</code> cross-checks gogen against the WordMachine on the full 50k input.</td></tr>
+  <tr><td><code>build_ms</code> metric</td><td class="no">BUG</td><td>Reports 0: the framework re-invokes the closure and the rebuild hits the per-process cache. Time it under <code>sync.Once</code> or build before <code>b.Run</code>.</td></tr>
+  <tr><td>Same units across benchmarks</td><td class="no">FAIL</td><td>50,000 vs 500 blocks; ns/op not comparable. MB/s already is — quote it.</td></tr>
+  <tr><td>Equal harness treatment</td><td class="meh">SKEWED (against gogen)</td><td>Interpreters: pre-decoded inputs, in-process. gogen: JSON decode + spawn + pipes inside the loop (~45% of plain time).</td></tr>
+  <tr><td>Lowered baseline parity</td><td class="meh">CAVEAT</td><td>Uint big-int interpreter is the only tier that can run lowered — inherent, but label speedups accordingly.</td></tr>
+  <tr><td>Statistical hygiene</td><td class="meh">WEAK</td><td>3 iterations, no variance. Use <code>-count≥5</code> + benchstat for headline numbers.</td></tr>
+</table>
+
+<h2><span class="n">05</span>Measured speedups (this branch, today)</h2>
+<p>Three experiments, all semantics-preserving, none touching the 1:1 instruction mapping:</p>
+
+<div class="bar-chart">
+  <div class="legend"><span>Plain · 50,000 blocks · end-to-end wall</span></div>
+  <div class="bar-row"><div class="bar-label">today (JSON + default build)</div>
+    <div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--bad)"></div></div>
+    <div class="bar-val">208–218 ms</div></div>
+  <div class="bar-row"><div class="bar-label">+ binary stdin + <code>-gcflags=-B</code></div>
+    <div class="bar-track"><div class="bar-fill" style="width:55%;background:var(--accent)"></div></div>
+    <div class="bar-val">120 ms <span class="ok">1.8×</span></div></div>
+  <div class="bar-row"><div class="bar-label">+ in-process (no spawn/pipe) — projected</div>
+    <div class="bar-track"><div class="bar-fill" style="width:51%;background:var(--accent);opacity:.6"></div></div>
+    <div class="bar-val">~111 ms <span class="ok">1.9×</span></div></div>
+</div>
+
+<div class="bar-chart">
+  <div class="legend"><span>Lowered · 500 blocks · end-to-end wall</span></div>
+  <div class="bar-row"><div class="bar-label">today</div>
+    <div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--bad)"></div></div>
+    <div class="bar-val">175–189 ms</div></div>
+  <div class="bar-row"><div class="bar-label">+ PGO build (one profile)</div>
+    <div class="bar-track"><div class="bar-fill" style="width:46%;background:var(--accent)"></div></div>
+    <div class="bar-val">85 ms <span class="ok">2.2×</span></div></div>
+</div>
+
+<table>
+  <tr><th>Experiment</th><th class="num">Before</th><th class="num">After</th><th>Note</th></tr>
+  <tr class="hl"><td>Binary input format (LE u64 frames) instead of JSON</td><td class="num">70 ms decode</td><td class="num">1.3 ms</td><td>54× on decode; payload 17.2 → 6.8 MB. Pure I/O — zero semantic impact.</td></tr>
+  <tr class="hl"><td>PGO (<code>go build -pgo</code>, profile from one run)</td><td class="num">1650 ms run (5k blk)</td><td class="num">795 ms</td><td>2.05× on lowered — the inliner flattens the hot <code>$bit_*</code> helper recursion. Plain: ~1%.</td></tr>
+  <tr><td><code>-gcflags=-B</code> (drop bounds checks)</td><td class="num">119 ms run</td><td class="num">111 ms</td><td>7% on plain; ~0% on lowered. Nice-to-have, not load-bearing.</td></tr>
+  <tr><td>Subprocess floor (spawn + pipe round-trip)</td><td class="num" colspan="2">6–8 ms / invocation</td><td>The tax every shard-sized work unit would pay — motivates the in-process path.</td></tr>
+</table>
+
+<h2><span class="n">06</span>Plan — ordered by leverage</h2>
+
+<div class="next"><div class="hd"><span class="name">1 · Benchmark hygiene</span>
+  <span class="tag effort">effort S</span><span class="tag safe">no semantics</span></div>
+  <div class="bd">Same block count for both benchmarks (or headline µs/block / MB/s); fix <code>build_ms</code> (time inside the cache, once); emit decode/run/encode phase metrics from the harness via stderr; <code>-count 5</code> + benchstat for PR tables. Stops the next reader from drawing the same wrong conclusion.</div></div>
+
+<div class="next"><div class="hd"><span class="name">2 · Binary I/O protocol for the generated harness</span>
+  <span class="tag gain">1.8× plain e2e</span><span class="tag effort">effort S</span><span class="tag safe">no semantics</span></div>
+  <div class="bd">Length-prefixed name + raw LE u64 frames on stdin/stdout (keep <code>--json</code> for debugging). Measured: decode 70 → 1.3 ms. Also the natural wire format for shipping checkpoint snapshots to shard workers later.</div></div>
+
+<div class="next"><div class="hd"><span class="name">3 · PGO in the build cache</span>
+  <span class="tag gain">2.2× lowered e2e</span><span class="tag effort">effort S–M</span><span class="tag safe">no semantics</span></div>
+  <div class="bd">Teach <code>gogen.Cache</code> an optional two-step build: compile, run once on a small representative input with <code>CPUPROFILE</code>, rebuild with <code>-pgo</code>. Content-addressed like the binary itself. Pure Go-compiler optimisation — generated source untouched.</div></div>
+
+<div class="next"><div class="hd"><span class="name">4 · Codegen inlining of leaf helper calls</span>
+  <span class="tag gain">≥2× lowered, deterministic</span><span class="tag effort">effort M</span><span class="tag safe">1:1 preserved</span></div>
+  <div class="bd">The <code>$bit_xor_u1</code>-style leaves are tiny pure functions; gogen can splice their bodies at call sites (registers renamed) instead of relying on PGO to discover it. Same transformation Go's inliner already performs legally — but deterministic, profile-free, and stackable with PGO. CALL remains a CALL in the instruction stream; only the emitted Go flattens, so the macro-PC ↔ statement mapping (<code>[vi.ci]</code> comments) survives.</div></div>
+
+<div class="next"><div class="hd"><span class="name">5 · In-process AOT execution (already planned)</span>
+  <span class="tag gain">−6–8 ms/invocation</span><span class="tag effort">effort M–L</span><span class="tag safe">no semantics</span></div>
+  <div class="bd">Spawn + pipe is 9% on one 50k-block run but becomes dominant when a sharded tracer dispatches many small shard re-executions. <code>go build -buildmode=plugin</code> or a persistent worker pool speaking the binary protocol both remove the floor; the worker pool also amortises one process per <em>program</em>, not per <em>shard</em>.</div></div>
+
+<div class="next"><div class="hd"><span class="name">6 · Two-tier sharded tracing (design work)</span>
+  <span class="tag gain">pays the 172× only where traced</span><span class="tag effort">design</span><span class="tag care">1:1 critical</span></div>
+  <div class="bd">The lowered shape costs 172× more instructions <em>by construction</em> — that is the trace the prover needs, so it cannot be optimised away where columns are materialised. The architecture that wins: run the fast shape ahead to drop checkpoints (memory snapshot + machine state at macro-PC boundaries), then re-execute only the shard being traced with the faithful lowered program, in parallel across shards. Items 2–5 make both tiers faster without touching this contract. <b>Anti-goal:</b> folding <code>$bit_*</code> semantics into native ops inside a traced shard — that deletes prover-visible register writes.</div></div>
+
+<div class="next"><div class="hd"><span class="name">7 · Parked: scalar promotion of small RAMs</span>
+  <span class="tag gain">~5× plain ceiling</span><span class="tag effort">effort L</span><span class="tag care">risky</span></div>
+  <div class="bd">The residual gap to hand-written keccak is state living in ZkC RAM (memGet/memWrite per lane op). Promoting small fixed-extent memories to locals would close it — but memory contents are machine state that checkpoints must observe, so it needs flush-at-boundary semantics. Revisit after the checkpoint design exists; don't pre-empt it.</div></div>
+
+<h2><span class="n">07</span>Reproduce</h2>
+<pre><code># artefacts: generated Go (both shapes) + input files at 1/500/5k/50k blocks
+go run ./scratch/gogendump /tmp/gogen-perf
+
+# benchmarks as in the PR (wordmachine excluded)
+go test --timeout 0 -run XXX -bench 'BenchmarkZkcExecKeccakV2$/^(bytecode|gogen)$' -benchtime 3x ./pkg/test/
+go test --timeout 0 -run XXX -bench 'BenchmarkZkcExecKeccakV2Lowered/gogen' -benchtime 3x ./pkg/test/
+
+# instruction counts per shape (vectorised macro steps)
+go run ./scratch/gogendump steps</code></pre>
+
+<footer>
+  Branch <code>perf/gogen-bench-investigation</code> · measurements on Apple M5 Max, go 1.26.2, single run each unless noted ·
+  phase timings via an instrumented copy of the generated harness (stderr), profiles via <code>runtime/pprof</code> around <code>Run()</code>.
+</footer>
+
+</div>
+</body>
+</html>
