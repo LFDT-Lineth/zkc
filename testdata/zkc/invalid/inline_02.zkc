@@ -1,0 +1,7 @@
+//error:2:3-9:not permitted on constant declaration
+#[inline]
+const MAX:u16 = 255
+
+fn main() {
+    var x:u16 = MAX
+}

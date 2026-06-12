@@ -899,6 +899,20 @@ func Test_ZkcInvalid_Debug_05(t *testing.T) {
 }
 
 // ===================================================================
+// Inline Function Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Inline_01(t *testing.T) {
+	// #[inline] is only permitted on functions, not memory declarations.
+	checkZkcInvalid(t, "zkc/invalid/inline_01")
+}
+
+func Test_ZkcInvalid_Inline_02(t *testing.T) {
+	// #[inline] is only permitted on functions, not constant declarations.
+	checkZkcInvalid(t, "zkc/invalid/inline_02")
+}
+
+// ===================================================================
 // Test Helpers
 // ===================================================================
 
