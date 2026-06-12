@@ -19,6 +19,7 @@ import "github.com/LFDT-Lineth/zkc/pkg/util/field"
 // setters below.
 var DEFAULT_CONFIG = Config{
 	field:          field.KOALABEAR_16,
+	inlining:       true,
 	lowerZkcNative: false,
 	quiet:          false,
 	vectorize:      true,
@@ -34,6 +35,10 @@ type Config struct {
 	// a target field in order to correctly evaluate native expressions, and
 	// sanity check native initialisers, etc.
 	field field.Config
+	// inlining controls whether functions marked with the #[inline] annotation
+	// are inlined at their call sites (and removed).  This happens before
+	// native lowering and vectorisation.
+	inlining bool
 	// lower ZkC native functions (such as bitwise ops) into arithmetic instructions.
 	// This is required to generate arithmetic constraints. It happens before vectorization and register splitting.
 	lowerZkcNative bool
@@ -65,6 +70,17 @@ func (p Config) Field(field field.Config) Config {
 // GetField returns the specified field configuration.
 func (p Config) GetField() field.Config {
 	return p.field
+}
+
+// Inlining returns a copy of this Config in which function inlining is either
+// enabled (flag=true) or disabled (flag=false).  When enabled, functions
+// marked with the #[inline] annotation are inlined at their call sites.
+func (p Config) Inlining(flag bool) Config {
+	var q = p
+	//
+	q.inlining = flag
+	//
+	return q
 }
 
 // SplitRegisters returns a copy of this Config in which register splitting is
