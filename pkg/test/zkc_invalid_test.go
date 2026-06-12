@@ -906,6 +906,19 @@ func Test_ZkcInvalid_Main_01(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/main_01")
 }
 
+// Inline Function Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Inline_01(t *testing.T) {
+	// #[inline] is only permitted on functions, not memory declarations.
+	checkZkcInvalid(t, "zkc/invalid/inline_01")
+}
+
+func Test_ZkcInvalid_Inline_02(t *testing.T) {
+	// #[inline] is only permitted on functions, not constant declarations.
+	checkZkcInvalid(t, "zkc/invalid/inline_02")
+}
+
 // ===================================================================
 // Test Helpers
 // ===================================================================
