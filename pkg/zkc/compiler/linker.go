@@ -258,6 +258,10 @@ func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.Synta
 		ninsn = &stmt.Break[symbol.Resolved]{}
 	case *stmt.Continue[symbol.Unresolved]:
 		ninsn = &stmt.Continue[symbol.Resolved]{}
+	case *stmt.Cost[symbol.Unresolved]:
+		body, errs := p.linkStatement(s.Body)
+		ninsn = &stmt.Cost[symbol.Resolved]{Label: s.Label, Body: body}
+		errors = errs
 	case *stmt.Fail[symbol.Unresolved]:
 		var args []expr.Expr[symbol.Resolved]
 		//

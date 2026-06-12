@@ -100,7 +100,7 @@ func applyInstructionSemantics(worklist *Worklist, fn decl.ResolvedFunction, src
 	// Apply effect of instruction on state
 	state, errors = applyInstructionFlow(insn, state, fn, srcmaps)
 	// Propagate state along branches
-	switch insn := insn.(type) {
+	switch insn := stmt.UnwrapCost(insn).(type) {
 	case *stmt.Goto[symbol.Resolved]:
 		// Unconditional jump target
 		worklist.Join(insn.Target, state)

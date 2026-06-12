@@ -51,6 +51,8 @@ type Config struct {
 	vectorize bool
 	// splitting controls whether or not register splitting is enabled.
 	splitting bool
+	// costReport collects statement annotation costs when enabled.
+	costReport *CostReport
 }
 
 // Field sets the target field configuration to use for this compiler.
@@ -104,6 +106,16 @@ func (p Config) Quiet(flag bool) Config {
 	var q = p
 	//
 	q.quiet = flag
+	//
+	return q
+}
+
+// CostReport returns a copy of this Config which records generated WIR
+// micro-instruction counts for #[cost:label] statement annotations.
+func (p Config) CostReport(report *CostReport) Config {
+	var q = p
+	//
+	q.costReport = report
 	//
 	return q
 }

@@ -73,6 +73,16 @@ func lowerStatements(pc uint, stmts []stmt.Resolved, env *lowerEnv, srcmaps sour
 // lowerStatement lowers a single statement into a flat sequence.
 func lowerStatement(pc uint, s stmt.Resolved, env *lowerEnv, srcmaps source.Maps[any]) []stmt.Resolved {
 	switch t := s.(type) {
+	case *stmt.Cost[symbol.Resolved]:
+		lowered := lowerStatement(pc, t.Body, env, srcmaps)
+		annotated := make([]stmt.Resolved, len(lowered))
+
+		for i, s := range lowered {
+			annotated[i] = &stmt.Cost[symbol.Resolved]{Label: t.Label, Body: s}
+			srcmaps.Copy(t, annotated[i])
+		}
+
+		return annotated
 	case *stmt.IfElse[symbol.Resolved]:
 		return lowerIfElse(pc, t, env, srcmaps)
 	case *stmt.Switch[symbol.Resolved]:
@@ -103,6 +113,11 @@ func lowerStatementExprs(s stmt.Resolved, srcmaps source.Maps[any]) stmt.Resolve
 		return ns
 	case *stmt.Printf[symbol.Resolved]:
 		ns := &stmt.Printf[symbol.Resolved]{Chunks: t.Chunks, Arguments: lowerExprs(t.Arguments, srcmaps)}
+		srcmaps.Copy(s, ns)
+
+		return ns
+	case *stmt.Cost[symbol.Resolved]:
+		ns := &stmt.Cost[symbol.Resolved]{Label: t.Label, Body: lowerStatementExprs(t.Body, srcmaps)}
 		srcmaps.Copy(s, ns)
 
 		return ns
@@ -547,6 +562,8 @@ func flattenComparison(cond *expr.Cmp[symbol.Resolved], sign bool, target uint,
 // (Goto and IfGoto) with the given target PC.
 func patchBranches(label uint, insns []stmt.Resolved, target uint) {
 	for _, insn := range insns {
+		insn = stmt.UnwrapCost(insn)
+
 		if g, ok := insn.(*stmt.Goto[symbol.Resolved]); ok && g.Target == label {
 			g.Target = target
 		} else if g, ok := insn.(*stmt.IfGoto[symbol.Resolved]); ok && g.Target == label {
@@ -563,7 +580,7 @@ func branchTerminates(stmts []stmt.Resolved) bool {
 		return false
 	}
 
-	switch t := stmts[len(stmts)-1].(type) {
+	switch t := stmt.UnwrapCost(stmts[len(stmts)-1]).(type) {
 	case *stmt.Break[symbol.Resolved]:
 		return true
 	case *stmt.Continue[symbol.Resolved]:

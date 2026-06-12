@@ -93,7 +93,7 @@ func expandFixedArrays(
 	// remap the PC of the expanded code for
 	if len(pcMapping) > 0 {
 		for _, s := range expandedCode {
-			switch s := s.(type) {
+			switch s := stmt.UnwrapCost(s).(type) {
 			case *stmt.IfGoto[symbol.Resolved]:
 				s.Target = remapPC(s.Target, pcMapping)
 			case *stmt.Goto[symbol.Resolved]:
@@ -143,11 +143,13 @@ func expandFnCode(
 	var origPC uint
 	//
 	for _, s := range fn.Code {
-		switch s := s.(type) {
+		costLabels, inner := unwrapCostAnnotations(s)
+
+		switch s := inner.(type) {
 		case *stmt.Assign[symbol.Resolved]:
 			// Break whole-array assignments into per-element assignments if any
 			if expanded := expandWholeArrayAssign(s, varMapping, env); expanded != nil {
-				expandedCode = append(expandedCode, expanded...)
+				expandedCode = append(expandedCode, wrapCostAnnotationsAll(costLabels, expanded)...)
 
 				if expLength := uint(len(expanded)); expLength > 1 {
 					pcMapping = append(pcMapping, PcMapping{pivotPC: origPC, shift: expLength - 1})
@@ -169,7 +171,7 @@ func expandFnCode(
 			if cmp, ok := s.Cond.(*expr.Cmp[symbol.Resolved]); ok {
 				// Break whole-array equality/inequality: expand into per-element IfGotos.
 				if expanded := expandWholeArrayCmp(s, cmp, varMapping, origPC); expanded != nil {
-					expandedCode = append(expandedCode, expanded...)
+					expandedCode = append(expandedCode, wrapCostAnnotationsAll(costLabels, expanded)...)
 
 					if expLength := uint(len(expanded)); expLength > 1 {
 						pcMapping = append(pcMapping, PcMapping{pivotPC: origPC, shift: expLength - 1})
@@ -189,11 +191,46 @@ func expandFnCode(
 			}
 		}
 
-		expandedCode = append(expandedCode, s)
+		expandedCode = append(expandedCode, wrapCostAnnotations(costLabels, inner))
 		origPC++
 	}
 	//
 	return
+}
+
+func unwrapCostAnnotations(s stmt.Resolved) ([]string, stmt.Resolved) {
+	var labels []string
+
+	for {
+		cost, ok := s.(*stmt.Cost[symbol.Resolved])
+		if !ok {
+			return labels, s
+		}
+
+		labels = append(labels, cost.Label)
+		s = cost.Body
+	}
+}
+
+func wrapCostAnnotationsAll(labels []string, stmts []stmt.Resolved) []stmt.Resolved {
+	if len(labels) == 0 {
+		return stmts
+	}
+
+	wrapped := make([]stmt.Resolved, len(stmts))
+	for i, s := range stmts {
+		wrapped[i] = wrapCostAnnotations(labels, s)
+	}
+
+	return wrapped
+}
+
+func wrapCostAnnotations(labels []string, s stmt.Resolved) stmt.Resolved {
+	for i := len(labels) - 1; i >= 0; i-- {
+		s = &stmt.Cost[symbol.Resolved]{Label: labels[i], Body: s}
+	}
+
+	return s
 }
 
 func expandArrayExpression(e expr.Resolved, varMapping []VarMapping, env ast.Environment) expr.Resolved {
@@ -747,6 +784,10 @@ func (p *Rewriter) rewriteFixedArrayStmt(s stmt.Resolved) stmt.Resolved {
 		}
 
 		s.Source = p.rewriteArrayExpression(s.Source)
+
+		return s
+	case *stmt.Cost[symbol.Resolved]:
+		s.Body = p.rewriteFixedArrayStmt(s.Body)
 
 		return s
 	case *stmt.IfGoto[symbol.Resolved]:

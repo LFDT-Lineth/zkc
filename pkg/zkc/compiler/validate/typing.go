@@ -65,7 +65,13 @@ type VariableMap = variable.Map[symbol.Resolved]
 func Typing(program ast.Program, field field.Config, srcmaps source.Maps[any]) []source.SyntaxError {
 	var (
 		errors []source.SyntaxError
-		typer  = TypeChecker{program, field, program.Environment(), srcmaps}
+		typer  = TypeChecker{
+			program:    program,
+			field:      field,
+			env:        program.Environment(),
+			srcmaps:    srcmaps,
+			costLabels: make(map[string]costLabelSite),
+		}
 	)
 	// NOTE: finalising constants must be done first to ensure their expressions
 	// are given types.  Otherwise, finalising components could fail.
@@ -110,10 +116,17 @@ func Typing(program ast.Program, field field.Config, srcmaps source.Maps[any]) [
 
 // TypeChecker embodies information needed for type checking a given program.
 type TypeChecker struct {
-	program ast.Program
-	field   field.Config
-	env     ast.Environment
-	srcmaps source.Maps[any]
+	program    ast.Program
+	field      field.Config
+	env        ast.Environment
+	srcmaps    source.Maps[any]
+	costLabels map[string]costLabelSite
+}
+
+type costLabelSite struct {
+	filename string
+	start    int
+	end      int
 }
 
 func (p *TypeChecker) lookup(id symbol.Resolved) decl.Resolved {
@@ -202,6 +215,8 @@ func (p *TypeChecker) typeFunction(fn decl.ResolvedFunction) []source.SyntaxErro
 		switch s := s.(type) {
 		case *stmt.Assign[symbol.Resolved]:
 			errors = append(errors, p.typeAssignment(s, &fn, effects)...)
+		case *stmt.Cost[symbol.Resolved]:
+			errors = append(errors, p.typeFunctionStatement(s, &fn, effects)...)
 		case *stmt.Fail[symbol.Resolved]:
 			errors = append(errors, p.typeFormatArgs(s.Chunks, s.Arguments, &fn, effects)...)
 		case *stmt.IfGoto[symbol.Resolved]:
@@ -212,6 +227,48 @@ func (p *TypeChecker) typeFunction(fn decl.ResolvedFunction) []source.SyntaxErro
 	}
 	//
 	return errors
+}
+
+func (p *TypeChecker) typeFunctionStatement(s stmt.Resolved, fn *decl.ResolvedFunction, effects bit.Set,
+) []source.SyntaxError {
+	switch s := s.(type) {
+	case *stmt.Assign[symbol.Resolved]:
+		return p.typeAssignment(s, fn, effects)
+	case *stmt.Cost[symbol.Resolved]:
+		errors := p.typeCostLabel(s)
+		errors = append(errors, p.typeFunctionStatement(s.Body, fn, effects)...)
+
+		return errors
+	case *stmt.Fail[symbol.Resolved]:
+		return p.typeFormatArgs(s.Chunks, s.Arguments, fn, effects)
+	case *stmt.IfGoto[symbol.Resolved]:
+		return p.typeIfGoto(s, fn, effects)
+	case *stmt.Printf[symbol.Resolved]:
+		return p.typeFormatArgs(s.Chunks, s.Arguments, fn, effects)
+	default:
+		return nil
+	}
+}
+
+func (p *TypeChecker) typeCostLabel(s *stmt.Cost[symbol.Resolved]) []source.SyntaxError {
+	site := p.costLabelSite(s)
+
+	if previous, ok := p.costLabels[s.Label]; ok && previous != site {
+		return p.srcmaps.SyntaxErrors(s, fmt.Sprintf("duplicate cost label %q", s.Label))
+	}
+
+	p.costLabels[s.Label] = site
+
+	return nil
+}
+
+func (p *TypeChecker) costLabelSite(s *stmt.Cost[symbol.Resolved]) costLabelSite {
+	file, span, ok := p.srcmaps.Lookup(s)
+	if !ok {
+		panic(fmt.Sprintf("missing source mapping for cost label %q", s.Label))
+	}
+
+	return costLabelSite{file.Filename(), span.Start(), span.End()}
 }
 
 func (p *TypeChecker) typeMemory(c decl.ResolvedMemory) []source.SyntaxError {

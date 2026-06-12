@@ -18,16 +18,24 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 )
 
 // TraceObserver prints a trace
 type TraceObserver[W vm.Word[W]] struct {
+	CostReport *codegen.CostReport
+	depth      uint
+	fun        *vm.Function[vm.WordInstruction]
+	insn       vm.WordInstruction
+	pc         vm.ProgramCounter
+	activeCost []activeCostLabel
+}
+
+type activeCostLabel struct {
+	label string
 	depth uint
-	fun   *vm.Function[vm.WordInstruction]
-	insn  vm.Instruction
-	pc    vm.ProgramCounter
 }
 
 // Initialise implementation for Observer interface
@@ -42,6 +50,8 @@ func (p *TraceObserver[W]) PreExecution(machine *vm.WordMachine[W]) {
 	)
 	//
 	if n > 0 {
+		p.pruneCostLabels(n)
+
 		if n != p.depth {
 			fmt.Println()
 			p.enterFunction(machine)
@@ -50,6 +60,7 @@ func (p *TraceObserver[W]) PreExecution(machine *vm.WordMachine[W]) {
 		}
 		//
 		p.writeInstruction(machine)
+		p.recordCost(n)
 	}
 }
 
@@ -88,6 +99,37 @@ func (p *TraceObserver[W]) writeInstruction(machine *vm.WordMachine[W]) {
 	//
 	p.pc = pc
 	p.insn = vec.Codes[pc.Micro()]
+}
+
+func (p *TraceObserver[W]) pruneCostLabels(depth uint) {
+	for len(p.activeCost) > 0 && p.activeCost[len(p.activeCost)-1].depth > depth {
+		p.activeCost = p.activeCost[:len(p.activeCost)-1]
+	}
+}
+
+func (p *TraceObserver[W]) recordCost(depth uint) {
+	if p.CostReport == nil {
+		return
+	}
+
+	var labels []string
+
+	for _, active := range p.activeCost {
+		labels = append(labels, active.label)
+	}
+
+	direct := p.CostReport.LabelsOf(p.insn)
+	labels = append(labels, direct...)
+	p.CostReport.AddDynamic(labels...)
+
+	if _, ok := p.insn.(*instruction.Call); ok {
+		for _, label := range direct {
+			p.activeCost = append(p.activeCost, activeCostLabel{
+				label: label,
+				depth: depth + 1,
+			})
+		}
+	}
 }
 
 func (p *TraceObserver[W]) writeState(machine *vm.WordMachine[W]) {

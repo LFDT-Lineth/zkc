@@ -45,6 +45,10 @@ type StmtCompiler struct {
 	errors      []source.SyntaxError
 	// quiet suppresses printf output
 	quiet bool
+	// costReport records generated WIR micro-instruction counts for annotated statements.
+	costReport *CostReport
+	// function identifies the VM function currently being compiled.
+	function uint
 }
 
 func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorInstruction {
@@ -58,6 +62,13 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorI
 		// Configure pre/post instructions
 		insns = append(pre, insns...)
 		insns = append(insns, post...)
+	case *stmt.Cost[symbol.Resolved]:
+		vec := p.compileStatement(pc, mapping, s.Body)
+		if p.costReport != nil {
+			p.costReport.Add(s.Label, p.function, vec)
+		}
+
+		return vec
 	case *stmt.IfGoto[symbol.Resolved]:
 		return p.compileCondition(pc, s.Cond, mapping, s.Target)
 	case *stmt.Goto[symbol.Resolved]:
