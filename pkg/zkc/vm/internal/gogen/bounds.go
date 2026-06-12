@@ -38,8 +38,11 @@ type operand struct {
 }
 
 // exact constructs an operand with a generation-time known value (< 2^64).
+// The expression carries an explicit uint64 conversion: a bare literal in a
+// short variable declaration (`lo, hi := 1, uint64(0)`) would type as int and
+// break the bits.Add64/Sub64 chains it feeds.
 func exact(v *big.Int) operand {
-	return operand{expr: v.String(), max: v, val: v}
+	return operand{expr: "uint64(" + v.String() + ")", max: v, val: v}
 }
 
 // isZero reports whether the operand is the constant zero.

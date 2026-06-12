@@ -110,8 +110,7 @@ func BenchmarkZkcExecMicro(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				keccakByteSink = runKeccakCore(b, compileMicro(b, tc.src), inputs)
-				_ = wm
+				keccakByteSink = runKeccakCore(b, wm, inputs)
 			}
 		})
 

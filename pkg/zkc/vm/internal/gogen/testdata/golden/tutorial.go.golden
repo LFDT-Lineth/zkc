@@ -17,7 +17,7 @@ func fail(msg string) { panic(failure(msg)) }
 var mem_args []uint64   // input ROM "args"
 var mem_result []uint64 // output WOM "result"
 
-func memGrow(s []uint64, addr uint64, v uint64) []uint64 {
+func memWrite(s []uint64, addr uint64, v uint64) []uint64 {
 	if n := addr + 1; uint64(len(s)) < n {
 		s = slices.Grow(s, int(n)-len(s))[:n]
 	}
@@ -102,7 +102,7 @@ func fn_main() {
 	// [0.9] MEMORY_WRITE: result[$7] = $8
 	{
 		start := r7
-		mem_result = memGrow(mem_result, start+0, r8)
+		mem_result = memWrite(mem_result, start+0, r8)
 	}
 	// [0.10] INT_ADD: $9 = 0x1
 	r9 = 1
@@ -114,7 +114,7 @@ func fn_main() {
 	// [0.12] MEMORY_WRITE: result[$9] = $10
 	{
 		start := r9
-		mem_result = memGrow(mem_result, start+0, r10)
+		mem_result = memWrite(mem_result, start+0, r10)
 	}
 	// [0.13] INT_ADD: $11 = 0x2
 	r11 = 2
@@ -129,7 +129,7 @@ func fn_main() {
 	// [0.15] MEMORY_WRITE: result[$11] = $12
 	{
 		start := r11
-		mem_result = memGrow(mem_result, start+0, r12)
+		mem_result = memWrite(mem_result, start+0, r12)
 	}
 	// [0.16] RETURN: ret
 	return

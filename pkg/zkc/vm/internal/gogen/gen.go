@@ -389,7 +389,7 @@ func (g *generator) emitImports(c *code) {
 	if g.usesBits {
 		deps = append(deps, `"math/bits"`)
 	}
-	// memGrow (WOM/RAM) and paged.set both use slices.Grow.
+	// memWrite (WOM/RAM) and paged.set both use slices.Grow.
 	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.pageds) > 0 {
 		deps = append(deps, `"slices"`)
 	}
@@ -416,11 +416,11 @@ func (g *generator) emitImports(c *code) {
 // emitMemHelpers writes the grow-on-write / zero-on-miss helpers backing the
 // writable memories, each only when some memory of that kind exists.
 func (g *generator) emitMemHelpers(c *code) {
-	// memGrow backs both write-once (WOM) outputs and read-write (RAM) scratch:
+	// memWrite backs both write-once (WOM) outputs and read-write (RAM) scratch:
 	// it grows the slice to cover addr and stores v, matching the VM's
 	// grow-on-write memories.
 	if len(g.outputs) > 0 || len(g.rams) > 0 {
-		c.line("func memGrow(s []uint64, addr uint64, v uint64) []uint64 {")
+		c.line("func memWrite(s []uint64, addr uint64, v uint64) []uint64 {")
 		c.line("if n := addr + 1; uint64(len(s)) < n {")
 		c.line("s = slices.Grow(s, int(n)-len(s))[:n]")
 		c.line("}")

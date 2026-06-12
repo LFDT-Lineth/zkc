@@ -323,6 +323,23 @@ fn main() {
 }
 `
 
+// wideConstAddSrc mixes a bare constant into a u128 sum of casts: the emitted
+// literal must be uint64-typed, or the `lo, hi := 1, uint64(0)` accumulator
+// declaration types lo as int and the generated code does not compile
+// (PR #1860 review finding).
+const wideConstAddSrc = `pub input data(address:u8) -> (word:u64)
+pub output result(address:u8) -> (word:u64)
+fn add(x:u64, y:u64) -> (r:u64) {
+    var tmp:u64
+    tmp::r = (x as u128) + (y as u128) + 1
+    return
+}
+fn main() {
+    result[0] = add(data[0], data[1])
+    return
+}
+`
+
 // divMod64Src is u64 division: under the lowered shape this produces a
 // division HINT with u128 quotient/remainder targets and a u128 validation
 // multiply — the prover-shape pattern that needs both intervals and two-limb
@@ -407,24 +424,25 @@ var shapes = []struct {
 
 func TestGenValidGo(t *testing.T) {
 	srcs := map[string]string{
-		"tutorial":    tutorialSrc,
-		"destructure": destructSrc,
-		"branch":      branchSrc,
-		"loop":        loopSrc,
-		"double":      doubleSrc,
-		"call":        callSrc,
-		"callFail":    callFailSrc,
-		"recSum":      recSumSrc,
-		"bitwise":     bitwiseSrc,
-		"shift":       shiftSrc,
-		"concat":      concatSrc,
-		"endian":      endianSrc,
-		"carry":       carrySrc,
-		"divmod":      divModSrc,
-		"addw":        addwSrc,
-		"mulWide":     mulWideSrc,
-		"wideReg":     wideRegSrc,
-		"divmod64":    divMod64Src,
+		"tutorial":     tutorialSrc,
+		"destructure":  destructSrc,
+		"branch":       branchSrc,
+		"loop":         loopSrc,
+		"double":       doubleSrc,
+		"call":         callSrc,
+		"callFail":     callFailSrc,
+		"recSum":       recSumSrc,
+		"bitwise":      bitwiseSrc,
+		"shift":        shiftSrc,
+		"concat":       concatSrc,
+		"endian":       endianSrc,
+		"carry":        carrySrc,
+		"divmod":       divModSrc,
+		"addw":         addwSrc,
+		"mulWide":      mulWideSrc,
+		"wideReg":      wideRegSrc,
+		"wideConstAdd": wideConstAddSrc,
+		"divmod64":     divMod64Src,
 	}
 	for name, src := range srcs {
 		for _, shape := range shapes {
@@ -631,6 +649,16 @@ var diffCases = []diffCase{
 			{"data": {5, 7}},
 			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}},
 			{"data": {0xDEADBEEF, 0xCAFEBABE}},
+		},
+	},
+	{
+		name: "wideConstAdd", // bare constant inside a u128 sum (typed-literal regression)
+		src:  wideConstAddSrc,
+		vectors: []map[string][]uint64{
+			{"data": {0, 0}},                                   // r=1
+			{"data": {3, 4}},                                   // r=8
+			{"data": {0xFFFFFFFFFFFFFFFF, 0}},                  // sum=2^64 -> r=0, tmp=1
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}}, // sum=2^65-1 -> r=2^64-1
 		},
 	},
 	{

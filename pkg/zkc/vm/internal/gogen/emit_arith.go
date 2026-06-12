@@ -633,8 +633,8 @@ func exactWide(v *big.Int) operand {
 	}
 
 	return operand{
-		expr: bigLit(slice(v, 64)),
-		hi:   bigLit(new(big.Int).Rsh(v, 64)),
+		expr: "uint64(" + bigLit(slice(v, 64)) + ")",
+		hi:   "uint64(" + bigLit(new(big.Int).Rsh(v, 64)) + ")",
 		max:  v,
 		val:  v,
 	}

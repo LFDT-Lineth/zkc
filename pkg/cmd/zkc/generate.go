@@ -17,7 +17,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"path"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -35,9 +34,9 @@ var generateCmd = &cobra.Command{
 	Short: "generate native Go source from a zkc program.",
 	Long: `Compile a zkc program into native Go source exposing Run(inputs) (outputs, error):
 the generated-code alternative to interpreting the word machine ("fast execution mode").
-With --pkg main (or when writing to stdout) the artefact additionally carries a JSON
-stdin/stdout harness, so it can be built and run standalone; any other package name
-yields an importable package suitable for go:generate + ahead-of-time compilation.`,
+By default the artefact is a package main carrying a JSON stdin/stdout harness, so it
+can be built and run standalone; naming any other package via --pkg yields an
+importable package suitable for go:generate + ahead-of-time compilation.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runFieldAgnosticCmd(cmd, args, generateCmds)
 	},
@@ -71,7 +70,7 @@ func runGenerateCmd[F field.Element[F]](cmd *cobra.Command, args []string, field
 	wm := artifacts.wir.Unwrap()
 	//
 	src, err := vm.GenerateGo(&wm, vm.GoGenConfig{
-		Package: packageName(pkg, output),
+		Package: packageName(pkg),
 		Source:  sourceProvenance(args),
 	})
 	if err != nil {
@@ -95,34 +94,15 @@ func applyGenerateDefaults[F field.Element[F]](build *BuildConfig[F], quiet bool
 }
 
 // packageName determines the generated package name: the --pkg flag when set,
-// otherwise a name derived from the output filename, otherwise "main" (which
-// carries the standalone JSON harness).
-func packageName(pkg, output string) string {
+// otherwise "main" (which carries the standalone JSON harness).  Deriving a
+// name from the output filename proved surprising — `-o test.go` yielded an
+// unrunnable `package test` — so the importable case is always explicit.
+func packageName(pkg string) string {
 	if pkg != "" {
 		return pkg
 	}
 
-	if output == "" {
-		return "main"
-	}
-	// Derive a valid Go identifier from the output file's base name.
-	base := strings.TrimSuffix(path.Base(output), ".go")
-	mapped := strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			return r
-		case r >= 'A' && r <= 'Z':
-			return r + ('a' - 'A')
-		default:
-			return '_'
-		}
-	}, base)
-	//
-	if mapped == "" || (mapped[0] >= '0' && mapped[0] <= '9') {
-		mapped = "zkc_" + mapped
-	}
-	//
-	return mapped
+	return "main"
 }
 
 // sourceProvenance renders the input filenames plus a digest of their contents,
@@ -144,6 +124,6 @@ func sourceProvenance(args []string) string {
 func init() {
 	rootCmd.AddCommand(generateCmd)
 	generateCmd.Flags().StringP("output", "o", "", "specify output file for generated Go source (default stdout)")
-	generateCmd.Flags().String("pkg", "", "generated package name (default: derived from output filename, or main)")
+	generateCmd.Flags().String("pkg", "", "generated package name (default main, which carries the standalone harness)")
 	generateCmd.Flags().BoolP("quiet", "q", false, "suppress printf output in the generated program")
 }

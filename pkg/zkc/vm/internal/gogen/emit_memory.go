@@ -132,7 +132,7 @@ func (g *generator) emitMemWrite(c *code, fn *wordFunction, x *instruction.MemWr
 			if mi.role == pagedScratch {
 				c.linef("%s.set(start+%d, %s)", mi.varName, i, src.expr)
 			} else {
-				c.linef("%s = memGrow(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
+				c.linef("%s = memWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
 			}
 		}
 	})

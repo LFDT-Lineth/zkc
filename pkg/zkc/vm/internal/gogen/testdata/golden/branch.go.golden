@@ -17,7 +17,7 @@ func fail(msg string) { panic(failure(msg)) }
 var mem_data []uint64   // input ROM "data"
 var mem_result []uint64 // output WOM "result"
 
-func memGrow(s []uint64, addr uint64, v uint64) []uint64 {
+func memWrite(s []uint64, addr uint64, v uint64) []uint64 {
 	if n := addr + 1; uint64(len(s)) < n {
 		s = slices.Grow(s, int(n)-len(s))[:n]
 	}
@@ -70,7 +70,7 @@ func fn_main() {
 		goto L_0_6
 	}
 	// [0.4] INT_ADD: y = x + 0x1
-	r1 = 1 + r0
+	r1 = uint64(1) + r0
 	if r1 >= 1<<8 {
 		fail("bit overflow (value exceeds u8)")
 	}
@@ -79,7 +79,7 @@ func fn_main() {
 L_0_6:
 	// [0.6] INT_SUB: y = x - 0x1
 	{
-		v, borrow := bits.Sub64(r0, 1, 0)
+		v, borrow := bits.Sub64(r0, uint64(1), 0)
 		if borrow != 0 {
 			fail("arithmetic underflow")
 		}
@@ -93,7 +93,7 @@ L_0_7:
 	// [0.9] MEMORY_WRITE: result[$4] = $5
 	{
 		start := r4
-		mem_result = memGrow(mem_result, start+0, r5)
+		mem_result = memWrite(mem_result, start+0, r5)
 	}
 	// [0.10] RETURN: ret
 	return
