@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Commits
+
+Always commit with `git commit -s`: the project enforces the DCO (Developer
+Certificate of Origin), and the PR check fails on any commit missing a
+`Signed-off-by` trailer matching the author email.
+
 ## Commands
 
 ```shell
