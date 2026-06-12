@@ -708,6 +708,12 @@ func Test_ZkcUnit_Div_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_04", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
 }
 
+// Division by a divisor conditionally assigned different power-of-two constants;
+// must NOT be rewritten into a shift (regression guard for OptimizeDivisions).
+func Test_ZkcUnit_Div_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/div_05", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================
