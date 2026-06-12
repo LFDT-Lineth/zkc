@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -30,13 +31,23 @@ import (
 // which follow, hence module identifiers within Call / MemRead / MemWrite
 // instructions are remapped accordingly.
 //
-// Inlining a call site replaces the Call instruction with: copies of the
-// argument registers into fresh (caller-local) shadows of the callee's
-// registers; the callee's body operating on those shadows; and copies of the
-// shadowed output registers into the call's return registers.  Width checks
-// which previously occurred when entering / leaving the callee's stack frame
-// are preserved, since the shadow registers retain their declared widths and
-// register assignment performs the same dynamic check.
+// Inlining a call site replaces the Call instruction with the callee's body,
+// where every callee register is realised by a caller register.  Where
+// possible, callee inputs / outputs are aliased directly to the corresponding
+// argument / return registers of the call; otherwise, a fresh (caller-local)
+// shadow register is allocated, along with a copy of the argument register
+// into the shadowed input at entry (resp. of the shadowed output into the
+// return register at exit).  Such copies enforce the same dynamic width
+// checks as entering / leaving the callee's stack frame did, hence aliasing
+// additionally requires identically shaped registers (see buildShadowMap for
+// the exact conditions).
+//
+// Output aliasing assumes the callee never reads an output before assigning
+// it, and assigns every output before returning.  Both are guaranteed for
+// compiler-generated functions (see validate.ControlFlow); machines built by
+// other means which violate them may observe the return register's previous
+// value where a true call would have observed the callee's initial (zero)
+// output.
 //
 // This transform must be applied before vectorisation, since it splits the
 // vector containing a call at the call site.  It panics on: an unknown or
@@ -203,15 +214,16 @@ func inlineCallSite[W word.Word[W]](code []VectorInstruction, pc, k uint, call *
 	)
 	// Sanity check the call site can actually be split.
 	checkCallSite(codes, k, callee)
-	// Allocate fresh caller-local shadows of every callee register.
-	shadows := allocateShadows(callee, alloc)
+	// Map callee registers onto caller registers, aliasing inputs / outputs
+	// with the call's argument / return registers where possible (and
+	// allocating fresh shadows otherwise).
+	shadows := buildShadowMap(call, callee, alloc)
 	// Construct entry vector (argument copies)
-	vPre := buildEntryVector[W](codes[:k], call.Arguments, shadows[:callee.NumInputs()])
+	vPre := buildEntryVector[W](codes[:k], shadows.entryCopies)
 	// Construct callee body
-	body := buildInlinedBody[W](callee, shadows, pc+1, exitPC)
+	body := buildInlinedBody[W](callee, shadows.registers, pc+1, exitPC)
 	// Construct exit vector (output copies)
-	outputs := shadows[callee.NumInputs() : callee.NumInputs()+callee.NumOutputs()]
-	vPost := buildExitVector[W](codes[k+1:], call.Returns, outputs)
+	vPost := buildExitVector[W](codes[k+1:], shadows.exitCopies)
 	// Splice, remapping all jumps within original caller vectors (including
 	// v_pre / v_post, whose codes originate from vector pc).
 	ncode := make([]VectorInstruction, 0, uint(len(code))+delta)
@@ -261,22 +273,139 @@ func checkCallSite(codes []WordInstruction, k uint, callee *WordFunction) {
 	}
 }
 
-// allocateShadows allocates a fresh (computed) caller register shadowing each
-// callee register, preserving its declared width.
-func allocateShadows(callee *WordFunction, alloc RegisterAllocator) []register.Id {
-	var shadows = make([]register.Id, callee.Width())
+// shadowMap describes how callee registers are realised within the caller at
+// a given call site.  Every callee register maps to a caller register: either
+// the corresponding argument / return register of the call itself (where this
+// is provably equivalent), or a freshly allocated shadow (in which case a
+// corresponding entry / exit copy is recorded).
+type shadowMap struct {
+	// registers maps each callee register to its caller-local realisation.
+	registers []register.Id
+	// entryCopies records (shadowed input, argument) pairs to be copied on
+	// entry to the inlined body.
+	entryCopies []registerCopy
+	// exitCopies records (return register, shadowed output) pairs to be
+	// copied on exit from the inlined body.
+	exitCopies []registerCopy
+}
+
+// registerCopy records a register-to-register assignment.
+type registerCopy struct {
+	target, source register.Id
+}
+
+// buildShadowMap maps each callee register onto a caller register at a given
+// call site.  Wherever possible, inputs / outputs are aliased directly to the
+// call's argument / return registers, eliding the corresponding copy:
+//
+// An input can be aliased provided the callee never writes it (guaranteed for
+// compiler-generated functions, which cannot write parameters) since the
+// argument register then remains stable throughout the body.
+//
+// An output can be aliased provided its return register neither duplicates
+// another return register (returning from a stack frame is last-wins, whereas
+// direct writes would interleave), nor aliases an argument register which was
+// itself aliased (the body could then clobber that argument whilst still
+// reading it).
+//
+// In both cases, aliasing additionally requires the two registers to have
+// identical shape: the elided copy performed a dynamic width check, which is
+// vacuous exactly when the value already resides in a register of the same
+// width.  Anything which cannot be aliased (including all temporaries) gets a
+// fresh (computed) shadow register of the same shape.
+func buildShadowMap(call *instruction.Call, callee *WordFunction, alloc RegisterAllocator) shadowMap {
+	var (
+		shadows    = shadowMap{registers: make([]register.Id, callee.Width())}
+		written    = writtenRegisters(callee)
+		numInputs  = callee.NumInputs()
+		numOutputs = callee.NumOutputs()
+		callerRegs = alloc.Registers()
+		elidedArgs []register.Id
+	)
 	//
 	for i, r := range callee.Registers() {
+		var (
+			index = uint(i)
+			alias = register.UnusedId()
+		)
+		// Determine whether this register can be aliased.
+		if index < numInputs {
+			arg := call.Arguments[index]
+			//
+			if !written.Contains(index) && sameShape(callerRegs[arg.Unwrap()], r) {
+				alias = arg
+			}
+		} else if index < numInputs+numOutputs {
+			var (
+				j         = index - numInputs
+				ret       = call.Returns[j]
+				duplicate = slices.Contains(call.Returns[:j], ret) || slices.Contains(call.Returns[j+1:], ret)
+			)
+			//
+			if sameShape(callerRegs[ret.Unwrap()], r) && !duplicate && !slices.Contains(elidedArgs, ret) {
+				alias = ret
+			}
+		}
+		//
+		if alias.IsUsed() {
+			shadows.registers[i] = alias
+			//
+			if index < numInputs {
+				elidedArgs = append(elidedArgs, alias)
+			}
+			//
+			continue
+		}
+		// Allocate a fresh shadow of the same shape.
 		var width uint = math.MaxUint
 		//
 		if !r.IsNative() {
 			width = r.Width()
 		}
 		//
-		shadows[i] = alloc.Allocate(callee.Name()+"_"+r.Name(), width)
+		shadows.registers[i] = alloc.Allocate(callee.Name()+"_"+r.Name(), width)
+		// Record the corresponding entry / exit copy.
+		if index < numInputs {
+			shadows.entryCopies = append(shadows.entryCopies,
+				registerCopy{shadows.registers[i], call.Arguments[index]})
+		} else if j := index - numInputs; j < numOutputs {
+			// Where the same register receives several outputs, retain only
+			// the last copy (matching the last-wins semantics of returning
+			// from a stack frame) since sequential copies would conflict.
+			if !slices.Contains(call.Returns[j+1:], call.Returns[j]) {
+				shadows.exitCopies = append(shadows.exitCopies,
+					registerCopy{call.Returns[j], shadows.registers[i]})
+			}
+		}
 	}
 	//
 	return shadows
+}
+
+// writtenRegisters returns the set of registers written anywhere within the
+// body of a given function.
+func writtenRegisters(fn *WordFunction) bit.Set {
+	var written bit.Set
+	//
+	for _, v := range fn.Code() {
+		for _, insn := range v.Codes {
+			for _, r := range insn.Definitions() {
+				written.Insert(r.Unwrap())
+			}
+		}
+	}
+	//
+	return written
+}
+
+// sameShape checks whether two registers have identical shape, i.e. are both
+// native, or both have the same declared width.
+func sameShape(a, b register.Register) bool {
+	if a.IsNative() || b.IsNative() {
+		return a.IsNative() && b.IsNative()
+	}
+	//
+	return a.Width() == b.Width()
 }
 
 // buildEntryVector constructs the vector replacing the front portion of the
@@ -284,12 +413,11 @@ func allocateShadows(callee *WordFunction, alloc RegisterAllocator) []register.I
 // followed by copies of the argument registers into the shadowed callee
 // inputs.  Such copies enforce the same dynamic width checks as entering the
 // callee's stack frame did.
-func buildEntryVector[W word.Word[W]](codes []WordInstruction, args []register.Id, inputs []register.Id,
-) VectorInstruction {
+func buildEntryVector[W word.Word[W]](codes []WordInstruction, copies []registerCopy) VectorInstruction {
 	var ncodes = slices.Clone(codes)
 	//
-	for i, input := range inputs {
-		ncodes = append(ncodes, instruction.UintAssign[W](input, args[i]))
+	for _, c := range copies {
+		ncodes = append(ncodes, instruction.UintAssign[W](c.target, c.source))
 	}
 	// Vectors must be non-empty in order to execute.
 	if len(ncodes) == 0 {
@@ -301,21 +429,14 @@ func buildEntryVector[W word.Word[W]](codes []WordInstruction, args []register.I
 
 // buildExitVector constructs the vector replacing the back portion of the
 // vector enclosing the call site.  This copies the shadowed callee outputs
-// into the call's return registers, followed by all codes succeeding the call.
-// Placing the copies here (rather than at each return site within the body)
-// ensures they are emitted exactly once, and that this vector defines exactly
-// the registers the original call defined.
-func buildExitVector[W word.Word[W]](codes []WordInstruction, returns []register.Id, outputs []register.Id,
-) VectorInstruction {
+// into the call's return registers, followed by all codes succeeding the
+// call.  Placing the copies here (rather than at each return site within the
+// body) ensures they are emitted exactly once.
+func buildExitVector[W word.Word[W]](codes []WordInstruction, copies []registerCopy) VectorInstruction {
 	var ncodes []WordInstruction
 	//
-	for j, ret := range returns {
-		// Where the same register receives several outputs, retain only the
-		// last copy (matching the last-wins semantics of returning from a
-		// stack frame) since sequential copies would conflict.
-		if !slices.Contains(returns[j+1:], ret) {
-			ncodes = append(ncodes, instruction.UintAssign[W](ret, outputs[j]))
-		}
+	for _, c := range copies {
+		ncodes = append(ncodes, instruction.UintAssign[W](c.target, c.source))
 	}
 	//
 	ncodes = append(ncodes, codes...)
