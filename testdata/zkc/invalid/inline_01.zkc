@@ -1,0 +1,7 @@
+//error:2:3-9:not permitted on memory declaration
+#[inline]
+pub input data(address:u16) -> (byte:u8)
+
+fn main() {
+    var x:u8 = data[0]
+}

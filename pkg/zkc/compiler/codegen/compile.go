@@ -95,6 +95,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		modules []vm.Module
 		mapping = make([]uint, len(declarations))
 		index   = uint(0)
+		inlines []string
 		errors  []source.SyntaxError
 	)
 	// Construct the mapping from ast declaration identifiers to vm module
@@ -125,6 +126,10 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			fn, errs := p.compileFunction(uint(i), mapping, declarations)
 			modules = append(modules, fn)
 			errors = append(errors, errs...)
+			// Record functions to be inlined (see below).
+			if slices.Contains(c.Annotations(), "inline") {
+				inlines = append(inlines, c.Name())
+			}
 		case *decl.ResolvedInclude:
 			// ignore
 		case *decl.ResolvedMemory:
@@ -158,6 +163,13 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		default:
 			panic(fmt.Sprintf("unknown declaration %s", c.Name()))
 		}
+	}
+	// Inline all functions marked with the #[inline] annotation.  This must
+	// happen before native lowering and vectorisation, both of which splice
+	// instruction sequences into vectors and would thereby break the
+	// invariant that no skip crosses over a call within its vector.
+	if len(errors) == 0 && p.config.inlining && len(inlines) > 0 {
+		modules = vm.InlineFunctions[vm.Uint](modules, inlines)
 	}
 	// Lower VM-level zkc-native instructions into arithmetic instructions.
 	if len(errors) == 0 && p.config.lowerZkcNative {

@@ -1,0 +1,10 @@
+//error:4:1-21:cannot inline native function
+#[native]
+#[inline]
+fn f(x:u8) -> (r:u8) {
+    r = x
+}
+
+fn main() {
+    var x:u8 = f(0)
+}

@@ -1,0 +1,15 @@
+//error:4:1-21:cannot inline recursive function
+//error:9:1-21:cannot inline recursive function
+#[inline]
+fn f(x:u8) -> (r:u8) {
+    r = g(x)
+}
+
+#[inline]
+fn g(x:u8) -> (r:u8) {
+    r = f(x)
+}
+
+fn main() {
+    var x:u8 = f(3)
+}

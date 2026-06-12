@@ -1,0 +1,5 @@
+//error:3:1-10:cannot inline entry function
+#[inline]
+fn main() {
+    var x:u8 = 0
+}
