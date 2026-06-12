@@ -107,7 +107,7 @@
     <span class="pill">gogen</span>
     <span class="pill purple">PR #1860 benchmark audit</span>
     <span class="pill pink">Apple M5 Max · go1.26</span>
-    <span class="pill warn">June 12, 2026 · rev 2: instruction metrics + workload sweep</span>
+    <span class="pill warn">June 12, 2026 · rev 3: instruction metrics + workload sweep + x86 preview</span>
   </div>
   <h1>The benchmark is honest — the table is misleading</h1>
   <p class="sub">A forensic pass over <code>BenchmarkZkcExecKeccakV2*</code>: every surprising delta has a
@@ -423,7 +423,39 @@ sharding the faithful re-execution across checkpoints) are worth more than micro
 A worked check of the formula: keccak-50k plain = 1.167 B / 9.8 G = 119 ms — exactly the measured run time.
 </div>
 
-<h2><span class="n">11</span>Reproduce</h2>
+<h2><span class="n">11</span>x86 production preview — c8a.8xlarge (Zen 5)</h2>
+<p><span class="pill warn">partial data — run stopped early</span></p>
+<p>A first pass on the production target (AWS c8a.8xlarge, AMD Zen 5) got through the keccak <em>plain</em>
+cells before being stopped (the wordmachine-lowered cell alone is minutes per iteration). The pattern is
+already consistent — <b>single-core x86 is 25–35% slower than the M5 Max dev machine, across every tier</b>:</p>
+
+<table>
+  <tr><th>keccak · plain · 50k blocks</th><th class="num">M5 Max</th><th class="num">c8a (Zen 5)</th><th class="num">x86 / Mac</th></tr>
+  <tr><td>wordmachine-u64</td><td class="num">24.2 s · 48 Minstr/s</td><td class="num">36.2 s · 32.3 Minstr/s</td><td class="num">0.67×</td></tr>
+  <tr><td>bytecode</td><td class="num">15.1 s · 77.5 Minstr/s</td><td class="num">20.1 s · 58.0 Minstr/s</td><td class="num">0.75×</td></tr>
+  <tr class="hl"><td>gogen (e2e)</td><td class="num">216 ms · 5,401 Minstr/s</td><td class="num">~270 ms · 4,320 Minstr/s</td><td class="num">0.80×</td></tr>
+</table>
+
+<p>Notably the gap <em>shrinks</em> as the tier gets faster (0.67× → 0.80×): interpreter dispatch leans on
+single-thread latency where Apple's core is strongest, while gogen's straight-line generated code ports better.
+Extrapolating the unmeasured cells with the per-tier ratios (gogen ×0.8, interpreters ×0.7): gogen lowered
+≈ <b>8.5–9 Ginstr/s</b>, wordmachine-Uint lowered ≈ <b>16 Minstr/s</b> on this box.</p>
+
+<div class="callout bad">
+<b>⚠ Production forecast (preliminary).</b> Re-running the §10 EVM-block scenario (35 B plain-shape
+micro-instructions) on c8a single-core: <b>gogen ~4.5–8 s plain</b> (pure-execution vs end-to-end harness),
+bytecode <b>~10 min</b>, Uint interpreter <b>~30+ min</b>. On the prover shape at blowup M=30:
+gogen <b>~2 min</b>, Uint interpreter <b>~18 h</b>; at keccak-like M=170: gogen <b>~12 min</b>, interpreter
+<b>~4+ days</b>. Three caveats before treating these as the plan of record:
+(1) data is partial — lowered cells and the sweep were extrapolated, not measured;
+(2) the x86-only levers are still unmeasured — PGO (2.05× on Mac lowered), <code>GOAMD64=v3/v4</code>
+(Zen 5 has AVX-512) and bounds-check flags could claw back much of the 0.8× gap;
+(3) every executor here is <b>single-threaded</b> — the c8a.8xlarge's other 31 vCPUs are idle. The forecast
+that actually matters is per-shard: the checkpoint/sharded-tracer design (§06, item 6) is what turns
+“gogen ~12 min single-core” into “~25 s across 32 shards”, and these per-core rates are its sizing input.
+</div>
+
+<h2><span class="n">12</span>Reproduce</h2>
 <pre><code># artefacts: generated Go (both shapes) + input files at 1/500/5k/50k blocks
 go run ./scratch/gogendump artifacts /tmp/gogen-perf
 
