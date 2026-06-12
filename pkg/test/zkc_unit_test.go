@@ -215,15 +215,15 @@ func Test_ZkcUnit_Basic_43(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_44(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNIT_CONFIG.Bytecode(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_45(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.Bytecode(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_46(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.Bytecode(false).Constraints(false))
 }
 
 // ===================================================================
@@ -888,5 +888,5 @@ func Test_ZkcUnit_SkipIf_05(t *testing.T) {
 // ===================================================================
 
 func checkZkcUnit(t *testing.T, test string, config util.Config) {
-	util.CheckValid(t, test, "zkc", config.Bytecode(true))
+	util.CheckValid(t, test, "zkc", config)
 }

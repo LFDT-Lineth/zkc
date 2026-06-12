@@ -80,6 +80,11 @@ func (p Uint64) Div(w Uint64) Uint64 {
 	return Uint64{p.value / w.value}
 }
 
+// DwMul implementation for Word interface.
+func (p Uint64) DwMul(w Uint64) (lo, hi Uint64) {
+	panic("todo")
+}
+
 // FitsWithin implementation for Word interface.
 func (p Uint64) FitsWithin(bitwidth uint) bool {
 	if bitwidth >= 64 {

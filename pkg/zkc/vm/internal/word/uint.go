@@ -59,16 +59,9 @@ func (p Uint) Bandwidth() uint {
 	return math.MaxUint
 }
 
-// Div implementation for Word interface.
-func (p Uint) Div(w Uint) Uint {
-	if w.value.Sign() == 0 {
-		panic("division by zero")
-	}
-	//
-	var res big.Int
-	res.Div(&p.value, &w.value)
-	//
-	return Uint{res}
+// BigInt implementation for Word interface.
+func (p Uint) BigInt() *big.Int {
+	return &p.value
 }
 
 // Cmp implementation for Word interface.
@@ -85,9 +78,30 @@ func (p Uint) Cmp64(o uint64) int {
 	return 1
 }
 
-// BigInt implementation for Word interface.
-func (p Uint) BigInt() *big.Int {
-	return &p.value
+// Div implementation for Word interface.
+func (p Uint) Div(w Uint) Uint {
+	if w.value.Sign() == 0 {
+		panic("division by zero")
+	}
+	//
+	var res big.Int
+	res.Div(&p.value, &w.value)
+	//
+	return Uint{res}
+}
+
+// DwMul implementation for Word interface.
+func (p Uint) DwMul(w Uint) (lo, hi Uint) {
+	panic("todo")
+}
+
+// DwShr64 implementation for Word interface.
+func (p Uint) DwShr64(w Uint, n uint64) (lo, hi Uint) {
+	lo = p.Shr64(n)
+	hi = w.Shr64(n)
+	lo = lo.Or(w.Slice(uint(n)))
+	//
+	return lo, hi
 }
 
 // FitsWithin implementation for Word interface.
@@ -184,15 +198,6 @@ func (p Uint) Shr64(n uint64) Uint {
 	val.Rsh(&p.value, uint(n))
 	//
 	return Uint{val}
-}
-
-// DwShr64 implementation for Word interface.
-func (p Uint) DwShr64(w Uint, n uint64) (lo, hi Uint) {
-	lo = p.Shr64(n)
-	hi = w.Shr64(n)
-	lo = lo.Or(w.Slice(uint(n)))
-	//
-	return lo, hi
 }
 
 // Slice implementation for Word interface.
