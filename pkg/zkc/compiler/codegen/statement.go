@@ -274,7 +274,7 @@ func (p *StmtCompiler) compileExpr(e Expr, bitwidth uint, mapping []uint, target
 			return p.compileIntAdd(e.Exprs, bitwidth, mapping, targets)
 		}
 	case *expr.Cast[symbol.Resolved]:
-		return p.compileRootExpr(e.Expr, mapping, targets)
+		return p.compileCast(e, bitwidth, mapping, targets)
 	case *expr.Concat[symbol.Resolved]:
 		return p.compileConcat(e.Exprs, bitwidth, mapping, targets)
 	case *expr.BitwiseAnd[symbol.Resolved]:
@@ -445,6 +445,22 @@ func (p *StmtCompiler) compileTupleInitialiser(e *expr.TupleInitialiser[symbol.R
 	return insns
 }
 
+func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth uint, mapping []uint,
+	targets register.Vector) []Instruction {
+	//
+	var e_bitwidth uint
+	//
+	if e.Expr.Type().AsField(p.environment) == nil {
+		//
+		if e_bitwidth, _ = data.BitWidthOf(e.Expr.Type(), p.environment); e_bitwidth <= bitwidth {
+			// upcast
+			return p.compileExpr(e.Expr, e_bitwidth, mapping, targets)
+		}
+	}
+	// down cast (of some kind).
+	return p.compileRootExpr(e.Expr, mapping, targets)
+}
+
 func (p *StmtCompiler) compileIntConst(c vm.Uint, _ []uint, target register.Vector,
 ) []Instruction {
 	//
@@ -474,16 +490,13 @@ func (p *StmtCompiler) compileIntAdd(args []Expr, bitwidth uint, mapping []uint,
 	var (
 		constant vm.Uint
 		nargs    []Expr
-		w        vm.Uint
 	)
 	//
 	for _, e := range args {
 		var overflow bool
 		//
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant, overflow = constant.Add(w.SetBigInt(c.Constant()))
-		} else if p.isConstantAccess(e) {
-			constant, overflow = constant.Add(p.evalConstant(e))
+		if c, ok := p.asConstant(e); ok {
+			constant, overflow = constant.Add(c)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -504,17 +517,14 @@ func (p *StmtCompiler) compileFieldAdd(args []Expr, mapping []uint, target regis
 	var (
 		constant vm.Uint
 		nargs    []Expr
-		w        vm.Uint
 		modulus  vm.Uint
 	)
 	//
 	modulus = modulus.SetBigInt(p.field.Modulus())
 	//
 	for _, e := range args {
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant = constant.AddMod(w.SetBigInt(c.Constant()), modulus)
-		} else if p.isConstantAccess(e) {
-			constant = constant.AddMod(p.evalConstant(e), modulus)
+		if c, ok := p.asConstant(e); ok {
+			constant = constant.AddMod(c, modulus)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -575,16 +585,13 @@ func (p *StmtCompiler) compileIntMul(args []Expr, bitwidth uint, mapping []uint,
 	var (
 		constant vm.Uint = vm.Const64[vm.Uint](1)
 		nargs    []Expr
-		w        vm.Uint
 	)
 	//
 	for _, e := range args {
 		var overflow bool
 		//
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant, overflow = constant.Mul(w.SetBigInt(c.Constant()))
-		} else if p.isConstantAccess(e) {
-			constant, overflow = constant.Mul(p.evalConstant(e))
+		if c, ok := p.asConstant(e); ok {
+			constant, overflow = constant.Mul(c)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -604,18 +611,16 @@ func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target regis
 ) []Instruction {
 	//
 	var (
-		constant   vm.Uint = vm.Const64[vm.Uint](1)
-		nargs      []Expr
-		w, modulus vm.Uint
+		constant vm.Uint = vm.Const64[vm.Uint](1)
+		nargs    []Expr
+		modulus  vm.Uint
 	)
 	//
 	modulus = modulus.SetBigInt(p.field.Modulus())
 	//
 	for _, e := range args {
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant = constant.MulMod(w.SetBigInt(c.Constant()), modulus)
-		} else if p.isConstantAccess(e) {
-			constant = constant.MulMod(p.evalConstant(e), modulus)
+		if c, ok := p.asConstant(e); ok {
+			constant = constant.MulMod(c, modulus)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -734,16 +739,13 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 	var (
 		constant vm.Uint
 		nargs    []Expr
-		w        vm.Uint
 	)
 	//
 	for i, e := range args {
 		var overflow bool
 
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok && i > 0 {
-			constant, overflow = constant.Add(w.SetBigInt(c.Constant()))
-		} else if p.isConstantAccess(e) && i > 0 {
-			constant, overflow = constant.Add(p.evalConstant(e))
+		if c, ok := p.asConstant(e); ok && i > 0 {
+			constant, overflow = constant.Add(c)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -763,18 +765,16 @@ func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target regis
 ) []Instruction {
 	//
 	var (
-		constant   vm.Uint
-		nargs      []Expr
-		w, modulus vm.Uint
+		constant vm.Uint
+		nargs    []Expr
+		modulus  vm.Uint
 	)
 	//
 	modulus = modulus.SetBigInt(p.field.Modulus())
 	//
 	for i, e := range args {
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok && i > 0 {
-			constant = constant.AddMod(w.SetBigInt(c.Constant()), modulus)
-		} else if p.isConstantAccess(e) && i > 0 {
-			constant = constant.AddMod(p.evalConstant(e), modulus)
+		if c, ok := p.asConstant(e); ok && i > 0 {
+			constant = constant.AddMod(c, modulus)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -849,7 +849,7 @@ func (p *StmtCompiler) compileUniformArgs(bitwidth uint, mapping []uint, exprs .
 	//
 	for i, e := range exprs {
 		//
-		if r, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
+		if r, ok := p.asLocalAccess(e); ok {
 			targets[i] = register.NewId(r.Variable)
 		} else {
 			// Allocate temporary variable
@@ -870,7 +870,7 @@ func (p *StmtCompiler) compileNonUniformArgs(mapping []uint, exprs ...Expr) ([]r
 	//
 	for i, e := range exprs {
 		//
-		if r, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
+		if r, ok := p.asLocalAccess(e); ok {
 			targets[i] = register.NewId(r.Variable)
 		} else {
 			var bitwidth uint
@@ -937,6 +937,28 @@ func (p *StmtCompiler) bitwidthOf(target register.Vector) uint {
 	}
 	//
 	return bitwidth
+}
+
+func (p *StmtCompiler) asConstant(e Expr) (vm.Uint, bool) {
+	var w vm.Uint
+	//
+	if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
+		return w.SetBigInt(c.Constant()), true
+	} else if p.isConstantAccess(e) {
+		return p.evalConstant(e), true
+	}
+	//
+	return w, false
+}
+
+func (p *StmtCompiler) asLocalAccess(e Expr) (*expr.LocalAccess[symbol.Resolved], bool) {
+	if c, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
+		return c, true
+	} else if c, ok := e.(*expr.Cast[symbol.Resolved]); ok {
+		return p.asLocalAccess(c.Expr)
+	}
+	//
+	return nil, false
 }
 
 func (p *StmtCompiler) isConstantAccess(e Expr) bool {

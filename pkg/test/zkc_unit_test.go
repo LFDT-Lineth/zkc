@@ -214,6 +214,10 @@ func Test_ZkcUnit_Basic_43(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_43", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
+func Test_ZkcUnit_Basic_44(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
 // ===================================================================
 // If-Else-If Tests
 // ===================================================================
