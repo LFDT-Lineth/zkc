@@ -702,6 +702,12 @@ func Test_ZkcUnit_Div_03(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_03", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
 }
 
+// Division by a constant power of two (optimised into a right shift in fast
+// mode; see OptimizeDivisions).
+func Test_ZkcUnit_Div_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/div_04", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================
@@ -716,6 +722,12 @@ func Test_ZkcUnit_Rem_02(t *testing.T) {
 
 func Test_ZkcUnit_Rem_03(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/rem_03", DEFAULT_UNIT_CONFIG)
+}
+
+// Remainder by a constant power of two (optimised into a bitwise AND in fast
+// mode; see OptimizeDivisions).
+func Test_ZkcUnit_Rem_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/rem_04", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
 }
 
 // ===================================================================

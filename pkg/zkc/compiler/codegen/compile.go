@@ -169,6 +169,12 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		// Must run after LowerBitwise and LowerDivisions, which may generate new relational SkipIf instructions.
 		modules = vm.LowerComparisons[vm.Uint](modules)
 	}
+	// Fast mode optimisation compiler passes
+	if len(errors) == 0 && !p.config.lowerZkcNative {
+		// Turn division / remainder by 2^m into right shifts / bitwise ANDs.
+		modules = vm.OptimizeDivisions[vm.Uint](modules)
+	}
+
 	// Vectorize modules (if no errors)
 	if len(errors) == 0 && p.config.vectorize {
 		Vectorize(modules, p.srcmaps)

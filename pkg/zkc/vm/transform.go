@@ -68,6 +68,13 @@ func LowerDivisions[W word.Word[W]](modules []Module) []Module {
 	return transform.LowerDivisions[W](modules)
 }
 
+// OptimizeDivisions is a fast-mode optimization which rewrites division by
+// powers of 2 into right shifts, and remainder by powers of 2 into bitwise
+// ANDs.
+func OptimizeDivisions[W word.Word[W]](modules []Module) []Module {
+	return transform.OptimizeDivisions[W](modules)
+}
+
 // SplitRegisters all modules to meet a given bandwidth and maximum register width.
 // This will split all registers wider than the maximum permitted width into two
 // or more "limbs" (i.e. subregisters which do not exceeded the permitted
