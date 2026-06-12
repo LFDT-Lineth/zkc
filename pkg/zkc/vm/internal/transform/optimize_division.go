@@ -14,7 +14,6 @@ package transform
 
 import (
 	"math/big"
-	"math/bits"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
@@ -26,11 +25,18 @@ import (
 // OptimizeDivisions is a fast mode optimization that rewrites integer divisions and remainders by a constant
 // power-of-two divisor into a (logical) right shift and a bitwise AND respectively.  That is, instructions of the form
 //
-//	q = x / 2^k => q = x >> k
-//	r = x % 2^k => r = x & (2^k - 1)
+//	$4 = 0x2^k ; q = x / $4   =>   $4 = 0xk ; q = x >> $4
+//	$5 = 0x2^k ; r = x % $5   =>   $5 = 0x2^k-1 ; r = x & $5
 //
-// Divisions/remainders whose divisor is not a statically-known power of two are
-// left unchanged.
+// Because each instruction maps to exactly one instruction, no register is left
+// dead and the instruction count is unchanged (so branch / skip offsets are
+// unaffected).
+//
+// To stay sound, a divisor register is only repurposed when it holds a single
+// statically-known power-of-two constant and is read exactly once (i.e. only by
+// this division / remainder); otherwise — including the case where a divisor
+// constant is bound to a variable and shared across instructions — the operation
+// is left unchanged.
 //
 // Note: we could apply more optimization here like:
 // - deal with generic constants
@@ -48,95 +54,139 @@ func OptimizeDivisions[W word.Word[W]](modules []Module) []Module {
 }
 
 func optimizeDivisionFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
+	// Determine which divisor registers can be repurposed, mapping each to the new
+	// constant value its load should hold (k for division, 2^k - 1 for remainder).
+	reloads := planDivisionReloads[W](fn)
+	//
+	if len(reloads) == 0 {
+		// Nothing to optimize.
+		return fn
+	}
+	//
 	var (
 		code  = fn.Code()
 		ncode = make([]VectorInstruction, len(code))
-		alloc = register.NewAllocator[int](fn.RegisterMap())
-		// constants tracks, for each register known to hold a statically-known
-		// constant, the value it holds.  Keyed by raw register index.
-		constants = make(map[uint]W)
 	)
-
-	for i, insn := range code {
-		ncode[i] = insn.Map(func(_ uint, ith WordInstruction) []WordInstruction {
-			return optimizeDivisionCode[W](ith, alloc, constants)
+	//
+	for i, vec := range code {
+		ncode[i] = vec.Map(func(_ uint, insn WordInstruction) []WordInstruction {
+			return rewriteDivisionInsn[W](insn, reloads)
 		})
 	}
-
-	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
+	// Registers are reused in place, so the register set is unchanged.
+	return function.New(fn.Name(), fn.IsNative(), fn.Registers(), ncode)
 }
 
-// optimizeDivisionCode rewrites a single instruction, replacing divisions and
-// remainders by a constant power-of-two divisor with an equivalent right shift
-// or bitwise AND respectively.  It also maintains the running map of registers
-// known to hold constant values so that divisor registers can be recognised.
-func optimizeDivisionCode[W word.Word[W]](
-	code WordInstruction,
-	registers RegisterAllocator,
-	constants map[uint]W,
-) []WordInstruction {
-	result := []WordInstruction{code}
+// planDivisionReloads scans a function and returns, for each divisor register
+// that can be repurposed, the new constant value its load should hold: the shift
+// amount (k) for a division by 2^k, or the mask (2^k - 1) for a remainder by
+// 2^k.  A register qualifies only when it holds a single statically-known
+// power-of-two constant and is read exactly once.
+func planDivisionReloads[W word.Word[W]](fn *WordFunction) map[uint]W {
+	var (
+		defs     = make(map[uint]int)
+		uses     = make(map[uint]int)
+		constVal = make(map[uint]W)
+		hasConst = make(map[uint]bool)
+	)
+	// First, gather definition / use counts and record constant loads.
+	for _, vec := range fn.Code() {
+		for _, insn := range vec.Codes {
+			for _, r := range insn.Uses() {
+				uses[r.Unwrap()]++
+			}
+			//
+			for _, r := range insn.Definitions() {
+				defs[r.Unwrap()]++
+			}
+			//
+			if r, c, ok := asConstantLoad[W](insn); ok {
+				constVal[r.Unwrap()] = c
+				hasConst[r.Unwrap()] = true
+			}
+		}
+	}
+	// Second, decide which divisor registers to repurpose.
+	reloads := make(map[uint]W)
 	//
-	switch code.OpCode() {
+	for _, vec := range fn.Code() {
+		for _, insn := range vec.Codes {
+			op := insn.OpCode()
+			//
+			if op != opcode.INT_DIV && op != opcode.INT_REM {
+				continue
+			}
+			//
+			r := insn.(*instruction.WordTypeB).RightSource.Unwrap()
+			// The divisor must hold a single statically-known power-of-two constant
+			// and be read exactly once, so repurposing its value affects nothing else.
+			if defs[r] != 1 || uses[r] != 1 || !hasConst[r] {
+				continue
+			}
+			//
+			k, ok := powerOfTwoExponent[W](constVal[r])
+			if !ok {
+				continue
+			}
+			//
+			if op == opcode.INT_DIV {
+				// x / 2^k == x >> k: the divisor register becomes the shift amount.
+				reloads[r] = word.Const64[W](uint64(k))
+			} else {
+				// x % 2^k == x & (2^k - 1): the divisor register becomes the mask.
+				reloads[r], _ = constVal[r].Sub(word.Const64[W](1))
+			}
+		}
+	}
+	//
+	return reloads
+}
+
+// rewriteDivisionInsn rewrites a single instruction according to the reload
+// plan: a repurposed divisor's constant load is updated to hold the shift amount
+// / mask, and the division / remainder over that register becomes a right shift
+// / bitwise AND.  Each instruction maps to exactly one instruction.
+func rewriteDivisionInsn[W word.Word[W]](insn WordInstruction, reloads map[uint]W) []WordInstruction {
+	switch insn.OpCode() {
+	case opcode.INT_ADD:
+		// Repurpose a divisor's constant load to hold the shift amount / mask.
+		if r, _, ok := asConstantLoad[W](insn); ok {
+			if v, ok := reloads[r.Unwrap()]; ok {
+				return []WordInstruction{instruction.UintConst(r, v)}
+			}
+		}
 	case opcode.INT_DIV:
-		insn := code.(*instruction.WordTypeB)
-		// Rewrite x / 2^k into x >> k.
-		if k, ok := constantPowerOfTwo[W](insn.RightSource, constants); ok {
-			// amt holds the shift amount (k); allocate a register wide enough to
-			// hold it and load the constant into it.
-			amt := registers.Allocate("", shiftAmountWidth(k))
-			result = []WordInstruction{
-				instruction.UintConst(amt, word.Const64[W](uint64(k))),
-				instruction.BitShr(insn.Bitwidth, insn.Target, insn.LeftSource, amt),
+		insn := insn.(*instruction.WordTypeB)
+		if _, ok := reloads[insn.RightSource.Unwrap()]; ok {
+			return []WordInstruction{
+				instruction.BitShr(insn.Bitwidth, insn.Target, insn.LeftSource, insn.RightSource),
 			}
 		}
 	case opcode.INT_REM:
-		insn := code.(*instruction.WordTypeB)
-		// Rewrite x % 2^k into x & (2^k - 1).  The mask 2^k - 1 is simply the
-		// divisor constant (2^k) minus one, and fits in exactly k bits.
-		if k, ok := constantPowerOfTwo[W](insn.RightSource, constants); ok {
-			mask := registers.Allocate("", k)
-			maskVal, _ := constants[insn.RightSource.Unwrap()].Sub(word.Const64[W](1))
-			result = []WordInstruction{
-				instruction.UintConst(mask, maskVal),
-				instruction.BitAnd(insn.Bitwidth, insn.Target, insn.LeftSource, mask),
+		insn := insn.(*instruction.WordTypeB)
+		if _, ok := reloads[insn.RightSource.Unwrap()]; ok {
+			return []WordInstruction{
+				instruction.BitAnd(insn.Bitwidth, insn.Target, insn.LeftSource, insn.RightSource),
 			}
 		}
 	}
-	// Update constant tracking based on this instruction's definitions.  This
-	// must happen after the rewrite above so a division reads the divisor's
-	// value rather than its own (clobbered) target.
-	updateConstants[W](code, constants)
 	//
-	return result
+	return []WordInstruction{insn}
 }
 
-// constantPowerOfTwo returns k such that the given register is known to hold the
-// constant 2^k, together with a flag indicating whether this is the case.
-func constantPowerOfTwo[W word.Word[W]](rid register.Id, constants map[uint]W) (uint, bool) {
-	if c, ok := constants[rid.Unwrap()]; ok {
-		return powerOfTwoExponent[W](c)
-	}
-	//
-	return 0, false
-}
-
-// updateConstants records (or invalidates) the constant value held by each
-// register defined by the given instruction.  A pure constant load (an integer
-// addition with no source registers, e.g. as emitted for a constant literal)
-// records its value; any other definition invalidates the target.
-func updateConstants[W word.Word[W]](code WordInstruction, constants map[uint]W) {
-	if a, ok := code.(*instruction.WordTypeA[W]); ok &&
+// asConstantLoad reports whether the given instruction is a pure constant load
+// (an integer addition with no source registers and a single target, as emitted
+// for a constant literal), returning the target register and the loaded value.
+func asConstantLoad[W word.Word[W]](insn WordInstruction) (register.Id, W, bool) {
+	if a, ok := insn.(*instruction.WordTypeA[W]); ok &&
 		a.Op == opcode.INT_ADD && len(a.Sources) == 0 && a.Target.Len() == 1 {
 		//
-		constants[a.Target.AsRegister().Unwrap()] = a.Constant
-		//
-		return
+		return a.Target.AsRegister(), a.Constant, true
 	}
-	// Any other definition means the register no longer holds a known constant.
-	for _, def := range code.Definitions() {
-		delete(constants, def.Unwrap())
-	}
+	//
+	var zero W
+	//
+	return register.UnusedId(), zero, false
 }
 
 // powerOfTwoExponent returns k such that w == 2^k, together with a flag
@@ -157,14 +207,4 @@ func powerOfTwoExponent[W word.Word[W]](w W) (uint, bool) {
 	}
 	// v == 2^k where k is the (zero-based) index of the single set bit.
 	return uint(v.BitLen() - 1), true
-}
-
-// shiftAmountWidth returns a register width sufficient to hold the shift amount
-// k (always at least one bit so that a shift by zero is representable).
-func shiftAmountWidth(k uint) uint {
-	if w := uint(bits.Len(k)); w != 0 {
-		return w
-	}
-	//
-	return 1
 }
