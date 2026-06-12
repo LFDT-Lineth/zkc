@@ -106,6 +106,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	build.field = field
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
+		Inlining(GetFlag(cmd, "inline")).
 		LowerNatives(lowerNative).
 		Vectorize(GetFlag(cmd, "vectorize")).
 		SplitRegisters(GetFlag(cmd, "split")).
@@ -144,6 +145,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
 	rootCmd.PersistentFlags().Bool("lower-native", false, "Lower ZkC native functions into arithmetic instructions")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
+	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().Bool("split", false, "Apply register splitting")
 	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")

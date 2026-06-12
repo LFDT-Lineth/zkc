@@ -145,6 +145,8 @@ func validateProgram(program ast.Program, field field.Config, srcmaps source.Map
 	errors = append(errors, validate.ControlFlow(program, srcmaps)...)
 	// Check #[debug] functions are safe to elide
 	errors = append(errors, validate.DebugFunctions(program, srcmaps)...)
+	// Check #[inline] functions can actually be inlined
+	errors = append(errors, validate.InlineFunctions(program, srcmaps)...)
 	//
 	return errors
 }

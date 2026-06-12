@@ -848,8 +848,9 @@ func Test_ZkcUnit_Debug_04(t *testing.T) {
 // ===================================================================
 //
 // These mirror the Basic_XX tests which contain a function call, but mark the
-// called function with the #[inline] annotation.  For now #[inline] has no
-// effect, so each behaves identically to its Basic_XX counterpart.
+// called function with the #[inline] annotation.  Hence, the called function
+// is inlined at every call site (and removed), but each test must still
+// behave identically to its Basic_XX counterpart.
 
 func Test_ZkcUnit_Inline_08(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/inline_08", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
