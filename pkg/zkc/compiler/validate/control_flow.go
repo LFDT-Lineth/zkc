@@ -109,6 +109,14 @@ func applyInstructionSemantics(worklist *Worklist, fn decl.ResolvedFunction, src
 		worklist.Join(insn.Target, state)
 		// Fall thru
 		worklist.Join(pc+1, state)
+	case *stmt.Dispatch[symbol.Resolved]:
+		// Multiway branch: control reaches each branch target or the default,
+		// and never falls through to the following instruction.
+		for _, b := range insn.Branches {
+			worklist.Join(b.Target, state)
+		}
+		//
+		worklist.Join(insn.DefaultTarget, state)
 	case *stmt.Return[symbol.Resolved]:
 		// Check all outputs are assigned
 		errs := checkOutputsAssigned(insn, state, fn, srcmaps)

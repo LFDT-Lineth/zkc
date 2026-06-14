@@ -98,7 +98,7 @@ func (p *SkipIf) String(mapping SystemMap) string {
 		panic("unknown skip condition encountered")
 	}
 	//
-	return fmt.Sprintf("skip_if %s %s %s %d", l, o, r, p.Skip)
+	return fmt.Sprintf("skipif %s %s %s %d", l, o, r, p.Skip)
 }
 
 // MicroValidate iumplementation for MicroInstruction interface

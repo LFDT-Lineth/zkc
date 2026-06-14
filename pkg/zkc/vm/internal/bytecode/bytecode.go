@@ -28,8 +28,11 @@ type Reg = uint16
 type Address = uint32
 
 // OPCODE_MASK determines how many bits of the opcode byte are used for the
-// opcode itself.
-const OPCODE_MASK = 0x3f
+// opcode itself.  This is a 7-bit field (bits 0..6); operand bytes always begin
+// at bit 8, and no instruction uses bits 6..7, so widening the opcode field
+// from 6 to 7 bits leaves every existing encoding untouched (their opcodes are
+// all <= 62, so bit 6 reads as zero).
+const OPCODE_MASK = 0x7f
 
 // Every instruction occupies 32 bits, where the first byte is as follows:
 //
@@ -51,6 +54,9 @@ const (
 	JMP
 	// SKIP (unconditional forward branch) instruction
 	SKIP
+	// SKIP_M (skip table) instruction: dispatches on a source register against a
+	// table of (value, target) pairs.
+	SKIP_M
 	// JEQ_rr (jump if equal)
 	JEQ_rr
 	// JNE_rr (jump if not equal)
@@ -275,6 +281,13 @@ func LoadConst[W word.Word[W]](target register.Id, constant W) *Arith[W] {
 func Move[W word.Word[W]](target register.Id, source register.Id) *Arith[W] {
 	var zero W
 	return newArith(arithop_ADD, asRegs(target), asRegs(source), zero)
+}
+
+// MultiwaySkip constructs a multiway-skip (SMW) instruction which dispatches on
+// the value of the source register against the given (value, target) table.
+// Targets are label indices until resolved during encoding (see Smw.Patch).
+func MultiwaySkip(source register.Id, cases []SwitchCase) *Switch {
+	return &Switch{asReg(source), cases}
 }
 
 // MulConst constructs a multiplication instruction computing

@@ -984,6 +984,8 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 		g.iv.edgeTo(target)
 
 		return nil
+	case *instruction.MultiwaySkip:
+		return g.emitMultiwaySkip(c, fn, x, vi, ci, vecLen)
 	case *instruction.Jump:
 		target := pos{x.Immediate, 0}
 		c.linef("goto %s", labelName(target))
@@ -1218,6 +1220,8 @@ func opName(op opcode.OpCode) string {
 		return "SKIP"
 	case opcode.SKIP_IF:
 		return "SKIP_IF"
+	case opcode.SKIP_MULTI:
+		return "SKIP_MULTI"
 	case opcode.CALL:
 		return "CALL"
 	case opcode.FAIL:
