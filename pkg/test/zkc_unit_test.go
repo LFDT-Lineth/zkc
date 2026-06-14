@@ -884,5 +884,8 @@ func Test_ZkcUnit_SkipIf_05(t *testing.T) {
 // ===================================================================
 
 func checkZkcUnit(t *testing.T, test string, config util.Config) {
-	util.CheckValid(t, test, "zkc", config.Bytecode(true))
+	// The generated-Go ("native") executor is cross-checked on every unit test:
+	// programs it cannot yet handle (wide registers/constants/moduli) are
+	// logged-and-skipped by the harness, never failed.
+	util.CheckValid(t, test, "zkc", config.Bytecode(true).Gogen(true))
 }
