@@ -61,24 +61,72 @@ func factorSkipConditionsFunction[W word.Word[W]](fn *WordFunction) *WordFunctio
 	)
 
 	for i, insn := range code {
-		ncode[i] = insn.Map(func(_ uint, ith WordInstruction) []WordInstruction {
-			return factorSkipConditionCode[W](ith, alloc)
+		// Decide up-front which SkipIf codes in this vector are worth factoring.
+		// This needs the whole vector body (to size each branch), which the Map
+		// closure cannot see one instruction at a time.
+		factor := factorableSkips(insn.Codes, alloc)
+		//
+		ncode[i] = insn.Map(func(idx uint, ith WordInstruction) []WordInstruction {
+			if factor[idx] {
+				return factorSkipIf[W](ith.(*instruction.SkipIf), alloc)
+			}
+			//
+			return []WordInstruction{ith}
 		})
 	}
 
 	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
 }
 
-func factorSkipConditionCode[W word.Word[W]](
-	code WordInstruction,
-	registers RegisterAllocator,
-) []WordInstruction {
-	si, ok := code.(*instruction.SkipIf)
-	if !ok || !isEqualityCondition(si.Cond) || !generatesInverse(si, registers) {
-		return []WordInstruction{code}
+// factorableSkips returns the set of code indices holding an equality SkipIf
+// worth factoring: one whose comparison generates an inverse and which guards a
+// non-trivial amount of work.  A two-sided branch (i.e. one with an else) is
+// always factored, since both sides then have their guards reduced from a
+// degree-3 (inverse) term to a degree-2 bit reference.  A one-sided branch is
+// only factored when its body holds more than a single instruction; otherwise
+// the diamond and extra column would not pay for themselves.
+func factorableSkips(codes []WordInstruction, registers RegisterAllocator) map[uint]bool {
+	factor := make(map[uint]bool)
+	//
+	for i, code := range codes {
+		si, ok := code.(*instruction.SkipIf)
+		if !ok || !isEqualityCondition(si.Cond) || !generatesInverse(si, registers) {
+			continue
+		}
+		//
+		thenSize, elseSize := branchSizes(codes, uint(i), si.Skip)
+		//
+		if thenSize > 1 || elseSize > 0 {
+			factor[uint(i)] = true
+		}
 	}
+	//
+	return factor
+}
 
-	return factorSkipIf[W](si, registers)
+// branchSizes estimates how many instructions a SkipIf located at index i (with
+// the given skip distance) guards.  The first result is the size of the
+// conditionally-skipped block; the second is the size of the block reached
+// after it (the "other" branch), read from the trailing unconditional Skip that
+// the skipped block uses to jump over it.  An if without an else has no such
+// trailing skip, so its else size is reported as zero.
+func branchSizes(codes []WordInstruction, i, skip uint) (thenSize, elseSize uint) {
+	var (
+		end   = min(i+1+skip, uint(len(codes)))
+		block = codes[i+1 : end]
+	)
+	//
+	thenSize = uint(len(block))
+	// If the skipped block ends with an unconditional Skip, that skip jumps over
+	// the other branch and its distance is the other branch's size.
+	if m := len(block); m > 0 {
+		if s, ok := block[m-1].(*instruction.Skip); ok {
+			thenSize = uint(m - 1)
+			elseSize = s.Skip
+		}
+	}
+	//
+	return thenSize, elseSize
 }
 
 func isEqualityCondition(cond opcode.Condition) bool {
