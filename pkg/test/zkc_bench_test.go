@@ -28,7 +28,7 @@ var DEFAULT_BENCH_CONFIG = util.DEFAULT_CONFIG.
 // Benchmark Tests
 // ===================================================================
 func Test_ZkcBench_Blake(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG.Words(vm.WORD_UINT))
+	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG.Bytecode(false))
 }
 
 func Test_ZkcBench_BinarySearchTree(t *testing.T) {

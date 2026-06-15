@@ -458,7 +458,7 @@ func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error
 func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		targets, sources, constant, n = decodeArith_nm[W](pc, codes)
-		val                           = constant
+		val                           = word.AsDouble(constant)
 	)
 	//
 	for sources.HasNext() {
@@ -467,14 +467,14 @@ func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (ui
 			src      = sources.Next()
 		)
 		//
-		val, overflow = val.Add(stack[src])
+		val, overflow = val.HalfAdd(stack[src])
 		//
 		if overflow {
 			return pc, errors.New("arithmetic overflow")
 		}
 	}
 	//
-	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
+	return pc + n, storeAcrossDw(p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeSub_nm implements SUB_nm: it seeds the value from the first source,
@@ -484,25 +484,28 @@ func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (ui
 func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		targets, sources, constant, n = decodeArith_nm[W](pc, codes)
-		val                           W
-		underflow                     bool
+		// determine target bitwidth
+		bitwidth = bitwidthOfAll(p.program.Module(p.fid), targets)
+		// seed first word
+		val = word.AsDouble(stack[sources.Next()])
+		// initialise accumulator
+		acc       = word.AsDouble(constant)
+		underflow bool
 	)
-	// Seed initial value
-	val = stack[sources.Next()]
 	// Subtract rest from it
 	for sources.HasNext() {
 		var src = sources.Next()
 		//
-		if val, underflow = val.Sub(stack[src]); underflow {
+		acc, underflow = acc.HalfAdd(stack[src])
+		//
+		if underflow {
 			return pc, errors.New("arithmetic underflow")
 		}
 	}
+	// Subtract with borrow
+	val = val.Sbb(uint64(bitwidth), acc)
 	//
-	if val, underflow = val.Sub(constant); underflow {
-		return pc, errors.New("arithmetic underflow")
-	}
-	//
-	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
+	return pc + n, storeAcrossDw(p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeMul_nm implements MUL_nm: it multiplies the constant by all sources
@@ -511,26 +514,26 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (ui
 func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		targets, sources, constant, n = decodeArith_nm[W](pc, codes)
-		val                           = constant
+		val                           = word.AsDouble(constant)
 		overflow                      bool
 	)
 	//
 	for sources.HasNext() {
 		var (
-			c      W
+			c      bool
 			source = uint16(sources.Next())
 		)
 		//
-		c, val = val.Mul(stack[source])
-		overflow = overflow || c.Cmp64(0) != 0
+		val, c = val.HalfMul(stack[source])
+		overflow = overflow || c
 	}
 	// A zero result is exact even when an intermediate product overflowed
 	// (matches executeMul in the slow word machine).
-	if overflow && val.Cmp64(0) != 0 {
+	if overflow && !val.IsZero() {
 		return pc, errors.New("arithmetic overflow")
 	}
 	//
-	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
+	return pc + n, storeAcrossDw(p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeFieldAdd implements ADDMOD_P: it sums the constant and all sources
@@ -1190,6 +1193,14 @@ func bitwidthOf(module Module, reg Reg) uint {
 	return r.Width()
 }
 
+func bitwidthOfAll(module Module, regs Op8Iter) (bitwidth uint) {
+	for regs.HasNext() {
+		bitwidth += bitwidthOf(module, uint16(regs.Next()))
+	}
+	//
+	return bitwidth
+}
+
 func storeAcross[W word.Word[W]](module Module, targets Op8Iter, value W, stack []W) error {
 	var bitwidth uint
 	//
@@ -1206,6 +1217,28 @@ func storeAcross[W word.Word[W]](module Module, targets Op8Iter, value W, stack 
 	}
 	//
 	if value.Cmp64(0) != 0 {
+		return fmt.Errorf("bit overflow (0x%s not u%d)", value.Text(16), bitwidth)
+	}
+	//
+	return nil
+}
+
+func storeAcrossDw[W word.Word[W]](module Module, targets Op8Iter, value word.Double[W], stack []W) error {
+	var bitwidth uint
+	//
+	for targets.HasNext() {
+		var (
+			target = uint16(targets.Next())
+			width  = bitwidthOf(module, target)
+		)
+		//
+		// Low limbs are written first, matching machine.StoreAcross.
+		stack[target] = value.LoWord().Slice(width)
+		value = value.Shr64(uint64(width))
+		bitwidth += width
+	}
+	//
+	if !value.IsZero() {
 		return fmt.Errorf("bit overflow (0x%s not u%d)", value.Text(16), bitwidth)
 	}
 	//
