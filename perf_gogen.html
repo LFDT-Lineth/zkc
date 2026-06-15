@@ -107,7 +107,7 @@
     <span class="pill">gogen</span>
     <span class="pill purple">PR #1860 benchmark audit</span>
     <span class="pill pink">Apple M5 Max · go1.26</span>
-    <span class="pill warn">June 12, 2026 · rev 3: instruction metrics + workload sweep + x86 preview</span>
+    <span class="pill warn">June 15, 2026 · rev 4: R5 interpreter measured (§11) · rev 3: metrics + sweep + x86</span>
   </div>
   <h1>The benchmark is honest — the table is misleading</h1>
   <p class="sub">A forensic pass over <code>BenchmarkZkcExecKeccakV2*</code>: every surprising delta has a
@@ -115,7 +115,9 @@
   (binary I/O, PGO) cut gogen wall time roughly in half on both shapes.
   Rev 2 adds what the benchmarks now report: <b>executed micro-instructions and Minstr/s</b>
   (§08), a cross-workload sweep — sort, fnv1a, blake2f (§09) — and the interpolation to the
-  production target, a RISC-V interpreter executing an EVM block (§10).</p>
+  production target, a RISC-V interpreter executing an EVM block (§10).
+  Rev 4 (zkc PR #1884) closes the loop: gogen now runs the <b>actual</b> ZkC RISC-V
+  interpreter, so §10's interpolation is replaced by direct measurement (§11).</p>
 </div></header>
 
 <div class="wrap">
@@ -421,9 +423,54 @@ consequences for the roadmap: (1) measure M for the actual RISC-V interpreter ea
 (2) the items that shrink M's cost (PGO ~2×, codegen inlining of <code>$bit_*</code> leaves, and ultimately
 sharding the faithful re-execution across checkpoints) are worth more than micro-tuning the plain shape.
 A worked check of the formula: keccak-50k plain = 1.167 B / 9.8 G = 119 ms — exactly the measured run time.
+<b>§11 now measures the real interpreter directly — the ~10 Ginstr/s plain-shape rate holds.</b>
 </div>
 
-<h2><span class="n">11</span>x86 production preview — c8a.8xlarge (Zen 5)</h2>
+<h2><span class="n">11</span>R5 interpreter — measured, not interpolated</h2>
+<p>§10 interpolated the production target from <em>direct</em> keccak. With zkc
+<a href="https://github.com/LFDT-Lineth/zkc/pull/1884">PR #1884</a> gogen now compiles and runs the
+<b>actual</b> ZkC RISC-V interpreter (<code>arithmetization/src/main/riscv/main.zkc</code>). The workload
+below is real Keccak-256 vectors compiled to <code>rv64im</code> (rust nightly, <code>build-std</code>) and
+fed through that interpreter — every guest instruction fetched, decoded and dispatched in ZkC, including the
+64×64 multiply path. Keccak-f is input-independent, so the ZkC micro-instruction count is exactly linear in
+the vector count (verified: 100 → 631,326,121; 1,000 → 6,311,924,521, exactly ×10).</p>
+
+<table>
+  <tr><th>Keccak-256 vectors</th><th class="num">ZkC µ-instrs</th><th class="num">gogen (e2e)</th><th class="num">gogen rate</th><th class="num">Uint interp.</th><th class="num">interp. rate</th><th class="num">speedup</th></tr>
+  <tr><td>100</td><td class="num">631.3 M</td><td class="num">0.11 s</td><td class="num">5.7 G/s †</td><td class="num">17.8 s</td><td class="num">35.5 M/s</td><td class="num">162×</td></tr>
+  <tr class="hl"><td>1,000</td><td class="num">6.31 B</td><td class="num">0.64 s</td><td class="num">9.9 G/s</td><td class="num">178 s</td><td class="num">35.5 M/s</td><td class="num">278×</td></tr>
+  <tr><td>5,000</td><td class="num">31.6 B</td><td class="num">3.00 s</td><td class="num">10.5 G/s</td><td class="num">~890 s ‡</td><td class="num">35.5 M/s</td><td class="num">~297×</td></tr>
+</table>
+<p class="muted" style="font-size:.88rem">gogen: quiet build, warmed binary, best of 3 (the first run of a fresh
+binary pays the one-off ~0.5 s macOS verification — §08). † floor-limited: at 100 vectors the ~0.05 s
+subprocess+decode floor dominates; pure execution is ~10 G/s. ‡ interpreter extrapolated from its stable
+35.5 M/s (≈15 min — not run). One-time gogen build: <code>generate</code> 0.11 s + <code>go build</code> 0.34 s.</p>
+
+<div class="callout purple">
+<b>The interpolation holds — on the real thing.</b> gogen sustains <b>~10.5 G ZkC-instr/s on the actual
+interpreter</b>, matching §08's 9.8–11.3 G/s on direct keccak: the rate is workload-stable even through an
+interpretation layer. So §10's EVM-block estimate (35 B plain-shape instrs → ~3.5 s gogen) now rests on a
+measured rate from the interpreter itself, not a transfer from microbenchmarks. Per Keccak-256 vector: gogen
+<b>0.59 ms</b> vs the Uint interpreter <b>178 ms</b> — a <b>~300×</b> wall-clock gap that widens with size as
+the harness floor amortises. The interpreter is not in viable territory; gogen is.
+</div>
+
+<div class="callout">
+<b>Fairness — printf is no longer free for gogen.</b> Before PR #1884 gogen silently dropped every
+<code>printf</code>, so any non-quiet comparison was meaningless: gogen skipped formatting work the
+interpreters performed. It now emits printf (and FAIL messages) byte-for-byte identical to the interpreter.
+A verbose 10-vector run went 9.85 s (unbuffered <code>fmt</code>) → 0.32 s (buffered) → <b>0.20 s</b>
+(specialised <code>strconv</code>/<code>big.Int</code> writes) — still ahead of the interpreter, and now
+honest. Every number in this section is <b>quiet</b> (printf stripped on both sides) — the proving-relevant
+mode.</div>
+
+<div class="callout warn">
+<b>Scope.</b> This is the <em>plain</em> (native-op) execution shape gogen consumes — the unsplit
+<code>WordMachine[Uint]</code>, the analogue of §10's left-hand column. The <em>prover</em> / lowered shape
+(the ×M blowup, §10 right-hand table) needs register-splitting that is not yet implemented for this
+interpreter, so those rows stay interpolated. These numbers also require zkc PR #1884 (not yet merged).</div>
+
+<h2><span class="n">12</span>x86 production preview — c8a.8xlarge (Zen 5)</h2>
 <p><span class="pill warn">partial data — run stopped early</span></p>
 <p>A first pass on the production target (AWS c8a.8xlarge, AMD Zen 5) got through the keccak <em>plain</em>
 cells before being stopped (the wordmachine-lowered cell alone is minutes per iteration). The pattern is
@@ -455,8 +502,18 @@ that actually matters is per-shard: the checkpoint/sharded-tracer design (§06, 
 “gogen ~12 min single-core” into “~25 s across 32 shards”, and these per-core rates are its sizing input.
 </div>
 
-<h2><span class="n">12</span>Reproduce</h2>
-<pre><code># artefacts: generated Go (both shapes) + input files at 1/500/5k/50k blocks
+<h2><span class="n">13</span>Reproduce</h2>
+<pre><code># §11 — the actual RISC-V interpreter through gogen (needs zkc PR #1884)
+make build-zkc                                   # bin/zkc with R5 support
+# build a real keccak ELF + JSON input (rust nightly + build-std), in lineth-monorepo:
+#   arithmetization/src/test/examples$ make keccak-rust-json KECCAK_N_VECTORS=1000
+bin/zkc generate -q .../riscv/main.zkc -o /tmp/r5/main.go   # 0.11 s
+( cd /tmp/r5 &amp;&amp; go build -o r5 main.go )                     # 0.34 s
+./r5 &lt; keccak.json                                # gogen: 0.64 s / 1000 vectors
+bin/zkc exec    -q keccak.json .../riscv/main.zkc # Uint interp: 178 s
+bin/zkc exec -v -q keccak.json .../riscv/main.zkc # add -v to print the ZkC step count
+
+# artefacts: generated Go (both shapes) + input files at 1/500/5k/50k blocks
 go run ./scratch/gogendump artifacts /tmp/gogen-perf
 
 # micro-instruction counts: keccak linearity check + sweep-size tuning
