@@ -207,11 +207,47 @@ func splitAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruction
 	// FIXME: this is a temporary place holder to allow some tests to actually
 	// run.  It is not a proper implementation of this function.
 	if len(target) > 1 {
+		// A pure copy (single source, zero constant) splits into limb-wise
+		// copies, provided source and target decompose into identical limbs.
+		// Such copies arise (for example) from function inlining.
+		if len(insn.Sources) == 1 && insn.Constant.Cmp64(0) == 0 && limbsAligned(limbsMap, target, sources) {
+			var insns = make([]WordInstruction, len(target))
+			//
+			for i := range target {
+				insns[i] = instruction.UintAssign[W](target[i], sources[i])
+			}
+			//
+			return insns
+		}
 		// TODO: this is where we actually need to do something
 		panic("todo")
 	}
 	//
 	return []WordInstruction{instruction.UintAdd(target[0], sources, insn.Constant)}
+}
+
+// limbsAligned checks whether two sets of limbs decompose identically (i.e.
+// pair up one-to-one with matching widths), such that an assignment between
+// the original registers can be split into limb-wise assignments.
+func limbsAligned(limbsMap register.LimbsMap, target, sources []register.Id) bool {
+	var limbs = limbsMap.Limbs()
+	//
+	if len(target) != len(sources) {
+		return false
+	}
+	//
+	for i := range target {
+		var (
+			ith = limbs[target[i].Unwrap()]
+			jth = limbs[sources[i].Unwrap()]
+		)
+		//
+		if ith.IsNative() != jth.IsNative() || (!ith.IsNative() && ith.Width() != jth.Width()) {
+			return false
+		}
+	}
+	//
+	return true
 }
 
 func splitSubtraction(limbsMap register.LimbsMap, insn WordInstruction) []WordInstruction {
