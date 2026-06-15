@@ -141,10 +141,14 @@ func validateProgram(program ast.Program, field field.Config, srcmaps source.Map
 	// Attempt to type the program; if this fails for some reaosn, skip
 	// remaining phases (for now).
 	errors = append(errors, validate.Typing(program, field, srcmaps)...)
+	// Check the entry point (if any) is well-formed.
+	errors = append(errors, validate.EntryPoint(program, srcmaps)...)
 	// Perform final validation
 	errors = append(errors, validate.ControlFlow(program, srcmaps)...)
 	// Check #[debug] functions are safe to elide
 	errors = append(errors, validate.DebugFunctions(program, srcmaps)...)
+	// Check #[inline] functions can actually be inlined
+	errors = append(errors, validate.InlineFunctions(program, srcmaps)...)
 	//
 	return errors
 }

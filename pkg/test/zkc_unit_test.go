@@ -844,6 +844,50 @@ func Test_ZkcUnit_Debug_04(t *testing.T) {
 }
 
 // ===================================================================
+// Inline Function Tests
+// ===================================================================
+//
+// These mirror the Basic_XX tests which contain a function call, but mark the
+// called function with the #[inline] annotation.  Hence, the called function
+// is inlined at every call site (and removed), but each test must still
+// behave identically to its Basic_XX counterpart.
+
+func Test_ZkcUnit_Inline_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/inline_08", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
+}
+
+func Test_ZkcUnit_Inline_09(t *testing.T) {
+	// TODO: register splitting
+	checkZkcUnit(t, "zkc/unit/inline_09", util.DEFAULT_CONFIG.Fields(field.BLS12_377).Constraints(true).Bytecode(true))
+}
+
+func Test_ZkcUnit_Inline_10(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/inline_10", util.DEFAULT_CONFIG.Bytecode(true))
+}
+
+func Test_ZkcUnit_Inline_25(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/inline_25", util.DEFAULT_CONFIG.Constraints(true).Bytecode(true))
+}
+
+func Test_ZkcUnit_Inline_28(t *testing.T) {
+	// TODO: register splitting (runs under bytecode interpreter on a wide field)
+	checkZkcUnit(t, "zkc/unit/inline_28", util.DEFAULT_CONFIG.Fields(field.BLS12_377).Constraints(true).Bytecode(true))
+}
+
+func Test_ZkcUnit_Inline_33(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/inline_33", util.DEFAULT_CONFIG.Constraints(true).Splitting(true))
+}
+
+func Test_ZkcUnit_Inline_34(t *testing.T) {
+	// TODO: register splitting (runs under bytecode interpreter on a wide field)
+	checkZkcUnit(t, "zkc/unit/inline_34", util.DEFAULT_CONFIG.Fields(field.BLS12_377).Constraints(true).Bytecode(true))
+}
+
+func Test_ZkcUnit_Inline_35(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/inline_35", util.DEFAULT_CONFIG.Bytecode(true))
+}
+
+// ===================================================================
 // Include Tests
 // ===================================================================
 
@@ -884,5 +928,8 @@ func Test_ZkcUnit_SkipIf_05(t *testing.T) {
 // ===================================================================
 
 func checkZkcUnit(t *testing.T, test string, config util.Config) {
-	util.CheckValid(t, test, "zkc", config.Bytecode(true))
+	// The generated-Go ("native") executor is cross-checked on every unit test:
+	// programs it cannot yet handle (wide registers/constants/moduli) are
+	// logged-and-skipped by the harness, never failed.
+	util.CheckValid(t, test, "zkc", config.Bytecode(true).Gogen(true))
 }
