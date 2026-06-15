@@ -128,9 +128,11 @@ func TestGenFieldOps(t *testing.T) {
 
 	for _, in := range vectors {
 		t.Run(inputName(in), func(t *testing.T) {
-			refOut, refErr := referenceRun(t, fieldMachine(), in)
+			inBytes := encodeInputs(fieldMachine(), in)
 
-			genOut, genErr := runProgram(t, prog, in)
+			refOut, refErr := referenceRun(t, fieldMachine(), inBytes)
+
+			genOut, genErr := runProgram(t, prog, inBytes)
 			if refErr != genErr {
 				t.Fatalf("error mismatch: reference err=%v, generated err=%v (in=%v)", refErr, genErr, in)
 			}

@@ -33,7 +33,6 @@ package test
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -54,11 +53,8 @@ const (
 	keccakExecBudget = 1 << 22
 )
 
-// Sinks prevent the compiler from optimising the benchmarked work away.
-var (
-	keccakByteSink map[string][]byte
-	keccakWordSink map[string][]uint64
-)
+// Sink prevents the compiler from optimising the benchmarked work away.
+var keccakByteSink map[string][]byte
 
 // TestZkcExecKeccakV2 checks the executors agree on the full 50000-block input,
 // using the (slow) WordMachine as the reference oracle.  The input carries no
@@ -240,8 +236,8 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 
 		buildMs := float64(time.Since(start).Milliseconds())
 		// Pre-marshal the inputs: the timed loop measures the executor
-		// (subprocess + its own JSON decode), not the harness's json.Marshal.
-		inJSON, err := json.Marshal(toKeccakU64Map(b, decodeKeccakInputs(b, wm, inputBytes)))
+		// (subprocess + its own JSON decode), not the input marshalling.
+		inJSON, err := gogen.MarshalInputs(inputBytes)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -259,7 +255,7 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 				b.Fatal("gogen reported an execution error")
 			}
 
-			keccakWordSink = out
+			keccakByteSink = out
 		}
 
 		b.StopTimer()
@@ -354,8 +350,8 @@ func runKeccakCore[W vm.Word[W], C vm.Core[W]](tb testing.TB, m C, inputs map[st
 }
 
 // tryKeccakGogen generates (from the Uint machine), builds and runs the gogen
-// executor, returning its "result" output encoded back to bytes for comparison
-// — or an error when the generator does not support the program.
+// executor, returning its "result" output bytes for comparison — or an error
+// when the generator does not support the program.
 func tryKeccakGogen(tb testing.TB, wm *vm.WordMachine[vm.Uint], inputBytes map[string][]byte) ([]byte, error) {
 	tb.Helper()
 
@@ -369,9 +365,7 @@ func tryKeccakGogen(tb testing.TB, wm *vm.WordMachine[vm.Uint], inputBytes map[s
 		tb.Fatalf("gogen build: %v", err)
 	}
 
-	inputWords := toKeccakU64Map(tb, decodeKeccakInputs(tb, wm, inputBytes))
-
-	out, errored, err := gogen.Run(prog, inputWords)
+	out, errored, err := gogen.Run(prog, inputBytes)
 	if err != nil {
 		tb.Fatalf("gogen run: %v", err)
 	}
@@ -380,52 +374,21 @@ func tryKeccakGogen(tb testing.TB, wm *vm.WordMachine[vm.Uint], inputBytes map[s
 		tb.Fatal("gogen reported an execution error")
 	}
 
-	return encodeKeccakResult(tb, wm, out["result"]), nil
+	return out["result"], nil
 }
 
-// toKeccakU64Map converts decoded word inputs into the plain uint64 form the
-// generated program consumes over JSON.
-func toKeccakU64Map(tb testing.TB, words map[string][]vm.Uint) map[string][]uint64 {
+// encodeInputs packs cell-valued inputs into the byte form the generated
+// harness reads, using each input memory's geometry.  The keccak benchmarks
+// already hold raw bytes, but the micro benchmarks construct cell values.
+func encodeInputs(tb testing.TB, m vm.Core[vm.Uint], cells map[string][]vm.Uint) map[string][]byte {
 	tb.Helper()
 
-	out := make(map[string][]uint64, len(words))
+	out := map[string][]byte{}
 
-	for name, vs := range words {
-		us := make([]uint64, len(vs))
-
-		for i, v := range vs {
-			if !v.FitsWithin(64) {
-				tb.Fatalf("input %q[%d] exceeds 64 bits", name, i)
-			}
-
-			us[i] = v.Uint64()
-		}
-
-		out[name] = us
+	for it := m.Inputs(); it.HasNext(); {
+		c := it.Next()
+		out[c.Name()] = vm.EncodeBytes(cells[c.Name()], c.Geometry())
 	}
 
 	return out
-}
-
-// encodeKeccakResult encodes the gogen "result" words back to bytes using the
-// result memory's geometry, so it can be compared with the fixture's expected
-// bytes.
-func encodeKeccakResult(tb testing.TB, wm *vm.WordMachine[vm.Uint], words []uint64) []byte {
-	tb.Helper()
-
-	vals := make([]vm.Uint, len(words))
-	for i, v := range words {
-		vals[i] = vals[i].SetUint64(v)
-	}
-
-	for it := wm.Outputs(); it.HasNext(); {
-		o := it.Next()
-		if o.Name() == "result" {
-			return vm.EncodeBytes(vals, o.Geometry())
-		}
-	}
-
-	tb.Fatal("no 'result' output memory")
-
-	return nil
 }
