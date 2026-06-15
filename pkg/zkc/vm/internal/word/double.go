@@ -26,6 +26,20 @@ func AsDouble[W Word[W]](lo W) Double[W] {
 	return Double[W]{zero, lo}
 }
 
+// Add adds two double words together, producing a double word (and overflow or
+// carry bit).
+func (p Double[W]) Add(rhs Double[W]) (res Double[W], overflow bool) {
+	var c0, c1 bool
+	//
+	if p.lo, c0 = p.lo.Add(rhs.lo); c0 {
+		p.hi, c0 = p.hi.Add64(1)
+	}
+	//
+	p.hi, c1 = p.hi.Add(rhs.hi)
+	//
+	return p, c0 || c1
+}
+
 // Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 func (p Double[W]) Cmp(o Double[W]) int {
 	if c := p.hi.Cmp(o.hi); c != 0 {
@@ -105,11 +119,11 @@ func (p Double[W]) Sbb(n uint64, rhs Double[W]) Double[W] {
 		dw, _ = p.Sub(rhs)
 	} else {
 		var hi, lo = tmp.SetUint64(1).Shl64(n)
-		// NOTE: underflow impossible
-		dw, _ = rhs.Sub(p)
-		// NOTE: underflow could arise here (i.e. if hi::lo==0), in which case
-		// result in undefined.
-		dw, _ = Double[W]{hi, lo}.Sub(dw)
+		// NOTE: underflow could only arise here if hi::lo == 0 (i.e. there is
+		// insufficient bandwidth in the underlying word).  As such, the system
+		// should prevent this at the level of register splitting.
+		dw, _ = Double[W]{hi, lo}.Add(p)
+		dw, _ = dw.Sub(rhs)
 	}
 	//
 	return dw
