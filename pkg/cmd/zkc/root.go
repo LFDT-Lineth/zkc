@@ -97,7 +97,8 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig[F] {
 	var build BuildConfig[F]
 
-	lowerNative := GetFlag(cmd, "lower-native") || GetFlag(cmd, "mir") || GetFlag(cmd, "air")
+	mirOrLower := GetFlag(cmd, "mir") || GetFlag(cmd, "air")
+	fastMode := GetFlag(cmd, "fastMode") && !mirOrLower
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
 		log.SetLevel(log.DebugLevel)
@@ -107,7 +108,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
 		Inlining(GetFlag(cmd, "inline")).
-		LowerNatives(lowerNative).
+		FastMode(fastMode).
 		Vectorize(GetFlag(cmd, "vectorize")).
 		SplitRegisters(GetFlag(cmd, "split")).
 		Field(field)

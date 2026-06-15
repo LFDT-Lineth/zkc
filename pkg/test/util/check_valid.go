@@ -136,9 +136,9 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f)
 		)
 		// Run all tests without lowering (and preventing the constraints check)
-		checkValidInternal(t, testfile, cfg.LowerNatives(false), config.Constraints(false), testcases[f])
+		checkValidInternal(t, testfile, cfg.FastMode(true), config.Constraints(false), testcases[f])
 		// Run all tests with lowering
-		checkValidInternal(t, testfile, cfg.LowerNatives(true), config, testcases[f])
+		checkValidInternal(t, testfile, cfg.FastMode(false), config, testcases[f])
 	}
 }
 

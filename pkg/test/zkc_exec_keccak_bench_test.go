@@ -72,7 +72,7 @@ func TestZkcExecKeccakV2(t *testing.T) {
 		t.Skip("keccak v2 cross-check is heavy; skipped in -short")
 	}
 
-	wm := compileKeccakV2(t, false)
+	wm := compileKeccakV2(t, true)
 	inputBytes := syntheticKeccakInput(50000)
 
 	m64, err := tryNarrowKeccak(wm)
@@ -109,18 +109,18 @@ func TestZkcExecKeccakV2(t *testing.T) {
 // WordMachine can run today (u65 temporaries); the others are logged-and-skipped.
 func TestZkcExecKeccakV2SmokeAgree(t *testing.T) {
 	for _, shape := range []struct {
-		name    string
-		lowered bool
+		name     string
+		fastMode bool
 	}{{"plain", false}, {"lowered", true}} {
 		t.Run(shape.name, func(t *testing.T) {
-			wm := compileKeccakV2(t, shape.lowered)
+			wm := compileKeccakV2(t, shape.fastMode)
 			inputBytes := syntheticKeccakInput(2)
 
 			// Reference: the Uint word machine (always runs).
 			want := runKeccakCore(t, wm, decodeKeccakInputs(t, wm, inputBytes))["result"]
 
 			// The uint64-narrowed peers, when the shape permits narrowing.
-			if m64, err := tryNarrowKeccak(compileKeccakV2(t, shape.lowered)); err != nil {
+			if m64, err := tryNarrowKeccak(compileKeccakV2(t, shape.fastMode)); err != nil {
 				t.Logf("uint64 narrowing unavailable for this shape: %v", err)
 			} else {
 				if got := runKeccakCore(t, m64, decodeKeccakInputs(t, m64, inputBytes))["result"]; !bytes.Equal(got, want) {
@@ -165,16 +165,16 @@ func BenchmarkZkcExecKeccakV2(b *testing.B) {
 	benchmarkKeccakThreeWay(b, false, syntheticKeccakInput(50000))
 }
 
-// BenchmarkZkcExecKeccakV2Lowered times the executors on the lowered (prover)
+// BenchmarkZkcExecKeccakV2Tracing times the executors on the tracing (prover)
 // shape.  Interpreting lowered bitwise ops is orders of magnitude slower, so a
 // smaller synthetic input keeps the comparison runnable; the u64-narrowed
 // tiers (wordmachine-u64, bytecode) skip — the shape's u65 temporaries cannot
 // narrow.
-func BenchmarkZkcExecKeccakV2Lowered(b *testing.B) {
-	benchmarkKeccakThreeWay(b, true, syntheticKeccakInput(500))
+func BenchmarkZkcExecKeccakV2Tracing(b *testing.B) {
+	benchmarkKeccakThreeWay(b, false, syntheticKeccakInput(500))
 }
 
-func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][]byte) {
+func benchmarkKeccakThreeWay(b *testing.B, fastMode bool, inputBytes map[string][]byte) {
 	b.Helper()
 
 	blockBytes := int64(len(inputBytes["blocks"]))
@@ -182,7 +182,7 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 	b.Run("wordmachine", func(b *testing.B) {
 		// Prefer the uint64-narrowed machine (the historical baseline); fall
 		// back to the Uint machine where narrowing is impossible.
-		wm := compileKeccakV2(b, lowered)
+		wm := compileKeccakV2(b, fastMode)
 
 		var run func() map[string][]byte
 
@@ -203,7 +203,7 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 	})
 
 	b.Run("bytecode", func(b *testing.B) {
-		m64, err := tryNarrowKeccak(compileKeccakV2(b, lowered))
+		m64, err := tryNarrowKeccak(compileKeccakV2(b, fastMode))
 		if err != nil {
 			b.Skipf("uint64 narrowing unavailable for this shape: %v", err)
 		}
@@ -224,7 +224,7 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 	})
 
 	b.Run("gogen", func(b *testing.B) {
-		wm := compileKeccakV2(b, lowered)
+		wm := compileKeccakV2(b, fastMode)
 
 		src, err := vm.GenerateGo(wm, vm.GoGenConfig{})
 		if err != nil {
@@ -273,8 +273,8 @@ func benchmarkKeccakThreeWay(b *testing.B, lowered bool, inputBytes map[string][
 
 // compileKeccakV2 compiles the keccak v2 source into a fresh, vectorised word
 // machine over Uint — the machine gogen consumes and the reference executor
-// interprets.  `lowered` selects the prover shape.
-func compileKeccakV2(tb testing.TB, lowered bool) *vm.WordMachine[vm.Uint] {
+// interprets.  `fastMode` selects the prover shape.
+func compileKeccakV2(tb testing.TB, fastMode bool) *vm.WordMachine[vm.Uint] {
 	tb.Helper()
 
 	data, err := os.ReadFile(keccakV2SourcePath)
@@ -289,7 +289,7 @@ func compileKeccakV2(tb testing.TB, lowered bool) *vm.WordMachine[vm.Uint] {
 		tb.Fatalf("compile: %v", errs)
 	}
 
-	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).LowerNatives(lowered).Vectorize(true).Quiet(true)
+	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).FastMode(fastMode).Vectorize(true).Quiet(true)
 
 	wm, errs := program.Compile(cfg)
 	if len(errs) > 0 {

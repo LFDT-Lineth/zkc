@@ -46,7 +46,7 @@ func TestGenFuzz(t *testing.T) {
 	for _, tc := range diffCases {
 		for _, shape := range shapes {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
-				src, err := vm.GenerateGo(compileUint(t, tc.src, shape.lowered), vm.GoGenConfig{})
+				src, err := vm.GenerateGo(compileUint(t, tc.src, shape.fastMode), vm.GoGenConfig{})
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}
@@ -56,7 +56,7 @@ func TestGenFuzz(t *testing.T) {
 				for i := 0; i < n; i++ {
 					in := randomInputs(rng, tc.vectors[0])
 
-					refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.lowered), in)
+					refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.fastMode), in)
 
 					genOut, genErr := runProgram(t, prog, in)
 					if refErr != genErr {

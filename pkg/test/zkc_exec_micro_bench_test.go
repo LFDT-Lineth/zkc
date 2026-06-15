@@ -161,14 +161,14 @@ func TestZkcExecMicroAgree(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		for _, lowered := range []bool{false, true} {
-			wm := compileMicroShape(t, tc.src, lowered)
+		for _, fastMode := range []bool{false, true} {
+			wm := compileMicroShape(t, tc.src, fastMode)
 			inputs := map[string][]vm.Uint{"data": {uintWord(500)}}
 			want := runKeccakCore(t, wm, inputs)["result"]
 
-			src, err := vm.GenerateGo(compileMicroShape(t, tc.src, lowered), vm.GoGenConfig{})
+			src, err := vm.GenerateGo(compileMicroShape(t, tc.src, fastMode), vm.GoGenConfig{})
 			if err != nil {
-				t.Fatalf("%s (lowered=%t): GenerateGo: %v", tc.name, lowered, err)
+				t.Fatalf("%s (fastMode=%t): GenerateGo: %v", tc.name, fastMode, err)
 			}
 
 			prog, err := gogen.Build(src)
@@ -178,12 +178,12 @@ func TestZkcExecMicroAgree(t *testing.T) {
 
 			out, errored, err := gogen.Run(prog, map[string][]uint64{"data": {500}})
 			if err != nil || errored {
-				t.Fatalf("%s (lowered=%t): gogen run failed: %v %t", tc.name, lowered, err, errored)
+				t.Fatalf("%s (fastMode=%t): gogen run failed: %v %t", tc.name, fastMode, err, errored)
 			}
 
 			got := encodeMicroResult(t, wm, out["result"])
 			if !bytes.Equal(got, want) {
-				t.Fatalf("%s (lowered=%t): gogen disagrees with the Uint reference", tc.name, lowered)
+				t.Fatalf("%s (fastMode=%t): gogen disagrees with the Uint reference", tc.name, fastMode)
 			}
 		}
 	}
@@ -191,10 +191,10 @@ func TestZkcExecMicroAgree(t *testing.T) {
 
 func compileMicro(tb testing.TB, src string) *vm.WordMachine[vm.Uint] {
 	tb.Helper()
-	return compileMicroShape(tb, src, false)
+	return compileMicroShape(tb, src, true)
 }
 
-func compileMicroShape(tb testing.TB, src string, lowered bool) *vm.WordMachine[vm.Uint] {
+func compileMicroShape(tb testing.TB, src string, fastMode bool) *vm.WordMachine[vm.Uint] {
 	tb.Helper()
 
 	sf := source.NewSourceFile("micro.zkc", []byte(src))
@@ -204,7 +204,7 @@ func compileMicroShape(tb testing.TB, src string, lowered bool) *vm.WordMachine[
 		tb.Fatalf("compile: %v", errs)
 	}
 
-	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).LowerNatives(lowered).Vectorize(true).Quiet(true)
+	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).FastMode(fastMode).Vectorize(true).Quiet(true)
 
 	wm, errs := program.Compile(cfg)
 	if len(errs) > 0 {
