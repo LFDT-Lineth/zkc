@@ -37,7 +37,7 @@ import (
 // instructions are present only in non-quiet builds — the compiler drops printf
 // under --quiet — so this is dead code there.
 func (g *generator) emitDebug(c *code, fn *wordFunction, x *instruction.Debug) error {
-	g.usesPrintf = true
+	g.useHelper(helperDbgWriter)
 
 	for _, ch := range x.Chunks {
 		if ch.Text != "" {
@@ -87,14 +87,15 @@ func (g *generator) emitDebugArg(c *code, fn *wordFunction, format util.Format, 
 		}
 
 		if op.wide() {
-			g.usesPrintfBig = true
+			g.useHelper(helperDbgB)
+			g.useHelper(helperU128)
 
 			c.linef("dbgB(u128(%s, %s), %d, %d, %s)", op.expr, op.hiOr0(), formatBase(format), format.Width, pad)
 
 			return nil
 		}
 
-		g.usesPrintfNum = true
+		g.useHelper(helperDbgU)
 
 		c.linef("dbgU(%s, %d, %d, %s)", op.expr, formatBase(format), format.Width, pad)
 
@@ -106,7 +107,7 @@ func (g *generator) emitDebugArg(c *code, fn *wordFunction, format util.Format, 
 		return err
 	}
 
-	g.usesPrintfBig = true
+	g.useHelper(helperDbgB)
 
 	c.linef("dbgB(%s, %d, %d, %s)", val, formatBase(format), format.Width, pad)
 
@@ -143,8 +144,6 @@ func (g *generator) emitFail(c *code, fn *wordFunction, x *instruction.Fail) err
 		return err
 	}
 
-	g.usesPrintf = true
-
 	if len(args) == 0 {
 		c.linef("panic(failure(%s))", strconv.Quote("machine panic: "+plain))
 		return nil
@@ -153,7 +152,7 @@ func (g *generator) emitFail(c *code, fn *wordFunction, x *instruction.Fail) err
 	// FAIL is a cold, terminating path (executed at most once), so it keeps the
 	// simpler fmt.Sprintf formatting rather than the specialised writes used for
 	// the hot DEBUG path.
-	g.usesFmt = true
+	g.useHelper(helperFmtSprintf)
 
 	c.linef("panic(failure(fmt.Sprintf(%s, %s)))", strconv.Quote("machine panic: "+format), strings.Join(args, ", "))
 
@@ -205,12 +204,12 @@ func (g *generator) printfArg(fn *wordFunction, format util.Format, vec register
 		}
 
 		if format.Code == util.FORMAT_CHR {
-			g.usesPrintfChr = true
+			g.useHelper(helperChr)
 			return "%s", fmt.Sprintf("chr(%s)", op.expr), nil
 		}
 
 		if op.wide() {
-			g.usesPrintfBig = true
+			g.useHelper(helperU128)
 			return format.String(), fmt.Sprintf("u128(%s, %s)", op.expr, op.hiOr0()), nil
 		}
 
@@ -227,8 +226,6 @@ func (g *generator) printfArg(fn *wordFunction, format util.Format, vec register
 	if err != nil {
 		return "", "", err
 	}
-
-	g.usesPrintfBig = true
 
 	return format.String(), arg, nil
 }
@@ -258,6 +255,8 @@ func (g *generator) multiLimbBig(fn *wordFunction, regs []register.Id) (string, 
 		widths = append(widths, strconv.FormatUint(uint64(w), 10))
 	}
 
+	g.useHelper(helperCatU64)
+
 	return fmt.Sprintf("catU64([]uint64{%s}, []uint{%s})", strings.Join(vals, ", "), strings.Join(widths, ", ")), nil
 }
 
@@ -267,7 +266,7 @@ func (g *generator) multiLimbBig(fn *wordFunction, regs []register.Id) (string, 
 // formatters for the hot DEBUG path, the big.Int limb folders (u128/catU64) and
 // chr (%c in a formatted FAIL).
 func (g *generator) emitPrintfHelpers(c *code) {
-	if g.usesPrintf {
+	if g.usesHelper(helperDbgWriter) {
 		c.line("// dbgw buffers printf output; Run flushes it. Per-instruction printf is")
 		c.line("// the hot path of a non-quiet run, so an unbuffered os.Stderr write (a")
 		c.line("// syscall each) would dominate; one bufio.Writer amortises that.")
@@ -275,7 +274,7 @@ func (g *generator) emitPrintfHelpers(c *code) {
 		c.line("")
 	}
 
-	if g.usesPrintfNum || g.usesPrintfBig {
+	if g.usesHelper(helperDbgU) || g.usesHelper(helperDbgB) {
 		c.line("// dbgPad left-pads digits d to width with pad, then writes them, matching")
 		c.line("// formatWord's digit-only width padding (no base prefix, no sign).")
 		c.line("func dbgPad(d []byte, width int, pad byte) {")
@@ -287,7 +286,7 @@ func (g *generator) emitPrintfHelpers(c *code) {
 		c.line("")
 	}
 
-	if g.usesPrintfNum {
+	if g.usesHelper(helperDbgU) {
 		c.line("// dbgU writes v in the given base, left-padded (narrow printf integers).")
 		c.line("func dbgU(v uint64, base, width int, pad byte) {")
 		c.line("var b [64]byte")
@@ -296,7 +295,7 @@ func (g *generator) emitPrintfHelpers(c *code) {
 		c.line("")
 	}
 
-	if g.usesPrintfBig {
+	if g.usesHelper(helperDbgB) {
 		c.line("// dbgB writes a big.Int in the given base, left-padded (wide/multi args).")
 		c.line("func dbgB(v *big.Int, base, width int, pad byte) {")
 		c.line("dbgPad(v.Append(nil, base), width, pad)")
@@ -304,18 +303,21 @@ func (g *generator) emitPrintfHelpers(c *code) {
 		c.line("")
 	}
 
-	if g.usesPrintfChr {
+	if g.usesHelper(helperChr) {
 		c.line("// chr renders a value as a single raw byte (printf %c in a formatted FAIL).")
 		c.line("func chr(v uint64) string { return string([]byte{byte(v)}) }")
 		c.line("")
 	}
 
-	if g.usesPrintfBig {
+	if g.usesHelper(helperU128) {
 		c.line("// u128 folds a low/high pair into a big.Int for printf formatting.")
 		c.line("func u128(lo, hi uint64) *big.Int {")
 		c.line("return new(big.Int).Or(new(big.Int).Lsh(new(big.Int).SetUint64(hi), 64), new(big.Int).SetUint64(lo))")
 		c.line("}")
 		c.line("")
+	}
+
+	if g.usesHelper(helperCatU64) {
 		c.line("// catU64 concatenates limbs (least-significant first) into a big.Int.")
 		c.line("func catU64(vals []uint64, widths []uint) *big.Int {")
 		c.line("v := new(big.Int)")

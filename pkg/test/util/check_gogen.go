@@ -51,8 +51,8 @@ func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestC
 		t.Errorf("[gogen %s]%s:%d build: %v", cfg.Name, test.filename, test.line, err)
 		return
 	}
-	// The generated harness shares the byte encoding the reference executor
-	// uses, so the test's raw JSON data feeds it unchanged.
+	// The generated harness consumes the same decoded memory bytes as the
+	// reference executor, so test.data feeds it unchanged.
 	_, outputs := decodeInputsOutputs(t, wm, test.data)
 
 	got, errored, runErr := gogen.Run(prog, test.data)
