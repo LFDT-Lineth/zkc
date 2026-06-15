@@ -16,7 +16,6 @@
 package gogen_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"go/format"
@@ -688,7 +687,9 @@ func TestGenDifferential(t *testing.T) {
 	for _, tc := range diffCases {
 		for _, shape := range shapes {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
-				src, err := vm.GenerateGo(compileUint(t, tc.src, shape.lowered), vm.GoGenConfig{})
+				m := compileUint(t, tc.src, shape.lowered)
+
+				src, err := vm.GenerateGo(m, vm.GoGenConfig{})
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}
@@ -696,9 +697,11 @@ func TestGenDifferential(t *testing.T) {
 				prog := buildProgram(t, src)
 				for _, in := range tc.vectors {
 					t.Run(inputName(in), func(t *testing.T) {
-						refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.lowered), in)
+						inBytes := encodeInputs(m, in)
 
-						genOut, genErr := runProgram(t, prog, in)
+						refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.lowered), inBytes)
+
+						genOut, genErr := runProgram(t, prog, inBytes)
 						if refErr != genErr {
 							t.Fatalf("error mismatch: reference err=%v, generated err=%v (in=%v)", refErr, genErr, in)
 						}
@@ -726,14 +729,17 @@ func inputName(in map[string][]uint64) string {
 	return string(b)
 }
 
-// referenceRun executes the program on a fresh reference Uint machine,
-// returning output memories as []uint64 and whether execution errored.
-func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]uint64) (map[string][]uint64, bool) {
+// referenceRun executes the program on a fresh reference Uint machine from the
+// same packed-byte inputs the generated harness consumes, returning output
+// memories as bytes and whether execution errored.  Sharing the bytes (rather
+// than the raw cells) guarantees both executors see identical, width-valid
+// inputs — see encodeInputs.
+func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]byte) (map[string][]byte, bool) {
 	t.Helper()
 
-	inputs := make(map[string][]vm.Uint, len(in))
-	for name, values := range in {
-		inputs[name] = toWords(values)
+	inputs, errs := vm.DecodeInputs(wm, in)
+	if len(errs) > 0 {
+		t.Fatalf("decode inputs: %v", errs)
 	}
 
 	if err := wm.Boot("main", inputs); err != nil {
@@ -744,14 +750,7 @@ func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]uin
 		return nil, true
 	}
 
-	out := map[string][]uint64{}
-
-	for it := wm.Outputs(); it.HasNext(); {
-		m := it.Next()
-		out[m.Name()] = fromWords(m.Contents())
-	}
-
-	return out, false
+	return vm.EncodeOutputs(wm), false
 }
 
 // buildProgram compiles generated source through the shared build cache
@@ -771,58 +770,43 @@ func buildProgram(t *testing.T, src string) string {
 	return prog
 }
 
-// runProgram runs the compiled program with JSON inputs on stdin, returning
-// parsed outputs and whether it reported an execution error (exit 1).
-func runProgram(t *testing.T, prog string, in map[string][]uint64) (map[string][]uint64, bool) {
+// runProgram runs the compiled program on packed-byte inputs (see encodeInputs),
+// returning its output memories as bytes and whether it reported an execution
+// error.
+func runProgram(t *testing.T, prog string, in map[string][]byte) (map[string][]byte, bool) {
 	t.Helper()
 
-	inJSON, err := json.Marshal(in)
+	out, errored, err := gogen.Run(prog, in)
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	var stdout, stderr bytes.Buffer
-
-	cmd := exec.Command(prog)
-	cmd.Stdin = bytes.NewReader(inJSON)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err = cmd.Run()
-	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			switch ee.ExitCode() {
-			case 1:
-				return nil, true
-			default:
-				t.Fatalf("generated program failed (exit %d): %s", ee.ExitCode(), stderr.String())
-			}
-		}
-
 		t.Fatalf("running generated program: %v", err)
 	}
 
-	var out map[string][]uint64
-	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
-		t.Fatalf("decoding generated output %q: %v", stdout.String(), err)
-	}
-
-	return out, false
+	return out, errored
 }
 
-func toWords(vs []uint64) []vm.Uint {
-	out := make([]vm.Uint, len(vs))
-	for i, v := range vs {
-		out[i] = out[i].SetUint64(v)
-	}
+// encodeInputs packs cell-valued inputs into the byte form the harness reads,
+// using each input memory's geometry.  Each value is masked to its data-line
+// width: the byte encoding carries exactly that many bits, so an out-of-width
+// cell is not expressible — masking yields the canonical input both executors
+// then consume identically.
+func encodeInputs(wm *vm.WordMachine[vm.Uint], in map[string][]uint64) map[string][]byte {
+	out := map[string][]byte{}
 
-	return out
-}
+	for it := wm.Inputs(); it.HasNext(); {
+		m := it.Next()
+		regs := m.Geometry().DataRegisters()
+		cells := in[m.Name()]
+		words := make([]vm.Uint, len(cells))
 
-func fromWords(ws []vm.Uint) []uint64 {
-	out := make([]uint64, len(ws))
-	for i, w := range ws {
-		out[i] = w.Uint64()
+		for i, v := range cells {
+			if w := regs[i%len(regs)].Width(); w < 64 {
+				v &= (1 << w) - 1
+			}
+
+			words[i] = words[i].SetUint64(v)
+		}
+
+		out[m.Name()] = vm.EncodeBytes(words, m.Geometry())
 	}
 
 	return out

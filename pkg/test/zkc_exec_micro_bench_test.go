@@ -21,7 +21,6 @@ package test
 
 import (
 	"bytes"
-	"encoding/json"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -115,7 +114,9 @@ func BenchmarkZkcExecMicro(b *testing.B) {
 		})
 
 		b.Run(tc.name+"/gogen", func(b *testing.B) {
-			src, err := vm.GenerateGo(compileMicro(b, tc.src), vm.GoGenConfig{})
+			wm := compileMicro(b, tc.src)
+
+			src, err := vm.GenerateGo(wm, vm.GoGenConfig{})
 			if err != nil {
 				b.Fatalf("GenerateGo: %v", err)
 			}
@@ -125,7 +126,7 @@ func BenchmarkZkcExecMicro(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			inJSON, err := json.Marshal(map[string][]uint64{"data": {microSteps}})
+			inJSON, err := gogen.MarshalInputs(encodeInputs(b, wm, map[string][]vm.Uint{"data": {uintWord(microSteps)}}))
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -142,7 +143,7 @@ func BenchmarkZkcExecMicro(b *testing.B) {
 					b.Fatal("gogen reported an execution error")
 				}
 
-				keccakWordSink = out
+				keccakByteSink = out
 			}
 		})
 	}
@@ -164,9 +165,10 @@ func TestZkcExecMicroAgree(t *testing.T) {
 		for _, lowered := range []bool{false, true} {
 			wm := compileMicroShape(t, tc.src, lowered)
 			inputs := map[string][]vm.Uint{"data": {uintWord(500)}}
-			want := runKeccakCore(t, wm, inputs)["result"]
 
-			src, err := vm.GenerateGo(compileMicroShape(t, tc.src, lowered), vm.GoGenConfig{})
+			// Generate before runKeccakCore boots wm (a booted machine is
+			// mutated); geometry stays valid for encodeInputs afterwards.
+			src, err := vm.GenerateGo(wm, vm.GoGenConfig{})
 			if err != nil {
 				t.Fatalf("%s (lowered=%t): GenerateGo: %v", tc.name, lowered, err)
 			}
@@ -176,13 +178,14 @@ func TestZkcExecMicroAgree(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			out, errored, err := gogen.Run(prog, map[string][]uint64{"data": {500}})
+			want := runKeccakCore(t, wm, inputs)["result"]
+
+			out, errored, err := gogen.Run(prog, encodeInputs(t, wm, inputs))
 			if err != nil || errored {
 				t.Fatalf("%s (lowered=%t): gogen run failed: %v %t", tc.name, lowered, err, errored)
 			}
 
-			got := encodeMicroResult(t, wm, out["result"])
-			if !bytes.Equal(got, want) {
+			if got := out["result"]; !bytes.Equal(got, want) {
 				t.Fatalf("%s (lowered=%t): gogen disagrees with the Uint reference", tc.name, lowered)
 			}
 		}
@@ -217,9 +220,4 @@ func compileMicroShape(tb testing.TB, src string, lowered bool) *vm.WordMachine[
 func uintWord(v uint64) vm.Uint {
 	var w vm.Uint
 	return w.SetUint64(v)
-}
-
-func encodeMicroResult(tb testing.TB, wm *vm.WordMachine[vm.Uint], words []uint64) []byte {
-	tb.Helper()
-	return encodeKeccakResult(tb, wm, words)
 }

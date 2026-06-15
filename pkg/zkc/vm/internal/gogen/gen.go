@@ -95,6 +95,10 @@ type memInfo struct {
 	varName string
 	role    memRole
 	geom    memory.Geometry[word.Uint]
+	// dataWidths are the bit-widths of the memory's data lines, in order; the
+	// main harness bakes these in to pack/unpack the byte encoding shared with
+	// `zkc exec` (see encodeBytes / decodeBytes).
+	dataWidths []uint
 	// contents holds the baked initial values of a static (SROM) memory; nil
 	// for all other roles.
 	contents []uint64
@@ -160,6 +164,17 @@ func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
 
 	if !hasMain {
 		return "", fmt.Errorf("gogen: no 'main' function found")
+	}
+	// The package-main JSON harness encodes inputs/outputs as bytes (the format
+	// `zkc exec` accepts), which a field-element data line has no fixed width
+	// for.  Importable packages expose words directly, so only main is affected.
+	if g.pkg == "main" {
+		for _, info := range append(append([]memInfo{}, g.inputs...), g.outputs...) {
+			if hasNativeDataLine(info) {
+				return "", fmt.Errorf("gogen: memory %q has a field-element data line, which the JSON "+
+					"harness cannot encode; generate an importable package (--pkg) to consume it as words", info.name)
+			}
+		}
 	}
 	// Only emit functions reachable from main (transitively via CALL); this keeps
 	// generation scoped to the program actually being executed and avoids failing
@@ -376,14 +391,16 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	}
 
 	if g.pkg == "main" {
-		c.raw(mainHarness)
+		c.raw(conversionHelpers)
+		g.emitMainHarness(c)
 	}
 }
 
 func (g *generator) emitImports(c *code) {
 	deps := []string{}
 	if g.pkg == "main" {
-		deps = append(deps, `"bufio"`, `"encoding/json"`, `"fmt"`, `"os"`)
+		deps = append(deps,
+			`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strings"`)
 	}
 
 	if g.usesBits {
@@ -471,26 +488,136 @@ func (g *generator) emitMemHelpers(c *code) {
 	}
 }
 
-// mainHarness reads JSON inputs from stdin, runs the program, and writes JSON
-// outputs to stdout.  Exit 1 signals an execution error (matching the reference
-// error path); exit 2 signals an I/O/harness problem.
-const mainHarness = `func main() {
-	var in map[string][]uint64
-	if err := json.NewDecoder(bufio.NewReader(os.Stdin)).Decode(&in); err != nil {
-		fmt.Fprintln(os.Stderr, "decode:", err)
-		os.Exit(2)
-	}
-	out, err := Run(in)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "exec error:", err)
-		os.Exit(1)
-	}
-	if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-		fmt.Fprintln(os.Stderr, "encode:", err)
-		os.Exit(2)
+// conversionHelpers are the static (machine-independent) helpers backing the
+// main harness: a parser for the input encoding and the byte<->cell packing
+// shared with `zkc exec`.  They are emitted only for package main.
+const conversionHelpers = `// parseInput decodes an input memory's encoding: a hex string ("0x…", with "_"
+// separators allowed) or a decimal literal — the same encoding ParseJsonInputFile
+// accepts, so a file feeding "zkc exec" feeds this program unchanged.
+func parseInput(s string) []byte {
+	s = strings.ReplaceAll(s, "_", "")
+	switch {
+	case strings.HasPrefix(s, "0x"):
+		b, err := hex.DecodeString(s[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "decode:", err)
+			os.Exit(2)
+		}
+		return b
+	case s == "":
+		return nil
+	default:
+		var v big.Int
+		if _, ok := v.SetString(s, 10); !ok {
+			fmt.Fprintln(os.Stderr, "malformed numeric literal:", s)
+			os.Exit(2)
+		}
+		return v.Bytes()
 	}
 }
+
+// decodeBytes unpacks a tightly-packed big-endian bit stream into one value per
+// data line, cycling through the line widths; a mirror of the VM's DecodeBytes
+// and the inverse of encodeBytes.
+func decodeBytes(data []byte, widths []uint) []uint64 {
+	var round uint
+	for _, w := range widths {
+		round += w
+	}
+	if round == 0 {
+		return nil
+	}
+	total := uint(len(data)) * 8
+	var out []uint64
+	for off := uint(0); total-off >= round; {
+		for _, w := range widths {
+			var v uint64
+			for i := uint(0); i < w; i++ {
+				bit := (data[(off+i)/8] >> (7 - (off+i)%8)) & 1
+				v = v<<1 | uint64(bit)
+			}
+			out = append(out, v)
+			off += w
+		}
+	}
+	return out
+}
+
+// encodeBytes packs one value per data line into a tightly-packed big-endian
+// bit stream, cycling through the line widths; a mirror of the VM's EncodeBytes
+// and the inverse of decodeBytes.
+func encodeBytes(values []uint64, widths []uint) []byte {
+	var totalBits uint
+	for i := range values {
+		totalBits += widths[i%len(widths)]
+	}
+	out := make([]byte, (totalBits+7)/8)
+	var off uint
+	for i, v := range values {
+		w := widths[i%len(widths)]
+		for j := uint(0); j < w; j++ {
+			if (v>>(w-1-j))&1 != 0 {
+				out[(off+j)/8] |= 1 << (7 - (off+j)%8)
+			}
+		}
+		off += w
+	}
+	return out
+}
 `
+
+// emitMainHarness writes the package-main entry point.  It reads the inputs as
+// JSON (one hex/decimal string per input memory, matching `zkc exec`), decodes
+// each into its data-line cells, runs the program, and writes the outputs as
+// JSON hex strings in the same encoding.  Exit 1 signals an execution error (a
+// rejected trace — the reference error path); exit 2 signals an I/O problem.
+func (g *generator) emitMainHarness(c *code) {
+	c.line("func main() {")
+	c.line("var raw map[string]string")
+	c.line("if err := json.NewDecoder(bufio.NewReader(os.Stdin)).Decode(&raw); err != nil {")
+	c.line(`fmt.Fprintln(os.Stderr, "decode:", err)`)
+	c.line("os.Exit(2)")
+	c.line("}")
+	c.line("in := map[string][]uint64{}")
+
+	for _, m := range g.inputs {
+		c.linef("in[%q] = decodeBytes(parseInput(raw[%q]), %s)", m.name, m.name, widthsLiteral(m.dataWidths))
+	}
+	// Bind 'out' only when there are outputs to read from it; an unreferenced
+	// result would not compile.
+	if len(g.outputs) == 0 {
+		c.line("if _, err := Run(in); err != nil {")
+	} else {
+		c.line("out, err := Run(in)")
+		c.line("if err != nil {")
+	}
+
+	c.line(`fmt.Fprintln(os.Stderr, "exec error:", err)`)
+	c.line("os.Exit(1)")
+	c.line("}")
+	c.line("enc := map[string]string{}")
+
+	for _, m := range g.outputs {
+		c.linef(`enc[%q] = "0x" + hex.EncodeToString(encodeBytes(out[%q], %s))`,
+			m.name, m.name, widthsLiteral(m.dataWidths))
+	}
+
+	c.line("if err := json.NewEncoder(os.Stdout).Encode(enc); err != nil {")
+	c.line(`fmt.Fprintln(os.Stderr, "encode:", err)`)
+	c.line("os.Exit(2)")
+	c.line("}")
+	c.line("}")
+}
+
+// widthsLiteral renders a Go []uint literal of data-line bit-widths.
+func widthsLiteral(widths []uint) string {
+	parts := make([]string, len(widths))
+	for i, w := range widths {
+		parts[i] = fmt.Sprintf("%d", w)
+	}
+
+	return "[]uint{" + strings.Join(parts, ", ") + "}"
+}
 
 // ===========================================================================
 // Function emission
@@ -833,12 +960,35 @@ func uintConst(w word.Uint) (uint64, error) {
 	return w.Uint64(), nil
 }
 
+// hasNativeDataLine reports whether a memory has a field-element (native) data
+// line, which has no fixed bit-width and so cannot cross the JSON byte boundary
+// the main harness uses.
+func hasNativeDataLine(info memInfo) bool {
+	for _, r := range info.geom.DataRegisters() {
+		if r.IsNative() {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (g *generator) classifyMemory(m memory.Memory[word.Uint]) (memInfo, error) {
 	info := memInfo{name: m.Name(), varName: g.uniqueName("mem_" + sanitize(m.Name())), geom: m.Geometry()}
 	// All memory traffic moves through uint64 cells.
 	for _, r := range append(info.geom.AddressRegisters(), info.geom.DataRegisters()...) {
 		if !r.IsNative() && r.Width() > 64 {
 			return info, fmt.Errorf("gogen: memory %q register %q wider than 64 bits unsupported", m.Name(), r.Name())
+		}
+	}
+
+	// Record data-line widths for the byte encoding the main harness shares
+	// with `zkc exec`.  Native (field-element) lines have no fixed width, so
+	// memories using them are scratch-only — the main harness rejects them as
+	// input/output (see Generate).
+	if !hasNativeDataLine(info) {
+		for _, r := range info.geom.DataRegisters() {
+			info.dataWidths = append(info.dataWidths, r.Width())
 		}
 	}
 
