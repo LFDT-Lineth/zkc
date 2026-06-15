@@ -172,7 +172,7 @@ func factorSkipIf[W word.Word[W]](
 		instruction.NewSkipIfVec(si.Cond, si.Left, si.Right, 2),
 		// b = 0  (condition does not hold)
 		instruction.UintConst(b, zero),
-		// skip 1  => jump over "b = 0"
+		// skip 1  => jump over "b = 1"
 		&instruction.Skip{Skip: 1},
 		// b = 1  (condition holds)
 		instruction.UintConst(b, one),
