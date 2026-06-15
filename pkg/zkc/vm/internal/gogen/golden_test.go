@@ -49,7 +49,7 @@ func TestGolden(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// The importable-package artefact (no JSON harness): the shape a
 			// `zkc generate` consumer would review.
-			src, err := vm.GenerateGo(compileUint(t, tc.src, false), vm.GoGenConfig{Package: "golden"})
+			src, err := vm.GenerateGo(compileUint(t, tc.src, true), vm.GoGenConfig{Package: "golden"})
 			if err != nil {
 				t.Fatalf("GenerateGo: %v", err)
 			}
