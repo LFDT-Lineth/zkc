@@ -16,6 +16,7 @@
 package gogen_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"go/format"
@@ -810,4 +811,144 @@ func encodeInputs(wm *vm.WordMachine[vm.Uint], in map[string][]uint64) map[strin
 	}
 
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// printf / fail messages (#1868): non-quiet builds emit printf to stderr and
+// surface fail messages, byte-compatible with the reference interpreter.
+// ---------------------------------------------------------------------------
+
+const printfSrc = `pub input args(address:u16) -> (word:u16)
+pub output result(address:u16) -> (word:u16)
+fn main() {
+    var a:u16 = args[0]
+    printf "dec=%d hex=%x bin=%b pad=%04x\n", a, a, a, a
+    result[0] = a
+    return
+}
+`
+
+// printfWideSrc prints a value wider than 64 bits, exercising the big.Int
+// printf path (the lo/hi pair folds into a *big.Int via the u128 helper).
+const printfWideSrc = `pub input args(address:u8) -> (w:u64)
+pub output result(address:u8) -> (w:u64)
+fn main() {
+    var a:u64 = args[0]
+    var b:u64 = args[1]
+    var p:u128 = (a as u128) * (b as u128)
+    printf "p=%d\n", p
+    result[0] = a
+    return
+}
+`
+
+const printfCharSrc = `pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var a:u8 = args[0]
+    printf "%c%c!", a, a
+    result[0] = a
+    return
+}
+`
+
+const failMsgSrc = `pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var a:u8 = args[0]
+    fail "boom a=%d", a
+}
+`
+
+// compileUintVerbose compiles with printf retained (Quiet(false)), unlike the
+// default helper which strips it.
+func compileUintVerbose(t testing.TB, src string) *vm.WordMachine[vm.Uint] {
+	t.Helper()
+
+	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).Vectorize(true).Quiet(false)
+
+	program := compileProgram(t, src)
+
+	wm, errs := program.Compile(cfg)
+	if len(errs) > 0 {
+		t.Fatalf("codegen: %v", errs)
+	}
+
+	return wm
+}
+
+// runStderr builds and runs a generated program, returning its stderr and exit
+// status.  Unlike runProgram it captures stderr on success (where printf lands).
+func runStderr(t *testing.T, m *vm.WordMachine[vm.Uint], in map[string][]uint64) (stderr string, exitErr bool) {
+	t.Helper()
+
+	src, err := vm.GenerateGo(m, vm.GoGenConfig{})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	prog := buildProgram(t, src)
+
+	inJSON, err := gogen.MarshalInputs(encodeInputs(m, in))
+	if err != nil {
+		t.Fatalf("marshal inputs: %v", err)
+	}
+
+	var out, errBuf bytes.Buffer
+
+	cmd := exec.Command(prog)
+	cmd.Stdin = bytes.NewReader(inJSON)
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+
+	if err := cmd.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return errBuf.String(), ee.ExitCode() != 0
+		}
+
+		t.Fatalf("running generated program: %v", err)
+	}
+
+	return errBuf.String(), false
+}
+
+func TestGenPrintf(t *testing.T) {
+	cases := []struct {
+		name, src string
+		in        map[string][]uint64
+		want      string
+	}{
+		{"verbs", printfSrc, map[string][]uint64{"args": {255}}, "dec=255 hex=ff bin=11111111 pad=00ff\n"},
+		{"char", printfCharSrc, map[string][]uint64{"args": {65}}, "AA!"},
+		// 2^33 * 2^33 = 2^66 = 73786976294838206464 (wider than u64).
+		{"wide", printfWideSrc, map[string][]uint64{"args": {1 << 33, 1 << 33}}, "p=73786976294838206464\n"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := compileUintVerbose(t, tc.src)
+
+			got, exitErr := runStderr(t, m, tc.in)
+			if exitErr {
+				t.Fatalf("unexpected non-zero exit; stderr=%q", got)
+			}
+
+			if got != tc.want {
+				t.Fatalf("printf output mismatch:\n  got  %q\n  want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGenFailMessage(t *testing.T) {
+	m := compileUintVerbose(t, failMsgSrc)
+
+	got, exitErr := runStderr(t, m, map[string][]uint64{"args": {7}})
+	if !exitErr {
+		t.Fatalf("expected non-zero exit on fail")
+	}
+
+	if want := "machine panic: boom a=7"; !bytes.Contains([]byte(got), []byte(want)) {
+		t.Fatalf("fail message missing: got %q, want substring %q", got, want)
+	}
 }

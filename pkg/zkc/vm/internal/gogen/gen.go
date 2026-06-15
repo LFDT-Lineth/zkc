@@ -204,25 +204,30 @@ func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
 }
 
 type generator struct {
-	pkg         string
-	noIntervals bool
-	source      string // provenance line for the generated header (may be empty)
-	memByID     map[uint]memInfo
-	inputs      []memInfo
-	outputs     []memInfo
-	sroms       []memInfo // static read-only memories (baked contents)
-	rams        []memInfo // read-write scratch memories
-	pageds      []memInfo // paged read-write scratch memories
-	modules     []instruction.Module
-	funcByID    map[uint]*wordFunction
-	modulus     *big.Int        // the machine's prime modulus (for mod-P ops)
-	names       map[string]bool // sanitized identifiers already taken
-	usesBits    bool            // whether math/bits is referenced (decides the import)
-	usesShl128  bool            // whether the 128-bit left-shift helper is referenced
-	usesShr128  bool            // whether the 128-bit right-shift helper is referenced
-	usesModP    fieldHelpers    // which mod-P helpers are referenced
-	cur         fnView          // the function currently being emitted (return shape)
-	iv          *intervals      // bound analysis for the function being emitted
+	pkg           string
+	noIntervals   bool
+	source        string // provenance line for the generated header (may be empty)
+	memByID       map[uint]memInfo
+	inputs        []memInfo
+	outputs       []memInfo
+	sroms         []memInfo // static read-only memories (baked contents)
+	rams          []memInfo // read-write scratch memories
+	pageds        []memInfo // paged read-write scratch memories
+	modules       []instruction.Module
+	funcByID      map[uint]*wordFunction
+	modulus       *big.Int        // the machine's prime modulus (for mod-P ops)
+	names         map[string]bool // sanitized identifiers already taken
+	usesBits      bool            // whether math/bits is referenced (decides the import)
+	usesShl128    bool            // whether the 128-bit left-shift helper is referenced
+	usesShr128    bool            // whether the 128-bit right-shift helper is referenced
+	usesPrintf    bool            // whether printf/fail diagnostics exist (decides dbgw + bufio/os)
+	usesPrintfNum bool            // whether the dbgU narrow-integer printf helper is referenced (strconv)
+	usesPrintfChr bool            // whether the chr (%c) helper is referenced (formatted FAIL only)
+	usesPrintfBig bool            // whether the big.Int printf helpers (dbgB/u128/catU64) are referenced
+	usesFmt       bool            // whether fmt is referenced (formatted FAIL message via fmt.Sprintf)
+	usesModP      fieldHelpers    // which mod-P helpers are referenced
+	cur           fnView          // the function currently being emitted (return shape)
+	iv            *intervals      // bound analysis for the function being emitted
 }
 
 // fnView captures the parts of the function currently being emitted that the
@@ -315,6 +320,7 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	c.line("")
 	g.emitImports(c)
 	emitFailureHelpers(c)
+	g.emitPrintfHelpers(c)
 
 	// Memories are shared across the call stack, so they live as package-level
 	// globals (matching the VM's shared memory banks); callees read/write them
@@ -349,6 +355,13 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	c.line("// Run executes the program on the given input memories, returning its")
 	c.line("// output memories, or an error if the execution fails (a rejected trace).")
 	c.line("func Run(in map[string][]uint64) (out map[string][]uint64, err error) {")
+	// Flush buffered printf output on the way out (registered first, so it runs
+	// last — after the recover below has produced any error), so a failing run
+	// still surfaces the diagnostics that preceded it.
+	if g.usesPrintf {
+		c.line("defer dbgw.Flush()")
+	}
+
 	c.line("defer func() {")
 	c.line("if r := recover(); r != nil {")
 	c.line("if f, ok := r.(failure); ok {")
@@ -409,6 +422,27 @@ func (g *generator) emitImports(c *code) {
 	// memWrite (WOM/RAM) and paged.set both use slices.Grow.
 	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.pageds) > 0 {
 		deps = append(deps, `"slices"`)
+	}
+	// printf/fail diagnostics (non-quiet). dbgw needs bufio+os; the narrow
+	// integer helper dbgU needs strconv; the big.Int helpers need math/big; a
+	// formatted FAIL message uses fmt.Sprintf. Package main already imports
+	// bufio/os/fmt/math/big for its harness, but never strconv.
+	if g.usesPrintfNum {
+		deps = append(deps, `"strconv"`)
+	}
+
+	if g.pkg != "main" {
+		if g.usesPrintf {
+			deps = append(deps, `"bufio"`, `"os"`)
+		}
+
+		if g.usesFmt {
+			deps = append(deps, `"fmt"`)
+		}
+
+		if g.usesPrintfBig {
+			deps = append(deps, `"math/big"`)
+		}
 	}
 
 	switch len(deps) {
@@ -878,8 +912,8 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 	case *instruction.FieldHint:
 		return g.emitHint(c, fn, x)
 	case *instruction.Debug:
-		// DEBUG only prints diagnostics; it has no effect on program outputs.
-		return nil
+		// DEBUG (printf) has no effect on program outputs; it writes to stderr.
+		return g.emitDebug(c, fn, x)
 	case *instruction.MemRead:
 		return g.emitMemRead(c, fn, x)
 	case *instruction.MemWrite:
@@ -920,7 +954,10 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 
 		return nil
 	case *instruction.Fail:
-		c.line(`panic(failure("machine panic"))`)
+		if err := g.emitFail(c, fn, x); err != nil {
+			return err
+		}
+
 		g.iv.endOfFlow()
 
 		return nil
