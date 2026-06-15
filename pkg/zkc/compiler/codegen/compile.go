@@ -171,6 +171,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	if len(errors) == 0 && p.config.inlining && len(inlines) > 0 {
 		modules = vm.InlineFunctions[vm.Uint](modules, inlines)
 	}
+
 	// Lower VM-level zkc-native instructions into arithmetic instructions.
 	if len(errors) == 0 && p.config.lowerZkcNative {
 		// Lower Bitwise operations into arithmetic instructions.
@@ -184,6 +185,13 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	// Vectorize modules (if no errors)
 	if len(errors) == 0 && p.config.vectorize {
 		Vectorize(modules, p.srcmaps)
+		// Factor branch conditions into a single bit register holding the condition result.
+		// Gated on the same flag as native lowering since it only makes
+		// sense when generating arithmetic constraints; must run after
+		// vectorisation and before register splitting.
+		if p.config.lowerZkcNative {
+			modules = vm.FactorSkipConditions[vm.Uint](modules)
+		}
 	}
 	//
 	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)

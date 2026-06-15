@@ -68,6 +68,14 @@ func LowerDivisions[W word.Word[W]](modules []Module) []Module {
 	return transform.LowerDivisions[W](modules)
 }
 
+// FactorSkipConditions rewrites equality SkipIf instructions (EQ/NEQ) so that
+// the branch condition is materialised once into a fresh 1-bit register, rather
+// than being replicated across each guarded write of the branch.
+// This pass must run after vectorisation and before register splitting.
+func FactorSkipConditions[W word.Word[W]](modules []Module) []Module {
+	return transform.FactorSkipConditions[W](modules)
+}
+
 // InlineFunctions returns an equivalent set of modules in which every call to
 // one of the named functions has been inlined at its call site, and the named
 // function modules removed (module identifiers within Call / MemRead /
