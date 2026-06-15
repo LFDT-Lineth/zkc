@@ -22,6 +22,7 @@ import (
 	"go/format"
 	"os/exec"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -718,6 +719,39 @@ func TestGenDifferential(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestMainHarnessRejectsBadInputNames(t *testing.T) {
+	src, err := vm.GenerateGo(compileUint(t, doubleSrc, false), vm.GoGenConfig{})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	prog := buildProgram(t, src)
+
+	for _, tc := range []struct {
+		name string
+		in   map[string][]byte
+		want string
+	}{
+		{"missing", map[string][]byte{}, `missing input "data"`},
+		{"unknown", map[string][]byte{"data": {3}, "extra": {1}}, `unknown input "extra"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errored, err := gogen.Run(prog, tc.in)
+			if err == nil {
+				t.Fatal("expected harness error")
+			}
+
+			if errored {
+				t.Fatal("bad input names should not be execution errors")
+			}
+
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected error containing %q, got %v", tc.want, err)
+			}
+		})
 	}
 }
 

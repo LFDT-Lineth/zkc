@@ -615,7 +615,24 @@ func (g *generator) emitMainHarness(c *code) {
 	c.line("in := map[string][]uint64{}")
 
 	for _, m := range g.inputs {
-		c.linef("in[%q] = decodeBytes(parseInput(raw[%q]), %s)", m.name, m.name, widthsLiteral(m.dataWidths))
+		c.line("{")
+		c.linef("rawInput, ok := raw[%q]", m.name)
+		c.line("if !ok {")
+		c.linef(`fmt.Fprintf(os.Stderr, "decode: missing input %%q\n", %q)`, m.name)
+		c.line("os.Exit(2)")
+		c.line("}")
+		c.linef("in[%q] = decodeBytes(parseInput(rawInput), %s)", m.name, widthsLiteral(m.dataWidths))
+		c.linef("delete(raw, %q)", m.name)
+		c.line("}")
+	}
+
+	c.line("for name := range raw {")
+	c.line(`fmt.Fprintf(os.Stderr, "decode: unknown input %q\n", name)`)
+	c.line("os.Exit(2)")
+	c.line("}")
+
+	if len(g.inputs) > 0 {
+		c.line("")
 	}
 	// Bind 'out' only when there are outputs to read from it; an unreferenced
 	// result would not compile.
