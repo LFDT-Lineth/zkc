@@ -22,12 +22,7 @@ import (
 
 // FactorSkipConditions rewrites each equality SkipIf (EQ/NEQ) whose comparison
 // would otherwise be replicated across the guarded writes of its branch.  The
-// branch condition is materialised once into a fresh 1-bit register, and the
-// skip is rewritten to test that bit.  Since equality between a bit register
-// and zero is normalisation-free (see the AIR `normalise` gadget), each of the
-// branch's guarded writes then references the bit directly and the expensive
-// equality normalisation is emitted exactly once (where the bit is defined)
-// rather than once per guarded write.
+// branch condition is materialised once into a fresh 1-bit register.
 //
 // Concretely, a skip of the form:
 //
@@ -42,9 +37,6 @@ import (
 //	b = 1                // condition holds
 //	skip_if b != 0 S     // original skip, now testing the bit
 //	(ifBranch) (elseBranch)
-//
-// The two writes to `b` lie on disjoint paths (so they do not conflict), and
-// the skip offsets are recomputed automatically by Vector.Map.
 //
 // This pass must run after vectorisation (so the branch's guarded writes share
 // the condition) and before register splitting (so comparison operands remain

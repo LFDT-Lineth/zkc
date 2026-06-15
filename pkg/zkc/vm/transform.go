@@ -70,9 +70,7 @@ func LowerDivisions[W word.Word[W]](modules []Module) []Module {
 
 // FactorSkipConditions rewrites equality SkipIf instructions (EQ/NEQ) so that
 // the branch condition is materialised once into a fresh 1-bit register, rather
-// than being replicated across each guarded write of the branch.  This avoids
-// emitting the (expensive) equality normalisation more than once.
-//
+// than being replicated across each guarded write of the branch.
 // This pass must run after vectorisation and before register splitting.
 func FactorSkipConditions[W word.Word[W]](modules []Module) []Module {
 	return transform.FactorSkipConditions[W](modules)
