@@ -95,7 +95,9 @@ func decodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32) (
 	// first: each limb is shifted into the low bits of the accumulator in turn.
 	for i := nlimbs; i > 0; i-- {
 		limb = limb.SetUint64(uint64(codes[pc+i]))
-		constant = constant.Shl64(32).Or(limb)
+		_, constant = constant.Shl64(32)
+		//
+		constant = constant.Or(limb)
 	}
 	// Source registers follow the constant limbs.
 	sources = NewOp8Iter(0, nsrc, codes[pc+1+nlimbs:])

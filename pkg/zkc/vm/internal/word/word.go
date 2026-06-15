@@ -57,12 +57,10 @@ type Word[W any] interface {
 	Cmp64(y uint64) int
 	// Div divides this word by another.  Panics on division by zero.
 	Div(W) W
-	// Multiply two words together, producing a double word.
-	DwMul(W) (W, W)
 	// Check whether this value fits within the given bitwidth.
 	FitsWithin(uint) bool
-	// Multiply two words together, producing another (along with an overflow bit).
-	Mul(W) (W, bool)
+	// Multiply two words together, producing a double word.
+	Mul(W) (hi W, lo W)
 	// MulMod multiplies two words together modulus a third.
 	MulMod(W, W) W
 	// Bitwise NOT of this word within the given bit width.
@@ -75,9 +73,7 @@ type Word[W any] interface {
 	// Shift left word by the amount given in another word, masking to width bits.
 	Shl(uint, W) W
 	// Shift left word by the amount given.
-	Shl64(uint64) W
-	// Shift left (double) word by the amount given.
-	DwShl64(uint64) (hi W, lo W)
+	Shl64(uint64) (hi W, lo W)
 	// Shift right word by the amount given in another word.
 	Shr(W) W
 	// Shift right word by a given number of bits.

@@ -460,7 +460,7 @@ func executeConcat[W word.Word[W]](target register.Vector, sources []register.Id
 			width = frame.BitwidthOf(reg)
 		)
 		//
-		val = val.Shl64(uint64(width))
+		_, val = val.Shl64(uint64(width))
 		// Merge bits from value at the correct position
 		val = val.Or(frame.Load(reg))
 	}

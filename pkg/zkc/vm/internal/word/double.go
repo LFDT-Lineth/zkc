@@ -53,18 +53,12 @@ func (p Double[W]) HalfAdd(rhs W) (res Double[W], overflow bool) {
 // HalfMul multiplies this double word by a given word, producing a double word
 // (and overflow bit).
 func (p Double[W]) HalfMul(rhs W) (res Double[W], overflow bool) {
-	var v W
+	var c W
 	//
-	p.lo, v = p.lo.DwMul(rhs)
-	p.hi, overflow = p.hi.Mul(v)
+	c, p.lo = p.lo.Mul(rhs)
+	c, p.hi = p.hi.Mul(c)
 	//
-	return p, overflow
-}
-
-// HalfSub subtracts a word from this double word by a given word, producing a
-// double word (and underflow bit).
-func (p Double[W]) HalfSub(rhs Word[W]) (res Double[W], overflow bool) {
-	panic("todo")
+	return p, c.Cmp64(0) != 0
 }
 
 // HiWord returns the most significant word of this double word.
@@ -110,7 +104,7 @@ func (p Double[W]) Sbb(n uint64, rhs Double[W]) Double[W] {
 		// NOTE: underflow impossible
 		dw, _ = p.Sub(rhs)
 	} else {
-		var hi, lo = tmp.SetUint64(1).DwShl64(n)
+		var hi, lo = tmp.SetUint64(1).Shl64(n)
 		// NOTE: underflow impossible
 		dw, _ = rhs.Sub(p)
 		// NOTE: underflow could arise here (i.e. if hi::lo==0), in which case

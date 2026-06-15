@@ -86,25 +86,6 @@ func (p Uint64) Div(w Uint64) Uint64 {
 	return Uint64{p.value / w.value}
 }
 
-// DwMul implementation for Word interface.
-func (p Uint64) DwMul(w Uint64) (lo, hi Uint64) {
-	h, l := bits.Mul64(p.value, w.value)
-	return Uint64{l}, Uint64{h}
-}
-
-// DwShl64 implementation for Word interface.
-func (p Uint64) DwShl64(n uint64) (hi Uint64, lo Uint64) {
-	//
-	if n >= 64 {
-		hi.value = p.value << (n - 64)
-	} else {
-		hi.value = p.value >> (64 - n)
-		lo.value = p.value << n
-	}
-	//
-	return hi, lo
-}
-
 // FitsWithin implementation for Word interface.
 func (p Uint64) FitsWithin(bitwidth uint) bool {
 	if bitwidth >= 64 {
@@ -115,9 +96,9 @@ func (p Uint64) FitsWithin(bitwidth uint) bool {
 }
 
 // Mul implementation for Word interface.
-func (p Uint64) Mul(w Uint64) (Uint64, bool) {
-	hi, lo := bits.Mul64(p.value, w.value)
-	return Uint64{lo}, hi != 0
+func (p Uint64) Mul(w Uint64) (hi, lo Uint64) {
+	h, l := bits.Mul64(p.value, w.value)
+	return Uint64{h}, Uint64{l}
 }
 
 // MulMod implementation for Word interface.
@@ -157,8 +138,16 @@ func (p Uint64) Shl(width uint, n Uint64) Uint64 {
 }
 
 // Shl64 implementation for Word interface.
-func (p Uint64) Shl64(n uint64) Uint64 {
-	return Uint64{(p.value << n)}
+func (p Uint64) Shl64(n uint64) (hi Uint64, lo Uint64) {
+	//
+	if n >= 64 {
+		hi.value = p.value << (n - 64)
+	} else {
+		hi.value = p.value >> (64 - n)
+		lo.value = p.value << n
+	}
+	//
+	return hi, lo
 }
 
 // Shr implementation for Word interface.
