@@ -68,6 +68,16 @@ func LowerDivisions[W word.Word[W]](modules []Module) []Module {
 	return transform.LowerDivisions[W](modules)
 }
 
+// FactorSkipConditions rewrites equality SkipIf instructions (EQ/NEQ) so that
+// the branch condition is materialised once into a fresh 1-bit register, rather
+// than being replicated across each guarded write of the branch.  This avoids
+// emitting the (expensive) equality normalisation more than once.
+//
+// This pass must run after vectorisation and before register splitting.
+func FactorSkipConditions[W word.Word[W]](modules []Module) []Module {
+	return transform.FactorSkipConditions[W](modules)
+}
+
 // SplitRegisters all modules to meet a given bandwidth and maximum register width.
 // This will split all registers wider than the maximum permitted width into two
 // or more "limbs" (i.e. subregisters which do not exceeded the permitted

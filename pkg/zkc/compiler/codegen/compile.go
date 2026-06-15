@@ -172,6 +172,14 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	// Vectorize modules (if no errors)
 	if len(errors) == 0 && p.config.vectorize {
 		Vectorize(modules, p.srcmaps)
+		// Factor equality branch conditions into bit registers so the equality
+		// normalisation is emitted once per branch rather than once per guarded
+		// write.  Gated on the same flag as native lowering since it only makes
+		// sense when generating arithmetic constraints; must run after
+		// vectorisation and before register splitting.
+		if p.config.lowerZkcNative {
+			modules = vm.FactorSkipConditions[vm.Uint](modules)
+		}
 	}
 	//
 	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)
