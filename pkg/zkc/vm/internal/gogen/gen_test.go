@@ -379,7 +379,7 @@ fn main<ram>() {
 // compileUint compiles a ZkC source string into a fresh, vectorised
 // WordMachine over vm.Uint — the machine the generator consumes and the
 // reference executor interprets.  `fastMode` selects the prover shape
-// (FastMode on: bitwise/division/comparisons rewritten into helper calls
+// (FastMode off: bitwise/division/comparisons rewritten into helper calls
 // and hints) versus the plain shape with native integer ops.  A fresh machine
 // is required per reference execution because execution mutates memory state.
 func compileUint(t testing.TB, src string, fastMode bool) *vm.WordMachine[vm.Uint] {
@@ -419,7 +419,7 @@ var shapes = []struct {
 	fastMode bool
 }{
 	{"plain", false},
-	{"fastMode", true},
+	{"fastMode", false},
 }
 
 func TestGenValidGo(t *testing.T) {

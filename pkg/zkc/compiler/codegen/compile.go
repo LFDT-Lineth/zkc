@@ -188,7 +188,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		// Factor branch conditions into a single bit register holding the condition result.
 		// Gated on the same flag as fastMode since it only makes
 		// sense when generating arithmetic constraints; must run after
-		// vectorisation to be meaningfull.
+		// vectorisation to be meaningful.
 		if !p.config.fastMode {
 			modules = vm.FactorSkipConditions[vm.Uint](modules)
 		}
