@@ -154,6 +154,7 @@ func (g *generator) emitFail(c *code, fn *wordFunction, x *instruction.Fail) err
 	// simpler fmt.Sprintf formatting rather than the specialised writes used for
 	// the hot DEBUG path.
 	g.usesFmt = true
+
 	c.linef("panic(failure(fmt.Sprintf(%s, %s)))", strconv.Quote("machine panic: "+format), strings.Join(args, ", "))
 
 	return nil
