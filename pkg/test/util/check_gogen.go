@@ -15,6 +15,7 @@ package util
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +40,9 @@ import (
 func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], prog string, test TestCase) {
 	_, outputs := decodeInputsOutputs(t, wm, test.data)
 
-	got, errored, runErr := gogen.Run(prog, gogenInputs(wm, test.data))
+	// Discard the program's debug/fail output: this cross-check compares the
+	// output memories and accept/reject verdict, not the printed messages.
+	got, errored, runErr := gogen.Run(prog, gogenInputs(wm, test.data), io.Discard)
 	if runErr != nil {
 		t.Errorf("[gogen]%s:%d run: %v", test.filename, test.line, runErr)
 		return

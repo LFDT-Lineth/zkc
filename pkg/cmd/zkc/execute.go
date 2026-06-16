@@ -193,8 +193,9 @@ func executeWithGogen(wm *vm.WordMachine[vm.Uint], input map[string][]byte) (map
 	//
 	defer cleanup()
 	// Run the compiled program, passing only the machine's declared inputs (the
-	// generated harness rejects unknown keys).
-	outputs, errored, err := gogen.Run(prog, filterInputsOnly(wm, input))
+	// generated harness rejects unknown keys).  Forward its debug/printf and
+	// fail output to our stderr so those statements are surfaced to the user.
+	outputs, errored, err := gogen.Run(prog, filterInputsOnly(wm, input), os.Stderr)
 	//
 	switch {
 	case err != nil:

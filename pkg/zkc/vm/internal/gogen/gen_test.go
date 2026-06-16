@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -741,7 +742,7 @@ func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 		{"unknown", map[string][]byte{"data": {3}, "extra": {1}}, `unknown input "extra"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, errored, err := gogen.Run(prog, tc.in)
+			_, errored, err := gogen.Run(prog, tc.in, io.Discard)
 			if err == nil {
 				t.Fatal("expected harness error")
 			}
@@ -836,7 +837,7 @@ func buildGeneratedProgram(t *testing.T, src string) (string, error) {
 func runProgram(t *testing.T, prog string, in map[string][]byte) (map[string][]byte, bool) {
 	t.Helper()
 
-	out, errored, err := gogen.Run(prog, in)
+	out, errored, err := gogen.Run(prog, in, io.Discard)
 	if err != nil {
 		t.Fatalf("running generated program: %v", err)
 	}

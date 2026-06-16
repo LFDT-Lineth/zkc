@@ -17,6 +17,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 )
@@ -29,13 +30,18 @@ import (
 // Inputs and outputs are raw memory bytes keyed by memory name, exactly as
 // vm.BootAndExecute consumes/produces them: the generated harness shares the
 // JSON-hex encoding `zkc exec` accepts.
-func Run(prog string, in map[string][]byte) (map[string][]byte, bool, error) {
+//
+// The generated binary's debug/printf output and any fail message are written
+// to stderr; callers pass the sink they want those statements forwarded to
+// (os.Stderr for `exec --gogen`, io.Discard for differential tests, which
+// compare outputs rather than messages).
+func Run(prog string, in map[string][]byte, stderr io.Writer) (map[string][]byte, bool, error) {
 	inJSON, err := MarshalInputs(in)
 	if err != nil {
 		return nil, false, err
 	}
 
-	return RunRaw(prog, inJSON)
+	return RunRaw(prog, inJSON, stderr)
 }
 
 // MarshalInputs renders input memories as the JSON the generated harness reads:
@@ -54,20 +60,26 @@ func MarshalInputs(in map[string][]byte) ([]byte, error) {
 //
 // The protocol matches the generated main harness: a JSON object of hex
 // strings on stdin, the same on stdout, exit code 1 for an execution error.
-func RunRaw(prog string, inJSON []byte) (map[string][]byte, bool, error) {
-	var stdout, stderr bytes.Buffer
+//
+// The generated binary writes its debug/printf output and any fail message to
+// stderr (output memories travel on stdout as JSON, so the two never interfere).
+// That stream is forwarded to the caller-supplied stderr sink — so `exec
+// --gogen` surfaces those statements as the interpreter paths do — while also
+// being captured to enrich any harness-level error.
+func RunRaw(prog string, inJSON []byte, stderr io.Writer) (map[string][]byte, bool, error) {
+	var stdout, captured bytes.Buffer
 
 	cmd := exec.Command(prog)
 	cmd.Stdin = bytes.NewReader(inJSON)
 	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stderr = io.MultiWriter(stderr, &captured)
 
 	if err := cmd.Run(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
 			return nil, true, nil
 		}
 
-		return nil, false, fmt.Errorf("running generated program: %v\n%s", err, stderr.String())
+		return nil, false, fmt.Errorf("running generated program: %v\n%s", err, captured.String())
 	}
 
 	var raw map[string]string
