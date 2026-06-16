@@ -18,12 +18,12 @@ import "github.com/LFDT-Lineth/zkc/pkg/util/field"
 // debugging, for example) should derive a custom Config via the chainable
 // setters below.
 var DEFAULT_CONFIG = Config{
-	field:          field.KOALABEAR_16,
-	inlining:       true,
-	lowerZkcNative: false,
-	quiet:          false,
-	vectorize:      true,
-	splitting:      false,
+	field:     field.KOALABEAR_16,
+	fastMode:  false,
+	inlining:  true,
+	quiet:     false,
+	vectorize: true,
+	splitting: false,
 }
 
 // Config captures the tunable aspects of the ZkC code generator.  Instances
@@ -35,13 +35,15 @@ type Config struct {
 	// a target field in order to correctly evaluate native expressions, and
 	// sanity check native initialisers, etc.
 	field field.Config
+	// fastMode execution is useful to harvest partial trace information,
+	// such as memory access, module call, etc..., but can't be used
+	// to generate the trace witness nor to generate arithmetic constraints.
+	// It is defaulted to false.
+	fastMode bool
 	// inlining controls whether functions marked with the #[inline] annotation
 	// are inlined at their call sites (and removed).  This happens before
 	// native lowering and vectorisation.
 	inlining bool
-	// lower ZkC native functions (such as bitwise ops) into arithmetic instructions.
-	// This is required to generate arithmetic constraints. It happens before vectorization and register splitting.
-	lowerZkcNative bool
 	// quiet controls whether printf statements are emitted as VM debug
 	// instructions or skipped during code generation.
 	quiet bool
@@ -104,12 +106,11 @@ func (p Config) Vectorize(flag bool) Config {
 	return q
 }
 
-// LowerNatives returns a copy of this Config with VM-level bitwise lowering
-// enabled (flag=true) or disabled (flag=false).
-func (p Config) LowerNatives(flag bool) Config {
+// FastMode returns a copy of this Config with fast-mode execution enabled (flag=true) or disabled (flag=false).
+func (p Config) FastMode(flag bool) Config {
 	var q = p
 	//
-	q.lowerZkcNative = flag
+	q.fastMode = flag
 	//
 	return q
 }

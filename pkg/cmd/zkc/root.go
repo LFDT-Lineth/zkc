@@ -97,7 +97,8 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig[F] {
 	var build BuildConfig[F]
 
-	lowerNative := GetFlag(cmd, "lower-native") || GetFlag(cmd, "mir") || GetFlag(cmd, "air")
+	mirOrAir := GetFlag(cmd, "mir") || GetFlag(cmd, "air")
+	fastMode := GetFlag(cmd, "fast") && !mirOrAir
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
 		log.SetLevel(log.DebugLevel)
@@ -107,7 +108,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
 		Inlining(GetFlag(cmd, "inline")).
-		LowerNatives(lowerNative).
+		FastMode(fastMode).
 		Vectorize(GetFlag(cmd, "vectorize")).
 		SplitRegisters(GetFlag(cmd, "split")).
 		Field(field)
@@ -143,7 +144,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("fir", false, "Output Field-level Intermediate Representation (FIR)")
 	rootCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
 	rootCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
-	rootCmd.PersistentFlags().Bool("lower-native", false, "Lower ZkC native functions into arithmetic instructions")
+	rootCmd.PersistentFlags().BoolP("fast", "f", false, "Fast-mode execution (no tracing, no constraints)")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")

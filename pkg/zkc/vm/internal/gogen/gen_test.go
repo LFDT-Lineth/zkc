@@ -381,13 +381,13 @@ fn main<ram>() {
 
 // compileUint compiles a ZkC source string into a fresh, vectorised
 // WordMachine over vm.Uint — the machine the generator consumes and the
-// reference executor interprets.  `lowered` selects the prover shape
-// (LowerNatives on: bitwise/division/comparisons rewritten into helper calls
+// reference executor interprets.  `fastMode` selects the prover shape
+// (FastMode off: bitwise/division/comparisons rewritten into helper calls
 // and hints) versus the plain shape with native integer ops.  A fresh machine
 // is required per reference execution because execution mutates memory state.
-func compileUint(t testing.TB, src string, lowered bool) *vm.WordMachine[vm.Uint] {
+func compileUint(t testing.TB, src string, fastMode bool) *vm.WordMachine[vm.Uint] {
 	t.Helper()
-	return compileUintProgram(t, compileProgram(t, src), lowered)
+	return compileUintProgram(t, compileProgram(t, src), fastMode)
 }
 
 func compileProgram(t testing.TB, src string) ast.Program {
@@ -403,10 +403,10 @@ func compileProgram(t testing.TB, src string) ast.Program {
 	return program
 }
 
-func compileUintProgram(t testing.TB, program ast.Program, lowered bool) *vm.WordMachine[vm.Uint] {
+func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) *vm.WordMachine[vm.Uint] {
 	t.Helper()
 
-	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).LowerNatives(lowered).Vectorize(true).Quiet(true)
+	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).FastMode(fastMode).Vectorize(true).Quiet(true)
 
 	wm, errs := program.Compile(cfg)
 	if len(errs) > 0 {
@@ -418,11 +418,11 @@ func compileUintProgram(t testing.TB, program ast.Program, lowered bool) *vm.Wor
 
 // shapes enumerates the two machine shapes every test runs against.
 var shapes = []struct {
-	name    string
-	lowered bool
+	name     string
+	fastMode bool
 }{
 	{"plain", false},
-	{"lowered", true},
+	{"fastMode", false},
 }
 
 func TestGenValidGo(t *testing.T) {
@@ -450,7 +450,7 @@ func TestGenValidGo(t *testing.T) {
 	for name, src := range srcs {
 		for _, shape := range shapes {
 			t.Run(name+"/"+shape.name, func(t *testing.T) {
-				out, err := vm.GenerateGo(compileUint(t, src, shape.lowered), vm.GoGenConfig{})
+				out, err := vm.GenerateGo(compileUint(t, src, shape.fastMode), vm.GoGenConfig{})
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}
@@ -691,7 +691,7 @@ func TestGenDifferential(t *testing.T) {
 	for _, tc := range diffCases {
 		for _, shape := range shapes {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
-				m := compileUint(t, tc.src, shape.lowered)
+				m := compileUint(t, tc.src, shape.fastMode)
 
 				src, err := vm.GenerateGo(m, vm.GoGenConfig{})
 				if err != nil {
@@ -703,7 +703,7 @@ func TestGenDifferential(t *testing.T) {
 					t.Run(inputName(in), func(t *testing.T) {
 						inBytes := encodeInputs(m, in)
 
-						refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.lowered), inBytes)
+						refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.fastMode), inBytes)
 
 						genOut, genErr := runProgram(t, prog, inBytes)
 						if refErr != genErr {

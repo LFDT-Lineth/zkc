@@ -196,7 +196,7 @@ func TestGenerateCorpus(t *testing.T) {
 					}
 
 					cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).
-						LowerNatives(shape.lowered).Vectorize(true).Quiet(true)
+						FastMode(shape.fastMode).Vectorize(true).Quiet(true)
 
 					wm, errs := program.Compile(cfg)
 					if len(errs) > 0 {
