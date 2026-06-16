@@ -38,10 +38,16 @@ type Program[W word.Word[W]] struct {
 	constants []W
 	// Symbols associated with bytecode offsets
 	symbols map[uint32]uint
+	// debug is the side-table of formatted-print specifications for DEBUG
+	// bytecodes, indexed by the value packed into each DEBUG word (see
+	// Debug.Codes).  Held out-of-line because the chunks (text + register
+	// vectors) cannot be encoded as raw uint32 words.
+	debug [][]base.FormattedChunk
 }
 
 // NewProgram constructs a new bytecode program with a given entry point.
 func NewProgram[W word.Word[W]](modules []Module, bytecodes []uint32, constants []W, symbols map[uint32]uint,
+	debug [][]base.FormattedChunk,
 ) Program[W] {
 	//
 	return Program[W]{
@@ -49,7 +55,14 @@ func NewProgram[W word.Word[W]](modules []Module, bytecodes []uint32, constants 
 		bytecodes,
 		constants,
 		symbols,
+		debug,
 	}
+}
+
+// DebugChunks returns the formatted-print specification for the debug site with
+// the given side-table index (as packed into a DEBUG bytecode word).
+func (p Program[W]) DebugChunks(index uint32) []base.FormattedChunk {
+	return p.debug[index]
 }
 
 // Bytecodes decodes this program into a more human-friendly representation.

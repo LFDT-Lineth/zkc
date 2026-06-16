@@ -16,11 +16,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/heap"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -230,7 +233,7 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		case CHECKCAST:
 			p.pc, err = executeCheckCast(p.pc, bytecodes, frame)
 		case DEBUG:
-			// DEBUG is ignored for now; tests only assert program outputs.
+			p.executeDebug(bytecodes[p.pc], frame)
 			p.pc++
 		case LDC:
 			p.pc = executeLdc_1(p.pc, bytecodes, frame)
@@ -617,6 +620,52 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 	}
 	//
 	return pc + n, storeAcross(module, targets, val, stack)
+}
+
+// executeDebug implements DEBUG: it reproduces the reference word machine's
+// debug/printf handling.  The chunk-set index packed into the bytecode word
+// selects this site's formatted-print specification from the program's debug
+// side-table; each chunk's literal text is emitted verbatim and each formatted
+// argument is rendered against the current frame, with the result written to
+// stdout (matching machine.Base's opcode.DEBUG case).
+func (p *Interpreter[W]) executeDebug(code uint32, frame []W) {
+	var (
+		chunks  = p.program.DebugChunks(code >> 8)
+		module  = p.program.Module(p.fid)
+		builder strings.Builder
+	)
+	//
+	for _, chunk := range chunks {
+		builder.WriteString(chunk.Text)
+		//
+		if chunk.Format.HasFormat() {
+			builder.WriteString(p.formatArgument(module, chunk.Format, chunk.Argument, frame))
+		}
+	}
+	//
+	fmt.Print(builder.String())
+}
+
+// formatArgument packs a (low-limb-first) register vector into a single integer
+// and renders it with the given format, mirroring formatWord in the reference
+// word machine: limbs are accumulated most-significant first, shifting by each
+// limb's bitwidth, and the shared Format.Render produces the final text.
+func (p *Interpreter[W]) formatArgument(module Module, format zkc_util.Format, vec register.Vector,
+	frame []W) string {
+	//
+	var (
+		value big.Int
+		regs  = vec.Registers()
+	)
+	// Loop from most-significant limb to least significant.
+	for i := vec.Len(); i > 0; i-- {
+		var reg = regs[i-1]
+		// Shift accumulator by this limb's width, then add the limb.
+		value.Lsh(&value, bitwidthOf(module, Reg(reg.Unwrap())))
+		value.Add(&value, frame[reg.Unwrap()].BigInt())
+	}
+	//
+	return format.Render(&value)
 }
 
 // executeAdd_2n1 implements ADD_2n1: stack[rd] = stack[rs0] + stack[rs1],

@@ -19,6 +19,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -57,14 +58,14 @@ func NewEncoder[W word.Word[W], T comparable](modules ...Module) *Encoder[W, T] 
 // is done, the internal bytecode sequence is reset.
 func (p *Encoder[W, T]) Encode() Program[W] {
 	// encode bytecodes
-	bytecodes, symbols := p.compile()
+	bytecodes, symbols, debug := p.compile()
 	// Reset internal buffers
 	p.bytecodes = nil
 	p.labels = nil
 	p.symbols = nil
 	p.marks = nil
 	// Done
-	return NewProgram[W](p.modules, bytecodes, nil, symbols)
+	return NewProgram[W](p.modules, bytecodes, nil, symbols, debug)
 }
 
 // MarkLabel current position with given label.
@@ -123,7 +124,7 @@ func (p *Encoder[W, T]) getLabelIndex(label T) uint32 {
 	return uint32(index)
 }
 
-func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint) {
+func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint, debug [][]base.FormattedChunk) {
 	var (
 		offset uint32
 		// Initial mapping assumes every branch at its maximal width.
@@ -154,6 +155,10 @@ func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint) {
 	symbols = patchSymbols(mapping, p.symbols)
 	// patch memories
 	patchIoBytecodes(p.memmap, resolved)
+	// Assign each DEBUG site its side-table index and gather the chunk-sets.
+	// This must happen before the emit loop below, since Debug.Codes packs the
+	// assigned index into the emitted word.
+	debug = indexDebugBytecodes(resolved)
 	// compile bytecodes into raw words
 	for _, bytecode := range resolved {
 		var cs = bytecode.Codes(offset)
@@ -164,7 +169,24 @@ func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint) {
 	// Sanity check the emitted codes decode consistently with the mapping.
 	verifyAlignment[W](codes, mapping, p.modules)
 	//
-	return codes, symbols
+	return codes, symbols, debug
+}
+
+// indexDebugBytecodes assigns each DEBUG bytecode its index into the program's
+// debug side-table (in encounter order) and returns the gathered chunk-sets.
+// The index is stamped back onto the bytecode so Debug.Codes can pack it into
+// the emitted word.
+func indexDebugBytecodes[W word.Word[W]](bytecodes []Bytecode[W]) [][]base.FormattedChunk {
+	var debug [][]base.FormattedChunk
+	//
+	for _, b := range bytecodes {
+		if d, ok := b.(*Debug); ok {
+			d.Index = uint32(len(debug))
+			debug = append(debug, d.Chunks)
+		}
+	}
+	//
+	return debug
 }
 
 // Decode-walk the emitted codes, checking that every bytecode offset in the
