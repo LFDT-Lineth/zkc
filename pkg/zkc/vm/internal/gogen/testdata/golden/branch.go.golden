@@ -65,7 +65,7 @@ func fn_main() {
 	}
 	// [0.2] INT_ADD: $3 = 0xa
 	r3 = 0xa
-	// [0.3] SKIP_IF: skip_if x > $3 2
+	// [0.3] SKIP_IF: skipif x > $3 2
 	if r0 > r3 {
 		goto L_0_6
 	}

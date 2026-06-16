@@ -176,6 +176,24 @@ func NewSkipIfVec(condition opcode.Condition, left, right register.Vector, skip 
 }
 
 // ============================================================================
+
+// DispatchCase is a convenient alias for one (value, skip) entry of a multiway
+// skip's dispatch array.
+type DispatchCase = base.DispatchCase
+
+// MultiwaySkip performs a multi-way conditional skip based on a dispatch array
+// of (value, skip) pairs: the source register is compared (in order) against
+// each case's value and, on the first match, control skips forward by that
+// case's amount.  No match falls through.  This generalises SkipIf.
+type MultiwaySkip = base.SkipMulti
+
+// NewMultiwaySkip constructs a fresh multiway skip instruction dispatching on
+// the value of the given source register.
+func NewMultiwaySkip(source register.Id, cases ...DispatchCase) *MultiwaySkip {
+	return &MultiwaySkip{Source: source, Cases: cases}
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -224,4 +242,5 @@ func init() {
 	gob.Register(Instruction(&Return{}))
 	gob.Register(Instruction(&Skip{}))
 	gob.Register(Instruction(&SkipIf{}))
+	gob.Register(Instruction(&MultiwaySkip{}))
 }

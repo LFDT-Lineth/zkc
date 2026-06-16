@@ -164,16 +164,21 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			panic(fmt.Sprintf("unknown declaration %s", c.Name()))
 		}
 	}
+
+	if len(errors) > 0 {
+		return nil, errors
+	}
+
 	// Inline all functions marked with the #[inline] annotation.  This must
 	// happen before native lowering and vectorisation, both of which splice
 	// instruction sequences into vectors and would thereby break the
 	// invariant that no skip crosses over a call within its vector.
-	if len(errors) == 0 && p.config.inlining && len(inlines) > 0 {
+	if p.config.inlining && len(inlines) > 0 {
 		modules = vm.InlineFunctions[vm.Uint](modules, inlines)
 	}
 
 	// Lower VM-level zkc-native instructions into arithmetic instructions.
-	if len(errors) == 0 && !p.config.fastMode {
+	if !p.config.fastMode {
 		// Lower Bitwise operations into arithmetic instructions.
 		modules = vm.LowerBitwise[vm.Uint](modules)
 		// Lower INT_DIV/INT_REM into hint + arithmetic validation sequences.
@@ -183,8 +188,14 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		modules = vm.LowerComparisons[vm.Uint](modules)
 	}
 
+	// Fast mode optimisation compiler passes
+	if p.config.fastMode {
+		// Turn division / remainder by 2^m into right shifts / bitwise ANDs.
+		modules = vm.OptimizeDivisions[vm.Uint](modules)
+	}
+
 	// Vectorize modules (if no errors)
-	if len(errors) == 0 && p.config.vectorize {
+	if p.config.vectorize {
 		Vectorize(modules, p.srcmaps)
 		// Factor branch conditions into a single bit register holding the condition result.
 		// Gated on the same flag as fastMode since it only makes
@@ -197,12 +208,12 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 
 	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)
 	// Apply register splitting (for now)
-	if len(errors) == 0 && p.config.splitting {
+	if p.config.splitting {
 		wm = vm.SplitRegisters(p.config.field, wm)
 	}
 
 	// Add range constraints. Only makes sense after register splitting happens. Irrelevant in fast mode.
-	if len(errors) == 0 && p.config.splitting && !p.config.fastMode {
+	if p.config.splitting && !p.config.fastMode {
 		wm = vm.AddRangeConstraints(p.config.field, wm)
 	}
 

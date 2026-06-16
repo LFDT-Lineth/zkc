@@ -142,6 +142,8 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 		// hence it decodes back to a Jmp.
 		target, n := decodeSkip1(pc, codes)
 		return &Jmp{Target: target}, n
+	case SKIP_M:
+		return decodeSkipTable[W](pc, codes)
 	case JEQ_rr, JNE_rr, JLT_rr, JLE_rr, JGT_rr, JGE_rr:
 		return decodeJif[W](pc, codes)
 	case SEQ_rr, SNE_rr, SLT_rr, SLE_rr, SGT_rr, SGE_rr:

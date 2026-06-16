@@ -27,8 +27,10 @@ import (
 
 // Compile takes a given set of source files, and parses them into a given set
 // of (linked) declarations.  This includes performing various checks on the
-// files, such as type checking, etc.
-func Compile(field field.Config, files ...source.File) (ast.Program, source.Maps[any], []source.SyntaxError) {
+// files, such as type checking, etc.  Switch statements are lowered to a
+// multiway-skip dispatch.
+func Compile(field field.Config, files ...source.File,
+) (ast.Program, source.Maps[any], []source.SyntaxError) {
 	//
 	var (
 		items   []parser.UnlinkedSourceFile

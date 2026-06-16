@@ -46,29 +46,6 @@ type SwitchBranch[S symbol.Symbol[S]] struct {
 	Body      []Stmt[S]
 }
 
-// LogicalOrOfCases takes a branch of a switch statement, say
-//
-//	switch (discr) {
-//		...
-//		case a, b, ..., z: { ... }	// sample branch
-//		...
-//	}
-//
-// and returns the logical disjunction
-//
-//	logicalOrOfCases  ≡  (discr == a) ∨ … ∨ (discr == z)
-//
-// This function is used to build an equivalent if-then-else statement
-func (s *SwitchBranch[S]) LogicalOrOfCases(discriminant expr.Expr[S]) (logicalOrOfCases expr.LogicalOr[S]) {
-	var labelComparisons = make([]expr.Expr[S], len(s.Labels))
-
-	for i, label := range s.Labels {
-		labelComparisons[i] = expr.NewCmp(expr.EQ, discriminant, label)
-	}
-
-	return expr.LogicalOr[S]{Exprs: labelComparisons}
-}
-
 // DefaultCaseCount returns the number of default case declarations in a switch statement
 // a valid switch statement should contain 0 or 1 default cases
 func (p *Switch[S]) DefaultCaseCount() (nDefaultCases uint) {

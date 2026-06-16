@@ -179,7 +179,7 @@ func verifyAlignment[W word.Word[W]](codes []uint32, mapping []uint32, modules [
 		rmap       = buildReverseMemoryMap[W](modules...)
 		offset     uint32
 		boundaries = make(map[uint32]bool)
-		targets    = make(map[uint32]uint32)
+		targets    = make(map[uint32][]uint32)
 	)
 	//
 	for offset < uint32(len(codes)) {
@@ -189,11 +189,18 @@ func verifyAlignment[W word.Word[W]](codes []uint32, mapping []uint32, modules [
 		//
 		switch bc := bc.(type) {
 		case *Jmp:
-			targets[offset] = bc.Target
+			targets[offset] = []uint32{bc.Target}
 		case *Jif:
-			targets[offset] = bc.Target
+			targets[offset] = []uint32{bc.Target}
 		case *Call:
-			targets[offset] = bc.Target
+			targets[offset] = []uint32{bc.Target}
+		case *Switch:
+			ts := make([]uint32, len(bc.Cases))
+			for i, c := range bc.Cases {
+				ts[i] = c.Target
+			}
+			//
+			targets[offset] = ts
 		}
 		//
 		offset += n
@@ -205,10 +212,12 @@ func verifyAlignment[W word.Word[W]](codes []uint32, mapping []uint32, modules [
 		}
 	}
 	//
-	for pc, t := range targets {
-		if !boundaries[t] {
-			panic(fmt.Sprintf("branch at offset %d (word 0x%08x) targets 0x%x, which is not an instruction boundary",
-				pc, codes[pc], t))
+	for pc, ts := range targets {
+		for _, t := range ts {
+			if !boundaries[t] {
+				panic(fmt.Sprintf("branch at offset %d (word 0x%08x) targets 0x%x, which is not an instruction boundary",
+					pc, codes[pc], t))
+			}
 		}
 	}
 }
