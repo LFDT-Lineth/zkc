@@ -24,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/heap"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -229,7 +230,7 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		//
 		switch opcode & OPCODE_MASK {
 		case FAIL:
-			return nsteps, errors.New("machine panic")
+			return nsteps, p.executeFail(bytecodes[p.pc], frame)
 		case CHECKCAST:
 			p.pc, err = executeCheckCast(p.pc, bytecodes, frame)
 		case DEBUG:
@@ -623,14 +624,33 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 }
 
 // executeDebug implements DEBUG: it reproduces the reference word machine's
-// debug/printf handling.  The chunk-set index packed into the bytecode word
-// selects this site's formatted-print specification from the program's debug
-// side-table; each chunk's literal text is emitted verbatim and each formatted
-// argument is rendered against the current frame, with the result written to
-// stdout (matching machine.Base's opcode.DEBUG case).
+// debug/printf handling, writing the formatted message to stdout (matching
+// machine.Base's opcode.DEBUG case).  The chunk-set index packed into the
+// bytecode word selects this site's specification from the program's side-table.
 func (p *Interpreter[W]) executeDebug(code uint32, frame []W) {
+	fmt.Print(p.formatChunks(p.program.Chunks(code>>8), frame))
+}
+
+// executeFail implements FAIL: it reproduces the reference word machine's
+// executeFail.  A fail with no message chunks aborts with a bare "machine
+// panic"; otherwise the formatted message (looked up in the program's
+// side-table by the index packed into the bytecode word) is included.
+func (p *Interpreter[W]) executeFail(code uint32, frame []W) error {
+	var chunks = p.program.Chunks(code >> 8)
+	//
+	if len(chunks) == 0 {
+		return errors.New("machine panic")
+	}
+	//
+	return fmt.Errorf("machine panic: %s", p.formatChunks(chunks, frame))
+}
+
+// formatChunks renders a formatted-message chunk-set against the current frame,
+// mirroring executeFormattedChunks in the reference word machine: each chunk's
+// literal text is emitted verbatim and each formatted argument is rendered
+// against the frame.
+func (p *Interpreter[W]) formatChunks(chunks []base.FormattedChunk, frame []W) string {
 	var (
-		chunks  = p.program.DebugChunks(code >> 8)
 		module  = p.program.Module(p.fid)
 		builder strings.Builder
 	)
@@ -643,7 +663,7 @@ func (p *Interpreter[W]) executeDebug(code uint32, frame []W) {
 		}
 	}
 	//
-	fmt.Print(builder.String())
+	return builder.String()
 }
 
 // formatArgument packs a (low-limb-first) register vector into a single integer

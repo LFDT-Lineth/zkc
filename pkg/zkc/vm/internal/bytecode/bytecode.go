@@ -245,12 +245,6 @@ func CallFun(target Address, width uint16, args []register.Id, returns []registe
 	return &Call{target, width, asRegs(args...), asRegs(returns...)}
 }
 
-// NewFail constructs a fail instruction, which causes the machine to panic when
-// executed.
-func NewFail() *Fail {
-	return &Fail{}
-}
-
 // Jump creates an unconditional jump instruction transferring control to the
 // given target address.
 func Jump(target Address) *Jmp {

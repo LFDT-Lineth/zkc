@@ -85,7 +85,7 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.DEBUG:
 		p.encoder.Add(bytecode.NewDebug(insn.(*instruction.Debug).Chunks))
 	case opcode.FAIL:
-		p.encoder.Add(bytecode.NewFail())
+		p.encoder.Add(bytecode.NewFail(insn.(*instruction.Fail).Chunks))
 	case opcode.JUMP:
 		p.compileJump(pos, insn.(*instruction.Jump))
 	case opcode.MEMORY_READ:

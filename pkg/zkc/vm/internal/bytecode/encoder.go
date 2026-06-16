@@ -58,14 +58,14 @@ func NewEncoder[W word.Word[W], T comparable](modules ...Module) *Encoder[W, T] 
 // is done, the internal bytecode sequence is reset.
 func (p *Encoder[W, T]) Encode() Program[W] {
 	// encode bytecodes
-	bytecodes, symbols, debug := p.compile()
+	bytecodes, symbols, chunks := p.compile()
 	// Reset internal buffers
 	p.bytecodes = nil
 	p.labels = nil
 	p.symbols = nil
 	p.marks = nil
 	// Done
-	return NewProgram[W](p.modules, bytecodes, nil, symbols, debug)
+	return NewProgram[W](p.modules, bytecodes, nil, symbols, chunks)
 }
 
 // MarkLabel current position with given label.
@@ -124,7 +124,7 @@ func (p *Encoder[W, T]) getLabelIndex(label T) uint32 {
 	return uint32(index)
 }
 
-func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint, debug [][]base.FormattedChunk) {
+func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint, chunks [][]base.FormattedChunk) {
 	var (
 		offset uint32
 		// Initial mapping assumes every branch at its maximal width.
@@ -155,10 +155,10 @@ func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint, debu
 	symbols = patchSymbols(mapping, p.symbols)
 	// patch memories
 	patchIoBytecodes(p.memmap, resolved)
-	// Assign each DEBUG site its side-table index and gather the chunk-sets.
-	// This must happen before the emit loop below, since Debug.Codes packs the
-	// assigned index into the emitted word.
-	debug = indexDebugBytecodes(resolved)
+	// Assign each DEBUG / FAIL site its side-table index and gather the
+	// chunk-sets.  This must happen before the emit loop below, since their
+	// Codes methods pack the assigned index into the emitted word.
+	chunks = indexFormattedBytecodes(resolved)
 	// compile bytecodes into raw words
 	for _, bytecode := range resolved {
 		var cs = bytecode.Codes(offset)
@@ -169,24 +169,28 @@ func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint, debu
 	// Sanity check the emitted codes decode consistently with the mapping.
 	verifyAlignment[W](codes, mapping, p.modules)
 	//
-	return codes, symbols, debug
+	return codes, symbols, chunks
 }
 
-// indexDebugBytecodes assigns each DEBUG bytecode its index into the program's
-// debug side-table (in encounter order) and returns the gathered chunk-sets.
-// The index is stamped back onto the bytecode so Debug.Codes can pack it into
-// the emitted word.
-func indexDebugBytecodes[W word.Word[W]](bytecodes []Bytecode[W]) [][]base.FormattedChunk {
-	var debug [][]base.FormattedChunk
+// indexFormattedBytecodes assigns each formatted-message bytecode (DEBUG and
+// FAIL) its index into the program's chunk side-table (in encounter order) and
+// returns the gathered chunk-sets.  The index is stamped back onto the bytecode
+// so its Codes method can pack it into the emitted word.
+func indexFormattedBytecodes[W word.Word[W]](bytecodes []Bytecode[W]) [][]base.FormattedChunk {
+	var chunks [][]base.FormattedChunk
 	//
 	for _, b := range bytecodes {
-		if d, ok := b.(*Debug); ok {
-			d.Index = uint32(len(debug))
-			debug = append(debug, d.Chunks)
+		switch b := b.(type) {
+		case *Debug:
+			b.Index = uint32(len(chunks))
+			chunks = append(chunks, b.Chunks)
+		case *Fail:
+			b.Index = uint32(len(chunks))
+			chunks = append(chunks, b.Chunks)
 		}
 	}
 	//
-	return debug
+	return chunks
 }
 
 // Decode-walk the emitted codes, checking that every bytecode offset in the

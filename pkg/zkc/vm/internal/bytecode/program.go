@@ -38,16 +38,17 @@ type Program[W word.Word[W]] struct {
 	constants []W
 	// Symbols associated with bytecode offsets
 	symbols map[uint32]uint
-	// debug is the side-table of formatted-print specifications for DEBUG
-	// bytecodes, indexed by the value packed into each DEBUG word (see
-	// Debug.Codes).  Held out-of-line because the chunks (text + register
-	// vectors) cannot be encoded as raw uint32 words.
-	debug [][]base.FormattedChunk
+	// chunks is the side-table of formatted-message specifications for the
+	// bytecodes that carry one (DEBUG and FAIL), indexed by the value packed
+	// into each such word (see Debug.Codes / Fail.Codes).  Held out-of-line
+	// because the chunks (text + register vectors) cannot be encoded as raw
+	// uint32 words.
+	chunks [][]base.FormattedChunk
 }
 
 // NewProgram constructs a new bytecode program with a given entry point.
 func NewProgram[W word.Word[W]](modules []Module, bytecodes []uint32, constants []W, symbols map[uint32]uint,
-	debug [][]base.FormattedChunk,
+	chunks [][]base.FormattedChunk,
 ) Program[W] {
 	//
 	return Program[W]{
@@ -55,14 +56,14 @@ func NewProgram[W word.Word[W]](modules []Module, bytecodes []uint32, constants 
 		bytecodes,
 		constants,
 		symbols,
-		debug,
+		chunks,
 	}
 }
 
-// DebugChunks returns the formatted-print specification for the debug site with
-// the given side-table index (as packed into a DEBUG bytecode word).
-func (p Program[W]) DebugChunks(index uint32) []base.FormattedChunk {
-	return p.debug[index]
+// Chunks returns the formatted-message specification for the DEBUG or FAIL site
+// with the given side-table index (as packed into its bytecode word).
+func (p Program[W]) Chunks(index uint32) []base.FormattedChunk {
+	return p.chunks[index]
 }
 
 // Bytecodes decodes this program into a more human-friendly representation.

@@ -119,7 +119,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	if len(errors) > 0 {
 		// Log errors
 		for _, e := range errors {
-			log.Error(fmt.Sprintf("%s (IR)", e))
+			log.Error(fmt.Sprintf("%s", e))
 		}
 		//
 		os.Exit(4)
