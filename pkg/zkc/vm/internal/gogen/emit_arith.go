@@ -50,10 +50,7 @@ func (g *generator) emitArith(c *code, fn *wordFunction, x *instruction.WordType
 		return g.emitConcat(c, fn, x, store)
 	}
 
-	konst, err := uintConst(x.Constant)
-	if err != nil {
-		return err
-	}
+	var konst = x.Constant.BigInt()
 
 	switch x.Op {
 	case opcode.INT_ADD:
@@ -84,10 +81,10 @@ func anyWide(ops []operand) bool {
 
 // emitAdd emits `target = const + Σ sources` (executeAdd: exact sum, then the
 // store decides).  Constant-zero terms add nothing and are dropped.
-func (g *generator) emitAdd(c *code, srcs []operand, konst uint64, store storeView) error {
+func (g *generator) emitAdd(c *code, srcs []operand, konst *big.Int, store storeView) error {
 	terms := []operand{}
-	if konst != 0 {
-		terms = append(terms, exact(new(big.Int).SetUint64(konst)))
+	if konst.Sign() != 0 {
+		terms = append(terms, exactWide(konst))
 	}
 
 	for _, s := range srcs {
@@ -165,13 +162,13 @@ func (g *generator) emitAdd(c *code, srcs []operand, konst uint64, store storeVi
 
 // emitSub emits `target = sources[0] - sources[1] - … - const`, each step
 // checked for underflow (executeSub: a negative intermediate is an error).
-func (g *generator) emitSub(c *code, srcs []operand, konst uint64, store storeView) error {
+func (g *generator) emitSub(c *code, srcs []operand, konst *big.Int, store storeView) error {
 	minuend := srcs[0]
 
 	subtrahends := slices0(srcs[1:])
-	if konst != 0 {
+	if konst.Sign() != 0 {
 		// The constant is subtracted last, matching executeSub.
-		subtrahends = append(subtrahends, exact(new(big.Int).SetUint64(konst)))
+		subtrahends = append(subtrahends, exactWide(konst))
 	}
 	// Subtracting a provable zero never underflows and changes nothing.
 	kept := subtrahends[:0]
@@ -249,10 +246,11 @@ func (g *generator) emitSub(c *code, srcs []operand, konst uint64, store storeVi
 // emitMul emits `target = const · Π sources` (executeMul: exact product, then
 // the store decides).  The constant leads the factor list, matching the
 // oracle's evaluation order, and is dropped when it is the identity.
-func (g *generator) emitMul(c *code, srcs []operand, konst uint64, store storeView) error {
+func (g *generator) emitMul(c *code, srcs []operand, konst *big.Int, store storeView) error {
 	factors := []operand{}
-	if konst != 1 || len(srcs) == 0 {
-		factors = append(factors, exact(new(big.Int).SetUint64(konst)))
+	// the first condition amounts to "konst != 1"
+	if konst.Cmp(big.NewInt(1)) != 0 || len(srcs) == 0 {
+		factors = append(factors, exactWide(konst))
 	}
 
 	factors = append(factors, srcs...)
