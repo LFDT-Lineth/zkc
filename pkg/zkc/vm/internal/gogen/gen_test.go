@@ -20,7 +20,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -788,8 +790,7 @@ func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]byt
 	return vm.EncodeOutputs(wm), false
 }
 
-// buildProgram compiles generated source through the shared build cache
-// (pkg/zkc/gogen), so identical programs across tests build exactly once.
+// buildProgram compiles generated source into a test-owned temporary directory.
 func buildProgram(t *testing.T, src string) string {
 	t.Helper()
 
@@ -797,12 +798,36 @@ func buildProgram(t *testing.T, src string) string {
 		t.Skip("go toolchain not available")
 	}
 
-	prog, err := gogen.Build(src)
+	prog, err := buildGeneratedProgram(t, src)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	return prog
+}
+
+func buildGeneratedProgram(t *testing.T, src string) (string, error) {
+	t.Helper()
+
+	dir := t.TempDir()
+	prog := filepath.Join(dir, "prog")
+
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o644); err != nil {
+		return "", err
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module zkcgen\n\ngo 1.24\n"), 0o644); err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("go", "build", "-o", prog, ".")
+	cmd.Dir = dir
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("go build failed: %v\n%s\n--- source ---\n%s", err, out, src)
+	}
+
+	return prog, nil
 }
 
 // runProgram runs the compiled program on packed-byte inputs (see encodeInputs),
