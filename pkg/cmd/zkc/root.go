@@ -97,8 +97,8 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig[F] {
 	var build BuildConfig[F]
 
-	mirOrLower := GetFlag(cmd, "mir") || GetFlag(cmd, "air")
-	fastMode := GetFlag(cmd, "fastMode") && !mirOrLower
+	mirOrAir := GetFlag(cmd, "mir") || GetFlag(cmd, "air")
+	fastMode := GetFlag(cmd, "fastMode") && !mirOrAir
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
 		log.SetLevel(log.DebugLevel)
@@ -144,7 +144,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("fir", false, "Output Field-level Intermediate Representation (FIR)")
 	rootCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
 	rootCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
-	rootCmd.PersistentFlags().Bool("fastMode", false, "Fast-mode execution (harvest partial trace information)")
+	rootCmd.PersistentFlags().Bool("fast", false, "Fast-mode execution (no tracing, no constraints)")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
