@@ -45,6 +45,7 @@ var opcodeCoverage = map[string]string{
 	"SKIP":         "goto",
 	"RETURN":       "returnOk",
 	"DEBUG":        "emitDebug (printf to stderr)",
+	"SKIP_MULTI":   "emitMultiwaySkip (switch + goto)",
 	// Word instructions.
 	"INT_ADD":      "emitArith (WordTypeA)",
 	"INT_SUB":      "emitArith (WordTypeA)",

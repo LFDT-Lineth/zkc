@@ -166,6 +166,8 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 		var insn = wi.(*instruction.SkipIf)
 		// Done
 		return insn
+	case opcode.SKIP_MULTI:
+		return wi.(*instruction.MultiwaySkip)
 	case opcode.BIT_CONCAT:
 		var insn = wi.(*instruction.WordTypeA[W])
 		return p.lowerBitwiseConcatenation(insn.Target, insn.Sources, mapping)

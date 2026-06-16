@@ -283,6 +283,8 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeSkipIf_rr[W, util.LessThanOrEqual[W]](p.pc, bytecodes, frame)
 		case SGE_rr:
 			p.pc = executeSkipIf_rr[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
+		case SKIP_M:
+			p.pc = executeSkipTable(p.pc, bytecodes, frame)
 		case JEQ_rv:
 			p.pc = executeJif_rv[W, util.Equal[W]](p.pc, bytecodes, frame)
 		case JNE_rv:

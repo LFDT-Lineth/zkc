@@ -34,6 +34,8 @@ const (
 	SKIP_IF
 	// SKIP instruction
 	SKIP
+	// SKIP_MULTI instruction
+	SKIP_MULTI
 	// RETURN instruction
 	RETURN
 	// DEBUG instruction

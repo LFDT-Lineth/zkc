@@ -321,6 +321,20 @@ func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 			frame.pc = frame.pc.Skip(insn.Skip)
 		}
 		// Fall thru
+	case opcode.SKIP_MULTI:
+		var binsn any = insn
+		insn := binsn.(*instruction.MultiwaySkip)
+		// Dispatch on the source register value: skip by the first matching
+		// case, or fall through to the next micro-instruction if none match.
+		val := frame.Load(insn.Source)
+		//
+		for _, c := range insn.Cases {
+			if val.Cmp64(uint64(c.Value)) == 0 {
+				frame.pc = frame.pc.Skip(c.Skip)
+				break
+			}
+		}
+		// Fall thru
 	case opcode.DEBUG:
 		var binsn any = insn
 		insn := binsn.(*instruction.Debug)

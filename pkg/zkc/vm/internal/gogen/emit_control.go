@@ -54,6 +54,10 @@ func collectLabels(code wordCode) map[pos]bool {
 				labels[skipTarget(uint(vi), uint(ci), x.Skip, n)] = true
 			case *instruction.Jump:
 				labels[pos{x.Immediate, 0}] = true
+			case *instruction.MultiwaySkip:
+				for _, cse := range x.Cases {
+					labels[skipTarget(uint(vi), uint(ci), cse.Skip, n)] = true
+				}
 			}
 		}
 	}
@@ -96,6 +100,45 @@ func (g *generator) condExpr(fn *wordFunction, x *instruction.SkipIf) (string, e
 	default:
 		return "", fmt.Errorf("gogen: unsupported skip condition 0x%x", uint(x.Cond))
 	}
+}
+
+// emitMultiwaySkip renders a multiway dispatch as a Go switch on the source
+// register: each case jumps to its skip target, and a non-matching value falls
+// through to the following instruction (so endOfFlow is NOT called).  The
+// switch form (over an if-else chain) lets the Go compiler lower the dispatch
+// to a jump table or binary search rather than a linear sequence of compares.
+//
+// A case value fits in 64 bits, so a wide source can only match when its high
+// limb is zero; we therefore switch on the low limb under a high-limb-zero
+// guard, leaving any wide non-zero source to fall through.
+func (g *generator) emitMultiwaySkip(c *code, fn *wordFunction, x *instruction.MultiwaySkip,
+	vi, ci, vecLen uint) error {
+	source, err := g.operand(fn, x.Source)
+	if err != nil {
+		return err
+	}
+	//
+	if source.wide() {
+		c.linef("if %s == 0 {", source.hi)
+	}
+	//
+	c.linef("switch %s {", source.expr)
+	//
+	for _, cse := range x.Cases {
+		target := skipTarget(vi, ci, cse.Skip, vecLen)
+		//
+		c.linef("case %d:", cse.Value)
+		c.linef("goto %s", labelName(target))
+		g.iv.edgeTo(target)
+	}
+	//
+	c.line("}")
+	//
+	if source.wide() {
+		c.line("}")
+	}
+	//
+	return nil
 }
 
 // elemEq / elemOrd compare one (possibly two-limb) element pair as full values.
