@@ -50,7 +50,7 @@ func (g *generator) emitArith(c *code, fn *wordFunction, x *instruction.WordType
 		return g.emitConcat(c, fn, x, store)
 	}
 
-	konst, err := uintConst(x.Constant)
+	konst, err := constOperand(x.Constant)
 	if err != nil {
 		return err
 	}
@@ -84,10 +84,10 @@ func anyWide(ops []operand) bool {
 
 // emitAdd emits `target = const + Σ sources` (executeAdd: exact sum, then the
 // store decides).  Constant-zero terms add nothing and are dropped.
-func (g *generator) emitAdd(c *code, srcs []operand, konst uint64, store storeView) error {
+func (g *generator) emitAdd(c *code, srcs []operand, konst operand, store storeView) error {
 	terms := []operand{}
-	if konst != 0 {
-		terms = append(terms, exact(new(big.Int).SetUint64(konst)))
+	if !konst.isZero() {
+		terms = append(terms, konst)
 	}
 
 	for _, s := range srcs {
@@ -165,13 +165,13 @@ func (g *generator) emitAdd(c *code, srcs []operand, konst uint64, store storeVi
 
 // emitSub emits `target = sources[0] - sources[1] - … - const`, each step
 // checked for underflow (executeSub: a negative intermediate is an error).
-func (g *generator) emitSub(c *code, srcs []operand, konst uint64, store storeView) error {
+func (g *generator) emitSub(c *code, srcs []operand, konst operand, store storeView) error {
 	minuend := srcs[0]
 
 	subtrahends := slices0(srcs[1:])
-	if konst != 0 {
+	if !konst.isZero() {
 		// The constant is subtracted last, matching executeSub.
-		subtrahends = append(subtrahends, exact(new(big.Int).SetUint64(konst)))
+		subtrahends = append(subtrahends, konst)
 	}
 	// Subtracting a provable zero never underflows and changes nothing.
 	kept := subtrahends[:0]
@@ -249,10 +249,10 @@ func (g *generator) emitSub(c *code, srcs []operand, konst uint64, store storeVi
 // emitMul emits `target = const · Π sources` (executeMul: exact product, then
 // the store decides).  The constant leads the factor list, matching the
 // oracle's evaluation order, and is dropped when it is the identity.
-func (g *generator) emitMul(c *code, srcs []operand, konst uint64, store storeView) error {
+func (g *generator) emitMul(c *code, srcs []operand, konst operand, store storeView) error {
 	factors := []operand{}
-	if konst != 1 || len(srcs) == 0 {
-		factors = append(factors, exact(new(big.Int).SetUint64(konst)))
+	if konst.val.Cmp(big.NewInt(1)) != 0 || len(srcs) == 0 {
+		factors = append(factors, konst)
 	}
 
 	factors = append(factors, srcs...)
@@ -472,6 +472,30 @@ type storeView struct {
 	total  uint // total bit width across all target registers
 }
 
+// hasWideLimb reports whether any limb of a multi-register store is itself
+// wider than 64 bits (a lo/hi pair).  Such stores arise from destructuring a
+// runtime pair (e.g. the shr_u128 bitwise-lowering helper splitting a u128 into
+// [u1, u127]) and are distributed by storePair, which is pair-aware.
+func (s storeView) hasWideLimb() bool {
+	for _, l := range s.limbs {
+		if l.width > 64 {
+			return true
+		}
+	}
+
+	return false
+}
+
+// noWideLimb is a defensive guard for the narrow distribution paths
+// (storeNamed/storeKnown), which cannot place a value into a wide limb.
+func (s storeView) noWideLimb() error {
+	if s.hasWideLimb() {
+		return fmt.Errorf("gogen: wide register inside a multi-register store reached a narrow distribution path")
+	}
+
+	return nil
+}
+
 // buildStore translates a target register vector into a storeView.
 func (g *generator) buildStore(fn *wordFunction, vec register.Vector) (storeView, error) {
 	regs := vec.Registers()
@@ -493,10 +517,6 @@ func (g *generator) buildStore(fn *wordFunction, vec register.Vector) (storeView
 			return storeView{}, err
 		}
 
-		if l.width > 64 {
-			return storeView{}, fmt.Errorf("gogen: wide register %q inside a multi-register store unsupported", l.reg)
-		}
-
 		limbs[i] = l
 		total += l.width
 	}
@@ -508,10 +528,10 @@ func (g *generator) buildStore(fn *wordFunction, vec register.Vector) (storeView
 // (exact / narrow expression / lo-hi pair) and the target's shape.
 func (g *generator) storeValue(c *code, store storeView, op operand) error {
 	switch {
-	case op.val != nil && !op.wide():
+	case op.val != nil && !op.wide() && !store.hasWideLimb():
 		g.storeKnown(c, store, op.val)
 		return nil
-	case !op.wide():
+	case !op.wide() && !store.hasWideLimb():
 		if store.single != nil {
 			g.assignSingle(c, *store.single, op)
 			return nil
@@ -571,6 +591,10 @@ func (g *generator) storeNamed(c *code, store storeView, op operand) error {
 		return nil
 	}
 
+	if err := store.noWideLimb(); err != nil {
+		return err
+	}
+
 	v := op.expr
 	rest := new(big.Int).Set(op.max) // bound of the not-yet-distributed bits
 
@@ -599,7 +623,9 @@ func (g *generator) storeNamed(c *code, store storeView, op operand) error {
 }
 
 // storeKnown stores a generation-time known value: limbs become literals and
-// the width check resolves statically.
+// the width check resolves statically.  A multi-register store with a wide
+// limb is not reachable for known values (such stores arise from destructuring
+// runtime pairs), so storeValue routes those through storePair instead.
 func (g *generator) storeKnown(c *code, store storeView, val *big.Int) {
 	if store.single != nil {
 		l := *store.single
@@ -688,9 +714,17 @@ func (g *generator) storePair(c *code, store storeView, bound *big.Int) error {
 	for i, l := range store.limbs {
 		last := i == len(store.limbs)-1
 
-		if l.width < 64 {
+		switch {
+		case l.width > 64:
+			// Wide limb: its low 64 bits are `lo`, its high (width-64) bits are
+			// `hi` masked to that width.  In a multi-register store total ≤ 128
+			// with at least one other limb, so width-64 ≤ 63 and the mask shift
+			// never overflows.
+			c.linef("%s = lo", l.lo())
+			c.linef("%s = hi & (1<<%d - 1)", l.hiName(), l.width-64)
+		case l.width < 64:
 			c.linef("%s = lo & (1<<%d - 1)", l.reg, l.width)
-		} else {
+		default:
 			c.linef("%s = lo", l.reg)
 		}
 
@@ -701,9 +735,15 @@ func (g *generator) storePair(c *code, store storeView, bound *big.Int) error {
 			break
 		}
 
-		if l.width == 64 {
+		switch {
+		case l.width > 64:
+			// Shift the pair right by width>64: the remaining bits are wholly in
+			// hi, so the new lo is hi>>(width-64) and hi clears.
+			c.linef("lo = hi >> %d", l.width-64)
+			c.line("hi = 0")
+		case l.width == 64:
 			c.line("lo, hi = hi, 0")
-		} else {
+		default:
 			c.linef("lo = lo>>%d | hi<<%d", l.width, 64-l.width)
 			c.linef("hi >>= %d", l.width)
 		}

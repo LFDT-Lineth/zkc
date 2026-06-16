@@ -87,6 +87,10 @@ func runGenerateCmd[F field.Element[F]](cmd *cobra.Command, args []string, field
 }
 
 func applyGenerateDefaults[F field.Element[F]](build *BuildConfig[F], quiet bool) {
+	// gogen compiles native ops straight to Go operators, so it must consume the
+	// un-lowered machine: native lowering produces wide arithmetic (e.g. 128-bit
+	// masks) that gogen cannot emit. Force fast mode regardless of the --fast flag.
+	build.config = build.config.FastMode(true)
 	// Suppress printf debug instructions when quiet mode is enabled.
 	build.config = build.config.Quiet(quiet)
 	// Generation consumes the word machine.
