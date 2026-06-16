@@ -53,6 +53,7 @@ func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestC
 		t.Errorf("[gogen %s]%s:%d build: %v", cfg.Name, test.filename, test.line, err)
 		return
 	}
+
 	_, outputs := decodeInputsOutputs(t, wm, test.data)
 
 	got, errored, runErr := gogen.Run(prog, gogenInputs(wm, test.data))
