@@ -627,16 +627,16 @@ func (p *StmtCompiler) compileIntMul(args []Expr, bitwidth uint, mapping []uint,
 	)
 	//
 	for _, e := range args {
-		var overflow bool
+		var carry vm.Uint
 		//
 		if c, ok := p.asConstant(e); ok {
-			constant, overflow = constant.Mul(c)
+			carry, constant = constant.Mul(c)
 		} else {
 			nargs = append(nargs, e)
 		}
 		// NOTE: this error should be caught and reported earlier in the
 		// pipeline.
-		if overflow || !constant.FitsWithin(bitwidth) {
+		if carry.Cmp64(0) != 0 || !constant.FitsWithin(bitwidth) {
 			panic("arithmetic overflow")
 		}
 	}

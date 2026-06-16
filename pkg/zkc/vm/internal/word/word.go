@@ -40,6 +40,8 @@ type Base[W any] interface {
 type Word[W any] interface {
 	// Add two words together, producing another (along with an overflow bit).
 	Add(W) (W, bool)
+	// Add two words together, producing another (along with an overflow bit).
+	Add64(uint64) (W, bool)
 	// AddMod adds two words together modulus a third.
 	AddMod(W, W) W
 	// Bitwise AND of two words.
@@ -57,8 +59,8 @@ type Word[W any] interface {
 	Div(W) W
 	// Check whether this value fits within the given bitwidth.
 	FitsWithin(uint) bool
-	// Multiply two words together, producing another (along with an overflow bit).
-	Mul(W) (W, bool)
+	// Multiply two words together, producing a double word.
+	Mul(W) (hi W, lo W)
 	// MulMod multiplies two words together modulus a third.
 	MulMod(W, W) W
 	// Bitwise NOT of this word within the given bit width.
@@ -71,7 +73,7 @@ type Word[W any] interface {
 	// Shift left word by the amount given in another word, masking to width bits.
 	Shl(uint, W) W
 	// Shift left word by the amount given.
-	Shl64(uint64) W
+	Shl64(uint64) (hi W, lo W)
 	// Shift right word by the amount given in another word.
 	Shr(W) W
 	// Shift right word by a given number of bits.
@@ -85,6 +87,8 @@ type Word[W any] interface {
 	SetUint64(uint64) W
 	// Sub two words together, producing another (along with an underflow bit).
 	Sub(W) (W, bool)
+	// Sub two words together, producing another (along with an underflow bit).
+	Sub64(uint64) (W, bool)
 	// SubMod subtracts two words together modulus a third.
 	SubMod(W, W) W
 	// Returns value of word as an unsigned integer and will panic if the value

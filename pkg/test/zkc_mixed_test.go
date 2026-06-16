@@ -24,7 +24,7 @@ import (
 // are executed via the bytecode interpreter (in addition to the usual word
 // machine), exercising its support for native field arithmetic.
 var DEFAULT_MIXED_CONFIG = util.DEFAULT_CONFIG.
-	Words(vm.WORD_UINT, vm.WORD_UINT64).
+	Words(vm.WORD_UINT128, vm.WORD_UINT64).
 	Bytecode(true)
 
 // ===================================================================

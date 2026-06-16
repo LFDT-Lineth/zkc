@@ -216,11 +216,11 @@ func executeMul[W word.Word[W]](target register.Vector, sources []register.Id, c
 	)
 	//
 	for _, arg := range sources {
-		var of bool
+		var w W
 		//
-		val, of = val.Mul(frame.Load(arg))
+		w, val = val.Mul(frame.Load(arg))
 		//
-		overflow = overflow || of
+		overflow = overflow || w.Cmp64(0) != 0
 	}
 	//
 	if overflow && val.Cmp64(0) != 0 {
@@ -465,7 +465,7 @@ func executeConcat[W word.Word[W]](target register.Vector, sources []register.Id
 			width = frame.BitwidthOf(reg)
 		)
 		//
-		val = val.Shl64(uint64(width))
+		_, val = val.Shl64(uint64(width))
 		// Merge bits from value at the correct position
 		val = val.Or(frame.Load(reg))
 	}

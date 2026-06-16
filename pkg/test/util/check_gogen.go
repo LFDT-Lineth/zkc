@@ -15,12 +15,13 @@ package util
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/gogen"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -36,29 +37,14 @@ import (
 // (there is no enclosing t.Run), so it must never call t.Skip / t.Fatal — doing so
 // would abort the surrounding bytecode and constraint checks.  Unsupported programs
 // are logged and skipped; only genuine mismatches use t.Errorf.
-func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase, cfg vm.WordConfig) {
-	if _, err := exec.LookPath("go"); err != nil {
-		// No Go toolchain: silently skip this optional cross-check.
-		return
-	}
-	// Generate native Go for this machine.
-	src, err := vm.GenerateGo(wm, vm.GoGenConfig{})
-	if err != nil {
-		t.Logf("[gogen %s]%s:%d unsupported, skipping: %v", cfg.Name, test.filename, test.line, err)
-		return
-	}
-	// Compile the generated main package for this test case.
-	prog, err := buildGogenProgram(t, src)
-	if err != nil {
-		t.Errorf("[gogen %s]%s:%d build: %v", cfg.Name, test.filename, test.line, err)
-		return
-	}
-
+func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], prog string, test TestCase) {
 	_, outputs := decodeInputsOutputs(t, wm, test.data)
 
-	got, errored, runErr := gogen.Run(prog, gogenInputs(wm, test.data))
+	// Discard the program's debug/fail output: this cross-check compares the
+	// output memories and accept/reject verdict, not the printed messages.
+	got, errored, runErr := gogen.Run(prog, gogenInputs(wm, test.data), io.Discard)
 	if runErr != nil {
-		t.Errorf("[gogen %s]%s:%d run: %v", cfg.Name, test.filename, test.line, runErr)
+		t.Errorf("[gogen]%s:%d run: %v", test.filename, test.line, runErr)
 		return
 	}
 
@@ -74,13 +60,25 @@ func runGogenExecutionTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestC
 	}
 
 	for _, err := range errs {
-		t.Errorf("[gogen %s]%s:%d %v", cfg.Name, test.filename, test.line, err)
+		t.Errorf("[gogen]%s:%d %v", test.filename, test.line, err)
 	}
 }
 
-func buildGogenProgram(t *testing.T, src string) (string, error) {
+// Build a go binary representing the given word machine.
+func buildGogenProgram(t *testing.T, wm *vm.WordMachine[vm.Uint]) (string, error) {
+	//
 	t.Helper()
-
+	//
+	if _, err := exec.LookPath("go"); err != nil {
+		// No Go toolchain: silently skip this optional cross-check.
+		return "", err
+	}
+	// Generate native Go for this machine.
+	src, err := vm.GenerateGo(wm, vm.GoGenConfig{})
+	if err != nil {
+		return "", err
+	}
+	// Compile the generated main package for this test case.
 	dir := t.TempDir()
 	prog := filepath.Join(dir, "prog")
 
@@ -96,7 +94,7 @@ func buildGogenProgram(t *testing.T, src string) (string, error) {
 	cmd.Dir = dir
 
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("go build failed: %v\n%s\n--- source ---\n%s", err, out, src)
+		return "", fmt.Errorf("build error: %v\n%s\n--- source ---\n%s", err, out, src)
 	}
 
 	return prog, nil
