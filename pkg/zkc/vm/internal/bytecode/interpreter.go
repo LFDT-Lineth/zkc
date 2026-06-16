@@ -519,12 +519,12 @@ func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (ui
 	//
 	for sources.HasNext() {
 		var (
-			of     bool
+			hi     W
 			source = uint16(sources.Next())
 		)
 		//
-		val, of = val.Mul(stack[source])
-		overflow = overflow || of
+		hi, val = val.Mul(stack[source])
+		overflow = overflow || hi.Cmp64(0) != 0
 	}
 	// A zero result is exact even when an intermediate product overflowed
 	// (matches executeMul in the slow word machine).
@@ -610,7 +610,8 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 			reg = uint16(sources.Next())
 		)
 		//
-		val = stack[reg].Shl64(uint64(width)).Or(val)
+		_, lo := stack[reg].Shl64(uint64(width))
+		val = val.Or(lo)
 		//
 		width = width + bitwidthOf(module, reg)
 	}
@@ -883,14 +884,14 @@ func executeMul_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 		// Read rs1
 		val1 = stack[rs1]
 		// Add v0 * v1
-		res, overflow = val0.Mul(val1)
+		hi, lo = val0.Mul(val1)
 	)
 	// Check for overflow
-	if overflow {
+	if hi.Cmp64(0) != 0 {
 		return pc, errors.New("arithmetic overflow")
 	}
 	//
-	stack[rd] = res
+	stack[rd] = lo
 	//
 	return pc + n, nil
 }
@@ -900,14 +901,14 @@ func executeMul_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint
 	var (
 		rs, rd, constant, n = decodeArith_1n1c[W](pc, codes)
 		val                 = stack[rs]
-		res, overflow       = val.Mul(constant)
+		hi, lo              = val.Mul(constant)
 	)
 	//
-	if overflow {
+	if hi.Cmp64(0) != 0 {
 		return pc, errors.New("arithmetic overflow")
 	}
 	//
-	stack[rd] = res
+	stack[rd] = lo
 	//
 	return pc + n, nil
 }

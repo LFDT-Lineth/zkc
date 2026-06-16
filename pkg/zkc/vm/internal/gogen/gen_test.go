@@ -27,12 +27,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 

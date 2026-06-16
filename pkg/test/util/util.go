@@ -28,7 +28,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -80,7 +80,7 @@ func ReadTestsFile(t *testing.T, cfg TestConfig, test string) []TestCase {
 		// Parse input line as JSON
 		if line != "" && !strings.HasPrefix(line, ";;") {
 			// Read inputs / outputs
-			data, err := util.ParseJsonInputFile([]byte(line))
+			data, err := zkc_util.ParseJsonInputFile([]byte(line))
 			//
 			if err != nil {
 				msg := fmt.Sprintf("%s:%d: %s", filename, i+1, err)

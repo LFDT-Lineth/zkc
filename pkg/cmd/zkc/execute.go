@@ -18,8 +18,10 @@ import (
 	"os"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -63,10 +65,10 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		quiet = GetFlag(cmd, "quiet")
 		// fast mode flag
 		fast = GetFlag(cmd, "fast")
-		// ultra fast mode flag
-		ultra_fast = GetFlag(cmd, "ultra-fast")
+		// gogen mode flag: execute via generated Go rather than the interpreter
+		gogen = GetFlag(cmd, "gogen")
 		// identify whether tracing required or not.
-		tracing = check || outputFile != ""
+		tracing = check || outputFile != "" || !fast
 		//
 		trace   trace.Trace[F]
 		outputs map[string][]byte
@@ -77,6 +79,8 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	artifacts := build.Build(args[1:]...)
 	wm := artifacts.wir.Unwrap()
+	// Filter out things other than inputs
+	input = filterInputsOnly(&wm, input)
 	// Wrap the word machine in a binary file for execution / tracing / checking.
 	binfile := constraints.NewBinaryFile[F](nil, nil, field, wm)
 	// =====================================================
@@ -84,22 +88,9 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// =====================================================
 	if tracing {
 		trace, errors = binfile.Trace(input, traceConfig)
-	} else if fast || ultra_fast {
-		var (
-			m = binfile.WordMachine()
-			// lower to a 64bit machine
-			m64 = vm.WordToWordMachine[vm.Uint, vm.Uint64](&m)
-		)
-		//
-		if ultra_fast {
-			// Compile bytecode interpreter
-			bci := vm.WordToBytecodeInterpreter(m64)
-			// Execute bytecode
-			outputs, errors = vm.BootAndExecute(bci, input, 131072)
-		} else {
-			// Execute directly
-			outputs, errors = vm.BootAndExecute(m64, input, 131072)
-		}
+	} else if gogen {
+		// Execute via native Go generated from the word machine.
+		outputs, errors = executeWithGogen(&wm, input)
 	} else {
 		outputs, errors = binfile.Execute(input, 131072)
 	}
@@ -177,5 +168,61 @@ func init() {
 	executeCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	executeCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
 	executeCmd.Flags().BoolP("fast", "f", false, "enable fast execution")
-	executeCmd.Flags().BoolP("ultra-fast", "u", false, "enable ultra-fast execution")
+	executeCmd.Flags().BoolP("gogen", "g", false, "execute via generated Go instead of the interpreter")
+}
+
+// executeWithGogen executes the word machine by generating native Go, compiling
+// it, and running the resulting binary as a subprocess — the same path the
+// gogen differential tests take, exposed here as the "--gogen" execution mode.
+func executeWithGogen(wm *vm.WordMachine[vm.Uint], input map[string][]byte) (map[string][]byte, []error) {
+	var (
+		stats = util.NewPerfStats()
+	)
+	// Generate native Go source for the word machine.
+	src, err := vm.GenerateGo(wm, vm.GoGenConfig{})
+	if err != nil {
+		return nil, []error{err}
+	}
+	// Compile the generated source to a temporary executable.
+	prog, cleanup, err := gogen.Build(src)
+	if err != nil {
+		return nil, []error{err}
+	}
+	// Log result
+	stats.Log(fmt.Sprintf("compiling binary %s", prog))
+	//
+	defer cleanup()
+	// Run the compiled program, passing only the machine's declared inputs (the
+	// generated harness rejects unknown keys).
+	outputs, errored, err := gogen.Run(prog, filterInputsOnly(wm, input))
+	//
+	switch {
+	case err != nil:
+		return nil, []error{err}
+	case errored:
+		return nil, []error{fmt.Errorf("execution rejected (trace rejected)")}
+	}
+	//
+	return outputs, nil
+}
+
+// filterInputsOnly restricts the parsed input file to the machine's declared
+// input memories, matching what the generated harness expects on stdin.
+func filterInputsOnly(wm *vm.WordMachine[vm.Uint], input map[string][]byte) map[string][]byte {
+	inputs := make(map[string][]byte)
+	//
+	for it := wm.Inputs(); it.HasNext(); {
+		in := it.Next()
+		if bytes, ok := input[in.Name()]; ok {
+			inputs[in.Name()] = bytes
+		}
+	}
+	// Sanity check what was actually filtered out
+	for k := range input {
+		if _, ok := inputs[k]; !ok {
+			log.Warn("ignoring input/output \"", k, "\"")
+		}
+	}
+	//
+	return inputs
 }

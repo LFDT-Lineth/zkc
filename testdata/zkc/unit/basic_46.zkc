@@ -4,13 +4,13 @@ fn main() {
     var val:u64 = data[0]
     var res:u64 = data[1]
     //
-    if dec(val) != res {
+    if double(val) != res {
         fail
     }
 }
 
-fn dec(val:u64) -> (res:u64) {
-    var b:u1
+fn double(val:u64) -> (res:u64) {
+    var tmp:u64
     //
-    b::res = (1 as u1)::val - 1
+    tmp::res = (val as u128) * 2
 }
