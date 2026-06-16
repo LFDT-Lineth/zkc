@@ -491,10 +491,6 @@ func (g *generator) buildStore(fn *wordFunction, vec register.Vector) (storeView
 			return storeView{}, err
 		}
 
-		if l.width > 64 {
-			return storeView{}, fmt.Errorf("gogen: wide register %q inside a multi-register store unsupported", l.reg)
-		}
-
 		limbs[i] = l
 		total += l.width
 	}
@@ -688,6 +684,8 @@ func (g *generator) storePair(c *code, store storeView, bound *big.Int) error {
 
 		if l.width < 64 {
 			c.linef("%s = lo & (1<<%d - 1)", l.reg, l.width)
+		} else if l.width > 64 {
+			c.linef("%s, %s = hi, lo", l.hiName(), l.lo())
 		} else {
 			c.linef("%s = lo", l.reg)
 		}
