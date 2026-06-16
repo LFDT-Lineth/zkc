@@ -95,6 +95,10 @@ type memInfo struct {
 	varName string
 	role    memRole
 	geom    memory.Geometry[word.Uint]
+	// dataWidths are the bit-widths of the memory's data lines, in order; the
+	// main harness bakes these in to pack/unpack the byte encoding shared with
+	// `zkc exec` (see encodeBytes / decodeBytes).
+	dataWidths []uint
 	// contents holds the baked initial values of a static (SROM) memory; nil
 	// for all other roles.
 	contents []uint64
@@ -124,6 +128,7 @@ func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
 		modules:     wm.Modules(),
 		modulus:     wm.Executor().Modulus().BigInt(),
 		names:       map[string]bool{},
+		helpers:     map[string]bool{},
 	}
 	mainID, hasMain := uint(0), false
 
@@ -161,11 +166,23 @@ func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
 	if !hasMain {
 		return "", fmt.Errorf("gogen: no 'main' function found")
 	}
+	// The package-main JSON harness encodes inputs/outputs as bytes (the format
+	// `zkc exec` accepts), which a field-element data line has no fixed width
+	// for.  Importable packages expose words directly, so only main is affected.
+	if g.pkg == "main" {
+		for _, info := range append(append([]memInfo{}, g.inputs...), g.outputs...) {
+			if hasNativeDataLine(info) {
+				return "", fmt.Errorf("gogen: memory %q has a field-element data line, which the JSON "+
+					"harness cannot encode; generate an importable package (--pkg) to consume it as words", info.name)
+			}
+		}
+	}
 	// Only emit functions reachable from main (transitively via CALL); this keeps
 	// generation scoped to the program actually being executed and avoids failing
 	// on unrelated helper functions that use out-of-scope instructions.
 	order := g.reachableFunctions(mainID)
-	// Emit each function body first so g.usesBits is known before the imports.
+	// Emit each function body first so helper/import requirements are known
+	// before the imports.
 	bodies := map[uint]*code{}
 
 	for _, id := range order {
@@ -202,12 +219,42 @@ type generator struct {
 	funcByID    map[uint]*wordFunction
 	modulus     *big.Int        // the machine's prime modulus (for mod-P ops)
 	names       map[string]bool // sanitized identifiers already taken
+	helpers     map[string]bool // optional generated helpers/import needs
 	usesBits    bool            // whether math/bits is referenced (decides the import)
-	usesShl128  bool            // whether the 128-bit left-shift helper is referenced
-	usesShr128  bool            // whether the 128-bit right-shift helper is referenced
 	usesModP    fieldHelpers    // which mod-P helpers are referenced
 	cur         fnView          // the function currently being emitted (return shape)
 	iv          *intervals      // bound analysis for the function being emitted
+}
+
+const (
+	helperCatU64     = "catU64"
+	helperChr        = "chr"
+	helperDbgB       = "dbgB"
+	helperDbgU       = "dbgU"
+	helperDbgWriter  = "dbgw"
+	helperFmtSprintf = "fmt.Sprintf"
+	helperShl128     = "shl128"
+	helperShr128     = "shr128"
+	helperU128       = "u128"
+)
+
+func (g *generator) useHelper(name string) {
+	g.helpers[name] = true
+}
+
+func (g *generator) usesHelper(name string) bool {
+	return g.helpers[name]
+}
+
+func cloneHelpers(src map[string]bool) map[string]bool {
+	dst := make(map[string]bool, len(src))
+	for name, used := range src {
+		if used {
+			dst[name] = true
+		}
+	}
+
+	return dst
 }
 
 // fnView captures the parts of the function currently being emitted that the
@@ -300,6 +347,7 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	c.line("")
 	g.emitImports(c)
 	emitFailureHelpers(c)
+	g.emitPrintfHelpers(c)
 
 	// Memories are shared across the call stack, so they live as package-level
 	// globals (matching the VM's shared memory banks); callees read/write them
@@ -334,6 +382,13 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	c.line("// Run executes the program on the given input memories, returning its")
 	c.line("// output memories, or an error if the execution fails (a rejected trace).")
 	c.line("func Run(in map[string][]uint64) (out map[string][]uint64, err error) {")
+	// Flush buffered printf output on the way out (registered first, so it runs
+	// last — after the recover below has produced any error), so a failing run
+	// still surfaces the diagnostics that preceded it.
+	if g.usesHelper(helperDbgWriter) {
+		c.line("defer dbgw.Flush()")
+	}
+
 	c.line("defer func() {")
 	c.line("if r := recover(); r != nil {")
 	c.line("if f, ok := r.(failure); ok {")
@@ -376,14 +431,16 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	}
 
 	if g.pkg == "main" {
-		c.raw(mainHarness)
+		c.raw(conversionHelpers)
+		g.emitMainHarness(c)
 	}
 }
 
 func (g *generator) emitImports(c *code) {
 	deps := []string{}
 	if g.pkg == "main" {
-		deps = append(deps, `"bufio"`, `"encoding/json"`, `"fmt"`, `"os"`)
+		deps = append(deps,
+			`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strings"`)
 	}
 
 	if g.usesBits {
@@ -392,6 +449,25 @@ func (g *generator) emitImports(c *code) {
 	// memWrite (WOM/RAM) and paged.set both use slices.Grow.
 	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.pageds) > 0 {
 		deps = append(deps, `"slices"`)
+	}
+	// Optional generated helpers add their own imports. Package main already
+	// imports bufio/os/fmt/math/big for its harness, but never strconv.
+	if g.usesHelper(helperDbgU) {
+		deps = append(deps, `"strconv"`)
+	}
+
+	if g.pkg != "main" {
+		if g.usesHelper(helperDbgWriter) {
+			deps = append(deps, `"bufio"`, `"os"`)
+		}
+
+		if g.usesHelper(helperFmtSprintf) {
+			deps = append(deps, `"fmt"`)
+		}
+
+		if g.usesHelper(helperDbgB) || g.usesHelper(helperU128) || g.usesHelper(helperCatU64) {
+			deps = append(deps, `"math/big"`)
+		}
 	}
 
 	switch len(deps) {
@@ -471,26 +547,153 @@ func (g *generator) emitMemHelpers(c *code) {
 	}
 }
 
-// mainHarness reads JSON inputs from stdin, runs the program, and writes JSON
-// outputs to stdout.  Exit 1 signals an execution error (matching the reference
-// error path); exit 2 signals an I/O/harness problem.
-const mainHarness = `func main() {
-	var in map[string][]uint64
-	if err := json.NewDecoder(bufio.NewReader(os.Stdin)).Decode(&in); err != nil {
-		fmt.Fprintln(os.Stderr, "decode:", err)
-		os.Exit(2)
-	}
-	out, err := Run(in)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "exec error:", err)
-		os.Exit(1)
-	}
-	if err := json.NewEncoder(os.Stdout).Encode(out); err != nil {
-		fmt.Fprintln(os.Stderr, "encode:", err)
-		os.Exit(2)
+// conversionHelpers are the static (machine-independent) helpers backing the
+// main harness: a parser for the input encoding and the byte<->cell packing
+// shared with `zkc exec`.  They are emitted only for package main.
+const conversionHelpers = `// parseInput decodes an input memory's encoding: a hex string ("0x…", with "_"
+// separators allowed) or a decimal literal — the same encoding ParseJsonInputFile
+// accepts, so a file feeding "zkc exec" feeds this program unchanged.
+func parseInput(s string) []byte {
+	s = strings.ReplaceAll(s, "_", "")
+	switch {
+	case strings.HasPrefix(s, "0x"):
+		b, err := hex.DecodeString(s[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "decode:", err)
+			os.Exit(2)
+		}
+		return b
+	case s == "":
+		return nil
+	default:
+		var v big.Int
+		if _, ok := v.SetString(s, 10); !ok {
+			fmt.Fprintln(os.Stderr, "malformed numeric literal:", s)
+			os.Exit(2)
+		}
+		return v.Bytes()
 	}
 }
+
+// decodeBytes unpacks a tightly-packed big-endian bit stream into one value per
+// data line, cycling through the line widths; a mirror of the VM's DecodeBytes
+// and the inverse of encodeBytes.
+func decodeBytes(data []byte, widths []uint) []uint64 {
+	var round uint
+	for _, w := range widths {
+		round += w
+	}
+	if round == 0 {
+		return nil
+	}
+	total := uint(len(data)) * 8
+	var out []uint64
+	for off := uint(0); total-off >= round; {
+		for _, w := range widths {
+			var v uint64
+			for i := uint(0); i < w; i++ {
+				bit := (data[(off+i)/8] >> (7 - (off+i)%8)) & 1
+				v = v<<1 | uint64(bit)
+			}
+			out = append(out, v)
+			off += w
+		}
+	}
+	return out
+}
+
+// encodeBytes packs one value per data line into a tightly-packed big-endian
+// bit stream, cycling through the line widths; a mirror of the VM's EncodeBytes
+// and the inverse of decodeBytes.
+func encodeBytes(values []uint64, widths []uint) []byte {
+	var totalBits uint
+	for i := range values {
+		totalBits += widths[i%len(widths)]
+	}
+	out := make([]byte, (totalBits+7)/8)
+	var off uint
+	for i, v := range values {
+		w := widths[i%len(widths)]
+		for j := uint(0); j < w; j++ {
+			if (v>>(w-1-j))&1 != 0 {
+				out[(off+j)/8] |= 1 << (7 - (off+j)%8)
+			}
+		}
+		off += w
+	}
+	return out
+}
 `
+
+// emitMainHarness writes the package-main entry point.  It reads the inputs as
+// JSON (one hex/decimal string per input memory, matching `zkc exec`), decodes
+// each into its data-line cells, runs the program, and writes the outputs as
+// JSON hex strings in the same encoding.  Exit 1 signals an execution error (a
+// rejected trace — the reference error path); exit 2 signals an I/O problem.
+func (g *generator) emitMainHarness(c *code) {
+	c.line("func main() {")
+	c.line("var raw map[string]string")
+	c.line("if err := json.NewDecoder(bufio.NewReader(os.Stdin)).Decode(&raw); err != nil {")
+	c.line(`fmt.Fprintln(os.Stderr, "decode:", err)`)
+	c.line("os.Exit(2)")
+	c.line("}")
+	c.line("in := map[string][]uint64{}")
+
+	for _, m := range g.inputs {
+		c.line("{")
+		c.linef("rawInput, ok := raw[%q]", m.name)
+		c.line("if !ok {")
+		c.linef(`fmt.Fprintf(os.Stderr, "decode: missing input %%q\n", %q)`, m.name)
+		c.line("os.Exit(2)")
+		c.line("}")
+		c.linef("in[%q] = decodeBytes(parseInput(rawInput), %s)", m.name, widthsLiteral(m.dataWidths))
+		c.linef("delete(raw, %q)", m.name)
+		c.line("}")
+	}
+
+	c.line("for name := range raw {")
+	c.line(`fmt.Fprintf(os.Stderr, "decode: unknown input %q\n", name)`)
+	c.line("os.Exit(2)")
+	c.line("}")
+
+	if len(g.inputs) > 0 {
+		c.line("")
+	}
+	// Bind 'out' only when there are outputs to read from it; an unreferenced
+	// result would not compile.
+	if len(g.outputs) == 0 {
+		c.line("if _, err := Run(in); err != nil {")
+	} else {
+		c.line("out, err := Run(in)")
+		c.line("if err != nil {")
+	}
+
+	c.line(`fmt.Fprintln(os.Stderr, "exec error:", err)`)
+	c.line("os.Exit(1)")
+	c.line("}")
+	c.line("enc := map[string]string{}")
+
+	for _, m := range g.outputs {
+		c.linef(`enc[%q] = "0x" + hex.EncodeToString(encodeBytes(out[%q], %s))`,
+			m.name, m.name, widthsLiteral(m.dataWidths))
+	}
+
+	c.line("if err := json.NewEncoder(os.Stdout).Encode(enc); err != nil {")
+	c.line(`fmt.Fprintln(os.Stderr, "encode:", err)`)
+	c.line("os.Exit(2)")
+	c.line("}")
+	c.line("}")
+}
+
+// widthsLiteral renders a Go []uint literal of data-line bit-widths.
+func widthsLiteral(widths []uint) string {
+	parts := make([]string, len(widths))
+	for i, w := range widths {
+		parts[i] = fmt.Sprintf("%d", w)
+	}
+
+	return "[]uint{" + strings.Join(parts, ", ") + "}"
+}
 
 // ===========================================================================
 // Function emission
@@ -559,8 +762,8 @@ func (g *generator) emitFunction(c *code, fn *wordFunction) error {
 	// stable pass IS the emitted body.  Helper flags are reset per pass so
 	// only the final pass decides them.
 	var (
-		body               code
-		savedBits, savedMP = g.usesBits, g.usesModP
+		body                             code
+		savedBits, savedMP, savedHelpers = g.usesBits, g.usesModP, cloneHelpers(g.helpers)
 	)
 
 	g.iv = newIntervals(fn, isBoot, g.noIntervals)
@@ -568,6 +771,7 @@ func (g *generator) emitFunction(c *code, fn *wordFunction) error {
 	for pass := 0; ; pass++ {
 		body = code{}
 		g.usesBits, g.usesModP = savedBits, savedMP
+		g.helpers = cloneHelpers(savedHelpers)
 		g.iv.beginPass()
 
 		if err := g.emitFunctionBody(&body, fn); err != nil {
@@ -751,8 +955,8 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 	case *instruction.FieldHint:
 		return g.emitHint(c, fn, x)
 	case *instruction.Debug:
-		// DEBUG only prints diagnostics; it has no effect on program outputs.
-		return nil
+		// DEBUG (printf) has no effect on program outputs; it writes to stderr.
+		return g.emitDebug(c, fn, x)
 	case *instruction.MemRead:
 		return g.emitMemRead(c, fn, x)
 	case *instruction.MemWrite:
@@ -793,7 +997,10 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 
 		return nil
 	case *instruction.Fail:
-		c.line(`panic(failure("machine panic"))`)
+		if err := g.emitFail(c, fn, x); err != nil {
+			return err
+		}
+
 		g.iv.endOfFlow()
 
 		return nil
@@ -833,12 +1040,35 @@ func uintConst(w word.Uint) (uint64, error) {
 	return w.Uint64(), nil
 }
 
+// hasNativeDataLine reports whether a memory has a field-element (native) data
+// line, which has no fixed bit-width and so cannot cross the JSON byte boundary
+// the main harness uses.
+func hasNativeDataLine(info memInfo) bool {
+	for _, r := range info.geom.DataRegisters() {
+		if r.IsNative() {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (g *generator) classifyMemory(m memory.Memory[word.Uint]) (memInfo, error) {
 	info := memInfo{name: m.Name(), varName: g.uniqueName("mem_" + sanitize(m.Name())), geom: m.Geometry()}
 	// All memory traffic moves through uint64 cells.
 	for _, r := range append(info.geom.AddressRegisters(), info.geom.DataRegisters()...) {
 		if !r.IsNative() && r.Width() > 64 {
 			return info, fmt.Errorf("gogen: memory %q register %q wider than 64 bits unsupported", m.Name(), r.Name())
+		}
+	}
+
+	// Record data-line widths for the byte encoding the main harness shares
+	// with `zkc exec`.  Native (field-element) lines have no fixed width, so
+	// memories using them are scratch-only — the main harness rejects them as
+	// input/output (see Generate).
+	if !hasNativeDataLine(info) {
+		for _, r := range info.geom.DataRegisters() {
+			info.dataWidths = append(info.dataWidths, r.Width())
 		}
 	}
 

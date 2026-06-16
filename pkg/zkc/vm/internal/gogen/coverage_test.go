@@ -37,14 +37,14 @@ import (
 var opcodeCoverage = map[string]string{
 	// Base instructions (gen.go emitInstruction).
 	"CALL":         "emitCall",
-	"FAIL":         "panic(failure)",
+	"FAIL":         "emitFail (panic with message)",
 	"JUMP":         "goto",
 	"MEMORY_READ":  "emitMemRead",
 	"MEMORY_WRITE": "emitMemWrite",
 	"SKIP_IF":      "condExpr + goto",
 	"SKIP":         "goto",
 	"RETURN":       "returnOk",
-	"DEBUG":        "no-op (diagnostics only)",
+	"DEBUG":        "emitDebug (printf to stderr)",
 	// Word instructions.
 	"INT_ADD":      "emitArith (WordTypeA)",
 	"INT_SUB":      "emitArith (WordTypeA)",
