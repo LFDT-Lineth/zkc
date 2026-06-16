@@ -182,6 +182,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		// Must run after LowerBitwise and LowerDivisions, which may generate new relational SkipIf instructions.
 		modules = vm.LowerComparisons[vm.Uint](modules)
 	}
+
 	// Vectorize modules (if no errors)
 	if len(errors) == 0 && p.config.vectorize {
 		Vectorize(modules, p.srcmaps)
@@ -193,12 +194,18 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			modules = vm.FactorSkipConditions[vm.Uint](modules)
 		}
 	}
-	//
+
 	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)
 	// Apply register splitting (for now)
 	if len(errors) == 0 && p.config.splitting {
 		wm = vm.SplitRegisters(p.config.field, wm)
 	}
+
+	// Add range constraints. Only makes sense after register splitting happens. Irrelevant in fast mode.
+	if len(errors) == 0 && p.config.splitting && !p.config.fastMode {
+		wm = vm.AddRangeConstraints(p.config.field, wm)
+	}
+
 	// Construct machine
 	return wm, errors
 }
