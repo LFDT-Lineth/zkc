@@ -16,11 +16,15 @@
 package gogen_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -720,6 +724,39 @@ func TestGenDifferential(t *testing.T) {
 	}
 }
 
+func TestMainHarnessRejectsBadInputNames(t *testing.T) {
+	src, err := vm.GenerateGo(compileUint(t, doubleSrc, false), vm.GoGenConfig{})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	prog := buildProgram(t, src)
+
+	for _, tc := range []struct {
+		name string
+		in   map[string][]byte
+		want string
+	}{
+		{"missing", map[string][]byte{}, `missing input "data"`},
+		{"unknown", map[string][]byte{"data": {3}, "extra": {1}}, `unknown input "extra"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errored, err := gogen.Run(prog, tc.in)
+			if err == nil {
+				t.Fatal("expected harness error")
+			}
+
+			if errored {
+				t.Fatal("bad input names should not be execution errors")
+			}
+
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected error containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func inputName(in map[string][]uint64) string {
 	b, err := json.Marshal(in)
 	if err != nil {
@@ -753,8 +790,7 @@ func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]byt
 	return vm.EncodeOutputs(wm), false
 }
 
-// buildProgram compiles generated source through the shared build cache
-// (pkg/zkc/gogen), so identical programs across tests build exactly once.
+// buildProgram compiles generated source into a test-owned temporary directory.
 func buildProgram(t *testing.T, src string) string {
 	t.Helper()
 
@@ -762,12 +798,36 @@ func buildProgram(t *testing.T, src string) string {
 		t.Skip("go toolchain not available")
 	}
 
-	prog, err := gogen.Build(src)
+	prog, err := buildGeneratedProgram(t, src)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	return prog
+}
+
+func buildGeneratedProgram(t *testing.T, src string) (string, error) {
+	t.Helper()
+
+	dir := t.TempDir()
+	prog := filepath.Join(dir, "prog")
+
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o644); err != nil {
+		return "", err
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module zkcgen\n\ngo 1.24\n"), 0o644); err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("go", "build", "-o", prog, ".")
+	cmd.Dir = dir
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("go build failed: %v\n%s\n--- source ---\n%s", err, out, src)
+	}
+
+	return prog, nil
 }
 
 // runProgram runs the compiled program on packed-byte inputs (see encodeInputs),
@@ -810,4 +870,144 @@ func encodeInputs(wm *vm.WordMachine[vm.Uint], in map[string][]uint64) map[strin
 	}
 
 	return out
+}
+
+// ---------------------------------------------------------------------------
+// printf / fail messages (#1868): non-quiet builds emit printf to stderr and
+// surface fail messages, byte-compatible with the reference interpreter.
+// ---------------------------------------------------------------------------
+
+const printfSrc = `pub input args(address:u16) -> (word:u16)
+pub output result(address:u16) -> (word:u16)
+fn main() {
+    var a:u16 = args[0]
+    printf "dec=%d hex=%x bin=%b pad=%04x\n", a, a, a, a
+    result[0] = a
+    return
+}
+`
+
+// printfWideSrc prints a value wider than 64 bits, exercising the big.Int
+// printf path (the lo/hi pair folds into a *big.Int via the u128 helper).
+const printfWideSrc = `pub input args(address:u8) -> (w:u64)
+pub output result(address:u8) -> (w:u64)
+fn main() {
+    var a:u64 = args[0]
+    var b:u64 = args[1]
+    var p:u128 = (a as u128) * (b as u128)
+    printf "p=%d\n", p
+    result[0] = a
+    return
+}
+`
+
+const printfCharSrc = `pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var a:u8 = args[0]
+    printf "%c%c!", a, a
+    result[0] = a
+    return
+}
+`
+
+const failMsgSrc = `pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var a:u8 = args[0]
+    fail "boom a=%d", a
+}
+`
+
+// compileUintVerbose compiles with printf retained (Quiet(false)), unlike the
+// default helper which strips it.
+func compileUintVerbose(t testing.TB, src string) *vm.WordMachine[vm.Uint] {
+	t.Helper()
+
+	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).Vectorize(true).Quiet(false)
+
+	program := compileProgram(t, src)
+
+	wm, errs := program.Compile(cfg)
+	if len(errs) > 0 {
+		t.Fatalf("codegen: %v", errs)
+	}
+
+	return wm
+}
+
+// runStderr builds and runs a generated program, returning its stderr and exit
+// status.  Unlike runProgram it captures stderr on success (where printf lands).
+func runStderr(t *testing.T, m *vm.WordMachine[vm.Uint], in map[string][]uint64) (stderr string, exitErr bool) {
+	t.Helper()
+
+	src, err := vm.GenerateGo(m, vm.GoGenConfig{})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	prog := buildProgram(t, src)
+
+	inJSON, err := gogen.MarshalInputs(encodeInputs(m, in))
+	if err != nil {
+		t.Fatalf("marshal inputs: %v", err)
+	}
+
+	var out, errBuf bytes.Buffer
+
+	cmd := exec.Command(prog)
+	cmd.Stdin = bytes.NewReader(inJSON)
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+
+	if err := cmd.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return errBuf.String(), ee.ExitCode() != 0
+		}
+
+		t.Fatalf("running generated program: %v", err)
+	}
+
+	return errBuf.String(), false
+}
+
+func TestGenPrintf(t *testing.T) {
+	cases := []struct {
+		name, src string
+		in        map[string][]uint64
+		want      string
+	}{
+		{"verbs", printfSrc, map[string][]uint64{"args": {255}}, "dec=255 hex=ff bin=11111111 pad=00ff\n"},
+		{"char", printfCharSrc, map[string][]uint64{"args": {65}}, "AA!"},
+		// 2^33 * 2^33 = 2^66 = 73786976294838206464 (wider than u64).
+		{"wide", printfWideSrc, map[string][]uint64{"args": {1 << 33, 1 << 33}}, "p=73786976294838206464\n"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := compileUintVerbose(t, tc.src)
+
+			got, exitErr := runStderr(t, m, tc.in)
+			if exitErr {
+				t.Fatalf("unexpected non-zero exit; stderr=%q", got)
+			}
+
+			if got != tc.want {
+				t.Fatalf("printf output mismatch:\n  got  %q\n  want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGenFailMessage(t *testing.T) {
+	m := compileUintVerbose(t, failMsgSrc)
+
+	got, exitErr := runStderr(t, m, map[string][]uint64{"args": {7}})
+	if !exitErr {
+		t.Fatalf("expected non-zero exit on fail")
+	}
+
+	if want := "machine panic: boom a=7"; !bytes.Contains([]byte(got), []byte(want)) {
+		t.Fatalf("fail message missing: got %q, want substring %q", got, want)
+	}
 }

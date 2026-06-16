@@ -141,7 +141,6 @@ func fits(bound *big.Int, w uint) bool {
 	return bound.BitLen() <= int(w)
 }
 
-// fitsU64 / fitsU128 report whether values with this bound fit the single- and
-// pair-word representations respectively.
-func fitsU64(bound *big.Int) bool  { return bound.BitLen() <= 64 }
-func fitsU128(bound *big.Int) bool { return bound.BitLen() <= 128 }
+// fitsU64 reports whether values with this bound fit the single-word
+// representation (the pair representation covers anything up to 128 bits).
+func fitsU64(bound *big.Int) bool { return bound.BitLen() <= 64 }

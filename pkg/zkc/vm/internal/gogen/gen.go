@@ -128,6 +128,7 @@ func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
 		modules:     wm.Modules(),
 		modulus:     wm.Executor().Modulus().BigInt(),
 		names:       map[string]bool{},
+		helpers:     map[string]bool{},
 	}
 	mainID, hasMain := uint(0), false
 
@@ -180,7 +181,8 @@ func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
 	// generation scoped to the program actually being executed and avoids failing
 	// on unrelated helper functions that use out-of-scope instructions.
 	order := g.reachableFunctions(mainID)
-	// Emit each function body first so g.usesBits is known before the imports.
+	// Emit each function body first so helper/import requirements are known
+	// before the imports.
 	bodies := map[uint]*code{}
 
 	for _, id := range order {
@@ -217,12 +219,42 @@ type generator struct {
 	funcByID    map[uint]*wordFunction
 	modulus     *big.Int        // the machine's prime modulus (for mod-P ops)
 	names       map[string]bool // sanitized identifiers already taken
+	helpers     map[string]bool // optional generated helpers/import needs
 	usesBits    bool            // whether math/bits is referenced (decides the import)
-	usesShl128  bool            // whether the 128-bit left-shift helper is referenced
-	usesShr128  bool            // whether the 128-bit right-shift helper is referenced
 	usesModP    fieldHelpers    // which mod-P helpers are referenced
 	cur         fnView          // the function currently being emitted (return shape)
 	iv          *intervals      // bound analysis for the function being emitted
+}
+
+const (
+	helperCatU64     = "catU64"
+	helperChr        = "chr"
+	helperDbgB       = "dbgB"
+	helperDbgU       = "dbgU"
+	helperDbgWriter  = "dbgw"
+	helperFmtSprintf = "fmt.Sprintf"
+	helperShl128     = "shl128"
+	helperShr128     = "shr128"
+	helperU128       = "u128"
+)
+
+func (g *generator) useHelper(name string) {
+	g.helpers[name] = true
+}
+
+func (g *generator) usesHelper(name string) bool {
+	return g.helpers[name]
+}
+
+func cloneHelpers(src map[string]bool) map[string]bool {
+	dst := make(map[string]bool, len(src))
+	for name, used := range src {
+		if used {
+			dst[name] = true
+		}
+	}
+
+	return dst
 }
 
 // fnView captures the parts of the function currently being emitted that the
@@ -315,6 +347,7 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	c.line("")
 	g.emitImports(c)
 	emitFailureHelpers(c)
+	g.emitPrintfHelpers(c)
 
 	// Memories are shared across the call stack, so they live as package-level
 	// globals (matching the VM's shared memory banks); callees read/write them
@@ -349,6 +382,13 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	c.line("// Run executes the program on the given input memories, returning its")
 	c.line("// output memories, or an error if the execution fails (a rejected trace).")
 	c.line("func Run(in map[string][]uint64) (out map[string][]uint64, err error) {")
+	// Flush buffered printf output on the way out (registered first, so it runs
+	// last — after the recover below has produced any error), so a failing run
+	// still surfaces the diagnostics that preceded it.
+	if g.usesHelper(helperDbgWriter) {
+		c.line("defer dbgw.Flush()")
+	}
+
 	c.line("defer func() {")
 	c.line("if r := recover(); r != nil {")
 	c.line("if f, ok := r.(failure); ok {")
@@ -409,6 +449,25 @@ func (g *generator) emitImports(c *code) {
 	// memWrite (WOM/RAM) and paged.set both use slices.Grow.
 	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.pageds) > 0 {
 		deps = append(deps, `"slices"`)
+	}
+	// Optional generated helpers add their own imports. Package main already
+	// imports bufio/os/fmt/math/big for its harness, but never strconv.
+	if g.usesHelper(helperDbgU) {
+		deps = append(deps, `"strconv"`)
+	}
+
+	if g.pkg != "main" {
+		if g.usesHelper(helperDbgWriter) {
+			deps = append(deps, `"bufio"`, `"os"`)
+		}
+
+		if g.usesHelper(helperFmtSprintf) {
+			deps = append(deps, `"fmt"`)
+		}
+
+		if g.usesHelper(helperDbgB) || g.usesHelper(helperU128) || g.usesHelper(helperCatU64) {
+			deps = append(deps, `"math/big"`)
+		}
 	}
 
 	switch len(deps) {
@@ -581,7 +640,24 @@ func (g *generator) emitMainHarness(c *code) {
 	c.line("in := map[string][]uint64{}")
 
 	for _, m := range g.inputs {
-		c.linef("in[%q] = decodeBytes(parseInput(raw[%q]), %s)", m.name, m.name, widthsLiteral(m.dataWidths))
+		c.line("{")
+		c.linef("rawInput, ok := raw[%q]", m.name)
+		c.line("if !ok {")
+		c.linef(`fmt.Fprintf(os.Stderr, "decode: missing input %%q\n", %q)`, m.name)
+		c.line("os.Exit(2)")
+		c.line("}")
+		c.linef("in[%q] = decodeBytes(parseInput(rawInput), %s)", m.name, widthsLiteral(m.dataWidths))
+		c.linef("delete(raw, %q)", m.name)
+		c.line("}")
+	}
+
+	c.line("for name := range raw {")
+	c.line(`fmt.Fprintf(os.Stderr, "decode: unknown input %q\n", name)`)
+	c.line("os.Exit(2)")
+	c.line("}")
+
+	if len(g.inputs) > 0 {
+		c.line("")
 	}
 	// Bind 'out' only when there are outputs to read from it; an unreferenced
 	// result would not compile.
@@ -686,8 +762,8 @@ func (g *generator) emitFunction(c *code, fn *wordFunction) error {
 	// stable pass IS the emitted body.  Helper flags are reset per pass so
 	// only the final pass decides them.
 	var (
-		body               code
-		savedBits, savedMP = g.usesBits, g.usesModP
+		body                             code
+		savedBits, savedMP, savedHelpers = g.usesBits, g.usesModP, cloneHelpers(g.helpers)
 	)
 
 	g.iv = newIntervals(fn, isBoot, g.noIntervals)
@@ -695,6 +771,7 @@ func (g *generator) emitFunction(c *code, fn *wordFunction) error {
 	for pass := 0; ; pass++ {
 		body = code{}
 		g.usesBits, g.usesModP = savedBits, savedMP
+		g.helpers = cloneHelpers(savedHelpers)
 		g.iv.beginPass()
 
 		if err := g.emitFunctionBody(&body, fn); err != nil {
@@ -878,8 +955,8 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 	case *instruction.FieldHint:
 		return g.emitHint(c, fn, x)
 	case *instruction.Debug:
-		// DEBUG only prints diagnostics; it has no effect on program outputs.
-		return nil
+		// DEBUG (printf) has no effect on program outputs; it writes to stderr.
+		return g.emitDebug(c, fn, x)
 	case *instruction.MemRead:
 		return g.emitMemRead(c, fn, x)
 	case *instruction.MemWrite:
@@ -920,7 +997,10 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 
 		return nil
 	case *instruction.Fail:
-		c.line(`panic(failure("machine panic"))`)
+		if err := g.emitFail(c, fn, x); err != nil {
+			return err
+		}
+
 		g.iv.endOfFlow()
 
 		return nil

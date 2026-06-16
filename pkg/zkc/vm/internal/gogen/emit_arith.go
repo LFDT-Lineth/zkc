@@ -118,8 +118,13 @@ func (g *generator) emitAdd(c *code, srcs []operand, konst uint64, store storeVi
 		return g.storeValue(c, store, operand{expr: strings.Join(exprsOf(terms), " + "), max: bound})
 	}
 
-	if !fitsU128(bound) {
-		return fmt.Errorf("gogen: addition bound exceeds 128 bits (unsupported)")
+	// A bound above 2^128 is fine as long as the target is ≤128 bits: gogen
+	// represents every runtime value as a ≤128-bit lo/hi pair, so the pair
+	// accumulation computes the result modulo 2^128 and storePair applies the
+	// target's own width check.  Only a target wider than the pair itself is
+	// genuinely unrepresentable.
+	if store.total > 128 {
+		return fmt.Errorf("gogen: addition target wider than 128 bits (unsupported)")
 	}
 	// Pair accumulation: carries land in hi rather than trapping.
 	g.usesBits = true
@@ -292,8 +297,13 @@ func (g *generator) emitMul(c *code, srcs []operand, konst uint64, store storeVi
 		return g.storeValue(c, store, operand{expr: strings.Join(exprsOf(terms), " * "), max: bound})
 	}
 
-	if !fitsU128(bound) {
-		return fmt.Errorf("gogen: multiplication bound exceeds 128 bits (unsupported)")
+	// As with addition, a bound above 2^128 is fine when the target is ≤128
+	// bits: the low 128 bits of the product are computed exactly (cross-term
+	// carries into hi wrap modulo 2^64, which is correct for a 128-bit result)
+	// and storePair applies the target's width check.  Only a wider target is
+	// unrepresentable in the lo/hi pair.
+	if store.total > 128 {
+		return fmt.Errorf("gogen: multiplication target wider than 128 bits (unsupported)")
 	}
 
 	g.usesBits = true

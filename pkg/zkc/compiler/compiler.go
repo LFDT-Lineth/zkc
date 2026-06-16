@@ -39,7 +39,7 @@ func Compile(field field.Config, files ...source.File) (ast.Program, source.Maps
 	)
 	// Initialise visited map with all top-level files
 	for _, sf := range files {
-		visited[sf.Filename()] = true
+		visited[canonicalPath(sf.Filename())] = true
 	}
 	// Parse each file in turn.
 	for len(files) > 0 {
@@ -83,6 +83,18 @@ func Compile(field field.Config, files ...source.File) (ast.Program, source.Maps
 	return program, srcmaps, errors
 }
 
+// canonicalPath returns an absolute, cleaned form of filename for use as a
+// dedup key, so the same file reached through different relative spellings maps
+// to one key.  On error (e.g. the working directory is unavailable) it falls
+// back to the cleaned relative path rather than failing the compile.
+func canonicalPath(filename string) string {
+	if abs, err := filepath.Abs(filename); err == nil {
+		return abs
+	}
+
+	return filepath.Clean(filename)
+}
+
 func readIncludedFiles(file source.File, item parser.UnlinkedSourceFile,
 	visited map[string]bool) ([]source.File, []source.SyntaxError) {
 	//
@@ -109,8 +121,14 @@ func readIncludedFiles(file source.File, item parser.UnlinkedSourceFile,
 			}
 			//
 			for _, filename := range matches {
+				// Dedup on the canonical (absolute, cleaned) path: the same
+				// physical file is reached through different relative spellings
+				// (e.g. main includes "memory.zkc" while a library includes
+				// "../../riscv/memory.zkc"), and keying on the raw path would
+				// parse it twice, yielding spurious duplicate-declaration errors.
+				key := canonicalPath(filename)
 				// Check filename not already parsed
-				if seen, ok := visited[filename]; seen && ok {
+				if seen, ok := visited[key]; seen && ok {
 					// file already loaded, therefore ignore.
 				} else if fs, err := source.ReadFiles(filename); err == nil {
 					files = append(files, fs...)
@@ -118,7 +136,7 @@ func readIncludedFiles(file source.File, item parser.UnlinkedSourceFile,
 					errors = append(errors, *item.SourceMap.SyntaxError(inc, err.Error()))
 				}
 				// Record that we've seen this file now.
-				visited[filename] = true
+				visited[key] = true
 			}
 		}
 	}
