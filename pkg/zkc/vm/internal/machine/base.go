@@ -348,6 +348,11 @@ func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 }
 
 func (p *Base[W, I, T]) executeCall(insn *instruction.Call, frame StackFrame[W, I]) (ProgramCounter, bool, error) {
+	// A call into a static table is a pure (range) lookup with no runtime
+	// behaviour: no frame is entered and execution falls through sequentially.
+	if insn.Static {
+		return frame.pc, false, nil
+	}
 	// Save caller PC
 	p.callstack.Goto(frame.pc)
 	// Enter callee stack frame

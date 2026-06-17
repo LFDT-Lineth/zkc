@@ -247,6 +247,8 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 // moduleOf maps a width to the index of its range module, so the emitted calls
 // can reference their sub-modules by id.
 func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSplit, moduleOf map[uint]uint) Module {
+	println("RECURSIVE_RANGE_MODULE:", name, "lo=", s.lo, "hi=", s.hi)
+
 	var (
 		padding big.Int
 		regs    = []register.Register{

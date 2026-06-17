@@ -192,6 +192,13 @@ func (p *bytecodeCompiler[W]) compileConcat(insn *instruction.WordTypeA[W]) {
 }
 
 func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call, f *WordFunction) {
+	// A call into a static table is a pure (range) lookup: the table is
+	// pre-populated and membership is enforced by the constraint system, so the
+	// call has no runtime behaviour and emits no bytecode.
+	if insn.Static {
+		return
+	}
+	//
 	var (
 		callee     = p.machine.Module(insn.Id).(*WordFunction)
 		frameWidth = callee.Width()
