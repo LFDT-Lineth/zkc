@@ -68,6 +68,20 @@ const (
 func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *machine.Word[W] {
 	var (
 		modules = m.Modules()
+	)
+
+	// First generate the range modules for every width which occurs on some register.
+	var extra = generateRangeModules[W](cfg, modules)
+
+	// Second step, call range_uX for every registers.
+	modules = addRangeCalls[W](cfg, modules, extra)
+
+	// Reassemble the machine with the original modules plus the range modules.
+	return machine.NewWord[W](cfg, append(slices.Clone(modules), extra...)...)
+}
+
+func generateRangeModules[W word.Word[W]](cfg field.Config, modules []Module) []Module {
+	var (
 		// Every width requiring a range module, mapped to its decomposition.
 		splits = neededRangeWidths[W](cfg, modules)
 		// Names already present before adding range check modules, to avoid collisions / ensure idempotency.
@@ -77,7 +91,7 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *
 		// Widths in ascending order, for deterministic output.
 		widths = make([]uint, 0, len(splits))
 	)
-	//
+	// First step, generate the range_uX modules for every width X which occurs on some register.
 	for w := range splits {
 		widths = append(widths, w)
 	}
@@ -109,8 +123,8 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *
 			extra = append(extra, newRecursiveRangeModule[W](name, w, splits[w], moduleOf))
 		}
 	}
-	// Reassemble the machine with the original modules plus the range modules.
-	return machine.NewWord[W](cfg, append(slices.Clone(modules), extra...)...)
+
+	return extra
 }
 
 // rangeSplit records how a width > 16 is destructured into a low half and a high
@@ -287,4 +301,29 @@ func moduleNames(modules []Module) map[string]bool {
 // rangeModuleName returns the canonical module name for a given width.
 func rangeModuleName(w uint) string {
 	return fmt.Sprintf("range_u%d", w)
+}
+
+func addRangeCalls[W word.Word[W]](cfg field.Config, modules []Module, rangeModules []Module) []Module {
+	for _, mod := range modules {
+		for _, r := range mod.Registers() {
+			if !r.IsConst() {
+				// TODO : add a call to the corresponding range module for this register.
+				// Issue:
+				// - for register > u16 we need a call that populates the range_uX modules. How to do it ?
+				// we can't do it before the last return instruction (it might not being hit), it's ugly
+				// to do it just before ach return instruction ...
+				// - same, we have to deal with multi line instruction ...
+				// so in the end, isn't it better to have uncontional call (API already implemented),
+				// and when lowering the unconditional call at the --air level it keeps in mind that it has to
+				// populate the callee module during a sort of trace expansion, like in zkasm ...
+				// does this step still exist ?
+				// Another option is to leave it for later ... as with KOALABEAR we'll have at most range_u16 modules,
+				// so only static modules, so no issue with this ...
+				// WDYT @DAve ?
+				return modules // rm me, just to make it compile
+			}
+		}
+	}
+
+	return modules
 }
