@@ -84,7 +84,7 @@ func (g *generator) emitTypeB(c *code, fn *wordFunction, x *instruction.WordType
 			break
 		}
 
-		g.usesShl128 = true
+		g.useHelper(helperShl128)
 
 		return g.pairCall(c, "shl128", lhs, rhs, target, func(lo, hi string) operand {
 			return operand{expr: lo, hi: maskExpr(hi, x.Bitwidth-64), max: widthMax(x.Bitwidth)}
@@ -95,7 +95,7 @@ func (g *generator) emitTypeB(c *code, fn *wordFunction, x *instruction.WordType
 			break
 		}
 
-		g.usesShr128 = true
+		g.useHelper(helperShr128)
 
 		return g.pairCall(c, "shr128", lhs, rhs, target, func(lo, hi string) operand {
 			return operand{expr: lo, hi: hi, max: lhs.max}
@@ -202,7 +202,7 @@ func orMax(a, b *big.Int) *big.Int {
 // referenced.  Counts of 128 or more clear the value, matching the unbounded
 // word semantics under a ≤128-bit mask.
 func (g *generator) emitShiftHelpers(c *code) {
-	if g.usesShl128 {
+	if g.usesHelper(helperShl128) {
 		c.line("func shl128(lo, hi, n uint64) (uint64, uint64) {")
 		c.line("switch {")
 		c.line("case n >= 128:")
@@ -218,7 +218,7 @@ func (g *generator) emitShiftHelpers(c *code) {
 		c.line("")
 	}
 
-	if g.usesShr128 {
+	if g.usesHelper(helperShr128) {
 		c.line("func shr128(lo, hi, n uint64) (uint64, uint64) {")
 		c.line("switch {")
 		c.line("case n >= 128:")

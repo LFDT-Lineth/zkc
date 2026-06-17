@@ -12,5 +12,5 @@ fn main() {
 fn dec(val:u64) -> (res:u64) {
     var b:u1
     //
-    b::res = (val as u65) - 1
+    b::res = (1 as u1)::val - 1
 }

@@ -20,16 +20,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -378,13 +382,13 @@ fn main<ram>() {
 
 // compileUint compiles a ZkC source string into a fresh, vectorised
 // WordMachine over vm.Uint — the machine the generator consumes and the
-// reference executor interprets.  `lowered` selects the prover shape
-// (LowerNatives on: bitwise/division/comparisons rewritten into helper calls
+// reference executor interprets.  `fastMode` selects the prover shape
+// (FastMode off: bitwise/division/comparisons rewritten into helper calls
 // and hints) versus the plain shape with native integer ops.  A fresh machine
 // is required per reference execution because execution mutates memory state.
-func compileUint(t testing.TB, src string, lowered bool) *vm.WordMachine[vm.Uint] {
+func compileUint(t testing.TB, src string, fastMode bool) *vm.WordMachine[vm.Uint] {
 	t.Helper()
-	return compileUintProgram(t, compileProgram(t, src), lowered)
+	return compileUintProgram(t, compileProgram(t, src), fastMode)
 }
 
 func compileProgram(t testing.TB, src string) ast.Program {
@@ -400,10 +404,10 @@ func compileProgram(t testing.TB, src string) ast.Program {
 	return program
 }
 
-func compileUintProgram(t testing.TB, program ast.Program, lowered bool) *vm.WordMachine[vm.Uint] {
+func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) *vm.WordMachine[vm.Uint] {
 	t.Helper()
 
-	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).LowerNatives(lowered).Vectorize(true).Quiet(true)
+	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).FastMode(fastMode).Vectorize(true).Quiet(true)
 
 	wm, errs := program.Compile(cfg)
 	if len(errs) > 0 {
@@ -415,11 +419,11 @@ func compileUintProgram(t testing.TB, program ast.Program, lowered bool) *vm.Wor
 
 // shapes enumerates the two machine shapes every test runs against.
 var shapes = []struct {
-	name    string
-	lowered bool
+	name     string
+	fastMode bool
 }{
 	{"plain", false},
-	{"lowered", true},
+	{"fastMode", false},
 }
 
 func TestGenValidGo(t *testing.T) {
@@ -447,7 +451,7 @@ func TestGenValidGo(t *testing.T) {
 	for name, src := range srcs {
 		for _, shape := range shapes {
 			t.Run(name+"/"+shape.name, func(t *testing.T) {
-				out, err := vm.GenerateGo(compileUint(t, src, shape.lowered), vm.GoGenConfig{})
+				out, err := vm.GenerateGo(compileUint(t, src, shape.fastMode), vm.GoGenConfig{})
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}
@@ -688,7 +692,9 @@ func TestGenDifferential(t *testing.T) {
 	for _, tc := range diffCases {
 		for _, shape := range shapes {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
-				src, err := vm.GenerateGo(compileUint(t, tc.src, shape.lowered), vm.GoGenConfig{})
+				m := compileUint(t, tc.src, shape.fastMode)
+
+				src, err := vm.GenerateGo(m, vm.GoGenConfig{})
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}
@@ -696,9 +702,11 @@ func TestGenDifferential(t *testing.T) {
 				prog := buildProgram(t, src)
 				for _, in := range tc.vectors {
 					t.Run(inputName(in), func(t *testing.T) {
-						refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.lowered), in)
+						inBytes := encodeInputs(m, in)
 
-						genOut, genErr := runProgram(t, prog, in)
+						refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.fastMode), inBytes)
+
+						genOut, genErr := runProgram(t, prog, inBytes)
 						if refErr != genErr {
 							t.Fatalf("error mismatch: reference err=%v, generated err=%v (in=%v)", refErr, genErr, in)
 						}
@@ -717,6 +725,39 @@ func TestGenDifferential(t *testing.T) {
 	}
 }
 
+func TestMainHarnessRejectsBadInputNames(t *testing.T) {
+	src, err := vm.GenerateGo(compileUint(t, doubleSrc, false), vm.GoGenConfig{})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	prog := buildProgram(t, src)
+
+	for _, tc := range []struct {
+		name string
+		in   map[string][]byte
+		want string
+	}{
+		{"missing", map[string][]byte{}, `missing input "data"`},
+		{"unknown", map[string][]byte{"data": {3}, "extra": {1}}, `unknown input "extra"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, errored, err := gogen.Run(prog, tc.in, io.Discard)
+			if err == nil {
+				t.Fatal("expected harness error")
+			}
+
+			if errored {
+				t.Fatal("bad input names should not be execution errors")
+			}
+
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected error containing %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func inputName(in map[string][]uint64) string {
 	b, err := json.Marshal(in)
 	if err != nil {
@@ -726,14 +767,17 @@ func inputName(in map[string][]uint64) string {
 	return string(b)
 }
 
-// referenceRun executes the program on a fresh reference Uint machine,
-// returning output memories as []uint64 and whether execution errored.
-func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]uint64) (map[string][]uint64, bool) {
+// referenceRun executes the program on a fresh reference Uint machine from the
+// same packed-byte inputs the generated harness consumes, returning output
+// memories as bytes and whether execution errored.  Sharing the bytes (rather
+// than the raw cells) guarantees both executors see identical, width-valid
+// inputs — see encodeInputs.
+func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]byte) (map[string][]byte, bool) {
 	t.Helper()
 
-	inputs := make(map[string][]vm.Uint, len(in))
-	for name, values := range in {
-		inputs[name] = toWords(values)
+	inputs, errs := vm.DecodeInputs(wm, in)
+	if len(errs) > 0 {
+		t.Fatalf("decode inputs: %v", errs)
 	}
 
 	if err := wm.Boot("main", inputs); err != nil {
@@ -744,18 +788,10 @@ func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]uin
 		return nil, true
 	}
 
-	out := map[string][]uint64{}
-
-	for it := wm.Outputs(); it.HasNext(); {
-		m := it.Next()
-		out[m.Name()] = fromWords(m.Contents())
-	}
-
-	return out, false
+	return vm.EncodeOutputs(wm), false
 }
 
-// buildProgram compiles generated source through the shared build cache
-// (pkg/zkc/gogen), so identical programs across tests build exactly once.
+// buildProgram compiles generated source into a test-owned temporary directory.
 func buildProgram(t *testing.T, src string) string {
 	t.Helper()
 
@@ -763,7 +799,7 @@ func buildProgram(t *testing.T, src string) string {
 		t.Skip("go toolchain not available")
 	}
 
-	prog, err := gogen.Build(src)
+	prog, err := buildGeneratedProgram(t, src)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -771,59 +807,208 @@ func buildProgram(t *testing.T, src string) string {
 	return prog
 }
 
-// runProgram runs the compiled program with JSON inputs on stdin, returning
-// parsed outputs and whether it reported an execution error (exit 1).
-func runProgram(t *testing.T, prog string, in map[string][]uint64) (map[string][]uint64, bool) {
+func buildGeneratedProgram(t *testing.T, src string) (string, error) {
 	t.Helper()
 
-	inJSON, err := json.Marshal(in)
-	if err != nil {
-		t.Fatal(err)
+	dir := t.TempDir()
+	prog := filepath.Join(dir, "prog")
+
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o644); err != nil {
+		return "", err
 	}
 
-	var stdout, stderr bytes.Buffer
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module zkcgen\n\ngo 1.24\n"), 0o644); err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("go", "build", "-o", prog, ".")
+	cmd.Dir = dir
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("go build failed: %v\n%s\n--- source ---\n%s", err, out, src)
+	}
+
+	return prog, nil
+}
+
+// runProgram runs the compiled program on packed-byte inputs (see encodeInputs),
+// returning its output memories as bytes and whether it reported an execution
+// error.
+func runProgram(t *testing.T, prog string, in map[string][]byte) (map[string][]byte, bool) {
+	t.Helper()
+
+	out, errored, err := gogen.Run(prog, in, io.Discard)
+	if err != nil {
+		t.Fatalf("running generated program: %v", err)
+	}
+
+	return out, errored
+}
+
+// encodeInputs packs cell-valued inputs into the byte form the harness reads,
+// using each input memory's geometry.  Each value is masked to its data-line
+// width: the byte encoding carries exactly that many bits, so an out-of-width
+// cell is not expressible — masking yields the canonical input both executors
+// then consume identically.
+func encodeInputs(wm *vm.WordMachine[vm.Uint], in map[string][]uint64) map[string][]byte {
+	out := map[string][]byte{}
+
+	for it := wm.Inputs(); it.HasNext(); {
+		m := it.Next()
+		regs := m.Geometry().DataRegisters()
+		cells := in[m.Name()]
+		words := make([]vm.Uint, len(cells))
+
+		for i, v := range cells {
+			if w := regs[i%len(regs)].Width(); w < 64 {
+				v &= (1 << w) - 1
+			}
+
+			words[i] = words[i].SetUint64(v)
+		}
+
+		out[m.Name()] = vm.EncodeBytes(words, m.Geometry())
+	}
+
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// printf / fail messages (#1868): non-quiet builds emit printf to stderr and
+// surface fail messages, byte-compatible with the reference interpreter.
+// ---------------------------------------------------------------------------
+
+const printfSrc = `pub input args(address:u16) -> (word:u16)
+pub output result(address:u16) -> (word:u16)
+fn main() {
+    var a:u16 = args[0]
+    printf "dec=%d hex=%x bin=%b pad=%04x\n", a, a, a, a
+    result[0] = a
+    return
+}
+`
+
+// printfWideSrc prints a value wider than 64 bits, exercising the big.Int
+// printf path (the lo/hi pair folds into a *big.Int via the u128 helper).
+const printfWideSrc = `pub input args(address:u8) -> (w:u64)
+pub output result(address:u8) -> (w:u64)
+fn main() {
+    var a:u64 = args[0]
+    var b:u64 = args[1]
+    var p:u128 = (a as u128) * (b as u128)
+    printf "p=%d\n", p
+    result[0] = a
+    return
+}
+`
+
+const printfCharSrc = `pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var a:u8 = args[0]
+    printf "%c%c!", a, a
+    result[0] = a
+    return
+}
+`
+
+const failMsgSrc = `pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var a:u8 = args[0]
+    fail "boom a=%d", a
+}
+`
+
+// compileUintVerbose compiles with printf retained (Quiet(false)), unlike the
+// default helper which strips it.
+func compileUintVerbose(t testing.TB, src string) *vm.WordMachine[vm.Uint] {
+	t.Helper()
+
+	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).Vectorize(true).Quiet(false)
+
+	program := compileProgram(t, src)
+
+	wm, errs := program.Compile(cfg)
+	if len(errs) > 0 {
+		t.Fatalf("codegen: %v", errs)
+	}
+
+	return wm
+}
+
+// runStderr builds and runs a generated program, returning its stderr and exit
+// status.  Unlike runProgram it captures stderr on success (where printf lands).
+func runStderr(t *testing.T, m *vm.WordMachine[vm.Uint], in map[string][]uint64) (stderr string, exitErr bool) {
+	t.Helper()
+
+	src, err := vm.GenerateGo(m, vm.GoGenConfig{})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	prog := buildProgram(t, src)
+
+	inJSON, err := gogen.MarshalInputs(encodeInputs(m, in))
+	if err != nil {
+		t.Fatalf("marshal inputs: %v", err)
+	}
+
+	var out, errBuf bytes.Buffer
 
 	cmd := exec.Command(prog)
 	cmd.Stdin = bytes.NewReader(inJSON)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
 
-	err = cmd.Run()
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
-			switch ee.ExitCode() {
-			case 1:
-				return nil, true
-			default:
-				t.Fatalf("generated program failed (exit %d): %s", ee.ExitCode(), stderr.String())
-			}
+			return errBuf.String(), ee.ExitCode() != 0
 		}
 
 		t.Fatalf("running generated program: %v", err)
 	}
 
-	var out map[string][]uint64
-	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
-		t.Fatalf("decoding generated output %q: %v", stdout.String(), err)
-	}
-
-	return out, false
+	return errBuf.String(), false
 }
 
-func toWords(vs []uint64) []vm.Uint {
-	out := make([]vm.Uint, len(vs))
-	for i, v := range vs {
-		out[i] = out[i].SetUint64(v)
+func TestGenPrintf(t *testing.T) {
+	cases := []struct {
+		name, src string
+		in        map[string][]uint64
+		want      string
+	}{
+		{"verbs", printfSrc, map[string][]uint64{"args": {255}}, "dec=255 hex=ff bin=11111111 pad=00ff\n"},
+		{"char", printfCharSrc, map[string][]uint64{"args": {65}}, "AA!"},
+		// 2^33 * 2^33 = 2^66 = 73786976294838206464 (wider than u64).
+		{"wide", printfWideSrc, map[string][]uint64{"args": {1 << 33, 1 << 33}}, "p=73786976294838206464\n"},
 	}
 
-	return out
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := compileUintVerbose(t, tc.src)
+
+			got, exitErr := runStderr(t, m, tc.in)
+			if exitErr {
+				t.Fatalf("unexpected non-zero exit; stderr=%q", got)
+			}
+
+			if got != tc.want {
+				t.Fatalf("printf output mismatch:\n  got  %q\n  want %q", got, tc.want)
+			}
+		})
+	}
 }
 
-func fromWords(ws []vm.Uint) []uint64 {
-	out := make([]uint64, len(ws))
-	for i, w := range ws {
-		out[i] = w.Uint64()
+func TestGenFailMessage(t *testing.T) {
+	m := compileUintVerbose(t, failMsgSrc)
+
+	got, exitErr := runStderr(t, m, map[string][]uint64{"args": {7}})
+	if !exitErr {
+		t.Fatalf("expected non-zero exit on fail")
 	}
 
-	return out
+	if want := "machine panic: boom a=7"; !bytes.Contains([]byte(got), []byte(want)) {
+		t.Fatalf("fail message missing: got %q, want substring %q", got, want)
+	}
 }

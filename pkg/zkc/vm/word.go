@@ -36,6 +36,22 @@ func init() {
 	gob.Register(instruction.Module(&memory.WriteOnce[Uint]{}))
 	gob.Register(instruction.Module(&memory.StaticReadOnly[Uint]{}))
 	gob.Register(instruction.Module(&memory.PagedRandomAccess[Uint]{}))
+	// Uint64 word type.
+	gob.Register(instruction.Word(&instruction.WordTypeA[Uint64]{}))
+	gob.Register(instruction.Word(&instruction.WordTypeF[Uint64]{}))
+	gob.Register(instruction.Module(&memory.RandomAccess[Uint64]{}))
+	gob.Register(instruction.Module(&memory.ReadOnly[Uint64]{}))
+	gob.Register(instruction.Module(&memory.WriteOnce[Uint64]{}))
+	gob.Register(instruction.Module(&memory.StaticReadOnly[Uint64]{}))
+	gob.Register(instruction.Module(&memory.PagedRandomAccess[Uint64]{}))
+	// Uint128 word type.
+	gob.Register(instruction.Word(&instruction.WordTypeA[Uint128]{}))
+	gob.Register(instruction.Word(&instruction.WordTypeF[Uint128]{}))
+	gob.Register(instruction.Module(&memory.RandomAccess[Uint128]{}))
+	gob.Register(instruction.Module(&memory.ReadOnly[Uint128]{}))
+	gob.Register(instruction.Module(&memory.WriteOnce[Uint128]{}))
+	gob.Register(instruction.Module(&memory.StaticReadOnly[Uint128]{}))
+	gob.Register(instruction.Module(&memory.PagedRandomAccess[Uint128]{}))
 }
 
 // WordConfig provides a minimal amount of information about a machine word
@@ -47,6 +63,9 @@ type WordConfig struct {
 
 // WORD_UINT64 provides metadata about the Uint64 word type.
 var WORD_UINT64 = WordConfig{Name: "Uint64", Bandwidth: 64}
+
+// WORD_UINT128 provides metadata about the Uint128 word type.
+var WORD_UINT128 = WordConfig{Name: "Uint128", Bandwidth: 128}
 
 // WORD_UINT provides metadata about the Uint word type.
 var WORD_UINT = WordConfig{Name: "Uint", Bandwidth: math.MaxUint}
@@ -65,6 +84,9 @@ type Uint = word.Uint
 
 // Uint64 represents an 64-bit unsigned integer.
 type Uint64 = word.Uint64
+
+// Uint128 represents an 128-bit unsigned integer.
+type Uint128 = word.Uint128
 
 // ============================================================================
 // Constructors

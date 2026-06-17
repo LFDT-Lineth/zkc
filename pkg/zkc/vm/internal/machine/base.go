@@ -321,6 +321,20 @@ func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 			frame.pc = frame.pc.Skip(insn.Skip)
 		}
 		// Fall thru
+	case opcode.SKIP_MULTI:
+		var binsn any = insn
+		insn := binsn.(*instruction.MultiwaySkip)
+		// Dispatch on the source register value: skip by the first matching
+		// case, or fall through to the next micro-instruction if none match.
+		val := frame.Load(insn.Source)
+		//
+		for _, c := range insn.Cases {
+			if val.Cmp64(uint64(c.Value)) == 0 {
+				frame.pc = frame.pc.Skip(c.Skip)
+				break
+			}
+		}
+		// Fall thru
 	case opcode.DEBUG:
 		var binsn any = insn
 		insn := binsn.(*instruction.Debug)
@@ -446,9 +460,8 @@ func executeCondition[W BaseWord[W], I Instruction](frame StackFrame[W, I], cond
 // FormatWord applies a given format to a given word to generate a formatted string.
 func formatWord[W BaseWord[W], I Instruction](fmt zkc_util.Format, vec register.Vector, frame StackFrame[W, I]) string {
 	var (
-		digits string
-		value  big.Int
-		regs   = vec.Registers()
+		value big.Int
+		regs  = vec.Registers()
 	)
 	// Loop from most-significant word to least significant.
 	for i := vec.Len(); i > 0; i-- {
@@ -458,44 +471,9 @@ func formatWord[W BaseWord[W], I Instruction](fmt zkc_util.Format, vec register.
 		// Add next word
 		value.Add(&value, frame.Load(reg).BigInt())
 	}
-	//
-	switch fmt.Code {
-	case zkc_util.FORMAT_DEC:
-		digits = value.Text(10)
-	case zkc_util.FORMAT_HEX:
-		digits = value.Text(16)
-	case zkc_util.FORMAT_BIN:
-		digits = value.Text(2)
-	case zkc_util.FORMAT_CHR:
-		// Render the value as a single ASCII character.  Type-checking
-		// (in the zkc compiler) enforces that the argument is a concrete
-		// u8, so the value fits in a single byte; nonetheless we mask
-		// the low 8 bits defensively in case this is called outside
-		// that path (e.g. by future Unicode work, or by tests that
-		// bypass the type checker).
-		if w, ok := any(value).(interface{ BigInt() *big.Int }); ok {
-			return string([]byte{byte(w.BigInt().Uint64() & 0xff)})
-		}
-		//
-		var v big.Int
-		v.SetString(value.Text(10), 10)
-		//
-		return string([]byte{byte(v.Uint64() & 0xff)})
-	default:
-		panic("invalid format")
-	}
-	// Apply any padding to the digit portion.
-	if uint(len(digits)) < fmt.Width {
-		padding := int(fmt.Width) - len(digits)
-		//
-		if fmt.ZeroPad {
-			digits = strings.Repeat("0", padding) + digits
-		} else {
-			digits = strings.Repeat(" ", padding) + digits
-		}
-	}
-	//
-	return digits
+	// Render the packed value, sharing the format logic with the bytecode
+	// interpreter so both machines emit identical debug output.
+	return fmt.Render(&value)
 }
 
 // Perform lexicographic comparison of two (equally sized) arrays.  In each

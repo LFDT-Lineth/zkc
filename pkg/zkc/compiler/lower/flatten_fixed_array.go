@@ -765,6 +765,16 @@ func (p *Rewriter) rewriteFixedArrayStmt(s stmt.Resolved) stmt.Resolved {
 		}
 
 		return s
+	case *stmt.Dispatch[symbol.Resolved]:
+		s.Discriminant = p.rewriteArrayExpression(s.Discriminant)
+		//
+		for i := range s.Branches {
+			for j, label := range s.Branches[i].Labels {
+				s.Branches[i].Labels[j] = p.rewriteArrayExpression(label)
+			}
+		}
+		//
+		return s
 	case *stmt.Return[symbol.Resolved], *stmt.Goto[symbol.Resolved], *stmt.Fail[symbol.Resolved]:
 		return s
 	default:

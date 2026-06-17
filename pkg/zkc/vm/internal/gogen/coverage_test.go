@@ -37,14 +37,15 @@ import (
 var opcodeCoverage = map[string]string{
 	// Base instructions (gen.go emitInstruction).
 	"CALL":         "emitCall",
-	"FAIL":         "panic(failure)",
+	"FAIL":         "emitFail (panic with message)",
 	"JUMP":         "goto",
 	"MEMORY_READ":  "emitMemRead",
 	"MEMORY_WRITE": "emitMemWrite",
 	"SKIP_IF":      "condExpr + goto",
 	"SKIP":         "goto",
 	"RETURN":       "returnOk",
-	"DEBUG":        "no-op (diagnostics only)",
+	"DEBUG":        "emitDebug (printf to stderr)",
+	"SKIP_MULTI":   "emitMultiwaySkip (switch + goto)",
 	// Word instructions.
 	"INT_ADD":      "emitArith (WordTypeA)",
 	"INT_SUB":      "emitArith (WordTypeA)",
@@ -196,7 +197,7 @@ func TestGenerateCorpus(t *testing.T) {
 					}
 
 					cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).
-						LowerNatives(shape.lowered).Vectorize(true).Quiet(true)
+						FastMode(shape.fastMode).Vectorize(true).Quiet(true)
 
 					wm, errs := program.Compile(cfg)
 					if len(errs) > 0 {

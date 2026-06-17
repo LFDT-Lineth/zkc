@@ -83,9 +83,9 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	case opcode.CALL:
 		p.compileCall(insn.(*instruction.Call), f)
 	case opcode.DEBUG:
-		p.encoder.Add(bytecode.NewDebug())
+		p.encoder.Add(bytecode.NewDebug(insn.(*instruction.Debug).Chunks))
 	case opcode.FAIL:
-		p.encoder.Add(bytecode.NewFail())
+		p.encoder.Add(bytecode.NewFail(insn.(*instruction.Fail).Chunks))
 	case opcode.JUMP:
 		p.compileJump(pos, insn.(*instruction.Jump))
 	case opcode.MEMORY_READ:
@@ -98,6 +98,8 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 		p.compileSkip(pos, insn.(*instruction.Skip))
 	case opcode.SKIP_IF:
 		p.compileSkipIf(pos, insn.(*instruction.SkipIf))
+	case opcode.SKIP_MULTI:
+		p.compileMultiwaySkip(pos, insn.(*instruction.MultiwaySkip))
 	case opcode.HINT_DIVISION:
 		p.compileDivHint(insn.(*instruction.FieldHint))
 	case opcode.INT_ADD:
@@ -379,6 +381,26 @@ func (p *bytecodeCompiler[W]) compileSkipIf(pos Label, insn *instruction.SkipIf)
 	)
 	//
 	p.encoder.Add(bytecode.JumpIfVec(insn.Cond, index, l, r))
+}
+
+// compileMultiwaySkip translates a multiway skip into a single SMW bytecode.
+// Each dispatch case targets the micro-code its skip would reach (pos.micro +
+// skip + 1) -- exactly as compileSkip / compileSkipIf resolve their targets --
+// so a match transfers control to that case's jump, while a non-match falls
+// through to the following (default) jump.
+func (p *bytecodeCompiler[W]) compileMultiwaySkip(pos Label, insn *instruction.MultiwaySkip) {
+	var cases = make([]bytecode.SwitchCase, len(insn.Cases))
+	//
+	for i, c := range insn.Cases {
+		var (
+			label = Label{pos.fun, pos.macro, pos.micro + c.Skip + 1}
+			index = p.encoder.Label(label)
+		)
+		//
+		cases[i] = bytecode.SwitchCase{Value: uint64(c.Value), Target: index}
+	}
+	//
+	p.encoder.Add(bytecode.MultiwaySkip(insn.Source, cases))
 }
 
 // Add a checkcast instruction if the given value does not fit within the target

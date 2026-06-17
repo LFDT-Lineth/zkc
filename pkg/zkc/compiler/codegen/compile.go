@@ -95,6 +95,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		modules []vm.Module
 		mapping = make([]uint, len(declarations))
 		index   = uint(0)
+		inlines []string
 		errors  []source.SyntaxError
 	)
 	// Construct the mapping from ast declaration identifiers to vm module
@@ -125,6 +126,10 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			fn, errs := p.compileFunction(uint(i), mapping, declarations)
 			modules = append(modules, fn)
 			errors = append(errors, errs...)
+			// Record functions to be inlined (see below).
+			if slices.Contains(c.Annotations(), "inline") {
+				inlines = append(inlines, c.Name())
+			}
 		case *decl.ResolvedInclude:
 			// ignore
 		case *decl.ResolvedMemory:
@@ -159,8 +164,21 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			panic(fmt.Sprintf("unknown declaration %s", c.Name()))
 		}
 	}
+
+	if len(errors) > 0 {
+		return nil, errors
+	}
+
+	// Inline all functions marked with the #[inline] annotation.  This must
+	// happen before native lowering and vectorisation, both of which splice
+	// instruction sequences into vectors and would thereby break the
+	// invariant that no skip crosses over a call within its vector.
+	if p.config.inlining && len(inlines) > 0 {
+		modules = vm.InlineFunctions[vm.Uint](modules, inlines)
+	}
+
 	// Lower VM-level zkc-native instructions into arithmetic instructions.
-	if len(errors) == 0 && p.config.lowerZkcNative {
+	if !p.config.fastMode {
 		// Lower Bitwise operations into arithmetic instructions.
 		modules = vm.LowerBitwise[vm.Uint](modules)
 		// Lower INT_DIV/INT_REM into hint + arithmetic validation sequences.
@@ -169,14 +187,28 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		// Must run after LowerBitwise and LowerDivisions, which may generate new relational SkipIf instructions.
 		modules = vm.LowerComparisons[vm.Uint](modules)
 	}
+
+	// Fast mode optimisation compiler passes
+	if p.config.fastMode {
+		// Turn division / remainder by 2^m into right shifts / bitwise ANDs.
+		modules = vm.OptimizeDivisions[vm.Uint](modules)
+	}
+
 	// Vectorize modules (if no errors)
-	if len(errors) == 0 && p.config.vectorize {
+	if p.config.vectorize {
 		Vectorize(modules, p.srcmaps)
+		// Factor branch conditions into a single bit register holding the condition result.
+		// Gated on the same flag as fastMode since it only makes
+		// sense when generating arithmetic constraints; must run after
+		// vectorisation to be meaningful.
+		if !p.config.fastMode {
+			modules = vm.FactorSkipConditions[vm.Uint](modules)
+		}
 	}
 	//
 	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)
 	// Apply register splitting (for now)
-	if len(errors) == 0 && p.config.splitting {
+	if p.config.splitting {
 		wm = vm.SplitRegisters(p.config.field, wm)
 	}
 	// Construct machine

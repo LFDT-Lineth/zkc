@@ -60,6 +60,8 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorI
 		insns = append(insns, post...)
 	case *stmt.IfGoto[symbol.Resolved]:
 		return p.compileCondition(pc, s.Cond, mapping, s.Target)
+	case *stmt.Dispatch[symbol.Resolved]:
+		return p.compileDispatch(s, mapping)
 	case *stmt.Goto[symbol.Resolved]:
 		return instruction.NewVector[Instruction](instruction.NewJump(s.Target))
 	case *stmt.Fail[symbol.Resolved]:
@@ -210,6 +212,43 @@ func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, ta
 	default:
 		panic("unknown condition encountered")
 	}
+}
+
+// compileDispatch compiles a multiway dispatch into a single vector
+// instruction.  The discriminant is evaluated into a register, then a
+// MultiwaySkip selects between a jump table laid out immediately after it: the
+// default jump (reached on no match) followed by one jump per branch.  Every
+// label of branch i therefore skips by i+1 to land on that branch's jump.
+func (p *StmtCompiler) compileDispatch(s *stmt.Dispatch[symbol.Resolved], mapping []uint) VectorInstruction {
+	// Evaluate the discriminant into a single register.
+	sources, insns := p.compileNonUniformArgs(mapping, s.Discriminant)
+	source := sources[0]
+	// Build the dispatch table from the (constant) case labels.
+	var cases []instruction.DispatchCase
+	//
+	for i, branch := range s.Branches {
+		for _, label := range branch.Labels {
+			value := p.evalConstant(label)
+			// The multiway skip compares against a uint64 immediate.
+			if !value.FitsWithin(64) {
+				p.errors = append(p.errors,
+					p.srcmaps.SyntaxErrors(label, "switch value too large for multiway dispatch")...)
+				//
+				continue
+			}
+			//
+			cases = append(cases, instruction.DispatchCase{Value: uint(value.Uint64()), Skip: uint(i) + 1})
+		}
+	}
+	// Emit the dispatch followed by its jump table (default first).
+	insns = append(insns, instruction.NewMultiwaySkip(source, cases...))
+	insns = append(insns, instruction.NewJump(s.DefaultTarget))
+	//
+	for _, branch := range s.Branches {
+		insns = append(insns, instruction.NewJump(branch.Target))
+	}
+	//
+	return instruction.NewVector(insns...)
 }
 
 func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...register.Vector) []Instruction {
@@ -588,16 +627,16 @@ func (p *StmtCompiler) compileIntMul(args []Expr, bitwidth uint, mapping []uint,
 	)
 	//
 	for _, e := range args {
-		var overflow bool
+		var carry vm.Uint
 		//
 		if c, ok := p.asConstant(e); ok {
-			constant, overflow = constant.Mul(c)
+			carry, constant = constant.Mul(c)
 		} else {
 			nargs = append(nargs, e)
 		}
 		// NOTE: this error should be caught and reported earlier in the
 		// pipeline.
-		if overflow || !constant.FitsWithin(bitwidth) {
+		if carry.Cmp64(0) != 0 || !constant.FitsWithin(bitwidth) {
 			panic("arithmetic overflow")
 		}
 	}

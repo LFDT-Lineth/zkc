@@ -1,0 +1,17 @@
+fn test(x:u8) -> (r:u8, s:u8) {
+
+    switch (x) {
+        case 0: {
+            r = 1
+            s = 1
+        }
+        case 0xFF: {
+            r = 0
+            s = 0xFF
+        }
+        default: {
+            r = x
+            s = x
+        }
+    }
+}

@@ -87,11 +87,11 @@ func (p Config) Bytecode(flag bool) Config {
 	return p
 }
 
-// Gogen determines whether or not to additionally run the generated-Go ("native")
+// GoGen determines whether or not to additionally run the generated-Go ("native")
 // executor and check its outputs against the test.  This is experimental and only
 // applies to the Uint64 word; programs the generator cannot yet handle are skipped
 // rather than failed (see runGogenExecutionTest).
-func (p Config) Gogen(flag bool) Config {
+func (p Config) GoGen(flag bool) Config {
 	p.gogen = flag
 	//
 	return p
@@ -136,9 +136,9 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f)
 		)
 		// Run all tests without lowering (and preventing the constraints check)
-		checkValidInternal(t, testfile, cfg.LowerNatives(false), config.Constraints(false), testcases[f])
+		checkValidInternal(t, testfile, cfg.FastMode(true), config.Constraints(false), testcases[f])
 		// Run all tests with lowering
-		checkValidInternal(t, testfile, cfg.LowerNatives(true), config, testcases[f])
+		checkValidInternal(t, testfile, cfg.FastMode(false), config, testcases[f])
 	}
 }
 
@@ -152,6 +152,25 @@ func checkValidInternal(t *testing.T, testfile string, cfg codegen.Config, confi
 	checkValidMachine(t, m1, cfg, config, testcases)
 	// check for marshalled / unmarshalled machine
 	checkValidMachine(t, m2, cfg, config, testcases)
+	// check gogen binaries (if requested)
+	if config.gogen {
+		checkValidGoGen(t, testfile, testcases, m1)
+	}
+}
+
+func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, m *vm.WordMachine[vm.Uint]) {
+	var binary, err = buildGogenProgram(t, m)
+	//
+	if err != nil {
+		t.Errorf("[gogen] %v", err)
+	} else {
+		// Log binary location
+		t.Logf("[gogen] compiled %s into binary at %s", testfile, binary)
+		// Run each test vector
+		for _, testcase := range tests {
+			runGogenExecutionTest(t, m, binary, testcase)
+		}
+	}
 }
 
 func checkValidMachine(t *testing.T, m *vm.WordMachine[vm.Uint], cfg codegen.Config, config Config, tests []TestCase) {
@@ -182,19 +201,21 @@ func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f 
 		case vm.WORD_UINT:
 			runBytecodeExecutionTest(t, m, tc, w, cfg.bytecode)
 		case vm.WORD_UINT64:
-			// Lower to 64bit machine
-			m64 := vm.WordToWordMachine[vm.Uint, vm.Uint64](m)
-			// Run execution test
-			runBytecodeExecutionTest(t, m64, tc, w, cfg.bytecode)
-			// Optionally cross-check against the generated-Go executor, which
-			// consumes the Uint machine directly (no word narrowing).
-			if cfg.gogen {
-				runGogenExecutionTest(t, m, tc, w)
-			}
+			runFixedWidthExecutionTest[vm.Uint128](t, m, tc, cfg, w)
+		case vm.WORD_UINT128:
+			runFixedWidthExecutionTest[vm.Uint128](t, m, tc, cfg, w)
 		default:
 			panic(fmt.Sprintf("unknown machine word: %s", w.Name))
 		}
 	}
+}
+
+func runFixedWidthExecutionTest[W vm.Word[W]](t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, cfg Config,
+	w vm.WordConfig) {
+	// Lower to fixed-width machine
+	fwm := vm.WordToWordMachine[vm.Uint, W](m)
+	// Run execution test
+	runBytecodeExecutionTest(t, fwm, tc, w, cfg.bytecode)
 }
 
 func runBytecodeExecutionTest[W vm.Word[W]](t *testing.T, wm *vm.WordMachine[W], test TestCase, cfg vm.WordConfig,

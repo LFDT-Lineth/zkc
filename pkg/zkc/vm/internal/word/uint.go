@@ -44,6 +44,12 @@ func (p Uint) Add(w Uint) (Uint, bool) {
 	return Uint{res}, false
 }
 
+// Add64 implementation for Word interface.
+func (p Uint) Add64(w uint64) (Uint, bool) {
+	var tmp Uint
+	return p.Add(tmp.SetUint64(w))
+}
+
 // AddMod implementation for Word interface.
 func (p Uint) AddMod(w, m Uint) Uint {
 	var res big.Int
@@ -59,16 +65,9 @@ func (p Uint) Bandwidth() uint {
 	return math.MaxUint
 }
 
-// Div implementation for Word interface.
-func (p Uint) Div(w Uint) Uint {
-	if w.value.Sign() == 0 {
-		panic("division by zero")
-	}
-	//
-	var res big.Int
-	res.Div(&p.value, &w.value)
-	//
-	return Uint{res}
+// BigInt implementation for Word interface.
+func (p Uint) BigInt() *big.Int {
+	return &p.value
 }
 
 // Cmp implementation for Word interface.
@@ -85,9 +84,16 @@ func (p Uint) Cmp64(o uint64) int {
 	return 1
 }
 
-// BigInt implementation for Word interface.
-func (p Uint) BigInt() *big.Int {
-	return &p.value
+// Div implementation for Word interface.
+func (p Uint) Div(w Uint) Uint {
+	if w.value.Sign() == 0 {
+		panic("division by zero")
+	}
+	//
+	var res big.Int
+	res.Div(&p.value, &w.value)
+	//
+	return Uint{res}
 }
 
 // FitsWithin implementation for Word interface.
@@ -120,13 +126,15 @@ func (p Uint) Or(w Uint) Uint {
 }
 
 // Mul implementation for Word interface.
-func (p Uint) Mul(w Uint) (Uint, bool) {
+func (p Uint) Mul(w Uint) (hi, lo Uint) {
 	var (
 		res big.Int
 	)
 	res.Mul(&p.value, &w.value)
 	//
-	return Uint{res}, false
+	lo = Uint{res}
+	//
+	return hi, lo
 }
 
 // MulMod implementation for Word interface.
@@ -163,11 +171,11 @@ func (p Uint) Shl(width uint, n Uint) Uint {
 }
 
 // Shl64 implementation for Word interface.
-func (p Uint) Shl64(n uint64) Uint {
+func (p Uint) Shl64(n uint64) (hi Uint, lo Uint) {
 	var res big.Int
 	res.Lsh(&p.value, uint(n))
 	//
-	return Uint{res}
+	return hi, Uint{res}
 }
 
 // Shr implementation for Word interface.
@@ -230,6 +238,12 @@ func (p Uint) Sub(w Uint) (Uint, bool) {
 	res.Sub(&p.value, &w.value)
 	//
 	return Uint{res}, res.Sign() < 0
+}
+
+// Sub64 implementation for Word interface.
+func (p Uint) Sub64(w uint64) (Uint, bool) {
+	var tmp Uint
+	return p.Sub(tmp.SetUint64(w))
 }
 
 // SubMod implementation for Word interface.

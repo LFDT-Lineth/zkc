@@ -305,14 +305,14 @@ func Product[W vm.Word[W]](bitwidth uint, values ...W) (W, bool) {
 	)
 	//
 	for i, v := range values {
-		var carry bool
+		var carry W
 
 		if i == 0 {
 			res = v
 		} else {
-			res, carry = res.Mul(v)
+			carry, res = res.Mul(v)
 			//
-			overflow = overflow || carry
+			overflow = overflow || carry.Cmp64(0) != 0
 		}
 	}
 	//

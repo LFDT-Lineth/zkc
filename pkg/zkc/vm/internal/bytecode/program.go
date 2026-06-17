@@ -38,10 +38,17 @@ type Program[W word.Word[W]] struct {
 	constants []W
 	// Symbols associated with bytecode offsets
 	symbols map[uint32]uint
+	// chunks is the side-table of formatted-message specifications for the
+	// bytecodes that carry one (DEBUG and FAIL), indexed by the value packed
+	// into each such word (see Debug.Codes / Fail.Codes).  Held out-of-line
+	// because the chunks (text + register vectors) cannot be encoded as raw
+	// uint32 words.
+	chunks [][]base.FormattedChunk
 }
 
 // NewProgram constructs a new bytecode program with a given entry point.
 func NewProgram[W word.Word[W]](modules []Module, bytecodes []uint32, constants []W, symbols map[uint32]uint,
+	chunks [][]base.FormattedChunk,
 ) Program[W] {
 	//
 	return Program[W]{
@@ -49,7 +56,14 @@ func NewProgram[W word.Word[W]](modules []Module, bytecodes []uint32, constants 
 		bytecodes,
 		constants,
 		symbols,
+		chunks,
 	}
+}
+
+// Chunks returns the formatted-message specification for the DEBUG or FAIL site
+// with the given side-table index (as packed into its bytecode word).
+func (p Program[W]) Chunks(index uint32) []base.FormattedChunk {
+	return p.chunks[index]
 }
 
 // Bytecodes decodes this program into a more human-friendly representation.
@@ -142,6 +156,8 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 		// hence it decodes back to a Jmp.
 		target, n := decodeSkip1(pc, codes)
 		return &Jmp{Target: target}, n
+	case SKIP_M:
+		return decodeSkipTable[W](pc, codes)
 	case JEQ_rr, JNE_rr, JLT_rr, JLE_rr, JGT_rr, JGE_rr:
 		return decodeJif[W](pc, codes)
 	case SEQ_rr, SNE_rr, SLT_rr, SLE_rr, SGT_rr, SGE_rr:

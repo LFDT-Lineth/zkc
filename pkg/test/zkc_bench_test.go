@@ -21,14 +21,15 @@ import (
 
 // DEFAULT_BENCH_CONFIG provides a default configuration for bench tests.
 var DEFAULT_BENCH_CONFIG = util.DEFAULT_CONFIG.
-	Words(vm.WORD_UINT, vm.WORD_UINT64).
-	Bytecode(true)
+	Words(vm.WORD_UINT128).
+	Bytecode(true).
+	GoGen(true)
 
 // ===================================================================
 // Benchmark Tests
 // ===================================================================
 func Test_ZkcBench_Blake(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG.Words(vm.WORD_UINT))
+	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_BinarySearchTree(t *testing.T) {
@@ -40,11 +41,11 @@ func Test_ZkcBench_FastPow(t *testing.T) {
 }
 
 func Test_ZkcBench_Fnv1aHash(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/fnv1a_hash", DEFAULT_BENCH_CONFIG.Words(vm.WORD_UINT))
+	checkZkcBench(t, "zkc/bench/fnv1a_hash", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_Keccakf(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG.Words(vm.WORD_UINT))
+	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG)
 }
 
 // func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {

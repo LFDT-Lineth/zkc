@@ -68,6 +68,40 @@ func LowerDivisions[W word.Word[W]](modules []Module) []Module {
 	return transform.LowerDivisions[W](modules)
 }
 
+// OptimizeDivisions is a fast-mode optimization which rewrites division by
+// powers of 2 into right shifts, and remainder by powers of 2 into bitwise
+// ANDs.
+func OptimizeDivisions[W word.Word[W]](modules []Module) []Module {
+	return transform.OptimizeDivisions[W](modules)
+}
+
+// FactorSkipConditions rewrites equality SkipIf instructions (EQ/NEQ) so that
+// the branch condition is materialised once into a fresh 1-bit register, rather
+// than being replicated across each guarded write of the branch.
+// This pass must run after vectorisation and before register splitting.
+func FactorSkipConditions[W word.Word[W]](modules []Module) []Module {
+	return transform.FactorSkipConditions[W](modules)
+}
+
+// InlineFunctions returns an equivalent set of modules in which every call to
+// one of the named functions has been inlined at its call site, and the named
+// function modules removed (module identifiers within Call / MemRead /
+// MemWrite instructions are remapped accordingly).  Each call site is replaced
+// by the callee's body operating on caller registers: inputs / outputs are
+// aliased directly to the call's argument / return registers where provably
+// equivalent; otherwise (e.g. for temporaries, or aliasing call sites such as
+// "x = f(x)") fresh caller-local shadow registers are allocated, along with
+// argument / return copies which preserve the dynamic width checks of a true
+// call.
+//
+// This transform must be applied before vectorisation, since it splits the
+// vector enclosing a call at the call site.  It panics on: an unknown or
+// duplicate name; a native function; the entry function "main"; or (mutual)
+// recursion amongst the named functions.
+func InlineFunctions[W word.Word[W]](modules []Module, names []string) []Module {
+	return transform.InlineFunctions[W](modules, names)
+}
+
 // SplitRegisters all modules to meet a given bandwidth and maximum register width.
 // This will split all registers wider than the maximum permitted width into two
 // or more "limbs" (i.e. subregisters which do not exceeded the permitted

@@ -19,6 +19,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -57,14 +58,14 @@ func NewEncoder[W word.Word[W], T comparable](modules ...Module) *Encoder[W, T] 
 // is done, the internal bytecode sequence is reset.
 func (p *Encoder[W, T]) Encode() Program[W] {
 	// encode bytecodes
-	bytecodes, symbols := p.compile()
+	bytecodes, symbols, chunks := p.compile()
 	// Reset internal buffers
 	p.bytecodes = nil
 	p.labels = nil
 	p.symbols = nil
 	p.marks = nil
 	// Done
-	return NewProgram[W](p.modules, bytecodes, nil, symbols)
+	return NewProgram[W](p.modules, bytecodes, nil, symbols, chunks)
 }
 
 // MarkLabel current position with given label.
@@ -123,7 +124,7 @@ func (p *Encoder[W, T]) getLabelIndex(label T) uint32 {
 	return uint32(index)
 }
 
-func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint) {
+func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint, chunks [][]base.FormattedChunk) {
 	var (
 		offset uint32
 		// Initial mapping assumes every branch at its maximal width.
@@ -154,6 +155,10 @@ func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint) {
 	symbols = patchSymbols(mapping, p.symbols)
 	// patch memories
 	patchIoBytecodes(p.memmap, resolved)
+	// Assign each DEBUG / FAIL site its side-table index and gather the
+	// chunk-sets.  This must happen before the emit loop below, since their
+	// Codes methods pack the assigned index into the emitted word.
+	chunks = indexFormattedBytecodes(resolved)
 	// compile bytecodes into raw words
 	for _, bytecode := range resolved {
 		var cs = bytecode.Codes(offset)
@@ -164,7 +169,28 @@ func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint) {
 	// Sanity check the emitted codes decode consistently with the mapping.
 	verifyAlignment[W](codes, mapping, p.modules)
 	//
-	return codes, symbols
+	return codes, symbols, chunks
+}
+
+// indexFormattedBytecodes assigns each formatted-message bytecode (DEBUG and
+// FAIL) its index into the program's chunk side-table (in encounter order) and
+// returns the gathered chunk-sets.  The index is stamped back onto the bytecode
+// so its Codes method can pack it into the emitted word.
+func indexFormattedBytecodes[W word.Word[W]](bytecodes []Bytecode[W]) [][]base.FormattedChunk {
+	var chunks [][]base.FormattedChunk
+	//
+	for _, b := range bytecodes {
+		switch b := b.(type) {
+		case *Debug:
+			b.Index = uint32(len(chunks))
+			chunks = append(chunks, b.Chunks)
+		case *Fail:
+			b.Index = uint32(len(chunks))
+			chunks = append(chunks, b.Chunks)
+		}
+	}
+	//
+	return chunks
 }
 
 // Decode-walk the emitted codes, checking that every bytecode offset in the
@@ -179,7 +205,7 @@ func verifyAlignment[W word.Word[W]](codes []uint32, mapping []uint32, modules [
 		rmap       = buildReverseMemoryMap[W](modules...)
 		offset     uint32
 		boundaries = make(map[uint32]bool)
-		targets    = make(map[uint32]uint32)
+		targets    = make(map[uint32][]uint32)
 	)
 	//
 	for offset < uint32(len(codes)) {
@@ -189,11 +215,18 @@ func verifyAlignment[W word.Word[W]](codes []uint32, mapping []uint32, modules [
 		//
 		switch bc := bc.(type) {
 		case *Jmp:
-			targets[offset] = bc.Target
+			targets[offset] = []uint32{bc.Target}
 		case *Jif:
-			targets[offset] = bc.Target
+			targets[offset] = []uint32{bc.Target}
 		case *Call:
-			targets[offset] = bc.Target
+			targets[offset] = []uint32{bc.Target}
+		case *Switch:
+			ts := make([]uint32, len(bc.Cases))
+			for i, c := range bc.Cases {
+				ts[i] = c.Target
+			}
+			//
+			targets[offset] = ts
 		}
 		//
 		offset += n
@@ -205,10 +238,12 @@ func verifyAlignment[W word.Word[W]](codes []uint32, mapping []uint32, modules [
 		}
 	}
 	//
-	for pc, t := range targets {
-		if !boundaries[t] {
-			panic(fmt.Sprintf("branch at offset %d (word 0x%08x) targets 0x%x, which is not an instruction boundary",
-				pc, codes[pc], t))
+	for pc, ts := range targets {
+		for _, t := range ts {
+			if !boundaries[t] {
+				panic(fmt.Sprintf("branch at offset %d (word 0x%08x) targets 0x%x, which is not an instruction boundary",
+					pc, codes[pc], t))
+			}
 		}
 	}
 }
