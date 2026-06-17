@@ -36,9 +36,11 @@
 //   - Functions become Go functions (the Go stack is the call stack, matching
 //     CallStack.Enter/Leave); shared memories become package-level globals.
 //
-// Registers wider than 64 bits, constants beyond 64 bits and moduli beyond 64
-// bits are rejected with descriptive errors (wide-register support is future
-// work); callers treat these programs as out of scope, not failures.
+// Registers and constants up to 128 bits are supported via the lo/hi pair
+// representation (including wide limbs inside a multi-register store, as the
+// bitwise-lowering helpers produce); registers/constants beyond 128 bits,
+// native (field-element) registers and moduli beyond 64 bits are rejected with
+// descriptive errors; callers treat these programs as out of scope, not failures.
 package gogen
 
 import (
@@ -1040,6 +1042,18 @@ func uintConst(w word.Uint) (uint64, error) {
 	}
 
 	return w.Uint64(), nil
+}
+
+// constOperand renders an instruction's immediate as an exact operand,
+// supporting up to 128 bits via the lo/hi pair representation.  The lowering
+// passes introduce wide masks (e.g. the 0xff…ff produced by bitwise lowering)
+// which then flow through the arithmetic emitters like any other wide value.
+func constOperand(w word.Uint) (operand, error) {
+	if !w.FitsWithin(128) {
+		return operand{}, fmt.Errorf("gogen: constant 0x%s wider than 128 bits unsupported", w.Text(16))
+	}
+
+	return exactWide(w.BigInt()), nil
 }
 
 // hasNativeDataLine reports whether a memory has a field-element (native) data

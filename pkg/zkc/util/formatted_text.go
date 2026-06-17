@@ -92,6 +92,43 @@ func (p Format) HasFormat() bool {
 	return p.Code != FORMAT_NONE
 }
 
+// Render formats the given (non-negative) integer value according to this
+// format, applying the selected base, then any minimum width and padding.  This
+// is the shared rendering used by the machine interpreters when producing debug
+// / printf output, ensuring the reference word machine and the bytecode
+// interpreter agree on the exact text emitted.
+func (p Format) Render(value *big.Int) string {
+	var digits string
+	//
+	switch p.Code {
+	case FORMAT_DEC:
+		digits = value.Text(10)
+	case FORMAT_HEX:
+		digits = value.Text(16)
+	case FORMAT_BIN:
+		digits = value.Text(2)
+	case FORMAT_CHR:
+		// Render the low byte as a single ASCII character.  Type-checking (in
+		// the zkc compiler) enforces that the argument is a concrete u8, so the
+		// value fits in a single byte.
+		return string([]byte{byte(value.Uint64() & 0xff)})
+	default:
+		panic("invalid format")
+	}
+	// Apply any padding to the digit portion.
+	if uint(len(digits)) < p.Width {
+		padding := int(p.Width) - len(digits)
+		//
+		if p.ZeroPad {
+			digits = strings.Repeat("0", padding) + digits
+		} else {
+			digits = strings.Repeat(" ", padding) + digits
+		}
+	}
+	//
+	return digits
+}
+
 func (p Format) String() string {
 	var (
 		builder  strings.Builder

@@ -22,16 +22,22 @@ import (
 
 // DEFAULT_UNIT_CONFIG provides a default configuration for unit tests.
 var DEFAULT_UNIT_CONFIG = util.DEFAULT_CONFIG.
-	Words(vm.WORD_UINT, vm.WORD_UINT64).
+	Words(vm.WORD_UINT64, vm.WORD_UINT128).
 	Constraints(true).
-	Bytecode(true)
+	Bytecode(true).
+	GoGen(true)
+
+// DEFAULT_UNITBIG_CONFIG provides a default configuration for unit tests
+// which cannot (currently) run in a 64bit machine.
+var DEFAULT_UNITBIG_CONFIG = DEFAULT_UNIT_CONFIG.
+	Words(vm.WORD_UINT128)
 
 // ===================================================================
 // Basic Tests
 // ===================================================================
 
 func Test_ZkcUnit_Basic_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_01", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_01", DEFAULT_UNIT_CONFIG.Constraints(false).GoGen(false))
 }
 
 func Test_ZkcUnit_Basic_02(t *testing.T) {
@@ -101,15 +107,15 @@ func Test_ZkcUnit_Basic_16(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_17(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_17", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_17", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Basic_18(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_18", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_18", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Basic_19(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_19", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_19", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Basic_20(t *testing.T) {
@@ -215,11 +221,23 @@ func Test_ZkcUnit_Basic_43(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_44(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNITBIG_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_45(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNITBIG_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_46(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_46", DEFAULT_UNITBIG_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_47(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_47", DEFAULT_UNITBIG_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_48(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_48", DEFAULT_UNITBIG_CONFIG.Constraints(false))
 }
 
 // ===================================================================
@@ -227,11 +245,11 @@ func Test_ZkcUnit_Basic_45(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_IfElse_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/ifelse_01", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/ifelse_01", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_IfElse_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/ifelse_02", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/ifelse_02", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_IfElse_03(t *testing.T) {
@@ -268,11 +286,11 @@ func Test_ZkcUnit_IfElse_08(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Const_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/const_01", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/const_01", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Const_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/const_02", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/const_02", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Const_03(t *testing.T) {
@@ -295,7 +313,7 @@ func Test_ZkcUnit_Const_06(t *testing.T) {
 func Test_ZkcUnit_Const_07(t *testing.T) {
 	// NOTE: u128 registers cannot be lowered to a 64-bit word machine, hence
 	// this test is restricted to fields where the Uint64 run is skipped.
-	checkZkcUnit(t, "zkc/unit/const_07", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/const_07", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377).GoGen(false))
 }
 
 // ===================================================================
@@ -401,31 +419,31 @@ func Test_ZkcUnit_FixedArray_23(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Type_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/type_01", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/type_01", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Type_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/type_02", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/type_02", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Type_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/type_03", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/type_03", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Type_04(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/type_04", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/type_04", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Type_05(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/type_05", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/type_05", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Type_06(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/type_06", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/type_06", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Type_07(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/type_07", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/type_07", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Type_08(t *testing.T) {
@@ -433,7 +451,7 @@ func Test_ZkcUnit_Type_08(t *testing.T) {
 }
 
 func Test_ZkcUnit_Type_09(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/type_09", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/type_09", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Type_10(t *testing.T) {
@@ -445,11 +463,11 @@ func Test_ZkcUnit_Type_10(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Cfg_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/cfg_01", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/cfg_01", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Cfg_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/cfg_02", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/cfg_02", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 // ===================================================================
@@ -476,7 +494,7 @@ func Test_ZkcUnit_For_01(t *testing.T) {
 }
 
 func Test_ZkcUnit_For_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/for_02", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/for_02", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_For_03(t *testing.T) {
@@ -781,7 +799,7 @@ func Test_ZkcUnit_Ternary_06(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Switch_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/switch_01", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/switch_01", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Switch_02(t *testing.T) {
@@ -910,11 +928,11 @@ func Test_ZkcUnit_Inline_35(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Include_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/include_01", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/include_01", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Include_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/include_02", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/include_02", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 // ===================================================================
@@ -949,5 +967,5 @@ func checkZkcUnit(t *testing.T, test string, config util.Config) {
 	// The generated-Go ("native") executor is cross-checked on every unit test:
 	// programs it cannot yet handle (wide registers/constants/moduli) are
 	// logged-and-skipped by the harness, never failed.
-	util.CheckValid(t, test, "zkc", config.Bytecode(true).Gogen(true))
+	util.CheckValid(t, test, "zkc", config)
 }

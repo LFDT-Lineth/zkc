@@ -16,11 +16,15 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/heap"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -226,11 +230,11 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		//
 		switch opcode & OPCODE_MASK {
 		case FAIL:
-			return nsteps, errors.New("machine panic")
+			return nsteps, p.executeFail(bytecodes[p.pc], frame)
 		case CHECKCAST:
 			p.pc, err = executeCheckCast(p.pc, bytecodes, frame)
 		case DEBUG:
-			// DEBUG is ignored for now; tests only assert program outputs.
+			p.executeDebug(bytecodes[p.pc], frame)
 			p.pc++
 		case LDC:
 			p.pc = executeLdc_1(p.pc, bytecodes, frame)
@@ -519,12 +523,12 @@ func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (ui
 	//
 	for sources.HasNext() {
 		var (
-			of     bool
+			hi     W
 			source = uint16(sources.Next())
 		)
 		//
-		val, of = val.Mul(stack[source])
-		overflow = overflow || of
+		hi, val = val.Mul(stack[source])
+		overflow = overflow || hi.Cmp64(0) != 0
 	}
 	// A zero result is exact even when an intermediate product overflowed
 	// (matches executeMul in the slow word machine).
@@ -610,12 +614,78 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 			reg = uint16(sources.Next())
 		)
 		//
-		val = stack[reg].Shl64(uint64(width)).Or(val)
+		_, lo := stack[reg].Shl64(uint64(width))
+		val = val.Or(lo)
 		//
 		width = width + bitwidthOf(module, reg)
 	}
 	//
 	return pc + n, storeAcross(module, targets, val, stack)
+}
+
+// executeDebug implements DEBUG: it reproduces the reference word machine's
+// debug/printf handling, writing the formatted message to stdout (matching
+// machine.Base's opcode.DEBUG case).  The chunk-set index packed into the
+// bytecode word selects this site's specification from the program's side-table.
+func (p *Interpreter[W]) executeDebug(code uint32, frame []W) {
+	fmt.Print(p.formatChunks(p.program.Chunks(code>>8), frame))
+}
+
+// executeFail implements FAIL: it reproduces the reference word machine's
+// executeFail.  A fail with no message chunks aborts with a bare "machine
+// panic"; otherwise the formatted message (looked up in the program's
+// side-table by the index packed into the bytecode word) is included.
+func (p *Interpreter[W]) executeFail(code uint32, frame []W) error {
+	var chunks = p.program.Chunks(code >> 8)
+	//
+	if len(chunks) == 0 {
+		return errors.New("machine panic")
+	}
+	//
+	return fmt.Errorf("machine panic: %s", p.formatChunks(chunks, frame))
+}
+
+// formatChunks renders a formatted-message chunk-set against the current frame,
+// mirroring executeFormattedChunks in the reference word machine: each chunk's
+// literal text is emitted verbatim and each formatted argument is rendered
+// against the frame.
+func (p *Interpreter[W]) formatChunks(chunks []base.FormattedChunk, frame []W) string {
+	var (
+		module  = p.program.Module(p.fid)
+		builder strings.Builder
+	)
+	//
+	for _, chunk := range chunks {
+		builder.WriteString(chunk.Text)
+		//
+		if chunk.Format.HasFormat() {
+			builder.WriteString(p.formatArgument(module, chunk.Format, chunk.Argument, frame))
+		}
+	}
+	//
+	return builder.String()
+}
+
+// formatArgument packs a (low-limb-first) register vector into a single integer
+// and renders it with the given format, mirroring formatWord in the reference
+// word machine: limbs are accumulated most-significant first, shifting by each
+// limb's bitwidth, and the shared Format.Render produces the final text.
+func (p *Interpreter[W]) formatArgument(module Module, format zkc_util.Format, vec register.Vector,
+	frame []W) string {
+	//
+	var (
+		value big.Int
+		regs  = vec.Registers()
+	)
+	// Loop from most-significant limb to least significant.
+	for i := vec.Len(); i > 0; i-- {
+		var reg = regs[i-1]
+		// Shift accumulator by this limb's width, then add the limb.
+		value.Lsh(&value, bitwidthOf(module, Reg(reg.Unwrap())))
+		value.Add(&value, frame[reg.Unwrap()].BigInt())
+	}
+	//
+	return format.Render(&value)
 }
 
 // executeAdd_2n1 implements ADD_2n1: stack[rd] = stack[rs0] + stack[rs1],
@@ -883,14 +953,14 @@ func executeMul_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 		// Read rs1
 		val1 = stack[rs1]
 		// Add v0 * v1
-		res, overflow = val0.Mul(val1)
+		hi, lo = val0.Mul(val1)
 	)
 	// Check for overflow
-	if overflow {
+	if hi.Cmp64(0) != 0 {
 		return pc, errors.New("arithmetic overflow")
 	}
 	//
-	stack[rd] = res
+	stack[rd] = lo
 	//
 	return pc + n, nil
 }
@@ -900,14 +970,14 @@ func executeMul_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint
 	var (
 		rs, rd, constant, n = decodeArith_1n1c[W](pc, codes)
 		val                 = stack[rs]
-		res, overflow       = val.Mul(constant)
+		hi, lo              = val.Mul(constant)
 	)
 	//
-	if overflow {
+	if hi.Cmp64(0) != 0 {
 		return pc, errors.New("arithmetic overflow")
 	}
 	//
-	stack[rd] = res
+	stack[rd] = lo
 	//
 	return pc + n, nil
 }
