@@ -120,8 +120,7 @@ func SplitRegisters[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachin
 // The table is generated based on the maximum width of the register and the field configuration.
 // This function must be called after SplitRegisters.
 func AddRangeConstraints[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachine[W] {
-	// TODO
-	return wm
+	return transform.AddRangeConstraints[W](cfg, wm)
 }
 
 // WordToWordMachine transforms a machine operating over a given word type (W1)

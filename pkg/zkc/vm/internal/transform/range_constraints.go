@@ -1,0 +1,270 @@
+// Copyright Consensys Software Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
+package transform
+
+import (
+	"fmt"
+	"math/big"
+	"slices"
+
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
+)
+
+// MAX_STATIC_RANGE_WIDTH is the largest register width for which a range proof
+// is provided directly by a fully-enumerated static table (range_u1 ..
+// range_u16).  Registers wider than this are range-checked by recursively
+// destructuring them into two roughly-equal halves, each of which is itself
+// range-checked.
+const MAX_STATIC_RANGE_WIDTH = 16
+
+// Register names used within generated range modules.  The "value" column is
+// the lookup recipient in both static tables and recursive modules, so callers
+// wiring the (deferred) lookups can rely on a single, uniform target name.
+const (
+	rangeValueName = "value"
+	rangeIndexName = "index"
+	rangeLoName    = "lo"
+	rangeHiName    = "hi"
+)
+
+// AddRangeConstraints adds, for every distinct register width occurring in the
+// machine, a "range" module which acts as the recipient of a range-proof
+// lookup for registers of that width.  Two flavours of range module are
+// generated:
+//
+//   - For a width n <= 16, range_un is a static table enumerating every valid
+//     value 0 .. 2^n - 1 in a single value column.
+//
+//   - For a width n > 16, range_un destructures the value into two halves
+//     (lo of n/2 bits, hi of n-n/2 bits) via the constraint value = hi::lo,
+//     and (later) range-checks each half by lookups into range_u{lo} and
+//     range_u{hi}.  This recursion bottoms out at the static tables above.
+//
+// Native (field-element) registers have no fixed bitwidth and are range-checked
+// against the field bandwidth.
+//
+// The lookups themselves (both the external register -> value lookups and the
+// internal lo/hi -> range_u{lo}/range_u{hi} lookups) are intentionally not
+// emitted here yet; this pass only materialises the module structures and the
+// destructuring constraints.
+//
+// This pass must run after SplitRegisters.
+func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *machine.Word[W] {
+	var (
+		modules = m.Modules()
+		// Every width requiring a range module, mapped to its decomposition.
+		splits = neededRangeWidths[W](cfg, modules)
+		// Names already present before adding range check modules, to avoid collisions / ensure idempotency.
+		existing = moduleNames(modules)
+		// Freshly generated range modules.
+		extra []Module
+		// Widths in ascending order, for deterministic output.
+		widths = make([]uint, 0, len(splits))
+	)
+	//
+	for w := range splits {
+		widths = append(widths, w)
+	}
+	//
+	slices.Sort(widths)
+	//
+	for _, w := range widths {
+		var name = rangeModuleName(w)
+		// A range module name must not clash with an existing module.
+		if existing[name] {
+			panic(fmt.Sprintf("AddRangeConstraints: module %q already exists", name))
+		}
+		//
+		if w <= MAX_STATIC_RANGE_WIDTH {
+			extra = append(extra, newStaticRangeTable[W](name, w))
+		} else {
+			var s = splits[w]
+
+			extra = append(extra, newRecursiveRangeModule[W](name, w, s.lo, s.hi))
+		}
+	}
+	// Reassemble the machine with the original modules plus the range modules.
+	return machine.NewWord[W](cfg, append(slices.Clone(modules), extra...)...)
+}
+
+// rangeSplit records how a width > 16 is destructured into a low half and a high
+// half, where lo + hi == width.  For leaf widths (<= 16) both fields are zero.
+type rangeSplit struct {
+	lo, hi uint
+}
+
+// neededRangeWidths computes the decomposition of every register width for which
+// a range module must be generated.  This is the set of widths occurring
+// directly on some register, closed under the destructuring of wide widths
+// (> 16); each wide width is mapped to the (lo, hi) halves it is destructured
+// into, while leaf widths (<= 16) map to the zero split.  Constant registers are
+// pinned to a fixed value and require no range proof, so are ignored.
+func neededRangeWidths[W word.Word[W]](cfg field.Config, modules []Module) map[uint]rangeSplit {
+	var (
+		// Final decompositions, keyed by width (one entry per dequeued width).
+		splits = make(map[uint]rangeSplit)
+		// Every width discovered so far, whether still queued or already decided.
+		seen = make(map[uint]bool)
+		// Widths discovered but not yet processed.
+		queue []uint
+	)
+	//
+	add := func(w uint) {
+		if w != 0 && !seen[w] {
+			seen[w] = true
+			queue = append(queue, w)
+		}
+	}
+	// Seed from every (non-constant) register of every module.
+	for _, mod := range modules {
+		for _, r := range mod.Registers() {
+			if !r.IsConst() {
+				add(registerWidth(cfg, r))
+			}
+		}
+	}
+	// Destructure each width wider than the static limit, pulling in its halves.
+	for len(queue) > 0 {
+		var n = queue[0]
+
+		queue = queue[1:]
+		//
+		if n <= MAX_STATIC_RANGE_WIDTH {
+			// Leaf width: handled by a static table, no decomposition.
+			splits[n] = rangeSplit{}
+		} else {
+			lo, hi := decompose(n, seen)
+			splits[n] = rangeSplit{lo: lo, hi: hi}
+			add(lo)
+			add(hi)
+		}
+	}
+	//
+	return splits
+}
+
+// decompose chooses how to destructure a width n > 16 into two halves summing to
+// n.  It first tries to reuse an existing pair of required widths (n1, n2) with
+// n1 + n2 == n, which avoids introducing fresh range tables; the smallest such
+// n1 (hence the largest reusable high half) is chosen for determinism.  Failing
+// that, it peels off the highest power of two below n, leaving the (smaller)
+// remainder as the low half.  A width counts as reusable if it has already been
+// discovered (whether still queued or already decided).
+func decompose(n uint, seen map[uint]bool) (lo, hi uint) {
+	// Try to reuse an existing pair of widths.
+	for lo := uint(1); lo+lo <= n; lo++ {
+		if seen[lo] && seen[n-lo] {
+			return lo, n - lo
+		}
+	}
+	// Otherwise peel off the highest power of two below n.
+	hi = highestPowerOfTwoBelow(n)
+	lo = n - hi
+	//
+	return lo, hi
+}
+
+// highestPowerOfTwoBelow returns the largest power of two strictly less than n
+// (assuming n > 1).
+func highestPowerOfTwoBelow(n uint) uint {
+	var p uint = 1
+	//
+	for p*2 < n {
+		p *= 2
+	}
+	//
+	return p
+}
+
+// registerWidth returns the bitwidth to range-check a register against.  Native
+// registers have no fixed width, so the field bandwidth is used.
+func registerWidth(cfg field.Config, r register.Register) uint {
+	if r.IsNative() {
+		return cfg.BandWidth
+	}
+	//
+	return r.Width()
+}
+
+// newStaticRangeTable constructs a static table enumerating every valid value
+// 0 .. 2^width - 1.  The table has an index (address) column and a value (data)
+// column; the value column is the lookup recipient.
+func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
+	var (
+		padding big.Int
+		// Number of valid values representable in this width.
+		rows     = uint64(1) << width
+		contents = make([]W, rows)
+		regs     = []register.Register{
+			// TODO: why an index is needed ??
+			register.NewInput(rangeIndexName, width, padding),
+			register.NewOutput(rangeValueName, width, padding),
+		}
+	)
+	// Enumerate 0 .. 2^width - 1.
+	for i := range rows {
+		var w W
+
+		contents[i] = w.SetUint64(i)
+	}
+	//
+	return memory.NewStatic(name, false, regs, contents...)
+}
+
+// newRecursiveRangeModule constructs the range module for a width > 16.  It is
+// an atomic function which recombines two range-checked halves into the full
+// value via the destructuring constraint value = hi::lo (i.e. value = lo +
+// hi*2^lo).  The lo/hi halves are inputs (themselves range-checked by deferred
+// lookups into range_u{lo}/range_u{hi}); the value is the output and the lookup
+// recipient.
+func newRecursiveRangeModule[W word.Word[W]](name string, width, lo, hi uint) Module {
+	var (
+		padding big.Int
+		regs    = []register.Register{
+			register.NewInput(rangeLoName, lo, padding),
+			register.NewInput(rangeHiName, hi, padding),
+			register.NewOutput(rangeValueName, width, padding),
+		}
+		// Register ids follow declaration order: value=0, lo=1, hi=2.
+		valID = register.NewId(0)
+		loID  = register.NewId(1)
+		hiID  = register.NewId(2)
+		// value = hi::lo  (little-endian sources: lo occupies the low bits).
+		concat = instruction.BitConcat[W](valID, []register.Id{loID, hiID})
+		code   = []VectorInstruction{instruction.NewVector[WordInstruction](concat)}
+	)
+	//
+	return function.New(name, false, regs, code)
+}
+
+// moduleNames returns the set of module names present in a slice of modules.
+func moduleNames(modules []Module) map[string]bool {
+	var names = make(map[string]bool, len(modules))
+	//
+	for _, m := range modules {
+		names[m.Name()] = true
+	}
+	//
+	return names
+}
+
+// rangeModuleName returns the canonical module name for a given width.
+func rangeModuleName(w uint) string {
+	return fmt.Sprintf("range_u%d", w)
+}
