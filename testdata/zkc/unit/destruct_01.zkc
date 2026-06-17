@@ -1,12 +1,12 @@
 pub input data(address:u16) -> (byte:u12)
-pub output hi(address:u16) -> (byte:u8)
-pub output lo(address:u16) -> (byte:u16)
+pub output hi(address:u16) -> (byte:u17)
+pub output lo(address:u16) -> (byte:u8)
 
 fn main() {
-    var x:u24 = data[0] as u24
+    var x:u25 = data[0] as u25
 
-    var tmp_hi:u8
-    var tmp_lo:u16
+    var tmp_hi:u17
+    var tmp_lo:u8
 
     tmp_hi::tmp_lo = x
 
