@@ -245,9 +245,11 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width, lo, hi uint) Mo
 		valID = register.NewId(0)
 		loID  = register.NewId(1)
 		hiID  = register.NewId(2)
-		// value = hi::lo  (little-endian sources: lo occupies the low bits).
+		// value = hi::lo  (little-endian sources: lo occupies the low bits),
+		// followed by a return to terminate the (atomic) function body.
 		concat = instruction.BitConcat[W](valID, []register.Id{loID, hiID})
-		code   = []VectorInstruction{instruction.NewVector[WordInstruction](concat)}
+		ret    = instruction.NewReturn()
+		code   = []VectorInstruction{instruction.NewVector[WordInstruction](concat, ret)}
 	)
 	//
 	return function.New(name, false, regs, code)
