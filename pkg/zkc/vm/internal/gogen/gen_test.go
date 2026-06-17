@@ -422,8 +422,8 @@ var shapes = []struct {
 	name     string
 	fastMode bool
 }{
-	{"plain", false},
-	{"fastMode", false},
+	{"fast", true},
+	{"lowered", false},
 }
 
 func TestGenValidGo(t *testing.T) {
