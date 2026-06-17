@@ -39,6 +39,18 @@ func ParseJsonInputFile(bytes []byte) (map[string][]byte, error) {
 			//
 			if strings.HasPrefix(w, "0x") {
 				data[k], err = hex.DecodeString(w[2:])
+			} else if strings.HasPrefix(w, "0b") {
+				bits := w[2:]
+				//
+				var val big.Int
+				if _, ok := val.SetString(bits, 2); !ok {
+					return nil, fmt.Errorf("malformed numeric literal \"%s\"", w)
+				}
+				// Preserve the byte width implied by the digit count (as the 0x
+				// form does), so a zero value does not collapse to empty bytes.
+				buf := make([]byte, (len(bits)+7)/8)
+				val.FillBytes(buf)
+				data[k] = buf
 			} else if w != "" {
 				var val big.Int
 				if _, ok := val.SetString(w, 10); !ok {

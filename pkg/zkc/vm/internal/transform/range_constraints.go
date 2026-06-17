@@ -241,10 +241,10 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width, lo, hi uint) Mo
 			register.NewInput(rangeHiName, hi, padding),
 			register.NewOutput(rangeValueName, width, padding),
 		}
-		// Register ids follow declaration order: value=0, lo=1, hi=2.
-		valID = register.NewId(0)
-		loID  = register.NewId(1)
-		hiID  = register.NewId(2)
+		// Register ids follow declaration order: lo=0, hi=1, value=2.
+		loID  = register.NewId(0)
+		hiID  = register.NewId(1)
+		valID = register.NewId(2)
 		// value = hi::lo  (little-endian sources: lo occupies the low bits),
 		// followed by a return to terminate the (atomic) function body.
 		concat = instruction.BitConcat[W](valID, []register.Id{loID, hiID})
