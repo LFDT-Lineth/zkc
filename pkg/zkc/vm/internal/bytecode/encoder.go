@@ -167,7 +167,7 @@ func (p *Encoder[W, T]) compile() (codes []uint32, symbols map[uint32]uint, chun
 		offset += uint32(len(cs))
 	}
 	// Sanity check the emitted codes decode consistently with the mapping.
-	verifyAlignment[W](codes, mapping, p.modules)
+	verifyAlignment[W](codes, mapping, p.modules, chunks)
 	//
 	return codes, symbols, chunks
 }
@@ -200,7 +200,8 @@ func indexFormattedBytecodes[W word.Word[W]](bytecodes []Bytecode[W]) [][]base.F
 // at execution time.  Note that a single bytecode may legitimately decode as
 // several instructions (e.g. an Arith with two sources and a constant), hence
 // boundaries are checked by inclusion rather than index-by-index.
-func verifyAlignment[W word.Word[W]](codes []uint32, mapping []uint32, modules []Module) {
+func verifyAlignment[W word.Word[W]](codes []uint32, mapping []uint32, modules []Module,
+	chunks [][]base.FormattedChunk) {
 	var (
 		rmap       = buildReverseMemoryMap[W](modules...)
 		offset     uint32
@@ -211,7 +212,7 @@ func verifyAlignment[W word.Word[W]](codes []uint32, mapping []uint32, modules [
 	for offset < uint32(len(codes)) {
 		boundaries[offset] = true
 		//
-		bc, n := decodeBytecode[W](offset, codes, rmap)
+		bc, n := decodeBytecode[W](offset, codes, rmap, chunks)
 		//
 		switch bc := bc.(type) {
 		case *Jmp:

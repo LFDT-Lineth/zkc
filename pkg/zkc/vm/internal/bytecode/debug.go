@@ -13,6 +13,8 @@
 package bytecode
 
 import (
+	"slices"
+
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 )
 
@@ -41,6 +43,11 @@ func (p *Debug) String(mapping SystemMap) string {
 // side-table.
 func (p *Debug) Codes(_ uint32) []uint32 {
 	return []uint32{(p.Index << 8) | DEBUG}
+}
+
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Debug) Clone() Patched {
+	return &Debug{slices.Clone(p.Chunks), p.Index}
 }
 
 // NewDebug constructs a debug bytecode carrying the given formatted-print

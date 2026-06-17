@@ -15,6 +15,7 @@ package bytecode
 import (
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -67,6 +68,11 @@ func (p *Arith[W]) String(mapping SystemMap) string {
 	}
 	//
 	return builder.String()
+}
+
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Arith[W]) Clone() Patched {
+	return &Arith[W]{p.Op, p.Constant, slices.Clone(p.Source), slices.Clone(p.Target)}
 }
 
 // Codes implementation for Bytecode interface
