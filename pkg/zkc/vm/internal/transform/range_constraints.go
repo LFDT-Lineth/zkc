@@ -83,6 +83,18 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *
 	}
 	//
 	slices.Sort(widths)
+	// Assign each range module its final index in the module list.  Range modules
+	// are appended after the original modules in ascending width order, so a
+	// width's module id is fixed once the ordering is known.  This lets the
+	// recursive range modules emit calls referencing their (lo/hi) sub-modules.
+	var (
+		base     = uint(len(modules))
+		moduleOf = make(map[uint]uint, len(widths))
+	)
+	//
+	for k, w := range widths {
+		moduleOf[w] = base + uint(k)
+	}
 	//
 	for _, w := range widths {
 		var name = rangeModuleName(w)
@@ -94,9 +106,7 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *
 		if w <= MAX_STATIC_RANGE_WIDTH {
 			extra = append(extra, newStaticRangeTable[W](name, w))
 		} else {
-			var s = splits[w]
-
-			extra = append(extra, newRecursiveRangeModule[W](name, w, s.lo, s.hi))
+			extra = append(extra, newRecursiveRangeModule[W](name, w, splits[w], moduleOf))
 		}
 	}
 	// Reassemble the machine with the original modules plus the range modules.
@@ -227,29 +237,35 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 	return memory.NewStatic(name, false, regs, contents...)
 }
 
-// newRecursiveRangeModule constructs the range module for a width > 16.  It is
-// an atomic function which recombines two range-checked halves into the full
-// value via the destructuring constraint value = hi::lo (i.e. value = lo +
-// hi*2^lo).  The lo/hi halves are inputs (themselves range-checked by deferred
-// lookups into range_u{lo}/range_u{hi}); the value is the output and the lookup
-// recipient.
-func newRecursiveRangeModule[W word.Word[W]](name string, width, lo, hi uint) Module {
+// newRecursiveRangeModule constructs the range module for a width > 16.  It is a
+// callable function "fn range_uw(value)" which range-checks its input by
+// destructuring it into a low half (lo) and a high half (hi), value = hi::lo,
+// and then range-checking each half via an unconditional call into the
+// corresponding range module (range_u{lo} / range_u{hi}).  A call whose callee
+// is a static enumeration table (width <= 16) is flagged accordingly.
+//
+// moduleOf maps a width to the index of its range module, so the emitted calls
+// can reference their sub-modules by id.
+func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSplit, moduleOf map[uint]uint) Module {
 	var (
 		padding big.Int
 		regs    = []register.Register{
-			register.NewInput(rangeLoName, lo, padding),
-			register.NewInput(rangeHiName, hi, padding),
-			register.NewOutput(rangeValueName, width, padding),
+			register.NewInput(rangeValueName, width, padding),
+			register.NewComputed(rangeLoName, s.lo, padding),
+			register.NewComputed(rangeHiName, s.hi, padding),
 		}
-		// Register ids follow declaration order: lo=0, hi=1, value=2.
-		loID  = register.NewId(0)
-		hiID  = register.NewId(1)
-		valID = register.NewId(2)
-		// value = hi::lo  (little-endian sources: lo occupies the low bits),
-		// followed by a return to terminate the (atomic) function body.
-		concat = instruction.BitConcat[W](valID, []register.Id{loID, hiID})
+		// Register ids follow declaration order: value=0, lo=1, hi=2.
+		valID = register.NewId(0)
+		loID  = register.NewId(1)
+		hiID  = register.NewId(2)
+		// Destructure value into its low (lo) and high (hi) halves: value = hi::lo
+		// (little-endian targets, so lo receives the low bits).
+		destruct = instruction.UintDestruct[W](register.NewVector(loID, hiID), valID)
+		// Range-check each half via an unconditional call into its range module.
+		loCall = instruction.NewUnconditionalCall(moduleOf[s.lo], loID, s.lo <= MAX_STATIC_RANGE_WIDTH)
+		hiCall = instruction.NewUnconditionalCall(moduleOf[s.hi], hiID, s.hi <= MAX_STATIC_RANGE_WIDTH)
 		ret    = instruction.NewReturn()
-		code   = []VectorInstruction{instruction.NewVector[WordInstruction](concat, ret)}
+		code   = []VectorInstruction{instruction.NewVector[WordInstruction](destruct, loCall, hiCall, ret)}
 	)
 	//
 	return function.New(name, false, regs, code)
