@@ -39,9 +39,7 @@ type StaticArray[W util.Uinter64] struct {
 }
 
 // NewStaticArray constructs a new array initialised with a given set of values.
-func NewStaticArray[W util.Uinter64](name string, kind Kind, registers []register.Register, init ...W) StaticArray[W] {
-	var geometry = NewGeometry[W](registers)
-	//
+func NewStaticArray[W util.Uinter64](name string, kind Kind, geometry Geometry[W], init ...W) StaticArray[W] {
 	return StaticArray[W]{kind, geometry, name, init}
 }
 

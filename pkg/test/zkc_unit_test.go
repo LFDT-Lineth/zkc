@@ -861,6 +861,11 @@ func Test_ZkcUnit_Switch_09(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_09", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
 }
 
+func Test_ZkcUnit_Switch_10(t *testing.T) {
+	// TODO: register splitting
+	checkZkcUnit(t, "zkc/unit/switch_10", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Printf Tests
 // ===================================================================

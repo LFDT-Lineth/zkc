@@ -13,9 +13,11 @@
 package bytecode
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 )
 
 // Fail aborts execution with a "machine panic".  It optionally carries a
@@ -27,32 +29,76 @@ type Fail struct {
 	// Chunks is the optional formatted-message specification: literal text
 	// interleaved with argument formats.  Carried through compilation into the
 	// program's chunk side-table rather than encoded inline.
-	Chunks []base.FormattedChunk
-	// Index identifies this fail site's chunk-set within the program's chunk
-	// side-table.  Assigned during encoding (see indexFormattedBytecodes).
-	Index uint32
-}
-
-func (p *Fail) String(_ SystemMap) string {
-	return "fail"
-}
-
-// Codes implementation for Bytecode interface.  The chunk-set index is packed
-// above the opcode so the single FAIL word both identifies the instruction and
-// locates its (optional) formatted-message specification in the side-table.
-// FAIL is opcode 0, so it occupies the low bits implicitly (the index sits
-// above it, mirroring Debug.Codes' "(Index << 8) | DEBUG").
-func (p *Fail) Codes(_ uint32) []uint32 {
-	return []uint32{p.Index << 8}
+	Chunks []FormattedChunk
+	// Source registers used for displaying chunks
+	Sources []RegVec
 }
 
 // Clone implementation for Bytecode / Patched interfaces.
 func (p *Fail) Clone() Patched {
-	return &Fail{slices.Clone(p.Chunks), p.Index}
+	return &Fail{slices.Clone(p.Chunks), slices.Clone(p.Sources)}
 }
 
-// NewFail constructs a fail bytecode carrying the given (possibly empty)
-// formatted-message chunks.  Its side-table index is assigned during encoding.
-func NewFail(chunks []base.FormattedChunk) *Fail {
-	return &Fail{Chunks: chunks}
+// Uses implementation for Bytecode interface.  A fail reads the registers
+// referenced by its formatted (error message) arguments.
+func (p *Fail) Uses() []RegisterId {
+	var uses []RegisterId
+	//
+	for _, s := range p.Sources {
+		uses = append(uses, s.Registers()...)
+	}
+	//
+	return uses
+}
+
+// Definitions implementation for Bytecode interface.
+func (p *Fail) Definitions() []RegisterId {
+	return nil
+}
+
+// Validate implementation for Bytecode interface.
+func (p *Fail) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+	return nil
+}
+
+func (p *Fail) String(env Environment) string {
+	var (
+		tBuilder strings.Builder
+	)
+	//
+	tBuilder.WriteString("\"")
+	//
+	for _, c := range p.Chunks {
+		tBuilder.WriteString(util.EscapeFormattedText(c.Text))
+		//
+		if c.Format.HasFormat() {
+			tBuilder.WriteString(c.Format.String())
+		}
+	}
+	//
+	tBuilder.WriteString("\"")
+	//
+	for _, s := range p.Sources {
+		tBuilder.WriteString(",")
+		tBuilder.WriteString(RegisterVectorToString(s, env))
+	}
+	//
+	return fmt.Sprintf("fail %s", tBuilder.String())
+}
+
+// FormattedChunk pairs a piece of literal text with the format used to render
+// an accompanying value, as used to build fail/debug messages.
+type FormattedChunk struct {
+	Text   string
+	Format util.Format
+}
+
+// Cmp compares two formatted chunks lexicographically, first by text and then
+// by format.
+func (p FormattedChunk) Cmp(o FormattedChunk) int {
+	if c := strings.Compare(p.Text, o.Text); c != 0 {
+		return c
+	}
+	//
+	return strings.Compare(p.Format.String(), o.Format.String())
 }

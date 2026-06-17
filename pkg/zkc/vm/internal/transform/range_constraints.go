@@ -236,7 +236,7 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 		contents[i] = w.SetUint64(uint64(i))
 	}
 	//
-	return memory.NewStatic(name, false, regs, contents...)
+	return memory.NewStatic(name, false, memory.NewGeometry[W](regs), contents...)
 }
 
 // newRecursiveRangeModule constructs the range module for a width > 16.  It is a

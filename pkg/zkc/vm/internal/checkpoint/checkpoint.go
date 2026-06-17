@@ -80,7 +80,7 @@ func (p CheckPoint[W]) Memories() []Memory[W] {
 // restored when it becomes the active function.
 type StackFrame struct {
 	// module identifier of the executing function.
-	FunctionId uint
+	FunctionId uint16
 	// frame pointer of the executing function.
 	FramePointer uint32
 	// program counter identifies next bytecode to execute.
@@ -89,7 +89,7 @@ type StackFrame struct {
 
 // NewStackFrame constructs a stack frame recording the function identifier,
 // frame pointer and program counter of a paused function.
-func NewStackFrame(fid uint, fp uint32, pc uint32) StackFrame {
+func NewStackFrame(fid uint16, fp uint32, pc uint32) StackFrame {
 	return StackFrame{fid, fp, pc}
 }
 
@@ -112,7 +112,7 @@ func (p CheckPoint[W]) MarshalBinary() ([]byte, error) {
 	buf = binary.BigEndian.AppendUint32(buf, uint32(len(p.callStack)))
 	//
 	for _, f := range p.callStack {
-		buf = binary.BigEndian.AppendUint64(buf, uint64(f.FunctionId))
+		buf = binary.BigEndian.AppendUint16(buf, f.FunctionId)
 		buf = binary.BigEndian.AppendUint32(buf, f.FramePointer)
 		buf = binary.BigEndian.AppendUint32(buf, f.ProgramCounter)
 	}
@@ -130,7 +130,7 @@ func (p CheckPoint[W]) MarshalBinary() ([]byte, error) {
 	buf = binary.BigEndian.AppendUint32(buf, uint32(len(p.memory)))
 	//
 	for _, m := range p.memory {
-		buf = binary.BigEndian.AppendUint64(buf, uint64(m.moduleId))
+		buf = binary.BigEndian.AppendUint16(buf, m.moduleId)
 		buf = binary.BigEndian.AppendUint32(buf, uint32(len(m.pages)))
 		//
 		for _, pg := range m.pages {
@@ -177,7 +177,7 @@ func (p *CheckPoint[W]) unmarshalFromReader(r *reader, readWord func(*reader) (W
 	callStack := make([]StackFrame, n)
 	//
 	for i := range callStack {
-		fid, err := r.uint64()
+		fid, err := r.uint16()
 		if err != nil {
 			return err
 		}
@@ -192,7 +192,7 @@ func (p *CheckPoint[W]) unmarshalFromReader(r *reader, readWord func(*reader) (W
 			return err
 		}
 		//
-		callStack[i] = NewStackFrame(uint(fid), fp, pc)
+		callStack[i] = NewStackFrame(fid, fp, pc)
 	}
 	// Data stack.
 	if n, err = r.uint32(); err != nil {
@@ -229,7 +229,7 @@ func (p *CheckPoint[W]) unmarshalFromReader(r *reader, readWord func(*reader) (W
 // readMemory decodes a single memory snapshot (module identifier plus pages).
 func readMemory[W word.Word[W]](r *reader, readWord func(*reader) (W, error)) (Memory[W], error) {
 	var (
-		mid, err = r.uint64()
+		mid, err = r.uint16()
 		np       uint32
 	)
 	//
@@ -249,7 +249,7 @@ func readMemory[W word.Word[W]](r *reader, readWord func(*reader) (W, error)) (M
 		}
 	}
 	//
-	return Memory[W]{uint(mid), pages}, nil
+	return Memory[W]{mid, pages}, nil
 }
 
 // readPage decodes a single page (address plus data words).
@@ -405,6 +405,16 @@ func (r *reader) byte() (byte, error) {
 	}
 	//
 	return bs[0], nil
+}
+
+// uint32 reads the next big-endian uint32.
+func (r *reader) uint16() (uint16, error) {
+	bs, err := r.bytes(2)
+	if err != nil {
+		return 0, err
+	}
+	//
+	return binary.BigEndian.Uint16(bs), nil
 }
 
 // uint32 reads the next big-endian uint32.

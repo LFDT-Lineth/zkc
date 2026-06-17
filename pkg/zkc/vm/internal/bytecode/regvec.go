@@ -19,14 +19,14 @@ import "fmt"
 type RegVec struct {
 	// Base identifies the first register in the vector (i.e. that with the
 	// least index).
-	Base Reg
+	Base RegisterId
 	// Len identifies the length of the vector.
 	Len uint16
 }
 
 // NewRegVec constructs a new register vector from an array of registers.  These
 // registers must be consecutively indexed, else this will panic.
-func NewRegVec(regs ...Reg) RegVec {
+func NewRegVec(regs ...RegisterId) RegVec {
 	// sanity checks
 	for i := 1; i < len(regs); i++ {
 		if regs[i-1]+1 != regs[i] {
@@ -40,6 +40,18 @@ func NewRegVec(regs ...Reg) RegVec {
 	}
 }
 
+// Registers returns the individual registers making up this vector, ordered
+// from least to most significant (i.e. lowest index first).
+func (p RegVec) Registers() []RegisterId {
+	regs := make([]RegisterId, p.Len)
+	//
+	for i := uint16(0); i < p.Len; i++ {
+		regs[i] = p.Base + i
+	}
+	//
+	return regs
+}
+
 func (p RegVec) String() string {
 	switch p.Len {
 	case 1:
@@ -49,18 +61,4 @@ func (p RegVec) String() string {
 	default:
 		return fmt.Sprintf("r%d;,,;r%d", p.Base, p.Base+p.Len-1)
 	}
-}
-
-// Pack an array of (small) registers into an array of bytes.  This will panic
-// if any register is encountered which does not fit into a byte.
-func regsAsBytes(regs []Reg) []byte {
-	var bytes = make([]byte, len(regs))
-	// sanity checks
-	checkSmallArgs(regs)
-	//
-	for i, r := range regs {
-		bytes[i] = uint8(r & 0xff)
-	}
-	//
-	return bytes
 }
