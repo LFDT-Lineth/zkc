@@ -298,10 +298,10 @@ func rangeModuleName(w uint) string {
 // w <= 16, or a Call into the recursive range function otherwise.
 func rangeCheck(id uint, r register.Id, w uint) WordInstruction {
 	if w <= MAX_STATIC_RANGE_WIDTH {
-		return instruction.NewMemRead(id, []register.Id{r}, nil)
+		return instruction.NewUnconditionalMemRead(id, []register.Id{r}, nil)
 	}
 
-	return instruction.NewCall(id, []register.Id{r}, nil)
+	return instruction.NewUnconditionalCall(id, []register.Id{r}, nil)
 }
 
 // addRangeCalls range-checks every (non-constant) register of every function

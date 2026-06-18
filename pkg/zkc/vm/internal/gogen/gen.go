@@ -282,10 +282,22 @@ func (g *generator) reachableFunctions(entry uint) []uint {
 		fn := g.funcByID[id]
 		for _, vec := range fn.Code() {
 			for _, insn := range vec.Codes {
-				if call, ok := insn.(*instruction.Call); ok && !seen[call.Id] {
-					seen[call.Id] = true
-					worklist = append(worklist, call.Id)
-					rest = append(rest, call.Id)
+				// Both regular and unconditional (range-check) calls reach a callee.
+				var callee uint
+
+				switch c := insn.(type) {
+				case *instruction.Call:
+					callee = c.Id
+				case *instruction.UnconditionalCall:
+					callee = c.Id
+				default:
+					continue
+				}
+				//
+				if !seen[callee] {
+					seen[callee] = true
+					worklist = append(worklist, callee)
+					rest = append(rest, callee)
 				}
 			}
 		}
@@ -961,10 +973,18 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 		return g.emitDebug(c, fn, x)
 	case *instruction.MemRead:
 		return g.emitMemRead(c, fn, x)
+	case *instruction.UnconditionalMemRead:
+		// Identical to MemRead during execution; differs only in constraint
+		// lowering, which gogen does not perform.
+		return g.emitMemRead(c, fn, &instruction.MemRead{OpIo: x.OpIo})
 	case *instruction.MemWrite:
 		return g.emitMemWrite(c, fn, x)
 	case *instruction.Call:
 		return g.emitCall(c, fn, x)
+	case *instruction.UnconditionalCall:
+		// Identical to Call during execution; differs only in constraint
+		// lowering, which gogen does not perform.
+		return g.emitCall(c, fn, &instruction.Call{OpIo: x.OpIo})
 	case *instruction.Skip:
 		target := skipTarget(vi, ci, x.Skip, vecLen)
 		c.linef("goto %s", labelName(target))
@@ -1224,6 +1244,8 @@ func opName(op opcode.OpCode) string {
 		return "HINT_DIVISION"
 	case opcode.MEMORY_READ:
 		return "MEMORY_READ"
+	case opcode.UNCONDITIONAL_MEMORY_READ:
+		return "UNCONDITIONAL_MEMORY_READ"
 	case opcode.MEMORY_WRITE:
 		return "MEMORY_WRITE"
 	case opcode.RETURN:
@@ -1238,6 +1260,8 @@ func opName(op opcode.OpCode) string {
 		return "SKIP_MULTI"
 	case opcode.CALL:
 		return "CALL"
+	case opcode.UNCONDITIONAL_CALL:
+		return "UNCONDITIONAL_CALL"
 	case opcode.FAIL:
 		return "FAIL"
 	case opcode.DEBUG:

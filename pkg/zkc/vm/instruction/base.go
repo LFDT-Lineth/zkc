@@ -83,6 +83,18 @@ func NewCall(id uint, arguments []register.Id, returns []register.Id) *Call {
 
 // ============================================================================
 
+// UnconditionalCall is similar to Call,
+// but it is unconditionally, ie there are no condition for the lookup.
+// It's the case for range check for example.
+type UnconditionalCall struct{ base.OpIo }
+
+// NewUnconditionalCall constructs a new function call instruction, where the lookup holds unconditionally.
+func NewUnconditionalCall(id uint, arguments []register.Id, returns []register.Id) *UnconditionalCall {
+	return &UnconditionalCall{base.OpIo{Op: opcode.UNCONDITIONAL_CALL, Id: id, Arguments: arguments, Returns: returns}}
+}
+
+// ============================================================================
+
 // Fail is a convenient alias
 type Fail = base.Fail
 
@@ -119,6 +131,20 @@ type MemRead struct{ base.OpIo }
 // Random Access Memory (RAM) or a Read-Only Memory (ROM).
 func NewMemRead(id uint, address []register.Id, data []register.Id) *MemRead {
 	return &MemRead{base.OpIo{Op: opcode.MEMORY_READ, Id: id, Arguments: address, Returns: data}}
+}
+
+// ============================================================================
+
+// UnconditionalMemRead is similar to MemRead,
+// but it is unconditionally, ie there are no condition for the lookup.
+// It's the case for range check for example.
+type UnconditionalMemRead struct{ base.OpIo }
+
+// NewUnconditionalMemRead constructs a new instruction which reads the value from either a
+// Random Access Memory (RAM) or a Read-Only Memory (ROM), where the lookup holds unconditionally.
+func NewUnconditionalMemRead(id uint, address []register.Id, data []register.Id) *UnconditionalMemRead {
+	return &UnconditionalMemRead{base.OpIo{Op: opcode.UNCONDITIONAL_MEMORY_READ, Id: id,
+		Arguments: address, Returns: data}}
 }
 
 // ============================================================================
@@ -233,6 +259,8 @@ func (p *systemMap) String() string {
 
 func init() {
 	gob.Register(Instruction(&Call{}))
+	gob.Register(Instruction(&UnconditionalCall{}))
+	gob.Register(Instruction(&UnconditionalMemRead{}))
 	gob.Register(Instruction(&Debug{}))
 	gob.Register(Instruction(&Fail{}))
 	gob.Register(Instruction(&FieldHint{}))

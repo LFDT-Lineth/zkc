@@ -105,6 +105,8 @@ func (p wordToWord[W1, W2]) lowerInstruction(insn instruction.Word) instruction.
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
 		return insn.(*instruction.Call)
+	case opcode.UNCONDITIONAL_CALL:
+		return insn.(*instruction.UnconditionalCall)
 	case opcode.DEBUG:
 		return insn.(*instruction.Debug)
 	case opcode.FAIL:
@@ -113,6 +115,8 @@ func (p wordToWord[W1, W2]) lowerInstruction(insn instruction.Word) instruction.
 		return insn.(*instruction.Jump)
 	case opcode.MEMORY_READ:
 		return insn.(*instruction.MemRead)
+	case opcode.UNCONDITIONAL_MEMORY_READ:
+		return insn.(*instruction.UnconditionalMemRead)
 	case opcode.MEMORY_WRITE:
 		return insn.(*instruction.MemWrite)
 	case opcode.RETURN:

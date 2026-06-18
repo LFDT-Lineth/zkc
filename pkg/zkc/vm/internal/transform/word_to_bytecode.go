@@ -82,6 +82,8 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
 		p.compileCall(insn.(*instruction.Call), f)
+	case opcode.UNCONDITIONAL_CALL:
+		p.compileCall(&instruction.Call{OpIo: insn.(*instruction.UnconditionalCall).OpIo}, f)
 	case opcode.DEBUG:
 		p.encoder.Add(bytecode.NewDebug(insn.(*instruction.Debug).Chunks))
 	case opcode.FAIL:
@@ -90,6 +92,8 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 		p.compileJump(pos, insn.(*instruction.Jump))
 	case opcode.MEMORY_READ:
 		p.compileMemRead(insn.(*instruction.MemRead), f)
+	case opcode.UNCONDITIONAL_MEMORY_READ:
+		p.compileMemRead(&instruction.MemRead{OpIo: insn.(*instruction.UnconditionalMemRead).OpIo}, f)
 	case opcode.MEMORY_WRITE:
 		p.compileMemWrite(insn.(*instruction.MemWrite), f)
 	case opcode.RETURN:

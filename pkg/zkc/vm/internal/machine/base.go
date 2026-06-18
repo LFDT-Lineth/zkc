@@ -280,6 +280,11 @@ func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 	case opcode.CALL:
 		var binsn any = insn
 		return p.executeCall(binsn.(*instruction.Call), frame)
+	case opcode.UNCONDITIONAL_CALL:
+		// Executes exactly like a Call; differs only in constraint lowering.
+		var binsn any = insn
+		c := binsn.(*instruction.UnconditionalCall)
+		return p.executeCall(&instruction.Call{OpIo: c.OpIo}, frame)
 	case opcode.FAIL:
 		var binsn any = insn
 		return p.executeFail(binsn.(*instruction.Fail), frame)
@@ -298,6 +303,12 @@ func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 	case opcode.MEMORY_READ:
 		var binsn any = insn
 		err = p.executeMemRead(binsn.(*instruction.MemRead), frame)
+		// Fall thru
+	case opcode.UNCONDITIONAL_MEMORY_READ:
+		// Executes exactly like a MemRead; differs only in constraint lowering.
+		var binsn any = insn
+		c := binsn.(*instruction.UnconditionalMemRead)
+		err = p.executeMemRead(&instruction.MemRead{OpIo: c.OpIo}, frame)
 		// Fall thru
 	case opcode.MEMORY_WRITE:
 		var binsn any = insn
