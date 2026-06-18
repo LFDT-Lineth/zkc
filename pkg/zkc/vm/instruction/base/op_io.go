@@ -119,8 +119,11 @@ func (p *OpIo) String(mapping SystemMap) string {
 		fmt.Fprintf(&builder, "%s(%s)", getModuleName(mapping, p.Id),
 			RegistersToString(mapping, p.Arguments...))
 	case opcode.MEMORY_READ:
-		builder.WriteString(RegistersToString(mapping, p.Returns...))
-		builder.WriteString(" = ")
+		//
+		if len(p.Returns) > 0 {
+			builder.WriteString(RegistersToString(mapping, p.Returns...))
+			builder.WriteString(" = ")
+		}
 		//
 		fmt.Fprintf(&builder, "%s[%s]", getModuleName(mapping, p.Id),
 			RegistersToString(mapping, p.Arguments...))

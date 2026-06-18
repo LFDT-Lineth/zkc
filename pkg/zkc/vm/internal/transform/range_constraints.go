@@ -109,7 +109,7 @@ func generateRangeModules[W word.Word[W]](cfg field.Config, modules []Module) []
 	}
 	//
 	for _, w := range widths {
-		var name = fmt.Sprintf("$range_u%d", w)
+		var name = rangeModuleName(w)
 		//
 		if w <= MAX_STATIC_RANGE_WIDTH {
 			extra = append(extra, newStaticRangeTable[W](name, w))
@@ -210,11 +210,15 @@ func highestPowerOfTwoBelow(n uint) uint {
 	return p
 }
 
-// registerWidth returns the bitwidth to range-check a register against.  Native
-// registers have no fixed width, so the field bandwidth is used.
+// registerWidth returns the bit-width to range-check a register against, or 0 if
+// it needs no check.  Native (field-element) registers span the whole field
+// [0, modulus) rather than a power-of-two range [0, 2^n), so a bit-range check
+// would be unsound (it would reject valid field elements >= 2^bandwidth); they
+// are therefore not range-checked.
 func registerWidth(cfg field.Config, r register.Register) uint {
 	if r.IsNative() {
-		return cfg.BandWidth
+		return 0 //TODO @Dave: do we have to range check the native field registers ?
+		// I assumed no, but not sure ...
 	}
 	//
 	return r.Width()
@@ -275,48 +279,103 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 	)
 	// Range-check each half: a static table (<= 16) is read via MemRead, a
 	// recursive range function (> 16) is invoked via Call.
-	codes = appendRangeCheck[W](codes, loID, s.lo, moduleOf)
-	codes = appendRangeCheck[W](codes, hiID, s.hi, moduleOf)
+	codes = appendRangeCheck(codes, loID, s.lo, moduleOf)
+	codes = appendRangeCheck(codes, hiID, s.hi, moduleOf)
 	codes = append(codes, instruction.NewReturn())
 	//
 	return function.New(name, false, regs, []VectorInstruction{instruction.NewVector(codes...)})
 }
 
 // appendRangeCheck appends to codes a range-check of register r (of width w)
-// against range_u{w}: a MemRead from the static ROM when w <= 16 (reading the
-// looked-up value into a fresh scratch register, appended to regs), or a Call
-// into the recursive range function otherwise.
-func appendRangeCheck[W word.Word[W]](codes []WordInstruction,
-	r register.Id, w uint, moduleOf map[uint]uint) []WordInstruction {
-	//
-	if w <= MAX_STATIC_RANGE_WIDTH {
-		return append(codes, instruction.NewMemRead(moduleOf[w], []register.Id{r}, nil))
-	}
-	//
-	return append(codes, instruction.NewCall(moduleOf[w], []register.Id{r}, nil))
+// against range_u{w} (see rangeCheck).
+func appendRangeCheck(codes []WordInstruction, r register.Id, w uint, moduleOf map[uint]uint) []WordInstruction {
+	return append(codes, rangeCheck(moduleOf[w], r, w))
 }
 
-func addRangeCalls[W word.Word[W]](cfg field.Config, modules []Module, rangeModules []Module) []Module {
-	for _, mod := range modules {
-		for _, r := range mod.Registers() {
-			if !r.IsConst() {
-				// TODO : add a call to the corresponding range module for this register.
-				// Issue:
-				// - for register > u16 we need a call that populates the range_uX modules. How to do it ?
-				// we can't do it before the last return instruction (it might not being hit), it's ugly
-				// to do it just before ach return instruction ...
-				// - same, we have to deal with multi line instruction ...
-				// so in the end, isn't it better to have uncontional call (API already implemented),
-				// and when lowering the unconditional call at the --air level it keeps in mind that it has to
-				// populate the callee module during a sort of trace expansion, like in zkasm ...
-				// does this step still exist ?
-				// Another option is to leave it for later ... as with KOALABEAR we'll have at most range_u16 modules,
-				// so only static modules, so no issue with this ...
-				// WDYT @DAve ?
-				return modules // rm me, just to make it compile
-			}
-		}
+// rangeModuleName returns the canonical module name for the range module of a
+// given width.
+func rangeModuleName(w uint) string {
+	return fmt.Sprintf("$range_u%d", w)
+}
+
+// rangeCheck builds a single range-check of register r (of width w) against the
+// range module whose id is `id`: a (data-less) MemRead from the static ROM when
+// w <= 16, or a Call into the recursive range function otherwise.
+func rangeCheck(id uint, r register.Id, w uint) WordInstruction {
+	if w <= MAX_STATIC_RANGE_WIDTH {
+		return instruction.NewMemRead(id, []register.Id{r}, nil)
 	}
 
-	return modules
+	return instruction.NewCall(id, []register.Id{r}, nil)
+}
+
+// addRangeCalls range-checks every (non-constant) register of every function
+// module: a block of range-checks is inserted before each row-terminating
+// instruction (Return or Jump — a Fail row is rejected so needs no check), so
+// that every row of every register column is checked.  Non-function modules
+// carry no instructions to host the checks and are left unchanged.
+func addRangeCalls[W word.Word[W]](cfg field.Config, modules []Module, rangeModules []Module) []Module {
+	// Resolve range_u{w}'s module id by name.  Range modules are appended after
+	// the original modules (in ascending-width order), so the k-th range module
+	// has id len(modules)+k.  Only range-module names are ever looked up.
+	var idOf = make(map[string]uint, len(rangeModules))
+	//
+	for k, m := range rangeModules {
+		idOf[m.Name()] = uint(len(modules)) + uint(k)
+	}
+	//
+	var out = make([]Module, len(modules))
+	//
+	for i, mod := range modules {
+		out[i] = addRangeChecks(cfg, mod, idOf)
+	}
+	//
+	return out
+}
+
+// addRangeChecks inserts a range-check of each non-constant register before
+// every Return / Jump terminator in each vector of the given function.  Vector
+// .Map remaps skip offsets, so a skip which targeted the terminator instead
+// lands on the first check and falls through to it.
+func addRangeChecks(cfg field.Config, mod Module, idOf map[string]uint) Module {
+	fn, ok := mod.(*WordFunction)
+	if !ok || fn.IsNative() {
+		return mod
+	}
+	// Build the check block: one range-check per non-constant register.
+	var checks []WordInstruction
+	//
+	for j, r := range fn.Registers() {
+		if r.IsConst() {
+			continue
+		}
+		//
+		// A zero-width (u0) register has a single representable value (0), so it
+		// is trivially in range and needs no check.
+		if w := registerWidth(cfg, r); w != 0 {
+			checks = append(checks, rangeCheck(idOf[rangeModuleName(w)], register.NewId(uint(j)), w))
+		}
+	}
+	//
+	if len(checks) == 0 {
+		return mod
+	}
+	// Insert the check block before every Return / Jump in each vector.
+	var (
+		code  = fn.Code()
+		ncode = make([]VectorInstruction, len(code))
+	)
+	//
+	for i, vec := range code {
+		ncode[i] = vec.Map(func(_ uint, ith WordInstruction) []WordInstruction {
+			switch ith.(type) {
+			case *instruction.Return, *instruction.Jump:
+				return append(slices.Clone(checks), ith)
+			default:
+				return []WordInstruction{ith}
+			}
+		})
+	}
+	//
+	return function.New(fn.Name(), fn.IsNative(), fn.Registers(), ncode)
 }
