@@ -45,7 +45,7 @@ func Test_ZkcBench_Fnv1aHash(t *testing.T) {
 }
 
 func Test_ZkcBench_Keccakf(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG)
+	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG.Checkpoints("keccakf", 2))
 }
 
 // func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {

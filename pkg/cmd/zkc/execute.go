@@ -330,7 +330,11 @@ func newCheckPointInterpreter(wm *vm.WordMachine[vm.Uint], fn string, clk util.C
 		}
 		//
 		out = f
-		closer = func() { f.Close() }
+		closer = func() {
+			if err = f.Close(); err != nil {
+				panic(err)
+			}
+		}
 	}
 	// Locate the function whose calls are to be checkpointed.
 	fid, ok := program.HasModule(fn)
@@ -349,7 +353,10 @@ func newCheckPointInterpreter(wm *vm.WordMachine[vm.Uint], fn string, clk util.C
 			return
 		}
 		//
-		fmt.Fprintf(out, "0x%s\n", hex.EncodeToString(bytes))
+		if _, err := fmt.Fprintf(out, "0x%s\n", hex.EncodeToString(bytes)); err != nil {
+			log.Errorf("encoding checkpoint: %s", err)
+			return
+		}
 	}
 	// The counter fires every interval invocations of fn (see
 	// executeEnterCheckPoint_n).

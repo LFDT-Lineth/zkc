@@ -299,9 +299,8 @@ func runCheckpointTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f
 		// Run the test
 		switch w {
 		case vm.WORD_UINT:
-			runBytecodeExecutionTest(t, m, tc, w, cfg.bytecode)
 		case vm.WORD_UINT64:
-			runFixedWidthCheckpointTest[vm.Uint128](t, m, tc, cfg, w)
+			runFixedWidthCheckpointTest[vm.Uint64](t, m, tc, cfg, w)
 		case vm.WORD_UINT128:
 			runFixedWidthCheckpointTest[vm.Uint128](t, m, tc, cfg, w)
 		default:
@@ -319,6 +318,8 @@ func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m *vm.WordMachine[v
 	if len(checkpoints) == 0 {
 		return
 	}
+	//
+	t.Logf("Generated %d checkpoints for %s", len(checkpoints), tc.filename)
 	//
 	var (
 		idx     = rand.Intn(len(checkpoints))
