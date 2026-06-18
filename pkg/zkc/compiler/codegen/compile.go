@@ -215,9 +215,9 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	}
 
 	// Add range constraints.
-	// Must be after register splitting happens to captures all the new registers created by splitting.
+	// Must be after register splitting happens to capture all the new registers created by splitting.
 	// Irrelevant in fast mode, since range proofs are not generated in that mode.
-	// Note: No columns should be added after this steps without super extra care.
+	// Note: No columns should be added after this step without extra care.
 
 	// TODO: do range constraints only if splitting is done. But almost no tests on the CI with splitting flag so ...
 	//if p.config.splitting && !p.config.fastMode {
