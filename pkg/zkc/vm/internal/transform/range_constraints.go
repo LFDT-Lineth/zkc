@@ -84,8 +84,6 @@ func generateRangeModules[W word.Word[W]](cfg field.Config, modules []Module) []
 	var (
 		// Every width requiring a range module, mapped to its decomposition.
 		splits = neededRangeWidths[W](cfg, modules)
-		// Names already present before adding range check modules, to avoid collisions / ensure idempotency.
-		existing = moduleNames(modules)
 		// Freshly generated range modules.
 		extra []Module
 		// Widths in ascending order, for deterministic output.
@@ -111,11 +109,7 @@ func generateRangeModules[W word.Word[W]](cfg field.Config, modules []Module) []
 	}
 	//
 	for _, w := range widths {
-		var name = rangeModuleName(w)
-		// A range module name must not clash with an existing module.
-		if existing[name] {
-			panic(fmt.Sprintf("AddRangeConstraints: module %q already exists", name))
-		}
+		var name = fmt.Sprintf("$range_u%d", w)
 		//
 		if w <= MAX_STATIC_RANGE_WIDTH {
 			extra = append(extra, newStaticRangeTable[W](name, w))
@@ -285,22 +279,6 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 	)
 	//
 	return function.New(name, false, regs, code)
-}
-
-// moduleNames returns the set of module names present in a slice of modules.
-func moduleNames(modules []Module) map[string]bool {
-	var names = make(map[string]bool, len(modules))
-	//
-	for _, m := range modules {
-		names[m.Name()] = true
-	}
-	//
-	return names
-}
-
-// rangeModuleName returns the canonical module name for a given width.
-func rangeModuleName(w uint) string {
-	return fmt.Sprintf("range_u%d", w)
 }
 
 func addRangeCalls[W word.Word[W]](cfg field.Config, modules []Module, rangeModules []Module) []Module {
