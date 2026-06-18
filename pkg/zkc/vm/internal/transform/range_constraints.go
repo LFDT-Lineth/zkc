@@ -232,7 +232,7 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 	var (
 		padding big.Int
 		// Number of valid values representable in this width.
-		rows     = uint64(1) << width
+		rows     = 1 << width
 		contents = make([]W, rows)
 		regs     = []register.Register{
 			// TODO: why an index is needed see https://github.com/LFDT-Lineth/zkc/issues/1906
@@ -241,10 +241,10 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 		}
 	)
 	// Enumerate 0 .. 2^width - 1.
-	for i := range rows {
+	for i := range contents {
 		var w W
 
-		contents[i] = w.SetUint64(i)
+		contents[i] = w.SetUint64(uint64(i))
 	}
 	//
 	return memory.NewStatic(name, false, regs, contents...)
