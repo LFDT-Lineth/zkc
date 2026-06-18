@@ -57,12 +57,7 @@ const (
 //     range_u{hi}.  This recursion bottoms out at the static tables above.
 //
 // Native (field-element) registers have no fixed bitwidth and are range-checked
-// against the field bandwidth.
-//
-// The lookups themselves (both the external register -> value lookups and the
-// internal lo/hi -> range_u{lo}/range_u{hi} lookups) are intentionally not
-// emitted here yet; this pass only materialises the module structures and the
-// destructuring constraints.
+// against the field bandwidth. //TODO: update me
 //
 // This pass must run after SplitRegisters.
 func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *machine.Word[W] {
