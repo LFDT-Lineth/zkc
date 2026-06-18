@@ -238,8 +238,9 @@ func (p *Interpreter[W]) Outputs() iter.Iterator[memory.InputOutput[W]] {
 //     pushed on top so that the full active call chain is self-contained;
 //   - the data stack holding the activation records (registers) of all active
 //     frames;
-//   - a snapshot of every mutable memory.  Static and (non-static) read-only
-//     memories form the program's fixed inputs and so need not be captured.
+//   - a snapshot of every read-only input memory and every mutable memory.
+//     Static read-only memories form part of the fixed program and are not
+//     captured.
 //
 // The data and call stacks are copied so that the checkpoint is unaffected by
 // any subsequent execution of the interpreter.
@@ -252,7 +253,11 @@ func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint[W] {
 	// Record the currently executing frame as the top of the call stack, so the
 	// checkpoint fully describes the active call chain.
 	callStack = append(callStack, checkpoint.NewStackFrame(p.fid, p.fp, p.pc))
-	// Snapshot mutable (write-once and random-access) memories.
+	// Snapshot read-only input memories and mutable memories.
+	for i := range p.roms {
+		memory = append(memory, p.snapshotMemory(&p.roms[i]))
+	}
+	//
 	for i := range p.woms {
 		memory = append(memory, p.snapshotMemory(&p.woms[i]))
 	}
@@ -268,9 +273,9 @@ func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint[W] {
 	return checkpoint.NewCheckPoint(callStack, dataStack, memory)
 }
 
-// snapshotMemory captures the full contents of a (flat) mutable memory as a
-// single checkpoint page beginning at address zero.  The memory's module
-// identifier is recovered from the program by name.
+// snapshotMemory captures the full contents of a flat memory as a single
+// checkpoint page beginning at address zero.  The memory's module identifier is
+// recovered from the program by name.
 func (p *Interpreter[W]) snapshotMemory(mem memory.Memory[W]) checkpoint.Memory[W] {
 	var (
 		moduleId, _ = p.program.HasModule(mem.Name())
@@ -301,7 +306,7 @@ func (p *Interpreter[W]) snapshotPagedMemory(mem *memory.PagedRandomAccess[W]) c
 
 // Restore resets this interpreter to the state captured by the given checkpoint
 // (see CheckPoint), such that execution can resume from that point.  The call
-// stack, data stack and all mutable memories are overwritten; the currently
+// stack, data stack and all captured memories are overwritten; the currently
 // executing frame (the top of the checkpoint's call stack) is unpacked into the
 // active fid/fp/pc.  The checkpoint's slices are copied into the interpreter, so
 // the checkpoint remains valid for subsequent restores.
@@ -332,18 +337,26 @@ func (p *Interpreter[W]) Restore(cp checkpoint.CheckPoint[W]) {
 	p.dataStack.Clear()
 	p.dataStack.Alloc(uint(len(data)))
 	copy(p.dataStack.SliceEnd(0), data)
-	// Restore mutable memories.
+	// Restore captured memories.
 	for _, m := range cp.Memories() {
 		p.restoreMemory(m)
 	}
 }
 
 // restoreMemory overwrites the contents of the live memory identified by the
-// snapshot's module identifier.  The memory is first cleared, then each captured
-// page is written back at its recorded address.  Writing page-by-page preserves
-// the sparse layout of paged memories (only captured pages are materialised).
+// snapshot's module identifier.  Read-only input memories are restored by
+// replacing their flat contents directly, whilst mutable memories are first
+// cleared and then each captured page is written back at its recorded address.
+// Writing page-by-page preserves the sparse layout of paged memories (only
+// captured pages are materialised).
 func (p *Interpreter[W]) restoreMemory(m checkpoint.Memory[W]) {
 	var mem = p.findMemory(p.program.Module(m.ModuleId()).Name())
+	// Read-only memories cannot be written cell-by-cell; checkpoint snapshots
+	// for ROMs are flat pages, so restore them by replacing the contents.
+	if mem.IsReadOnly() {
+		mem.Initialise(flattenMemory(m.Pages()))
+		return
+	}
 	// Clear any existing contents.
 	mem.Initialise(nil)
 	// Write back each captured page.
@@ -359,11 +372,35 @@ func (p *Interpreter[W]) restoreMemory(m checkpoint.Memory[W]) {
 	}
 }
 
-// findMemory locates the live mutable memory with the given module name amongst
-// the write-once, random-access and paged random-access memories.  It panics if
-// no such memory exists, as a checkpoint should only ever reference memories
-// belonging to the program being executed.
+// flattenMemory converts a page-based checkpoint snapshot into flat contents.
+// This is used for ROMs, whose checkpoint snapshots are full flat pages.
+func flattenMemory[W word.Word[W]](pages []checkpoint.Page[W]) []W {
+	var size uint64
+	//
+	for _, page := range pages {
+		size = max(size, page.Address()+uint64(len(page.Data())))
+	}
+	//
+	contents := make([]W, size)
+	//
+	for _, page := range pages {
+		copy(contents[page.Address():], page.Data())
+	}
+	//
+	return contents
+}
+
+// findMemory locates the live checkpointable memory with the given module name
+// amongst the read-only input, write-once, random-access and paged random-access
+// memories.  It panics if no such memory exists, as a checkpoint should only
+// ever reference memories belonging to the program being executed.
 func (p *Interpreter[W]) findMemory(name string) memory.Memory[W] {
+	for i := range p.roms {
+		if p.roms[i].Name() == name {
+			return &p.roms[i]
+		}
+	}
+	//
 	for i := range p.woms {
 		if p.woms[i].Name() == name {
 			return &p.woms[i]

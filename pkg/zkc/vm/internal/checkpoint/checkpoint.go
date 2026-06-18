@@ -5,6 +5,7 @@
 package checkpoint
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -44,12 +45,12 @@ type CheckPoint[W word.Word[W]] struct {
 	// Data stack holding the activation records (registers) of active function
 	// calls.  The current frame begins at fp.
 	dataStack []W
-	// Snapshot of all mutable Memory.
+	// Snapshot of all checkpointed memories.
 	memory []Memory[W]
 }
 
 // NewCheckPoint constructs a checkpoint from a snapshot of the call stack, data
-// stack and mutable memories of an executing machine.  The provided slices are
+// stack and memories of an executing machine.  The provided slices are
 // retained by reference, so callers which intend to continue mutating the
 // underlying storage (e.g. an interpreter's live stacks) should pass copies.
 func NewCheckPoint[W word.Word[W]](callStack []StackFrame, dataStack []W, memory []Memory[W]) CheckPoint[W] {
@@ -67,7 +68,7 @@ func (p CheckPoint[W]) DataStack() []W {
 	return p.dataStack
 }
 
-// Memories returns the captured snapshots of all mutable memories.
+// Memories returns the captured memory snapshots.
 func (p CheckPoint[W]) Memories() []Memory[W] {
 	return p.memory
 }
@@ -96,23 +97,17 @@ func NewStackFrame(fid uint, fp uint32, pc uint32) StackFrame {
 // Encoding / Decoding
 // ============================================================================
 //
-// A checkpoint is serialised into a flat byte sequence using a big-endian
-// layout.  Counts, identifiers and addresses are written as fixed-width
-// integers, whilst each word is written using exactly bytesPerWord(W) bytes
-// (derived from the word type's Bandwidth).  The bytes-per-word is itself
-// written as the first field, so that unmarshalling can sanity check that the
-// data was produced for a word type of the expected width.
+// A checkpoint is serialised into a flat byte sequence beginning with
+// checkpointHeader.  Counts, identifiers and addresses are written as fixed-
+// width big-endian integers, whilst each word is written as an unsigned
+// LEB128-style variable-length integer.
+
+var checkpointHeader = []byte{'Z', 'K', 'C', 'P', 1}
 
 // MarshalBinary implements encoding.BinaryMarshaler, serialising this checkpoint
-// into a flat big-endian byte sequence (see above).
+// into the checkpoint format (see above).
 func (p CheckPoint[W]) MarshalBinary() ([]byte, error) {
-	var (
-		buf   []byte
-		nbits = bytesPerWord[W]()
-		tmp   = make([]byte, nbits)
-	)
-	// Bytes-per-word: written first so it can be validated on unmarshalling.
-	buf = binary.BigEndian.AppendUint32(buf, uint32(nbits))
+	buf := append([]byte{}, checkpointHeader...)
 	// Call stack: count followed by each frame.
 	buf = binary.BigEndian.AppendUint32(buf, uint32(len(p.callStack)))
 	//
@@ -125,7 +120,11 @@ func (p CheckPoint[W]) MarshalBinary() ([]byte, error) {
 	buf = binary.BigEndian.AppendUint32(buf, uint32(len(p.dataStack)))
 	//
 	for _, w := range p.dataStack {
-		buf = append(buf, w.BigInt().FillBytes(tmp)...)
+		var err error
+		//
+		if buf, err = appendUvarWord(buf, w); err != nil {
+			return nil, err
+		}
 	}
 	// Memories: count followed by each memory.
 	buf = binary.BigEndian.AppendUint32(buf, uint32(len(p.memory)))
@@ -139,7 +138,11 @@ func (p CheckPoint[W]) MarshalBinary() ([]byte, error) {
 			buf = binary.BigEndian.AppendUint32(buf, uint32(len(pg.data)))
 			//
 			for _, w := range pg.data {
-				buf = append(buf, w.BigInt().FillBytes(tmp)...)
+				var err error
+				//
+				if buf, err = appendUvarWord(buf, w); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -150,19 +153,22 @@ func (p CheckPoint[W]) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary implements encoding.BinaryUnmarshaler, reconstructing a
 // checkpoint previously serialised by MarshalBinary.
 func (p *CheckPoint[W]) UnmarshalBinary(data []byte) error {
-	var (
-		r     = &reader{data: data}
-		nbits = bytesPerWord[W]()
-		err   error
-		n     uint32
-	)
-	// Bytes-per-word: validate the data was produced for a word type of the
-	// expected width before decoding anything else.
-	if n, err = r.uint32(); err != nil {
-		return err
-	} else if n != uint32(nbits) {
-		return fmt.Errorf("invalid checkpoint: expected %d bytes-per-word, got %d", nbits, n)
+	if !bytes.HasPrefix(data, checkpointHeader) {
+		return fmt.Errorf("invalid checkpoint: missing header")
 	}
+	//
+	data = data[len(checkpointHeader):]
+	//
+	return p.unmarshalFromReader(&reader{data: data}, readUvarWord[W])
+}
+
+// unmarshalFromReader decodes the checkpoint payload.  The supplied readWord
+// function handles the word representation.
+func (p *CheckPoint[W]) unmarshalFromReader(r *reader, readWord func(*reader) (W, error)) error {
+	var (
+		err error
+		n   uint32
+	)
 	// Call stack.
 	if n, err = r.uint32(); err != nil {
 		return err
@@ -196,7 +202,7 @@ func (p *CheckPoint[W]) UnmarshalBinary(data []byte) error {
 	dataStack := make([]W, n)
 	//
 	for i := range dataStack {
-		if dataStack[i], err = readWord[W](r, nbits); err != nil {
+		if dataStack[i], err = readWord(r); err != nil {
 			return err
 		}
 	}
@@ -208,7 +214,7 @@ func (p *CheckPoint[W]) UnmarshalBinary(data []byte) error {
 	memory := make([]Memory[W], n)
 	//
 	for i := range memory {
-		if memory[i], err = readMemory[W](r, nbits); err != nil {
+		if memory[i], err = readMemory(r, readWord); err != nil {
 			return err
 		}
 	}
@@ -221,7 +227,7 @@ func (p *CheckPoint[W]) UnmarshalBinary(data []byte) error {
 }
 
 // readMemory decodes a single memory snapshot (module identifier plus pages).
-func readMemory[W word.Word[W]](r *reader, nbits int) (Memory[W], error) {
+func readMemory[W word.Word[W]](r *reader, readWord func(*reader) (W, error)) (Memory[W], error) {
 	var (
 		mid, err = r.uint64()
 		np       uint32
@@ -238,7 +244,7 @@ func readMemory[W word.Word[W]](r *reader, nbits int) (Memory[W], error) {
 	pages := make([]Page[W], np)
 	//
 	for j := range pages {
-		if pages[j], err = readPage[W](r, nbits); err != nil {
+		if pages[j], err = readPage[W](r, readWord); err != nil {
 			return Memory[W]{}, err
 		}
 	}
@@ -247,7 +253,7 @@ func readMemory[W word.Word[W]](r *reader, nbits int) (Memory[W], error) {
 }
 
 // readPage decodes a single page (address plus data words).
-func readPage[W word.Word[W]](r *reader, nbits int) (Page[W], error) {
+func readPage[W word.Word[W]](r *reader, readWord func(*reader) (W, error)) (Page[W], error) {
 	var (
 		address, err = r.uint64()
 		nd           uint32
@@ -264,7 +270,7 @@ func readPage[W word.Word[W]](r *reader, nbits int) (Page[W], error) {
 	data := make([]W, nd)
 	//
 	for k := range data {
-		if data[k], err = readWord[W](r, nbits); err != nil {
+		if data[k], err = readWord(r); err != nil {
 			return Page[W]{}, err
 		}
 	}
@@ -272,28 +278,103 @@ func readPage[W word.Word[W]](r *reader, nbits int) (Page[W], error) {
 	return Page[W]{address, data}, nil
 }
 
-// readWord decodes a single word from the next nbits bytes (big-endian).
-func readWord[W word.Word[W]](r *reader, nbits int) (W, error) {
-	var (
-		zero    W
-		bs, err = r.bytes(nbits)
-	)
+// appendUvarWord appends w using unsigned LEB128-style variable-length
+// encoding.
+func appendUvarWord[W word.Word[W]](buf []byte, w W) ([]byte, error) {
+	value := w.BigInt()
 	//
-	if err != nil {
-		return zero, err
+	if value.Sign() < 0 {
+		return nil, fmt.Errorf("invalid checkpoint word: negative value 0x%s", value.Text(16))
 	}
 	//
-	var value big.Int
-	value.SetBytes(bs)
+	return appendUvarBig(buf, value), nil
+}
+
+// appendUvarBig appends value using unsigned LEB128-style variable-length
+// encoding.  The input is copied before shifting, so callers retain ownership of
+// value.
+func appendUvarBig(buf []byte, value *big.Int) []byte {
+	if value.Sign() == 0 {
+		return append(buf, 0)
+	}
+	//
+	var v big.Int
+	v.Set(value)
+	//
+	for v.Sign() > 0 {
+		b := byte(v.Uint64() & 0x7f)
+		v.Rsh(&v, 7)
+		//
+		if v.Sign() != 0 {
+			b |= 0x80
+		}
+		//
+		buf = append(buf, b)
+	}
+	//
+	return buf
+}
+
+// readUvarWord decodes a single unsigned LEB128-style word.
+func readUvarWord[W word.Word[W]](r *reader) (W, error) {
+	var (
+		zero      W
+		value     big.Int
+		shift     uint
+		bandwidth = zero.Bandwidth()
+		maxBytes  = maxUvarWordBytes(bandwidth)
+	)
+	//
+	for nbytes := uint(1); ; nbytes++ {
+		if maxBytes != 0 && nbytes > maxBytes {
+			return zero, fmt.Errorf("invalid checkpoint: variable-length word exceeds %d-bit bandwidth", bandwidth)
+		}
+		//
+		b, err := r.byte()
+		if err != nil {
+			return zero, err
+		}
+		//
+		if payload := b & 0x7f; payload != 0 {
+			var part big.Int
+			part.SetUint64(uint64(payload))
+			part.Lsh(&part, shift)
+			value.Or(&value, &part)
+		}
+		//
+		if b&0x80 == 0 {
+			break
+		}
+		//
+		shift += 7
+	}
+	//
+	if err := validateWordBandwidth[W](&value); err != nil {
+		return zero, err
+	}
 	//
 	return zero.SetBigInt(&value), nil
 }
 
-// bytesPerWord returns the number of bytes required to hold a single word of
-// type W, derived from the word type's Bandwidth (rounded up to whole bytes).
-func bytesPerWord[W word.Word[W]]() int {
+// validateWordBandwidth reports an error when value does not fit into W.
+func validateWordBandwidth[W word.Word[W]](value *big.Int) error {
 	var zero W
-	return int((zero.Bandwidth() + 7) / 8)
+	//
+	if bandwidth := zero.Bandwidth(); bandwidth != ^uint(0) && uint(value.BitLen()) > bandwidth {
+		return fmt.Errorf("invalid checkpoint: word value 0x%s exceeds %d-bit bandwidth", value.Text(16), bandwidth)
+	}
+	//
+	return nil
+}
+
+// maxUvarWordBytes returns the maximum canonical byte length for a word with a
+// finite bit bandwidth.  A zero result means unbounded.
+func maxUvarWordBytes(bandwidth uint) uint {
+	if bandwidth == ^uint(0) {
+		return 0
+	}
+	//
+	return (bandwidth + 6) / 7
 }
 
 // reader is a minimal cursor over a byte slice used during decoding.  Each read
@@ -314,6 +395,16 @@ func (r *reader) bytes(n int) ([]byte, error) {
 	r.pos += n
 	//
 	return bs, nil
+}
+
+// byte returns the next byte.
+func (r *reader) byte() (byte, error) {
+	bs, err := r.bytes(1)
+	if err != nil {
+		return 0, err
+	}
+	//
+	return bs[0], nil
 }
 
 // uint32 reads the next big-endian uint32.
