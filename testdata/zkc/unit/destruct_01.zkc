@@ -3,7 +3,8 @@ pub output hi(address:u16) -> (byte:u17)
 pub output lo(address:u16) -> (byte:u8)
 
 fn main() {
-    var x:u25 = data[0] as u25
+    var a:u55 = data[0] as u55
+    var x:u25 = a as u25
 
     var tmp_hi:u17
     var tmp_lo:u8

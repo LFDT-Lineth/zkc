@@ -255,8 +255,6 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 // moduleOf maps a width to the index of its range module, so the emitted calls
 // can reference their sub-modules by id.
 func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSplit, moduleOf map[uint]uint) Module {
-	println("RECURSIVE_RANGE_MODULE:", name, "lo=", s.lo, "hi=", s.hi)
-
 	var (
 		padding big.Int
 		regs    = []register.Register{
@@ -269,16 +267,32 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 		loID  = register.NewId(1)
 		hiID  = register.NewId(2)
 		// Destructure value into its low (lo) and high (hi) halves: value = hi::lo
-		// (little-endian targets, so lo receives the low bits).
-		destruct = instruction.UintDestruct[W](register.NewVector(loID, hiID), valID)
-		// Range-check each half via an unconditional call into its range module.
-		loCall = instruction.NewUnconditionalCall(moduleOf[s.lo], loID, s.lo <= MAX_STATIC_RANGE_WIDTH)
-		hiCall = instruction.NewUnconditionalCall(moduleOf[s.hi], hiID, s.hi <= MAX_STATIC_RANGE_WIDTH)
-		ret    = instruction.NewReturn()
-		code   = []VectorInstruction{instruction.NewVector[WordInstruction](destruct, loCall, hiCall, ret)}
+		// (little-endian targets, so lo receives the low bits).  The subsequent
+		// checks read lo/hi via in-vector forwarding, so they see the destructured
+		// values.
+		codes = []WordInstruction{instruction.UintDestruct[W](register.NewVector(loID, hiID), valID)}
 	)
+	// Range-check each half: a static table (<= 16) is read via MemRead, a
+	// recursive range function (> 16) is invoked via Call.
+	codes = appendRangeCheck[W](codes, loID, s.lo, moduleOf)
+	codes = appendRangeCheck[W](codes, hiID, s.hi, moduleOf)
+	codes = append(codes, instruction.NewReturn())
 	//
-	return function.New(name, false, regs, code)
+	return function.New(name, false, regs, []VectorInstruction{instruction.NewVector(codes...)})
+}
+
+// appendRangeCheck appends to codes a range-check of register r (of width w)
+// against range_u{w}: a MemRead from the static ROM when w <= 16 (reading the
+// looked-up value into a fresh scratch register, appended to regs), or a Call
+// into the recursive range function otherwise.
+func appendRangeCheck[W word.Word[W]](codes []WordInstruction,
+	r register.Id, w uint, moduleOf map[uint]uint) []WordInstruction {
+	//
+	if w <= MAX_STATIC_RANGE_WIDTH {
+		return append(codes, instruction.NewMemRead(moduleOf[w], []register.Id{r}, nil))
+	}
+	//
+	return append(codes, instruction.NewCall(moduleOf[w], []register.Id{r}, nil))
 }
 
 func addRangeCalls[W word.Word[W]](cfg field.Config, modules []Module, rangeModules []Module) []Module {

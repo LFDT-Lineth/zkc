@@ -74,38 +74,11 @@ func NewDebug(chunks ...FormattedChunk) *Debug {
 // the return registers of the caller's frame.  Execution of the calling
 // frame is suspended until the callee returns; on return, control resumes
 // at the instruction following the Call.
-//
-// At the constraint level, a Call corresponds to a lookup of the
-// (arguments, returns) tuple into the callee's columns.  Two flags refine this:
-//
-//   - Unconditional: the lookup is always enabled, i.e. it applies to every row
-//     of the caller rather than being gated by a per-row selector line.  This is
-//     used by range-check calls, which must hold for all rows.
-//   - Static: the callee is a static table (a memory) rather than a function, so
-//     the lookup targets the table's value column and no stack frame is entered
-//     when the call is executed.
-type Call struct {
-	base.OpIo
-	// Unconditional indicates the lookup applies to all rows (no selector line).
-	Unconditional bool
-	// Static indicates the target module is a static table (memory), not a function.
-	Static bool
-}
+type Call struct{ base.OpIo }
 
-// NewCall constructs a new (conditional, function-targeted) call instruction.
+// NewCall constructs a new function call instruction.
 func NewCall(id uint, arguments []register.Id, returns []register.Id) *Call {
-	return &Call{OpIo: base.OpIo{Op: opcode.CALL, Id: id, Arguments: arguments, Returns: returns}}
-}
-
-// NewUnconditionalCall constructs an unconditional call used to range-check a single
-// source register against the value column of a range module.  When the target
-// is a static enumeration table, static must be true.
-func NewUnconditionalCall(id uint, source register.Id, static bool) *Call {
-	return &Call{
-		OpIo:          base.OpIo{Op: opcode.CALL, Id: id, Arguments: []register.Id{source}},
-		Unconditional: true,
-		Static:        static,
-	}
+	return &Call{base.OpIo{Op: opcode.CALL, Id: id, Arguments: arguments, Returns: returns}}
 }
 
 // ============================================================================
