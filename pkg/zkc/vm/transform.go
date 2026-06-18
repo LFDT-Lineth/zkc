@@ -115,9 +115,9 @@ func SplitRegisters[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachin
 	return transform.SplitRegisters(limbsMap, wm)
 }
 
-// AddRangeConstraints adds a range proof constraint for each register in the machine. This is done by adding
-// lookups from each register to a precomputed table of all valid values for that register.
-// The table is generated based on the maximum width of the register and the field configuration.
+// AddRangeConstraints adds a range-proof constraint for each register in the machine.
+// This is done by adding lookups from each (non-constant) register to a precomputed
+// table of all valid values for that register width.
 // This function must be called after SplitRegisters.
 func AddRangeConstraints[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachine[W] {
 	return transform.AddRangeConstraints[W](cfg, wm)
