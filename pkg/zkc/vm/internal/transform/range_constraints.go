@@ -223,6 +223,7 @@ func registerWidth(cfg field.Config, r register.Register) uint {
 // newStaticRangeTable constructs a static table enumerating every valid value
 // 0 .. 2^width - 1.  The table has an index (address) column and a value (data)
 // column; the value column is the lookup recipient.
+// TODO: some mini perf, see https://github.com/LFDT-Lineth/zkc/issues/1907
 func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 	var (
 		padding big.Int
@@ -230,7 +231,7 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 		rows     = uint64(1) << width
 		contents = make([]W, rows)
 		regs     = []register.Register{
-			// TODO: why an index is needed ??
+			// TODO: why an index is needed see https://github.com/LFDT-Lineth/zkc/issues/1906
 			register.NewInput(rangeIndexName, width, padding),
 			register.NewOutput(rangeValueName, width, padding),
 		}
