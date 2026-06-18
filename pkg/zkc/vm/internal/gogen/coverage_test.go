@@ -64,6 +64,10 @@ var opcodeCoverage = map[string]string{
 	"INT_MULMOD_P": "emitFieldOp (WordTypeF)",
 	// Hint instructions.
 	"HINT_DIVISION": "emitHint (FieldHint)",
+	// Range-check instructions: emitted exactly like their unconditional-free
+	// counterparts (they execute identically; only constraint lowering differs).
+	"UNCONDITIONAL_CALL":        "emitCall (as CALL)",
+	"UNCONDITIONAL_MEMORY_READ": "emitMemRead (as MEMORY_READ)",
 	// Field instructions cannot appear in a word machine; the emitter's
 	// default arm rejects them with a clean error.
 	"FIELD_ASSIGN": "rejected (field-machine only)",
