@@ -56,8 +56,7 @@ const (
 //     and (later) range-checks each half by lookups into range_u{lo} and
 //     range_u{hi}.  This recursion bottoms out at the static tables above.
 //
-// Native (field-element) registers have no fixed bitwidth and are range-checked
-// against the field bandwidth. //TODO: update me
+// Native (field-element) registers are not ranged-checked.
 //
 // This pass must run after SplitRegisters.
 func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *machine.Word[W] {
@@ -65,11 +64,11 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *
 		modules = m.Modules()
 	)
 
-	// First generate the range modules for every width which occurs on some register.
+	// First step, generate the range modules for every width which occurs on some register.
 	var extra = generateRangeModules[W](cfg, modules)
 
 	// Second step, call range_uX for every registers.
-	modules = addRangeCalls[W](cfg, modules, extra)
+	modules = addRangeCalls[W](modules, extra)
 
 	// Reassemble the machine with the original modules plus the range modules.
 	return machine.NewWord[W](cfg, append(slices.Clone(modules), extra...)...)
@@ -147,9 +146,7 @@ func neededRangeWidths[W word.Word[W]](cfg field.Config, modules []Module) map[u
 	// Seed from every (non-constant) register of every module.
 	for _, mod := range modules {
 		for _, r := range mod.Registers() {
-			if !r.IsConst() {
-				add(registerWidth(cfg, r))
-			}
+			add(registerWidthOrZero(r))
 		}
 	}
 	// Destructure each width wider than the static limit, pulling in its halves.
@@ -205,15 +202,11 @@ func highestPowerOfTwoBelow(n uint) uint {
 	return p
 }
 
-// registerWidth returns the bit-width to range-check a register against, or 0 if
-// it needs no check.  Native (field-element) registers span the whole field
-// [0, modulus) rather than a power-of-two range [0, 2^n), so a bit-range check
-// would be unsound (it would reject valid field elements >= 2^bandwidth); they
-// are therefore not range-checked.
-func registerWidth(cfg field.Config, r register.Register) uint {
+// registerWidthOrZero returns the bit-width to range-check a register against, or 0 if
+// it needs no check (for native field)
+func registerWidthOrZero(r register.Register) uint {
 	if r.IsNative() {
-		return 0 //TODO @Dave: do we have to range check the native field registers ?
-		// I assumed no, but not sure ...
+		return 0
 	}
 	//
 	return r.Width()
@@ -309,7 +302,7 @@ func rangeCheck(id uint, r register.Id, w uint) WordInstruction {
 // instruction (Return or Jump — a Fail row is rejected so needs no check), so
 // that every row of every register column is checked.  Non-function modules
 // carry no instructions to host the checks and are left unchanged.
-func addRangeCalls[W word.Word[W]](cfg field.Config, modules []Module, rangeModules []Module) []Module {
+func addRangeCalls[W word.Word[W]](modules []Module, rangeModules []Module) []Module {
 	// Resolve range_u{w}'s module id by name.  Range modules are appended after
 	// the original modules (in ascending-width order), so the k-th range module
 	// has id len(modules)+k.  Only range-module names are ever looked up.
@@ -322,32 +315,28 @@ func addRangeCalls[W word.Word[W]](cfg field.Config, modules []Module, rangeModu
 	var out = make([]Module, len(modules))
 	//
 	for i, mod := range modules {
-		out[i] = addRangeChecks(cfg, mod, idOf)
+		out[i] = addRangeChecks(mod, idOf)
 	}
 	//
 	return out
 }
 
-// addRangeChecks inserts a range-check of each non-constant register before
+// addRangeChecks inserts a range-check of each register before
 // every Return / Jump terminator in each vector of the given function.  Vector
 // .Map remaps skip offsets, so a skip which targeted the terminator instead
 // lands on the first check and falls through to it.
-func addRangeChecks(cfg field.Config, mod Module, idOf map[string]uint) Module {
+func addRangeChecks(mod Module, idOf map[string]uint) Module {
 	fn, ok := mod.(*WordFunction)
 	if !ok || fn.IsNative() {
 		return mod
 	}
-	// Build the check block: one range-check per non-constant register.
+	// Build the check block: one range-check per register.
 	var checks []WordInstruction
 	//
 	for j, r := range fn.Registers() {
-		if r.IsConst() {
-			continue
-		}
-		//
 		// A zero-width (u0) register has a single representable value (0), so it
 		// is trivially in range and needs no check.
-		if w := registerWidth(cfg, r); w != 0 {
+		if w := registerWidthOrZero(r); w != 0 {
 			checks = append(checks, rangeCheck(idOf[rangeModuleName(w)], register.NewId(uint(j)), w))
 		}
 	}
