@@ -73,6 +73,13 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		trace   trace.Trace[F]
 		outputs map[string][]byte
 	)
+	// gogen only executes the fast-mode machine: without --fast the run would
+	// silently fall through to tracing. Reject it rather than ignore --gogen.
+	if gogen && tracing {
+		log.Error("--gogen requires --fast (and is incompatible with --check / --output)")
+		os.Exit(2)
+	}
+	//
 	applyExecuteDefaults(&build, check, quiet)
 	//
 	input := ParseInputFile(args[0])
