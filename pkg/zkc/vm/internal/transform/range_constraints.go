@@ -127,8 +127,7 @@ type rangeSplit struct {
 // a range module must be generated.  This is the set of widths occurring
 // directly on some register, closed under the destructuring of wide widths
 // (> 16); each wide width is mapped to the (lo, hi) halves it is destructured
-// into, while leaf widths (<= 16) map to the zero split.  Constant registers are
-// pinned to a fixed value and require no range proof, so are ignored.
+// into, while leaf widths (<= 16) map to the zero split.
 func neededRangeWidths[W word.Word[W]](cfg field.Config, modules []Module) map[uint]rangeSplit {
 	var (
 		// Final decompositions, keyed by width (one entry per dequeued width).
@@ -145,7 +144,7 @@ func neededRangeWidths[W word.Word[W]](cfg field.Config, modules []Module) map[u
 			queue = append(queue, w)
 		}
 	}
-	// Seed from every (non-constant) register of every module.
+	// Seed from every register of every module.
 	for _, mod := range modules {
 		for _, r := range mod.Registers() {
 			add(registerWidthOrZero(r))
@@ -299,7 +298,7 @@ func rangeCheck(id uint, r register.Id, w uint) WordInstruction {
 	return instruction.NewUnconditionalCall(id, []register.Id{r}, nil)
 }
 
-// addRangeCalls range-checks every (non-constant) register of every function
+// addRangeCalls range-checks every register of every function
 // module: a block of range-checks is inserted before each row-terminating
 // instruction (Return or Jump — a Fail row is rejected so needs no check), so
 // that every row of every register column is checked.  Non-function modules
