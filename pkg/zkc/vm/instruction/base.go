@@ -83,9 +83,8 @@ func NewCall(id uint, arguments []register.Id, returns []register.Id) *Call {
 
 // ============================================================================
 
-// UnconditionalCall is similar to Call,
-// but it is unconditionally, ie there are no condition for the lookup.
-// It's the case for range check for example.
+// UnconditionalCall is similar to Call, but executes unconditionally (i.e. the
+// lookup is not gated by a selector). This is used for range checks, for example.
 type UnconditionalCall struct{ base.OpIo }
 
 // NewUnconditionalCall constructs a new function call instruction, where the lookup holds unconditionally.
