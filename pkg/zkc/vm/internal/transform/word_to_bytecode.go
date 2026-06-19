@@ -92,8 +92,6 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 		p.compileJump(pos, insn.(*instruction.Jump))
 	case opcode.MEMORY_READ:
 		p.compileMemRead(insn.(*instruction.MemRead), f)
-	case opcode.UNCONDITIONAL_MEMORY_READ:
-		p.compileMemRead(&instruction.MemRead{OpIo: insn.(*instruction.UnconditionalMemRead).OpIo}, f)
 	case opcode.MEMORY_WRITE:
 		p.compileMemWrite(insn.(*instruction.MemWrite), f)
 	case opcode.RETURN:

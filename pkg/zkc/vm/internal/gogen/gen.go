@@ -973,10 +973,6 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 		return g.emitDebug(c, fn, x)
 	case *instruction.MemRead:
 		return g.emitMemRead(c, fn, x)
-	case *instruction.UnconditionalMemRead:
-		// Identical to MemRead during execution; differs only in constraint
-		// lowering, which gogen does not perform.
-		return g.emitMemRead(c, fn, &instruction.MemRead{OpIo: x.OpIo})
 	case *instruction.MemWrite:
 		return g.emitMemWrite(c, fn, x)
 	case *instruction.Call:

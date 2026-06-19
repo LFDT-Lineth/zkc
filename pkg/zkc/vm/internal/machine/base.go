@@ -304,12 +304,6 @@ func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 		var binsn any = insn
 		err = p.executeMemRead(binsn.(*instruction.MemRead), frame)
 		// Fall thru
-	case opcode.UNCONDITIONAL_MEMORY_READ:
-		// Executes exactly like a MemRead; differs only in constraint lowering.
-		var binsn any = insn
-		c := binsn.(*instruction.UnconditionalMemRead)
-		err = p.executeMemRead(&instruction.MemRead{OpIo: c.OpIo}, frame)
-		// Fall thru
 	case opcode.MEMORY_WRITE:
 		var binsn any = insn
 		err = p.executeMemWrite(binsn.(*instruction.MemWrite), frame)

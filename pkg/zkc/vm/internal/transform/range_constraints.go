@@ -104,7 +104,9 @@ func generateRangeModules[W word.Word[W]](cfg field.Config, modules []Module) []
 	//
 	for _, w := range widths {
 		var name = rangeModuleName(w)
-		//
+		// Note, this could be optimized:
+		// https://github.com/LFDT-Lineth/zkc/issues/1910
+		// and https://github.com/LFDT-Lineth/zkc/issues/1911
 		if w <= MAX_STATIC_RANGE_WIDTH {
 			extra = append(extra, newStaticRangeTable[W](name, w))
 		} else {
@@ -291,7 +293,7 @@ func rangeModuleName(w uint) string {
 // w <= 16, or a Call into the recursive range function otherwise.
 func rangeCheck(id uint, r register.Id, w uint) WordInstruction {
 	if w <= MAX_STATIC_RANGE_WIDTH {
-		return instruction.NewUnconditionalMemRead(id, []register.Id{r}, nil)
+		return instruction.NewMemRead(id, []register.Id{r}, nil)
 	}
 
 	return instruction.NewUnconditionalCall(id, []register.Id{r}, nil)
@@ -334,9 +336,11 @@ func addRangeChecks(mod Module, idOf map[string]uint) Module {
 	var checks []WordInstruction
 	//
 	for j, r := range fn.Registers() {
-		// A zero-width (u0) register has a single representable value (0), so it
-		// is trivially in range and needs no check.
-		if w := registerWidthOrZero(r); w != 0 {
+		// For runtime, we only need to do the call for registers wider than MAX_STATIC_RANGE_WIDTH
+		// to populate the range module.
+		// For registers of width <= MAX_STATIC_RANGE_WIDTH, the range check is done via a static table,
+		// and the lookup is added when generating constraints.
+		if w := registerWidthOrZero(r); w > MAX_STATIC_RANGE_WIDTH {
 			checks = append(checks, rangeCheck(idOf[rangeModuleName(w)], register.NewId(uint(j)), w))
 		}
 	}

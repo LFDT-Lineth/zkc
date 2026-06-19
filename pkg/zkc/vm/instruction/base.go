@@ -135,20 +135,6 @@ func NewMemRead(id uint, address []register.Id, data []register.Id) *MemRead {
 
 // ============================================================================
 
-// UnconditionalMemRead is similar to MemRead,
-// but it is unconditionally, ie there are no condition for the lookup.
-// It's the case for range check for example.
-type UnconditionalMemRead struct{ base.OpIo }
-
-// NewUnconditionalMemRead constructs a new instruction which reads the value from either a
-// Random Access Memory (RAM) or a Read-Only Memory (ROM), where the lookup holds unconditionally.
-func NewUnconditionalMemRead(id uint, address []register.Id, data []register.Id) *UnconditionalMemRead {
-	return &UnconditionalMemRead{base.OpIo{Op: opcode.UNCONDITIONAL_MEMORY_READ, Id: id,
-		Arguments: address, Returns: data}}
-}
-
-// ============================================================================
-
 // MemWrite writes to the memory module identified by Id, using the argument
 // registers as the data words and the return registers as the address.  The
 // target module must be a Random Access Memory (RAM) or a Write-Once Memory
@@ -260,7 +246,6 @@ func (p *systemMap) String() string {
 func init() {
 	gob.Register(Instruction(&Call{}))
 	gob.Register(Instruction(&UnconditionalCall{}))
-	gob.Register(Instruction(&UnconditionalMemRead{}))
 	gob.Register(Instruction(&Debug{}))
 	gob.Register(Instruction(&Fail{}))
 	gob.Register(Instruction(&FieldHint{}))

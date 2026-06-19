@@ -157,9 +157,6 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 		return wi.(*instruction.Jump)
 	case opcode.MEMORY_READ:
 		return wi.(*instruction.MemRead)
-	case opcode.UNCONDITIONAL_MEMORY_READ:
-		// Preserve the type so the constraint translator can distinguish it.
-		return wi.(*instruction.UnconditionalMemRead)
 	case opcode.MEMORY_WRITE:
 		return wi.(*instruction.MemWrite)
 	case opcode.RETURN:
