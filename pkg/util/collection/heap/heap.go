@@ -36,6 +36,7 @@ func (p *Heap[T]) Alloc(n uint) {
 	data := slices.Grow(p.data, int(n))
 	// expand data length
 	p.data = data[:nsize]
+	// Note: clearing may degrade performance, but is necessary for range proof. A better solution is welcome.
 	// zero the newly allocated region
 	clear(p.data[offset:])
 }
