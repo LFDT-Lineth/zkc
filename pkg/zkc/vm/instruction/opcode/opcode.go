@@ -30,8 +30,6 @@ const (
 	JUMP
 	// MEMORY_READ instruction
 	MEMORY_READ
-	// UNCONDITIONAL_MEMORY_READ instruction
-	UNCONDITIONAL_MEMORY_READ
 	// MEMORY_WRITE instruction
 	MEMORY_WRITE
 	// SKIP_IF instruction

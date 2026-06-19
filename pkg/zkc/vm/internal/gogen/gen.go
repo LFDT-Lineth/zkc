@@ -1240,8 +1240,6 @@ func opName(op opcode.OpCode) string {
 		return "HINT_DIVISION"
 	case opcode.MEMORY_READ:
 		return "MEMORY_READ"
-	case opcode.UNCONDITIONAL_MEMORY_READ:
-		return "UNCONDITIONAL_MEMORY_READ"
 	case opcode.MEMORY_WRITE:
 		return "MEMORY_WRITE"
 	case opcode.RETURN:
