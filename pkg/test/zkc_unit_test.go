@@ -241,6 +241,16 @@ func Test_ZkcUnit_Basic_48(t *testing.T) {
 }
 
 // ===================================================================
+// Memory Tests
+// ===================================================================
+
+func Test_ZkcUnit_Memory_01(t *testing.T) {
+	// Multi-address-lane RAM write/read round-trip (regression for the
+	// hard-coded write arity in parseLVal).
+	checkZkcUnit(t, "zkc/unit/memory_01", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
 // If-Else-If Tests
 // ===================================================================
 

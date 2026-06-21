@@ -2028,7 +2028,7 @@ func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
 		lv = lval.NewArray(env.LookupVariable(reg), index[0])
 	} else {
 		// construct name symbol
-		var name = symbol.NewUnresolved(reg, symbol.WRITEABLE_MEMORY, 1)
+		var name = symbol.NewUnresolved(reg, symbol.WRITEABLE_MEMORY, uint(len(index)))
 		// Done
 		lv = lval.NewMemAccess(name, index)
 	}
