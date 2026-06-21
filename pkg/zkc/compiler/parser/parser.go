@@ -2026,23 +2026,23 @@ func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
 	case !lSquareFollows && !isDeclaredVariable:
 		return lv, p.syntaxErrors(lookahead, "unknown variable")
 	default:
-		// '[' was consumed: parse the index list up to ']', then decide whether
+		// '[' was consumed: parse the arguments list up to ']', then decide whether
 		// this is an array access (declared variable) or a memory access (not).
-		var index []Expr
+		var arguments []Expr
 		//
-		if index, errs = p.parseExprList(RSQUARE, env); len(errs) > 0 {
+		if arguments, errs = p.parseExprList(RSQUARE, env); len(errs) > 0 {
 			return lv, errs
 		} else if isDeclaredVariable {
-			if len(index) != 1 {
+			if len(arguments) != 1 {
 				return lv, p.syntaxErrors(lookahead, "incorrect number of array access arguments")
 			}
 
-			lv = lval.NewArray(env.LookupVariable(reg), index[0])
+			lv = lval.NewArray(env.LookupVariable(reg), arguments[0])
 		} else {
 			// construct name symbol
-			var name = symbol.NewUnresolved(reg, symbol.WRITEABLE_MEMORY, 1)
+			var name = symbol.NewUnresolved(reg, symbol.WRITEABLE_MEMORY, uint(len(arguments)))
 			// Done
-			lv = lval.NewMemAccess(name, index)
+			lv = lval.NewMemAccess(name, arguments)
 		}
 	}
 	// update source mapping
