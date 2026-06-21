@@ -1989,19 +1989,26 @@ func (p *Parser) parseLVals(env Environment) ([]LVal, []source.SyntaxError) {
 
 func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
 	var (
-		lv         LVal
-		start      = p.index
-		lookahead  = p.lookahead()
-		reg, errs  = p.parseIdentifier()
-		isDeclared = env.IsDeclaredVariable(reg)
-		index      []Expr
+		lv        LVal
+		start     = p.index
+		lookahead = p.lookahead()
+		reg, errs = p.parseIdentifier()
 	)
 	//
 	if len(errs) > 0 {
 		return lv, errs
-	} else if isDeclared && !p.match(LSQUARE) {
+	}
+	//
+	var (
+		isDeclaredVariable = env.IsDeclaredVariable(reg)
+		lSquareFollows     = p.match(LSQUARE)
+	)
+	//
+	switch {
+	case !lSquareFollows && isDeclaredVariable:
+		// Plain register, possibly the head of a "::" destructuring chain.
 		var vars = []variable.Id{env.LookupVariable(reg)}
-		// Look for destructuring lvals
+		//
 		for p.match(COLONCOLON) {
 			// save lookahead for error reporting
 			lookahead = p.lookahead()
@@ -2016,21 +2023,27 @@ func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
 		}
 		//
 		lv = lval.NewVariable[symbol.Unresolved](vars...)
-	} else if !isDeclared && !p.match(LSQUARE) {
+	case !lSquareFollows && !isDeclaredVariable:
 		return lv, p.syntaxErrors(lookahead, "unknown variable")
-	} else if index, errs = p.parseExprList(RSQUARE, env); len(errs) > 0 {
-		return lv, errs
-	} else if isDeclared {
-		if len(index) != 1 {
-			return lv, p.syntaxErrors(lookahead, "incorrect number of array access arguments")
-		}
+	default:
+		// '[' was consumed: parse the index list up to ']', then decide whether
+		// this is an array access (declared variable) or a memory access (not).
+		var index []Expr
+		//
+		if index, errs = p.parseExprList(RSQUARE, env); len(errs) > 0 {
+			return lv, errs
+		} else if isDeclaredVariable {
+			if len(index) != 1 {
+				return lv, p.syntaxErrors(lookahead, "incorrect number of array access arguments")
+			}
 
-		lv = lval.NewArray(env.LookupVariable(reg), index[0])
-	} else {
-		// construct name symbol
-		var name = symbol.NewUnresolved(reg, symbol.WRITEABLE_MEMORY, 1)
-		// Done
-		lv = lval.NewMemAccess(name, index)
+			lv = lval.NewArray(env.LookupVariable(reg), index[0])
+		} else {
+			// construct name symbol
+			var name = symbol.NewUnresolved(reg, symbol.WRITEABLE_MEMORY, 1)
+			// Done
+			lv = lval.NewMemAccess(name, index)
+		}
 	}
 	// update source mapping
 	p.srcmap.Put(lv, p.spanOf(start, p.index-1))
