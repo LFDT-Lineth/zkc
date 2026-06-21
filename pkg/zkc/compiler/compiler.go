@@ -29,48 +29,48 @@ import (
 // of (linked) declarations.  This includes performing various checks on the
 // files, such as type checking, etc.  Switch statements are lowered to a
 // multiway-skip dispatch.
-func Compile(field field.Config, files ...source.File,
+func Compile(field field.Config, sourceFiles ...source.File,
 ) (ast.Program, source.Maps[any], []source.SyntaxError) {
 	//
 	var (
-		items   []parser.UnlinkedSourceFile
-		errors  []source.SyntaxError
-		program ast.Program
-		srcmaps source.Maps[any]
-		visited map[string]bool = make(map[string]bool)
+		parsedSourceFiles []parser.UnlinkedSourceFile
+		errors            []source.SyntaxError
+		program           ast.Program
+		srcmaps           source.Maps[any]
+		knownSourceFiles  map[string]bool = make(map[string]bool)
 	)
-	// Initialise visited map with all top-level files
-	for _, sf := range files {
-		visited[canonicalPath(sf.Filename())] = true
+	// Initialise accounted for source files map with all top-level files
+	for _, sf := range sourceFiles {
+		knownSourceFiles[canonicalPath(sf.Filename())] = true
 	}
-	// Parse each file in turn.
-	for len(files) > 0 {
+	// recursively parse all files required to compile sourceFiles:
+	// the files themselves as well as the recursive closure of all
+	// included files
+	for len(sourceFiles) > 0 {
 		var (
-			asm      = files[0]
-			errs     []source.SyntaxError
-			included []source.File
-			cs       parser.UnlinkedSourceFile
+			sourceFile         = sourceFiles[0]
+			errs               []source.SyntaxError
+			furtherSourceFiles []source.File
+			parsedSourceFile   parser.UnlinkedSourceFile
 		)
 		//
-		files = files[1:]
+		sourceFiles = sourceFiles[1:]
 		// Parse source file; keep partial results even on error.
-		cs, errs = parser.Parse(&asm)
-		if len(cs.Components) > 0 {
-			items = append(items, cs)
+		parsedSourceFile, errs = parser.Parse(&sourceFile)
+		if len(parsedSourceFile.Declarations) > 0 {
+			parsedSourceFiles = append(parsedSourceFiles, parsedSourceFile)
 
 			var inclErrs []source.SyntaxError
 
-			included, inclErrs = readIncludedFiles(asm, cs, visited)
+			furtherSourceFiles, inclErrs = scanForFurtherSourceFiles(sourceFile, parsedSourceFile, knownSourceFiles)
 			errs = append(errs, inclErrs...)
-			files = append(files, included...)
+			sourceFiles = append(sourceFiles, furtherSourceFiles...)
 		}
 
 		errors = append(errors, errs...)
 	}
-	// Link assembly and resolve buses.
-	var linkErrs []source.SyntaxError
 	// Link assembly and resolve external accesses
-	program, srcmaps, linkErrs = Link(items...)
+	program, srcmaps, linkErrs := Link(parsedSourceFiles...)
 	//
 	errors = append(errors, linkErrs...)
 	// Flatten block-level constructs (if/else, switch, while, for) into flat if-goto form
@@ -97,16 +97,25 @@ func canonicalPath(filename string) string {
 	return filepath.Clean(filename)
 }
 
-func readIncludedFiles(file source.File, item parser.UnlinkedSourceFile,
-	visited map[string]bool) ([]source.File, []source.SyntaxError) {
+// scanForFurtherSourceFiles goes over the include declarations of a parsed source file and
+// determines which include declarations are genuinely new vs already known / accounted for.
+// It then returns the list of new source files that must be added to the compilation process.
+//
+// Since include declarations provide relative paths, the original sourceFile is provided
+// in order to determine canonical (absolute) paths.
+//
+// Note: scanForFurtherSourceFiles implicitly updates 'sourceFileAccounting' with every new
+// source file that it adds to its furtherSourceFiles output
+func scanForFurtherSourceFiles(sourceFile source.File, parsedSourceFile parser.UnlinkedSourceFile,
+	knownSourceFiles map[string]bool) ([]source.File, []source.SyntaxError) {
 	//
 	var (
-		dir    = filepath.Dir(file.Filename())
-		files  []source.File
-		errors []source.SyntaxError
+		dir                = filepath.Dir(sourceFile.Filename())
+		furtherSourceFiles []source.File
+		errors             []source.SyntaxError
 	)
 	//
-	for _, d := range item.Components {
+	for _, d := range parsedSourceFile.Declarations {
 		if inc, ok := d.(*decl.Include[symbol.Unresolved]); ok {
 			var (
 				pattern      = filepath.Join(dir, inc.Pattern())
@@ -114,11 +123,11 @@ func readIncludedFiles(file source.File, item parser.UnlinkedSourceFile,
 			)
 			//
 			if err != nil {
-				errors = append(errors, *item.SourceMap.SyntaxError(inc, err.Error()))
+				errors = append(errors, *parsedSourceFile.SourceMap.SyntaxError(inc, err.Error()))
 				continue
 			} else if len(matches) == 0 {
-				// failed to match anythuing
-				errors = append(errors, *item.SourceMap.SyntaxError(inc, "failed to match anything"))
+				// failed to match anything
+				errors = append(errors, *parsedSourceFile.SourceMap.SyntaxError(inc, "failed to match anything"))
 				continue
 			}
 			//
@@ -130,20 +139,20 @@ func readIncludedFiles(file source.File, item parser.UnlinkedSourceFile,
 				// parse it twice, yielding spurious duplicate-declaration errors.
 				key := canonicalPath(filename)
 				// Check filename not already parsed
-				if seen, ok := visited[key]; seen && ok {
+				if seen, ok := knownSourceFiles[key]; seen && ok {
 					// file already loaded, therefore ignore.
 				} else if fs, err := source.ReadFiles(filename); err == nil {
-					files = append(files, fs...)
+					furtherSourceFiles = append(furtherSourceFiles, fs...)
 				} else {
-					errors = append(errors, *item.SourceMap.SyntaxError(inc, err.Error()))
+					errors = append(errors, *parsedSourceFile.SourceMap.SyntaxError(inc, err.Error()))
 				}
 				// Record that we've seen this file now.
-				visited[key] = true
+				knownSourceFiles[key] = true
 			}
 		}
 	}
 	//
-	return files, errors
+	return furtherSourceFiles, errors
 }
 
 // Validate checks that a given program is well-formed.  For example, an

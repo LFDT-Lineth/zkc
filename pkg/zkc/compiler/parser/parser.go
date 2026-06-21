@@ -52,8 +52,8 @@ type VariableDescriptor = variable.Descriptor[symbol.Unresolved]
 // fail with an error at link time due to an unresolvable reference to an
 // external component (e.g. function, RAM, ROM, etc).
 type UnlinkedSourceFile struct {
-	// Components making up this assembly item.
-	Components []decl.Unresolved
+	// (top-level) Declarations making up this assembly item.
+	Declarations []decl.Unresolved
 	// Mapping of instructions back to the source file.
 	SourceMap source.Map[any]
 }
@@ -119,7 +119,7 @@ func (p *Parser) Parse() (UnlinkedSourceFile, []source.SyntaxError) {
 			break
 		}
 		//
-		item.Components = append(item.Components, components...)
+		item.Declarations = append(item.Declarations, components...)
 	}
 	// Copy over source map
 	item.SourceMap = *p.srcmap

@@ -46,7 +46,7 @@ func Link(files ...parser.UnlinkedSourceFile) (ast.Program, source.Maps[any], []
 	for _, item := range files {
 		linker.Join(item.SourceMap)
 		//
-		for _, declaration := range item.Components {
+		for _, declaration := range item.Declarations {
 			// Check whether component of same name already exists.
 			if linker.Exists(declaration.Name()) {
 				// Indicates component of same name already exists.
