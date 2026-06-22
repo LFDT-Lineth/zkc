@@ -64,7 +64,7 @@ func (p *CallStack[W, I]) Enter(id uint, fn *function.Function[I]) error {
 		pc         = ProgramCounter{}
 		caller     = p.Frame(0)
 		insn   any = caller.Instruction(caller.PC())
-		call       = insn.(*instruction.Call)
+		call       = asCall(insn)
 	)
 	// Allocate space for function
 	p.values.Alloc(fn.Width())
@@ -123,13 +123,27 @@ func (p *CallStack[W, I]) Leave() (err error) {
 		var (
 			caller     = p.Frame(0)
 			insn   any = caller.Instruction(caller.PC())
-			call       = insn.(*instruction.Call)
+			call       = asCall(insn)
 		)
 		// Copy and check
 		return frameCopyFrom(caller.values, calleeReturns, call.Returns, caller.fn.Registers())
 	}
 	//
 	return nil
+}
+
+// asCall returns the call instruction driving a frame enter/leave, which may be
+// a regular Call or an UnconditionalCall (the latter executes identically — only
+// its constraint lowering differs).
+func asCall(insn any) *instruction.Call {
+	switch c := insn.(type) {
+	case *instruction.Call:
+		return c
+	case *instruction.UnconditionalCall:
+		return &instruction.Call{OpIo: c.OpIo}
+	default:
+		panic(fmt.Sprintf("expected call instruction, got %T", insn))
+	}
 }
 
 // IsEmpty determines whether or not this stack is empty.

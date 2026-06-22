@@ -38,6 +38,12 @@ func (p *Not) String(mapping SystemMap) string {
 	return fmt.Sprintf("not %s = ~%s [u%d]", target, source, p.Bitwidth)
 }
 
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Not) Clone() Patched {
+	var c = *p
+	return &c
+}
+
 // Codes implementation for Bytecode interface.
 func (p *Not) Codes(_ uint32) []uint32 {
 	return encodeNot(p.Target, p.Source, p.Bitwidth)
@@ -119,6 +125,12 @@ func (p *Bitwise) String(mapping SystemMap) string {
 	}
 	//
 	return fmt.Sprintf("%s %s = %s %s %s", prefix, target, left, bitwiseSymbol(p.Opcode), right)
+}
+
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Bitwise) Clone() Patched {
+	var c = *p
+	return &c
 }
 
 // Codes implementation for Bytecode interface.
@@ -207,6 +219,12 @@ func (p *Shift) String(mapping SystemMap) string {
 	}
 	//
 	return fmt.Sprintf("%s = %s %s %s [u%d]", target, source, symbol, amount, p.Bitwidth)
+}
+
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Shift) Clone() Patched {
+	var c = *p
+	return &c
 }
 
 // Codes implementation for Bytecode interface.

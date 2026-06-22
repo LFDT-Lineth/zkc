@@ -42,6 +42,12 @@ func (p *CheckCast) String(mapping SystemMap) string {
 	return fmt.Sprintf("check %s:u%d", registerToString(p.Target, mapping), p.Bitwidth)
 }
 
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *CheckCast) Clone() Patched {
+	var c = *p
+	return &c
+}
+
 // Codes implementation for Bytecode interface
 func (p *CheckCast) Codes(_ uint32) []uint32 {
 	var (

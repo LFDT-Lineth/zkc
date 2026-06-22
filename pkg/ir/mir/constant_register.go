@@ -35,7 +35,7 @@ func InitialiseConstantRegisters[F Element[F]](offset uint, modules []Module[F])
 		// Consider each register in turn
 		for r, reg := range mod.Registers() {
 			var rid = register.NewId(uint(r))
-			if reg.IsConst() {
+			if reg.IsU1Const() {
 				initialiseConstantRegister(rid, mid, mod)
 			}
 		}

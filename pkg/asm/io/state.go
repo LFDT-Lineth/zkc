@@ -111,7 +111,7 @@ func InitialState(inputs []big.Int, registers []register.Register, buses []Bus, 
 	}
 	// Initialise constant registers
 	for i, reg := range registers {
-		if reg.IsConst() {
+		if reg.IsU1Const() {
 			state[i] = *reg.Padding()
 		}
 	}

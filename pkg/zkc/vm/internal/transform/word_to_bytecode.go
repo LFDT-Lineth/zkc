@@ -82,6 +82,8 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruc
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
 		p.compileCall(insn.(*instruction.Call), f)
+	case opcode.UNCONDITIONAL_CALL:
+		p.compileCall(&instruction.Call{OpIo: insn.(*instruction.UnconditionalCall).OpIo}, f)
 	case opcode.DEBUG:
 		p.encoder.Add(bytecode.NewDebug(insn.(*instruction.Debug).Chunks))
 	case opcode.FAIL:
@@ -206,7 +208,7 @@ func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call, f *WordFunctio
 	// receiving parameter registers, matching the slow machine (frameCopyTo).
 	p.addOutgoingCheckCasts(insn.Arguments, callee.Inputs(), f)
 	//
-	p.encoder.Add(bytecode.CallFun(index, uint16(frameWidth), insn.Arguments, insn.Returns))
+	p.encoder.Add(bytecode.CallFun(index, false, uint16(frameWidth), insn.Arguments, insn.Returns))
 	// Check whether cast checks are required for returns wider than their
 	// receiving target registers, matching the slow machine (frameCopyFrom).
 	p.addIncomingCheckCasts(callee.Outputs(), insn.Returns, f)

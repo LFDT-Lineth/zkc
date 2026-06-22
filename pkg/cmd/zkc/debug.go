@@ -59,6 +59,8 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	artifacts := build.Build(args[1:]...)
 	wm := artifacts.wir.Unwrap()
+	// Filter out unnecessary inputs
+	input = filterInputsOnly(&wm, input)
 	// Decode inputs against the compiled machine.
 	inputs, errs := vm.DecodeInputs(&wm, input)
 	if len(errs) == 0 {

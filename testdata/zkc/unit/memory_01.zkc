@@ -1,13 +1,13 @@
-// regression tests for multilane ram assignments
+// regression tests for multi-lane RAM assignments
 //
-// The parseLVal function handles the left hand side of an assigment
+// The parseLVal function handles the left-hand side of an assignment
 // being an assignment to a read-write memory. It has a line:
 //
 // var name = symbol.NewUnresolved(reg, symbol.WRITEABLE_MEMORY, XXX)
 //
-// initially we had XXX = 1; the fix set XXX to uint(len(arguments))
+// Initially, XXX was 1; the fix sets XXX to uint(len(index)).
 // The initial code rejected `ram[a,b] = ...` at linking even though
-// the read `ram[a,b]` was accepted; the fix uses uint(len(arguments))).
+// the read `ram[a,b]` was accepted; the fix uses uint(len(index)).
 pub input data(address:u8) -> (byte:u8)
 memory ram(a:u8, b:u8) -> (byte:u8)
 
@@ -15,13 +15,13 @@ fn main<ram>() {
     var p:u8 = data[0]
     var q:u8 = data[1]
     // multi-lane writes (the previously-rejected form)
-    ram[1,2] = p
-    ram[2,1] = q
+    ram[1, 2] = p
+    ram[2, 1] = q
     // multi-lane reads back; both lanes must matter
-    if ram[1,2] != p {
+    if ram[1, 2] != p {
         fail
     }
-    if ram[2,1] != q {
+    if ram[2, 1] != q {
         fail
     }
 }

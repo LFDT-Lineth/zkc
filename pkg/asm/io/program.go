@@ -91,7 +91,7 @@ func initialState(registers []Register, buses []Bus, iomap Map) State {
 	)
 	// Initialise arguments
 	for i, reg := range registers {
-		if reg.IsInput() || reg.IsConst() {
+		if reg.IsInput() || reg.IsU1Const() {
 			var ith big.Int
 			// Clone big int.
 			ith.SetBytes(reg.Padding().Bytes())

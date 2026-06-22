@@ -13,6 +13,7 @@
 package bytecode
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -42,6 +43,11 @@ func (p *Cat) String(mapping SystemMap) string {
 // Codes implementation for Bytecode interface.
 func (p *Cat) Codes(_ uint32) []uint32 {
 	return encodeCat(p.Targets, p.Sources)
+}
+
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Cat) Clone() Patched {
+	return &Cat{slices.Clone(p.Targets), slices.Clone(p.Sources)}
 }
 
 func decodeCat[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {

@@ -15,6 +15,7 @@ package bytecode
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -24,6 +25,8 @@ import (
 type Call struct {
 	// address of target function
 	Target Address
+	// CheckPoint indicates whether this is a checkpointing call (or not).
+	CheckPoint bool
 	// FrameWidth of target function
 	FrameWidth uint16
 	// Arguments are caller-frame registers copied into callee inputs.
@@ -47,30 +50,36 @@ func (p *Call) String(mapping SystemMap) string {
 	return builder.String()
 }
 
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Call) Clone() Patched {
+	return &Call{p.Target, p.CheckPoint, p.FrameWidth, slices.Clone(p.Arguments), slices.Clone(p.Returns)}
+}
+
 // Codes implementation for Bytecode interface.
 func (p *Call) Codes(pc uint32) (codes []uint32) {
 	// Encode enter
-	codes = append(codes, encodeEnter_n(pc, p.Target, p.FrameWidth, p.Arguments)...)
+	codes = append(codes, encodeEnter_n(pc, p.Target, p.CheckPoint, p.FrameWidth, p.Arguments)...)
 	// Encode leave
 	return append(codes, encodeLeave_n(p.Returns)...)
 }
 
 // Patch implementation for Patchable interface
 func (p *Call) Patch(labels []Address) Patched {
-	return &Call{labels[p.Target], p.FrameWidth, p.Arguments, p.Returns}
+	return &Call{labels[p.Target], p.CheckPoint, p.FrameWidth, p.Arguments, p.Returns}
 }
 
 // MaxWidth implementation for Patchable interface: the width of a call is
 // independent of where its target resolves (the relative offset always
 // occupies the same field), so it is computed against a dummy nearby target.
 func (p *Call) MaxWidth() uint32 {
-	var enter = encodeEnter_n(0, 1, p.FrameWidth, p.Arguments)
+	var enter = encodeEnter_n(0, 1, p.CheckPoint, p.FrameWidth, p.Arguments)
 	//
 	return uint32(len(enter) + len(encodeLeave_n(p.Returns)))
 }
 
 func decodeCall[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
 	var (
+		checkpoint = (codes[pc] & OPCODE_MASK) == ENTERCP_n
 		// Decode ENTER
 		width, target, argsIter, n = decodeEnter_n(pc, codes)
 		// Decode LEAVE
@@ -80,7 +89,7 @@ func decodeCall[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32)
 		rets []Reg = OpIterToArray[uint16](retsIter)
 	)
 	// //
-	return &Call{target, width, args, rets}, n + m
+	return &Call{target, checkpoint, width, args, rets}, n + m
 }
 
 // NOTE: a call bytecode compiles down into a pair of instructions, ENTER/LEAVE.
@@ -106,7 +115,7 @@ func decodeCall[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32)
 // offset to the target.
 // ============================================================================
 
-func encodeEnter_n(pc, target uint32, width uint16, args []Reg) []uint32 {
+func encodeEnter_n(pc, target uint32, checkpoint bool, width uint16, args []Reg) []uint32 {
 	if width > math.MaxUint8 || len(args) > math.MaxUint8 {
 		panic("wide call instructions not supported")
 	}
@@ -114,14 +123,18 @@ func encodeEnter_n(pc, target uint32, width uint16, args []Reg) []uint32 {
 	var (
 		roff, ok = getRelativeOffset(pc, target, 16)
 		_width   = uint32(width) << 8
-		codes    = []uint32{roff<<16 | _width | ENTER_n}
 		bytes    = []uint8{uint8(len(args))}
+		opcode   = ENTER_n
 	)
 	// sanity check
 	if !ok {
 		panic("branch target overflow")
+	} else if checkpoint {
+		opcode = ENTERCP_n
 	}
-	//
+	// Determine full opcode
+	codes := []uint32{roff<<16 | _width | opcode}
+	// Generate register bytes
 	bytes = append(bytes, regsAsBytes(args)...)
 	//
 	return append(codes, packRegsIntoCodes(bytes)...)
