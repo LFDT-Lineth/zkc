@@ -20,6 +20,27 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 )
 
+// globalEnvironment may contain identical variable descriptors in
+// its variables field; for instance a given function in a zkc file
+// may legally contain the following two for loops
+//
+//	for i :u8 = 0; i < 2; i = i + 1 { ... }
+//	for i :u8 = 4; i < 8; i = i + 2 { ... }
+//
+// and not throw a compilation error. The following will, however,
+// break. This is due to visibility.
+//
+//	for i :u8 = 0; i < 2; i = i + 1 {                  // 1st i
+//		for i :u8 = 4; i < 8; i = i + 2 { ... }    // 2nd i
+//	}
+//
+// references to variables do not happen in terms of names or data type
+// but in terms of their index in env.globalEnvironment. See for
+// instance
+//
+//	rid := env.LookupVariable(name)
+//
+// in parseAccessExpr
 type globalEnvironment struct {
 	effects []*symbol.Unresolved
 	// Variables identifies set of declared variables.

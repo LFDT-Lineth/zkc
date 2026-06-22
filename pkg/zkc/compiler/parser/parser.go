@@ -1515,6 +1515,15 @@ func (p *Parser) parseVar(env Environment) ([]stmt.Unresolved, []source.SyntaxEr
 		return nil, errs
 	}
 	// Parse one or more name:type pairs (comma-separated)
+	// Note: malformed variable declarations like so
+	//
+	//	var , x :u32 = 0
+	//
+	// get rejected: the first condition (len(names) == 0) triggers
+	// after consuming KEYWORD_VAR which short circuits the condition
+	// computation in go and prevents p.match(COMMA) from executing.
+	// The comma therefore doesn't get consumed and parsing would fail
+	// at parseIdentifier()
 	for len(names) == 0 || p.match(COMMA) {
 		// Store lookahead for error reporting
 		lookahead := p.lookahead()
