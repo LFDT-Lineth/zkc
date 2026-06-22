@@ -146,6 +146,9 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 	// Base instructions translate directly as is.
 	case opcode.CALL:
 		return wi.(*instruction.Call)
+	case opcode.UNCONDITIONAL_CALL:
+		// Preserve the type so the constraint translator can distinguish it.
+		return wi.(*instruction.UnconditionalCall)
 	case opcode.DEBUG:
 		return wi.(*instruction.Debug)
 	case opcode.FAIL:

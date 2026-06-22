@@ -40,6 +40,12 @@ func (g *generator) emitMemRead(c *code, fn *wordFunction, x *instruction.MemRea
 		return fmt.Errorf("gogen: MEMORY_READ from write-once memory %q", mi.name)
 	}
 
+	// A data-less read is a pure (range-check) lookup with no runtime effect,
+	// mirroring executeMemRead's empty-target loop; emit nothing.
+	if len(x.Data()) == 0 {
+		return nil
+	}
+
 	start, err := g.addrExpr(fn, mi, x.Address())
 	if err != nil {
 		return err

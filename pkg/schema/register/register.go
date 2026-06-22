@@ -121,11 +121,11 @@ func (p *Register) IsOutput() bool {
 // that "zero" registers are included in this, since they are neither input nor
 // output registers.
 func (p *Register) IsComputed() bool {
-	return p.kind == COMPUTED_REGISTER || p.IsConst()
+	return p.kind == COMPUTED_REGISTER || p.IsU1Const()
 }
 
-// IsConst determines whether or not this is a constant "zero" or "one" register
-func (p *Register) IsConst() bool {
+// IsU1Const determines whether or not this is a constant "zero" or "one" register
+func (p *Register) IsU1Const() bool {
 	return p.kind == ZERO_REGISTER || p.kind == ONE_REGISTER
 }
 

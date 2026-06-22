@@ -39,6 +39,21 @@ func ParseJsonInputFile(bytes []byte) (map[string][]byte, error) {
 			//
 			if strings.HasPrefix(w, "0x") {
 				data[k], err = hex.DecodeString(w[2:])
+			} else if strings.HasPrefix(w, "0b") {
+				bits := w[2:]
+				//
+				var val big.Int
+				if _, ok := val.SetString(bits, 2); !ok {
+					return nil, fmt.Errorf("malformed numeric literal \"%s\"", w)
+				}
+				// Pack the bits MSB-first, left-aligned within whole bytes (the
+				// order DecodeBytes expects).  The digit count therefore fixes the
+				// bit width, so e.g. a u12 value must be written with 12 digits.
+				nbytes := (len(bits) + 7) / 8
+				val.Lsh(&val, uint(nbytes*8-len(bits)))
+				buf := make([]byte, nbytes)
+				val.FillBytes(buf)
+				data[k] = buf
 			} else if w != "" {
 				var val big.Int
 				if _, ok := val.SetString(w, 10); !ok {

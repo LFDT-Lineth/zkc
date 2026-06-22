@@ -141,7 +141,7 @@ func splitInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec VectorInst
 		case opcode.INT_MUL:
 			insns = append(insns, splitMultiplication(limbsMap, c)...)
 		default:
-			panic("unsupported instruction")
+			panic(fmt.Sprintf("unsupported instruction opcode (0x%x)", c.OpCode()))
 		}
 	}
 

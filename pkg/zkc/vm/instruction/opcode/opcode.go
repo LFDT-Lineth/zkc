@@ -22,6 +22,8 @@ const (
 
 	// CALL instruction
 	CALL OpCode = iota
+	// UNCONDITIONAL_CALL instruction
+	UNCONDITIONAL_CALL
 	// FAIL instruction
 	FAIL
 	// JUMP (unconditional) instruction

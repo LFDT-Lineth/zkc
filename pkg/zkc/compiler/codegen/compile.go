@@ -165,6 +165,8 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		}
 	}
 
+	// Stop here if any errors were detected during compilation of the declarations.
+	// There shouldn't be any compilation errors after this point.
 	if len(errors) > 0 {
 		return nil, errors
 	}
@@ -194,7 +196,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		modules = vm.OptimizeDivisions[vm.Uint](modules)
 	}
 
-	// Vectorize modules (if no errors)
+	// Vectorize modules
 	if p.config.vectorize {
 		Vectorize(modules, p.srcmaps)
 		// Factor branch conditions into a single bit register holding the condition result.
@@ -205,12 +207,24 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			modules = vm.FactorSkipConditions[vm.Uint](modules)
 		}
 	}
-	//
+
 	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)
-	// Apply register splitting (for now)
+	// Apply register splitting
 	if p.config.splitting {
 		wm = vm.SplitRegisters(p.config.field, wm)
 	}
+
+	// Add range constraints.
+	// Must be after register splitting happens to capture all the new registers created by splitting.
+	// Irrelevant in fast mode, since range proofs are not generated in that mode.
+	// Note: No columns should be added after this step without extra care.
+
+	// TODO: do range constraints only if splitting is done. But almost no tests on the CI with splitting flag so ...
+	//if p.config.splitting && !p.config.fastMode {
+	if !p.config.fastMode {
+		wm = vm.AddRangeConstraints(p.config.field, wm)
+	}
+
 	// Construct machine
 	return wm, errors
 }
