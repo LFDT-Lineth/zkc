@@ -33,11 +33,11 @@ func Compile(field field.Config, sourceFiles ...source.File,
 ) (ast.Program, source.Maps[any], []source.SyntaxError) {
 	//
 	var (
-		parsedSourceFiles []parser.UnlinkedSourceFile
-		errors            []source.SyntaxError
-		program           ast.Program
-		srcmaps           source.Maps[any]
-		knownSourceFiles  map[string]bool = make(map[string]bool)
+		unlinkedSourceFiles []parser.UnlinkedSourceFile
+		errors              []source.SyntaxError
+		program             ast.Program
+		srcmaps             source.Maps[any]
+		knownSourceFiles    map[string]bool = make(map[string]bool)
 	)
 	// Initialise accounted for source files map with all top-level files
 	for _, sf := range sourceFiles {
@@ -51,18 +51,18 @@ func Compile(field field.Config, sourceFiles ...source.File,
 			sourceFile         = sourceFiles[0]
 			errs               []source.SyntaxError
 			furtherSourceFiles []source.File
-			parsedSourceFile   parser.UnlinkedSourceFile
+			unlinkedSourceFile parser.UnlinkedSourceFile
 		)
 		//
 		sourceFiles = sourceFiles[1:]
 		// Parse source file; keep partial results even on error.
-		parsedSourceFile, errs = parser.Parse(&sourceFile)
-		if len(parsedSourceFile.Declarations) > 0 {
-			parsedSourceFiles = append(parsedSourceFiles, parsedSourceFile)
+		unlinkedSourceFile, errs = parser.Parse(&sourceFile)
+		if len(unlinkedSourceFile.Declarations) > 0 {
+			unlinkedSourceFiles = append(unlinkedSourceFiles, unlinkedSourceFile)
 
 			var inclErrs []source.SyntaxError
 
-			furtherSourceFiles, inclErrs = scanForFurtherSourceFiles(sourceFile, parsedSourceFile, knownSourceFiles)
+			furtherSourceFiles, inclErrs = scanForFurtherSourceFiles(sourceFile, unlinkedSourceFile, knownSourceFiles)
 			errs = append(errs, inclErrs...)
 			sourceFiles = append(sourceFiles, furtherSourceFiles...)
 		}
@@ -70,7 +70,7 @@ func Compile(field field.Config, sourceFiles ...source.File,
 		errors = append(errors, errs...)
 	}
 	// Link assembly and resolve external accesses
-	program, srcmaps, linkErrs := Link(parsedSourceFiles...)
+	program, srcmaps, linkErrs := Link(unlinkedSourceFiles...)
 	//
 	errors = append(errors, linkErrs...)
 	// Flatten block-level constructs (if/else, switch, while, for) into flat if-goto form
