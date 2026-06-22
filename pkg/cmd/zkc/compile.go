@@ -102,7 +102,7 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig[F], a
 }
 
 func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F], showStatic bool) {
-	// Abstract Sytnax Tree
+	// Abstract Syntax Tree
 	if artifacts.ast.HasValue() {
 		writeAbstractSyntaxTree(artifacts.ast.Unwrap())
 	}
