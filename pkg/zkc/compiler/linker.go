@@ -71,7 +71,6 @@ func Link(files ...parser.UnlinkedSourceFile) (ast.Program, source.Maps[any], []
 // Linker packages together the various bits of information required for linking
 // the assembly files.
 type Linker struct {
-	busmap       map[string]symbol.Resolved
 	declarations []decl.Unresolved
 	srcmap       source.Maps[any]
 	names        map[string]bool
@@ -80,7 +79,6 @@ type Linker struct {
 // NewLinker constructs a new linker
 func NewLinker() *Linker {
 	return &Linker{
-		busmap:       make(map[string]symbol.Resolved),
 		declarations: nil,
 		srcmap:       *source.NewSourceMaps[any](),
 		names:        make(map[string]bool),
@@ -106,7 +104,6 @@ func (p *Linker) Register(declaration decl.Unresolved) {
 		// Record the name, allocate its bus entry (name -> resolved index), and
 		// keep the declaration for the later resolution pass.
 		p.names[declaration.Name()] = true
-		p.busmap[declaration.Name()] = symbol.Resolved{Index: uint(len(p.busmap))}
 		p.declarations = append(p.declarations, declaration)
 	}
 }
