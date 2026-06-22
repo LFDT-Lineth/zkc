@@ -283,7 +283,7 @@ func (p *Parser) parseConstant() ([]decl.Unresolved, []source.SyntaxError) {
 	}
 	//
 	component := decl.NewConstant[symbol.Unresolved](name, datatype, constExpr)
-	p.srcmap.Put(component, p.spanOf(start, end-1))
+	p.srcmap.Put(component, p.spanOf(start, end))
 	consts = append(consts, component)
 	// Parse additional comma-separated constants on the same line.
 	for p.match(COMMA) {
@@ -306,7 +306,7 @@ func (p *Parser) parseConstant() ([]decl.Unresolved, []source.SyntaxError) {
 		}
 
 		component = decl.NewConstant[symbol.Unresolved](name, datatype, constExpr)
-		p.srcmap.Put(component, p.spanOf(start, end-1))
+		p.srcmap.Put(component, p.spanOf(start, end))
 		consts = append(consts, component)
 	}
 	//
@@ -385,7 +385,7 @@ func (p *Parser) parseFunction() (decl.Unresolved, []source.SyntaxError) {
 	// Construct function
 	fn := decl.NewFunction(name, env.Effects(), env.Variables(), code)
 	//
-	p.srcmap.Put(fn, p.spanOf(start, end-1))
+	p.srcmap.Put(fn, p.spanOf(start, end))
 	// Done
 	return fn, nil
 }
@@ -531,7 +531,7 @@ func (p *Parser) parseInputOutputMemory() (decl.Unresolved, []source.SyntaxError
 		mem = decl.NewStaticMemory[symbol.Unresolved](public, name, address, data, contents)
 	}
 	//
-	p.srcmap.Put(mem, p.spanOf(start, end-1))
+	p.srcmap.Put(mem, p.spanOf(start, end))
 	//
 	return mem, nil
 }
@@ -605,7 +605,7 @@ func (p *Parser) parseReadWriteMemory() (decl.Unresolved, []source.SyntaxError) 
 	// Done
 	mem := decl.NewRandomAccessMemory[symbol.Unresolved](name, address, data)
 	//
-	p.srcmap.Put(mem, p.spanOf(start, p.index-1))
+	p.srcmap.Put(mem, p.spanOf(start, p.index))
 	//
 	return mem, nil
 }
@@ -631,7 +631,7 @@ func (p *Parser) parseTypeAlias() (decl.Unresolved, []source.SyntaxError) {
 	end := p.index
 	component := decl.NewTypeAlias[symbol.Unresolved](name, datatype)
 	//
-	p.srcmap.Put(component, p.spanOf(start, end-1))
+	p.srcmap.Put(component, p.spanOf(start, end))
 	//
 	return component, errs
 }
@@ -707,18 +707,18 @@ func (p *Parser) parseType() (Type, []source.SyntaxError) {
 		default:
 			alias := symbol.NewUnresolved(name, symbol.TYPE_ALIAS, 0)
 			arrayType = data.NewAlias[symbol.Unresolved](alias)
-			p.srcmap.Put(arrayType, p.spanOf(start+1, p.index-1))
+			p.srcmap.Put(arrayType, p.spanOf(start+1, p.index))
 		}
 		//
 		lookahead := p.lookahead()
-		p.srcmap.Put(lookahead, p.spanOf(p.index, p.index))
+		p.srcmap.Put(lookahead, p.spanOfSingleToken(p.index))
 
 		if _, errs := p.expect(SEMICOLON); len(errs) != 0 {
 			return nil, p.srcmap.SyntaxErrors(lookahead, "expected semicolon to define array size")
 		}
 		//
 		lookahead = p.lookahead()
-		p.srcmap.Put(lookahead, p.spanOf(p.index, p.index))
+		p.srcmap.Put(lookahead, p.spanOfSingleToken(p.index))
 
 		size, errors := p.parseArraySize(lookahead)
 		if len(errors) > 0 {
@@ -730,7 +730,7 @@ func (p *Parser) parseType() (Type, []source.SyntaxError) {
 		}
 		//
 		fa := data.NewFixedArray[symbol.Unresolved](arrayType, size)
-		p.srcmap.Put(fa, p.spanOf(start, p.index-1))
+		p.srcmap.Put(fa, p.spanOf(start, p.index))
 
 		return fa, nil
 	case strings.HasPrefix(name, "u") && bwErr == nil:
@@ -740,7 +740,7 @@ func (p *Parser) parseType() (Type, []source.SyntaxError) {
 	default:
 		alias := data.NewAlias[symbol.Unresolved](symbol.NewUnresolved(name, symbol.TYPE_ALIAS, 0))
 		//
-		p.srcmap.Put(alias, p.spanOf(start, p.index-1))
+		p.srcmap.Put(alias, p.spanOf(start, p.index))
 		//
 		return alias, nil
 	}
@@ -867,7 +867,7 @@ func (p *Parser) parseStatement(env Environment,
 		// Check whether instruction already added to source map.  This can
 		// arise with recursive calls to parseStatement() (e.g. for blocks).
 		if !p.srcmap.Has(insn) {
-			p.srcmap.Put(insn, p.spanOf(start, p.index-1))
+			p.srcmap.Put(insn, p.spanOf(start, p.index))
 		}
 	}
 	//
@@ -1635,7 +1635,7 @@ func (p *Parser) parseExpr(env Environment) (Expr, []source.SyntaxError) {
 	}
 
 	result := expr.NewTernary[symbol.Unresolved](ex, ifTrue, ifFalse)
-	p.srcmap.Put(result, p.spanOf(start, p.index-1))
+	p.srcmap.Put(result, p.spanOf(start, p.index))
 
 	return result, nil
 }
@@ -1674,7 +1674,7 @@ func (p *Parser) parseLogicalExpr(env Environment) (Expr, []source.SyntaxError) 
 		arg = expr.NewLogicalOr(args...)
 	}
 	//
-	p.srcmap.Put(arg, p.spanOf(start, p.index-1))
+	p.srcmap.Put(arg, p.spanOf(start, p.index))
 	//
 	return arg, errs
 }
@@ -1748,7 +1748,7 @@ func (p *Parser) parseArithExpr(env Environment) (Expr, []source.SyntaxError) {
 		arg = expr.NewCmp(expr.GT, args[0], args[1])
 	}
 	//
-	p.srcmap.Put(arg, p.spanOf(start, p.index-1))
+	p.srcmap.Put(arg, p.spanOf(start, p.index))
 	//
 	if binary && len(args) != 2 {
 		return nil, p.srcmap.SyntaxErrors(arg, "invalid binary expression")
@@ -1781,7 +1781,7 @@ func (p *Parser) parseConcatExpr(env Environment) (Expr, []source.SyntaxError) {
 	// Bitwise concatenation
 	arg := expr.NewConcat(exprs...)
 	// Record span for this new expression
-	p.srcmap.Put(arg, p.spanOf(start, p.index-1))
+	p.srcmap.Put(arg, p.spanOf(start, p.index))
 	//
 	return arg, nil
 }
@@ -1837,7 +1837,7 @@ func (p *Parser) parseUnitExpr(env Environment) (Expr, []source.SyntaxError) {
 	}
 	//
 	if len(errors) == 0 && !p.srcmap.Has(nexpr) {
-		p.srcmap.Put(nexpr, p.spanOf(start, p.index-1))
+		p.srcmap.Put(nexpr, p.spanOf(start, p.index))
 	}
 	//
 	if len(errors) == 0 && p.match(KEYWORD_AS) {
@@ -1845,7 +1845,7 @@ func (p *Parser) parseUnitExpr(env Environment) (Expr, []source.SyntaxError) {
 		//
 		if castType, errors = p.parseType(); len(errors) == 0 {
 			cast := expr.NewCast(nexpr, castType)
-			p.srcmap.Put(cast, p.spanOf(start, p.index-1))
+			p.srcmap.Put(cast, p.spanOf(start, p.index))
 			nexpr = cast
 		}
 	}
@@ -1884,7 +1884,7 @@ func (p *Parser) parseTupleExpr(env Environment) (Expr, []source.SyntaxError) {
 	}
 	//
 	init := expr.NewTupleInitialiser(exprs...)
-	p.srcmap.Put(init, p.spanOf(start, p.index-1))
+	p.srcmap.Put(init, p.spanOf(start, p.index))
 	//
 	return init, nil
 }
@@ -2046,7 +2046,7 @@ func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
 		}
 	}
 	// update source mapping
-	p.srcmap.Put(lv, p.spanOf(start, p.index-1))
+	p.srcmap.Put(lv, p.spanOf(start, p.index))
 	//
 	return lv, nil
 }
@@ -2157,12 +2157,22 @@ func (p *Parser) follows(options ...uint) bool {
 	return slices.Contains(options, p.lookahead().Kind)
 }
 
-func (p *Parser) spanOf(firstToken, lastToken int) source.Span {
+// spanOf returns the byte span covering the half-open token range
+// [startToken, endToken) from the start of startToken up to (but not
+// including) endToken. This mirrors the half-open convention of source.Span.
+//
+// Note: the final token has index endToken-1
+func (p *Parser) spanOf(startToken, endToken int) source.Span {
 	//
-	start := p.tokens[firstToken].Span.Start()
-	end := p.tokens[lastToken].Span.End()
+	start := p.tokens[startToken].Span.Start()
+	end := p.tokens[endToken-1].Span.End()
 	//
 	return source.NewSpan(start, end)
+}
+
+// spanOfSingleToken returns the byte span of the single token at a given index.
+func (p *Parser) spanOfSingleToken(index int) source.Span {
+	return p.spanOf(index, index+1)
 }
 
 func (p *Parser) syntaxErrors(token lex.Token, msg string) []source.SyntaxError {
