@@ -107,7 +107,7 @@ func init() {
 	debugCmd.Flags().Bool("stats", false, "Print summary information")
 	debugCmd.Flags().BoolP("modules", "m", false, "show module stats")
 	debugCmd.Flags().Bool("spillage", false, "Print spillage information")
-	debugCmd.Flags().Bool("show-static", false, "Show static tables in the output")
+	debugCmd.Flags().Bool("show-static", false, "Show static tables when printing schemas")
 	debugCmd.Flags().Uint("textwidth", 130, "Set maximum textwidth to use")
 	debugCmd.Flags().Uint("sort", 0, "sort table column")
 }
