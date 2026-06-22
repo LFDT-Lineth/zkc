@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -25,6 +26,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -88,6 +90,13 @@ type Interpreter[W word.Word[W]] struct {
 	// (Large) paged random-access memories which may be freely read and
 	// written.
 	prams []memory.PagedRandomAccess[W]
+	// Optional callback invoked when a CHECKPOINT bytecode is executed, passed a
+	// snapshot of the current machine state (see CheckPoint).  Configured via
+	// the CheckPointer builder method; nil if no checkpointer has been set.
+	checkpointer func(checkpoint.CheckPoint[W])
+	// Counter governing how frequently the checkpointer fires.  Configured
+	// alongside the checkpointer via the CheckPointer builder method.
+	counter util.Counter
 }
 
 // StackFrame captures relevant information about all functions currently
@@ -95,14 +104,7 @@ type Interpreter[W word.Word[W]] struct {
 // being executed.  The purpose of a stack frame is to record the Frame Pointer
 // (FP) and Program Counter (PC) of the relevant function so that these can be
 // restored when it becomes the active function.
-type StackFrame struct {
-	// DEPRECATED
-	fid uint
-	// frame pointer of the executing function.
-	fp uint32
-	// program counter identifies next bytecode to execute.
-	pc uint32
-}
+type StackFrame = checkpoint.StackFrame
 
 // NewInterpreter constructs a new bytecode interpreter for the given program.
 // The program's memory modules are partitioned by access discipline (static
@@ -149,7 +151,29 @@ func NewInterpreter[W word.Word[W]](program Program[W], modulus W) *Interpreter[
 		woms:    woms,
 		rams:    rams,
 		prams:   prams,
+		// Default checkpointer: panics until a real one is configured via
+		// CheckPointer, since a CHECKPOINT bytecode is meaningless without one.
+		checkpointer: func(checkpoint.CheckPoint[W]) {
+			panic("no checkpointer configured")
+		},
+		// Default counter fires on every CHECKPOINT, so an unconfigured
+		// interpreter reaches the panicking default checkpointer above.
+		counter: util.NewCounter(1),
 	}
+}
+
+// CheckPointer configures the callback invoked whenever a CHECKPOINT bytecode
+// is executed, passing it a snapshot of the current machine state (see
+// CheckPoint).  The given counter initialises the interpreter's checkpoint
+// counter, governing how frequently the checkpointer fires.  It returns the
+// interpreter to allow method chaining.
+func (p *Interpreter[W]) CheckPointer(counter util.Counter,
+	checkpointer func(checkpoint.CheckPoint[W])) *Interpreter[W] {
+	//
+	p.counter = counter
+	p.checkpointer = checkpointer
+	//
+	return p
 }
 
 // Boot implementation of Core interface.  This locates the named function,
@@ -206,6 +230,198 @@ func (p *Interpreter[W]) Outputs() iter.Iterator[memory.InputOutput[W]] {
 	return iter.NewArrayIterator(outputs)
 }
 
+// CheckPoint captures the current state of this interpreter as a checkpoint,
+// from which execution can later be resumed (see checkpoint.CheckPoint).  The
+// returned checkpoint records:
+//
+//   - the call stack of paused callers, with the currently executing frame
+//     pushed on top so that the full active call chain is self-contained;
+//   - the data stack holding the activation records (registers) of all active
+//     frames;
+//   - a snapshot of every read-only input memory and every mutable memory.
+//     Static read-only memories form part of the fixed program and are not
+//     captured.
+//
+// The data and call stacks are copied so that the checkpoint is unaffected by
+// any subsequent execution of the interpreter.
+func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint[W] {
+	var (
+		callStack = slices.Clone(p.callStack.SliceEnd(0))
+		dataStack = slices.Clone(p.dataStack.SliceEnd(0))
+		memory    []checkpoint.Memory[W]
+	)
+	// Record the currently executing frame as the top of the call stack, so the
+	// checkpoint fully describes the active call chain.
+	callStack = append(callStack, checkpoint.NewStackFrame(p.fid, p.fp, p.pc))
+	// Snapshot read-only input memories and mutable memories.
+	for i := range p.roms {
+		memory = append(memory, p.snapshotMemory(&p.roms[i]))
+	}
+	//
+	for i := range p.woms {
+		memory = append(memory, p.snapshotMemory(&p.woms[i]))
+	}
+	//
+	for i := range p.rams {
+		memory = append(memory, p.snapshotMemory(&p.rams[i]))
+	}
+	//
+	for i := range p.prams {
+		memory = append(memory, p.snapshotPagedMemory(&p.prams[i]))
+	}
+	//
+	return checkpoint.NewCheckPoint(callStack, dataStack, memory)
+}
+
+// snapshotMemory captures the full contents of a flat memory as a single
+// checkpoint page beginning at address zero.  The memory's module identifier is
+// recovered from the program by name.
+func (p *Interpreter[W]) snapshotMemory(mem memory.Memory[W]) checkpoint.Memory[W] {
+	var (
+		moduleId, _ = p.program.HasModule(mem.Name())
+		page        = checkpoint.NewPage(0, slices.Clone(mem.Contents()))
+	)
+	//
+	return checkpoint.NewMemory(moduleId, []checkpoint.Page[W]{page})
+}
+
+// snapshotPagedMemory captures a paged random-access memory as one checkpoint
+// page per allocated memory page, preserving the sparse layout: page i in the
+// backing table begins at physical address i*PAGE_SIZE.  Pages which have never
+// been written (nil) are omitted.  The memory's module identifier is recovered
+// from the program by name.
+func (p *Interpreter[W]) snapshotPagedMemory(mem *memory.PagedRandomAccess[W]) checkpoint.Memory[W] {
+	var (
+		moduleId, _ = p.program.HasModule(mem.Name())
+		pages       []checkpoint.Page[W]
+	)
+	//
+	for it := mem.Pages(); it.HasNext(); {
+		// Clone each page, as Pages references the live backing slices.
+		pages = append(pages, it.Next().Clone())
+	}
+	//
+	return checkpoint.NewMemory(moduleId, pages)
+}
+
+// Restore resets this interpreter to the state captured by the given checkpoint
+// (see CheckPoint), such that execution can resume from that point.  The call
+// stack, data stack and all captured memories are overwritten; the currently
+// executing frame (the top of the checkpoint's call stack) is unpacked into the
+// active fid/fp/pc.  The checkpoint's slices are copied into the interpreter, so
+// the checkpoint remains valid for subsequent restores.
+func (p *Interpreter[W]) Restore(cp checkpoint.CheckPoint[W]) {
+	var (
+		frames = cp.CallStack()
+		// The topmost frame records the currently executing function (see
+		// CheckPoint); the remainder are the paused callers.
+		active = frames[len(frames)-1]
+	)
+	// Restore the active frame.
+	p.fid = active.FunctionId
+	p.fp = active.FramePointer
+	p.pc = active.ProgramCounter
+	// Reset the return pointer/width: these are transient and meaningful only
+	// mid-return, so a checkpoint never captures an in-flight value.
+	p.rp = 0
+	p.rw = 0
+	// Restore the paused callers.
+	p.callStack.Clear()
+	//
+	for _, f := range frames[:len(frames)-1] {
+		p.callStack.Push(f)
+	}
+	// Restore the data stack.
+	var data = cp.DataStack()
+
+	p.dataStack.Clear()
+	p.dataStack.Alloc(uint(len(data)))
+	copy(p.dataStack.SliceEnd(0), data)
+	// Restore captured memories.
+	for _, m := range cp.Memories() {
+		p.restoreMemory(m)
+	}
+}
+
+// restoreMemory overwrites the contents of the live memory identified by the
+// snapshot's module identifier.  Read-only input memories are restored by
+// replacing their flat contents directly, whilst mutable memories are first
+// cleared and then each captured page is written back at its recorded address.
+// Writing page-by-page preserves the sparse layout of paged memories (only
+// captured pages are materialised).
+func (p *Interpreter[W]) restoreMemory(m checkpoint.Memory[W]) {
+	var mem = p.findMemory(p.program.Module(m.ModuleId()).Name())
+	// Read-only memories cannot be written cell-by-cell; checkpoint snapshots
+	// for ROMs are flat pages, so restore them by replacing the contents.
+	if mem.IsReadOnly() {
+		mem.Initialise(flattenMemory(m.Pages()))
+		return
+	}
+	// Clear any existing contents.
+	mem.Initialise(nil)
+	// Write back each captured page.
+	for _, page := range m.Pages() {
+		var address = page.Address()
+		//
+		for _, w := range page.Data() {
+			//nolint
+			mem.Write(address, w)
+			//
+			address++
+		}
+	}
+}
+
+// flattenMemory converts a page-based checkpoint snapshot into flat contents.
+// This is used for ROMs, whose checkpoint snapshots are full flat pages.
+func flattenMemory[W word.Word[W]](pages []checkpoint.Page[W]) []W {
+	var size uint64
+	//
+	for _, page := range pages {
+		size = max(size, page.Address()+uint64(len(page.Data())))
+	}
+	//
+	contents := make([]W, size)
+	//
+	for _, page := range pages {
+		copy(contents[page.Address():], page.Data())
+	}
+	//
+	return contents
+}
+
+// findMemory locates the live checkpointable memory with the given module name
+// amongst the read-only input, write-once, random-access and paged random-access
+// memories.  It panics if no such memory exists, as a checkpoint should only
+// ever reference memories belonging to the program being executed.
+func (p *Interpreter[W]) findMemory(name string) memory.Memory[W] {
+	for i := range p.roms {
+		if p.roms[i].Name() == name {
+			return &p.roms[i]
+		}
+	}
+	//
+	for i := range p.woms {
+		if p.woms[i].Name() == name {
+			return &p.woms[i]
+		}
+	}
+	//
+	for i := range p.rams {
+		if p.rams[i].Name() == name {
+			return &p.rams[i]
+		}
+	}
+	//
+	for i := range p.prams {
+		if p.prams[i].Name() == name {
+			return &p.prams[i]
+		}
+	}
+	//
+	panic(fmt.Sprintf("unknown memory \"%s\"", name))
+}
+
 // Execute implementation of Core interface.  This runs the central fetch-decode-
 // dispatch loop: each iteration reads the bytecode at the current program
 // counter, extracts its opcode, and dispatches to the corresponding executor
@@ -236,6 +452,14 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		case DEBUG:
 			p.executeDebug(bytecodes[p.pc], frame)
 			p.pc++
+		case CHECKPOINT:
+			// Advance past CHECKPOINT before snapshotting, so any captured state
+			// resumes at the following instruction rather than re-checkpointing.
+			p.pc++
+			// Only fire the checkpointer once every counter period.
+			if p.counter.Tick() {
+				p.checkpointer(p.CheckPoint())
+			}
 		case LDC:
 			p.pc = executeLdc_1(p.pc, bytecodes, frame)
 		case LDC_w:
@@ -244,6 +468,10 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeMove_1s1(p.pc, bytecodes, frame)
 		case ENTER_n:
 			err = p.executeEnter_n(p.pc, bytecodes, frame)
+			// refresh the register window.
+			frame = p.dataStack.SliceEnd(uint(p.fp))
+		case ENTERCP_n:
+			err = p.executeEnterCheckPoint_n(p.pc, bytecodes, frame)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case LEAVE_n:
@@ -417,7 +645,7 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 	// allocate callee frame
 	p.dataStack.Alloc(uint(width))
 	// save function pointer and return address
-	p.callStack.Push(StackFrame{p.fid, p.fp, p.pc + n})
+	p.callStack.Push(checkpoint.NewStackFrame(p.fid, p.fp, p.pc+n))
 	// copy arguments into callee frame
 	for i := uint(calleeFp); args.HasNext(); i++ {
 		p.dataStack.Set(i, stack[args.Next()])
@@ -428,6 +656,17 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 	p.pc = target
 	//
 	return nil
+}
+
+func (p *Interpreter[W]) executeEnterCheckPoint_n(pc uint32, codes []uint32, stack []W) error {
+	// Enter checkpoint function
+	err := p.executeEnter_n(pc, codes, stack)
+	// Only fire the checkpointer once every counter period.
+	if p.counter.Tick() {
+		p.checkpointer(p.CheckPoint())
+	}
+	//
+	return err
 }
 
 func (p *Interpreter[W]) executeLeave_n(pc uint32, codes []uint32, stack []W) uint32 {
@@ -450,12 +689,12 @@ func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error
 		width, roffset, _ = decodeRet1(pc, codes)
 	)
 	//
-	p.fid = frame.fid // FIXME: remove
+	p.fid = frame.FunctionId // FIXME: remove
 	p.rp = p.fp + uint32(roffset)
 	p.rw = uint32(width)
-	p.fp = frame.fp
+	p.fp = frame.FramePointer
 	//
-	return frame.pc, nil
+	return frame.ProgramCounter, nil
 }
 
 // executeAdd_nm implements ADD_nm: it sums the constant and all sources and

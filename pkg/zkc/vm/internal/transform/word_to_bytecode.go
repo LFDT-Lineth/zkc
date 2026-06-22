@@ -206,7 +206,7 @@ func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call, f *WordFunctio
 	// receiving parameter registers, matching the slow machine (frameCopyTo).
 	p.addOutgoingCheckCasts(insn.Arguments, callee.Inputs(), f)
 	//
-	p.encoder.Add(bytecode.CallFun(index, uint16(frameWidth), insn.Arguments, insn.Returns))
+	p.encoder.Add(bytecode.CallFun(index, false, uint16(frameWidth), insn.Arguments, insn.Returns))
 	// Check whether cast checks are required for returns wider than their
 	// receiving target registers, matching the slow machine (frameCopyFrom).
 	p.addIncomingCheckCasts(callee.Outputs(), insn.Returns, f)

@@ -45,6 +45,12 @@ func (p *Ret) String(_ SystemMap) string {
 	return fmt.Sprintf("ret %d/%d", p.ReturnOffset, p.FrameWidth)
 }
 
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Ret) Clone() Patched {
+	var c = *p
+	return &c
+}
+
 // Codes implementation for Bytecode interface
 func (p *Ret) Codes(_ uint32) []uint32 {
 	return encodeRet1(p.FrameWidth, p.ReturnOffset)

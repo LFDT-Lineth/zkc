@@ -19,6 +19,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 )
 
 // PAGE_SIZE determines the number of words in a single page of a
@@ -156,6 +158,25 @@ func (p *PagedRandomAccess[W]) Write(address uint64, value W) error {
 // Contents implementation for Memory interface.
 func (p *PagedRandomAccess[W]) Contents() []W {
 	panic("unsupported operation")
+}
+
+// Pages returns an iterator over the allocated pages backing this memory.  Each
+// yielded page covers the PAGE_SIZE words beginning at physical address
+// i*PAGE_SIZE (where i is its page number); pages which have never been written
+// are omitted.  The backing data slices are referenced directly (not copied),
+// so callers must not mutate them.
+func (p *PagedRandomAccess[W]) Pages() iter.Iterator[checkpoint.Page[W]] {
+	var pages []checkpoint.Page[W]
+	//
+	for i, page := range p.pages {
+		if page != nil {
+			var address = uint64(i) * PAGE_SIZE
+
+			pages = append(pages, checkpoint.NewPage(address, page))
+		}
+	}
+	//
+	return iter.NewArrayIterator(pages)
 }
 
 // HasRegister implementation for vm.Module interface.

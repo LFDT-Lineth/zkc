@@ -15,8 +15,10 @@ package util
 import (
 	"encoding/hex"
 	"fmt"
+	"math/rand"
 	"testing"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
@@ -63,6 +65,8 @@ type Config struct {
 	// enable quiet mode, which elides printf statements and calls to #[debug]
 	// functions during code generation.
 	quiet bool
+	// enable checkpoint testing.
+	checkpointing util.Option[util.Pair[string, util.Counter]]
 }
 
 // Fields determines which fields to test over.
@@ -93,6 +97,14 @@ func (p Config) Bytecode(flag bool) Config {
 // rather than failed (see runGogenExecutionTest).
 func (p Config) GoGen(flag bool) Config {
 	p.gogen = flag
+	//
+	return p
+}
+
+// Checkpoints enables checkpoint testing with checkpoints at every n ZkC
+// instructions.
+func (p Config) Checkpoints(fn string, n uint64) Config {
+	p.checkpointing = util.Some(util.NewPair(fn, util.NewCounter(n)))
 	//
 	return p
 }
@@ -178,6 +190,12 @@ func checkValidMachine(t *testing.T, m *vm.WordMachine[vm.Uint], cfg codegen.Con
 	for _, testcase := range tests {
 		runExecutionTests(t, m, testcase, cfg.GetField(), config)
 	}
+	// Run checkpointing tests (if requested)
+	if config.checkpointing.HasValue() {
+		for _, testcase := range tests {
+			runCheckpointTests(t, m, testcase, cfg.GetField(), config)
+		}
+	}
 	// Run constraint tests
 	if config.constraints {
 		for _, test := range tests {
@@ -201,7 +219,7 @@ func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f 
 		case vm.WORD_UINT:
 			runBytecodeExecutionTest(t, m, tc, w, cfg.bytecode)
 		case vm.WORD_UINT64:
-			runFixedWidthExecutionTest[vm.Uint128](t, m, tc, cfg, w)
+			runFixedWidthExecutionTest[vm.Uint64](t, m, tc, cfg, w)
 		case vm.WORD_UINT128:
 			runFixedWidthExecutionTest[vm.Uint128](t, m, tc, cfg, w)
 		default:
@@ -262,6 +280,114 @@ func runExecutionTest[W vm.Word[W]](t *testing.T, wm vm.Core[W], test TestCase,
 	for _, err := range errs {
 		t.Errorf("[%s]%s:%d %v", cfg.Name, test.filename, test.line, err)
 	}
+}
+
+// runCheckpointTests exercises checkpoint/resume for a single test case.  The
+// program is first run, under the fast bytecode interpreter, to generate a
+// sequence of checkpoints (taken at the interval configured via
+// Config.Checkpoints).  One checkpoint is then chosen at random, a fresh
+// interpreter is resumed from it and run to completion, and the resulting
+// behaviour is checked against what the test expected.  Checkpoint testing is
+// (for now) restricted to the Uint128 word.
+func runCheckpointTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f field.Config, cfg Config) {
+	for _, w := range cfg.words {
+		// Check for incompatible field/word combinations.  For example, we
+		// cannot emulate a 254bit field using a 64bit word.
+		if w.Bandwidth <= f.BandWidth {
+			continue
+		}
+		// Run the test
+		switch w {
+		case vm.WORD_UINT:
+		case vm.WORD_UINT64:
+			runFixedWidthCheckpointTest[vm.Uint64](t, m, tc, cfg, w)
+		case vm.WORD_UINT128:
+			runFixedWidthCheckpointTest[vm.Uint128](t, m, tc, cfg, w)
+		default:
+			panic(fmt.Sprintf("unknown machine word: %s", w.Name))
+		}
+	}
+}
+
+func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase,
+	cfg Config, w vm.WordConfig) {
+	//
+	program, checkpoints, outputs, modulus := bootAndCheckpoint[vm.Uint128](t, m, tc, w, cfg)
+	// Nothing to resume from (the checkpointed function ran fewer than the
+	// configured interval, or a reject test failed early): skip phase 2.
+	if len(checkpoints) == 0 {
+		return
+	}
+	//
+	t.Logf("Generated %d checkpoints for %s", len(checkpoints), tc.filename)
+	//
+	var (
+		idx     = rand.Intn(len(checkpoints))
+		resumed = vm.NewBytecodeInterpreter(program, modulus)
+		errs    []error
+	)
+	// Phase 2: resume a fresh interpreter from a randomly-chosen checkpoint and
+	// run it to completion.  The resume runs against the *plain* program: the
+	// checkpoints share its coordinates (see Program.AddCheckPoint), and it has
+	// no checkpointing calls to re-trigger.
+	resumed.Restore(checkpoints[idx])
+	//
+	_, err := vm.ExecuteAll(resumed, 131072)
+	//
+	if err == nil && tc.expected {
+		// Resumed execution succeeded: check it produced the expected outputs.
+		errs = append(errs, checkExpectedOutputs(outputs, resumed)...)
+	} else if err == nil && !tc.expected {
+		errs = append(errs, fmt.Errorf("test accepted incorrectly"))
+	} else if tc.expected {
+		// Resumed execution failed, but the test was expected to pass.
+		errs = append(errs, err)
+	}
+	// Report any failures, noting which checkpoint was resumed from.
+	for _, err := range errs {
+		t.Errorf("[checkpoint:%s]%s:%d (checkpoint %d/%d) %v", w.Name, tc.filename, tc.line, idx, len(checkpoints), err)
+	}
+}
+
+func bootAndCheckpoint[W vm.Word[W]](t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, w vm.WordConfig,
+	cfg Config) (vm.BytecodeProgram[W], []vm.CheckPoint[W], map[string][]W, W) {
+	//
+	var (
+		checkpoints     []vm.CheckPoint[W]
+		spec            = cfg.checkpointing.Unwrap()
+		fn              = spec.Left
+		counter         = spec.Right
+		m128            = vm.WordToWordMachine[vm.Uint, W](m)
+		program         = vm.WordToBytecodeProgram(m128)
+		modulus         = m128.Executor().Modulus()
+		inputs, outputs = decodeInputsOutputs(t, m128, tc.data)
+		err             error
+	)
+	// Locate the function whose calls are to be checkpointed.
+	fid, ok := program.HasModule(fn)
+	if !ok {
+		t.Errorf("[%s]%s:%d unknown checkpoint function %q", w.Name, tc.filename, tc.line, fn)
+		return program, nil, outputs, modulus
+	}
+	// Phase 1: run the program (with calls to fn switched into checkpointing
+	// calls) to completion, collecting the checkpoints it produces.
+	gen := vm.NewBytecodeInterpreter(program.AddCheckPoint(fid), modulus).
+		CheckPointer(counter, func(cp vm.CheckPoint[W]) {
+			checkpoints = append(checkpoints, cp)
+		})
+	//
+	if err = gen.Boot("main", inputs); err == nil {
+		_, err = vm.ExecuteAll(gen, 131072)
+	}
+	//
+	// An accepting test's generation run is the reference execution and must
+	// succeed; a rejecting test, by contrast, is expected to fail at some point.
+	if tc.expected && err != nil {
+		t.Errorf("[%s]%s:%d checkpoint generation failed: %v", w.Name, tc.filename, tc.line, err)
+		return program, nil, outputs, modulus
+	}
+	//
+	return program, checkpoints, outputs, modulus
 }
 
 func runConstraintTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase, cfg codegen.Config) {
