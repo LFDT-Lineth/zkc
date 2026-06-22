@@ -13,7 +13,8 @@
 package vm
 
 import (
-	"encoding"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // CheckPoint represents a captured state of an executing machine, such that
@@ -41,14 +42,4 @@ import (
 // steps of execution.  The purpose of this is to allow a program's execution to
 // be broken up into multiple checkpoints, such that each checkpoint only stores
 // the data it requires for executing its portion of the overall execution.
-type CheckPoint[W any] interface {
-	// Checkpoints must be convertable into bytes
-	encoding.BinaryMarshaler
-	// Checkpoints must be constructable from bytes
-	encoding.BinaryUnmarshaler
-	// ValidFor returns the number of execution steps for which this checkpoint
-	// is valid, or math.MaxUint64 if it is valid for all remaining steps.  We
-	// can expect that executing the machine beyond this number of steps will
-	// result in an execution which diverges from the original.
-	ValidFor() uint64
-}
+type CheckPoint[W word.Word[W]] = checkpoint.CheckPoint[W]

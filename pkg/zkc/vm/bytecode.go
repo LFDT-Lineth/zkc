@@ -32,3 +32,10 @@ type BytecodeProgram[W Word[W]] = bytecode.Program[W]
 func DecodeBytecodes[W word.Word[W]](program BytecodeProgram[W]) []Bytecode[W] {
 	return program.Bytecodes()
 }
+
+// NewBytecodeInterpreter constructs an interpreter for executing the given
+// bytecode program.  The modulus is the prime characteristic of the surrounding
+// field, used when executing native field instructions.
+func NewBytecodeInterpreter[W word.Word[W]](program BytecodeProgram[W], modulus W) *BytecodeInterpreter[W] {
+	return bytecode.NewInterpreter(program, modulus)
+}

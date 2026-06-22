@@ -15,6 +15,7 @@ package bytecode
 import (
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -120,6 +121,11 @@ func (p *ReadWrite) String(mapping SystemMap) string {
 func (p *ReadWrite) Codes(_ uint32) []uint32 {
 	//
 	return encodeReadWrite_sn(p.Mode, p.Id, p.Address, p.Data)
+}
+
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *ReadWrite) Clone() Patched {
+	return &ReadWrite{p.Mode, p.Id, slices.Clone(p.Address), slices.Clone(p.Data)}
 }
 
 func decodeReadWrite[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId]uint16) (Bytecode[W], uint32) {

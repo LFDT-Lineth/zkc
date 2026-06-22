@@ -15,12 +15,12 @@ package test
 import (
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/test/util"
+	test_util "github.com/LFDT-Lineth/zkc/pkg/test/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // DEFAULT_BENCH_CONFIG provides a default configuration for bench tests.
-var DEFAULT_BENCH_CONFIG = util.DEFAULT_CONFIG.
+var DEFAULT_BENCH_CONFIG = test_util.DEFAULT_CONFIG.
 	Words(vm.WORD_UINT128).
 	Bytecode(true).
 	GoGen(true)
@@ -45,7 +45,7 @@ func Test_ZkcBench_Fnv1aHash(t *testing.T) {
 }
 
 func Test_ZkcBench_Keccakf(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG)
+	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG.Checkpoints("keccakf", 2))
 }
 
 // func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {
@@ -64,7 +64,7 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 // }
 
 func Test_ZkcBench_Sort(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/sort", DEFAULT_BENCH_CONFIG)
+	checkZkcBench(t, "zkc/bench/sort", DEFAULT_BENCH_CONFIG.Checkpoints("sort_slice", 5))
 }
 
 func Test_ZkcBench_LongDivision(t *testing.T) {
@@ -79,6 +79,6 @@ func Test_ZkcBench_DivRem(t *testing.T) {
 // Test Helpers
 // ===================================================================
 
-func checkZkcBench(t *testing.T, test string, config util.Config) {
-	util.CheckValid(t, test, "zkc", config)
+func checkZkcBench(t *testing.T, test string, config test_util.Config) {
+	test_util.CheckValid(t, test, "zkc", config)
 }

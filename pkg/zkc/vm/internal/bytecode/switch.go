@@ -14,6 +14,7 @@ package bytecode
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -68,6 +69,11 @@ func (p *Switch) String(_ SystemMap) string {
 	b.WriteString("]")
 	//
 	return b.String()
+}
+
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Switch) Clone() Patched {
+	return &Switch{p.Source, slices.Clone(p.Cases)}
 }
 
 // Codes implementation for Bytecode interface.

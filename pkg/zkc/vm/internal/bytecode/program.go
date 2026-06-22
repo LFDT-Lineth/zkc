@@ -14,6 +14,7 @@ package bytecode
 
 import (
 	"math"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -67,9 +68,12 @@ func (p Program[W]) Chunks(index uint32) []base.FormattedChunk {
 }
 
 // Bytecodes decodes this program into a more human-friendly representation.
-// Observe that this decoding procedure is non-trivial, and may allocate memory.
-// As such, it should not be used when performance is critical.  In such
-// situations, direct decoding should be preferred.
+// The decoding is faithful: re-encoding the result (via each bytecode's Codes
+// method) reproduces this program's words exactly, including the side-table
+// indices and formatted-message chunks of any DEBUG / FAIL sites.  Observe that
+// this decoding procedure is non-trivial, and may allocate memory.  As such, it
+// should not be used when performance is critical.  In such situations, direct
+// decoding should be preferred.
 func (p Program[W]) Bytecodes() (bytecodes []Bytecode[W]) {
 	var (
 		rmap   = buildReverseMemoryMap[W](p.modules...)
@@ -78,7 +82,7 @@ func (p Program[W]) Bytecodes() (bytecodes []Bytecode[W]) {
 	)
 	//
 	for offset < ncodes {
-		bc, n := decodeBytecode[W](offset, p.bytecodes, rmap)
+		bc, n := decodeBytecode[W](offset, p.bytecodes, rmap, p.chunks)
 		bytecodes = append(bytecodes, bc)
 		offset += n
 	}
@@ -129,7 +133,55 @@ func (p Program[W]) Modules() []Module {
 	return p.modules
 }
 
-func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId]uint16) (Bytecode[W], uint32) {
+// AddCheckPoint returns a copy of this program in which all calls to the target
+// function are "checkpointing calls" (i.e. have their CheckPoint field set).
+// Switching a call to checkpointing only swaps its ENTER opcode (ENTER_n =>
+// ENTERCP_n), which is width-preserving; hence every instruction offset --
+// along with the symbol and chunk side-tables -- is unaffected, and the
+// returned program shares those tables with the original.
+func (p Program[W]) AddCheckPoint(fid uint) Program[W] {
+	var (
+		// Clone of the raw words: only matching ENTER words are rewritten, and
+		// always in place (see above), so the remaining words are untouched.
+		bytecodes = slices.Clone(p.bytecodes)
+		rmap      = buildReverseMemoryMap[W](p.modules...)
+		offset    uint32
+	)
+	// Determine the entry address of the target function.  If it has none (e.g.
+	// it is never marked, or fid does not name a function), there are no calls
+	// to rewrite and the clone is returned unchanged.
+	target, ok := p.AddressOf(fid)
+	//
+	for ok && offset < uint32(len(bytecodes)) {
+		bc, n := decodeBytecode[W](offset, bytecodes, rmap, p.chunks)
+		// Switch on checkpointing for any call to the target function, then
+		// re-encode it in place over its original words.
+		if call, isCall := bc.(*Call); isCall && call.Target == target {
+			call.CheckPoint = true
+			cs := call.Codes(offset)
+			// Sanity check: switching on checkpointing must not resize the call.
+			if uint32(len(cs)) != n {
+				panic("checkpointing call changed its encoded width")
+			}
+			//
+			copy(bytecodes[offset:], cs)
+		}
+		//
+		offset += n
+	}
+	//
+	return NewProgram[W](p.modules, bytecodes, p.constants, p.symbols, p.chunks)
+}
+
+// decodeBytecode decodes the single bytecode beginning at pc into its
+// higher-level representation, returning it together with the number of words
+// consumed.  Decoding is faithful: re-encoding the result via its Codes method
+// reproduces the original words exactly.  In particular, DEBUG and FAIL recover
+// both their side-table index (packed into the word) and the formatted-message
+// chunks it points at, so they round-trip without loss; chunks is the program's
+// chunk side-table (see Program.chunks).
+func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId]uint16,
+	chunks [][]base.FormattedChunk) (Bytecode[W], uint32) {
 	var (
 		code = codes[pc]
 	)
@@ -145,9 +197,11 @@ func decodeBytecode[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId
 		rd, width, n := decodeCheckCast(pc, codes)
 		return &CheckCast{width, rd}, n
 	case DEBUG:
-		return &Debug{}, 1
+		index := code >> 8
+		return &Debug{Chunks: chunks[index], Index: index}, 1
 	case FAIL:
-		return &Fail{}, 1
+		index := code >> 8
+		return &Fail{Chunks: chunks[index], Index: index}, 1
 	case JMP:
 		target, n := decodeJmp1(pc, codes)
 		return &Jmp{Target: target}, n

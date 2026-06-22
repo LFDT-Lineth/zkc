@@ -21,6 +21,12 @@ func (p *Jmp) String(_ SystemMap) string {
 	return fmt.Sprintf("jmp 0x%08x", p.Target)
 }
 
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Jmp) Clone() Patched {
+	var c = *p
+	return &c
+}
+
 // Codes implementation for Bytecode interface
 func (p *Jmp) Codes(pc uint32) []uint32 {
 	// Forward branches are preferred as SKIP instructions, whose offset is

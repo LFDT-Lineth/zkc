@@ -95,6 +95,8 @@ const (
 	SGE_rr
 	// ENTER_n instruction
 	ENTER_n
+	// ENTERCP_n (enter and checkpoint) instruction
+	ENTERCP_n
 	// LEAVE_n instruction
 	LEAVE_n
 	// RET instruction
@@ -175,6 +177,8 @@ const (
 	CAT
 	// DEBUG instruction
 	DEBUG
+	// CHECKPOINT instruction (no operands)
+	CHECKPOINT
 	//
 	MAX_BYTECODE
 )
@@ -183,6 +187,10 @@ const (
 type Bytecode[W word.Word[W]] interface {
 	String(SystemMap) string
 	Codes(uint32) []uint32
+	// Clone returns a deep copy of this bytecode, sharing no mutable state (in
+	// particular, no operand slices) with the original.  See
+	// Program.AddCheckPoint.
+	Clone() Patched
 }
 
 // Patchable bytecodes contain a branch target which must be resolved during
@@ -204,6 +212,8 @@ type Patchable[W word.Word[W]] interface {
 type Patched interface {
 	String(SystemMap) string
 	Codes(uint32) []uint32
+	// Clone returns a deep copy of this bytecode (see Bytecode.Clone).
+	Clone() Patched
 }
 
 // ============================================================================
@@ -241,8 +251,8 @@ func AddVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, c
 }
 
 // CallFun constructs a function-call bytecode.
-func CallFun(target Address, width uint16, args []register.Id, returns []register.Id) *Call {
-	return &Call{target, width, asRegs(args...), asRegs(returns...)}
+func CallFun(target Address, checkpoint bool, width uint16, args []register.Id, returns []register.Id) *Call {
+	return &Call{target, checkpoint, width, asRegs(args...), asRegs(returns...)}
 }
 
 // Jump creates an unconditional jump instruction transferring control to the

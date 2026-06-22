@@ -46,6 +46,12 @@ func (p *DivRem) String(mapping SystemMap) string {
 	return fmt.Sprintf("%s = %s %s %s", target, dividend, symbol, divisor)
 }
 
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *DivRem) Clone() Patched {
+	var c = *p
+	return &c
+}
+
 // Codes implementation for Bytecode interface.
 func (p *DivRem) Codes(_ uint32) []uint32 {
 	return encodeDivRem(p.Opcode, p.Target, p.Dividend, p.Divisor)
@@ -115,6 +121,12 @@ func (p *DivHint) String(mapping SystemMap) string {
 	)
 	//
 	return fmt.Sprintf("%s::%s::%s = hint(%s, %s)", quotient, remainder, witness, dividend, divisor)
+}
+
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *DivHint) Clone() Patched {
+	var c = *p
+	return &c
 }
 
 // Codes implementation for Bytecode interface.

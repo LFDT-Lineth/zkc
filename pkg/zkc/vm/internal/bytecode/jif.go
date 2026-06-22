@@ -54,6 +54,12 @@ func (p *Jif) String(mapping SystemMap) string {
 	return fmt.Sprintf("jif %s %s %s 0x%08x", src0, ops, src1, p.Target)
 }
 
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Jif) Clone() Patched {
+	var c = *p
+	return &c
+}
+
 // Codes implementation for Bytecode interface
 func (p *Jif) Codes(offset uint32) []uint32 {
 	var (

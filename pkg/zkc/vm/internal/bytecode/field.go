@@ -14,6 +14,7 @@ package bytecode
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -65,6 +66,11 @@ func (p *FieldArith[W]) String(mapping SystemMap) string {
 // Codes implementation for Bytecode interface.
 func (p *FieldArith[W]) Codes(_ uint32) []uint32 {
 	return encodeFieldArith(p.Op, p.Target, p.Sources, p.Constant)
+}
+
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *FieldArith[W]) Clone() Patched {
+	return &FieldArith[W]{p.Op, p.Target, slices.Clone(p.Sources), p.Constant}
 }
 
 func decodeFieldArith[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
