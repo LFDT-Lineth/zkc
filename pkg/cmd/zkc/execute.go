@@ -54,6 +54,9 @@ var executeCmds = []FieldAgnosticCmd{
 	{field.BLS12_377, runExecuteCmd[bls12_377.Element]},
 }
 
+// Permitted flag combinations
+var executeFlags FlagChecks
+
 func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
 		errors []error
@@ -78,33 +81,21 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		// rather than an initial set of JSON inputs.  Execution then continues to
 		// completion via the fast bytecode interpreter.
 		resume = GetFlag(cmd, "resume")
-		// identify whether tracing required or not.
-		tracing = !resume && checkpoint == "" && (check || outputFile != "" || !fast)
+		// simple equivalence
+		tracing = !fast
 		//
 		trace   trace.Trace[F]
 		input   map[string][]byte
 		outputs map[string][]byte
 	)
-	// gogen only executes the fast-mode machine: without --fast the run would
-	// silently fall through to tracing. Reject it rather than ignore --gogen.
-	if gogen && tracing {
-		log.Error("--gogen requires --fast (and is incompatible with --check / --output)")
-		os.Exit(2)
-	}
+	// Sanity permitted flag combinations
+	checkFlags(cmd, executeFlags)
 	//
 	applyExecuteDefaults(&build, check, quiet)
 	//
-	// In resume mode the input file is a checkpoint, not JSON inputs.
-	if !resume {
-		input = ParseInputFile(args[0])
-	}
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	artifacts := build.Build(args[1:]...)
 	wm := artifacts.wir.Unwrap()
-	// Filter out things other than inputs
-	if !resume {
-		input = filterInputsOnly(&wm, input)
-	}
 	// Wrap the word machine in a binary file for execution / tracing / checking.
 	binfile := constraints.NewBinaryFile[F](nil, nil, field, wm)
 	// =====================================================
@@ -114,30 +105,34 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		// Resume execution from the checkpoint held (in hex) in the input file,
 		// running the (unmodified) program to completion in fast mode.
 		outputs, errors = resumeFromCheckPoint(&wm, args[0])
-	} else if checkpoint != "" {
-		// Checkpoint the function named in the spec (periodically with "f:N", or
-		// once with "f@N") and execute in fast mode, writing the resulting
-		// checkpoints to the output file (with -o) or to stdout otherwise.
-		outputs, errors = executeWithCheckPoint(&wm, checkpoint, outputFile, input)
-	} else if tracing {
-		trace, errors = binfile.Trace(input, traceConfig)
-	} else if gogen {
-		// Execute via native Go generated from the word machine.
-		outputs, errors = executeWithGogen(&wm, input)
 	} else {
-		outputs, errors = binfile.Execute(input, 131072)
+		// Parse an filter input file
+		input = ParseInputFile(args[0])
+		input = filterInputsOnly(&wm, input)
+		// decide what is happening
+		if checkpoint != "" {
+			// Checkpoint the function named in the spec (periodically with "f:N", or
+			// once with "f@N") and execute in fast mode, writing the resulting
+			// checkpoints to the output file (with -o) or to stdout otherwise.
+			outputs, errors = executeWithCheckPoint(&wm, checkpoint, outputFile, input)
+		} else if tracing {
+			trace, errors = binfile.Trace(input, traceConfig)
+		} else if gogen {
+			// Execute via native Go generated from the word machine.
+			outputs, errors = executeWithGogen(&wm, input)
+		} else {
+			outputs, errors = binfile.Execute(input, 131072)
+		}
 	}
 	// =====================================================
 	// Generate output
 	// =====================================================
-	if resume || checkpoint != "" || outputFile == "" {
-		// In resume / checkpoint mode there is no trace (any checkpoints have
-		// already been written); here we simply report the program outputs on
-		// stdout.
-		for name, bytes := range outputs {
-			fmt.Printf("%s = 0x%s\n", name, hex.EncodeToString(bytes))
-		}
-	} else {
+	// Write outputs
+	for name, bytes := range outputs {
+		fmt.Printf("%s = 0x%s\n", name, hex.EncodeToString(bytes))
+	}
+	// write out trace (if requested)
+	if tracing && outputFile != "" {
 		// Construct trace file
 		ltf := lt.FromRawTrace(nil, trace)
 		// Write out trace file
@@ -146,7 +141,8 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// =====================================================
 	// Check Constraints
 	// =====================================================
-	if check && !resume && len(errors) == 0 {
+	if check && len(errors) == 0 {
+		// NOTE: check ==> tracing
 		checkConstraints(binfile, trace, traceConfig)
 	}
 	// =====================================================
@@ -163,10 +159,6 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 }
 
 func applyExecuteDefaults[F field.Element[F]](build *BuildConfig[F], check, quiet bool) {
-	// Constraint checking requires native ZkC operations to be lowered.
-	if check {
-		build.config = build.config.FastMode(false)
-	}
 	// Suppress printf debug instructions when quiet mode is enabled.
 	build.config = build.config.Quiet(quiet)
 	// Force compilation of the word machine, which is what we execute.
@@ -209,6 +201,18 @@ func init() {
 		"checkpoint a function: \"f:N\" on every Nth call to f, or \"f@N\" once after N calls to f")
 	executeCmd.Flags().Bool("resume", false,
 		"resume from a checkpoint: the input file is a hex checkpoint (rather than JSON inputs) to execute to completion")
+	// Checkpointing is only supported in fast mode.
+	executeFlags.Require("checkpoint", "fast")
+	// Resuming from a checkpoint (currently) is only supported in fast mode.
+	// Eventually, this restriction should be lifted.
+	executeFlags.Require("resume", "fast")
+	// Gogen only supports fast mode (for now).
+	executeFlags.Require("gogen", "fast")
+	// Gogen does not support checkpointing (for now)
+	executeFlags.Exclude("checkpoint", "gogen")
+	// Fast mode cannot be used to check constraints (i.e. because it does not
+	// generate a trace).
+	executeFlags.Exclude("check", "fast")
 }
 
 // executeWithCheckPoint executes the word machine via the fast bytecode
