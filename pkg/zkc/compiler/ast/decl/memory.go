@@ -16,32 +16,32 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 )
 
-// MemoryKind determines the type of a given memory (i.e. random access, read
-// only, etc).
+// MemoryKind determines the type of a given memory
+//
+//   - STATIC: static ROM; identical across all executions of a given machine
+//   - ROM: read-only memory; variable across executions
+//   - WOM: write-only and write-once memory; variable across executions
+//   - RAM: ubiquitous form of memory; supports arbitrary reads / writes
+//
+// as well as PRIVATE vs PUBLIC memories.
 type MemoryKind uint8
 
+// MemoryKind constants
 const (
-	// PUBLIC_STATIC_MEMORY represents a (public) static read-only memory.  That
-	// is a ROM which never changes across all executions of a given machine.
-	PUBLIC_STATIC_MEMORY = 0
-	// PRIVATE_STATIC_MEMORY represents a (private) static read-only memory.  That
-	// is a ROM which never changes across all executions of a given machine.
-	PRIVATE_STATIC_MEMORY = 1
-	// PUBLIC_READ_ONLY_MEMORY represents a (public) read-only memory which can
-	// change between different executions of a given machine.
-	PUBLIC_READ_ONLY_MEMORY = 2
-	// PRIVATE_READ_ONLY_MEMORY represents a (private) read-only memory which
-	// can change between different executions of a given machine.
-	PRIVATE_READ_ONLY_MEMORY = 3
-	// PUBLIC_WRITE_ONCE_MEMORY represents a (public) write-only memory which can only be
-	// written once.
-	PUBLIC_WRITE_ONCE_MEMORY = 4
-	// PRIVATE_WRITE_ONCE_MEMORY represents a (private) write-only memory which
-	// can only be written once.
-	PRIVATE_WRITE_ONCE_MEMORY = 5
-	// RANDOM_ACCESS_MEMORY represents the ubiquitous form of memory which
-	// supports arbitrary reads / writes.  Observe that RAM is always private.
-	RANDOM_ACCESS_MEMORY = 6
+	// A (public) static ROM; identical across all executions of a given machine
+	PUBLIC_STATIC_MEMORY MemoryKind = iota
+	// A (private) static ROM; identical across all executions of a given machine
+	PRIVATE_STATIC_MEMORY
+	// A (public) read-only memory; variable across executions
+	PUBLIC_READ_ONLY_MEMORY
+	// A (private) read-only memory; variable across executions
+	PRIVATE_READ_ONLY_MEMORY
+	// A (public) write-once memory; variable across executions
+	PUBLIC_WRITE_ONCE_MEMORY
+	// A (private) write-once memory; variable across executions
+	PRIVATE_WRITE_ONCE_MEMORY
+	// The ubiquitous form of memory; supports Arbitrary reads / writes; always PRIVATE
+	RANDOM_ACCESS_MEMORY
 )
 
 // ResolvedMemory represents a memory whose external identifiers are otherwise resolved.

@@ -25,10 +25,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/validate"
 )
 
-// Compile takes a given set of source files, and parses them into a given set
-// of (linked) declarations.  This includes performing various checks on the
-// files, such as type checking, etc.  Switch statements are lowered to a
-// multiway-skip dispatch.
+// Compile takes a given set of source files and parses them and their
+// dependencies into a given set of linked declarations. This includes
+// performing various checks on the files, such as type checking, etc.
+// Switch statements are lowered to a multiway-skip dispatch.
 func Compile(field field.Config, sourceFiles ...source.File,
 ) (ast.Program, source.Maps[any], []source.SyntaxError) {
 	//
@@ -104,7 +104,7 @@ func canonicalPath(filename string) string {
 // Since include declarations provide relative paths, the original sourceFile is provided
 // in order to determine canonical (absolute) paths.
 //
-// Note: scanForFurtherSourceFiles implicitly updates 'sourceFileAccounting' with every new
+// Note: scanForFurtherSourceFiles implicitly updates 'knownSourceFiles' with every new
 // source file that it adds to its furtherSourceFiles output
 func scanForFurtherSourceFiles(sourceFile source.File, parsedSourceFile parser.UnlinkedSourceFile,
 	knownSourceFiles map[string]bool) ([]source.File, []source.SyntaxError) {

@@ -48,6 +48,9 @@ func Link(files ...parser.UnlinkedSourceFile) (ast.Program, source.Maps[any], []
 		//
 		for _, declaration := range item.Declarations {
 			// Check whether component of same name already exists.
+			// This condition forbids overloading, you can't e.g. have two functions with the same
+			// name across different files nor can you have functions with the same name but
+			// different signatures.
 			if linker.Exists(declaration.Name()) {
 				// Indicates component of same name already exists.
 				errors = append(errors, *linker.srcmap.SyntaxError(declaration, "duplicate declaration"))
@@ -68,19 +71,19 @@ func Link(files ...parser.UnlinkedSourceFile) (ast.Program, source.Maps[any], []
 // Linker packages together the various bits of information required for linking
 // the assembly files.
 type Linker struct {
-	busmap     map[string]symbol.Resolved
-	components []decl.Unresolved
-	srcmap     source.Maps[any]
-	names      map[string]bool
+	busmap       map[string]symbol.Resolved
+	declarations []decl.Unresolved
+	srcmap       source.Maps[any]
+	names        map[string]bool
 }
 
 // NewLinker constructs a new linker
 func NewLinker() *Linker {
 	return &Linker{
-		srcmap:     *source.NewSourceMaps[any](),
-		busmap:     make(map[string]symbol.Resolved),
-		components: nil,
-		names:      make(map[string]bool),
+		busmap:       make(map[string]symbol.Resolved),
+		declarations: nil,
+		srcmap:       *source.NewSourceMaps[any](),
+		names:        make(map[string]bool),
 	}
 }
 
@@ -96,23 +99,15 @@ func (p *Linker) Join(srcmap source.Map[any]) {
 	p.srcmap.Join(&srcmap)
 }
 
-// Register a new components with this linker.
-func (p *Linker) Register(component decl.Unresolved) {
+// Register a new declaration with this linker.
+func (p *Linker) Register(declaration decl.Unresolved) {
 	// Ignore any anonymous components (i.e. includes)
-	if component.Name() != "" {
-		// First, record name
-		p.names[component.Name()] = true
-		// Second, act on component type
-		switch c := component.(type) {
-		case decl.Unresolved:
-			// Allocate bus entry
-			p.busmap[c.Name()] = symbol.Resolved{Index: uint(len(p.busmap))}
-			//
-			p.components = append(p.components, c)
-		default:
-			// Should be unreachable
-			panic(fmt.Sprintf("unknown component %s", component.Name()))
-		}
+	if declaration.Name() != "" {
+		// Record the name, allocate its bus entry (name -> resolved index), and
+		// keep the declaration for the later resolution pass.
+		p.names[declaration.Name()] = true
+		p.busmap[declaration.Name()] = symbol.Resolved{Index: uint(len(p.busmap))}
+		p.declarations = append(p.declarations, declaration)
 	}
 }
 
@@ -123,12 +118,12 @@ func (p *Linker) Link() (ast.Program, []source.SyntaxError) {
 		decls  []decl.Resolved
 	)
 	//
-	for index := range p.components {
+	for index := range p.declarations {
 		decl, errs := p.linkDeclaration(uint(index))
 		decls = append(decls, decl)
 		errors = append(errors, errs...)
 
-		p.srcmap.Copy(p.components[index], decl)
+		p.srcmap.Copy(p.declarations[index], decl)
 	}
 	//
 	return ast.NewProgram(decls, p.srcmap), errors
@@ -138,7 +133,7 @@ func (p *Linker) Link() (ast.Program, []source.SyntaxError) {
 // targets.  This means, for every bus used locally, settings the global bus
 // identifier and also allocated registers for the address/data lines.
 func (p *Linker) linkDeclaration(index uint) (decl.Resolved, []source.SyntaxError) {
-	switch d := p.components[index].(type) {
+	switch d := p.declarations[index].(type) {
 	case *decl.UnresolvedConstant:
 		return p.linkConstant(*d)
 	case *decl.UnresolvedFunction:
@@ -602,7 +597,7 @@ func (p *Linker) linkType(datatype data.UnresolvedType) (data.ResolvedType, []so
 func (p *Linker) resolve(name symbol.Unresolved, node any) (symbol.Resolved, []source.SyntaxError) {
 	var sym symbol.Resolved
 	//
-	for i, c := range p.components {
+	for i, c := range p.declarations {
 		nIns, _ := c.Arity()
 		// first, check whether name matches
 		if c.Name() == name.Name {
