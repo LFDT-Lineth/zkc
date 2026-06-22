@@ -63,6 +63,7 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	metadata := GetFlag(cmd, "metadata")
 	constants := GetFlag(cmd, "constants")
 	spillage := GetFlag(cmd, "spillage")
+	showStatic := GetFlag(cmd, "show-static")
 	textWidth := GetUint(cmd, "textwidth")
 	sort := GetUint(cmd, "sort")
 	// Read in constraint files
@@ -94,7 +95,7 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	}
 	//
 	if !stats && !modules && !attrs {
-		debug.PrintSchemas(stack, textWidth)
+		debug.PrintSchemas(stack, textWidth, showStatic)
 	}
 }
 
@@ -106,6 +107,7 @@ func init() {
 	debugCmd.Flags().Bool("stats", false, "Print summary information")
 	debugCmd.Flags().BoolP("modules", "m", false, "show module stats")
 	debugCmd.Flags().Bool("spillage", false, "Print spillage information")
+	debugCmd.Flags().Bool("show-static", false, "Show static tables in the output")
 	debugCmd.Flags().Uint("textwidth", 130, "Set maximum textwidth to use")
 	debugCmd.Flags().Uint("sort", 0, "sort table column")
 }

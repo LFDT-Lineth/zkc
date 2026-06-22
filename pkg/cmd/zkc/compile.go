@@ -57,9 +57,10 @@ var compileCmds = []FieldAgnosticCmd{
 
 func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
-		build  = GetBuildConfig[F](cmd, field)
-		output = GetString(cmd, "output")
-		quiet  = GetFlag(cmd, "quiet")
+		build      = GetBuildConfig[F](cmd, field)
+		output     = GetString(cmd, "output")
+		quiet      = GetFlag(cmd, "quiet")
+		showStatic = GetFlag(cmd, "show-static")
 	)
 	// Suppress printf debug instructions when quiet mode is enabled.
 	build.config = build.config.Quiet(quiet)
@@ -71,7 +72,7 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		writeArtifacts(output, build, artifacts)
 	} else {
 		// Print out requested artifacts
-		printArtifacts(artifacts)
+		printArtifacts(artifacts, showStatic)
 	}
 }
 
@@ -100,7 +101,7 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig[F], a
 	}
 }
 
-func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F]) {
+func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F], showStatic bool) {
 	// Abstract Sytnax Tree
 	if artifacts.ast.HasValue() {
 		writeAbstractSyntaxTree(artifacts.ast.Unwrap())
@@ -119,11 +120,11 @@ func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F]) {
 	}
 	// Mid-level Intermediate Representation
 	if artifacts.mir.HasValue() {
-		debug.PrintAnySchema(artifacts.mir.Unwrap(), 80)
+		debug.PrintAnySchema(artifacts.mir.Unwrap(), 80, showStatic)
 	}
 	// Arithmetic Intermediate Representation
 	if artifacts.air.HasValue() {
-		debug.PrintAnySchema(artifacts.air.Unwrap(), 80)
+		debug.PrintAnySchema(artifacts.air.Unwrap(), 80, showStatic)
 	}
 }
 
