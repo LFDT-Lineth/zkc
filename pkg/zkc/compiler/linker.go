@@ -144,6 +144,22 @@ func (p *Linker) Link() (ast.Program, []source.SyntaxError) {
 // Link all external accessed used within this function to their intended
 // targets.  This means, for every bus used locally, settings the global bus
 // identifier and also allocated registers for the address/data lines.
+//
+// Note: the declarations that require linking correspond to (currently) unknown
+//
+//   - (supposedly declared) function   names
+//   - (supposedly declared) constants  names
+//   - (supposedly declared) memory     names
+//   - (supposedly declared) type alias names
+//
+// What is noteworthy is that ALL of these symbols (strings) should / must
+// correspond to top level declarations: one does not have to look inside
+// of these declarations, instead: it is enough to scan Linker.Declarations
+// and filter by .Name() until we have a match.
+//
+// Furthermore, there is no need to `Link` local variables of a function, for
+// instance. This will have happened in some sense during parseFunction() where
+// LocalAccesses are already linked to variable.Id's from the function body.
 func (p *Linker) linkDeclaration(index uint) (decl.Resolved, []source.SyntaxError) {
 	switch d := p.declarations[index].(type) {
 	case *decl.UnresolvedConstant:
@@ -177,17 +193,22 @@ func (p *Linker) linkDeclaration(index uint) (decl.Resolved, []source.SyntaxErro
 	}
 }
 
-func (p *Linker) linkConstant(fn decl.UnresolvedConstant) (decl.Resolved, []source.SyntaxError) {
-	expr, errs1 := p.linkExpr(fn.ConstExpr)
-	datatype, errs2 := p.linkType(fn.DataType)
+// linkConstant is required since the constant's type may be a type alias
+// and because the value of the Constant may be an expression such as
+//
+// const LENGTH_IN_BYTES :u32 = 256
+// const LENGTH_IN_BITS  :u32 = 8 * LENGTH_IN_BYTES
+func (p *Linker) linkConstant(cn decl.UnresolvedConstant) (decl.Resolved, []source.SyntaxError) {
+	expr, errs1 := p.linkExpr(cn.ConstExpr)
+	datatype, errs2 := p.linkType(cn.DataType)
 	//
-	return decl.NewConstant[symbol.Resolved](fn.Name(), datatype, expr), append(errs1, errs2...)
+	return decl.NewConstant[symbol.Resolved](cn.Name(), datatype, expr), append(errs1, errs2...)
 }
 
 func (p *Linker) linkFunction(fn decl.UnresolvedFunction) (decl.Resolved, []source.SyntaxError) {
 	var (
 		effects = make([]*symbol.Resolved, len(fn.Effects))
-		codes   = make([]stmt.Resolved, len(fn.Code))
+		code    = make([]stmt.Resolved, len(fn.Code))
 		errs1   []source.SyntaxError
 	)
 	// link effects
@@ -202,14 +223,14 @@ func (p *Linker) linkFunction(fn decl.UnresolvedFunction) (decl.Resolved, []sour
 	for i, c := range fn.Code {
 		var es []source.SyntaxError
 		//
-		codes[i], es = p.linkStatement(c)
+		code[i], es = p.linkStatement(c)
 		//
 		errs1 = append(errs1, es...)
 	}
 	//
 	vars, errs2 := p.linkVariableDeclarations(fn.Variables)
 	//
-	resolved := decl.NewFunction(fn.Name(), effects, vars, codes)
+	resolved := decl.NewFunction(fn.Name(), effects, vars, code)
 	resolved.SetAnnotations(fn.Annotations())
 	//
 	return resolved, append(errs1, errs2...)

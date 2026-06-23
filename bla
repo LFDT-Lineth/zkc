@@ -1,5 +1,0 @@
-memory ram(a:u8, b:u8) -> (byte:u8)
-
-fn main<ram>() {
-    ram[0,0] = 12
-}
