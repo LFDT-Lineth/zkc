@@ -20,7 +20,9 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -28,6 +30,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 )
 
 // GenerateMirConstraints is responsible for converting a field machine into a
@@ -35,13 +38,44 @@ import (
 func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F]) mir.Schema[F] {
 	var (
 		modules = make([]mir.Module[F], len(fm.Modules()))
+		// Pre-compute per-module metadata required to wire up call lookups (e.g.
+		// the callee register layout and whether it is atomic).
+		infos = computeModuleInfos(fm.Modules())
 	)
 	//
 	for i, m := range fm.Modules() {
-		modules[i] = translateModule[F](uint(i), m)
+		modules[i] = translateModule[F](uint(i), m, infos)
 	}
 	//
 	return schema.NewUniformSchema(modules)
+}
+
+// moduleInfo captures the metadata about a (potential) callee module which is
+// required to construct a lookup constraint at a call site.
+type moduleInfo struct {
+	// function indicates this module is a field function (as opposed to a
+	// memory module).
+	function bool
+	// atomic indicates this is a one-line function (which therefore has no
+	// $ret control line and is used as an unfiltered lookup target).
+	atomic bool
+	// registers gives the callee register layout: inputs, followed by outputs,
+	// followed by any locals.
+	registers []register.Register
+}
+
+// computeModuleInfos collects the metadata needed to wire up call lookups for
+// every module in the machine.
+func computeModuleInfos(modules []vm.Module) []moduleInfo {
+	infos := make([]moduleInfo, len(modules))
+	//
+	for i, m := range modules {
+		if fn, ok := m.(*vm.FieldFunction); ok {
+			infos[i] = moduleInfo{true, fn.IsAtomic(), fn.Registers()}
+		}
+	}
+	//
+	return infos
 }
 
 // GenerateAirConstraints is responsible for converting a field machine into a
@@ -54,10 +88,10 @@ func GenerateAirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], field fi
 	return mir.LowerToAir(mirc, field.BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)
 }
 
-func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module) mir.Module[F] {
+func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module, infos []moduleInfo) mir.Module[F] {
 	switch fm := fm.(type) {
 	case *vm.FieldFunction:
-		return translateFunction[F](ctx, *fm)
+		return translateFunction[F](ctx, *fm, infos)
 	case vm.Memory[F]:
 		if fm.IsStatic() {
 			return translateStaticMemory(ctx, fm)
@@ -131,7 +165,8 @@ func translateReadWriteMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memor
 	return mod
 }
 
-func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction) mir.Module[F] {
+func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction, infos []moduleInfo,
+) mir.Module[F] {
 	var (
 		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]
