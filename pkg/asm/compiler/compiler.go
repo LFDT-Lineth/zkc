@@ -281,7 +281,7 @@ func (p *Compiler[F, T, E, M]) initMultLineFunctionFraming(busId uint, fn MicroF
 	// Add constancies for all input registers (if applicable)
 	p.addInputConstancies(pc, busId, fn)
 	//
-	return NewMultiLineFraming[T, E](pc, bus.pcWidth, ret, bus.retWidth)
+	return NewLegacyMultiLineFraming[T, E](pc, bus.pcWidth, ret, bus.retWidth)
 }
 
 // Add input constancies for the given function.  That is, constraints which

@@ -155,13 +155,20 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			ret         = register.NewId(mod.Width() + 1)
 			// determine suitable width of PC register
 			pcWidth = bit.Width(uint(1 + len(fm.Code())))
+			// one boolean selector register per instruction (code line)
+			pcSelectors = make([]register.Id, len(fm.Code()))
 		)
 		// Create program counter
 		mod.AddRegisters(register.NewComputed(io.PC_NAME, pcWidth, padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
+		// Create one-hot program counter selectors
+		for c := range pcSelectors {
+			pcSelectors[c] = register.NewId(mod.Width())
+			mod.AddRegisters(register.NewComputed(io.SelectorName(uint(c)), 1, padding))
+		}
 		// Initialise multi-line framing
-		framing, constraints = initMultiLineFraming[F](ctx, pc, ret, fm)
+		framing, constraints = initMultiLineFraming[F](ctx, pc, ret, pcSelectors, fm)
 		// Include framing constraints
 		mod.AddConstraints(constraints...)
 	} else {
@@ -183,7 +190,8 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	return mod
 }
 
-func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id, fn vm.FieldFunction,
+func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id, pcSelectors []register.Id,
+	fn vm.FieldFunction,
 ) (Framing[F], []mir.Constraint[F]) {
 	var (
 		// determine suitable width of PC register
@@ -210,8 +218,28 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 	// PC[0] != 0 ==> PC[0] == 1
 	first := mir.NewVanishingConstraint("first", ctx, util.Some(0),
 		mirc.If(pc_i.NotEquals(zero), pc_i.Equals(one)).AsLogical())
+	// Build one-hot selector terms.  The selector for code line c is high
+	// exactly when PC==c+1 (PC==0 is reserved for padding).
+	var (
+		selectorTerms = make([]Expr[F], len(pcSelectors))
+		weightedTerms = make([]Expr[F], len(pcSelectors))
+	)
 	//
-	constraints := []mir.Constraint[F]{padding, init, reset, first}
+	for c, sel := range pcSelectors {
+		sel_i := mirc.Variable[register.Id, Expr[F]](sel, 1, 0)
+		selectorTerms[c] = sel_i
+		weightedTerms[c] = mirc.Number[register.Id, Expr[F]](uint(c + 1)).Multiply(sel_i)
+	}
+	// S = sum of selectors (the activity indicator).
+	sum := mirc.Sum[register.Id, Expr[F]](selectorTerms)
+	// PC == sum_c (c+1)*IS_PC_c (reconstruction)
+	recon := mir.NewVanishingConstraint("pc_recon", ctx, util.None[int](),
+		pc_i.Equals(mirc.Sum[register.Id, Expr[F]](weightedTerms)).AsLogical())
+	// S*(S-1) == 0 i.e. at most one selector is high (one-hot / padding).
+	activity := mir.NewVanishingConstraint("pc_onehot", ctx, util.None[int](),
+		sum.Multiply(sum.Add(mirc.BigNumber[register.Id, Expr[F]](big.NewInt(-1)))).Equals(zero).AsLogical())
+	//
+	constraints := []mir.Constraint[F]{padding, init, reset, first, recon, activity}
 	// Add constancies for all input registers (if applicable):
 	for i, r := range fn.Registers() {
 		if r.IsInput() {
@@ -228,5 +256,5 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 		}
 	}
 	//
-	return mirc.NewMultiLineFraming[register.Id, Expr[F]](pc, pcWidth, ret, 1), constraints
+	return mirc.NewMultiLineFraming[register.Id, Expr[F]](pc, pcWidth, ret, 1, pcSelectors), constraints
 }
