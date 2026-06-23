@@ -172,6 +172,9 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		mod     *schema.Table[F, mir.Constraint[F]]
 		name    = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
 		framing Framing[F]
+		// one boolean selector register per instruction (code line); empty for
+		// atomic functions (which have no program counter).
+		pcSelectors []register.Id
 	)
 	// Initialise module
 	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
@@ -190,9 +193,9 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			ret         = register.NewId(mod.Width() + 1)
 			// determine suitable width of PC register
 			pcWidth = bit.Width(uint(1 + len(fm.Code())))
-			// one boolean selector register per instruction (code line)
-			pcSelectors = make([]register.Id, len(fm.Code()))
 		)
+
+		pcSelectors = make([]register.Id, len(fm.Code()))
 		// Create program counter
 		mod.AddRegisters(register.NewComputed(io.PC_NAME, pcWidth, padding))
 		// Create return line
@@ -221,8 +224,111 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		// translate into AIR constraints
 		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint))
 	}
+	// Emit lookup constraints for any function calls made by this function.
+	addCallLookups[F](mod, ctx, fm, pcSelectors, infos)
 	// Done
 	return mod
+}
+
+// addCallLookups emits a lookup constraint for every function call (Call or
+// UnconditionalCall) made by the given function.  The lookup maps the caller's
+// argument/return registers onto the callee's input/output registers.
+//
+// The caller (source) side is gated by the call's position in the program: in a
+// multi-line caller the call at code line k fires exactly on rows where the
+// one-hot selector IS_PC_k is high, so that selector is used as the source
+// selector; in an atomic caller every row is a call row, so the source is
+// unfiltered.  The callee (target) side is filtered by its $ret line for
+// multi-line callees, or unfiltered for atomic callees.
+func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+	fm vm.FieldFunction, pcSelectors []register.Id, infos []moduleInfo) {
+	//
+	for pc, vec := range fm.Code() {
+		// Determine the source selector for calls on this line (none for atomic
+		// callers, which have no program counter selectors).
+		var srcSelector util.Option[register.Id]
+		if len(pcSelectors) != 0 {
+			srcSelector = util.Some(pcSelectors[pc])
+		}
+		//
+		for _, code := range vec.Codes {
+			switch c := code.(type) {
+			case *instruction.Call:
+				emitCallLookup[F](mod, ctx, fm.Registers(), uint(pc), c.Id, c.Arguments, c.Returns, srcSelector, infos)
+			case *instruction.UnconditionalCall:
+				emitCallLookup[F](mod, ctx, fm.Registers(), uint(pc), c.Id, c.Arguments, c.Returns, srcSelector, infos)
+			}
+		}
+	}
+}
+
+// emitCallLookup constructs and adds a single lookup constraint mapping the
+// caller's argument/return registers onto the callee's input/output registers.
+func emitCallLookup[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+	callerRegs []register.Register, pc, calleeId uint, args, returns []register.Id,
+	srcSelector util.Option[register.Id], infos []moduleInfo) {
+	var (
+		callee = infos[calleeId]
+		handle = fmt.Sprintf("call_%d_%d_%d", ctx, pc, calleeId)
+		// Source ids: the caller's argument registers followed by its return
+		// registers.
+		srcIds = append(append([]register.Id{}, args...), returns...)
+		// Target ids: the callee's input registers (0..nInputs) followed by its
+		// output registers (nInputs..nInputs+nOutputs).  Their count matches the
+		// number of source ids.
+		tgtIds = make([]register.Id, len(srcIds))
+	)
+	//
+	for i := range tgtIds {
+		tgtIds[i] = register.NewId(uint(i))
+	}
+	// Build the source (caller) vector.
+	var source mir.LookupVector[F]
+
+	if srcSelector.HasValue() {
+		var (
+			selId = srcSelector.Unwrap()
+			sel   = term.RawRegisterAccess[F, mir.Term[F]](selId, 1, 0)
+		)
+
+		source = lookup.FilteredVector[F, *mir.RegisterAccess[F]](ctx, sel, registerAccesses[F](callerRegs, srcIds)...)
+	} else {
+		source = lookup.UnfilteredVector[F, *mir.RegisterAccess[F]](ctx, registerAccesses[F](callerRegs, srcIds)...)
+	}
+	// Build the target (callee) vector.
+	var (
+		target   mir.LookupVector[F]
+		tgtTerms = registerAccesses[F](callee.registers, tgtIds)
+	)
+	//
+	if callee.atomic {
+		// Atomic callees have no $ret line: every callee row is a valid table
+		// entry, so the target side is unfiltered.
+		target = lookup.UnfilteredVector[F, *mir.RegisterAccess[F]](calleeId, tgtTerms...)
+	} else {
+		// Multi-line callees expose a $ret line (immediately after the $pc line)
+		// which is 1 on active rows; use it as the lookup selector.
+		var (
+			retId = register.NewId(uint(len(callee.registers)) + 1)
+			ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
+		)
+
+		target = lookup.FilteredVector[F, *mir.RegisterAccess[F]](calleeId, ret, tgtTerms...)
+	}
+	//
+	mod.AddConstraints(mir.NewLookupConstraint(handle, []mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
+}
+
+// registerAccesses builds MIR register accesses (at row offset 0) for the given
+// register ids, looking up each register's width in the supplied layout.
+func registerAccesses[F field.Element[F]](regs []register.Register, ids []register.Id) []*mir.RegisterAccess[F] {
+	terms := make([]*mir.RegisterAccess[F], len(ids))
+	//
+	for i, id := range ids {
+		terms[i] = term.RawRegisterAccess[F, mir.Term[F]](id, regs[id.Unwrap()].Width(), 0)
+	}
+	//
+	return terms
 }
 
 func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id, pcSelectors []register.Id,
