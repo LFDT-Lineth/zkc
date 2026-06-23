@@ -582,8 +582,8 @@ func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved]
 	)
 	// Compile arguments
 	arguments, insns := p.compileNonUniformArgs(mapping, e.Args...)
-	// If a a register is both an argument and a return a call (e. g. "x = f(x)"),
-	// we snapshot any such argument into a fresh temporary first so
+	// If a register is both an argument and a return of a call (e.g. "x = f(x)"),
+	// snapshot that argument into a fresh temporary first so
 	// the call reads a register distinct from the one it writes.
 	for i, arg := range arguments {
 		if slices.ContainsFunc(returns, func(r register.Id) bool { return r.Unwrap() == arg.Unwrap() }) {
