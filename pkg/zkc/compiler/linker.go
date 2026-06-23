@@ -116,8 +116,7 @@ func (p *Linker) Join(srcmap source.Map[any]) {
 func (p *Linker) Register(declaration decl.Unresolved) {
 	// Ignore any anonymous components (i.e. includes)
 	if declaration.Name() != "" {
-		// Record the name, allocate its bus entry (name -> resolved index), and
-		// keep the declaration for the later resolution pass.
+		// Record the name and keep the declaration for the later resolution pass.
 		p.names[declaration.Name()] = true
 		p.declarations = append(p.declarations, declaration)
 	}
