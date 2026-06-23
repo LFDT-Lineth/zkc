@@ -231,15 +231,16 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 		weightedTerms[c] = mirc.Number[register.Id, Expr[F]](uint(c + 1)).Multiply(sel_i)
 	}
 	// S = sum of selectors (the activity indicator).
-	sum := mirc.Sum[register.Id, Expr[F]](selectorTerms)
+	sum := mirc.Sum(selectorTerms)
 	// PC == sum_c (c+1)*IS_PC_c (reconstruction)
-	recon := mir.NewVanishingConstraint("pc_recon", ctx, util.None[int](),
-		pc_i.Equals(mirc.Sum[register.Id, Expr[F]](weightedTerms)).AsLogical())
-	// S*(S-1) == 0 i.e. at most one selector is high (one-hot / padding).
-	activity := mir.NewVanishingConstraint("pc_onehot", ctx, util.None[int](),
-		sum.Multiply(sum.Add(mirc.BigNumber[register.Id, Expr[F]](big.NewInt(-1)))).Equals(zero).AsLogical())
+	decoding := mir.NewVanishingConstraint("pc_decoding", ctx, util.None[int](),
+		pc_i.Equals(mirc.Sum(weightedTerms)).AsLogical())
+	// PC*S == PC i.e. exactly one selector is high whenever PC!=0 (and, via
+	// pc_decoding, none when PC==0).
+	exclusivity := mir.NewVanishingConstraint("is_pc_exclusivity", ctx, util.None[int](),
+		pc_i.Multiply(sum).Equals(pc_i).AsLogical())
 	//
-	constraints := []mir.Constraint[F]{padding, init, reset, first, recon, activity}
+	constraints := []mir.Constraint[F]{padding, init, reset, first, decoding, exclusivity}
 	// Add constancies for all input registers (if applicable):
 	for i, r := range fn.Registers() {
 		if r.IsInput() {
