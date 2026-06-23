@@ -776,12 +776,12 @@ func Test_ZkcUnit_Call_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_02", DEFAULT_UNIT_CONFIG)
 }
 
-// This test produce a recursive call x = f(x)
+// This test covers call register aliasing where the return is assigned to an argument register (x = f(x)).
 func Test_ZkcUnit_Call_03(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_03", DEFAULT_UNIT_CONFIG)
 }
 
-// This test produce a recursive call x = f(y, x)
+// This test covers call register aliasing where the return is assigned to an argument register (x = f(x, y)).
 func Test_ZkcUnit_Call_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_04", DEFAULT_UNIT_CONFIG)
 }
