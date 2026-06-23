@@ -20,27 +20,32 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 )
 
-// globalEnvironment may contain identical variable descriptors in
-// its variables field; for instance a given function in a zkc file
-// may legally contain the following two for loops
+// Note: globalEnvironment may contain identical variable descriptors
+// in its variables slice; e.g. the following is legal zkc:
 //
 //	for i :u8 = 0; i < 2; i = i + 1 { ... }
 //	for i :u8 = 4; i < 8; i = i + 2 { ... }
 //
-// and not throw a compilation error. The following will, however,
-// break. This is due to visibility.
+// The admissibility of a variable declaration within a function body
+// (e.g. in a VarDeclaration or when initializing a for loop) is
+// determined in terms of the set of visible names in the current scope.
+// This is determined via the env.localEnvironment.visible set of
+// variable.Id's and the corresponding Descriptor in
+// env.globalEnvironment.variables.
+//
+// See for instance `rid := env.LookupVariable(name)` in parseAccessExpr.
+//
+// Note: The following zkc code will fail (as expected)
 //
 //	for i :u8 = 0; i < 2; i = i + 1 {                  // 1st i
 //		for i :u8 = 4; i < 8; i = i + 2 { ... }    // 2nd i
 //	}
 //
-// references to variables do not happen in terms of names or data type
-// but in terms of their index in env.globalEnvironment. See for
-// instance
+// due to the first 'i' variable being visible when the 2nd one is being
+// introduced.
 //
-//	rid := env.LookupVariable(name)
-//
-// in parseAccessExpr
+// Note. Creating a block surrounded by braces (within a function body) to
+// to create a new scope is disallowed by the syntax.
 type globalEnvironment struct {
 	effects []*symbol.Unresolved
 	// Variables identifies set of declared variables.
@@ -108,6 +113,10 @@ func (env *Environment) DeclareEffect(effect *symbol.Unresolved) {
 
 // DeclareVariable declares a new register with the given name and bitwidth.  If
 // a register with the same name already exists, this panics.
+//
+// Note. DeclareVariable allows one to introduce local variables whose names shadow
+// the names of top level declarations (constants, functions, memories and type aliases).
+// See https://github.com/LFDT-Lineth/zkc/issues/1921.
 func (env *Environment) DeclareVariable(kind variable.Kind, name string, datatype Type) {
 	// Determine global index of this variable
 	var index = uint(len(env.global.variables))
