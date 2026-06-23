@@ -13,7 +13,7 @@
 package iter
 
 import (
-	"github.com/consensys/go-corset/pkg/util/collection/enum"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/enum"
 )
 
 // ArrayIterator provides an iterator implementation for an Array.

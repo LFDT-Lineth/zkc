@@ -15,9 +15,9 @@ package test
 import (
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/test/util"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/test/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // ===================================================================
@@ -595,6 +595,31 @@ func Test_ZkcInvalid_Memory_16(t *testing.T) {
 }
 
 // ===================================================================
+// Felt assignment Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Felt_Assignment_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_assignment_01")
+}
+
+// ===================================================================
+// Felt static table Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Felt_Static_Table_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_01")
+}
+func Test_ZkcInvalid_Felt_Static_Table_02(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_02")
+}
+func Test_ZkcInvalid_Felt_Static_Table_03(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_03")
+}
+func Test_ZkcInvalid_Felt_Static_Table_04(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/felt_static_table_04")
+}
+
+// ===================================================================
 // Static Tests
 // ===================================================================
 
@@ -847,6 +872,71 @@ func Test_ZkcInvalid_Ternary_03(t *testing.T) {
 
 func Test_ZkcInvalid_Ternary_04(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/ternary_04")
+}
+
+// ===================================================================
+// Debug Function Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Debug_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/debug_01")
+}
+
+func Test_ZkcInvalid_Debug_02(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/debug_02")
+}
+
+func Test_ZkcInvalid_Debug_03(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/debug_03")
+}
+
+func Test_ZkcInvalid_Debug_04(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/debug_04")
+}
+
+func Test_ZkcInvalid_Debug_05(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/debug_05")
+}
+
+// ===================================================================
+// Main (entry point) Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Main_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/main_01")
+}
+
+// Inline Function Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Inline_01(t *testing.T) {
+	// #[inline] is only permitted on functions, not memory declarations.
+	checkZkcInvalid(t, "zkc/invalid/inline_01")
+}
+
+func Test_ZkcInvalid_Inline_02(t *testing.T) {
+	// #[inline] is only permitted on functions, not constant declarations.
+	checkZkcInvalid(t, "zkc/invalid/inline_02")
+}
+
+func Test_ZkcInvalid_Inline_03(t *testing.T) {
+	// The entry function "main" cannot be inlined.
+	checkZkcInvalid(t, "zkc/invalid/inline_03")
+}
+
+func Test_ZkcInvalid_Inline_04(t *testing.T) {
+	// Native functions have no body and, hence, cannot be inlined.
+	checkZkcInvalid(t, "zkc/invalid/inline_04")
+}
+
+func Test_ZkcInvalid_Inline_05(t *testing.T) {
+	// Self-recursive functions cannot be inlined.
+	checkZkcInvalid(t, "zkc/invalid/inline_05")
+}
+
+func Test_ZkcInvalid_Inline_06(t *testing.T) {
+	// Mutually recursive functions cannot be inlined.
+	checkZkcInvalid(t, "zkc/invalid/inline_06")
 }
 
 // ===================================================================

@@ -16,8 +16,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array/codec"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array/codec"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // Decode a given encoding into a mutable array, using a given heap (which

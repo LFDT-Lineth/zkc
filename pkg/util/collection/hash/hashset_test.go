@@ -17,7 +17,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 func Test_HashSet_01(t *testing.T) {

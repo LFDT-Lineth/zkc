@@ -15,9 +15,9 @@ package compiler
 import (
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/corset/ast"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // PreprocessCircuit performs preprocessing prior to final translation.

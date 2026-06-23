@@ -11,9 +11,9 @@
 package decl
 
 import (
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // ResolvedConstant represents a constant whose expression uses only external

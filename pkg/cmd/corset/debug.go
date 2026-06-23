@@ -16,14 +16,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/consensys/go-corset/pkg/binfile"
-	"github.com/consensys/go-corset/pkg/cmd/corset/debug"
-	"github.com/consensys/go-corset/pkg/corset"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
-	"github.com/consensys/go-corset/pkg/util/field/gf251"
-	"github.com/consensys/go-corset/pkg/util/field/gf8209"
-	"github.com/consensys/go-corset/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/binfile"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
+	"github.com/LFDT-Lineth/zkc/pkg/corset"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -63,6 +63,7 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	metadata := GetFlag(cmd, "metadata")
 	constants := GetFlag(cmd, "constants")
 	spillage := GetFlag(cmd, "spillage")
+	showStatic := GetFlag(cmd, "show-static")
 	textWidth := GetUint(cmd, "textwidth")
 	sort := GetUint(cmd, "sort")
 	// Read in constraint files
@@ -94,7 +95,7 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	}
 	//
 	if !stats && !modules && !attrs {
-		debug.PrintSchemas(stack, textWidth)
+		debug.PrintSchemas(stack, textWidth, showStatic)
 	}
 }
 
@@ -106,6 +107,7 @@ func init() {
 	debugCmd.Flags().Bool("stats", false, "Print summary information")
 	debugCmd.Flags().BoolP("modules", "m", false, "show module stats")
 	debugCmd.Flags().Bool("spillage", false, "Print spillage information")
+	debugCmd.Flags().Bool("show-static", false, "Show static tables when printing schemas")
 	debugCmd.Flags().Uint("textwidth", 130, "Set maximum textwidth to use")
 	debugCmd.Flags().Uint("sort", 0, "sort table column")
 }

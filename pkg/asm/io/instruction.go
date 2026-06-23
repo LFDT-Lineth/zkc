@@ -16,7 +16,7 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 )
 
 // UNKNOWN_BUS signals a bus which is unknown.

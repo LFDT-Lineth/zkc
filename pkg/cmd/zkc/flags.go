@@ -17,8 +17,51 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/spf13/cobra"
 )
+
+// FlagChecks provides some additional feature over the base flags package used
+// in Cobra.  Specifically, it allows to ensure certain flags are only used in
+// conjunction with others or, conversely, that certain flags cannot be used in
+// conjunction with others.
+type FlagChecks struct {
+	requires []util.Pair[string, string]
+	excludes []util.Pair[string, string]
+}
+
+// Require asserts that a given flag requires another flag to be set.
+func (p *FlagChecks) Require(flag, required string) {
+	p.requires = append(p.requires, util.Pair[string, string]{Left: flag, Right: required})
+}
+
+// Exclude asserts that two given flags cannot be used together.
+func (p *FlagChecks) Exclude(flag1, flag2 string) {
+	p.excludes = append(p.excludes, util.Pair[string, string]{Left: flag1, Right: flag2})
+}
+
+func checkFlags(cmd *cobra.Command, checks FlagChecks) {
+	// Check requires
+	for _, check := range checks.requires {
+		first := cmd.Flags().Changed(check.Left)
+
+		second := cmd.Flags().Changed(check.Right)
+		if first && !second {
+			fmt.Printf("error: \"--%s\" requires \"--%s\"\n", check.Left, check.Right)
+			os.Exit(1)
+		}
+	}
+	// Check excludes
+	for _, check := range checks.excludes {
+		first := cmd.Flags().Changed(check.Left)
+
+		second := cmd.Flags().Changed(check.Right)
+		if first && second {
+			fmt.Printf("error: \"--%s\" and \"--%s\" cannot be used together\n", check.Left, check.Right)
+			os.Exit(1)
+		}
+	}
+}
 
 // GetFlag gets an expected flag, or panic if an error arises.
 func GetFlag(cmd *cobra.Command, flag string) bool {

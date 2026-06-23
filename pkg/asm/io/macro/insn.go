@@ -16,8 +16,8 @@ import (
 	"encoding/gob"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/asm/io/micro"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro"
 )
 
 // Alias for big integer representation of 1.

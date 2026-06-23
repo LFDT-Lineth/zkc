@@ -13,16 +13,16 @@
 package vm
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/module"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	finsn "github.com/consensys/go-corset/pkg/zkc/vm/instruction/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/transform"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	finsn "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Monomial is a useful alias
@@ -68,6 +68,40 @@ func LowerDivisions[W word.Word[W]](modules []Module) []Module {
 	return transform.LowerDivisions[W](modules)
 }
 
+// OptimizeDivisions is a fast-mode optimization which rewrites division by
+// powers of 2 into right shifts, and remainder by powers of 2 into bitwise
+// ANDs.
+func OptimizeDivisions[W word.Word[W]](modules []Module) []Module {
+	return transform.OptimizeDivisions[W](modules)
+}
+
+// FactorSkipConditions rewrites equality SkipIf instructions (EQ/NEQ) so that
+// the branch condition is materialised once into a fresh 1-bit register, rather
+// than being replicated across each guarded write of the branch.
+// This pass must run after vectorisation and before register splitting.
+func FactorSkipConditions[W word.Word[W]](modules []Module) []Module {
+	return transform.FactorSkipConditions[W](modules)
+}
+
+// InlineFunctions returns an equivalent set of modules in which every call to
+// one of the named functions has been inlined at its call site, and the named
+// function modules removed (module identifiers within Call / MemRead /
+// MemWrite instructions are remapped accordingly).  Each call site is replaced
+// by the callee's body operating on caller registers: inputs / outputs are
+// aliased directly to the call's argument / return registers where provably
+// equivalent; otherwise (e.g. for temporaries, or aliasing call sites such as
+// "x = f(x)") fresh caller-local shadow registers are allocated, along with
+// argument / return copies which preserve the dynamic width checks of a true
+// call.
+//
+// This transform must be applied before vectorisation, since it splits the
+// vector enclosing a call at the call site.  It panics on: an unknown or
+// duplicate name; a native function; the entry function "main"; or (mutual)
+// recursion amongst the named functions.
+func InlineFunctions[W word.Word[W]](modules []Module, names []string) []Module {
+	return transform.InlineFunctions[W](modules, names)
+}
+
 // SplitRegisters all modules to meet a given bandwidth and maximum register width.
 // This will split all registers wider than the maximum permitted width into two
 // or more "limbs" (i.e. subregisters which do not exceeded the permitted
@@ -81,6 +115,14 @@ func SplitRegisters[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachin
 	return transform.SplitRegisters(limbsMap, wm)
 }
 
+// AddRangeConstraints adds a range-proof constraint for each register in the machine.
+// This is done by adding lookups from each (non-constant) register to a precomputed
+// table of all valid values for that register width.
+// This function must be called after SplitRegisters.
+func AddRangeConstraints[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachine[W] {
+	return transform.AddRangeConstraints[W](cfg, wm)
+}
+
 // WordToWordMachine transforms a machine operating over a given word type (W1)
 // into an identical machine which operates over a different word type (W2).
 // Generally speaking, we are going from a larger word (e.g. word.Uint) to a
@@ -92,7 +134,7 @@ func SplitRegisters[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachin
 // The source machine's prime modulus is re-expressed in W2 so the new machine
 // retains the same field semantics; this means the modulus itself must also
 // fit in W2's bandwidth.  ROM/SROM contents are converted element-wise;
-// WOM/RAM/Bipartite memories start empty in the new machine.
+// WOM/RAM/Paged memories start empty in the new machine.
 //
 // This function will panic if it encounters a register, constant, modulus or
 // memory cell which exceeds the bandwidth of W2.  Callers needing to target a
@@ -109,6 +151,18 @@ func WordToWordMachine[W1 word.Word[W1], W2 word.Word[W2]](m1 *machine.Word[W1])
 func WordToFieldMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm *WordMachine[W],
 ) (fm *FieldMachine[F]) {
 	return transform.WordToFieldMachine[W, F](cfg, wm)
+}
+
+// WordToBytecodeInterpreter compiles a word machine into a bytecode sequence
+// and, from this, constructs an interpreter.
+func WordToBytecodeInterpreter[W word.Word[W]](wm *machine.Word[W]) *BytecodeInterpreter[W] {
+	return transform.WordToBytecodeMachine(wm)
+}
+
+// WordToBytecodeProgram compiles a word machine into a bytecode sequence which
+// can be executed by an interpreter.
+func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) BytecodeProgram[W] {
+	return transform.WordToBytecodeProgram(wm)
 }
 
 func newLimbsMap(config field.Config, modules ...Module) module.LimbsMap {

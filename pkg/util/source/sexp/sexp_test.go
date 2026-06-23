@@ -16,7 +16,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // ============================================================================

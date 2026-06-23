@@ -13,8 +13,8 @@
 package field
 
 import (
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 )
 
 // BatchInvert efficiently inverts the list of elements s, in place.

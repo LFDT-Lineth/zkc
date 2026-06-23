@@ -16,7 +16,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 const ADD = 0

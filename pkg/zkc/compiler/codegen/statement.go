@@ -14,21 +14,22 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"slices"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/lval"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/util"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/lval"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
 // StmtCompiler provides a working environment for compiling individual statements
@@ -59,6 +60,8 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorI
 		insns = append(insns, post...)
 	case *stmt.IfGoto[symbol.Resolved]:
 		return p.compileCondition(pc, s.Cond, mapping, s.Target)
+	case *stmt.Dispatch[symbol.Resolved]:
+		return p.compileDispatch(s, mapping)
 	case *stmt.Goto[symbol.Resolved]:
 		return instruction.NewVector[Instruction](instruction.NewJump(s.Target))
 	case *stmt.Fail[symbol.Resolved]:
@@ -119,14 +122,20 @@ func (p *StmtCompiler) mapLVals(mapping []uint, lvals []LVal) ([]register.Vector
 				id = mapping[lv.Name.Index]
 			)
 			if !ext.IsWriteable() {
-				panic(fmt.Sprintf("unreadable memory \"%s\" encountered", ext.Name()))
+				panic(fmt.Sprintf("unwritable memory \"%s\" encountered", ext.Name()))
 			}
 			//
 			dataLines := make([]register.Id, len(ext.Data))
 			addressLines, pre := p.compileNonUniformArgs(mapping, lv.Args...)
 			// Allocate data lines as needed
 			for j, t := range ext.Data {
-				bitwidth, _ := data.BitWidthOf(t.DataType, p.environment)
+				var bitwidth uint
+				if t.DataType.AsField(p.environment) != nil {
+					bitwidth = math.MaxUint
+				} else {
+					bitwidth, _ = data.BitWidthOf(t.DataType, p.environment)
+				}
+
 				dataLines[j] = p.allocate(bitwidth)
 				regs = append(regs, register.NewVector(dataLines[j]))
 			}
@@ -206,6 +215,43 @@ func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, ta
 	}
 }
 
+// compileDispatch compiles a multiway dispatch into a single vector
+// instruction.  The discriminant is evaluated into a register, then a
+// MultiwaySkip selects between a jump table laid out immediately after it: the
+// default jump (reached on no match) followed by one jump per branch.  Every
+// label of branch i therefore skips by i+1 to land on that branch's jump.
+func (p *StmtCompiler) compileDispatch(s *stmt.Dispatch[symbol.Resolved], mapping []uint) VectorInstruction {
+	// Evaluate the discriminant into a single register.
+	sources, insns := p.compileNonUniformArgs(mapping, s.Discriminant)
+	source := sources[0]
+	// Build the dispatch table from the (constant) case labels.
+	var cases []instruction.DispatchCase
+	//
+	for i, branch := range s.Branches {
+		for _, label := range branch.Labels {
+			value := p.evalConstant(label)
+			// The multiway skip compares against a uint64 immediate.
+			if !value.FitsWithin(64) {
+				p.errors = append(p.errors,
+					p.srcmaps.SyntaxErrors(label, "switch value too large for multiway dispatch")...)
+				//
+				continue
+			}
+			//
+			cases = append(cases, instruction.DispatchCase{Value: uint(value.Uint64()), Skip: uint(i) + 1})
+		}
+	}
+	// Emit the dispatch followed by its jump table (default first).
+	insns = append(insns, instruction.NewMultiwaySkip(source, cases...))
+	insns = append(insns, instruction.NewJump(s.DefaultTarget))
+	//
+	for _, branch := range s.Branches {
+		insns = append(insns, instruction.NewJump(branch.Target))
+	}
+	//
+	return instruction.NewVector(insns...)
+}
+
 func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...register.Vector) []Instruction {
 	switch e := e.(type) {
 	case *expr.TupleInitialiser[symbol.Resolved]:
@@ -222,6 +268,14 @@ func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...regis
 			//
 			return destructMultiway(p, e, mapping, targets, p.compileMemoryRead)
 		case *decl.ResolvedFunction:
+			// Calls to #[debug] functions are elided in quiet mode, exactly as
+			// printf statements are.  Such functions cannot return values or
+			// write memories (enforced by validate.DebugFunctions), so
+			// dropping the call has no effect on the surrounding computation.
+			if p.quiet && slices.Contains(ext.Annotations(), "debug") {
+				return nil
+			}
+			//
 			return destructMultiway(p, e, mapping, targets, p.compileFunctionCall)
 		default:
 			panic(fmt.Sprintf("unknown symbol \"%s\" encountered", e.Name.String()))
@@ -260,7 +314,7 @@ func (p *StmtCompiler) compileExpr(e Expr, bitwidth uint, mapping []uint, target
 			return p.compileIntAdd(e.Exprs, bitwidth, mapping, targets)
 		}
 	case *expr.Cast[symbol.Resolved]:
-		return p.compileRootExpr(e.Expr, mapping, targets)
+		return p.compileCast(e, bitwidth, mapping, targets)
 	case *expr.Concat[symbol.Resolved]:
 		return p.compileConcat(e.Exprs, bitwidth, mapping, targets)
 	case *expr.BitwiseAnd[symbol.Resolved]:
@@ -431,6 +485,22 @@ func (p *StmtCompiler) compileTupleInitialiser(e *expr.TupleInitialiser[symbol.R
 	return insns
 }
 
+func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth uint, mapping []uint,
+	targets register.Vector) []Instruction {
+	//
+	var e_bitwidth uint
+	//
+	if e.Expr.Type().AsField(p.environment) == nil {
+		//
+		if e_bitwidth, _ = data.BitWidthOf(e.Expr.Type(), p.environment); e_bitwidth <= bitwidth {
+			// upcast
+			return p.compileExpr(e.Expr, e_bitwidth, mapping, targets)
+		}
+	}
+	// down cast (of some kind).
+	return p.compileRootExpr(e.Expr, mapping, targets)
+}
+
 func (p *StmtCompiler) compileIntConst(c vm.Uint, _ []uint, target register.Vector,
 ) []Instruction {
 	//
@@ -460,16 +530,13 @@ func (p *StmtCompiler) compileIntAdd(args []Expr, bitwidth uint, mapping []uint,
 	var (
 		constant vm.Uint
 		nargs    []Expr
-		w        vm.Uint
 	)
 	//
 	for _, e := range args {
 		var overflow bool
 		//
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant, overflow = constant.Add(w.SetBigInt(c.Constant()))
-		} else if p.isConstantAccess(e) {
-			constant, overflow = constant.Add(p.evalConstant(e))
+		if c, ok := p.asConstant(e); ok {
+			constant, overflow = constant.Add(c)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -490,17 +557,14 @@ func (p *StmtCompiler) compileFieldAdd(args []Expr, mapping []uint, target regis
 	var (
 		constant vm.Uint
 		nargs    []Expr
-		w        vm.Uint
 		modulus  vm.Uint
 	)
 	//
 	modulus = modulus.SetBigInt(p.field.Modulus())
 	//
 	for _, e := range args {
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant = constant.AddMod(w.SetBigInt(c.Constant()), modulus)
-		} else if p.isConstantAccess(e) {
-			constant = constant.AddMod(p.evalConstant(e), modulus)
+		if c, ok := p.asConstant(e); ok {
+			constant = constant.AddMod(c, modulus)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -561,22 +625,19 @@ func (p *StmtCompiler) compileIntMul(args []Expr, bitwidth uint, mapping []uint,
 	var (
 		constant vm.Uint = vm.Const64[vm.Uint](1)
 		nargs    []Expr
-		w        vm.Uint
 	)
 	//
 	for _, e := range args {
-		var overflow bool
+		var carry vm.Uint
 		//
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant, overflow = constant.Mul(w.SetBigInt(c.Constant()))
-		} else if p.isConstantAccess(e) {
-			constant, overflow = constant.Mul(p.evalConstant(e))
+		if c, ok := p.asConstant(e); ok {
+			carry, constant = constant.Mul(c)
 		} else {
 			nargs = append(nargs, e)
 		}
 		// NOTE: this error should be caught and reported earlier in the
 		// pipeline.
-		if overflow || !constant.FitsWithin(bitwidth) {
+		if carry.Cmp64(0) != 0 || !constant.FitsWithin(bitwidth) {
 			panic("arithmetic overflow")
 		}
 	}
@@ -590,18 +651,16 @@ func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target regis
 ) []Instruction {
 	//
 	var (
-		constant   vm.Uint = vm.Const64[vm.Uint](1)
-		nargs      []Expr
-		w, modulus vm.Uint
+		constant vm.Uint = vm.Const64[vm.Uint](1)
+		nargs    []Expr
+		modulus  vm.Uint
 	)
 	//
 	modulus = modulus.SetBigInt(p.field.Modulus())
 	//
 	for _, e := range args {
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			constant = constant.MulMod(w.SetBigInt(c.Constant()), modulus)
-		} else if p.isConstantAccess(e) {
-			constant = constant.MulMod(p.evalConstant(e), modulus)
+		if c, ok := p.asConstant(e); ok {
+			constant = constant.MulMod(c, modulus)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -720,16 +779,13 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 	var (
 		constant vm.Uint
 		nargs    []Expr
-		w        vm.Uint
 	)
 	//
 	for i, e := range args {
 		var overflow bool
 
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok && i > 0 {
-			constant, overflow = constant.Add(w.SetBigInt(c.Constant()))
-		} else if p.isConstantAccess(e) && i > 0 {
-			constant, overflow = constant.Add(p.evalConstant(e))
+		if c, ok := p.asConstant(e); ok && i > 0 {
+			constant, overflow = constant.Add(c)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -749,18 +805,16 @@ func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target regis
 ) []Instruction {
 	//
 	var (
-		constant   vm.Uint
-		nargs      []Expr
-		w, modulus vm.Uint
+		constant vm.Uint
+		nargs    []Expr
+		modulus  vm.Uint
 	)
 	//
 	modulus = modulus.SetBigInt(p.field.Modulus())
 	//
 	for i, e := range args {
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok && i > 0 {
-			constant = constant.AddMod(w.SetBigInt(c.Constant()), modulus)
-		} else if p.isConstantAccess(e) && i > 0 {
-			constant = constant.AddMod(p.evalConstant(e), modulus)
+		if c, ok := p.asConstant(e); ok && i > 0 {
+			constant = constant.AddMod(c, modulus)
 		} else {
 			nargs = append(nargs, e)
 		}
@@ -835,7 +889,7 @@ func (p *StmtCompiler) compileUniformArgs(bitwidth uint, mapping []uint, exprs .
 	//
 	for i, e := range exprs {
 		//
-		if r, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
+		if r, ok := p.asLocalAccess(e); ok {
 			targets[i] = register.NewId(r.Variable)
 		} else {
 			// Allocate temporary variable
@@ -856,7 +910,7 @@ func (p *StmtCompiler) compileNonUniformArgs(mapping []uint, exprs ...Expr) ([]r
 	//
 	for i, e := range exprs {
 		//
-		if r, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
+		if r, ok := p.asLocalAccess(e); ok {
 			targets[i] = register.NewId(r.Variable)
 		} else {
 			var bitwidth uint
@@ -923,6 +977,28 @@ func (p *StmtCompiler) bitwidthOf(target register.Vector) uint {
 	}
 	//
 	return bitwidth
+}
+
+func (p *StmtCompiler) asConstant(e Expr) (vm.Uint, bool) {
+	var w vm.Uint
+	//
+	if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
+		return w.SetBigInt(c.Constant()), true
+	} else if p.isConstantAccess(e) {
+		return p.evalConstant(e), true
+	}
+	//
+	return w, false
+}
+
+func (p *StmtCompiler) asLocalAccess(e Expr) (*expr.LocalAccess[symbol.Resolved], bool) {
+	if c, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
+		return c, true
+	} else if c, ok := e.(*expr.Cast[symbol.Resolved]); ok {
+		return p.asLocalAccess(c.Expr)
+	}
+	//
+	return nil, false
 }
 
 func (p *StmtCompiler) isConstantAccess(e Expr) bool {

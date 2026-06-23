@@ -17,10 +17,10 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/pool"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/pool"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // FromBytesV2 parses a byte array representing a given LTv2 trace file into a set

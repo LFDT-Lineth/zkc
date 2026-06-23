@@ -15,7 +15,7 @@ package pool
 import (
 	"math"
 
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // LocalIndex represents a pool which stores words "as is", and does not attempt

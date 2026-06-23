@@ -15,10 +15,10 @@ package mir
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/ir/term"
-	"github.com/consensys/go-corset/pkg/schema/constraint/lookup"
-	"github.com/consensys/go-corset/pkg/schema/module"
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 // Subdivide implementation for the FieldAgnostic interface.
@@ -107,7 +107,7 @@ func (p *Subdivider[F]) splitLookupVector(geometry lookup.Geometry, vector looku
 	}
 	// Check alignment
 	for i, ith := range vector.Terms {
-		// Pad & flattern
+		// Pad & flatten
 		limbs = append(limbs, p.padLookupLimb(uint(i), ith, geometry, vector.Module)...)
 	}
 	// Done

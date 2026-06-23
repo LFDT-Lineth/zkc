@@ -11,10 +11,10 @@
 package decl
 
 import (
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 )
 
 // ResolvedFunction represents a function which contains instructions whose
@@ -48,8 +48,8 @@ type Function[S symbol.Symbol[S]] struct {
 	// Effects describes zero or more external memories which this function is
 	// permitted to access.
 	Effects []*S
-	// Registers describes zero or more variables of a given width.  Each
-	// register can be designated as an input / output or temporary.
+	// Variables describes zero or more variables of a given width.  Each
+	// variable can be designated as an input / output or temporary.
 	Variables []variable.Descriptor[S]
 	// Number of input variables
 	NumInputs uint

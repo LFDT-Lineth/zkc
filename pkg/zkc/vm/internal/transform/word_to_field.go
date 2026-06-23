@@ -17,16 +17,16 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/poly"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/poly"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // WordToFieldMachine translates a machine over integer words into a machine over
@@ -93,8 +93,8 @@ func (p wordToField[W, F]) lowerWordMemory(wf memory.Memory[W]) (ff memory.Memor
 		return memory.NewWriteOnce[F](wf.Name(), wf.IsPublic(), regs)
 	case *memory.RandomAccess[W]:
 		return memory.NewRandomAccess[F](wf.Name(), regs)
-	case *memory.BiPartiteRandomAccess[W]:
-		return memory.NewBiPartiteRandomAccess[F](wf.Name(), regs)
+	case *memory.PagedRandomAccess[W]:
+		return memory.NewPagedRandomAccess[F](wf.Name(), regs)
 	default:
 		panic(fmt.Sprintf("unknown word memory %s", wf.Name()))
 	}
@@ -146,6 +146,9 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 	// Base instructions translate directly as is.
 	case opcode.CALL:
 		return wi.(*instruction.Call)
+	case opcode.UNCONDITIONAL_CALL:
+		// Preserve the type so the constraint translator can distinguish it.
+		return wi.(*instruction.UnconditionalCall)
 	case opcode.DEBUG:
 		return wi.(*instruction.Debug)
 	case opcode.FAIL:
@@ -166,6 +169,8 @@ func (p wordToField[W, F]) lowerWordInstruction(wi WordInstruction, mapping Syst
 		var insn = wi.(*instruction.SkipIf)
 		// Done
 		return insn
+	case opcode.SKIP_MULTI:
+		return wi.(*instruction.MultiwaySkip)
 	case opcode.BIT_CONCAT:
 		var insn = wi.(*instruction.WordTypeA[W])
 		return p.lowerBitwiseConcatenation(insn.Target, insn.Sources, mapping)

@@ -15,7 +15,7 @@ package hash
 import (
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 func Test_HashMap_01(t *testing.T) {

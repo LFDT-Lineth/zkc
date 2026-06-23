@@ -13,7 +13,7 @@
 package enum
 
 import (
-	"github.com/consensys/go-corset/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
 
 // Power returns an iterator which enumerates all arrays of size n

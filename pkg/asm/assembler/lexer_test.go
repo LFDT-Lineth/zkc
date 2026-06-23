@@ -3,7 +3,7 @@ package assembler
 import (
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/util/assert"
+	"github.com/LFDT-Lineth/zkc/pkg/util/assert"
 )
 
 func TestLexerNumberRule(t *testing.T) {

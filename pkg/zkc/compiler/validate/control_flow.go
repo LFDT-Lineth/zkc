@@ -16,12 +16,12 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // ControlFlow checks for issues related to the control-flow of a function.  For
@@ -109,6 +109,14 @@ func applyInstructionSemantics(worklist *Worklist, fn decl.ResolvedFunction, src
 		worklist.Join(insn.Target, state)
 		// Fall thru
 		worklist.Join(pc+1, state)
+	case *stmt.Dispatch[symbol.Resolved]:
+		// Multiway branch: control reaches each branch target or the default,
+		// and never falls through to the following instruction.
+		for _, b := range insn.Branches {
+			worklist.Join(b.Target, state)
+		}
+		//
+		worklist.Join(insn.DefaultTarget, state)
 	case *stmt.Return[symbol.Resolved]:
 		// Check all outputs are assigned
 		errs := checkOutputsAssigned(insn, state, fn, srcmaps)

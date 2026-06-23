@@ -17,8 +17,9 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"math/bits"
 
-	util_math "github.com/consensys/go-corset/pkg/util/math"
+	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
 
 // Uint represents an unbound unsigned integer.
@@ -43,6 +44,12 @@ func (p Uint) Add(w Uint) (Uint, bool) {
 	return Uint{res}, false
 }
 
+// Add64 implementation for Word interface.
+func (p Uint) Add64(w uint64) (Uint, bool) {
+	var tmp Uint
+	return p.Add(tmp.SetUint64(w))
+}
+
 // AddMod implementation for Word interface.
 func (p Uint) AddMod(w, m Uint) Uint {
 	var res big.Int
@@ -58,16 +65,9 @@ func (p Uint) Bandwidth() uint {
 	return math.MaxUint
 }
 
-// Div implementation for Word interface.
-func (p Uint) Div(w Uint) Uint {
-	if w.value.Sign() == 0 {
-		panic("division by zero")
-	}
-	//
-	var res big.Int
-	res.Div(&p.value, &w.value)
-	//
-	return Uint{res}
+// BigInt implementation for Word interface.
+func (p Uint) BigInt() *big.Int {
+	return &p.value
 }
 
 // Cmp implementation for Word interface.
@@ -84,9 +84,16 @@ func (p Uint) Cmp64(o uint64) int {
 	return 1
 }
 
-// BigInt implementation for Word interface.
-func (p Uint) BigInt() *big.Int {
-	return &p.value
+// Div implementation for Word interface.
+func (p Uint) Div(w Uint) Uint {
+	if w.value.Sign() == 0 {
+		panic("division by zero")
+	}
+	//
+	var res big.Int
+	res.Div(&p.value, &w.value)
+	//
+	return Uint{res}
 }
 
 // FitsWithin implementation for Word interface.
@@ -119,13 +126,15 @@ func (p Uint) Or(w Uint) Uint {
 }
 
 // Mul implementation for Word interface.
-func (p Uint) Mul(w Uint) (Uint, bool) {
+func (p Uint) Mul(w Uint) (hi, lo Uint) {
 	var (
 		res big.Int
 	)
 	res.Mul(&p.value, &w.value)
 	//
-	return Uint{res}, false
+	lo = Uint{res}
+	//
+	return hi, lo
 }
 
 // MulMod implementation for Word interface.
@@ -162,11 +171,11 @@ func (p Uint) Shl(width uint, n Uint) Uint {
 }
 
 // Shl64 implementation for Word interface.
-func (p Uint) Shl64(n uint64) Uint {
+func (p Uint) Shl64(n uint64) (hi Uint, lo Uint) {
 	var res big.Int
 	res.Lsh(&p.value, uint(n))
 	//
-	return Uint{res}
+	return hi, Uint{res}
 }
 
 // Shr implementation for Word interface.
@@ -187,8 +196,7 @@ func (p Uint) Shr64(n uint64) Uint {
 
 // Slice implementation for Word interface.
 func (p Uint) Slice(width uint) Uint {
-	val := readBitSlice(0, width, p.value, true)
-	return Uint{val}
+	return Uint{lowBits(width, p.value)}
 }
 
 // Uint64 implementation for Word interface.
@@ -232,6 +240,12 @@ func (p Uint) Sub(w Uint) (Uint, bool) {
 	return Uint{res}, res.Sign() < 0
 }
 
+// Sub64 implementation for Word interface.
+func (p Uint) Sub64(w uint64) (Uint, bool) {
+	var tmp Uint
+	return p.Sub(tmp.SetUint64(w))
+}
+
 // SubMod implementation for Word interface.
 func (p Uint) SubMod(w, m Uint) Uint {
 	var res big.Int
@@ -269,33 +283,27 @@ func (p *Uint) GobDecode(data []byte) error {
 	return p.value.GobDecode(data)
 }
 
-// ReadBitSlice reads a slice of bits starting at a given offset in a give
-// value.  For example, consider the value is 10111000 and we have offset=1 and
-// width=4, then the result is 1100.
-func readBitSlice(offset uint, width uint, value big.Int, sign bool) big.Int {
-	var (
-		slice big.Int
-		bit   uint
-		n     = int(offset + width)
-		m     = value.BitLen()
-		i     = int(offset)
-		j     = 0
-	)
-	// Read bits upto end
-	for ; i < min(n, m); i, j = i+1, j+1 {
-		// Read appropriate bit
-		bit = value.Bit(i)
-		// set appropriate bit
-		slice.SetBit(&slice, j, bit)
-	}
-	// Sign extend (negative values)
-	if !sign {
-		// Negative value
-		for ; i < n; i, j = i+1, j+1 {
-			// set appropriate bit
-			slice.SetBit(&slice, j, 1)
+// lowBits returns the low `width` bits of value (i.e. value mod 2^width).
+// For example, given value 10111000 and width=4 the result is 1000.
+func lowBits(width uint, value big.Int) big.Int {
+	var slice big.Int
+	// Fast paths: the result fits within a single uint64.
+	if width <= 64 {
+		if value.IsUint64() {
+			slice.SetUint64(value.Uint64() & mask64(width))
+			return slice
+		}
+		// For a multi-word value, the least-significant machine word already
+		// holds every bit we keep, so there's no need to touch the high words.
+		if width <= bits.UintSize {
+			slice.SetUint64(uint64(value.Bits()[0]) & mask64(width))
+			return slice
 		}
 	}
+	// General path: mask off everything at or above bit `width`.
+	mask := new(big.Int).Lsh(&one, width)
+	mask.Sub(mask, &one)
+	slice.And(&value, mask)
 	//
 	return slice
 }

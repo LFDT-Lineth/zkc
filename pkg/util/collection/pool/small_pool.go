@@ -16,11 +16,11 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
-	"github.com/consensys/go-corset/pkg/util/field/gf251"
-	"github.com/consensys/go-corset/pkg/util/field/gf8209"
-	"github.com/consensys/go-corset/pkg/util/field/koalabear"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // SmallPool is a pool implementation for handling small domains (i.e. where all

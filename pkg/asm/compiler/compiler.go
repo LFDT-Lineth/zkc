@@ -16,13 +16,13 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/asm/io/micro"
-	"github.com/consensys/go-corset/pkg/schema/module"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Element provides a convenient shorthand.
@@ -281,7 +281,7 @@ func (p *Compiler[F, T, E, M]) initMultLineFunctionFraming(busId uint, fn MicroF
 	// Add constancies for all input registers (if applicable)
 	p.addInputConstancies(pc, busId, fn)
 	//
-	return NewMultiLineFraming[T, E](pc, bus.pcWidth, ret, bus.retWidth)
+	return NewLegacyMultiLineFraming[T, E](pc, bus.pcWidth, ret, bus.retWidth)
 }
 
 // Add input constancies for the given function.  That is, constraints which

@@ -18,11 +18,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Word --- see documentation on vm.WordMachine
@@ -216,11 +216,11 @@ func executeMul[W word.Word[W]](target register.Vector, sources []register.Id, c
 	)
 	//
 	for _, arg := range sources {
-		var of bool
+		var w W
 		//
-		val, of = val.Mul(frame.Load(arg))
+		w, val = val.Mul(frame.Load(arg))
 		//
-		overflow = overflow || of
+		overflow = overflow || w.Cmp64(0) != 0
 	}
 	//
 	if overflow && val.Cmp64(0) != 0 {
@@ -465,7 +465,7 @@ func executeConcat[W word.Word[W]](target register.Vector, sources []register.Id
 			width = frame.BitwidthOf(reg)
 		)
 		//
-		val = val.Shl64(uint64(width))
+		_, val = val.Shl64(uint64(width))
 		// Merge bits from value at the correct position
 		val = val.Or(frame.Load(reg))
 	}

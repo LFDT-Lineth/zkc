@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // WordArrayBuilder provides a convenient aliasO

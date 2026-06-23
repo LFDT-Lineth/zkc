@@ -1,5 +1,5 @@
 GOCORSET_VERSION:=$(shell git describe --always --tags)
-GOCORSET_VERSION_PATH:="github.com/consensys/go-corset/pkg/cmd"
+GOCORSET_VERSION_PATH:="github.com/LFDT-Lineth/zkc/pkg/cmd"
 GOLANGCI_VERSION:=2.4.0
 PROJECT_NAME:=go-corset
 GOPATH_BIN:=$(shell go env GOPATH)/bin
@@ -62,7 +62,7 @@ unit-test:
 
 build-zkc:
 	@echo ">>> Building zkc... ${GOCORSET_VERSION}"
-	go build -ldflags="-X 'github.com/consensys/go-corset/pkg/cmd/zkc.Version=${GOCORSET_VERSION}'" -o bin/zkc cmd/zkc/main.go
+	go build -ldflags="-X 'github.com/LFDT-Lineth/zkc/pkg/cmd/zkc.Version=${GOCORSET_VERSION}'" -o bin/zkc cmd/zkc/main.go
 
 zkc-lint: build-zkc
 	@echo ">>> Linting ZkC source files..."

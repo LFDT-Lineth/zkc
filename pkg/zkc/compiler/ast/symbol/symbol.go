@@ -13,7 +13,7 @@ package symbol
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 )
 
 // Symbol represents a reference to some declared entity, such as a function,

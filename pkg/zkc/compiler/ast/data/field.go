@@ -11,7 +11,7 @@
 package data
 
 import (
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // ResolvedFieldElement represents a field element type with only resolved identifiers.

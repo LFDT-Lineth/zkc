@@ -17,17 +17,17 @@ import (
 	"math"
 	"path/filepath"
 
-	"github.com/consensys/go-corset/pkg/asm/assembler"
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/asm/io/macro"
-	"github.com/consensys/go-corset/pkg/asm/io/micro"
-	"github.com/consensys/go-corset/pkg/asm/program"
-	"github.com/consensys/go-corset/pkg/ir/hir"
-	"github.com/consensys/go-corset/pkg/ir/mir"
-	"github.com/consensys/go-corset/pkg/schema/constraint/lookup"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/assembler"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/macro"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/program"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/hir"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // Register describes a single register within a function.

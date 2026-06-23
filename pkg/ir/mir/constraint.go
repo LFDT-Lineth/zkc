@@ -13,20 +13,20 @@
 package mir
 
 import (
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/constraint"
-	"github.com/consensys/go-corset/pkg/schema/constraint/interleaving"
-	"github.com/consensys/go-corset/pkg/schema/constraint/lookup"
-	"github.com/consensys/go-corset/pkg/schema/constraint/permutation"
-	"github.com/consensys/go-corset/pkg/schema/constraint/ranged"
-	"github.com/consensys/go-corset/pkg/schema/constraint/sorted"
-	"github.com/consensys/go-corset/pkg/schema/constraint/vanishing"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source/sexp"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/interleaving"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/sorted"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // Constraint attempts to encapsulate the notion of a valid constraint at the MIR

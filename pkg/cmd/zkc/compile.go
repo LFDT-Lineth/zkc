@@ -15,23 +15,25 @@ package zkc
 import (
 	"fmt"
 	"os"
+	"strings"
 
-	"github.com/consensys/go-corset/pkg/cmd/corset/debug"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
-	"github.com/consensys/go-corset/pkg/util/field/gf251"
-	"github.com/consensys/go-corset/pkg/util/field/gf8209"
-	"github.com/consensys/go-corset/pkg/util/field/koalabear"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
-	"github.com/consensys/go-corset/pkg/zkc/constraints"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -55,9 +57,10 @@ var compileCmds = []FieldAgnosticCmd{
 
 func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
-		build  = GetBuildConfig[F](cmd, field)
-		output = GetString(cmd, "output")
-		quiet  = GetFlag(cmd, "quiet")
+		build      = GetBuildConfig[F](cmd, field)
+		output     = GetString(cmd, "output")
+		quiet      = GetFlag(cmd, "quiet")
+		showStatic = GetFlag(cmd, "show-static")
 	)
 	// Suppress printf debug instructions when quiet mode is enabled.
 	build.config = build.config.Quiet(quiet)
@@ -69,7 +72,7 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		writeArtifacts(output, build, artifacts)
 	} else {
 		// Print out requested artifacts
-		printArtifacts(artifacts)
+		printArtifacts(artifacts, showStatic)
 	}
 }
 
@@ -98,26 +101,30 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig[F], a
 	}
 }
 
-func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F]) {
-	// Abstract Sytnax Tree
+func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F], showStatic bool) {
+	// Abstract Syntax Tree
 	if artifacts.ast.HasValue() {
 		writeAbstractSyntaxTree(artifacts.ast.Unwrap())
 	}
 	// Word-level Intermediate Representation
 	if artifacts.wir.HasValue() {
-		writeIntermediateRepresentation(artifacts.wir.Unwrap())
+		writeIntermediateRepresentation(artifacts.wir.Unwrap(), artifacts.annotations)
+	}
+	// Word-level Intermediate Representation
+	if artifacts.bci.HasValue() {
+		writeBytecodeInterpreter(artifacts.bci.Unwrap(), artifacts.annotations)
 	}
 	// Field-level Intermediate Representation
 	if artifacts.fir.HasValue() {
-		writeIntermediateRepresentation(artifacts.fir.Unwrap())
+		writeIntermediateRepresentation(artifacts.fir.Unwrap(), artifacts.annotations)
 	}
 	// Mid-level Intermediate Representation
 	if artifacts.mir.HasValue() {
-		debug.PrintAnySchema(artifacts.mir.Unwrap(), 80)
+		debug.PrintAnySchema(artifacts.mir.Unwrap(), 80, showStatic)
 	}
 	// Arithmetic Intermediate Representation
 	if artifacts.air.HasValue() {
-		debug.PrintAnySchema(artifacts.air.Unwrap(), 80)
+		debug.PrintAnySchema(artifacts.air.Unwrap(), 80, showStatic)
 	}
 }
 
@@ -168,7 +175,15 @@ func writeConstant(m *decl.ResolvedConstant, env data.ResolvedEnvironment) {
 	fmt.Println(m.ConstExpr.String(mapping))
 }
 
+func writeAnnotations(annotations []string) {
+	for _, a := range annotations {
+		fmt.Printf("#[%s]\n", a)
+	}
+}
+
 func writeMemory(m *decl.ResolvedMemory, env data.ResolvedEnvironment) {
+	writeAnnotations(m.Annotations())
+	//
 	switch m.Kind {
 	case decl.PUBLIC_READ_ONLY_MEMORY:
 		fmt.Printf("public input")
@@ -230,6 +245,8 @@ func writeMemoryContents(values []expr.Resolved) {
 }
 
 func writeFunction(f *decl.ResolvedFunction, env data.ResolvedEnvironment) {
+	writeAnnotations(f.Annotations())
+	//
 	fmt.Printf("fn %s", f.Name())
 	// Write optional effects
 	if len(f.Effects) > 0 {
@@ -298,13 +315,15 @@ func writeFunctionVariables(f *decl.ResolvedFunction, env data.ResolvedEnvironme
 // ============================================================================
 
 func writeIntermediateRepresentation[W vm.MachineWord[W], I vm.Instruction, T vm.Executor[W, I]](
-	machine vm.BaseMachine[W, I, T]) {
+	machine vm.BaseMachine[W, I, T], annotations map[string][]string) {
 	//
 	// Write memories
 	for i, m := range machine.Modules() {
 		if i != 0 {
 			fmt.Println()
 		}
+		//
+		writeAnnotations(annotations[m.Name()])
 		//
 		switch m := m.(type) {
 		case vm.Memory[W]:
@@ -405,6 +424,93 @@ func registerType(r register.Register) string {
 	}
 	//
 	return fmt.Sprintf("u%d", r.Width())
+}
+
+// ============================================================================
+// Bytecode Interpreter
+// ============================================================================
+
+func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram[W], annotations map[string][]string) {
+	var (
+		address   uint32
+		bytecodes = vm.DecodeBytecodes(program)
+		width     uint
+		mapping   vm.SystemMap
+	)
+	//
+	for _, bytecode := range bytecodes {
+		var codes = bytecode.Codes(address)
+		//
+		width = max(width, uint(len(codes)))
+		address += uint32(len(codes))
+	}
+	// Reset for another sweep
+	address = 0
+	//
+	for i, bytecode := range vm.DecodeBytecodes(program) {
+		var codes = bytecode.Codes(address)
+		//
+		if sym := program.SymbolAt(address); sym.HasValue() {
+			var m = program.Module(sym.Unwrap())
+			//
+			if i != 0 {
+				fmt.Println()
+			}
+			//
+			writeAnnotations(annotations[m.Name()])
+			//
+			fmt.Printf("%s:\n", signatureOf(m))
+			//
+			mapping = instruction.NewSystemMap(m.RegisterMap(), program.Modules())
+		}
+		//
+		fmt.Printf("0x%04x\t%s\t%s\n", address, codeStr(width, codes), bytecode.String(mapping))
+		//
+		address += uint32(len(codes))
+	}
+}
+
+func codeStr(width uint, codes []uint32) string {
+	var (
+		n   = (width * 9) + 1
+		str = fmt.Sprintf("%08x", codes)
+	)
+	//
+	return fmt.Sprintf("%-*s", n, str)
+}
+
+func signatureOf(m vm.Module) string {
+	var (
+		args = array.Filter(m.Registers(), func(r register.Register) bool {
+			return r.IsInput()
+		})
+		returns = array.Filter(m.Registers(), func(r register.Register) bool {
+			return r.IsOutput()
+		})
+	)
+	//
+	return fmt.Sprintf("%s(%s) -> (%s)", m.Name(), fnArgs(args), fnArgs(returns))
+}
+
+func fnArgs(regs []register.Register) string {
+	var builder strings.Builder
+	//
+	for i, r := range regs {
+		if i != 0 {
+			builder.WriteString(",")
+		}
+		//
+		builder.WriteString(r.Name())
+		builder.WriteString(":")
+		//
+		if r.IsNative() {
+			builder.WriteString("𝔽")
+		} else {
+			fmt.Fprintf(&builder, "u%d", r.Width())
+		}
+	}
+	//
+	return builder.String()
 }
 
 // ============================================================================

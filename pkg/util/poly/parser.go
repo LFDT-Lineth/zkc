@@ -16,8 +16,8 @@ import (
 	"cmp"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/util/source/bexp"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/bexp"
 )
 
 // Parse a given input string representing a polynomial, or produce one or more

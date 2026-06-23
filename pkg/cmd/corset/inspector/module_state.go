@@ -18,10 +18,10 @@ import (
 	"math/big"
 	"regexp"
 
-	"github.com/consensys/go-corset/pkg/cmd/corset/view"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/termio"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // ModuleState provides state regarding how to display the trace for a given

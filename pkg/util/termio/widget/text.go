@@ -12,7 +12,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package widget
 
-import "github.com/consensys/go-corset/pkg/util/termio"
+import "github.com/LFDT-Lineth/zkc/pkg/util/termio"
 
 // TextLine displays a line of formatted text.
 type TextLine struct {

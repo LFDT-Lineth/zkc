@@ -15,7 +15,7 @@ package sexp
 import (
 	"unicode"
 
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // Parse a given string into an S-expression, or return an error if the string

@@ -13,9 +13,9 @@
 package instruction
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
-	vm_word "github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	vm_word "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Word captures the subset of all instructions which can be executed

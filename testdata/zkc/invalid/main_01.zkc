@@ -1,0 +1,8 @@
+//error:2:1-23:entry point cannot declare parameters (use an input memory)
+fn main(args: [u8; 1]) {
+    var a:u8 = args[0]
+    if a != 0 {
+        fail
+    }
+    return
+}

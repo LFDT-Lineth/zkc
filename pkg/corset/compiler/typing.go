@@ -17,9 +17,9 @@ import (
 	"math/big"
 	"reflect"
 
-	"github.com/consensys/go-corset/pkg/corset/ast"
-	"github.com/consensys/go-corset/pkg/util/math"
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // SyntaxError defines the kind of errors that can be reported by this compiler.

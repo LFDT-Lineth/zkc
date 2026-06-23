@@ -13,13 +13,13 @@
 package mir
 
 import (
-	"github.com/consensys/go-corset/pkg/ir/assignment"
-	"github.com/consensys/go-corset/pkg/ir/term"
-	"github.com/consensys/go-corset/pkg/schema/module"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // InitialiseConstantRegisters initialises any constant registers declared
@@ -35,7 +35,7 @@ func InitialiseConstantRegisters[F Element[F]](offset uint, modules []Module[F])
 		// Consider each register in turn
 		for r, reg := range mod.Registers() {
 			var rid = register.NewId(uint(r))
-			if reg.IsConst() {
+			if reg.IsU1Const() {
 				initialiseConstantRegister(rid, mid, mod)
 			}
 		}

@@ -17,8 +17,8 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -97,7 +97,8 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig[F] {
 	var build BuildConfig[F]
 
-	lowerNative := GetFlag(cmd, "lower-native") || GetFlag(cmd, "mir") || GetFlag(cmd, "air")
+	mirOrAir := GetFlag(cmd, "mir") || GetFlag(cmd, "air")
+	fastMode := GetFlag(cmd, "fast") && !mirOrAir
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
 		log.SetLevel(log.DebugLevel)
@@ -106,13 +107,15 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	build.field = field
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
-		LowerNatives(lowerNative).
+		Inlining(GetFlag(cmd, "inline")).
+		FastMode(fastMode).
 		Vectorize(GetFlag(cmd, "vectorize")).
 		SplitRegisters(GetFlag(cmd, "split")).
 		Field(field)
 	// Configure build targets
 	build.ast = GetFlag(cmd, "ast")
 	build.wir = GetFlag(cmd, "wir")
+	build.bci = GetFlag(cmd, "bci")
 	build.fir = GetFlag(cmd, "fir")
 	build.mir = GetFlag(cmd, "mir")
 	build.air = GetFlag(cmd, "air")
@@ -137,11 +140,14 @@ func findFieldAgnosticCmd(config field.Config, cmds []FieldAgnosticCmd) (cmd Fie
 func init() {
 	rootCmd.PersistentFlags().Bool("ast", false, "Output Abstract Syntax Tree (AST)")
 	rootCmd.PersistentFlags().Bool("wir", false, "Output Word-level Intermediate Representation (WIR)")
+	rootCmd.PersistentFlags().Bool("bci", false, "Output Bytecode Representation (BCI)")
 	rootCmd.PersistentFlags().Bool("fir", false, "Output Field-level Intermediate Representation (FIR)")
 	rootCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
 	rootCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
-	rootCmd.PersistentFlags().Bool("lower-native", false, "Lower ZkC native functions into arithmetic instructions")
+	rootCmd.PersistentFlags().Bool("show-static", false, "Show static tables in the MIR/AIR output")
+	rootCmd.PersistentFlags().BoolP("fast", "f", false, "Fast-mode execution (no tracing, no constraints)")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
+	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().Bool("split", false, "Apply register splitting")
 	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")

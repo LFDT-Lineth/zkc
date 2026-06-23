@@ -19,8 +19,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	util_math "github.com/consensys/go-corset/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
 
 // RETURN is used to signal that a given instruction returns from the enclosing
@@ -111,7 +111,7 @@ func InitialState(inputs []big.Int, registers []register.Register, buses []Bus, 
 	}
 	// Initialise constant registers
 	for i, reg := range registers {
-		if reg.IsConst() {
+		if reg.IsU1Const() {
 			state[i] = *reg.Padding()
 		}
 	}

@@ -14,10 +14,10 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // DecodeAll decodes the given set of bytes as big integer values according to
@@ -50,7 +50,7 @@ func DecodeAll[S symbol.Symbol[S]](datatype Type[S], bytes []byte, env Environme
 		// Done
 		return ints
 	})
-	// Flattern decoded tuples
+	// Flatten decoded tuples
 	return array.FlatMap(values, func(ints []big.Int) []vm.Uint {
 		var words = make([]vm.Uint, len(ints))
 		//

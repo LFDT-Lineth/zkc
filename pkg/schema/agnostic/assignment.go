@@ -17,13 +17,13 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/math"
-	util_math "github.com/consensys/go-corset/pkg/util/math"
-	"github.com/consensys/go-corset/pkg/util/poly"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
+	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/util/poly"
 )
 
 // USE_NEW_CHUNKUP determines the chunkup algorithm to use.  The new one is

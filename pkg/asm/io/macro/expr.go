@@ -15,8 +15,8 @@ package macro
 import (
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/asm/io/macro/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/macro/expr"
 )
 
 // Expr represents an arbitrary expression used within an instruction.

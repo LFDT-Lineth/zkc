@@ -13,14 +13,14 @@
 package term
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/math"
-	"github.com/consensys/go-corset/pkg/util/source/sexp"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // Add represents the addition of zero or more expressions.
@@ -29,7 +29,7 @@ type Add[F field.Element[F], T Expr[F, T]] struct{ Args []T }
 // Sum zero or more expressions together.
 func Sum[F field.Element[F], T Expr[F, T]](terms ...T) T {
 	// Flatten any nested sums
-	terms = array.Flatten(terms, flatternAdd[F, T])
+	terms = array.Flatten(terms, flattenAdd[F, T])
 	// Remove any zeros
 	terms = array.RemoveMatching(terms, isZero)
 	// Final simplifications
@@ -125,7 +125,7 @@ func simplifySum[F field.Element[F], T Expr[F, T]](args []T, casts bool) T {
 		tmp   Expr[F, T]
 	)
 	// Flatten any nested sums
-	terms = array.Flatten(terms, flatternAdd[F, T])
+	terms = array.Flatten(terms, flattenAdd[F, T])
 	// Remove any zeros
 	terms = array.RemoveMatching(terms, isZero)
 	// Check anything left
@@ -141,7 +141,7 @@ func simplifySum[F field.Element[F], T Expr[F, T]](args []T, casts bool) T {
 	return tmp.(T)
 }
 
-func flatternAdd[F field.Element[F], T Expr[F, T]](term T) []T {
+func flattenAdd[F field.Element[F], T Expr[F, T]](term T) []T {
 	var e Expr[F, T] = term
 	if t, ok := e.(*Add[F, T]); ok {
 		return t.Args

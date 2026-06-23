@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // BitWidthOf determines the bitwidth of the given type in the given

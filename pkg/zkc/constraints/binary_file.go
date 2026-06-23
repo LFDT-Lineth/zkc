@@ -19,14 +19,14 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/ir/air"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/module"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/typed"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // BINFILE_MAJOR_VERSION is the major version of the binary file format.
@@ -65,8 +65,10 @@ type BinaryFile[F field.Element[F]] struct {
 	// pretty, but right now its all we have.  This will certainly change in the
 	// near future.
 	machine vm.WordMachine[vm.Uint]
+	// cached fast machine
+	machineCache util.Option[*vm.BytecodeInterpreter[vm.Uint128]]
 	// cached air constraints
-	cache util.Option[air.Schema[F]]
+	constraintsCache util.Option[air.Schema[F]]
 }
 
 // NewBinaryFile constructs a BinaryFile with a header stamped at the current
@@ -81,6 +83,7 @@ func NewBinaryFile[F field.Element[F]](metadata []byte, attributes []Attribute, 
 		attributes,
 		config,
 		machine,
+		util.None[*vm.BytecodeInterpreter[vm.Uint128]](),
 		util.None[air.Schema[F]](),
 	}
 }
@@ -107,8 +110,8 @@ func (p *BinaryFile[F]) Field() field.Config {
 // AirConstraints returns the arithmetic (AIR) constraints encoded in this file.
 func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
 	// Check cache
-	if p.cache.HasValue() {
-		return p.cache.Unwrap()
+	if p.constraintsCache.HasValue() {
+		return p.constraintsCache.Unwrap()
 	}
 	//
 	var (
@@ -119,7 +122,7 @@ func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
 		air = GenerateAirConstraints(fir, p.Field())
 	)
 	// cache result
-	p.cache = util.Some(air)
+	p.constraintsCache = util.Some(air)
 	// Log stats
 	stats.Log("Constraint compilation")
 	//
@@ -151,7 +154,16 @@ func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Fa
 // trace because it does not record any internal information about the trace ---
 // it simply extracts the outputs at the end.
 func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[string][]byte, errs []error) {
-	return vm.BootAndExecute(&p.machine, input, n)
+	if !p.machineCache.HasValue() {
+		// lower to a 64bit machine
+		m128 := vm.WordToWordMachine[vm.Uint, vm.Uint128](&p.machine)
+		// Construct bytecode machine
+		bci := vm.WordToBytecodeInterpreter(m128)
+		// Compile bytecode interpreter
+		p.machineCache = util.Some(bci)
+	}
+	// Boot and execute fast machine
+	return vm.BootAndExecute(p.machineCache.Unwrap(), input, n)
 }
 
 // Trace generates a suitable trace from the given inputs for the contraints

@@ -17,12 +17,12 @@ import (
 	"math"
 	"math/big"
 
-	cmd_util "github.com/consensys/go-corset/pkg/cmd/corset/util"
-	"github.com/consensys/go-corset/pkg/ir/term"
-	"github.com/consensys/go-corset/pkg/schema"
-	sc "github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/termio"
+	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // PrintModuleStats prints out various items of information about the modules in a given schema.

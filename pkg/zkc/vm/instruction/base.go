@@ -15,11 +15,11 @@ package instruction
 import (
 	"encoding/gob"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
 // FormattedChunk is a convenient alias
@@ -79,6 +79,17 @@ type Call struct{ base.OpIo }
 // NewCall constructs a new function call instruction.
 func NewCall(id uint, arguments []register.Id, returns []register.Id) *Call {
 	return &Call{base.OpIo{Op: opcode.CALL, Id: id, Arguments: arguments, Returns: returns}}
+}
+
+// ============================================================================
+
+// UnconditionalCall is similar to Call, but executes unconditionally (i.e. the
+// lookup is not gated by a selector). This is used for range checks, for example.
+type UnconditionalCall struct{ base.OpIo }
+
+// NewUnconditionalCall constructs a new function call instruction, where the lookup holds unconditionally.
+func NewUnconditionalCall(id uint, arguments []register.Id, returns []register.Id) *UnconditionalCall {
+	return &UnconditionalCall{base.OpIo{Op: opcode.UNCONDITIONAL_CALL, Id: id, Arguments: arguments, Returns: returns}}
 }
 
 // ============================================================================
@@ -176,6 +187,24 @@ func NewSkipIfVec(condition opcode.Condition, left, right register.Vector, skip 
 }
 
 // ============================================================================
+
+// DispatchCase is a convenient alias for one (value, skip) entry of a multiway
+// skip's dispatch array.
+type DispatchCase = base.DispatchCase
+
+// MultiwaySkip performs a multi-way conditional skip based on a dispatch array
+// of (value, skip) pairs: the source register is compared (in order) against
+// each case's value and, on the first match, control skips forward by that
+// case's amount.  No match falls through.  This generalises SkipIf.
+type MultiwaySkip = base.SkipMulti
+
+// NewMultiwaySkip constructs a fresh multiway skip instruction dispatching on
+// the value of the given source register.
+func NewMultiwaySkip(source register.Id, cases ...DispatchCase) *MultiwaySkip {
+	return &MultiwaySkip{Source: source, Cases: cases}
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -215,6 +244,7 @@ func (p *systemMap) String() string {
 
 func init() {
 	gob.Register(Instruction(&Call{}))
+	gob.Register(Instruction(&UnconditionalCall{}))
 	gob.Register(Instruction(&Debug{}))
 	gob.Register(Instruction(&Fail{}))
 	gob.Register(Instruction(&FieldHint{}))
@@ -224,4 +254,5 @@ func init() {
 	gob.Register(Instruction(&Return{}))
 	gob.Register(Instruction(&Skip{}))
 	gob.Register(Instruction(&SkipIf{}))
+	gob.Register(Instruction(&MultiwaySkip{}))
 }

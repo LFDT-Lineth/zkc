@@ -13,13 +13,13 @@
 package trace
 
 import (
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 )
 
 // Observer is a generic interface for extract information before and after an
 // execution step of the VM.  For example, to generate debugging information.
-type Observer[W machine.BaseWord[W], I instruction.Instruction, M machine.Core[W, I]] interface {
+type Observer[W machine.BaseWord[W], I instruction.Instruction, M machine.Machine[W, I]] interface {
 	Initialise(machine M)
 	// PreExecution is called directly before each instruction is executed
 	PreExecution(machine M)

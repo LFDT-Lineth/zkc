@@ -18,10 +18,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/util/source/bexp"
-	"github.com/consensys/go-corset/pkg/util/termio"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/bexp"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // InputMode is where the user is entering some information (e.g. row for

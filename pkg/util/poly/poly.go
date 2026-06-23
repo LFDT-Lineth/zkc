@@ -16,8 +16,8 @@ import (
 	"bytes"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/source/sexp"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // Polynomial represents a sum of terms of a type T of variables.

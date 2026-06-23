@@ -16,8 +16,8 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/util/file"
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/file"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // Binding represents an association between a name, as found in a source file,

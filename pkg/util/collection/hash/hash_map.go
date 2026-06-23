@@ -16,10 +16,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/enum"
-	"github.com/consensys/go-corset/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/enum"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 )
 
 // Map defines a generic set implementation backed by a map.  This is a true

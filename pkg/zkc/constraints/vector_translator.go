@@ -17,15 +17,15 @@ import (
 	"reflect"
 	"slices"
 
-	mirc "github.com/consensys/go-corset/pkg/asm/compiler"
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/asm/io/micro/dfa"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
+	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 )
 
 // Expr is a useful alias for an MIR expression
@@ -87,9 +87,10 @@ func (p *VectorInsnTranslator[F]) translate() Expr[F] {
 		case *instruction.Debug:
 			// no-operation
 			continue
-		case *instruction.Call, *instruction.MemRead, *instruction.MemWrite:
+		case *instruction.Call, *instruction.MemRead, *instruction.MemWrite, *instruction.UnconditionalCall:
 			// TODO: these need to be implemented as assignments to their
 			// respected selector line (i.e. to enable the conditional lookup).
+			// TODO: add MemRead for <=16-bit registers for range proof
 			continue
 		case *instruction.Fail:
 			assignments = joinAssignments(assignments, localWrites)
@@ -113,7 +114,7 @@ func (p *VectorInsnTranslator[F]) translate() Expr[F] {
 			// constraint is generated here, since correctness is enforced by
 			// subsequent arithmetic checks.
 			continue
-		case *instruction.SkipIf, *instruction.Skip:
+		case *instruction.SkipIf, *instruction.Skip, *instruction.MultiwaySkip:
 			// do nothing
 			continue
 		default:

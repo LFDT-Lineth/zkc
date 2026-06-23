@@ -16,15 +16,15 @@ import (
 	"os"
 	"path"
 
-	"github.com/consensys/go-corset/pkg/ir/air"
-	"github.com/consensys/go-corset/pkg/ir/mir"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen"
-	"github.com/consensys/go-corset/pkg/zkc/constraints"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -39,12 +39,19 @@ type BuildArtifacts[F field.Element[F]] struct {
 	ast util.Option[ast.Program]
 	// Word Machine
 	wir util.Option[vm.WordMachine[vm.Uint]]
+	// Bytecode Machine
+	bci util.Option[vm.BytecodeProgram[vm.Uint64]]
 	// Field Machine
 	fir util.Option[vm.FieldMachine[F]]
 	// MIR Constraints
 	mir util.Option[mir.Schema[F]]
 	// AIR Constraints
 	air util.Option[air.Schema[F]]
+	// Annotations on source-level declarations (functions and memories),
+	// keyed by declaration name.  These are not carried through to the lower
+	// levels, hence they are retained here for printing purposes.  Observe
+	// this is empty when building from a prebuilt binary.
+	annotations map[string][]string
 }
 
 // BuildConfig packages up all the requirements for building the set of target
@@ -57,12 +64,12 @@ type BuildConfig[F field.Element[F]] struct {
 	// metadata to include in binary output file
 	metadata []byte
 	// flags signal which layers to generate artifacts for.
-	ast, wir, fir, mir, air bool
+	ast, wir, bci, fir, mir, air bool
 }
 
 // HasTarget checks whether or not at least one build target is specified.
 func (p BuildConfig[F]) HasTarget() bool {
-	return p.ast || p.wir || p.fir || p.mir || p.air
+	return p.ast || p.wir || p.bci || p.fir || p.mir || p.air
 }
 
 // Dependencies produces a build configuration with all transitive dependencies
@@ -70,7 +77,7 @@ func (p BuildConfig[F]) HasTarget() bool {
 func (p BuildConfig[F]) Dependencies() BuildConfig[F] {
 	p.mir = p.mir || p.air
 	p.fir = p.fir || p.mir
-	p.wir = p.wir || p.fir
+	p.wir = p.wir || p.fir || p.bci
 	p.ast = p.ast || p.wir
 	//
 	return p
@@ -88,6 +95,8 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 		ast ast.Program
 		// Word Machine
 		wir *vm.WordMachine[vm.Uint]
+		// Bytecode interpreter
+		bci vm.BytecodeProgram[vm.Uint64]
 		// Field Machine
 		fir *vm.FieldMachine[F]
 		// MIR Constraints
@@ -112,6 +121,8 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 	} else {
 		// Compile source files, or print errors
 		ast = CompileSourceFiles(p.field, args...)
+		// Record annotations for printing purposes
+		artifacts.annotations = annotationsOf(ast)
 		// Word-level Intermediate Representation
 		if deps.wir {
 			// Compile the AST into the top-level word machine
@@ -125,6 +136,13 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 				os.Exit(4)
 			}
 		}
+	}
+	// Field-level Intermediate Representation
+	if deps.bci {
+		// lower to a 64bit machine
+		var m64 = vm.WordToWordMachine[vm.Uint, vm.Uint64](wir)
+		// Compile bytecode interpreter
+		bci = vm.WordToBytecodeProgram(m64)
 	}
 	// Field-level Intermediate Representation
 	if deps.fir {
@@ -147,6 +165,10 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 		artifacts.wir = util.Some(*wir)
 	}
 	//
+	if p.bci {
+		artifacts.bci = util.Some(bci)
+	}
+	//
 	if p.fir {
 		artifacts.fir = util.Some(*fir)
 	}
@@ -160,4 +182,19 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 	}
 	//
 	return artifacts
+}
+
+// annotationsOf extracts the annotations associated with each annotated
+// declaration (i.e. function or memory) in a given program, keyed by the
+// declaration's name.
+func annotationsOf(program ast.Program) map[string][]string {
+	var annotations = make(map[string][]string)
+	//
+	for _, d := range program.Components() {
+		if annots := d.Annotations(); len(annots) > 0 {
+			annotations[d.Name()] = annots
+		}
+	}
+	//
+	return annotations
 }

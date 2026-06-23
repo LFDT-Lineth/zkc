@@ -13,7 +13,7 @@
 package vm
 
 import (
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/trace"
 )
 
 // Observer is a generic interface for extract information before and after an

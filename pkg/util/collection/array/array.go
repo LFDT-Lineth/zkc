@@ -12,7 +12,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package array
 
-import "github.com/consensys/go-corset/pkg/util/word"
+import "github.com/LFDT-Lineth/zkc/pkg/util/word"
 
 // Predicate abstracts the notion of a function which identifies something.
 type Predicate[T any] = func(T) bool

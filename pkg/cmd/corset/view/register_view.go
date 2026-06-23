@@ -15,10 +15,10 @@ package view
 import (
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	tr "github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
 
 // RegisterView provides an abstract view of a given column.

@@ -16,14 +16,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/consensys/go-corset/pkg/cmd/corset/verify/picus"
-	"github.com/consensys/go-corset/pkg/ir/air"
-	"github.com/consensys/go-corset/pkg/ir/mir"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
-	"github.com/consensys/go-corset/pkg/util/field/gf251"
-	"github.com/consensys/go-corset/pkg/util/field/gf8209"
-	"github.com/consensys/go-corset/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/verify/picus"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/spf13/cobra"
 )
 

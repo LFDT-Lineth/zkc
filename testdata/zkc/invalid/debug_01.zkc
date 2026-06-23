@@ -1,0 +1,7 @@
+//error:2:3-8:not permitted on memory declaration
+#[debug]
+pub input data(address:u16) -> (byte:u8)
+
+fn main() {
+    var x:u8 = data[0]
+}

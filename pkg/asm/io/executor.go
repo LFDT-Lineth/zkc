@@ -17,8 +17,8 @@ import (
 	"math/big"
 	"sync"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 )
 
 // Executor provides a mechanism for executing a program efficiently and

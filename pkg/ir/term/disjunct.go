@@ -13,13 +13,13 @@
 package term
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source/sexp"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // Disjunct erpresents the logical OR of zero or more terms.  Observe that if
@@ -125,7 +125,7 @@ func (p *Disjunct[F, T]) Simplify(casts bool) T {
 	// Simplify terms
 	terms := simplifyLogicalTerms(p.Args, casts)
 	// Flatten any nested disjuncts
-	terms = array.Flatten(terms, flatternDisjunct[F, T])
+	terms = array.Flatten(terms, flattenDisjunct[F, T])
 	// True if contains True
 	if array.ContainsMatching(terms, IsTrue[F, T]) {
 		return True[F, T]()
@@ -148,7 +148,7 @@ func (p *Disjunct[F, T]) Substitute(mapping map[string]F) {
 	substituteTerms(mapping, p.Args...)
 }
 
-func flatternDisjunct[F field.Element[F], T Logical[F, T]](term T) []T {
+func flattenDisjunct[F field.Element[F], T Logical[F, T]](term T) []T {
 	var e Logical[F, T] = term
 	if t, ok := e.(*Disjunct[F, T]); ok {
 		return t.Args

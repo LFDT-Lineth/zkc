@@ -16,9 +16,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/trace/lt"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // ToJsonString converts a trace into a JSON string.

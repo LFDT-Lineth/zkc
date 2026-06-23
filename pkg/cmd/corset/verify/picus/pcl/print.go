@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/consensys/go-corset/pkg/util/source/sexp"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // WriteTo implements io.WriterTo for Program, emitting the program in Lisp form

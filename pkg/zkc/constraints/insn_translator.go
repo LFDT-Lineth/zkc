@@ -15,12 +15,12 @@ package constraints
 import (
 	"math/big"
 
-	mirc "github.com/consensys/go-corset/pkg/asm/compiler"
-	"github.com/consensys/go-corset/pkg/asm/io/micro/dfa"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	finsn "github.com/consensys/go-corset/pkg/zkc/vm/instruction/field"
+	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	finsn "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/field"
 )
 
 // InstructionTranslator encapsulates key information for translating an

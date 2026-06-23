@@ -17,12 +17,12 @@ import (
 	"math"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/stack"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/stack"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
 // Vectorize a given function by merging as many instructions as possible into
@@ -184,6 +184,12 @@ func endsInTerminator(codes []Instruction) bool {
 		case *instruction.SkipIf:
 			if uint(i)+code.Skip+1 >= n {
 				return false
+			}
+		case *instruction.MultiwaySkip:
+			for _, dc := range code.Cases {
+				if uint(i)+dc.Skip+1 >= n {
+					return false
+				}
 			}
 		}
 	}
@@ -356,6 +362,18 @@ func inlineJump(vec VectorInstruction, jmpIndex uint, targetCodes []Instruction)
 				Right: c.Right,
 				Skip:  target - npc - 1,
 			}
+		case *instruction.MultiwaySkip:
+			// Each dispatch case skips to a micro-code within this vector, so
+			// its offset must be recomputed after the splice (exactly as for
+			// Skip / SkipIf above).
+			ncases := make([]instruction.DispatchCase, len(c.Cases))
+			//
+			for k, dc := range c.Cases {
+				target := mapping[cc+1+dc.Skip]
+				ncases[k] = instruction.DispatchCase{Value: dc.Value, Skip: target - npc - 1}
+			}
+			//
+			code = &instruction.MultiwaySkip{Source: c.Source, Cases: ncases}
 		}
 		//
 		ncodes[npc] = code

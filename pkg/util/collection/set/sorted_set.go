@@ -18,7 +18,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 )
 
 // SortedSet is an array of unique sorted values (i.e. no duplicates).

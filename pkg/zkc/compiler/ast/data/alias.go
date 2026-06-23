@@ -11,7 +11,7 @@
 package data
 
 import (
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // ResolvedAlias represents an alias which contains only resolved identifiers.

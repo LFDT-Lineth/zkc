@@ -16,10 +16,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
 // ============================================================================
@@ -109,7 +109,7 @@ func (p *OpIo) String(mapping SystemMap) string {
 	//
 	switch p.Op {
 	//
-	case opcode.CALL:
+	case opcode.CALL, opcode.UNCONDITIONAL_CALL:
 		//
 		if len(p.Returns) > 0 {
 			builder.WriteString(RegistersToString(mapping, p.Returns...))
@@ -119,8 +119,11 @@ func (p *OpIo) String(mapping SystemMap) string {
 		fmt.Fprintf(&builder, "%s(%s)", getModuleName(mapping, p.Id),
 			RegistersToString(mapping, p.Arguments...))
 	case opcode.MEMORY_READ:
-		builder.WriteString(RegistersToString(mapping, p.Returns...))
-		builder.WriteString(" = ")
+		//
+		if len(p.Returns) > 0 {
+			builder.WriteString(RegistersToString(mapping, p.Returns...))
+			builder.WriteString(" = ")
+		}
 		//
 		fmt.Fprintf(&builder, "%s[%s]", getModuleName(mapping, p.Id),
 			RegistersToString(mapping, p.Arguments...))

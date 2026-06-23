@@ -18,7 +18,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 )
 
 // Get a suitable string representing a Java type which safely contains all

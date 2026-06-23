@@ -20,14 +20,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/binfile"
-	"github.com/consensys/go-corset/pkg/trace/json"
-	"github.com/consensys/go-corset/pkg/trace/lt"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/pool"
-	"github.com/consensys/go-corset/pkg/util/collection/typed"
-	"github.com/consensys/go-corset/pkg/util/file"
-	"github.com/consensys/go-corset/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/binfile"
+	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
+	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/pool"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
+	"github.com/LFDT-Lineth/zkc/pkg/util/file"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/spf13/cobra"
 )
 

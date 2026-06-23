@@ -17,20 +17,20 @@ import (
 	"math"
 	"reflect"
 
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/lval"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen"
-	zkc_util "github.com/consensys/go-corset/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/lval"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 )
 
 // Stmt is a convenient alias.
@@ -206,6 +206,8 @@ func (p *TypeChecker) typeFunction(fn decl.ResolvedFunction) []source.SyntaxErro
 			errors = append(errors, p.typeFormatArgs(s.Chunks, s.Arguments, &fn, effects)...)
 		case *stmt.IfGoto[symbol.Resolved]:
 			errors = append(errors, p.typeIfGoto(s, &fn, effects)...)
+		case *stmt.Dispatch[symbol.Resolved]:
+			errors = append(errors, p.typeDispatch(s, &fn, effects)...)
 		case *stmt.Printf[symbol.Resolved]:
 			errors = append(errors, p.typeFormatArgs(s.Chunks, s.Arguments, &fn, effects)...)
 		}
@@ -406,6 +408,27 @@ func checkTargets(s *stmt.Assign[symbol.Resolved], env VariableMap, srcmaps sour
 func (p *TypeChecker) typeIfGoto(s *stmt.IfGoto[symbol.Resolved], env VariableMap, effects bit.Set,
 ) []source.SyntaxError {
 	return p.typeCondition(s.Cond, env, effects)
+}
+
+// typeDispatch type-checks a multiway dispatch by checking the discriminant
+// against each (constant) label, mirroring the per-comparison checking the
+// equivalent if-else chain would otherwise receive.
+func (p *TypeChecker) typeDispatch(s *stmt.Dispatch[symbol.Resolved], env VariableMap, effects bit.Set,
+) []source.SyntaxError {
+	var errors []source.SyntaxError
+	//
+	for _, branch := range s.Branches {
+		for _, label := range branch.Labels {
+			cmp := expr.NewCmp(expr.EQ, s.Discriminant, label)
+			// Give the synthetic comparison the label's source location so any
+			// diagnostics point at the offending case.
+			p.srcmaps.Copy(label, cmp)
+			//
+			errors = append(errors, p.typeCondition(cmp, env, effects)...)
+		}
+	}
+	//
+	return errors
 }
 
 func (p *TypeChecker) typeFormatArgs(chunks []stmt.FormattedChunk, args []expr.Resolved, env VariableMap,
@@ -745,10 +768,11 @@ func (p *TypeChecker) typeCastExpression(_ Type, e *expr.Cast[symbol.Resolved], 
 	var (
 		srcType, errors = p.typeExpression(nil, e.Expr, env, effects)
 	)
-	// Sanity check whether the cast makes sense (or not).
-	if len(errors) == 0 {
-		errors = p.checkCastType(e.CastType, srcType, e.Expr)
+	if len(errors) > 0 {
+		return e.CastType, errors
 	}
+	// Sanity check whether the cast makes sense (or not).
+	errors = p.checkCastType(e.CastType, srcType, e.Expr)
 	//
 	return e.CastType, errors
 }

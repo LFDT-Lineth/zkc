@@ -16,16 +16,16 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/data"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/lval"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/variable"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/lval"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // Declaration represents a declaration which can contain macro
@@ -95,6 +95,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		modules []vm.Module
 		mapping = make([]uint, len(declarations))
 		index   = uint(0)
+		inlines []string
 		errors  []source.SyntaxError
 	)
 	// Construct the mapping from ast declaration identifiers to vm module
@@ -125,6 +126,10 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			fn, errs := p.compileFunction(uint(i), mapping, declarations)
 			modules = append(modules, fn)
 			errors = append(errors, errs...)
+			// Record functions to be inlined (see below).
+			if slices.Contains(c.Annotations(), "inline") {
+				inlines = append(inlines, c.Name())
+			}
 		case *decl.ResolvedInclude:
 			// ignore
 		case *decl.ResolvedMemory:
@@ -149,8 +154,8 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 				// Include all errors
 				errors = append(errors, errs...)
 			case decl.RANDOM_ACCESS_MEMORY:
-				if slices.Contains(c.Annotations(), "bipartite") {
-					modules = append(modules, vm.NewLargeReadWriteMemory[vm.Uint](c.Name(), regs))
+				if slices.Contains(c.Annotations(), "paged") {
+					modules = append(modules, vm.NewPagedReadWriteMemory[vm.Uint](c.Name(), regs))
 				} else {
 					modules = append(modules, vm.NewReadWriteMemory[vm.Uint](c.Name(), regs))
 				}
@@ -159,8 +164,23 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			panic(fmt.Sprintf("unknown declaration %s", c.Name()))
 		}
 	}
+
+	// Stop here if any errors were detected during compilation of the declarations.
+	// There shouldn't be any compilation errors after this point.
+	if len(errors) > 0 {
+		return nil, errors
+	}
+
+	// Inline all functions marked with the #[inline] annotation.  This must
+	// happen before native lowering and vectorisation, both of which splice
+	// instruction sequences into vectors and would thereby break the
+	// invariant that no skip crosses over a call within its vector.
+	if p.config.inlining && len(inlines) > 0 {
+		modules = vm.InlineFunctions[vm.Uint](modules, inlines)
+	}
+
 	// Lower VM-level zkc-native instructions into arithmetic instructions.
-	if len(errors) == 0 && p.config.lowerZkcNative {
+	if !p.config.fastMode {
 		// Lower Bitwise operations into arithmetic instructions.
 		modules = vm.LowerBitwise[vm.Uint](modules)
 		// Lower INT_DIV/INT_REM into hint + arithmetic validation sequences.
@@ -169,16 +189,42 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		// Must run after LowerBitwise and LowerDivisions, which may generate new relational SkipIf instructions.
 		modules = vm.LowerComparisons[vm.Uint](modules)
 	}
-	// Vectorize modules (if no errors)
-	if len(errors) == 0 && p.config.vectorize {
-		Vectorize(modules, p.srcmaps)
+
+	// Fast mode optimisation compiler passes
+	if p.config.fastMode {
+		// Turn division / remainder by 2^m into right shifts / bitwise ANDs.
+		modules = vm.OptimizeDivisions[vm.Uint](modules)
 	}
-	//
+
+	// Vectorize modules
+	if p.config.vectorize {
+		Vectorize(modules, p.srcmaps)
+		// Factor branch conditions into a single bit register holding the condition result.
+		// Gated on the same flag as fastMode since it only makes
+		// sense when generating arithmetic constraints; must run after
+		// vectorisation to be meaningful.
+		if !p.config.fastMode {
+			modules = vm.FactorSkipConditions[vm.Uint](modules)
+		}
+	}
+
 	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)
-	// Apply register splitting (for now)
-	if len(errors) == 0 && p.config.splitting {
+	// Apply register splitting
+	if p.config.splitting {
 		wm = vm.SplitRegisters(p.config.field, wm)
 	}
+
+	// Add range constraints.
+	// Must be after register splitting happens to capture all the new registers created by splitting.
+	// Irrelevant in fast mode, since range proofs are not generated in that mode.
+	// Note: No columns should be added after this step without extra care.
+
+	// TODO: do range constraints only if splitting is done. But almost no tests on the CI with splitting flag so ...
+	//if p.config.splitting && !p.config.fastMode {
+	if !p.config.fastMode {
+		wm = vm.AddRangeConstraints(p.config.field, wm)
+	}
+
 	// Construct machine
 	return wm, errors
 }
@@ -236,7 +282,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 			panic(fmt.Sprintf("unexpected variable kind %d", v.Kind))
 		}
 
-		flattern(v.DataType, v.Name, p.env, func(name string, bitwidth uint) {
+		flatten(v.DataType, v.Name, p.env, func(name string, bitwidth uint) {
 			registers = append(registers, register.New(kind, name, bitwidth, padding))
 		})
 	}
@@ -266,15 +312,15 @@ func toMemoryRegisters(address []VariableDescriptor, datas []VariableDescriptor,
 		registers []register.Register
 		padding   big.Int
 	)
-	// Flattern address lines
+	// Flatten address lines
 	for _, v := range address {
-		flattern(v.DataType, v.Name, env, func(name string, bitwidth uint) {
+		flatten(v.DataType, v.Name, env, func(name string, bitwidth uint) {
 			registers = append(registers, register.NewInput(name, bitwidth, padding))
 		})
 	}
-	// Flattern data lines
+	// Flatten data lines
 	for _, v := range datas {
-		flattern(v.DataType, v.Name, env, func(name string, bitwidth uint) {
+		flatten(v.DataType, v.Name, env, func(name string, bitwidth uint) {
 			registers = append(registers, register.NewOutput(name, bitwidth, padding))
 		})
 	}

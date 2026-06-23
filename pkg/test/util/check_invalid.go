@@ -18,7 +18,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // ErrorCompiler compiles a source file and produces zero or more errors.

@@ -11,7 +11,7 @@
 package decl
 
 import (
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // Resolved represents a declaration  where external identifiers are otherwise

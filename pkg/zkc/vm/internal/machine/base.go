@@ -20,14 +20,15 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	zkc_util "github.com/consensys/go-corset/pkg/zkc/util"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/base"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Instruction is a convenient alias
@@ -59,11 +60,7 @@ func NewBase[W BaseWord[W], I Instruction, T Executor[W, I]](executor T, modules
 	}
 }
 
-// Boot this machine by starting the given function with the given inputs.  This
-// function assumes the given inputs are correctly formed, and will: (1) ingore
-// unknown inputs; (2) initialise empty memories when no input is given for
-// them.  Thus, it is recommended to perform sanity checking on input prior to
-// calling this function.
+// Boot implementation for Core interface.
 func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
 	// Reset call stack
 	p.callstack.Reset()
@@ -85,10 +82,30 @@ func (p *Base[W, I, T]) Boot(fun string, input map[string][]W) error {
 	return fmt.Errorf("missing boot function \"%s\"", fun)
 }
 
-// Function returns the function with the corresponding ID (or panics if the ID
-// does not correspond to a function).
-func (p *Base[W, I, T]) Function(id uint) *function.Function[I] {
-	return p.modules[id].(*function.Function[I])
+// Inputs implementation for Core interface.
+func (p *Base[W, I, T]) Inputs() iter.Iterator[memory.InputOutput[W]] {
+	var inputs []memory.InputOutput[W]
+	//
+	for _, m := range p.modules {
+		if m, ok := m.(memory.Memory[W]); ok && m.IsReadOnly() && !m.IsStatic() {
+			inputs = append(inputs, m)
+		}
+	}
+	//
+	return iter.NewArrayIterator(inputs)
+}
+
+// Outputs implementation for Core interface.
+func (p *Base[W, I, T]) Outputs() iter.Iterator[memory.InputOutput[W]] {
+	var outputs []memory.InputOutput[W]
+	//
+	for _, m := range p.modules {
+		if m, ok := m.(memory.Memory[W]); ok && m.IsWriteOnly() {
+			outputs = append(outputs, m)
+		}
+	}
+	//
+	return iter.NewArrayIterator(outputs)
 }
 
 // Execute the machine for the given number of steps, returning the actual
@@ -104,6 +121,12 @@ func (p *Base[W, I, T]) Execute(steps uint) (uint, error) {
 	}
 	//
 	return (steps - nsteps), err
+}
+
+// Function returns the function with the corresponding ID (or panics if the ID
+// does not correspond to a function).
+func (p *Base[W, I, T]) Function(id uint) *function.Function[I] {
+	return p.modules[id].(*function.Function[I])
 }
 
 // Executor returns the executor for this machine.  This is primarily useful
@@ -257,6 +280,11 @@ func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 	case opcode.CALL:
 		var binsn any = insn
 		return p.executeCall(binsn.(*instruction.Call), frame)
+	case opcode.UNCONDITIONAL_CALL:
+		// Executes exactly like a Call; differs only in constraint lowering.
+		var binsn any = insn
+		c := binsn.(*instruction.UnconditionalCall)
+		return p.executeCall(&instruction.Call{OpIo: c.OpIo}, frame)
 	case opcode.FAIL:
 		var binsn any = insn
 		return p.executeFail(binsn.(*instruction.Fail), frame)
@@ -296,6 +324,20 @@ func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 		// Skip (conditionally) micro-instructions
 		if executeCondition(frame, insn.Cond, insn.Left, insn.Right) {
 			frame.pc = frame.pc.Skip(insn.Skip)
+		}
+		// Fall thru
+	case opcode.SKIP_MULTI:
+		var binsn any = insn
+		insn := binsn.(*instruction.MultiwaySkip)
+		// Dispatch on the source register value: skip by the first matching
+		// case, or fall through to the next micro-instruction if none match.
+		val := frame.Load(insn.Source)
+		//
+		for _, c := range insn.Cases {
+			if val.Cmp64(uint64(c.Value)) == 0 {
+				frame.pc = frame.pc.Skip(c.Skip)
+				break
+			}
 		}
 		// Fall thru
 	case opcode.DEBUG:
@@ -358,15 +400,15 @@ func (p *Base[W, I, T]) executeMemWrite(insn *instruction.MemWrite, frame StackF
 	// Write data words to the given address range
 	for i := 0; i < len(sourceRegs) && err == nil; i++ {
 		var (
-			bitwidth = targetRegs[i].Width()
-			val      = frame.Load(sourceRegs[i])
+			ith = targetRegs[i]
+			val = frame.Load(sourceRegs[i])
 		)
 		// bitwidth check
-		if val.FitsWithin(bitwidth) {
+		if ith.IsNative() || val.FitsWithin(ith.Width()) {
 			err = mem.Write(address, val)
 		} else {
 			// failed
-			err = fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), bitwidth)
+			err = fmt.Errorf("bit overflow (0x%s not u%d)", val.Text(16), ith.Width())
 		}
 		//
 		address++
@@ -423,9 +465,8 @@ func executeCondition[W BaseWord[W], I Instruction](frame StackFrame[W, I], cond
 // FormatWord applies a given format to a given word to generate a formatted string.
 func formatWord[W BaseWord[W], I Instruction](fmt zkc_util.Format, vec register.Vector, frame StackFrame[W, I]) string {
 	var (
-		digits string
-		value  big.Int
-		regs   = vec.Registers()
+		value big.Int
+		regs  = vec.Registers()
 	)
 	// Loop from most-significant word to least significant.
 	for i := vec.Len(); i > 0; i-- {
@@ -435,44 +476,9 @@ func formatWord[W BaseWord[W], I Instruction](fmt zkc_util.Format, vec register.
 		// Add next word
 		value.Add(&value, frame.Load(reg).BigInt())
 	}
-	//
-	switch fmt.Code {
-	case zkc_util.FORMAT_DEC:
-		digits = value.Text(10)
-	case zkc_util.FORMAT_HEX:
-		digits = value.Text(16)
-	case zkc_util.FORMAT_BIN:
-		digits = value.Text(2)
-	case zkc_util.FORMAT_CHR:
-		// Render the value as a single ASCII character.  Type-checking
-		// (in the zkc compiler) enforces that the argument is a concrete
-		// u8, so the value fits in a single byte; nonetheless we mask
-		// the low 8 bits defensively in case this is called outside
-		// that path (e.g. by future Unicode work, or by tests that
-		// bypass the type checker).
-		if w, ok := any(value).(interface{ BigInt() *big.Int }); ok {
-			return string([]byte{byte(w.BigInt().Uint64() & 0xff)})
-		}
-		//
-		var v big.Int
-		v.SetString(value.Text(10), 10)
-		//
-		return string([]byte{byte(v.Uint64() & 0xff)})
-	default:
-		panic("invalid format")
-	}
-	// Apply any padding to the digit portion.
-	if uint(len(digits)) < fmt.Width {
-		padding := int(fmt.Width) - len(digits)
-		//
-		if fmt.ZeroPad {
-			digits = strings.Repeat("0", padding) + digits
-		} else {
-			digits = strings.Repeat(" ", padding) + digits
-		}
-	}
-	//
-	return digits
+	// Render the packed value, sharing the format logic with the bytecode
+	// interpreter so both machines emit identical debug output.
+	return fmt.Render(&value)
 }
 
 // Perform lexicographic comparison of two (equally sized) arrays.  In each

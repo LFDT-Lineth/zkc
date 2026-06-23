@@ -13,14 +13,14 @@
 package lower
 
 import (
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/decl"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/expr"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/lval"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/stmt"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/lval"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
 // Flatten flattens all block-level statements (IfElse, Switch, While, For,
@@ -237,107 +237,81 @@ func lowerTernaryCondition(
 	}
 }
 
-// lowerSwitch converts a switch statement to a nested if-(else-if)-else statement, e.g.
-//
-//	switch discr {
-//		case A, B: { stmts_AB }
-//		case C: { stmts_C }
-//		default: { stmts_default }	// 'misplaced' default
-//		case D, E, G { stmts_DEF }
-//	}
-//
-// should convert to
-//
-//	if (discr == A || discr == B) {
-//		stmts_AB
-//	} else if (discr == C) {
-//		stmts_C
-//	} else if (discr == D || discr == E || discr == F) {
-//		stmts_DEF
-//	} else {
-//		stmts_default
-//	}
-//
-// and applies the lowering to the resulting if-then-else statement.
-//
-// Note: the default statement, if present, is moved to the deepest nesting level.
+// lowerSwitch lowers a switch statement to a single Dispatch (compiled downstream
+// to a multiway-skip) followed by the flattened case bodies.  The layout mirrors
+// lowerIfElse: the Dispatch occupies one PC, each non-default case body is laid
+// out in turn and — unless it already terminates — is followed by a goto past
+// the remaining bodies; the default body (if any) is laid out last and falls
+// straight through to the end.
 func lowerSwitch(pc uint, s *stmt.Switch[symbol.Resolved], env *lowerEnv, srcmaps source.Maps[any]) []stmt.Resolved {
 	// special case: empty switch statement
 	if len(s.Branches) == 0 {
 		return []stmt.Resolved{}
 	}
-
-	var (
-		defaultCaseCount uint
-		containsDefault  bool
-	)
-
-	// pathological case with more than one default cases
-	if defaultCaseCount = s.DefaultCaseCount(); defaultCaseCount > 1 {
+	// pathological case with more than one default case
+	if s.DefaultCaseCount() > 1 {
 		return nil
 	}
-
-	containsDefault = defaultCaseCount == 1
-
 	// special case: the default case is the only case in the switch statement
-	if len(s.Branches) == 1 && containsDefault {
-		return s.Branches[0].Body
+	if len(s.Branches) == 1 && s.Branches[0].IsDefault {
+		return lowerStatements(pc, s.Branches[0].Body, env, srcmaps)
 	}
-
-	// beyond this point a proper (non default) case is present
+	//
 	var (
-		defaultStatement     *[]stmt.Stmt[symbol.Resolved]
-		equivalentIfThenElse *stmt.IfElse[symbol.Resolved]
-		mostNestedIfThenElse *stmt.IfElse[symbol.Resolved]
-		falseBranch          *stmt.IfElse[symbol.Resolved]
+		endLabel      = env.freshLabel()
+		dispatch      = &stmt.Dispatch[symbol.Resolved]{Discriminant: s.Discriminant}
+		bodies        []stmt.Resolved
+		defaultBranch *stmt.SwitchBranch[symbol.Resolved]
+		// The Dispatch occupies pc; the bodies begin at pc+1.
+		cursor = pc + 1
 	)
-
-	// this loop builds a nested if-then-else statement
-	for _, branch := range s.Branches {
-		// if we come across the default statement we store it
-		// and continue to the next branch
+	// Lay out each non-default branch body, recording its target PC.
+	for i := range s.Branches {
+		branch := &s.Branches[i]
+		// The default branch is laid out last, regardless of its position.
 		if branch.IsDefault {
-			defaultStatement = &branch.Body
+			defaultBranch = branch
 			continue
 		}
-
-		logicalOrOfCases := branch.LogicalOrOfCases(s.Discriminant)
-
-		// we initialize the equivalent if-then-else statement and point the
-		// 'most nested if-then-else statement' to it
-		if equivalentIfThenElse == nil {
-			equivalentIfThenElse = &stmt.IfElse[symbol.Resolved]{
-				Cond:        &logicalOrOfCases,
-				TrueBranch:  branch.Body,
-				FalseBranch: []stmt.Stmt[symbol.Resolved]{},
-			}
-			srcmaps.Copy(s, equivalentIfThenElse)
-			mostNestedIfThenElse = equivalentIfThenElse
-		} else {
-			falseBranch = &stmt.IfElse[symbol.Resolved]{
-				Cond:        &logicalOrOfCases,
-				TrueBranch:  branch.Body,
-				FalseBranch: []stmt.Stmt[symbol.Resolved]{},
-			}
-			srcmaps.Copy(s, falseBranch)
-			mostNestedIfThenElse.FalseBranch = append(mostNestedIfThenElse.FalseBranch, falseBranch)
-			mostNestedIfThenElse = falseBranch
+		//
+		target := cursor
+		body := lowerStatements(cursor, branch.Body, env, srcmaps)
+		cursor += uint(len(body))
+		bodies = append(bodies, body...)
+		// Unless the body already terminates, jump past the remaining bodies.
+		if !branchTerminates(branch.Body) {
+			g := &stmt.Goto[symbol.Resolved]{Target: endLabel}
+			srcmaps.Copy(s, g)
+			bodies = append(bodies, g)
+			cursor++
 		}
+		//
+		dispatch.Branches = append(dispatch.Branches,
+			stmt.DispatchBranch[symbol.Resolved]{Labels: branch.Labels, Target: target})
 	}
-
-	// the default statement, if present, becomes the final "else"
-	// of the equivalent nested if-then-else statement
-	if containsDefault {
-		mostNestedIfThenElse.FalseBranch = *defaultStatement
+	// Lay out the default body last (if any); on a non-match control reaches it
+	// and then falls straight through to the end, so no trailing goto is needed.
+	dispatch.DefaultTarget = cursor
+	//
+	if defaultBranch != nil {
+		body := lowerStatements(cursor, defaultBranch.Body, env, srcmaps)
+		cursor += uint(len(body))
+		bodies = append(bodies, body...)
 	}
-
-	return lowerIfElse(pc, equivalentIfThenElse, env, srcmaps)
+	//
+	srcmaps.Copy(s, dispatch)
+	// Assemble Dispatch + bodies, then resolve the end label to the PC following
+	// the whole construct.
+	result := append([]stmt.Resolved{dispatch}, bodies...)
+	patchBranches(endLabel, result, cursor)
+	//
+	return result
 }
 
 func lowerIfElse(pc uint, s *stmt.IfElse[symbol.Resolved], env *lowerEnv, srcmaps source.Maps[any]) []stmt.Resolved {
 	falseLabel := env.freshLabel()
 	// Flatten condition: generates IfGoto/Assign sequence that jumps to falseLabel if condition is false
-	condInsns := flatternCondition(s.Cond, pc, false, falseLabel, env, s, srcmaps)
+	condInsns := flattenCondition(s.Cond, pc, false, falseLabel, env, s, srcmaps)
 	n := uint(len(condInsns))
 	// Lower true branch
 	trueBranch := lowerStatements(pc+n, s.TrueBranch, env, srcmaps)
@@ -375,7 +349,7 @@ func lowerWhile(pc uint, s *stmt.While[symbol.Resolved], env *lowerEnv, srcmaps 
 	contLabel := env.freshLabel()
 	condLabel := env.freshLabel()
 	// Flatten condition
-	condInsns := flatternCondition(s.Cond, pc, false, condLabel, env, s, srcmaps)
+	condInsns := flattenCondition(s.Cond, pc, false, condLabel, env, s, srcmaps)
 	n := uint(len(condInsns))
 	// Lower body with loop context
 	innerEnv := *env
@@ -405,7 +379,7 @@ func lowerFor(pc uint, s *stmt.For[symbol.Resolved], env *lowerEnv, srcmaps sour
 	initInsns := lowerStatement(pc, s.Init, env, srcmaps)
 	condPC := pc + uint(len(initInsns))
 	// Flatten condition
-	condInsns := flatternCondition(s.Cond, condPC, false, condLabel, env, s, srcmaps)
+	condInsns := flattenCondition(s.Cond, condPC, false, condLabel, env, s, srcmaps)
 	bodyPC := condPC + uint(len(condInsns))
 	// Lower body with loop context
 	innerEnv := *env
@@ -469,41 +443,41 @@ func lowerVarDecl(s *stmt.VarDecl[symbol.Resolved], srcmaps source.Maps[any]) []
 	return []stmt.Resolved{assign}
 }
 
-// flatternCondition converts a condition expression into a flat sequence of
+// flattenCondition converts a condition expression into a flat sequence of
 // IfGoto/Goto statements.  sign=false means "jump to target if condition is false"
 // (the normal use for if/while/for).
-func flatternCondition(cond expr.Expr[symbol.Resolved], pc uint, sign bool, target uint,
+func flattenCondition(cond expr.Expr[symbol.Resolved], pc uint, sign bool, target uint,
 	env *lowerEnv, orig stmt.Resolved, srcmaps source.Maps[any]) []stmt.Resolved {
 	switch c := cond.(type) {
 	case *expr.Cmp[symbol.Resolved]:
-		return flatternComparison(c, sign, target, orig, srcmaps)
+		return flattenComparison(c, sign, target, orig, srcmaps)
 	case *expr.LogicalAnd[symbol.Resolved]:
 		if sign {
-			return flatternLogicalAnd(c.Exprs, pc, true, target, env, orig, srcmaps)
+			return flattenLogicalAnd(c.Exprs, pc, true, target, env, orig, srcmaps)
 		}
 
-		return flatternLogicalOr(c.Exprs, pc, false, target, env, orig, srcmaps)
+		return flattenLogicalOr(c.Exprs, pc, false, target, env, orig, srcmaps)
 	case *expr.LogicalOr[symbol.Resolved]:
 		if sign {
-			return flatternLogicalOr(c.Exprs, pc, true, target, env, orig, srcmaps)
+			return flattenLogicalOr(c.Exprs, pc, true, target, env, orig, srcmaps)
 		}
 
-		return flatternLogicalAnd(c.Exprs, pc, false, target, env, orig, srcmaps)
+		return flattenLogicalAnd(c.Exprs, pc, false, target, env, orig, srcmaps)
 	case *expr.LogicalNot[symbol.Resolved]:
-		return flatternCondition(c.Expr, pc, !sign, target, env, orig, srcmaps)
+		return flattenCondition(c.Expr, pc, !sign, target, env, orig, srcmaps)
 	default:
 		panic("invalid condition type (should have been caught by parser)")
 	}
 }
 
-func flatternLogicalAnd(args []expr.Expr[symbol.Resolved], pc uint, sign bool, target uint,
+func flattenLogicalAnd(args []expr.Expr[symbol.Resolved], pc uint, sign bool, target uint,
 	env *lowerEnv, orig stmt.Resolved, srcmaps source.Maps[any]) []stmt.Resolved {
 	label := env.freshLabel()
 
 	var stmts []stmt.Resolved
 
 	for _, arg := range args {
-		ss := flatternCondition(arg, pc+uint(len(stmts)), !sign, label, env, orig, srcmaps)
+		ss := flattenCondition(arg, pc+uint(len(stmts)), !sign, label, env, orig, srcmaps)
 		stmts = append(stmts, ss...)
 	}
 	// Success path: jump to the target
@@ -516,19 +490,19 @@ func flatternLogicalAnd(args []expr.Expr[symbol.Resolved], pc uint, sign bool, t
 	return stmts
 }
 
-func flatternLogicalOr(args []expr.Expr[symbol.Resolved], pc uint, sign bool, target uint,
+func flattenLogicalOr(args []expr.Expr[symbol.Resolved], pc uint, sign bool, target uint,
 	env *lowerEnv, orig stmt.Resolved, srcmaps source.Maps[any]) []stmt.Resolved {
 	var stmts []stmt.Resolved
 
 	for _, arg := range args {
-		ss := flatternCondition(arg, pc+uint(len(stmts)), sign, target, env, orig, srcmaps)
+		ss := flattenCondition(arg, pc+uint(len(stmts)), sign, target, env, orig, srcmaps)
 		stmts = append(stmts, ss...)
 	}
 
 	return stmts
 }
 
-func flatternComparison(cond *expr.Cmp[symbol.Resolved], sign bool, target uint,
+func flattenComparison(cond *expr.Cmp[symbol.Resolved], sign bool, target uint,
 	orig stmt.Resolved, srcmaps source.Maps[any]) []stmt.Resolved {
 	var ifg *stmt.IfGoto[symbol.Resolved]
 

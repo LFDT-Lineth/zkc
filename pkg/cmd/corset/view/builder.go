@@ -13,14 +13,14 @@
 package view
 
 import (
-	"github.com/consensys/go-corset/pkg/corset"
-	"github.com/consensys/go-corset/pkg/schema/module"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	tr "github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/file"
+	"github.com/LFDT-Lineth/zkc/pkg/corset"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
 // CellRefSet defines a type for sets of cell references.
@@ -149,7 +149,7 @@ func extractSourceMap(optSrcmap util.Option[corset.SourceMap]) (map[string]corse
 	if optSrcmap.HasValue() {
 		var srcmap = optSrcmap.Unwrap()
 		//
-		for _, module := range srcmap.Flattern(concreteModules) {
+		for _, module := range srcmap.Flatten(concreteModules) {
 			mapping[module.Name] = module
 		}
 		//

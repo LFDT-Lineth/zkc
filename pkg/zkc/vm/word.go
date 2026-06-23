@@ -17,13 +17,13 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 func init() {
@@ -35,7 +35,23 @@ func init() {
 	gob.Register(instruction.Module(&memory.ReadOnly[Uint]{}))
 	gob.Register(instruction.Module(&memory.WriteOnce[Uint]{}))
 	gob.Register(instruction.Module(&memory.StaticReadOnly[Uint]{}))
-	gob.Register(instruction.Module(&memory.BiPartiteRandomAccess[Uint]{}))
+	gob.Register(instruction.Module(&memory.PagedRandomAccess[Uint]{}))
+	// Uint64 word type.
+	gob.Register(instruction.Word(&instruction.WordTypeA[Uint64]{}))
+	gob.Register(instruction.Word(&instruction.WordTypeF[Uint64]{}))
+	gob.Register(instruction.Module(&memory.RandomAccess[Uint64]{}))
+	gob.Register(instruction.Module(&memory.ReadOnly[Uint64]{}))
+	gob.Register(instruction.Module(&memory.WriteOnce[Uint64]{}))
+	gob.Register(instruction.Module(&memory.StaticReadOnly[Uint64]{}))
+	gob.Register(instruction.Module(&memory.PagedRandomAccess[Uint64]{}))
+	// Uint128 word type.
+	gob.Register(instruction.Word(&instruction.WordTypeA[Uint128]{}))
+	gob.Register(instruction.Word(&instruction.WordTypeF[Uint128]{}))
+	gob.Register(instruction.Module(&memory.RandomAccess[Uint128]{}))
+	gob.Register(instruction.Module(&memory.ReadOnly[Uint128]{}))
+	gob.Register(instruction.Module(&memory.WriteOnce[Uint128]{}))
+	gob.Register(instruction.Module(&memory.StaticReadOnly[Uint128]{}))
+	gob.Register(instruction.Module(&memory.PagedRandomAccess[Uint128]{}))
 }
 
 // WordConfig provides a minimal amount of information about a machine word
@@ -47,6 +63,9 @@ type WordConfig struct {
 
 // WORD_UINT64 provides metadata about the Uint64 word type.
 var WORD_UINT64 = WordConfig{Name: "Uint64", Bandwidth: 64}
+
+// WORD_UINT128 provides metadata about the Uint128 word type.
+var WORD_UINT128 = WordConfig{Name: "Uint128", Bandwidth: 128}
 
 // WORD_UINT provides metadata about the Uint word type.
 var WORD_UINT = WordConfig{Name: "Uint", Bandwidth: math.MaxUint}
@@ -65,6 +84,9 @@ type Uint = word.Uint
 
 // Uint64 represents an 64-bit unsigned integer.
 type Uint64 = word.Uint64
+
+// Uint128 represents an 128-bit unsigned integer.
+type Uint128 = word.Uint128
 
 // ============================================================================
 // Constructors
@@ -95,9 +117,10 @@ func Const64[W Word[W]](val uint64) W {
 // | 0x3 | 0x1 | 0xf | 0x0 | 0x0 | 0xe | 0x1 | 0xd |
 //
 // If the input array is not a multiple of the bitwidth
-func DecodeBytes[W Word[W]](bytes []byte, registers []register.Register) []W {
+func DecodeBytes[W Word[W]](bytes []byte, geometry memory.Geometry[W]) []W {
 	var (
-		bitwidth = bitwidthOf(registers)
+		registers = geometry.DataRegisters()
+		bitwidth  = bitwidthOf(registers)
 		// Initially empty buffer which is expanded as necessary to accommodate
 		// reading bits of the given data types.
 		buffer []byte
@@ -118,7 +141,7 @@ func DecodeBytes[W Word[W]](bytes []byte, registers []register.Register) []W {
 		// Done
 		return ints
 	})
-	// Flattern decoded tuples
+	// Flatten decoded tuples
 	return array.FlatMap(values, func(ints []big.Int) []W {
 		var words = make([]W, len(ints))
 		//
@@ -145,8 +168,9 @@ func DecodeBytes[W Word[W]](bytes []byte, registers []register.Register) []W {
 // |  00  |  01  |  02  |  03  |
 // +------+------+------+------+
 // | 0x31 | 0xf0 | 0x0e | 0x1d |
-func EncodeBytes[W Word[W]](values []W, registers []register.Register) []byte {
+func EncodeBytes[W Word[W]](values []W, geometry memory.Geometry[W]) []byte {
 	var (
+		registers = geometry.DataRegisters()
 		nRegs     = uint(len(registers))
 		nElems    = uint(len(values))
 		bitOffset uint
@@ -176,6 +200,7 @@ func EncodeBytes[W Word[W]](values []W, registers []register.Register) []byte {
 				reg = registers[j]
 				val = values[i]
 			)
+			//
 			EncodeUnsignedInt(reg.Width(), val.BigInt(), buf)
 			bit.BigEndianCopy(buf, 0, result, bitOffset, reg.Width())
 			bitOffset += reg.Width()

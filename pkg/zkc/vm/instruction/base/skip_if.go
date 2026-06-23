@@ -15,10 +15,10 @@ package base
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
 // SkipIf microcode performs a conditional skip over a given number of codes.
@@ -98,7 +98,7 @@ func (p *SkipIf) String(mapping SystemMap) string {
 		panic("unknown skip condition encountered")
 	}
 	//
-	return fmt.Sprintf("skip_if %s %s %s %d", l, o, r, p.Skip)
+	return fmt.Sprintf("skipif %s %s %s %d", l, o, r, p.Skip)
 }
 
 // MicroValidate iumplementation for MicroInstruction interface

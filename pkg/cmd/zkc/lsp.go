@@ -27,9 +27,9 @@ import (
 	"go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
 
-	"github.com/consensys/go-corset/pkg/cmd/zkc/lsp"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/lsp"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/spf13/cobra"
 )
 

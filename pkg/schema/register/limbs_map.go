@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // LimbsMap provides a high-level mapping of all registers before and

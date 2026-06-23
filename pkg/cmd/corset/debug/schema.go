@@ -15,33 +15,33 @@ package debug
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/asm"
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/asm/io/macro"
-	"github.com/consensys/go-corset/pkg/asm/io/micro"
-	cmd_util "github.com/consensys/go-corset/pkg/cmd/corset/util"
-	"github.com/consensys/go-corset/pkg/ir/mir"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/source/sexp"
+	"github.com/LFDT-Lineth/zkc/pkg/asm"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/macro"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro"
+	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // PrintSchemas is responsible for printing out a human-readable description of
 // a given schema.
-func PrintSchemas[F field.Element[F]](stack cmd_util.SchemaStack[F], textwidth uint) {
+func PrintSchemas[F field.Element[F]](stack cmd_util.SchemaStack[F], textwidth uint, showStatic bool) {
 	//
 	for _, schema := range stack.AbstractSchemas() {
-		PrintAnySchema(schema, textwidth)
+		PrintAnySchema(schema, textwidth, showStatic)
 	}
 	//
 	if stack.HasConcreteSchema() {
-		PrintAnySchema(stack.ConcreteSchema(), textwidth)
+		PrintAnySchema(stack.ConcreteSchema(), textwidth, showStatic)
 	}
 }
 
 // PrintAnySchema prints out all declarations included in a given schema
-func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint) {
+func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, showStatic bool) {
 	first := true
 	// Print out each module, one by one.
 	for i := schema.Modules(); i.HasNext(); {
@@ -50,6 +50,9 @@ func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint) 
 		if isEmptyModule(ith) {
 			// Skip empty modules as they just clutter things up.  Typically,
 			// for example, the root module is empty.
+			continue
+		} else if ith.IsStatic() && !showStatic {
+			// Hide static tables unless explicitly requested.
 			continue
 		} else if !first {
 			fmt.Println()

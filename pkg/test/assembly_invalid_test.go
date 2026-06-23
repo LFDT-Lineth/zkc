@@ -15,9 +15,9 @@ package test
 import (
 	"testing"
 
-	"github.com/consensys/go-corset/pkg/asm"
-	"github.com/consensys/go-corset/pkg/test/util"
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/asm"
+	"github.com/LFDT-Lineth/zkc/pkg/test/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 func Test_AsmInvalid_Basic_01(t *testing.T) {

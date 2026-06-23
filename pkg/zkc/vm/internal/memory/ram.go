@@ -13,8 +13,8 @@
 package memory
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 // RandomAccess is a memory implementation backed by a dynamically sizing []W,

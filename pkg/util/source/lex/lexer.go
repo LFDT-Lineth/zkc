@@ -12,7 +12,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package lex
 
-import "github.com/consensys/go-corset/pkg/util/source"
+import "github.com/LFDT-Lineth/zkc/pkg/util/source"
 
 // Token associates a piece of information with a given range of characters in
 // the string being scanned.

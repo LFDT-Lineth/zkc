@@ -16,13 +16,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/consensys/go-corset/pkg/cmd/zkc/debug"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
-	"github.com/consensys/go-corset/pkg/util/field/gf251"
-	"github.com/consensys/go-corset/pkg/util/field/gf8209"
-	"github.com/consensys/go-corset/pkg/util/field/koalabear"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/debug"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -59,9 +59,12 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	artifacts := build.Build(args[1:]...)
 	wm := artifacts.wir.Unwrap()
+	// Filter out unnecessary inputs
+	input = filterInputsOnly(&wm, input)
 	// Decode inputs against the compiled machine.
 	inputs, errs := vm.DecodeInputs(&wm, input)
 	if len(errs) == 0 {
+		// boot & execute
 		if err := wm.Boot("main", inputs); err != nil {
 			errs = append(errs, err)
 		} else if _, err := vm.ExecuteAndObserve(&wm, 1, &observer); err != nil {

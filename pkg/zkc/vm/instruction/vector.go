@@ -14,13 +14,14 @@ package instruction
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/asm/io/micro/dfa"
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/logical"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
 // Vector instructions are instructions composed of some number of micro
@@ -204,45 +205,70 @@ func remapPacket[I Instruction](oldOffset, newOffset uint, packet []I, mapping [
 	)
 	//
 	for i, insn := range packet {
-		if skip, ok := isExternalSkip(n-uint(i), insn); ok {
-			// determine new target
-			target := mapping[oldOffset+skip+1]
-			// Remap
-			packet[i] = remapSkip(target, newOffset+uint(i), insn)
+		if isExternalSkip(n-uint(i), insn) {
+			packet[i] = remapSkip(n-uint(i), oldOffset, newOffset+uint(i), insn, mapping)
 		}
 	}
 }
 
-func isExternalSkip[I Instruction](n uint, insn I) (uint, bool) {
-	var (
-		c    any = insn
-		skip uint
-	)
-	// extract skip offset
+// isExternalSkip determines whether insn contains a skip whose target lies
+// outside the enclosing packet -- i.e. a skip of n or more, where n is the
+// number of instructions from insn to the end of the packet.  A multiway skip
+// is external when any of its cases is.
+func isExternalSkip[I Instruction](n uint, insn I) bool {
+	var c any = insn
+	//
 	switch insn := c.(type) {
 	case *Skip:
-		skip = insn.Skip
+		return insn.Skip >= n
 	case *SkipIf:
-		skip = insn.Skip
+		return insn.Skip >= n
+	case *MultiwaySkip:
+		for _, cse := range insn.Cases {
+			if cse.Skip >= n {
+				return true
+			}
+		}
+		//
+		return false
 	default:
-		return 0, false
+		return false
 	}
-	//
-	return skip, skip >= n
 }
 
-func remapSkip[I Instruction](target, offset uint, insn I) I {
+// remapSkip rewrites the external skip(s) in insn so they continue to identify
+// the same target after the surrounding instructions have been re-laid-out.
+// Skips internal to the packet (offset < n) are left unchanged; that only
+// matters for a multiway skip, whose cases may mix internal and external skips.
+func remapSkip[I Instruction](n, oldOffset, newOffset uint, insn I, mapping []uint) I {
+	// remap maps an (external) skip offset to its new value: look up the new
+	// position of the original target, then make it relative to newOffset.
+	remap := func(skip uint) uint {
+		return mapping[oldOffset+skip+1] - newOffset - 1
+	}
+	//
 	var (
 		c     any = insn
-		skip      = target - offset - 1
 		ninsn any
 	)
 	// reconstruct skip
 	switch insn := c.(type) {
 	case *Skip:
-		ninsn = &Skip{Skip: skip}
+		ninsn = &Skip{Skip: remap(insn.Skip)}
 	case *SkipIf:
-		ninsn = &SkipIf{Cond: insn.Cond, Left: insn.Left, Right: insn.Right, Skip: skip}
+		ninsn = &SkipIf{Cond: insn.Cond, Left: insn.Left, Right: insn.Right, Skip: remap(insn.Skip)}
+	case *MultiwaySkip:
+		ncases := make([]DispatchCase, len(insn.Cases))
+		//
+		for j, cse := range insn.Cases {
+			ncases[j] = cse
+			// only external cases are remapped; internal ones are unchanged
+			if cse.Skip >= n {
+				ncases[j].Skip = remap(cse.Skip)
+			}
+		}
+		//
+		ninsn = &MultiwaySkip{Source: insn.Source, Cases: ncases}
 	default:
 		panic("unreachable")
 	}
@@ -345,6 +371,14 @@ func writeDfaTransfer[I Instruction](offset uint, code I, state dfa.Writes) []df
 		// join into branch target
 		arcs = append(arcs, dfa.NewTransfer(state, offset+code.Skip+1))
 		// fall through
+	case opcode.SKIP_MULTI:
+		code := insn.(*MultiwaySkip)
+		// join into each case's branch target (the skip writes nothing, so the
+		// propagated state is unchanged); the fall-through is added below.
+		for _, c := range code.Cases {
+			arcs = append(arcs, dfa.NewTransfer(state, offset+c.Skip+1))
+		}
+		// fall through
 	}
 	// Construct state after this code
 	nState := state.Write(code.Definitions()...)
@@ -379,6 +413,17 @@ func branchTableTransfer[I Instruction](writeMap dfa.Result[dfa.Writes]) dfa.Bra
 			arcs = append(arcs, dfa.NewTransfer(trueBranch, offset+code.Skip+1))
 			// join into following instruction
 			return append(arcs, dfa.NewTransfer(falseBranch, offset+1))
+		case *MultiwaySkip:
+			// Each case is reached when the source register equals that case's
+			// value; the fall-through is reached only when no value matches.
+			source := dfa.NewBranchId(writes.MayAnybeAssigned(code.Source), code.Source)
+			//
+			for _, c := range code.Cases {
+				branch := extendMultiway(state, source, c.Value, true)
+				arcs = append(arcs, dfa.NewTransfer(branch, offset+c.Skip+1))
+			}
+			//
+			return append(arcs, dfa.NewTransfer(extendMultiwayDefault(state, source, code.Cases), offset+1))
 		}
 		// Transfer to following instruction
 		return append(arcs, dfa.NewTransfer(state, offset+1))
@@ -417,4 +462,42 @@ func extendSkipIf(tail dfa.Branch, sign bool, code *SkipIf, writes dfa.Writes) d
 	}
 	//
 	return dfa.Branch{Condition: tailc.And(logical.NewProposition(head))}
+}
+
+// extendMultiway conjoins a single dispatch comparison onto the incoming branch
+// condition: "source == value" when equal is true, or "source != value"
+// otherwise.  The empty-tail handling mirrors extendSkipIf (dfa.TRUE has no
+// conjuncts, so the first atom replaces it rather than being and-ed onto it).
+func extendMultiway(tail dfa.Branch, source dfa.BranchId, value uint, equal bool) dfa.Branch {
+	var (
+		c    big.Int
+		head dfa.BranchEquality
+	)
+	//
+	c.SetUint64(uint64(value))
+	//
+	if equal {
+		head = logical.EqualsConst(source, c)
+	} else {
+		head = logical.NotEqualsConst(source, c)
+	}
+	//
+	if len(tail.Condition.Conjuncts()) == 0 {
+		return dfa.Branch{Condition: logical.NewProposition(head)}
+	}
+	//
+	return dfa.Branch{Condition: tail.Condition.And(logical.NewProposition(head))}
+}
+
+// extendMultiwayDefault builds the condition under which a multiway skip falls
+// through (i.e. no case matched): the conjunction of "source != value" over
+// every case.
+func extendMultiwayDefault(tail dfa.Branch, source dfa.BranchId, cases []DispatchCase) dfa.Branch {
+	var branch = tail
+	//
+	for _, c := range cases {
+		branch = extendMultiway(branch, source, c.Value, false)
+	}
+	//
+	return branch
 }

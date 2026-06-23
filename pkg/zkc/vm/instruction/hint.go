@@ -13,8 +13,8 @@
 package instruction
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
-	finsn "github.com/consensys/go-corset/pkg/zkc/vm/instruction/field"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	finsn "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/field"
 )
 
 // FieldHint is a non-deterministic register assignment with no polynomial

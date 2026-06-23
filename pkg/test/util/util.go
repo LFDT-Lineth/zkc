@@ -17,19 +17,19 @@ import (
 	"strings"
 	"testing"
 
-	cmd_util "github.com/consensys/go-corset/pkg/cmd/zkc"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/util/field/bls12_377"
-	"github.com/consensys/go-corset/pkg/util/field/gf251"
-	"github.com/consensys/go-corset/pkg/util/field/gf8209"
-	"github.com/consensys/go-corset/pkg/util/field/koalabear"
-	"github.com/consensys/go-corset/pkg/util/file"
-	"github.com/consensys/go-corset/pkg/util/source"
-	"github.com/consensys/go-corset/pkg/zkc/compiler"
-	"github.com/consensys/go-corset/pkg/zkc/compiler/codegen"
-	"github.com/consensys/go-corset/pkg/zkc/constraints"
-	"github.com/consensys/go-corset/pkg/zkc/util"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
+	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/zkc"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/file"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // TestCase represents a line in a file
@@ -80,7 +80,7 @@ func ReadTestsFile(t *testing.T, cfg TestConfig, test string) []TestCase {
 		// Parse input line as JSON
 		if line != "" && !strings.HasPrefix(line, ";;") {
 			// Read inputs / outputs
-			data, err := util.ParseJsonInputFile([]byte(line))
+			data, err := zkc_util.ParseJsonInputFile([]byte(line))
 			//
 			if err != nil {
 				msg := fmt.Sprintf("%s:%d: %s", filename, i+1, err)
@@ -124,9 +124,9 @@ func compileTestProgram(t *testing.T, testfile string, cfg codegen.Config) (vm *
 	return vm
 }
 
-func decodeInputsOutputs[W vm.Word[W], I vm.Instruction](t *testing.T, m vm.Machine[W, I], data map[string][]byte,
+func decodeInputsOutputs[W vm.Word[W]](t *testing.T, m vm.Core[W], data map[string][]byte,
 ) (inputs map[string][]W, outputs map[string][]W) {
-	inputs, outputs, errs := vm.DecodeInputsOutputs[W, I](m, data)
+	inputs, outputs, errs := vm.DecodeInputsOutputs[W](m, data)
 	//
 	if len(errs) > 0 {
 		for _, err := range errs {

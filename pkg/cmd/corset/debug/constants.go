@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/consensys/go-corset/pkg/binfile"
-	"github.com/consensys/go-corset/pkg/corset"
+	"github.com/LFDT-Lineth/zkc/pkg/binfile"
+	"github.com/LFDT-Lineth/zkc/pkg/corset"
 )
 
 // PrintExternalisedConstants is responsible for printing any externalised

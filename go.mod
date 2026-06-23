@@ -1,4 +1,4 @@
-module github.com/consensys/go-corset
+module github.com/LFDT-Lineth/zkc
 
 go 1.24.6
 

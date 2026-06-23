@@ -3,7 +3,7 @@ package picus
 import (
 	"math/big"
 
-	"github.com/consensys/go-corset/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // ModulusOf gets the modulus of F.

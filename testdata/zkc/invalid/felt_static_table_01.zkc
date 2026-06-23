@@ -1,0 +1,13 @@
+//error:12:5-20:cast overflows field modulus "KOALABEAR_16"
+
+// ===================================================================
+// felt static table test:
+//
+// static felt table contains both valid and overflowing values
+// ===================================================================
+
+static felt_static(address:u8) -> (felt:𝔽) {
+    0          as 𝔽, // ok
+    0x7f000000 as 𝔽, // ok
+    0x7f000001 as 𝔽, // overflows koalabear modulus
+}

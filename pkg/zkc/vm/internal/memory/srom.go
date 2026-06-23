@@ -13,8 +13,8 @@
 package memory
 
 import (
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
 // StaticReadOnly is a ReadOnly memory whose contents are fixed at construction
@@ -36,7 +36,7 @@ func (p *StaticReadOnly[W]) Initialise(contents []W) {
 // NewStatic constructs a static read-only memory pre-loaded with the
 // given values.
 func NewStatic[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
-) InputOutput[W] {
+) *StaticReadOnly[W] {
 	//
 	var kind Kind
 	//

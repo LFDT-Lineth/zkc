@@ -13,7 +13,7 @@
 package util
 
 import (
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // Attribute provides a generic mechanism for extract attributes from the

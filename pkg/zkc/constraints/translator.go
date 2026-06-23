@@ -16,18 +16,18 @@ import (
 	"fmt"
 	"math/big"
 
-	mirc "github.com/consensys/go-corset/pkg/asm/compiler"
-	"github.com/consensys/go-corset/pkg/asm/io"
-	"github.com/consensys/go-corset/pkg/ir/air"
-	"github.com/consensys/go-corset/pkg/ir/mir"
-	"github.com/consensys/go-corset/pkg/schema"
-	"github.com/consensys/go-corset/pkg/schema/module"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/trace"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/util/field"
-	"github.com/consensys/go-corset/pkg/zkc/vm"
+	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // GenerateMirConstraints is responsible for converting a field machine into a
@@ -58,22 +58,22 @@ func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module) mir.
 	switch fm := fm.(type) {
 	case *vm.FieldFunction:
 		return translateFunction[F](ctx, *fm)
-	case vm.InputOutputMemory[F]:
+	case vm.Memory[F]:
 		if fm.IsStatic() {
 			return translateStaticMemory(ctx, fm)
 		} else if fm.IsReadOnly() {
 			return translateReadOnlyMemory(ctx, fm)
+		} else if fm.IsWriteOnly() {
+			return translateWriteOnceMemory(ctx, fm)
 		}
 		//
-		return translateWriteOnceMemory(ctx, fm)
-	case vm.Memory[F]:
 		return translateReadWriteMemory(ctx, fm)
 	default:
 		panic(fmt.Sprintf("unknown module \"%s\" encountered", fm.Name()))
 	}
 }
 
-func translateStaticMemory[F field.Element[F]](_ schema.ModuleId, m vm.InputOutputMemory[F]) mir.Module[F] {
+func translateStaticMemory[F field.Element[F]](_ schema.ModuleId, m vm.Memory[F]) mir.Module[F] {
 	var (
 		mod      *schema.Table[F, mir.Constraint[F]]
 		name     = trace.ModuleName{Name: m.Name(), Multiplier: 1}
@@ -93,27 +93,22 @@ func translateStaticMemory[F field.Element[F]](_ schema.ModuleId, m vm.InputOutp
 }
 
 func translateReadOnlyMemory[F field.Element[F]](
-	ctx schema.ModuleId, fm vm.InputOutputMemory[F]) mir.Module[F] {
+	ctx schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
 	var name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
-	return translateMemoryCommon(ctx, fm, name)
+	return translateSingleAccessMemory(ctx, fm, name)
 }
 
 // Write once memory and read only memory are equivalent on the constraints level
 func translateWriteOnceMemory[F field.Element[F]](
-	ctx schema.ModuleId, fm vm.InputOutputMemory[F]) mir.Module[F] {
+	ctx schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
 	var name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
-	return translateMemoryCommon(ctx, fm, name)
+	return translateSingleAccessMemory(ctx, fm, name)
 }
 
 func translateReadWriteMemory[F field.Element[F]](
 	ctx schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
-	var name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
-	return translateMemoryCommon(ctx, fm, name)
-}
-
-func translateMemoryCommon[F field.Element[F]](
-	ctx schema.ModuleId, fm vm.Memory[F], name trace.ModuleName) mir.Module[F] {
 	var (
+		name           = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
 		memoryModule   *schema.Table[F, mir.Constraint[F]]
 		padding        big.Int
 		timestampWidth = uint(32)
@@ -149,6 +144,7 @@ func translateMemoryCommon[F field.Element[F]](
 	// var address = register.NewId(memoryModule.Width() + 0)
 	// var valueRead   = register.NewId(memoryModule.Width() + 1)
 	memoryModule.AddRegisters(register.NewComputed("address", addressWidth, padding))
+	memoryModule.AddRegisters(register.NewComputed("address_delta", addressWidth, padding))
 	memoryModule.AddRegisters(register.NewComputed("valueRead", valueWidth, padding))
 
 	var (
@@ -165,8 +161,8 @@ func translateMemoryCommon[F field.Element[F]](
 		dTime = mirc.Variable[register.Id, Expr[F]](timestampDelta, timestampWidth, 0)
 		// addr     = mirc.Variable[register.Id, Expr[F]](address,           addressWidth,   0)
 		// val      = mirc.Variable[register.Id, Expr[F]](value,             valueWidth,     0)
-		execPrev = mirc.Variable[register.Id, Expr[F]](execPhase, 1, -1)
-		finlPrev = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, -1)
+		prevExec = mirc.Variable[register.Id, Expr[F]](execPhase, 1, -1)
+		prevFinl = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, -1)
 		exec     = mirc.Variable[register.Id, Expr[F]](execPhase, 1, 0)
 		finl     = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, 0)
 		zero     = mirc.Number[register.Id, Expr[F]](0)
@@ -194,9 +190,9 @@ func translateMemoryCommon[F field.Element[F]](
 	//    │       │     │
 	//  ⁰ ┴  ─────┘∙∙∙∙∙└──────   ( ─ ≡ exec)
 	flagMonotony1 := mir.NewVanishingConstraint("finl_monotony", ctx, util.None[int](),
-		mirc.If(finlPrev.NotEquals(zero), finl.Equals(one)).AsLogical())
+		mirc.If(prevFinl.NotEquals(zero), finl.Equals(one)).AsLogical())
 	flagMonotony2 := mir.NewVanishingConstraint("exec+finl_monotony", ctx, util.None[int](),
-		mirc.If(mirc.Sum([]Expr[F]{execPrev, finlPrev}).NotEquals(zero),
+		mirc.If(mirc.Sum([]Expr[F]{prevExec, prevFinl}).NotEquals(zero),
 			mirc.Sum([]Expr[F]{exec, finl}).Equals(one)).AsLogical())
 
 	// we want to prove WT - RT = 1 + ΔT (which forces WT > RT given that ΔT is ≥ 0)
@@ -204,32 +200,35 @@ func translateMemoryCommon[F field.Element[F]](
 	timestampMonotony := mir.NewVanishingConstraint("timestamp_monotony", ctx, util.None[int](),
 		mirc.If(exec.NotEquals(zero), wTime.Equals(rTime.Add(dTime, one))).AsLogical())
 
-	// var isImmutable bool
-	// switch fm.(type) {
-	// case vm.InputOutputMemory[F]: isImmutable = true
-	// case vm.Memory[F]: isImmutable = false
-	// default: panic("unknown memory type")
-	// }
-	//
-	// var valueWritten = register.Id
-	// if isImmutable {
-	// 	valueWritten = valueRead
-	// } else {
-	// 	valueWritten   = register.NewId(memoryModule.Width() + 0)
-	// 	memoryModule.AddRegisters(register.NewComputed("valueWritten", valueWidth, padding))
-	// }
-	//
 	// // we impose value constancy by enforcing that the received value be the same as the sent value
 	// rcvExec := mir.NewReceiveConstraint[F]("reading_in_execution_phase",
 	// []register.Id{address, timestampRead, valueRead})
 	// sndExec := mir.NewSendConstraint[F]("writing_in_execution_phase",
 	// []register.Id{address, timestampWritten, valueWritten})
 
-	constraints := []mir.Constraint[F]{flagExclusivity, flagMonotony1,
-		flagMonotony2, timestampMonotony} // , rcvExec, sndExec}
+	addressMonotonyInFinl := mir.NewVanishingConstraint("address_monotony_in_finalization_phase", ctx, util.None[int](),
+		mirc.If(mirc.Product([]Expr[F]{finl, prevFinl}).NotEquals(zero), wTime.Equals(rTime.Add(dTime, one))).AsLogical())
+
+	constraints := []mir.Constraint[F]{
+		flagExclusivity,
+		flagMonotony1,
+		flagMonotony2,
+		timestampMonotony,
+		// rcvExec,
+		// sndExec,
+		addressMonotonyInFinl,
+	}
 	memoryModule.AddConstraints(constraints...)
 
 	return memoryModule
+}
+
+// translateSingleAccessMemory handles both
+//   - read once memory
+//   - write once memory
+func translateSingleAccessMemory[F field.Element[F]](
+	ctx schema.ModuleId, fm vm.Memory[F], name trace.ModuleName) (mod mir.Module[F]) {
+	return
 }
 
 func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction) mir.Module[F] {
@@ -256,13 +255,20 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			ret         = register.NewId(mod.Width() + 1)
 			// determine suitable width of PC register
 			pcWidth = bit.Width(uint(1 + len(fm.Code())))
+			// one boolean selector register per instruction (code line)
+			pcSelectors = make([]register.Id, len(fm.Code()))
 		)
 		// Create program counter
 		mod.AddRegisters(register.NewComputed(io.PC_NAME, pcWidth, padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
+		// Create one-hot program counter selectors
+		for c := range pcSelectors {
+			pcSelectors[c] = register.NewId(mod.Width())
+			mod.AddRegisters(register.NewComputed(io.SelectorName(uint(c)), 1, padding))
+		}
 		// Initialise multi-line framing
-		framing, constraints = initMultiLineFraming[F](ctx, pc, ret, fm)
+		framing, constraints = initMultiLineFraming[F](ctx, pc, ret, pcSelectors, fm)
 		// Include framing constraints
 		mod.AddConstraints(constraints...)
 	} else {
@@ -284,7 +290,8 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	return mod
 }
 
-func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id, fn vm.FieldFunction,
+func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id, pcSelectors []register.Id,
+	fn vm.FieldFunction,
 ) (Framing[F], []mir.Constraint[F]) {
 	var (
 		// determine suitable width of PC register
@@ -311,8 +318,29 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 	// PC[0] != 0 ==> PC[0] == 1
 	first := mir.NewVanishingConstraint("first", ctx, util.Some(0),
 		mirc.If(pc_i.NotEquals(zero), pc_i.Equals(one)).AsLogical())
+	// Build one-hot selector terms.  The selector for code line c is high
+	// exactly when PC==c+1 (PC==0 is reserved for padding).
+	var (
+		selectorTerms = make([]Expr[F], len(pcSelectors))
+		weightedTerms = make([]Expr[F], len(pcSelectors))
+	)
 	//
-	constraints := []mir.Constraint[F]{padding, init, reset, first}
+	for c, sel := range pcSelectors {
+		sel_i := mirc.Variable[register.Id, Expr[F]](sel, 1, 0)
+		selectorTerms[c] = sel_i
+		weightedTerms[c] = mirc.Number[register.Id, Expr[F]](uint(c + 1)).Multiply(sel_i)
+	}
+	// S = sum of selectors (the activity indicator).
+	sum := mirc.Sum(selectorTerms)
+	// PC == sum_c (c+1)*IS_PC_c (reconstruction)
+	decoding := mir.NewVanishingConstraint("pc_decoding", ctx, util.None[int](),
+		pc_i.Equals(mirc.Sum(weightedTerms)).AsLogical())
+	// PC*S == PC i.e. exactly one selector is high whenever PC!=0 (and, via
+	// pc_decoding, none when PC==0).
+	exclusivity := mir.NewVanishingConstraint("is_pc_exclusivity", ctx, util.None[int](),
+		pc_i.Multiply(sum).Equals(pc_i).AsLogical())
+	//
+	constraints := []mir.Constraint[F]{padding, init, reset, first, decoding, exclusivity}
 	// Add constancies for all input registers (if applicable):
 	for i, r := range fn.Registers() {
 		if r.IsInput() {
@@ -329,5 +357,5 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 		}
 	}
 	//
-	return mirc.NewMultiLineFraming[register.Id, Expr[F]](pc, pcWidth, ret, 1), constraints
+	return mirc.NewMultiLineFraming[register.Id, Expr[F]](pc, pcWidth, ret, 1, pcSelectors), constraints
 }

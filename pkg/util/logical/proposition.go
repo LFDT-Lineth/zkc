@@ -17,8 +17,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/util/collection/array"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 )
 
 // Atom represents an indivisible part of a proposition.

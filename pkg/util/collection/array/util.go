@@ -43,6 +43,16 @@ func Compare[T Comparable[T]](lhs []T, rhs []T) int {
 	return c
 }
 
+// Expand ensures space for exactly n elements on top of this heap.  This may
+// result in allocation only if the underlying capacity is exhausted.
+func Expand[T any](data []T, n uint) []T {
+	var nsize = uint(len(data)) + n
+	// grow data capacity (as necessary)
+	data = slices.Grow(data, int(n))
+	// expand data length
+	return data[:nsize]
+}
+
 // FrontPad pads an array upto a given length n with a given item.
 // Specifically, new items are inserted at the front of the array.
 func FrontPad[T any](slice []T, n uint, item T) []T {

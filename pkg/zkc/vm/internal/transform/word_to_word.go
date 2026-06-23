@@ -16,12 +16,12 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction"
-	"github.com/consensys/go-corset/pkg/zkc/vm/instruction/opcode"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/function"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/machine"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/memory"
-	"github.com/consensys/go-corset/pkg/zkc/vm/internal/word"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // WordToWordMachine transforms a machine operating over a given word type (W1)
@@ -35,7 +35,7 @@ import (
 // The source machine's prime modulus is read from its executor and re-expressed
 // in W2 so the new machine retains the same field semantics; this means the
 // modulus itself must also fit in W2's bandwidth.  ROM/SROM contents are
-// converted element-wise; WOM/RAM/Bipartite memories start empty in the new
+// converted element-wise; WOM/RAM/Paged memories start empty in the new
 // machine, matching their behaviour in the source.
 //
 // This function will panic if it encounters a register, constant, modulus or
@@ -105,6 +105,8 @@ func (p wordToWord[W1, W2]) lowerInstruction(insn instruction.Word) instruction.
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
 		return insn.(*instruction.Call)
+	case opcode.UNCONDITIONAL_CALL:
+		return insn.(*instruction.UnconditionalCall)
 	case opcode.DEBUG:
 		return insn.(*instruction.Debug)
 	case opcode.FAIL:
@@ -121,6 +123,8 @@ func (p wordToWord[W1, W2]) lowerInstruction(insn instruction.Word) instruction.
 		return insn.(*instruction.Skip)
 	case opcode.SKIP_IF:
 		return insn.(*instruction.SkipIf)
+	case opcode.SKIP_MULTI:
+		return insn.(*instruction.MultiwaySkip)
 	case opcode.HINT_DIVISION:
 		return insn.(*instruction.FieldHint)
 	// Type-A instructions carry a W-typed constant and must be re-typed.
@@ -157,8 +161,8 @@ func (p wordToWord[W1, W2]) lowerMemory(m memory.Memory[W1]) memory.Memory[W2] {
 		return memory.NewWriteOnce[W2](m.Name(), m.IsPublic(), regs)
 	case *memory.RandomAccess[W1]:
 		return memory.NewRandomAccess[W2](m.Name(), regs)
-	case *memory.BiPartiteRandomAccess[W1]:
-		return memory.NewBiPartiteRandomAccess[W2](m.Name(), regs)
+	case *memory.PagedRandomAccess[W1]:
+		return memory.NewPagedRandomAccess[W2](m.Name(), regs)
 	default:
 		panic(fmt.Sprintf("unknown memory module \"%s\"", m.Name()))
 	}

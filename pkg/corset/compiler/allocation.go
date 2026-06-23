@@ -19,10 +19,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/corset/ast"
-	"github.com/consensys/go-corset/pkg/util/collection/iter"
-	"github.com/consensys/go-corset/pkg/util/collection/set"
-	"github.com/consensys/go-corset/pkg/util/file"
+	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
 // Register encapsulates information about a "register" in the underlying

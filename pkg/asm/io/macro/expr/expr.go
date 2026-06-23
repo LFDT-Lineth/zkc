@@ -18,11 +18,11 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/consensys/go-corset/pkg/asm/io/micro"
-	"github.com/consensys/go-corset/pkg/schema/agnostic"
-	"github.com/consensys/go-corset/pkg/schema/register"
-	"github.com/consensys/go-corset/pkg/util/collection/bit"
-	"github.com/consensys/go-corset/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/agnostic"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
 
 var (
@@ -36,7 +36,7 @@ type Expr interface {
 	Equals(e Expr) bool
 	// Evaluate this expression in a given environment producing a given value.
 	Eval([]big.Int) big.Int
-	// Polynomial returns this expression flatterned into a polynomial form.
+	// Polynomial returns this expression flattened into a polynomial form.
 	Polynomial() agnostic.StaticPolynomial
 	// RegistersRead returns the set of registers read by this expression
 	RegistersRead() bit.Set

@@ -15,9 +15,9 @@ package compiler
 import (
 	"fmt"
 
-	"github.com/consensys/go-corset/pkg/corset/ast"
-	"github.com/consensys/go-corset/pkg/util"
-	"github.com/consensys/go-corset/pkg/util/file"
+	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
 // Scope represents a region of code in which an expression can be evaluated.
@@ -453,13 +453,13 @@ func (p *ModuleScope) setDefinition(status bool, symbol ast.SymbolDefinition) {
 	panic(fmt.Sprintf("unknown symbol definition \"%s\"", symbol.Path().String()))
 }
 
-// Flattern flatterns the tree into a flat array of modules, such that a module
+// Flatten flattens the tree into a flat array of modules, such that a module
 // always comes before its own submodules.
-func (p *ModuleScope) Flattern() []*ModuleScope {
+func (p *ModuleScope) Flatten() []*ModuleScope {
 	modules := []*ModuleScope{p}
 	//
 	for _, m := range p.submodules {
-		modules = append(modules, m.Flattern()...)
+		modules = append(modules, m.Flatten()...)
 	}
 	//
 	return modules

@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/consensys/go-corset/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // SymbolRule is a symbol generator is responsible for converting a terminating
