@@ -42,7 +42,7 @@ func Link(unlinkedSourceFiles ...parser.UnlinkedSourceFile) (ast.Program, source
 		linker  = NewLinker()
 		errors  []source.SyntaxError
 	)
-	// Construct bus and source mappings
+	// Join source maps and register declarations
 	for _, unlinkedSourceFile := range unlinkedSourceFiles {
 		linker.Join(unlinkedSourceFile.SourceMap)
 		//
