@@ -29,19 +29,19 @@ import (
 
 // PrintSchemas is responsible for printing out a human-readable description of
 // a given schema.
-func PrintSchemas[F field.Element[F]](stack cmd_util.SchemaStack[F], textwidth uint) {
+func PrintSchemas[F field.Element[F]](stack cmd_util.SchemaStack[F], textwidth uint, showStatic bool) {
 	//
 	for _, schema := range stack.AbstractSchemas() {
-		PrintAnySchema(schema, textwidth)
+		PrintAnySchema(schema, textwidth, showStatic)
 	}
 	//
 	if stack.HasConcreteSchema() {
-		PrintAnySchema(stack.ConcreteSchema(), textwidth)
+		PrintAnySchema(stack.ConcreteSchema(), textwidth, showStatic)
 	}
 }
 
 // PrintAnySchema prints out all declarations included in a given schema
-func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint) {
+func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, showStatic bool) {
 	first := true
 	// Print out each module, one by one.
 	for i := schema.Modules(); i.HasNext(); {
@@ -50,6 +50,9 @@ func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint) 
 		if isEmptyModule(ith) {
 			// Skip empty modules as they just clutter things up.  Typically,
 			// for example, the root module is empty.
+			continue
+		} else if ith.IsStatic() && !showStatic {
+			// Hide static tables unless explicitly requested.
 			continue
 		} else if !first {
 			fmt.Println()
