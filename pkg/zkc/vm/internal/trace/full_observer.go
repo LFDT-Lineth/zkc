@@ -166,7 +166,7 @@ func (p *FullObserver[W, I, M]) assignControlRegisters(m *function.Function[inst
 	// Initialise columns
 	cols[pc] = builder.NewArray(nrows, pcWidth)
 	cols[ret] = builder.NewArray(nrows, 1)
-	// Initialise one-hot selector columns (one per instruction).
+	// Initialise is_PC_* selector columns (one per instruction).
 	for c := range m.Code() {
 		cols[sel+uint(c)] = builder.NewArray(nrows, 1)
 	}
@@ -181,14 +181,8 @@ func (p *FullObserver[W, I, M]) assignControlRegisters(m *function.Function[inst
 		} else {
 			cols[ret] = cols[ret].Set(uint(row), zero)
 		}
-		// Set one-hot selector for the active instruction.
-		for c := range m.Code() {
-			if uint(c) == st.pc {
-				cols[sel+uint(c)] = cols[sel+uint(c)].Set(uint(row), one)
-			} else {
-				cols[sel+uint(c)] = cols[sel+uint(c)].Set(uint(row), zero)
-			}
-		}
+		// Set is_PC_i to 1 when PC == i
+		cols[sel+st.pc] = cols[sel+st.pc].Set(uint(row), one)
 	}
 }
 
