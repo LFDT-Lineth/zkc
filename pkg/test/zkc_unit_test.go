@@ -781,6 +781,11 @@ func Test_ZkcUnit_Call_03(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_03", DEFAULT_UNIT_CONFIG)
 }
 
+// This test produce a recursive call x = f(y, x)
+func Test_ZkcUnit_Call_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/call_04", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Ternary Tests
 // ===================================================================
