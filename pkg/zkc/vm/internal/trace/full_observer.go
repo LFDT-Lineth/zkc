@@ -13,6 +13,7 @@
 package trace
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
@@ -112,8 +113,10 @@ func (p *FullObserver[W, I, M]) traceModule(m machine.Module, states []State[W],
 	)
 	// Initialise columns
 	if multiLine {
-		// include space for two additional control registers
-		cols = make([]array.MutArray[util_word.BigEndian], m.Width()+2)
+		// include space for the program counter, return line and one selector
+		// per instruction.
+		nSelectors := uint(len(m.(*function.Function[instruction.Word]).Code()))
+		cols = make([]array.MutArray[util_word.BigEndian], m.Width()+2+nSelectors)
 	} else {
 		cols = make([]array.MutArray[util_word.BigEndian], m.Width())
 	}
@@ -155,12 +158,18 @@ func (p *FullObserver[W, I, M]) assignControlRegisters(m *function.Function[inst
 		nrows = uint(len(states))
 		pc    = uint(len(m.Registers()))
 		ret   = pc + 1
+		// First selector column; one selector per instruction follows.
+		sel = ret + 1
 		// Calculate minimum size of PC; NOTE: +1 because PC==0 is reserved for padding.
 		pcWidth = bit.Width(uint(len(m.Code()) + 1))
 	)
 	// Initialise columns
 	cols[pc] = builder.NewArray(nrows, pcWidth)
 	cols[ret] = builder.NewArray(nrows, 1)
+	// Initialise is_PC_* selector columns (one per instruction).
+	for c := range m.Code() {
+		cols[sel+uint(c)] = builder.NewArray(nrows, 1)
+	}
 	// Assign values
 	for row, st := range states {
 		npc := field.Uint64[util_word.BigEndian](uint64(st.pc + 1))
@@ -172,6 +181,8 @@ func (p *FullObserver[W, I, M]) assignControlRegisters(m *function.Function[inst
 		} else {
 			cols[ret] = cols[ret].Set(uint(row), zero)
 		}
+		// Set is_PC_i to 1 when PC == i
+		cols[sel+st.pc] = cols[sel+st.pc].Set(uint(row), one)
 	}
 }
 
@@ -295,9 +306,12 @@ func traceColumns[W any](regs []register.Register, cols []array.MutArray[W]) []l
 		if i < len(regs) {
 			name = regs[i].Name()
 		} else if i == len(regs) {
-			name = "$pc"
+			name = io.PC_NAME
+		} else if i == len(regs)+1 {
+			name = io.RET_NAME
 		} else {
-			name = "$ret"
+			// one-hot program counter selector
+			name = io.SelectorName(uint(i - len(regs) - 2))
 		}
 		//
 		ltcols[i] = lt.NewColumn(name, c)
