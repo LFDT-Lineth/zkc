@@ -146,23 +146,26 @@ func (p wordToWord[W1, W2]) lowerInstruction(insn instruction.Word) instruction.
 }
 
 func (p wordToWord[W1, W2]) lowerMemory(m memory.Memory[W1]) memory.Memory[W2] {
-	var regs = slices.Clone(m.Registers())
+	var (
+		regs     = slices.Clone(m.Registers())
+		geometry = memory.NewGeometry[W2](regs)
+	)
 	// Sanity-check register widths against W2.
 	checkRegisterWidths(p.bandwidth, regs...)
 	//
 	switch m := m.(type) {
 	case *memory.StaticReadOnly[W1]:
 		contents := p.convertContents(m.Contents())
-		return memory.NewStatic(m.Name(), m.IsPublic(), regs, contents...)
+		return memory.NewStatic(m.Name(), m.IsPublic(), geometry, contents...)
 	case *memory.ReadOnly[W1]:
 		contents := p.convertContents(m.Contents())
-		return memory.NewReadOnly(m.Name(), m.IsPublic(), regs, contents...)
+		return memory.NewReadOnly(m.Name(), m.IsPublic(), geometry, contents...)
 	case *memory.WriteOnce[W1]:
-		return memory.NewWriteOnce[W2](m.Name(), m.IsPublic(), regs)
+		return memory.NewWriteOnce[W2](m.Name(), m.IsPublic(), geometry)
 	case *memory.RandomAccess[W1]:
-		return memory.NewRandomAccess[W2](m.Name(), regs)
+		return memory.NewRandomAccess[W2](m.Name(), geometry)
 	case *memory.PagedRandomAccess[W1]:
-		return memory.NewPagedRandomAccess[W2](m.Name(), regs)
+		return memory.NewPagedRandomAccess[W2](m.Name(), geometry)
 	default:
 		panic(fmt.Sprintf("unknown memory module \"%s\"", m.Name()))
 	}

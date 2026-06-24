@@ -112,7 +112,7 @@ func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F], showStatic 
 	}
 	// Word-level Intermediate Representation
 	if artifacts.bci.HasValue() {
-		writeBytecodeInterpreter(artifacts.bci.Unwrap(), artifacts.annotations)
+		writeBytecodeProgram(true, artifacts.bci.Unwrap(), artifacts.annotations)
 	}
 	// Field-level Intermediate Representation
 	if artifacts.fir.HasValue() {
@@ -430,44 +430,124 @@ func registerType(r register.Register) string {
 // Bytecode Interpreter
 // ============================================================================
 
-func writeBytecodeInterpreter[W vm.Word[W]](program vm.BytecodeProgram[W], annotations map[string][]string) {
+func writeBytecodeProgram[W vm.Word[W]](binary bool, program vm.BytecodeProgram[W], annotations map[string][]string) {
 	var (
-		address   uint32
-		bytecodes = vm.DecodeBytecodes(program)
-		width     uint
-		mapping   vm.SystemMap
+		bin     [][]uint32
+		address uint32
 	)
 	//
-	for _, bytecode := range bytecodes {
-		var codes = bytecode.Codes(address)
-		//
-		width = max(width, uint(len(codes)))
-		address += uint32(len(codes))
+	if binary {
+		// Extract encoding for all bytecodes
+		bin = vm.CompileProgram(program).Encoding()
 	}
-	// Reset for another sweep
-	address = 0
 	//
-	for i, bytecode := range vm.DecodeBytecodes(program) {
-		var codes = bytecode.Codes(address)
-		//
-		if sym := program.SymbolAt(address); sym.HasValue() {
-			var m = program.Module(sym.Unwrap())
-			//
-			if i != 0 {
-				fmt.Println()
+	for i, m := range program.Modules() {
+		if i != 0 {
+			fmt.Println()
+		}
+		// Write any annotations for this module
+		writeAnnotations(annotations[m.Name()])
+		//  Write module contents
+		switch m := m.(type) {
+		case *vm.BytecodeFunction[W]:
+			fid := uint16(i)
+			address, bin = writeBytecodeFunction(address, program.EnvironmentOf(fid), m, bin)
+		case *vm.BytecodeMemory[W]:
+			writeBytecodeMemory(m)
+		default:
+			panic(fmt.Sprintf("unknown module \"%s\" encountered", m.Name()))
+		}
+	}
+}
+
+func writeBytecodeFunction[W vm.Word[W]](address uint32, env vm.BytecodeEnvironment,
+	f *vm.BytecodeFunction[W], bin [][]uint32) (uint32, [][]uint32) {
+	//
+	var width = maxBytecodeLength(f, bin)
+	//
+	fmt.Printf("fn %s\n", signatureOf(f))
+	//
+	for _, r := range f.Registers() {
+		if !r.IsInputOutput() {
+			fmt.Printf("\t%s %s\n", regType(r), r.Name())
+		}
+	}
+	//
+	for pc, vec := range f.Vectors() {
+		for cc, b := range vec.Bytecodes {
+			// Include low-level information (if requested)
+			if bin != nil {
+				var codes = array.Reverse(bin[0])
+				//
+				fmt.Printf("0x%04x\t%s\t", address, codeStr(width, codes))
+				//
+				address += uint32(len(codes))
+				bin = bin[1:]
 			}
 			//
-			writeAnnotations(annotations[m.Name()])
+			if cc == 0 {
+				fmt.Printf("[%02d]", pc)
+			} else {
+				fmt.Print("    ")
+			}
+			// Sanity check to prevent crashing even in the presence of invalid
+			// structure.
+			if b == nil {
+				fmt.Print("\t???")
+			} else {
+				fmt.Printf("\t%s", b.String(env))
+			}
 			//
-			fmt.Printf("%s:\n", signatureOf(m))
-			//
-			mapping = instruction.NewSystemMap(m.RegisterMap(), program.Modules())
+			fmt.Println()
 		}
-		//
-		fmt.Printf("0x%04x\t%s\t%s\n", address, codeStr(width, codes), bytecode.String(mapping))
-		//
-		address += uint32(len(codes))
 	}
+	//
+	return address, bin
+}
+
+func regType[W vm.Word[W]](r vm.BytecodeRegister[W]) string {
+	if r.IsNative() {
+		return "𝔽"
+	}
+	//
+	return fmt.Sprintf("u%d", r.Bitwidth().Unwrap())
+}
+
+func maxBytecodeLength[W vm.Word[W]](f *vm.BytecodeFunction[W], encoding [][]uint32) uint {
+	var maxWidth int
+	//
+	if encoding == nil {
+		// Width doesn't matter when no low-level information is requested.
+		return 0
+	}
+	//
+	for _, vec := range f.Vectors() {
+		for range vec.Bytecodes {
+			maxWidth = max(maxWidth, len(encoding[0]))
+			encoding = encoding[1:]
+		}
+	}
+	//
+	return uint(maxWidth)
+}
+
+func writeBytecodeMemory[W vm.Word[W]](m *vm.BytecodeMemory[W]) {
+	if m.IsPublic() {
+		fmt.Printf("pub ")
+	}
+	//
+	switch {
+	case m.IsStatic():
+		fmt.Print("static ")
+	case m.IsReadOnly():
+		fmt.Print("input ")
+	case m.IsWriteOnly():
+		fmt.Print("output ")
+	default:
+		fmt.Print("memory ")
+	}
+	//
+	fmt.Println(signatureOf(m))
 }
 
 func codeStr(width uint, codes []uint32) string {
@@ -479,12 +559,12 @@ func codeStr(width uint, codes []uint32) string {
 	return fmt.Sprintf("%-*s", n, str)
 }
 
-func signatureOf(m vm.Module) string {
+func signatureOf[W vm.Word[W]](m vm.BytecodeModule[W]) string {
 	var (
-		args = array.Filter(m.Registers(), func(r register.Register) bool {
+		args = array.Filter(m.Registers(), func(r vm.BytecodeRegister[W]) bool {
 			return r.IsInput()
 		})
-		returns = array.Filter(m.Registers(), func(r register.Register) bool {
+		returns = array.Filter(m.Registers(), func(r vm.BytecodeRegister[W]) bool {
 			return r.IsOutput()
 		})
 	)
@@ -492,7 +572,7 @@ func signatureOf(m vm.Module) string {
 	return fmt.Sprintf("%s(%s) -> (%s)", m.Name(), fnArgs(args), fnArgs(returns))
 }
 
-func fnArgs(regs []register.Register) string {
+func fnArgs[W vm.Word[W]](regs []vm.BytecodeRegister[W]) string {
 	var builder strings.Builder
 	//
 	for i, r := range regs {
@@ -506,7 +586,7 @@ func fnArgs(regs []register.Register) string {
 		if r.IsNative() {
 			builder.WriteString("𝔽")
 		} else {
-			fmt.Fprintf(&builder, "u%d", r.Width())
+			fmt.Fprintf(&builder, "u%d", r.Bitwidth().Unwrap())
 		}
 	}
 	//

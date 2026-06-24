@@ -13,7 +13,6 @@
 package memory
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
@@ -31,7 +30,7 @@ func (p *WriteOnce[W]) Read(address uint64) (W, error) {
 }
 
 // NewWriteOnce constructs an empty write-once memory.
-func NewWriteOnce[W util.Uinter64](name string, public bool, registers []register.Register) *WriteOnce[W] {
+func NewWriteOnce[W util.Uinter64](name string, public bool, geometry Geometry[W]) *WriteOnce[W] {
 	var kind Kind
 	//
 	if public {
@@ -41,6 +40,6 @@ func NewWriteOnce[W util.Uinter64](name string, public bool, registers []registe
 	}
 	//
 	return &WriteOnce[W]{
-		StaticArray: NewStaticArray[W](name, kind, registers),
+		StaticArray: NewStaticArray[W](name, kind, geometry),
 	}
 }

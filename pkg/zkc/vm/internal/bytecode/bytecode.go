@@ -14,6 +14,10 @@ package bytecode
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -21,176 +25,83 @@ import (
 // Cond provides a convenient alias to make the code more readable.
 type Cond = opcode.Condition
 
-// Reg just provides a convenient alias to make the code more readable.
-type Reg = uint16
+// RegisterId just provides a convenient alias to make the code more readable.
+type RegisterId = uint16
+
+// ModuleId represents module identifiers
+type ModuleId = uint16
 
 // Address just provides a convenient alias to make the code more readable.
 type Address = uint32
 
-// OPCODE_MASK determines how many bits of the opcode byte are used for the
-// opcode itself.  This is a 7-bit field (bits 0..6); operand bytes always begin
-// at bit 8, and no instruction uses bits 6..7, so widening the opcode field
-// from 6 to 7 bits leaves every existing encoding untouched (their opcodes are
-// all <= 62, so bit 6 reads as zero).
-const OPCODE_MASK = 0x7f
+// Module provides a convenient alias to make the code more readable.
+type Module = base.Module
 
-// Every instruction occupies 32 bits, where the first byte is as follows:
-//
-//	7   5 4       0
-//
-// +-----+---------+
-// | : : | : : : : |
-// +-----+---------+
-//
-//	(n)   (opcode)
-//
-// Currently, n is instruction specific.
-const (
-	// FAIL instruction
-	FAIL uint32 = iota
-	// CHECKCAST instruction
-	CHECKCAST
-	// JMP instruction
-	JMP
-	// SKIP (unconditional forward branch) instruction
-	SKIP
-	// SKIP_M (skip table) instruction: dispatches on a source register against a
-	// table of (value, target) pairs.
-	SKIP_M
-	// JEQ_rr (jump if equal)
-	JEQ_rr
-	// JNE_rr (jump if not equal)
-	JNE_rr
-	// JLT_rr (jump if less than)
-	JLT_rr
-	// JLE_RR (jump if less than or equal)
-	JGT_rr
-	// JGE_RR (jump if greater than or equal)
-	JLE_rr
-	// JGT_RR (jump if greater than)
-	JGE_rr
-	// JEQ_rv (vectored jump if equal)
-	JEQ_rv
-	// JNE_rv (vectored jump if not equal)
-	JNE_rv
-	// JLT_rv (vectored jump if less than)
-	JLT_rv
-	// JLE_nm (vectored jump if less than or equal)
-	JGT_rv
-	// JGE_nm (vectored jump if greater than or equal)
-	JLE_rv
-	// JGT_nm (vectored jump if greater than)
-	JGE_rv
-	// SEQ_rr (skip forward if equal)
-	SEQ_rr
-	// SNE_rr (skip forward if not equal)
-	SNE_rr
-	// SLT_rr (skip forward if less than)
-	SLT_rr
-	// SGT_rr (skip forward if greater than)
-	SGT_rr
-	// SLE_rr (skip forward if less than or equal)
-	SLE_rr
-	// SGE_rr (skip forward if greater than or equal)
-	SGE_rr
-	// ENTER_n instruction
-	ENTER_n
-	// ENTERCP_n (enter and checkpoint) instruction
-	ENTERCP_n
-	// LEAVE_n instruction
-	LEAVE_n
-	// RET instruction
-	RET
-	// RD_ROM_nm instruction
-	RD_ROM_nm
-	// RD_SROM_nm instruction
-	RD_SROM_nm
-	// WR_WOM_nm instruction
-	WR_WOM_nm
-	// WR_SRAM instruction
-	RD_RAM_nm
-	// WR_RAM_nm instruction
-	WR_RAM_nm
-	// RD_PRAM_nm instruction
-	RD_PRAM_nm
-	// WR_PRAM_nm instruction
-	WR_PRAM_nm
-	// PUSH instruction
-	PUSH
-	// POP instruction
-	POP
-	// MOVE instruction
-	MOVE
-	// LDC (load constant) instruction
-	LDC
-	// LDC_w (load wide constant) instruction
-	LDC_w
-	// DESTRUCT instruction
-	DESTRUCT
-	// CAST instruction
-	CAST
-	// ADD_2n1 instruction
-	ADD_2n1
-	// SUB_2n1 instruction [must follow ADD_2n1]
-	SUB_2n1
-	// MUL_2n1 instruction [must follow SUB_2n1]
-	MUL_2n1
-	// ADDC (add with constant) instruction
-	ADDC
-	// SUBC (subtract with constant) instruction
-	SUBC
-	// MULC (multiply with constant) instruction
-	MULC
-	// ADD_nm (addition with vector target) instruction
-	ADD_nm
-	// SUB_nm (subtraction with vector target) instruction [must follow ADD_nm]
-	SUB_nm
-	// MUL_nm (multiplication with vector target) instruction [must follow SUB_nm]
-	MUL_nm
-	// CSUB (subtract from constant) instruction
-	CSUB
-	// DIV instruction
-	DIV
-	// REM instruction
-	REM
-	// DIVHINT (division hint) instruction
-	DIVHINT
-	// ADDMOD_P instruction
-	ADDMOD_P
-	// SUBMOD_P instruction
-	SUBMOD_P
-	// MULMOD_P instruction
-	MULMOD_P
-	// AND instruction
-	AND
-	// OR instruction
-	OR
-	// XOR instruction
-	XOR
-	// NOT instruction
-	NOT
-	// SHL instruction
-	SHL
-	// SHR instruction
-	SHR
-	// CAT instruction
-	CAT
-	// DEBUG instruction
-	DEBUG
-	// CHECKPOINT instruction (no operands)
-	CHECKPOINT
-	//
-	MAX_BYTECODE
-)
+// FieldConfig provides a convenient alias for the field configuration passed to
+// Bytecode.Validate (mirroring the field.Config argument of
+// instruction.Instruction.MicroValidate).  Aliasing it here keeps the per-
+// instance Validate signatures free of an otherwise package-wide import.
+type FieldConfig = field.Config
+
+// ============================================================================
+// Interfaces
+// ============================================================================
 
 // Bytecode encapsulates a single bytecode instruction.
 type Bytecode[W word.Word[W]] interface {
-	String(SystemMap) string
-	Codes(uint32) []uint32
 	// Clone returns a deep copy of this bytecode, sharing no mutable state (in
 	// particular, no operand slices) with the original.  See
 	// Program.AddCheckPoint.
 	Clone() Patched
+	// Uses returns the set of registers used (i.e. read) by this bytecode.
+	Uses() []RegisterId
+	// Definitions returns the set of registers defined (i.e. written) by this
+	// bytecode.
+	Definitions() []RegisterId
+	// Validate checks that this bytecode is well-formed, returning any errors
+	// found (or nil when it is well-formed).  Here, width is the number of
+	// bytecodes in the enclosing vector, field is the surrounding field
+	// configuration and env resolves register information.
+	Validate(width uint, field FieldConfig, env Environment) []error
+	// String returns a suitable string representation of this bytecode.
+	String(Environment) string
+}
+
+// Environment provides a mechanism to allow Bytecode functions access to
+// information about the enclosing environment.  For example, to generate a
+// suitable string for a given instruction, it is useful to know the names of
+// registers in the enclosing function, etc.
+type Environment interface {
+	// Name returns the name of the enclosing function.
+	Name() string
+	// HasRegister checks whether a register with the given name exists and, if
+	// so, returns its register identifier.  Otherwise, it returns false.
+	HasModule(name string) (RegisterId, bool)
+	// HasRegister checks whether a register with the given name exists and, if
+	// so, returns its register identifier.  Otherwise, it returns false.
+	HasRegister(name string) (RegisterId, bool)
+	// Register returns the ith register used in this module.
+	Module(id ModuleId) ModuleInfo
+	// Register returns the ith register used in this module.
+	Register(id RegisterId) RegisterInfo
+}
+
+// RegisterInfo provides a minimal amount of information about a register in the
+// enclosing function.
+type RegisterInfo interface {
+	// Name returns the  name of this register
+	Name() string
+	// Bitwidth returns the bitwidth of this register, or the empty option for a
+	// native register (which has no fixed bitwidth).  Used by Bytecode.Validate
+	// to detect width overflows.
+	Bitwidth() util.Option[uint]
+}
+
+// ModuleInfo provides a minimal amount of information about a module in the
+// enclosing environment.
+type ModuleInfo interface {
+	// Name returns the  name of this register
+	Name() string
 }
 
 // Patchable bytecodes contain a branch target which must be resolved during
@@ -210,21 +121,18 @@ type Patchable[W word.Word[W]] interface {
 // of Patchable.Patch).  Its method set matches Bytecode, which is independent
 // of the word type; hence patched bytecodes convert directly into Bytecode[W].
 type Patched interface {
-	String(SystemMap) string
-	Codes(uint32) []uint32
-	// Clone returns a deep copy of this bytecode (see Bytecode.Clone).
-	Clone() Patched
+	String(Environment) string
 }
 
 // ============================================================================
 // Constructors
 // ============================================================================
-//
+
 // The constructors below provide a more readable way to build bytecode
 // instructions than instantiating the underlying instruction structs directly.
 // Several of them are thin wrappers around the general-purpose Arith
 // instruction, which computes "target = source[0] op source[1] op ... op
-// constant" for some arithmetic operation op (add, subtract or multiply).  The
+// constant" for some Arithmetic operation op (add, subtract or multiply).  The
 // "Vec" variants accept a slice of target registers, allowing a single logical
 // value to be spread across multiple register limbs (e.g. when a value is wider
 // than the underlying word type W).
@@ -232,7 +140,7 @@ type Patched interface {
 // AddConst constructs an addition instruction computing
 // "target = sum(sources) + constant" into a single target register.
 func AddConst[W word.Word[W]](target register.Id, sources []register.Id, constant W) *Arith[W] {
-	return newArith(arithop_ADD, asRegs(target), asRegs(sources...), constant)
+	return NewArith(ARITHOP_ADD, asRegs(target), asRegs(sources...), constant)
 }
 
 // AddVec constructs a vectored addition instruction computing
@@ -240,137 +148,247 @@ func AddConst[W word.Word[W]](target register.Id, sources []register.Id, constan
 // multi-limb register vector.
 func AddVec[W word.Word[W]](targets []register.Id, sources []register.Id) *Arith[W] {
 	var zero W
-	return newArith(arithop_ADD, asRegs(targets...), asRegs(sources...), zero)
+	return NewArith(ARITHOP_ADD, asRegs(targets...), asRegs(sources...), zero)
 }
 
 // AddVecConst constructs a vectored addition instruction computing
 // "targets = sum(sources) + constant", where targets is a multi-limb register
 // vector.
 func AddVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, constant W) *Arith[W] {
-	return newArith(arithop_ADD, asRegs(targets...), asRegs(sources...), constant)
+	return NewArith(ARITHOP_ADD, asRegs(targets...), asRegs(sources...), constant)
 }
 
 // CallFun constructs a function-call bytecode.
-func CallFun(target Address, checkpoint bool, width uint16, args []register.Id, returns []register.Id) *Call {
-	return &Call{target, checkpoint, width, asRegs(args...), asRegs(returns...)}
+func CallFun(target ModuleId, checkpoint bool, args []register.Id, returns []register.Id) *Call {
+	return &Call{target, checkpoint, asRegs(args...), asRegs(returns...)}
 }
 
 // Jump creates an unconditional jump instruction transferring control to the
 // given target address.
 func Jump(target Address) *Jmp {
-	return &Jmp{target}
+	return &Jmp{Target: target}
 }
 
-// JumpIf constructs a conditional branch instruction which jumps to the target
-// address when "left op right" holds, comparing single registers.
-func JumpIf(op Cond, target Address, left, right register.Id) *Jif {
-	return &Jif{target, NewRegVec(asReg(left)), NewRegVec(asReg(right)), op}
+// NewSkip constructs an uncondition skip instruction which skips over n
+// instructions.
+func NewSkip(skip uint16) *Skip {
+	return &Skip{Skip: skip}
 }
 
-// JumpIfVec constructs a conditional branch instruction which jumps to the
+// NewSkipIf constructs a conditional branch instruction which jumps to the
+// target address when "left op right" holds, comparing single registers.
+func NewSkipIf(op Cond, skip uint16, left, right register.Id) *SkipIf {
+	return &SkipIf{Skip: skip, Left: NewRegVec(asReg(left)), Right: NewRegVec(asReg(right)), Op: op}
+}
+
+// NewSkipIfVec constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing multi-limb register
 // vectors.
-func JumpIfVec(op Cond, target Address, left, right register.Vector) *Jif {
-	return &Jif{target, NewRegVec(asRegs(left.Registers()...)...), NewRegVec(asRegs(right.Registers()...)...), op}
+func NewSkipIfVec(op Cond, skip uint16, left, right register.Vector) *SkipIf {
+	return &SkipIf{Skip: skip, Left: NewRegVec(asRegs(left.Registers()...)...),
+		Right: NewRegVec(asRegs(right.Registers()...)...), Op: op}
 }
 
 // LoadConst constructs a load-constant (LDC) instruction which assigns the
 // given constant to the target register.
 func LoadConst[W word.Word[W]](target register.Id, constant W) *Arith[W] {
-	return newArith(arithop_ADD, asRegs(target), nil, constant)
+	return NewArith(ARITHOP_ADD, asRegs(target), nil, constant)
 }
 
 // Move constructs a move instruction which copies the source register into the
 // target register.
 func Move[W word.Word[W]](target register.Id, source register.Id) *Arith[W] {
 	var zero W
-	return newArith(arithop_ADD, asRegs(target), asRegs(source), zero)
+	return NewArith(ARITHOP_ADD, asRegs(target), asRegs(source), zero)
 }
 
 // MultiwaySkip constructs a multiway-skip (SMW) instruction which dispatches on
 // the value of the source register against the given (value, target) table.
 // Targets are label indices until resolved during encoding (see Smw.Patch).
-func MultiwaySkip(source register.Id, cases []SwitchCase) *Switch {
-	return &Switch{asReg(source), cases}
+func MultiwaySkip[W word.Word[W]](source register.Id, cases []SwitchCase[W]) *Switch[W] {
+	return &Switch[W]{Source: asReg(source), Cases: cases}
 }
 
 // MulConst constructs a multiplication instruction computing
 // "target = product(sources) * constant" into a single target register.
 func MulConst[W word.Word[W]](target register.Id, sources []register.Id, constant W) *Arith[W] {
-	return newArith(arithop_MUL, asRegs(target), asRegs(sources...), constant)
+	return NewArith(ARITHOP_MUL, asRegs(target), asRegs(sources...), constant)
 }
 
 // MulVecConst constructs a vectored multiplication instruction computing
 // "targets = product(sources) * constant", where targets is a multi-limb
 // register vector.
 func MulVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, constant W) *Arith[W] {
-	return newArith(arithop_MUL, asRegs(targets...), asRegs(sources...), constant)
+	return NewArith(ARITHOP_MUL, asRegs(targets...), asRegs(sources...), constant)
 }
 
 // ReadRom constructs a read instruction for a (non-static) read-only memory.
 // The data registers receive the row located at the address given by the
 // address registers, in the memory identified by id.
 func ReadRom(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{ROM_READ, id, asRegs(address...), asRegs(data...)}
+	return &ReadWrite{Mode: ROM_READ, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
 }
 
 // ReadStaticRom constructs a read instruction for a static read-only memory.
 // The data registers receive the row located at the address given by the
 // address registers, in the memory identified by id.
 func ReadStaticRom(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{SROM_READ, id, asRegs(address...), asRegs(data...)}
+	return &ReadWrite{Mode: SROM_READ, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
 }
 
 // ReadRam constructs a read instruction for a (small) random-access memory.
 // The data registers receive the row located at the address given by the
 // address registers, in the memory identified by id.
 func ReadRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{SRAM_READ, id, asRegs(address...), asRegs(data...)}
+	return &ReadWrite{Mode: SRAM_READ, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
 }
 
 // ReadPagedRam constructs a read instruction for a paged random-access memory.
 // The data registers receive the row located at the address given by the
 // address registers, in the memory identified by id.
 func ReadPagedRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{PRAM_READ, id, asRegs(address...), asRegs(data...)}
+	return &ReadWrite{Mode: PRAM_READ, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
 }
 
 // SubConst constructs a subtraction instruction computing
 // "target = sources[0] - ... - constant" into a single target register.
 func SubConst[W word.Word[W]](target register.Id, sources []register.Id, constant W) *Arith[W] {
-	return newArith(arithop_SUB, asRegs(target), asRegs(sources...), constant)
+	return NewArith(ARITHOP_SUB, asRegs(target), asRegs(sources...), constant)
 }
 
 // SubVecConst constructs a vectored subtraction instruction computing
 // "targets = sources[0] - ... - constant", where targets is a multi-limb
 // register vector.
 func SubVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, constant W) *Arith[W] {
-	return newArith(arithop_SUB, asRegs(targets...), asRegs(sources...), constant)
+	return NewArith(ARITHOP_SUB, asRegs(targets...), asRegs(sources...), constant)
 }
 
 // WriteWom constructs a write instruction for a write-once memory.  The data
 // registers are written to the row located at the address given by the address
 // registers, in the memory identified by id.
 func WriteWom(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{WOM_WRITE, id, asRegs(address...), asRegs(data...)}
+	return &ReadWrite{Mode: WOM_WRITE, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
 }
 
 // WriteRam constructs a write instruction for a (small) random-access memory.
 // The data registers are written to the row located at the address given by the
 // address registers, in the memory identified by id.
 func WriteRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{SRAM_WRITE, id, asRegs(address...), asRegs(data...)}
+	return &ReadWrite{Mode: SRAM_WRITE, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
 }
 
 // WritePagedRam constructs a write instruction for a paged random-access
 // memory.  The data registers are written to the row located at the address
 // given by the address registers, in the memory identified by id.
 func WritePagedRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{PRAM_WRITE, id, asRegs(address...), asRegs(data...)}
+	return &ReadWrite{Mode: PRAM_WRITE, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
 }
 
-func init() {
-	if MAX_BYTECODE > OPCODE_MASK {
-		panic("overflowing opcodes")
+// NewBitwise constructs a bitwise instruction (and/or/xor) computing
+// "target = left op right".
+func NewBitwise(op BitwiseOp, target, left, right register.Id, bitwidth uint16) *Bitwise {
+	return &Bitwise{Op: op, Target: asReg(target), Left: asReg(left), Right: asReg(right), Bitwidth: bitwidth}
+}
+
+// NewCheckCast constructs a check-cast instruction asserting that the given
+// target register fits within the given bit width.
+func NewCheckCast(target register.Id, bitwidth uint16) *CheckCast {
+	//
+	return &CheckCast{Bitwidth: bitwidth, Target: asReg(target)}
+}
+
+// NewDebug constructs a debug instruction carrying the given formatted message.
+func NewDebug(chunks []base.FormattedChunk) *Debug {
+	var (
+		hunks   = make([]FormattedChunk, len(chunks))
+		sources []RegVec
+	)
+	//
+	for i, c := range chunks {
+		var args = asRegs(c.Argument.Registers()...)
+		//
+		hunks[i] = FormattedChunk{c.Text, c.Format}
+		//
+		if len(args) > 0 {
+			sources = append(sources, NewRegVec(args...))
+		}
+	}
+	//
+	return &Debug{hunks, sources}
+}
+
+// NewDivHint constructs a division-hint instruction.
+func NewDivHint(quotient, remainder, witness, dividend, divisor register.Id) *DivHint {
+	return &DivHint{Quotient: asReg(quotient), Remainder: asReg(remainder), Witness: asReg(witness),
+		Dividend: asReg(dividend), Divisor: asReg(divisor)}
+}
+
+// NewDivRem constructs a division/remainder instruction computing
+// "target = dividend op divisor".
+func NewDivRem(op uint32, target, dividend, divisor register.Id) *DivRem {
+	return &DivRem{Opcode: op, Target: asReg(target), Dividend: asReg(dividend), Divisor: asReg(divisor)}
+}
+
+// NewFail constructs a fail instruction carrying the given formatted message.
+func NewFail(chunks []base.FormattedChunk) *Fail {
+	var (
+		hunks   = make([]FormattedChunk, len(chunks))
+		sources []RegVec
+	)
+	//
+	for i, c := range chunks {
+		var args = asRegs(c.Argument.Registers()...)
+		//
+		hunks[i] = FormattedChunk{c.Text, c.Format}
+		//
+		if len(args) > 0 {
+			sources = append(sources, NewRegVec(args...))
+		}
+	}
+	//
+	return &Fail{hunks, sources}
+}
+
+// NewFieldArith constructs a field arithmetic instruction computing
+// "target = sources[0] op ... op constant" modulo the field prime.
+func NewFieldArith[W word.Word[W]](op uint32, target register.Id, sources []register.Id, constant W) *FieldArith[W] {
+	return &FieldArith[W]{Op: op, Target: asReg(target), Sources: asRegs(sources...), Constant: constant}
+}
+
+// NewRet constructs a return instruction with the given frame width and return
+// offset.
+func NewRet() *Ret {
+	return &Ret{}
+}
+
+// Concat constructs a concatenation instruction which joins the source
+// registers into the target register vector.
+func Concat(targets []register.Id, sources []register.Id) *Cat {
+	return &Cat{Targets: asRegs(targets...), Sources: asRegs(sources...)}
+}
+
+func asReg(rid register.Id) RegisterId {
+	return util.Cast[uint16](rid.Unwrap())
+}
+
+func asRegs(rids ...register.Id) []RegisterId {
+	return array.Map(rids, func(_ uint, r register.Id) RegisterId {
+		return asReg(r)
+	})
+}
+
+// IsUnusedConstant checks whether a given constant is the "identity element".
+// This depends on the arithmetic operation in question.  For example, for
+// addition and subtraction, this is zero.  But, for multiplication it is one.
+func IsUnusedConstant[W word.Word[W]](op ArithOp, constant W) bool {
+	switch op {
+	case ARITHOP_ADD:
+		return constant.Cmp64(0) == 0
+	case ARITHOP_SUB:
+		return constant.Cmp64(0) == 0
+	case ARITHOP_MUL:
+		return constant.Cmp64(1) == 0
+	default:
+		panic("unknown arithmetic operation")
 	}
 }

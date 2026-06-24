@@ -77,7 +77,7 @@ type InputOutput[W util.Uinter64] interface {
 // Kind provides relevant information about the underlying memory (e.g. whether
 // it is read-only, or read-write, etc).
 type Kind struct {
-	public, static, read, write bool
+	public, static, read, write, paged bool
 }
 
 // IsPublic indicates whether this is a public input or output.
@@ -107,6 +107,11 @@ func (p Kind) IsWriteOnly() bool {
 // reads / writes.  Observe that RAM is always private.
 func (p Kind) IsReadWrite() bool {
 	return p.read && p.write
+}
+
+// IsPaged indicates whether this read-write memory is paged (or not).
+func (p Kind) IsPaged() bool {
+	return p.paged
 }
 
 // ============================================================================
@@ -166,23 +171,29 @@ func (p *Kind) GobDecode(data []byte) error {
 var (
 	// PUBLIC_STATIC_MEMORY represents a (public) static read-only memory.  That
 	// is a ROM which never changes across all executions of a given machine.
-	PUBLIC_STATIC_MEMORY = Kind{true, true, true, false}
+	PUBLIC_STATIC_MEMORY = Kind{true, true, true, false, false}
 	// PRIVATE_STATIC_MEMORY represents a (private) static read-only memory.  That
 	// is a ROM which never changes across all executions of a given machine.
-	PRIVATE_STATIC_MEMORY = Kind{false, true, true, false}
+	PRIVATE_STATIC_MEMORY = Kind{false, true, true, false, false}
 	// PUBLIC_READ_ONLY_MEMORY represents a (public) read-only memory which can
 	// change between different executions of a given machine.
-	PUBLIC_READ_ONLY_MEMORY = Kind{true, false, true, false}
+	PUBLIC_READ_ONLY_MEMORY = Kind{true, false, true, false, false}
 	// PRIVATE_READ_ONLY_MEMORY represents a (private) read-only memory which
 	// can change between different executions of a given machine.
-	PRIVATE_READ_ONLY_MEMORY = Kind{false, false, true, false}
+	PRIVATE_READ_ONLY_MEMORY = Kind{false, false, true, false, false}
 	// PUBLIC_WRITE_ONCE_MEMORY represents a (public) write-only memory which can only be
 	// written once.
-	PUBLIC_WRITE_ONCE_MEMORY = Kind{true, false, false, true}
+	PUBLIC_WRITE_ONCE_MEMORY = Kind{true, false, false, true, false}
 	// PRIVATE_WRITE_ONCE_MEMORY represents a (private) write-only memory which
 	// can only be written once.
-	PRIVATE_WRITE_ONCE_MEMORY = Kind{false, false, false, true}
-	// RANDOM_ACCESS_MEMORY represents the ubiquitous form of memory which
+	PRIVATE_WRITE_ONCE_MEMORY = Kind{false, false, false, true, false}
+	// READWRITE_MEMORY represents the ubiquitous form of memory which supports
+	// arbitrary reads / writes.  Observe that RAM is always private.  Also,
+	// this variant is unpaged --- meaning it is suitable only for relatively
+	// small RAMs.
+	READWRITE_MEMORY = Kind{false, false, true, true, false}
+	// PAGED_READWRITE_MEMORY represents the ubiquitous form of memory which
 	// supports arbitrary reads / writes.  Observe that RAM is always private.
-	RANDOM_ACCESS_MEMORY = Kind{false, false, true, true}
+	// This variant is paged --- meaning it is suitable for larger RAMs.
+	PAGED_READWRITE_MEMORY = Kind{false, false, true, true, true}
 )

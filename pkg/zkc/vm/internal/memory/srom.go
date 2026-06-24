@@ -13,7 +13,6 @@
 package memory
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
@@ -35,7 +34,7 @@ func (p *StaticReadOnly[W]) Initialise(contents []W) {
 
 // NewStatic constructs a static read-only memory pre-loaded with the
 // given values.
-func NewStatic[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
+func NewStatic[W util.Uinter64](name string, public bool, geometry Geometry[W], init ...W,
 ) *StaticReadOnly[W] {
 	//
 	var kind Kind
@@ -48,7 +47,7 @@ func NewStatic[W util.Uinter64](name string, public bool, registers []register.R
 	//
 	return &StaticReadOnly[W]{
 		ReadOnly: ReadOnly[W]{
-			StaticArray: NewStaticArray(name, kind, registers, init...),
+			StaticArray: NewStaticArray(name, kind, geometry, init...),
 		},
 	}
 }
