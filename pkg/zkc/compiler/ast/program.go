@@ -25,17 +25,17 @@ import (
 // RawProgram encapsulates one of more functions together, such that one may call
 // another, etc.  Furthermore, it provides an interface between assembly
 // components and the notion of a Schema.
-type RawProgram[I any] struct {
-	declarations []decl.Declaration[I]
+type RawProgram[S any] struct {
+	declarations []decl.Declaration[S]
 }
 
 // Component returns the ith entity in this program.
-func (p *RawProgram[I]) Component(id uint) decl.Declaration[I] {
+func (p *RawProgram[S]) Component(id uint) decl.Declaration[S] {
 	return p.declarations[id]
 }
 
 // Components returns all functions making up this program.
-func (p *RawProgram[I]) Components() []decl.Declaration[I] {
+func (p *RawProgram[S]) Components() []decl.Declaration[S] {
 	return p.declarations
 }
 
