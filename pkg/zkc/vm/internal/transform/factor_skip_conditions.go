@@ -143,8 +143,7 @@ func branchContainsCall(codes []WordInstruction, i, skip uint) (thenHasCall, els
 // containsCall reports whether the given block contains a (conditional) function call.
 func containsCall(block []WordInstruction) bool {
 	for _, code := range block {
-		switch code.(type) {
-		case *instruction.Call:
+		if _, ok := code.(*instruction.Call); ok {
 			return true
 		}
 	}
