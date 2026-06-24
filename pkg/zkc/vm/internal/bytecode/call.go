@@ -14,179 +14,64 @@ package bytecode
 
 import (
 	"fmt"
-	"math"
 	"slices"
 	"strings"
-
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Call invokes another function module.
 type Call struct {
 	// address of target function
-	Target Address
+	Target ModuleId
 	// CheckPoint indicates whether this is a checkpointing call (or not).
 	CheckPoint bool
-	// FrameWidth of target function
-	FrameWidth uint16
 	// Arguments are caller-frame registers copied into callee inputs.
-	Arguments []Reg
+	Arguments []RegisterId
 	// Returns are caller-frame registers receiving callee outputs.
-	Returns []Reg
+	Returns []RegisterId
 }
 
-func (p *Call) String(mapping SystemMap) string {
-	var builder strings.Builder
-	//
-	builder.WriteString("call ")
-	//
-	if len(p.Returns) > 0 {
-		builder.WriteString(registersToString(p.Returns, mapping, ","))
-		builder.WriteString(" = ")
-	}
-	//
-	fmt.Fprintf(&builder, "(%s) 0x%08x", registersToString(p.Arguments, mapping, ","), p.Target)
-	//
-	return builder.String()
+// SetCheckPoint turns this call into a checkpointing call.
+func (p *Call) SetCheckPoint() *Call {
+	return &Call{p.Target, true, slices.Clone(p.Arguments), slices.Clone(p.Returns)}
 }
 
 // Clone implementation for Bytecode / Patched interfaces.
 func (p *Call) Clone() Patched {
-	return &Call{p.Target, p.CheckPoint, p.FrameWidth, slices.Clone(p.Arguments), slices.Clone(p.Returns)}
+	return &Call{p.Target, p.CheckPoint, slices.Clone(p.Arguments), slices.Clone(p.Returns)}
 }
 
-// Codes implementation for Bytecode interface.
-func (p *Call) Codes(pc uint32) (codes []uint32) {
-	// Encode enter
-	codes = append(codes, encodeEnter_n(pc, p.Target, p.CheckPoint, p.FrameWidth, p.Arguments)...)
-	// Encode leave
-	return append(codes, encodeLeave_n(p.Returns)...)
+// Uses implementation for Bytecode interface.  A call reads the argument
+// registers passed into the callee.
+func (p *Call) Uses() []RegisterId {
+	return p.Arguments
 }
 
-// Patch implementation for Patchable interface
-func (p *Call) Patch(labels []Address) Patched {
-	return &Call{labels[p.Target], p.CheckPoint, p.FrameWidth, p.Arguments, p.Returns}
+// Definitions implementation for Bytecode interface.  A call writes the callee's
+// outputs into the return registers of the caller's frame.
+func (p *Call) Definitions() []RegisterId {
+	return p.Returns
 }
 
-// MaxWidth implementation for Patchable interface: the width of a call is
-// independent of where its target resolves (the relative offset always
-// occupies the same field), so it is computed against a dummy nearby target.
-func (p *Call) MaxWidth() uint32 {
-	var enter = encodeEnter_n(0, 1, p.CheckPoint, p.FrameWidth, p.Arguments)
-	//
-	return uint32(len(enter) + len(encodeLeave_n(p.Returns)))
+// Validate implementation for Bytecode interface.
+func (p *Call) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+	return nil
 }
 
-func decodeCall[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
+func (p *Call) String(env Environment) string {
 	var (
-		checkpoint = (codes[pc] & OPCODE_MASK) == ENTERCP_n
-		// Decode ENTER
-		width, target, argsIter, n = decodeEnter_n(pc, codes)
-		// Decode LEAVE
-		retsIter, m = decodeLeave_n(pc+n, codes)
-		//
-		args []Reg = OpIterToArray[uint16](argsIter)
-		rets []Reg = OpIterToArray[uint16](retsIter)
+		builder strings.Builder
+		// Determine enclosing module
+		mod = env.Module(p.Target)
 	)
-	// //
-	return &Call{target, checkpoint, width, args, rets}, n + m
-}
-
-// NOTE: a call bytecode compiles down into a pair of instructions, ENTER/LEAVE.
-// The ENTER instruction prepares for the call by allocating the frame,
-// assigning the arguments and pushing a stackframe record.  The LEAVE
-// instruction handles the assignment of returns to their destination registers.
-//
-// ============================================================================
-// ENTER_n instruction. Format is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |     offset      | width  | opcode |
-// +--------+--------+--------+--------+
-// |  arg2  |  arg1  |  arg0  | nargs  |
-// +--------+--------+--------+--------+
-// |  ...   |  ...   |  arg5  |  arg4  |
-// +-----------------------------------+
-//
-// Here, nargs determines the number of packed argument registers, whilst width
-// determines the frame width to allocate and offset determines (relative)
-// offset to the target.
-// ============================================================================
-
-func encodeEnter_n(pc, target uint32, checkpoint bool, width uint16, args []Reg) []uint32 {
-	if width > math.MaxUint8 || len(args) > math.MaxUint8 {
-		panic("wide call instructions not supported")
+	//
+	builder.WriteString("call ")
+	//
+	if len(p.Returns) > 0 {
+		builder.WriteString(RegistersToString(p.Returns, env, ","))
+		builder.WriteString(" = ")
 	}
 	//
-	var (
-		roff, ok = getRelativeOffset(pc, target, 16)
-		_width   = uint32(width) << 8
-		bytes    = []uint8{uint8(len(args))}
-		opcode   = ENTER_n
-	)
-	// sanity check
-	if !ok {
-		panic("branch target overflow")
-	} else if checkpoint {
-		opcode = ENTERCP_n
-	}
-	// Determine full opcode
-	codes := []uint32{roff<<16 | _width | opcode}
-	// Generate register bytes
-	bytes = append(bytes, regsAsBytes(args)...)
+	fmt.Fprintf(&builder, "%s(%s)", mod.Name(), RegistersToString(p.Arguments, env, ","))
 	//
-	return append(codes, packRegsIntoCodes(bytes)...)
-}
-
-func decodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args Op8Iter, n uint32) {
-	var nargs = uint(codes[pc+1] & 0xff)
-	//
-	width = uint16((codes[pc] >> 8) & 0xff)
-	target = getBranchTarget(pc, codes[pc]>>16, 16)
-	args = NewOp8Iter(1, nargs, codes[pc+1:])
-	n = 1 + nCodesPackedSmall(nargs+1)
-	//
-	return
-}
-
-// ============================================================================
-// LEAVE_n instruction. Format is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |  n/a   |     nrets       | opcode |
-// +--------+--------+--------+--------+
-// |  ...   |  ...   |  ret1  |  ret0  |
-// +-----------------------------------+
-//
-// Here, nrets determines the number of packed return registers.
-//
-// ============================================================================
-
-func encodeLeave_n(rets []Reg) []uint32 {
-	if len(rets) > math.MaxUint16 {
-		panic("wide call instructions not supported")
-	}
-	//
-	var (
-		nrets = uint32(len(rets)) << 8
-		codes = []uint32{nrets | LEAVE_n}
-		bytes = regsAsBytes(rets)
-	)
-	//
-	return append(codes, packRegsIntoCodes(bytes)...)
-}
-
-func decodeLeave_n(pc uint32, codes []uint32) (rets Op8Iter, n uint32) {
-	var (
-		nrets = uint(codes[pc]>>8) & 0xffff
-	)
-	//
-	rets = NewOp8Iter(0, nrets, codes[pc+1:])
-	n = 1 + nCodesPackedSmall(nrets)
-	//
-	return
+	return builder.String()
 }

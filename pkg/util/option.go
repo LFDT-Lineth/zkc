@@ -57,6 +57,16 @@ func (o Option[T]) Unwrap() T {
 	panic("cannot unwrap an empty option")
 }
 
+// UnwrapOr returns the value contained, or a given default value is the option
+// is empty.
+func (o Option[T]) UnwrapOr(value T) T {
+	if o.some {
+		return o.value
+	}
+	//
+	return value
+}
+
 // ============================================================================
 // Encoding / Decoding
 // ============================================================================

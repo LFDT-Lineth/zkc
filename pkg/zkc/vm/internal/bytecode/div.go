@@ -12,12 +12,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package bytecode
 
-import (
-	"fmt"
-
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
-)
+import "fmt"
 
 // DivRem computes the (truncated) integer quotient or remainder of two
 // registers.  The operation is identified by Opcode, which is one of DIV or
@@ -26,24 +21,9 @@ type DivRem struct {
 	// Opcode selects the operation (DIV or REM).
 	Opcode uint32
 	// Target receives the result.
-	Target Reg
+	Target RegisterId
 	// Dividend and Divisor are the operand registers.
-	Dividend, Divisor Reg
-}
-
-func (p *DivRem) String(mapping SystemMap) string {
-	var (
-		target   = registerToString(p.Target, mapping)
-		dividend = registerToString(p.Dividend, mapping)
-		divisor  = registerToString(p.Divisor, mapping)
-		symbol   = "/"
-	)
-	//
-	if p.Opcode == REM {
-		symbol = "%"
-	}
-	//
-	return fmt.Sprintf("%s = %s %s %s", target, dividend, symbol, divisor)
+	Dividend, Divisor RegisterId
 }
 
 // Clone implementation for Bytecode / Patched interfaces.
@@ -52,51 +32,35 @@ func (p *DivRem) Clone() Patched {
 	return &c
 }
 
-// Codes implementation for Bytecode interface.
-func (p *DivRem) Codes(_ uint32) []uint32 {
-	return encodeDivRem(p.Opcode, p.Target, p.Dividend, p.Divisor)
+// Uses implementation for Bytecode interface.
+func (p *DivRem) Uses() []RegisterId {
+	return []RegisterId{p.Dividend, p.Divisor}
 }
 
-func decodeDivRem[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	var (
-		op              = codes[pc] & OPCODE_MASK
-		rd, lhs, rhs, n = decodeDivRem_2n1(pc, codes)
-	)
-	//
-	return &DivRem{op, rd, lhs, rhs}, n
+// Definitions implementation for Bytecode interface.
+func (p *DivRem) Definitions() []RegisterId {
+	return []RegisterId{p.Target}
 }
 
-// ============================================================================
-// DIV / REM instruction. Format of these instructions is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// | divisor|dividend|   rd   | opcode |
-// +--------+--------+--------+--------+
-//
-// The opcode itself distinguishes the two operations, so no width is needed.
-// ============================================================================
-
-func encodeDivRem(op uint32, rd, dividend, divisor Reg) []uint32 {
-	if rd >= 256 || dividend >= 256 || divisor >= 256 {
-		panic("wide division instructions not supported")
-	}
-	//
-	return []uint32{uint32(divisor)<<24 | uint32(dividend)<<16 | uint32(rd)<<8 | op}
+// Validate implementation for Bytecode interface.
+func (p *DivRem) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+	return nil
 }
 
-func decodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor Reg, n uint32) {
-	rd = Reg((codes[pc] >> 8) & 0xff)
-	dividend = Reg((codes[pc] >> 16) & 0xff)
-	divisor = Reg((codes[pc] >> 24) & 0xff)
-	//
-	return rd, dividend, divisor, 1
-}
-
-// NewDivRem constructs a division/remainder bytecode for op (DIV or REM).
-func NewDivRem(op uint32, target, dividend, divisor register.Id) *DivRem {
-	return &DivRem{op, asReg(target), asReg(dividend), asReg(divisor)}
+func (p *DivRem) String(mapping Environment) string {
+	// var (
+	// 	target   = RegisterToString(p.Target, mapping)
+	// 	dividend = RegisterToString(p.Dividend, mapping)
+	// 	divisor  = RegisterToString(p.Divisor, mapping)
+	// 	symbol   = "/"
+	// )
+	// //
+	// if p.Opcode == REM {
+	// 	symbol = "%"
+	// }
+	// //
+	// return fmt.Sprintf("%s = %s %s %s", target, dividend, symbol, divisor)
+	panic("todo")
 }
 
 // DivHint computes quotient, remainder and range witness for a division hint
@@ -106,21 +70,9 @@ func NewDivRem(op uint32, target, dividend, divisor register.Id) *DivRem {
 // zero divisor aborts execution with a division-by-zero error.
 type DivHint struct {
 	// Quotient, Remainder and Witness receive the results.
-	Quotient, Remainder, Witness Reg
+	Quotient, Remainder, Witness RegisterId
 	// Dividend and Divisor are the operand registers.
-	Dividend, Divisor Reg
-}
-
-func (p *DivHint) String(mapping SystemMap) string {
-	var (
-		quotient  = registerToString(p.Quotient, mapping)
-		remainder = registerToString(p.Remainder, mapping)
-		witness   = registerToString(p.Witness, mapping)
-		dividend  = registerToString(p.Dividend, mapping)
-		divisor   = registerToString(p.Divisor, mapping)
-	)
-	//
-	return fmt.Sprintf("%s::%s::%s = hint(%s, %s)", quotient, remainder, witness, dividend, divisor)
+	Dividend, Divisor RegisterId
 }
 
 // Clone implementation for Bytecode / Patched interfaces.
@@ -129,54 +81,29 @@ func (p *DivHint) Clone() Patched {
 	return &c
 }
 
-// Codes implementation for Bytecode interface.
-func (p *DivHint) Codes(_ uint32) []uint32 {
-	return encodeDivHint(p.Quotient, p.Remainder, p.Witness, p.Dividend, p.Divisor)
+// Uses implementation for Bytecode interface.
+func (p *DivHint) Uses() []RegisterId {
+	return []RegisterId{p.Dividend, p.Divisor}
 }
 
-func decodeDivHint[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	var rq, rr, rw, rx, ry, n = decodeDivHint_2n3(pc, codes)
+// Definitions implementation for Bytecode interface.
+func (p *DivHint) Definitions() []RegisterId {
+	return []RegisterId{p.Quotient, p.Remainder, p.Witness}
+}
+
+// Validate implementation for Bytecode interface.
+func (p *DivHint) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+	return nil
+}
+
+func (p *DivHint) String(env Environment) string {
+	var (
+		quotient  = RegisterToString(p.Quotient, env)
+		remainder = RegisterToString(p.Remainder, env)
+		witness   = RegisterToString(p.Witness, env)
+		dividend  = RegisterToString(p.Dividend, env)
+		divisor   = RegisterToString(p.Divisor, env)
+	)
 	//
-	return &DivHint{rq, rr, rw, rx, ry}, n
-}
-
-// ============================================================================
-// DIVHINT instruction. Format of this instruction is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |   rw   |   rr   |   rq   | opcode |
-// +--------+--------+--------+--------+
-// |   n/a  |   n/a  |   ry   |   rx   |
-// +--------+--------+--------+--------+
-//
-// Here, rx and ry are the dividend and divisor source registers, whilst rq, rr
-// and rw are the quotient, remainder and witness destination registers.
-// ============================================================================
-
-func encodeDivHint(rq, rr, rw, rx, ry Reg) []uint32 {
-	if rq >= 256 || rr >= 256 || rw >= 256 || rx >= 256 || ry >= 256 {
-		panic("wide division hint instructions not supported")
-	}
-	//
-	return []uint32{
-		uint32(rw)<<24 | uint32(rr)<<16 | uint32(rq)<<8 | DIVHINT,
-		uint32(ry)<<8 | uint32(rx),
-	}
-}
-
-func decodeDivHint_2n3(pc uint32, codes []uint32) (rq, rr, rw, rx, ry Reg, n uint32) {
-	rq = Reg((codes[pc] >> 8) & 0xff)
-	rr = Reg((codes[pc] >> 16) & 0xff)
-	rw = Reg((codes[pc] >> 24) & 0xff)
-	rx = Reg(codes[pc+1] & 0xff)
-	ry = Reg((codes[pc+1] >> 8) & 0xff)
-	//
-	return rq, rr, rw, rx, ry, 2
-}
-
-// NewDivHint constructs a division hint bytecode.
-func NewDivHint(quotient, remainder, witness, dividend, divisor register.Id) *DivHint {
-	return &DivHint{asReg(quotient), asReg(remainder), asReg(witness), asReg(dividend), asReg(divisor)}
+	return fmt.Sprintf("%s::%s::%s = hint(%s, %s)", quotient, remainder, witness, dividend, divisor)
 }

@@ -6,20 +6,20 @@ package checkpoint
 // are implicitly zero.
 type Memory[W any] struct {
 	// Module identifier for this memory.
-	moduleId uint
+	moduleId uint16
 	// Pages determines the contents of the given memory in this snapshot.
 	pages []Page[W]
 }
 
 // NewMemory constructs a snapshot of a single memory module, identified by its
 // module identifier and described by the given sequence of pages.
-func NewMemory[W any](moduleId uint, pages []Page[W]) Memory[W] {
+func NewMemory[W any](moduleId uint16, pages []Page[W]) Memory[W] {
 	return Memory[W]{moduleId, pages}
 }
 
 // ModuleId returns the module identifier of the memory captured by this
 // snapshot.
-func (p Memory[W]) ModuleId() uint {
+func (p Memory[W]) ModuleId() uint16 {
 	return p.moduleId
 }
 

@@ -14,28 +14,51 @@ package vm
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Bytecode encapsulates a single bytecode instruction.
 type Bytecode[W Word[W]] = bytecode.Bytecode[W]
 
+// BytecodeModule describes a moddule, such as a function or memory
+type BytecodeModule[W Word[W]] = descriptor.Module[W]
+
+// BytecodeFunction describes a function
+type BytecodeFunction[W Word[W]] = descriptor.Function[W]
+
+// BytecodeMemory describes a memory
+type BytecodeMemory[W Word[W]] = descriptor.Memory[W]
+
+// BytecodeRegister describes a register
+type BytecodeRegister[W Word[W]] = descriptor.Register[W]
+
 // BytecodeInterpreter is an optimised bytecode interpreter for executing word
 // instructions.
-type BytecodeInterpreter[W Word[W]] = bytecode.Interpreter[W]
+type BytecodeInterpreter[W Word[W]] = interpreter.Interpreter[W]
 
-// BytecodeProgram represents a compiled bytecode program, along with
-// accompanying symbolic information.
-type BytecodeProgram[W Word[W]] = bytecode.Program[W]
+// BytecodeProgram represents a bytecode assembly program.
+type BytecodeProgram[W Word[W]] = descriptor.Program[W]
 
-// DecodeBytecodes decodes a given bytecode program into a bytecode sequence.
-func DecodeBytecodes[W word.Word[W]](program BytecodeProgram[W]) []Bytecode[W] {
-	return program.Bytecodes()
-}
+// BytecodeBinary represents a compiled bytecode program, along with
+// accompanying symbolic information.  This is primarily useful for debugging.
+type BytecodeBinary[W Word[W]] = encoding.Binary[W]
+
+// BytecodeEnvironment provides information about the enclosing environment of a
+// bytecode, and is primarily for debugging and validation.
+type BytecodeEnvironment = bytecode.Environment
 
 // NewBytecodeInterpreter constructs an interpreter for executing the given
 // bytecode program.  The modulus is the prime characteristic of the surrounding
 // field, used when executing native field instructions.
 func NewBytecodeInterpreter[W word.Word[W]](program BytecodeProgram[W], modulus W) *BytecodeInterpreter[W] {
-	return bytecode.NewInterpreter(program, modulus)
+	return interpreter.New(program, modulus)
+}
+
+// CompileProgram compiles a program descriptor into an binary (i.e. executable)
+// bytecode program.
+func CompileProgram[W word.Word[W]](p BytecodeProgram[W]) BytecodeBinary[W] {
+	return interpreter.CompileProgram(p)
 }

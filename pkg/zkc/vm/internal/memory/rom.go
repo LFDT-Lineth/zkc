@@ -13,7 +13,6 @@
 package memory
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
@@ -38,7 +37,7 @@ func (p *ReadOnly[W]) Write(address uint64, value W) error {
 }
 
 // NewReadOnly constructs a new read-only memory initialised with a given set of values.
-func NewReadOnly[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
+func NewReadOnly[W util.Uinter64](name string, public bool, geometry Geometry[W], init ...W,
 ) *ReadOnly[W] {
 	//
 	var kind Kind
@@ -50,6 +49,6 @@ func NewReadOnly[W util.Uinter64](name string, public bool, registers []register
 	}
 	//
 	return &ReadOnly[W]{
-		StaticArray: NewStaticArray[W](name, kind, registers, init...),
+		StaticArray: NewStaticArray[W](name, kind, geometry, init...),
 	}
 }

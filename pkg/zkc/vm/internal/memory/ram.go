@@ -13,7 +13,6 @@
 package memory
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
@@ -44,8 +43,8 @@ func (p *RandomAccess[W]) Read(address uint64) (W, error) {
 // NewRandomAccess constructs an empty random-access memory which employs a
 // non-sparse implementation.  Thus, this is not suitable for very large
 // memories.
-func NewRandomAccess[W util.Uinter64](name string, registers []register.Register) Memory[W] {
+func NewRandomAccess[W util.Uinter64](name string, geometry Geometry[W]) *RandomAccess[W] {
 	return &RandomAccess[W]{
-		StaticArray: NewStaticArray[W](name, RANDOM_ACCESS_MEMORY, registers),
+		StaticArray: NewStaticArray[W](name, READWRITE_MEMORY, geometry),
 	}
 }

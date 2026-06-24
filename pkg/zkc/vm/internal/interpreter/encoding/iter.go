@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package bytecode
+package encoding
 
 // Op8Iter provides a way of iterating u8 operands packed into u32 words without
 // allocating memory.

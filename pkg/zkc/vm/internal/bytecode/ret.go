@@ -12,37 +12,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package bytecode
 
-import (
-	"fmt"
-	"math"
-
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
-)
-
 // Ret (return from function call) instruction.
 type Ret struct {
-	// FrameWidth determines the number of registers in the corresponding
-	// function's frame.  This many registers are popped from the stack when
-	// this instruction executes.
-	FrameWidth uint16
-	// ReturnOffset (RO) determines the offset from the callee frame pointer
-	// where the return pointer should be set.  That is, rp = fp + ro.
-	ReturnOffset uint8
-}
-
-// NewRet constructs a new return instruction for a given frame width.
-func NewRet(width uint, roffset uint) *Ret {
-	if width > math.MaxUint16 {
-		panic("invalid frame width")
-	} else if roffset > math.MaxUint8 {
-		panic("invalid return offset")
-	}
-	//
-	return &Ret{uint16(width), uint8(roffset)}
-}
-
-func (p *Ret) String(_ SystemMap) string {
-	return fmt.Sprintf("ret %d/%d", p.ReturnOffset, p.FrameWidth)
 }
 
 // Clone implementation for Bytecode / Patched interfaces.
@@ -51,40 +22,23 @@ func (p *Ret) Clone() Patched {
 	return &c
 }
 
-// Codes implementation for Bytecode interface
-func (p *Ret) Codes(_ uint32) []uint32 {
-	return encodeRet1(p.FrameWidth, p.ReturnOffset)
+// Uses implementation for Bytecode interface.  The copying of return values is
+// handled by the frame machinery rather than by named register operands, so a
+// return reads no registers here.
+func (p *Ret) Uses() []RegisterId {
+	return nil
 }
 
-func decodeRet[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	width, roffset, n := decodeRet1(pc, codes)
-	//
-	return &Ret{width, roffset}, n
+// Definitions implementation for Bytecode interface.
+func (p *Ret) Definitions() []RegisterId {
+	return nil
 }
 
-// ============================================================================
-// RET.  Format of these instruction is:
-//
-//	31                                0
-//
-// +--------+-----------------+--------+
-// | offset |   frame width   | opcode |
-// +--------+-----------------+--------+
-func decodeRet1(pc uint32, codes []uint32) (width uint16, roffset uint8, n uint32) {
-	// RET stores frame width in bits 8..23.
-	width = uint16((codes[pc] >> 8) & 0xffff)
-	roffset = uint8(codes[pc] >> 24)
-	//
-	return width, roffset, 1
+// Validate implementation for Bytecode interface.
+func (p *Ret) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+	return nil
 }
 
-func encodeRet1(width uint16, roffset uint8) []uint32 {
-	var (
-		_width   = uint32(width)
-		_roffset = uint32(roffset)
-	)
-
-	return []uint32{
-		_roffset<<24 | _width<<8 | RET,
-	}
+func (p *Ret) String(_ Environment) string {
+	return "ret"
 }
