@@ -78,30 +78,78 @@ func factorSkipConditionsFunction[W word.Word[W]](fn *WordFunction) *WordFunctio
 	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
 }
 
-// factorableSkips returns the set of code indices holding an equality SkipIf
-// worth factoring: one whose comparison generates an inverse and which guards a
-// non-trivial amount of work.  A two-sided branch (i.e. one with an else) is
-// always factored, since both sides then have their guards reduced from a
-// degree-3 (inverse) term to a degree-2 bit reference.  A one-sided branch is
-// only factored when its body holds more than a single instruction; otherwise
-// the diamond and extra column would not pay for themselves.
+// factorableSkips returns the set of code indices holding a SkipIf worth factoring.
 func factorableSkips(codes []WordInstruction, registers RegisterAllocator) map[uint]bool {
 	factor := make(map[uint]bool)
 	//
 	for i, code := range codes {
 		si, ok := code.(*instruction.SkipIf)
-		if !ok || !isEqualityCondition(si.Cond) || !generatesInverse(si, registers) {
+		if !ok {
 			continue
 		}
-		//
+		// Nothing to factorize if the condition is a (in)equality on a bit register
+		if isEqualityCondition(si.Cond) && !generatesInverse(si, registers) {
+			factor[uint(i)] = false
+			continue
+		}
+
+		thenHasCall, elseHasCall := branchContainsCall(codes, uint(i), si.Skip)
+		// Factorize if it guards a call, as it is needed for the source selector of the lookup.
+		if thenHasCall || elseHasCall {
+			factor[uint(i)] = true
+			continue
+		}
+
 		thenSize, elseSize := branchSizes(codes, uint(i), si.Skip)
-		//
-		if thenSize > 1 || elseSize > 0 {
+		// Performance improvment: compute the condition only once and then check against a boolean.
+		// It reduces the constraint degree.
+		if generatesInverse(si, registers) && (elseSize > 0 || thenSize > 1) {
 			factor[uint(i)] = true
 		}
 	}
 	//
 	return factor
+}
+
+// branchContainsCall reports whether the "then" (conditionally-skipped) block
+// of a SkipIf at index i, and/or the "else" block reached after it, contain a
+// function call.  The block boundaries are computed exactly as in branchSizes.
+func branchContainsCall(codes []WordInstruction, i, skip uint) (thenHasCall, elseHasCall bool) {
+	var (
+		end   = min(i+1+skip, uint(len(codes)))
+		block = codes[i+1 : end]
+	)
+	// Determine the "else" block (i.e. the code reached when the condition
+	// holds), which depends on how the "then" block ends.
+	if m := len(block); m > 0 {
+		switch last := block[m-1].(type) {
+		case *instruction.Skip:
+			// The then block jumps over a contiguous else block.
+			elseEnd := min(end+last.Skip, uint(len(codes)))
+			elseHasCall = containsCall(codes[end:elseEnd])
+			block = block[:m-1]
+		case *instruction.Fail, *instruction.Return:
+			// The then block terminates, so the code that follows is only reached
+			// when the condition holds (the skip is taken).
+			elseHasCall = containsCall(codes[end:])
+		}
+	}
+	//
+	thenHasCall = containsCall(block)
+	//
+	return thenHasCall, elseHasCall
+}
+
+// containsCall reports whether the given block contains a (conditional) function call.
+func containsCall(block []WordInstruction) bool {
+	for _, code := range block {
+		switch code.(type) {
+		case *instruction.Call:
+			return true
+		}
+	}
+	//
+	return false
 }
 
 // branchSizes estimates how many instructions a SkipIf located at index i (with
@@ -135,13 +183,11 @@ func isEqualityCondition(cond opcode.Condition) bool {
 
 // generatesInverse reports whether the comparison performed by a SkipIf would
 // lower to an inverse normalisation.  This is only the case when some operand
-// is wider than a single bit; equality involving only bit registers is
-// normalisation-free and so factoring it would add instructions for no benefit.
+// is wider than a single bit.
 func generatesInverse(si *instruction.SkipIf, registers RegisterAllocator) bool {
 	for _, r := range si.Uses() {
 		reg := registers.Register(r)
-		// Native registers are full-field-width (and have no fixed bitwidth), so
-		// they are certainly wider than a single bit.
+		// Native registers are wider than a single bit.
 		if reg.IsNative() || reg.Width() > 1 {
 			return true
 		}

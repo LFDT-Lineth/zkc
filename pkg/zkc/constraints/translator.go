@@ -18,6 +18,7 @@ import (
 
 	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
@@ -234,32 +235,102 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 // UnconditionalCall) made by the given function.  The lookup maps the caller's
 // argument/return registers onto the callee's input/output registers.
 //
-// The caller (source) side is gated by the call's position in the program: in a
-// multi-line caller the call at code line k fires exactly on rows where the
-// one-hot selector IS_PC_k is high, so that selector is used as the source
-// selector; in an atomic caller every row is a call row, so the source is
-// unfiltered.  The callee (target) side is filtered by its $ret line for
-// multi-line callees, or unfiltered for atomic callees.
+// The caller (source) side is gated on two (potentially combined) conditions:
+//
+//   - Position: in a multi-line caller the call at code line k fires only on
+//     rows where the one-hot selector IS_PC_k is high; in an atomic caller
+//     every row is a call row, so there is no positional gating.
+//   - Path: a call may be executed conditionally (e.g. the recursive call in a
+//     shift helper, guarded by "n != 0").  The branch condition under which the
+//     call is reached is materialised by FactorSkipConditions as a boolean
+//     register ("path selector"); only rows where it is high actually call.
+//
+// For an atomic caller the source selector is therefore the path selector
+// (unfiltered when the call is unconditional).  For a multi-line caller it
+// would be IS_PC_k * path_selector — currently only the unconditional case
+// (just IS_PC_k) is supported.  The callee (target) side is filtered by its
+// $ret line for multi-line callees, or unfiltered for atomic callees.
 func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	fm vm.FieldFunction, pcSelectors []register.Id, infos []moduleInfo) {
 	//
 	for pc, vec := range fm.Code() {
-		// Determine the pc selector for calls on this line (none for atomic
-		// callers, which have no program counter selectors).
-		var srcSelector util.Option[register.Id]
-		if len(pcSelectors) != 0 {
-			srcSelector = util.Some(pcSelectors[pc])
-		}
+		// Branch table giving the condition under which each code in this vector
+		// is reached.
+		_, branchTable := vec.BranchTable()
 		//
-		for _, code := range vec.Codes {
+		for cc, code := range vec.Codes {
+			var (
+				args     []register.Id
+				returns  []register.Id
+				calleeId uint
+			)
+			//
 			switch c := code.(type) {
 			case *instruction.Call:
-				emitCallLookup(mod, ctx, fm.Registers(), uint(pc), c.Id, c.Arguments, c.Returns, srcSelector, infos)
+				calleeId, args, returns = c.Id, c.Arguments, c.Returns
 			case *instruction.UnconditionalCall:
-				emitCallLookup(mod, ctx, fm.Registers(), uint(pc), c.Id, c.Arguments, c.Returns, srcSelector, infos)
+				calleeId, args, returns = c.Id, c.Arguments, c.Returns
+			default:
+				continue
+			}
+			// Determine the source selector gating this call.
+			srcSelector := callSourceSelector(branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors)
+			//
+			emitCallLookup(mod, ctx, fm.Registers(), uint(pc), calleeId, args, returns, srcSelector, infos)
+		}
+	}
+}
+
+// callSourceSelector determines the register used to gate the source (caller)
+// side of a call's lookup constraint, given the branch condition under which
+// the call executes and the caller's per-line one-hot selectors (empty for an
+// atomic caller).
+func callSourceSelector(cond dfa.BranchCondition, pc uint, pcSelectors []register.Id) util.Option[register.Id] {
+	var (
+		atomic  = len(pcSelectors) == 0
+		pathSel = callPathSelector(cond)
+	)
+	//
+	if atomic {
+		// Atomic caller: no positional gating, so the selector is just the path
+		// selector (none => unfiltered, i.e. the call always fires).
+		return pathSel
+	}
+	// Multi-line caller: gated by the line's one-hot selector.
+	if pathSel.HasValue() {
+		// TODO: a conditional call in a multi-line function needs a fresh column
+		// holding IS_PC_k * path_selector as its source selector.
+		panic("conditional call within multi-line function not yet supported")
+	}
+	//
+	return util.Some(pcSelectors[pc])
+}
+
+// callPathSelector extracts the "path selector" register gating a conditionally
+// executed call, from the branch condition under which it is reached.  Returns
+// None when the call is unconditional (i.e. always reached).
+//
+// FactorSkipConditions materialises each skip condition into a boolean register
+// b (1 exactly when the guarded path is taken) and rewrites the guard as a
+// single inequality "b != zero".  We therefore expect the condition to be one
+// such atom and return b.
+func callPathSelector(cond dfa.BranchCondition) util.Option[register.Id] {
+	if cond.IsTrue() {
+		return util.None[register.Id]()
+	}
+	//
+	if conjuncts := cond.Conjuncts(); len(conjuncts) == 1 {
+		if atoms := conjuncts[0].Atoms(); len(atoms) == 1 {
+			// Atom is "Left != Right"; Left is the (lower-id) materialised boolean
+			// guard register, which is high exactly when the call fires.
+			if atom := atoms[0]; !atom.Sign && atom.Left.Width == 1 {
+				return util.Some(atom.Left.Id)
 			}
 		}
 	}
+	//
+	panic(fmt.Sprintf("unsupported call branch condition: %s",
+		cond.String(func(id dfa.BranchId) string { return id.String() })))
 }
 
 // emitCallLookup constructs and adds a single lookup constraint mapping the
