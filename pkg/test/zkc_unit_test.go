@@ -871,6 +871,11 @@ func Test_ZkcUnit_Switch_10(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_10", DEFAULT_UNIT_CONFIG)
 }
 
+// y = switch(x) f_x(x)
+func Test_ZkcUnit_Switch_11(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_11", DEFAULT_UNIT_CONFIG.Constraints(true))
+}
+
 // ===================================================================
 // Printf Tests
 // ===================================================================
