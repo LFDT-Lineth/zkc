@@ -1,57 +1,75 @@
-## RAM module
+# RAM module
 
-Here's one set of constraints for a random access memory (RAM) module. We make the following assumptions:
+We document the constraints for random access memory (RAM) modules.
+We make the following assumptions:
 
 - the RAM may be read from arbitrarily
 - before an address has been written to for the first time it holds the value 0
-- we must guarantee consistency across segments
+- the RAM module must guarantee consistency across segments
 
-### Triggering the finalization phase
+## Triggering the initialization/finalization phase `FINL ≡ true`
 
-To avoid ROM, WOM, and RAM all share the same issue wrt the logUpBus: if initialization/finalization isn't tightly constrained a memory cell can end up living many parallel lives. One constraint that removes this issue is to impose that these memory-types perform a single initialiazation/finalization event per address. Here's one way of doing this in our RISCV zkVM/zkc interpreter:
+If RAM initialization/finalization isn't tightly constrained a memory cell can
+end up living parallel and wholly unrelated lives. One constraint that removes
+this issue is to impose that these memory-types perform a single initialiazation
+and finalization event per address. And here there are two options: go over a
+contiguous chunk of addresses (with address increments of 1) or only initialize/
+finalize active addresses. The first option is valid when address space is small
+and can be expected to be filled contiguously. RV's RAM isn't in that category
+given the way the linker script allocates swathes of memory in the order of mega
+bytes to the program itself, inputs and the stack ... The alternative and likely
+most useful option is to only initialize/finalize active addresses, which requires
+proving address monotony in the initialization/finalization phase.
+
+One option (to ensure unique init/finl) is to have the RISCV zkVM/zkc interpreter
+make these init/finl calls itself at specific points in time, e.g. after the
+program is done executing. For instance one could have
 
 ```rust
-// We interpret pc == MAX_UINT_64 as the stop signal, which is set by the ecall instruction
+// We interpret pc == MAX_UINT_64 as the stop signal
 while pc != MAX_UINT_64 {
     instruction = read_32(pc) as Instruction
     pc = interpreter(instruction, pc)
 }
 
-// executed at program end
+// Program execution has ended, perform finalization
 if pc == MAX_UINT_64 {
-  // finaliztion of ROM's
-  finalize(rom_1)
-  finalize(rom_2)
-  ...
-  finalize(rom_m)
-
-  // finalization of WOM's
-  finalize(wom_1)
-  finalize(wom_2)
-  ...
-  finalize(wom_n)
-
   // finalization of RAM
-  finalize(ram)
+  // would require passing ram's as arguments in one way or another
+  finalize(ram_1)
+  finalize(ram_2)
+  ...
+  finalize(ram_m)
 } else {
    // should be unreachable ...
    fail "Invalid final program counter %x", pc
 }
 ```
 
+## Ram module columns
+
 ```rust
 // columns of RAM
 EXEC
 FINL
-ADDRESS
-TIMESTAMP_READ
+
+// slices of address columns
+[]ADDRESS
+[]ADDRESS_DELTA
+
+// slices of value columns
+[]VALUE_READ
+[]VALUE_WRITTEN
+
+// timestamp columns
 TIMESTAMP_WRITTEN
-VALUE_READ
-VALUE_WRITTEN
+TIMESTAMP_READ
+TIMESTAMP_DELTA
+
 IS_WRITE
 ```
 
-and one will impose
+## General constraints
 
 ```rust
 // binary columns
@@ -65,70 +83,79 @@ FINL
 EXEC + FINL
 ```
 
-Furthermore one wants
+We differentiate between memory accesses stemming from the execution of the
+guest program (`EXEC ≡ true`) and memory accesses stemming from the init/finl
+phase (`FINL ≡ true`).
 
-### The "constrain the full range output range" case
+## Execution phase constraints
 
-Note. The "constrain the nontrivial part of the output range" alternative has issues if the output is empty.
+We impose the following 'execution-phase' constraints:
 
 ```rust
 if EXEC = true then
   // timestamp comparisons are only meaningful if associated
   // to actual reads / writes in the execution phase
   TIMESTAMP_READ < TIMESTAMP_WRITTEN
+  // Note: the constraint will be enforced with a TIMESTAMP_DELTA column via
+  // TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 + TIMESTAMP_DELTA
 
   // value read and value written behave as expected
-  TIMESTAMP_READ, VALUE_READ = hint(ram, ADDRESS)
-  rcv( ADDRESS, TIMESTAMP_READ,    VALUE_READ    )
-  snd( ADDRESS, TIMESTAMP_WRITTEN, VALUE_WRITTEN )
+  TIMESTAMP_READ, []VALUE_READ = hint(ram, []ADDRESS)
+  rcv( []ADDRESS, []VALUE_READ,    TIMESTAMP_READ,    )
+  snd( []ADDRESS, []VALUE_WRITTEN, TIMESTAMP_WRITTEN, )
 
   if IS_WRITE = false then
-    VALUE_READ = VALUE_WRITTEN
+    []VALUE_READ = []VALUE_WRITTEN
 
+```
+
+## Finalization phase constraints
+
+We impose the following 'finalization-phase' constraints:
+
+```rust
 // the finalization phase does both initializations and finalizations
 if FINL = true then
   // address starts at 0 and increments by 1
   if prev FINL = false then
-    ADDRESS = 0
+    []ADDRESS = []0
   if prev FINL = true then
-    ADDRESS = 1 + prev(ADDRESS)
+    // using []ADDRESS_DELTA
+    []ADDRESS > prev( []ADDRESS )
 
-  // initialization and finalization
-  TIMESTAMP_READ, VALUE_READ = hint(ram, ADDRESS)
-  snd( ADDRESS, 0,              0          ) // init
-  rcv( ADDRESS, TIMESTAMP_READ, VALUE_READ ) // finl
+    // initialization and finalization
+  TIMESTAMP_READ, []VALUE_READ = hint(ram, []ADDRESS)
+  snd( []ADDRESS, []0,          0,              ) // init
+  rcv( []ADDRESS, []VALUE_READ, TIMESTAMP_READ, ) // finl
 ```
 
 where
 
-```rust
-rcv( address, timestamp, value )
-snd( address, timestamp, value )
-```
-
 Any zkc module `MOD` that allows one to touch the WOM requires the following columns
 
 ```rust
-WOM_TRIGGER
-WOM_ADDRESS
-WOM_TIMESTAMP_WRITTEN
-WOM_IS_WRITE
-WOM_VALUE
+RAM_TRIGGER
+[]RAM_ADDRESS
+[]RAM_VALUE            // the value retrieved by
+RAM_TIMESTAMP_WRITTEN
+RAM_IS_WRITE
 ```
 
 and we require bilateral conditional lookups
 
-| MOD             | WOM                 | Notes       |
-| --------------- | ------------------- | ----------- |
-| RAM_TRIGGER     | EXEC                | condition   |
-| --------------- | ------------------- | ----------- |
-| RAM_ADDRESS     | ADDRESS             |             |
-| RAM_TIMESTAMP   | TIMESTAMP_WRITTEN   |             |
-| RAM_IS_WRITE    | IS_WRITE            |             |
-| RAM_VALUE       | VALUE_WRITTEN       |             |
+| MOD                   | WOM               | Notes     |
+| --------------------- | ----------------- | --------- |
+| RAM_TRIGGER           | EXEC              | condition |
+| []RAM_ADDRESS         | []ADDRESS         |           |
+| []RAM_VALUE           | []VALUE_WRITTEN   |           |
+| RAM_TIMESTAMP_WRITTEN | TIMESTAMP_WRITTEN |           |
+| RAM_IS_WRITE          | IS_WRITE          |           |
 
 ### Lanes
 
-There is an issue wrt _input lanes_: if the `ADDRESS` is a tuple then you need some canonical way to enumerate/list its items. Under the hood one can imagine that all components would still end up being `uX`'s for some `X`. The `VALUES_XXX` are tuples there shouldn't be much of an issue conceptually.
+There is an issue wrt _input lanes_: if the `[]ADDRESS` is a tuple then you need some canonical way to enumerate/list its items. Under the hood one can imagine that all components would still end up being `uX`'s for some `X`. The `VALUES_XXX` are tuples there shouldn't be much of an issue conceptually.
 
-There is the question of emptyness: what to do if we have a "you only pay the initialization / finalization prize for those cells that you touched approach" and no operations were done in the various ROM/WOM/RAM's ? One simple approach to this would be to force a single interaction with every memory component.
+What to do in case of empty RAM ? It shouldn't be an issue in our RV-interpreter.
+In the "you only initialize / finalize those cells that you touched" approach
+you can force an interaction with address `[]0`, for instance
+what

@@ -4,9 +4,9 @@ Here's one set of constraints for a read-once-memory (ROM) module.
 We make the following assumptions:
 
 - a ROM is an immutable table
-- addresses are consecutive, start at 0 and there are no gaps
+- addresses are consecutive, start at 0; there are no gaps
 - the full contents of that memory will be read start to finish at one specific point in time
-- the ROM is never read from again
+- the ROM is never touched again
 
 **Note.** The fact that this data is read **once** must be assured by the zkc program itself.
 The ROM has no control over it. If the ROM were to enforce this we would have to add a source
@@ -30,9 +30,9 @@ The entire thing can be arranged as a single lookup
 
 ```rust
 // columns of the source
-ACCESS  // determines padding (ACCESS ≡ 0) and non padding rows (ACCESS ≡ 1)
-ADDRESS // a multitude of columns, potentially
-VALUE   // a multitude of columns, potentially
+ACCESS    // determines padding (ACCESS ≡ 0) and non padding rows (ACCESS ≡ 1)
+[]ADDRESS // slice of columns that define the address space
+[]VALUE   // slice of columns that define the value space
 
 // binary constraint
 ACCESS
@@ -43,11 +43,11 @@ and one will impose
 ```rust
 ACCESS[0] = False
 if ACCESS = False:
-    ADDRESS = 0
+    []ADDRESS = 0
 
 if ACCESS = True:
     next( ACCESS ) = True
-    ADDRESS = 1 + prev( ADDRESS )
+    []ADDRESS = 1 + prev( []ADDRESS )
 ```
 
 ## Requirements for sources adding to the bus
@@ -56,15 +56,15 @@ Any zkc module `MOD` that may read a ROM requires the following columns
 
 ```rust
 ROM_ACCESS
-ROM_ADDRESS
-ROM_VALUE
+[]ROM_ADDRESS
+[]ROM_VALUE
 ```
 
 and we require bilateral conditional lookups
 
-| MOD           | ROM       | Notes       |
-| ------------- | --------- | ----------- |
-| ROM_ACCESS    | ACCESS    | condition   |
-| ------------- | --------- | ----------- |
-| ROM_ADDRESS   | ADDRESS   |             |
-| ROM_VALUE     | VALUE     |             |
+| MOD             | ROM         | Notes       |
+| --------------- | ----------- | ----------- |
+| ROM_ACCESS      | ACCESS      | condition   |
+| --------------- | ----------- | ----------- |
+| []ROM_ADDRESS   | []ADDRESS   |             |
+| []ROM_VALUE     | []VALUE     |             |
