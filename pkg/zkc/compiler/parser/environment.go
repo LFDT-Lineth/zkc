@@ -44,7 +44,7 @@ import (
 // due to the first 'i' variable being visible when the 2nd one is being
 // introduced.
 //
-// Note. Creating a block surrounded by braces (within a function body) to
+// Note. Creating a block surrounded by braces (within a function body)
 // to create a new scope is disallowed by the syntax.
 type globalEnvironment struct {
 	effects []*symbol.Unresolved
