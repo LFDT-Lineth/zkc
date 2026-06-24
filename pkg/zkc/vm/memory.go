@@ -31,25 +31,29 @@ type Memory[W util.Uinter64] = memory.Memory[W]
 // given values.
 func NewStaticMemory[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
 ) Memory[W] {
-	return memory.NewStatic[W](name, public, registers, init...)
+	var geometry = memory.NewGeometry[W](registers)
+	return memory.NewStatic[W](name, public, geometry, init...)
 }
 
 // NewInputMemory constructs a new read-only memory initialised with a given set of values.
 func NewInputMemory[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
 ) Memory[W] {
-	return memory.NewReadOnly[W](name, public, registers, init...)
+	var geometry = memory.NewGeometry[W](registers)
+	return memory.NewReadOnly[W](name, public, geometry, init...)
 }
 
 // NewOutputMemory constructs an empty write-once memory.
 func NewOutputMemory[W util.Uinter64](name string, public bool, registers []register.Register) Memory[W] {
-	return memory.NewWriteOnce[W](name, public, registers)
+	var geometry = memory.NewGeometry[W](registers)
+	return memory.NewWriteOnce[W](name, public, geometry)
 }
 
 // NewReadWriteMemory constructs an empty random-access memory which employs a
 // non-sparse implementation.  Thus, this is not suitable for very large
 // memories.
 func NewReadWriteMemory[W util.Uinter64](name string, registers []register.Register) Memory[W] {
-	return memory.NewRandomAccess[W](name, registers)
+	var geometry = memory.NewGeometry[W](registers)
+	return memory.NewRandomAccess(name, geometry)
 }
 
 // NewPagedReadWriteMemory constructs an empty random-access memory which
@@ -57,5 +61,6 @@ func NewReadWriteMemory[W util.Uinter64](name string, registers []register.Regis
 // read/write implementation of Memory suitable for larger memories, provided
 // they do not use very high addresses.
 func NewPagedReadWriteMemory[W util.Uinter64](name string, registers []register.Register) Memory[W] {
-	return memory.NewPagedRandomAccess[W](name, registers)
+	var geometry = memory.NewGeometry[W](registers)
+	return memory.NewPagedRandomAccess(name, geometry)
 }

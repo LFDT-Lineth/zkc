@@ -22,11 +22,11 @@ import (
 
 // SwitchCase is a single (value, target) entry of a multiway-skip dispatch table:
 // when the source register holds Value, control transfers to Target.
-type SwitchCase struct {
+type SwitchCase[W any] struct {
 	// Value compared against the source register.
-	Value uint64
-	// Target branch address (a label index until resolved by Smw.Patch).
-	Target Address
+	Value W
+	// Skip amount.
+	Skip uint16
 }
 
 // Switch (skip multiway) dispatches on the value of a source register: it is
@@ -48,12 +48,57 @@ type SwitchCase struct {
 // Here count is the number of cases (<= 255), source is the dispatch register,
 // and each case occupies three words: a 64-bit value (low word then high word)
 // followed by an absolute target address.
-type Switch struct {
-	Source Reg
-	Cases  []SwitchCase
+type Switch[W word.Word[W]] struct {
+	Source RegisterId
+	Cases  []SwitchCase[W]
 }
 
-func (p *Switch) String(_ SystemMap) string {
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Switch[W]) Clone() Patched {
+	return &Switch[W]{p.Source, slices.Clone(p.Cases)}
+}
+
+// Uses implementation for Bytecode interface.  A multiway skip reads the
+// dispatch (source) register it compares against each case value.
+func (p *Switch[W]) Uses() []RegisterId {
+	return []RegisterId{p.Source}
+}
+
+// Definitions implementation for Bytecode interface.
+func (p *Switch[W]) Definitions() []RegisterId {
+	return nil
+}
+
+// Validate implementation for Bytecode interface.  This mirrors
+// base.SkipMulti.MicroValidate: every dispatch value must be unique (since the
+// first match wins, a duplicate is unreachable and almost certainly a mistake)
+// and must fit within the source register's width.  A native source register
+// holds arbitrary-width values, so no value can overflow it.
+func (p *Switch[W]) Validate(_ uint, _ FieldConfig, env Environment) []error {
+	var (
+		errors []error
+		seen   = make(map[string]bool)
+		width  = env.Register(p.Source).Bitwidth()
+	)
+	//
+	for _, c := range p.Cases {
+		var key = c.Value.Text(16)
+		// Detect duplicate dispatch values.
+		if seen[key] {
+			errors = append(errors, fmt.Errorf("duplicate dispatch value 0x%s", key))
+		}
+		//
+		seen[key] = true
+		// Check the value fits within the (non-native) source register.
+		if width.HasValue() && !c.Value.FitsWithin(width.Unwrap()) {
+			errors = append(errors, fmt.Errorf("dispatch value 0x%s overflows u%d", key, width.Unwrap()))
+		}
+	}
+	//
+	return errors
+}
+
+func (p *Switch[W]) String(_ Environment) string {
 	var b strings.Builder
 	//
 	fmt.Fprintf(&b, "switch r%d [", p.Source)
@@ -63,97 +108,10 @@ func (p *Switch) String(_ SystemMap) string {
 			b.WriteString(", ")
 		}
 		//
-		fmt.Fprintf(&b, "%d->0x%08x", c.Value, c.Target)
+		fmt.Fprintf(&b, "0x%s:%d", c.Value.Text(16), c.Skip)
 	}
 	//
 	b.WriteString("]")
 	//
 	return b.String()
-}
-
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Switch) Clone() Patched {
-	return &Switch{p.Source, slices.Clone(p.Cases)}
-}
-
-// Codes implementation for Bytecode interface.
-func (p *Switch) Codes(_ uint32) []uint32 {
-	if len(p.Cases) > 0xff {
-		panic("too many cases in multiway skip")
-	}
-	//
-	var codes = make([]uint32, 0, p.MaxWidth())
-	// word 0: count | source | opcode
-	codes = append(codes, uint32(len(p.Cases))<<24|uint32(p.Source)<<8|SKIP_M)
-	// one (value_lo, value_hi, target) triple per case
-	for _, c := range p.Cases {
-		codes = append(codes, uint32(c.Value), uint32(c.Value>>32), c.Target)
-	}
-	//
-	return codes
-}
-
-// Patch implementation for Patchable interface: resolve each case's target from
-// a label index into a concrete address.
-func (p *Switch) Patch(labels []Address) Patched {
-	var ncases = make([]SwitchCase, len(p.Cases))
-	//
-	for i, c := range p.Cases {
-		ncases[i] = SwitchCase{Value: c.Value, Target: labels[c.Target]}
-	}
-	//
-	return &Switch{Source: p.Source, Cases: ncases}
-}
-
-// MaxWidth implementation for Patchable interface.  The width is fixed by the
-// number of cases (it does not depend on where the targets resolve).
-func (p *Switch) MaxWidth() uint32 {
-	return 1 + 3*uint32(len(p.Cases))
-}
-
-// decodeSkipTable decodes an SMW instruction at the given program counter.
-func decodeSkipTable[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	var (
-		word0  = codes[pc]
-		count  = (word0 >> 24) & 0xff
-		source = Reg((word0 >> 8) & 0xffff)
-		cases  = make([]SwitchCase, count)
-	)
-	//
-	for i := range count {
-		var base = pc + 1 + (i * 3)
-		//
-		cases[i] = SwitchCase{
-			Value:  uint64(codes[base]) | (uint64(codes[base+1]) << 32),
-			Target: codes[base+2],
-		}
-	}
-	//
-	return &Switch{Source: source, Cases: cases}, 1 + (3 * count)
-}
-
-// executeSkipTable implements the SMW dispatch: the source register is
-// compared against each case value and, on the first match, control transfers
-// to that case's (absolute) target; otherwise control falls through past the
-// whole instruction to the following one.
-func executeSkipTable[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
-	var (
-		word0  = codes[pc]
-		count  = (word0 >> 24) & 0xff
-		source = (word0 >> 8) & 0xffff
-		val    = stack[source]
-	)
-	//
-	for i := range count {
-		var (
-			base  = pc + 1 + (i * 3)
-			value = uint64(codes[base]) | (uint64(codes[base+1]) << 32)
-		)
-		//
-		if val.Cmp64(value) == 0 {
-			return codes[base+2]
-		}
-	}
-	// no match: fall through past the whole instruction
-	return pc + 1 + (3 * count)
 }

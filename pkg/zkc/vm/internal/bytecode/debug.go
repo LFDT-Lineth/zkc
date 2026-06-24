@@ -13,9 +13,11 @@
 package bytecode
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 )
 
 // Debug carries a formatted-print (printf) specification so the interpreter can
@@ -27,31 +29,59 @@ type Debug struct {
 	// Chunks is the formatted-print specification: literal text interleaved with
 	// argument formats.  Carried through compilation into the program's debug
 	// side-table rather than encoded inline.
-	Chunks []base.FormattedChunk
-	// Index identifies this debug site's chunk-set within the program's debug
-	// side-table.  Assigned during encoding (see indexDebugBytecodes).
-	Index uint32
-}
-
-func (p *Debug) String(mapping SystemMap) string {
-	return "debug"
-}
-
-// Codes implementation for Bytecode interface.  The chunk-set index is packed
-// above the opcode so the single DEBUG word both identifies the instruction and
-// locates its formatted-print specification within the program's debug
-// side-table.
-func (p *Debug) Codes(_ uint32) []uint32 {
-	return []uint32{(p.Index << 8) | DEBUG}
+	Chunks []FormattedChunk
+	// Source registers used for displaying chunks
+	Sources []RegVec
 }
 
 // Clone implementation for Bytecode / Patched interfaces.
 func (p *Debug) Clone() Patched {
-	return &Debug{slices.Clone(p.Chunks), p.Index}
+	return &Debug{slices.Clone(p.Chunks), slices.Clone(p.Sources)}
 }
 
-// NewDebug constructs a debug bytecode carrying the given formatted-print
-// chunks.  Its side-table index is assigned later, during encoding.
-func NewDebug(chunks []base.FormattedChunk) *Debug {
-	return &Debug{Chunks: chunks}
+// Uses implementation for Bytecode interface.  A debug reads the registers
+// referenced by its formatted arguments.
+func (p *Debug) Uses() []RegisterId {
+	var uses []RegisterId
+	//
+	for _, s := range p.Sources {
+		uses = append(uses, s.Registers()...)
+	}
+	//
+	return uses
+}
+
+// Definitions implementation for Bytecode interface.
+func (p *Debug) Definitions() []RegisterId {
+	return nil
+}
+
+// Validate implementation for Bytecode interface.
+func (p *Debug) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+	return nil
+}
+
+func (p *Debug) String(env Environment) string {
+	var (
+		tBuilder strings.Builder
+	)
+	//
+	tBuilder.WriteString("\"")
+	//
+	for _, c := range p.Chunks {
+		tBuilder.WriteString(util.EscapeFormattedText(c.Text))
+		//
+		if c.Format.HasFormat() {
+			tBuilder.WriteString(c.Format.String())
+		}
+	}
+	//
+	tBuilder.WriteString("\"")
+	//
+	for _, s := range p.Sources {
+		tBuilder.WriteString(",")
+		tBuilder.WriteString(RegisterVectorToString(s, env))
+	}
+	//
+	return fmt.Sprintf("debug %s", tBuilder.String())
 }

@@ -60,16 +60,17 @@ func splitModule[W word.Word[W]](mapping register.LimbsMap, m Module) Module {
 func splitMemory[W word.Word[W]](mapping register.LimbsMap, m memory.Memory[W]) Module {
 	var (
 		registers = mapping.Limbs()
+		geometry  = memory.NewGeometry[W](registers)
 	)
 	//
 	switch m := m.(type) {
 	case *memory.WriteOnce[W]:
 		return &memory.WriteOnce[W]{
-			StaticArray: memory.NewStaticArray[W](m.Name(), m.Kind(), registers),
+			StaticArray: memory.NewStaticArray[W](m.Name(), m.Kind(), geometry),
 		}
 	case *memory.ReadOnly[W]:
 		return &memory.ReadOnly[W]{
-			StaticArray: memory.NewStaticArray[W](m.Name(), m.Kind(), registers),
+			StaticArray: memory.NewStaticArray[W](m.Name(), m.Kind(), geometry),
 		}
 	case *memory.StaticReadOnly[W]:
 		panic("support subdivision for static ROM")

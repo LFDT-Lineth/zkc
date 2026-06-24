@@ -51,10 +51,10 @@ type PagedRandomAccess[W util.Uinter64] struct {
 }
 
 // NewPagedRandomAccess constructs a new paged random access memory.
-func NewPagedRandomAccess[W util.Uinter64](name string, registers []register.Register) Memory[W] {
+func NewPagedRandomAccess[W util.Uinter64](name string, geometry Geometry[W]) *PagedRandomAccess[W] {
 	return &PagedRandomAccess[W]{
-		kind:     RANDOM_ACCESS_MEMORY,
-		geometry: NewGeometry[W](registers),
+		kind:     PAGED_READWRITE_MEMORY,
+		geometry: geometry,
 		name:     name,
 	}
 }

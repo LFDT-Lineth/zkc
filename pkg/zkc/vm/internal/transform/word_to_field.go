@@ -73,7 +73,8 @@ func (p wordToField[W, F]) lowerWordModule(wm Module, mapping SystemMap) (fm Mod
 
 func (p wordToField[W, F]) lowerWordMemory(wf memory.Memory[W]) (ff memory.Memory[F]) {
 	var (
-		regs = slices.Clone(wf.Registers())
+		regs     = slices.Clone(wf.Registers())
+		geometry = memory.NewGeometry[F](regs)
 	)
 	// Lower registers
 	checkRegisterWidths(p.field.RegisterWidth, regs...)
@@ -83,18 +84,18 @@ func (p wordToField[W, F]) lowerWordMemory(wf memory.Memory[W]) (ff memory.Memor
 		// Lower contents
 		var contents = p.lowerMemoryContents(wf.Contents())
 		// Done
-		return memory.NewReadOnly(wf.Name(), wf.IsPublic(), regs, contents...)
+		return memory.NewReadOnly(wf.Name(), wf.IsPublic(), geometry, contents...)
 	case *memory.StaticReadOnly[W]:
 		// Lower contents
 		var contents = p.lowerMemoryContents(wf.Contents())
 		// Done
-		return memory.NewStatic(wf.Name(), wf.IsPublic(), regs, contents...)
+		return memory.NewStatic(wf.Name(), wf.IsPublic(), geometry, contents...)
 	case *memory.WriteOnce[W]:
-		return memory.NewWriteOnce[F](wf.Name(), wf.IsPublic(), regs)
+		return memory.NewWriteOnce[F](wf.Name(), wf.IsPublic(), geometry)
 	case *memory.RandomAccess[W]:
-		return memory.NewRandomAccess[F](wf.Name(), regs)
+		return memory.NewRandomAccess[F](wf.Name(), geometry)
 	case *memory.PagedRandomAccess[W]:
-		return memory.NewPagedRandomAccess[F](wf.Name(), regs)
+		return memory.NewPagedRandomAccess[F](wf.Name(), geometry)
 	default:
 		panic(fmt.Sprintf("unknown word memory %s", wf.Name()))
 	}

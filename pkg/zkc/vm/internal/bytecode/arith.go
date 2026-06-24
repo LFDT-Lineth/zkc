@@ -14,7 +14,6 @@ package bytecode
 
 import (
 	"fmt"
-	"math/big"
 	"slices"
 	"strings"
 
@@ -22,22 +21,86 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-func newArith[W word.Word[W]](op arithOp, targets []Reg, sources []Reg, constant W) *Arith[W] {
-	return &Arith[W]{op, constant, sources, targets}
+// ArithOp identifies an arithmetic operation (add, subtract or multiply).
+type ArithOp struct{ tag uint8 }
+
+// String returns the infix operator symbol for this operation.
+func (p ArithOp) String() string {
+	switch p {
+	case ARITHOP_ADD:
+		return " + "
+	case ARITHOP_SUB:
+		return " - "
+	case ARITHOP_MUL:
+		return " * "
+	default:
+		panic("unknown arithmetic operation")
+	}
 }
 
-// ============================================================================
+// Tag returns the underlying tag for this operation.
+func (p ArithOp) Tag() uint8 {
+	return p.tag
+}
+
+// Prefix returns the mnemonic prefix for this operation.
+func (p ArithOp) Prefix() string {
+	switch p {
+	case ARITHOP_ADD:
+		return "add"
+	case ARITHOP_SUB:
+		return "sub"
+	case ARITHOP_MUL:
+		return "mul"
+	default:
+		panic("unknown arithmetic operation")
+	}
+}
+
+// ARITHOP_ADD, ARITHOP_SUB and ARITHOP_MUL identify the arithmetic operation
+// performed by an Arith instruction.
+var (
+	ARITHOP_ADD = ArithOp{0}
+	ARITHOP_SUB = ArithOp{1}
+	ARITHOP_MUL = ArithOp{2}
+)
+
+// NewArith constructs a new arithmetic instruction computing
+// "targets = sources[0] op sources[1] op ... op constant".
+func NewArith[W word.Word[W]](op ArithOp, targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	return &Arith[W]{op, constant, sources, targets}
+}
 
 // Arith (arithmetic) instruction encodes a wide range of related arithmetic
 // operations (e.g. +,-,*) including various bitwise operations.
 type Arith[W word.Word[W]] struct {
-	Op       arithOp
+	Op       ArithOp
 	Constant W
-	Source   []Reg
-	Target   []Reg
+	Source   []RegisterId
+	Target   []RegisterId
 }
 
-func (p *Arith[W]) String(mapping SystemMap) string {
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *Arith[W]) Clone() Patched {
+	return &Arith[W]{p.Op, p.Constant, slices.Clone(p.Source), slices.Clone(p.Target)}
+}
+
+// Uses implementation for Bytecode interface.
+func (p *Arith[W]) Uses() []RegisterId {
+	return p.Source
+}
+
+// Definitions implementation for Bytecode interface.
+func (p *Arith[W]) Definitions() []RegisterId {
+	return p.Target
+}
+
+// Validate implementation for Bytecode interface.
+func (p *Arith[W]) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+	return nil
+}
+
+func (p *Arith[W]) String(env Environment) string {
 	var (
 		builder strings.Builder
 		cz      = IsUnusedConstant(p.Op, p.Constant)
@@ -56,9 +119,9 @@ func (p *Arith[W]) String(mapping SystemMap) string {
 	//
 	builder.WriteString(prefix)
 	builder.WriteString(" ")
-	builder.WriteString(registersToString(array.Reverse(p.Target), mapping, "::"))
+	builder.WriteString(RegistersToString(array.Reverse(p.Target), env, "::"))
 	builder.WriteString(" = ")
-	builder.WriteString(registersToString(p.Source, mapping, p.Op.String()))
+	builder.WriteString(RegistersToString(p.Source, env, p.Op.String()))
 	//
 	if len(p.Source) == 0 {
 		builder.WriteString(cstr)
@@ -69,442 +132,3 @@ func (p *Arith[W]) String(mapping SystemMap) string {
 	//
 	return builder.String()
 }
-
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Arith[W]) Clone() Patched {
-	return &Arith[W]{p.Op, p.Constant, slices.Clone(p.Source), slices.Clone(p.Target)}
-}
-
-// Codes implementation for Bytecode interface
-func (p *Arith[W]) Codes(_ uint32) []uint32 {
-	var (
-		n             = len(p.Source)
-		m             = len(p.Target)
-		cz            = IsUnusedConstant(p.Op, p.Constant)
-		constIsUint8  = p.Constant.Cmp64(256) < 0
-		constIsUint16 = p.Constant.Cmp64(65536) < 0
-	)
-	//
-	switch {
-	case n == 0 && m == 1 && constIsUint16:
-		return encodeLdc_1(p.Constant, p.Target[0])
-	case n == 0 && m == 1:
-		return encodeLdc_w(p.Constant, p.Target[0])
-	case n == 1 && m == 1 && cz:
-		return encodeMove_1s1(p.Source[0], p.Target[0])
-	case n == 1 && m == 1 && constIsUint8:
-		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant)
-	case n == 2 && m == 1 && cz:
-		return encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
-	case n == 2 && m == 1 && constIsUint8:
-		return encodeArith_2n1c(p.Op, p.Source[0], p.Source[1], p.Target[0], p.Constant)
-	case m > 0:
-		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant)
-	default:
-		panic(fmt.Sprintf("unsupported arithmetic instruction form (%d, %d, %t)", n, m, cz))
-	}
-}
-
-func decodeArith[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	var (
-		rs0, rs1, rd Reg
-		opcode       = codes[pc] & OPCODE_MASK
-		constant     W
-		sources      []Reg
-		targets      []Reg
-		n            uint32
-		op           arithOp
-	)
-
-	switch opcode {
-	case ADD_2n1, SUB_2n1:
-		rs0, rs1, rd, n = decodeArith_2n1(pc, codes)
-		sources = []Reg{rs0, rs1}
-		targets = []Reg{rd}
-		op = opcodeToArithOp(opcode)
-	case MUL_2n1:
-		rs0, rs1, rd, n = decodeArith_2n1(pc, codes)
-		sources = []Reg{rs0, rs1}
-		targets = []Reg{rd}
-		constant = word.Const64[W](1)
-		op = opcodeToArithOp(opcode)
-	case ADDC, SUBC, MULC:
-		rs0, rd, constant, n = decodeArith_1n1c[W](pc, codes)
-		sources = []Reg{rs0}
-		targets = []Reg{rd}
-		op = opcodeToArithOp(opcode)
-	case ADD_nm, SUB_nm, MUL_nm:
-		var ts, ss Op8Iter
-		//
-		ts, ss, constant, n = decodeArith_nm[W](pc, codes)
-		sources = OpIterToArray[uint16](ss)
-		targets = OpIterToArray[uint16](ts)
-		op = opcodeToArithOp(opcode)
-	case MOVE:
-		rs0, rd, n = decodeMove_1s1(pc, codes)
-		sources = []Reg{rs0}
-		targets = []Reg{rd}
-		op = arithop_ADD
-	case LDC:
-		constant, rd, n = decodeLdc_1[W](pc, codes)
-		targets = []Reg{rd}
-		op = arithop_ADD
-	case LDC_w:
-		constant, rd, n = decodeLdc_w[W](pc, codes)
-		targets = []Reg{rd}
-		op = arithop_ADD
-	default:
-		panic("unsupported instruction form")
-	}
-	//
-	return &Arith[W]{Op: op, Constant: constant, Source: sources, Target: targets}, n
-}
-
-func opcodeToArithOp(opcode uint32) arithOp {
-	switch opcode {
-	case ADD_2n1, ADDC, ADD_nm:
-		return arithop_ADD
-	case SUB_2n1, SUBC, SUB_nm:
-		return arithop_SUB
-	case MUL_2n1, MULC, MUL_nm:
-		return arithop_MUL
-	default:
-		panic("unknown arithmetic operation")
-	}
-}
-
-// ============================================================================
-// Add_2s1 instruction.  Format of this instruction is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |  rs0   |  rs1   |   rd   | opcode |
-// +--------+--------+--------+--------+
-//
-// Here, rs0 and rs1 are u8 source registers, whilst rd is a u8 destination
-// register.
-// ============================================================================
-
-func encodeArith_2n1(aop arithOp, rs0, rs1, rd uint16) []uint32 {
-	var (
-		_rd    = uint32(rd) << 8
-		_rs1   = uint32(rs1) << 16
-		_rs0   = uint32(rs0) << 24
-		opcode = ADD_2n1 + uint32(aop.tag)
-	)
-	//
-	if rs0 >= 256 || rs1 >= 256 || rd >= 256 {
-		// NOTE: this corresponds to a WIDE instruction, but these are not
-		// supported at this time.
-		panic("wide instructions not supported")
-	}
-	//
-	return []uint32{
-		_rs0 | _rs1 | _rd | opcode,
-	}
-}
-
-func decodeArith_2n1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) {
-	rd = Reg((codes[pc] >> 8) & 0xff)
-	rs1 = Reg((codes[pc] >> 16) & 0xff)
-	rs0 = Reg((codes[pc] >> 24) & 0xff)
-	//
-	return rs0, rs1, rd, 1
-}
-
-// ============================================================================
-// Arithmetic-with-constant instruction. Format of this instruction is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |  imm8  |   rs   |   rd   | opcode |
-// +--------+--------+--------+--------+
-//
-// Here, rs is a u8 source register, rd is a u8 destination register, imm8 is
-// the small constant operand and opcode is ADDC, SUBC or MULC.
-// ============================================================================
-
-func encodeArith_2n1c[W word.Word[W]](aop arithOp, rs0, rs1, rd uint16, constant W) []uint32 {
-	// There is no 2-source-plus-constant instruction form, so compute
-	// "x op y" first, then fold in the constant (when used) with a second
-	// one-source instruction operating in place on the target.
-	codes := encodeArith_2n1(aop, rs0, rs1, rd)
-	//
-	return append(codes, encodeArith_1n1c(aop, rd, rd, constant)...)
-}
-
-func encodeArith_1n1c[W word.Word[W]](aop arithOp, rs, rd uint16, constant W) []uint32 {
-	if rs >= 256 || rd >= 256 || constant.Cmp64(256) >= 0 {
-		// NOTE: this corresponds to a WIDE instruction, but these are not
-		// supported at this time.
-		panic("wide instructions not supported")
-	}
-	//
-	var (
-		_rd    = uint32(rd) << 8
-		_rs    = uint32(rs) << 16
-		_imm   = uint32(constant.Uint64()) << 24
-		opcode = ADDC + uint32(aop.tag)
-	)
-	//
-	return []uint32{
-		_imm | _rs | _rd | opcode,
-	}
-}
-
-func decodeArith_1n1c[W word.Word[W]](pc uint32, codes []uint32) (rs, rd uint16, constant W, n uint32) {
-	rd = Reg((codes[pc] >> 8) & 0xff)
-	rs = Reg((codes[pc] >> 16) & 0xff)
-	constant = constant.SetUint64(uint64((codes[pc] >> 24) & 0xff))
-	//
-	return rs, rd, constant, 1
-}
-
-// ============================================================================
-// Ldc_1 instruction.  Format of this instruction is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |      imm16      |   rd   | opcode |
-// +--------+--------+--------+--------+
-//
-// Here, rs0 and rs1 are u8 source registers, whilst rd is a u8 destination
-// register.
-// ============================================================================
-
-func encodeLdc_1[W word.Word[W]](constant W, rd uint16) []uint32 {
-	// Sanity checks.  Constants which do not fit within 16 bits must use the
-	// wide form (see encodeLdc_w).
-	if rd >= 256 || constant.Cmp64(65536) >= 0 {
-		panic("constant exceeds short load form")
-	}
-	// Encoding
-	_rd := uint32(rd) << 8
-	c := uint32(constant.Uint64()) << 16
-	//
-	return []uint32{
-		c | _rd | LDC,
-	}
-}
-
-func decodeLdc_1[W word.Word[W]](pc uint32, codes []uint32) (constant W, rd uint16, n uint32) {
-	var c W
-	//
-	rd = Reg((codes[pc] >> 8) & 0xff)
-	c = c.SetUint64(uint64(codes[pc] >> 16))
-	//
-	return c, rd, 1
-}
-
-// ============================================================================
-// Ldc_w (wide load constant) instruction.  Format of this instruction is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |      n          |   rd   | opcode |
-// +--------+--------+--------+--------+
-// |     limb 0 (least significant)    |
-// +-----------------------------------+
-// |                ...                |
-// +-----------------------------------+
-// |     limb n-1 (most significant)   |
-// +-----------------------------------+
-//
-// Here, rd is a u8 destination register and the constant is carried inline as
-// n 32-bit limbs (least significant first).  This form supports constants of
-// arbitrary width (e.g. field-sized constants on a Uint machine), in contrast
-// to the short LDC form which carries a single 16-bit immediate.
-// ============================================================================
-
-func encodeLdc_w[W word.Word[W]](constant W, rd uint16) []uint32 {
-	// Sanity checks
-	if rd >= 256 {
-		panic("wide instructions not supported")
-	}
-	//
-	var (
-		// NOTE: big-endian byte ordering
-		bytes  = constant.BigInt().Bytes()
-		nlimbs = max(1, (len(bytes)+3)/4)
-		codes  = make([]uint32, nlimbs+1)
-	)
-	//
-	codes[0] = uint32(nlimbs)<<16 | uint32(rd)<<8 | LDC_w
-	// Pack bytes into limbs, least significant limb first.
-	for i, b := range bytes {
-		var k = len(bytes) - 1 - i
-		//
-		codes[1+(k/4)] |= uint32(b) << (8 * (k % 4))
-	}
-	//
-	return codes
-}
-
-func decodeLdc_w[W word.Word[W]](pc uint32, codes []uint32) (constant W, rd uint16, n uint32) {
-	var (
-		c      big.Int
-		limb   big.Int
-		nlimbs = (codes[pc] >> 16) & 0xffff
-	)
-	//
-	rd = Reg((codes[pc] >> 8) & 0xff)
-	// Unpack limbs, most significant limb first.
-	for i := nlimbs; i > 0; i-- {
-		limb.SetUint64(uint64(codes[pc+i]))
-		c.Lsh(&c, 32)
-		c.Or(&c, &limb)
-	}
-	//
-	return constant.SetBigInt(&c), rd, nlimbs + 1
-}
-
-// ============================================================================
-// Move instruction.  Format of this instruction is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |   n/a  |   rs   |   rd   | opcode |
-// +--------+--------+--------+--------+
-//
-// Here, rs is a u8 source register whilst rd is a u8 destination register.
-// ============================================================================
-
-func encodeMove_1s1(rs, rd uint16) []uint32 {
-	var (
-		_rd = uint32(rd) << 8
-		_rs = uint32(rs) << 16
-	)
-	//
-	if rs >= 256 || rd >= 256 {
-		// NOTE: this corresponds to a WIDE instruction, but these are not
-		// supported at this time.
-		panic("wide instructions not supported")
-	}
-	//
-	return []uint32{
-		_rs | _rd | MOVE,
-	}
-}
-
-func decodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
-	rd = Reg((codes[pc] >> 8) & 0xff)
-	rs = Reg((codes[pc] >> 16) & 0xff)
-	//
-	return rs, rd, 1
-}
-
-// ============================================================================
-// Vector-target arithmetic instruction. Format of this instruction is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |   n/a  |  nsrc  | ntgt   | opcode |
-// +--------+--------+--------+--------+
-// |        constant low 32 bits        |
-// +------------------------------------+
-// |        constant high 32 bits       |
-// +------------------------------------+
-// | tgt3   | tgt2   | tgt1   | tgt0   |
-// +--------+--------+--------+--------+
-// | ... packed source registers ...    |
-// +------------------------------------+
-//
-// The arithmetic operation (add, subtract or multiply) is identified by the
-// opcode itself (ADD_nm, SUB_nm or MUL_nm).  Targets are packed first because
-// StoreAcross writes the low limbs first.
-// ============================================================================
-
-func encodeArith_vec[W word.Word[W]](aop arithOp, targets []Reg, sources []Reg, constant W) []uint32 {
-	if len(targets) == 0 || len(targets) >= 256 || len(sources) >= 256 {
-		panic("wide vector arithmetic instructions not supported")
-	} else if constant.Cmp64(^uint64(0)) > 0 {
-		panic("wide vector arithmetic constants not supported")
-	}
-	//
-	var (
-		opcode   = ADD_nm + uint32(aop.tag)
-		nsrc     = uint32(len(sources)) << 16
-		ntgt     = uint32(len(targets)) << 8
-		c        = constant.Uint64()
-		codes    = []uint32{nsrc | ntgt | opcode, uint32(c), uint32(c >> 32)}
-		regBytes = append(regsAsBytes(targets), regsAsBytes(sources)...)
-	)
-	//
-	return append(codes, packRegsIntoCodes(regBytes)...)
-}
-
-func decodeArith_nm[W word.Word[W]](pc uint32, codes []uint32) (
-	targets, sources Op8Iter, constant W, n uint32) {
-	//
-	var (
-		ntargets = uint((codes[pc] >> 8) & 0xff)
-		nsources = uint((codes[pc] >> 16) & 0xff)
-		c        = uint64(codes[pc+1]) | (uint64(codes[pc+2]) << 32)
-	)
-	//
-	targets = NewOp8Iter(0, ntargets, codes[pc+3:])
-	sources = NewOp8Iter(ntargets, nsources, codes[pc+3:])
-	//
-	constant = constant.SetUint64(c)
-	//
-	return targets, sources, constant,
-		3 + nCodesPackedSmall(ntargets+nsources)
-}
-
-// ============================================================================
-
-type arithOp struct{ tag uint8 }
-
-func (p arithOp) String() string {
-	switch p {
-	case arithop_ADD:
-		return " + "
-	case arithop_SUB:
-		return " - "
-	case arithop_MUL:
-		return " * "
-	default:
-		panic("unknown arithmetic operation")
-	}
-}
-
-func (p arithOp) Prefix() string {
-	switch p {
-	case arithop_ADD:
-		return "add"
-	case arithop_SUB:
-		return "sub"
-	case arithop_MUL:
-		return "mul"
-	default:
-		panic("unknown arithmetic operation")
-	}
-}
-
-// IsUnusedConstant checks whether a given constant is the "identity element".
-// This depends on the arithmetic operation in question.  For example, for
-// addition and subtraction, this is zero.  But, for multiplication it is one.
-func IsUnusedConstant[W word.Word[W]](op arithOp, constant W) bool {
-	switch op {
-	case arithop_ADD:
-		return constant.Cmp64(0) == 0
-	case arithop_SUB:
-		return constant.Cmp64(0) == 0
-	case arithop_MUL:
-		return constant.Cmp64(1) == 0
-	default:
-		panic("unknown arithmetic operation")
-	}
-}
-
-var (
-	arithop_ADD = arithOp{0}
-	arithop_SUB = arithOp{1}
-	arithop_MUL = arithOp{2}
-)

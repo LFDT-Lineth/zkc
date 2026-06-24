@@ -145,7 +145,7 @@ func (p Format) String() string {
 	case FORMAT_CHR:
 		typeChar = 'c'
 	default:
-		panic("invalid format")
+		return "%?"
 	}
 	//
 	builder.WriteByte('%')

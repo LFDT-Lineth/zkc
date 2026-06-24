@@ -14,10 +14,7 @@ package bytecode
 
 import (
 	"fmt"
-	"math"
 	"slices"
-
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // ROM_READ representing reading from a read-only memory.
@@ -47,22 +44,9 @@ type RwMode struct {
 	tag uint8
 }
 
-// Kind returns the memory kind associated with this read-write mode.
-func (p RwMode) Kind() MemoryKind {
-	switch p {
-	case SROM_READ:
-		return STATIC_READONLY_MEMORY
-	case ROM_READ:
-		return READONLY_MEMORY
-	case WOM_WRITE:
-		return WRITEONCE_MEMORY
-	case SRAM_READ, SRAM_WRITE:
-		return READWRITE_MEMORY
-	case PRAM_READ, PRAM_WRITE:
-		return PAGED_READWRITE_MEMORY
-	default:
-		panic("invalid read/write mode")
-	}
+// Tag gets the underlying tag for this enum.
+func (p RwMode) Tag() uint8 {
+	return p.tag
 }
 
 func (p RwMode) prefix() string {
@@ -94,18 +78,62 @@ type ReadWrite struct {
 	// Identifies the memory being read or written.
 	Id uint16
 	// Address lines used to determine which data row to read.
-	Address []Reg
+	Address []RegisterId
 	// Data lines identify where the data row is written.
-	Data []Reg
+	Data []RegisterId
 }
 
-func (p *ReadWrite) String(mapping SystemMap) string {
+// Clone implementation for Bytecode / Patched interfaces.
+func (p *ReadWrite) Clone() Patched {
+	return &ReadWrite{p.Mode, p.Id, slices.Clone(p.Address), slices.Clone(p.Data)}
+}
+
+// isWrite reports whether this is a memory write (rather than a read).
+func (p *ReadWrite) isWrite() bool {
+	switch p.Mode {
+	case WOM_WRITE, SRAM_WRITE, PRAM_WRITE:
+		return true
+	default:
+		return false
+	}
+}
+
+// Uses implementation for Bytecode interface.  A read uses only its address
+// registers, whereas a write uses both the address and data registers.
+func (p *ReadWrite) Uses() []RegisterId {
+	if p.isWrite() {
+		return append(slices.Clone(p.Address), p.Data...)
+	}
+	//
+	return p.Address
+}
+
+// Definitions implementation for Bytecode interface.  A read defines its data
+// registers, whereas a write defines nothing in the surrounding frame.
+func (p *ReadWrite) Definitions() []RegisterId {
+	if p.isWrite() {
+		return nil
+	}
+	//
+	return p.Data
+}
+
+// Validate implementation for Bytecode interface.
+func (p *ReadWrite) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+	return nil
+}
+
+func (p *ReadWrite) String(env Environment) string {
 	var (
-		name    = mapping.Module(uint(p.Id)).Name()
-		address = registersToString(p.Address, mapping, ",")
-		data    = registersToString(p.Data, mapping, ",")
+		name    = "???"
+		address = RegistersToString(p.Address, env, ",")
+		data    = RegistersToString(p.Data, env, ",")
 		prefix  = p.Mode.prefix()
 	)
+	//
+	if env != nil {
+		name = env.Module(p.Id).Name()
+	}
 	//
 	switch p.Mode {
 	case SROM_READ, ROM_READ, SRAM_READ, PRAM_READ:
@@ -114,105 +142,5 @@ func (p *ReadWrite) String(mapping SystemMap) string {
 		return fmt.Sprintf("%s %s[%s] = %s", prefix, name, address, data)
 	default:
 		panic("unknown read/write mode")
-	}
-}
-
-// Codes implementation for Bytecode interface
-func (p *ReadWrite) Codes(_ uint32) []uint32 {
-	//
-	return encodeReadWrite_sn(p.Mode, p.Id, p.Address, p.Data)
-}
-
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *ReadWrite) Clone() Patched {
-	return &ReadWrite{p.Mode, p.Id, slices.Clone(p.Address), slices.Clone(p.Data)}
-}
-
-func decodeReadWrite[W word.Word[W]](pc uint32, codes []uint32, rmap map[MemoryId]uint16) (Bytecode[W], uint32) {
-	var (
-		// determine read/write mode
-		m = RwMode{tag: uint8(codes[pc] - RD_ROM_nm)}
-		// decode remainder
-		id, addrIter, dataIter, n = decodeReadWrite_sn(pc, codes)
-		// flattern iterators
-		addr = OpIterToArray[uint16](addrIter)
-		data = OpIterToArray[uint16](dataIter)
-		//
-		mid = MemoryId{m.Kind(), id}
-	)
-	// remap memory identifier to be module-specific
-	id = rmap[mid]
-	// done
-	return &ReadWrite{m, id, addr, data}, n
-}
-
-// ============================================================================
-// Encoders / Decoders
-// ============================================================================
-
-// ============================================================================
-// RDS_n and WRS_n instruction.  Format of these instruction is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |  ndata |  naddr |   id   | opcode |
-// +--------+--------+--------+--------+
-// |  ra3   |  ra2   |  ra1   |  ra0   |
-// +--------+--------+--------+--------+
-// |  ...   |  ...   |  ...   |  ...   |
-// +--------+--------+--------+--------+
-// |  rd2   |  rd1   |  rd0   |  ...   |
-// +--------+--------+--------+--------+
-// |  ...   |  ...   |  ...   |  ...   |
-// +--------+--------+--------+--------+
-//
-//
-// Here, ra0...raN are u8 address registers, whilst rd0..rdN are u8 data
-// registers.
-// ============================================================================
-
-func encodeReadWrite_sn(m RwMode, id uint16, addr []Reg, data []Reg) []uint32 {
-	var (
-		opcode = RD_ROM_nm + uint32(m.tag)
-		_id    = uint32(id) << 8
-		naddr  = uint32(len(addr)) << 16
-		ndata  = uint32(len(data)) << 24
-		codes  = []uint32{
-			ndata | naddr | _id | opcode,
-		}
-	)
-	// construct register bytes
-	bytes := append(regsAsBytes(addr), regsAsBytes(data)...)
-	// pack bytes into bytecodes
-	return append(codes, packRegsIntoCodes(bytes)...)
-}
-
-func decodeReadWrite_sn(pc uint32, codes []uint32) (id uint16, addr, data Op8Iter, n uint32) {
-	naddr := uint((codes[pc] >> 16) & 0xff)
-	ndata := uint((codes[pc] >> 24) & 0xff)
-	ns := nCodesPackedSmall(naddr + ndata)
-	id = uint16((codes[pc] >> 8) & 0xff)
-	addr = NewOp8Iter(0, naddr, codes[pc+1:])
-	data = NewOp8Iter(naddr, ndata, codes[pc+1:])
-	n = 1 + ns
-	//
-	return
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-func checkSmallArgs(args []Reg) {
-	//
-	if len(args) > math.MaxUint8 {
-		panic("too many arguments")
-	}
-	//
-	for _, r := range args {
-		if r > math.MaxUint8 {
-			panic("support wide read/write instructions")
-		}
 	}
 }

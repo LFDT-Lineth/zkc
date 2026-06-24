@@ -18,128 +18,175 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
+// Bytecode provides a convenient alias
+type Bytecode[W word.Word[W]] = bytecode.Bytecode[W]
+
+// BytecodeVector provides a convenient alias
+type BytecodeVector[W word.Word[W]] = bytecode.Vector[W]
+
 // WordToBytecodeMachine compiles a word machine into a bytecode sequence which
 // can be executed by an interpreter.
-func WordToBytecodeMachine[W word.Word[W]](wm *machine.Word[W]) *bytecode.Interpreter[W] {
+func WordToBytecodeMachine[W word.Word[W]](wm *machine.Word[W]) *interpreter.Interpreter[W] {
 	var (
 		program = WordToBytecodeProgram(wm)
 	)
 	//
-	return bytecode.NewInterpreter(program, wm.Executor().Modulus())
+	return interpreter.New(program, wm.Executor().Modulus())
 }
 
 // WordToBytecodeProgram compiles the various components of a word machine into
 // a bytecode program.
-func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) bytecode.Program[W] {
+func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) descriptor.Program[W] {
 	var (
-		encoder  = bytecode.NewEncoder[W, Label](wm.Modules()...)
-		compiler = &bytecodeCompiler[W]{wm, encoder}
+		modules  = make([]descriptor.Module[W], len(wm.Modules()))
+		compiler = &bytecodeCompiler[W]{wm, modules}
 	)
 	// translate functions
 	for i, m := range wm.Modules() {
-		if f, ok := m.(*WordFunction); ok {
-			//
-			compiler.compileWordFunction(uint(i), f)
-		}
+		modules[i] = compiler.compileWordModule(uint(i), m)
 	}
 	//
-	return compiler.encoder.Encode()
+	return descriptor.NewProgram(0, modules...)
 }
 
 type bytecodeCompiler[W word.Word[W]] struct {
 	machine *machine.Word[W]
-	encoder *bytecode.Encoder[W, Label]
+	modules []descriptor.Module[W]
 }
 
-func (p *bytecodeCompiler[W]) compileWordFunction(fid uint, f *WordFunction) {
-	// mark entry point of this function
-	p.encoder.MarkLabel(Label{fid, 0, 0})
-	p.encoder.MarkModule(fid)
-	//
-	for i, vec := range f.Code() {
-		for j, insn := range vec.Codes {
-			var label = Label{fid, uint(i), uint(j)}
-			// Mark instruction position in case it is the target of a skip or
-			// jump instruction.
-			p.encoder.MarkLabel(label)
-			// Compile instruction into sequence of bytecodes as required.
-			p.compileWordInstruction(label, insn, f)
-		}
+func (p *bytecodeCompiler[W]) compileWordModule(mid uint, m Module) descriptor.Module[W] {
+	switch t := m.(type) {
+	case *WordFunction:
+		return p.compileWordFunction(t)
+	case memory.Memory[W]:
+		return p.compileWordMemory(t)
+	default:
+		panic("todo")
 	}
 }
 
-func (p *bytecodeCompiler[W]) compileWordInstruction(pos Label, insn WordInstruction, f *WordFunction) {
+func (p *bytecodeCompiler[W]) compileWordMemory(m memory.Memory[W]) descriptor.Module[W] {
+	//
+	var (
+		registers = descriptor.FromRegisters[W](m.Registers()...)
+		contents  []W
+	)
+	// Extract contents for static memories only
+	if m.Kind().IsStatic() {
+		contents = m.Contents()
+	}
+	//
+	return descriptor.NewMemory(m.Name(), registers, m.Kind(), m.Geometry(), contents)
+}
+
+func (p *bytecodeCompiler[W]) compileWordFunction(f *WordFunction) descriptor.Module[W] {
+	var vectors []BytecodeVector[W]
+	//
+	for _, vec := range f.Code() {
+		// Compile vector instruction into a bytecode vector as required.
+		vectors = append(vectors, p.compileWordVector(vec, f))
+	}
+	//
+	registers := descriptor.FromRegisters[W](f.Registers()...)
+	//
+	return descriptor.NewFunction[W](f.Name(), registers, f.IsNative(), vectors)
+}
+
+func (p *bytecodeCompiler[W]) compileWordVector(vec VectorInstruction, f *WordFunction) BytecodeVector[W] {
+	var packets [][]Bytecode[W]
+	//
+	for _, insn := range vec.Codes {
+		// Compile instruction into sequence of bytecodes as required.
+		bytecode := p.compileWordInstruction(insn, f)
+		//
+		packets = append(packets, bytecode)
+	}
+	//
+	bytecodes := flatternPackets(packets)
+	//
+	return bytecode.NewVector(bytecodes...)
+}
+
+func (p *bytecodeCompiler[W]) compileWordInstruction(insn WordInstruction, f *WordFunction) []Bytecode[W] {
+	var code Bytecode[W]
+	//
 	switch insn.OpCode() {
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
-		p.compileCall(insn.(*instruction.Call), f)
+		return p.compileCall(insn.(*instruction.Call), f)
 	case opcode.UNCONDITIONAL_CALL:
-		p.compileCall(&instruction.Call{OpIo: insn.(*instruction.UnconditionalCall).OpIo}, f)
+		return p.compileCall(&instruction.Call{OpIo: insn.(*instruction.UnconditionalCall).OpIo}, f)
 	case opcode.DEBUG:
-		p.encoder.Add(bytecode.NewDebug(insn.(*instruction.Debug).Chunks))
+		code = bytecode.NewDebug(insn.(*instruction.Debug).Chunks)
 	case opcode.FAIL:
-		p.encoder.Add(bytecode.NewFail(insn.(*instruction.Fail).Chunks))
+		code = bytecode.NewFail(insn.(*instruction.Fail).Chunks)
 	case opcode.JUMP:
-		p.compileJump(pos, insn.(*instruction.Jump))
+		code = p.compileJump(insn.(*instruction.Jump))
 	case opcode.MEMORY_READ:
-		p.compileMemRead(insn.(*instruction.MemRead), f)
+		return p.compileMemRead(insn.(*instruction.MemRead), f)
 	case opcode.MEMORY_WRITE:
-		p.compileMemWrite(insn.(*instruction.MemWrite), f)
+		return p.compileMemWrite(insn.(*instruction.MemWrite), f)
 	case opcode.RETURN:
-		p.encoder.Add(bytecode.NewRet(f.Width(), f.NumInputs()))
+		code = bytecode.NewRet()
 	case opcode.SKIP:
-		p.compileSkip(pos, insn.(*instruction.Skip))
+		return p.compileSkip(insn.(*instruction.Skip))
 	case opcode.SKIP_IF:
-		p.compileSkipIf(pos, insn.(*instruction.SkipIf))
+		code = p.compileSkipIf(insn.(*instruction.SkipIf))
 	case opcode.SKIP_MULTI:
-		p.compileMultiwaySkip(pos, insn.(*instruction.MultiwaySkip))
+		code = p.compileMultiwaySkip(insn.(*instruction.MultiwaySkip))
 	case opcode.HINT_DIVISION:
-		p.compileDivHint(insn.(*instruction.FieldHint))
+		code = p.compileDivHint(insn.(*instruction.FieldHint))
 	case opcode.INT_ADD:
-		p.compileAdd(insn.(*instruction.WordTypeA[W]), f)
+		return p.compileAdd(insn.(*instruction.WordTypeA[W]), f)
 	case opcode.INT_SUB:
-		p.compileSub(insn.(*instruction.WordTypeA[W]))
+		code = p.compileSub(insn.(*instruction.WordTypeA[W]))
 	case opcode.INT_MUL:
-		p.compileMul(insn.(*instruction.WordTypeA[W]), f)
+		return p.compileMul(insn.(*instruction.WordTypeA[W]), f)
 	case opcode.BIT_CONCAT:
-		p.compileConcat(insn.(*instruction.WordTypeA[W]))
+		code = p.compileConcat(insn.(*instruction.WordTypeA[W]))
 	case opcode.INT_DIV:
-		p.compileDivRem(insn.(*instruction.WordTypeB), bytecode.DIV, f)
+		return p.compileDivRem(insn.(*instruction.WordTypeB), encoding.DIV, f)
 	case opcode.INT_REM:
-		p.compileDivRem(insn.(*instruction.WordTypeB), bytecode.REM, f)
+		return p.compileDivRem(insn.(*instruction.WordTypeB), encoding.REM, f)
 	case opcode.BIT_AND:
-		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.AND, f)
+		return p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.AND, f)
 	case opcode.BIT_NOT:
-		p.compileNot(insn.(*instruction.WordTypeB))
+		code = p.compileNot(insn.(*instruction.WordTypeB))
 	case opcode.BIT_OR:
-		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.OR, f)
+		return p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.OR, f)
 	case opcode.BIT_XOR:
-		p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.XOR, f)
+		return p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.XOR, f)
 	case opcode.BIT_SHL:
-		p.compileShift(insn.(*instruction.WordTypeB), bytecode.SHL)
+		code = p.compileShift(insn.(*instruction.WordTypeB), true)
 	case opcode.BIT_SHR:
-		p.compileShift(insn.(*instruction.WordTypeB), bytecode.SHR)
+		code = p.compileShift(insn.(*instruction.WordTypeB), false)
 	case opcode.INT_ADDMOD_P:
-		p.compileFieldArith(insn.(*instruction.WordTypeF[W]), bytecode.ADDMOD_P)
+		code = p.compileFieldArith(insn.(*instruction.WordTypeF[W]), encoding.ADDMOD_P)
 	case opcode.INT_SUBMOD_P:
-		p.compileFieldArith(insn.(*instruction.WordTypeF[W]), bytecode.SUBMOD_P)
+		code = p.compileFieldArith(insn.(*instruction.WordTypeF[W]), encoding.SUBMOD_P)
 	case opcode.INT_MULMOD_P:
-		p.compileFieldArith(insn.(*instruction.WordTypeF[W]), bytecode.MULMOD_P)
+		code = p.compileFieldArith(insn.(*instruction.WordTypeF[W]), encoding.MULMOD_P)
 	default:
 		panic(fmt.Sprintf("unknown instruction opcode (0x%x)", insn.OpCode()))
 	}
+	//
+	return []Bytecode[W]{code}
 }
 
-func (p *bytecodeCompiler[W]) compileAdd(insn *instruction.WordTypeA[W], f *WordFunction) {
+func (p *bytecodeCompiler[W]) compileAdd(insn *instruction.WordTypeA[W], f *WordFunction) []Bytecode[W] {
 	var rhsMaxVal big.Int
 	// Initialise max value
 	rhsMaxVal.Set(insn.Constant.BigInt())
@@ -150,12 +197,12 @@ func (p *bytecodeCompiler[W]) compileAdd(insn *instruction.WordTypeA[W], f *Word
 		rhsMaxVal.Add(&rhsMaxVal, maxValueOf(bitwidth))
 	}
 	//
-	p.encoder.Add(bytecode.AddVecConst(insn.Target.Registers(), insn.Sources, insn.Constant))
+	code := []Bytecode[W]{bytecode.AddVecConst(insn.Target.Registers(), insn.Sources, insn.Constant)}
 	// Check whether cast check is required (or not).
-	p.addCheckCast(insn.Target, &rhsMaxVal, f)
+	return append(code, p.addCheckCast(insn.Target, &rhsMaxVal, f)...)
 }
 
-func (p *bytecodeCompiler[W]) compileMul(insn *instruction.WordTypeA[W], f *WordFunction) {
+func (p *bytecodeCompiler[W]) compileMul(insn *instruction.WordTypeA[W], f *WordFunction) []Bytecode[W] {
 	var rhsMaxVal big.Int
 	// Initialise max value
 	rhsMaxVal.Set(insn.Constant.BigInt())
@@ -166,13 +213,12 @@ func (p *bytecodeCompiler[W]) compileMul(insn *instruction.WordTypeA[W], f *Word
 		rhsMaxVal.Mul(&rhsMaxVal, maxValueOf(bitwidth))
 	}
 	//
-	p.encoder.Add(bytecode.MulVecConst(insn.Target.Registers(), insn.Sources, insn.Constant))
+	code := []Bytecode[W]{bytecode.MulVecConst(insn.Target.Registers(), insn.Sources, insn.Constant)}
 	// Check whether cast check is required (or not).
-	p.addCheckCast(insn.Target, &rhsMaxVal, f)
+	return append(code, p.addCheckCast(insn.Target, &rhsMaxVal, f)...)
 }
-func (p *bytecodeCompiler[W]) compileSub(insn *instruction.WordTypeA[W]) {
-	// NOTE: should we worry about overflow here?
-	p.encoder.Add(bytecode.SubVecConst(insn.Target.Registers(), insn.Sources, insn.Constant))
+func (p *bytecodeCompiler[W]) compileSub(insn *instruction.WordTypeA[W]) Bytecode[W] {
+	return bytecode.SubVecConst(insn.Target.Registers(), insn.Sources, insn.Constant)
 }
 
 // compileFieldArith emits a modular field-arithmetic bytecode (ADDMOD_P,
@@ -180,57 +226,58 @@ func (p *bytecodeCompiler[W]) compileSub(insn *instruction.WordTypeA[W]) {
 // always reduced modulo the prime characteristic and so fits within the (native)
 // target register; hence no cast check is ever required, matching the slow
 // machine (executeFieldAdd / executeFieldSub / executeFieldMul).
-func (p *bytecodeCompiler[W]) compileFieldArith(insn *instruction.WordTypeF[W], op uint32) {
-	p.encoder.Add(bytecode.NewFieldArith(op, insn.Target, insn.Sources, insn.Constant))
+func (p *bytecodeCompiler[W]) compileFieldArith(insn *instruction.WordTypeF[W], op uint32) Bytecode[W] {
+	return bytecode.NewFieldArith(op, insn.Target, insn.Sources, insn.Constant)
 }
 
-func (p *bytecodeCompiler[W]) compileConcat(insn *instruction.WordTypeA[W]) {
+func (p *bytecodeCompiler[W]) compileConcat(insn *instruction.WordTypeA[W]) Bytecode[W] {
 	if insn.Constant.Cmp64(0) != 0 {
 		panic("constant given for bit concatenation")
 	}
-	//
 	// CAT keeps source and target vectors in low-limb-first register order.
-	p.encoder.Add(bytecode.Concat(insn.Target.Registers(), insn.Sources))
+	return bytecode.Concat(insn.Target.Registers(), insn.Sources)
 }
 
-func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call, f *WordFunction) {
+func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call, f *WordFunction) []Bytecode[W] {
 	var (
-		callee     = p.machine.Module(insn.Id).(*WordFunction)
-		frameWidth = callee.Width()
-		// index identifies first instruction of given function.
-		index = p.encoder.Label(Label{insn.Id, 0, 0})
+		callee = p.machine.Module(insn.Id).(*WordFunction)
+		mid    = util.Cast[bytecode.ModuleId](bytecode.ModuleId(insn.Id))
 	)
 	// sanity chewcks
-	checkUintIs[uint16](frameWidth)
 	checkOperands(insn.Arguments...)
 	checkOperands(insn.Returns...)
 	// Check whether cast checks are required for arguments wider than their
 	// receiving parameter registers, matching the slow machine (frameCopyTo).
-	p.addOutgoingCheckCasts(insn.Arguments, callee.Inputs(), f)
-	//
-	p.encoder.Add(bytecode.CallFun(index, false, uint16(frameWidth), insn.Arguments, insn.Returns))
+	code := p.addOutgoingCheckCasts(insn.Arguments, callee.Inputs(), f)
+	// Add the call instruction
+	code = append(code, bytecode.CallFun(mid, false, insn.Arguments, insn.Returns))
 	// Check whether cast checks are required for returns wider than their
 	// receiving target registers, matching the slow machine (frameCopyFrom).
-	p.addIncomingCheckCasts(callee.Outputs(), insn.Returns, f)
+	return append(code, p.addIncomingCheckCasts(callee.Outputs(), insn.Returns, f)...)
 }
 
-func (p *bytecodeCompiler[W]) compileNot(insn *instruction.WordTypeB) {
+func (p *bytecodeCompiler[W]) compileNot(insn *instruction.WordTypeB) Bytecode[W] {
+	var bitwidth = util.Cast[uint16](insn.Bitwidth)
 	// NOT uses only the left source; WordTypeB duplicates it as the right source.
-	p.encoder.Add(bytecode.NewNot(insn.Target, insn.LeftSource, insn.Bitwidth))
+	return bytecode.NewBitwise(bytecode.NOT, insn.Target, insn.LeftSource, insn.RightSource, bitwidth)
 }
 
-func (p *bytecodeCompiler[W]) compileBitwise(insn *instruction.WordTypeB, op uint32, f *WordFunction) {
-	var bitwidth uint = base.RegisterBitwidth(f.RegisterMap(), insn.Target)
+func (p *bytecodeCompiler[W]) compileBitwise(insn *instruction.WordTypeB, op bytecode.BitwiseOp, f *WordFunction,
+) []Bytecode[W] {
+	//
+	var bitwidth = util.Cast[uint16](base.RegisterBitwidth(f.RegisterMap(), insn.Target))
 	// op selects the bytecode operation (bytecode.AND / OR / XOR).
-	p.encoder.Add(bytecode.NewBitwise(op, insn.Target, insn.LeftSource, insn.RightSource))
+	code := []Bytecode[W]{bytecode.NewBitwise(op, insn.Target, insn.LeftSource, insn.RightSource, bitwidth)}
 	// Check whether cast check is required (or not).
-	if bitwidth < insn.Bitwidth {
+	if uint(bitwidth) < insn.Bitwidth {
 		// yes
-		p.encoder.Add(bytecode.NewCheckCast(insn.Target, bitwidth))
+		code = append(code, bytecode.NewCheckCast(insn.Target, bitwidth))
 	}
+	//
+	return code
 }
 
-func (p *bytecodeCompiler[W]) compileDivHint(insn *instruction.FieldHint) {
+func (p *bytecodeCompiler[W]) compileDivHint(insn *instruction.FieldHint) Bytecode[W] {
 	// The only hint form currently generated is the division hint produced by
 	// LowerDivisions, which assigns quotient, remainder and range witness from
 	// a dividend and divisor.
@@ -238,90 +285,134 @@ func (p *bytecodeCompiler[W]) compileDivHint(insn *instruction.FieldHint) {
 		panic("unsupported hint form")
 	}
 	//
-	p.encoder.Add(bytecode.NewDivHint(
-		insn.Targets[0], insn.Targets[1], insn.Targets[2], insn.Sources[0], insn.Sources[1]))
+	return bytecode.NewDivHint(
+		insn.Targets[0], insn.Targets[1], insn.Targets[2], insn.Sources[0], insn.Sources[1])
 }
 
-func (p *bytecodeCompiler[W]) compileDivRem(insn *instruction.WordTypeB, op uint32, f *WordFunction) {
-	var bitwidth uint = base.RegisterBitwidth(f.RegisterMap(), insn.Target)
+func (p *bytecodeCompiler[W]) compileDivRem(insn *instruction.WordTypeB, op uint32, f *WordFunction) []Bytecode[W] {
+	var bitwidth = util.Cast[uint16](base.RegisterBitwidth(f.RegisterMap(), insn.Target))
 	// LeftSource is the dividend; RightSource is the divisor.  op selects the
 	// bytecode operation (bytecode.DIV / REM).
-	p.encoder.Add(bytecode.NewDivRem(op, insn.Target, insn.LeftSource, insn.RightSource))
+	code := []Bytecode[W]{bytecode.NewDivRem(op, insn.Target, insn.LeftSource, insn.RightSource)}
 	// Check whether cast check is required (or not).
-	if bitwidth < insn.Bitwidth {
+	if uint(bitwidth) < insn.Bitwidth {
 		// yes
-		p.encoder.Add(bytecode.NewCheckCast(insn.Target, bitwidth))
+		code = append(code, bytecode.NewCheckCast(insn.Target, bitwidth))
 	}
+	//
+	return code
 }
 
-func (p *bytecodeCompiler[W]) compileShift(insn *instruction.WordTypeB, op uint32) {
-	// LeftSource is the value shifted; RightSource holds the shift amount.  The
-	// bitwidth masks the result of a left shift and is ignored by a right shift.
-	p.encoder.Add(bytecode.NewShift(op, insn.Target, insn.LeftSource, insn.RightSource, insn.Bitwidth))
-}
-
-func (p *bytecodeCompiler[W]) compileJump(pos Label, insn *instruction.Jump) {
+func (p *bytecodeCompiler[W]) compileShift(insn *instruction.WordTypeB, shl bool) Bytecode[W] {
 	var (
-		index = p.encoder.Label(Label{pos.fun, insn.Immediate, 0})
-	)
-	p.encoder.Add(bytecode.Jump(index))
-}
-
-func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead, f *WordFunction) {
-	var (
-		mem  = p.machine.Module(insn.Id).(memory.Memory[W])
-		mid  = uint16(insn.Id)
-		code bytecode.Bytecode[W]
+		op       bytecode.BitwiseOp = bytecode.SHL
+		bitwidth                    = util.Cast[uint16](insn.Bitwidth)
 	)
 	//
-	checkModuleId(insn.Id)
+	if !shl {
+		op = bytecode.SHR
+	}
+	// LeftSource is the value shifted; RightSource holds the shift amount.  The
+	// bitwidth masks the result of a left shift and is ignored by a right shift.
+	return bytecode.NewBitwise(op, insn.Target, insn.LeftSource, insn.RightSource, bitwidth)
+}
+
+func (p *bytecodeCompiler[W]) compileJump(insn *instruction.Jump) Bytecode[W] {
+	return bytecode.Jump(bytecode.Address(insn.Immediate))
+}
+
+func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead, f *WordFunction) []Bytecode[W] {
+	var (
+		mem  = p.machine.Module(insn.Id).(memory.Memory[W])
+		mid  = util.Cast[bytecode.ModuleId](insn.Id)
+		code []Bytecode[W]
+	)
 	//
 	switch mem.(type) {
 	case *memory.ReadOnly[W]:
-		code = bytecode.ReadRom(mid, insn.Arguments, insn.Returns)
+		code = []Bytecode[W]{bytecode.ReadRom(mid, insn.Arguments, insn.Returns)}
 	case *memory.StaticReadOnly[W]:
-		code = bytecode.ReadStaticRom(mid, insn.Arguments, insn.Returns)
+		code = []Bytecode[W]{bytecode.ReadStaticRom(mid, insn.Arguments, insn.Returns)}
 	case *memory.RandomAccess[W]:
-		code = bytecode.ReadRam(mid, insn.Arguments, insn.Returns)
+		code = []Bytecode[W]{bytecode.ReadRam(mid, insn.Arguments, insn.Returns)}
 	case *memory.PagedRandomAccess[W]:
-		code = bytecode.ReadPagedRam(mid, insn.Arguments, insn.Returns)
+		code = []Bytecode[W]{bytecode.ReadPagedRam(mid, insn.Arguments, insn.Returns)}
 	default:
 		panic("unknown memory type")
 	}
-	//
-	p.encoder.Add(code)
 	// Check whether cast checks are required (or not).  Values read from a
 	// memory whose data registers are wider than the receiving registers must
 	// be checked, matching the slow machine which validates every register
 	// write (frame.Store).
-	p.addIncomingCheckCasts(mem.Geometry().DataRegisters(), insn.Returns, f)
+	return append(code, p.addIncomingCheckCasts(mem.Geometry().DataRegisters(), insn.Returns, f)...)
 }
 
-func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite, f *WordFunction) {
+func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite, f *WordFunction) []Bytecode[W] {
 	var (
 		mem  = p.machine.Module(insn.Id).(memory.Memory[W])
-		code bytecode.Bytecode[W]
-		mid  = uint16(insn.Id)
+		code []Bytecode[W]
+		mid  = util.Cast[bytecode.ModuleId](insn.Id)
 	)
-	//
-	checkModuleId(insn.Id)
 	// Check whether cast checks are required (or not).  Values written from
 	// registers wider than the memory's data registers must be checked before
 	// the write, matching the slow machine (executeMemWrite).
-	p.addOutgoingCheckCasts(insn.Returns, mem.Geometry().DataRegisters(), f)
+	code = p.addOutgoingCheckCasts(insn.Returns, mem.Geometry().DataRegisters(), f)
 	//
 	switch mem.(type) {
 	case *memory.WriteOnce[W]:
-		code = bytecode.WriteWom(mid, insn.Arguments, insn.Returns)
+		code = append(code, bytecode.WriteWom(mid, insn.Arguments, insn.Returns))
 	case *memory.RandomAccess[W]:
-		code = bytecode.WriteRam(mid, insn.Arguments, insn.Returns)
+		code = append(code, bytecode.WriteRam(mid, insn.Arguments, insn.Returns))
 	case *memory.PagedRandomAccess[W]:
-		code = bytecode.WritePagedRam(mid, insn.Arguments, insn.Returns)
+		code = append(code, bytecode.WritePagedRam(mid, insn.Arguments, insn.Returns))
 	default:
 		panic("unknown memory type")
 	}
 	//
-	p.encoder.Add(code)
+	return code
+}
+
+func (p *bytecodeCompiler[W]) compileSkip(insn *instruction.Skip) []Bytecode[W] {
+	var (
+		skip  = util.Cast[uint16](insn.Skip)
+		codes []Bytecode[W]
+	)
+	//
+	if insn.Skip != 0 {
+		codes = append(codes, bytecode.NewSkip(skip))
+	}
+	//
+	return codes
+}
+
+func (p *bytecodeCompiler[W]) compileSkipIf(insn *instruction.SkipIf) Bytecode[W] {
+	var (
+		skip = util.Cast[uint16](insn.Skip)
+		l    = insn.Left
+		r    = insn.Right
+	)
+	//
+	return bytecode.NewSkipIfVec(insn.Cond, skip, l, r)
+}
+
+// compileMultiwaySkip translates a multiway skip into a single SMW bytecode.
+// Each dispatch case targets the micro-code its skip would reach (pos.micro +
+// skip + 1) -- exactly as compileSkip / compileSkipIf resolve their targets --
+// so a match transfers control to that case's jump, while a non-match falls
+// through to the following (default) jump.
+func (p *bytecodeCompiler[W]) compileMultiwaySkip(insn *instruction.MultiwaySkip) Bytecode[W] {
+	var cases = make([]bytecode.SwitchCase[W], len(insn.Cases))
+	//
+	for i, c := range insn.Cases {
+		var (
+			skip  = util.Cast[uint16](c.Skip)
+			value = word.Const64[W](uint64(c.Value))
+		)
+		//
+		cases[i] = bytecode.SwitchCase[W]{Value: value, Skip: skip}
+	}
+	//
+	return bytecode.MultiwaySkip(insn.Source, cases)
 }
 
 // addIncomingCheckCasts emits a CHECKCAST for every target register which is
@@ -330,7 +421,8 @@ func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite, f *Wor
 // or a callee's return registers).  This mirrors the width check the slow
 // machine performs on every register write (frame.Store / frameCopyFrom).
 func (p *bytecodeCompiler[W]) addIncomingCheckCasts(sources []register.Register, targets []register.Id,
-	f *WordFunction) {
+	f *WordFunction) []Bytecode[W] {
+	var codes []Bytecode[W]
 	//
 	for i, target := range targets {
 		var (
@@ -339,9 +431,12 @@ func (p *bytecodeCompiler[W]) addIncomingCheckCasts(sources []register.Register,
 		)
 		//
 		if !dst.IsNative() && (src.IsNative() || src.Width() > dst.Width()) {
-			p.encoder.Add(bytecode.NewCheckCast(target, dst.Width()))
+			width := util.Cast[uint16](dst.Width())
+			codes = append(codes, bytecode.NewCheckCast(target, width))
 		}
 	}
+	//
+	return codes
 }
 
 // addOutgoingCheckCasts emits a CHECKCAST for every source register in this
@@ -350,7 +445,8 @@ func (p *bytecodeCompiler[W]) addIncomingCheckCasts(sources []register.Register,
 // mirrors the width check the slow machine performs on memory writes
 // (executeMemWrite) and call arguments (frameCopyTo).
 func (p *bytecodeCompiler[W]) addOutgoingCheckCasts(sources []register.Id, targets []register.Register,
-	f *WordFunction) {
+	f *WordFunction) []Bytecode[W] {
+	var codes []Bytecode[W]
 	//
 	for i, source := range sources {
 		var (
@@ -359,91 +455,32 @@ func (p *bytecodeCompiler[W]) addOutgoingCheckCasts(sources []register.Id, targe
 		)
 		//
 		if !dst.IsNative() && (src.IsNative() || src.Width() > dst.Width()) {
-			p.encoder.Add(bytecode.NewCheckCast(source, dst.Width()))
+			width := util.Cast[uint16](dst.Width())
+			codes = append(codes, bytecode.NewCheckCast(source, width))
 		}
 	}
-}
-
-func (p *bytecodeCompiler[W]) compileSkip(pos Label, insn *instruction.Skip) {
-	if insn.Skip != 0 {
-		var (
-			label = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
-			index = p.encoder.Label(label)
-		)
-		p.encoder.Add(bytecode.Jump(index))
-	}
-}
-
-func (p *bytecodeCompiler[W]) compileSkipIf(pos Label, insn *instruction.SkipIf) {
-	var (
-		label = Label{pos.fun, pos.macro, pos.micro + insn.Skip + 1}
-		index = p.encoder.Label(label)
-		l     = insn.Left
-		r     = insn.Right
-	)
 	//
-	p.encoder.Add(bytecode.JumpIfVec(insn.Cond, index, l, r))
-}
-
-// compileMultiwaySkip translates a multiway skip into a single SMW bytecode.
-// Each dispatch case targets the micro-code its skip would reach (pos.micro +
-// skip + 1) -- exactly as compileSkip / compileSkipIf resolve their targets --
-// so a match transfers control to that case's jump, while a non-match falls
-// through to the following (default) jump.
-func (p *bytecodeCompiler[W]) compileMultiwaySkip(pos Label, insn *instruction.MultiwaySkip) {
-	var cases = make([]bytecode.SwitchCase, len(insn.Cases))
-	//
-	for i, c := range insn.Cases {
-		var (
-			label = Label{pos.fun, pos.macro, pos.micro + c.Skip + 1}
-			index = p.encoder.Label(label)
-		)
-		//
-		cases[i] = bytecode.SwitchCase{Value: uint64(c.Value), Target: index}
-	}
-	//
-	p.encoder.Add(bytecode.MultiwaySkip(insn.Source, cases))
+	return codes
 }
 
 // Add a checkcast instruction if the given value does not fit within the target
 // register(s).
-func (p *bytecodeCompiler[W]) addCheckCast(target register.Vector, value *big.Int, f *WordFunction) {
+func (p *bytecodeCompiler[W]) addCheckCast(target register.Vector, value *big.Int, f *WordFunction) []Bytecode[W] {
 	var (
 		targetMaxVal = maxValueOf(target.BitWidth(f.RegisterMap()))
+		codes        []Bytecode[W]
 	)
 	//
 	if targetMaxVal.Cmp(value) < 0 {
 		var (
 			last      = target.Last()
-			lastWidth = f.Register(last).Width()
+			lastWidth = util.Cast[uint16](f.Register(last).Width())
 		)
 		// yes
-		p.encoder.Add(bytecode.NewCheckCast(last, lastWidth))
+		codes = append(codes, bytecode.NewCheckCast(last, lastWidth))
 	}
-}
-
-// Label uniquely identifies an instruction within a given module.
-type Label struct {
-	// Function identifier
-	fun uint
-	// Vector instruction
-	macro uint
-	// Vector position
-	micro uint
-}
-
-func checkModuleId(mid uint) {
-	if mid > math.MaxUint16 {
-		panic("invalid module identifier (too many modules)")
-	}
-}
-
-func checkUintIs[T uint8 | uint16](value uint) {
-	var bound = uint(T(0) - 1)
 	//
-	if value >= bound {
-		panic("wide instructions not supported")
-	}
+	return codes
 }
 
 func checkOperands(regs ...register.Id) {
@@ -470,4 +507,98 @@ func maxValueOf(bitwidth uint) *big.Int {
 	val.Sub(val, big.NewInt(1))
 	//
 	return val
+}
+
+// flatternPackets concatenates an array of "bytecode packets" into a single
+// flat array of bytecodes.  Each packet holds the bytecodes compiled from one
+// word instruction, and a single word instruction may expand to zero, one or
+// several bytecodes (e.g. an arithmetic operation followed by a cast check).
+//
+// The key challenge is that branching instructions (Skip / SkipIf) encode their
+// targets as a number of *packets* to skip: at the word-instruction level one
+// instruction occupies exactly one position, so skips are counted in those
+// positions.  Once packets are flattened these counts are wrong, because each
+// intervening packet no longer occupies a single slot.  Each skip count must
+// therefore be rewritten into the equivalent number of *bytecodes*.
+//
+// This proceeds in two passes.  The first records, for every packet, the
+// bytecode offset at which it begins (mapping[i]).  The second copies each
+// bytecode into the output, recomputing the skip count of any Skip / SkipIf via
+// calculateSkip against that mapping.
+func flatternPackets[W word.Word[W]](packets [][]Bytecode[W]) (bytecodes []Bytecode[W]) {
+	var (
+		mapping = make([]uint, len(packets))
+		offset  uint
+	)
+	// Build the mapping
+	for i, p := range packets {
+		mapping[i] = offset
+		offset += uint(len(p))
+	}
+	//
+	offset = 0
+	// Apply the mapping
+	for i, p := range packets {
+		for _, b := range p {
+			switch s := b.(type) {
+			case *bytecode.Skip:
+				// Construct clone with recalculated skip
+				b = bytecode.NewSkip(calculateSkip(uint(i), offset, s.Skip, mapping))
+			case *bytecode.SkipIf:
+				// Construct clone with recalculated skip
+				b = &bytecode.SkipIf{
+					Skip:  calculateSkip(uint(i), offset, s.Skip, mapping),
+					Left:  s.Left,
+					Right: s.Right,
+					Op:    s.Op,
+				}
+			case *bytecode.Switch[W]:
+				// Recalculate every case's skip, mirroring Skip / SkipIf above.
+				// Under the current lowering this is a no-op, since a multiway
+				// skip is always immediately followed by a contiguous table of
+				// single-bytecode jumps (see compileDispatch), so no packet in
+				// any case's skip range can expand.  It is done here regardless
+				// so flattening stays correct should that layout ever change.
+				ncases := make([]bytecode.SwitchCase[W], len(s.Cases))
+				for j, c := range s.Cases {
+					ncases[j] = bytecode.SwitchCase[W]{
+						Value: c.Value,
+						Skip:  calculateSkip(uint(i), offset, c.Skip, mapping),
+					}
+				}
+				//
+				b = &bytecode.Switch[W]{Source: s.Source, Cases: ncases}
+			default:
+			}
+			//
+			bytecodes = append(bytecodes, b)
+			offset++
+		}
+	}
+	//
+	return bytecodes
+}
+
+// calculateSkip rewrites a skip count expressed in packets into the equivalent
+// count expressed in flattened bytecodes.  Its parameters are:
+//
+//	cc      -- index of the packet containing this skip instruction.
+//	ncc     -- offset of this skip instruction within the flattened bytecodes.
+//	skip    -- original skip count, measured in packets.
+//	mapping -- maps each packet index to its starting bytecode offset.
+//
+// A skip of n packets from packet cc lands on packet cc+n+1 (the +1 steps past
+// the skip itself).  That target packet is translated to its starting bytecode
+// offset via mapping, and the new skip count is the distance from this
+// instruction's own bytecode position (ncc) to that offset, again less one for
+// the skip itself.
+func calculateSkip(cc, ncc uint, skip uint16, mapping []uint) uint16 {
+	// Original target packet of this skip
+	var target = cc + uint(skip) + 1
+	// Bytecode offset at which that target packet begins
+	var ntarget = mapping[target]
+	// Recompute skip relative to the flattened bytecode position
+	var nskip = ntarget - ncc - 1
+	//
+	return util.Cast[uint16](nskip)
 }

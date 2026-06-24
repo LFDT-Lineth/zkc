@@ -71,11 +71,11 @@ func Test_ZkcMixed_Basic_08(t *testing.T) {
 // Others
 // ===================================================================
 
-func Test_ZkcUnit_Felt_Memory_01(t *testing.T) {
+func Test_ZkcMixed_Felt_Memory_01(t *testing.T) {
 	checkZkcMixed(t, "zkc/mixed/felt_memory_01", DEFAULT_MIXED_CONFIG)
 }
 
-func Test_ZkcUnit_Felt_Casting_01(t *testing.T) {
+func Test_ZkcMixed_Felt_Casting_01(t *testing.T) {
 	checkZkcMixed(t, "zkc/mixed/felt_casting_01", DEFAULT_MIXED_CONFIG.Fields(field.KOALABEAR_16))
 }
 
