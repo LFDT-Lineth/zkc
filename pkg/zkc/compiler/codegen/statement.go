@@ -45,6 +45,8 @@ type StmtCompiler struct {
 	errors      []source.SyntaxError
 	// quiet suppresses printf output
 	quiet bool
+	// fastMode disables constraint-only rewrites not required by the vm.
+	fastMode bool
 }
 
 func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) VectorInstruction {
@@ -583,6 +585,21 @@ func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved]
 	)
 	// Compile arguments
 	arguments, insns := p.compileNonUniformArgs(mapping, e.Args...)
+	if !p.fastMode {
+		// If a register is both an argument and a return of a call (e.g. "x = f(x)"),
+		// snapshot that argument into a fresh temporary first so
+		// the call reads a register distinct from the one it writes.
+		// We could not add this tmp register, but it would imply a lookup with a row shift,
+		// which makes prover's life harder.
+		// We do this only in !fastMode as it is required by the constraints, not by the vm.
+		for i, arg := range arguments {
+			if slices.ContainsFunc(returns, func(r register.Id) bool { return r.Unwrap() == arg.Unwrap() }) {
+				tmp := p.allocate(p.bitwidthOf(register.NewVector(arg)))
+				insns = append(insns, instruction.UintAssignV[vm.Uint](register.NewVector(tmp), arg))
+				arguments[i] = tmp
+			}
+		}
+	}
 	// determine type of read
 	return append(insns, instruction.NewCall(id, arguments, returns))
 }
