@@ -225,7 +225,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint))
 	}
 	// Emit lookup constraints for any function calls made by this function.
-	addCallLookups[F](mod, ctx, fm, pcSelectors, infos)
+	addCallLookups(mod, ctx, fm, pcSelectors, infos)
 	// Done
 	return mod
 }
@@ -244,7 +244,7 @@ func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 	fm vm.FieldFunction, pcSelectors []register.Id, infos []moduleInfo) {
 	//
 	for pc, vec := range fm.Code() {
-		// Determine the source selector for calls on this line (none for atomic
+		// Determine the pc selector for calls on this line (none for atomic
 		// callers, which have no program counter selectors).
 		var srcSelector util.Option[register.Id]
 		if len(pcSelectors) != 0 {
@@ -254,9 +254,9 @@ func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 		for _, code := range vec.Codes {
 			switch c := code.(type) {
 			case *instruction.Call:
-				emitCallLookup[F](mod, ctx, fm.Registers(), uint(pc), c.Id, c.Arguments, c.Returns, srcSelector, infos)
+				emitCallLookup(mod, ctx, fm.Registers(), uint(pc), c.Id, c.Arguments, c.Returns, srcSelector, infos)
 			case *instruction.UnconditionalCall:
-				emitCallLookup[F](mod, ctx, fm.Registers(), uint(pc), c.Id, c.Arguments, c.Returns, srcSelector, infos)
+				emitCallLookup(mod, ctx, fm.Registers(), uint(pc), c.Id, c.Arguments, c.Returns, srcSelector, infos)
 			}
 		}
 	}

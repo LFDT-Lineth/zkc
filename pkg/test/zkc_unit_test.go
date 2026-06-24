@@ -791,6 +791,11 @@ func Test_ZkcUnit_Call_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_04", DEFAULT_UNIT_CONFIG)
 }
 
+// This test performs different module call depending on the branch taken
+func Test_ZkcUnit_Call_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/call_05", DEFAULT_UNIT_CONFIG.Constraints(true))
+}
+
 // ===================================================================
 // Ternary Tests
 // ===================================================================
