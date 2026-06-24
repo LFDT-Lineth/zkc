@@ -67,6 +67,10 @@ func Test_ZkcMixed_Basic_08(t *testing.T) {
 	checkZkcMixed(t, "zkc/mixed/basic_08", DEFAULT_MIXED_CONFIG)
 }
 
+func Test_ZkcMixed_Basic_09(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/basic_09", DEFAULT_MIXED_CONFIG.Constraints(true))
+}
+
 // ===================================================================
 // Others
 // ===================================================================
