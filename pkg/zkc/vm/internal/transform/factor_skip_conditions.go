@@ -93,16 +93,16 @@ func factorableSkips(codes []WordInstruction, registers RegisterAllocator) map[u
 			continue
 		}
 
-		thenHasCall, elseHasCall := branchContainsCall(codes, uint(i), si.Skip)
 		// Factorize if it guards a call, as it is needed for the source selector of the lookup.
-		if thenHasCall || elseHasCall {
+		branchHasCall := branchContainsCall(codes, uint(i), si.Skip)
+		if branchHasCall {
 			factor[uint(i)] = true
 			continue
 		}
 
-		thenSize, elseSize := branchSizes(codes, uint(i), si.Skip)
 		// Performance improvment: compute the condition only once and then check against a boolean.
 		// It reduces the constraint degree.
+		thenSize, elseSize := branchSizes(codes, uint(i), si.Skip)
 		if generatesInverse(si, registers) && (elseSize > 0 || thenSize > 1) {
 			factor[uint(i)] = true
 		}
@@ -114,7 +114,7 @@ func factorableSkips(codes []WordInstruction, registers RegisterAllocator) map[u
 // branchContainsCall reports whether the "then" (conditionally-skipped) block
 // of a SkipIf at index i, and/or the "else" block reached after it, contain a
 // function call.  The block boundaries are computed exactly as in branchSizes.
-func branchContainsCall(codes []WordInstruction, i, skip uint) (thenHasCall, elseHasCall bool) {
+func branchContainsCall(codes []WordInstruction, i, skip uint) (branchHasCall bool) {
 	var (
 		end   = min(i+1+skip, uint(len(codes)))
 		block = codes[i+1 : end]
@@ -126,18 +126,18 @@ func branchContainsCall(codes []WordInstruction, i, skip uint) (thenHasCall, els
 		case *instruction.Skip:
 			// The then block jumps over a contiguous else block.
 			elseEnd := min(end+last.Skip, uint(len(codes)))
-			elseHasCall = containsCall(codes[end:elseEnd])
+			branchHasCall = containsCall(codes[end:elseEnd])
 			block = block[:m-1]
 		case *instruction.Fail, *instruction.Return:
 			// The then block terminates, so the code that follows is only reached
 			// when the condition holds (the skip is taken).
-			elseHasCall = containsCall(codes[end:])
+			branchHasCall = containsCall(codes[end:])
 		}
 	}
+	// check for then branch
+	branchHasCall = branchHasCall || containsCall(block)
 	//
-	thenHasCall = containsCall(block)
-	//
-	return thenHasCall, elseHasCall
+	return branchHasCall
 }
 
 // containsCall reports whether the given block contains a (conditional) function call.
