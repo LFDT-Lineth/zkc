@@ -61,25 +61,38 @@ func (p *FullObserver[W, I, M]) PreExecution(machine M) {
 	//
 	if machine.Depth() > depth {
 		p.enterFunction(machine)
+		return
 	} else if machine.Depth() < depth {
 		p.leaveFunction(machine)
-	} else if depth != 0 {
-		// Extract enclosing frame
-		var frame = machine.StackFrame(0)
-		// Check whether enclosing vector is finishing (i.e. about to execute a
-		// terminal instruction which either terminates the enclosing function, or
-		// moves the program counter to the next vector instruction).
-		if next, end := isVectorTerminal(frame); next || end {
-			var (
-				width    = frame.Function().Width()
-				contents = loadWords(0, width, frame)
-				state    = NewState(frame.PC().Macro(), end, width, contents)
-			)
-			// Record state
-			sf := p.callstack.Pop()
-			sf.states = append(sf.states, state)
-			p.callstack.Push(sf)
-		}
+		// NOTE: control has now returned to the caller, which may itself be about
+		// to execute a terminal instruction (e.g. a "return" immediately following
+		// the call, as in a recursive helper).  Fall through to record that
+		// caller's terminal state, otherwise its row would be lost.
+	}
+	// Record the terminal state of the (now) enclosing frame, if any.
+	if p.callstack.Len() != 0 {
+		p.recordTerminalState(machine)
+	}
+}
+
+// recordTerminalState records a row for the currently-executing frame when it
+// is about to execute a terminal instruction (i.e. one which either terminates
+// the enclosing function, or moves the program counter to the next vector
+// instruction).
+func (p *FullObserver[W, I, M]) recordTerminalState(machine M) {
+	// Extract enclosing frame
+	var frame = machine.StackFrame(0)
+	//
+	if next, end := isVectorTerminal(frame); next || end {
+		var (
+			width    = frame.Function().Width()
+			contents = loadWords(0, width, frame)
+			state    = NewState(frame.PC().Macro(), end, width, contents)
+		)
+		// Record state
+		sf := p.callstack.Pop()
+		sf.states = append(sf.states, state)
+		p.callstack.Push(sf)
 	}
 }
 
