@@ -33,18 +33,18 @@ type Kind uint8
 
 const (
 	// UNKNOWN indicates an unidentified external access which results due to some kind of linking failure.
-	UNKNOWN = 0
+	UNKNOWN Kind = iota
 	// READABLE_MEMORY identifies a memory which can be read (i.e. an input memory, or a static memory, etc).
-	READABLE_MEMORY = 1
+	READABLE_MEMORY
 	// WRITEABLE_MEMORY identifies a memory which can be written (i.e. an
 	// output memory, or a read/write memory, etc).
-	WRITEABLE_MEMORY = 2
+	WRITEABLE_MEMORY
 	// FUNCTION identifies a function symbol.
-	FUNCTION = 3
+	FUNCTION
 	// CONSTANT identifies a constant symbol.
-	CONSTANT = 4
+	CONSTANT
 	// TYPE_ALIAS identifies a alias symbol.
-	TYPE_ALIAS = 5
+	TYPE_ALIAS
 	// MEMORY_EFFECT indicates a declared effect on some memory.
-	MEMORY_EFFECT = 6
+	MEMORY_EFFECT
 )

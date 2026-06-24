@@ -20,6 +20,32 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 )
 
+// Note: globalEnvironment may contain identical variable descriptors
+// in its variables slice; e.g. the following is legal zkc:
+//
+//	for i :u8 = 0; i < 2; i = i + 1 { ... }
+//	for i :u8 = 4; i < 8; i = i + 2 { ... }
+//
+// The admissibility of a variable declaration within a function body
+// (e.g. in a VarDeclaration or when initializing a for loop) is
+// determined in terms of the set of visible names in the current scope.
+// This is determined via the env.localEnvironment.visible set of
+// variable.Id's and the corresponding Descriptor in
+// env.globalEnvironment.variables.
+//
+// See for instance `rid := env.LookupVariable(name)` in parseAccessExpr.
+//
+// Note: The following zkc code will fail (as expected)
+//
+//	for i :u8 = 0; i < 2; i = i + 1 {                  // 1st i
+//		for i :u8 = 4; i < 8; i = i + 2 { ... }    // 2nd i
+//	}
+//
+// due to the first 'i' variable being visible when the 2nd one is being
+// introduced.
+//
+// Note. Creating a block surrounded by braces (within a function body)
+// to create a new scope is disallowed by the syntax.
 type globalEnvironment struct {
 	effects []*symbol.Unresolved
 	// Variables identifies set of declared variables.
@@ -50,76 +76,80 @@ func EmptyEnvironment() Environment {
 // Clone constructs a clone of this environment, such that variables declared in
 // the clone will not clash with those declared elsewhere.  The inLoop parameter
 // indicates whether the cloned environment is inside a loop.
-func (p *Environment) Clone(inLoop bool) Environment {
+func (env *Environment) Clone(inLoop bool) Environment {
 	var local localEnvironment
 	// Clone local variables
-	local.visible = p.local.visible.Clone()
+	local.visible = env.local.visible.Clone()
 	local.inLoop = inLoop
 	// Otherwise, keep global as is
-	return Environment{global: p.global, local: &local}
+	return Environment{global: env.global, local: &local}
 }
 
 // InLoop returns whether the current environment is inside a loop body.
-func (p *Environment) InLoop() bool {
-	return p.local.inLoop
+func (env *Environment) InLoop() bool {
+	return env.local.inLoop
 }
 
 // Effects returns the set of memory effects declared globally
-func (p *Environment) Effects() []*symbol.Unresolved {
-	return p.global.effects
+func (env *Environment) Effects() []*symbol.Unresolved {
+	return env.global.effects
 }
 
 // Variables returns the set of variables declared globally
-func (p *Environment) Variables() []VariableDescriptor {
-	return p.global.variables
+func (env *Environment) Variables() []VariableDescriptor {
+	return env.global.variables
 }
 
 // DeclareEffect declares a new effect.  If an effect with the same name
 // already exists, this panics.
-func (p *Environment) DeclareEffect(effect *symbol.Unresolved) {
+func (env *Environment) DeclareEffect(effect *symbol.Unresolved) {
 	//
-	if p.IsDeclared(effect.Name) {
+	if env.IsDeclared(effect.Name) {
 		panic(fmt.Sprintf("effect %s already declared", effect.Name))
 	}
 	//
-	p.global.effects = append(p.global.effects, effect)
+	env.global.effects = append(env.global.effects, effect)
 }
 
 // DeclareVariable declares a new register with the given name and bitwidth.  If
 // a register with the same name already exists, this panics.
-func (p *Environment) DeclareVariable(kind variable.Kind, name string, datatype Type) {
+//
+// Note. DeclareVariable allows one to introduce local variables whose names shadow
+// the names of top level declarations (constants, functions, memories and type aliases).
+// See https://github.com/LFDT-Lineth/zkc/issues/1921.
+func (env *Environment) DeclareVariable(kind variable.Kind, name string, datatype Type) {
 	// Determine global index of this variable
-	var index = uint(len(p.global.variables))
+	var index = uint(len(env.global.variables))
 	// Check whether it clashes with another variable in the same (local) environment
-	if p.IsDeclared(name) {
+	if env.IsDeclared(name) {
 		panic(fmt.Sprintf("variable %s already declared", name))
 	}
 	// Update global environment
-	p.global.variables = append(p.global.variables, variable.New(kind, name, datatype))
+	env.global.variables = append(env.global.variables, variable.New(kind, name, datatype))
 	// Update local environment
-	p.local.visible.Insert(index)
+	env.local.visible.Insert(index)
 }
 
 // IsDeclared checks whether or not a given name is already declared (either as
 // an effect or a variable).
-func (p *Environment) IsDeclared(name string) bool {
+func (env *Environment) IsDeclared(name string) bool {
 	// check effects
-	for _, effect := range p.global.effects {
+	for _, effect := range env.global.effects {
 		if effect.Name == name {
 			return true
 		}
 	}
 	// check local variables
-	return p.IsDeclaredVariable(name)
+	return env.IsDeclaredVariable(name)
 }
 
 // IsDeclaredVariable checks whether or not a given name is already declared as
 // a variable.
-func (p *Environment) IsDeclaredVariable(name string) bool {
+func (env *Environment) IsDeclaredVariable(name string) bool {
 	// check local variables
-	for iter := p.local.visible.Iter(); iter.HasNext(); {
+	for iter := env.local.visible.Iter(); iter.HasNext(); {
 		var index = iter.Next()
-		if p.global.variables[index].Name == name {
+		if env.global.variables[index].Name == name {
 			return true
 		}
 	}
@@ -128,11 +158,11 @@ func (p *Environment) IsDeclaredVariable(name string) bool {
 }
 
 // LookupVariable looks up the index for a given register.
-func (p *Environment) LookupVariable(name string) variable.Id {
+func (env *Environment) LookupVariable(name string) variable.Id {
 	// check local variables
-	for iter := p.local.visible.Iter(); iter.HasNext(); {
+	for iter := env.local.visible.Iter(); iter.HasNext(); {
 		var index = iter.Next()
-		if p.global.variables[index].Name == name {
+		if env.global.variables[index].Name == name {
 			return index
 		}
 	}

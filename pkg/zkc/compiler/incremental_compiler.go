@@ -124,7 +124,7 @@ func (p *IncrementalCompiler) Apply(updates ...FileUpdate) []source.SyntaxError 
 			srcfile  = source.NewSourceFile(filename, []byte(contents))
 			cs, errs = parser.Parse(srcfile)
 		)
-		if len(cs.Components) > 0 {
+		if len(cs.Declarations) > 0 {
 			items = append(items, cs)
 		}
 

@@ -36,21 +36,24 @@ import (
 // This can fail for various reasons: for example, if no function of the given
 // name can be found in any source file; or, if a function with the correct name
 // but incorrect arity (i.e. number of parameters/returns) is found.
-func Link(files ...parser.UnlinkedSourceFile) (ast.Program, source.Maps[any], []source.SyntaxError) {
+func Link(unlinkedSourceFiles ...parser.UnlinkedSourceFile) (ast.Program, source.Maps[any], []source.SyntaxError) {
 	var (
 		program ast.Program
 		linker  = NewLinker()
 		errors  []source.SyntaxError
 	)
-	// Construct bus and source mappings
-	for _, item := range files {
-		linker.Join(item.SourceMap)
+	// Join source maps and register declarations
+	for _, unlinkedSourceFile := range unlinkedSourceFiles {
+		linker.Join(unlinkedSourceFile.SourceMap)
 		//
-		for _, declaration := range item.Components {
+		for _, declaration := range unlinkedSourceFile.Declarations {
 			// Check whether component of same name already exists.
+			// This condition forbids overloading, you can't e.g. have two functions with the same
+			// name across different files nor can you have functions with the same name but
+			// different signatures.
 			if linker.Exists(declaration.Name()) {
 				// Indicates component of same name already exists.
-				errors = append(errors, *linker.srcmap.SyntaxError(declaration, "duplicate declaration"))
+				errors = append(errors, *linker.srcmaps.SyntaxError(declaration, "duplicate declaration"))
 			} else {
 				linker.Register(declaration)
 			}
@@ -62,25 +65,36 @@ func Link(files ...parser.UnlinkedSourceFile) (ast.Program, source.Maps[any], []
 	program, linkErrs = linker.Link()
 	errors = append(errors, linkErrs...)
 	//
-	return program, linker.srcmap, errors
+	return program, linker.srcmaps, errors
 }
 
-// Linker packages together the various bits of information required for linking
-// the assembly files.
+// Linker packages together data from the UnlinkedSourceFile's that Compile
+// produced by parsing its input source files, as well as any and all dependencies
+// obtained by following include declarations. As such it contains:
+//
+//   - srcmaps: the list of all srcmap's: these maps are kept disjoint since
+//     they each refer to distinct underlying source files;
+//   - declarations: the concatenation of all declarations across all
+//     UnlinkedSourceFile's (save for include's) into one slice;
+//   - names: records the names of the declarations; used to detect duplicates
+//
+// Together these let the linker resolve every declaration's external
+// identifiers (function, memories, constants, type aliases) into
+// concrete indices, producing the fully linked ast.Program.
+//
+// Note: includes were already followed up on in Compile.
 type Linker struct {
-	busmap     map[string]symbol.Resolved
-	components []decl.Unresolved
-	srcmap     source.Maps[any]
-	names      map[string]bool
+	srcmaps      source.Maps[any]
+	declarations []decl.Unresolved
+	names        map[string]bool
 }
 
 // NewLinker constructs a new linker
 func NewLinker() *Linker {
 	return &Linker{
-		srcmap:     *source.NewSourceMaps[any](),
-		busmap:     make(map[string]symbol.Resolved),
-		components: nil,
-		names:      make(map[string]bool),
+		declarations: nil,
+		srcmaps:      *source.NewSourceMaps[any](),
+		names:        make(map[string]bool),
 	}
 }
 
@@ -91,28 +105,20 @@ func (p *Linker) Exists(name string) bool {
 	return ok
 }
 
-// Join a source map into this linker
+// Join a source map into this linker. Join is just a wrapper for appending
+// some UnlinkedSourceFile's srcmap to the Linker's srcmaps.
 func (p *Linker) Join(srcmap source.Map[any]) {
-	p.srcmap.Join(&srcmap)
+	p.srcmaps.Join(&srcmap)
 }
 
-// Register a new components with this linker.
-func (p *Linker) Register(component decl.Unresolved) {
+// Register a new declaration with this linker. Register saves the declaration's name
+// and adds it to the linker's full slice of Declaration's
+func (p *Linker) Register(declaration decl.Unresolved) {
 	// Ignore any anonymous components (i.e. includes)
-	if component.Name() != "" {
-		// First, record name
-		p.names[component.Name()] = true
-		// Second, act on component type
-		switch c := component.(type) {
-		case decl.Unresolved:
-			// Allocate bus entry
-			p.busmap[c.Name()] = symbol.Resolved{Index: uint(len(p.busmap))}
-			//
-			p.components = append(p.components, c)
-		default:
-			// Should be unreachable
-			panic(fmt.Sprintf("unknown component %s", component.Name()))
-		}
+	if declaration.Name() != "" {
+		// Record the name and keep the declaration for the later resolution pass.
+		p.names[declaration.Name()] = true
+		p.declarations = append(p.declarations, declaration)
 	}
 }
 
@@ -123,28 +129,42 @@ func (p *Linker) Link() (ast.Program, []source.SyntaxError) {
 		decls  []decl.Resolved
 	)
 	//
-	for index := range p.components {
+	for index := range p.declarations {
 		decl, errs := p.linkDeclaration(uint(index))
 		decls = append(decls, decl)
 		errors = append(errors, errs...)
 
-		p.srcmap.Copy(p.components[index], decl)
+		p.srcmaps.Copy(p.declarations[index], decl)
 	}
 	//
-	return ast.NewProgram(decls, p.srcmap), errors
+	return ast.NewProgram(decls, p.srcmaps), errors
 }
 
 // Link all external accessed used within this function to their intended
 // targets.  This means, for every bus used locally, settings the global bus
 // identifier and also allocated registers for the address/data lines.
+//
+// Note: the declarations that require linking correspond to (currently) unknown
+//
+//   - (supposedly declared) function   names
+//   - (supposedly declared) constants  names
+//   - (supposedly declared) memory     names
+//   - (supposedly declared) type alias names
+//
+// What is noteworthy is that ALL of these symbols (strings) should / must
+// correspond to top level declarations: one does not have to look inside
+// of these declarations, instead: it is enough to scan Linker.Declarations
+// and filter by .Name() until we have a match.
+//
+// Furthermore, there is no need to `Link` local variables of a function, for
+// instance. This will have happened in some sense during parseFunction() where
+// LocalAccesses are already linked to variable.Id's from the function body.
 func (p *Linker) linkDeclaration(index uint) (decl.Resolved, []source.SyntaxError) {
-	switch d := p.components[index].(type) {
+	switch d := p.declarations[index].(type) {
 	case *decl.UnresolvedConstant:
 		return p.linkConstant(*d)
 	case *decl.UnresolvedFunction:
 		return p.linkFunction(*d)
-	case *decl.UnresolvedInclude:
-		return decl.NewInclude[symbol.Resolved](d.Pattern()), nil
 	case *decl.UnresolvedMemory:
 		address, errs1 := p.linkVariableDeclarations(d.Address)
 		data, errs2 := p.linkVariableDeclarations(d.Data)
@@ -165,22 +185,29 @@ func (p *Linker) linkDeclaration(index uint) (decl.Resolved, []source.SyntaxErro
 		datatype, errs := p.linkType(d.DataType)
 		//
 		return decl.NewTypeAlias[symbol.Resolved](d.Name(), datatype), errs
+	// decl.UnresolvedIncludes, which are anonymous, were filtered out in the initial Link(...)
 	default:
-		panic("unknown declaration")
+		// Unreachable: Register only stores named declarations.
+		panic(fmt.Sprintf("linker: unexpected declaration %q (%T)", d.Name(), d))
 	}
 }
 
-func (p *Linker) linkConstant(fn decl.UnresolvedConstant) (decl.Resolved, []source.SyntaxError) {
-	expr, errs1 := p.linkExpr(fn.ConstExpr)
-	datatype, errs2 := p.linkType(fn.DataType)
+// linkConstant is required since the constant's type may be a type alias
+// and because the value of the Constant may be an expression such as
+//
+// const LENGTH_IN_BYTES :u32 = 256
+// const LENGTH_IN_BITS  :u32 = 8 * LENGTH_IN_BYTES
+func (p *Linker) linkConstant(cn decl.UnresolvedConstant) (decl.Resolved, []source.SyntaxError) {
+	expr, errs1 := p.linkExpr(cn.ConstExpr)
+	datatype, errs2 := p.linkType(cn.DataType)
 	//
-	return decl.NewConstant[symbol.Resolved](fn.Name(), datatype, expr), append(errs1, errs2...)
+	return decl.NewConstant[symbol.Resolved](cn.Name(), datatype, expr), append(errs1, errs2...)
 }
 
 func (p *Linker) linkFunction(fn decl.UnresolvedFunction) (decl.Resolved, []source.SyntaxError) {
 	var (
 		effects = make([]*symbol.Resolved, len(fn.Effects))
-		codes   = make([]stmt.Resolved, len(fn.Code))
+		code    = make([]stmt.Resolved, len(fn.Code))
 		errs1   []source.SyntaxError
 	)
 	// link effects
@@ -195,14 +222,14 @@ func (p *Linker) linkFunction(fn decl.UnresolvedFunction) (decl.Resolved, []sour
 	for i, c := range fn.Code {
 		var es []source.SyntaxError
 		//
-		codes[i], es = p.linkStatement(c)
+		code[i], es = p.linkStatement(c)
 		//
 		errs1 = append(errs1, es...)
 	}
 	//
 	vars, errs2 := p.linkVariableDeclarations(fn.Variables)
 	//
-	resolved := decl.NewFunction(fn.Name(), effects, vars, codes)
+	resolved := decl.NewFunction(fn.Name(), effects, vars, code)
 	resolved.SetAnnotations(fn.Annotations())
 	//
 	return resolved, append(errs1, errs2...)
@@ -215,7 +242,7 @@ func (p *Linker) linkEffect(effect *symbol.Unresolved,
 	// take its address
 	neffect := &ne
 	// copy over source map info
-	p.srcmap.Copy(effect, neffect)
+	p.srcmaps.Copy(effect, neffect)
 	//
 	return neffect, err
 }
@@ -349,11 +376,11 @@ func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.Synta
 		//
 		errors = append(errs1, errs2...)
 	default:
-		return nil, p.srcmap.SyntaxErrors(s, "invalid statement")
+		return nil, p.srcmaps.SyntaxErrors(s, "invalid statement")
 	}
 	//
 	if ninsn != nil {
-		p.srcmap.Copy(s, ninsn)
+		p.srcmaps.Copy(s, ninsn)
 	}
 	//
 	return ninsn, errors
@@ -416,11 +443,11 @@ func (p *Linker) linkLVal(lv lval.Unresolved) (lval.Resolved, []source.SyntaxErr
 		//
 		errs = append(errs1, errs2...)
 	default:
-		return nil, p.srcmap.SyntaxErrors(lv, "unknown lval encountered")
+		return nil, p.srcmaps.SyntaxErrors(lv, "unknown lval encountered")
 	}
 	//
 	if nlval != nil {
-		p.srcmap.Copy(lv, nlval)
+		p.srcmaps.Copy(lv, nlval)
 	}
 	//
 	return nlval, errs
@@ -529,11 +556,11 @@ func (p *Linker) linkExpr(e expr.Unresolved) (expr.Resolved, []source.SyntaxErro
 		args, errors = p.linkExprs(e.Exprs...)
 		nexpr = expr.NewTupleInitialiser[symbol.Resolved](args...)
 	default:
-		return nil, p.srcmap.SyntaxErrors(e, "invalid expression")
+		return nil, p.srcmaps.SyntaxErrors(e, "invalid expression")
 	}
 	//
 	if nexpr != nil {
-		p.srcmap.Copy(e, nexpr)
+		p.srcmaps.Copy(e, nexpr)
 	}
 	//
 	return nexpr, errors
@@ -586,14 +613,14 @@ func (p *Linker) linkType(datatype data.UnresolvedType) (data.ResolvedType, []so
 		name, err := p.resolve(t.Name, t)
 		//
 		if err != nil {
-			return nil, p.srcmap.SyntaxErrors(datatype, "unknown type alias")
+			return nil, p.srcmaps.SyntaxErrors(datatype, "unknown type alias")
 		}
 
 		return data.NewAlias[symbol.Resolved](name), nil
 	case *data.FieldElement[symbol.Unresolved]:
 		return data.NewFieldElement[symbol.Resolved](), nil
 	default:
-		return nil, p.srcmap.SyntaxErrors(datatype, "unknown type encountered")
+		return nil, p.srcmaps.SyntaxErrors(datatype, "unknown type encountered")
 	}
 }
 
@@ -602,24 +629,24 @@ func (p *Linker) linkType(datatype data.UnresolvedType) (data.ResolvedType, []so
 func (p *Linker) resolve(name symbol.Unresolved, node any) (symbol.Resolved, []source.SyntaxError) {
 	var sym symbol.Resolved
 	//
-	for i, c := range p.components {
+	for i, c := range p.declarations {
 		nIns, _ := c.Arity()
 		// first, check whether name matches
 		if c.Name() == name.Name {
 			// now, check arity
 			if nIns > name.Inputs {
-				return sym, p.srcmap.SyntaxErrors(node, fmt.Sprintf("insufficient arguments (expected %d)", nIns))
+				return sym, p.srcmaps.SyntaxErrors(node, fmt.Sprintf("insufficient arguments (expected %d)", nIns))
 			} else if nIns < name.Inputs && !name.HasAnyArity() {
-				return sym, p.srcmap.SyntaxErrors(node, fmt.Sprintf("too many arguments (expected %d)", nIns))
+				return sym, p.srcmaps.SyntaxErrors(node, fmt.Sprintf("too many arguments (expected %d)", nIns))
 			} else if msg, err := checkSymbolKind(c, name); err {
-				return sym, p.srcmap.SyntaxErrors(node, msg)
+				return sym, p.srcmaps.SyntaxErrors(node, msg)
 			}
 			// hit
 			return symbol.NewResolved(c.Name(), name.Kind, uint(i)), nil
 		}
 	}
 	// fail
-	return sym, p.srcmap.SyntaxErrors(node, "unknown symbol")
+	return sym, p.srcmaps.SyntaxErrors(node, "unknown symbol")
 }
 
 // Attempt to determine whether or not the given symbol kind matches the
