@@ -24,9 +24,26 @@ import (
 // Hint represents a non-deterministic register assignment.  The listed target
 // registers are defined (written) by the prover without any polynomial
 // constraint; correctness is validated by subsequent arithmetic checks.
+//
+// Each argument (Source) and return (Target) is a register vector: after
+// register splitting a single value may span several limb registers, so the
+// per-operand grouping is retained here (rather than a flat register list) to
+// let the executor reconstruct each value from its limbs.
 type Hint struct {
-	Targets []register.Id
-	Sources []register.Id
+	Targets []register.Vector
+	Sources []register.Vector
+}
+
+// flattenVectors collects the individual registers making up the given vectors
+// into a single flat list.
+func flattenVectors(vecs []register.Vector) []register.Id {
+	var regs []register.Id
+	//
+	for _, v := range vecs {
+		regs = append(regs, v.Registers()...)
+	}
+	//
+	return regs
 }
 
 // OpCode implementation for Instruction interface
@@ -46,12 +63,12 @@ func (p *Hint) IsField() bool {
 
 // Uses implementation for Instruction interface
 func (p *Hint) Uses() []register.Id {
-	return p.Sources
+	return flattenVectors(p.Sources)
 }
 
 // Definitions implementation for Instruction interface
 func (p *Hint) Definitions() []register.Id {
-	return p.Targets
+	return flattenVectors(p.Targets)
 }
 
 // MicroValidate implementation for Instruction interface
@@ -62,6 +79,6 @@ func (p *Hint) MicroValidate(_ uint, _ field.Config, _ base.SystemMap) []error {
 // String implementation for Instruction interface
 func (p *Hint) String(mapping base.SystemMap) string {
 	return fmt.Sprintf("%s = hint(%s)",
-		base.RegistersToString(mapping, p.Targets...),
-		base.RegistersToString(mapping, p.Sources...))
+		base.RegistersToString(mapping, flattenVectors(p.Targets)...),
+		base.RegistersToString(mapping, flattenVectors(p.Sources)...))
 }

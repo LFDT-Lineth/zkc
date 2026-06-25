@@ -126,12 +126,15 @@ func (g *generator) emitAdd(c *code, srcs []operand, konst operand, store storeV
 	if store.total > 128 {
 		return fmt.Errorf("gogen: addition target wider than 128 bits (unsupported)")
 	}
-	// Pair accumulation: carries land in hi rather than trapping.
-	g.usesBits = true
-
+	// A single wide term is distributed by storeValue via storePair, which uses
+	// no math/bits helpers; only the genuine multi-term pair accumulation below
+	// does.  Setting usesBits before this early return would import math/bits
+	// without using it.
 	if len(terms) == 1 {
 		return g.storeValue(c, store, terms[0])
 	}
+	// Pair accumulation: carries land in hi rather than trapping.
+	g.usesBits = true
 
 	var inner error
 

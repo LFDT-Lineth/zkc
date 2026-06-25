@@ -42,56 +42,16 @@ func (p *DivRem) Validate(_ uint, _ FieldConfig, _ Environment) []error {
 }
 
 func (p *DivRem) String(mapping Environment) string {
-	// var (
-	// 	target   = RegisterToString(p.Target, mapping)
-	// 	dividend = RegisterToString(p.Dividend, mapping)
-	// 	divisor  = RegisterToString(p.Divisor, mapping)
-	// 	symbol   = "/"
-	// )
-	// //
-	// if p.Opcode == REM {
-	// 	symbol = "%"
-	// }
-	// //
-	// return fmt.Sprintf("%s = %s %s %s", target, dividend, symbol, divisor)
-	panic("todo")
-}
-
-// DivHint computes quotient, remainder and range witness for a division hint
-// (i.e. as produced by the LowerDivisions transform).  Specifically, Quotient =
-// Dividend / Divisor, Remainder = Dividend % Divisor and Witness = Divisor -
-// Remainder - 1, with correctness validated by subsequent arithmetic checks.  A
-// zero divisor aborts execution with a division-by-zero error.
-type DivHint struct {
-	// Quotient, Remainder and Witness receive the results.
-	Quotient, Remainder, Witness RegisterId
-	// Dividend and Divisor are the operand registers.
-	Dividend, Divisor RegisterId
-}
-
-// Uses implementation for Bytecode interface.
-func (p *DivHint) Uses() []RegisterId {
-	return []RegisterId{p.Dividend, p.Divisor}
-}
-
-// Definitions implementation for Bytecode interface.
-func (p *DivHint) Definitions() []RegisterId {
-	return []RegisterId{p.Quotient, p.Remainder, p.Witness}
-}
-
-// Validate implementation for Bytecode interface.
-func (p *DivHint) Validate(_ uint, _ FieldConfig, _ Environment) []error {
-	return nil
-}
-
-func (p *DivHint) String(env Environment) string {
 	var (
-		quotient  = RegisterToString(p.Quotient, env)
-		remainder = RegisterToString(p.Remainder, env)
-		witness   = RegisterToString(p.Witness, env)
-		dividend  = RegisterToString(p.Dividend, env)
-		divisor   = RegisterToString(p.Divisor, env)
+		target   = RegisterToString(p.Target, mapping)
+		dividend = RegisterToString(p.Dividend, mapping)
+		divisor  = RegisterToString(p.Divisor, mapping)
+		symbol   = "/"
 	)
 	//
-	return fmt.Sprintf("%s::%s::%s = hint(%s, %s)", quotient, remainder, witness, dividend, divisor)
+	if p.Opcode != 0 {
+		symbol = "%"
+	}
+	//
+	return fmt.Sprintf("%s = %s %s %s", target, dividend, symbol, divisor)
 }

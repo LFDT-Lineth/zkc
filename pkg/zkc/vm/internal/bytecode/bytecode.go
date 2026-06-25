@@ -43,7 +43,10 @@ type Module = base.Module
 // instance Validate signatures free of an otherwise package-wide import.
 type FieldConfig = field.Config
 
-// Operation identifies a bitwise operation (AND, OR, XOR, NOT, SHL or SHR).
+// Operation identifies an operation performed by a bytecode instruction: an
+// arithmetic operation (ADD, SUB, MUL), a bitwise operation (AND, OR, XOR, NOT,
+// SHL, SHR), a field operation (ADDMOD_P, SUBMOD_P, MULMOD_P) or a hint
+// operation (DIV_HINT).
 type Operation uint8
 
 // Symbol returns a suitable string representation of this operator.
@@ -123,6 +126,9 @@ const (
 	OP_SUBMOD_P
 	// OP_MULMOD_P represents multiplication modulus the prime P
 	OP_MULMOD_P
+	// DIV_HINT is the hint operation which computes the quotient, remainder
+	// and range witness for a division hint (see Hint).
+	DIV_HINT
 )
 
 // ============================================================================
@@ -153,11 +159,11 @@ type Environment interface {
 	// Name returns the name of the enclosing function.
 	Name() string
 	// HasRegister checks whether a register with the given name exists and, if
-	// so, returns its register identifier.  Otherwise, it returns false.
-	HasModule(name string) (RegisterId, bool)
+	// so, returns its register identifier.  Otherwise, it returns none.
+	HasModule(name string) util.Option[RegisterId]
 	// HasRegister checks whether a register with the given name exists and, if
-	// so, returns its register identifier.  Otherwise, it returns false.
-	HasRegister(name string) (RegisterId, bool)
+	// so, returns its register identifier.  Otherwise, it returns none.
+	HasRegister(name string) util.Option[RegisterId]
 	// Register returns the ith register used in this module.
 	Module(id ModuleId) ModuleInfo
 	// Register returns the ith register used in this module.
@@ -236,15 +242,15 @@ func NewSkip(skip uint16) *Skip {
 // NewSkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
 func NewSkipIf(op Cond, skip uint16, left, right RegisterId) *SkipIf {
-	return &SkipIf{Skip: skip, Left: NewRegVec(left), Right: NewRegVec(right), Op: op}
+	return &SkipIf{Skip: skip, Left: NewRegisterVector(left), Right: NewRegisterVector(right), Op: op}
 }
 
 // NewSkipIfVec constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing multi-limb register
 // vectors.
 func NewSkipIfVec(op Cond, skip uint16, left, right register.Vector) *SkipIf {
-	return &SkipIf{Skip: skip, Left: NewRegVec(asRegs(left.Registers()...)...),
-		Right: NewRegVec(asRegs(right.Registers()...)...), Op: op}
+	return &SkipIf{Skip: skip, Left: NewRegisterVector(asRegs(left.Registers()...)...),
+		Right: NewRegisterVector(asRegs(right.Registers()...)...), Op: op}
 }
 
 // LoadConst constructs a load-constant (LDC) instruction which assigns the
@@ -328,7 +334,7 @@ func NewCheckCast(target RegisterId, bitwidth uint16) *CheckCast {
 func NewDebug(chunks []base.FormattedChunk) *Debug {
 	var (
 		hunks   = make([]FormattedChunk, len(chunks))
-		sources []RegVec
+		sources []RegisterVector
 	)
 	//
 	for i, c := range chunks {
@@ -337,17 +343,11 @@ func NewDebug(chunks []base.FormattedChunk) *Debug {
 		hunks[i] = FormattedChunk{c.Text, c.Format}
 		//
 		if len(args) > 0 {
-			sources = append(sources, NewRegVec(args...))
+			sources = append(sources, NewRegisterVector(args...))
 		}
 	}
 	//
 	return &Debug{hunks, sources}
-}
-
-// NewDivHint constructs a division-hint instruction.
-func NewDivHint(quotient, remainder, witness, dividend, divisor RegisterId) *DivHint {
-	return &DivHint{Quotient: quotient, Remainder: remainder, Witness: witness,
-		Dividend: dividend, Divisor: divisor}
 }
 
 // NewDivRem constructs a division/remainder instruction computing
@@ -360,7 +360,7 @@ func NewDivRem(op uint32, target, dividend, divisor RegisterId) *DivRem {
 func NewFail(chunks []base.FormattedChunk) *Fail {
 	var (
 		hunks   = make([]FormattedChunk, len(chunks))
-		sources []RegVec
+		sources []RegisterVector
 	)
 	//
 	for i, c := range chunks {
@@ -369,7 +369,7 @@ func NewFail(chunks []base.FormattedChunk) *Fail {
 		hunks[i] = FormattedChunk{c.Text, c.Format}
 		//
 		if len(args) > 0 {
-			sources = append(sources, NewRegVec(args...))
+			sources = append(sources, NewRegisterVector(args...))
 		}
 	}
 	//

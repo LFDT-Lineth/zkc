@@ -332,10 +332,11 @@ func Debug[W Word[W]](chunks []FormattedChunk) Bytecode[W] {
 	return bytecode.NewDebug(chunks)
 }
 
-// DivHint constructs a division-hint instruction.
-func DivHint[W Word[W]](quotient, remainder, witness, dividend, divisor RegisterId) Bytecode[W] {
-	return bytecode.NewDivHint(quotient, remainder, witness,
-		dividend, divisor)
+// Hint constructs a hint instruction performing the given operation op (e.g.
+// DIV_HINT) which reads the given source (argument) register vectors and writes
+// the given target (return) register vectors.
+func Hint[W Word[W]](op bytecode.Operation, targets, sources []bytecode.RegisterVector) Bytecode[W] {
+	return bytecode.NewHint(op, targets, sources)
 }
 
 // UintDiv constructs an integer-division instruction computing

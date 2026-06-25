@@ -561,8 +561,8 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = executeDiv(p.pc, bytecodes, frame)
 		case encoding.REM:
 			p.pc, err = executeRem(p.pc, bytecodes, frame)
-		case encoding.DIVHINT:
-			p.pc, err = executeDivHint(p.pc, bytecodes, frame)
+		case encoding.HINT:
+			p.pc, err = p.executeHint(p.pc, bytecodes, frame)
 		case encoding.ADDMOD_P:
 			p.pc, err = p.executeFieldAdd(p.pc, bytecodes, frame)
 		case encoding.SUBMOD_P:
@@ -903,7 +903,7 @@ func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources 
 			var (
 				base = bytecode.RegisterId(sources.Next())
 				len  = uint16(sources.Next())
-				vec  = bytecode.RegVec{Base: base, Len: len}
+				vec  = bytecode.RegisterVector{Base: base, Len: len}
 			)
 			//
 			builder.WriteString(p.formatArgument(module, chunk.Format, vec, frame))
@@ -917,8 +917,8 @@ func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources 
 // and renders it with the given format, mirroring formatWord in the reference
 // word machine: limbs are accumulated most-significant first, shifting by each
 // limb's bitwidth, and the shared Format.Render produces the final text.
-func (p *Interpreter[W]) formatArgument(module descriptor.Module[W], format zkc_util.Format, vec bytecode.RegVec,
-	frame []W) string {
+func (p *Interpreter[W]) formatArgument(module descriptor.Module[W], format zkc_util.Format,
+	vec bytecode.RegisterVector, frame []W) string {
 	//
 	var value big.Int
 	// Loop from most-significant limb to least significant.
@@ -1042,36 +1042,115 @@ func executeRem[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 	return pc + n, nil
 }
 
-// executeDivHint implements DIVHINT: it assigns the quotient, remainder and
-// range witness (divisor - remainder - 1) of a division, returning an error if
-// the divisor is zero.  This matches executeDivHint in the slow word machine.
-func executeDivHint[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+// executeHint implements HINT: it decodes the operation selector and dispatches
+// to the corresponding hint.  Currently the only supported operation is
+// DIV_HINT.
+func (p *Interpreter[W]) executeHint(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	op, targets, sources, n := encoding.DecodeHintOperands(pc, codes)
+	//
+	switch op {
+	case bytecode.DIV_HINT:
+		return p.executeDivHint(pc, n, targets, sources, stack)
+	default:
+		return pc, fmt.Errorf("unknown hint operation (%d)", op)
+	}
+}
+
+// executeDivHint implements the DIV_HINT hint: it reconstructs the dividend and
+// divisor arguments from their (possibly multi-limb) register vectors, then
+// assigns the quotient, remainder and range witness (divisor - remainder - 1)
+// of the division across the corresponding target vectors, returning an error
+// if the divisor is zero.  big.Int arithmetic is used so values spanning
+// several limbs (i.e. wider than the machine word) are handled correctly.
+func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.Op8Iter,
+	stack []W) (uint32, error) {
 	var (
-		rq, rr, rw, rx, ry, n = encoding.DecodeDivHint_2n3(pc, codes)
-		dividend              = stack[rx]
-		divisor               = stack[ry]
-		w                     W
-		uf1, uf2              bool
+		module   = p.program.Module(p.fid)
+		dividend = loadHintOperand(module, &sources, stack)
+		divisor  = loadHintOperand(module, &sources, stack)
 	)
 	//
-	if divisor.Cmp64(0) == 0 {
+	if divisor.Sign() == 0 {
 		return pc, errors.New("division by zero")
 	}
 	//
-	q := dividend.Div(divisor)
-	r := dividend.Rem(divisor)
-	w, uf1 = divisor.Sub(r)
-	w, uf2 = w.Sub(word.Const64[W](1))
+	var (
+		q = new(big.Int).Quo(dividend, divisor)
+		r = new(big.Int).Rem(dividend, divisor)
+		w = new(big.Int).Sub(divisor, r)
+	)
 	//
-	if uf1 || uf2 {
+	w.Sub(w, big.NewInt(1))
+	//
+	if w.Sign() < 0 {
 		return pc, errors.New("arithmetic underflow")
 	}
-	//
-	stack[rq] = q
-	stack[rr] = r
-	stack[rw] = w
+	// Distribute quotient, remainder and witness across their target vectors.
+	for _, val := range []*big.Int{q, r, w} {
+		if err := storeHintResult(module, &targets, val, stack); err != nil {
+			return pc, err
+		}
+	}
 	//
 	return pc + n, nil
+}
+
+// loadHintOperand reconstructs the value of a single hint operand from the next
+// (base, len) register vector in the iterator, with the least-significant limb
+// held in the lowest-indexed register (matching storeAcross).
+func loadHintOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Op8Iter, stack []W) *big.Int {
+	var (
+		base   = uint16(iter.Next())
+		length = uint(iter.Next())
+		value  = new(big.Int)
+		offset uint
+	)
+	//
+	for i := uint(0); i < length; i++ {
+		var (
+			reg  = base + uint16(i)
+			limb = new(big.Int).Lsh(stack[reg].BigInt(), offset)
+		)
+		//
+		value.Or(value, limb)
+		//
+		offset += bitwidthOf(module, reg)
+	}
+	//
+	return value
+}
+
+// storeHintResult distributes value across the next (base, len) register vector
+// in the iterator, writing the least-significant limb into the lowest-indexed
+// register (matching storeAcross).  It errors if the value does not fit within
+// the vector's total width.
+func storeHintResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Op8Iter,
+	value *big.Int, stack []W) error {
+	var (
+		base   = uint16(iter.Next())
+		length = uint(iter.Next())
+		acc    = new(big.Int).Set(value)
+		total  uint
+	)
+	//
+	for i := uint(0); i < length; i++ {
+		var (
+			reg   = base + uint16(i)
+			width = bitwidthOf(module, reg)
+			mask  = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))
+			limb  W
+		)
+		//
+		stack[reg] = limb.SetBigInt(new(big.Int).And(acc, mask))
+		acc.Rsh(acc, width)
+		total += width
+	}
+	//
+	if acc.Sign() != 0 {
+		return fmt.Errorf("bit overflow (0x%s not u%d)", value.Text(16), total)
+	}
+	//
+	return nil
 }
 
 // executeSkipIf_rr implements the conditional register-register forward branch

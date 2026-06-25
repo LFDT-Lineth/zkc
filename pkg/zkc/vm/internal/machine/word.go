@@ -410,12 +410,16 @@ func executeShr[W word.Word[W]](insn *instruction.WordTypeB, frame WordFrame[W])
 // ==============================================================
 
 // executeDivHint computes quotient and remainder for a division hint.
-// targets[0] = sources[0] / sources[1], targets[1] = sources[0] % sources[1].
-func executeDivHint[W word.Word[W]](targets []register.Id, sources []register.Id, frame WordFrame[W]) error {
+// targets[0] = sources[0] / sources[1], targets[1] = sources[0] % sources[1],
+// targets[2] = sources[1] - targets[1] - 1 (the range witness).  Each operand
+// is a register vector: after register splitting a value may span several limb
+// registers, so its value is reconstructed from (and its result distributed
+// across) those limbs.
+func executeDivHint[W word.Word[W]](targets, sources []register.Vector, frame WordFrame[W]) error {
 	//
 	var (
-		dividend = frame.Load(sources[0])
-		divisor  = frame.Load(sources[1])
+		dividend = loadAcross(frame, sources[0])
+		divisor  = loadAcross(frame, sources[1])
 		one      W
 		uf2      bool
 	)
@@ -435,19 +439,37 @@ func executeDivHint[W word.Word[W]](targets []register.Id, sources []register.Id
 		return errors.New("arithmetic underflow")
 	}
 	// assign q
-	if err := frame.Store(targets[0], q); err != nil {
+	if err := StoreAcross(frame, targets[0], q); err != nil {
 		return err
 	}
 	// assign r
-	if err := frame.Store(targets[1], r); err != nil {
+	if err := StoreAcross(frame, targets[1], r); err != nil {
 		return err
 	}
 	// assign w
-	if err := frame.Store(targets[2], w); err != nil {
-		return err
+	return StoreAcross(frame, targets[2], w)
+}
+
+// loadAcross reconstructs the value held in a register vector by concatenating
+// its limbs, with the least significant register at the lowest index (matching
+// StoreAcross and executeConcat).
+func loadAcross[W word.Word[W]](frame WordFrame[W], vec register.Vector) W {
+	var (
+		val  W
+		regs = vec.Registers()
+	)
+	// Accumulate most-significant limb first.
+	for i := len(regs); i > 0; i-- {
+		var (
+			reg   = regs[i-1]
+			width = frame.BitwidthOf(reg)
+		)
+		//
+		_, val = val.Shl64(uint64(width))
+		val = val.Or(frame.Load(reg))
 	}
 	//
-	return nil
+	return val
 }
 
 // ==============================================================

@@ -23,6 +23,9 @@ import (
 // RegisterId provides a convenient alias
 type RegisterId = bytecode.RegisterId
 
+// Operation provides a convenient alias
+type Operation = bytecode.Operation
+
 // Bytecode provides a convenient alias
 type Bytecode[W word.Word[W]] = bytecode.Bytecode[W]
 
@@ -35,8 +38,8 @@ type Address = bytecode.Address
 // Cond just provides a convenient alias to make the code more readable.
 type Cond = bytecode.Cond
 
-// RegVec just provides a convenient alias to make the code more readable.
-type RegVec = bytecode.RegVec
+// RegisterVector just provides a convenient alias to make the code more readable.
+type RegisterVector = bytecode.RegisterVector
 
 // OPCODE_MASK determines how many bits of the opcode byte are used for the
 // opcode itself.  This is a 7-bit field (bits 0..6); operand bytes always begin
@@ -152,8 +155,8 @@ const (
 	DIV
 	// REM instruction
 	REM
-	// DIVHINT (division hint) instruction
-	DIVHINT
+	// HINT instruction (e.g. division hint)
+	HINT
 	// ADDMOD_P instruction
 	ADDMOD_P
 	// SUBMOD_P instruction
@@ -201,8 +204,8 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 		return Debug(b, env)
 	case *bytecode.DivRem:
 		return DivRem(b)
-	case *bytecode.DivHint:
-		return DivHint(b)
+	case *bytecode.Hint:
+		return Hint(b)
 	case *bytecode.Fail:
 		return Fail(b, env)
 	case *bytecode.FieldArith[W]:
@@ -353,9 +356,9 @@ func RegsAsBytes(regs []RegisterId) []byte {
 	return bytes
 }
 
-// RegVecsAsBytes packs an array of (small) registers into an array of bytes.  This
+// RegisterVectorsAsBytes packs an array of (small) registers into an array of bytes.  This
 // will panic if any register is encountered which does not fit into a byte.
-func RegVecsAsBytes(vecs []RegVec) []byte {
+func RegisterVectorsAsBytes(vecs []RegisterVector) []byte {
 	var bytes = make([]byte, len(vecs)*2)
 	//
 	for i, r := range vecs {

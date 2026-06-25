@@ -319,9 +319,7 @@ func (p *bytecodeCompiler[W]) compileDivHint(insn *instruction.FieldHint) Byteco
 		panic("unsupported hint form")
 	}
 	//
-	return bytecode.NewDivHint(
-		toReg(insn.Targets[0]), toReg(insn.Targets[1]), toReg(insn.Targets[2]),
-		toReg(insn.Sources[0]), toReg(insn.Sources[1]))
+	return bytecode.NewHint(bytecode.DIV_HINT, toRegisterVectors(insn.Targets), toRegisterVectors(insn.Sources))
 }
 
 func (p *bytecodeCompiler[W]) compileDivRem(insn *instruction.WordTypeB, op uint32, f *WordFunction) []Bytecode[W] {
@@ -691,6 +689,19 @@ func toRegs(ids []register.Id) []bytecode.RegisterId {
 	}
 	//
 	return regs
+}
+
+// toRegisterVectors converts a list of word-machine register vectors into the
+// corresponding bytecode register vectors, preserving the per-operand grouping
+// (each value may span several limb registers after splitting).
+func toRegisterVectors(vecs []register.Vector) []bytecode.RegisterVector {
+	var out = make([]bytecode.RegisterVector, len(vecs))
+	//
+	for i, v := range vecs {
+		out[i] = bytecode.NewRegisterVector(toRegs(v.Registers())...)
+	}
+	//
+	return out
 }
 
 // emitter's skipTarget, which clamps micro >= vecLen to the next vector.

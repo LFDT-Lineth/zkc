@@ -16,10 +16,24 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
+
+// MapProgram applies a mapping function to all modules within this program,
+// producing an array of mapped items.  Returned items are guaranteed to be in
+// the same order as in the original program.
+func MapProgram[W word.Word[W], T any](p Program[W], mapper func(uint, Module[W]) T) []T {
+	var mapping = make([]T, len(p.modules))
+	//
+	for i, m := range p.modules {
+		mapping[i] = mapper(uint(i), m)
+	}
+	//
+	return mapping
+}
 
 // Program represents a bytecode program.  This representation is useful for
 // transforming bytecode programs, generating code or constraints from bytecode
@@ -90,19 +104,19 @@ func (p moduleEnvironment[W]) Name() string {
 
 // HasRegister checks whether a register with the given name exists and, if
 // so, returns its register identifier.  Otherwise, it returns false.
-func (p moduleEnvironment[W]) HasModule(name string) (ModuleId, bool) {
+func (p moduleEnvironment[W]) HasModule(name string) util.Option[ModuleId] {
 	for i, r := range p.modules {
 		if r.Name() == name {
-			return ModuleId(i), true
+			return util.Some(ModuleId(i))
 		}
 	}
 	// Failed
-	return math.MaxUint16, false
+	return util.None[ModuleId]()
 }
 
 // HasRegister checks whether a register with the given name exists and, if
 // so, returns its register identifier.  Otherwise, it returns false.
-func (p moduleEnvironment[W]) HasRegister(name string) (RegisterId, bool) {
+func (p moduleEnvironment[W]) HasRegister(name string) util.Option[RegisterId] {
 	return p.modules[p.module].HasRegister(name)
 }
 

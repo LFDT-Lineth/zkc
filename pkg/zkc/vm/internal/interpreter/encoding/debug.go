@@ -56,11 +56,11 @@ func DecodeDebug(pc uint32, codes []uint32) (index uint, sources Op8Iter, n uint
 
 // encodeDebug_n encodes a debug instruction referencing the formatted chunks at
 // the given index, packing its source register vectors.
-func encodeDebug_n(index uint16, sources []RegVec) []uint32 {
+func encodeDebug_n(index uint16, sources []RegisterVector) []uint32 {
 	var (
 		nsources = uint32(util.Cast[uint8](uint(len(sources)))) << 24
 		codes    = []uint32{nsources | uint32(index)<<8 | DEBUG}
-		bytes    = RegVecsAsBytes(sources)
+		bytes    = RegisterVectorsAsBytes(sources)
 	)
 	//
 	return append(codes, PackBytesIntoCodes(bytes)...)

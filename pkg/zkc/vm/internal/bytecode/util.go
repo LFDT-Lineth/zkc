@@ -36,7 +36,7 @@ func RegistersToString(registers []RegisterId, mapping Environment, separator st
 
 // RegisterVectorToString formats a register vector as a string, abbreviating
 // vectors of more than two limbs.
-func RegisterVectorToString(reg RegVec, mapping Environment) string {
+func RegisterVectorToString(reg RegisterVector, mapping Environment) string {
 	var (
 		first = RegisterToString(reg.Base, mapping)
 	)

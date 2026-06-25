@@ -50,7 +50,7 @@ func LowerComparisons[W word.Word[W]](program Program[W]) Program[W] {
 // LowerDivisions rewrites INT_DIV and INT_REM bytecodes into a non-deterministic
 // hint followed by arithmetic validation:
 //
-//	DivHint{q, r, w, x, y}   // prover fills quotient, remainder and range witness
+//	Hint{DIV_HINT, q, r, w, x, y}   // prover fills quotient, remainder and range witness
 //	qy = q * y
 //	z0 = x - qy - r          // written into a 0-width register: asserts == 0
 //	z1 = y - r - w - 1       // written into a 0-width register: asserts == 0

@@ -13,7 +13,6 @@
 package encoding
 
 import (
-	"fmt"
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -45,10 +44,8 @@ func Arith[W word.Word[W]](p bytecode.Arith[W]) []uint32 {
 		return encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
 	case n == 2 && m == 1 && constIsUint8:
 		return encodeArith_2n1c(p.Op, p.Source[0], p.Source[1], p.Target[0], p.Constant)
-	case m > 0:
-		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant)
 	default:
-		panic(fmt.Sprintf("unsupported arithmetic instruction form (%d, %d, %t)", n, m, cz))
+		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant)
 	}
 }
 
@@ -325,7 +322,9 @@ func DecodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterId, sources []RegisterId,
 	constant W) []uint32 {
 	//
-	if len(targets) == 0 || len(targets) >= 256 || len(sources) >= 256 {
+	if len(targets) == 0 {
+		panic("targetless arithmetic instructions not supported")
+	} else if len(targets) >= 256 || len(sources) >= 256 {
 		panic("wide vector arithmetic instructions not supported")
 	} else if constant.Cmp64(^uint64(0)) > 0 {
 		panic("wide vector arithmetic constants not supported")
