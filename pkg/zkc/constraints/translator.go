@@ -397,27 +397,47 @@ func conditionTerm[F field.Element[F], T term.Expr[F, T]](cond dfa.BranchConditi
 }
 
 // atomTerm builds a 0/1 term for a single branch (in)equality over single-bit
-// operands.  Since left, right ∈ {0,1}, (left-right) ∈ {-1,0,1} and its square
-// is 1 iff left != right — so no normalisation (inverse) is required.
+// operands.
 func atomTerm[F field.Element[F], T term.Expr[F, T]](atom dfa.BranchEquality, regs []register.Register) T {
 	var (
-		left  = branchRegisterTerm[F, T](atom.Left, regs)
-		right T
+		left = branchRegisterTerm[F, T](atom.Left, regs)
+		one  = term.Const[F, T](field.One[F]())
 	)
+	// Comparison against a constant bit (0 or 1) is linear for a single-bit operand
+	// Specifically it is "1 - left" for "== 0" and "!= 1", and "left" for "!= 0" and "== 1".
+	if atom.Right.HasSecond() {
+		rhs := atom.Right.Second()
+		isZero := rhs.Sign() == 0
+		//
+		if isZero || rhs.Cmp(big.NewInt(1)) == 0 {
+			if atom.Sign == isZero {
+				return term.Subtract(one, left)
+			}
+			//
+			return left
+		}
+	}
+	// General single-bit case: since left, right ∈ {0,1}, (left-right) ∈ {-1,0,1}
+	// and its square is 1 iff left != right — so no normalisation (inverse) is
+	// required.
+	//TODO: (cf https://github.com/LFDT-Lineth/zkc/issues/1879) once we have skif_if with constant
+	// (and not a register holding a constant), we can suppress this:
+	// all the conditions coming from the branch table are of the form "b != 0" (or "b == 0"), so we can just
+	// use the single-bit register directly.
+	var right T
 	//
 	if atom.Right.HasSecond() {
-		bi := atom.Right.Second()
-		right = term.Const[F, T](field.BigInt[F](bi))
+		right = term.Const[F, T](field.BigInt[F](atom.Right.Second()))
 	} else {
 		right = branchRegisterTerm[F, T](atom.Right.First(), regs)
 	}
-	// (left - right)^2 is 1 iff left != right, 0 otherwise.
+	//
 	diff := term.Subtract(left, right)
 	neq := term.Product(diff, diff)
 	//
 	if atom.Sign {
 		// Equality: 1 iff left == right.
-		return term.Subtract(term.Const[F, T](field.One[F]()), neq)
+		return term.Subtract(one, neq)
 	}
 	//
 	return neq

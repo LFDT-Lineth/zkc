@@ -211,6 +211,7 @@ func factorSkipIf[W word.Word[W]](
 	)
 	//
 	return []WordInstruction{
+		//TODO: use skip_if vs cst, not register (cf https://github.com/LFDT-Lineth/zkc/issues/1879)
 		// zero = 0
 		instruction.UintConst(zr, zero),
 		// skip_if (cond) 2  => condition holds, jump to "b = 1"
