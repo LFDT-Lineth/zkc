@@ -429,7 +429,6 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, wm *vm.WordMachi
 	accepted := len(failures) == 0
 	// Process what happened versus what was supposed to happen.
 	if !accepted && test.expected {
-		//table.PrintTrace(tr)
 		t.Errorf("Trace rejected incorrectly (%s:%d): %s", test.filename, test.line, failures)
 	} else if accepted && !test.expected {
 		//printTrace(tr)
