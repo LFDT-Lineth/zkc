@@ -774,26 +774,40 @@ func Test_ZkcUnit_Rem_04(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Call_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/call_01", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/call_01", DEFAULT_UNIT_CONFIG.Constraints(true))
 }
 
 func Test_ZkcUnit_Call_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/call_02", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/call_02", DEFAULT_UNIT_CONFIG.Constraints(true))
 }
 
 // This test covers call register aliasing where the return is assigned to an argument register (x = f(x)).
 func Test_ZkcUnit_Call_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/call_03", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/call_03", DEFAULT_UNIT_CONFIG.Constraints(true))
 }
 
 // This test covers call register aliasing where the return is assigned to an argument register (x = f(x, y)).
 func Test_ZkcUnit_Call_04(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/call_04", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/call_04", DEFAULT_UNIT_CONFIG.Constraints(true))
 }
 
 // This test performs different module call depending on the branch taken
 func Test_ZkcUnit_Call_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_05", DEFAULT_UNIT_CONFIG.Constraints(true))
+}
+
+// b = f(a) + 1
+// the return value is then modified in the same vector
+func Test_ZkcUnit_Call_06(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/call_06", DEFAULT_UNIT_CONFIG.Constraints(true))
+}
+
+// x = f(x) + 1
+// mixed of register collisio:
+// arg and return value are the same register
+// return value is rewrote in the same vector
+func Test_ZkcUnit_Call_07(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/call_07", DEFAULT_UNIT_CONFIG.Constraints(true))
 }
 
 // ===================================================================
