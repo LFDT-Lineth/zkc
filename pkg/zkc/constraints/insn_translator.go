@@ -13,6 +13,7 @@
 package constraints
 
 import (
+	"fmt"
 	"math/big"
 
 	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
@@ -45,15 +46,25 @@ func (p *InstructionTranslator[F]) WriteAndShiftRegisters(targets ...register.Id
 	offset := big.NewInt(1)
 	// build up the lhs
 	for i, dst := range targets {
-		var ith = p.reader.Register(dst)
+		var (
+			ith       = p.reader.Register(dst)
+			ith_width = bitwidthOf(ith)
+		)
 		//
-		lhs[i] = mirc.Variable[register.Id, Expr[F]](dst, ith.Width(), 0)
+		lhs[i] = mirc.Variable[register.Id, Expr[F]](dst, ith_width, 0)
 		//
 		if i != 0 {
 			lhs[i] = mirc.BigNumber[register.Id, Expr[F]](offset).Multiply(lhs[i])
 		}
 		// left shift offset by given register width.
-		offset.Lsh(offset, ith.Width())
+		if !ith.IsNative() {
+			offset.Lsh(offset, ith_width)
+		} else if i != 0 || len(targets) != 1 {
+			// NOTE: this should be unreachable, but is included as a safety
+			// check.  Basically, when assigning a native register there should
+			// only ever be exactly one target.
+			panic(fmt.Sprintf("invalid native assignment (target %d/%d)", i, len(targets)))
+		}
 	}
 	//
 	return lhs

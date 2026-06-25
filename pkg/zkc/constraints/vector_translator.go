@@ -14,6 +14,7 @@ package constraints
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
 
@@ -206,13 +207,13 @@ func (p *VectorInsnTranslator[F]) ReadRegister(regId register.Id, forwarding boo
 	//
 	if reg.IsInput() {
 		// Inputs don't need to refer back
-		return mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
+		return mirc.Variable[register.Id, Expr[F]](regId, bitwidthOf(reg), 0)
 	} else if forwarding {
 		// Forwarded
-		return mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
+		return mirc.Variable[register.Id, Expr[F]](regId, bitwidthOf(reg), 0)
 	}
 	// Not forwarded
-	return mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), -1)
+	return mirc.Variable[register.Id, Expr[F]](regId, bitwidthOf(reg), -1)
 }
 
 // Register implementation for RegisterReader interface
@@ -251,4 +252,12 @@ func determineWriteConditions(reg register.Id, branchTable dfa.Result[dfa.Branch
 	}
 	//
 	return condition
+}
+
+func bitwidthOf(reg register.Register) uint {
+	if reg.IsNative() {
+		return math.MaxUint
+	}
+	//
+	return reg.Width()
 }

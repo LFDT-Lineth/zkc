@@ -13,6 +13,8 @@
 package trace
 
 import (
+	"math"
+
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -122,7 +124,12 @@ func (p *FullObserver[W, I, M]) traceModule(m machine.Module, states []State[W],
 	}
 	// Initialise register columns
 	for i, r := range m.Registers() {
-		cols[i] = builder.NewArray(nrows, r.Width())
+		//
+		if r.IsNative() {
+			cols[i] = builder.NewArray(nrows, math.MaxUint)
+		} else {
+			cols[i] = builder.NewArray(nrows, r.Width())
+		}
 	}
 	// Initialise control columns (if applicable)
 	// transcribe values
