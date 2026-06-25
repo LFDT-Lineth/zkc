@@ -350,7 +350,7 @@ func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m *vm.WordMachine[v
 }
 
 func bootAndCheckpoint[W vm.Word[W]](t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, w vm.WordConfig,
-	cfg Config) (vm.BytecodeProgram[W], []vm.CheckPoint[W], map[string][]W, W) {
+	cfg Config) (vm.Program[W], []vm.CheckPoint[W], map[string][]W, W) {
 	//
 	var (
 		checkpoints     []vm.CheckPoint[W]

@@ -24,7 +24,6 @@ import (
 type Memory[W word.Word[W]] struct {
 	moduleBase[W]
 	kind     memory.Kind
-	geometry memory.Geometry[W]
 	contents []W
 }
 
@@ -33,19 +32,19 @@ type Memory[W word.Word[W]] struct {
 // WOM), geometry (size and layout), and initial contents (for static memories
 // only).  NOTE: this will panic is a non-static memory is created with some
 // contents.
-func NewMemory[W word.Word[W]](name string, registers []Register[W], kind memory.Kind, geometry memory.Geometry[W],
+func NewMemory[W word.Word[W]](name string, registers []Register[W], kind memory.Kind,
 	contents []W) *Memory[W] {
 	// Sanity check
 	if !kind.IsStatic() && len(contents) > 0 {
 		panic("unsupported contents for non-static memory")
 	}
 	//
-	return &Memory[W]{newModuleBase(name, registers), kind, geometry, contents}
+	return &Memory[W]{newModuleBase(name, registers), kind, contents}
 }
 
-// Geometry defines the geometry of this memory.
+// Geometry constructs a suitable geometry for this memory
 func (p *Memory[W]) Geometry() memory.Geometry[W] {
-	return p.geometry
+	return memory.NewGeometry[W](ToRegisters(p.registers...))
 }
 
 // Kind returns the underlying kind of memory (e.g. ROM, WOM, RAM, etc)

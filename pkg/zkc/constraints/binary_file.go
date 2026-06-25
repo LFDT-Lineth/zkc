@@ -66,7 +66,7 @@ type BinaryFile[F field.Element[F]] struct {
 	// near future.
 	machine vm.WordMachine[vm.Uint]
 	// cached fast machine
-	machineCache util.Option[*vm.BytecodeInterpreter[vm.Uint128]]
+	machineCache util.Option[*vm.Interpreter[vm.Uint128]]
 	// cached air constraints
 	constraintsCache util.Option[air.Schema[F]]
 }
@@ -83,7 +83,7 @@ func NewBinaryFile[F field.Element[F]](metadata []byte, attributes []Attribute, 
 		attributes,
 		config,
 		machine,
-		util.None[*vm.BytecodeInterpreter[vm.Uint128]](),
+		util.None[*vm.Interpreter[vm.Uint128]](),
 		util.None[air.Schema[F]](),
 	}
 }

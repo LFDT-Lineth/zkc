@@ -34,20 +34,28 @@ type Polynomial = finsn.Polynomial
 // SystemMap is a useful alias
 type SystemMap = instruction.SystemMap
 
+// rebuildMachine constructs a new word machine which retains the prime modulus
+// of an existing machine but carries a (transformed) set of modules.  It is
+// used by the module-level transforms below to thread a word machine through a
+// pass which internally operates over the machine's modules.
+func rebuildMachine[W Word[W]](wm *WordMachine[W], modules []Module) *WordMachine[W] {
+	return machine.NewWordFromModulus(wm.Executor().Modulus(), modules...)
+}
+
 // LowerBitwise rewrites VM-level bitwise micro-instructions into CALLs to
 // helper functions. The helper modules are appended to the returned module
 // slice.
 // We assume this lowering happens BEFORE vectorization and register splitting
-func LowerBitwise[W Word[W]](modules []Module) []Module {
-	return transform.LowerBitwise[W](modules)
+func LowerBitwise[W Word[W]](wm *WordMachine[W]) *WordMachine[W] {
+	return rebuildMachine(wm, transform.LowerBitwise[W](wm.Modules()))
 }
 
 // LowerComparisons rewrites SkipIf instructions with LT/GT/LTEQ/GTEQ conditions
 // into arithmetic-only sequences using biased subtraction and sign-bit extraction.
 // EQ and NEQ conditions are left unchanged.
 // This pass must run after LowerBitwise.
-func LowerComparisons[W word.Word[W]](modules []Module) []Module {
-	return transform.LowerComparisons[W](modules)
+func LowerComparisons[W word.Word[W]](wm *WordMachine[W]) *WordMachine[W] {
+	return rebuildMachine(wm, transform.LowerComparisons[W](wm.Modules()))
 }
 
 // LowerDivisions rewrites INT_DIV and INT_REM instructions into a
@@ -64,23 +72,23 @@ func LowerComparisons[W word.Word[W]](modules []Module) []Module {
 //	Fail
 //
 // This pass must run before LowerComparisons.
-func LowerDivisions[W word.Word[W]](modules []Module) []Module {
-	return transform.LowerDivisions[W](modules)
+func LowerDivisions[W word.Word[W]](wm *WordMachine[W]) *WordMachine[W] {
+	return rebuildMachine(wm, transform.LowerDivisions[W](wm.Modules()))
 }
 
 // OptimizeDivisions is a fast-mode optimization which rewrites division by
 // powers of 2 into right shifts, and remainder by powers of 2 into bitwise
 // ANDs.
-func OptimizeDivisions[W word.Word[W]](modules []Module) []Module {
-	return transform.OptimizeDivisions[W](modules)
+func OptimizeDivisions[W word.Word[W]](wm *WordMachine[W]) *WordMachine[W] {
+	return rebuildMachine(wm, transform.OptimizeDivisions[W](wm.Modules()))
 }
 
 // FactorSkipConditions rewrites equality SkipIf instructions (EQ/NEQ) so that
 // the branch condition is materialised once into a fresh 1-bit register, rather
 // than being replicated across each guarded write of the branch.
 // This pass must run after vectorisation and before register splitting.
-func FactorSkipConditions[W word.Word[W]](modules []Module) []Module {
-	return transform.FactorSkipConditions[W](modules)
+func FactorSkipConditions[W word.Word[W]](wm *WordMachine[W]) *WordMachine[W] {
+	return rebuildMachine(wm, transform.FactorSkipConditions[W](wm.Modules()))
 }
 
 // InlineFunctions returns an equivalent set of modules in which every call to
@@ -98,8 +106,8 @@ func FactorSkipConditions[W word.Word[W]](modules []Module) []Module {
 // vector enclosing a call at the call site.  It panics on: an unknown or
 // duplicate name; a native function; the entry function "main"; or (mutual)
 // recursion amongst the named functions.
-func InlineFunctions[W word.Word[W]](modules []Module, names []string) []Module {
-	return transform.InlineFunctions[W](modules, names)
+func InlineFunctions[W word.Word[W]](wm *WordMachine[W], names []string) *WordMachine[W] {
+	return rebuildMachine(wm, transform.InlineFunctions[W](wm.Modules(), names))
 }
 
 // SplitRegisters all modules to meet a given bandwidth and maximum register width.
@@ -155,14 +163,31 @@ func WordToFieldMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm
 
 // WordToBytecodeInterpreter compiles a word machine into a bytecode sequence
 // and, from this, constructs an interpreter.
-func WordToBytecodeInterpreter[W word.Word[W]](wm *machine.Word[W]) *BytecodeInterpreter[W] {
+func WordToBytecodeInterpreter[W word.Word[W]](wm *machine.Word[W]) *Interpreter[W] {
 	return transform.WordToBytecodeMachine(wm)
 }
 
 // WordToBytecodeProgram compiles a word machine into a bytecode sequence which
 // can be executed by an interpreter.
-func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) BytecodeProgram[W] {
+func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) Program[W] {
 	return transform.WordToBytecodeProgram(wm)
+}
+
+// BytecodeProgramToWord decompiles a bytecode program back into an equivalent
+// word machine.  It is the inverse of WordToBytecodeProgram.  Since the bytecode
+// descriptor does not carry the surrounding field, the prime modulus (needed
+// when executing native field instructions) must be supplied separately.
+func BytecodeProgramToWord[W word.Word[W]](p Program[W], modulus W) *machine.Word[W] {
+	return transform.BytecodeProgramToWord(p, modulus)
+}
+
+// InsertCheckCasts inserts the width-check (CHECKCAST) bytecodes required by a
+// bytecode program, returning the updated program.  Codegen emits operations
+// without casts; this pass adds the cast checks each operation needs (resolving
+// call / memory references against the program's module signatures) and rewrites
+// branch offsets accordingly.  It must run on a complete program.
+func InsertCheckCasts[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.InsertCheckCasts(program)
 }
 
 func newLimbsMap(config field.Config, modules ...Module) module.LimbsMap {

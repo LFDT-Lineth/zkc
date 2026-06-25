@@ -13,7 +13,8 @@
 package bytecode
 
 import (
-	"slices"
+	"fmt"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -26,7 +27,7 @@ import (
 // so no cast check is ever required.
 type FieldArith[W word.Word[W]] struct {
 	// Op selects the operation (ADDMOD_P, SUBMOD_P or MULMOD_P).
-	Op uint32
+	Op Operation
 	// Target receives the result.
 	Target RegisterId
 	// Sources are the operand registers, with Sources[0] the leftmost operand.
@@ -34,11 +35,6 @@ type FieldArith[W word.Word[W]] struct {
 	// Constant is folded into the operation (the identity element when unused:
 	// zero for ADDMOD_P / SUBMOD_P, one for MULMOD_P).
 	Constant W
-}
-
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *FieldArith[W]) Clone() Patched {
-	return &FieldArith[W]{p.Op, p.Target, slices.Clone(p.Sources), p.Constant}
 }
 
 // Uses implementation for Bytecode interface.
@@ -57,26 +53,25 @@ func (p *FieldArith[W]) Validate(_ uint, _ FieldConfig, _ Environment) []error {
 }
 
 func (p *FieldArith[W]) String(env Environment) string {
-	// var (
-	// 	builder strings.Builder
-	// 	symbol  = fieldArithSymbol(p.Op)
-	// 	cz      = fieldArithUnusedConstant(p.Op, p.Constant)
-	// )
-	// //
-	// builder.WriteString(fieldArithPrefix(p.Op))
-	// builder.WriteString(" ")
-	// builder.WriteString(RegisterToString(p.Target, mapping))
-	// builder.WriteString(" = ")
-	// builder.WriteString(RegistersToString(p.Sources, mapping, symbol))
-	// // Append the constant operand unless it is the (elided) identity element.
-	// if !cz {
-	// 	if len(p.Sources) > 0 {
-	// 		builder.WriteString(symbol)
-	// 	}
-	// 	//
-	// 	fmt.Fprintf(&builder, "0x%s", p.Constant.Text(16))
-	// }
-	// //
-	// return builder.String()
-	panic("todo")
+	var (
+		builder        strings.Builder
+		symbol, prefix = p.Op.Symbol(), p.Op.Prefix()
+		cz             = IsUnusedConstant(p.Op, p.Constant)
+	)
+	//
+	builder.WriteString(prefix)
+	builder.WriteString(" ")
+	builder.WriteString(RegisterToString(p.Target, env))
+	builder.WriteString(" = ")
+	builder.WriteString(RegistersToString(p.Sources, env, symbol))
+	// Append the constant operand unless it is the (elided) identity element.
+	if !cz {
+		if len(p.Sources) > 0 {
+			builder.WriteString(symbol)
+		}
+		//
+		fmt.Fprintf(&builder, "0x%s", p.Constant.Text(16))
+	}
+	//
+	return builder.String()
 }

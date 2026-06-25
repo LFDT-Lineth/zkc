@@ -14,75 +14,25 @@ package bytecode
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// ArithOp identifies an arithmetic operation (add, subtract or multiply).
-type ArithOp struct{ tag uint8 }
-
-// String returns the infix operator symbol for this operation.
-func (p ArithOp) String() string {
-	switch p {
-	case ARITHOP_ADD:
-		return " + "
-	case ARITHOP_SUB:
-		return " - "
-	case ARITHOP_MUL:
-		return " * "
-	default:
-		panic("unknown arithmetic operation")
-	}
-}
-
-// Tag returns the underlying tag for this operation.
-func (p ArithOp) Tag() uint8 {
-	return p.tag
-}
-
-// Prefix returns the mnemonic prefix for this operation.
-func (p ArithOp) Prefix() string {
-	switch p {
-	case ARITHOP_ADD:
-		return "add"
-	case ARITHOP_SUB:
-		return "sub"
-	case ARITHOP_MUL:
-		return "mul"
-	default:
-		panic("unknown arithmetic operation")
-	}
-}
-
-// ARITHOP_ADD, ARITHOP_SUB and ARITHOP_MUL identify the arithmetic operation
-// performed by an Arith instruction.
-var (
-	ARITHOP_ADD = ArithOp{0}
-	ARITHOP_SUB = ArithOp{1}
-	ARITHOP_MUL = ArithOp{2}
-)
-
 // NewArith constructs a new arithmetic instruction computing
 // "targets = sources[0] op sources[1] op ... op constant".
-func NewArith[W word.Word[W]](op ArithOp, targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+func NewArith[W word.Word[W]](op Operation, targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
 	return &Arith[W]{op, constant, sources, targets}
 }
 
 // Arith (arithmetic) instruction encodes a wide range of related arithmetic
 // operations (e.g. +,-,*) including various bitwise operations.
 type Arith[W word.Word[W]] struct {
-	Op       ArithOp
+	Op       Operation
 	Constant W
 	Source   []RegisterId
 	Target   []RegisterId
-}
-
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Arith[W]) Clone() Patched {
-	return &Arith[W]{p.Op, p.Constant, slices.Clone(p.Source), slices.Clone(p.Target)}
 }
 
 // Uses implementation for Bytecode interface.
@@ -121,12 +71,12 @@ func (p *Arith[W]) String(env Environment) string {
 	builder.WriteString(" ")
 	builder.WriteString(RegistersToString(array.Reverse(p.Target), env, "::"))
 	builder.WriteString(" = ")
-	builder.WriteString(RegistersToString(p.Source, env, p.Op.String()))
+	builder.WriteString(RegistersToString(p.Source, env, p.Op.Symbol()))
 	//
 	if len(p.Source) == 0 {
 		builder.WriteString(cstr)
 	} else if !cz {
-		builder.WriteString(p.Op.String())
+		builder.WriteString(p.Op.Symbol())
 		builder.WriteString(cstr)
 	}
 	//

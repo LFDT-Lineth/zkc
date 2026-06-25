@@ -18,26 +18,38 @@ import (
 	"strings"
 )
 
+// CallFlags captures boolean properties of a call which do not affect how it
+// executes, but which are significant for constraint lowering.
+type CallFlags struct {
+	// CheckPoint indicates whether this is a checkpointing call (or not).
+	CheckPoint bool
+	// Unconditional indicates whether the corresponding lookup holds
+	// unconditionally (i.e. is not gated by a selector), as used (for example)
+	// for range checks.  This mirrors instruction.UnconditionalCall.
+	Unconditional bool
+}
+
 // Call invokes another function module.
 type Call struct {
 	// address of target function
 	Target ModuleId
-	// CheckPoint indicates whether this is a checkpointing call (or not).
-	CheckPoint bool
+	// Flags captures boolean properties of this call (e.g. whether it is a
+	// checkpointing or unconditional call).
+	Flags CallFlags
 	// Arguments are caller-frame registers copied into callee inputs.
 	Arguments []RegisterId
 	// Returns are caller-frame registers receiving callee outputs.
 	Returns []RegisterId
 }
 
-// SetCheckPoint turns this call into a checkpointing call.
+// SetCheckPoint turns this call into a checkpointing call, preserving its other
+// flags.
 func (p *Call) SetCheckPoint() *Call {
-	return &Call{p.Target, true, slices.Clone(p.Arguments), slices.Clone(p.Returns)}
-}
+	var flags = p.Flags
 
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Call) Clone() Patched {
-	return &Call{p.Target, p.CheckPoint, slices.Clone(p.Arguments), slices.Clone(p.Returns)}
+	flags.CheckPoint = true
+	//
+	return &Call{p.Target, flags, slices.Clone(p.Arguments), slices.Clone(p.Returns)}
 }
 
 // Uses implementation for Bytecode interface.  A call reads the argument

@@ -22,17 +22,6 @@ func FieldArith[W word.Word[W]](p *bytecode.FieldArith[W]) []uint32 {
 	return encodeFieldArith(p.Op, p.Target, p.Sources, p.Constant)
 }
 
-// DecodeFieldArith decodes a field arithmetic instruction at the given program counter.
-func DecodeFieldArith[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	var (
-		op                       = codes[pc] & OPCODE_MASK
-		rd, sources, constant, n = DecodeFieldArithOperands[W](pc, codes)
-		srcs                     = OpIterToArray[uint16](sources)
-	)
-	//
-	return &bytecode.FieldArith[W]{Op: op, Target: rd, Sources: srcs, Constant: constant}, n
-}
-
 // DecodeFieldArithOperands extracts the raw operands (target register, source
 // register iterator, constant and instruction width) of a field-arithmetic
 // instruction.  It is shared by the disassembler (DecodeFieldArith) and the
@@ -89,12 +78,13 @@ func DecodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32) (
 // encodeFieldArith encodes a field-arithmetic instruction, carrying the
 // (possibly field-sized) constant inline as a sequence of 32-bit limbs followed
 // by the packed source registers.
-func encodeFieldArith[W word.Word[W]](op uint32, rd RegisterId, sources []RegisterId, constant W) []uint32 {
+func encodeFieldArith[W word.Word[W]](op bytecode.Operation, rd RegisterId, sources []RegisterId, constant W) []uint32 {
 	if rd >= 256 || len(sources) >= 256 {
 		panic("wide field instructions not supported")
 	}
 	//
 	var (
+		opcode = ADDMOD_P + uint32(op-bytecode.OP_ADDMOD_P)
 		// NOTE: big-endian byte ordering
 		bytes  = constant.BigInt().Bytes()
 		nlimbs = (len(bytes) + 3) / 4
@@ -105,7 +95,7 @@ func encodeFieldArith[W word.Word[W]](op uint32, rd RegisterId, sources []Regist
 	}
 	//
 	var (
-		header = uint32(len(sources))<<24 | uint32(nlimbs)<<16 | uint32(rd)<<8 | op
+		header = uint32(len(sources))<<24 | uint32(nlimbs)<<16 | uint32(rd)<<8 | opcode
 		codes  = make([]uint32, nlimbs+1)
 	)
 	//

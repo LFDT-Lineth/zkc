@@ -43,16 +43,94 @@ type Module = base.Module
 // instance Validate signatures free of an otherwise package-wide import.
 type FieldConfig = field.Config
 
+// Operation identifies a bitwise operation (AND, OR, XOR, NOT, SHL or SHR).
+type Operation uint8
+
+// Symbol returns a suitable string representation of this operator.
+func (p Operation) Symbol() string {
+	switch p {
+	case OP_ADD:
+		return "+"
+	case OP_SUB:
+		return "-"
+	case OP_MUL:
+		return "*"
+	case OP_AND:
+		return "&"
+	case OP_OR:
+		return "|"
+	case OP_XOR:
+		return "^"
+	case OP_ADDMOD_P:
+		return "⊕"
+	case OP_SUBMOD_P:
+		return "⊖"
+	case OP_MULMOD_P:
+		return "⊗"
+	default:
+		panic("unknown operation")
+	}
+}
+
+// Prefix returns a suitable "prefix" string for this operator.
+func (p Operation) Prefix() string {
+	switch p {
+	case OP_ADD:
+		return "add"
+	case OP_SUB:
+		return "sub"
+	case OP_MUL:
+		return "mul"
+	case OP_AND:
+		return "and"
+	case OP_OR:
+		return "or"
+	case OP_XOR:
+		return "xor"
+	case OP_ADDMOD_P:
+		return "fadd"
+	case OP_SUBMOD_P:
+		return "fsub"
+	case OP_MULMOD_P:
+		return "fmul"
+	default:
+		panic("unknown operation")
+	}
+}
+
+const (
+	// OP_ADD integer addition
+	OP_ADD Operation = iota
+	// OP_SUB integer subtraction
+	OP_SUB
+	// OP_MUL integer multiplication
+	OP_MUL
+	// OP_AND bitwise conjunction.
+	OP_AND
+	// OP_OR bitwise disjunction.
+	OP_OR
+	// OP_XOR bitwise exclusive-or.
+	OP_XOR
+	// OP_NOT bitwise negation.
+	OP_NOT
+	// OP_SHL logical shift left.
+	OP_SHL
+	// OP_SHR logical shift right.
+	OP_SHR
+	// OP_ADDMOD_P represents addition modulus the prime P
+	OP_ADDMOD_P
+	// OP_SUBMOD_P represents subtraction modulus the prime P
+	OP_SUBMOD_P
+	// OP_MULMOD_P represents multiplication modulus the prime P
+	OP_MULMOD_P
+)
+
 // ============================================================================
 // Interfaces
 // ============================================================================
 
 // Bytecode encapsulates a single bytecode instruction.
 type Bytecode[W word.Word[W]] interface {
-	// Clone returns a deep copy of this bytecode, sharing no mutable state (in
-	// particular, no operand slices) with the original.  See
-	// Program.AddCheckPoint.
-	Clone() Patched
 	// Uses returns the set of registers used (i.e. read) by this bytecode.
 	Uses() []RegisterId
 	// Definitions returns the set of registers defined (i.e. written) by this
@@ -104,26 +182,6 @@ type ModuleInfo interface {
 	Name() string
 }
 
-// Patchable bytecodes contain a branch target which must be resolved during
-// encoding.  Until resolved, their encoded width is unknown (it can depend on
-// the target), hence MaxWidth provides a conservative bound.
-type Patchable[W word.Word[W]] interface {
-	Bytecode[W]
-	// Patch returns a copy of this bytecode with its target resolved against
-	// the given label addresses.  The receiver is left untouched.
-	Patch(labels []Address) Patched
-	// MaxWidth returns the largest number of code words this bytecode can
-	// occupy, regardless of where its target resolves.
-	MaxWidth() uint32
-}
-
-// Patched is a bytecode whose branch target has been resolved (i.e. the result
-// of Patchable.Patch).  Its method set matches Bytecode, which is independent
-// of the word type; hence patched bytecodes convert directly into Bytecode[W].
-type Patched interface {
-	String(Environment) string
-}
-
 // ============================================================================
 // Constructors
 // ============================================================================
@@ -139,28 +197,28 @@ type Patched interface {
 
 // AddConst constructs an addition instruction computing
 // "target = sum(sources) + constant" into a single target register.
-func AddConst[W word.Word[W]](target register.Id, sources []register.Id, constant W) *Arith[W] {
-	return NewArith(ARITHOP_ADD, asRegs(target), asRegs(sources...), constant)
+func AddConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	return NewArith(OP_ADD, []RegisterId{target}, sources, constant)
 }
 
 // AddVec constructs a vectored addition instruction computing
 // "targets = sum(sources)" (i.e. with no constant addend), where targets is a
 // multi-limb register vector.
-func AddVec[W word.Word[W]](targets []register.Id, sources []register.Id) *Arith[W] {
+func AddVec[W word.Word[W]](targets []RegisterId, sources []RegisterId) *Arith[W] {
 	var zero W
-	return NewArith(ARITHOP_ADD, asRegs(targets...), asRegs(sources...), zero)
+	return NewArith(OP_ADD, targets, sources, zero)
 }
 
 // AddVecConst constructs a vectored addition instruction computing
 // "targets = sum(sources) + constant", where targets is a multi-limb register
 // vector.
-func AddVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, constant W) *Arith[W] {
-	return NewArith(ARITHOP_ADD, asRegs(targets...), asRegs(sources...), constant)
+func AddVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	return NewArith(OP_ADD, targets, sources, constant)
 }
 
-// CallFun constructs a function-call bytecode.
-func CallFun(target ModuleId, checkpoint bool, args []register.Id, returns []register.Id) *Call {
-	return &Call{target, checkpoint, asRegs(args...), asRegs(returns...)}
+// CallFun constructs a function-call bytecode with the given flags.
+func CallFun(target ModuleId, flags CallFlags, args []RegisterId, returns []RegisterId) *Call {
+	return &Call{target, flags, args, returns}
 }
 
 // Jump creates an unconditional jump instruction transferring control to the
@@ -177,8 +235,8 @@ func NewSkip(skip uint16) *Skip {
 
 // NewSkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
-func NewSkipIf(op Cond, skip uint16, left, right register.Id) *SkipIf {
-	return &SkipIf{Skip: skip, Left: NewRegVec(asReg(left)), Right: NewRegVec(asReg(right)), Op: op}
+func NewSkipIf(op Cond, skip uint16, left, right RegisterId) *SkipIf {
+	return &SkipIf{Skip: skip, Left: NewRegVec(left), Right: NewRegVec(right), Op: op}
 }
 
 // NewSkipIfVec constructs a conditional branch instruction which jumps to the
@@ -191,110 +249,79 @@ func NewSkipIfVec(op Cond, skip uint16, left, right register.Vector) *SkipIf {
 
 // LoadConst constructs a load-constant (LDC) instruction which assigns the
 // given constant to the target register.
-func LoadConst[W word.Word[W]](target register.Id, constant W) *Arith[W] {
-	return NewArith(ARITHOP_ADD, asRegs(target), nil, constant)
+func LoadConst[W word.Word[W]](target RegisterId, constant W) *Arith[W] {
+	return NewArith(OP_ADD, []RegisterId{target}, nil, constant)
 }
 
 // Move constructs a move instruction which copies the source register into the
 // target register.
-func Move[W word.Word[W]](target register.Id, source register.Id) *Arith[W] {
+func Move[W word.Word[W]](target RegisterId, source RegisterId) *Arith[W] {
 	var zero W
-	return NewArith(ARITHOP_ADD, asRegs(target), asRegs(source), zero)
+	return NewArith(OP_ADD, []RegisterId{target}, []RegisterId{source}, zero)
 }
 
 // MultiwaySkip constructs a multiway-skip (SMW) instruction which dispatches on
 // the value of the source register against the given (value, target) table.
 // Targets are label indices until resolved during encoding (see Smw.Patch).
-func MultiwaySkip[W word.Word[W]](source register.Id, cases []SwitchCase[W]) *Switch[W] {
-	return &Switch[W]{Source: asReg(source), Cases: cases}
+func MultiwaySkip[W word.Word[W]](source RegisterId, cases []SwitchCase[W]) *Switch[W] {
+	return &Switch[W]{Source: source, Cases: cases}
 }
 
 // MulConst constructs a multiplication instruction computing
 // "target = product(sources) * constant" into a single target register.
-func MulConst[W word.Word[W]](target register.Id, sources []register.Id, constant W) *Arith[W] {
-	return NewArith(ARITHOP_MUL, asRegs(target), asRegs(sources...), constant)
+func MulConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	return NewArith(OP_MUL, []RegisterId{target}, sources, constant)
 }
 
 // MulVecConst constructs a vectored multiplication instruction computing
 // "targets = product(sources) * constant", where targets is a multi-limb
 // register vector.
-func MulVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, constant W) *Arith[W] {
-	return NewArith(ARITHOP_MUL, asRegs(targets...), asRegs(sources...), constant)
+func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	return NewArith(OP_MUL, targets, sources, constant)
 }
 
-// ReadRom constructs a read instruction for a (non-static) read-only memory.
-// The data registers receive the row located at the address given by the
-// address registers, in the memory identified by id.
-func ReadRom(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{Mode: ROM_READ, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
-}
-
-// ReadStaticRom constructs a read instruction for a static read-only memory.
-// The data registers receive the row located at the address given by the
-// address registers, in the memory identified by id.
-func ReadStaticRom(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{Mode: SROM_READ, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
-}
-
-// ReadRam constructs a read instruction for a (small) random-access memory.
-// The data registers receive the row located at the address given by the
-// address registers, in the memory identified by id.
-func ReadRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{Mode: SRAM_READ, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
-}
-
-// ReadPagedRam constructs a read instruction for a paged random-access memory.
-// The data registers receive the row located at the address given by the
-// address registers, in the memory identified by id.
-func ReadPagedRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{Mode: PRAM_READ, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
+// NewMemRead constructs a memory-read instruction.  The data registers receive
+// the row located at the address given by the address registers, in the memory
+// identified by id.  The kind of memory being read (ROM, static ROM, RAM, paged
+// RAM) is not recorded here: it is resolved from the environment when the
+// instruction is encoded.
+func NewMemRead(id uint16, address []RegisterId, data []RegisterId) *ReadWrite {
+	return &ReadWrite{Write: false, Id: id, Address: address, Data: data}
 }
 
 // SubConst constructs a subtraction instruction computing
 // "target = sources[0] - ... - constant" into a single target register.
-func SubConst[W word.Word[W]](target register.Id, sources []register.Id, constant W) *Arith[W] {
-	return NewArith(ARITHOP_SUB, asRegs(target), asRegs(sources...), constant)
+func SubConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	return NewArith(OP_SUB, []RegisterId{target}, sources, constant)
 }
 
 // SubVecConst constructs a vectored subtraction instruction computing
 // "targets = sources[0] - ... - constant", where targets is a multi-limb
 // register vector.
-func SubVecConst[W word.Word[W]](targets []register.Id, sources []register.Id, constant W) *Arith[W] {
-	return NewArith(ARITHOP_SUB, asRegs(targets...), asRegs(sources...), constant)
+func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	return NewArith(OP_SUB, targets, sources, constant)
 }
 
-// WriteWom constructs a write instruction for a write-once memory.  The data
-// registers are written to the row located at the address given by the address
-// registers, in the memory identified by id.
-func WriteWom(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{Mode: WOM_WRITE, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
-}
-
-// WriteRam constructs a write instruction for a (small) random-access memory.
-// The data registers are written to the row located at the address given by the
-// address registers, in the memory identified by id.
-func WriteRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{Mode: SRAM_WRITE, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
-}
-
-// WritePagedRam constructs a write instruction for a paged random-access
-// memory.  The data registers are written to the row located at the address
-// given by the address registers, in the memory identified by id.
-func WritePagedRam(id uint16, address []register.Id, data []register.Id) *ReadWrite {
-	return &ReadWrite{Mode: PRAM_WRITE, Id: id, Address: asRegs(address...), Data: asRegs(data...)}
+// NewMemWrite constructs a memory-write instruction.  The data registers are
+// written to the row located at the address given by the address registers, in
+// the memory identified by id.  The kind of memory being written (write-once,
+// RAM, paged RAM) is not recorded here: it is resolved from the environment when
+// the instruction is encoded.
+func NewMemWrite(id uint16, address []RegisterId, data []RegisterId) *ReadWrite {
+	return &ReadWrite{Write: true, Id: id, Address: address, Data: data}
 }
 
 // NewBitwise constructs a bitwise instruction (and/or/xor) computing
 // "target = left op right".
-func NewBitwise(op BitwiseOp, target, left, right register.Id, bitwidth uint16) *Bitwise {
-	return &Bitwise{Op: op, Target: asReg(target), Left: asReg(left), Right: asReg(right), Bitwidth: bitwidth}
+func NewBitwise(op Operation, target, left, right RegisterId, bitwidth uint16) *Bitwise {
+	return &Bitwise{Op: op, Target: target, Left: left, Right: right, Bitwidth: bitwidth}
 }
 
 // NewCheckCast constructs a check-cast instruction asserting that the given
 // target register fits within the given bit width.
-func NewCheckCast(target register.Id, bitwidth uint16) *CheckCast {
+func NewCheckCast(target RegisterId, bitwidth uint16) *CheckCast {
 	//
-	return &CheckCast{Bitwidth: bitwidth, Target: asReg(target)}
+	return &CheckCast{Bitwidth: bitwidth, Target: target}
 }
 
 // NewDebug constructs a debug instruction carrying the given formatted message.
@@ -318,15 +345,15 @@ func NewDebug(chunks []base.FormattedChunk) *Debug {
 }
 
 // NewDivHint constructs a division-hint instruction.
-func NewDivHint(quotient, remainder, witness, dividend, divisor register.Id) *DivHint {
-	return &DivHint{Quotient: asReg(quotient), Remainder: asReg(remainder), Witness: asReg(witness),
-		Dividend: asReg(dividend), Divisor: asReg(divisor)}
+func NewDivHint(quotient, remainder, witness, dividend, divisor RegisterId) *DivHint {
+	return &DivHint{Quotient: quotient, Remainder: remainder, Witness: witness,
+		Dividend: dividend, Divisor: divisor}
 }
 
 // NewDivRem constructs a division/remainder instruction computing
 // "target = dividend op divisor".
-func NewDivRem(op uint32, target, dividend, divisor register.Id) *DivRem {
-	return &DivRem{Opcode: op, Target: asReg(target), Dividend: asReg(dividend), Divisor: asReg(divisor)}
+func NewDivRem(op uint32, target, dividend, divisor RegisterId) *DivRem {
+	return &DivRem{Opcode: op, Target: target, Dividend: dividend, Divisor: divisor}
 }
 
 // NewFail constructs a fail instruction carrying the given formatted message.
@@ -351,8 +378,8 @@ func NewFail(chunks []base.FormattedChunk) *Fail {
 
 // NewFieldArith constructs a field arithmetic instruction computing
 // "target = sources[0] op ... op constant" modulo the field prime.
-func NewFieldArith[W word.Word[W]](op uint32, target register.Id, sources []register.Id, constant W) *FieldArith[W] {
-	return &FieldArith[W]{Op: op, Target: asReg(target), Sources: asRegs(sources...), Constant: constant}
+func NewFieldArith[W word.Word[W]](op Operation, target RegisterId, sources []RegisterId, constant W) *FieldArith[W] {
+	return &FieldArith[W]{Op: op, Target: target, Sources: sources, Constant: constant}
 }
 
 // NewRet constructs a return instruction with the given frame width and return
@@ -363,8 +390,8 @@ func NewRet() *Ret {
 
 // Concat constructs a concatenation instruction which joins the source
 // registers into the target register vector.
-func Concat(targets []register.Id, sources []register.Id) *Cat {
-	return &Cat{Targets: asRegs(targets...), Sources: asRegs(sources...)}
+func Concat(targets []RegisterId, sources []RegisterId) *Cat {
+	return &Cat{Targets: targets, Sources: sources}
 }
 
 func asReg(rid register.Id) RegisterId {
@@ -380,13 +407,13 @@ func asRegs(rids ...register.Id) []RegisterId {
 // IsUnusedConstant checks whether a given constant is the "identity element".
 // This depends on the arithmetic operation in question.  For example, for
 // addition and subtraction, this is zero.  But, for multiplication it is one.
-func IsUnusedConstant[W word.Word[W]](op ArithOp, constant W) bool {
+func IsUnusedConstant[W word.Word[W]](op Operation, constant W) bool {
 	switch op {
-	case ARITHOP_ADD:
+	case OP_ADD, OP_ADDMOD_P:
 		return constant.Cmp64(0) == 0
-	case ARITHOP_SUB:
+	case OP_SUB, OP_SUBMOD_P:
 		return constant.Cmp64(0) == 0
-	case ARITHOP_MUL:
+	case OP_MUL, OP_MULMOD_P:
 		return constant.Cmp64(1) == 0
 	default:
 		panic("unknown arithmetic operation")

@@ -16,12 +16,6 @@ package bytecode
 type Ret struct {
 }
 
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Ret) Clone() Patched {
-	var c = *p
-	return &c
-}
-
 // Uses implementation for Bytecode interface.  The copying of return values is
 // handled by the frame machinery rather than by named register operands, so a
 // return reads no registers here.

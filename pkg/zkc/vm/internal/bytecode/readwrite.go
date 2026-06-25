@@ -17,64 +17,13 @@ import (
 	"slices"
 )
 
-// ROM_READ representing reading from a read-only memory.
-var ROM_READ = RwMode{0}
-
-// SROM_READ representing reading from a (static) read-only memory.
-var SROM_READ = RwMode{1}
-
-// WOM_WRITE representing writing to a write-once memory.
-var WOM_WRITE = RwMode{2}
-
-// SRAM_READ representing reading from a (small) random-access memory.
-var SRAM_READ = RwMode{3}
-
-// SRAM_WRITE representing write to a (small) random-access memory.
-var SRAM_WRITE = RwMode{4}
-
-// PRAM_READ representing reading from a (paged) random-access memory.
-var PRAM_READ = RwMode{5}
-
-// PRAM_WRITE representing write to a (paged) random-access memory.
-var PRAM_WRITE = RwMode{6}
-
-// RwMode determines whether what kind of memory is being operated on (e.g. ROM
-// or RAM, etc) and what operation is being performed (i.e. READ or WRITE).
-type RwMode struct {
-	tag uint8
-}
-
-// Tag gets the underlying tag for this enum.
-func (p RwMode) Tag() uint8 {
-	return p.tag
-}
-
-func (p RwMode) prefix() string {
-	switch p {
-	case SROM_READ:
-		return "rdo"
-	case ROM_READ:
-		return "rdr"
-	case WOM_WRITE:
-		return "wrw"
-	case SRAM_READ:
-		return "rds"
-	case SRAM_WRITE:
-		return "wrs"
-	case PRAM_READ:
-		return "rdp"
-	case PRAM_WRITE:
-		return "wrp"
-	default:
-		panic("invalid read/write mode")
-	}
-}
-
-// ReadWrite instruction captures memory read/writes.
+// ReadWrite instruction captures memory read/writes.  It records only whether
+// the access is a read or a write; the kind of memory being accessed (ROM, RAM,
+// etc.) is resolved from the enclosing environment when the instruction is
+// encoded.
 type ReadWrite struct {
-	// RwMode determines whether this is a read or write operation and,
-	// furthermore, what kind of memory is being accessed.
-	Mode RwMode
+	// Write distinguishes a memory write (true) from a memory read (false).
+	Write bool
 	// Identifies the memory being read or written.
 	Id uint16
 	// Address lines used to determine which data row to read.
@@ -83,25 +32,10 @@ type ReadWrite struct {
 	Data []RegisterId
 }
 
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *ReadWrite) Clone() Patched {
-	return &ReadWrite{p.Mode, p.Id, slices.Clone(p.Address), slices.Clone(p.Data)}
-}
-
-// isWrite reports whether this is a memory write (rather than a read).
-func (p *ReadWrite) isWrite() bool {
-	switch p.Mode {
-	case WOM_WRITE, SRAM_WRITE, PRAM_WRITE:
-		return true
-	default:
-		return false
-	}
-}
-
 // Uses implementation for Bytecode interface.  A read uses only its address
 // registers, whereas a write uses both the address and data registers.
 func (p *ReadWrite) Uses() []RegisterId {
-	if p.isWrite() {
+	if p.Write {
 		return append(slices.Clone(p.Address), p.Data...)
 	}
 	//
@@ -111,7 +45,7 @@ func (p *ReadWrite) Uses() []RegisterId {
 // Definitions implementation for Bytecode interface.  A read defines its data
 // registers, whereas a write defines nothing in the surrounding frame.
 func (p *ReadWrite) Definitions() []RegisterId {
-	if p.isWrite() {
+	if p.Write {
 		return nil
 	}
 	//
@@ -128,19 +62,15 @@ func (p *ReadWrite) String(env Environment) string {
 		name    = "???"
 		address = RegistersToString(p.Address, env, ",")
 		data    = RegistersToString(p.Data, env, ",")
-		prefix  = p.Mode.prefix()
 	)
 	//
 	if env != nil {
 		name = env.Module(p.Id).Name()
 	}
 	//
-	switch p.Mode {
-	case SROM_READ, ROM_READ, SRAM_READ, PRAM_READ:
-		return fmt.Sprintf("%s %s = %s[%s]", prefix, data, name, address)
-	case WOM_WRITE, SRAM_WRITE, PRAM_WRITE:
-		return fmt.Sprintf("%s %s[%s] = %s", prefix, name, address, data)
-	default:
-		panic("unknown read/write mode")
+	if p.Write {
+		return fmt.Sprintf("write %s[%s] = %s", name, address, data)
 	}
+	//
+	return fmt.Sprintf("read %s = %s[%s]", data, name, address)
 }

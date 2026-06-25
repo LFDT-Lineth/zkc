@@ -85,12 +85,16 @@ import (
 // NOTE: this stage is assumed to run after flattening has taken place and,
 // hence, only needs to deal with unstructured control-flow (i.e. not
 // block-level control flow).
-func Vectorize(modules []vm.Module, _ source.Maps[any]) {
+func Vectorize(wm *vm.WordMachine[vm.Uint], _ source.Maps[any]) *vm.WordMachine[vm.Uint] {
+	modules := wm.Modules()
+	//
 	for i, m := range modules {
 		if fn, ok := m.(*Function); ok {
 			modules[i] = vectorizeFunction(fn, modules)
 		}
 	}
+	//
+	return wm
 }
 
 // vectorizeFunction applies the per-function vectorisation pass, returning a

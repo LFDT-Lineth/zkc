@@ -1,6 +1,6 @@
 GOCORSET_VERSION:=$(shell git describe --always --tags)
 GOCORSET_VERSION_PATH:="github.com/LFDT-Lineth/zkc/pkg/cmd"
-GOLANGCI_VERSION:=2.4.0
+GOLANGCI_VERSION:=2.12.2
 PROJECT_NAME:=go-corset
 GOPATH_BIN:=$(shell go env GOPATH)/bin
 ZKC_LINTABLE_FILES=$(shell find testdata/zkc -name "*.zkc" -not -path "*/invalid/*")
@@ -8,9 +8,7 @@ ZKC_LINTABLE_FILES=$(shell find testdata/zkc -name "*.zkc" -not -path "*/invalid
 
 install:
         # Install golangci-lint for go code linting.
-	curl -sSfL \
-		"https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh" | \
-		sh -s -- -b ${GOPATH_BIN} v${GOLANGCI_VERSION}
+	curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b ${GOPATH_BIN} v${GOLANGCI_VERSION}
         # Install cobra-cli command generator.
 	go install github.com/spf13/cobra-cli@latest
 

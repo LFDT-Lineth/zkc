@@ -19,12 +19,6 @@ import (
 // Skip (unconditional skip) instruction
 type Skip struct{ Skip uint16 }
 
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Skip) Clone() Patched {
-	var c = *p
-	return &c
-}
-
 // Uses implementation for Bytecode interface.
 func (p *Skip) Uses() []RegisterId {
 	return nil
