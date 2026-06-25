@@ -114,33 +114,38 @@ func factorableSkips(codes []WordInstruction, registers RegisterAllocator) map[u
 // branchContainsCall reports whether the "then" (conditionally-skipped) block
 // of a SkipIf at index i, and/or the "else" block reached after it, contain a
 // function call.  The block boundaries are computed exactly as in branchSizes.
-func branchContainsCall(codes []WordInstruction, i, skip uint) (branchHasCall bool) {
+func branchContainsCall(codes []WordInstruction, i, skip uint) bool {
 	var (
 		end   = min(i+1+skip, uint(len(codes)))
 		block = codes[i+1 : end]
 	)
-	// Determine the "else" block (i.e. the code reached when the condition
-	// holds), which depends on how the "then" block ends.
+	// Scan the "else" block (i.e. the code reached when the condition holds),
+	// whose extent depends on how the "then" block ends.
 	if m := len(block); m > 0 {
 		switch last := block[m-1].(type) {
 		case *instruction.Skip:
 			// The then block jumps over a contiguous else block.
 			elseEnd := min(end+last.Skip, uint(len(codes)))
-			branchHasCall = containsCall(codes[end:elseEnd])
+			if containsCall(codes[end:elseEnd]) {
+				return true
+			}
+			//
 			block = block[:m-1]
-		case *instruction.Fail, *instruction.Return:
-			// The then block terminates, so the code that follows is only reached
-			// when the condition holds (the skip is taken).
-			branchHasCall = containsCall(codes[end:])
+		case *instruction.Fail, *instruction.Return, *instruction.Jump:
+			// The then block diverts control (terminates, or jumps elsewhere), so
+			// the code that follows is only reached when the condition holds (the
+			// skip is taken).
+			if containsCall(codes[end:]) {
+				return true
+			}
 		}
 	}
-	// check for then branch
-	branchHasCall = branchHasCall || containsCall(block)
-	//
-	return branchHasCall
+	// Otherwise, the answer is whether the then block itself contains a call.
+	return containsCall(block)
 }
 
-// containsCall reports whether the given block contains a (conditional) function call.
+// containsCall reports whether the given block contains a (conditional) function
+// call, returning as soon as the first one is found.
 func containsCall(block []WordInstruction) bool {
 	for _, code := range block {
 		if _, ok := code.(*instruction.Call); ok {
