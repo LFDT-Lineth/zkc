@@ -95,14 +95,14 @@ func translateStaticMemory[F field.Element[F]](_ schema.ModuleId, m vm.Memory[F]
 func translateReadOnlyMemory[F field.Element[F]](
 	ctx schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
 	var name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
-	return translateSingleAccessMemory(ctx, fm, name)
+	return translateAccessOnceMemory(ctx, fm, name)
 }
 
 // Write once memory and read only memory are equivalent on the constraints level
 func translateWriteOnceMemory[F field.Element[F]](
 	ctx schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
 	var name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
-	return translateSingleAccessMemory(ctx, fm, name)
+	return translateAccessOnceMemory(ctx, fm, name)
 }
 
 func translateReadWriteMemory[F field.Element[F]](
@@ -141,9 +141,10 @@ func translateReadWriteMemory[F field.Element[F]](
 		}
 	}
 
-	// var address = register.NewId(memoryModule.Width() + 0)
-	// var valueRead   = register.NewId(memoryModule.Width() + 1)
-	memoryModule.AddRegisters(register.NewComputed("address", addressWidth, padding))
+	var (
+		addressDelta = register.NewId(memoryModule.Width() + 0)
+	)
+
 	memoryModule.AddRegisters(register.NewComputed("address_delta", addressWidth, padding))
 	memoryModule.AddRegisters(register.NewComputed("valueRead", valueWidth, padding))
 
@@ -156,17 +157,20 @@ func translateReadWriteMemory[F field.Element[F]](
 	memoryModule.AddRegisters(register.NewComputed("finl", 1, padding))
 
 	var (
-		rTime = mirc.Variable[register.Id, Expr[F]](timestampRead, timestampWidth, 0)
-		wTime = mirc.Variable[register.Id, Expr[F]](timestampWritten, timestampWidth, 0)
-		dTime = mirc.Variable[register.Id, Expr[F]](timestampDelta, timestampWidth, 0)
-		// addr     = mirc.Variable[register.Id, Expr[F]](address,           addressWidth,   0)
-		// val      = mirc.Variable[register.Id, Expr[F]](value,             valueWidth,     0)
-		prevExec = mirc.Variable[register.Id, Expr[F]](execPhase, 1, -1)
-		prevFinl = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, -1)
-		exec     = mirc.Variable[register.Id, Expr[F]](execPhase, 1, 0)
-		finl     = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, 0)
-		zero     = mirc.Number[register.Id, Expr[F]](0)
-		one      = mirc.Number[register.Id, Expr[F]](1)
+		rTime         = mirc.Variable[register.Id, Expr[F]](timestampRead, timestampWidth, 0)
+		wTime         = mirc.Variable[register.Id, Expr[F]](timestampWritten, timestampWidth, 0)
+		dTime         = mirc.Variable[register.Id, Expr[F]](timestampDelta, timestampWidth, 0)
+		addrRegs      = fm.Geometry().AddressRegisters()
+		addrRegOffset = uint(0)
+		prevAddr      = concatenateRegisters[F](addrRegs, addrRegOffset, -1)
+		addr          = concatenateRegisters[F](addrRegs, addrRegOffset, 0)
+		addrDelta     = mirc.Variable[register.Id, Expr[F]](addressDelta, 1, 0)
+		prevExec      = mirc.Variable[register.Id, Expr[F]](execPhase, 1, -1)
+		prevFinl      = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, -1)
+		exec          = mirc.Variable[register.Id, Expr[F]](execPhase, 1, 0)
+		finl          = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, 0)
+		zero          = mirc.Number[register.Id, Expr[F]](0)
+		one           = mirc.Number[register.Id, Expr[F]](1)
 	)
 
 	// ================================================
@@ -195,8 +199,8 @@ func translateReadWriteMemory[F field.Element[F]](
 		mirc.If(mirc.Sum([]Expr[F]{prevExec, prevFinl}).NotEquals(zero),
 			mirc.Sum([]Expr[F]{exec, finl}).Equals(one)).AsLogical())
 
-	// we want to prove WT - RT = 1 + ΔT (which forces WT > RT given that ΔT is ≥ 0)
-	// instead we prove WT = RT + 1 + ΔT
+	// we want WT > RT which we prove via WT = RT + (1 + ΔT)
+	// which works given that ΔT is ≥ 0
 	timestampMonotony := mir.NewVanishingConstraint("timestamp_monotony", ctx, util.None[int](),
 		mirc.If(exec.NotEquals(zero), wTime.Equals(rTime.Add(dTime, one))).AsLogical())
 
@@ -207,7 +211,8 @@ func translateReadWriteMemory[F field.Element[F]](
 	// []register.Id{address, timestampWritten, valueWritten})
 
 	addressMonotonyInFinl := mir.NewVanishingConstraint("address_monotony_in_finalization_phase", ctx, util.None[int](),
-		mirc.If(mirc.Product([]Expr[F]{finl, prevFinl}).NotEquals(zero), wTime.Equals(rTime.Add(dTime, one))).AsLogical())
+		mirc.If(mirc.Product([]Expr[F]{finl, prevFinl}).NotEquals(zero),
+			addr.Equals(prevAddr.Add(addrDelta, one))).AsLogical())
 
 	constraints := []mir.Constraint[F]{
 		flagExclusivity,
@@ -223,12 +228,97 @@ func translateReadWriteMemory[F field.Element[F]](
 	return memoryModule
 }
 
-// translateSingleAccessMemory handles both
+// translateAccessOnceMemory handles both
 //   - read once memory
 //   - write once memory
-func translateSingleAccessMemory[F field.Element[F]](
+func translateAccessOnceMemory[F field.Element[F]](
 	ctx schema.ModuleId, fm vm.Memory[F], name trace.ModuleName) (mod mir.Module[F]) {
-	return
+	var (
+		memoryModule *schema.Table[F, mir.Constraint[F]]
+		padding      big.Int
+	)
+
+	// Initialise module and add all registers
+	memoryModule = memoryModule.Init(name, false, true, false, fm.IsNative(), false, 0)
+	memoryModule.AddRegisters(fm.Registers()...)
+
+	var (
+		access = register.NewId(memoryModule.Width() + 0)
+	)
+
+	memoryModule.AddRegisters(register.NewComputed("access", 1, padding))
+
+	var (
+		addrRegs      = fm.Geometry().AddressRegisters()
+		addrRegOffset = uint(0)
+		addr          = concatenateRegisters[F](addrRegs, addrRegOffset, 0)
+		nextAddr      = concatenateRegisters[F](addrRegs, addrRegOffset, 1)
+		acc           = mirc.Variable[register.Id, Expr[F]](access, 1, 0)
+		nextAcc       = mirc.Variable[register.Id, Expr[F]](access, 1, 1)
+		zero          = mirc.Number[register.Id, Expr[F]](0)
+		one           = mirc.Number[register.Id, Expr[F]](1)
+	)
+
+	// ================================================
+	// constraints
+	// ================================================
+
+	// ================================================
+	// ACCESS bit constraints
+	// ================================================
+
+	// ACCESS[0] = 0
+	accessBitVanishesInPadding := mir.NewVanishingConstraint("access_bit_vanishes_in_padding", ctx, util.Some[int](0),
+		acc.Equals(zero).AsLogical())
+	// ACCESS[i] = 1 => ACCESS[i + 1] = 1
+	accessBitMonotony := mir.NewVanishingConstraint("access_bit_monotony", ctx, util.None[int](),
+		mirc.If(acc.Equals(one), nextAcc.Equals(one)).AsLogical())
+
+	// ================================================
+	// []ADDRESS constraints
+	// ================================================
+
+	// If ACCESS[i] = 0 Then ADDRESS[i] = 0
+	addressesVanishInPadding := mir.NewVanishingConstraint("addresses_vanish_in_padding", ctx, util.None[int](),
+		mirc.If(acc.Equals(zero), addr.Equals(zero)).AsLogical())
+	// If ACCESS[i] = 0 ∧ ACCESS[i + 1] = 1 Then ADDRESS[i + 1] = 0
+	firstNonpaddingAddressIsZero := mir.NewVanishingConstraint("first_nontrivial_address_is_zero", ctx, util.None[int](),
+		mirc.If(acc.Equals(zero),
+			mirc.If(nextAcc.NotEquals(zero),
+				nextAddr.Equals(zero))).AsLogical())
+	// If ACCESS[i] = 1 Then ADDRESS[i + 1] = 1 + ADDRESS[i]
+	addressMonotony := mir.NewVanishingConstraint("address_monotony", ctx, util.None[int](),
+		mirc.If(acc.NotEquals(zero), nextAddr.Equals(addr.Add(one))).AsLogical())
+
+	constraints := []mir.Constraint[F]{
+		accessBitVanishesInPadding,
+		accessBitMonotony,
+		addressesVanishInPadding,
+		firstNonpaddingAddressIsZero,
+		addressMonotony,
+	}
+	memoryModule.AddConstraints(constraints...)
+
+	return memoryModule
+}
+
+// concatenateRegisters concatenates registers in 'big endian order', e.g.
+// [a, b, c] should correspond to a :: b :: c. It assumes that register ids
+// are contiguous (and start at id = base).
+func concatenateRegisters[F field.Element[F]](registers []register.Register, base uint, shift int) Expr[F] {
+	terms := make([]Expr[F], len(registers))
+	// cumulative width of registers
+	tail := uint(0)
+	//
+	for j := len(registers) - 1; j >= 0; j-- {
+		w := registers[j].Width()
+		v := mirc.Variable[register.Id, Expr[F]](register.NewId(base+uint(j)), w, shift)
+		weight := new(big.Int).Lsh(big.NewInt(1), tail) // 2^tail
+		terms[j] = v.Multiply(mirc.BigNumber[register.Id, Expr[F]](weight))
+		tail += w
+	}
+	//
+	return mirc.Sum(terms)
 }
 
 func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction) mir.Module[F] {
