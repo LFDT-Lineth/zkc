@@ -100,7 +100,7 @@ func factorableSkips(codes []WordInstruction, registers RegisterAllocator) map[u
 			continue
 		}
 
-		// Performance improvment: compute the condition only once and then check against a boolean.
+		// Performance improvement: compute the condition only once and then check against a boolean.
 		// It reduces the constraint degree.
 		thenSize, elseSize := branchSizes(codes, uint(i), si.Skip)
 		if generatesInverse(si, registers) && (elseSize > 0 || thenSize > 1) {
