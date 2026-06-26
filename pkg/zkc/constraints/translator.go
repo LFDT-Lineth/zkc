@@ -420,7 +420,7 @@ func atomTerm[F field.Element[F], T term.Expr[F, T]](atom dfa.BranchEquality, re
 	// General single-bit case: since left, right ∈ {0,1}, (left-right) ∈ {-1,0,1}
 	// and its square is 1 iff left != right — so no normalisation (inverse) is
 	// required.
-	//TODO: (cf https://github.com/LFDT-Lineth/zkc/issues/1879) once we have skif_if with constant
+	//TODO: (cf https://github.com/LFDT-Lineth/zkc/issues/1879) once we have skip_if with constant
 	// (and not a register holding a constant), we can suppress this:
 	// all the conditions coming from the branch table are of the form "b != 0" (or "b == 0"), so we can just
 	// use the single-bit register directly.
