@@ -165,11 +165,10 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			pc          = register.NewId(mod.Width())
 			ret         = register.NewId(mod.Width() + 1)
 			// determine suitable width of PC register
-			pcWidth = bit.Width(uint(1 + len(fm.Code())))
 		)
 
 		// Create program counter
-		mod.AddRegisters(register.NewComputed(io.PC_NAME, pcWidth, padding))
+		mod.AddRegisters(register.NewComputed(io.PC_NAME, fm.PcWidth(), padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
 		// Create IS_PC_<k> program counter selectors

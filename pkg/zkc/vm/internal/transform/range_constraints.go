@@ -59,7 +59,7 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *
 	)
 
 	// First step, generate the range modules for every width which occurs on some register.
-	var extra = generateRangeModules[W](cfg, modules)
+	var extra = generateRangeModules[W](modules)
 
 	// Second step, call range_uX for every registers.
 	modules = addRangeCalls[W](modules, extra)
@@ -68,10 +68,10 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *
 	return machine.NewWord[W](cfg, append(slices.Clone(modules), extra...)...)
 }
 
-func generateRangeModules[W word.Word[W]](cfg field.Config, modules []Module) []Module {
+func generateRangeModules[W word.Word[W]](modules []Module) []Module {
 	var (
 		// Every width requiring a range module, mapped to its decomposition.
-		splits = neededRangeWidths[W](cfg, modules)
+		splits = neededRangeWidths[W](modules)
 		// Freshly generated range modules.
 		extra []Module
 		// Widths in ascending order, for deterministic output.
@@ -122,7 +122,7 @@ type rangeSplit struct {
 // directly on some register, closed under the destructuring of wide widths
 // (> 16); each wide width is mapped to the (lo, hi) halves it is destructured
 // into, while leaf widths (<= 16) map to the zero split.
-func neededRangeWidths[W word.Word[W]](cfg field.Config, modules []Module) map[uint]rangeSplit {
+func neededRangeWidths[W word.Word[W]](modules []Module) map[uint]rangeSplit {
 	var (
 		// Final decompositions, keyed by width (one entry per dequeued width).
 		splits = make(map[uint]rangeSplit)
@@ -138,8 +138,15 @@ func neededRangeWidths[W word.Word[W]](cfg field.Config, modules []Module) map[u
 			queue = append(queue, w)
 		}
 	}
-	// Seed from every register of every module.
+
 	for _, mod := range modules {
+		// Seed from the PC register, which is added later while lowering to mir
+		// (see translateFunction). It exists only for non-atomic, non-native
+		// functions, and the PC bit width must match the one chosen there.
+		if fn, ok := mod.(*WordFunction); ok && !fn.IsNative() && !fn.IsAtomic() {
+			add(fn.PcWidth())
+		}
+		// Seed from every register of every module.
 		for _, r := range mod.Registers() {
 			add(registerWidthOrZero(r))
 		}

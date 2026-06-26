@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 )
@@ -66,6 +67,18 @@ func (p *Function[I]) CodeAt(i uint) instruction.Vector[I] {
 // Code returns the instructions making up the body of this function.
 func (p *Function[I]) Code() []instruction.Vector[I] {
 	return p.code
+}
+
+// PcWidth returns the bit width required for this function's program counter
+// register, which must be able to index every code line plus the (one past the
+// end) halt value.  Only meaningful for non-atomic functions, which are the
+// only ones carrying a PC register.
+func (p *Function[I]) PcWidth() uint {
+	if p.IsAtomic() || p.IsNative() {
+		panic("PC register only exist for non-atomic non-native functions")
+	}
+
+	return bit.Width(uint(1 + len(p.code)))
 }
 
 // IsAtomic determines whether or not this is a "one line function".  That is,
