@@ -263,7 +263,8 @@ func newDecomposedNaryHelper[W word.Word[W]](
 	out := b.output
 	zero := word.Const64[W](0)
 
-	// TODO: we will want to stop before width == 1 to reduce the number of tiny modules.
+	// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1747
+	// we will want to stop before width == 1 to reduce the number of tiny modules.
 	if key.width == 1 {
 		// Base case: single-bit operation.  Seed agg with the op's identity
 		// (1 for AND, 0 for OR/XOR) then fold each source in via the
