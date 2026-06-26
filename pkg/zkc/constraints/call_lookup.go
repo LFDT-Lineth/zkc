@@ -65,8 +65,7 @@ func computeModuleInfos(modules []vm.Module) []moduleInfo {
 //   - Position: in a multi-line caller the call at code line k fires only on
 //     rows where the selector IS_PC_k is on; in an atomic caller
 //     every row is a call row, so there is no positional gating.
-//   - Path: a call may be executed conditionally (e.g. the recursive call in a
-//     shift helper, guarded by "n != 0").  The branch condition under which the
+//   - Path: a call may be executed conditionally. The branch condition under which the
 //     call is reached is materialised by FactorSkipConditions as a boolean
 //     register ("path selector"); only rows where it is on actually call.
 //
@@ -120,6 +119,7 @@ func callSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
 ) util.Option[register.Id] {
 	// TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1936
+	//
 	// In a multi-line caller the call only fires on rows executing its line, so
 	// fold the line's PC selector (IS_PC_k != 0) into the condition as an
 	// extra single-bit atom.  An atomic caller has no line selectors, so its
@@ -134,26 +134,52 @@ func callSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[
 	}
 	// The (gated) condition is already a single materialised boolean: reuse it
 	// directly, with no fresh column.
-	if b, ok := singleBitGuard(cond); ok {
+	if b, ok := singleBitGuard(cond, regs); ok {
 		return util.Some(b)
 	}
 	// General case: materialise a fresh path selector column.
 	return util.Some(newPathSelector(mod, ctx, regs, cond))
 }
 
-// singleBitGuard recognises a branch condition of the form "b != zero" (a single
-// inequality over a 1-bit register), as produced by FactorSkipConditions, and
-// returns b — which is 1 exactly when the guarded path is taken.
-func singleBitGuard(cond dfa.BranchCondition) (register.Id, bool) {
-	if conjuncts := cond.Conjuncts(); len(conjuncts) == 1 {
-		if atoms := conjuncts[0].Atoms(); len(atoms) == 1 {
-			if atom := atoms[0]; !atom.Sign && atom.Left.Width == 1 {
-				return atom.Left.Id, true
-			}
-		}
+// singleBitGuard recognises a branch condition which is, over a single register
+// b, either "b != 0" or "b == 1" — both of which are 1 exactly when the guarded
+// path is taken, so b can serve directly as the lookup selector.  Other forms
+// ("b == 0", "b != 1", a register-valued or non-{0,1} RHS, a multi-register
+// group) cannot, and fall back to a materialised path selector column.
+//
+// Such a call guard is always materialised on a 1-bit register by
+// FactorSkipConditions, so a wider operand here indicates a broken invariant
+// and panics.
+func singleBitGuard(cond dfa.BranchCondition, regs []register.Register) (register.Id, bool) {
+	conjuncts := cond.Conjuncts()
+	if len(conjuncts) != 1 {
+		return register.UnusedId(), false
 	}
 	//
-	return register.UnusedId(), false
+	atoms := conjuncts[0].Atoms()
+	if len(atoms) != 1 {
+		return register.UnusedId(), false
+	}
+	// Require a single register compared against a constant.
+	atom := atoms[0]
+	if atom.Left.Width != 1 || !atom.Right.HasSecond() {
+		return register.UnusedId(), false
+	}
+	// Only "b != 0" (inequality vs 0) and "b == 1" (equality vs 1) let us reuse b.
+	rhs := atom.Right.Second()
+	neqZero := !atom.Sign && rhs.Sign() == 0
+	eqOne := atom.Sign && rhs.Cmp(big.NewInt(1)) == 0
+	//
+	if !neqZero && !eqOne {
+		return register.UnusedId(), false
+	}
+	// The operand must be a genuine boolean (1-bit) register.
+	id := atom.Left.Id
+	if w := regs[id.Unwrap()].Width(); w != 1 {
+		panic(fmt.Sprintf("expected 1-bit branch register for call guard, got width %d", w))
+	}
+	//
+	return id, true
 }
 
 // newPathSelector creates a fresh 1-bit column gating a conditionally executed
