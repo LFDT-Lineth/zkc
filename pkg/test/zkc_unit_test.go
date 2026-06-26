@@ -803,11 +803,23 @@ func Test_ZkcUnit_Call_06(t *testing.T) {
 }
 
 // x = f(x) + 1
-// mixed of register collisio:
+// mixed of register collision:
 // arg and return value are the same register
 // return value is rewrote in the same vector
 func Test_ZkcUnit_Call_07(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_07", DEFAULT_UNIT_CONFIG.Constraints(true))
+}
+
+// y = f(x); x = x+1
+// rewrite the arg call
+func Test_ZkcUnit_Call_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/call_08", DEFAULT_UNIT_CONFIG.Constraints(true))
+}
+
+// y = f(x); if() {x = x+1}
+// rewrite the arg call, hidden in a skip_if condition
+func Test_ZkcUnit_Call_09(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/call_09", DEFAULT_UNIT_CONFIG.Constraints(true))
 }
 
 // ===================================================================
