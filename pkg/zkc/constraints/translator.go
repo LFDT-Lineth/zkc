@@ -203,7 +203,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	// that will be introduced later will be already range-proved (as a product of bit registers).
 	// Note that registers coming from control flow have been added to the module before this point,
 	// so they will be range-proved as well.
-	addRangeProofConstraints(mod, ctx, fm.Registers(), rangeTables)
+	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables)
 
 	// Emit lookup constraints for any function calls made by this function.
 	addCallLookups(mod, ctx, fm, pcSelectors, infos)
