@@ -50,11 +50,7 @@ type StmtCompiler struct {
 	// fastMode disables constraint-only rewrites not required by the vm.
 	fastMode bool
 	// assignTargets holds the destination registers of the assignment
-	// currently being compiled.  A call argument that coincides with one of
-	// these is rewritten later in the same vector (e.g. "a = f(a) + 1"), so it
-	// must be snapshotted before the call — see compileFunctionCall.  It is set
-	// around the source expression in compileStatement's Assign case and
-	// cleared afterwards.
+	// currently being compiled.
 	assignTargets map[RegisterId]bool
 }
 

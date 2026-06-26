@@ -99,6 +99,7 @@ func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors)
 			case *instruction.UnconditionalCall:
 				//TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1935
+				//
 				// An unconditional call fires on every row, so it has no selector at
 				// all (neither positional nor path).
 				calleeId, args, returns = c.Id, c.Arguments, c.Returns
