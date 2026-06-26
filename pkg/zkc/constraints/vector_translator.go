@@ -89,9 +89,9 @@ func (p *VectorInsnTranslator[F]) translate() Expr[F] {
 			// no-operation
 			continue
 		case *instruction.Call, *instruction.MemRead, *instruction.MemWrite, *instruction.UnconditionalCall:
-			// TODO: these need to be implemented as assignments to their
-			// respected selector line (i.e. to enable the conditional lookup).
-			// TODO: add MemRead for <=16-bit registers for range proof
+			// Translation of (unconditional)calls, and memory read/write is done at the function level, 
+			// as it modifies the module itself (adding source selectors), requires knowledge of
+			// taregt modules, etc
 			continue
 		case *instruction.Fail:
 			assignments = joinAssignments(assignments, localWrites)

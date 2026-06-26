@@ -1,0 +1,345 @@
+// Copyright Consensys Software Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
+package constraints
+
+import (
+	"fmt"
+	"math/big"
+
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+)
+
+// moduleInfo captures the metadata about a (potential) callee module which is
+// required to construct a lookup constraint at a call site.
+type moduleInfo struct {
+	// function indicates this module is a field function (as opposed to a
+	// memory module).
+	function bool
+	// atomic indicates this is a one-line function (which therefore has no
+	// $ret control line and is used as an unfiltered lookup target).
+	atomic bool
+	// registers gives the callee register layout: inputs, followed by outputs,
+	// followed by any locals.
+	registers []register.Register
+}
+
+// computeModuleInfos collects the metadata needed to wire up call lookups for
+// every module in the machine.
+func computeModuleInfos(modules []vm.Module) []moduleInfo {
+	infos := make([]moduleInfo, len(modules))
+	//
+	for i, m := range modules {
+		if fn, ok := m.(*vm.FieldFunction); ok {
+			infos[i] = moduleInfo{true, fn.IsAtomic(), fn.Registers()}
+		}
+	}
+	//
+	return infos
+}
+
+// addCallLookups emits a lookup constraint for every function call (Call or
+// UnconditionalCall) made by the given function.  The lookup maps the caller's
+// argument/return registers onto the callee's input/output registers.
+//
+// The caller (source) side is gated on two (potentially combined) conditions:
+//
+//   - Position: in a multi-line caller the call at code line k fires only on
+//     rows where the selector IS_PC_k is on; in an atomic caller
+//     every row is a call row, so there is no positional gating.
+//   - Path: a call may be executed conditionally (e.g. the recursive call in a
+//     shift helper, guarded by "n != 0").  The branch condition under which the
+//     call is reached is materialised by FactorSkipConditions as a boolean
+//     register ("path selector"); only rows where it is on actually call.
+//
+// Lookups require a register (and not an expression) as the source selector,
+// so the path selector is materialised as a fresh 1-bit register (if it is not already).
+func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+	fm vm.FieldFunction, pcSelectors []register.Id, infos []moduleInfo) {
+	//
+	for pc, vec := range fm.Code() {
+		// Branch table giving the condition under which each code in this vector
+		// is reached.
+		_, branchTable := vec.BranchTable()
+		//
+		for cc, code := range vec.Codes {
+			var (
+				args     []register.Id
+				returns  []register.Id
+				calleeId uint
+				// Source selector gating the call (None => unfiltered).
+				srcSelector util.Option[register.Id]
+			)
+			//
+			switch c := code.(type) {
+			case *instruction.Call:
+				calleeId, args, returns = c.Id, c.Arguments, c.Returns
+				// A (conditional) call is gated by its branch condition and, in a
+				// multi-line caller, its line selector.  Pass the module's full
+				// register set (which includes the IS_PC_* selectors, beyond the
+				// function's own registers) so the condition can reference them.
+				srcSelector = callSourceSelector(mod, ctx, mod.Registers(),
+					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors)
+			case *instruction.UnconditionalCall:
+				// An unconditional call fires on every row, so it has no selector at
+				// all (neither positional nor path).
+				calleeId, args, returns = c.Id, c.Arguments, c.Returns
+			default:
+				continue
+			}
+			//
+			emitCallLookup(mod, ctx, fm.Registers(), uint(pc), calleeId, args, returns, srcSelector, infos)
+		}
+	}
+}
+
+// callSourceSelector determines the register used to gate the source (caller)
+// side of a (conditional) call's lookup constraint, given the branch condition
+// under which the call executes and the caller's per-line is_pc_* selectors
+// (empty for an atomic caller).
+func callSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
+) util.Option[register.Id] {
+	// In a multi-line caller the call only fires on rows executing its line, so
+	// fold the line's PC selector (IS_PC_k != 0) into the condition as an
+	// extra single-bit atom.  An atomic caller has no line selectors, so its
+	// gating is the branch condition alone.
+	if len(pcSelectors) != 0 {
+		isPc := logical.NotEqualsConst(dfa.NewBranchId(false, pcSelectors[pc]), big.Int{})
+		cond = cond.And(logical.NewProposition(isPc))
+	}
+	// Reached on every row: no gating at all.
+	if cond.IsTrue() {
+		return util.None[register.Id]()
+	}
+	// The (gated) condition is already a single materialised boolean: reuse it
+	// directly, with no fresh column.
+	if b, ok := singleBitGuard(cond); ok {
+		return util.Some(b)
+	}
+	// General case: materialise a fresh path selector column.
+	return util.Some(newPathSelector(mod, ctx, regs, cond))
+}
+
+// singleBitGuard recognises a branch condition of the form "b != zero" (a single
+// inequality over a 1-bit register), as produced by FactorSkipConditions, and
+// returns b — which is 1 exactly when the guarded path is taken.
+func singleBitGuard(cond dfa.BranchCondition) (register.Id, bool) {
+	if conjuncts := cond.Conjuncts(); len(conjuncts) == 1 {
+		if atoms := conjuncts[0].Atoms(); len(atoms) == 1 {
+			if atom := atoms[0]; !atom.Sign && atom.Left.Width == 1 {
+				return atom.Left.Id, true
+			}
+		}
+	}
+	//
+	return register.UnusedId(), false
+}
+
+// newPathSelector creates a fresh 1-bit column gating a conditionally executed
+// call and returns its id.  The column is filled (during trace expansion) with,
+// and constrained to equal, the boolean value of the call's (already position-
+// gated) branch condition — so it is 1 exactly on the rows which perform the
+// call.
+func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+	regs []register.Register, cond dfa.BranchCondition,
+) register.Id {
+	var padding big.Int
+	// Allocate the selector column.
+	selId := register.NewId(mod.Width())
+	mod.AddRegisters(register.NewComputed(fmt.Sprintf("$call_sel_%d", selId.Unwrap()), 1, padding))
+	// Build the boolean value of the condition, both as a computation (to fill
+	// the column during trace expansion) and as an MIR term (to constrain it).
+	selComp := conditionTerm[word.BigEndian, term.Computation[word.BigEndian]](cond, regs)
+	selTerm := conditionTerm[F, mir.Term[F]](cond, regs)
+	// Fill the column during trace expansion.
+	mod.AddAssignments(assignment.NewComputedRegister[F](selComp, true, ctx, selId))
+	// Bind it for soundness: $call_sel == cond_1 * ... * cond_i.
+	mod.AddConstraints(mir.NewVanishingConstraint(
+		fmt.Sprintf("call_sel_%d", selId.Unwrap()), ctx, util.None[int](),
+		term.Equals[F, mir.LogicalTerm[F]](
+			term.NewRegisterAccess[F, mir.Term[F]](selId, 1, 0), selTerm)))
+	//
+	return selId
+}
+
+// conditionTerm builds a 0/1 term which evaluates to 1 exactly when the given
+// branch condition holds.  Branch conditions are stored in disjunctive normal
+// form over single-bit operands, so this is a pure product/sum of binaries — no
+// normalisation (inverse) is required.  A conjunction is the product of its
+// (0/1) atoms; a disjunction is "1 - product(1 - clause)".
+func conditionTerm[F field.Element[F], T term.Expr[F, T]](cond dfa.BranchCondition, regs []register.Register) T {
+	conjuncts := cond.Conjuncts()
+	clauses := make([]T, len(conjuncts))
+	//
+	for i, conjunct := range conjuncts {
+		atoms := conjunct.Atoms()
+		factors := make([]T, len(atoms))
+		//
+		for j, atom := range atoms {
+			factors[j] = atomTerm[F, T](atom, regs)
+		}
+		// A conjunction is the product of its (0/1) atoms.
+		clauses[i] = term.Product(factors...)
+	}
+	//
+	if len(clauses) == 1 {
+		return clauses[0]
+	}
+	// A disjunction of (0/1) clauses: 1 - product(1 - clause).
+	one := term.Const[F, T](field.One[F]())
+	complements := make([]T, len(clauses))
+	//
+	for i, clause := range clauses {
+		complements[i] = term.Subtract(one, clause)
+	}
+	//
+	return term.Subtract(one, term.Product(complements...))
+}
+
+// atomTerm builds a 0/1 term for a single branch (in)equality over single-bit
+// operands.
+func atomTerm[F field.Element[F], T term.Expr[F, T]](atom dfa.BranchEquality, regs []register.Register) T {
+	var (
+		left = branchRegisterTerm[F, T](atom.Left, regs)
+		one  = term.Const[F, T](field.One[F]())
+	)
+	// Comparison against a constant bit (0 or 1) is linear for a single-bit operand
+	// Specifically it is "1 - left" for "== 0" and "!= 1", and "left" for "!= 0" and "== 1".
+	if atom.Right.HasSecond() {
+		rhs := atom.Right.Second()
+		isZero := rhs.Sign() == 0
+		//
+		if isZero || rhs.Cmp(big.NewInt(1)) == 0 {
+			if atom.Sign == isZero {
+				return term.Subtract(one, left)
+			}
+			//
+			return left
+		}
+	}
+	// General single-bit case: since left, right ∈ {0,1}, (left-right) ∈ {-1,0,1}
+	// and its square is 1 iff left != right — so no normalisation (inverse) is
+	// required.
+	//TODO: (cf https://github.com/LFDT-Lineth/zkc/issues/1879) once we have skip_if with constant
+	// (and not a register holding a constant), we can suppress this:
+	// all the conditions coming from the branch table are of the form "b != 0" (or "b == 0"), so we can just
+	// use the single-bit register directly.
+	var right T
+	//
+	if atom.Right.HasSecond() {
+		right = term.Const[F, T](field.BigInt[F](atom.Right.Second()))
+	} else {
+		right = branchRegisterTerm[F, T](atom.Right.First(), regs)
+	}
+	//
+	diff := term.Subtract(left, right)
+	neq := term.Product(diff, diff)
+	//
+	if atom.Sign {
+		// Equality: 1 iff left == right.
+		return term.Subtract(one, neq)
+	}
+	//
+	return neq
+}
+
+// branchRegisterTerm builds a register-access term for a single branch register.
+func branchRegisterTerm[F field.Element[F], T term.Expr[F, T]](id dfa.BranchId, regs []register.Register) T {
+	if id.Width != 1 {
+		panic("unsupported multi-register branch condition")
+	}
+	// NOTE: forwarding is read on the current row (shift 0), which is correct
+	// since a register holds its assigned value on the row it is written.
+	return term.NewRegisterAccess[F, T](id.Id, regs[id.Id.Unwrap()].Width(), 0)
+}
+
+// emitCallLookup constructs and adds a single lookup constraint mapping the
+// caller's argument/return registers onto the callee's input/output registers.
+func emitCallLookup[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+	callerRegs []register.Register, pc, calleeId uint, args, returns []register.Id,
+	srcSelector util.Option[register.Id], infos []moduleInfo) {
+	var (
+		callee = infos[calleeId]
+		handle = fmt.Sprintf("call_%d_%d_%d", ctx, pc, calleeId)
+		// Source ids: the caller's argument registers followed by its return
+		// registers.
+		srcIds = append(append([]register.Id{}, args...), returns...)
+		// Target ids: the callee's input registers (0..nInputs) followed by its
+		// output registers (nInputs..nInputs+nOutputs).  Their count matches the
+		// number of source ids.
+		tgtIds = make([]register.Id, len(srcIds))
+	)
+	//
+	for i := range tgtIds {
+		tgtIds[i] = register.NewId(uint(i))
+	}
+	// Build the source (caller) vector.
+	var source mir.LookupVector[F]
+
+	if srcSelector.HasValue() {
+		var (
+			selId = srcSelector.Unwrap()
+			sel   = term.RawRegisterAccess[F, mir.Term[F]](selId, 1, 0)
+		)
+
+		source = lookup.FilteredVector(ctx, sel, registerAccesses[F](callerRegs, srcIds)...)
+	} else {
+		source = lookup.UnfilteredVector(ctx, registerAccesses[F](callerRegs, srcIds)...)
+	}
+	// Build the target (callee) vector.
+	var (
+		target   mir.LookupVector[F]
+		tgtTerms = registerAccesses[F](callee.registers, tgtIds)
+	)
+	//
+	if callee.atomic {
+		// Atomic callees have no $ret line: every callee row is a valid table
+		// entry, so the target side is unfiltered.
+		target = lookup.UnfilteredVector(calleeId, tgtTerms...)
+	} else {
+		// Multi-line callees expose a $ret line (immediately after the $pc line)
+		// which is 1 on active rows; use it as the lookup selector.
+		var (
+			retId = register.NewId(uint(len(callee.registers)) + 1)
+			ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
+		)
+
+		target = lookup.FilteredVector(calleeId, ret, tgtTerms...)
+	}
+	//
+	mod.AddConstraints(mir.NewLookupConstraint(handle, []mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
+}
+
+// registerAccesses builds MIR register accesses (at row offset 0) for the given
+// register ids, looking up each register's width in the supplied layout.
+func registerAccesses[F field.Element[F]](regs []register.Register, ids []register.Id) []*mir.RegisterAccess[F] {
+	terms := make([]*mir.RegisterAccess[F], len(ids))
+	//
+	for i, id := range ids {
+		terms[i] = term.RawRegisterAccess[F, mir.Term[F]](id, regs[id.Unwrap()].Width(), 0)
+	}
+	//
+	return terms
+}
