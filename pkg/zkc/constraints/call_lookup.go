@@ -34,9 +34,6 @@ import (
 // moduleInfo captures the metadata about a (potential) callee module which is
 // required to construct a lookup constraint at a call site.
 type moduleInfo struct {
-	// function indicates this module is a field function (as opposed to a
-	// memory module).
-	function bool
 	// atomic indicates this is a one-line function (which therefore has no
 	// $ret control line and is used as an unfiltered lookup target).
 	atomic bool
@@ -52,7 +49,7 @@ func computeModuleInfos(modules []vm.Module) []moduleInfo {
 	//
 	for i, m := range modules {
 		if fn, ok := m.(*vm.FieldFunction); ok {
-			infos[i] = moduleInfo{true, fn.IsAtomic(), fn.Registers()}
+			infos[i] = moduleInfo{fn.IsAtomic(), fn.Registers()}
 		}
 	}
 	//

@@ -193,11 +193,11 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		// translate into MIR constraints
 		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint))
 	}
-	// Add range proof constraints for all registers. 
-	// While adding lookups from calls and memory read/write  might add (bit) register, 
-	// it is safe to add range proof constraints for all registers here, as the register 
+	// Add range proof constraints for all registers.
+	// While adding lookups from calls and memory read/write  might add (bit) register,
+	// it is safe to add range proof constraints for all registers here, as the register
 	// that will be introduced later will be already range-prooved (as a product of bit register)
-	// addRangeProofConstraints(mod, ctx, fm.Registers())
+	// addRangeProofConstraints()
 
 	// Emit lookup constraints for any function calls made by this function.
 	addCallLookups(mod, ctx, fm, pcSelectors, infos)
