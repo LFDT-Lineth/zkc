@@ -158,7 +158,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	if fm.IsNative() {
 		return mod
 	}
-	// Add control registers (as required)
+	// Add control registers for Multi Line Instruction
 	if !fm.IsAtomic() {
 		var (
 			constraints []mir.Constraint[F]
@@ -168,12 +168,12 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			pcWidth = bit.Width(uint(1 + len(fm.Code())))
 		)
 
-		pcSelectors = make([]register.Id, len(fm.Code()))
 		// Create program counter
 		mod.AddRegisters(register.NewComputed(io.PC_NAME, pcWidth, padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
 		// Create IS_PC_<k> program counter selectors
+		pcSelectors = make([]register.Id, len(fm.Code()))
 		for c := range pcSelectors {
 			pcSelectors[c] = register.NewId(mod.Width())
 			mod.AddRegisters(register.NewComputed(io.SelectorName(uint(c)), 1, padding))
@@ -201,6 +201,8 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	// Note: while adding lookups from calls and memory read/write  might add (bit) registers,
 	// it is safe to add range proof constraints for all registers before, as the registers
 	// that will be introduced later will be already range-proved (as a product of bit registers).
+	// Note that registers coming from control flow have been added to the module before this point,
+	// so they will be range-proved as well.
 	addRangeProofConstraints(mod, ctx, fm.Registers(), rangeTables)
 
 	// Emit lookup constraints for any function calls made by this function.
