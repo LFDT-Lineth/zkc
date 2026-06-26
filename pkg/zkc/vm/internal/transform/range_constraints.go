@@ -145,6 +145,9 @@ func neededRangeWidths[W word.Word[W]](modules []Module) map[uint]rangeSplit {
 		// functions, and the PC bit width must match the one chosen there.
 		if fn, ok := mod.(*WordFunction); ok && !fn.IsNative() && !fn.IsAtomic() {
 			add(fn.PcWidth())
+			//TODO: rm me see https://github.com/LFDT-Lineth/zkc/issues/1910
+			// Seed from IS_PC_<k> selectors
+			add(1)
 		}
 		// Seed from every register of every module.
 		for _, r := range mod.Registers() {
