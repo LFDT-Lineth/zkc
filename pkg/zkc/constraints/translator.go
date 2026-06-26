@@ -204,7 +204,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		mod.AddRegisters(register.NewComputed(io.PC_NAME, pcWidth, padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
-		// Create one-hot program counter selectors
+		// Create IS_PC_<k> program counter selectors
 		for c := range pcSelectors {
 			pcSelectors[c] = register.NewId(mod.Width())
 			mod.AddRegisters(register.NewComputed(io.SelectorName(uint(c)), 1, padding))
@@ -216,7 +216,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	} else {
 		framing = mirc.NewAtomicFraming[register.Id, Expr[F]]()
 	}
-	// Transle all instructions
+	// Translate all instructions
 	for pc, vec := range fm.Code() {
 		var (
 			handle = fmt.Sprintf("pc%d", pc)
@@ -225,7 +225,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			// extract logical constraint
 			constraint = tr.translate().AsLogical()
 		)
-		// translate into AIR constraints
+		// translate into MIR constraints
 		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint))
 	}
 	// Emit lookup constraints for any function calls made by this function.
