@@ -241,18 +241,15 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 // The caller (source) side is gated on two (potentially combined) conditions:
 //
 //   - Position: in a multi-line caller the call at code line k fires only on
-//     rows where the is_pc_* selector IS_PC_k is on; in an atomic caller
+//     rows where the selector IS_PC_k is on; in an atomic caller
 //     every row is a call row, so there is no positional gating.
 //   - Path: a call may be executed conditionally (e.g. the recursive call in a
 //     shift helper, guarded by "n != 0").  The branch condition under which the
 //     call is reached is materialised by FactorSkipConditions as a boolean
 //     register ("path selector"); only rows where it is on actually call.
 //
-// For an atomic caller the source selector is therefore the path selector
-// (unfiltered when the call is unconditional).  For a multi-line caller it
-// would be IS_PC_k * path_selector — currently only the unconditional case
-// (just IS_PC_k) is supported.  The callee (target) side is filtered by its
-// $ret line for multi-line callees, or unfiltered for atomic callees.
+// Lookups require a register (and not an expression) as the source selector,
+// so the path selector is materialised as a fresh 1-bit register (if it is not already).
 func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	fm vm.FieldFunction, pcSelectors []register.Id, infos []moduleInfo) {
 	//
