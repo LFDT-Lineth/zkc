@@ -99,6 +99,7 @@ func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 				srcSelector = callSourceSelector(mod, ctx, mod.Registers(),
 					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors)
 			case *instruction.UnconditionalCall:
+				//TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1935
 				// An unconditional call fires on every row, so it has no selector at
 				// all (neither positional nor path).
 				calleeId, args, returns = c.Id, c.Arguments, c.Returns
@@ -118,6 +119,7 @@ func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 func callSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
 ) util.Option[register.Id] {
+	// TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1936
 	// In a multi-line caller the call only fires on rows executing its line, so
 	// fold the line's PC selector (IS_PC_k != 0) into the condition as an
 	// extra single-bit atom.  An atomic caller has no line selectors, so its

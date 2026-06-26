@@ -46,10 +46,16 @@ func (p *FullObserver[W, I, M]) Initialise(machine M) {
 	// initialise data structures
 	p.trace = make([][]State[W], len(machine.Modules()))
 	p.callstack = stack.Stack[StackFrame[W]]{}
-	// initialise input ROMs
+	// initialise input ROMs and static reference tables
 	for i, m := range machine.Modules() {
-		// Check whether this is a (non-static) read-only memory
-		if m, ok := m.(*memory.ReadOnly[W]); ok {
+		switch m := m.(type) {
+		case *memory.StaticReadOnly[W]:
+			// Static reference tables (e.g. the $range_un range-check tables) are
+			// not populated by execution, so their full contents must be seeded
+			// here; otherwise lookups into them would see an empty target.
+			p.trace[i] = initialiseROM(&m.ReadOnly)
+		case *memory.ReadOnly[W]:
+			// (non-static) read-only memory, i.e. an input ROM.
 			p.trace[i] = initialiseROM(m)
 		}
 	}

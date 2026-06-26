@@ -19,19 +19,13 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
-
-// MAX_STATIC_RANGE_WIDTH is the largest register width for which a range proof
-// is provided directly by a fully-enumerated static table (range_u1 ..
-// range_u16).  Registers wider than this are range-checked by recursively
-// destructuring them into two roughly-equal halves, each of which is itself
-// range-checked.
-const MAX_STATIC_RANGE_WIDTH = 16
 
 // Register names used within generated range modules.  The "value" column is
 // the lookup recipient in both static tables and recursive modules, so callers
@@ -107,7 +101,7 @@ func generateRangeModules[W word.Word[W]](cfg field.Config, modules []Module) []
 		// Note, this could be optimized:
 		// https://github.com/LFDT-Lineth/zkc/issues/1910
 		// and https://github.com/LFDT-Lineth/zkc/issues/1911
-		if w <= MAX_STATIC_RANGE_WIDTH {
+		if w <= util.MAX_STATIC_RANGE_WIDTH {
 			extra = append(extra, newStaticRangeTable[W](name, w))
 		} else {
 			extra = append(extra, newRecursiveRangeModule[W](name, w, splits[w], moduleOf))
@@ -156,7 +150,7 @@ func neededRangeWidths[W word.Word[W]](cfg field.Config, modules []Module) map[u
 
 		queue = queue[1:]
 		//
-		if n <= MAX_STATIC_RANGE_WIDTH {
+		if n <= util.MAX_STATIC_RANGE_WIDTH {
 			// Leaf width: handled by a static table, no decomposition.
 			splits[n] = rangeSplit{}
 		} else {
@@ -291,7 +285,7 @@ func rangeModuleName(w uint) string {
 // range module whose id is `id`: a (data-less) MemRead from the static ROM when
 // w <= 16, or a Call into the recursive range function otherwise.
 func rangeCheck(id uint, r register.Id, w uint) WordInstruction {
-	if w <= MAX_STATIC_RANGE_WIDTH {
+	if w <= util.MAX_STATIC_RANGE_WIDTH {
 		return instruction.NewMemRead(id, []register.Id{r}, nil)
 	}
 
@@ -339,7 +333,7 @@ func addRangeChecks(mod Module, idOf map[string]uint) Module {
 		// to populate the range module.
 		// For registers of width <= MAX_STATIC_RANGE_WIDTH, the range check is done via a static table,
 		// and the lookup is added when generating constraints.
-		if w := registerWidthOrZero(r); w > MAX_STATIC_RANGE_WIDTH {
+		if w := registerWidthOrZero(r); w > util.MAX_STATIC_RANGE_WIDTH {
 			checks = append(checks, rangeCheck(idOf[rangeModuleName(w)], register.NewId(uint(j)), w))
 		}
 	}

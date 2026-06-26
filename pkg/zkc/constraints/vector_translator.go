@@ -89,7 +89,7 @@ func (p *VectorInsnTranslator[F]) translate() Expr[F] {
 			// no-operation
 			continue
 		case *instruction.Call, *instruction.MemRead, *instruction.MemWrite, *instruction.UnconditionalCall:
-			// Translation of (unconditional)calls, and memory read/write is done at the function level, 
+			// Translation of (unconditional)calls, and memory read/write is done at the function level,
 			// as it modifies the module itself (adding source selectors), requires knowledge of
 			// taregt modules, etc
 			continue

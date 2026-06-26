@@ -38,10 +38,13 @@ func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F]) mir.Sche
 		// Pre-compute per-module metadata required to wire up call lookups (e.g.
 		// the callee register layout and whether it is atomic).
 		infos = computeModuleInfos(fm.Modules())
+		// Index the static range-check tables by width, so each register can be
+		// range-proved by a lookup into the matching $range_un table.
+		rangeTables = computeRangeTables[F](fm.Modules())
 	)
 	//
 	for i, m := range fm.Modules() {
-		modules[i] = translateModule[F](uint(i), m, infos)
+		modules[i] = translateModule[F](uint(i), m, infos, rangeTables)
 	}
 	//
 	return schema.NewUniformSchema(modules)
@@ -57,10 +60,11 @@ func GenerateAirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], field fi
 	return mir.LowerToAir(mirc, field.BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)
 }
 
-func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module, infos []moduleInfo) mir.Module[F] {
+func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module, infos []moduleInfo,
+	rangeTables map[uint]rangeTable) mir.Module[F] {
 	switch fm := fm.(type) {
 	case *vm.FieldFunction:
-		return translateFunction[F](ctx, *fm, infos)
+		return translateFunction[F](ctx, *fm, infos, rangeTables)
 	case vm.Memory[F]:
 		if fm.IsStatic() {
 			return translateStaticMemory(ctx, fm)
@@ -135,7 +139,7 @@ func translateReadWriteMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memor
 }
 
 func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction, infos []moduleInfo,
-) mir.Module[F] {
+	rangeTables map[uint]rangeTable) mir.Module[F] {
 	var (
 		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]
@@ -194,10 +198,10 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint))
 	}
 	// Add range proof constraints for all registers.
-	// While adding lookups from calls and memory read/write  might add (bit) register,
-	// it is safe to add range proof constraints for all registers here, as the register
-	// that will be introduced later will be already range-prooved (as a product of bit register)
-	// addRangeProofConstraints()
+	// Note: while adding lookups from calls and memory read/write  might add (bit) registers,
+	// it is safe to add range proof constraints for all registers before, as the registers
+	// that will be introduced later will be already range-proved (as a product of bit registers).
+	addRangeProofConstraints(mod, ctx, fm.Registers(), rangeTables)
 
 	// Emit lookup constraints for any function calls made by this function.
 	addCallLookups(mod, ctx, fm, pcSelectors, infos)

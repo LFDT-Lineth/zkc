@@ -20,6 +20,15 @@ import (
 	"strings"
 )
 
+// MAX_STATIC_RANGE_WIDTH is the largest register width for which a range proof
+// is provided directly by a fully-enumerated static table ($range_u1 ..
+// $range_u16).  Registers wider than this are range-checked by recursively
+// destructuring them into two roughly-equal halves, each of which is itself
+// range-checked.  It is shared between the range-module generator
+// (pkg/zkc/vm/internal/transform) and the constraint translator
+// (pkg/zkc/constraints).
+const MAX_STATIC_RANGE_WIDTH = 16
+
 // ParseJsonInputFile parses a json input file into an input / output mapping,
 // as suitable for booting a machine with.  This can fail with a parsing error.
 func ParseJsonInputFile(bytes []byte) (map[string][]byte, error) {
