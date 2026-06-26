@@ -91,7 +91,7 @@ func (p *VectorInsnTranslator[F]) translate() Expr[F] {
 		case *instruction.Call, *instruction.MemRead, *instruction.MemWrite, *instruction.UnconditionalCall:
 			// Translation of (unconditional)calls, and memory read/write is done at the function level,
 			// as it modifies the module itself (adding source selectors), requires knowledge of
-			// taregt modules, etc
+			// target modules, etc
 			continue
 		case *instruction.Fail:
 			assignments = joinAssignments(assignments, localWrites)
