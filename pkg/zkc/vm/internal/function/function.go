@@ -75,7 +75,7 @@ func (p *Function[I]) Code() []instruction.Vector[I] {
 // only ones carrying a PC register.
 func (p *Function[I]) PcWidth() uint {
 	if p.IsAtomic() || p.IsNative() {
-		panic("PC register only exist for non-atomic non-native functions")
+		panic("PC register exists only for non-atomic, non-native functions")
 	}
 
 	return bit.Width(uint(1 + len(p.code)))
