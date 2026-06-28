@@ -242,63 +242,216 @@ func translateAccessOnceMemory[F field.Element[F]](
 	memoryModule = memoryModule.Init(name, false, true, false, fm.IsNative(), false, 0)
 	memoryModule.AddRegisters(fm.Registers()...)
 
-	var (
-		access = register.NewId(memoryModule.Width() + 0)
-	)
-
+	var access = register.NewId(memoryModule.Width())
 	memoryModule.AddRegisters(register.NewComputed("access", 1, padding))
 
 	var (
-		addrRegs      = fm.Geometry().AddressRegisters()
-		addrRegOffset = uint(0)
-		addr          = concatenateRegisters[F](addrRegs, addrRegOffset, 0)
-		nextAddr      = concatenateRegisters[F](addrRegs, addrRegOffset, 1)
-		acc           = mirc.Variable[register.Id, Expr[F]](access, 1, 0)
-		nextAcc       = mirc.Variable[register.Id, Expr[F]](access, 1, 1)
-		zero          = mirc.Number[register.Id, Expr[F]](0)
-		one           = mirc.Number[register.Id, Expr[F]](1)
+		addrRegs                     = fm.Geometry().AddressRegisters()
+		L                            = len(addrRegs)
+		addressSpansSeveralRegisters = L > 1
+		prevAccess                   = mirc.Variable[register.Id, Expr[F]](access, 1, -1)
+		currAccess                   = mirc.Variable[register.Id, Expr[F]](access, 1, 0)
+		nextAccess                   = mirc.Variable[register.Id, Expr[F]](access, 1, 1)
+		zero                         = mirc.Number[register.Id, Expr[F]](0)
+		one                          = mirc.Number[register.Id, Expr[F]](1)
+		constraints                  = []mir.Constraint[F]{}
 	)
-
-	// ================================================
-	// constraints
-	// ================================================
 
 	// ================================================
 	// ACCESS bit constraints
 	// ================================================
 
+	// We will impose the following:
+	//
+	//	- if ACCESS[i] = 0
+	//		- Then []ADDRESS[i] ≡ 0
+	//	- if ACCESS[i-1] = 0 ∧ ACCESS[i] = 1 then
+	//		- []ADDRESS[i] ≡ 0
+
 	// ACCESS[0] = 0
 	accessBitVanishesInPadding := mir.NewVanishingConstraint("access_bit_vanishes_in_padding", ctx, util.Some[int](0),
-		acc.Equals(zero).AsLogical())
+		currAccess.Equals(zero).AsLogical())
 	// ACCESS[i] = 1 => ACCESS[i + 1] = 1
 	accessBitMonotony := mir.NewVanishingConstraint("access_bit_monotony", ctx, util.None[int](),
-		mirc.If(acc.Equals(one), nextAcc.Equals(one)).AsLogical())
+		mirc.If(currAccess.Equals(one), nextAccess.Equals(one)).AsLogical())
+
+	constraints = append(constraints,
+		accessBitVanishesInPadding,
+		accessBitMonotony,
+	)
 
 	// ================================================
 	// []ADDRESS constraints
 	// ================================================
 
-	// If ACCESS[i] = 0 Then ADDRESS[i] = 0
-	addressesVanishInPadding := mir.NewVanishingConstraint("addresses_vanish_in_padding", ctx, util.None[int](),
-		mirc.If(acc.Equals(zero), addr.Equals(zero)).AsLogical())
-	// If ACCESS[i] = 0 ∧ ACCESS[i + 1] = 1 Then ADDRESS[i + 1] = 0
-	firstNonpaddingAddressIsZero := mir.NewVanishingConstraint("first_nontrivial_address_is_zero", ctx, util.None[int](),
-		mirc.If(acc.Equals(zero),
-			mirc.If(nextAcc.NotEquals(zero),
-				nextAddr.Equals(zero))).AsLogical())
-	// If ACCESS[i] = 1 Then ADDRESS[i + 1] = 1 + ADDRESS[i]
-	addressMonotony := mir.NewVanishingConstraint("address_monotony", ctx, util.None[int](),
-		mirc.If(acc.NotEquals(zero), nextAddr.Equals(addr.Add(one))).AsLogical())
+	switch {
+	case addressSpansSeveralRegisters:
 
-	constraints := []mir.Constraint[F]{
-		accessBitVanishesInPadding,
-		accessBitMonotony,
-		addressesVanishInPadding,
-		firstNonpaddingAddressIsZero,
-		addressMonotony,
+		var (
+			prevAddrRegs = make([]Expr[F], L)
+			currAddrRegs = make([]Expr[F], L)
+		)
+
+		for k := range addrRegs {
+			prevAddrRegs[k] = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(k)), addrRegs[k].Width(), -1)
+			currAddrRegs[k] = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(k)), addrRegs[k].Width(), 0)
+		}
+
+		// ================================================
+		// at_flag constraints
+		// ================================================
+
+		// we add binary '@k' flags to help locate the address register that
+		// gets updated when going from ADDRESS[i] to 1 + ADDRESS[i], with
+		// ADDRESS really meaning the address register slice []ADDRESS.
+		//
+		// The idea is that
+		//	- precisely one of these flags is active on any non-padding row
+		//	  expresed as
+		//		- @k ≡ binary, for k = 0..L
+		//		- Σ_k @k[i] = ACCESS[i]
+		//	- if ACCESS[i-1] = 1 ∧ @k[i] = 1 then
+		//		- [a]ADDRESS[i]   =     [a]ADDRESS[i-1] for 0 ≤ a < k
+		//		- [k]ADDRESS[i-1] ≠ max_value_k
+		//		- [k]ADDRESS[i]   = 1 + [k]ADDRESS[i-1]
+		//		- [b]ADDRESS[i-1] = max_value_b for k < b < L
+		//		- [b]ADDRESS[i]   = 0           for k < b < L
+		//
+		// where L ≡ len([]ADDRESS) and max_value_x is the maximum integer of
+		// bitwidth that of the register [x]ADDRESS.
+		//
+		// **Note.** [0]ADDRESS is the *most* significant limb
+		//
+		// **Note.** This precaution is only required when []ADDRESS holds >1
+		// registers.
+		var (
+			atFlags           = make([]register.Id, L)
+			atFlagVars        = make([]Expr[F], L)
+			addrLimbMaxValues = make([]Expr[F], L)
+		)
+
+		for i := range atFlags {
+			atFlags[i] = register.NewId(memoryModule.Width())
+			memoryModule.AddRegisters(register.NewComputed(fmt.Sprintf("at_flag_%d", i), 1, padding))
+
+			atFlagVars[i] = mirc.Variable[register.Id, Expr[F]](atFlags[i], 1, 0)
+			addrLimbMaxValues[i] = mirc.BigNumber[register.Id, Expr[F]](addrRegs[i].MaxValue())
+		}
+
+		// @k ≡ binary, for k = 0..L
+		// these are bitwidth 1 registers : we don't need to explicitly impose binarity (?)
+
+		// Σ_k @k[i] = ACCESS[i]
+		var (
+			atFlagSum                = mirc.Sum(atFlagVars)
+			atFlagSumEqualsAccessBit mir.Constraint[F]
+		)
+
+		atFlagSumEqualsAccessBit = mir.NewVanishingConstraint(
+			"at_flag_sum_equals_access_bit", ctx,
+			util.None[int](),
+			atFlagSum.Equals(currAccess).AsLogical())
+
+		// if ACCESS[i] = 0 Then []ADDRESS[i] ≡ 0
+		var addressesVanishInPadding = make([]mir.Constraint[F], L)
+		for k := range L {
+			addressesVanishInPadding[k] = mir.NewVanishingConstraint(
+				fmt.Sprintf("address_%d_vanishes_in_padding", k), ctx,
+				util.None[int](),
+				mirc.If(currAccess.Equals(zero), currAddrRegs[k].Equals(zero)).AsLogical())
+		}
+
+		// if ACCESS[i - 1] = 0 ∧ ACCESS[i] = 1 then []ADDRESS[i] ≡ 0
+		var addressesVanishOnFirstNonPaddingRow = make([]mir.Constraint[F], L)
+		for k := range L {
+			addressesVanishOnFirstNonPaddingRow[k] = mir.NewVanishingConstraint(
+				fmt.Sprintf("address_%d_vanishes_on_first_non_padding_row", k), ctx,
+				util.None[int](),
+				mirc.If(prevAccess.Equals(zero),
+					mirc.If(currAccess.Equals(one), currAddrRegs[k].Equals(zero))).AsLogical())
+		}
+
+		var addrUpdateConstraints = make([][]mir.Constraint[F], L)
+		for k := range L {
+			// 2*k: constraints for ADDRESS limbs preceding the k-th limb
+			// 2: constraints applying to the k-th limb
+			// (L - k - 1): constraints for ADDRESS limbs after the k-th limb
+			addrUpdateConstraints[k] = make([]mir.Constraint[F], 2*k+2+(L-k-1))
+
+			// constraints on the limbs preceding the k-th limb
+			for i := 0; i < k; i++ {
+				addrUpdateConstraints[k][2*i] = mir.NewVanishingConstraint(
+					fmt.Sprintf("@%d_prev_addr_%d_equals_max_value_%d", k, i, i),
+					ctx, util.None[int](),
+					mirc.If(prevAccess.Equals(one),
+						mirc.If(atFlagVars[k].Equals(one), prevAddrRegs[i].Equals(addrLimbMaxValues[i]))).AsLogical())
+				addrUpdateConstraints[k][2*i+1] = mir.NewVanishingConstraint(
+					fmt.Sprintf("@%d_curr_addr_%d_equals_zero", k, i),
+					ctx, util.None[int](),
+					mirc.If(prevAccess.Equals(one),
+						mirc.If(atFlagVars[k].Equals(one), currAddrRegs[i].Equals(zero))).AsLogical())
+			}
+
+			// constraints on the k-th limb
+			addrUpdateConstraints[k][2*k] = mir.NewVanishingConstraint(
+				fmt.Sprintf("@%d_prev_addr_%d_equals_not_max_value_%d", k, k, k),
+				ctx, util.None[int](),
+				mirc.If(prevAccess.Equals(one),
+					mirc.If(atFlagVars[k].Equals(one), prevAddrRegs[k].NotEquals(addrLimbMaxValues[k]))).AsLogical())
+			addrUpdateConstraints[k][2*k+1] = mir.NewVanishingConstraint(
+				fmt.Sprintf("@%d_curr_addr_%d_equals_one_plus_prev_addr_%d", k, k, k),
+				ctx, util.None[int](),
+				mirc.If(prevAccess.Equals(one),
+					mirc.If(atFlagVars[k].Equals(one), currAddrRegs[k].Equals(prevAddrRegs[k].Add(one)))).AsLogical())
+
+			// constraints on the limbs after the k-th limb
+			for i := 0; i < L-k-1; i++ {
+				b := k + 1 + i
+				addrUpdateConstraints[k][2*k+2+i] = mir.NewVanishingConstraint(
+					fmt.Sprintf("@%d_prev_addr_%d_equals_prev_value_%d", k, b, b),
+					ctx, util.None[int](),
+					mirc.If(prevAccess.Equals(one),
+						mirc.If(atFlagVars[k].Equals(one), currAddrRegs[i].Equals(prevAddrRegs[i]))).AsLogical())
+			}
+		}
+
+		constraints = append(constraints, atFlagSumEqualsAccessBit)
+		constraints = append(constraints, addressesVanishInPadding...)
+
+		constraints = append(constraints, addressesVanishOnFirstNonPaddingRow...)
+		for k := range L {
+			constraints = append(constraints, addrUpdateConstraints[k]...)
+		}
+
+	case !addressSpansSeveralRegisters:
+		var (
+			currAddr = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(0)), 1, 0)
+			nextAddr = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(0)), 1, 1)
+		)
+
+		// If ACCESS[i] = 0 Then ADDRESS[i] = 0
+		addressVanishesInPadding := mir.NewVanishingConstraint(
+			"addresses_vanish_in_padding", ctx, util.None[int](),
+			mirc.If(currAccess.Equals(zero), currAddr.Equals(zero)).AsLogical())
+		// If ACCESS[i] = 0 ∧ ACCESS[i + 1] = 1 Then ADDRESS[i + 1] = 0
+		addressVanishesOnFirstNonPaddingRow := mir.NewVanishingConstraint(
+			"first_nontrivial_address_is_zero", ctx, util.None[int](),
+			mirc.If(currAccess.Equals(zero),
+				mirc.If(nextAccess.NotEquals(zero),
+					nextAddr.Equals(zero))).AsLogical())
+		// If ACCESS[i] = 1 Then ADDRESS[i + 1] = 1 + ADDRESS[i]
+		addressMonotony := mir.NewVanishingConstraint(
+			"address_monotony", ctx, util.None[int](),
+			mirc.If(currAccess.NotEquals(zero), nextAddr.Equals(currAddr.Add(one))).AsLogical())
+
+		constraints = append(constraints,
+			addressVanishesInPadding,
+			addressVanishesOnFirstNonPaddingRow,
+			addressMonotony,
+		)
 	}
-	memoryModule.AddConstraints(constraints...)
 
+	memoryModule.AddConstraints(constraints...)
 	return memoryModule
 }
 
