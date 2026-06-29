@@ -23,9 +23,4 @@ type LoweringConfig struct {
 	// includes: the maximum field bandwidth, which is number of bits the
 	// underlying field can hold; and, the maximum register width.
 	Field field.Config
-	// Vectorize determines whether or not to enable vectorisation.  More
-	// specifically, vectorisation attempts to combine multiple machine
-	// instructions together into batches which can be "executed" concurrently,
-	// roughly reminiscent of Very Long Instruction Word (VLIW) architectures.
-	Vectorize bool
 }

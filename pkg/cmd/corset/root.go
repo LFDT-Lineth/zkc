@@ -153,8 +153,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 	corsetConfig.EnforceTypes = GetFlag(cmd, "enforce-types")
 	corsetConfig.EnforceLimbTypes = GetFlag(cmd, "enforce-limb-types")
 	corsetConfig.Field = *fieldConfig
-	// Assembly lowering config
-	asmConfig.Vectorize = GetFlag(cmd, "vectorize")
 	asmConfig.Field = *fieldConfig
 	// Sanity check MIR optimisation level
 	if optimisation >= uint(len(mir.OPTIMISATION_LEVELS)) {

@@ -423,7 +423,6 @@ func getSchemaStack[F field.Element[F]](stdlib bool, field field.Config, filenam
 	corsetConfig.Stdlib = stdlib
 	corsetConfig.Field = field
 	// Configure asm for lowering
-	asmConfig.Vectorize = true
 	asmConfig.Field = field
 	//
 	stack = stack.
