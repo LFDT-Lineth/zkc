@@ -317,7 +317,7 @@ func CompileSourceFiles(config corset.CompilationConfig, asmConfig asm.LoweringC
 		srcfiles[i] = *source.NewSourceFile(n, bytes)
 	}
 	// Parse and compile source files
-	mixedMacroProgram, srcmap, errors = corset.CompileSourceFiles(config, srcfiles, asm.MacroProgram{})
+	mixedMacroProgram, srcmap, errors = corset.CompileSourceFiles(config, srcfiles)
 	// Check for any errors
 	if len(errors) == 0 {
 		attributes := []binfile.Attribute{&srcmap}

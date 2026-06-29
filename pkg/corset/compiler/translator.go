@@ -71,10 +71,9 @@ func TranslateCircuit(
 	env Environment,
 	srcmap *source.Maps[ast.Node],
 	circuit *ast.Circuit,
-	extern asm.MacroProgram,
 	config Config) (asm.MacroHirProgram, []SyntaxError) {
 	//
-	builder := ir.NewSchemaBuilder[word.BigEndian, hir.Constraint, hir.Term](extern.Components()...)
+	builder := ir.NewSchemaBuilder[word.BigEndian, hir.Constraint, hir.Term, asm.MacroComponent]()
 	t := translator{env, srcmap, builder, config}
 	// Allocate all modules into schema
 	t.translateModules(circuit)
@@ -85,7 +84,7 @@ func TranslateCircuit(
 	// Build concrete modules from schema
 	modules := ir.BuildSchema[hir.Module](t.schema)
 	// Finally, construct the asm program
-	return asm.NewMixedProgram[word.BigEndian](extern, modules...), nil
+	return asm.NewMixedProgram[word.BigEndian](asm.MacroProgram{}, modules...), nil
 }
 
 // Translator packages up information necessary for translating a circuit into
