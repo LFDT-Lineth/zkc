@@ -19,32 +19,33 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// InlineFunctions constructs an equivalent set of modules in which every call to
-// one of the named functions has been inlined at its call site, and the named
-// function modules removed.  Removing modules shifts the identifiers of those
-// which follow, hence module identifiers within Call / MemRead / MemWrite
-// instructions are remapped accordingly.
+// InlineFunctions constructs an equivalent bytecode program in which every call
+// to one of the named functions has been inlined at its call site, and the
+// named function modules removed.  Removing modules shifts the identifiers of
+// those which follow, hence module identifiers within Call / ReadWrite
+// bytecodes are remapped accordingly.
 //
-// Inlining a call site replaces the Call instruction with the callee's body,
-// where every callee register is realised by a caller register.  Where
-// possible, callee inputs / outputs are aliased directly to the corresponding
-// argument / return registers of the call; otherwise, a fresh (caller-local)
-// shadow register is allocated, along with a copy of the argument register
-// into the shadowed input at entry (resp. of the shadowed output into the
-// return register at exit).  Such copies enforce the same dynamic width
-// checks as entering / leaving the callee's stack frame did, hence aliasing
-// additionally requires identically shaped registers (see buildShadowMap for
-// the exact conditions).
+// Inlining a call site replaces the Call bytecode with the callee's body, where
+// every callee register is realised by a caller register.  Where possible,
+// callee inputs / outputs are aliased directly to the corresponding argument /
+// return registers of the call; otherwise, a fresh (caller-local) shadow
+// register is allocated, along with a copy of the argument register into the
+// shadowed input at entry (resp. of the shadowed output into the return
+// register at exit).  Such copies enforce the same dynamic width checks as
+// entering / leaving the callee's stack frame did, hence aliasing additionally
+// requires identically shaped registers (see buildShadowMap for the exact
+// conditions).
 //
-// Output aliasing assumes the callee never reads an output before assigning
-// it, and assigns every output before returning.  Both are guaranteed for
-// compiler-generated functions (see validate.ControlFlow); machines built by
+// Output aliasing assumes the callee never reads an output before assigning it,
+// and assigns every output before returning.  Both are guaranteed for
+// compiler-generated functions (see validate.ControlFlow); programs built by
 // other means which violate them may observe the return register's previous
 // value where a true call would have observed the callee's initial (zero)
 // output.
@@ -53,11 +54,11 @@ import (
 // vector containing a call at the call site.  It panics on: an unknown or
 // duplicate name; a native function; the entry function "main"; or (mutual)
 // recursion amongst the named functions.
-func InlineFunctions[W word.Word[W]](modules []Module, names []string) []Module {
-	var targets []uint
-	//
-	modules = slices.Clone(modules)
-	targets = resolveInlineTargets(modules, names)
+func InlineFunctions[W word.Word[W]](program descriptor.Program[W], names []string) descriptor.Program[W] {
+	var (
+		modules = slices.Clone(program.Modules())
+		targets = resolveInlineTargets(modules, names)
+	)
 	// Inline named functions in callee-first order.  At each step, pick a
 	// target whose body no longer calls any unprocessed target; hence, by the
 	// time a target is inlined into its callers, its body is fully inlined
@@ -66,11 +67,11 @@ func InlineFunctions[W word.Word[W]](modules []Module, names []string) []Module 
 	for remaining := slices.Clone(targets); len(remaining) > 0; {
 		var (
 			index  = findInlinableTarget(modules, remaining)
-			callee = modules[remaining[index]].(*WordFunction)
+			callee = modules[remaining[index]].(*descriptor.Function[W])
 		)
 		//
 		for i, m := range modules {
-			if fn, ok := m.(*WordFunction); ok && fn != callee && !fn.IsNative() {
+			if fn, ok := m.(*descriptor.Function[W]); ok && fn != callee && !fn.IsNative() {
 				modules[i] = inlineAllCalls[W](fn, remaining[index], callee)
 			}
 		}
@@ -78,17 +79,17 @@ func InlineFunctions[W word.Word[W]](modules []Module, names []string) []Module 
 		remaining = slices.Delete(remaining, index, index+1)
 	}
 	// Remove now-dead targets, remapping module identifiers.
-	return removeModules(modules, targets)
+	return descriptor.NewProgram(removeModules(modules, targets)...)
 }
 
-// resolveInlineTargets maps each name to its module identifier, sanity
-// checking that every name identifies a distinct function which can actually
-// be inlined (and removed).
-func resolveInlineTargets(modules []Module, names []string) []uint {
+// resolveInlineTargets maps each name to its module identifier, sanity checking
+// that every name identifies a distinct function which can actually be inlined
+// (and removed).
+func resolveInlineTargets[W word.Word[W]](modules []descriptor.Module[W], names []string) []uint {
 	var targets = make([]uint, len(names))
 	//
 	for i, name := range names {
-		index := slices.IndexFunc(modules, func(m Module) bool { return m.Name() == name })
+		index := slices.IndexFunc(modules, func(m descriptor.Module[W]) bool { return m.Name() == name })
 		//
 		switch {
 		case index < 0:
@@ -99,7 +100,7 @@ func resolveInlineTargets(modules []Module, names []string) []uint {
 			panic(fmt.Sprintf("duplicate inlined function \"%s\"", name))
 		}
 		//
-		if fn, ok := modules[index].(*WordFunction); !ok {
+		if fn, ok := modules[index].(*descriptor.Function[W]); !ok {
 			panic(fmt.Sprintf("cannot inline non-function \"%s\"", name))
 		} else if fn.IsNative() {
 			panic(fmt.Sprintf("cannot inline native function \"%s\"", name))
@@ -114,9 +115,9 @@ func resolveInlineTargets(modules []Module, names []string) []uint {
 // findInlinableTarget returns the index (within remaining) of a target whose
 // body contains no calls to any remaining target, panicking if every target
 // calls another (i.e. the named functions are recursive).
-func findInlinableTarget(modules []Module, remaining []uint) int {
+func findInlinableTarget[W word.Word[W]](modules []descriptor.Module[W], remaining []uint) int {
 	for i, id := range remaining {
-		if !callsAny(modules[id].(*WordFunction), remaining) {
+		if !callsAny(modules[id].(*descriptor.Function[W]), remaining) {
 			return i
 		}
 	}
@@ -132,10 +133,10 @@ func findInlinableTarget(modules []Module, remaining []uint) int {
 
 // callsAny checks whether the body of a given function calls any of the given
 // modules.
-func callsAny(fn *WordFunction, ids []uint) bool {
-	for _, v := range fn.Code() {
-		for _, insn := range v.Codes {
-			if call, ok := insn.(*instruction.Call); ok && slices.Contains(ids, call.Id) {
+func callsAny[W word.Word[W]](fn *descriptor.Function[W], ids []uint) bool {
+	for _, v := range fn.Vectors() {
+		for _, insn := range v.Bytecodes {
+			if call, ok := insn.(*bytecode.Call); ok && slices.Contains(ids, uint(call.Target)) {
 				return true
 			}
 		}
@@ -146,10 +147,12 @@ func callsAny(fn *WordFunction, ids []uint) bool {
 
 // inlineAllCalls inlines every call to a given callee within the body of a
 // given function, returning the (possibly unchanged) result.
-func inlineAllCalls[W word.Word[W]](fn *WordFunction, calleeId uint, callee *WordFunction) *WordFunction {
+func inlineAllCalls[W word.Word[W]](fn *descriptor.Function[W], calleeId uint,
+	callee *descriptor.Function[W]) *descriptor.Function[W] {
+	//
 	var (
-		alloc   = register.NewAllocator[int](fn.RegisterMap())
-		code    = slices.Clone(fn.Code())
+		alloc   = newRegAllocator(fn.Registers())
+		code    = slices.Clone(fn.Vectors())
 		changed = false
 	)
 	// Splice call sites one at a time.  Since the callee's body contains no
@@ -170,16 +173,16 @@ func inlineAllCalls[W word.Word[W]](fn *WordFunction, calleeId uint, callee *Wor
 		return fn
 	}
 	//
-	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), code)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), code)
 }
 
 // findCall locates the first call to a given callee, returning the enclosing
 // vector index, the position within that vector and the call itself (or nil if
 // there is none).
-func findCall(code []VectorInstruction, calleeId uint) (uint, uint, *instruction.Call) {
+func findCall[W word.Word[W]](code []BytecodeVector[W], calleeId uint) (uint, uint, *bytecode.Call) {
 	for i, v := range code {
-		for j, insn := range v.Codes {
-			if call, ok := insn.(*instruction.Call); ok && call.Id == calleeId {
+		for j, insn := range v.Bytecodes {
+			if call, ok := insn.(*bytecode.Call); ok && uint(call.Target) == calleeId {
 				return uint(i), uint(j), call
 			}
 		}
@@ -188,9 +191,9 @@ func findCall(code []VectorInstruction, calleeId uint) (uint, uint, *instruction
 	return 0, 0, nil
 }
 
-// inlineCallSite splices the body of the callee into the caller's code in
-// place of the call at position k within vector pc.  The enclosing vector is
-// split around the call site, giving the following layout:
+// inlineCallSite splices the body of the callee into the caller's code in place
+// of the call at position k within vector pc.  The enclosing vector is split
+// around the call site, giving the following layout:
 //
 //	[0 .. pc)                                  unchanged (jumps remapped)
 //	[pc]        v_pre  = codes[:k] ++ argument copies
@@ -199,14 +202,14 @@ func findCall(code []VectorInstruction, calleeId uint) (uint, uint, *instruction
 //	[exitPC]    v_post = output copies ++ codes[k+1:]
 //	[exitPC+1 ..]                              unchanged (jumps remapped)
 //
-// Since the callee body occupies len(callee.Code())+1 additional vectors, all
-// jump targets beyond pc within the original code are shifted accordingly.
-func inlineCallSite[W word.Word[W]](code []VectorInstruction, pc, k uint, call *instruction.Call,
-	callee *WordFunction, alloc RegisterAllocator) []VectorInstruction {
+// Since the callee body occupies len(callee.Vectors())+1 additional vectors,
+// all jump targets beyond pc within the original code are shifted accordingly.
+func inlineCallSite[W word.Word[W]](code []BytecodeVector[W], pc, k uint, call *bytecode.Call,
+	callee *descriptor.Function[W], alloc *regAllocator[W]) []BytecodeVector[W] {
 	//
 	var (
-		codes  = code[pc].Codes
-		nBody  = uint(len(callee.Code()))
+		codes  = code[pc].Bytecodes
+		nBody  = uint(len(callee.Vectors()))
 		exitPC = pc + 1 + nBody
 		// Inserting v_pre, body and v_post in place of one vector shifts
 		// subsequent vectors down by this amount.
@@ -226,7 +229,7 @@ func inlineCallSite[W word.Word[W]](code []VectorInstruction, pc, k uint, call *
 	vPost := buildExitVector[W](codes[k+1:], shadows.exitCopies)
 	// Splice, remapping all jumps within original caller vectors (including
 	// v_pre / v_post, whose codes originate from vector pc).
-	ncode := make([]VectorInstruction, 0, uint(len(code))+delta)
+	ncode := make([]BytecodeVector[W], 0, uint(len(code))+delta)
 	//
 	for _, v := range code[:pc] {
 		ncode = append(ncode, remapJumps(v, pc, delta))
@@ -243,55 +246,59 @@ func inlineCallSite[W word.Word[W]](code []VectorInstruction, pc, k uint, call *
 	return ncode
 }
 
-// checkCallSite ensures a given call site can be inlined.  Specifically, no
-// skip before the call may cross over it, since such a skip cannot survive
-// splitting the enclosing vector at the call site.  Note that a skip targeting
-// the call itself is fine, as this lands on the argument copies (i.e. the call
-// entry) after splitting.
-func checkCallSite(codes []WordInstruction, k uint, callee *WordFunction) {
-	if len(callee.Code()) == 0 {
+// checkCallSite ensures a given call site can be inlined.  Specifically, no skip
+// before the call may cross over it, since such a skip cannot survive splitting
+// the enclosing vector at the call site.  Note that a skip targeting the call
+// itself is fine, as this lands on the argument copies (i.e. the call entry)
+// after splitting.
+func checkCallSite[W word.Word[W]](codes []Bytecode[W], k uint, callee *descriptor.Function[W]) {
+	if len(callee.Vectors()) == 0 {
 		panic(fmt.Sprintf("cannot inline function \"%s\" with empty body", callee.Name()))
 	}
 	//
 	for j := range k {
-		var skip uint
-		//
 		switch insn := codes[j].(type) {
-		case *instruction.Skip:
-			skip = insn.Skip
-		case *instruction.SkipIf:
-			skip = insn.Skip
-		default:
-			continue
-		}
-		// Determine target of this skip
-		if j+skip+1 > k {
-			panic(fmt.Sprintf(
-				"cannot inline call to \"%s\" guarded by skip (inlining must be applied before vectorisation)",
-				callee.Name()))
+		case *bytecode.Skip:
+			checkSkipDoesNotCross(j, uint(insn.Skip), k, callee)
+		case *bytecode.SkipIf:
+			checkSkipDoesNotCross(j, uint(insn.Skip), k, callee)
+		case *bytecode.Switch[W]:
+			for _, c := range insn.Cases {
+				checkSkipDoesNotCross(j, uint(c.Skip), k, callee)
+			}
 		}
 	}
 }
 
-// shadowMap describes how callee registers are realised within the caller at
-// a given call site.  Every callee register maps to a caller register: either
-// the corresponding argument / return register of the call itself (where this
-// is provably equivalent), or a freshly allocated shadow (in which case a
+// checkSkipDoesNotCross panics when a skip of the given amount, located at
+// position j, would jump over the call at position k.
+func checkSkipDoesNotCross[W word.Word[W]](j, skip, k uint, callee *descriptor.Function[W]) {
+	if j+skip+1 > k {
+		panic(fmt.Sprintf(
+			"cannot inline call to \"%s\" guarded by skip (inlining must be applied before vectorisation)",
+			callee.Name()))
+	}
+}
+
+// shadowMap describes how callee registers are realised within the caller at a
+// given call site.  Every callee register maps to a caller register: either the
+// corresponding argument / return register of the call itself (where this is
+// provably equivalent), or a freshly allocated shadow (in which case a
 // corresponding entry / exit copy is recorded).
 type shadowMap struct {
 	// registers maps each callee register to its caller-local realisation.
-	registers []register.Id
-	// entryCopies records (shadowed input, argument) pairs to be copied on
-	// entry to the inlined body.
+	registers []bytecode.RegisterId
+	// entryCopies records (shadowed input, argument) pairs to be copied on entry
+	// to the inlined body.
 	entryCopies []registerCopy
-	// exitCopies records (return register, shadowed output) pairs to be
-	// copied on exit from the inlined body.
+	// exitCopies records (return register, shadowed output) pairs to be copied
+	// on exit from the inlined body.
 	exitCopies []registerCopy
 }
 
 // registerCopy records a register-to-register assignment.
 type registerCopy struct {
-	target, source register.Id
+	target, source bytecode.RegisterId
 }
 
 // buildShadowMap maps each callee register onto a caller register at a given
@@ -305,35 +312,38 @@ type registerCopy struct {
 // An output can be aliased provided its return register neither duplicates
 // another return register (returning from a stack frame is last-wins, whereas
 // direct writes would interleave), nor aliases an argument register which was
-// itself aliased (the body could then clobber that argument whilst still
-// reading it).
+// itself aliased (the body could then clobber that argument whilst still reading
+// it).
 //
 // In both cases, aliasing additionally requires the two registers to have
 // identical shape: the elided copy performed a dynamic width check, which is
 // vacuous exactly when the value already resides in a register of the same
 // width.  Anything which cannot be aliased (including all temporaries) gets a
 // fresh (computed) shadow register of the same shape.
-func buildShadowMap(call *instruction.Call, callee *WordFunction, alloc RegisterAllocator) shadowMap {
+func buildShadowMap[W word.Word[W]](call *bytecode.Call, callee *descriptor.Function[W],
+	alloc *regAllocator[W]) shadowMap {
+	//
 	var (
-		shadows    = shadowMap{registers: make([]register.Id, callee.Width())}
+		shadows    = shadowMap{registers: make([]bytecode.RegisterId, callee.Width())}
 		written    = writtenRegisters(callee)
 		numInputs  = callee.NumInputs()
 		numOutputs = callee.NumOutputs()
 		callerRegs = alloc.Registers()
-		elidedArgs []register.Id
+		elidedArgs []bytecode.RegisterId
 	)
 	//
 	for i, r := range callee.Registers() {
 		var (
-			index = uint(i)
-			alias = register.UnusedId()
+			index   = uint(i)
+			aliased = false
+			alias   bytecode.RegisterId
 		)
 		// Determine whether this register can be aliased.
 		if index < numInputs {
 			arg := call.Arguments[index]
 			//
-			if !written.Contains(index) && sameShape(callerRegs[arg.Unwrap()], r) {
-				alias = arg
+			if !written.Contains(index) && sameShape(callerRegs[arg], r) {
+				alias, aliased = arg, true
 			}
 		} else if index < numInputs+numOutputs {
 			var (
@@ -342,12 +352,12 @@ func buildShadowMap(call *instruction.Call, callee *WordFunction, alloc Register
 				duplicate = slices.Contains(call.Returns[:j], ret) || slices.Contains(call.Returns[j+1:], ret)
 			)
 			//
-			if sameShape(callerRegs[ret.Unwrap()], r) && !duplicate && !slices.Contains(elidedArgs, ret) {
-				alias = ret
+			if sameShape(callerRegs[ret], r) && !duplicate && !slices.Contains(elidedArgs, ret) {
+				alias, aliased = ret, true
 			}
 		}
 		//
-		if alias.IsUsed() {
+		if aliased {
 			shadows.registers[i] = alias
 			//
 			if index < numInputs {
@@ -357,21 +367,15 @@ func buildShadowMap(call *instruction.Call, callee *WordFunction, alloc Register
 			continue
 		}
 		// Allocate a fresh shadow of the same shape.
-		var width uint = math.MaxUint
-		//
-		if !r.IsNative() {
-			width = r.Width()
-		}
-		//
-		shadows.registers[i] = alloc.Allocate(callee.Name()+"_"+r.Name(), width)
+		shadows.registers[i] = alloc.Allocate(callee.Name()+"_"+r.Name(), r.Bitwidth())
 		// Record the corresponding entry / exit copy.
 		if index < numInputs {
 			shadows.entryCopies = append(shadows.entryCopies,
 				registerCopy{shadows.registers[i], call.Arguments[index]})
 		} else if j := index - numInputs; j < numOutputs {
-			// Where the same register receives several outputs, retain only
-			// the last copy (matching the last-wins semantics of returning
-			// from a stack frame) since sequential copies would conflict.
+			// Where the same register receives several outputs, retain only the
+			// last copy (matching the last-wins semantics of returning from a
+			// stack frame) since sequential copies would conflict.
 			if !slices.Contains(call.Returns[j+1:], call.Returns[j]) {
 				shadows.exitCopies = append(shadows.exitCopies,
 					registerCopy{call.Returns[j], shadows.registers[i]})
@@ -382,15 +386,15 @@ func buildShadowMap(call *instruction.Call, callee *WordFunction, alloc Register
 	return shadows
 }
 
-// writtenRegisters returns the set of registers written anywhere within the
-// body of a given function.
-func writtenRegisters(fn *WordFunction) bit.Set {
+// writtenRegisters returns the set of registers written anywhere within the body
+// of a given function.
+func writtenRegisters[W word.Word[W]](fn *descriptor.Function[W]) bit.Set {
 	var written bit.Set
 	//
-	for _, v := range fn.Code() {
-		for _, insn := range v.Codes {
+	for _, v := range fn.Vectors() {
+		for _, insn := range v.Bytecodes {
 			for _, r := range insn.Definitions() {
-				written.Insert(r.Unwrap())
+				written.Insert(uint(r))
 			}
 		}
 	}
@@ -400,71 +404,72 @@ func writtenRegisters(fn *WordFunction) bit.Set {
 
 // sameShape checks whether two registers have identical shape, i.e. are both
 // native, or both have the same declared width.
-func sameShape(a, b register.Register) bool {
+func sameShape[W word.Word[W]](a, b descriptor.Register[W]) bool {
 	if a.IsNative() || b.IsNative() {
 		return a.IsNative() && b.IsNative()
 	}
 	//
-	return a.Width() == b.Width()
+	return a.Bitwidth().Unwrap() == b.Bitwidth().Unwrap()
 }
 
 // buildEntryVector constructs the vector replacing the front portion of the
 // vector enclosing the call site.  This retains all codes preceding the call,
-// followed by copies of the argument registers into the shadowed callee
-// inputs.  Such copies enforce the same dynamic width checks as entering the
-// callee's stack frame did.
-func buildEntryVector[W word.Word[W]](codes []WordInstruction, copies []registerCopy) VectorInstruction {
+// followed by copies of the argument registers into the shadowed callee inputs.
+// Such copies enforce the same dynamic width checks as entering the callee's
+// stack frame did.
+func buildEntryVector[W word.Word[W]](codes []Bytecode[W], copies []registerCopy) BytecodeVector[W] {
 	var ncodes = slices.Clone(codes)
 	//
 	for _, c := range copies {
-		ncodes = append(ncodes, instruction.UintAssign[W](c.target, c.source))
+		ncodes = append(ncodes, bytecode.Move[W](c.target, c.source))
 	}
 	// Vectors must be non-empty in order to execute.
 	if len(ncodes) == 0 {
-		ncodes = append(ncodes, &instruction.Skip{Skip: 0})
+		ncodes = append(ncodes, bytecode.NewSkip(0))
 	}
 	//
-	return instruction.NewVector(ncodes...)
+	return bytecode.NewVector(ncodes...)
 }
 
-// buildExitVector constructs the vector replacing the back portion of the
-// vector enclosing the call site.  This copies the shadowed callee outputs
-// into the call's return registers, followed by all codes succeeding the
-// call.  Placing the copies here (rather than at each return site within the
-// body) ensures they are emitted exactly once.
-func buildExitVector[W word.Word[W]](codes []WordInstruction, copies []registerCopy) VectorInstruction {
-	var ncodes []WordInstruction
+// buildExitVector constructs the vector replacing the back portion of the vector
+// enclosing the call site.  This copies the shadowed callee outputs into the
+// call's return registers, followed by all codes succeeding the call.  Placing
+// the copies here (rather than at each return site within the body) ensures they
+// are emitted exactly once.
+func buildExitVector[W word.Word[W]](codes []Bytecode[W], copies []registerCopy) BytecodeVector[W] {
+	var ncodes []Bytecode[W]
 	//
 	for _, c := range copies {
-		ncodes = append(ncodes, instruction.UintAssign[W](c.target, c.source))
+		ncodes = append(ncodes, bytecode.Move[W](c.target, c.source))
 	}
 	//
 	ncodes = append(ncodes, codes...)
 	// Vectors must be non-empty in order to execute.
 	if len(ncodes) == 0 {
-		ncodes = append(ncodes, &instruction.Skip{Skip: 0})
+		ncodes = append(ncodes, bytecode.NewSkip(0))
 	}
 	//
-	return instruction.NewVector(ncodes...)
+	return bytecode.NewVector(ncodes...)
 }
 
 // buildInlinedBody instantiates the callee's body at a given call site.  All
 // registers are substituted for their caller-local shadows; internal jumps are
 // rebased onto the caller's program counter; and returns become jumps to the
 // exit vector (which performs the output copies).
-func buildInlinedBody[W word.Word[W]](callee *WordFunction, shadows []register.Id, base, exitPC uint,
-) []VectorInstruction {
-	var body = make([]VectorInstruction, len(callee.Code()))
+func buildInlinedBody[W word.Word[W]](callee *descriptor.Function[W], shadows []bytecode.RegisterId,
+	base, exitPC uint) []BytecodeVector[W] {
 	//
-	for i, v := range callee.Code() {
-		body[i] = v.Map(func(_ uint, insn WordInstruction) []WordInstruction {
+	var body = make([]BytecodeVector[W], len(callee.Vectors()))
+	//
+	for i, v := range callee.Vectors() {
+		body[i] = v.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
 			switch insn := insn.(type) {
-			case *instruction.Return:
-				return []WordInstruction{instruction.NewJump(exitPC)}
-			case *instruction.Jump:
-				return []WordInstruction{instruction.NewJump(base + insn.Immediate)}
+			case *bytecode.Ret:
+				return []Bytecode[W]{bytecode.Jump(bytecode.Address(exitPC))}
+			case *bytecode.Jmp:
+				return []Bytecode[W]{bytecode.Jump(bytecode.Address(base) + insn.Target)}
 			default:
-				return []WordInstruction{substituteRegisters[W](insn, shadows)}
+				return []Bytecode[W]{substituteRegisters[W](insn, shadows)}
 			}
 		})
 	}
@@ -472,91 +477,100 @@ func buildInlinedBody[W word.Word[W]](callee *WordFunction, shadows []register.I
 	return body
 }
 
-// substituteRegisters reconstructs a given instruction with every register
-// substituted according to a given mapping.  Unused register identifiers (e.g.
-// marking the register-constant variant of skip_if) are retained as is.
-func substituteRegisters[W word.Word[W]](insn WordInstruction, sub []register.Id) WordInstruction {
+// substituteRegisters reconstructs a given bytecode with every register
+// substituted according to a given mapping.
+//
+//nolint:gocyclo
+func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.RegisterId) Bytecode[W] {
 	switch insn := insn.(type) {
-	case *instruction.Call:
-		return instruction.NewCall(insn.Id, substituteIds(insn.Arguments, sub), substituteIds(insn.Returns, sub))
-	case *instruction.MemRead:
-		return instruction.NewMemRead(insn.Id, substituteIds(insn.Arguments, sub), substituteIds(insn.Returns, sub))
-	case *instruction.MemWrite:
-		return instruction.NewMemWrite(insn.Id, substituteIds(insn.Arguments, sub), substituteIds(insn.Returns, sub))
-	case *instruction.Debug:
-		return instruction.NewDebug(substituteChunks(insn.Chunks, sub)...)
-	case *instruction.Fail:
-		return instruction.NewFail(substituteChunks(insn.Chunks, sub)...)
-	case *instruction.Skip:
-		return insn
-	case *instruction.SkipIf:
-		var (
-			left  = register.NewVector(substituteIds(insn.Left.Registers(), sub)...)
-			right = register.NewVector(substituteIds(insn.Right.Registers(), sub)...)
-		)
-		//
-		return instruction.NewSkipIfVec(insn.Cond, left, right, insn.Skip)
-	case *instruction.FieldHint:
-		return instruction.NewFieldHint(substituteIds(insn.Targets, sub), substituteIds(insn.Sources, sub))
-	case *instruction.WordTypeA[W]:
-		target := register.NewVector(substituteIds(insn.Target.Registers(), sub)...)
-		return instruction.NewWordTypeA(insn.Op, target, substituteIds(insn.Sources, sub), insn.Constant)
-	case *instruction.WordTypeB:
-		return instruction.NewWordTypeB(insn.Op, insn.Bitwidth, substituteId(insn.Target, sub),
-			substituteId(insn.LeftSource, sub), substituteId(insn.RightSource, sub))
-	case *instruction.WordTypeF[W]:
-		return instruction.NewWordTypeF(insn.Op, substituteId(insn.Target, sub),
-			substituteIds(insn.Sources, sub), insn.Constant)
-	default:
-		panic(fmt.Sprintf("unexpected instruction in inlined body (0x%x)", insn.OpCode()))
-	}
-}
-
-func substituteChunks(chunks []instruction.FormattedChunk, sub []register.Id) []instruction.FormattedChunk {
-	var nchunks = make([]instruction.FormattedChunk, len(chunks))
-	//
-	for i, chunk := range chunks {
-		nchunks[i] = instruction.FormattedChunk{
-			Text:     chunk.Text,
-			Format:   chunk.Format,
-			Argument: register.NewVector(substituteIds(chunk.Argument.Registers(), sub)...),
+	case *bytecode.Arith[W]:
+		return bytecode.NewArith(insn.Op, substituteIds(insn.Target, sub), substituteIds(insn.Source, sub), insn.Constant)
+	case *bytecode.Bitwise:
+		return bytecode.NewBitwise(insn.Op, substituteId(insn.Target, sub), substituteId(insn.Left, sub),
+			substituteId(insn.Right, sub), insn.Bitwidth)
+	case *bytecode.FieldArith[W]:
+		return bytecode.NewFieldArith(insn.Op, substituteId(insn.Target, sub), substituteIds(insn.Sources, sub),
+			insn.Constant)
+	case *bytecode.Cat:
+		return bytecode.Concat(substituteIds(insn.Targets, sub), substituteIds(insn.Sources, sub))
+	case *bytecode.Call:
+		return bytecode.CallFun(insn.Target, insn.Flags, substituteIds(insn.Arguments, sub),
+			substituteIds(insn.Returns, sub))
+	case *bytecode.ReadWrite:
+		if insn.Write {
+			return bytecode.NewMemWrite(insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub))
 		}
+		//
+		return bytecode.NewMemRead(insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub))
+	case *bytecode.DivRem:
+		return bytecode.NewDivRem(insn.Opcode, substituteId(insn.Target, sub), substituteId(insn.Dividend, sub),
+			substituteId(insn.Divisor, sub))
+	case *bytecode.DivHint:
+		return bytecode.NewDivHint(substituteId(insn.Quotient, sub), substituteId(insn.Remainder, sub),
+			substituteId(insn.Witness, sub), substituteId(insn.Dividend, sub), substituteId(insn.Divisor, sub))
+	case *bytecode.CheckCast:
+		return bytecode.NewCheckCast(substituteId(insn.Target, sub), insn.Bitwidth)
+	case *bytecode.Skip:
+		return insn
+	case *bytecode.SkipIf:
+		return &bytecode.SkipIf{Op: insn.Op, Skip: insn.Skip,
+			Left: substituteRegVec(insn.Left, sub), Right: substituteRegVec(insn.Right, sub)}
+	case *bytecode.Switch[W]:
+		return bytecode.MultiwaySkip(substituteId(insn.Source, sub), insn.Cases)
+	case *bytecode.Debug:
+		return &bytecode.Debug{Chunks: insn.Chunks, Sources: substituteRegVecs(insn.Sources, sub)}
+	case *bytecode.Fail:
+		return &bytecode.Fail{Chunks: insn.Chunks, Sources: substituteRegVecs(insn.Sources, sub)}
+	default:
+		panic(fmt.Sprintf("unexpected instruction in inlined body (%T)", insn))
 	}
-	//
-	return nchunks
 }
 
-func substituteId(id register.Id, sub []register.Id) register.Id {
-	if !id.IsUsed() {
-		return id
-	}
-	//
-	return sub[id.Unwrap()]
+func substituteId(id bytecode.RegisterId, sub []bytecode.RegisterId) bytecode.RegisterId {
+	return sub[id]
 }
 
-func substituteIds(ids []register.Id, sub []register.Id) []register.Id {
-	var nids = make([]register.Id, len(ids))
+func substituteIds(ids []bytecode.RegisterId, sub []bytecode.RegisterId) []bytecode.RegisterId {
+	var nids = make([]bytecode.RegisterId, len(ids))
 	//
 	for i, id := range ids {
-		nids[i] = substituteId(id, sub)
+		nids[i] = sub[id]
 	}
 	//
 	return nids
 }
 
+// substituteRegVec reconstructs a register vector with each constituent register
+// substituted according to a given mapping.  The substituted registers must
+// remain consecutive (a RegVec invariant); this holds before register splitting,
+// where every such vector is a single register.
+func substituteRegVec(v bytecode.RegVec, sub []bytecode.RegisterId) bytecode.RegVec {
+	return bytecode.NewRegVec(substituteIds(v.Registers(), sub)...)
+}
+
+func substituteRegVecs(vs []bytecode.RegVec, sub []bytecode.RegisterId) []bytecode.RegVec {
+	var nvs = make([]bytecode.RegVec, len(vs))
+	//
+	for i, v := range vs {
+		nvs[i] = substituteRegVec(v, sub)
+	}
+	//
+	return nvs
+}
+
 // remapJumps shifts all jump targets beyond a given program counter down by a
-// given amount, accounting for the vectors inserted by inlining.  A target of
-// pc itself is retained, since the entry vector occupies that position in the
-// new layout.
-func remapJumps(v VectorInstruction, pc, delta uint) VectorInstruction {
+// given amount, accounting for the vectors inserted by inlining.  A target of pc
+// itself is retained, since the entry vector occupies that position in the new
+// layout.
+func remapJumps[W word.Word[W]](v BytecodeVector[W], pc, delta uint) BytecodeVector[W] {
 	var (
-		ncodes  = make([]WordInstruction, len(v.Codes))
+		ncodes  = make([]Bytecode[W], len(v.Bytecodes))
 		changed = false
 	)
 	//
-	for i, insn := range v.Codes {
-		if jmp, ok := insn.(*instruction.Jump); ok && jmp.Immediate > pc {
-			ncodes[i] = instruction.NewJump(jmp.Immediate + delta)
+	for i, insn := range v.Bytecodes {
+		if jmp, ok := insn.(*bytecode.Jmp); ok && uint(jmp.Target) > pc {
+			ncodes[i] = bytecode.Jump(bytecode.Address(uint(jmp.Target) + delta))
 			changed = true
 		} else {
 			ncodes[i] = insn
@@ -567,16 +581,16 @@ func remapJumps(v VectorInstruction, pc, delta uint) VectorInstruction {
 		return v
 	}
 	//
-	return instruction.NewVector(ncodes...)
+	return bytecode.NewVector(ncodes...)
 }
 
 // removeModules removes the given target modules, remapping the module
-// identifiers embedded within the instructions of all remaining functions
+// identifiers embedded within the bytecodes of all remaining functions
 // accordingly.
-func removeModules(modules []Module, targets []uint) []Module {
+func removeModules[W word.Word[W]](modules []descriptor.Module[W], targets []uint) []descriptor.Module[W] {
 	var (
 		idMap = make([]uint, len(modules))
-		kept  []Module
+		kept  []descriptor.Module[W]
 	)
 	//
 	for i, m := range modules {
@@ -589,7 +603,7 @@ func removeModules(modules []Module, targets []uint) []Module {
 	}
 	//
 	for i, m := range kept {
-		if fn, ok := m.(*WordFunction); ok {
+		if fn, ok := m.(*descriptor.Function[W]); ok {
 			kept[i] = remapModuleIds(fn, idMap)
 		}
 	}
@@ -599,39 +613,37 @@ func removeModules(modules []Module, targets []uint) []Module {
 
 // remapModuleIds reconstructs a given function with all module identifiers
 // substituted according to a given mapping.
-func remapModuleIds(fn *WordFunction, idMap []uint) *WordFunction {
+func remapModuleIds[W word.Word[W]](fn *descriptor.Function[W], idMap []uint) *descriptor.Function[W] {
 	var (
-		code    = make([]VectorInstruction, len(fn.Code()))
+		code    = make([]BytecodeVector[W], len(fn.Vectors()))
 		changed = false
 	)
 	//
-	for i, v := range fn.Code() {
-		var ncodes = make([]WordInstruction, len(v.Codes))
+	for i, v := range fn.Vectors() {
+		var ncodes = make([]Bytecode[W], len(v.Bytecodes))
 		//
-		for j, insn := range v.Codes {
-			ncodes[j] = remapModuleId(insn, idMap)
+		for j, insn := range v.Bytecodes {
+			ncodes[j] = remapModuleId[W](insn, idMap)
 			changed = changed || ncodes[j] != insn
 		}
 		//
-		code[i] = instruction.NewVector(ncodes...)
+		code[i] = bytecode.NewVector(ncodes...)
 	}
 	//
 	if !changed {
 		return fn
 	}
 	//
-	return function.New(fn.Name(), fn.IsNative(), fn.Registers(), code)
+	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.IsNative(), code)
 }
 
-func remapModuleId(insn WordInstruction, idMap []uint) WordInstruction {
+func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
 	var id uint
 	// Extract module identifier (if applicable)
 	switch insn := insn.(type) {
-	case *instruction.Call:
-		id = idMap[insn.Id]
-	case *instruction.MemRead:
-		id = idMap[insn.Id]
-	case *instruction.MemWrite:
+	case *bytecode.Call:
+		id = idMap[insn.Target]
+	case *bytecode.ReadWrite:
 		id = idMap[insn.Id]
 	default:
 		return insn
@@ -642,19 +654,64 @@ func remapModuleId(insn WordInstruction, idMap []uint) WordInstruction {
 	}
 	// Reconstruct instruction (where necessary)
 	switch insn := insn.(type) {
-	case *instruction.Call:
-		if id != insn.Id {
-			return instruction.NewCall(id, insn.Arguments, insn.Returns)
+	case *bytecode.Call:
+		if id != uint(insn.Target) {
+			return bytecode.CallFun(bytecode.ModuleId(id), insn.Flags, insn.Arguments, insn.Returns)
 		}
-	case *instruction.MemRead:
-		if id != insn.Id {
-			return instruction.NewMemRead(id, insn.Arguments, insn.Returns)
-		}
-	case *instruction.MemWrite:
-		if id != insn.Id {
-			return instruction.NewMemWrite(id, insn.Arguments, insn.Returns)
+	case *bytecode.ReadWrite:
+		if id != uint(insn.Id) {
+			if insn.Write {
+				return bytecode.NewMemWrite(bytecode.ModuleId(id), insn.Address, insn.Data)
+			}
+			//
+			return bytecode.NewMemRead(bytecode.ModuleId(id), insn.Address, insn.Data)
 		}
 	}
 	//
 	return insn
+}
+
+// ============================================================================
+// Register allocator
+// ============================================================================
+
+// regAllocator allocates fresh caller-local shadow registers within a function
+// during inlining.  It mirrors register.Allocator, but works directly over the
+// descriptor registers carried by a bytecode function, so existing registers
+// (and their padding) are preserved verbatim rather than round-tripped through
+// the schema-register representation.
+type regAllocator[W word.Word[W]] struct {
+	registers []descriptor.Register[W]
+}
+
+// newRegAllocator constructs an allocator seeded with the given (existing)
+// registers.  Subsequently allocated registers are appended after these.
+func newRegAllocator[W word.Word[W]](registers []descriptor.Register[W]) *regAllocator[W] {
+	return &regAllocator[W]{slices.Clone(registers)}
+}
+
+// Allocate a fresh computed register of the given shape (native when the
+// bitwidth is empty), returning its identifier.  A unique name is derived from
+// the given prefix.  Computed registers sort after inputs / outputs, so
+// appending here preserves the register ordering required by a function module.
+func (p *regAllocator[W]) Allocate(prefix string, bitwidth util.Option[uint]) bytecode.RegisterId {
+	var (
+		padding W
+		index   = uint16(len(p.registers))
+		name    = fmt.Sprintf("%s$%d", prefix, index)
+	)
+	//
+	p.registers = append(p.registers, descriptor.NewRegister(register.COMPUTED_REGISTER, name, bitwidth, padding))
+	//
+	return index
+}
+
+// Registers returns the current register set, including any allocated shadows.
+func (p *regAllocator[W]) Registers() []descriptor.Register[W] {
+	return p.registers
+}
+
+// Register returns the register with the given identifier.
+func (p *regAllocator[W]) Register(id bytecode.RegisterId) descriptor.Register[W] {
+	return p.registers[id]
 }

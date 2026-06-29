@@ -13,6 +13,7 @@
 package descriptor
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -40,10 +41,12 @@ func NewFunction[W word.Word[W]](name string, registers []Register[W], native bo
 	return &Function[W]{newModuleBase(name, registers), native, code}
 }
 
-// Vectors returns the bytecode vectors that define the body of this function.
-// These vectors contain the executable bytecode instructions for the function.
-func (p *Function[W]) Vectors() []bytecode.Vector[W] {
-	return p.vectors
+// IsAtomic determines whether or not this is a "one line function".  That is,
+// where every instance of this function occupies exactly one line in the
+// corresponding trace.  This is useful to know, as certain optimisations can be
+// applied for one line functions (e.g. no PC register is required).
+func (p *Function[W]) IsAtomic() bool {
+	return len(p.vectors) == 1
 }
 
 // IsNative reports whether this function is backed by a native circuit (i.e.
@@ -51,4 +54,22 @@ func (p *Function[W]) Vectors() []bytecode.Vector[W] {
 // vectors.
 func (p *Function[W]) IsNative() bool {
 	return p.native
+}
+
+// PcWidth returns the bit width required for this function's program counter
+// register, which must be able to index every code line plus the (one past the
+// end) halt value.  Only meaningful for non-atomic functions, which are the
+// only ones carrying a PC register.
+func (p *Function[W]) PcWidth() uint {
+	if p.IsAtomic() || p.IsNative() {
+		panic("PC register unavailable on atomic or native function")
+	}
+
+	return bit.Width(uint(1 + len(p.vectors)))
+}
+
+// Vectors returns the bytecode vectors that define the body of this function.
+// These vectors contain the executable bytecode instructions for the function.
+func (p *Function[W]) Vectors() []bytecode.Vector[W] {
+	return p.vectors
 }
