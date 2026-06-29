@@ -145,8 +145,11 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		mod     *schema.Table[F, mir.Constraint[F]]
 		name    = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
 		framing Framing[F]
-		// Create IS_PC_<k> program counter selectors
-		pcSelectors = make([]register.Id, len(fm.Code()))
+		// IS_PC_<k> program counter selectors.  Only multi-line (non-atomic)
+		// functions have these; an atomic function occupies a single line and
+		// thus has no positional gating, so this stays empty (which addCallLookups
+		// relies on to decide there is no line selector to fold in).
+		pcSelectors []register.Id
 	)
 	// Initialise module
 	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
@@ -169,7 +172,8 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		mod.AddRegisters(register.NewComputed(io.PC_NAME, fm.PcWidth(), padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
-		// Add IS_PC_<k> program counter selectors
+		// Add IS_PC_<k> program counter selectors (one per code line)
+		pcSelectors = make([]register.Id, len(fm.Code()))
 		for c := range pcSelectors {
 			pcSelectors[c] = register.NewId(mod.Width())
 			mod.AddRegisters(register.NewComputed(io.SelectorName(uint(c)), 1, padding))

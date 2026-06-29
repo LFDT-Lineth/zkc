@@ -113,7 +113,7 @@ func generatesInverse(si *instruction.SkipIf, registers RegisterAllocator) bool 
 	for _, r := range si.Uses() {
 		reg := registers.Register(r)
 		// Native registers are wider than a single bit.
-		if reg.IsNative() || reg.Width() > 1 {
+		if reg.WidthOrNative() > 1 {
 			return true
 		}
 	}
