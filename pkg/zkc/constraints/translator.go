@@ -145,10 +145,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		mod     *schema.Table[F, mir.Constraint[F]]
 		name    = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
 		framing Framing[F]
-		// IS_PC_<k> program counter selectors.  Only multi-line (non-atomic)
-		// functions have these; an atomic function occupies a single line and
-		// thus has no positional gating, so this stays empty (which addCallLookups
-		// relies on to decide there is no line selector to fold in).
+		// IS_PC_<k> program counter selectors, only for MLI.
 		pcSelectors []register.Id
 	)
 	// Initialise module
