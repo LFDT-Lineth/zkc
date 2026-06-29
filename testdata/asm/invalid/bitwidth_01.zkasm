@@ -1,5 +1,0 @@
-;;error:3:3-10:bit overflow (u16 into u15)
-fn f(x u16) -> (res u15) {
-  res = x
-  return
-}

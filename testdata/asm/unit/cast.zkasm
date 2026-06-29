@@ -1,4 +1,0 @@
-fn f(value u32) -> (res u16) {
-  res = (u16) value
-  return
-}

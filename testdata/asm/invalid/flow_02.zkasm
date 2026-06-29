@@ -1,3 +1,0 @@
-;;error:3:1-2:missing return
-fn f(x u16) -> (res u2) {
-}

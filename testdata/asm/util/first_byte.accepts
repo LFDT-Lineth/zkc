@@ -1,6 +1,0 @@
-{"first_nonzero_byte": { "word": [255], "res": [31] }}
-{"first_nonzero_byte": { "word": [65535], "res": [30] }}
-{"first_nonzero_byte": { "word": [4294967295], "res": [28] }}
-{"first_nonzero_byte": { "word": [18446744073709551615], "res": [24] }}
-{"first_nonzero_byte": { "word": [340282366920938352553754334751646382491], "res": [16] }}
-{"first_nonzero_byte": { "word": [115792089237316195423570985008687907853269984665640564039457584007913129639935], "res": [0] }}

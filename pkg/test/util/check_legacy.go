@@ -42,12 +42,6 @@ import (
 // (accepts/rejects) are found.
 const TestDir = "../../testdata"
 
-// ASM_MAX_PADDING determines the maximum amount of padding to use when testing.
-// Specifically, every trace is tested with varying amounts of padding upto this
-// value.  NOTE: assembly modules don't need to be tested for higher padding
-// values, since they only ever do unit shifts.
-const ASM_MAX_PADDING uint = 2
-
 // CORSET_MAX_PADDING determines the maximum amount of padding to use when
 // testing. Specifically, every trace is tested with varying amounts of padding
 // upto this value.
@@ -286,7 +280,7 @@ func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf lt.Trac
 
 // SRC_EXTENSIONS identifies the set of currently recognised extensions for
 // constraint source files.
-var SRC_EXTENSIONS = []string{"lisp", "zkasm"}
+var SRC_EXTENSIONS = []string{"lisp"}
 
 // This identifies matching source files.
 func matchSourceFiles(test string) []string {
@@ -429,13 +423,11 @@ func getSchemaStack[F field.Element[F]](stdlib bool, field field.Config, filenam
 	corsetConfig.Stdlib = stdlib
 	corsetConfig.Field = field
 	// Configure asm for lowering
-	asmConfig.Vectorize = true
 	asmConfig.Field = field
 	//
 	stack = stack.
 		WithCorsetConfig(corsetConfig).
 		WithAssemblyConfig(asmConfig).
-		WithLayer(cmd_util.MACRO_ASM_LAYER).
 		WithLayer(cmd_util.MICRO_ASM_LAYER).
 		WithLayer(cmd_util.MIR_LAYER).
 		WithLayer(cmd_util.AIR_LAYER)

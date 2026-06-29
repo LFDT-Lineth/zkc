@@ -18,7 +18,6 @@ import (
 	"reflect"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
-	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
@@ -34,8 +33,7 @@ type DeclPredicate = array.Predicate[ast.Declaration]
 // a symbol (e.g. a column) is referred to which doesn't exist.  Likewise, if
 // two modules or columns with identical names are declared in the same scope,
 // etc.
-func ResolveCircuit[M schema.ModuleView](srcmap *source.Maps[ast.Node], circuit *ast.Circuit,
-	externs ...M) (*ModuleScope, []SyntaxError) {
+func ResolveCircuit(srcmap *source.Maps[ast.Node], circuit *ast.Circuit) (*ModuleScope, []SyntaxError) {
 	// Construct top-level scope
 	scope := NewModuleScope(true)
 	// Define natives
@@ -46,8 +44,6 @@ func ResolveCircuit[M schema.ModuleView](srcmap *source.Maps[ast.Node], circuit 
 	for _, i := range INTRINSICS {
 		scope.Define(&i)
 	}
-	// Initialise externs
-	DeclareExterns(scope, externs...)
 	// Register modules
 	for _, m := range circuit.Modules {
 		scope.Declare(m.Name, extractSelector(nil), true)

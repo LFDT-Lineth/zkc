@@ -1,5 +1,0 @@
-fn dec(x u16, y u16) -> (z u18) {
-  var b u1
-  b,z = x - y - y - y - y
-  return
-}

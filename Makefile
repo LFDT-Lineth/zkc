@@ -26,22 +26,6 @@ test:
 	@echo ">>> Running All Tests..."
 	go test --timeout 0 ./...
 
-asm-racer:
-	@echo ">>> Running Assembly Racer Tests..."
-	go test -race --timeout 0 -run "Test_AsmUtil_FillBytes" ./...
-
-asm-bench:
-	@echo ">>> Running Assembly Benchmark Tests..."
-	go test -p 1 --timeout 0 -run "Test_AsmBench" ./...
-
-asm-util:
-	@echo ">>> Running Assembly Util Tests..."
-	go test -p 1 --timeout 0 -run "Test_AsmUtil" ./...
-
-asm-unit:
-	@echo ">>> Running Assembly Unit Tests..."
-	go test --timeout 0 -run "Test_AsmInvalid|Test_AsmUnit" ./...
-
 corset-test:
 	@echo ">>> Running Corset Tests..."
 	go test --timeout 0 -run "Test_Agnostic|Test_Valid|Test_Invalid" ./...
@@ -56,7 +40,7 @@ corset-bench:
 
 unit-test:
 	@echo ">>> Running Unit Tests..."
-	go test --timeout 0 -skip "Test_Asm|Test_Agnostic|Test_Bench|Test_Valid|Test_Invalid|Test_Zkc" ./...
+	go test --timeout 0 -skip "Test_Agnostic|Test_Bench|Test_Valid|Test_Invalid|Test_Zkc" ./...
 
 build-zkc:
 	@echo ">>> Building zkc... ${GOCORSET_VERSION}"

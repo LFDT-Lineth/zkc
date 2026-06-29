@@ -1,5 +1,0 @@
-fn f(x u16) -> (y u1) {
-  var b u1
-  y,b = x == 0 ? 0 : 2
-  return
-}

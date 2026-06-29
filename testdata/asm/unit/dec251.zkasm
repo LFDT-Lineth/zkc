@@ -1,5 +1,0 @@
-fn dec251(x u256) -> (res=1 u1) {
-   var tmp u256
-   res,tmp = x - 251
-   return
-}
