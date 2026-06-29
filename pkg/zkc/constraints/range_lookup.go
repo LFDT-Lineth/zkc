@@ -43,13 +43,13 @@ type rangeTable struct {
 	value  register.Id
 }
 
-// computeRangeTables indexes, by register width, the static range-check tables
+// indexRangeTables indexes, by register width, the static range-check tables
 // present in the machine.  A static $range_un table fully enumerates the values
 // of an n-bit register and is generated for exactly the widths
 // n <= MAX_STATIC_RANGE_WIDTH; wider registers are range-checked recursively by
 // a call (lowered via addCallLookups), so only the static tables are collected
 // here.
-func computeRangeTables[F field.Element[F]](modules []vm.Module) map[uint]rangeTable {
+func indexRangeTables[F field.Element[F]](modules []vm.Module) map[uint]rangeTable {
 	tables := make(map[uint]rangeTable)
 	//
 	for id, m := range modules {

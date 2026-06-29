@@ -40,7 +40,7 @@ func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F]) mir.Sche
 		infos = computeModuleInfos(fm.Modules())
 		// Index the static range-check tables by width, so each register can be
 		// range-proved by a lookup into the matching $range_un table.
-		rangeTables = computeRangeTables[F](fm.Modules())
+		rangeTables = indexRangeTables[F](fm.Modules())
 	)
 	//
 	for i, m := range fm.Modules() {
@@ -164,15 +164,15 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			constraints []mir.Constraint[F]
 			pc          = register.NewId(mod.Width())
 			ret         = register.NewId(mod.Width() + 1)
-			// determine suitable width of PC register
+			// Create IS_PC_<k> program counter selectors
+			pcSelectors = make([]register.Id, len(fm.Code()))
 		)
 
 		// Create program counter
 		mod.AddRegisters(register.NewComputed(io.PC_NAME, fm.PcWidth(), padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
-		// Create IS_PC_<k> program counter selectors
-		pcSelectors = make([]register.Id, len(fm.Code()))
+		// Add IS_PC_<k> program counter selectors
 		for c := range pcSelectors {
 			pcSelectors[c] = register.NewId(mod.Width())
 			mod.AddRegisters(register.NewComputed(io.SelectorName(uint(c)), 1, padding))
