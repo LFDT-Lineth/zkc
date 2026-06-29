@@ -1,6 +1,0 @@
-;; Multiply two 16bit integers using modulo arithmetic
-fn mul(arg1 u16, arg2 u16) -> (res u16) {
-   var tmp u16
-   tmp,res = arg1 * arg2
-   return
-}

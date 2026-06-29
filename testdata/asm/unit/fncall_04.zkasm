@@ -1,4 +1,0 @@
-fn id(arg u16) -> (res u16) {
-  res = arg
-  return
-}

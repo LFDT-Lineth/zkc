@@ -1,7 +1,0 @@
-const TWO_HUNDRED = 200
-
-;; ternary_test is using a value u128 to avoid the register splitting error for now
-fn ternary_test(value u128) -> (result u1) {
-    result = value == TWO_HUNDRED ? 1 : 0
-    return
-}

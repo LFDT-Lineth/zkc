@@ -1,5 +1,0 @@
-;;error:2:23-24:variable already declared
-fn f(x u16) -> (r u2, r u2) {
-  r = 0
-  return
-}

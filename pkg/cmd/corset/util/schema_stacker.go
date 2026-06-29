@@ -269,29 +269,6 @@ func readConstraintFiles(config corset.CompilationConfig, lowering asm.LoweringC
 	return CompileSourceFiles(config, lowering, filenames)
 }
 
-// ReadAssemblyProgram reads a given set of assembly files into a (macro) assembly program.
-func ReadAssemblyProgram(filenames ...string) (asm.MacroProgram, source.Maps[any]) {
-	srcfiles, err := source.ReadFiles(filenames...)
-	//
-	if err != nil {
-		panic(err)
-	}
-	//
-	program, srcmaps, errs := asm.Assemble(srcfiles...)
-	//
-	if len(errs) == 0 {
-		return program, srcmaps
-	}
-	// Report errors
-	for _, err := range errs {
-		printSyntaxError(&err)
-	}
-	// Fail
-	os.Exit(4)
-	// Unreachable
-	return asm.MacroProgram{}, srcmaps
-}
-
 // ReadBinaryFile reads a binfile which includes the metadata bytes, along with
 // the schema, and any included attributes.
 func ReadBinaryFile(filename string) binfile.BinaryFile {
@@ -339,19 +316,12 @@ func CompileSourceFiles(config corset.CompilationConfig, asmConfig asm.LoweringC
 		//
 		srcfiles[i] = *source.NewSourceFile(n, bytes)
 	}
-	// Separate Corset from ASM files.
-	corsetFiles, asmFiles := splitSourceFiles(srcfiles)
-	// Compile ASM files
-	macroProgram, _, errors := asm.Assemble(asmFiles...)
-	// Continue if no errors
+	// Parse and compile source files
+	mixedMacroProgram, srcmap, errors = corset.CompileSourceFiles(config, srcfiles, asm.MacroProgram{})
+	// Check for any errors
 	if len(errors) == 0 {
-		// Parse and compile source files
-		mixedMacroProgram, srcmap, errors = corset.CompileSourceFiles(config, corsetFiles, macroProgram)
-		// Check for any errors
-		if len(errors) == 0 {
-			attributes := []binfile.Attribute{&srcmap}
-			return *binfile.NewBinaryFile(nil, attributes, mixedMacroProgram)
-		}
+		attributes := []binfile.Attribute{&srcmap}
+		return *binfile.NewBinaryFile(nil, attributes, mixedMacroProgram)
 	}
 	// Report errors
 	for _, err := range errors {
@@ -361,23 +331,6 @@ func CompileSourceFiles(config corset.CompilationConfig, asmConfig asm.LoweringC
 	os.Exit(4)
 	// unreachable
 	return binfile.BinaryFile{}
-}
-
-func splitSourceFiles(srcfiles []source.File) ([]source.File, []source.File) {
-	var (
-		corsetFiles []source.File
-		asmFiles    []source.File
-	)
-	// Expand assembly programs
-	for _, n := range srcfiles {
-		if path.Ext(n.Filename()) == ".zkasm" {
-			asmFiles = append(asmFiles, n)
-		} else {
-			corsetFiles = append(corsetFiles, n)
-		}
-	}
-	//
-	return corsetFiles, asmFiles
 }
 
 // Look through the list of filenames and identify any which are directories.

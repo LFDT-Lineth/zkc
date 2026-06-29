@@ -1,5 +1,0 @@
-fn cast(x u32) -> (y u16) {
-  var c u16
-  c, y = x
-  return
-}

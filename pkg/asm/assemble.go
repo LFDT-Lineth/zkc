@@ -15,7 +15,6 @@ package asm
 import (
 	"fmt"
 	"math"
-	"path/filepath"
 
 	"github.com/LFDT-Lineth/zkc/pkg/asm/assembler"
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
@@ -26,7 +25,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
@@ -77,86 +75,6 @@ type MacroModule[F field.Element[F]] = program.Module[F, macro.Instruction]
 
 // MicroModule is an instance of schema.Module which encapsulates a MicroFunction[F].
 type MicroModule[F field.Element[F]] = program.Module[F, micro.Instruction]
-
-// Assemble takes a given set of assembly files, and parses them into a given
-// set of functions.  This includes performing various checks on the files, such
-// as type checking, etc.
-func Assemble(files ...source.File) (
-	MacroProgram, source.Maps[any], []source.SyntaxError) {
-	//
-	var (
-		items      []assembler.AssemblyItem
-		errors     []source.SyntaxError
-		components []MacroComponent
-		srcmaps    source.Maps[any]
-		visited    map[string]bool = make(map[string]bool)
-	)
-	// Initialise visited map with all top-level files
-	for _, sf := range files {
-		visited[sf.Filename()] = true
-	}
-	// Parse each file in turn.
-	for len(files) > 0 {
-		var (
-			asm      = files[0]
-			errs     []source.SyntaxError
-			included []source.File
-			cs       assembler.AssemblyItem
-		)
-		//
-		files = files[1:]
-		// Parse source file
-		if cs, errs = assembler.Parse(&asm); len(errs) == 0 {
-			items = append(items, cs)
-			// Process included source files
-			included, errs = readIncludedFiles(asm, cs, visited)
-			// Append any new files for processing
-			files = append(files, included...)
-		}
-		// Include all errors
-		errors = append(errors, errs...)
-	}
-	// Link assembly
-	if len(errors) != 0 {
-		return MacroProgram{}, srcmaps, errors
-	}
-	// Link assembly and resolve buses
-	components, srcmaps, errors = assembler.Link(items...)
-	// Error check
-	if len(errors) != 0 {
-		return MacroProgram{}, srcmaps, errors
-	}
-	// Well-formedness checks (assuming unlimited field width).
-	errors = assembler.Validate(math.MaxUint, components, srcmaps)
-	// Done
-	return io.NewProgram(components), srcmaps, errors
-}
-
-func readIncludedFiles(file source.File, item assembler.AssemblyItem,
-	visited map[string]bool) ([]source.File, []source.SyntaxError) {
-	//
-	var (
-		dir    = filepath.Dir(file.Filename())
-		files  []source.File
-		errors []source.SyntaxError
-	)
-	//
-	for _, include := range item.Includes {
-		filename := filepath.Join(dir, *include)
-		// Check filename not already parsed
-		if seen, ok := visited[filename]; seen && ok {
-			// file already loaded, therefore ignore.
-		} else if fs, err := source.ReadFiles(filename); err == nil {
-			files = append(files, fs...)
-		} else {
-			errors = append(errors, *item.SourceMap.SyntaxError(include, err.Error()))
-		}
-		// Record that we've seen this file now.
-		visited[filename] = true
-	}
-	//
-	return files, errors
-}
 
 // LowerMixedMacroProgram a mixed macro program (i.e. schema) into a mixed micro program, using
 // vectorisation if desired.  Specifically, any macro modules within the schema
