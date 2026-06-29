@@ -61,7 +61,6 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	modules := GetFlag(cmd, "modules")
 	attrs := GetFlag(cmd, "attributes")
 	metadata := GetFlag(cmd, "metadata")
-	constants := GetFlag(cmd, "constants")
 	spillage := GetFlag(cmd, "spillage")
 	showStatic := GetFlag(cmd, "show-static")
 	textWidth := GetUint(cmd, "textwidth")
@@ -69,10 +68,6 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	// Read in constraint files
 	stacker := *getSchemaStack[F](cmd, SCHEMA_DEFAULT_MIR, args...)
 	stack := stacker.Build()
-	// Print constant info (if requested)
-	if constants {
-		debug.PrintExternalisedConstants(stack.BinaryFile())
-	}
 	// Print spillage info (if requested)
 	if spillage {
 		printSpillage(stack.BinaryFile(), true)
