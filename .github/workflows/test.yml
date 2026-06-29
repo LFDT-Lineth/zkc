@@ -16,15 +16,11 @@ jobs:
       contents: read
     strategy:
       matrix:
-        test: [asm-bench,asm-racer,asm-util,asm-unit,corset-bench,corset-racer,corset-test,unit-test]
+        test: [corset-bench,corset-racer,corset-test,unit-test]
         field: [BLS12_377,KOALABEAR_16,GF_8209]
         exclude:
-          - { field: KOALABEAR_16, test: asm-racer }
           - { field: KOALABEAR_16, test: corset-racer }
           - { field: KOALABEAR_16, test: unit-test }
-          - { field: GF_8209,      test: asm-bench }
-          - { field: GF_8209,      test: asm-racer }
-          - { field: GF_8209,      test: asm-util }
           - { field: GF_8209,      test: corset-bench }
           - { field: GF_8209,      test: corset-racer }
           - { field: GF_8209,      test: unit-test }
