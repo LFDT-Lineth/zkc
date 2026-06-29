@@ -48,23 +48,65 @@ func WordToBytecodeMachine[W word.Word[W]](wm *machine.Word[W]) *interpreter.Int
 }
 
 // WordToBytecodeProgram compiles the various components of a word machine into
-// a bytecode program.
+// a bytecode program.  It first derives a signature table from the machine's
+// modules, then lowers each module against those signatures.
 func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) descriptor.Program[W] {
 	var (
-		modules  = make([]descriptor.Module[W], len(wm.Modules()))
-		compiler = &bytecodeCompiler[W]{wm, modules}
+		mods       = wm.Modules()
+		signatures = make([]descriptor.Module[W], len(mods))
+		compiler   = &bytecodeCompiler[W]{nil}
 	)
-	// translate functions
-	for i, m := range wm.Modules() {
-		modules[i] = compiler.compileWordModule(uint(i), m)
+	// Derive signatures (body-less for functions; complete for memories).
+	for i, m := range mods {
+		signatures[i] = compiler.compileWordSignature(m)
 	}
 	//
-	return descriptor.NewProgram(0, modules...)
+	return descriptor.NewProgram(WordToBytecodeModules(signatures, mods...)...)
+}
+
+// WordToBytecodeModules lowers a set of word modules into descriptor modules,
+// resolving call / memory references against the supplied signature table.  The
+// signature table must be index-aligned with the module ids used by Call /
+// MemRead / MemWrite instructions; it is what allows references to forward (or
+// self) modules to be resolved before all module bodies have been compiled.
+// This is the generalized core used both by WordToBytecodeProgram and by the
+// per-function lowering invoked from codegen.
+func WordToBytecodeModules[W word.Word[W]](signatures []descriptor.Module[W], modules ...Module,
+) []descriptor.Module[W] {
+	var (
+		out      = make([]descriptor.Module[W], len(modules))
+		compiler = &bytecodeCompiler[W]{signatures}
+	)
+	//
+	for i, m := range modules {
+		out[i] = compiler.compileWordModule(uint(i), m)
+	}
+	//
+	return out
 }
 
 type bytecodeCompiler[W word.Word[W]] struct {
-	machine *machine.Word[W]
-	modules []descriptor.Module[W]
+	// signatures holds the descriptor signature of every module in the program,
+	// indexed by module id.  It is used to resolve the foreign modules referenced
+	// by call / memory instructions (see compileCall / compileMemRead /
+	// compileMemWrite).
+	signatures []descriptor.Module[W]
+}
+
+// compileWordSignature builds a descriptor signature for a word module: a
+// body-less function (registers + native flag only) or a complete memory.  The
+// signature carries everything needed to resolve a reference to this module from
+// another module's instructions.
+func (p *bytecodeCompiler[W]) compileWordSignature(m Module) descriptor.Module[W] {
+	switch t := m.(type) {
+	case *WordFunction:
+		registers := descriptor.FromRegisters[W](t.Registers()...)
+		return descriptor.NewFunction[W](t.Name(), registers, t.IsNative(), nil)
+	case memory.Memory[W]:
+		return p.compileWordMemory(t)
+	default:
+		panic("todo")
+	}
 }
 
 func (p *bytecodeCompiler[W]) compileWordModule(mid uint, m Module) descriptor.Module[W] {
@@ -89,7 +131,7 @@ func (p *bytecodeCompiler[W]) compileWordMemory(m memory.Memory[W]) descriptor.M
 		contents = m.Contents()
 	}
 	//
-	return descriptor.NewMemory(m.Name(), registers, m.Kind(), m.Geometry(), contents)
+	return descriptor.NewMemory(m.Name(), registers, m.Kind(), contents)
 }
 
 func (p *bytecodeCompiler[W]) compileWordFunction(f *WordFunction) descriptor.Module[W] {
@@ -126,9 +168,9 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(insn WordInstruction, f *Wo
 	switch insn.OpCode() {
 	// Base instructions are word-type-agnostic and translate verbatim.
 	case opcode.CALL:
-		return p.compileCall(insn.(*instruction.Call), f)
+		return p.compileCall(insn.(*instruction.Call), false, f)
 	case opcode.UNCONDITIONAL_CALL:
-		return p.compileCall(&instruction.Call{OpIo: insn.(*instruction.UnconditionalCall).OpIo}, f)
+		return p.compileCall(&instruction.Call{OpIo: insn.(*instruction.UnconditionalCall).OpIo}, true, f)
 	case opcode.DEBUG:
 		code = bytecode.NewDebug(insn.(*instruction.Debug).Chunks)
 	case opcode.FAIL:
@@ -162,23 +204,23 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(insn WordInstruction, f *Wo
 	case opcode.INT_REM:
 		return p.compileDivRem(insn.(*instruction.WordTypeB), encoding.REM, f)
 	case opcode.BIT_AND:
-		return p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.AND, f)
+		return p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.OP_AND, f)
 	case opcode.BIT_NOT:
 		code = p.compileNot(insn.(*instruction.WordTypeB))
 	case opcode.BIT_OR:
-		return p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.OR, f)
+		return p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.OP_OR, f)
 	case opcode.BIT_XOR:
-		return p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.XOR, f)
+		return p.compileBitwise(insn.(*instruction.WordTypeB), bytecode.OP_XOR, f)
 	case opcode.BIT_SHL:
 		code = p.compileShift(insn.(*instruction.WordTypeB), true)
 	case opcode.BIT_SHR:
 		code = p.compileShift(insn.(*instruction.WordTypeB), false)
 	case opcode.INT_ADDMOD_P:
-		code = p.compileFieldArith(insn.(*instruction.WordTypeF[W]), encoding.ADDMOD_P)
+		code = p.compileFieldArith(insn.(*instruction.WordTypeF[W]), bytecode.OP_ADDMOD_P)
 	case opcode.INT_SUBMOD_P:
-		code = p.compileFieldArith(insn.(*instruction.WordTypeF[W]), encoding.SUBMOD_P)
+		code = p.compileFieldArith(insn.(*instruction.WordTypeF[W]), bytecode.OP_SUBMOD_P)
 	case opcode.INT_MULMOD_P:
-		code = p.compileFieldArith(insn.(*instruction.WordTypeF[W]), encoding.MULMOD_P)
+		code = p.compileFieldArith(insn.(*instruction.WordTypeF[W]), bytecode.OP_MULMOD_P)
 	default:
 		panic(fmt.Sprintf("unknown instruction opcode (0x%x)", insn.OpCode()))
 	}
@@ -187,38 +229,31 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(insn WordInstruction, f *Wo
 }
 
 func (p *bytecodeCompiler[W]) compileAdd(insn *instruction.WordTypeA[W], f *WordFunction) []Bytecode[W] {
-	var rhsMaxVal big.Int
-	// Initialise max value
-	rhsMaxVal.Set(insn.Constant.BigInt())
-	// Determine maximum expressible value
-	for _, reg := range insn.Sources {
-		var bitwidth = f.Register(reg).Width()
-		// Determine width of source
-		rhsMaxVal.Add(&rhsMaxVal, maxValueOf(bitwidth))
-	}
-	//
-	code := []Bytecode[W]{bytecode.AddVecConst(insn.Target.Registers(), insn.Sources, insn.Constant)}
+	var (
+		acc = func(lhs, rhs *big.Int) { lhs.Add(lhs, rhs) }
+		// Initialise max value
+		rhsBitwidth = CalculateBitwidth(insn.Constant, insn.Sources, f.RegisterMap(), acc)
+		//
+		code = []Bytecode[W]{bytecode.AddVecConst(toRegs(insn.Target.Registers()), toRegs(insn.Sources), insn.Constant)}
+	)
 	// Check whether cast check is required (or not).
-	return append(code, p.addCheckCast(insn.Target, &rhsMaxVal, f)...)
+	return append(code, AddCheckCast[W](f.RegisterMap(), insn.Target, rhsBitwidth)...)
 }
 
 func (p *bytecodeCompiler[W]) compileMul(insn *instruction.WordTypeA[W], f *WordFunction) []Bytecode[W] {
-	var rhsMaxVal big.Int
-	// Initialise max value
-	rhsMaxVal.Set(insn.Constant.BigInt())
-	// Determine maximum expressible value
-	for _, reg := range insn.Sources {
-		var bitwidth = f.Register(reg).Width()
-		// Determine width of source
-		rhsMaxVal.Mul(&rhsMaxVal, maxValueOf(bitwidth))
-	}
-	//
-	code := []Bytecode[W]{bytecode.MulVecConst(insn.Target.Registers(), insn.Sources, insn.Constant)}
+	var (
+		acc = func(lhs, rhs *big.Int) { lhs.Mul(lhs, rhs) }
+		// Initialise max value
+		rhsBitwidth = CalculateBitwidth(insn.Constant, insn.Sources, f.RegisterMap(), acc)
+		//
+		code = []Bytecode[W]{bytecode.MulVecConst(toRegs(insn.Target.Registers()), toRegs(insn.Sources), insn.Constant)}
+	)
 	// Check whether cast check is required (or not).
-	return append(code, p.addCheckCast(insn.Target, &rhsMaxVal, f)...)
+	return append(code, AddCheckCast[W](f.RegisterMap(), insn.Target, rhsBitwidth)...)
 }
+
 func (p *bytecodeCompiler[W]) compileSub(insn *instruction.WordTypeA[W]) Bytecode[W] {
-	return bytecode.SubVecConst(insn.Target.Registers(), insn.Sources, insn.Constant)
+	return bytecode.SubVecConst(toRegs(insn.Target.Registers()), toRegs(insn.Sources), insn.Constant)
 }
 
 // compileFieldArith emits a modular field-arithmetic bytecode (ADDMOD_P,
@@ -226,8 +261,8 @@ func (p *bytecodeCompiler[W]) compileSub(insn *instruction.WordTypeA[W]) Bytecod
 // always reduced modulo the prime characteristic and so fits within the (native)
 // target register; hence no cast check is ever required, matching the slow
 // machine (executeFieldAdd / executeFieldSub / executeFieldMul).
-func (p *bytecodeCompiler[W]) compileFieldArith(insn *instruction.WordTypeF[W], op uint32) Bytecode[W] {
-	return bytecode.NewFieldArith(op, insn.Target, insn.Sources, insn.Constant)
+func (p *bytecodeCompiler[W]) compileFieldArith(insn *instruction.WordTypeF[W], op bytecode.Operation) Bytecode[W] {
+	return bytecode.NewFieldArith(op, toReg(insn.Target), toRegs(insn.Sources), insn.Constant)
 }
 
 func (p *bytecodeCompiler[W]) compileConcat(insn *instruction.WordTypeA[W]) Bytecode[W] {
@@ -235,12 +270,12 @@ func (p *bytecodeCompiler[W]) compileConcat(insn *instruction.WordTypeA[W]) Byte
 		panic("constant given for bit concatenation")
 	}
 	// CAT keeps source and target vectors in low-limb-first register order.
-	return bytecode.Concat(insn.Target.Registers(), insn.Sources)
+	return bytecode.Concat(toRegs(insn.Target.Registers()), toRegs(insn.Sources))
 }
 
-func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call, f *WordFunction) []Bytecode[W] {
+func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call, unconditional bool, f *WordFunction) []Bytecode[W] {
 	var (
-		callee = p.machine.Module(insn.Id).(*WordFunction)
+		callee = p.signatures[insn.Id]
 		mid    = util.Cast[bytecode.ModuleId](bytecode.ModuleId(insn.Id))
 	)
 	// sanity chewcks
@@ -248,33 +283,32 @@ func (p *bytecodeCompiler[W]) compileCall(insn *instruction.Call, f *WordFunctio
 	checkOperands(insn.Returns...)
 	// Check whether cast checks are required for arguments wider than their
 	// receiving parameter registers, matching the slow machine (frameCopyTo).
-	code := p.addOutgoingCheckCasts(insn.Arguments, callee.Inputs(), f)
-	// Add the call instruction
-	code = append(code, bytecode.CallFun(mid, false, insn.Arguments, insn.Returns))
+	code := AddOutgoingCheckCasts[W](f.RegisterMap(), insn.Arguments, callee.Inputs())
+	// Add the call instruction.  Checkpointing is applied later (see
+	// Program.AddCheckPoint), so only the unconditional flag is set here.
+	code = append(code, bytecode.CallFun(mid, bytecode.CallFlags{Unconditional: unconditional},
+		toRegs(insn.Arguments), toRegs(insn.Returns)))
 	// Check whether cast checks are required for returns wider than their
 	// receiving target registers, matching the slow machine (frameCopyFrom).
-	return append(code, p.addIncomingCheckCasts(callee.Outputs(), insn.Returns, f)...)
+	return append(code, AddIncomingCheckCasts[W](f.RegisterMap(), callee.Outputs(), insn.Returns)...)
 }
 
 func (p *bytecodeCompiler[W]) compileNot(insn *instruction.WordTypeB) Bytecode[W] {
 	var bitwidth = util.Cast[uint16](insn.Bitwidth)
 	// NOT uses only the left source; WordTypeB duplicates it as the right source.
-	return bytecode.NewBitwise(bytecode.NOT, insn.Target, insn.LeftSource, insn.RightSource, bitwidth)
+	return bytecode.NewBitwise(bytecode.OP_NOT, toReg(insn.Target), toReg(insn.LeftSource),
+		toReg(insn.RightSource), bitwidth)
 }
 
-func (p *bytecodeCompiler[W]) compileBitwise(insn *instruction.WordTypeB, op bytecode.BitwiseOp, f *WordFunction,
+func (p *bytecodeCompiler[W]) compileBitwise(insn *instruction.WordTypeB, op bytecode.Operation, f *WordFunction,
 ) []Bytecode[W] {
-	//
-	var bitwidth = util.Cast[uint16](base.RegisterBitwidth(f.RegisterMap(), insn.Target))
-	// op selects the bytecode operation (bytecode.AND / OR / XOR).
-	code := []Bytecode[W]{bytecode.NewBitwise(op, insn.Target, insn.LeftSource, insn.RightSource, bitwidth)}
-	// Check whether cast check is required (or not).
-	if uint(bitwidth) < insn.Bitwidth {
-		// yes
-		code = append(code, bytecode.NewCheckCast(insn.Target, bitwidth))
-	}
-	//
-	return code
+	// The bytecode records the operation width (matching compileShift / compileNot),
+	// so it is self-describing; op selects the bytecode operation (bytecode.AND / OR / XOR).
+	code := []Bytecode[W]{bytecode.NewBitwise(op, toReg(insn.Target), toReg(insn.LeftSource), toReg(insn.RightSource),
+		util.Cast[uint16](insn.Bitwidth))}
+	// A cast check is required when the result is written to a register narrower
+	// than the operation width.
+	return append(code, BitwidthCheckCast[W](f.RegisterMap(), insn.Target, insn.Bitwidth)...)
 }
 
 func (p *bytecodeCompiler[W]) compileDivHint(insn *instruction.FieldHint) Bytecode[W] {
@@ -286,35 +320,30 @@ func (p *bytecodeCompiler[W]) compileDivHint(insn *instruction.FieldHint) Byteco
 	}
 	//
 	return bytecode.NewDivHint(
-		insn.Targets[0], insn.Targets[1], insn.Targets[2], insn.Sources[0], insn.Sources[1])
+		toReg(insn.Targets[0]), toReg(insn.Targets[1]), toReg(insn.Targets[2]),
+		toReg(insn.Sources[0]), toReg(insn.Sources[1]))
 }
 
 func (p *bytecodeCompiler[W]) compileDivRem(insn *instruction.WordTypeB, op uint32, f *WordFunction) []Bytecode[W] {
-	var bitwidth = util.Cast[uint16](base.RegisterBitwidth(f.RegisterMap(), insn.Target))
 	// LeftSource is the dividend; RightSource is the divisor.  op selects the
 	// bytecode operation (bytecode.DIV / REM).
-	code := []Bytecode[W]{bytecode.NewDivRem(op, insn.Target, insn.LeftSource, insn.RightSource)}
+	code := []Bytecode[W]{bytecode.NewDivRem(op, toReg(insn.Target), toReg(insn.LeftSource), toReg(insn.RightSource))}
 	// Check whether cast check is required (or not).
-	if uint(bitwidth) < insn.Bitwidth {
-		// yes
-		code = append(code, bytecode.NewCheckCast(insn.Target, bitwidth))
-	}
-	//
-	return code
+	return append(code, BitwidthCheckCast[W](f.RegisterMap(), insn.Target, insn.Bitwidth)...)
 }
 
 func (p *bytecodeCompiler[W]) compileShift(insn *instruction.WordTypeB, shl bool) Bytecode[W] {
 	var (
-		op       bytecode.BitwiseOp = bytecode.SHL
+		op       bytecode.Operation = bytecode.OP_SHL
 		bitwidth                    = util.Cast[uint16](insn.Bitwidth)
 	)
 	//
 	if !shl {
-		op = bytecode.SHR
+		op = bytecode.OP_SHR
 	}
 	// LeftSource is the value shifted; RightSource holds the shift amount.  The
 	// bitwidth masks the result of a left shift and is ignored by a right shift.
-	return bytecode.NewBitwise(op, insn.Target, insn.LeftSource, insn.RightSource, bitwidth)
+	return bytecode.NewBitwise(op, toReg(insn.Target), toReg(insn.LeftSource), toReg(insn.RightSource), bitwidth)
 }
 
 func (p *bytecodeCompiler[W]) compileJump(insn *instruction.Jump) Bytecode[W] {
@@ -323,53 +352,32 @@ func (p *bytecodeCompiler[W]) compileJump(insn *instruction.Jump) Bytecode[W] {
 
 func (p *bytecodeCompiler[W]) compileMemRead(insn *instruction.MemRead, f *WordFunction) []Bytecode[W] {
 	var (
-		mem  = p.machine.Module(insn.Id).(memory.Memory[W])
-		mid  = util.Cast[bytecode.ModuleId](insn.Id)
-		code []Bytecode[W]
+		mem = p.signatures[insn.Id].(*descriptor.Memory[W])
+		mid = util.Cast[bytecode.ModuleId](insn.Id)
 	)
-	//
-	switch mem.(type) {
-	case *memory.ReadOnly[W]:
-		code = []Bytecode[W]{bytecode.ReadRom(mid, insn.Arguments, insn.Returns)}
-	case *memory.StaticReadOnly[W]:
-		code = []Bytecode[W]{bytecode.ReadStaticRom(mid, insn.Arguments, insn.Returns)}
-	case *memory.RandomAccess[W]:
-		code = []Bytecode[W]{bytecode.ReadRam(mid, insn.Arguments, insn.Returns)}
-	case *memory.PagedRandomAccess[W]:
-		code = []Bytecode[W]{bytecode.ReadPagedRam(mid, insn.Arguments, insn.Returns)}
-	default:
-		panic("unknown memory type")
-	}
+	// A single read bytecode suffices regardless of the memory kind (ROM, static
+	// ROM, RAM, paged RAM): the kind is recovered from the environment at encode
+	// time.
+	code := []Bytecode[W]{bytecode.NewMemRead(mid, toRegs(insn.Arguments), toRegs(insn.Returns))}
 	// Check whether cast checks are required (or not).  Values read from a
 	// memory whose data registers are wider than the receiving registers must
 	// be checked, matching the slow machine which validates every register
 	// write (frame.Store).
-	return append(code, p.addIncomingCheckCasts(mem.Geometry().DataRegisters(), insn.Returns, f)...)
+	return append(code, AddIncomingCheckCasts[W](f.RegisterMap(), mem.Outputs(), insn.Returns)...)
 }
 
 func (p *bytecodeCompiler[W]) compileMemWrite(insn *instruction.MemWrite, f *WordFunction) []Bytecode[W] {
 	var (
-		mem  = p.machine.Module(insn.Id).(memory.Memory[W])
-		code []Bytecode[W]
-		mid  = util.Cast[bytecode.ModuleId](insn.Id)
+		mem = p.signatures[insn.Id].(*descriptor.Memory[W])
+		mid = util.Cast[bytecode.ModuleId](insn.Id)
 	)
 	// Check whether cast checks are required (or not).  Values written from
 	// registers wider than the memory's data registers must be checked before
 	// the write, matching the slow machine (executeMemWrite).
-	code = p.addOutgoingCheckCasts(insn.Returns, mem.Geometry().DataRegisters(), f)
-	//
-	switch mem.(type) {
-	case *memory.WriteOnce[W]:
-		code = append(code, bytecode.WriteWom(mid, insn.Arguments, insn.Returns))
-	case *memory.RandomAccess[W]:
-		code = append(code, bytecode.WriteRam(mid, insn.Arguments, insn.Returns))
-	case *memory.PagedRandomAccess[W]:
-		code = append(code, bytecode.WritePagedRam(mid, insn.Arguments, insn.Returns))
-	default:
-		panic("unknown memory type")
-	}
-	//
-	return code
+	code := AddOutgoingCheckCasts[W](f.RegisterMap(), insn.Returns, mem.Outputs())
+	// A single write bytecode suffices regardless of the memory kind (write-once,
+	// RAM, paged RAM): the kind is recovered from the environment at encode time.
+	return append(code, bytecode.NewMemWrite(mid, toRegs(insn.Arguments), toRegs(insn.Returns)))
 }
 
 func (p *bytecodeCompiler[W]) compileSkip(insn *instruction.Skip) []Bytecode[W] {
@@ -412,75 +420,138 @@ func (p *bytecodeCompiler[W]) compileMultiwaySkip(insn *instruction.MultiwaySkip
 		cases[i] = bytecode.SwitchCase[W]{Value: value, Skip: skip}
 	}
 	//
-	return bytecode.MultiwaySkip(insn.Source, cases)
+	return bytecode.MultiwaySkip(toReg(insn.Source), cases)
 }
 
-// addIncomingCheckCasts emits a CHECKCAST for every target register which is
+// AddIncomingCheckCasts emits a CHECKCAST for every target register which is
 // narrower than the corresponding source register, where sources are values
 // arriving in this frame from another module (e.g. a memory's data registers,
 // or a callee's return registers).  This mirrors the width check the slow
-// machine performs on every register write (frame.Store / frameCopyFrom).
-func (p *bytecodeCompiler[W]) addIncomingCheckCasts(sources []register.Register, targets []register.Id,
-	f *WordFunction) []Bytecode[W] {
+// machine performs on every register write (frame.Store / frameCopyFrom).  The
+// targets are resolved against the given register map (the frame's own
+// registers).
+func AddIncomingCheckCasts[W word.Word[W]](regmap register.Map, sources []descriptor.Register[W],
+	targets []register.Id) []Bytecode[W] {
 	var codes []Bytecode[W]
 	//
 	for i, target := range targets {
 		var (
 			src = sources[i]
-			dst = f.Register(target)
+			dst = regmap.Register(target)
 		)
 		//
-		if !dst.IsNative() && (src.IsNative() || src.Width() > dst.Width()) {
+		if !dst.IsNative() && (src.IsNative() || src.Bitwidth().Unwrap() > dst.Width()) {
 			width := util.Cast[uint16](dst.Width())
-			codes = append(codes, bytecode.NewCheckCast(target, width))
+			codes = append(codes, bytecode.NewCheckCast(toReg(target), width))
 		}
 	}
 	//
 	return codes
 }
 
-// addOutgoingCheckCasts emits a CHECKCAST for every source register in this
+// AddOutgoingCheckCasts emits a CHECKCAST for every source register in this
 // frame which is wider than the register receiving its value in another module
 // (e.g. a memory's data registers, or a callee's parameter registers).  This
 // mirrors the width check the slow machine performs on memory writes
-// (executeMemWrite) and call arguments (frameCopyTo).
-func (p *bytecodeCompiler[W]) addOutgoingCheckCasts(sources []register.Id, targets []register.Register,
-	f *WordFunction) []Bytecode[W] {
+// (executeMemWrite) and call arguments (frameCopyTo).  The sources are resolved
+// against the given register map (the frame's own registers).
+func AddOutgoingCheckCasts[W word.Word[W]](regmap register.Map, sources []register.Id,
+	targets []descriptor.Register[W]) []Bytecode[W] {
 	var codes []Bytecode[W]
 	//
 	for i, source := range sources {
 		var (
-			src = f.Register(source)
+			src = regmap.Register(source)
 			dst = targets[i]
 		)
 		//
-		if !dst.IsNative() && (src.IsNative() || src.Width() > dst.Width()) {
-			width := util.Cast[uint16](dst.Width())
-			codes = append(codes, bytecode.NewCheckCast(source, width))
+		if !dst.IsNative() && (src.IsNative() || src.Width() > dst.Bitwidth().Unwrap()) {
+			width := util.Cast[uint16](dst.Bitwidth().Unwrap())
+			codes = append(codes, bytecode.NewCheckCast(toReg(source), width))
 		}
 	}
 	//
 	return codes
 }
 
-// Add a checkcast instruction if the given value does not fit within the target
-// register(s).
-func (p *bytecodeCompiler[W]) addCheckCast(target register.Vector, value *big.Int, f *WordFunction) []Bytecode[W] {
+// AddCheckCast adds a checkcast instruction if the bitwidth of the right-hand
+// side does not fit within the target register(s), resolving widths against the
+// given register map.
+func AddCheckCast[W word.Word[W]](regmap register.Map, lhs register.Vector, rhs util.Option[uint]) []Bytecode[W] {
 	var (
-		targetMaxVal = maxValueOf(target.BitWidth(f.RegisterMap()))
-		codes        []Bytecode[W]
+		isNative = isNative(regmap, lhs)
+		codes    []Bytecode[W]
 	)
-	//
-	if targetMaxVal.Cmp(value) < 0 {
+	// Add case if either: (i) the rhs has no specific bitwidth; or (2) the
+	// bitwidth of the rhs overflows the lhs.
+	if !isNative && (rhs.IsEmpty() || lhs.BitWidth(regmap) < rhs.Unwrap()) {
 		var (
-			last      = target.Last()
-			lastWidth = util.Cast[uint16](f.Register(last).Width())
+			last      = lhs.Last()
+			lastWidth = util.Cast[uint16](regmap.Register(last).Width())
 		)
 		// yes
-		codes = append(codes, bytecode.NewCheckCast(last, lastWidth))
+		codes = append(codes, bytecode.NewCheckCast(toReg(last), lastWidth))
 	}
 	//
 	return codes
+}
+
+// BitwidthCheckCast adds a checkcast instruction when the target register is
+// narrower than the given operation bitwidth, resolving the target width against
+// the register map.  This is the cast rule shared by bitwise (AND/OR/XOR) and
+// division/remainder operations.
+func BitwidthCheckCast[W word.Word[W]](regmap register.Map, target register.Id, opBitwidth uint) []Bytecode[W] {
+	var targetWidth = base.RegisterBitwidth(regmap, target)
+	//
+	if targetWidth < opBitwidth {
+		return []Bytecode[W]{bytecode.NewCheckCast(toReg(target), util.Cast[uint16](targetWidth))}
+	}
+	//
+	return nil
+}
+
+// CalculateBitwidth computes the number of bits required to hold the largest
+// value the right-hand side of an arithmetic instruction can produce.  Starting
+// from the instruction's constant, it folds in the maximum value of each source
+// register via acc (addition for INT_ADD, multiplication for INT_MUL) and
+// returns the bit-length of that worst-case total.  The caller (addCheckCast)
+// uses this to decide whether the result can overflow its target register and
+// hence whether a cast check must be inserted.
+//
+// None is returned when any source is a native (field-typed) register.  Such a
+// register has no fixed bitwidth — it can hold any field element up to the prime
+// modulus — so the RHS has no finite width bound and could always overflow a
+// fixed-width target.  Returning None therefore signals "unbounded", which
+// addCheckCast treats as a guaranteed overflow and always emits a cast check.
+// This also avoids calling Width() on a native register, which panics.
+func CalculateBitwidth[W word.Word[W]](constant W, regs []register.Id, regmap register.Map,
+	acc func(*big.Int, *big.Int)) util.Option[uint] {
+	//
+	var rhsMaxVal big.Int
+	// Initialise max value
+	rhsMaxVal.Set(constant.BigInt())
+	// Determine maximum expressible value
+	for _, rod := range regs {
+		reg := regmap.Register(rod)
+		// Check for native registers
+		if reg.IsNative() {
+			return util.None[uint]()
+		}
+		// Accumulate maximum register value
+		acc(&rhsMaxVal, maxValueOf(reg.Width()))
+	}
+	//
+	return util.Some(uint(rhsMaxVal.BitLen()))
+}
+
+func isNative(mapping register.Map, vec register.Vector) bool {
+	if vec.Len() != 1 {
+		return false
+	}
+	//
+	var reg = mapping.Register(vec.Last())
+	//
+	return reg.IsNative()
 }
 
 func checkOperands(regs ...register.Id) {
@@ -527,7 +598,12 @@ func maxValueOf(bitwidth uint) *big.Int {
 // calculateSkip against that mapping.
 func flatternPackets[W word.Word[W]](packets [][]Bytecode[W]) (bytecodes []Bytecode[W]) {
 	var (
-		mapping = make([]uint, len(packets))
+		// One extra slot holds the end sentinel: mapping[len(packets)] is the
+		// total bytecode length, i.e. the offset just past the last packet.  A
+		// skip which falls off the end of the vector targets this position (see
+		// calculateSkip), exactly as the word machine treats a skip past the end
+		// as terminating the vector / falling through to the next one.
+		mapping = make([]uint, len(packets)+1)
 		offset  uint
 	)
 	// Build the mapping
@@ -535,6 +611,8 @@ func flatternPackets[W word.Word[W]](packets [][]Bytecode[W]) (bytecodes []Bytec
 		mapping[i] = offset
 		offset += uint(len(p))
 	}
+	// Record the end sentinel (total bytecode length).
+	mapping[len(packets)] = offset
 	//
 	offset = 0
 	// Apply the mapping
@@ -585,16 +663,44 @@ func flatternPackets[W word.Word[W]](packets [][]Bytecode[W]) (bytecodes []Bytec
 //	cc      -- index of the packet containing this skip instruction.
 //	ncc     -- offset of this skip instruction within the flattened bytecodes.
 //	skip    -- original skip count, measured in packets.
-//	mapping -- maps each packet index to its starting bytecode offset.
+//	mapping -- maps each packet index to its starting bytecode offset, with a
+//	           final end sentinel at mapping[len-1] holding the total length.
 //
 // A skip of n packets from packet cc lands on packet cc+n+1 (the +1 steps past
 // the skip itself).  That target packet is translated to its starting bytecode
 // offset via mapping, and the new skip count is the distance from this
 // instruction's own bytecode position (ncc) to that offset, again less one for
 // the skip itself.
+//
+// A skip whose target reaches or passes the end of the vector falls off the end
+// — a legitimate vector terminator (the word machine treats it as falling
+// through to the next vector).  Such a target is clamped to the end sentinel, so
+// the flattened skip lands just past the last bytecode.  This mirrors the gogen
+// toReg / toRegs convert the schema register.Id values carried by word
+// instructions into the bytecode-layer RegisterId expected by the bytecode
+// constructors (the inverse of toId / toIds in bytecode_to_word.go).
+func toReg(id register.Id) bytecode.RegisterId {
+	return util.Cast[bytecode.RegisterId](id.Unwrap())
+}
+
+func toRegs(ids []register.Id) []bytecode.RegisterId {
+	var regs = make([]bytecode.RegisterId, len(ids))
+	//
+	for i, id := range ids {
+		regs[i] = toReg(id)
+	}
+	//
+	return regs
+}
+
+// emitter's skipTarget, which clamps micro >= vecLen to the next vector.
 func calculateSkip(cc, ncc uint, skip uint16, mapping []uint) uint16 {
 	// Original target packet of this skip
 	var target = cc + uint(skip) + 1
+	// Clamp a fall-off-the-end target to the end sentinel (last mapping entry).
+	if target >= uint(len(mapping)) {
+		target = uint(len(mapping)) - 1
+	}
 	// Bytecode offset at which that target packet begins
 	var ntarget = mapping[target]
 	// Recompute skip relative to the flattened bytecode position

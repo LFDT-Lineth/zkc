@@ -14,41 +14,17 @@ package bytecode
 
 import "fmt"
 
-// BitwiseOp identifies a bitwise operation (AND, OR, XOR, NOT, SHL or SHR).
-type BitwiseOp uint8
-
-const (
-	// AND bitwise conjunction.
-	AND BitwiseOp = iota
-	// OR bitwise disjunction.
-	OR
-	// XOR bitwise exclusive-or.
-	XOR
-	// NOT bitwise negation.
-	NOT
-	// SHL logical shift left.
-	SHL
-	// SHR logical shift right.
-	SHR
-)
-
 // Bitwise computes a binary bitwise operation between two registers.  The
 // operation is identified by Opcode, which is one of AND, OR or XOR.
 type Bitwise struct {
 	// Opcode selects the operation (AND, OR or XOR).
-	Op BitwiseOp
+	Op Operation
 	// Target receives the result.
 	Target RegisterId
 	// Left and Right are the operand registers.
 	Left, Right RegisterId
 	//
 	Bitwidth uint16
-}
-
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Bitwise) Clone() Patched {
-	var c = *p
-	return &c
 }
 
 // Uses implementation for Bytecode interface.  A NOT carries its single operand
@@ -76,17 +52,17 @@ func (p *Bitwise) String(env Environment) string {
 	)
 	//
 	switch p.Op {
-	case AND:
+	case OP_AND:
 		return fmt.Sprintf("and %s = %s & %s [u%d]", tgt, lhs, rhs, p.Bitwidth)
-	case OR:
+	case OP_OR:
 		return fmt.Sprintf("or %s = %s | %s [u%d]", tgt, lhs, rhs, p.Bitwidth)
-	case XOR:
+	case OP_XOR:
 		return fmt.Sprintf("xor %s = %s ^ %s [u%d]", tgt, lhs, rhs, p.Bitwidth)
-	case NOT:
+	case OP_NOT:
 		return fmt.Sprintf("not %s = ~%s [u%d]", tgt, lhs, p.Bitwidth)
-	case SHL:
+	case OP_SHL:
 		return fmt.Sprintf("shl %s = %s << %s [u%d]", tgt, lhs, rhs, p.Bitwidth)
-	case SHR:
+	case OP_SHR:
 		return fmt.Sprintf("shl %s = %s >> %s [u%d]", tgt, lhs, rhs, p.Bitwidth)
 	default:
 		panic("unknown bitwise operator")

@@ -13,7 +13,6 @@
 package bytecode
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -25,11 +24,6 @@ type Cat struct {
 	Targets []RegisterId
 	// Sources are concatenated with Sources[0] in the least-significant bits.
 	Sources []RegisterId
-}
-
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Cat) Clone() Patched {
-	return &Cat{slices.Clone(p.Targets), slices.Clone(p.Sources)}
 }
 
 // Uses implementation for Bytecode interface.

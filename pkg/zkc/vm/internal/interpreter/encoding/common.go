@@ -38,8 +38,6 @@ type Cond = bytecode.Cond
 // RegVec just provides a convenient alias to make the code more readable.
 type RegVec = bytecode.RegVec
 
-type arithOp = bytecode.ArithOp
-
 // OPCODE_MASK determines how many bits of the opcode byte are used for the
 // opcode itself.  This is a 7-bit field (bits 0..6); operand bytes always begin
 // at bit 8, and no instruction uses bits 6..7, so widening the opcode field
@@ -233,7 +231,7 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 	switch b := b.(type) {
 	case *bytecode.Call:
 		var (
-			enter = encodeEnter_n(0, 1, b.CheckPoint, 0, b.Arguments)
+			enter = encodeEnter_n(0, 1, b.Flags.CheckPoint, 0, b.Arguments)
 			leave = encodeLeave_n(b.Returns)
 		)
 		//

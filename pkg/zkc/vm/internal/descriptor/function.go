@@ -45,3 +45,10 @@ func NewFunction[W word.Word[W]](name string, registers []Register[W], native bo
 func (p *Function[W]) Vectors() []bytecode.Vector[W] {
 	return p.vectors
 }
+
+// IsNative reports whether this function is backed by a native circuit (i.e.
+// declared with the @native annotation) rather than by the bytecode in its
+// vectors.
+func (p *Function[W]) IsNative() bool {
+	return p.native
+}

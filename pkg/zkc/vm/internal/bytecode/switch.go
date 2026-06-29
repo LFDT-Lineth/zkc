@@ -14,7 +14,6 @@ package bytecode
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -51,11 +50,6 @@ type SwitchCase[W any] struct {
 type Switch[W word.Word[W]] struct {
 	Source RegisterId
 	Cases  []SwitchCase[W]
-}
-
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Switch[W]) Clone() Patched {
-	return &Switch[W]{p.Source, slices.Clone(p.Cases)}
 }
 
 // Uses implementation for Bytecode interface.  A multiway skip reads the

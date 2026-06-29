@@ -77,16 +77,18 @@ func (p ConstantEvaluator) evalConstants(es []Expr, definition bool) ([]vm.Uint,
 
 func (p ConstantEvaluator) evalIntConstant(e Expr, definition bool) (res vm.Uint, err string) {
 	var (
-		overflow, ok bool
-		bitwidth     uint
-		args         []vm.Uint
+		overflow bool
+		bitwidth uint
+		args     []vm.Uint
 	)
 	// NOTE: we must sanity check the bitwidth identified is valid in order to
 	// ensure this function is robust against errors.  This is necessary because
 	// it is used during typing and, thus, could be called on a malformed
 	// expression as a result.
-	if bitwidth, ok = data.BitWidthOf(e.Type(), p.env); !ok {
+	if bw := data.BitWidthOf(e.Type(), p.env); bw.IsEmpty() {
 		return res, "invalid constant"
+	} else {
+		bitwidth = bw.Unwrap()
 	}
 	//
 	switch e := e.(type) {
