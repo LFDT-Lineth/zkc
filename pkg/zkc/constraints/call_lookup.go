@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"math/big"
 
+	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
@@ -195,110 +196,65 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]]
 	// Allocate the selector column.
 	selId := register.NewId(mod.Width())
 	mod.AddRegisters(register.NewComputed(fmt.Sprintf("$call_sel_%d", selId.Unwrap()), 1, padding))
-	// Build the boolean value of the condition, both as a computation (to fill
-	// the column during trace expansion) and as an MIR term (to constrain it).
-	selComp := conditionTerm[word.BigEndian, term.Computation[word.BigEndian]](cond, regs)
-	selTerm := conditionTerm[F, mir.Term[F]](cond, regs)
-	// Fill the column during trace expansion.
-	mod.AddAssignments(assignment.NewComputedRegister[F](selComp, true, ctx, selId))
-	// Bind it for soundness: $call_sel == cond_1 * ... * cond_i.
+	// Fill the flag selector during trace expansion with the boolean value of the condition.
+	mod.AddAssignments(assignment.NewComputedRegister[F](pathSelectorComputation(cond, regs), true, ctx, selId))
+	// Bind it for soundness: $call_sel == 1 exactly when the condition holds.
 	mod.AddConstraints(mir.NewVanishingConstraint(
 		fmt.Sprintf("call_sel_%d", selId.Unwrap()), ctx, util.None[int](),
-		term.Equals[F, mir.LogicalTerm[F]](
-			term.NewRegisterAccess[F, mir.Term[F]](selId, 1, 0), selTerm)))
+		pathSelectorConstraint[F](selId, cond, regs)))
 	//
 	return selId
 }
 
-// conditionTerm builds a 0/1 term which evaluates to 1 exactly when the given
-// branch condition holds.  Branch conditions are stored in disjunctive normal
-// form over single-bit operands, so this is a pure product/sum of binaries — no
-// normalisation (inverse) is required.  A conjunction is the product of its
-// (0/1) atoms; a disjunction is "1 - product(1 - clause)".
-func conditionTerm[F field.Element[F], T term.Expr[F, T]](cond dfa.BranchCondition, regs []register.Register) T {
-	conjuncts := cond.Conjuncts()
-	clauses := make([]T, len(conjuncts))
-	//
-	for i, conjunct := range conjuncts {
-		atoms := conjunct.Atoms()
-		factors := make([]T, len(atoms))
-		//
-		for j, atom := range atoms {
-			factors[j] = atomTerm[F, T](atom, regs)
-		}
-		// A conjunction is the product of its (0/1) atoms.
-		clauses[i] = term.Product(factors...)
-	}
-	//
-	if len(clauses) == 1 {
-		return clauses[0]
-	}
-	// A disjunction of (0/1) clauses: 1 - product(1 - clause).
-	one := term.Const[F, T](field.One[F]())
-	complements := make([]T, len(clauses))
-	//
-	for i, clause := range clauses {
-		complements[i] = term.Subtract(one, clause)
-	}
-	//
-	return term.Subtract(one, term.Product(complements...))
-}
-
-// atomTerm builds a 0/1 term for a single branch (in)equality over single-bit
-// operands.
-func atomTerm[F field.Element[F], T term.Expr[F, T]](atom dfa.BranchEquality, regs []register.Register) T {
+// pathSelectorConstraint builds the binding "$call_sel == 1 iff cond" as an MIR
+// logical term.
+func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.BranchCondition,
+	regs []register.Register) mir.LogicalTerm[F] {
 	var (
-		left = branchRegisterTerm[F, T](atom.Left, regs)
-		one  = term.Const[F, T](field.One[F]())
+		condition = mirc.TranslateBranchCondition(cond, callRegisterReader[F]{regs})
+		sel       = mirc.Variable[register.Id, Expr[F]](selId, 1, 0)
+		one       = mirc.Number[register.Id, Expr[F]](1)
+		zero      = mirc.Number[register.Id, Expr[F]](0)
 	)
-	// Comparison against a constant bit (0 or 1) is linear for a single-bit operand
-	// Specifically it is "1 - left" for "== 0" and "!= 1", and "left" for "!= 0" and "== 1".
-	if atom.Right.HasSecond() {
-		rhs := atom.Right.Second()
-		isZero := rhs.Sign() == 0
-		//
-		if isZero || rhs.Cmp(big.NewInt(1)) == 0 {
-			if atom.Sign == isZero {
-				return term.Subtract(one, left)
-			}
-			//
-			return left
-		}
-	}
-	// General single-bit case: since left, right ∈ {0,1}, (left-right) ∈ {-1,0,1}
-	// and its square is 1 iff left != right — so no normalisation (inverse) is
-	// required.
-	//TODO: (cf https://github.com/LFDT-Lineth/zkc/issues/1879) once we have skip_if with constant
-	// (and not a register holding a constant), we can suppress this:
-	// all the conditions coming from the branch table are of the form "b != 0" (or "b == 0"), so we can just
-	// use the single-bit register directly.
-	var right T
 	//
-	if atom.Right.HasSecond() {
-		right = term.Const[F, T](field.BigInt[F](atom.Right.Second()))
-	} else {
-		right = branchRegisterTerm[F, T](atom.Right.First(), regs)
-	}
-	//
-	diff := term.Subtract(left, right)
-	neq := term.Product(diff, diff)
-	//
-	if atom.Sign {
-		// Equality: 1 iff left == right.
-		return term.Subtract(one, neq)
-	}
-	//
-	return neq
+	return condition.ThenElse(sel.Equals(one), sel.Equals(zero)).AsLogical()
 }
 
-// branchRegisterTerm builds a register-access term for a single branch register.
-func branchRegisterTerm[F field.Element[F], T term.Expr[F, T]](id dfa.BranchId, regs []register.Register) T {
-	if id.Width != 1 {
-		panic("unsupported multi-register branch condition")
+// pathSelectorComputation builds the trace-expansion computation for a path
+// selector: the boolean value of the branch condition (1 when taken, else 0).
+func pathSelectorComputation(cond dfa.BranchCondition, regs []register.Register) term.Computation[word.BigEndian] {
+	var (
+		condition = mirc.TranslateBranchCondition(cond, callRegisterReader[word.BigEndian]{regs})
+		logical   = term.NewLogicalComputation[word.BigEndian, mir.LogicalTerm[word.BigEndian],
+			mir.Term[word.BigEndian]](condition.AsLogical())
+		one  = term.Const[word.BigEndian, term.Computation[word.BigEndian]](field.One[word.BigEndian]())
+		zero = term.Const[word.BigEndian, term.Computation[word.BigEndian]](field.Zero[word.BigEndian]())
+	)
+	//
+	return term.IfElse(logical, one, zero)
+}
+
+// callRegisterReader is a minimal mirc.RegisterReader over a register layout,
+// reading every branch register on the current row (shift 0): the row on which
+// the gated call fires holds the register's assigned value.
+type callRegisterReader[F field.Element[F]] struct {
+	regs []register.Register
+}
+
+func (p callRegisterReader[F]) Register(id register.Id) register.Register { return p.regs[id.Unwrap()] }
+
+func (p callRegisterReader[F]) RegisterWidths(ids ...register.Id) []uint {
+	widths := make([]uint, len(ids))
+	//
+	for i, id := range ids {
+		widths[i] = p.regs[id.Unwrap()].Width()
 	}
-	// NOTE: forwarding is read on the current row (shift 0), which is correct
-	// since a register holds its assigned value on the row it is written.
-	return term.NewRegisterAccess[F, T](id.Id, regs[id.Id.Unwrap()].Width(), 0)
+	//
+	return widths
+}
+
+func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
+	return mirc.Variable[register.Id, Expr[F]](id, p.regs[id.Unwrap()].Width(), 0)
 }
 
 // emitCallLookup constructs and adds a single lookup constraint mapping the
