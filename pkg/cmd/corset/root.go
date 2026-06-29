@@ -120,7 +120,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 		fieldName    = GetString(cmd, "field")
 		mirEnable    = GetFlag(cmd, "mir")
 		airEnable    = GetFlag(cmd, "air")
-		asmEnable    = GetFlag(cmd, "asm")
 		uasmEnable   = GetFlag(cmd, "uasm")
 		nasmEnable   = GetFlag(cmd, "nasm")
 		optimisation = GetUint(cmd, "opt")
@@ -161,12 +160,12 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 	if optimisation >= uint(len(mir.OPTIMISATION_LEVELS)) {
 		fmt.Printf("invalid optimisation level %d\n", optimisation)
 		os.Exit(2)
-	} else if countFlags(asmEnable, uasmEnable, nasmEnable, mirEnable, airEnable) > 1 {
-		fmt.Printf("cannot specify more than one of --asm/uasm/nasm/mir/air\n")
+	} else if countFlags(uasmEnable, nasmEnable, mirEnable, airEnable) > 1 {
+		fmt.Printf("cannot specify more than one of --uasm/nasm/mir/air\n")
 		os.Exit(2)
 	}
 	// If no IR was specified, set a default
-	if !airEnable && !mirEnable && !uasmEnable && !asmEnable && !nasmEnable {
+	if !airEnable && !mirEnable && !uasmEnable && !nasmEnable {
 		switch mode {
 		case SCHEMA_DEFAULT_MIR:
 			mirEnable = true
@@ -187,10 +186,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 		WithCorsetConfig(corsetConfig).
 		WithOptimisationConfig(mir.OPTIMISATION_LEVELS[optimisation]).
 		WithConstantDefinitions(externs)
-	//
-	if asmEnable {
-		stacker = stacker.WithLayer(cmd_util.MACRO_ASM_LAYER)
-	}
 	//
 	if uasmEnable {
 		stacker = stacker.WithLayer(cmd_util.MICRO_ASM_LAYER)
@@ -248,7 +243,6 @@ func init() {
 	rootCmd.PersistentFlags().Uint("register-width", 160, "maximum bitwidth for registers")
 	// Schema stack
 	rootCmd.PersistentFlags().Bool("air", false, "include constraints at AIR level")
-	rootCmd.PersistentFlags().Bool("asm", false, "include constraints at ASM level")
 	rootCmd.PersistentFlags().Bool("mir", false, "include constraints at MIR level")
 	rootCmd.PersistentFlags().Bool("uasm", false, "include constraints at micro ASM level")
 	rootCmd.PersistentFlags().Bool("nasm", false, "include constraints at nano ASM level")

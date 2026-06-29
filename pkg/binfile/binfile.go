@@ -30,7 +30,7 @@ import (
 // BinaryFile is the in-memory representation of a compiled constraint binary.
 // It is produced by the go-corset compiler and consumed by the checker/prover.
 // The on-disk layout is: a custom binary Header, followed by a gob-encoded
-// attribute list, followed by a gob-encoded MacroHirProgram schema.
+// attribute list, followed by a gob-encoded MicroHirProgram schema.
 type BinaryFile struct {
 	// Header holds the magic identifier, version numbers, and optional JSON
 	// metadata for the file.
@@ -39,15 +39,15 @@ type BinaryFile struct {
 	// constraint checking but may be useful for tooling (e.g. source-column
 	// mappings for debug output).
 	Attributes []Attribute
-	// Schema is the compiled constraint program, combining macro-level assembly
+	// Schema is the compiled constraint program, combining micro-level assembly
 	// instructions with a HIR constraint schema.
-	Schema asm.MacroHirProgram
+	Schema asm.MicroHirProgram
 }
 
 // NewBinaryFile constructs a BinaryFile with a header stamped at the current
 // major/minor version.  metadata is an optional JSON blob stored verbatim in
 // the header (pass nil for none).
-func NewBinaryFile(metadata []byte, attributes []Attribute, schema asm.MacroHirProgram,
+func NewBinaryFile(metadata []byte, attributes []Attribute, schema asm.MicroHirProgram,
 ) *BinaryFile {
 	//
 	return &BinaryFile{

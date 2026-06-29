@@ -38,9 +38,6 @@ import (
 )
 
 const (
-	// MACRO_ASM_LAYER represents the macro assembly layer which is most
-	// high-level layer in the stack.
-	MACRO_ASM_LAYER = 0
 	// MICRO_ASM_LAYER represents the micro assembly layer which is typically
 	// vectorised and field specific.
 	MICRO_ASM_LAYER = 1
@@ -174,7 +171,6 @@ func (p SchemaStacker[F]) TraceBuilder() ir.TraceBuilder[F] {
 // Build a fresh SchemaStack from this stacker.
 func (p SchemaStacker[F]) Build() SchemaStack[F] {
 	var (
-		asmProgram  asm.MacroHirProgram
 		uasmProgram asm.MicroHirProgram
 		airSchema   air.Schema[F]
 		stack       SchemaStack[F]
@@ -185,12 +181,8 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 		binfile := p.binfile.Unwrap()
 		// Apply any user-specified values for externalised constants.
 		applyExternOverrides(p.externs, &binfile)
-		// Read out the mixed macro schema
-		asmProgram = binfile.Schema
-		// Lower to mixed micro schema
-		uasmProgram = asm.LowerMixedMacroProgram(p.asmConfig.Vectorize, asmProgram)
-		//
-		stats.Log("lowering")
+		// Read out the mixed micro schema
+		uasmProgram = binfile.Schema
 		// Apply register splitting for field agnosticity
 		nasmProgram, mapping := asm.Concretize[F](p.asmConfig.Field, uasmProgram)
 		//
@@ -201,11 +193,6 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 		stats.Log("translation")
 		// Record mapping
 		stack.mapping = mapping
-		// Include (Macro) Assembly Layer (if requested)
-		if p.layers.Contains(MACRO_ASM_LAYER) {
-			stack.abstractSchemas = append(stack.abstractSchemas, &asmProgram)
-			stack.names = append(stack.names, "ASM")
-		}
 		// Include (Micro) Assembly Layer (if requested)
 		if p.layers.Contains(MICRO_ASM_LAYER) {
 			stack.abstractSchemas = append(stack.abstractSchemas, &uasmProgram)
@@ -301,7 +288,7 @@ func CompileSourceFiles(config corset.CompilationConfig, asmConfig asm.LoweringC
 		errors            []source.SyntaxError
 		srcmap            corset.SourceMap
 		srcfiles          = make([]source.File, len(filenames))
-		mixedMacroProgram asm.MacroHirProgram
+		mixedMicroProgram asm.MicroHirProgram
 	)
 	// Read each file
 	for i, n := range filenames {
@@ -317,11 +304,11 @@ func CompileSourceFiles(config corset.CompilationConfig, asmConfig asm.LoweringC
 		srcfiles[i] = *source.NewSourceFile(n, bytes)
 	}
 	// Parse and compile source files
-	mixedMacroProgram, srcmap, errors = corset.CompileSourceFiles(config, srcfiles)
+	mixedMicroProgram, srcmap, errors = corset.CompileSourceFiles(config, srcfiles)
 	// Check for any errors
 	if len(errors) == 0 {
 		attributes := []binfile.Attribute{&srcmap}
-		return *binfile.NewBinaryFile(nil, attributes, mixedMacroProgram)
+		return *binfile.NewBinaryFile(nil, attributes, mixedMicroProgram)
 	}
 	// Report errors
 	for _, err := range errors {

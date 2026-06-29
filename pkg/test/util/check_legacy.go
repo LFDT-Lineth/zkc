@@ -429,7 +429,6 @@ func getSchemaStack[F field.Element[F]](stdlib bool, field field.Config, filenam
 	stack = stack.
 		WithCorsetConfig(corsetConfig).
 		WithAssemblyConfig(asmConfig).
-		WithLayer(cmd_util.MACRO_ASM_LAYER).
 		WithLayer(cmd_util.MICRO_ASM_LAYER).
 		WithLayer(cmd_util.MIR_LAYER).
 		WithLayer(cmd_util.AIR_LAYER)

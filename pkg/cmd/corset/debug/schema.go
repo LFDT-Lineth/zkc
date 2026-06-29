@@ -17,7 +17,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/asm"
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io/macro"
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro"
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
@@ -59,8 +58,6 @@ func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, 
 		}
 		//
 		switch ith := ith.(type) {
-		case *asm.MacroModule[F]:
-			printAssemblyFunctionalUnit[macro.Instruction](ith.Function())
 		case *asm.MicroModule[F]:
 			printAssemblyFunctionalUnit[micro.Instruction](ith.Function())
 		default:
