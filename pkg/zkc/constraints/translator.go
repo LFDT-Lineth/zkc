@@ -356,7 +356,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 		var addressesVanishInPadding = make([]mir.Constraint[F], L)
 		for k := range L {
 			addressesVanishInPadding[k] = mir.NewVanishingConstraint(
-				fmt.Sprintf("address_%d_vanishes_in_padding", k), ctx,
+				fmt.Sprintf("addr_%d_vanishes_in_padding", k), ctx,
 				util.None[int](),
 				mirc.If(currAccess.Equals(zero), currAddrRegs[k].Equals(zero)).AsLogical())
 		}
@@ -365,7 +365,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 		var addressesVanishOnFirstNonPaddingRow = make([]mir.Constraint[F], L)
 		for k := range L {
 			addressesVanishOnFirstNonPaddingRow[k] = mir.NewVanishingConstraint(
-				fmt.Sprintf("address_%d_vanishes_on_first_non_padding_row", k), ctx,
+				fmt.Sprintf("addr_%d_vanishes_on_first_non_padding_row", k), ctx,
 				util.None[int](),
 				mirc.If(prevAccess.Equals(zero),
 					mirc.If(currAccess.Equals(one), currAddrRegs[k].Equals(zero))).AsLogical())
@@ -373,51 +373,50 @@ func translateAccessOnceMemory[F field.Element[F]](
 
 		var addrUpdateConstraints = make([][]mir.Constraint[F], L)
 		for k := range L {
-			// 2*k: constraints for ADDRESS limbs preceding the k-th limb
-			// 2: constraints applying to the k-th limb
-			// (L - k - 1): constraints for ADDRESS limbs after the k-th limb
-			addrUpdateConstraints[k] = make([]mir.Constraint[F], 2*k+2+(L-k-1))
+			var cs []mir.Constraint[F]
 
-			// constraints on the limbs preceding the k-th limb
-			for i := 0; i < k; i++ {
-				addrUpdateConstraints[k][2*i] = mir.NewVanishingConstraint(
-					fmt.Sprintf("@%d_prev_addr_%d_equals_max_value_%d", k, i, i),
+			// more significant limbs (0 ≤ a < k): unchanged
+			for a := range k {
+				cs = append(cs, mir.NewVanishingConstraint(
+					fmt.Sprintf("@%d_addr_%d_curr_equals_prev", k, a),
 					ctx, util.None[int](),
 					mirc.If(prevAccess.Equals(one),
-						mirc.If(atFlagVars[k].Equals(one), prevAddrRegs[i].Equals(addrLimbMaxValues[i]))).AsLogical())
-				addrUpdateConstraints[k][2*i+1] = mir.NewVanishingConstraint(
-					fmt.Sprintf("@%d_curr_addr_%d_equals_zero", k, i),
-					ctx, util.None[int](),
-					mirc.If(prevAccess.Equals(one),
-						mirc.If(atFlagVars[k].Equals(one), currAddrRegs[i].Equals(zero))).AsLogical())
+						mirc.If(atFlagVars[k].Equals(one), currAddrRegs[a].Equals(prevAddrRegs[a]))).AsLogical()))
 			}
 
-			// constraints on the k-th limb
-			addrUpdateConstraints[k][2*k] = mir.NewVanishingConstraint(
-				fmt.Sprintf("@%d_prev_addr_%d_equals_not_max_value_%d", k, k, k),
-				ctx, util.None[int](),
-				mirc.If(prevAccess.Equals(one),
-					mirc.If(atFlagVars[k].Equals(one), prevAddrRegs[k].NotEquals(addrLimbMaxValues[k]))).AsLogical())
-			addrUpdateConstraints[k][2*k+1] = mir.NewVanishingConstraint(
-				fmt.Sprintf("@%d_curr_addr_%d_equals_one_plus_prev_addr_%d", k, k, k),
-				ctx, util.None[int](),
-				mirc.If(prevAccess.Equals(one),
-					mirc.If(atFlagVars[k].Equals(one), currAddrRegs[k].Equals(prevAddrRegs[k].Add(one)))).AsLogical())
-
-			// constraints on the limbs after the k-th limb
-			for i := 0; i < L-k-1; i++ {
-				b := k + 1 + i
-				addrUpdateConstraints[k][2*k+2+i] = mir.NewVanishingConstraint(
-					fmt.Sprintf("@%d_prev_addr_%d_equals_prev_value_%d", k, b, b),
+			// k-th limb (carry stop): prev ≠ max, curr = 1 + prev
+			cs = append(cs,
+				mir.NewVanishingConstraint(
+					fmt.Sprintf("@%d_addr_%d_prev_not_max_value", k, k),
 					ctx, util.None[int](),
 					mirc.If(prevAccess.Equals(one),
-						mirc.If(atFlagVars[k].Equals(one), currAddrRegs[i].Equals(prevAddrRegs[i]))).AsLogical())
+						mirc.If(atFlagVars[k].Equals(one), prevAddrRegs[k].NotEquals(addrLimbMaxValues[k]))).AsLogical()),
+				mir.NewVanishingConstraint(
+					fmt.Sprintf("@%d_addr_%d_equals_one_plus_prev", k, k),
+					ctx, util.None[int](),
+					mirc.If(prevAccess.Equals(one),
+						mirc.If(atFlagVars[k].Equals(one), currAddrRegs[k].Equals(prevAddrRegs[k].Add(one)))).AsLogical()))
+
+			// less significant limbs (k < b < L): roll over (prev = max, curr = 0)
+			for b := k + 1; b < L; b++ {
+				cs = append(cs,
+					mir.NewVanishingConstraint(
+						fmt.Sprintf("@%d_addr_%d_prev_equals_max_value", k, b),
+						ctx, util.None[int](),
+						mirc.If(prevAccess.Equals(one),
+							mirc.If(atFlagVars[k].Equals(one), prevAddrRegs[b].Equals(addrLimbMaxValues[b]))).AsLogical()),
+					mir.NewVanishingConstraint(
+						fmt.Sprintf("@%d_addr_%d_curr_equals_zero", k, b),
+						ctx, util.None[int](),
+						mirc.If(prevAccess.Equals(one),
+							mirc.If(atFlagVars[k].Equals(one), currAddrRegs[b].Equals(zero))).AsLogical()))
 			}
+
+			addrUpdateConstraints[k] = cs
 		}
 
 		constraints = append(constraints, atFlagSumEqualsAccessBit)
 		constraints = append(constraints, addressesVanishInPadding...)
-
 		constraints = append(constraints, addressesVanishOnFirstNonPaddingRow...)
 		for k := range L {
 			constraints = append(constraints, addrUpdateConstraints[k]...)
