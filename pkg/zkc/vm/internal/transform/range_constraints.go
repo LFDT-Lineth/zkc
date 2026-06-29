@@ -19,19 +19,13 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
-
-// MAX_STATIC_RANGE_WIDTH is the largest register width for which a range proof
-// is provided directly by a fully-enumerated static table (range_u1 ..
-// range_u16).  Registers wider than this are range-checked by recursively
-// destructuring them into two roughly-equal halves, each of which is itself
-// range-checked.
-const MAX_STATIC_RANGE_WIDTH = 16
 
 // Register names used within generated range modules.  The "value" column is
 // the lookup recipient in both static tables and recursive modules, so callers
@@ -65,7 +59,7 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *
 	)
 
 	// First step, generate the range modules for every width which occurs on some register.
-	var extra = generateRangeModules[W](cfg, modules)
+	var extra = generateRangeModules[W](modules)
 
 	// Second step, call range_uX for every registers.
 	modules = addRangeCalls[W](modules, extra)
@@ -74,10 +68,10 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *
 	return machine.NewWord[W](cfg, append(slices.Clone(modules), extra...)...)
 }
 
-func generateRangeModules[W word.Word[W]](cfg field.Config, modules []Module) []Module {
+func generateRangeModules[W word.Word[W]](modules []Module) []Module {
 	var (
 		// Every width requiring a range module, mapped to its decomposition.
-		splits = neededRangeWidths[W](cfg, modules)
+		splits = neededRangeWidths[W](modules)
 		// Freshly generated range modules.
 		extra []Module
 		// Widths in ascending order, for deterministic output.
@@ -107,7 +101,7 @@ func generateRangeModules[W word.Word[W]](cfg field.Config, modules []Module) []
 		// Note, this could be optimized:
 		// https://github.com/LFDT-Lineth/zkc/issues/1910
 		// and https://github.com/LFDT-Lineth/zkc/issues/1911
-		if w <= MAX_STATIC_RANGE_WIDTH {
+		if w <= util.MAX_STATIC_RANGE_WIDTH {
 			extra = append(extra, newStaticRangeTable[W](name, w))
 		} else {
 			extra = append(extra, newRecursiveRangeModule[W](name, w, splits[w], moduleOf))
@@ -128,7 +122,7 @@ type rangeSplit struct {
 // directly on some register, closed under the destructuring of wide widths
 // (> 16); each wide width is mapped to the (lo, hi) halves it is destructured
 // into, while leaf widths (<= 16) map to the zero split.
-func neededRangeWidths[W word.Word[W]](cfg field.Config, modules []Module) map[uint]rangeSplit {
+func neededRangeWidths[W word.Word[W]](modules []Module) map[uint]rangeSplit {
 	var (
 		// Final decompositions, keyed by width (one entry per dequeued width).
 		splits = make(map[uint]rangeSplit)
@@ -144,8 +138,18 @@ func neededRangeWidths[W word.Word[W]](cfg field.Config, modules []Module) map[u
 			queue = append(queue, w)
 		}
 	}
-	// Seed from every register of every module.
+
 	for _, mod := range modules {
+		// Seed from the PC register, which is added later while lowering to mir
+		// (see translateFunction). It exists only for non-atomic, non-native
+		// functions, and the PC bit width must match the one chosen there.
+		if fn, ok := mod.(*WordFunction); ok && !fn.IsNative() && !fn.IsAtomic() {
+			add(fn.PcWidth())
+			//TODO: rm me see https://github.com/LFDT-Lineth/zkc/issues/1910
+			// Seed from IS_PC_<k> selectors
+			add(1)
+		}
+		// Seed from every register of every module.
 		for _, r := range mod.Registers() {
 			add(registerWidthOrZero(r))
 		}
@@ -156,7 +160,7 @@ func neededRangeWidths[W word.Word[W]](cfg field.Config, modules []Module) map[u
 
 		queue = queue[1:]
 		//
-		if n <= MAX_STATIC_RANGE_WIDTH {
+		if n <= util.MAX_STATIC_RANGE_WIDTH {
 			// Leaf width: handled by a static table, no decomposition.
 			splits[n] = rangeSplit{}
 		} else {
@@ -291,7 +295,7 @@ func rangeModuleName(w uint) string {
 // range module whose id is `id`: a (data-less) MemRead from the static ROM when
 // w <= 16, or a Call into the recursive range function otherwise.
 func rangeCheck(id uint, r register.Id, w uint) WordInstruction {
-	if w <= MAX_STATIC_RANGE_WIDTH {
+	if w <= util.MAX_STATIC_RANGE_WIDTH {
 		return instruction.NewMemRead(id, []register.Id{r}, nil)
 	}
 
@@ -339,7 +343,7 @@ func addRangeChecks(mod Module, idOf map[string]uint) Module {
 		// to populate the range module.
 		// For registers of width <= MAX_STATIC_RANGE_WIDTH, the range check is done via a static table,
 		// and the lookup is added when generating constraints.
-		if w := registerWidthOrZero(r); w > MAX_STATIC_RANGE_WIDTH {
+		if w := registerWidthOrZero(r); w > util.MAX_STATIC_RANGE_WIDTH {
 			checks = append(checks, rangeCheck(idOf[rangeModuleName(w)], register.NewId(uint(j)), w))
 		}
 	}

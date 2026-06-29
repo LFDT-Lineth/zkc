@@ -35,10 +35,13 @@ import (
 func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F]) mir.Schema[F] {
 	var (
 		modules = make([]mir.Module[F], len(fm.Modules()))
+		// Index the static range-check tables by width, so each register can be
+		// range-proved by a lookup into the matching $range_un table.
+		rangeTables = indexRangeTables[F](fm.Modules())
 	)
 	//
 	for i, m := range fm.Modules() {
-		modules[i] = translateModule[F](uint(i), m)
+		modules[i] = translateModule[F](uint(i), m, fm.Modules(), rangeTables)
 	}
 	//
 	return schema.NewUniformSchema(modules)
@@ -54,10 +57,11 @@ func GenerateAirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], field fi
 	return mir.LowerToAir(mirc, field.BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)
 }
 
-func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module) mir.Module[F] {
+func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module, infos []vm.Module,
+	rangeTables map[uint]rangeTable) mir.Module[F] {
 	switch fm := fm.(type) {
 	case *vm.FieldFunction:
-		return translateFunction[F](ctx, *fm)
+		return translateFunction[F](ctx, *fm, infos, rangeTables)
 	case vm.Memory[F]:
 		if fm.IsStatic() {
 			return translateStaticMemory(ctx, fm)
@@ -131,12 +135,15 @@ func translateReadWriteMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memor
 	return mod
 }
 
-func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction) mir.Module[F] {
+func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction, infos []vm.Module,
+	rangeTables map[uint]rangeTable) mir.Module[F] {
 	var (
 		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]
 		name    = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
 		framing Framing[F]
+		// IS_PC_<k> program counter selectors, only for MLI.
+		pcSelectors []register.Id
 	)
 	// Initialise module
 	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
@@ -147,22 +154,20 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	if fm.IsNative() {
 		return mod
 	}
-	// Add control registers (as required)
+	// Add control registers for Multi Line Instruction
 	if !fm.IsAtomic() {
 		var (
 			constraints []mir.Constraint[F]
 			pc          = register.NewId(mod.Width())
 			ret         = register.NewId(mod.Width() + 1)
-			// determine suitable width of PC register
-			pcWidth = bit.Width(uint(1 + len(fm.Code())))
-			// one boolean selector register per instruction (code line)
-			pcSelectors = make([]register.Id, len(fm.Code()))
 		)
+
 		// Create program counter
-		mod.AddRegisters(register.NewComputed(io.PC_NAME, pcWidth, padding))
+		mod.AddRegisters(register.NewComputed(io.PC_NAME, fm.PcWidth(), padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
-		// Create one-hot program counter selectors
+		// Add IS_PC_<k> program counter selectors (one per code line)
+		pcSelectors = make([]register.Id, len(fm.Code()))
 		for c := range pcSelectors {
 			pcSelectors[c] = register.NewId(mod.Width())
 			mod.AddRegisters(register.NewComputed(io.SelectorName(uint(c)), 1, padding))
@@ -174,7 +179,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	} else {
 		framing = mirc.NewAtomicFraming[register.Id, Expr[F]]()
 	}
-	// Transle all instructions
+	// Translate all instructions
 	for pc, vec := range fm.Code() {
 		var (
 			handle = fmt.Sprintf("pc%d", pc)
@@ -183,9 +188,20 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			// extract logical constraint
 			constraint = tr.translate().AsLogical()
 		)
-		// translate into AIR constraints
+		// translate into MIR constraints
 		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint))
 	}
+	// Add range proof constraints for all registers.
+	// Note: while adding lookups from calls and memory read/write  might add (bit) registers,
+	// it is safe to add range proof constraints for all registers before, as the registers
+	// that will be introduced later will be already range-proved (as a product of bit registers).
+	// Note that registers coming from control flow have been added to the module before this point,
+	// so they will be range-proved as well.
+	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables)
+
+	// Emit lookup constraints for any function calls made by this function.
+	addCallLookups(mod, ctx, fm, pcSelectors, infos)
+	// TODO: add memory read / write constraints (as lookups).
 	// Done
 	return mod
 }
@@ -218,7 +234,7 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 	// PC[0] != 0 ==> PC[0] == 1
 	first := mir.NewVanishingConstraint("first", ctx, util.Some(0),
 		mirc.If(pc_i.NotEquals(zero), pc_i.Equals(one)).AsLogical())
-	// Build one-hot selector terms.  The selector for code line c is high
+	// Build one-hot selector terms.  The selector for code line c is 1
 	// exactly when PC==c+1 (PC==0 is reserved for padding).
 	var (
 		selectorTerms = make([]Expr[F], len(pcSelectors))
@@ -235,7 +251,7 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 	// PC == sum_c (c+1)*IS_PC_c (reconstruction)
 	decoding := mir.NewVanishingConstraint("pc_decoding", ctx, util.None[int](),
 		pc_i.Equals(mirc.Sum(weightedTerms)).AsLogical())
-	// PC*S == PC i.e. exactly one selector is high whenever PC!=0 (and, via
+	// PC*S == PC i.e. exactly one selector is 1 whenever PC!=0 (and, via
 	// pc_decoding, none when PC==0).
 	exclusivity := mir.NewVanishingConstraint("is_pc_exclusivity", ctx, util.None[int](),
 		pc_i.Multiply(sum).Equals(pc_i).AsLogical())
