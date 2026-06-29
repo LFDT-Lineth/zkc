@@ -145,9 +145,8 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		mod     *schema.Table[F, mir.Constraint[F]]
 		name    = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
 		framing Framing[F]
-		// one boolean selector register per instruction (code line); empty for
-		// atomic functions (which have no program counter).
-		pcSelectors []register.Id
+		// Create IS_PC_<k> program counter selectors
+		pcSelectors = make([]register.Id, len(fm.Code()))
 	)
 	// Initialise module
 	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
@@ -164,8 +163,6 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			constraints []mir.Constraint[F]
 			pc          = register.NewId(mod.Width())
 			ret         = register.NewId(mod.Width() + 1)
-			// Create IS_PC_<k> program counter selectors
-			pcSelectors = make([]register.Id, len(fm.Code()))
 		)
 
 		// Create program counter
