@@ -35,16 +35,13 @@ import (
 func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F]) mir.Schema[F] {
 	var (
 		modules = make([]mir.Module[F], len(fm.Modules()))
-		// Pre-compute per-module metadata required to wire up call lookups (e.g.
-		// the callee register layout and whether it is atomic).
-		infos = computeModuleInfos(fm.Modules())
 		// Index the static range-check tables by width, so each register can be
 		// range-proved by a lookup into the matching $range_un table.
 		rangeTables = indexRangeTables[F](fm.Modules())
 	)
 	//
 	for i, m := range fm.Modules() {
-		modules[i] = translateModule[F](uint(i), m, infos, rangeTables)
+		modules[i] = translateModule[F](uint(i), m, fm.Modules(), rangeTables)
 	}
 	//
 	return schema.NewUniformSchema(modules)
@@ -60,7 +57,7 @@ func GenerateAirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], field fi
 	return mir.LowerToAir(mirc, field.BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)
 }
 
-func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module, infos []moduleInfo,
+func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module, infos []vm.Module,
 	rangeTables map[uint]rangeTable) mir.Module[F] {
 	switch fm := fm.(type) {
 	case *vm.FieldFunction:
@@ -138,7 +135,7 @@ func translateReadWriteMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memor
 	return mod
 }
 
-func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction, infos []moduleInfo,
+func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction, infos []vm.Module,
 	rangeTables map[uint]rangeTable) mir.Module[F] {
 	var (
 		padding big.Int
