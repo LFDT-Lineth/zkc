@@ -91,6 +91,17 @@ func FactorSkipConditions[W word.Word[W]](wm *WordMachine[W]) *WordMachine[W] {
 	return rebuildMachine(wm, transform.FactorSkipConditions[W](wm.Modules()))
 }
 
+// FlattenCalls introduces a tmp register to hold a call argument when it's rewritten in the same vector:
+// 1. x = f(x)
+// 2. y = f(x); x = x + 1
+// As we want to avoid shift in lookups, we must keep the original value of x in a tmp register,
+// so that the call can be rewritten as:
+// 1. tmp = x; x = f(tmp)
+// 2. tmp = x; y = f(tmp); x = x + 1
+func FlattenCalls[W word.Word[W]](wm *WordMachine[W]) *WordMachine[W] {
+	return rebuildMachine(wm, transform.FlattenCalls[W](wm.Modules()))
+}
+
 // InlineFunctions returns an equivalent set of modules in which every call to
 // one of the named functions has been inlined at its call site, and the named
 // function modules removed (module identifiers within Call / MemRead /

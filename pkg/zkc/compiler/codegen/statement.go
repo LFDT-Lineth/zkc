@@ -47,11 +47,6 @@ type StmtCompiler struct {
 	errors      []source.SyntaxError
 	// quiet suppresses printf output
 	quiet bool
-	// fastMode disables constraint-only rewrites not required by the vm.
-	fastMode bool
-	// assignTargets holds the destination registers of the assignment
-	// currently being compiled.
-	assignTargets map[RegisterId]bool
 }
 
 func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) BytecodeVector {
@@ -60,12 +55,7 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) Bytecod
 	switch s := s.(type) {
 	case *stmt.Assign[symbol.Resolved]:
 		targets, pre, post := p.mapLVals(mapping, s.Targets)
-		// Record the destination registers so nested calls can snapshot any
-		// argument that coincides with a target (and is therefore rewritten
-		// later in the same vector).
-		p.assignTargets = registerSet(targets)
 		insns = p.compileRootExprs(s.Source, mapping, targets...)
-		p.assignTargets = nil
 		// Configure pre/post instructions
 		insns = append(pre, insns...)
 		insns = append(insns, post...)
@@ -573,40 +563,12 @@ func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved]
 	returns []RegisterId) []Bytecode {
 	var (
 		// Determine vm module identifier
-		id = mapping[e.Name.Index]
+		id = vm.ModuleId(mapping[e.Name.Index])
 	)
 	// Compile arguments
 	arguments, insns := p.compileNonUniformArgs(mapping, e.Args...)
-	//
-	if !p.fastMode {
-		// The lookup gluing this call to its callee reads the argument and
-		// return columns at the call's row.  If an argument register is also
-		// written elsewhere in the call's vector, that column holds the
-		// final value rather than the argument actually passed, so we
-		// snapshot the argument into a fresh temporary first and let the call
-		// read that instead.  Two cases require this:
-		//
-		//   - the argument is also a return of the call (e.g. "x = f(x)"); or
-		//   - the argument coincides with a destination of the enclosing
-		//     assignment, which is written after the call (e.g. "x = f(x) + 1",
-		//     lowered to "$t = f(x); x = $t + 1").
-		//
-		// We could avoid the temporary, but it would imply a lookup with a row
-		// shift, which makes the prover's life harder.  We do this only in
-		// !fastMode as it is required by the constraints, not by the vm.
-		for i, arg := range arguments {
-			isReturn := slices.Contains(returns, arg)
-			if isReturn || p.assignTargets[arg] {
-				tmp := p.allocate(p.bitwidthOf(arg))
-				insns = append(insns, vm.UintAssign[vm.Uint](tmp, arg))
-				arguments[i] = tmp
-			}
-		}
-	}
-	// Emit the call.  Cast checks for arguments / returns crossing the call
-	// boundary are inserted later by the check-cast pass.
-	return append(insns,
-		vm.Call[vm.Uint](vm.ModuleId(id), vm.CallFlags{}, arguments, returns))
+
+	return append(insns, vm.Call[vm.Uint](id, vm.CallFlags{}, arguments, returns))
 }
 
 func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, targets []vm.RegisterId,
@@ -976,20 +938,6 @@ func (p *StmtCompiler) evalConstant(e Expr) vm.Uint {
 	}
 	//
 	return res
-}
-
-// registerSet flattens a list of register vectors into the set of register
-// ids they cover.
-func registerSet(vectors [][]RegisterId) map[RegisterId]bool {
-	set := make(map[uint16]bool)
-	//
-	for _, regs := range vectors {
-		for _, r := range regs {
-			set[r] = true
-		}
-	}
-	//
-	return set
 }
 
 func (p *StmtCompiler) allocate(bitwidth util.Option[uint]) RegisterId {

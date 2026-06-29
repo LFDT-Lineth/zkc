@@ -201,13 +201,22 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	// Vectorize modules
 	if p.config.vectorize {
 		wm = Vectorize(wm, p.srcmaps)
+	}
+
+	if !p.config.fastMode {
 		// Factor branch conditions into a single bit register holding the condition result.
 		// Gated on the same flag as fastMode since it only makes
 		// sense when generating arithmetic constraints; must run after
 		// vectorisation to be meaningful.
-		if !p.config.fastMode {
-			wm = vm.FactorSkipConditions(wm)
-		}
+		wm = vm.FactorSkipConditions[vm.Uint](wm)
+		// FlattenCalls introduces a tmp register to hold a call argument when it's rewritten in the same vector, e.g.:
+		// 1. x = f(x)
+		// 2. y = f(x); x = x + 1
+		// As we want to avoid shift in lookups, we must keep the original value of x in a tmp register,
+		// so that the call can be rewritten as:
+		// 1. tmp = x; x = f(tmp)
+		// 2. tmp = x; y = f(tmp); x = x + 1
+		wm = vm.FlattenCalls[vm.Uint](wm)
 	}
 
 	// Apply register splitting
@@ -295,7 +304,6 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		field:       p.config.field,
 		srcmaps:     p.srcmaps,
 		quiet:       p.config.quiet,
-		fastMode:    p.config.fastMode,
 	}
 	//
 	for i, stmt := range fn.Code {

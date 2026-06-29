@@ -224,6 +224,15 @@ func (p Register) Width() uint {
 	return p.width
 }
 
+// WidthOrNative returns the bitwidth of this register, or math.MaxUint if it is a native register.
+func (p Register) WidthOrNative() uint {
+	if p.IsNative() {
+		return math.MaxUint
+	}
+	//
+	return p.width
+}
+
 // ============================================================================
 // Encoding / Decoding
 // ============================================================================
