@@ -93,92 +93,13 @@ func factorableSkips(codes []WordInstruction, registers RegisterAllocator) map[u
 			continue
 		}
 
-		// Factorize if it guards a call, as it is needed for the source selector of the lookup.
-		branchHasCall := branchContainsCall(codes, uint(i), si.Skip)
-		if branchHasCall {
-			factor[uint(i)] = true
-			continue
-		}
+		// In all other cases, we can factor the skip condition into a single bit register.
+		factor[uint(i)] = true
 
-		// Performance improvement: compute the condition only once and then check against a boolean.
-		// It reduces the constraint degree.
-		thenSize, elseSize := branchSizes(codes, uint(i), si.Skip)
-		if generatesInverse(si, registers) && (elseSize > 0 || thenSize > 1) {
-			factor[uint(i)] = true
-		}
+		continue
 	}
 	//
 	return factor
-}
-
-// branchContainsCall reports whether the "then" (conditionally-skipped) block
-// of a SkipIf at index i, and/or the "else" block reached after it, contain a
-// function call.  The block boundaries are computed exactly as in branchSizes.
-func branchContainsCall(codes []WordInstruction, i, skip uint) bool {
-	var (
-		end   = min(i+1+skip, uint(len(codes)))
-		block = codes[i+1 : end]
-	)
-	// Scan the "else" block (i.e. the code reached when the condition holds),
-	// whose extent depends on how the "then" block ends.
-	if m := len(block); m > 0 {
-		switch last := block[m-1].(type) {
-		case *instruction.Skip:
-			// The then block jumps over a contiguous else block.
-			elseEnd := min(end+last.Skip, uint(len(codes)))
-			if containsCall(codes[end:elseEnd]) {
-				return true
-			}
-			//
-			block = block[:m-1]
-		case *instruction.Fail, *instruction.Return, *instruction.Jump:
-			// The then block diverts control (terminates, or jumps elsewhere), so
-			// the code that follows is only reached when the condition holds (the
-			// skip is taken).
-			if containsCall(codes[end:]) {
-				return true
-			}
-		}
-	}
-	// Otherwise, the answer is whether the then block itself contains a call.
-	return containsCall(block)
-}
-
-// containsCall reports whether the given block contains a (conditional) function
-// call, returning as soon as the first one is found.
-func containsCall(block []WordInstruction) bool {
-	for _, code := range block {
-		if _, ok := code.(*instruction.Call); ok {
-			return true
-		}
-	}
-	//
-	return false
-}
-
-// branchSizes estimates how many instructions a SkipIf located at index i (with
-// the given skip distance) guards.  The first result is the size of the
-// conditionally-skipped block; the second is the size of the block reached
-// after it (the "other" branch), read from the trailing unconditional Skip that
-// the skipped block uses to jump over it.  An if without an else has no such
-// trailing skip, so its else size is reported as zero.
-func branchSizes(codes []WordInstruction, i, skip uint) (thenSize, elseSize uint) {
-	var (
-		end   = min(i+1+skip, uint(len(codes)))
-		block = codes[i+1 : end]
-	)
-	//
-	thenSize = uint(len(block))
-	// If the skipped block ends with an unconditional Skip, that skip jumps over
-	// the other branch and its distance is the other branch's size.
-	if m := len(block); m > 0 {
-		if s, ok := block[m-1].(*instruction.Skip); ok {
-			thenSize = uint(m - 1)
-			elseSize = s.Skip
-		}
-	}
-	//
-	return thenSize, elseSize
 }
 
 func isEqualityCondition(cond opcode.Condition) bool {
