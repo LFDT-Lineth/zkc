@@ -192,7 +192,6 @@ func translateAccessOnceMemory[F field.Element[F]](
 
 	switch {
 	case addressSpansSeveralRegisters:
-
 		var (
 			prevAddrRegs = make([]Expr[F], L)
 			currAddrRegs = make([]Expr[F], L)
@@ -324,6 +323,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 		constraints = append(constraints, atFlagSumEqualsAccessBitProduct)
 		constraints = append(constraints, addressesVanishInPadding...)
 		constraints = append(constraints, addressesVanishOnFirstNonPaddingRow...)
+
 		for k := range L {
 			constraints = append(constraints, addrUpdateConstraints[k]...)
 		}
@@ -357,26 +357,8 @@ func translateAccessOnceMemory[F field.Element[F]](
 	}
 
 	memoryModule.AddConstraints(constraints...)
-	return memoryModule
-}
 
-// concatenateRegisters concatenates registers in 'big endian order', e.g.
-// [a, b, c] should correspond to a :: b :: c. It assumes that register ids
-// are contiguous (and start at id = base).
-func concatenateRegisters[F field.Element[F]](registers []register.Register, base uint, shift int) Expr[F] {
-	terms := make([]Expr[F], len(registers))
-	// cumulative width of registers
-	tail := uint(0)
-	//
-	for j := len(registers) - 1; j >= 0; j-- {
-		w := registers[j].Width()
-		v := mirc.Variable[register.Id, Expr[F]](register.NewId(base+uint(j)), w, shift)
-		weight := new(big.Int).Lsh(big.NewInt(1), tail) // 2^tail
-		terms[j] = v.Multiply(mirc.BigNumber[register.Id, Expr[F]](weight))
-		tail += w
-	}
-	//
-	return mirc.Sum(terms)
+	return memoryModule
 }
 
 func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction, infos []vm.Module,
