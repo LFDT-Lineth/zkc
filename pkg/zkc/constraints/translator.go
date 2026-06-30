@@ -238,8 +238,10 @@ func translateAccessOnceMemory[F field.Element[F]](
 		padding      big.Int
 	)
 
-	// Initialise module and add all registers
-	memoryModule = memoryModule.Init(name, false, true, false, fm.IsNative(), false, 0)
+	// Initialise module and add all registers.  AllowPadding (first flag) must
+	// be true so a leading padding row is inserted, which the ACCESS[0]=0 /
+	// addresses-vanish-in-padding constraints rely on.
+	memoryModule = memoryModule.Init(name, true, true, false, fm.IsNative(), false, 0)
 	memoryModule.AddRegisters(fm.Registers()...)
 
 	var access = register.NewId(memoryModule.Width())
@@ -271,9 +273,9 @@ func translateAccessOnceMemory[F field.Element[F]](
 	// ACCESS[0] = 0
 	accessBitVanishesInPadding := mir.NewVanishingConstraint("access_bit_vanishes_in_padding", ctx, util.Some[int](0),
 		currAccess.Equals(zero).AsLogical())
-	// ACCESS[i] = 1 => ACCESS[i + 1] = 1
+	// ACCESS[i - 1] = 1 => ACCESS[i] = 1
 	accessBitMonotony := mir.NewVanishingConstraint("access_bit_monotony", ctx, util.None[int](),
-		mirc.If(currAccess.Equals(one), nextAccess.Equals(one)).AsLogical())
+		mirc.If(prevAccess.Equals(one), currAccess.Equals(one)).AsLogical())
 
 	constraints = append(constraints,
 		accessBitVanishesInPadding,
