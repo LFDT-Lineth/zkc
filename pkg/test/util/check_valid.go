@@ -395,24 +395,24 @@ func runConstraintTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase,
 	// Dispatch based on field config
 	switch f {
 	case field.GF_251:
-		testConstraintsWithField[gf251.Element](t, wm, test, f)
+		testConstraintsWithField[gf251.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
 	case field.GF_8209:
-		testConstraintsWithField[gf8209.Element](t, wm, test, f)
+		testConstraintsWithField[gf8209.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
 	case field.KOALABEAR_16:
-		testConstraintsWithField[koalabear.Element](t, wm, test, f)
+		testConstraintsWithField[koalabear.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
 	case field.BLS12_377:
-		testConstraintsWithField[bls12_377.Element](t, wm, test, f)
+		testConstraintsWithField[bls12_377.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
 	default:
 		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
 	}
 }
 
 func testConstraintsWithField[F field.Element[F]](t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase,
-	f field.Config) {
+	f field.Config, maxStaticDepth uint) {
 	//
 	var (
 		// construct binary file
-		binf = constraints.NewBinaryFile[F](nil, nil, f, *wm)
+		binf = constraints.NewBinaryFile[F](nil, nil, f, maxStaticDepth, *wm)
 		// decode inputs / outputs
 		inputs, _ = decodeInputsOutputs(t, wm, test.data)
 		// generate trace

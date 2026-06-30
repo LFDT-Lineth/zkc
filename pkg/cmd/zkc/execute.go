@@ -97,7 +97,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	artifacts := build.Build(args[1:]...)
 	wm := artifacts.wir.Unwrap()
 	// Wrap the word machine in a binary file for execution / tracing / checking.
-	binfile := constraints.NewBinaryFile[F](nil, nil, field, wm)
+	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticDepth(), wm)
 	// =====================================================
 	// Trace / Execute
 	// =====================================================

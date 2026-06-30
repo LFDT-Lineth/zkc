@@ -15,6 +15,7 @@ package constraints
 import (
 	"fmt"
 	"math/big"
+	"math/bits"
 
 	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
@@ -32,16 +33,21 @@ import (
 
 // GenerateMirConstraints is responsible for converting a field machine into a
 // corresponding set of MIR constraints.
-func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F]) mir.Schema[F] {
+func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], maxStaticDepth uint) mir.Schema[F] {
 	var (
 		modules = make([]mir.Module[F], len(fm.Modules()))
+		// maxStaticWidth is the largest X for which 2^X <= maxStaticDepth (the
+		// max static table size), i.e. floor(log2(maxStaticDepth)).
+		// It represents the maximum register width for which a static table can be use to range-check it.
+		// Wider registers require recursive range modules.
+		maxStaticWidth = uint(bits.Len(maxStaticDepth) - 1)
 		// Index the static range-check tables by width, so each register can be
 		// range-proved by a lookup into the matching $range_un table.
-		rangeTables = indexRangeTables[F](fm.Modules())
+		rangeTables = indexRangeTables[F](fm.Modules(), maxStaticWidth)
 	)
 	//
 	for i, m := range fm.Modules() {
-		modules[i] = translateModule[F](uint(i), m, fm.Modules(), rangeTables)
+		modules[i] = translateModule[F](uint(i), m, fm.Modules(), rangeTables, maxStaticWidth)
 	}
 	//
 	return schema.NewUniformSchema(modules)
@@ -49,19 +55,20 @@ func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F]) mir.Sche
 
 // GenerateAirConstraints is responsible for converting a field machine into a
 // corresponding set of AIR constraints.
-func GenerateAirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], field field.Config) air.Schema[F] {
+func GenerateAirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], field field.Config,
+	maxStaticDepth uint) air.Schema[F] {
 	var (
-		mirc = GenerateMirConstraints(fm)
+		mirc = GenerateMirConstraints(fm, maxStaticDepth)
 	)
 	//
 	return mir.LowerToAir(mirc, field.BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)
 }
 
 func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module, infos []vm.Module,
-	rangeTables map[uint]rangeTable) mir.Module[F] {
+	rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	switch fm := fm.(type) {
 	case *vm.FieldFunction:
-		return translateFunction[F](ctx, *fm, infos, rangeTables)
+		return translateFunction[F](ctx, *fm, infos, rangeTables, maxStaticWidth)
 	case vm.Memory[F]:
 		if fm.IsStatic() {
 			return translateStaticMemory(ctx, fm)
@@ -136,7 +143,7 @@ func translateReadWriteMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memor
 }
 
 func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction, infos []vm.Module,
-	rangeTables map[uint]rangeTable) mir.Module[F] {
+	rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	var (
 		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]
@@ -197,7 +204,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	// that will be introduced later will be already range-proved (as a product of bit registers).
 	// Note that registers coming from control flow have been added to the module before this point,
 	// so they will be range-proved as well.
-	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables)
+	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
 
 	// Emit lookup constraints for any function calls made by this function.
 	addCallLookups(mod, ctx, fm, pcSelectors, infos)

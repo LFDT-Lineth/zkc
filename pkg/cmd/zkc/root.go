@@ -111,6 +111,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 		FastMode(fastMode).
 		Vectorize(GetFlag(cmd, "vectorize")).
 		SplitRegisters(GetFlag(cmd, "split")).
+		MaxStaticDepth(GetUint(cmd, "max_static_depth")).
 		Field(field)
 	// Configure build targets
 	build.ast = GetFlag(cmd, "ast")
@@ -150,6 +151,8 @@ func init() {
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().Bool("split", false, "Apply register splitting")
+	rootCmd.PersistentFlags().Uint("max_static_depth", codegen.DEFAULT_MAX_STATIC_DEPTH,
+		"maximum depth (number of rows) of static tables")
 	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")
 	// profiling commands'
 	rootCmd.PersistentFlags().String("cpuprof", "", "write cpu profile to `file`")

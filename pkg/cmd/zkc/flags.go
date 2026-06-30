@@ -61,6 +61,16 @@ func checkFlags(cmd *cobra.Command, checks FlagChecks) {
 			os.Exit(1)
 		}
 	}
+	// Some sanity check on some flag values:
+	// Note: range checks require static tables of size at least 2.
+	// no more the case once https://github.com/LFDT-Lineth/zkc/issues/1910 implemented
+	if cmd.Flags().Changed("max-static-depth") {
+		maxStaticDepth := GetUint(cmd, "max-static-depth")
+		if maxStaticDepth <= 2 {
+			fmt.Printf("error: \"--%s\" must be greater than 2\n", "max-static-depth")
+			os.Exit(1)
+		}
+	}
 }
 
 // GetFlag gets an expected flag, or panic if an error arises.

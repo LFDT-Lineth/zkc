@@ -181,7 +181,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			program = vm.SplitRegisters(p.config.field, program)
 		}
 	} else {
-		// Apply transformations required for tracing.
+		// Apply transformations required for tracing and constraint generation.
 		program = vm.LowerBitwise(program)
 		program = vm.LowerDivisions(program)
 		program = vm.LowerComparisons(program)
@@ -193,7 +193,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 			program = vm.SplitRegisters(p.config.field, program)
 		}
 		//
-		program = vm.AddRangeConstraints(p.config.field, program)
+		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticDepth)
 	}
 	// Insert check casts to ensure appropriate safety checks during execution.
 	program = vm.InsertCheckCasts(program)

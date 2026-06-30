@@ -14,12 +14,12 @@ package transform
 
 import (
 	"fmt"
+	"math/bits"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
@@ -40,10 +40,10 @@ const (
 // program, a "range" module which acts as the recipient of a range-proof lookup
 // for registers of that width.  Two flavours of range module are generated:
 //
-//   - For a width n <= 16, range_un is a static table enumerating every valid
+//   - For a width n <= maxStaticWidth, range_un is a static table enumerating every valid
 //     value 0 .. 2^n - 1 in a single value column.
 //
-//   - For a width n > 16, range_un destructures the value into two halves
+//   - For a width n > maxStaticWidth, range_un destructures the value into two halves
 //     (lo of n/2 bits, hi of n-n/2 bits) via the constraint value = hi::lo,
 //     and (later) range-checks each half by lookups into range_u{lo} and
 //     range_u{hi}.  This recursion bottoms out at the static tables above.
@@ -51,25 +51,32 @@ const (
 // Native (field-element) registers are not ranged-checked.
 //
 // NOTE: this transform must run after register splitting.
-func AddRangeConstraints[W word.Word[W]](cfg field.Config, program descriptor.Program[W]) descriptor.Program[W] {
+func AddRangeConstraints[W word.Word[W]](cfg field.Config, program descriptor.Program[W],
+	maxStaticDepth uint) descriptor.Program[W] {
 	var (
 		modules = program.Modules()
+		// maxStaticWidth is the largest X for which 2^X <= maxStaticDepth (the
+		// max static table size), i.e. floor(log2(maxStaticDepth)).
+		// It represents the maximum register width for which a static table can be use to range-check it.
+		// Wider registers require recursive range modules.
+		maxStaticWidth = uint(bits.Len(maxStaticDepth) - 1)
 	)
 
 	// First step, generate the range modules for every width which occurs on some register.
-	var extra = generateRangeModules[W](modules)
+	var extra = generateRangeModules(modules, maxStaticWidth)
 
 	// Second step, call range_uX for every registers.
-	modules = addRangeCalls[W](modules, extra)
+	modules = addRangeCalls(modules, extra, maxStaticWidth)
 
 	// Reassemble the program with the original modules plus the range modules.
 	return descriptor.NewProgram(append(slices.Clone(modules), extra...)...)
 }
 
-func generateRangeModules[W word.Word[W]](modules []descriptor.Module[W]) []descriptor.Module[W] {
+func generateRangeModules[W word.Word[W]](modules []descriptor.Module[W],
+	maxStaticWidth uint) []descriptor.Module[W] {
 	var (
 		// Every width requiring a range module, mapped to its decomposition.
-		splits = neededRangeWidths[W](modules)
+		splits = neededRangeWidths(modules, maxStaticWidth)
 		// Freshly generated range modules.
 		extra []descriptor.Module[W]
 		// Widths in ascending order, for deterministic output.
@@ -99,18 +106,18 @@ func generateRangeModules[W word.Word[W]](modules []descriptor.Module[W]) []desc
 		// Note, this could be optimized:
 		// https://github.com/LFDT-Lineth/zkc/issues/1910
 		// and https://github.com/LFDT-Lineth/zkc/issues/1911
-		if w <= zkc_util.MAX_STATIC_RANGE_WIDTH {
+		if w <= maxStaticWidth {
 			extra = append(extra, newStaticRangeTable[W](name, w))
 		} else {
-			extra = append(extra, newRecursiveRangeModule[W](name, w, splits[w], moduleOf))
+			extra = append(extra, newRecursiveRangeModule[W](name, w, splits[w], moduleOf, maxStaticWidth))
 		}
 	}
 
 	return extra
 }
 
-// rangeSplit records how a width > 16 is destructured into a low half and a high
-// half, where lo + hi == width.  For leaf widths (<= 16) both fields are zero.
+// rangeSplit records how a width > maxStaticWidth is destructured into a low half and a high
+// half, where lo + hi == width.  For leaf widths (<= maxStaticWidth) both fields are zero.
 type rangeSplit struct {
 	lo, hi uint
 }
@@ -118,9 +125,10 @@ type rangeSplit struct {
 // neededRangeWidths computes the decomposition of every register width for which
 // a range module must be generated.  This is the set of widths occurring
 // directly on some register, closed under the destructuring of wide widths
-// (> 16); each wide width is mapped to the (lo, hi) halves it is destructured
-// into, while leaf widths (<= 16) map to the zero split.
-func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W]) map[uint]rangeSplit {
+// (> maxStaticWidth); each wide width is mapped to the (lo, hi) halves it is destructured
+// into, while leaf widths (<= maxStaticWidth) map to the zero split.
+func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W],
+	maxStaticWidth uint) map[uint]rangeSplit {
 	var (
 		// Final decompositions, keyed by width (one entry per dequeued width).
 		splits = make(map[uint]rangeSplit)
@@ -149,7 +157,7 @@ func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W]) map[uint]
 		}
 		// Seed from every register of every module.
 		for _, r := range mod.Registers() {
-			add(registerWidthOrZero[W](r))
+			add(registerWidthOrZero(r))
 		}
 	}
 	// Destructure each width wider than the static limit, pulling in its halves.
@@ -158,7 +166,7 @@ func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W]) map[uint]
 
 		queue = queue[1:]
 		//
-		if n <= zkc_util.MAX_STATIC_RANGE_WIDTH {
+		if n <= maxStaticWidth {
 			// Leaf width: handled by a static table, no decomposition.
 			splits[n] = rangeSplit{}
 		} else {
@@ -241,17 +249,17 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) descriptor.Mod
 	return descriptor.NewMemory(name, regs, memory.PRIVATE_STATIC_MEMORY, contents)
 }
 
-// newRecursiveRangeModule constructs the range module for a width > 16.  It is a
+// newRecursiveRangeModule constructs the range module for a width > maxStaticWidth.  It is a
 // callable function "fn range_uw(value)" which range-checks its input by
 // destructuring it into a low half (lo) and a high half (hi), value = hi::lo,
 // and then range-checking each half via an unconditional call into the
 // corresponding range module (range_u{lo} / range_u{hi}).  A call whose callee
-// is a static enumeration table (width <= 16) is flagged accordingly.
+// is a static enumeration table (width <= maxStaticWidth) is flagged accordingly.
 //
 // moduleOf maps a width to the index of its range module, so the emitted calls
 // can reference their sub-modules by id.
 func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSplit,
-	moduleOf map[uint]uint) descriptor.Module[W] {
+	moduleOf map[uint]uint, maxStaticWidth uint) descriptor.Module[W] {
 	//
 	var (
 		padding W
@@ -272,8 +280,8 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 	)
 	// Range-check each half: a static table (<= 16) is read via MemRead, a
 	// recursive range function (> 16) is invoked via Call.
-	codes = appendRangeCheck[W](codes, loID, s.lo, moduleOf)
-	codes = appendRangeCheck[W](codes, hiID, s.hi, moduleOf)
+	codes = appendRangeCheck(codes, loID, s.lo, moduleOf, maxStaticWidth)
+	codes = appendRangeCheck(codes, hiID, s.hi, moduleOf, maxStaticWidth)
 	codes = append(codes, bytecode.NewRet())
 	//
 	return descriptor.NewFunction(name, regs, false, []BytecodeVector[W]{bytecode.NewVector(codes...)})
@@ -282,8 +290,8 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 // appendRangeCheck appends to codes a range-check of register r (of width w)
 // against range_u{w} (see rangeCheck).
 func appendRangeCheck[W word.Word[W]](codes []Bytecode[W], r bytecode.RegisterId, w uint,
-	moduleOf map[uint]uint) []Bytecode[W] {
-	return append(codes, rangeCheck[W](moduleOf[w], r, w))
+	moduleOf map[uint]uint, maxStaticWidth uint) []Bytecode[W] {
+	return append(codes, rangeCheck[W](moduleOf[w], r, w, maxStaticWidth))
 }
 
 // rangeModuleName returns the canonical module name for the range module of a
@@ -295,8 +303,9 @@ func rangeModuleName(w uint) string {
 // rangeCheck builds a single range-check of register r (of width w) against the
 // range module whose id is `id`: a (data-less) MemRead from the static ROM when
 // w <= 16, or a Call into the recursive range function otherwise.
-func rangeCheck[W word.Word[W]](id uint, r bytecode.RegisterId, w uint) Bytecode[W] {
-	if w <= zkc_util.MAX_STATIC_RANGE_WIDTH {
+func rangeCheck[W word.Word[W]](id uint, r bytecode.RegisterId, w uint,
+	maxStaticWidth uint) Bytecode[W] {
+	if w <= maxStaticWidth {
 		return bytecode.NewMemRead(uint16(id), []bytecode.RegisterId{r}, nil)
 	}
 	//
@@ -309,7 +318,8 @@ func rangeCheck[W word.Word[W]](id uint, r bytecode.RegisterId, w uint) Bytecode
 // column is checked.  Non-function modules carry no bytecodes to host the checks
 // and are left unchanged.
 func addRangeCalls[W word.Word[W]](modules []descriptor.Module[W],
-	rangeModules []descriptor.Module[W]) []descriptor.Module[W] {
+	rangeModules []descriptor.Module[W],
+	maxStaticWidth uint) []descriptor.Module[W] {
 	// Resolve range_u{w}'s module id by name.  Range modules are appended after
 	// the original modules (in ascending-width order), so the k-th range module
 	// has id len(modules)+k.  Only range-module names are ever looked up.
@@ -322,7 +332,7 @@ func addRangeCalls[W word.Word[W]](modules []descriptor.Module[W],
 	var out = make([]descriptor.Module[W], len(modules))
 	//
 	for i, mod := range modules {
-		out[i] = addRangeChecks[W](mod, idOf)
+		out[i] = addRangeChecks(mod, idOf, maxStaticWidth)
 	}
 	//
 	return out
@@ -332,7 +342,8 @@ func addRangeCalls[W word.Word[W]](modules []descriptor.Module[W],
 // terminator in each vector of the given function.  Vector.Map remaps skip
 // offsets, so a skip which targeted the terminator instead lands on the first
 // check and falls through to it.
-func addRangeChecks[W word.Word[W]](mod descriptor.Module[W], idOf map[string]uint) descriptor.Module[W] {
+func addRangeChecks[W word.Word[W]](mod descriptor.Module[W], idOf map[string]uint,
+	maxStaticWidth uint) descriptor.Module[W] {
 	fn, ok := mod.(*descriptor.Function[W])
 	if !ok || fn.IsNative() {
 		return mod
@@ -341,12 +352,13 @@ func addRangeChecks[W word.Word[W]](mod descriptor.Module[W], idOf map[string]ui
 	var checks []Bytecode[W]
 	//
 	for j, r := range fn.Registers() {
-		// For runtime, we only need to do the call for registers wider than MAX_STATIC_RANGE_WIDTH
+		// For runtime, we only need to do the call for registers wider than maxStaticWidth
 		// to populate the range module.
-		// For registers of width <= MAX_STATIC_RANGE_WIDTH, the range check is done via a static table,
+		// For registers of width <= maxStaticWidth, the range check is done via a static table,
 		// and the lookup is added when generating constraints.
-		if w := registerWidthOrZero[W](r); w > zkc_util.MAX_STATIC_RANGE_WIDTH {
-			checks = append(checks, rangeCheck[W](idOf[rangeModuleName(w)], bytecode.RegisterId(j), w))
+		if w := registerWidthOrZero(r); w > maxStaticWidth {
+			checks = append(checks, rangeCheck[W](idOf[rangeModuleName(w)], bytecode.RegisterId(j), w,
+				maxStaticWidth))
 		}
 	}
 	//

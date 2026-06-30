@@ -22,7 +22,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -46,10 +45,10 @@ type rangeTable struct {
 // indexRangeTables indexes, by register width, the static range-check tables
 // present in the machine.  A static $range_un table fully enumerates the values
 // of an n-bit register and is generated for exactly the widths
-// n <= MAX_STATIC_RANGE_WIDTH; wider registers are range-checked recursively by
+// n <= maxStaticWidth; wider registers are range-checked recursively by
 // a call (lowered via addCallLookups), so only the static tables are collected
 // here.
-func indexRangeTables[F field.Element[F]](modules []vm.Module) map[uint]rangeTable {
+func indexRangeTables[F field.Element[F]](modules []vm.Module, maxStaticWidth uint) map[uint]rangeTable {
 	tables := make(map[uint]rangeTable)
 	//
 	for id, m := range modules {
@@ -64,7 +63,7 @@ func indexRangeTables[F field.Element[F]](modules []vm.Module) map[uint]rangeTab
 			continue
 		}
 		//
-		if w := m.Register(valId).Width(); w <= util.MAX_STATIC_RANGE_WIDTH {
+		if w := m.Register(valId).Width(); w <= maxStaticWidth {
 			tables[w] = rangeTable{schema.ModuleId(id), valId}
 		}
 	}
@@ -78,12 +77,12 @@ func indexRangeTables[F field.Element[F]](modules []vm.Module) map[uint]rangeTab
 // width.  Both sides are unfiltered: the source ranges over every row (each row
 // holds a value which must be in range) and the target over the whole enumeration.
 //
-// Registers wider than MAX_STATIC_RANGE_WIDTH have no static table; they are
+// Registers wider than maxStaticWidth have no static table; they are
 // range-checked at runtime by a recursive call which addCallLookups lowers into
 // a lookup.  Native (field-element) and zero-width registers are not
 // range-checked at all.
 func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	regs []register.Register, tables map[uint]rangeTable) {
+	regs []register.Register, tables map[uint]rangeTable, maxStaticWidth uint) {
 	// TODO: lots of perf possible here, see
 	// https://github.com/LFDT-Lineth/zkc/issues/1910
 	// https://github.com/LFDT-Lineth/zkc/issues/1907
@@ -96,8 +95,8 @@ func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Const
 		//
 		table, ok := tables[reg.Width()]
 		if !ok {
-			// a width <= MAX_STATIC_RANGE_WIDTH must always have a static table.
-			if reg.Width() <= util.MAX_STATIC_RANGE_WIDTH {
+			// a width <= maxStaticWidth must always have a static table.
+			if reg.Width() <= maxStaticWidth {
 				panic(fmt.Sprintf("missing static range table for width %d", reg.Width()))
 			}
 			// Wider registers are range-checked recursively via a call lookup.

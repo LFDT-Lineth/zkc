@@ -37,7 +37,7 @@ type SystemMap = instruction.SystemMap
 // NOTE: this transform must be applied BEFORE vectorization and register
 // splitting.
 func LowerBitwise[W word.Word[W]](program Program[W]) Program[W] {
-	return transform.LowerBitwise[W](program)
+	return transform.LowerBitwise(program)
 }
 
 // LowerComparisons rewrites SkipIf bytecodes with LT/GT/LTEQ/GTEQ conditions
@@ -60,14 +60,14 @@ func LowerComparisons[W word.Word[W]](program Program[W]) Program[W] {
 //
 // NOTE: This pass must run before LowerComparisons.
 func LowerDivisions[W word.Word[W]](program Program[W]) Program[W] {
-	return transform.LowerDivisions[W](program)
+	return transform.LowerDivisions(program)
 }
 
 // OptimizeDivisions is a fast-mode optimization which rewrites division by
 // powers of 2 into right shifts, and remainder by powers of 2 into bitwise
 // ANDs.
 func OptimizeDivisions[W word.Word[W]](program Program[W]) Program[W] {
-	return transform.OptimizeDivisions[W](program)
+	return transform.OptimizeDivisions(program)
 }
 
 // Vectorize merges as many bytecodes as possible into each (vector / trace-line)
@@ -126,8 +126,8 @@ func SplitRegisters[W word.Word[W]](cfg field.Config, program Program[W]) Progra
 // AddRangeConstraints adds a range-proof constraint for each register in the program.
 // This is done by adding lookups from each (non-constant) register to a precomputed
 // table of all valid values for that register width.
-func AddRangeConstraints[W word.Word[W]](cfg field.Config, program Program[W]) Program[W] {
-	return transform.AddRangeConstraints(cfg, program)
+func AddRangeConstraints[W word.Word[W]](cfg field.Config, program Program[W], maxStaticDepth uint) Program[W] {
+	return transform.AddRangeConstraints(cfg, program, maxStaticDepth)
 }
 
 // WordToWordMachine transforms a machine operating over a given word type (W1)
