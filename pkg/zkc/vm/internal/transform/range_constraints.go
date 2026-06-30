@@ -42,10 +42,10 @@ const (
 // lookup for registers of that width.  Two flavours of range module are
 // generated:
 //
-//   - For a width n <= 16, range_un is a static table enumerating every valid
+//   - For a width n <= maxStaticWidth, range_un is a static table enumerating every valid
 //     value 0 .. 2^n - 1 in a single value column.
 //
-//   - For a width n > 16, range_un destructures the value into two halves
+//   - For a width n > maxStaticWidth, range_un destructures the value into two halves
 //     (lo of n/2 bits, hi of n-n/2 bits) via the constraint value = hi::lo,
 //     and (later) range-checks each half by lookups into range_u{lo} and
 //     range_u{hi}.  This recursion bottoms out at the static tables above.
@@ -116,8 +116,8 @@ func generateRangeModules[W word.Word[W]](modules []Module, maxStaticWidth uint)
 	return extra
 }
 
-// rangeSplit records how a width > 16 is destructured into a low half and a high
-// half, where lo + hi == width.  For leaf widths (<= 16) both fields are zero.
+// rangeSplit records how a width > maxStaticWidth is destructured into a low half and a high
+// half, where lo + hi == width.  For leaf widths (<= maxStaticWidth) both fields are zero.
 type rangeSplit struct {
 	lo, hi uint
 }
@@ -125,8 +125,8 @@ type rangeSplit struct {
 // neededRangeWidths computes the decomposition of every register width for which
 // a range module must be generated.  This is the set of widths occurring
 // directly on some register, closed under the destructuring of wide widths
-// (> 16); each wide width is mapped to the (lo, hi) halves it is destructured
-// into, while leaf widths (<= 16) map to the zero split.
+// (> maxStaticWidth); each wide width is mapped to the (lo, hi) halves it is destructured
+// into, while leaf widths (<= maxStaticWidth) map to the zero split.
 func neededRangeWidths[W word.Word[W]](modules []Module, maxStaticWidth uint) map[uint]rangeSplit {
 	var (
 		// Final decompositions, keyed by width (one entry per dequeued width).
@@ -248,12 +248,12 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 	return memory.NewStatic(name, false, memory.NewGeometry[W](regs), contents...)
 }
 
-// newRecursiveRangeModule constructs the range module for a width > 16.  It is a
+// newRecursiveRangeModule constructs the range module for a width > maxStaticWidth.  It is a
 // callable function "fn range_uw(value)" which range-checks its input by
 // destructuring it into a low half (lo) and a high half (hi), value = hi::lo,
 // and then range-checking each half via an unconditional call into the
 // corresponding range module (range_u{lo} / range_u{hi}).  A call whose callee
-// is a static enumeration table (width <= 16) is flagged accordingly.
+// is a static enumeration table (width <= maxStaticWidth) is flagged accordingly.
 //
 // moduleOf maps a width to the index of its range module, so the emitted calls
 // can reference their sub-modules by id.
@@ -346,9 +346,9 @@ func addRangeChecks(mod Module, idOf map[string]uint, maxStaticWidth uint) Modul
 	var checks []WordInstruction
 	//
 	for j, r := range fn.Registers() {
-		// For runtime, we only need to do the call for registers wider than MAX_STATIC_RANGE_WIDTH
+		// For runtime, we only need to do the call for registers wider than maxStaticWidth
 		// to populate the range module.
-		// For registers of width <= MAX_STATIC_RANGE_WIDTH, the range check is done via a static table,
+		// For registers of width <= maxStaticWidth, the range check is done via a static table,
 		// and the lookup is added when generating constraints.
 		if w := registerWidthOrZero(r); w > maxStaticWidth {
 			checks = append(checks, rangeCheck(idOf[rangeModuleName(w)], register.NewId(uint(j)), w, maxStaticWidth))

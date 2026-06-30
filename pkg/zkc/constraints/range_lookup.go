@@ -45,7 +45,7 @@ type rangeTable struct {
 // indexRangeTables indexes, by register width, the static range-check tables
 // present in the machine.  A static $range_un table fully enumerates the values
 // of an n-bit register and is generated for exactly the widths
-// n <= MAX_STATIC_RANGE_WIDTH; wider registers are range-checked recursively by
+// n <= maxStaticWidth; wider registers are range-checked recursively by
 // a call (lowered via addCallLookups), so only the static tables are collected
 // here.
 func indexRangeTables[F field.Element[F]](modules []vm.Module, maxStaticWidth uint) map[uint]rangeTable {
@@ -77,7 +77,7 @@ func indexRangeTables[F field.Element[F]](modules []vm.Module, maxStaticWidth ui
 // width.  Both sides are unfiltered: the source ranges over every row (each row
 // holds a value which must be in range) and the target over the whole enumeration.
 //
-// Registers wider than MAX_STATIC_RANGE_WIDTH have no static table; they are
+// Registers wider than maxStaticWidth have no static table; they are
 // range-checked at runtime by a recursive call which addCallLookups lowers into
 // a lookup.  Native (field-element) and zero-width registers are not
 // range-checked at all.
@@ -95,7 +95,7 @@ func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Const
 		//
 		table, ok := tables[reg.Width()]
 		if !ok {
-			// a width <= MAX_STATIC_RANGE_WIDTH must always have a static table.
+			// a width <= maxStaticWidth must always have a static table.
 			if reg.Width() <= maxStaticWidth {
 				panic(fmt.Sprintf("missing static range table for width %d", reg.Width()))
 			}
