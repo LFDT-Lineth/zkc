@@ -41,11 +41,12 @@ func NewFunction[W word.Word[W]](name string, registers []Register[W], native bo
 	return &Function[W]{newModuleBase(name, registers), native, code}
 }
 
-// IsAtomic determines whether or not this is a "one line function".  That is,
-// where every instance of this function occupies exactly one line in the
-// corresponding trace.  This is useful to know, as certain optimisations can be
-// applied for one line functions (e.g. no PC register is required).
-func (p *Function[W]) IsAtomic() bool {
+// IsOneLine determines whether or not this function contains a single "line"
+// (i.e. exactly one bytecode vector).  If so, this implies that every instance
+// of this function occupies exactly one line in the corresponding trace. This
+// is important to distinguish, as certain optimisations can be applied to one
+// line functions (e.g. no PC register is required).
+func (p *Function[W]) IsOneLine() bool {
 	return len(p.vectors) == 1
 }
 
@@ -61,7 +62,7 @@ func (p *Function[W]) IsNative() bool {
 // end) halt value.  Only meaningful for non-atomic functions, which are the
 // only ones carrying a PC register.
 func (p *Function[W]) PcWidth() uint {
-	if p.IsAtomic() || p.IsNative() {
+	if p.IsOneLine() || p.IsNative() {
 		panic("PC register unavailable on atomic or native function")
 	}
 

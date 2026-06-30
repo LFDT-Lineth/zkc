@@ -141,7 +141,7 @@ func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W]) map[uint]
 		// Seed from the PC register, which is added later while lowering to mir
 		// (see translateFunction). It exists only for non-atomic, non-native
 		// functions, and the PC bit width must match the one chosen there.
-		if fn, ok := mod.(*descriptor.Function[W]); ok && !fn.IsNative() && !fn.IsAtomic() {
+		if fn, ok := mod.(*descriptor.Function[W]); ok && !fn.IsNative() && !fn.IsOneLine() {
 			add(fn.PcWidth())
 			//TODO: rm me see https://github.com/LFDT-Lineth/zkc/issues/1910
 			// Seed from IS_PC_<k> selectors
