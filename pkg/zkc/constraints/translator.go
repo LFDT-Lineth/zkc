@@ -152,15 +152,15 @@ func translateAccessOnceMemory[F field.Element[F]](
 	memoryModule.AddRegisters(register.NewComputed(io.ACCESS_BIT_NAME, 1, padding))
 
 	var (
-		addrRegs                     = fm.Geometry().AddressRegisters()
-		L                            = len(addrRegs)
-		addressSpansSeveralRegisters = L > 1
-		prevAccess                   = mirc.Variable[register.Id, Expr[F]](access, 1, -1)
-		currAccess                   = mirc.Variable[register.Id, Expr[F]](access, 1, 0)
-		nextAccess                   = mirc.Variable[register.Id, Expr[F]](access, 1, 1)
-		zero                         = mirc.Number[register.Id, Expr[F]](0)
-		one                          = mirc.Number[register.Id, Expr[F]](1)
-		constraints                  = []mir.Constraint[F]{}
+		addrRegs           = fm.Geometry().AddressRegisters()
+		isMultiLaneAddress = fm.Geometry().IsMultiLineAddress()
+		L                  = len(addrRegs)
+		prevAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, -1)
+		currAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, 0)
+		nextAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, 1)
+		zero               = mirc.Number[register.Id, Expr[F]](0)
+		one                = mirc.Number[register.Id, Expr[F]](1)
+		constraints        = []mir.Constraint[F]{}
 	)
 
 	// ================================================
@@ -191,7 +191,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 	// ================================================
 
 	switch {
-	case addressSpansSeveralRegisters:
+	case isMultiLaneAddress:
 		var (
 			prevAddrRegs = make([]Expr[F], L)
 			currAddrRegs = make([]Expr[F], L)
@@ -328,10 +328,10 @@ func translateAccessOnceMemory[F field.Element[F]](
 			constraints = append(constraints, addrUpdateConstraints[k]...)
 		}
 
-	case !addressSpansSeveralRegisters:
+	case !isMultiLaneAddress:
 		var (
-			currAddr = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(0)), 1, 0)
-			nextAddr = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(0)), 1, 1)
+			currAddr = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(0)), addrRegs[0].Width(), 0)
+			nextAddr = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(0)), addrRegs[0].Width(), 1)
 		)
 
 		// If ACCESS[i] = 0 Then ADDRESS[i] = 0
