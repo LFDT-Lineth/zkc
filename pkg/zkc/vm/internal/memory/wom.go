@@ -13,6 +13,8 @@
 package memory
 
 import (
+	"fmt"
+
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
@@ -22,6 +24,29 @@ import (
 // exactly what they are typically used for).
 type WriteOnce[W util.Uinter64] struct {
 	StaticArray[W]
+	writtenToAddresses map[uint64]bool
+}
+
+// Write implementation for Memory interface.
+func (p *WriteOnce[W]) Write(address uint64, value W) error {
+	if _, ok := p.writtenToAddresses[address]; ok {
+		return fmt.Errorf("address ≡ %x of WOM ≡ %s was already written to", address, p.Name())
+	}
+	// ensure sufficient space
+	p.data = expand(p.data, address+1)
+	//
+	p.writtenToAddresses[address] = true
+	p.data[address] = value
+	//
+	return nil
+}
+
+// Initialise implementation for Memory interface.  Resets the backing array
+// and the set of written addresses, so write-once tracking starts fresh on
+// every execution (Boot calls Initialise on each memory before running).
+func (p *WriteOnce[W]) Initialise(contents []W) {
+	p.StaticArray.Initialise(contents)
+	p.writtenToAddresses = make(map[uint64]bool)
 }
 
 // Read implementation for Memory interface.
@@ -40,6 +65,7 @@ func NewWriteOnce[W util.Uinter64](name string, public bool, geometry Geometry[W
 	}
 	//
 	return &WriteOnce[W]{
-		StaticArray: NewStaticArray[W](name, kind, geometry),
+		StaticArray:        NewStaticArray[W](name, kind, geometry),
+		writtenToAddresses: make(map[uint64]bool),
 	}
 }
