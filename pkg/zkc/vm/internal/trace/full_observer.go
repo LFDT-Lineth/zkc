@@ -50,11 +50,11 @@ func (p *FullObserver[W, I, M]) Initialise(machine M) {
 	for i, m := range machine.Modules() {
 		// Check whether this is a (non-static) read-only memory
 		if m, ok := m.(*memory.ReadOnly[W]); ok {
-			p.trace[i] = initialiseROM(m)
+			p.trace[i] = initialiseAccessOnceMemory(m)
 		}
 
 		if m, ok := m.(*memory.WriteOnce[W]); ok {
-			p.trace[i] = initialiseWOM(m)
+			p.trace[i] = initialiseAccessOnceMemory(m)
 		}
 	}
 }
@@ -218,7 +218,7 @@ func (p *FullObserver[W, I, M]) assignRomWomRegisters(
 		cols[accessOffset] = cols[accessOffset].Set(uint(row), one)
 		if isMultiLineAddress && row != 0 {
 			var k uint = nLines - 1
-			for st.state[k].Cmp64(0) == 0 {
+			for k > 0 && st.state[k].Cmp64(0) == 0 {
 				k--
 			}
 
@@ -436,36 +436,11 @@ func traceColumns[W any](regs []register.Register, auxNames []string, cols []arr
 	return ltcols
 }
 
-func initialiseROM[W word.Word[W]](rom *memory.ReadOnly[W]) []State[W] {
-	var (
-		states       []State[W]
-		addressWidth = int(rom.Geometry().AddressLines())
-		dataWidth    = int(rom.Geometry().DataLines())
-		contents     = rom.Contents()
-	)
-	// sanity check (for now)
-	if rom.Geometry().AddressLines() > 1 {
-		panic("support ROM with multiple address lines")
-	}
-	//
-	for i := 0; i < len(contents); i += dataWidth {
-		var (
-			address W
-			data    = contents[i : i+dataWidth]
-			words   = make([]W, rom.Width())
-		)
-		// Configure address line
-		words[0] = address.SetUint64(uint64(i / dataWidth))
-		//
-		copy(words[addressWidth:], data)
-		//
-		states = append(states, NewState(0, false, rom.Width(), words))
-	}
-	//
-	return states
-}
-
-func initialiseWOM[W word.Word[W]](rom *memory.WriteOnce[W]) []State[W] {
+// initialiseAccessOnceMemory materializes the trace rows for a read-only (ROM)
+// or write-once (WOM) memory.  Both expose the same Contents()/Geometry()
+// interface and are identical at the trace level: one row per cell with
+// consecutive addresses, single- or multi-limb (via splitAddress).
+func initialiseAccessOnceMemory[W word.Word[W]](rom memory.Memory[W]) []State[W] {
 	var (
 		states       []State[W]
 		addressWidth = int(rom.Geometry().AddressLines())
@@ -534,7 +509,7 @@ func splitAddress[W word.Word[W]](masks []uint64, widths []uint, address uint64)
 
 	var split = make([]W, addressWidth)
 	for i := addressWidth - 1; i >= 0; i-- {
-		split[i].SetUint64(address & masks[i])
+		split[i] = split[i].SetUint64(address & masks[i])
 		address = address >> widths[i]
 	}
 
