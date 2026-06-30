@@ -108,124 +108,137 @@ func translateWriteOnceMemory[F field.Element[F]](
 func translateReadWriteMemory[F field.Element[F]](
 	ctx schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
 	var (
-		name           = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
-		memoryModule   *schema.Table[F, mir.Constraint[F]]
-		padding        big.Int
-		timestampWidth = uint(32)
+		mod  *schema.Table[F, mir.Constraint[F]]
+		name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
 	)
+	// Initialise module
+	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
+	// Add all registers
+	mod.AddRegisters(fm.Registers()...)
+	// TODO: implement WOM constraints
+	return mod
 
-	// Initialise module and add all registers
-	memoryModule = memoryModule.Init(name, false, true, false, fm.IsNative(), false, 0)
-	memoryModule.AddRegisters(fm.Registers()...)
+	/*
+		var (
+			name           = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
+			memoryModule   *schema.Table[F, mir.Constraint[F]]
+			padding        big.Int
+			timestampWidth = uint(32)
+		)
 
-	var (
-		timestampRead    = register.NewId(memoryModule.Width() + 0)
-		timestampWritten = register.NewId(memoryModule.Width() + 1)
-		timestampDelta   = register.NewId(memoryModule.Width() + 2)
-	)
+		// Initialise module and add all registers
+		memoryModule = memoryModule.Init(name, false, true, false, fm.IsNative(), false, 0)
+		memoryModule.AddRegisters(fm.Registers()...)
 
-	memoryModule.AddRegisters(register.NewComputed("timestamp_read", timestampWidth, padding))
-	memoryModule.AddRegisters(register.NewComputed("timestamp_write", timestampWidth, padding))
-	memoryModule.AddRegisters(register.NewComputed("timestamp_delta", timestampWidth, padding))
+		var (
+			timestampRead    = register.NewId(memoryModule.Width() + 0)
+			timestampWritten = register.NewId(memoryModule.Width() + 1)
+			timestampDelta   = register.NewId(memoryModule.Width() + 2)
+		)
 
-	var (
-		addressWidth uint
-		valueWidth   uint
-	)
+		memoryModule.AddRegisters(register.NewComputed("timestamp_read", timestampWidth, padding))
+		memoryModule.AddRegisters(register.NewComputed("timestamp_write", timestampWidth, padding))
+		memoryModule.AddRegisters(register.NewComputed("timestamp_delta", timestampWidth, padding))
 
-	for i, l := range fm.Registers() {
-		if uint(i) < fm.Geometry().AddressLines() {
-			addressWidth += l.Width()
-		} else if uint(i) < fm.Geometry().AddressLines()+fm.Geometry().DataLines() {
-			valueWidth += l.Width()
+		var (
+			addressWidth uint
+			valueWidth   uint
+		)
+
+		for i, l := range fm.Registers() {
+			if uint(i) < fm.Geometry().AddressLines() {
+				addressWidth += l.Width()
+			} else if uint(i) < fm.Geometry().AddressLines()+fm.Geometry().DataLines() {
+				valueWidth += l.Width()
+			}
 		}
-	}
 
-	var (
-		addressDelta = register.NewId(memoryModule.Width() + 0)
-	)
+		var (
+			addressDelta = register.NewId(memoryModule.Width() + 0)
+		)
 
-	memoryModule.AddRegisters(register.NewComputed("address_delta", addressWidth, padding))
-	memoryModule.AddRegisters(register.NewComputed("valueRead", valueWidth, padding))
+		memoryModule.AddRegisters(register.NewComputed("address_delta", addressWidth, padding))
+		memoryModule.AddRegisters(register.NewComputed("valueRead", valueWidth, padding))
 
-	var (
-		execPhase = register.NewId(memoryModule.Width() + 0)
-		finlPhase = register.NewId(memoryModule.Width() + 1)
-	)
+		var (
+			execPhase = register.NewId(memoryModule.Width() + 0)
+			finlPhase = register.NewId(memoryModule.Width() + 1)
+		)
 
-	memoryModule.AddRegisters(register.NewComputed("exec", 1, padding))
-	memoryModule.AddRegisters(register.NewComputed("finl", 1, padding))
+		memoryModule.AddRegisters(register.NewComputed("exec", 1, padding))
+		memoryModule.AddRegisters(register.NewComputed("finl", 1, padding))
 
-	var (
-		rTime         = mirc.Variable[register.Id, Expr[F]](timestampRead, timestampWidth, 0)
-		wTime         = mirc.Variable[register.Id, Expr[F]](timestampWritten, timestampWidth, 0)
-		dTime         = mirc.Variable[register.Id, Expr[F]](timestampDelta, timestampWidth, 0)
-		addrRegs      = fm.Geometry().AddressRegisters()
-		addrRegOffset = uint(0)
-		prevAddr      = concatenateRegisters[F](addrRegs, addrRegOffset, -1)
-		addr          = concatenateRegisters[F](addrRegs, addrRegOffset, 0)
-		addrDelta     = mirc.Variable[register.Id, Expr[F]](addressDelta, 1, 0)
-		prevExec      = mirc.Variable[register.Id, Expr[F]](execPhase, 1, -1)
-		prevFinl      = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, -1)
-		exec          = mirc.Variable[register.Id, Expr[F]](execPhase, 1, 0)
-		finl          = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, 0)
-		zero          = mirc.Number[register.Id, Expr[F]](0)
-		one           = mirc.Number[register.Id, Expr[F]](1)
-	)
+		var (
+			rTime         = mirc.Variable[register.Id, Expr[F]](timestampRead, timestampWidth, 0)
+			wTime         = mirc.Variable[register.Id, Expr[F]](timestampWritten, timestampWidth, 0)
+			dTime         = mirc.Variable[register.Id, Expr[F]](timestampDelta, timestampWidth, 0)
+			addrRegs      = fm.Geometry().AddressRegisters()
+			addrRegOffset = uint(0)
+			prevAddr      = concatenateRegisters[F](addrRegs, addrRegOffset, -1)
+			addr          = concatenateRegisters[F](addrRegs, addrRegOffset, 0)
+			addrDelta     = mirc.Variable[register.Id, Expr[F]](addressDelta, 1, 0)
+			prevExec      = mirc.Variable[register.Id, Expr[F]](execPhase, 1, -1)
+			prevFinl      = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, -1)
+			exec          = mirc.Variable[register.Id, Expr[F]](execPhase, 1, 0)
+			finl          = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, 0)
+			zero          = mirc.Number[register.Id, Expr[F]](0)
+			one           = mirc.Number[register.Id, Expr[F]](1)
+		)
 
-	// ================================================
-	// constraints
-	// ================================================
+		// ================================================
+		// constraints
+		// ================================================
 
-	// (non padding) rows are either created during standard execution (exec ≡ true)
-	// or during the finalization phase (finl ≡ true)
-	flagExclusivity := mir.NewVanishingConstraint("flag_exclusivity", ctx, util.None[int](),
-		mirc.Product([]Expr[F]{exec, finl}).Equals(zero).AsLogical())
+		// (non padding) rows are either created during standard execution (exec ≡ true)
+		// or during the finalization phase (finl ≡ true)
+		flagExclusivity := mir.NewVanishingConstraint("flag_exclusivity", ctx, util.None[int](),
+			mirc.Product([]Expr[F]{exec, finl}).Equals(zero).AsLogical())
 
-	// both exec and (exec + finl) should, on any trace segment, look like one of these :
-	//
-	//  ¹ ┼       ┌─────         ¹ ┼
-	//    │       │                │
-	//  ⁰ ┴  ─────┘        or    ⁰ ┴  ───────────
-	//
-	// exec may not be nondecreasing; the (exec, finl) pair may look like so :
-	//
-	//  ¹ ┼       ┌─────┐∙∙∙∙∙∙   ( ∙ ≡ finl)
-	//    │       │     │
-	//  ⁰ ┴  ─────┘∙∙∙∙∙└──────   ( ─ ≡ exec)
-	flagMonotony1 := mir.NewVanishingConstraint("finl_monotony", ctx, util.None[int](),
-		mirc.If(prevFinl.NotEquals(zero), finl.Equals(one)).AsLogical())
-	flagMonotony2 := mir.NewVanishingConstraint("exec+finl_monotony", ctx, util.None[int](),
-		mirc.If(mirc.Sum([]Expr[F]{prevExec, prevFinl}).NotEquals(zero),
-			mirc.Sum([]Expr[F]{exec, finl}).Equals(one)).AsLogical())
+		// both exec and (exec + finl) should, on any trace segment, look like one of these :
+		//
+		//  ¹ ┼       ┌─────         ¹ ┼
+		//    │       │                │
+		//  ⁰ ┴  ─────┘        or    ⁰ ┴  ───────────
+		//
+		// exec may not be nondecreasing; the (exec, finl) pair may look like so :
+		//
+		//  ¹ ┼       ┌─────┐∙∙∙∙∙∙   ( ∙ ≡ finl)
+		//    │       │     │
+		//  ⁰ ┴  ─────┘∙∙∙∙∙└──────   ( ─ ≡ exec)
+		flagMonotony1 := mir.NewVanishingConstraint("finl_monotony", ctx, util.None[int](),
+			mirc.If(prevFinl.NotEquals(zero), finl.Equals(one)).AsLogical())
+		flagMonotony2 := mir.NewVanishingConstraint("exec+finl_monotony", ctx, util.None[int](),
+			mirc.If(mirc.Sum([]Expr[F]{prevExec, prevFinl}).NotEquals(zero),
+				mirc.Sum([]Expr[F]{exec, finl}).Equals(one)).AsLogical())
 
-	// we want WT > RT which we prove via WT = RT + (1 + ΔT)
-	// which works given that ΔT is ≥ 0
-	timestampMonotony := mir.NewVanishingConstraint("timestamp_monotony", ctx, util.None[int](),
-		mirc.If(exec.NotEquals(zero), wTime.Equals(rTime.Add(dTime, one))).AsLogical())
+		// we want WT > RT which we prove via WT = RT + (1 + ΔT)
+		// which works given that ΔT is ≥ 0
+		timestampMonotony := mir.NewVanishingConstraint("timestamp_monotony", ctx, util.None[int](),
+			mirc.If(exec.NotEquals(zero), wTime.Equals(rTime.Add(dTime, one))).AsLogical())
 
-	// // we impose value constancy by enforcing that the received value be the same as the sent value
-	// rcvExec := mir.NewReceiveConstraint[F]("reading_in_execution_phase",
-	// []register.Id{address, timestampRead, valueRead})
-	// sndExec := mir.NewSendConstraint[F]("writing_in_execution_phase",
-	// []register.Id{address, timestampWritten, valueWritten})
+		// // we impose value constancy by enforcing that the received value be the same as the sent value
+		// rcvExec := mir.NewReceiveConstraint[F]("reading_in_execution_phase",
+		// []register.Id{address, timestampRead, valueRead})
+		// sndExec := mir.NewSendConstraint[F]("writing_in_execution_phase",
+		// []register.Id{address, timestampWritten, valueWritten})
 
-	addressMonotonyInFinl := mir.NewVanishingConstraint("address_monotony_in_finalization_phase", ctx, util.None[int](),
-		mirc.If(mirc.Product([]Expr[F]{finl, prevFinl}).NotEquals(zero),
-			addr.Equals(prevAddr.Add(addrDelta, one))).AsLogical())
+		addressMonotonyInFinl := mir.NewVanishingConstraint("address_monotony_in_finalization_phase", ctx, util.None[int](),
+			mirc.If(mirc.Product([]Expr[F]{finl, prevFinl}).NotEquals(zero),
+				addr.Equals(prevAddr.Add(addrDelta, one))).AsLogical())
 
-	constraints := []mir.Constraint[F]{
-		flagExclusivity,
-		flagMonotony1,
-		flagMonotony2,
-		timestampMonotony,
-		// rcvExec,
-		// sndExec,
-		addressMonotonyInFinl,
-	}
-	memoryModule.AddConstraints(constraints...)
+		constraints := []mir.Constraint[F]{
+			flagExclusivity,
+			flagMonotony1,
+			flagMonotony2,
+			timestampMonotony,
+			// rcvExec,
+			// sndExec,
+			addressMonotonyInFinl,
+		}
+		memoryModule.AddConstraints(constraints...)
 
-	return memoryModule
+		return memoryModule
+	*/
 }
 
 // translateAccessOnceMemory handles both
@@ -345,7 +358,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 
 		// Σ_k @k[i] = ACCESS[i-1] ∙ ACCESS[i]
 		var (
-			atFlagSum                = mirc.Sum(atFlagVars)
+			atFlagSum                       = mirc.Sum(atFlagVars)
 			atFlagSumEqualsAccessBitProduct mir.Constraint[F]
 		)
 
