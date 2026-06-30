@@ -73,8 +73,7 @@ func NewSendConstraint[F field.Element[F]](handle string, sources []register.Id)
 // NewReceiveConstraint creates a new "receive from logUpBus" constraint; it doesn't take into account
 // the potential Id of the logup bus, which would for instance determine what shared randomness to use.
 func NewReceiveConstraint[F field.Element[F]](handle string, sources []register.Id) Constraint[F] {
-	// TODO
-	return Constraint[F]{}
+	panic("NewReceiveConstraint is not implemented")
 }
 
 // NewPermutationConstraint creates a new permutation
