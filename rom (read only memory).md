@@ -1,6 +1,6 @@
 # ROM (read ONLY memory) module
 
-Here's one set of constraints for a write-once-memory (ROM) module. We make the following assumptions:
+Here's one set of constraints for a read-only memory (ROM) module. We make the following assumptions:
 
 - a ROM is an immutable table: reads always return the same value across the full lifetime of the execution
 
