@@ -13,13 +13,13 @@
 package util
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -444,13 +444,17 @@ func checkExpectedOutputs[W vm.Word[W]](outputs map[string][]W, wm vm.Core[W]) [
 		m := iter.Next()
 		//
 		if output, ok := outputs[m.Name()]; ok {
-			if c := array.Compare(output, m.Contents()); c != 0 {
-				var (
-					expected = hex.EncodeToString(vm.EncodeBytes(output, m.Geometry()))
-					actual   = hex.EncodeToString(vm.EncodeBytes(m.Contents(), m.Geometry()))
-				)
-
-				errors = append(errors, fmt.Errorf("incorrect output (expected 0x%s, actual 0x%s)", expected, actual))
+			// Compare canonical byte encodings rather than the raw cell arrays:
+			// a memory whose live cell-count is odd encodes the same bytes as an
+			// expected value that (being byte-granular input) carries a trailing
+			// padding cell, so a length-sensitive array compare would spuriously
+			// fail.  This mirrors compareGogenOutputs.
+			expected := vm.EncodeBytes(output, m.Geometry())
+			actual := vm.EncodeBytes(m.Contents(), m.Geometry())
+			//
+			if !bytes.Equal(expected, actual) {
+				errors = append(errors, fmt.Errorf("incorrect output (expected 0x%s, actual 0x%s)",
+					hex.EncodeToString(expected), hex.EncodeToString(actual)))
 			}
 		}
 	}
