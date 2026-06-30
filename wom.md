@@ -8,7 +8,7 @@ We present constraints for a write-once-memory (WOM) module with the following f
   - reads and writes to an address that has already been written to (`WAS_ALREADY_WRITTEN_TO ≡ true`) reproduce the same value in the snd / rcv requests
 - note that the `WAS_ALREADY_WRITTEN_TO` bit is a _prediction_
 - the WOM may be written to (at a given address) once; further writes are allowed unless they overwrite a previously written value
-- reads / writes may ocurr in all segments of the trace
+- reads / writes may occur in all segments of the trace
 - regardless, the WOM must ensure its own consistency
 
 By definition in a WOM, once a memory cell with address `a` has been written to,
