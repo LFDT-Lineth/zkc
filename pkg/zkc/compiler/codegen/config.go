@@ -63,9 +63,9 @@ type Config struct {
 	vectorize bool
 	// splitting controls whether or not register splitting is enabled.
 	splitting bool
-	// maxStaticDepth controls the maximum depth (ie nb of rows) of static tables.
+	// maxStaticDepth controls the maximum depth (i.e. number of rows) of static tables.
 	// This is used to limit the size of static tables, as required by the prover.
-	// It is default to 2^16.
+	// It defaults to 2^16.
 	maxStaticDepth uint
 }
 
