@@ -33,6 +33,10 @@ const (
 	// selector lines in traces.  A selector for PC value v is named
 	// "$is_pc_<v>".
 	IS_PC_PREFIX = "$is_pc_"
+	// AT_FLAG_PREFIX name of binary flag names for multi-lane address increments
+	AT_FLAG_PREFIX = "at_flag_"
+	// ACCESS_BIT_NAME name of binary flag for non-padding rows
+	ACCESS_BIT_NAME = "access_bit"
 )
 
 // SelectorName returns the name of the one-hot program counter selector
@@ -40,6 +44,12 @@ const (
 // value for code line c is c+1 (PC==0 is reserved for padding).
 func SelectorName(line uint) string {
 	return fmt.Sprintf("%s%d", IS_PC_PREFIX, line+1)
+}
+
+// AtFlagName returns the name of the binary "at flag" register for address
+// limb k, used to locate the carry-stop limb on a multi-limb address increment.
+func AtFlagName(k uint) string {
+	return fmt.Sprintf("%s%d", AT_FLAG_PREFIX, k)
 }
 
 // Register defines the notion of a register within a function.

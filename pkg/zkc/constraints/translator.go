@@ -243,7 +243,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 	memoryModule.AddRegisters(fm.Registers()...)
 
 	var access = register.NewId(memoryModule.Width())
-	memoryModule.AddRegisters(register.NewComputed("access", 1, padding))
+	memoryModule.AddRegisters(register.NewComputed(io.ACCESS_BIT_NAME, 1, padding))
 
 	var (
 		addrRegs                     = fm.Geometry().AddressRegisters()
@@ -307,9 +307,9 @@ func translateAccessOnceMemory[F field.Element[F]](
 		//
 		// The idea is that
 		//	- precisely one of these flags is active on any non-padding row
-		//	  expresed as
+		//	  (save for the first one) expresed as
 		//		- @k ≡ binary, for k = 0..L
-		//		- Σ_k @k[i] = ACCESS[i]
+		//		- Σ_k @k[i] = ACCESS[i-1] ∙ ACCESS[i]
 		//	- if ACCESS[i-1] = 1 ∧ @k[i] = 1 then
 		//		- [a]ADDRESS[i]   =     [a]ADDRESS[i-1] for 0 ≤ a < k
 		//		- [k]ADDRESS[i-1] ≠ max_value_k
@@ -330,27 +330,27 @@ func translateAccessOnceMemory[F field.Element[F]](
 			addrLimbMaxValues = make([]Expr[F], L)
 		)
 
-		for i := range atFlags {
-			atFlags[i] = register.NewId(memoryModule.Width())
-			memoryModule.AddRegisters(register.NewComputed(fmt.Sprintf("at_flag_%d", i), 1, padding))
+		for k := range atFlags {
+			atFlags[k] = register.NewId(memoryModule.Width())
+			memoryModule.AddRegisters(register.NewComputed(io.AtFlagName(uint(k)), 1, padding))
 
-			atFlagVars[i] = mirc.Variable[register.Id, Expr[F]](atFlags[i], 1, 0)
-			addrLimbMaxValues[i] = mirc.BigNumber[register.Id, Expr[F]](addrRegs[i].MaxValue())
+			atFlagVars[k] = mirc.Variable[register.Id, Expr[F]](atFlags[k], 1, 0)
+			addrLimbMaxValues[k] = mirc.BigNumber[register.Id, Expr[F]](addrRegs[k].MaxValue())
 		}
 
 		// @k ≡ binary, for k = 0..L
 		// these are bitwidth 1 registers : we don't need to explicitly impose binarity (?)
 
-		// Σ_k @k[i] = ACCESS[i]
+		// Σ_k @k[i] = ACCESS[i-1] ∙ ACCESS[i]
 		var (
 			atFlagSum                = mirc.Sum(atFlagVars)
-			atFlagSumEqualsAccessBit mir.Constraint[F]
+			atFlagSumEqualsAccessBitProduct mir.Constraint[F]
 		)
 
-		atFlagSumEqualsAccessBit = mir.NewVanishingConstraint(
+		atFlagSumEqualsAccessBitProduct = mir.NewVanishingConstraint(
 			"at_flag_sum_equals_access_bit", ctx,
 			util.None[int](),
-			atFlagSum.Equals(currAccess).AsLogical())
+			atFlagSum.Equals(mirc.Product([]Expr[F]{prevAccess, currAccess})).AsLogical())
 
 		// if ACCESS[i] = 0 Then []ADDRESS[i] ≡ 0
 		var addressesVanishInPadding = make([]mir.Constraint[F], L)
@@ -415,7 +415,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 			addrUpdateConstraints[k] = cs
 		}
 
-		constraints = append(constraints, atFlagSumEqualsAccessBit)
+		constraints = append(constraints, atFlagSumEqualsAccessBitProduct)
 		constraints = append(constraints, addressesVanishInPadding...)
 		constraints = append(constraints, addressesVanishOnFirstNonPaddingRow...)
 		for k := range L {
