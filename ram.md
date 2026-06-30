@@ -11,7 +11,7 @@ We make the following assumptions:
 
 If RAM initialization/finalization isn't tightly constrained a memory cell can
 end up living parallel and wholly unrelated lives. One constraint that removes
-this issue is to impose that these memory-types perform a single initialiazation
+this issue is to impose that these memory-types perform a single initialization
 and finalization event per address. And here there are two options: go over a
 contiguous chunk of addresses (with address increments of 1) or only initialize/
 finalize active addresses. The first option is valid when address space is small
