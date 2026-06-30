@@ -258,6 +258,24 @@ func Test_ZkcUnit_Memory_01(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/memory_01", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
+	// Multi-address-lane access-once memory: a read-only ROM and a write-once
+	// WOM, exercising the access bit and at_flag carry columns end-to-end.
+	checkZkcUnit(t, "zkc/unit/access_once_memory_01", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_AccessOnceMemory_02(t *testing.T) {
+	// Multi-address-lane access-once memory: a read-only ROM and a write-once
+	// WOM, exercising the access bit and at_flag carry columns end-to-end.
+	checkZkcUnit(t, "zkc/unit/access_once_memory_02", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_AccessOnceMemory_03(t *testing.T) {
+	// Multi-address-lane access-once memory: a read-only ROM and a write-once
+	// WOM, exercising the access bit and at_flag carry columns end-to-end.
+	checkZkcUnit(t, "zkc/unit/access_once_memory_03", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // If-Else-If Tests
 // ===================================================================
