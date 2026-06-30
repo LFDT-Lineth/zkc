@@ -13,10 +13,12 @@
 package transform
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"slices"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -38,95 +40,68 @@ import (
 //	skip_if b != 0 S     // original skip, now testing the bit
 //	(ifBranch) (elseBranch)
 //
-// This pass must run after vectorisation (so the branch's guarded writes share
-// the condition) and before register splitting (so comparison operands remain
-// single registers).
-func FactorSkipConditions[W word.Word[W]](modules []Module) []Module {
-	out := append([]Module{}, modules...)
+// NOTE: this transform must run after vectorisation (so the branch's guarded
+// writes share the condition) and before register splitting (so comparison
+// operands remain single registers).
+func FactorSkipConditions[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
+	out := slices.Clone(program.Modules())
 
 	for i, mod := range out {
-		if fn, ok := mod.(*WordFunction); ok {
+		if fn, ok := mod.(*descriptor.Function[W]); ok {
 			out[i] = factorSkipConditionsFunction[W](fn)
 		}
 	}
 
-	return out
+	return descriptor.NewProgram(out...)
 }
 
-func factorSkipConditionsFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
+func factorSkipConditionsFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {
 	var (
-		code  = fn.Code()
-		ncode = make([]VectorInstruction, len(code))
-		alloc = register.NewAllocator[int](fn.RegisterMap())
+		vectors = fn.Vectors()
+		nvecs   = make([]BytecodeVector[W], len(vectors))
+		alloc   = newRegAllocator(fn.Registers())
 	)
 
-	for i, insn := range code {
+	for i, vec := range vectors {
 		// Decide up-front which SkipIf codes in this vector are worth factoring.
 		// This needs the whole vector body (to size each branch), which the Map
-		// closure cannot see one instruction at a time.
-		factor := factorableSkips(insn.Codes, alloc)
+		// closure cannot see one bytecode at a time.
+		factor := factorableSkips[W](vec.Bytecodes, alloc)
 		//
-		ncode[i] = insn.Map(func(idx uint, ith WordInstruction) []WordInstruction {
+		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
 			if factor[idx] {
-				return factorSkipIf[W](ith.(*instruction.SkipIf), alloc)
+				return factorSkipIf[W](ith.(*bytecode.SkipIf), alloc)
 			}
 			//
-			return []WordInstruction{ith}
+			return []Bytecode[W]{ith}
 		})
 	}
 
-	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), nvecs)
 }
 
-// factorableSkips returns the set of code indices holding an equality SkipIf
-// worth factoring: one whose comparison generates an inverse and which guards a
-// non-trivial amount of work.  A two-sided branch (i.e. one with an else) is
-// always factored, since both sides then have their guards reduced from a
-// degree-3 (inverse) term to a degree-2 bit reference.  A one-sided branch is
-// only factored when its body holds more than a single instruction; otherwise
-// the diamond and extra column would not pay for themselves.
-func factorableSkips(codes []WordInstruction, registers RegisterAllocator) map[uint]bool {
+// factorableSkips returns the set of code indices holding a SkipIf worth factoring.
+func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers *regAllocator[W]) map[uint]bool {
 	factor := make(map[uint]bool)
 	//
 	for i, code := range codes {
-		si, ok := code.(*instruction.SkipIf)
-		if !ok || !isEqualityCondition(si.Cond) || !generatesInverse(si, registers) {
+		si, ok := code.(*bytecode.SkipIf)
+		if !ok {
 			continue
 		}
-		//
-		thenSize, elseSize := branchSizes(codes, uint(i), si.Skip)
-		//
-		if thenSize > 1 || elseSize > 0 {
-			factor[uint(i)] = true
+		// Nothing to factorize if the condition is a (in)equality on a bit register
+		if isEqualityCondition(si.Op) && !generatesInverse(si, registers) {
+			factor[uint(i)] = false
+			continue
 		}
+
+		// In all other cases, we can factor the skip condition into a single bit register.
+		factor[uint(i)] = true
+
+		continue
 	}
 	//
 	return factor
-}
-
-// branchSizes estimates how many instructions a SkipIf located at index i (with
-// the given skip distance) guards.  The first result is the size of the
-// conditionally-skipped block; the second is the size of the block reached
-// after it (the "other" branch), read from the trailing unconditional Skip that
-// the skipped block uses to jump over it.  An if without an else has no such
-// trailing skip, so its else size is reported as zero.
-func branchSizes(codes []WordInstruction, i, skip uint) (thenSize, elseSize uint) {
-	var (
-		end   = min(i+1+skip, uint(len(codes)))
-		block = codes[i+1 : end]
-	)
-	//
-	thenSize = uint(len(block))
-	// If the skipped block ends with an unconditional Skip, that skip jumps over
-	// the other branch and its distance is the other branch's size.
-	if m := len(block); m > 0 {
-		if s, ok := block[m-1].(*instruction.Skip); ok {
-			thenSize = uint(m - 1)
-			elseSize = s.Skip
-		}
-	}
-	//
-	return thenSize, elseSize
 }
 
 func isEqualityCondition(cond opcode.Condition) bool {
@@ -134,15 +109,15 @@ func isEqualityCondition(cond opcode.Condition) bool {
 }
 
 // generatesInverse reports whether the comparison performed by a SkipIf would
-// lower to an inverse normalisation.  This is only the case when some operand
-// is wider than a single bit; equality involving only bit registers is
-// normalisation-free and so factoring it would add instructions for no benefit.
-func generatesInverse(si *instruction.SkipIf, registers RegisterAllocator) bool {
+// lower to an inverse normalisation.  This is only the case when some operand is
+// wider than a single bit; equality involving only bit registers is
+// normalisation-free and so factoring it would add bytecodes for no benefit.
+func generatesInverse[W word.Word[W]](si *bytecode.SkipIf, registers *regAllocator[W]) bool {
 	for _, r := range si.Uses() {
 		reg := registers.Register(r)
 		// Native registers are full-field-width (and have no fixed bitwidth), so
 		// they are certainly wider than a single bit.
-		if reg.IsNative() || reg.Width() > 1 {
+		if reg.IsNative() || reg.Bitwidth().Unwrap() > 1 {
 			return true
 		}
 	}
@@ -155,28 +130,29 @@ func generatesInverse(si *instruction.SkipIf, registers RegisterAllocator) bool 
 // (unnegated): when it holds, execution jumps to `b = 1`; otherwise it falls
 // through to `b = 0`.
 func factorSkipIf[W word.Word[W]](
-	si *instruction.SkipIf,
-	registers RegisterAllocator,
-) []WordInstruction {
+	si *bytecode.SkipIf,
+	registers *regAllocator[W],
+) []Bytecode[W] {
 	var (
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
-		b    = registers.Allocate("", 1)
-		zr   = registers.Allocate("", 1)
+		b    = registers.Allocate("", util.Some[uint](1))
+		zr   = registers.Allocate("", util.Some[uint](1))
 	)
 	//
-	return []WordInstruction{
+	return []Bytecode[W]{
+		// TODO: use skip_if vs cst, not register (cf https://github.com/LFDT-Lineth/zkc/issues/1879)
 		// zero = 0
-		instruction.UintConst(zr, zero),
+		bytecode.LoadConst(zr, zero),
 		// skip_if (cond) 2  => condition holds, jump to "b = 1"
-		instruction.NewSkipIfVec(si.Cond, si.Left, si.Right, 2),
+		&bytecode.SkipIf{Op: si.Op, Left: si.Left, Right: si.Right, Skip: 2},
 		// b = 0  (condition does not hold)
-		instruction.UintConst(b, zero),
+		bytecode.LoadConst(b, zero),
 		// skip 1  => jump over "b = 1"
-		&instruction.Skip{Skip: 1},
+		bytecode.NewSkip(1),
 		// b = 1  (condition holds)
-		instruction.UintConst(b, one),
+		bytecode.LoadConst(b, one),
 		// skip_if b != 0 S  (original skip, now testing the bit)
-		instruction.NewSkipIf(opcode.NEQ, b, zr, si.Skip),
+		bytecode.NewSkipIf(opcode.NEQ, si.Skip, b, zr),
 	}
 }

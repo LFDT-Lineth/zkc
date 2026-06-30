@@ -17,79 +17,86 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// SplitRegisters all modules to meet a given bandwidth and maximum register width.
-// This will split all registers wider than the maximum permitted width into two
-// or more "limbs" (i.e. subregisters which do not exceeded the permitted
-// width). For example, consider a register "r" of width u32. Subdividing this
-// register into registers of at most 8bits will result in four limbs: r'0, r'1,
-// r'2 and r'3 where (by convention) r'0 is the least significant.
-func SplitRegisters[W word.Word[W]](mapping module.LimbsMap, m *machine.Word[W]) *machine.Word[W] {
+// SplitRegisters splits all registers in a program to meet a given field's
+// bandwidth and maximum register width.  This will split all registers wider
+// than the maximum permitted width into two or more "limbs" (i.e. subregisters
+// which do not exceeded the permitted width). For example, consider a register
+// "r" of width u32. Subdividing this register into registers of at most 8bits
+// will result in four limbs: r'0, r'1, r'2 and r'3 where (by convention) r'0 is
+// the least significant.
+func SplitRegisters[W word.Word[W]](cfg field.Config, program descriptor.Program[W]) descriptor.Program[W] {
 	var (
-		mods = make([]Module, len(m.Modules()))
+		mods    = program.Modules()
+		mapping = newLimbsMap[W](cfg, mods)
+		out     = make([]descriptor.Module[W], len(mods))
 	)
 	//
-	for i, ith := range m.Modules() {
+	for i, ith := range mods {
 		// Determine limb mapping for this module
 		limbsMap := mapping.Module(uint(i))
 		//
-		mods[i] = splitModule[W](limbsMap, ith)
+		out[i] = splitModule[W](limbsMap, ith)
 	}
 	//
-	return machine.NewWord[W](mapping.Field(), mods...)
+	return descriptor.NewProgram(out...)
 }
 
-func splitModule[W word.Word[W]](mapping register.LimbsMap, m Module) Module {
+// newLimbsMap constructs the program-wide limbs map from a program's descriptor
+// modules, deriving a register map per module from its (schema) registers.
+func newLimbsMap[W word.Word[W]](cfg field.Config, modules []descriptor.Module[W]) module.LimbsMap {
+	var ms []register.Map = array.Map(modules, func(_ uint, m descriptor.Module[W]) register.Map {
+		name := trace.ModuleName{Name: m.Name(), Multiplier: 1}
+		return register.ArrayMap(name, descriptor.ToRegisters(m.Registers()...)...)
+	})
+	// NOTE: generic parameter is meaningless, and only retained for backwards
+	// compatibility.
+	return module.NewLimbsMap[uint](cfg, ms...)
+}
+
+func splitModule[W word.Word[W]](mapping register.LimbsMap, m descriptor.Module[W]) descriptor.Module[W] {
 	switch m := m.(type) {
-	case *function.Function[WordInstruction]:
-		return splitFunction[W](mapping, *m)
-	case memory.Memory[W]:
-		return splitMemory(mapping, m)
+	case *descriptor.Function[W]:
+		return splitFunction[W](mapping, m)
+	case *descriptor.Memory[W]:
+		return splitMemory[W](mapping, m)
 	default:
 		panic("unknown module encountered")
 	}
 }
 
-func splitMemory[W word.Word[W]](mapping register.LimbsMap, m memory.Memory[W]) Module {
-	var (
-		registers = mapping.Limbs()
-		geometry  = memory.NewGeometry[W](registers)
-	)
+func splitMemory[W word.Word[W]](mapping register.LimbsMap, m *descriptor.Memory[W]) descriptor.Module[W] {
+	var registers = limbsToDescriptor[W](mapping.Limbs())
 	//
-	switch m := m.(type) {
-	case *memory.WriteOnce[W]:
-		return &memory.WriteOnce[W]{
-			StaticArray: memory.NewStaticArray[W](m.Name(), m.Kind(), geometry),
-		}
-	case *memory.ReadOnly[W]:
-		return &memory.ReadOnly[W]{
-			StaticArray: memory.NewStaticArray[W](m.Name(), m.Kind(), geometry),
-		}
-	case *memory.StaticReadOnly[W]:
+	switch {
+	case m.IsStatic():
 		panic("support subdivision for static ROM")
+	case m.IsWriteOnly(), m.IsReadOnly():
+		return descriptor.NewMemory(m.Name(), registers, m.Kind(), nil)
 	default:
 		panic(fmt.Sprintf("unknown memory \"%s\"", m.Name()))
 	}
 }
 
-func splitFunction[W word.Word[W]](mapping register.LimbsMap, m function.Function[WordInstruction]) Module {
+func splitFunction[W word.Word[W]](mapping register.LimbsMap, m *descriptor.Function[W]) descriptor.Module[W] {
 	var (
-		registers = mapping.Limbs()
-		code      = splitInstructions[W](mapping, m.Code())
+		registers = limbsToDescriptor[W](mapping.Limbs())
+		code      = splitInstructions[W](mapping, m.Vectors())
 	)
 	//
-	return function.New(m.Name(), m.IsNative(), registers, code)
+	return descriptor.NewFunction(m.Name(), registers, m.IsNative(), code)
 }
 
-func splitInstructions[W word.Word[W]](mapping register.LimbsMap, code []VectorInstruction) []VectorInstruction {
-	var ncode = make([]VectorInstruction, len(code))
+func splitInstructions[W word.Word[W]](mapping register.LimbsMap, code []BytecodeVector[W]) []BytecodeVector[W] {
+	var ncode = make([]BytecodeVector[W], len(code))
 	//
 	for i, c := range code {
 		ncode[i] = splitInstruction[W](mapping, c)
@@ -98,112 +105,96 @@ func splitInstructions[W word.Word[W]](mapping register.LimbsMap, code []VectorI
 	return ncode
 }
 
-func splitInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec VectorInstruction) VectorInstruction {
-	var (
-		insns []WordInstruction
-	)
-	// skipif
+func splitInstruction[W word.Word[W]](limbsMap register.LimbsMap, vec BytecodeVector[W]) BytecodeVector[W] {
+	var insns []Bytecode[W]
 	//
-	for _, c := range vec.Codes {
-		switch c.OpCode() {
+	for _, c := range vec.Bytecodes {
+		switch c := c.(type) {
 		// =======================================================
-		// Base instructions
+		// Base bytecodes
 		// =======================================================
-		case opcode.CALL:
-			insns = append(insns, splitRegisters(limbsMap, c))
-		case opcode.DEBUG:
-			c := c.(*instruction.Debug)
-			insns = append(insns, splitFormatting(limbsMap, false, c.Chunks))
-		case opcode.FAIL:
-			c := c.(*instruction.Fail)
-			insns = append(insns, splitFormatting(limbsMap, true, c.Chunks))
-		case opcode.JUMP:
+		case *bytecode.Call:
+			insns = append(insns, splitRegisters[W](limbsMap, c))
+		case *bytecode.Debug:
+			insns = append(insns, &bytecode.Debug{Chunks: c.Chunks, Sources: splitRegVecs(limbsMap, c.Sources)})
+		case *bytecode.Fail:
+			insns = append(insns, &bytecode.Fail{Chunks: c.Chunks, Sources: splitRegVecs(limbsMap, c.Sources)})
+		case *bytecode.Jmp:
 			insns = append(insns, c)
-		case opcode.MEMORY_READ:
-			insns = append(insns, splitRegisters(limbsMap, c))
-		case opcode.MEMORY_WRITE:
-			insns = append(insns, splitRegisters(limbsMap, c))
-		case opcode.RETURN:
+		case *bytecode.ReadWrite:
+			insns = append(insns, splitRegisters[W](limbsMap, c))
+		case *bytecode.Ret:
 			insns = append(insns, c)
-		case opcode.SKIP:
+		case *bytecode.Skip:
 			insns = append(insns, c)
-		case opcode.SKIP_IF:
-			insns = append(insns, splitRegisters(limbsMap, c))
+		case *bytecode.SkipIf:
+			insns = append(insns, splitRegisters[W](limbsMap, c))
 
 		// =======================================================
-		// Arithmetic instructions
+		// Arithmetic bytecodes
 		// =======================================================
-
-		case opcode.INT_ADD:
-			c := c.(*instruction.WordTypeA[W])
-			insns = append(insns, splitAddition(limbsMap, c)...)
-		case opcode.INT_SUB:
-			insns = append(insns, splitSubtraction(limbsMap, c)...)
-		case opcode.INT_MUL:
-			insns = append(insns, splitMultiplication(limbsMap, c)...)
+		case *bytecode.Arith[W]:
+			switch c.Op {
+			case bytecode.OP_ADD:
+				insns = append(insns, splitAddition[W](limbsMap, c)...)
+			case bytecode.OP_SUB:
+				insns = append(insns, splitSubtraction[W](limbsMap, c)...)
+			case bytecode.OP_MUL:
+				insns = append(insns, splitMultiplication[W](limbsMap, c)...)
+			default:
+				panic(fmt.Sprintf("unsupported arithmetic operation (%d)", c.Op))
+			}
 		default:
-			panic(fmt.Sprintf("unsupported instruction opcode (0x%x)", c.OpCode()))
+			panic(fmt.Sprintf("unsupported bytecode (%T)", c))
 		}
 	}
-
 	//
-	return instruction.NewVector(insns...)
+	return bytecode.NewVector(insns...)
 }
 
-func splitRegisters(limbsMap register.LimbsMap, insn WordInstruction) WordInstruction {
+func splitRegisters[W word.Word[W]](limbsMap register.LimbsMap, insn Bytecode[W]) Bytecode[W] {
 	switch c := insn.(type) {
-	case *instruction.Call:
-		args := register.ApplyLimbsMap(limbsMap, c.Arguments...)
-		rets := register.ApplyLimbsMap(limbsMap, c.Returns...)
+	case *bytecode.Call:
+		args := applyLimbs(limbsMap, c.Arguments...)
+		rets := applyLimbs(limbsMap, c.Returns...)
 		//
-		return instruction.NewCall(c.Id, args, rets)
-	case *instruction.MemRead:
-		addr := register.ApplyLimbsMap(limbsMap, c.Arguments...)
-		data := register.ApplyLimbsMap(limbsMap, c.Returns...)
+		return bytecode.CallFun(c.Target, c.Flags, args, rets)
+	case *bytecode.ReadWrite:
+		addr := applyLimbs(limbsMap, c.Address...)
+		data := applyLimbs(limbsMap, c.Data...)
 		//
-		return instruction.NewMemRead(c.Id, addr, data)
-	case *instruction.MemWrite:
-		addr := register.ApplyLimbsMap(limbsMap, c.Arguments...)
-		data := register.ApplyLimbsMap(limbsMap, c.Returns...)
+		if c.Write {
+			return bytecode.NewMemWrite(c.Id, addr, data)
+		}
 		//
-		return instruction.NewMemWrite(c.Id, addr, data)
-	case *instruction.SkipIf:
-		left := register.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
-		right := register.ApplyLimbsMap(limbsMap, c.Right.Registers()...)
+		return bytecode.NewMemRead(c.Id, addr, data)
+	case *bytecode.SkipIf:
+		left := applyLimbs(limbsMap, c.Left.Registers()...)
+		right := applyLimbs(limbsMap, c.Right.Registers()...)
 		// Construct vectored form of skip_if
-		return instruction.NewSkipIfVec(c.Cond, register.NewVector(left...), register.NewVector(right...), c.Skip)
+		return &bytecode.SkipIf{Op: c.Op, Left: bytecode.NewRegVec(left...), Right: bytecode.NewRegVec(right...),
+			Skip: c.Skip}
 	default:
 		panic("unsupported instruction")
 	}
 }
 
-func splitFormatting(limbsMap register.LimbsMap, fail bool, chunks []instruction.FormattedChunk) WordInstruction {
-	var (
-		nchunks = make([]instruction.FormattedChunk, len(chunks))
-	)
+// splitRegVecs splits each register vector (e.g. a debug / fail formatted
+// argument) into the limbs of its constituent registers.
+func splitRegVecs(limbsMap register.LimbsMap, vecs []bytecode.RegVec) []bytecode.RegVec {
+	var nvecs = make([]bytecode.RegVec, len(vecs))
 	//
-	for i, chunk := range chunks {
-		// split registers
-		arg := register.ApplyLimbsMap(limbsMap, chunk.Argument.Registers()...)
-		//
-		nchunks[i] = instruction.FormattedChunk{
-			Text:     chunk.Text,
-			Format:   chunk.Format,
-			Argument: register.NewVector(arg...),
-		}
+	for i, v := range vecs {
+		nvecs[i] = bytecode.NewRegVec(applyLimbs(limbsMap, v.Registers()...)...)
 	}
 	//
-	if fail {
-		return instruction.NewFail(nchunks...)
-	}
-	//
-	return instruction.NewDebug(nchunks...)
+	return nvecs
 }
 
-func splitAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruction.WordTypeA[W]) []WordInstruction {
+func splitAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *bytecode.Arith[W]) []Bytecode[W] {
 	var (
-		target  = register.ApplyLimbsMap(limbsMap, insn.Target.Registers()...)
-		sources = register.ApplyLimbsMap(limbsMap, insn.Sources...)
+		target  = applyLimbs(limbsMap, insn.Target...)
+		sources = applyLimbs(limbsMap, insn.Source...)
 	)
 	// FIXME: this is a temporary place holder to allow some tests to actually
 	// run.  It is not a proper implementation of this function.
@@ -211,11 +202,11 @@ func splitAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruction
 		// A pure copy (single source, zero constant) splits into limb-wise
 		// copies, provided source and target decompose into identical limbs.
 		// Such copies arise (for example) from function inlining.
-		if len(insn.Sources) == 1 && insn.Constant.Cmp64(0) == 0 && limbsAligned(limbsMap, target, sources) {
-			var insns = make([]WordInstruction, len(target))
+		if len(insn.Source) == 1 && insn.Constant.Cmp64(0) == 0 && limbsAligned(limbsMap, target, sources) {
+			var insns = make([]Bytecode[W], len(target))
 			//
 			for i := range target {
-				insns[i] = instruction.UintAssign[W](target[i], sources[i])
+				insns[i] = bytecode.Move[W](target[i], sources[i])
 			}
 			//
 			return insns
@@ -224,13 +215,13 @@ func splitAddition[W word.Word[W]](limbsMap register.LimbsMap, insn *instruction
 		panic("todo")
 	}
 	//
-	return []WordInstruction{instruction.UintAdd(target[0], sources, insn.Constant)}
+	return []Bytecode[W]{bytecode.AddConst(target[0], sources, insn.Constant)}
 }
 
-// limbsAligned checks whether two sets of limbs decompose identically (i.e.
-// pair up one-to-one with matching widths), such that an assignment between
-// the original registers can be split into limb-wise assignments.
-func limbsAligned(limbsMap register.LimbsMap, target, sources []register.Id) bool {
+// limbsAligned checks whether two sets of limbs decompose identically (i.e. pair
+// up one-to-one with matching widths), such that an assignment between the
+// original registers can be split into limb-wise assignments.
+func limbsAligned(limbsMap register.LimbsMap, target, sources []bytecode.RegisterId) bool {
 	var limbs = limbsMap.Limbs()
 	//
 	if len(target) != len(sources) {
@@ -239,8 +230,8 @@ func limbsAligned(limbsMap register.LimbsMap, target, sources []register.Id) boo
 	//
 	for i := range target {
 		var (
-			ith = limbs[target[i].Unwrap()]
-			jth = limbs[sources[i].Unwrap()]
+			ith = limbs[target[i]]
+			jth = limbs[sources[i]]
 		)
 		//
 		if ith.IsNative() != jth.IsNative() || (!ith.IsNative() && ith.Width() != jth.Width()) {
@@ -251,10 +242,51 @@ func limbsAligned(limbsMap register.LimbsMap, target, sources []register.Id) boo
 	return true
 }
 
-func splitSubtraction(limbsMap register.LimbsMap, insn WordInstruction) []WordInstruction {
+func splitSubtraction[W word.Word[W]](_ register.LimbsMap, _ *bytecode.Arith[W]) []Bytecode[W] {
 	panic("todo")
 }
 
-func splitMultiplication(limbsMap register.LimbsMap, insn WordInstruction) []WordInstruction {
+func splitMultiplication[W word.Word[W]](_ register.LimbsMap, _ *bytecode.Arith[W]) []Bytecode[W] {
 	panic("todo")
+}
+
+// applyLimbs maps a set of (bytecode) registers onto the corresponding limb
+// registers, returning the result in bytecode-register currency.
+func applyLimbs(limbsMap register.LimbsMap, rids ...bytecode.RegisterId) []bytecode.RegisterId {
+	var ids = make([]register.Id, len(rids))
+	//
+	for i, r := range rids {
+		ids[i] = register.NewId(uint(r))
+	}
+	//
+	var (
+		lids  = register.ApplyLimbsMap(limbsMap, ids...)
+		limbs = make([]bytecode.RegisterId, len(lids))
+	)
+	//
+	for i, l := range lids {
+		limbs[i] = util.Cast[uint16](l.Unwrap())
+	}
+	//
+	return limbs
+}
+
+// limbsToDescriptor converts a set of (schema) limb registers into descriptor
+// registers, preserving each limb's kind, width and padding.
+func limbsToDescriptor[W word.Word[W]](limbs []register.Register) []descriptor.Register[W] {
+	var out = make([]descriptor.Register[W], len(limbs))
+	//
+	for i, r := range limbs {
+		var padding W
+		//
+		padding = padding.SetBigInt(r.Padding())
+		//
+		if r.IsNative() {
+			out[i] = descriptor.NewRegister(r.Kind(), r.Name(), util.None[uint](), padding)
+		} else {
+			out[i] = descriptor.NewRegister(r.Kind(), r.Name(), util.Some(r.Width()), padding)
+		}
+	}
+	//
+	return out
 }

@@ -112,14 +112,15 @@ func expandFnVariables(
 		base := uint(len(expandedVars))
 
 		if vType := v.DataType.AsFixedArray(env); vType != nil {
-			size := vType.Size.First()
-
-			bitwidth, ok := data.BitWidthOf(vType, env)
-			if !ok {
+			var (
+				size     = vType.Size.First()
+				bitwidth = data.BitWidthOf(vType, env)
+			)
+			if bitwidth.IsEmpty() {
 				panic("expected bitwidth to be resolved for the fixed array")
 			}
 			//
-			elemType := data.NewUnsignedInt[symbol.Resolved](bitwidth, false)
+			elemType := data.NewUnsignedInt[symbol.Resolved](bitwidth.Unwrap(), false)
 
 			for j := range size {
 				name := v.Name + "$" + strconv.FormatUint(uint64(j), 10)

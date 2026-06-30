@@ -1,5 +1,0 @@
-;;error:3:3-12:register res possibly undefined
-fn f(x u16) -> (res u2) {
-  res = res
-  return
-}

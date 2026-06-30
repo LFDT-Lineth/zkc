@@ -11,9 +11,7 @@
 package data
 
 import (
-	"fmt"
-	"math"
-
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 )
 
@@ -23,10 +21,10 @@ import (
 //
 // NOTE: this function assumes that t1 and t2 are well-formed under the given
 // environment.
-func BitWidthOf[S symbol.Symbol[S]](t Type[S], env Environment[S]) (bitwidth uint, ok bool) {
+func BitWidthOf[S symbol.Symbol[S]](t Type[S], env Environment[S]) (bitwidth util.Option[uint]) {
 	switch t := t.(type) {
 	case *UnsignedInt[S]:
-		return t.bitwidth, true
+		return util.Some(t.bitwidth)
 	case *Alias[S]:
 		return BitWidthOf(t.Resolve(env), env)
 	case *FixedArray[S]:
@@ -35,19 +33,17 @@ func BitWidthOf[S symbol.Symbol[S]](t Type[S], env Environment[S]) (bitwidth uin
 		var bitwidth uint
 		//
 		for _, f := range t.elements {
-			bw, ok := BitWidthOf(f, env)
+			bw := BitWidthOf(f, env)
 			//
-			if !ok {
-				return math.MaxUint, false
+			if !bw.HasValue() {
+				return bw
 			}
 			//
-			bitwidth += bw
+			bitwidth += bw.Unwrap()
 		}
 		//
-		return bitwidth, true
-	case *FieldElement[S]:
-		panic(fmt.Sprintf("field element type has no fixed bitwidth: %s", t.String(env)))
+		return util.Some(bitwidth)
+	default:
+		return util.None[uint]()
 	}
-	//
-	return math.MaxUint, false
 }

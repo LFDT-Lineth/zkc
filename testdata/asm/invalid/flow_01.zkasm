@@ -1,4 +1,0 @@
-;;error:3:3-9:output res possibly undefined
-fn f(x u16) -> (res u2) {
-  return
-}

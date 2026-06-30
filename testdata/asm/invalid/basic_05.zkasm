@@ -1,7 +1,0 @@
-;;error:5:1-25:duplicate component f
-fn f(x u16) -> (res u16) {
-  res = x
-}
-fn f(x u16) -> (res u16) {
-  res = x
-}

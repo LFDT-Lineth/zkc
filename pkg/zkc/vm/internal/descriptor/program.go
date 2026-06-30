@@ -26,21 +26,13 @@ import (
 // programs and analysing bytecode programs.  However, it is not good for
 // executing bytecode programs (and, for that, compiled programs are better).
 type Program[W word.Word[W]] struct {
-	// identifies the function representing the entrypoint of this program.
-	// This function cannot accept have any parameters or returns.
-	entrypoint uint
 	// modules declared within this (uncompiled) program.
 	modules []Module[W]
 }
 
 // NewProgram creates a new program descriptor.
-func NewProgram[W word.Word[W]](entrypoint uint, modules ...Module[W]) Program[W] {
-	return Program[W]{entrypoint, modules}
-}
-
-// EntryPoint identies the module id of the entry function.
-func (p *Program[W]) EntryPoint() uint {
-	return p.entrypoint
+func NewProgram[W word.Word[W]](modules ...Module[W]) Program[W] {
+	return Program[W]{modules}
 }
 
 // AddCheckPoint returns a copy of this program in which all calls to the target
@@ -135,7 +127,7 @@ func mapProgram[W word.Word[W]](p Program[W], fn func(uint, bytecode.Bytecode[W]
 		modules[i] = mapModule(m, fn)
 	}
 	//
-	return Program[W]{p.entrypoint, modules}
+	return Program[W]{modules}
 }
 
 func mapModule[W word.Word[W]](m Module[W], fn func(uint, bytecode.Bytecode[W]) []Bytecode[W]) Module[W] {

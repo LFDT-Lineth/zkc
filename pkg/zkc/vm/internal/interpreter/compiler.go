@@ -79,11 +79,16 @@ func initialiseSymbolTable[W word.Word[W]](program descriptor.Program[W]) Symbol
 		nsroms, nroms, nwoms, nrams, nprams uint32
 	)
 	//
+	// First pass: insert a symbol for every memory module.  This must happen
+	// before any function is sized below, because sizing a function encodes its
+	// bytecodes -- including memory reads/writes, whose opcode is derived from
+	// the target memory's symbol kind (see encoding.ReadWrite).  A function may
+	// reference a memory declared later in module order, so all memory symbols
+	// must already be present.
 	for i, m := range program.Modules() {
 		var mid = util.Cast[uint16](uint(i))
 		//
-		switch m := m.(type) {
-		case *descriptor.Memory[W]:
+		if m, ok := m.(*descriptor.Memory[W]); ok {
 			var (
 				symbol encoding.Symbol
 				lab    = Label{ModuleId: mid}
@@ -110,7 +115,14 @@ func initialiseSymbolTable[W word.Word[W]](program descriptor.Program[W]) Symbol
 			}
 			// Mark this label at the given offset
 			env.Insert(lab, symbol)
-		case *descriptor.Function[W]:
+		}
+	}
+	// Second pass: size each function's program points, now that every memory
+	// symbol is available for resolution.
+	for i, m := range program.Modules() {
+		var mid = util.Cast[uint16](uint(i))
+		//
+		if m, ok := m.(*descriptor.Function[W]); ok {
 			offset = initFunctionPoints(offset, mid, *m, &env)
 		}
 	}

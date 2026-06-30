@@ -15,13 +15,50 @@ package vm
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Memory captures the familiar notion of a "machine memory" which can be
 // read-only, write-only or read-write.  Furthermore, memory can be static (i.e.
 // its contents are fixed for all executions of a machine).
 type Memory[W util.Uinter64] = memory.Memory[W]
+
+// MemoryKind identifies the kind of a memory: its access mode (read-only,
+// write-once or read-write), its visibility (public/private), and whether it is
+// static or paged.  Used with NewBytecodeMemory.
+type MemoryKind = memory.Kind
+
+// Memory kinds, re-exported for use with NewBytecodeMemory.
+var (
+	// PUBLIC_STATIC_MEMORY is a public static (compile-time initialised) read-only memory.
+	PUBLIC_STATIC_MEMORY = memory.PUBLIC_STATIC_MEMORY
+	// PRIVATE_STATIC_MEMORY is a private static (compile-time initialised) read-only memory.
+	PRIVATE_STATIC_MEMORY = memory.PRIVATE_STATIC_MEMORY
+	// PUBLIC_READ_ONLY_MEMORY is a public read-only memory.
+	PUBLIC_READ_ONLY_MEMORY = memory.PUBLIC_READ_ONLY_MEMORY
+	// PRIVATE_READ_ONLY_MEMORY is a private read-only memory.
+	PRIVATE_READ_ONLY_MEMORY = memory.PRIVATE_READ_ONLY_MEMORY
+	// PUBLIC_WRITE_ONCE_MEMORY is a public write-once memory.
+	PUBLIC_WRITE_ONCE_MEMORY = memory.PUBLIC_WRITE_ONCE_MEMORY
+	// PRIVATE_WRITE_ONCE_MEMORY is a private write-once memory.
+	PRIVATE_WRITE_ONCE_MEMORY = memory.PRIVATE_WRITE_ONCE_MEMORY
+	// READWRITE_MEMORY is a (private) random-access read-write memory.
+	READWRITE_MEMORY = memory.READWRITE_MEMORY
+	// PAGED_READWRITE_MEMORY is a (private) paged random-access read-write memory.
+	PAGED_READWRITE_MEMORY = memory.PAGED_READWRITE_MEMORY
+)
+
+// NewBytecodeMemory constructs a memory (descriptor) module directly from its
+// name, kind and registers.  Since a memory has no body, this descriptor is its
+// final form (cf. NewBytecodeFunction).  The geometry is derived from the
+// registers; init supplies the static contents and must be empty for non-static
+// memories.
+func NewBytecodeMemory[W word.Word[W]](name string, kind MemoryKind, registers []Register[W], init ...W,
+) *BytecodeMemory[W] {
+	return descriptor.NewMemory(name, registers, kind, init)
+}
 
 // ============================================================================
 // Constructors

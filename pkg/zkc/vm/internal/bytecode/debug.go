@@ -14,7 +14,6 @@ package bytecode
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
@@ -32,11 +31,6 @@ type Debug struct {
 	Chunks []FormattedChunk
 	// Source registers used for displaying chunks
 	Sources []RegVec
-}
-
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Debug) Clone() Patched {
-	return &Debug{slices.Clone(p.Chunks), slices.Clone(p.Sources)}
 }
 
 // Uses implementation for Bytecode interface.  A debug reads the registers

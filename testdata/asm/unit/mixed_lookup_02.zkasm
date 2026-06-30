@@ -1,6 +1,0 @@
-;; Add two 256bit integers using modulo arithmetic
-fn add(arg1 u256, arg2 u256) -> (res u256) {
-   var tmp u1
-   tmp,res = arg1 + arg2
-   return
-}

@@ -46,14 +46,19 @@ func (p *FullObserver[W, I, M]) Initialise(machine M) {
 	// initialise data structures
 	p.trace = make([][]State[W], len(machine.Modules()))
 	p.callstack = stack.Stack[StackFrame[W]]{}
-	// initialise input ROMs
+	// initialise input ROMs and static reference tables
 	for i, m := range machine.Modules() {
-		// Check whether this is a (non-static) read-only memory
-		if m, ok := m.(*memory.ReadOnly[W]); ok {
+		switch m := m.(type) {
+		case *memory.StaticReadOnly[W]:
+			// Static reference tables (e.g. the $range_un range-check tables) are
+			// not populated by execution, so their full contents must be seeded
+			// here; otherwise lookups into them would see an empty target.
+			p.trace[i] = initialiseAccessOnceMemory(&m.ReadOnly)
+		case *memory.ReadOnly[W]:
+			// (non-static) read-only memory, i.e. an input ROM.
 			p.trace[i] = initialiseAccessOnceMemory(m)
-		}
-
-		if m, ok := m.(*memory.WriteOnce[W]); ok {
+		case *memory.WriteOnce[W]:
+			// write-once output memory.
 			p.trace[i] = initialiseAccessOnceMemory(m)
 		}
 	}
@@ -65,25 +70,38 @@ func (p *FullObserver[W, I, M]) PreExecution(machine M) {
 	//
 	if machine.Depth() > depth {
 		p.enterFunction(machine)
+		return
 	} else if machine.Depth() < depth {
 		p.leaveFunction(machine)
-	} else if depth != 0 {
-		// Extract enclosing frame
-		var frame = machine.StackFrame(0)
-		// Check whether enclosing vector is finishing (i.e. about to execute a
-		// terminal instruction which either terminates the enclosing function, or
-		// moves the program counter to the next vector instruction).
-		if next, end := isVectorTerminal(frame); next || end {
-			var (
-				width    = frame.Function().Width()
-				contents = loadWords(0, width, frame)
-				state    = NewState(frame.PC().Macro(), end, width, contents)
-			)
-			// Record state
-			sf := p.callstack.Pop()
-			sf.states = append(sf.states, state)
-			p.callstack.Push(sf)
-		}
+		// NOTE: control has now returned to the caller, which may itself be about
+		// to execute a terminal instruction (e.g. a "return" immediately following
+		// the call, as in a recursive helper).  Fall through to record that
+		// caller's terminal state, otherwise its row would be lost.
+	}
+	// Record the terminal state of the (now) enclosing frame, if any.
+	if p.callstack.Len() != 0 {
+		p.recordTerminalState(machine)
+	}
+}
+
+// recordTerminalState records a row for the currently-executing frame when it
+// is about to execute a terminal instruction (i.e. one which either terminates
+// the enclosing function, or moves the program counter to the next vector
+// instruction).
+func (p *FullObserver[W, I, M]) recordTerminalState(machine M) {
+	// Extract enclosing frame
+	var frame = machine.StackFrame(0)
+	//
+	if next, end := isVectorTerminal(frame); next || end {
+		var (
+			width    = frame.Function().Width()
+			contents = loadWords(0, width, frame)
+			state    = NewState(frame.PC().Macro(), end, width, contents)
+		)
+		// Record state
+		sf := p.callstack.Pop()
+		sf.states = append(sf.states, state)
+		p.callstack.Push(sf)
 	}
 }
 

@@ -13,10 +13,10 @@ package codegen
 import (
 	"fmt"
 	"math"
-	"math/big"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
@@ -39,8 +39,15 @@ type Declaration = decl.Declaration[symbol.Resolved]
 // declaration refers to unknown (or otherwise incorrect) external components.
 type VariableDescriptor = variable.Descriptor[symbol.Resolved]
 
-// Function is a convenient alias
+// Function is a convenient alias for a word function.
 type Function = vm.WordFunction
+
+// Instruction is a single word-level instruction, as manipulated by the
+// downstream vectoriser.
+type Instruction = vm.WordInstruction
+
+// VectorInstruction is a vector (trace line) of word-level instructions.
+type VectorInstruction = vm.Vector[Instruction]
 
 // Stmt is a convenient alias
 type Stmt = stmt.Stmt[symbol.Resolved]
@@ -54,11 +61,13 @@ type Expr = expr.Expr[symbol.Resolved]
 // LVal is a convenient alias
 type LVal = lval.LVal[symbol.Resolved]
 
-// Instruction provides a convenient alias
-type Instruction = vm.WordInstruction
+// Bytecode provides a convenient alias for a single bytecode instruction
+// emitted by codegen.
+type Bytecode = vm.Bytecode[vm.Uint]
 
-// VectorInstruction provides a convenient alias
-type VectorInstruction = vm.Vector[Instruction]
+// BytecodeVector provides a convenient alias for a vector (trace line) of
+// bytecode instructions.
+type BytecodeVector = vm.BytecodeVector[vm.Uint]
 
 // Compiler is responsible for compiling high-level programs into low-level
 // machines which can be used (for example) to execute this program with some
@@ -92,7 +101,7 @@ func NewCompiler(cfg Config, env data.ResolvedEnvironment, srcmaps source.Maps[a
 func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint], []source.SyntaxError) {
 	//
 	var (
-		modules []vm.Module
+		modules []vm.BytecodeModule[vm.Uint]
 		mapping = make([]uint, len(declarations))
 		index   = uint(0)
 		inlines []string
@@ -133,33 +142,13 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		case *decl.ResolvedInclude:
 			// ignore
 		case *decl.ResolvedMemory:
-			var regs = toMemoryRegisters(c.Address, c.Data, p.env)
+			mem, errs := p.buildMemory(declarations, c)
 			//
-			switch c.Kind {
-			case decl.PRIVATE_READ_ONLY_MEMORY, decl.PUBLIC_READ_ONLY_MEMORY:
-				public := c.Kind == decl.PUBLIC_READ_ONLY_MEMORY
-				modules = append(modules, vm.NewInputMemory[vm.Uint](c.Name(), public, regs))
-			case decl.PRIVATE_WRITE_ONCE_MEMORY, decl.PUBLIC_WRITE_ONCE_MEMORY:
-				public := c.Kind == decl.PUBLIC_WRITE_ONCE_MEMORY
-				modules = append(modules, vm.NewOutputMemory[vm.Uint](c.Name(), public, regs))
-			case decl.PRIVATE_STATIC_MEMORY, decl.PUBLIC_STATIC_MEMORY:
-				public := c.Kind == decl.PUBLIC_STATIC_MEMORY
-				// Compile the static initialiser
-				words, errs := p.compileStaticInitialisers(declarations, p.env, p.srcmaps, c.Contents...)
-				//
-				if len(errs) == 0 {
-					// Construct the read-only memory
-					modules = append(modules, vm.NewStaticMemory(c.Name(), public, regs, words...))
-				}
-				// Include all errors
-				errors = append(errors, errs...)
-			case decl.RANDOM_ACCESS_MEMORY:
-				if slices.Contains(c.Annotations(), "paged") {
-					modules = append(modules, vm.NewPagedReadWriteMemory[vm.Uint](c.Name(), regs))
-				} else {
-					modules = append(modules, vm.NewReadWriteMemory[vm.Uint](c.Name(), regs))
-				}
+			if len(errs) == 0 {
+				modules = append(modules, mem)
 			}
+			// Include any static-initialiser errors
+			errors = append(errors, errs...)
 		default:
 			panic(fmt.Sprintf("unknown declaration %s", c.Name()))
 		}
@@ -170,62 +159,48 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	if len(errors) > 0 {
 		return nil, errors
 	}
-
-	// Inline all functions marked with the #[inline] annotation.  This must
-	// happen before native lowering and vectorisation, both of which splice
-	// instruction sequences into vectors and would thereby break the
-	// invariant that no skip crosses over a call within its vector.
+	// Derive the prime modulus from the field configuration (previously obtained
+	// from the constructed word machine).
+	var modulus vm.Uint
+	//
+	modulus = modulus.SetBigInt(p.config.field.Modulus())
+	// Construct bytecode program from descriptor modules.
+	program := vm.NewBytecodeProgram(modules...)
+	//
 	if p.config.inlining && len(inlines) > 0 {
-		modules = vm.InlineFunctions[vm.Uint](modules, inlines)
+		// Apply function inlining
+		program = vm.InlineFunctions(program, inlines)
 	}
-
-	// Lower VM-level zkc-native instructions into arithmetic instructions.
-	if !p.config.fastMode {
-		// Lower Bitwise operations into arithmetic instructions.
-		modules = vm.LowerBitwise[vm.Uint](modules)
-		// Lower INT_DIV/INT_REM into hint + arithmetic validation sequences.
-		modules = vm.LowerDivisions[vm.Uint](modules)
-		// Lower relational SkipIf (LT/GT/LTEQ/GTEQ) into sign-bit extraction sequences.
-		// Must run after LowerBitwise and LowerDivisions, which may generate new relational SkipIf instructions.
-		modules = vm.LowerComparisons[vm.Uint](modules)
-	}
-
-	// Fast mode optimisation compiler passes
+	//
 	if p.config.fastMode {
-		// Turn division / remainder by 2^m into right shifts / bitwise ANDs.
-		modules = vm.OptimizeDivisions[vm.Uint](modules)
-	}
-
-	// Vectorize modules
-	if p.config.vectorize {
-		Vectorize(modules, p.srcmaps)
-		// Factor branch conditions into a single bit register holding the condition result.
-		// Gated on the same flag as fastMode since it only makes
-		// sense when generating arithmetic constraints; must run after
-		// vectorisation to be meaningful.
-		if !p.config.fastMode {
-			modules = vm.FactorSkipConditions[vm.Uint](modules)
+		// Apply transforms suitable for fast mode
+		program = vm.OptimizeDivisions(program)
+		program = vm.Vectorize(program)
+		// NOTE: eventually this will always be applied
+		if p.config.splitting {
+			program = vm.SplitRegisters(p.config.field, program)
 		}
+	} else {
+		// Apply transformations required for tracing and constraint generation.
+		program = vm.LowerBitwise(program)
+		program = vm.LowerDivisions(program)
+		program = vm.LowerComparisons(program)
+		program = vm.Vectorize(program)
+		program = vm.FactorSkipConditions(program)
+		program = vm.FlattenCalls(program)
+		// NOTE: eventually this will always be applied
+		if p.config.splitting {
+			program = vm.SplitRegisters(p.config.field, program)
+		}
+		//
+		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticDepth)
 	}
-
-	wm := vm.NewWordMachine[vm.Uint](p.config.field, modules...)
-	// Apply register splitting
-	if p.config.splitting {
-		wm = vm.SplitRegisters(p.config.field, wm)
-	}
-
-	// Add range constraints.
-	// Must be after register splitting happens to capture all the new registers created by splitting.
-	// Irrelevant in fast mode, since range proofs are not generated in that mode.
-	// Note: No columns should be added after this step without extra care.
-
-	// TODO: do range constraints only if splitting is done. But almost no tests on the CI with splitting flag so ...
-	//if p.config.splitting && !p.config.fastMode {
-	if !p.config.fastMode {
-		wm = vm.AddRangeConstraints(p.config.field, wm)
-	}
-
-	// Construct machine
+	// Insert check casts to ensure appropriate safety checks during execution.
+	program = vm.InsertCheckCasts(program)
+	// Convert to word machine.  This should eventually be deprecated in favour
+	// of simply returning the bytecode program.
+	wm := vm.BytecodeProgramToWord(program, modulus)
+	// Done
 	return wm, errors
 }
 
@@ -254,18 +229,20 @@ func (p *Compiler) compileStaticInitialisers(
 	return words, errors
 }
 
-// Convert a decl.Function instance into a fun.Function instance by flattening
-// the variable descriptors into register descriptors.  Each variable may
-// expand into one or more registers (e.g. a tuple variable produces one
-// register per element).
+// Convert a decl.Function instance into a bytecode (descriptor) function by
+// flattening the variable descriptors into register descriptors and compiling
+// its statements directly into bytecode vectors.  Each variable may expand into
+// one or more registers (e.g. a tuple variable produces one register per
+// element).  Calls and memory accesses are resolved against the resolved AST
+// (the program), so no separate signature table is required.
 func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaration,
-) (*Function, []source.SyntaxError) {
+) (*vm.BytecodeFunction[vm.Uint], []source.SyntaxError) {
 	//
 	var (
 		fn        = program[id].(*decl.ResolvedFunction)
-		registers []register.Register
-		padding   big.Int // zero padding
-		bootCode  = make([]VectorInstruction, len(fn.Code))
+		registers []vm.Register[vm.Uint]
+		padding   vm.Uint // zero padding
+		vectors   = make([]BytecodeVector, len(fn.Code))
 	)
 	//
 	for _, v := range fn.Variables {
@@ -283,7 +260,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		}
 
 		flatten(v.DataType, v.Name, p.env, func(name string, bitwidth uint) {
-			registers = append(registers, register.New(kind, name, bitwidth, padding))
+			registers = append(registers, vm.NewRegister(kind, name, bitwidthOf(bitwidth), padding))
 		})
 	}
 	//
@@ -299,32 +276,81 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 	}
 	//
 	for i, stmt := range fn.Code {
-		bootCode[i] = compiler.compileStatement(uint(i), mapping, stmt)
+		vectors[i] = compiler.compileStatement(uint(i), mapping, stmt)
 	}
 	//
 	native := slices.Contains(fn.Annotations(), "native")
-	//
-	return vm.NewFunction(fn.Name(), native, compiler.registers, bootCode), compiler.errors
+	// Note: compiler.registers includes any temporaries allocated during
+	// statement compilation.
+	return vm.NewBytecodeFunction(fn.Name(), native, compiler.registers, vectors), compiler.errors
 }
 
-func toMemoryRegisters(address []VariableDescriptor, datas []VariableDescriptor, env data.ResolvedEnvironment,
-) []register.Register {
+// buildMemory constructs the memory descriptor module for a resolved memory
+// declaration.  For static memories, the (compile-time constant) contents are
+// evaluated here; any evaluation errors are returned alongside the descriptor,
+// which is still constructed (with whatever contents were produced) -- compilation
+// aborts on the returned errors before the memory is ever executed.
+func (p *Compiler) buildMemory(program []Declaration, c *decl.ResolvedMemory,
+) (vm.BytecodeModule[vm.Uint], []source.SyntaxError) {
+	var regs = toMemoryRegisters[vm.Uint](c.Address, c.Data, p.env)
+	//
+	switch c.Kind {
+	case decl.PRIVATE_READ_ONLY_MEMORY:
+		return vm.NewBytecodeMemory(c.Name(), vm.PRIVATE_READ_ONLY_MEMORY, regs), nil
+	case decl.PUBLIC_READ_ONLY_MEMORY:
+		return vm.NewBytecodeMemory(c.Name(), vm.PUBLIC_READ_ONLY_MEMORY, regs), nil
+	case decl.PRIVATE_WRITE_ONCE_MEMORY:
+		return vm.NewBytecodeMemory(c.Name(), vm.PRIVATE_WRITE_ONCE_MEMORY, regs), nil
+	case decl.PUBLIC_WRITE_ONCE_MEMORY:
+		return vm.NewBytecodeMemory(c.Name(), vm.PUBLIC_WRITE_ONCE_MEMORY, regs), nil
+	case decl.PRIVATE_STATIC_MEMORY:
+		// Compile the static initialiser
+		words, errs := p.compileStaticInitialisers(program, p.env, p.srcmaps, c.Contents...)
+		//
+		return vm.NewBytecodeMemory(c.Name(), vm.PRIVATE_STATIC_MEMORY, regs, words...), errs
+	case decl.PUBLIC_STATIC_MEMORY:
+		// Compile the static initialiser
+		words, errs := p.compileStaticInitialisers(program, p.env, p.srcmaps, c.Contents...)
+		//
+		return vm.NewBytecodeMemory(c.Name(), vm.PUBLIC_STATIC_MEMORY, regs, words...), errs
+	case decl.RANDOM_ACCESS_MEMORY:
+		// Check for paged memory
+		if slices.Contains(c.Annotations(), "paged") {
+			return vm.NewBytecodeMemory(c.Name(), vm.PAGED_READWRITE_MEMORY, regs), nil
+		}
+		//
+		return vm.NewBytecodeMemory(c.Name(), vm.READWRITE_MEMORY, regs), nil
+	default:
+		panic(fmt.Sprintf("unknown memory kind for \"%s\"", c.Name()))
+	}
+}
+
+func toMemoryRegisters[W vm.Word[W]](address []VariableDescriptor, datas []VariableDescriptor,
+	env data.ResolvedEnvironment) []vm.Register[W] {
 	var (
-		registers []register.Register
-		padding   big.Int
+		registers []vm.Register[W]
+		padding   W
 	)
 	// Flatten address lines
 	for _, v := range address {
 		flatten(v.DataType, v.Name, env, func(name string, bitwidth uint) {
-			registers = append(registers, register.NewInput(name, bitwidth, padding))
+			registers = append(registers, vm.NewInputRegister(name, bitwidthOf(bitwidth), padding))
 		})
 	}
 	// Flatten data lines
 	for _, v := range datas {
 		flatten(v.DataType, v.Name, env, func(name string, bitwidth uint) {
-			registers = append(registers, register.NewOutput(name, bitwidth, padding))
+			registers = append(registers, vm.NewOutputRegister(name, bitwidthOf(bitwidth), padding))
 		})
 	}
 	//
 	return registers
+}
+
+func bitwidthOf(bitwidth uint) util.Option[uint] {
+	if bitwidth == math.MaxUint {
+		return util.None[uint]()
+	}
+	//
+	return util.Some(bitwidth)
 }

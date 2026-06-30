@@ -13,6 +13,8 @@
 package descriptor
 
 import (
+	"math"
+
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -44,6 +46,26 @@ func FromRegisters[W word.Word[W]](registers ...register.Register) []Register[W]
 	return regs
 }
 
+// ToRegisters converts an array of register descriptors into an array of scheme
+// registers.
+func ToRegisters[W word.Word[W]](registers ...Register[W]) []register.Register {
+	var regs = make([]register.Register, len(registers))
+	//
+	for i, r := range registers {
+		var (
+			bitwidth uint = math.MaxUint
+		)
+		// Determine bitwidth (if applicable)
+		if !r.IsNative() {
+			bitwidth = r.bitwidth.Unwrap()
+		}
+		//
+		regs[i] = register.New(r.kind, r.name, bitwidth, *r.padding.BigInt())
+	}
+	//
+	return regs
+}
+
 // Register represents an individual register in a module that, eventually, will
 // be mapped to one (or more) columns in the trace.  Likewise, a single register
 // can end up being mapped across multiple columns as a result of register
@@ -60,6 +82,15 @@ type Register[W any] struct {
 	bitwidth util.Option[uint]
 	// Determines what value will be used to pad this register.
 	padding W
+}
+
+// NewRegister constructs a new register descriptor.
+func NewRegister[W any](kind register.Type, name string, bitwidth util.Option[uint], padding W) Register[W] {
+	if bitwidth.HasValue() && bitwidth.Unwrap() == math.MaxUint {
+		panic("invalid register bitwidth")
+	}
+	//
+	return Register[W]{kind, name, bitwidth, padding}
 }
 
 // Bitwidth determines the bitwidth of this register (if applicable).  Observe

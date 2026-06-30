@@ -1,5 +1,0 @@
-;;error:3:3-4:missing target register for remainder
-fn div(x u16, y u16) -> (q u16, r u16) {
-  q = x / y
-  return
-}

@@ -22,12 +22,6 @@ type CheckCast struct {
 	Target   RegisterId
 }
 
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *CheckCast) Clone() Patched {
-	var c = *p
-	return &c
-}
-
 // Uses implementation for Bytecode interface.  A check-cast reads its target to
 // assert the held value fits within the given bit width.
 func (p *CheckCast) Uses() []RegisterId {

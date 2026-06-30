@@ -38,12 +38,6 @@ type SkipIf struct {
 	Op    Cond
 }
 
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *SkipIf) Clone() Patched {
-	var c = *p
-	return &c
-}
-
 // Uses implementation for Bytecode interface.  A conditional skip reads both
 // operand vectors being compared.
 func (p *SkipIf) Uses() []RegisterId {

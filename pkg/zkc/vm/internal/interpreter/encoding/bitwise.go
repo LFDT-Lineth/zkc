@@ -36,8 +36,8 @@ func Bitwise(p *bytecode.Bitwise) []uint32 {
 
 // encodeBitwise encodes a bitwise instruction, where op selects the operation
 // and bitwidth gives the operand width.
-func encodeBitwise(op bytecode.BitwiseOp, rd, lhs, rhs RegisterId, bitwidth uint16) []uint32 {
-	var opcode = AND + uint32(op)
+func encodeBitwise(op bytecode.Operation, rd, lhs, rhs RegisterId, bitwidth uint16) []uint32 {
+	var opcode = AND + uint32(op-bytecode.OP_AND)
 	//
 	if rd >= 256 || lhs >= 256 || rhs >= 256 {
 		panic("wide bitwise instructions not supported")

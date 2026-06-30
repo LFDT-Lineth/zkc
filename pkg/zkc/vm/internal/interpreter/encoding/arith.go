@@ -67,12 +67,12 @@ func Arith[W word.Word[W]](p bytecode.Arith[W]) []uint32 {
 
 // encodeArith_2n1 encodes a two-source, one-target arithmetic instruction,
 // where aop selects the operation (ADD/SUB/MUL).
-func encodeArith_2n1(aop arithOp, rs0, rs1, rd uint16) []uint32 {
+func encodeArith_2n1(aop bytecode.Operation, rs0, rs1, rd uint16) []uint32 {
 	var (
 		_rd    = uint32(rd) << 8
 		_rs1   = uint32(rs1) << 16
 		_rs0   = uint32(rs0) << 24
-		opcode = ADD_2n1 + uint32(aop.Tag())
+		opcode = ADD_2n1 + uint32(aop-bytecode.OP_ADD)
 	)
 	//
 	if rs0 >= 256 || rs1 >= 256 || rd >= 256 {
@@ -111,7 +111,7 @@ func DecodeArith_2n1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) 
 
 // encodeArith_2n1c encodes a two-source, one-target arithmetic instruction with
 // a constant operand.
-func encodeArith_2n1c[W word.Word[W]](aop arithOp, rs0, rs1, rd uint16, constant W) []uint32 {
+func encodeArith_2n1c[W word.Word[W]](aop bytecode.Operation, rs0, rs1, rd uint16, constant W) []uint32 {
 	// There is no 2-source-plus-constant instruction form, so compute
 	// "x op y" first, then fold in the constant (when used) with a second
 	// one-source instruction operating in place on the target.
@@ -122,7 +122,7 @@ func encodeArith_2n1c[W word.Word[W]](aop arithOp, rs0, rs1, rd uint16, constant
 
 // encodeArith_1n1c encodes a one-source, one-target arithmetic-with-constant
 // instruction (ADDC/SUBC/MULC).
-func encodeArith_1n1c[W word.Word[W]](aop arithOp, rs, rd uint16, constant W) []uint32 {
+func encodeArith_1n1c[W word.Word[W]](aop bytecode.Operation, rs, rd uint16, constant W) []uint32 {
 	if rs >= 256 || rd >= 256 || constant.Cmp64(256) >= 0 {
 		// NOTE: this corresponds to a WIDE instruction, but these are not
 		// supported at this time.
@@ -133,7 +133,7 @@ func encodeArith_1n1c[W word.Word[W]](aop arithOp, rs, rd uint16, constant W) []
 		_rd    = uint32(rd) << 8
 		_rs    = uint32(rs) << 16
 		_imm   = uint32(constant.Uint64()) << 24
-		opcode = ADDC + uint32(aop.Tag())
+		opcode = ADDC + uint32(aop-bytecode.OP_ADD)
 	)
 	//
 	return []uint32{
@@ -322,7 +322,9 @@ func DecodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 
 // encodeArith_vec encodes the general (multi-target, multi-source) vectored form
 // of an arithmetic instruction (ADD_nm/SUB_nm/MUL_nm).
-func encodeArith_vec[W word.Word[W]](aop arithOp, targets []RegisterId, sources []RegisterId, constant W) []uint32 {
+func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterId, sources []RegisterId,
+	constant W) []uint32 {
+	//
 	if len(targets) == 0 || len(targets) >= 256 || len(sources) >= 256 {
 		panic("wide vector arithmetic instructions not supported")
 	} else if constant.Cmp64(^uint64(0)) > 0 {
@@ -330,7 +332,7 @@ func encodeArith_vec[W word.Word[W]](aop arithOp, targets []RegisterId, sources 
 	}
 	//
 	var (
-		opcode   = ADD_nm + uint32(aop.Tag())
+		opcode   = ADD_nm + uint32(aop-bytecode.OP_ADD)
 		nsrc     = uint32(len(sources)) << 16
 		ntgt     = uint32(len(targets)) << 8
 		c        = constant.Uint64()

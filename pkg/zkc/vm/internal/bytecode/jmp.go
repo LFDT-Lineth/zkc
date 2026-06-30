@@ -19,12 +19,6 @@ import (
 // Jmp (unconditional branch) instruction
 type Jmp struct{ Target Address }
 
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *Jmp) Clone() Patched {
-	var c = *p
-	return &c
-}
-
 // Uses implementation for Bytecode interface.
 func (p *Jmp) Uses() []RegisterId {
 	return nil
@@ -38,11 +32,6 @@ func (p *Jmp) Definitions() []RegisterId {
 // Validate implementation for Bytecode interface.
 func (p *Jmp) Validate(_ uint, _ FieldConfig, _ Environment) []error {
 	return nil
-}
-
-// Patch implementation for Patchable interface
-func (p *Jmp) Patch(labels []Address) Patched {
-	return &Jmp{labels[p.Target]}
 }
 
 func (p *Jmp) String(_ Environment) string {

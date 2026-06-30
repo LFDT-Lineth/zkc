@@ -12,18 +12,23 @@ package codegen
 
 import "github.com/LFDT-Lineth/zkc/pkg/util/field"
 
+// DEFAULT_MAX_STATIC_DEPTH is the default maximum depth (i.e. number of rows) of
+// static tables, used when no override is supplied.  It is 2^16.
+const DEFAULT_MAX_STATIC_DEPTH uint = 65536
+
 // DEFAULT_CONFIG is the configuration used when no overrides are supplied.
 // Vectorisation is enabled, which matches the behaviour expected by the
 // downstream prover; callers wanting to disable individual passes (for
 // debugging, for example) should derive a custom Config via the chainable
 // setters below.
 var DEFAULT_CONFIG = Config{
-	field:     field.KOALABEAR_16,
-	fastMode:  false,
-	inlining:  true,
-	quiet:     false,
-	vectorize: true,
-	splitting: false,
+	field:          field.KOALABEAR_16,
+	fastMode:       false,
+	inlining:       true,
+	quiet:          false,
+	vectorize:      true,
+	splitting:      false,
+	maxStaticDepth: DEFAULT_MAX_STATIC_DEPTH,
 }
 
 // Config captures the tunable aspects of the ZkC code generator.  Instances
@@ -58,6 +63,10 @@ type Config struct {
 	vectorize bool
 	// splitting controls whether or not register splitting is enabled.
 	splitting bool
+	// maxStaticDepth controls the maximum depth (i.e. number of rows) of static tables.
+	// This is used to limit the size of static tables, as required by the prover.
+	// It defaults to 2^16.
+	maxStaticDepth uint
 }
 
 // Field sets the target field configuration to use for this compiler.
@@ -72,6 +81,20 @@ func (p Config) Field(field field.Config) Config {
 // GetField returns the specified field configuration.
 func (p Config) GetField() field.Config {
 	return p.field
+}
+
+// MaxStaticDepth sets the maximum depth (ie nb of rows) of static tables.
+func (p Config) MaxStaticDepth(depth uint) Config {
+	var q = p
+	//
+	q.maxStaticDepth = depth
+	//
+	return q
+}
+
+// GetMaxStaticDepth returns the maximum depth (ie nb of rows) of static tables.
+func (p Config) GetMaxStaticDepth() uint {
+	return p.maxStaticDepth
 }
 
 // Inlining returns a copy of this Config in which function inlining is either

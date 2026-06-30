@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
@@ -61,7 +62,8 @@ func Test_ZkcBinaryFile_RoundTrip(t *testing.T) {
 		}
 		fn      = vm.NewFunction[instruction.Word]("main", false, regs, code)
 		machine = vm.NewWordMachine[vm.Uint](field, fn)
-		binfile = constraints.NewBinaryFile[koalabear.Element](nil, nil, field, *machine)
+		binfile = constraints.NewBinaryFile[koalabear.Element](nil, nil, field,
+			codegen.DEFAULT_MAX_STATIC_DEPTH, *machine)
 	)
 	//
 	data, err := binfile.MarshalBinary()

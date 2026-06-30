@@ -92,7 +92,8 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig[F], a
 	//nolint
 	if artifacts.wir.HasValue() {
 		// Construct binary file
-		var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.field, artifacts.wir.Unwrap())
+		var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.field,
+			build.config.GetMaxStaticDepth(), artifacts.wir.Unwrap())
 		// Write to disk
 		WriteBinaryFile(binfile, filename)
 	} else {
@@ -430,7 +431,7 @@ func registerType(r register.Register) string {
 // Bytecode Interpreter
 // ============================================================================
 
-func writeBytecodeProgram[W vm.Word[W]](binary bool, program vm.BytecodeProgram[W], annotations map[string][]string) {
+func writeBytecodeProgram[W vm.Word[W]](binary bool, program vm.Program[W], annotations map[string][]string) {
 	var (
 		bin     [][]uint32
 		address uint32
@@ -505,7 +506,7 @@ func writeBytecodeFunction[W vm.Word[W]](address uint32, env vm.BytecodeEnvironm
 	return address, bin
 }
 
-func regType[W vm.Word[W]](r vm.BytecodeRegister[W]) string {
+func regType[W vm.Word[W]](r vm.Register[W]) string {
 	if r.IsNative() {
 		return "𝔽"
 	}
@@ -561,10 +562,10 @@ func codeStr(width uint, codes []uint32) string {
 
 func signatureOf[W vm.Word[W]](m vm.BytecodeModule[W]) string {
 	var (
-		args = array.Filter(m.Registers(), func(r vm.BytecodeRegister[W]) bool {
+		args = array.Filter(m.Registers(), func(r vm.Register[W]) bool {
 			return r.IsInput()
 		})
-		returns = array.Filter(m.Registers(), func(r vm.BytecodeRegister[W]) bool {
+		returns = array.Filter(m.Registers(), func(r vm.Register[W]) bool {
 			return r.IsOutput()
 		})
 	)
@@ -572,7 +573,7 @@ func signatureOf[W vm.Word[W]](m vm.BytecodeModule[W]) string {
 	return fmt.Sprintf("%s(%s) -> (%s)", m.Name(), fnArgs(args), fnArgs(returns))
 }
 
-func fnArgs[W vm.Word[W]](regs []vm.BytecodeRegister[W]) string {
+func fnArgs[W vm.Word[W]](regs []vm.Register[W]) string {
 	var builder strings.Builder
 	//
 	for i, r := range regs {

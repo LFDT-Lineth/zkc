@@ -198,14 +198,13 @@ func (p *Proposition[I, A]) String(mapping func(I) string) string {
 }
 
 func simplify[I any, A Atom[I, A]](p Proposition[I, A]) Proposition[I, A] {
-	var (
-		n       = uint(len(p.conjuncts))
-		changed = true
-	)
+	var changed = true
 	//
 	for changed {
 		changed = false
 		// Outmost loop iterates unit terms, whilst innermost loop.
+		n := uint(len(p.conjuncts))
+		//
 		for i := uint(0); i < n; i++ {
 			for j := i + 1; j < n; j++ {
 				if c, tautology := simplifyConjuncts(p, i, j); tautology {
@@ -215,12 +214,71 @@ func simplify[I any, A Atom[I, A]](p Proposition[I, A]) Proposition[I, A] {
 				}
 			}
 		}
+		// Apply consensus: two clauses which agree on every atom except one,
+		// which appears negated in one and positive in the other (e.g. "A ∧ R"
+		// and "¬A ∧ R"), are together equivalent to their shared remainder ("R").
+		// This collapses the redundant branches left behind when a materialised
+		// (factored) condition's diamond reconverges.
+		if conjuncts, ok := consensus(p.conjuncts); ok {
+			p.conjuncts = conjuncts
+			changed = true
+		}
 	}
 	// Resort the set, as it may be out of order after simplification has
 	// completed.
 	p.conjuncts = *set.RawAnySortedSet(p.conjuncts...)
 	//
 	return p
+}
+
+// consensus applies a single step of the consensus (resolution) rule: it finds
+// two clauses which differ in exactly one atom — present positively in one and
+// negated in the other, with all remaining atoms identical — and replaces them
+// with their shared remainder.  Returns the updated clauses and true when a step
+// was applied; otherwise the clauses unchanged and false.
+func consensus[I any, A Atom[I, A]](conjuncts []Conjunction[I, A]) ([]Conjunction[I, A], bool) {
+	for i := range conjuncts {
+		for j := i + 1; j < len(conjuncts); j++ {
+			if resolvent, ok := resolve(conjuncts[i], conjuncts[j]); ok {
+				// Replace clause i with the resolvent and drop clause j.
+				out := make([]Conjunction[I, A], 0, len(conjuncts)-1)
+				out = append(out, conjuncts[:j]...)
+				out = append(out, conjuncts[j+1:]...)
+				out[i] = resolvent
+				//
+				return out, true
+			}
+		}
+	}
+	//
+	return conjuncts, false
+}
+
+// resolve returns the consensus resolvent of two clauses when they differ in
+// exactly one complementary literal (and agree on all others); otherwise false.
+func resolve[I any, A Atom[I, A]](a, b Conjunction[I, A]) (Conjunction[I, A], bool) {
+	if len(a.atoms) != len(b.atoms) {
+		return a, false
+	}
+	// Find the (unique) atom of a which is absent from b.
+	var (
+		pivot   A
+		found   bool
+		surplus int
+	)
+	//
+	for _, atom := range a.atoms {
+		if !b.atoms.Contains(atom) {
+			pivot, found = atom, true
+			surplus++
+		}
+	}
+	// Consensus requires exactly one differing atom whose negation is in b.
+	if surplus != 1 || !found || !b.atoms.Contains(pivot.Negate()) {
+		return a, false
+	}
+	// The resolvent is a without the pivot (equivalently b without its negation).
+	return a.Remove(pivot)
 }
 
 func simplifyConjuncts[I any, A Atom[I, A]](p Proposition[I, A], i, j uint) (bool, bool) {

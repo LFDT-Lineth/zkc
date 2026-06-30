@@ -30,7 +30,7 @@ func Call[W word.Word[W]](pc uint32, p *bytecode.Call, env Environment[W]) (code
 		width = uint16(env.Module(p.Target).Width())
 	)
 	// Encode enter
-	codes = append(codes, encodeEnter_n(pc, offset, p.CheckPoint, width, p.Arguments)...)
+	codes = append(codes, encodeEnter_n(pc, offset, p.Flags.CheckPoint, width, p.Arguments)...)
 	// Encode leave
 	return append(codes, encodeLeave_n(p.Returns)...)
 }

@@ -18,15 +18,82 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
+// ROM_READ representing reading from a read-only memory.
+var ROM_READ = RwMode{0}
+
+// SROM_READ representing reading from a (static) read-only memory.
+var SROM_READ = RwMode{1}
+
+// WOM_WRITE representing writing to a write-once memory.
+var WOM_WRITE = RwMode{2}
+
+// SRAM_READ representing reading from a (small) random-access memory.
+var SRAM_READ = RwMode{3}
+
+// SRAM_WRITE representing write to a (small) random-access memory.
+var SRAM_WRITE = RwMode{4}
+
+// PRAM_READ representing reading from a (paged) random-access memory.
+var PRAM_READ = RwMode{5}
+
+// PRAM_WRITE representing write to a (paged) random-access memory.
+var PRAM_WRITE = RwMode{6}
+
+// RwMode determines what kind of memory is being operated on (e.g. ROM or RAM,
+// etc) and what operation is being performed (i.e. READ or WRITE).  Its tag
+// selects the corresponding opcode (RD_ROM_nm + tag).
+type RwMode struct {
+	tag uint8
+}
+
+// Tag gets the underlying tag for this enum.
+func (p RwMode) Tag() uint8 {
+	return p.tag
+}
+
 // ReadWrite encodes a memory read/write bytecode, resolving the target memory to
-// its memory-specific identifier via the symbol table.
+// its memory-specific identifier via the symbol table.  The bytecode records
+// only whether the access is a read or a write; the precise mode (and hence
+// opcode) is recovered here by combining that with the memory's kind, as
+// recorded in the symbol table.
 func ReadWrite[W word.Word[W]](p *bytecode.ReadWrite, env Environment[W]) []uint32 {
 	var (
-		lab = Label{p.Id, ProgramPoint{}}
-		id  = util.Cast[uint8](env.SymbolAt(lab).Offset)
+		lab  = Label{p.Id, ProgramPoint{}}
+		sym  = env.SymbolAt(lab)
+		id   = util.Cast[uint8](sym.Offset)
+		mode = rwModeOf(sym.Kind, p.Write)
 	)
 	//
-	return encodeReadWrite_sn(p.Mode, id, p.Address, p.Data)
+	return encodeReadWrite_sn(mode, id, p.Address, p.Data)
+}
+
+// rwModeOf determines the read/write mode from a memory's symbol kind and
+// whether the access is a write.  The kind alone fixes the mode for read-only
+// and write-once memories; for read-write memories the write flag selects
+// between the read and write modes.
+func rwModeOf(kind uint8, write bool) RwMode {
+	switch kind {
+	case STATIC_MEMORY:
+		return SROM_READ
+	case READONLY_MEMORY:
+		return ROM_READ
+	case WRITEONCE_MEMORY:
+		return WOM_WRITE
+	case READWRITE_MEMORY:
+		if write {
+			return SRAM_WRITE
+		}
+		//
+		return SRAM_READ
+	case PAGED_READWRITE_MEMORY:
+		if write {
+			return PRAM_WRITE
+		}
+		//
+		return PRAM_READ
+	default:
+		panic("invalid memory kind for read/write")
+	}
 }
 
 // ============================================================================
@@ -57,7 +124,7 @@ func ReadWrite[W word.Word[W]](p *bytecode.ReadWrite, env Environment[W]) []uint
 
 // encodeReadWrite_sn encodes a memory read/write instruction, packing its
 // address and data registers.  The opcode is determined by the read/write mode.
-func encodeReadWrite_sn(m bytecode.RwMode, id uint8, addr []RegisterId, data []RegisterId) []uint32 {
+func encodeReadWrite_sn(m RwMode, id uint8, addr []RegisterId, data []RegisterId) []uint32 {
 	var (
 		opcode = RD_ROM_nm + uint32(m.Tag())
 		_id    = uint32(id) << 8

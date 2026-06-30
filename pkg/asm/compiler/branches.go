@@ -38,7 +38,7 @@ func TranslateBranchCondition[T any, E Expr[T, E]](p dfa.BranchCondition, reader
 	p = expandBranchCondition(p, reader)
 	// Translate (assuming an expanded branch condition)
 	for i, c := range p.Conjuncts() {
-		ith := translateBranchConjunct[T, E](c, reader)
+		ith := translateBranchConjunct(c, reader)
 		//
 		if i == 0 {
 			condition = ith
@@ -56,7 +56,7 @@ func translateBranchConjunct[T any, E Expr[T, E]](p dfa.BranchConjunction, reade
 	var condition E
 	//
 	for i, atom := range p.Atoms() {
-		ith := translateBranchEquality[T, E](atom, reader)
+		ith := translateBranchEquality(atom, reader)
 		//
 		if i == 0 {
 			condition = ith
@@ -71,7 +71,7 @@ func translateBranchConjunct[T any, E Expr[T, E]](p dfa.BranchConjunction, reade
 // Translate a given condition within the context of a given state translator.
 func translateBranchEquality[T any, E Expr[T, E]](p dfa.BranchEquality, reader RegisterReader[E]) E {
 	var (
-		left  = ReadRegister[T, E](p.Left, reader)
+		left  = ReadRegister(p.Left, reader)
 		right E
 	)
 	//
@@ -79,7 +79,7 @@ func translateBranchEquality[T any, E Expr[T, E]](p dfa.BranchEquality, reader R
 		bi := p.Right.Second()
 		right = BigNumber[T, E](&bi)
 	} else {
-		right = ReadRegister[T, E](p.Right.First(), reader)
+		right = ReadRegister(p.Right.First(), reader)
 	}
 	//
 	if p.Sign {

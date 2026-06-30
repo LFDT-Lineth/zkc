@@ -15,6 +15,7 @@ package constraints
 import (
 	"fmt"
 	"math/big"
+	"math/bits"
 
 	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
@@ -32,13 +33,21 @@ import (
 
 // GenerateMirConstraints is responsible for converting a field machine into a
 // corresponding set of MIR constraints.
-func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F]) mir.Schema[F] {
+func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], maxStaticDepth uint) mir.Schema[F] {
 	var (
 		modules = make([]mir.Module[F], len(fm.Modules()))
+		// maxStaticWidth is the largest X for which 2^X <= maxStaticDepth (the
+		// max static table size), i.e. floor(log2(maxStaticDepth)).
+		// It represents the maximum register width for which a static table can be use to range-check it.
+		// Wider registers require recursive range modules.
+		maxStaticWidth = uint(bits.Len(maxStaticDepth) - 1)
+		// Index the static range-check tables by width, so each register can be
+		// range-proved by a lookup into the matching $range_un table.
+		rangeTables = indexRangeTables[F](fm.Modules(), maxStaticWidth)
 	)
 	//
 	for i, m := range fm.Modules() {
-		modules[i] = translateModule[F](uint(i), m)
+		modules[i] = translateModule[F](uint(i), m, fm.Modules(), rangeTables, maxStaticWidth)
 	}
 	//
 	return schema.NewUniformSchema(modules)
@@ -46,18 +55,20 @@ func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F]) mir.Sche
 
 // GenerateAirConstraints is responsible for converting a field machine into a
 // corresponding set of AIR constraints.
-func GenerateAirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], field field.Config) air.Schema[F] {
+func GenerateAirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], field field.Config,
+	maxStaticDepth uint) air.Schema[F] {
 	var (
-		mirc = GenerateMirConstraints(fm)
+		mirc = GenerateMirConstraints(fm, maxStaticDepth)
 	)
 	//
 	return mir.LowerToAir(mirc, field.BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)
 }
 
-func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module) mir.Module[F] {
+func translateModule[F field.Element[F]](ctx schema.ModuleId, fm vm.Module, infos []vm.Module,
+	rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	switch fm := fm.(type) {
 	case *vm.FieldFunction:
-		return translateFunction[F](ctx, *fm)
+		return translateFunction[F](ctx, *fm, infos, rangeTables, maxStaticWidth)
 	case vm.Memory[F]:
 		if fm.IsStatic() {
 			return translateStaticMemory(ctx, fm)
@@ -115,130 +126,10 @@ func translateReadWriteMemory[F field.Element[F]](
 	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
 	// Add all registers
 	mod.AddRegisters(fm.Registers()...)
-	// TODO: implement WOM constraints
+	// TODO: read-write (RAM) constraints are disabled for now — the timestamp
+	// columns they rely on are not yet filled by the trace observer (see git
+	// history for the WIP body).
 	return mod
-
-	/*
-		var (
-			name           = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
-			memoryModule   *schema.Table[F, mir.Constraint[F]]
-			padding        big.Int
-			timestampWidth = uint(32)
-		)
-
-		// Initialise module and add all registers
-		memoryModule = memoryModule.Init(name, false, true, false, fm.IsNative(), false, 0)
-		memoryModule.AddRegisters(fm.Registers()...)
-
-		var (
-			timestampRead    = register.NewId(memoryModule.Width() + 0)
-			timestampWritten = register.NewId(memoryModule.Width() + 1)
-			timestampDelta   = register.NewId(memoryModule.Width() + 2)
-		)
-
-		memoryModule.AddRegisters(register.NewComputed("timestamp_read", timestampWidth, padding))
-		memoryModule.AddRegisters(register.NewComputed("timestamp_write", timestampWidth, padding))
-		memoryModule.AddRegisters(register.NewComputed("timestamp_delta", timestampWidth, padding))
-
-		var (
-			addressWidth uint
-			valueWidth   uint
-		)
-
-		for i, l := range fm.Registers() {
-			if uint(i) < fm.Geometry().AddressLines() {
-				addressWidth += l.Width()
-			} else if uint(i) < fm.Geometry().AddressLines()+fm.Geometry().DataLines() {
-				valueWidth += l.Width()
-			}
-		}
-
-		var (
-			addressDelta = register.NewId(memoryModule.Width() + 0)
-		)
-
-		memoryModule.AddRegisters(register.NewComputed("address_delta", addressWidth, padding))
-		memoryModule.AddRegisters(register.NewComputed("valueRead", valueWidth, padding))
-
-		var (
-			execPhase = register.NewId(memoryModule.Width() + 0)
-			finlPhase = register.NewId(memoryModule.Width() + 1)
-		)
-
-		memoryModule.AddRegisters(register.NewComputed("exec", 1, padding))
-		memoryModule.AddRegisters(register.NewComputed("finl", 1, padding))
-
-		var (
-			rTime         = mirc.Variable[register.Id, Expr[F]](timestampRead, timestampWidth, 0)
-			wTime         = mirc.Variable[register.Id, Expr[F]](timestampWritten, timestampWidth, 0)
-			dTime         = mirc.Variable[register.Id, Expr[F]](timestampDelta, timestampWidth, 0)
-			addrRegs      = fm.Geometry().AddressRegisters()
-			addrRegOffset = uint(0)
-			prevAddr      = concatenateRegisters[F](addrRegs, addrRegOffset, -1)
-			addr          = concatenateRegisters[F](addrRegs, addrRegOffset, 0)
-			addrDelta     = mirc.Variable[register.Id, Expr[F]](addressDelta, 1, 0)
-			prevExec      = mirc.Variable[register.Id, Expr[F]](execPhase, 1, -1)
-			prevFinl      = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, -1)
-			exec          = mirc.Variable[register.Id, Expr[F]](execPhase, 1, 0)
-			finl          = mirc.Variable[register.Id, Expr[F]](finlPhase, 1, 0)
-			zero          = mirc.Number[register.Id, Expr[F]](0)
-			one           = mirc.Number[register.Id, Expr[F]](1)
-		)
-
-		// ================================================
-		// constraints
-		// ================================================
-
-		// (non padding) rows are either created during standard execution (exec ≡ true)
-		// or during the finalization phase (finl ≡ true)
-		flagExclusivity := mir.NewVanishingConstraint("flag_exclusivity", ctx, util.None[int](),
-			mirc.Product([]Expr[F]{exec, finl}).Equals(zero).AsLogical())
-
-		// both exec and (exec + finl) should, on any trace segment, look like one of these :
-		//
-		//  ¹ ┼       ┌─────         ¹ ┼
-		//    │       │                │
-		//  ⁰ ┴  ─────┘        or    ⁰ ┴  ───────────
-		//
-		// exec may not be nondecreasing; the (exec, finl) pair may look like so :
-		//
-		//  ¹ ┼       ┌─────┐∙∙∙∙∙∙   ( ∙ ≡ finl)
-		//    │       │     │
-		//  ⁰ ┴  ─────┘∙∙∙∙∙└──────   ( ─ ≡ exec)
-		flagMonotony1 := mir.NewVanishingConstraint("finl_monotony", ctx, util.None[int](),
-			mirc.If(prevFinl.NotEquals(zero), finl.Equals(one)).AsLogical())
-		flagMonotony2 := mir.NewVanishingConstraint("exec+finl_monotony", ctx, util.None[int](),
-			mirc.If(mirc.Sum([]Expr[F]{prevExec, prevFinl}).NotEquals(zero),
-				mirc.Sum([]Expr[F]{exec, finl}).Equals(one)).AsLogical())
-
-		// we want WT > RT which we prove via WT = RT + (1 + ΔT)
-		// which works given that ΔT is ≥ 0
-		timestampMonotony := mir.NewVanishingConstraint("timestamp_monotony", ctx, util.None[int](),
-			mirc.If(exec.NotEquals(zero), wTime.Equals(rTime.Add(dTime, one))).AsLogical())
-
-		// // we impose value constancy by enforcing that the received value be the same as the sent value
-		// rcvExec := mir.NewReceiveConstraint[F]("reading_in_execution_phase",
-		// []register.Id{address, timestampRead, valueRead})
-		// sndExec := mir.NewSendConstraint[F]("writing_in_execution_phase",
-		// []register.Id{address, timestampWritten, valueWritten})
-
-		addressMonotonyInFinl := mir.NewVanishingConstraint("address_monotony_in_finalization_phase", ctx, util.None[int](),
-			mirc.If(mirc.Product([]Expr[F]{finl, prevFinl}).NotEquals(zero),
-				addr.Equals(prevAddr.Add(addrDelta, one))).AsLogical())
-
-		constraints := []mir.Constraint[F]{
-			flagExclusivity,
-			flagMonotony1,
-			flagMonotony2,
-			timestampMonotony,
-			// rcvExec,
-			// sndExec,
-			addressMonotonyInFinl,
-		}
-		memoryModule.AddConstraints(constraints...)
-
-		return memoryModule
-	*/
 }
 
 // translateAccessOnceMemory handles both
@@ -488,12 +379,15 @@ func concatenateRegisters[F field.Element[F]](registers []register.Register, bas
 	return mirc.Sum(terms)
 }
 
-func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction) mir.Module[F] {
+func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction, infos []vm.Module,
+	rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	var (
 		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]
 		name    = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
 		framing Framing[F]
+		// IS_PC_<k> program counter selectors, only for MLI.
+		pcSelectors []register.Id
 	)
 	// Initialise module
 	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
@@ -504,22 +398,20 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	if fm.IsNative() {
 		return mod
 	}
-	// Add control registers (as required)
+	// Add control registers for Multi Line Instruction
 	if !fm.IsAtomic() {
 		var (
 			constraints []mir.Constraint[F]
 			pc          = register.NewId(mod.Width())
 			ret         = register.NewId(mod.Width() + 1)
-			// determine suitable width of PC register
-			pcWidth = bit.Width(uint(1 + len(fm.Code())))
-			// one boolean selector register per instruction (code line)
-			pcSelectors = make([]register.Id, len(fm.Code()))
 		)
+
 		// Create program counter
-		mod.AddRegisters(register.NewComputed(io.PC_NAME, pcWidth, padding))
+		mod.AddRegisters(register.NewComputed(io.PC_NAME, fm.PcWidth(), padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
-		// Create one-hot program counter selectors
+		// Add IS_PC_<k> program counter selectors (one per code line)
+		pcSelectors = make([]register.Id, len(fm.Code()))
 		for c := range pcSelectors {
 			pcSelectors[c] = register.NewId(mod.Width())
 			mod.AddRegisters(register.NewComputed(io.SelectorName(uint(c)), 1, padding))
@@ -531,7 +423,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	} else {
 		framing = mirc.NewAtomicFraming[register.Id, Expr[F]]()
 	}
-	// Transle all instructions
+	// Translate all instructions
 	for pc, vec := range fm.Code() {
 		var (
 			handle = fmt.Sprintf("pc%d", pc)
@@ -540,9 +432,20 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			// extract logical constraint
 			constraint = tr.translate().AsLogical()
 		)
-		// translate into AIR constraints
+		// translate into MIR constraints
 		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint))
 	}
+	// Add range proof constraints for all registers.
+	// Note: while adding lookups from calls and memory read/write  might add (bit) registers,
+	// it is safe to add range proof constraints for all registers before, as the registers
+	// that will be introduced later will be already range-proved (as a product of bit registers).
+	// Note that registers coming from control flow have been added to the module before this point,
+	// so they will be range-proved as well.
+	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
+
+	// Emit lookup constraints for any function calls made by this function.
+	addCallLookups(mod, ctx, fm, pcSelectors, infos)
+	// TODO: add memory read / write constraints (as lookups).
 	// Done
 	return mod
 }
@@ -575,7 +478,7 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 	// PC[0] != 0 ==> PC[0] == 1
 	first := mir.NewVanishingConstraint("first", ctx, util.Some(0),
 		mirc.If(pc_i.NotEquals(zero), pc_i.Equals(one)).AsLogical())
-	// Build one-hot selector terms.  The selector for code line c is high
+	// Build one-hot selector terms.  The selector for code line c is 1
 	// exactly when PC==c+1 (PC==0 is reserved for padding).
 	var (
 		selectorTerms = make([]Expr[F], len(pcSelectors))
@@ -592,7 +495,7 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 	// PC == sum_c (c+1)*IS_PC_c (reconstruction)
 	decoding := mir.NewVanishingConstraint("pc_decoding", ctx, util.None[int](),
 		pc_i.Equals(mirc.Sum(weightedTerms)).AsLogical())
-	// PC*S == PC i.e. exactly one selector is high whenever PC!=0 (and, via
+	// PC*S == PC i.e. exactly one selector is 1 whenever PC!=0 (and, via
 	// pc_decoding, none when PC==0).
 	exclusivity := mir.NewVanishingConstraint("is_pc_exclusivity", ctx, util.None[int](),
 		pc_i.Multiply(sum).Equals(pc_i).AsLogical())

@@ -97,7 +97,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	artifacts := build.Build(args[1:]...)
 	wm := artifacts.wir.Unwrap()
 	// Wrap the word machine in a binary file for execution / tracing / checking.
-	binfile := constraints.NewBinaryFile[F](nil, nil, field, wm)
+	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticDepth(), wm)
 	// =====================================================
 	// Trace / Execute
 	// =====================================================
@@ -317,7 +317,7 @@ func resumeFromCheckPoint(wm *vm.WordMachine[vm.Uint], inputFile string) (map[st
 // checkpoints thus share the original program's coordinates and resume directly
 // against it (see resumeFromCheckPoint).
 func newCheckPointInterpreter(wm *vm.WordMachine[vm.Uint], fn string, clk util.Counter, outputFile string,
-) (*vm.BytecodeInterpreter[vm.Uint128], func(), error) {
+) (*vm.Interpreter[vm.Uint128], func(), error) {
 	//
 	var (
 		m128    = vm.WordToWordMachine[vm.Uint, vm.Uint128](wm)

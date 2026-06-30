@@ -26,12 +26,6 @@ type DivRem struct {
 	Dividend, Divisor RegisterId
 }
 
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *DivRem) Clone() Patched {
-	var c = *p
-	return &c
-}
-
 // Uses implementation for Bytecode interface.
 func (p *DivRem) Uses() []RegisterId {
 	return []RegisterId{p.Dividend, p.Divisor}
@@ -73,12 +67,6 @@ type DivHint struct {
 	Quotient, Remainder, Witness RegisterId
 	// Dividend and Divisor are the operand registers.
 	Dividend, Divisor RegisterId
-}
-
-// Clone implementation for Bytecode / Patched interfaces.
-func (p *DivHint) Clone() Patched {
-	var c = *p
-	return &c
 }
 
 // Uses implementation for Bytecode interface.
