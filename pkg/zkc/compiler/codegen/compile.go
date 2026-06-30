@@ -229,7 +229,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	// Irrelevant in fast mode, since range proofs are not generated in that mode.
 	// Note: No columns should be added after this step without extra care.
 	if !p.config.fastMode {
-		wm = vm.AddRangeConstraints(p.config.field, wm)
+		wm = vm.AddRangeConstraints(p.config.field, p.config.maxStaticDepth, wm)
 	}
 
 	// Construct machine

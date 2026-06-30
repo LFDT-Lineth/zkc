@@ -92,7 +92,8 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig[F], a
 	//nolint
 	if artifacts.wir.HasValue() {
 		// Construct binary file
-		var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.field, artifacts.wir.Unwrap())
+		var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.field,
+			build.config.GetMaxStaticDepth(), artifacts.wir.Unwrap())
 		// Write to disk
 		WriteBinaryFile(binfile, filename)
 	} else {

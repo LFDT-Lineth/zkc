@@ -138,8 +138,8 @@ func SplitRegisters[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachin
 // This is done by adding lookups from each (non-constant) register to a precomputed
 // table of all valid values for that register width.
 // This function must be called after SplitRegisters.
-func AddRangeConstraints[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachine[W] {
-	return transform.AddRangeConstraints[W](cfg, wm)
+func AddRangeConstraints[W Word[W]](cfg field.Config, maxStaticDepth uint, wm *WordMachine[W]) *WordMachine[W] {
+	return transform.AddRangeConstraints(cfg, maxStaticDepth, wm)
 }
 
 // WordToWordMachine transforms a machine operating over a given word type (W1)

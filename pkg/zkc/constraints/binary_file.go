@@ -61,6 +61,11 @@ type BinaryFile[F field.Element[F]] struct {
 	// This is important for e.g. checking the binary file is compiled for the
 	// right field, etc.
 	config field.Config
+	// maxStaticDepth records the maximum depth (i.e. number of rows) of static
+	// tables used when this binary was compiled.  It must be carried in the file
+	// so that constraints regenerated from it match those produced at compile
+	// time (the range constraints baked into the machine depend on this value).
+	maxStaticDepth uint
 	// Machine is the current representation of "constraints".  Its not very
 	// pretty, but right now its all we have.  This will certainly change in the
 	// near future.
@@ -76,12 +81,13 @@ type BinaryFile[F field.Element[F]] struct {
 // the header (pass nil for none).  A field configuration is required to allow
 // clients to check they are targeting the expected field.
 func NewBinaryFile[F field.Element[F]](metadata []byte, attributes []Attribute, config field.Config,
-	machine vm.WordMachine[vm.Uint]) *BinaryFile[F] {
+	maxStaticDepth uint, machine vm.WordMachine[vm.Uint]) *BinaryFile[F] {
 	//
 	return &BinaryFile[F]{
 		Header{ZKC_EXEC, BINFILE_MAJOR_VERSION, BINFILE_MINOR_VERSION, metadata},
 		attributes,
 		config,
+		maxStaticDepth,
 		machine,
 		util.None[*vm.Interpreter[vm.Uint128]](),
 		util.None[air.Schema[F]](),
@@ -119,7 +125,7 @@ func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
 		// Lower from word-level machine to field-level machine
 		fir = vm.WordToFieldMachine[vm.Uint, F](p.config, &p.machine)
 		// Generate arithmetic intermediate representation
-		air = GenerateAirConstraints(fir, p.Field())
+		air = GenerateAirConstraints(fir, p.Field(), p.maxStaticDepth)
 	)
 	// cache result
 	p.constraintsCache = util.Some(air)
@@ -207,6 +213,10 @@ func (p *BinaryFile[F]) MarshalBinary() ([]byte, error) {
 	if err := gobEncoder.Encode(p.config); err != nil {
 		return nil, err
 	}
+	// Encode maximum static table depth
+	if err := gobEncoder.Encode(p.maxStaticDepth); err != nil {
+		return nil, err
+	}
 	// Encode schema
 	if err := gobEncoder.Encode(&p.machine); err != nil {
 		return nil, err
@@ -238,7 +248,7 @@ func (p *BinaryFile[F]) UnmarshalBinary(data []byte) error {
 				// check for compatible field
 				if modulus.Cmp(p.config.Modulus()) != 0 {
 					err = fmt.Errorf("incompatible prime field (0x%s versus 0x%s))", modulus.Text(16), mod.Text(16))
-				} else {
+				} else if err = decoder.Decode(&p.maxStaticDepth); err == nil {
 					// finally, decode the constraints
 					err = decoder.Decode(&p.machine)
 				}

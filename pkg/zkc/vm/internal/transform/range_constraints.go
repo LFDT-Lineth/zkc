@@ -15,11 +15,11 @@ package transform
 import (
 	"fmt"
 	"math/big"
+	"math/bits"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
@@ -53,25 +53,30 @@ const (
 // Native (field-element) registers are not ranged-checked.
 //
 // This pass must run after SplitRegisters.
-func AddRangeConstraints[W word.Word[W]](cfg field.Config, m *machine.Word[W]) *machine.Word[W] {
+func AddRangeConstraints[W word.Word[W]](cfg field.Config, maxStaticDepth uint, m *machine.Word[W]) *machine.Word[W] {
 	var (
 		modules = m.Modules()
+		// maxStaticWidth is the largest X for which 2^X <= maxStaticDepth (the
+		// max static table size), i.e. floor(log2(maxStaticDepth)).
+		// It represents the maximum register width for which a static table can be use to range-check it.
+		// Wider registers require recursive range modules.
+		maxStaticWidth = uint(bits.Len(maxStaticDepth) - 1)
 	)
 
 	// First step, generate the range modules for every width which occurs on some register.
-	var extra = generateRangeModules[W](modules)
+	var extra = generateRangeModules[W](modules, maxStaticWidth)
 
 	// Second step, call range_uX for every registers.
-	modules = addRangeCalls[W](modules, extra)
+	modules = addRangeCalls[W](modules, extra, maxStaticWidth)
 
 	// Reassemble the machine with the original modules plus the range modules.
 	return machine.NewWord[W](cfg, append(slices.Clone(modules), extra...)...)
 }
 
-func generateRangeModules[W word.Word[W]](modules []Module) []Module {
+func generateRangeModules[W word.Word[W]](modules []Module, maxStaticWidth uint) []Module {
 	var (
 		// Every width requiring a range module, mapped to its decomposition.
-		splits = neededRangeWidths[W](modules)
+		splits = neededRangeWidths[W](modules, maxStaticWidth)
 		// Freshly generated range modules.
 		extra []Module
 		// Widths in ascending order, for deterministic output.
@@ -101,10 +106,10 @@ func generateRangeModules[W word.Word[W]](modules []Module) []Module {
 		// Note, this could be optimized:
 		// https://github.com/LFDT-Lineth/zkc/issues/1910
 		// and https://github.com/LFDT-Lineth/zkc/issues/1911
-		if w <= util.MAX_STATIC_RANGE_WIDTH {
+		if w <= maxStaticWidth {
 			extra = append(extra, newStaticRangeTable[W](name, w))
 		} else {
-			extra = append(extra, newRecursiveRangeModule[W](name, w, splits[w], moduleOf))
+			extra = append(extra, newRecursiveRangeModule[W](name, w, splits[w], moduleOf, maxStaticWidth))
 		}
 	}
 
@@ -122,7 +127,7 @@ type rangeSplit struct {
 // directly on some register, closed under the destructuring of wide widths
 // (> 16); each wide width is mapped to the (lo, hi) halves it is destructured
 // into, while leaf widths (<= 16) map to the zero split.
-func neededRangeWidths[W word.Word[W]](modules []Module) map[uint]rangeSplit {
+func neededRangeWidths[W word.Word[W]](modules []Module, maxStaticWidth uint) map[uint]rangeSplit {
 	var (
 		// Final decompositions, keyed by width (one entry per dequeued width).
 		splits = make(map[uint]rangeSplit)
@@ -160,7 +165,7 @@ func neededRangeWidths[W word.Word[W]](modules []Module) map[uint]rangeSplit {
 
 		queue = queue[1:]
 		//
-		if n <= util.MAX_STATIC_RANGE_WIDTH {
+		if n <= maxStaticWidth {
 			// Leaf width: handled by a static table, no decomposition.
 			splits[n] = rangeSplit{}
 		} else {
@@ -252,7 +257,8 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 //
 // moduleOf maps a width to the index of its range module, so the emitted calls
 // can reference their sub-modules by id.
-func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSplit, moduleOf map[uint]uint) Module {
+func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSplit,
+	moduleOf map[uint]uint, maxStaticWidth uint) Module {
 	var (
 		padding big.Int
 		regs    = []register.Register{
@@ -272,8 +278,8 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 	)
 	// Range-check each half: a static table (<= 16) is read via MemRead, a
 	// recursive range function (> 16) is invoked via Call.
-	codes = appendRangeCheck(codes, loID, s.lo, moduleOf)
-	codes = appendRangeCheck(codes, hiID, s.hi, moduleOf)
+	codes = appendRangeCheck(codes, loID, s.lo, moduleOf, maxStaticWidth)
+	codes = appendRangeCheck(codes, hiID, s.hi, moduleOf, maxStaticWidth)
 	codes = append(codes, instruction.NewReturn())
 	//
 	return function.New(name, false, regs, []VectorInstruction{instruction.NewVector(codes...)})
@@ -281,8 +287,9 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 
 // appendRangeCheck appends to codes a range-check of register r (of width w)
 // against range_u{w} (see rangeCheck).
-func appendRangeCheck(codes []WordInstruction, r register.Id, w uint, moduleOf map[uint]uint) []WordInstruction {
-	return append(codes, rangeCheck(moduleOf[w], r, w))
+func appendRangeCheck(codes []WordInstruction, r register.Id, w uint, moduleOf map[uint]uint,
+	maxStaticWidth uint) []WordInstruction {
+	return append(codes, rangeCheck(moduleOf[w], r, w, maxStaticWidth))
 }
 
 // rangeModuleName returns the canonical module name for the range module of a
@@ -294,8 +301,8 @@ func rangeModuleName(w uint) string {
 // rangeCheck builds a single range-check of register r (of width w) against the
 // range module whose id is `id`: a (data-less) MemRead from the static ROM when
 // w <= 16, or a Call into the recursive range function otherwise.
-func rangeCheck(id uint, r register.Id, w uint) WordInstruction {
-	if w <= util.MAX_STATIC_RANGE_WIDTH {
+func rangeCheck(id uint, r register.Id, w uint, maxStaticWidth uint) WordInstruction {
+	if w <= maxStaticWidth {
 		return instruction.NewMemRead(id, []register.Id{r}, nil)
 	}
 
@@ -307,7 +314,7 @@ func rangeCheck(id uint, r register.Id, w uint) WordInstruction {
 // instruction (Return or Jump — a Fail row is rejected so needs no check), so
 // that every row of every register column is checked.  Non-function modules
 // carry no instructions to host the checks and are left unchanged.
-func addRangeCalls[W word.Word[W]](modules []Module, rangeModules []Module) []Module {
+func addRangeCalls[W word.Word[W]](modules []Module, rangeModules []Module, maxStaticWidth uint) []Module {
 	// Resolve range_u{w}'s module id by name.  Range modules are appended after
 	// the original modules (in ascending-width order), so the k-th range module
 	// has id len(modules)+k.  Only range-module names are ever looked up.
@@ -320,7 +327,7 @@ func addRangeCalls[W word.Word[W]](modules []Module, rangeModules []Module) []Mo
 	var out = make([]Module, len(modules))
 	//
 	for i, mod := range modules {
-		out[i] = addRangeChecks(mod, idOf)
+		out[i] = addRangeChecks(mod, idOf, maxStaticWidth)
 	}
 	//
 	return out
@@ -330,7 +337,7 @@ func addRangeCalls[W word.Word[W]](modules []Module, rangeModules []Module) []Mo
 // every Return / Jump terminator in each vector of the given function.  Vector
 // .Map remaps skip offsets, so a skip which targeted the terminator instead
 // lands on the first check and falls through to it.
-func addRangeChecks(mod Module, idOf map[string]uint) Module {
+func addRangeChecks(mod Module, idOf map[string]uint, maxStaticWidth uint) Module {
 	fn, ok := mod.(*WordFunction)
 	if !ok || fn.IsNative() {
 		return mod
@@ -343,8 +350,8 @@ func addRangeChecks(mod Module, idOf map[string]uint) Module {
 		// to populate the range module.
 		// For registers of width <= MAX_STATIC_RANGE_WIDTH, the range check is done via a static table,
 		// and the lookup is added when generating constraints.
-		if w := registerWidthOrZero(r); w > util.MAX_STATIC_RANGE_WIDTH {
-			checks = append(checks, rangeCheck(idOf[rangeModuleName(w)], register.NewId(uint(j)), w))
+		if w := registerWidthOrZero(r); w > maxStaticWidth {
+			checks = append(checks, rangeCheck(idOf[rangeModuleName(w)], register.NewId(uint(j)), w, maxStaticWidth))
 		}
 	}
 	//

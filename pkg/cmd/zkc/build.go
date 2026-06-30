@@ -150,11 +150,11 @@ func (p *BuildConfig[F]) Build(args ...string) BuildArtifacts[F] {
 	}
 	// Mid-level Intermediate Representation
 	if deps.mir {
-		mir = constraints.GenerateMirConstraints(fir)
+		mir = constraints.GenerateMirConstraints(fir, p.config.GetMaxStaticDepth())
 	}
 	// Arithmetic Intermediate Representation
 	if deps.air {
-		air = constraints.GenerateAirConstraints(fir, p.field)
+		air = constraints.GenerateAirConstraints(fir, p.field, p.config.GetMaxStaticDepth())
 	}
 	// copy over what has been requested
 	if p.ast {
