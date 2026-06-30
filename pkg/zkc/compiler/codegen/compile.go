@@ -164,75 +164,43 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	var modulus vm.Uint
 	//
 	modulus = modulus.SetBigInt(p.config.field.Modulus())
-	// Assemble the bytecode program directly from the descriptor modules.  Codegen
-	// emits the core operations without width-check (CHECKCAST) bytecodes; a
-	// dedicated pass inserts those now that every module signature is known
-	// (resolving calls / memory accesses against the program).  The program is
-	// then decompiled into the word machine consumed by the downstream pipeline.
+	// Construct bytecode program from descriptor modules.
 	program := vm.NewBytecodeProgram(modules...)
-	program = vm.InsertCheckCasts(program)
-	wm := vm.BytecodeProgramToWord(program, modulus)
-
-	// Inline all functions marked with the #[inline] annotation.  This must
-	// happen before native lowering and vectorisation, both of which splice
-	// instruction sequences into vectors and would thereby break the
-	// invariant that no skip crosses over a call within its vector.
+	//
 	if p.config.inlining && len(inlines) > 0 {
-		wm = vm.InlineFunctions(wm, inlines)
+		// Apply function inlining
+		program = vm.InlineFunctions(program, inlines)
 	}
-
-	// Lower VM-level zkc-native instructions into arithmetic instructions.
-	if !p.config.fastMode {
-		// Lower Bitwise operations into arithmetic instructions.
-		wm = vm.LowerBitwise(wm)
-		// Lower INT_DIV/INT_REM into hint + arithmetic validation sequences.
-		wm = vm.LowerDivisions(wm)
-		// Lower relational SkipIf (LT/GT/LTEQ/GTEQ) into sign-bit extraction sequences.
-		// Must run after LowerBitwise and LowerDivisions, which may generate new relational SkipIf instructions.
-		wm = vm.LowerComparisons(wm)
-	}
-
-	// Fast mode optimisation compiler passes
+	//
 	if p.config.fastMode {
-		// Turn division / remainder by 2^m into right shifts / bitwise ANDs.
-		wm = vm.OptimizeDivisions(wm)
+		// Apply transforms suitable for fast mode
+		program = vm.OptimizeDivisions(program)
+		program = vm.Vectorize(program)
+		// NOTE: eventually this will always be applied
+		if p.config.splitting {
+			program = vm.SplitRegisters(p.config.field, program)
+		}
+	} else {
+		// Apply transformations required for tracing.
+		program = vm.LowerBitwise(program)
+		program = vm.LowerDivisions(program)
+		program = vm.LowerComparisons(program)
+		program = vm.Vectorize(program)
+		program = vm.FactorSkipConditions(program)
+		program = vm.FlattenCalls(program)
+		// NOTE: eventually this will always be applied
+		if p.config.splitting {
+			program = vm.SplitRegisters(p.config.field, program)
+		}
+		//
+		program = vm.AddRangeConstraints(p.config.field, program)
 	}
-
-	// Vectorize modules
-	if p.config.vectorize {
-		wm = Vectorize(wm, p.srcmaps)
-	}
-
-	if !p.config.fastMode {
-		// Factor branch conditions into a single bit register holding the condition result.
-		// Gated on the same flag as fastMode since it only makes
-		// sense when generating arithmetic constraints; must run after
-		// vectorisation to be meaningful.
-		wm = vm.FactorSkipConditions[vm.Uint](wm)
-		// FlattenCalls introduces a tmp register to hold a call argument when it's rewritten in the same vector, e.g.:
-		// 1. x = f(x)
-		// 2. y = f(x); x = x + 1
-		// As we want to avoid shift in lookups, we must keep the original value of x in a tmp register,
-		// so that the call can be rewritten as:
-		// 1. tmp = x; x = f(tmp)
-		// 2. tmp = x; y = f(tmp); x = x + 1
-		wm = vm.FlattenCalls[vm.Uint](wm)
-	}
-
-	// Apply register splitting
-	if p.config.splitting {
-		wm = vm.SplitRegisters(p.config.field, wm)
-	}
-
-	// Add range constraints.
-	// Must be after register splitting happens to capture all the new registers created by splitting.
-	// Irrelevant in fast mode, since range proofs are not generated in that mode.
-	// Note: No columns should be added after this step without extra care.
-	if !p.config.fastMode {
-		wm = vm.AddRangeConstraints(p.config.field, wm)
-	}
-
-	// Construct machine
+	// Insert check casts to ensure appropriate safety checks during execution.
+	program = vm.InsertCheckCasts(program)
+	// Convert to word machine.  This should eventually be deprecated in favour
+	// of simply returning the bytecode program.
+	wm := vm.BytecodeProgramToWord(program, modulus)
+	// Done
 	return wm, errors
 }
 
