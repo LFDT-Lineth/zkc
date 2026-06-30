@@ -33,14 +33,6 @@ var DEFAULT_UNITBIG_CONFIG = DEFAULT_UNIT_CONFIG.
 	Words(vm.WORD_UINT128)
 
 // ===================================================================
-// example test
-// ===================================================================
-
-func Test_ZkcUnit_Example(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/_example", DEFAULT_UNIT_CONFIG.Constraints(true).GoGen(false))
-}
-
-// ===================================================================
 // Basic Tests
 // ===================================================================
 
