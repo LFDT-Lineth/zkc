@@ -67,8 +67,7 @@ func NewLookupConstraint[F field.Element[F]](handle string, targets []LookupVect
 // NewSendConstraint creates a new "send to logUpBus" constraint; it doesn't take into account
 // the potential Id of the logup bus, which would for instance determine what shared randomness to use.
 func NewSendConstraint[F field.Element[F]](handle string, sources []register.Id) Constraint[F] {
-	// TODO
-	return Constraint[F]{}
+	panic("NewSendConstraint is not implemented")
 }
 
 // NewReceiveConstraint creates a new "receive from logUpBus" constraint; it doesn't take into account
