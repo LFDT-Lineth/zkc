@@ -13,52 +13,55 @@
 package transform
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"slices"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// LowerComparisons rewrites SkipIf instructions with LT/GT/LTEQ/GTEQ conditions
+// LowerComparisons rewrites SkipIf bytecodes with LT/GT/LTEQ/GTEQ conditions
 // into arithmetic-only sequences using biased subtraction and sign-bit extraction.
 // EQ and NEQ conditions are left unchanged.
-// This pass must run after LowerBitwise.
-func LowerComparisons[W word.Word[W]](modules []Module) []Module {
-	out := append([]Module{}, modules...)
+//
+// NOTE: this transform must run after LowerBitwise.
+func LowerComparisons[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
+	out := slices.Clone(program.Modules())
 
 	for i, mod := range out {
-		if fn, ok := mod.(*WordFunction); ok {
+		if fn, ok := mod.(*descriptor.Function[W]); ok {
 			out[i] = lowerComparisonFunction[W](fn)
 		}
 	}
 
-	return out
+	return descriptor.NewProgram(out...)
 }
 
-func lowerComparisonFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
+func lowerComparisonFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {
 	var (
-		code  = fn.Code()
-		ncode = make([]VectorInstruction, len(code))
-		alloc = register.NewAllocator[int](fn.RegisterMap())
+		vectors = fn.Vectors()
+		nvecs   = make([]BytecodeVector[W], len(vectors))
+		alloc   = newRegAllocator(fn.Registers())
 	)
 
-	for i, insn := range code {
-		ncode[i] = insn.Map(func(_ uint, ith WordInstruction) []WordInstruction {
-			return lowerComparisonCode[W](ith, alloc)
+	for i, vec := range vectors {
+		nvecs[i] = vec.Map(func(_ uint, b Bytecode[W]) []Bytecode[W] {
+			return lowerComparisonCode[W](b, alloc)
 		})
 	}
 
-	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), nvecs)
 }
 
 func lowerComparisonCode[W word.Word[W]](
-	code WordInstruction,
-	registers RegisterAllocator,
-) []WordInstruction {
-	si, ok := code.(*instruction.SkipIf)
-	if !ok || !isRelationalCondition(si.Cond) {
-		return []WordInstruction{code}
+	b Bytecode[W],
+	registers *regAllocator[W],
+) []Bytecode[W] {
+	si, ok := b.(*bytecode.SkipIf)
+	if !ok || !isRelationalCondition(si.Op) {
+		return []Bytecode[W]{b}
 	}
 
 	return lowerRelationalSkipIf[W](si, registers)
@@ -79,47 +82,43 @@ func isRelationalCondition(cond opcode.Condition) bool {
 // directly in BitConcat with no cast. Otherwise (GT/LTEQ after swap), lhs is
 // first widened to castBandWidth-1 via aBase.
 //
-//	[aBase = cast(lhs, castBandWidth-1)]   // only when lhsWidth < castBandWidth-1
-//	b_wide = cast(rhs, castBandWidth)
 //	one    = 1
-//	biased = BitConcat([lhs_or_aBase, one])  // 1::lhs, avoids underflow in diff
-//	diff   = biased - b_wide
-//	lo, sign = Destruct(diff)               // sign=1 iff lhs >= rhs
+//	biased = BitConcat([lhs, one])          // 1::lhs, avoids underflow in diff
+//	lo, sign = biased - rhs                  // sign=1 iff lhs >= rhs
 //	zero   = 0
 //	SkipIf(EQ/NEQ, sign, zero, skip)
 func lowerRelationalSkipIf[W word.Word[W]](
-	si *instruction.SkipIf,
-	registers RegisterAllocator,
-) []WordInstruction {
+	si *bytecode.SkipIf,
+	registers *regAllocator[W],
+) []Bytecode[W] {
 	lhs, rhs, skipOnZero := normalizeRelational(si)
-	lhsWidth := registers.Register(lhs).Width()
-	rhsWidth := registers.Register(rhs).Width()
+	lhsWidth := registers.Register(lhs).Bitwidth().Unwrap()
+	rhsWidth := registers.Register(rhs).Bitwidth().Unwrap()
 
 	castBandWidth := max(lhsWidth, rhsWidth) + 1
 
 	zero := word.Const64[W](0)
 	one := word.Const64[W](1)
 
-	//bWide := registers.Allocate("", castBandWidth)
-	oneReg := registers.Allocate("", 1)
-	biased := registers.Allocate("", castBandWidth)
-	lo := registers.Allocate("", castBandWidth-1)
-	sign := registers.Allocate("", 1)
-	zeroReg := registers.Allocate("", 1)
+	oneReg := registers.Allocate("", util.Some[uint](1))
+	biased := registers.Allocate("", util.Some(castBandWidth))
+	lo := registers.Allocate("", util.Some(castBandWidth-1))
+	sign := registers.Allocate("", util.Some[uint](1))
+	zeroReg := registers.Allocate("", util.Some[uint](1))
 
 	// rhs is always cast to castBandWidth
-	castRhs := []WordInstruction{
-		instruction.UintConst(oneReg, one),
+	castRhs := []Bytecode[W]{
+		bytecode.LoadConst(oneReg, one),
 	}
 	// when creating 1::lhs, we don't need to cast lhs if it's of size castBandWidth-1 already.
-	var castLhs = instruction.BitConcat[W](biased, []register.Id{lhs, oneReg})
+	var castLhs = bytecode.Concat([]bytecode.RegisterId{biased}, []bytecode.RegisterId{lhs, oneReg})
 
-	subtractAnsDestruct := []WordInstruction{
-		instruction.UintSubV(register.NewVector(lo, sign), []register.Id{biased, rhs}, zero),
-		instruction.UintConst(zeroReg, zero),
+	subtractAndDestruct := []Bytecode[W]{
+		bytecode.SubVecConst([]bytecode.RegisterId{lo, sign}, []bytecode.RegisterId{biased, rhs}, zero),
+		bytecode.LoadConst(zeroReg, zero),
 	}
 
-	insns := append(append(castRhs, castLhs), subtractAnsDestruct...)
+	insns := append(append(castRhs, castLhs), subtractAndDestruct...)
 
 	// Finally emit the SkipIf with the appropriate condition on the sign bit
 	finalCond := opcode.EQ
@@ -127,7 +126,7 @@ func lowerRelationalSkipIf[W word.Word[W]](
 		finalCond = opcode.NEQ
 	}
 
-	return append(insns, instruction.NewSkipIf(finalCond, sign, zeroReg, si.Skip))
+	return append(insns, bytecode.NewSkipIf(finalCond, si.Skip, sign, zeroReg))
 }
 
 // normalizeRelational returns (lhs, rhs, skipOnZero) for a relational SkipIf.
@@ -137,15 +136,18 @@ func lowerRelationalSkipIf[W word.Word[W]](
 //	GTEQ(a,b) → lhs=a, rhs=b, skipOnZero=false (skip if sign==1 i.e. a >= b)
 //	GT(a,b)   → lhs=b, rhs=a, skipOnZero=true  (sign==0 iff b < a iff a > b)
 //	LTEQ(a,b) → lhs=b, rhs=a, skipOnZero=false (sign==1 iff b >= a iff a <= b)
-func normalizeRelational(si *instruction.SkipIf) (lhs, rhs register.Id, skipOnZero bool) {
-	if len(si.Left.Registers()) != 1 || len(si.Right.Registers()) != 1 {
+func normalizeRelational(si *bytecode.SkipIf) (lhs, rhs bytecode.RegisterId, skipOnZero bool) {
+	left := si.Left.Registers()
+	right := si.Right.Registers()
+	//
+	if len(left) != 1 || len(right) != 1 {
 		panic("cannot lower comparisons after register splitting")
 	}
 	//
-	lhs = si.Left.Registers()[0]
-	rhs = si.Right.Registers()[0]
+	lhs = left[0]
+	rhs = right[0]
 	//
-	switch si.Cond {
+	switch si.Op {
 	case opcode.LT:
 		return lhs, rhs, true
 	case opcode.GTEQ:

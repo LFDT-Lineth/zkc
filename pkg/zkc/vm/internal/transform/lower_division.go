@@ -13,117 +13,117 @@
 package transform
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"slices"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// LowerDivisions rewrites INT_DIV and INT_REM instructions into a
-// non-deterministic hint followed by arithmetic validation:
+// LowerDivisions rewrites INT_DIV and INT_REM bytecodes into a non-deterministic
+// hint followed by arithmetic validation:
 //
-//	FieldHint{targets:[wideQ, wideR], sources:[x, y]}  // prover fills both at 2n bits
-//	q = cast(wideQ, n) ; r = cast(wideR, n)           // write results to n-bit outputs
-//	wideX, wideY = cast(x, 2n), cast(y, 2n)
-//	sum = wideQ * wideY                                // exact 2n-bit product
-//	sum = sum + wideR
-//	SkipIf(EQ, sum, wideX, 1)
-//	Fail
-//	SkipIf(LT, r, y, 1)                        // expanded later by LowerComparisons
-//	Fail
+//	DivHint{q, r, w, x, y}   // prover fills quotient, remainder and range witness
+//	qy = q * y
+//	z0 = x - qy - r          // written into a 0-width register: asserts == 0
+//	z1 = y - r - w - 1       // written into a 0-width register: asserts == 0
 //
-// This pass must run before LowerComparisons.
-func LowerDivisions[W word.Word[W]](modules []Module) []Module {
-	out := append([]Module{}, modules...)
+// NOTE: this transform must run before LowerComparisons.
+func LowerDivisions[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
+	out := slices.Clone(program.Modules())
 
 	for i, mod := range out {
-		if fn, ok := mod.(*WordFunction); ok {
+		if fn, ok := mod.(*descriptor.Function[W]); ok {
 			out[i] = lowerDivisionFunction[W](fn)
 		}
 	}
 
-	return out
+	return descriptor.NewProgram(out...)
 }
 
-func lowerDivisionFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
+func lowerDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {
 	var (
-		code  = fn.Code()
-		ncode = make([]VectorInstruction, len(code))
-		alloc = register.NewAllocator[int](fn.RegisterMap())
+		vectors = fn.Vectors()
+		nvecs   = make([]BytecodeVector[W], len(vectors))
+		alloc   = newRegAllocator(fn.Registers())
 	)
 
-	for i, insn := range code {
-		ncode[i] = insn.Map(func(_ uint, ith WordInstruction) []WordInstruction {
-			return lowerDivisionCode[W](ith, alloc)
+	for i, vec := range vectors {
+		nvecs[i] = vec.Map(func(_ uint, b Bytecode[W]) []Bytecode[W] {
+			return lowerDivisionCode[W](b, alloc)
 		})
 	}
 
-	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), nvecs)
 }
 
 func lowerDivisionCode[W word.Word[W]](
-	code WordInstruction,
-	registers RegisterAllocator,
-) []WordInstruction {
-	switch code.OpCode() {
-	case opcode.INT_DIV:
-		insn := code.(*instruction.WordTypeB)
-		return expandDivision[W](insn.Target, insn.LeftSource, insn.RightSource, registers)
-	case opcode.INT_REM:
-		insn := code.(*instruction.WordTypeB)
-		return expandRemainder[W](insn.Target, insn.LeftSource, insn.RightSource, registers)
+	b Bytecode[W],
+	registers *regAllocator[W],
+) []Bytecode[W] {
+	dr, ok := b.(*bytecode.DivRem)
+	if !ok {
+		return []Bytecode[W]{b}
+	}
+	//
+	switch dr.Opcode {
+	case encoding.DIV:
+		return expandDivision[W](dr.Target, dr.Dividend, dr.Divisor, registers)
+	case encoding.REM:
+		return expandRemainder[W](dr.Target, dr.Dividend, dr.Divisor, registers)
 	default:
-		return []WordInstruction{code}
+		return []Bytecode[W]{b}
 	}
 }
 
 // expandDivision replaces INT_DIV(q, x, y) with the hint+validation sequence.
-// sum holds q*y and must be 2*nX bits so the product is exact: a cheating prover
+// qy holds q*y and must be 2*nX bits so the product is exact: a cheating prover
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
-func expandDivision[W word.Word[W]](q, x, y register.Id, registers RegisterAllocator) []WordInstruction {
+func expandDivision[W word.Word[W]](q, x, y bytecode.RegisterId, registers *regAllocator[W]) []Bytecode[W] {
 	var (
-		nX   = registers.Register(x).Width()
-		nY   = registers.Register(y).Width()
-		r    = registers.Allocate("", nY)
-		w    = registers.Allocate("", nY)
+		nX   = registers.Register(x).Bitwidth().Unwrap()
+		nY   = registers.Register(y).Bitwidth().Unwrap()
+		r    = registers.Allocate("", util.Some(nY))
+		w    = registers.Allocate("", util.Some(nY))
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
-		qy   = registers.Allocate("", nX)
+		qy   = registers.Allocate("", util.Some(nX))
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
-		z0 = registers.Allocate("", 0)
-		z1 = registers.Allocate("", 0)
+		z0 = registers.Allocate("", util.Some[uint](0))
+		z1 = registers.Allocate("", util.Some[uint](0))
 	)
 	//
-	return []WordInstruction{
-		instruction.NewFieldHint([]register.Id{q, r, w}, []register.Id{x, y}),
-		instruction.UintMul(qy, []register.Id{q, y}, one),
-		instruction.UintSub(z0, []register.Id{x, qy, r}, zero),
-		instruction.UintSub(z1, []register.Id{y, r, w}, one),
+	return []Bytecode[W]{
+		bytecode.NewDivHint(q, r, w, x, y),
+		bytecode.MulConst(qy, []bytecode.RegisterId{q, y}, one),
+		bytecode.SubConst(z0, []bytecode.RegisterId{x, qy, r}, zero),
+		bytecode.SubConst(z1, []bytecode.RegisterId{y, r, w}, one),
 	}
 }
 
 // expandRemainder replaces INT_REM(r, x, y) with the hint+validation sequence.
-// sum holds qTmp*y and must be 2*nX bits so the product is exact: a cheating prover
+// qy holds q*y and must be 2*nX bits so the product is exact: a cheating prover
 // could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
-func expandRemainder[W word.Word[W]](r, x, y register.Id, registers RegisterAllocator) []WordInstruction {
+func expandRemainder[W word.Word[W]](r, x, y bytecode.RegisterId, registers *regAllocator[W]) []Bytecode[W] {
 	var (
-		nX   = registers.Register(x).Width()
-		nY   = registers.Register(y).Width()
-		q    = registers.Allocate("", nX)
-		w    = registers.Allocate("", nY)
+		nX   = registers.Register(x).Bitwidth().Unwrap()
+		nY   = registers.Register(y).Bitwidth().Unwrap()
+		q    = registers.Allocate("", util.Some(nX))
+		w    = registers.Allocate("", util.Some(nY))
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
-		qy   = registers.Allocate("", nX)
+		qy   = registers.Allocate("", util.Some(nX))
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
-		z0 = registers.Allocate("", 0)
-		z1 = registers.Allocate("", 0)
+		z0 = registers.Allocate("", util.Some[uint](0))
+		z1 = registers.Allocate("", util.Some[uint](0))
 	)
 	//
-	return []WordInstruction{
-		instruction.NewFieldHint([]register.Id{q, r, w}, []register.Id{x, y}),
-		instruction.UintMul(qy, []register.Id{q, y}, one),
-		instruction.UintSub(z0, []register.Id{x, qy, r}, zero),
-		instruction.UintSub(z1, []register.Id{y, r, w}, one),
+	return []Bytecode[W]{
+		bytecode.NewDivHint(q, r, w, x, y),
+		bytecode.MulConst(qy, []bytecode.RegisterId{q, y}, one),
+		bytecode.SubConst(z0, []bytecode.RegisterId{x, qy, r}, zero),
+		bytecode.SubConst(z1, []bytecode.RegisterId{y, r, w}, one),
 	}
 }

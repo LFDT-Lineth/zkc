@@ -13,9 +13,10 @@
 package transform
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"slices"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -38,69 +39,69 @@ import (
 // when generating arithmetic constraints (it is not required by the vm) and
 // must run after vectorisation, so the writes which would corrupt the argument
 // column share the call's vector.
-func FlattenCalls[W word.Word[W]](modules []Module) []Module {
-	out := append([]Module{}, modules...)
+func FlattenCalls[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
+	out := slices.Clone(program.Modules())
 
 	for i, mod := range out {
-		if fn, ok := mod.(*WordFunction); ok {
+		if fn, ok := mod.(*descriptor.Function[W]); ok {
 			out[i] = flattenCallsFunction[W](fn)
 		}
 	}
 
-	return out
+	return descriptor.NewProgram(out...)
 }
 
-func flattenCallsFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
+func flattenCallsFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {
 	var (
-		code  = fn.Code()
-		ncode = make([]VectorInstruction, len(code))
-		alloc = register.NewAllocator[int](fn.RegisterMap())
+		vectors = fn.Vectors()
+		nvecs   = make([]BytecodeVector[W], len(vectors))
+		alloc   = newRegAllocator(fn.Registers())
 	)
 
-	for i, insn := range code {
+	for i, vec := range vectors {
 		// Decide, for each call in this vector, which arguments must be
 		// snapshotted.  This needs the whole vector body (to know which registers
 		// are written at or after each call), which the Map closure cannot see one
-		// instruction at a time.
-		snapshot := flattenableArgs(insn.Codes)
+		// bytecode at a time.
+		snapshot := flattenableArgs[W](vec.Bytecodes)
 		//
-		ncode[i] = insn.Map(func(idx uint, ith WordInstruction) []WordInstruction {
-			if call, ok := ith.(*instruction.Call); ok {
+		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
+			if call, ok := ith.(*bytecode.Call); ok {
 				return flattenCall[W](call, snapshot[idx], alloc)
 			}
 			//
-			return []WordInstruction{ith}
+			return []Bytecode[W]{ith}
 		})
 	}
 
-	return function.New(fn.Name(), fn.IsNative(), alloc.Registers(), ncode)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), nvecs)
 }
 
 // flattenableArgs returns, for each call in the vector, the set of argument
 // positions whose register is written at or after the call.  Starting the scan
 // at the call itself captures both the call's own returns and any register
-// rewritten by a later instruction;
-func flattenableArgs(codes []WordInstruction) map[uint][]bool {
+// rewritten by a later bytecode.
+func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
 	snapshot := make(map[uint][]bool)
 	//
 	for i, code := range codes {
-		call, ok := code.(*instruction.Call)
+		call, ok := code.(*bytecode.Call)
 		if !ok {
 			continue
 		}
 		// Collect the registers written from this call onwards.
-		written := make(map[uint]bool)
+		written := make(map[bytecode.RegisterId]bool)
 		//
 		for _, later := range codes[i:] {
 			for _, r := range later.Definitions() {
-				written[r.Unwrap()] = true
+				written[r] = true
 			}
 		}
 		// Flag each argument coinciding with such a write.
 		args := make([]bool, len(call.Arguments))
 		//
 		for j, arg := range call.Arguments {
-			args[j] = written[arg.Unwrap()]
+			args[j] = written[arg]
 		}
 		//
 		snapshot[uint(i)] = args
@@ -111,20 +112,25 @@ func flattenableArgs(codes []WordInstruction) map[uint][]bool {
 
 // flattenCall expands a call, prefixing it with a snapshot ("tmp = arg") for
 // each flagged argument and rewriting the call to read those temporaries.
-func flattenCall[W word.Word[W]](call *instruction.Call, snapshot []bool,
-	registers RegisterAllocator) []WordInstruction {
+func flattenCall[W word.Word[W]](call *bytecode.Call, snapshot []bool,
+	registers *regAllocator[W]) []Bytecode[W] {
 	var (
-		args  = append([]register.Id{}, call.Arguments...)
-		insns []WordInstruction
+		args  = slices.Clone(call.Arguments)
+		insns []Bytecode[W]
 	)
 	//
 	for i, arg := range args {
 		if snapshot[i] {
-			tmp := registers.Allocate("", registers.Register(arg).WidthOrNative())
-			insns = append(insns, instruction.UintAssignV[W](register.NewVector(tmp), arg))
+			tmp := registers.Allocate("", registers.Register(arg).Bitwidth())
+			insns = append(insns, bytecode.Move[W](tmp, arg))
 			args[i] = tmp
 		}
 	}
-	// Append the (possibly rewritten) call.
-	return append(insns, instruction.NewCall(call.Id, args, call.Returns))
+	// Append the (possibly rewritten) call, preserving its flags.
+	return append(insns, &bytecode.Call{
+		Target:    call.Target,
+		Flags:     call.Flags,
+		Arguments: args,
+		Returns:   call.Returns,
+	})
 }

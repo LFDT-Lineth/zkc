@@ -14,15 +14,14 @@ package transform
 
 import (
 	"fmt"
-	"math/big"
 	"math/bits"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -38,9 +37,8 @@ const (
 )
 
 // AddRangeConstraints adds, for every distinct register width occurring in the
-// machine, a "range" module which acts as the recipient of a range-proof
-// lookup for registers of that width.  Two flavours of range module are
-// generated:
+// program, a "range" module which acts as the recipient of a range-proof lookup
+// for registers of that width.  Two flavours of range module are generated:
 //
 //   - For a width n <= maxStaticWidth, range_un is a static table enumerating every valid
 //     value 0 .. 2^n - 1 in a single value column.
@@ -52,10 +50,11 @@ const (
 //
 // Native (field-element) registers are not ranged-checked.
 //
-// This pass must run after SplitRegisters.
-func AddRangeConstraints[W word.Word[W]](cfg field.Config, maxStaticDepth uint, m *machine.Word[W]) *machine.Word[W] {
+// NOTE: this transform must run after register splitting.
+func AddRangeConstraints[W word.Word[W]](cfg field.Config, program descriptor.Program[W],
+	maxStaticDepth uint) descriptor.Program[W] {
 	var (
-		modules = m.Modules()
+		modules = program.Modules()
 		// maxStaticWidth is the largest X for which 2^X <= maxStaticDepth (the
 		// max static table size), i.e. floor(log2(maxStaticDepth)).
 		// It represents the maximum register width for which a static table can be use to range-check it.
@@ -64,21 +63,22 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, maxStaticDepth uint, 
 	)
 
 	// First step, generate the range modules for every width which occurs on some register.
-	var extra = generateRangeModules[W](modules, maxStaticWidth)
+	var extra = generateRangeModules(modules, maxStaticWidth)
 
 	// Second step, call range_uX for every registers.
-	modules = addRangeCalls[W](modules, extra, maxStaticWidth)
+	modules = addRangeCalls(modules, extra, maxStaticWidth)
 
-	// Reassemble the machine with the original modules plus the range modules.
-	return machine.NewWord[W](cfg, append(slices.Clone(modules), extra...)...)
+	// Reassemble the program with the original modules plus the range modules.
+	return descriptor.NewProgram(append(slices.Clone(modules), extra...)...)
 }
 
-func generateRangeModules[W word.Word[W]](modules []Module, maxStaticWidth uint) []Module {
+func generateRangeModules[W word.Word[W]](modules []descriptor.Module[W],
+	maxStaticWidth uint) []descriptor.Module[W] {
 	var (
 		// Every width requiring a range module, mapped to its decomposition.
-		splits = neededRangeWidths[W](modules, maxStaticWidth)
+		splits = neededRangeWidths(modules, maxStaticWidth)
 		// Freshly generated range modules.
-		extra []Module
+		extra []descriptor.Module[W]
 		// Widths in ascending order, for deterministic output.
 		widths = make([]uint, 0, len(splits))
 	)
@@ -127,7 +127,8 @@ type rangeSplit struct {
 // directly on some register, closed under the destructuring of wide widths
 // (> maxStaticWidth); each wide width is mapped to the (lo, hi) halves it is destructured
 // into, while leaf widths (<= maxStaticWidth) map to the zero split.
-func neededRangeWidths[W word.Word[W]](modules []Module, maxStaticWidth uint) map[uint]rangeSplit {
+func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W],
+	maxStaticWidth uint) map[uint]rangeSplit {
 	var (
 		// Final decompositions, keyed by width (one entry per dequeued width).
 		splits = make(map[uint]rangeSplit)
@@ -148,7 +149,7 @@ func neededRangeWidths[W word.Word[W]](modules []Module, maxStaticWidth uint) ma
 		// Seed from the PC register, which is added later while lowering to mir
 		// (see translateFunction). It exists only for non-atomic, non-native
 		// functions, and the PC bit width must match the one chosen there.
-		if fn, ok := mod.(*WordFunction); ok && !fn.IsNative() && !fn.IsAtomic() {
+		if fn, ok := mod.(*descriptor.Function[W]); ok && !fn.IsNative() && !fn.IsOneLine() {
 			add(fn.PcWidth())
 			//TODO: rm me see https://github.com/LFDT-Lineth/zkc/issues/1910
 			// Seed from IS_PC_<k> selectors
@@ -214,28 +215,28 @@ func highestPowerOfTwoBelow(n uint) uint {
 
 // registerWidthOrZero returns the bit-width to range-check a register against, or 0 if
 // it needs no check (for native field)
-func registerWidthOrZero(r register.Register) uint {
+func registerWidthOrZero[W word.Word[W]](r descriptor.Register[W]) uint {
 	if r.IsNative() {
 		return 0
 	}
 	//
-	return r.Width()
+	return r.Bitwidth().Unwrap()
 }
 
 // newStaticRangeTable constructs a static table enumerating every valid value
 // 0 .. 2^width - 1.  The table has an index (address) column and a value (data)
 // column; the value column is the lookup recipient.
 // TODO: some mini perf, see https://github.com/LFDT-Lineth/zkc/issues/1907
-func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
+func newStaticRangeTable[W word.Word[W]](name string, width uint) descriptor.Module[W] {
 	var (
-		padding big.Int
+		padding W
 		// Number of valid values representable in this width.
 		rows     = 1 << width
 		contents = make([]W, rows)
-		regs     = []register.Register{
+		regs     = []descriptor.Register[W]{
 			// TODO: why an index is needed see https://github.com/LFDT-Lineth/zkc/issues/1906
-			register.NewInput(rangeIndexName, width, padding),
-			register.NewOutput(rangeValueName, width, padding),
+			descriptor.NewRegister(register.INPUT_REGISTER, rangeIndexName, util.Some(width), padding),
+			descriptor.NewRegister(register.OUTPUT_REGISTER, rangeValueName, util.Some(width), padding),
 		}
 	)
 	// Enumerate 0 .. 2^width - 1.
@@ -245,7 +246,7 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 		contents[i] = w.SetUint64(uint64(i))
 	}
 	//
-	return memory.NewStatic(name, false, memory.NewGeometry[W](regs), contents...)
+	return descriptor.NewMemory(name, regs, memory.PRIVATE_STATIC_MEMORY, contents)
 }
 
 // newRecursiveRangeModule constructs the range module for a width > maxStaticWidth.  It is a
@@ -258,38 +259,39 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) Module {
 // moduleOf maps a width to the index of its range module, so the emitted calls
 // can reference their sub-modules by id.
 func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSplit,
-	moduleOf map[uint]uint, maxStaticWidth uint) Module {
+	moduleOf map[uint]uint, maxStaticWidth uint) descriptor.Module[W] {
+	//
 	var (
-		padding big.Int
-		regs    = []register.Register{
-			register.NewInput(rangeValueName, width, padding),
-			register.NewComputed(rangeLoName, s.lo, padding),
-			register.NewComputed(rangeHiName, s.hi, padding),
+		padding W
+		regs    = []descriptor.Register[W]{
+			descriptor.NewRegister(register.INPUT_REGISTER, rangeValueName, util.Some(width), padding),
+			descriptor.NewRegister(register.COMPUTED_REGISTER, rangeLoName, util.Some(s.lo), padding),
+			descriptor.NewRegister(register.COMPUTED_REGISTER, rangeHiName, util.Some(s.hi), padding),
 		}
 		// Register ids follow declaration order: value=0, lo=1, hi=2.
-		valID = register.NewId(0)
-		loID  = register.NewId(1)
-		hiID  = register.NewId(2)
+		valID = bytecode.RegisterId(0)
+		loID  = bytecode.RegisterId(1)
+		hiID  = bytecode.RegisterId(2)
 		// Destructure value into its low (lo) and high (hi) halves: value = hi::lo
 		// (little-endian targets, so lo receives the low bits).  The subsequent
 		// checks read lo/hi via in-vector forwarding, so they see the destructured
 		// values.
-		codes = []WordInstruction{instruction.UintDestruct[W](register.NewVector(loID, hiID), valID)}
+		codes = []Bytecode[W]{bytecode.AddVec[W]([]bytecode.RegisterId{loID, hiID}, []bytecode.RegisterId{valID})}
 	)
 	// Range-check each half: a static table (<= 16) is read via MemRead, a
 	// recursive range function (> 16) is invoked via Call.
 	codes = appendRangeCheck(codes, loID, s.lo, moduleOf, maxStaticWidth)
 	codes = appendRangeCheck(codes, hiID, s.hi, moduleOf, maxStaticWidth)
-	codes = append(codes, instruction.NewReturn())
+	codes = append(codes, bytecode.NewRet())
 	//
-	return function.New(name, false, regs, []VectorInstruction{instruction.NewVector(codes...)})
+	return descriptor.NewFunction(name, regs, false, []BytecodeVector[W]{bytecode.NewVector(codes...)})
 }
 
 // appendRangeCheck appends to codes a range-check of register r (of width w)
 // against range_u{w} (see rangeCheck).
-func appendRangeCheck(codes []WordInstruction, r register.Id, w uint, moduleOf map[uint]uint,
-	maxStaticWidth uint) []WordInstruction {
-	return append(codes, rangeCheck(moduleOf[w], r, w, maxStaticWidth))
+func appendRangeCheck[W word.Word[W]](codes []Bytecode[W], r bytecode.RegisterId, w uint,
+	moduleOf map[uint]uint, maxStaticWidth uint) []Bytecode[W] {
+	return append(codes, rangeCheck[W](moduleOf[w], r, w, maxStaticWidth))
 }
 
 // rangeModuleName returns the canonical module name for the range module of a
@@ -301,20 +303,23 @@ func rangeModuleName(w uint) string {
 // rangeCheck builds a single range-check of register r (of width w) against the
 // range module whose id is `id`: a (data-less) MemRead from the static ROM when
 // w <= 16, or a Call into the recursive range function otherwise.
-func rangeCheck(id uint, r register.Id, w uint, maxStaticWidth uint) WordInstruction {
+func rangeCheck[W word.Word[W]](id uint, r bytecode.RegisterId, w uint,
+	maxStaticWidth uint) Bytecode[W] {
 	if w <= maxStaticWidth {
-		return instruction.NewMemRead(id, []register.Id{r}, nil)
+		return bytecode.NewMemRead(uint16(id), []bytecode.RegisterId{r}, nil)
 	}
-
-	return instruction.NewUnconditionalCall(id, []register.Id{r}, nil)
+	//
+	return bytecode.CallFun(uint16(id), bytecode.CallFlags{Unconditional: true}, []bytecode.RegisterId{r}, nil)
 }
 
-// addRangeCalls range-checks every register of every function
-// module: a block of range-checks is inserted before each row-terminating
-// instruction (Return or Jump — a Fail row is rejected so needs no check), so
-// that every row of every register column is checked.  Non-function modules
-// carry no instructions to host the checks and are left unchanged.
-func addRangeCalls[W word.Word[W]](modules []Module, rangeModules []Module, maxStaticWidth uint) []Module {
+// addRangeCalls range-checks every register of every function module: a block of
+// range-checks is inserted before each row-terminating bytecode (Ret or Jmp — a
+// Fail row is rejected so needs no check), so that every row of every register
+// column is checked.  Non-function modules carry no bytecodes to host the checks
+// and are left unchanged.
+func addRangeCalls[W word.Word[W]](modules []descriptor.Module[W],
+	rangeModules []descriptor.Module[W],
+	maxStaticWidth uint) []descriptor.Module[W] {
 	// Resolve range_u{w}'s module id by name.  Range modules are appended after
 	// the original modules (in ascending-width order), so the k-th range module
 	// has id len(modules)+k.  Only range-module names are ever looked up.
@@ -324,7 +329,7 @@ func addRangeCalls[W word.Word[W]](modules []Module, rangeModules []Module, maxS
 		idOf[m.Name()] = uint(len(modules)) + uint(k)
 	}
 	//
-	var out = make([]Module, len(modules))
+	var out = make([]descriptor.Module[W], len(modules))
 	//
 	for i, mod := range modules {
 		out[i] = addRangeChecks(mod, idOf, maxStaticWidth)
@@ -333,17 +338,18 @@ func addRangeCalls[W word.Word[W]](modules []Module, rangeModules []Module, maxS
 	return out
 }
 
-// addRangeChecks inserts a range-check of each register before
-// every Return / Jump terminator in each vector of the given function.  Vector
-// .Map remaps skip offsets, so a skip which targeted the terminator instead
-// lands on the first check and falls through to it.
-func addRangeChecks(mod Module, idOf map[string]uint, maxStaticWidth uint) Module {
-	fn, ok := mod.(*WordFunction)
+// addRangeChecks inserts a range-check of each register before every Ret / Jmp
+// terminator in each vector of the given function.  Vector.Map remaps skip
+// offsets, so a skip which targeted the terminator instead lands on the first
+// check and falls through to it.
+func addRangeChecks[W word.Word[W]](mod descriptor.Module[W], idOf map[string]uint,
+	maxStaticWidth uint) descriptor.Module[W] {
+	fn, ok := mod.(*descriptor.Function[W])
 	if !ok || fn.IsNative() {
 		return mod
 	}
 	// Build the check block: one range-check per register.
-	var checks []WordInstruction
+	var checks []Bytecode[W]
 	//
 	for j, r := range fn.Registers() {
 		// For runtime, we only need to do the call for registers wider than maxStaticWidth
@@ -351,29 +357,30 @@ func addRangeChecks(mod Module, idOf map[string]uint, maxStaticWidth uint) Modul
 		// For registers of width <= maxStaticWidth, the range check is done via a static table,
 		// and the lookup is added when generating constraints.
 		if w := registerWidthOrZero(r); w > maxStaticWidth {
-			checks = append(checks, rangeCheck(idOf[rangeModuleName(w)], register.NewId(uint(j)), w, maxStaticWidth))
+			checks = append(checks, rangeCheck[W](idOf[rangeModuleName(w)], bytecode.RegisterId(j), w,
+				maxStaticWidth))
 		}
 	}
 	//
 	if len(checks) == 0 {
 		return mod
 	}
-	// Insert the check block before every Return / Jump in each vector.
+	// Insert the check block before every Ret / Jmp in each vector.
 	var (
-		code  = fn.Code()
-		ncode = make([]VectorInstruction, len(code))
+		vectors = fn.Vectors()
+		nvecs   = make([]BytecodeVector[W], len(vectors))
 	)
 	//
-	for i, vec := range code {
-		ncode[i] = vec.Map(func(_ uint, ith WordInstruction) []WordInstruction {
+	for i, vec := range vectors {
+		nvecs[i] = vec.Map(func(_ uint, ith Bytecode[W]) []Bytecode[W] {
 			switch ith.(type) {
-			case *instruction.Return, *instruction.Jump:
+			case *bytecode.Ret, *bytecode.Jmp:
 				return append(slices.Clone(checks), ith)
 			default:
-				return []WordInstruction{ith}
+				return []Bytecode[W]{ith}
 			}
 		})
 	}
 	//
-	return function.New(fn.Name(), fn.IsNative(), fn.Registers(), ncode)
+	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.IsNative(), nvecs)
 }

@@ -14,23 +14,22 @@ package transform
 
 import (
 	"math/big"
+	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // OptimizeDivisions is a fast mode optimization that rewrites integer divisions and remainders by a constant
-// power-of-two divisor into a (logical) right shift and a bitwise AND respectively.  That is, instructions of the form
+// power-of-two divisor into a (logical) right shift and a bitwise AND respectively.  That is, bytecodes of the form
 //
 //	$4 = 0x2^k ; q = x / $4   =>   $4 = 0xk ; q = x >> $4
 //	$5 = 0x2^k ; r = x % $5   =>   $5 = 0x2^k-1 ; r = x & $5
 //
-// Because each instruction maps to exactly one instruction, no register is left
-// dead and the instruction count is unchanged (so branch / skip offsets are
-// unaffected).
+// Because each bytecode maps to exactly one bytecode, no register is left dead
+// and the bytecode count is unchanged (so branch / skip offsets are unaffected).
 //
 // To stay sound, a divisor register is only repurposed when it holds a single
 // statically-known power-of-two constant and is read exactly once (i.e. only by
@@ -38,22 +37,22 @@ import (
 // constant is bound to a variable and shared across instructions — the operation
 // is left unchanged.
 //
-// Note: we could apply more optimization here like:
+// NOTE: we could apply more optimization here like:
 // - deal with generic constants
 // - when doing remainder and division by the same constant, we can compute the quotient and remainder together
-func OptimizeDivisions[W word.Word[W]](modules []Module) []Module {
-	out := append([]Module{}, modules...)
+func OptimizeDivisions[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
+	out := slices.Clone(program.Modules())
 
 	for i, mod := range out {
-		if fn, ok := mod.(*WordFunction); ok {
+		if fn, ok := mod.(*descriptor.Function[W]); ok {
 			out[i] = optimizeDivisionFunction[W](fn)
 		}
 	}
 
-	return out
+	return descriptor.NewProgram(out...)
 }
 
-func optimizeDivisionFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
+func optimizeDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {
 	// Determine which divisor registers can be repurposed, mapping each to the new
 	// constant value its load should hold (k for division, 2^k - 1 for remainder).
 	reloads := planDivisionReloads[W](fn)
@@ -64,17 +63,18 @@ func optimizeDivisionFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
 	}
 	//
 	var (
-		code  = fn.Code()
-		ncode = make([]VectorInstruction, len(code))
+		regs    = fn.Registers()
+		vectors = fn.Vectors()
+		nvecs   = make([]BytecodeVector[W], len(vectors))
 	)
 	//
-	for i, vec := range code {
-		ncode[i] = vec.Map(func(_ uint, insn WordInstruction) []WordInstruction {
-			return rewriteDivisionInsn[W](insn, reloads)
+	for i, vec := range vectors {
+		nvecs[i] = vec.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
+			return rewriteDivisionInsn[W](insn, reloads, regs)
 		})
 	}
 	// Registers are reused in place, so the register set is unchanged.
-	return function.New(fn.Name(), fn.IsNative(), fn.Registers(), ncode)
+	return descriptor.NewFunction(fn.Name(), regs, fn.IsNative(), nvecs)
 }
 
 // planDivisionReloads scans a function and returns, for each divisor register
@@ -82,42 +82,41 @@ func optimizeDivisionFunction[W word.Word[W]](fn *WordFunction) *WordFunction {
 // amount (k) for a division by 2^k, or the mask (2^k - 1) for a remainder by
 // 2^k.  A register qualifies only when it holds a single statically-known
 // power-of-two constant and is read exactly once.
-func planDivisionReloads[W word.Word[W]](fn *WordFunction) map[uint]W {
+func planDivisionReloads[W word.Word[W]](fn *descriptor.Function[W]) map[bytecode.RegisterId]W {
 	var (
-		defs     = make(map[uint]int)
-		uses     = make(map[uint]int)
-		constVal = make(map[uint]W)
-		hasConst = make(map[uint]bool)
+		defs     = make(map[bytecode.RegisterId]int)
+		uses     = make(map[bytecode.RegisterId]int)
+		constVal = make(map[bytecode.RegisterId]W)
+		hasConst = make(map[bytecode.RegisterId]bool)
 	)
 	// First, gather definition / use counts and record constant loads.
-	for _, vec := range fn.Code() {
-		for _, insn := range vec.Codes {
+	for _, vec := range fn.Vectors() {
+		for _, insn := range vec.Bytecodes {
 			for _, r := range insn.Uses() {
-				uses[r.Unwrap()]++
+				uses[r]++
 			}
 			//
 			for _, r := range insn.Definitions() {
-				defs[r.Unwrap()]++
+				defs[r]++
 			}
 			//
 			if r, c, ok := asConstantLoad[W](insn); ok {
-				constVal[r.Unwrap()] = c
-				hasConst[r.Unwrap()] = true
+				constVal[r] = c
+				hasConst[r] = true
 			}
 		}
 	}
 	// Second, decide which divisor registers to repurpose.
-	reloads := make(map[uint]W)
+	reloads := make(map[bytecode.RegisterId]W)
 	//
-	for _, vec := range fn.Code() {
-		for _, insn := range vec.Codes {
-			op := insn.OpCode()
-			//
-			if op != opcode.INT_DIV && op != opcode.INT_REM {
+	for _, vec := range fn.Vectors() {
+		for _, insn := range vec.Bytecodes {
+			dr, ok := insn.(*bytecode.DivRem)
+			if !ok {
 				continue
 			}
 			//
-			r := insn.(*instruction.WordTypeB).RightSource.Unwrap()
+			r := dr.Divisor
 			// The divisor must hold a single statically-known power-of-two constant
 			// and be read exactly once, so repurposing its value affects nothing else.
 			if defs[r] != 1 || uses[r] != 1 || !hasConst[r] {
@@ -129,7 +128,7 @@ func planDivisionReloads[W word.Word[W]](fn *WordFunction) map[uint]W {
 				continue
 			}
 			//
-			if op == opcode.INT_DIV {
+			if dr.Opcode == encoding.DIV {
 				// x / 2^k == x >> k: the divisor register becomes the shift amount.
 				reloads[r] = word.Const64[W](uint64(k))
 			} else {
@@ -142,51 +141,56 @@ func planDivisionReloads[W word.Word[W]](fn *WordFunction) map[uint]W {
 	return reloads
 }
 
-// rewriteDivisionInsn rewrites a single instruction according to the reload
-// plan: a repurposed divisor's constant load is updated to hold the shift amount
-// / mask, and the division / remainder over that register becomes a right shift
-// / bitwise AND.  Each instruction maps to exactly one instruction.
-func rewriteDivisionInsn[W word.Word[W]](insn WordInstruction, reloads map[uint]W) []WordInstruction {
-	switch insn.OpCode() {
-	case opcode.INT_ADD:
+// rewriteDivisionInsn rewrites a single bytecode according to the reload plan: a
+// repurposed divisor's constant load is updated to hold the shift amount / mask,
+// and the division / remainder over that register becomes a right shift / bitwise
+// AND.  Each bytecode maps to exactly one bytecode.  The operation width (carried
+// explicitly by the bitwise bytecode) is recovered from the dividend register,
+// mirroring how a DivRem's width is recovered when decompiled.
+func rewriteDivisionInsn[W word.Word[W]](insn Bytecode[W], reloads map[bytecode.RegisterId]W,
+	regs []descriptor.Register[W]) []Bytecode[W] {
+	//
+	switch insn := insn.(type) {
+	case *bytecode.Arith[W]:
 		// Repurpose a divisor's constant load to hold the shift amount / mask.
 		if r, _, ok := asConstantLoad[W](insn); ok {
-			if v, ok := reloads[r.Unwrap()]; ok {
-				return []WordInstruction{instruction.UintConst(r, v)}
+			if v, ok := reloads[r]; ok {
+				return []Bytecode[W]{bytecode.LoadConst(r, v)}
 			}
 		}
-	case opcode.INT_DIV:
-		insn := insn.(*instruction.WordTypeB)
-		if _, ok := reloads[insn.RightSource.Unwrap()]; ok {
-			return []WordInstruction{
-				instruction.BitShr(insn.Bitwidth, insn.Target, insn.LeftSource, insn.RightSource),
-			}
-		}
-	case opcode.INT_REM:
-		insn := insn.(*instruction.WordTypeB)
-		if _, ok := reloads[insn.RightSource.Unwrap()]; ok {
-			return []WordInstruction{
-				instruction.BitAnd(insn.Bitwidth, insn.Target, insn.LeftSource, insn.RightSource),
+	case *bytecode.DivRem:
+		if _, ok := reloads[insn.Divisor]; ok {
+			width := uint16(regs[insn.Dividend].Bitwidth().UnwrapOr(0))
+			//
+			switch insn.Opcode {
+			case encoding.DIV:
+				return []Bytecode[W]{
+					bytecode.NewBitwise(bytecode.OP_SHR, insn.Target, insn.Dividend, insn.Divisor, width),
+				}
+			case encoding.REM:
+				return []Bytecode[W]{
+					bytecode.NewBitwise(bytecode.OP_AND, insn.Target, insn.Dividend, insn.Divisor, width),
+				}
 			}
 		}
 	}
 	//
-	return []WordInstruction{insn}
+	return []Bytecode[W]{insn}
 }
 
-// asConstantLoad reports whether the given instruction is a pure constant load
-// (an integer addition with no source registers and a single target, as emitted
-// for a constant literal), returning the target register and the loaded value.
-func asConstantLoad[W word.Word[W]](insn WordInstruction) (register.Id, W, bool) {
-	if a, ok := insn.(*instruction.WordTypeA[W]); ok &&
-		a.Op == opcode.INT_ADD && len(a.Sources) == 0 && a.Target.Len() == 1 {
+// asConstantLoad reports whether the given bytecode is a pure constant load (an
+// integer addition with no source registers and a single target, as emitted for
+// a constant literal), returning the target register and the loaded value.
+func asConstantLoad[W word.Word[W]](insn Bytecode[W]) (bytecode.RegisterId, W, bool) {
+	if a, ok := insn.(*bytecode.Arith[W]); ok &&
+		a.Op == bytecode.OP_ADD && len(a.Source) == 0 && len(a.Target) == 1 {
 		//
-		return a.Target.AsRegister(), a.Constant, true
+		return a.Target[0], a.Constant, true
 	}
 	//
 	var zero W
 	//
-	return register.UnusedId(), zero, false
+	return 0, zero, false
 }
 
 // powerOfTwoExponent returns k such that w == 2^k, together with a flag
