@@ -199,7 +199,7 @@ func (p *FullObserver[W, I, M]) traceModule(m machine.Module, states []State[W],
 		// access bit, then (for multi-limb addresses) one at_flag per limb.
 		auxNames = append(auxNames, io.ACCESS_BIT_NAME)
 
-		if mem.Geometry().IsMultiLaneAddress() {
+		if mem.Geometry().IsMultiLineAddress() {
 			for k := uint(0); k < mem.Geometry().AddressLines(); k++ {
 				auxNames = append(auxNames, io.AtFlagName(k))
 			}
@@ -222,7 +222,7 @@ func (p *FullObserver[W, I, M]) assignRomWomRegisters(
 		atFlagOffset       = accessOffset + 1
 		nRows              = uint(len(states))
 		nLines             = mem.Geometry().AddressLines()
-		isMultiLineAddress = mem.Geometry().IsMultiLaneAddress()
+		isMultiLineAddress = mem.Geometry().IsMultiLineAddress()
 	)
 
 	// Initialise columns
@@ -395,7 +395,7 @@ func extraColumnsForAccessOnceMemory[W word.Word[W]](m machine.Module) uint {
 			return uint(0)
 		case mem.IsWriteOnly() || mem.IsReadOnly():
 			extra := uint(1)
-			if mem.Geometry().IsMultiLaneAddress() {
+			if mem.Geometry().IsMultiLineAddress() {
 				extra += mem.Geometry().AddressLines()
 			}
 
@@ -466,10 +466,10 @@ func initialiseAccessOnceMemory[W word.Word[W]](rom memory.Memory[W]) []State[W]
 		contents     = rom.Contents()
 	)
 	// sanity check (for now)
-	var isMultiLaneAddressWom = addressWidth > 1
+	var isMultiLineAddressWom = rom.Geometry().IsMultiLineAddress()
 
 	switch {
-	case !isMultiLaneAddressWom:
+	case !isMultiLineAddressWom:
 		for i := 0; i < len(contents); i += dataWidth {
 			var (
 				address W
@@ -483,7 +483,7 @@ func initialiseAccessOnceMemory[W word.Word[W]](rom memory.Memory[W]) []State[W]
 			//
 			states = append(states, NewState(0, false, rom.Width(), words))
 		}
-	case isMultiLaneAddressWom:
+	case isMultiLineAddressWom:
 		var (
 			masks  = make([]uint64, addressWidth)
 			widths = make([]uint, addressWidth)

@@ -1,4 +1,4 @@
-// this test performs multiple assignments to a cell of an mono-lane address memory
+// this test performs multiple assignments to a cell of an mono-line address memory
 // which violates its "write once" property; it should FAIL, but it doesn't ...
 output WOM(address_1:u8) -> (value:u4)
 

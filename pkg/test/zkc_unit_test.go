@@ -245,18 +245,18 @@ func Test_ZkcUnit_Basic_48(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Memory_01(t *testing.T) {
-	// Multi-address-lane RAM write/read round-trip (regression for the
+	// Multi-line address RAM write/read round-trip (regression for the
 	// hard-coded write arity in parseLVal).
 	checkZkcUnit(t, "zkc/unit/memory_01", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
-	// Multi-address-lane access-once memory: a read-only ROM and a write-once
+	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.
 	checkZkcUnit(t, "zkc/unit/access_once_memory_01", DEFAULT_UNIT_CONFIG)
 }
 
-// DEFERRED: access_once_memory_02 is a multi-lane double-write that must be
+// DEFERRED: access_once_memory_02 is a multi-line double-write that must be
 // REJECTED. The interpreter rejects it (WriteOnce.Write), but the harness can't
 // assert that yet — it skips constraint tests for .rejects, and the backends it
 // runs for .rejects (word-machine exec, gogen) don't enforce write-once.
@@ -266,19 +266,19 @@ func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
 // }
 
 func Test_ZkcUnit_AccessOnceMemory_03(t *testing.T) {
-	// Multi-address-lane access-once memory: a read-only ROM and a write-once
+	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.
 	checkZkcUnit(t, "zkc/unit/access_once_memory_03", DEFAULT_UNIT_CONFIG)
 }
 
-// DEFERRED: access_once_memory_04 (single-lane double-write) — same reason as
+// DEFERRED: access_once_memory_04 (single-line double-write) — same reason as
 // _02; see wom-double-write-reject-gap.md.
 // func Test_ZkcUnit_AccessOnceMemory_04(t *testing.T) {
 // 	checkZkcUnit(t, "zkc/unit/access_once_memory_04", DEFAULT_UNIT_CONFIG)
 // }
 
 func Test_ZkcUnit_AccessOnceMemory_05(t *testing.T) {
-	// Multi-address-lane access-once memory: a read-only ROM and a write-once
+	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.
 	checkZkcUnit(t, "zkc/unit/access_once_memory_05", DEFAULT_UNIT_CONFIG)
 }

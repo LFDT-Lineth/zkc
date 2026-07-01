@@ -153,7 +153,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 
 	var (
 		addrRegs           = fm.Geometry().AddressRegisters()
-		isMultiLaneAddress = fm.Geometry().IsMultiLaneAddress()
+		isMultiLineAddress = fm.Geometry().IsMultiLineAddress()
 		L                  = len(addrRegs)
 		prevAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, -1)
 		currAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, 0)
@@ -196,7 +196,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 	//		- []ADDRESS[i] ≡ 0
 
 	switch {
-	case isMultiLaneAddress:
+	case isMultiLineAddress:
 		var (
 			prevAddrRegs = make([]Expr[F], L)
 			currAddrRegs = make([]Expr[F], L)
@@ -333,7 +333,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 			constraints = append(constraints, addrUpdateConstraints[k]...)
 		}
 
-	case !isMultiLaneAddress:
+	case !isMultiLineAddress:
 		var (
 			currAddr = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(0)), addrRegs[0].Width(), 0)
 			nextAddr = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(0)), addrRegs[0].Width(), 1)

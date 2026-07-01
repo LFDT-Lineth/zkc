@@ -1,4 +1,4 @@
-// regression tests for multi-lane RAM assignments
+// regression tests for multi-line RAM assignments
 //
 // The parseLVal function handles the left-hand side of an assignment
 // being an assignment to a read-write memory. It has a line:
@@ -14,10 +14,10 @@ memory ram(a:u8, b:u8) -> (byte:u8)
 fn main<ram>() {
     var p:u8 = data[0]
     var q:u8 = data[1]
-    // multi-lane writes (the previously-rejected form)
+    // multi-line writes (the previously-rejected form)
     ram[1, 2] = p
     ram[2, 1] = q
-    // multi-lane reads back; both lanes must matter
+    // multi-line reads back; both lines must matter
     if ram[1, 2] != p {
         fail
     }

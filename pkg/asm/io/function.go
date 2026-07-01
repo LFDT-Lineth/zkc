@@ -33,7 +33,7 @@ const (
 	// selector lines in traces.  A selector for PC value v is named
 	// "$is_pc_<v>".
 	IS_PC_PREFIX = "$is_pc_"
-	// AT_FLAG_PREFIX name of binary flag names for multi-lane address increments
+	// AT_FLAG_PREFIX name of binary flag names for multi-line address increments
 	AT_FLAG_PREFIX = "at_flag_"
 	// ACCESS_BIT_NAME name of binary flag for non-padding rows
 	ACCESS_BIT_NAME = "access_bit"
