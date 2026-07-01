@@ -153,7 +153,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 
 	var (
 		addrRegs           = fm.Geometry().AddressRegisters()
-		isMultiLaneAddress = fm.Geometry().IsMultiLineAddress()
+		isMultiLaneAddress = fm.Geometry().IsMultiLaneAddress()
 		L                  = len(addrRegs)
 		prevAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, -1)
 		currAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, 0)
@@ -167,12 +167,10 @@ func translateAccessOnceMemory[F field.Element[F]](
 	// ACCESS bit constraints
 	// ================================================
 
-	// We will impose the following:
-	//
-	//	- if ACCESS[i] = 0
-	//		- Then []ADDRESS[i] ≡ 0
-	//	- if ACCESS[i-1] = 0 ∧ ACCESS[i] = 1 then
-	//		- []ADDRESS[i] ≡ 0
+	// the ACCESS bit separates accessible rows from non-accessible rows
+	// ACCESS[i] = 0 ⇔ i is a padding row. We impose that traces start
+	// with a padding row and that padding rows can't follow non-padding rows,
+	// i.e. ACCESS bit monontony
 
 	// ACCESS[0] = 0
 	accessBitVanishesInPadding := mir.NewVanishingConstraint("access_bit_vanishes_in_padding", ctx, util.Some[int](0),
@@ -189,6 +187,13 @@ func translateAccessOnceMemory[F field.Element[F]](
 	// ================================================
 	// []ADDRESS constraints
 	// ================================================
+
+	// We will impose the following:
+	//
+	//	- if ACCESS[i] = 0
+	//		- Then []ADDRESS[i] ≡ 0
+	//	- if ACCESS[i-1] = 0 ∧ ACCESS[i] = 1 then
+	//		- []ADDRESS[i] ≡ 0
 
 	switch {
 	case isMultiLaneAddress:
@@ -227,7 +232,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 		//
 		// **Note.** [0]ADDRESS is the *most* significant limb
 		//
-		// **Note.** This precaution is only required when []ADDRESS holds >1
+		// **Note.** This precaution is only required when []ADDRESS holds > 1
 		// registers.
 		var (
 			atFlags           = make([]register.Id, L)

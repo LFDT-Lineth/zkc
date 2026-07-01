@@ -130,16 +130,16 @@ func (p *FullObserver[W, I, M]) traceModule(m machine.Module, states []State[W],
 	builder array.Builder[util_word.BigEndian]) lt.Module[util_word.BigEndian] {
 	//
 	var (
-		name               = trace.ModuleName{Name: m.Name(), Multiplier: 1}
-		cols               []array.MutArray[util_word.BigEndian]
-		nrows              = uint(len(states))
-		multiLine          = isMultiLineFunction(m)
-		isAccessOnceMemory = isAccessOnceMemory[W](m)
-		extra              = extraColumnsForAccessOnceMemory[W](m)
+		name                = trace.ModuleName{Name: m.Name(), Multiplier: 1}
+		cols                []array.MutArray[util_word.BigEndian]
+		nrows               = uint(len(states))
+		isMultiLineFunction = isMultiLineFunction(m)
+		isAccessOnceMemory  = isAccessOnceMemory[W](m)
+		extra               = extraColumnsForAccessOnceMemory[W](m)
 	)
 	// Initialise columns
 	switch {
-	case multiLine:
+	case isMultiLineFunction:
 		// include space for the program counter, return line and one selector
 		// per instruction.
 		nSelectors := uint(len(m.(*function.Function[instruction.Word]).Code()))
@@ -177,7 +177,7 @@ func (p *FullObserver[W, I, M]) traceModule(m machine.Module, states []State[W],
 	// is aligned to the schema by column name.
 	var auxNames []string
 	// Set control registers for multi-line functions
-	if multiLine {
+	if isMultiLineFunction {
 		// Extract function
 		f := m.(*function.Function[instruction.Word])
 		// Add control registers
@@ -199,7 +199,7 @@ func (p *FullObserver[W, I, M]) traceModule(m machine.Module, states []State[W],
 		// access bit, then (for multi-limb addresses) one at_flag per limb.
 		auxNames = append(auxNames, io.ACCESS_BIT_NAME)
 
-		if mem.Geometry().IsMultiLineAddress() {
+		if mem.Geometry().IsMultiLaneAddress() {
 			for k := uint(0); k < mem.Geometry().AddressLines(); k++ {
 				auxNames = append(auxNames, io.AtFlagName(k))
 			}
@@ -222,7 +222,7 @@ func (p *FullObserver[W, I, M]) assignRomWomRegisters(
 		atFlagOffset       = accessOffset + 1
 		nRows              = uint(len(states))
 		nLines             = mem.Geometry().AddressLines()
-		isMultiLineAddress = mem.Geometry().IsMultiLineAddress()
+		isMultiLineAddress = mem.Geometry().IsMultiLaneAddress()
 	)
 
 	// Initialise columns
@@ -395,7 +395,7 @@ func extraColumnsForAccessOnceMemory[W word.Word[W]](m machine.Module) uint {
 			return uint(0)
 		case mem.IsWriteOnly() || mem.IsReadOnly():
 			extra := uint(1)
-			if mem.Geometry().IsMultiLineAddress() {
+			if mem.Geometry().IsMultiLaneAddress() {
 				extra += mem.Geometry().AddressLines()
 			}
 
@@ -516,12 +516,12 @@ func initialiseAccessOnceMemory[W word.Word[W]](rom memory.Memory[W]) []State[W]
 }
 
 // split address takes an address uint64 and returns this address split according
-// to
+// to a slice of bit widths
 //
 // **Note.** splitAddress expects an address that fits into a uint64. This must be the
 // case for ROM's and WOM's, where the address space is expected to be read beginning to
-// end and to contain no gaps. This assumption does not hold for RAM's. E.g. in RISCV
-// address allocation is sparse. General multi-lane RAM's can be of arbitrary size.
+// end and to contain no gaps. General multi-line RAM's can be of arbitrary size and have
+// sparsely allocated memory.
 func splitAddress[W word.Word[W]](masks []uint64, widths []uint, address uint64) []W {
 	addressWidth := len(masks)
 
