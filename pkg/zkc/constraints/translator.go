@@ -202,7 +202,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 			currAddrRegs = make([]Expr[F], L)
 		)
 
-		for k := range addrRegs {
+		for k := range L {
 			prevAddrRegs[k] = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(k)), addrRegs[k].Width(), -1)
 			currAddrRegs[k] = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(k)), addrRegs[k].Width(), 0)
 		}
@@ -251,12 +251,12 @@ func translateAccessOnceMemory[F field.Element[F]](
 		// @k ≡ binary, for k = 0..L
 		// these are bitwidth 1 registers : we don't need to explicitly impose binarity (?)
 
-		// Σ_k @k[i] = ACCESS[i-1] ∙ ACCESS[i]
 		var (
 			atFlagSum                       = mirc.Sum(atFlagVars)
 			atFlagSumEqualsAccessBitProduct mir.Constraint[F]
 		)
 
+		// Σ_k @k[i] = ACCESS[i-1] ∙ ACCESS[i]
 		atFlagSumEqualsAccessBitProduct = mir.NewVanishingConstraint(
 			"at_flag_sum_equals_access_bit", ctx,
 			util.None[int](),
