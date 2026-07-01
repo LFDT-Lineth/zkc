@@ -130,83 +130,108 @@ func (p *FullObserver[W, I, M]) traceModule(m machine.Module, states []State[W],
 	builder array.Builder[util_word.BigEndian]) lt.Module[util_word.BigEndian] {
 	//
 	var (
-		name                = trace.ModuleName{Name: m.Name(), Multiplier: 1}
-		cols                []array.MutArray[util_word.BigEndian]
-		nrows               = uint(len(states))
-		isMultiLineFunction = isMultiLineFunction(m)
-		isAccessOnceMemory  = isAccessOnceMemory[W](m)
-		extra               = extraColumnsForAccessOnceMemory[W](m)
+		name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
+		// Register columns, plus trailing space for any computed/control columns.
+		cols = make([]array.MutArray[util_word.BigEndian], m.Width()+numAuxColumns[W](m))
+		// Names for the trailing columns; must match the schema register names,
+		// since the trace is aligned to the schema by column name.
+		auxNames []string
 	)
-	// Initialise columns
+	// Fill the register columns from the recorded states.
+	p.transcribeRegisterColumns(m, states, cols, builder)
+	// Fill the trailing computed/control columns, if any.  A module is either a
+	// multi-line function or an access-once memory, never both.
 	switch {
-	case isMultiLineFunction:
-		// include space for the program counter, return line and one selector
-		// per instruction.
-		nSelectors := uint(len(m.(*function.Function[instruction.Word]).Code()))
-		cols = make([]array.MutArray[util_word.BigEndian], m.Width()+2+nSelectors)
-	case isAccessOnceMemory:
-		cols = make([]array.MutArray[util_word.BigEndian], m.Width()+extra)
-	default:
-		cols = make([]array.MutArray[util_word.BigEndian], m.Width())
+	case isMultiLineFunction(m):
+		f := m.(*function.Function[instruction.Word])
+		auxNames = p.assignControlColumns(f, cols, states, builder)
+	case isAccessOnceMemory[W](m):
+		mem, ok := m.(memory.Memory[W])
+		if !ok {
+			panic("expected memory module")
+		}
+
+		auxNames = p.assignAccessOnceColumns(mem, cols, states, builder)
 	}
+	//
+	return lt.NewModule(name, traceColumns(m.Registers(), auxNames, cols))
+}
+
+// numAuxColumns returns the number of trailing (computed/control) columns a
+// module needs beyond its registers: PC + RET + one selector per code line for
+// a multi-line function, the access-once control columns for a ROM/WOM, and
+// none otherwise.
+func numAuxColumns[W word.Word[W]](m machine.Module) uint {
+	switch {
+	case isMultiLineFunction(m):
+		// program counter, return line and one selector per instruction.
+		return 2 + uint(len(m.(*function.Function[instruction.Word]).Code()))
+	case isAccessOnceMemory[W](m):
+		return extraColumnsForAccessOnceMemory[W](m)
+	default:
+		return 0
+	}
+}
+
+// transcribeRegisterColumns allocates the register columns and copies each
+// state's register values into them.
+func (p *FullObserver[W, I, M]) transcribeRegisterColumns(m machine.Module, states []State[W],
+	cols []array.MutArray[util_word.BigEndian], builder array.Builder[util_word.BigEndian]) {
+	//
+	var nrows = uint(len(states))
 	// Initialise register columns
 	for i, r := range m.Registers() {
-		//
 		if r.IsNative() {
 			cols[i] = builder.NewArray(nrows, math.MaxUint)
 		} else {
 			cols[i] = builder.NewArray(nrows, r.Width())
 		}
 	}
-	// Initialise control columns (if applicable)
-	// transcribe values
+	// Transcribe values
 	for row, st := range states {
 		for i := range m.Registers() {
-			var (
-				val  util_word.BigEndian
-				word = st.state[i]
-			)
+			var val util_word.BigEndian
 			// Copy over data
-			val = val.SetBytes(word.BigInt().Bytes())
-			//
+			val = val.SetBytes(st.state[i].BigInt().Bytes())
 			cols[i] = cols[i].Set(uint(row), val)
 		}
 	}
-	// Names for any trailing (computed/control) columns beyond the registers.
-	// These must match the corresponding schema register names, since the trace
-	// is aligned to the schema by column name.
-	var auxNames []string
-	// Set control registers for multi-line functions
-	if isMultiLineFunction {
-		// Extract function
-		f := m.(*function.Function[instruction.Word])
-		// Add control registers
-		p.assignControlRegisters(f, cols, states, builder)
-		// PC, RET, then one selector per code line.
-		auxNames = append(auxNames, io.PC_NAME, io.RET_NAME)
-		for c := range f.Code() {
-			auxNames = append(auxNames, io.SelectorName(uint(c)))
+}
+
+// assignControlColumns fills the control columns for a multi-line function and
+// returns their names: PC, RET, then one selector per code line.
+func (p *FullObserver[W, I, M]) assignControlColumns(f *function.Function[instruction.Word],
+	cols []array.MutArray[util_word.BigEndian], states []State[W],
+	builder array.Builder[util_word.BigEndian]) []string {
+	//
+	p.assignControlRegisters(f, cols, states, builder)
+	//
+	auxNames := []string{io.PC_NAME, io.RET_NAME}
+	for c := range f.Code() {
+		auxNames = append(auxNames, io.SelectorName(uint(c)))
+	}
+	//
+	return auxNames
+}
+
+// assignAccessOnceColumns fills the access-once control columns for a ROM/WOM
+// and returns their names: the access bit, then (for multi-limb addresses) one
+// at_flag per limb.
+func (p *FullObserver[W, I, M]) assignAccessOnceColumns(mem memory.Memory[W],
+	cols []array.MutArray[util_word.BigEndian], states []State[W],
+	builder array.Builder[util_word.BigEndian]) []string {
+	//
+	p.assignRomWomRegisters(mem, cols, states, builder)
+	//
+	auxNames := []string{io.ACCESS_BIT_NAME}
+
+	if mem.Geometry().IsMultiLineAddress() {
+		for k := uint(0); k < mem.Geometry().AddressLines(); k++ {
+			auxNames = append(auxNames, io.AtFlagName(k))
 		}
 	}
 	//
-	if isAccessOnceMemory {
-		mem, ok := m.(memory.Memory[W])
-		if !ok {
-			panic("expected memory module")
-		}
-
-		p.assignRomWomRegisters(mem, cols, states, builder)
-		// access bit, then (for multi-limb addresses) one at_flag per limb.
-		auxNames = append(auxNames, io.ACCESS_BIT_NAME)
-
-		if mem.Geometry().IsMultiLineAddress() {
-			for k := uint(0); k < mem.Geometry().AddressLines(); k++ {
-				auxNames = append(auxNames, io.AtFlagName(k))
-			}
-		}
-	}
-
-	return lt.NewModule(name, traceColumns(m.Registers(), auxNames, cols))
+	return auxNames
 }
 
 func (p *FullObserver[W, I, M]) assignRomWomRegisters(
