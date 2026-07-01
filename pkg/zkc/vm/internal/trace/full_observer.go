@@ -53,13 +53,13 @@ func (p *FullObserver[W, I, M]) Initialise(machine M) {
 			// Static reference tables (e.g. the $range_un range-check tables) are
 			// not populated by execution, so their full contents must be seeded
 			// here; otherwise lookups into them would see an empty target.
-			p.trace[i] = initialiseAccessOnceMemory(&m.ReadOnly)
+			p.trace[i] = initializeMemoryAddressesAndContents(&m.ReadOnly)
 		case *memory.ReadOnly[W]:
 			// (non-static) read-only memory, i.e. an input ROM.
-			p.trace[i] = initialiseAccessOnceMemory(m)
+			p.trace[i] = initializeMemoryAddressesAndContents(m)
 		case *memory.WriteOnce[W]:
 			// write-once output memory.
-			p.trace[i] = initialiseAccessOnceMemory(m)
+			p.trace[i] = initializeMemoryAddressesAndContents(m)
 		}
 	}
 }
@@ -454,19 +454,21 @@ func traceColumns[W any](regs []register.Register, auxNames []string, cols []arr
 	return ltcols
 }
 
-// initialiseAccessOnceMemory materializes the trace rows for a read-only (ROM)
-// or write-once (WOM) memory.  Both expose the same Contents()/Geometry()
-// interface and are identical at the trace level: one row per cell with
-// consecutive addresses, single- or multi-limb (via splitAddress).
-func initialiseAccessOnceMemory[W word.Word[W]](rom memory.Memory[W]) []State[W] {
+// initializeMemoryAddressesAndContents materializes the trace rows for a
+// static, read-only (ROM) or write-once (WOM) memory: one row per cell with
+// consecutive addresses (single- or multi-limb, via splitAddress) plus the
+// cell's data.  It only seeds the address and data register columns; the
+// access-once control columns (ACCESS bit, at_flags) are added separately in
+// traceModule and only for ROM/WOM, not static memory.
+func initializeMemoryAddressesAndContents[W word.Word[W]](m memory.Memory[W]) []State[W] {
 	var (
 		states       []State[W]
-		addressWidth = int(rom.Geometry().AddressLines())
-		dataWidth    = int(rom.Geometry().DataLines())
-		contents     = rom.Contents()
+		addressWidth = int(m.Geometry().AddressLines())
+		dataWidth    = int(m.Geometry().DataLines())
+		contents     = m.Contents()
 	)
 	// sanity check (for now)
-	var isMultiLineAddressWom = rom.Geometry().IsMultiLineAddress()
+	var isMultiLineAddressWom = m.Geometry().IsMultiLineAddress()
 
 	switch {
 	case !isMultiLineAddressWom:
@@ -474,14 +476,14 @@ func initialiseAccessOnceMemory[W word.Word[W]](rom memory.Memory[W]) []State[W]
 			var (
 				address W
 				data    = contents[i : i+dataWidth]
-				words   = make([]W, rom.Width())
+				words   = make([]W, m.Width())
 			)
 			// Configure address line
 			words[0] = address.SetUint64(uint64(i / dataWidth))
 			//
 			copy(words[addressWidth:], data)
 			//
-			states = append(states, NewState(0, false, rom.Width(), words))
+			states = append(states, NewState(0, false, m.Width(), words))
 		}
 	case isMultiLineAddressWom:
 		var (
@@ -491,8 +493,8 @@ func initialiseAccessOnceMemory[W word.Word[W]](rom memory.Memory[W]) []State[W]
 
 		for i := range addressWidth {
 			// TODO: is the usage of Uint64() problematic ? Are registers short ?
-			masks[i] = rom.Registers()[i].MaxValue().Uint64()
-			widths[i] = rom.Registers()[i].Width()
+			masks[i] = m.Registers()[i].MaxValue().Uint64()
+			widths[i] = m.Registers()[i].Width()
 		}
 
 		var addressUint64 = uint64(0)
@@ -500,14 +502,14 @@ func initialiseAccessOnceMemory[W word.Word[W]](rom memory.Memory[W]) []State[W]
 		for i := 0; i < len(contents); i += dataWidth {
 			var (
 				data  = contents[i : i+dataWidth]
-				words = make([]W, rom.Width())
+				words = make([]W, m.Width())
 			)
 			// Configure address line
 			copy(words[:addressWidth], splitAddress[W](masks, widths, addressUint64))
 			//
 			copy(words[addressWidth:], data)
 			//
-			states = append(states, NewState(0, false, rom.Width(), words))
+			states = append(states, NewState(0, false, m.Width(), words))
 			addressUint64++
 		}
 	}
