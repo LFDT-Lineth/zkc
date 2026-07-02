@@ -116,7 +116,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 			// checkpoints to the output file (with -o) or to stdout otherwise.
 			outputs, errors = executeWithCheckPoint(&wm, checkpoint, outputFile, input)
 		} else if tracing {
-			trace, errors = binfile.Trace(input, traceConfig)
+			outputs, trace, errors = binfile.Trace(input, traceConfig)
 		} else if gogen {
 			// Execute via native Go generated from the word machine.
 			outputs, errors = executeWithGogen(&wm, input)

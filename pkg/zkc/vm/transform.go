@@ -63,6 +63,20 @@ func LowerDivisions[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.LowerDivisions(program)
 }
 
+// LowerSwitch rewrites Switch (multiway skip) bytecodes into equivalent
+// sequences of SkipIf bytecodes.  Each dispatch case becomes a constant load
+// of the case's value into a fresh register, followed by a conditional (EQ)
+// skip against the dispatch register targeting the case's original
+// destination.  Cases are tested in order, preserving the first-match-wins
+// semantics of the multiway dispatch; when no case matches, control falls
+// through exactly as before.
+//
+// NOTE: this transform must run before register splitting (which does not
+// support Switch bytecodes).
+func LowerSwitch[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.LowerSwitch(program)
+}
+
 // OptimizeDivisions is a fast-mode optimization which rewrites division by
 // powers of 2 into right shifts, and remainder by powers of 2 into bitwise
 // ANDs.

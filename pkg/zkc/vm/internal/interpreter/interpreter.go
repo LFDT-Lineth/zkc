@@ -864,6 +864,7 @@ func (p *Interpreter[W]) executeDebug(pc uint32, codes []uint32, frame []W) uint
 	var (
 		index, sources, n = encoding.DecodeDebug(pc, codes)
 	)
+	//
 	fmt.Print(p.formatChunks(p.program.Chunks(index), sources, frame))
 	//
 	return pc + n
@@ -922,8 +923,8 @@ func (p *Interpreter[W]) formatArgument(module descriptor.Module[W], format zkc_
 	//
 	var value big.Int
 	// Loop from most-significant limb to least significant.
-	for i := vec.Len; i > 0; i-- {
-		var reg = vec.Base + (i - 1)
+	for i := uint16(0); i < vec.Len; i++ {
+		var reg = vec.Base + i
 		// Shift accumulator by this limb's width, then add the limb.
 		value.Lsh(&value, bitwidthOf(module, reg))
 		value.Add(&value, frame[reg].BigInt())

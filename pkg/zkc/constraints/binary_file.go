@@ -177,14 +177,20 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[str
 // vm.DecodeInputs() based on the register types of the corresponding memory.
 // This can return one (or more) errors if, for example, the input is malformed
 // (e.g. is missing expected fields and/or contains unexpected fields).
-func (p *BinaryFile[F]) Trace(input map[string][]byte, config TraceConfig) (tr trace.Trace[F], errs []error) {
+func (p *BinaryFile[F]) Trace(input map[string][]byte, config TraceConfig,
+) (output map[string][]byte, tr trace.Trace[F], errs []error) {
+	//
 	var inputs map[string][]vm.Uint
 	// Execute machine in chunks of 1K steps
 	if inputs, errs = vm.DecodeInputs(&p.machine, input); len(errs) == 0 {
-		return Trace(p, inputs, config)
+		tr, errs = Trace(p, inputs, config)
 	}
 	//
-	return nil, errs
+	if len(errs) == 0 {
+		output = vm.EncodeOutputs(&p.machine)
+	}
+	//
+	return output, tr, errs
 }
 
 // ============================================================================

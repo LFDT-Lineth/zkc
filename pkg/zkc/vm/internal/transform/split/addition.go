@@ -36,48 +36,14 @@ import (
 // Where c is a newly introduced (u1) carry line.
 func Addition[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
-	// Split into the initial set of chunks.
-	var chunks = initialiseAddChunks(mapping, insn.Target, insn.Source, insn.Constant)
+	var (
+		// Split into the initial set of chunks.
+		chunks, context = initialiseLineaChunks(mapping, alloc, insn.Target, insn.Source, insn.Constant)
+	)
 	// Next, add carry lines as needed
 	chunks = insertAddCarryLines(alloc, chunks)
 	// Convert chunks into assignments
-	return MapChunks(chunks, addAssignment[W])
-}
-
-// initialiseAddChunks splits the source registers (and constant) into
-// least-significant-first chunks, then assigns target limbs to each chunk
-// according to the number of bits the corresponding RHS can produce.
-func initialiseAddChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], targets, sources []RegisterId,
-	constant W) Chunks[W] {
-	//
-	var (
-		limbsMap = mapping.LimbsMap()
-		// Split source registers into initial chunks
-		chunks = splitSourceRegisters(mapping, sources, constant)
-	)
-	// Split all target registers
-	targets = applyLimbsMapReversed(mapping, targets...)
-	//
-	for i := uint(0); i < chunks.Len() && len(targets) > 0; i++ {
-		var (
-			bitwidth = addRhsBitwidth(chunks.Ith(i), limbsMap)
-			lhs      []RegisterId
-		)
-		// pull out targets
-		lhs, targets = selectLimbs(bitwidth, targets, limbsMap)
-		// allocate selected targets
-		chunks.Apply(i, setLhsLimbs[W](lhs...))
-	}
-	// Handle cases where we have more targets than necessary.  This can arise
-	// under normal circumstances, such as when assigning a small constant to a
-	// wide target register.  In this case, we simple assign each target in this
-	// "overhang" to zero.
-	for len(targets) > 0 {
-		chunks.Append(setLhsLimbs[W](targets[0]))
-		targets = targets[1:]
-	}
-	//
-	return chunks
+	return append(MapChunks(chunks, addAssignment[W]), context...)
 }
 
 // insertAddCarryLines verifies that each addition chunk fits within its

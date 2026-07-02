@@ -20,6 +20,7 @@ import (
 	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -111,6 +112,88 @@ func selectLimbs[W any](bitwidth uint, targets []RegisterId, mapping descriptor.
 	}
 	//
 	return lhs, targets
+}
+
+// initialiseLineaChunks splits the source registers (and constant) into
+// least-significant-first chunks, then assigns target limbs to each chunk
+// according to the number of bits the corresponding RHS can produce.
+func initialiseLineaChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
+	targets, sources []RegisterId, constant W) (Chunks[W], []Bytecode[W]) {
+	//
+	var (
+		bytecodes []Bytecode[W]
+		// Extract register width
+		regWidth = mapping.Field().RegisterWidth
+		// Split source registers into initial chunks
+		chunks = splitSourceRegisters(mapping, sources, constant)
+		// Determine target limbs
+		limbs = applyLimbsMapReversed(mapping, targets...)
+	)
+	//
+	for i := uint(0); i < chunks.Len(); i++ {
+		var (
+			lhs   []RegisterId
+			codes []Bytecode[W]
+		)
+		// pull out targets
+		if len(limbs) > 0 {
+			lhs, limbs, codes = selectAlignedLimbs(regWidth, limbs, alloc)
+		} else {
+			lhs = []RegisterId{alloc.ZeroRegister()}
+		}
+		// allocate selected targets
+		chunks.Apply(i, setLhsLimbs[W](lhs...))
+		//
+		bytecodes = append(bytecodes, codes...)
+	}
+	// Handle cases where we have more targets than necessary.  This can arise
+	// under normal circumstances, such as when assigning a small constant to a
+	// wide target register.  In this case, we simple assign each target in this
+	// "overhang" to zero.
+	for len(limbs) > 0 {
+		chunks.Append(setLhsLimbs[W](limbs[0]))
+		limbs = limbs[1:]
+	}
+	//
+	return chunks, bytecodes
+}
+
+// select aligned target registers
+func selectAlignedLimbs[W word.Word[W]](bitwidth uint, targets []RegisterId, alloc Allocator[W],
+) (selected []RegisterId, remainder []RegisterId, context []Bytecode[W]) {
+	//
+	var (
+		lhsWidth  uint
+		lastWidth uint
+	)
+	// Consume upto the given bitwidth.
+	for lhsWidth < bitwidth && len(targets) > 0 {
+		// Determine width of target
+		lastWidth = alloc.Register(targets[0]).Bitwidth().Unwrap()
+		// Push target onto current lhs
+		selected = append(selected, targets[0])
+		// Pop target from targets queue
+		targets = targets[1:]
+		// Update lhs bitwidth
+		lhsWidth += lastWidth
+	}
+	// Alignment check
+	if lhsWidth > bitwidth {
+		// In this case, we've pull off a register which is too big.  Therefore,
+		// it needs to be split into two pieces.
+		var (
+			n  = lhsWidth - bitwidth
+			m  = len(selected) - 1
+			lo = alloc.Allocate("t", lastWidth-n)
+			hi = alloc.Allocate("t", n)
+		)
+		//
+		context = append(context, bytecode.Concat([]RegisterId{selected[m]}, []RegisterId{lo, hi}))
+		selected = append(selected[:m], lo)
+		targets = array.Prepend(hi, targets)
+	}
+	//
+	return selected, targets, context
 }
 
 // targetWidth determines the bitwidth of the first target.  If no target

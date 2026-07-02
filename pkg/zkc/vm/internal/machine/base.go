@@ -469,8 +469,8 @@ func formatWord[W BaseWord[W], I Instruction](fmt zkc_util.Format, vec register.
 		regs  = vec.Registers()
 	)
 	// Loop from most-significant word to least significant.
-	for i := vec.Len(); i > 0; i-- {
-		var reg = regs[i-1]
+	for i := uint(0); i < vec.Len(); i++ {
+		var reg = regs[i]
 		// Shift left
 		value.Lsh(&value, frame.BitwidthOf(reg))
 		// Add next word

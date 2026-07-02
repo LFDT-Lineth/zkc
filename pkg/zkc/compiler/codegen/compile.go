@@ -185,6 +185,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		program = vm.LowerBitwise(program)
 		program = vm.LowerDivisions(program)
 		program = vm.LowerComparisons(program)
+		program = vm.LowerSwitch(program)
 		program = vm.Vectorize(program)
 		program = vm.FactorSkipConditions(program)
 		program = vm.FlattenCalls(program)

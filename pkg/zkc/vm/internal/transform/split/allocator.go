@@ -15,6 +15,7 @@ package split
 
 import (
 	"fmt"
+	"math"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -39,6 +40,9 @@ type Allocator[W any] interface {
 	// This is presumed to be a computed register, and automatically assigned a
 	// unique name.  No assignment is included for the allocated register
 	Allocate(prefix string, width uint) RegisterId
+	// ZeroRegister returns an id for a so-called "zero" register.  That is, a
+	// register which always holds zero.
+	ZeroRegister() RegisterId
 }
 
 type registerAllocator[W any] struct {
@@ -98,4 +102,15 @@ func (p *registerAllocator[W]) Registers() []descriptor.Register[W] {
 
 func (p *registerAllocator[W]) Width() uint {
 	return uint(len(p.registers))
+}
+
+func (p *registerAllocator[W]) ZeroRegister() RegisterId {
+	// Check for any existing zero registers;
+	for i, r := range p.registers {
+		if r.Bitwidth().UnwrapOr(math.MaxUint) == 0 {
+			return util.Cast[RegisterId](uint(i))
+		}
+	}
+	// Allocate a new register.
+	return p.Allocate("z", 0)
 }
