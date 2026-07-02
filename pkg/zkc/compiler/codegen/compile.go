@@ -272,6 +272,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		field:       p.config.field,
 		srcmaps:     p.srcmaps,
 		quiet:       p.config.quiet,
+		fastMode:    p.config.fastMode,
 	}
 	//
 	for i, stmt := range fn.Code {

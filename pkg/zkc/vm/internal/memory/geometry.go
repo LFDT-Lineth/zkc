@@ -56,6 +56,11 @@ func (p Geometry[W]) AddressLines() uint {
 	return p.numInputs
 }
 
+// IsMultiLineAddress reports whether the address spans more than one limb.
+func (p Geometry[W]) IsMultiLineAddress() bool {
+	return p.AddressLines() > 1
+}
+
 // DataLines returns the number of data lines
 func (p Geometry[W]) DataLines() uint {
 	return p.numOutputs

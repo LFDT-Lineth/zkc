@@ -46,7 +46,7 @@ type Memory[W util.Uinter64] interface {
 	// reads / writes.  Observe that RAM is always private.
 	IsReadWrite() bool
 	// Initialise this memory with the given contents.  This will overwrite any
-	// existing contents.
+	// existing contents. For WOM's it resets the seen addresses.
 	Initialise(contents []W)
 	// Read the value at a given physical address within this memory, possibly
 	// producing an error (e.g. for an out-of-bounds access).

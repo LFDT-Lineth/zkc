@@ -47,6 +47,8 @@ type StmtCompiler struct {
 	errors      []source.SyntaxError
 	// quiet suppresses printf output
 	quiet bool
+	// fastMode disables constraint-only rewrites not required by the vm.
+	fastMode bool
 }
 
 func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) BytecodeVector {
@@ -87,7 +89,8 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) Bytecod
 //
 // > struct tmp { x u32, y u32 }
 // > ...
-// > var t tmp > tmp = f(...)
+// > var t tmp
+// > tmp = f(...)
 //
 // In this case, we want to "compile out" the struct, so we end up with this:
 //
