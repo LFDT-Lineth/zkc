@@ -50,10 +50,8 @@ func (p *FullObserver[W, I, M]) Initialise(machine M) {
 	for i, m := range machine.Modules() {
 		switch m := m.(type) {
 		case *memory.StaticReadOnly[W]:
-			// Static reference tables (e.g. the $range_un range-check tables) are
-			// not populated by execution, so their full contents must be seeded
-			// here; otherwise lookups into them would see an empty target.
-			p.trace[i] = initializeMemoryAddressesAndContents(&m.ReadOnly)
+		// TODO: figure out how static reference tables are handled prover side
+		// and determine whether any tracing is necessary on our side
 		case *memory.ReadOnly[W]:
 			// (non-static) read-only memory, i.e. an input ROM.
 			p.trace[i] = initializeMemoryAddressesAndContents(m)
