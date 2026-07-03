@@ -14,7 +14,6 @@ package zkc
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
@@ -55,77 +54,88 @@ var compileCmds = []FieldAgnosticCmd{
 	{field.BLS12_377, runCompileCmd[bls12_377.Element]},
 }
 
+// CompileConfig brings together various configuration options specific to this
+// command.
+type CompileConfig struct {
+	build BuildConfig
+	// indicates whether or not to print the Abstract Syntax Tree (when available)
+	ast bool
+	// indicates whether or not to print the Intermediate Reprentation
+	ir bool
+	// indicates whether or not to print the Mid-level Intermediate Reprentation (MIR).
+	mir bool
+	// indicates whether or not to print the Mid-level Intermediate Reprentation (AIR).
+	air bool
+	// indicates whether or not to print everything in full (e.g. including
+	// static reference tables).
+	verbose bool
+}
+
 func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
-		build      = GetBuildConfig[F](cmd, field)
-		output     = GetString(cmd, "output")
-		quiet      = GetFlag(cmd, "quiet")
-		showStatic = GetFlag(cmd, "show-static")
+		build  = GetBuildConfig[F](cmd, field)
+		output = GetString(cmd, "output")
+		config CompileConfig
 	)
-	// Suppress printf debug instructions when quiet mode is enabled.
-	build.config = build.config.Quiet(quiet)
-	applyCompileDefaults(&build, output)
+	//
+	config.ast = GetFlag(cmd, "ast")
+	config.mir = GetFlag(cmd, "mir")
+	config.air = GetFlag(cmd, "air")
+	config.ir = !(config.ast || config.mir || config.air)
+	config.verbose = GetFlag(cmd, "verbose")
 	// Build all artifacts
-	artifacts := build.Build(args...)
+	artifacts := Build[F](build, args...)
 	//
 	if output != "" {
-		writeArtifacts(output, build, artifacts)
+		writeArtifacts[F](output, build, artifacts)
 	} else {
 		// Print out requested artifacts
-		printArtifacts(artifacts, showStatic)
+		printArtifacts[F](field, artifacts, config)
 	}
 }
 
-func applyCompileDefaults[F field.Element[F]](build *BuildConfig[F], output string) {
-	// Writing a binary file requires a word-level machine artifact.
-	if output != "" {
-		build.wir = true
-	}
-	// Set default target (if none specified).
-	if !build.HasTarget() {
-		build.ast = true
-	}
-}
-
-func writeArtifacts[F field.Element[F]](filename string, build BuildConfig[F], artifacts BuildArtifacts[F]) {
+func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, artifacts BuildArtifacts) {
 	// Word-level Intermediate Representation
 	//nolint
-	if artifacts.wir.HasValue() {
-		// Construct binary file
-		var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.field,
-			build.config.GetMaxStaticDepth(), artifacts.wir.Unwrap())
-		// Write to disk
-		WriteBinaryFile(binfile, filename)
-	} else {
-		log.Error("must use --wir to write binary file")
-		os.Exit(5)
-	}
+	// Construct binary file
+	var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.field,
+		build.config.GetMaxStaticDepth(), artifacts.wir)
+	// Write to disk
+	WriteBinaryFile(binfile, filename)
 }
 
-func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F], showStatic bool) {
+func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
+	// lower to a 64bit machine
+	var (
+		m64 = vm.WordToWordMachine[vm.Uint, vm.Uint64](&artifacts.wir)
+		// Compile bytecode interpreter
+		bci = vm.WordToBytecodeProgram(m64)
+	)
 	// Abstract Syntax Tree
-	if artifacts.ast.HasValue() {
+	if config.ast && artifacts.ast.HasValue() {
 		writeAbstractSyntaxTree(artifacts.ast.Unwrap())
+	} else if config.ast {
+		log.Warn("Abstract Syntax Tree unavailable")
 	}
 	// Word-level Intermediate Representation
-	if artifacts.wir.HasValue() {
-		writeIntermediateRepresentation(artifacts.wir.Unwrap(), artifacts.annotations)
-	}
-	// Word-level Intermediate Representation
-	if artifacts.bci.HasValue() {
-		writeBytecodeProgram(true, artifacts.bci.Unwrap(), artifacts.annotations)
-	}
-	// Field-level Intermediate Representation
-	if artifacts.fir.HasValue() {
-		writeIntermediateRepresentation(artifacts.fir.Unwrap(), artifacts.annotations)
+	if config.ir {
+		writeIntermediateRepresentation(artifacts.wir, artifacts.annotations)
+		// Bytecode Intermediate Representation
+		writeBytecodeProgram(true, bci, artifacts.annotations)
 	}
 	// Mid-level Intermediate Representation
-	if artifacts.mir.HasValue() {
-		debug.PrintAnySchema(artifacts.mir.Unwrap(), 80, showStatic)
+	if config.mir {
+		fir := vm.WordToFieldMachine[vm.Uint, F](field, &artifacts.wir)
+		mir := constraints.GenerateMirConstraints(fir, config.build.config.GetMaxStaticDepth())
+		//
+		debug.PrintAnySchema(mir, 80, config.verbose)
 	}
-	// Arithmetic Intermediate Representation
-	if artifacts.air.HasValue() {
-		debug.PrintAnySchema(artifacts.air.Unwrap(), 80, showStatic)
+	// // Arithmetic Intermediate Representation
+	if config.mir {
+		fir := vm.WordToFieldMachine[vm.Uint, F](field, &artifacts.wir)
+		air := constraints.GenerateAirConstraints(fir, field, config.build.config.GetMaxStaticDepth())
+		//
+		debug.PrintAnySchema(air, 80, config.verbose)
 	}
 }
 
@@ -602,5 +612,8 @@ func fnArgs[W vm.Word[W]](regs []vm.Register[W]) string {
 func init() {
 	rootCmd.AddCommand(compileCmd)
 	compileCmd.Flags().StringP("output", "o", "", "specify output file for writing binary constraints")
-	compileCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
+	compileCmd.PersistentFlags().Bool("ast", false, "Output Abstract Syntax Tree (AST)")
+	compileCmd.PersistentFlags().Bool("bci", false, "Output Bytecode Representation (BCI)")
+	compileCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
+	compileCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
 }

@@ -20,6 +20,24 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
+// BitwidthOf returns the accumulated bitwidth of the given set of registers, or
+// none if there exists a native register.
+func BitwidthOf[W any](regmap RegisterMap[W], regs ...RegisterId) util.Option[uint] {
+	var bitwidth uint
+	//
+	for _, r := range regs {
+		bw := regmap.Register(r).Bitwidth()
+		//
+		if bw.IsEmpty() {
+			return bw
+		}
+		//
+		bitwidth += bw.Unwrap()
+	}
+	//
+	return util.Some(bitwidth)
+}
+
 // FromRegisters converts an array of schema registers into an array of register
 // descriptors.
 func FromRegisters[W word.Word[W]](registers ...register.Register) []Register[W] {

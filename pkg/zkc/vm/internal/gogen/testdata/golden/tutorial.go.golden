@@ -122,9 +122,12 @@ func fn_main() {
 	{
 		v, borrow := bits.Sub64(r0, r1, 0)
 		if borrow != 0 {
-			fail("arithmetic underflow")
+			v &= 1<<17 - 1
 		}
 		r12 = v
+		if r12 >= 1<<16 {
+			fail("bit overflow (value exceeds u16)")
+		}
 	}
 	// [0.15] MEMORY_WRITE: result[$11] = $12
 	{

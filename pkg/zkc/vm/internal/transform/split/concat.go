@@ -141,9 +141,11 @@ func insertConcatCarryLines[W word.Word[W]](alloc Allocator[W], chunks Chunks[W]
 				// allocate new carry line
 				carry = alloc.Allocate("c", bitwidth)
 			)
-			// insert carry line
+			// insert carry line.  Observe that, since the carry holds the
+			// overflowing (most significant) bits of this chunk, it becomes
+			// the least significant limb of the next chunk.
 			chunks.Apply(i, appendLhsLimb[W](carry))
-			chunks.Apply(i+1, appendRhsLimb[W](carry))
+			chunks.Apply(i+1, prependRhsLimb[W](carry))
 		}
 	}
 	//

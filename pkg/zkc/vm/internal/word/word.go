@@ -51,6 +51,8 @@ type Word[W any] interface {
 	Bandwidth() uint
 	// Return the value of this word as a big integer.
 	BigInt() *big.Int
+	// Determine number of bits of this value
+	BitLen() uint
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 	Cmp(y W) int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.

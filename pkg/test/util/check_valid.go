@@ -21,7 +21,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
@@ -401,7 +400,8 @@ func runConstraintTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase,
 	case field.KOALABEAR_16:
 		testConstraintsWithField[koalabear.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
 	case field.BLS12_377:
-		testConstraintsWithField[bls12_377.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
+		//testConstraintsWithField[bls12_377.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
+		panic("BLS12_377 not currently supported for tracing")
 	default:
 		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
 	}

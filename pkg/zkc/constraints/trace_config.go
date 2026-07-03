@@ -107,7 +107,8 @@ func (tb TraceConfig) BatchSize() uint {
 // unexpected fields).
 func Trace[F field.Element[F]](bf *BinaryFile[F], in map[string][]vm.Uint, cfg TraceConfig) (trace.Trace[F], []error) {
 	var (
-		observer vm.TraceObserver[vm.Uint, vm.WordInstruction, *vm.WordMachine[vm.Uint]]
+		wm128    = vm.WordToWordMachine[vm.Uint, vm.Uint128](&bf.machine)
+		observer vm.TraceObserver[vm.Uint128, vm.WordInstruction, *vm.WordMachine[vm.Uint128]]
 		stats    = util.NewPerfStats()
 		errs     []error
 		tr       trace.Trace[F]
@@ -115,7 +116,7 @@ func Trace[F field.Element[F]](bf *BinaryFile[F], in map[string][]vm.Uint, cfg T
 	// Execute machine
 	if err := bf.machine.Boot("main", in); err != nil {
 		errs = append(errs, err)
-	} else if _, err := vm.ExecuteAndObserve(&bf.machine, 1, &observer); err != nil {
+	} else if _, err := vm.ExecuteAndObserve(wm128, 1, &observer); err != nil {
 		errs = append(errs, err)
 	} else {
 		// Extract AIR constraints
@@ -129,7 +130,7 @@ func Trace[F field.Element[F]](bf *BinaryFile[F], in map[string][]vm.Uint, cfg T
 			WithParallelism(cfg.parallel).
 			WithBatchSize(cfg.batchSize)
 		// Build the trace (finally)
-		tr, errs = builder.Build(constraints, observer.Trace(&bf.machine))
+		tr, errs = builder.Build(constraints, observer.Trace(wm128))
 	}
 	//
 	stats.Log("Trace generation")

@@ -25,6 +25,7 @@ import (
 // machine), exercising its support for native field arithmetic.
 var DEFAULT_MIXED_CONFIG = util.DEFAULT_CONFIG.
 	Words(vm.WORD_UINT128, vm.WORD_UINT64).
+	Fields(field.KOALABEAR_16).
 	Bytecode(true)
 
 // ===================================================================

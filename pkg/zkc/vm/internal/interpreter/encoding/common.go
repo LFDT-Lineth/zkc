@@ -191,7 +191,7 @@ const (
 func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint32 {
 	switch b := b.(type) {
 	case *bytecode.Arith[W]:
-		return Arith(*b)
+		return Arith(*b, env)
 	case *bytecode.Bitwise:
 		return Bitwise(b)
 	case *bytecode.Call:

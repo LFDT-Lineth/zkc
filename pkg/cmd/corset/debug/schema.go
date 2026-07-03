@@ -28,19 +28,19 @@ import (
 
 // PrintSchemas is responsible for printing out a human-readable description of
 // a given schema.
-func PrintSchemas[F field.Element[F]](stack cmd_util.SchemaStack[F], textwidth uint, showStatic bool) {
+func PrintSchemas[F field.Element[F]](stack cmd_util.SchemaStack[F], textwidth uint, verbose bool) {
 	//
 	for _, schema := range stack.AbstractSchemas() {
-		PrintAnySchema(schema, textwidth, showStatic)
+		PrintAnySchema(schema, textwidth, verbose)
 	}
 	//
 	if stack.HasConcreteSchema() {
-		PrintAnySchema(stack.ConcreteSchema(), textwidth, showStatic)
+		PrintAnySchema(stack.ConcreteSchema(), textwidth, verbose)
 	}
 }
 
 // PrintAnySchema prints out all declarations included in a given schema
-func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, showStatic bool) {
+func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, verbose bool) {
 	first := true
 	// Print out each module, one by one.
 	for i := schema.Modules(); i.HasNext(); {
@@ -50,7 +50,7 @@ func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, 
 			// Skip empty modules as they just clutter things up.  Typically,
 			// for example, the root module is empty.
 			continue
-		} else if ith.IsStatic() && !showStatic {
+		} else if ith.IsStatic() {
 			// Hide static tables unless explicitly requested.
 			continue
 		} else if !first {
@@ -61,7 +61,7 @@ func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, 
 		case *asm.MicroModule[F]:
 			printAssemblyFunctionalUnit[micro.Instruction](ith.Function())
 		default:
-			printModule(ith, schema, width)
+			printModule(ith, schema, width, verbose)
 		}
 		//
 		first = false
@@ -72,7 +72,7 @@ func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, 
 // Legacy module
 // ==================================================================
 
-func printModule[F field.Element[F]](module schema.Module[F], sc schema.AnySchema[F], width uint) {
+func printModule[F field.Element[F]](module schema.Module[F], sc schema.AnySchema[F], width uint, verbose bool) {
 	var (
 		name      = module.Name().String()
 		formatter = sexp.NewFormatter(width, true)
@@ -112,7 +112,7 @@ func printModule[F field.Element[F]](module schema.Module[F], sc schema.AnySchem
 	printRegisters(module, "outputs", func(r register.Register) bool { return r.IsOutput() })
 	printRegisters(module, "computed", func(r register.Register) bool { return r.IsComputed() })
 	// Print static contents (if applicable)
-	printStaticContents(module)
+	printStaticContents(module, verbose)
 	// Print computations
 	for i := module.Assignments(); i.HasNext(); {
 		ith := i.Next()
@@ -132,7 +132,7 @@ func printModule[F field.Element[F]](module schema.Module[F], sc schema.AnySchem
 	}
 }
 
-func printStaticContents[F field.Element[F]](module schema.Module[F]) {
+func printStaticContents[F field.Element[F]](module schema.Module[F], verbose bool) {
 	if module.IsStatic() {
 		var contents = module.StaticContents()
 		//
@@ -149,7 +149,10 @@ func printStaticContents[F field.Element[F]](module schema.Module[F]) {
 				fmt.Printf("0x%s", v.Text(16))
 			}
 			//
-			if i+1 != len(contents) {
+			if verbose && i > 5 {
+				fmt.Println("... )")
+				break
+			} else if i+1 != len(contents) {
 				fmt.Println("),")
 			} else {
 				fmt.Println(")")

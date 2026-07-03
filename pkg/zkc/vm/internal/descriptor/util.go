@@ -13,10 +13,101 @@ package descriptor
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
+
+// CalculateAddBitwidth computes the minimal bitwidth required to hold the result
+// of summing the given registers and constant.
+//
+// NOTE: none is returned when any source is a native (field-typed) register.
+// Such a register has no fixed bitwidth — it can hold any field element up to
+// the prime modulus — so the RHS has no finite width bound and could always
+// overflow a fixed-width target.
+func CalculateAddBitwidth[W word.Word[W]](sources []RegisterId, constant W, env RegisterMap[W]) util.Option[uint] {
+	var (
+		acc = func(lhs, rhs *big.Int) { lhs.Add(lhs, rhs) }
+		max = CalculateMaximumValue(constant, sources, env, acc)
+	)
+	//
+	return util.MapOption(max, func(val big.Int) uint { return uint(val.BitLen()) })
+}
+
+// CalculateSubBitwidth computes the minimal bitwidth required to hold the
+// result of subtraction the first register from the sum of the remaining
+// registers and constant.
+//
+// NOTE: none is returned when any source is a native (field-typed) register.
+// Such a register has no fixed bitwidth — it can hold any field element up to
+// the prime modulus — so the RHS has no finite width bound and could always
+// overflow a fixed-width target.
+func CalculateSubBitwidth[W word.Word[W]](sources []RegisterId, constant W, env RegisterMap[W]) util.Option[uint] {
+	var (
+		zero W
+		acc  = func(lhs, rhs *big.Int) { lhs.Add(lhs, rhs) }
+		lhs  = CalculateMaximumValue(zero, sources[:1], env, acc).Unwrap()
+		rhs  = CalculateMaximumValue(constant, sources[1:], env, acc).Unwrap()
+	)
+	// Subtract one for rhs to account correctly for negative values.  This is
+	// because negative values do not need to encode zero and, hence, can
+	// account for one additional value.
+	rhs.Sub(&rhs, big.NewInt(1))
+	// Calculate bitwidth, including an additional bit for the sign
+	return util.Some(1 + uint(max(lhs.BitLen(), rhs.BitLen())))
+}
+
+// CalculateMulBitwidth computes the minimal bitwidth required to hold the
+// result of the product of the given registers and constant.
+//
+// NOTE: none is returned when any source is a native (field-typed) register.
+// Such a register has no fixed bitwidth — it can hold any field element up to
+// the prime modulus — so the RHS has no finite width bound and could always
+// overflow a fixed-width target.
+func CalculateMulBitwidth[W word.Word[W]](sources []RegisterId, constant W, env RegisterMap[W]) util.Option[uint] {
+	var (
+		acc = func(lhs, rhs *big.Int) { lhs.Mul(lhs, rhs) }
+		max = CalculateMaximumValue(constant, sources, env, acc)
+	)
+	//
+	return util.MapOption(max, func(val big.Int) uint { return uint(val.BitLen()) })
+}
+
+// CalculateMaximumValue computes the largest value which can be produced by the
+// given set of registers and constant using the given accumulator function.
+// Using this, its possible to determine the number of bits required to hold the
+// resulting value.
+//
+// NOTE: none is returned when any source is a native (field-typed) register.
+// Such a register has no fixed bitwidth — it can hold any field element up to
+// the prime modulus — so the RHS has no finite width bound and could always
+// overflow a fixed-width target.
+func CalculateMaximumValue[W word.Word[W]](constant W, regs []RegisterId, regmap RegisterMap[W],
+	acc func(*big.Int, *big.Int)) util.Option[big.Int] {
+	//
+	var maxVal big.Int
+	// Initialise max value
+	maxVal.Set(constant.BigInt())
+	// Determine maximum expressible value
+	for _, rod := range regs {
+		var (
+			v   = big.NewInt(1)
+			reg = regmap.Register(rod)
+		)
+		// Check for native registers
+		if reg.IsNative() {
+			return util.None[big.Int]()
+		}
+		//
+		v.Lsh(v, reg.Bitwidth().Unwrap())
+		v.Sub(v, big.NewInt(1))
+		// Accumulate maximum register value
+		acc(&maxVal, v)
+	}
+	//
+	return util.Some(maxVal)
+}
 
 // SplitConstant splits a given constant into a number of "limbs". For example,
 // consider splitting the constant 0x7b2d into 8-bit limbs.  Then, this function

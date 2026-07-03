@@ -67,12 +67,6 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		outputFile = GetString(cmd, "output")
 		// check constraints
 		check = GetFlag(cmd, "check")
-		// suppress printf output
-		quiet = GetFlag(cmd, "quiet")
-		// fast mode flag
-		fast = GetFlag(cmd, "fast")
-		// gogen mode flag: execute via generated Go rather than the interpreter
-		gogen = GetFlag(cmd, "gogen")
 		// checkpoint spec: when set (as "FUNCTION:INTERVAL"), checkpoint every
 		// INTERVAL-th call to FUNCTION and execute in fast mode, printing
 		// checkpoints.
@@ -82,7 +76,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		// completion via the fast bytecode interpreter.
 		resume = GetFlag(cmd, "resume")
 		// simple equivalence
-		tracing = !fast
+		tracing = !build.fastMode
 		//
 		trace   trace.Trace[F]
 		input   map[string][]byte
@@ -91,11 +85,9 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
 	//
-	applyExecuteDefaults(&build, check, quiet)
-	//
 	// Build artifacts (compiles source files or loads a prebuilt binary).
-	artifacts := build.Build(args[1:]...)
-	wm := artifacts.wir.Unwrap()
+	artifacts := Build[F](build, args[1:]...)
+	wm := artifacts.wir
 	// Wrap the word machine in a binary file for execution / tracing / checking.
 	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticDepth(), wm)
 	// =====================================================
@@ -117,7 +109,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 			outputs, errors = executeWithCheckPoint(&wm, checkpoint, outputFile, input)
 		} else if tracing {
 			outputs, trace, errors = binfile.Trace(input, traceConfig)
-		} else if gogen {
+		} else if build.gogen {
 			// Execute via native Go generated from the word machine.
 			outputs, errors = executeWithGogen(&wm, input)
 		} else {
@@ -158,13 +150,6 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	}
 }
 
-func applyExecuteDefaults[F field.Element[F]](build *BuildConfig[F], check, quiet bool) {
-	// Suppress printf debug instructions when quiet mode is enabled.
-	build.config = build.config.Quiet(quiet)
-	// Force compilation of the word machine, which is what we execute.
-	build.wir = true
-}
-
 func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F], tr trace.Trace[F],
 	cfg constraints.TraceConfig) {
 	//
@@ -194,9 +179,6 @@ func init() {
 	rootCmd.AddCommand(executeCmd)
 	executeCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
 	executeCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
-	executeCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
-	executeCmd.Flags().BoolP("fast", "f", false, "enable fast execution")
-	executeCmd.Flags().BoolP("gogen", "g", false, "execute via generated Go instead of the interpreter")
 	executeCmd.Flags().String("checkpoint", "",
 		"checkpoint a function: \"f:N\" on every Nth call to f, or \"f@N\" once after N calls to f")
 	executeCmd.Flags().Bool("resume", false,

@@ -194,7 +194,7 @@ func (p *bytecodeCompiler[W]) compileWordInstruction(insn WordInstruction, f *Wo
 	case opcode.INT_ADD:
 		return p.compileAdd(insn.(*instruction.WordTypeA[W]), f)
 	case opcode.INT_SUB:
-		code = p.compileSub(insn.(*instruction.WordTypeA[W]))
+		return p.compileSub(insn.(*instruction.WordTypeA[W]), f)
 	case opcode.INT_MUL:
 		return p.compileMul(insn.(*instruction.WordTypeA[W]), f)
 	case opcode.BIT_CONCAT:
@@ -232,28 +232,45 @@ func (p *bytecodeCompiler[W]) compileAdd(insn *instruction.WordTypeA[W], f *Word
 	var (
 		acc = func(lhs, rhs *big.Int) { lhs.Add(lhs, rhs) }
 		// Initialise max value
-		rhsBitwidth = CalculateBitwidth(insn.Constant, insn.Sources, f.RegisterMap(), acc)
+		max      = CalculateMaximumValue(insn.Constant, insn.Sources, f.RegisterMap(), acc)
+		bitwidth = util.MapOption(max, func(x big.Int) uint { return uint(x.BitLen()) })
 		//
 		code = []Bytecode[W]{bytecode.AddVecConst(toRegs(insn.Target.Registers()), toRegs(insn.Sources), insn.Constant)}
 	)
 	// Check whether cast check is required (or not).
-	return append(code, AddCheckCast[W](f.RegisterMap(), insn.Target, rhsBitwidth)...)
+	return append(code, AddCheckCast[W](f.RegisterMap(), insn.Target, bitwidth)...)
 }
 
 func (p *bytecodeCompiler[W]) compileMul(insn *instruction.WordTypeA[W], f *WordFunction) []Bytecode[W] {
 	var (
 		acc = func(lhs, rhs *big.Int) { lhs.Mul(lhs, rhs) }
 		// Initialise max value
-		rhsBitwidth = CalculateBitwidth(insn.Constant, insn.Sources, f.RegisterMap(), acc)
+		max      = CalculateMaximumValue(insn.Constant, insn.Sources, f.RegisterMap(), acc)
+		bitwidth = util.MapOption(max, func(x big.Int) uint { return uint(x.BitLen()) })
 		//
 		code = []Bytecode[W]{bytecode.MulVecConst(toRegs(insn.Target.Registers()), toRegs(insn.Sources), insn.Constant)}
 	)
 	// Check whether cast check is required (or not).
-	return append(code, AddCheckCast[W](f.RegisterMap(), insn.Target, rhsBitwidth)...)
+	return append(code, AddCheckCast[W](f.RegisterMap(), insn.Target, bitwidth)...)
 }
 
-func (p *bytecodeCompiler[W]) compileSub(insn *instruction.WordTypeA[W]) Bytecode[W] {
-	return bytecode.SubVecConst(toRegs(insn.Target.Registers()), toRegs(insn.Sources), insn.Constant)
+func (p *bytecodeCompiler[W]) compileSub(insn *instruction.WordTypeA[W], f *WordFunction) []Bytecode[W] {
+	var (
+		acc = func(lhs, rhs *big.Int) { lhs.Add(lhs, rhs) }
+		// Initialise max value
+		lhsMax = CalculateMaximumValue(insn.Constant, insn.Sources[:1], f.RegisterMap(), acc).Unwrap()
+		rhsMax = CalculateMaximumValue(insn.Constant, insn.Sources[1:], f.RegisterMap(), acc).Unwrap()
+		//
+		code = []Bytecode[W]{bytecode.SubVecConst(toRegs(insn.Target.Registers()), toRegs(insn.Sources), insn.Constant)}
+	)
+	// Subtract one for rhs to account correctly for negative values.  This is
+	// because negative values do not need to encode zero and, hence, can
+	// account for one additional value.
+	lhsMax.Sub(&lhsMax, big.NewInt(1))
+	// Calculate bitwidth, including an additional bit for the sign.
+	bitwidth := util.Some(1 + max(uint(lhsMax.BitLen()), uint(rhsMax.BitLen())))
+
+	return append(code, AddCheckCast[W](f.RegisterMap(), insn.Target, bitwidth)...)
 }
 
 // compileFieldArith emits a modular field-arithmetic bytecode (ADDMOD_P,
@@ -508,7 +525,7 @@ func BitwidthCheckCast[W word.Word[W]](regmap register.Map, target register.Id, 
 	return nil
 }
 
-// CalculateBitwidth computes the number of bits required to hold the largest
+// CalculateMaximumValue computes the number of bits required to hold the largest
 // value the right-hand side of an arithmetic instruction can produce.  Starting
 // from the instruction's constant, it folds in the maximum value of each source
 // register via acc (addition for INT_ADD, multiplication for INT_MUL) and
@@ -522,8 +539,8 @@ func BitwidthCheckCast[W word.Word[W]](regmap register.Map, target register.Id, 
 // fixed-width target.  Returning None therefore signals "unbounded", which
 // addCheckCast treats as a guaranteed overflow and always emits a cast check.
 // This also avoids calling Width() on a native register, which panics.
-func CalculateBitwidth[W word.Word[W]](constant W, regs []register.Id, regmap register.Map,
-	acc func(*big.Int, *big.Int)) util.Option[uint] {
+func CalculateMaximumValue[W word.Word[W]](constant W, regs []register.Id, regmap register.Map,
+	acc func(*big.Int, *big.Int)) util.Option[big.Int] {
 	//
 	var rhsMaxVal big.Int
 	// Initialise max value
@@ -533,13 +550,13 @@ func CalculateBitwidth[W word.Word[W]](constant W, regs []register.Id, regmap re
 		reg := regmap.Register(rod)
 		// Check for native registers
 		if reg.IsNative() {
-			return util.None[uint]()
+			return util.None[big.Int]()
 		}
 		// Accumulate maximum register value
 		acc(&rhsMaxVal, maxValueOf(reg.Width()))
 	}
 	//
-	return util.Some(uint(rhsMaxVal.BitLen()))
+	return util.Some(rhsMaxVal)
 }
 
 func isNative(mapping register.Map, vec register.Vector) bool {

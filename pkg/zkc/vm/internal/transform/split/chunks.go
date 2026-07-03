@@ -206,6 +206,20 @@ func appendRhsLimb[W word.Word[W]](limb RegisterId) ChunkMutator[W] {
 	}
 }
 
+// prependRhsLimb returns a mutator which prepends one source limb to a chunk's
+// right-hand side while preserving its targets and constant.  This is useful
+// where the limb is the least significant of a positional (i.e. concatenation)
+// chunk.
+func prependRhsLimb[W word.Word[W]](limb RegisterId) ChunkMutator[W] {
+	return func(c Chunk[W]) Chunk[W] {
+		return Chunk[W]{
+			LeftHandSide:  c.LeftHandSide,
+			RightHandSide: array.Prepend(limb, c.RightHandSide),
+			Constant:      c.Constant,
+		}
+	}
+}
+
 // appendLhsLimb returns a mutator which appends one target limb to a chunk's
 // left-hand side whilst preserving the rest.
 func appendLhsLimb[W word.Word[W]](limb RegisterId) ChunkMutator[W] {

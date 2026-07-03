@@ -194,3 +194,8 @@ func (p *Environment[W]) OffsetFor(id ModuleId, pp ProgramPoint) uint32 {
 	var lab = Label{id, pp}
 	return p.mapping[lab].Offset
 }
+
+// RegisterMap returns a register map for the enclosing module
+func (p *Environment[W]) RegisterMap() descriptor.RegisterMap[W] {
+	return p.modules[p.enclosing]
+}

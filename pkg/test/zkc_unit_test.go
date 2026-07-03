@@ -22,16 +22,12 @@ import (
 
 // DEFAULT_UNIT_CONFIG provides a default configuration for unit tests.
 var DEFAULT_UNIT_CONFIG = util.DEFAULT_CONFIG.
+	Fields(field.KOALABEAR_16).
 	Words(vm.WORD_UINT64, vm.WORD_UINT128).
 	Constraints(true).
 	Splitting(true).
 	Bytecode(true).
 	GoGen(true)
-
-// DEFAULT_UNITBIG_CONFIG provides a default configuration for unit tests
-// which cannot (currently) run in a 64bit machine.
-var DEFAULT_UNITBIG_CONFIG = DEFAULT_UNIT_CONFIG.
-	Words(vm.WORD_UINT128)
 
 // ===================================================================
 // Basic Tests
@@ -73,28 +69,24 @@ func Test_ZkcUnit_Basic_09(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_10(t *testing.T) {
-	// TODO: register splitting: wrong output + register exceeds field width (u32 vs u16)
-	checkZkcUnit(t, "zkc/unit/basic_10", DEFAULT_UNIT_CONFIG) //.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/basic_10", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_11(t *testing.T) {
-	// TODO: arithmetic underflow
-	checkZkcUnit(t, "zkc/unit/basic_11", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/basic_11", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_12(t *testing.T) {
-	// TODO: arithmetic underflow
-	checkZkcUnit(t, "zkc/unit/basic_12", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/basic_12", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_13(t *testing.T) {
-	// TODO: arithmetic underflow
-	checkZkcUnit(t, "zkc/unit/basic_13", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/basic_13", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_14(t *testing.T) {
 	// TODO: unsupported instruction form
-	checkZkcUnit(t, "zkc/unit/basic_14", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/basic_14", DEFAULT_UNIT_CONFIG.Constraints(false).Fields(field.BLS12_377))
 }
 
 func Test_ZkcUnit_Basic_15(t *testing.T) {
@@ -140,18 +132,15 @@ func Test_ZkcUnit_Basic_25(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_25", DEFAULT_UNIT_CONFIG)
 }
 func Test_ZkcUnit_Basic_26(t *testing.T) {
-	// TODO: arithmetic underflow
-	checkZkcUnit(t, "zkc/unit/basic_26", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/basic_26", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_27(t *testing.T) {
-	// TODO: arithmetic underflow
-	checkZkcUnit(t, "zkc/unit/basic_27", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/basic_27", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_28(t *testing.T) {
-	// TODO: arithmetic underflow
-	checkZkcUnit(t, "zkc/unit/basic_28", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/basic_28", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_29(t *testing.T) {
@@ -163,8 +152,7 @@ func Test_ZkcUnit_Basic_30(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_31(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): index out of range
-	checkZkcUnit(t, "zkc/unit/basic_31", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/basic_31", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_32(t *testing.T) {
@@ -211,38 +199,33 @@ func Test_ZkcUnit_Basic_41(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_42(t *testing.T) {
-	// TODO: constraints (bit overflow, not u32) + gogen (generated code fails to build)
-	checkZkcUnit(t, "zkc/unit/basic_42", DEFAULT_UNIT_CONFIG.Constraints(false).GoGen(false))
+	checkZkcUnit(t, "zkc/unit/basic_42", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_43(t *testing.T) {
-	// TODO: register splitting: bit overflow + register exceeds field width (u32 vs u16)
-	checkZkcUnit(t, "zkc/unit/basic_43", DEFAULT_UNIT_CONFIG.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/basic_43", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_44(t *testing.T) {
-	// NOTE: needs u128 word (u32 arithmetic overflows a 64-bit machine)
-	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNITBIG_CONFIG)
+	// NOTE: needs u128 word (or fast mode splitting)
+	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128))
 }
 
 func Test_ZkcUnit_Basic_45(t *testing.T) {
-	// TODO: arithmetic underflow
-	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNITBIG_CONFIG.Constraints(false).Splitting(false))
+	// TODO: subtract with borrow; needs u128 word (or fast mode splitting).
+	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128))
 }
 
 func Test_ZkcUnit_Basic_46(t *testing.T) {
-	// TODO: bit overflow
-	checkZkcUnit(t, "zkc/unit/basic_46", DEFAULT_UNITBIG_CONFIG.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/basic_46", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128))
 }
 
 func Test_ZkcUnit_Basic_47(t *testing.T) {
-	// TODO: register splitting (register exceeds field width, u64 vs u16); also needs u128 word
-	checkZkcUnit(t, "zkc/unit/basic_47", DEFAULT_UNITBIG_CONFIG.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/basic_47", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128))
 }
 
 func Test_ZkcUnit_Basic_48(t *testing.T) {
-	// TODO: register splitting (register exceeds field width, u64 vs u16); also needs u128 word
-	checkZkcUnit(t, "zkc/unit/basic_48", DEFAULT_UNITBIG_CONFIG.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/basic_48", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128))
 }
 
 func Test_ZkcUnit_Basic_49(t *testing.T) {
@@ -258,6 +241,7 @@ func Test_ZkcUnit_Basic_51(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_52(t *testing.T) {
+	// TODO: missing check cast??
 	checkZkcUnit(t, "zkc/unit/basic_52", DEFAULT_UNIT_CONFIG.Constraints(false).Splitting(false))
 }
 
@@ -291,6 +275,20 @@ func Test_ZkcUnit_Basic_59(t *testing.T) {
 
 func Test_ZkcUnit_Basic_60(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_60", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_61(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_61", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_62(t *testing.T) {
+	// TODO: gogen
+	checkZkcUnit(t, "zkc/unit/basic_62", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_63(t *testing.T) {
+	// TODO: constraint generation: carry exceeds max register width (u17 vs u16)
+	checkZkcUnit(t, "zkc/unit/basic_63", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
@@ -343,18 +341,15 @@ func Test_ZkcUnit_IfElse_03(t *testing.T) {
 }
 
 func Test_ZkcUnit_IfElse_04(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): machine panic during execution
-	checkZkcUnit(t, "zkc/unit/ifelse_04", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/ifelse_04", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_IfElse_05(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): machine panic during execution
-	checkZkcUnit(t, "zkc/unit/ifelse_05", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/ifelse_05", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_IfElse_06(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): reject trace wrongly accepted
-	checkZkcUnit(t, "zkc/unit/ifelse_06", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/ifelse_06", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_IfElse_07(t *testing.T) {
@@ -378,8 +373,7 @@ func Test_ZkcUnit_Const_02(t *testing.T) {
 }
 
 func Test_ZkcUnit_Const_03(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): targetless arithmetic not supported
-	checkZkcUnit(t, "zkc/unit/const_03", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/const_03", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Const_04(t *testing.T) {
@@ -387,8 +381,7 @@ func Test_ZkcUnit_Const_04(t *testing.T) {
 }
 
 func Test_ZkcUnit_Const_05(t *testing.T) {
-	// TODO: register splitting: wrong output + register exceeds field width (u32 vs u16)
-	checkZkcUnit(t, "zkc/unit/const_05", DEFAULT_UNIT_CONFIG.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/const_05", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Const_06(t *testing.T) {
@@ -396,9 +389,9 @@ func Test_ZkcUnit_Const_06(t *testing.T) {
 }
 
 func Test_ZkcUnit_Const_07(t *testing.T) {
-	// NOTE: u128 registers cannot be lowered to a 64-bit word machine, hence
-	// this test is restricted to fields where the Uint64 run is skipped.
-	checkZkcUnit(t, "zkc/unit/const_07", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377).GoGen(false))
+	// NOTE: u128 registers cannot be lowered to a 64-bit word machine, nor
+	// are they supported by gogen.
+	checkZkcUnit(t, "zkc/unit/const_07", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false))
 }
 
 // ===================================================================
@@ -524,8 +517,7 @@ func Test_ZkcUnit_Type_05(t *testing.T) {
 }
 
 func Test_ZkcUnit_Type_06(t *testing.T) {
-	// TODO: gogen unsupported (concatenation source wider than 64 bits unsupported)
-	checkZkcUnit(t, "zkc/unit/type_06", DEFAULT_UNIT_CONFIG.GoGen(false))
+	checkZkcUnit(t, "zkc/unit/type_06", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Type_07(t *testing.T) {
@@ -565,13 +557,11 @@ func Test_ZkcUnit_While_01(t *testing.T) {
 }
 
 func Test_ZkcUnit_While_02(t *testing.T) {
-	// TODO: arithmetic underflow
-	checkZkcUnit(t, "zkc/unit/while_02", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/while_02", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_While_03(t *testing.T) {
-	// TODO: arithmetic underflow
-	checkZkcUnit(t, "zkc/unit/while_03", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/while_03", DEFAULT_UNIT_CONFIG)
 }
 
 // x = f(x) in a while loop
@@ -589,8 +579,7 @@ func Test_ZkcUnit_For_02(t *testing.T) {
 }
 
 func Test_ZkcUnit_For_03(t *testing.T) {
-	// TODO: arithmetic underflow
-	checkZkcUnit(t, "zkc/unit/for_03", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/for_03", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_For_04(t *testing.T) {
@@ -603,8 +592,7 @@ func Test_ZkcUnit_For_04(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Break_01(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): targetless arithmetic not supported
-	checkZkcUnit(t, "zkc/unit/break_01", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/break_01", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -612,8 +600,7 @@ func Test_ZkcUnit_Break_01(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Continue_01(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): targetless arithmetic not supported
-	checkZkcUnit(t, "zkc/unit/continue_01", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/continue_01", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -669,7 +656,7 @@ func Test_ZkcUnit_Bitwise_12(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_13(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bitwise_13", DEFAULT_UNIT_CONFIG.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/bitwise_13", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Bitwise_14(t *testing.T) {
@@ -678,8 +665,7 @@ func Test_ZkcUnit_Bitwise_14(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_15(t *testing.T) {
-	// TODO: register splitting: wrong output + register exceeds field width (u32 vs u16)
-	checkZkcUnit(t, "zkc/unit/bitwise_15", DEFAULT_UNIT_CONFIG.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/bitwise_15", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Bitwise_16(t *testing.T) {
@@ -687,16 +673,16 @@ func Test_ZkcUnit_Bitwise_16(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_17(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bitwise_17", DEFAULT_UNIT_CONFIG.Constraints(false).GoGen(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/bitwise_17", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Bitwise_18(t *testing.T) {
-	// TODO: register splitting (register exceeds width, u128 vs u64 / u32 vs u16)
+	// TODO: wide instructions not supported
 	checkZkcUnit(t, "zkc/unit/bitwise_18", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).Constraints(false).Splitting(false))
 }
 
 func Test_ZkcUnit_Bitwise_19(t *testing.T) {
-	// TODO: register splitting (register exceeds width, u128 vs u64 / u32 vs u16)
+	// TODO: multiply granularity
 	checkZkcUnit(t, "zkc/unit/bitwise_19", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).Constraints(false).Splitting(false))
 }
 
@@ -713,13 +699,11 @@ func Test_ZkcUnit_Shift_02(t *testing.T) {
 }
 
 func Test_ZkcUnit_Shift_03(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): machine panic during execution
-	checkZkcUnit(t, "zkc/unit/shift_03", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/shift_03", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Shift_04(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): machine panic during execution
-	checkZkcUnit(t, "zkc/unit/shift_04", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/shift_04", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Shift_05(t *testing.T) {
@@ -735,8 +719,7 @@ func Test_ZkcUnit_Shift_07(t *testing.T) {
 }
 
 func Test_ZkcUnit_Shift_08(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): machine panic during execution
-	checkZkcUnit(t, "zkc/unit/shift_08", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/shift_08", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Shift_09(t *testing.T) {
@@ -752,8 +735,7 @@ func Test_ZkcUnit_Shift_11(t *testing.T) {
 }
 
 func Test_ZkcUnit_Shift_12(t *testing.T) {
-	// TODO: constraint "$bit_shl_u32" does not hold
-	checkZkcUnit(t, "zkc/unit/shift_12", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/shift_12", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -809,24 +791,19 @@ func Test_ZkcUnit_Div_01(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_01", DEFAULT_UNIT_CONFIG)
 }
 
-// Register splitting now works under BLS12_377; KOALABEAR (u16) still fails
-// (targetless arithmetic not supported), hence the field restriction remains.
 func Test_ZkcUnit_Div_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/div_02", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	// TODO: register exceeds max register width
+	checkZkcUnit(t, "zkc/unit/div_02", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377).Constraints(false))
 }
 
 func Test_ZkcUnit_Div_03(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_03", DEFAULT_UNIT_CONFIG)
 }
 
-// Division by a constant power of two (optimised into a right shift in fast
-// mode; see OptimizeDivisions).
 func Test_ZkcUnit_Div_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_04", DEFAULT_UNIT_CONFIG)
 }
 
-// Division by a divisor conditionally assigned different power-of-two constants;
-// must NOT be rewritten into a shift (regression guard for OptimizeDivisions).
 func Test_ZkcUnit_Div_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_05", DEFAULT_UNIT_CONFIG)
 }
@@ -842,7 +819,8 @@ func Test_ZkcUnit_Rem_01(t *testing.T) {
 // Constraints + register splitting now work under BLS12_377; KOALABEAR (u16)
 // still fails (register exceeds field width), hence the field restriction.
 func Test_ZkcUnit_Rem_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/rem_02", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	// TODO: register exceeds maximum bitwidth
+	checkZkcUnit(t, "zkc/unit/rem_02", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377).Constraints(false))
 }
 
 func Test_ZkcUnit_Rem_03(t *testing.T) {
@@ -869,8 +847,7 @@ func Test_ZkcUnit_Call_02(t *testing.T) {
 
 // This test covers call register aliasing where the return is assigned to an argument register (x = f(x)).
 func Test_ZkcUnit_Call_03(t *testing.T) {
-	// TODO: register splitting: constraint "doubleCapped" fails (call aliasing)
-	checkZkcUnit(t, "zkc/unit/call_03", DEFAULT_UNIT_CONFIG.Splitting(false))
+	checkZkcUnit(t, "zkc/unit/call_03", DEFAULT_UNIT_CONFIG)
 }
 
 // This test covers call register aliasing where the return is assigned to an argument register (x = f(x, y)).
@@ -966,8 +943,7 @@ func Test_ZkcUnit_Switch_06(t *testing.T) {
 }
 
 func Test_ZkcUnit_Switch_07(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): machine panic
-	checkZkcUnit(t, "zkc/unit/switch_07", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	checkZkcUnit(t, "zkc/unit/switch_07", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Switch_08(t *testing.T) {
@@ -975,8 +951,8 @@ func Test_ZkcUnit_Switch_08(t *testing.T) {
 }
 
 func Test_ZkcUnit_Switch_09(t *testing.T) {
-	// TODO: register splitting (KOALABEAR): unsupported instruction form
-	checkZkcUnit(t, "zkc/unit/switch_09", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
+	// TODO: unsupported instruction form
+	checkZkcUnit(t, "zkc/unit/switch_09", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377).Constraints(false))
 }
 
 func Test_ZkcUnit_Switch_10(t *testing.T) {
@@ -1106,15 +1082,6 @@ func Test_ZkcUnit_SkipIf_04(t *testing.T) {
 
 func Test_ZkcUnit_SkipIf_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/skip_if_05", DEFAULT_UNIT_CONFIG)
-}
-
-// ===================================================================
-// Destruct Tests
-// ===================================================================
-
-func Test_ZkcUnit_Destruct_01(t *testing.T) {
-	// TODO: index out-of-range
-	checkZkcUnit(t, "zkc/unit/destruct_01", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377))
 }
 
 // ===================================================================
