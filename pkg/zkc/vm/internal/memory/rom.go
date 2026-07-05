@@ -28,7 +28,7 @@ import (
 // to fixed tables used within the program (e.g. in a hash function such as
 // BLAKE or KECCAK, there are fixed lookup tables used as part of the program).
 type ReadOnly[W util.Uinter64] struct {
-	StaticArray[W]
+	StaticArray[W, W]
 }
 
 // Write implementation for Memory interface.
@@ -49,6 +49,6 @@ func NewReadOnly[W util.Uinter64](name string, public bool, geometry Geometry[W]
 	}
 	//
 	return &ReadOnly[W]{
-		StaticArray: NewStaticArray[W](name, kind, geometry, init...),
+		StaticArray: NewStaticArray[W, W](name, kind, geometry, init...),
 	}
 }

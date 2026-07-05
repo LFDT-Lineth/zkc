@@ -23,7 +23,7 @@ import (
 // starting from zero.  Thus, a WOM can be viewed as an output stream (which is
 // exactly what they are typically used for).
 type WriteOnce[W util.Uinter64] struct {
-	StaticArray[W]
+	StaticArray[W, W]
 	writtenToAddresses []bool
 }
 
@@ -73,7 +73,7 @@ func NewWriteOnce[W util.Uinter64](name string, public bool, geometry Geometry[W
 	}
 	//
 	return &WriteOnce[W]{
-		StaticArray:        NewStaticArray[W](name, kind, geometry),
+		StaticArray:        NewStaticArray[W, W](name, kind, geometry),
 		writtenToAddresses: []bool{},
 	}
 }
