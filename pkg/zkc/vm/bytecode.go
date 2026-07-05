@@ -15,6 +15,7 @@ package vm
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -65,8 +66,16 @@ type BytecodeEnvironment = bytecode.Environment
 // NewBytecodeInterpreter constructs an interpreter for executing the given
 // bytecode program.  The modulus is the prime characteristic of the surrounding
 // field, used when executing native field instructions.
-func NewBytecodeInterpreter[W word.Word[W]](program Program[W], modulus W) *Interpreter[W] {
-	return interpreter.New(program, modulus)
+func NewBytecodeInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
+	var prime W
+	// sanity check prime fits within target word
+	if prime.Bandwidth() < program.Field().BandWidth {
+		panic("insufficient bandwidth for prime field")
+	}
+	// Construct prime field
+	prime = prime.SetBigInt(program.Field().Modulus())
+	//
+	return interpreter.New(program, prime)
 }
 
 // CompileProgram compiles a program descriptor into an binary (i.e. executable)
@@ -77,8 +86,8 @@ func CompileProgram[W word.Word[W]](p Program[W]) BinaryProgram[W] {
 
 // NewBytecodeProgram assembles a bytecode program directly from pre-lowered
 // descriptor modules, bypassing the word-machine round trip.
-func NewBytecodeProgram[W word.Word[W]](modules ...BytecodeModule[W]) Program[W] {
-	return descriptor.NewProgram(modules...)
+func NewBytecodeProgram[W word.Word[W]](field field.Config, modules ...BytecodeModule[W]) Program[W] {
+	return descriptor.NewProgram(field, modules...)
 }
 
 // NewBytecodeVector constructs a bytecode vector (single trace line) from the
@@ -207,6 +216,30 @@ func Jump[W Word[W]](target Address) Bytecode[W] {
 // instructions.
 func Skip[W Word[W]](skip uint16) Bytecode[W] {
 	return bytecode.NewSkip(skip)
+}
+
+// SkipTargets returns, for a skip-like bytecode located at bytecode index
+// `from` within its enclosing vector, the index of each bytecode to which
+// control may transfer when the skip is taken.  A skip over n bytecodes
+// transfers to `from + n + 1` (mirroring the interpreter's control flow).  For
+// non-skip bytecodes, nil is returned.
+func SkipTargets[W Word[W]](b Bytecode[W], from uint) []uint {
+	switch b := b.(type) {
+	case *bytecode.Skip:
+		return []uint{from + uint(b.Skip) + 1}
+	case *bytecode.SkipIf:
+		return []uint{from + uint(b.Skip) + 1}
+	case *bytecode.Switch[W]:
+		targets := make([]uint, len(b.Cases))
+		//
+		for i, c := range b.Cases {
+			targets[i] = from + uint(c.Skip) + 1
+		}
+		//
+		return targets
+	default:
+		return nil
+	}
 }
 
 // SkipIf constructs a conditional branch instruction which jumps to the

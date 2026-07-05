@@ -13,6 +13,8 @@
 package descriptor
 
 import (
+	"bytes"
+	"encoding/gob"
 	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -118,6 +120,11 @@ func (p Register[W]) Bitwidth() util.Option[uint] {
 	return p.bitwidth
 }
 
+// Kind returns the kind of this register (e.g. input, output, computed).
+func (p Register[W]) Kind() register.Type {
+	return p.kind
+}
+
 // IsInput determines whether or not this is an input register
 func (p Register[W]) IsInput() bool {
 	return p.kind == register.INPUT_REGISTER
@@ -153,4 +160,62 @@ func (p Register[W]) Name() string {
 // Padding returns the padding for this register
 func (p Register[W]) Padding() W {
 	return p.padding
+}
+
+// ============================================================================
+// Encoding / Decoding
+// ============================================================================
+
+// GobEncode marshals this register descriptor.  All of the register's fields
+// are unexported, so an explicit encoding is required (gob would otherwise skip
+// them).
+//
+// nolint
+func (p *Register[W]) GobEncode() ([]byte, error) {
+	var buffer bytes.Buffer
+	gobEncoder := gob.NewEncoder(&buffer)
+	//
+	if err := gobEncoder.Encode(&p.kind); err != nil {
+		return nil, err
+	}
+	//
+	if err := gobEncoder.Encode(p.name); err != nil {
+		return nil, err
+	}
+	//
+	if err := gobEncoder.Encode(&p.bitwidth); err != nil {
+		return nil, err
+	}
+	//
+	if err := gobEncoder.Encode(&p.padding); err != nil {
+		return nil, err
+	}
+	//
+	return buffer.Bytes(), nil
+}
+
+// nolint
+func (p *Register[W]) GobDecode(data []byte) error {
+	var (
+		buffer     = bytes.NewBuffer(data)
+		gobDecoder = gob.NewDecoder(buffer)
+	)
+	//
+	if err := gobDecoder.Decode(&p.kind); err != nil {
+		return err
+	}
+	//
+	if err := gobDecoder.Decode(&p.name); err != nil {
+		return err
+	}
+	//
+	if err := gobDecoder.Decode(&p.bitwidth); err != nil {
+		return err
+	}
+	//
+	if err := gobDecoder.Decode(&p.padding); err != nil {
+		return err
+	}
+	//
+	return nil
 }

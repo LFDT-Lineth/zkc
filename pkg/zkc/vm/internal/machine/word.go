@@ -35,17 +35,21 @@ type WordFrame[W word.Word[W]] = StackFrame[W, instruction.Word]
 func NewWord[W word.Word[W]](field field.Config, modules ...Module) *Word[W] {
 	var (
 		prime W
+		// initially empty call stack
+		callstack CallStack[W, instruction.Word]
 		// Construct executor over the given prime modulus
 		executor = WordExecutor[W]{prime.SetBigInt(field.Modulus())}
 	)
 	//
-	return NewBase(executor, modules...)
+	return NewBase(executor, callstack, modules...)
 }
 
 // NewWordFromModulus constructs a new empty word machine directly from a given
 // prime modulus (already expressed in the target word type).
-func NewWordFromModulus[W word.Word[W]](modulus W, modules ...Module) *Word[W] {
-	return NewBase(WordExecutor[W]{modulus}, modules...)
+func NewWordFromModulus[W word.Word[W]](modulus W, callstack CallStack[W, instruction.Word],
+	modules ...Module) *Word[W] {
+	//
+	return NewBase(WordExecutor[W]{modulus}, callstack, modules...)
 }
 
 // ==============================================================
@@ -246,13 +250,13 @@ func executeSub[W word.Word[W]](target register.Vector, sources []register.Id, c
 			val = ith
 		} else {
 			if val, underflow = val.Sub(ith); underflow {
-				return errors.New("arithmetic underflow")
+				return errors.New("arithmetic underflow [4]")
 			}
 		}
 	}
 	// Subtract constant
 	if val, underflow = val.Sub(constant); underflow {
-		return errors.New("arithmetic underflow")
+		return errors.New("arithmetic underflow [5]")
 	}
 	//
 	return StoreAcross(frame, target, val)
@@ -436,7 +440,7 @@ func executeDivHint[W word.Word[W]](targets, sources []register.Vector, frame Wo
 	w, uf2 = w.Sub(one)
 	//
 	if uf1 || uf2 {
-		return errors.New("arithmetic underflow")
+		return errors.New("arithmetic underflow [6]")
 	}
 	// assign q
 	if err := StoreAcross(frame, targets[0], q); err != nil {

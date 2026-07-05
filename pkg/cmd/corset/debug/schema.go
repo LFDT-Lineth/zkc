@@ -50,9 +50,6 @@ func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, 
 			// Skip empty modules as they just clutter things up.  Typically,
 			// for example, the root module is empty.
 			continue
-		} else if ith.IsStatic() {
-			// Hide static tables unless explicitly requested.
-			continue
 		} else if !first {
 			fmt.Println()
 		}
@@ -149,8 +146,10 @@ func printStaticContents[F field.Element[F]](module schema.Module[F], verbose bo
 				fmt.Printf("0x%s", v.Text(16))
 			}
 			//
-			if verbose && i > 5 {
-				fmt.Println("... )")
+			if !verbose && i > 3 {
+				fmt.Println("),")
+				fmt.Println("   ...")
+				//
 				break
 			} else if i+1 != len(contents) {
 				fmt.Println("),")

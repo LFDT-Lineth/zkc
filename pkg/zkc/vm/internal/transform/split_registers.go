@@ -48,7 +48,7 @@ func SplitRegisters[W word.Word[W]](cfg field.Config, program descriptor.Program
 		out[i] = splitModule(mapping, mods, ith)
 	}
 	//
-	return descriptor.NewProgram(out...)
+	return descriptor.NewProgram(program.Field(), out...)
 }
 
 func splitModule[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descriptor.Module[W],

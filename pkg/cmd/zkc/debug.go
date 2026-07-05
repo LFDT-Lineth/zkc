@@ -53,16 +53,17 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	input := ParseInputFile(args[0])
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	artifacts := Build[F](build, args[1:]...)
-	wm := artifacts.wir
+	// Translate bytecode => word machine
+	wm := vm.BytecodeProgramToWord(artifacts.ir)
 	// Filter out unnecessary inputs
-	input = filterInputsOnly(&wm, input)
+	input = filterInputsOnly(artifacts.ir, input)
 	// Decode inputs against the compiled machine.
-	inputs, errs := vm.DecodeInputs(&wm, input)
+	inputs, errs := vm.DecodeInputs(wm, input)
 	if len(errs) == 0 {
 		// boot & execute
 		if err := wm.Boot("main", inputs); err != nil {
 			errs = append(errs, err)
-		} else if _, err := vm.ExecuteAndObserve(&wm, 1, &observer); err != nil {
+		} else if _, err := vm.ExecuteAndObserve(wm, 1, &observer); err != nil {
 			errs = append(errs, err)
 		}
 	}

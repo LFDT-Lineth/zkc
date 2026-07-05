@@ -57,19 +57,10 @@ type BinaryFile[F field.Element[F]] struct {
 	// constraint checking but may be useful for tooling (e.g. source-column
 	// mappings for debug output).
 	attributes []Attribute
-	// Config identifies the field configuration supported by this binary file.
-	// This is important for e.g. checking the binary file is compiled for the
-	// right field, etc.
-	config field.Config
-	// maxStaticDepth records the maximum depth (i.e. number of rows) of static
-	// tables used when this binary was compiled.  It must be carried in the file
-	// so that constraints regenerated from it match those produced at compile
-	// time (the range constraints baked into the machine depend on this value).
-	maxStaticDepth uint
 	// Machine is the current representation of "constraints".  Its not very
 	// pretty, but right now its all we have.  This will certainly change in the
 	// near future.
-	machine vm.WordMachine[vm.Uint]
+	program vm.Program[vm.Uint]
 	// cached fast machine
 	machineCache util.Option[*vm.Interpreter[vm.Uint128]]
 	// cached air constraints
@@ -81,13 +72,11 @@ type BinaryFile[F field.Element[F]] struct {
 // the header (pass nil for none).  A field configuration is required to allow
 // clients to check they are targeting the expected field.
 func NewBinaryFile[F field.Element[F]](metadata []byte, attributes []Attribute, config field.Config,
-	maxStaticDepth uint, machine vm.WordMachine[vm.Uint]) *BinaryFile[F] {
+	maxStaticDepth uint, machine vm.Program[vm.Uint]) *BinaryFile[F] {
 	//
 	return &BinaryFile[F]{
 		Header{ZKC_EXEC, BINFILE_MAJOR_VERSION, BINFILE_MINOR_VERSION, metadata},
 		attributes,
-		config,
-		maxStaticDepth,
 		machine,
 		util.None[*vm.Interpreter[vm.Uint128]](),
 		util.None[air.Schema[F]](),
@@ -103,14 +92,22 @@ func (p *BinaryFile[F]) Header() Header {
 // LimbsMap provides a mapping from top-level registers to register limbs.  This
 // is useful to understand the mapping before / after register splitting.
 func (p *BinaryFile[F]) LimbsMap() module.LimbsMap {
-	return newLimbsMap(p.config, p.machine.Modules()...)
+	return newLimbsMap(p.program.Field(), p.program.Modules()...)
 }
 
 // Field returns the field configuration for which this binary file is compiled.
 // The primary purpose of this is to allow sanity check that the fields match
 // between the client and what is embedded in this file.
 func (p *BinaryFile[F]) Field() field.Config {
-	return p.config
+	return p.program.Field()
+}
+
+// MaxStaticDepth records the maximum depth (i.e. number of rows) of static
+// tables used when this binary was compiled.  It must be carried in the file
+// so that constraints regenerated from it match those produced at compile
+// time (the range constraints baked into the machine depend on this value).
+func (p *BinaryFile[F]) MaxStaticDepth() uint {
+	return p.program.MaxStaticDepth()
 }
 
 // AirConstraints returns the arithmetic (AIR) constraints encoded in this file.
@@ -122,10 +119,11 @@ func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
 	//
 	var (
 		stats = util.NewPerfStats()
+		wm    = vm.BytecodeProgramToWord(p.program)
 		// Lower from word-level machine to field-level machine
-		fir = vm.WordToFieldMachine[vm.Uint, F](p.config, &p.machine)
+		fir = vm.WordToFieldMachine[vm.Uint, F](p.Field(), wm)
 		// Generate arithmetic intermediate representation
-		air = GenerateAirConstraints(fir, p.Field(), p.maxStaticDepth)
+		air = GenerateAirConstraints(fir, p.Field(), p.MaxStaticDepth())
 	)
 	// cache result
 	p.constraintsCache = util.Some(air)
@@ -135,9 +133,9 @@ func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
 	return air
 }
 
-// WordMachine returns the top-level word machine encoded in this file.
-func (p *BinaryFile[F]) WordMachine() vm.WordMachine[vm.Uint] {
-	return p.machine
+// Program returns the bytecode program encoded in this file.
+func (p *BinaryFile[F]) Program() vm.Program[vm.Uint] {
+	return p.program
 }
 
 // Check a given trace against the constraints embodied in this constraints
@@ -161,12 +159,10 @@ func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Fa
 // it simply extracts the outputs at the end.
 func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[string][]byte, errs []error) {
 	if !p.machineCache.HasValue() {
-		// lower to a 64bit machine
-		m128 := vm.WordToWordMachine[vm.Uint, vm.Uint128](&p.machine)
 		// Construct bytecode machine
-		bci := vm.WordToBytecodeInterpreter(m128)
+		bci := vm.ProgramToProgram[vm.Uint, vm.Uint128](p.program)
 		// Compile bytecode interpreter
-		p.machineCache = util.Some(bci)
+		p.machineCache = util.Some(vm.NewBytecodeInterpreter(bci))
 	}
 	// Boot and execute fast machine
 	return vm.BootAndExecute(p.machineCache.Unwrap(), input, n)
@@ -180,14 +176,17 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[str
 func (p *BinaryFile[F]) Trace(input map[string][]byte, config TraceConfig,
 ) (output map[string][]byte, tr trace.Trace[F], errs []error) {
 	//
-	var inputs map[string][]vm.Uint
+	var (
+		inputs map[string][]vm.Uint
+		wm     = vm.BytecodeProgramToWord(p.program)
+	)
 	// Execute machine in chunks of 1K steps
-	if inputs, errs = vm.DecodeInputs(&p.machine, input); len(errs) == 0 {
+	if inputs, errs = vm.DecodeInputs(wm, input); len(errs) == 0 {
 		tr, errs = Trace(p, inputs, config)
 	}
 	//
 	if len(errs) == 0 {
-		output = vm.EncodeOutputs(&p.machine)
+		output = vm.EncodeOutputs(wm)
 	}
 	//
 	return output, tr, errs
@@ -215,16 +214,8 @@ func (p *BinaryFile[F]) MarshalBinary() ([]byte, error) {
 	if err := gobEncoder.Encode(p.attributes); err != nil {
 		return nil, err
 	}
-	// Encode field configuration
-	if err := gobEncoder.Encode(p.config); err != nil {
-		return nil, err
-	}
-	// Encode maximum static table depth
-	if err := gobEncoder.Encode(p.maxStaticDepth); err != nil {
-		return nil, err
-	}
 	// Encode schema
-	if err := gobEncoder.Encode(&p.machine); err != nil {
+	if err := gobEncoder.Encode(&p.program); err != nil {
 		return nil, err
 	}
 	// Done
@@ -247,16 +238,13 @@ func (p *BinaryFile[F]) UnmarshalBinary(data []byte) error {
 		decoder := gob.NewDecoder(buffer)
 		// Proceed to decoding any attributes.
 		if err = decoder.Decode(&p.attributes); err == nil {
-			if err = decoder.Decode(&p.config); err == nil {
+			if err = decoder.Decode(&p.program); err == nil {
 				// extract modulus defined used for the compiling the given
 				// constraints.
-				var mod = p.config.Modulus()
+				var mod = p.program.Field().Modulus()
 				// check for compatible field
-				if modulus.Cmp(p.config.Modulus()) != 0 {
+				if modulus.Cmp(mod) != 0 {
 					err = fmt.Errorf("incompatible prime field (0x%s versus 0x%s))", modulus.Text(16), mod.Text(16))
-				} else if err = decoder.Decode(&p.maxStaticDepth); err == nil {
-					// finally, decode the constraints
-					err = decoder.Decode(&p.machine)
 				}
 			}
 		}

@@ -45,7 +45,7 @@ func InsertCheckCasts[W word.Word[W]](program descriptor.Program[W]) descriptor.
 		}
 	}
 	//
-	return descriptor.NewProgram(out...)
+	return descriptor.NewProgram(program.Field(), out...)
 }
 
 // insertFunctionCasts rewrites a single function's vectors, inserting cast checks

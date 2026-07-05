@@ -734,12 +734,12 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (ui
 		var src = sources.Next()
 		//
 		if acc, underflow = acc.Add(stack[src]); underflow {
-			return pc, errors.New("arithmetic underflow")
+			return pc, errors.New("arithmetic underflow [1]")
 		}
 	}
 	//
 	if acc, underflow = acc.Add(constant); underflow {
-		return pc, errors.New("arithmetic underflow")
+		return pc, errors.New("arithmetic underflow [2]")
 	} else if val, underflow = val.Sub(acc); underflow {
 		val = val.Slice(bitwidth)
 	}
@@ -1087,7 +1087,7 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 	w.Sub(w, big.NewInt(1))
 	//
 	if w.Sign() < 0 {
-		return pc, errors.New("arithmetic underflow")
+		return pc, errors.New("arithmetic underflow [3]")
 	}
 	// Distribute quotient, remainder and witness across their target vectors.
 	for _, val := range []*big.Int{q, r, w} {

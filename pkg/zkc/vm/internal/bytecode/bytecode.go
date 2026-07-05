@@ -13,6 +13,8 @@
 package bytecode
 
 import (
+	"encoding/gob"
+
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -418,4 +420,29 @@ func IsUnusedConstant[W word.Word[W]](op Operation, constant W) bool {
 	default:
 		panic("unknown arithmetic operation")
 	}
+}
+
+// RegisterGobTypes registers every concrete Bytecode[W] implementation with the
+// gob package for the given word type W.  This is required so that the Bytecode
+// interface values held within a Vector can be marshalled / unmarshalled.  gob
+// registration is keyed on the concrete type, so registering the same
+// instantiation more than once is harmless (and registering distinct word types
+// yields distinct names, hence no conflict).
+func RegisterGobTypes[W word.Word[W]]() {
+	gob.Register(&Arith[W]{})
+	gob.Register(&Bitwise{})
+	gob.Register(&Call{})
+	gob.Register(&Cat{})
+	gob.Register(&CheckCast{})
+	gob.Register(&Debug{})
+	gob.Register(&DivRem{})
+	gob.Register(&Fail{})
+	gob.Register(&FieldArith[W]{})
+	gob.Register(&Hint{})
+	gob.Register(&Jmp{})
+	gob.Register(&ReadWrite{})
+	gob.Register(&Ret{})
+	gob.Register(&Skip{})
+	gob.Register(&SkipIf{})
+	gob.Register(&Switch[W]{})
 }

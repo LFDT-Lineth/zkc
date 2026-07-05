@@ -23,7 +23,6 @@ import (
 // DEFAULT_UNIT_CONFIG provides a default configuration for unit tests.
 var DEFAULT_UNIT_CONFIG = util.DEFAULT_CONFIG.
 	Fields(field.KOALABEAR_16).
-	Words(vm.WORD_UINT64, vm.WORD_UINT128).
 	Constraints(true).
 	Splitting(true).
 	Bytecode(true).
@@ -73,15 +72,15 @@ func Test_ZkcUnit_Basic_10(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_11(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_11", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_11", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_12(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_12", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_12", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_13(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_13", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_13", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_14(t *testing.T) {
@@ -132,15 +131,15 @@ func Test_ZkcUnit_Basic_25(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_25", DEFAULT_UNIT_CONFIG)
 }
 func Test_ZkcUnit_Basic_26(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_26", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_26", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_27(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_27", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_27", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_28(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_28", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_28", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_29(t *testing.T) {
@@ -213,7 +212,7 @@ func Test_ZkcUnit_Basic_44(t *testing.T) {
 
 func Test_ZkcUnit_Basic_45(t *testing.T) {
 	// TODO: subtract with borrow; needs u128 word (or fast mode splitting).
-	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128))
+	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_46(t *testing.T) {
@@ -221,11 +220,11 @@ func Test_ZkcUnit_Basic_46(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_47(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_47", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128))
+	checkZkcUnit(t, "zkc/unit/basic_47", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_48(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_48", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128))
+	checkZkcUnit(t, "zkc/unit/basic_48", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_49(t *testing.T) {
@@ -283,7 +282,7 @@ func Test_ZkcUnit_Basic_61(t *testing.T) {
 
 func Test_ZkcUnit_Basic_62(t *testing.T) {
 	// TODO: gogen
-	checkZkcUnit(t, "zkc/unit/basic_62", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_62", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_63(t *testing.T) {
@@ -557,11 +556,11 @@ func Test_ZkcUnit_While_01(t *testing.T) {
 }
 
 func Test_ZkcUnit_While_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/while_02", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/while_02", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_While_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/while_03", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/while_03", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 // x = f(x) in a while loop
@@ -579,7 +578,7 @@ func Test_ZkcUnit_For_02(t *testing.T) {
 }
 
 func Test_ZkcUnit_For_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/for_03", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/for_03", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_For_04(t *testing.T) {
@@ -592,7 +591,7 @@ func Test_ZkcUnit_For_04(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Break_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/break_01", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/break_01", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 // ===================================================================
@@ -600,7 +599,7 @@ func Test_ZkcUnit_Break_01(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Continue_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/continue_01", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/continue_01", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 // ===================================================================

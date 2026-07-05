@@ -74,9 +74,10 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		// resume mode: the input file holds a checkpoint (hex) to resume from,
 		// rather than an initial set of JSON inputs.  Execution then continues to
 		// completion via the fast bytecode interpreter.
-		resume = GetFlag(cmd, "resume")
+		resume   = GetFlag(cmd, "resume")
+		fastMode = build.config.IsFastMode()
 		// simple equivalence
-		tracing = !build.fastMode
+		tracing = !fastMode
 		//
 		trace   trace.Trace[F]
 		input   map[string][]byte
@@ -84,34 +85,35 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	)
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
-	//
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	artifacts := Build[F](build, args[1:]...)
-	wm := artifacts.wir
+	// Translate bytecode => word machine
+	program := vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
 	// Wrap the word machine in a binary file for execution / tracing / checking.
-	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticDepth(), wm)
+	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticDepth(), artifacts.ir)
 	// =====================================================
 	// Trace / Execute
 	// =====================================================
 	if resume {
 		// Resume execution from the checkpoint held (in hex) in the input file,
 		// running the (unmodified) program to completion in fast mode.
-		outputs, errors = resumeFromCheckPoint(&wm, args[0])
+		outputs, errors = resumeFromCheckPoint(program, args[0])
 	} else {
 		// Parse an filter input file
 		input = ParseInputFile(args[0])
-		input = filterInputsOnly(&wm, input)
+		input = filterInputsOnly(program, input)
 		// decide what is happening
 		if checkpoint != "" {
 			// Checkpoint the function named in the spec (periodically with "f:N", or
 			// once with "f@N") and execute in fast mode, writing the resulting
 			// checkpoints to the output file (with -o) or to stdout otherwise.
-			outputs, errors = executeWithCheckPoint(&wm, checkpoint, outputFile, input)
+			outputs, errors = executeWithCheckPoint(program, checkpoint, outputFile, input)
 		} else if tracing {
 			outputs, trace, errors = binfile.Trace(input, traceConfig)
 		} else if build.gogen {
+			wm := vm.BytecodeProgramToWord(artifacts.ir)
 			// Execute via native Go generated from the word machine.
-			outputs, errors = executeWithGogen(&wm, input)
+			outputs, errors = executeWithGogen(wm, input)
 		} else {
 			outputs, errors = binfile.Execute(input, 131072)
 		}
@@ -203,7 +205,7 @@ func init() {
 // "FUNCTION@INTERVAL" (see parseCheckPointSpec); checkpoints are written -- one
 // hex string per line -- to the given output file (or to stdout when outputFile
 // is empty).
-func executeWithCheckPoint(wm *vm.WordMachine[vm.Uint], spec, outputFile string,
+func executeWithCheckPoint[W vm.Word[W]](program vm.Program[W], spec, outputFile string,
 	input map[string][]byte) (map[string][]byte, []error) {
 	//
 	fn, clk, err := parseCheckPointSpec(spec)
@@ -211,7 +213,7 @@ func executeWithCheckPoint(wm *vm.WordMachine[vm.Uint], spec, outputFile string,
 		return nil, []error{err}
 	}
 	//
-	interp, closer, err := newCheckPointInterpreter(wm, fn, clk, outputFile)
+	interp, closer, err := newCheckPointInterpreter(program, fn, clk, outputFile)
 	if err != nil {
 		return nil, []error{err}
 	}
@@ -256,19 +258,14 @@ func parseCheckPointSpec(spec string) (string, util.Counter, error) {
 // so checkpoints are written in the plain program's coordinates (see
 // executeWithCheckPoint) and resume directly against it -- no checkpointing
 // transformation is needed here.
-func resumeFromCheckPoint(wm *vm.WordMachine[vm.Uint], inputFile string) (map[string][]byte, []error) {
+func resumeFromCheckPoint[W vm.Word[W]](prog vm.Program[W], inputFile string) (map[string][]byte, []error) {
 	//
 	var (
-		stats = util.NewPerfStats()
-		// Lower to the fast (128-bit) word machine, then compile to bytecode --
-		// the same program the checkpoint was taken against (checkpointing leaves
-		// the bytecode layout unchanged).
-		m128    = vm.WordToWordMachine[vm.Uint, vm.Uint128](wm)
-		program = vm.WordToBytecodeProgram(m128)
-		interp  = vm.NewBytecodeInterpreter(program, m128.Executor().Modulus())
+		stats  = util.NewPerfStats()
+		interp = vm.NewBytecodeInterpreter(prog)
 	)
 	// Decode the checkpoint and restore the interpreter's state from it.
-	cp, err := readCheckPoint(inputFile)
+	cp, err := readCheckPoint[W](inputFile)
 	if err != nil {
 		return nil, []error{err}
 	}
@@ -298,12 +295,10 @@ func resumeFromCheckPoint(wm *vm.WordMachine[vm.Uint], inputFile string) (map[st
 // layout is therefore identical to the unmodified program.  Captured
 // checkpoints thus share the original program's coordinates and resume directly
 // against it (see resumeFromCheckPoint).
-func newCheckPointInterpreter(wm *vm.WordMachine[vm.Uint], fn string, clk util.Counter, outputFile string,
-) (*vm.Interpreter[vm.Uint128], func(), error) {
+func newCheckPointInterpreter[W vm.Word[W]](p vm.Program[W], fn string, clk util.Counter, outputFile string,
+) (*vm.Interpreter[W], func(), error) {
 	//
 	var (
-		m128    = vm.WordToWordMachine[vm.Uint, vm.Uint128](wm)
-		program = vm.WordToBytecodeProgram(m128)
 		// Checkpoints are written here: the output file (with -o) or stdout.
 		out    io.Writer = os.Stdout
 		closer           = func() {}
@@ -323,16 +318,16 @@ func newCheckPointInterpreter(wm *vm.WordMachine[vm.Uint], fn string, clk util.C
 		}
 	}
 	// Locate the function whose calls are to be checkpointed.
-	fid, ok := program.HasModule(fn)
+	fid, ok := p.HasModule(fn)
 	if !ok {
 		return nil, nil, fmt.Errorf("unknown function \"%s\"", fn)
 	}
 	// Switch every call to fn into a checkpointing call and build an
 	// interpreter for the result.
-	program = program.AddCheckPoint(fid)
-	interp := vm.NewBytecodeInterpreter(program, m128.Executor().Modulus())
+	p = p.AddCheckPoint(fid)
+	interp := vm.NewBytecodeInterpreter(p)
 	// Write a checkpoint as a hex string, one per line.
-	emit := func(cp vm.CheckPoint[vm.Uint128]) {
+	emit := func(cp vm.CheckPoint[W]) {
 		bytes, err := cp.MarshalBinary()
 		if err != nil {
 			log.Errorf("encoding checkpoint: %s", err)
@@ -353,8 +348,8 @@ func newCheckPointInterpreter(wm *vm.WordMachine[vm.Uint], fn string, clk util.C
 
 // readCheckPoint reads a single checkpoint, encoded as a hex string (optionally
 // 0x-prefixed) in the given file, and decodes it.
-func readCheckPoint(file string) (vm.CheckPoint[vm.Uint128], error) {
-	var cp vm.CheckPoint[vm.Uint128]
+func readCheckPoint[W vm.Word[W]](file string) (vm.CheckPoint[W], error) {
+	var cp vm.CheckPoint[W]
 	//
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -399,7 +394,7 @@ func executeWithGogen(wm *vm.WordMachine[vm.Uint], input map[string][]byte) (map
 	// Run the compiled program, passing only the machine's declared inputs (the
 	// generated harness rejects unknown keys).  Forward its debug/printf and
 	// fail output to our stderr so those statements are surfaced to the user.
-	outputs, errored, err := gogen.Run(prog, filterInputsOnly(wm, input), os.Stderr)
+	outputs, errored, err := gogen.Run(prog, input, os.Stderr)
 	//
 	switch {
 	case err != nil:
@@ -413,10 +408,10 @@ func executeWithGogen(wm *vm.WordMachine[vm.Uint], input map[string][]byte) (map
 
 // filterInputsOnly restricts the parsed input file to the machine's declared
 // input memories, matching what the generated harness expects on stdin.
-func filterInputsOnly(wm *vm.WordMachine[vm.Uint], input map[string][]byte) map[string][]byte {
+func filterInputsOnly[W vm.Word[W]](p vm.Program[W], input map[string][]byte) map[string][]byte {
 	inputs := make(map[string][]byte)
 	//
-	for it := wm.Inputs(); it.HasNext(); {
+	for it := p.Inputs(); it.HasNext(); {
 		in := it.Next()
 		if bytes, ok := input[in.Name()]; ok {
 			inputs[in.Name()] = bytes

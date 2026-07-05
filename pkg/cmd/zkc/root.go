@@ -97,16 +97,13 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig {
 	var (
 		build    BuildConfig
-		mirOrAir = GetFlag(cmd, "mir") || GetFlag(cmd, "air")
-		fastMode = GetFlag(cmd, "fast") && !mirOrAir
+		fastMode = GetFlag(cmd, "fast")
 		quiet    = GetFlag(cmd, "quiet")
 	)
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
 		log.SetLevel(log.DebugLevel)
 	}
-	// Configure target field
-	build.field = field
 	// Conmfigure go generator
 	build.gogen = GetFlag(cmd, "gogen")
 	// Configure compiler config

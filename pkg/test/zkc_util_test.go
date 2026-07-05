@@ -17,12 +17,10 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/test/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // DEFAULT_UTIL_CONFIG provides a default configuration for util tests.
 var DEFAULT_UTIL_CONFIG = util.DEFAULT_CONFIG.
-	Words(vm.WORD_UINT64, vm.WORD_UINT128).
 	Fields(field.KOALABEAR_16).
 	Constraints(true).
 	Splitting(true).

@@ -144,25 +144,23 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, program Program[W], m
 	return transform.AddRangeConstraints(cfg, program, maxStaticDepth)
 }
 
-// WordToWordMachine transforms a machine operating over a given word type (W1)
-// into an identical machine which operates over a different word type (W2).
-// Generally speaking, we are going from a larger word (e.g. word.Uint) to a
-// smaller word (e.g. word.Uint64).
+// ProgramToProgram transforms a bytecode program operating over a given word
+// type (W1) into an identical program which operates over a different word type
+// (W2).  Generally speaking, we are going from a larger word (e.g. word.Uint) to
+// a smaller word (e.g. word.Uint64).  This is the program-level analogue of
+// WordToWordMachine.
 //
-// The transformation is purely structural: instructions are re-typed but not
+// The transformation is purely structural: bytecodes are re-typed but not
 // rewritten or lowered, register declarations are preserved verbatim (no
 // splitting or width changes), and constants are not reduced modulo the field.
-// The source machine's prime modulus is re-expressed in W2 so the new machine
-// retains the same field semantics; this means the modulus itself must also
-// fit in W2's bandwidth.  ROM/SROM contents are converted element-wise;
-// WOM/RAM/Paged memories start empty in the new machine.
+// Static memory contents are converted element-wise; non-static memories carry
+// no contents in either representation.
 //
-// This function will panic if it encounters a register, constant, modulus or
-// memory cell which exceeds the bandwidth of W2.  Callers needing to target a
-// narrower word size than some source register widths should run
-// SplitRegisters first.
-func WordToWordMachine[W1 word.Word[W1], W2 word.Word[W2]](m1 *machine.Word[W1]) (m2 *machine.Word[W2]) {
-	return transform.WordToWordMachine[W1, W2](m1)
+// This function will panic if it encounters a register, constant or memory cell
+// which exceeds the bandwidth of W2.  Callers needing to target a narrower word
+// size than some source register widths should run SplitRegisters first.
+func ProgramToProgram[W1 word.Word[W1], W2 word.Word[W2]](p Program[W1]) Program[W2] {
+	return transform.ProgramToProgram[W1, W2](p)
 }
 
 // WordToFieldMachine translates a machine over integer words into a machine over
@@ -174,24 +172,13 @@ func WordToFieldMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm
 	return transform.WordToFieldMachine[W, F](cfg, wm)
 }
 
-// WordToBytecodeInterpreter compiles a word machine into a bytecode sequence
-// and, from this, constructs an interpreter.
-func WordToBytecodeInterpreter[W word.Word[W]](wm *machine.Word[W]) *Interpreter[W] {
-	return transform.WordToBytecodeMachine(wm)
-}
-
-// WordToBytecodeProgram compiles a word machine into a bytecode sequence which
-// can be executed by an interpreter.
-func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) Program[W] {
-	return transform.WordToBytecodeProgram(wm)
-}
-
 // BytecodeProgramToWord decompiles a bytecode program back into an equivalent
 // word machine.  It is the inverse of WordToBytecodeProgram.  Since the bytecode
 // descriptor does not carry the surrounding field, the prime modulus (needed
 // when executing native field instructions) must be supplied separately.
-func BytecodeProgramToWord[W word.Word[W]](p Program[W], modulus W) *machine.Word[W] {
-	return transform.BytecodeProgramToWord(p, modulus)
+func BytecodeProgramToWord[W word.Word[W]](p Program[W]) *machine.Word[W] {
+	//
+	return transform.BytecodeProgramToWord(p)
 }
 
 // InsertCheckCasts inserts the width-check (CHECKCAST) bytecodes required by a

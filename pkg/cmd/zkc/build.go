@@ -35,7 +35,7 @@ type BuildArtifacts struct {
 	// Abstract Syntax Tree
 	ast util.Option[ast.Program]
 	// Word Machine
-	wir vm.WordMachine[vm.Uint]
+	ir vm.Program[vm.Uint]
 	// Annotations on source-level declarations (functions and memories),
 	// keyed by declaration name.  These are not carried through to the lower
 	// levels, hence they are retained here for printing purposes.  Observe
@@ -48,12 +48,8 @@ type BuildArtifacts struct {
 type BuildConfig struct {
 	// code configuration includes various things which can be turned off / on.
 	config codegen.Config
-	// field configuration
-	field field.Config
 	// metadata to include in binary output file
 	metadata []byte
-	// flags signal which layers to generate artifacts for.
-	fastMode bool
 	// enable go code generator
 	gogen bool
 }
@@ -73,22 +69,20 @@ func Build[F field.Element[F]](build BuildConfig, args ...string) BuildArtifacts
 			os.Exit(6)
 		}
 		// Single (binary) file supplied
-		wm := ReadBinaryFile[F](args[0]).WordMachine()
-		// Assign over
-		artifacts.wir = wm
+		artifacts.ir = ReadBinaryFile[F](args[0]).Program()
 	} else {
-		var wir *vm.WordMachine[vm.Uint]
+		var ir vm.Program[vm.Uint]
 		// Compile source files, or print errors
-		ast := CompileSourceFiles(build.field, args...)
+		prog := CompileSourceFiles(build.config.GetField(), args...)
 		// Record AST (e.g. for debugging)
-		artifacts.ast = util.Some(ast)
+		artifacts.ast = util.Some(prog)
 		// Record annotations for printing purposes
-		artifacts.annotations = annotationsOf(ast)
+		artifacts.annotations = annotationsOf(prog)
 		// Word-level Intermediate Representation
 		// Compile the AST into the top-level word machine
-		wir, errs = ast.Compile(build.config)
+		ir, errs = ast.Compile(prog, build.config)
 		//
-		artifacts.wir = *wir
+		artifacts.ir = ir
 		//
 		if len(errs) > 0 {
 			for _, err := range errs {

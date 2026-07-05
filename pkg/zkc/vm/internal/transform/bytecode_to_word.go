@@ -42,17 +42,21 @@ import (
 // checkpoint flag on calls) is not recovered.  The bytecode descriptor does not
 // carry the surrounding field, so the prime modulus -- needed when executing
 // native field instructions -- is supplied separately.
-func BytecodeProgramToWord[W word.Word[W]](p descriptor.Program[W], modulus W) *machine.Word[W] {
+func BytecodeProgramToWord[W word.Word[W]](p descriptor.Program[W]) *machine.Word[W] {
 	var (
-		mods    = p.Modules()
-		modules = make([]Module, len(mods))
+		mods      = p.Modules()
+		modules   = make([]Module, len(mods))
+		callstack machine.CallStack[W, instruction.Word]
+		modulus   W
 	)
+	// Derive the prime field modulus from the word configuration.
+	modulus = modulus.SetBigInt(p.Field().Modulus())
 	// Decompile each module back into its word-machine form.
 	for i, m := range mods {
 		modules[i] = decompileModule(m)
 	}
 	//
-	return machine.NewWordFromModulus(modulus, modules...)
+	return machine.NewWordFromModulus(modulus, callstack, modules...)
 }
 
 func decompileModule[W word.Word[W]](m descriptor.Module[W]) Module {

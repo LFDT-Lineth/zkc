@@ -16,8 +16,12 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 )
+
+// Config is (for now) simply an alias for field config.
+type Config = field.Config
 
 // Base captures the minimal set of requirements for a word used in the base
 // machine.

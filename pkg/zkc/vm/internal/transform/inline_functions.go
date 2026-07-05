@@ -79,7 +79,7 @@ func InlineFunctions[W word.Word[W]](program descriptor.Program[W], names []stri
 		remaining = slices.Delete(remaining, index, index+1)
 	}
 	// Remove now-dead targets, remapping module identifiers.
-	return descriptor.NewProgram(removeModules(modules, targets)...)
+	return descriptor.NewProgram(program.Field(), removeModules(modules, targets)...)
 }
 
 // resolveInlineTargets maps each name to its module identifier, sanity checking

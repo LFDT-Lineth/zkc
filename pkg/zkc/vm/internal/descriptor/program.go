@@ -13,13 +13,24 @@
 package descriptor
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
+)
+
+// Tags identifying the concrete kind of a module when encoding the (interface
+// typed) modules of a program.
+const (
+	moduleFunctionTag uint8 = iota
+	moduleMemoryTag
 )
 
 // MapProgram applies a mapping function to all modules within this program,
@@ -42,11 +53,13 @@ func MapProgram[W word.Word[W], T any](p Program[W], mapper func(uint, Module[W]
 type Program[W word.Word[W]] struct {
 	// modules declared within this (uncompiled) program.
 	modules []Module[W]
+	// field configuration for the target prime field
+	field field.Config
 }
 
 // NewProgram creates a new program descriptor.
-func NewProgram[W word.Word[W]](modules ...Module[W]) Program[W] {
-	return Program[W]{modules}
+func NewProgram[W word.Word[W]](field field.Config, modules ...Module[W]) Program[W] {
+	return Program[W]{modules, field}
 }
 
 // AddCheckPoint returns a copy of this program in which all calls to the target
@@ -55,8 +68,8 @@ func NewProgram[W word.Word[W]](modules ...Module[W]) Program[W] {
 // ENTERCP_n), which is width-preserving; hence every instruction offset --
 // along with the symbol and chunk side-tables -- is unaffected, and the
 // returned program shares those tables with the original.
-func (p *Program[W]) AddCheckPoint(fid uint16) Program[W] {
-	return mapProgram(*p, addCheckPoint[W](fid))
+func (p Program[W]) AddCheckPoint(fid uint16) Program[W] {
+	return mapProgram(p, addCheckPoint[W](fid))
 }
 
 // EnvironmentOf returns an environment for the given module.  This is useful
@@ -66,6 +79,26 @@ func (p Program[W]) EnvironmentOf(mid uint16) bytecode.Environment {
 		mid,
 		p.modules,
 	}
+}
+
+// Field returns the field configuration for prime field associated with this
+// program.
+func (p Program[W]) Field() field.Config {
+	return p.field
+}
+
+// MaxStaticDepth reports the maximum depth (i.e. number of rows) of any static
+// table used within this program.
+func (p Program[W]) MaxStaticDepth() uint {
+	var depth = uint(0)
+	//
+	for iter := p.Inputs(); iter.HasNext(); {
+		if ith := iter.Next(); ith.IsStatic() {
+			depth = max(depth, ith.StaticDepth())
+		}
+	}
+	//
+	return depth
 }
 
 // HasModule returns the identifier for the module with the given name, or returns
@@ -86,6 +119,131 @@ func (p *Program[W]) Prune() Program[W] {
 // Modules returns an array of modules over which this
 func (p *Program[W]) Modules() []Module[W] {
 	return p.modules
+}
+
+// Inputs returns the set of declared input memories
+func (p *Program[W]) Inputs() iter.Iterator[Memory[W]] {
+	var inputs []Memory[W]
+	//
+	for _, m := range p.modules {
+		if m, ok := m.(*Memory[W]); ok && m.IsReadOnly() && !m.IsStatic() {
+			inputs = append(inputs, *m)
+		}
+	}
+	//
+	return iter.NewArrayIterator(inputs)
+}
+
+// Outputs returns the set of declared output memories
+func (p *Program[W]) Outputs() iter.Iterator[Memory[W]] {
+	var outputs []Memory[W]
+	//
+	for _, m := range p.modules {
+		if m, ok := m.(*Memory[W]); ok && m.IsWriteOnly() {
+			outputs = append(outputs, *m)
+		}
+	}
+	//
+	return iter.NewArrayIterator(outputs)
+}
+
+// ============================================================================
+// Encoding / Decoding
+// ============================================================================
+
+// GobEncode marshals this program.  Modules are held via the Module interface,
+// so each is written with a leading tag identifying its concrete kind; the
+// concrete types themselves define the encoding of their (unexported) fields.
+//
+// nolint
+func (p *Program[W]) GobEncode() ([]byte, error) {
+	var buffer bytes.Buffer
+	gobEncoder := gob.NewEncoder(&buffer)
+	// Number of modules.
+	if err := gobEncoder.Encode(uint16(len(p.modules))); err != nil {
+		return nil, err
+	}
+	// Encode field configuration
+	if err := gobEncoder.Encode(p.field); err != nil {
+		return nil, err
+	}
+	// Each module, prefixed with a tag identifying its concrete type.
+	for _, m := range p.modules {
+		switch m := m.(type) {
+		case *Function[W]:
+			if err := gobEncoder.Encode(moduleFunctionTag); err != nil {
+				return nil, err
+			}
+			//
+			if err := gobEncoder.Encode(m); err != nil {
+				return nil, err
+			}
+		case *Memory[W]:
+			if err := gobEncoder.Encode(moduleMemoryTag); err != nil {
+				return nil, err
+			}
+			//
+			if err := gobEncoder.Encode(m); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, fmt.Errorf("cannot encode unknown module \"%s\"", m.Name())
+		}
+	}
+	//
+	return buffer.Bytes(), nil
+}
+
+// nolint
+func (p *Program[W]) GobDecode(data []byte) error {
+	var (
+		buffer     = bytes.NewBuffer(data)
+		gobDecoder = gob.NewDecoder(buffer)
+		n          uint16
+	)
+	// Number of modules.
+	if err := gobDecoder.Decode(&n); err != nil {
+		return err
+	}
+	// Decode field config
+	if err := gobDecoder.Decode(&p.field); err != nil {
+		return err
+	}
+	//
+	modules := make([]Module[W], n)
+	// Each module, dispatched on its leading tag.
+	for i := uint16(0); i < n; i++ {
+		var tag uint8
+		//
+		if err := gobDecoder.Decode(&tag); err != nil {
+			return err
+		}
+		//
+		switch tag {
+		case moduleFunctionTag:
+			var fn Function[W]
+			//
+			if err := gobDecoder.Decode(&fn); err != nil {
+				return err
+			}
+			//
+			modules[i] = &fn
+		case moduleMemoryTag:
+			var mem Memory[W]
+			//
+			if err := gobDecoder.Decode(&mem); err != nil {
+				return err
+			}
+			//
+			modules[i] = &mem
+		default:
+			return fmt.Errorf("cannot decode unknown module tag %d", tag)
+		}
+	}
+	//
+	p.modules = modules
+	//
+	return nil
 }
 
 // ============================================================================
@@ -141,7 +299,7 @@ func mapProgram[W word.Word[W]](p Program[W], fn func(uint, bytecode.Bytecode[W]
 		modules[i] = mapModule(m, fn)
 	}
 	//
-	return Program[W]{modules}
+	return Program[W]{modules, p.field}
 }
 
 func mapModule[W word.Word[W]](m Module[W], fn func(uint, bytecode.Bytecode[W]) []Bytecode[W]) Module[W] {
