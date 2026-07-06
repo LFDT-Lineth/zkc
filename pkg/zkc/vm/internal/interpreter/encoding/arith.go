@@ -13,17 +13,18 @@
 package encoding
 
 import (
-	"fmt"
 	"math/big"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Arith encodes an arithmetic bytecode, selecting the most compact instruction
 // form supported by its operands (e.g. load-constant, move, register-register,
 // register-constant, or the general vectored form).
-func Arith[W word.Word[W]](p bytecode.Arith[W]) []uint32 {
+func Arith[W word.Word[W]](p bytecode.Arith[W], env Environment[W]) []uint32 {
 	var (
 		n             = len(p.Source)
 		m             = len(p.Target)
@@ -45,10 +46,8 @@ func Arith[W word.Word[W]](p bytecode.Arith[W]) []uint32 {
 		return encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
 	case n == 2 && m == 1 && constIsUint8:
 		return encodeArith_2n1c(p.Op, p.Source[0], p.Source[1], p.Target[0], p.Constant)
-	case m > 0:
-		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant)
 	default:
-		panic(fmt.Sprintf("unsupported arithmetic instruction form (%d, %d, %t)", n, m, cz))
+		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant, env)
 	}
 }
 
@@ -323,20 +322,26 @@ func DecodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 // encodeArith_vec encodes the general (multi-target, multi-source) vectored form
 // of an arithmetic instruction (ADD_nm/SUB_nm/MUL_nm).
 func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterId, sources []RegisterId,
-	constant W) []uint32 {
+	constant W, env Environment[W]) []uint32 {
+	var bitwidth = calculateArithBitwidth(aop, sources, constant, env.RegisterMap())
 	//
-	if len(targets) == 0 || len(targets) >= 256 || len(sources) >= 256 {
+	if len(targets) == 0 {
+		panic("targetless arithmetic instructions not supported")
+	} else if len(targets) >= 256 || len(sources) >= 256 {
 		panic("wide vector arithmetic instructions not supported")
 	} else if constant.Cmp64(^uint64(0)) > 0 {
 		panic("wide vector arithmetic constants not supported")
+	} else if bitwidth > 255 {
+		panic("wide vector arithmetic not supported")
 	}
 	//
 	var (
 		opcode   = ADD_nm + uint32(aop-bytecode.OP_ADD)
+		bw       = uint32(bitwidth) << 24
 		nsrc     = uint32(len(sources)) << 16
 		ntgt     = uint32(len(targets)) << 8
 		c        = constant.Uint64()
-		codes    = []uint32{nsrc | ntgt | opcode, uint32(c), uint32(c >> 32)}
+		codes    = []uint32{bw | nsrc | ntgt | opcode, uint32(c), uint32(c >> 32)}
 		regBytes = append(RegsAsBytes(targets), RegsAsBytes(sources)...)
 	)
 	//
@@ -347,11 +352,12 @@ func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterI
 // instruction, returning iterators over its target and source registers, the
 // constant operand and the instruction width.
 func DecodeArith_nm[W word.Word[W]](pc uint32, codes []uint32) (
-	targets, sources Op8Iter, constant W, n uint32) {
+	targets, sources Op8Iter, constant W, bitwidth uint, n uint32) {
 	//
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
 		nsources = uint((codes[pc] >> 16) & 0xff)
+		bw       = uint((codes[pc] >> 24) & 0xff)
 		c        = uint64(codes[pc+1]) | (uint64(codes[pc+2]) << 32)
 	)
 	//
@@ -360,6 +366,25 @@ func DecodeArith_nm[W word.Word[W]](pc uint32, codes []uint32) (
 	//
 	constant = constant.SetUint64(c)
 	//
-	return targets, sources, constant,
+	return targets, sources, constant, bw,
 		3 + NumCodesPackedSmall(ntargets+nsources)
+}
+
+func calculateArithBitwidth[W word.Word[W]](aop bytecode.Operation, sources []RegisterId, constant W,
+	env descriptor.RegisterMap[W]) uint {
+	//
+	var bitwidth util.Option[uint]
+	//
+	switch aop {
+	case bytecode.OP_ADD:
+		bitwidth = descriptor.CalculateAddBitwidth(sources, constant, env)
+	case bytecode.OP_SUB:
+		bitwidth = descriptor.CalculateSubBitwidth(sources, constant, env)
+	case bytecode.OP_MUL:
+		bitwidth = descriptor.CalculateMulBitwidth(sources, constant, env)
+	default:
+		panic("unknown operation encountered")
+	}
+	//
+	return bitwidth.Unwrap()
 }

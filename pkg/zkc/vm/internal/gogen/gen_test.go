@@ -409,7 +409,7 @@ func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) *vm.Wo
 
 	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).FastMode(fastMode).Vectorize(true).Quiet(true)
 
-	wm, errs := program.Compile(cfg)
+	wm, errs := ast.CompileToWordMachine(program, cfg)
 	if len(errs) > 0 {
 		t.Fatalf("codegen: %v", errs)
 	}
@@ -929,7 +929,7 @@ func compileUintVerbose(t testing.TB, src string) *vm.WordMachine[vm.Uint] {
 
 	program := compileProgram(t, src)
 
-	wm, errs := program.Compile(cfg)
+	wm, errs := ast.CompileToWordMachine(program, cfg)
 	if len(errs) > 0 {
 		t.Fatalf("codegen: %v", errs)
 	}

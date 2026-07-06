@@ -52,8 +52,11 @@ func WordToFieldMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm
 		//
 		modules[i] = lowering.lowerWordModule(m, sysMap)
 	}
+	// Clone the (live) call stack across to the target field, re-binding frames
+	// against the lowered modules.
+	callstack := lowering.lowerCallStack(wm, modules)
 	//
-	return machine.NewField[F](modules...)
+	return machine.NewField[F](callstack, modules...)
 }
 
 type wordToField[W word.Word[W], F field.Element[F]] struct {
@@ -275,6 +278,24 @@ func (p wordToField[W, F]) lowerBitwiseConcatenation(lhs register.Vector, rhs []
 	}
 	//
 	return instruction.NewFieldAssign[F](lhs, sum(terms...))
+}
+
+// lowerCallStack clones the source machine's (live) call stack across to the
+// target field F.  Heap values (integer words) are converted to field elements,
+// and each frame is re-bound (by module id) to the corresponding lowered field
+// function so that execution can continue against the re-typed instructions.
+func (p wordToField[W, F]) lowerCallStack(wm *machine.Word[W],
+	modules []Module) machine.CallStack[F, instruction.Field] {
+	//
+	convert := func(w W) F {
+		var f F
+		return f.SetBytes(w.BigInt().Bytes())
+	}
+	//
+	return machine.CloneCallStack(wm.CallStack(), convert,
+		func(fid uint) *function.Function[instruction.Field] {
+			return modules[fid].(*FieldFunction)
+		})
 }
 
 func checkRegisterWidths(registerWidth uint, regs ...register.Register) {

@@ -98,7 +98,7 @@ func NewCompiler(cfg Config, env data.ResolvedEnvironment, srcmaps source.Maps[a
 // Compile attempts to compile a given high-level program into a low-level
 // machine which can be used (for example) to execute this program with some
 // given inputs.
-func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint], []source.SyntaxError) {
+func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []source.SyntaxError) {
 	//
 	var (
 		modules []vm.BytecodeModule[vm.Uint]
@@ -157,15 +157,10 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	// Stop here if any errors were detected during compilation of the declarations.
 	// There shouldn't be any compilation errors after this point.
 	if len(errors) > 0 {
-		return nil, errors
+		return vm.Program[vm.Uint]{}, errors
 	}
-	// Derive the prime modulus from the field configuration (previously obtained
-	// from the constructed word machine).
-	var modulus vm.Uint
-	//
-	modulus = modulus.SetBigInt(p.config.field.Modulus())
 	// Construct bytecode program from descriptor modules.
-	program := vm.NewBytecodeProgram(modules...)
+	program := vm.NewBytecodeProgram(p.config.field, modules...)
 	//
 	if p.config.inlining && len(inlines) > 0 {
 		// Apply function inlining
@@ -178,6 +173,8 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		program = vm.Vectorize(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
+			// FIXME: this is broken as we should be splitting for the target
+			// word, not the target field.
 			program = vm.SplitRegisters(p.config.field, program)
 		}
 	} else {
@@ -185,6 +182,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		program = vm.LowerBitwise(program)
 		program = vm.LowerDivisions(program)
 		program = vm.LowerComparisons(program)
+		program = vm.LowerSwitch(program)
 		program = vm.Vectorize(program)
 		program = vm.FactorSkipConditions(program)
 		program = vm.FlattenCalls(program)
@@ -197,11 +195,8 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	}
 	// Insert check casts to ensure appropriate safety checks during execution.
 	program = vm.InsertCheckCasts(program)
-	// Convert to word machine.  This should eventually be deprecated in favour
-	// of simply returning the bytecode program.
-	wm := vm.BytecodeProgramToWord(program, modulus)
 	// Done
-	return wm, errors
+	return program, errors
 }
 
 // compileStaticInitialise evaluates the compile-time constant expressions from a static

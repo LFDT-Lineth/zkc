@@ -105,17 +105,23 @@ func (tb TraceConfig) BatchSize() uint {
 // embodied in this file.  This can return one (or more) errors if, for example,
 // the input is malformed (e.g. is missing expected fields and/or contains
 // unexpected fields).
-func Trace[F field.Element[F]](bf *BinaryFile[F], in map[string][]vm.Uint, cfg TraceConfig) (trace.Trace[F], []error) {
+func Trace[W vm.Word[W], F field.Element[F]](bf *BinaryFile[F], in map[string][]W, cfg TraceConfig,
+) (trace.Trace[F], []error) {
+	//
 	var (
-		observer vm.TraceObserver[vm.Uint, vm.WordInstruction, *vm.WordMachine[vm.Uint]]
+		pW       = vm.ProgramToProgram[vm.Uint, W](bf.program)
+		wm       = vm.BytecodeProgramToWord(pW)
+		observer vm.TraceObserver[W, vm.WordInstruction, *vm.WordMachine[W]]
 		stats    = util.NewPerfStats()
 		errs     []error
 		tr       trace.Trace[F]
 	)
 	// Execute machine
-	if err := bf.machine.Boot("main", in); err != nil {
-		errs = append(errs, err)
-	} else if _, err := vm.ExecuteAndObserve(&bf.machine, 1, &observer); err != nil {
+	if err := wm.Boot("main", in); err != nil {
+		return nil, append(errs, err)
+	}
+	//
+	if _, err := vm.ExecuteAndObserve(wm, 1, &observer); err != nil {
 		errs = append(errs, err)
 	} else {
 		// Extract AIR constraints
@@ -129,7 +135,7 @@ func Trace[F field.Element[F]](bf *BinaryFile[F], in map[string][]vm.Uint, cfg T
 			WithParallelism(cfg.parallel).
 			WithBatchSize(cfg.batchSize)
 		// Build the trace (finally)
-		tr, errs = builder.Build(constraints, observer.Trace(&bf.machine))
+		tr, errs = builder.Build(constraints, observer.Trace(wm))
 	}
 	//
 	stats.Log("Trace generation")

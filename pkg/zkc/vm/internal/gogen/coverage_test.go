@@ -26,6 +26,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
+	zkc_ast "github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
@@ -202,7 +204,7 @@ func TestGenerateCorpus(t *testing.T) {
 					cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).
 						FastMode(shape.fastMode).Vectorize(true).Quiet(true)
 
-					wm, errs := program.Compile(cfg)
+					wm, errs := zkc_ast.CompileToWordMachine(program, cfg)
 					if len(errs) > 0 {
 						t.Skipf("codegen fails: %v", errs[0])
 					}

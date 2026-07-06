@@ -53,14 +53,14 @@ func DecodeFail(pc uint32, codes []uint32) (index uint, sources Op8Iter, n uint3
 // ============================================================================
 // encodeFail_n encodes a fail instruction referencing the formatted chunks at
 // the given index, packing its source register vectors.
-func encodeFail_n(index uint16, sources []RegVec) []uint32 {
+func encodeFail_n(index uint16, sources []RegisterVector) []uint32 {
 	var (
 		nsources = uint32(util.Cast[uint8](uint(len(sources)))) << 24
 		codes    = []uint32{
 			// nolint
 			nsources | uint32(index)<<8 | FAIL,
 		}
-		bytes = RegVecsAsBytes(sources)
+		bytes = RegisterVectorsAsBytes(sources)
 	)
 	//
 	return append(codes, PackBytesIntoCodes(bytes)...)

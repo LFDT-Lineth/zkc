@@ -30,7 +30,7 @@ type Debug struct {
 	// side-table rather than encoded inline.
 	Chunks []FormattedChunk
 	// Source registers used for displaying chunks
-	Sources []RegVec
+	Sources []RegisterVector
 }
 
 // Uses implementation for Bytecode interface.  A debug reads the registers

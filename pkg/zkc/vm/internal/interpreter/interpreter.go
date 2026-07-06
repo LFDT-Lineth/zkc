@@ -544,9 +544,9 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		case encoding.ADDC:
 			p.pc, err = executeAdd_1n1c(p.pc, bytecodes, frame)
 		case encoding.SUB_2n1:
-			p.pc, err = executeSub_2n1(p.pc, bytecodes, frame)
+			p.pc, err = p.executeSub_2n1(p.pc, bytecodes, frame)
 		case encoding.SUBC:
-			p.pc, err = executeSub_1n1c(p.pc, bytecodes, frame)
+			p.pc, err = p.executeSub_1n1c(p.pc, bytecodes, frame)
 		case encoding.MUL_2n1:
 			p.pc, err = executeMul_2n1(p.pc, bytecodes, frame)
 		case encoding.MULC:
@@ -561,8 +561,8 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = executeDiv(p.pc, bytecodes, frame)
 		case encoding.REM:
 			p.pc, err = executeRem(p.pc, bytecodes, frame)
-		case encoding.DIVHINT:
-			p.pc, err = executeDivHint(p.pc, bytecodes, frame)
+		case encoding.HINT:
+			p.pc, err = p.executeHint(p.pc, bytecodes, frame)
 		case encoding.ADDMOD_P:
 			p.pc, err = p.executeFieldAdd(p.pc, bytecodes, frame)
 		case encoding.SUBMOD_P:
@@ -696,8 +696,8 @@ func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error
 // as the word machine, reporting an error on overflow.
 func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
-		targets, sources, constant, n = encoding.DecodeArith_nm[W](pc, codes)
-		val                           = constant
+		targets, sources, constant, _, n = encoding.DecodeArith_nm[W](pc, codes)
+		val                              = constant
 	)
 	//
 	for sources.HasNext() {
@@ -713,7 +713,7 @@ func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (ui
 		}
 	}
 	//
-	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
+	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeSub_nm implements SUB_nm: it seeds the value from the first source,
@@ -722,9 +722,10 @@ func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (ui
 // machine, reporting an error on underflow.
 func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
-		targets, sources, constant, n = encoding.DecodeArith_nm[W](pc, codes)
-		val                           W
-		underflow                     bool
+		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm[W](pc, codes)
+		val                                     W
+		acc                                     W
+		underflow                               bool
 	)
 	// Seed initial value
 	val = stack[sources.Next()]
@@ -732,16 +733,18 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (ui
 	for sources.HasNext() {
 		var src = sources.Next()
 		//
-		if val, underflow = val.Sub(stack[src]); underflow {
-			return pc, errors.New("arithmetic underflow")
+		if acc, underflow = acc.Add(stack[src]); underflow {
+			return pc, errors.New("arithmetic underflow [1]")
 		}
 	}
 	//
-	if val, underflow = val.Sub(constant); underflow {
-		return pc, errors.New("arithmetic underflow")
+	if acc, underflow = acc.Add(constant); underflow {
+		return pc, errors.New("arithmetic underflow [2]")
+	} else if val, underflow = val.Sub(acc); underflow {
+		val = val.Slice(bitwidth)
 	}
 	//
-	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
+	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeMul_nm implements MUL_nm: it multiplies the constant by all sources
@@ -749,9 +752,9 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (ui
 // rule as the word machine, reporting an error on overflow.
 func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
-		targets, sources, constant, n = encoding.DecodeArith_nm[W](pc, codes)
-		val                           = constant
-		overflow                      bool
+		targets, sources, constant, _, n = encoding.DecodeArith_nm[W](pc, codes)
+		val                              = constant
+		overflow                         bool
 	)
 	//
 	for sources.HasNext() {
@@ -769,7 +772,7 @@ func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (ui
 		return pc, errors.New("arithmetic overflow")
 	}
 	//
-	return pc + n, storeAcross(p.program.Module(p.fid), targets, val, stack)
+	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeFieldAdd implements ADDMOD_P: it sums the constant and all sources
@@ -853,7 +856,7 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 		width = width + bitwidthOf(module, reg)
 	}
 	//
-	return pc + n, storeAcross(module, targets, val, stack)
+	return pc + n, storeAcross(pc, module, targets, val, stack)
 }
 
 // executeDebug implements DEBUG: it reproduces the reference word machine's
@@ -864,6 +867,7 @@ func (p *Interpreter[W]) executeDebug(pc uint32, codes []uint32, frame []W) uint
 	var (
 		index, sources, n = encoding.DecodeDebug(pc, codes)
 	)
+	//
 	fmt.Print(p.formatChunks(p.program.Chunks(index), sources, frame))
 	//
 	return pc + n
@@ -903,7 +907,7 @@ func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources 
 			var (
 				base = bytecode.RegisterId(sources.Next())
 				len  = uint16(sources.Next())
-				vec  = bytecode.RegVec{Base: base, Len: len}
+				vec  = bytecode.RegisterVector{Base: base, Len: len}
 			)
 			//
 			builder.WriteString(p.formatArgument(module, chunk.Format, vec, frame))
@@ -917,13 +921,13 @@ func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources 
 // and renders it with the given format, mirroring formatWord in the reference
 // word machine: limbs are accumulated most-significant first, shifting by each
 // limb's bitwidth, and the shared Format.Render produces the final text.
-func (p *Interpreter[W]) formatArgument(module descriptor.Module[W], format zkc_util.Format, vec bytecode.RegVec,
-	frame []W) string {
+func (p *Interpreter[W]) formatArgument(module descriptor.Module[W], format zkc_util.Format,
+	vec bytecode.RegisterVector, frame []W) string {
 	//
 	var value big.Int
 	// Loop from most-significant limb to least significant.
-	for i := vec.Len; i > 0; i-- {
-		var reg = vec.Base + (i - 1)
+	for i := uint16(0); i < vec.Len; i++ {
+		var reg = vec.Base + i
 		// Shift accumulator by this limb's width, then add the limb.
 		value.Lsh(&value, bitwidthOf(module, reg))
 		value.Add(&value, frame[reg].BigInt())
@@ -1042,36 +1046,115 @@ func executeRem[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 	return pc + n, nil
 }
 
-// executeDivHint implements DIVHINT: it assigns the quotient, remainder and
-// range witness (divisor - remainder - 1) of a division, returning an error if
-// the divisor is zero.  This matches executeDivHint in the slow word machine.
-func executeDivHint[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+// executeHint implements HINT: it decodes the operation selector and dispatches
+// to the corresponding hint.  Currently the only supported operation is
+// DIV_HINT.
+func (p *Interpreter[W]) executeHint(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	op, targets, sources, n := encoding.DecodeHintOperands(pc, codes)
+	//
+	switch op {
+	case bytecode.DIV_HINT:
+		return p.executeDivHint(pc, n, targets, sources, stack)
+	default:
+		return pc, fmt.Errorf("unknown hint operation (%d)", op)
+	}
+}
+
+// executeDivHint implements the DIV_HINT hint: it reconstructs the dividend and
+// divisor arguments from their (possibly multi-limb) register vectors, then
+// assigns the quotient, remainder and range witness (divisor - remainder - 1)
+// of the division across the corresponding target vectors, returning an error
+// if the divisor is zero.  big.Int arithmetic is used so values spanning
+// several limbs (i.e. wider than the machine word) are handled correctly.
+func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.Op8Iter,
+	stack []W) (uint32, error) {
 	var (
-		rq, rr, rw, rx, ry, n = encoding.DecodeDivHint_2n3(pc, codes)
-		dividend              = stack[rx]
-		divisor               = stack[ry]
-		w                     W
-		uf1, uf2              bool
+		module   = p.program.Module(p.fid)
+		dividend = loadHintOperand(module, &sources, stack)
+		divisor  = loadHintOperand(module, &sources, stack)
 	)
 	//
-	if divisor.Cmp64(0) == 0 {
+	if divisor.Sign() == 0 {
 		return pc, errors.New("division by zero")
 	}
 	//
-	q := dividend.Div(divisor)
-	r := dividend.Rem(divisor)
-	w, uf1 = divisor.Sub(r)
-	w, uf2 = w.Sub(word.Const64[W](1))
+	var (
+		q = new(big.Int).Quo(dividend, divisor)
+		r = new(big.Int).Rem(dividend, divisor)
+		w = new(big.Int).Sub(divisor, r)
+	)
 	//
-	if uf1 || uf2 {
-		return pc, errors.New("arithmetic underflow")
+	w.Sub(w, big.NewInt(1))
+	//
+	if w.Sign() < 0 {
+		return pc, errors.New("arithmetic underflow [3]")
+	}
+	// Distribute quotient, remainder and witness across their target vectors.
+	for _, val := range []*big.Int{q, r, w} {
+		if err := storeHintResult(module, &targets, val, stack); err != nil {
+			return pc, err
+		}
 	}
 	//
-	stack[rq] = q
-	stack[rr] = r
-	stack[rw] = w
-	//
 	return pc + n, nil
+}
+
+// loadHintOperand reconstructs the value of a single hint operand from the next
+// (base, len) register vector in the iterator, with the least-significant limb
+// held in the lowest-indexed register (matching storeAcross).
+func loadHintOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Op8Iter, stack []W) *big.Int {
+	var (
+		base   = uint16(iter.Next())
+		length = uint(iter.Next())
+		value  = new(big.Int)
+		offset uint
+	)
+	//
+	for i := uint(0); i < length; i++ {
+		var (
+			reg  = base + uint16(i)
+			limb = new(big.Int).Lsh(stack[reg].BigInt(), offset)
+		)
+		//
+		value.Or(value, limb)
+		//
+		offset += bitwidthOf(module, reg)
+	}
+	//
+	return value
+}
+
+// storeHintResult distributes value across the next (base, len) register vector
+// in the iterator, writing the least-significant limb into the lowest-indexed
+// register (matching storeAcross).  It errors if the value does not fit within
+// the vector's total width.
+func storeHintResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Op8Iter,
+	value *big.Int, stack []W) error {
+	var (
+		base   = uint16(iter.Next())
+		length = uint(iter.Next())
+		acc    = new(big.Int).Set(value)
+		total  uint
+	)
+	//
+	for i := uint(0); i < length; i++ {
+		var (
+			reg   = base + uint16(i)
+			width = bitwidthOf(module, reg)
+			mask  = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))
+			limb  W
+		)
+		//
+		stack[reg] = limb.SetBigInt(new(big.Int).And(acc, mask))
+		acc.Rsh(acc, width)
+		total += width
+	}
+	//
+	if acc.Sign() != 0 {
+		return fmt.Errorf("bit overflow (0x%s not u%d)", value.Text(16), total)
+	}
+	//
+	return nil
 }
 
 // executeSkipIf_rr implements the conditional register-register forward branch
@@ -1313,7 +1396,7 @@ func executeShr[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 }
 
 // executeSub_1n1c implements SUBC: stack[rd] = stack[rs] - constant.
-func executeSub_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes)
 		val                 = stack[rs]
@@ -1321,7 +1404,13 @@ func executeSub_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint
 	)
 	//
 	if underflow {
-		return pc, errors.New("arithmetic underflow")
+		var (
+			module   = p.program.Module(p.fid)
+			rs_width = module.Register(rs).Bitwidth().Unwrap()
+			bitwidth = 1 + max(rs_width, constant.BitLen())
+		)
+		// slice enough values
+		res = res.Slice(bitwidth)
 	}
 	//
 	stack[rd] = res
@@ -1331,7 +1420,7 @@ func executeSub_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint
 
 // executeSub_2n1 implements SUB_2n1: stack[rd] = stack[rs0] - stack[rs1],
 // returning an error if the subtraction underflows the word type.
-func executeSub_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeSub_2n1(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rs0, rs1, rd, n = encoding.DecodeArith_2n1(pc, codes)
 		// Read rs0
@@ -1343,7 +1432,14 @@ func executeSub_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 	)
 	// Check for overflow
 	if underflow {
-		return pc, errors.New("arithmetic underflow")
+		var (
+			module    = p.program.Module(p.fid)
+			rs0_width = module.Register(rs0).Bitwidth().Unwrap()
+			rs1_width = module.Register(rs1).Bitwidth().Unwrap()
+			bitwidth  = 1 + max(rs0_width, rs1_width)
+		)
+		// slice enough values
+		res = res.Slice(bitwidth)
 	}
 	//
 	stack[rd] = res
@@ -1507,8 +1603,13 @@ func bitwidthOf[W word.Word[W]](module descriptor.Module[W], reg RegisterId) uin
 	return r.Bitwidth().UnwrapOr(math.MaxUint)
 }
 
-func storeAcross[W word.Word[W]](module descriptor.Module[W], targets encoding.Op8Iter, value W, stack []W) error {
-	var bitwidth uint
+func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets encoding.Op8Iter, oval W,
+	stack []W) error {
+	//
+	var (
+		bitwidth uint
+		value    = oval
+	)
 	//
 	for targets.HasNext() {
 		var (
@@ -1523,7 +1624,7 @@ func storeAcross[W word.Word[W]](module descriptor.Module[W], targets encoding.O
 	}
 	//
 	if value.Cmp64(0) != 0 {
-		return fmt.Errorf("bit overflow (0x%s not u%d)", value.Text(16), bitwidth)
+		return fmt.Errorf("bit overflow (0x%s not u%d, pc=0x%x)", oval.Text(16), bitwidth, pc)
 	}
 	//
 	return nil

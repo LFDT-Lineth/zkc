@@ -52,11 +52,13 @@ type Base[W BaseWord[W], I Instruction, T Executor[W, I]] struct {
 }
 
 // NewBase constructs a new empty base machine
-func NewBase[W BaseWord[W], I Instruction, T Executor[W, I]](executor T, modules ...Module) *Base[W, I, T] {
+func NewBase[W BaseWord[W], I Instruction, T Executor[W, I]](executor T, callstack CallStack[W, I],
+	modules ...Module) *Base[W, I, T] {
 	//
 	return &Base[W, I, T]{
-		modules:  modules,
-		executor: executor,
+		modules:   modules,
+		callstack: callstack,
+		executor:  executor,
 	}
 }
 
@@ -154,6 +156,11 @@ func (p *Base[W, I, T]) Depth() uint {
 // StackFrame returns the nth stack frame, where n==0 returns the active frame.
 func (p *Base[W, I, T]) StackFrame(n uint) StackFrame[W, I] {
 	return p.callstack.Frame(n)
+}
+
+// CallStack provides internal access call stack
+func (p *Base[W, I, T]) CallStack() CallStack[W, I] {
+	return p.callstack
 }
 
 // ============================================================================
@@ -469,8 +476,8 @@ func formatWord[W BaseWord[W], I Instruction](fmt zkc_util.Format, vec register.
 		regs  = vec.Registers()
 	)
 	// Loop from most-significant word to least significant.
-	for i := vec.Len(); i > 0; i-- {
-		var reg = regs[i-1]
+	for i := uint(0); i < vec.Len(); i++ {
+		var reg = regs[i]
 		// Shift left
 		value.Lsh(&value, frame.BitwidthOf(reg))
 		// Add next word

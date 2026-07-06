@@ -14,7 +14,6 @@ package vm
 
 import (
 	"encoding/gob"
-	"math"
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -54,21 +53,15 @@ func init() {
 	gob.Register(instruction.Module(&memory.PagedRandomAccess[Uint128]{}))
 }
 
-// WordConfig provides a minimal amount of information about a machine word
-// type.
-type WordConfig struct {
-	Name      string
-	Bandwidth uint
-}
+// WordConfig provides necessary configuration information about a given target
+// word.
+type WordConfig = word.Config
 
 // WORD_UINT64 provides metadata about the Uint64 word type.
-var WORD_UINT64 = WordConfig{Name: "Uint64", Bandwidth: 64}
+var WORD_UINT64 = WordConfig{Name: "Uint64", BandWidth: 64, RegisterWidth: 32}
 
 // WORD_UINT128 provides metadata about the Uint128 word type.
-var WORD_UINT128 = WordConfig{Name: "Uint128", Bandwidth: 128}
-
-// WORD_UINT provides metadata about the Uint word type.
-var WORD_UINT = WordConfig{Name: "Uint", Bandwidth: math.MaxUint}
+var WORD_UINT128 = WordConfig{Name: "Uint128", BandWidth: 128, RegisterWidth: 64}
 
 // Word abstracts the data type (a.k.a the "machine word") used for holding
 // values within the machine.  The reason for abstracting this concept is to

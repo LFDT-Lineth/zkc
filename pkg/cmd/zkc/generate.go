@@ -50,26 +50,27 @@ var generateCmds = []FieldAgnosticCmd{
 	{field.BLS12_377, runGenerateCmd[bls12_377.Element]},
 }
 
+// Permitted flag combinations
+var generateFlags FlagChecks
+
 func runGenerateCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
 		build  = GetBuildConfig[F](cmd, field)
 		output = GetString(cmd, "output")
 		pkg    = GetString(cmd, "pkg")
-		quiet  = GetFlag(cmd, "quiet")
 	)
-	// The generator consumes the unsplit machine: it lowers register widths to
-	// Go types itself (splitting is a prover-shape concern, not an execution one).
-	if GetFlag(cmd, "split") {
-		log.Error("generate does not support register splitting")
-		os.Exit(2)
+	// Ensure gogen flag is set by default
+	if err := cmd.Flags().Set("gogen", "true"); err != nil {
+		panic(err)
 	}
-
-	applyGenerateDefaults(&build, quiet)
+	// Sanity permitted flag combinations
+	checkFlags(cmd, generateFlags)
 	// Build the word machine from the source files.
-	artifacts := build.Build(args...)
-	wm := artifacts.wir.Unwrap()
+	artifacts := Build[F](build, args...)
+	// Translate bytecode => word machine
+	wm := vm.BytecodeProgramToWord(artifacts.ir)
 	//
-	src, err := vm.GenerateGo(&wm, vm.GoGenConfig{
+	src, err := vm.GenerateGo(wm, vm.GoGenConfig{
 		Package: packageName(pkg),
 		Source:  sourceProvenance(args),
 	})
@@ -84,17 +85,6 @@ func runGenerateCmd[F field.Element[F]](cmd *cobra.Command, args []string, field
 		log.Error(err)
 		os.Exit(5)
 	}
-}
-
-func applyGenerateDefaults[F field.Element[F]](build *BuildConfig[F], quiet bool) {
-	// gogen compiles native ops straight to Go operators, so it must consume the
-	// un-lowered machine: native lowering produces wide arithmetic (e.g. 128-bit
-	// masks) that gogen cannot emit. Force fast mode regardless of the --fast flag.
-	build.config = build.config.FastMode(true)
-	// Suppress printf debug instructions when quiet mode is enabled.
-	build.config = build.config.Quiet(quiet)
-	// Generation consumes the word machine.
-	build.wir = true
 }
 
 // packageName determines the generated package name: the --pkg flag when set,
@@ -129,5 +119,8 @@ func init() {
 	rootCmd.AddCommand(generateCmd)
 	generateCmd.Flags().StringP("output", "o", "", "specify output file for generated Go source (default stdout)")
 	generateCmd.Flags().String("pkg", "", "generated package name (default main, which carries the standalone harness)")
-	generateCmd.Flags().BoolP("quiet", "q", false, "suppress printf output in the generated program")
+	// Gogen only supports fast mode (for now).
+	generateFlags.Require("gogen", "fast")
+	// Gogen does not currently support splitting (for now)
+	generateFlags.Exclude("gogen", "split")
 }

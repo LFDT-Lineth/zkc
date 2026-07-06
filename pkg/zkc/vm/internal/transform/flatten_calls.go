@@ -48,7 +48,7 @@ func FlattenCalls[W word.Word[W]](program descriptor.Program[W]) descriptor.Prog
 		}
 	}
 
-	return descriptor.NewProgram(out...)
+	return descriptor.NewProgram(program.Field(), out...)
 }
 
 func flattenCallsFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {

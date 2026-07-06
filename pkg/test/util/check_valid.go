@@ -21,7 +21,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
@@ -36,7 +35,7 @@ var (
 	// DEFAULT_FIELDS set default fields for testing
 	DEFAULT_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_16}
 	// DEFAULT_WORDS set default words for testing
-	DEFAULT_WORDS = []vm.WordConfig{vm.WORD_UINT}
+	DEFAULT_WORDS = []vm.WordConfig{vm.WORD_UINT64, vm.WORD_UINT128}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = Config{
 		fields:      DEFAULT_FIELDS,
@@ -147,9 +146,9 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 			// Setup default config
 			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f)
 		)
-		// Run all tests without lowering (and preventing the constraints check)
-		checkValidInternal(t, testfile, cfg.FastMode(true), config.Constraints(false), testcases[f])
-		// Run all tests with lowering
+		// Run all tests in fast mode
+		checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(false), config.Constraints(false), testcases[f])
+		// Run all tests in tracing mode
 		checkValidInternal(t, testfile, cfg.FastMode(false), config, testcases[f])
 	}
 }
@@ -157,16 +156,17 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 func checkValidInternal(t *testing.T, testfile string, cfg codegen.Config, config Config, testcases []TestCase) {
 	var (
 		// Compile test program
-		m1 = compileTestProgram(t, testfile, cfg)
-		m2 = marshallUnmarshallMachine(m1, cfg.GetField())
+		p1 = compileTestProgram(t, testfile, cfg)
+		p2 = marshallUnmarshallMachine(p1, cfg.GetField())
 	)
 	// check for original machine
-	checkValidMachine(t, m1, cfg, config, testcases)
+	checkValidMachine(t, p1, cfg, config, testcases)
 	// check for marshalled / unmarshalled machine
-	checkValidMachine(t, m2, cfg, config, testcases)
+	checkValidMachine(t, p2, cfg, config, testcases)
 	// check gogen binaries (if requested)
 	if config.gogen {
-		checkValidGoGen(t, testfile, testcases, m1)
+		m := vm.BytecodeProgramToWord(p1)
+		checkValidGoGen(t, testfile, testcases, m)
 	}
 }
 
@@ -185,15 +185,15 @@ func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, m *vm.Word
 	}
 }
 
-func checkValidMachine(t *testing.T, m *vm.WordMachine[vm.Uint], cfg codegen.Config, config Config, tests []TestCase) {
+func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg codegen.Config, config Config, tests []TestCase) {
 	// Run execution tests
 	for _, testcase := range tests {
-		runExecutionTests(t, m, testcase, cfg.GetField(), config)
+		runExecutionTests(t, p, testcase, cfg.GetField(), config)
 	}
 	// Run checkpointing tests (if requested)
 	if config.checkpointing.HasValue() {
 		for _, testcase := range tests {
-			runCheckpointTests(t, m, testcase, cfg.GetField(), config)
+			runCheckpointTests(t, p, testcase, cfg.GetField(), config)
 		}
 	}
 	// Run constraint tests
@@ -201,23 +201,21 @@ func checkValidMachine(t *testing.T, m *vm.WordMachine[vm.Uint], cfg codegen.Con
 		for _, test := range tests {
 			// FIXME: support reject tests
 			if test.expected {
-				runConstraintTest(t, m, test, cfg)
+				runConstraintTest(t, p, test, cfg)
 			}
 		}
 	}
 }
 
-func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f field.Config, cfg Config) {
+func runExecutionTests(t *testing.T, m vm.Program[vm.Uint], tc TestCase, f field.Config, cfg Config) {
 	for _, w := range cfg.words {
 		// Check for incompatible field/word combinations.  For example, we
 		// cannot emulate a 254bit field using a 64bit word.
-		if w.Bandwidth <= f.BandWidth {
+		if w.BandWidth <= f.BandWidth {
 			continue
 		}
 		// Run the test
 		switch w {
-		case vm.WORD_UINT:
-			runBytecodeExecutionTest(t, m, tc, w, cfg.bytecode)
 		case vm.WORD_UINT64:
 			runFixedWidthExecutionTest[vm.Uint64](t, m, tc, cfg, w)
 		case vm.WORD_UINT128:
@@ -228,43 +226,30 @@ func runExecutionTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f 
 	}
 }
 
-func runFixedWidthExecutionTest[W vm.Word[W]](t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, cfg Config,
+func runFixedWidthExecutionTest[W vm.Word[W]](t *testing.T, pU vm.Program[vm.Uint], tc TestCase, cfg Config,
 	w vm.WordConfig) {
 	// Lower to fixed-width machine
-	fwm := vm.WordToWordMachine[vm.Uint, W](m)
+	pW := vm.ProgramToProgram[vm.Uint, W](pU)
 	// Run execution test
-	runBytecodeExecutionTest(t, fwm, tc, w, cfg.bytecode)
+	runExecutionTest(t, pW, tc, w)
 }
 
-func runBytecodeExecutionTest[W vm.Word[W]](t *testing.T, wm *vm.WordMachine[W], test TestCase, cfg vm.WordConfig,
-	bytecode bool) {
-	//
-	if bytecode {
-		// Compile bytecode interpreter
-		bci := vm.WordToBytecodeInterpreter(wm)
-		// Execute bytecode
-		runExecutionTest(t, bci, test, cfg)
-	} else {
-		// Run using slow interpreter
-		runExecutionTest(t, wm, test, cfg)
-	}
-}
-
-func runExecutionTest[W vm.Word[W]](t *testing.T, wm vm.Core[W], test TestCase,
+func runExecutionTest[W vm.Word[W]](t *testing.T, p vm.Program[W], test TestCase,
 	cfg vm.WordConfig) {
 	//
 	var (
-		err  error
-		errs []error
+		err         error
+		errs        []error
+		interpreter = vm.NewBytecodeInterpreter(p)
 		// decode inputs / outputs
-		inputs, outputs = decodeInputsOutputs(t, wm, test.data)
+		inputs, outputs = decodeInputsOutputs(t, interpreter, test.data)
 	)
 	// Boot & Execute machine
-	if err = wm.Boot("main", inputs); err == nil {
+	if err = interpreter.Boot("main", inputs); err == nil {
 		// Execute it
-		if _, err = vm.ExecuteAll(wm, 131072); err == nil && test.expected {
+		if _, err = vm.ExecuteAll(interpreter, 131072); err == nil && test.expected {
 			// Check outputs match
-			errs = append(errs, checkExpectedOutputs(outputs, wm)...)
+			errs = append(errs, checkExpectedOutputs(outputs, interpreter)...)
 		} else if err == nil && !test.expected {
 			errs = append(errs, fmt.Errorf("test accepted incorrectly"))
 		} else if !test.expected {
@@ -289,30 +274,35 @@ func runExecutionTest[W vm.Word[W]](t *testing.T, wm vm.Core[W], test TestCase,
 // interpreter is resumed from it and run to completion, and the resulting
 // behaviour is checked against what the test expected.  Checkpoint testing is
 // (for now) restricted to the Uint128 word.
-func runCheckpointTests(t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, f field.Config, cfg Config) {
+func runCheckpointTests(t *testing.T, pU vm.Program[vm.Uint], tc TestCase, f field.Config, cfg Config) {
 	for _, w := range cfg.words {
 		// Check for incompatible field/word combinations.  For example, we
 		// cannot emulate a 254bit field using a 64bit word.
-		if w.Bandwidth <= f.BandWidth {
+		if w.BandWidth <= f.BandWidth {
 			continue
 		}
 		// Run the test
 		switch w {
-		case vm.WORD_UINT:
 		case vm.WORD_UINT64:
-			runFixedWidthCheckpointTest[vm.Uint64](t, m, tc, cfg, w)
+			// Lower machine to use 64bit words
+			pW := vm.ProgramToProgram[vm.Uint, vm.Uint64](pU)
+			// Run test
+			runFixedWidthCheckpointTest(t, pW, tc, cfg, w)
 		case vm.WORD_UINT128:
-			runFixedWidthCheckpointTest[vm.Uint128](t, m, tc, cfg, w)
+			// Lower machine to use 128bit words
+			pW := vm.ProgramToProgram[vm.Uint, vm.Uint128](pU)
+			// Run test
+			runFixedWidthCheckpointTest(t, pW, tc, cfg, w)
 		default:
 			panic(fmt.Sprintf("unknown machine word: %s", w.Name))
 		}
 	}
 }
 
-func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase,
+func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m vm.Program[W], tc TestCase,
 	cfg Config, w vm.WordConfig) {
 	//
-	program, checkpoints, outputs, modulus := bootAndCheckpoint[vm.Uint128](t, m, tc, w, cfg)
+	program, checkpoints, outputs := bootAndCheckpoint(t, m, tc, w, cfg)
 	// Nothing to resume from (the checkpointed function ran fewer than the
 	// configured interval, or a reject test failed early): skip phase 2.
 	if len(checkpoints) == 0 {
@@ -323,7 +313,7 @@ func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m *vm.WordMachine[v
 	//
 	var (
 		idx     = rand.Intn(len(checkpoints))
-		resumed = vm.NewBytecodeInterpreter(program, modulus)
+		resumed = vm.NewBytecodeInterpreter(program)
 		errs    []error
 	)
 	// Phase 2: resume a fresh interpreter from a randomly-chosen checkpoint and
@@ -349,29 +339,30 @@ func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m *vm.WordMachine[v
 	}
 }
 
-func bootAndCheckpoint[W vm.Word[W]](t *testing.T, m *vm.WordMachine[vm.Uint], tc TestCase, w vm.WordConfig,
-	cfg Config) (vm.Program[W], []vm.CheckPoint[W], map[string][]W, W) {
+func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc TestCase, w vm.WordConfig,
+	cfg Config) (vm.Program[W], []vm.CheckPoint[W], map[string][]W) {
 	//
 	var (
-		checkpoints     []vm.CheckPoint[W]
-		spec            = cfg.checkpointing.Unwrap()
-		fn              = spec.Left
-		counter         = spec.Right
-		m128            = vm.WordToWordMachine[vm.Uint, W](m)
-		program         = vm.WordToBytecodeProgram(m128)
-		modulus         = m128.Executor().Modulus()
-		inputs, outputs = decodeInputsOutputs(t, m128, tc.data)
-		err             error
+		checkpoints []vm.CheckPoint[W]
+		spec        = cfg.checkpointing.Unwrap()
+		fn          = spec.Left
+		counter     = spec.Right
+		err         error
 	)
 	// Locate the function whose calls are to be checkpointed.
 	fid, ok := program.HasModule(fn)
 	if !ok {
 		t.Errorf("[%s]%s:%d unknown checkpoint function %q", w.Name, tc.filename, tc.line, fn)
-		return program, nil, outputs, modulus
+		return program, nil, nil
 	}
+	//
+	var (
+		interpreter     = vm.NewBytecodeInterpreter(program.AddCheckPoint(fid))
+		inputs, outputs = decodeInputsOutputs(t, interpreter, tc.data)
+	)
 	// Phase 1: run the program (with calls to fn switched into checkpointing
 	// calls) to completion, collecting the checkpoints it produces.
-	gen := vm.NewBytecodeInterpreter(program.AddCheckPoint(fid), modulus).
+	gen := interpreter.
 		CheckPointer(counter, func(cp vm.CheckPoint[W]) {
 			checkpoints = append(checkpoints, cp)
 		})
@@ -384,35 +375,37 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, m *vm.WordMachine[vm.Uint], t
 	// succeed; a rejecting test, by contrast, is expected to fail at some point.
 	if tc.expected && err != nil {
 		t.Errorf("[%s]%s:%d checkpoint generation failed: %v", w.Name, tc.filename, tc.line, err)
-		return program, nil, outputs, modulus
+		return program, nil, outputs
 	}
 	//
-	return program, checkpoints, outputs, modulus
+	return program, checkpoints, outputs
 }
 
-func runConstraintTest(t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase, cfg codegen.Config) {
+func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg codegen.Config) {
 	var f = cfg.GetField()
 	// Dispatch based on field config
 	switch f {
 	case field.GF_251:
-		testConstraintsWithField[gf251.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
+		testConstraintsWithField[gf251.Element](t, p, test, f, cfg.GetMaxStaticDepth())
 	case field.GF_8209:
-		testConstraintsWithField[gf8209.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
+		testConstraintsWithField[gf8209.Element](t, p, test, f, cfg.GetMaxStaticDepth())
 	case field.KOALABEAR_16:
-		testConstraintsWithField[koalabear.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
+		testConstraintsWithField[koalabear.Element](t, p, test, f, cfg.GetMaxStaticDepth())
 	case field.BLS12_377:
-		testConstraintsWithField[bls12_377.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
+		//testConstraintsWithField[bls12_377.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
+		panic("BLS12_377 not currently supported for tracing")
 	default:
 		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
 	}
 }
 
-func testConstraintsWithField[F field.Element[F]](t *testing.T, wm *vm.WordMachine[vm.Uint], test TestCase,
+func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.Uint], test TestCase,
 	f field.Config, maxStaticDepth uint) {
 	//
 	var (
+		wm = vm.BytecodeProgramToWord(p)
 		// construct binary file
-		binf = constraints.NewBinaryFile[F](nil, nil, f, maxStaticDepth, *wm)
+		binf = constraints.NewBinaryFile[F](nil, nil, f, maxStaticDepth, p)
 		// decode inputs / outputs
 		inputs, _ = decodeInputsOutputs(t, wm, test.data)
 		// generate trace

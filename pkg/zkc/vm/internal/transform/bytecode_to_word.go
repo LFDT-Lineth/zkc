@@ -42,17 +42,21 @@ import (
 // checkpoint flag on calls) is not recovered.  The bytecode descriptor does not
 // carry the surrounding field, so the prime modulus -- needed when executing
 // native field instructions -- is supplied separately.
-func BytecodeProgramToWord[W word.Word[W]](p descriptor.Program[W], modulus W) *machine.Word[W] {
+func BytecodeProgramToWord[W word.Word[W]](p descriptor.Program[W]) *machine.Word[W] {
 	var (
-		mods    = p.Modules()
-		modules = make([]Module, len(mods))
+		mods      = p.Modules()
+		modules   = make([]Module, len(mods))
+		callstack machine.CallStack[W, instruction.Word]
+		modulus   W
 	)
+	// Derive the prime field modulus from the word configuration.
+	modulus = modulus.SetBigInt(p.Field().Modulus())
 	// Decompile each module back into its word-machine form.
 	for i, m := range mods {
 		modules[i] = decompileModule(m)
 	}
 	//
-	return machine.NewWordFromModulus(modulus, modules...)
+	return machine.NewWordFromModulus(modulus, callstack, modules...)
 }
 
 func decompileModule[W word.Word[W]](m descriptor.Module[W]) Module {
@@ -127,10 +131,8 @@ func decompileBytecode[W word.Word[W]](b bytecode.Bytecode[W], regs []descriptor
 		panic("unexpected cast check")
 	case *bytecode.Debug:
 		return instruction.NewDebug(decompileChunks(b.Chunks, b.Sources)...)
-	case *bytecode.DivHint:
-		return instruction.NewFieldHint(
-			[]register.Id{toId(b.Quotient), toId(b.Remainder), toId(b.Witness)},
-			[]register.Id{toId(b.Dividend), toId(b.Divisor)})
+	case *bytecode.Hint:
+		return instruction.NewFieldHint(registerVectorsToVectors(b.Targets), registerVectorsToVectors(b.Sources))
 	case *bytecode.DivRem:
 		return decompileDivRem(b, regs)
 	case *bytecode.Fail:
@@ -266,7 +268,7 @@ func decompileSwitch[W word.Word[W]](b *bytecode.Switch[W]) WordInstruction {
 // the bytecode form, re-pairing each chunk that carries a format with the next
 // source register vector (mirroring how the chunks and sources were separated
 // during lowering, see bytecode.NewDebug / bytecode.NewFail).
-func decompileChunks(chunks []bytecode.FormattedChunk, sources []bytecode.RegVec) []instruction.FormattedChunk {
+func decompileChunks(chunks []bytecode.FormattedChunk, sources []bytecode.RegisterVector) []instruction.FormattedChunk {
 	var (
 		result = make([]instruction.FormattedChunk, len(chunks))
 		next   = 0
@@ -362,6 +364,19 @@ func toIds(regs []bytecode.RegisterId) []register.Id {
 	}
 	//
 	return ids
+}
+
+// registerVectorsToVectors converts each bytecode register vector into the
+// corresponding word-machine register vector, preserving the per-operand
+// grouping (each value may span several limb registers after splitting).
+func registerVectorsToVectors(vecs []bytecode.RegisterVector) []register.Vector {
+	var out = make([]register.Vector, len(vecs))
+	//
+	for i, v := range vecs {
+		out[i] = toVector(v.Registers())
+	}
+	//
+	return out
 }
 
 func toVector(regs []bytecode.RegisterId) register.Vector {
