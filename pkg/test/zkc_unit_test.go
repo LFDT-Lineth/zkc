@@ -1092,7 +1092,7 @@ func Test_ZkcUnit_Padding_01(t *testing.T) {
 }
 
 // This test contains an OLI empty module for some execution.
-// For the empty module 0 as an argument is an invalid input (leads to a fail)
+// For the empty module, "0" is an invalid input (leads to a fail)
 func Test_ZkcUnit_Padding_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/padding_02", util.DEFAULT_CONFIG)
 }

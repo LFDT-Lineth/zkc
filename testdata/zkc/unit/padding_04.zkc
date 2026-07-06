@@ -1,7 +1,7 @@
 pub input data(address:u8) -> (byte:u8)
 memory tmp(address:u8) -> (byte:u8)
 
-fn main() {
+fn main<tmp>() {
     var x:u8 = data[0]
     var y:u8
     tmp[0] = 0xFF
@@ -10,7 +10,7 @@ fn main() {
     y = f(x)
 }
 
-fn f(x:u8) -> (y:u8) {
+fn f<tmp>(x:u8) -> (y:u8) {
     y = x / 2
     tmp[0] = y
     return
