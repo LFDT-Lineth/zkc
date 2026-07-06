@@ -44,7 +44,11 @@ func Arith[W word.Word[W]](p bytecode.Arith[W], env Environment[W]) []uint32 {
 		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant)
 	case n == 2 && m == 1 && cz:
 		return encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
-	case n == 2 && m == 1 && constIsUint8:
+	case n == 2 && m == 1 && constIsUint8 && p.Op != bytecode.OP_SUB:
+		// SUB is excluded: the two-step pairing wraps each step separately,
+		// which is not equivalent to the single wrap (at CalculateSubBitwidth
+		// width) that the vectored form performs when the first step
+		// underflows.  See encodeArith_2n1c.
 		return encodeArith_2n1c(p.Op, p.Source[0], p.Source[1], p.Target[0], p.Constant)
 	default:
 		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant, env)
@@ -109,8 +113,15 @@ func DecodeArith_2n1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) 
 // ============================================================================
 
 // encodeArith_2n1c encodes a two-source, one-target arithmetic instruction with
-// a constant operand.
+// a constant operand.  This form applies only to ADD and MUL: those are exact
+// (a fold in two steps computes the same value as one), whereas a subtraction
+// wraps per-instruction on underflow, so splitting it would wrap at the wrong
+// width — SUB must use the vectored form instead (see Arith).
 func encodeArith_2n1c[W word.Word[W]](aop bytecode.Operation, rs0, rs1, rd uint16, constant W) []uint32 {
+	// Sanity check
+	if aop == bytecode.OP_SUB {
+		panic("two-step encoding unsound for subtraction")
+	}
 	// There is no 2-source-plus-constant instruction form, so compute
 	// "x op y" first, then fold in the constant (when used) with a second
 	// one-source instruction operating in place on the target.

@@ -111,9 +111,8 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		} else if tracing {
 			outputs, trace, errors = binfile.Trace(input, traceConfig)
 		} else if build.gogen {
-			wm := vm.BytecodeProgramToWord(artifacts.ir)
 			// Execute via native Go generated from the word machine.
-			outputs, errors = executeWithGogen(wm, input)
+			outputs, errors = executeWithGogen(artifacts.ir, input)
 		} else {
 			outputs, errors = binfile.Execute(input, 131072)
 		}
@@ -373,12 +372,12 @@ func readCheckPoint[W vm.Word[W]](file string) (vm.CheckPoint[W], error) {
 // executeWithGogen executes the word machine by generating native Go, compiling
 // it, and running the resulting binary as a subprocess — the same path the
 // gogen differential tests take, exposed here as the "--gogen" execution mode.
-func executeWithGogen(wm *vm.WordMachine[vm.Uint], input map[string][]byte) (map[string][]byte, []error) {
+func executeWithGogen(program vm.Program[vm.Uint], input map[string][]byte) (map[string][]byte, []error) {
 	var (
 		stats = util.NewPerfStats()
 	)
 	// Generate native Go source for the word machine.
-	src, err := vm.GenerateGo(wm, vm.GoGenConfig{})
+	src, err := vm.GenerateGo(program, vm.GoGenConfig{})
 	if err != nil {
 		return nil, []error{err}
 	}

@@ -390,7 +390,7 @@ func destructUnit[T any](p *StmtCompiler, args T, bitwidth uint, mapping []uint,
 	// Translate expression
 	insns := fn(args, bitwidth, mapping, tmp)
 	// Generate destruct
-	return append(insns, vm.UintAddV[vm.Uint](targets, []RegisterId{tmp}))
+	return append(insns, vm.AddVec[vm.Uint](targets, []RegisterId{tmp}))
 }
 
 func destructMultiway[T any](p *StmtCompiler, args T, mapping []uint, targets [][]vm.RegisterId, fn MultiTranslator[T],
@@ -412,7 +412,7 @@ func destructMultiway[T any](p *StmtCompiler, args T, mapping []uint, targets []
 	//  Generate destruct(s)
 	for i, v := range targets {
 		if len(v) != 1 {
-			insns = append(insns, vm.UintAddV[vm.Uint](v, []RegisterId{tmps[i]}))
+			insns = append(insns, vm.AddVec[vm.Uint](v, []RegisterId{tmps[i]}))
 		}
 	}
 	//
@@ -491,13 +491,13 @@ func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.
 func (p *StmtCompiler) compileIntConst(c vm.Uint, _ []uint, targets []vm.RegisterId,
 ) []Bytecode {
 	//
-	return []Bytecode{vm.UintAddVC(targets, nil, c)}
+	return []Bytecode{vm.AddVecConst(targets, nil, c)}
 }
 
 func (p *StmtCompiler) compileFieldConst(c vm.Uint, _ []uint, target RegisterId,
 ) []Bytecode {
 	//
-	return []Bytecode{vm.UintAddModP(target, nil, c)}
+	return []Bytecode{vm.AddModP(target, nil, c)}
 }
 
 func (p *StmtCompiler) compileConcat(args []Expr, mapping []uint, targets []vm.RegisterId) []Bytecode {
@@ -536,7 +536,7 @@ func (p *StmtCompiler) compileIntAdd(args []Expr, bitwidth uint, mapping []uint,
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(util.Some(bitwidth), mapping, nargs...)
 	// Done
-	return append(insns, vm.UintAddVC(targets, sources, constant))
+	return append(insns, vm.AddVecConst(targets, sources, constant))
 }
 
 func (p *StmtCompiler) compileFieldAdd(args []Expr, mapping []uint, target RegisterId) []Bytecode {
@@ -559,7 +559,7 @@ func (p *StmtCompiler) compileFieldAdd(args []Expr, mapping []uint, target Regis
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(util.None[uint](), mapping, nargs...)
 	// Done
-	return append(insns, vm.UintAddModP(target, sources, constant))
+	return append(insns, vm.AddModP(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved], mapping []uint,
@@ -576,7 +576,7 @@ func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved]
 
 func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, targets []vm.RegisterId,
 ) []Bytecode {
-	return []Bytecode{vm.UintAddV[vm.Uint](targets, []RegisterId{util.Cast[RegisterId](e.Variable)})}
+	return []Bytecode{vm.AddVec[vm.Uint](targets, []RegisterId{util.Cast[RegisterId](e.Variable)})}
 }
 
 func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target RegisterId,
@@ -586,7 +586,7 @@ func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], 
 		reg  = []RegisterId{util.Cast[RegisterId](e.Variable)}
 	)
 	//
-	return []Bytecode{vm.UintAddModP(target, reg, zero)}
+	return []Bytecode{vm.AddModP(target, reg, zero)}
 }
 
 func (p *StmtCompiler) compileArrayAccess(e *expr.ArrayAccess[symbol.Resolved], mapping []uint, targets []vm.RegisterId,
@@ -631,7 +631,7 @@ func (p *StmtCompiler) compileIntMul(args []Expr, bitwidth uint, mapping []uint,
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(util.Some(bitwidth), mapping, nargs...)
 	//
-	return append(insns, vm.UintMulV(targets, sources, constant))
+	return append(insns, vm.MulVec(targets, sources, constant))
 }
 
 func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target RegisterId,
@@ -655,7 +655,7 @@ func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target Regis
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(util.None[uint](), mapping, nargs...)
 	// Done
-	return append(insns, vm.UintMulModP[vm.Uint](target, sources, constant))
+	return append(insns, vm.MulModP[vm.Uint](target, sources, constant))
 }
 
 func (p *StmtCompiler) compileIntDiv(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
@@ -705,12 +705,12 @@ func (p *StmtCompiler) compileIntDiv(args []Expr, bitwidth uint, mapping []uint,
 	//
 	for i := 1; i < len(sources)-1; i++ {
 		tmp := p.allocate(util.Some[uint](bitwidth))
-		insns = append(insns, vm.UintDiv[vm.Uint](tmp, value, sources[i]))
+		insns = append(insns, vm.Div[vm.Uint](tmp, value, sources[i]))
 		value = tmp
 	}
 	//
 	return append(insns,
-		vm.UintDiv[vm.Uint](target, value, sources[len(sources)-1]))
+		vm.Div[vm.Uint](target, value, sources[len(sources)-1]))
 }
 
 func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
@@ -723,12 +723,12 @@ func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint,
 	//
 	for i := 1; i < len(sources)-1; i++ {
 		tmp := p.allocate(bw)
-		insns = append(insns, vm.UintRem[vm.Uint](tmp, value, sources[i]))
+		insns = append(insns, vm.Rem[vm.Uint](tmp, value, sources[i]))
 		value = tmp
 	}
 	//
 	return append(insns,
-		vm.UintRem[vm.Uint](target, value, sources[len(sources)-1]))
+		vm.Rem[vm.Uint](target, value, sources[len(sources)-1]))
 }
 
 func (p *StmtCompiler) compileBitwiseShl(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
@@ -795,7 +795,7 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
 	// Done (subtraction never needs a cast check; cf. compileSub).
-	return append(insns, vm.UintSubV(targets, sources, constant))
+	return append(insns, vm.SubVec(targets, sources, constant))
 }
 
 func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target RegisterId) []Bytecode {
@@ -818,7 +818,7 @@ func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target Regis
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(util.None[uint](), mapping, nargs...)
 	// Done
-	return append(insns, vm.UintSubModP[vm.Uint](target, sources, constant))
+	return append(insns, vm.SubModP[vm.Uint](target, sources, constant))
 }
 
 func (p *StmtCompiler) compileBitwiseAnd(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
@@ -945,11 +945,12 @@ func (p *StmtCompiler) evalConstant(e Expr) vm.Uint {
 
 func (p *StmtCompiler) allocate(bitwidth util.Option[uint]) RegisterId {
 	var (
-		n    = len(p.registers)
-		name = fmt.Sprintf("$%d", n)
+		n       = len(p.registers)
+		name    = fmt.Sprintf("$%d", n)
+		padding vm.Uint
 	)
 	//
-	p.registers = append(p.registers, vm.NewComputedRegister[vm.Uint](name, bitwidth))
+	p.registers = append(p.registers, vm.NewComputedRegister[vm.Uint](name, bitwidth, padding))
 	//
 	return util.Cast[RegisterId](uint(n))
 }

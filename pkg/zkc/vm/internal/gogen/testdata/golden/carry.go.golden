@@ -57,45 +57,45 @@ func fn_main() {
 	var r7 uint64 // $7
 	var r8 uint64 // $8
 	var r9 uint64 // $9
-	// [0.0] INT_ADD: $4 = 0x0
+	// [0.0] ldc $4 = 0x0
 	r4 = 0
-	// [0.1] MEMORY_READ: a = data[$4]
+	// [0.1] read a = data[$4]
 	{
 		start := r4
 		r0 = mem_data[start+0]
 	}
-	// [0.2] INT_ADD: $5 = 0x1
+	// [0.2] ldc $5 = 0x1
 	r5 = 1
-	// [0.3] MEMORY_READ: b = data[$5]
+	// [0.3] read b = data[$5]
 	{
 		start := r5
 		r1 = mem_data[start+0]
 	}
-	// [0.4] INT_ADD: c::s = a + b
+	// [0.4] add c::s = a+b
 	{
 		lo, hi := bits.Add64(r0, r1, 0)
 		r3 = lo
 		lo, hi = hi, 0
 		r2 = lo & (1<<1 - 1)
 	}
-	// [0.5] INT_ADD: $6 = 0x0
+	// [0.5] ldc $6 = 0x0
 	r6 = 0
-	// [0.6] INT_ADD: $7 = s
+	// [0.6] mov $7 = s
 	r7 = r3
-	// [0.7] MEMORY_WRITE: result[$6] = $7
+	// [0.7] write result[$6] = $7
 	{
 		start := r6
 		mem_result = memWrite(mem_result, start+0, r7)
 	}
-	// [0.8] INT_ADD: $8 = 0x1
+	// [0.8] ldc $8 = 0x1
 	r8 = 1
-	// [0.9] INT_ADD: $9 = c
+	// [0.9] mov $9 = c
 	r9 = r2
-	// [0.10] MEMORY_WRITE: result[$8] = $9
+	// [0.10] write result[$8] = $9
 	{
 		start := r8
 		mem_result = memWrite(mem_result, start+0, r9)
 	}
-	// [0.11] RETURN: ret
+	// [0.11] ret
 	return
 }

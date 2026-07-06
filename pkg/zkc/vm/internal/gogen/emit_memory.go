@@ -17,21 +17,20 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 )
 
 // emitMemRead emits a read from a readable memory: decode the address, then
-// load each data word into its target register (executeMemRead: each load is a
-// frame.Store, i.e. checked against the TARGET register width).  What is known
-// about the loaded value depends on the role:
+// load each data word into its target register (each load is a checked store
+// against the TARGET register width).  What is known about the loaded value
+// depends on the role:
 //
 //   - input ROM: untrusted (raw program input) — full uint64 range;
 //   - static ROM: contents are baked, so the bound is their maximum;
 //   - RAM: cells were width-checked against the data registers when written
 //     (and unwritten cells read 0), so the data width bounds the value.
-func (g *generator) emitMemRead(c *code, fn *wordFunction, x *instruction.MemRead) error {
-	mi, ok := g.memByID[x.Id]
+func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite) error {
+	mi, ok := g.memByID[uint(x.Id)]
 	if !ok {
 		return fmt.Errorf("gogen: MEMORY_READ from unknown module id %d", x.Id)
 	}
@@ -40,13 +39,13 @@ func (g *generator) emitMemRead(c *code, fn *wordFunction, x *instruction.MemRea
 		return fmt.Errorf("gogen: MEMORY_READ from write-once memory %q", mi.name)
 	}
 
-	// A data-less read is a pure (range-check) lookup with no runtime effect,
-	// mirroring executeMemRead's empty-target loop; emit nothing.
-	if len(x.Data()) == 0 {
+	// A data-less read is a pure (range-check) lookup with no runtime effect;
+	// emit nothing.
+	if len(x.Data) == 0 {
 		return nil
 	}
 
-	start, err := g.addrExpr(fn, mi, x.Address())
+	start, err := g.addrExpr(fn, mi, x.Address)
 	if err != nil {
 		return err
 	}
@@ -58,7 +57,7 @@ func (g *generator) emitMemRead(c *code, fn *wordFunction, x *instruction.MemRea
 	c.block(func() {
 		c.linef("start := %s", start)
 
-		for i, d := range x.Data() {
+		for i, d := range x.Data {
 			l, e := g.limbOf(fn, d)
 			if e != nil {
 				inner = e
@@ -94,11 +93,11 @@ func (g *generator) emitMemRead(c *code, fn *wordFunction, x *instruction.MemRea
 	return inner
 }
 
-// emitMemWrite emits a write to a writable memory (executeMemWrite): decode
-// the address, width-check each value against the memory's data register, and
-// store grow-on-write.
-func (g *generator) emitMemWrite(c *code, fn *wordFunction, x *instruction.MemWrite) error {
-	mi, ok := g.memByID[x.Id]
+// emitMemWrite emits a write to a writable memory: decode the address,
+// width-check each value against the memory's data register, and store
+// grow-on-write.
+func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrite) error {
+	mi, ok := g.memByID[uint(x.Id)]
 	if !ok {
 		return fmt.Errorf("gogen: MEMORY_WRITE to unknown module id %d", x.Id)
 	}
@@ -109,14 +108,14 @@ func (g *generator) emitMemWrite(c *code, fn *wordFunction, x *instruction.MemWr
 		return fmt.Errorf("gogen: MEMORY_WRITE to read-only memory %q", mi.name)
 	}
 
-	start, err := g.addrExpr(fn, mi, x.Address())
+	start, err := g.addrExpr(fn, mi, x.Address)
 	if err != nil {
 		return err
 	}
 
 	dataRegs := mi.geom.DataRegisters()
-	if len(x.Data()) != len(dataRegs) {
-		return fmt.Errorf("gogen: MEMORY_WRITE data lines mismatch (%d vs %d)", len(x.Data()), len(dataRegs))
+	if len(x.Data) != len(dataRegs) {
+		return fmt.Errorf("gogen: MEMORY_WRITE data lines mismatch (%d vs %d)", len(x.Data), len(dataRegs))
 	}
 
 	var inner error
@@ -124,7 +123,7 @@ func (g *generator) emitMemWrite(c *code, fn *wordFunction, x *instruction.MemWr
 	c.block(func() {
 		c.linef("start := %s", start)
 
-		for i, s := range x.Data() {
+		for i, s := range x.Data {
 			src, e := g.operand(fn, s)
 			if e != nil {
 				inner = e
@@ -146,10 +145,10 @@ func (g *generator) emitMemWrite(c *code, fn *wordFunction, x *instruction.MemWr
 	return inner
 }
 
-// addrExpr mirrors memory.Geometry.Decode: fold the address registers
+// addrExpr mirrors the interpreter's decodeAddress: fold the address registers
 // big-endian by their geometry widths (in uint64 arithmetic, as the oracle
 // does), then multiply by the number of data lines.
-func (g *generator) addrExpr(fn *wordFunction, mi memInfo, addr []register.Id) (string, error) {
+func (g *generator) addrExpr(fn *descFunction, mi memInfo, addr []regId) (string, error) {
 	addrRegs := mi.geom.AddressRegisters()
 	if len(addr) != len(addrRegs) {
 		return "", fmt.Errorf("gogen: address lines mismatch (%d vs %d) for %q", len(addr), len(addrRegs), mi.name)

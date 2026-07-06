@@ -18,9 +18,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -34,20 +32,16 @@ import (
 //     covers two-limb (64 < width ≤ 128) registers as operands and targets;
 //   - beyond 2^128: a clean "unsupported" error.
 
-// emitArith dispatches the WordTypeA opcodes (the vector-target instructions).
-func (g *generator) emitArith(c *code, fn *wordFunction, x *instruction.WordTypeA[word.Uint]) error {
+// emitArith dispatches the ARITH operations (the vector-target instructions).
+func (g *generator) emitArith(c *code, fn *descFunction, x *bytecode.Arith[word.Uint]) error {
 	store, err := g.buildStore(fn, x.Target)
 	if err != nil {
 		return err
 	}
 
-	srcs, err := g.operands(fn, x.Sources)
+	srcs, err := g.operands(fn, x.Source)
 	if err != nil {
 		return err
-	}
-
-	if x.Op == opcode.BIT_CONCAT {
-		return g.emitConcat(c, fn, x, store)
 	}
 
 	konst, err := constOperand(x.Constant)
@@ -56,23 +50,23 @@ func (g *generator) emitArith(c *code, fn *wordFunction, x *instruction.WordType
 	}
 
 	switch x.Op {
-	case opcode.INT_ADD:
+	case bytecode.OP_ADD:
 		return g.emitAdd(c, srcs, konst, store)
-	case opcode.INT_SUB:
+	case bytecode.OP_SUB:
 		if len(srcs) == 0 {
-			return fmt.Errorf("gogen: INT_SUB with no sources unsupported")
+			return fmt.Errorf("gogen: SUB with no sources unsupported")
 		}
 
-		wrap, err := g.subWrapWidth(fn, x.Sources, x.Constant)
+		wrap, err := g.subWrapWidth(fn, x.Source, x.Constant)
 		if err != nil {
 			return err
 		}
 
 		return g.emitSub(c, srcs, konst, store, wrap)
-	case opcode.INT_MUL:
+	case bytecode.OP_MUL:
 		return g.emitMul(c, srcs, konst, store)
 	default:
-		return fmt.Errorf("gogen: unsupported arithmetic op %s", opName(x.Op))
+		return fmt.Errorf("gogen: unsupported arithmetic operation (%d)", x.Op)
 	}
 }
 
@@ -177,7 +171,7 @@ func (g *generator) emitAdd(c *code, srcs []operand, konst operand, store storeV
 // subtract-with-borrow into the top target limb.  Widths are the declared
 // register widths — not the interval-sharpened bounds — because that is what
 // the reference interpreter encodes.
-func (g *generator) subWrapWidth(fn *wordFunction, sources []register.Id, constant word.Uint) (uint, error) {
+func (g *generator) subWrapWidth(fn *descFunction, sources []regId, constant word.Uint) (uint, error) {
 	lhs, err := g.regWidth(fn, sources[0])
 	if err != nil {
 		return 0, err
@@ -430,11 +424,16 @@ func (g *generator) emitMul(c *code, srcs []operand, konst operand, store storeV
 	return inner
 }
 
-// emitConcat emits a BIT_CONCAT (`tn::…::t0 = sn::…::s0`): the sources pack
-// into one value with sources[0] in the least-significant bits (executeConcat),
-// which is then stored across the (possibly multi-limb) target.  Widths are the
+// emitConcat emits a CAT (`tn::…::t0 = sn::…::s0`): the sources pack into one
+// value with sources[0] in the least-significant bits (executeCat), which is
+// then stored across the (possibly multi-limb) target.  Widths are the
 // declared register widths, and each source is known to fit its width.
-func (g *generator) emitConcat(c *code, fn *wordFunction, x *instruction.WordTypeA[word.Uint], store storeView) error {
+func (g *generator) emitConcat(c *code, fn *descFunction, x *bytecode.Cat) error {
+	store, err := g.buildStore(fn, x.Targets)
+	if err != nil {
+		return err
+	}
+
 	srcs := make([]operand, len(x.Sources))
 	widths := make([]uint, len(x.Sources))
 	total := uint(0)
@@ -508,13 +507,13 @@ func (g *generator) emitConcat(c *code, fn *wordFunction, x *instruction.WordTyp
 }
 
 // ===========================================================================
-// Stores (mirroring StackFrame.Store / StoreAcross)
+// Stores (mirroring the interpreter's storeAcross)
 // ===========================================================================
 
 // limb identifies a target register and its bit width.  A width above 64 means
 // the register is a two-limb pair (rN_0 / rN_1).
 type limb struct {
-	id    register.Id
+	id    regId
 	reg   string // Go base name, e.g. "r3"
 	width uint
 }
@@ -530,7 +529,7 @@ func (l limb) lo() string {
 
 func (l limb) hiName() string { return l.reg + "_1" }
 
-func (g *generator) limbOf(fn *wordFunction, id register.Id) (limb, error) {
+func (g *generator) limbOf(fn *descFunction, id regId) (limb, error) {
 	w, err := g.regWidth(fn, id)
 	if err != nil {
 		return limb{}, err
@@ -541,7 +540,7 @@ func (g *generator) limbOf(fn *wordFunction, id register.Id) (limb, error) {
 
 // storeView models a store target: exactly one of single / limbs is set.  A
 // multi-register target receives the value distributed lowest-register-first
-// (least significant limb first), per StoreAcross.  Registers in a multi-limb
+// (least significant limb first), per storeAcross.  Registers in a multi-limb
 // vector must be narrow (a wide register inside a destructure has not been
 // observed and stays unsupported).
 type storeView struct {
@@ -575,8 +574,7 @@ func (s storeView) noWideLimb() error {
 }
 
 // buildStore translates a target register vector into a storeView.
-func (g *generator) buildStore(fn *wordFunction, vec register.Vector) (storeView, error) {
-	regs := vec.Registers()
+func (g *generator) buildStore(fn *descFunction, regs []regId) (storeView, error) {
 	if len(regs) == 1 {
 		l, err := g.limbOf(fn, regs[0])
 		if err != nil {
@@ -755,7 +753,7 @@ func exactWide(v *big.Int) operand {
 }
 
 // storePair distributes a lo/hi pair (named exactly `lo` and `hi`, in scope)
-// across the target, mirroring StoreAcross over a 128-bit value.
+// across the target, mirroring storeAcross over a 128-bit value.
 func (g *generator) storePair(c *code, store storeView, bound *big.Int) error {
 	checked := !fits(bound, store.total)
 

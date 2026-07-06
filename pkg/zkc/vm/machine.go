@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 )
@@ -190,7 +191,7 @@ func ExecuteAndObserve[W Word[W], I Instruction, M Machine[W, I], V Observer[W, 
 // DecodeInputsOutputs decodes  given set of input and output bytes
 // appropriately for the given machine.  If there are unknown or conflicting
 // inputs, then errors are returned.
-func DecodeInputsOutputs[W Word[W], M Core[W]](m M, data map[string][]byte,
+func DecodeInputsOutputs[W Word[W]](program descriptor.Program[W], data map[string][]byte,
 ) (inputs, outputs map[string][]W, errs []error) {
 	//
 	var visited = make(map[string]bool)
@@ -198,7 +199,7 @@ func DecodeInputsOutputs[W Word[W], M Core[W]](m M, data map[string][]byte,
 	inputs = make(map[string][]W)
 	outputs = make(map[string][]W)
 	// scan input modules
-	for iter := m.Inputs(); iter.HasNext(); {
+	for iter := program.Inputs(); iter.HasNext(); {
 		var input = iter.Next()
 		// Record visited information
 		visited[input.Name()] = true
@@ -210,7 +211,7 @@ func DecodeInputsOutputs[W Word[W], M Core[W]](m M, data map[string][]byte,
 		}
 	}
 	// scan output modules
-	for iter := m.Outputs(); iter.HasNext(); {
+	for iter := program.Outputs(); iter.HasNext(); {
 		var output = iter.Next()
 		// Record visited information
 		visited[output.Name()] = true

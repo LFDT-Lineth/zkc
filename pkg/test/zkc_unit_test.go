@@ -290,6 +290,13 @@ func Test_ZkcUnit_Basic_63(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_63", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
+func Test_ZkcUnit_Basic_64(t *testing.T) {
+	// TODO: constraint tracing still runs the legacy word machine, which
+	// rejects subtraction underflow ("arithmetic underflow") instead of
+	// wrapping like the bytecode interpreter.
+	checkZkcUnit(t, "zkc/unit/basic_64", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
 	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.

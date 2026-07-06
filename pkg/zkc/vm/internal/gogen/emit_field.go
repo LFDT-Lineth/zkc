@@ -17,9 +17,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -33,11 +31,11 @@ type fieldHelpers struct {
 
 func (f fieldHelpers) any() bool { return f.add || f.sub || f.mul }
 
-// emitFieldOp emits the WordTypeF mod-P chains (executeFieldAdd/Sub/Mul) with
-// the machine's prime modulus baked in as a constant.  Only moduli up to 64
+// emitFieldOp emits the mod-P chains (executeFieldAdd/Sub/Mul) with the
+// machine's prime modulus baked in as a constant.  Only moduli up to 64
 // bits are supported — anything wider implies wide registers, equally out of
 // scope for now.
-func (g *generator) emitFieldOp(c *code, fn *wordFunction, x *instruction.WordTypeF[word.Uint]) error {
+func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArith[word.Uint]) error {
 	if g.modulus.BitLen() > 64 {
 		return fmt.Errorf("gogen: modulus 0x%s wider than 64 bits unsupported", g.modulus.Text(16))
 	}
@@ -69,7 +67,7 @@ func (g *generator) emitFieldOp(c *code, fn *wordFunction, x *instruction.WordTy
 	var expr string
 
 	switch x.Op {
-	case opcode.INT_ADDMOD_P:
+	case bytecode.OP_ADDMOD_P:
 		// executeFieldAdd: val = constant; val = (val + src) mod P per source.
 		// With no sources the (unreduced) constant is stored as-is.
 		if len(srcs) == 0 {
@@ -83,7 +81,7 @@ func (g *generator) emitFieldOp(c *code, fn *wordFunction, x *instruction.WordTy
 		for _, s := range srcs {
 			expr = fmt.Sprintf("addModP(%s, %s)", expr, s.expr)
 		}
-	case opcode.INT_SUBMOD_P:
+	case bytecode.OP_SUBMOD_P:
 		// executeFieldSub: val = src0 - src1 - … (mod P), then always - constant
 		// (mod P) — so the result is reduced even when the constant is zero.
 		// With no sources the seed is the zero word.
@@ -98,7 +96,7 @@ func (g *generator) emitFieldOp(c *code, fn *wordFunction, x *instruction.WordTy
 		}
 
 		expr = fmt.Sprintf("subModP(%s, %d)", expr, konst)
-	case opcode.INT_MULMOD_P:
+	case bytecode.OP_MULMOD_P:
 		// executeFieldMul: val = constant; val = (val · src) mod P per source.
 		// With no sources the (unreduced) constant is stored as-is.
 		if len(srcs) == 0 {
@@ -113,7 +111,7 @@ func (g *generator) emitFieldOp(c *code, fn *wordFunction, x *instruction.WordTy
 			expr = fmt.Sprintf("mulModP(%s, %s)", expr, s.expr)
 		}
 	default:
-		return fmt.Errorf("gogen: unsupported field op %s", opName(x.Op))
+		return fmt.Errorf("gogen: unsupported field operation (%d)", x.Op)
 	}
 
 	g.assignSingle(c, target, operand{expr: expr, max: pm1})
@@ -167,16 +165,16 @@ func (g *generator) emitModPHelpers(c *code) {
 	}
 }
 
-// emitHint emits HINT_DIVISION (executeDivHint), the only word-executable
-// hint: targets[0] = q, targets[1] = r, targets[2] = w where
+// emitHint emits the DIV_HINT hint (executeDivHint), the only supported hint
+// operation: targets[0] = q, targets[1] = r, targets[2] = w where
 //
 //	q = dividend / divisor,  r = dividend % divisor,  w = divisor - r - 1.
 //
 // A zero divisor fails.  Since r < divisor, w never underflows (the oracle's
 // underflow checks are unreachable), so none are emitted.
-func (g *generator) emitHint(c *code, fn *wordFunction, x *instruction.FieldHint) error {
-	if x.OpCode() != opcode.HINT_DIVISION {
-		return fmt.Errorf("gogen: unsupported hint %s", opName(x.OpCode()))
+func (g *generator) emitHint(c *code, fn *descFunction, x *bytecode.Hint) error {
+	if x.Op != bytecode.DIV_HINT {
+		return fmt.Errorf("gogen: unsupported hint operation (%d)", x.Op)
 	}
 
 	if len(x.Sources) != 2 || len(x.Targets) != 3 {
@@ -252,15 +250,15 @@ func (g *generator) emitHint(c *code, fn *wordFunction, x *instruction.FieldHint
 // register ids.  gogen only supports narrow (single-limb) hint operands; a
 // multi-limb vector (produced by register-splitting a wide value) is not yet
 // supported here.
-func hintRegisters(vecs []register.Vector) ([]register.Id, error) {
-	ids := make([]register.Id, len(vecs))
+func hintRegisters(vecs []bytecode.RegisterVector) ([]regId, error) {
+	ids := make([]regId, len(vecs))
 
 	for i, v := range vecs {
-		if v.Len() != 1 {
+		if v.Len != 1 {
 			return nil, fmt.Errorf("gogen: multi-limb division hint operand unsupported")
 		}
 
-		ids[i] = v.AsRegister()
+		ids[i] = v.Base
 	}
 
 	return ids, nil
