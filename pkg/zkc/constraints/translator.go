@@ -334,14 +334,15 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		// IS_PC_<k> program counter selectors, only for MLI.
 		pcSelectors []register.Id
 	)
-	// One-line (atomic) and native functions carry no $pc / $ret control lines,
-	// so a padding row cannot be "deactivated" the way it is for multi-line
-	// functions (via PC==0).  Instead we allow padding for them and fill padding
+	// One-line (atomic) functions that don't do memory operation (read or write)
+	// can not carry $pc / $ret control lines.
+	// We allow padding for them and fill padding
 	// rows by copying a real row (see the trace builder), which is a valid
-	// witness for every constraint such a row participates in.  This is unsound
+	// witness for every constraint such a row participates in.
+	// This is unsound
 	// for a function performing a memory read/write, since duplicating a memory
 	// access row would break memory consistency, so those are excluded.
-	allowPadding := (fm.IsAtomic() || fm.IsNative()) && !containsMemoryAccess(fm)
+	allowPadding := fm.IsAtomic() && !containsMemoryAccess(fm)
 	// Initialise module
 	mod = mod.Init(name, allowPadding, true, false, fm.IsNative(), false, 0)
 	// Add all registers
@@ -404,8 +405,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 }
 
 // containsMemoryAccess reports whether any instruction in the function performs
-// a memory read or write.  Such functions must not use copy-row padding, since
-// duplicating a memory access row would break memory consistency.
+// a memory read or write.
 func containsMemoryAccess(fm vm.FieldFunction) bool {
 	for _, vec := range fm.Code() {
 		for _, code := range vec.Codes {

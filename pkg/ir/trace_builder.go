@@ -266,7 +266,7 @@ func addSpillageAndDefensivePadding[F field.Element[F]](defensive bool, tr *trac
 	//
 	n := tr.Modules().Count()
 	// Iterate over modules
-	for i := uint(0); i < n; i++ {
+	for i := range n {
 		// Compute extra padding rows required
 		padding := sc.RequiredPaddingRows(i, defensive, schema)
 		// Don't pad unless we have to
@@ -293,15 +293,9 @@ const retRegisterName = "$ret"
 
 // padsByCopyingRow determines whether a module's padding rows should replicate
 // an existing row rather than use a constant padding value.  This applies to
-// one-line (atomic) and native function modules, which — unlike multi-line
+// one-line (atomic) function modules, which — unlike multi-line
 // functions — have no $ret control line marking a row as inactive, so a
-// constant padding value need not satisfy their constraints.  Multi-line
-// functions (identified by their $ret register) keep constant padding, since
-// their padding rows are deactivated via PC==0.
-//
-// NOTE: only reached for modules with padding enabled (see AllowPadding), which
-// currently excludes memory modules; this should be revisited if padded memory
-// modules are introduced.
+// constant padding value need not satisfy their constraints.
 func padsByCopyingRow[F field.Element[F]](mod sc.Module[F]) bool {
 	for i := uint(0); i < mod.Width(); i++ {
 		if mod.Register(register.NewId(i)).Name() == retRegisterName {
