@@ -29,7 +29,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 )
 
 // GenerateMirConstraints is responsible for converting a field machine into a
@@ -334,13 +333,21 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		// IS_PC_<k> program counter selectors, only for MLI.
 		pcSelectors []register.Id
 	)
-	// One-line (atomic) functions that don't do memory operation (read or write)
-	// don't carry $pc / $ret control lines.
-	// We allow padding for them and fill padding
-	// rows by copying a real row (see the trace builder), which is a valid
-	// witness for every constraint such a row participates in.
-	padByCopyExistingLine := fm.IsAtomic() && !containsMemoryAccess(fm)
-	mod = mod.Init(name, padByCopyExistingLine, padByCopyExistingLine, true, false, fm.IsNative(), false, 0)
+	// One-line (atomic) functions carry no $pc control line.  Those free of
+	// memory operations are padded by copying a real row (see the trace
+	// builder), a valid witness for every constraint such a row participates in.
+	// Those touching memory cannot be padded that way (duplicating a memory
+	// access is unsound), so instead they carry a $ret activity line and are
+	// padded with all-zero ($ret==0) rows which deactivate their per-instruction
+	// constraints below.
+	var (
+		atomic        = fm.IsAtomic()
+		touchesMemory = fm.ContainsMemoryAccess()
+		// activity holds the $ret line for atomic memory-touching functions.
+		activity = util.None[register.Id]()
+	)
+
+	mod = mod.Init(name, atomic, atomic && !touchesMemory, true, false, fm.IsNative(), false, 0)
 	// Add all registers
 	mod.AddRegisters(fm.Registers()...)
 	// Native functions are backed by an external circuit, so we emit only the
@@ -348,8 +355,8 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	if fm.IsNative() {
 		return mod
 	}
-	// Add control registers for Multi Line Instruction
-	if !fm.IsAtomic() {
+	// Add control registers.
+	if !atomic {
 		var (
 			constraints []mir.Constraint[F]
 			pc          = register.NewId(mod.Width())
@@ -372,18 +379,32 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		mod.AddConstraints(constraints...)
 	} else {
 		framing = mirc.NewAtomicFraming[register.Id, Expr[F]]()
+		// Atomic functions touching memory get a $ret activity line whose padding
+		// rows ($ret==0) deactivate the per-instruction constraints.
+		if touchesMemory {
+			ret := register.NewId(mod.Width())
+			mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
+
+			activity = util.Some(ret)
+		}
 	}
 	// Translate all instructions
 	for pc, vec := range fm.Code() {
 		var (
 			handle = fmt.Sprintf("pc%d", pc)
 			// construct translator for this instruction
-			tr = NewVectorTranslator(ctx, uint(pc), vec, framing, fm.Registers())
-			// extract logical constraint
-			constraint = tr.translate().AsLogical()
+			tr         = NewVectorTranslator(ctx, uint(pc), vec, framing, fm.Registers())
+			constraint = tr.translate()
 		)
+		// For atomic memory-touching functions, gate the constraint on the $ret
+		// activity line so padding rows ($ret==0) are unconstrained.
+		if activity.HasValue() {
+			active := mirc.Variable[register.Id, Expr[F]](activity.Unwrap(), 1, 0).
+				NotEquals(mirc.Number[register.Id, Expr[F]](0))
+			constraint = mirc.If(active, constraint)
+		}
 		// translate into MIR constraints
-		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint))
+		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint.AsLogical()))
 	}
 	// Add range proof constraints for all registers.
 	// Note: while adding lookups from calls and memory read/write  might add (bit) registers,
@@ -398,21 +419,6 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	// TODO: add memory read / write constraints (as lookups).
 	// Done
 	return mod
-}
-
-// containsMemoryAccess reports whether any instruction in the function performs
-// a memory read or write.
-func containsMemoryAccess(fm vm.FieldFunction) bool {
-	for _, vec := range fm.Code() {
-		for _, code := range vec.Codes {
-			switch code.(type) {
-			case *instruction.MemRead, *instruction.MemWrite:
-				return true
-			}
-		}
-	}
-	//
-	return false
 }
 
 func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id, pcSelectors []register.Id,

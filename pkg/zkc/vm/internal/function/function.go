@@ -89,6 +89,21 @@ func (p *Function[I]) IsAtomic() bool {
 	return len(p.code) == 1
 }
 
+// ContainsMemoryAccess reports whether any instruction in this function performs
+// a memory read or write.
+func (p *Function[I]) ContainsMemoryAccess() bool {
+	for _, vec := range p.code {
+		for _, code := range vec.Codes {
+			switch any(code).(type) {
+			case *instruction.MemRead, *instruction.MemWrite:
+				return true
+			}
+		}
+	}
+	//
+	return false
+}
+
 // IsNative reports whether this function is backed by a native circuit (i.e.
 // declared with the @native annotation) rather than by the instructions in
 // its body.

@@ -271,15 +271,22 @@ func emitCallLookup[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 		tgtTerms = registerAccesses[F](callee.Registers(), tgtIds)
 	)
 	//
-	if callee.IsAtomic() {
+	if callee.IsAtomic() && !callee.ContainsMemoryAccess() {
 		// Atomic callees have no $ret line: every callee row is a valid table
 		// entry, so the target side is unfiltered.
 		target = lookup.UnfilteredVector(calleeId, tgtTerms...)
 	} else {
-		// Multi-line callees expose a $ret line (immediately after the $pc line)
-		// which is 1 on active rows; use it as the lookup selector.
+		// Both multi-line callees and atomic memory-touching callees expose a $ret
+		// line which is 1 on active rows; use it as the lookup selector.  A
+		// multi-line callee's $ret follows its $pc line (offset 1); an atomic
+		// callee has no $pc, so its $ret immediately follows the registers.
+		offset := uint(0)
+		if !callee.IsAtomic() {
+			offset = 1
+		}
+		//
 		var (
-			retId = register.NewId(uint(len(callee.Registers())) + 1)
+			retId = register.NewId(uint(len(callee.Registers())) + offset)
 			ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
 		)
 

@@ -145,6 +145,8 @@ func (p *FullObserver[W, I, M]) traceModule(m machine.Module, states []State[W],
 	case isMultiLineFunction(m):
 		f := m.(*function.Function[instruction.Word])
 		auxNames = p.assignControlColumns(f, cols, states, builder)
+	case isAtomicMemoryFunction(m):
+		auxNames = p.assignActivityColumn(m, cols, states, builder)
 	case isAccessOnceMemory[W](m):
 		mem, ok := m.(memory.Memory[W])
 		if !ok {
@@ -166,11 +168,35 @@ func numAuxColumns[W word.Word[W]](m machine.Module) uint {
 	case isMultiLineFunction(m):
 		// program counter, return line and one selector per instruction.
 		return 2 + uint(len(m.(*function.Function[instruction.Word]).Code()))
+	case isAtomicMemoryFunction(m):
+		// a single $ret activity line.
+		return 1
 	case isAccessOnceMemory[W](m):
 		return extraColumnsForAccessOnceMemory[W](m)
 	default:
 		return 0
 	}
+}
+
+// assignActivityColumn fills the single $ret activity column of an atomic
+// memory-touching function with 1 on every (active) row and returns its name.
+// Padding rows are left at the column's zero padding value, so $ret==0 there.
+func (p *FullObserver[W, I, M]) assignActivityColumn(m machine.Module,
+	cols []array.MutArray[util_word.BigEndian], states []State[W],
+	builder array.Builder[util_word.BigEndian]) []string {
+	//
+	var (
+		one    = field.One[util_word.BigEndian]()
+		nrows  = uint(len(states))
+		retCol = uint(len(m.Registers()))
+	)
+	// Initialise and fill the activity column.
+	cols[retCol] = builder.NewArray(nrows, 1)
+	for row := range states {
+		cols[retCol] = cols[retCol].Set(uint(row), one)
+	}
+	//
+	return []string{io.RET_NAME}
 }
 
 // transcribeRegisterColumns allocates the register columns and copies each
@@ -387,6 +413,18 @@ func loadWords[W word.Word[W], I instruction.Instruction](start, end uint, frame
 func isMultiLineFunction(m machine.Module) bool {
 	if f, ok := m.(*function.Function[instruction.Word]); ok {
 		return !f.IsAtomic()
+	}
+	//
+	return false
+}
+
+// isAtomicMemoryFunction detects a one-line function performing a memory access.
+// Such functions carry a single $ret activity column (1 on active rows, 0 on
+// padding) instead of using copy-row padding, which would be unsound for memory
+// operations.
+func isAtomicMemoryFunction(m machine.Module) bool {
+	if f, ok := m.(*function.Function[instruction.Word]); ok {
+		return f.IsAtomic() && f.ContainsMemoryAccess()
 	}
 	//
 	return false
