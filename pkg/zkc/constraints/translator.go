@@ -95,7 +95,7 @@ func translateStaticMemory[F field.Element[F]](_ schema.ModuleId, m vm.Memory[F]
 		outputs  = m.Registers()[nInputs : nInputs+nOutputs]
 	)
 	// Initialise module as a static reference table.
-	mod = mod.Init(name, false, true, false, m.IsNative(), true, 0)
+	mod = mod.Init(name, false, false, true, false, m.IsNative(), true, 0)
 	// Add all registers
 	mod.AddRegisters(m.Registers()...)
 	// Populate the table contents from the pre-loaded memory.
@@ -124,7 +124,7 @@ func translateReadWriteMemory[F field.Element[F]](
 		name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
 	)
 	// Initialise module
-	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
+	mod = mod.Init(name, false, false, true, false, fm.IsNative(), false, 0)
 	// Add all registers
 	mod.AddRegisters(fm.Registers()...)
 	// TODO: read-write (RAM) constraints are disabled for now — the timestamp
@@ -146,7 +146,7 @@ func translateAccessOnceMemory[F field.Element[F]](
 	// Initialise module and add all registers.  AllowPadding (first flag) must
 	// be true so a leading padding row is inserted, which the ACCESS[0]=0 /
 	// addresses-vanish-in-padding constraints rely on.
-	memoryModule = memoryModule.Init(name, true, true, false, fm.IsNative(), false, 0)
+	memoryModule = memoryModule.Init(name, true, false, true, false, fm.IsNative(), false, 0)
 	memoryModule.AddRegisters(fm.Registers()...)
 
 	var access = register.NewId(memoryModule.Width())
@@ -335,16 +335,12 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		pcSelectors []register.Id
 	)
 	// One-line (atomic) functions that don't do memory operation (read or write)
-	// can not carry $pc / $ret control lines.
+	// don't carry $pc / $ret control lines.
 	// We allow padding for them and fill padding
 	// rows by copying a real row (see the trace builder), which is a valid
 	// witness for every constraint such a row participates in.
-	// This is unsound
-	// for a function performing a memory read/write, since duplicating a memory
-	// access row would break memory consistency, so those are excluded.
-	allowPadding := fm.IsAtomic() && !containsMemoryAccess(fm)
-	// Initialise module
-	mod = mod.Init(name, allowPadding, true, false, fm.IsNative(), false, 0)
+	padByCopyExistingLine := fm.IsAtomic() && !containsMemoryAccess(fm)
+	mod = mod.Init(name, padByCopyExistingLine, padByCopyExistingLine, true, false, fm.IsNative(), false, 0)
 	// Add all registers
 	mod.AddRegisters(fm.Registers()...)
 	// Native functions are backed by an external circuit, so we emit only the

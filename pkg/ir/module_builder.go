@@ -40,6 +40,9 @@ type ModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 	// AllowPadding determines whether the given module allows an initial
 	// padding row, or not.
 	AllowPadding() bool
+	// PadsByCopyingRow determines whether the module's padding rows replicate an
+	// existing row rather than use a constant padding value.
+	PadsByCopyingRow() bool
 	// Assignments returns those assignments added to this module.
 	Assignments() []schema.Assignment[F]
 	// Constraints returns those constraints added to this module.
@@ -76,11 +79,11 @@ type ModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 
 // NewModuleBuilder constructs a new builder for a module with the given name.
 func NewModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]](name module.Name,
-	mid schema.ModuleId, padding, public, synthetic, static, native bool, keys uint) ModuleBuilder[F, C, T] {
+	mid schema.ModuleId, padding, padByCopy, public, synthetic, static, native bool, keys uint) ModuleBuilder[F, C, T] {
 	//
 	regmap := make(map[string]uint, 0)
 
-	return &internalModuleBuilder[F, C, T]{name, mid, padding, public, synthetic, static, native,
+	return &internalModuleBuilder[F, C, T]{name, mid, padding, padByCopy, public, synthetic, static, native,
 		keys, regmap, nil, nil, nil, nil}
 }
 
@@ -91,6 +94,9 @@ type internalModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Ex
 	moduleId schema.ModuleId
 	// Indicates whether padding supported for this module
 	padding bool
+	// Indicates whether padding rows replicate a real row (see
+	// schema.Module.PadsByCopyingRow)
+	padByCopy bool
 	// Indicates whether externally visible
 	public bool
 	// Indicates whether this is a synthetic module or not
@@ -146,6 +152,11 @@ func (p *internalModuleBuilder[F, C, T]) Keys() uint {
 // AllowPadding implementation for ModuleBuilder interface.
 func (p *internalModuleBuilder[F, C, T]) AllowPadding() bool {
 	return p.padding
+}
+
+// PadsByCopyingRow implementation for ModuleBuilder interface.
+func (p *internalModuleBuilder[F, C, T]) PadsByCopyingRow() bool {
+	return p.padByCopy
 }
 
 // IsExtern implementation for ModuleBuilder interface.
@@ -328,6 +339,11 @@ func (p *externalModuleBuilder[F, C, T]) Keys() uint {
 
 // AllowPadding implementation for ModuleBuilder interface.
 func (p *externalModuleBuilder[F, C, T]) AllowPadding() bool {
+	return false
+}
+
+// PadsByCopyingRow implementation for ModuleBuilder interface.
+func (p *externalModuleBuilder[F, C, T]) PadsByCopyingRow() bool {
 	return false
 }
 

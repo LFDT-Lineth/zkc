@@ -119,7 +119,7 @@ func (t *translator) translateModules(circuit *ast.Circuit) {
 // one HIR module.
 func (t *translator) translateModule(name string) {
 	// Always include module with base multiplier (even if empty).
-	t.schema.NewModule(module.NewName(name, 1), true, true, false, false, false, 0)
+	t.schema.NewModule(module.NewName(name, 1), true, false, true, false, false, false, 0)
 	// Initialise the corresponding family of HIR modules.
 	for _, regIndex := range t.env.RegistersOf(name) {
 		var (
@@ -131,7 +131,7 @@ func (t *translator) translateModule(name string) {
 		// Check whether module created this already (or not)
 		if _, ok := t.schema.HasModule(moduleName); !ok {
 			// No, therefore create new module.
-			t.schema.NewModule(moduleName, true, true, false, false, false, 0)
+			t.schema.NewModule(moduleName, true, false, true, false, false, false, 0)
 		}
 	}
 	// Translate all corset registers in this module into HIR registers across

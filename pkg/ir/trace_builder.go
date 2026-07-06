@@ -278,32 +278,13 @@ func addSpillageAndDefensivePadding[F field.Element[F]](defensive bool, tr *trac
 			// TODO: an empty copy-row module has no row to replicate, so it falls
 			// back to the constant padding value, which is generally not a valid
 			// witness.  Such modules need a synthesized/precomputed padding row.
-			if padsByCopyingRow(schema.Module(i)) {
+			if schema.Module(i).PadsByCopyingRow() {
 				tr.RawModule(i).UseLastRowAsPadding()
 			}
 			// Pad extract rows
 			tr.Pad(i, padding, 0)
 		}
 	}
-}
-
-// retRegisterName is the name of the return-line control register carried by
-// multi-line function modules (matches asm/io.RET_NAME).
-const retRegisterName = "$ret"
-
-// padsByCopyingRow determines whether a module's padding rows should replicate
-// an existing row rather than use a constant padding value.  This applies to
-// one-line (atomic) function modules, which — unlike multi-line
-// functions — have no $ret control line marking a row as inactive, so a
-// constant padding value need not satisfy their constraints.
-func padsByCopyingRow[F field.Element[F]](mod sc.Module[F]) bool {
-	for i := uint(0); i < mod.Width(); i++ {
-		if mod.Register(register.NewId(i)).Name() == retRegisterName {
-			return false
-		}
-	}
-	//
-	return true
 }
 
 // determineModuleHeights returns the height for each module in the trace.

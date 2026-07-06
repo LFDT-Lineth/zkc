@@ -57,6 +57,12 @@ type Module[F any] interface {
 	// AllowPadding determines whether the given module allows an initial
 	// padding row, or not.
 	AllowPadding() bool
+	// PadsByCopyingRow determines whether the module's padding rows should
+	// replicate an existing row rather than use a constant padding value.  This
+	// is required for modules — such as one-line (atomic) functions — which have
+	// no way to deactivate a padding row, so a constant padding value need not be
+	// a valid witness for their constraints, whereas any real row is.
+	PadsByCopyingRow() bool
 	// Assignments returns an iterator over the assignments of this module.
 	// These are the computations used to assign values to all computed columns
 	// in this module.
@@ -96,6 +102,7 @@ type Module[F any] interface {
 type Table[F field.Element[F], C Constraint[F]] struct {
 	name           module.Name
 	padding        bool
+	padByCopy      bool
 	public         bool
 	synthetic      bool
 	native         bool
@@ -112,9 +119,9 @@ type Table[F field.Element[F], C Constraint[F]] struct {
 // the ZkC pipeline should ever pass true.  The static flag indicates that this
 // module is a static reference table whose contents are fixed at compile time
 // and are populated separately via SetStaticContents.
-func (p *Table[F, C]) Init(name module.Name, padding, public, synthetic, native, static bool,
+func (p *Table[F, C]) Init(name module.Name, padding, padByCopy, public, synthetic, native, static bool,
 	keys uint) *Table[F, C] {
-	return &Table[F, C]{name, padding, public, synthetic, native, static, keys, nil, nil, nil, nil}
+	return &Table[F, C]{name, padding, padByCopy, public, synthetic, native, static, keys, nil, nil, nil, nil}
 }
 
 // Assignments provides access to those assignments defined as part of this
@@ -174,6 +181,11 @@ func (p *Table[F, C]) Keys() uint {
 // initial padding row, and allow defensive padding as well.
 func (p *Table[F, C]) AllowPadding() bool {
 	return p.padding
+}
+
+// PadsByCopyingRow implementation of Module interface.
+func (p *Table[F, C]) PadsByCopyingRow() bool {
+	return p.padByCopy
 }
 
 // IsPublic identifies whether or not this module is externally visible.

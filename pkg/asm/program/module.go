@@ -77,6 +77,11 @@ func (p *Module[F, T]) AllowPadding() bool {
 	return false
 }
 
+// PadsByCopyingRow implementation for schema.Module interface.
+func (p *Module[F, T]) PadsByCopyingRow() bool {
+	return false
+}
+
 // Constraints implementation for schema.Module interface.
 func (p *Module[F, T]) Constraints() iter.Iterator[schema.Constraint[F]] {
 	panic("unsupported operation")
