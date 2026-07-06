@@ -14,17 +14,18 @@ package zkc
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
@@ -55,77 +56,90 @@ var compileCmds = []FieldAgnosticCmd{
 	{field.BLS12_377, runCompileCmd[bls12_377.Element]},
 }
 
+// CompileConfig brings together various configuration options specific to this
+// command.
+type CompileConfig struct {
+	build BuildConfig
+	// indicates whether or not to print the Abstract Syntax Tree (when available)
+	ast bool
+	// indicates whether or not to print the Intermediate Reprentation
+	ir bool
+	// indicates whether or not to print the Mid-level Intermediate Reprentation (MIR).
+	mir bool
+	// indicates whether or not to print the Mid-level Intermediate Reprentation (AIR).
+	air bool
+	// indicates whether or not to print everything in full (e.g. including
+	// static reference tables).
+	verbose bool
+}
+
 func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
-		build      = GetBuildConfig[F](cmd, field)
-		output     = GetString(cmd, "output")
-		quiet      = GetFlag(cmd, "quiet")
-		showStatic = GetFlag(cmd, "show-static")
+		build  = GetBuildConfig[F](cmd, field)
+		output = GetString(cmd, "output")
+		config CompileConfig
 	)
-	// Suppress printf debug instructions when quiet mode is enabled.
-	build.config = build.config.Quiet(quiet)
-	applyCompileDefaults(&build, output)
+	//
+	config.ast = GetFlag(cmd, "ast")
+	config.mir = GetFlag(cmd, "mir")
+	config.air = GetFlag(cmd, "air")
+	config.ir = !(config.ast || config.mir || config.air)
+	config.verbose = GetFlag(cmd, "verbose")
 	// Build all artifacts
-	artifacts := build.Build(args...)
+	artifacts := Build[F](build, args...)
 	//
 	if output != "" {
-		writeArtifacts(output, build, artifacts)
+		writeArtifacts[F](output, build, artifacts)
 	} else {
 		// Print out requested artifacts
-		printArtifacts(artifacts, showStatic)
+		printArtifacts[F](field, artifacts, config)
 	}
 }
 
-func applyCompileDefaults[F field.Element[F]](build *BuildConfig[F], output string) {
-	// Writing a binary file requires a word-level machine artifact.
-	if output != "" {
-		build.wir = true
-	}
-	// Set default target (if none specified).
-	if !build.HasTarget() {
-		build.ast = true
-	}
+func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, artifacts BuildArtifacts) {
+	// Construct binary file
+	var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.config.GetField(),
+		build.config.GetMaxStaticDepth(), artifacts.ir)
+	// Write to disk
+	WriteBinaryFile(binfile, filename)
 }
 
-func writeArtifacts[F field.Element[F]](filename string, build BuildConfig[F], artifacts BuildArtifacts[F]) {
-	// Word-level Intermediate Representation
-	//nolint
-	if artifacts.wir.HasValue() {
-		// Construct binary file
-		var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.field,
-			build.config.GetMaxStaticDepth(), artifacts.wir.Unwrap())
-		// Write to disk
-		WriteBinaryFile(binfile, filename)
-	} else {
-		log.Error("must use --wir to write binary file")
-		os.Exit(5)
-	}
-}
-
-func printArtifacts[F field.Element[F]](artifacts BuildArtifacts[F], showStatic bool) {
+func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
+	// lower to a 64bit machine
+	var (
+		debugWir = false
+		// Word-level Intermediate Representation
+		wir = vm.BytecodeProgramToWord(artifacts.ir)
+		// Compile bytecode interpreter
+		bci = vm.ProgramToProgram[vm.Uint, vm.Uint64](artifacts.ir)
+	)
 	// Abstract Syntax Tree
-	if artifacts.ast.HasValue() {
+	if config.ast && artifacts.ast.HasValue() {
 		writeAbstractSyntaxTree(artifacts.ast.Unwrap())
+	} else if config.ast {
+		log.Warn("Abstract Syntax Tree unavailable")
 	}
 	// Word-level Intermediate Representation
-	if artifacts.wir.HasValue() {
-		writeIntermediateRepresentation(artifacts.wir.Unwrap(), artifacts.annotations)
-	}
-	// Word-level Intermediate Representation
-	if artifacts.bci.HasValue() {
-		writeBytecodeProgram(true, artifacts.bci.Unwrap(), artifacts.annotations)
-	}
-	// Field-level Intermediate Representation
-	if artifacts.fir.HasValue() {
-		writeIntermediateRepresentation(artifacts.fir.Unwrap(), artifacts.annotations)
+	if config.ir {
+		if debugWir {
+			writeIntermediateRepresentation(*wir, artifacts.annotations)
+		}
+		// Bytecode Intermediate Representation
+		writeBytecodeProgram(config.verbose, bci, artifacts.annotations)
 	}
 	// Mid-level Intermediate Representation
-	if artifacts.mir.HasValue() {
-		debug.PrintAnySchema(artifacts.mir.Unwrap(), 80, showStatic)
+	if config.mir {
+		fir := vm.WordToFieldMachine[vm.Uint, F](field, wir)
+		mir := constraints.GenerateMirConstraints(fir, config.build.config.GetMaxStaticDepth())
+		//
+		debug.PrintAnySchema(mir, 80, config.verbose)
 	}
-	// Arithmetic Intermediate Representation
-	if artifacts.air.HasValue() {
-		debug.PrintAnySchema(artifacts.air.Unwrap(), 80, showStatic)
+	// // Arithmetic Intermediate Representation
+	if config.air {
+		fir := vm.WordToFieldMachine[vm.Uint, F](field, wir)
+		air := constraints.GenerateAirConstraints(fir, field, config.build.config.GetMaxStaticDepth())
+		//
+		debug.PrintAnySchema(air, 80, config.verbose)
 	}
 }
 
@@ -431,79 +445,294 @@ func registerType(r register.Register) string {
 // Bytecode Interpreter
 // ============================================================================
 
+// bytecodeListing accumulates the rows of a disassembly table.  Each row is
+// stored as its "core" cells plus a parallel flow-graph string.  When binary
+// output is enabled the core column layout is [address, encoding, marker,
+// text]; otherwise it is just [marker, text].  The trailing "text" column
+// carries all assembly content (function signatures, register declarations,
+// instructions and memory declarations); the leading columns are populated
+// only on instruction rows.  A final flow column (rendering the control-flow
+// ranges of skip instructions) is appended to the right of the text column,
+// but only when at least one row actually has flow content.
+type bytecodeListing struct {
+	// binary indicates whether the address / encoding columns are present.
+	binary bool
+	// encodingWidth is the fixed width to which every encoding cell is padded,
+	// so the encoding column lines up across all functions in the program.
+	encodingWidth uint
+	// rows holds the accumulated core cells, each of coreWidth() cells.
+	rows [][]termio.FormattedText
+	// flows holds the flow-graph rendering for each row (parallel to rows);
+	// the empty string denotes a row with no flow content.
+	flows []string
+}
+
+// coreWidth returns the number of core columns (i.e. excluding the flow
+// column) in the listing.
+func (p *bytecodeListing) coreWidth() uint {
+	if p.binary {
+		return 4
+	}
+	//
+	return 2
+}
+
+// blank returns a fresh row of empty core cells of the correct width.
+func (p *bytecodeListing) blank() []termio.FormattedText {
+	row := make([]termio.FormattedText, p.coreWidth())
+	//
+	for i := range row {
+		row[i] = termio.NewText("")
+	}
+	//
+	return row
+}
+
+// darkGrey is the escape used to render variable (register) declarations, and
+// darkYellow the escape used to render the skip-arrow flow column.
+var (
+	darkGrey   = termio.NewAnsiEscape().Fg256Colour(240)
+	darkYellow = termio.NewAnsiEscape().Fg256Colour(136)
+)
+
+// addText appends a text-only row (with no flow content), placing the given
+// (possibly formatted) cell in the trailing text column.
+func (p *bytecodeListing) addText(cell termio.FormattedText) {
+	row := p.blank()
+	row[p.coreWidth()-1] = cell
+	p.rows = append(p.rows, row)
+	p.flows = append(p.flows, "")
+}
+
+// add appends an unformatted text-only row (e.g. an annotation), placed in the
+// trailing text column.
+func (p *bytecodeListing) add(text string) {
+	p.addText(termio.NewText(text))
+}
+
+// addDeclaration appends a variable (register) declaration row, rendered in
+// dark grey.
+func (p *bytecodeListing) addDeclaration(text string) {
+	p.addText(termio.NewFormattedText(text, darkGrey))
+}
+
+// addInstruction appends an instruction row, with the instruction text itself
+// rendered in the default colour and flow holding the control-flow rendering
+// for this row.  The address and encoding are omitted when binary output is
+// disabled.
+func (p *bytecodeListing) addInstruction(address, encoding, marker, text, flow string) {
+	row := p.blank()
+	instruction := termio.NewText(text)
+	//
+	if p.binary {
+		// Pad the encoding to the program-wide width so the column lines up
+		// across every function.
+		encoding = fmt.Sprintf("%*s", int(p.encodingWidth), encoding)
+		row[0] = termio.NewFormattedText(address, darkYellow)
+		row[1] = termio.NewFormattedText(encoding, darkGrey)
+		row[2] = termio.NewText(marker)
+		row[3] = instruction
+	} else {
+		row[0] = termio.NewText(marker)
+		row[1] = instruction
+	}
+	//
+	p.rows = append(p.rows, row)
+	p.flows = append(p.flows, flow)
+}
+
+// hasFlow reports whether any row carries flow content, and hence whether the
+// flow column should be included in the rendered table.
+func (p *bytecodeListing) hasFlow() bool {
+	for _, f := range p.flows {
+		if f != "" {
+			return true
+		}
+	}
+	//
+	return false
+}
+
+// table renders the accumulated rows into a FormattedTable, appending the flow
+// column to the right of the core columns when any row has flow content.
+func (p *bytecodeListing) table() *termio.FormattedTable {
+	var (
+		flow  = p.hasFlow()
+		width = p.coreWidth()
+	)
+	//
+	if flow {
+		width++
+	}
+	//
+	tbl := termio.NewFormattedTable(width, uint(len(p.rows)))
+	// Drop the vertical lines between columns.
+	tbl.SetSeparator("")
+	// Left-align the text column (function signatures, register declarations
+	// and instructions), so the assembly reads flush-left.
+	tbl.SetLeftAlign(p.coreWidth() - 1)
+	//
+	for i, row := range p.rows {
+		if flow {
+			row = append(row, termio.NewFormattedText(p.flows[i], darkYellow))
+		}
+		//
+		tbl.SetRow(uint(i), row...)
+	}
+	//
+	return tbl
+}
+
 func writeBytecodeProgram[W vm.Word[W]](binary bool, program vm.Program[W], annotations map[string][]string) {
 	var (
-		bin     [][]uint32
-		address uint32
+		bin           [][]uint32
+		address       uint32
+		encodingWidth uint
 	)
 	//
 	if binary {
 		// Extract encoding for all bytecodes
 		bin = vm.CompileProgram(program).Encoding()
+		// Determine the widest encoding across the entire program, so the
+		// encoding column can be given a uniform width in every function.
+		for _, codes := range bin {
+			encodingWidth = max(encodingWidth, uint(len(fmt.Sprintf("%08x", codes))))
+		}
 	}
 	//
 	for i, m := range program.Modules() {
 		if i != 0 {
+			// Blank line between module tables
 			fmt.Println()
 		}
-		// Write any annotations for this module
-		writeAnnotations(annotations[m.Name()])
-		//  Write module contents
-		switch m := m.(type) {
-		case *vm.BytecodeFunction[W]:
-			fid := uint16(i)
-			address, bin = writeBytecodeFunction(address, program.EnvironmentOf(fid), m, bin)
-		case *vm.BytecodeMemory[W]:
-			writeBytecodeMemory(m)
-		default:
-			panic(fmt.Sprintf("unknown module \"%s\" encountered", m.Name()))
-		}
+		// Write and print this module's table
+		address, bin = writeBytecodeModule(binary, encodingWidth, uint16(i), program, m, annotations, address, bin)
 	}
 }
 
-func writeBytecodeFunction[W vm.Word[W]](address uint32, env vm.BytecodeEnvironment,
+// writeBytecodeModule builds and prints the FormattedTable for a single module.
+// The encoding stream (bin) and running instruction address are threaded
+// through (and returned) since they accumulate across the whole program.
+func writeBytecodeModule[W vm.Word[W]](binary bool, encodingWidth uint, fid uint16, program vm.Program[W],
+	m vm.BytecodeModule[W], annotations map[string][]string, address uint32, bin [][]uint32) (uint32, [][]uint32) {
+	//
+	listing := &bytecodeListing{binary: binary, encodingWidth: encodingWidth}
+	// Write any annotations for this module
+	for _, a := range annotations[m.Name()] {
+		listing.add(fmt.Sprintf("#[%s]", a))
+	}
+	// Write module contents
+	switch m := m.(type) {
+	case *vm.BytecodeFunction[W]:
+		address, bin = writeBytecodeFunction(listing, address, program.EnvironmentOf(fid), m, bin)
+	case *vm.BytecodeMemory[W]:
+		writeBytecodeMemory(listing, m)
+	default:
+		panic(fmt.Sprintf("unknown module \"%s\" encountered", m.Name()))
+	}
+	//
+	writeModuleSignature(m)
+	// Print this module's table
+	listing.table().Print(true)
+	//
+	return address, bin
+}
+
+func writeModuleSignature[W vm.Word[W]](m vm.BytecodeModule[W]) {
+	// Write module contents
+	switch m := m.(type) {
+	case *vm.BytecodeFunction[W]:
+		fmt.Printf("fn %s\n", signatureOf(m))
+	case *vm.BytecodeMemory[W]:
+		//
+		if m.IsPublic() {
+			fmt.Print("pub ")
+		}
+		//
+		switch {
+		case m.IsStatic():
+			fmt.Print("static ")
+		case m.IsReadOnly():
+			fmt.Print("input ")
+		case m.IsWriteOnly():
+			fmt.Print("output ")
+		default:
+			fmt.Print("memory ")
+		}
+		//
+		fmt.Printf("%s\n", signatureOf(m))
+	default:
+		panic(fmt.Sprintf("unknown module \"%s\" encountered", m.Name()))
+	}
+}
+
+func writeBytecodeFunction[W vm.Word[W]](listing *bytecodeListing, address uint32, env vm.BytecodeEnvironment,
 	f *vm.BytecodeFunction[W], bin [][]uint32) (uint32, [][]uint32) {
-	//
-	var width = maxBytecodeLength(f, bin)
-	//
-	fmt.Printf("fn %s\n", signatureOf(f))
-	//
 	for _, r := range f.Registers() {
 		if !r.IsInputOutput() {
-			fmt.Printf("\t%s %s\n", regType(r), r.Name())
+			listing.addDeclaration(fmt.Sprintf("  %s %s", regType(r), r.Name()))
 		}
 	}
+	// First pass: gather each bytecode's display fields, and record the
+	// control-flow range of every skip instruction.  Flow ranges are expressed
+	// in bytecode-row indices local to this function (row 0 == first bytecode).
+	var (
+		flow  util.FlowGraph
+		insns []bytecodeRow
+		idx   uint
+	)
 	//
 	for pc, vec := range f.Vectors() {
 		for cc, b := range vec.Bytecodes {
+			var row bytecodeRow
 			// Include low-level information (if requested)
 			if bin != nil {
 				var codes = array.Reverse(bin[0])
 				//
-				fmt.Printf("0x%04x\t%s\t", address, codeStr(width, codes))
+				row.address = fmt.Sprintf("0x%04x", address)
+				row.encoding = fmt.Sprintf("%08x", codes)
 				//
 				address += uint32(len(codes))
 				bin = bin[1:]
 			}
 			//
 			if cc == 0 {
-				fmt.Printf("[%02d]", pc)
-			} else {
-				fmt.Print("    ")
+				row.marker = fmt.Sprintf("[%02d]", pc)
 			}
 			// Sanity check to prevent crashing even in the presence of invalid
 			// structure.
 			if b == nil {
-				fmt.Print("\t???")
+				row.text = "???"
 			} else {
-				fmt.Printf("\t%s", b.String(env))
+				row.text = b.String(env)
+				// A skip's range spans from this row to each of its targets.
+				for _, target := range vm.SkipTargets[W](b, idx) {
+					flow.Add(idx, target)
+				}
 			}
 			//
-			fmt.Println()
+			insns = append(insns, row)
+			idx++
 		}
+	}
+	// Render the flow graph across all bytecode rows of this function.
+	arrows := flow.Render(idx)
+	// Second pass: emit each instruction row alongside its flow-graph column.
+	for i, row := range insns {
+		listing.addInstruction(row.address, row.encoding, row.marker, row.text, arrows[i])
 	}
 	//
 	return address, bin
+}
+
+// bytecodeRow holds the display fields of a single instruction row, gathered in
+// a first pass so that its flow-graph column can be rendered once all skip
+// ranges within the function are known.
+type bytecodeRow struct {
+	address  string
+	encoding string
+	marker   string
+	text     string
 }
 
 func regType[W vm.Word[W]](r vm.Register[W]) string {
@@ -514,50 +743,27 @@ func regType[W vm.Word[W]](r vm.Register[W]) string {
 	return fmt.Sprintf("u%d", r.Bitwidth().Unwrap())
 }
 
-func maxBytecodeLength[W vm.Word[W]](f *vm.BytecodeFunction[W], encoding [][]uint32) uint {
-	var maxWidth int
+func writeBytecodeMemory[W vm.Word[W]](listing *bytecodeListing, m *vm.BytecodeMemory[W]) {
 	//
-	if encoding == nil {
-		// Width doesn't matter when no low-level information is requested.
-		return 0
-	}
-	//
-	for _, vec := range f.Vectors() {
-		for range vec.Bytecodes {
-			maxWidth = max(maxWidth, len(encoding[0]))
-			encoding = encoding[1:]
+	if m.IsStatic() {
+		var builder strings.Builder
+		builder.WriteString("{")
+		//
+		for i, v := range m.StaticContents() {
+			if i > 5 {
+				builder.WriteString(", ...")
+				break
+			} else if i != 0 {
+				builder.WriteString(", ")
+			}
+			//
+			fmt.Fprintf(&builder, "0x%s", v.Text(16))
 		}
+		//
+		builder.WriteString("}")
+		//
+		listing.addText(termio.NewText(builder.String()))
 	}
-	//
-	return uint(maxWidth)
-}
-
-func writeBytecodeMemory[W vm.Word[W]](m *vm.BytecodeMemory[W]) {
-	if m.IsPublic() {
-		fmt.Printf("pub ")
-	}
-	//
-	switch {
-	case m.IsStatic():
-		fmt.Print("static ")
-	case m.IsReadOnly():
-		fmt.Print("input ")
-	case m.IsWriteOnly():
-		fmt.Print("output ")
-	default:
-		fmt.Print("memory ")
-	}
-	//
-	fmt.Println(signatureOf(m))
-}
-
-func codeStr(width uint, codes []uint32) string {
-	var (
-		n   = (width * 9) + 1
-		str = fmt.Sprintf("%08x", codes)
-	)
-	//
-	return fmt.Sprintf("%-*s", n, str)
 }
 
 func signatureOf[W vm.Word[W]](m vm.BytecodeModule[W]) string {
@@ -602,5 +808,8 @@ func fnArgs[W vm.Word[W]](regs []vm.Register[W]) string {
 func init() {
 	rootCmd.AddCommand(compileCmd)
 	compileCmd.Flags().StringP("output", "o", "", "specify output file for writing binary constraints")
-	compileCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
+	compileCmd.PersistentFlags().Bool("ast", false, "Output Abstract Syntax Tree (AST)")
+	compileCmd.PersistentFlags().Bool("bci", false, "Output Bytecode Representation (BCI)")
+	compileCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
+	compileCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
 }

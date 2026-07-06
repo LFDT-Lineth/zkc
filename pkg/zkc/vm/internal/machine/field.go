@@ -21,8 +21,8 @@ import (
 type Field[F field.Element[F]] = Base[F, instruction.Field, FieldExecutor[F]]
 
 // NewField constructs a new empty field machine.
-func NewField[F field.Element[F]](modules ...Module) *Field[F] {
-	return NewBase(FieldExecutor[F]{}, modules...)
+func NewField[F field.Element[F]](callstack CallStack[F, instruction.Field], modules ...Module) *Field[F] {
+	return NewBase(FieldExecutor[F]{}, callstack, modules...)
 }
 
 // ==============================================================

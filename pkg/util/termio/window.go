@@ -101,12 +101,25 @@ func (p *FormattedText) Clip(start uint, end uint) FormattedText {
 	return FormattedText{p.format, text}
 }
 
-// Pad ensures the text is at least a given width, by prepending spaces.
+// Pad ensures the text is at least a given width, by prepending spaces
+// (right-justifying the content).
 func (p *FormattedText) Pad(width uint) FormattedText {
 	var text = p.text
 	// Pad only if necessary
 	if uint(len(text)) < width {
 		text = []rune(fmt.Sprintf("%*s", width, string(text)))
+	}
+	//
+	return FormattedText{p.format, text}
+}
+
+// PadLeft ensures the text is at least a given width, by appending spaces
+// (left-justifying the content).
+func (p *FormattedText) PadLeft(width uint) FormattedText {
+	var text = p.text
+	// Pad only if necessary
+	if uint(len(text)) < width {
+		text = []rune(fmt.Sprintf("%-*s", width, string(text)))
 	}
 	//
 	return FormattedText{p.format, text}

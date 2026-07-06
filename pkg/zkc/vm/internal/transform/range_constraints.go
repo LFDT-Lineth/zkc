@@ -69,7 +69,7 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, program descriptor.Pr
 	modules = addRangeCalls(modules, extra, maxStaticWidth)
 
 	// Reassemble the program with the original modules plus the range modules.
-	return descriptor.NewProgram(append(slices.Clone(modules), extra...)...)
+	return descriptor.NewProgram(program.Field(), append(slices.Clone(modules), extra...)...)
 }
 
 func generateRangeModules[W word.Word[W]](modules []descriptor.Module[W],

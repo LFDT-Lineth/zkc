@@ -138,6 +138,11 @@ func (p Config) FastMode(flag bool) Config {
 	return q
 }
 
+// IsFastMode determines whether or not fast mode is enabled.
+func (p Config) IsFastMode() bool {
+	return p.fastMode
+}
+
 // Quiet returns a copy of this Config where printf statements are skipped
 // during code generation when flag=true.
 func (p Config) Quiet(flag bool) Config {

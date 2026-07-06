@@ -81,9 +81,12 @@ L_0_6:
 	{
 		v, borrow := bits.Sub64(r0, uint64(1), 0)
 		if borrow != 0 {
-			fail("arithmetic underflow")
+			v &= 1<<9 - 1
 		}
 		r1 = v
+		if r1 >= 1<<8 {
+			fail("bit overflow (value exceeds u8)")
+		}
 	}
 L_0_7:
 	// [0.7] INT_ADD: $4 = 0x0

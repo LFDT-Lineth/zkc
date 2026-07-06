@@ -13,10 +13,7 @@
 package transform
 
 import (
-	"math/big"
-
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -48,23 +45,18 @@ func InsertCheckCasts[W word.Word[W]](program descriptor.Program[W]) descriptor.
 		}
 	}
 	//
-	return descriptor.NewProgram(out...)
+	return descriptor.NewProgram(program.Field(), out...)
 }
 
 // insertFunctionCasts rewrites a single function's vectors, inserting cast checks
 // around each operation that needs them.
 func insertFunctionCasts[W word.Word[W]](fn *descriptor.Function[W], modules []descriptor.Module[W],
 ) *descriptor.Function[W] {
-	var (
-		// Build a register map over this function's (schema) registers, as needed
-		// by the cast helpers to resolve register widths.
-		regmap  = register.ArrayMap(trace.ModuleName{Multiplier: 1}, decompileRegisters(fn.Registers())...)
-		vectors = make([]bytecode.Vector[W], len(fn.Vectors()))
-	)
+	var vectors = make([]bytecode.Vector[W], len(fn.Vectors()))
 	//
 	for i, vec := range fn.Vectors() {
 		vectors[i] = vec.Map(func(_ uint, b Bytecode[W]) []Bytecode[W] {
-			return castPacket(b, regmap, modules)
+			return castPacket(b, fn, modules)
 		})
 	}
 	//
@@ -77,7 +69,9 @@ func insertFunctionCasts[W word.Word[W]](fn *descriptor.Function[W], modules []d
 // the slow word machine: arithmetic / bitwise / div-rem cast their result after
 // the operation; calls cast arguments before and returns after; memory writes
 // cast the data before the write; memory reads cast the data after.
-func castPacket[W word.Word[W]](b Bytecode[W], regmap register.Map, modules []descriptor.Module[W]) []Bytecode[W] {
+func castPacket[W word.Word[W]](b Bytecode[W], regmap descriptor.RegisterMap[W], modules []descriptor.Module[W],
+) []Bytecode[W] {
+	//
 	switch b := b.(type) {
 	case *bytecode.Arith[W]:
 		return arithCasts(b, regmap)
@@ -85,23 +79,23 @@ func castPacket[W word.Word[W]](b Bytecode[W], regmap register.Map, modules []de
 		// AND/OR/XOR cast their result down to the target width; SHL/SHR/NOT do not.
 		switch b.Op {
 		case bytecode.OP_AND, bytecode.OP_OR, bytecode.OP_XOR:
-			return prepend[W](b, BitwidthCheckCast[W](regmap, toId(b.Target), uint(b.Bitwidth)))
+			return prepend(b, checkCast(regmap, util.Some(uint(b.Bitwidth)), b.Target))
 		default:
 			return []Bytecode[W]{b}
 		}
 	case *bytecode.DivRem:
 		// The operation width is that of the (uniform) operands, recovered from
 		// the dividend register; native dividends have no fixed width (-> 0).
-		var width uint
-		if dividend := regmap.Register(toId(b.Dividend)); !dividend.IsNative() {
-			width = dividend.Width()
+		var width util.Option[uint]
+		if dividend := regmap.Register(b.Dividend); !dividend.IsNative() {
+			width = dividend.Bitwidth()
 		}
 		//
-		return prepend[W](b, BitwidthCheckCast[W](regmap, toId(b.Target), width))
+		return prepend(b, checkCast(regmap, width, b.Target))
 	case *bytecode.Call:
 		callee := modules[b.Target]
-		pre := AddOutgoingCheckCasts[W](regmap, toIds(b.Arguments), callee.Inputs())
-		post := AddIncomingCheckCasts[W](regmap, callee.Outputs(), toIds(b.Returns))
+		pre := addOutgoingCheckCasts(regmap, b.Arguments, callee.Inputs())
+		post := addIncomingCheckCasts(regmap, callee.Outputs(), b.Returns)
 		//
 		return append(append(pre, b), post...)
 	case *bytecode.ReadWrite:
@@ -113,32 +107,31 @@ func castPacket[W word.Word[W]](b Bytecode[W], regmap register.Map, modules []de
 
 // arithCasts emits the cast check for an integer add / multiply (subtraction
 // never overflows its target and needs none).
-func arithCasts[W word.Word[W]](b *bytecode.Arith[W], regmap register.Map) []Bytecode[W] {
-	var acc func(*big.Int, *big.Int)
+func arithCasts[W word.Word[W]](b *bytecode.Arith[W], regmap descriptor.RegisterMap[W]) []Bytecode[W] {
+	var (
+		bits    util.Option[uint]
+		sources = b.Source
+	)
 	//
 	switch b.Op {
 	case bytecode.OP_ADD:
-		acc = bitwidthAdd
+		bits = descriptor.CalculateAddBitwidth(sources, b.Constant, regmap)
 	case bytecode.OP_MUL:
-		acc = bitwidthMul
+		bits = descriptor.CalculateMulBitwidth(sources, b.Constant, regmap)
+	case bytecode.OP_SUB:
+		bits = descriptor.CalculateSubBitwidth(sources, b.Constant, regmap)
 	default:
-		// Subtraction (and any other arithmetic) needs no cast.
-		return []Bytecode[W]{b}
+		panic("unknown arithmetic instruction")
 	}
 	//
-	var (
-		target = register.NewVector(toIds(b.Target)...)
-		bits   = CalculateBitwidth(b.Constant, toIds(b.Source), regmap, acc)
-	)
-	//
-	return prepend[W](b, AddCheckCast[W](regmap, target, bits))
+	return prepend(b, checkCast(regmap, bits, b.Target...))
 }
 
 // readWriteCasts emits the cast checks for a memory read (incoming, after the
 // read) or write (outgoing, before the write), resolving the memory's data
 // registers from the program's module signatures.
-func readWriteCasts[W word.Word[W]](b *bytecode.ReadWrite, regmap register.Map, modules []descriptor.Module[W],
-) []Bytecode[W] {
+func readWriteCasts[W word.Word[W]](b *bytecode.ReadWrite, regmap descriptor.RegisterMap[W],
+	modules []descriptor.Module[W]) []Bytecode[W] {
 	var (
 		mem  = modules[b.Id].(*descriptor.Memory[W])
 		data = mem.Outputs()
@@ -146,10 +139,10 @@ func readWriteCasts[W word.Word[W]](b *bytecode.ReadWrite, regmap register.Map, 
 	//
 	if b.Write {
 		// Write: cast outgoing data registers before the write.
-		return append(AddOutgoingCheckCasts[W](regmap, toIds(b.Data), data), b)
+		return append(addOutgoingCheckCasts(regmap, b.Data, data), b)
 	}
 	// Read: cast incoming data registers after the read.
-	return prepend[W](b, AddIncomingCheckCasts[W](regmap, data, toIds(b.Data)))
+	return prepend(b, addIncomingCheckCasts(regmap, data, b.Data))
 }
 
 // prepend returns the operation followed by its (possibly empty) trailing cast
@@ -158,8 +151,77 @@ func prepend[W word.Word[W]](op Bytecode[W], casts []Bytecode[W]) []Bytecode[W] 
 	return append([]Bytecode[W]{op}, casts...)
 }
 
-// bitwidthAdd / bitwidthMul are the accumulators passed to CalculateBitwidth:
-// addition folds source widths additively (INT_ADD), multiplication
-// multiplicatively (INT_MUL).
-func bitwidthAdd(lhs, rhs *big.Int) { lhs.Add(lhs, rhs) }
-func bitwidthMul(lhs, rhs *big.Int) { lhs.Mul(lhs, rhs) }
+// AddIncomingCheckCasts emits a CHECKCAST for every target register which is
+// narrower than the corresponding source register, where sources are values
+// arriving in this frame from another module (e.g. a memory's data registers,
+// or a callee's return registers).  This mirrors the width check the slow
+// machine performs on every register write (frame.Store / frameCopyFrom).  The
+// targets are resolved against the given register map (the frame's own
+// registers).
+func addIncomingCheckCasts[W word.Word[W]](regmap descriptor.RegisterMap[W], sources []descriptor.Register[W],
+	targets []RegisterId) []Bytecode[W] {
+	var codes []Bytecode[W]
+	//
+	for i, target := range targets {
+		var (
+			src = sources[i]
+			dst = regmap.Register(target)
+		)
+		//
+		if !dst.IsNative() && (src.IsNative() || src.Bitwidth().Unwrap() > dst.Bitwidth().Unwrap()) {
+			width := util.Cast[uint16](dst.Bitwidth().Unwrap())
+			codes = append(codes, bytecode.NewCheckCast(target, width))
+		}
+	}
+	//
+	return codes
+}
+
+// AddOutgoingCheckCasts emits a CHECKCAST for every source register in this
+// frame which is wider than the register receiving its value in another module
+// (e.g. a memory's data registers, or a callee's parameter registers).  This
+// mirrors the width check the slow machine performs on memory writes
+// (executeMemWrite) and call arguments (frameCopyTo).  The sources are resolved
+// against the given register map (the frame's own registers).
+func addOutgoingCheckCasts[W word.Word[W]](regmap descriptor.RegisterMap[W], sources []RegisterId,
+	targets []descriptor.Register[W]) []Bytecode[W] {
+	var codes []Bytecode[W]
+	//
+	for i, source := range sources {
+		var (
+			src = regmap.Register(source)
+			dst = targets[i]
+		)
+		//
+		if !dst.IsNative() && (src.IsNative() || src.Bitwidth().Unwrap() > dst.Bitwidth().Unwrap()) {
+			width := util.Cast[uint16](dst.Bitwidth().Unwrap())
+			codes = append(codes, bytecode.NewCheckCast(source, width))
+		}
+	}
+	//
+	return codes
+}
+
+// checkCast adds a checkcast instruction if the bitwidth of the right-hand side
+// does not fit within the target register(s), resolving widths against the
+// given register map.
+func checkCast[W word.Word[W]](rmap descriptor.RegisterMap[W], rhs util.Option[uint], lhs ...RegisterId) []Bytecode[W] {
+	var (
+		last = len(lhs) - 1
+		// Determine bitwidth of lhs
+		bitwidth = descriptor.BitwidthOf(rmap, lhs...)
+		codes    []Bytecode[W]
+	)
+	// Add case if either: (i) the rhs has no specific bitwidth; or (2) the
+	// bitwidth of the rhs overflows the lhs.
+	if bitwidth.HasValue() && (rhs.IsEmpty() || bitwidth.Unwrap() < rhs.Unwrap()) {
+		var (
+			last      = lhs[last]
+			lastWidth = util.Cast[uint16](rmap.Register(last).Bitwidth().Unwrap())
+		)
+		// yes
+		codes = append(codes, bytecode.NewCheckCast(last, lastWidth))
+	}
+	//
+	return codes
+}

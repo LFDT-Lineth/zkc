@@ -81,7 +81,7 @@ func Vectorize[W word.Word[W]](program descriptor.Program[W]) descriptor.Program
 		}
 	}
 	//
-	return descriptor.NewProgram(modules...)
+	return descriptor.NewProgram(program.Field(), modules...)
 }
 
 // vectorizeFunction applies the per-function vectorisation pass, returning a new

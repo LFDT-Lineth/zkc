@@ -35,17 +35,21 @@ type WordFrame[W word.Word[W]] = StackFrame[W, instruction.Word]
 func NewWord[W word.Word[W]](field field.Config, modules ...Module) *Word[W] {
 	var (
 		prime W
+		// initially empty call stack
+		callstack CallStack[W, instruction.Word]
 		// Construct executor over the given prime modulus
 		executor = WordExecutor[W]{prime.SetBigInt(field.Modulus())}
 	)
 	//
-	return NewBase(executor, modules...)
+	return NewBase(executor, callstack, modules...)
 }
 
 // NewWordFromModulus constructs a new empty word machine directly from a given
 // prime modulus (already expressed in the target word type).
-func NewWordFromModulus[W word.Word[W]](modulus W, modules ...Module) *Word[W] {
-	return NewBase(WordExecutor[W]{modulus}, modules...)
+func NewWordFromModulus[W word.Word[W]](modulus W, callstack CallStack[W, instruction.Word],
+	modules ...Module) *Word[W] {
+	//
+	return NewBase(WordExecutor[W]{modulus}, callstack, modules...)
 }
 
 // ==============================================================
@@ -246,13 +250,13 @@ func executeSub[W word.Word[W]](target register.Vector, sources []register.Id, c
 			val = ith
 		} else {
 			if val, underflow = val.Sub(ith); underflow {
-				return errors.New("arithmetic underflow")
+				return errors.New("arithmetic underflow [4]")
 			}
 		}
 	}
 	// Subtract constant
 	if val, underflow = val.Sub(constant); underflow {
-		return errors.New("arithmetic underflow")
+		return errors.New("arithmetic underflow [5]")
 	}
 	//
 	return StoreAcross(frame, target, val)
@@ -410,12 +414,16 @@ func executeShr[W word.Word[W]](insn *instruction.WordTypeB, frame WordFrame[W])
 // ==============================================================
 
 // executeDivHint computes quotient and remainder for a division hint.
-// targets[0] = sources[0] / sources[1], targets[1] = sources[0] % sources[1].
-func executeDivHint[W word.Word[W]](targets []register.Id, sources []register.Id, frame WordFrame[W]) error {
+// targets[0] = sources[0] / sources[1], targets[1] = sources[0] % sources[1],
+// targets[2] = sources[1] - targets[1] - 1 (the range witness).  Each operand
+// is a register vector: after register splitting a value may span several limb
+// registers, so its value is reconstructed from (and its result distributed
+// across) those limbs.
+func executeDivHint[W word.Word[W]](targets, sources []register.Vector, frame WordFrame[W]) error {
 	//
 	var (
-		dividend = frame.Load(sources[0])
-		divisor  = frame.Load(sources[1])
+		dividend = loadAcross(frame, sources[0])
+		divisor  = loadAcross(frame, sources[1])
 		one      W
 		uf2      bool
 	)
@@ -432,22 +440,40 @@ func executeDivHint[W word.Word[W]](targets []register.Id, sources []register.Id
 	w, uf2 = w.Sub(one)
 	//
 	if uf1 || uf2 {
-		return errors.New("arithmetic underflow")
+		return errors.New("arithmetic underflow [6]")
 	}
 	// assign q
-	if err := frame.Store(targets[0], q); err != nil {
+	if err := StoreAcross(frame, targets[0], q); err != nil {
 		return err
 	}
 	// assign r
-	if err := frame.Store(targets[1], r); err != nil {
+	if err := StoreAcross(frame, targets[1], r); err != nil {
 		return err
 	}
 	// assign w
-	if err := frame.Store(targets[2], w); err != nil {
-		return err
+	return StoreAcross(frame, targets[2], w)
+}
+
+// loadAcross reconstructs the value held in a register vector by concatenating
+// its limbs, with the least significant register at the lowest index (matching
+// StoreAcross and executeConcat).
+func loadAcross[W word.Word[W]](frame WordFrame[W], vec register.Vector) W {
+	var (
+		val  W
+		regs = vec.Registers()
+	)
+	// Accumulate most-significant limb first.
+	for i := len(regs); i > 0; i-- {
+		var (
+			reg   = regs[i-1]
+			width = frame.BitwidthOf(reg)
+		)
+		//
+		_, val = val.Shl64(uint64(width))
+		val = val.Or(frame.Load(reg))
 	}
 	//
-	return nil
+	return val
 }
 
 // ==============================================================

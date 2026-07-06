@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -181,8 +182,19 @@ func (g *generator) emitHint(c *code, fn *wordFunction, x *instruction.FieldHint
 	if len(x.Sources) != 2 || len(x.Targets) != 3 {
 		return fmt.Errorf("gogen: malformed division hint (%d sources, %d targets)", len(x.Sources), len(x.Targets))
 	}
+	// gogen only supports narrow (single-limb) hint operands; a value split
+	// across several limb registers is not yet handled here.
+	sourceIds, err := hintRegisters(x.Sources)
+	if err != nil {
+		return err
+	}
 
-	srcs, err := g.operands(fn, x.Sources)
+	targetIds, err := hintRegisters(x.Targets)
+	if err != nil {
+		return err
+	}
+
+	srcs, err := g.operands(fn, sourceIds)
 	if err != nil {
 		return err
 	}
@@ -197,9 +209,9 @@ func (g *generator) emitHint(c *code, fn *wordFunction, x *instruction.FieldHint
 		return nil
 	}
 
-	targets := make([]limb, len(x.Targets))
+	targets := make([]limb, len(targetIds))
 
-	for i, id := range x.Targets {
+	for i, id := range targetIds {
 		l, err := g.limbOf(fn, id)
 		if err != nil {
 			return err
@@ -234,4 +246,22 @@ func (g *generator) emitHint(c *code, fn *wordFunction, x *instruction.FieldHint
 	})
 
 	return inner
+}
+
+// hintRegisters flattens single-register hint operand vectors into their
+// register ids.  gogen only supports narrow (single-limb) hint operands; a
+// multi-limb vector (produced by register-splitting a wide value) is not yet
+// supported here.
+func hintRegisters(vecs []register.Vector) ([]register.Id, error) {
+	ids := make([]register.Id, len(vecs))
+
+	for i, v := range vecs {
+		if v.Len() != 1 {
+			return nil, fmt.Errorf("gogen: multi-limb division hint operand unsupported")
+		}
+
+		ids[i] = v.AsRegister()
+	}
+
+	return ids, nil
 }

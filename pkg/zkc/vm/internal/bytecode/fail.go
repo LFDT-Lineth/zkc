@@ -30,7 +30,7 @@ type Fail struct {
 	// program's chunk side-table rather than encoded inline.
 	Chunks []FormattedChunk
 	// Source registers used for displaying chunks
-	Sources []RegVec
+	Sources []RegisterVector
 }
 
 // Uses implementation for Bytecode interface.  A fail reads the registers

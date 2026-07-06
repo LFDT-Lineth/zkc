@@ -108,7 +108,7 @@ func DecodeSkipIf_rr(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterI
 // length).  Likewise, target is an absolute u32 target address.
 // ============================================================================
 // encodeSkipIf_rv encodes a register-vector conditional skip instruction.
-func encodeSkipIf_rv(skip uint32, rs0, rs1 RegVec, op Cond) []uint32 {
+func encodeSkipIf_rv(skip uint32, rs0, rs1 RegisterVector, op Cond) []uint32 {
 	var (
 		rs1b = uint32(rs1.Base) << 8
 		rs0b = uint32(rs0.Base) << 16
@@ -126,7 +126,7 @@ func encodeSkipIf_rv(skip uint32, rs0, rs1 RegVec, op Cond) []uint32 {
 }
 
 // DecodeSkipIf_rv decodes the operands of a register-vector conditional branch.
-func DecodeSkipIf_rv(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegVec, op Cond, n uint32) {
+func DecodeSkipIf_rv(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterVector, op Cond, n uint32) {
 	var (
 		rs1b = RegisterId((codes[pc] >> 8) & 0xff)
 		rs0b = RegisterId((codes[pc] >> 16) & 0xff)
@@ -135,8 +135,8 @@ func DecodeSkipIf_rv(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegVec, o
 	//
 	op = Cond((codes[pc] & OPCODE_MASK) - SEQ_rv)
 	skip = codes[pc+1]
-	rs0 = RegVec{Base: rs0b, Len: nv}
-	rs1 = RegVec{Base: rs1b, Len: nv}
+	rs0 = RegisterVector{Base: rs0b, Len: nv}
+	rs1 = RegisterVector{Base: rs1b, Len: nv}
 	//
 	return skip, rs0, rs1, op, 2
 }
