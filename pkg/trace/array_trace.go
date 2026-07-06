@@ -260,6 +260,23 @@ func (p *ArrayModule[W]) Resize() {
 	p.height = nsize
 }
 
+// UseLastRowAsPadding sets each (already filled) column's padding value to its
+// final row, so that a subsequent Pad replicates a real row rather than a
+// constant.  This is used for modules — such as one-line functions — where any
+// real row is a valid padding row, but the constant padding value is not.
+// Columns which are not yet filled (computed columns, data == nil) are left
+// untouched; their padding rows are (re)computed during trace expansion, at
+// which point they derive from these copied values.
+func (p *ArrayModule[W]) UseLastRowAsPadding() {
+	for i := 0; i < len(p.columns); i++ {
+		col := &p.columns[i]
+		//
+		if col.data != nil && col.data.Len() > 0 {
+			col.padding = col.data.Get(col.data.Len() - 1)
+		}
+	}
+}
+
 // Pad prepends (front) and appends (back) all columns in this module with a
 // given number of padding rows.
 func (p *ArrayModule[W]) Pad(front uint, back uint) {

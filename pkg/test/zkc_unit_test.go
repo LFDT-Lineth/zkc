@@ -1034,6 +1034,20 @@ func Test_ZkcUnit_Destruct_01(t *testing.T) {
 }
 
 // ===================================================================
+// Padding Tests
+// ===================================================================
+// This test contains an empty module for some execution
+func Test_ZkcUnit_Padding_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/padding_01", util.DEFAULT_CONFIG.Constraints(true))
+}
+
+// This test contains an empty module for some execution.
+// For the empty module 0 as an argument is an invalid input.
+func Test_ZkcUnit_Padding_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/padding_02", util.DEFAULT_CONFIG.Constraints(true))
+}
+
+// ===================================================================
 // Test Helpers
 // ===================================================================
 

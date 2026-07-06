@@ -29,6 +29,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 )
 
 // GenerateMirConstraints is responsible for converting a field machine into a
@@ -152,8 +153,16 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		// IS_PC_<k> program counter selectors, only for MLI.
 		pcSelectors []register.Id
 	)
+	// One-line (atomic) and native functions carry no $pc / $ret control lines,
+	// so a padding row cannot be "deactivated" the way it is for multi-line
+	// functions (via PC==0).  Instead we allow padding for them and fill padding
+	// rows by copying a real row (see the trace builder), which is a valid
+	// witness for every constraint such a row participates in.  This is unsound
+	// for a function performing a memory read/write, since duplicating a memory
+	// access row would break memory consistency, so those are excluded.
+	allowPadding := (fm.IsAtomic() || fm.IsNative()) && !containsMemoryAccess(fm)
 	// Initialise module
-	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
+	mod = mod.Init(name, allowPadding, true, false, fm.IsNative(), false, 0)
 	// Add all registers
 	mod.AddRegisters(fm.Registers()...)
 	// Native functions are backed by an external circuit, so we emit only the
@@ -211,6 +220,22 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	// TODO: add memory read / write constraints (as lookups).
 	// Done
 	return mod
+}
+
+// containsMemoryAccess reports whether any instruction in the function performs
+// a memory read or write.  Such functions must not use copy-row padding, since
+// duplicating a memory access row would break memory consistency.
+func containsMemoryAccess(fm vm.FieldFunction) bool {
+	for _, vec := range fm.Code() {
+		for _, code := range vec.Codes {
+			switch code.(type) {
+			case *instruction.MemRead, *instruction.MemWrite:
+				return true
+			}
+		}
+	}
+	//
+	return false
 }
 
 func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id, pcSelectors []register.Id,
