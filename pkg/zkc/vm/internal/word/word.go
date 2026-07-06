@@ -16,8 +16,12 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 )
+
+// Config is (for now) simply an alias for field config.
+type Config = field.Config
 
 // Base captures the minimal set of requirements for a word used in the base
 // machine.
@@ -51,6 +55,8 @@ type Word[W any] interface {
 	Bandwidth() uint
 	// Return the value of this word as a big integer.
 	BigInt() *big.Int
+	// Determine number of bits of this value
+	BitLen() uint
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 	Cmp(y W) int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.

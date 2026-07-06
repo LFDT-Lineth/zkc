@@ -104,7 +104,21 @@ func translateStaticMemory[F field.Element[F]](_ schema.ModuleId, m vm.Memory[F]
 	return mod
 }
 
-func translateReadOnlyMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
+func translateReadOnlyMemory[F field.Element[F]](
+	ctx schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
+	var name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
+	return translateAccessOnceMemory(ctx, fm, name)
+}
+
+// Write once memory and read only memory are equivalent on the constraints level
+func translateWriteOnceMemory[F field.Element[F]](
+	ctx schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
+	var name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
+	return translateAccessOnceMemory(ctx, fm, name)
+}
+
+func translateReadWriteMemory[F field.Element[F]](
+	ctx schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
 	var (
 		mod  *schema.Table[F, mir.Constraint[F]]
 		name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
@@ -113,34 +127,201 @@ func translateReadOnlyMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memory
 	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
 	// Add all registers
 	mod.AddRegisters(fm.Registers()...)
-	// TODO: implement ROM constraints
+	// TODO: read-write (RAM) constraints are disabled for now — the timestamp
+	// columns they rely on are not yet filled by the trace observer (see git
+	// history for the WIP body).
 	return mod
 }
 
-func translateWriteOnceMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
+// translateAccessOnceMemory handles both
+//   - read once memory
+//   - write once memory
+func translateAccessOnceMemory[F field.Element[F]](
+	ctx schema.ModuleId, fm vm.Memory[F], name trace.ModuleName) (mod mir.Module[F]) {
 	var (
-		mod  *schema.Table[F, mir.Constraint[F]]
-		name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
+		memoryModule *schema.Table[F, mir.Constraint[F]]
+		padding      big.Int
 	)
-	// Initialise module
-	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
-	// Add all registers
-	mod.AddRegisters(fm.Registers()...)
-	// TODO: implement WOM constraints
-	return mod
+
+	// Initialise module and add all registers.  AllowPadding (first flag) must
+	// be true so a leading padding row is inserted, which the ACCESS[0]=0 /
+	// addresses-vanish-in-padding constraints rely on.
+	memoryModule = memoryModule.Init(name, true, true, false, fm.IsNative(), false, 0)
+	memoryModule.AddRegisters(fm.Registers()...)
+
+	var access = register.NewId(memoryModule.Width())
+	memoryModule.AddRegisters(register.NewComputed(io.ACCESS_BIT_NAME, 1, padding))
+
+	var (
+		addrRegs           = fm.Geometry().AddressRegisters()
+		isMultiLineAddress = fm.Geometry().IsMultiLineAddress()
+		prevAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, -1)
+		currAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, 0)
+		nextAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, 1)
+		zero               = mirc.Number[register.Id, Expr[F]](0)
+		one                = mirc.Number[register.Id, Expr[F]](1)
+		constraints        = []mir.Constraint[F]{}
+	)
+
+	// ================================================
+	// ACCESS bit constraints
+	// ================================================
+
+	// the ACCESS bit separates accessible rows from non-accessible rows
+	// ACCESS[i] = 0 ⇔ i is a padding row. We impose that traces start
+	// with a padding row and that padding rows can't follow non-padding rows,
+	// i.e. ACCESS bit monontony
+
+	// ACCESS[0] = 0
+	accessBitVanishesInPadding := mir.NewVanishingConstraint("access_bit_vanishes_in_padding", ctx, util.Some[int](0),
+		currAccess.Equals(zero).AsLogical())
+	// ACCESS[i - 1] = 1 => ACCESS[i] = 1
+	accessBitMonotony := mir.NewVanishingConstraint("access_bit_monotony", ctx, util.None[int](),
+		mirc.If(prevAccess.Equals(one), currAccess.Equals(one)).AsLogical())
+
+	constraints = append(constraints,
+		accessBitVanishesInPadding,
+		accessBitMonotony,
+	)
+
+	// ================================================
+	// []ADDRESS constraints
+	// ================================================
+
+	// We will impose the following:
+	//
+	//	- if ACCESS[i] = 0
+	//		- Then []ADDRESS[i] ≡ 0
+	//	- if ACCESS[i-1] = 0 ∧ ACCESS[i] = 1 then
+	//		- []ADDRESS[i] ≡ 0
+
+	if isMultiLineAddress {
+		constraints = append(constraints,
+			multiLineAddressConstraints(ctx, memoryModule, addrRegs, prevAccess, currAccess, zero, one, padding)...)
+	} else {
+		constraints = append(constraints,
+			singleLineAddressConstraints(ctx, addrRegs, currAccess, nextAccess, zero, one)...)
+	}
+
+	memoryModule.AddConstraints(constraints...)
+
+	return memoryModule
 }
 
-func translateReadWriteMemory[F field.Element[F]](_ schema.ModuleId, fm vm.Memory[F]) mir.Module[F] {
+// singleLineAddressConstraints builds the []ADDRESS constraints for a memory
+// with a single address register: the address vanishes in padding, is zero on
+// the first non-padding row, and increments by one across non-padding rows.
+func singleLineAddressConstraints[F field.Element[F]](
+	ctx schema.ModuleId, addrRegs []register.Register, currAccess, nextAccess, zero, one Expr[F],
+) []mir.Constraint[F] {
 	var (
-		mod  *schema.Table[F, mir.Constraint[F]]
-		name = trace.ModuleName{Name: fm.Name(), Multiplier: 1}
+		currAddr = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(0)), addrRegs[0].Width(), 0)
+		nextAddr = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(0)), addrRegs[0].Width(), 1)
 	)
-	// Initialise module
-	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
-	// Add all registers
-	mod.AddRegisters(fm.Registers()...)
-	// TODO: implement WOM constraints
-	return mod
+
+	return []mir.Constraint[F]{
+		// If ACCESS[i] = 0 Then ADDRESS[i] = 0
+		mir.NewVanishingConstraint("addresses_vanish_in_padding", ctx, util.None[int](),
+			mirc.If(currAccess.Equals(zero), currAddr.Equals(zero)).AsLogical()),
+		// If ACCESS[i] = 0 ∧ ACCESS[i + 1] = 1 Then ADDRESS[i + 1] = 0
+		mir.NewVanishingConstraint("first_nontrivial_address_is_zero", ctx, util.None[int](),
+			mirc.If(currAccess.Equals(zero),
+				mirc.If(nextAccess.NotEquals(zero), nextAddr.Equals(zero))).AsLogical()),
+		// If ACCESS[i] = 1 Then ADDRESS[i + 1] = 1 + ADDRESS[i]
+		mir.NewVanishingConstraint("address_monotony", ctx, util.None[int](),
+			mirc.If(currAccess.NotEquals(zero), nextAddr.Equals(currAddr.Add(one))).AsLogical()),
+	}
+}
+
+// multiLineAddressConstraints builds the []ADDRESS constraints for a memory
+// whose address spans more than one register (limb). It adds the one-hot
+// at_flag registers that locate the carry-stop limb when the address is
+// incremented by one, and constrains the limbs around it. [0]ADDRESS is the
+// most significant limb.
+//
+// The at_flag scheme: exactly one '@k' flag is active on any non-padding row
+// whose predecessor is also non-padding, i.e. Σ_k @k[i] = ACCESS[i-1] ∙ ACCESS[i]
+// (the @k are bitwidth-1 registers, so binarity is implicit). When @k[i] = 1:
+//   - [a]ADDRESS unchanged from rows i-1 to i, for 0 ≤ a < k, the most significant limbs
+//   - [k]ADDRESS[i-1] ≠ max, [k]ADDRESS[i] = 1 + [k]ADDRESS[i-1]   (carry stop)
+//   - [b]ADDRESS[i-1] = max, [b]ADDRESS[i] = 0    for k < b < L    (roll over)
+func multiLineAddressConstraints[F field.Element[F]](
+	ctx schema.ModuleId, memoryModule *schema.Table[F, mir.Constraint[F]], addrRegs []register.Register,
+	prevAccess, currAccess, zero, one Expr[F], padding big.Int,
+) []mir.Constraint[F] {
+	var (
+		L            = len(addrRegs)
+		prevAddrRegs = make([]Expr[F], L)
+		currAddrRegs = make([]Expr[F], L)
+	)
+	for k := range L {
+		prevAddrRegs[k] = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(k)), addrRegs[k].Width(), -1)
+		currAddrRegs[k] = mirc.Variable[register.Id, Expr[F]](register.NewId(uint(k)), addrRegs[k].Width(), 0)
+	}
+
+	// Add the one-hot at_flag registers (one per limb) and cache their access
+	// expressions plus each limb's max value.
+	var (
+		atFlagVars        = make([]Expr[F], L)
+		addrLimbMaxValues = make([]Expr[F], L)
+	)
+	for k := range L {
+		atFlag := register.NewId(memoryModule.Width())
+		memoryModule.AddRegisters(register.NewComputed(io.AtFlagName(uint(k)), 1, padding))
+		atFlagVars[k] = mirc.Variable[register.Id, Expr[F]](atFlag, 1, 0)
+		addrLimbMaxValues[k] = mirc.BigNumber[register.Id, Expr[F]](addrRegs[k].MaxValue())
+	}
+
+	constraints := []mir.Constraint[F]{
+		// Σ_k @k[i] = ACCESS[i-1] ∙ ACCESS[i]
+		mir.NewVanishingConstraint("at_flag_sum_equals_access_bit_product", ctx, util.None[int](),
+			mirc.Sum(atFlagVars).Equals(mirc.Product([]Expr[F]{prevAccess, currAccess})).AsLogical()),
+	}
+
+	for k := range L {
+		// if ACCESS[i] = 0 Then [k]ADDRESS[i] = 0
+		constraints = append(constraints, mir.NewVanishingConstraint(
+			fmt.Sprintf("addr_%d_vanishes_in_padding", k), ctx, util.None[int](),
+			mirc.If(currAccess.Equals(zero), currAddrRegs[k].Equals(zero)).AsLogical()))
+		// if ACCESS[i-1] = 0 ∧ ACCESS[i] = 1 Then [k]ADDRESS[i] = 0
+		constraints = append(constraints, mir.NewVanishingConstraint(
+			fmt.Sprintf("addr_%d_vanishes_on_first_non_padding_row", k), ctx, util.None[int](),
+			mirc.If(prevAccess.Equals(zero),
+				mirc.If(currAccess.Equals(one), currAddrRegs[k].Equals(zero))).AsLogical()))
+	}
+
+	// Per-limb address-update constraints, all guarded by ACCESS[i-1] = 1 ∧ @k[i] = 1.
+	for k := range L {
+		guarded := func(name string, body Expr[F]) mir.Constraint[F] {
+			return mir.NewVanishingConstraint(name, ctx, util.None[int](),
+				mirc.If(prevAccess.Equals(one), mirc.If(atFlagVars[k].Equals(one), body)).AsLogical())
+		}
+
+		// more significant limbs (0 ≤ a < k): unchanged
+		for a := range k {
+			constraints = append(constraints, guarded(
+				fmt.Sprintf("@%d_addr_%d_curr_equals_prev", k, a),
+				currAddrRegs[a].Equals(prevAddrRegs[a])))
+		}
+
+		// k-th limb (carry stop): prev ≠ max, curr = 1 + prev
+		constraints = append(constraints,
+			guarded(fmt.Sprintf("@%d_addr_%d_prev_not_max_value", k, k),
+				prevAddrRegs[k].NotEquals(addrLimbMaxValues[k])),
+			guarded(fmt.Sprintf("@%d_addr_%d_equals_one_plus_prev", k, k),
+				currAddrRegs[k].Equals(prevAddrRegs[k].Add(one))))
+
+		// less significant limbs (k < b < L): roll over (prev = max, curr = 0)
+		for b := k + 1; b < L; b++ {
+			constraints = append(constraints,
+				guarded(fmt.Sprintf("@%d_addr_%d_prev_equals_max_value", k, b),
+					prevAddrRegs[b].Equals(addrLimbMaxValues[b])),
+				guarded(fmt.Sprintf("@%d_addr_%d_curr_equals_zero", k, b),
+					currAddrRegs[b].Equals(zero)))
+		}
+	}
+
+	return constraints
 }
 
 func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunction, infos []vm.Module,

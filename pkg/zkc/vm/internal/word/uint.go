@@ -101,6 +101,11 @@ func (p Uint) FitsWithin(bitwidth uint) bool {
 	return uint(p.value.BitLen()) <= bitwidth
 }
 
+// BitLen implementation for Word interface.
+func (p Uint) BitLen() uint {
+	return uint(p.value.BitLen())
+}
+
 // Not implementation for Word interface.
 func (p Uint) Not(bitwidth uint) Uint {
 	// Compute bitwise complement within width: (2^width - 1) XOR value

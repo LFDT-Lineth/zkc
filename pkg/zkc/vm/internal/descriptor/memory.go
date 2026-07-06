@@ -13,6 +13,9 @@
 package descriptor
 
 import (
+	"bytes"
+	"encoding/gob"
+
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -95,4 +98,84 @@ func (p *Memory[W]) StaticContents() []W {
 	}
 	//
 	panic("non-static memory has no contents")
+}
+
+// StaticDepth returns the number of rows described by this static memory.
+// This will panic if !Kind().IsStatic().
+func (p *Memory[W]) StaticDepth() uint {
+	if p.IsStatic() {
+		var (
+			n = uint(len(p.contents))
+			m = n / p.numOutputs
+		)
+		//
+		if m*p.numOutputs != n {
+			m++
+		}
+		//
+		return m
+	}
+	//
+	panic("non-static memory has no contents")
+}
+
+// ============================================================================
+// Encoding / Decoding
+// ============================================================================
+
+// GobEncode marshals this memory.  The embedded moduleBase holds unexported
+// fields (as do the kind and contents), so an explicit encoding is required.
+//
+// nolint
+func (p *Memory[W]) GobEncode() ([]byte, error) {
+	var buffer bytes.Buffer
+	gobEncoder := gob.NewEncoder(&buffer)
+	//
+	if err := gobEncoder.Encode(p.name); err != nil {
+		return nil, err
+	}
+	//
+	if err := gobEncoder.Encode(p.registers); err != nil {
+		return nil, err
+	}
+	//
+	if err := gobEncoder.Encode(&p.kind); err != nil {
+		return nil, err
+	}
+	//
+	if err := gobEncoder.Encode(p.contents); err != nil {
+		return nil, err
+	}
+	//
+	return buffer.Bytes(), nil
+}
+
+// nolint
+func (p *Memory[W]) GobDecode(data []byte) error {
+	var (
+		buffer     = bytes.NewBuffer(data)
+		gobDecoder = gob.NewDecoder(buffer)
+		name       string
+		registers  []Register[W]
+	)
+	//
+	if err := gobDecoder.Decode(&name); err != nil {
+		return err
+	}
+	//
+	if err := gobDecoder.Decode(&registers); err != nil {
+		return err
+	}
+	//
+	if err := gobDecoder.Decode(&p.kind); err != nil {
+		return err
+	}
+	//
+	if err := gobDecoder.Decode(&p.contents); err != nil {
+		return err
+	}
+	// Reconstruct the module base (which recomputes the input / output counts).
+	p.moduleBase = newModuleBase(name, registers)
+	//
+	return nil
 }

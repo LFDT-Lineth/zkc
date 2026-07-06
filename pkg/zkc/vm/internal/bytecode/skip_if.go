@@ -33,8 +33,8 @@ import (
 // length.  This assumption could be relaxed in the future.
 type SkipIf struct {
 	Skip  uint16
-	Left  RegVec
-	Right RegVec
+	Left  RegisterVector
+	Right RegisterVector
 	Op    Cond
 }
 
@@ -71,7 +71,7 @@ func (p *SkipIf) Validate(_ uint, _ FieldConfig, env Environment) []error {
 // vectorBitwidth returns the total bitwidth of a register vector under the
 // given environment, or the empty option when any constituent register is
 // native (and hence has no fixed bitwidth).
-func vectorBitwidth(v RegVec, env Environment) util.Option[uint] {
+func vectorBitwidth(v RegisterVector, env Environment) util.Option[uint] {
 	var total uint
 	//
 	for _, r := range v.Registers() {

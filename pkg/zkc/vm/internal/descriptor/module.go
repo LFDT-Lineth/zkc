@@ -13,9 +13,8 @@
 package descriptor
 
 import (
-	"math"
-
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -26,26 +25,15 @@ import (
 // (internal) computed registers.  Both functions and memories are modules, and
 // this interface captures the register-related structure common to them.
 type Module[W word.Word[W]] interface {
-	// HasRegister checks whether a register with the given name exists and, if
-	// so, returns its register identifier.  Otherwise, it returns false.
-	HasRegister(name string) (RegisterId, bool)
+	RegisterMap[W]
 	// Inputs returns the set of input registers for this module.
 	Inputs() []Register[W]
 	// NumInputs returns the number of input registers for this module.
 	NumInputs() uint
 	// NumOutputs returns the number of output registers for this module.
 	NumOutputs() uint
-	// Name returns the name of this module.
-	Name() string
 	// Outputs returns the set of output registers for this module.
 	Outputs() []Register[W]
-	// Register returns the ith register used in this module.
-	Register(id RegisterId) Register[W]
-	// Registers returns the set of all registers used during execution of this
-	// module.
-	Registers() []Register[W]
-	// Width returns the number of registers in this module
-	Width() uint
 }
 
 type moduleBase[W word.Word[W]] struct {
@@ -77,14 +65,14 @@ func newModuleBase[W word.Word[W]](name string, registers []Register[W]) moduleB
 
 // HasRegister checks whether a register with the given name exists and, if
 // so, returns its register identifier.  Otherwise, it returns false.
-func (p *moduleBase[W]) HasRegister(name string) (RegisterId, bool) {
+func (p *moduleBase[W]) HasRegister(name string) util.Option[RegisterId] {
 	for i, r := range p.registers {
 		if r.Name() == name {
-			return RegisterId(i), true
+			return util.Some(RegisterId(i))
 		}
 	}
 	// Failed
-	return math.MaxUint16, false
+	return util.None[RegisterId]()
 }
 
 // Inputs returns the set of input registers for this function.

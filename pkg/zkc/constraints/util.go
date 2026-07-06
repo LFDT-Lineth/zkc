@@ -13,6 +13,8 @@
 package constraints
 
 import (
+	"math"
+
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -21,14 +23,34 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-func newLimbsMap(config field.Config, modules ...vm.Module) module.LimbsMap {
-	var ms []register.Map = array.Map(modules, func(_ uint, m vm.Module) register.Map {
+func newLimbsMap[W vm.Word[W]](config field.Config, modules ...vm.BytecodeModule[W]) module.LimbsMap {
+	var ms []register.Map = array.Map(modules, func(_ uint, m vm.BytecodeModule[W]) register.Map {
 		name := trace.ModuleName{Name: m.Name(), Multiplier: 1}
-		return register.ArrayMap(name, m.Registers()...)
+		return register.ArrayMap(name, toRegisters[W](m.Registers())...)
 	})
 	// NOTE: generic parameter is meaningless, and only retained for backwards
 	// compatibility.
 	return module.NewLimbsMap[uint](config, ms...)
+}
+
+// ToRegisters converts an array of register descriptors into an array of scheme
+// registers.
+func toRegisters[W vm.Word[W]](registers []vm.Register[W]) []register.Register {
+	var regs = make([]register.Register, len(registers))
+	//
+	for i, r := range registers {
+		var (
+			bitwidth uint = math.MaxUint
+		)
+		// Determine bitwidth (if applicable)
+		if !r.IsNative() {
+			bitwidth = r.Bitwidth().Unwrap()
+		}
+		//
+		regs[i] = register.New(r.Kind(), r.Name(), bitwidth, *r.Padding().BigInt())
+	}
+	//
+	return regs
 }
 
 // FoldContents folds the contents of a memory into a multi-dimensional representation.

@@ -79,7 +79,7 @@ func InlineFunctions[W word.Word[W]](program descriptor.Program[W], names []stri
 		remaining = slices.Delete(remaining, index, index+1)
 	}
 	// Remove now-dead targets, remapping module identifiers.
-	return descriptor.NewProgram(removeModules(modules, targets)...)
+	return descriptor.NewProgram(program.Field(), removeModules(modules, targets)...)
 }
 
 // resolveInlineTargets maps each name to its module identifier, sanity checking
@@ -505,22 +505,22 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 	case *bytecode.DivRem:
 		return bytecode.NewDivRem(insn.Opcode, substituteId(insn.Target, sub), substituteId(insn.Dividend, sub),
 			substituteId(insn.Divisor, sub))
-	case *bytecode.DivHint:
-		return bytecode.NewDivHint(substituteId(insn.Quotient, sub), substituteId(insn.Remainder, sub),
-			substituteId(insn.Witness, sub), substituteId(insn.Dividend, sub), substituteId(insn.Divisor, sub))
+	case *bytecode.Hint:
+		return bytecode.NewHint(insn.Op, substituteRegisterVectors(insn.Targets, sub),
+			substituteRegisterVectors(insn.Sources, sub))
 	case *bytecode.CheckCast:
 		return bytecode.NewCheckCast(substituteId(insn.Target, sub), insn.Bitwidth)
 	case *bytecode.Skip:
 		return insn
 	case *bytecode.SkipIf:
 		return &bytecode.SkipIf{Op: insn.Op, Skip: insn.Skip,
-			Left: substituteRegVec(insn.Left, sub), Right: substituteRegVec(insn.Right, sub)}
+			Left: substituteRegisterVector(insn.Left, sub), Right: substituteRegisterVector(insn.Right, sub)}
 	case *bytecode.Switch[W]:
 		return bytecode.MultiwaySkip(substituteId(insn.Source, sub), insn.Cases)
 	case *bytecode.Debug:
-		return &bytecode.Debug{Chunks: insn.Chunks, Sources: substituteRegVecs(insn.Sources, sub)}
+		return &bytecode.Debug{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
 	case *bytecode.Fail:
-		return &bytecode.Fail{Chunks: insn.Chunks, Sources: substituteRegVecs(insn.Sources, sub)}
+		return &bytecode.Fail{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
 	default:
 		panic(fmt.Sprintf("unexpected instruction in inlined body (%T)", insn))
 	}
@@ -540,19 +540,19 @@ func substituteIds(ids []bytecode.RegisterId, sub []bytecode.RegisterId) []bytec
 	return nids
 }
 
-// substituteRegVec reconstructs a register vector with each constituent register
+// substituteRegisterVector reconstructs a register vector with each constituent register
 // substituted according to a given mapping.  The substituted registers must
-// remain consecutive (a RegVec invariant); this holds before register splitting,
+// remain consecutive (a RegisterVector invariant); this holds before register splitting,
 // where every such vector is a single register.
-func substituteRegVec(v bytecode.RegVec, sub []bytecode.RegisterId) bytecode.RegVec {
-	return bytecode.NewRegVec(substituteIds(v.Registers(), sub)...)
+func substituteRegisterVector(v bytecode.RegisterVector, sub []bytecode.RegisterId) bytecode.RegisterVector {
+	return bytecode.NewRegisterVector(substituteIds(v.Registers(), sub)...)
 }
 
-func substituteRegVecs(vs []bytecode.RegVec, sub []bytecode.RegisterId) []bytecode.RegVec {
-	var nvs = make([]bytecode.RegVec, len(vs))
+func substituteRegisterVectors(vs []bytecode.RegisterVector, sub []bytecode.RegisterId) []bytecode.RegisterVector {
+	var nvs = make([]bytecode.RegisterVector, len(vs))
 	//
 	for i, v := range vs {
-		nvs[i] = substituteRegVec(v, sub)
+		nvs[i] = substituteRegisterVector(v, sub)
 	}
 	//
 	return nvs

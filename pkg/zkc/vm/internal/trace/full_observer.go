@@ -53,10 +53,13 @@ func (p *FullObserver[W, I, M]) Initialise(machine M) {
 			// Static reference tables (e.g. the $range_un range-check tables) are
 			// not populated by execution, so their full contents must be seeded
 			// here; otherwise lookups into them would see an empty target.
-			p.trace[i] = initialiseROM(&m.ReadOnly)
+			p.trace[i] = initializeMemoryAddressesAndContents(&m.ReadOnly)
 		case *memory.ReadOnly[W]:
 			// (non-static) read-only memory, i.e. an input ROM.
-			p.trace[i] = initialiseROM(m)
+			p.trace[i] = initializeMemoryAddressesAndContents(m)
+		case *memory.WriteOnce[W]:
+			// write-once output memory.
+			p.trace[i] = initializeMemoryAddressesAndContents(m)
 		}
 	}
 }
@@ -127,52 +130,144 @@ func (p *FullObserver[W, I, M]) traceModule(m machine.Module, states []State[W],
 	builder array.Builder[util_word.BigEndian]) lt.Module[util_word.BigEndian] {
 	//
 	var (
-		name      = trace.ModuleName{Name: m.Name(), Multiplier: 1}
-		cols      []array.MutArray[util_word.BigEndian]
-		nrows     = uint(len(states))
-		multiLine = isMultiLineFunction(m)
+		name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
+		// Register columns, plus trailing space for any computed/control columns.
+		cols = make([]array.MutArray[util_word.BigEndian], m.Width()+numAuxColumns[W](m))
+		// Names for the trailing columns; must match the schema register names,
+		// since the trace is aligned to the schema by column name.
+		auxNames []string
 	)
-	// Initialise columns
-	if multiLine {
-		// include space for the program counter, return line and one selector
-		// per instruction.
-		nSelectors := uint(len(m.(*function.Function[instruction.Word]).Code()))
-		cols = make([]array.MutArray[util_word.BigEndian], m.Width()+2+nSelectors)
-	} else {
-		cols = make([]array.MutArray[util_word.BigEndian], m.Width())
+	// Fill the register columns from the recorded states.
+	p.transcribeRegisterColumns(m, states, cols, builder)
+	// Fill the trailing computed/control columns, if any.  A module is either a
+	// multi-line function or an access-once memory, never both.
+	switch {
+	case isMultiLineFunction(m):
+		f := m.(*function.Function[instruction.Word])
+		auxNames = p.assignControlColumns(f, cols, states, builder)
+	case isAccessOnceMemory[W](m):
+		mem, ok := m.(memory.Memory[W])
+		if !ok {
+			panic("expected memory module")
+		}
+
+		auxNames = p.assignAccessOnceColumns(mem, cols, states, builder)
 	}
+	//
+	return lt.NewModule(name, traceColumns(m.Registers(), auxNames, cols))
+}
+
+// numAuxColumns returns the number of trailing (computed/control) columns a
+// module needs beyond its registers: PC + RET + one selector per code line for
+// a multi-line function, the access-once control columns for a ROM/WOM, and
+// none otherwise.
+func numAuxColumns[W word.Word[W]](m machine.Module) uint {
+	switch {
+	case isMultiLineFunction(m):
+		// program counter, return line and one selector per instruction.
+		return 2 + uint(len(m.(*function.Function[instruction.Word]).Code()))
+	case isAccessOnceMemory[W](m):
+		return extraColumnsForAccessOnceMemory[W](m)
+	default:
+		return 0
+	}
+}
+
+// transcribeRegisterColumns allocates the register columns and copies each
+// state's register values into them.
+func (p *FullObserver[W, I, M]) transcribeRegisterColumns(m machine.Module, states []State[W],
+	cols []array.MutArray[util_word.BigEndian], builder array.Builder[util_word.BigEndian]) {
+	//
+	var nrows = uint(len(states))
 	// Initialise register columns
 	for i, r := range m.Registers() {
-		//
 		if r.IsNative() {
 			cols[i] = builder.NewArray(nrows, math.MaxUint)
 		} else {
 			cols[i] = builder.NewArray(nrows, r.Width())
 		}
 	}
-	// Initialise control columns (if applicable)
-	// transcribe values
+	// Transcribe values
 	for row, st := range states {
 		for i := range m.Registers() {
-			var (
-				val  util_word.BigEndian
-				word = st.state[i]
-			)
+			var val util_word.BigEndian
 			// Copy over data
-			val = val.SetBytes(word.BigInt().Bytes())
-			//
+			val = val.SetBytes(st.state[i].BigInt().Bytes())
 			cols[i] = cols[i].Set(uint(row), val)
 		}
 	}
-	// Set control registers for multi-line functions
-	if multiLine {
-		// Extract function
-		f := m.(*function.Function[instruction.Word])
-		// Add control registers
-		p.assignControlRegisters(f, cols, states, builder)
+}
+
+// assignControlColumns fills the control columns for a multi-line function and
+// returns their names: PC, RET, then one selector per code line.
+func (p *FullObserver[W, I, M]) assignControlColumns(f *function.Function[instruction.Word],
+	cols []array.MutArray[util_word.BigEndian], states []State[W],
+	builder array.Builder[util_word.BigEndian]) []string {
+	//
+	p.assignControlRegisters(f, cols, states, builder)
+	//
+	auxNames := []string{io.PC_NAME, io.RET_NAME}
+	for c := range f.Code() {
+		auxNames = append(auxNames, io.SelectorName(uint(c)))
 	}
-	// Done
-	return lt.NewModule(name, traceColumns(m.Registers(), cols))
+	//
+	return auxNames
+}
+
+// assignAccessOnceColumns fills the access-once control columns for a ROM/WOM
+// and returns their names: the access bit, then (for multi-limb addresses) one
+// at_flag per limb.
+func (p *FullObserver[W, I, M]) assignAccessOnceColumns(mem memory.Memory[W],
+	cols []array.MutArray[util_word.BigEndian], states []State[W],
+	builder array.Builder[util_word.BigEndian]) []string {
+	//
+	p.assignRomWomRegisters(mem, cols, states, builder)
+	//
+	auxNames := []string{io.ACCESS_BIT_NAME}
+
+	if mem.Geometry().IsMultiLineAddress() {
+		for k := uint(0); k < mem.Geometry().AddressLines(); k++ {
+			auxNames = append(auxNames, io.AtFlagName(k))
+		}
+	}
+	//
+	return auxNames
+}
+
+func (p *FullObserver[W, I, M]) assignRomWomRegisters(
+	mem memory.Memory[W],
+	cols []array.MutArray[util_word.BigEndian],
+	states []State[W],
+	builder array.Builder[util_word.BigEndian],
+) {
+	var (
+		one                = field.One[util_word.BigEndian]()
+		extra              = extraColumnsForAccessOnceMemory[W](mem)
+		accessOffset       = uint(len(mem.Registers()))
+		atFlagOffset       = accessOffset + 1
+		nRows              = uint(len(states))
+		nLines             = mem.Geometry().AddressLines()
+		isMultiLineAddress = mem.Geometry().IsMultiLineAddress()
+	)
+
+	// Initialise columns
+	cols[accessOffset] = builder.NewArray(nRows, 1)
+	for i := uint(1); i < extra; i++ {
+		cols[accessOffset+i] = builder.NewArray(nRows, 1)
+	}
+
+	// Assign values
+	for row, st := range states {
+		cols[accessOffset] = cols[accessOffset].Set(uint(row), one)
+		if isMultiLineAddress && row != 0 {
+			var k uint = nLines - 1
+			for k > 0 && st.state[k].Cmp64(0) == 0 {
+				k--
+			}
+
+			cols[atFlagOffset+k] = cols[atFlagOffset+k].Set(uint(row), one)
+		}
+	}
 }
 
 func (p *FullObserver[W, I, M]) assignControlRegisters(m *function.Function[instruction.Word],
@@ -288,12 +383,54 @@ func loadWords[W word.Word[W], I instruction.Instruction](start, end uint, frame
 	// Done
 	return words
 }
+
 func isMultiLineFunction(m machine.Module) bool {
 	if f, ok := m.(*function.Function[instruction.Word]); ok {
 		return !f.IsAtomic()
 	}
 	//
 	return false
+}
+
+// isAccessOnceMemory detects WriteOnce and ReadOnce memories.
+func isAccessOnceMemory[W word.Word[W]](m machine.Module) bool {
+	if mem, ok := m.(memory.Memory[W]); ok {
+		switch {
+		case mem.IsStatic() || mem.IsReadWrite():
+			return false
+		case mem.IsWriteOnly() || mem.IsReadOnly():
+			return true
+		default:
+			panic("undefined memory type")
+		}
+	}
+
+	return false
+}
+
+// extraColumnsForAccessOnceMemory computes the number of extra columns
+// that a ROM/WOM module requires:
+//   - one comes from the ACCESS_BIT column
+//   - whenever L > 1, where L is the number of address lines, there
+//     are also the at_flags_k, k = 0..L, columns
+func extraColumnsForAccessOnceMemory[W word.Word[W]](m machine.Module) uint {
+	if mem, ok := m.(memory.Memory[W]); ok {
+		switch {
+		case mem.IsStatic() || mem.IsReadWrite():
+			return uint(0)
+		case mem.IsWriteOnly() || mem.IsReadOnly():
+			extra := uint(1)
+			if mem.Geometry().IsMultiLineAddress() {
+				extra += mem.Geometry().AddressLines()
+			}
+
+			return extra
+		default:
+			panic("undefined memory type")
+		}
+	}
+
+	return uint(0)
 }
 
 // Check whether the next instruction to execute will terminate the enclosing
@@ -323,21 +460,17 @@ func isVectorTerminal[W machine.BaseWord[W], I instruction.Instruction](frame ma
 	}
 }
 
-func traceColumns[W any](regs []register.Register, cols []array.MutArray[W]) []lt.Column[W] {
+func traceColumns[W any](regs []register.Register, auxNames []string, cols []array.MutArray[W]) []lt.Column[W] {
 	var ltcols = make([]lt.Column[W], len(cols))
 	//
 	for i, c := range cols {
 		var name string
-		// Determine name
+		// Register columns are named directly; trailing (computed/control)
+		// columns take their names from auxNames, supplied by the caller.
 		if i < len(regs) {
 			name = regs[i].Name()
-		} else if i == len(regs) {
-			name = io.PC_NAME
-		} else if i == len(regs)+1 {
-			name = io.RET_NAME
 		} else {
-			// one-hot program counter selector
-			name = io.SelectorName(uint(i - len(regs) - 2))
+			name = auxNames[i-len(regs)]
 		}
 		//
 		ltcols[i] = lt.NewColumn(name, c)
@@ -346,31 +479,84 @@ func traceColumns[W any](regs []register.Register, cols []array.MutArray[W]) []l
 	return ltcols
 }
 
-func initialiseROM[W word.Word[W]](rom *memory.ReadOnly[W]) []State[W] {
+// initializeMemoryAddressesAndContents materializes the trace rows for a
+// static, read-only (ROM) or write-once (WOM) memory: one row per cell with
+// consecutive addresses (single- or multi-limb, via splitAddress) plus the
+// cell's data.  It only seeds the address and data register columns; the
+// access-once control columns (ACCESS bit, at_flags) are added separately in
+// traceModule and only for ROM/WOM, not static memory.
+func initializeMemoryAddressesAndContents[W word.Word[W]](m memory.Memory[W]) []State[W] {
 	var (
 		states       []State[W]
-		addressWidth = int(rom.Geometry().AddressLines())
-		dataWidth    = int(rom.Geometry().DataLines())
-		contents     = rom.Contents()
+		addressWidth = int(m.Geometry().AddressLines())
+		dataWidth    = int(m.Geometry().DataLines())
+		contents     = m.Contents()
 	)
 	// sanity check (for now)
-	if rom.Geometry().AddressLines() > 1 {
-		panic("support ROM with multiple address lines")
-	}
-	//
-	for i := 0; i < len(contents); i += dataWidth {
+	var isMultiLineAddressWom = m.Geometry().IsMultiLineAddress()
+
+	switch {
+	case !isMultiLineAddressWom:
+		for i := 0; i < len(contents); i += dataWidth {
+			var (
+				address W
+				data    = contents[i : i+dataWidth]
+				words   = make([]W, m.Width())
+			)
+			// Configure address line
+			words[0] = address.SetUint64(uint64(i / dataWidth))
+			//
+			copy(words[addressWidth:], data)
+			//
+			states = append(states, NewState(0, false, m.Width(), words))
+		}
+	case isMultiLineAddressWom:
 		var (
-			address W
-			data    = contents[i : i+dataWidth]
-			words   = make([]W, rom.Width())
+			masks  = make([]uint64, addressWidth)
+			widths = make([]uint, addressWidth)
 		)
-		// Configure address line
-		words[0] = address.SetUint64(uint64(i / dataWidth))
-		//
-		copy(words[addressWidth:], data)
-		//
-		states = append(states, NewState(0, false, rom.Width(), words))
+
+		for i := range addressWidth {
+			// TODO: is the usage of Uint64() problematic ? Are registers short ?
+			masks[i] = m.Registers()[i].MaxValue().Uint64()
+			widths[i] = m.Registers()[i].Width()
+		}
+
+		var addressUint64 = uint64(0)
+
+		for i := 0; i < len(contents); i += dataWidth {
+			var (
+				data  = contents[i : i+dataWidth]
+				words = make([]W, m.Width())
+			)
+			// Configure address line
+			copy(words[:addressWidth], splitAddress[W](masks, widths, addressUint64))
+			//
+			copy(words[addressWidth:], data)
+			//
+			states = append(states, NewState(0, false, m.Width(), words))
+			addressUint64++
+		}
 	}
 	//
 	return states
+}
+
+// split address takes an address uint64 and returns this address split according
+// to a slice of bit widths
+//
+// **Note.** splitAddress expects an address that fits into a uint64. This must be the
+// case for ROM's and WOM's, where the address space is expected to be read beginning to
+// end and to contain no gaps. General multi-line RAM's can be of arbitrary size and have
+// sparsely allocated memory.
+func splitAddress[W word.Word[W]](masks []uint64, widths []uint, address uint64) []W {
+	addressWidth := len(masks)
+
+	var split = make([]W, addressWidth)
+	for i := addressWidth - 1; i >= 0; i-- {
+		split[i] = split[i].SetUint64(address & masks[i])
+		address = address >> widths[i]
+	}
+
+	return split
 }

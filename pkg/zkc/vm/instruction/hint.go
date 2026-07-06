@@ -22,7 +22,9 @@ import (
 // analysis without generating any equality.
 type FieldHint = finsn.Hint
 
-// NewFieldHint constructs a new hint instruction.
-func NewFieldHint(targets, sources []register.Id) *FieldHint {
+// NewFieldHint constructs a new hint instruction.  Each argument (source) and
+// return (target) is a register vector so that, after register splitting, a
+// value spanning several limb registers is kept grouped.
+func NewFieldHint(targets, sources []register.Vector) *FieldHint {
 	return &FieldHint{Targets: targets, Sources: sources}
 }

@@ -88,6 +88,15 @@ func (p Uint128) BigInt() *big.Int {
 	return new(big.Int).SetBytes(buf[:])
 }
 
+// BitLen implementation for Word interface.
+func (p Uint128) BitLen() uint {
+	if p.hi == 0 {
+		return uint(bits.Len64(p.lo))
+	}
+	//
+	return uint(bits.Len64(p.hi)) + 64
+}
+
 // Cmp implementation for Word interface.
 func (p Uint128) Cmp(o Uint128) int {
 	if c := cmp.Compare(p.hi, o.hi); c != 0 {

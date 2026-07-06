@@ -70,7 +70,7 @@ func NewPermutationConstraint[F field.Element[F]](handle string, context schema.
 	return Constraint[F]{permutation.NewConstraint[F](handle, context, targets, sources)}
 }
 
-// NewRangeConstraint constructs a new Range constraint!
+// NewRangeConstraint constructs a new Range constraint
 func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, registers []*RegisterAccess[F],
 	bitwidths []uint) Constraint[F] {
 	//

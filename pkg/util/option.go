@@ -67,6 +67,16 @@ func (o Option[T]) UnwrapOr(value T) T {
 	return value
 }
 
+// MapOption maps an option from one type to another using a given mapping
+// function.
+func MapOption[S any, T any](opt Option[S], fn func(S) T) Option[T] {
+	if opt.IsEmpty() {
+		return None[T]()
+	}
+	//
+	return Some[T](fn(opt.Unwrap()))
+}
+
 // ============================================================================
 // Encoding / Decoding
 // ============================================================================
