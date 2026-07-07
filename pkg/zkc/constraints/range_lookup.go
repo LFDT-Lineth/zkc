@@ -16,11 +16,13 @@ import (
 	"fmt"
 	"strings"
 
+	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
@@ -84,12 +86,20 @@ func indexRangeTables[F field.Element[F]](modules []vm.Module, maxStaticWidth ui
 func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, tables map[uint]rangeTable, maxStaticWidth uint) {
 	// TODO: lots of perf possible here, see
-	// https://github.com/LFDT-Lineth/zkc/issues/1910
 	// https://github.com/LFDT-Lineth/zkc/issues/1907
 	// https://github.com/LFDT-Lineth/zkc/issues/1911
 	for i, reg := range regs {
 		// Native registers are not range-checked.
 		if reg.IsNative() || reg.Width() == 0 {
+			continue
+		}
+		// u1 registers are not range-checked with a static table, but with a
+		// constraint r * r == r (equivalently r * (1 - r) == 0).
+		if reg.Width() == 1 {
+			r := mirc.Variable[register.Id, Expr[F]](register.NewId(uint(i)), reg.Width(), 0)
+			mod.AddConstraints(mir.NewVanishingConstraint("u1_range_check", ctx, util.None[int](),
+				mirc.Product([]Expr[F]{r, r}).Equals(r).AsLogical()))
+
 			continue
 		}
 		//

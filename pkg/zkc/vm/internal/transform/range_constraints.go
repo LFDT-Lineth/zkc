@@ -139,7 +139,9 @@ func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W],
 	)
 	//
 	add := func(w uint) {
-		if w != 0 && !seen[w] {
+		// Note: width == 0 comes from native registers, which are not range-checked.
+		// width == 1 are not range proven with a call to a static table, but with a constraint r (1 - r) == 0
+		if w != 0 && w != 1 && !seen[w] {
 			seen[w] = true
 			queue = append(queue, w)
 		}
@@ -151,9 +153,6 @@ func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W],
 		// functions, and the PC bit width must match the one chosen there.
 		if fn, ok := mod.(*descriptor.Function[W]); ok && !fn.IsNative() && !fn.IsOneLine() {
 			add(fn.PcWidth())
-			//TODO: rm me see https://github.com/LFDT-Lineth/zkc/issues/1910
-			// Seed from IS_PC_<k> selectors
-			add(1)
 		}
 		// Seed from every register of every module.
 		for _, r := range mod.Registers() {
