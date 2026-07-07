@@ -408,9 +408,9 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.
 		// construct binary file
 		binf = constraints.NewBinaryFile[F](nil, nil, f, maxStaticDepth, p)
 		// decode inputs / outputs
-		inputs, _ = decodeInputsOutputs(t, p, test.data)
+		inputs = vm.FilterInputs(p, test.data)
 		// generate trace
-		tr, errs = constraints.Trace(binf, inputs, constraints.DEFAULT_TRACE_CONFIG)
+		_, tr, errs = binf.Trace(inputs, constraints.DEFAULT_TRACE_CONFIG)
 	)
 	//
 	if test.expected {

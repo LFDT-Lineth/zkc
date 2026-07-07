@@ -203,9 +203,9 @@ func AddVecConst[W Word[W]](targets []RegisterId, sources []RegisterId, constant
 	return bytecode.AddVecConst(targets, sources, constant)
 }
 
-// UintAssign constructs a move instruction which copies the source register into
+// Assign constructs a move instruction which copies the source register into
 // the target register.
-func UintAssign[W Word[W]](target RegisterId, source RegisterId) Bytecode[W] {
+func Assign[W Word[W]](target RegisterId, source RegisterId) Bytecode[W] {
 	return bytecode.Move[W](target, source)
 }
 

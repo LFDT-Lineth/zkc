@@ -187,8 +187,20 @@ func (tb TraceBuilder[F]) Build(schema sc.AnySchema[F], tf lt.TraceFile) (trace.
 	if modules, errors = AlignTrace(schema.Modules().Collect(), modules, tb.expand); len(errors) > 0 {
 		return nil, errors
 	}
+	// Apply trace expansion
+	return tb.innerBuild(schema, modules, arrBuilder)
+}
+
+// Expand applies trace expansion directly on a given trace.
+func (tb TraceBuilder[F]) Expand(schema sc.AnySchema[F], modules []lt.Module[F]) (trace.Trace[F], []error) {
+	return tb.innerBuild(schema, modules, array.NewStaticBuilder[F]())
+}
+
+func (tb TraceBuilder[F]) innerBuild(schema sc.AnySchema[F], mods []lt.Module[F], arrBuilder array.Builder[F],
+) (trace.Trace[F], []error) {
+	var errors []error
 	// Initialise the actual trace object
-	tr := initialiseTrace(schema, arrBuilder, modules)
+	tr := initialiseTrace(schema, arrBuilder, mods)
 	//
 	if tb.expand {
 		// Save original line counts
@@ -278,7 +290,7 @@ func addSpillageAndDefensivePadding[F field.Element[F]](defensive bool, tr *trac
 }
 
 // determineModuleHeights returns the height for each module in the trace.
-func determineModuleHeights[F field.Element[F]](tr *trace.ArrayTrace[F]) []uint {
+func determineModuleHeights[F field.Element[F]](tr trace.Trace[F]) []uint {
 	n := tr.Modules().Count()
 	mid := 0
 	heights := make([]uint, n)
@@ -294,7 +306,7 @@ func determineModuleHeights[F field.Element[F]](tr *trace.ArrayTrace[F]) []uint 
 
 // checkModuleHeights checks the expanded heights match exactly what was
 // expected.
-func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr *trace.ArrayTrace[F],
+func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr trace.Trace[F],
 	schema sc.AnySchema[F]) error {
 	//
 	expanded := determineModuleHeights(tr)

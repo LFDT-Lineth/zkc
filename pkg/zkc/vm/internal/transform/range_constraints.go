@@ -31,7 +31,6 @@ import (
 // wiring the (deferred) lookups can rely on a single, uniform target name.
 const (
 	rangeValueName = "value"
-	rangeIndexName = "index"
 	rangeLoName    = "lo"
 	rangeHiName    = "hi"
 )
@@ -234,8 +233,6 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) descriptor.Mod
 		rows     = 1 << width
 		contents = make([]W, rows)
 		regs     = []descriptor.Register[W]{
-			// TODO: why an index is needed see https://github.com/LFDT-Lineth/zkc/issues/1906
-			descriptor.NewRegister(register.INPUT_REGISTER, rangeIndexName, util.Some(width), padding),
 			descriptor.NewRegister(register.OUTPUT_REGISTER, rangeValueName, util.Some(width), padding),
 		}
 	)

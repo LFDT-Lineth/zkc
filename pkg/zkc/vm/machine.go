@@ -22,6 +22,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	log "github.com/sirupsen/logrus"
 )
 
 // Core provides a minimal interface for booting and executing a machine with a
@@ -186,6 +187,27 @@ func ExecuteAndObserve[W Word[W], I Instruction, M Machine[W, I], V Observer[W, 
 			return nsteps, err
 		}
 	}
+}
+
+// FilterInputs restricts the given set of (parsed) inputs to the program's
+// declared input memories.
+func FilterInputs[W Word[W], T any](p Program[W], input map[string][]T) map[string][]T {
+	inputs := make(map[string][]T)
+	//
+	for it := p.Inputs(); it.HasNext(); {
+		in := it.Next()
+		if bytes, ok := input[in.Name()]; ok {
+			inputs[in.Name()] = bytes
+		}
+	}
+	// Sanity check what was actually filtered out
+	for k := range input {
+		if _, ok := inputs[k]; !ok {
+			log.Warn("ignoring input/output \"", k, "\"")
+		}
+	}
+	//
+	return inputs
 }
 
 // DecodeInputsOutputs decodes  given set of input and output bytes

@@ -83,6 +83,18 @@ func BigInts[F Element[F]](values []big.Int) []F {
 	return elements
 }
 
+// Uint1 construct a field element from a boolean value, where false returns 0
+// and true returns 1.
+func Uint1[F Element[F]](val bool) F {
+	var element F
+	//
+	if val {
+		return element.SetUint64(1)
+	}
+	//
+	return element.SetUint64(0)
+}
+
 // Uint64 construct a field element from a given uint64
 func Uint64[F Element[F]](val uint64) F {
 	var element F

@@ -158,6 +158,9 @@ func validateColumnBitWidth[F field.Element[F]](reg register.Register, col tr.Co
 		// is for columns holding the multiplicative inverse of some other
 		// column.
 		return nil
+	} else if mod.IsStatic() {
+		// Static modules always have empty columns in the trace.
+		return nil
 	} else if col.Data() == nil {
 		panic(fmt.Sprintf("column %s is unassigned in module %s", col.Name(), mod.Name()))
 	}

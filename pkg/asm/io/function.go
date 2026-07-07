@@ -34,9 +34,9 @@ const (
 	// "$is_pc_<v>".
 	IS_PC_PREFIX = "$is_pc_"
 	// AT_FLAG_PREFIX name of binary flag names for multi-line address increments
-	AT_FLAG_PREFIX = "at_flag_"
+	AT_FLAG_PREFIX = "$at_flag_"
 	// ACCESS_BIT_NAME name of binary flag for non-padding rows
-	ACCESS_BIT_NAME = "access_bit"
+	ACCESS_BIT_NAME = "$access_bit"
 )
 
 // SelectorName returns the name of the one-hot program counter selector
