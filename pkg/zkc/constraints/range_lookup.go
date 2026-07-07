@@ -96,8 +96,10 @@ func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Const
 		// u1 registers are not range-checked with a static table, but with a
 		// constraint r * r == r (equivalently r * (1 - r) == 0).
 		if reg.Width() == 1 {
-			r := mirc.Variable[register.Id, Expr[F]](register.NewId(uint(i)), reg.Width(), 0)
-			mod.AddConstraints(mir.NewVanishingConstraint("u1_range_check", ctx, util.None[int](),
+			regId := register.NewId(uint(i))
+			handle := fmt.Sprintf("range_u1_%d", regId.Unwrap())
+			r := mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
+			mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](),
 				mirc.Product([]Expr[F]{r, r}).Equals(r).AsLogical()))
 
 			continue
@@ -115,7 +117,7 @@ func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Const
 		//
 		var (
 			regId  = register.NewId(uint(i))
-			handle = fmt.Sprintf("range_%d_%d", ctx, regId.Unwrap())
+			handle = fmt.Sprintf("range_u%d_%d", reg.Width(), regId.Unwrap())
 			// Source: the register's value on the current row.
 			source = lookup.UnfilteredVector(ctx,
 				term.RawRegisterAccess[F, mir.Term[F]](regId, reg.Width(), 0))
