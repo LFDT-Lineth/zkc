@@ -277,7 +277,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 	native := slices.Contains(fn.Annotations(), "native")
 	// Note: compiler.registers includes any temporaries allocated during
 	// statement compilation.
-	return vm.NewBytecodeFunction(fn.Name(), native, compiler.registers, vectors), compiler.errors
+	return vm.NewBytecodeFunction(fn.Name(), native, compiler.registers, vectors...), compiler.errors
 }
 
 // buildMemory constructs the memory descriptor module for a resolved memory

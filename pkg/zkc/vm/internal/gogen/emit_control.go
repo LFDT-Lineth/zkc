@@ -17,18 +17,19 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // labelName renders the Go label for a 2-D PC position.
 func labelName(p pos) string { return fmt.Sprintf("L_%d_%d", p.macro, p.micro) }
 
 // skipTarget computes the destination of a skip/skip_if at (vi, ci) skipping
-// `skip` micro-instructions.  Per the VM (machine/base.go), a skip advances the
-// micro counter to ci+skip and then falls through one step, so the destination
-// is ci+skip+1; if that lands past the end of the vector it falls through to the
-// start of the next macro vector.
+// `skip` micro-instructions.  Per the VM (encoding.ProgramPoint.Skip), a skip
+// advances the micro counter to ci+skip and then falls through one step, so the
+// destination is ci+skip+1; if that lands past the end of the vector it falls
+// through to the start of the next macro vector.
 func skipTarget(vi, ci, skip, vecLen uint) pos {
 	micro := ci + skip + 1
 	if micro >= vecLen {
@@ -41,22 +42,22 @@ func skipTarget(vi, ci, skip, vecLen uint) pos {
 // collectLabels gathers every 2-D PC position targeted by a skip or jump, so the
 // emitter knows exactly which positions need a Go label (Go rejects unused
 // labels, so we must not over-emit).
-func collectLabels(code wordCode) map[pos]bool {
+func collectLabels(code BytecodeVector) map[pos]bool {
 	labels := map[pos]bool{}
 
 	for vi, vec := range code {
-		n := uint(len(vec.Codes))
-		for ci, insn := range vec.Codes {
+		n := uint(len(vec.Bytecodes))
+		for ci, insn := range vec.Bytecodes {
 			switch x := insn.(type) {
-			case *instruction.Skip:
-				labels[skipTarget(uint(vi), uint(ci), x.Skip, n)] = true
-			case *instruction.SkipIf:
-				labels[skipTarget(uint(vi), uint(ci), x.Skip, n)] = true
-			case *instruction.Jump:
-				labels[pos{x.Immediate, 0}] = true
-			case *instruction.MultiwaySkip:
+			case *bytecode.Skip:
+				labels[skipTarget(uint(vi), uint(ci), uint(x.Skip), n)] = true
+			case *bytecode.SkipIf:
+				labels[skipTarget(uint(vi), uint(ci), uint(x.Skip), n)] = true
+			case *bytecode.Jmp:
+				labels[pos{uint(x.Target), 0}] = true
+			case *bytecode.Switch[word.Uint]:
 				for _, cse := range x.Cases {
-					labels[skipTarget(uint(vi), uint(ci), cse.Skip, n)] = true
+					labels[skipTarget(uint(vi), uint(ci), uint(cse.Skip), n)] = true
 				}
 			}
 		}
@@ -67,9 +68,9 @@ func collectLabels(code wordCode) map[pos]bool {
 
 // condExpr renders the boolean Go expression under which a SkipIf takes its
 // skip.  Vectors are compared lexicographically with the most-significant
-// register at the highest index, matching machine/base.go's cmp; two-limb
-// elements compare their high limbs first.
-func (g *generator) condExpr(fn *wordFunction, x *instruction.SkipIf) (string, error) {
+// register at the highest index, matching executeSkipIf_rv; two-limb elements
+// compare their high limbs first.
+func (g *generator) condExpr(fn *descFunction, x *bytecode.SkipIf) (string, error) {
 	lhsOps, err := g.operands(fn, x.Left.Registers())
 	if err != nil {
 		return "", err
@@ -84,7 +85,7 @@ func (g *generator) condExpr(fn *wordFunction, x *instruction.SkipIf) (string, e
 		return "", fmt.Errorf("gogen: skip_if compares vectors of differing length (%d vs %d)", len(lhsOps), len(rhsOps))
 	}
 
-	switch x.Cond {
+	switch x.Op {
 	case opcode.EQ:
 		return eqExpr(lhsOps, rhsOps), nil
 	case opcode.NEQ:
@@ -98,7 +99,7 @@ func (g *generator) condExpr(fn *wordFunction, x *instruction.SkipIf) (string, e
 	case opcode.GTEQ:
 		return "!(" + ordExpr(lhsOps, rhsOps, "<") + ")", nil
 	default:
-		return "", fmt.Errorf("gogen: unsupported skip condition 0x%x", uint(x.Cond))
+		return "", fmt.Errorf("gogen: unsupported skip condition 0x%x", uint(x.Op))
 	}
 }
 
@@ -111,7 +112,7 @@ func (g *generator) condExpr(fn *wordFunction, x *instruction.SkipIf) (string, e
 // A case value fits in 64 bits, so a wide source can only match when its high
 // limb is zero; we therefore switch on the low limb under a high-limb-zero
 // guard, leaving any wide non-zero source to fall through.
-func (g *generator) emitMultiwaySkip(c *code, fn *wordFunction, x *instruction.MultiwaySkip,
+func (g *generator) emitMultiwaySkip(c *code, fn *descFunction, x *bytecode.Switch[word.Uint],
 	vi, ci, vecLen uint) error {
 	source, err := g.operand(fn, x.Source)
 	if err != nil {
@@ -125,9 +126,14 @@ func (g *generator) emitMultiwaySkip(c *code, fn *wordFunction, x *instruction.M
 	c.linef("switch %s {", source.expr)
 	//
 	for _, cse := range x.Cases {
-		target := skipTarget(vi, ci, cse.Skip, vecLen)
+		value, err := uintConst(cse.Value)
+		if err != nil {
+			return err
+		}
+
+		target := skipTarget(vi, ci, uint(cse.Skip), vecLen)
 		//
-		c.linef("case %d:", cse.Value)
+		c.linef("case %d:", value)
 		c.linef("goto %s", labelName(target))
 		g.iv.edgeTo(target)
 	}

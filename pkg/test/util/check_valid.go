@@ -165,13 +165,12 @@ func checkValidInternal(t *testing.T, testfile string, cfg codegen.Config, confi
 	checkValidMachine(t, p2, cfg, config, testcases)
 	// check gogen binaries (if requested)
 	if config.gogen {
-		m := vm.BytecodeProgramToWord(p1)
-		checkValidGoGen(t, testfile, testcases, m)
+		checkValidGoGen(t, testfile, testcases, p1)
 	}
 }
 
-func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, m *vm.WordMachine[vm.Uint]) {
-	var binary, err = buildGogenProgram(t, m)
+func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, p vm.Program[vm.Uint]) {
+	var binary, err = buildGogenProgram(t, p)
 	//
 	if err != nil {
 		t.Errorf("[gogen] %v", err)
@@ -180,7 +179,7 @@ func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, m *vm.Word
 		t.Logf("[gogen] compiled %s into binary at %s", testfile, binary)
 		// Run each test vector
 		for _, testcase := range tests {
-			runGogenExecutionTest(t, m, binary, testcase)
+			runGogenExecutionTest(t, p, binary, testcase)
 		}
 	}
 }
@@ -238,11 +237,12 @@ func runExecutionTest[W vm.Word[W]](t *testing.T, p vm.Program[W], test TestCase
 	cfg vm.WordConfig) {
 	//
 	var (
-		err         error
-		errs        []error
-		interpreter = vm.NewBytecodeInterpreter(p)
+		err  error
+		errs []error
 		// decode inputs / outputs
-		inputs, outputs = decodeInputsOutputs(t, interpreter, test.data)
+		inputs, outputs = decodeInputsOutputs(t, p, test.data)
+		// construct interpreter
+		interpreter = vm.NewBytecodeInterpreter(p)
 	)
 	// Boot & Execute machine
 	if err = interpreter.Boot("main", inputs); err == nil {
@@ -357,8 +357,10 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc Tes
 	}
 	//
 	var (
-		interpreter     = vm.NewBytecodeInterpreter(program.AddCheckPoint(fid))
-		inputs, outputs = decodeInputsOutputs(t, interpreter, tc.data)
+		// decode inputs/outputs
+		inputs, outputs = decodeInputsOutputs(t, program, tc.data)
+		// construct interpreter
+		interpreter = vm.NewBytecodeInterpreter(program.AddCheckPoint(fid))
 	)
 	// Phase 1: run the program (with calls to fn switched into checkpointing
 	// calls) to completion, collecting the checkpoints it produces.
@@ -403,11 +405,10 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.
 	f field.Config, maxStaticDepth uint) {
 	//
 	var (
-		wm = vm.BytecodeProgramToWord(p)
 		// construct binary file
 		binf = constraints.NewBinaryFile[F](nil, nil, f, maxStaticDepth, p)
 		// decode inputs / outputs
-		inputs, _ = decodeInputsOutputs(t, wm, test.data)
+		inputs, _ = decodeInputsOutputs(t, p, test.data)
 		// generate trace
 		tr, errs = constraints.Trace(binf, inputs, constraints.DEFAULT_TRACE_CONFIG)
 	)

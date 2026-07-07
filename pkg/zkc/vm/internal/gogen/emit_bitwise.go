@@ -17,79 +17,80 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 )
 
-// emitTypeB emits the single-target WordTypeB ops: bitwise (executeAnd/Or/Xor/
-// Not), shifts (executeShl/Shr) and integer division (executeDiv/Rem).
-// AND/OR/XOR/SHR map to the plain Go operators; NOT and SHL additionally mask
-// to the operation bit width (word.Not / word.Shl).  DIV/REM fail on a zero
-// divisor.  Wide (two-limb) operands compute lane-wise, with runtime shifts
-// going through the shl128/shr128 helpers.  The result is then stored with the
-// usual width check.
-func (g *generator) emitTypeB(c *code, fn *wordFunction, x *instruction.WordTypeB) error {
+// emitBitwise emits the single-target bitwise ops: and/or/xor (executeAnd/Or/
+// Xor), not (executeNot) and shifts (executeShl/Shr).  AND/OR/XOR/SHR map to
+// the plain Go operators; NOT and SHL additionally mask to the operation bit
+// width (word.Not / word.Shl).  Wide (two-limb) operands compute lane-wise,
+// with runtime shifts going through the shl128/shr128 helpers.  The result is
+// then stored with the usual width check.
+func (g *generator) emitBitwise(c *code, fn *descFunction, x *bytecode.Bitwise) error {
 	target, err := g.limbOf(fn, x.Target)
 	if err != nil {
 		return err
 	}
 
-	lhs, err := g.operand(fn, x.LeftSource)
+	lhs, err := g.operand(fn, x.Left)
 	if err != nil {
 		return err
 	}
 
-	// BIT_NOT is unary; the rest read a right operand.
+	// NOT is unary (its operand is duplicated across Left and Right); the rest
+	// read a right operand.
 	var rhs operand
-	if x.Op != opcode.BIT_NOT {
-		if rhs, err = g.operand(fn, x.RightSource); err != nil {
+	if x.Op != bytecode.OP_NOT {
+		if rhs, err = g.operand(fn, x.Right); err != nil {
 			return err
 		}
 	}
 
-	if x.Bitwidth > 128 && (x.Op == opcode.BIT_NOT || x.Op == opcode.BIT_SHL) {
-		return fmt.Errorf("gogen: %s with bit width u%d unsupported (exceeds 128 bits)", opName(x.Op), x.Bitwidth)
+	bitwidth := uint(x.Bitwidth)
+	if bitwidth > 128 && (x.Op == bytecode.OP_NOT || x.Op == bytecode.OP_SHL) {
+		return fmt.Errorf("gogen: %s with bit width u%d unsupported (exceeds 128 bits)", bitwiseName(x.Op), bitwidth)
 	}
 
 	var val operand
 
 	switch x.Op {
-	case opcode.BIT_AND:
+	case bytecode.OP_AND:
 		val = operand{expr: fmt.Sprintf("%s & %s", lhs.expr, rhs.expr), max: bigMin(lhs.max, rhs.max)}
 		if lhs.wide() && rhs.wide() {
 			val.hi = fmt.Sprintf("%s & %s", lhs.hi, rhs.hi)
 		}
-	case opcode.BIT_OR:
+	case bytecode.OP_OR:
 		val = wideLanes(lhs, rhs, "|", orMax(lhs.max, rhs.max))
-	case opcode.BIT_XOR:
+	case bytecode.OP_XOR:
 		val = wideLanes(lhs, rhs, "^", orMax(lhs.max, rhs.max))
-	case opcode.BIT_NOT:
+	case bytecode.OP_NOT:
 		// (^x) mod 2^bw: bits of x above bw are dropped by the mask; bits of a
 		// narrow x in 64..bw-1 are zero and flip to one.
-		if x.Bitwidth <= 64 {
-			val = operand{expr: maskExpr(fmt.Sprintf("^%s", lhs.expr), x.Bitwidth), max: widthMax(x.Bitwidth)}
+		if bitwidth <= 64 {
+			val = operand{expr: maskExpr(fmt.Sprintf("^%s", lhs.expr), bitwidth), max: widthMax(bitwidth)}
 		} else {
 			val = operand{
 				expr: fmt.Sprintf("^%s", lhs.expr),
-				hi:   maskExpr(fmt.Sprintf("^%s", lhs.hiOr0()), x.Bitwidth-64),
-				max:  widthMax(x.Bitwidth),
+				hi:   maskExpr(fmt.Sprintf("^%s", lhs.hiOr0()), bitwidth-64),
+				max:  widthMax(bitwidth),
 			}
 		}
-	case opcode.BIT_SHL:
+	case bytecode.OP_SHL:
 		// (x << n) mod 2^bw.  For bw ≤ 64 only the low limb can contribute
 		// (result bit j < 64 comes from x bit j-n, also below 64); Go's
 		// variable shift already yields 0 once the count reaches 64.
-		if x.Bitwidth <= 64 {
-			val = operand{expr: maskExpr(fmt.Sprintf("%s << %s", lhs.expr, rhs.expr), x.Bitwidth), max: widthMax(x.Bitwidth)}
+		if bitwidth <= 64 {
+			val = operand{expr: maskExpr(fmt.Sprintf("%s << %s", lhs.expr, rhs.expr), bitwidth), max: widthMax(bitwidth)}
 			break
 		}
 
 		g.useHelper(helperShl128)
 
 		return g.pairCall(c, "shl128", lhs, rhs, target, func(lo, hi string) operand {
-			return operand{expr: lo, hi: maskExpr(hi, x.Bitwidth-64), max: widthMax(x.Bitwidth)}
+			return operand{expr: lo, hi: maskExpr(hi, bitwidth-64), max: widthMax(bitwidth)}
 		})
-	case opcode.BIT_SHR:
+	case bytecode.OP_SHR:
 		if !lhs.wide() {
 			val = operand{expr: fmt.Sprintf("%s >> %s", lhs.expr, rhs.expr), max: lhs.max}
 			break
@@ -100,17 +101,26 @@ func (g *generator) emitTypeB(c *code, fn *wordFunction, x *instruction.WordType
 		return g.pairCall(c, "shr128", lhs, rhs, target, func(lo, hi string) operand {
 			return operand{expr: lo, hi: hi, max: lhs.max}
 		})
-	case opcode.INT_DIV, opcode.INT_REM:
-		if lhs.wide() || rhs.wide() {
-			return fmt.Errorf("gogen: division operand wider than 64 bits unsupported")
-		}
-
-		return g.emitDivRem(c, x.Op, target, lhs, rhs)
 	default:
-		return fmt.Errorf("gogen: unsupported op %s", opName(x.Op))
+		return fmt.Errorf("gogen: unsupported bitwise operation (%d)", x.Op)
 	}
 
 	return g.storeValue(c, storeView{single: &target, total: target.width}, val)
+}
+
+// bitwiseName names a bitwise operation for error messages (Operation.Prefix
+// covers only the arithmetic and and/or/xor operations).
+func bitwiseName(op bytecode.Operation) string {
+	switch op {
+	case bytecode.OP_NOT:
+		return "BIT_NOT"
+	case bytecode.OP_SHL:
+		return "BIT_SHL"
+	case bytecode.OP_SHR:
+		return "BIT_SHR"
+	default:
+		return fmt.Sprintf("op(%d)", op)
+	}
 }
 
 // wideLanes builds a lane-wise OR/XOR over possibly-wide operands.
@@ -144,9 +154,28 @@ func (g *generator) pairCall(c *code, helper string, lhs, rhs operand, target li
 	return inner
 }
 
-// emitDivRem emits INT_DIV / INT_REM: a zero divisor fails (executeDiv/Rem),
-// otherwise the result is the plain Go quotient/remainder.
-func (g *generator) emitDivRem(c *code, op opcode.OpCode, target limb, lhs, rhs operand) error {
+// emitDivRem emits DIV / REM (executeDiv/Rem): a zero divisor fails, otherwise
+// the result is the plain Go quotient/remainder.
+func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem) error {
+	target, err := g.limbOf(fn, x.Target)
+	if err != nil {
+		return err
+	}
+
+	lhs, err := g.operand(fn, x.Dividend)
+	if err != nil {
+		return err
+	}
+
+	rhs, err := g.operand(fn, x.Divisor)
+	if err != nil {
+		return err
+	}
+
+	if lhs.wide() || rhs.wide() {
+		return fmt.Errorf("gogen: division operand wider than 64 bits unsupported")
+	}
+
 	switch {
 	case rhs.isZero():
 		c.linef("fail(%q) // divisor is the constant zero", "division by zero")
@@ -158,7 +187,7 @@ func (g *generator) emitDivRem(c *code, op opcode.OpCode, target limb, lhs, rhs 
 	}
 
 	goOp, bound := "/", lhs.max
-	if op == opcode.INT_REM {
+	if x.Opcode == encoding.REM {
 		// The remainder is below the divisor (and never above the dividend).
 		goOp = "%"
 		bound = bigMin(lhs.max, new(big.Int).Sub(rhs.max, big.NewInt(1)))

@@ -13,18 +13,15 @@
 package gogen_test
 
 import (
-	"math/big"
 	"reflect"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
-// fieldMachine hand-builds a word machine exercising the WordTypeF mod-P ops
+// fieldTestProgram hand-builds a word machine exercising the WordTypeF mod-P ops
 // (no ZkC surface syntax produces them yet):
 //
 //	result[0] = x ⊕ y      (INT_ADDMOD_P, constant 0)
@@ -32,38 +29,39 @@ import (
 //	result[2] = x ⊗ y ⊗ 2  (INT_MULMOD_P, constant 2)
 //
 // over KoalaBear's prime, with u32 inputs read from data[0], data[1].
-func fieldMachine() *vm.WordMachine[vm.Uint] {
+func fieldTestProgram[W vm.Word[W]]() vm.Program[W] {
 	var (
-		padding big.Int
-		two     vm.Uint
-		zero    vm.Uint
+		padding W
+		two     W
+		zero    W
+		u8      = util.Some(uint(8))
+		u32     = util.Some(uint(32))
 	)
 
-	two = two.SetUint64(2)
+	two = vm.Const64[W](2)
 
-	memRegs := func() []register.Register {
-		return []register.Register{
-			register.NewInput("address", 8, padding),
-			register.NewOutput("word", 32, padding),
+	memRegs := func() []vm.Register[W] {
+		return []vm.Register[W]{
+			vm.NewInputRegister("address", u8, padding),
+			vm.NewOutputRegister("word", u32, padding),
 		}
 	}
 	// Function registers: x, y, the result z, and the materialised address
 	// constants a0/a1/a2 (the compiler materialises constants via INT_ADD into
 	// computed registers; the zero/one "const" registers read as 0 at runtime).
-	regs := []register.Register{
-		register.NewComputed("x", 32, padding), // r0
-		register.NewComputed("y", 32, padding), // r1
-		register.NewComputed("z", 32, padding), // r2
-		register.NewComputed("a0", 8, padding), // r3
-		register.NewComputed("a1", 8, padding), // r4
-		register.NewComputed("a2", 8, padding), // r5
+	regs := []vm.Register[W]{
+		vm.NewComputedRegister("x", u32, padding), // r0
+		vm.NewComputedRegister("y", u32, padding), // r1
+		vm.NewComputedRegister("z", u32, padding), // r2
+		vm.NewComputedRegister("a0", u8, padding), // r3
+		vm.NewComputedRegister("a1", u8, padding), // r4
+		vm.NewComputedRegister("a2", u8, padding), // r5
 	}
 
-	rid := func(i uint) register.Id { return register.NewId(i) }
-	ids := func(is ...uint) []register.Id {
-		out := make([]register.Id, len(is))
+	ids := func(is ...uint) []vm.RegisterId {
+		out := make([]vm.RegisterId, len(is))
 		for i, v := range is {
-			out[i] = rid(v)
+			out[i] = vm.RegisterId(v)
 		}
 
 		return out
@@ -73,35 +71,36 @@ func fieldMachine() *vm.WordMachine[vm.Uint] {
 		var w vm.Uint
 		return w.SetUint64(v)
 	}
-	loadConst := func(target uint, v uint64) instruction.Word {
-		return instruction.NewWordTypeA(opcode.INT_ADD, register.NewVector(rid(target)), nil, uconst(v))
+	loadConst := func(target uint, v uint64) vm.Bytecode[vm.Uint] {
+		return vm.LoadConst(vm.RegisterId(target), uconst(v))
 	}
 
 	// One vector ending in RETURN: the machine only reloads the active vector
 	// on non-sequential control flow, so sequential code must stay within a
 	// single vector (exactly how the LowerBitwise helper bodies are built).
-	code := []instruction.Vector[instruction.Word]{{Codes: []instruction.Word{
+	code := vm.NewBytecodeVector[W](
 		loadConst(3, 0),
 		loadConst(4, 1),
 		loadConst(5, 2),
-		instruction.NewMemRead(0, ids(3), ids(0)), // x = data[0]
-		instruction.NewMemRead(0, ids(4), ids(1)), // y = data[1]
+		vm.MemRead[W](0, ids(3), ids(0)), // x = data[0]
+		vm.MemRead[W](0, ids(4), ids(1)), // y = data[1]
 		// result[0] = x ⊕ y
-		instruction.NewWordTypeF(opcode.INT_ADDMOD_P, rid(2), ids(0, 1), zero),
-		instruction.NewMemWrite(1, ids(3), ids(2)),
+		vm.AddModP(vm.RegisterId(2), ids(0, 1), zero),
+		vm.MemWrite[W](1, ids(3), ids(2)),
 		// result[1] = x ⊖ y
-		instruction.NewWordTypeF(opcode.INT_SUBMOD_P, rid(2), ids(0, 1), zero),
-		instruction.NewMemWrite(1, ids(4), ids(2)),
+		vm.SubModP(vm.RegisterId(2), ids(0, 1), zero),
+		vm.MemWrite[W](1, ids(4), ids(2)),
 		// result[2] = x ⊗ y ⊗ 2
-		instruction.NewWordTypeF(opcode.INT_MULMOD_P, rid(2), ids(0, 1), two),
-		instruction.NewMemWrite(1, ids(5), ids(2)),
-		instruction.NewReturn(),
-	}}}
+		vm.MulModP(vm.RegisterId(2), ids(0, 1), two),
+		vm.MemWrite[W](1, ids(5), ids(2)),
+		vm.Return[W](),
+	)
 
-	return vm.NewWordMachine[vm.Uint](field.KOALABEAR_16,
-		vm.NewInputMemory[vm.Uint]("data", true, memRegs()),
-		vm.NewOutputMemory[vm.Uint]("result", true, memRegs()),
-		vm.NewFunction("main", false, regs, code),
+	return vm.NewBytecodeProgram(
+		field.KOALABEAR_16,
+		vm.NewBytecodeMemory[W]("data", vm.PUBLIC_READ_ONLY_MEMORY, memRegs()),
+		vm.NewBytecodeMemory[W]("result", vm.PUBLIC_WRITE_ONCE_MEMORY, memRegs()),
+		vm.NewBytecodeFunction("main", false, regs, code),
 	)
 }
 
@@ -110,7 +109,7 @@ func fieldMachine() *vm.WordMachine[vm.Uint] {
 func TestGenFieldOps(t *testing.T) {
 	const koalabear = 0x7f000001 // 2^31 - 2^24 + 1
 
-	src, err := vm.GenerateGo(fieldMachine(), vm.GoGenConfig{})
+	src, err := vm.GenerateGo(fieldTestProgram[vm.Uint](), vm.GoGenConfig{})
 	if err != nil {
 		t.Fatalf("GenerateGo: %v", err)
 	}
@@ -128,9 +127,9 @@ func TestGenFieldOps(t *testing.T) {
 
 	for _, in := range vectors {
 		t.Run(inputName(in), func(t *testing.T) {
-			inBytes := encodeInputs(fieldMachine(), in)
+			inBytes := encodeInputs(fieldTestProgram[vm.Uint](), in)
 
-			refOut, refErr := referenceRun(t, fieldMachine(), inBytes)
+			refOut, refErr := referenceRun(t, fieldTestProgram[vm.Uint](), inBytes)
 
 			genOut, genErr := runProgram(t, prog, inBytes)
 			if refErr != genErr {

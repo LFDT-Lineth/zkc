@@ -18,14 +18,18 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 )
+
+// A debug/fail bytecode carries its formatted-print specification as literal
+// chunks plus a separate list of source register vectors: a chunk consumes the
+// next source vector exactly when it carries a format (mirroring the
+// interpreter's formatChunks).
 
 // emitDebug renders a printf (DEBUG) instruction as a sequence of writes to the
 // buffered stderr writer dbgw.  Output is byte-for-byte compatible with the
-// reference interpreter (executeFormattedChunks / formatWord): literal text is
+// reference interpreter (formatChunks / formatArgument): literal text is
 // written verbatim, integers go out in the requested base with digit-only width
 // padding (no base prefix, lowercase hex/bin) and %c as a single raw byte.
 //
@@ -36,8 +40,10 @@ import (
 // corrupts the JSON the package-main harness writes to stdout.  DEBUG
 // instructions are present only in non-quiet builds — the compiler drops printf
 // under --quiet — so this is dead code there.
-func (g *generator) emitDebug(c *code, fn *wordFunction, x *instruction.Debug) error {
+func (g *generator) emitDebug(c *code, fn *descFunction, x *bytecode.Debug) error {
 	g.useHelper(helperDbgWriter)
+
+	next := 0
 
 	for _, ch := range x.Chunks {
 		if ch.Text != "" {
@@ -48,7 +54,10 @@ func (g *generator) emitDebug(c *code, fn *wordFunction, x *instruction.Debug) e
 			continue
 		}
 
-		if err := g.emitDebugArg(c, fn, ch.Format, ch.Argument); err != nil {
+		vec := x.Sources[next]
+		next++
+
+		if err := g.emitDebugArg(c, fn, ch.Format, vec.Registers()); err != nil {
 			return err
 		}
 	}
@@ -59,10 +68,8 @@ func (g *generator) emitDebug(c *code, fn *wordFunction, x *instruction.Debug) e
 // emitDebugArg writes one formatted printf argument to dbgw.  The common case —
 // a single register no wider than 64 bits — formats via dbgU; %c writes the low
 // byte verbatim; wider or multi-register arguments fold their limbs into a
-// *big.Int (matching formatWord) and format via dbgB.
-func (g *generator) emitDebugArg(c *code, fn *wordFunction, format util.Format, vec register.Vector) error {
-	regs := vec.Registers()
-
+// *big.Int (matching formatArgument) and format via dbgB.
+func (g *generator) emitDebugArg(c *code, fn *descFunction, format util.Format, regs []regId) error {
 	// %c writes the low byte verbatim (type-checked to a single u8).
 	if format.Code == util.FORMAT_CHR {
 		op, err := g.operand(fn, regs[0])
@@ -133,13 +140,13 @@ func formatBase(f util.Format) int {
 // <msg>".  The Run entry point recovers the failure into its error result,
 // which the harness relays on stderr.  FAIL is always compiled (quiet only
 // strips printf), so the message path is live in both modes.
-func (g *generator) emitFail(c *code, fn *wordFunction, x *instruction.Fail) error {
+func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail) error {
 	if len(x.Chunks) == 0 {
 		c.line(`panic(failure("machine panic"))`)
 		return nil
 	}
 
-	format, plain, args, err := g.printfChunks(fn, x.Chunks)
+	format, plain, args, err := g.printfChunks(fn, x.Chunks, x.Sources)
 	if err != nil {
 		return err
 	}
@@ -163,10 +170,13 @@ func (g *generator) emitFail(c *code, fn *wordFunction, x *instruction.Fail) err
 // with the interpreter's verbs, (b) the equivalent plain text for the
 // no-argument case, and (c) the matching argument expressions.  Literal text
 // has its '%' doubled so it survives Fprintf; the plain form keeps it verbatim.
-func (g *generator) printfChunks(fn *wordFunction, chunks []instruction.FormattedChunk) (format, plain string,
-	args []string, err error) {
+func (g *generator) printfChunks(fn *descFunction, chunks []bytecode.FormattedChunk,
+	sources []bytecode.RegisterVector) (format, plain string, args []string, err error) {
 	//
-	var fb, pb strings.Builder
+	var (
+		fb, pb strings.Builder
+		next   = 0
+	)
 
 	for _, ch := range chunks {
 		fb.WriteString(strings.ReplaceAll(ch.Text, "%", "%%"))
@@ -176,7 +186,10 @@ func (g *generator) printfChunks(fn *wordFunction, chunks []instruction.Formatte
 			continue
 		}
 
-		verb, arg, e := g.printfArg(fn, ch.Format, ch.Argument)
+		vec := sources[next]
+		next++
+
+		verb, arg, e := g.printfArg(fn, ch.Format, vec.Registers())
 		if e != nil {
 			return "", "", nil, e
 		}
@@ -192,11 +205,9 @@ func (g *generator) printfChunks(fn *wordFunction, chunks []instruction.Formatte
 // printfArg returns the Go verb and argument expression for one formatted
 // chunk.  The common case — a single register no wider than 64 bits — passes
 // the local directly; %c renders the low byte verbatim; wider or multi-register
-// arguments fold their limbs (most-significant last, matching formatWord) into
-// a *big.Int, which fmt formats identically for %d/%x/%b.
-func (g *generator) printfArg(fn *wordFunction, format util.Format, vec register.Vector) (string, string, error) {
-	regs := vec.Registers()
-
+// arguments fold their limbs (most-significant last, matching formatArgument)
+// into a *big.Int, which fmt formats identically for %d/%x/%b.
+func (g *generator) printfArg(fn *descFunction, format util.Format, regs []regId) (string, string, error) {
 	if len(regs) == 1 {
 		op, err := g.operand(fn, regs[0])
 		if err != nil {
@@ -231,9 +242,9 @@ func (g *generator) printfArg(fn *wordFunction, format util.Format, vec register
 }
 
 // multiLimbBig builds a catU64 call folding a multi-register argument's limbs
-// (least-significant first, matching formatWord) into one *big.Int.  Each limb
-// must be a single ≤64-bit register.
-func (g *generator) multiLimbBig(fn *wordFunction, regs []register.Id) (string, error) {
+// (least-significant first, matching formatArgument) into one *big.Int.  Each
+// limb must be a single ≤64-bit register.
+func (g *generator) multiLimbBig(fn *descFunction, regs []regId) (string, error) {
 	var vals, widths []string
 
 	for _, id := range regs {
@@ -276,7 +287,7 @@ func (g *generator) emitPrintfHelpers(c *code) {
 
 	if g.usesHelper(helperDbgU) || g.usesHelper(helperDbgB) {
 		c.line("// dbgPad left-pads digits d to width with pad, then writes them, matching")
-		c.line("// formatWord's digit-only width padding (no base prefix, no sign).")
+		c.line("// the reference digit-only width padding (no base prefix, no sign).")
 		c.line("func dbgPad(d []byte, width int, pad byte) {")
 		c.line("for n := width - len(d); n > 0; n-- {")
 		c.line("dbgw.WriteByte(pad)")

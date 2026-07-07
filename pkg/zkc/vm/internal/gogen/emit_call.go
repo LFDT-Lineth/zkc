@@ -17,19 +17,18 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 )
 
-// emitCall emits a Go call to the callee function, mirroring CallStack.Enter /
-// Leave: arguments are width-checked against the callee's input registers, and
-// returns are width-checked against the caller's target registers.  Checks the
-// bounds prove dead are omitted, so the common case is a plain Go call.  A
-// two-limb register expands to two parameters / results.
-func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) error {
-	callee, ok := g.funcByID[x.Id]
+// emitCall emits a Go call to the callee function: arguments are width-checked
+// against the callee's input registers, and returns are width-checked against
+// the caller's target registers.  Checks the bounds prove dead are omitted, so
+// the common case is a plain Go call.  A two-limb register expands to two
+// parameters / results.
+func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call) error {
+	callee, ok := g.funcByID[uint(x.Target)]
 	if !ok {
-		return fmt.Errorf("gogen: CALL to non-function module id %d", x.Id)
+		return fmt.Errorf("gogen: CALL to non-function module id %d", x.Target)
 	}
 
 	calleeInputs := callee.Inputs()
@@ -37,8 +36,8 @@ func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) err
 		return fmt.Errorf("gogen: CALL argument count mismatch (%d vs %d) for %q",
 			len(x.Arguments), len(calleeInputs), callee.Name())
 	}
-	// A call may take FEWER returns than the callee has outputs: CallStack.Leave
-	// copies per call.Returns entry, silently discarding trailing outputs.
+	// A call may take FEWER returns than the callee has outputs: the return
+	// copies happen per call.Returns entry, silently discarding trailing outputs.
 	if len(x.Returns) > int(callee.NumOutputs()) {
 		return fmt.Errorf("gogen: CALL return count mismatch (%d vs %d) for %q",
 			len(x.Returns), callee.NumOutputs(), callee.Name())
@@ -48,7 +47,7 @@ func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) err
 	if err != nil {
 		return err
 	}
-	// Argument width checks against the callee parameter widths (Enter), then
+	// Argument width checks against the callee parameter widths, then
 	// expansion: a wide parameter takes both limbs, a narrow one takes the low
 	// limb (the check just proved the high limb empty).
 	argExprs := []string{}
@@ -59,10 +58,10 @@ func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) err
 			return fmt.Errorf("gogen: native parameter in %q unsupported", callee.Name())
 		}
 
-		g.checkWidth(c, arg, in.Width())
+		g.checkWidth(c, arg, in.Bitwidth().Unwrap())
 		argExprs = append(argExprs, arg.expr)
 
-		if in.Width() > 64 {
+		if in.Bitwidth().Unwrap() > 64 {
 			argExprs = append(argExprs, arg.hiOr0())
 		}
 	}
@@ -97,7 +96,7 @@ func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) err
 			return fmt.Errorf("gogen: native output in %q unsupported", callee.Name())
 		}
 
-		ow := out.Width()
+		ow := out.Bitwidth().Unwrap()
 		rets[i] = ret{target: l, outWidth: ow, outWide: ow > 64}
 		// Shape mismatch or a surviving width check forces the temp path.
 		if (ow > 64) != (l.width > 64) || ow > l.width {
@@ -109,7 +108,7 @@ func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) err
 
 	for i := len(x.Returns); i < int(callee.NumOutputs()); i++ {
 		discards = append(discards, "_")
-		if callee.Register(calleeOutput(callee, i)).Width() > 64 {
+		if callee.Register(calleeOutput(callee, i)).Bitwidth().Unwrap() > 64 {
 			discards = append(discards, "_")
 		}
 	}
@@ -163,6 +162,6 @@ func (g *generator) emitCall(c *code, fn *wordFunction, x *instruction.Call) err
 
 // calleeOutput returns the register id of the callee's i-th output register
 // (outputs follow inputs in the register file).
-func calleeOutput(callee *wordFunction, i int) register.Id {
-	return register.NewId(callee.NumInputs() + uint(i))
+func calleeOutput(callee *descFunction, i int) regId {
+	return regId(callee.NumInputs() + uint(i))
 }

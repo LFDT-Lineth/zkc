@@ -92,8 +92,8 @@ func (p Program[W]) Field() field.Config {
 func (p Program[W]) MaxStaticDepth() uint {
 	var depth = uint(0)
 	//
-	for iter := p.Inputs(); iter.HasNext(); {
-		if ith := iter.Next(); ith.IsStatic() {
+	for _, m := range p.modules {
+		if ith, ok := m.(*Memory[W]); ok && ith.IsStatic() {
 			depth = max(depth, ith.StaticDepth())
 		}
 	}

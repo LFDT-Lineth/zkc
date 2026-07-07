@@ -11,18 +11,20 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-// Package gogen compiles a ZkC WordMachine into native Go source: the "fast
-// execution mode" alternative to interpreting the machine.
+// Package gogen compiles a ZkC bytecode program into native Go source: the
+// "fast execution mode" alternative to interpreting the program.
 //
-// The generator consumes the machine over word.Uint — the same machine the
-// reference executor interprets — so its semantics are an exact mirror of
-// pkg/zkc/vm/internal/machine (word.go, stack_frame.go, base.go):
+// The generator consumes a program descriptor over word.Uint — the same
+// program the reference executor interprets — walking its bytecode vectors
+// directly (see pkg/zkc/vm/internal/bytecode):
 //
 //   - Arithmetic is EXACT (word.Uint is unbounded): there is no accumulator
 //     overflow.  All width enforcement happens at store time, where a single
 //     register store checks the declared bit width and a multi-register store
 //     distributes the value across the limbs (lowest register = least
-//     significant) and fails only on bits beyond the total width.
+//     significant) and fails only on bits beyond the total width.  Explicit
+//     CHECKCAST bytecodes are emitted as the same width checks (and, like
+//     store checks, are elided when the bound analysis proves them dead).
 //   - The generator picks a Go representation per result from a static bound
 //     derived from register widths: plain uint64 when the bound fits 64 bits,
 //     a lo/hi pair (math/bits) up to 128 bits, and a clean "unsupported" error
@@ -33,8 +35,8 @@
 //     value signatures with no error plumbing.
 //   - The 2-D program counter (macro vector + micro code) becomes labelled Go:
 //     skips and jumps are gotos between labelled positions.
-//   - Functions become Go functions (the Go stack is the call stack, matching
-//     CallStack.Enter/Leave); shared memories become package-level globals.
+//   - Functions become Go functions (the Go stack is the call stack); shared
+//     memories become package-level globals.
 //
 // Registers and constants up to 128 bits are supported via the lo/hi pair
 // representation (including wide limbs inside a multi-register store, as the
@@ -51,11 +53,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -77,10 +76,13 @@ type Config struct {
 	Source string
 }
 
-type wordFunction = function.Function[instruction.Word]
+// regId identifies a register within the enclosing function's frame.
+type regId = bytecode.RegisterId
 
-// wordCode is the body of a function: a slice of (vectorised) macro instructions.
-type wordCode = []instruction.Vector[instruction.Word]
+type descFunction = descriptor.Function[word.Uint]
+
+// BytecodeVector is the body of a function: a slice of (vectorised) bytecode vectors.
+type BytecodeVector = []bytecode.Vector[word.Uint]
 
 type memRole int
 
@@ -113,10 +115,10 @@ type pos struct {
 	micro uint
 }
 
-// Generate compiles a word machine into a self-contained Go source file
+// Generate compiles a bytecode program into a self-contained Go source file
 // exposing Run(inputs) (outputs, error).  See the package documentation for
 // the semantics contract and Config for the artefact shape.
-func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
+func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error) {
 	if cfg.Package == "" {
 		cfg.Package = "main"
 	}
@@ -126,17 +128,17 @@ func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
 		noIntervals: cfg.NoIntervals,
 		source:      cfg.Source,
 		memByID:     map[uint]memInfo{},
-		funcByID:    map[uint]*wordFunction{},
-		modules:     wm.Modules(),
-		modulus:     wm.Executor().Modulus().BigInt(),
+		funcByID:    map[uint]*descFunction{},
+		program:     program,
+		modulus:     program.Field().Modulus(),
 		names:       map[string]bool{},
 		helpers:     map[string]bool{},
 	}
 	mainID, hasMain := uint(0), false
 
-	for id, m := range wm.Modules() {
+	for id, m := range program.Modules() {
 		switch mm := m.(type) {
-		case memory.Memory[word.Uint]:
+		case *descriptor.Memory[word.Uint]:
 			info, err := g.classifyMemory(mm)
 			if err != nil {
 				return "", err
@@ -155,7 +157,7 @@ func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
 			case pagedScratch:
 				g.pageds = append(g.pageds, info)
 			}
-		case *wordFunction:
+		case *descFunction:
 			g.funcByID[uint(id)] = mm
 			if mm.Name() == "main" {
 				mainID, hasMain = uint(id), true
@@ -194,7 +196,7 @@ func Generate(wm *machine.Word[word.Uint], cfg Config) (string, error) {
 		}
 
 		var b code
-		if err := g.emitFunction(&b, fn); err != nil {
+		if err := g.emitFunction(&b, id, fn); err != nil {
 			return "", err
 		}
 
@@ -217,8 +219,8 @@ type generator struct {
 	sroms       []memInfo // static read-only memories (baked contents)
 	rams        []memInfo // read-write scratch memories
 	pageds      []memInfo // paged read-write scratch memories
-	modules     []instruction.Module
-	funcByID    map[uint]*wordFunction
+	program     descriptor.Program[word.Uint]
+	funcByID    map[uint]*descFunction
 	modulus     *big.Int        // the machine's prime modulus (for mod-P ops)
 	names       map[string]bool // sanitized identifiers already taken
 	helpers     map[string]bool // optional generated helpers/import needs
@@ -280,20 +282,15 @@ func (g *generator) reachableFunctions(entry uint) []uint {
 		worklist = worklist[1:]
 
 		fn := g.funcByID[id]
-		for _, vec := range fn.Code() {
-			for _, insn := range vec.Codes {
+		for _, vec := range fn.Vectors() {
+			for _, insn := range vec.Bytecodes {
 				// Both regular and unconditional (range-check) calls reach a callee.
-				var callee uint
-
-				switch c := insn.(type) {
-				case *instruction.Call:
-					callee = c.Id
-				case *instruction.UnconditionalCall:
-					callee = c.Id
-				default:
+				call, ok := insn.(*bytecode.Call)
+				if !ok {
 					continue
 				}
 				//
+				callee := uint(call.Target)
 				if !seen[callee] {
 					seen[callee] = true
 					worklist = append(worklist, callee)
@@ -714,14 +711,14 @@ func widthsLiteral(widths []uint) string {
 // ===========================================================================
 
 // goFuncName returns the Go function name for a ZkC function.
-func goFuncName(fn *wordFunction) string { return "fn_" + sanitize(fn.Name()) }
+func goFuncName(fn *descFunction) string { return "fn_" + sanitize(fn.Name()) }
 
 // emitFunction emits a complete Go function: signature, register locals, body.
 // Input registers become parameters (named rN so the operand helpers address
 // them unchanged) and output registers become plain results.  The boot frame
-// ('main') takes no parameters — its inputs are zero, matching CallStack.Boot —
-// and discards its outputs.
-func (g *generator) emitFunction(c *code, fn *wordFunction) error {
+// ('main') takes no parameters — its inputs are zero, matching the boot frame's
+// zero-allocated activation record — and discards its outputs.
+func (g *generator) emitFunction(c *code, id uint, fn *descFunction) error {
 	var (
 		isBoot   = fn.Name() == "main"
 		ni       = fn.NumInputs()
@@ -736,7 +733,7 @@ func (g *generator) emitFunction(c *code, fn *wordFunction) error {
 	if !isBoot {
 		params = ni
 		for i := range ni {
-			l, err := g.limbOf(fn, register.NewId(i))
+			l, err := g.limbOf(fn, regId(i))
 			if err != nil {
 				return err
 			}
@@ -749,7 +746,7 @@ func (g *generator) emitFunction(c *code, fn *wordFunction) error {
 		}
 
 		for i := range no {
-			l, err := g.limbOf(fn, register.NewId(ni+i))
+			l, err := g.limbOf(fn, regId(ni+i))
 			if err != nil {
 				return err
 			}
@@ -788,7 +785,7 @@ func (g *generator) emitFunction(c *code, fn *wordFunction) error {
 		g.helpers = cloneHelpers(savedHelpers)
 		g.iv.beginPass()
 
-		if err := g.emitFunctionBody(&body, fn); err != nil {
+		if err := g.emitFunctionBody(&body, id, fn); err != nil {
 			return err
 		}
 
@@ -808,7 +805,7 @@ func (g *generator) emitFunction(c *code, fn *wordFunction) error {
 	used, read := usedRegisters(body.String())
 
 	for i := params; i < uint(len(regs)); i++ {
-		l, err := g.limbOf(fn, register.NewId(i))
+		l, err := g.limbOf(fn, regId(i))
 		if err != nil {
 			return err
 		}
@@ -881,8 +878,8 @@ var (
 )
 
 // returnOk renders the `return` performed by a RETURN instruction: the boot
-// frame discards its outputs (matching CallStack.Leave at depth 0), whereas a
-// callee returns its output registers (limb-expanded).
+// frame discards its outputs, whereas a callee returns its output registers
+// (limb-expanded).
 func (g *generator) returnOk() string {
 	if len(g.cur.outNames) == 0 {
 		return "return"
@@ -900,21 +897,21 @@ func (g *generator) returnOk() string {
 // targets that position.  A final (unreachable for well-formed code) panic
 // satisfies Go's terminating-statement requirement and models falling off the
 // end of the function.
-func (g *generator) emitFunctionBody(c *code, fn *wordFunction) error {
-	mapping := instruction.NewSystemMap(fn.RegisterMap(), g.modules)
-	code := fn.Code()
+func (g *generator) emitFunctionBody(c *code, id uint, fn *descFunction) error {
+	mapping := g.program.EnvironmentOf(uint16(id))
+	code := fn.Vectors()
 	labels := collectLabels(code)
 
 	for vi, vec := range code {
-		n := uint(len(vec.Codes))
-		for ci, insn := range vec.Codes {
+		n := uint(len(vec.Bytecodes))
+		for ci, insn := range vec.Bytecodes {
 			at := pos{uint(vi), uint(ci)}
 			if labels[at] {
 				c.linef("%s:", labelName(at))
 				g.iv.atLabel(at)
 			}
 
-			c.commentf("[%d.%d] %s: %s", vi, ci, opName(insn.OpCode()), insn.String(mapping))
+			c.commentf("[%d.%d] %s", vi, ci, insn.String(mapping))
 
 			if err := g.emitInstruction(c, fn, insn, uint(vi), uint(ci), n); err != nil {
 				return err
@@ -939,62 +936,70 @@ func (g *generator) emitFunctionBody(c *code, fn *wordFunction) error {
 
 // endsTerminated reports whether the final instruction of the code (if any)
 // unconditionally transfers control, i.e. execution cannot fall off the end.
-func endsTerminated(code wordCode) bool {
+func endsTerminated(code BytecodeVector) bool {
 	if len(code) == 0 {
 		return false
 	}
 
-	last := code[len(code)-1].Codes
+	last := code[len(code)-1].Bytecodes
 
 	if len(last) == 0 {
 		return false
 	}
 
 	switch last[len(last)-1].(type) {
-	case *instruction.Skip, *instruction.Jump, *instruction.Return, *instruction.Fail:
+	case *bytecode.Skip, *bytecode.Jmp, *bytecode.Ret, *bytecode.Fail:
 		return true
 	default:
 		return false
 	}
 }
 
-func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.Word, vi, ci, vecLen uint) error {
+func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Bytecode[word.Uint],
+	vi, ci, vecLen uint) error {
 	switch x := insn.(type) {
-	case *instruction.WordTypeA[word.Uint]:
+	case *bytecode.Arith[word.Uint]:
 		return g.emitArith(c, fn, x)
-	case *instruction.WordTypeB:
-		return g.emitTypeB(c, fn, x)
-	case *instruction.WordTypeF[word.Uint]:
+	case *bytecode.Bitwise:
+		return g.emitBitwise(c, fn, x)
+	case *bytecode.Cat:
+		return g.emitConcat(c, fn, x)
+	case *bytecode.CheckCast:
+		return g.emitCheckCast(c, fn, x)
+	case *bytecode.DivRem:
+		return g.emitDivRem(c, fn, x)
+	case *bytecode.FieldArith[word.Uint]:
 		return g.emitFieldOp(c, fn, x)
-	case *instruction.FieldHint:
+	case *bytecode.Hint:
 		return g.emitHint(c, fn, x)
-	case *instruction.Debug:
+	case *bytecode.Debug:
 		// DEBUG (printf) has no effect on program outputs; it writes to stderr.
 		return g.emitDebug(c, fn, x)
-	case *instruction.MemRead:
+	case *bytecode.ReadWrite:
+		// The unconditional flag on a call (range checks) and the checkpoint
+		// flag affect only constraint lowering, which gogen does not perform;
+		// likewise memory reads/writes execute identically whatever their kind.
+		if x.Write {
+			return g.emitMemWrite(c, fn, x)
+		}
+
 		return g.emitMemRead(c, fn, x)
-	case *instruction.MemWrite:
-		return g.emitMemWrite(c, fn, x)
-	case *instruction.Call:
+	case *bytecode.Call:
 		return g.emitCall(c, fn, x)
-	case *instruction.UnconditionalCall:
-		// Identical to Call during execution; differs only in constraint
-		// lowering, which gogen does not perform.
-		return g.emitCall(c, fn, &instruction.Call{OpIo: x.OpIo})
-	case *instruction.Skip:
-		target := skipTarget(vi, ci, x.Skip, vecLen)
+	case *bytecode.Skip:
+		target := skipTarget(vi, ci, uint(x.Skip), vecLen)
 		c.linef("goto %s", labelName(target))
 		g.iv.edgeTo(target)
 		g.iv.endOfFlow()
 
 		return nil
-	case *instruction.SkipIf:
+	case *bytecode.SkipIf:
 		cond, err := g.condExpr(fn, x)
 		if err != nil {
 			return err
 		}
 
-		target := skipTarget(vi, ci, x.Skip, vecLen)
+		target := skipTarget(vi, ci, uint(x.Skip), vecLen)
 
 		c.linef("if %s {", cond)
 		c.linef("goto %s", labelName(target))
@@ -1002,21 +1007,21 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 		g.iv.edgeTo(target)
 
 		return nil
-	case *instruction.MultiwaySkip:
+	case *bytecode.Switch[word.Uint]:
 		return g.emitMultiwaySkip(c, fn, x, vi, ci, vecLen)
-	case *instruction.Jump:
-		target := pos{x.Immediate, 0}
+	case *bytecode.Jmp:
+		target := pos{uint(x.Target), 0}
 		c.linef("goto %s", labelName(target))
 		g.iv.edgeTo(target)
 		g.iv.endOfFlow()
 
 		return nil
-	case *instruction.Return:
+	case *bytecode.Ret:
 		c.line(g.returnOk())
 		g.iv.endOfFlow()
 
 		return nil
-	case *instruction.Fail:
+	case *bytecode.Fail:
 		if err := g.emitFail(c, fn, x); err != nil {
 			return err
 		}
@@ -1025,7 +1030,7 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 
 		return nil
 	default:
-		return fmt.Errorf("gogen: unsupported instruction %T (op 0x%x)", insn, uint8(insn.OpCode()))
+		return fmt.Errorf("gogen: unsupported bytecode %T", insn)
 	}
 }
 
@@ -1034,20 +1039,21 @@ func (g *generator) emitInstruction(c *code, fn *wordFunction, insn instruction.
 // ===========================================================================
 
 // reg returns the Go local name for a register id.
-func reg(id register.Id) string { return fmt.Sprintf("r%d", id.Unwrap()) }
+func reg(id regId) string { return fmt.Sprintf("r%d", id) }
 
-func (g *generator) regWidth(fn *wordFunction, id register.Id) (uint, error) {
+func (g *generator) regWidth(fn *descFunction, id regId) (uint, error) {
 	r := fn.Register(id)
 	if r.IsNative() {
-		return 0, fmt.Errorf("gogen: native register r%d unsupported", id.Unwrap())
+		return 0, fmt.Errorf("gogen: native register r%d unsupported", id)
 	}
 	// Registers up to 64 bits are single uint64 locals; up to 128 bits they
 	// are rN_0/rN_1 limb pairs.
-	if w := r.Width(); w <= 128 {
+	if w := r.Bitwidth().Unwrap(); w <= 128 {
 		return w, nil
 	}
 
-	return 0, fmt.Errorf("gogen: register %q wider than 128 bits (u%d) unsupported", r.Name(), r.Width())
+	return 0, fmt.Errorf("gogen: register %q wider than 128 bits (u%d) unsupported",
+		r.Name(), r.Bitwidth().Unwrap())
 }
 
 // uintConst converts a word.Uint constant into a uint64, erroring on wider
@@ -1085,7 +1091,7 @@ func hasNativeDataLine(info memInfo) bool {
 	return false
 }
 
-func (g *generator) classifyMemory(m memory.Memory[word.Uint]) (memInfo, error) {
+func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, error) {
 	info := memInfo{name: m.Name(), varName: g.uniqueName("mem_" + sanitize(m.Name())), geom: m.Geometry()}
 	// All memory traffic moves through uint64 cells.
 	for _, r := range append(info.geom.AddressRegisters(), info.geom.DataRegisters()...) {
@@ -1104,30 +1110,27 @@ func (g *generator) classifyMemory(m memory.Memory[word.Uint]) (memInfo, error) 
 		}
 	}
 
-	switch mm := m.(type) {
-	case *memory.PagedRandomAccess[word.Uint]:
-		info.role = pagedScratch
-	case *memory.StaticReadOnly[word.Uint]:
+	switch {
+	case m.IsStatic():
 		// Static read-only: bake the fixed contents into the generated program.
 		info.role = sromStatic
 
-		contents, err := toU64s(mm.Contents())
+		contents, err := toU64s(m.StaticContents())
 		if err != nil {
 			return info, fmt.Errorf("gogen: memory %q: %w", m.Name(), err)
 		}
 
 		info.contents = contents
+	case m.IsPaged():
+		info.role = pagedScratch
+	case m.IsReadOnly():
+		info.role = romInput
+	case m.IsWriteOnly():
+		info.role = womOutput
+	case m.IsReadWrite():
+		info.role = ramScratch
 	default:
-		switch {
-		case m.IsReadOnly():
-			info.role = romInput
-		case m.IsWriteOnly():
-			info.role = womOutput
-		case m.IsReadWrite():
-			info.role = ramScratch
-		default:
-			return info, fmt.Errorf("gogen: unsupported memory %q (%T)", m.Name(), m)
-		}
+		return info, fmt.Errorf("gogen: unsupported memory %q (%T)", m.Name(), m)
 	}
 
 	return info, nil
@@ -1202,67 +1205,6 @@ func formatSource(src string) (string, error) {
 	}
 
 	return string(out), nil
-}
-
-func opName(op opcode.OpCode) string {
-	switch op {
-	case opcode.INT_ADD:
-		return "INT_ADD"
-	case opcode.INT_SUB:
-		return "INT_SUB"
-	case opcode.INT_MUL:
-		return "INT_MUL"
-	case opcode.INT_DIV:
-		return "INT_DIV"
-	case opcode.INT_REM:
-		return "INT_REM"
-	case opcode.INT_ADDMOD_P:
-		return "INT_ADDMOD_P"
-	case opcode.INT_SUBMOD_P:
-		return "INT_SUBMOD_P"
-	case opcode.INT_MULMOD_P:
-		return "INT_MULMOD_P"
-	case opcode.BIT_AND:
-		return "BIT_AND"
-	case opcode.BIT_OR:
-		return "BIT_OR"
-	case opcode.BIT_XOR:
-		return "BIT_XOR"
-	case opcode.BIT_NOT:
-		return "BIT_NOT"
-	case opcode.BIT_SHL:
-		return "BIT_SHL"
-	case opcode.BIT_SHR:
-		return "BIT_SHR"
-	case opcode.BIT_CONCAT:
-		return "BIT_CONCAT"
-	case opcode.HINT_DIVISION:
-		return "HINT_DIVISION"
-	case opcode.MEMORY_READ:
-		return "MEMORY_READ"
-	case opcode.MEMORY_WRITE:
-		return "MEMORY_WRITE"
-	case opcode.RETURN:
-		return "RETURN"
-	case opcode.JUMP:
-		return "JUMP"
-	case opcode.SKIP:
-		return "SKIP"
-	case opcode.SKIP_IF:
-		return "SKIP_IF"
-	case opcode.SKIP_MULTI:
-		return "SKIP_MULTI"
-	case opcode.CALL:
-		return "CALL"
-	case opcode.UNCONDITIONAL_CALL:
-		return "UNCONDITIONAL_CALL"
-	case opcode.FAIL:
-		return "FAIL"
-	case opcode.DEBUG:
-		return "DEBUG"
-	default:
-		return fmt.Sprintf("op(0x%x)", uint8(op))
-	}
 }
 
 func numberLines(src string) string {
