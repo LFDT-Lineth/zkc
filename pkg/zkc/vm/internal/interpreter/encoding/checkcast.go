@@ -13,27 +13,56 @@
 package encoding
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 )
+
+// ============================================================================
+// CHECKCAST instruction.  Format of this instruction is:
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |    bitwidth     |   rd   | opcode |
+// +--------+--------+--------+--------+
+//
+// Here, rd is a u8 register whose value is checked against the given bit
+// width.  The wide form moves the (now u16) register into a subsequent word:
+//
+// +--------+--------+--------+--------+
+// |    bitwidth     |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// |       n/a       |        rd       |
+// +-----------------+-----------------+
+// ============================================================================
 
 // CheckCast encodes a check-cast bytecode, which checks that the value held in
 // the target register fits within the given bit width.
 func CheckCast(p *bytecode.CheckCast) []uint32 {
-	var (
-		rd       = uint32(util.Cast[uint8](p.Target)) << 8
-		bitwidth = uint32(p.Bitwidth) << 16
-	)
+	var bitwidth = uint32(p.Bitwidth) << 16
+	//
+	if IsWideRegisters(p.Target) {
+		return []uint32{
+			bitwidth | CHECKCAST | WIDE,
+			uint32(p.Target),
+		}
+	}
 	//
 	return []uint32{
-		bitwidth | rd | CHECKCAST,
+		bitwidth | uint32(p.Target)<<8 | CHECKCAST,
 	}
 }
 
 // DecodeCheckCast decodes a check-cast instruction, returning its register, bit width and instruction width.
 func DecodeCheckCast(pc uint32, codes []uint32) (rd uint16, bitwidth uint16, n uint32) {
-	rd = uint16((codes[pc] >> 8) & 0xff)
 	bitwidth = uint16(codes[pc] >> 16)
+	//
+	if IsWideForm(pc, codes) {
+		rd = uint16(codes[pc+1] & 0xffff)
+		//
+		return rd, bitwidth, 2
+	}
+	//
+	rd = uint16((codes[pc] >> 8) & 0xff)
 	//
 	return rd, bitwidth, 1
 }

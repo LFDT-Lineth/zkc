@@ -46,19 +46,31 @@ func DecodeCat[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) 
 // | ... packed source registers ...    |
 // +------------------------------------+
 //
-// The first source and target are the least-significant limbs.
+// The first source and target are the least-significant limbs.  The wide form
+// retains the header but packs the (now u16) target and source registers two
+// per word.
 // ============================================================================
 
 // encodeCat encodes a concatenation instruction, packing its target and source
 // registers (least-significant limb first).
 func encodeCat(targets []RegisterId, sources []RegisterId) []uint32 {
 	if len(targets) == 0 || len(sources) == 0 || len(targets) >= 256 || len(sources) >= 256 {
-		panic("wide concat instructions not supported")
+		panic("concat instruction operand counts not supported")
 	}
 	//
 	var (
-		nsrc  = uint32(len(sources)) << 16
-		ntgt  = uint32(len(targets)) << 8
+		nsrc = uint32(len(sources)) << 16
+		ntgt = uint32(len(targets)) << 8
+		regs = append(RegsAsShorts(targets), RegsAsShorts(sources)...)
+	)
+	//
+	if IsWideRegisters(regs...) {
+		var codes = []uint32{nsrc | ntgt | CAT | WIDE}
+		//
+		return append(codes, PackShortsIntoCodes(regs)...)
+	}
+	//
+	var (
 		codes = []uint32{nsrc | ntgt | CAT}
 		bytes = append(RegsAsBytes(targets), RegsAsBytes(sources)...)
 	)
@@ -67,15 +79,21 @@ func encodeCat(targets []RegisterId, sources []RegisterId) []uint32 {
 }
 
 // DecodeCatOperands decodes the target and source operands of a concatenation instruction.
-func DecodeCatOperands(pc uint32, codes []uint32) (targets, sources Op8Iter, n uint32) {
+func DecodeCatOperands(pc uint32, codes []uint32) (targets, sources OpIter, n uint32) {
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
 		nsources = uint((codes[pc] >> 16) & 0xff)
 	)
 	//
-	targets = NewOp8Iter(0, ntargets, codes[pc+1:])
-	sources = NewOp8Iter(ntargets, nsources, codes[pc+1:])
-	n = 1 + NumCodesPackedSmall(ntargets+nsources)
+	if IsWideForm(pc, codes) {
+		targets = NewOp16Iter(0, ntargets, codes[pc+1:])
+		sources = NewOp16Iter(ntargets, nsources, codes[pc+1:])
+		n = 1 + NumCodesPackedWide(ntargets+nsources)
+	} else {
+		targets = NewOp8Iter(0, ntargets, codes[pc+1:])
+		sources = NewOp8Iter(ntargets, nsources, codes[pc+1:])
+		n = 1 + NumCodesPackedSmall(ntargets+nsources)
+	}
 	//
 	return
 }

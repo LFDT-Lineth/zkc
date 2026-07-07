@@ -119,7 +119,8 @@ func rwModeOf(kind uint8, write bool) RwMode {
 //
 //
 // Here, ra0...raN are u8 address registers, whilst rd0..rdN are u8 data
-// registers.
+// registers.  The wide form retains the header but packs the (now u16) address
+// and data registers two per word.
 // ============================================================================
 
 // encodeReadWrite_sn encodes a memory read/write instruction, packing its
@@ -130,10 +131,16 @@ func encodeReadWrite_sn(m RwMode, id uint8, addr []RegisterId, data []RegisterId
 		_id    = uint32(id) << 8
 		naddr  = uint32(util.Cast[uint8](uint(len(addr)))) << 16
 		ndata  = uint32(util.Cast[uint8](uint(len(data)))) << 24
-		codes  = []uint32{
-			ndata | naddr | _id | opcode,
-		}
+		regs   = append(RegsAsShorts(addr), RegsAsShorts(data)...)
 	)
+	//
+	if IsWideRegisters(regs...) {
+		var codes = []uint32{ndata | naddr | _id | opcode | WIDE}
+		//
+		return append(codes, PackShortsIntoCodes(regs)...)
+	}
+	//
+	var codes = []uint32{ndata | naddr | _id | opcode}
 	// construct register bytes
 	bytes := append(RegsAsBytes(addr), RegsAsBytes(data)...)
 	// pack bytes into bytecodes
@@ -141,14 +148,20 @@ func encodeReadWrite_sn(m RwMode, id uint8, addr []RegisterId, data []RegisterId
 }
 
 // DecodeReadWrite_sn decodes the operands of a memory read/write instruction.
-func DecodeReadWrite_sn(pc uint32, codes []uint32) (id uint16, addr, data Op8Iter, n uint32) {
+func DecodeReadWrite_sn(pc uint32, codes []uint32) (id uint16, addr, data OpIter, n uint32) {
 	naddr := uint((codes[pc] >> 16) & 0xff)
 	ndata := uint((codes[pc] >> 24) & 0xff)
-	ns := NumCodesPackedSmall(naddr + ndata)
 	id = uint16((codes[pc] >> 8) & 0xff)
-	addr = NewOp8Iter(0, naddr, codes[pc+1:])
-	data = NewOp8Iter(naddr, ndata, codes[pc+1:])
-	n = 1 + ns
+	//
+	if IsWideForm(pc, codes) {
+		addr = NewOp16Iter(0, naddr, codes[pc+1:])
+		data = NewOp16Iter(naddr, ndata, codes[pc+1:])
+		n = 1 + NumCodesPackedWide(naddr+ndata)
+	} else {
+		addr = NewOp8Iter(0, naddr, codes[pc+1:])
+		data = NewOp8Iter(naddr, ndata, codes[pc+1:])
+		n = 1 + NumCodesPackedSmall(naddr+ndata)
+	}
 	//
 	return
 }

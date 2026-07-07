@@ -297,6 +297,36 @@ func Test_ZkcUnit_Basic_64(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_64", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
+func Test_ZkcUnit_Basic_65(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_65", DEFAULT_UNIT_CONFIG)
+}
+
+// Wide (u16 register operand) instruction forms: register-register +, - and *,
+// plus a wide vectored add.
+func Test_ZkcUnit_Basic_66(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_66", DEFAULT_UNIT_CONFIG)
+}
+
+// Wide (u16 register operand) instruction forms: load-constant, / and %, plus
+// a wide conditional branch.
+func Test_ZkcUnit_Basic_67(t *testing.T) {
+	// TODO: constraint tracing of u16 division fails with an arithmetic
+	// underflow (pre-existing; unrelated to wide instructions).
+	checkZkcUnit(t, "zkc/unit/basic_67", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
+// Wide (u16 register operand) instruction forms: bitwise &, |, ^ and shifts.
+func Test_ZkcUnit_Basic_68(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_68", DEFAULT_UNIT_CONFIG)
+}
+
+// Wide (u16 register operand) instruction forms: general (limb-based) load
+// constant.  Runs with u128 words so the u32 constants are not split before
+// encoding.
+func Test_ZkcUnit_Basic_69(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_69", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false).Constraints(false))
+}
+
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
 	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.
