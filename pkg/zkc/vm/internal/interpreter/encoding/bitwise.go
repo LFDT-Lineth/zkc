@@ -31,7 +31,17 @@ func Bitwise(p *bytecode.Bitwise) []uint32 {
 // |                 |     bitwidth    |
 // +--------+--------+--------+--------+
 //
-// The opcode itself distinguishes the three operations, so no width is needed.
+// The opcode itself distinguishes the operations, so no width is needed.  The
+// wide form carries the (now u16) destination register in the first word, with
+// both source registers in a third:
+//
+// +--------+--------+--------+--------+
+// |        rd       |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// |                 |     bitwidth    |
+// +--------+--------+--------+--------+
+// |     amount      |      source     |
+// +-----------------+-----------------+
 // ============================================================================
 
 // encodeBitwise encodes a bitwise instruction, where op selects the operation
@@ -39,8 +49,12 @@ func Bitwise(p *bytecode.Bitwise) []uint32 {
 func encodeBitwise(op bytecode.Operation, rd, lhs, rhs RegisterId, bitwidth uint16) []uint32 {
 	var opcode = AND + uint32(op-bytecode.OP_AND)
 	//
-	if rd >= 256 || lhs >= 256 || rhs >= 256 {
-		panic("wide bitwise instructions not supported")
+	if IsWideRegisters(rd, lhs, rhs) {
+		return []uint32{
+			uint32(rd)<<16 | opcode | WIDE,
+			uint32(bitwidth),
+			uint32(lhs) | uint32(rhs)<<16,
+		}
 	}
 	//
 	return []uint32{
@@ -51,10 +65,19 @@ func encodeBitwise(op bytecode.Operation, rd, lhs, rhs RegisterId, bitwidth uint
 
 // DecodeBitwise_2n1 decodes the operands of a two-source bitwise instruction.
 func DecodeBitwise_2n1(pc uint32, codes []uint32) (rd, lhs, rhs RegisterId, bitwidth uint16, n uint32) {
+	bitwidth = uint16(codes[pc+1])
+	//
+	if IsWideForm(pc, codes) {
+		rd = RegisterId(codes[pc] >> 16)
+		lhs = RegisterId(codes[pc+2] & 0xffff)
+		rhs = RegisterId(codes[pc+2] >> 16)
+		//
+		return rd, lhs, rhs, bitwidth, 3
+	}
+	//
 	rd = RegisterId((codes[pc] >> 8) & 0xff)
 	lhs = RegisterId((codes[pc] >> 16) & 0xff)
 	rhs = RegisterId((codes[pc] >> 24) & 0xff)
-	bitwidth = uint16(codes[pc+1])
 	//
 	return rd, lhs, rhs, bitwidth, 2
 }

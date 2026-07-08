@@ -684,7 +684,7 @@ func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error
 	)
 	//
 	p.fid = frame.FunctionId // FIXME: remove
-	p.rp = p.fp + uint32(roffset)
+	p.rp = p.fp + roffset
 	p.rw = uint32(width)
 	p.fp = frame.FramePointer
 	//
@@ -760,7 +760,7 @@ func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (ui
 	for sources.HasNext() {
 		var (
 			hi     W
-			source = uint16(sources.Next())
+			source = sources.Next()
 		)
 		//
 		hi, val = val.Mul(stack[source])
@@ -847,7 +847,7 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 	//
 	for sources.HasNext() {
 		var (
-			reg = uint16(sources.Next())
+			reg = sources.Next()
 		)
 		//
 		_, lo := stack[reg].Shl64(uint64(width))
@@ -894,7 +894,7 @@ func (p *Interpreter[W]) executeFail(pc uint32, codes []uint32, frame []W) error
 // mirroring executeFormattedChunks in the reference word machine: each chunk's
 // literal text is emitted verbatim and each formatted argument is rendered
 // against the frame.
-func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources encoding.Op8Iter, frame []W) string {
+func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources encoding.OpIter, frame []W) string {
 	var (
 		module  = p.program.Module(p.fid)
 		builder strings.Builder
@@ -905,8 +905,8 @@ func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources 
 		//
 		if chunk.Format.HasFormat() {
 			var (
-				base = bytecode.RegisterId(sources.Next())
-				len  = uint16(sources.Next())
+				base = sources.Next()
+				len  = sources.Next()
 				vec  = bytecode.RegisterVector{Base: base, Len: len}
 			)
 			//
@@ -1066,7 +1066,7 @@ func (p *Interpreter[W]) executeHint(pc uint32, codes []uint32, stack []W) (uint
 // of the division across the corresponding target vectors, returning an error
 // if the divisor is zero.  big.Int arithmetic is used so values spanning
 // several limbs (i.e. wider than the machine word) are handled correctly.
-func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.Op8Iter,
+func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.OpIter,
 	stack []W) (uint32, error) {
 	var (
 		module   = p.program.Module(p.fid)
@@ -1102,9 +1102,9 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 // loadHintOperand reconstructs the value of a single hint operand from the next
 // (base, len) register vector in the iterator, with the least-significant limb
 // held in the lowest-indexed register (matching storeAcross).
-func loadHintOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Op8Iter, stack []W) *big.Int {
+func loadHintOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.OpIter, stack []W) *big.Int {
 	var (
-		base   = uint16(iter.Next())
+		base   = iter.Next()
 		length = uint(iter.Next())
 		value  = new(big.Int)
 		offset uint
@@ -1128,10 +1128,10 @@ func loadHintOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding
 // in the iterator, writing the least-significant limb into the lowest-indexed
 // register (matching storeAcross).  It errors if the value does not fit within
 // the vector's total width.
-func storeHintResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Op8Iter,
+func storeHintResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.OpIter,
 	value *big.Int, stack []W) error {
 	var (
-		base   = uint16(iter.Next())
+		base   = iter.Next()
 		length = uint(iter.Next())
 		acc    = new(big.Int).Set(value)
 		total  uint
@@ -1583,7 +1583,7 @@ func executeWritePagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []
 // index, then scales that index by the number of data lines so the result
 // addresses the first word of the selected memory row.  The advanced register
 // iterator is returned so the caller can continue reading the data registers.
-func decodeAddress[W word.Word[W]](regs encoding.Op8Iter, geometry memory.Geometry[W], stack []W) uint64 {
+func decodeAddress[W word.Word[W]](regs encoding.OpIter, geometry memory.Geometry[W], stack []W) uint64 {
 	var (
 		index      uint64
 		registers  = geometry.Registers()
@@ -1609,7 +1609,7 @@ func bitwidthOf[W word.Word[W]](module descriptor.Module[W], reg RegisterId) uin
 	return r.Bitwidth().UnwrapOr(math.MaxUint)
 }
 
-func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets encoding.Op8Iter, oval W,
+func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets encoding.OpIter, oval W,
 	stack []W) error {
 	//
 	var (
@@ -1619,7 +1619,7 @@ func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets
 	//
 	for targets.HasNext() {
 		var (
-			target = uint16(targets.Next())
+			target = targets.Next()
 			width  = bitwidthOf(module, target)
 		)
 		//
