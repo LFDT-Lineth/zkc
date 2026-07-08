@@ -30,7 +30,7 @@ func Call[W word.Word[W]](pc uint32, p *bytecode.Call, env Environment[W]) (code
 		width = uint16(env.Module(p.Target).Width())
 	)
 	// Encode enter
-	codes = append(codes, encodeEnter_n(pc, offset, p.Flags.CheckPoint, width, p.Arguments)...)
+	codes = append(codes, encodeEnter_n(pc, offset, width, p.Arguments)...)
 	// Encode leave
 	return append(codes, encodeLeave_n(p.Returns)...)
 }
@@ -80,9 +80,8 @@ func MaxCallEncodedLength(p *bytecode.Call) uint {
 // ============================================================================
 
 // encodeEnter_n encodes the ENTER (function entry) instruction, computing the
-// relative branch offset to the target.  When checkpoint is set, the
-// checkpointing variant (ENTERCP_n) is emitted instead.
-func encodeEnter_n(pc, target uint32, checkpoint bool, width uint16, args []RegisterId) []uint32 {
+// relative branch offset to the target.
+func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 {
 	if len(args) > math.MaxUint8 {
 		panic("too many call arguments")
 	}
@@ -91,15 +90,11 @@ func encodeEnter_n(pc, target uint32, checkpoint bool, width uint16, args []Regi
 		roff, ok = GetRelativeOffset(pc, target, 16)
 		opcode   = ENTER_n
 	)
-	//
-	if checkpoint {
-		opcode = ENTERCP_n
-	}
 	// The wide form is required whenever the frame width or an argument
 	// register overflows a byte, and also rescues relative branch targets which
 	// overflow the narrow form's 16-bit offset (the wide form's target is
 	// absolute).
-	if width > math.MaxUint8 || !ok || IsWideRegisters(args...) {
+	if width > math.MaxUint8 || !ok || HasWideRegister(args...) {
 		codes := []uint32{
 			uint32(width)<<16 | uint32(len(args))<<8 | opcode | WIDE,
 			target,
@@ -120,7 +115,7 @@ func encodeEnter_n(pc, target uint32, checkpoint bool, width uint16, args []Regi
 
 // DecodeEnter_n decodes the operands of an enter (function entry) instruction.
 func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args OpIter, n uint32) {
-	if IsWideForm(pc, codes) {
+	if IsWideInstruction(pc, codes) {
 		var nargs = uint((codes[pc] >> 8) & 0xff)
 		//
 		width = uint16(codes[pc] >> 16)
@@ -166,7 +161,7 @@ func encodeLeave_n(rets []RegisterId) []uint32 {
 	//
 	var nrets = uint32(len(rets)) << 8
 	//
-	if IsWideRegisters(rets...) {
+	if HasWideRegister(rets...) {
 		var codes = []uint32{nrets | LEAVE_n | WIDE}
 		//
 		return append(codes, PackShortsIntoCodes(RegsAsShorts(rets))...)
@@ -186,7 +181,7 @@ func DecodeLeave_n(pc uint32, codes []uint32) (rets OpIter, n uint32) {
 		nrets = uint(codes[pc]>>8) & 0xffff
 	)
 	//
-	if IsWideForm(pc, codes) {
+	if IsWideInstruction(pc, codes) {
 		rets = NewOp16Iter(0, nrets, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(nrets)
 	} else {

@@ -252,10 +252,10 @@ func parseCheckPointSpec(spec string) (string, util.Counter, error) {
 // resumeFromCheckPoint resumes execution from the checkpoint held (as a hex
 // string) in inputFile.  The program is rebuilt in fast mode, the
 // interpreter's state is restored from the checkpoint, and execution continues
-// to completion.  Checkpointing is width-preserving (see Program.AddCheckPoint),
-// so checkpoints are written in the plain program's coordinates (see
-// executeWithCheckPoint) and resume directly against it -- no checkpointing
-// transformation is needed here.
+// to completion.  Registering a breakpoint does not alter instruction offsets
+// (see Program.BreakPoint), so checkpoints are written in the plain program's
+// coordinates (see executeWithCheckPoint) and resume directly against it -- no
+// breakpoint needs to be registered here.
 func resumeFromCheckPoint[W vm.Word[W]](prog vm.Program[W], inputFile string) (map[string][]byte, []error) {
 	//
 	var (
@@ -281,15 +281,14 @@ func resumeFromCheckPoint[W vm.Word[W]](prog vm.Program[W], inputFile string) (m
 }
 
 // newCheckPointInterpreter lowers the word machine to the fast (128-bit)
-// bytecode form (mirroring BinaryFile.Execute), switches every call to fn into
-// a checkpointing call, and returns an interpreter whose checkpointer writes a
-// hex checkpoint line to the output file (or stdout) on every interval-th
-// invocation of fn -- or, when once is set, exactly once after the interval-th
-// invocation.  The returned closer must be invoked once execution has
-// completed.
+// bytecode form (mirroring BinaryFile.Execute), registers a breakpoint at fn's
+// entry, and returns an interpreter whose breakpointer writes a hex checkpoint
+// line to the output file (or stdout) on every interval-th entry of fn -- or,
+// when once is set, exactly once after the interval-th entry.  The returned
+// closer must be invoked once execution has completed.
 //
-// Switching a call to checkpointing only swaps its ENTER opcode (see
-// Program.AddCheckPoint), which is width-preserving; the resulting bytecode
+// Registering a breakpoint only sets a modifier bit on the target instruction
+// (see Program.BreakPoint), which is width-preserving; the resulting bytecode
 // layout is therefore identical to the unmodified program.  Captured
 // checkpoints thus share the original program's coordinates and resume directly
 // against it (see resumeFromCheckPoint).
@@ -320,13 +319,19 @@ func newCheckPointInterpreter[W vm.Word[W]](p vm.Program[W], fn string, clk util
 	if !ok {
 		return nil, nil, fmt.Errorf("unknown function \"%s\"", fn)
 	}
-	// Switch every call to fn into a checkpointing call and build an
-	// interpreter for the result.
-	p = p.AddCheckPoint(fid)
+	// Register a breakpoint at fn's entry and build an interpreter for the
+	// result, so the breakpointer fires each time fn is entered.
+	p = p.BreakPoint(fid, vm.NewProgramCounter(0, 0))
 	interp := vm.NewBytecodeInterpreter(p)
-	// Write a checkpoint as a hex string, one per line.
-	emit := func(cp vm.CheckPoint[W]) {
-		bytes, err := cp.MarshalBinary()
+	// Write a checkpoint as a hex string, one per line.  The counter governs how
+	// frequently this actually fires: it triggers every interval entries of fn.
+	emit := func() {
+		// Only record once every interval-th invocation of fn.
+		if !clk.Tick() {
+			return
+		}
+		//
+		bytes, err := interp.CheckPoint().MarshalBinary()
 		if err != nil {
 			log.Errorf("encoding checkpoint: %s", err)
 			return
@@ -337,9 +342,8 @@ func newCheckPointInterpreter[W vm.Word[W]](p vm.Program[W], fn string, clk util
 			return
 		}
 	}
-	// The counter fires every interval invocations of fn (see
-	// executeEnterCheckPoint_n).
-	interp.CheckPointer(clk, emit)
+	//
+	interp.BreakPointer(emit)
 	//
 	return interp, closer, nil
 }

@@ -90,13 +90,13 @@ type Interpreter[W word.Word[W]] struct {
 	// (Large) paged random-access memories which may be freely read and
 	// written.
 	prams []memory.PagedRandomAccess[W]
-	// Optional callback invoked when a CHECKPOINT bytecode is executed, passed a
-	// snapshot of the current machine state (see CheckPoint).  Configured via
-	// the CheckPointer builder method; nil if no checkpointer has been set.
-	checkpointer func(checkpoint.CheckPoint[W])
-	// Counter governing how frequently the checkpointer fires.  Configured
-	// alongside the checkpointer via the CheckPointer builder method.
-	counter util.Counter
+	// Optional callback invoked whenever a breakpoint is reached, i.e. an
+	// instruction flagged with the BREAKPOINT modifier bit (see BreakPoint) is
+	// about to execute.  The callback typically snapshots the current machine
+	// state itself (see CheckPoint) and is responsible for governing how
+	// frequently it actually acts.  Configured via the BreakPointer builder
+	// method; defaults to a panicking stub until one has been set.
+	breakpoint func()
 }
 
 // StackFrame captures relevant information about all functions currently
@@ -166,27 +166,23 @@ func New[W word.Word[W]](program descriptor.Program[W], modulus W) *Interpreter[
 		woms:    woms,
 		rams:    rams,
 		prams:   prams,
-		// Default checkpointer: panics until a real one is configured via
-		// CheckPointer, since a CHECKPOINT bytecode is meaningless without one.
-		checkpointer: func(checkpoint.CheckPoint[W]) {
-			panic("no checkpointer configured")
+		// Default breakpointer: panics until a real one is configured via
+		// BreakPointer, since a breakpoint is meaningless without one.
+		breakpoint: func() {
+			panic("no breakpointer configured")
 		},
-		// Default counter fires on every CHECKPOINT, so an unconfigured
-		// interpreter reaches the panicking default checkpointer above.
-		counter: util.NewCounter(1),
 	}
 }
 
-// CheckPointer configures the callback invoked whenever a CHECKPOINT bytecode
-// is executed, passing it a snapshot of the current machine state (see
-// CheckPoint).  The given counter initialises the interpreter's checkpoint
-// counter, governing how frequently the checkpointer fires.  It returns the
-// interpreter to allow method chaining.
-func (p *Interpreter[W]) CheckPointer(counter util.Counter,
-	checkpointer func(checkpoint.CheckPoint[W])) *Interpreter[W] {
+// BreakPointer configures the callback invoked whenever a breakpoint is
+// reached, i.e. an instruction flagged with the BREAKPOINT modifier bit (see
+// BreakPoint) is about to execute.  The callback typically snapshots the
+// current machine state itself (see CheckPoint) and is responsible for
+// governing how frequently it actually acts.  It returns the interpreter to
+// allow method chaining.
+func (p *Interpreter[W]) BreakPointer(breakpointer func()) *Interpreter[W] {
 	//
-	p.counter = counter
-	p.checkpointer = checkpointer
+	p.breakpoint = breakpointer
 	//
 	return p
 }
@@ -455,7 +451,14 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 	//
 	for nsteps < steps && err == nil {
 		// decode instruction
-		var opcode = bytecodes[p.pc] & encoding.OPCODE_MASK
+		var (
+			opcode     = bytecodes[p.pc] & encoding.OPCODE_MASK
+			breakpoint = bytecodes[p.pc]&encoding.BREAKPOINT != 0
+		)
+		// Check for breakpoint.
+		if breakpoint {
+			p.breakpoint()
+		}
 		// increase step counter
 		nsteps++
 		//
@@ -474,10 +477,6 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeMove_1s1(p.pc, bytecodes, frame)
 		case encoding.ENTER_n:
 			err = p.executeEnter_n(p.pc, bytecodes, frame)
-			// refresh the register window.
-			frame = p.dataStack.SliceEnd(uint(p.fp))
-		case encoding.ENTERCP_n:
-			err = p.executeEnterCheckPoint_n(p.pc, bytecodes, frame)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case encoding.LEAVE_n:
@@ -650,17 +649,6 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 	p.pc = target
 	//
 	return nil
-}
-
-func (p *Interpreter[W]) executeEnterCheckPoint_n(pc uint32, codes []uint32, stack []W) error {
-	// Enter checkpoint function
-	err := p.executeEnter_n(pc, codes, stack)
-	// Only fire the checkpointer once every counter period.
-	if p.counter.Tick() {
-		p.checkpointer(p.CheckPoint())
-	}
-	//
-	return err
 }
 
 func (p *Interpreter[W]) executeLeave_n(pc uint32, codes []uint32, stack []W) uint32 {

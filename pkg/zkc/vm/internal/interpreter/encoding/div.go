@@ -81,7 +81,7 @@ func registerVectorsFromIter(iter OpIter) []RegisterVector {
 // encodeDivRem encodes a division/remainder instruction, where op distinguishes
 // the two operations.
 func encodeDivRem(op uint32, rd, dividend, divisor RegisterId) []uint32 {
-	if IsWideRegisters(rd, dividend, divisor) {
+	if HasWideRegister(rd, dividend, divisor) {
 		return []uint32{
 			uint32(rd)<<16 | op | WIDE,
 			uint32(dividend) | uint32(divisor)<<16,
@@ -93,7 +93,7 @@ func encodeDivRem(op uint32, rd, dividend, divisor RegisterId) []uint32 {
 
 // DecodeDivRem_2n1 decodes the operands of a division/remainder instruction.
 func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor RegisterId, n uint32) {
-	if IsWideForm(pc, codes) {
+	if IsWideInstruction(pc, codes) {
 		rd = RegisterId(codes[pc] >> 16)
 		dividend = RegisterId(codes[pc+1] & 0xffff)
 		divisor = RegisterId(codes[pc+1] >> 16)
@@ -140,7 +140,7 @@ func encodeHint(op Operation, targets, sources []RegisterVector) []uint32 {
 		ntgt = uint32(len(targets)) << 8
 	)
 	//
-	if IsWideRegisterVectors(targets) || IsWideRegisterVectors(sources) {
+	if HasWideRegisterVecs(targets) || HasWideRegisterVecs(sources) {
 		var (
 			codes  = []uint32{nop | nsrc | ntgt | HINT | WIDE}
 			shorts = append(RegisterVectorsAsShorts(targets), RegisterVectorsAsShorts(sources)...)
@@ -168,7 +168,7 @@ func DecodeHintOperands(pc uint32, codes []uint32) (op Operation, targets, sourc
 	//
 	op = Operation((codes[pc] >> 24) & 0xff)
 	//
-	if IsWideForm(pc, codes) {
+	if IsWideInstruction(pc, codes) {
 		targets = NewOp16Iter(0, 2*ntargets, codes[pc+1:])
 		sources = NewOp16Iter(2*ntargets, 2*nsources, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(2*(ntargets+nsources))

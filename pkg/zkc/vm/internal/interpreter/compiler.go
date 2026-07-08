@@ -62,6 +62,16 @@ func CompileProgram[W word.Word[W]](program descriptor.Program[W]) encoding.Bina
 		// continue until we reach a fixed point
 		bytecodes, changed = encodeBytecodes(program, &symtab)
 	}
+	// Flag every instruction at which a breakpoint has been registered by setting
+	// the BREAKPOINT modifier bit on its (resolved) first word.
+	for _, bp := range program.BreakPoints() {
+		var (
+			pp  = ProgramPoint{Macro: bp.ProgramCounter.Macro(), Micro: bp.ProgramCounter.Micro()}
+			lab = Label{ModuleId: bp.Function, Point: pp}
+		)
+		//
+		bytecodes[symtab.SymbolAt(lab).Offset] |= encoding.BREAKPOINT
+	}
 	// Done
 	return encoding.NewBinary(symtab, bytecodes)
 }

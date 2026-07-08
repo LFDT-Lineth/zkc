@@ -57,6 +57,12 @@ type StackFrame[W MachineWord[W], I Instruction] = machine.StackFrame[W, I]
 // it identifies the (micro) instruction within that being executed.
 type ProgramCounter = machine.ProgramCounter
 
+// NewProgramCounter constructs a program counter identifying the given macro
+// instruction and the micro code within it.
+func NewProgramCounter(macro, micro uint) ProgramCounter {
+	return machine.NewProgramCounter(macro, micro)
+}
+
 // MachineWord captures the minimal set of requirements for a word used in the base
 // machine.
 type MachineWord[W any] = machine.BaseWord[W]

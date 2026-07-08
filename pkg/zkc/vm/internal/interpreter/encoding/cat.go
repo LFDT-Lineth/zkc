@@ -64,7 +64,7 @@ func encodeCat(targets []RegisterId, sources []RegisterId) []uint32 {
 		regs = append(RegsAsShorts(targets), RegsAsShorts(sources)...)
 	)
 	//
-	if IsWideRegisters(regs...) {
+	if HasWideRegister(regs...) {
 		var codes = []uint32{nsrc | ntgt | CAT | WIDE}
 		//
 		return append(codes, PackShortsIntoCodes(regs)...)
@@ -85,7 +85,7 @@ func DecodeCatOperands(pc uint32, codes []uint32) (targets, sources OpIter, n ui
 		nsources = uint((codes[pc] >> 16) & 0xff)
 	)
 	//
-	if IsWideForm(pc, codes) {
+	if IsWideInstruction(pc, codes) {
 		targets = NewOp16Iter(0, ntargets, codes[pc+1:])
 		sources = NewOp16Iter(ntargets, nsources, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(ntargets+nsources)

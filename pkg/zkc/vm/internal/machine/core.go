@@ -86,6 +86,12 @@ type ProgramCounter struct {
 	microCounter uint
 }
 
+// NewProgramCounter constructs a program counter identifying the given macro
+// instruction and the micro code within it.
+func NewProgramCounter(macro, micro uint) ProgramCounter {
+	return ProgramCounter{macro, micro}
+}
+
 // Macro returns the macro instruction identfied by this program counter
 // position.
 func (p ProgramCounter) Macro() uint {

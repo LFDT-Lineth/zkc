@@ -134,7 +134,7 @@ func encodeReadWrite_sn(m RwMode, id uint8, addr []RegisterId, data []RegisterId
 		regs   = append(RegsAsShorts(addr), RegsAsShorts(data)...)
 	)
 	//
-	if IsWideRegisters(regs...) {
+	if HasWideRegister(regs...) {
 		var codes = []uint32{ndata | naddr | _id | opcode | WIDE}
 		//
 		return append(codes, PackShortsIntoCodes(regs)...)
@@ -153,7 +153,7 @@ func DecodeReadWrite_sn(pc uint32, codes []uint32) (id uint16, addr, data OpIter
 	ndata := uint((codes[pc] >> 24) & 0xff)
 	id = uint16((codes[pc] >> 8) & 0xff)
 	//
-	if IsWideForm(pc, codes) {
+	if IsWideInstruction(pc, codes) {
 		addr = NewOp16Iter(0, naddr, codes[pc+1:])
 		data = NewOp16Iter(naddr, ndata, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(naddr+ndata)

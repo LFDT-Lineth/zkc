@@ -59,7 +59,7 @@ func DecodeRet1(pc uint32, codes []uint32) (width uint16, roffset uint32, n uint
 	// RET stores frame width in bits 8..23.
 	width = uint16((codes[pc] >> 8) & 0xffff)
 	//
-	if IsWideForm(pc, codes) {
+	if IsWideInstruction(pc, codes) {
 		roffset = codes[pc+1]
 		//
 		return width, roffset, 2
