@@ -67,7 +67,7 @@ func (p *Bitwise[W]) String(env Environment[W]) string {
 	case OP_SHL:
 		return fmt.Sprintf("shl %s = %s << %s [u%d]", tgt, lhs, rhs, p.Bitwidth)
 	case OP_SHR:
-		return fmt.Sprintf("shl %s = %s >> %s [u%d]", tgt, lhs, rhs, p.Bitwidth)
+		return fmt.Sprintf("shr %s = %s >> %s [u%d]", tgt, lhs, rhs, p.Bitwidth)
 	default:
 		panic("unknown bitwise operator")
 	}
