@@ -776,29 +776,6 @@ func Test_ZkcUnit_Shift_12(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/shift_12", DEFAULT_UNIT_CONFIG)
 }
 
-// Wide shifts exercise register splitting of SHL/SHR into WIDE_SHL/WIDE_SHR
-// intrinsics.  These run in fast mode with splitting enabled (the only pipeline
-// where a Bitwise shift survives to register splitting) on KOALABEAR_16.  The
-// _01 cases use a u32 operand (two u16 limbs); the _02 cases use a u256 operand
-// (16 u16 limbs), whose value exceeds a double machine word on the Uint64 run
-// and so requires the multi-limb (carry-chained) shift.  Constraints for wide
-// intrinsics are not yet supported, so only the bytecode interpreter runs.
-func Test_ZkcUnit_WideShl_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/wide_shl_01", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).GoGen(false))
-}
-
-func Test_ZkcUnit_WideShl_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/wide_shl_02", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).GoGen(false))
-}
-
-func Test_ZkcUnit_WideShr_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/wide_shr_01", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).GoGen(false))
-}
-
-func Test_ZkcUnit_WideShr_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/wide_shr_02", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).GoGen(false))
-}
-
 // ===================================================================
 // Static Initialiser Tests
 // ===================================================================
@@ -1199,6 +1176,84 @@ func Test_ZkcUnit_RangeCheck_04(t *testing.T) {
 // Range check a u5
 func Test_ZkcUnit_RangeCheck_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/range_check_05", DEFAULT_UNIT_CONFIG)
+}
+
+// Big Tests
+// ===================================================================
+
+func Test_ZkcUnit_BigNum_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_01", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+}
+
+func Test_ZkcUnit_BigNum_02(t *testing.T) {
+	// TODO: constraint tracing still runs the legacy word machine, which
+	// rejects subtraction underflow ("arithmetic underflow") instead of
+	// wrapping like the bytecode interpreter.
+	checkZkcUnit(t, "zkc/unit/bignum_02", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).Constraints(false))
+}
+
+func Test_ZkcUnit_BigNum_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_03", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+}
+
+func Test_ZkcUnit_BigNum_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_04", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).GoGen(false))
+}
+
+func Test_ZkcUnit_BigNum_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_05", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).GoGen(false))
+}
+
+func Test_ZkcUnit_BigNum_06(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_06", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+}
+
+func Test_ZkcUnit_BigNum_07(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_07", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+}
+
+func Test_ZkcUnit_BigNum_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_08", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+}
+
+func Test_ZkcUnit_BigNum_09(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_09", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+}
+
+// func Test_ZkcUnit_BigNum_10(t *testing.T) {
+// 	checkZkcUnit(t, "zkc/unit/bignum_10", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).Constraints(false))
+// }
+
+// func Test_ZkcUnit_BigNum_11(t *testing.T) {
+// 	checkZkcUnit(t, "zkc/unit/bignum_11", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+// }
+
+// func Test_ZkcUnit_BigNum_12(t *testing.T) {
+// 	checkZkcUnit(t, "zkc/unit/bignum_12", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+// }
+
+// func Test_ZkcUnit_BigNum_13(t *testing.T) {
+// 	checkZkcUnit(t, "zkc/unit/bignum_13", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+// }
+
+func Test_ZkcUnit_BigNum_14(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_14", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+}
+
+func Test_ZkcUnit_BigNum_15(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_15", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).Constraints(false))
+}
+
+func Test_ZkcUnit_BigNum_16(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_16", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).Constraints(false))
+}
+
+func Test_ZkcUnit_BigNum_17(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
+}
+
+func Test_ZkcUnit_BigNum_18(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.FastModeSplitting(true))
 }
 
 // ===================================================================

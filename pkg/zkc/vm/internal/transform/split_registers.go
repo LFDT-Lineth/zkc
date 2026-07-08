@@ -229,7 +229,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		// =======================================================
 		case *bytecode.Bitwise[W]:
 			switch c.Op {
-			case bytecode.OP_AND, bytecode.OP_OR, bytecode.OP_XOR:
+			case bytecode.OP_AND, bytecode.OP_OR, bytecode.OP_XOR, bytecode.OP_NOT:
 				return split.Bitwise(limbsMap, alloc, c)
 			case bytecode.OP_SHL, bytecode.OP_SHR:
 				return split.Shift(limbsMap, c)
