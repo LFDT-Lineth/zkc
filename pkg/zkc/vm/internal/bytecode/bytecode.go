@@ -59,7 +59,7 @@ type FieldConfig = field.Config
 // Operation identifies an operation performed by a bytecode instruction: an
 // arithmetic operation (ADD, SUB, MUL), a bitwise operation (AND, OR, XOR, NOT,
 // SHL, SHR), a field operation (ADDMOD_P, SUBMOD_P, MULMOD_P) or a hint
-// operation (DIV_HINT).
+// operation (DIV_HINT, WIDE_SHL, WIDE_SHR, WIDE_DIV, WIDE_REM).
 type Operation uint8
 
 // Symbol returns a suitable string representation of this operator.
@@ -140,8 +140,24 @@ const (
 	// OP_MULMOD_P represents multiplication modulus the prime P
 	OP_MULMOD_P
 	// DIV_HINT is the hint operation which computes the quotient, remainder
-	// and range witness for a division hint (see Hint).
+	// and range witness for a division hint (see Intrinsic).
 	DIV_HINT
+	// WIDE_SHL is the hint operation which computes a logical shift left of a
+	// (possibly multi-limb) value by a given amount, mirroring the Bitwise SHL
+	// instruction but operating over vectored operands (see Intrinsic).
+	WIDE_SHL
+	// WIDE_SHR is the hint operation which computes a logical shift right of a
+	// (possibly multi-limb) value by a given amount, mirroring the Bitwise SHR
+	// instruction but operating over vectored operands (see Intrinsic).
+	WIDE_SHR
+	// WIDE_DIV is the hint operation which computes the quotient of a
+	// (possibly multi-limb) dividend and divisor, mirroring the DIV instruction
+	// but operating over vectored operands (see Intrinsic).
+	WIDE_DIV
+	// WIDE_REM is the hint operation which computes the remainder of a
+	// (possibly multi-limb) dividend and divisor, mirroring the REM instruction
+	// but operating over vectored operands (see Intrinsic).
+	WIDE_REM
 )
 
 // ============================================================================
@@ -429,7 +445,7 @@ func RegisterGobTypes[W word.Word[W]]() {
 	gob.Register(&DivRem[W]{})
 	gob.Register(&Fail[W]{})
 	gob.Register(&FieldArith[W]{})
-	gob.Register(&Hint[W]{})
+	gob.Register(&Intrinsic[W]{})
 	gob.Register(&Jmp[W]{})
 	gob.Register(&ReadWrite[W]{})
 	gob.Register(&Ret[W]{})

@@ -209,8 +209,8 @@ const (
 	DIV
 	// REM instruction
 	REM
-	// HINT instruction (e.g. division hint)
-	HINT
+	// INTRINSIC instruction (e.g. division hint, wide shift-left)
+	INTRINSIC
 	// ADDMOD_P instruction
 	ADDMOD_P
 	// SUBMOD_P instruction
@@ -258,8 +258,8 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 		return Debug(b, env)
 	case *bytecode.DivRem[W]:
 		return DivRem(b)
-	case *bytecode.Hint[W]:
-		return Hint(b)
+	case *bytecode.Intrinsic[W]:
+		return Intrinsic(b)
 	case *bytecode.Fail[W]:
 		return Fail(b, env)
 	case *bytecode.FieldArith[W]:

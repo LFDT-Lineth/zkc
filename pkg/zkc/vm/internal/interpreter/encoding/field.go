@@ -27,7 +27,7 @@ func FieldArith[W word.Word[W]](p *bytecode.FieldArith[W]) []uint32 {
 // instruction.  It is shared by the disassembler (DecodeFieldArith) and the
 // interpreter's executor.
 func DecodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32) (
-	rd RegisterId, sources OpIter, constant W, n uint32) {
+	rd RegisterId, sources Operands, constant W, n uint32) {
 	//
 	var (
 		nlimbs = (codes[pc] >> 16) & 0xff
@@ -52,10 +52,10 @@ func DecodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32) (
 	}
 	// Source registers follow the constant limbs.
 	if wide {
-		sources = NewOp16Iter(0, nsrc, codes[offset+1+nlimbs:])
+		sources = NewWideOperands(0, nsrc, codes[offset+1+nlimbs:])
 		n = 2 + nlimbs + NumCodesPackedWide(nsrc)
 	} else {
-		sources = NewOp8Iter(0, nsrc, codes[offset+1+nlimbs:])
+		sources = NewOperands(0, nsrc, codes[offset+1+nlimbs:])
 		n = 1 + nlimbs + NumCodesPackedSmall(nsrc)
 	}
 	//

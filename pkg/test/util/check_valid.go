@@ -39,15 +39,16 @@ var (
 	DEFAULT_WORDS = []vm.WordConfig{vm.WORD_UINT64, vm.WORD_UINT128}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = Config{
-		fields:          DEFAULT_FIELDS,
-		words:           DEFAULT_WORDS,
-		constraints:     false,
-		splitting:       false,
-		bytecode:        false,
-		gogen:           false,
-		quiet:           false,
-		maxStaticDepth:  codegen.DEFAULT_MAX_STATIC_DEPTH,
-		paddingStrategy: ir.NextPowerOfTwoPadding}
+		fields:            DEFAULT_FIELDS,
+		words:             DEFAULT_WORDS,
+		constraints:       false,
+		splitting:         false,
+		fastModeSplitting: false,
+		bytecode:          false,
+		gogen:             false,
+		quiet:             false,
+		maxStaticDepth:    codegen.DEFAULT_MAX_STATIC_DEPTH,
+		paddingStrategy:   ir.NextPowerOfTwoPadding}
 )
 
 // Config for testing
@@ -60,6 +61,8 @@ type Config struct {
 	constraints bool
 	// enable register splitting
 	splitting bool
+	// enable register splitting in fast mode
+	fastModeSplitting bool
 	// enable bytecode interpreter
 	bytecode bool
 	// enable the generated-Go ("native") executor
@@ -131,9 +134,17 @@ func (p Config) Constraints(flag bool) Config {
 	return p
 }
 
-// Splitting determines whether or not to apply register splitting.
+// Splitting determines whether or not to apply register splitting when tracing.
 func (p Config) Splitting(flag bool) Config {
 	p.splitting = flag
+	//
+	return p
+}
+
+// FastModeSplitting determines whether or not to apply register splitting in
+// fast mode.
+func (p Config) FastModeSplitting(flag bool) Config {
+	p.fastModeSplitting = flag
 	//
 	return p
 }
@@ -171,7 +182,7 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 				MaxStaticDepth(config.maxStaticDepth)
 		)
 		// Run all tests in fast mode
-		checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(false), config.Constraints(false), testcases[f])
+		checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(config.fastModeSplitting), config.Constraints(false), testcases[f])
 		// Run all tests in tracing mode
 		checkValidInternal(t, testfile, cfg.FastMode(false), config, testcases[f])
 	}

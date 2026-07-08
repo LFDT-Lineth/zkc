@@ -96,7 +96,7 @@ func expandDivision[W word.Word[W]](q, x, y bytecode.RegisterId, registers *regA
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.NewHint[W](bytecode.DIV_HINT,
+		bytecode.NewIntrinsic[W](bytecode.DIV_HINT,
 			[]bytecode.RegisterVector{
 				bytecode.NewRegisterVector(q), bytecode.NewRegisterVector(r), bytecode.NewRegisterVector(w),
 			},
@@ -125,7 +125,7 @@ func expandRemainder[W word.Word[W]](r, x, y bytecode.RegisterId, registers *reg
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.NewHint[W](bytecode.DIV_HINT,
+		bytecode.NewIntrinsic[W](bytecode.DIV_HINT,
 			[]bytecode.RegisterVector{
 				bytecode.NewRegisterVector(q), bytecode.NewRegisterVector(r), bytecode.NewRegisterVector(w),
 			},

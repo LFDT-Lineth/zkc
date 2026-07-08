@@ -116,7 +116,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 		case *vm.BytecodeRet[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()
-		case *vm.BytecodeHint[W]:
+		case *vm.BytecodeIntrinsic[W]:
 			// Non-deterministic assignment: the target registers are already
 			// recorded in the write map for constancy analysis; no polynomial
 			// constraint is generated here, since correctness is enforced by

@@ -505,8 +505,8 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 	case *bytecode.DivRem[W]:
 		return bytecode.NewDivRem[W](insn.Opcode, substituteId(insn.Target, sub), substituteId(insn.Dividend, sub),
 			substituteId(insn.Divisor, sub))
-	case *bytecode.Hint[W]:
-		return bytecode.NewHint[W](insn.Op, substituteRegisterVectors(insn.Targets, sub),
+	case *bytecode.Intrinsic[W]:
+		return bytecode.NewIntrinsic[W](insn.Op, substituteRegisterVectors(insn.Targets, sub),
 			substituteRegisterVectors(insn.Sources, sub))
 	case *bytecode.CheckCast[W]:
 		return bytecode.NewCheckCast[W](substituteId(insn.Target, sub), insn.Bitwidth)

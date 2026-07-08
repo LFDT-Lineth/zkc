@@ -144,8 +144,8 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 		return &bytecode.DivRem[W2]{Opcode: b.Opcode, Target: b.Target, Dividend: b.Dividend, Divisor: b.Divisor}
 	case *bytecode.Fail[W1]:
 		return &bytecode.Fail[W2]{Chunks: b.Chunks, Sources: b.Sources}
-	case *bytecode.Hint[W1]:
-		return &bytecode.Hint[W2]{Op: b.Op, Targets: b.Targets, Sources: b.Sources}
+	case *bytecode.Intrinsic[W1]:
+		return &bytecode.Intrinsic[W2]{Op: b.Op, Targets: b.Targets, Sources: b.Sources}
 	case *bytecode.Jmp[W1]:
 		return &bytecode.Jmp[W2]{Target: b.Target}
 	case *bytecode.ReadWrite[W1]:

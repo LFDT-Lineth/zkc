@@ -114,13 +114,13 @@ func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 
 }
 
 // DecodeEnter_n decodes the operands of an enter (function entry) instruction.
-func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args OpIter, n uint32) {
+func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args Operands, n uint32) {
 	if IsWideForm(pc, codes) {
 		var nargs = uint((codes[pc] >> 8) & 0xff)
 		//
 		width = uint16(codes[pc] >> 16)
 		target = codes[pc+1]
-		args = NewOp16Iter(0, nargs, codes[pc+2:])
+		args = NewWideOperands(0, nargs, codes[pc+2:])
 		n = 2 + NumCodesPackedWide(nargs)
 		//
 		return
@@ -130,7 +130,7 @@ func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args
 	//
 	width = uint16((codes[pc] >> 8) & 0xff)
 	target = GetBranchTarget(pc, codes[pc]>>16, 16)
-	args = NewOp8Iter(1, nargs, codes[pc+1:])
+	args = NewOperands(1, nargs, codes[pc+1:])
 	n = 1 + NumCodesPackedSmall(nargs+1)
 	//
 	return
@@ -176,16 +176,16 @@ func encodeLeave_n(rets []RegisterId) []uint32 {
 }
 
 // DecodeLeave_n decodes the operands of a leave (function exit) instruction.
-func DecodeLeave_n(pc uint32, codes []uint32) (rets OpIter, n uint32) {
+func DecodeLeave_n(pc uint32, codes []uint32) (rets Operands, n uint32) {
 	var (
 		nrets = uint(codes[pc]>>8) & 0xffff
 	)
 	//
 	if IsWideForm(pc, codes) {
-		rets = NewOp16Iter(0, nrets, codes[pc+1:])
+		rets = NewWideOperands(0, nrets, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(nrets)
 	} else {
-		rets = NewOp8Iter(0, nrets, codes[pc+1:])
+		rets = NewOperands(0, nrets, codes[pc+1:])
 		n = 1 + NumCodesPackedSmall(nrets)
 	}
 	//

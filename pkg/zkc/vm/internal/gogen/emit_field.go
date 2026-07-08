@@ -165,16 +165,16 @@ func (g *generator) emitModPHelpers(c *code) {
 	}
 }
 
-// emitHint emits the DIV_HINT hint (executeDivHint), the only supported hint
-// operation: targets[0] = q, targets[1] = r, targets[2] = w where
+// emitIntrinsic emits the DIV_HINT intrinsic (executeDivHint), the only intrinsic
+// operation gogen supports: targets[0] = q, targets[1] = r, targets[2] = w where
 //
 //	q = dividend / divisor,  r = dividend % divisor,  w = divisor - r - 1.
 //
 // A zero divisor fails.  Since r < divisor, w never underflows (the oracle's
 // underflow checks are unreachable), so none are emitted.
-func (g *generator) emitHint(c *code, fn *descFunction, x *bytecode.Hint[word.Uint]) error {
+func (g *generator) emitIntrinsic(c *code, fn *descFunction, x *bytecode.Intrinsic[word.Uint]) error {
 	if x.Op != bytecode.DIV_HINT {
-		return fmt.Errorf("gogen: unsupported hint operation (%d)", x.Op)
+		return fmt.Errorf("gogen: unsupported intrinsic operation (%d)", x.Op)
 	}
 
 	if len(x.Sources) != 2 || len(x.Targets) != 3 {
@@ -182,12 +182,12 @@ func (g *generator) emitHint(c *code, fn *descFunction, x *bytecode.Hint[word.Ui
 	}
 	// gogen only supports narrow (single-limb) hint operands; a value split
 	// across several limb registers is not yet handled here.
-	sourceIds, err := hintRegisters(x.Sources)
+	sourceIds, err := intrinsicRegisters(x.Sources)
 	if err != nil {
 		return err
 	}
 
-	targetIds, err := hintRegisters(x.Targets)
+	targetIds, err := intrinsicRegisters(x.Targets)
 	if err != nil {
 		return err
 	}
@@ -246,11 +246,11 @@ func (g *generator) emitHint(c *code, fn *descFunction, x *bytecode.Hint[word.Ui
 	return inner
 }
 
-// hintRegisters flattens single-register hint operand vectors into their
-// register ids.  gogen only supports narrow (single-limb) hint operands; a
-// multi-limb vector (produced by register-splitting a wide value) is not yet
-// supported here.
-func hintRegisters(vecs []bytecode.RegisterVector) ([]regId, error) {
+// intrinsicRegisters flattens single-register intrinsic operand vectors into
+// their register ids.  gogen only supports narrow (single-limb) intrinsic
+// operands; a multi-limb vector (produced by register-splitting a wide value)
+// is not yet supported here.
+func intrinsicRegisters(vecs []bytecode.RegisterVector) ([]regId, error) {
 	ids := make([]regId, len(vecs))
 
 	for i, v := range vecs {

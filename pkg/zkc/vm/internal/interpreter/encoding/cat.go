@@ -79,19 +79,19 @@ func encodeCat(targets []RegisterId, sources []RegisterId) []uint32 {
 }
 
 // DecodeCatOperands decodes the target and source operands of a concatenation instruction.
-func DecodeCatOperands(pc uint32, codes []uint32) (targets, sources OpIter, n uint32) {
+func DecodeCatOperands(pc uint32, codes []uint32) (targets, sources Operands, n uint32) {
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
 		nsources = uint((codes[pc] >> 16) & 0xff)
 	)
 	//
 	if IsWideForm(pc, codes) {
-		targets = NewOp16Iter(0, ntargets, codes[pc+1:])
-		sources = NewOp16Iter(ntargets, nsources, codes[pc+1:])
+		targets = NewWideOperands(0, ntargets, codes[pc+1:])
+		sources = NewWideOperands(ntargets, nsources, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(ntargets+nsources)
 	} else {
-		targets = NewOp8Iter(0, ntargets, codes[pc+1:])
-		sources = NewOp8Iter(ntargets, nsources, codes[pc+1:])
+		targets = NewOperands(0, ntargets, codes[pc+1:])
+		sources = NewOperands(ntargets, nsources, codes[pc+1:])
 		n = 1 + NumCodesPackedSmall(ntargets+nsources)
 	}
 	//

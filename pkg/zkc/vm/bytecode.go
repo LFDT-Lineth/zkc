@@ -389,11 +389,11 @@ func Debug[W Word[W]](chunks []FormattedChunk, sources []RegisterId) Bytecode[W]
 	return bytecode.NewDebug[W](chunks, sources)
 }
 
-// Hint constructs a hint instruction performing the given operation op (e.g.
+// Intrinsic constructs a hint instruction performing the given operation op (e.g.
 // DIV_HINT) which reads the given source (argument) register vectors and writes
 // the given target (return) register vectors.
-func Hint[W Word[W]](op bytecode.Operation, targets, sources []bytecode.RegisterVector) Bytecode[W] {
-	return bytecode.NewHint[W](op, targets, sources)
+func Intrinsic[W Word[W]](op bytecode.Operation, targets, sources []bytecode.RegisterVector) Bytecode[W] {
+	return bytecode.NewIntrinsic[W](op, targets, sources)
 }
 
 // Div constructs an integer-division instruction computing
@@ -533,7 +533,7 @@ type BytecodeFail[W Word[W]] = bytecode.Fail[W]
 type BytecodeDebug[W Word[W]] = bytecode.Debug[W]
 
 // BytecodeHint is a (non-deterministic) hint bytecode.
-type BytecodeHint[W Word[W]] = bytecode.Hint[W]
+type BytecodeHint[W Word[W]] = bytecode.Intrinsic[W]
 
 // BytecodeCheckCast is a width-check (cast) bytecode.
 type BytecodeCheckCast[W Word[W]] = bytecode.CheckCast[W]

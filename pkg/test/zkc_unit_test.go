@@ -776,6 +776,29 @@ func Test_ZkcUnit_Shift_12(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/shift_12", DEFAULT_UNIT_CONFIG)
 }
 
+// Wide shifts exercise register splitting of SHL/SHR into WIDE_SHL/WIDE_SHR
+// intrinsics.  These run in fast mode with splitting enabled (the only pipeline
+// where a Bitwise shift survives to register splitting) on KOALABEAR_16.  The
+// _01 cases use a u32 operand (two u16 limbs); the _02 cases use a u256 operand
+// (16 u16 limbs), whose value exceeds a double machine word on the Uint64 run
+// and so requires the multi-limb (carry-chained) shift.  Constraints for wide
+// intrinsics are not yet supported, so only the bytecode interpreter runs.
+func Test_ZkcUnit_WideShl_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/wide_shl_01", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).GoGen(false))
+}
+
+func Test_ZkcUnit_WideShl_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/wide_shl_02", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).GoGen(false))
+}
+
+func Test_ZkcUnit_WideShr_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/wide_shr_01", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).GoGen(false))
+}
+
+func Test_ZkcUnit_WideShr_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/wide_shr_02", DEFAULT_UNIT_CONFIG.FastModeSplitting(true).GoGen(false))
+}
+
 // ===================================================================
 // Static Initialiser Tests
 // ===================================================================

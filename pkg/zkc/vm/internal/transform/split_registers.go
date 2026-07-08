@@ -185,11 +185,11 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 			return []Bytecode[W]{&bytecode.Debug[W]{Chunks: c.Chunks, Sources: splitRegisterVectors(limbsMap, c.Sources)}}
 		case *bytecode.Fail[W]:
 			return []Bytecode[W]{&bytecode.Fail[W]{Chunks: c.Chunks, Sources: splitRegisterVectors(limbsMap, c.Sources)}}
-		case *bytecode.Hint[W]:
+		case *bytecode.Intrinsic[W]:
 			// Each operand (argument / return) is split into the limbs of its
 			// constituent registers, preserving the per-operand grouping so the
 			// hint's executor can still reconstruct each value.
-			return []Bytecode[W]{&bytecode.Hint[W]{
+			return []Bytecode[W]{&bytecode.Intrinsic[W]{
 				Op:      c.Op,
 				Targets: splitRegisterVectors(limbsMap, c.Targets),
 				Sources: splitRegisterVectors(limbsMap, c.Sources),
@@ -231,8 +231,10 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 			switch c.Op {
 			case bytecode.OP_AND, bytecode.OP_OR, bytecode.OP_XOR:
 				return split.Bitwise(limbsMap, alloc, c)
+			case bytecode.OP_SHL, bytecode.OP_SHR:
+				return split.Shift(limbsMap, c)
 			default:
-				panic("todo: split shift operations")
+				panic(fmt.Sprintf("unsupported bitwise operation (%d)", c.Op))
 			}
 
 		// =======================================================
