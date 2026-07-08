@@ -19,7 +19,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -158,14 +160,8 @@ func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Fa
 // trace because it does not record any internal information about the trace ---
 // it simply extracts the outputs at the end.
 func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[string][]byte, errs []error) {
-	if !p.machineCache.HasValue() {
-		// Construct bytecode machine
-		bci := vm.ProgramToProgram[vm.Uint, vm.Uint128](p.program)
-		// Compile bytecode interpreter
-		p.machineCache = util.Some(vm.NewBytecodeInterpreter(bci))
-	}
 	// Boot and execute fast machine
-	return vm.BootAndExecute(p.machineCache.Unwrap(), input, n)
+	return vm.BootAndExecute(p.cachedInterpreter(), input, n)
 }
 
 // Trace generates a suitable trace from the given inputs for the contraints
@@ -173,23 +169,59 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[str
 // vm.DecodeInputs() based on the register types of the corresponding memory.
 // This can return one (or more) errors if, for example, the input is malformed
 // (e.g. is missing expected fields and/or contains unexpected fields).
-func (p *BinaryFile[F]) Trace(input map[string][]byte, config TraceConfig,
+func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 ) (output map[string][]byte, tr trace.Trace[F], errs []error) {
 	//
 	var (
-		inputs map[string][]vm.Uint
-		wm     = vm.BytecodeProgramToWord(p.program)
+		stats = util.NewPerfStats()
+		//
+		inputs map[string][]vm.Uint128
+		// Lower bytecode program
+		prog128 = vm.ProgramToProgram[vm.Uint, vm.Uint128](p.program)
+		//
+		wm = vm.BytecodeProgramToWord(prog128)
+		//
+		rtr rtrace.Trace[F]
 	)
 	// Execute machine in chunks of 1K steps
 	if inputs, errs = vm.DecodeInputs(wm, input); len(errs) == 0 {
-		tr, errs = Trace(p, inputs, config)
+		rtr, errs = vm.Trace(prog128, inputs, postProcess[vm.Uint128, F])
 	}
 	//
 	if len(errs) == 0 {
 		output = vm.EncodeOutputs(wm)
+		// Extract AIR constraints
+		constraints := p.AirConstraints()
+		// Construct trace builder
+		builder := ir.NewTraceBuilder[F]().
+			WithValidation(cfg.validate).
+			WithDefensivePadding(true).
+			WithExpansionChecks(true).
+			WithExpansion(true).
+			WithParallelism(cfg.parallel).
+			WithBatchSize(cfg.batchSize)
+		// Build the trace (finally)
+		tr, errs = builder.Expand(constraints, rtrace.ToTrace(rtr))
 	}
 	//
+	stats.Log("Trace generation")
+	//
 	return output, tr, errs
+}
+
+func (p *BinaryFile[F]) cachedInterpreter() *vm.Interpreter[vm.Uint128] {
+	var interpreter *vm.Interpreter[vm.Uint128]
+	//
+	if !p.machineCache.HasValue() {
+		// Lower bytecode program
+		bci := vm.ProgramToProgram[vm.Uint, vm.Uint128](p.program)
+		// Construct fresh interpreter
+		interpreter = vm.NewBytecodeInterpreter(bci)
+		// Compile bytecode interpreter
+		p.machineCache = util.Some(interpreter)
+	}
+	//
+	return interpreter
 }
 
 // ============================================================================

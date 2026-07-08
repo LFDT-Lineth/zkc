@@ -100,8 +100,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		outputs, errors = resumeFromCheckPoint(program, args[0])
 	} else {
 		// Parse an filter input file
-		input = ParseInputFile(args[0])
-		input = filterInputsOnly(program, input)
+		input = vm.FilterInputs(program, ParseInputFile(args[0]))
 		// decide what is happening
 		if checkpoint != "" {
 			// Checkpoint the function named in the spec (periodically with "f:N", or
@@ -403,25 +402,4 @@ func executeWithGogen(program vm.Program[vm.Uint], input map[string][]byte) (map
 	}
 	//
 	return outputs, nil
-}
-
-// filterInputsOnly restricts the parsed input file to the machine's declared
-// input memories, matching what the generated harness expects on stdin.
-func filterInputsOnly[W vm.Word[W]](p vm.Program[W], input map[string][]byte) map[string][]byte {
-	inputs := make(map[string][]byte)
-	//
-	for it := p.Inputs(); it.HasNext(); {
-		in := it.Next()
-		if bytes, ok := input[in.Name()]; ok {
-			inputs[in.Name()] = bytes
-		}
-	}
-	// Sanity check what was actually filtered out
-	for k := range input {
-		if _, ok := inputs[k]; !ok {
-			log.Warn("ignoring input/output \"", k, "\"")
-		}
-	}
-	//
-	return inputs
 }
