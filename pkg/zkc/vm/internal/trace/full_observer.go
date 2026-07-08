@@ -60,6 +60,7 @@ func (p *FullObserver[W, I, M]) Initialise(machine M) {
 		case *memory.WriteOnce[W]:
 			// write-once output memory.
 			p.trace[i] = initializeMemoryAddressesAndContents(m)
+			// no initialization require for read-write memory
 		}
 	}
 }

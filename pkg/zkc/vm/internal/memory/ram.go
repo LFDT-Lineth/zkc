@@ -18,24 +18,21 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 )
 
-// RandomAccess is a memory implementation backed by a dynamically sizing []W,
-// meaning that an out-of-bound read will return 0.  Reads are performed by
-// delegating address decoding to a D (an AddressDecoder) which translates the
-// incoming multi-word address tuple into a (start, end) index range, and then
-// returning the corresponding sub-slice of the backing data.
-//
-// The type parameter W is the word type (e.g. a field element or big.Int), and
-// D is the AddressDecoder strategy that encodes the layout of rows within the
-// flat slice.
+// RandomAccess is a memory implementation backed by a dynamically sizing slice
+// of timestamped cells; an out-of-bound read returns the zero cell.  Every
+// access re-stamps the touched cell with the current clock, and (when a
+// recording Log is installed) is logged for trace generation.  The type
+// parameter W is the (machine) word type; the timestamp is internal bookkeeping.
 type RandomAccess[W util.Uinter64] struct {
 	// timestamped memory contents
 	StaticArray[W, TimestampedCell[W]]
 	// timestamp; increments by 1 with every memory access
-	timestamp int
-	// accesses logs memory accesses in chronological order
-	accesses []AccessData[W]
+	timestamp uint64
+	// logs memory accesses in chronological order (no-op unless tracing)
+	accessLog Log[W]
 }
 
 // Read function handles out-of-bounds accesses.
@@ -84,21 +81,35 @@ func (ram *RandomAccess[W]) access(address uint64, isWrite bool, newValue ...W) 
 		valueWritten = newValue[0]
 	}
 	//
-	timestampWrite := uint64(ram.timestamp)
+	timestampWrite := ram.timestamp
 	// Re-stamp the cell with this access's timestamp.
 	ram.data = expand(ram.data, address+1)
 	ram.data[address] = TimestampedCell[W]{timestamp: timestampWrite, value: valueWritten}
-	// Log the access.
-	ram.accesses = append(ram.accesses, AccessData[W]{
-		timestampRead:  old.timestamp,
-		timestampWrite: timestampWrite,
-		address:        address,
-		valueRead:      old.value,
-		valueWritten:   valueWritten,
-		isWrite:        isWrite,
-	})
+	// Log the access (write-side; the read-side is reconstructed at trace time
+	// by a state-tracking observer -- see Log).
+	if isWrite {
+		ram.log().Write(address, timestampWrite, valueWritten)
+	} else {
+		ram.log().Read(address, timestampWrite, valueWritten)
+	}
 	//
-	return old.value, nil
+	return valueWritten, nil
+}
+
+// log returns this memory's access log, lazily installing the no-op log if none
+// has been set (e.g. on a freshly gob-decoded memory).  Trace generation
+// installs a recording log via SetLog before execution.
+func (ram *RandomAccess[W]) log() Log[W] {
+	if ram.accessLog == nil {
+		ram.accessLog = &CheckpointingMemoryLog[W]{}
+	}
+	//
+	return ram.accessLog
+}
+
+// SetLog installs the given access log; used to switch a RAM into tracing mode.
+func (ram *RandomAccess[W]) SetLog(log Log[W]) {
+	ram.accessLog = log
 }
 
 // Contents returns the stored values (dropping timestamps), so RandomAccess
@@ -113,8 +124,24 @@ func (ram *RandomAccess[W]) Contents() []W {
 	return values
 }
 
+// Cells returns the underlying timestamped storage.  Used by the checkpoint to
+// snapshot RAM together with its per-cell timestamps.
+func (ram *RandomAccess[W]) Cells() []TimestampedCell[W] {
+	return ram.data
+}
+
+// Clock returns the current value of this memory's access clock (the timestamp
+// of the most recent access).  Saved alongside the cells by the checkpoint.
+func (ram *RandomAccess[W]) Clock() uint64 {
+	return ram.timestamp
+}
+
 // Initialise seeds the backing array from a slice of raw values, wrapping each
-// in a timestamped cell.
+// in a timestamped cell (timestamp zero).  Resets the access log and clock for
+// a fresh execution.
+//
+// Note: Initialise is the wrong method for restoring a checkpoint. This task
+// befalls the RestoreCells method
 func (ram *RandomAccess[W]) Initialise(contents []W) {
 	cells := make([]TimestampedCell[W], len(contents))
 	//
@@ -124,59 +151,82 @@ func (ram *RandomAccess[W]) Initialise(contents []W) {
 	//
 	ram.StaticArray.Initialise(cells)
 	// Reset the access log and clock for a fresh execution.
-	ram.accesses = nil
+	ram.log().Reset()
 	ram.timestamp = 0
 }
 
+// Reset clears all contents and the access log, and sets the clock to the given
+// value.  Used on resume before the captured cells are restored -- mirrors
+// PagedRandomAccess.Reset, so both RAMs restore as Reset-then-install.
+func (ram *RandomAccess[W]) Reset(clock uint64) {
+	ram.data = nil
+	ram.timestamp = clock
+	ram.log().Reset()
+}
+
+// RestoreCells re-seeds the memory from a checkpoint snapshot's pages (e.g. on
+// resume).  A flat memory is stored as a single page at address zero, so this
+// unpacks that page into cells.  Call Reset first to set the clock and clear any
+// prior state.  Takes the checkpoint's page representation (shared with
+// PagedRandomAccess) so both memories restore identically.
+func (ram *RandomAccess[W]) RestoreCells(pages []checkpoint.Page[W]) {
+	// A flat memory is captured as a single page at address zero; more than one
+	// page means a corrupt or mismatched snapshot.
+	if len(pages) > 1 {
+		panic(fmt.Sprintf("flat memory %q: expected at most one checkpoint page, got %d", ram.Name(), len(pages)))
+	}
+	//
+	if len(pages) == 1 {
+		ram.data = cellsFromPage(pages[0])
+	}
+}
+
+// cellsFromPage zips a checkpoint page's parallel value/timestamp columns into a
+// fresh slice of timestamped cells.  The columns are stored separately in
+// checkpoint.Page because that (lower-level) package cannot reference this
+// package's TimestampedCell type.  Used to turn a captured page back into the
+// cells a RAM restores from (a flat RAM's single page, or each page of a paged
+// RAM).
+func cellsFromPage[W util.Uinter64](page checkpoint.Page[W]) []TimestampedCell[W] {
+	var (
+		data       = page.Data()
+		timestamps = page.Timestamps()
+		cells      = make([]TimestampedCell[W], len(data))
+	)
+	//
+	for i, value := range data {
+		var ts uint64
+		//
+		if i < len(timestamps) {
+			ts = timestamps[i]
+		}
+		//
+		cells[i] = TimestampedCell[W]{timestamp: ts, value: value}
+	}
+	//
+	return cells
+}
+
 // Accesses returns the ordered log of reads/writes performed since the last
-// Initialise.  Used by the trace observer to materialise per-access rows.
+// Initialise.  Used by the trace observer to materialise per-access rows; nil
+// unless a recording log has been installed (i.e. in tracing mode).
 func (ram *RandomAccess[W]) Accesses() []AccessData[W] {
-	return ram.accesses
+	return ram.log().Accesses()
 }
 
 // NewRandomAccess constructs an empty random-access memory which employs a
 // non-sparse implementation.  Thus, this is not suitable for very large
 // memories.
+//
+// Note: accessLog is set to be a CheckpointingMemoryLog: no logging by default.
+// The intent is that it be swapped out for a TraceableMemoryLog using SetLog
+// when tracing is required.
 func NewRandomAccess[W util.Uinter64](name string, geometry Geometry[W]) *RandomAccess[W] {
 	return &RandomAccess[W]{
 		StaticArray: NewStaticArray[W, TimestampedCell[W]](name, READWRITE_MEMORY, geometry),
+		accessLog:   &CheckpointingMemoryLog[W]{},
 	}
 }
-
-// AccessData logs a ram access; the relevant data is
-//   - the address
-//   - the current value and the updated value
-//   - the current timestamp and the updated timestamp
-//
-// as well as the knowledge of whether this access performed a write or not
-type AccessData[W util.Uinter64] struct {
-	address        uint64
-	valueRead      W
-	valueWritten   W
-	timestampRead  uint64
-	timestampWrite uint64
-	isWrite        bool
-}
-
-// TimestampRead returns the timestamp that was recorded when
-// first reading a TimestampedCell
-func (a AccessData[W]) TimestampRead() uint64 { return a.timestampRead }
-
-// TimestampWrite returns the timestamp that was recorded as the
-// timestamp at which a value was written to a TimestampedCell
-func (a AccessData[W]) TimestampWrite() uint64 { return a.timestampWrite }
-
-// Address returns the flat address touched by this access.
-func (a AccessData[W]) Address() uint64 { return a.address }
-
-// ValueRead returns the value read or written by this access.
-func (a AccessData[W]) ValueRead() W { return a.valueRead }
-
-// ValueWritten returns the value read or written by this access.
-func (a AccessData[W]) ValueWritten() W { return a.valueWritten }
-
-// IsWrite reports whether this access was a write (true) or a read (false).
-func (a AccessData[W]) IsWrite() bool { return a.isWrite }
 
 // TimestampedCell holds a value and the timestamp at which that data
 // was written; reads and writes both update that timestamp to the
@@ -185,6 +235,17 @@ type TimestampedCell[W util.Uinter64] struct {
 	timestamp uint64
 	value     W
 }
+
+// NewTimestampedCell constructs a cell holding value with the given timestamp.
+func NewTimestampedCell[W util.Uinter64](value W, timestamp uint64) TimestampedCell[W] {
+	return TimestampedCell[W]{timestamp: timestamp, value: value}
+}
+
+// Value returns the value stored in this cell.
+func (tsmc TimestampedCell[W]) Value() W { return tsmc.value }
+
+// Timestamp returns the timestamp at which this cell was last touched.
+func (tsmc TimestampedCell[W]) Timestamp() uint64 { return tsmc.timestamp }
 
 // Uint64 method from the util.Uinter64 interface
 func (tsmc TimestampedCell[W]) Uint64() uint64 {
