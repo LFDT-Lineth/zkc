@@ -14,6 +14,7 @@ package encoding
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -47,6 +48,48 @@ type RegisterVector = bytecode.RegisterVector
 // from 6 to 7 bits leaves every existing encoding untouched (their opcodes are
 // all <= 62, so bit 6 reads as zero).
 const OPCODE_MASK = 0x7f
+
+// WIDE is a modifier bit (bit 7 of the opcode byte) marking the "wide" form of
+// an instruction, whose register operands are u16 rather than u8.  Wide forms
+// arise for functions with more than 256 registers.  By convention, a wide
+// form keeps its non-register fields in the first instruction word exactly as
+// the narrow form does (where they still fit), whilst its register operands
+// move into subsequent words, packed two per word (least significant half
+// first) in the order they appear in the narrow encoding.  Since dispatch
+// masks with OPCODE_MASK, both forms reach the same executor, which selects
+// the appropriate decoding by testing this bit.
+const WIDE = 0x80
+
+// IsWideForm checks whether the instruction word at the given position has the
+// WIDE modifier bit set (i.e. carries u16 register operands).
+func IsWideForm(pc uint32, codes []uint32) bool {
+	return codes[pc]&WIDE != 0
+}
+
+// IsWideRegisters checks whether any of the given registers requires the wide
+// (u16) instruction form, i.e. does not fit within a single byte.
+func IsWideRegisters(regs ...RegisterId) bool {
+	for _, r := range regs {
+		if r > math.MaxUint8 {
+			return true
+		}
+	}
+	//
+	return false
+}
+
+// IsWideRegisterVectors checks whether any of the given register vectors
+// requires the wide (u16) instruction form, i.e. has a base or length which
+// does not fit within a single byte.
+func IsWideRegisterVectors(vecs []RegisterVector) bool {
+	for _, v := range vecs {
+		if v.Base > math.MaxUint8 || v.Len > math.MaxUint8 {
+			return true
+		}
+	}
+	//
+	return false
+}
 
 // Every instruction occupies 32 bits, where the first byte is as follows:
 //
@@ -233,15 +276,15 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 	//
 	switch b := b.(type) {
 	case *bytecode.Call:
-		var (
-			enter = encodeEnter_n(0, 1, b.Flags.CheckPoint, 0, b.Arguments)
-			leave = encodeLeave_n(b.Returns)
-		)
-		//
-		return uint(len(enter) + len(leave))
+		return MaxCallEncodedLength(b)
 	case *bytecode.Skip, *bytecode.Jmp:
 		return 1
 	case *bytecode.SkipIf:
+		// The wide form carries its base registers in an additional word.
+		if IsWideRegisters(b.Left.Base, b.Right.Base) {
+			return 3
+		}
+		//
 		return 2
 	default:
 		// NOTE: the maximum length of the remaining bytecodes is not dependent
@@ -342,6 +385,51 @@ func NumCodesPackedSmall(n uint) uint32 {
 	return ncodes
 }
 
+// PackShortsIntoCodes packs a given array of u16 operands into an array of
+// codes (two per code, least significant half first), such that the last code
+// is padded with 0xffff.
+func PackShortsIntoCodes(shorts []uint16) []uint32 {
+	var (
+		nShorts = uint32(len(shorts))
+		ncodes  = NumCodesPackedWide(uint(nShorts))
+		//
+		codes = make([]uint32, ncodes)
+	)
+	//
+	for i := range ncodes {
+		var ith uint32
+		//
+		for j := range uint32(2) {
+			var jth uint32 = 0xffff
+			//
+			if k := (i * 2) + j; k < nShorts {
+				jth = uint32(shorts[k])
+			}
+			//
+			ith = ith | (jth << (j * 16))
+		}
+		//
+		codes[i] = ith
+	}
+	//
+	return codes
+}
+
+// NumCodesPackedWide returns the number of 32-bit codes required to pack n
+// u16 operands, two per code (rounding up).
+func NumCodesPackedWide(n uint) uint32 {
+	var (
+		// 2 shorts per code
+		ncodes = uint32(n) / 2
+	)
+	// Round up if necessary
+	if n%2 != 0 {
+		ncodes++
+	}
+	//
+	return ncodes
+}
+
 // RegsAsBytes packs an array of (small) registers into an array of bytes.  This
 // will panic if any register is encountered which does not fit into a byte.
 func RegsAsBytes(regs []RegisterId) []byte {
@@ -367,6 +455,29 @@ func RegisterVectorsAsBytes(vecs []RegisterVector) []byte {
 	}
 	//
 	return bytes
+}
+
+// RegsAsShorts packs an array of registers into an array of u16 operands, as
+// used by wide instruction forms.
+func RegsAsShorts(regs []RegisterId) []uint16 {
+	var shorts = make([]uint16, len(regs))
+	//
+	copy(shorts, regs)
+	//
+	return shorts
+}
+
+// RegisterVectorsAsShorts packs an array of register vectors into an array of
+// u16 operands (as base / length pairs), as used by wide instruction forms.
+func RegisterVectorsAsShorts(vecs []RegisterVector) []uint16 {
+	var shorts = make([]uint16, len(vecs)*2)
+	//
+	for i, r := range vecs {
+		shorts[2*i] = r.Base
+		shorts[(2*i)+1] = r.Len
+	}
+	//
+	return shorts
 }
 
 func init() {

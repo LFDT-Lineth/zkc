@@ -35,6 +35,18 @@ func Call[W word.Word[W]](pc uint32, p *bytecode.Call, env Environment[W]) (code
 	return append(codes, encodeLeave_n(p.Returns)...)
 }
 
+// MaxCallEncodedLength returns the maximum length (in u32 words) which an
+// encoding of the given call bytecode can occupy, i.e. the size of its wide
+// ENTER/LEAVE pair (the wide form is never smaller than the narrow form).
+func MaxCallEncodedLength(p *bytecode.Call) uint {
+	var (
+		enter = 2 + NumCodesPackedWide(uint(len(p.Arguments)))
+		leave = 1 + NumCodesPackedWide(uint(len(p.Returns)))
+	)
+	//
+	return uint(enter + leave)
+}
+
 // NOTE: a call bytecode compiles down into a pair of instructions, ENTER/LEAVE.
 // The ENTER instruction prepares for the call by allocating the frame,
 // assigning the arguments and pushing a stackframe record.  The LEAVE
@@ -55,31 +67,51 @@ func Call[W word.Word[W]](pc uint32, p *bytecode.Call, env Environment[W]) (code
 //
 // Here, nargs determines the number of packed argument registers, whilst width
 // determines the frame width to allocate and offset determines (relative)
-// offset to the target.
+// offset to the target.  The wide form carries a u16 frame width, an absolute
+// u32 target address and (now u16) argument registers packed two per word:
+//
+// +--------+--------+--------+--------+
+// |      width      | nargs  | opcode |
+// +--------+--------+--------+--------+
+// | ............ target ............. |
+// +--------+--------+--------+--------+
+// |  arg1  |  arg0   (u16 pairs) ...  |
+// +-----------------+-----------------+
 // ============================================================================
 
 // encodeEnter_n encodes the ENTER (function entry) instruction, computing the
 // relative branch offset to the target.  When checkpoint is set, the
 // checkpointing variant (ENTERCP_n) is emitted instead.
 func encodeEnter_n(pc, target uint32, checkpoint bool, width uint16, args []RegisterId) []uint32 {
-	if width > math.MaxUint8 || len(args) > math.MaxUint8 {
-		panic("wide call instructions not supported")
+	if len(args) > math.MaxUint8 {
+		panic("too many call arguments")
 	}
 	//
 	var (
 		roff, ok = GetRelativeOffset(pc, target, 16)
-		_width   = uint32(width) << 8
-		bytes    = []uint8{uint8(len(args))}
 		opcode   = ENTER_n
 	)
-	// sanity check
-	if !ok {
-		panic("branch target overflow")
-	} else if checkpoint {
+	//
+	if checkpoint {
 		opcode = ENTERCP_n
 	}
-	// Determine full opcode
-	codes := []uint32{roff<<16 | _width | opcode}
+	// The wide form is required whenever the frame width or an argument
+	// register overflows a byte, and also rescues relative branch targets which
+	// overflow the narrow form's 16-bit offset (the wide form's target is
+	// absolute).
+	if width > math.MaxUint8 || !ok || IsWideRegisters(args...) {
+		codes := []uint32{
+			uint32(width)<<16 | uint32(len(args))<<8 | opcode | WIDE,
+			target,
+		}
+		//
+		return append(codes, PackShortsIntoCodes(RegsAsShorts(args))...)
+	}
+	//
+	var (
+		codes = []uint32{roff<<16 | uint32(width)<<8 | opcode}
+		bytes = []uint8{uint8(len(args))}
+	)
 	//
 	bytes = append(bytes, RegsAsBytes(args)...)
 	//
@@ -87,7 +119,18 @@ func encodeEnter_n(pc, target uint32, checkpoint bool, width uint16, args []Regi
 }
 
 // DecodeEnter_n decodes the operands of an enter (function entry) instruction.
-func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args Op8Iter, n uint32) {
+func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args OpIter, n uint32) {
+	if IsWideForm(pc, codes) {
+		var nargs = uint((codes[pc] >> 8) & 0xff)
+		//
+		width = uint16(codes[pc] >> 16)
+		target = codes[pc+1]
+		args = NewOp16Iter(0, nargs, codes[pc+2:])
+		n = 2 + NumCodesPackedWide(nargs)
+		//
+		return
+	}
+	//
 	var nargs = uint(codes[pc+1] & 0xff)
 	//
 	width = uint16((codes[pc] >> 8) & 0xff)
@@ -109,7 +152,8 @@ func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args
 // |  ...   |  ...   |  ret1  |  ret0  |
 // +-----------------------------------+
 //
-// Here, nrets determines the number of packed return registers.
+// Here, nrets determines the number of packed return registers.  The wide form
+// retains the header but packs the (now u16) return registers two per word.
 //
 // ============================================================================
 
@@ -117,11 +161,18 @@ func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args
 // return registers.
 func encodeLeave_n(rets []RegisterId) []uint32 {
 	if len(rets) > math.MaxUint16 {
-		panic("wide call instructions not supported")
+		panic("too many call returns")
+	}
+	//
+	var nrets = uint32(len(rets)) << 8
+	//
+	if IsWideRegisters(rets...) {
+		var codes = []uint32{nrets | LEAVE_n | WIDE}
+		//
+		return append(codes, PackShortsIntoCodes(RegsAsShorts(rets))...)
 	}
 	//
 	var (
-		nrets = uint32(len(rets)) << 8
 		codes = []uint32{nrets | LEAVE_n}
 		bytes = RegsAsBytes(rets)
 	)
@@ -130,13 +181,18 @@ func encodeLeave_n(rets []RegisterId) []uint32 {
 }
 
 // DecodeLeave_n decodes the operands of a leave (function exit) instruction.
-func DecodeLeave_n(pc uint32, codes []uint32) (rets Op8Iter, n uint32) {
+func DecodeLeave_n(pc uint32, codes []uint32) (rets OpIter, n uint32) {
 	var (
 		nrets = uint(codes[pc]>>8) & 0xffff
 	)
 	//
-	rets = NewOp8Iter(0, nrets, codes[pc+1:])
-	n = 1 + NumCodesPackedSmall(nrets)
+	if IsWideForm(pc, codes) {
+		rets = NewOp16Iter(0, nrets, codes[pc+1:])
+		n = 1 + NumCodesPackedWide(nrets)
+	} else {
+		rets = NewOp8Iter(0, nrets, codes[pc+1:])
+		n = 1 + NumCodesPackedSmall(nrets)
+	}
 	//
 	return
 }

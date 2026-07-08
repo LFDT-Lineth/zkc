@@ -27,25 +27,37 @@ func FieldArith[W word.Word[W]](p *bytecode.FieldArith[W]) []uint32 {
 // instruction.  It is shared by the disassembler (DecodeFieldArith) and the
 // interpreter's executor.
 func DecodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32) (
-	rd RegisterId, sources Op8Iter, constant W, n uint32) {
+	rd RegisterId, sources OpIter, constant W, n uint32) {
 	//
 	var (
 		nlimbs = (codes[pc] >> 16) & 0xff
 		nsrc   = uint((codes[pc] >> 24) & 0xff)
+		wide   = IsWideForm(pc, codes)
+		offset = pc
 		limb   W
 	)
 	//
-	rd = RegisterId((codes[pc] >> 8) & 0xff)
+	if wide {
+		rd = RegisterId(codes[pc+1] & 0xffff)
+		offset = pc + 1
+	} else {
+		rd = RegisterId((codes[pc] >> 8) & 0xff)
+	}
 	// Reconstruct the constant from its 32-bit limbs, most significant limb
 	// first: each limb is shifted into the low bits of the accumulator in turn.
 	for i := nlimbs; i > 0; i-- {
-		limb = limb.SetUint64(uint64(codes[pc+i]))
+		limb = limb.SetUint64(uint64(codes[offset+i]))
 		_, constant = constant.Shl64(32)
 		constant = constant.Or(limb)
 	}
 	// Source registers follow the constant limbs.
-	sources = NewOp8Iter(0, nsrc, codes[pc+1+nlimbs:])
-	n = 1 + nlimbs + NumCodesPackedSmall(nsrc)
+	if wide {
+		sources = NewOp16Iter(0, nsrc, codes[offset+1+nlimbs:])
+		n = 2 + nlimbs + NumCodesPackedWide(nsrc)
+	} else {
+		sources = NewOp8Iter(0, nsrc, codes[offset+1+nlimbs:])
+		n = 1 + nlimbs + NumCodesPackedSmall(nsrc)
+	}
 	//
 	return rd, sources, constant, n
 }
@@ -72,15 +84,27 @@ func DecodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32) (
 // number of source registers (packed four-per-code after the constant).  The
 // operation itself (add, subtract or multiply, modulo the prime) is identified
 // by the opcode.  A field-sized constant can be wider than the 64 bits carried
-// by the integer vector forms, hence the inline limb encoding.
+// by the integer vector forms, hence the inline limb encoding.  The wide form
+// moves the (now u16) destination register into a word of its own, preceding
+// the constant limbs, and packs the source registers two per word:
+//
+// +--------+--------+--------+--------+
+// |  nsrc  |  ncon  |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// |       n/a       |        rd       |
+// +-----------------+-----------------+
+// | ... constant limbs ...             |
+// +------------------------------------+
+// | ... packed source registers ...    |
+// +------------------------------------+
 // ============================================================================
 
 // encodeFieldArith encodes a field-arithmetic instruction, carrying the
 // (possibly field-sized) constant inline as a sequence of 32-bit limbs followed
 // by the packed source registers.
 func encodeFieldArith[W word.Word[W]](op bytecode.Operation, rd RegisterId, sources []RegisterId, constant W) []uint32 {
-	if rd >= 256 || len(sources) >= 256 {
-		panic("wide field instructions not supported")
+	if len(sources) >= 256 {
+		panic("field instruction operand counts not supported")
 	}
 	//
 	var (
@@ -88,24 +112,36 @@ func encodeFieldArith[W word.Word[W]](op bytecode.Operation, rd RegisterId, sour
 		// NOTE: big-endian byte ordering
 		bytes  = constant.BigInt().Bytes()
 		nlimbs = (len(bytes) + 3) / 4
+		wide   = IsWideRegisters(rd) || IsWideRegisters(sources...)
+		header = uint32(len(sources))<<24 | uint32(nlimbs)<<16
+		codes  []uint32
+		offset int
 	)
 	//
 	if nlimbs >= 256 {
 		panic("wide field constants not supported")
 	}
 	//
-	var (
-		header = uint32(len(sources))<<24 | uint32(nlimbs)<<16 | uint32(rd)<<8 | opcode
-		codes  = make([]uint32, nlimbs+1)
-	)
-	//
-	codes[0] = header
+	if wide {
+		codes = make([]uint32, nlimbs+2)
+		codes[0] = header | opcode | WIDE
+		codes[1] = uint32(rd)
+		offset = 2
+	} else {
+		codes = make([]uint32, nlimbs+1)
+		codes[0] = header | uint32(rd)<<8 | opcode
+		offset = 1
+	}
 	// Pack constant bytes into limbs, least significant limb first.
 	for i, b := range bytes {
 		var k = len(bytes) - 1 - i
 		//
-		codes[1+(k/4)] |= uint32(b) << (8 * (k % 4))
+		codes[offset+(k/4)] |= uint32(b) << (8 * (k % 4))
 	}
 	// Append packed source registers.
+	if wide {
+		return append(codes, PackShortsIntoCodes(RegsAsShorts(sources))...)
+	}
+	//
 	return append(codes, PackBytesIntoCodes(RegsAsBytes(sources))...)
 }
