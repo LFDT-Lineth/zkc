@@ -105,6 +105,7 @@ func callSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[
 		isPc := logical.NotEqualsConst(dfa.NewBranchId(false, pcSelectors[pc]), big.Int{})
 		cond = cond.And(logical.NewProposition(isPc))
 	} else {
+		// Atomic caller: also gate on $ret so padding rows don't trigger lookups.
 		iomf := logical.NotEqualsConst(dfa.NewBranchId(false, ret), big.Int{})
 		cond = cond.And(logical.NewProposition(iomf))
 	}
