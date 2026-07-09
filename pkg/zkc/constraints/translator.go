@@ -31,9 +31,17 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-// GenerateMirConstraints is responsible for converting a field machine into a
-// corresponding set of MIR constraints.
-func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], maxStaticDepth uint) mir.Schema[F] {
+// GenerateMirConstraints is responsible for converting a bytecode program into
+// a corresponding set of MIR constraints.  The program is first converted into
+// a field machine, over which the remaining translation logic operates.
+func GenerateMirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program[W], field field.Config,
+	maxStaticDepth uint) mir.Schema[F] {
+	// Convert the bytecode program into a field machine.
+	var (
+		wm = vm.BytecodeProgramToWord(program)
+		fm = vm.WordToFieldMachine[W, F](field, wm)
+	)
+	//
 	var (
 		modules = make([]mir.Module[F], len(fm.Modules()))
 		// maxStaticWidth is the largest X for which 2^X <= maxStaticDepth (the
@@ -53,12 +61,12 @@ func GenerateMirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], maxStati
 	return schema.NewUniformSchema(modules)
 }
 
-// GenerateAirConstraints is responsible for converting a field machine into a
-// corresponding set of AIR constraints.
-func GenerateAirConstraints[F field.Element[F]](fm *vm.FieldMachine[F], field field.Config,
+// GenerateAirConstraints is responsible for converting a bytecode program into
+// a corresponding set of AIR constraints.
+func GenerateAirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program[W], field field.Config,
 	maxStaticDepth uint) air.Schema[F] {
 	var (
-		mirc = GenerateMirConstraints(fm, maxStaticDepth)
+		mirc = GenerateMirConstraints[W, F](program, field, maxStaticDepth)
 	)
 	//
 	return mir.LowerToAir(mirc, field.BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)
