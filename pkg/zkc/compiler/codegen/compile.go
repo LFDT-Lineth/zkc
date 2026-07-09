@@ -39,16 +39,6 @@ type Declaration = decl.Declaration[symbol.Resolved]
 // declaration refers to unknown (or otherwise incorrect) external components.
 type VariableDescriptor = variable.Descriptor[symbol.Resolved]
 
-// Function is a convenient alias for a word function.
-type Function = vm.WordFunction
-
-// Instruction is a single word-level instruction, as manipulated by the
-// downstream vectoriser.
-type Instruction = vm.WordInstruction
-
-// VectorInstruction is a vector (trace line) of word-level instructions.
-type VectorInstruction = vm.Vector[Instruction]
-
 // Stmt is a convenient alias
 type Stmt = stmt.Stmt[symbol.Resolved]
 
@@ -231,7 +221,7 @@ func (p *Compiler) compileStaticInitialisers(
 // element).  Calls and memory accesses are resolved against the resolved AST
 // (the program), so no separate signature table is required.
 func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaration,
-) (*vm.BytecodeFunction[vm.Uint], []source.SyntaxError) {
+) (*vm.Function[vm.Uint], []source.SyntaxError) {
 	//
 	var (
 		fn        = program[id].(*decl.ResolvedFunction)

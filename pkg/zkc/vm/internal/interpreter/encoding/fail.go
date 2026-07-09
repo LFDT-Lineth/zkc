@@ -29,7 +29,7 @@ func Fail[W word.Word[W]](p *bytecode.Fail, env Environment[W]) []uint32 {
 // DecodeFail decodes a fail instruction, returning the index of its formatted
 // chunks, an iterator over its source register vectors and the instruction
 // width.
-func DecodeFail(pc uint32, codes []uint32) (index uint, sources Op8Iter, n uint32) {
+func DecodeFail(pc uint32, codes []uint32) (index uint, sources OpIter, n uint32) {
 	return decodeFail_n(pc, codes)
 }
 
@@ -49,14 +49,23 @@ func DecodeFail(pc uint32, codes []uint32) (index uint, sources Op8Iter, n uint3
 // Here, nvecs determines the number of packed source register vectors, whilst
 // index identifies the formatted chunks (i.e. the failure message template) to
 // emit.  Each source vector is encoded as a (base, len) byte pair, packed two
-// vectors per word.
+// vectors per word.  The wide form retains the header but packs each vector as
+// a (base, len) pair of u16 operands (i.e. one word per vector).
 // ============================================================================
 // encodeFail_n encodes a fail instruction referencing the formatted chunks at
 // the given index, packing its source register vectors.
 func encodeFail_n(index uint16, sources []RegisterVector) []uint32 {
+	var nsources = uint32(util.Cast[uint8](uint(len(sources)))) << 24
+	//
+	if IsWideRegisterVectors(sources) {
+		// nolint
+		var codes = []uint32{nsources | uint32(index)<<8 | FAIL | WIDE}
+		//
+		return append(codes, PackShortsIntoCodes(RegisterVectorsAsShorts(sources))...)
+	}
+	//
 	var (
-		nsources = uint32(util.Cast[uint8](uint(len(sources)))) << 24
-		codes    = []uint32{
+		codes = []uint32{
 			// nolint
 			nsources | uint32(index)<<8 | FAIL,
 		}
@@ -67,11 +76,18 @@ func encodeFail_n(index uint16, sources []RegisterVector) []uint32 {
 }
 
 // decodeFail_n decodes the operands of a fail instruction.
-func decodeFail_n(pc uint32, codes []uint32) (index uint, sources Op8Iter, n uint32) {
-	var nbytes = 2 * uint(codes[pc]>>24)
+func decodeFail_n(pc uint32, codes []uint32) (index uint, sources OpIter, n uint32) {
+	var nops = 2 * uint(codes[pc]>>24)
 	//
 	index = uint(codes[pc]>>8) & 0xffff
-	sources = NewOp8Iter(0, nbytes, codes[pc+1:])
 	//
-	return index, sources, 1 + NumCodesPackedSmall(nbytes)
+	if IsWideForm(pc, codes) {
+		sources = NewOp16Iter(0, nops, codes[pc+1:])
+		n = 1 + NumCodesPackedWide(nops)
+	} else {
+		sources = NewOp8Iter(0, nops, codes[pc+1:])
+		n = 1 + NumCodesPackedSmall(nops)
+	}
+	//
+	return index, sources, n
 }

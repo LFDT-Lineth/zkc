@@ -112,7 +112,13 @@ func splitStaticContents[W word.Word[W]](mapping descriptor.LimbsMap[W], m *desc
 	//
 	for row := 0; row+len(dataIds) <= len(contents); row += len(dataIds) {
 		for j, id := range dataIds {
-			out = append(out, splitCell(contents[row+j], mapping.LimbIds(id), limbsMap)...)
+			// Check for native field
+			if descriptor.BitwidthOf(limbsMap, mapping.LimbIds(id)...).HasValue() {
+				out = append(out, splitCell(contents[row+j], mapping.LimbIds(id), limbsMap)...)
+			} else {
+				// No splitting necessary
+				out = append(out, contents[row+j])
+			}
 		}
 	}
 	//
@@ -237,7 +243,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 			// bytecode.
 			panic("todo: split div/rem operations")
 		case *bytecode.FieldArith[W]:
-			panic("todo: split field arithmetic operations")
+			return []Bytecode[W]{c}
 		case *bytecode.Switch[W]:
 			// NOTE: only relevant for splitting fast mode (i.e. non-lowered)
 			// bytecode.

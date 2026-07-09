@@ -14,15 +14,12 @@ package bytecode
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 )
 
 // CallFlags captures boolean properties of a call which do not affect how it
 // executes, but which are significant for constraint lowering.
 type CallFlags struct {
-	// CheckPoint indicates whether this is a checkpointing call (or not).
-	CheckPoint bool
 	// Unconditional indicates whether the corresponding lookup holds
 	// unconditionally (i.e. is not gated by a selector), as used (for example)
 	// for range checks.  This mirrors instruction.UnconditionalCall.
@@ -33,23 +30,13 @@ type CallFlags struct {
 type Call struct {
 	// address of target function
 	Target ModuleId
-	// Flags captures boolean properties of this call (e.g. whether it is a
-	// checkpointing or unconditional call).
+	// Flags captures boolean properties of this call (e.g. whether it is an
+	// unconditional call).
 	Flags CallFlags
 	// Arguments are caller-frame registers copied into callee inputs.
 	Arguments []RegisterId
 	// Returns are caller-frame registers receiving callee outputs.
 	Returns []RegisterId
-}
-
-// SetCheckPoint turns this call into a checkpointing call, preserving its other
-// flags.
-func (p *Call) SetCheckPoint() *Call {
-	var flags = p.Flags
-
-	flags.CheckPoint = true
-	//
-	return &Call{p.Target, flags, slices.Clone(p.Arguments), slices.Clone(p.Returns)}
 }
 
 // Uses implementation for Bytecode interface.  A call reads the argument

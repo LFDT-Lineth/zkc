@@ -41,15 +41,15 @@ func DecodeHint[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32)
 	return &bytecode.Hint{Op: op, Targets: targets, Sources: sources}, n
 }
 
-// registerVectorsFromIter reconstructs the register vectors packed as (base, len) byte
+// registerVectorsFromIter reconstructs the register vectors packed as (base, len)
 // pairs within the given iterator.
-func registerVectorsFromIter(iter Op8Iter) []RegisterVector {
+func registerVectorsFromIter(iter OpIter) []RegisterVector {
 	var vecs []RegisterVector
 	//
 	for iter.HasNext() {
 		var (
-			base = RegisterId(iter.Next())
-			len  = uint16(iter.Next())
+			base = iter.Next()
+			len  = iter.Next()
 		)
 		//
 		vecs = append(vecs, RegisterVector{Base: base, Len: len})
@@ -68,13 +68,24 @@ func registerVectorsFromIter(iter Op8Iter) []RegisterVector {
 // +--------+--------+--------+--------+
 //
 // The opcode itself distinguishes the two operations, so no width is needed.
+// The wide form carries the (now u16) destination register in the first word,
+// with both source registers in a second:
+//
+// +--------+--------+--------+--------+
+// |        rd       |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// |     divisor     |    dividend     |
+// +-----------------+-----------------+
 // ============================================================================
 
 // encodeDivRem encodes a division/remainder instruction, where op distinguishes
 // the two operations.
 func encodeDivRem(op uint32, rd, dividend, divisor RegisterId) []uint32 {
-	if rd >= 256 || dividend >= 256 || divisor >= 256 {
-		panic("wide division instructions not supported")
+	if IsWideRegisters(rd, dividend, divisor) {
+		return []uint32{
+			uint32(rd)<<16 | op | WIDE,
+			uint32(dividend) | uint32(divisor)<<16,
+		}
 	}
 	//
 	return []uint32{uint32(divisor)<<24 | uint32(dividend)<<16 | uint32(rd)<<8 | op}
@@ -82,6 +93,14 @@ func encodeDivRem(op uint32, rd, dividend, divisor RegisterId) []uint32 {
 
 // DecodeDivRem_2n1 decodes the operands of a division/remainder instruction.
 func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor RegisterId, n uint32) {
+	if IsWideForm(pc, codes) {
+		rd = RegisterId(codes[pc] >> 16)
+		dividend = RegisterId(codes[pc+1] & 0xffff)
+		divisor = RegisterId(codes[pc+1] >> 16)
+		//
+		return rd, dividend, divisor, 2
+	}
+	//
 	rd = RegisterId((codes[pc] >> 8) & 0xff)
 	dividend = RegisterId((codes[pc] >> 16) & 0xff)
 	divisor = RegisterId((codes[pc] >> 24) & 0xff)
@@ -103,21 +122,34 @@ func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor Register
 // Here, op selects the hint operation (e.g. DIV_HINT), whilst ntgt and nsrc give
 // the number of target (return) and source (argument) register vectors
 // respectively.  Each vector is packed as a (base, len) byte pair, targets
-// first.
+// first.  The wide form retains the header but packs each vector as a (base,
+// len) pair of u16 operands (i.e. one word per vector).
 // ============================================================================
 
 // encodeHint encodes a hint instruction, where op selects the operation and the
 // target (return) and source (argument) register vectors are packed as (base,
-// len) byte pairs, targets first.
+// len) pairs, targets first.
 func encodeHint(op Operation, targets, sources []RegisterVector) []uint32 {
 	if len(targets) == 0 || len(sources) == 0 || len(targets) >= 256 || len(sources) >= 256 {
-		panic("wide hint instructions not supported")
+		panic("hint instruction operand counts not supported")
 	}
 	//
 	var (
-		nop   = uint32(op) << 24
-		nsrc  = uint32(len(sources)) << 16
-		ntgt  = uint32(len(targets)) << 8
+		nop  = uint32(op) << 24
+		nsrc = uint32(len(sources)) << 16
+		ntgt = uint32(len(targets)) << 8
+	)
+	//
+	if IsWideRegisterVectors(targets) || IsWideRegisterVectors(sources) {
+		var (
+			codes  = []uint32{nop | nsrc | ntgt | HINT | WIDE}
+			shorts = append(RegisterVectorsAsShorts(targets), RegisterVectorsAsShorts(sources)...)
+		)
+		//
+		return append(codes, PackShortsIntoCodes(shorts)...)
+	}
+	//
+	var (
 		codes = []uint32{nop | nsrc | ntgt | HINT}
 		bytes = append(RegisterVectorsAsBytes(targets), RegisterVectorsAsBytes(sources)...)
 	)
@@ -127,17 +159,24 @@ func encodeHint(op Operation, targets, sources []RegisterVector) []uint32 {
 
 // DecodeHintOperands decodes the operation selector along with the target and
 // source operands of a hint instruction.  Each vector is packed as a (base,
-// len) byte pair, hence the iterators range over twice the vector counts.
-func DecodeHintOperands(pc uint32, codes []uint32) (op Operation, targets, sources Op8Iter, n uint32) {
+// len) pair, hence the iterators range over twice the vector counts.
+func DecodeHintOperands(pc uint32, codes []uint32) (op Operation, targets, sources OpIter, n uint32) {
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
 		nsources = uint((codes[pc] >> 16) & 0xff)
 	)
 	//
 	op = Operation((codes[pc] >> 24) & 0xff)
-	targets = NewOp8Iter(0, 2*ntargets, codes[pc+1:])
-	sources = NewOp8Iter(2*ntargets, 2*nsources, codes[pc+1:])
-	n = 1 + NumCodesPackedSmall(2*(ntargets+nsources))
+	//
+	if IsWideForm(pc, codes) {
+		targets = NewOp16Iter(0, 2*ntargets, codes[pc+1:])
+		sources = NewOp16Iter(2*ntargets, 2*nsources, codes[pc+1:])
+		n = 1 + NumCodesPackedWide(2*(ntargets+nsources))
+	} else {
+		targets = NewOp8Iter(0, 2*ntargets, codes[pc+1:])
+		sources = NewOp8Iter(2*ntargets, 2*nsources, codes[pc+1:])
+		n = 1 + NumCodesPackedSmall(2*(ntargets+nsources))
+	}
 	//
 	return
 }

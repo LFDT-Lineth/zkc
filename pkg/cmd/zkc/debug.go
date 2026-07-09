@@ -56,7 +56,7 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Translate bytecode => word machine
 	wm := vm.BytecodeProgramToWord(artifacts.ir)
 	// Filter out unnecessary inputs
-	input = filterInputsOnly(artifacts.ir, input)
+	input = vm.FilterInputs(artifacts.ir, input)
 	// Decode inputs against the compiled machine.
 	inputs, errs := vm.DecodeInputs(wm, input)
 	if len(errs) == 0 {

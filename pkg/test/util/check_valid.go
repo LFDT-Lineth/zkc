@@ -318,8 +318,8 @@ func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m vm.Program[W], tc
 	)
 	// Phase 2: resume a fresh interpreter from a randomly-chosen checkpoint and
 	// run it to completion.  The resume runs against the *plain* program: the
-	// checkpoints share its coordinates (see Program.AddCheckPoint), and it has
-	// no checkpointing calls to re-trigger.
+	// checkpoints share its coordinates (see Program.BreakPoint), and it has no
+	// breakpoint to re-trigger.
 	resumed.Restore(checkpoints[idx])
 	//
 	_, err := vm.ExecuteAll(resumed, 131072)
@@ -359,14 +359,17 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc Tes
 	var (
 		// decode inputs/outputs
 		inputs, outputs = decodeInputsOutputs(t, program, tc.data)
-		// construct interpreter
-		interpreter = vm.NewBytecodeInterpreter(program.AddCheckPoint(fid))
+		// construct interpreter with a breakpoint at fn's entry
+		interpreter = vm.NewBytecodeInterpreter(program.BreakPoint(fid, vm.NewProgramCounter(0, 0)))
 	)
-	// Phase 1: run the program (with calls to fn switched into checkpointing
-	// calls) to completion, collecting the checkpoints it produces.
+	// Phase 1: run the program (with a breakpoint at fn's entry) to completion,
+	// collecting the checkpoints it produces.  The counter governs how frequently
+	// a checkpoint is actually recorded.
 	gen := interpreter.
-		CheckPointer(counter, func(cp vm.CheckPoint[W]) {
-			checkpoints = append(checkpoints, cp)
+		BreakPointer(func(_ uint32) {
+			if counter.Tick() {
+				checkpoints = append(checkpoints, interpreter.CheckPoint())
+			}
 		})
 	//
 	if err = gen.Boot("main", inputs); err == nil {
@@ -408,9 +411,9 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.
 		// construct binary file
 		binf = constraints.NewBinaryFile[F](nil, nil, f, maxStaticDepth, p)
 		// decode inputs / outputs
-		inputs, _ = decodeInputsOutputs(t, p, test.data)
+		inputs = vm.FilterInputs(p, test.data)
 		// generate trace
-		tr, errs = constraints.Trace(binf, inputs, constraints.DEFAULT_TRACE_CONFIG)
+		_, tr, errs = binf.Trace(inputs, constraints.DEFAULT_TRACE_CONFIG)
 	)
 	//
 	if test.expected {

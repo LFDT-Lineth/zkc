@@ -343,7 +343,7 @@ func writeIntermediateRepresentation[W vm.MachineWord[W], I vm.Instruction, T vm
 		switch m := m.(type) {
 		case vm.Memory[W]:
 			writeIrMemory(m)
-		case *vm.Function[I]:
+		case *vm.LegacyFunction[I]:
 			mapping := instruction.NewSystemMap(m.RegisterMap(), machine.Modules())
 			writeIrFunction[W](m, mapping)
 		}
@@ -369,7 +369,7 @@ func writeIrMemory[W vm.MachineWord[W]](m vm.Memory[W]) {
 	fmt.Println(")")
 }
 
-func writeIrFunction[W vm.MachineWord[W], I vm.Instruction](f *vm.Function[I], mapping instruction.SystemMap) {
+func writeIrFunction[W vm.MachineWord[W], I vm.Instruction](f *vm.LegacyFunction[I], mapping instruction.SystemMap) {
 	fmt.Printf("fn %s(", f.Name())
 	// parameters
 	writeIrFunctionArgs(register.INPUT_REGISTER, f.Registers())
@@ -412,7 +412,7 @@ func writeIrFunctionArgs(kind register.Type, regs []register.Register) {
 	}
 }
 
-func writeIrFunctionVariables[W vm.MachineWord[W], I vm.Instruction](f *vm.Function[I]) {
+func writeIrFunctionVariables[W vm.MachineWord[W], I vm.Instruction](f *vm.LegacyFunction[I]) {
 	for _, r := range f.Registers() {
 		if !r.IsInputOutput() {
 			fmt.Printf("\t%s %s\n", registerType(r), r.Name())
@@ -623,7 +623,7 @@ func writeBytecodeModule[W vm.Word[W]](binary bool, encodingWidth uint, fid uint
 	}
 	// Write module contents
 	switch m := m.(type) {
-	case *vm.BytecodeFunction[W]:
+	case *vm.Function[W]:
 		address, bin = writeBytecodeFunction(listing, address, program.EnvironmentOf(fid), m, bin)
 	case *vm.BytecodeMemory[W]:
 		writeBytecodeMemory(listing, m)
@@ -641,7 +641,7 @@ func writeBytecodeModule[W vm.Word[W]](binary bool, encodingWidth uint, fid uint
 func writeModuleSignature[W vm.Word[W]](m vm.BytecodeModule[W]) {
 	// Write module contents
 	switch m := m.(type) {
-	case *vm.BytecodeFunction[W]:
+	case *vm.Function[W]:
 		fmt.Printf("fn %s\n", signatureOf(m))
 	case *vm.BytecodeMemory[W]:
 		//
@@ -667,7 +667,7 @@ func writeModuleSignature[W vm.Word[W]](m vm.BytecodeModule[W]) {
 }
 
 func writeBytecodeFunction[W vm.Word[W]](listing *bytecodeListing, address uint32, env vm.BytecodeEnvironment,
-	f *vm.BytecodeFunction[W], bin [][]uint32) (uint32, [][]uint32) {
+	f *vm.Function[W], bin [][]uint32) (uint32, [][]uint32) {
 	for _, r := range f.Registers() {
 		if !r.IsInputOutput() {
 			listing.addDeclaration(fmt.Sprintf("  %s %s", regType(r), r.Name()))

@@ -32,6 +32,15 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
+// ExtractExecutingState extracts the currently executing state from the
+// bytecode intepreter.  That is, specifically, the current: executing function,
+// program counter and register values.
+func ExtractExecutingState[W word.Word[W]](p *Interpreter[W]) (fid uint16, pc uint32, st []W) {
+	lab := p.program.FunctionAt(p.pc)
+	//
+	return lab.ModuleId, uint32(lab.Point.Macro), p.dataStack.SliceEnd(uint(p.fp))
+}
+
 // Interpreter is a fast, register-based interpreter for the bytecode form of a
 // compiled program.  It implements the machine.Core interface and exists to
 // execute programs as efficiently as possible (e.g. for testing and benchmark
@@ -90,13 +99,13 @@ type Interpreter[W word.Word[W]] struct {
 	// (Large) paged random-access memories which may be freely read and
 	// written.
 	prams []memory.PagedRandomAccess[W]
-	// Optional callback invoked when a CHECKPOINT bytecode is executed, passed a
-	// snapshot of the current machine state (see CheckPoint).  Configured via
-	// the CheckPointer builder method; nil if no checkpointer has been set.
-	checkpointer func(checkpoint.CheckPoint[W])
-	// Counter governing how frequently the checkpointer fires.  Configured
-	// alongside the checkpointer via the CheckPointer builder method.
-	counter util.Counter
+	// Optional callback invoked whenever a breakpoint is reached, i.e. an
+	// instruction flagged with the BREAKPOINT modifier bit (see BreakPoint) is
+	// about to execute.  The callback typically snapshots the current machine
+	// state itself (see CheckPoint) and is responsible for governing how
+	// frequently it actually acts.  Configured via the BreakPointer builder
+	// method; defaults to a panicking stub until one has been set.
+	breakpoint func(uint32)
 }
 
 // StackFrame captures relevant information about all functions currently
@@ -114,15 +123,22 @@ type StackFrame = checkpoint.StackFrame
 // used when executing native field instructions.  The interpreter is created in
 // an unbooted state; Boot must be called to select an entry point and supply
 // inputs before calling Execute.
-func New[W word.Word[W]](program descriptor.Program[W], modulus W) *Interpreter[W] {
+func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpreter[W] {
 	var (
+		prime    W
 		sroms    []memory.StaticReadOnly[W]
 		roms     []memory.ReadOnly[W]
 		woms     []memory.WriteOnce[W]
 		rams     []memory.RandomAccess[W]
 		prams    []memory.PagedRandomAccess[W]
-		compiled = CompileProgram(program)
+		compiled = CompileProgram(program, tracing)
 	)
+	// sanity check prime fits within target word
+	if prime.Bandwidth() < program.Field().BandWidth {
+		panic("insufficient bandwidth for prime field")
+	}
+	// Construct prime field
+	prime = prime.SetBigInt(program.Field().Modulus())
 	// Initialise memories
 	for _, m := range program.Modules() {
 		//
@@ -156,7 +172,7 @@ func New[W word.Word[W]](program descriptor.Program[W], modulus W) *Interpreter[
 	//
 	return &Interpreter[W]{
 		program: compiled,
-		modulus: modulus,
+		modulus: prime,
 		pc:      0,
 		fp:      0,
 		rp:      0,
@@ -166,27 +182,23 @@ func New[W word.Word[W]](program descriptor.Program[W], modulus W) *Interpreter[
 		woms:    woms,
 		rams:    rams,
 		prams:   prams,
-		// Default checkpointer: panics until a real one is configured via
-		// CheckPointer, since a CHECKPOINT bytecode is meaningless without one.
-		checkpointer: func(checkpoint.CheckPoint[W]) {
-			panic("no checkpointer configured")
+		// Default breakpointer: panics until a real one is configured via
+		// BreakPointer, since a breakpoint is meaningless without one.
+		breakpoint: func(uint32) {
+			panic("no breakpointer configured")
 		},
-		// Default counter fires on every CHECKPOINT, so an unconfigured
-		// interpreter reaches the panicking default checkpointer above.
-		counter: util.NewCounter(1),
 	}
 }
 
-// CheckPointer configures the callback invoked whenever a CHECKPOINT bytecode
-// is executed, passing it a snapshot of the current machine state (see
-// CheckPoint).  The given counter initialises the interpreter's checkpoint
-// counter, governing how frequently the checkpointer fires.  It returns the
-// interpreter to allow method chaining.
-func (p *Interpreter[W]) CheckPointer(counter util.Counter,
-	checkpointer func(checkpoint.CheckPoint[W])) *Interpreter[W] {
+// BreakPointer configures the callback invoked whenever a breakpoint is
+// reached, i.e. an instruction flagged with the BREAKPOINT modifier bit (see
+// BreakPoint) is about to execute.  The callback typically snapshots the
+// current machine state itself (see CheckPoint) and is responsible for
+// governing how frequently it actually acts.  It returns the interpreter to
+// allow method chaining.
+func (p *Interpreter[W]) BreakPointer(breakpointer func(uint32)) *Interpreter[W] {
 	//
-	p.counter = counter
-	p.checkpointer = checkpointer
+	p.breakpoint = breakpointer
 	//
 	return p
 }
@@ -196,17 +208,21 @@ func (p *Interpreter[W]) CheckPointer(counter util.Counter,
 // record for it on the data stack, and initialises all memories (loading the
 // provided inputs into the input memories and resetting the rest).
 func (p *Interpreter[W]) Boot(fun string, input map[string][]W) (err error) {
-	// lookup function identifier
-	fid, ok := p.program.HasModule(fun)
+	var (
+		sym encoding.Symbol
+		// lookup function identifier
+		fid, ok = p.program.HasModule(fun)
+	)
 	//
 	if !ok {
 		return fmt.Errorf("unknown function \"%s\"", fun)
 	}
 	// find instruction to boot
-	if p.pc, ok = p.program.AddressOf(fid); !ok {
+	if sym, ok = p.program.AddressOf(fid); !ok {
 		return fmt.Errorf("missing symbol for \"%s\"", fun)
 	}
 	//
+	p.pc = sym.Offset
 	p.fid = fid
 	p.fp = 0
 	p.callStack.Clear()
@@ -437,6 +453,37 @@ func (p *Interpreter[W]) findMemory(name string) memory.Memory[W] {
 	panic(fmt.Sprintf("unknown memory \"%s\"", name))
 }
 
+// Binary provides access to the compiled program binary being executed.
+func (p *Interpreter[W]) Binary() encoding.Binary[W] {
+	return p.program
+}
+
+// Memory provides access to the underlying memory corresponding to a given
+// module identifier.
+func (p *Interpreter[W]) Memory(mid uint16) memory.Memory[W] {
+	var (
+		sym, ok = p.program.AddressOf(mid)
+	)
+	// Sanity check
+	if ok {
+		//
+		switch sym.Kind {
+		case encoding.STATIC_MEMORY:
+			return &p.sroms[sym.Offset]
+		case encoding.READONLY_MEMORY:
+			return &p.roms[sym.Offset]
+		case encoding.WRITEONCE_MEMORY:
+			return &p.woms[sym.Offset]
+		case encoding.READWRITE_MEMORY:
+			return &p.rams[sym.Offset]
+		case encoding.PAGED_READWRITE_MEMORY:
+			return &p.prams[sym.Offset]
+		}
+	}
+	//
+	panic("internal failure")
+}
+
 // Execute implementation of Core interface.  This runs the central fetch-decode-
 // dispatch loop: each iteration reads the bytecode at the current program
 // counter, extracts its opcode, and dispatches to the corresponding executor
@@ -455,7 +502,14 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 	//
 	for nsteps < steps && err == nil {
 		// decode instruction
-		var opcode = bytecodes[p.pc] & encoding.OPCODE_MASK
+		var (
+			opcode     = bytecodes[p.pc] & encoding.OPCODE_MASK
+			breakpoint = bytecodes[p.pc]&encoding.BREAKPOINT != 0
+		)
+		// Check for breakpoint.
+		if breakpoint {
+			p.breakpoint(opcode)
+		}
 		// increase step counter
 		nsteps++
 		//
@@ -474,10 +528,6 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeMove_1s1(p.pc, bytecodes, frame)
 		case encoding.ENTER_n:
 			err = p.executeEnter_n(p.pc, bytecodes, frame)
-			// refresh the register window.
-			frame = p.dataStack.SliceEnd(uint(p.fp))
-		case encoding.ENTERCP_n:
-			err = p.executeEnterCheckPoint_n(p.pc, bytecodes, frame)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case encoding.LEAVE_n:
@@ -645,22 +695,11 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 		p.dataStack.Set(i, stack[args.Next()])
 	}
 	// FIXME: following to be deprecated
-	p.fid = p.program.FunctionAt(target).Unwrap()
+	p.fid = p.program.FunctionAt(target).ModuleId
 	p.fp = calleeFp
 	p.pc = target
 	//
 	return nil
-}
-
-func (p *Interpreter[W]) executeEnterCheckPoint_n(pc uint32, codes []uint32, stack []W) error {
-	// Enter checkpoint function
-	err := p.executeEnter_n(pc, codes, stack)
-	// Only fire the checkpointer once every counter period.
-	if p.counter.Tick() {
-		p.checkpointer(p.CheckPoint())
-	}
-	//
-	return err
 }
 
 func (p *Interpreter[W]) executeLeave_n(pc uint32, codes []uint32, stack []W) uint32 {
@@ -684,7 +723,7 @@ func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error
 	)
 	//
 	p.fid = frame.FunctionId // FIXME: remove
-	p.rp = p.fp + uint32(roffset)
+	p.rp = p.fp + roffset
 	p.rw = uint32(width)
 	p.fp = frame.FramePointer
 	//
@@ -760,7 +799,7 @@ func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (ui
 	for sources.HasNext() {
 		var (
 			hi     W
-			source = uint16(sources.Next())
+			source = sources.Next()
 		)
 		//
 		hi, val = val.Mul(stack[source])
@@ -847,7 +886,7 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 	//
 	for sources.HasNext() {
 		var (
-			reg = uint16(sources.Next())
+			reg = sources.Next()
 		)
 		//
 		_, lo := stack[reg].Shl64(uint64(width))
@@ -894,7 +933,7 @@ func (p *Interpreter[W]) executeFail(pc uint32, codes []uint32, frame []W) error
 // mirroring executeFormattedChunks in the reference word machine: each chunk's
 // literal text is emitted verbatim and each formatted argument is rendered
 // against the frame.
-func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources encoding.Op8Iter, frame []W) string {
+func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources encoding.OpIter, frame []W) string {
 	var (
 		module  = p.program.Module(p.fid)
 		builder strings.Builder
@@ -905,8 +944,8 @@ func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources 
 		//
 		if chunk.Format.HasFormat() {
 			var (
-				base = bytecode.RegisterId(sources.Next())
-				len  = uint16(sources.Next())
+				base = sources.Next()
+				len  = sources.Next()
 				vec  = bytecode.RegisterVector{Base: base, Len: len}
 			)
 			//
@@ -1066,7 +1105,7 @@ func (p *Interpreter[W]) executeHint(pc uint32, codes []uint32, stack []W) (uint
 // of the division across the corresponding target vectors, returning an error
 // if the divisor is zero.  big.Int arithmetic is used so values spanning
 // several limbs (i.e. wider than the machine word) are handled correctly.
-func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.Op8Iter,
+func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.OpIter,
 	stack []W) (uint32, error) {
 	var (
 		module   = p.program.Module(p.fid)
@@ -1102,9 +1141,9 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 // loadHintOperand reconstructs the value of a single hint operand from the next
 // (base, len) register vector in the iterator, with the least-significant limb
 // held in the lowest-indexed register (matching storeAcross).
-func loadHintOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Op8Iter, stack []W) *big.Int {
+func loadHintOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.OpIter, stack []W) *big.Int {
 	var (
-		base   = uint16(iter.Next())
+		base   = iter.Next()
 		length = uint(iter.Next())
 		value  = new(big.Int)
 		offset uint
@@ -1128,10 +1167,10 @@ func loadHintOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding
 // in the iterator, writing the least-significant limb into the lowest-indexed
 // register (matching storeAcross).  It errors if the value does not fit within
 // the vector's total width.
-func storeHintResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Op8Iter,
+func storeHintResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.OpIter,
 	value *big.Int, stack []W) error {
 	var (
-		base   = uint16(iter.Next())
+		base   = iter.Next()
 		length = uint(iter.Next())
 		acc    = new(big.Int).Set(value)
 		total  uint
@@ -1583,7 +1622,7 @@ func executeWritePagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []
 // index, then scales that index by the number of data lines so the result
 // addresses the first word of the selected memory row.  The advanced register
 // iterator is returned so the caller can continue reading the data registers.
-func decodeAddress[W word.Word[W]](regs encoding.Op8Iter, geometry memory.Geometry[W], stack []W) uint64 {
+func decodeAddress[W word.Word[W]](regs encoding.OpIter, geometry memory.Geometry[W], stack []W) uint64 {
 	var (
 		index      uint64
 		registers  = geometry.Registers()
@@ -1609,7 +1648,7 @@ func bitwidthOf[W word.Word[W]](module descriptor.Module[W], reg RegisterId) uin
 	return r.Bitwidth().UnwrapOr(math.MaxUint)
 }
 
-func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets encoding.Op8Iter, oval W,
+func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets encoding.OpIter, oval W,
 	stack []W) error {
 	//
 	var (
@@ -1619,7 +1658,7 @@ func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets
 	//
 	for targets.HasNext() {
 		var (
-			target = uint16(targets.Next())
+			target = targets.Next()
 			width  = bitwidthOf(module, target)
 		)
 		//

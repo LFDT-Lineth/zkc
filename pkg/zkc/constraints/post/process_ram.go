@@ -10,18 +10,17 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package util
+package post
 
-import "math/big"
+import (
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+)
 
-// Uinter64 captures any type which can be converted into a uint64 value.
-type Uinter64 interface {
-	// Convert the given type into a uint64 value.
-	Uint64() uint64
-}
-
-// BigInter captures any type which can be convered into a big.Int value.  NOTE:
-// the return value should be fresh (i.e. not an alias for some internal state).
-type BigInter interface {
-	BigInt() *big.Int
+// ProcessReadWriteMemory performs post-processing on a RAM trace.
+func ProcessReadWriteMemory[W Word[W], F Element[F]](m vm.Memory[W]) rtrace.ArrayModule[F] {
+	var regs = array.Map(m.Registers(), toRtraceRegisterLegacy)
+	// TODO: flesh me out :)
+	return rtrace.NewArrayModule[F](m.Name(), regs)
 }

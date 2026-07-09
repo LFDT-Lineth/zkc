@@ -26,7 +26,7 @@ import (
 func newLimbsMap[W vm.Word[W]](config field.Config, modules ...vm.BytecodeModule[W]) module.LimbsMap {
 	var ms []register.Map = array.Map(modules, func(_ uint, m vm.BytecodeModule[W]) register.Map {
 		name := trace.ModuleName{Name: m.Name(), Multiplier: 1}
-		return register.ArrayMap(name, toRegisters[W](m.Registers())...)
+		return register.ArrayMap(name, toRegisters(m.Registers())...)
 	})
 	// NOTE: generic parameter is meaningless, and only retained for backwards
 	// compatibility.
@@ -70,7 +70,7 @@ func foldContents[F field.Element[F]](inputs, outputs []register.Register, conte
 	for i := 0; i < len(contents); i++ {
 		var (
 			// Determine table row
-			row = uint(i / nOutputs)
+			row = uint64(i / nOutputs)
 			// Determine output index
 			output = nInputs + (i % nOutputs)
 			// Extract row data
@@ -79,7 +79,7 @@ func foldContents[F field.Element[F]](inputs, outputs []register.Register, conte
 		// Construct row (if not previously constructed)
 		if ith == nil {
 			ith = make([]F, nInputs+nOutputs)
-			fillAddressLine(row, ith, inputs)
+			fillAddressLines(row, ith[:nInputs], inputs[:nInputs])
 			rows[row] = ith
 		}
 		//
@@ -89,12 +89,24 @@ func foldContents[F field.Element[F]](inputs, outputs []register.Register, conte
 	return rows
 }
 
-func fillAddressLine[F field.Element[F]](index uint, row []F, inputs []register.Register) {
-	var address F
-	//
-	if len(inputs) != 1 {
-		panic("support multi-address static memories")
+func fillAddressLines[F field.Element[F]](address uint64, row []F, lines []register.Register) {
+	// Least signicant word first
+	var acc vm.Uint64
+	// Initialise accumulator
+	acc = acc.SetUint64(address)
+	// process address lines in reverse order since the most significant line
+	// always comes first.
+	for i := len(lines); i > 0; i-- {
+		var (
+			val F
+			// determine bitwidth of ith line
+			bitwidth = uint64(lines[i-1].Width())
+			// Slice out bitwidth bits
+			slice = acc.Slice(uint(bitwidth))
+		)
+		// Assign u64 (slice as field element)
+		row[i-1] = val.SetUint64(slice.Uint64())
+		// Shift down address
+		acc = acc.Shr64(bitwidth)
 	}
-	//
-	row[0] = address.SetUint64(uint64(index))
 }
