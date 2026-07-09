@@ -1260,7 +1260,7 @@ func shr64[W word.Word[W]](values []W, width uint64) []W {
 // machine word bandwidth.
 func packOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, stack []W) []W {
 	var (
-		base      = uint16(iter.Next())
+		base      = iter.Next()
 		length    = uint(iter.Next())
 		zero      W
 		bandwidth = zero.Bandwidth()
@@ -1302,7 +1302,7 @@ func packOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Ope
 // silently dropped, so — unlike storeIntrinsicResult — there is no overflow.
 func unpackResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, words, stack []W) {
 	var (
-		base      = uint16(iter.Next())
+		base      = iter.Next()
 		length    = uint(iter.Next())
 		zero      W
 		bandwidth = zero.Bandwidth()
@@ -1410,7 +1410,7 @@ func (p *Interpreter[W]) executeWideRemHint(pc, n uint32, targets, sources encod
 // vector in the iterator, consuming that vector.
 func intrinsicVectorWidth[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands) uint {
 	var (
-		base   = uint16(iter.Next())
+		base   = iter.Next()
 		length = uint(iter.Next())
 		total  uint
 	)

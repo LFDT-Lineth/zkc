@@ -243,7 +243,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.DivRem[W]:
 			// NOTE: only relevant for splitting fast mode (i.e. non-lowered)
 			// bytecode.
-			panic("todo: split div/rem operations")
+			return split.DivRem(limbsMap, c)
 		case *bytecode.FieldArith[W]:
 			return []Bytecode[W]{c}
 		case *bytecode.Switch[W]:

@@ -42,10 +42,38 @@ func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator
 ) []Bytecode[W] {
 	// Split into the initial set of chunks.
 	var chunks, context = initialiseLineaChunks(mapping, alloc, insn.Target, insn.Source, insn.Constant)
-	// Next, add borrow lines as needed
-	chunks = insertSubBorrowLines(alloc, chunks)
+	// A zero assignment of the form "0 = a - b" (a zero-width target, two operands and
+	// no constant) asserts a == b.  Split limb-wise, this is exactly asserting a_i == b_i
+	// for every limb independently, which requires NO borrow chain — equal values have
+	// equal limbs.  Threading borrows instead would be unsound-free but catastrophic for
+	// width: a zero-width target cannot absorb any bits, so each limb's entire value is
+	// forced into the borrow, and those borrows compound across limbs until they exceed
+	// the field's register width (e.g. a u256 difference needs a u256-wide borrow).  So
+	// for this case we leave the chunks as independent per-limb assertions.
+	if !isZeroDifference(mapping, insn) {
+		// Next, add borrow lines as needed
+		chunks = insertSubBorrowLines(alloc, chunks)
+	}
 	// Convert chunks into assignments
 	return append(MapChunks(chunks, subAssignment[W]), context...)
+}
+
+// isZeroDifference determines whether the given subtraction is a zero assignment of
+// the form "0 = a - b": a zero-width target subtracting exactly two operands with no
+// constant.  Such an assertion (a == b) decomposes into independent per-limb equalities
+// and therefore needs no borrow chain (see Subtraction).
+func isZeroDifference[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Arith[W]) bool {
+	if len(insn.Source) != 2 || insn.Constant.Cmp64(0) != 0 {
+		return false
+	}
+	//
+	var width uint
+	//
+	for _, t := range insn.Target {
+		width += mapping.Register(t).Bitwidth().Unwrap()
+	}
+	//
+	return width == 0
 }
 
 // insertSubBorrowLines verifies that each subtraction chunk fits within its

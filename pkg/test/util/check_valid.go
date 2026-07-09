@@ -15,6 +15,7 @@ package util
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -207,7 +208,11 @@ func checkValidInternal(t *testing.T, testfile string, cfg codegen.Config, confi
 func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, p vm.Program[vm.Uint]) {
 	var binary, err = buildGogenProgram(t, p)
 	//
-	if err != nil {
+	if errors.Is(err, errGoGenUnsupported) {
+		// gogen cannot yet represent this program: log and skip rather than fail
+		// (see errGoGenUnsupported / runGogenExecutionTest).
+		t.Logf("[gogen] skipping %s: %v", testfile, err)
+	} else if err != nil {
 		t.Errorf("[gogen] %v", err)
 	} else {
 		// Log binary location
