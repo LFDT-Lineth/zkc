@@ -48,23 +48,24 @@ type rangeTable struct {
 // n <= maxStaticWidth; wider registers are range-checked recursively by
 // a call (lowered via addCallLookups), so only the static tables are collected
 // here.
-func indexRangeTables[F field.Element[F]](modules []vm.Module, maxStaticWidth uint) map[uint]rangeTable {
+func indexRangeTables[W vm.Word[W], F field.Element[F]](modules []vm.BytecodeModule[W],
+	maxStaticWidth uint) map[uint]rangeTable {
 	tables := make(map[uint]rangeTable)
 	//
 	for id, m := range modules {
 		// Only the fully-enumerated static tables serve as direct lookup targets;
-		mem, ok := m.(vm.Memory[F])
+		mem, ok := m.(*vm.BytecodeMemory[W])
 		if !ok || !mem.IsStatic() || !strings.HasPrefix(m.Name(), rangeModulePrefix) {
 			continue
 		}
 		// The "value" column holds the enumerated values and is the lookup target.
-		valId, ok := m.HasRegister(rangeValueName)
-		if !ok {
+		valId := m.HasRegister(rangeValueName)
+		if valId.IsEmpty() {
 			continue
 		}
-		//
-		if w := m.Register(valId).Width(); w <= maxStaticWidth {
-			tables[w] = rangeTable{schema.ModuleId(id), valId}
+		// The value column is a word (non-native) register, so it has a bitwidth.
+		if w := m.Register(valId.Unwrap()).Bitwidth().Unwrap(); w <= maxStaticWidth {
+			tables[w] = rangeTable{schema.ModuleId(id), register.NewId(uint(valId.Unwrap()))}
 		}
 	}
 	//

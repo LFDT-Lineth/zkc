@@ -462,3 +462,98 @@ func Return[W Word[W]]() Bytecode[W] {
 func BitConcat[W Word[W]](targets []RegisterId, sources []RegisterId) Bytecode[W] {
 	return bytecode.Concat(targets, sources)
 }
+
+// ============================================================================
+// Bytecode instruction types
+// ============================================================================
+
+// The aliases below re-export the concrete bytecode instruction types so that
+// external packages (in particular the constraint generator in
+// pkg/zkc/constraints) can dispatch on, and read the operands of, individual
+// bytecodes without reaching into the internal bytecode package.  This
+// complements the bytecode *construction* API above: those functions build
+// bytecodes (returning the Bytecode[W] interface), whereas these types let a
+// consumer take a Bytecode[W] apart again via a type switch.
+//
+// The concrete type names are prefixed with "Bytecode" to avoid colliding with
+// the identically-named construction functions (e.g. the Call function versus
+// the BytecodeCall struct).
+
+// Operation identifies the operation performed by an arithmetic / field /
+// bitwise / hint bytecode (see the OP_* constants).
+type Operation = bytecode.Operation
+
+// RegisterVector is a contiguous span of registers (a multi-limb operand).
+type RegisterVector = bytecode.RegisterVector
+
+// Operation constants (mirroring bytecode.OP_*).
+const (
+	// OP_ADD integer addition.
+	OP_ADD = bytecode.OP_ADD
+	// OP_SUB integer subtraction.
+	OP_SUB = bytecode.OP_SUB
+	// OP_MUL integer multiplication.
+	OP_MUL = bytecode.OP_MUL
+	// OP_AND bitwise conjunction.
+	OP_AND = bytecode.OP_AND
+	// OP_OR bitwise disjunction.
+	OP_OR = bytecode.OP_OR
+	// OP_XOR bitwise exclusive-or.
+	OP_XOR = bytecode.OP_XOR
+	// OP_NOT bitwise negation.
+	OP_NOT = bytecode.OP_NOT
+	// OP_SHL logical shift left.
+	OP_SHL = bytecode.OP_SHL
+	// OP_SHR logical shift right.
+	OP_SHR = bytecode.OP_SHR
+	// OP_ADDMOD_P addition modulo the field prime.
+	OP_ADDMOD_P = bytecode.OP_ADDMOD_P
+	// OP_SUBMOD_P subtraction modulo the field prime.
+	OP_SUBMOD_P = bytecode.OP_SUBMOD_P
+	// OP_MULMOD_P multiplication modulo the field prime.
+	OP_MULMOD_P = bytecode.OP_MULMOD_P
+	// DIV_HINT division hint operation.
+	DIV_HINT = bytecode.DIV_HINT
+)
+
+// BytecodeArith is an integer arithmetic bytecode (target = op(sources) op constant).
+type BytecodeArith[W Word[W]] = bytecode.Arith[W]
+
+// BytecodeFieldArith is a field arithmetic bytecode (target = op(sources) op constant mod P).
+type BytecodeFieldArith[W Word[W]] = bytecode.FieldArith[W]
+
+// BytecodeCat is a concatenation bytecode (target vector = sources joined by width).
+type BytecodeCat = bytecode.Cat
+
+// BytecodeCall is a function-call bytecode.
+type BytecodeCall = bytecode.Call
+
+// BytecodeReadWrite is a memory read/write bytecode.
+type BytecodeReadWrite = bytecode.ReadWrite
+
+// BytecodeSkip is an unconditional skip bytecode.
+type BytecodeSkip = bytecode.Skip
+
+// BytecodeSkipIf is a conditional skip bytecode.
+type BytecodeSkipIf = bytecode.SkipIf
+
+// BytecodeSwitch is a multiway-skip (switch) bytecode.
+type BytecodeSwitch[W Word[W]] = bytecode.Switch[W]
+
+// BytecodeJmp is an unconditional jump bytecode.
+type BytecodeJmp = bytecode.Jmp
+
+// BytecodeRet is a return bytecode.
+type BytecodeRet = bytecode.Ret
+
+// BytecodeFail is a fail bytecode.
+type BytecodeFail = bytecode.Fail
+
+// BytecodeDebug is a debug bytecode.
+type BytecodeDebug = bytecode.Debug
+
+// BytecodeHint is a (non-deterministic) hint bytecode.
+type BytecodeHint = bytecode.Hint
+
+// BytecodeCheckCast is a width-check (cast) bytecode.
+type BytecodeCheckCast = bytecode.CheckCast
