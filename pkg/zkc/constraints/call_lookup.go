@@ -272,13 +272,13 @@ func emitCallLookup[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 	)
 	//
 
-	// Multi-line callees expose a $ret line
-	// which is 1 on active rows; use it as the lookup selector.
+	// Both multi-line and atomic (one-line) callees expose a $ret line which is 1
+	// on active rows; use it as the lookup selector.
 
 	// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
 	// Atomic callees have $ret line as well. Only OLI that touches memmory should have one.
 	var (
-		retId = register.NewId(uint(len(callee.Registers())) + 1)
+		retId = register.NewId(uint(len(callee.Registers())))
 		ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
 	)
 

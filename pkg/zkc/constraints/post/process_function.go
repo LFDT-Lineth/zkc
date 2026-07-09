@@ -129,18 +129,18 @@ func multiLineTranscriber[W Word[W], F Element[F]](nVectors uint) Transcriber[W,
 	//
 	return func(st vm.State[W]) []F {
 		var (
-			pc  = st.Width()
-			ret = pc + 1
+			ret = st.Width()
+			pc  = ret + 1
 			row = make([]F, st.Width()+2+nVectors)
 		)
 		// Copy over function state
 		copyState(st, row)
-		// Assign PC register
-		row[pc] = field.Uint64[F](uint64(st.PC() + 1))
 		// Assign return register
 		row[ret] = field.Uint1[F](st.IsTerminal())
+		// Assign PC register
+		row[pc] = field.Uint64[F](uint64(st.PC() + 1))
 		// Assign active PC selector
-		row[ret+1+st.PC()] = one
+		row[pc+1+st.PC()] = one
 		//
 		return row
 	}

@@ -353,10 +353,10 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			pc          = register.NewId(mod.Width() + 1)
 		)
 
-		// Create program counter
-		mod.AddRegisters(register.NewComputed(io.PC_NAME, fm.PcWidth(), padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
+		// Create program counter
+		mod.AddRegisters(register.NewComputed(io.PC_NAME, fm.PcWidth(), padding))
 		// Add IS_PC_<k> program counter selectors (one per code line)
 		pcSelectors = make([]register.Id, len(fm.Code()))
 		for c := range pcSelectors {
