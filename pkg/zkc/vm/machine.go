@@ -87,19 +87,6 @@ type WordFunction = LegacyFunction[instruction.Word]
 type WordInstruction = instruction.Word
 
 // ============================================================================
-// Field Machine
-// ============================================================================
-
-// FieldFunction is a function made up of field instructions.
-type FieldFunction = LegacyFunction[instruction.Field]
-
-// FieldMachine is a machine which operates over field elements only.
-type FieldMachine[F field.Element[F]] = machine.Field[F]
-
-// FieldInstruction is an instruction which operates over field elements only.
-type FieldInstruction = instruction.Field
-
-// ============================================================================
 // Constructors
 // ============================================================================
 

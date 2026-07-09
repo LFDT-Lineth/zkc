@@ -56,11 +56,6 @@ func (p *Hint) IsWord() bool {
 	return true
 }
 
-// IsField implementation for instruction.Field interface
-func (p *Hint) IsField() bool {
-	return true
-}
-
 // Uses implementation for Instruction interface
 func (p *Hint) Uses() []register.Id {
 	return flattenVectors(p.Sources)

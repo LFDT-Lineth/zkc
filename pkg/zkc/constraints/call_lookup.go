@@ -294,6 +294,7 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 			retId = register.NewId(uint(len(calleeRegs)))
 			ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
 		)
+		//
 		target = lookup.FilteredVector(calleeId, ret, tgtTerms...)
 	}
 	//

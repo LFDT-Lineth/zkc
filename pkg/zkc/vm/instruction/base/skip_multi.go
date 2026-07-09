@@ -50,11 +50,6 @@ func (p *SkipMulti) IsWord() bool {
 	return true
 }
 
-// IsField implementation for instruction.Field interface
-func (p *SkipMulti) IsField() bool {
-	return true
-}
-
 // OpCode implementation for Instruction interface
 func (p *SkipMulti) OpCode() opcode.OpCode {
 	return opcode.SKIP_MULTI
