@@ -163,9 +163,9 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.Vectorize(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
-			// FIXME: this is broken as we should be splitting for the target
-			// word, not the target field.
-			program = vm.SplitRegisters(p.config.field, program)
+			// NOTE: in fast mode we split according to the target machine word,
+			// not the underlying field.
+			program = vm.SplitRegisters(p.config.word, program)
 		}
 	} else {
 		// Apply transformations required for tracing and constraint generation.

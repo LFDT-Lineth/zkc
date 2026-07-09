@@ -299,7 +299,7 @@ func registerAccesses[F field.Element[F]](regs []register.Register, ids []regist
 	terms := make([]*mir.RegisterAccess[F], len(ids))
 	//
 	for i, id := range ids {
-		terms[i] = term.RawRegisterAccess[F, mir.Term[F]](id, regs[id.Unwrap()].Width(), 0)
+		terms[i] = term.RawRegisterAccess[F, mir.Term[F]](id, regs[id.Unwrap()].WidthOrNative(), 0)
 	}
 	//
 	return terms

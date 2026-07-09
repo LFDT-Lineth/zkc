@@ -123,23 +123,13 @@ func expandRemainder[W word.Word[W]](r, x, y bytecode.RegisterId, registers *reg
 // operands that borrow grows past the field register width.  A two-operand zero
 // assertion splits into independent per-limb equalities (see split.Subtraction),
 // which needs no borrows.
-//
-// FIXME(qy-width): qy holds the product q*y, whose exact value spans up to nX+nY
-// bits.  It is currently allocated at only nX bits.  For wide (multi-limb)
-// operands this makes the split multiplication force the product's high half
-// into zero-width overflow columns, whose carry lines then grow past the field
-// register width (a "u17 exceeds u16" panic during AIR generation).  Soundness
-// does not require the wider register — the multiply rejects on overflow and the
-// downstream "x == qyr" equality re-imposes qy < 2^nX — so this is a lowering
-// limitation, not a correctness one.  Wide division-under-constraints tests
-// (Test_ZkcUnit_BigNum_17/18) are skipped until this is resolved.
 func expandDivRem[W word.Word[W]](q, r, w, x, y bytecode.RegisterId, nX, nY uint,
 	registers *regAllocator[W]) []Bytecode[W] {
 	var (
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
 		qy   = registers.Allocate("", util.Some(nX))
-		qyr  = registers.Allocate("", util.Some(nX+nY))
+		qyr  = registers.Allocate("", util.Some(nY+1))
 		rw1  = registers.Allocate("", util.Some(nY+1))
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", util.Some[uint](0))

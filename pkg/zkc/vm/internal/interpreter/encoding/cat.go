@@ -54,8 +54,12 @@ func DecodeCat[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) 
 // encodeCat encodes a concatenation instruction, packing its target and source
 // registers (least-significant limb first).
 func encodeCat(targets []RegisterId, sources []RegisterId) []uint32 {
-	if len(targets) == 0 || len(sources) == 0 || len(targets) >= 256 || len(sources) >= 256 {
-		panic("concat instruction operand counts not supported")
+	if len(targets) == 0 {
+		panic("cat requires at least one target")
+	} else if len(targets) == 0 || len(sources) == 0 {
+		panic("cat requires at least one source")
+	} else if len(targets) >= 256 || len(sources) >= 256 {
+		panic("cat has too many operands")
 	}
 	//
 	var (

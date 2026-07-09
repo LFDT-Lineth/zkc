@@ -34,7 +34,7 @@ import (
 //
 // After splitting registers into u16 limbs, we have this:
 //
-// > fn f(x'1:u16, x'0:u16, y'1:u16,y'0:u16) -> (r'1:u16,r'0:u16) { ... }
+// > fn f(x'1:u16,x'0:u16, y'1:u16,y'0:u16) -> (r'1:u16,r'0:u16) { ... }
 //
 // Observe that x'1 is the most significant limb of x, etc.  Thus, given the
 // array "[x,y,r]", this function returns "[x'1,x'0,y'1,y'0,r'1,r'0]"
@@ -80,7 +80,7 @@ func splitSourceRegisters[W word.Word[W]](mapping descriptor.LimbsMap[W], regs [
 		}
 	}
 	// Split constant
-	for i, c := range descriptor.SplitConstant(constant, mapping.Field().RegisterWidth) {
+	for i, c := range descriptor.SplitConstant(constant, mapping.RegisterWidth()) {
 		chunks.Apply(uint(i), setRhsConstant(c))
 	}
 	//
@@ -123,7 +123,7 @@ func initialiseLineaChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc
 	var (
 		bytecodes []Bytecode[W]
 		// Extract register width
-		regWidth = mapping.Field().RegisterWidth
+		regWidth = mapping.RegisterWidth()
 		// Split source registers into initial chunks
 		chunks = splitSourceRegisters(mapping, sources, constant)
 		// Determine target limbs

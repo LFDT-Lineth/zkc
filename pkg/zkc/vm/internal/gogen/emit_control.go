@@ -66,9 +66,10 @@ func collectLabels(code BytecodeVector) map[pos]bool {
 }
 
 // condExpr renders the boolean Go expression under which a SkipIf takes its
-// skip.  Vectors are compared lexicographically with the most-significant
-// register at the highest index, matching executeSkipIf_rv; two-limb elements
-// compare their high limbs first.
+// skip.  Register splitting lays limbs out most-significant first, so the
+// lowest-indexed register (Base) holds the most-significant limb; vectors are
+// therefore compared lexicographically from Base downwards, matching
+// executeSkipIf_rv.  Two-limb elements compare their high limbs first.
 func (g *generator) condExpr(fn *descFunction, x *bytecode.SkipIf[word.Uint]) (string, error) {
 	lhsOps, err := g.operands(fn, x.Left.Registers())
 	if err != nil {
@@ -175,18 +176,21 @@ func eqExpr(lhs, rhs []operand) string {
 }
 
 // ordExpr renders a strict lexicographic comparison (op is "<" or ">") of two
-// operand lists, most significant register first.
+// operand lists.  The operands are ordered most-significant register first
+// (index 0 is Base, the most-significant limb), so the comparison is decided by
+// the most-significant differing element, falling through to less-significant
+// elements only while the more-significant ones are equal.
 func ordExpr(lhs, rhs []operand, op string) string {
 	var build func(i int) string
 
 	build = func(i int) string {
-		if i == 0 {
-			return elemOrd(lhs[0], rhs[0], op)
+		if i == len(lhs)-1 {
+			return elemOrd(lhs[i], rhs[i], op)
 		}
 
 		return fmt.Sprintf("(%s || (%s && %s))",
-			elemOrd(lhs[i], rhs[i], op), elemEq(lhs[i], rhs[i]), build(i-1))
+			elemOrd(lhs[i], rhs[i], op), elemEq(lhs[i], rhs[i]), build(i+1))
 	}
 
-	return build(len(lhs) - 1)
+	return build(0)
 }

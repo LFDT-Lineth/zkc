@@ -53,7 +53,13 @@ func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.DivRe
 		dividend = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Dividend)...)
 		divisor  = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Divisor)...)
 	)
-	//
+	// Check whether splitting actually required
+	if target.Len == 1 && dividend.Len == 1 && divisor.Len == 1 {
+		// No, splitting not technically required
+		return []Bytecode[W]{bytecode.NewDivRem[W](insn.Opcode,
+			target.Base, dividend.Base, divisor.Base)}
+	}
+	// Yes, splitting is actually required.
 	return []Bytecode[W]{bytecode.NewIntrinsic[W](op,
 		[]bytecode.RegisterVector{target},
 		[]bytecode.RegisterVector{dividend, divisor})}

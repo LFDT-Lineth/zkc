@@ -14,7 +14,6 @@
 package split
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -76,7 +75,7 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], targ
 		// Split all target registers
 		targetLimbs = applyLimbsMapReversed(mapping, targets...)
 		// Split source registers into initial chunks
-		chunks = splitConcatSources(mapping.Field(), limbsMap, sourceLimbs)
+		chunks = splitConcatSources(mapping.BandWidth(), limbsMap, sourceLimbs)
 	)
 	//
 	for i := uint(0); i < chunks.Len() && len(targetLimbs) > 0; i++ {
@@ -103,13 +102,10 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], targ
 
 // Partition the source limbs of a concatenation into chunks, each of which fits
 // within the given bandwidth.
-func splitConcatSources[W word.Word[W]](cfg field.Config, mapping descriptor.RegisterMap[W], sources []RegisterId,
+func splitConcatSources[W word.Word[W]](bandwidth uint, mapping descriptor.RegisterMap[W], sources []RegisterId,
 ) Chunks[W] {
 	//
-	var (
-		bandwidth = cfg.BandWidth
-		chunks    Chunks[W]
-	)
+	var chunks Chunks[W]
 	//
 	for len(sources) > 0 {
 		var limbs []RegisterId
@@ -166,6 +162,11 @@ func concatRhsBitwidth[W word.Word[W]](chunk Chunk[W], mapping descriptor.Regist
 
 // addAssignment lowers a chunk back into a concrete unsigned-add instruction.
 func concatAssignment[W word.Word[W]](chunk Chunk[W]) Bytecode[W] {
+	var zero W
+
+	if len(chunk.RightHandSide) == 0 {
+		return bytecode.LoadConstVec(chunk.LeftHandSide, zero)
+	}
 	// Done
 	return bytecode.Concat[W](chunk.LeftHandSide, chunk.RightHandSide)
 }

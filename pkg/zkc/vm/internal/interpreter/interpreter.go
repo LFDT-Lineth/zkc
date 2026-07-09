@@ -1511,6 +1511,12 @@ func executeSkipIf_rr[W word.Word[W], F util.Comparator[W]](pc uint32, codes []u
 // via the Comparator type parameter F.  If stack[rs0] compares to stack[rs1] as
 // required, execution jumps to the encoded target; otherwise it falls through
 // to the following bytecode.
+//
+// Register splitting lays limbs out most-significant first (see
+// descriptor.NewLimbsMap and split.ApplyLimbsMap), so the lowest-indexed
+// register (base) holds the most-significant limb.  The comparison therefore
+// scans from the most-significant limb (base) downwards, skipping past equal
+// limbs until the first difference (or the least-significant limb) decides.
 func executeSkipIf_rv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []uint32, stack []W) uint32 {
 	var (
 		cmp F
@@ -1520,14 +1526,13 @@ func executeSkipIf_rv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []u
 		target = pc + 1 + skip
 	)
 	//
-	for i := rs0.Len; i > 0; {
-		i = i - 1
+	for i := uint16(0); i < rs0.Len; i++ {
 		// Read rs0
 		val0 := stack[rs0.Base+i]
 		// Read rs1
 		val1 := stack[rs1.Base+i]
 		//
-		if i != 0 && val0.Cmp(val1) == 0 {
+		if i+1 != rs0.Len && val0.Cmp(val1) == 0 {
 			continue
 		} else if cmp.Cmp(val0, val1) {
 			// true branch

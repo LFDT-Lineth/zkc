@@ -111,7 +111,6 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 		Inlining(GetFlag(cmd, "inline")).
 		FastMode(fastMode).
 		Vectorize(GetFlag(cmd, "vectorize")).
-		SplitRegisters(GetFlag(cmd, "split")).
 		MaxStaticDepth(GetUint(cmd, "max_static_depth")).
 		Field(field).
 		Quiet(quiet)
@@ -143,7 +142,6 @@ func init() {
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().BoolP("gogen", "g", false, "enable Go code generation")
-	rootCmd.PersistentFlags().Bool("split", false, "Apply register splitting")
 	rootCmd.PersistentFlags().Uint("max_static_depth", codegen.DEFAULT_MAX_STATIC_DEPTH,
 		"maximum depth (number of rows) of static tables")
 	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")

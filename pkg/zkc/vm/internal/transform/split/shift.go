@@ -53,6 +53,12 @@ func Shift[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Bitwis
 		value  = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Left)...)
 		amount = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Right)...)
 	)
+	// Check whether splitting actually required
+	if target.Len == 1 && value.Len == 1 && amount.Len == 1 {
+		// No, splitting not technically required
+		return []Bytecode[W]{bytecode.NewBitwise[W](insn.Op,
+			target.Base, value.Base, amount.Base, insn.Bitwidth)}
+	}
 	//
 	return []Bytecode[W]{bytecode.NewIntrinsic[W](op,
 		[]bytecode.RegisterVector{target},

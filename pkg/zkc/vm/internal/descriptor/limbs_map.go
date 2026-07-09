@@ -32,11 +32,12 @@ type LimbId = RegisterId
 // register to those limbs into which it was subdivided.
 type LimbsMap[W any] interface {
 	RegisterMap[W]
-	// Field returns the underlying field configuration used for this mapping.
-	// This includes the field bandwidth (i.e. number of bits available in
-	// underlying field) and the maximum register width (i.e. width at which
-	// registers are capped).
-	Field() field.Config
+	// BandWidth returns the maximum number of bits representable in the underlying
+	// machine word.
+	BandWidth() uint
+	// RegisterWidth returns the maximum number of bits any register is permitted to
+	// have.
+	RegisterWidth() uint
 	// Limbs identifies the limbs into which a given register is divided.
 	// Observe that limbs are ordered by their position in the original
 	// register.  In particular, the first limb (i.e. at index 0) is always
@@ -106,8 +107,8 @@ func NewLimbsMap[W word.Word[W]](field field.Config, m RegisterMap[W]) LimbsMap[
 type limbsMap[W any] struct {
 	// Name of the module to which this mapping corresponds
 	name string
-	// Field configuration in play
-	field field.Config
+	// word configuration in play
+	word word.Config
 	// Set of registers in the original schema (i.e. as they were before the
 	// split)
 	registers []Register[W]
@@ -117,9 +118,16 @@ type limbsMap[W any] struct {
 	mapping [][]LimbId
 }
 
-// Field implementation for register.Map interface
-func (p limbsMap[W]) Field() field.Config {
-	return p.field
+// RegisterWidth returns the maximum number of bits any register is permitted to
+// have.
+func (p limbsMap[W]) RegisterWidth() uint {
+	return p.word.RegisterWidth
+}
+
+// BandWidth returns the maximum number of bits representable in the underlying
+// machine word.
+func (p limbsMap[W]) BandWidth() uint {
+	return p.word.BandWidth
 }
 
 // Limbs implementation for the register.Map interface
@@ -140,7 +148,7 @@ func (p limbsMap[W]) Limbs() []Limb[W] {
 // LimbsMap implementation for the register.Map interface
 func (p limbsMap[W]) LimbsMap() RegisterMap[W] {
 	return limbsMap[W]{
-		p.name, p.field, p.limbs, nil, nil,
+		p.name, p.word, p.limbs, nil, nil,
 	}
 }
 

@@ -532,8 +532,8 @@ type BytecodeFail[W Word[W]] = bytecode.Fail[W]
 // BytecodeDebug is a debug bytecode.
 type BytecodeDebug[W Word[W]] = bytecode.Debug[W]
 
-// BytecodeHint is a (non-deterministic) hint bytecode.
-type BytecodeHint[W Word[W]] = bytecode.Intrinsic[W]
+// BytecodeIntrinsic is a (non-deterministic) hint bytecode.
+type BytecodeIntrinsic[W Word[W]] = bytecode.Intrinsic[W]
 
 // BytecodeCheckCast is a width-check (cast) bytecode.
 type BytecodeCheckCast[W Word[W]] = bytecode.CheckCast[W]

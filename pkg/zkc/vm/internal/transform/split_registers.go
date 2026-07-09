@@ -17,7 +17,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
@@ -34,7 +33,7 @@ type RegisterId = descriptor.RegisterId
 // "r" of width u32. Subdividing this register into registers of at most 8bits
 // will result in four limbs: r'0, r'1, r'2 and r'3 where (by convention) r'0 is
 // the least significant.
-func SplitRegisters[W word.Word[W]](cfg field.Config, program descriptor.Program[W]) descriptor.Program[W] {
+func SplitRegisters[W word.Word[W]](cfg word.Config, program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		mods = program.Modules()
 		//
@@ -43,7 +42,7 @@ func SplitRegisters[W word.Word[W]](cfg field.Config, program descriptor.Program
 	//
 	for i, ith := range mods {
 		// construct limbs map for this module
-		mapping := descriptor.NewLimbsMap[W](cfg, ith)
+		mapping := descriptor.NewLimbsMap(cfg, ith)
 		// split the module
 		out[i] = splitModule(mapping, mods, ith)
 	}
@@ -247,9 +246,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.FieldArith[W]:
 			return []Bytecode[W]{c}
 		case *bytecode.Switch[W]:
-			// NOTE: only relevant for splitting fast mode (i.e. non-lowered)
-			// bytecode.
-			panic("todo: split switch bytecode")
+			return split.Switch(limbsMap, c)
 
 		default:
 			// NOTE: checkcast does not technically need to be supported because
@@ -315,8 +312,8 @@ func splitSkipIf[W word.Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.Sk
 	left := split.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
 	right := split.ApplyLimbsMap(limbsMap, c.Right.Registers()...)
 	// Construct vectored form of skip_if
-	return &bytecode.SkipIf[W]{Op: c.Op, Left: bytecode.NewRegisterVector(left...),
-		Right: bytecode.NewRegisterVector(right...), Skip: c.Skip}
+	return bytecode.NewSkipIfVec[W](c.Op, c.Skip, bytecode.NewRegisterVector(left...),
+		bytecode.NewRegisterVector(right...))
 }
 
 // Argument alignment is concerned with ensuring the number of arguments matches
@@ -430,7 +427,7 @@ func alignArgsReturns[W word.Word[W]](
 	splitter func([]RegisterId, []descriptor.Register[W], split.Allocator[W]) ([]RegisterId, []Bytecode[W]),
 ) (boundary []RegisterId, extras []Bytecode[W]) {
 	//
-	var regWidth = limbsMap.Field().RegisterWidth
+	var regWidth = limbsMap.RegisterWidth()
 	//
 	for i, local := range locals {
 		var (

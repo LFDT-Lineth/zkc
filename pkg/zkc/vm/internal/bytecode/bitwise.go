@@ -27,7 +27,7 @@ type Bitwise[W word.Word[W]] struct {
 	Target RegisterId
 	// Left and Right are the operand registers.
 	Left, Right RegisterId
-	//
+	// Bitwidth of operands
 	Bitwidth uint16
 }
 

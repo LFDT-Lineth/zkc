@@ -1,11 +1,9 @@
-pub input data(address:u32) -> (word:u32)
+pub input data(address:u32) -> (word:u64)
 
-// prove that x / y == z (u32 analogue of bignum_17, for reproducing the
-// qy-width limitation on small operands over a narrow-register field).
 fn main() {
-    var x:u32 = data[0]
-    var y:u32 = data[1]
-    var z:u32 = data[2]
+    var x:u64 = data[0]
+    var y:u64 = data[1]
+    var z:u64 = data[2]
 
     if (x / y) != z {
         fail

@@ -164,9 +164,9 @@ func (p *VectorInsnTranslator[W, F]) WithConstancyConstraints(writes dfa.Writes,
 		var (
 			regId = register.NewId(uint(i))
 			// Value of register on this row of the trace.
-			r_i = mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
+			r_i = mirc.Variable[register.Id, Expr[F]](regId, reg.WidthOrNative(), 0)
 			// Value of register on previous row of the trace.
-			r_im1 = mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), -1)
+			r_im1 = mirc.Variable[register.Id, Expr[F]](regId, reg.WidthOrNative(), -1)
 		)
 		//
 		if reg.IsInput() {

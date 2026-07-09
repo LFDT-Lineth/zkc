@@ -40,8 +40,10 @@ func NewRegisterVector(regs ...RegisterId) RegisterVector {
 	}
 }
 
-// Registers returns the individual registers making up this vector, ordered
-// from least to most significant (i.e. lowest index first).
+// Registers returns the individual registers making up this vector, in
+// increasing index order (Base first).  Note that register splitting lays limbs
+// out most-significant first (see split.ApplyLimbsMap), so the lowest-indexed
+// register (Base) holds the most-significant limb.
 func (p RegisterVector) Registers() []RegisterId {
 	regs := make([]RegisterId, p.Len)
 	//

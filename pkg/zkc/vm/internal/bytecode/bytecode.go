@@ -14,8 +14,8 @@ package bytecode
 
 import (
 	"encoding/gob"
+	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -283,15 +283,24 @@ func NewSkipIf[W word.Word[W]](op Condition, skip uint16, left, right RegisterId
 // NewSkipIfVec constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing multi-limb register
 // vectors.
-func NewSkipIfVec[W word.Word[W]](op Condition, skip uint16, left, right register.Vector) *SkipIf[W] {
-	return &SkipIf[W]{Skip: skip, Left: NewRegisterVector(asRegs(left.Registers()...)...),
-		Right: NewRegisterVector(asRegs(right.Registers()...)...), Op: op}
+func NewSkipIfVec[W word.Word[W]](op Condition, skip uint16, left, right RegisterVector) *SkipIf[W] {
+	if left.Len != right.Len {
+		panic(fmt.Sprintf("mismatched limbs (%d vs %d)", left.Len, right.Len))
+	}
+	//
+	return &SkipIf[W]{Skip: skip, Left: left, Right: right, Op: op}
 }
 
 // LoadConst constructs a load-constant (LDC) instruction which assigns the
 // given constant to the target register.
 func LoadConst[W word.Word[W]](target RegisterId, constant W) *Arith[W] {
 	return NewArith(OP_ADD, []RegisterId{target}, nil, constant)
+}
+
+// LoadConstVec constructs a load-constant (LDC) instruction which assigns the
+// given constant to the target registers.
+func LoadConstVec[W word.Word[W]](targets []RegisterId, constant W) *Arith[W] {
+	return NewArith(OP_ADD, targets, nil, constant)
 }
 
 // Move constructs a move instruction which copies the source register into the
@@ -401,16 +410,6 @@ func NewRet[W word.Word[W]]() *Ret[W] {
 // registers into the target register vector.
 func Concat[W word.Word[W]](targets []RegisterId, sources []RegisterId) *Cat[W] {
 	return &Cat[W]{Targets: targets, Sources: sources}
-}
-
-func asReg(rid register.Id) RegisterId {
-	return util.Cast[uint16](rid.Unwrap())
-}
-
-func asRegs(rids ...register.Id) []RegisterId {
-	return array.Map(rids, func(_ uint, r register.Id) RegisterId {
-		return asReg(r)
-	})
 }
 
 // IsUnusedConstant checks whether a given constant is the "identity element".

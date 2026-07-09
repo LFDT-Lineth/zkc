@@ -14,7 +14,6 @@
 package split
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -29,16 +28,16 @@ import (
 // The approach is schoolbook long multiplication over "sub-limbs":
 //
 //  1. A multiply granularity g is chosen (see mulGranularity) such that a
-//     partial product of two g-bit values, plus the folded constant, fits the
-//     field bandwidth.  Each operand is decomposed (least-significant first)
-//     into g-bit sub-limbs.
+//     partial product of two g-bit values fits the field bandwidth.  Each
+//     operand — and the constant — is decomposed (least-significant first) into
+//     g-bit sub-limbs.
 //  2. For a binary product a·b, every partial product aᵢ·bⱼ is materialised into
 //     fresh sub-limb registers via a narrow MulVecConst and bucketed against its
 //     column weight (i+j, plus the sub-limb offset within the product).  The
-//     constant k is folded in via an initial scalar pass; n-ary products are
-//     reduced to a left-fold of binary products.  Each fold keeps the full
-//     product width, since the multiply is overflow-checked rather than
-//     truncating.
+//     constant k is decomposed into g-bit sub-limbs and folded in via an initial
+//     scalar pass; n-ary products are reduced to a left-fold of binary products.
+//     Each fold keeps the full product width, since the multiply is
+//     overflow-checked rather than truncating.
 //  3. Each column is a multi-operand addition, lowered by reusing the carry
 //     machinery of Addition (insertAddCarryLines / addAssignment): a carry from
 //     column c always has weight c+1, so it threads into the next column.
@@ -54,8 +53,7 @@ func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Alloca
 		insns       []Bytecode[W]
 		targetLimbs = applyLimbsMapReversed(mapping, insn.Target...)
 		targetWidth = groupWidth(alloc, targetLimbs)
-		kbits       = uint(insn.Constant.BigInt().BitLen())
-		g           = mulGranularity(mapping.Field(), kbits)
+		g           = mulGranularity(mapping.RegisterWidth(), mapping.BandWidth())
 	)
 	//
 	one = one.SetUint64(1)
@@ -93,15 +91,17 @@ func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Alloca
 }
 
 // mulGranularity determines the sub-limb width g used for multiplication.  It is
-// the largest divisor of the field's RegisterWidth such that both a partial
-// product of two g-bit values (2·g bits) and a constant-folded partial product
-// (kbits + g bits) fit within the field bandwidth.  Choosing a divisor of
-// RegisterWidth keeps sub-limb boundaries aligned with limb boundaries.
-func mulGranularity(cfg field.Config, kbits uint) uint {
-	var rw, bw = cfg.RegisterWidth, cfg.BandWidth
+// the largest divisor of the field's RegisterWidth such that a partial product
+// of two g-bit values (2·g bits) fits within the field bandwidth.  Choosing a
+// divisor of RegisterWidth keeps sub-limb boundaries aligned with limb
+// boundaries.  Both the variable operands and the constant are decomposed into
+// g-bit sub-limbs (see binaryStep / scalarStep), so every partial product is at
+// most 2·g bits regardless of the constant's magnitude — hence g does not depend
+// on the constant.
+func mulGranularity(regWidth, bandWidth uint) uint {
 	//
-	for g := rw; g >= 1; g-- {
-		if rw%g == 0 && 2*g <= bw && kbits+g <= bw {
+	for g := regWidth; g >= 1; g-- {
+		if regWidth%g == 0 && 2*g <= bandWidth {
 			return g
 		}
 	}
@@ -138,27 +138,37 @@ func decomposeToSubLimbs[W word.Word[W]](alloc Allocator[W], g uint, limbs []Reg
 	return subs, insns
 }
 
-// scalarStep multiplies each sub-limb of the accumulator by the constant k,
-// bucketing the resulting product sub-limbs by column weight, then accumulates
-// the columns into the full-width (kbits + width) product.
+// scalarStep multiplies the sub-limb accumulator a by the constant k.  The
+// constant is decomposed into g-wide sub-limbs kⱼ (exactly as the variable
+// operands are), and every partial product aᵢ·kⱼ is materialised and bucketed
+// against its column weight (i+j) — the same shape as binaryStep, but with a
+// constant rather than a variable second operand.  Because each aᵢ·kⱼ multiplies
+// two g-bit values it is at most 2·g bits, so however wide k is the multiply
+// still fits the field bandwidth (see mulGranularity).  Zero sub-limbs of k are
+// skipped: they contribute nothing to any column.
 func scalarStep[W word.Word[W]](alloc Allocator[W], g uint, a []RegisterId, k W,
 ) ([]RegisterId, []Bytecode[W]) {
 	//
 	var (
-		kbits     = uint(k.BigInt().BitLen())
-		fullWidth = kbits + groupWidth(alloc, a)
+		kSubs     = descriptor.SplitConstant(k, g)
+		fullWidth = uint(k.BigInt().BitLen()) + groupWidth(alloc, a)
 		partials  = map[uint][]RegisterId{}
 		insns     []Bytecode[W]
 	)
 	//
 	for i, ai := range a {
-		var (
-			wa = alloc.Register(ai).Bitwidth().Unwrap()
-			pp = allocSubLimbs(alloc, "pp", g, kbits+wa)
-		)
+		var wa = alloc.Register(ai).Bitwidth().Unwrap()
 		//
-		insns = append(insns, bytecode.MulVecConst(pp, []RegisterId{ai}, k))
-		bucket(partials, uint(i), pp)
+		for j, kj := range kSubs {
+			if kj.Cmp64(0) == 0 {
+				continue
+			}
+			//
+			var pp = allocSubLimbs(alloc, "pp", g, wa+uint(kj.BigInt().BitLen()))
+			//
+			insns = append(insns, bytecode.MulVecConst(pp, []RegisterId{ai}, kj))
+			bucket(partials, uint(i+j), pp)
+		}
 	}
 	//
 	outs, code := accumulate(alloc, columns(fullWidth, g, partials), columnWidth(fullWidth, g), partials)
