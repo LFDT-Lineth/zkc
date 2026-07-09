@@ -31,21 +31,14 @@ func NewAtomicFraming[T any, E Expr[T, E]]() Framing[T, E] {
 	return &OneLineFraming[T, E]{}
 }
 
-// NewMultiLineFraming constructs a selector-based framing for a multi-line
-// function.  Each instruction is guarded directly on a dedicated boolean
-// selector register (one per code line); because each selector is a width-1
-// register, lowering avoids the inverse gadget otherwise required to normalise a
-// PC equality.  The selectors slice provides one register per instruction,
-// indexed by code line.
+// NewMultiLineFraming constructs multi-line function.
+// It adds a PC and IS_PC_<k> registers.
 func NewMultiLineFraming[T any, E Expr[T, E]](pc T, pcWidth uint, ret T, retWidth uint,
 	selectors []T) Framing[T, E] {
 	return &MultiLineFraming[T, E]{LegacyMultiLineFraming[T, E]{pc, pcWidth, ret, retWidth}, selectors}
 }
 
-// NewLegacyMultiLineFraming constructs a framing for a multi-line function which
-// guards each instruction using an equality on the program counter.  This is
-// retained for the assembly pipeline, which does not (yet) emit selector
-// registers.
+// NewLegacyMultiLineFraming is a legacy constructor used only by zkasm, not by zkc.
 func NewLegacyMultiLineFraming[T any, E Expr[T, E]](pc T, pcWidth uint, ret T, retWidth uint) Framing[T, E] {
 	return &LegacyMultiLineFraming[T, E]{pc, pcWidth, ret, retWidth}
 }

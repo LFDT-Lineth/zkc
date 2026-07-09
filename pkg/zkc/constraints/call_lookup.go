@@ -271,20 +271,19 @@ func emitCallLookup[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 		tgtTerms = registerAccesses[F](callee.Registers(), tgtIds)
 	)
 	//
-	if callee.IsAtomic() {
-		// Atomic callees have no $ret line: every callee row is a valid table
-		// entry, so the target side is unfiltered.
-		target = lookup.UnfilteredVector(calleeId, tgtTerms...)
-	} else {
-		// Multi-line callees expose a $ret line (immediately after the $pc line)
-		// which is 1 on active rows; use it as the lookup selector.
-		var (
-			retId = register.NewId(uint(len(callee.Registers())) + 1)
-			ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
-		)
 
-		target = lookup.FilteredVector(calleeId, ret, tgtTerms...)
-	}
+	// Multi-line callees expose a $ret line
+	// which is 1 on active rows; use it as the lookup selector.
+
+	// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
+	// Atomic callees have $ret line as well. Only OLI that touches memmory should have one.
+	var (
+		retId = register.NewId(uint(len(callee.Registers())) + 1)
+		ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
+	)
+
+	target = lookup.FilteredVector(calleeId, ret, tgtTerms...)
+
 	//
 	mod.AddConstraints(mir.NewLookupConstraint(handle, []mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
 }
