@@ -17,6 +17,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
@@ -32,15 +33,15 @@ import (
 //
 // Here, ADDRESS is the set of declared input registers, whilst DATA is the set
 // of declared output registers.
-func ProcessAccessOnceMemory[W vm.Word[W], F Element[F]](m Memory[W]) rtrace.ArrayModule[F] {
+func ProcessAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.Memory[W]) rtrace.ArrayModule[F] {
 	var (
 		one      = field.Uint64[F](1)
 		geometry = m.Geometry()
 		// Extract memory contents
 		data = m.Contents()
-		// number of address lines
+		// Number of address lines
 		nAddr = geometry.AddressLines()
-		// number of data lines
+		// Number of data lines
 		nData = geometry.DataLines()
 		// Calculate height of trace based on geometry
 		height = uint64(len(data)) / uint64(geometry.DataLines())
@@ -78,7 +79,7 @@ func ProcessAccessOnceMemory[W vm.Word[W], F Element[F]](m Memory[W]) rtrace.Arr
 func determineAomRegisters(registers []register.Register, nAddressLines uint) []rtrace.Register {
 	var (
 		// Copy over all address / data lines
-		regs = toRtraceRegisters(registers)
+		regs = array.Map(registers, toRtraceRegisterLegacy)
 		// Bitwidth for binary selector lines
 		u1 = util.Some([]uint{1})
 	)

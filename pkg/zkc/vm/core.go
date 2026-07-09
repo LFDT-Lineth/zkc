@@ -21,7 +21,7 @@ import (
 // Module identifies a machine module
 type Module = machine.Module
 
-// Function contains information about an executable function in the system.  A
+// LegacyFunction contains information about an executable function in the system.  A
 // function has one or more registers where: the first n registers are the input
 // registers (i.e. parameters); the next m registers are the output registers
 // (i.e. returns); and all remaining registers are internal (sometimes also
@@ -33,7 +33,7 @@ type Module = machine.Module
 // efficient execution.  However, the instructions of an "assembly" level
 // function implement the Instruction interface, which is better suited to
 // analysis and/or translation into constraints.
-type Function[I instruction.Instruction] = function.Function[I]
+type LegacyFunction[I instruction.Instruction] = function.Function[I]
 
 // Vector instructions are instructions composed of some number of micro
 // instructions which, with restrictions, can be executed by the underlying

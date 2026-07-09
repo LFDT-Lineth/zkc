@@ -40,7 +40,7 @@ import (
 func CheckCast(p *bytecode.CheckCast) []uint32 {
 	var bitwidth = uint32(p.Bitwidth) << 16
 	//
-	if HasWideRegister(p.Target) {
+	if IsWideRegisters(p.Target) {
 		return []uint32{
 			bitwidth | CHECKCAST | WIDE,
 			uint32(p.Target),
@@ -56,7 +56,7 @@ func CheckCast(p *bytecode.CheckCast) []uint32 {
 func DecodeCheckCast(pc uint32, codes []uint32) (rd uint16, bitwidth uint16, n uint32) {
 	bitwidth = uint16(codes[pc] >> 16)
 	//
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		rd = uint16(codes[pc+1] & 0xffff)
 		//
 		return rd, bitwidth, 2

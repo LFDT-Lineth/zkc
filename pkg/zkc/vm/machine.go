@@ -22,6 +22,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/trace"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -80,7 +81,7 @@ type BaseMachine[W MachineWord[W], I Instruction, E Executor[W, I]] = machine.Ba
 type WordMachine[W Word[W]] = machine.Word[W]
 
 // WordFunction is a function made up of word instructions.
-type WordFunction = Function[instruction.Word]
+type WordFunction = LegacyFunction[instruction.Word]
 
 // WordInstruction is an instruction which operates over standard machine words.
 type WordInstruction = instruction.Word
@@ -90,7 +91,7 @@ type WordInstruction = instruction.Word
 // ============================================================================
 
 // FieldFunction is a function made up of field instructions.
-type FieldFunction = Function[instruction.Field]
+type FieldFunction = LegacyFunction[instruction.Field]
 
 // FieldMachine is a machine which operates over field elements only.
 type FieldMachine[F field.Element[F]] = machine.Field[F]
@@ -106,7 +107,7 @@ type FieldInstruction = instruction.Field
 // flag indicates whether this function is backed by a native circuit (i.e.
 // declared with the @native annotation) rather than by code.
 func NewFunction[I Instruction](name string, native bool, registers []register.Register,
-	code []instruction.Vector[I]) *Function[I] {
+	code []instruction.Vector[I]) *LegacyFunction[I] {
 	return function.New(name, native, registers, code)
 }
 
@@ -167,6 +168,10 @@ func ExecuteAll[W MachineWord[W], M Core[W]](machine M, n uint) (uint, error) {
 		}
 	}
 }
+
+// Observer is a generic interface for extract information before and after an
+// execution step of the VM.  For example, to generate debugging information.
+type Observer[W MachineWord[W], I Instruction, M Machine[W, I]] = trace.Observer[W, I, M]
 
 // ExecuteAndObserve executes a given machine for n steps with a supplied
 // observer.  The purpose of this is that it provides a way to extract

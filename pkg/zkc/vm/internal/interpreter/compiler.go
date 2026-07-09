@@ -51,16 +51,17 @@ type RegisterId = bytecode.RegisterId
 type ModuleId = bytecode.ModuleId
 
 // CompileProgram compiles a program descriptor into an executable (i.e.
-// compiled) bytecode program.
-func CompileProgram[W word.Word[W]](program descriptor.Program[W]) encoding.Binary[W] {
+// compiled) bytecode program.  If tracing is enabled then a break point is set
+// for the terminal instruction(s) of each bytecode vector.
+func CompileProgram[W word.Word[W]](program descriptor.Program[W], tracing bool) encoding.Binary[W] {
 	var (
 		symtab             = initialiseSymbolTable(program)
-		bytecodes, changed = encodeBytecodes(program, &symtab)
+		bytecodes, changed = encodeBytecodes(program, &symtab, tracing)
 	)
 	// Encode the bytecodes
 	for changed {
 		// continue until we reach a fixed point
-		bytecodes, changed = encodeBytecodes(program, &symtab)
+		bytecodes, changed = encodeBytecodes(program, &symtab, tracing)
 	}
 	// Flag every instruction at which a breakpoint has been registered by setting
 	// the BREAKPOINT modifier bit on its (resolved) first word.
@@ -171,7 +172,7 @@ func initFunctionPoints[W word.Word[W]](offset Address, fid uint16, fn Function[
 	return offset
 }
 
-func encodeBytecodes[W word.Word[W]](prog descriptor.Program[W], symtab *SymbolTable[W],
+func encodeBytecodes[W word.Word[W]](prog descriptor.Program[W], symtab *SymbolTable[W], tracing bool,
 ) (codes []uint32, changed bool) {
 	var (
 		offset Address
@@ -188,7 +189,7 @@ func encodeBytecodes[W word.Word[W]](prog descriptor.Program[W], symtab *SymbolT
 		)
 		//
 		if f, ok := m.(*descriptor.Function[W]); ok {
-			vwords, offset, c = encodeVectors(mid, f.Vectors(), offset, symtab)
+			vwords, offset, c = encodeVectors(mid, f.Vectors(), offset, symtab, tracing)
 			changed = changed || c
 			//
 			words = append(words, vwords...)
@@ -198,8 +199,8 @@ func encodeBytecodes[W word.Word[W]](prog descriptor.Program[W], symtab *SymbolT
 	return words, changed
 }
 
-func encodeVectors[W word.Word[W]](fid ModuleId, vectors []bytecode.Vector[W], offset Address, symtab *SymbolTable[W],
-) ([]uint32, Address, bool) {
+func encodeVectors[W word.Word[W]](fid ModuleId, vectors []bytecode.Vector[W], offset Address,
+	symtab *SymbolTable[W], tracing bool) ([]uint32, Address, bool) {
 	//
 	var (
 		words   []uint32
@@ -219,6 +220,10 @@ func encodeVectors[W word.Word[W]](fid ModuleId, vectors []bytecode.Vector[W], o
 				// Encode given bytecode
 				codes = encoding.Encode(b, offset, env)
 			)
+			// Insert breakpoint if tracing
+			if tracing && isVectorTerminal[W](b) {
+				codes[0] |= encoding.BREAKPOINT
+			}
 			//
 			words = append(words, codes...)
 			// Check whether offset in encoded sequence of this instruction has
@@ -243,5 +248,20 @@ func checkMemoryCount(count uint32, name string) {
 	// in case.
 	if count > math.MaxUint16 {
 		panic(fmt.Sprintf("too many %s memory modules (%d)", name, count))
+	}
+}
+
+// check whether the next bytecode to execute will terminate the enclosing
+// function, or not.
+func isVectorTerminal[W word.Word[W]](b bytecode.Bytecode[W]) bool {
+	switch b.(type) {
+	case *bytecode.Fail:
+		return true
+	case *bytecode.Jmp:
+		return true
+	case *bytecode.Ret:
+		return true
+	default:
+		return false
 	}
 }

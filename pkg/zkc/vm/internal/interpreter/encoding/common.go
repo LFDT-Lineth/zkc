@@ -73,15 +73,15 @@ const WIDE = 0x40
 // instructions reach the same executor.
 const BREAKPOINT = 0x80
 
-// IsWideInstruction checks whether the instruction word at the given position has the
+// IsWideForm checks whether the instruction word at the given position has the
 // WIDE modifier bit set (i.e. carries u16 register operands).
-func IsWideInstruction(pc uint32, codes []uint32) bool {
+func IsWideForm(pc uint32, codes []uint32) bool {
 	return codes[pc]&WIDE != 0
 }
 
-// HasWideRegister checks whether any of the given registers requires the wide
+// IsWideRegisters checks whether any of the given registers requires the wide
 // (u16) instruction form, i.e. does not fit within a single byte.
-func HasWideRegister(regs ...RegisterId) bool {
+func IsWideRegisters(regs ...RegisterId) bool {
 	for _, r := range regs {
 		if r > math.MaxUint8 {
 			return true
@@ -91,10 +91,10 @@ func HasWideRegister(regs ...RegisterId) bool {
 	return false
 }
 
-// HasWideRegisterVecs checks whether any of the given register vectors
+// IsWideRegisterVectors checks whether any of the given register vectors
 // requires the wide (u16) instruction form, i.e. has a base or length which
 // does not fit within a single byte.
-func HasWideRegisterVecs(vecs []RegisterVector) bool {
+func IsWideRegisterVectors(vecs []RegisterVector) bool {
 	for _, v := range vecs {
 		if v.Base > math.MaxUint8 || v.Len > math.MaxUint8 {
 			return true
@@ -292,7 +292,7 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 		return 1
 	case *bytecode.SkipIf:
 		// The wide form carries its base registers in an additional word.
-		if HasWideRegister(b.Left.Base, b.Right.Base) {
+		if IsWideRegisters(b.Left.Base, b.Right.Base) {
 			return 3
 		}
 		//

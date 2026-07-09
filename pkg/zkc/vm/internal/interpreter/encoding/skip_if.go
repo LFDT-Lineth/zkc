@@ -70,7 +70,7 @@ func SkipIf[W word.Word[W]](pc Address, b *bytecode.SkipIf, env Environment[W]) 
 func encodeSkipIf_rr(skip uint8, rs0, rs1 RegisterId, op Cond) []uint32 {
 	// Forward branches are preferred as SKIP_IF instructions, whose offset is
 	// unsigned and hence offers a greater forward range.
-	if HasWideRegister(rs0, rs1) {
+	if IsWideRegisters(rs0, rs1) {
 		return []uint32{
 			uint32(skip)<<24 | (SEQ_rr + uint32(op)) | WIDE,
 			uint32(rs1) | uint32(rs0)<<16,
@@ -95,7 +95,7 @@ func DecodeSkipIf_rr(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterI
 	op = Cond((codes[pc] & OPCODE_MASK) - SEQ_rr)
 	skip = codes[pc] >> 24
 	//
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		rs1 = RegisterId(codes[pc+1] & 0xffff)
 		rs0 = RegisterId(codes[pc+1] >> 16)
 		n = 2
@@ -142,7 +142,7 @@ func encodeSkipIf_rv(skip uint32, rs0, rs1 RegisterVector, op Cond) []uint32 {
 		panic(fmt.Sprintf("mismatched length for source vectors (%d vs %d)", rs0.Len, rs1.Len))
 	}
 	//
-	if HasWideRegister(rs0.Base, rs1.Base) {
+	if IsWideRegisters(rs0.Base, rs1.Base) {
 		return []uint32{
 			nv | (SEQ_rv + uint32(op)) | WIDE,
 			skip,
@@ -166,7 +166,7 @@ func DecodeSkipIf_rv(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterV
 	op = Cond((codes[pc] & OPCODE_MASK) - SEQ_rv)
 	skip = codes[pc+1]
 	//
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		rs1b = RegisterId(codes[pc+2] & 0xffff)
 		rs0b = RegisterId(codes[pc+2] >> 16)
 		n = 3

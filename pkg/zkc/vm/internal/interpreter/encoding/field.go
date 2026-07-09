@@ -32,7 +32,7 @@ func DecodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32) (
 	var (
 		nlimbs = (codes[pc] >> 16) & 0xff
 		nsrc   = uint((codes[pc] >> 24) & 0xff)
-		wide   = IsWideInstruction(pc, codes)
+		wide   = IsWideForm(pc, codes)
 		offset = pc
 		limb   W
 	)
@@ -112,7 +112,7 @@ func encodeFieldArith[W word.Word[W]](op bytecode.Operation, rd RegisterId, sour
 		// NOTE: big-endian byte ordering
 		bytes  = constant.BigInt().Bytes()
 		nlimbs = (len(bytes) + 3) / 4
-		wide   = HasWideRegister(rd) || HasWideRegister(sources...)
+		wide   = IsWideRegisters(rd) || IsWideRegisters(sources...)
 		header = uint32(len(sources))<<24 | uint32(nlimbs)<<16
 		codes  []uint32
 		offset int

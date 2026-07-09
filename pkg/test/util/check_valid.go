@@ -366,7 +366,7 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc Tes
 	// collecting the checkpoints it produces.  The counter governs how frequently
 	// a checkpoint is actually recorded.
 	gen := interpreter.
-		BreakPointer(func() {
+		BreakPointer(func(_ uint32) {
 			if counter.Tick() {
 				checkpoints = append(checkpoints, interpreter.CheckPoint())
 			}

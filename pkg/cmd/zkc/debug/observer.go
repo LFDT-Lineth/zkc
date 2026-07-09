@@ -25,7 +25,7 @@ import (
 // TraceObserver prints a trace
 type TraceObserver[W vm.Word[W]] struct {
 	depth uint
-	fun   *vm.Function[vm.WordInstruction]
+	fun   *vm.LegacyFunction[vm.WordInstruction]
 	insn  vm.Instruction
 	pc    vm.ProgramCounter
 }

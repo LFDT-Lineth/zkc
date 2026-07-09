@@ -79,7 +79,7 @@ func Arith[W word.Word[W]](p bytecode.Arith[W], env Environment[W]) []uint32 {
 func encodeArith_2n1(aop bytecode.Operation, rs0, rs1, rd uint16) []uint32 {
 	var opcode = ADD_2n1 + uint32(aop-bytecode.OP_ADD)
 	//
-	if HasWideRegister(rs0, rs1, rd) {
+	if IsWideRegisters(rs0, rs1, rd) {
 		return []uint32{
 			uint32(rd)<<16 | opcode | WIDE,
 			uint32(rs1) | uint32(rs0)<<16,
@@ -94,7 +94,7 @@ func encodeArith_2n1(aop bytecode.Operation, rs0, rs1, rd uint16) []uint32 {
 // DecodeArith_2n1 decodes a two-source, one-target arithmetic instruction,
 // returning the source and destination registers and the instruction width.
 func DecodeArith_2n1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) {
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		rd = RegisterId(codes[pc] >> 16)
 		rs1 = RegisterId(codes[pc+1] & 0xffff)
 		rs0 = RegisterId(codes[pc+1] >> 16)
@@ -163,7 +163,7 @@ func encodeArith_1n1c[W word.Word[W]](aop bytecode.Operation, rs, rd uint16, con
 		opcode = ADDC + uint32(aop-bytecode.OP_ADD)
 	)
 	//
-	if HasWideRegister(rs, rd) || imm > 0xff {
+	if IsWideRegisters(rs, rd) || imm > 0xff {
 		return []uint32{
 			imm<<8 | opcode | WIDE,
 			uint32(rd) | uint32(rs)<<16,
@@ -178,7 +178,7 @@ func encodeArith_1n1c[W word.Word[W]](aop bytecode.Operation, rs, rd uint16, con
 // DecodeArith_1n1c decodes a one-source-plus-constant arithmetic instruction,
 // returning the source and destination registers, constant and instruction width.
 func DecodeArith_1n1c[W word.Word[W]](pc uint32, codes []uint32) (rs, rd uint16, constant W, n uint32) {
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		constant = constant.SetUint64(uint64(codes[pc] >> 8))
 		rd = RegisterId(codes[pc+1] & 0xffff)
 		rs = RegisterId(codes[pc+1] >> 16)
@@ -227,7 +227,7 @@ func encodeLdc_1[W word.Word[W]](constant W, rd uint16) []uint32 {
 	// Encoding
 	c := uint32(constant.Uint64())
 	//
-	if HasWideRegister(rd) || c > 0xffff {
+	if IsWideRegisters(rd) || c > 0xffff {
 		return []uint32{
 			c<<8 | LDC | WIDE,
 			uint32(rd),
@@ -245,7 +245,7 @@ func encodeLdc_1[W word.Word[W]](constant W, rd uint16) []uint32 {
 func DecodeLdc_1[W word.Word[W]](pc uint32, codes []uint32) (constant W, rd uint16, n uint32) {
 	var c W
 	//
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		c = c.SetUint64(uint64(codes[pc] >> 8))
 		rd = RegisterId(codes[pc+1] & 0xffff)
 		//
@@ -298,7 +298,7 @@ func encodeLdc_w[W word.Word[W]](constant W, rd uint16) []uint32 {
 		// NOTE: big-endian byte ordering
 		bytes  = constant.BigInt().Bytes()
 		nlimbs = max(1, (len(bytes)+3)/4)
-		wide   = HasWideRegister(rd)
+		wide   = IsWideRegisters(rd)
 		codes  = make([]uint32, nlimbs+1)
 	)
 	//
@@ -331,7 +331,7 @@ func DecodeLdc_w[W word.Word[W]](pc uint32, codes []uint32) (constant W, rd uint
 		nlimbs uint32
 	)
 	//
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		nlimbs = (codes[pc] >> 8) & 0xff
 		rd = RegisterId(codes[pc] >> 16)
 	} else {
@@ -369,7 +369,7 @@ func DecodeLdc_w[W word.Word[W]](pc uint32, codes []uint32) (constant W, rd uint
 
 // encodeMove_1s1 encodes a register-to-register move instruction.
 func encodeMove_1s1(rs, rd uint16) []uint32 {
-	if HasWideRegister(rs, rd) {
+	if IsWideRegisters(rs, rd) {
 		return []uint32{
 			MOVE | WIDE,
 			uint32(rd) | uint32(rs)<<16,
@@ -384,7 +384,7 @@ func encodeMove_1s1(rs, rd uint16) []uint32 {
 // DecodeMove_1s1 decodes a register-to-register move instruction, returning the
 // source and destination registers and the instruction width.
 func DecodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		rd = RegisterId(codes[pc+1] & 0xffff)
 		rs = RegisterId(codes[pc+1] >> 16)
 		//
@@ -446,7 +446,7 @@ func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterI
 		regs   = append(RegsAsShorts(targets), RegsAsShorts(sources)...)
 	)
 	//
-	if HasWideRegister(regs...) {
+	if IsWideRegisters(regs...) {
 		codes := []uint32{bw | nsrc | ntgt | opcode | WIDE, uint32(c), uint32(c >> 32)}
 		//
 		return append(codes, PackShortsIntoCodes(regs)...)
@@ -473,7 +473,7 @@ func DecodeArith_nm[W word.Word[W]](pc uint32, codes []uint32) (
 		c        = uint64(codes[pc+1]) | (uint64(codes[pc+2]) << 32)
 	)
 	//
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		targets = NewOp16Iter(0, ntargets, codes[pc+3:])
 		sources = NewOp16Iter(ntargets, nsources, codes[pc+3:])
 		n = 3 + NumCodesPackedWide(ntargets+nsources)

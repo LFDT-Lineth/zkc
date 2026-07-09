@@ -14,10 +14,13 @@ package post
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // ProcessReadWriteMemory performs post-processing on a RAM trace.
-func ProcessReadWriteMemory[W Word[W], F Element[F]](m Memory[W]) rtrace.ArrayModule[F] {
+func ProcessReadWriteMemory[W Word[W], F Element[F]](m vm.Memory[W]) rtrace.ArrayModule[F] {
+	var regs = array.Map(m.Registers(), toRtraceRegisterLegacy)
 	// TODO: flesh me out :)
-	return rtrace.NewArrayModule[F](m.Name(), toRtraceRegisters(m.Registers()))
+	return rtrace.NewArrayModule[F](m.Name(), regs)
 }

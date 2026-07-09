@@ -49,7 +49,7 @@ func Bitwise(p *bytecode.Bitwise) []uint32 {
 func encodeBitwise(op bytecode.Operation, rd, lhs, rhs RegisterId, bitwidth uint16) []uint32 {
 	var opcode = AND + uint32(op-bytecode.OP_AND)
 	//
-	if HasWideRegister(rd, lhs, rhs) {
+	if IsWideRegisters(rd, lhs, rhs) {
 		return []uint32{
 			uint32(rd)<<16 | opcode | WIDE,
 			uint32(bitwidth),
@@ -67,7 +67,7 @@ func encodeBitwise(op bytecode.Operation, rd, lhs, rhs RegisterId, bitwidth uint
 func DecodeBitwise_2n1(pc uint32, codes []uint32) (rd, lhs, rhs RegisterId, bitwidth uint16, n uint32) {
 	bitwidth = uint16(codes[pc+1])
 	//
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		rd = RegisterId(codes[pc] >> 16)
 		lhs = RegisterId(codes[pc+2] & 0xffff)
 		rhs = RegisterId(codes[pc+2] >> 16)

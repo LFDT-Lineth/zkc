@@ -15,8 +15,8 @@ package post
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
@@ -31,9 +31,9 @@ type Transcriber[W Word[W], F Element[F]] func(state vm.State[W]) []F
 
 // ProcessOneLineFunction performs post-processing on a one-line function.  This
 // is the simplest case possible.
-func ProcessOneLineFunction[W Word[W], F Element[F]](f Function, states []vm.State[W]) rtrace.ArrayModule[F] {
+func ProcessOneLineFunction[W Word[W], F Element[F]](f vm.Function[W], states []vm.State[W]) rtrace.ArrayModule[F] {
 	var (
-		regs = toRtraceRegisters(f.Registers())
+		regs = array.Map(f.Registers(), toRtraceRegister)
 		rows = transcribe(states, oneLineTranscriber[W, F])
 	)
 	//
@@ -61,9 +61,9 @@ func oneLineTranscriber[W Word[W], F Element[F]](st vm.State[W]) []F {
 // +----------+----+-----+--------+--------+-----+
 //
 // Here, REGS is the set of registers declared by the given function.
-func ProcessMultiLineFunction[W Word[W], F Element[F]](f Function, states []vm.State[W]) rtrace.ArrayModule[F] {
+func ProcessMultiLineFunction[W Word[W], F Element[F]](f vm.Function[W], states []vm.State[W]) rtrace.ArrayModule[F] {
 	var (
-		nVectors = uint(len(f.Code()))
+		nVectors = uint(len(f.Vectors()))
 		regs     = determineMultiLineFnRegisters(f.Registers(), nVectors)
 		rows     = transcribe(states, multiLineTranscriber[W, F](nVectors))
 	)
@@ -72,10 +72,10 @@ func ProcessMultiLineFunction[W Word[W], F Element[F]](f Function, states []vm.S
 }
 
 // Determine the full set of registers required for the trace of this funcion.
-func determineMultiLineFnRegisters(registers []register.Register, nVectors uint) []rtrace.Register {
+func determineMultiLineFnRegisters[W vm.Word[W]](registers []vm.Register[W], nVectors uint) []rtrace.Register {
 	var (
 		// Copy over all address / data lines
-		regs = toRtraceRegisters(registers)
+		regs = array.Map(registers, toRtraceRegister)
 		// Calculate bitwidth for PC register (recall that PC==0 is reserved for
 		// padding).
 		uPC = util.Some([]uint{bit.Width(nVectors + 1)})
@@ -134,9 +134,9 @@ func transcribe[W Word[W], F Element[F]](states []vm.State[W], scribe Transcribe
 // after conversion.
 func copyState[W Word[W], F Element[F]](st vm.State[W], fields []F) {
 	// Copy over state registers
-	for i := range st.Width() {
+	for i, v := range st.Frame() {
 		var val F
 		// Copy over data
-		fields[i] = val.SetBytes(st.Get(i).BigInt().Bytes())
+		fields[i] = val.SetBytes(v.BigInt().Bytes())
 	}
 }

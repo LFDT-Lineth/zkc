@@ -31,22 +31,25 @@ type (
 	Memory[W Word[W]] = vm.Memory[W]
 )
 
-// ToRegisters converts an array of register descriptors into an array of scheme
-// registers.
-func toRtraceRegisters(registers []register.Register) []rtrace.Register {
-	var regs = make([]rtrace.Register, len(registers))
-	//
-	for i, r := range registers {
-		var (
-			bitwidth util.Option[[]uint]
-		)
-		// Determine bitwidth (if applicable)
-		if !r.IsNative() {
-			bitwidth = util.Some([]uint{r.Width()})
-		}
-		//
-		regs[i] = rtrace.NewRegister(r.Name(), bitwidth)
+// convert register descriptor into rtrace register
+func toRtraceRegister[W Word[W]](_ uint, reg vm.Register[W]) rtrace.Register {
+	var bitwidth util.Option[[]uint]
+	// Determine bitwidth (if applicable)
+	if !reg.IsNative() {
+		bitwidth = util.Some([]uint{reg.Bitwidth().Unwrap()})
 	}
 	//
-	return regs
+	return rtrace.NewRegister(reg.Name(), bitwidth)
+}
+
+// convert register descriptor into rtrace register (legacy version to be
+// deprecated).
+func toRtraceRegisterLegacy(_ uint, reg register.Register) rtrace.Register {
+	var bitwidth util.Option[[]uint]
+	// Determine bitwidth (if applicable)
+	if !reg.IsNative() {
+		bitwidth = util.Some([]uint{reg.Width()})
+	}
+	//
+	return rtrace.NewRegister(reg.Name(), bitwidth)
 }

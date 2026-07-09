@@ -60,7 +60,7 @@ func DecodeDebug(pc uint32, codes []uint32) (index uint, sources OpIter, n uint3
 func encodeDebug_n(index uint16, sources []RegisterVector) []uint32 {
 	var nsources = uint32(util.Cast[uint8](uint(len(sources)))) << 24
 	//
-	if HasWideRegisterVecs(sources) {
+	if IsWideRegisterVectors(sources) {
 		var codes = []uint32{nsources | uint32(index)<<8 | DEBUG | WIDE}
 		//
 		return append(codes, PackShortsIntoCodes(RegisterVectorsAsShorts(sources))...)
@@ -80,7 +80,7 @@ func decodeDebug_n(pc uint32, codes []uint32) (index uint, sources OpIter, n uin
 	//
 	index = uint(codes[pc]>>8) & 0xffff
 	//
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		sources = NewOp16Iter(0, nops, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(nops)
 	} else {

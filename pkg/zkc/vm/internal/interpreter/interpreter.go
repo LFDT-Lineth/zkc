@@ -32,6 +32,15 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
+// ExtractExecutingState extracts the currently executing state from the
+// bytecode intepreter.  That is, specifically, the current: executing function,
+// program counter and register values.
+func ExtractExecutingState[W word.Word[W]](p *Interpreter[W]) (fid uint16, pc uint32, st []W) {
+	lab := p.program.FunctionAt(p.pc)
+	//
+	return lab.ModuleId, uint32(lab.Point.Macro), p.dataStack.SliceEnd(uint(p.fp))
+}
+
 // Interpreter is a fast, register-based interpreter for the bytecode form of a
 // compiled program.  It implements the machine.Core interface and exists to
 // execute programs as efficiently as possible (e.g. for testing and benchmark
@@ -96,7 +105,7 @@ type Interpreter[W word.Word[W]] struct {
 	// state itself (see CheckPoint) and is responsible for governing how
 	// frequently it actually acts.  Configured via the BreakPointer builder
 	// method; defaults to a panicking stub until one has been set.
-	breakpoint func()
+	breakpoint func(uint32)
 }
 
 // StackFrame captures relevant information about all functions currently
@@ -114,15 +123,22 @@ type StackFrame = checkpoint.StackFrame
 // used when executing native field instructions.  The interpreter is created in
 // an unbooted state; Boot must be called to select an entry point and supply
 // inputs before calling Execute.
-func New[W word.Word[W]](program descriptor.Program[W], modulus W) *Interpreter[W] {
+func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpreter[W] {
 	var (
+		prime    W
 		sroms    []memory.StaticReadOnly[W]
 		roms     []memory.ReadOnly[W]
 		woms     []memory.WriteOnce[W]
 		rams     []memory.RandomAccess[W]
 		prams    []memory.PagedRandomAccess[W]
-		compiled = CompileProgram(program)
+		compiled = CompileProgram(program, tracing)
 	)
+	// sanity check prime fits within target word
+	if prime.Bandwidth() < program.Field().BandWidth {
+		panic("insufficient bandwidth for prime field")
+	}
+	// Construct prime field
+	prime = prime.SetBigInt(program.Field().Modulus())
 	// Initialise memories
 	for _, m := range program.Modules() {
 		//
@@ -156,7 +172,7 @@ func New[W word.Word[W]](program descriptor.Program[W], modulus W) *Interpreter[
 	//
 	return &Interpreter[W]{
 		program: compiled,
-		modulus: modulus,
+		modulus: prime,
 		pc:      0,
 		fp:      0,
 		rp:      0,
@@ -168,7 +184,7 @@ func New[W word.Word[W]](program descriptor.Program[W], modulus W) *Interpreter[
 		prams:   prams,
 		// Default breakpointer: panics until a real one is configured via
 		// BreakPointer, since a breakpoint is meaningless without one.
-		breakpoint: func() {
+		breakpoint: func(uint32) {
 			panic("no breakpointer configured")
 		},
 	}
@@ -180,7 +196,7 @@ func New[W word.Word[W]](program descriptor.Program[W], modulus W) *Interpreter[
 // current machine state itself (see CheckPoint) and is responsible for
 // governing how frequently it actually acts.  It returns the interpreter to
 // allow method chaining.
-func (p *Interpreter[W]) BreakPointer(breakpointer func()) *Interpreter[W] {
+func (p *Interpreter[W]) BreakPointer(breakpointer func(uint32)) *Interpreter[W] {
 	//
 	p.breakpoint = breakpointer
 	//
@@ -192,17 +208,21 @@ func (p *Interpreter[W]) BreakPointer(breakpointer func()) *Interpreter[W] {
 // record for it on the data stack, and initialises all memories (loading the
 // provided inputs into the input memories and resetting the rest).
 func (p *Interpreter[W]) Boot(fun string, input map[string][]W) (err error) {
-	// lookup function identifier
-	fid, ok := p.program.HasModule(fun)
+	var (
+		sym encoding.Symbol
+		// lookup function identifier
+		fid, ok = p.program.HasModule(fun)
+	)
 	//
 	if !ok {
 		return fmt.Errorf("unknown function \"%s\"", fun)
 	}
 	// find instruction to boot
-	if p.pc, ok = p.program.AddressOf(fid); !ok {
+	if sym, ok = p.program.AddressOf(fid); !ok {
 		return fmt.Errorf("missing symbol for \"%s\"", fun)
 	}
 	//
+	p.pc = sym.Offset
 	p.fid = fid
 	p.fp = 0
 	p.callStack.Clear()
@@ -433,6 +453,37 @@ func (p *Interpreter[W]) findMemory(name string) memory.Memory[W] {
 	panic(fmt.Sprintf("unknown memory \"%s\"", name))
 }
 
+// Binary provides access to the compiled program binary being executed.
+func (p *Interpreter[W]) Binary() encoding.Binary[W] {
+	return p.program
+}
+
+// Memory provides access to the underlying memory corresponding to a given
+// module identifier.
+func (p *Interpreter[W]) Memory(mid uint16) memory.Memory[W] {
+	var (
+		sym, ok = p.program.AddressOf(mid)
+	)
+	// Sanity check
+	if ok {
+		//
+		switch sym.Kind {
+		case encoding.STATIC_MEMORY:
+			return &p.sroms[sym.Offset]
+		case encoding.READONLY_MEMORY:
+			return &p.roms[sym.Offset]
+		case encoding.WRITEONCE_MEMORY:
+			return &p.woms[sym.Offset]
+		case encoding.READWRITE_MEMORY:
+			return &p.rams[sym.Offset]
+		case encoding.PAGED_READWRITE_MEMORY:
+			return &p.prams[sym.Offset]
+		}
+	}
+	//
+	panic("internal failure")
+}
+
 // Execute implementation of Core interface.  This runs the central fetch-decode-
 // dispatch loop: each iteration reads the bytecode at the current program
 // counter, extracts its opcode, and dispatches to the corresponding executor
@@ -457,7 +508,7 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		)
 		// Check for breakpoint.
 		if breakpoint {
-			p.breakpoint()
+			p.breakpoint(opcode)
 		}
 		// increase step counter
 		nsteps++
@@ -644,7 +695,7 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 		p.dataStack.Set(i, stack[args.Next()])
 	}
 	// FIXME: following to be deprecated
-	p.fid = p.program.FunctionAt(target).Unwrap()
+	p.fid = p.program.FunctionAt(target).ModuleId
 	p.fp = calleeFp
 	p.pc = target
 	//

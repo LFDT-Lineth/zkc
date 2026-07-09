@@ -146,6 +146,12 @@ func (p Program[W]) HasModule(name string) (uint16, bool) {
 	return uint16(mid), mid <= math.MaxUint16
 }
 
+// Module returns the module corresponding to the given identifier (or panics if
+// the identifier is invalid).
+func (p Program[W]) Module(mid uint16) Module[W] {
+	return p.modules[mid]
+}
+
 // Prune away all functions which cannot be reached from the entrypoint.
 func (p *Program[W]) Prune() Program[W] {
 	panic("todo")

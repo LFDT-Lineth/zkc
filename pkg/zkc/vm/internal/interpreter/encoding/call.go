@@ -94,7 +94,7 @@ func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 
 	// register overflows a byte, and also rescues relative branch targets which
 	// overflow the narrow form's 16-bit offset (the wide form's target is
 	// absolute).
-	if width > math.MaxUint8 || !ok || HasWideRegister(args...) {
+	if width > math.MaxUint8 || !ok || IsWideRegisters(args...) {
 		codes := []uint32{
 			uint32(width)<<16 | uint32(len(args))<<8 | opcode | WIDE,
 			target,
@@ -115,7 +115,7 @@ func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 
 
 // DecodeEnter_n decodes the operands of an enter (function entry) instruction.
 func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args OpIter, n uint32) {
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		var nargs = uint((codes[pc] >> 8) & 0xff)
 		//
 		width = uint16(codes[pc] >> 16)
@@ -161,7 +161,7 @@ func encodeLeave_n(rets []RegisterId) []uint32 {
 	//
 	var nrets = uint32(len(rets)) << 8
 	//
-	if HasWideRegister(rets...) {
+	if IsWideRegisters(rets...) {
 		var codes = []uint32{nrets | LEAVE_n | WIDE}
 		//
 		return append(codes, PackShortsIntoCodes(RegsAsShorts(rets))...)
@@ -181,7 +181,7 @@ func DecodeLeave_n(pc uint32, codes []uint32) (rets OpIter, n uint32) {
 		nrets = uint(codes[pc]>>8) & 0xffff
 	)
 	//
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		rets = NewOp16Iter(0, nrets, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(nrets)
 	} else {

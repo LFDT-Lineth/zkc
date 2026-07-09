@@ -13,8 +13,6 @@
 package constraints
 
 import (
-	"fmt"
-
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/post"
@@ -32,30 +30,36 @@ type (
 	Memory[W Word[W]] = vm.Memory[W]
 )
 
-// Post process the recorded state for a given module.  For memories, this means
-// transcribing the state into a suitable trace format with auxiliary registers
-// as required (e.g. for selector bits, etc).  For functions, this means
-// transcribing each state generated for the function during execution.
-func postProcess[W Word[W], F Element[F]](m vm.Module, states []vm.State[W]) rtrace.ArrayModule[F] {
-	switch m := m.(type) {
-	case *Function:
-		if m.IsAtomic() {
-			return post.ProcessOneLineFunction[W, F](*m, states)
-		}
-		//
-		return post.ProcessMultiLineFunction[W, F](*m, states)
-	case vm.Memory[W]:
-		switch {
-		case m.IsStatic():
-			return rtrace.NewArrayModule[F](m.Name(), nil)
-		case m.IsReadOnly() && !m.IsStatic():
-			return post.ProcessAccessOnceMemory[W, F](m)
-		case m.IsWriteOnly():
-			return post.ProcessAccessOnceMemory[W, F](m)
-		case m.IsReadWrite():
-			return post.ProcessReadWriteMemory[W, F](m)
-		}
+// Post processor for post-processing recorded state for a given module.  For
+// memories, this means transcribing the state into a suitable trace format with
+// auxiliary registers as required (e.g. for selector bits, etc).  For
+// functions, this means transcribing each state generated for the function
+// during execution.
+type postProcess[W Word[W], F Element[F]] struct {
+}
+
+// TraceFunction implementation for the vm.TraceProcessor interface.
+func (p *postProcess[W, F]) TraceFunction(f vm.Function[W], states []vm.State[W]) rtrace.ArrayModule[F] {
+	if f.IsOneLine() {
+		return post.ProcessOneLineFunction[W, F](f, states)
 	}
 	//
-	panic(fmt.Sprintf("unsupported module \"%s\" encountered", m.Name()))
+	return post.ProcessMultiLineFunction[W, F](f, states)
+}
+
+// TraceMemory implementation for the vm.TraceProcessor interface.
+func (p *postProcess[W, F]) TraceMemory(m vm.Memory[W]) rtrace.ArrayModule[F] {
+	switch {
+	case m.IsStatic():
+		// ProcessStaticMemory does what is required to represent a static memory within
+		// a trace.  Specifically, static memories do exist in the trace, but only to
+		// ensure alignment of module identifiers.  Hence, they always have an empty trace.
+		return rtrace.NewArrayModule[F](m.Name(), nil)
+	case m.IsReadOnly():
+		return post.ProcessAccessOnceMemory[W, F](m)
+	case m.IsWriteOnly():
+		return post.ProcessAccessOnceMemory[W, F](m)
+	default:
+		return post.ProcessReadWriteMemory[W, F](m)
+	}
 }

@@ -325,7 +325,7 @@ func newCheckPointInterpreter[W vm.Word[W]](p vm.Program[W], fn string, clk util
 	interp := vm.NewBytecodeInterpreter(p)
 	// Write a checkpoint as a hex string, one per line.  The counter governs how
 	// frequently this actually fires: it triggers every interval entries of fn.
-	emit := func() {
+	emit := func(_ uint32) {
 		// Only record once every interval-th invocation of fn.
 		if !clk.Tick() {
 			return

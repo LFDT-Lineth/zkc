@@ -57,7 +57,7 @@ func DecodeFail(pc uint32, codes []uint32) (index uint, sources OpIter, n uint32
 func encodeFail_n(index uint16, sources []RegisterVector) []uint32 {
 	var nsources = uint32(util.Cast[uint8](uint(len(sources)))) << 24
 	//
-	if HasWideRegisterVecs(sources) {
+	if IsWideRegisterVectors(sources) {
 		// nolint
 		var codes = []uint32{nsources | uint32(index)<<8 | FAIL | WIDE}
 		//
@@ -81,7 +81,7 @@ func decodeFail_n(pc uint32, codes []uint32) (index uint, sources OpIter, n uint
 	//
 	index = uint(codes[pc]>>8) & 0xffff
 	//
-	if IsWideInstruction(pc, codes) {
+	if IsWideForm(pc, codes) {
 		sources = NewOp16Iter(0, nops, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(nops)
 	} else {
