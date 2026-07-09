@@ -270,20 +270,22 @@ func emitCallLookup[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 		target   mir.LookupVector[F]
 		tgtTerms = registerAccesses[F](callee.Registers(), tgtIds)
 	)
-	//
+	// Native module don't have a $ret function
+	if callee.IsNative() {
+		target = lookup.UnfilteredVector(calleeId, tgtTerms...)
+	} else {
+		// Both multi-line and atomic (one-line) callees expose a $ret line which is 1
+		// on active rows; use it as the lookup selector.
 
-	// Both multi-line and atomic (one-line) callees expose a $ret line which is 1
-	// on active rows; use it as the lookup selector.
+		// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
+		// Atomic callees have $ret line as well. Only OLI that touches memmory should have one.
+		var (
+			retId = register.NewId(uint(len(callee.Registers())))
+			ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
+		)
 
-	// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
-	// Atomic callees have $ret line as well. Only OLI that touches memmory should have one.
-	var (
-		retId = register.NewId(uint(len(callee.Registers())))
-		ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
-	)
-
-	target = lookup.FilteredVector(calleeId, ret, tgtTerms...)
-
+		target = lookup.FilteredVector(calleeId, ret, tgtTerms...)
+	}
 	//
 	mod.AddConstraints(mir.NewLookupConstraint(handle, []mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
 }

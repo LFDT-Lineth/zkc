@@ -31,8 +31,8 @@ func NewAtomicFraming[T any, E Expr[T, E]]() Framing[T, E] {
 	return &OneLineFraming[T, E]{}
 }
 
-// NewMultiLineFraming constructs multi-line function.
-// It adds a PC and IS_PC_<k> registers.
+// NewMultiLineFraming constructs framing for a multi-line function.
+// It assumes the caller has allocated $ret, PC and IS_PC_<k> selector registers and passes their ids here.
 func NewMultiLineFraming[T any, E Expr[T, E]](pc T, pcWidth uint, ret T, retWidth uint,
 	selectors []T) Framing[T, E] {
 	return &MultiLineFraming[T, E]{LegacyMultiLineFraming[T, E]{pc, pcWidth, ret, retWidth}, selectors}
