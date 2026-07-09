@@ -324,7 +324,7 @@ func Test_ZkcUnit_Basic_68(t *testing.T) {
 // constant.  Runs with u128 words so the u32 constants are not split before
 // encoding.
 func Test_ZkcUnit_Basic_69(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_69", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_69", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false))
 }
 
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
@@ -779,8 +779,7 @@ func Test_ZkcUnit_Shift_12(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Static_01(t *testing.T) {
-	// TODO: static ROM with multiple address lines unsupported
-	checkZkcUnit(t, "zkc/unit/static_01", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/static_01", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Static_02(t *testing.T) {

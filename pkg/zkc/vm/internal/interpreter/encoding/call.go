@@ -30,7 +30,7 @@ func Call[W word.Word[W]](pc uint32, p *bytecode.Call, env Environment[W]) (code
 		width = uint16(env.Module(p.Target).Width())
 	)
 	// Encode enter
-	codes = append(codes, encodeEnter_n(pc, offset, p.Flags.CheckPoint, width, p.Arguments)...)
+	codes = append(codes, encodeEnter_n(pc, offset, width, p.Arguments)...)
 	// Encode leave
 	return append(codes, encodeLeave_n(p.Returns)...)
 }
@@ -80,9 +80,8 @@ func MaxCallEncodedLength(p *bytecode.Call) uint {
 // ============================================================================
 
 // encodeEnter_n encodes the ENTER (function entry) instruction, computing the
-// relative branch offset to the target.  When checkpoint is set, the
-// checkpointing variant (ENTERCP_n) is emitted instead.
-func encodeEnter_n(pc, target uint32, checkpoint bool, width uint16, args []RegisterId) []uint32 {
+// relative branch offset to the target.
+func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 {
 	if len(args) > math.MaxUint8 {
 		panic("too many call arguments")
 	}
@@ -91,10 +90,6 @@ func encodeEnter_n(pc, target uint32, checkpoint bool, width uint16, args []Regi
 		roff, ok = GetRelativeOffset(pc, target, 16)
 		opcode   = ENTER_n
 	)
-	//
-	if checkpoint {
-		opcode = ENTERCP_n
-	}
 	// The wide form is required whenever the frame width or an argument
 	// register overflows a byte, and also rescues relative branch targets which
 	// overflow the narrow form's 16-bit offset (the wide form's target is

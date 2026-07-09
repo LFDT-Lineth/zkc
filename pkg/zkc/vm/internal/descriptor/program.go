@@ -23,6 +23,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -46,6 +47,15 @@ func MapProgram[W word.Word[W], T any](p Program[W], mapper func(uint, Module[W]
 	return mapping
 }
 
+// BreakPointLabel identifies a single instruction breakpoint by the enclosing
+// function (Function) and the program counter within it (ProgramCounter).
+type BreakPointLabel struct {
+	// Function is the identifier of the enclosing function module.
+	Function uint16
+	// ProgramCounter identifies the instruction within that function.
+	ProgramCounter machine.ProgramCounter
+}
+
 // Program represents a bytecode program.  This representation is useful for
 // transforming bytecode programs, generating code or constraints from bytecode
 // programs and analysing bytecode programs.  However, it is not good for
@@ -55,21 +65,46 @@ type Program[W word.Word[W]] struct {
 	modules []Module[W]
 	// field configuration for the target prime field
 	field field.Config
+	// breakpoints records the set of instruction locations at which a breakpoint
+	// has been registered (see BreakPoint).  The compiler flags each such
+	// instruction with the BREAKPOINT modifier bit.
+	breakpoints map[BreakPointLabel]bool
 }
 
 // NewProgram creates a new program descriptor.
 func NewProgram[W word.Word[W]](field field.Config, modules ...Module[W]) Program[W] {
-	return Program[W]{modules, field}
+	return Program[W]{modules, field, nil}
 }
 
-// AddCheckPoint returns a copy of this program in which all calls to the target
-// function are "checkpointing calls" (i.e. have their CheckPoint field set).
-// Switching a call to checkpointing only swaps its ENTER opcode (ENTER_n =>
-// ENTERCP_n), which is width-preserving; hence every instruction offset --
-// along with the symbol and chunk side-tables -- is unaffected, and the
-// returned program shares those tables with the original.
-func (p Program[W]) AddCheckPoint(fid uint16) Program[W] {
-	return mapProgram(p, addCheckPoint[W](fid))
+// BreakPoint returns a copy of this program in which a breakpoint has been
+// registered against the instruction at the given PC location within the given
+// function.  When execution reaches that instruction, the breakpoint function
+// registered with the interpreter is triggered immediately before it executes.
+// Registering a breakpoint does not alter instruction offsets, so the returned
+// program shares the symbol and chunk side-tables with the original.
+func (p Program[W]) BreakPoint(fid uint16, pc machine.ProgramCounter) Program[W] {
+	// Copy the existing set, adding the new breakpoint.
+	var breakpoints = make(map[BreakPointLabel]bool, len(p.breakpoints)+1)
+	//
+	for bp := range p.breakpoints {
+		breakpoints[bp] = true
+	}
+	//
+	breakpoints[BreakPointLabel{fid, pc}] = true
+	//
+	return Program[W]{p.modules, p.field, breakpoints}
+}
+
+// BreakPoints returns the set of instruction locations at which a breakpoint
+// has been registered (see BreakPoint).
+func (p Program[W]) BreakPoints() []BreakPointLabel {
+	var breakpoints = make([]BreakPointLabel, 0, len(p.breakpoints))
+	//
+	for bp := range p.breakpoints {
+		breakpoints = append(breakpoints, bp)
+	}
+	//
+	return breakpoints
 }
 
 // EnvironmentOf returns an environment for the given module.  This is useful
@@ -109,6 +144,12 @@ func (p Program[W]) HasModule(name string) (uint16, bool) {
 	})
 	//
 	return uint16(mid), mid <= math.MaxUint16
+}
+
+// Module returns the module corresponding to the given identifier (or panics if
+// the identifier is invalid).
+func (p Program[W]) Module(mid uint16) Module[W] {
+	return p.modules[mid]
 }
 
 // Prune away all functions which cannot be reached from the entrypoint.
@@ -286,53 +327,4 @@ func (p moduleEnvironment[W]) Module(id ModuleId) bytecode.ModuleInfo {
 // Register returns the ith register used in this module.
 func (p moduleEnvironment[W]) Register(id RegisterId) bytecode.RegisterInfo {
 	return p.modules[p.module].Register(id)
-}
-
-// ============================================================================
-// Map
-// ============================================================================
-
-func mapProgram[W word.Word[W]](p Program[W], fn func(uint, bytecode.Bytecode[W]) []Bytecode[W]) Program[W] {
-	var modules = make([]Module[W], len(p.modules))
-	//
-	for i, m := range p.modules {
-		modules[i] = mapModule(m, fn)
-	}
-	//
-	return Program[W]{modules, p.field}
-}
-
-func mapModule[W word.Word[W]](m Module[W], fn func(uint, bytecode.Bytecode[W]) []Bytecode[W]) Module[W] {
-	switch m := m.(type) {
-	case *Memory[W]:
-		return m
-	case *Function[W]:
-		return mapFunction(*m, fn)
-	default:
-		panic(fmt.Sprintf("unknown descriptor \"%s\"", m.Name()))
-	}
-}
-
-func mapFunction[W word.Word[W]](m Function[W], fn func(uint, bytecode.Bytecode[W]) []Bytecode[W]) *Function[W] {
-	var vectors = make([]bytecode.Vector[W], len(m.vectors))
-	//
-	for i, vec := range m.vectors {
-		vectors[i] = vec.Map(fn)
-	}
-	//
-	return &Function[W]{m.moduleBase, m.native, vectors}
-}
-
-// ============================================================================
-// Mapping functions
-// ============================================================================
-
-func addCheckPoint[W word.Word[W]](fid ModuleId) func(uint, bytecode.Bytecode[W]) []Bytecode[W] {
-	return func(_ uint, b bytecode.Bytecode[W]) []Bytecode[W] {
-		if c, ok := b.(*bytecode.Call); ok && c.Target == fid {
-			b = c.SetCheckPoint()
-		}
-		//
-		return []Bytecode[W]{b}
-	}
 }

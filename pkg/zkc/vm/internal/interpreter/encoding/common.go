@@ -42,23 +42,36 @@ type Cond = bytecode.Cond
 // RegisterVector just provides a convenient alias to make the code more readable.
 type RegisterVector = bytecode.RegisterVector
 
-// OPCODE_MASK determines how many bits of the opcode byte are used for the
-// opcode itself.  This is a 7-bit field (bits 0..6); operand bytes always begin
-// at bit 8, and no instruction uses bits 6..7, so widening the opcode field
-// from 6 to 7 bits leaves every existing encoding untouched (their opcodes are
-// all <= 62, so bit 6 reads as zero).
-const OPCODE_MASK = 0x7f
+// OPCODE_MASK is used to extract the actual opcode from the opcode byte.  The
+// current format of an opcode byte is:
+//
+//	7   6   5                   0
+//
+// +---+---+---+---+---+---+---+---+
+// | B | W |        OPCODE         |
+// +---+---+---+---+---+---+---+---+
+//
+// Here, B is the Breakpoint flag, W is the Wide instruction flag, whilst the
+// lower 6-bits form the opcode itself.  For reference, the breakpoint bit
+// signals a breakpoint should be triggered immediately before the current
+// instruction executes.
+const OPCODE_MASK = 0x3f
 
-// WIDE is a modifier bit (bit 7 of the opcode byte) marking the "wide" form of
+// WIDE is a modifier bit (bit 6 of the opcode byte) marking the "wide" form of
 // an instruction, whose register operands are u16 rather than u8.  Wide forms
 // arise for functions with more than 256 registers.  By convention, a wide
 // form keeps its non-register fields in the first instruction word exactly as
 // the narrow form does (where they still fit), whilst its register operands
 // move into subsequent words, packed two per word (least significant half
-// first) in the order they appear in the narrow encoding.  Since dispatch
-// masks with OPCODE_MASK, both forms reach the same executor, which selects
-// the appropriate decoding by testing this bit.
-const WIDE = 0x80
+// first) in the order they appear in the narrow encoding.
+const WIDE = 0x40
+
+// BREAKPOINT is a modifier bit (bit 7 of the opcode byte) which, when set,
+// signals that a breakpoint should be triggered immediately before the
+// instruction executes.  Like WIDE, it lies above the opcode field, so dispatch
+// (which masks with OPCODE_MASK) is unaffected and both flagged and unflagged
+// instructions reach the same executor.
+const BREAKPOINT = 0x80
 
 // IsWideForm checks whether the instruction word at the given position has the
 // WIDE modifier bit set (i.e. carries u16 register operands).
@@ -140,8 +153,6 @@ const (
 	SGE_rv
 	// ENTER_n instruction
 	ENTER_n
-	// ENTERCP_n instruction
-	ENTERCP_n
 	// LEAVE_n instruction
 	LEAVE_n
 	// RET instruction

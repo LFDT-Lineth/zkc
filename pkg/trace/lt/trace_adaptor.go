@@ -45,7 +45,7 @@ func reconstructLtTraceModule[F field.Element[F]](module trace.Module[F], builde
 	)
 	// iterate columns
 	for i := range module.Width() {
-		columns[i] = reconstructLtTraceColumn[F](module.Column(i), builder)
+		columns[i] = reconstructLtTraceColumn(module.Column(i), builder)
 	}
 	// construct new module
 	return NewModule(module.Name(), columns)
@@ -56,19 +56,25 @@ func reconstructLtTraceColumn[F field.Element[F]](col trace.Column[F], builder a
 	//
 	var (
 		data = col.Data()
-		// construct new column
-		ncol = builder.NewArray(data.Len(), data.BitWidth())
+		//
+		ncol array.MutArray[word.BigEndian]
 	)
-	// populate column
-	for i := range data.Len() {
-		var (
-			v = data.Get(i)
-			w word.BigEndian
-		)
-		// Copy over bytes
-		w = w.SetBytes(v.Bytes())
-		// Done
-		ncol.Set(i, w)
+	// construct new column
+	if data == nil {
+		ncol = builder.NewArray(0, 0)
+	} else {
+		ncol = builder.NewArray(data.Len(), data.BitWidth())
+		// populate column
+		for i := range data.Len() {
+			var (
+				v = data.Get(i)
+				w word.BigEndian
+			)
+			// Copy over bytes
+			w = w.SetBytes(v.Bytes())
+			// Done
+			ncol.Set(i, w)
+		}
 	}
 	//
 	return NewColumn(col.Name(), ncol)

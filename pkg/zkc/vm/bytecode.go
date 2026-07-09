@@ -31,8 +31,19 @@ type Bytecode[W Word[W]] = bytecode.Bytecode[W]
 // BytecodeModule describes a moddule, such as a function or memory
 type BytecodeModule[W Word[W]] = descriptor.Module[W]
 
-// BytecodeFunction describes a function
-type BytecodeFunction[W Word[W]] = descriptor.Function[W]
+// Function contains information about an executable function in the system.  A
+// function has one or more registers where: the first n registers are the input
+// registers (i.e. parameters); the next m registers are the output registers
+// (i.e. returns); and all remaining registers are internal (sometimes also
+// referred to as computed registers).  Additionally, a function has some number
+// of "instructions" which capture its semantics (i.e. intended behaviour).  The
+// notion of an instruction is specifically left undefined by this interface to
+// support different levels of the compilation pipeline.  For example, a
+// compiled function has instructions which are simply bytes (or words) for
+// efficient execution.  However, the instructions of an "assembly" level
+// function implement the Instruction interface, which is better suited to
+// analysis and/or translation into constraints.
+type Function[W Word[W]] = descriptor.Function[W]
 
 // BytecodeMemory describes a memory
 type BytecodeMemory[W Word[W]] = descriptor.Memory[W]
@@ -45,7 +56,49 @@ type Register[W Word[W]] = descriptor.Register[W]
 // bytecode RegisterId).
 type RegisterId = bytecode.RegisterId
 
-// BytecodeVector is a vector (single trace line) of bytecode instructions.
+// BytecodeVector bundles together one or more bytecode instructions which, with
+// restrictions, can be executed by the underlying machine "in parallel".  The
+// approach is analoguous to the concept of "Very-Long Instruction Words (VLIW)"
+// but taken to more of an extreme --- there is no limit on the number of
+// bytecode instructions.
+//
+// To better understand bytecode vectors, consider two instructions executed in
+// sequence (the at pc location 0, the second at pc location 1):
+//
+// (pc=0) x = y + 1 (pc=1) z = 0
+//
+// When executing these instructions, there is an intermediate state after the
+// first instruction is executed but before the second has been where x has been
+// written but z has not.  Alternatively, the two instructions can be composed
+// together to form a bytecode vector, written like so:
+//
+// (pc=0) x = y + 1 ; z = 0
+//
+// In this case, both instructions are executed together and there is no
+// intermediate state where x is written but z is not.
+//
+// To ensure easy translation into polynomial constraints, there are
+// restrictions on how bytecode vectors can be composed.  In particular, no
+// variable can be assigned twice on the same execution path.  Thus, for
+// example, this is an invalid bytecode vector:
+//
+// (pc=0) x = 0 ; x = 1
+//
+// These writes are said to be _conflicting_.  In contrast, the following is a
+// valid bytecode vector:
+//
+// (pc=0) skip_if x != y 2 ; r = 0 ; ret ; r = 1 ; ret
+//
+// In this case, whilst there are two assignments to register r, neither are on
+// the same path.  These writes are said to be _non-conflicting_.  Finally, we
+// should note that register forwarding is applied within bytecode vectors.
+// Thus, for example, the following is allowed:
+//
+// (pc=0) x = 0; y = x + 1; ret
+//
+// Here, the value of x written in the instruction is "forwarded" to the
+// assignment for y.  This process is, roughly speaking, analoguous to register
+// forwarding as found in CPU architectures.
 type BytecodeVector[W Word[W]] = bytecode.Vector[W]
 
 // Interpreter is an optimised bytecode interpreter for executing word
@@ -67,21 +120,13 @@ type BytecodeEnvironment = bytecode.Environment
 // bytecode program.  The modulus is the prime characteristic of the surrounding
 // field, used when executing native field instructions.
 func NewBytecodeInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
-	var prime W
-	// sanity check prime fits within target word
-	if prime.Bandwidth() < program.Field().BandWidth {
-		panic("insufficient bandwidth for prime field")
-	}
-	// Construct prime field
-	prime = prime.SetBigInt(program.Field().Modulus())
-	//
-	return interpreter.New(program, prime)
+	return interpreter.New(program, false)
 }
 
 // CompileProgram compiles a program descriptor into an binary (i.e. executable)
 // bytecode program.
 func CompileProgram[W word.Word[W]](p Program[W]) BinaryProgram[W] {
-	return interpreter.CompileProgram(p)
+	return interpreter.CompileProgram(p, false)
 }
 
 // NewBytecodeProgram assembles a bytecode program directly from pre-lowered
@@ -99,7 +144,7 @@ func NewBytecodeVector[W word.Word[W]](codes ...Bytecode[W]) BytecodeVector[W] {
 // NewBytecodeFunction constructs a bytecode (descriptor) function module from its
 // registers and a body of bytecode vectors.
 func NewBytecodeFunction[W word.Word[W]](name string, native bool, registers []Register[W],
-	code ...BytecodeVector[W]) *BytecodeFunction[W] {
+	code ...BytecodeVector[W]) *Function[W] {
 	return descriptor.NewFunction[W](name, registers, native, code)
 }
 

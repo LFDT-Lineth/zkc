@@ -15,7 +15,6 @@ package encoding
 import (
 	"math"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -29,21 +28,19 @@ type Binary[W word.Word[W]] struct {
 	env SymbolTable[W]
 	// Compiled program being executed
 	bytecodes []uint32
-	//
-	rmap []ModuleId
+	// Mapping from addresses in the encoded binary program back to their
+	// relevant labels.  This can be used to determine the function at a given
+	// address and/or the appropriate PC value.
+	rmap []Label
 }
 
 // NewBinary returns a new Binary[W] initialized with the given parameters.
 func NewBinary[W word.Word[W]](env SymbolTable[W], bytecodes []uint32) Binary[W] {
-	var (
-		zero = ProgramPoint{0, 0}
-		rmap = array.BackPad(nil, uint(len(bytecodes)), uint16(math.MaxUint16))
-	)
-	// NOTE: building the reverse map is temporary until storeAccess is removed
-	// from the interpreter.
+	var rmap = make([]Label, len(bytecodes))
+	// NOTE: building the reverse map
 	for l, s := range env.mapping {
-		if s.Kind == FUNCTION_SYMBOL && l.Point == zero {
-			rmap[s.Offset] = l.ModuleId
+		if s.Kind == FUNCTION_SYMBOL {
+			rmap[s.Offset] = l
 		}
 	}
 	//
@@ -81,26 +78,20 @@ func (p Binary[W]) Module(mid uint16) descriptor.Module[W] {
 
 // AddressOf determines the address of a given (function) symbol, or returns an
 // error if no such symbol exists.
-func (p Binary[W]) AddressOf(mid uint16) (uint32, bool) {
+func (p Binary[W]) AddressOf(mid uint16) (Symbol, bool) {
 	var lab = Label{mid, ProgramPoint{}}
 	//
 	if p.env.HasSymbol(lab) {
-		return p.env.SymbolAt(lab).Offset, true
+		return p.env.SymbolAt(lab), true
 	}
 	//
-	return math.MaxUint32, false
+	return Symbol{}, false
 }
 
 // FunctionAt determines whether or not there is a symbol associated with a given
 // instruction address.
-func (p Binary[W]) FunctionAt(address Address) util.Option[uint16] {
-	var id = p.rmap[address]
-	//
-	if id != math.MaxUint16 {
-		return util.Some(id)
-	}
-	//
-	return util.None[uint16]()
+func (p Binary[W]) FunctionAt(address Address) Label {
+	return p.rmap[address]
 }
 
 // Modules returns information about the modules declared within this program.
