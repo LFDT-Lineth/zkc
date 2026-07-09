@@ -48,7 +48,7 @@ import (
 // Lookups require a register (and not an expression) as the source selector,
 // so the path selector is materialised as a fresh 1-bit register (if it is not already).
 func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	fm vm.FieldFunction, pcSelectors []register.Id, infos []vm.Module) {
+	fm vm.FieldFunction, pcSelectors []register.Id, ret register.Id, infos []vm.Module) {
 	//
 	for pc, vec := range fm.Code() {
 		// Branch table giving the condition under which each code in this vector
@@ -72,7 +72,7 @@ func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 				// register set (which includes the IS_PC_* selectors, beyond the
 				// function's own registers) so the condition can reference them.
 				srcSelector = callSourceSelector(mod, ctx, mod.Registers(),
-					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors)
+					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors, ret)
 			case *instruction.UnconditionalCall:
 				//TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1935
 				//
@@ -94,7 +94,7 @@ func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 // (empty for an atomic caller).
 func callSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
-) util.Option[register.Id] {
+	ret register.Id) util.Option[register.Id] {
 	// TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1936
 	//
 	// In a multi-line caller the call only fires on rows executing its line, so
@@ -104,6 +104,9 @@ func callSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[
 	if len(pcSelectors) != 0 {
 		isPc := logical.NotEqualsConst(dfa.NewBranchId(false, pcSelectors[pc]), big.Int{})
 		cond = cond.And(logical.NewProposition(isPc))
+	} else {
+		iomf := logical.NotEqualsConst(dfa.NewBranchId(false, ret), big.Int{})
+		cond = cond.And(logical.NewProposition(iomf))
 	}
 	// Reached on every row: no gating at all.
 	if cond.IsTrue() {

@@ -332,6 +332,9 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		framing Framing[F]
 		// IS_PC_<k> program counter selectors, only for MLI.
 		pcSelectors []register.Id
+		// $ret register, used to guard lookup for OLI.
+		// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
+		ret register.Id
 	)
 	// Initialise module
 	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
@@ -343,9 +346,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		return mod
 	}
 
-	var (
-		ret = register.NewId(mod.Width())
-	)
+	ret = register.NewId(mod.Width())
 	// Add control registers for Multi Line Instruction
 	if !fm.IsAtomic() {
 		var (
@@ -405,7 +406,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
 
 	// Emit lookup constraints for any function calls made by this function.
-	addCallLookups(mod, ctx, fm, pcSelectors, infos)
+	addCallLookups(mod, ctx, fm, pcSelectors, ret, infos)
 	// TODO: add memory read / write constraints (as lookups).
 	// Done
 	return mod
