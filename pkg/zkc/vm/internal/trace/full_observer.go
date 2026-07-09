@@ -60,7 +60,15 @@ func (p *FullObserver[W, I, M]) Initialise(machine M) {
 		case *memory.WriteOnce[W]:
 			// write-once output memory.
 			p.trace[i] = initializeMemoryAddressesAndContents(m)
-			// no initialization require for read-write memory
+		case *memory.RandomAccess[W]:
+			// Read-write memory: install a recording access log so the reads and
+			// writes performed during execution can be materialised as per-access
+			// trace rows at Trace() time.  Unlike ROM/WOM there is no contents
+			// snapshot here -- a RAM's trace rows come from its access log, not
+			// its final contents.
+			m.SetLog(&memory.TraceableMemoryLog[W]{})
+		case *memory.PagedRandomAccess[W]:
+			m.SetLog(&memory.TraceableMemoryLog[W]{})
 		}
 	}
 }
