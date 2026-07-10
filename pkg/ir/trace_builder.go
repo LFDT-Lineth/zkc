@@ -51,7 +51,7 @@ type TraceBuilder[F field.Element[F]] struct {
 	// amount.
 	checks bool
 	// Determines whether or not padding is applied to each module in the trace.
-	// When enabled, every module's length is expanded (with trailing padding
+	// When enabled, every module's length is expanded (with front padding
 	// rows) up to the next power of two.  An empty module is expanded to a
 	// height of one; a module whose height is already a (non-zero) power of two
 	// is left unchanged.
@@ -329,7 +329,7 @@ func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr 
 }
 
 // padColumns expands every module in a given trace up to the next power of two
-// by appending trailing padding rows.  An empty module is expanded to a height
+// by prepending front padding rows.  An empty module is expanded to a height
 // of one; a module whose height is already a (non-zero) power of two is left
 // unchanged.  Observe that this applies on top of any spillage and/or defensive
 // padding already applied.
@@ -343,7 +343,7 @@ func padColumns[F field.Element[F]](tr *trace.ArrayTrace[F]) {
 		)
 		// Only pad when the module is not already a power of two.
 		if target > height {
-			tr.Pad(i, 0, target-height)
+			tr.Pad(i, target-height, 0)
 		}
 	}
 }
