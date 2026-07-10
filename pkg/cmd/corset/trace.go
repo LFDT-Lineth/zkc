@@ -93,7 +93,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	cfg.startRow = GetUint(cmd, "start")
 	cfg.endRow = GetUint(cmd, "end")
 	cfg.filter, err = regexp.Compile(GetString(cmd, "filter"))
-	padding := GetUint(cmd, "padding")
+	padding := GetFlag(cmd, "padding")
 	// Check for error
 	if err != nil {
 		panic(err)
@@ -177,7 +177,7 @@ func init() {
 	traceCmd.Flags().Uint("title-width", 32, "specify maximum display width for a column title")
 	traceCmd.Flags().Bool("show-computed", false, "show (low-level) computed registers")
 	traceCmd.Flags().BoolP("show-limbs", "l", false, "show register limbs")
-	traceCmd.Flags().Uint("padding", 0, "specify amount of (front) padding to apply")
+	traceCmd.Flags().Bool("padding", false, "expand each module's length up to the next power of two")
 	traceCmd.Flags().StringP("out", "o", "", "Specify output file to write trace")
 	traceCmd.Flags().StringP("filter", "f", "", "Filter columns matching regex")
 	traceCmd.Flags().Bool("batched", false,

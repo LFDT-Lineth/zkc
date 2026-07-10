@@ -26,7 +26,8 @@ var DEFAULT_UNIT_CONFIG = util.DEFAULT_CONFIG.
 	Constraints(true).
 	Splitting(true).
 	Bytecode(true).
-	GoGen(true)
+	GoGen(true).
+	AddPadding(true)
 
 // ===================================================================
 // Basic Tests

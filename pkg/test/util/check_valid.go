@@ -44,7 +44,8 @@ var (
 		splitting:   false,
 		bytecode:    false,
 		gogen:       false,
-		quiet:       false}
+		quiet:       false,
+		addPadding:  false}
 )
 
 // Config for testing
@@ -64,6 +65,9 @@ type Config struct {
 	// enable quiet mode, which elides printf statements and calls to #[debug]
 	// functions during code generation.
 	quiet bool
+	// enable padding of the generated trace, expanding every module's length up
+	// to the next power of two.
+	addPadding bool
 	// enable checkpoint testing.
 	checkpointing util.Option[util.Pair[string, util.Counter]]
 }
@@ -126,6 +130,14 @@ func (p Config) Splitting(flag bool) Config {
 // functions are elided during code generation.
 func (p Config) Quiet(flag bool) Config {
 	p.quiet = flag
+	//
+	return p
+}
+
+// AddPadding determines whether or not padding rows are added to the generated
+// trace, expanding every module's length up to the next power of two.
+func (p Config) AddPadding(flag bool) Config {
+	p.addPadding = flag
 	//
 	return p
 }
@@ -200,7 +212,7 @@ func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg codegen.Config, 
 		for _, test := range tests {
 			// FIXME: support reject tests
 			if test.expected {
-				runConstraintTest(t, p, test, cfg)
+				runConstraintTest(t, p, test, cfg, config.addPadding)
 			}
 		}
 	}
@@ -386,16 +398,16 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc Tes
 	return program, checkpoints, outputs
 }
 
-func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg codegen.Config) {
+func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg codegen.Config, addPadding bool) {
 	var f = cfg.GetField()
 	// Dispatch based on field config
 	switch f {
 	case field.GF_251:
-		testConstraintsWithField[gf251.Element](t, p, test, f, cfg.GetMaxStaticDepth())
+		testConstraintsWithField[gf251.Element](t, p, test, f, cfg.GetMaxStaticDepth(), addPadding)
 	case field.GF_8209:
-		testConstraintsWithField[gf8209.Element](t, p, test, f, cfg.GetMaxStaticDepth())
+		testConstraintsWithField[gf8209.Element](t, p, test, f, cfg.GetMaxStaticDepth(), addPadding)
 	case field.KOALABEAR_16:
-		testConstraintsWithField[koalabear.Element](t, p, test, f, cfg.GetMaxStaticDepth())
+		testConstraintsWithField[koalabear.Element](t, p, test, f, cfg.GetMaxStaticDepth(), addPadding)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
 		panic("BLS12_377 not currently supported for tracing")
@@ -405,15 +417,18 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg c
 }
 
 func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.Uint], test TestCase,
-	f field.Config, maxStaticDepth uint) {
+	f field.Config, maxStaticDepth uint, addPadding bool) {
 	//
 	var (
 		// construct binary file
 		binf = constraints.NewBinaryFile[F](nil, nil, f, maxStaticDepth, p)
 		// decode inputs / outputs
 		inputs = vm.FilterInputs(p, test.data)
+		// trace configuration (optionally expanding each module up to the next
+		// power of two)
+		traceCfg = constraints.DEFAULT_TRACE_CONFIG.WithAddPadding(addPadding)
 		// generate trace
-		_, tr, errs = binf.Trace(inputs, constraints.DEFAULT_TRACE_CONFIG)
+		_, tr, errs = binf.Trace(inputs, traceCfg)
 	)
 	//
 	if test.expected {
@@ -421,7 +436,7 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.
 		failIfErrors(t, errs...)
 	}
 	//
-	failures := binf.Check(tr, constraints.DEFAULT_TRACE_CONFIG)
+	failures := binf.Check(tr, traceCfg)
 	// Determine whether trace accepted or not.
 	accepted := len(failures) == 0
 	// Process what happened versus what was supposed to happen.

@@ -24,10 +24,14 @@ type TraceConfig struct {
 	parallel bool
 	// Specify the maximum size of any dispatched batch.
 	batchSize uint
+	// Indicates whether or not padding rows should be added to the generated
+	// trace.  When enabled, every module's length is expanded up to the next
+	// power of two (see ir.TraceBuilder.WithPadding).
+	addPadding bool
 }
 
 // DEFAULT_TRACE_CONFIG defines a default configuration for tracing.
-var DEFAULT_TRACE_CONFIG = TraceConfig{true, true, 1024}
+var DEFAULT_TRACE_CONFIG = TraceConfig{true, true, 1024, false}
 
 // WithValidation updates a given builder configuration to perform trace validation (or
 // not).
@@ -54,6 +58,21 @@ func (tb TraceConfig) WithBatchSize(batchSize uint) TraceConfig {
 	ntb.batchSize = batchSize
 	//
 	return ntb
+}
+
+// WithAddPadding updates a given builder configuration to add padding rows to
+// the generated trace, expanding every module's length up to the next power of
+// two (or not).
+func (tb TraceConfig) WithAddPadding(flag bool) TraceConfig {
+	ntb := tb
+	ntb.addPadding = flag
+	//
+	return ntb
+}
+
+// AddPadding checks whether padding is enabled for this builder.
+func (tb TraceConfig) AddPadding() bool {
+	return tb.addPadding
 }
 
 // Parallelism checks whether parallelism is enabled for this builder.

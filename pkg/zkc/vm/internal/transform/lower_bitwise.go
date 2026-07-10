@@ -19,6 +19,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -92,7 +93,7 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 	//
 	p := origWidth
 	if !isPowerOfTwo {
-		p = nextPowerOfTwo(origWidth)
+		p = util_math.NextPowerOfTwo(origWidth)
 	}
 	// After BinarizeBitwise, any non-identity constant has been
 	// materialised as a source register, so we can drop the constant
@@ -140,15 +141,6 @@ func inlineBitwiseNot[W word.Word[W]](b *bytecode.Bitwise, registers *regAllocat
 		bytecode.LoadConst(maskReg, mask),
 		bytecode.SubConst(b.Target, []bytecode.RegisterId{maskReg, b.Left}, zero),
 	}
-}
-
-func nextPowerOfTwo(w uint) uint {
-	p := uint(1)
-	for p < w {
-		p <<= 1
-	}
-
-	return p
 }
 
 func maxBitwidthOf[W word.Word[W]](regs []descriptor.Register[W], targets ...bytecode.RegisterId) (uint, bool) {
