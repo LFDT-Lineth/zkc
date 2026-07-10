@@ -31,7 +31,7 @@ type TraceConfig struct {
 }
 
 // DEFAULT_TRACE_CONFIG defines a default configuration for tracing.
-var DEFAULT_TRACE_CONFIG = TraceConfig{true, true, 1024, false}
+var DEFAULT_TRACE_CONFIG = TraceConfig{validate: true, parallel: true, batchSize: 1024, addPadding: false}
 
 // WithValidation updates a given builder configuration to perform trace validation (or
 // not).
