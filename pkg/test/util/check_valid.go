@@ -38,13 +38,14 @@ var (
 	DEFAULT_WORDS = []vm.WordConfig{vm.WORD_UINT64, vm.WORD_UINT128}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = Config{
-		fields:      DEFAULT_FIELDS,
-		words:       DEFAULT_WORDS,
-		constraints: false,
-		splitting:   false,
-		bytecode:    false,
-		gogen:       false,
-		quiet:       false}
+		fields:         DEFAULT_FIELDS,
+		words:          DEFAULT_WORDS,
+		constraints:    false,
+		splitting:      false,
+		bytecode:       false,
+		gogen:          false,
+		quiet:          false,
+		maxStaticDepth: codegen.DEFAULT_MAX_STATIC_DEPTH}
 )
 
 // Config for testing
@@ -64,8 +65,20 @@ type Config struct {
 	// enable quiet mode, which elides printf statements and calls to #[debug]
 	// functions during code generation.
 	quiet bool
+	// maxStaticDepth controls the maximum depth (i.e. number of rows) of static
+	// range tables.  Widths whose enumeration would exceed this are range-checked
+	// recursively instead.  Defaults to codegen.DEFAULT_MAX_STATIC_DEPTH.
+	maxStaticDepth uint
 	// enable checkpoint testing.
 	checkpointing util.Option[util.Pair[string, util.Counter]]
+}
+
+// MaxStaticDepth sets the maximum depth (i.e. number of rows) of static range
+// tables to test with.
+func (p Config) MaxStaticDepth(depth uint) Config {
+	p.maxStaticDepth = depth
+	//
+	return p
 }
 
 // Fields determines which fields to test over.
@@ -144,7 +157,8 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 		var (
 			testfile = fmt.Sprintf("%s.%s", test, ext)
 			// Setup default config
-			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f)
+			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f).
+				MaxStaticDepth(config.maxStaticDepth)
 		)
 		// Run all tests in fast mode
 		checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(false), config.Constraints(false), testcases[f])

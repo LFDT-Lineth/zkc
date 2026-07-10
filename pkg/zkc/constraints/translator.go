@@ -181,7 +181,7 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 	// i.e. ACCESS bit monontony
 
 	// ACCESS[0] = 0
-	accessBitVanishesInPadding := mir.NewVanishingConstraint("access_bit_vanishes_in_padding", ctx, util.Some[int](0),
+	accessBitVanishesInPadding := mir.NewVanishingConstraint("access_bit_vanishes_in_padding", ctx, util.Some(0),
 		currAccess.Equals(zero).AsLogical())
 	// ACCESS[i - 1] = 1 => ACCESS[i] = 1
 	accessBitMonotony := mir.NewVanishingConstraint("access_bit_monotony", ctx, util.None[int](),
