@@ -332,6 +332,9 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		framing Framing[F]
 		// IS_PC_<k> program counter selectors, only for MLI.
 		pcSelectors []register.Id
+		// $ret register, used to guard lookup for OLI.
+		// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
+		ret register.Id
 	)
 	// Initialise module
 	mod = mod.Init(name, false, true, false, fm.IsNative(), false, 0)
@@ -342,18 +345,19 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	if fm.IsNative() {
 		return mod
 	}
+
+	ret = register.NewId(mod.Width())
 	// Add control registers for Multi Line Instruction
 	if !fm.IsAtomic() {
 		var (
 			constraints []mir.Constraint[F]
-			pc          = register.NewId(mod.Width())
-			ret         = register.NewId(mod.Width() + 1)
+			pc          = register.NewId(mod.Width() + 1)
 		)
 
-		// Create program counter
-		mod.AddRegisters(register.NewComputed(io.PC_NAME, fm.PcWidth(), padding))
 		// Create return line
 		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
+		// Create program counter
+		mod.AddRegisters(register.NewComputed(io.PC_NAME, fm.PcWidth(), padding))
 		// Add IS_PC_<k> program counter selectors (one per code line)
 		pcSelectors = make([]register.Id, len(fm.Code()))
 		for c := range pcSelectors {
@@ -366,6 +370,8 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 		mod.AddConstraints(constraints...)
 	} else {
 		framing = mirc.NewAtomicFraming[register.Id, Expr[F]]()
+
+		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
 	}
 	// Translate all instructions
 	for pc, vec := range fm.Code() {
@@ -374,10 +380,22 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 			// construct translator for this instruction
 			tr = NewVectorTranslator(ctx, uint(pc), vec, framing, fm.Registers())
 			// extract logical constraint
-			constraint = tr.translate().AsLogical()
+			constraint = tr.translate()
 		)
+		// For atomic functions, gate the constraint on the $ret
+		// activity line so padding rows ($ret==0) are unconstrained.
+		// TODO: this is a temporary nuclear option as it brings bad perf:
+		// - all constraints are gated on $ret, so raising the degree of all constraints by one
+		// - add one column ($ret)
+		// see https://github.com/LFDT-Lineth/zkc/issues/1975
+		// Note: we might still need to do it for OLI touching memory.
+		if fm.IsAtomic() {
+			iomf := mirc.Variable[register.Id, Expr[F]](ret, 1, 0).
+				NotEquals(mirc.Number[register.Id, Expr[F]](0))
+			constraint = mirc.If(iomf, constraint)
+		}
 		// translate into MIR constraints
-		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint))
+		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint.AsLogical()))
 	}
 	// Add range proof constraints for all registers.
 	// Note: while adding lookups from calls and memory read/write  might add (bit) registers,
@@ -388,7 +406,7 @@ func translateFunction[F field.Element[F]](ctx schema.ModuleId, fm vm.FieldFunct
 	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
 
 	// Emit lookup constraints for any function calls made by this function.
-	addCallLookups(mod, ctx, fm, pcSelectors, infos)
+	addCallLookups(mod, ctx, fm, pcSelectors, ret, infos)
 	// TODO: add memory read / write constraints (as lookups).
 	// Done
 	return mod

@@ -154,6 +154,13 @@ func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W],
 			// Seed from IS_PC_<k> selectors
 			add(1)
 		}
+
+		if fn, ok := mod.(*descriptor.Function[W]); ok && !fn.IsNative() && fn.IsOneLine() {
+			// TODO: rm me see https://github.com/LFDT-Lineth/zkc/issues/1975
+			// or  https://github.com/LFDT-Lineth/zkc/issues/1910
+			// seed for $ret line
+			add(1)
+		}
 		// Seed from every register of every module.
 		for _, r := range mod.Registers() {
 			add(registerWidthOrZero(r))

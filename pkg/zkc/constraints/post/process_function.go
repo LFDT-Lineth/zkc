@@ -29,23 +29,53 @@ type Transcriber[W Word[W], F Element[F]] func(state vm.State[W]) []F
 // One-Line Functions
 // ============================================================================
 
-// ProcessOneLineFunction performs post-processing on a one-line function.  This
-// is the simplest case possible.
+// ProcessOneLineFunction performs post-processing on a one-line function.  The
+// format of a trace row for a (non-native) one-line function is:
+//
+// +----------+-----+
+// |   REGS   | RET |
+// +----------+-----+
+//
+// Here, REGS is the set of registers declared by the given function.  The RET
+// activity line is 1 on every non-padding row, since each instance of a one-line
+// function occupies exactly one active row; padding rows are left at 0.
+// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
+// OLI won't have a $ret column
 func ProcessOneLineFunction[W Word[W], F Element[F]](f vm.Function[W], states []vm.State[W]) rtrace.ArrayModule[F] {
 	var (
-		regs = array.Map(f.Registers(), toRtraceRegister)
-		rows = transcribe(states, oneLineTranscriber[W, F])
+		hasRet = !f.IsNative()
+		regs   = array.Map(f.Registers(), toRtraceRegister)
+		rows   = transcribe(states, oneLineTranscriber[W, F](hasRet))
 	)
+	// Return Line
+	if hasRet {
+		regs = append(regs, rtrace.NewRegister(io.RET_NAME, util.Some([]uint{1})))
+	}
 	//
 	return rtrace.NewArrayModule(f.Name(), regs, rows...)
 }
 
-func oneLineTranscriber[W Word[W], F Element[F]](st vm.State[W]) []F {
-	var row = make([]F, st.Width())
-	// copy over function state
-	copyState(st, row)
+func oneLineTranscriber[W Word[W], F Element[F]](hasRet bool) Transcriber[W, F] {
+	var one = field.Uint64[F](1)
 	//
-	return row
+	return func(st vm.State[W]) []F {
+		var width = st.Width()
+		//
+		if !hasRet {
+			var row = make([]F, width)
+			copyState(st, row)
+
+			return row
+		}
+		// Reserve an extra column for the $ret activity line.
+		var row = make([]F, width+1)
+		// Copy over function state
+		copyState(st, row)
+		// Every real row of a one-line function is active.
+		row[width] = one
+		//
+		return row
+	}
 }
 
 // ============================================================================
@@ -56,9 +86,9 @@ func oneLineTranscriber[W Word[W], F Element[F]](st vm.State[W]) []F {
 // (which requires adding control lines as necessary).  The format of a trace
 // row for a multi-line function is:
 //
-// +----------+----+-----+--------+--------+-----+
-// |   REGS   | PC | RET | IS_PC0 | IS_PC1 | ... |
-// +----------+----+-----+--------+--------+-----+
+// +----------+-----+----+--------+--------+-----+
+// |   REGS   | RET | PC | IS_PC0 | IS_PC1 | ... |
+// +----------+-----+----+--------+--------+-----+
 //
 // Here, REGS is the set of registers declared by the given function.
 func ProcessMultiLineFunction[W Word[W], F Element[F]](f vm.Function[W], states []vm.State[W]) rtrace.ArrayModule[F] {
@@ -82,10 +112,10 @@ func determineMultiLineFnRegisters[W vm.Word[W]](registers []vm.Register[W], nVe
 		// Bitwidth for binary selector line(s)
 		u1 = util.Some([]uint{1})
 	)
-	// Program Counter
-	regs = append(regs, rtrace.NewRegister(io.PC_NAME, uPC))
 	// Return Line
 	regs = append(regs, rtrace.NewRegister(io.RET_NAME, u1))
+	// Program Counter
+	regs = append(regs, rtrace.NewRegister(io.PC_NAME, uPC))
 	// PC selector lines
 	for k := range nVectors {
 		regs = append(regs, rtrace.NewRegister(io.SelectorName(k), u1))
@@ -99,18 +129,18 @@ func multiLineTranscriber[W Word[W], F Element[F]](nVectors uint) Transcriber[W,
 	//
 	return func(st vm.State[W]) []F {
 		var (
-			pc  = st.Width()
-			ret = pc + 1
+			ret = st.Width()
+			pc  = ret + 1
 			row = make([]F, st.Width()+2+nVectors)
 		)
 		// Copy over function state
 		copyState(st, row)
-		// Assign PC register
-		row[pc] = field.Uint64[F](uint64(st.PC() + 1))
 		// Assign return register
 		row[ret] = field.Uint1[F](st.IsTerminal())
+		// Assign PC register
+		row[pc] = field.Uint64[F](uint64(st.PC() + 1))
 		// Assign active PC selector
-		row[ret+1+st.PC()] = one
+		row[pc+1+st.PC()] = one
 		//
 		return row
 	}
