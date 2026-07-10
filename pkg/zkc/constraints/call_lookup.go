@@ -29,7 +29,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 )
 
 // addCallLookups emits a lookup constraint for every function call (Call or
@@ -47,15 +46,16 @@ import (
 //
 // Lookups require a register (and not an expression) as the source selector,
 // so the path selector is materialised as a fresh 1-bit register (if it is not already).
-func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	fm vm.FieldFunction, pcSelectors []register.Id, ret register.Id, infos []vm.Module) {
+func addCallLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+	fn *vm.Function[W], pcSelectors []register.Id, ret register.Id, infos []vm.BytecodeModule[W],
+	callerRegs []register.Register) {
 	//
-	for pc, vec := range fm.Code() {
+	for pc, vec := range fn.Vectors() {
 		// Branch table giving the condition under which each code in this vector
 		// is reached.
 		_, branchTable := vec.BranchTable()
 		//
-		for cc, code := range vec.Codes {
+		for cc, code := range vec.Bytecodes {
 			var (
 				args     []register.Id
 				returns  []register.Id
@@ -65,25 +65,29 @@ func addCallLookups[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 			)
 			//
 			switch c := code.(type) {
-			case *instruction.Call:
-				calleeId, args, returns = c.Id, c.Arguments, c.Returns
-				// A (conditional) call is gated by its branch condition and, in a
-				// multi-line caller, its line selector.  Pass the module's full
-				// register set (which includes the IS_PC_* selectors, beyond the
-				// function's own registers) so the condition can reference them.
-				srcSelector = callSourceSelector(mod, ctx, mod.Registers(),
-					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors, ret)
-			case *instruction.UnconditionalCall:
-				//TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1935
+			case *vm.BytecodeCall:
+				calleeId = uint(c.Target)
+				args = toRegisterIds(c.Arguments)
+				returns = toRegisterIds(c.Returns)
 				//
-				// An unconditional call fires on every row, so it has no selector at
-				// all (neither positional nor path).
-				calleeId, args, returns = c.Id, c.Arguments, c.Returns
+				if c.Flags.Unconditional {
+					//TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1935
+					//
+					// An unconditional call fires on every row, so it has no selector
+					// at all (neither positional nor path).
+				} else {
+					// A (conditional) call is gated by its branch condition and, in a
+					// multi-line caller, its line selector.  Pass the module's full
+					// register set (which includes the IS_PC_* selectors, beyond the
+					// function's own registers) so the condition can reference them.
+					srcSelector = callSourceSelector(mod, ctx, mod.Registers(),
+						branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors, ret)
+				}
 			default:
 				continue
 			}
 			//
-			emitCallLookup(mod, ctx, fm.Registers(), uint(pc), calleeId, args, returns, srcSelector, infos)
+			emitCallLookup[W](mod, ctx, callerRegs, uint(pc), calleeId, args, returns, srcSelector, infos)
 		}
 	}
 }
@@ -238,12 +242,13 @@ func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
 
 // emitCallLookup constructs and adds a single lookup constraint mapping the
 // caller's argument/return registers onto the callee's input/output registers.
-func emitCallLookup[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	callerRegs []register.Register, pc, calleeId uint, args, returns []register.Id,
-	srcSelector util.Option[register.Id], infos []vm.Module) {
+	srcSelector util.Option[register.Id], infos []vm.BytecodeModule[W]) {
 	var (
-		callee = infos[calleeId].(*vm.FieldFunction)
-		handle = fmt.Sprintf("call_%d_%d_%d", ctx, pc, calleeId)
+		callee     = infos[calleeId].(*vm.Function[W])
+		calleeRegs = toRegisters(callee.Registers())
+		handle     = fmt.Sprintf("call_%d_%d_%d", ctx, pc, calleeId)
 		// Source ids: the caller's argument registers followed by its return
 		// registers.
 		srcIds = append(append([]register.Id{}, args...), returns...)
@@ -272,10 +277,12 @@ func emitCallLookup[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 	// Build the target (callee) vector.
 	var (
 		target   mir.LookupVector[F]
-		tgtTerms = registerAccesses[F](callee.Registers(), tgtIds)
+		tgtTerms = registerAccesses[F](calleeRegs, tgtIds)
 	)
 	// Native module don't have a $ret function
-	if callee.IsNative() {
+	if callee.IsOneLine() {
+		// Atomic callees have no $ret line: every callee row is a valid table
+		// entry, so the target side is unfiltered.
 		target = lookup.UnfilteredVector(calleeId, tgtTerms...)
 	} else {
 		// Both multi-line and atomic (one-line) callees expose a $ret line which is 1
@@ -284,10 +291,10 @@ func emitCallLookup[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 		// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
 		// Atomic callees have $ret line as well. Only OLI that touches memmory should have one.
 		var (
-			retId = register.NewId(uint(len(callee.Registers())))
+			retId = register.NewId(uint(len(calleeRegs)))
 			ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
 		)
-
+		//
 		target = lookup.FilteredVector(calleeId, ret, tgtTerms...)
 	}
 	//

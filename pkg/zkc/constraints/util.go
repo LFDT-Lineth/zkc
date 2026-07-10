@@ -53,6 +53,21 @@ func toRegisters[W vm.Word[W]](registers []vm.Register[W]) []register.Register {
 	return regs
 }
 
+// toFieldElements converts a slice of words into a slice of field elements.
+// This mirrors the memory-contents lowering previously performed by
+// WordToFieldMachine.
+func toFieldElements[W vm.Word[W], F field.Element[F]](contents []W) []F {
+	var elements = make([]F, len(contents))
+	//
+	for i, w := range contents {
+		var f F
+
+		elements[i] = f.SetBytes(w.BigInt().Bytes())
+	}
+	//
+	return elements
+}
+
 // FoldContents folds the contents of a memory into a multi-dimensional representation.
 func foldContents[F field.Element[F]](inputs, outputs []register.Register, contents []F) [][]F {
 	var (

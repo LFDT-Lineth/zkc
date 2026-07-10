@@ -122,11 +122,8 @@ func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
 	//
 	var (
 		stats = util.NewPerfStats()
-		wm    = vm.BytecodeProgramToWord(p.program)
-		// Lower from word-level machine to field-level machine
-		fir = vm.WordToFieldMachine[vm.Uint, F](p.Field(), wm)
 		// Generate arithmetic intermediate representation
-		air = GenerateAirConstraints(fir, p.Field(), p.MaxStaticDepth())
+		air = GenerateAirConstraints[vm.Uint, F](p.program, p.Field(), p.MaxStaticDepth())
 	)
 	// cache result
 	p.constraintsCache = util.Some(air)
