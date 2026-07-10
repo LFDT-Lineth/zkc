@@ -31,7 +31,6 @@ import (
 // wiring the (deferred) lookups can rely on a single, uniform target name.
 const (
 	rangeValueName = "value"
-	rangeIndexName = "index"
 	rangeLoName    = "lo"
 	rangeHiName    = "hi"
 )
@@ -69,7 +68,7 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, program descriptor.Pr
 	modules = addRangeCalls(modules, extra, maxStaticWidth)
 
 	// Reassemble the program with the original modules plus the range modules.
-	return descriptor.NewProgram(append(slices.Clone(modules), extra...)...)
+	return descriptor.NewProgram(program.Field(), append(slices.Clone(modules), extra...)...)
 }
 
 func generateRangeModules[W word.Word[W]](modules []descriptor.Module[W],
@@ -155,6 +154,13 @@ func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W],
 			// Seed from IS_PC_<k> selectors
 			add(1)
 		}
+
+		if fn, ok := mod.(*descriptor.Function[W]); ok && !fn.IsNative() && fn.IsOneLine() {
+			// TODO: rm me see https://github.com/LFDT-Lineth/zkc/issues/1975
+			// or  https://github.com/LFDT-Lineth/zkc/issues/1910
+			// seed for $ret line
+			add(1)
+		}
 		// Seed from every register of every module.
 		for _, r := range mod.Registers() {
 			add(registerWidthOrZero(r))
@@ -234,8 +240,6 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) descriptor.Mod
 		rows     = 1 << width
 		contents = make([]W, rows)
 		regs     = []descriptor.Register[W]{
-			// TODO: why an index is needed see https://github.com/LFDT-Lineth/zkc/issues/1906
-			descriptor.NewRegister(register.INPUT_REGISTER, rangeIndexName, util.Some(width), padding),
 			descriptor.NewRegister(register.OUTPUT_REGISTER, rangeValueName, util.Some(width), padding),
 		}
 	)

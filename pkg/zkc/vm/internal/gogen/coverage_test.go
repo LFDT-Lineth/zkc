@@ -26,6 +26,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
+	zkc_ast "github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
@@ -165,8 +167,8 @@ var generateSkippable = []*regexp.Regexp{
 }
 
 // TestGenerateCorpus sweeps every checked-in fixture: whenever a .zkc file
-// compiles standalone to a word machine, GenerateGo must either succeed or
-// fail with one of the enumerated unsupported-feature errors above.
+// compiles standalone, GenerateGo must either succeed or fail with one of the
+// enumerated unsupported-feature errors above.
 func TestGenerateCorpus(t *testing.T) {
 	dirs := []string{
 		"../../../../../testdata/zkc/unit",
@@ -201,13 +203,13 @@ func TestGenerateCorpus(t *testing.T) {
 
 					cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).
 						FastMode(shape.fastMode).Vectorize(true).Quiet(true)
-
-					wm, errs := program.Compile(cfg)
+					// Compile AST into a bytecode program
+					p, errs := zkc_ast.Compile(program, cfg)
 					if len(errs) > 0 {
 						t.Skipf("codegen fails: %v", errs[0])
 					}
-
-					if _, err := vm.GenerateGo(wm, vm.GoGenConfig{}); err != nil {
+					//
+					if _, err := vm.GenerateGo(p, vm.GoGenConfig{}); err != nil {
 						for _, re := range generateSkippable {
 							if re.MatchString(err.Error()) {
 								skipped++

@@ -29,12 +29,14 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 )
 
 // tutorialSrc mirrors pkg/zkc/tutorial: branchless u16 arithmetic with single
@@ -386,7 +388,7 @@ fn main<ram>() {
 // (FastMode off: bitwise/division/comparisons rewritten into helper calls
 // and hints) versus the plain shape with native integer ops.  A fresh machine
 // is required per reference execution because execution mutates memory state.
-func compileUint(t testing.TB, src string, fastMode bool) *vm.WordMachine[vm.Uint] {
+func compileUint(t testing.TB, src string, fastMode bool) vm.Program[vm.Uint] {
 	t.Helper()
 	return compileUintProgram(t, compileProgram(t, src), fastMode)
 }
@@ -404,17 +406,20 @@ func compileProgram(t testing.TB, src string) ast.Program {
 	return program
 }
 
-func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) *vm.WordMachine[vm.Uint] {
+func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) vm.Program[vm.Uint] {
 	t.Helper()
 
-	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).FastMode(fastMode).Vectorize(true).Quiet(true)
-
-	wm, errs := program.Compile(cfg)
+	var (
+		cfg = codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).FastMode(fastMode).Vectorize(true).Quiet(true)
+		// compile into bytecode program
+		p, errs = ast.Compile(program, cfg)
+	)
+	//
 	if len(errs) > 0 {
 		t.Fatalf("codegen: %v", errs)
 	}
-
-	return wm
+	//
+	return p
 }
 
 // shapes enumerates the two machine shapes every test runs against.
@@ -685,16 +690,43 @@ var diffCases = []diffCase{
 			{"data": {0xFFFFFFFFFFFFFFFF, 0, 0xDEADBEEF}},
 		},
 	},
+	{
+		name: "subWrap", // x - y - c: single-step two's-complement wrap on underflow
+		src:  subWrapSrc,
+		vectors: []map[string][]uint64{
+			{"data": {10, 3}},    // 5
+			{"data": {5, 10}},    // -7 -> 1017 (mod 2^10)
+			{"data": {0, 255}},   // -257 -> 767
+			{"data": {255, 0}},   // 253
+			{"data": {0, 0}},     // -2 -> 1022
+			{"data": {255, 255}}, // -2 -> 1022
+		},
+	},
 }
+
+// subWrapSrc compiles its subtraction into a single SUB with two register
+// sources AND a constant subtrahend: the shape whose two-step (SUB_2n1 + SUBC)
+// encoding used to wrap each step separately rather than once at the
+// CalculateSubBitwidth width.  The result type is u10, so an underflow wraps
+// modulo 2^10 and the wrapped value is observable through the widening cast.
+const subWrapSrc = `pub input data(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (word:u16)
+fn main() {
+    var x:u8 = data[0]
+    var y:u8 = data[1]
+    result[0] = (x - y - 2) as u16
+    return
+}
+`
 
 // TestGenDifferential runs the shared corpus: see the comment on diffCase.
 func TestGenDifferential(t *testing.T) {
 	for _, tc := range diffCases {
 		for _, shape := range shapes {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
-				m := compileUint(t, tc.src, shape.fastMode)
+				p := compileUint(t, tc.src, shape.fastMode)
 
-				src, err := vm.GenerateGo(m, vm.GoGenConfig{})
+				src, err := vm.GenerateGo(p, vm.GoGenConfig{})
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}
@@ -702,7 +734,7 @@ func TestGenDifferential(t *testing.T) {
 				prog := buildProgram(t, src)
 				for _, in := range tc.vectors {
 					t.Run(inputName(in), func(t *testing.T) {
-						inBytes := encodeInputs(m, in)
+						inBytes := encodeInputs(p, in)
 
 						refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.fastMode), inBytes)
 
@@ -722,6 +754,51 @@ func TestGenDifferential(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestGenSubConstWrapWidth pins the wrap width of a single-source subtraction
+// whose constant is a power of two WIDER than the source register — a shape
+// the surface language cannot express (the type checker rejects a constant
+// exceeding the operand type), so the program is assembled directly from
+// bytecodes.  Per CalculateSubBitwidth, "x:u4 - 16" wraps at 1+max(4,
+// BitLen(16-1)) = 5 bits, so 1 - 16 = -15 wraps to 17 (not 49, which the
+// SUBC executor's former 1+max(4, BitLen(16)) = 6-bit width produced).  The
+// program asserts the wrapped value in-machine via skip_if/fail, and the
+// verdict is cross-checked against the generated Go.
+func TestGenSubConstWrapWidth(t *testing.T) {
+	var (
+		zero, c16, c17 vm.Uint
+		u4, u8         = util.Some(uint(4)), util.Some(uint(8))
+		regs           = []vm.Register[vm.Uint]{
+			vm.NewComputedRegister("x", u4, zero),
+			vm.NewComputedRegister("t", u8, zero),
+			vm.NewComputedRegister("e", u8, zero),
+		}
+		main = vm.NewBytecodeFunction("main", false, regs,
+			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(0, zero.SetUint64(1))),               // x = 1
+			vm.NewBytecodeVector[vm.Uint](vm.Sub(1, []vm.RegisterId{0}, c16.SetUint64(16))), // t = x - 16
+			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(2, c17.SetUint64(17))),               // e = 17
+			vm.NewBytecodeVector[vm.Uint]( // if t == e { ret } else { fail }
+				vm.SkipIf[vm.Uint](opcode.EQ, 1, 1, 2),
+				vm.Fail[vm.Uint](nil),
+				vm.Return[vm.Uint]()),
+		)
+		p = vm.NewBytecodeProgram(field.KOALABEAR_16, main)
+	)
+
+	_, refErr := referenceRun(t, p, map[string][]byte{})
+
+	src, err := vm.GenerateGo(p, vm.GoGenConfig{})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	prog := buildProgram(t, src)
+
+	_, genErr := runProgram(t, prog, map[string][]byte{})
+	if refErr || genErr {
+		t.Fatalf("subtraction wrapped at the wrong width: reference err=%v, generated err=%v", refErr, genErr)
 	}
 }
 
@@ -772,23 +849,26 @@ func inputName(in map[string][]uint64) string {
 // memories as bytes and whether execution errored.  Sharing the bytes (rather
 // than the raw cells) guarantees both executors see identical, width-valid
 // inputs — see encodeInputs.
-func referenceRun(t *testing.T, wm *vm.WordMachine[vm.Uint], in map[string][]byte) (map[string][]byte, bool) {
+func referenceRun(t *testing.T, p vm.Program[vm.Uint], in map[string][]byte) (map[string][]byte, bool) {
 	t.Helper()
 
-	inputs, errs := vm.DecodeInputs(wm, in)
+	var (
+		interpreter  = vm.NewBytecodeInterpreter(p)
+		inputs, errs = vm.DecodeInputs(interpreter, in)
+	)
 	if len(errs) > 0 {
 		t.Fatalf("decode inputs: %v", errs)
 	}
 
-	if err := wm.Boot("main", inputs); err != nil {
+	if err := interpreter.Boot("main", inputs); err != nil {
 		return nil, true
 	}
 
-	if _, err := vm.ExecuteAll(wm, 1<<20); err != nil {
+	if _, err := vm.ExecuteAll(interpreter, 1<<20); err != nil {
 		return nil, true
 	}
 
-	return vm.EncodeOutputs(wm), false
+	return vm.EncodeOutputs(interpreter), false
 }
 
 // buildProgram compiles generated source into a test-owned temporary directory.
@@ -850,7 +930,7 @@ func runProgram(t *testing.T, prog string, in map[string][]byte) (map[string][]b
 // width: the byte encoding carries exactly that many bits, so an out-of-width
 // cell is not expressible — masking yields the canonical input both executors
 // then consume identically.
-func encodeInputs(wm *vm.WordMachine[vm.Uint], in map[string][]uint64) map[string][]byte {
+func encodeInputs(wm vm.Program[vm.Uint], in map[string][]uint64) map[string][]byte {
 	out := map[string][]byte{}
 
 	for it := wm.Inputs(); it.HasNext(); {
@@ -922,34 +1002,36 @@ fn main() {
 
 // compileUintVerbose compiles with printf retained (Quiet(false)), unlike the
 // default helper which strips it.
-func compileUintVerbose(t testing.TB, src string) *vm.WordMachine[vm.Uint] {
+func compileUintVerbose(t testing.TB, src string) vm.Program[vm.Uint] {
 	t.Helper()
 
-	cfg := codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).Vectorize(true).Quiet(false)
-
-	program := compileProgram(t, src)
-
-	wm, errs := program.Compile(cfg)
+	var (
+		cfg = codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).Vectorize(true).Quiet(false)
+		// Compile source file into an AST
+		program = compileProgram(t, src)
+		// Compile AST into a bytecode program
+		p, errs = ast.Compile(program, cfg)
+	)
 	if len(errs) > 0 {
 		t.Fatalf("codegen: %v", errs)
 	}
 
-	return wm
+	return p
 }
 
 // runStderr builds and runs a generated program, returning its stderr and exit
 // status.  Unlike runProgram it captures stderr on success (where printf lands).
-func runStderr(t *testing.T, m *vm.WordMachine[vm.Uint], in map[string][]uint64) (stderr string, exitErr bool) {
+func runStderr(t *testing.T, p vm.Program[vm.Uint], in map[string][]uint64) (stderr string, exitErr bool) {
 	t.Helper()
 
-	src, err := vm.GenerateGo(m, vm.GoGenConfig{})
+	src, err := vm.GenerateGo(p, vm.GoGenConfig{})
 	if err != nil {
 		t.Fatalf("GenerateGo: %v", err)
 	}
 
 	prog := buildProgram(t, src)
 
-	inJSON, err := gogen.MarshalInputs(encodeInputs(m, in))
+	inJSON, err := gogen.MarshalInputs(encodeInputs(p, in))
 	if err != nil {
 		t.Fatalf("marshal inputs: %v", err)
 	}

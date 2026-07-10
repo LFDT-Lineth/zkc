@@ -52,9 +52,9 @@ func fn_main() {
 	var r5 uint64 // $5
 	var r6 uint64 // $6
 	var r7 uint64 // $7
-	// [0.0] INT_ADD: $2 = 0x0
+	// [0.0] ldc $2 = 0x0
 	r2 = 0
-	// [0.1] MEMORY_READ: x = data[$2]
+	// [0.1] read x = data[$2]
 	{
 		start := r2
 		r0 = mem_data[start+0]
@@ -62,9 +62,9 @@ func fn_main() {
 			fail("bit overflow (value exceeds u8)")
 		}
 	}
-	// [0.2] INT_ADD: $3 = 0x1
+	// [0.2] ldc $3 = 0x1
 	r3 = 1
-	// [0.3] MEMORY_READ: y = data[$3]
+	// [0.3] read y = data[$3]
 	{
 		start := r3
 		r1 = mem_data[start+0]
@@ -72,30 +72,30 @@ func fn_main() {
 			fail("bit overflow (value exceeds u8)")
 		}
 	}
-	// [0.4] INT_ADD: $4 = 0x0
+	// [0.4] ldc $4 = 0x0
 	r4 = 0
-	// [0.5] INT_DIV: $5 = x / y
+	// [0.5] $5 = x % y
 	if r1 == 0 {
 		fail("division by zero")
 	}
 	r5 = r0 / r1
-	// [0.6] MEMORY_WRITE: result[$4] = $5
+	// [0.6] write result[$4] = $5
 	{
 		start := r4
 		mem_result = memWrite(mem_result, start+0, r5)
 	}
-	// [0.7] INT_ADD: $6 = 0x1
+	// [0.7] ldc $6 = 0x1
 	r6 = 1
-	// [0.8] INT_REM: $7 = x % y
+	// [0.8] $7 = x % y
 	if r1 == 0 {
 		fail("division by zero")
 	}
 	r7 = r0 % r1
-	// [0.9] MEMORY_WRITE: result[$6] = $7
+	// [0.9] write result[$6] = $7
 	{
 		start := r6
 		mem_result = memWrite(mem_result, start+0, r7)
 	}
-	// [0.10] RETURN: ret
+	// [0.10] ret
 	return
 }

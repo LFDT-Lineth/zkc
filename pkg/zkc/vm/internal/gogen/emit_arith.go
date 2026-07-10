@@ -18,9 +18,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -34,20 +32,16 @@ import (
 //     covers two-limb (64 < width ≤ 128) registers as operands and targets;
 //   - beyond 2^128: a clean "unsupported" error.
 
-// emitArith dispatches the WordTypeA opcodes (the vector-target instructions).
-func (g *generator) emitArith(c *code, fn *wordFunction, x *instruction.WordTypeA[word.Uint]) error {
+// emitArith dispatches the ARITH operations (the vector-target instructions).
+func (g *generator) emitArith(c *code, fn *descFunction, x *bytecode.Arith[word.Uint]) error {
 	store, err := g.buildStore(fn, x.Target)
 	if err != nil {
 		return err
 	}
 
-	srcs, err := g.operands(fn, x.Sources)
+	srcs, err := g.operands(fn, x.Source)
 	if err != nil {
 		return err
-	}
-
-	if x.Op == opcode.BIT_CONCAT {
-		return g.emitConcat(c, fn, x, store)
 	}
 
 	konst, err := constOperand(x.Constant)
@@ -56,18 +50,23 @@ func (g *generator) emitArith(c *code, fn *wordFunction, x *instruction.WordType
 	}
 
 	switch x.Op {
-	case opcode.INT_ADD:
+	case bytecode.OP_ADD:
 		return g.emitAdd(c, srcs, konst, store)
-	case opcode.INT_SUB:
+	case bytecode.OP_SUB:
 		if len(srcs) == 0 {
-			return fmt.Errorf("gogen: INT_SUB with no sources unsupported")
+			return fmt.Errorf("gogen: SUB with no sources unsupported")
 		}
 
-		return g.emitSub(c, srcs, konst, store)
-	case opcode.INT_MUL:
+		wrap, err := g.subWrapWidth(fn, x.Source, x.Constant)
+		if err != nil {
+			return err
+		}
+
+		return g.emitSub(c, srcs, konst, store, wrap)
+	case bytecode.OP_MUL:
 		return g.emitMul(c, srcs, konst, store)
 	default:
-		return fmt.Errorf("gogen: unsupported arithmetic op %s", opName(x.Op))
+		return fmt.Errorf("gogen: unsupported arithmetic operation (%d)", x.Op)
 	}
 }
 
@@ -126,12 +125,15 @@ func (g *generator) emitAdd(c *code, srcs []operand, konst operand, store storeV
 	if store.total > 128 {
 		return fmt.Errorf("gogen: addition target wider than 128 bits (unsupported)")
 	}
-	// Pair accumulation: carries land in hi rather than trapping.
-	g.usesBits = true
-
+	// A single wide term is distributed by storeValue via storePair, which uses
+	// no math/bits helpers; only the genuine multi-term pair accumulation below
+	// does.  Setting usesBits before this early return would import math/bits
+	// without using it.
 	if len(terms) == 1 {
 		return g.storeValue(c, store, terms[0])
 	}
+	// Pair accumulation: carries land in hi rather than trapping.
+	g.usesBits = true
 
 	var inner error
 
@@ -163,9 +165,41 @@ func (g *generator) emitAdd(c *code, srcs []operand, konst operand, store storeV
 	return inner
 }
 
-// emitSub emits `target = sources[0] - sources[1] - … - const`, each step
-// checked for underflow (executeSub: a negative intermediate is an error).
-func (g *generator) emitSub(c *code, srcs []operand, konst operand, store storeView) error {
+// subWrapWidth mirrors calculateArithBitwidth for OP_SUB: the width in which a
+// vectored subtraction is performed.  On underflow the value wraps modulo
+// 2^width (executeSub_nm), which is what places the borrow bit of a
+// subtract-with-borrow into the top target limb.  Widths are the declared
+// register widths — not the interval-sharpened bounds — because that is what
+// the reference interpreter encodes.
+func (g *generator) subWrapWidth(fn *descFunction, sources []regId, constant word.Uint) (uint, error) {
+	lhs, err := g.regWidth(fn, sources[0])
+	if err != nil {
+		return 0, err
+	}
+
+	rhsMax := new(big.Int).Set(constant.BigInt())
+
+	for _, id := range sources[1:] {
+		w, err := g.regWidth(fn, id)
+		if err != nil {
+			return 0, err
+		}
+
+		rhsMax.Add(rhsMax, widthMax(w))
+	}
+	// Subtract one because negative values do not need to represent zero.
+	rhsMax.Sub(rhsMax, big.NewInt(1))
+	// Include an additional bit for the sign
+	return 1 + max(lhs, uint(rhsMax.BitLen())), nil
+}
+
+// emitSub emits `target = sources[0] - sources[1] - … - const`, matching
+// executeSub_nm: the subtrahends and constant accumulate into a single value
+// which is subtracted in one step, and a negative result wraps modulo 2^wrap
+// (subtract-with-borrow) rather than trapping.  A wrapped value that exceeds
+// the target's total width still fails at the store, exactly as StoreAcross
+// does in the interpreter.
+func (g *generator) emitSub(c *code, srcs []operand, konst operand, store storeView, wrap uint) error {
 	minuend := srcs[0]
 
 	subtrahends := slices0(srcs[1:])
@@ -187,6 +221,14 @@ func (g *generator) emitSub(c *code, srcs []operand, konst operand, store storeV
 	if len(subtrahends) == 0 {
 		return g.storeValue(c, store, minuend)
 	}
+	// The wrapped result occupies up to wrap bits, which must stay within the
+	// pair representation.  (wrap ≤ 129 for ≤128-bit operands, so only wide
+	// minuends can trip this.)
+	if wrap > 128 {
+		return fmt.Errorf("gogen: subtraction wrap width %d exceeds 128 bits (unsupported)", wrap)
+	}
+
+	bound := widthMax(wrap)
 
 	if allExact(append([]operand{minuend}, subtrahends...)) {
 		val := new(big.Int).Set(minuend.val)
@@ -195,52 +237,82 @@ func (g *generator) emitSub(c *code, srcs []operand, konst operand, store storeV
 		}
 
 		if val.Sign() < 0 {
-			c.linef("fail(%q) // constant subtraction always underflows", "arithmetic underflow")
-			return nil
+			// Wrap modulo 2^wrap (subtract-with-borrow).
+			val.Add(val, new(big.Int).Lsh(big.NewInt(1), wrap))
 		}
 
 		return g.storeValue(c, store, exactWide(val))
+	}
+	// The subtrahends accumulate before the subtraction, so their sum must be
+	// representable as a pair.
+	sumBound := big.NewInt(0)
+	for _, s := range subtrahends {
+		sumBound.Add(sumBound, s.max)
+	}
+
+	if sumBound.BitLen() > 128 {
+		return fmt.Errorf("gogen: subtraction subtrahend sum exceeds 128 bits (unsupported)")
 	}
 
 	g.usesBits = true
 
 	var inner error
 
-	if !minuend.wide() && !anyWide(subtrahends) {
-		// Narrow path: the running value stays below the minuend.
+	if !minuend.wide() && !anyWide(subtrahends) && fitsU64(sumBound) && wrap <= 64 {
+		// Narrow path: one Sub64, masking the wrapped value on borrow.
 		c.block(func() {
-			c.linef("v, borrow := bits.Sub64(%s, %s, 0)", minuend.expr, subtrahends[0].expr)
+			c.linef("v, borrow := bits.Sub64(%s, %s, 0)", minuend.expr, strings.Join(exprsOf(subtrahends), " + "))
 			c.line("if borrow != 0 {")
-			c.line(`fail("arithmetic underflow")`)
+			c.linef("v &= 1<<%d - 1", wrap)
 			c.line("}")
 
-			for _, s := range subtrahends[1:] {
-				c.linef("v, borrow = bits.Sub64(v, %s, 0)", s.expr)
-				c.line("if borrow != 0 {")
-				c.line(`fail("arithmetic underflow")`)
-				c.line("}")
-			}
-
-			inner = g.storeNamed(c, store, operand{expr: "v", max: minuend.max})
+			inner = g.storeNamed(c, store, operand{expr: "v", max: bound})
 		})
 
 		return inner
 	}
-	// Pair path: subtract limb-wise with the borrow chained into hi; a borrow
-	// out of hi is the underflow.
+	// Pair path: accumulate the subtrahends into a pair, subtract limb-wise,
+	// and mask the pair down to wrap bits when the subtraction borrows.
 	c.block(func() {
-		c.linef("lo, hi := %s, uint64(%s)", minuend.expr, minuend.hiOr0())
-		c.line("var b uint64")
+		first := subtrahends[0]
+		c.linef("alo, ahi := %s, uint64(%s)", first.expr, first.hiOr0())
 
-		for _, s := range subtrahends {
-			c.linef("lo, b = bits.Sub64(lo, %s, 0)", s.expr)
-			c.linef("hi, b = bits.Sub64(hi, %s, b)", s.hiOr0())
-			c.line("if b != 0 {")
-			c.line(`fail("arithmetic underflow")`)
-			c.line("}")
+		if len(subtrahends) > 1 {
+			c.line("var c uint64")
+
+			for _, s := range subtrahends[1:] {
+				c.linef("alo, c = bits.Add64(alo, %s, 0)", s.expr)
+
+				if s.wide() {
+					c.linef("ahi += %s + c", s.hi)
+				} else {
+					c.line("ahi += c")
+				}
+			}
 		}
 
-		inner = g.storePair(c, store, minuend.max)
+		c.linef("lo, b := bits.Sub64(%s, alo, 0)", minuend.expr)
+		c.linef("hi, b := bits.Sub64(uint64(%s), ahi, b)", minuend.hiOr0())
+
+		if wrap < 128 {
+			c.line("if b != 0 {")
+
+			switch {
+			case wrap < 64:
+				c.linef("lo &= 1<<%d - 1", wrap)
+				c.line("hi = 0")
+			case wrap == 64:
+				c.line("hi = 0")
+			default:
+				c.linef("hi &= 1<<%d - 1", wrap-64)
+			}
+
+			c.line("}")
+		} else {
+			c.line("_ = b")
+		}
+
+		inner = g.storePair(c, store, bound)
 	})
 
 	return inner
@@ -352,11 +424,16 @@ func (g *generator) emitMul(c *code, srcs []operand, konst operand, store storeV
 	return inner
 }
 
-// emitConcat emits a BIT_CONCAT (`tn::…::t0 = sn::…::s0`): the sources pack
-// into one value with sources[0] in the least-significant bits (executeConcat),
-// which is then stored across the (possibly multi-limb) target.  Widths are the
+// emitConcat emits a CAT (`tn::…::t0 = sn::…::s0`): the sources pack into one
+// value with sources[0] in the least-significant bits (executeCat), which is
+// then stored across the (possibly multi-limb) target.  Widths are the
 // declared register widths, and each source is known to fit its width.
-func (g *generator) emitConcat(c *code, fn *wordFunction, x *instruction.WordTypeA[word.Uint], store storeView) error {
+func (g *generator) emitConcat(c *code, fn *descFunction, x *bytecode.Cat) error {
+	store, err := g.buildStore(fn, x.Targets)
+	if err != nil {
+		return err
+	}
+
 	srcs := make([]operand, len(x.Sources))
 	widths := make([]uint, len(x.Sources))
 	total := uint(0)
@@ -430,13 +507,13 @@ func (g *generator) emitConcat(c *code, fn *wordFunction, x *instruction.WordTyp
 }
 
 // ===========================================================================
-// Stores (mirroring StackFrame.Store / StoreAcross)
+// Stores (mirroring the interpreter's storeAcross)
 // ===========================================================================
 
 // limb identifies a target register and its bit width.  A width above 64 means
 // the register is a two-limb pair (rN_0 / rN_1).
 type limb struct {
-	id    register.Id
+	id    regId
 	reg   string // Go base name, e.g. "r3"
 	width uint
 }
@@ -452,7 +529,7 @@ func (l limb) lo() string {
 
 func (l limb) hiName() string { return l.reg + "_1" }
 
-func (g *generator) limbOf(fn *wordFunction, id register.Id) (limb, error) {
+func (g *generator) limbOf(fn *descFunction, id regId) (limb, error) {
 	w, err := g.regWidth(fn, id)
 	if err != nil {
 		return limb{}, err
@@ -463,7 +540,7 @@ func (g *generator) limbOf(fn *wordFunction, id register.Id) (limb, error) {
 
 // storeView models a store target: exactly one of single / limbs is set.  A
 // multi-register target receives the value distributed lowest-register-first
-// (least significant limb first), per StoreAcross.  Registers in a multi-limb
+// (least significant limb first), per storeAcross.  Registers in a multi-limb
 // vector must be narrow (a wide register inside a destructure has not been
 // observed and stays unsupported).
 type storeView struct {
@@ -497,8 +574,7 @@ func (s storeView) noWideLimb() error {
 }
 
 // buildStore translates a target register vector into a storeView.
-func (g *generator) buildStore(fn *wordFunction, vec register.Vector) (storeView, error) {
-	regs := vec.Registers()
+func (g *generator) buildStore(fn *descFunction, regs []regId) (storeView, error) {
 	if len(regs) == 1 {
 		l, err := g.limbOf(fn, regs[0])
 		if err != nil {
@@ -677,7 +753,7 @@ func exactWide(v *big.Int) operand {
 }
 
 // storePair distributes a lo/hi pair (named exactly `lo` and `hi`, in scope)
-// across the target, mirroring StoreAcross over a 128-bit value.
+// across the target, mirroring storeAcross over a 128-bit value.
 func (g *generator) storePair(c *code, store storeView, bound *big.Int) error {
 	checked := !fits(bound, store.total)
 

@@ -14,9 +14,9 @@ package bytecode
 
 import "fmt"
 
-// RegVec is a "register vector".  That is, a set of n consecutively indexed
+// RegisterVector is a "register vector".  That is, a set of n consecutively indexed
 // registers.
-type RegVec struct {
+type RegisterVector struct {
 	// Base identifies the first register in the vector (i.e. that with the
 	// least index).
 	Base RegisterId
@@ -24,9 +24,9 @@ type RegVec struct {
 	Len uint16
 }
 
-// NewRegVec constructs a new register vector from an array of registers.  These
+// NewRegisterVector constructs a new register vector from an array of registers.  These
 // registers must be consecutively indexed, else this will panic.
-func NewRegVec(regs ...RegisterId) RegVec {
+func NewRegisterVector(regs ...RegisterId) RegisterVector {
 	// sanity checks
 	for i := 1; i < len(regs); i++ {
 		if regs[i-1]+1 != regs[i] {
@@ -34,7 +34,7 @@ func NewRegVec(regs ...RegisterId) RegVec {
 		}
 	}
 	//
-	return RegVec{
+	return RegisterVector{
 		regs[0],
 		uint16(len(regs)),
 	}
@@ -42,7 +42,7 @@ func NewRegVec(regs ...RegisterId) RegVec {
 
 // Registers returns the individual registers making up this vector, ordered
 // from least to most significant (i.e. lowest index first).
-func (p RegVec) Registers() []RegisterId {
+func (p RegisterVector) Registers() []RegisterId {
 	regs := make([]RegisterId, p.Len)
 	//
 	for i := uint16(0); i < p.Len; i++ {
@@ -52,7 +52,7 @@ func (p RegVec) Registers() []RegisterId {
 	return regs
 }
 
-func (p RegVec) String() string {
+func (p RegisterVector) String() string {
 	switch p.Len {
 	case 1:
 		return fmt.Sprintf("r%d", p.Base)

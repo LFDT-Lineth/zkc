@@ -48,26 +48,22 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	var (
 		build    = GetBuildConfig[F](cmd, field)
 		observer = debug.TraceObserver[vm.Uint]{}
-		quiet    = GetFlag(cmd, "quiet")
 	)
-	// Suppress printf debug instructions when quiet mode is enabled.
-	build.config = build.config.Quiet(quiet)
-	// Force compilation of the word machine, which is what we execute.
-	build.wir = true
 	//
 	input := ParseInputFile(args[0])
 	// Build artifacts (compiles source files or loads a prebuilt binary).
-	artifacts := build.Build(args[1:]...)
-	wm := artifacts.wir.Unwrap()
+	artifacts := Build[F](build, args[1:]...)
+	// Translate bytecode => word machine
+	wm := vm.BytecodeProgramToWord(artifacts.ir)
 	// Filter out unnecessary inputs
-	input = filterInputsOnly(&wm, input)
+	input = vm.FilterInputs(artifacts.ir, input)
 	// Decode inputs against the compiled machine.
-	inputs, errs := vm.DecodeInputs(&wm, input)
+	inputs, errs := vm.DecodeInputs(wm, input)
 	if len(errs) == 0 {
 		// boot & execute
 		if err := wm.Boot("main", inputs); err != nil {
 			errs = append(errs, err)
-		} else if _, err := vm.ExecuteAndObserve(&wm, 1, &observer); err != nil {
+		} else if _, err := vm.ExecuteAndObserve(wm, 1, &observer); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -90,5 +86,4 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 //nolint:errcheck
 func init() {
 	rootCmd.AddCommand(debugCmd)
-	debugCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
 }

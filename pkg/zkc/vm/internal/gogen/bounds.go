@@ -15,8 +15,6 @@ package gogen
 
 import (
 	"math/big"
-
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 )
 
 // operand is a value read rendered as Go expression(s), together with what the
@@ -70,7 +68,7 @@ func (o operand) hiOr0() string {
 // values — the reference machine zero-initialises frames and never installs
 // their nominal constant, so they are NOT folded to literals here (their
 // interval does that, soundly, instead).
-func (g *generator) operand(fn *wordFunction, id register.Id) (operand, error) {
+func (g *generator) operand(fn *descFunction, id regId) (operand, error) {
 	w, err := g.regWidth(fn, id)
 	if err != nil {
 		return operand{}, err
@@ -93,7 +91,7 @@ func (g *generator) operand(fn *wordFunction, id register.Id) (operand, error) {
 	return op, nil
 }
 
-func (g *generator) operands(fn *wordFunction, ids []register.Id) ([]operand, error) {
+func (g *generator) operands(fn *descFunction, ids []regId) ([]operand, error) {
 	out := make([]operand, len(ids))
 
 	for i, id := range ids {

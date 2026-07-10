@@ -48,11 +48,11 @@ func fn_main() {
 	var r1 uint64 // $1
 	var r2 uint64 // $2
 	var r3 uint64 // $3
-	// [0.0] INT_ADD: $0 = 0x0
+	// [0.0] ldc $0 = 0x0
 	r0 = 0
-	// [0.1] INT_ADD: $3 = 0x0
+	// [0.1] ldc $3 = 0x0
 	r3 = 0
-	// [0.2] MEMORY_READ: $2 = data[$3]
+	// [0.2] read $2 = data[$3]
 	{
 		start := r3
 		r2 = mem_data[start+0]
@@ -60,25 +60,26 @@ func fn_main() {
 			fail("bit overflow (value exceeds u8)")
 		}
 	}
-	// [0.3] CALL: $1 = inc($2)
+	// [0.3] call $1 = inc($2)
 	r1 = fn_inc(r2)
-	// [0.4] MEMORY_WRITE: result[$0] = $1
+	// [0.4] write result[$0] = $1
 	{
 		start := r0
 		mem_result = memWrite(mem_result, start+0, r1)
 	}
-	// [0.5] RETURN: ret
+	// [0.5] ret
 	return
 }
 
 // fn_inc corresponds to ZkC function "inc".
 func fn_inc(r0 uint64) uint64 {
 	var r1 uint64 // r
-	// [0.0] INT_ADD: r = x + 0x1
+	// [0.0] add r = x+0x1
 	r1 = uint64(1) + r0
 	if r1 >= 1<<8 {
 		fail("bit overflow (value exceeds u8)")
 	}
-	// [0.1] RETURN: ret
+	// [0.1] check r:u8
+	// [0.2] ret
 	return r1
 }

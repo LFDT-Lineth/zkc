@@ -39,16 +39,6 @@ type Declaration = decl.Declaration[symbol.Resolved]
 // declaration refers to unknown (or otherwise incorrect) external components.
 type VariableDescriptor = variable.Descriptor[symbol.Resolved]
 
-// Function is a convenient alias for a word function.
-type Function = vm.WordFunction
-
-// Instruction is a single word-level instruction, as manipulated by the
-// downstream vectoriser.
-type Instruction = vm.WordInstruction
-
-// VectorInstruction is a vector (trace line) of word-level instructions.
-type VectorInstruction = vm.Vector[Instruction]
-
 // Stmt is a convenient alias
 type Stmt = stmt.Stmt[symbol.Resolved]
 
@@ -98,7 +88,7 @@ func NewCompiler(cfg Config, env data.ResolvedEnvironment, srcmaps source.Maps[a
 // Compile attempts to compile a given high-level program into a low-level
 // machine which can be used (for example) to execute this program with some
 // given inputs.
-func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint], []source.SyntaxError) {
+func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []source.SyntaxError) {
 	//
 	var (
 		modules []vm.BytecodeModule[vm.Uint]
@@ -157,15 +147,10 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	// Stop here if any errors were detected during compilation of the declarations.
 	// There shouldn't be any compilation errors after this point.
 	if len(errors) > 0 {
-		return nil, errors
+		return vm.Program[vm.Uint]{}, errors
 	}
-	// Derive the prime modulus from the field configuration (previously obtained
-	// from the constructed word machine).
-	var modulus vm.Uint
-	//
-	modulus = modulus.SetBigInt(p.config.field.Modulus())
 	// Construct bytecode program from descriptor modules.
-	program := vm.NewBytecodeProgram(modules...)
+	program := vm.NewBytecodeProgram(p.config.field, modules...)
 	//
 	if p.config.inlining && len(inlines) > 0 {
 		// Apply function inlining
@@ -178,6 +163,8 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		program = vm.Vectorize(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
+			// FIXME: this is broken as we should be splitting for the target
+			// word, not the target field.
 			program = vm.SplitRegisters(p.config.field, program)
 		}
 	} else {
@@ -185,6 +172,7 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 		program = vm.LowerBitwise(program)
 		program = vm.LowerDivisions(program)
 		program = vm.LowerComparisons(program)
+		program = vm.LowerSwitch(program)
 		program = vm.Vectorize(program)
 		program = vm.FactorSkipConditions(program)
 		program = vm.FlattenCalls(program)
@@ -197,11 +185,8 @@ func (p *Compiler) Compile(declarations []Declaration) (*vm.WordMachine[vm.Uint]
 	}
 	// Insert check casts to ensure appropriate safety checks during execution.
 	program = vm.InsertCheckCasts(program)
-	// Convert to word machine.  This should eventually be deprecated in favour
-	// of simply returning the bytecode program.
-	wm := vm.BytecodeProgramToWord(program, modulus)
 	// Done
-	return wm, errors
+	return program, errors
 }
 
 // compileStaticInitialise evaluates the compile-time constant expressions from a static
@@ -236,7 +221,7 @@ func (p *Compiler) compileStaticInitialisers(
 // element).  Calls and memory accesses are resolved against the resolved AST
 // (the program), so no separate signature table is required.
 func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaration,
-) (*vm.BytecodeFunction[vm.Uint], []source.SyntaxError) {
+) (*vm.Function[vm.Uint], []source.SyntaxError) {
 	//
 	var (
 		fn        = program[id].(*decl.ResolvedFunction)
@@ -282,7 +267,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 	native := slices.Contains(fn.Annotations(), "native")
 	// Note: compiler.registers includes any temporaries allocated during
 	// statement compilation.
-	return vm.NewBytecodeFunction(fn.Name(), native, compiler.registers, vectors), compiler.errors
+	return vm.NewBytecodeFunction(fn.Name(), native, compiler.registers, vectors...), compiler.errors
 }
 
 // buildMemory constructs the memory descriptor module for a resolved memory

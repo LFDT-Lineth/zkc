@@ -13,17 +13,21 @@
 
 package gogen
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+)
 
 // Runtime failures (width-check violations, underflow, division by zero, FAIL)
 // are exceptional: generated functions panic with a `failure` value which the
 // Run entry point recovers into its error result.  This keeps every generated
 // signature free of error plumbing.
 
-// checkWidth enforces a store of `op` into a width-w register, mirroring
-// StackFrame.Store, unless the bound proves the check dead (omitted entirely)
-// or the exact value proves it always fires (unconditional failure).  Wide
-// (lo/hi pair) values and wide targets check the relevant limbs.
+// checkWidth enforces a store of `op` into a width-w register, unless the
+// bound proves the check dead (omitted entirely) or the exact value proves it
+// always fires (unconditional failure).  Wide (lo/hi pair) values and wide
+// targets check the relevant limbs.
 func (g *generator) checkWidth(c *code, op operand, w uint) {
 	if w >= 128 || fits(op.max, w) {
 		return // the value provably fits the target
@@ -54,6 +58,24 @@ func (g *generator) checkWidth(c *code, op operand, w uint) {
 
 	c.linef("fail(%q)", msg)
 	c.line("}")
+}
+
+// emitCheckCast emits a CHECKCAST (executeCheckCast): the target register's
+// value must fit within the given bit width, leaving the register unchanged.
+// Like store checks, the check is elided when the bound analysis proves it
+// dead; when it survives, flow past it proves the value fits, so the target's
+// interval is refined to the checked width.
+func (g *generator) emitCheckCast(c *code, fn *descFunction, x *bytecode.CheckCast) error {
+	op, err := g.operand(fn, x.Target)
+	if err != nil {
+		return err
+	}
+
+	w := uint(x.Bitwidth)
+	g.checkWidth(c, op, w)
+	g.iv.assign(x.Target, bigMin(op.max, widthMax(w)))
+
+	return nil
 }
 
 func widthFailMsg(w uint) string {

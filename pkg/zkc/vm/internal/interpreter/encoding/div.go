@@ -14,6 +14,7 @@ package encoding
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // DivRem encodes a division/remainder bytecode; the opcode held within the
@@ -22,10 +23,39 @@ func DivRem(p *bytecode.DivRem) []uint32 {
 	return encodeDivRem(p.Opcode, p.Target, p.Dividend, p.Divisor)
 }
 
-// DivHint encodes a division-hint bytecode, which supplies the prover with the
-// quotient, remainder and witness for a division.
-func DivHint(p *bytecode.DivHint) []uint32 {
-	return encodeDivHint(p.Quotient, p.Remainder, p.Witness, p.Dividend, p.Divisor)
+// Hint encodes a hint bytecode.  Currently the only supported operation is
+// DIV_HINT, which supplies the prover with the quotient, remainder and witness
+// for a division.
+func Hint(p *bytecode.Hint) []uint32 {
+	return encodeHint(p.Op, p.Targets, p.Sources)
+}
+
+// DecodeHint decodes a hint instruction at the given program counter.
+func DecodeHint[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
+	var (
+		op, tIter, sIter, n = DecodeHintOperands(pc, codes)
+		targets             = registerVectorsFromIter(tIter)
+		sources             = registerVectorsFromIter(sIter)
+	)
+	//
+	return &bytecode.Hint{Op: op, Targets: targets, Sources: sources}, n
+}
+
+// registerVectorsFromIter reconstructs the register vectors packed as (base, len)
+// pairs within the given iterator.
+func registerVectorsFromIter(iter OpIter) []RegisterVector {
+	var vecs []RegisterVector
+	//
+	for iter.HasNext() {
+		var (
+			base = iter.Next()
+			len  = iter.Next()
+		)
+		//
+		vecs = append(vecs, RegisterVector{Base: base, Len: len})
+	}
+	//
+	return vecs
 }
 
 // ============================================================================
@@ -38,13 +68,24 @@ func DivHint(p *bytecode.DivHint) []uint32 {
 // +--------+--------+--------+--------+
 //
 // The opcode itself distinguishes the two operations, so no width is needed.
+// The wide form carries the (now u16) destination register in the first word,
+// with both source registers in a second:
+//
+// +--------+--------+--------+--------+
+// |        rd       |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// |     divisor     |    dividend     |
+// +-----------------+-----------------+
 // ============================================================================
 
 // encodeDivRem encodes a division/remainder instruction, where op distinguishes
 // the two operations.
 func encodeDivRem(op uint32, rd, dividend, divisor RegisterId) []uint32 {
-	if rd >= 256 || dividend >= 256 || divisor >= 256 {
-		panic("wide division instructions not supported")
+	if IsWideRegisters(rd, dividend, divisor) {
+		return []uint32{
+			uint32(rd)<<16 | op | WIDE,
+			uint32(dividend) | uint32(divisor)<<16,
+		}
 	}
 	//
 	return []uint32{uint32(divisor)<<24 | uint32(dividend)<<16 | uint32(rd)<<8 | op}
@@ -52,6 +93,14 @@ func encodeDivRem(op uint32, rd, dividend, divisor RegisterId) []uint32 {
 
 // DecodeDivRem_2n1 decodes the operands of a division/remainder instruction.
 func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor RegisterId, n uint32) {
+	if IsWideForm(pc, codes) {
+		rd = RegisterId(codes[pc] >> 16)
+		dividend = RegisterId(codes[pc+1] & 0xffff)
+		divisor = RegisterId(codes[pc+1] >> 16)
+		//
+		return rd, dividend, divisor, 2
+	}
+	//
 	rd = RegisterId((codes[pc] >> 8) & 0xff)
 	dividend = RegisterId((codes[pc] >> 16) & 0xff)
 	divisor = RegisterId((codes[pc] >> 24) & 0xff)
@@ -60,41 +109,74 @@ func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor Register
 }
 
 // ============================================================================
-// DIVHINT instruction. Format of this instruction is:
+// HINT instruction. Format of this instruction is:
 //
 //	31                                0
 //
 // +--------+--------+--------+--------+
-// |   rw   |   rr   |   rq   | opcode |
+// |   op   |  nsrc  |  ntgt  | opcode |
 // +--------+--------+--------+--------+
-// |   n/a  |   n/a  |   ry   |   rx   |
-// +--------+--------+--------+--------+
+// | ... packed target then source register vectors ... |
+// +-----------------------------------------------------+
 //
-// Here, rx and ry are the dividend and divisor source registers, whilst rq, rr
-// and rw are the quotient, remainder and witness destination registers.
+// Here, op selects the hint operation (e.g. DIV_HINT), whilst ntgt and nsrc give
+// the number of target (return) and source (argument) register vectors
+// respectively.  Each vector is packed as a (base, len) byte pair, targets
+// first.  The wide form retains the header but packs each vector as a (base,
+// len) pair of u16 operands (i.e. one word per vector).
 // ============================================================================
 
-// encodeDivHint encodes a division-hint instruction, where rx and ry are the
-// dividend and divisor and rq, rr and rw are the quotient, remainder and witness
-// destination registers.
-func encodeDivHint(rq, rr, rw, rx, ry RegisterId) []uint32 {
-	if rq >= 256 || rr >= 256 || rw >= 256 || rx >= 256 || ry >= 256 {
-		panic("wide division hint instructions not supported")
+// encodeHint encodes a hint instruction, where op selects the operation and the
+// target (return) and source (argument) register vectors are packed as (base,
+// len) pairs, targets first.
+func encodeHint(op Operation, targets, sources []RegisterVector) []uint32 {
+	if len(targets) == 0 || len(sources) == 0 || len(targets) >= 256 || len(sources) >= 256 {
+		panic("hint instruction operand counts not supported")
 	}
 	//
-	return []uint32{
-		uint32(rw)<<24 | uint32(rr)<<16 | uint32(rq)<<8 | DIVHINT,
-		uint32(ry)<<8 | uint32(rx),
+	var (
+		nop  = uint32(op) << 24
+		nsrc = uint32(len(sources)) << 16
+		ntgt = uint32(len(targets)) << 8
+	)
+	//
+	if IsWideRegisterVectors(targets) || IsWideRegisterVectors(sources) {
+		var (
+			codes  = []uint32{nop | nsrc | ntgt | HINT | WIDE}
+			shorts = append(RegisterVectorsAsShorts(targets), RegisterVectorsAsShorts(sources)...)
+		)
+		//
+		return append(codes, PackShortsIntoCodes(shorts)...)
 	}
+	//
+	var (
+		codes = []uint32{nop | nsrc | ntgt | HINT}
+		bytes = append(RegisterVectorsAsBytes(targets), RegisterVectorsAsBytes(sources)...)
+	)
+	//
+	return append(codes, PackBytesIntoCodes(bytes)...)
 }
 
-// DecodeDivHint_2n3 decodes the operands of a division-hint instruction.
-func DecodeDivHint_2n3(pc uint32, codes []uint32) (rq, rr, rw, rx, ry RegisterId, n uint32) {
-	rq = RegisterId((codes[pc] >> 8) & 0xff)
-	rr = RegisterId((codes[pc] >> 16) & 0xff)
-	rw = RegisterId((codes[pc] >> 24) & 0xff)
-	rx = RegisterId(codes[pc+1] & 0xff)
-	ry = RegisterId((codes[pc+1] >> 8) & 0xff)
+// DecodeHintOperands decodes the operation selector along with the target and
+// source operands of a hint instruction.  Each vector is packed as a (base,
+// len) pair, hence the iterators range over twice the vector counts.
+func DecodeHintOperands(pc uint32, codes []uint32) (op Operation, targets, sources OpIter, n uint32) {
+	var (
+		ntargets = uint((codes[pc] >> 8) & 0xff)
+		nsources = uint((codes[pc] >> 16) & 0xff)
+	)
 	//
-	return rq, rr, rw, rx, ry, 2
+	op = Operation((codes[pc] >> 24) & 0xff)
+	//
+	if IsWideForm(pc, codes) {
+		targets = NewOp16Iter(0, 2*ntargets, codes[pc+1:])
+		sources = NewOp16Iter(2*ntargets, 2*nsources, codes[pc+1:])
+		n = 1 + NumCodesPackedWide(2*(ntargets+nsources))
+	} else {
+		targets = NewOp8Iter(0, 2*ntargets, codes[pc+1:])
+		sources = NewOp8Iter(2*ntargets, 2*nsources, codes[pc+1:])
+		n = 1 + NumCodesPackedSmall(2*(ntargets+nsources))
+	}
+	//
+	return
 }

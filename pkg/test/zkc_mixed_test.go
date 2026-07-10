@@ -17,14 +17,13 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/test/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // DEFAULT_MIXED_CONFIG provides a default configuration for mixed tests.  These
 // are executed via the bytecode interpreter (in addition to the usual word
 // machine), exercising its support for native field arithmetic.
 var DEFAULT_MIXED_CONFIG = util.DEFAULT_CONFIG.
-	Words(vm.WORD_UINT128, vm.WORD_UINT64).
+	Fields(field.KOALABEAR_16).
 	Bytecode(true)
 
 // ===================================================================

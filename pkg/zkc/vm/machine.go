@@ -19,8 +19,11 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/trace"
+	log "github.com/sirupsen/logrus"
 )
 
 // Core provides a minimal interface for booting and executing a machine with a
@@ -55,6 +58,12 @@ type StackFrame[W MachineWord[W], I Instruction] = machine.StackFrame[W, I]
 // it identifies the (micro) instruction within that being executed.
 type ProgramCounter = machine.ProgramCounter
 
+// NewProgramCounter constructs a program counter identifying the given macro
+// instruction and the micro code within it.
+func NewProgramCounter(macro, micro uint) ProgramCounter {
+	return machine.NewProgramCounter(macro, micro)
+}
+
 // MachineWord captures the minimal set of requirements for a word used in the base
 // machine.
 type MachineWord[W any] = machine.BaseWord[W]
@@ -72,7 +81,7 @@ type BaseMachine[W MachineWord[W], I Instruction, E Executor[W, I]] = machine.Ba
 type WordMachine[W Word[W]] = machine.Word[W]
 
 // WordFunction is a function made up of word instructions.
-type WordFunction = Function[instruction.Word]
+type WordFunction = LegacyFunction[instruction.Word]
 
 // WordInstruction is an instruction which operates over standard machine words.
 type WordInstruction = instruction.Word
@@ -82,7 +91,7 @@ type WordInstruction = instruction.Word
 // ============================================================================
 
 // FieldFunction is a function made up of field instructions.
-type FieldFunction = Function[instruction.Field]
+type FieldFunction = LegacyFunction[instruction.Field]
 
 // FieldMachine is a machine which operates over field elements only.
 type FieldMachine[F field.Element[F]] = machine.Field[F]
@@ -98,7 +107,7 @@ type FieldInstruction = instruction.Field
 // flag indicates whether this function is backed by a native circuit (i.e.
 // declared with the @native annotation) rather than by code.
 func NewFunction[I Instruction](name string, native bool, registers []register.Register,
-	code []instruction.Vector[I]) *Function[I] {
+	code []instruction.Vector[I]) *LegacyFunction[I] {
 	return function.New(name, native, registers, code)
 }
 
@@ -160,6 +169,10 @@ func ExecuteAll[W MachineWord[W], M Core[W]](machine M, n uint) (uint, error) {
 	}
 }
 
+// Observer is a generic interface for extract information before and after an
+// execution step of the VM.  For example, to generate debugging information.
+type Observer[W MachineWord[W], I Instruction, M Machine[W, I]] = trace.Observer[W, I, M]
+
 // ExecuteAndObserve executes a given machine for n steps with a supplied
 // observer.  The purpose of this is that it provides a way to extract
 // information (as desired) from an executing machine.
@@ -187,10 +200,31 @@ func ExecuteAndObserve[W Word[W], I Instruction, M Machine[W, I], V Observer[W, 
 	}
 }
 
+// FilterInputs restricts the given set of (parsed) inputs to the program's
+// declared input memories.
+func FilterInputs[W Word[W], T any](p Program[W], input map[string][]T) map[string][]T {
+	inputs := make(map[string][]T)
+	//
+	for it := p.Inputs(); it.HasNext(); {
+		in := it.Next()
+		if bytes, ok := input[in.Name()]; ok {
+			inputs[in.Name()] = bytes
+		}
+	}
+	// Sanity check what was actually filtered out
+	for k := range input {
+		if _, ok := inputs[k]; !ok {
+			log.Warn("ignoring input/output \"", k, "\"")
+		}
+	}
+	//
+	return inputs
+}
+
 // DecodeInputsOutputs decodes  given set of input and output bytes
 // appropriately for the given machine.  If there are unknown or conflicting
 // inputs, then errors are returned.
-func DecodeInputsOutputs[W Word[W], M Core[W]](m M, data map[string][]byte,
+func DecodeInputsOutputs[W Word[W]](program descriptor.Program[W], data map[string][]byte,
 ) (inputs, outputs map[string][]W, errs []error) {
 	//
 	var visited = make(map[string]bool)
@@ -198,7 +232,7 @@ func DecodeInputsOutputs[W Word[W], M Core[W]](m M, data map[string][]byte,
 	inputs = make(map[string][]W)
 	outputs = make(map[string][]W)
 	// scan input modules
-	for iter := m.Inputs(); iter.HasNext(); {
+	for iter := program.Inputs(); iter.HasNext(); {
 		var input = iter.Next()
 		// Record visited information
 		visited[input.Name()] = true
@@ -210,7 +244,7 @@ func DecodeInputsOutputs[W Word[W], M Core[W]](m M, data map[string][]byte,
 		}
 	}
 	// scan output modules
-	for iter := m.Outputs(); iter.HasNext(); {
+	for iter := program.Outputs(); iter.HasNext(); {
 		var output = iter.Next()
 		// Record visited information
 		visited[output.Name()] = true

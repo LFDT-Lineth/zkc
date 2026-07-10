@@ -55,20 +55,30 @@ func SkipIf[W word.Word[W]](pc Address, b *bytecode.SkipIf, env Environment[W]) 
 //
 // Here, skip is a u8 identifying the number of instructions to skip, where the
 // following instruction is considered to be at offset 0.  Likewise, rs0 and rs1
-// are u8 source registers, whilst op identifies the operation.
+// are u8 source registers, whilst op identifies the operation.  The wide form
+// keeps skip in place, moving the (now u16) registers into a subsequent word:
+//
+// +--------+--------+--------+--------+
+// |  skip  |       n/a       | opcode |
+// +--------+--------+--------+--------+
+// |       rs0       |       rs1       |
+// +-----------------+-----------------+
 // ============================================================================
 
 // encodeSkipIf_rr encodes a register-register conditional skip instruction,
 // where op identifies the comparison.
 func encodeSkipIf_rr(skip uint8, rs0, rs1 RegisterId, op Cond) []uint32 {
-	var (
-		_rs1 = uint32(rs1) << 8
-		_rs0 = uint32(rs0) << 16
-	)
 	// Forward branches are preferred as SKIP_IF instructions, whose offset is
 	// unsigned and hence offers a greater forward range.
+	if IsWideRegisters(rs0, rs1) {
+		return []uint32{
+			uint32(skip)<<24 | (SEQ_rr + uint32(op)) | WIDE,
+			uint32(rs1) | uint32(rs0)<<16,
+		}
+	}
+	//
 	return []uint32{
-		uint32(skip)<<24 | _rs0 | _rs1 | (SEQ_rr + uint32(op)),
+		uint32(skip)<<24 | uint32(rs0)<<16 | uint32(rs1)<<8 | (SEQ_rr + uint32(op)),
 	}
 }
 
@@ -83,10 +93,17 @@ func encodeSkipIf_rr(skip uint8, rs0, rs1 RegisterId, op Cond) []uint32 {
 // DecodeSkipIf_rr decodes the operands of a register-register conditional skip.
 func DecodeSkipIf_rr(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterId, op Cond, n uint32) {
 	op = Cond((codes[pc] & OPCODE_MASK) - SEQ_rr)
-	rs1 = RegisterId((codes[pc] >> 8) & 0xff)
-	rs0 = RegisterId((codes[pc] >> 16) & 0xff)
 	skip = codes[pc] >> 24
-	n = 1
+	//
+	if IsWideForm(pc, codes) {
+		rs1 = RegisterId(codes[pc+1] & 0xffff)
+		rs0 = RegisterId(codes[pc+1] >> 16)
+		n = 2
+	} else {
+		rs1 = RegisterId((codes[pc] >> 8) & 0xff)
+		rs0 = RegisterId((codes[pc] >> 16) & 0xff)
+		n = 1
+	}
 	//
 	return
 }
@@ -105,38 +122,62 @@ func DecodeSkipIf_rr(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterI
 //
 // Here, rs0 and rs1 are the base registers for the left and right vectors
 // whilst nv is the vector length (which assumes both vectors have the same
-// length).  Likewise, target is an absolute u32 target address.
+// length).  Likewise, target is an absolute u32 target address.  The wide form
+// keeps nv and target in place, moving the (now u16) base registers into a
+// third word:
+//
+// +--------+--------+--------+--------+
+// |   nv   |       n/a       | opcode |
+// +--------+--------+--------+--------+
+// | ............ target ............. |
+// +--------+--------+--------+--------+
+// |       rs0       |       rs1       |
+// +-----------------+-----------------+
 // ============================================================================
 // encodeSkipIf_rv encodes a register-vector conditional skip instruction.
-func encodeSkipIf_rv(skip uint32, rs0, rs1 RegVec, op Cond) []uint32 {
-	var (
-		rs1b = uint32(rs1.Base) << 8
-		rs0b = uint32(rs0.Base) << 16
-		nv   = uint32(rs1.Len) << 24
-	)
+func encodeSkipIf_rv(skip uint32, rs0, rs1 RegisterVector, op Cond) []uint32 {
+	var nv = uint32(util.Cast[uint8](rs1.Len)) << 24
 	// check core invariant
 	if rs0.Len != rs1.Len {
 		panic(fmt.Sprintf("mismatched length for source vectors (%d vs %d)", rs0.Len, rs1.Len))
 	}
 	//
+	if IsWideRegisters(rs0.Base, rs1.Base) {
+		return []uint32{
+			nv | (SEQ_rv + uint32(op)) | WIDE,
+			skip,
+			uint32(rs1.Base) | uint32(rs0.Base)<<16,
+		}
+	}
+	//
 	return []uint32{
-		nv | rs0b | rs1b | (SEQ_rv + uint32(op)),
+		nv | uint32(rs0.Base)<<16 | uint32(rs1.Base)<<8 | (SEQ_rv + uint32(op)),
 		skip,
 	}
 }
 
 // DecodeSkipIf_rv decodes the operands of a register-vector conditional branch.
-func DecodeSkipIf_rv(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegVec, op Cond, n uint32) {
+func DecodeSkipIf_rv(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterVector, op Cond, n uint32) {
 	var (
-		rs1b = RegisterId((codes[pc] >> 8) & 0xff)
-		rs0b = RegisterId((codes[pc] >> 16) & 0xff)
-		nv   = RegisterId((codes[pc] >> 24) & 0xff)
+		rs0b, rs1b RegisterId
+		nv         = RegisterId((codes[pc] >> 24) & 0xff)
 	)
 	//
 	op = Cond((codes[pc] & OPCODE_MASK) - SEQ_rv)
 	skip = codes[pc+1]
-	rs0 = RegVec{Base: rs0b, Len: nv}
-	rs1 = RegVec{Base: rs1b, Len: nv}
 	//
-	return skip, rs0, rs1, op, 2
+	if IsWideForm(pc, codes) {
+		rs1b = RegisterId(codes[pc+2] & 0xffff)
+		rs0b = RegisterId(codes[pc+2] >> 16)
+		n = 3
+	} else {
+		rs1b = RegisterId((codes[pc] >> 8) & 0xff)
+		rs0b = RegisterId((codes[pc] >> 16) & 0xff)
+		n = 2
+	}
+	//
+	rs0 = RegisterVector{Base: rs0b, Len: nv}
+	rs1 = RegisterVector{Base: rs1b, Len: nv}
+	//
+	return skip, rs0, rs1, op, n
 }

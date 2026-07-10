@@ -13,18 +13,127 @@
 package vm
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/trace"
+	"slices"
+
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 )
 
-// Observer is a generic interface for extract information before and after an
-// execution step of the VM.  For example, to generate debugging information.
-type Observer[W MachineWord[W], I Instruction, M Machine[W, I]] = trace.Observer[W, I, M]
+// TraceProcessor captures the notion of a "post-processing" function on the
+// data recorded during execution for a given module.  The goal of this is to
+// decouple post-processing logic from the trace observer itself.
+type TraceProcessor[W Word[W], F any] interface {
+	// Post-process the trace for a given function.
+	TraceFunction(Function[W], []State[W]) rtrace.ArrayModule[F]
+	// Post-process the trace for a memory of some kind
+	TraceMemory(m Memory[W]) rtrace.ArrayModule[F]
+}
 
-// BaseObserver is an observer for a base machin
-type BaseObserver[W Word[W]] = trace.Observer[W, WordInstruction, *WordMachine[W]]
+// BootAndTrace generates a suitable trace from the given inputs for the contraints
+// embodied in this file.  This can return one (or more) errors if, for example,
+// the input is malformed (e.g. is missing expected fields and/or contains
+// unexpected fields).
+func BootAndTrace[W Word[W], F field.Element[F]](
+	program Program[W], in map[string][]byte, n uint, processor TraceProcessor[W, F],
+) (rtrace.Trace[F], []error) {
+	//
+	var (
+		states = make([][]State[W], len(program.Modules()))
+		tr     rtrace.Trace[F]
+		errs   []error
+		bci    = interpreter.New(program, true)
+	)
+	// Register breakpoint handler to record all states generated during
+	// tracing.
+	bci = bci.BreakPointer(func(opcode uint32) {
+		// Extract state from the interpreter
+		fid, pc, frame := interpreter.ExtractExecutingState(bci)
+		// Check whether terminating state
+		terminal := opcode == encoding.RET
+		// Clone the frame to ensure it is preserved until execution has
+		// completed.
+		frame = slices.Clone(frame)
+		// Append state
+		states[fid] = append(states[fid], State[W]{pc, terminal, frame})
+	})
+	// Install a recording access log on each read-write memory so its reads and
+	// writes are captured during execution (consumed at post-processing by
+	// ProcessReadWriteMemory).  Trace-only: fast execution keeps the no-op log.
+	for i := range bci.Binary().Modules() {
+		if _, isFn := bci.Binary().Module(uint16(i)).(*Function[W]); isFn {
+			continue
+		}
+		//
+		switch mem := bci.Memory(uint16(i)).(type) {
+		case *memory.RandomAccess[W]:
+			mem.SetLog(&memory.TraceableMemoryLog[W]{})
+		case *memory.PagedRandomAccess[W]:
+			mem.SetLog(&memory.TraceableMemoryLog[W]{})
+		}
+	}
+	// Execute the interpreter with appropriate breakpoints
+	if _, errs = BootAndExecute(bci, in, n); len(errs) == 0 {
+		// Post process trace states
+		tr = postProcess(bci, states, processor)
+	}
+	//
+	return tr, errs
+}
 
-// EmptyBaseObserver is an empty observer for a base machine.
-type EmptyBaseObserver = trace.EmptyObserver[Uint, WordInstruction, *WordMachine[Uint]]
+func postProcess[W Word[W], F field.Element[F]](bci *Interpreter[W], states [][]State[W],
+	processor TraceProcessor[W, F]) rtrace.Trace[F] {
+	//
+	var (
+		binary  = bci.Binary()
+		modules = make([]rtrace.ArrayModule[F], len(binary.Modules()))
+	)
+	// Post process trace states
+	for i := range states {
+		var m = binary.Module(uint16(i))
+		// Decide what we've got
+		if f, ok := m.(*Function[W]); ok {
+			modules[i] = processor.TraceFunction(*f, states[i])
+		} else {
+			modules[i] = processor.TraceMemory(bci.Memory(uint16(i)))
+		}
+	}
+	// Construct trace file
+	return rtrace.NewArray(modules)
+}
 
-// TraceObserver is an observer which can be used to extract a full trace.
-type TraceObserver[W Word[W], I Instruction, M Machine[W, I]] = trace.FullObserver[W, I, M]
+// State collects together information recorded when executing a single vector
+// instruction.
+type State[W any] struct {
+	// Program Counter position.
+	pc uint32
+	// Terminal indicates this is a terminating state (i.e. whether or not the
+	// next instruction to execute was a return).
+	terminal bool
+	// Values for each register in this state excluding the program counter
+	// (since this is held above).
+	frame []W
+}
+
+// Frame returns frame data stored in this state
+func (p State[W]) Frame() []W {
+	return p.frame
+}
+
+// Width returns with the width of this state.
+func (p State[W]) Width() uint {
+	return uint(len(p.frame))
+}
+
+// PC returns the value of program counter for this state.
+func (p State[W]) PC() uint {
+	return uint(p.pc)
+}
+
+// IsTerminal indicates whether or not this is a "terminal state" for the
+// enclosing function.
+func (p State[W]) IsTerminal() bool {
+	return p.terminal
+}

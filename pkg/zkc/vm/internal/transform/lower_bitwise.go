@@ -40,7 +40,7 @@ func LowerBitwise[W word.Word[W]](program descriptor.Program[W]) descriptor.Prog
 		}
 	}
 
-	return descriptor.NewProgram(append(out, helpers.modules()...)...)
+	return descriptor.NewProgram(program.Field(), append(out, helpers.modules()...)...)
 }
 
 func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *bitwiseHelpers[W],

@@ -67,6 +67,11 @@ func (p Uint64) BigInt() *big.Int {
 	return new(big.Int).SetUint64(p.value)
 }
 
+// BitLen implementation for Word interface.
+func (p Uint64) BitLen() uint {
+	return uint(bits.Len64(p.value))
+}
+
 // Cmp implementation for Word interface.
 func (p Uint64) Cmp(o Uint64) int {
 	return cmp.Compare(p.value, o.value)

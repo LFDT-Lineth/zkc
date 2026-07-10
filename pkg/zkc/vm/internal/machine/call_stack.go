@@ -35,6 +35,45 @@ type CallStack[W BaseWord[W], I Instruction] struct {
 	frames stack.Stack[FrameRecord[I]]
 }
 
+// CloneCallStack produces a copy of the given call stack, re-typed from a source
+// word/instruction pairing (W1, I1) to a target pairing (W2, I2).  This is used
+// when lowering a machine to a different word type (or to a field), where the
+// live execution state must be carried across verbatim.
+//
+// Heap values are converted element-wise via convert.  Each frame's function
+// pointer is re-bound (by module id) to the corresponding function in the
+// lowered machine via lookup — this is essential, since the source frames
+// reference un-lowered functions whose instructions carry the old word type.
+// The frame pointers, program counters and module ids are structural (register
+// layout is preserved by lowering) and are copied verbatim.
+func CloneCallStack[W1 BaseWord[W1], W2 BaseWord[W2], I1, I2 Instruction](
+	src CallStack[W1, I1], convert func(W1) W2, lookup func(fid uint) *function.Function[I2],
+) CallStack[W2, I2] {
+	//
+	var (
+		dst CallStack[W2, I2]
+		n   = src.values.Size()
+	)
+	// Convert the heap of values element-wise, preserving offsets.
+	dst.values.Alloc(n)
+	//
+	for i := range n {
+		dst.values.Set(i, convert(src.values.Get(i)))
+	}
+	// Copy each frame record (bottom-to-top), re-binding the function pointer to
+	// the lowered function with the same module id.
+	for _, rec := range src.frames.AsArray() {
+		dst.frames.Push(FrameRecord[I2]{
+			fp:  rec.fp,
+			pc:  rec.pc,
+			fid: rec.fid,
+			fn:  lookup(rec.fid),
+		})
+	}
+	//
+	return dst
+}
+
 // Depth returns the number of frames currently on the stack.
 func (p *CallStack[W, I]) Depth() uint {
 	return p.frames.Len()

@@ -14,6 +14,7 @@ package encoding
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -22,6 +23,9 @@ import (
 
 // RegisterId provides a convenient alias
 type RegisterId = bytecode.RegisterId
+
+// Operation provides a convenient alias
+type Operation = bytecode.Operation
 
 // Bytecode provides a convenient alias
 type Bytecode[W word.Word[W]] = bytecode.Bytecode[W]
@@ -35,15 +39,70 @@ type Address = bytecode.Address
 // Cond just provides a convenient alias to make the code more readable.
 type Cond = bytecode.Cond
 
-// RegVec just provides a convenient alias to make the code more readable.
-type RegVec = bytecode.RegVec
+// RegisterVector just provides a convenient alias to make the code more readable.
+type RegisterVector = bytecode.RegisterVector
 
-// OPCODE_MASK determines how many bits of the opcode byte are used for the
-// opcode itself.  This is a 7-bit field (bits 0..6); operand bytes always begin
-// at bit 8, and no instruction uses bits 6..7, so widening the opcode field
-// from 6 to 7 bits leaves every existing encoding untouched (their opcodes are
-// all <= 62, so bit 6 reads as zero).
-const OPCODE_MASK = 0x7f
+// OPCODE_MASK is used to extract the actual opcode from the opcode byte.  The
+// current format of an opcode byte is:
+//
+//	7   6   5                   0
+//
+// +---+---+---+---+---+---+---+---+
+// | B | W |        OPCODE         |
+// +---+---+---+---+---+---+---+---+
+//
+// Here, B is the Breakpoint flag, W is the Wide instruction flag, whilst the
+// lower 6-bits form the opcode itself.  For reference, the breakpoint bit
+// signals a breakpoint should be triggered immediately before the current
+// instruction executes.
+const OPCODE_MASK = 0x3f
+
+// WIDE is a modifier bit (bit 6 of the opcode byte) marking the "wide" form of
+// an instruction, whose register operands are u16 rather than u8.  Wide forms
+// arise for functions with more than 256 registers.  By convention, a wide
+// form keeps its non-register fields in the first instruction word exactly as
+// the narrow form does (where they still fit), whilst its register operands
+// move into subsequent words, packed two per word (least significant half
+// first) in the order they appear in the narrow encoding.
+const WIDE = 0x40
+
+// BREAKPOINT is a modifier bit (bit 7 of the opcode byte) which, when set,
+// signals that a breakpoint should be triggered immediately before the
+// instruction executes.  Like WIDE, it lies above the opcode field, so dispatch
+// (which masks with OPCODE_MASK) is unaffected and both flagged and unflagged
+// instructions reach the same executor.
+const BREAKPOINT = 0x80
+
+// IsWideForm checks whether the instruction word at the given position has the
+// WIDE modifier bit set (i.e. carries u16 register operands).
+func IsWideForm(pc uint32, codes []uint32) bool {
+	return codes[pc]&WIDE != 0
+}
+
+// IsWideRegisters checks whether any of the given registers requires the wide
+// (u16) instruction form, i.e. does not fit within a single byte.
+func IsWideRegisters(regs ...RegisterId) bool {
+	for _, r := range regs {
+		if r > math.MaxUint8 {
+			return true
+		}
+	}
+	//
+	return false
+}
+
+// IsWideRegisterVectors checks whether any of the given register vectors
+// requires the wide (u16) instruction form, i.e. has a base or length which
+// does not fit within a single byte.
+func IsWideRegisterVectors(vecs []RegisterVector) bool {
+	for _, v := range vecs {
+		if v.Base > math.MaxUint8 || v.Len > math.MaxUint8 {
+			return true
+		}
+	}
+	//
+	return false
+}
 
 // Every instruction occupies 32 bits, where the first byte is as follows:
 //
@@ -94,8 +153,6 @@ const (
 	SGE_rv
 	// ENTER_n instruction
 	ENTER_n
-	// ENTERCP_n instruction
-	ENTERCP_n
 	// LEAVE_n instruction
 	LEAVE_n
 	// RET instruction
@@ -152,8 +209,8 @@ const (
 	DIV
 	// REM instruction
 	REM
-	// DIVHINT (division hint) instruction
-	DIVHINT
+	// HINT instruction (e.g. division hint)
+	HINT
 	// ADDMOD_P instruction
 	ADDMOD_P
 	// SUBMOD_P instruction
@@ -188,7 +245,7 @@ const (
 func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint32 {
 	switch b := b.(type) {
 	case *bytecode.Arith[W]:
-		return Arith(*b)
+		return Arith(*b, env)
 	case *bytecode.Bitwise:
 		return Bitwise(b)
 	case *bytecode.Call:
@@ -201,8 +258,8 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 		return Debug(b, env)
 	case *bytecode.DivRem:
 		return DivRem(b)
-	case *bytecode.DivHint:
-		return DivHint(b)
+	case *bytecode.Hint:
+		return Hint(b)
 	case *bytecode.Fail:
 		return Fail(b, env)
 	case *bytecode.FieldArith[W]:
@@ -230,15 +287,15 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 	//
 	switch b := b.(type) {
 	case *bytecode.Call:
-		var (
-			enter = encodeEnter_n(0, 1, b.Flags.CheckPoint, 0, b.Arguments)
-			leave = encodeLeave_n(b.Returns)
-		)
-		//
-		return uint(len(enter) + len(leave))
+		return MaxCallEncodedLength(b)
 	case *bytecode.Skip, *bytecode.Jmp:
 		return 1
 	case *bytecode.SkipIf:
+		// The wide form carries its base registers in an additional word.
+		if IsWideRegisters(b.Left.Base, b.Right.Base) {
+			return 3
+		}
+		//
 		return 2
 	default:
 		// NOTE: the maximum length of the remaining bytecodes is not dependent
@@ -339,6 +396,51 @@ func NumCodesPackedSmall(n uint) uint32 {
 	return ncodes
 }
 
+// PackShortsIntoCodes packs a given array of u16 operands into an array of
+// codes (two per code, least significant half first), such that the last code
+// is padded with 0xffff.
+func PackShortsIntoCodes(shorts []uint16) []uint32 {
+	var (
+		nShorts = uint32(len(shorts))
+		ncodes  = NumCodesPackedWide(uint(nShorts))
+		//
+		codes = make([]uint32, ncodes)
+	)
+	//
+	for i := range ncodes {
+		var ith uint32
+		//
+		for j := range uint32(2) {
+			var jth uint32 = 0xffff
+			//
+			if k := (i * 2) + j; k < nShorts {
+				jth = uint32(shorts[k])
+			}
+			//
+			ith = ith | (jth << (j * 16))
+		}
+		//
+		codes[i] = ith
+	}
+	//
+	return codes
+}
+
+// NumCodesPackedWide returns the number of 32-bit codes required to pack n
+// u16 operands, two per code (rounding up).
+func NumCodesPackedWide(n uint) uint32 {
+	var (
+		// 2 shorts per code
+		ncodes = uint32(n) / 2
+	)
+	// Round up if necessary
+	if n%2 != 0 {
+		ncodes++
+	}
+	//
+	return ncodes
+}
+
 // RegsAsBytes packs an array of (small) registers into an array of bytes.  This
 // will panic if any register is encountered which does not fit into a byte.
 func RegsAsBytes(regs []RegisterId) []byte {
@@ -353,9 +455,9 @@ func RegsAsBytes(regs []RegisterId) []byte {
 	return bytes
 }
 
-// RegVecsAsBytes packs an array of (small) registers into an array of bytes.  This
+// RegisterVectorsAsBytes packs an array of (small) registers into an array of bytes.  This
 // will panic if any register is encountered which does not fit into a byte.
-func RegVecsAsBytes(vecs []RegVec) []byte {
+func RegisterVectorsAsBytes(vecs []RegisterVector) []byte {
 	var bytes = make([]byte, len(vecs)*2)
 	//
 	for i, r := range vecs {
@@ -364,6 +466,29 @@ func RegVecsAsBytes(vecs []RegVec) []byte {
 	}
 	//
 	return bytes
+}
+
+// RegsAsShorts packs an array of registers into an array of u16 operands, as
+// used by wide instruction forms.
+func RegsAsShorts(regs []RegisterId) []uint16 {
+	var shorts = make([]uint16, len(regs))
+	//
+	copy(shorts, regs)
+	//
+	return shorts
+}
+
+// RegisterVectorsAsShorts packs an array of register vectors into an array of
+// u16 operands (as base / length pairs), as used by wide instruction forms.
+func RegisterVectorsAsShorts(vecs []RegisterVector) []uint16 {
+	var shorts = make([]uint16, len(vecs)*2)
+	//
+	for i, r := range vecs {
+		shorts[2*i] = r.Base
+		shorts[(2*i)+1] = r.Len
+	}
+	//
+	return shorts
 }
 
 func init() {

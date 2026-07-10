@@ -15,6 +15,7 @@ package vm
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -30,8 +31,19 @@ type Bytecode[W Word[W]] = bytecode.Bytecode[W]
 // BytecodeModule describes a moddule, such as a function or memory
 type BytecodeModule[W Word[W]] = descriptor.Module[W]
 
-// BytecodeFunction describes a function
-type BytecodeFunction[W Word[W]] = descriptor.Function[W]
+// Function contains information about an executable function in the system.  A
+// function has one or more registers where: the first n registers are the input
+// registers (i.e. parameters); the next m registers are the output registers
+// (i.e. returns); and all remaining registers are internal (sometimes also
+// referred to as computed registers).  Additionally, a function has some number
+// of "instructions" which capture its semantics (i.e. intended behaviour).  The
+// notion of an instruction is specifically left undefined by this interface to
+// support different levels of the compilation pipeline.  For example, a
+// compiled function has instructions which are simply bytes (or words) for
+// efficient execution.  However, the instructions of an "assembly" level
+// function implement the Instruction interface, which is better suited to
+// analysis and/or translation into constraints.
+type Function[W Word[W]] = descriptor.Function[W]
 
 // BytecodeMemory describes a memory
 type BytecodeMemory[W Word[W]] = descriptor.Memory[W]
@@ -44,7 +56,49 @@ type Register[W Word[W]] = descriptor.Register[W]
 // bytecode RegisterId).
 type RegisterId = bytecode.RegisterId
 
-// BytecodeVector is a vector (single trace line) of bytecode instructions.
+// BytecodeVector bundles together one or more bytecode instructions which, with
+// restrictions, can be executed by the underlying machine "in parallel".  The
+// approach is analoguous to the concept of "Very-Long Instruction Words (VLIW)"
+// but taken to more of an extreme --- there is no limit on the number of
+// bytecode instructions.
+//
+// To better understand bytecode vectors, consider two instructions executed in
+// sequence (the at pc location 0, the second at pc location 1):
+//
+// (pc=0) x = y + 1 (pc=1) z = 0
+//
+// When executing these instructions, there is an intermediate state after the
+// first instruction is executed but before the second has been where x has been
+// written but z has not.  Alternatively, the two instructions can be composed
+// together to form a bytecode vector, written like so:
+//
+// (pc=0) x = y + 1 ; z = 0
+//
+// In this case, both instructions are executed together and there is no
+// intermediate state where x is written but z is not.
+//
+// To ensure easy translation into polynomial constraints, there are
+// restrictions on how bytecode vectors can be composed.  In particular, no
+// variable can be assigned twice on the same execution path.  Thus, for
+// example, this is an invalid bytecode vector:
+//
+// (pc=0) x = 0 ; x = 1
+//
+// These writes are said to be _conflicting_.  In contrast, the following is a
+// valid bytecode vector:
+//
+// (pc=0) skip_if x != y 2 ; r = 0 ; ret ; r = 1 ; ret
+//
+// In this case, whilst there are two assignments to register r, neither are on
+// the same path.  These writes are said to be _non-conflicting_.  Finally, we
+// should note that register forwarding is applied within bytecode vectors.
+// Thus, for example, the following is allowed:
+//
+// (pc=0) x = 0; y = x + 1; ret
+//
+// Here, the value of x written in the instruction is "forwarded" to the
+// assignment for y.  This process is, roughly speaking, analoguous to register
+// forwarding as found in CPU architectures.
 type BytecodeVector[W Word[W]] = bytecode.Vector[W]
 
 // Interpreter is an optimised bytecode interpreter for executing word
@@ -65,20 +119,20 @@ type BytecodeEnvironment = bytecode.Environment
 // NewBytecodeInterpreter constructs an interpreter for executing the given
 // bytecode program.  The modulus is the prime characteristic of the surrounding
 // field, used when executing native field instructions.
-func NewBytecodeInterpreter[W word.Word[W]](program Program[W], modulus W) *Interpreter[W] {
-	return interpreter.New(program, modulus)
+func NewBytecodeInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] {
+	return interpreter.New(program, false)
 }
 
 // CompileProgram compiles a program descriptor into an binary (i.e. executable)
 // bytecode program.
 func CompileProgram[W word.Word[W]](p Program[W]) BinaryProgram[W] {
-	return interpreter.CompileProgram(p)
+	return interpreter.CompileProgram(p, false)
 }
 
 // NewBytecodeProgram assembles a bytecode program directly from pre-lowered
 // descriptor modules, bypassing the word-machine round trip.
-func NewBytecodeProgram[W word.Word[W]](modules ...BytecodeModule[W]) Program[W] {
-	return descriptor.NewProgram(modules...)
+func NewBytecodeProgram[W word.Word[W]](field field.Config, modules ...BytecodeModule[W]) Program[W] {
+	return descriptor.NewProgram(field, modules...)
 }
 
 // NewBytecodeVector constructs a bytecode vector (single trace line) from the
@@ -90,7 +144,7 @@ func NewBytecodeVector[W word.Word[W]](codes ...Bytecode[W]) BytecodeVector[W] {
 // NewBytecodeFunction constructs a bytecode (descriptor) function module from its
 // registers and a body of bytecode vectors.
 func NewBytecodeFunction[W word.Word[W]](name string, native bool, registers []Register[W],
-	code []BytecodeVector[W]) *BytecodeFunction[W] {
+	code ...BytecodeVector[W]) *Function[W] {
 	return descriptor.NewFunction[W](name, registers, native, code)
 }
 
@@ -105,8 +159,7 @@ func NewRegister[W word.Word[W]](kind register.Type, name string, bitwidth util.
 // NewComputedRegister constructs a computed register descriptor of the given
 // name and bit-width.  A bit-width of math.MaxUint yields a native (field)
 // register, which carries no fixed bit-width.
-func NewComputedRegister[W word.Word[W]](name string, bitwidth util.Option[uint]) Register[W] {
-	var padding W
+func NewComputedRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
 	return descriptor.NewRegister(register.COMPUTED_REGISTER, name, bitwidth, padding)
 }
 
@@ -169,24 +222,36 @@ func NewFormattedChunk(text string, format zkc_util.Format, args ...RegisterId) 
 // NewJump), so that the same operation carries the same name at both the
 // bytecode and word layers.
 
-// UintAdd constructs an addition instruction computing
+// LoadConst constructs an instruction assigning a constant into a single
+// target register.
+func LoadConst[W Word[W]](target RegisterId, constant W) Bytecode[W] {
+	return bytecode.LoadConst(target, constant)
+}
+
+// Add constructs an addition instruction computing
 // "target = sum(sources) + constant" into a single target register.
-func UintAdd[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
+func Add[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
 	return bytecode.AddConst(target, sources, constant)
 }
 
-// UintAddV constructs a vectored addition instruction computing
+// AddVec constructs a vectored addition instruction computing
 // "targets = sum(sources)" (i.e. with no constant addend), where targets is a
 // multi-limb register vector.
-func UintAddV[W Word[W]](targets []RegisterId, sources []RegisterId) Bytecode[W] {
+func AddVec[W Word[W]](targets []RegisterId, sources []RegisterId) Bytecode[W] {
 	return bytecode.AddVec[W](targets, sources)
 }
 
-// UintAddVC constructs a vectored addition instruction computing
+// AddVecConst constructs a vectored addition instruction computing
 // "targets = sum(sources) + constant", where targets is a multi-limb register
 // vector.
-func UintAddVC[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) Bytecode[W] {
+func AddVecConst[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) Bytecode[W] {
 	return bytecode.AddVecConst(targets, sources, constant)
+}
+
+// Assign constructs a move instruction which copies the source register into
+// the target register.
+func Assign[W Word[W]](target RegisterId, source RegisterId) Bytecode[W] {
+	return bytecode.Move[W](target, source)
 }
 
 // CallFlags captures boolean properties of a call (checkpoint / unconditional).
@@ -209,6 +274,30 @@ func Skip[W Word[W]](skip uint16) Bytecode[W] {
 	return bytecode.NewSkip(skip)
 }
 
+// SkipTargets returns, for a skip-like bytecode located at bytecode index
+// `from` within its enclosing vector, the index of each bytecode to which
+// control may transfer when the skip is taken.  A skip over n bytecodes
+// transfers to `from + n + 1` (mirroring the interpreter's control flow).  For
+// non-skip bytecodes, nil is returned.
+func SkipTargets[W Word[W]](b Bytecode[W], from uint) []uint {
+	switch b := b.(type) {
+	case *bytecode.Skip:
+		return []uint{from + uint(b.Skip) + 1}
+	case *bytecode.SkipIf:
+		return []uint{from + uint(b.Skip) + 1}
+	case *bytecode.Switch[W]:
+		targets := make([]uint, len(b.Cases))
+		//
+		for i, c := range b.Cases {
+			targets[i] = from + uint(c.Skip) + 1
+		}
+		//
+		return targets
+	default:
+		return nil
+	}
+}
+
 // SkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
 func SkipIf[W Word[W]](op Cond, skip uint16, left, right RegisterId) Bytecode[W] {
@@ -222,34 +311,22 @@ func SkipIfVec[W Word[W]](op Cond, skip uint16, left, right register.Vector) Byt
 	return bytecode.NewSkipIfVec(op, skip, left, right)
 }
 
-// UintConst constructs a load-constant (LDC) instruction which assigns the
-// given constant to the target register.
-func UintConst[W Word[W]](target RegisterId, constant W) Bytecode[W] {
-	return bytecode.LoadConst(target, constant)
-}
-
-// UintAssign constructs a move instruction which copies the source register into
-// the target register.
-func UintAssign[W Word[W]](target RegisterId, source RegisterId) Bytecode[W] {
-	return bytecode.Move[W](target, source)
-}
-
 // Switch constructs a multiway-skip (SMW) instruction which dispatches
 // on the value of the source register against the given (value, target) table.
 func Switch[W Word[W]](source RegisterId, cases []SwitchCase[W]) Bytecode[W] {
 	return bytecode.MultiwaySkip(source, cases)
 }
 
-// UintMul constructs a multiplication instruction computing
+// Mul constructs a multiplication instruction computing
 // "target = product(sources) * constant" into a single target register.
-func UintMul[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
+func Mul[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
 	return bytecode.MulConst(target, sources, constant)
 }
 
-// UintMulV constructs a vectored multiplication instruction computing
+// MulVec constructs a vectored multiplication instruction computing
 // "targets = product(sources) * constant", where targets is a multi-limb
 // register vector.
-func UintMulV[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) Bytecode[W] {
+func MulVec[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) Bytecode[W] {
 	return bytecode.MulVecConst(targets, sources, constant)
 }
 
@@ -261,16 +338,16 @@ func MemRead[W Word[W]](id uint16, address []RegisterId, data []RegisterId) Byte
 	return bytecode.NewMemRead(id, address, data)
 }
 
-// UintSub constructs a subtraction instruction computing
+// Sub constructs a subtraction instruction computing
 // "target = sources[0] - ... - constant" into a single target register.
-func UintSub[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
+func Sub[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
 	return bytecode.SubConst(target, sources, constant)
 }
 
-// UintSubV constructs a vectored subtraction instruction computing
+// SubVec constructs a vectored subtraction instruction computing
 // "targets = sources[0] - ... - constant", where targets is a multi-limb
 // register vector.
-func UintSubV[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) Bytecode[W] {
+func SubVec[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) Bytecode[W] {
 	return bytecode.SubVecConst(targets, sources, constant)
 }
 
@@ -332,21 +409,22 @@ func Debug[W Word[W]](chunks []FormattedChunk) Bytecode[W] {
 	return bytecode.NewDebug(chunks)
 }
 
-// DivHint constructs a division-hint instruction.
-func DivHint[W Word[W]](quotient, remainder, witness, dividend, divisor RegisterId) Bytecode[W] {
-	return bytecode.NewDivHint(quotient, remainder, witness,
-		dividend, divisor)
+// Hint constructs a hint instruction performing the given operation op (e.g.
+// DIV_HINT) which reads the given source (argument) register vectors and writes
+// the given target (return) register vectors.
+func Hint[W Word[W]](op bytecode.Operation, targets, sources []bytecode.RegisterVector) Bytecode[W] {
+	return bytecode.NewHint(op, targets, sources)
 }
 
-// UintDiv constructs an integer-division instruction computing
+// Div constructs an integer-division instruction computing
 // "target = dividend / divisor".
-func UintDiv[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
+func Div[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
 	return bytecode.NewDivRem(encoding.DIV, target, dividend, divisor)
 }
 
-// UintRem constructs an integer-remainder instruction computing
+// Rem constructs an integer-remainder instruction computing
 // "target = dividend % divisor".
-func UintRem[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
+func Rem[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
 	return bytecode.NewDivRem(encoding.REM, target, dividend, divisor)
 }
 
@@ -355,21 +433,21 @@ func Fail[W Word[W]](chunks []FormattedChunk) Bytecode[W] {
 	return bytecode.NewFail(chunks)
 }
 
-// UintAddModP constructs a field-addition instruction computing
+// AddModP constructs a field-addition instruction computing
 // "target = sources[0] + ... + constant" modulo the field prime.
-func UintAddModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
+func AddModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
 	return bytecode.NewFieldArith(bytecode.OP_ADDMOD_P, target, sources, constant)
 }
 
-// UintSubModP constructs a field-subtraction instruction computing
+// SubModP constructs a field-subtraction instruction computing
 // "target = sources[0] - ... - constant" modulo the field prime.
-func UintSubModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
+func SubModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
 	return bytecode.NewFieldArith(bytecode.OP_SUBMOD_P, target, sources, constant)
 }
 
-// UintMulModP constructs a field-multiplication instruction computing
+// MulModP constructs a field-multiplication instruction computing
 // "target = sources[0] * ... * constant" modulo the field prime.
-func UintMulModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
+func MulModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
 	return bytecode.NewFieldArith(bytecode.OP_MULMOD_P, target, sources, constant)
 }
 

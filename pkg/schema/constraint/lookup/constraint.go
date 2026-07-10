@@ -216,7 +216,9 @@ func (p *Constraint[F, E]) insertTargetVectors(tr trace.Trace[F], sc schema.AnyS
 			height   = trModule.Height()
 		)
 		//
-		if target.HasSelector() {
+		if scModule.IsStatic() {
+			st.insertStaticTarget(scModule)
+		} else if target.HasSelector() {
 			// unfiltered
 			for i := range int(height) {
 				if err := st.insertFilteredVector(i, target, trModule, scModule); err != nil {
@@ -315,6 +317,16 @@ func (p *State[F, E]) insertTargetVector(k int, vec Vector[F, E], trModule trace
 	}
 	//
 	return nil
+}
+
+func (p *State[F, E]) insertStaticTarget(scModule schema.Module[F]) {
+	var (
+		contents = scModule.StaticContents()
+	)
+	// Insert all rows
+	for _, row := range contents {
+		p.rows.Insert(hash.NewArray(row))
+	}
 }
 
 func (p *State[F, E]) checkFilteredSourceVector(k int, vec Vector[F, E], trModule trace.Module[F],

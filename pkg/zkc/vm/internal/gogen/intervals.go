@@ -15,8 +15,6 @@ package gogen
 
 import (
 	"math/big"
-
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 )
 
 // intervals is the flow-sensitive bound analysis for one function: an
@@ -51,10 +49,10 @@ type intervals struct {
 }
 
 // newIntervals seeds the analysis for a function: the boot frame enters with
-// every register zero (CallStack.Boot allocates without copying), a callee
-// enters with its inputs bounded by their declared widths (Enter checks them)
-// and everything else zero.
-func newIntervals(fn *wordFunction, isBoot, disabled bool) *intervals {
+// every register zero (its activation record is allocated without copying), a
+// callee enters with its inputs bounded by their declared widths (the call
+// checks them) and everything else zero.
+func newIntervals(fn *descFunction, isBoot, disabled bool) *intervals {
 	regs := fn.Registers()
 	iv := &intervals{
 		disabled: disabled,
@@ -67,8 +65,8 @@ func newIntervals(fn *wordFunction, isBoot, disabled bool) *intervals {
 
 	for i, r := range regs {
 		w := uint(128)
-		if !r.IsNative() && r.Width() < 128 {
-			w = r.Width()
+		if !r.IsNative() && r.Bitwidth().Unwrap() < 128 {
+			w = r.Bitwidth().Unwrap()
 		}
 
 		iv.caps[i] = widthMax(w)
@@ -94,26 +92,24 @@ func (iv *intervals) stable() bool { return !iv.changed }
 
 // boundOf returns the current upper bound of a register (its width cap when
 // the analysis is disabled or the position is unreachable).
-func (iv *intervals) boundOf(id register.Id) *big.Int {
-	i := id.Unwrap()
+func (iv *intervals) boundOf(id regId) *big.Int {
 	if iv.disabled || iv.cur == nil {
-		return iv.caps[i]
+		return iv.caps[id]
 	}
 
-	return iv.cur[i]
+	return iv.cur[id]
 }
 
 // assign records a write with the given value bound (capped at the register's
 // width — the store check guarantees the value fits).  The bound is copied:
 // callers may keep mutating the value they pass (e.g. the running remainder of
 // a multi-limb store).
-func (iv *intervals) assign(id register.Id, bound *big.Int) {
+func (iv *intervals) assign(id regId, bound *big.Int) {
 	if iv.disabled || iv.cur == nil {
 		return
 	}
 
-	i := id.Unwrap()
-	iv.cur[i] = new(big.Int).Set(bigMin(bound, iv.caps[i]))
+	iv.cur[id] = new(big.Int).Set(bigMin(bound, iv.caps[id]))
 }
 
 // edgeTo merges the current state into a goto/skip target's label state.

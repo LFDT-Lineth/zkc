@@ -101,6 +101,11 @@ func (p Uint) FitsWithin(bitwidth uint) bool {
 	return uint(p.value.BitLen()) <= bitwidth
 }
 
+// BitLen implementation for Word interface.
+func (p Uint) BitLen() uint {
+	return uint(p.value.BitLen())
+}
+
 // Not implementation for Word interface.
 func (p Uint) Not(bitwidth uint) Uint {
 	// Compute bitwise complement within width: (2^width - 1) XOR value
@@ -284,11 +289,15 @@ func (p *Uint) GobDecode(data []byte) error {
 }
 
 // lowBits returns the low `width` bits of value (i.e. value mod 2^width).
-// For example, given value 10111000 and width=4 the result is 1000.
+// For example, given value 10111000 and width=4 the result is 1000.  A
+// negative value (e.g. an underflowed subtraction) wraps two's-complement:
+// -1 with width=4 gives 1111.
 func lowBits(width uint, value big.Int) big.Int {
 	var slice big.Int
-	// Fast paths: the result fits within a single uint64.
-	if width <= 64 {
+	// Fast paths: the result fits within a single uint64.  These apply only to
+	// non-negative values — Uint64() / Bits() expose the magnitude, whereas a
+	// negative value must wrap two's-complement (the general path's And).
+	if width <= 64 && value.Sign() >= 0 {
 		if value.IsUint64() {
 			slice.SetUint64(value.Uint64() & mask64(width))
 			return slice
@@ -300,7 +309,9 @@ func lowBits(width uint, value big.Int) big.Int {
 			return slice
 		}
 	}
-	// General path: mask off everything at or above bit `width`.
+	// General path: mask off everything at or above bit `width`.  big.Int.And
+	// treats a negative operand as its infinite two's-complement extension, so
+	// this also wraps negative values correctly.
 	mask := new(big.Int).Lsh(&one, width)
 	mask.Sub(mask, &one)
 	slice.And(&value, mask)

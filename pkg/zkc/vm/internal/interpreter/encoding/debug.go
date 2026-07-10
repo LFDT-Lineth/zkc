@@ -31,7 +31,7 @@ func Debug[W word.Word[W]](p *bytecode.Debug, env Environment[W]) []uint32 {
 // DecodeDebug decodes a debug instruction, returning the index of its formatted
 // chunks, an iterator over its source register vectors and the instruction
 // width.
-func DecodeDebug(pc uint32, codes []uint32) (index uint, sources Op8Iter, n uint32) {
+func DecodeDebug(pc uint32, codes []uint32) (index uint, sources OpIter, n uint32) {
 	return decodeDebug_n(pc, codes)
 }
 
@@ -51,27 +51,42 @@ func DecodeDebug(pc uint32, codes []uint32) (index uint, sources Op8Iter, n uint
 // Here, nvecs determines the number of packed source register vectors, whilst
 // index identifies the formatted chunks (i.e. the debug message template) to
 // emit.  Each source vector is encoded as a (base, len) byte pair, packed two
-// vectors per word.
+// vectors per word.  The wide form retains the header but packs each vector as
+// a (base, len) pair of u16 operands (i.e. one word per vector).
 // ============================================================================
 
 // encodeDebug_n encodes a debug instruction referencing the formatted chunks at
 // the given index, packing its source register vectors.
-func encodeDebug_n(index uint16, sources []RegVec) []uint32 {
+func encodeDebug_n(index uint16, sources []RegisterVector) []uint32 {
+	var nsources = uint32(util.Cast[uint8](uint(len(sources)))) << 24
+	//
+	if IsWideRegisterVectors(sources) {
+		var codes = []uint32{nsources | uint32(index)<<8 | DEBUG | WIDE}
+		//
+		return append(codes, PackShortsIntoCodes(RegisterVectorsAsShorts(sources))...)
+	}
+	//
 	var (
-		nsources = uint32(util.Cast[uint8](uint(len(sources)))) << 24
-		codes    = []uint32{nsources | uint32(index)<<8 | DEBUG}
-		bytes    = RegVecsAsBytes(sources)
+		codes = []uint32{nsources | uint32(index)<<8 | DEBUG}
+		bytes = RegisterVectorsAsBytes(sources)
 	)
 	//
 	return append(codes, PackBytesIntoCodes(bytes)...)
 }
 
 // decodeDebug_n decodes the operands of a debug instruction.
-func decodeDebug_n(pc uint32, codes []uint32) (index uint, sources Op8Iter, n uint32) {
-	var nbytes = 2 * uint(codes[pc]>>24)
+func decodeDebug_n(pc uint32, codes []uint32) (index uint, sources OpIter, n uint32) {
+	var nops = 2 * uint(codes[pc]>>24)
 	//
 	index = uint(codes[pc]>>8) & 0xffff
-	sources = NewOp8Iter(0, nbytes, codes[pc+1:])
 	//
-	return index, sources, 1 + NumCodesPackedSmall(nbytes)
+	if IsWideForm(pc, codes) {
+		sources = NewOp16Iter(0, nops, codes[pc+1:])
+		n = 1 + NumCodesPackedWide(nops)
+	} else {
+		sources = NewOp8Iter(0, nops, codes[pc+1:])
+		n = 1 + NumCodesPackedSmall(nops)
+	}
+	//
+	return index, sources, n
 }
