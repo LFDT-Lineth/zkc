@@ -163,15 +163,6 @@ func ProgramToProgram[W1 word.Word[W1], W2 word.Word[W2]](p Program[W1]) Program
 	return transform.ProgramToProgram[W1, W2](p)
 }
 
-// WordToFieldMachine translates a machine over integer words into a machine over
-// field elements.  In order to do this, it must "compile out" various
-// high-level word operations (e.g. bitwise operations, division, etc) which
-// have no direct correspondance within a field machine.
-func WordToFieldMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm *WordMachine[W],
-) (fm *FieldMachine[F]) {
-	return transform.WordToFieldMachine[W, F](cfg, wm)
-}
-
 // BytecodeProgramToWord decompiles a bytecode program back into an equivalent
 // word machine.  It is the inverse of WordToBytecodeProgram.  Since the bytecode
 // descriptor does not carry the surrounding field, the prime modulus (needed

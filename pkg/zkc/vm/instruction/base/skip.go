@@ -36,11 +36,6 @@ func (p *Skip) IsWord() bool {
 	return true
 }
 
-// IsField implementation for instruction.Field interface
-func (p *Skip) IsField() bool {
-	return true
-}
-
 // Uses implementation for Instruction interface.
 func (p *Skip) Uses() []register.Id {
 	return nil

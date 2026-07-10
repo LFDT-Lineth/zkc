@@ -48,11 +48,6 @@ func (p *SkipIf) IsWord() bool {
 	return true
 }
 
-// IsField implementation for instruction.Field interface
-func (p *SkipIf) IsField() bool {
-	return true
-}
-
 // OpCode implementation for Instruction interface
 func (p *SkipIf) OpCode() opcode.OpCode {
 	return opcode.SKIP_IF

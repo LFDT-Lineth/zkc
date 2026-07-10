@@ -20,7 +20,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
+	"github.com/LFDT-Lineth/zkc/pkg/util/poly"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	finsn "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/field"
 )
 
@@ -74,15 +75,126 @@ func (p *InstructionTranslator[F]) WriteAndShiftRegisters(targets ...register.Id
 // Assignments
 // ============================================================================
 
-func (p *InstructionTranslator[F]) translateAssignment(insn instruction.FieldAssign[F]) Expr[F] {
+// translateArith translates an integer / field arithmetic assignment of the
+// form "targets = op(sources) op constant" into a polynomial constraint.  This
+// folds together the word→field lowering previously performed by
+// WordToFieldMachine (turning an INT_*/*MOD_P bytecode into a polynomial) with
+// the polynomial translation below.  The right-hand side must be built before
+// the left-hand side, since the latter activates register forwarding for the
+// targets which must not affect the source reads.
+func (p *InstructionTranslator[F]) translateArith(op vm.Operation, targets, sources []register.Id,
+	constant big.Int) Expr[F] {
 	var (
-		// build rhs
-		rhs = p.translatePolynomial(insn.Source)
-		// build lhs (must be after rhs)
-		lhs = p.WriteAndShiftRegisters(insn.Target.Registers()...)
+		rhs = p.translatePolynomial(arithPolynomial(op, sources, constant))
+		lhs = p.WriteAndShiftRegisters(targets...)
 	)
 	//
 	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
+}
+
+// translateConcat translates a concatenation assignment (BIT_CONCAT) which
+// joins the source registers into the target register vector, weighting each
+// source by 2^(bitwidth of the less-significant sources).  widths gives the bit
+// width of each source register, least-significant first.
+func (p *InstructionTranslator[F]) translateConcat(targets, sources []register.Id, widths []uint) Expr[F] {
+	var (
+		rhs = p.translatePolynomial(concatPolynomial(sources, widths))
+		lhs = p.WriteAndShiftRegisters(targets...)
+	)
+	//
+	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
+}
+
+// arithPolynomial builds the right-hand-side polynomial for an arithmetic
+// bytecode: the sources become weight-one monomials, an optional (non-zero)
+// constant is appended as a constant monomial, and the whole lot is combined
+// according to the operation (sum, difference or product).  This mirrors the
+// lowering in the (now removed) WordToFieldMachine path.
+func arithPolynomial(op vm.Operation, sources []register.Id, constant big.Int) finsn.Polynomial {
+	var (
+		one   = big.NewInt(1)
+		terms = make([]finsn.Monomial, len(sources))
+	)
+	//
+	for i, r := range sources {
+		terms[i] = poly.NewMonomial(*one, r)
+	}
+	// Append the constant term (if non-zero).
+	if constant.Sign() != 0 {
+		terms = append(terms, poly.NewMonomial[register.Id](constant))
+	}
+	//
+	switch op {
+	case vm.OP_ADD, vm.OP_ADDMOD_P:
+		return polySum(terms...)
+	case vm.OP_SUB, vm.OP_SUBMOD_P:
+		return polySubtract(terms...)
+	case vm.OP_MUL, vm.OP_MULMOD_P:
+		return polyProduct(terms...)
+	default:
+		panic(fmt.Sprintf("unexpected arithmetic operation (%d)", op))
+	}
+}
+
+// concatPolynomial builds the right-hand-side polynomial for a concatenation
+// bytecode: source i is weighted by 2^(sum of the widths of sources 0..i-1),
+// with source 0 being the least significant limb.
+func concatPolynomial(sources []register.Id, widths []uint) finsn.Polynomial {
+	var (
+		terms = make([]finsn.Monomial, len(sources))
+		acc   = big.NewInt(1)
+	)
+	//
+	for i, r := range sources {
+		var coeff big.Int
+		//
+		coeff.Set(acc)
+		terms[i] = poly.NewMonomial(coeff, r)
+		// Shift the running weight left by this source's bit width.
+		acc = acc.Lsh(acc, widths[i])
+	}
+	//
+	return polySum(terms...)
+}
+
+// polySum constructs the polynomial equal to the sum of the given monomials.
+func polySum(terms ...finsn.Monomial) finsn.Polynomial {
+	var p finsn.Polynomial
+	return p.Set(terms...)
+}
+
+// polySubtract constructs the polynomial equal to terms[0] - terms[1] - ...
+func polySubtract(terms ...finsn.Monomial) finsn.Polynomial {
+	var p finsn.Polynomial
+	//
+	for i, m := range terms {
+		if i == 0 {
+			p = p.Set(m)
+		} else {
+			p.SubTerm(m)
+		}
+	}
+	//
+	return p
+}
+
+// polyProduct constructs the polynomial equal to the product of the given
+// monomials.
+func polyProduct(terms ...finsn.Monomial) finsn.Polynomial {
+	var (
+		p finsn.Polynomial
+		m finsn.Monomial
+	)
+	//
+	for i, t := range terms {
+		if i == 0 {
+			m = t
+		} else {
+			m = m.Mul(t)
+		}
+	}
+	//
+	return p.Set(m)
 }
 
 // Translate polynomial (c0*x0$0*...*xn$0) + ... + (cm*x0$m*...*xn$m) where cX

@@ -129,15 +129,13 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 	}
 	// Mid-level Intermediate Representation
 	if config.mir {
-		fir := vm.WordToFieldMachine[vm.Uint, F](field, wir)
-		mir := constraints.GenerateMirConstraints(fir, config.build.config.GetMaxStaticDepth())
+		mir := constraints.GenerateMirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 		//
 		debug.PrintAnySchema(mir, 80, config.verbose)
 	}
 	// // Arithmetic Intermediate Representation
 	if config.air {
-		fir := vm.WordToFieldMachine[vm.Uint, F](field, wir)
-		air := constraints.GenerateAirConstraints(fir, field, config.build.config.GetMaxStaticDepth())
+		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 		//
 		debug.PrintAnySchema(air, 80, config.verbose)
 	}

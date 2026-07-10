@@ -14,19 +14,12 @@ package transform
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	finsn "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
-
-// Monomial is a useful alias
-type Monomial = finsn.Monomial
-
-// Polynomial is a useful alias
-type Polynomial = finsn.Polynomial
 
 // SystemMap is a useful alias
 type SystemMap = instruction.SystemMap
@@ -36,9 +29,6 @@ type Module = machine.Module
 
 // WordFunction is a useful alias
 type WordFunction = function.Function[WordInstruction]
-
-// FieldFunction is a useful alias
-type FieldFunction = function.Function[instruction.Field]
 
 // Vector is a useful alias
 type Vector[I instruction.Instruction] = instruction.Vector[I]
