@@ -136,10 +136,13 @@ func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W],
 		// Widths discovered but not yet processed.
 		queue []uint
 	)
+	// We don't construct a module for range_u1, since the constraint r * (1 - r) == 0 is used instead.
+	// So 1 is always considered "seen" and never queued for processing.
+	seen[1] = true
 	//
 	add := func(w uint) {
 		// Note: width == 0 comes from native registers, which are not range-checked.
-		// width == 1 are not range proven with a call to a static table, but with a constraint r (1 - r) == 0
+		// width == 1 are not range proven with a call to a static table, but with a constraint r * (1 - r) == 0
 		if w != 0 && w != 1 && !seen[w] {
 			seen[w] = true
 			queue = append(queue, w)
@@ -152,13 +155,6 @@ func neededRangeWidths[W word.Word[W]](modules []descriptor.Module[W],
 		// functions, and the PC bit width must match the one chosen there.
 		if fn, ok := mod.(*descriptor.Function[W]); ok && !fn.IsNative() && !fn.IsOneLine() {
 			add(fn.PcWidth())
-		}
-
-		if fn, ok := mod.(*descriptor.Function[W]); ok && !fn.IsNative() && fn.IsOneLine() {
-			// TODO: rm me see https://github.com/LFDT-Lineth/zkc/issues/1975
-			// or  https://github.com/LFDT-Lineth/zkc/issues/1910
-			// seed for $ret line
-			add(1)
 		}
 		// Seed from every register of every module.
 		for _, r := range mod.Registers() {
@@ -255,9 +251,8 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) descriptor.Mod
 // newRecursiveRangeModule constructs the range module for a width > maxStaticWidth.  It is a
 // callable function "fn range_uw(value)" which range-checks its input by
 // destructuring it into a low half (lo) and a high half (hi), value = hi::lo,
-// and then range-checking each half via an unconditional call into the
-// corresponding range module (range_u{lo} / range_u{hi}).  A call whose callee
-// is a static enumeration table (width <= maxStaticWidth) is flagged accordingly.
+// and then range-checking each half via a lookup into the
+// corresponding range module (range_u{lo} / range_u{hi}).
 //
 // moduleOf maps a width to the index of its range module, so the emitted calls
 // can reference their sub-modules by id.
@@ -281,8 +276,9 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 		// values.
 		codes = []Bytecode[W]{bytecode.AddVec[W]([]bytecode.RegisterId{loID, hiID}, []bytecode.RegisterId{valID})}
 	)
-	// Range-check each half: a static table (<= 16) is read via MemRead, a
-	// recursive range function (> 16) is invoked via Call.
+	// Range-check each half to:
+	// a static table (<= maxStaticWidth): nothing to do here, the lookup will be added at constraint generation.
+	// another recursive range function (> maxStaticWidth): invoked via a Call.
 	codes = appendRangeCheck(codes, loID, s.lo, moduleOf, maxStaticWidth)
 	codes = appendRangeCheck(codes, hiID, s.hi, moduleOf, maxStaticWidth)
 	codes = append(codes, bytecode.NewRet())
@@ -291,9 +287,13 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 }
 
 // appendRangeCheck appends to codes a range-check of register r (of width w)
-// against range_u{w} (see rangeCheck).
+// against range_u{w}, when w > maxStaticWidth.
 func appendRangeCheck[W word.Word[W]](codes []Bytecode[W], r bytecode.RegisterId, w uint,
 	moduleOf map[uint]uint, maxStaticWidth uint) []Bytecode[W] {
+	if w <= maxStaticWidth {
+		return codes
+	}
+
 	return append(codes, rangeCheck[W](moduleOf[w], r, w, maxStaticWidth))
 }
 
@@ -303,13 +303,12 @@ func rangeModuleName(w uint) string {
 	return fmt.Sprintf("$range_u%d", w)
 }
 
-// rangeCheck builds a single range-check of register r (of width w) against the
-// range module whose id is `id`: a (data-less) MemRead from the static ROM when
-// w <= 16, or a Call into the recursive range function otherwise.
+// rangeCheck builds a single range-check of register r of width w > maxStaticWidth.
+// It does a call into the recursive range function $range_u{w}
 func rangeCheck[W word.Word[W]](id uint, r bytecode.RegisterId, w uint,
 	maxStaticWidth uint) Bytecode[W] {
 	if w <= maxStaticWidth {
-		return bytecode.NewMemRead(uint16(id), []bytecode.RegisterId{r}, nil)
+		panic(fmt.Sprintf("rangeCheck: width %d <= maxStaticWidth %d should be handled by static table", w, maxStaticWidth))
 	}
 	//
 	return bytecode.CallFun(uint16(id), []bytecode.RegisterId{r}, nil)
