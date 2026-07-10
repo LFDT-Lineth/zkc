@@ -117,12 +117,6 @@ func decompileBytecode[W word.Word[W]](b bytecode.Bytecode[W], regs []descriptor
 	case *bytecode.Bitwise:
 		return decompileBitwise(b)
 	case *bytecode.Call:
-		// The checkpoint flag has no word-instruction representation and is
-		// dropped; the unconditional flag selects between the two call forms.
-		if b.Flags.Unconditional {
-			return instruction.NewUnconditionalCall(uint(b.Target), toIds(b.Arguments), toIds(b.Returns))
-		}
-		//
 		return instruction.NewCall(uint(b.Target), toIds(b.Arguments), toIds(b.Returns))
 	case *bytecode.Cat:
 		return instruction.BitConcatV[W](toVector(b.Targets), toIds(b.Sources))

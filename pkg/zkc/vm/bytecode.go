@@ -254,12 +254,9 @@ func Assign[W Word[W]](target RegisterId, source RegisterId) Bytecode[W] {
 	return bytecode.Move[W](target, source)
 }
 
-// CallFlags captures boolean properties of a call (checkpoint / unconditional).
-type CallFlags = bytecode.CallFlags
-
 // Call constructs a function-call bytecode with the given flags.
-func Call[W Word[W]](target ModuleId, flags CallFlags, args []RegisterId, returns []RegisterId) Bytecode[W] {
-	return bytecode.CallFun(target, flags, args, returns)
+func Call[W Word[W]](target ModuleId, args []RegisterId, returns []RegisterId) Bytecode[W] {
+	return bytecode.CallFun(target, args, returns)
 }
 
 // Jump creates an unconditional jump instruction transferring control to the

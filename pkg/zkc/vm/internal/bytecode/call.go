@@ -17,22 +17,10 @@ import (
 	"strings"
 )
 
-// CallFlags captures boolean properties of a call which do not affect how it
-// executes, but which are significant for constraint lowering.
-type CallFlags struct {
-	// Unconditional indicates whether the corresponding lookup holds
-	// unconditionally (i.e. is not gated by a selector), as used (for example)
-	// for range checks.  This mirrors instruction.UnconditionalCall.
-	Unconditional bool
-}
-
 // Call invokes another function module.
 type Call struct {
 	// address of target function
 	Target ModuleId
-	// Flags captures boolean properties of this call (e.g. whether it is an
-	// unconditional call).
-	Flags CallFlags
 	// Arguments are caller-frame registers copied into callee inputs.
 	Arguments []RegisterId
 	// Returns are caller-frame registers receiving callee outputs.

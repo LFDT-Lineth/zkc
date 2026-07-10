@@ -276,7 +276,7 @@ func splitCall[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allo
 		rets, post = alignArgsReturns(limbsMap, alloc, c.Returns, callee.Outputs(), retAlignment)
 	)
 	//
-	return join(pre, bytecode.CallFun(c.Target, c.Flags, args, rets), post)
+	return join(pre, bytecode.CallFun(c.Target, args, rets), post)
 }
 
 func splitRead[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allocator[W], mods []descriptor.Module[W],

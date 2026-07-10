@@ -287,11 +287,6 @@ func (p *Base[W, I, T]) executeInstruction(insn I, frame StackFrame[W, I],
 	case opcode.CALL:
 		var binsn any = insn
 		return p.executeCall(binsn.(*instruction.Call), frame)
-	case opcode.UNCONDITIONAL_CALL:
-		// Executes exactly like a Call; differs only in constraint lowering.
-		var binsn any = insn
-		c := binsn.(*instruction.UnconditionalCall)
-		return p.executeCall(&instruction.Call{OpIo: c.OpIo}, frame)
 	case opcode.FAIL:
 		var binsn any = insn
 		return p.executeFail(binsn.(*instruction.Fail), frame)

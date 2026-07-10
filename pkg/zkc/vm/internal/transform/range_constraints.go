@@ -312,7 +312,7 @@ func rangeCheck[W word.Word[W]](id uint, r bytecode.RegisterId, w uint,
 		return bytecode.NewMemRead(uint16(id), []bytecode.RegisterId{r}, nil)
 	}
 	//
-	return bytecode.CallFun(uint16(id), bytecode.CallFlags{Unconditional: true}, []bytecode.RegisterId{r}, nil)
+	return bytecode.CallFun(uint16(id), []bytecode.RegisterId{r}, nil)
 }
 
 // addRangeCalls range-checks every register of every function module: a block of

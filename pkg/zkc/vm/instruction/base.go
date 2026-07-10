@@ -83,17 +83,6 @@ func NewCall(id uint, arguments []register.Id, returns []register.Id) *Call {
 
 // ============================================================================
 
-// UnconditionalCall is similar to Call, but executes unconditionally (i.e. the
-// lookup is not gated by a selector). This is used for range checks, for example.
-type UnconditionalCall struct{ base.OpIo }
-
-// NewUnconditionalCall constructs a new function call instruction, where the lookup holds unconditionally.
-func NewUnconditionalCall(id uint, arguments []register.Id, returns []register.Id) *UnconditionalCall {
-	return &UnconditionalCall{base.OpIo{Op: opcode.UNCONDITIONAL_CALL, Id: id, Arguments: arguments, Returns: returns}}
-}
-
-// ============================================================================
-
 // Fail is a convenient alias
 type Fail = base.Fail
 
@@ -244,7 +233,6 @@ func (p *systemMap) String() string {
 
 func init() {
 	gob.Register(Instruction(&Call{}))
-	gob.Register(Instruction(&UnconditionalCall{}))
 	gob.Register(Instruction(&Debug{}))
 	gob.Register(Instruction(&Fail{}))
 	gob.Register(Instruction(&FieldHint{}))

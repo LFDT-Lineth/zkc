@@ -139,8 +139,6 @@ func asCall(insn any) *instruction.Call {
 	switch c := insn.(type) {
 	case *instruction.Call:
 		return c
-	case *instruction.UnconditionalCall:
-		return &instruction.Call{OpIo: c.OpIo}
 	default:
 		panic(fmt.Sprintf("expected call instruction, got %T", insn))
 	}

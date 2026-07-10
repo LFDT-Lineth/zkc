@@ -415,7 +415,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 	// so they will be range-proved as well.
 	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
 	// Emit lookup constraints for any function calls made by this function.
-	addCallLookups[W, F](mod, ctx, fn, pcSelectors, ret, infos, regs)
+	addCallLookups(mod, ctx, fn, pcSelectors, ret, infos, regs)
 	// TODO: add memory read / write constraints (as lookups).
 	// Done
 	return mod

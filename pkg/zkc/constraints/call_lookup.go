@@ -69,20 +69,12 @@ func addCallLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 				calleeId = uint(c.Target)
 				args = toRegisterIds(c.Arguments)
 				returns = toRegisterIds(c.Returns)
-				//
-				if c.Flags.Unconditional {
-					//TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1935
-					//
-					// An unconditional call fires on every row, so it has no selector
-					// at all (neither positional nor path).
-				} else {
-					// A (conditional) call is gated by its branch condition and, in a
-					// multi-line caller, its line selector.  Pass the module's full
-					// register set (which includes the IS_PC_* selectors, beyond the
-					// function's own registers) so the condition can reference them.
-					srcSelector = callSourceSelector(mod, ctx, mod.Registers(),
-						branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors, ret)
-				}
+
+				// A call is gated by its branch condition and:
+				// - for multi-line caller, its line selector (IS_PC_*)
+				// - for one line caller, the $ret register (defining the non-padding region)
+				srcSelector = callSourceSelector(mod, ctx, mod.Registers(),
+					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors, ret)
 			default:
 				continue
 			}

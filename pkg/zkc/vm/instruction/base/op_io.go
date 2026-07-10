@@ -104,7 +104,7 @@ func (p *OpIo) String(mapping SystemMap) string {
 	//
 	switch p.Op {
 	//
-	case opcode.CALL, opcode.UNCONDITIONAL_CALL:
+	case opcode.CALL:
 		//
 		if len(p.Returns) > 0 {
 			builder.WriteString(RegistersToString(mapping, p.Returns...))
