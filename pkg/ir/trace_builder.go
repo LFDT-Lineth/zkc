@@ -329,17 +329,26 @@ func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr 
 }
 
 // padColumns expands every module in a given trace up to the next power of two
-// by prepending front padding rows.  An empty module is expanded to a height
-// of one; a module whose height is already a (non-zero) power of two is left
-// unchanged.  Observe that this applies on top of any spillage and/or defensive
-// padding already applied.
+// by prepending front padding rows.  An empty module is expanded to a height of
+// one (logical) row; a module whose height is already a (non-zero) power of two
+// is left unchanged.  Observe that this applies on top of any spillage and/or
+// defensive padding already applied.
+//
+// The power of two is computed on the module's logical height (i.e. its height
+// divided by its length multiplier) and then scaled back by the multiplier.
+// This ensures the amount of padding added is always a multiple of the
+// multiplier, as required by ArrayModule.Pad (relevant for interleaved corset
+// modules, whose multiplier can exceed one).
 func padColumns[F field.Element[F]](tr *trace.ArrayTrace[F]) {
 	n := tr.Modules().Count()
 	// Iterate over modules
 	for i := uint(0); i < n; i++ {
 		var (
-			height = tr.Module(i).Height()
-			target = util_math.NextPowerOfTwo(height)
+			height     = tr.Module(i).Height()
+			multiplier = tr.Module(i).Name().Multiplier
+			// Round the logical height up to the next power of two, then scale
+			// back by the multiplier so the delta is divisible by it.
+			target = util_math.NextPowerOfTwo(height/multiplier) * multiplier
 		)
 		// Only pad when the module is not already a power of two.
 		if target > height {
