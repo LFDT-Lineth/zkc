@@ -65,7 +65,7 @@ func addCallLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 			)
 			//
 			switch c := code.(type) {
-			case *vm.BytecodeCall:
+			case *vm.BytecodeCall[W]:
 				calleeId = uint(c.Target)
 				args = toRegisterIds(c.Arguments)
 				returns = toRegisterIds(c.Returns)

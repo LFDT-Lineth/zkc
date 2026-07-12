@@ -93,7 +93,7 @@ func decompileFunction[W word.Word[W]](f *descriptor.Function[W]) *WordFunction 
 func decompileVector[W word.Word[W]](vec bytecode.Vector[W], regs []descriptor.Register[W]) VectorInstruction {
 	// Drop cast checks, rewriting skip offsets as needed.
 	cleaned := vec.Map(func(_ uint, b bytecode.Bytecode[W]) []bytecode.Bytecode[W] {
-		if _, ok := b.(*bytecode.CheckCast); ok {
+		if _, ok := b.(*bytecode.CheckCast[W]); ok {
 			return nil
 		}
 		//
@@ -114,9 +114,9 @@ func decompileBytecode[W word.Word[W]](b bytecode.Bytecode[W], regs []descriptor
 	switch b := b.(type) {
 	case *bytecode.Arith[W]:
 		return decompileArith(b)
-	case *bytecode.Bitwise:
+	case *bytecode.Bitwise[W]:
 		return decompileBitwise(b)
-	case *bytecode.Call:
+	case *bytecode.Call[W]:
 		// The checkpoint flag has no word-instruction representation and is
 		// dropped; the unconditional flag selects between the two call forms.
 		if b.Flags.Unconditional {
@@ -124,30 +124,30 @@ func decompileBytecode[W word.Word[W]](b bytecode.Bytecode[W], regs []descriptor
 		}
 		//
 		return instruction.NewCall(uint(b.Target), toIds(b.Arguments), toIds(b.Returns))
-	case *bytecode.Cat:
+	case *bytecode.Cat[W]:
 		return instruction.BitConcatV[W](toVector(b.Targets), toIds(b.Sources))
-	case *bytecode.CheckCast:
+	case *bytecode.CheckCast[W]:
 		// Cast checks are dropped by decompileVector before reaching here.
 		panic("unexpected cast check")
-	case *bytecode.Debug:
+	case *bytecode.Debug[W]:
 		return instruction.NewDebug(decompileChunks(b.Chunks, b.Sources)...)
-	case *bytecode.Hint:
+	case *bytecode.Hint[W]:
 		return instruction.NewFieldHint(registerVectorsToVectors(b.Targets), registerVectorsToVectors(b.Sources))
-	case *bytecode.DivRem:
+	case *bytecode.DivRem[W]:
 		return decompileDivRem(b, regs)
-	case *bytecode.Fail:
+	case *bytecode.Fail[W]:
 		return instruction.NewFail(decompileChunks(b.Chunks, b.Sources)...)
 	case *bytecode.FieldArith[W]:
 		return decompileFieldArith(b)
-	case *bytecode.Jmp:
+	case *bytecode.Jmp[W]:
 		return instruction.NewJump(uint(b.Target))
-	case *bytecode.ReadWrite:
+	case *bytecode.ReadWrite[W]:
 		return decompileReadWrite(b)
-	case *bytecode.Ret:
+	case *bytecode.Ret[W]:
 		return instruction.NewReturn()
-	case *bytecode.Skip:
+	case *bytecode.Skip[W]:
 		return &instruction.Skip{Skip: uint(b.Skip)}
-	case *bytecode.SkipIf:
+	case *bytecode.SkipIf[W]:
 		return instruction.NewSkipIfVec(b.Op, toVector(b.Left.Registers()), toVector(b.Right.Registers()), uint(b.Skip))
 	case *bytecode.Switch[W]:
 		return decompileSwitch(b)
@@ -174,7 +174,7 @@ func decompileArith[W word.Word[W]](b *bytecode.Arith[W]) WordInstruction {
 	}
 }
 
-func decompileBitwise(b *bytecode.Bitwise) WordInstruction {
+func decompileBitwise[W word.Word[W]](b *bytecode.Bitwise[W]) WordInstruction {
 	var (
 		bitwidth = uint(b.Bitwidth)
 		target   = toId(b.Target)
@@ -201,7 +201,7 @@ func decompileBitwise(b *bytecode.Bitwise) WordInstruction {
 	}
 }
 
-func decompileDivRem[W word.Word[W]](b *bytecode.DivRem, regs []descriptor.Register[W]) WordInstruction {
+func decompileDivRem[W word.Word[W]](b *bytecode.DivRem[W], regs []descriptor.Register[W]) WordInstruction {
 	var (
 		// Like the bitwise operations, the bytecode does not record the operation
 		// width; it is the width of the (uniform) operands, recovered from the
@@ -240,7 +240,7 @@ func decompileFieldArith[W word.Word[W]](b *bytecode.FieldArith[W]) WordInstruct
 	}
 }
 
-func decompileReadWrite(b *bytecode.ReadWrite) WordInstruction {
+func decompileReadWrite[W word.Word[W]](b *bytecode.ReadWrite[W]) WordInstruction {
 	var (
 		id      = uint(b.Id)
 		address = toIds(b.Address)

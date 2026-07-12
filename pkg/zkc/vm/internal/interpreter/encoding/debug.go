@@ -20,7 +20,7 @@ import (
 
 // Debug encodes a debug bytecode, interning its formatted chunks in the symbol
 // table and referencing them by index.
-func Debug[W word.Word[W]](p *bytecode.Debug, env Environment[W]) []uint32 {
+func Debug[W word.Word[W]](p *bytecode.Debug[W], env Environment[W]) []uint32 {
 	var (
 		index = env.ChunksIndex(p.Chunks...)
 	)

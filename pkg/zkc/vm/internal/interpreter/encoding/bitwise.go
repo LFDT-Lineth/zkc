@@ -14,10 +14,11 @@ package encoding
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Bitwise encodes a bitwise bytecode (AND/OR/XOR/NOT/SHL/SHR).
-func Bitwise(p *bytecode.Bitwise) []uint32 {
+func Bitwise[W word.Word[W]](p *bytecode.Bitwise[W]) []uint32 {
 	return encodeBitwise(p.Op, p.Target, p.Left, p.Right, p.Bitwidth)
 }
 

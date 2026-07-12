@@ -255,11 +255,11 @@ func checkMemoryCount(count uint32, name string) {
 // function, or not.
 func isVectorTerminal[W word.Word[W]](b bytecode.Bytecode[W]) bool {
 	switch b.(type) {
-	case *bytecode.Fail:
+	case *bytecode.Fail[W]:
 		return true
-	case *bytecode.Jmp:
+	case *bytecode.Jmp[W]:
 		return true
-	case *bytecode.Ret:
+	case *bytecode.Ret[W]:
 		return true
 	default:
 		return false

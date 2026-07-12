@@ -246,33 +246,33 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 	switch b := b.(type) {
 	case *bytecode.Arith[W]:
 		return Arith(*b, env)
-	case *bytecode.Bitwise:
+	case *bytecode.Bitwise[W]:
 		return Bitwise(b)
-	case *bytecode.Call:
+	case *bytecode.Call[W]:
 		return Call(pc, b, env)
-	case *bytecode.Cat:
+	case *bytecode.Cat[W]:
 		return Cat(b)
-	case *bytecode.CheckCast:
+	case *bytecode.CheckCast[W]:
 		return CheckCast(b)
-	case *bytecode.Debug:
+	case *bytecode.Debug[W]:
 		return Debug(b, env)
-	case *bytecode.DivRem:
+	case *bytecode.DivRem[W]:
 		return DivRem(b)
-	case *bytecode.Hint:
+	case *bytecode.Hint[W]:
 		return Hint(b)
-	case *bytecode.Fail:
+	case *bytecode.Fail[W]:
 		return Fail(b, env)
 	case *bytecode.FieldArith[W]:
 		return FieldArith(b)
-	case *bytecode.Skip:
+	case *bytecode.Skip[W]:
 		return Skip(pc, b, env)
-	case *bytecode.SkipIf:
+	case *bytecode.SkipIf[W]:
 		return SkipIf(pc, b, env)
-	case *bytecode.Jmp:
+	case *bytecode.Jmp[W]:
 		return Jmp(pc, b, env)
-	case *bytecode.ReadWrite:
+	case *bytecode.ReadWrite[W]:
 		return ReadWrite(b, env)
-	case *bytecode.Ret:
+	case *bytecode.Ret[W]:
 		return Ret(b, env)
 	case *bytecode.Switch[W]:
 		return Switch(b, env)
@@ -286,11 +286,11 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]) uint {
 	//
 	switch b := b.(type) {
-	case *bytecode.Call:
+	case *bytecode.Call[W]:
 		return MaxCallEncodedLength(b)
-	case *bytecode.Skip, *bytecode.Jmp:
+	case *bytecode.Skip[W], *bytecode.Jmp[W]:
 		return 1
-	case *bytecode.SkipIf:
+	case *bytecode.SkipIf[W]:
 		// The wide form carries its base registers in an additional word.
 		if IsWideRegisters(b.Left.Base, b.Right.Base) {
 			return 3

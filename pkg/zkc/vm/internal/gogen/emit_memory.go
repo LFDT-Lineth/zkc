@@ -18,6 +18,7 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // emitMemRead emits a read from a readable memory: decode the address, then
@@ -29,7 +30,7 @@ import (
 //   - static ROM: contents are baked, so the bound is their maximum;
 //   - RAM: cells were width-checked against the data registers when written
 //     (and unwritten cells read 0), so the data width bounds the value.
-func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite) error {
+func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite[word.Uint]) error {
 	mi, ok := g.memByID[uint(x.Id)]
 	if !ok {
 		return fmt.Errorf("gogen: MEMORY_READ from unknown module id %d", x.Id)
@@ -96,7 +97,7 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 // emitMemWrite emits a write to a writable memory: decode the address,
 // width-check each value against the memory's data register, and store
 // grow-on-write.
-func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrite) error {
+func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrite[word.Uint]) error {
 	mi, ok := g.memByID[uint(x.Id)]
 	if !ok {
 		return fmt.Errorf("gogen: MEMORY_WRITE to unknown module id %d", x.Id)

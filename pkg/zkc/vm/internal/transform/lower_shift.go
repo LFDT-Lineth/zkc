@@ -44,7 +44,7 @@ func scanShiftAmountWidths[W word.Word[W]](modules []descriptor.Module[W]) map[s
 
 		for _, vec := range fn.Vectors() {
 			for _, insn := range vec.Bytecodes {
-				bw, ok := insn.(*bytecode.Bitwise)
+				bw, ok := insn.(*bytecode.Bitwise[W])
 				if !ok {
 					continue
 				}
@@ -92,9 +92,9 @@ func newShlHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	b.emit(bytecode.LoadConst(zeroReg, zero))
 
 	// if n == 0: return a
-	b.emit(bytecode.NewSkipIf(opcode.NEQ, 2, n, zeroReg))
+	b.emit(bytecode.NewSkipIf[W](opcode.NEQ, 2, n, zeroReg))
 	b.emit(bytecode.AddConst(out, []bytecode.RegisterId{a}, zero))
-	b.emit(bytecode.NewRet())
+	b.emit(bytecode.NewRet[W]())
 
 	// doubled = 2*a mod 2^width: strip the top bit via Destruct, add low+low.
 	// low < 2^(width-1) so low+low < 2^width — no IntAdd overflow.
@@ -106,9 +106,9 @@ func newShlHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 
 	n1 := b.newComputedNamed(amtWidth)
 	b.emit(bytecode.SubConst(n1, []bytecode.RegisterId{n}, one))
-	b.emit(bytecode.CallFun(uint16(selfID), bytecode.CallFlags{},
+	b.emit(bytecode.CallFun[W](uint16(selfID), bytecode.CallFlags{},
 		[]bytecode.RegisterId{doubled, n1}, []bytecode.RegisterId{out}))
-	b.emit(bytecode.NewRet())
+	b.emit(bytecode.NewRet[W]())
 
 	return descriptor.NewFunction(helperName(key), b.regs(), false,
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})
@@ -140,9 +140,9 @@ func newShrHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	b.emit(bytecode.LoadConst(zeroReg, zero))
 
 	// if n == 0: return a
-	b.emit(bytecode.NewSkipIf(opcode.NEQ, 2, n, zeroReg))
+	b.emit(bytecode.NewSkipIf[W](opcode.NEQ, 2, n, zeroReg))
 	b.emit(bytecode.AddConst(out, []bytecode.RegisterId{a}, zero))
-	b.emit(bytecode.NewRet())
+	b.emit(bytecode.NewRet[W]())
 
 	// floor(a/2) via Destruct: split a into [lsb:u1, rest:u(width-1)].
 	// rest holds the upper (width-1) bits of a, i.e. floor(a/2), with no
@@ -155,9 +155,9 @@ func newShrHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	b.emit(bytecode.AddConst(half, []bytecode.RegisterId{rest}, zero))
 	n1 := b.newComputedNamed(amtWidth)
 	b.emit(bytecode.SubConst(n1, []bytecode.RegisterId{n}, one))
-	b.emit(bytecode.CallFun(uint16(selfID), bytecode.CallFlags{},
+	b.emit(bytecode.CallFun[W](uint16(selfID), bytecode.CallFlags{},
 		[]bytecode.RegisterId{half, n1}, []bytecode.RegisterId{out}))
-	b.emit(bytecode.NewRet())
+	b.emit(bytecode.NewRet[W]())
 
 	return descriptor.NewFunction(helperName(key), b.regs(), false,
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})

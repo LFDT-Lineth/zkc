@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // SkipIf instruction performs a conditional skip over a given number of codes.
@@ -31,7 +32,7 @@ import (
 //
 // NOTE: currently their is an assumption that both vectors have the same
 // length.  This assumption could be relaxed in the future.
-type SkipIf struct {
+type SkipIf[W word.Word[W]] struct {
 	Skip  uint16
 	Left  RegisterVector
 	Right RegisterVector
@@ -40,12 +41,12 @@ type SkipIf struct {
 
 // Uses implementation for Bytecode interface.  A conditional skip reads both
 // operand vectors being compared.
-func (p *SkipIf) Uses() []RegisterId {
+func (p *SkipIf[W]) Uses() []RegisterId {
 	return append(p.Left.Registers(), p.Right.Registers()...)
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *SkipIf) Definitions() []RegisterId {
+func (p *SkipIf[W]) Definitions() []RegisterId {
 	return nil
 }
 
@@ -54,7 +55,7 @@ func (p *SkipIf) Definitions() []RegisterId {
 // right (mirroring base.SkipIf.MicroValidate): a narrower left operand could
 // not faithfully hold the value it is compared against.  When either vector
 // involves a native register (and hence has no fixed width) no check applies.
-func (p *SkipIf) Validate(_ uint, _ FieldConfig, env Environment) []error {
+func (p *SkipIf[W]) Validate(_ uint, _ FieldConfig, env Environment[W]) []error {
 	var (
 		errors []error
 		lw     = vectorBitwidth(p.Left, env)
@@ -71,7 +72,7 @@ func (p *SkipIf) Validate(_ uint, _ FieldConfig, env Environment) []error {
 // vectorBitwidth returns the total bitwidth of a register vector under the
 // given environment, or the empty option when any constituent register is
 // native (and hence has no fixed bitwidth).
-func vectorBitwidth(v RegisterVector, env Environment) util.Option[uint] {
+func vectorBitwidth[W word.Word[W]](v RegisterVector, env Environment[W]) util.Option[uint] {
 	var total uint
 	//
 	for _, r := range v.Registers() {
@@ -87,7 +88,7 @@ func vectorBitwidth(v RegisterVector, env Environment) util.Option[uint] {
 	return util.Some(total)
 }
 
-func (p *SkipIf) String(env Environment) string {
+func (p *SkipIf[W]) String(env Environment[W]) string {
 	var (
 		ops  string
 		src0 = RegisterVectorToString(p.Left, env)

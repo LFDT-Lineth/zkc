@@ -16,10 +16,11 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Cat concatenates source register bits and stores the result across targets.
-type Cat struct {
+type Cat[W word.Word[W]] struct {
 	// Targets receive the concatenated value, least-significant limb first.
 	Targets []RegisterId
 	// Sources are concatenated with Sources[0] in the least-significant bits.
@@ -27,21 +28,21 @@ type Cat struct {
 }
 
 // Uses implementation for Bytecode interface.
-func (p *Cat) Uses() []RegisterId {
+func (p *Cat[W]) Uses() []RegisterId {
 	return p.Sources
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *Cat) Definitions() []RegisterId {
+func (p *Cat[W]) Definitions() []RegisterId {
 	return p.Targets
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Cat) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *Cat[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *Cat) String(env Environment) string {
+func (p *Cat[W]) String(env Environment[W]) string {
 	var builder strings.Builder
 	//
 	builder.WriteString("cat ")

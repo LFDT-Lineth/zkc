@@ -90,10 +90,10 @@ func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers *regAllo
 		switch c := c.(type) {
 		case *bytecode.Switch[W]:
 			ncodes = append(ncodes, lowerSwitchCode(uint(i), c, mapping, registers)...)
-		case *bytecode.Skip:
-			ncodes = append(ncodes, &bytecode.Skip{Skip: relocateSkip(uint(i), c.Skip, mapping)})
-		case *bytecode.SkipIf:
-			ncodes = append(ncodes, &bytecode.SkipIf{
+		case *bytecode.Skip[W]:
+			ncodes = append(ncodes, &bytecode.Skip[W]{Skip: relocateSkip(uint(i), c.Skip, mapping)})
+		case *bytecode.SkipIf[W]:
+			ncodes = append(ncodes, &bytecode.SkipIf[W]{
 				Skip: relocateSkip(uint(i), c.Skip, mapping), Left: c.Left, Right: c.Right, Op: c.Op})
 		default:
 			ncodes = append(ncodes, c)
@@ -133,7 +133,7 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 		//
 		codes = append(codes,
 			bytecode.LoadConst(creg, cse.Value),
-			bytecode.NewSkipIf(opcode.EQ, util.Cast[uint16](target-position-1), sw.Source, creg))
+			bytecode.NewSkipIf[W](opcode.EQ, util.Cast[uint16](target-position-1), sw.Source, creg))
 	}
 	//
 	return codes

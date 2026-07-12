@@ -664,7 +664,7 @@ func writeModuleSignature[W vm.Word[W]](m vm.BytecodeModule[W]) {
 	}
 }
 
-func writeBytecodeFunction[W vm.Word[W]](listing *bytecodeListing, address uint32, env vm.BytecodeEnvironment,
+func writeBytecodeFunction[W vm.Word[W]](listing *bytecodeListing, address uint32, env vm.BytecodeEnvironment[W],
 	f *vm.Function[W], bin [][]uint32) (uint32, [][]uint32) {
 	for _, r := range f.Registers() {
 		if !r.IsInputOutput() {

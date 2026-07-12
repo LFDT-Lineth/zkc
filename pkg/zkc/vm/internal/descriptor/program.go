@@ -109,7 +109,7 @@ func (p Program[W]) BreakPoints() []BreakPointLabel {
 
 // EnvironmentOf returns an environment for the given module.  This is useful
 // for working with bytecodes enclosed by that module, etc.
-func (p Program[W]) EnvironmentOf(mid uint16) bytecode.Environment {
+func (p Program[W]) EnvironmentOf(mid uint16) bytecode.Environment[W] {
 	return &moduleEnvironment[W]{
 		mid,
 		p.modules,
@@ -327,4 +327,13 @@ func (p moduleEnvironment[W]) Module(id ModuleId) bytecode.ModuleInfo {
 // Register returns the ith register used in this module.
 func (p moduleEnvironment[W]) Register(id RegisterId) bytecode.RegisterInfo {
 	return p.modules[p.module].Register(id)
+}
+
+// ValueOf implementation for the bytecode.Environment interface.  A module
+// environment describes a program's static structure and has no notion of a
+// register's runtime value, so it always returns None.  Environments used
+// within a concrete execution context (e.g. the debugger) override this to
+// supply live register values.
+func (p moduleEnvironment[W]) ValueOf(id RegisterId) util.Option[W] {
+	return util.None[W]()
 }

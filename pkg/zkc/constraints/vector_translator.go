@@ -81,23 +81,23 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 		)
 		//
 		switch c := p.vec.Bytecodes[cc].(type) {
-		case *vm.BytecodeDebug:
+		case *vm.BytecodeDebug[W]:
 			// no-operation
 			continue
-		case *vm.BytecodeCall, *vm.BytecodeReadWrite:
+		case *vm.BytecodeCall[W], *vm.BytecodeReadWrite[W]:
 			// Translation of calls, and memory read/write is done at the function
 			// level, as it modifies the module itself (adding source selectors),
 			// requires knowledge of target modules, etc.
 			continue
-		case *vm.BytecodeCheckCast:
+		case *vm.BytecodeCheckCast[W]:
 			// Width checks are enforced by the range-proof constraints emitted for
 			// each register, so a cast check needs no constraint of its own.  This
 			// mirrors the bytecode→word decompiler, which drops casts entirely.
 			continue
-		case *vm.BytecodeFail:
+		case *vm.BytecodeFail[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = mirc.False[register.Id, Expr[F]]()
-		case *vm.BytecodeJmp:
+		case *vm.BytecodeJmp[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Goto(uint(c.Target))
 		case *vm.BytecodeArith[W]:
@@ -109,20 +109,20 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			// translate field arithmetic assignment (single native target)
 			local = it.translateArith(c.Op, []register.Id{register.NewId(uint(c.Target))},
 				toRegisterIds(c.Sources), *c.Constant.BigInt())
-		case *vm.BytecodeCat:
+		case *vm.BytecodeCat[W]:
 			it := InstructionTranslator[F]{p, localWrites}
 			// translate concatenation assignment
 			local = it.translateConcat(toRegisterIds(c.Targets), toRegisterIds(c.Sources), p.sourceWidths(c.Sources))
-		case *vm.BytecodeRet:
+		case *vm.BytecodeRet[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()
-		case *vm.BytecodeHint:
+		case *vm.BytecodeHint[W]:
 			// Non-deterministic assignment: the target registers are already
 			// recorded in the write map for constancy analysis; no polynomial
 			// constraint is generated here, since correctness is enforced by
 			// subsequent arithmetic checks.
 			continue
-		case *vm.BytecodeSkipIf, *vm.BytecodeSkip, *vm.BytecodeSwitch[W]:
+		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeSwitch[W]:
 			// control flow is captured via the branch table; no constraint here
 			continue
 		default:
