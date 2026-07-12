@@ -22,7 +22,7 @@ import (
 // falling back to a JMP carrying a signed relative offset otherwise.
 func Jmp[W word.Word[W]](pc uint32, b *bytecode.Jmp[W], env Environment[W]) []uint32 {
 	var (
-		offset = env.OffsetFor(env.enclosing, ProgramPoint{uint(b.Target), 0})
+		offset = env.OffsetFor(env.enclosing, ProgramPoint{Macro: uint(b.Target), Micro: 0})
 	)
 	// Forward branches are preferred as SKIP instructions, whose offset is
 	// unsigned and hence offers a greater forward range.

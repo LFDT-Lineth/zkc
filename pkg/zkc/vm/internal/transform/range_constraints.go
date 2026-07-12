@@ -22,7 +22,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -250,7 +249,7 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) descriptor.Mod
 		contents[i] = w.SetUint64(uint64(i))
 	}
 	//
-	return descriptor.NewMemory(name, regs, memory.PRIVATE_STATIC_MEMORY, contents)
+	return descriptor.NewMemory(name, regs, descriptor.PRIVATE_STATIC_MEMORY, contents)
 }
 
 // newRecursiveRangeModule constructs the range module for a width > maxStaticWidth.  It is a

@@ -15,7 +15,6 @@ package transform
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -92,7 +91,7 @@ func newShlHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	b.emit(bytecode.LoadConst(zeroReg, zero))
 
 	// if n == 0: return a
-	b.emit(bytecode.NewSkipIf[W](opcode.NEQ, 2, n, zeroReg))
+	b.emit(bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, 2, n, zeroReg))
 	b.emit(bytecode.AddConst(out, []bytecode.RegisterId{a}, zero))
 	b.emit(bytecode.NewRet[W]())
 
@@ -140,7 +139,7 @@ func newShrHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	b.emit(bytecode.LoadConst(zeroReg, zero))
 
 	// if n == 0: return a
-	b.emit(bytecode.NewSkipIf[W](opcode.NEQ, 2, n, zeroReg))
+	b.emit(bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, 2, n, zeroReg))
 	b.emit(bytecode.AddConst(out, []bytecode.RegisterId{a}, zero))
 	b.emit(bytecode.NewRet[W]())
 

@@ -47,7 +47,7 @@ import (
 // Lookups require a register (and not an expression) as the source selector,
 // so the path selector is materialised as a fresh 1-bit register (if it is not already).
 func addCallLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	fn *vm.Function[W], pcSelectors []register.Id, ret register.Id, infos []vm.BytecodeModule[W],
+	fn *vm.Function[W], pcSelectors []register.Id, ret register.Id, infos []vm.Module[W],
 	callerRegs []register.Register) {
 	//
 	for pc, vec := range fn.Vectors() {
@@ -244,7 +244,7 @@ func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
 // caller's argument/return registers onto the callee's input/output registers.
 func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	callerRegs []register.Register, pc, calleeId uint, args, returns []register.Id,
-	srcSelector util.Option[register.Id], infos []vm.BytecodeModule[W]) {
+	srcSelector util.Option[register.Id], infos []vm.Module[W]) {
 	var (
 		callee     = infos[calleeId].(*vm.Function[W])
 		calleeRegs = toRegisters(callee.Registers())

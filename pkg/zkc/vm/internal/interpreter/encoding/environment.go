@@ -44,19 +44,8 @@ const (
 	PAGED_READWRITE_MEMORY
 )
 
-// ProgramPoint represents an instruction boundary in the compiled bytecode
-// sequence.
-type ProgramPoint struct {
-	// Macro position identifies the enclosing vector instruction of this point.
-	Macro uint
-	// Micro position identifies the bytecode index within the enclosing vector.
-	Micro uint
-}
-
-// Skip n micro instructions in this point
-func (p ProgramPoint) Skip(n uint) ProgramPoint {
-	return ProgramPoint{p.Macro, p.Micro + n + 1}
-}
+// ProgramPoint provides a convenient alias.
+type ProgramPoint = descriptor.ProgramPoint
 
 // Symbol describes the resolved location of a labelled entity (a function
 // program point or a memory) within the compiled program.

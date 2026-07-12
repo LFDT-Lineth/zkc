@@ -78,10 +78,10 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 				bound = maxContents(mi.contents)
 			case ramScratch:
 				expr = fmt.Sprintf("memGet(%s, start+%d)", mi.varName, i)
-				bound = widthMax(dataRegs[i].Width())
+				bound = widthMax(dataRegs[i].Bitwidth().Unwrap())
 			case pagedScratch:
 				expr = fmt.Sprintf("%s.get(start + %d)", mi.varName, i)
-				bound = widthMax(dataRegs[i].Width())
+				bound = widthMax(dataRegs[i].Bitwidth().Unwrap())
 			default: // input ROM: untrusted contents
 				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
 				bound = widthMax(64)
@@ -132,7 +132,7 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 			}
 
 			if !dataRegs[i].IsNative() {
-				g.checkWidth(c, src, dataRegs[i].Width())
+				g.checkWidth(c, src, dataRegs[i].Bitwidth().Unwrap())
 			}
 
 			if mi.role == pagedScratch {
@@ -171,7 +171,7 @@ func (g *generator) addrExpr(fn *descFunction, mi memInfo, addr []regId) (string
 		if i == 0 {
 			expr = src.expr
 		} else {
-			expr = fmt.Sprintf("(%s<<%d | %s)", expr, addrRegs[i].Width(), src.expr)
+			expr = fmt.Sprintf("(%s<<%d | %s)", expr, addrRegs[i].Bitwidth().Unwrap(), src.expr)
 		}
 	}
 	// A constant-only address must still be typed uint64.
@@ -179,7 +179,7 @@ func (g *generator) addrExpr(fn *descFunction, mi memInfo, addr []regId) (string
 		expr = fmt.Sprintf("uint64(%s)", expr)
 	}
 
-	if lines := mi.geom.DataLines(); lines != 1 {
+	if lines := mi.geom.NumOutputs(); lines != 1 {
 		expr = fmt.Sprintf("(%s) * %d", expr, lines)
 	}
 

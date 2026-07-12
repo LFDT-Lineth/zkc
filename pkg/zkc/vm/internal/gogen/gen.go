@@ -55,7 +55,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -98,7 +97,7 @@ type memInfo struct {
 	name    string
 	varName string
 	role    memRole
-	geom    memory.Geometry[word.Uint]
+	geom    descriptor.Memory[word.Uint]
 	// dataWidths are the bit-widths of the memory's data lines, in order; the
 	// main harness bakes these in to pack/unpack the byte encoding shared with
 	// `zkc exec` (see encodeBytes / decodeBytes).
@@ -1092,10 +1091,10 @@ func hasNativeDataLine(info memInfo) bool {
 }
 
 func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, error) {
-	info := memInfo{name: m.Name(), varName: g.uniqueName("mem_" + sanitize(m.Name())), geom: m.Geometry()}
+	info := memInfo{name: m.Name(), varName: g.uniqueName("mem_" + sanitize(m.Name())), geom: *m}
 	// All memory traffic moves through uint64 cells.
 	for _, r := range append(info.geom.AddressRegisters(), info.geom.DataRegisters()...) {
-		if !r.IsNative() && r.Width() > 64 {
+		if !r.IsNative() && r.Bitwidth().Unwrap() > 64 {
 			return info, fmt.Errorf("gogen: memory %q register %q wider than 64 bits unsupported", m.Name(), r.Name())
 		}
 	}
@@ -1106,7 +1105,7 @@ func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, er
 	// input/output (see Generate).
 	if !hasNativeDataLine(info) {
 		for _, r := range info.geom.DataRegisters() {
-			info.dataWidths = append(info.dataWidths, r.Width())
+			info.dataWidths = append(info.dataWidths, r.Bitwidth().Unwrap())
 		}
 	}
 

@@ -14,7 +14,6 @@ package post
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
@@ -25,10 +24,8 @@ type (
 	Word[W any] = vm.Word[W]
 	// Element provides a useful alias
 	Element[F any] = field.Element[F]
-	// Function provides a useful alias
-	Function = vm.WordFunction
 	// Memory provides a useful alias
-	Memory[W Word[W]] = vm.Memory[W]
+	Memory[W Word[W]] = vm.RuntimeMemory[W]
 )
 
 // convert register descriptor into rtrace register
@@ -37,18 +34,6 @@ func toRtraceRegister[W Word[W]](_ uint, reg vm.Register[W]) rtrace.Register {
 	// Determine bitwidth (if applicable)
 	if !reg.IsNative() {
 		bitwidth = util.Some([]uint{reg.Bitwidth().Unwrap()})
-	}
-	//
-	return rtrace.NewRegister(reg.Name(), bitwidth)
-}
-
-// convert register descriptor into rtrace register (legacy version to be
-// deprecated).
-func toRtraceRegisterLegacy(_ uint, reg register.Register) rtrace.Register {
-	var bitwidth util.Option[[]uint]
-	// Determine bitwidth (if applicable)
-	if !reg.IsNative() {
-		bitwidth = util.Some([]uint{reg.Width()})
 	}
 	//
 	return rtrace.NewRegister(reg.Name(), bitwidth)

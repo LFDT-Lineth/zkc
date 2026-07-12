@@ -16,7 +16,6 @@ import (
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -133,7 +132,7 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 		//
 		codes = append(codes,
 			bytecode.LoadConst(creg, cse.Value),
-			bytecode.NewSkipIf[W](opcode.EQ, util.Cast[uint16](target-position-1), sw.Source, creg))
+			bytecode.NewSkipIf[W](bytecode.CONDITION_EQ, util.Cast[uint16](target-position-1), sw.Source, creg))
 	}
 	//
 	return codes

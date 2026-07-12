@@ -28,7 +28,7 @@ type TraceProcessor[W Word[W], F any] interface {
 	// Post-process the trace for a given function.
 	TraceFunction(Function[W], []State[W]) rtrace.ArrayModule[F]
 	// Post-process the trace for a memory of some kind
-	TraceMemory(m Memory[W]) rtrace.ArrayModule[F]
+	TraceMemory(m RuntimeMemory[W]) rtrace.ArrayModule[F]
 }
 
 // BootAndTrace generates a suitable trace from the given inputs for the contraints
@@ -37,13 +37,14 @@ type TraceProcessor[W Word[W], F any] interface {
 // unexpected fields).
 func BootAndTrace[W Word[W], F field.Element[F]](
 	program Program[W], in map[string][]byte, n uint, processor TraceProcessor[W, F],
-) (rtrace.Trace[F], []error) {
+) (rtrace.Trace[F], map[string][]byte, []error) {
 	//
 	var (
 		states = make([][]State[W], len(program.Modules()))
 		tr     rtrace.Trace[F]
 		errs   []error
 		bci    = interpreter.New(program, true)
+		out    map[string][]byte
 	)
 	// Register breakpoint handler to record all states generated during
 	// tracing.
@@ -62,9 +63,11 @@ func BootAndTrace[W Word[W], F field.Element[F]](
 	if _, errs = BootAndExecute(bci, in, n); len(errs) == 0 {
 		// Post process trace states
 		tr = postProcess(bci, states, processor)
+		// Encode outputs
+		out = EncodeOutputs(bci)
 	}
 	//
-	return tr, errs
+	return tr, out, errs
 }
 
 func postProcess[W Word[W], F field.Element[F]](bci *Interpreter[W], states [][]State[W],

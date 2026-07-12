@@ -16,7 +16,6 @@ import (
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -104,8 +103,8 @@ func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers *regAllocato
 	return factor
 }
 
-func isEqualityCondition(cond opcode.Condition) bool {
-	return cond == opcode.EQ || cond == opcode.NEQ
+func isEqualityCondition(cond bytecode.Condition) bool {
+	return cond == bytecode.CONDITION_EQ || cond == bytecode.CONDITION_NEQ
 }
 
 // generatesInverse reports whether the comparison performed by a SkipIf would
@@ -153,6 +152,6 @@ func factorSkipIf[W word.Word[W]](
 		// b = 1  (condition holds)
 		bytecode.LoadConst(b, one),
 		// skip_if b != 0 S  (original skip, now testing the bit)
-		bytecode.NewSkipIf[W](opcode.NEQ, si.Skip, b, zr),
+		bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, si.Skip, b, zr),
 	}
 }

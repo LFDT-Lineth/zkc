@@ -16,7 +16,6 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -36,7 +35,7 @@ type SkipIf[W word.Word[W]] struct {
 	Skip  uint16
 	Left  RegisterVector
 	Right RegisterVector
-	Op    Cond
+	Op    Condition
 }
 
 // Uses implementation for Bytecode interface.  A conditional skip reads both
@@ -96,17 +95,17 @@ func (p *SkipIf[W]) String(env Environment[W]) string {
 	)
 	//
 	switch p.Op {
-	case opcode.EQ:
+	case CONDITION_EQ:
 		ops = "=="
-	case opcode.NEQ:
+	case CONDITION_NEQ:
 		ops = "!="
-	case opcode.LT:
+	case CONDITION_LT:
 		ops = "<"
-	case opcode.LTEQ:
+	case CONDITION_LTEQ:
 		ops = "<="
-	case opcode.GT:
+	case CONDITION_GT:
 		ops = ">"
-	case opcode.GTEQ:
+	case CONDITION_GTEQ:
 		ops = ">="
 	default:
 		ops = "??"

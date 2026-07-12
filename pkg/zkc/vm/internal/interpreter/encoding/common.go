@@ -37,7 +37,7 @@ type ModuleId = bytecode.ModuleId
 type Address = bytecode.Address
 
 // Cond just provides a convenient alias to make the code more readable.
-type Cond = bytecode.Cond
+type Cond = bytecode.Condition
 
 // RegisterVector just provides a convenient alias to make the code more readable.
 type RegisterVector = bytecode.RegisterVector

@@ -17,7 +17,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
@@ -28,8 +27,8 @@ import (
 // Bytecode encapsulates a single bytecode instruction.
 type Bytecode[W Word[W]] = bytecode.Bytecode[W]
 
-// BytecodeModule describes a moddule, such as a function or memory
-type BytecodeModule[W Word[W]] = descriptor.Module[W]
+// Module describes a moddule, such as a function or memory
+type Module[W Word[W]] = descriptor.Module[W]
 
 // Function contains information about an executable function in the system.  A
 // function has one or more registers where: the first n registers are the input
@@ -44,9 +43,6 @@ type BytecodeModule[W Word[W]] = descriptor.Module[W]
 // function implement the Instruction interface, which is better suited to
 // analysis and/or translation into constraints.
 type Function[W Word[W]] = descriptor.Function[W]
-
-// BytecodeMemory describes a memory
-type BytecodeMemory[W Word[W]] = descriptor.Memory[W]
 
 // Register describes a register
 type Register[W Word[W]] = descriptor.Register[W]
@@ -131,7 +127,7 @@ func CompileProgram[W word.Word[W]](p Program[W]) BinaryProgram[W] {
 
 // NewBytecodeProgram assembles a bytecode program directly from pre-lowered
 // descriptor modules, bypassing the word-machine round trip.
-func NewBytecodeProgram[W word.Word[W]](field field.Config, modules ...BytecodeModule[W]) Program[W] {
+func NewBytecodeProgram[W word.Word[W]](field field.Config, modules ...Module[W]) Program[W] {
 	return descriptor.NewProgram(field, modules...)
 }
 
@@ -188,7 +184,7 @@ func NewOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], 
 
 // Cond provides a convenient alias for the comparison condition used by
 // conditional skip instructions.
-type Cond = bytecode.Cond
+type Cond = bytecode.Condition
 
 // Address provides a convenient alias for a branch target address.
 type Address = bytecode.Address
@@ -201,20 +197,14 @@ type ModuleId = bytecode.ModuleId
 type SwitchCase[W any] = bytecode.SwitchCase[W]
 
 // FormattedChunk describes a single chunk of a formatted (debug/fail) message.
-type FormattedChunk = base.FormattedChunk
+type FormattedChunk = bytecode.FormattedChunk
 
 // NewFormattedChunk constructs a formatted (debug/fail) message chunk from its
 // text, format directive and (optional) argument registers.  The argument
 // registers are bundled into the chunk's register vector internally, so callers
 // work purely in terms of RegisterId.
-func NewFormattedChunk(text string, format zkc_util.Format, args ...RegisterId) FormattedChunk {
-	ids := make([]register.Id, len(args))
-	//
-	for i, a := range args {
-		ids[i] = register.NewId(uint(a))
-	}
-	//
-	return FormattedChunk{Text: text, Format: format, Argument: register.NewVector(ids...)}
+func NewFormattedChunk(text string, format zkc_util.Format) FormattedChunk {
+	return FormattedChunk{Text: text, Format: format}
 }
 
 // The instruction constructors below are deliberately named to mirror the
@@ -302,13 +292,6 @@ func SkipTargets[W Word[W]](b Bytecode[W], from uint) []uint {
 // target address when "left op right" holds, comparing single registers.
 func SkipIf[W Word[W]](op Cond, skip uint16, left, right RegisterId) Bytecode[W] {
 	return bytecode.NewSkipIf[W](op, skip, left, right)
-}
-
-// SkipIfVec constructs a conditional branch instruction which jumps to the
-// target address when "left op right" holds, comparing multi-limb register
-// vectors.
-func SkipIfVec[W Word[W]](op Cond, skip uint16, left, right register.Vector) Bytecode[W] {
-	return bytecode.NewSkipIfVec[W](op, skip, left, right)
 }
 
 // Switch constructs a multiway-skip (SMW) instruction which dispatches
@@ -405,8 +388,8 @@ func CheckCast[W Word[W]](target RegisterId, bitwidth uint16) Bytecode[W] {
 }
 
 // Debug constructs a debug instruction carrying the given formatted message.
-func Debug[W Word[W]](chunks []FormattedChunk) Bytecode[W] {
-	return bytecode.NewDebug[W](chunks)
+func Debug[W Word[W]](chunks []FormattedChunk, sources []RegisterId) Bytecode[W] {
+	return bytecode.NewDebug[W](chunks, sources)
 }
 
 // Hint constructs a hint instruction performing the given operation op (e.g.
@@ -429,8 +412,8 @@ func Rem[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
 }
 
 // Fail constructs a fail instruction carrying the given formatted message.
-func Fail[W Word[W]](chunks []FormattedChunk) Bytecode[W] {
-	return bytecode.NewFail[W](chunks)
+func Fail[W Word[W]](chunks []FormattedChunk, sources []RegisterId) Bytecode[W] {
+	return bytecode.NewFail[W](chunks, sources)
 }
 
 // AddModP constructs a field-addition instruction computing

@@ -16,7 +16,6 @@ import (
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -67,9 +66,9 @@ func lowerComparisonCode[W word.Word[W]](
 	return lowerRelationalSkipIf[W](si, registers)
 }
 
-func isRelationalCondition(cond opcode.Condition) bool {
+func isRelationalCondition(cond bytecode.Condition) bool {
 	switch cond {
-	case opcode.LT, opcode.GT, opcode.LTEQ, opcode.GTEQ:
+	case bytecode.CONDITION_LT, bytecode.CONDITION_GT, bytecode.CONDITION_LTEQ, bytecode.CONDITION_GTEQ:
 		return true
 	default:
 		return false
@@ -121,9 +120,9 @@ func lowerRelationalSkipIf[W word.Word[W]](
 	insns := append(append(castRhs, castLhs), subtractAndDestruct...)
 
 	// Finally emit the SkipIf with the appropriate condition on the sign bit
-	finalCond := opcode.EQ
+	finalCond := bytecode.CONDITION_EQ
 	if !skipOnZero {
-		finalCond = opcode.NEQ
+		finalCond = bytecode.CONDITION_NEQ
 	}
 
 	return append(insns, bytecode.NewSkipIf[W](finalCond, si.Skip, sign, zeroReg))
@@ -148,13 +147,13 @@ func normalizeRelational[W word.Word[W]](si *bytecode.SkipIf[W]) (lhs, rhs bytec
 	rhs = right[0]
 	//
 	switch si.Op {
-	case opcode.LT:
+	case bytecode.CONDITION_LT:
 		return lhs, rhs, true
-	case opcode.GTEQ:
+	case bytecode.CONDITION_GTEQ:
 		return lhs, rhs, false
-	case opcode.GT:
+	case bytecode.CONDITION_GT:
 		return rhs, lhs, true
-	case opcode.LTEQ:
+	case bytecode.CONDITION_LTEQ:
 		return rhs, lhs, false
 	default:
 		panic("normalizeRelational called with non-relational condition")

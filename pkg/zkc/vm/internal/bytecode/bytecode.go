@@ -19,13 +19,27 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// Cond provides a convenient alias to make the code more readable.
-type Cond = opcode.Condition
+// Condition represents the set of permission comparitors for a SkipIf
+// instruction.
+type Condition uint
+
+const (
+	// CONDITION_EQ indicates an equality condition
+	CONDITION_EQ Condition = 0
+	// CONDITION_NEQ indicates a non-equality condition
+	CONDITION_NEQ Condition = 1
+	// CONDITION_LT indicates a less-than condition
+	CONDITION_LT Condition = 2
+	// CONDITION_GT indicates a greater-than condition
+	CONDITION_GT Condition = 3
+	// CONDITION_LTEQ indicates a less-than-or-equals condition
+	CONDITION_LTEQ Condition = 4
+	// CONDITION_GTEQ indicates a greater-than-or-equals condition
+	CONDITION_GTEQ Condition = 5
+)
 
 // RegisterId just provides a convenient alias to make the code more readable.
 type RegisterId = uint16
@@ -35,9 +49,6 @@ type ModuleId = uint16
 
 // Address just provides a convenient alias to make the code more readable.
 type Address = uint32
-
-// Module provides a convenient alias to make the code more readable.
-type Module = base.Module
 
 // FieldConfig provides a convenient alias for the field configuration passed to
 // Bytecode.Validate (mirroring the field.Config argument of
@@ -249,14 +260,14 @@ func NewSkip[W word.Word[W]](skip uint16) *Skip[W] {
 
 // NewSkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
-func NewSkipIf[W word.Word[W]](op Cond, skip uint16, left, right RegisterId) *SkipIf[W] {
+func NewSkipIf[W word.Word[W]](op Condition, skip uint16, left, right RegisterId) *SkipIf[W] {
 	return &SkipIf[W]{Skip: skip, Left: NewRegisterVector(left), Right: NewRegisterVector(right), Op: op}
 }
 
 // NewSkipIfVec constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing multi-limb register
 // vectors.
-func NewSkipIfVec[W word.Word[W]](op Cond, skip uint16, left, right register.Vector) *SkipIf[W] {
+func NewSkipIfVec[W word.Word[W]](op Condition, skip uint16, left, right register.Vector) *SkipIf[W] {
 	return &SkipIf[W]{Skip: skip, Left: NewRegisterVector(asRegs(left.Registers()...)...),
 		Right: NewRegisterVector(asRegs(right.Registers()...)...), Op: op}
 }
@@ -339,23 +350,10 @@ func NewCheckCast[W word.Word[W]](target RegisterId, bitwidth uint16) *CheckCast
 }
 
 // NewDebug constructs a debug instruction carrying the given formatted message.
-func NewDebug[W word.Word[W]](chunks []base.FormattedChunk) *Debug[W] {
-	var (
-		hunks   = make([]FormattedChunk, len(chunks))
-		sources []RegisterVector
-	)
-	//
-	for i, c := range chunks {
-		var args = asRegs(c.Argument.Registers()...)
-		//
-		hunks[i] = FormattedChunk{c.Text, c.Format}
-		//
-		if len(args) > 0 {
-			sources = append(sources, NewRegisterVector(args...))
-		}
-	}
-	//
-	return &Debug[W]{hunks, sources}
+func NewDebug[W word.Word[W]](chunks []FormattedChunk, sources []RegisterId) *Debug[W] {
+	return &Debug[W]{chunks, array.Map(sources, func(_ uint, id RegisterId) RegisterVector {
+		return NewRegisterVector(id)
+	})}
 }
 
 // NewDivRem constructs a division/remainder instruction computing
@@ -365,23 +363,10 @@ func NewDivRem[W word.Word[W]](op uint32, target, dividend, divisor RegisterId) 
 }
 
 // NewFail constructs a fail instruction carrying the given formatted message.
-func NewFail[W word.Word[W]](chunks []base.FormattedChunk) *Fail[W] {
-	var (
-		hunks   = make([]FormattedChunk, len(chunks))
-		sources []RegisterVector
-	)
-	//
-	for i, c := range chunks {
-		var args = asRegs(c.Argument.Registers()...)
-		//
-		hunks[i] = FormattedChunk{c.Text, c.Format}
-		//
-		if len(args) > 0 {
-			sources = append(sources, NewRegisterVector(args...))
-		}
-	}
-	//
-	return &Fail[W]{hunks, sources}
+func NewFail[W word.Word[W]](chunks []FormattedChunk, sources []RegisterId) *Fail[W] {
+	return &Fail[W]{chunks, array.Map(sources, func(_ uint, id RegisterId) RegisterVector {
+		return NewRegisterVector(id)
+	})}
 }
 
 // NewFieldArith constructs a field arithmetic instruction computing

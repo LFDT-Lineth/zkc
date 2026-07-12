@@ -36,7 +36,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 )
 
 // tutorialSrc mirrors pkg/zkc/tutorial: branchless u16 arithmetic with single
@@ -780,8 +780,8 @@ func TestGenSubConstWrapWidth(t *testing.T) {
 			vm.NewBytecodeVector[vm.Uint](vm.Sub(1, []vm.RegisterId{0}, c16.SetUint64(16))), // t = x - 16
 			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(2, c17.SetUint64(17))),               // e = 17
 			vm.NewBytecodeVector[vm.Uint]( // if t == e { ret } else { fail }
-				vm.SkipIf[vm.Uint](opcode.EQ, 1, 1, 2),
-				vm.Fail[vm.Uint](nil),
+				vm.SkipIf[vm.Uint](bytecode.CONDITION_EQ, 1, 1, 2),
+				vm.Fail[vm.Uint](nil, nil),
 				vm.Return[vm.Uint]()),
 		)
 		p = vm.NewBytecodeProgram(field.KOALABEAR_16, main)
@@ -930,24 +930,24 @@ func runProgram(t *testing.T, prog string, in map[string][]byte) (map[string][]b
 // width: the byte encoding carries exactly that many bits, so an out-of-width
 // cell is not expressible — masking yields the canonical input both executors
 // then consume identically.
-func encodeInputs(wm vm.Program[vm.Uint], in map[string][]uint64) map[string][]byte {
+func encodeInputs(p vm.Program[vm.Uint], in map[string][]uint64) map[string][]byte {
 	out := map[string][]byte{}
 
-	for it := wm.Inputs(); it.HasNext(); {
+	for it := p.Inputs(); it.HasNext(); {
 		m := it.Next()
-		regs := m.Geometry().DataRegisters()
+		regs := m.DataRegisters()
 		cells := in[m.Name()]
 		words := make([]vm.Uint, len(cells))
 
 		for i, v := range cells {
-			if w := regs[i%len(regs)].Width(); w < 64 {
+			if w := regs[i%len(regs)].Bitwidth().Unwrap(); w < 64 {
 				v &= (1 << w) - 1
 			}
 
 			words[i] = words[i].SetUint64(v)
 		}
 
-		out[m.Name()] = vm.EncodeBytes(words, m.Geometry())
+		out[m.Name()] = vm.EncodeBytes(words, m)
 	}
 
 	return out

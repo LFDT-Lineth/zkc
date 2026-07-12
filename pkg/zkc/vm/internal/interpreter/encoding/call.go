@@ -24,7 +24,7 @@ import (
 // record, whilst LEAVE binds the returns to their destination registers.
 func Call[W word.Word[W]](pc uint32, p *bytecode.Call[W], env Environment[W]) (codes []uint32) {
 	var (
-		zero   = ProgramPoint{0, 0}
+		zero   ProgramPoint
 		offset = env.OffsetFor(p.Target, zero)
 		// Extract frame width
 		width = uint16(env.Module(p.Target).Width())

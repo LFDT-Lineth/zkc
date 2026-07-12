@@ -10,10 +10,11 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package memory
+package interpreter
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // ReadOnly (ROM) represents a form of memory that can only be read during
@@ -27,7 +28,7 @@ import (
 // same program with different input data.  In constrast, static ROMs correspond
 // to fixed tables used within the program (e.g. in a hash function such as
 // BLAKE or KECCAK, there are fixed lookup tables used as part of the program).
-type ReadOnly[W util.Uinter64] struct {
+type ReadOnly[W word.Word[W]] struct {
 	StaticArray[W]
 }
 
@@ -37,18 +38,9 @@ func (p *ReadOnly[W]) Write(address uint64, value W) error {
 }
 
 // NewReadOnly constructs a new read-only memory initialised with a given set of values.
-func NewReadOnly[W util.Uinter64](name string, public bool, geometry Geometry[W], init ...W,
+func NewReadOnly[W word.Word[W]](descriptor descriptor.Memory[W], init ...W,
 ) *ReadOnly[W] {
-	//
-	var kind Kind
-	//
-	if public {
-		kind = PUBLIC_READ_ONLY_MEMORY
-	} else {
-		kind = PRIVATE_READ_ONLY_MEMORY
-	}
-	//
 	return &ReadOnly[W]{
-		StaticArray: NewStaticArray[W](name, kind, geometry, init...),
+		StaticArray: NewStaticArray[W](descriptor, init...),
 	}
 }
