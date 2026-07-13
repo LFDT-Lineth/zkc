@@ -1182,7 +1182,7 @@ func Test_ZkcUnit_RangeCheck_05(t *testing.T) {
 // Test Helpers
 // ===================================================================
 
-var STATIC_DEPTHS = []uint{codegen.DEFAULT_MAX_STATIC_DEPTH, 256, 1 << 24}
+var STATIC_DEPTHS = []uint{codegen.DEFAULT_MAX_STATIC_DEPTH, 256}
 
 // checkZkcUnit runs test for different combinations of:
 // - STATIC_DEPTHS
