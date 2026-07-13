@@ -10,17 +10,16 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package memory
+package interpreter
 
 import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // PAGE_SIZE determines the number of words in a single page of a
@@ -42,67 +41,22 @@ const PAGE_SIZE uint64 = 1 << 20
 //
 // Since the page table is indexed densely by address / PAGE_SIZE, this
 // representation assumes programs do not access very high addresses.
-type PagedRandomAccess[W util.Uinter64] struct {
-	kind     Kind
-	geometry Geometry[W]
-	name     string
+type PagedRandomAccess[W word.Word[W]] struct {
+	descriptor descriptor.Memory[W]
 	// Pages of memory, allocated on demand.
 	pages [][]W
 }
 
 // NewPagedRandomAccess constructs a new paged random access memory.
-func NewPagedRandomAccess[W util.Uinter64](name string, geometry Geometry[W]) *PagedRandomAccess[W] {
+func NewPagedRandomAccess[W word.Word[W]](descriptor descriptor.Memory[W]) *PagedRandomAccess[W] {
 	return &PagedRandomAccess[W]{
-		kind:     PAGED_READWRITE_MEMORY,
-		geometry: geometry,
-		name:     name,
+		descriptor: descriptor,
 	}
 }
 
-// Kind implementation for memory interface.
-func (p *PagedRandomAccess[W]) Kind() Kind {
-	return p.kind
-}
-
-// IsPublic implementation for memory interface.
-func (p *PagedRandomAccess[W]) IsPublic() bool {
-	return p.kind.IsPublic()
-}
-
-// IsStatic implementation for memory interface.
-func (p *PagedRandomAccess[W]) IsStatic() bool {
-	return p.kind.IsStatic()
-}
-
-// IsReadOnly implementation for memory interface.
-func (p *PagedRandomAccess[W]) IsReadOnly() bool {
-	return p.kind.IsReadOnly()
-}
-
-// IsWriteOnly implementation for memory interface.
-func (p *PagedRandomAccess[W]) IsWriteOnly() bool {
-	return p.kind.IsWriteOnly()
-}
-
-// IsReadWrite implementation for memory interface.
-func (p *PagedRandomAccess[W]) IsReadWrite() bool {
-	return p.kind.IsReadWrite()
-}
-
-// Name implementation for Memory interface.
-func (p *PagedRandomAccess[W]) Name() string {
-	return p.name
-}
-
-// IsNative implementation for Module interface.  Memory modules are never
-// native.
-func (p *PagedRandomAccess[W]) IsNative() bool {
-	return false
-}
-
-// Geometry implementation for Memory interface.
-func (p *PagedRandomAccess[W]) Geometry() Geometry[W] {
-	return p.geometry
+// Descriptor implementation for Memory interface.
+func (p *PagedRandomAccess[W]) Descriptor() *descriptor.Memory[W] {
+	return &p.descriptor
 }
 
 // Initialise implementation for Memory interface.  The provided contents
@@ -179,39 +133,6 @@ func (p *PagedRandomAccess[W]) Pages() iter.Iterator[checkpoint.Page[W]] {
 	return iter.NewArrayIterator(pages)
 }
 
-// HasRegister implementation for vm.Module interface.
-func (p *PagedRandomAccess[W]) HasRegister(name string) (register.Id, bool) {
-	for i, r := range p.geometry.registers {
-		if r.Name() == name {
-			return register.NewId(uint(i)), true
-		}
-	}
-	// Failed
-	return register.UnusedId(), false
-}
-
-// Register implementation for vm.Module interface.
-func (p *PagedRandomAccess[W]) Register(id register.Id) register.Register {
-	return p.geometry.registers[id.Unwrap()]
-}
-
-// RegisterMap returns a register map view of the registers declared by this
-// function.
-func (p *PagedRandomAccess[W]) RegisterMap() register.Map {
-	name := trace.ModuleName{Name: p.Name(), Multiplier: 1}
-	return register.ArrayMap(name, p.Registers()...)
-}
-
-// Registers implementation for vm.Module interface.
-func (p *PagedRandomAccess[W]) Registers() []register.Register {
-	return p.geometry.registers
-}
-
-// Width implementation for Module interface.
-func (p *PagedRandomAccess[W]) Width() uint {
-	return uint(len(p.geometry.registers))
-}
-
 // ============================================================================
 // Encoding / Decoding
 // ============================================================================
@@ -221,15 +142,7 @@ func (p *PagedRandomAccess[W]) GobEncode() ([]byte, error) {
 	var buffer bytes.Buffer
 	gobEncoder := gob.NewEncoder(&buffer)
 	//
-	if err := gobEncoder.Encode(&p.kind); err != nil {
-		return nil, err
-	}
-	//
-	if err := gobEncoder.Encode(&p.geometry); err != nil {
-		return nil, err
-	}
-	//
-	if err := gobEncoder.Encode(p.name); err != nil {
+	if err := gobEncoder.Encode(&p.descriptor); err != nil {
 		return nil, err
 	}
 	//
@@ -247,15 +160,7 @@ func (p *PagedRandomAccess[W]) GobDecode(data []byte) error {
 		gobDecoder = gob.NewDecoder(buffer)
 	)
 	//
-	if err := gobDecoder.Decode(&p.kind); err != nil {
-		return err
-	}
-	//
-	if err := gobDecoder.Decode(&p.geometry); err != nil {
-		return err
-	}
-	//
-	if err := gobDecoder.Decode(&p.name); err != nil {
+	if err := gobDecoder.Decode(&p.descriptor); err != nil {
 		return err
 	}
 	//

@@ -19,6 +19,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // emitBitwise emits the single-target bitwise ops: and/or/xor (executeAnd/Or/
@@ -27,7 +28,7 @@ import (
 // width (word.Not / word.Shl).  Wide (two-limb) operands compute lane-wise,
 // with runtime shifts going through the shl128/shr128 helpers.  The result is
 // then stored with the usual width check.
-func (g *generator) emitBitwise(c *code, fn *descFunction, x *bytecode.Bitwise) error {
+func (g *generator) emitBitwise(c *code, fn *descFunction, x *bytecode.Bitwise[word.Uint]) error {
 	target, err := g.limbOf(fn, x.Target)
 	if err != nil {
 		return err
@@ -156,7 +157,7 @@ func (g *generator) pairCall(c *code, helper string, lhs, rhs operand, target li
 
 // emitDivRem emits DIV / REM (executeDiv/Rem): a zero divisor fails, otherwise
 // the result is the plain Go quotient/remainder.
-func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem) error {
+func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem[word.Uint]) error {
 	target, err := g.limbOf(fn, x.Target)
 	if err != nil {
 		return err

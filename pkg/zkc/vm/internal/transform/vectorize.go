@@ -136,7 +136,7 @@ func prepareCode[W word.Word[W]](code []BytecodeVector[W]) []BytecodeVector[W] {
 		codes := slices.Clone(vec.Bytecodes)
 		// Append fall-through Jmp if the vector doesn't already terminate.
 		if !endsInTerminator[W](codes) && uint(pc)+1 < n {
-			codes = append(codes, bytecode.Jump(bytecode.Address(uint(pc)+1)))
+			codes = append(codes, bytecode.Jump[W](bytecode.Address(uint(pc)+1)))
 		}
 		//
 		prepared[pc] = bytecode.NewVector(codes...)
@@ -157,18 +157,18 @@ func endsInTerminator[W word.Word[W]](codes []Bytecode[W]) bool {
 	}
 	//
 	switch codes[n-1].(type) {
-	case *bytecode.Jmp, *bytecode.Ret, *bytecode.Fail:
+	case *bytecode.Jmp[W], *bytecode.Ret[W], *bytecode.Fail[W]:
 	default:
 		return false
 	}
 	// Verify no skip-bytecode can reach past the end of the vector.
 	for i, code := range codes {
 		switch code := code.(type) {
-		case *bytecode.Skip:
+		case *bytecode.Skip[W]:
 			if uint(i)+uint(code.Skip)+1 >= n {
 				return false
 			}
-		case *bytecode.SkipIf:
+		case *bytecode.SkipIf[W]:
 			if uint(i)+uint(code.Skip)+1 >= n {
 				return false
 			}
@@ -202,7 +202,7 @@ func vectorizeInstruction[W word.Word[W]](pc uint, code []BytecodeVector[W]) Byt
 		index, ok := lastJump[W](vec.Bytecodes, uint(len(vec.Bytecodes)))
 		// Try the right-most non-conflicting jump.
 		for ok {
-			jmpTarget := uint(vec.Bytecodes[index].(*bytecode.Jmp).Target)
+			jmpTarget := uint(vec.Bytecodes[index].(*bytecode.Jmp[W]).Target)
 			// Skip back-edges into ourselves and absorbs that would shift
 			// backwards (which would otherwise unfold a loop).
 			if offset := externs[jmpTarget]; offset > index && jmpTarget != pc {
@@ -245,7 +245,7 @@ func lastJump[W word.Word[W]](codes []Bytecode[W], n uint) (uint, bool) {
 	for i := n; i > 0; {
 		i--
 		//
-		if _, ok := codes[i].(*bytecode.Jmp); ok {
+		if _, ok := codes[i].(*bytecode.Jmp[W]); ok {
 			return i, true
 		}
 	}
@@ -258,7 +258,7 @@ func lastJump[W word.Word[W]](codes []Bytecode[W], n uint) (uint, bool) {
 func markJumpTargets[W word.Word[W]](vec BytecodeVector[W], visited []bool, worklist *stack.Stack[uint]) {
 	index, found := lastJump[W](vec.Bytecodes, uint(len(vec.Bytecodes)))
 	for found {
-		target := uint(vec.Bytecodes[index].(*bytecode.Jmp).Target)
+		target := uint(vec.Bytecodes[index].(*bytecode.Jmp[W]).Target)
 		//
 		if !visited[target] {
 			visited[target] = true
@@ -291,7 +291,7 @@ func replaceJump[W word.Word[W]](vec BytecodeVector[W], jmpIndex uint, offset ui
 	}
 	//
 	codes := slices.Clone(vec.Bytecodes)
-	codes[jmpIndex] = bytecode.NewSkip(uint16(offset - jmpIndex - 1))
+	codes[jmpIndex] = bytecode.NewSkip[W](uint16(offset - jmpIndex - 1))
 	//
 	return bytecode.NewVector(codes...)
 }
@@ -323,7 +323,7 @@ func inlineJump[W word.Word[W]](vec BytecodeVector[W], jmpIndex uint, targetCode
 		code := codes[cc]
 		//
 		switch c := code.(type) {
-		case *bytecode.Jmp:
+		case *bytecode.Jmp[W]:
 			if cc == jmpIndex {
 				// Splice in the target's codes (shared references — the originals
 				// are not mutated downstream).
@@ -334,12 +334,12 @@ func inlineJump[W word.Word[W]](vec BytecodeVector[W], jmpIndex uint, targetCode
 				//
 				continue
 			}
-		case *bytecode.Skip:
+		case *bytecode.Skip[W]:
 			target := mapping[cc+1+uint(c.Skip)]
-			code = bytecode.NewSkip(uint16(target - npc - 1))
-		case *bytecode.SkipIf:
+			code = bytecode.NewSkip[W](uint16(target - npc - 1))
+		case *bytecode.SkipIf[W]:
 			target := mapping[cc+1+uint(c.Skip)]
-			code = &bytecode.SkipIf{
+			code = &bytecode.SkipIf[W]{
 				Op:    c.Op,
 				Left:  c.Left,
 				Right: c.Right,
@@ -386,8 +386,8 @@ func pruneUnreachableInstructions[W word.Word[W]](insns []BytecodeVector[W]) []B
 	// Rebind every Jmp.Target to its new position.
 	for _, vec := range kept {
 		for i, code := range vec.Bytecodes {
-			if jmp, ok := code.(*bytecode.Jmp); ok {
-				vec.Bytecodes[i] = bytecode.Jump(bytecode.Address(mapping[jmp.Target]))
+			if jmp, ok := code.(*bytecode.Jmp[W]); ok {
+				vec.Bytecodes[i] = bytecode.Jump[W](bytecode.Address(mapping[jmp.Target]))
 			}
 		}
 	}

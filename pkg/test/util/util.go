@@ -58,7 +58,7 @@ func CompileMachine(field field.Config, srcfiles ...source.File) []source.Syntax
 func CompileZkc(field field.Config, srcfile source.File) []source.SyntaxError {
 	program, _, errors := compiler.Compile(field, srcfile)
 	if len(errors) == 0 {
-		_, errors = ast.CompileToWordMachine(program, codegen.DEFAULT_CONFIG)
+		_, errors = ast.Compile(program, codegen.DEFAULT_CONFIG)
 	}
 	//
 	return errors

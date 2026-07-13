@@ -12,27 +12,31 @@
 // SPDX-License-Identifier: Apache-2.0
 package bytecode
 
+import (
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
+)
+
 // Ret (return from function call) instruction.
-type Ret struct {
+type Ret[W word.Word[W]] struct {
 }
 
 // Uses implementation for Bytecode interface.  The copying of return values is
 // handled by the frame machinery rather than by named register operands, so a
 // return reads no registers here.
-func (p *Ret) Uses() []RegisterId {
+func (p *Ret[W]) Uses() []RegisterId {
 	return nil
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *Ret) Definitions() []RegisterId {
+func (p *Ret[W]) Definitions() []RegisterId {
 	return nil
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Ret) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *Ret[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *Ret) String(_ Environment) string {
+func (p *Ret[W]) String(_ Environment[W]) string {
 	return "ret"
 }

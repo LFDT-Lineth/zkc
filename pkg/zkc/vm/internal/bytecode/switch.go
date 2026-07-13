@@ -68,7 +68,7 @@ func (p *Switch[W]) Definitions() []RegisterId {
 // first match wins, a duplicate is unreachable and almost certainly a mistake)
 // and must fit within the source register's width.  A native source register
 // holds arbitrary-width values, so no value can overflow it.
-func (p *Switch[W]) Validate(_ uint, _ FieldConfig, env Environment) []error {
+func (p *Switch[W]) Validate(_ uint, _ FieldConfig, env Environment[W]) []error {
 	var (
 		errors []error
 		seen   = make(map[string]bool)
@@ -92,7 +92,7 @@ func (p *Switch[W]) Validate(_ uint, _ FieldConfig, env Environment) []error {
 	return errors
 }
 
-func (p *Switch[W]) String(_ Environment) string {
+func (p *Switch[W]) String(_ Environment[W]) string {
 	var b strings.Builder
 	//
 	fmt.Fprintf(&b, "switch r%d [", p.Source)

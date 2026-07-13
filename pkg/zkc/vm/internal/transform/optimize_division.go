@@ -111,7 +111,7 @@ func planDivisionReloads[W word.Word[W]](fn *descriptor.Function[W]) map[bytecod
 	//
 	for _, vec := range fn.Vectors() {
 		for _, insn := range vec.Bytecodes {
-			dr, ok := insn.(*bytecode.DivRem)
+			dr, ok := insn.(*bytecode.DivRem[W])
 			if !ok {
 				continue
 			}
@@ -158,18 +158,18 @@ func rewriteDivisionInsn[W word.Word[W]](insn Bytecode[W], reloads map[bytecode.
 				return []Bytecode[W]{bytecode.LoadConst(r, v)}
 			}
 		}
-	case *bytecode.DivRem:
+	case *bytecode.DivRem[W]:
 		if _, ok := reloads[insn.Divisor]; ok {
 			width := uint16(regs[insn.Dividend].Bitwidth().UnwrapOr(0))
 			//
 			switch insn.Opcode {
 			case encoding.DIV:
 				return []Bytecode[W]{
-					bytecode.NewBitwise(bytecode.OP_SHR, insn.Target, insn.Dividend, insn.Divisor, width),
+					bytecode.NewBitwise[W](bytecode.OP_SHR, insn.Target, insn.Dividend, insn.Divisor, width),
 				}
 			case encoding.REM:
 				return []Bytecode[W]{
-					bytecode.NewBitwise(bytecode.OP_AND, insn.Target, insn.Dividend, insn.Divisor, width),
+					bytecode.NewBitwise[W](bytecode.OP_AND, insn.Target, insn.Dividend, insn.Divisor, width),
 				}
 			}
 		}

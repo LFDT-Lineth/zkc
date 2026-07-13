@@ -48,13 +48,13 @@ type rangeTable struct {
 // n <= maxStaticWidth; wider registers are range-checked recursively by
 // a call (lowered via addCallLookups), so only the static tables are collected
 // here.
-func indexRangeTables[W vm.Word[W], F field.Element[F]](modules []vm.BytecodeModule[W],
+func indexRangeTables[W vm.Word[W], F field.Element[F]](modules []vm.Module[W],
 	maxStaticWidth uint) map[uint]rangeTable {
 	tables := make(map[uint]rangeTable)
 	//
 	for id, m := range modules {
 		// Only the fully-enumerated static tables serve as direct lookup targets;
-		mem, ok := m.(*vm.BytecodeMemory[W])
+		mem, ok := m.(*vm.Memory[W])
 		if !ok || !mem.IsStatic() || !strings.HasPrefix(m.Name(), rangeModulePrefix) {
 			continue
 		}

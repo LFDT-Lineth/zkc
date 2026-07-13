@@ -10,10 +10,11 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package memory
+package interpreter
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // RandomAccess is a memory implementation backed by a dynamically sizing []W,
@@ -25,7 +26,7 @@ import (
 // The type parameter W is the word type (e.g. a field element or big.Int), and
 // D is the AddressDecoder strategy that encodes the layout of rows within the
 // flat slice.
-type RandomAccess[W util.Uinter64] struct {
+type RandomAccess[W word.Word[W]] struct {
 	StaticArray[W]
 }
 
@@ -43,8 +44,8 @@ func (p *RandomAccess[W]) Read(address uint64) (W, error) {
 // NewRandomAccess constructs an empty random-access memory which employs a
 // non-sparse implementation.  Thus, this is not suitable for very large
 // memories.
-func NewRandomAccess[W util.Uinter64](name string, geometry Geometry[W]) *RandomAccess[W] {
+func NewRandomAccess[W word.Word[W]](descriptor descriptor.Memory[W]) *RandomAccess[W] {
 	return &RandomAccess[W]{
-		StaticArray: NewStaticArray[W](name, READWRITE_MEMORY, geometry),
+		StaticArray: NewStaticArray[W](descriptor),
 	}
 }

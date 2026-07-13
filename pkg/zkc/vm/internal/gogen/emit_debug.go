@@ -20,6 +20,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // A debug/fail bytecode carries its formatted-print specification as literal
@@ -40,7 +41,7 @@ import (
 // corrupts the JSON the package-main harness writes to stdout.  DEBUG
 // instructions are present only in non-quiet builds — the compiler drops printf
 // under --quiet — so this is dead code there.
-func (g *generator) emitDebug(c *code, fn *descFunction, x *bytecode.Debug) error {
+func (g *generator) emitDebug(c *code, fn *descFunction, x *bytecode.Debug[word.Uint]) error {
 	g.useHelper(helperDbgWriter)
 
 	next := 0
@@ -140,7 +141,7 @@ func formatBase(f util.Format) int {
 // <msg>".  The Run entry point recovers the failure into its error result,
 // which the harness relays on stderr.  FAIL is always compiled (quiet only
 // strips printf), so the message path is live in both modes.
-func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail) error {
+func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail[word.Uint]) error {
 	if len(x.Chunks) == 0 {
 		c.line(`panic(failure("machine panic"))`)
 		return nil

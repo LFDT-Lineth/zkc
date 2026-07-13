@@ -17,7 +17,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
@@ -28,8 +27,8 @@ import (
 // Bytecode encapsulates a single bytecode instruction.
 type Bytecode[W Word[W]] = bytecode.Bytecode[W]
 
-// BytecodeModule describes a moddule, such as a function or memory
-type BytecodeModule[W Word[W]] = descriptor.Module[W]
+// Module describes a moddule, such as a function or memory
+type Module[W Word[W]] = descriptor.Module[W]
 
 // Function contains information about an executable function in the system.  A
 // function has one or more registers where: the first n registers are the input
@@ -44,9 +43,6 @@ type BytecodeModule[W Word[W]] = descriptor.Module[W]
 // function implement the Instruction interface, which is better suited to
 // analysis and/or translation into constraints.
 type Function[W Word[W]] = descriptor.Function[W]
-
-// BytecodeMemory describes a memory
-type BytecodeMemory[W Word[W]] = descriptor.Memory[W]
 
 // Register describes a register
 type Register[W Word[W]] = descriptor.Register[W]
@@ -114,7 +110,7 @@ type BinaryProgram[W Word[W]] = encoding.Binary[W]
 
 // BytecodeEnvironment provides information about the enclosing environment of a
 // bytecode, and is primarily for debugging and validation.
-type BytecodeEnvironment = bytecode.Environment
+type BytecodeEnvironment[W Word[W]] = bytecode.Environment[W]
 
 // NewBytecodeInterpreter constructs an interpreter for executing the given
 // bytecode program.  The modulus is the prime characteristic of the surrounding
@@ -131,7 +127,7 @@ func CompileProgram[W word.Word[W]](p Program[W]) BinaryProgram[W] {
 
 // NewBytecodeProgram assembles a bytecode program directly from pre-lowered
 // descriptor modules, bypassing the word-machine round trip.
-func NewBytecodeProgram[W word.Word[W]](field field.Config, modules ...BytecodeModule[W]) Program[W] {
+func NewBytecodeProgram[W word.Word[W]](field field.Config, modules ...Module[W]) Program[W] {
 	return descriptor.NewProgram(field, modules...)
 }
 
@@ -188,7 +184,7 @@ func NewOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], 
 
 // Cond provides a convenient alias for the comparison condition used by
 // conditional skip instructions.
-type Cond = bytecode.Cond
+type Cond = bytecode.Condition
 
 // Address provides a convenient alias for a branch target address.
 type Address = bytecode.Address
@@ -201,20 +197,14 @@ type ModuleId = bytecode.ModuleId
 type SwitchCase[W any] = bytecode.SwitchCase[W]
 
 // FormattedChunk describes a single chunk of a formatted (debug/fail) message.
-type FormattedChunk = base.FormattedChunk
+type FormattedChunk = bytecode.FormattedChunk
 
 // NewFormattedChunk constructs a formatted (debug/fail) message chunk from its
 // text, format directive and (optional) argument registers.  The argument
 // registers are bundled into the chunk's register vector internally, so callers
 // work purely in terms of RegisterId.
-func NewFormattedChunk(text string, format zkc_util.Format, args ...RegisterId) FormattedChunk {
-	ids := make([]register.Id, len(args))
-	//
-	for i, a := range args {
-		ids[i] = register.NewId(uint(a))
-	}
-	//
-	return FormattedChunk{Text: text, Format: format, Argument: register.NewVector(ids...)}
+func NewFormattedChunk(text string, format zkc_util.Format) FormattedChunk {
+	return FormattedChunk{Text: text, Format: format}
 }
 
 // The instruction constructors below are deliberately named to mirror the
@@ -259,19 +249,19 @@ type CallFlags = bytecode.CallFlags
 
 // Call constructs a function-call bytecode with the given flags.
 func Call[W Word[W]](target ModuleId, flags CallFlags, args []RegisterId, returns []RegisterId) Bytecode[W] {
-	return bytecode.CallFun(target, flags, args, returns)
+	return bytecode.CallFun[W](target, flags, args, returns)
 }
 
 // Jump creates an unconditional jump instruction transferring control to the
 // given target address.
 func Jump[W Word[W]](target Address) Bytecode[W] {
-	return bytecode.Jump(target)
+	return bytecode.Jump[W](target)
 }
 
 // Skip constructs an uncondition skip instruction which skips over n
 // instructions.
 func Skip[W Word[W]](skip uint16) Bytecode[W] {
-	return bytecode.NewSkip(skip)
+	return bytecode.NewSkip[W](skip)
 }
 
 // SkipTargets returns, for a skip-like bytecode located at bytecode index
@@ -281,9 +271,9 @@ func Skip[W Word[W]](skip uint16) Bytecode[W] {
 // non-skip bytecodes, nil is returned.
 func SkipTargets[W Word[W]](b Bytecode[W], from uint) []uint {
 	switch b := b.(type) {
-	case *bytecode.Skip:
+	case *bytecode.Skip[W]:
 		return []uint{from + uint(b.Skip) + 1}
-	case *bytecode.SkipIf:
+	case *bytecode.SkipIf[W]:
 		return []uint{from + uint(b.Skip) + 1}
 	case *bytecode.Switch[W]:
 		targets := make([]uint, len(b.Cases))
@@ -301,14 +291,7 @@ func SkipTargets[W Word[W]](b Bytecode[W], from uint) []uint {
 // SkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
 func SkipIf[W Word[W]](op Cond, skip uint16, left, right RegisterId) Bytecode[W] {
-	return bytecode.NewSkipIf(op, skip, left, right)
-}
-
-// SkipIfVec constructs a conditional branch instruction which jumps to the
-// target address when "left op right" holds, comparing multi-limb register
-// vectors.
-func SkipIfVec[W Word[W]](op Cond, skip uint16, left, right register.Vector) Bytecode[W] {
-	return bytecode.NewSkipIfVec(op, skip, left, right)
+	return bytecode.NewSkipIf[W](op, skip, left, right)
 }
 
 // Switch constructs a multiway-skip (SMW) instruction which dispatches
@@ -335,7 +318,7 @@ func MulVec[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) B
 // identified by id.  The kind of memory being read (ROM, static ROM, RAM, paged
 // RAM) is resolved from the environment when the instruction is encoded.
 func MemRead[W Word[W]](id uint16, address []RegisterId, data []RegisterId) Bytecode[W] {
-	return bytecode.NewMemRead(id, address, data)
+	return bytecode.NewMemRead[W](id, address, data)
 }
 
 // Sub constructs a subtraction instruction computing
@@ -357,80 +340,80 @@ func SubVec[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) B
 // RAM, paged RAM) is resolved from the environment when the instruction is
 // encoded.
 func MemWrite[W Word[W]](id uint16, address []RegisterId, data []RegisterId) Bytecode[W] {
-	return bytecode.NewMemWrite(id, address, data)
+	return bytecode.NewMemWrite[W](id, address, data)
 }
 
 // BitAnd constructs a bitwise-and instruction computing
 // "target = left & right".  bitwidth is the operand/result width in bits.
 func BitAnd[W Word[W]](target, left, right RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise(bytecode.OP_AND, target, left, right, bitwidth)
+	return bytecode.NewBitwise[W](bytecode.OP_AND, target, left, right, bitwidth)
 }
 
 // BitOr constructs a bitwise-or instruction computing
 // "target = left | right".  bitwidth is the operand/result width in bits.
 func BitOr[W Word[W]](target, left, right RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise(bytecode.OP_OR, target, left, right, bitwidth)
+	return bytecode.NewBitwise[W](bytecode.OP_OR, target, left, right, bitwidth)
 }
 
 // BitXor constructs a bitwise-xor instruction computing
 // "target = left ^ right".  bitwidth is the operand/result width in bits.
 func BitXor[W Word[W]](target, left, right RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise(bytecode.OP_XOR, target, left, right, bitwidth)
+	return bytecode.NewBitwise[W](bytecode.OP_XOR, target, left, right, bitwidth)
 }
 
 // BitNot constructs a bitwise-not instruction computing
 // "target = ^source".  bitwidth is the width (in bits) the complement is taken
 // within, so the result holds only the low bitwidth bits of ^source.
 func BitNot[W Word[W]](target, source RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise(bytecode.OP_NOT, target, source, source, bitwidth)
+	return bytecode.NewBitwise[W](bytecode.OP_NOT, target, source, source, bitwidth)
 }
 
 // BitShl constructs a logical shift-left instruction computing
 // "target = left << right".  bitwidth is the result width in bits; bits shifted
 // out beyond it are discarded.
 func BitShl[W Word[W]](target, left, right RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise(bytecode.OP_SHL, target, left, right, bitwidth)
+	return bytecode.NewBitwise[W](bytecode.OP_SHL, target, left, right, bitwidth)
 }
 
 // BitShr constructs a logical shift-right instruction computing
 // "target = left >> right".  bitwidth is the operand/result width in bits.
 func BitShr[W Word[W]](target, left, right RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise(bytecode.OP_SHR, target, left, right, bitwidth)
+	return bytecode.NewBitwise[W](bytecode.OP_SHR, target, left, right, bitwidth)
 }
 
 // CheckCast constructs a check-cast instruction asserting that the given
 // target register fits within the given bit width.
 func CheckCast[W Word[W]](target RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewCheckCast(target, bitwidth)
+	return bytecode.NewCheckCast[W](target, bitwidth)
 }
 
 // Debug constructs a debug instruction carrying the given formatted message.
-func Debug[W Word[W]](chunks []FormattedChunk) Bytecode[W] {
-	return bytecode.NewDebug(chunks)
+func Debug[W Word[W]](chunks []FormattedChunk, sources []RegisterId) Bytecode[W] {
+	return bytecode.NewDebug[W](chunks, sources)
 }
 
 // Hint constructs a hint instruction performing the given operation op (e.g.
 // DIV_HINT) which reads the given source (argument) register vectors and writes
 // the given target (return) register vectors.
 func Hint[W Word[W]](op bytecode.Operation, targets, sources []bytecode.RegisterVector) Bytecode[W] {
-	return bytecode.NewHint(op, targets, sources)
+	return bytecode.NewHint[W](op, targets, sources)
 }
 
 // Div constructs an integer-division instruction computing
 // "target = dividend / divisor".
 func Div[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
-	return bytecode.NewDivRem(encoding.DIV, target, dividend, divisor)
+	return bytecode.NewDivRem[W](encoding.DIV, target, dividend, divisor)
 }
 
 // Rem constructs an integer-remainder instruction computing
 // "target = dividend % divisor".
 func Rem[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
-	return bytecode.NewDivRem(encoding.REM, target, dividend, divisor)
+	return bytecode.NewDivRem[W](encoding.REM, target, dividend, divisor)
 }
 
 // Fail constructs a fail instruction carrying the given formatted message.
-func Fail[W Word[W]](chunks []FormattedChunk) Bytecode[W] {
-	return bytecode.NewFail(chunks)
+func Fail[W Word[W]](chunks []FormattedChunk, sources []RegisterId) Bytecode[W] {
+	return bytecode.NewFail[W](chunks, sources)
 }
 
 // AddModP constructs a field-addition instruction computing
@@ -454,13 +437,13 @@ func MulModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Byt
 // Return constructs a return instruction with the given frame width and
 // return offset.
 func Return[W Word[W]]() Bytecode[W] {
-	return bytecode.NewRet()
+	return bytecode.NewRet[W]()
 }
 
 // BitConcat constructs a concatenation instruction which joins the source
 // registers into the target register vector.
 func BitConcat[W Word[W]](targets []RegisterId, sources []RegisterId) Bytecode[W] {
-	return bytecode.Concat(targets, sources)
+	return bytecode.Concat[W](targets, sources)
 }
 
 // ============================================================================
@@ -523,37 +506,37 @@ type BytecodeArith[W Word[W]] = bytecode.Arith[W]
 type BytecodeFieldArith[W Word[W]] = bytecode.FieldArith[W]
 
 // BytecodeCat is a concatenation bytecode (target vector = sources joined by width).
-type BytecodeCat = bytecode.Cat
+type BytecodeCat[W Word[W]] = bytecode.Cat[W]
 
 // BytecodeCall is a function-call bytecode.
-type BytecodeCall = bytecode.Call
+type BytecodeCall[W Word[W]] = bytecode.Call[W]
 
 // BytecodeReadWrite is a memory read/write bytecode.
-type BytecodeReadWrite = bytecode.ReadWrite
+type BytecodeReadWrite[W Word[W]] = bytecode.ReadWrite[W]
 
 // BytecodeSkip is an unconditional skip bytecode.
-type BytecodeSkip = bytecode.Skip
+type BytecodeSkip[W Word[W]] = bytecode.Skip[W]
 
 // BytecodeSkipIf is a conditional skip bytecode.
-type BytecodeSkipIf = bytecode.SkipIf
+type BytecodeSkipIf[W Word[W]] = bytecode.SkipIf[W]
 
 // BytecodeSwitch is a multiway-skip (switch) bytecode.
 type BytecodeSwitch[W Word[W]] = bytecode.Switch[W]
 
 // BytecodeJmp is an unconditional jump bytecode.
-type BytecodeJmp = bytecode.Jmp
+type BytecodeJmp[W Word[W]] = bytecode.Jmp[W]
 
 // BytecodeRet is a return bytecode.
-type BytecodeRet = bytecode.Ret
+type BytecodeRet[W Word[W]] = bytecode.Ret[W]
 
 // BytecodeFail is a fail bytecode.
-type BytecodeFail = bytecode.Fail
+type BytecodeFail[W Word[W]] = bytecode.Fail[W]
 
 // BytecodeDebug is a debug bytecode.
-type BytecodeDebug = bytecode.Debug
+type BytecodeDebug[W Word[W]] = bytecode.Debug[W]
 
 // BytecodeHint is a (non-deterministic) hint bytecode.
-type BytecodeHint = bytecode.Hint
+type BytecodeHint[W Word[W]] = bytecode.Hint[W]
 
 // BytecodeCheckCast is a width-check (cast) bytecode.
-type BytecodeCheckCast = bytecode.CheckCast
+type BytecodeCheckCast[W Word[W]] = bytecode.CheckCast[W]

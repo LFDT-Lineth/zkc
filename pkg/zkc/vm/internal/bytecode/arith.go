@@ -46,11 +46,11 @@ func (p *Arith[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Arith[W]) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *Arith[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *Arith[W]) String(env Environment) string {
+func (p *Arith[W]) String(env Environment[W]) string {
 	var (
 		builder strings.Builder
 		cz      = IsUnusedConstant(p.Op, p.Constant)

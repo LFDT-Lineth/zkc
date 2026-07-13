@@ -188,7 +188,7 @@ func selectAlignedLimbs[W word.Word[W]](bitwidth uint, targets []RegisterId, all
 			hi = alloc.Allocate("t", n)
 		)
 		//
-		context = append(context, bytecode.Concat([]RegisterId{selected[m]}, []RegisterId{lo, hi}))
+		context = append(context, bytecode.Concat[W]([]RegisterId{selected[m]}, []RegisterId{lo, hi}))
 		selected = append(selected[:m], lo)
 		targets = array.Prepend(hi, targets)
 	}

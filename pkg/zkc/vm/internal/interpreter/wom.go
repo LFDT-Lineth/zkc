@@ -10,19 +10,20 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package memory
+package interpreter
 
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // WriteOnce (WOM) represents a form of memory where each cell can be
 // written exactly once and, furthermore, cells must be written consecutively
 // starting from zero.  Thus, a WOM can be viewed as an output stream (which is
 // exactly what they are typically used for).
-type WriteOnce[W util.Uinter64] struct {
+type WriteOnce[W word.Word[W]] struct {
 	StaticArray[W]
 	writtenToAddresses []bool
 }
@@ -37,7 +38,7 @@ func (p *WriteOnce[W]) markAsWrittenTo(address uint64) {
 // Write implementation for Memory interface.
 func (p *WriteOnce[W]) Write(address uint64, value W) error {
 	if p.addressInCurrentRange(address) && p.writtenToAddresses[address] {
-		return fmt.Errorf("address ≡ %x of WOM ≡ %s was already written to", address, p.Name())
+		return fmt.Errorf("address ≡ %x of WOM ≡ %s was already written to", address, p.descriptor.Name())
 	}
 	// ensure sufficient space
 	p.data = expand(p.data, address+1)
@@ -63,17 +64,9 @@ func (p *WriteOnce[W]) Read(address uint64) (W, error) {
 }
 
 // NewWriteOnce constructs an empty write-once memory.
-func NewWriteOnce[W util.Uinter64](name string, public bool, geometry Geometry[W]) *WriteOnce[W] {
-	var kind Kind
-	//
-	if public {
-		kind = PUBLIC_WRITE_ONCE_MEMORY
-	} else {
-		kind = PRIVATE_WRITE_ONCE_MEMORY
-	}
-	//
+func NewWriteOnce[W word.Word[W]](descriptor descriptor.Memory[W]) *WriteOnce[W] {
 	return &WriteOnce[W]{
-		StaticArray:        NewStaticArray[W](name, kind, geometry),
+		StaticArray:        NewStaticArray[W](descriptor),
 		writtenToAddresses: []bool{},
 	}
 }
