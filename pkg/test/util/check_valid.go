@@ -19,6 +19,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -38,14 +39,14 @@ var (
 	DEFAULT_WORDS = []vm.WordConfig{vm.WORD_UINT64, vm.WORD_UINT128}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = Config{
-		fields:      DEFAULT_FIELDS,
-		words:       DEFAULT_WORDS,
-		constraints: false,
-		splitting:   false,
-		bytecode:    false,
-		gogen:       false,
-		quiet:       false,
-		addPadding:  false}
+		fields:          DEFAULT_FIELDS,
+		words:           DEFAULT_WORDS,
+		constraints:     false,
+		splitting:       false,
+		bytecode:        false,
+		gogen:           false,
+		quiet:           false,
+		paddingStrategy: ir.NextPowerOfTwoPadding}
 )
 
 // Config for testing
@@ -65,9 +66,8 @@ type Config struct {
 	// enable quiet mode, which elides printf statements and calls to #[debug]
 	// functions during code generation.
 	quiet bool
-	// enable padding of the generated trace, expanding every module's length up
-	// to the next power of two.
-	addPadding bool
+	// determines how much front padding is added to the generated trace.
+	paddingStrategy ir.PaddingStrategy
 	// enable checkpoint testing.
 	checkpointing util.Option[util.Pair[string, util.Counter]]
 }
@@ -134,10 +134,9 @@ func (p Config) Quiet(flag bool) Config {
 	return p
 }
 
-// AddPadding determines whether or not padding rows are added to the generated
-// trace, expanding every module's length up to the next power of two.
-func (p Config) AddPadding(flag bool) Config {
-	p.addPadding = flag
+// Padding determines how much front padding is added to the generated trace.
+func (p Config) Padding(strategy ir.PaddingStrategy) Config {
+	p.paddingStrategy = strategy
 	//
 	return p
 }
@@ -212,7 +211,7 @@ func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg codegen.Config, 
 		for _, test := range tests {
 			// FIXME: support reject tests
 			if test.expected {
-				runConstraintTest(t, p, test, cfg, config.addPadding)
+				runConstraintTest(t, p, test, cfg, config.paddingStrategy)
 			}
 		}
 	}
@@ -399,16 +398,17 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc Tes
 	return program, checkpoints, outputs
 }
 
-func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg codegen.Config, addPadding bool) {
+func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg codegen.Config,
+	paddingStrategy ir.PaddingStrategy) {
 	var f = cfg.GetField()
 	// Dispatch based on field config
 	switch f {
 	case field.GF_251:
-		testConstraintsWithField[gf251.Element](t, p, test, f, cfg.GetMaxStaticDepth(), addPadding)
+		testConstraintsWithField[gf251.Element](t, p, test, f, cfg.GetMaxStaticDepth(), paddingStrategy)
 	case field.GF_8209:
-		testConstraintsWithField[gf8209.Element](t, p, test, f, cfg.GetMaxStaticDepth(), addPadding)
+		testConstraintsWithField[gf8209.Element](t, p, test, f, cfg.GetMaxStaticDepth(), paddingStrategy)
 	case field.KOALABEAR_16:
-		testConstraintsWithField[koalabear.Element](t, p, test, f, cfg.GetMaxStaticDepth(), addPadding)
+		testConstraintsWithField[koalabear.Element](t, p, test, f, cfg.GetMaxStaticDepth(), paddingStrategy)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
 		panic("BLS12_377 not currently supported for tracing")
@@ -418,7 +418,7 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg c
 }
 
 func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.Uint], test TestCase,
-	f field.Config, maxStaticDepth uint, addPadding bool) {
+	f field.Config, maxStaticDepth uint, paddingStrategy ir.PaddingStrategy) {
 	//
 	var (
 		// construct binary file
@@ -427,7 +427,7 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.
 		inputs = vm.FilterInputs(p, test.data)
 		// trace configuration (optionally expanding each module up to the next
 		// power of two)
-		traceCfg = constraints.DEFAULT_TRACE_CONFIG.WithAddPadding(addPadding)
+		traceCfg = constraints.DEFAULT_TRACE_CONFIG.WithPadding(paddingStrategy)
 		// generate trace
 		_, tr, errs = binf.Trace(inputs, traceCfg)
 	)

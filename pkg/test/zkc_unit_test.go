@@ -15,6 +15,7 @@ package test
 import (
 	"testing"
 
+	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/test/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
@@ -26,8 +27,18 @@ var DEFAULT_UNIT_CONFIG = util.DEFAULT_CONFIG.
 	Constraints(true).
 	Splitting(true).
 	Bytecode(true).
-	GoGen(true).
-	AddPadding(true)
+	GoGen(true)
+
+// ZKC_PADDING_STRATEGIES enumerates the padding strategies that every ZkC unit
+// test is exercised against (see checkZkcUnit).
+var ZKC_PADDING_STRATEGIES = []struct {
+	name     string
+	strategy ir.PaddingStrategy
+}{
+	{"no-padding", ir.NoPadding},
+	{"single-row-padding", ir.SingleRowPadding},
+	{"next-power-of-two-padding", ir.NextPowerOfTwoPadding},
+}
 
 // ===================================================================
 // Basic Tests
@@ -1157,5 +1168,13 @@ func checkZkcUnit(t *testing.T, test string, config util.Config) {
 	// The generated-Go ("native") executor is cross-checked on every unit test:
 	// programs it cannot yet handle (wide registers/constants/moduli) are
 	// logged-and-skipped by the harness, never failed.
-	util.CheckValid(t, test, "zkc", config)
+	//
+	// Every unit test is exercised against each padding strategy (no padding,
+	// single-row padding and next-power-of-two padding), so that constraints are
+	// checked against unpadded, minimally padded and power-of-two padded traces.
+	for _, s := range ZKC_PADDING_STRATEGIES {
+		t.Run(s.name, func(t *testing.T) {
+			util.CheckValid(t, test, "zkc", config.Padding(s.strategy))
+		})
+	}
 }

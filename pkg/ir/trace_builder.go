@@ -50,12 +50,9 @@ type TraceBuilder[F field.Element[F]] struct {
 	// the number of lines actually added to a trace matches the expected
 	// amount.
 	checks bool
-	// Determines whether or not padding is applied to each module in the trace.
-	// When enabled, every module's length is expanded (with front padding
-	// rows) up to the next power of two.  An empty module is expanded to a
-	// height of one; a module whose height is already a (non-zero) power of two
-	// is left unchanged.
-	padding bool
+	// Determines how much front padding is applied to each module in the
+	// trace.  See PaddingStrategy for the available strategies.
+	paddingStrategy PaddingStrategy
 	// Determines whether or not trace expansion should be performed in
 	// parallel.  This should be the default, but a sequential option is
 	// retained for debugging purposes.
@@ -70,7 +67,7 @@ type TraceBuilder[F field.Element[F]] struct {
 // NewTraceBuilder constructs a default trace builder.  The idea is that this
 // could then be customized as needed following the builder pattern.
 func NewTraceBuilder[F field.Element[F]]() TraceBuilder[F] {
-	return TraceBuilder[F]{true, true, true, true, false, true, math.MaxUint, nil}
+	return TraceBuilder[F]{true, true, true, true, NextPowerOfTwoPadding, true, math.MaxUint, nil}
 }
 
 // WithDefensivePadding updates a given builder configuration to apply defensive padding
@@ -117,11 +114,10 @@ func (tb TraceBuilder[F]) WithValidation(flag bool) TraceBuilder[F] {
 	return ntb
 }
 
-// WithPadding updates a given builder configuration to control padding.  When
-// enabled, every module's length is expanded up to the next power of two.
-func (tb TraceBuilder[F]) WithPadding(padding bool) TraceBuilder[F] {
+// WithPadding updates a given builder configuration to control padding.
+func (tb TraceBuilder[F]) WithPadding(strategy PaddingStrategy) TraceBuilder[F] {
 	ntb := tb
-	ntb.padding = padding
+	ntb.paddingStrategy = strategy
 	//
 	return ntb
 }
@@ -228,9 +224,7 @@ func (tb TraceBuilder[F]) innerBuild(schema sc.AnySchema[F], mods []lt.Module[F]
 		}
 	}
 	// Padding
-	if tb.padding {
-		padColumns(tr)
-	}
+	padColumns(tr, tb.paddingStrategy)
 	//
 	return tr, errors
 }
@@ -328,29 +322,41 @@ func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr 
 	return nil
 }
 
-// padColumns expands every module in a given trace up to the next power of two
-// by prepending front padding rows.  An empty module is expanded to a height of
-// one (logical) row; a module whose height is already a (non-zero) power of two
-// is left unchanged.  Observe that this applies on top of any spillage and/or
-// defensive padding already applied.
+// padColumns prepends front padding rows to every module in a given trace,
+// according to the given strategy.  Observe that this applies on top of any
+// spillage and/or defensive padding already applied.
 //
-// The power of two is computed on the module's logical height (i.e. its height
-// divided by its length multiplier) and then scaled back by the multiplier.
-// This ensures the amount of padding added is always a multiple of the
-// multiplier, as required by ArrayModule.Pad (relevant for interleaved corset
-// modules, whose multiplier can exceed one).
-func padColumns[F field.Element[F]](tr *trace.ArrayTrace[F]) {
+// For each module, the target height is computed on its logical height (i.e.
+// its height divided by its length multiplier) and then scaled back by the
+// multiplier.  This ensures the amount of padding added is always a multiple of
+// the multiplier, as required by ArrayModule.Pad (relevant for interleaved
+// corset modules, whose multiplier can exceed one).
+func padColumns[F field.Element[F]](tr *trace.ArrayTrace[F], strategy PaddingStrategy) {
+	if strategy == NoPadding {
+		return
+	}
+	//
 	n := tr.Modules().Count()
 	// Iterate over modules
 	for i := uint(0); i < n; i++ {
 		var (
 			height     = tr.Module(i).Height()
 			multiplier = tr.Module(i).Name().Multiplier
-			// Round the logical height up to the next power of two, then scale
-			// back by the multiplier so the delta is divisible by it.
-			target = util_math.NextPowerOfTwo(height/multiplier) * multiplier
+			logical    = height / multiplier
+			target     uint
 		)
-		// Only pad when the module is not already a power of two.
+		//
+		switch strategy {
+		case SingleRowPadding:
+			// Prepend exactly one logical row.
+			target = (logical + 1) * multiplier
+		case NextPowerOfTwoPadding:
+			// Round the logical height up to the next power of two.  An empty
+			// module is expanded to a height of one; a module whose height is
+			// already a (non-zero) power of two is left unchanged.
+			target = util_math.NextPowerOfTwo(logical) * multiplier
+		}
+		// Only pad when the module falls short of its target.
 		if target > height {
 			tr.Pad(i, target-height, 0)
 		}

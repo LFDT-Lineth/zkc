@@ -81,7 +81,14 @@ func runCheckCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	//
 	batched := GetFlag(cmd, "batched")
 	//
-	cfg.Padding = GetFlag(cmd, "padding")
+	strategy, ok := ir.GetPaddingStrategy(GetString(cmd, "padding"))
+	if !ok {
+		fmt.Printf("unknown padding strategy \"%s\"\n", GetString(cmd, "padding"))
+		os.Exit(3)
+	}
+	//
+	cfg.PaddingStrategy = strategy
+
 	cfg.Report = GetFlag(cmd, "report")
 	cfg.ReportPadding = GetUint(cmd, "report-context")
 	cfg.ReportLimbs = GetFlag(cmd, "show-limbs")
@@ -148,9 +155,8 @@ type CheckConfig struct {
 	// Specifies whether to use Coverage testing and, if so, where to write the
 	// Coverage data.
 	Coverage util.Option[string]
-	// Specifies whether to expand each module's length up to the next power of
-	// two by adding padding rows.
-	Padding bool
+	// Specifies how much front padding to add to each module.
+	PaddingStrategy ir.PaddingStrategy
 	// Specifies whether or not to Report details of the failure (e.g. for
 	// debugging purposes).
 	Report bool
@@ -224,7 +230,7 @@ func checkTraces[F field.Element[F]](traces []lt.TraceFile, stacker cmd_util.Sch
 		// between runs (e.g. for the io.Executor).
 		stack := stacker.Build()
 		// configure trace builder
-		builder := stack.TraceBuilder().WithPadding(cfg.Padding)
+		builder := stack.TraceBuilder().WithPadding(cfg.PaddingStrategy)
 		// identify concrete schema separately
 		schema := stack.ConcreteSchema()
 		// identify schema name
@@ -376,7 +382,8 @@ func init() {
 	checkCmd.Flags().Uint("report-titlewidth", 40, "specify maximum width of column titles in report")
 	//
 	checkCmd.Flags().String("coverage", "", "write JSON coverage data to file")
-	checkCmd.Flags().Bool("padding", false, "expand each module's length up to the next power of two")
+	checkCmd.Flags().String("padding", "next-power-of-two",
+		"front padding strategy for each module (none, single-row, next-power-of-two)")
 	checkCmd.Flags().Bool("batched", false,
 		"specify trace file is batched (i.e. contains multiple traces, one for each line)")
 	checkCmd.Flags().Bool("ansi-escapes", true, "specify whether to allow ANSI escapes or not (e.g. for colour reports)")
