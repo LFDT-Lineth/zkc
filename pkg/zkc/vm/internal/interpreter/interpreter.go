@@ -1138,34 +1138,32 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 }
 
 // loadHintOperand reconstructs the value of a single hint operand from the next
-// (base, len) register vector in the iterator, with the least-significant limb
-// held in the lowest-indexed register (matching storeAcross).
+// (base, len) register vector in the iterator.  Register splitting lays a
+// multi-limb operand out in big-endian order — the most-significant limb in the
+// lowest-indexed register — so the limbs are accumulated most-significant first.
 func loadHintOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.OpIter, stack []W) *big.Int {
 	var (
 		base   = iter.Next()
 		length = uint(iter.Next())
 		value  = new(big.Int)
-		offset uint
 	)
 	//
 	for i := uint(0); i < length; i++ {
-		var (
-			reg  = base + uint16(i)
-			limb = new(big.Int).Lsh(stack[reg].BigInt(), offset)
-		)
-		//
-		value.Or(value, limb)
-		//
-		offset += bitwidthOf(module, reg)
+		var reg = base + uint16(i)
+		// Shift the accumulated (more significant) limbs up to make room for this
+		// (less significant) one.
+		value.Lsh(value, bitwidthOf(module, reg))
+		value.Or(value, stack[reg].BigInt())
 	}
 	//
 	return value
 }
 
 // storeHintResult distributes value across the next (base, len) register vector
-// in the iterator, writing the least-significant limb into the lowest-indexed
-// register (matching storeAcross).  It errors if the value does not fit within
-// the vector's total width.
+// in the iterator.  Register splitting lays a multi-limb operand out in
+// big-endian order — the most-significant limb in the lowest-indexed register —
+// so the least-significant limb is written into the highest-indexed register.
+// It errors if the value does not fit within the vector's total width.
 func storeHintResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.OpIter,
 	value *big.Int, stack []W) error {
 	var (
@@ -1174,10 +1172,11 @@ func storeHintResult[W word.Word[W]](module descriptor.Module[W], iter *encoding
 		acc    = new(big.Int).Set(value)
 		total  uint
 	)
-	//
-	for i := uint(0); i < length; i++ {
+	// Fill limbs least-significant first, i.e. from the highest-indexed register
+	// down to base (the most-significant limb).
+	for i := length; i > 0; i-- {
 		var (
-			reg   = base + uint16(i)
+			reg   = base + uint16(i-1)
 			width = bitwidthOf(module, reg)
 			mask  = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))
 			limb  W

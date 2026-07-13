@@ -72,6 +72,16 @@ func OptimizeDivisions[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.OptimizeDivisions(program)
 }
 
+// DecomposeSubtractions rewrites every to-be-split subtraction with more than
+// one negative term (subtrahend registers plus a non-zero constant) into a chain
+// of single-negative-term subtractions.  This must run before register
+// splitting, whose borrow line only handles a single-unit (1-bit) borrow
+// correctly.  Subtractions that fit within the field's register width (i.e. are
+// not split) are left unchanged.
+func DecomposeSubtractions[W word.Word[W]](cfg field.Config, program Program[W]) Program[W] {
+	return transform.DecomposeSubtractions(cfg, program)
+}
+
 // Vectorize merges as many bytecodes as possible into each (vector / trace-line)
 // bytecode, subject to register-conflict (data hazard) constraints.
 func Vectorize[W word.Word[W]](program Program[W]) Program[W] {

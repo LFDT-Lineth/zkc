@@ -165,6 +165,7 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		if p.config.splitting {
 			// FIXME: this is broken as we should be splitting for the target
 			// word, not the target field.
+			program = vm.DecomposeSubtractions(p.config.field, program)
 			program = vm.SplitRegisters(p.config.field, program)
 		}
 	} else {
@@ -178,6 +179,7 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.FlattenCalls(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
+			program = vm.DecomposeSubtractions(p.config.field, program)
 			program = vm.SplitRegisters(p.config.field, program)
 		}
 		//

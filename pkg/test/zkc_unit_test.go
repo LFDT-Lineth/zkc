@@ -843,6 +843,26 @@ func Test_ZkcUnit_Div_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_05", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Div_06(t *testing.T) {
+	// u32 division under register splitting: lowers to a hint with multi-limb
+	// operands plus multi-limb (chained) subtractions with borrow.  GoGen and
+	// constraints do not yet support split subtract-with-borrow / multi-limb
+	// hints (see basic_45), so this exercises the bytecode interpreter only.
+	checkZkcUnit(t, "zkc/unit/div_06", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+}
+
+// ===================================================================
+// Subtraction Tests
+// ===================================================================
+
+func Test_ZkcUnit_Sub_01(t *testing.T) {
+	// u32 chained subtraction (x - y - z) under register splitting: the low limb
+	// can borrow more than one 2^16 unit.  GoGen and constraints do not yet
+	// support split subtract-with-borrow (see basic_45), so this exercises the
+	// bytecode interpreter only.
+	checkZkcUnit(t, "zkc/unit/sub_01", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================
