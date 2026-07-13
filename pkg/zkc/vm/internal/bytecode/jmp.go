@@ -14,26 +14,28 @@ package bytecode
 
 import (
 	"fmt"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Jmp (unconditional branch) instruction
-type Jmp struct{ Target Address }
+type Jmp[W word.Word[W]] struct{ Target Address }
 
 // Uses implementation for Bytecode interface.
-func (p *Jmp) Uses() []RegisterId {
+func (p *Jmp[W]) Uses() []RegisterId {
 	return nil
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *Jmp) Definitions() []RegisterId {
+func (p *Jmp[W]) Definitions() []RegisterId {
 	return nil
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Jmp) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *Jmp[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *Jmp) String(_ Environment) string {
+func (p *Jmp[W]) String(_ Environment[W]) string {
 	return fmt.Sprintf("jmp 0x%x", p.Target)
 }

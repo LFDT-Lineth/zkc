@@ -19,14 +19,14 @@ import (
 
 // DivRem encodes a division/remainder bytecode; the opcode held within the
 // bytecode selects between quotient (DIV) and remainder (REM).
-func DivRem(p *bytecode.DivRem) []uint32 {
+func DivRem[W word.Word[W]](p *bytecode.DivRem[W]) []uint32 {
 	return encodeDivRem(p.Opcode, p.Target, p.Dividend, p.Divisor)
 }
 
 // Hint encodes a hint bytecode.  Currently the only supported operation is
 // DIV_HINT, which supplies the prover with the quotient, remainder and witness
 // for a division.
-func Hint(p *bytecode.Hint) []uint32 {
+func Hint[W word.Word[W]](p *bytecode.Hint[W]) []uint32 {
 	return encodeHint(p.Op, p.Targets, p.Sources)
 }
 
@@ -38,7 +38,7 @@ func DecodeHint[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32)
 		sources             = registerVectorsFromIter(sIter)
 	)
 	//
-	return &bytecode.Hint{Op: op, Targets: targets, Sources: sources}, n
+	return &bytecode.Hint[W]{Op: op, Targets: targets, Sources: sources}, n
 }
 
 // registerVectorsFromIter reconstructs the register vectors packed as (base, len)

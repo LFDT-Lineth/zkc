@@ -12,12 +12,16 @@
 // SPDX-License-Identifier: Apache-2.0
 package bytecode
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
+)
 
 // DivRem computes the (truncated) integer quotient or remainder of two
 // registers.  The operation is identified by Opcode, which is one of DIV or
 // REM.  A zero divisor aborts execution with a division-by-zero error.
-type DivRem struct {
+type DivRem[W word.Word[W]] struct {
 	// Opcode selects the operation (DIV or REM).
 	Opcode uint32
 	// Target receives the result.
@@ -27,21 +31,21 @@ type DivRem struct {
 }
 
 // Uses implementation for Bytecode interface.
-func (p *DivRem) Uses() []RegisterId {
+func (p *DivRem[W]) Uses() []RegisterId {
 	return []RegisterId{p.Dividend, p.Divisor}
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *DivRem) Definitions() []RegisterId {
+func (p *DivRem[W]) Definitions() []RegisterId {
 	return []RegisterId{p.Target}
 }
 
 // Validate implementation for Bytecode interface.
-func (p *DivRem) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *DivRem[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *DivRem) String(mapping Environment) string {
+func (p *DivRem[W]) String(mapping Environment[W]) string {
 	var (
 		target   = RegisterToString(p.Target, mapping)
 		dividend = RegisterToString(p.Dividend, mapping)

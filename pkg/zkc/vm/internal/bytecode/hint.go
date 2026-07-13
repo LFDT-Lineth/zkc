@@ -15,6 +15,8 @@ package bytecode
 import (
 	"fmt"
 	"strings"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Hint performs a built-in operation identified by Op, reading a variable
@@ -27,7 +29,7 @@ import (
 // dividend % divisor and witness = divisor - remainder - 1, with correctness
 // validated by subsequent arithmetic checks.  A zero divisor aborts execution
 // with a division-by-zero error.
-type Hint struct {
+type Hint[W word.Word[W]] struct {
 	// Op selects the hint operation (currently only DIV_HINT).
 	Op Operation
 	// Targets receive the results (returns) written by this hint.
@@ -39,12 +41,12 @@ type Hint struct {
 // NewHint constructs a hint instruction performing the given operation op (e.g.
 // DIV_HINT) which reads the given source (argument) register vectors and writes
 // the given target (return) register vectors.
-func NewHint(op Operation, targets, sources []RegisterVector) *Hint {
-	return &Hint{Op: op, Targets: targets, Sources: sources}
+func NewHint[W word.Word[W]](op Operation, targets, sources []RegisterVector) *Hint[W] {
+	return &Hint[W]{Op: op, Targets: targets, Sources: sources}
 }
 
 // Uses implementation for Bytecode interface.
-func (p *Hint) Uses() []RegisterId {
+func (p *Hint[W]) Uses() []RegisterId {
 	var uses []RegisterId
 	//
 	for _, s := range p.Sources {
@@ -55,7 +57,7 @@ func (p *Hint) Uses() []RegisterId {
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *Hint) Definitions() []RegisterId {
+func (p *Hint[W]) Definitions() []RegisterId {
 	var defs []RegisterId
 	//
 	for _, t := range p.Targets {
@@ -67,7 +69,7 @@ func (p *Hint) Definitions() []RegisterId {
 
 // Validate implementation for Bytecode interface.  This checks that the number
 // of arguments and returns matches what the selected operation expects.
-func (p *Hint) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *Hint[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	var errs []error
 	//
 	switch p.Op {
@@ -86,7 +88,7 @@ func (p *Hint) Validate(_ uint, _ FieldConfig, _ Environment) []error {
 	return errs
 }
 
-func (p *Hint) String(env Environment) string {
+func (p *Hint[W]) String(env Environment[W]) string {
 	var (
 		name    = hintName(p.Op)
 		targets = registerVectorsToString(p.Targets, env, ",")
@@ -109,7 +111,7 @@ func hintName(op Operation) string {
 
 // registerVectorsToString formats a slice of register vectors, joining their individual
 // representations with the given separator.
-func registerVectorsToString(vecs []RegisterVector, env Environment, separator string) string {
+func registerVectorsToString[W word.Word[W]](vecs []RegisterVector, env Environment[W], separator string) string {
 	var builder strings.Builder
 	//
 	for i, v := range vecs {

@@ -41,9 +41,6 @@ type SymbolTable[W word.Word[W]] = encoding.SymbolTable[W]
 // Environment provides a convenient alias
 type Environment[W word.Word[W]] = encoding.Environment[W]
 
-// ProgramPoint provides a convenient alias
-type ProgramPoint = encoding.ProgramPoint
-
 // RegisterId provides a useful alias
 type RegisterId = bytecode.RegisterId
 
@@ -67,8 +64,7 @@ func CompileProgram[W word.Word[W]](program descriptor.Program[W], tracing bool)
 	// the BREAKPOINT modifier bit on its (resolved) first word.
 	for _, bp := range program.BreakPoints() {
 		var (
-			pp  = ProgramPoint{Macro: bp.ProgramCounter.Macro(), Micro: bp.ProgramCounter.Micro()}
-			lab = Label{ModuleId: bp.Function, Point: pp}
+			lab = Label{ModuleId: bp.Function, Point: bp.ProgramCounter}
 		)
 		//
 		bytecodes[symtab.SymbolAt(lab).Offset] |= encoding.BREAKPOINT
@@ -154,7 +150,7 @@ func initFunctionPoints[W word.Word[W]](offset Address, fid uint16, fn Function[
 	for pc, vec := range fn.Vectors() {
 		for cc, b := range vec.Bytecodes {
 			var (
-				pp = ProgramPoint{Macro: uint(pc), Micro: uint(cc)}
+				pp = descriptor.ProgramPoint{Macro: uint(pc), Micro: uint(cc)}
 				// construct environment for this point
 				fenv = env.EnvironmentFor(fid, pp)
 				// Construct label for this program point
@@ -210,7 +206,7 @@ func encodeVectors[W word.Word[W]](fid ModuleId, vectors []bytecode.Vector[W], o
 	for pc, vec := range vectors {
 		for cc, b := range vec.Bytecodes {
 			var (
-				pp = ProgramPoint{Macro: uint(pc), Micro: uint(cc)}
+				pp = descriptor.ProgramPoint{Macro: uint(pc), Micro: uint(cc)}
 				// construct environment for this bytecode
 				env = symtab.EnvironmentFor(fid, pp)
 				// Construct label representing this program point
@@ -255,11 +251,11 @@ func checkMemoryCount(count uint32, name string) {
 // function, or not.
 func isVectorTerminal[W word.Word[W]](b bytecode.Bytecode[W]) bool {
 	switch b.(type) {
-	case *bytecode.Fail:
+	case *bytecode.Fail[W]:
 		return true
-	case *bytecode.Jmp:
+	case *bytecode.Jmp[W]:
 		return true
-	case *bytecode.Ret:
+	case *bytecode.Ret[W]:
 		return true
 	default:
 		return false

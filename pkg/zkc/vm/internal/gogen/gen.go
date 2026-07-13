@@ -55,7 +55,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -98,7 +97,7 @@ type memInfo struct {
 	name    string
 	varName string
 	role    memRole
-	geom    memory.Geometry[word.Uint]
+	geom    descriptor.Memory[word.Uint]
 	// dataWidths are the bit-widths of the memory's data lines, in order; the
 	// main harness bakes these in to pack/unpack the byte encoding shared with
 	// `zkc exec` (see encodeBytes / decodeBytes).
@@ -285,7 +284,7 @@ func (g *generator) reachableFunctions(entry uint) []uint {
 		for _, vec := range fn.Vectors() {
 			for _, insn := range vec.Bytecodes {
 				// Both regular and unconditional (range-check) calls reach a callee.
-				call, ok := insn.(*bytecode.Call)
+				call, ok := insn.(*bytecode.Call[word.Uint])
 				if !ok {
 					continue
 				}
@@ -948,7 +947,7 @@ func endsTerminated(code BytecodeVector) bool {
 	}
 
 	switch last[len(last)-1].(type) {
-	case *bytecode.Skip, *bytecode.Jmp, *bytecode.Ret, *bytecode.Fail:
+	case *bytecode.Skip[word.Uint], *bytecode.Jmp[word.Uint], *bytecode.Ret[word.Uint], *bytecode.Fail[word.Uint]:
 		return true
 	default:
 		return false
@@ -960,22 +959,22 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 	switch x := insn.(type) {
 	case *bytecode.Arith[word.Uint]:
 		return g.emitArith(c, fn, x)
-	case *bytecode.Bitwise:
+	case *bytecode.Bitwise[word.Uint]:
 		return g.emitBitwise(c, fn, x)
-	case *bytecode.Cat:
+	case *bytecode.Cat[word.Uint]:
 		return g.emitConcat(c, fn, x)
-	case *bytecode.CheckCast:
+	case *bytecode.CheckCast[word.Uint]:
 		return g.emitCheckCast(c, fn, x)
-	case *bytecode.DivRem:
+	case *bytecode.DivRem[word.Uint]:
 		return g.emitDivRem(c, fn, x)
 	case *bytecode.FieldArith[word.Uint]:
 		return g.emitFieldOp(c, fn, x)
-	case *bytecode.Hint:
+	case *bytecode.Hint[word.Uint]:
 		return g.emitHint(c, fn, x)
-	case *bytecode.Debug:
+	case *bytecode.Debug[word.Uint]:
 		// DEBUG (printf) has no effect on program outputs; it writes to stderr.
 		return g.emitDebug(c, fn, x)
-	case *bytecode.ReadWrite:
+	case *bytecode.ReadWrite[word.Uint]:
 		// The unconditional flag on a call (range checks) and the checkpoint
 		// flag affect only constraint lowering, which gogen does not perform;
 		// likewise memory reads/writes execute identically whatever their kind.
@@ -984,16 +983,16 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 		}
 
 		return g.emitMemRead(c, fn, x)
-	case *bytecode.Call:
+	case *bytecode.Call[word.Uint]:
 		return g.emitCall(c, fn, x)
-	case *bytecode.Skip:
+	case *bytecode.Skip[word.Uint]:
 		target := skipTarget(vi, ci, uint(x.Skip), vecLen)
 		c.linef("goto %s", labelName(target))
 		g.iv.edgeTo(target)
 		g.iv.endOfFlow()
 
 		return nil
-	case *bytecode.SkipIf:
+	case *bytecode.SkipIf[word.Uint]:
 		cond, err := g.condExpr(fn, x)
 		if err != nil {
 			return err
@@ -1009,19 +1008,19 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 		return nil
 	case *bytecode.Switch[word.Uint]:
 		return g.emitMultiwaySkip(c, fn, x, vi, ci, vecLen)
-	case *bytecode.Jmp:
+	case *bytecode.Jmp[word.Uint]:
 		target := pos{uint(x.Target), 0}
 		c.linef("goto %s", labelName(target))
 		g.iv.edgeTo(target)
 		g.iv.endOfFlow()
 
 		return nil
-	case *bytecode.Ret:
+	case *bytecode.Ret[word.Uint]:
 		c.line(g.returnOk())
 		g.iv.endOfFlow()
 
 		return nil
-	case *bytecode.Fail:
+	case *bytecode.Fail[word.Uint]:
 		if err := g.emitFail(c, fn, x); err != nil {
 			return err
 		}
@@ -1092,10 +1091,10 @@ func hasNativeDataLine(info memInfo) bool {
 }
 
 func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, error) {
-	info := memInfo{name: m.Name(), varName: g.uniqueName("mem_" + sanitize(m.Name())), geom: m.Geometry()}
+	info := memInfo{name: m.Name(), varName: g.uniqueName("mem_" + sanitize(m.Name())), geom: *m}
 	// All memory traffic moves through uint64 cells.
 	for _, r := range append(info.geom.AddressRegisters(), info.geom.DataRegisters()...) {
-		if !r.IsNative() && r.Width() > 64 {
+		if !r.IsNative() && r.Bitwidth().Unwrap() > 64 {
 			return info, fmt.Errorf("gogen: memory %q register %q wider than 64 bits unsupported", m.Name(), r.Name())
 		}
 	}
@@ -1106,7 +1105,7 @@ func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, er
 	// input/output (see Generate).
 	if !hasNativeDataLine(info) {
 		for _, r := range info.geom.DataRegisters() {
-			info.dataWidths = append(info.dataWidths, r.Width())
+			info.dataWidths = append(info.dataWidths, r.Bitwidth().Unwrap())
 		}
 	}
 

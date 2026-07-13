@@ -14,17 +14,19 @@ package bytecode
 
 import (
 	"fmt"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // CheckCast instruction.
-type CheckCast struct {
+type CheckCast[W word.Word[W]] struct {
 	Bitwidth uint16
 	Target   RegisterId
 }
 
 // Uses implementation for Bytecode interface.  A check-cast reads its target to
 // assert the held value fits within the given bit width.
-func (p *CheckCast) Uses() []RegisterId {
+func (p *CheckCast[W]) Uses() []RegisterId {
 	return []RegisterId{p.Target}
 }
 
@@ -33,15 +35,15 @@ func (p *CheckCast) Uses() []RegisterId {
 // nothing.  In particular, it does not redefine its target: doing so would
 // conflict with the definition it is paired with to validate (e.g. the
 // preceding arithmetic write).
-func (p *CheckCast) Definitions() []RegisterId {
+func (p *CheckCast[W]) Definitions() []RegisterId {
 	return nil
 }
 
 // Validate implementation for Bytecode interface.
-func (p *CheckCast) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *CheckCast[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *CheckCast) String(env Environment) string {
+func (p *CheckCast[W]) String(env Environment[W]) string {
 	return fmt.Sprintf("check %s:u%d", RegisterToString(p.Target, env), p.Bitwidth)
 }

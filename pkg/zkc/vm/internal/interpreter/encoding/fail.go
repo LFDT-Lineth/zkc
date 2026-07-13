@@ -20,7 +20,7 @@ import (
 
 // Fail encodes a fail bytecode, interning its formatted chunks in the symbol
 // table and referencing them by index.
-func Fail[W word.Word[W]](p *bytecode.Fail, env Environment[W]) []uint32 {
+func Fail[W word.Word[W]](p *bytecode.Fail[W], env Environment[W]) []uint32 {
 	var index = env.ChunksIndex(p.Chunks...)
 	//
 	return encodeFail_n(util.Cast[uint16](index), p.Sources)

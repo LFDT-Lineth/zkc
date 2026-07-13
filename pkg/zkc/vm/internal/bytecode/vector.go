@@ -21,7 +21,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -86,7 +85,7 @@ func NewVector[W word.Word[W]](bytecodes ...Bytecode[W]) Vector[W] {
 // String returns a human-readable representation of this vector, rendering each
 // constituent bytecode (resolved against the given environment) separated by
 // " ; ".  This mirrors instruction.Vector.String.
-func (p *Vector[W]) String(env Environment) string {
+func (p *Vector[W]) String(env Environment[W]) string {
 	var builder strings.Builder
 	//
 	for i, b := range p.Bytecodes {
@@ -108,7 +107,7 @@ func (p *Vector[W]) String(env Environment) string {
 // A write conflict arises when a register is written which _may_ already have
 // been written on the same path; a read conflict arises when a register is read
 // which _may_ (but not _definitely_) have been written.
-func (p *Vector[W]) Validate(field FieldConfig, env Environment) []error {
+func (p *Vector[W]) Validate(field FieldConfig, env Environment[W]) []error {
 	var (
 		errors   []error
 		nCodes   = uint(len(p.Bytecodes))
@@ -212,13 +211,13 @@ func writeDfaTransfer[W word.Word[W]](offset uint, code Bytecode[W],
 	var arcs []dfa.Transfer[dfa.Writes]
 	//
 	switch code := code.(type) {
-	case *Fail, *Ret, *Jmp:
+	case *Fail[W], *Ret[W], *Jmp[W]:
 		// Control-flow terminators: no fall-through within the vector.
 		return nil
-	case *Skip:
+	case *Skip[W]:
 		// Unconditional skip: control transfers only to the branch target.
 		return append(arcs, dfa.NewTransfer(state, offset+uint(code.Skip)+1))
-	case *SkipIf:
+	case *SkipIf[W]:
 		// Conditional skip: join into the branch target, then fall through.
 		arcs = append(arcs, dfa.NewTransfer(state, offset+uint(code.Skip)+1))
 	case *Switch[W]:
@@ -260,12 +259,12 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
 		)
 		//
 		switch code := code.(type) {
-		case *Fail, *Ret, *Jmp:
+		case *Fail[W], *Ret[W], *Jmp[W]:
 			return nil
-		case *Skip:
+		case *Skip[W]:
 			// join into branch target
 			return append(arcs, dfa.NewTransfer(state, offset+uint(code.Skip)+1))
-		case *SkipIf:
+		case *SkipIf[W]:
 			var (
 				// Determine true branch
 				trueBranch = extendSkipIf(state, true, code, writes)
@@ -299,7 +298,7 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
 // taken).  The empty-tail handling exists because there is no implicit
 // representation of logical truth: dfa.TRUE has no conjuncts, so the first atom
 // replaces it rather than being and-ed onto it.
-func extendSkipIf(tail dfa.Branch, sign bool, code *SkipIf, writes dfa.Writes) dfa.Branch {
+func extendSkipIf[W word.Word[W]](tail dfa.Branch, sign bool, code *SkipIf[W], writes dfa.Writes) dfa.Branch {
 	var (
 		lhs      = toRegisterIds(code.Left.Registers())
 		rhs      = toRegisterIds(code.Right.Registers())
@@ -310,9 +309,9 @@ func extendSkipIf(tail dfa.Branch, sign bool, code *SkipIf, writes dfa.Writes) d
 	)
 	// normalise condition
 	switch code.Op {
-	case opcode.EQ:
+	case CONDITION_EQ:
 		equality = sign
-	case opcode.NEQ:
+	case CONDITION_NEQ:
 		equality = !sign
 	default:
 		panic(fmt.Sprintf("unsupported skip condition (0x%x)", code.Op))
@@ -459,9 +458,9 @@ func isExternalSkip[W word.Word[W]](n uint, insn Bytecode[W]) bool {
 	var c any = insn
 	//
 	switch insn := c.(type) {
-	case *Skip:
+	case *Skip[W]:
 		return uint(insn.Skip) >= n
-	case *SkipIf:
+	case *SkipIf[W]:
 		return uint(insn.Skip) >= n
 	case *Switch[W]:
 		for _, cse := range insn.Cases {
@@ -495,10 +494,10 @@ func remapSkip[W word.Word[W]](n, oldOffset, newOffset uint, insn Bytecode[W], m
 	}
 	// reconstruct skip
 	switch insn := insn.(type) {
-	case *Skip:
-		return &Skip{Skip: remap(insn.Skip)}
-	case *SkipIf:
-		return &SkipIf{Op: insn.Op, Left: insn.Left, Right: insn.Right, Skip: remap(insn.Skip)}
+	case *Skip[W]:
+		return &Skip[W]{Skip: remap(insn.Skip)}
+	case *SkipIf[W]:
+		return &SkipIf[W]{Op: insn.Op, Left: insn.Left, Right: insn.Right, Skip: remap(insn.Skip)}
 	case *Switch[W]:
 		ncases := make([]SwitchCase[W], len(insn.Cases))
 		//

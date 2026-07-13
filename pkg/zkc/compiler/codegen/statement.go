@@ -151,9 +151,9 @@ func (p *StmtCompiler) mapLVals(mapping []uint, lvals []LVal) ([][]vm.RegisterId
 
 func (p *StmtCompiler) compilePrintf(mapping []uint, chunks []stmt.FormattedChunk, args []Expr,
 ) BytecodeVector {
-	nchunks, insns := p.compileFormattedChunks(mapping, chunks, args)
+	nchunks, sources, insns := p.compileFormattedChunks(mapping, chunks, args)
 	//
-	insns = append(insns, vm.Debug[vm.Uint](nchunks))
+	insns = append(insns, vm.Debug[vm.Uint](nchunks, sources))
 	//
 	return vm.NewBytecodeVector(insns...)
 }
@@ -161,9 +161,9 @@ func (p *StmtCompiler) compilePrintf(mapping []uint, chunks []stmt.FormattedChun
 func (p *StmtCompiler) compileFail(mapping []uint, chunks []stmt.FormattedChunk, args []Expr,
 ) BytecodeVector {
 	//
-	nchunks, insns := p.compileFormattedChunks(mapping, chunks, args)
+	nchunks, sources, insns := p.compileFormattedChunks(mapping, chunks, args)
 	//
-	insns = append(insns, vm.Fail[vm.Uint](nchunks))
+	insns = append(insns, vm.Fail[vm.Uint](nchunks, sources))
 	//
 	return vm.NewBytecodeVector(insns...)
 }
@@ -174,7 +174,7 @@ func (p *StmtCompiler) compileFail(mapping []uint, chunks []stmt.FormattedChunk,
 // register.  Returns the resulting chunk list together with the
 // micro-instructions needed to evaluate the arguments.
 func (p *StmtCompiler) compileFormattedChunks(mapping []uint, chunks []stmt.FormattedChunk, args []Expr,
-) ([]vm.FormattedChunk, []Bytecode) {
+) ([]vm.FormattedChunk, []vm.RegisterId, []Bytecode) {
 	var (
 		nchunks     []vm.FormattedChunk
 		regs, insns = p.compileNonUniformArgs(mapping, args...)
@@ -183,7 +183,7 @@ func (p *StmtCompiler) compileFormattedChunks(mapping []uint, chunks []stmt.Form
 	//
 	for _, chunk := range chunks {
 		if chunk.Format.HasFormat() {
-			nchunks = append(nchunks, vm.NewFormattedChunk(chunk.Text, chunk.Format, regs[index]))
+			nchunks = append(nchunks, vm.NewFormattedChunk(chunk.Text, chunk.Format))
 			//
 			index++
 		} else {
@@ -191,7 +191,7 @@ func (p *StmtCompiler) compileFormattedChunks(mapping []uint, chunks []stmt.Form
 		}
 	}
 	//
-	return nchunks, insns
+	return nchunks, regs, insns
 }
 
 func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, target uint,

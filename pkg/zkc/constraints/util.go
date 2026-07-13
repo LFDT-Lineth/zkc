@@ -23,8 +23,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-func newLimbsMap[W vm.Word[W]](config field.Config, modules ...vm.BytecodeModule[W]) module.LimbsMap {
-	var ms []register.Map = array.Map(modules, func(_ uint, m vm.BytecodeModule[W]) register.Map {
+func newLimbsMap[W vm.Word[W]](config field.Config, modules ...vm.Module[W]) module.LimbsMap {
+	var ms []register.Map = array.Map(modules, func(_ uint, m vm.Module[W]) register.Map {
 		name := trace.ModuleName{Name: m.Name(), Multiplier: 1}
 		return register.ArrayMap(name, toRegisters(m.Registers())...)
 	})

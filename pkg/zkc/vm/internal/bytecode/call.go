@@ -15,10 +15,12 @@ package bytecode
 import (
 	"fmt"
 	"strings"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Call invokes another function module.
-type Call struct {
+type Call[W word.Word[W]] struct {
 	// address of target function
 	Target ModuleId
 	// Arguments are caller-frame registers copied into callee inputs.
@@ -29,22 +31,22 @@ type Call struct {
 
 // Uses implementation for Bytecode interface.  A call reads the argument
 // registers passed into the callee.
-func (p *Call) Uses() []RegisterId {
+func (p *Call[W]) Uses() []RegisterId {
 	return p.Arguments
 }
 
 // Definitions implementation for Bytecode interface.  A call writes the callee's
 // outputs into the return registers of the caller's frame.
-func (p *Call) Definitions() []RegisterId {
+func (p *Call[W]) Definitions() []RegisterId {
 	return p.Returns
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Call) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *Call[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *Call) String(env Environment) string {
+func (p *Call[W]) String(env Environment[W]) string {
 	var (
 		builder strings.Builder
 		// Determine enclosing module

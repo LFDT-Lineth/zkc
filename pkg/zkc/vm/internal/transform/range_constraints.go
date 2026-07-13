@@ -22,7 +22,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -245,7 +244,7 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) descriptor.Mod
 		contents[i] = w.SetUint64(uint64(i))
 	}
 	//
-	return descriptor.NewMemory(name, regs, memory.PRIVATE_STATIC_MEMORY, contents)
+	return descriptor.NewMemory(name, regs, descriptor.PRIVATE_STATIC_MEMORY, contents)
 }
 
 // newRecursiveRangeModule constructs the range module for a width > maxStaticWidth.  It is a
@@ -281,7 +280,7 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 	// another recursive range function (> maxStaticWidth): invoked via a Call.
 	codes = appendRangeCheck(codes, loID, s.lo, moduleOf, maxStaticWidth)
 	codes = appendRangeCheck(codes, hiID, s.hi, moduleOf, maxStaticWidth)
-	codes = append(codes, bytecode.NewRet())
+	codes = append(codes, bytecode.NewRet[W]())
 	//
 	return descriptor.NewFunction(name, regs, false, []BytecodeVector[W]{bytecode.NewVector(codes...)})
 }
@@ -311,7 +310,7 @@ func rangeCheck[W word.Word[W]](id uint, r bytecode.RegisterId, w uint,
 		panic(fmt.Sprintf("rangeCheck: width %d <= maxStaticWidth %d should be handled by static table", w, maxStaticWidth))
 	}
 	//
-	return bytecode.CallFun(uint16(id), []bytecode.RegisterId{r}, nil)
+	return bytecode.CallFun[W](uint16(id), []bytecode.RegisterId{r}, nil)
 }
 
 // addRangeCalls range-checks every register of every function module: a block of
@@ -376,7 +375,7 @@ func addRangeChecks[W word.Word[W]](mod descriptor.Module[W], idOf map[string]ui
 	for i, vec := range vectors {
 		nvecs[i] = vec.Map(func(_ uint, ith Bytecode[W]) []Bytecode[W] {
 			switch ith.(type) {
-			case *bytecode.Ret, *bytecode.Jmp:
+			case *bytecode.Ret[W], *bytecode.Jmp[W]:
 				return append(slices.Clone(checks), ith)
 			default:
 				return []Bytecode[W]{ith}

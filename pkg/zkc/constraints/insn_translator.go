@@ -22,8 +22,14 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/poly"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	finsn "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/field"
 )
+
+// Polynomial defines the type of polynomials over which packets (and register
+// splitting in general) operate.
+type Polynomial = *poly.ArrayPoly[register.Id]
+
+// Monomial is a convenient alias
+type Monomial = poly.Monomial[register.Id]
 
 // InstructionTranslator encapsulates key information for translating an
 // individual instruction (e.g. an assignment) into constraints.
@@ -110,10 +116,10 @@ func (p *InstructionTranslator[F]) translateConcat(targets, sources []register.I
 // constant is appended as a constant monomial, and the whole lot is combined
 // according to the operation (sum, difference or product).  This mirrors the
 // lowering in the (now removed) WordToFieldMachine path.
-func arithPolynomial(op vm.Operation, sources []register.Id, constant big.Int) finsn.Polynomial {
+func arithPolynomial(op vm.Operation, sources []register.Id, constant big.Int) Polynomial {
 	var (
 		one   = big.NewInt(1)
-		terms = make([]finsn.Monomial, len(sources))
+		terms = make([]Monomial, len(sources))
 	)
 	//
 	for i, r := range sources {
@@ -139,9 +145,9 @@ func arithPolynomial(op vm.Operation, sources []register.Id, constant big.Int) f
 // concatPolynomial builds the right-hand-side polynomial for a concatenation
 // bytecode: source i is weighted by 2^(sum of the widths of sources 0..i-1),
 // with source 0 being the least significant limb.
-func concatPolynomial(sources []register.Id, widths []uint) finsn.Polynomial {
+func concatPolynomial(sources []register.Id, widths []uint) Polynomial {
 	var (
-		terms = make([]finsn.Monomial, len(sources))
+		terms = make([]Monomial, len(sources))
 		acc   = big.NewInt(1)
 	)
 	//
@@ -158,14 +164,14 @@ func concatPolynomial(sources []register.Id, widths []uint) finsn.Polynomial {
 }
 
 // polySum constructs the polynomial equal to the sum of the given monomials.
-func polySum(terms ...finsn.Monomial) finsn.Polynomial {
-	var p finsn.Polynomial
+func polySum(terms ...Monomial) Polynomial {
+	var p Polynomial
 	return p.Set(terms...)
 }
 
 // polySubtract constructs the polynomial equal to terms[0] - terms[1] - ...
-func polySubtract(terms ...finsn.Monomial) finsn.Polynomial {
-	var p finsn.Polynomial
+func polySubtract(terms ...Monomial) Polynomial {
+	var p Polynomial
 	//
 	for i, m := range terms {
 		if i == 0 {
@@ -180,10 +186,10 @@ func polySubtract(terms ...finsn.Monomial) finsn.Polynomial {
 
 // polyProduct constructs the polynomial equal to the product of the given
 // monomials.
-func polyProduct(terms ...finsn.Monomial) finsn.Polynomial {
+func polyProduct(terms ...Monomial) Polynomial {
 	var (
-		p finsn.Polynomial
-		m finsn.Monomial
+		p Polynomial
+		m Monomial
 	)
 	//
 	for i, t := range terms {
@@ -200,7 +206,7 @@ func polyProduct(terms ...finsn.Monomial) finsn.Polynomial {
 // Translate polynomial (c0*x0$0*...*xn$0) + ... + (cm*x0$m*...*xn$m) where cX
 // are constant coefficients.  This generates a given translation of terms,
 // along with an indication as to whether this is signed or not.
-func (p *InstructionTranslator[F]) translatePolynomial(poly finsn.Polynomial) (pos []Expr[F]) {
+func (p *InstructionTranslator[F]) translatePolynomial(poly Polynomial) (pos []Expr[F]) {
 	var (
 		terms []Expr[F]
 	)
@@ -215,7 +221,7 @@ func (p *InstructionTranslator[F]) translatePolynomial(poly finsn.Polynomial) (p
 }
 
 // Translate a monomial of the form c*x0*...*xn where c is a constant coefficient.
-func (p *InstructionTranslator[F]) translateMonomial(mono finsn.Monomial) Expr[F] {
+func (p *InstructionTranslator[F]) translateMonomial(mono Monomial) Expr[F] {
 	var (
 		n               = mono.Len()
 		coeff           = mono.Coefficient()

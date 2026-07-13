@@ -24,10 +24,8 @@ type (
 	Word[W any] = vm.Word[W]
 	// Element provides a useful alias
 	Element[F any] = field.Element[F]
-	// Function provides a useful alias
-	Function = vm.WordFunction
 	// Memory provides a useful alias
-	Memory[W Word[W]] = vm.Memory[W]
+	Memory[W Word[W]] = vm.RuntimeMemory[W]
 )
 
 // Post processor for post-processing recorded state for a given module.  For
@@ -48,16 +46,16 @@ func (p *postProcess[W, F]) TraceFunction(f vm.Function[W], states []vm.State[W]
 }
 
 // TraceMemory implementation for the vm.TraceProcessor interface.
-func (p *postProcess[W, F]) TraceMemory(m vm.Memory[W]) rtrace.ArrayModule[F] {
-	switch {
-	case m.IsStatic():
+func (p *postProcess[W, F]) TraceMemory(m vm.RuntimeMemory[W]) rtrace.ArrayModule[F] {
+	switch m.Descriptor().Kind() {
+	case vm.PRIVATE_STATIC_MEMORY, vm.PUBLIC_STATIC_MEMORY:
 		// ProcessStaticMemory does what is required to represent a static memory within
 		// a trace.  Specifically, static memories do exist in the trace, but only to
 		// ensure alignment of module identifiers.  Hence, they always have an empty trace.
-		return rtrace.NewArrayModule[F](m.Name(), nil)
-	case m.IsReadOnly():
+		return rtrace.NewArrayModule[F](m.Descriptor().Name(), nil)
+	case vm.PRIVATE_READ_ONLY_MEMORY, vm.PUBLIC_READ_ONLY_MEMORY:
 		return post.ProcessAccessOnceMemory[W, F](m)
-	case m.IsWriteOnly():
+	case vm.PRIVATE_WRITE_ONCE_MEMORY, vm.PUBLIC_WRITE_ONCE_MEMORY:
 		return post.ProcessAccessOnceMemory[W, F](m)
 	default:
 		return post.ProcessReadWriteMemory[W, F](m)

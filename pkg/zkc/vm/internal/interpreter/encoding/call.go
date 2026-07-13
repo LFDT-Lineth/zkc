@@ -22,9 +22,9 @@ import (
 // Call encodes a call bytecode as an ENTER/LEAVE instruction pair: ENTER
 // allocates the callee's frame, binds its arguments and pushes a stack-frame
 // record, whilst LEAVE binds the returns to their destination registers.
-func Call[W word.Word[W]](pc uint32, p *bytecode.Call, env Environment[W]) (codes []uint32) {
+func Call[W word.Word[W]](pc uint32, p *bytecode.Call[W], env Environment[W]) (codes []uint32) {
 	var (
-		zero   = ProgramPoint{0, 0}
+		zero   ProgramPoint
 		offset = env.OffsetFor(p.Target, zero)
 		// Extract frame width
 		width = uint16(env.Module(p.Target).Width())
@@ -38,7 +38,7 @@ func Call[W word.Word[W]](pc uint32, p *bytecode.Call, env Environment[W]) (code
 // MaxCallEncodedLength returns the maximum length (in u32 words) which an
 // encoding of the given call bytecode can occupy, i.e. the size of its wide
 // ENTER/LEAVE pair (the wide form is never smaller than the narrow form).
-func MaxCallEncodedLength(p *bytecode.Call) uint {
+func MaxCallEncodedLength[W word.Word[W]](p *bytecode.Call[W]) uint {
 	var (
 		enter = 2 + NumCodesPackedWide(uint(len(p.Arguments)))
 		leave = 1 + NumCodesPackedWide(uint(len(p.Returns)))
