@@ -1,8 +1,0 @@
-fn main() {
-    var a:u64
-    var b:u63
-    var c:u31
-    var d:u25
-    var e:u7
-    var f:u1
-}

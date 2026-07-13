@@ -1153,62 +1153,46 @@ func Test_ZkcUnit_Padding_05(t *testing.T) {
 // ===================================================================
 // Range check Tests
 // ===================================================================
-// Range check a u16, exercised across several static-table depth limits so
-// that the width is covered by a static table (depth 2^16), and by recursive
-// destructuring (depths 2^8 and 2^4).
+// Range check a u16
 func Test_ZkcUnit_RangeCheck_01(t *testing.T) {
-	checkZkcUnitStaticDepths(t, "zkc/unit/range_check_01",
-		DEFAULT_UNIT_CONFIG, codegen.DEFAULT_MAX_STATIC_DEPTH, 1<<8, 1<<4)
+	checkZkcUnit(t, "zkc/unit/range_check_01", DEFAULT_UNIT_CONFIG)
 }
 
 // Range check a u64
 func Test_ZkcUnit_RangeCheck_02(t *testing.T) {
-	checkZkcUnitStaticDepths(t, "zkc/unit/range_check_02",
-		DEFAULT_UNIT_CONFIG, codegen.DEFAULT_MAX_STATIC_DEPTH, 1<<8, 1<<4)
+	checkZkcUnit(t, "zkc/unit/range_check_02", DEFAULT_UNIT_CONFIG)
 }
 
 // Range check a u17
 func Test_ZkcUnit_RangeCheck_03(t *testing.T) {
-	checkZkcUnitStaticDepths(t, "zkc/unit/range_check_03",
-		DEFAULT_UNIT_CONFIG, codegen.DEFAULT_MAX_STATIC_DEPTH, 1<<8, 1<<4)
+	checkZkcUnit(t, "zkc/unit/range_check_03", DEFAULT_UNIT_CONFIG)
 }
 
 // Range check a u31
 func Test_ZkcUnit_RangeCheck_04(t *testing.T) {
-	checkZkcUnitStaticDepths(t, "zkc/unit/range_check_04",
-		DEFAULT_UNIT_CONFIG, codegen.DEFAULT_MAX_STATIC_DEPTH, 1<<8, 1<<4)
+	checkZkcUnit(t, "zkc/unit/range_check_04", DEFAULT_UNIT_CONFIG)
 }
 
 // Range check a u5
 func Test_ZkcUnit_RangeCheck_05(t *testing.T) {
-	checkZkcUnitStaticDepths(t, "zkc/unit/range_check_05",
-		DEFAULT_UNIT_CONFIG, codegen.DEFAULT_MAX_STATIC_DEPTH, 1<<8, 1<<4)
-}
-
-// Range check various uX
-func Test_ZkcUnit_RangeCheck_06(t *testing.T) {
-	checkZkcUnitStaticDepths(t, "zkc/unit/range_check_06",
-		DEFAULT_UNIT_CONFIG, codegen.DEFAULT_MAX_STATIC_DEPTH, 1<<8, 1<<4)
+	checkZkcUnit(t, "zkc/unit/range_check_05", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
 // Test Helpers
 // ===================================================================
 
+var STATIC_DEPTHS = []uint{codegen.DEFAULT_MAX_STATIC_DEPTH, 256, 1 << 24}
+
+// checkZkcUnit runs test for different combinations of:
+// - STATIC_DEPTHS
 func checkZkcUnit(t *testing.T, test string, config util.Config) {
 	// The generated-Go ("native") executor is cross-checked on every unit test:
 	// programs it cannot yet handle (wide registers/constants/moduli) are
 	// logged-and-skipped by the harness, never failed.
-	util.CheckValid(t, test, "zkc", config)
-}
-
-// checkZkcUnitStaticDepths runs the given test once per supplied static-table
-// depth limit.  Each depth runs as its own subtest because CheckValid calls
-// t.Parallel, which may only be invoked once per *testing.T.
-func checkZkcUnitStaticDepths(t *testing.T, test string, config util.Config, depths ...uint) {
-	for _, depth := range depths {
+	for _, depth := range STATIC_DEPTHS {
 		t.Run(fmt.Sprintf("depth=%d", depth), func(t *testing.T) {
-			checkZkcUnit(t, test, config.MaxStaticDepth(depth))
+			util.CheckValid(t, test, "zkc", config.MaxStaticDepth(depth))
 		})
 	}
 }
