@@ -242,8 +242,8 @@ func AddVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 }
 
 // CallFun constructs a function-call bytecode with the given flags.
-func CallFun[W word.Word[W]](target ModuleId, flags CallFlags, args []RegisterId, returns []RegisterId) *Call[W] {
-	return &Call[W]{target, flags, args, returns}
+func CallFun[W word.Word[W]](target ModuleId, args []RegisterId, returns []RegisterId) *Call[W] {
+	return &Call[W]{target, args, returns}
 }
 
 // Jump creates an unconditional jump instruction transferring control to the

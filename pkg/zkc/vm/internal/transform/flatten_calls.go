@@ -129,7 +129,6 @@ func flattenCall[W word.Word[W]](call *bytecode.Call[W], snapshot []bool,
 	// Append the (possibly rewritten) call, preserving its flags.
 	return append(insns, &bytecode.Call[W]{
 		Target:    call.Target,
-		Flags:     call.Flags,
 		Arguments: args,
 		Returns:   call.Returns,
 	})

@@ -102,7 +102,7 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 	id := helpers.ensure(b.Op, p, 2)
 	//
 	return []Bytecode[W]{
-		bytecode.CallFun[W](uint16(id), bytecode.CallFlags{},
+		bytecode.CallFun[W](uint16(id),
 			[]bytecode.RegisterId{b.Left, b.Right}, []bytecode.RegisterId{b.Target}),
 	}
 }
@@ -118,8 +118,7 @@ func lowerBitwiseShlShr[W word.Word[W]](
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.CallFun[W](uint16(id), bytecode.CallFlags{},
-			[]bytecode.RegisterId{b.Left, b.Right}, []bytecode.RegisterId{b.Target}),
+		bytecode.CallFun[W](uint16(id), []bytecode.RegisterId{b.Left, b.Right}, []bytecode.RegisterId{b.Target}),
 	}
 }
 
@@ -308,8 +307,8 @@ func newDecomposedNaryHelper[W word.Word[W]](
 		resLow := b.newComputedNamed(half)
 		resHigh := b.newComputedNamed(half)
 
-		b.emit(bytecode.CallFun[W](uint16(subID), bytecode.CallFlags{}, lowSrcs, []bytecode.RegisterId{resLow}))
-		b.emit(bytecode.CallFun[W](uint16(subID), bytecode.CallFlags{}, highSrcs, []bytecode.RegisterId{resHigh}))
+		b.emit(bytecode.CallFun[W](uint16(subID), lowSrcs, []bytecode.RegisterId{resLow}))
+		b.emit(bytecode.CallFun[W](uint16(subID), highSrcs, []bytecode.RegisterId{resHigh}))
 
 		b.emit(bytecode.Concat[W]([]bytecode.RegisterId{out}, []bytecode.RegisterId{resLow, resHigh}))
 	}

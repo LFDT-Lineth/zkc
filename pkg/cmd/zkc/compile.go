@@ -78,6 +78,7 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		config CompileConfig
 	)
 	//
+	config.build = build
 	config.ast = GetFlag(cmd, "ast")
 	config.mir = GetFlag(cmd, "mir")
 	config.air = GetFlag(cmd, "air")
