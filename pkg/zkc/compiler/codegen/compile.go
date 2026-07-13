@@ -91,7 +91,7 @@ func NewCompiler(cfg Config, env data.ResolvedEnvironment, srcmaps source.Maps[a
 func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []source.SyntaxError) {
 	//
 	var (
-		modules []vm.BytecodeModule[vm.Uint]
+		modules []vm.Module[vm.Uint]
 		mapping = make([]uint, len(declarations))
 		index   = uint(0)
 		inlines []string
@@ -276,7 +276,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 // which is still constructed (with whatever contents were produced) -- compilation
 // aborts on the returned errors before the memory is ever executed.
 func (p *Compiler) buildMemory(program []Declaration, c *decl.ResolvedMemory,
-) (vm.BytecodeModule[vm.Uint], []source.SyntaxError) {
+) (vm.Module[vm.Uint], []source.SyntaxError) {
 	var regs = toMemoryRegisters[vm.Uint](c.Address, c.Data, p.env)
 	//
 	switch c.Kind {

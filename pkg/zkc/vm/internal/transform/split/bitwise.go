@@ -34,7 +34,7 @@ import (
 //
 // The same limb-wise decomposition applies to OR and XOR.  Thus, we can see
 // that splitting bitwise operations is relatively straightforward.
-func Bitwise[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Bitwise,
+func Bitwise[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Bitwise[W],
 ) []Bytecode[W] {
 	var (
 		// LimbIds returns limbs least-significant first, which is exactly the
@@ -61,7 +61,7 @@ func Bitwise[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 			bw = uint16(mapping.Limb(tgt).Bitwidth().Unwrap())
 		)
 		//
-		insns = append(insns, bytecode.NewBitwise(insn.Op, tgt, lhs, rhs, bw))
+		insns = append(insns, bytecode.NewBitwise[W](insn.Op, tgt, lhs, rhs, bw))
 	}
 	//
 	return insns

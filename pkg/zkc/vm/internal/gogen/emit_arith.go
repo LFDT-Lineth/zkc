@@ -428,7 +428,7 @@ func (g *generator) emitMul(c *code, srcs []operand, konst operand, store storeV
 // value with sources[0] in the least-significant bits (executeCat), which is
 // then stored across the (possibly multi-limb) target.  Widths are the
 // declared register widths, and each source is known to fit its width.
-func (g *generator) emitConcat(c *code, fn *descFunction, x *bytecode.Cat) error {
+func (g *generator) emitConcat(c *code, fn *descFunction, x *bytecode.Cat[word.Uint]) error {
 	store, err := g.buildStore(fn, x.Targets)
 	if err != nil {
 		return err

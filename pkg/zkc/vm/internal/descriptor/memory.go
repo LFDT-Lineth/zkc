@@ -16,7 +16,6 @@ import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -26,7 +25,7 @@ import (
 // characteristics (public/private, static, read-only, write-only, read-write).
 type Memory[W word.Word[W]] struct {
 	moduleBase[W]
-	kind     memory.Kind
+	kind     MemoryKind
 	contents []W
 }
 
@@ -35,7 +34,7 @@ type Memory[W word.Word[W]] struct {
 // WOM), geometry (size and layout), and initial contents (for static memories
 // only).  NOTE: this will panic is a non-static memory is created with some
 // contents.
-func NewMemory[W word.Word[W]](name string, registers []Register[W], kind memory.Kind,
+func NewMemory[W word.Word[W]](name string, registers []Register[W], kind MemoryKind,
 	contents []W) *Memory[W] {
 	// Sanity check
 	if !kind.IsStatic() && len(contents) > 0 {
@@ -45,13 +44,20 @@ func NewMemory[W word.Word[W]](name string, registers []Register[W], kind memory
 	return &Memory[W]{newModuleBase(name, registers), kind, contents}
 }
 
-// Geometry constructs a suitable geometry for this memory
-func (p *Memory[W]) Geometry() memory.Geometry[W] {
-	return memory.NewGeometry[W](ToRegisters(p.registers...))
+// AddressRegisters returns the set of registers making up the address lines of
+// this memory (which is exactly the set of input registers).
+func (p *Memory[W]) AddressRegisters() []Register[W] {
+	return p.Inputs()
+}
+
+// DataRegisters returns the set of registers making up the data lines of this
+// memory (which is exactly the set of output registers).
+func (p *Memory[W]) DataRegisters() []Register[W] {
+	return p.Outputs()
 }
 
 // Kind returns the underlying kind of memory (e.g. ROM, WOM, RAM, etc)
-func (p *Memory[W]) Kind() memory.Kind {
+func (p *Memory[W]) Kind() MemoryKind {
 	return p.kind
 }
 

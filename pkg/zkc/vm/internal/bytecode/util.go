@@ -16,11 +16,13 @@ import (
 	"fmt"
 	"math"
 	"strings"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // RegistersToString formats a slice of registers as a string, joining their
 // individual representations with the given separator.
-func RegistersToString(registers []RegisterId, mapping Environment, separator string) string {
+func RegistersToString[W word.Word[W]](registers []RegisterId, mapping Environment[W], separator string) string {
 	var builder strings.Builder
 	//
 	for i, r := range registers {
@@ -36,7 +38,7 @@ func RegistersToString(registers []RegisterId, mapping Environment, separator st
 
 // RegisterVectorToString formats a register vector as a string, abbreviating
 // vectors of more than two limbs.
-func RegisterVectorToString(reg RegisterVector, mapping Environment) string {
+func RegisterVectorToString[W word.Word[W]](reg RegisterVector, mapping Environment[W]) string {
 	var (
 		first = RegisterToString(reg.Base, mapping)
 	)
@@ -53,13 +55,22 @@ func RegisterVectorToString(reg RegisterVector, mapping Environment) string {
 }
 
 // RegisterToString formats a single register as a string, using the given
-// mapping to resolve its name (falling back to a numeric placeholder).
-func RegisterToString(reg RegisterId, env Environment) string {
+// mapping to resolve its name (falling back to a numeric placeholder).  When
+// the environment can supply a current value for the register (see
+// Environment.ValueOf), that value is appended inline as "[0xVAL]"; this is how
+// the debugger renders register values within an instruction's string.
+func RegisterToString[W word.Word[W]](reg RegisterId, env Environment[W]) string {
 	if env == nil {
 		return fmt.Sprintf("?%d", reg)
 	}
 	//
-	return env.Register(reg).Name()
+	var name = env.Register(reg).Name()
+	// Append the current value, when one is available.
+	if val := env.ValueOf(reg); val.HasValue() {
+		return fmt.Sprintf("%s[0x%s]", name, val.Unwrap().Text(16))
+	}
+	//
+	return name
 }
 
 // ============================================================================

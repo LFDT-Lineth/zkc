@@ -16,7 +16,6 @@ import (
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -70,7 +69,7 @@ func factorSkipConditionsFunction[W word.Word[W]](fn *descriptor.Function[W]) *d
 		//
 		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
 			if factor[idx] {
-				return factorSkipIf[W](ith.(*bytecode.SkipIf), alloc)
+				return factorSkipIf[W](ith.(*bytecode.SkipIf[W]), alloc)
 			}
 			//
 			return []Bytecode[W]{ith}
@@ -85,7 +84,7 @@ func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers *regAllocato
 	factor := make(map[uint]bool)
 	//
 	for i, code := range codes {
-		si, ok := code.(*bytecode.SkipIf)
+		si, ok := code.(*bytecode.SkipIf[W])
 		if !ok {
 			continue
 		}
@@ -104,15 +103,15 @@ func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers *regAllocato
 	return factor
 }
 
-func isEqualityCondition(cond opcode.Condition) bool {
-	return cond == opcode.EQ || cond == opcode.NEQ
+func isEqualityCondition(cond bytecode.Condition) bool {
+	return cond == bytecode.CONDITION_EQ || cond == bytecode.CONDITION_NEQ
 }
 
 // generatesInverse reports whether the comparison performed by a SkipIf would
 // lower to an inverse normalisation.  This is only the case when some operand is
 // wider than a single bit; equality involving only bit registers is
 // normalisation-free and so factoring it would add bytecodes for no benefit.
-func generatesInverse[W word.Word[W]](si *bytecode.SkipIf, registers *regAllocator[W]) bool {
+func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers *regAllocator[W]) bool {
 	for _, r := range si.Uses() {
 		reg := registers.Register(r)
 		// Native registers are full-field-width (and have no fixed bitwidth), so
@@ -130,7 +129,7 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf, registers *regAllocat
 // (unnegated): when it holds, execution jumps to `b = 1`; otherwise it falls
 // through to `b = 0`.
 func factorSkipIf[W word.Word[W]](
-	si *bytecode.SkipIf,
+	si *bytecode.SkipIf[W],
 	registers *regAllocator[W],
 ) []Bytecode[W] {
 	var (
@@ -145,14 +144,14 @@ func factorSkipIf[W word.Word[W]](
 		// zero = 0
 		bytecode.LoadConst(zr, zero),
 		// skip_if (cond) 2  => condition holds, jump to "b = 1"
-		&bytecode.SkipIf{Op: si.Op, Left: si.Left, Right: si.Right, Skip: 2},
+		&bytecode.SkipIf[W]{Op: si.Op, Left: si.Left, Right: si.Right, Skip: 2},
 		// b = 0  (condition does not hold)
 		bytecode.LoadConst(b, zero),
 		// skip 1  => jump over "b = 1"
-		bytecode.NewSkip(1),
+		bytecode.NewSkip[W](1),
 		// b = 1  (condition holds)
 		bytecode.LoadConst(b, one),
 		// skip_if b != 0 S  (original skip, now testing the bit)
-		bytecode.NewSkipIf(opcode.NEQ, si.Skip, b, zr),
+		bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, si.Skip, b, zr),
 	}
 }

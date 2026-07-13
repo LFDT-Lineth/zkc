@@ -10,107 +10,50 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package memory
+package descriptor
 
 import (
 	"bytes"
 	"encoding/gob"
-
-	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
 )
 
-// Memory represents (in many ways) the simplest form of memory
-// which can be read or written without restrictions.  Initially, all locations
-// of a RAM can be considered to hold zero.  Thus, reading a location which has
-// not yet been written will return zero; otherwise, it will return the last
-// value written.
-type Memory[W util.Uinter64] interface {
-	base.Module
-	// Geometry defines the geometry of this RAM.
-	Geometry() Geometry[W]
-	// Kind returns the underlying kind of memory
-	Kind() Kind
-	// IsPublic indicates whether this is a public input or output.
-	IsPublic() bool
-	// IsStatic indicates a static (read-only) memory.  That is a ROM which never
-	// changes across all executions of a given machine.
-	IsStatic() bool
-	// IsReadOnly indicates a read-only memory (which may or may not be static).  A
-	// non-static read-only memory can change between different executions of a given machine.
-	IsReadOnly() bool
-	// IsWriteOnly represents a write-only memory where each element can only be
-	// written once.
-	IsWriteOnly() bool
-	// IsReadWrite represents the ubiquitous form of memory which supports arbitrary
-	// reads / writes.  Observe that RAM is always private.
-	IsReadWrite() bool
-	// Initialise this memory with the given contents.  This will overwrite any
-	// existing contents. For WOM's it resets the seen addresses.
-	Initialise(contents []W)
-	// Read the value at a given physical address within this memory, possibly
-	// producing an error (e.g. for an out-of-bounds access).
-	Read(address uint64) (W, error)
-	// Write to a given physical address within this memory, possibly
-	// producing an error (e.g. for an out-of-bounds access).
-	Write(address uint64, value W) error
-	// Contents returns the contents of this memory as an array.
-	Contents() []W
-}
-
-// InputOutput identifiers memory used to represent inputs or outputs.  The main
-// purpose of this is to enable inspection of said memory to ensure e.g. the
-// correct outputs are produced.
-type InputOutput[W util.Uinter64] interface {
-	// Contents returns the contents of this memory as an array.
-	Contents() []W
-	// Geometry defines the geometry of this memory.
-	Geometry() Geometry[W]
-	// Initialise this memory with the given contents.  This will overwrite any
-	// existing contents.
-	Initialise(contents []W)
-	// Name returns the name given to the enclosing entity (i.e. memory or
-	// function).
-	Name() string
-}
-
-// Kind provides relevant information about the underlying memory (e.g. whether
+// MemoryKind provides relevant information about the underlying memory (e.g. whether
 // it is read-only, or read-write, etc).
-type Kind struct {
+type MemoryKind struct {
 	public, static, read, write, paged bool
 }
 
 // IsPublic indicates whether this is a public input or output.
-func (p Kind) IsPublic() bool {
+func (p MemoryKind) IsPublic() bool {
 	return p.public
 }
 
 // IsStatic indicates a static (read-only) memory.  That is a ROM which never
 // changes across all executions of a given machine.
-func (p Kind) IsStatic() bool {
+func (p MemoryKind) IsStatic() bool {
 	return p.static
 }
 
 // IsReadOnly indicates a read-only memory (which may or may not be static).  A
 // non-static read-only memory can change between different executions of a given machine.
-func (p Kind) IsReadOnly() bool {
+func (p MemoryKind) IsReadOnly() bool {
 	return p.read && !p.write
 }
 
 // IsWriteOnly represents a write-only memory where each element can only be
 // written once.
-func (p Kind) IsWriteOnly() bool {
+func (p MemoryKind) IsWriteOnly() bool {
 	return !p.read && p.write
 }
 
 // IsReadWrite represents the ubiquitous form of memory which supports arbitrary
 // reads / writes.  Observe that RAM is always private.
-func (p Kind) IsReadWrite() bool {
+func (p MemoryKind) IsReadWrite() bool {
 	return p.read && p.write
 }
 
 // IsPaged indicates whether this read-write memory is paged (or not).
-func (p Kind) IsPaged() bool {
+func (p MemoryKind) IsPaged() bool {
 	return p.paged
 }
 
@@ -119,7 +62,7 @@ func (p Kind) IsPaged() bool {
 // ============================================================================
 
 // nolint
-func (p *Kind) GobEncode() ([]byte, error) {
+func (p *MemoryKind) GobEncode() ([]byte, error) {
 	var buffer bytes.Buffer
 	gobEncoder := gob.NewEncoder(&buffer)
 	//
@@ -143,7 +86,7 @@ func (p *Kind) GobEncode() ([]byte, error) {
 }
 
 // nolint
-func (p *Kind) GobDecode(data []byte) error {
+func (p *MemoryKind) GobDecode(data []byte) error {
 	var (
 		buffer     = bytes.NewBuffer(data)
 		gobDecoder = gob.NewDecoder(buffer)
@@ -171,29 +114,29 @@ func (p *Kind) GobDecode(data []byte) error {
 var (
 	// PUBLIC_STATIC_MEMORY represents a (public) static read-only memory.  That
 	// is a ROM which never changes across all executions of a given machine.
-	PUBLIC_STATIC_MEMORY = Kind{true, true, true, false, false}
+	PUBLIC_STATIC_MEMORY = MemoryKind{true, true, true, false, false}
 	// PRIVATE_STATIC_MEMORY represents a (private) static read-only memory.  That
 	// is a ROM which never changes across all executions of a given machine.
-	PRIVATE_STATIC_MEMORY = Kind{false, true, true, false, false}
+	PRIVATE_STATIC_MEMORY = MemoryKind{false, true, true, false, false}
 	// PUBLIC_READ_ONLY_MEMORY represents a (public) read-only memory which can
 	// change between different executions of a given machine.
-	PUBLIC_READ_ONLY_MEMORY = Kind{true, false, true, false, false}
+	PUBLIC_READ_ONLY_MEMORY = MemoryKind{true, false, true, false, false}
 	// PRIVATE_READ_ONLY_MEMORY represents a (private) read-only memory which
 	// can change between different executions of a given machine.
-	PRIVATE_READ_ONLY_MEMORY = Kind{false, false, true, false, false}
+	PRIVATE_READ_ONLY_MEMORY = MemoryKind{false, false, true, false, false}
 	// PUBLIC_WRITE_ONCE_MEMORY represents a (public) write-only memory which can only be
 	// written once.
-	PUBLIC_WRITE_ONCE_MEMORY = Kind{true, false, false, true, false}
+	PUBLIC_WRITE_ONCE_MEMORY = MemoryKind{true, false, false, true, false}
 	// PRIVATE_WRITE_ONCE_MEMORY represents a (private) write-only memory which
 	// can only be written once.
-	PRIVATE_WRITE_ONCE_MEMORY = Kind{false, false, false, true, false}
+	PRIVATE_WRITE_ONCE_MEMORY = MemoryKind{false, false, false, true, false}
 	// READWRITE_MEMORY represents the ubiquitous form of memory which supports
 	// arbitrary reads / writes.  Observe that RAM is always private.  Also,
 	// this variant is unpaged --- meaning it is suitable only for relatively
 	// small RAMs.
-	READWRITE_MEMORY = Kind{false, false, true, true, false}
+	READWRITE_MEMORY = MemoryKind{false, false, true, true, false}
 	// PAGED_READWRITE_MEMORY represents the ubiquitous form of memory which
 	// supports arbitrary reads / writes.  Observe that RAM is always private.
 	// This variant is paged --- meaning it is suitable for larger RAMs.
-	PAGED_READWRITE_MEMORY = Kind{false, false, true, true, true}
+	PAGED_READWRITE_MEMORY = MemoryKind{false, false, true, true, true}
 )

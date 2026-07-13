@@ -14,6 +14,7 @@ package encoding
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // ============================================================================
@@ -37,7 +38,7 @@ import (
 
 // CheckCast encodes a check-cast bytecode, which checks that the value held in
 // the target register fits within the given bit width.
-func CheckCast(p *bytecode.CheckCast) []uint32 {
+func CheckCast[W word.Word[W]](p *bytecode.CheckCast[W]) []uint32 {
 	var bitwidth = uint32(p.Bitwidth) << 16
 	//
 	if IsWideRegisters(p.Target) {

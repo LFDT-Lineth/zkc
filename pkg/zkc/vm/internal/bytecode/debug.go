@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Debug carries a formatted-print (printf) specification so the interpreter can
@@ -24,7 +25,7 @@ import (
 // held in the program's debug side-table (they cannot be encoded inline as
 // uint32 words); Index identifies this site's entry there and is the only thing
 // packed into the bytecode stream (see Codes).
-type Debug struct {
+type Debug[W word.Word[W]] struct {
 	// Chunks is the formatted-print specification: literal text interleaved with
 	// argument formats.  Carried through compilation into the program's debug
 	// side-table rather than encoded inline.
@@ -35,7 +36,7 @@ type Debug struct {
 
 // Uses implementation for Bytecode interface.  A debug reads the registers
 // referenced by its formatted arguments.
-func (p *Debug) Uses() []RegisterId {
+func (p *Debug[W]) Uses() []RegisterId {
 	var uses []RegisterId
 	//
 	for _, s := range p.Sources {
@@ -46,16 +47,16 @@ func (p *Debug) Uses() []RegisterId {
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *Debug) Definitions() []RegisterId {
+func (p *Debug[W]) Definitions() []RegisterId {
 	return nil
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Debug) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *Debug[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *Debug) String(env Environment) string {
+func (p *Debug[W]) String(env Environment[W]) string {
 	var (
 		tBuilder strings.Builder
 	)

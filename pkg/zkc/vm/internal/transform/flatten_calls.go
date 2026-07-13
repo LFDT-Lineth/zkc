@@ -66,7 +66,7 @@ func flattenCallsFunction[W word.Word[W]](fn *descriptor.Function[W]) *descripto
 		snapshot := flattenableArgs[W](vec.Bytecodes)
 		//
 		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
-			if call, ok := ith.(*bytecode.Call); ok {
+			if call, ok := ith.(*bytecode.Call[W]); ok {
 				return flattenCall[W](call, snapshot[idx], alloc)
 			}
 			//
@@ -85,7 +85,7 @@ func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
 	snapshot := make(map[uint][]bool)
 	//
 	for i, code := range codes {
-		call, ok := code.(*bytecode.Call)
+		call, ok := code.(*bytecode.Call[W])
 		if !ok {
 			continue
 		}
@@ -112,7 +112,7 @@ func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
 
 // flattenCall expands a call, prefixing it with a snapshot ("tmp = arg") for
 // each flagged argument and rewriting the call to read those temporaries.
-func flattenCall[W word.Word[W]](call *bytecode.Call, snapshot []bool,
+func flattenCall[W word.Word[W]](call *bytecode.Call[W], snapshot []bool,
 	registers *regAllocator[W]) []Bytecode[W] {
 	var (
 		args  = slices.Clone(call.Arguments)
@@ -127,7 +127,7 @@ func flattenCall[W word.Word[W]](call *bytecode.Call, snapshot []bool,
 		}
 	}
 	// Append the (possibly rewritten) call, preserving its flags.
-	return append(insns, &bytecode.Call{
+	return append(insns, &bytecode.Call[W]{
 		Target:    call.Target,
 		Flags:     call.Flags,
 		Arguments: args,

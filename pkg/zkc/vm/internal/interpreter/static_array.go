@@ -10,16 +10,15 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package memory
+package interpreter
 
 import (
 	"bytes"
 	"encoding/gob"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // StaticArray is a memory implementation backed by a fixed-size []W, meaning
@@ -31,67 +30,24 @@ import (
 // The type parameter W is the word type (e.g. a field element or big.Int), and
 // D is the AddressDecoder strategy that encodes the layout of rows within the
 // flat slice.
-type StaticArray[W util.Uinter64] struct {
-	kind     Kind
-	geometry Geometry[W]
-	name     string
-	data     []W
+type StaticArray[W word.Word[W]] struct {
+	descriptor descriptor.Memory[W]
+	data       []W
 }
 
 // NewStaticArray constructs a new array initialised with a given set of values.
-func NewStaticArray[W util.Uinter64](name string, kind Kind, geometry Geometry[W], init ...W) StaticArray[W] {
-	return StaticArray[W]{kind, geometry, name, init}
+func NewStaticArray[W word.Word[W]](descriptor descriptor.Memory[W], init ...W) StaticArray[W] {
+	return StaticArray[W]{descriptor, init}
 }
 
-// Kind implementation for memory interface.
-func (p *StaticArray[W]) Kind() Kind {
-	return p.kind
-}
-
-// IsPublic implementation for memory interface.
-func (p *StaticArray[W]) IsPublic() bool {
-	return p.kind.IsPublic()
-}
-
-// IsStatic implementation for memory interface.
-func (p *StaticArray[W]) IsStatic() bool {
-	return p.kind.IsStatic()
-}
-
-// IsReadOnly implementation for memory interface.
-func (p *StaticArray[W]) IsReadOnly() bool {
-	return p.kind.IsReadOnly()
-}
-
-// IsWriteOnly implementation for memory interface.
-func (p *StaticArray[W]) IsWriteOnly() bool {
-	return p.kind.IsWriteOnly()
-}
-
-// IsReadWrite implementation for memory interface.
-func (p *StaticArray[W]) IsReadWrite() bool {
-	return p.kind.IsReadWrite()
-}
-
-// Name implementation for Memory interface.
-func (p *StaticArray[W]) Name() string {
-	return p.name
-}
-
-// IsNative implementation for Module interface.  Memory modules are never
-// native.
-func (p *StaticArray[W]) IsNative() bool {
-	return false
+// Descriptor implementation for memory interface.
+func (p *StaticArray[W]) Descriptor() *descriptor.Memory[W] {
+	return &p.descriptor
 }
 
 // Initialise implementation for Memory interface.
 func (p *StaticArray[W]) Initialise(contents []W) {
 	p.data = contents
-}
-
-// Geometry implementation for Memory interface.
-func (p *StaticArray[W]) Geometry() Geometry[W] {
-	return p.geometry
 }
 
 // Read implementation for Memory interface.
@@ -112,39 +68,6 @@ func (p *StaticArray[W]) Write(address uint64, value W) error {
 // Contents implementation for Memory interface.
 func (p *StaticArray[W]) Contents() []W {
 	return p.data
-}
-
-// HasRegister implementation for vm.Module interface.
-func (p *StaticArray[W]) HasRegister(name string) (register.Id, bool) {
-	for i, r := range p.geometry.registers {
-		if r.Name() == name {
-			return register.NewId(uint(i)), true
-		}
-	}
-	// Failed
-	return register.UnusedId(), false
-}
-
-// Register implementation for vm.Module interface.
-func (p *StaticArray[W]) Register(id register.Id) register.Register {
-	return p.geometry.registers[id.Unwrap()]
-}
-
-// RegisterMap returns a register map view of the registers declared by this
-// function.
-func (p *StaticArray[I]) RegisterMap() register.Map {
-	name := trace.ModuleName{Name: p.Name(), Multiplier: 1}
-	return register.ArrayMap(name, p.Registers()...)
-}
-
-// Registers implementation for vm.Module interface.
-func (p *StaticArray[W]) Registers() []register.Register {
-	return p.geometry.registers
-}
-
-// Width implementation for Module interface.
-func (p *StaticArray[W]) Width() uint {
-	return uint(len(p.geometry.registers))
 }
 
 // Expand a slice to ensure it has at least length n.  If the slice already has
@@ -170,15 +93,7 @@ func (p *StaticArray[W]) GobEncode() ([]byte, error) {
 	var buffer bytes.Buffer
 	gobEncoder := gob.NewEncoder(&buffer)
 	//
-	if err := gobEncoder.Encode(&p.kind); err != nil {
-		return nil, err
-	}
-	//
-	if err := gobEncoder.Encode(&p.geometry); err != nil {
-		return nil, err
-	}
-	//
-	if err := gobEncoder.Encode(p.name); err != nil {
+	if err := gobEncoder.Encode(&p.descriptor); err != nil {
 		return nil, err
 	}
 	//
@@ -196,15 +111,7 @@ func (p *StaticArray[W]) GobDecode(data []byte) error {
 		gobDecoder = gob.NewDecoder(buffer)
 	)
 	//
-	if err := gobDecoder.Decode(&p.kind); err != nil {
-		return err
-	}
-	//
-	if err := gobDecoder.Decode(&p.geometry); err != nil {
-		return err
-	}
-	//
-	if err := gobDecoder.Decode(&p.name); err != nil {
+	if err := gobDecoder.Decode(&p.descriptor); err != nil {
 		return err
 	}
 	//

@@ -56,7 +56,7 @@ func (p RwMode) Tag() uint8 {
 // only whether the access is a read or a write; the precise mode (and hence
 // opcode) is recovered here by combining that with the memory's kind, as
 // recorded in the symbol table.
-func ReadWrite[W word.Word[W]](p *bytecode.ReadWrite, env Environment[W]) []uint32 {
+func ReadWrite[W word.Word[W]](p *bytecode.ReadWrite[W], env Environment[W]) []uint32 {
 	var (
 		lab  = Label{p.Id, ProgramPoint{}}
 		sym  = env.SymbolAt(lab)

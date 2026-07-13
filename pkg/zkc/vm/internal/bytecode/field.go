@@ -48,11 +48,11 @@ func (p *FieldArith[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *FieldArith[W]) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *FieldArith[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *FieldArith[W]) String(env Environment) string {
+func (p *FieldArith[W]) String(env Environment[W]) string {
 	var (
 		builder        strings.Builder
 		symbol, prefix = p.Op.Symbol(), p.Op.Prefix()

@@ -68,12 +68,12 @@ func GenerateAirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program
 	return mir.LowerToAir(mirc, field.BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)
 }
 
-func translateModule[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, m vm.BytecodeModule[W],
-	infos []vm.BytecodeModule[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
+func translateModule[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, m vm.Module[W],
+	infos []vm.Module[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	switch m := m.(type) {
 	case *vm.Function[W]:
 		return translateFunction[W, F](ctx, m, infos, rangeTables, maxStaticWidth)
-	case *vm.BytecodeMemory[W]:
+	case *vm.Memory[W]:
 		if m.IsStatic() {
 			return translateStaticMemory[W, F](ctx, m)
 		} else if m.IsReadOnly() {
@@ -88,14 +88,13 @@ func translateModule[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, m vm
 	}
 }
 
-func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, m *vm.BytecodeMemory[W]) mir.Module[F] {
+func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
 	var (
-		mod      *schema.Table[F, mir.Constraint[F]]
-		name     = trace.ModuleName{Name: m.Name(), Multiplier: 1}
-		geometry = m.Geometry()
-		regs     = geometry.Registers()
-		inputs   = geometry.AddressRegisters()
-		outputs  = geometry.DataRegisters()
+		mod     *schema.Table[F, mir.Constraint[F]]
+		name    = trace.ModuleName{Name: m.Name(), Multiplier: 1}
+		regs    = toRegisters(m.Registers())
+		inputs  = toRegisters(m.AddressRegisters())
+		outputs = toRegisters(m.DataRegisters())
 		// Convert the static contents from words into field elements.
 		contents = toFieldElements[W, F](m.StaticContents())
 	)
@@ -111,28 +110,29 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 }
 
 func translateReadOnlyMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.BytecodeMemory[W]) mir.Module[F] {
+	ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
 	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
 	return translateAccessOnceMemory[W, F](ctx, m, name)
 }
 
 // Write once memory and read only memory are equivalent on the constraints level
 func translateWriteOnceMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.BytecodeMemory[W]) mir.Module[F] {
+	ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
 	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
 	return translateAccessOnceMemory[W, F](ctx, m, name)
 }
 
 func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.BytecodeMemory[W]) mir.Module[F] {
+	ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
 	var (
+		regs = toRegisters(m.Registers())
 		mod  *schema.Table[F, mir.Constraint[F]]
 		name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
 	)
 	// Initialise module.  Memory modules are never native.
 	mod = mod.Init(name, false, true, false, false, false, 0)
 	// Add all registers
-	mod.AddRegisters(m.Geometry().Registers()...)
+	mod.AddRegisters(regs...)
 	// TODO: read-write (RAM) constraints are disabled for now — the timestamp
 	// columns they rely on are not yet filled by the trace observer (see git
 	// history for the WIP body).
@@ -143,11 +143,11 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
 //   - read once memory
 //   - write once memory
 func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.BytecodeMemory[W], name trace.ModuleName) (mod mir.Module[F]) {
+	ctx schema.ModuleId, m *vm.Memory[W], name trace.ModuleName) (mod mir.Module[F]) {
 	var (
 		memoryModule *schema.Table[F, mir.Constraint[F]]
 		padding      big.Int
-		geometry     = m.Geometry()
+		regs         = toRegisters(m.Registers())
 	)
 
 	// Initialise module and add all registers.  AllowPadding (first flag) must
@@ -155,14 +155,14 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 	// addresses-vanish-in-padding constraints rely on.  Memory modules are never
 	// native.
 	memoryModule = memoryModule.Init(name, true, true, false, false, false, 0)
-	memoryModule.AddRegisters(geometry.Registers()...)
+	memoryModule.AddRegisters(regs...)
 
 	var access = register.NewId(memoryModule.Width())
 	memoryModule.AddRegisters(register.NewComputed(io.ACCESS_BIT_NAME, 1, padding))
 
 	var (
-		addrRegs           = geometry.AddressRegisters()
-		isMultiLineAddress = geometry.IsMultiLineAddress()
+		addrRegs           = toRegisters(m.AddressRegisters())
+		isMultiLineAddress = m.NumInputs() > 1
 		prevAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, -1)
 		currAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, 0)
 		nextAccess         = mirc.Variable[register.Id, Expr[F]](access, 1, 1)
@@ -333,7 +333,7 @@ func multiLineAddressConstraints[F field.Element[F]](
 }
 
 func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn *vm.Function[W],
-	infos []vm.BytecodeModule[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
+	infos []vm.Module[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	var (
 		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]

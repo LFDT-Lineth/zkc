@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -49,11 +48,11 @@ func collectLabels(code BytecodeVector) map[pos]bool {
 		n := uint(len(vec.Bytecodes))
 		for ci, insn := range vec.Bytecodes {
 			switch x := insn.(type) {
-			case *bytecode.Skip:
+			case *bytecode.Skip[word.Uint]:
 				labels[skipTarget(uint(vi), uint(ci), uint(x.Skip), n)] = true
-			case *bytecode.SkipIf:
+			case *bytecode.SkipIf[word.Uint]:
 				labels[skipTarget(uint(vi), uint(ci), uint(x.Skip), n)] = true
-			case *bytecode.Jmp:
+			case *bytecode.Jmp[word.Uint]:
 				labels[pos{uint(x.Target), 0}] = true
 			case *bytecode.Switch[word.Uint]:
 				for _, cse := range x.Cases {
@@ -70,7 +69,7 @@ func collectLabels(code BytecodeVector) map[pos]bool {
 // skip.  Vectors are compared lexicographically with the most-significant
 // register at the highest index, matching executeSkipIf_rv; two-limb elements
 // compare their high limbs first.
-func (g *generator) condExpr(fn *descFunction, x *bytecode.SkipIf) (string, error) {
+func (g *generator) condExpr(fn *descFunction, x *bytecode.SkipIf[word.Uint]) (string, error) {
 	lhsOps, err := g.operands(fn, x.Left.Registers())
 	if err != nil {
 		return "", err
@@ -86,17 +85,17 @@ func (g *generator) condExpr(fn *descFunction, x *bytecode.SkipIf) (string, erro
 	}
 
 	switch x.Op {
-	case opcode.EQ:
+	case bytecode.CONDITION_EQ:
 		return eqExpr(lhsOps, rhsOps), nil
-	case opcode.NEQ:
+	case bytecode.CONDITION_NEQ:
 		return "!(" + eqExpr(lhsOps, rhsOps) + ")", nil
-	case opcode.LT:
+	case bytecode.CONDITION_LT:
 		return ordExpr(lhsOps, rhsOps, "<"), nil
-	case opcode.GT:
+	case bytecode.CONDITION_GT:
 		return ordExpr(lhsOps, rhsOps, ">"), nil
-	case opcode.LTEQ:
+	case bytecode.CONDITION_LTEQ:
 		return "!(" + ordExpr(lhsOps, rhsOps, ">") + ")", nil
-	case opcode.GTEQ:
+	case bytecode.CONDITION_GTEQ:
 		return "!(" + ordExpr(lhsOps, rhsOps, "<") + ")", nil
 	default:
 		return "", fmt.Errorf("gogen: unsupported skip condition 0x%x", uint(x.Op))

@@ -172,7 +172,7 @@ func (g *generator) emitModPHelpers(c *code) {
 //
 // A zero divisor fails.  Since r < divisor, w never underflows (the oracle's
 // underflow checks are unreachable), so none are emitted.
-func (g *generator) emitHint(c *code, fn *descFunction, x *bytecode.Hint) error {
+func (g *generator) emitHint(c *code, fn *descFunction, x *bytecode.Hint[word.Uint]) error {
 	if x.Op != bytecode.DIV_HINT {
 		return fmt.Errorf("gogen: unsupported hint operation (%d)", x.Op)
 	}

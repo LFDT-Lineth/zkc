@@ -18,7 +18,7 @@ import (
 )
 
 // Cat encodes a concatenation bytecode.
-func Cat(p *bytecode.Cat) []uint32 {
+func Cat[W word.Word[W]](p *bytecode.Cat[W]) []uint32 {
 	return encodeCat(p.Targets, p.Sources)
 }
 
@@ -30,7 +30,7 @@ func DecodeCat[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) 
 		sources         = OpIterToArray[uint16](sIter)
 	)
 	//
-	return &bytecode.Cat{Targets: targets, Sources: sources}, n
+	return &bytecode.Cat[W]{Targets: targets, Sources: sources}, n
 }
 
 // ============================================================================

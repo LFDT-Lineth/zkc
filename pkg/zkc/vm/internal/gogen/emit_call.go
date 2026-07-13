@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // emitCall emits a Go call to the callee function: arguments are width-checked
@@ -25,7 +26,7 @@ import (
 // the caller's target registers.  Checks the bounds prove dead are omitted, so
 // the common case is a plain Go call.  A two-limb register expands to two
 // parameters / results.
-func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call) error {
+func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Uint]) error {
 	callee, ok := g.funcByID[uint(x.Target)]
 	if !ok {
 		return fmt.Errorf("gogen: CALL to non-function module id %d", x.Target)

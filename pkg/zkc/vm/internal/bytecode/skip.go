@@ -14,26 +14,28 @@ package bytecode
 
 import (
 	"fmt"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Skip (unconditional skip) instruction
-type Skip struct{ Skip uint16 }
+type Skip[W word.Word[W]] struct{ Skip uint16 }
 
 // Uses implementation for Bytecode interface.
-func (p *Skip) Uses() []RegisterId {
+func (p *Skip[W]) Uses() []RegisterId {
 	return nil
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *Skip) Definitions() []RegisterId {
+func (p *Skip[W]) Definitions() []RegisterId {
 	return nil
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Skip) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *Skip[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *Skip) String(_ Environment) string {
+func (p *Skip[W]) String(_ Environment[W]) string {
 	return fmt.Sprintf("skip %d", p.Skip)
 }

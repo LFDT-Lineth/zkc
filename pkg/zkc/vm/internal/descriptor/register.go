@@ -40,6 +40,24 @@ func BitwidthOf[W any](regmap RegisterMap[W], regs ...RegisterId) util.Option[ui
 	return util.Some(bitwidth)
 }
 
+// BitwidthOfRegisters returns the accumulated bitwidth of the given set of
+// registers, or none if there exists a native register.
+func BitwidthOfRegisters[W any](regs ...Register[W]) util.Option[uint] {
+	var bitwidth uint
+	//
+	for _, r := range regs {
+		bw := r.Bitwidth()
+		//
+		if bw.IsEmpty() {
+			return bw
+		}
+		//
+		bitwidth += bw.Unwrap()
+	}
+	//
+	return util.Some(bitwidth)
+}
+
 // FromRegisters converts an array of schema registers into an array of register
 // descriptors.
 func FromRegisters[W word.Word[W]](registers ...register.Register) []Register[W] {

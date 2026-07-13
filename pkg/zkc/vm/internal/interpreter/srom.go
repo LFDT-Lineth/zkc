@@ -10,17 +10,18 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package memory
+package interpreter
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // StaticReadOnly is a ReadOnly memory whose contents are fixed at construction
 // time and are never overwritten by Boot.  Specifically, its Initialise method
 // is a no-op, so the pre-loaded data survives across multiple executions of the
 // same machine.
-type StaticReadOnly[W util.Uinter64] struct {
+type StaticReadOnly[W word.Word[W]] struct {
 	ReadOnly[W]
 }
 
@@ -34,20 +35,12 @@ func (p *StaticReadOnly[W]) Initialise(contents []W) {
 
 // NewStatic constructs a static read-only memory pre-loaded with the
 // given values.
-func NewStatic[W util.Uinter64](name string, public bool, geometry Geometry[W], init ...W,
+func NewStatic[W word.Word[W]](descriptor descriptor.Memory[W], init ...W,
 ) *StaticReadOnly[W] {
-	//
-	var kind Kind
-	//
-	if public {
-		kind = PUBLIC_STATIC_MEMORY
-	} else {
-		kind = PRIVATE_STATIC_MEMORY
-	}
 	//
 	return &StaticReadOnly[W]{
 		ReadOnly: ReadOnly[W]{
-			StaticArray: NewStaticArray(name, kind, geometry, init...),
+			StaticArray: NewStaticArray(descriptor, init...),
 		},
 	}
 }

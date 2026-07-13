@@ -13,31 +13,10 @@
 package transform
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
-
-// SystemMap is a useful alias
-type SystemMap = instruction.SystemMap
-
-// Module is a useful alias
-type Module = machine.Module
-
-// WordFunction is a useful alias
-type WordFunction = function.Function[WordInstruction]
-
-// Vector is a useful alias
-type Vector[I instruction.Instruction] = instruction.Vector[I]
-
-// WordInstruction is a useful alias
-type WordInstruction = instruction.Word
-
-// VectorInstruction is a useful alias
-type VectorInstruction = Vector[WordInstruction]
 
 // Allocator is a useful alias
 type Allocator[W word.Word[W]] = split.Allocator[W]
