@@ -38,13 +38,14 @@ var (
 	DEFAULT_WORDS = []vm.WordConfig{vm.WORD_UINT64, vm.WORD_UINT128}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = Config{
-		fields:      DEFAULT_FIELDS,
-		words:       DEFAULT_WORDS,
-		constraints: false,
-		splitting:   false,
-		bytecode:    false,
-		gogen:       false,
-		quiet:       false}
+		fields:         DEFAULT_FIELDS,
+		words:          DEFAULT_WORDS,
+		constraints:    false,
+		splitting:      false,
+		bytecode:       false,
+		gogen:          false,
+		quiet:          false,
+		maxStaticDepth: codegen.DEFAULT_MAX_STATIC_DEPTH}
 )
 
 // Config for testing
@@ -64,8 +65,20 @@ type Config struct {
 	// enable quiet mode, which elides printf statements and calls to #[debug]
 	// functions during code generation.
 	quiet bool
+	// maxStaticDepth controls the maximum depth (i.e. number of rows) of static
+	// range tables.  Widths whose enumeration would exceed this are range-checked
+	// recursively instead.  Defaults to codegen.DEFAULT_MAX_STATIC_DEPTH.
+	maxStaticDepth uint
 	// enable checkpoint testing.
 	checkpointing util.Option[util.Pair[string, util.Counter]]
+}
+
+// MaxStaticDepth sets the maximum depth (i.e. number of rows) of static range
+// tables to test with.
+func (p Config) MaxStaticDepth(depth uint) Config {
+	p.maxStaticDepth = depth
+	//
+	return p
 }
 
 // Fields determines which fields to test over.
@@ -144,7 +157,8 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 		var (
 			testfile = fmt.Sprintf("%s.%s", test, ext)
 			// Setup default config
-			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f)
+			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f).
+				MaxStaticDepth(config.maxStaticDepth)
 		)
 		// Run all tests in fast mode
 		checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(false), config.Constraints(false), testcases[f])
@@ -343,6 +357,7 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc Tes
 	cfg Config) (vm.Program[W], []vm.CheckPoint[W], map[string][]W) {
 	//
 	var (
+		entry       vm.ProgramPoint
 		checkpoints []vm.CheckPoint[W]
 		spec        = cfg.checkpointing.Unwrap()
 		fn          = spec.Left
@@ -360,7 +375,7 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc Tes
 		// decode inputs/outputs
 		inputs, outputs = decodeInputsOutputs(t, program, tc.data)
 		// construct interpreter with a breakpoint at fn's entry
-		interpreter = vm.NewBytecodeInterpreter(program.BreakPoint(fid, vm.NewProgramCounter(0, 0)))
+		interpreter = vm.NewBytecodeInterpreter(program.BreakPoint(fid, entry))
 	)
 	// Phase 1: run the program (with a breakpoint at fn's entry) to completion,
 	// collecting the checkpoints it produces.  The counter governs how frequently
@@ -437,16 +452,19 @@ func checkExpectedOutputs[W vm.Word[W]](outputs map[string][]W, wm vm.Core[W]) [
 	var errors []error
 	//
 	for iter := wm.Outputs(); iter.HasNext(); {
-		m := iter.Next()
+		var (
+			mem  = iter.Next()
+			name = mem.Descriptor().Name()
+		)
 		//
-		if output, ok := outputs[m.Name()]; ok {
+		if output, ok := outputs[name]; ok {
 			// Compare canonical byte encodings rather than the raw cell arrays:
 			// a memory whose live cell-count is odd encodes the same bytes as an
 			// expected value that (being byte-granular input) carries a trailing
 			// padding cell, so a length-sensitive array compare would spuriously
 			// fail.  This mirrors compareGogenOutputs.
-			expected := vm.EncodeBytes(output, m.Geometry())
-			actual := vm.EncodeBytes(m.Contents(), m.Geometry())
+			expected := vm.EncodeBytes(output, *mem.Descriptor())
+			actual := vm.EncodeBytes(mem.Contents(), *mem.Descriptor())
 			//
 			if !bytes.Equal(expected, actual) {
 				errors = append(errors, fmt.Errorf("incorrect output (expected 0x%s, actual 0x%s)",

@@ -15,7 +15,6 @@ package post
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -33,20 +32,20 @@ import (
 //
 // Here, ADDRESS is the set of declared input registers, whilst DATA is the set
 // of declared output registers.
-func ProcessAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.Memory[W]) rtrace.ArrayModule[F] {
+func ProcessAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.RuntimeMemory[W]) rtrace.ArrayModule[F] {
 	var (
 		one      = field.Uint64[F](1)
-		geometry = m.Geometry()
+		geometry = m.Descriptor()
 		// Extract memory contents
 		data = m.Contents()
 		// Number of address lines
-		nAddr = geometry.AddressLines()
+		nAddr = geometry.NumInputs()
 		// Number of data lines
-		nData = geometry.DataLines()
+		nData = geometry.NumOutputs()
 		// Calculate height of trace based on geometry
-		height = uint64(len(data)) / uint64(geometry.DataLines())
+		height = uint64(len(data)) / uint64(nData)
 		// Determine full set of registers (inc. any selector lines required)
-		regs = determineAomRegisters(m.Registers(), geometry.AddressLines())
+		regs = determineAomRegisters(geometry.Registers(), nAddr)
 		// Construct initially empty rows
 		rows = make([][]F, height+1)
 	)
@@ -72,14 +71,14 @@ func ProcessAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.Memory[W]) rtrace.
 		rows[i+1] = row
 	}
 	//
-	return rtrace.NewArrayModule(m.Name(), regs, rows...)
+	return rtrace.NewArrayModule(geometry.Name(), regs, rows...)
 }
 
 // Determine the full set of registers required for the trace of this memory.
-func determineAomRegisters(registers []register.Register, nAddressLines uint) []rtrace.Register {
+func determineAomRegisters[W vm.Word[W]](registers []vm.Register[W], nAddressLines uint) []rtrace.Register {
 	var (
 		// Copy over all address / data lines
-		regs = array.Map(registers, toRtraceRegisterLegacy)
+		regs = array.Map(registers, toRtraceRegister)
 		// Bitwidth for binary selector lines
 		u1 = util.Some([]uint{1})
 	)
@@ -99,7 +98,7 @@ func determineAomRegisters(registers []register.Register, nAddressLines uint) []
 
 // Taken the given address, split it into the necessary components and write
 // into the row
-func copyAddressLines[F Element[F]](address uint64, lines []register.Register, row []F) {
+func copyAddressLines[W Word[W], F Element[F]](address uint64, lines []vm.Register[W], row []F) {
 	var acc vm.Uint64
 	// Initialise accumulator
 	acc = acc.SetUint64(address)
@@ -109,7 +108,7 @@ func copyAddressLines[F Element[F]](address uint64, lines []register.Register, r
 		var (
 			val F
 			// determine bitwidth of ith line
-			bitwidth = uint64(lines[i-1].Width())
+			bitwidth = uint64(lines[i-1].Bitwidth().Unwrap())
 			// Slice out bitwidth bits
 			slice = acc.Slice(uint(bitwidth))
 		)
@@ -121,7 +120,7 @@ func copyAddressLines[F Element[F]](address uint64, lines []register.Register, r
 }
 
 // Copy over the row data from the data
-func copyDataLines[W Word[W], F Element[F]](address uint64, lines []register.Register, data []W, row []F) {
+func copyDataLines[W Word[W], F Element[F]](address uint64, lines []vm.Register[W], data []W, row []F) {
 	var offset = int(address) * len(lines)
 	//
 	for i := range lines {

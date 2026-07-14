@@ -174,22 +174,3 @@ func Compile(prog Program, config codegen.Config) (vm.Program[vm.Uint], []source
 	// Compiler into vm Program
 	return compiler.Compile(prog.declarations)
 }
-
-// CompileToWordMachine attempts to compile a given high-level program into a low-level
-// machine which can be used (for example) to execute this program with some
-// given inputs.
-func CompileToWordMachine(prog Program, config codegen.Config) (*vm.WordMachine[vm.Uint], []source.SyntaxError) {
-	var (
-		// Construct code generator
-		compiler = codegen.NewCompiler(config, prog.Environment(), prog.srcmaps)
-		// Compiler into vm Program
-		program, errs = compiler.Compile(prog.declarations)
-	)
-	// Sanity check for errors
-	if len(errs) > 0 {
-		return nil, errs
-	}
-	// Convert to word machine.  This should eventually be deprecated in favour
-	// of simply returning the bytecode program.
-	return vm.BytecodeProgramToWord(program), nil
-}

@@ -124,7 +124,7 @@ func compareGogenOutputs(program vm.Program[vm.Uint], expected map[string][]vm.U
 	for it := program.Outputs(); it.HasNext(); {
 		o := it.Next()
 		name := o.Name()
-		want := vm.EncodeBytes(expected[name], o.Geometry())
+		want := vm.EncodeBytes(expected[name], o)
 		//
 		if have := got[name]; !bytes.Equal(have, want) {
 			errs = append(errs, fmt.Errorf("output %q: expected 0x%x, got 0x%x", name, want, have))

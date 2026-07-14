@@ -321,7 +321,7 @@ func newCheckPointInterpreter[W vm.Word[W]](p vm.Program[W], fn string, clk util
 	}
 	// Register a breakpoint at fn's entry and build an interpreter for the
 	// result, so the breakpointer fires each time fn is entered.
-	p = p.BreakPoint(fid, vm.NewProgramCounter(0, 0))
+	p = p.BreakPoint(fid, vm.ProgramPoint{Macro: 0, Micro: 0})
 	interp := vm.NewBytecodeInterpreter(p)
 	// Write a checkpoint as a hex string, one per line.  The counter governs how
 	// frequently this actually fires: it triggers every interval entries of fn.

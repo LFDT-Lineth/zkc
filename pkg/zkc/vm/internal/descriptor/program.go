@@ -23,7 +23,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -47,13 +46,31 @@ func MapProgram[W word.Word[W], T any](p Program[W], mapper func(uint, Module[W]
 	return mapping
 }
 
+// ProgramPoint identifies a specific bytecode instruction within a given
+// bytecode program.
+type ProgramPoint struct {
+	// Macro position identifies the enclosing vector instruction of this point.
+	Macro uint
+	// Micro position identifies the bytecode index within the enclosing vector.
+	Micro uint
+}
+
+// Skip n micro instructions in this point
+func (p ProgramPoint) Skip(n uint) ProgramPoint {
+	return ProgramPoint{p.Macro, p.Micro + n + 1}
+}
+
+func (p ProgramPoint) String() string {
+	return fmt.Sprintf("%02d.%02d", p.Macro, p.Micro)
+}
+
 // BreakPointLabel identifies a single instruction breakpoint by the enclosing
 // function (Function) and the program counter within it (ProgramCounter).
 type BreakPointLabel struct {
 	// Function is the identifier of the enclosing function module.
 	Function uint16
 	// ProgramCounter identifies the instruction within that function.
-	ProgramCounter machine.ProgramCounter
+	ProgramCounter ProgramPoint
 }
 
 // Program represents a bytecode program.  This representation is useful for
@@ -82,7 +99,7 @@ func NewProgram[W word.Word[W]](field field.Config, modules ...Module[W]) Progra
 // registered with the interpreter is triggered immediately before it executes.
 // Registering a breakpoint does not alter instruction offsets, so the returned
 // program shares the symbol and chunk side-tables with the original.
-func (p Program[W]) BreakPoint(fid uint16, pc machine.ProgramCounter) Program[W] {
+func (p Program[W]) BreakPoint(fid uint16, pc ProgramPoint) Program[W] {
 	// Copy the existing set, adding the new breakpoint.
 	var breakpoints = make(map[BreakPointLabel]bool, len(p.breakpoints)+1)
 	//
@@ -109,7 +126,7 @@ func (p Program[W]) BreakPoints() []BreakPointLabel {
 
 // EnvironmentOf returns an environment for the given module.  This is useful
 // for working with bytecodes enclosed by that module, etc.
-func (p Program[W]) EnvironmentOf(mid uint16) bytecode.Environment {
+func (p Program[W]) EnvironmentOf(mid uint16) bytecode.Environment[W] {
 	return &moduleEnvironment[W]{
 		mid,
 		p.modules,
@@ -327,4 +344,13 @@ func (p moduleEnvironment[W]) Module(id ModuleId) bytecode.ModuleInfo {
 // Register returns the ith register used in this module.
 func (p moduleEnvironment[W]) Register(id RegisterId) bytecode.RegisterInfo {
 	return p.modules[p.module].Register(id)
+}
+
+// ValueOf implementation for the bytecode.Environment interface.  A module
+// environment describes a program's static structure and has no notion of a
+// register's runtime value, so it always returns None.  Environments used
+// within a concrete execution context (e.g. the debugger) override this to
+// supply live register values.
+func (p moduleEnvironment[W]) ValueOf(id RegisterId) util.Option[W] {
+	return util.None[W]()
 }

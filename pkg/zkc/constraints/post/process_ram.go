@@ -19,8 +19,8 @@ import (
 )
 
 // ProcessReadWriteMemory performs post-processing on a RAM trace.
-func ProcessReadWriteMemory[W Word[W], F Element[F]](m vm.Memory[W]) rtrace.ArrayModule[F] {
-	var regs = array.Map(m.Registers(), toRtraceRegisterLegacy)
+func ProcessReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W]) rtrace.ArrayModule[F] {
+	var regs = array.Map(m.Descriptor().Registers(), toRtraceRegister)
 	// TODO: flesh me out :)
-	return rtrace.NewArrayModule[F](m.Name(), regs)
+	return rtrace.NewArrayModule[F](m.Descriptor().Name(), regs)
 }

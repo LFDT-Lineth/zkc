@@ -136,7 +136,7 @@ func findInlinableTarget[W word.Word[W]](modules []descriptor.Module[W], remaini
 func callsAny[W word.Word[W]](fn *descriptor.Function[W], ids []uint) bool {
 	for _, v := range fn.Vectors() {
 		for _, insn := range v.Bytecodes {
-			if call, ok := insn.(*bytecode.Call); ok && slices.Contains(ids, uint(call.Target)) {
+			if call, ok := insn.(*bytecode.Call[W]); ok && slices.Contains(ids, uint(call.Target)) {
 				return true
 			}
 		}
@@ -179,10 +179,10 @@ func inlineAllCalls[W word.Word[W]](fn *descriptor.Function[W], calleeId uint,
 // findCall locates the first call to a given callee, returning the enclosing
 // vector index, the position within that vector and the call itself (or nil if
 // there is none).
-func findCall[W word.Word[W]](code []BytecodeVector[W], calleeId uint) (uint, uint, *bytecode.Call) {
+func findCall[W word.Word[W]](code []BytecodeVector[W], calleeId uint) (uint, uint, *bytecode.Call[W]) {
 	for i, v := range code {
 		for j, insn := range v.Bytecodes {
-			if call, ok := insn.(*bytecode.Call); ok && uint(call.Target) == calleeId {
+			if call, ok := insn.(*bytecode.Call[W]); ok && uint(call.Target) == calleeId {
 				return uint(i), uint(j), call
 			}
 		}
@@ -204,7 +204,7 @@ func findCall[W word.Word[W]](code []BytecodeVector[W], calleeId uint) (uint, ui
 //
 // Since the callee body occupies len(callee.Vectors())+1 additional vectors,
 // all jump targets beyond pc within the original code are shifted accordingly.
-func inlineCallSite[W word.Word[W]](code []BytecodeVector[W], pc, k uint, call *bytecode.Call,
+func inlineCallSite[W word.Word[W]](code []BytecodeVector[W], pc, k uint, call *bytecode.Call[W],
 	callee *descriptor.Function[W], alloc *regAllocator[W]) []BytecodeVector[W] {
 	//
 	var (
@@ -258,9 +258,9 @@ func checkCallSite[W word.Word[W]](codes []Bytecode[W], k uint, callee *descript
 	//
 	for j := range k {
 		switch insn := codes[j].(type) {
-		case *bytecode.Skip:
+		case *bytecode.Skip[W]:
 			checkSkipDoesNotCross(j, uint(insn.Skip), k, callee)
-		case *bytecode.SkipIf:
+		case *bytecode.SkipIf[W]:
 			checkSkipDoesNotCross(j, uint(insn.Skip), k, callee)
 		case *bytecode.Switch[W]:
 			for _, c := range insn.Cases {
@@ -320,7 +320,7 @@ type registerCopy struct {
 // vacuous exactly when the value already resides in a register of the same
 // width.  Anything which cannot be aliased (including all temporaries) gets a
 // fresh (computed) shadow register of the same shape.
-func buildShadowMap[W word.Word[W]](call *bytecode.Call, callee *descriptor.Function[W],
+func buildShadowMap[W word.Word[W]](call *bytecode.Call[W], callee *descriptor.Function[W],
 	alloc *regAllocator[W]) shadowMap {
 	//
 	var (
@@ -425,7 +425,7 @@ func buildEntryVector[W word.Word[W]](codes []Bytecode[W], copies []registerCopy
 	}
 	// Vectors must be non-empty in order to execute.
 	if len(ncodes) == 0 {
-		ncodes = append(ncodes, bytecode.NewSkip(0))
+		ncodes = append(ncodes, bytecode.NewSkip[W](0))
 	}
 	//
 	return bytecode.NewVector(ncodes...)
@@ -446,7 +446,7 @@ func buildExitVector[W word.Word[W]](codes []Bytecode[W], copies []registerCopy)
 	ncodes = append(ncodes, codes...)
 	// Vectors must be non-empty in order to execute.
 	if len(ncodes) == 0 {
-		ncodes = append(ncodes, bytecode.NewSkip(0))
+		ncodes = append(ncodes, bytecode.NewSkip[W](0))
 	}
 	//
 	return bytecode.NewVector(ncodes...)
@@ -464,10 +464,10 @@ func buildInlinedBody[W word.Word[W]](callee *descriptor.Function[W], shadows []
 	for i, v := range callee.Vectors() {
 		body[i] = v.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
 			switch insn := insn.(type) {
-			case *bytecode.Ret:
-				return []Bytecode[W]{bytecode.Jump(bytecode.Address(exitPC))}
-			case *bytecode.Jmp:
-				return []Bytecode[W]{bytecode.Jump(bytecode.Address(base) + insn.Target)}
+			case *bytecode.Ret[W]:
+				return []Bytecode[W]{bytecode.Jump[W](bytecode.Address(exitPC))}
+			case *bytecode.Jmp[W]:
+				return []Bytecode[W]{bytecode.Jump[W](bytecode.Address(base) + insn.Target)}
 			default:
 				return []Bytecode[W]{substituteRegisters[W](insn, shadows)}
 			}
@@ -485,42 +485,42 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 	switch insn := insn.(type) {
 	case *bytecode.Arith[W]:
 		return bytecode.NewArith(insn.Op, substituteIds(insn.Target, sub), substituteIds(insn.Source, sub), insn.Constant)
-	case *bytecode.Bitwise:
-		return bytecode.NewBitwise(insn.Op, substituteId(insn.Target, sub), substituteId(insn.Left, sub),
+	case *bytecode.Bitwise[W]:
+		return bytecode.NewBitwise[W](insn.Op, substituteId(insn.Target, sub), substituteId(insn.Left, sub),
 			substituteId(insn.Right, sub), insn.Bitwidth)
 	case *bytecode.FieldArith[W]:
 		return bytecode.NewFieldArith(insn.Op, substituteId(insn.Target, sub), substituteIds(insn.Sources, sub),
 			insn.Constant)
-	case *bytecode.Cat:
-		return bytecode.Concat(substituteIds(insn.Targets, sub), substituteIds(insn.Sources, sub))
-	case *bytecode.Call:
-		return bytecode.CallFun(insn.Target, insn.Flags, substituteIds(insn.Arguments, sub),
+	case *bytecode.Cat[W]:
+		return bytecode.Concat[W](substituteIds(insn.Targets, sub), substituteIds(insn.Sources, sub))
+	case *bytecode.Call[W]:
+		return bytecode.CallFun[W](insn.Target, substituteIds(insn.Arguments, sub),
 			substituteIds(insn.Returns, sub))
-	case *bytecode.ReadWrite:
+	case *bytecode.ReadWrite[W]:
 		if insn.Write {
-			return bytecode.NewMemWrite(insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub))
+			return bytecode.NewMemWrite[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub))
 		}
 		//
-		return bytecode.NewMemRead(insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub))
-	case *bytecode.DivRem:
-		return bytecode.NewDivRem(insn.Opcode, substituteId(insn.Target, sub), substituteId(insn.Dividend, sub),
+		return bytecode.NewMemRead[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub))
+	case *bytecode.DivRem[W]:
+		return bytecode.NewDivRem[W](insn.Opcode, substituteId(insn.Target, sub), substituteId(insn.Dividend, sub),
 			substituteId(insn.Divisor, sub))
-	case *bytecode.Hint:
-		return bytecode.NewHint(insn.Op, substituteRegisterVectors(insn.Targets, sub),
+	case *bytecode.Hint[W]:
+		return bytecode.NewHint[W](insn.Op, substituteRegisterVectors(insn.Targets, sub),
 			substituteRegisterVectors(insn.Sources, sub))
-	case *bytecode.CheckCast:
-		return bytecode.NewCheckCast(substituteId(insn.Target, sub), insn.Bitwidth)
-	case *bytecode.Skip:
+	case *bytecode.CheckCast[W]:
+		return bytecode.NewCheckCast[W](substituteId(insn.Target, sub), insn.Bitwidth)
+	case *bytecode.Skip[W]:
 		return insn
-	case *bytecode.SkipIf:
-		return &bytecode.SkipIf{Op: insn.Op, Skip: insn.Skip,
+	case *bytecode.SkipIf[W]:
+		return &bytecode.SkipIf[W]{Op: insn.Op, Skip: insn.Skip,
 			Left: substituteRegisterVector(insn.Left, sub), Right: substituteRegisterVector(insn.Right, sub)}
 	case *bytecode.Switch[W]:
 		return bytecode.MultiwaySkip(substituteId(insn.Source, sub), insn.Cases)
-	case *bytecode.Debug:
-		return &bytecode.Debug{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
-	case *bytecode.Fail:
-		return &bytecode.Fail{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
+	case *bytecode.Debug[W]:
+		return &bytecode.Debug[W]{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
+	case *bytecode.Fail[W]:
+		return &bytecode.Fail[W]{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
 	default:
 		panic(fmt.Sprintf("unexpected instruction in inlined body (%T)", insn))
 	}
@@ -569,8 +569,8 @@ func remapJumps[W word.Word[W]](v BytecodeVector[W], pc, delta uint) BytecodeVec
 	)
 	//
 	for i, insn := range v.Bytecodes {
-		if jmp, ok := insn.(*bytecode.Jmp); ok && uint(jmp.Target) > pc {
-			ncodes[i] = bytecode.Jump(bytecode.Address(uint(jmp.Target) + delta))
+		if jmp, ok := insn.(*bytecode.Jmp[W]); ok && uint(jmp.Target) > pc {
+			ncodes[i] = bytecode.Jump[W](bytecode.Address(uint(jmp.Target) + delta))
 			changed = true
 		} else {
 			ncodes[i] = insn
@@ -641,9 +641,9 @@ func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
 	var id uint
 	// Extract module identifier (if applicable)
 	switch insn := insn.(type) {
-	case *bytecode.Call:
+	case *bytecode.Call[W]:
 		id = idMap[insn.Target]
-	case *bytecode.ReadWrite:
+	case *bytecode.ReadWrite[W]:
 		id = idMap[insn.Id]
 	default:
 		return insn
@@ -654,17 +654,17 @@ func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
 	}
 	// Reconstruct instruction (where necessary)
 	switch insn := insn.(type) {
-	case *bytecode.Call:
+	case *bytecode.Call[W]:
 		if id != uint(insn.Target) {
-			return bytecode.CallFun(bytecode.ModuleId(id), insn.Flags, insn.Arguments, insn.Returns)
+			return bytecode.CallFun[W](bytecode.ModuleId(id), insn.Arguments, insn.Returns)
 		}
-	case *bytecode.ReadWrite:
+	case *bytecode.ReadWrite[W]:
 		if id != uint(insn.Id) {
 			if insn.Write {
-				return bytecode.NewMemWrite(bytecode.ModuleId(id), insn.Address, insn.Data)
+				return bytecode.NewMemWrite[W](bytecode.ModuleId(id), insn.Address, insn.Data)
 			}
 			//
-			return bytecode.NewMemRead(bytecode.ModuleId(id), insn.Address, insn.Data)
+			return bytecode.NewMemRead[W](bytecode.ModuleId(id), insn.Address, insn.Data)
 		}
 	}
 	//

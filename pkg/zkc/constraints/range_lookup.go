@@ -16,11 +16,13 @@ import (
 	"fmt"
 	"strings"
 
+	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
@@ -48,23 +50,24 @@ type rangeTable struct {
 // n <= maxStaticWidth; wider registers are range-checked recursively by
 // a call (lowered via addCallLookups), so only the static tables are collected
 // here.
-func indexRangeTables[F field.Element[F]](modules []vm.Module, maxStaticWidth uint) map[uint]rangeTable {
+func indexRangeTables[W vm.Word[W], F field.Element[F]](modules []vm.Module[W],
+	maxStaticWidth uint) map[uint]rangeTable {
 	tables := make(map[uint]rangeTable)
 	//
 	for id, m := range modules {
 		// Only the fully-enumerated static tables serve as direct lookup targets;
-		mem, ok := m.(vm.Memory[F])
+		mem, ok := m.(*vm.Memory[W])
 		if !ok || !mem.IsStatic() || !strings.HasPrefix(m.Name(), rangeModulePrefix) {
 			continue
 		}
 		// The "value" column holds the enumerated values and is the lookup target.
-		valId, ok := m.HasRegister(rangeValueName)
-		if !ok {
+		valId := m.HasRegister(rangeValueName)
+		if valId.IsEmpty() {
 			continue
 		}
-		//
-		if w := m.Register(valId).Width(); w <= maxStaticWidth {
-			tables[w] = rangeTable{schema.ModuleId(id), valId}
+		// The value column is a word (non-native) register, so it has a bitwidth.
+		if w := m.Register(valId.Unwrap()).Bitwidth().Unwrap(); w <= maxStaticWidth {
+			tables[w] = rangeTable{schema.ModuleId(id), register.NewId(uint(valId.Unwrap()))}
 		}
 	}
 	//
@@ -84,12 +87,22 @@ func indexRangeTables[F field.Element[F]](modules []vm.Module, maxStaticWidth ui
 func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, tables map[uint]rangeTable, maxStaticWidth uint) {
 	// TODO: lots of perf possible here, see
-	// https://github.com/LFDT-Lineth/zkc/issues/1910
 	// https://github.com/LFDT-Lineth/zkc/issues/1907
 	// https://github.com/LFDT-Lineth/zkc/issues/1911
 	for i, reg := range regs {
 		// Native registers are not range-checked.
 		if reg.IsNative() || reg.Width() == 0 {
+			continue
+		}
+		// u1 registers are not range-checked with a static table, but with a
+		// constraint r * r == r (equivalently r * (1 - r) == 0).
+		if reg.Width() == 1 {
+			regId := register.NewId(uint(i))
+			handle := fmt.Sprintf("range_u1_%d", regId.Unwrap())
+			r := mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
+			mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](),
+				mirc.Product([]Expr[F]{r, r}).Equals(r).AsLogical()))
+
 			continue
 		}
 		//
@@ -105,7 +118,7 @@ func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Const
 		//
 		var (
 			regId  = register.NewId(uint(i))
-			handle = fmt.Sprintf("range_%d_%d", ctx, regId.Unwrap())
+			handle = fmt.Sprintf("range_u%d_%d", reg.Width(), regId.Unwrap())
 			// Source: the register's value on the current row.
 			source = lookup.UnfilteredVector(ctx,
 				term.RawRegisterAccess[F, mir.Term[F]](regId, reg.Width(), 0))

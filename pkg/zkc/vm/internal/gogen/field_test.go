@@ -67,12 +67,8 @@ func fieldTestProgram[W vm.Word[W]]() vm.Program[W] {
 		return out
 	}
 
-	uconst := func(v uint64) vm.Uint {
-		var w vm.Uint
-		return w.SetUint64(v)
-	}
-	loadConst := func(target uint, v uint64) vm.Bytecode[vm.Uint] {
-		return vm.LoadConst(vm.RegisterId(target), uconst(v))
+	loadConst := func(target uint, v uint64) vm.Bytecode[W] {
+		return vm.LoadConst(vm.RegisterId(target), vm.Const64[W](v))
 	}
 
 	// One vector ending in RETURN: the machine only reloads the active vector

@@ -54,7 +54,7 @@ import (
 //	}
 //
 // Here, we can see that two carry registers, c0 and c1 have been introduced.
-func Concat[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Cat,
+func Concat[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Cat[W],
 ) []Bytecode[W] {
 	// Split into the initial set of chunks.
 	var chunks = initialiseConcatChunks(mapping, insn.Targets, insn.Sources)
@@ -167,5 +167,5 @@ func concatRhsBitwidth[W word.Word[W]](chunk Chunk[W], mapping descriptor.Regist
 // addAssignment lowers a chunk back into a concrete unsigned-add instruction.
 func concatAssignment[W word.Word[W]](chunk Chunk[W]) Bytecode[W] {
 	// Done
-	return bytecode.Concat(chunk.LeftHandSide, chunk.RightHandSide)
+	return bytecode.Concat[W](chunk.LeftHandSide, chunk.RightHandSide)
 }

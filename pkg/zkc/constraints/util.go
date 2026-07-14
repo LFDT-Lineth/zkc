@@ -23,8 +23,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-func newLimbsMap[W vm.Word[W]](config field.Config, modules ...vm.BytecodeModule[W]) module.LimbsMap {
-	var ms []register.Map = array.Map(modules, func(_ uint, m vm.BytecodeModule[W]) register.Map {
+func newLimbsMap[W vm.Word[W]](config field.Config, modules ...vm.Module[W]) module.LimbsMap {
+	var ms []register.Map = array.Map(modules, func(_ uint, m vm.Module[W]) register.Map {
 		name := trace.ModuleName{Name: m.Name(), Multiplier: 1}
 		return register.ArrayMap(name, toRegisters(m.Registers())...)
 	})
@@ -51,6 +51,21 @@ func toRegisters[W vm.Word[W]](registers []vm.Register[W]) []register.Register {
 	}
 	//
 	return regs
+}
+
+// toFieldElements converts a slice of words into a slice of field elements.
+// This mirrors the memory-contents lowering previously performed by
+// WordToFieldMachine.
+func toFieldElements[W vm.Word[W], F field.Element[F]](contents []W) []F {
+	var elements = make([]F, len(contents))
+	//
+	for i, w := range contents {
+		var f F
+
+		elements[i] = f.SetBytes(w.BigInt().Bytes())
+	}
+	//
+	return elements
 }
 
 // FoldContents folds the contents of a memory into a multi-dimensional representation.

@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -34,7 +33,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -80,6 +78,7 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		config CompileConfig
 	)
 	//
+	config.build = build
 	config.ast = GetFlag(cmd, "ast")
 	config.mir = GetFlag(cmd, "mir")
 	config.air = GetFlag(cmd, "air")
@@ -107,9 +106,6 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, arti
 func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
 	// lower to a 64bit machine
 	var (
-		debugWir = false
-		// Word-level Intermediate Representation
-		wir = vm.BytecodeProgramToWord(artifacts.ir)
 		// Compile bytecode interpreter
 		bci = vm.ProgramToProgram[vm.Uint, vm.Uint64](artifacts.ir)
 	)
@@ -121,23 +117,18 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 	}
 	// Word-level Intermediate Representation
 	if config.ir {
-		if debugWir {
-			writeIntermediateRepresentation(*wir, artifacts.annotations)
-		}
 		// Bytecode Intermediate Representation
 		writeBytecodeProgram(config.verbose, bci, artifacts.annotations)
 	}
 	// Mid-level Intermediate Representation
 	if config.mir {
-		fir := vm.WordToFieldMachine[vm.Uint, F](field, wir)
-		mir := constraints.GenerateMirConstraints(fir, config.build.config.GetMaxStaticDepth())
+		mir := constraints.GenerateMirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 		//
 		debug.PrintAnySchema(mir, 80, config.verbose)
 	}
 	// // Arithmetic Intermediate Representation
 	if config.air {
-		fir := vm.WordToFieldMachine[vm.Uint, F](field, wir)
-		air := constraints.GenerateAirConstraints(fir, field, config.build.config.GetMaxStaticDepth())
+		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 		//
 		debug.PrintAnySchema(air, 80, config.verbose)
 	}
@@ -326,122 +317,6 @@ func writeFunctionVariables(f *decl.ResolvedFunction, env data.ResolvedEnvironme
 }
 
 // ============================================================================
-// Intermediate Representation (IR)
-// ============================================================================
-
-func writeIntermediateRepresentation[W vm.MachineWord[W], I vm.Instruction, T vm.Executor[W, I]](
-	machine vm.BaseMachine[W, I, T], annotations map[string][]string) {
-	//
-	// Write memories
-	for i, m := range machine.Modules() {
-		if i != 0 {
-			fmt.Println()
-		}
-		//
-		writeAnnotations(annotations[m.Name()])
-		//
-		switch m := m.(type) {
-		case vm.Memory[W]:
-			writeIrMemory(m)
-		case *vm.LegacyFunction[I]:
-			mapping := instruction.NewSystemMap(m.RegisterMap(), machine.Modules())
-			writeIrFunction[W](m, mapping)
-		}
-	}
-}
-
-func writeIrMemory[W vm.MachineWord[W]](m vm.Memory[W]) {
-	var (
-		regs = m.Geometry().Registers()
-		kind = memoryKind(m)
-	)
-	//
-	fmt.Printf("%s %s(", kind, m.Name())
-	// parameters
-	writeIrFunctionArgs(register.INPUT_REGISTER, regs)
-	//
-	fmt.Printf(")")
-	//
-	fmt.Printf(" -> (")
-	// returns
-	writeIrFunctionArgs(register.OUTPUT_REGISTER, regs)
-	//
-	fmt.Println(")")
-}
-
-func writeIrFunction[W vm.MachineWord[W], I vm.Instruction](f *vm.LegacyFunction[I], mapping instruction.SystemMap) {
-	fmt.Printf("fn %s(", f.Name())
-	// parameters
-	writeIrFunctionArgs(register.INPUT_REGISTER, f.Registers())
-	//
-	fmt.Printf(")")
-	//
-	if f.NumOutputs() != 0 {
-		//
-		fmt.Printf(" -> (")
-		// returns
-		writeIrFunctionArgs(register.OUTPUT_REGISTER, f.Registers())
-		//
-		fmt.Printf(")")
-	}
-	//
-	fmt.Println(" {")
-	//
-	writeIrFunctionVariables[W](f)
-	//
-	for pc, insn := range f.Code() {
-		fmt.Printf("[%d]\t%s\n", pc, insn.String(mapping))
-	}
-	// Done
-	fmt.Println("}")
-}
-
-func writeIrFunctionArgs(kind register.Type, regs []register.Register) {
-	var first = true
-	//
-	for _, r := range regs {
-		if r.Kind() == kind {
-			if !first {
-				fmt.Printf(", ")
-			} else {
-				first = false
-			}
-			//
-			fmt.Printf("%s %s", registerType(r), r.Name())
-		}
-	}
-}
-
-func writeIrFunctionVariables[W vm.MachineWord[W], I vm.Instruction](f *vm.LegacyFunction[I]) {
-	for _, r := range f.Registers() {
-		if !r.IsInputOutput() {
-			fmt.Printf("\t%s %s\n", registerType(r), r.Name())
-		}
-	}
-}
-
-func memoryKind[W vm.MachineWord[W]](m vm.Memory[W]) string {
-	switch {
-	case m.IsStatic():
-		return "static"
-	case m.IsReadOnly():
-		return "input"
-	case m.IsWriteOnly():
-		return "output"
-	default:
-		return "memory"
-	}
-}
-
-func registerType(r register.Register) string {
-	if r.IsNative() {
-		return "𝔽"
-	}
-	//
-	return fmt.Sprintf("u%d", r.Width())
-}
-
-// ============================================================================
 // Bytecode Interpreter
 // ============================================================================
 
@@ -614,7 +489,7 @@ func writeBytecodeProgram[W vm.Word[W]](binary bool, program vm.Program[W], anno
 // The encoding stream (bin) and running instruction address are threaded
 // through (and returned) since they accumulate across the whole program.
 func writeBytecodeModule[W vm.Word[W]](binary bool, encodingWidth uint, fid uint16, program vm.Program[W],
-	m vm.BytecodeModule[W], annotations map[string][]string, address uint32, bin [][]uint32) (uint32, [][]uint32) {
+	m vm.Module[W], annotations map[string][]string, address uint32, bin [][]uint32) (uint32, [][]uint32) {
 	//
 	listing := &bytecodeListing{binary: binary, encodingWidth: encodingWidth}
 	// Write any annotations for this module
@@ -625,7 +500,7 @@ func writeBytecodeModule[W vm.Word[W]](binary bool, encodingWidth uint, fid uint
 	switch m := m.(type) {
 	case *vm.Function[W]:
 		address, bin = writeBytecodeFunction(listing, address, program.EnvironmentOf(fid), m, bin)
-	case *vm.BytecodeMemory[W]:
+	case *vm.Memory[W]:
 		writeBytecodeMemory(listing, m)
 	default:
 		panic(fmt.Sprintf("unknown module \"%s\" encountered", m.Name()))
@@ -638,12 +513,12 @@ func writeBytecodeModule[W vm.Word[W]](binary bool, encodingWidth uint, fid uint
 	return address, bin
 }
 
-func writeModuleSignature[W vm.Word[W]](m vm.BytecodeModule[W]) {
+func writeModuleSignature[W vm.Word[W]](m vm.Module[W]) {
 	// Write module contents
 	switch m := m.(type) {
 	case *vm.Function[W]:
 		fmt.Printf("fn %s\n", signatureOf(m))
-	case *vm.BytecodeMemory[W]:
+	case *vm.Memory[W]:
 		//
 		if m.IsPublic() {
 			fmt.Print("pub ")
@@ -666,7 +541,7 @@ func writeModuleSignature[W vm.Word[W]](m vm.BytecodeModule[W]) {
 	}
 }
 
-func writeBytecodeFunction[W vm.Word[W]](listing *bytecodeListing, address uint32, env vm.BytecodeEnvironment,
+func writeBytecodeFunction[W vm.Word[W]](listing *bytecodeListing, address uint32, env vm.BytecodeEnvironment[W],
 	f *vm.Function[W], bin [][]uint32) (uint32, [][]uint32) {
 	for _, r := range f.Registers() {
 		if !r.IsInputOutput() {
@@ -743,7 +618,7 @@ func regType[W vm.Word[W]](r vm.Register[W]) string {
 	return fmt.Sprintf("u%d", r.Bitwidth().Unwrap())
 }
 
-func writeBytecodeMemory[W vm.Word[W]](listing *bytecodeListing, m *vm.BytecodeMemory[W]) {
+func writeBytecodeMemory[W vm.Word[W]](listing *bytecodeListing, m *vm.Memory[W]) {
 	//
 	if m.IsStatic() {
 		var builder strings.Builder
@@ -766,7 +641,7 @@ func writeBytecodeMemory[W vm.Word[W]](listing *bytecodeListing, m *vm.BytecodeM
 	}
 }
 
-func signatureOf[W vm.Word[W]](m vm.BytecodeModule[W]) string {
+func signatureOf[W vm.Word[W]](m vm.Module[W]) string {
 	var (
 		args = array.Filter(m.Registers(), func(r vm.Register[W]) bool {
 			return r.IsInput()

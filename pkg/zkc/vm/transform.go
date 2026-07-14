@@ -14,21 +14,9 @@ package vm
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	finsn "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
-
-// Monomial is a useful alias
-type Monomial = finsn.Monomial
-
-// Polynomial is a useful alias
-type Polynomial = finsn.Polynomial
-
-// SystemMap is a useful alias
-type SystemMap = instruction.SystemMap
 
 // LowerBitwise rewrites VM-level bitwise bytecodes into CALLs to helper
 // functions, returning the updated bytecode program (the helper function
@@ -161,24 +149,6 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, program Program[W], m
 // size than some source register widths should run SplitRegisters first.
 func ProgramToProgram[W1 word.Word[W1], W2 word.Word[W2]](p Program[W1]) Program[W2] {
 	return transform.ProgramToProgram[W1, W2](p)
-}
-
-// WordToFieldMachine translates a machine over integer words into a machine over
-// field elements.  In order to do this, it must "compile out" various
-// high-level word operations (e.g. bitwise operations, division, etc) which
-// have no direct correspondance within a field machine.
-func WordToFieldMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm *WordMachine[W],
-) (fm *FieldMachine[F]) {
-	return transform.WordToFieldMachine[W, F](cfg, wm)
-}
-
-// BytecodeProgramToWord decompiles a bytecode program back into an equivalent
-// word machine.  It is the inverse of WordToBytecodeProgram.  Since the bytecode
-// descriptor does not carry the surrounding field, the prime modulus (needed
-// when executing native field instructions) must be supplied separately.
-func BytecodeProgramToWord[W word.Word[W]](p Program[W]) *machine.Word[W] {
-	//
-	return transform.BytecodeProgramToWord(p)
 }
 
 // InsertCheckCasts inserts the width-check (CHECKCAST) bytecodes required by a

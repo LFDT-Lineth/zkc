@@ -19,13 +19,27 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/base"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/opcode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// Cond provides a convenient alias to make the code more readable.
-type Cond = opcode.Condition
+// Condition represents the set of permission comparitors for a SkipIf
+// instruction.
+type Condition uint
+
+const (
+	// CONDITION_EQ indicates an equality condition
+	CONDITION_EQ Condition = 0
+	// CONDITION_NEQ indicates a non-equality condition
+	CONDITION_NEQ Condition = 1
+	// CONDITION_LT indicates a less-than condition
+	CONDITION_LT Condition = 2
+	// CONDITION_GT indicates a greater-than condition
+	CONDITION_GT Condition = 3
+	// CONDITION_LTEQ indicates a less-than-or-equals condition
+	CONDITION_LTEQ Condition = 4
+	// CONDITION_GTEQ indicates a greater-than-or-equals condition
+	CONDITION_GTEQ Condition = 5
+)
 
 // RegisterId just provides a convenient alias to make the code more readable.
 type RegisterId = uint16
@@ -35,9 +49,6 @@ type ModuleId = uint16
 
 // Address just provides a convenient alias to make the code more readable.
 type Address = uint32
-
-// Module provides a convenient alias to make the code more readable.
-type Module = base.Module
 
 // FieldConfig provides a convenient alias for the field configuration passed to
 // Bytecode.Validate (mirroring the field.Config argument of
@@ -148,16 +159,16 @@ type Bytecode[W word.Word[W]] interface {
 	// found (or nil when it is well-formed).  Here, width is the number of
 	// bytecodes in the enclosing vector, field is the surrounding field
 	// configuration and env resolves register information.
-	Validate(width uint, field FieldConfig, env Environment) []error
+	Validate(width uint, field FieldConfig, env Environment[W]) []error
 	// String returns a suitable string representation of this bytecode.
-	String(Environment) string
+	String(Environment[W]) string
 }
 
 // Environment provides a mechanism to allow Bytecode functions access to
 // information about the enclosing environment.  For example, to generate a
 // suitable string for a given instruction, it is useful to know the names of
 // registers in the enclosing function, etc.
-type Environment interface {
+type Environment[W word.Word[W]] interface {
 	// Name returns the name of the enclosing function.
 	Name() string
 	// HasRegister checks whether a register with the given name exists and, if
@@ -170,6 +181,12 @@ type Environment interface {
 	Module(id ModuleId) ModuleInfo
 	// Register returns the ith register used in this module.
 	Register(id RegisterId) RegisterInfo
+	// ValueOf optionally returns the current value held in the given register.
+	// This is used (for example) by the debugger to render register values
+	// inline within an instruction's string representation.  Environments which
+	// have no notion of a "current value" (i.e. those used outside of a concrete
+	// execution context) return None.
+	ValueOf(id RegisterId) util.Option[W]
 }
 
 // RegisterInfo provides a minimal amount of information about a register in the
@@ -225,33 +242,33 @@ func AddVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 }
 
 // CallFun constructs a function-call bytecode with the given flags.
-func CallFun(target ModuleId, flags CallFlags, args []RegisterId, returns []RegisterId) *Call {
-	return &Call{target, flags, args, returns}
+func CallFun[W word.Word[W]](target ModuleId, args []RegisterId, returns []RegisterId) *Call[W] {
+	return &Call[W]{target, args, returns}
 }
 
 // Jump creates an unconditional jump instruction transferring control to the
 // given target address.
-func Jump(target Address) *Jmp {
-	return &Jmp{Target: target}
+func Jump[W word.Word[W]](target Address) *Jmp[W] {
+	return &Jmp[W]{Target: target}
 }
 
 // NewSkip constructs an uncondition skip instruction which skips over n
 // instructions.
-func NewSkip(skip uint16) *Skip {
-	return &Skip{Skip: skip}
+func NewSkip[W word.Word[W]](skip uint16) *Skip[W] {
+	return &Skip[W]{Skip: skip}
 }
 
 // NewSkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
-func NewSkipIf(op Cond, skip uint16, left, right RegisterId) *SkipIf {
-	return &SkipIf{Skip: skip, Left: NewRegisterVector(left), Right: NewRegisterVector(right), Op: op}
+func NewSkipIf[W word.Word[W]](op Condition, skip uint16, left, right RegisterId) *SkipIf[W] {
+	return &SkipIf[W]{Skip: skip, Left: NewRegisterVector(left), Right: NewRegisterVector(right), Op: op}
 }
 
 // NewSkipIfVec constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing multi-limb register
 // vectors.
-func NewSkipIfVec(op Cond, skip uint16, left, right register.Vector) *SkipIf {
-	return &SkipIf{Skip: skip, Left: NewRegisterVector(asRegs(left.Registers()...)...),
+func NewSkipIfVec[W word.Word[W]](op Condition, skip uint16, left, right register.Vector) *SkipIf[W] {
+	return &SkipIf[W]{Skip: skip, Left: NewRegisterVector(asRegs(left.Registers()...)...),
 		Right: NewRegisterVector(asRegs(right.Registers()...)...), Op: op}
 }
 
@@ -293,8 +310,8 @@ func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 // identified by id.  The kind of memory being read (ROM, static ROM, RAM, paged
 // RAM) is not recorded here: it is resolved from the environment when the
 // instruction is encoded.
-func NewMemRead(id uint16, address []RegisterId, data []RegisterId) *ReadWrite {
-	return &ReadWrite{Write: false, Id: id, Address: address, Data: data}
+func NewMemRead[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId) *ReadWrite[W] {
+	return &ReadWrite[W]{Write: false, Id: id, Address: address, Data: data}
 }
 
 // SubConst constructs a subtraction instruction computing
@@ -315,67 +332,41 @@ func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 // the memory identified by id.  The kind of memory being written (write-once,
 // RAM, paged RAM) is not recorded here: it is resolved from the environment when
 // the instruction is encoded.
-func NewMemWrite(id uint16, address []RegisterId, data []RegisterId) *ReadWrite {
-	return &ReadWrite{Write: true, Id: id, Address: address, Data: data}
+func NewMemWrite[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId) *ReadWrite[W] {
+	return &ReadWrite[W]{Write: true, Id: id, Address: address, Data: data}
 }
 
 // NewBitwise constructs a bitwise instruction (and/or/xor) computing
 // "target = left op right".
-func NewBitwise(op Operation, target, left, right RegisterId, bitwidth uint16) *Bitwise {
-	return &Bitwise{Op: op, Target: target, Left: left, Right: right, Bitwidth: bitwidth}
+func NewBitwise[W word.Word[W]](op Operation, target, left, right RegisterId, bitwidth uint16) *Bitwise[W] {
+	return &Bitwise[W]{Op: op, Target: target, Left: left, Right: right, Bitwidth: bitwidth}
 }
 
 // NewCheckCast constructs a check-cast instruction asserting that the given
 // target register fits within the given bit width.
-func NewCheckCast(target RegisterId, bitwidth uint16) *CheckCast {
+func NewCheckCast[W word.Word[W]](target RegisterId, bitwidth uint16) *CheckCast[W] {
 	//
-	return &CheckCast{Bitwidth: bitwidth, Target: target}
+	return &CheckCast[W]{Bitwidth: bitwidth, Target: target}
 }
 
 // NewDebug constructs a debug instruction carrying the given formatted message.
-func NewDebug(chunks []base.FormattedChunk) *Debug {
-	var (
-		hunks   = make([]FormattedChunk, len(chunks))
-		sources []RegisterVector
-	)
-	//
-	for i, c := range chunks {
-		var args = asRegs(c.Argument.Registers()...)
-		//
-		hunks[i] = FormattedChunk{c.Text, c.Format}
-		//
-		if len(args) > 0 {
-			sources = append(sources, NewRegisterVector(args...))
-		}
-	}
-	//
-	return &Debug{hunks, sources}
+func NewDebug[W word.Word[W]](chunks []FormattedChunk, sources []RegisterId) *Debug[W] {
+	return &Debug[W]{chunks, array.Map(sources, func(_ uint, id RegisterId) RegisterVector {
+		return NewRegisterVector(id)
+	})}
 }
 
 // NewDivRem constructs a division/remainder instruction computing
 // "target = dividend op divisor".
-func NewDivRem(op uint32, target, dividend, divisor RegisterId) *DivRem {
-	return &DivRem{Opcode: op, Target: target, Dividend: dividend, Divisor: divisor}
+func NewDivRem[W word.Word[W]](op uint32, target, dividend, divisor RegisterId) *DivRem[W] {
+	return &DivRem[W]{Opcode: op, Target: target, Dividend: dividend, Divisor: divisor}
 }
 
 // NewFail constructs a fail instruction carrying the given formatted message.
-func NewFail(chunks []base.FormattedChunk) *Fail {
-	var (
-		hunks   = make([]FormattedChunk, len(chunks))
-		sources []RegisterVector
-	)
-	//
-	for i, c := range chunks {
-		var args = asRegs(c.Argument.Registers()...)
-		//
-		hunks[i] = FormattedChunk{c.Text, c.Format}
-		//
-		if len(args) > 0 {
-			sources = append(sources, NewRegisterVector(args...))
-		}
-	}
-	//
-	return &Fail{hunks, sources}
+func NewFail[W word.Word[W]](chunks []FormattedChunk, sources []RegisterId) *Fail[W] {
+	return &Fail[W]{chunks, array.Map(sources, func(_ uint, id RegisterId) RegisterVector {
+		return NewRegisterVector(id)
+	})}
 }
 
 // NewFieldArith constructs a field arithmetic instruction computing
@@ -386,14 +377,14 @@ func NewFieldArith[W word.Word[W]](op Operation, target RegisterId, sources []Re
 
 // NewRet constructs a return instruction with the given frame width and return
 // offset.
-func NewRet() *Ret {
-	return &Ret{}
+func NewRet[W word.Word[W]]() *Ret[W] {
+	return &Ret[W]{}
 }
 
 // Concat constructs a concatenation instruction which joins the source
 // registers into the target register vector.
-func Concat(targets []RegisterId, sources []RegisterId) *Cat {
-	return &Cat{Targets: targets, Sources: sources}
+func Concat[W word.Word[W]](targets []RegisterId, sources []RegisterId) *Cat[W] {
+	return &Cat[W]{Targets: targets, Sources: sources}
 }
 
 func asReg(rid register.Id) RegisterId {
@@ -430,19 +421,19 @@ func IsUnusedConstant[W word.Word[W]](op Operation, constant W) bool {
 // yields distinct names, hence no conflict).
 func RegisterGobTypes[W word.Word[W]]() {
 	gob.Register(&Arith[W]{})
-	gob.Register(&Bitwise{})
-	gob.Register(&Call{})
-	gob.Register(&Cat{})
-	gob.Register(&CheckCast{})
-	gob.Register(&Debug{})
-	gob.Register(&DivRem{})
-	gob.Register(&Fail{})
+	gob.Register(&Bitwise[W]{})
+	gob.Register(&Call[W]{})
+	gob.Register(&Cat[W]{})
+	gob.Register(&CheckCast[W]{})
+	gob.Register(&Debug[W]{})
+	gob.Register(&DivRem[W]{})
+	gob.Register(&Fail[W]{})
 	gob.Register(&FieldArith[W]{})
-	gob.Register(&Hint{})
-	gob.Register(&Jmp{})
-	gob.Register(&ReadWrite{})
-	gob.Register(&Ret{})
-	gob.Register(&Skip{})
-	gob.Register(&SkipIf{})
+	gob.Register(&Hint[W]{})
+	gob.Register(&Jmp[W]{})
+	gob.Register(&ReadWrite[W]{})
+	gob.Register(&Ret[W]{})
+	gob.Register(&Skip[W]{})
+	gob.Register(&SkipIf[W]{})
 	gob.Register(&Switch[W]{})
 }

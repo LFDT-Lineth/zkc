@@ -23,7 +23,7 @@ import (
 
 // SkipIf encodes a conditional forward-branch bytecode, selecting the
 // register-register or register-vector form according to its operands.
-func SkipIf[W word.Word[W]](pc Address, b *bytecode.SkipIf, env Environment[W]) []uint32 {
+func SkipIf[W word.Word[W]](pc Address, b *bytecode.SkipIf[W], env Environment[W]) []uint32 {
 	var (
 		target = env.Point().Skip(uint(b.Skip))
 		offset = env.OffsetFor(env.enclosing, target)

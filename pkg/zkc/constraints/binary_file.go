@@ -122,11 +122,8 @@ func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
 	//
 	var (
 		stats = util.NewPerfStats()
-		wm    = vm.BytecodeProgramToWord(p.program)
-		// Lower from word-level machine to field-level machine
-		fir = vm.WordToFieldMachine[vm.Uint, F](p.Field(), wm)
 		// Generate arithmetic intermediate representation
-		air = GenerateAirConstraints(fir, p.Field(), p.MaxStaticDepth())
+		air = GenerateAirConstraints[vm.Uint, F](p.program, p.Field(), p.MaxStaticDepth())
 	)
 	// cache result
 	p.constraintsCache = util.Some(air)
@@ -180,15 +177,12 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 		// Lower bytecode program
 		prog64 = vm.ProgramToProgram[vm.Uint, vm.Uint128](p.program)
 		//
-		wm = vm.BytecodeProgramToWord(prog64)
-		//
 		rtr rtrace.Trace[F]
 	)
 	// Execute machine in chunks of 1K steps
-	rtr, errs = vm.BootAndTrace(prog64, input, math.MaxUint, processor)
+	rtr, output, errs = vm.BootAndTrace(prog64, input, math.MaxUint, processor)
 	//
 	if len(errs) == 0 {
-		output = vm.EncodeOutputs(wm)
 		// Extract AIR constraints
 		constraints := p.AirConstraints()
 		// Construct trace builder

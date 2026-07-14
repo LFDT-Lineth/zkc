@@ -75,7 +75,7 @@ func castPacket[W word.Word[W]](b Bytecode[W], regmap descriptor.RegisterMap[W],
 	switch b := b.(type) {
 	case *bytecode.Arith[W]:
 		return arithCasts(b, regmap)
-	case *bytecode.Bitwise:
+	case *bytecode.Bitwise[W]:
 		// AND/OR/XOR cast their result down to the target width; SHL/SHR/NOT do not.
 		switch b.Op {
 		case bytecode.OP_AND, bytecode.OP_OR, bytecode.OP_XOR:
@@ -83,7 +83,7 @@ func castPacket[W word.Word[W]](b Bytecode[W], regmap descriptor.RegisterMap[W],
 		default:
 			return []Bytecode[W]{b}
 		}
-	case *bytecode.DivRem:
+	case *bytecode.DivRem[W]:
 		// The operation width is that of the (uniform) operands, recovered from
 		// the dividend register; native dividends have no fixed width (-> 0).
 		var width util.Option[uint]
@@ -92,13 +92,13 @@ func castPacket[W word.Word[W]](b Bytecode[W], regmap descriptor.RegisterMap[W],
 		}
 		//
 		return prepend(b, checkCast(regmap, width, b.Target))
-	case *bytecode.Call:
+	case *bytecode.Call[W]:
 		callee := modules[b.Target]
 		pre := addOutgoingCheckCasts(regmap, b.Arguments, callee.Inputs())
 		post := addIncomingCheckCasts(regmap, callee.Outputs(), b.Returns)
 		//
 		return append(append(pre, b), post...)
-	case *bytecode.ReadWrite:
+	case *bytecode.ReadWrite[W]:
 		return readWriteCasts(b, regmap, modules)
 	default:
 		return []Bytecode[W]{b}
@@ -130,7 +130,7 @@ func arithCasts[W word.Word[W]](b *bytecode.Arith[W], regmap descriptor.Register
 // readWriteCasts emits the cast checks for a memory read (incoming, after the
 // read) or write (outgoing, before the write), resolving the memory's data
 // registers from the program's module signatures.
-func readWriteCasts[W word.Word[W]](b *bytecode.ReadWrite, regmap descriptor.RegisterMap[W],
+func readWriteCasts[W word.Word[W]](b *bytecode.ReadWrite[W], regmap descriptor.RegisterMap[W],
 	modules []descriptor.Module[W]) []Bytecode[W] {
 	var (
 		mem  = modules[b.Id].(*descriptor.Memory[W])
@@ -170,7 +170,7 @@ func addIncomingCheckCasts[W word.Word[W]](regmap descriptor.RegisterMap[W], sou
 		//
 		if !dst.IsNative() && (src.IsNative() || src.Bitwidth().Unwrap() > dst.Bitwidth().Unwrap()) {
 			width := util.Cast[uint16](dst.Bitwidth().Unwrap())
-			codes = append(codes, bytecode.NewCheckCast(target, width))
+			codes = append(codes, bytecode.NewCheckCast[W](target, width))
 		}
 	}
 	//
@@ -195,7 +195,7 @@ func addOutgoingCheckCasts[W word.Word[W]](regmap descriptor.RegisterMap[W], sou
 		//
 		if !dst.IsNative() && (src.IsNative() || src.Bitwidth().Unwrap() > dst.Bitwidth().Unwrap()) {
 			width := util.Cast[uint16](dst.Bitwidth().Unwrap())
-			codes = append(codes, bytecode.NewCheckCast(source, width))
+			codes = append(codes, bytecode.NewCheckCast[W](source, width))
 		}
 	}
 	//
@@ -220,7 +220,7 @@ func checkCast[W word.Word[W]](rmap descriptor.RegisterMap[W], rhs util.Option[u
 			lastWidth = util.Cast[uint16](rmap.Register(last).Bitwidth().Unwrap())
 		)
 		// yes
-		codes = append(codes, bytecode.NewCheckCast(last, lastWidth))
+		codes = append(codes, bytecode.NewCheckCast[W](last, lastWidth))
 	}
 	//
 	return codes

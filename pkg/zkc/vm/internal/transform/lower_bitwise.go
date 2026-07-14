@@ -66,7 +66,7 @@ func lowerBitwiseCode[W word.Word[W]](
 	helpers *bitwiseHelpers[W],
 ) []Bytecode[W] {
 	//
-	bw, ok := b.(*bytecode.Bitwise)
+	bw, ok := b.(*bytecode.Bitwise[W])
 	if !ok {
 		return []Bytecode[W]{b}
 	}
@@ -84,7 +84,7 @@ func lowerBitwiseCode[W word.Word[W]](
 }
 
 func lowerBitwiseAndOrXor[W word.Word[W]](
-	b *bytecode.Bitwise,
+	b *bytecode.Bitwise[W],
 	registers *regAllocator[W],
 	helpers *bitwiseHelpers[W],
 ) []Bytecode[W] {
@@ -102,13 +102,13 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 	id := helpers.ensure(b.Op, p, 2)
 	//
 	return []Bytecode[W]{
-		bytecode.CallFun(uint16(id), bytecode.CallFlags{},
+		bytecode.CallFun[W](uint16(id),
 			[]bytecode.RegisterId{b.Left, b.Right}, []bytecode.RegisterId{b.Target}),
 	}
 }
 
 func lowerBitwiseShlShr[W word.Word[W]](
-	b *bytecode.Bitwise,
+	b *bytecode.Bitwise[W],
 	helpers *bitwiseHelpers[W],
 ) []Bytecode[W] {
 	var (
@@ -118,14 +118,13 @@ func lowerBitwiseShlShr[W word.Word[W]](
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.CallFun(uint16(id), bytecode.CallFlags{},
-			[]bytecode.RegisterId{b.Left, b.Right}, []bytecode.RegisterId{b.Target}),
+		bytecode.CallFun[W](uint16(id), []bytecode.RegisterId{b.Left, b.Right}, []bytecode.RegisterId{b.Target}),
 	}
 }
 
 // inlineBitwiseNot emits ~x as (MASK - x) directly into the caller's bytecode
 // stream, where MASK = 2^width - 1.  No helper module is created.
-func inlineBitwiseNot[W word.Word[W]](b *bytecode.Bitwise, registers *regAllocator[W]) []Bytecode[W] {
+func inlineBitwiseNot[W word.Word[W]](b *bytecode.Bitwise[W], registers *regAllocator[W]) []Bytecode[W] {
 	var (
 		width, _ = maxBitwidthOf(registers.Registers(), b.Uses()...)
 		maskBig  = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))
@@ -308,13 +307,13 @@ func newDecomposedNaryHelper[W word.Word[W]](
 		resLow := b.newComputedNamed(half)
 		resHigh := b.newComputedNamed(half)
 
-		b.emit(bytecode.CallFun(uint16(subID), bytecode.CallFlags{}, lowSrcs, []bytecode.RegisterId{resLow}))
-		b.emit(bytecode.CallFun(uint16(subID), bytecode.CallFlags{}, highSrcs, []bytecode.RegisterId{resHigh}))
+		b.emit(bytecode.CallFun[W](uint16(subID), lowSrcs, []bytecode.RegisterId{resLow}))
+		b.emit(bytecode.CallFun[W](uint16(subID), highSrcs, []bytecode.RegisterId{resHigh}))
 
-		b.emit(bytecode.Concat([]bytecode.RegisterId{out}, []bytecode.RegisterId{resLow, resHigh}))
+		b.emit(bytecode.Concat[W]([]bytecode.RegisterId{out}, []bytecode.RegisterId{resLow, resHigh}))
 	}
 
-	b.emit(bytecode.NewRet())
+	b.emit(bytecode.NewRet[W]())
 
 	return descriptor.NewFunction(helperName(key), b.regs(), false,
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})

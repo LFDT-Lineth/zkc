@@ -22,7 +22,7 @@ import (
 
 // Ret encodes a return bytecode, emitting the enclosing function's frame width
 // and the offset of its return registers within the frame.
-func Ret[W word.Word[W]](p *bytecode.Ret, env Environment[W]) []uint32 {
+func Ret[W word.Word[W]](p *bytecode.Ret[W], env Environment[W]) []uint32 {
 	var (
 		module = env.Module(env.enclosing)
 		// Extract frame width

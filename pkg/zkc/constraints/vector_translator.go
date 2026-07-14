@@ -15,8 +15,6 @@ package constraints
 import (
 	"fmt"
 	"math"
-	"reflect"
-	"slices"
 
 	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
@@ -26,7 +24,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
 )
 
 // Expr is a useful alias for an MIR expression
@@ -42,37 +39,36 @@ type Framing[F field.Element[F]] = mirc.Framing[register.Id, Expr[F]]
 type RegisterReader[F field.Element[F]] = mirc.RegisterReader[Expr[F]]
 
 // VectorInsnTranslator encapsulates general information related to the mapping from
-// an instruction vector into to MIR constraints.
-type VectorInsnTranslator[F field.Element[F]] struct {
+// a bytecode vector into to MIR constraints.
+type VectorInsnTranslator[W vm.Word[W], F field.Element[F]] struct {
 	context     schema.ModuleId
 	pc          uint
-	vec         vm.Vector[vm.FieldInstruction]
+	vec         vm.BytecodeVector[W]
 	registers   []register.Register
 	writeMap    dfa.Result[dfa.Writes]
 	branchTable dfa.Result[dfa.Branch]
 	framing     Framing[F]
 }
 
-// NewVectorTranslator constructs a translator for a specific vector
-// instruction.
-func NewVectorTranslator[F field.Element[F]](ctx schema.ModuleId, pc uint,
-	vec vm.Vector[vm.FieldInstruction], framing Framing[F], registers []register.Register) VectorInsnTranslator[F] {
+// NewVectorTranslator constructs a translator for a specific bytecode vector.
+func NewVectorTranslator[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, pc uint,
+	vec vm.BytecodeVector[W], framing Framing[F], registers []register.Register) VectorInsnTranslator[W, F] {
 	// generate writeMap & branch table
 	writeMap, branchTable := vec.BranchTable()
 	//
-	return VectorInsnTranslator[F]{
+	return VectorInsnTranslator[W, F]{
 		ctx, pc, vec, registers, writeMap, branchTable, framing,
 	}
 }
 
-func (p *VectorInsnTranslator[F]) translate() Expr[F] {
+func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 	//
 	var (
 		constraint = mirc.True[register.Id, Expr[F]]()
 		//
-		nCodes = uint(len(p.vec.Codes))
-		// Assignments determines whether the given instruction definitely
-		// assignments, may assign or does not assign any given registers.  This
+		nCodes = uint(len(p.vec.Bytecodes))
+		// Assignments determines whether the given bytecode definitely
+		// assigns, may assign or does not assign any given registers.  This
 		// is necessary to apply constancy information.
 		assignments util.Option[dfa.Writes]
 	)
@@ -84,43 +80,53 @@ func (p *VectorInsnTranslator[F]) translate() Expr[F] {
 			local       Expr[F]
 		)
 		//
-		switch c := p.vec.Codes[cc].(type) {
-		case *instruction.Debug:
+		switch c := p.vec.Bytecodes[cc].(type) {
+		case *vm.BytecodeDebug[W]:
 			// no-operation
 			continue
-		case *instruction.Call, *instruction.MemRead, *instruction.MemWrite, *instruction.UnconditionalCall:
-			// Translation of (unconditional)calls, and memory read/write is done at the function level,
-			// as it modifies the module itself (adding source selectors), requires knowledge of
-			// target modules, etc
+		case *vm.BytecodeCall[W], *vm.BytecodeReadWrite[W]:
+			// Translation of calls, and memory read/write is done at the function
+			// level, as it modifies the module itself (adding source selectors),
+			// requires knowledge of target modules, etc.
 			continue
-		case *instruction.Fail:
+		case *vm.BytecodeCheckCast[W]:
+			// Width checks are enforced by the range-proof constraints emitted for
+			// each register, so a cast check needs no constraint of its own.  This
+			// mirrors the bytecode→word decompiler, which drops casts entirely.
+			continue
+		case *vm.BytecodeFail[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = mirc.False[register.Id, Expr[F]]()
-		case *instruction.Jump:
+		case *vm.BytecodeJmp[W]:
 			assignments = joinAssignments(assignments, localWrites)
-			local = p.framing.Goto(c.Immediate)
-		case *instruction.FieldAssign[F]:
-			var (
-				// construct instruction translator
-				it = InstructionTranslator[F]{p, localWrites}
-			)
-			// translate assignment instruction
-			local = it.translateAssignment(*c)
-		case *instruction.Return:
+			local = p.framing.Goto(uint(c.Target))
+		case *vm.BytecodeArith[W]:
+			it := InstructionTranslator[F]{p, localWrites}
+			// translate integer arithmetic assignment
+			local = it.translateArith(c.Op, toRegisterIds(c.Target), toRegisterIds(c.Source), *c.Constant.BigInt())
+		case *vm.BytecodeFieldArith[W]:
+			it := InstructionTranslator[F]{p, localWrites}
+			// translate field arithmetic assignment (single native target)
+			local = it.translateArith(c.Op, []register.Id{register.NewId(uint(c.Target))},
+				toRegisterIds(c.Sources), *c.Constant.BigInt())
+		case *vm.BytecodeCat[W]:
+			it := InstructionTranslator[F]{p, localWrites}
+			// translate concatenation assignment
+			local = it.translateConcat(toRegisterIds(c.Targets), toRegisterIds(c.Sources), p.sourceWidths(c.Sources))
+		case *vm.BytecodeRet[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()
-		case *instruction.FieldHint:
+		case *vm.BytecodeHint[W]:
 			// Non-deterministic assignment: the target registers are already
 			// recorded in the write map for constancy analysis; no polynomial
 			// constraint is generated here, since correctness is enforced by
 			// subsequent arithmetic checks.
 			continue
-		case *instruction.SkipIf, *instruction.Skip, *instruction.MultiwaySkip:
-			// do nothing
+		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeSwitch[W]:
+			// control flow is captured via the branch table; no constraint here
 			continue
 		default:
-			var t = reflect.TypeOf(c)
-			panic(fmt.Sprintf("unexpected instruction (%s)", t.String()))
+			panic(fmt.Sprintf("unexpected bytecode (%T)", c))
 		}
 		//
 		condition := mirc.TranslateBranchCondition(p.branchTable.StateOf(cc).Condition, p)
@@ -138,21 +144,21 @@ func (p *VectorInsnTranslator[F]) translate() Expr[F] {
 }
 
 // WithConstancyConstraints adds constancy constraints for all registers which
-// are either not mutated at all by an instruction, or are sometimes mutated by
-// an instruction.  Constancy constraints are required when the value of a
+// are either not mutated at all by a bytecode, or are sometimes mutated by
+// a bytecode.  Constancy constraints are required when the value of a
 // register should be copied from the previous state into this state (i.e.
-// because it was not changed by this instruction and, hence, must retain its
+// because it was not changed by this bytecode and, hence, must retain its
 // original value).
 //
 // A key challenge lies with registers that are sometimes assigned by the
-// instruction, and sometimes not assigned (i.e. maybe but not definitely
+// bytecode, and sometimes not assigned (i.e. maybe but not definitely
 // assigned).  To resolve this we first determine the conditions under which
 // they are assigned, and negate this to determine the conditions under which
 // they are not assigned.
 //
 // NOTE: it is possible to further optimise this process by taking into account
 // which registers are actually used (i.e. live) after this instruction.
-func (p *VectorInsnTranslator[F]) WithConstancyConstraints(writes dfa.Writes, condition Expr[F]) Expr[F] {
+func (p *VectorInsnTranslator[W, F]) WithConstancyConstraints(writes dfa.Writes, condition Expr[F]) Expr[F] {
 	//
 	for i, reg := range p.registers {
 		var (
@@ -176,7 +182,7 @@ func (p *VectorInsnTranslator[F]) WithConstancyConstraints(writes dfa.Writes, co
 			// Variable is sometimes (but not always) assigned by this
 			// instruction.  This is the difficult case.  First determine
 			// condition under which this register is assigned.
-			wCondition := determineWriteConditions(regId, p.branchTable, p.vec.Codes)
+			wCondition := determineWriteConditions(regId, p.branchTable, p.vec.Bytecodes)
 			// Next, negate condition to determine when it is **not** assigned
 			wCondition = wCondition.Negate()
 			// Finally translate condition and include constancy constraint
@@ -188,7 +194,7 @@ func (p *VectorInsnTranslator[F]) WithConstancyConstraints(writes dfa.Writes, co
 }
 
 // RegisterWidths implementation for RegisterReader interface
-func (p *VectorInsnTranslator[F]) RegisterWidths(regs ...io.RegisterId) []uint {
+func (p *VectorInsnTranslator[W, F]) RegisterWidths(regs ...io.RegisterId) []uint {
 	var widths = make([]uint, len(regs))
 	//
 	for i, r := range regs {
@@ -200,7 +206,7 @@ func (p *VectorInsnTranslator[F]) RegisterWidths(regs ...io.RegisterId) []uint {
 
 // ReadRegister constructs a suitable accessor for referring to a given register.
 // This applies forwarding as appropriate.
-func (p *VectorInsnTranslator[F]) ReadRegister(regId register.Id, forwarding bool) Expr[F] {
+func (p *VectorInsnTranslator[W, F]) ReadRegister(regId register.Id, forwarding bool) Expr[F] {
 	var (
 		reg = p.Register(regId)
 	)
@@ -217,12 +223,23 @@ func (p *VectorInsnTranslator[F]) ReadRegister(regId register.Id, forwarding boo
 }
 
 // Register implementation for RegisterReader interface
-func (p *VectorInsnTranslator[F]) Register(reg register.Id) register.Register {
+func (p *VectorInsnTranslator[W, F]) Register(reg register.Id) register.Register {
 	return p.registers[reg.Unwrap()]
 }
 
+// sourceWidths returns the bit widths of the given source registers, in order.
+func (p *VectorInsnTranslator[W, F]) sourceWidths(ids []vm.RegisterId) []uint {
+	widths := make([]uint, len(ids))
+	//
+	for i, id := range ids {
+		widths[i] = p.registers[id].Width()
+	}
+	//
+	return widths
+}
+
 // nolint
-func (p *VectorInsnTranslator[F]) debugString(condition Expr[F]) string {
+func (p *VectorInsnTranslator[W, F]) debugString(condition Expr[F]) string {
 	return condition.String(func(r register.Id) string { return p.Register(r).Name() })
 }
 
@@ -234,24 +251,48 @@ func joinAssignments(lhs util.Option[dfa.Writes], rhs dfa.Writes) util.Option[df
 	return util.Some(rhs)
 }
 
+// toRegisterIds converts a slice of bytecode register identifiers into schema
+// register identifiers.
+func toRegisterIds(ids []vm.RegisterId) []register.Id {
+	regs := make([]register.Id, len(ids))
+	//
+	for i, id := range ids {
+		regs[i] = register.NewId(uint(id))
+	}
+	//
+	return regs
+}
+
 // Determine the conditions under which an assignment to a given register can
 // occur.  This is relatively straightforward to determine given the information
 // already generated.  Specifically, we already have the entry condition
-// required to execute every instruction.  Therefore, we just need to identify
-// all instructions which can assign the given register and take the disjunction
+// required to execute every bytecode.  Therefore, we just need to identify
+// all bytecodes which can assign the given register and take the disjunction
 // of all their entry conditions.
-func determineWriteConditions(reg register.Id, branchTable dfa.Result[dfa.Branch], codes []vm.FieldInstruction,
-) dfa.BranchCondition {
+func determineWriteConditions[W vm.Word[W]](reg register.Id, branchTable dfa.Result[dfa.Branch],
+	codes []vm.Bytecode[W]) dfa.BranchCondition {
 	//
 	var condition = dfa.FALSE
 	//
 	for i, c := range codes {
-		if slices.Contains(c.Definitions(), reg) {
+		if containsRegister(c.Definitions(), reg) {
 			condition = condition.Or(branchTable.StateOf(uint(i)).Condition)
 		}
 	}
 	//
 	return condition
+}
+
+// containsRegister reports whether the given bytecode register identifier list
+// contains the given schema register identifier.
+func containsRegister(ids []vm.RegisterId, reg register.Id) bool {
+	for _, id := range ids {
+		if uint(id) == reg.Unwrap() {
+			return true
+		}
+	}
+	//
+	return false
 }
 
 func bitwidthOf(reg register.Register) uint {

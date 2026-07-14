@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Fail aborts execution with a "machine panic".  It optionally carries a
@@ -24,7 +25,7 @@ import (
 // held in the program's chunk side-table exactly as Debug's is, and Index
 // identifies this site's entry there — the only thing packed into the bytecode
 // stream (see Codes).  When there are no chunks the panic carries no message.
-type Fail struct {
+type Fail[W word.Word[W]] struct {
 	// Chunks is the optional formatted-message specification: literal text
 	// interleaved with argument formats.  Carried through compilation into the
 	// program's chunk side-table rather than encoded inline.
@@ -35,7 +36,7 @@ type Fail struct {
 
 // Uses implementation for Bytecode interface.  A fail reads the registers
 // referenced by its formatted (error message) arguments.
-func (p *Fail) Uses() []RegisterId {
+func (p *Fail[W]) Uses() []RegisterId {
 	var uses []RegisterId
 	//
 	for _, s := range p.Sources {
@@ -46,16 +47,16 @@ func (p *Fail) Uses() []RegisterId {
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *Fail) Definitions() []RegisterId {
+func (p *Fail[W]) Definitions() []RegisterId {
 	return nil
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Fail) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *Fail[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *Fail) String(env Environment) string {
+func (p *Fail[W]) String(env Environment[W]) string {
 	var (
 		tBuilder strings.Builder
 	)

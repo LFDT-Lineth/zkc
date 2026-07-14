@@ -15,13 +15,15 @@ package bytecode
 import (
 	"fmt"
 	"slices"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // ReadWrite instruction captures memory read/writes.  It records only whether
 // the access is a read or a write; the kind of memory being accessed (ROM, RAM,
 // etc.) is resolved from the enclosing environment when the instruction is
 // encoded.
-type ReadWrite struct {
+type ReadWrite[W word.Word[W]] struct {
 	// Write distinguishes a memory write (true) from a memory read (false).
 	Write bool
 	// Identifies the memory being read or written.
@@ -34,7 +36,7 @@ type ReadWrite struct {
 
 // Uses implementation for Bytecode interface.  A read uses only its address
 // registers, whereas a write uses both the address and data registers.
-func (p *ReadWrite) Uses() []RegisterId {
+func (p *ReadWrite[W]) Uses() []RegisterId {
 	if p.Write {
 		return append(slices.Clone(p.Address), p.Data...)
 	}
@@ -44,7 +46,7 @@ func (p *ReadWrite) Uses() []RegisterId {
 
 // Definitions implementation for Bytecode interface.  A read defines its data
 // registers, whereas a write defines nothing in the surrounding frame.
-func (p *ReadWrite) Definitions() []RegisterId {
+func (p *ReadWrite[W]) Definitions() []RegisterId {
 	if p.Write {
 		return nil
 	}
@@ -53,11 +55,11 @@ func (p *ReadWrite) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *ReadWrite) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *ReadWrite[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *ReadWrite) String(env Environment) string {
+func (p *ReadWrite[W]) String(env Environment[W]) string {
 	var (
 		name    = "???"
 		address = RegistersToString(p.Address, env, ",")

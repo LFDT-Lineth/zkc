@@ -12,11 +12,15 @@
 // SPDX-License-Identifier: Apache-2.0
 package bytecode
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
+)
 
 // Bitwise computes a binary bitwise operation between two registers.  The
 // operation is identified by Opcode, which is one of AND, OR or XOR.
-type Bitwise struct {
+type Bitwise[W word.Word[W]] struct {
 	// Opcode selects the operation (AND, OR or XOR).
 	Op Operation
 	// Target receives the result.
@@ -30,21 +34,21 @@ type Bitwise struct {
 // Uses implementation for Bytecode interface.  A NOT carries its single operand
 // duplicated across Left and Right (see compileNot), so returning both is
 // always correct.
-func (p *Bitwise) Uses() []RegisterId {
+func (p *Bitwise[W]) Uses() []RegisterId {
 	return []RegisterId{p.Left, p.Right}
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *Bitwise) Definitions() []RegisterId {
+func (p *Bitwise[W]) Definitions() []RegisterId {
 	return []RegisterId{p.Target}
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Bitwise) Validate(_ uint, _ FieldConfig, _ Environment) []error {
+func (p *Bitwise[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *Bitwise) String(env Environment) string {
+func (p *Bitwise[W]) String(env Environment[W]) string {
 	var (
 		tgt = RegisterToString(p.Target, env)
 		lhs = RegisterToString(p.Left, env)

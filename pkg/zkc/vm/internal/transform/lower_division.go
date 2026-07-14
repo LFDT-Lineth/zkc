@@ -63,7 +63,7 @@ func lowerDivisionCode[W word.Word[W]](
 	b Bytecode[W],
 	registers *regAllocator[W],
 ) []Bytecode[W] {
-	dr, ok := b.(*bytecode.DivRem)
+	dr, ok := b.(*bytecode.DivRem[W])
 	if !ok {
 		return []Bytecode[W]{b}
 	}
@@ -96,7 +96,7 @@ func expandDivision[W word.Word[W]](q, x, y bytecode.RegisterId, registers *regA
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.NewHint(bytecode.DIV_HINT,
+		bytecode.NewHint[W](bytecode.DIV_HINT,
 			[]bytecode.RegisterVector{
 				bytecode.NewRegisterVector(q), bytecode.NewRegisterVector(r), bytecode.NewRegisterVector(w),
 			},
@@ -125,7 +125,7 @@ func expandRemainder[W word.Word[W]](r, x, y bytecode.RegisterId, registers *reg
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.NewHint(bytecode.DIV_HINT,
+		bytecode.NewHint[W](bytecode.DIV_HINT,
 			[]bytecode.RegisterVector{
 				bytecode.NewRegisterVector(q), bytecode.NewRegisterVector(r), bytecode.NewRegisterVector(w),
 			},

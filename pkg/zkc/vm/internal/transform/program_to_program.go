@@ -127,13 +127,35 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 		return bytecode.NewFieldArith(b.Op, b.Target, b.Sources, p.convertConstant(b.Constant))
 	case *bytecode.Switch[W1]:
 		return bytecode.MultiwaySkip(b.Source, p.convertCases(b.Cases))
-	// All remaining bytecodes are word-type-agnostic (their methods do not
-	// mention W), so a single value implements Bytecode over any word type.
-	case *bytecode.Bitwise, *bytecode.Call, *bytecode.Cat, *bytecode.CheckCast,
-		*bytecode.Debug, *bytecode.DivRem, *bytecode.Fail, *bytecode.Hint,
-		*bytecode.Jmp, *bytecode.ReadWrite, *bytecode.Ret, *bytecode.Skip,
-		*bytecode.SkipIf:
-		return b.(bytecode.Bytecode[W2])
+	// All remaining bytecodes carry no W-typed value, but their type is
+	// parameterised over W nonetheless, so each must be re-expressed as its W2
+	// instantiation (copying its word-agnostic fields verbatim).
+	case *bytecode.Bitwise[W1]:
+		return &bytecode.Bitwise[W2]{Op: b.Op, Target: b.Target, Left: b.Left, Right: b.Right, Bitwidth: b.Bitwidth}
+	case *bytecode.Call[W1]:
+		return &bytecode.Call[W2]{Target: b.Target, Arguments: b.Arguments, Returns: b.Returns}
+	case *bytecode.Cat[W1]:
+		return &bytecode.Cat[W2]{Targets: b.Targets, Sources: b.Sources}
+	case *bytecode.CheckCast[W1]:
+		return &bytecode.CheckCast[W2]{Bitwidth: b.Bitwidth, Target: b.Target}
+	case *bytecode.Debug[W1]:
+		return &bytecode.Debug[W2]{Chunks: b.Chunks, Sources: b.Sources}
+	case *bytecode.DivRem[W1]:
+		return &bytecode.DivRem[W2]{Opcode: b.Opcode, Target: b.Target, Dividend: b.Dividend, Divisor: b.Divisor}
+	case *bytecode.Fail[W1]:
+		return &bytecode.Fail[W2]{Chunks: b.Chunks, Sources: b.Sources}
+	case *bytecode.Hint[W1]:
+		return &bytecode.Hint[W2]{Op: b.Op, Targets: b.Targets, Sources: b.Sources}
+	case *bytecode.Jmp[W1]:
+		return &bytecode.Jmp[W2]{Target: b.Target}
+	case *bytecode.ReadWrite[W1]:
+		return &bytecode.ReadWrite[W2]{Write: b.Write, Id: b.Id, Address: b.Address, Data: b.Data}
+	case *bytecode.Ret[W1]:
+		return &bytecode.Ret[W2]{}
+	case *bytecode.Skip[W1]:
+		return &bytecode.Skip[W2]{Skip: b.Skip}
+	case *bytecode.SkipIf[W1]:
+		return &bytecode.SkipIf[W2]{Skip: b.Skip, Left: b.Left, Right: b.Right, Op: b.Op}
 	default:
 		panic("unknown bytecode")
 	}

@@ -28,7 +28,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -88,17 +87,17 @@ type Interpreter[W word.Word[W]] struct {
 	callStack heap.Heap[StackFrame]
 	// Static read-only memories: read-only memories whose contents are fixed and
 	// not provided as inputs.
-	sroms []memory.StaticReadOnly[W]
+	sroms []StaticReadOnly[W]
 	// Read-only memories.  Non-static read-only memories form the program's
 	// inputs (see Inputs).
-	roms []memory.ReadOnly[W]
+	roms []ReadOnly[W]
 	// Write-once memories.  These form the program's outputs (see Outputs).
-	woms []memory.WriteOnce[W]
+	woms []WriteOnce[W]
 	// (Small) random-access memories which may be freely read and written.
-	rams []memory.RandomAccess[W]
+	rams []RandomAccess[W]
 	// (Large) paged random-access memories which may be freely read and
 	// written.
-	prams []memory.PagedRandomAccess[W]
+	prams []PagedRandomAccess[W]
 	// Optional callback invoked whenever a breakpoint is reached, i.e. an
 	// instruction flagged with the BREAKPOINT modifier bit (see BreakPoint) is
 	// about to execute.  The callback typically snapshots the current machine
@@ -126,11 +125,11 @@ type StackFrame = checkpoint.StackFrame
 func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpreter[W] {
 	var (
 		prime    W
-		sroms    []memory.StaticReadOnly[W]
-		roms     []memory.ReadOnly[W]
-		woms     []memory.WriteOnce[W]
-		rams     []memory.RandomAccess[W]
-		prams    []memory.PagedRandomAccess[W]
+		sroms    []StaticReadOnly[W]
+		roms     []ReadOnly[W]
+		woms     []WriteOnce[W]
+		rams     []RandomAccess[W]
+		prams    []PagedRandomAccess[W]
 		compiled = CompileProgram(program, tracing)
 	)
 	// sanity check prime fits within target word
@@ -145,23 +144,23 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 		if m, ok := m.(*descriptor.Memory[W]); ok {
 			switch {
 			case m.IsStatic():
-				var mem = memory.NewStatic(m.Name(), m.IsPublic(), m.Geometry(), m.StaticContents()...)
+				var mem = NewStatic(*m, m.StaticContents()...)
 				//
 				sroms = append(sroms, *mem)
 			case m.IsReadOnly():
-				var mem = memory.NewReadOnly(m.Name(), m.IsPublic(), m.Geometry())
+				var mem = NewReadOnly(*m)
 				//
 				roms = append(roms, *mem)
 			case m.IsWriteOnly():
-				var mem = memory.NewWriteOnce(m.Name(), m.IsPublic(), m.Geometry())
+				var mem = NewWriteOnce(*m)
 				//
 				woms = append(woms, *mem)
 			case m.IsPaged():
-				var mem = memory.NewPagedRandomAccess(m.Name(), m.Geometry())
+				var mem = NewPagedRandomAccess(*m)
 				//
 				prams = append(prams, *mem)
 			case m.IsReadWrite():
-				var mem = memory.NewRandomAccess(m.Name(), m.Geometry())
+				var mem = NewRandomAccess(*m)
 				//
 				rams = append(rams, *mem)
 			default:
@@ -237,11 +236,11 @@ func (p *Interpreter[W]) Boot(fun string, input map[string][]W) (err error) {
 
 // Inputs implementation of Core interface.  The inputs are the non-static
 // read-only memories, i.e. those whose contents are supplied to Boot.
-func (p *Interpreter[W]) Inputs() iter.Iterator[memory.InputOutput[W]] {
-	var inputs []memory.InputOutput[W]
+func (p *Interpreter[W]) Inputs() iter.Iterator[InputOutput[W]] {
+	var inputs []InputOutput[W]
 	//
 	for i := range p.roms {
-		if !p.roms[i].IsStatic() {
+		if !p.roms[i].Descriptor().IsStatic() {
 			inputs = append(inputs, &p.roms[i])
 		}
 	}
@@ -251,8 +250,8 @@ func (p *Interpreter[W]) Inputs() iter.Iterator[memory.InputOutput[W]] {
 
 // Outputs implementation of Core interface.  The outputs are the write-once
 // memories, whose contents are populated as the program executes.
-func (p *Interpreter[W]) Outputs() iter.Iterator[memory.InputOutput[W]] {
-	var outputs = make([]memory.InputOutput[W], len(p.woms))
+func (p *Interpreter[W]) Outputs() iter.Iterator[InputOutput[W]] {
+	var outputs = make([]InputOutput[W], len(p.woms))
 	//
 	for i := range p.woms {
 		outputs[i] = &p.woms[i]
@@ -269,7 +268,7 @@ func (p *Interpreter[W]) Outputs() iter.Iterator[memory.InputOutput[W]] {
 //     pushed on top so that the full active call chain is self-contained;
 //   - the data stack holding the activation records (registers) of all active
 //     frames;
-//   - a snapshot of every read-only input memory and every mutable memory.
+//   - a snapshot of every read-only input memory and every mutable
 //     Static read-only memories form part of the fixed program and are not
 //     captured.
 //
@@ -307,16 +306,16 @@ func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint[W] {
 // snapshotMemory captures the full contents of a flat memory as a single
 // checkpoint page beginning at address zero.  The memory's module identifier is
 // recovered from the program by name.
-func (p *Interpreter[W]) snapshotMemory(mem memory.Memory[W]) checkpoint.Memory[W] {
+func (p *Interpreter[W]) snapshotMemory(mem Memory[W]) checkpoint.Memory[W] {
 	var (
-		moduleId, _ = p.program.HasModule(mem.Name())
+		moduleId, _ = p.program.HasModule(mem.Descriptor().Name())
 		page        checkpoint.Page[W]
 		clock       uint64
 	)
 	// A random-access memory is captured with its per-cell timestamps and clock,
 	// so the timestamps survive the checkpoint.  Other flat memories (ROM/WOM)
 	// have no timestamps and are captured by value only.
-	if ram, ok := mem.(*memory.RandomAccess[W]); ok {
+	if ram, ok := mem.(*RandomAccess[W]); ok {
 		var (
 			cells      = ram.Cells()
 			data       = make([]W, len(cells))
@@ -342,9 +341,9 @@ func (p *Interpreter[W]) snapshotMemory(mem memory.Memory[W]) checkpoint.Memory[
 // backing table begins at physical address i*PAGE_SIZE.  Pages which have never
 // been written (nil) are omitted.  The memory's module identifier is recovered
 // from the program by name.
-func (p *Interpreter[W]) snapshotPagedMemory(mem *memory.PagedRandomAccess[W]) checkpoint.Memory[W] {
+func (p *Interpreter[W]) snapshotPagedMemory(mem *PagedRandomAccess[W]) checkpoint.Memory[W] {
 	var (
-		moduleId, _ = p.program.HasModule(mem.Name())
+		moduleId, _ = p.program.HasModule(mem.Descriptor().Name())
 		pages       []checkpoint.Page[W]
 	)
 	//
@@ -408,7 +407,7 @@ func (p *Interpreter[W]) restoreMemory(snapshot checkpoint.Memory[W]) {
 	var mem = p.findMemory(p.program.Module(snapshot.ModuleId()).Name())
 	// Read-only memories cannot be written cell-by-cell; checkpoint snapshots
 	// for ROMs are flat pages, so restore them by replacing the contents.
-	if mem.IsReadOnly() {
+	if mem.Descriptor().IsReadOnly() {
 		mem.Initialise(flattenMemory(snapshot.Pages()))
 		return
 	}
@@ -417,12 +416,12 @@ func (p *Interpreter[W]) restoreMemory(snapshot checkpoint.Memory[W]) {
 	// contents -- so per-cell timestamps survive the checkpoint (rather than
 	// being re-stamped by a replay of writes).
 	switch mem := mem.(type) {
-	case *memory.RandomAccess[W]:
+	case *RandomAccess[W]:
 		mem.Reset(snapshot.Clock())
 		mem.RestoreCells(snapshot.Pages())
 
 		return
-	case *memory.PagedRandomAccess[W]:
+	case *PagedRandomAccess[W]:
 		mem.Reset(snapshot.Clock())
 		mem.RestoreCells(snapshot.Pages())
 
@@ -465,27 +464,27 @@ func flattenMemory[W word.Word[W]](pages []checkpoint.Page[W]) []W {
 // amongst the read-only input, write-once, random-access and paged random-access
 // memories.  It panics if no such memory exists, as a checkpoint should only
 // ever reference memories belonging to the program being executed.
-func (p *Interpreter[W]) findMemory(name string) memory.Memory[W] {
+func (p *Interpreter[W]) findMemory(name string) Memory[W] {
 	for i := range p.roms {
-		if p.roms[i].Name() == name {
+		if p.roms[i].Descriptor().Name() == name {
 			return &p.roms[i]
 		}
 	}
 	//
 	for i := range p.woms {
-		if p.woms[i].Name() == name {
+		if p.woms[i].Descriptor().Name() == name {
 			return &p.woms[i]
 		}
 	}
 	//
 	for i := range p.rams {
-		if p.rams[i].Name() == name {
+		if p.rams[i].Descriptor().Name() == name {
 			return &p.rams[i]
 		}
 	}
 	//
 	for i := range p.prams {
-		if p.prams[i].Name() == name {
+		if p.prams[i].Descriptor().Name() == name {
 			return &p.prams[i]
 		}
 	}
@@ -500,7 +499,7 @@ func (p *Interpreter[W]) Binary() encoding.Binary[W] {
 
 // Memory provides access to the underlying memory corresponding to a given
 // module identifier.
-func (p *Interpreter[W]) Memory(mid uint16) memory.Memory[W] {
+func (p *Interpreter[W]) Memory(mid uint16) Memory[W] {
 	var (
 		sym, ok = p.program.AddressOf(mid)
 	)
@@ -688,11 +687,11 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 func (p *Interpreter[W]) initialise(input map[string][]W) {
 	// initialise roms
 	for i, m := range p.roms {
-		p.roms[i].Initialise(input[m.Name()])
+		p.roms[i].Initialise(input[m.Descriptor().Name()])
 	}
 	// initialise static roms
 	for i, m := range p.sroms {
-		p.sroms[i].Initialise(input[m.Name()])
+		p.sroms[i].Initialise(input[m.Descriptor().Name()])
 	}
 	// reset woms
 	for i := range p.woms {
@@ -1410,7 +1409,7 @@ func executeNot[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 // from the static read-only memory identified by id, starting at the address
 // decoded from the operand registers, into successive destination registers.
 func executeReadSrom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	sroms []memory.StaticReadOnly[W]) uint32 {
+	sroms []StaticReadOnly[W]) uint32 {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -1418,7 +1417,7 @@ func executeReadSrom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 		address           uint64
 	)
 	//
-	address = decodeAddress(addr, srom.Geometry(), stack)
+	address = decodeAddress(addr, srom.Descriptor(), stack)
 	//
 	for data.HasNext() {
 		//nolint
@@ -1434,7 +1433,7 @@ func executeReadSrom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 // the read-only memory identified by id, starting at the address decoded from
 // the operand registers, into successive destination registers.
 func executeReadRom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	roms []memory.ReadOnly[W]) uint32 {
+	roms []ReadOnly[W]) uint32 {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -1442,7 +1441,7 @@ func executeReadRom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 		address           uint64
 	)
 	//
-	address = decodeAddress(addr, rom.Geometry(), stack)
+	address = decodeAddress(addr, rom.Descriptor(), stack)
 	//
 	for data.HasNext() {
 		//nolint
@@ -1536,7 +1535,7 @@ func (p *Interpreter[W]) executeSub_2n1(pc uint32, codes []uint32, stack []W) (u
 // from successive source registers into the write-once memory identified by id,
 // starting at the address decoded from the operand registers.
 func executeWriteWom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	woms []memory.WriteOnce[W]) uint32 {
+	woms []WriteOnce[W]) uint32 {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -1544,7 +1543,7 @@ func executeWriteWom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 		address           uint64
 	)
 	//
-	address = decodeAddress(addr, wom.Geometry(), stack)
+	address = decodeAddress(addr, wom.Descriptor(), stack)
 	//
 	for data.HasNext() {
 		//nolint
@@ -1560,7 +1559,7 @@ func executeWriteWom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 // the random-access memory identified by id, starting at the address decoded
 // from the operand registers, into successive destination registers.
 func executeReadRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	rams []memory.RandomAccess[W]) uint32 {
+	rams []RandomAccess[W]) uint32 {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -1568,7 +1567,7 @@ func executeReadRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 		address           uint64
 	)
 	//
-	address = decodeAddress(addr, ram.Geometry(), stack)
+	address = decodeAddress(addr, ram.Descriptor(), stack)
 	//
 	for data.HasNext() {
 		//nolint
@@ -1584,7 +1583,7 @@ func executeReadRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 // from successive source registers into the random-access memory identified by
 // id, starting at the address decoded from the operand registers.
 func executeWriteRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	rams []memory.RandomAccess[W]) uint32 {
+	rams []RandomAccess[W]) uint32 {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -1592,7 +1591,7 @@ func executeWriteRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 		address           uint64
 	)
 	//
-	address = decodeAddress(addr, ram.Geometry(), stack)
+	address = decodeAddress(addr, ram.Descriptor(), stack)
 	//
 	for data.HasNext() {
 		//nolint
@@ -1608,7 +1607,7 @@ func executeWriteRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 // from the paged random-access memory identified by id, starting at the address
 // decoded from the operand registers, into successive destination registers.
 func executeReadPagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	prams []memory.PagedRandomAccess[W]) uint32 {
+	prams []PagedRandomAccess[W]) uint32 {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -1616,7 +1615,7 @@ func executeReadPagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W
 		address           uint64
 	)
 	//
-	address = decodeAddress(addr, pram.Geometry(), stack)
+	address = decodeAddress(addr, pram.Descriptor(), stack)
 	//
 	for data.HasNext() {
 		//nolint
@@ -1632,7 +1631,7 @@ func executeReadPagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W
 // from successive source registers into the paged random-access memory
 // identified by id, starting at the address decoded from the operand registers.
 func executeWritePagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	prams []memory.PagedRandomAccess[W]) uint32 {
+	prams []PagedRandomAccess[W]) uint32 {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -1640,7 +1639,7 @@ func executeWritePagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []
 		address           uint64
 	)
 	//
-	address = decodeAddress(addr, pram.Geometry(), stack)
+	address = decodeAddress(addr, pram.Descriptor(), stack)
 	//
 	for data.HasNext() {
 		//nolint
@@ -1662,17 +1661,17 @@ func executeWritePagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []
 // index, then scales that index by the number of data lines so the result
 // addresses the first word of the selected memory row.  The advanced register
 // iterator is returned so the caller can continue reading the data registers.
-func decodeAddress[W word.Word[W]](regs encoding.OpIter, geometry memory.Geometry[W], stack []W) uint64 {
+func decodeAddress[W word.Word[W]](regs encoding.OpIter, geometry *descriptor.Memory[W], stack []W) uint64 {
 	var (
 		index      uint64
 		registers  = geometry.Registers()
-		numInputs  = geometry.AddressLines()
-		numOutputs = geometry.DataLines()
+		numInputs  = geometry.NumInputs()
+		numOutputs = geometry.NumOutputs()
 	)
 
 	for i := range numInputs {
 		var (
-			bitwidth = uint64(registers[i].Width())
+			bitwidth = uint64(registers[i].Bitwidth().Unwrap())
 			val      = stack[regs.Next()]
 		)
 		//
