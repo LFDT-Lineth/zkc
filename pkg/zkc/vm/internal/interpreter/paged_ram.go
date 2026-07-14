@@ -15,7 +15,6 @@ package interpreter
 import (
 	"bytes"
 	"encoding/gob"
-	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
@@ -50,6 +49,10 @@ type PagedRandomAccess[W word.Word[W]] struct {
 	timestamp uint64
 	// logs memory accesses in chronological order (no-op unless tracing)
 	accessLog Log[W]
+	// cached accessLog.Records(): true only while a recording log is installed,
+	// so the hot read/write path can skip the log call without an interface
+	// dispatch.  Set by SetLog; false for the default (checkpointing) log.
+	logging bool
 }
 
 // NewPagedRandomAccess constructs a new paged random access memory.
@@ -76,8 +79,10 @@ func (p *PagedRandomAccess[W]) log() Log[W] {
 }
 
 // SetLog installs the given access log; used to switch a RAM into tracing mode.
+// It caches whether the log records, so the hot path can skip logging cheaply.
 func (p *PagedRandomAccess[W]) SetLog(log Log[W]) {
 	p.accessLog = log
+	p.logging = log.Records()
 }
 
 // Clock returns the current value of this memory's access clock.
@@ -109,69 +114,57 @@ func (p *PagedRandomAccess[W]) Initialise(contents []W) {
 	p.timestamp = 0
 }
 
-// Read implementation for Memory interface.
+// Read returns the value at the given address (the zero value for an address
+// whose page has never been allocated).  A read re-stamps an already-allocated
+// cell with the current clock but never allocates a page, preserving sparsity.
 func (p *PagedRandomAccess[W]) Read(address uint64) (W, error) {
-	return p.access(address, false)
-}
-
-// Write implementation for Memory interface.
-func (p *PagedRandomAccess[W]) Write(address uint64, value W) error {
-	_, err := p.access(address, true, value)
-	//
-	return err
-}
-
-// access performs a single read or write, records it in the access log, and
-// returns the value read from the cell.  Every access re-stamps the touched
-// cell with the current clock; writes always materialise the cell, whilst reads
-// only re-stamp a cell whose page already exists (a read never allocates a page,
-// preserving sparsity).
-func (p *PagedRandomAccess[W]) access(address uint64, isWrite bool, newValue ...W) (W, error) {
-	// newValue should hold at most one value
-	if len(newValue) > 1 || (isWrite && len(newValue) != 1) || (!isWrite && len(newValue) != 0) {
-		var ignored W
-		return ignored, fmt.Errorf("invalid access call; isWrite = %v, len(newValues) = %d", isWrite, len(newValue))
-	}
-	//
 	p.timestamp++
 	//
 	var (
 		page      = address / PAGE_SIZE
 		offset    = address % PAGE_SIZE
 		allocated = page < uint64(len(p.pages)) && p.pages[page] != nil
-		old       TimestampedCell[W]
+		value     W
 	)
 	//
 	if allocated {
-		old = p.pages[page][offset]
-	}
-	// The value written back: the new value for a write, the value just read for
-	// a read.
-	valueWritten := old.value
-	//
-	if isWrite {
-		valueWritten = newValue[0]
-	}
-	// Materialise + re-stamp the cell.  Writes allocate the page if needed; reads
-	// only re-stamp an already-allocated page (never allocate).
-	if isWrite || allocated {
-		p.pages = expand(p.pages, page+1)
-		//
-		if p.pages[page] == nil {
-			p.pages[page] = make([]TimestampedCell[W], PAGE_SIZE)
-		}
-		//
-		p.pages[page][offset] = TimestampedCell[W]{timestamp: p.timestamp, value: valueWritten}
-	}
-	// Log the access (write-side; the read-side is reconstructed at trace time
-	// by a state-tracking observer -- see Log).
-	if isWrite {
-		p.log().Write(address, p.timestamp, valueWritten)
-	} else {
-		p.log().Read(address, p.timestamp, valueWritten)
+		value = p.pages[page][offset].value
+		// Re-stamp the existing cell (value unchanged); never allocate on a read.
+		p.pages[page][offset] = TimestampedCell[W]{timestamp: p.timestamp, value: value}
 	}
 	//
-	return valueWritten, nil
+	if p.logging {
+		// Write-side only; the read-side is reconstructed at trace time by a
+		// state-tracking observer (see Log).
+		p.accessLog.Read(address, p.timestamp, value)
+	}
+	//
+	return value, nil
+}
+
+// Write stores value at the given address, allocating the enclosing page if
+// needed, and stamps the cell with the current clock.
+func (p *PagedRandomAccess[W]) Write(address uint64, value W) error {
+	p.timestamp++
+	//
+	var (
+		page   = address / PAGE_SIZE
+		offset = address % PAGE_SIZE
+	)
+	// Materialise the page if needed, then re-stamp the cell.
+	p.pages = expand(p.pages, page+1)
+	//
+	if p.pages[page] == nil {
+		p.pages[page] = make([]TimestampedCell[W], PAGE_SIZE)
+	}
+	//
+	p.pages[page][offset] = TimestampedCell[W]{timestamp: p.timestamp, value: value}
+	//
+	if p.logging {
+		p.accessLog.Write(address, p.timestamp, value)
+	}
+	//
+	return nil
 }
 
 // Contents implementation for Memory interface.

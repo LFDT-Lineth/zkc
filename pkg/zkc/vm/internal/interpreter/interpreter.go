@@ -309,12 +309,18 @@ func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint[W] {
 func (p *Interpreter[W]) snapshotMemory(mem Memory[W]) checkpoint.Memory[W] {
 	var (
 		moduleId, _ = p.program.HasModule(mem.Descriptor().Name())
-		page        checkpoint.Page[W]
-		clock       uint64
+		page, clock = flatPage(mem)
 	)
-	// A random-access memory is captured with its per-cell timestamps and clock,
-	// so the timestamps survive the checkpoint.  Other flat memories (ROM/WOM)
-	// have no timestamps and are captured by value only.
+	//
+	return checkpoint.NewMemory(moduleId, []checkpoint.Page[W]{page}, clock)
+}
+
+// flatPage captures a flat memory as a single checkpoint page at address zero,
+// along with its access clock.  A random-access memory is captured with its
+// per-cell timestamps and clock, so the timestamps survive the checkpoint;
+// other flat memories (ROM/WOM) have no timestamps and are captured by value
+// only (clock zero).
+func flatPage[W word.Word[W]](mem Memory[W]) (checkpoint.Page[W], uint64) {
 	if ram, ok := mem.(*RandomAccess[W]); ok {
 		var (
 			cells      = ram.Cells()
@@ -327,13 +333,10 @@ func (p *Interpreter[W]) snapshotMemory(mem Memory[W]) checkpoint.Memory[W] {
 			timestamps[i] = cell.Timestamp()
 		}
 		//
-		page = checkpoint.NewTimestampedPage(0, data, timestamps)
-		clock = ram.Clock()
-	} else {
-		page = checkpoint.NewPage(0, slices.Clone(mem.Contents()))
+		return checkpoint.NewTimestampedPage(0, data, timestamps), ram.Clock()
 	}
 	//
-	return checkpoint.NewMemory(moduleId, []checkpoint.Page[W]{page}, clock)
+	return checkpoint.NewPage(0, slices.Clone(mem.Contents())), 0
 }
 
 // snapshotPagedMemory captures a paged random-access memory as one checkpoint
@@ -343,7 +346,7 @@ func (p *Interpreter[W]) snapshotMemory(mem Memory[W]) checkpoint.Memory[W] {
 // from the program by name.
 func (p *Interpreter[W]) snapshotPagedMemory(mem *PagedRandomAccess[W]) checkpoint.Memory[W] {
 	var (
-		moduleId, _ = p.program.HasModule(mem.Descriptor().Name())
+		moduleID, _ = p.program.HasModule(mem.Descriptor().Name())
 		pages       []checkpoint.Page[W]
 	)
 	//
@@ -353,7 +356,7 @@ func (p *Interpreter[W]) snapshotPagedMemory(mem *PagedRandomAccess[W]) checkpoi
 		pages = append(pages, it.Next())
 	}
 	//
-	return checkpoint.NewMemory(moduleId, pages, mem.Clock())
+	return checkpoint.NewMemory(moduleID, pages, mem.Clock())
 }
 
 // Restore resets this interpreter to the state captured by the given checkpoint
@@ -405,39 +408,36 @@ func (p *Interpreter[W]) restoreMemory(snapshot checkpoint.Memory[W]) {
 	// snapshot is the checkpointed image (stored as pages, whatever the memory
 	// kind); mem is the live memory being restored.
 	var mem = p.findMemory(p.program.Module(snapshot.ModuleId()).Name())
-	// Read-only memories cannot be written cell-by-cell; checkpoint snapshots
-	// for ROMs are flat pages, so restore them by replacing the contents.
-	if mem.Descriptor().IsReadOnly() {
-		mem.Initialise(flattenMemory(snapshot.Pages()))
-		return
-	}
 	// Read/write memories (paged or not) restore their timestamped cells and
 	// clock directly -- Reset to a clean slate, then re-install the captured
 	// contents -- so per-cell timestamps survive the checkpoint (rather than
-	// being re-stamped by a replay of writes).
+	// being re-stamped by a replay of writes).  Read-only memories (ROM) cannot
+	// be written cell-by-cell, so they are restored by replacing their flat
+	// contents; other mutable memories (write-once) are cleared then replayed.
 	switch mem := mem.(type) {
 	case *RandomAccess[W]:
 		mem.Reset(snapshot.Clock())
 		mem.RestoreCells(snapshot.Pages())
-
-		return
 	case *PagedRandomAccess[W]:
 		mem.Reset(snapshot.Clock())
 		mem.RestoreCells(snapshot.Pages())
-
-		return
-	}
-	// Other mutable memories (write-once): clear then replay writes.
-	mem.Initialise(nil)
-	// Write back each captured page.
-	for _, page := range snapshot.Pages() {
-		var address = page.Address()
+	default:
+		if mem.Descriptor().IsReadOnly() {
+			mem.Initialise(flattenMemory(snapshot.Pages()))
+			return
+		}
+		// Write-once: clear then replay each captured page cell-by-cell.
+		mem.Initialise(nil)
 		//
-		for _, w := range page.Data() {
-			//nolint
-			mem.Write(address, w)
+		for _, page := range snapshot.Pages() {
+			var address = page.Address()
 			//
-			address++
+			for _, w := range page.Data() {
+				//nolint
+				mem.Write(address, w)
+				//
+				address++
+			}
 		}
 	}
 }

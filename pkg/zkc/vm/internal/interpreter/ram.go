@@ -34,67 +34,65 @@ type RandomAccess[W word.Word[W]] struct {
 	timestamp uint64
 	// logs memory accesses in chronological order (no-op unless tracing)
 	accessLog Log[W]
+	// cached accessLog.Records(): true only while a recording log is installed,
+	// so the hot read/write path can skip the log call without an interface
+	// dispatch.  Set by SetLog; false for the default (checkpointing) log.
+	logging bool
 }
 
-// Read function handles out-of-bounds accesses.
+// Read returns the value at the given address (the zero value for an address
+// never written), re-stamping the cell with the current clock as required by
+// the memory-consistency argument (see ram.md); a read leaves the stored value
+// unchanged.  Out-of-bounds reads are handled (they return the zero value).
 func (ram *RandomAccess[W]) Read(address uint64) (W, error) {
-	return ram.access(address, false)
-}
-
-// Write stores value at the given address, wrapping it in a timestamped cell.
-func (ram *RandomAccess[W]) Write(address uint64, value W) error {
-	_, err := ram.access(address, true, value)
-	//
-	return err
-}
-
-// access performs a single read or write, records it in the access log, and
-// returns the value that was read from the cell.  Following the memory-
-// consistency argument (see ram.md), every access reads the cell's current
-// (value, timestamp), then re-stamps the cell with the current time: a write
-// stores the new value, a read stores the value back unchanged.
-func (ram *RandomAccess[W]) access(address uint64, isWrite bool, newValue ...W) (W, error) {
-	// newValue should hold at most one value
-	if len(newValue) > 1 || (isWrite && len(newValue) != 1) || (!isWrite && len(newValue) != 0) {
-		var ignored W
-		return ignored, fmt.Errorf("invalid access call; isWrite = %v, len(newValues) = %d", isWrite, len(newValue))
-	}
-
-	// unexceptional accesses raise the time stamp; raising the timestamp initially
-	// means that every deliberate memory access has nonzero timestamp; it follows
-	// that we can identify memory cells that deliberately touched by them having
-	// a nonzero timestamp; this property will be exploited in the finalization
-	// phase
+	// Raising the timestamp initially means every deliberate access has a
+	// nonzero timestamp, so touched cells are identifiable in the finalization
+	// phase.
 	ram.timestamp++
+	//
+	value := ram.valueAt(address)
+	// A read stores the value back unchanged, re-stamped with this access's time.
+	ram.restamp(address, value)
+	//
+	if ram.logging {
+		// Write-side only; the read-side is reconstructed at trace time by a
+		// state-tracking observer (see Log).
+		ram.accessLog.Read(address, ram.timestamp, value)
+	}
+	//
+	return value, nil
+}
 
-	// Read the current cell.  An out-of-range address reads as the zero cell
-	// (value 0 at timestamp 0).
-	var old TimestampedCell[W]
+// Write stores value at the given address, wrapping it in a timestamped cell
+// stamped with the current clock.
+func (ram *RandomAccess[W]) Write(address uint64, value W) error {
+	ram.timestamp++
+	ram.restamp(address, value)
+	//
+	if ram.logging {
+		ram.accessLog.Write(address, ram.timestamp, value)
+	}
+	//
+	return nil
+}
+
+// valueAt returns the value stored at address, or the zero value if the address
+// has never been written (including out-of-range addresses).
+func (ram *RandomAccess[W]) valueAt(address uint64) W {
+	var value W
 	//
 	if address < uint64(len(ram.data)) {
-		old = ram.data[address]
-	}
-	// The value written back: the new value for a write, the value just read
-	// for a read (a read leaves the stored value unchanged).
-	valueWritten := old.value
-	//
-	if isWrite {
-		valueWritten = newValue[0]
+		value = ram.data[address].value
 	}
 	//
-	timestampWrite := ram.timestamp
-	// Re-stamp the cell with this access's timestamp.
+	return value
+}
+
+// restamp stores value at address, stamped with the current clock, growing the
+// backing slice as needed.
+func (ram *RandomAccess[W]) restamp(address uint64, value W) {
 	ram.data = expand(ram.data, address+1)
-	ram.data[address] = TimestampedCell[W]{timestamp: timestampWrite, value: valueWritten}
-	// Log the access (write-side; the read-side is reconstructed at trace time
-	// by a state-tracking observer -- see Log).
-	if isWrite {
-		ram.log().Write(address, timestampWrite, valueWritten)
-	} else {
-		ram.log().Read(address, timestampWrite, valueWritten)
-	}
-	//
-	return valueWritten, nil
+	ram.data[address] = TimestampedCell[W]{timestamp: ram.timestamp, value: value}
 }
 
 // log returns this memory's access log, lazily installing the no-op log if none
@@ -109,8 +107,10 @@ func (ram *RandomAccess[W]) log() Log[W] {
 }
 
 // SetLog installs the given access log; used to switch a RAM into tracing mode.
+// It caches whether the log records, so the hot path can skip logging cheaply.
 func (ram *RandomAccess[W]) SetLog(log Log[W]) {
 	ram.accessLog = log
+	ram.logging = log.Records()
 }
 
 // Contents returns the stored values (dropping timestamps), so RandomAccess

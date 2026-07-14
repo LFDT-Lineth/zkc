@@ -42,26 +42,30 @@ type Log[W word.Word[W]] interface {
 	// Accesses returns the recorded accesses in chronological order; nil for a
 	// non-recording log.
 	Accesses() []AccessData[W]
+	// Records reports whether this log retains accesses.  A memory caches this
+	// when the log is installed, so the hot read/write path can skip the log
+	// call without paying for an interface dispatch.
+	Records() bool
 }
 
 // AccessData records a single memory access: the address, the value and
-// timestamp the cell holds after the access (its write-side), and whether the
-// access was a write.
+// timestamp the cell holds AFTER the access, and whether the access was
+// a write.
 type AccessData[W word.Word[W]] struct {
-	address          uint64
-	valueWritten     W
-	timestampWritten uint64
-	isWrite          bool
+	address   uint64
+	value     W
+	timestamp uint64
+	isWrite   bool
 }
 
 // Address returns the address touched by this access.
 func (a AccessData[W]) Address() uint64 { return a.address }
 
 // ValueWritten returns the value the cell holds after this access.
-func (a AccessData[W]) ValueWritten() W { return a.valueWritten }
+func (a AccessData[W]) ValueWritten() W { return a.value }
 
 // TimestampWritten returns the timestamp the cell holds after this access.
-func (a AccessData[W]) TimestampWritten() uint64 { return a.timestampWritten }
+func (a AccessData[W]) TimestampWritten() uint64 { return a.timestamp }
 
 // IsWrite reports whether this access was a write (true) or a read (false).
 func (a AccessData[W]) IsWrite() bool { return a.isWrite }
@@ -82,6 +86,9 @@ func (l *CheckpointingMemoryLog[W]) Reset() {}
 
 // Accesses implementation for Log (always nil).
 func (l *CheckpointingMemoryLog[W]) Accesses() []AccessData[W] { return nil }
+
+// Records implementation for Log (never records).
+func (l *CheckpointingMemoryLog[W]) Records() bool { return false }
 
 // TraceableMemoryLog is the recording Log used during trace generation: it
 // retains every access in chronological order for the trace observer.
@@ -105,3 +112,6 @@ func (l *TraceableMemoryLog[W]) Reset() { l.accesses = nil }
 
 // Accesses implementation for Log.
 func (l *TraceableMemoryLog[W]) Accesses() []AccessData[W] { return l.accesses }
+
+// Records implementation for Log (always records).
+func (l *TraceableMemoryLog[W]) Records() bool { return true }
