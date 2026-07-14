@@ -13,6 +13,7 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
@@ -28,17 +29,6 @@ var DEFAULT_UNIT_CONFIG = util.DEFAULT_CONFIG.
 	Splitting(true).
 	Bytecode(true).
 	GoGen(true)
-
-// ZKC_PADDING_STRATEGIES enumerates the padding strategies that every ZkC unit
-// test is exercised against (see checkZkcUnit).
-var ZKC_PADDING_STRATEGIES = []struct {
-	name     string
-	strategy ir.PaddingStrategy
-}{
-	{"no-padding", ir.NoPadding},
-	{"single-row-padding", ir.SingleRowPadding},
-	{"next-power-of-two-padding", ir.NextPowerOfTwoPadding},
-}
 
 // ===================================================================
 // Basic Tests
@@ -1161,17 +1151,71 @@ func Test_ZkcUnit_Padding_05(t *testing.T) {
 }
 
 // ===================================================================
+// Range check Tests
+// ===================================================================
+// Range check a u16
+func Test_ZkcUnit_RangeCheck_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/range_check_01", DEFAULT_UNIT_CONFIG)
+}
+
+// Range check a u64
+func Test_ZkcUnit_RangeCheck_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/range_check_02", DEFAULT_UNIT_CONFIG)
+}
+
+// Range check a u17
+func Test_ZkcUnit_RangeCheck_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/range_check_03", DEFAULT_UNIT_CONFIG)
+}
+
+// Range check a u31
+func Test_ZkcUnit_RangeCheck_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/range_check_04", DEFAULT_UNIT_CONFIG)
+}
+
+// Range check a u5
+func Test_ZkcUnit_RangeCheck_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/range_check_05", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
 // Test Helpers
 // ===================================================================
 
+var STATIC_DEPTHS = []uint{256, 1 << 12}
+
+// ZKC_PADDING_STRATEGIES enumerates the padding strategies that every ZkC unit
+// test is exercised against (see checkZkcUnit).
+var ZKC_PADDING_STRATEGIES = []struct {
+	name     string
+	strategy ir.PaddingStrategy
+}{
+	{"no-padding", ir.NoPadding},
+	{"single-row-padding", ir.SingleRowPadding},
+	{"next-power-of-two-padding", ir.NextPowerOfTwoPadding},
+}
+
+// checkZkcUnit runs test for different combinations of:
+// - STATIC_DEPTHS
+// - padding strategy
 func checkZkcUnit(t *testing.T, test string, config util.Config) {
 	// The generated-Go ("native") executor is cross-checked on every unit test:
 	// programs it cannot yet handle (wide registers/constants/moduli) are
 	// logged-and-skipped by the harness, never failed.
 	//
-	// Every unit test is exercised against each padding strategy (no padding,
-	// single-row padding and next-power-of-two padding), so that constraints are
-	// checked against unpadded, minimally padded and power-of-two padded traces.
+	// Run with defined config
+	t.Run("Defined config", func(t *testing.T) {
+		util.CheckValid(t, test, "zkc", config)
+	})
+
+	// Run with different static depths
+	for _, depth := range STATIC_DEPTHS {
+		t.Run(fmt.Sprintf("depth=%d", depth), func(t *testing.T) {
+			util.CheckValid(t, test, "zkc", config.MaxStaticDepth(depth))
+		})
+	}
+
+	// Run with different padding strategies
 	for _, s := range ZKC_PADDING_STRATEGIES {
 		t.Run(s.name, func(t *testing.T) {
 			util.CheckValid(t, test, "zkc", config.Padding(s.strategy))

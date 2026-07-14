@@ -494,7 +494,7 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 	case *bytecode.Cat[W]:
 		return bytecode.Concat[W](substituteIds(insn.Targets, sub), substituteIds(insn.Sources, sub))
 	case *bytecode.Call[W]:
-		return bytecode.CallFun[W](insn.Target, insn.Flags, substituteIds(insn.Arguments, sub),
+		return bytecode.CallFun[W](insn.Target, substituteIds(insn.Arguments, sub),
 			substituteIds(insn.Returns, sub))
 	case *bytecode.ReadWrite[W]:
 		if insn.Write {
@@ -656,7 +656,7 @@ func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
 	switch insn := insn.(type) {
 	case *bytecode.Call[W]:
 		if id != uint(insn.Target) {
-			return bytecode.CallFun[W](bytecode.ModuleId(id), insn.Flags, insn.Arguments, insn.Returns)
+			return bytecode.CallFun[W](bytecode.ModuleId(id), insn.Arguments, insn.Returns)
 		}
 	case *bytecode.ReadWrite[W]:
 		if id != uint(insn.Id) {

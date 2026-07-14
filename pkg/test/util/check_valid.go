@@ -46,6 +46,7 @@ var (
 		bytecode:        false,
 		gogen:           false,
 		quiet:           false,
+		maxStaticDepth:  codegen.DEFAULT_MAX_STATIC_DEPTH,
 		paddingStrategy: ir.NextPowerOfTwoPadding}
 )
 
@@ -68,8 +69,19 @@ type Config struct {
 	quiet bool
 	// determines how much front padding is added to the generated trace.
 	paddingStrategy ir.PaddingStrategy
+	// maxStaticDepth controls the maximum depth (i.e. number of rows) of static
+	// range tables.
+	maxStaticDepth uint
 	// enable checkpoint testing.
 	checkpointing util.Option[util.Pair[string, util.Counter]]
+}
+
+// MaxStaticDepth sets the maximum depth (i.e. number of rows) of static range
+// tables to test with.
+func (p Config) MaxStaticDepth(depth uint) Config {
+	p.maxStaticDepth = depth
+	//
+	return p
 }
 
 // Fields determines which fields to test over.
@@ -155,7 +167,8 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 		var (
 			testfile = fmt.Sprintf("%s.%s", test, ext)
 			// Setup default config
-			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f)
+			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f).
+				MaxStaticDepth(config.maxStaticDepth)
 		)
 		// Run all tests in fast mode
 		checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(false), config.Constraints(false), testcases[f])

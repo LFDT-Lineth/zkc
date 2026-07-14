@@ -133,7 +133,7 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 	case *bytecode.Bitwise[W1]:
 		return &bytecode.Bitwise[W2]{Op: b.Op, Target: b.Target, Left: b.Left, Right: b.Right, Bitwidth: b.Bitwidth}
 	case *bytecode.Call[W1]:
-		return &bytecode.Call[W2]{Target: b.Target, Flags: b.Flags, Arguments: b.Arguments, Returns: b.Returns}
+		return &bytecode.Call[W2]{Target: b.Target, Arguments: b.Arguments, Returns: b.Returns}
 	case *bytecode.Cat[W1]:
 		return &bytecode.Cat[W2]{Targets: b.Targets, Sources: b.Sources}
 	case *bytecode.CheckCast[W1]:

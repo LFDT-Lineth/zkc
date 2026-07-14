@@ -571,7 +571,7 @@ func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved]
 	// Compile arguments
 	arguments, insns := p.compileNonUniformArgs(mapping, e.Args...)
 
-	return append(insns, vm.Call[vm.Uint](id, vm.CallFlags{}, arguments, returns))
+	return append(insns, vm.Call[vm.Uint](id, arguments, returns))
 }
 
 func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, targets []vm.RegisterId,

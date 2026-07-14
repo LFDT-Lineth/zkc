@@ -105,8 +105,7 @@ func newShlHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 
 	n1 := b.newComputedNamed(amtWidth)
 	b.emit(bytecode.SubConst(n1, []bytecode.RegisterId{n}, one))
-	b.emit(bytecode.CallFun[W](uint16(selfID), bytecode.CallFlags{},
-		[]bytecode.RegisterId{doubled, n1}, []bytecode.RegisterId{out}))
+	b.emit(bytecode.CallFun[W](uint16(selfID), []bytecode.RegisterId{doubled, n1}, []bytecode.RegisterId{out}))
 	b.emit(bytecode.NewRet[W]())
 
 	return descriptor.NewFunction(helperName(key), b.regs(), false,
@@ -154,8 +153,7 @@ func newShrHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	b.emit(bytecode.AddConst(half, []bytecode.RegisterId{rest}, zero))
 	n1 := b.newComputedNamed(amtWidth)
 	b.emit(bytecode.SubConst(n1, []bytecode.RegisterId{n}, one))
-	b.emit(bytecode.CallFun[W](uint16(selfID), bytecode.CallFlags{},
-		[]bytecode.RegisterId{half, n1}, []bytecode.RegisterId{out}))
+	b.emit(bytecode.CallFun[W](uint16(selfID), []bytecode.RegisterId{half, n1}, []bytecode.RegisterId{out}))
 	b.emit(bytecode.NewRet[W]())
 
 	return descriptor.NewFunction(helperName(key), b.regs(), false,
