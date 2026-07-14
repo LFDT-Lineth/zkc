@@ -238,10 +238,16 @@ func AddVecConst[W Word[W]](targets []RegisterId, sources []RegisterId, constant
 	return bytecode.AddVecConst(targets, sources, constant)
 }
 
-// Assign constructs a move instruction which copies the source register into
-// the target register.
+// Assign constructs a assignment which copies the source register into the
+// target register.
 func Assign[W Word[W]](target RegisterId, source RegisterId) Bytecode[W] {
-	return bytecode.Move[W](target, source)
+	return AssignV[W]([]RegisterId{target}, source)
+}
+
+// AssignV constructs a concatenation instruction which concatenates the source
+// registers and assigns to a given target register vector.
+func AssignV[W Word[W]](targets []RegisterId, sources ...RegisterId) Bytecode[W] {
+	return bytecode.Concat[W](targets, sources)
 }
 
 // Call constructs a function-call bytecode with the given flags.
@@ -435,12 +441,6 @@ func MulModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Byt
 // return offset.
 func Return[W Word[W]]() Bytecode[W] {
 	return bytecode.NewRet[W]()
-}
-
-// BitConcat constructs a concatenation instruction which joins the source
-// registers into the target register vector.
-func BitConcat[W Word[W]](targets []RegisterId, sources []RegisterId) Bytecode[W] {
-	return bytecode.Concat[W](targets, sources)
 }
 
 // ============================================================================

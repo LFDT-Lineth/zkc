@@ -16,6 +16,7 @@ package split
 import (
 	"math/big"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -62,7 +63,7 @@ func insertAddCarryLines[W word.Word[W]](alloc Allocator[W], chunks Chunks[W]) C
 			var (
 				bitwidth = rhs - lhs
 				// allocate new carry line
-				carry = alloc.Allocate("c", bitwidth)
+				carry = alloc.Allocate("c", util.Some(bitwidth))
 			)
 			// insert carry line
 			chunks.Apply(i, appendLhsLimb[W](carry))

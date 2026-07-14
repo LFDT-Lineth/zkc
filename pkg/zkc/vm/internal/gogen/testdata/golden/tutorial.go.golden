@@ -60,6 +60,9 @@ func fn_main() {
 	var r10 uint64 // $10
 	var r11 uint64 // $11
 	var r12 uint64 // $12
+	var r13 uint64 // pp$13
+	var r14 uint64 // m$14
+	var r15 uint64 // m$15
 	// [0.0] ldc $4 = 0x0
 	r4 = 0
 	// [0.1] read a = args[$4]
@@ -98,7 +101,7 @@ func fn_main() {
 	// [0.7] check sum:u16
 	// [0.8] ldc $7 = 0x0
 	r7 = 0
-	// [0.9] mov $8 = sum
+	// [0.9] cat $8 = sum
 	r8 = r3
 	// [0.10] write result[$7] = $8
 	{
@@ -107,20 +110,26 @@ func fn_main() {
 	}
 	// [0.11] ldc $9 = 0x1
 	r9 = 1
-	// [0.12] mul $10 = sum*c
-	r10 = r3 * r2
-	if r10 >= 1<<16 {
+	// [0.12] mul pp$13 = sum*c
+	r13 = r3 * r2
+	// [0.13] mov m$14 = pp$13
+	r14 = r13
+	// [0.14] mov m$15 = m$14
+	r15 = r14
+	if r15 >= 1<<16 {
 		fail("bit overflow (value exceeds u16)")
 	}
-	// [0.13] check $10:u16
-	// [0.14] write result[$9] = $10
+	// [0.15] check m$15:u16
+	// [0.16] cat $10 = m$15
+	r10 = r15
+	// [0.17] write result[$9] = $10
 	{
 		start := r9
 		mem_result = memWrite(mem_result, start+0, r10)
 	}
-	// [0.15] ldc $11 = 0x2
+	// [0.18] ldc $11 = 0x2
 	r11 = 2
-	// [0.16] sub $12 = a-b
+	// [0.19] sub $12 = a-b
 	{
 		v, borrow := bits.Sub64(r0, r1, 0)
 		if borrow != 0 {
@@ -131,12 +140,12 @@ func fn_main() {
 			fail("bit overflow (value exceeds u16)")
 		}
 	}
-	// [0.17] check $12:u16
-	// [0.18] write result[$11] = $12
+	// [0.20] check $12:u16
+	// [0.21] write result[$11] = $12
 	{
 		start := r11
 		mem_result = memWrite(mem_result, start+0, r12)
 	}
-	// [0.19] ret
+	// [0.22] ret
 	return
 }

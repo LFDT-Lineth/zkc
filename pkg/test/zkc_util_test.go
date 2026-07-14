@@ -30,7 +30,7 @@ func Test_ZkcUtil_BitRor64(t *testing.T) {
 }
 
 func Test_ZkcUtil_BitSar(t *testing.T) {
-	checkZkcUtil(t, "zkc/util/bit_sar", DEFAULT_UTIL_CONFIG.FastModeSplitting(false))
+	checkZkcUtil(t, "zkc/util/bit_sar", DEFAULT_UTIL_CONFIG)
 }
 
 func Test_ZkcUtil_BitShr(t *testing.T) {
@@ -50,8 +50,8 @@ func Test_ZkcUtil_ByteSize(t *testing.T) {
 }
 
 func Test_ZkcUtil_FillBytes(t *testing.T) {
-	// TODO: no multiply granularity for field bandwidth
-	checkZkcUtil(t, "zkc/util/fill_bytes", DEFAULT_UTIL_CONFIG.Constraints(false))
+	// TODO: slice out of bounds
+	checkZkcUtil(t, "zkc/util/fill_bytes", DEFAULT_UTIL_CONFIG)
 }
 
 func Test_ZkcUtil_FirstByte(t *testing.T) {

@@ -156,8 +156,13 @@ func concatPolynomial(sources []register.Id, widths []uint) Polynomial {
 		//
 		coeff.Set(acc)
 		terms[i] = poly.NewMonomial(coeff, r)
-		// Shift the running weight left by this source's bit width.
-		acc = acc.Lsh(acc, widths[i])
+		// Shift the running weight left by this source's bit width (unless this
+		// is the last source, in which case don't bother).  Note, for native
+		// registers the last source will have a very large width, so we must
+		// ignore it.
+		if i+1 != len(sources) {
+			acc = acc.Lsh(acc, widths[i])
+		}
 	}
 	//
 	return polySum(terms...)

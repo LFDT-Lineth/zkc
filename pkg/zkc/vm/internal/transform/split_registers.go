@@ -42,7 +42,7 @@ func SplitRegisters[W word.Word[W]](cfg word.Config, program descriptor.Program[
 	//
 	for i, ith := range mods {
 		// construct limbs map for this module
-		mapping := descriptor.NewLimbsMap(cfg, ith)
+		mapping := descriptor.NewLimbsMap(cfg, program.Field(), ith)
 		// split the module
 		out[i] = splitModule(mapping, mods, ith)
 	}
@@ -271,8 +271,10 @@ func splitCall[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allo
 		callee = mods[c.Target]
 		// Arguments are outgoing (this frame -> callee inputs); returns are
 		// incoming (callee outputs -> this frame).
-		args, pre  = alignArgsReturns(limbsMap, alloc, c.Arguments, callee.Inputs(), argAlignment)
-		rets, post = alignArgsReturns(limbsMap, alloc, c.Returns, callee.Outputs(), retAlignment)
+		args, pre1, post1 = alignArgsReturns(limbsMap, alloc, c.Arguments, callee.Inputs(), argAlignment)
+		rets, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Returns, callee.Outputs(), retAlignment)
+		// Combine all together
+		pre, post = append(pre1, pre2...), append(post1, post2...)
 	)
 	//
 	return join(pre, bytecode.CallFun[W](c.Target, args, rets), post)
@@ -285,11 +287,13 @@ func splitRead[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allo
 		mem = mods[c.Id]
 		// Address registers correspond to the memory's inputs, data registers to
 		// its outputs.
-		addr, pre1 = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
-		data, pre2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), argAlignment)
+		addr, pre1, post1 = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
+		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
+		// Combine all together
+		pre, post = append(pre1, pre2...), append(post1, post2...)
 	)
 	//
-	return join(append(pre1, pre2...), bytecode.NewMemRead[W](c.Id, addr, data), nil)
+	return join(pre, bytecode.NewMemRead[W](c.Id, addr, data), post)
 }
 
 func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allocator[W], mods []descriptor.Module[W],
@@ -299,8 +303,10 @@ func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.All
 		mem = mods[c.Id]
 		// Address registers correspond to the memory's inputs, data registers to
 		// its outputs.
-		addr, pre  = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
-		data, post = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
+		addr, pre1, post1 = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
+		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
+		// Combine all together
+		pre, post = append(pre1, pre2...), append(post1, post2...)
 	)
 	//
 	return join(pre, bytecode.NewMemWrite[W](c.Id, addr, data), post)
@@ -339,14 +345,30 @@ func splitSkipIf[W word.Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.Sk
 // fn f(x'1:u16,x'0:u16) { g(x'0); check x'1 == 0 }
 // fn g(y:u16) { ... }
 func argAlignment[W word.Word[W]](local []RegisterId, remote []descriptor.Register[W], alloc split.Allocator[W],
-) ([]RegisterId, []Bytecode[W]) {
+) (nlocals []RegisterId, pre, post []Bytecode[W]) {
 	//
 	var (
-		context []Bytecode[W]
-		m, n    = len(local), len(remote)
+		m, n = len(local), len(remote)
 	)
 	//
-	if m < n {
+	if m < n && descriptor.HasNativeRegisterId(local, alloc) {
+		// going from native register to multiple limbs.  In this case, we again
+		// have to injecte temporaries and assign them to the native register.
+		var nativeLocal = local
+		// Allocate temporaries
+		local = allocateMatchingLocals(remote, alloc)
+		// assignment native local to local
+		pre = append(pre, bytecode.Concat[W](local, nativeLocal))
+		//
+	} else if m > n && descriptor.HasNativeRegister(remote) {
+		// going to native register from multiple limbs.  In this case, we again
+		// have to injecte temporaries and assign them to the native register.
+		var locals = local
+		// Allocate temporaries
+		local = allocateMatchingLocals(remote, alloc)
+		// assignment native local to local
+		pre = append(pre, bytecode.Concat[W](local, locals))
+	} else if m < n {
 		var zreg = alloc.ZeroRegister()
 		// Less locals than remotes.  In this case, pad locals with zero
 		// register.
@@ -357,13 +379,13 @@ func argAlignment[W word.Word[W]](local []RegisterId, remote []descriptor.Regist
 		// More locals than remotes.  In this case, ensure all surplus locals
 		// are zero.
 		for _, s := range local[n:] {
-			context = append(context, bytecode.NewCheckCast[W](s, 0))
+			pre = append(pre, bytecode.NewCheckCast[W](s, 0))
 		}
 		// discard surplus
 		local = local[:n]
 	}
 	//
-	return local, context
+	return local, pre, post
 }
 
 // Argument alignment is concerned with ensuring the number of arguments matches
@@ -389,14 +411,30 @@ func argAlignment[W word.Word[W]](local []RegisterId, remote []descriptor.Regist
 // fn f() -> (r'1:u16, r'0) { r'0 = g(); r'1 = 0 }
 // fn g() -> (p:u16) { ... }
 func retAlignment[W word.Word[W]](local []RegisterId, remote []descriptor.Register[W], alloc split.Allocator[W],
-) ([]RegisterId, []Bytecode[W]) {
+) (nlocal []RegisterId, pre, post []Bytecode[W]) {
 	var (
-		context []Bytecode[W]
-		m, n    = len(local), len(remote)
-		zero    W
+		m, n = len(local), len(remote)
+		zero W
 	)
 	//
-	if m < n {
+	if m < n && descriptor.HasNativeRegisterId(local, alloc) {
+		// going to native register from multiple limbs.  In this case, we again
+		// have to injecte temporaries and assign them to the native register.
+		var nativeLocal = local
+		// Allocate temporaries
+		local = allocateMatchingLocals(remote, alloc)
+		// assignment native local to local
+		post = append(post, bytecode.Concat[W](nativeLocal, local))
+		//
+	} else if m > n && descriptor.HasNativeRegister(remote) {
+		// going to multiple limbs from native register.  In this case, we again
+		// have to inject a temporary native and assign them to the native register.
+		var locals = local
+		// Allocate temporaries
+		local = allocateMatchingLocals(remote, alloc)
+		// assignment native local to local
+		post = append(post, bytecode.Concat[W](locals, local))
+	} else if m < n {
 		var zreg = alloc.ZeroRegister()
 		// Less locals than remotes.  In this case, pad locals with zero
 		// register.
@@ -407,14 +445,17 @@ func retAlignment[W word.Word[W]](local []RegisterId, remote []descriptor.Regist
 		// More locals than remotes.  In this case, surplus locals are assigned
 		// zero.
 		for _, s := range local[n:] {
-			context = append(context, bytecode.LoadConst(s, zero))
+			post = append(post, bytecode.LoadConst(s, zero))
 		}
 		// discard surplus
 		local = local[:n]
 	}
 	//
-	return local, context
+	return local, pre, post
 }
+
+type splitterFunc[W word.Word[W]] = func(local []RegisterId, remote []descriptor.Register[W], alloc split.Allocator[W],
+) (nlocal []RegisterId, pre, post []Bytecode[W])
 
 // Align the arguments (resp. returns) for a function call.  This means ensuring
 // that the number of arguments (resp. returns) matches the number of parameters
@@ -424,8 +465,8 @@ func alignArgsReturns[W word.Word[W]](
 	alloc split.Allocator[W],
 	locals []RegisterId,
 	remotes []descriptor.Register[W],
-	splitter func([]RegisterId, []descriptor.Register[W], split.Allocator[W]) ([]RegisterId, []Bytecode[W]),
-) (boundary []RegisterId, extras []Bytecode[W]) {
+	splitter splitterFunc[W],
+) (boundary []RegisterId, pre, post []Bytecode[W]) {
 	//
 	var regWidth = limbsMap.RegisterWidth()
 	//
@@ -436,15 +477,16 @@ func alignArgsReturns[W word.Word[W]](
 			// Number of limbs the corresponding remote register splits into.
 			ithRemotes = descriptor.SplitIntoLimbs(regWidth, remotes[i])
 			//
-			limbs, extra = splitter(ithLocals, ithRemotes, alloc)
+			limbs, preExtra, postExtra = splitter(ithLocals, ithRemotes, alloc)
 		)
 		// Present the retained limbs in declaration (most-significant-first) order.
 		boundary = append(boundary, array.Reverse(limbs)...)
 		// Include any require bytecodes
-		extras = append(extras, extra...)
+		pre = append(pre, preExtra...)
+		post = append(post, postExtra...)
 	}
 	//
-	return boundary, extras
+	return boundary, pre, post
 }
 
 // join sandwiches an instruction between its preceding and following bytecodes.
@@ -463,4 +505,17 @@ func splitRegisterVectors[W any](limbsMap descriptor.LimbsMap[W],
 	}
 	//
 	return nvecs
+}
+
+func allocateMatchingLocals[W word.Word[W]](remote []descriptor.Register[W], alloc split.Allocator[W],
+) (local []RegisterId) {
+	//
+	local = make([]RegisterId, len(remote))
+	//
+	for i, r := range remote {
+		// NOTE: remote should always have valid bitwidth here.
+		local[i] = alloc.Allocate("f", r.Bitwidth())
+	}
+	//
+	return local
 }

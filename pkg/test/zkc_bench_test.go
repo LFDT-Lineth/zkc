@@ -29,7 +29,7 @@ func Test_ZkcBench_Blake(t *testing.T) {
 }
 
 func Test_ZkcBench_BinarySearchTree(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/bsearch_tree", DEFAULT_BENCH_CONFIG.Constraints(false))
+	checkZkcBench(t, "zkc/bench/bsearch_tree", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_FastPow(t *testing.T) {
@@ -37,7 +37,7 @@ func Test_ZkcBench_FastPow(t *testing.T) {
 }
 
 func Test_ZkcBench_Gcd(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/gcd", DEFAULT_BENCH_CONFIG)
+	checkZkcBench(t, "zkc/bench/gcd", DEFAULT_BENCH_CONFIG.GoGen(false))
 }
 
 func Test_ZkcBench_Fnv1aHash(t *testing.T) {
@@ -45,7 +45,7 @@ func Test_ZkcBench_Fnv1aHash(t *testing.T) {
 }
 
 func Test_ZkcBench_Keccakf(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG.Checkpoints("keccakf", 2).GoGen(false).Constraints(false))
+	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG.Checkpoints("keccakf", 2).Constraints(false))
 }
 
 // func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {
@@ -72,7 +72,7 @@ func Test_ZkcBench_LongDivision(t *testing.T) {
 }
 
 func Test_ZkcBench_DivRem(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/div_rem", DEFAULT_BENCH_CONFIG.FastModeSplitting(false))
+	checkZkcBench(t, "zkc/bench/div_rem", DEFAULT_BENCH_CONFIG.GoGen(false))
 }
 
 func Test_ZkcBench_ModExp32(t *testing.T) {

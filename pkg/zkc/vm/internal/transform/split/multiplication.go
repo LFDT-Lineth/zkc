@@ -14,6 +14,7 @@
 package split
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -277,7 +278,7 @@ func accumulate[W word.Word[W]](alloc Allocator[W], numCols uint, colWidth func(
 	)
 	//
 	for c := range numCols {
-		var o = alloc.Allocate("m", colWidth(c))
+		var o = alloc.Allocate("m", util.Some(colWidth(c)))
 		//
 		outs = append(outs, o)
 		chunks.Apply(c, setLhsLimbs[W](o))
@@ -360,7 +361,7 @@ func allocSubLimbs[W word.Word[W]](alloc Allocator[W], prefix string, g, width u
 	var out []RegisterId
 	//
 	for off := uint(0); off < width; off += g {
-		out = append(out, alloc.Allocate(prefix, min(g, width-off)))
+		out = append(out, alloc.Allocate(prefix, util.Some(min(g, width-off))))
 	}
 	//
 	return out

@@ -16,8 +16,25 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
+
+// HasNativeRegisterId checks whether a given set of registers contains at least
+// one native register.
+func HasNativeRegisterId[W word.Word[W]](regs []RegisterId, mapping RegisterMap[W]) bool {
+	return array.ContainsMatching(regs, func(rid RegisterId) bool {
+		return mapping.Register(rid).IsNative()
+	})
+}
+
+// HasNativeRegister checks whether a given set of registers contains at least
+// one native register.
+func HasNativeRegister[W word.Word[W]](regs []Register[W]) bool {
+	return array.ContainsMatching(regs, func(reg Register[W]) bool {
+		return reg.IsNative()
+	})
+}
 
 // CalculateAddBitwidth computes the minimal bitwidth required to hold the result
 // of summing the given registers and constant.

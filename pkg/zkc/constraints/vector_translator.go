@@ -232,7 +232,7 @@ func (p *VectorInsnTranslator[W, F]) sourceWidths(ids []vm.RegisterId) []uint {
 	widths := make([]uint, len(ids))
 	//
 	for i, id := range ids {
-		widths[i] = p.registers[id].Width()
+		widths[i] = p.registers[id].WidthOrNative()
 	}
 	//
 	return widths

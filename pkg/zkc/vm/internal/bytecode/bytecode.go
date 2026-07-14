@@ -247,6 +247,9 @@ func AddConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant 
 // multi-limb register vector.
 func AddVec[W word.Word[W]](targets []RegisterId, sources []RegisterId) *Arith[W] {
 	var zero W
+	//
+	util.Assert(len(targets) > 0, "atleast one target required")
+	//
 	return NewArith(OP_ADD, targets, sources, zero)
 }
 
@@ -255,6 +258,12 @@ func AddVec[W word.Word[W]](targets []RegisterId, sources []RegisterId) *Arith[W
 // vector.
 func AddVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
 	return NewArith(OP_ADD, targets, sources, constant)
+}
+
+// Assign constructs a move instruction which copies the source register into the
+// target register.
+func Assign[W word.Word[W]](target RegisterId, source RegisterId) *Cat[W] {
+	return Concat[W]([]RegisterId{target}, []RegisterId{source})
 }
 
 // CallFun constructs a function-call bytecode with the given flags.
@@ -300,14 +309,9 @@ func LoadConst[W word.Word[W]](target RegisterId, constant W) *Arith[W] {
 // LoadConstVec constructs a load-constant (LDC) instruction which assigns the
 // given constant to the target registers.
 func LoadConstVec[W word.Word[W]](targets []RegisterId, constant W) *Arith[W] {
+	util.Assert(len(targets) > 0, "atleast one target required")
+	//
 	return NewArith(OP_ADD, targets, nil, constant)
-}
-
-// Move constructs a move instruction which copies the source register into the
-// target register.
-func Move[W word.Word[W]](target RegisterId, source RegisterId) *Arith[W] {
-	var zero W
-	return NewArith(OP_ADD, []RegisterId{target}, []RegisterId{source}, zero)
 }
 
 // MultiwaySkip constructs a multiway-skip (SMW) instruction which dispatches on
@@ -327,6 +331,8 @@ func MulConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant 
 // "targets = product(sources) * constant", where targets is a multi-limb
 // register vector.
 func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	util.Assert(len(targets) > 0, "atleast one target required")
+	//
 	return NewArith(OP_MUL, targets, sources, constant)
 }
 
@@ -349,6 +355,8 @@ func SubConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant 
 // "targets = sources[0] - ... - constant", where targets is a multi-limb
 // register vector.
 func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	util.Assert(len(targets) > 0, "atleast one target required")
+	//
 	return NewArith(OP_SUB, targets, sources, constant)
 }
 
@@ -409,6 +417,9 @@ func NewRet[W word.Word[W]]() *Ret[W] {
 // Concat constructs a concatenation instruction which joins the source
 // registers into the target register vector.
 func Concat[W word.Word[W]](targets []RegisterId, sources []RegisterId) *Cat[W] {
+	util.Assert(len(targets) > 0, "at least one target required")
+	util.Assert(len(sources) > 0, "at least one source required")
+	//
 	return &Cat[W]{Targets: targets, Sources: sources}
 }
 

@@ -57,7 +57,14 @@ func NewLimbsMap[F any](field field.Config, module Map) limbsMap {
 	)
 	// Split up limbs
 	for i, r := range regs {
-		ls := SplitIntoLimbs(field.RegisterWidth, r)
+		var ls []Register
+		// Check for native register
+		if r.IsNative() {
+			ls = []Register{r}
+		} else {
+			ls = SplitIntoLimbs(field.RegisterWidth, r)
+		}
+		//
 		limbs = append(limbs, ls...)
 		// build mapping
 		m := make([]Id, len(ls))

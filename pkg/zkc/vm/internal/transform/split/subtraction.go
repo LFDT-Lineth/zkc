@@ -16,6 +16,7 @@ package split
 import (
 	"math/big"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -95,7 +96,7 @@ func insertSubBorrowLines[W word.Word[W]](alloc Allocator[W], chunks Chunks[W]) 
 			var (
 				bitwidth = rhs - lhs
 				// allocate new borrow line
-				borrow = alloc.Allocate("b", bitwidth)
+				borrow = alloc.Allocate("b", util.Some(bitwidth))
 			)
 			// insert borrow line
 			chunks.Apply(i, appendLhsLimb[W](borrow))

@@ -22,9 +22,6 @@ import (
 // are executed via the bytecode interpreter (in addition to the usual word
 // machine), exercising its support for native field arithmetic.
 var DEFAULT_MIXED_CONFIG = util.DEFAULT_CONFIG.
-	Splitting(false).
-	FastModeSplitting(false).
-	Constraints(false).
 	GoGen(false)
 
 // ===================================================================
@@ -64,7 +61,11 @@ func Test_ZkcMixed_Basic_08(t *testing.T) {
 }
 
 func Test_ZkcMixed_Basic_09(t *testing.T) {
-	checkZkcMixed(t, "zkc/mixed/basic_09", DEFAULT_MIXED_CONFIG.Constraints(true))
+	checkZkcMixed(t, "zkc/mixed/basic_09", DEFAULT_MIXED_CONFIG)
+}
+
+func Test_ZkcMixed_Basic_10(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/basic_10", DEFAULT_MIXED_CONFIG)
 }
 
 // ===================================================================

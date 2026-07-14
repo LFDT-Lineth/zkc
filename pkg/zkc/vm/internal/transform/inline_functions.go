@@ -421,7 +421,7 @@ func buildEntryVector[W word.Word[W]](codes []Bytecode[W], copies []registerCopy
 	var ncodes = slices.Clone(codes)
 	//
 	for _, c := range copies {
-		ncodes = append(ncodes, bytecode.Move[W](c.target, c.source))
+		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source))
 	}
 	// Vectors must be non-empty in order to execute.
 	if len(ncodes) == 0 {
@@ -440,7 +440,7 @@ func buildExitVector[W word.Word[W]](codes []Bytecode[W], copies []registerCopy)
 	var ncodes []Bytecode[W]
 	//
 	for _, c := range copies {
-		ncodes = append(ncodes, bytecode.Move[W](c.target, c.source))
+		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source))
 	}
 	//
 	ncodes = append(ncodes, codes...)

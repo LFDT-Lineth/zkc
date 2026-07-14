@@ -46,7 +46,7 @@ var (
 		fastModeSplitting: true,
 		gogen:             true,
 		quiet:             false,
-		maxStaticDepth:    codegen.DEFAULT_MAX_STATIC_DEPTH,
+		maxStaticDepths:   []uint{codegen.DEFAULT_MAX_STATIC_DEPTH},
 		paddingStrategy:   ir.NextPowerOfTwoPadding}
 )
 
@@ -67,17 +67,18 @@ type Config struct {
 	quiet bool
 	// determines how much front padding is added to the generated trace.
 	paddingStrategy ir.PaddingStrategy
-	// maxStaticDepth controls the maximum depth (i.e. number of rows) of static
-	// range tables.
-	maxStaticDepth uint
+	// maxStaticDepths controls the maximum depth (i.e. number of rows) of static
+	// range tables.  Widths whose enumeration would exceed this are range-checked
+	// recursively instead.  Defaults to codegen.DEFAULT_MAX_STATIC_DEPTH.
+	maxStaticDepths []uint
 	// enable checkpoint testing.
 	checkpointing util.Option[util.Pair[string, util.Counter]]
 }
 
-// MaxStaticDepth sets the maximum depth (i.e. number of rows) of static range
+// MaxStaticDepths sets the maximum depths (i.e. number of rows) of static range
 // tables to test with.
-func (p Config) MaxStaticDepth(depth uint) Config {
-	p.maxStaticDepth = depth
+func (p Config) MaxStaticDepths(depths ...uint) Config {
+	p.maxStaticDepths = depths
 	//
 	return p
 }
@@ -144,8 +145,6 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 		// Parse all JSON tests
 		testcases = readTestCases(t, test)
 	)
-	// Enable testing each trace in parallel
-	t.Parallel()
 	// Check for each field requested
 	for _, f := range config.fields {
 		var (
@@ -154,13 +153,26 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 			cfg = codegen.DEFAULT_CONFIG.
 				SplitRegisters(config.splitting).
 				Quiet(config.quiet).Field(f).
-				Word(DEFAULT_WORD).
-				MaxStaticDepth(config.maxStaticDepth)
+				Word(DEFAULT_WORD)
 		)
-		// Run all tests in fast mode
-		checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(config.fastModeSplitting), config.Constraints(false), testcases[f])
-		// Run all tests in tracing mode
-		checkValidInternal(t, testfile, cfg.FastMode(false), config, testcases[f])
+		// Only run fast mode tests for the default depth, since static
+		// depth has no impact on fast mode.
+		t.Run(fmt.Sprintf("%s/fastmode", f.Name), func(t *testing.T) {
+			t.Parallel()
+			//
+			checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(config.fastModeSplitting),
+				config.Constraints(false), testcases[f])
+		})
+		// Run tracing tests across differing static depths to ensure resiliance
+		// against changing the default depth.
+		for _, depth := range config.maxStaticDepths {
+			//
+			t.Run(fmt.Sprintf("%s/depth=%d", f.Name, depth), func(t *testing.T) {
+				t.Parallel()
+				// Run all tests in tracing mode
+				checkValidInternal(t, testfile, cfg.MaxStaticDepth(depth).FastMode(false), config, testcases[f])
+			})
+		}
 	}
 }
 
@@ -203,8 +215,8 @@ func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg codegen.Config, 
 	for _, testcase := range tests {
 		runExecutionTests(t, p, testcase)
 	}
-	// Run checkpointing tests (if requested)
-	if config.checkpointing.HasValue() {
+	// Run checkpointing tests (if requested and in fastmode)
+	if config.checkpointing.HasValue() && cfg.IsFastMode() {
 		for _, testcase := range tests {
 			runCheckpointTests(t, p, testcase, config.checkpointing.Unwrap())
 		}

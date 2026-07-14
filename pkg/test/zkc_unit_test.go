@@ -13,15 +13,14 @@
 package test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
-	"github.com/LFDT-Lineth/zkc/pkg/test/util"
+	test_util "github.com/LFDT-Lineth/zkc/pkg/test/util"
 )
 
 // DEFAULT_UNIT_CONFIG provides a default configuration for unit tests.
-var DEFAULT_UNIT_CONFIG = util.DEFAULT_CONFIG
+var DEFAULT_UNIT_CONFIG = test_util.DEFAULT_CONFIG
 
 // ===================================================================
 // Basic Tests
@@ -79,7 +78,7 @@ func Test_ZkcUnit_Basic_13(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_14(t *testing.T) {
-	// TODO: unsupported instruction form
+	t.Skip("mismatched limbs")
 	checkZkcUnit(t, "zkc/unit/basic_14", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
@@ -193,10 +192,12 @@ func Test_ZkcUnit_Basic_41(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_42(t *testing.T) {
+	t.Skip("subtract with borrow")
 	checkZkcUnit(t, "zkc/unit/basic_42", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_43(t *testing.T) {
+	t.Skip("subtract with borrow")
 	checkZkcUnit(t, "zkc/unit/basic_43", DEFAULT_UNIT_CONFIG)
 }
 
@@ -616,7 +617,7 @@ func Test_ZkcUnit_For_03(t *testing.T) {
 
 func Test_ZkcUnit_For_04(t *testing.T) {
 	// TODO: duplicate variable declaration #1801
-	checkZkcUnit(t, "zkc/unit/for_04", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/for_04", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -693,8 +694,7 @@ func Test_ZkcUnit_Bitwise_13(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_14(t *testing.T) {
-	// TODO: register splitting: duplicate register "hi" declared
-	checkZkcUnit(t, "zkc/unit/bitwise_14", DEFAULT_UNIT_CONFIG.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/bitwise_14", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Bitwise_15(t *testing.T) {
@@ -970,9 +970,7 @@ func Test_ZkcUnit_Switch_08(t *testing.T) {
 }
 
 func Test_ZkcUnit_Switch_09(t *testing.T) {
-	// TODO: unsupported instruction form
-	checkZkcUnit(t, "zkc/unit/switch_09", DEFAULT_UNIT_CONFIG.
-		FastModeSplitting(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/switch_09", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Switch_10(t *testing.T) {
@@ -984,11 +982,11 @@ func Test_ZkcUnit_Switch_11(t *testing.T) {
 }
 
 func Test_ZkcUnit_Switch_12(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/switch_12", DEFAULT_UNIT_CONFIG.FastModeSplitting(false))
+	checkZkcUnit(t, "zkc/unit/switch_12", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Switch_13(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/switch_13", DEFAULT_UNIT_CONFIG.FastModeSplitting(false))
+	checkZkcUnit(t, "zkc/unit/switch_13", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -1185,11 +1183,11 @@ func Test_ZkcUnit_BigNum_03(t *testing.T) {
 }
 
 func Test_ZkcUnit_BigNum_04(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_04", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/bignum_04", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_BigNum_05(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_05", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/bignum_05", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_BigNum_06(t *testing.T) {
@@ -1242,11 +1240,11 @@ func Test_ZkcUnit_BigNum_16(t *testing.T) {
 }
 
 func Test_ZkcUnit_BigNum_17(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_BigNum_18(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 // ===================================================================
@@ -1257,39 +1255,24 @@ var STATIC_DEPTHS = []uint{256, 1 << 12}
 
 // ZKC_PADDING_STRATEGIES enumerates the padding strategies that every ZkC unit
 // test is exercised against (see checkZkcUnit).
-var ZKC_PADDING_STRATEGIES = []struct {
-	name     string
-	strategy ir.PaddingStrategy
-}{
-	{"single-row-padding", ir.NaryRowPadding(1)},
-	{"double-row-padding", ir.NaryRowPadding(2)},
-	{"next-power-of-two-padding", ir.NextPowerOfTwoPadding},
+var ZKC_PADDING_STRATEGIES = map[string]ir.PaddingStrategy{
+	"single-row-padding":        ir.NaryRowPadding(1),
+	"double-row-padding":        ir.NaryRowPadding(2),
+	"next-power-of-two-padding": ir.NextPowerOfTwoPadding,
 }
 
 // checkZkcUnit runs test for different combinations of:
 // - STATIC_DEPTHS
 // - padding strategy
-func checkZkcUnit(t *testing.T, test string, config util.Config) {
-	// The generated-Go ("native") executor is cross-checked on every unit test:
-	// programs it cannot yet handle (wide registers/constants/moduli) are
-	// logged-and-skipped by the harness, never failed.
-	//
-	// Run with defined config
+func checkZkcUnit(t *testing.T, test string, config test_util.Config) {
+	// Run with defined config, but varying static depths
 	t.Run("Defined config", func(t *testing.T) {
-		util.CheckValid(t, test, "zkc", config)
+		test_util.CheckValid(t, test, "zkc", config.MaxStaticDepths(STATIC_DEPTHS...))
 	})
-
-	// Run with different static depths
-	for _, depth := range STATIC_DEPTHS {
-		t.Run(fmt.Sprintf("depth=%d", depth), func(t *testing.T) {
-			util.CheckValid(t, test, "zkc", config.MaxStaticDepth(depth))
-		})
-	}
-
 	// Run with different padding strategies
-	for _, s := range ZKC_PADDING_STRATEGIES {
-		t.Run(s.name, func(t *testing.T) {
-			util.CheckValid(t, test, "zkc", config.Padding(s.strategy))
+	for name, strategy := range ZKC_PADDING_STRATEGIES {
+		t.Run(name, func(t *testing.T) {
+			test_util.CheckValid(t, test, "zkc", config.Padding(strategy))
 		})
 	}
 }

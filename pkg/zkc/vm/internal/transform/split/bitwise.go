@@ -115,7 +115,7 @@ func newAndBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ..
 
 func newOrBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ...RegisterId) Bytecode[W] {
 	if len(sources) != 2 {
-		return bytecode.Move[W](target, sources[0])
+		return bytecode.Assign[W](target, sources[0])
 	}
 	//
 	return bytecode.NewBitwise[W](bytecode.OP_OR, target, sources[0], sources[1], util.Cast[uint16](bitwidth))
