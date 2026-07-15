@@ -58,6 +58,79 @@ type moduleStats struct {
 	complexity uint
 }
 
+// bucket groups a range of keys (register widths or constraint degrees) into a
+// single column of the stats table.  The range is inclusive.
+type bucket struct {
+	label  string
+	lo, hi uint
+}
+
+// registerBuckets defines the (fixed) width buckets used for the pre-split
+// register columns.  The first bucket's lo of 0 folds the trivial 0-bit
+// (constant) registers into "u1".
+var registerBuckets = []bucket{
+	{"u1", 0, 1},
+	{"u2-u16", 2, 16},
+	{"u17-u32", 17, 32},
+	{"u33-u64", 33, 64},
+	{"u65+", 65, ^uint(0)},
+}
+
+// degreeBuckets defines the (fixed) degree buckets used for the constraint
+// columns; degrees of 8 or more are aggregated into "d8+".
+var degreeBuckets = []bucket{
+	{"d1", 0, 1},
+	{"d2", 2, 2},
+	{"d3", 3, 3},
+	{"d4", 4, 4},
+	{"d5", 5, 5},
+	{"d6", 6, 6},
+	{"d7", 7, 7},
+	{"d8+", 8, ^uint(0)},
+}
+
+// closeFinalBucket returns a copy of the given buckets in which the final,
+// open-ended bucket's label is closed off with the actual maximum key present
+// (e.g. "u65-u80" or "d8-d12").  When nothing reaches the final bucket its
+// original ("+") label is kept.
+func closeFinalBucket(buckets []bucket, prefix string, maxKey uint) []bucket {
+	out := append([]bucket(nil), buckets...)
+	last := &out[len(out)-1]
+	//
+	if maxKey >= last.lo {
+		last.label = fmt.Sprintf("%s%d-%s%d", prefix, last.lo, prefix, maxKey)
+	}
+	//
+	return out
+}
+
+// maxKey returns the largest key found across the histograms selected by sel
+// over all modules (0 if none).
+func maxKey(stats []moduleStats, sel func(moduleStats) map[uint]uint) uint {
+	var m uint
+	//
+	for _, s := range stats {
+		for k := range sel(s) {
+			m = max(m, k)
+		}
+	}
+	//
+	return m
+}
+
+// bucketCount sums the counts in hist whose key falls within bucket b.
+func bucketCount(hist map[uint]uint, b bucket) uint {
+	var n uint
+	//
+	for k, c := range hist {
+		if k >= b.lo && k <= b.hi {
+			n += c
+		}
+	}
+	//
+	return n
+}
+
 // PrintCompileStats prints summary statistics about the modules of a generated
 // AIR schema, one row per module.  Register widths (pre-splitting) and
 // constraint degrees are gathered from the pre-split bytecode program (ir) and
@@ -289,28 +362,30 @@ type statsColumn struct {
 // grouped under "Registers" and "Constraints" meta-headers spanning their
 // sub-columns; the remaining columns carry their label on the first header row.
 func printAirModuleStats(stats []moduleStats) {
-	var (
-		// Union of register widths and constraint degrees across all modules,
-		// used to determine the (dynamic) set of sub-columns.
-		widths  = collectKeys(stats, func(m moduleStats) map[uint]uint { return m.preSplit })
-		degrees = collectKeys(stats, func(m moduleStats) map[uint]uint { return m.degrees })
-		cols    []*statsColumn
-	)
+	var cols []*statsColumn
+	// Give the open-ended final buckets an upper bound reflecting the largest
+	// register width / constraint degree actually present.
+	maxWidth := maxKey(stats, func(m moduleStats) map[uint]uint { return m.preSplit })
+	maxDegree := maxKey(stats, func(m moduleStats) map[uint]uint { return m.degrees })
+	regBuckets := closeFinalBucket(registerBuckets, "u", maxWidth)
+	degBuckets := closeFinalBucket(degreeBuckets, "d", maxDegree)
 	// Module name and type (left-aligned).
 	cols = append(cols, dataColumn(stats, "", "", "Module", true,
 		func(m moduleStats) string { return m.name }))
 	cols = append(cols, dataColumn(stats, "", "", "type", true,
 		func(m moduleStats) string { return m.typ }))
-	// Registers (pre-splitting), one sub-column per width, then native registers.
-	for _, w := range widths {
-		cols = append(cols, regularColumn(stats, "Registers", fmt.Sprintf("u%d", w),
-			func(m moduleStats) uint { return m.preSplit[w] }))
+	// Registers (pre-splitting), bucketed by width, then native registers.
+	for _, b := range regBuckets {
+		b := b
+		cols = append(cols, regularColumn(stats, "Registers (pre splitting)", b.label,
+			func(m moduleStats) uint { return bucketCount(m.preSplit, b) }))
 	}
 	//
-	cols = append(cols, regularColumn(stats, "Registers", "native",
+	cols = append(cols, regularColumn(stats, "Registers (pre splitting)", "native",
 		func(m moduleStats) uint { return m.preNative }))
-	// Total registers post-splitting (regular and native modules).
-	cols = append(cols, dataColumn(stats, "", "Total", "(post splitting)", false,
+	// Total registers post-splitting, i.e. the number of limbs (regular and
+	// native modules).
+	cols = append(cols, dataColumn(stats, "", "Total", "limbs", false,
 		func(m moduleStats) string {
 			if m.kind == "" || m.kind == "native" {
 				return count(m.postRegs)
@@ -318,10 +393,11 @@ func printAirModuleStats(stats []moduleStats) {
 			//
 			return ""
 		}))
-	// Constraints by degree, one sub-column per degree.
-	for _, d := range degrees {
-		cols = append(cols, regularColumn(stats, "Constraints", fmt.Sprintf("d%d", d),
-			func(m moduleStats) uint { return m.degrees[d] }))
+	// Constraints bucketed by degree.
+	for _, b := range degBuckets {
+		b := b
+		cols = append(cols, regularColumn(stats, "Constraints", b.label,
+			func(m moduleStats) uint { return bucketCount(m.degrees, b) }))
 	}
 	// Lookups, complexity (regular modules only).
 	cols = append(cols, dataColumn(stats, "", "lookups", "", false,
@@ -574,27 +650,6 @@ func align(s string, width uint, left bool) string {
 	}
 	//
 	return strings.Repeat(" ", pad) + s
-}
-
-// collectKeys returns the sorted union of the keys of the histogram selected by
-// key(m) across all modules.
-func collectKeys(stats []moduleStats, key func(moduleStats) map[uint]uint) []uint {
-	var seen = make(map[uint]bool)
-	//
-	for _, m := range stats {
-		for k := range key(m) {
-			seen[k] = true
-		}
-	}
-	//
-	keys := make([]uint, 0, len(seen))
-	for k := range seen {
-		keys = append(keys, k)
-	}
-	//
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-	//
-	return keys
 }
 
 // count renders a count as text, showing an empty cell for a zero count so that
