@@ -12,6 +12,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package constraints
 
+import "github.com/LFDT-Lineth/zkc/pkg/ir"
+
 // TraceConfig provides the necessary configuration for the trace generation.
 type TraceConfig struct {
 	// Indicates whether or not to validate all column types.  That is, check
@@ -24,10 +26,14 @@ type TraceConfig struct {
 	parallel bool
 	// Specify the maximum size of any dispatched batch.
 	batchSize uint
+	// Determines how much front padding is added to the generated trace (see
+	// ir.TraceBuilder.WithPadding).
+	paddingStrategy ir.PaddingStrategy
 }
 
 // DEFAULT_TRACE_CONFIG defines a default configuration for tracing.
-var DEFAULT_TRACE_CONFIG = TraceConfig{true, true, 1024}
+var DEFAULT_TRACE_CONFIG = TraceConfig{
+	validate: true, parallel: true, batchSize: 1024, paddingStrategy: ir.NextPowerOfTwoPadding}
 
 // WithValidation updates a given builder configuration to perform trace validation (or
 // not).
@@ -54,6 +60,20 @@ func (tb TraceConfig) WithBatchSize(batchSize uint) TraceConfig {
 	ntb.batchSize = batchSize
 	//
 	return ntb
+}
+
+// WithPadding updates a given builder configuration to control how much front
+// padding is added to the generated trace (see ir.PaddingStrategy).
+func (tb TraceConfig) WithPadding(strategy ir.PaddingStrategy) TraceConfig {
+	ntb := tb
+	ntb.paddingStrategy = strategy
+	//
+	return ntb
+}
+
+// PaddingStrategy returns the padding strategy configured for this builder.
+func (tb TraceConfig) PaddingStrategy() ir.PaddingStrategy {
+	return tb.paddingStrategy
 }
 
 // Parallelism checks whether parallelism is enabled for this builder.

@@ -192,7 +192,8 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 			WithExpansionChecks(true).
 			WithExpansion(true).
 			WithParallelism(cfg.parallel).
-			WithBatchSize(cfg.batchSize)
+			WithBatchSize(cfg.batchSize).
+			WithPadding(cfg.paddingStrategy)
 		// Build the trace (finally)
 		tr, errs = builder.Expand(constraints, rtrace.ToTrace(rtr))
 	}

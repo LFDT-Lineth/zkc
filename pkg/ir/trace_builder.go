@@ -49,12 +49,9 @@ type TraceBuilder[F field.Element[F]] struct {
 	// the number of lines actually added to a trace matches the expected
 	// amount.
 	checks bool
-	// Determines the amount of padding to apply to each module in the trace.
-	// At the moment, this is applied uniformly across all modules.  This is
-	// somewhat cumbersome, and it would make sense to support different
-	// protocols.  For example, one obvious protocol is to expand a module's
-	// length upto a power-of-two.
-	padding uint
+	// Determines how much front padding is applied to each module in the
+	// trace.  See PaddingStrategy for the available strategies.
+	paddingStrategy PaddingStrategy
 	// Determines whether or not trace expansion should be performed in
 	// parallel.  This should be the default, but a sequential option is
 	// retained for debugging purposes.
@@ -69,7 +66,7 @@ type TraceBuilder[F field.Element[F]] struct {
 // NewTraceBuilder constructs a default trace builder.  The idea is that this
 // could then be customized as needed following the builder pattern.
 func NewTraceBuilder[F field.Element[F]]() TraceBuilder[F] {
-	return TraceBuilder[F]{true, true, true, true, 0, true, math.MaxUint, nil}
+	return TraceBuilder[F]{true, true, true, true, NextPowerOfTwoPadding, true, math.MaxUint, nil}
 }
 
 // WithDefensivePadding updates a given builder configuration to apply defensive padding
@@ -116,10 +113,10 @@ func (tb TraceBuilder[F]) WithValidation(flag bool) TraceBuilder[F] {
 	return ntb
 }
 
-// WithPadding updates a given builder configuration to use a given amount of padding
-func (tb TraceBuilder[F]) WithPadding(padding uint) TraceBuilder[F] {
+// WithPadding updates a given builder configuration to control padding.
+func (tb TraceBuilder[F]) WithPadding(strategy PaddingStrategy) TraceBuilder[F] {
 	ntb := tb
-	ntb.padding = padding
+	ntb.paddingStrategy = strategy
 	//
 	return ntb
 }
@@ -226,9 +223,7 @@ func (tb TraceBuilder[F]) innerBuild(schema sc.AnySchema[F], mods []lt.Module[F]
 		}
 	}
 	// Padding
-	if tb.padding > 0 {
-		padColumns(tr, schema, tb.padding)
-	}
+	padColumns(tr, tb.paddingStrategy)
 	//
 	return tr, errors
 }
@@ -326,14 +321,30 @@ func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr 
 	return nil
 }
 
-// PadColumns pads every column in a given trace with a given amount of (front)
-// padding. Observe that this applies on top of any spillage and/or defensive
-// padding already applied.
-func padColumns[F field.Element[F]](tr *trace.ArrayTrace[F], schema sc.AnySchema[F], padding uint) {
+// padColumns prepends front padding rows to every module in a given trace,
+// according to the given strategy.  Observe that this applies on top of any
+// spillage and/or defensive padding already applied.
+//
+// For each module, the target height is computed on its logical height (i.e.
+// its height divided by its length multiplier) and then scaled back by the
+// multiplier.  This ensures the amount of padding added is always a multiple of
+// the multiplier, as required by ArrayModule.Pad (relevant for interleaved
+// corset modules, whose multiplier can exceed one).
+func padColumns[F field.Element[F]](tr *trace.ArrayTrace[F], strategy PaddingStrategy) {
 	n := tr.Modules().Count()
 	// Iterate over modules
 	for i := uint(0); i < n; i++ {
-		multiplier := schema.Module(i).Name().Multiplier
-		tr.Pad(i, padding*multiplier, 0)
+		var (
+			height     = tr.Module(i).Height()
+			multiplier = tr.Module(i).Name().Multiplier
+			logical    = height / multiplier
+			target     uint
+		)
+		// Apply padding strategy
+		target = strategy(logical, multiplier)
+		// Only pad when the module falls short of its target.
+		if target > height {
+			tr.Pad(i, target-height, 0)
+		}
 	}
 }

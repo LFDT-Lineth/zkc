@@ -16,9 +16,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/test/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -1182,17 +1182,43 @@ func Test_ZkcUnit_RangeCheck_05(t *testing.T) {
 // Test Helpers
 // ===================================================================
 
-var STATIC_DEPTHS = []uint{codegen.DEFAULT_MAX_STATIC_DEPTH, 256}
+var STATIC_DEPTHS = []uint{256, 1 << 12}
+
+// ZKC_PADDING_STRATEGIES enumerates the padding strategies that every ZkC unit
+// test is exercised against (see checkZkcUnit).
+var ZKC_PADDING_STRATEGIES = []struct {
+	name     string
+	strategy ir.PaddingStrategy
+}{
+	{"single-row-padding", ir.NaryRowPadding(1)},
+	{"double-row-padding", ir.NaryRowPadding(2)},
+	{"next-power-of-two-padding", ir.NextPowerOfTwoPadding},
+}
 
 // checkZkcUnit runs test for different combinations of:
 // - STATIC_DEPTHS
+// - padding strategy
 func checkZkcUnit(t *testing.T, test string, config util.Config) {
 	// The generated-Go ("native") executor is cross-checked on every unit test:
 	// programs it cannot yet handle (wide registers/constants/moduli) are
 	// logged-and-skipped by the harness, never failed.
+	//
+	// Run with defined config
+	t.Run("Defined config", func(t *testing.T) {
+		util.CheckValid(t, test, "zkc", config)
+	})
+
+	// Run with different static depths
 	for _, depth := range STATIC_DEPTHS {
 		t.Run(fmt.Sprintf("depth=%d", depth), func(t *testing.T) {
 			util.CheckValid(t, test, "zkc", config.MaxStaticDepth(depth))
+		})
+	}
+
+	// Run with different padding strategies
+	for _, s := range ZKC_PADDING_STRATEGIES {
+		t.Run(s.name, func(t *testing.T) {
+			util.CheckValid(t, test, "zkc", config.Padding(s.strategy))
 		})
 	}
 }
