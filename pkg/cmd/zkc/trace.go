@@ -18,6 +18,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
@@ -67,6 +68,8 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		check = GetFlag(cmd, "check")
 		// show trace statistics
 		stats = GetFlag(cmd, "stats")
+		// open trace in the interactive inspector
+		inspect = GetFlag(cmd, "inspect")
 		//
 		trace   trace.Trace[F]
 		outputs map[string][]byte
@@ -119,6 +122,14 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		checkConstraints(binfile, trace, traceConfig)
 	}
 	// =====================================================
+	// Inspect
+	// =====================================================
+	// Open the generated trace in the interactive inspector (if requested).  This
+	// takes over the terminal, so it runs last, after any stdout output above.
+	if inspect && len(errors) == 0 {
+		errors = corset.InspectTrace(binfile.LimbsMap(), trace, false, 32, 128)
+	}
+	// =====================================================
 	// Report Execution Failures
 	// =====================================================
 	if len(errors) > 0 {
@@ -137,6 +148,7 @@ func init() {
 	traceCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
 	traceCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	traceCmd.Flags().Bool("stats", false, "show overall stats for the generated trace")
+	traceCmd.Flags().BoolP("inspect", "i", false, "open the generated trace in the interactive inspector")
 }
 
 // Column bit-width buckets reported by printTraceStats, matching those shown by
