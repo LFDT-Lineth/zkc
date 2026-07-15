@@ -207,6 +207,12 @@ func moduleType(m vm.Module[vm.Uint]) string {
 	}
 }
 
+// isGenerated reports whether a module is compiler-generated (rather than
+// user-defined).  Generated modules use a "$" name prefix (e.g. "$range_u8").
+func isGenerated(name string) bool {
+	return strings.HasPrefix(name, "$")
+}
+
 // summariseAirModule gathers the summary statistics for a single AIR module.
 func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 	preSplit map[string]preSplitInfo) moduleStats {
@@ -232,9 +238,16 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 		// Regular module (function or memory): report the full breakdown.
 		info := preSplit[mod.Name().Name]
 		stats.typ = info.typ
-		stats.preSplit = info.widths
-		stats.preNative = info.native
 		stats.postRegs = mod.Width()
+		// Pre-split register widths are only meaningful (and field-independent)
+		// for user-defined modules.  Compiler-generated modules (e.g. the
+		// recursive $range_* range checkers) have no pre-split form and their
+		// register widths depend on the field, so leave those columns blank.
+		if !isGenerated(mod.Name().Name) {
+			stats.preSplit = info.widths
+			stats.preNative = info.native
+		}
+		//
 		//
 		for iter := mod.Constraints(); iter.HasNext(); {
 			switch c := iter.Next().(type) {

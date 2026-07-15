@@ -149,8 +149,17 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 		}
 		//
 		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
+		// Register counts are reported before register splitting.  Splitting is
+		// the only field-specific transform that changes register widths, so
+		// recompile the program with it disabled to recover the pre-split widths.
+		// When compiling from a prebuilt binary there is no AST to recompile, so
+		// fall back to the (already split) build.
+		preSplit := artifacts.ir
+		if artifacts.ast.HasValue() {
+			preSplit, _ = ast.Compile(artifacts.ast.Unwrap(), config.build.config.SplitRegisters(false))
+		}
 		//
-		PrintCompileStats[F](air, artifacts.ir, config.order)
+		PrintCompileStats[F](air, preSplit, config.order)
 	}
 }
 
