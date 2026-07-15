@@ -183,7 +183,7 @@ func orderModules(stats []moduleStats, order string) {
 }
 
 // typeRank gives the ordering position of each module type: functions first,
-// then memories (RAM, ROM, WOM), then static tables last.
+// then native modules, then memories (RAM, ROM, WOM), then static tables last.
 func typeRank(typ string) int {
 	switch typ {
 	case "function":
