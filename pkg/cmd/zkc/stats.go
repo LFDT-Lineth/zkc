@@ -55,6 +55,16 @@ type moduleStats struct {
 	complexity uint
 }
 
+// isStatic reports whether this is a static reference table.
+func (m moduleStats) isStatic() bool { return m.typ == "static" }
+
+// isNative reports whether this is a native circuit.
+func (m moduleStats) isNative() bool { return m.typ == "native" }
+
+// isRegular reports whether this is a regular module (a function or memory),
+// i.e. neither static nor native.  Regular modules report the full breakdown.
+func (m moduleStats) isRegular() bool { return !m.isStatic() && !m.isNative() }
+
 // bucket groups a range of keys (register widths or constraint degrees) into a
 // single column of the stats table.  The range is inclusive.
 type bucket struct {
@@ -296,12 +306,10 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 	switch {
 	case mod.IsStatic():
 		// Static reference table: report only the number of cells.
-		stats.kind = "static"
 		stats.typ = "static"
 		stats.cells = uint(len(mod.StaticContents())) * mod.Width()
 	case mod.IsNative():
 		// Native circuit: report only the number of registers.
-		stats.kind = "native"
 		stats.typ = "native"
 		stats.postRegs = mod.Width()
 	default:
@@ -317,7 +325,6 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 			stats.preSplit = info.widths
 			stats.preNative = info.native
 		}
-		//
 		//
 		for iter := mod.Constraints(); iter.HasNext(); {
 			switch c := iter.Next().(type) {
@@ -384,7 +391,7 @@ func printAirModuleStats(stats []moduleStats) {
 	// native modules).
 	cols = append(cols, dataColumn(stats, "", "Total", "limbs", false,
 		func(m moduleStats) string {
-			if m.kind == "" || m.kind == "native" {
+			if !m.isStatic() {
 				return count(m.postRegs)
 			}
 			//
@@ -401,7 +408,7 @@ func printAirModuleStats(stats []moduleStats) {
 	// Lookups, complexity (regular modules only).
 	cols = append(cols, dataColumn(stats, "", "lookups", "", false,
 		func(m moduleStats) string {
-			if m.kind == "" {
+			if m.isRegular() {
 				return count(m.lookups)
 			}
 			//
@@ -409,7 +416,7 @@ func printAirModuleStats(stats []moduleStats) {
 		}))
 	cols = append(cols, dataColumn(stats, "", "complexity", "(= sum d^2)", false,
 		func(m moduleStats) string {
-			if m.kind == "" {
+			if m.isRegular() {
 				return count(m.complexity)
 			}
 			//
@@ -418,7 +425,7 @@ func printAirModuleStats(stats []moduleStats) {
 	// Cells (static modules only).
 	cols = append(cols, dataColumn(stats, "", "cells", "(static tables)", false,
 		func(m moduleStats) string {
-			if m.kind == "static" {
+			if m.isStatic() {
 				return count(m.cells)
 			}
 			//
@@ -432,7 +439,7 @@ func printAirModuleStats(stats []moduleStats) {
 // count derived from each module, blank for static/native modules.
 func regularColumn(stats []moduleStats, group, sub string, get func(moduleStats) uint) *statsColumn {
 	return dataColumn(stats, group, "", sub, false, func(m moduleStats) string {
-		if m.kind != "" {
+		if !m.isRegular() {
 			return ""
 		}
 		//
