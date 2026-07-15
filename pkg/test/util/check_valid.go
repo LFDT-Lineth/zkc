@@ -47,7 +47,9 @@ var (
 		gogen:             true,
 		quiet:             false,
 		maxStaticDepths:   []uint{codegen.DEFAULT_MAX_STATIC_DEPTH},
-		paddingStrategy:   ir.NextPowerOfTwoPadding}
+		paddingStrategies: map[string]ir.PaddingStrategy{
+			"next-power-of-two-padding": ir.NextPowerOfTwoPadding,
+		}}
 )
 
 // Config for testing
@@ -66,7 +68,7 @@ type Config struct {
 	// functions during code generation.
 	quiet bool
 	// determines how much front padding is added to the generated trace.
-	paddingStrategy ir.PaddingStrategy
+	paddingStrategies map[string]ir.PaddingStrategy
 	// maxStaticDepths controls the maximum depth (i.e. number of rows) of static
 	// range tables.  Widths whose enumeration would exceed this are range-checked
 	// recursively instead.  Defaults to codegen.DEFAULT_MAX_STATIC_DEPTH.
@@ -132,8 +134,8 @@ func (p Config) Quiet(flag bool) Config {
 }
 
 // Padding determines how much front padding is added to the generated trace.
-func (p Config) Padding(strategy ir.PaddingStrategy) Config {
-	p.paddingStrategy = strategy
+func (p Config) Padding(strategies map[string]ir.PaddingStrategy) Config {
+	p.paddingStrategies = strategies
 	//
 	return p
 }
@@ -155,8 +157,8 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 				Quiet(config.quiet).Field(f).
 				Word(DEFAULT_WORD)
 		)
-		// Only run fast mode tests for the default depth, since static
-		// depth has no impact on fast mode.
+		// Only run fast mode tests for the default depth / padding, since
+		// neither static depth nor padding impacts on fast mode.
 		t.Run(fmt.Sprintf("%s/fastmode", f.Name), func(t *testing.T) {
 			t.Parallel()
 			//
@@ -226,7 +228,12 @@ func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg codegen.Config, 
 		for _, test := range tests {
 			// FIXME: support reject tests
 			if test.expected {
-				runConstraintTest(t, p, test, cfg, config.paddingStrategy)
+				// Test all configure padding strategies
+				for name, strategy := range config.paddingStrategies {
+					t.Run(name, func(t *testing.T) {
+						runConstraintTest(t, p, test, cfg, strategy)
+					})
+				}
 			}
 		}
 	}

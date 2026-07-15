@@ -1270,14 +1270,7 @@ var ZKC_PADDING_STRATEGIES = map[string]ir.PaddingStrategy{
 // - STATIC_DEPTHS
 // - padding strategy
 func checkZkcUnit(t *testing.T, test string, config test_util.Config) {
-	// Run with defined config, but varying static depths
-	t.Run("Defined config", func(t *testing.T) {
-		test_util.CheckValid(t, test, "zkc", config.MaxStaticDepths(STATIC_DEPTHS...))
-	})
 	// Run with different padding strategies, but default static depth
-	for name, strategy := range ZKC_PADDING_STRATEGIES {
-		t.Run(name, func(t *testing.T) {
-			test_util.CheckValid(t, test, "zkc", config.Padding(strategy))
-		})
-	}
+	test_util.CheckValid(t, test, "zkc", config.Padding(ZKC_PADDING_STRATEGIES).
+		MaxStaticDepths(STATIC_DEPTHS...))
 }
