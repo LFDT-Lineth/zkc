@@ -59,6 +59,21 @@ func BootAndTrace[W Word[W], F field.Element[F]](
 		// Append state
 		states[fid] = append(states[fid], State[W]{fid, pc, terminal, frame})
 	})
+	// Install a recording access log on each read-write memory so its reads and
+	// writes are captured during execution (consumed at post-processing by
+	// ProcessReadWriteMemory).  Trace-only: fast execution keeps the no-op log.
+	for i := range bci.Binary().Modules() {
+		if _, isFn := bci.Binary().Module(uint16(i)).(*Function[W]); isFn {
+			continue
+		}
+		//
+		switch mem := bci.Memory(uint16(i)).(type) {
+		case *interpreter.RandomAccess[W]:
+			mem.SetLog(&interpreter.TraceableMemoryLog[W]{})
+		case *interpreter.PagedRandomAccess[W]:
+			mem.SetLog(&interpreter.TraceableMemoryLog[W]{})
+		}
+	}
 	// Execute the interpreter with appropriate breakpoints
 	if _, errs = BootAndExecute(bci, in, n); len(errs) == 0 {
 		// Post process trace states

@@ -102,7 +102,7 @@ func NewStackFrame(fid uint16, fp uint32, pc uint32) StackFrame {
 // width big-endian integers, whilst each word is written as an unsigned
 // LEB128-style variable-length integer.
 
-var checkpointHeader = []byte{'Z', 'K', 'C', 'P', 1}
+var checkpointHeader = []byte{'Z', 'K', 'C', 'P', 2}
 
 // MarshalBinary implements encoding.BinaryMarshaler, serialising this checkpoint
 // into the checkpoint format (see above).
@@ -131,6 +131,7 @@ func (p CheckPoint[W]) MarshalBinary() ([]byte, error) {
 	//
 	for _, m := range p.memory {
 		buf = binary.BigEndian.AppendUint16(buf, m.moduleId)
+		buf = binary.BigEndian.AppendUint64(buf, m.clock)
 		buf = binary.BigEndian.AppendUint32(buf, uint32(len(m.pages)))
 		//
 		for _, pg := range m.pages {
@@ -143,6 +144,12 @@ func (p CheckPoint[W]) MarshalBinary() ([]byte, error) {
 				if buf, err = appendUvarWord(buf, w); err != nil {
 					return nil, err
 				}
+			}
+			// Per-cell timestamps: count (0 if none) followed by each timestamp.
+			buf = binary.BigEndian.AppendUint32(buf, uint32(len(pg.timestamps)))
+			//
+			for _, ts := range pg.timestamps {
+				buf = binary.BigEndian.AppendUint64(buf, ts)
 			}
 		}
 	}
@@ -230,10 +237,15 @@ func (p *CheckPoint[W]) unmarshalFromReader(r *reader, readWord func(*reader) (W
 func readMemory[W word.Word[W]](r *reader, readWord func(*reader) (W, error)) (Memory[W], error) {
 	var (
 		mid, err = r.uint16()
+		clock    uint64
 		np       uint32
 	)
 	//
 	if err != nil {
+		return Memory[W]{}, err
+	}
+	//
+	if clock, err = r.uint64(); err != nil {
 		return Memory[W]{}, err
 	}
 	//
@@ -249,14 +261,16 @@ func readMemory[W word.Word[W]](r *reader, readWord func(*reader) (W, error)) (M
 		}
 	}
 	//
-	return Memory[W]{mid, pages}, nil
+	return NewMemory(mid, pages, clock), nil
 }
 
-// readPage decodes a single page (address plus data words).
+// readPage decodes a single page (address, data words, then optional per-cell
+// timestamps).
 func readPage[W word.Word[W]](r *reader, readWord func(*reader) (W, error)) (Page[W], error) {
 	var (
 		address, err = r.uint64()
 		nd           uint32
+		nt           uint32
 	)
 	//
 	if err != nil {
@@ -274,8 +288,24 @@ func readPage[W word.Word[W]](r *reader, readWord func(*reader) (W, error)) (Pag
 			return Page[W]{}, err
 		}
 	}
+	// Per-cell timestamps: count (0 if none) followed by each timestamp.
+	if nt, err = r.uint32(); err != nil {
+		return Page[W]{}, err
+	}
 	//
-	return Page[W]{address, data}, nil
+	if nt == 0 {
+		return NewPage(address, data), nil
+	}
+	//
+	timestamps := make([]uint64, nt)
+	//
+	for k := range timestamps {
+		if timestamps[k], err = r.uint64(); err != nil {
+			return Page[W]{}, err
+		}
+	}
+	//
+	return NewTimestampedPage(address, data, timestamps), nil
 }
 
 // appendUvarWord appends w using unsigned LEB128-style variable-length
