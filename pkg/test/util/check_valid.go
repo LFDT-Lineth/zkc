@@ -240,16 +240,16 @@ func runExecutionTests(t *testing.T, m vm.Program[vm.Uint], tc TestCase, f field
 		// Run the test
 		switch w {
 		case vm.WORD_UINT64:
-			runFixedWidthExecutionTest[vm.Uint64](t, m, tc, cfg, w)
+			runFixedWidthExecutionTest[vm.Uint64](t, m, tc, w)
 		case vm.WORD_UINT128:
-			runFixedWidthExecutionTest[vm.Uint128](t, m, tc, cfg, w)
+			runFixedWidthExecutionTest[vm.Uint128](t, m, tc, w)
 		default:
 			panic(fmt.Sprintf("unknown machine word: %s", w.Name))
 		}
 	}
 }
 
-func runFixedWidthExecutionTest[W vm.Word[W]](t *testing.T, pU vm.Program[vm.Uint], tc TestCase, cfg Config,
+func runFixedWidthExecutionTest[W vm.Word[W]](t *testing.T, pU vm.Program[vm.Uint], tc TestCase,
 	w vm.WordConfig) {
 	// Lower to fixed-width machine
 	pW := vm.ProgramToProgram[vm.Uint, W](pU)
@@ -442,7 +442,7 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.
 		// power of two)
 		traceCfg = constraints.DEFAULT_TRACE_CONFIG.WithPadding(paddingStrategy)
 		// generate trace
-		_, tr, errs = binf.Trace(inputs, traceCfg)
+		_, _, tr, errs = binf.Trace(inputs, traceCfg)
 	)
 	//
 	if test.expected {
