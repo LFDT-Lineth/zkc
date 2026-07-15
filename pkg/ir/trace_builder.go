@@ -223,7 +223,7 @@ func (tb TraceBuilder[F]) innerBuild(schema sc.AnySchema[F], mods []lt.Module[F]
 		}
 	}
 	// Padding
-	padColumns(tr, tb.paddingStrategy)
+	padColumns(schema, tr, tb.paddingStrategy)
 	//
 	return tr, errors
 }
@@ -330,16 +330,21 @@ func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr 
 // multiplier.  This ensures the amount of padding added is always a multiple of
 // the multiplier, as required by ArrayModule.Pad (relevant for interleaved
 // corset modules, whose multiplier can exceed one).
-func padColumns[F field.Element[F]](tr *trace.ArrayTrace[F], strategy PaddingStrategy) {
+func padColumns[F field.Element[F]](schema sc.AnySchema[F], tr *trace.ArrayTrace[F], strategy PaddingStrategy) {
 	n := tr.Modules().Count()
 	// Iterate over modules
 	for i := uint(0); i < n; i++ {
 		var (
+			scMod      = schema.Module(i)
 			height     = tr.Module(i).Height()
 			multiplier = tr.Module(i).Name().Multiplier
 			logical    = height / multiplier
 			target     uint
 		)
+		// Skip static reference tables
+		if scMod.IsStatic() {
+			continue
+		}
 		// Apply padding strategy
 		target = strategy(logical, multiplier)
 		// Only pad when the module falls short of its target.
