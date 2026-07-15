@@ -253,7 +253,7 @@ func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, op
 func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf lt.TraceFile, id traceId,
 	schema sc.Schema[F, C], mapping module.LimbsMap) {
 	// Map the legacy padding toggle onto a padding strategy.
-	paddingStrategy := ir.NoPadding
+	paddingStrategy := ir.NaryRowPadding(0)
 	if id.padding {
 		paddingStrategy = ir.NextPowerOfTwoPadding
 	}

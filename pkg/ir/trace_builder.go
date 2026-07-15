@@ -24,7 +24,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
 
 // TraceBuilder provides a mechanical means of constructing a trace from a given
@@ -332,10 +331,6 @@ func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr 
 // the multiplier, as required by ArrayModule.Pad (relevant for interleaved
 // corset modules, whose multiplier can exceed one).
 func padColumns[F field.Element[F]](tr *trace.ArrayTrace[F], strategy PaddingStrategy) {
-	if strategy == NoPadding {
-		return
-	}
-	//
 	n := tr.Modules().Count()
 	// Iterate over modules
 	for i := uint(0); i < n; i++ {
@@ -345,17 +340,8 @@ func padColumns[F field.Element[F]](tr *trace.ArrayTrace[F], strategy PaddingStr
 			logical    = height / multiplier
 			target     uint
 		)
-		//
-		switch strategy {
-		case SingleRowPadding:
-			// Prepend exactly one logical row.
-			target = (logical + 1) * multiplier
-		case NextPowerOfTwoPadding:
-			// Round the logical height up to the next power of two.  An empty
-			// module is expanded to a height of one; a module whose height is
-			// already a (non-zero) power of two is left unchanged.
-			target = util_math.NextPowerOfTwo(logical) * multiplier
-		}
+		// Apply padding strategy
+		target = strategy(logical, multiplier)
 		// Only pad when the module falls short of its target.
 		if target > height {
 			tr.Pad(i, target-height, 0)

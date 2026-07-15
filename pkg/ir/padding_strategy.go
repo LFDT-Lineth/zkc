@@ -12,30 +12,36 @@
 // SPDX-License-Identifier: Apache-2.0
 package ir
 
-// PaddingStrategy determines how much front padding is added to each module
-// when expanding a trace (see TraceBuilder.WithPadding).  The zero value is
-// NextPowerOfTwoPadding, making it the default strategy.
-type PaddingStrategy uint
+import util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 
-const (
-	// NextPowerOfTwoPadding expands every module's (logical) height up to the
-	// next power of two.  An empty module is expanded to a height of one; a
-	// module whose height is already a (non-zero) power of two is left
-	// unchanged.  This is the default strategy.
-	NextPowerOfTwoPadding PaddingStrategy = iota
-	// NoPadding leaves each module's height unchanged.
-	NoPadding
-	// SingleRowPadding prepends exactly one (logical) padding row to each
-	// module.
-	SingleRowPadding
-)
+// PaddingStrategy captures the notion of an algorithm that determines how much front padding is added to each module
+// when expanding a trace (see TraceBuilder.WithPadding).
+type PaddingStrategy func(height, multiplier uint) uint
 
 // PADDING_STRATEGIES maps the name of each strategy (as accepted on the command
 // line) to its value.
 var PADDING_STRATEGIES = map[string]PaddingStrategy{
-	"none":              NoPadding,
-	"single-row":        SingleRowPadding,
+	"none":              NaryRowPadding(0),
+	"single-row":        NaryRowPadding(1),
+	"double-row":        NaryRowPadding(2),
+	"triple-row":        NaryRowPadding(3),
 	"next-power-of-two": NextPowerOfTwoPadding,
+}
+
+// NextPowerOfTwoPadding rounds the logical height to the next power of 2.  For
+// example, a height of 3 would become 4, etc.  An empty module is expanded to a
+// height of one; a module whose height is already a (non-zero) power of two is
+// left unchanged.
+func NextPowerOfTwoPadding(height, multiplier uint) uint {
+	return util_math.NextPowerOfTwo(height) * multiplier
+}
+
+// NaryRowPadding rounds up the height of a module by a given number of complete
+// rows.
+func NaryRowPadding(n uint) PaddingStrategy {
+	return func(height, multiplier uint) uint {
+		return (height + n) * multiplier
+	}
 }
 
 // GetPaddingStrategy resolves a strategy name (e.g. as supplied on the command

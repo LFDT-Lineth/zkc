@@ -1190,8 +1190,8 @@ var ZKC_PADDING_STRATEGIES = []struct {
 	name     string
 	strategy ir.PaddingStrategy
 }{
-	{"no-padding", ir.NoPadding},
-	{"single-row-padding", ir.SingleRowPadding},
+	{"single-row-padding", ir.NaryRowPadding(1)},
+	{"double-row-padding", ir.NaryRowPadding(2)},
 	{"next-power-of-two-padding", ir.NextPowerOfTwoPadding},
 }
 
