@@ -66,6 +66,9 @@ type CompileConfig struct {
 	mir bool
 	// indicates whether or not to print the Mid-level Intermediate Reprentation (AIR).
 	air bool
+	// indicates whether or not to print summary statistics about the generated
+	// AIR schema.
+	stats bool
 	// indicates whether or not to print everything in full (e.g. including
 	// static reference tables).
 	verbose bool
@@ -82,7 +85,8 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	config.ast = GetFlag(cmd, "ast")
 	config.mir = GetFlag(cmd, "mir")
 	config.air = GetFlag(cmd, "air")
-	config.ir = !(config.ast || config.mir || config.air)
+	config.stats = GetFlag(cmd, "stats")
+	config.ir = !(config.ast || config.mir || config.air || config.stats)
 	config.verbose = GetFlag(cmd, "verbose")
 	// Build all artifacts
 	artifacts := Build[F](build, args...)
@@ -131,6 +135,12 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 		//
 		debug.PrintAnySchema(air, 80, config.verbose)
+	}
+	// Summary statistics
+	if config.stats {
+		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
+		//
+		PrintCompileStats[F](air, artifacts.ir)
 	}
 }
 
@@ -687,4 +697,5 @@ func init() {
 	compileCmd.PersistentFlags().Bool("bci", false, "Output Bytecode Representation (BCI)")
 	compileCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
 	compileCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
+	compileCmd.PersistentFlags().Bool("stats", false, "Output summary statistics")
 }
