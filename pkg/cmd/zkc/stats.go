@@ -393,10 +393,12 @@ func printAirModuleStats(stats []moduleStats) {
 			//
 			return ""
 		}))
-	// Constraints bucketed by degree.
+	// Vanishing constraints bucketed by degree.  Note this is specifically the
+	// vanishing-constraint breakdown; other AIR constraint kinds (range,
+	// permutation, ...) are not counted here (lookups have their own column).
 	for _, b := range degBuckets {
 		b := b
-		cols = append(cols, regularColumn(stats, "Constraints", b.label,
+		cols = append(cols, regularColumn(stats, "Vanishing constraints (by degree)", b.label,
 			func(m moduleStats) uint { return bucketCount(m.degrees, b) }))
 	}
 	// Lookups, complexity (regular modules only).
