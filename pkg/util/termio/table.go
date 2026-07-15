@@ -107,6 +107,20 @@ func (p *FormattedTable) SetMaxWidth(col uint, width uint) {
 	p.widths[col] = min(p.widths[col], width)
 }
 
+// PrintedWidth returns the total width (in characters) of this table as rendered
+// by Print.  This is useful when something of matching width needs to be drawn
+// alongside the table (e.g. a horizontal rule).  Each column contributes its
+// width plus a leading space, a trailing space and the separator.
+func (p *FormattedTable) PrintedWidth() uint {
+	var width uint
+	//
+	for _, w := range p.widths {
+		width += w + 2 + uint(len(p.separator))
+	}
+	//
+	return width
+}
+
 // Print the table with or without the use of ANSI escapes (e.g. for showing
 // colour).  Disabling escapes is useful in environments that don't support
 // escapes as, otherwise, you get a lot of visible excape characters being
