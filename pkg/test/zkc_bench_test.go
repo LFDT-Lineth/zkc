@@ -25,7 +25,7 @@ var DEFAULT_BENCH_CONFIG = test_util.DEFAULT_CONFIG
 // Benchmark Tests
 // ===================================================================
 func Test_ZkcBench_Blake(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG.GoGen(false).Constraints(false))
+	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG.Constraints(false))
 }
 
 func Test_ZkcBench_BinarySearchTree(t *testing.T) {
@@ -37,7 +37,7 @@ func Test_ZkcBench_FastPow(t *testing.T) {
 }
 
 func Test_ZkcBench_Gcd(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/gcd", DEFAULT_BENCH_CONFIG.GoGen(false))
+	checkZkcBench(t, "zkc/bench/gcd", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_Fnv1aHash(t *testing.T) {
@@ -72,7 +72,7 @@ func Test_ZkcBench_LongDivision(t *testing.T) {
 }
 
 func Test_ZkcBench_DivRem(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/div_rem", DEFAULT_BENCH_CONFIG.GoGen(false))
+	checkZkcBench(t, "zkc/bench/div_rem", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_ModExp32(t *testing.T) {

@@ -19,10 +19,12 @@ import (
 )
 
 // DEFAULT_MIXED_CONFIG provides a default configuration for mixed tests.  These
-// are executed via the bytecode interpreter (in addition to the usual word
-// machine), exercising its support for native field arithmetic.
+// exercise native field arithmetic: they run on the bytecode interpreter and,
+// since the tested field (KoalaBear) has a modulus ≤ 64 bits, on the
+// generated-Go executor too (gogen represents a field element as a single
+// uint64 — see pkg/zkc/vm/internal/gogen).
 var DEFAULT_MIXED_CONFIG = util.DEFAULT_CONFIG.
-	GoGen(false)
+	GoGen(true)
 
 // ===================================================================
 // Basic Tests

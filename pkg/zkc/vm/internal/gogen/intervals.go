@@ -65,7 +65,12 @@ func newIntervals(fn *descFunction, isBoot, disabled bool) *intervals {
 
 	for i, r := range regs {
 		w := uint(128)
-		if !r.IsNative() && r.Bitwidth().Unwrap() < 128 {
+
+		switch {
+		case r.IsNative():
+			// Native registers are single uint64 locals (see regWidth).
+			w = 64
+		case r.Bitwidth().Unwrap() < 128:
 			w = r.Bitwidth().Unwrap()
 		}
 

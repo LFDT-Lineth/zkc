@@ -18,6 +18,7 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -78,10 +79,10 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 				bound = maxContents(mi.contents)
 			case ramScratch:
 				expr = fmt.Sprintf("memGet(%s, start+%d)", mi.varName, i)
-				bound = widthMax(dataRegs[i].Bitwidth().Unwrap())
+				bound = dataBound(dataRegs[i])
 			case pagedScratch:
 				expr = fmt.Sprintf("%s.get(start + %d)", mi.varName, i)
-				bound = widthMax(dataRegs[i].Bitwidth().Unwrap())
+				bound = dataBound(dataRegs[i])
 			default: // input ROM: untrusted contents
 				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
 				bound = widthMax(64)
@@ -184,6 +185,17 @@ func (g *generator) addrExpr(fn *descFunction, mi memInfo, addr []regId) (string
 	}
 
 	return expr, nil
+}
+
+// dataBound bounds a value read from a scratch memory data line: its declared
+// width, or the full uint64 range for a native (field-element) line, which has
+// no fixed width (its stored field values are < P ≤ 2^64).
+func dataBound(r descriptor.Register[word.Uint]) *big.Int {
+	if r.IsNative() {
+		return widthMax(64)
+	}
+
+	return widthMax(r.Bitwidth().Unwrap())
 }
 
 // maxContents bounds the values of a baked static memory.
