@@ -124,21 +124,30 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 // supplied register mapping, without requiring a corset source map.  Columns are
 // shown as computed (low-level) registers.  This is intended for callers (e.g.
 // the zkc toolchain) which generate a trace but have no source map available.
+//
+// The optional "public" predicate determines which modules are publicly visible
+// (shown by default); when nil, all modules are public.  Callers use this to
+// hide synthetic modules such as range-check tables.
 func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F],
-	limbs bool, cellWidth, titleWidth uint) []error {
+	public func(tr.ModuleName) bool, limbs bool, cellWidth, titleWidth uint) []error {
 	//
 	term, err := termio.NewTerminal()
 	if err != nil {
 		return []error{err}
 	}
 	// Build the viewing window (no source map, so show computed registers).
-	window := view.NewBuilder[F](mapping).
+	builder := view.NewBuilder[F](mapping).
 		WithTitleWidth(titleWidth).
 		WithCellWidth(cellWidth).
 		WithFormatting(inspector.NewFormatter()).
 		WithLimbs(limbs).
-		WithComputed(true).
-		Build(trace)
+		WithComputed(true)
+	// Apply the visibility predicate (if any).
+	if public != nil {
+		builder = builder.WithVisibility(public)
+	}
+	//
+	window := builder.Build(trace)
 	// Construct the inspector.
 	insp := inspector.NewInspector(term, window)
 	// Render it.

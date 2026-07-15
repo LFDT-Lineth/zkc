@@ -20,6 +20,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -127,7 +128,9 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Open the generated trace in the interactive inspector (if requested).  This
 	// takes over the terminal, so it runs last, after any stdout output above.
 	if inspect && len(errors) == 0 {
-		errors = corset.InspectTrace(binfile.LimbsMap(), trace, false, 32, 128)
+		// Real ZkC functions are public; synthetic modules (e.g. range-check
+		// tables) are private (hidden by default in the inspector).
+		errors = corset.InspectTrace(binfile.LimbsMap(), trace, publicModule, false, 32, 128)
 	}
 	// =====================================================
 	// Report Execution Failures
@@ -149,6 +152,17 @@ func init() {
 	traceCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	traceCmd.Flags().Bool("stats", false, "show overall stats for the generated trace")
 	traceCmd.Flags().BoolP("inspect", "i", false, "open the generated trace in the interactive inspector")
+}
+
+// publicModule reports whether a module is publicly visible in the inspector.
+// Real ZkC functions and memories are public; synthetic modules generated during
+// compilation (e.g. range-check tables such as "$range_u16") are private, so the
+// inspector hides them by default.  Synthetic modules are named with a "$" sigil,
+// which cannot appear in user-written identifiers (see the ZkC lexer), making the
+// prefix a reliable marker.  Note the AIR schema does not set the IsSynthetic
+// flag for these modules, so the name is the only discriminator available.
+func publicModule(name module.Name) bool {
+	return !strings.HasPrefix(name.Name, "$")
 }
 
 // Column bit-width buckets reported by printTraceStats, matching those shown by
