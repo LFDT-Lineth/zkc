@@ -46,18 +46,18 @@ type CompilationConfig = compiler.Config
 // CompileSourceFiles compiles one or more source files into a schema.  This
 // process can fail if the source files are mal-formed, or contain syntax errors
 // or other forms of error (e.g. type errors).
-func CompileSourceFiles(config CompilationConfig, srcfiles []source.File, extern asm.MacroProgram,
-) (asm.MacroHirProgram, SourceMap, []SyntaxError) {
+func CompileSourceFiles(config CompilationConfig, srcfiles []source.File,
+) (asm.MicroHirProgram, SourceMap, []SyntaxError) {
 	// Include the standard library (if requested)
 	srcfiles = includeStdlib(config.Stdlib, srcfiles)
 	// Parse all source files (inc stdblib if applicable).
 	circuit, srcmap, errs := compiler.ParseSourceFiles(srcfiles, config)
 	// Check for parsing errors
 	if errs != nil {
-		return asm.MacroHirProgram{}, SourceMap{}, errs
+		return asm.MicroHirProgram{}, SourceMap{}, errs
 	}
 	// Compile each module into the schema
-	comp := NewCompiler(circuit, srcmap, extern).
+	comp := NewCompiler(circuit, srcmap).
 		SetDebug(config.Debug)
 	// Configure register allocator (if requested)
 	if config.Legacy {
@@ -73,11 +73,8 @@ func CompileSourceFiles(config CompilationConfig, srcfiles []source.File, extern
 // really helper function for e.g. the testing environment.   This process can
 // fail if the source file is mal-formed, or contains syntax errors or other
 // forms of error (e.g. type errors).
-func CompileSourceFile(config CompilationConfig, srcfile source.File) (asm.MacroHirProgram, SourceMap, []SyntaxError) {
-	//
-	var macroProgram asm.MacroProgram
-	//
-	return CompileSourceFiles(config, []source.File{srcfile}, macroProgram)
+func CompileSourceFile(config CompilationConfig, srcfile source.File) (asm.MicroHirProgram, SourceMap, []SyntaxError) {
+	return CompileSourceFiles(config, []source.File{srcfile})
 }
 
 // Compiler packages up everything needed to compile a given set of module
@@ -88,8 +85,6 @@ type Compiler struct {
 	allocator func(compiler.RegisterAllocation)
 	// A high-level definition of a Corset circuit.
 	circuit ast.Circuit
-	// Externally defined modules
-	asmProgram asm.MacroProgram
 	// Determines whether debug
 	debug bool
 	// Determines whether to apply sanity checks
@@ -101,9 +96,8 @@ type Compiler struct {
 }
 
 // NewCompiler constructs a new compiler for a given set of modules.
-func NewCompiler(circuit ast.Circuit, srcmaps *source.Maps[ast.Node], extern asm.MacroProgram) *Compiler {
-	//
-	return &Compiler{compiler.DEFAULT_ALLOCATOR, circuit, extern, false, true, srcmaps}
+func NewCompiler(circuit ast.Circuit, srcmaps *source.Maps[ast.Node]) *Compiler {
+	return &Compiler{compiler.DEFAULT_ALLOCATOR, circuit, false, true, srcmaps}
 }
 
 // SetDebug enables or disables debug mode.  In debug mode, debug constraints
@@ -124,30 +118,30 @@ func (p *Compiler) SetAllocator(allocator func(compiler.RegisterAllocation)) *Co
 // ways if the given modules are malformed in some way.  For example, if some
 // expression refers to a non-existent module or column, or is not well-typed,
 // etc.
-func (p *Compiler) Compile(config compiler.Config) (asm.MacroHirProgram, SourceMap, []SyntaxError) {
+func (p *Compiler) Compile(config compiler.Config) (asm.MicroHirProgram, SourceMap, []SyntaxError) {
 	var (
 		scope  *compiler.ModuleScope
 		errors []SyntaxError
 	)
 	// Resolve variables (via nested scopes)
-	scope, errors = compiler.ResolveCircuit(p.srcmap, &p.circuit, p.asmProgram.Components()...)
+	scope, errors = compiler.ResolveCircuit(p.srcmap, &p.circuit)
 	// Type check circuit.
 	errors = append(errors, compiler.TypeCheckCircuit(p.srcmap, &p.circuit)...)
 	// Catch errors
 	if len(errors) > 0 {
-		return asm.MacroHirProgram{}, SourceMap{}, errors
+		return asm.MicroHirProgram{}, SourceMap{}, errors
 	}
 	// Preprocess circuit to remove invocations, reductions, etc.
 	if errors = compiler.PreprocessCircuit(p.debug, p.srcmap, &p.circuit); len(errors) > 0 {
-		return asm.MacroHirProgram{}, SourceMap{}, errors
+		return asm.MicroHirProgram{}, SourceMap{}, errors
 	}
 	// Convert global scope into an environment by allocating all columns.
 	environment := compiler.NewGlobalEnvironment(scope, p.allocator)
 	// Translate everything and add it to the schema.
-	asmProgram, errs := compiler.TranslateCircuit(environment, p.srcmap, &p.circuit, p.asmProgram, config)
+	asmProgram, errs := compiler.TranslateCircuit(environment, p.srcmap, &p.circuit, config)
 	// Sanity check for errors
 	if len(errs) > 0 {
-		return asm.MacroHirProgram{}, SourceMap{}, errs
+		return asm.MicroHirProgram{}, SourceMap{}, errs
 	} else if cerrs := asmProgram.Consistent(math.MaxUint); len(cerrs) > 0 {
 		// Should be unreachable.
 		for _, err := range cerrs {

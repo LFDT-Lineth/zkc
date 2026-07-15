@@ -57,6 +57,26 @@ func (o Option[T]) Unwrap() T {
 	panic("cannot unwrap an empty option")
 }
 
+// UnwrapOr returns the value contained, or a given default value is the option
+// is empty.
+func (o Option[T]) UnwrapOr(value T) T {
+	if o.some {
+		return o.value
+	}
+	//
+	return value
+}
+
+// MapOption maps an option from one type to another using a given mapping
+// function.
+func MapOption[S any, T any](opt Option[S], fn func(S) T) Option[T] {
+	if opt.IsEmpty() {
+		return None[T]()
+	}
+	//
+	return Some[T](fn(opt.Unwrap()))
+}
+
 // ============================================================================
 // Encoding / Decoding
 // ============================================================================

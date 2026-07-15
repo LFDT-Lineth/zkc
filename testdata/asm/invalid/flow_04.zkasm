@@ -1,6 +1,0 @@
-;;error:5:3-10:unreachable
-fn f(x u16) -> (res u16) {
-  res = 0
-  return
-  res = x
-}

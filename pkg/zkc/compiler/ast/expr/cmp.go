@@ -87,7 +87,7 @@ func (p *Cmp[S]) Negate() Condition[S] {
 
 // ExternUses implementation for the Condition interface.
 func (p *Cmp[S]) ExternUses() set.AnySortedSet[S] {
-	panic("todo")
+	return externUses(p.Left, p.Right)
 }
 
 // LocalUses implementation for the Condition interface.

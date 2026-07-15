@@ -94,7 +94,7 @@ func (p *RegisterAccess[F, T]) Mask(maskwidth uint) *RegisterAccess[F, T] {
 	// Sanity check mask
 	if maskwidth > p.bitwidth {
 		panic(fmt.Sprintf("invalid mask (u%d > u%d)", maskwidth, p.bitwidth))
-	} else if p.HasFieldType() {
+	} else if p.HasFieldType() && maskwidth != math.MaxUint {
 		panic("cannot mask a register of field type")
 	}
 	//

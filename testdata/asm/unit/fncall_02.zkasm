@@ -1,6 +1,0 @@
-;; Add two 32bit integers using modulo arithmetic
-fn add(arg1 u32, arg2 u32) -> (res u32) {
-   var tmp u1
-   tmp,res = arg1 + arg2
-   return
-}

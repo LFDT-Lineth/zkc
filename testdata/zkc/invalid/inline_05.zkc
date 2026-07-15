@@ -1,0 +1,13 @@
+//error:3:1-21:cannot inline recursive function
+#[inline]
+fn f(x:u8) -> (r:u8) {
+    if x == 0 {
+        r = 0
+        return
+    }
+    r = f(x - 1)
+}
+
+fn main() {
+    var x:u8 = f(3)
+}

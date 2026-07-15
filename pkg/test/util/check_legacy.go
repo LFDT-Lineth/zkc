@@ -42,17 +42,6 @@ import (
 // (accepts/rejects) are found.
 const TestDir = "../../testdata"
 
-// ASM_MAX_PADDING determines the maximum amount of padding to use when testing.
-// Specifically, every trace is tested with varying amounts of padding upto this
-// value.  NOTE: assembly modules don't need to be tested for higher padding
-// values, since they only ever do unit shifts.
-const ASM_MAX_PADDING uint = 2
-
-// CORSET_MAX_PADDING determines the maximum amount of padding to use when
-// testing. Specifically, every trace is tested with varying amounts of padding
-// upto this value.
-const CORSET_MAX_PADDING uint = 7
-
 // FIELD_REGEX is used to restrict which fields will be tested.  This is
 // primarily useful for the CI pipeline where we want to test individual fields
 // in separate runners.
@@ -60,10 +49,11 @@ var FIELD_REGEX *regexp.Regexp
 
 // CheckCorset checks that all traces which we expect to be accepted are
 // accepted by a given set of constraints, and all traces that we expect to be
-// rejected are rejected.  All fields provided are tested against, and also all
-// padding amounts upto 7.
+// rejected are rejected.  All fields provided are tested against, both with and
+// without padding (whereby every module's length is expanded up to the next
+// power of two).
 func CheckCorset(t *testing.T, stdlib bool, test string, fields ...field.Config) {
-	CheckWithFields(t, stdlib, test, CORSET_MAX_PADDING, fields...)
+	CheckWithFields(t, stdlib, test, true, fields...)
 }
 
 // CheckCorsetNoPadding checks that all traces which we expect to be accepted
@@ -72,13 +62,13 @@ func CheckCorset(t *testing.T, stdlib bool, test string, fields ...field.Config)
 // any padding.  This is useful to reduce unnecessary testing for cases where we
 // know padding is not relevant.
 func CheckCorsetNoPadding(t *testing.T, stdlib bool, test string, fields ...field.Config) {
-	CheckWithFields(t, stdlib, test, 0, fields...)
+	CheckWithFields(t, stdlib, test, false, fields...)
 }
 
 // CheckWithFields checks that all traces which we expect to be accepted are
 // accepted by a given set of constraints, and all traces that we expect to be
 // rejected are rejected.  All fields provided are tested against.
-func CheckWithFields(t *testing.T, stdlib bool, test string, maxPadding uint, fields ...field.Config) {
+func CheckWithFields(t *testing.T, stdlib bool, test string, padding bool, fields ...field.Config) {
 	// Sanity check
 	if len(fields) == 0 {
 		panic("no field configurations")
@@ -92,20 +82,20 @@ func CheckWithFields(t *testing.T, stdlib bool, test string, maxPadding uint, fi
 		// Dispatch based on field config
 		switch f {
 		case field.GF_251:
-			checkWithField[gf251.Element](t, stdlib, test, maxPadding, f)
+			checkWithField[gf251.Element](t, stdlib, test, padding, f)
 		case field.GF_8209:
-			checkWithField[gf8209.Element](t, stdlib, test, maxPadding, f)
+			checkWithField[gf8209.Element](t, stdlib, test, padding, f)
 		case field.KOALABEAR_16:
-			checkWithField[koalabear.Element](t, stdlib, test, maxPadding, f)
+			checkWithField[koalabear.Element](t, stdlib, test, padding, f)
 		case field.BLS12_377:
-			checkWithField[bls12_377.Element](t, stdlib, test, maxPadding, f)
+			checkWithField[bls12_377.Element](t, stdlib, test, padding, f)
 		default:
 			panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
 		}
 	}
 }
 
-func checkWithField[F field.Element[F]](t *testing.T, stdlib bool, test string, maxPadding uint,
+func checkWithField[F field.Element[F]](t *testing.T, stdlib bool, test string, padding bool,
 	field field.Config) {
 	//
 	var (
@@ -126,7 +116,7 @@ func checkWithField[F field.Element[F]](t *testing.T, stdlib bool, test string, 
 			traces = ReadTracesFile(testFilename)
 			if len(traces) > 0 {
 				// Run tests
-				fullCheckTraces(t, testFilename, cfg, maxPadding, traces, stacks)
+				fullCheckTraces(t, testFilename, cfg, padding, traces, stacks)
 			}
 		}
 		// Record how many tests we found
@@ -138,7 +128,7 @@ func checkWithField[F field.Element[F]](t *testing.T, stdlib bool, test string, 
 	}
 }
 
-func fullCheckTraces[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, maxPadding uint,
+func fullCheckTraces[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, padding bool,
 	traces []lt.TraceFile, stack cmd_util.SchemaStacker[F]) {
 	//
 	if cfg.expand {
@@ -160,7 +150,7 @@ func fullCheckTraces[F field.Element[F]](t *testing.T, test string, cfg LegacyTe
 	// Construct binary schema using primary stack
 	checkBinaryEncoding(t, test, cfg, traces, stack)
 	// Perform checks with different fields
-	checkPadding(t, test, cfg, maxPadding, traces, stack)
+	checkPadding(t, test, cfg, padding, traces, stack)
 }
 
 // Sanity check same outcome for all optimisation levels
@@ -173,7 +163,7 @@ func checkCompilerOptimisations[F field.Element[F]](t *testing.T, test string, c
 			// Set optimisation level
 			stack = stack.WithOptimisationConfig(mir.OPTIMISATION_LEVELS[opt])
 			// Apply stack
-			checkTraces(t, test, 0, opt, cfg, traces, stack)
+			checkTraces(t, test, false, opt, cfg, traces, stack)
 		}
 	}
 }
@@ -194,36 +184,42 @@ func checkBinaryEncoding[F field.Element[F]](t *testing.T, test string, cfg Lega
 
 		// Run checks using schema from binary file.  Observe, to try and reduce
 		// overhead of repeating all the tests we don't consider padding.
-		checkTraces(t, name, 0, opt, cfg, traces, stack)
+		checkTraces(t, name, false, opt, cfg, traces, stack)
 	}
 }
 
 // Run default optimisation over all fields, and check padding for the primary
 // stack only.
-func checkPadding[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, maxPadding uint,
+func checkPadding[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, padding bool,
 	traces []lt.TraceFile, stack cmd_util.SchemaStacker[F]) {
 	//
 	if cfg.field == "" || cfg.field == stack.Field().Name {
 		// Set default optimisation level
 		stack = stack.WithOptimisationConfig(mir.DEFAULT_OPTIMISATION_LEVEL)
 		// Apply stack
-		checkTraces(t, test, maxPadding, mir.DEFAULT_OPTIMISATION_INDEX, cfg, traces, stack)
+		checkTraces(t, test, padding, mir.DEFAULT_OPTIMISATION_INDEX, cfg, traces, stack)
 	}
 }
 
 // Check a given set of tests have an expected outcome (i.e. are
 // either accepted or rejected) by a given set of constraints.
-func checkTraces[F field.Element[F]](t *testing.T, test string, maxPadding uint, opt uint, cfg LegacyTestConfig,
+func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, opt uint, cfg LegacyTestConfig,
 	traces []lt.TraceFile, stacker cmd_util.SchemaStacker[F]) {
 	// For unexpected traces, we never want to explore padding (because that's
 	// the whole point of unexpanded traces --- they are raw).
 	if !cfg.expand {
-		maxPadding = 0
+		padding = false
+	}
+	// Always test without padding; additionally test with padding when
+	// requested (whereby every module is expanded up to the next power of two).
+	paddings := []bool{false}
+	if padding {
+		paddings = append(paddings, true)
 	}
 	// Configure stack.
 	stack := stacker.Build()
 	// Run through all configurations.
-	for padding := uint(0); padding <= maxPadding; padding++ {
+	for _, padding := range paddings {
 		// Fork trace
 		t.Run(test, func(t *testing.T) {
 			// Enable parallel testing
@@ -256,11 +252,16 @@ func checkTraces[F field.Element[F]](t *testing.T, test string, maxPadding uint,
 
 func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf lt.TraceFile, id traceId,
 	schema sc.Schema[F, C], mapping module.LimbsMap) {
+	// Map the legacy padding toggle onto a padding strategy.
+	paddingStrategy := ir.NaryRowPadding(0)
+	if id.padding {
+		paddingStrategy = ir.NextPowerOfTwoPadding
+	}
 	// Construct the trace
 	tr, errs := ir.NewTraceBuilder[F]().
 		WithExpansion(id.expand).
 		WithValidation(id.validate).
-		WithPadding(id.padding).
+		WithPadding(paddingStrategy).
 		WithParallelism(id.parallel).
 		WithRegisterMapping(mapping).
 		WithBatchSize(128).
@@ -286,7 +287,7 @@ func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf lt.Trac
 
 // SRC_EXTENSIONS identifies the set of currently recognised extensions for
 // constraint source files.
-var SRC_EXTENSIONS = []string{"lisp", "zkasm"}
+var SRC_EXTENSIONS = []string{"lisp"}
 
 // This identifies matching source files.
 func matchSourceFiles(test string) []string {
@@ -363,12 +364,13 @@ type traceId struct {
 	// Identifies the line number within the test file that the failing trace
 	// original.
 	line int
-	// Identifies how much padding has been added to the expanded trace.
-	padding uint
+	// Identifies whether padding has been added to the expanded trace (whereby
+	// every module's length is expanded up to the next power of two).
+	padding bool
 }
 
 func (p *traceId) String() string {
-	return fmt.Sprintf("[%s;%s;O%d], %s, line %d with padding %d", p.field, p.ir,
+	return fmt.Sprintf("[%s;%s;O%d], %s, line %d with padding %t", p.field, p.ir,
 		p.optimisation, p.test, p.line, p.padding)
 }
 
@@ -429,13 +431,11 @@ func getSchemaStack[F field.Element[F]](stdlib bool, field field.Config, filenam
 	corsetConfig.Stdlib = stdlib
 	corsetConfig.Field = field
 	// Configure asm for lowering
-	asmConfig.Vectorize = true
 	asmConfig.Field = field
 	//
 	stack = stack.
 		WithCorsetConfig(corsetConfig).
 		WithAssemblyConfig(asmConfig).
-		WithLayer(cmd_util.MACRO_ASM_LAYER).
 		WithLayer(cmd_util.MICRO_ASM_LAYER).
 		WithLayer(cmd_util.MIR_LAYER).
 		WithLayer(cmd_util.AIR_LAYER)

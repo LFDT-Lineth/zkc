@@ -12,7 +12,20 @@
 // SPDX-License-Identifier: Apache-2.0
 package math
 
-import "math/big"
+import (
+	"math/big"
+	"math/bits"
+)
+
+// NextPowerOfTwo returns the smallest power of two greater than or equal to n,
+// treating zero as one.
+func NextPowerOfTwo(n uint) uint {
+	if n <= 1 {
+		return 1
+	}
+	//
+	return 1 << bits.Len(n-1)
+}
 
 // PowUint64 raises a given base raised to a given power.
 func PowUint64(base uint64, exp uint64) uint64 {

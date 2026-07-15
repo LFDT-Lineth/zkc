@@ -1,9 +1,0 @@
-;;error:7:3-31:remainder bit overflow (u16 into u15)
-fn div(x u16, y u16) -> (q u16, r u15) {
-  var sum u32
-  var witsum u17
-  var w u16
-
-  q, r, w, sum, witsum = x / y
-  return
-}

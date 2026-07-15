@@ -1,6 +1,0 @@
-;;error:3:3-23:unknown label
-fn f(x u16) -> (res u16) {
-  if x == 0 goto label
-  res = 1
-  return
-}

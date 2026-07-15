@@ -12,8 +12,16 @@
 // SPDX-License-Identifier: Apache-2.0
 package util
 
+import "math/big"
+
 // Uinter64 captures any type which can be converted into a uint64 value.
 type Uinter64 interface {
 	// Convert the given type into a uint64 value.
 	Uint64() uint64
+}
+
+// BigInter captures any type which can be convered into a big.Int value.  NOTE:
+// the return value should be fresh (i.e. not an alias for some internal state).
+type BigInter interface {
+	BigInt() *big.Int
 }

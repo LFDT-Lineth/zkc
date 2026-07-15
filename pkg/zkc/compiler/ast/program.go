@@ -25,17 +25,17 @@ import (
 // RawProgram encapsulates one of more functions together, such that one may call
 // another, etc.  Furthermore, it provides an interface between assembly
 // components and the notion of a Schema.
-type RawProgram[I any] struct {
-	declarations []decl.Declaration[I]
+type RawProgram[S any] struct {
+	declarations []decl.Declaration[S]
 }
 
 // Component returns the ith entity in this program.
-func (p *RawProgram[I]) Component(id uint) decl.Declaration[I] {
+func (p *RawProgram[S]) Component(id uint) decl.Declaration[S] {
 	return p.declarations[id]
 }
 
 // Components returns all functions making up this program.
-func (p *RawProgram[I]) Components() []decl.Declaration[I] {
+func (p *RawProgram[S]) Components() []decl.Declaration[S] {
 	return p.declarations
 }
 
@@ -166,8 +166,11 @@ func (p *Program) EncodeInputsOutputs(values map[string][]vm.Uint) (map[string][
 // Compile attempts to compile a given high-level program into a low-level
 // machine which can be used (for example) to execute this program with some
 // given inputs.
-func (p *Program) Compile(config codegen.Config) (*vm.WordMachine[vm.Uint], []source.SyntaxError) {
-	var compiler = codegen.NewCompiler(config, p.Environment(), p.srcmaps)
-	// Compile all decalarations
-	return compiler.Compile(p.declarations)
+func Compile(prog Program, config codegen.Config) (vm.Program[vm.Uint], []source.SyntaxError) {
+	var (
+		// Construct code generator
+		compiler = codegen.NewCompiler(config, prog.Environment(), prog.srcmaps)
+	)
+	// Compiler into vm Program
+	return compiler.Compile(prog.declarations)
 }

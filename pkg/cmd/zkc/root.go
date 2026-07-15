@@ -38,10 +38,10 @@ var rootCmd = &cobra.Command{
 
 			if Version != "" {
 				// Built via "make"
-				fmt.Printf("%s", Version)
+				fmt.Printf("\"%s\"", Version)
 			} else if info, ok := debug.ReadBuildInfo(); ok {
 				// Built via "go install"
-				fmt.Printf("%s", info.Main.Version)
+				fmt.Printf("\"%s\"", info.Main.Version)
 			} else {
 				// Unknown, perhaps "go run"
 				fmt.Printf("(unknown version)")
@@ -94,29 +94,26 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 // GetBuildConfig constructs a build configuration from the provided
 // command-line arguments.  The purpose of this is to provide a consistent
 // mechanism for compiling constraint files across the various sub-commands.
-func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig[F] {
-	var build BuildConfig[F]
-
-	lowerNative := GetFlag(cmd, "lower-native") || GetFlag(cmd, "mir") || GetFlag(cmd, "air")
+func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig {
+	var (
+		build    BuildConfig
+		fastMode = GetFlag(cmd, "fast")
+		quiet    = GetFlag(cmd, "quiet")
+	)
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
 		log.SetLevel(log.DebugLevel)
 	}
-	// Configure target field
-	build.field = field
+	// Conmfigure go generator
+	build.gogen = GetFlag(cmd, "gogen")
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
-		LowerNatives(lowerNative).
+		Inlining(GetFlag(cmd, "inline")).
+		FastMode(fastMode).
 		Vectorize(GetFlag(cmd, "vectorize")).
-		SplitRegisters(GetFlag(cmd, "split")).
-		Field(field)
-	// Configure build targets
-	build.ast = GetFlag(cmd, "ast")
-	build.wir = GetFlag(cmd, "wir")
-	build.bci = GetFlag(cmd, "bci")
-	build.fir = GetFlag(cmd, "fir")
-	build.mir = GetFlag(cmd, "mir")
-	build.air = GetFlag(cmd, "air")
+		MaxStaticDepth(GetUint(cmd, "max_static_depth")).
+		Field(field).
+		Quiet(quiet)
 	//
 	return build
 }
@@ -136,16 +133,17 @@ func findFieldAgnosticCmd(config field.Config, cmds []FieldAgnosticCmd) (cmd Fie
 }
 
 func init() {
-	rootCmd.PersistentFlags().Bool("ast", false, "Output Abstract Syntax Tree (AST)")
-	rootCmd.PersistentFlags().Bool("wir", false, "Output Word-level Intermediate Representation (WIR)")
-	rootCmd.PersistentFlags().Bool("bci", false, "Output Bytecode Representation (BCI)")
-	rootCmd.PersistentFlags().Bool("fir", false, "Output Field-level Intermediate Representation (FIR)")
-	rootCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
-	rootCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
-	rootCmd.PersistentFlags().Bool("lower-native", false, "Lower ZkC native functions into arithmetic instructions")
+	rootCmd.Flags().Bool("version", false, "Report version of this executable")
+	//
+	rootCmd.PersistentFlags().Bool("show-static", false, "Show static tables in the MIR/AIR output")
+	rootCmd.PersistentFlags().BoolP("fast", "f", false, "Fast-mode execution (no tracing, no constraints)")
+	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress debug output")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
+	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
-	rootCmd.PersistentFlags().Bool("split", false, "Apply register splitting")
+	rootCmd.PersistentFlags().BoolP("gogen", "g", false, "enable Go code generation")
+	rootCmd.PersistentFlags().Uint("max_static_depth", codegen.DEFAULT_MAX_STATIC_DEPTH,
+		"maximum depth (number of rows) of static tables")
 	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")
 	// profiling commands'
 	rootCmd.PersistentFlags().String("cpuprof", "", "write cpu profile to `file`")

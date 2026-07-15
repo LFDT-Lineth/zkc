@@ -14,49 +14,36 @@ package bytecode
 
 import (
 	"fmt"
-	"math"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // CheckCast instruction.
-type CheckCast struct {
+type CheckCast[W word.Word[W]] struct {
 	Bitwidth uint16
-	Target   Reg
+	Target   RegisterId
 }
 
-// NewCheckCast constructs a new check cast instruction.
-func NewCheckCast(target register.Id, bitwidth uint) *CheckCast {
-	//
-	if bitwidth > math.MaxUint16 {
-		panic("register too large")
-	}
-	//
-	return &CheckCast{
-		uint16(bitwidth),
-		asReg(target),
-	}
+// Uses implementation for Bytecode interface.  A check-cast reads its target to
+// assert the held value fits within the given bit width.
+func (p *CheckCast[W]) Uses() []RegisterId {
+	return []RegisterId{p.Target}
 }
 
-func (p *CheckCast) String(mapping SystemMap) string {
-	return fmt.Sprintf("check %s:u%d", registerToString(p.Target, mapping), p.Bitwidth)
+// Definitions implementation for Bytecode interface.  A check-cast asserts a
+// property of an existing register without writing a new value, so it defines
+// nothing.  In particular, it does not redefine its target: doing so would
+// conflict with the definition it is paired with to validate (e.g. the
+// preceding arithmetic write).
+func (p *CheckCast[W]) Definitions() []RegisterId {
+	return nil
 }
 
-// Codes implementation for Bytecode interface
-func (p *CheckCast) Codes(_ uint32) []uint32 {
-	var (
-		rd       = uint32(p.Target) << 8
-		bitwidth = uint32(p.Bitwidth) << 16
-	)
-	//
-	return []uint32{
-		bitwidth | rd | CHECKCAST,
-	}
+// Validate implementation for Bytecode interface.
+func (p *CheckCast[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
+	return nil
 }
 
-func decodeCheckCast(pc uint32, codes []uint32) (rd uint16, bitwidth uint16, n uint32) {
-	rd = uint16((codes[pc] >> 8) & 0xff)
-	bitwidth = uint16(codes[pc] >> 16)
-	//
-	return rd, bitwidth, 1
+func (p *CheckCast[W]) String(env Environment[W]) string {
+	return fmt.Sprintf("check %s:u%d", RegisterToString(p.Target, env), p.Bitwidth)
 }

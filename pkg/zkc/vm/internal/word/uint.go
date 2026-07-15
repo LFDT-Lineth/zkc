@@ -44,6 +44,12 @@ func (p Uint) Add(w Uint) (Uint, bool) {
 	return Uint{res}, false
 }
 
+// Add64 implementation for Word interface.
+func (p Uint) Add64(w uint64) (Uint, bool) {
+	var tmp Uint
+	return p.Add(tmp.SetUint64(w))
+}
+
 // AddMod implementation for Word interface.
 func (p Uint) AddMod(w, m Uint) Uint {
 	var res big.Int
@@ -59,16 +65,9 @@ func (p Uint) Bandwidth() uint {
 	return math.MaxUint
 }
 
-// Div implementation for Word interface.
-func (p Uint) Div(w Uint) Uint {
-	if w.value.Sign() == 0 {
-		panic("division by zero")
-	}
-	//
-	var res big.Int
-	res.Div(&p.value, &w.value)
-	//
-	return Uint{res}
+// BigInt implementation for Word interface.
+func (p Uint) BigInt() *big.Int {
+	return &p.value
 }
 
 // Cmp implementation for Word interface.
@@ -85,14 +84,48 @@ func (p Uint) Cmp64(o uint64) int {
 	return 1
 }
 
-// BigInt implementation for Word interface.
-func (p Uint) BigInt() *big.Int {
-	return &p.value
+// Div implementation for Word interface.
+func (p Uint) Div(w Uint) Uint {
+	if w.value.Sign() == 0 {
+		panic("division by zero")
+	}
+	//
+	var res big.Int
+	res.Div(&p.value, &w.value)
+	//
+	return Uint{res}
+}
+
+// DwDiv implementation for Word interface.  Since Uint is unbounded there is
+// no meaningful high word; consistent with Uint.Mul (which always returns a
+// zero high word), this panics unless the receiver is zero.
+func (p Uint) DwDiv(lo, d Uint) (Uint, Uint) {
+	if p.value.Sign() != 0 {
+		panic("quotient overflow")
+	}
+	//
+	return lo.Div(d), lo.Rem(d)
+}
+
+// DwRem implementation for Word interface.  Since Uint is unbounded there is
+// no meaningful high word; consistent with Uint.Mul (which always returns a
+// zero high word), this panics unless the receiver is zero.
+func (p Uint) DwRem(lo, d Uint) Uint {
+	if p.value.Sign() != 0 {
+		panic("no meaningful high word for unbounded words")
+	}
+	//
+	return lo.Rem(d)
 }
 
 // FitsWithin implementation for Word interface.
 func (p Uint) FitsWithin(bitwidth uint) bool {
 	return uint(p.value.BitLen()) <= bitwidth
+}
+
+// BitLen implementation for Word interface.
+func (p Uint) BitLen() uint {
+	return uint(p.value.BitLen())
 }
 
 // Not implementation for Word interface.
@@ -120,13 +153,15 @@ func (p Uint) Or(w Uint) Uint {
 }
 
 // Mul implementation for Word interface.
-func (p Uint) Mul(w Uint) (Uint, bool) {
+func (p Uint) Mul(w Uint) (hi, lo Uint) {
 	var (
 		res big.Int
 	)
 	res.Mul(&p.value, &w.value)
 	//
-	return Uint{res}, false
+	lo = Uint{res}
+	//
+	return hi, lo
 }
 
 // MulMod implementation for Word interface.
@@ -163,11 +198,11 @@ func (p Uint) Shl(width uint, n Uint) Uint {
 }
 
 // Shl64 implementation for Word interface.
-func (p Uint) Shl64(n uint64) Uint {
+func (p Uint) Shl64(n uint64) (hi Uint, lo Uint) {
 	var res big.Int
 	res.Lsh(&p.value, uint(n))
 	//
-	return Uint{res}
+	return hi, Uint{res}
 }
 
 // Shr implementation for Word interface.
@@ -232,6 +267,12 @@ func (p Uint) Sub(w Uint) (Uint, bool) {
 	return Uint{res}, res.Sign() < 0
 }
 
+// Sub64 implementation for Word interface.
+func (p Uint) Sub64(w uint64) (Uint, bool) {
+	var tmp Uint
+	return p.Sub(tmp.SetUint64(w))
+}
+
 // SubMod implementation for Word interface.
 func (p Uint) SubMod(w, m Uint) Uint {
 	var res big.Int
@@ -270,11 +311,15 @@ func (p *Uint) GobDecode(data []byte) error {
 }
 
 // lowBits returns the low `width` bits of value (i.e. value mod 2^width).
-// For example, given value 10111000 and width=4 the result is 1000.
+// For example, given value 10111000 and width=4 the result is 1000.  A
+// negative value (e.g. an underflowed subtraction) wraps two's-complement:
+// -1 with width=4 gives 1111.
 func lowBits(width uint, value big.Int) big.Int {
 	var slice big.Int
-	// Fast paths: the result fits within a single uint64.
-	if width <= 64 {
+	// Fast paths: the result fits within a single uint64.  These apply only to
+	// non-negative values — Uint64() / Bits() expose the magnitude, whereas a
+	// negative value must wrap two's-complement (the general path's And).
+	if width <= 64 && value.Sign() >= 0 {
 		if value.IsUint64() {
 			slice.SetUint64(value.Uint64() & mask64(width))
 			return slice
@@ -286,7 +331,9 @@ func lowBits(width uint, value big.Int) big.Int {
 			return slice
 		}
 	}
-	// General path: mask off everything at or above bit `width`.
+	// General path: mask off everything at or above bit `width`.  big.Int.And
+	// treats a negative operand as its infinite two's-complement extension, so
+	// this also wraps negative values correctly.
 	mask := new(big.Int).Lsh(&one, width)
 	mask.Sub(mask, &one)
 	slice.And(&value, mask)

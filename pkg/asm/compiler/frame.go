@@ -31,9 +31,16 @@ func NewAtomicFraming[T any, E Expr[T, E]]() Framing[T, E] {
 	return &OneLineFraming[T, E]{}
 }
 
-// NewMultiLineFraming constructs a suitable framing for a multi-line instruction.
-func NewMultiLineFraming[T any, E Expr[T, E]](pc T, pcWidth uint, ret T, retWidth uint) Framing[T, E] {
-	return &MultiLineFraming[T, E]{pc, pcWidth, ret, retWidth}
+// NewMultiLineFraming constructs framing for a multi-line function.
+// It assumes the caller has allocated $ret, PC and IS_PC_<k> selector registers and passes their ids here.
+func NewMultiLineFraming[T any, E Expr[T, E]](pc T, pcWidth uint, ret T, retWidth uint,
+	selectors []T) Framing[T, E] {
+	return &MultiLineFraming[T, E]{LegacyMultiLineFraming[T, E]{pc, pcWidth, ret, retWidth}, selectors}
+}
+
+// NewLegacyMultiLineFraming is a legacy constructor used only by zkasm, not by zkc.
+func NewLegacyMultiLineFraming[T any, E Expr[T, E]](pc T, pcWidth uint, ret T, retWidth uint) Framing[T, E] {
+	return &LegacyMultiLineFraming[T, E]{pc, pcWidth, ret, retWidth}
 }
 
 // ============================================================================
@@ -64,8 +71,9 @@ func (p *OneLineFraming[T, E]) Return() E {
 // Multi-Line Framing
 // ============================================================================
 
-// MultiLineFraming provides suitable control lines for multi-line functions.
-type MultiLineFraming[T any, E Expr[T, E]] struct {
+// LegacyMultiLineFraming provides suitable control lines for multi-line
+// functions, guarding each instruction with an equality on the program counter.
+type LegacyMultiLineFraming[T any, E Expr[T, E]] struct {
 	// Program Counter indicates which instruction is being executed.
 	pc T
 	// Width of program counter (for reference)
@@ -78,7 +86,7 @@ type MultiLineFraming[T any, E Expr[T, E]] struct {
 }
 
 // Goto implementation for Framing interface.
-func (p *MultiLineFraming[T, E]) Goto(pc uint) E {
+func (p *LegacyMultiLineFraming[T, E]) Goto(pc uint) E {
 	// PC[i+1] = target
 	var (
 		zero   = Number[T, E](0)
@@ -92,14 +100,32 @@ func (p *MultiLineFraming[T, E]) Goto(pc uint) E {
 }
 
 // Guard implementation for Framing interface.
-func (p *MultiLineFraming[T, E]) Guard(pc uint) E {
+func (p *LegacyMultiLineFraming[T, E]) Guard(pc uint) E {
 	// NOTE: pc+1 as pc==0 is for padding
 	return Variable[T, E](p.pc, p.pcWidth, 0).Equals(Number[T, E](pc + 1))
 }
 
 // Return implementation for Framing interface.
-func (p *MultiLineFraming[T, E]) Return() E {
+func (p *LegacyMultiLineFraming[T, E]) Return() E {
 	var one = Number[T, E](1)
 	// return line must be high; next PC must be zero.
 	return Variable[T, E](p.ret, p.retWidth, 0).Equals(one)
+}
+
+// MultiLineFraming provides suitable control lines for multi-line functions,
+// guarding each instruction with a dedicated boolean selector register.  It
+// reuses the legacy framing for Goto/Return (which act on the program counter
+// and return line) and overrides only the per-instruction Guard.
+type MultiLineFraming[T any, E Expr[T, E]] struct {
+	LegacyMultiLineFraming[T, E]
+	// selectors provides one boolean selector register per instruction, indexed
+	// by code line.  The selector for code line c is high exactly when PC==c+1.
+	selectors []T
+}
+
+// Guard implementation for Framing interface.  Guards directly on the selector
+// for this instruction.  Since the selector is a width-1 register, the resulting
+// condition lowers to the bare column with no inverse.
+func (p *MultiLineFraming[T, E]) Guard(pc uint) E {
+	return Variable[T, E](p.selectors[pc], 1, 0).NotEquals(Number[T, E](0))
 }

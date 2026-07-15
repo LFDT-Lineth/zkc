@@ -81,7 +81,14 @@ func runCheckCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	//
 	batched := GetFlag(cmd, "batched")
 	//
-	cfg.Padding.Right = GetUint(cmd, "padding")
+	strategy, ok := ir.GetPaddingStrategy(GetString(cmd, "padding"))
+	if !ok {
+		fmt.Printf("unknown padding strategy \"%s\"\n", GetString(cmd, "padding"))
+		os.Exit(3)
+	}
+	//
+	cfg.PaddingStrategy = strategy
+
 	cfg.Report = GetFlag(cmd, "report")
 	cfg.ReportPadding = GetUint(cmd, "report-context")
 	cfg.ReportLimbs = GetFlag(cmd, "show-limbs")
@@ -89,8 +96,6 @@ func runCheckCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	cfg.ReportCellWidth = GetUint(cmd, "report-cellwidth")
 	cfg.ReportTitleWidth = GetUint(cmd, "report-titlewidth")
 	cfg.AnsiEscapes = GetFlag(cmd, "ansi-escapes")
-	// TODO: support true ranges
-	cfg.Padding.Left = cfg.Padding.Right
 	// Read in constraint files
 	schemas := *getSchemaStack[F](cmd, SCHEMA_DEFAULT_AIR, args[1:]...)
 	// enable / disable coverage
@@ -150,8 +155,8 @@ type CheckConfig struct {
 	// Specifies whether to use Coverage testing and, if so, where to write the
 	// Coverage data.
 	Coverage util.Option[string]
-	// Specifies the range of Padding values to check
-	Padding util.Pair[uint, uint]
+	// Specifies how much front padding to add to each module.
+	PaddingStrategy ir.PaddingStrategy
 	// Specifies whether or not to Report details of the failure (e.g. for
 	// debugging purposes).
 	Report bool
@@ -221,21 +226,18 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 func checkTraces[F field.Element[F]](traces []lt.TraceFile, stacker cmd_util.SchemaStacker[F], cfg CheckConfig) bool {
 	//
 	for _, tf := range traces {
+		// Configure stack.  This is important to ensure true separation
+		// between runs (e.g. for the io.Executor).
+		stack := stacker.Build()
+		// configure trace builder
+		builder := stack.TraceBuilder().WithPadding(cfg.PaddingStrategy)
+		// identify concrete schema separately
+		schema := stack.ConcreteSchema()
+		// identify schema name
+		ir := stack.ConcreteIrName()
 		//
-		for n := cfg.Padding.Left; n <= cfg.Padding.Right; n++ {
-			// Configure stack.  This is important to ensure true separation
-			// between runs (e.g. for the io.Executor).
-			stack := stacker.Build()
-			// configure trace builder
-			builder := stack.TraceBuilder().WithPadding(n)
-			// identify concrete schema separately
-			schema := stack.ConcreteSchema()
-			// identify schema name
-			ir := stack.ConcreteIrName()
-			//
-			if ok := CheckTrace(ir, schema, tf, builder, cfg); !ok {
-				return false
-			}
+		if ok := CheckTrace(ir, schema, tf, builder, cfg); !ok {
+			return false
 		}
 	}
 	// Done
@@ -380,7 +382,8 @@ func init() {
 	checkCmd.Flags().Uint("report-titlewidth", 40, "specify maximum width of column titles in report")
 	//
 	checkCmd.Flags().String("coverage", "", "write JSON coverage data to file")
-	checkCmd.Flags().Uint("padding", 0, "specify amount of (front) padding to apply")
+	checkCmd.Flags().String("padding", "next-power-of-two",
+		"front padding strategy for each module (none, single-row, next-power-of-two)")
 	checkCmd.Flags().Bool("batched", false,
 		"specify trace file is batched (i.e. contains multiple traces, one for each line)")
 	checkCmd.Flags().Bool("ansi-escapes", true, "specify whether to allow ANSI escapes or not (e.g. for colour reports)")

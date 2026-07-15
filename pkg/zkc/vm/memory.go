@@ -13,49 +13,52 @@
 package vm
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// Memory captures the familiar notion of a "machine memory" which can be
+// Memory describes the familiar notion of a "machine memory" which can be
 // read-only, write-only or read-write.  Furthermore, memory can be static (i.e.
 // its contents are fixed for all executions of a machine).
-type Memory[W util.Uinter64] = memory.Memory[W]
+type Memory[W Word[W]] = descriptor.Memory[W]
 
-// ============================================================================
-// Constructors
-// ============================================================================
+// RuntimeMemory captures the notion of an executing memory, rather than a
+// simple static descriptor.  That is, one whose current contents can be
+// accessed.
+type RuntimeMemory[W Word[W]] = interpreter.Memory[W]
 
-// NewStaticMemory constructs a static read-only memory pre-loaded with the
-// given values.
-func NewStaticMemory[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
-) Memory[W] {
-	return memory.NewStatic[W](name, public, registers, init...)
-}
+// MemoryKind identifies the kind of a memory: its access mode (read-only,
+// write-once or read-write), its visibility (public/private), and whether it is
+// static or paged.  Used with NewBytecodeMemory.
+type MemoryKind = descriptor.MemoryKind
 
-// NewInputMemory constructs a new read-only memory initialised with a given set of values.
-func NewInputMemory[W util.Uinter64](name string, public bool, registers []register.Register, init ...W,
-) Memory[W] {
-	return memory.NewReadOnly[W](name, public, registers, init...)
-}
+// Memory kinds, re-exported for use with NewBytecodeMemory.
+var (
+	// PUBLIC_STATIC_MEMORY is a public static (compile-time initialised) read-only memory.
+	PUBLIC_STATIC_MEMORY = descriptor.PUBLIC_STATIC_MEMORY
+	// PRIVATE_STATIC_MEMORY is a private static (compile-time initialised) read-only memory.
+	PRIVATE_STATIC_MEMORY = descriptor.PRIVATE_STATIC_MEMORY
+	// PUBLIC_READ_ONLY_MEMORY is a public read-only memory.
+	PUBLIC_READ_ONLY_MEMORY = descriptor.PUBLIC_READ_ONLY_MEMORY
+	// PRIVATE_READ_ONLY_MEMORY is a private read-only memory.
+	PRIVATE_READ_ONLY_MEMORY = descriptor.PRIVATE_READ_ONLY_MEMORY
+	// PUBLIC_WRITE_ONCE_MEMORY is a public write-once memory.
+	PUBLIC_WRITE_ONCE_MEMORY = descriptor.PUBLIC_WRITE_ONCE_MEMORY
+	// PRIVATE_WRITE_ONCE_MEMORY is a private write-once memory.
+	PRIVATE_WRITE_ONCE_MEMORY = descriptor.PRIVATE_WRITE_ONCE_MEMORY
+	// READWRITE_MEMORY is a (private) random-access read-write memory.
+	READWRITE_MEMORY = descriptor.READWRITE_MEMORY
+	// PAGED_READWRITE_MEMORY is a (private) paged random-access read-write memory.
+	PAGED_READWRITE_MEMORY = descriptor.PAGED_READWRITE_MEMORY
+)
 
-// NewOutputMemory constructs an empty write-once memory.
-func NewOutputMemory[W util.Uinter64](name string, public bool, registers []register.Register) Memory[W] {
-	return memory.NewWriteOnce[W](name, public, registers)
-}
-
-// NewReadWriteMemory constructs an empty random-access memory which employs a
-// non-sparse implementation.  Thus, this is not suitable for very large
+// NewBytecodeMemory constructs a memory (descriptor) module directly from its
+// name, kind and registers.  Since a memory has no body, this descriptor is its
+// final form (cf. NewBytecodeFunction).  The geometry is derived from the
+// registers; init supplies the static contents and must be empty for non-static
 // memories.
-func NewReadWriteMemory[W util.Uinter64](name string, registers []register.Register) Memory[W] {
-	return memory.NewRandomAccess[W](name, registers)
-}
-
-// NewLargeReadWriteMemory constructs an empty random-access memory which
-// employs a sparse (bipartite) representation.  This is a read/write
-// implementation of Memory optimised for representing the kind of split
-// heap/stack memory found in typical compute architectures (e.g. RISC-V).
-func NewLargeReadWriteMemory[W util.Uinter64](name string, registers []register.Register) Memory[W] {
-	return memory.NewBiPartiteRandomAccess[W](name, registers)
+func NewBytecodeMemory[W word.Word[W]](name string, kind MemoryKind, registers []Register[W], init ...W,
+) *Memory[W] {
+	return descriptor.NewMemory(name, registers, kind, init)
 }

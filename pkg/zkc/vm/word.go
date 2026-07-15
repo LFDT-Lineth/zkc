@@ -13,43 +13,23 @@
 package vm
 
 import (
-	"encoding/gob"
-	"math"
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/memory"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-func init() {
-	gob.Register(instruction.Word(&instruction.WordTypeA[Uint]{}))
-	gob.Register(instruction.Word(&instruction.WordTypeB{}))
-	gob.Register(instruction.Word(&instruction.WordTypeF[Uint]{}))
-	gob.Register(instruction.Module(&function.Function[instruction.Word]{}))
-	gob.Register(instruction.Module(&memory.RandomAccess[Uint]{}))
-	gob.Register(instruction.Module(&memory.ReadOnly[Uint]{}))
-	gob.Register(instruction.Module(&memory.WriteOnce[Uint]{}))
-	gob.Register(instruction.Module(&memory.StaticReadOnly[Uint]{}))
-	gob.Register(instruction.Module(&memory.BiPartiteRandomAccess[Uint]{}))
-}
-
-// WordConfig provides a minimal amount of information about a machine word
-// type.
-type WordConfig struct {
-	Name      string
-	Bandwidth uint
-}
+// WordConfig provides necessary configuration information about a given target
+// word.
+type WordConfig = word.Config
 
 // WORD_UINT64 provides metadata about the Uint64 word type.
-var WORD_UINT64 = WordConfig{Name: "Uint64", Bandwidth: 64}
+var WORD_UINT64 = WordConfig{Name: "Uint64", BandWidth: 64, RegisterWidth: 32}
 
-// WORD_UINT provides metadata about the Uint word type.
-var WORD_UINT = WordConfig{Name: "Uint", Bandwidth: math.MaxUint}
+// WORD_UINT128 provides metadata about the Uint128 word type.
+var WORD_UINT128 = WordConfig{Name: "Uint128", BandWidth: 128, RegisterWidth: 64}
 
 // Word abstracts the data type (a.k.a the "machine word") used for holding
 // values within the machine.  The reason for abstracting this concept is to
@@ -65,6 +45,9 @@ type Uint = word.Uint
 
 // Uint64 represents an 64-bit unsigned integer.
 type Uint64 = word.Uint64
+
+// Uint128 represents an 128-bit unsigned integer.
+type Uint128 = word.Uint128
 
 // ============================================================================
 // Constructors
@@ -95,10 +78,10 @@ func Const64[W Word[W]](val uint64) W {
 // | 0x3 | 0x1 | 0xf | 0x0 | 0x0 | 0xe | 0x1 | 0xd |
 //
 // If the input array is not a multiple of the bitwidth
-func DecodeBytes[W Word[W]](bytes []byte, geometry memory.Geometry[W]) []W {
+func DecodeBytes[W Word[W]](bytes []byte, geometry descriptor.Memory[W]) []W {
 	var (
-		registers = geometry.DataRegisters()
-		bitwidth  = bitwidthOf(registers)
+		registers = geometry.Outputs()
+		bitwidth  = descriptor.BitwidthOfRegisters(registers...).Unwrap()
 		// Initially empty buffer which is expanded as necessary to accommodate
 		// reading bits of the given data types.
 		buffer []byte
@@ -112,7 +95,7 @@ func DecodeBytes[W Word[W]](bytes []byte, geometry memory.Geometry[W]) []W {
 		for _, t := range registers {
 			var vs []big.Int
 			//
-			vs, buffer = DecodeUnsignedInt(t.Width(), &reader, buffer)
+			vs, buffer = DecodeUnsignedInt(t.Bitwidth().Unwrap(), &reader, buffer)
 			//
 			ints = append(ints, vs...)
 		}
@@ -146,14 +129,14 @@ func DecodeBytes[W Word[W]](bytes []byte, geometry memory.Geometry[W]) []W {
 // |  00  |  01  |  02  |  03  |
 // +------+------+------+------+
 // | 0x31 | 0xf0 | 0x0e | 0x1d |
-func EncodeBytes[W Word[W]](values []W, geometry memory.Geometry[W]) []byte {
+func EncodeBytes[W Word[W]](values []W, geometry descriptor.Memory[W]) []byte {
 	var (
-		registers = geometry.DataRegisters()
+		registers = geometry.Outputs()
 		nRegs     = uint(len(registers))
 		nElems    = uint(len(values))
 		bitOffset uint
 		// total bitwidth of round
-		bitwidth = bitwidthOf(registers)
+		bitwidth = descriptor.BitwidthOfRegisters(registers...).Unwrap()
 		// buffer size required to hold a round
 		n = bit.BytesRequiredFor(bitwidth)
 		// create buffer
@@ -165,7 +148,7 @@ func EncodeBytes[W Word[W]](values []W, geometry memory.Geometry[W]) []byte {
 	)
 	// Update total bits calc for odd number of elements.
 	for i := (nRounds * nRegs); i < nElems; i++ {
-		totalBits += registers[i].Width()
+		totalBits += registers[i].Bitwidth().Unwrap()
 	}
 	// Determine required size result buffer
 	totalBytes := (totalBits + 7) / 8
@@ -175,13 +158,14 @@ func EncodeBytes[W Word[W]](values []W, geometry memory.Geometry[W]) []byte {
 	for i := 0; i < len(values); {
 		for j := 0; j < len(registers) && i < len(values); j++ {
 			var (
-				reg = registers[j]
-				val = values[i]
+				reg   = registers[j]
+				val   = values[i]
+				width = reg.Bitwidth().Unwrap()
 			)
 			//
-			EncodeUnsignedInt(reg.Width(), val.BigInt(), buf)
-			bit.BigEndianCopy(buf, 0, result, bitOffset, reg.Width())
-			bitOffset += reg.Width()
+			EncodeUnsignedInt(width, val.BigInt(), buf)
+			bit.BigEndianCopy(buf, 0, result, bitOffset, width)
+			bitOffset += width
 			i = i + 1
 		}
 	}
@@ -279,18 +263,4 @@ func expandBufferAsNeeded(bitwidth uint, buffer []byte) []byte {
 	}
 	//
 	return make([]byte, n)
-}
-
-func bitwidthOf(registers []register.Register) uint {
-	var width uint
-	//
-	for _, r := range registers {
-		if r.IsNative() {
-			panic("cannot determine bitwidth of native register")
-		}
-		//
-		width += r.Width()
-	}
-	//
-	return width
 }

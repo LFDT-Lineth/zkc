@@ -13,39 +13,16 @@
 package transform
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	finsn "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/function"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// Monomial is a useful alias
-type Monomial = finsn.Monomial
+// Allocator is a useful alias
+type Allocator[W word.Word[W]] = split.Allocator[W]
 
-// Polynomial is a useful alias
-type Polynomial = finsn.Polynomial
+// Bytecode provides a convenient alias
+type Bytecode[W word.Word[W]] = bytecode.Bytecode[W]
 
-// SystemMap is a useful alias
-type SystemMap = instruction.SystemMap
-
-// Module is a useful alias
-type Module = machine.Module
-
-// WordFunction is a useful alias
-type WordFunction = function.Function[WordInstruction]
-
-// FieldFunction is a useful alias
-type FieldFunction = function.Function[instruction.Field]
-
-// Vector is a useful alias
-type Vector[I instruction.Instruction] = instruction.Vector[I]
-
-// WordInstruction is a useful alias
-type WordInstruction = instruction.Word
-
-// VectorInstruction is a useful alias
-type VectorInstruction = Vector[WordInstruction]
-
-// RegisterAllocator provides a simple means of allocating new registers
-type RegisterAllocator = register.Allocator[int]
+// BytecodeVector provides a convenient alias
+type BytecodeVector[W word.Word[W]] = bytecode.Vector[W]

@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/debug"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -46,29 +46,23 @@ var debugCmds = []FieldAgnosticCmd{
 
 func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
-		build    = GetBuildConfig[F](cmd, field)
-		observer = debug.TraceObserver[vm.Uint]{}
-		quiet    = GetFlag(cmd, "quiet")
+		build = GetBuildConfig[F](cmd, field)
 	)
-	// Suppress printf debug instructions when quiet mode is enabled.
-	build.config = build.config.Quiet(quiet)
-	// Force compilation of the word machine, which is what we execute.
-	build.wir = true
 	//
 	input := ParseInputFile(args[0])
 	// Build artifacts (compiles source files or loads a prebuilt binary).
-	artifacts := build.Build(args[1:]...)
-	wm := artifacts.wir.Unwrap()
-	// Decode inputs against the compiled machine.
-	inputs, errs := vm.DecodeInputs(&wm, input)
-	if len(errs) == 0 {
-		// boot & execute
-		if err := wm.Boot("main", inputs); err != nil {
-			errs = append(errs, err)
-		} else if _, err := vm.ExecuteAndObserve(&wm, 1, &observer); err != nil {
-			errs = append(errs, err)
-		}
-	}
+	artifacts := Build[F](build, args[1:]...)
+	// Lower the bytecode program to a fixed-width form the bytecode interpreter
+	// can execute (mirroring the execute / trace commands).
+	program := vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
+	// Filter out unnecessary inputs
+	input = vm.FilterInputs(program, input)
+	// Construct a trace observer which prints each executed trace line, with
+	// register values rendered inline.
+	observer := NewDebugger(program)
+	// Boot & execute via the bytecode interpreter, printing a trace line for
+	// each executed bytecode vector.
+	errs := vm.BootAndDebug(program, input, observer.Observe)
 	//
 	if len(errs) > 0 {
 		for _, e := range errs {
@@ -85,8 +79,81 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 // Misc
 // ============================================================================
 
+// Debugger renders an execution trace to stdout using the bytecode
+// interpreter's debug facility (see vm.BootAndDebug).  It prints one line per
+// executed trace line (bytecode vector), rendered against the enclosing
+// function's environment, with register values shown inline (see valueEnv).
+type Debugger[W vm.Word[W]] struct {
+	// program being debugged, used to resolve the executing function's bytecode
+	// and environment at each step.
+	program vm.Program[W]
+	// started indicates whether at least one state has been observed (so the
+	// first function header is always printed).
+	started bool
+	// prevFid records the previously executing function, used to detect when
+	// control enters a different function (so a header can be printed).
+	prevFid uint16
+}
+
+// NewDebugger constructs a trace observer for the given (lowered) bytecode
+// program.
+func NewDebugger[W vm.Word[W]](program vm.Program[W]) *Debugger[W] {
+	return &Debugger[W]{program: program}
+}
+
+// Observe is invoked once per executed trace line (bytecode vector).  It is
+// intended to be passed as the observer callback to vm.BootAndDebug.
+func (p *Debugger[W]) Observe(st vm.State[W]) {
+	fid := st.Fid()
+	//
+	fn, ok := p.program.Module(fid).(*vm.Function[W])
+	if !ok {
+		// Only functions carry executable bytecode; nothing to render otherwise.
+		return
+	}
+	// Print a function header whenever execution (re-)enters a different function.
+	if !p.started || fid != p.prevFid {
+		fmt.Printf("\n> %s\n", fn.Name())
+		//
+		p.started = true
+		p.prevFid = fid
+	}
+	//
+	var (
+		vectors = fn.Vectors()
+		// Wrap the function's environment so register values are rendered inline.
+		env = valueEnv[W]{p.program.EnvironmentOf(fid), st.Frame()}
+	)
+	//
+	if st.PC() < uint(len(vectors)) {
+		vec := vectors[st.PC()]
+		fmt.Printf("[%02x] %s\n", st.PC(), vec.String(env))
+	}
+}
+
+// valueEnv wraps a bytecode environment, supplementing it with the current
+// register values recorded for the active frame.  This is what allows
+// Bytecode.String to render each register's value inline (via
+// Environment.ValueOf).
+type valueEnv[W vm.Word[W]] struct {
+	vm.BytecodeEnvironment[W]
+	frame []W
+}
+
+// ValueOf returns the current value held in the given register, when available.
+func (e valueEnv[W]) ValueOf(id vm.RegisterId) util.Option[W] {
+	if int(id) < len(e.frame) {
+		return util.Some(e.frame[id])
+	}
+	//
+	return util.None[W]()
+}
+
+// ============================================================================
+// Misc
+// ============================================================================
+
 //nolint:errcheck
 func init() {
 	rootCmd.AddCommand(debugCmd)
-	debugCmd.Flags().BoolP("quiet", "q", false, "suppress printf output")
 }

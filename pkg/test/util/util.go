@@ -26,9 +26,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -57,7 +58,7 @@ func CompileMachine(field field.Config, srcfiles ...source.File) []source.Syntax
 func CompileZkc(field field.Config, srcfile source.File) []source.SyntaxError {
 	program, _, errors := compiler.Compile(field, srcfile)
 	if len(errors) == 0 {
-		_, errors = program.Compile(codegen.DEFAULT_CONFIG)
+		_, errors = ast.Compile(program, codegen.DEFAULT_CONFIG)
 	}
 	//
 	return errors
@@ -80,7 +81,7 @@ func ReadTestsFile(t *testing.T, cfg TestConfig, test string) []TestCase {
 		// Parse input line as JSON
 		if line != "" && !strings.HasPrefix(line, ";;") {
 			// Read inputs / outputs
-			data, err := util.ParseJsonInputFile([]byte(line))
+			data, err := zkc_util.ParseJsonInputFile([]byte(line))
 			//
 			if err != nil {
 				msg := fmt.Sprintf("%s:%d: %s", filename, i+1, err)
@@ -105,13 +106,12 @@ func failIfErrors(t *testing.T, errs ...error) {
 	}
 }
 
-func compileTestProgram(t *testing.T, testfile string, cfg codegen.Config) (vm *vm.WordMachine[vm.Uint]) {
+func compileTestProgram(t *testing.T, testfile string, cfg codegen.Config) (vm vm.Program[vm.Uint]) {
 	var filename = fmt.Sprintf("%s/%s", TestDir, testfile)
 	// Compile source file into Abstract Syntax Tree form.
 	program := cmd_util.CompileSourceFiles(cfg.GetField(), filename)
 	// Compile program into boot machine
-	vm, errs := program.Compile(cfg)
-	//
+	vm, errs := ast.Compile(program, cfg)
 	//
 	if len(errs) > 0 {
 		for _, err := range errs {
@@ -124,9 +124,9 @@ func compileTestProgram(t *testing.T, testfile string, cfg codegen.Config) (vm *
 	return vm
 }
 
-func decodeInputsOutputs[W vm.Word[W]](t *testing.T, m vm.Core[W], data map[string][]byte,
+func decodeInputsOutputs[W vm.Word[W]](t *testing.T, p vm.Program[W], data map[string][]byte,
 ) (inputs map[string][]W, outputs map[string][]W) {
-	inputs, outputs, errs := vm.DecodeInputsOutputs[W](m, data)
+	inputs, outputs, errs := vm.DecodeInputsOutputs[W](p, data)
 	//
 	if len(errs) > 0 {
 		for _, err := range errs {
@@ -144,7 +144,7 @@ func decodeInputsOutputs[W vm.Word[W]](t *testing.T, m vm.Core[W], data map[stri
 // and the unmarshalls this sequence back into a fresh machine.  The purpose of
 // this is to ensure that the marshalling / unmarshalling process: (a) actually
 // works; (b) does not change the machine internals in some subtle way.
-func marshallUnmarshallMachine(m *vm.WordMachine[vm.Uint], f field.Config) *vm.WordMachine[vm.Uint] {
+func marshallUnmarshallMachine(m vm.Program[vm.Uint], f field.Config) vm.Program[vm.Uint] {
 	switch f {
 	case field.GF_251:
 		return roundTripMachine[gf251.Element](m, f)
@@ -159,9 +159,9 @@ func marshallUnmarshallMachine(m *vm.WordMachine[vm.Uint], f field.Config) *vm.W
 	}
 }
 
-func roundTripMachine[F field.Element[F]](m *vm.WordMachine[vm.Uint], f field.Config) *vm.WordMachine[vm.Uint] {
+func roundTripMachine[F field.Element[F]](prog vm.Program[vm.Uint], f field.Config) vm.Program[vm.Uint] {
 	var (
-		original = constraints.NewBinaryFile[F](nil, nil, f, *m)
+		original = constraints.NewBinaryFile[F](nil, nil, f, codegen.DEFAULT_MAX_STATIC_DEPTH, prog)
 		decoded  constraints.BinaryFile[F]
 	)
 	//
@@ -174,7 +174,5 @@ func roundTripMachine[F field.Element[F]](m *vm.WordMachine[vm.Uint], f field.Co
 		panic(fmt.Sprintf("unmarshalling machine failed: %s", err))
 	}
 	//
-	nm := decoded.WordMachine()
-	//
-	return &nm
+	return decoded.Program()
 }

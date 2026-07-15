@@ -13,6 +13,8 @@
 package constraints
 
 import (
+	"math"
+
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -21,14 +23,49 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-func newLimbsMap(config field.Config, modules ...vm.Module) module.LimbsMap {
-	var ms []register.Map = array.Map(modules, func(_ uint, m vm.Module) register.Map {
+func newLimbsMap[W vm.Word[W]](config field.Config, modules ...vm.Module[W]) module.LimbsMap {
+	var ms []register.Map = array.Map(modules, func(_ uint, m vm.Module[W]) register.Map {
 		name := trace.ModuleName{Name: m.Name(), Multiplier: 1}
-		return register.ArrayMap(name, m.Registers()...)
+		return register.ArrayMap(name, toRegisters(m.Registers())...)
 	})
 	// NOTE: generic parameter is meaningless, and only retained for backwards
 	// compatibility.
 	return module.NewLimbsMap[uint](config, ms...)
+}
+
+// ToRegisters converts an array of register descriptors into an array of scheme
+// registers.
+func toRegisters[W vm.Word[W]](registers []vm.Register[W]) []register.Register {
+	var regs = make([]register.Register, len(registers))
+	//
+	for i, r := range registers {
+		var (
+			bitwidth uint = math.MaxUint
+		)
+		// Determine bitwidth (if applicable)
+		if !r.IsNative() {
+			bitwidth = r.Bitwidth().Unwrap()
+		}
+		//
+		regs[i] = register.New(r.Kind(), r.Name(), bitwidth, *r.Padding().BigInt())
+	}
+	//
+	return regs
+}
+
+// toFieldElements converts a slice of words into a slice of field elements.
+// This mirrors the memory-contents lowering previously performed by
+// WordToFieldMachine.
+func toFieldElements[W vm.Word[W], F field.Element[F]](contents []W) []F {
+	var elements = make([]F, len(contents))
+	//
+	for i, w := range contents {
+		var f F
+
+		elements[i] = f.SetBytes(w.BigInt().Bytes())
+	}
+	//
+	return elements
 }
 
 // FoldContents folds the contents of a memory into a multi-dimensional representation.
@@ -48,7 +85,7 @@ func foldContents[F field.Element[F]](inputs, outputs []register.Register, conte
 	for i := 0; i < len(contents); i++ {
 		var (
 			// Determine table row
-			row = uint(i / nOutputs)
+			row = uint64(i / nOutputs)
 			// Determine output index
 			output = nInputs + (i % nOutputs)
 			// Extract row data
@@ -57,7 +94,7 @@ func foldContents[F field.Element[F]](inputs, outputs []register.Register, conte
 		// Construct row (if not previously constructed)
 		if ith == nil {
 			ith = make([]F, nInputs+nOutputs)
-			fillAddressLine(row, ith, inputs)
+			fillAddressLines(row, ith[:nInputs], inputs[:nInputs])
 			rows[row] = ith
 		}
 		//
@@ -67,12 +104,24 @@ func foldContents[F field.Element[F]](inputs, outputs []register.Register, conte
 	return rows
 }
 
-func fillAddressLine[F field.Element[F]](index uint, row []F, inputs []register.Register) {
-	var address F
-	//
-	if len(inputs) != 1 {
-		panic("support multi-address static memories")
+func fillAddressLines[F field.Element[F]](address uint64, row []F, lines []register.Register) {
+	// Least signicant word first
+	var acc vm.Uint64
+	// Initialise accumulator
+	acc = acc.SetUint64(address)
+	// process address lines in reverse order since the most significant line
+	// always comes first.
+	for i := len(lines); i > 0; i-- {
+		var (
+			val F
+			// determine bitwidth of ith line
+			bitwidth = uint64(lines[i-1].Width())
+			// Slice out bitwidth bits
+			slice = acc.Slice(uint(bitwidth))
+		)
+		// Assign u64 (slice as field element)
+		row[i-1] = val.SetUint64(slice.Uint64())
+		// Shift down address
+		acc = acc.Shr64(bitwidth)
 	}
-	//
-	row[0] = address.SetUint64(uint64(index))
 }

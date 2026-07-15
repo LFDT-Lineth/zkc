@@ -16,8 +16,12 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 )
+
+// Config is (for now) simply an alias for field config.
+type Config = field.Config
 
 // Base captures the minimal set of requirements for a word used in the base
 // machine.
@@ -40,6 +44,8 @@ type Base[W any] interface {
 type Word[W any] interface {
 	// Add two words together, producing another (along with an overflow bit).
 	Add(W) (W, bool)
+	// Add two words together, producing another (along with an overflow bit).
+	Add64(uint64) (W, bool)
 	// AddMod adds two words together modulus a third.
 	AddMod(W, W) W
 	// Bitwise AND of two words.
@@ -49,16 +55,30 @@ type Word[W any] interface {
 	Bandwidth() uint
 	// Return the value of this word as a big integer.
 	BigInt() *big.Int
+	// Determine number of bits of this value
+	BitLen() uint
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 	Cmp(y W) int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 	Cmp64(y uint64) int
 	// Div divides this word by another.  Panics on division by zero.
 	Div(W) W
+	// DwDiv divides the double word formed from this word (as the most
+	// significant part) and lo (as the least significant part) by d, returning
+	// the quotient and remainder.  Following math/bits.Div64, this panics if d
+	// is zero, or if the quotient would not fit within a single word (i.e.
+	// unless this word is strictly less than d).
+	DwDiv(lo W, d W) (q W, r W)
+	// DwRem computes the remainder of dividing the double word formed from this
+	// word (as the most significant part) and lo (as the least significant part)
+	// by d.  Following math/bits.Rem64, this panics if d is zero but, unlike
+	// DwDiv, it does not panic on quotient overflow (the remainder always fits
+	// within a single word).
+	DwRem(lo W, d W) W
 	// Check whether this value fits within the given bitwidth.
 	FitsWithin(uint) bool
-	// Multiply two words together, producing another (along with an overflow bit).
-	Mul(W) (W, bool)
+	// Multiply two words together, producing a double word.
+	Mul(W) (hi W, lo W)
 	// MulMod multiplies two words together modulus a third.
 	MulMod(W, W) W
 	// Bitwise NOT of this word within the given bit width.
@@ -71,7 +91,7 @@ type Word[W any] interface {
 	// Shift left word by the amount given in another word, masking to width bits.
 	Shl(uint, W) W
 	// Shift left word by the amount given.
-	Shl64(uint64) W
+	Shl64(uint64) (hi W, lo W)
 	// Shift right word by the amount given in another word.
 	Shr(W) W
 	// Shift right word by a given number of bits.
@@ -85,6 +105,8 @@ type Word[W any] interface {
 	SetUint64(uint64) W
 	// Sub two words together, producing another (along with an underflow bit).
 	Sub(W) (W, bool)
+	// Sub two words together, producing another (along with an underflow bit).
+	Sub64(uint64) (W, bool)
 	// SubMod subtracts two words together modulus a third.
 	SubMod(W, W) W
 	// Returns value of word as an unsigned integer and will panic if the value

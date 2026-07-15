@@ -13,59 +13,106 @@
 package vm
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction"
-	finsn "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/instruction/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/machine"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// Monomial is a useful alias
-type Monomial = finsn.Monomial
-
-// Polynomial is a useful alias
-type Polynomial = finsn.Polynomial
-
-// SystemMap is a useful alias
-type SystemMap = instruction.SystemMap
-
-// LowerBitwise rewrites VM-level bitwise micro-instructions into CALLs to
-// helper functions. The helper modules are appended to the returned module
-// slice.
-// We assume this lowering happens BEFORE vectorization and register splitting
-func LowerBitwise[W Word[W]](modules []Module) []Module {
-	return transform.LowerBitwise[W](modules)
+// LowerBitwise rewrites VM-level bitwise bytecodes into CALLs to helper
+// functions, returning the updated bytecode program (the helper function
+// modules are appended to it).
+//
+// NOTE: this transform must be applied BEFORE vectorization and register
+// splitting.
+func LowerBitwise[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.LowerBitwise(program)
 }
 
-// LowerComparisons rewrites SkipIf instructions with LT/GT/LTEQ/GTEQ conditions
+// LowerComparisons rewrites SkipIf bytecodes with LT/GT/LTEQ/GTEQ conditions
 // into arithmetic-only sequences using biased subtraction and sign-bit extraction.
 // EQ and NEQ conditions are left unchanged.
-// This pass must run after LowerBitwise.
-func LowerComparisons[W word.Word[W]](modules []Module) []Module {
-	return transform.LowerComparisons[W](modules)
+func LowerComparisons[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.LowerComparisons(program)
 }
 
-// LowerDivisions rewrites INT_DIV and INT_REM instructions into a
-// non-deterministic hint followed by arithmetic validation:
+// LowerDivisions rewrites INT_DIV and INT_REM bytecodes into a non-deterministic
+// hint followed by arithmetic validation:
 //
-//	FieldHint{targets:[wideQ, wideR], sources:[x, y]}  // prover fills both at 2n bits
-//	q = cast(wideQ, n) ; r = cast(wideR, n)           // write results to n-bit outputs
-//	wideX, wideY = cast(x, 2n), cast(y, 2n)
-//	sum = wideQ * wideY                                // exact 2n-bit product
-//	sum = sum + wideR
-//	SkipIf(EQ, sum, wideX, 1)
-//	Fail
-//	SkipIf(LT, r, y, 1)                        // expanded later by LowerComparisons
-//	Fail
+//	Hint{DIV_HINT, q, r, w, x, y}   // prover fills quotient, remainder and range witness
+//	qy = q * y
+//	z0 = x - qy - r          // written into a 0-width register: asserts == 0
+//	z1 = y - r - w - 1       // written into a 0-width register: asserts == 0
 //
-// This pass must run before LowerComparisons.
-func LowerDivisions[W word.Word[W]](modules []Module) []Module {
-	return transform.LowerDivisions[W](modules)
+// This is a bytecode-level transform, so it runs before the program is
+// decompiled into a word machine.
+//
+// NOTE: This pass must run before LowerComparisons.
+func LowerDivisions[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.LowerDivisions(program)
+}
+
+// LowerSwitch rewrites Switch (multiway skip) bytecodes into equivalent
+// sequences of SkipIf bytecodes.  Each dispatch case becomes a constant load
+// of the case's value into a fresh register, followed by a conditional (EQ)
+// skip against the dispatch register targeting the case's original
+// destination.  Cases are tested in order, preserving the first-match-wins
+// semantics of the multiway dispatch; when no case matches, control falls
+// through exactly as before.
+//
+// NOTE: this transform must run before register splitting (which does not
+// support Switch bytecodes).
+func LowerSwitch[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.LowerSwitch(program)
+}
+
+// OptimizeDivisions is a fast-mode optimization which rewrites division by
+// powers of 2 into right shifts, and remainder by powers of 2 into bitwise
+// ANDs.
+func OptimizeDivisions[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.OptimizeDivisions(program)
+}
+
+// Vectorize merges as many bytecodes as possible into each (vector / trace-line)
+// bytecode, subject to register-conflict (data hazard) constraints.
+func Vectorize[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.Vectorize(program)
+}
+
+// FlattenCalls introduces a tmp register to hold a call argument when it's rewritten in the same vector:
+// 1. x = f(x)
+// 2. y = f(x); x = x + 1
+// As we want to avoid shift in lookups, we must keep the original value of x in a tmp register,
+// so that the call can be rewritten as:
+// 1. tmp = x; x = f(tmp)
+// 2. tmp = x; y = f(tmp); x = x + 1
+func FlattenCalls[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.FlattenCalls(program)
+}
+
+// FactorSkipConditions rewrites equality SkipIf bytecodes (EQ/NEQ) so that the
+// branch condition is materialised once into a fresh 1-bit register, rather
+// than being replicated across each guarded write of the branch.
+//
+// NOTE: This transform must run after vectorisation and before register
+// splitting.
+func FactorSkipConditions[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.FactorSkipConditions(program)
+}
+
+// InlineFunctions returns an equivalent bytecode program in which every call to
+// one of the named functions has been inlined at its call site, and the named
+// function modules removed (module identifiers within Call / ReadWrite
+// bytecodes are remapped accordingly).  Each call site is replaced by the
+// callee's body operating on caller registers: inputs / outputs are aliased
+// directly to the call's argument / return registers where provably equivalent;
+// otherwise (e.g. for temporaries, or aliasing call sites such as "x = f(x)")
+// fresh caller-local shadow registers are allocated, along with argument /
+// return copies which preserve the dynamic width checks of a true call.
+//
+// NOTE: This transform must be applied before vectorisation, since it splits
+// the vector enclosing a call at the call site.
+func InlineFunctions[W word.Word[W]](program Program[W], names []string) Program[W] {
+	return transform.InlineFunctions(program, names)
 }
 
 // SplitRegisters all modules to meet a given bandwidth and maximum register width.
@@ -74,61 +121,41 @@ func LowerDivisions[W word.Word[W]](modules []Module) []Module {
 // width). For example, consider a register "r" of width u32. Subdividing this
 // register into registers of at most 8bits will result in four limbs: r'0, r'1,
 // r'2 and r'3 where (by convention) r'0 is the least significant.
-func SplitRegisters[W Word[W]](cfg field.Config, wm *WordMachine[W]) *WordMachine[W] {
-	// Construct a suitable limbs mapping
-	var limbsMap = newLimbsMap(cfg, wm.Modules()...)
-	// Invoke subdivision algorithm
-	return transform.SplitRegisters(limbsMap, wm)
+func SplitRegisters[W word.Word[W]](cfg WordConfig, program Program[W]) Program[W] {
+	return transform.SplitRegisters(cfg, program)
 }
 
-// WordToWordMachine transforms a machine operating over a given word type (W1)
-// into an identical machine which operates over a different word type (W2).
-// Generally speaking, we are going from a larger word (e.g. word.Uint) to a
-// smaller word (e.g. word.Uint64).
+// AddRangeConstraints adds a range-proof constraint for each register in the program.
+// This is done by adding lookups from each (non-constant) register to a precomputed
+// table of all valid values for that register width.
+func AddRangeConstraints[W word.Word[W]](cfg field.Config, program Program[W], maxStaticDepth uint) Program[W] {
+	return transform.AddRangeConstraints(cfg, program, maxStaticDepth)
+}
+
+// ProgramToProgram transforms a bytecode program operating over a given word
+// type (W1) into an identical program which operates over a different word type
+// (W2).  Generally speaking, we are going from a larger word (e.g. word.Uint) to
+// a smaller word (e.g. word.Uint64).  This is the program-level analogue of
+// WordToWordMachine.
 //
-// The transformation is purely structural: instructions are re-typed but not
+// The transformation is purely structural: bytecodes are re-typed but not
 // rewritten or lowered, register declarations are preserved verbatim (no
 // splitting or width changes), and constants are not reduced modulo the field.
-// The source machine's prime modulus is re-expressed in W2 so the new machine
-// retains the same field semantics; this means the modulus itself must also
-// fit in W2's bandwidth.  ROM/SROM contents are converted element-wise;
-// WOM/RAM/Bipartite memories start empty in the new machine.
+// Static memory contents are converted element-wise; non-static memories carry
+// no contents in either representation.
 //
-// This function will panic if it encounters a register, constant, modulus or
-// memory cell which exceeds the bandwidth of W2.  Callers needing to target a
-// narrower word size than some source register widths should run
-// SplitRegisters first.
-func WordToWordMachine[W1 word.Word[W1], W2 word.Word[W2]](m1 *machine.Word[W1]) (m2 *machine.Word[W2]) {
-	return transform.WordToWordMachine[W1, W2](m1)
+// This function will panic if it encounters a register, constant or memory cell
+// which exceeds the bandwidth of W2.  Callers needing to target a narrower word
+// size than some source register widths should run SplitRegisters first.
+func ProgramToProgram[W1 word.Word[W1], W2 word.Word[W2]](p Program[W1]) Program[W2] {
+	return transform.ProgramToProgram[W1, W2](p)
 }
 
-// WordToFieldMachine translates a machine over integer words into a machine over
-// field elements.  In order to do this, it must "compile out" various
-// high-level word operations (e.g. bitwise operations, division, etc) which
-// have no direct correspondance within a field machine.
-func WordToFieldMachine[W word.Word[W], F field.Element[F]](cfg field.Config, wm *WordMachine[W],
-) (fm *FieldMachine[F]) {
-	return transform.WordToFieldMachine[W, F](cfg, wm)
-}
-
-// WordToBytecodeInterpreter compiles a word machine into a bytecode sequence
-// and, from this, constructs an interpreter.
-func WordToBytecodeInterpreter[W word.Word[W]](wm *machine.Word[W]) *BytecodeInterpreter[W] {
-	return transform.WordToBytecodeMachine(wm)
-}
-
-// WordToBytecodeProgram compiles a word machine into a bytecode sequence which
-// can be executed by an interpreter.
-func WordToBytecodeProgram[W word.Word[W]](wm *machine.Word[W]) BytecodeProgram[W] {
-	return transform.WordToBytecodeProgram(wm)
-}
-
-func newLimbsMap(config field.Config, modules ...Module) module.LimbsMap {
-	var ms []register.Map = array.Map(modules, func(_ uint, m Module) register.Map {
-		name := trace.ModuleName{Name: m.Name(), Multiplier: 1}
-		return register.ArrayMap(name, m.Registers()...)
-	})
-	// NOTE: generic parameter is meaningless, and only retained for backwards
-	// compatibility.
-	return module.NewLimbsMap[uint](config, ms...)
+// InsertCheckCasts inserts the width-check (CHECKCAST) bytecodes required by a
+// bytecode program, returning the updated program.  Codegen emits operations
+// without casts; this pass adds the cast checks each operation needs (resolving
+// call / memory references against the program's module signatures) and rewrites
+// branch offsets accordingly.  It must run on a complete program.
+func InsertCheckCasts[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.InsertCheckCasts(program)
 }

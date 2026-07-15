@@ -33,13 +33,13 @@ import (
 // | 0x31 | 0xf0 | 0x0e | 0x1d |
 func EncodeAll[S symbol.Symbol[S]](datatype Type[S], values []vm.Uint, env Environment[S]) []byte {
 	var (
-		bitwidth, _ = BitWidthOf(datatype, env)
-		nElems      = uint(len(values))
-		totalBits   = nElems * bitwidth
-		totalBytes  = (totalBits + 7) / 8
-		result      = make([]byte, totalBytes)
-		n           = bit.BytesRequiredFor(bitwidth)
-		buf         = make([]byte, n)
+		bitwidth   = BitWidthOf(datatype, env).Unwrap()
+		nElems     = uint(len(values))
+		totalBits  = nElems * bitwidth
+		totalBytes = (totalBits + 7) / 8
+		result     = make([]byte, totalBytes)
+		n          = bit.BytesRequiredFor(bitwidth)
+		buf        = make([]byte, n)
 	)
 
 	for i, v := range values {

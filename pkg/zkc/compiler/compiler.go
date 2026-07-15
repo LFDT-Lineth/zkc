@@ -25,50 +25,52 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/validate"
 )
 
-// Compile takes a given set of source files, and parses them into a given set
-// of (linked) declarations.  This includes performing various checks on the
-// files, such as type checking, etc.
-func Compile(field field.Config, files ...source.File) (ast.Program, source.Maps[any], []source.SyntaxError) {
+// Compile takes a given set of source files and parses them and their
+// dependencies into a given set of linked declarations. This includes
+// performing various checks on the files, such as type checking, etc.
+// Switch statements are lowered to a multiway-skip dispatch.
+func Compile(field field.Config, sourceFiles ...source.File,
+) (ast.Program, source.Maps[any], []source.SyntaxError) {
 	//
 	var (
-		items   []parser.UnlinkedSourceFile
-		errors  []source.SyntaxError
-		program ast.Program
-		srcmaps source.Maps[any]
-		visited map[string]bool = make(map[string]bool)
+		unlinkedSourceFiles []parser.UnlinkedSourceFile
+		errors              []source.SyntaxError
+		program             ast.Program
+		srcmaps             source.Maps[any]
+		knownSourceFiles    map[string]bool = make(map[string]bool)
 	)
-	// Initialise visited map with all top-level files
-	for _, sf := range files {
-		visited[sf.Filename()] = true
+	// Initialise accounted for source files map with all top-level files
+	for _, sf := range sourceFiles {
+		knownSourceFiles[canonicalPath(sf.Filename())] = true
 	}
-	// Parse each file in turn.
-	for len(files) > 0 {
+	// recursively parse all files required to compile sourceFiles:
+	// the files themselves as well as the recursive closure of all
+	// included files
+	for len(sourceFiles) > 0 {
 		var (
-			asm      = files[0]
-			errs     []source.SyntaxError
-			included []source.File
-			cs       parser.UnlinkedSourceFile
+			sourceFile         = sourceFiles[0]
+			errs               []source.SyntaxError
+			furtherSourceFiles []source.File
+			unlinkedSourceFile parser.UnlinkedSourceFile
 		)
 		//
-		files = files[1:]
+		sourceFiles = sourceFiles[1:]
 		// Parse source file; keep partial results even on error.
-		cs, errs = parser.Parse(&asm)
-		if len(cs.Components) > 0 {
-			items = append(items, cs)
+		unlinkedSourceFile, errs = parser.Parse(&sourceFile)
+		if len(unlinkedSourceFile.Declarations) > 0 {
+			unlinkedSourceFiles = append(unlinkedSourceFiles, unlinkedSourceFile)
 
 			var inclErrs []source.SyntaxError
 
-			included, inclErrs = readIncludedFiles(asm, cs, visited)
+			furtherSourceFiles, inclErrs = scanForFurtherSourceFiles(sourceFile, unlinkedSourceFile, knownSourceFiles)
 			errs = append(errs, inclErrs...)
-			files = append(files, included...)
+			sourceFiles = append(sourceFiles, furtherSourceFiles...)
 		}
 
 		errors = append(errors, errs...)
 	}
-	// Link assembly and resolve buses.
-	var linkErrs []source.SyntaxError
 	// Link assembly and resolve external accesses
-	program, srcmaps, linkErrs = Link(items...)
+	program, srcmaps, linkErrs := Link(unlinkedSourceFiles...)
 	//
 	errors = append(errors, linkErrs...)
 	// Flatten block-level constructs (if/else, switch, while, for) into flat if-goto form
@@ -83,16 +85,37 @@ func Compile(field field.Config, files ...source.File) (ast.Program, source.Maps
 	return program, srcmaps, errors
 }
 
-func readIncludedFiles(file source.File, item parser.UnlinkedSourceFile,
-	visited map[string]bool) ([]source.File, []source.SyntaxError) {
+// canonicalPath returns an absolute, cleaned form of filename for use as a
+// dedup key, so the same file reached through different relative spellings maps
+// to one key.  On error (e.g. the working directory is unavailable) it falls
+// back to the cleaned relative path rather than failing the compile.
+func canonicalPath(filename string) string {
+	if abs, err := filepath.Abs(filename); err == nil {
+		return abs
+	}
+
+	return filepath.Clean(filename)
+}
+
+// scanForFurtherSourceFiles goes over the include declarations of a parsed source file and
+// determines which include declarations are genuinely new vs already known / accounted for.
+// It then returns the list of new source files that must be added to the compilation process.
+//
+// Since include declarations provide relative paths, the original sourceFile is provided
+// in order to determine canonical (absolute) paths.
+//
+// Note: scanForFurtherSourceFiles implicitly updates 'knownSourceFiles' with every new
+// source file that it adds to its furtherSourceFiles output
+func scanForFurtherSourceFiles(sourceFile source.File, parsedSourceFile parser.UnlinkedSourceFile,
+	knownSourceFiles map[string]bool) ([]source.File, []source.SyntaxError) {
 	//
 	var (
-		dir    = filepath.Dir(file.Filename())
-		files  []source.File
-		errors []source.SyntaxError
+		dir                = filepath.Dir(sourceFile.Filename())
+		furtherSourceFiles []source.File
+		errors             []source.SyntaxError
 	)
 	//
-	for _, d := range item.Components {
+	for _, d := range parsedSourceFile.Declarations {
 		if inc, ok := d.(*decl.Include[symbol.Unresolved]); ok {
 			var (
 				pattern      = filepath.Join(dir, inc.Pattern())
@@ -100,30 +123,36 @@ func readIncludedFiles(file source.File, item parser.UnlinkedSourceFile,
 			)
 			//
 			if err != nil {
-				errors = append(errors, *item.SourceMap.SyntaxError(inc, err.Error()))
+				errors = append(errors, *parsedSourceFile.SourceMap.SyntaxError(inc, err.Error()))
 				continue
 			} else if len(matches) == 0 {
-				// failed to match anythuing
-				errors = append(errors, *item.SourceMap.SyntaxError(inc, "failed to match anything"))
+				// failed to match anything
+				errors = append(errors, *parsedSourceFile.SourceMap.SyntaxError(inc, "failed to match anything"))
 				continue
 			}
 			//
 			for _, filename := range matches {
+				// Dedup on the canonical (absolute, cleaned) path: the same
+				// physical file is reached through different relative spellings
+				// (e.g. main includes "memory.zkc" while a library includes
+				// "../../riscv/memory.zkc"), and keying on the raw path would
+				// parse it twice, yielding spurious duplicate-declaration errors.
+				key := canonicalPath(filename)
 				// Check filename not already parsed
-				if seen, ok := visited[filename]; seen && ok {
+				if seen, ok := knownSourceFiles[key]; seen && ok {
 					// file already loaded, therefore ignore.
 				} else if fs, err := source.ReadFiles(filename); err == nil {
-					files = append(files, fs...)
+					furtherSourceFiles = append(furtherSourceFiles, fs...)
 				} else {
-					errors = append(errors, *item.SourceMap.SyntaxError(inc, err.Error()))
+					errors = append(errors, *parsedSourceFile.SourceMap.SyntaxError(inc, err.Error()))
 				}
 				// Record that we've seen this file now.
-				visited[filename] = true
+				knownSourceFiles[key] = true
 			}
 		}
 	}
 	//
-	return files, errors
+	return furtherSourceFiles, errors
 }
 
 // Validate checks that a given program is well-formed.  For example, an
@@ -141,8 +170,14 @@ func validateProgram(program ast.Program, field field.Config, srcmaps source.Map
 	// Attempt to type the program; if this fails for some reaosn, skip
 	// remaining phases (for now).
 	errors = append(errors, validate.Typing(program, field, srcmaps)...)
+	// Check the entry point (if any) is well-formed.
+	errors = append(errors, validate.EntryPoint(program, srcmaps)...)
 	// Perform final validation
 	errors = append(errors, validate.ControlFlow(program, srcmaps)...)
+	// Check #[debug] functions are safe to elide
+	errors = append(errors, validate.DebugFunctions(program, srcmaps)...)
+	// Check #[inline] functions can actually be inlined
+	errors = append(errors, validate.InlineFunctions(program, srcmaps)...)
 	//
 	return errors
 }

@@ -1,0 +1,11 @@
+//error:10:5-11:debug function cannot write memory
+pub output sum(address:u16) -> (byte:u32)
+
+fn main() {
+    report()
+}
+
+#[debug]
+fn report() {
+    sum[0] = 0xff
+}

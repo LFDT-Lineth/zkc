@@ -43,7 +43,7 @@ type Constraint[F field.Element[F], E term.Evaluable[F]] struct {
 	Bitwidths []uint
 }
 
-// NewConstraint constructs a new Range constraint!
+// NewConstraint constructs a new Range constraint
 func NewConstraint[F field.Element[F], E term.Evaluable[F]](handle string, context schema.ModuleId,
 	exprs []E, bitwidths []uint) Constraint[F, E] {
 	return Constraint[F, E]{handle, context, exprs, bitwidths}

@@ -23,13 +23,43 @@ type Heap[T any] struct {
 }
 
 // Alloc ensures space for exactly n elements on top of this heap.  This may
-// result in allocation only if the underlying capacity is exhausted.
+// result in allocation only if the underlying capacity is exhausted.  The newly
+// allocated region is zeroed: the heap retains capacity across Free/Pop, so
+// without this a fresh allocation would inherit stale values from a previously
+// freed region (e.g. leaking a popped call frame's registers into a new one).
 func (p *Heap[T]) Alloc(n uint) {
-	var nsize = uint(len(p.data)) + n
+	var (
+		offset = uint(len(p.data))
+		nsize  = offset + n
+	)
 	// grow data capacity (as necessary)
 	data := slices.Grow(p.data, int(n))
 	// expand data length
 	p.data = data[:nsize]
+	// Note: clearing may degrade performance, but is necessary for range proof. A better solution is welcome.
+	// zero the newly allocated region
+	clear(p.data[offset:])
+}
+
+// Push exactly one item onto the heap.  This allocates space for one item, and
+// sets that item accordingly.
+func (p *Heap[T]) Push(item T) {
+	var offset = len(p.data)
+	p.Alloc(1)
+	p.data[offset] = item
+}
+
+// Pop exactly one off the heap.  This retrieves the top item on the heap, and
+// the frees it.
+func (p *Heap[T]) Pop() T {
+	var (
+		offset = len(p.data) - 1
+		item   = p.data[offset]
+	)
+	//
+	p.Free(1)
+	//
+	return item
 }
 
 // Clear resets the heap to an empty state whilst retaining any allocated

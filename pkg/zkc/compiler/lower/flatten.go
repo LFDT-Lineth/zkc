@@ -237,101 +237,75 @@ func lowerTernaryCondition(
 	}
 }
 
-// lowerSwitch converts a switch statement to a nested if-(else-if)-else statement, e.g.
-//
-//	switch discr {
-//		case A, B: { stmts_AB }
-//		case C: { stmts_C }
-//		default: { stmts_default }	// 'misplaced' default
-//		case D, E, G { stmts_DEF }
-//	}
-//
-// should convert to
-//
-//	if (discr == A || discr == B) {
-//		stmts_AB
-//	} else if (discr == C) {
-//		stmts_C
-//	} else if (discr == D || discr == E || discr == F) {
-//		stmts_DEF
-//	} else {
-//		stmts_default
-//	}
-//
-// and applies the lowering to the resulting if-then-else statement.
-//
-// Note: the default statement, if present, is moved to the deepest nesting level.
+// lowerSwitch lowers a switch statement to a single Dispatch (compiled downstream
+// to a multiway-skip) followed by the flattened case bodies.  The layout mirrors
+// lowerIfElse: the Dispatch occupies one PC, each non-default case body is laid
+// out in turn and — unless it already terminates — is followed by a goto past
+// the remaining bodies; the default body (if any) is laid out last and falls
+// straight through to the end.
 func lowerSwitch(pc uint, s *stmt.Switch[symbol.Resolved], env *lowerEnv, srcmaps source.Maps[any]) []stmt.Resolved {
 	// special case: empty switch statement
 	if len(s.Branches) == 0 {
 		return []stmt.Resolved{}
 	}
-
-	var (
-		defaultCaseCount uint
-		containsDefault  bool
-	)
-
-	// pathological case with more than one default cases
-	if defaultCaseCount = s.DefaultCaseCount(); defaultCaseCount > 1 {
+	// pathological case with more than one default case
+	if s.DefaultCaseCount() > 1 {
 		return nil
 	}
-
-	containsDefault = defaultCaseCount == 1
-
 	// special case: the default case is the only case in the switch statement
-	if len(s.Branches) == 1 && containsDefault {
-		return s.Branches[0].Body
+	if len(s.Branches) == 1 && s.Branches[0].IsDefault {
+		return lowerStatements(pc, s.Branches[0].Body, env, srcmaps)
 	}
-
-	// beyond this point a proper (non default) case is present
+	//
 	var (
-		defaultStatement     *[]stmt.Stmt[symbol.Resolved]
-		equivalentIfThenElse *stmt.IfElse[symbol.Resolved]
-		mostNestedIfThenElse *stmt.IfElse[symbol.Resolved]
-		falseBranch          *stmt.IfElse[symbol.Resolved]
+		endLabel      = env.freshLabel()
+		dispatch      = &stmt.Dispatch[symbol.Resolved]{Discriminant: s.Discriminant}
+		bodies        []stmt.Resolved
+		defaultBranch *stmt.SwitchBranch[symbol.Resolved]
+		// The Dispatch occupies pc; the bodies begin at pc+1.
+		cursor = pc + 1
 	)
-
-	// this loop builds a nested if-then-else statement
-	for _, branch := range s.Branches {
-		// if we come across the default statement we store it
-		// and continue to the next branch
+	// Lay out each non-default branch body, recording its target PC.
+	for i := range s.Branches {
+		branch := &s.Branches[i]
+		// The default branch is laid out last, regardless of its position.
 		if branch.IsDefault {
-			defaultStatement = &branch.Body
+			defaultBranch = branch
 			continue
 		}
-
-		logicalOrOfCases := branch.LogicalOrOfCases(s.Discriminant)
-
-		// we initialize the equivalent if-then-else statement and point the
-		// 'most nested if-then-else statement' to it
-		if equivalentIfThenElse == nil {
-			equivalentIfThenElse = &stmt.IfElse[symbol.Resolved]{
-				Cond:        &logicalOrOfCases,
-				TrueBranch:  branch.Body,
-				FalseBranch: []stmt.Stmt[symbol.Resolved]{},
-			}
-			srcmaps.Copy(s, equivalentIfThenElse)
-			mostNestedIfThenElse = equivalentIfThenElse
-		} else {
-			falseBranch = &stmt.IfElse[symbol.Resolved]{
-				Cond:        &logicalOrOfCases,
-				TrueBranch:  branch.Body,
-				FalseBranch: []stmt.Stmt[symbol.Resolved]{},
-			}
-			srcmaps.Copy(s, falseBranch)
-			mostNestedIfThenElse.FalseBranch = append(mostNestedIfThenElse.FalseBranch, falseBranch)
-			mostNestedIfThenElse = falseBranch
+		//
+		target := cursor
+		body := lowerStatements(cursor, branch.Body, env, srcmaps)
+		cursor += uint(len(body))
+		bodies = append(bodies, body...)
+		// Unless the body already terminates, jump past the remaining bodies.
+		if !branchTerminates(branch.Body) {
+			g := &stmt.Goto[symbol.Resolved]{Target: endLabel}
+			srcmaps.Copy(s, g)
+			bodies = append(bodies, g)
+			cursor++
 		}
+		//
+		dispatch.Branches = append(dispatch.Branches,
+			stmt.DispatchBranch[symbol.Resolved]{Labels: branch.Labels, Target: target})
 	}
-
-	// the default statement, if present, becomes the final "else"
-	// of the equivalent nested if-then-else statement
-	if containsDefault {
-		mostNestedIfThenElse.FalseBranch = *defaultStatement
+	// Lay out the default body last (if any); on a non-match control reaches it
+	// and then falls straight through to the end, so no trailing goto is needed.
+	dispatch.DefaultTarget = cursor
+	//
+	if defaultBranch != nil {
+		body := lowerStatements(cursor, defaultBranch.Body, env, srcmaps)
+		cursor += uint(len(body))
+		bodies = append(bodies, body...)
 	}
-
-	return lowerIfElse(pc, equivalentIfThenElse, env, srcmaps)
+	//
+	srcmaps.Copy(s, dispatch)
+	// Assemble Dispatch + bodies, then resolve the end label to the PC following
+	// the whole construct.
+	result := append([]stmt.Resolved{dispatch}, bodies...)
+	patchBranches(endLabel, result, cursor)
+	//
+	return result
 }
 
 func lowerIfElse(pc uint, s *stmt.IfElse[symbol.Resolved], env *lowerEnv, srcmaps source.Maps[any]) []stmt.Resolved {

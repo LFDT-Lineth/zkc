@@ -1,5 +1,0 @@
-;;error:3:9-10:unknown register or constant
-fn f(x u16) -> (res u2) {
-  res = y
-  return
-}

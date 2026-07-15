@@ -12,38 +12,30 @@
 // SPDX-License-Identifier: Apache-2.0
 package bytecode
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
+)
 
 // Jmp (unconditional branch) instruction
-type Jmp struct{ Target Address }
+type Jmp[W word.Word[W]] struct{ Target Address }
 
-func (p *Jmp) String(_ SystemMap) string {
-	return fmt.Sprintf("jmp 0x%08x", p.Target)
+// Uses implementation for Bytecode interface.
+func (p *Jmp[W]) Uses() []RegisterId {
+	return nil
 }
 
-// Codes implementation for Bytecode interface
-func (p *Jmp) Codes(pc uint32) []uint32 {
-	var roff = getRelativeOffset(pc, p.Target, 24) << 8
-	//
-	return []uint32{
-		roff | JMP,
-	}
+// Definitions implementation for Bytecode interface.
+func (p *Jmp[W]) Definitions() []RegisterId {
+	return nil
 }
 
-// Patch implementation for Bytecode interface
-func (p *Jmp) Patch(labels []Address) {
-	p.Target = labels[p.Target]
+// Validate implementation for Bytecode interface.
+func (p *Jmp[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
+	return nil
 }
 
-// Jmp (jump unconditional) instruction.  Format of this instruction is:
-//
-// +--------------------------+---------+
-// |        offset            | opcode  |
-// +--------------------------+---------+
-//
-// Here, offset is a signed u16 relative offset, where the following
-// instruction is considered to be at offset 0.
-func decodeJmp1(pc uint32, codes []uint32) (uint32, uint32) {
-	var target = getBranchTarget(pc, codes[pc]>>8, 24)
-	return target, 1
+func (p *Jmp[W]) String(_ Environment[W]) string {
+	return fmt.Sprintf("jmp 0x%x", p.Target)
 }

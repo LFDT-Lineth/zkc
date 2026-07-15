@@ -29,7 +29,28 @@ const (
 	PC_NAME = "$pc"
 	// RET_NAME gives the name used for the return line in traces.
 	RET_NAME = "$ret"
+	// IS_PC_PREFIX gives the prefix used for the one-hot program counter
+	// selector lines in traces.  A selector for PC value v is named
+	// "$is_pc_<v>".
+	IS_PC_PREFIX = "$is_pc_"
+	// AT_FLAG_PREFIX name of binary flag names for multi-line address increments
+	AT_FLAG_PREFIX = "$at_flag_"
+	// ACCESS_BIT_NAME name of binary flag for non-padding rows
+	ACCESS_BIT_NAME = "$access_bit"
 )
+
+// SelectorName returns the name of the one-hot program counter selector
+// register for the instruction at the given (zero-based) code line.  The PC
+// value for code line c is c+1 (PC==0 is reserved for padding).
+func SelectorName(line uint) string {
+	return fmt.Sprintf("%s%d", IS_PC_PREFIX, line+1)
+}
+
+// AtFlagName returns the name of the binary "at flag" register for address
+// limb k, used to locate the carry-stop limb on a multi-limb address increment.
+func AtFlagName(k uint) string {
+	return fmt.Sprintf("%s%d", AT_FLAG_PREFIX, k)
+}
 
 // Register defines the notion of a register within a function.
 type Register = register.Register

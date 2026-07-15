@@ -49,12 +49,17 @@ type Builder[F field.Element[F]] struct {
 	formatting TraceFormatting
 	// Optional source map information.  This is primarily used to determine
 	srcmap util.Option[corset.SourceMap]
+	// Optional predicate determining whether a given module is publicly visible.
+	// When set, it overrides the public flag otherwise derived from the source
+	// map (or the default).  This is used by callers without a source map (e.g.
+	// zkc) to hide synthetic modules such as range-check tables.
+	visibility util.Option[func(tr.ModuleName) bool]
 }
 
 // NewBuilder constructs a default builder.
 func NewBuilder[F field.Element[F]](mapping module.LimbsMap) Builder[F] {
 	return Builder[F]{util.None[CellRefSet](), false, false, 16, 16, mapping,
-		DefaultFormatter(), util.None[corset.SourceMap]()}
+		DefaultFormatter(), util.None[corset.SourceMap](), util.None[func(tr.ModuleName) bool]()}
 }
 
 // WithCellWidth sets the maximum width of any cell in the view.
@@ -113,6 +118,17 @@ func (p Builder[F]) WithSourceMap(srcmap corset.SourceMap) Builder[F] {
 	return builder
 }
 
+// WithVisibility applies a predicate determining whether a given module is
+// publicly visible.  When set, it overrides the public flag otherwise derived
+// from the source map (or the default).
+func (p Builder[F]) WithVisibility(public func(tr.ModuleName) bool) Builder[F] {
+	var builder = p
+	//
+	builder.visibility = util.Some(public)
+	//
+	return builder
+}
+
 // Build the viewing window for this trace.
 func (p Builder[F]) Build(trace tr.Trace[F]) TraceView {
 	var windows []ModuleView
@@ -124,6 +140,10 @@ func (p Builder[F]) Build(trace tr.Trace[F]) TraceView {
 		scMod := p.mapping.Module(i)
 		//
 		public, columns := extractSourceMapData(trMod, p.limbs, p.computed, srcmap, scMod)
+		// Override visibility with the caller-supplied predicate (if any).
+		if p.visibility.HasValue() {
+			public = p.visibility.Unwrap()(trMod.Name())
+		}
 		//
 		data := newModuleData(i, scMod, trMod, public, enums, columns)
 		// construct initial module view

@@ -24,18 +24,36 @@ type FormattedTable struct {
 	widths []uint
 	// Table data stored in row-major format.
 	rows [][]FormattedText
+	// Separator printed after each column (defaults to "|").
+	separator string
+	// Whether each column is left-justified (defaults to false, i.e.
+	// right-justified).
+	leftAlign []bool
 }
 
 // NewFormattedTable constructs a new table with given dimensions.
 func NewFormattedTable(width uint, height uint) *FormattedTable {
 	widths := make([]uint, width)
+	leftAlign := make([]bool, width)
 	rows := make([][]FormattedText, height)
 	// Construct the table
 	for i := uint(0); i < height; i++ {
 		rows[i] = make([]FormattedText, width)
 	}
 
-	return &FormattedTable{widths, rows}
+	return &FormattedTable{widths: widths, rows: rows, separator: "|", leftAlign: leftAlign}
+}
+
+// SetSeparator sets the string printed after each column (e.g. "|" for a ruled
+// table, or "" to drop the vertical lines between columns).
+func (p *FormattedTable) SetSeparator(separator string) {
+	p.separator = separator
+}
+
+// SetLeftAlign makes the given column left-justified (the default is
+// right-justified).
+func (p *FormattedTable) SetLeftAlign(col uint) {
+	p.leftAlign[col] = true
 }
 
 // Set the contents of a given cell in this table
@@ -89,6 +107,20 @@ func (p *FormattedTable) SetMaxWidth(col uint, width uint) {
 	p.widths[col] = min(p.widths[col], width)
 }
 
+// PrintedWidth returns the total width (in characters) of this table as rendered
+// by Print.  This is useful when something of matching width needs to be drawn
+// alongside the table (e.g. a horizontal rule).  Each column contributes its
+// width plus a leading space, a trailing space and the separator.
+func (p *FormattedTable) PrintedWidth() uint {
+	var width uint
+	//
+	for _, w := range p.widths {
+		width += w + 2 + uint(len(p.separator))
+	}
+	//
+	return width
+}
+
 // Print the table with or without the use of ANSI escapes (e.g. for showing
 // colour).  Disabling escapes is useful in environments that don't support
 // escapes as, otherwise, you get a lot of visible excape characters being
@@ -106,8 +138,13 @@ func (p *FormattedTable) Print(escapes bool) {
 			)
 			// Clip anything longer than given width
 			jth = jth.Clip(0, jth_width)
-			// Pad out anything shorter than given width
-			jth = jth.Pad(jth_width)
+			// Pad out anything shorter than given width, justifying according
+			// to the column's alignment.
+			if p.leftAlign[j] {
+				jth = jth.PadLeft(jth_width)
+			} else {
+				jth = jth.Pad(jth_width)
+			}
 			// Print colour (if applicable)
 			if escapes {
 				text = string(jth.Bytes())
@@ -115,7 +152,7 @@ func (p *FormattedTable) Print(escapes bool) {
 				text = string(jth.text)
 			}
 			//
-			fmt.Printf(" %s |", text)
+			fmt.Printf(" %s %s", text, p.separator)
 		}
 
 		fmt.Println()

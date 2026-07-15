@@ -13,57 +13,30 @@
 package bytecode
 
 import (
-	"fmt"
-	"math"
-
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Ret (return from function call) instruction.
-type Ret struct {
-	// FrameWidth determines the number of registers in the corresponding
-	// function's frame.  This many registers are popped from the stack when
-	// this instruction executes.
-	FrameWidth uint16
+type Ret[W word.Word[W]] struct {
 }
 
-// NewRet constructs a new return instruction for a given frame width.
-func NewRet(width uint) *Ret {
-	if width > math.MaxUint16 {
-		panic("invalid frame width")
-	}
-	//
-	return &Ret{uint16(width)}
+// Uses implementation for Bytecode interface.  The copying of return values is
+// handled by the frame machinery rather than by named register operands, so a
+// return reads no registers here.
+func (p *Ret[W]) Uses() []RegisterId {
+	return nil
 }
 
-func (p *Ret) String(_ SystemMap) string {
-	return fmt.Sprintf("ret %d", p.FrameWidth)
+// Definitions implementation for Bytecode interface.
+func (p *Ret[W]) Definitions() []RegisterId {
+	return nil
 }
 
-// Codes implementation for Bytecode interface
-func (p *Ret) Codes(_ uint32) []uint32 {
-	return encodeRet1(p.FrameWidth)
+// Validate implementation for Bytecode interface.
+func (p *Ret[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
+	return nil
 }
 
-// Patch implementation for Bytecode interface
-func (p *Ret) Patch(_ []Address) {
-	// do nothing
-}
-
-func decodeRet[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	width := decodeRet1(codes[pc])
-	//
-	return &Ret{width}, 1
-}
-
-func decodeRet1(code uint32) (width uint16) {
-	return uint16(code >> 16)
-}
-
-func encodeRet1(width uint16) []uint32 {
-	var _width = uint32(width)
-
-	return []uint32{
-		_width<<8 | RET,
-	}
+func (p *Ret[W]) String(_ Environment[W]) string {
+	return "ret"
 }

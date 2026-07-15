@@ -14,12 +14,15 @@ package bytecode
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-func registersToString(registers []Reg, mapping SystemMap, separator string) string {
+// RegistersToString formats a slice of registers as a string, joining their
+// individual representations with the given separator.
+func RegistersToString[W word.Word[W]](registers []RegisterId, mapping Environment[W], separator string) string {
 	var builder strings.Builder
 	//
 	for i, r := range registers {
@@ -27,103 +30,64 @@ func registersToString(registers []Reg, mapping SystemMap, separator string) str
 			builder.WriteString(separator)
 		}
 		//
-		builder.WriteString(registerToString(r, mapping))
+		builder.WriteString(RegisterToString(r, mapping))
 	}
 	//
 	return builder.String()
 }
 
-func registerVectorToString(reg RegVec, mapping SystemMap) string {
+// RegisterVectorToString formats a register vector as a string, abbreviating
+// vectors of more than two limbs.
+func RegisterVectorToString[W word.Word[W]](reg RegisterVector, mapping Environment[W]) string {
 	var (
-		first = registerToString(reg.Base, mapping)
+		first = RegisterToString(reg.Base, mapping)
 	)
 	switch reg.Len {
 	case 1:
 		return first
 	case 2:
-		var second = registerToString(reg.Base+1, mapping)
+		var second = RegisterToString(reg.Base+1, mapping)
 		return fmt.Sprintf("%s;%s", first, second)
 	default:
-		var last = registerToString(reg.Base+reg.Len-1, mapping)
+		var last = RegisterToString(reg.Base+reg.Len-1, mapping)
 		return fmt.Sprintf("%s;,,;%s", first, last)
 	}
 }
 
-func registerToString(reg Reg, mapping SystemMap) string {
-	if mapping == nil {
+// RegisterToString formats a single register as a string, using the given
+// mapping to resolve its name (falling back to a numeric placeholder).  When
+// the environment can supply a current value for the register (see
+// Environment.ValueOf), that value is appended inline as "[0xVAL]"; this is how
+// the debugger renders register values within an instruction's string.
+func RegisterToString[W word.Word[W]](reg RegisterId, env Environment[W]) string {
+	if env == nil {
 		return fmt.Sprintf("?%d", reg)
 	}
 	//
-	return mapping.Register(register.NewId(uint(reg))).Name()
-}
-
-func getBranchTarget(offset uint32, relOffset uint32, width uint) Address {
-	var (
-		sign = uint32(0x1) << (width - 1)
-		max  = uint32(0x1) << width
-	)
-	//
-	if relOffset < sign {
-		return offset + 1 + relOffset
+	var name = env.Register(reg).Name()
+	// Append the current value, when one is available.
+	if val := env.ValueOf(reg); val.HasValue() {
+		return fmt.Sprintf("%s[0x%s]", name, val.Unwrap().Text(16))
 	}
 	//
-	return offset + 1 - max + relOffset
+	return name
 }
 
-func getRelativeOffset(offset uint32, target Address, width uint) uint32 {
-	var sign_bit = uint32(0x1) << width
-	//
-	if target > offset {
-		return target - offset - 1
-	}
-	//
-	roff := 1 + offset - target
-	//
-	if roff >= sign_bit {
-		panic("branch target overflow")
-	}
-	//
-	return sign_bit - roff
-}
+// ============================================================================
+// Helpers
+// ============================================================================
 
-// Pack a given array of bytes into an array of codes, such that the last code
-// is padded with 0xff.
-func packRegsIntoCodes(bytes []byte) []uint32 {
-	var (
-		nBytes = uint32(len(bytes))
-		ncodes = nCodesPackedSmall(nBytes)
-		//
-		codes = make([]uint32, ncodes)
-	)
+// CheckSmallArgs panics if the given arguments cannot be encoded as a "small"
+// (single-byte) operand list, since wide read/write instructions are unsupported.
+func CheckSmallArgs(args []RegisterId) {
 	//
-	for i := range ncodes {
-		var ith uint32
-		//
-		for j := range uint32(4) {
-			var jth uint32 = 0xff
-			//
-			if k := (i * 4) + j; k < nBytes {
-				jth = uint32(bytes[k])
-			}
-			//
-			ith = ith | (jth << (j * 8))
+	if len(args) > math.MaxUint8 {
+		panic("too many arguments")
+	}
+	//
+	for _, r := range args {
+		if r > math.MaxUint8 {
+			panic("support wide read/write instructions")
 		}
-		//
-		codes[i] = ith
 	}
-	//
-	return codes
-}
-
-func nCodesPackedSmall(n uint32) uint32 {
-	var (
-		// 4 bytes per code
-		ncodes = n / 4
-	)
-	// Round up if necessary
-	if n%4 != 0 {
-		ncodes++
-	}
-	//
-	return ncodes
 }
