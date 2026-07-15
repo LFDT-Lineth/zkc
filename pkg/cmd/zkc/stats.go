@@ -30,11 +30,8 @@ import (
 // their register count; all other modules report the full breakdown.
 type moduleStats struct {
 	name string
-	// kind is one of "static", "native" or "" (a regular module).  It drives
-	// which columns apply; see typ for the finer, display-only classification.
-	kind string
-	// typ is the display module type: "function", "memory", "native" or
-	// "static".
+	// typ is the display module type: "function", "native", one of "RAM"/"ROM"/"WOM"
+	// for memories, or "static".
 	typ string
 	// cells is the number of cells in a static reference table (rows ×
 	// registers).  Only meaningful for static modules.
