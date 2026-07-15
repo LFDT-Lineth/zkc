@@ -148,18 +148,18 @@ func encodeReadWrite_sn(m RwMode, id uint8, addr []RegisterId, data []RegisterId
 }
 
 // DecodeReadWrite_sn decodes the operands of a memory read/write instruction.
-func DecodeReadWrite_sn(pc uint32, codes []uint32) (id uint16, addr, data OpIter, n uint32) {
+func DecodeReadWrite_sn(pc uint32, codes []uint32) (id uint16, addr, data Operands, n uint32) {
 	naddr := uint((codes[pc] >> 16) & 0xff)
 	ndata := uint((codes[pc] >> 24) & 0xff)
 	id = uint16((codes[pc] >> 8) & 0xff)
 	//
 	if IsWideForm(pc, codes) {
-		addr = NewOp16Iter(0, naddr, codes[pc+1:])
-		data = NewOp16Iter(naddr, ndata, codes[pc+1:])
+		addr = NewWideOperands(0, naddr, codes[pc+1:])
+		data = NewWideOperands(naddr, ndata, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(naddr+ndata)
 	} else {
-		addr = NewOp8Iter(0, naddr, codes[pc+1:])
-		data = NewOp8Iter(naddr, ndata, codes[pc+1:])
+		addr = NewOperands(0, naddr, codes[pc+1:])
+		data = NewOperands(naddr, ndata, codes[pc+1:])
 		n = 1 + NumCodesPackedSmall(naddr+ndata)
 	}
 	//

@@ -167,8 +167,11 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[str
 // vm.DecodeInputs() based on the register types of the corresponding memory.
 // This can return one (or more) errors if, for example, the input is malformed
 // (e.g. is missing expected fields and/or contains unexpected fields).
+// The raw (row-major) trace produced by the machine is also returned, since it
+// carries the original register / limb structure before AIR expansion (e.g. for
+// reporting statistics).  It is nil when execution fails.
 func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
-) (output map[string][]byte, tr trace.Trace[F], errs []error) {
+) (output map[string][]byte, rtr rtrace.Trace[F], tr trace.Trace[F], errs []error) {
 	//
 	var (
 		processor = &postProcess[vm.Uint128, F]{}
@@ -176,8 +179,6 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 		stats = util.NewPerfStats()
 		// Lower bytecode program
 		prog64 = vm.ProgramToProgram[vm.Uint, vm.Uint128](p.program)
-		//
-		rtr rtrace.Trace[F]
 	)
 	// Execute machine in chunks of 1K steps
 	rtr, output, errs = vm.BootAndTrace(prog64, input, math.MaxUint, processor)
@@ -192,14 +193,15 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 			WithExpansionChecks(true).
 			WithExpansion(true).
 			WithParallelism(cfg.parallel).
-			WithBatchSize(cfg.batchSize)
+			WithBatchSize(cfg.batchSize).
+			WithPadding(cfg.paddingStrategy)
 		// Build the trace (finally)
 		tr, errs = builder.Expand(constraints, rtrace.ToTrace(rtr))
 	}
 	//
 	stats.Log("Trace generation")
 	//
-	return output, tr, errs
+	return output, rtr, tr, errs
 }
 
 func (p *BinaryFile[F]) cachedInterpreter() *vm.Interpreter[vm.Uint128] {

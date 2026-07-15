@@ -59,7 +59,7 @@ func (p *StaticArray[W, C]) Read(address uint64) (C, error) {
 func (p *StaticArray[W, C]) Write(address uint64, value C) error {
 	// ensure sufficient space
 	p.data = expand(p.data, address+1)
-	//
+	// perform write
 	p.data[address] = value
 	//
 	return nil

@@ -509,7 +509,7 @@ func (p *StmtCompiler) compileConcat(args []Expr, mapping []uint, targets []vm.R
 	// Reverse sources (as concatenation requires them in little endian order)
 	sources = array.Reverse(sources)
 	// Done
-	return append(insns, vm.BitConcat[vm.Uint](targets, sources))
+	return append(insns, vm.AssignV[vm.Uint](targets, sources...))
 }
 
 func (p *StmtCompiler) compileIntAdd(args []Expr, bitwidth uint, mapping []uint, targets []vm.RegisterId) []Bytecode {
@@ -576,7 +576,7 @@ func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved]
 
 func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, targets []vm.RegisterId,
 ) []Bytecode {
-	return []Bytecode{vm.AddVec[vm.Uint](targets, []RegisterId{util.Cast[RegisterId](e.Variable)})}
+	return []Bytecode{vm.AssignV[vm.Uint](targets, util.Cast[RegisterId](e.Variable))}
 }
 
 func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target RegisterId,

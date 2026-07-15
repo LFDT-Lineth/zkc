@@ -126,6 +126,49 @@ func (p Uint128) Div(w Uint128) Uint128 {
 	return q
 }
 
+// DwDiv implementation for Word interface.
+func (p Uint128) DwDiv(lo, d Uint128) (Uint128, Uint128) {
+	if d.isZero() {
+		panic("division by zero")
+	} else if p.Cmp(d) >= 0 {
+		panic("quotient overflow")
+	}
+	// Fast path: the divisor fits within 64 bits, and hence (given the
+	// precondition p < d) so does p.  Chain bits.Div64 across the remaining
+	// limbs, each step leaving a remainder strictly less than the divisor.
+	if d.hi == 0 {
+		q1, r := bits.Div64(p.lo, lo.hi, d.lo)
+		q0, r := bits.Div64(r, lo.lo, d.lo)
+		//
+		return Uint128{q1, q0}, Uint128{0, r}
+	}
+	// Slow path: bitwise long division over the full 256-bit dividend.  The
+	// truncation of the quotient to 128 bits is exact here since p < d.
+	return quoRem256by128(p, lo, d)
+}
+
+// DwRem implementation for Word interface.
+func (p Uint128) DwRem(lo, d Uint128) Uint128 {
+	if d.isZero() {
+		panic("division by zero")
+	}
+	// Fast path: the divisor fits within 64 bits.  First reduce the high word
+	// (which, unlike for DwDiv, may be arbitrarily large), then chain
+	// bits.Rem64 across the low word's limbs.
+	if d.hi == 0 {
+		r0 := p.rem(d)
+		r := bits.Rem64(r0.lo, lo.hi, d.lo)
+		r = bits.Rem64(r, lo.lo, d.lo)
+		//
+		return Uint128{0, r}
+	}
+	// Slow path: bitwise long division over the full 256-bit dividend.  The
+	// remainder is exact regardless of any quotient truncation.
+	_, r := quoRem256by128(p, lo, d)
+	//
+	return r
+}
+
 // FitsWithin implementation for Word interface.
 func (p Uint128) FitsWithin(bitwidth uint) bool {
 	switch {
@@ -167,12 +210,10 @@ func (p Uint128) MulMod(w, m Uint128) Uint128 {
 	if m.isZero() {
 		panic("modulus by zero")
 	}
-	// Form the full 256-bit product, then reduce it modulo m.  There is no
-	// hardware 256/128 division, so the reduction is a (big.Int-free) bitwise
-	// long division over the product.
+	// Form the full 256-bit product, then reduce it modulo m.
 	hi, lo := p.Mul(w)
 	//
-	return reduceMod256(hi, lo, m)
+	return hi.DwRem(lo, m)
 }
 
 // Not implementation for Word interface.
@@ -456,12 +497,14 @@ func (p Uint128) quoRem(v Uint128) (q, r Uint128) {
 	return Uint128{0, quo}, r
 }
 
-// reduceMod256 reduces the 256-bit value (hi*2^128 + lo) modulo m, returning a
-// value in [0, m).  The caller must ensure m is non-zero.  This is a bitwise
-// long division: the running remainder is always strictly less than m, so the
-// only state that can spill past bit 127 when it is doubled is captured by the
-// carry bit and folded back in via the comparison against m.
-func reduceMod256(hi, lo, m Uint128) Uint128 {
+// quoRem256by128 divides the 256-bit value (hi*2^128 + lo) by m, returning
+// the low 128 bits of the quotient along with the remainder (in [0, m)).  The
+// caller must ensure m is non-zero.  Note that the quotient is truncated to
+// 128 bits; it is exact only when hi < m.  This is a bitwise long division:
+// the running remainder is always strictly less than m, so the only state
+// that can spill past bit 127 when it is doubled is captured by the carry bit
+// and folded back in via the comparison against m.
+func quoRem256by128(hi, lo, m Uint128) (q, r Uint128) {
 	// Locate the most-significant set bit of the 256-bit dividend so that we
 	// start from there rather than always iterating all 256 positions.
 	var top int
@@ -476,10 +519,8 @@ func reduceMod256(hi, lo, m Uint128) Uint128 {
 	case lo.lo != 0:
 		top = bits.Len64(lo.lo) - 1
 	default:
-		return Uint128{}
+		return Uint128{}, Uint128{}
 	}
-	//
-	var r Uint128
 	//
 	for i := top; i >= 0; i-- {
 		// r = (r << 1) | bit_i, remembering whether the doubling overflowed bit
@@ -490,10 +531,18 @@ func reduceMod256(hi, lo, m Uint128) Uint128 {
 		// needs reducing; in that case Sub wraps to exactly value-m.
 		if carryOut != 0 || r.Cmp(m) >= 0 {
 			r, _ = r.Sub(m)
+			// Each subtraction corresponds to quotient bit i, of which only the
+			// low 128 are representable.
+			switch {
+			case i >= 64:
+				q.hi |= uint64(1) << uint(i-64)
+			default:
+				q.lo |= uint64(1) << uint(i)
+			}
 		}
 	}
 	//
-	return r
+	return q, r
 }
 
 // bitAt256 returns bit i (as 0 or 1) of the 256-bit value (hi*2^128 + lo).

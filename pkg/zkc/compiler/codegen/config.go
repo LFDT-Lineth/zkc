@@ -10,7 +10,10 @@
 // SPDX-License-Identifier: Apache-2.0
 package codegen
 
-import "github.com/LFDT-Lineth/zkc/pkg/util/field"
+import (
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+)
 
 // DEFAULT_MAX_STATIC_DEPTH is the default maximum depth (i.e. number of rows) of
 // static tables, used when no override is supplied.  It is 2^16.
@@ -22,12 +25,14 @@ const DEFAULT_MAX_STATIC_DEPTH uint = 65536
 // debugging, for example) should derive a custom Config via the chainable
 // setters below.
 var DEFAULT_CONFIG = Config{
-	field:          field.KOALABEAR_16,
+	field: field.KOALABEAR_16,
+	// NOTE: this should be deprecated to u64 at some point.
+	word:           vm.WORD_UINT128,
 	fastMode:       false,
 	inlining:       true,
 	quiet:          false,
 	vectorize:      true,
-	splitting:      false,
+	splitting:      true,
 	maxStaticDepth: DEFAULT_MAX_STATIC_DEPTH,
 }
 
@@ -40,6 +45,10 @@ type Config struct {
 	// a target field in order to correctly evaluate native expressions, and
 	// sanity check native initialisers, etc.
 	field field.Config
+	// word provides information about the target word.  That is, in fast mode,
+	// the machine word to be used for execution.  This must be larger than the
+	// field (for now).
+	word vm.WordConfig
 	// fastMode execution is useful to harvest partial trace information,
 	// such as memory access, module call, etc..., but can't be used
 	// to generate the trace witness nor to generate arithmetic constraints.
@@ -74,6 +83,15 @@ func (p Config) Field(field field.Config) Config {
 	var q = p
 	//
 	q.field = field
+	//
+	return q
+}
+
+// Word sets the target word configuration to use for this compiler.
+func (p Config) Word(word vm.WordConfig) Config {
+	var q = p
+	//
+	p.word = word
 	//
 	return q
 }

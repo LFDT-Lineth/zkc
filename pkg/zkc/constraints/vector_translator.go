@@ -116,7 +116,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 		case *vm.BytecodeRet[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()
-		case *vm.BytecodeHint[W]:
+		case *vm.BytecodeIntrinsic[W]:
 			// Non-deterministic assignment: the target registers are already
 			// recorded in the write map for constancy analysis; no polynomial
 			// constraint is generated here, since correctness is enforced by
@@ -164,9 +164,9 @@ func (p *VectorInsnTranslator[W, F]) WithConstancyConstraints(writes dfa.Writes,
 		var (
 			regId = register.NewId(uint(i))
 			// Value of register on this row of the trace.
-			r_i = mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
+			r_i = mirc.Variable[register.Id, Expr[F]](regId, reg.WidthOrNative(), 0)
 			// Value of register on previous row of the trace.
-			r_im1 = mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), -1)
+			r_im1 = mirc.Variable[register.Id, Expr[F]](regId, reg.WidthOrNative(), -1)
 		)
 		//
 		if reg.IsInput() {
@@ -232,7 +232,7 @@ func (p *VectorInsnTranslator[W, F]) sourceWidths(ids []vm.RegisterId) []uint {
 	widths := make([]uint, len(ids))
 	//
 	for i, id := range ids {
-		widths[i] = p.registers[id].Width()
+		widths[i] = p.registers[id].WidthOrNative()
 	}
 	//
 	return widths

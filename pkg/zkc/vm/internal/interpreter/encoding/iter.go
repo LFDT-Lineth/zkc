@@ -12,11 +12,11 @@
 // SPDX-License-Identifier: Apache-2.0
 package encoding
 
-// OpIter provides a way of iterating operands packed into u32 words without
+// Operands provides a way of iterating operands packed into u32 words without
 // allocating memory.  Operands are either u8 (four per word, as used by narrow
 // instruction forms) or u16 (two per word, as used by wide instruction forms);
 // the element width is fixed at construction.
-type OpIter struct {
+type Operands struct {
 	count  uint
 	offset uint
 	// Number of operands packed into each u32 word (4 for u8 operands, 2 for
@@ -25,10 +25,10 @@ type OpIter struct {
 	data    []uint32
 }
 
-// NewOp8Iter constructs an iterator over u8 operands (packed four per word)
+// NewOperands constructs an iterator over u8 operands (packed four per word)
 // from a given array of words and starting position.
-func NewOp8Iter(n, len uint, data []uint32) OpIter {
-	return OpIter{
+func NewOperands(n, len uint, data []uint32) Operands {
+	return Operands{
 		offset:  n % 4,
 		count:   len,
 		perWord: 4,
@@ -36,10 +36,10 @@ func NewOp8Iter(n, len uint, data []uint32) OpIter {
 	}
 }
 
-// NewOp16Iter constructs an iterator over u16 operands (packed two per word)
+// NewWideOperands constructs an iterator over u16 operands (packed two per word)
 // from a given array of words and starting position.
-func NewOp16Iter(n, len uint, data []uint32) OpIter {
-	return OpIter{
+func NewWideOperands(n, len uint, data []uint32) Operands {
+	return Operands{
 		offset:  n % 2,
 		count:   len,
 		perWord: 2,
@@ -48,12 +48,12 @@ func NewOp16Iter(n, len uint, data []uint32) OpIter {
 }
 
 // HasNext determines whether there are any more operands in this iterator.
-func (p *OpIter) HasNext() bool {
+func (p *Operands) HasNext() bool {
 	return p.count != 0
 }
 
 // Next returns the next operand in this iterator.
-func (p *OpIter) Next() (operand uint16) {
+func (p *Operands) Next() (operand uint16) {
 	var (
 		bits = 32 / p.perWord
 		mask = (uint32(1) << bits) - 1
@@ -72,7 +72,7 @@ func (p *OpIter) Next() (operand uint16) {
 }
 
 // OpIterToArray extracts n elements from the given iterator into an array.
-func OpIterToArray[T uint8 | uint16](iter OpIter) []T {
+func OpIterToArray[T uint8 | uint16](iter Operands) []T {
 	var arr = make([]T, iter.count)
 	//
 	for i := range iter.count {

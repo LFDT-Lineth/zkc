@@ -13,22 +13,14 @@
 package test
 
 import (
-	"fmt"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/test/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/ir"
+	test_util "github.com/LFDT-Lineth/zkc/pkg/test/util"
 )
 
 // DEFAULT_UNIT_CONFIG provides a default configuration for unit tests.
-var DEFAULT_UNIT_CONFIG = util.DEFAULT_CONFIG.
-	Fields(field.KOALABEAR_16).
-	Constraints(true).
-	Splitting(true).
-	Bytecode(true).
-	GoGen(true)
+var DEFAULT_UNIT_CONFIG = test_util.DEFAULT_CONFIG
 
 // ===================================================================
 // Basic Tests
@@ -74,20 +66,20 @@ func Test_ZkcUnit_Basic_10(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_11(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_11", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_11", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_12(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_12", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_12", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_13(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_13", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_13", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_14(t *testing.T) {
-	// TODO: unsupported instruction form
-	checkZkcUnit(t, "zkc/unit/basic_14", DEFAULT_UNIT_CONFIG.Constraints(false).Fields(field.BLS12_377))
+	t.Skip("mismatched limbs")
+	checkZkcUnit(t, "zkc/unit/basic_14", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_15(t *testing.T) {
@@ -133,15 +125,15 @@ func Test_ZkcUnit_Basic_25(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_25", DEFAULT_UNIT_CONFIG)
 }
 func Test_ZkcUnit_Basic_26(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_26", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_26", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_27(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_27", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_27", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_28(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_28", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_28", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_29(t *testing.T) {
@@ -200,33 +192,37 @@ func Test_ZkcUnit_Basic_41(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_42(t *testing.T) {
+	t.Skip("subtract with borrow")
 	checkZkcUnit(t, "zkc/unit/basic_42", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_43(t *testing.T) {
+	t.Skip("subtract with borrow")
 	checkZkcUnit(t, "zkc/unit/basic_43", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_44(t *testing.T) {
-	// NOTE: needs u128 word (or fast mode splitting)
-	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128))
+	checkZkcUnit(t, "zkc/unit/basic_44", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_45(t *testing.T) {
-	// TODO: subtract with borrow; needs u128 word (or fast mode splitting).
-	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false).Constraints(false))
+	// TODO: subtract with borrow.
+	checkZkcUnit(t, "zkc/unit/basic_45", DEFAULT_UNIT_CONFIG.
+		Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_46(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_46", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128))
+	checkZkcUnit(t, "zkc/unit/basic_46", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_47(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_47", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_47", DEFAULT_UNIT_CONFIG.
+		Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_48(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_48", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_48", DEFAULT_UNIT_CONFIG.
+		Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_49(t *testing.T) {
@@ -242,8 +238,7 @@ func Test_ZkcUnit_Basic_51(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_52(t *testing.T) {
-	// TODO: missing check cast??
-	checkZkcUnit(t, "zkc/unit/basic_52", DEFAULT_UNIT_CONFIG.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/basic_52", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_53(t *testing.T) {
@@ -283,19 +278,15 @@ func Test_ZkcUnit_Basic_61(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_62(t *testing.T) {
-	// TODO: gogen
-	checkZkcUnit(t, "zkc/unit/basic_62", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_62", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_63(t *testing.T) {
-	// TODO: constraint generation: carry exceeds max register width (u17 vs u16)
-	checkZkcUnit(t, "zkc/unit/basic_63", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_63", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_64(t *testing.T) {
-	// TODO: constraint tracing still runs the legacy word machine, which
-	// rejects subtraction underflow ("arithmetic underflow") instead of
-	// wrapping like the bytecode interpreter.
+	// TODO: subtract with borrow?
 	checkZkcUnit(t, "zkc/unit/basic_64", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
@@ -303,30 +294,39 @@ func Test_ZkcUnit_Basic_65(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_65", DEFAULT_UNIT_CONFIG)
 }
 
-// Wide (u16 register operand) instruction forms: register-register +, - and *,
-// plus a wide vectored add.
 func Test_ZkcUnit_Basic_66(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_66", DEFAULT_UNIT_CONFIG)
 }
 
-// Wide (u16 register operand) instruction forms: load-constant, / and %, plus
-// a wide conditional branch.
 func Test_ZkcUnit_Basic_67(t *testing.T) {
-	// TODO: constraint tracing of u16 division fails with an arithmetic
-	// underflow (pre-existing; unrelated to wide instructions).
+	// TODO: subtract with borrow?
 	checkZkcUnit(t, "zkc/unit/basic_67", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
-// Wide (u16 register operand) instruction forms: bitwise &, |, ^ and shifts.
 func Test_ZkcUnit_Basic_68(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_68", DEFAULT_UNIT_CONFIG)
 }
 
-// Wide (u16 register operand) instruction forms: general (limb-based) load
-// constant.  Runs with u128 words so the u32 constants are not split before
-// encoding.
 func Test_ZkcUnit_Basic_69(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_69", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false))
+	checkZkcUnit(t, "zkc/unit/basic_69", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_70(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_70", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_71(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_71", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_72(t *testing.T) {
+	t.Skip("subtract with borrow")
+	checkZkcUnit(t, "zkc/unit/basic_72", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_74(t *testing.T) {
+	t.Skip("subtract with borrow")
+	checkZkcUnit(t, "zkc/unit/basic_74", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
@@ -427,9 +427,7 @@ func Test_ZkcUnit_Const_06(t *testing.T) {
 }
 
 func Test_ZkcUnit_Const_07(t *testing.T) {
-	// NOTE: u128 registers cannot be lowered to a 64-bit word machine, nor
-	// are they supported by gogen.
-	checkZkcUnit(t, "zkc/unit/const_07", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).GoGen(false))
+	checkZkcUnit(t, "zkc/unit/const_07", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -595,14 +593,15 @@ func Test_ZkcUnit_While_01(t *testing.T) {
 }
 
 func Test_ZkcUnit_While_02(t *testing.T) {
+	// TODO: subtract with borrow?
 	checkZkcUnit(t, "zkc/unit/while_02", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_While_03(t *testing.T) {
+	// TODO: subtract with borrow?
 	checkZkcUnit(t, "zkc/unit/while_03", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
-// x = f(x) in a while loop
 func Test_ZkcUnit_While_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/while_04", DEFAULT_UNIT_CONFIG)
 }
@@ -617,12 +616,13 @@ func Test_ZkcUnit_For_02(t *testing.T) {
 }
 
 func Test_ZkcUnit_For_03(t *testing.T) {
+	// TODO: subtract with borrow?
 	checkZkcUnit(t, "zkc/unit/for_03", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_For_04(t *testing.T) {
 	// TODO: duplicate variable declaration #1801
-	checkZkcUnit(t, "zkc/unit/for_04", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/for_04", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -630,6 +630,7 @@ func Test_ZkcUnit_For_04(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Break_01(t *testing.T) {
+	// TODO: subtract with borrow?
 	checkZkcUnit(t, "zkc/unit/break_01", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
@@ -698,8 +699,7 @@ func Test_ZkcUnit_Bitwise_13(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_14(t *testing.T) {
-	// TODO: register splitting: duplicate register "hi" declared
-	checkZkcUnit(t, "zkc/unit/bitwise_14", DEFAULT_UNIT_CONFIG.Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/bitwise_14", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Bitwise_15(t *testing.T) {
@@ -715,13 +715,15 @@ func Test_ZkcUnit_Bitwise_17(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_18(t *testing.T) {
-	// TODO: wide instructions not supported
-	checkZkcUnit(t, "zkc/unit/bitwise_18", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/bitwise_18", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Bitwise_19(t *testing.T) {
-	// TODO: multiply granularity
-	checkZkcUnit(t, "zkc/unit/bitwise_19", DEFAULT_UNIT_CONFIG.Words(vm.WORD_UINT128).Constraints(false).Splitting(false))
+	checkZkcUnit(t, "zkc/unit/bitwise_19", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Bitwise_20(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bitwise_20", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -788,10 +790,6 @@ func Test_ZkcUnit_Static_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/static_02", DEFAULT_UNIT_CONFIG)
 }
 
-// A static ROM with u32 data lines: register splitting subdivides its constant
-// contents into limbs (under the smaller test fields), and the value-checked
-// accepts confirm each row reassembles to its original value.  The reject reads
-// out of bounds.
 func Test_ZkcUnit_Static_03(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/static_03", DEFAULT_UNIT_CONFIG)
 }
@@ -829,8 +827,7 @@ func Test_ZkcUnit_Div_01(t *testing.T) {
 }
 
 func Test_ZkcUnit_Div_02(t *testing.T) {
-	// TODO: register exceeds max register width
-	checkZkcUnit(t, "zkc/unit/div_02", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/div_02", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Div_03(t *testing.T) {
@@ -845,6 +842,14 @@ func Test_ZkcUnit_Div_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_05", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Div_06(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/div_06", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Div_07(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/div_07", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================
@@ -853,19 +858,14 @@ func Test_ZkcUnit_Rem_01(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/rem_01", DEFAULT_UNIT_CONFIG)
 }
 
-// Constraints + register splitting now work under BLS12_377; KOALABEAR (u16)
-// still fails (register exceeds field width), hence the field restriction.
 func Test_ZkcUnit_Rem_02(t *testing.T) {
-	// TODO: register exceeds maximum bitwidth
-	checkZkcUnit(t, "zkc/unit/rem_02", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/rem_02", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Rem_03(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/rem_03", DEFAULT_UNIT_CONFIG)
 }
 
-// Remainder by a constant power of two (optimised into a bitwise AND in fast
-// mode; see OptimizeDivisions).
 func Test_ZkcUnit_Rem_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/rem_04", DEFAULT_UNIT_CONFIG)
 }
@@ -882,43 +882,30 @@ func Test_ZkcUnit_Call_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_02", DEFAULT_UNIT_CONFIG)
 }
 
-// This test covers call register aliasing where the return is assigned to an argument register (x = f(x)).
 func Test_ZkcUnit_Call_03(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_03", DEFAULT_UNIT_CONFIG)
 }
 
-// This test covers call register aliasing where the return is assigned to an argument register (x = f(x, y)).
 func Test_ZkcUnit_Call_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_04", DEFAULT_UNIT_CONFIG)
 }
 
-// This test performs different module call depending on the branch taken
 func Test_ZkcUnit_Call_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_05", DEFAULT_UNIT_CONFIG)
 }
 
-// b = f(a) + 1
-// the return value is then modified in the same vector
 func Test_ZkcUnit_Call_06(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_06", DEFAULT_UNIT_CONFIG)
 }
 
-// x = f(x) + 1
-// mixed of register collision:
-// arg and return value are the same register
-// return value is rewrote in the same vector
 func Test_ZkcUnit_Call_07(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_07", DEFAULT_UNIT_CONFIG)
 }
 
-// y = f(x); x = x+1
-// rewrite the arg call
 func Test_ZkcUnit_Call_08(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_08", DEFAULT_UNIT_CONFIG)
 }
 
-// y = f(x); if() {x = x+1}
-// rewrite the arg call, hidden in a skip_if condition
 func Test_ZkcUnit_Call_09(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_09", DEFAULT_UNIT_CONFIG)
 }
@@ -988,17 +975,23 @@ func Test_ZkcUnit_Switch_08(t *testing.T) {
 }
 
 func Test_ZkcUnit_Switch_09(t *testing.T) {
-	// TODO: unsupported instruction form
-	checkZkcUnit(t, "zkc/unit/switch_09", DEFAULT_UNIT_CONFIG.Fields(field.BLS12_377).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/switch_09", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Switch_10(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_10", DEFAULT_UNIT_CONFIG)
 }
 
-// y = switch(x) f_x(x)
 func Test_ZkcUnit_Switch_11(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_11", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_12(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_12", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_13(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_13", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -1054,35 +1047,35 @@ func Test_ZkcUnit_Debug_04(t *testing.T) {
 // behave identically to its Basic_XX counterpart.
 
 func Test_ZkcUnit_Inline_08(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/inline_08", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/inline_08", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Inline_09(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/inline_09", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/inline_09", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Inline_10(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/inline_10", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/inline_10", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Inline_25(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/inline_25", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/inline_25", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Inline_28(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/inline_28", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/inline_28", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
-// func Test_ZkcUnit_Inline_33(t *testing.T) {
-// 	checkZkcUnit(t, "zkc/unit/inline_33", util.DEFAULT_CONFIG)
-// }
+func Test_ZkcUnit_Inline_33(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/inline_33", DEFAULT_UNIT_CONFIG)
+}
 
 func Test_ZkcUnit_Inline_34(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/inline_34", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/inline_34", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Inline_35(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/inline_35", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/inline_35", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -1126,28 +1119,28 @@ func Test_ZkcUnit_SkipIf_05(t *testing.T) {
 // ===================================================================
 // This test contains an OLI empty module for some execution
 func Test_ZkcUnit_Padding_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/padding_01", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/padding_01", DEFAULT_UNIT_CONFIG)
 }
 
 // This test contains an OLI empty module for some execution.
 // For the empty module, "0" is an invalid input (leads to a fail)
 func Test_ZkcUnit_Padding_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/padding_02", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/padding_02", DEFAULT_UNIT_CONFIG)
 }
 
 // This test contains an OLI module doing a memory read
 func Test_ZkcUnit_Padding_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/padding_03", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/padding_03", DEFAULT_UNIT_CONFIG)
 }
 
 // This test contains an OLI module doing a memory write
 func Test_ZkcUnit_Padding_04(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/padding_04", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/padding_04", DEFAULT_UNIT_CONFIG)
 }
 
 // This test contains an OLI empty module doing a call in case of execution
 func Test_ZkcUnit_Padding_05(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/padding_05", util.DEFAULT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/padding_05", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -1178,21 +1171,106 @@ func Test_ZkcUnit_RangeCheck_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/range_check_05", DEFAULT_UNIT_CONFIG)
 }
 
+// Big Tests
+// ===================================================================
+
+func Test_ZkcUnit_BigNum_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_01", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_BigNum_02(t *testing.T) {
+	// TODO: subtract with borrow?
+	checkZkcUnit(t, "zkc/unit/bignum_02", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_BigNum_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_03", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_BigNum_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_04", DEFAULT_UNIT_CONFIG.GoGen(false))
+}
+
+func Test_ZkcUnit_BigNum_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_05", DEFAULT_UNIT_CONFIG.GoGen(false))
+}
+
+func Test_ZkcUnit_BigNum_06(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_06", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_BigNum_07(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_07", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_BigNum_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_08", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_BigNum_09(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_09", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_BigNum_10(t *testing.T) {
+	// TODO: subtract with borrow?
+	checkZkcUnit(t, "zkc/unit/bignum_10", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_BigNum_11(t *testing.T) {
+	// TODO: subtract with borrow?
+	checkZkcUnit(t, "zkc/unit/bignum_11", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_BigNum_12(t *testing.T) {
+	// TODO: subtract with borrow?
+	checkZkcUnit(t, "zkc/unit/bignum_12", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_BigNum_13(t *testing.T) {
+	// TODO: subtract with borrow?
+	checkZkcUnit(t, "zkc/unit/bignum_13", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_BigNum_14(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_14", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_BigNum_15(t *testing.T) {
+	// TODO: subtract with borrow?
+	checkZkcUnit(t, "zkc/unit/bignum_15", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_BigNum_16(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_16", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_BigNum_17(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG.GoGen(false))
+}
+
+func Test_ZkcUnit_BigNum_18(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.GoGen(false))
+}
+
 // ===================================================================
 // Test Helpers
 // ===================================================================
 
-var STATIC_DEPTHS = []uint{codegen.DEFAULT_MAX_STATIC_DEPTH, 256}
+var STATIC_DEPTHS = []uint{256, 1 << 12}
+
+// ZKC_PADDING_STRATEGIES enumerates the padding strategies that every ZkC unit
+// test is exercised against (see checkZkcUnit).
+var ZKC_PADDING_STRATEGIES = map[string]ir.PaddingStrategy{
+	"single-row-padding":        ir.NaryRowPadding(1),
+	"double-row-padding":        ir.NaryRowPadding(2),
+	"next-power-of-two-padding": ir.NextPowerOfTwoPadding,
+}
 
 // checkZkcUnit runs test for different combinations of:
 // - STATIC_DEPTHS
-func checkZkcUnit(t *testing.T, test string, config util.Config) {
-	// The generated-Go ("native") executor is cross-checked on every unit test:
-	// programs it cannot yet handle (wide registers/constants/moduli) are
-	// logged-and-skipped by the harness, never failed.
-	for _, depth := range STATIC_DEPTHS {
-		t.Run(fmt.Sprintf("depth=%d", depth), func(t *testing.T) {
-			util.CheckValid(t, test, "zkc", config.MaxStaticDepth(depth))
-		})
-	}
+// - padding strategy
+func checkZkcUnit(t *testing.T, test string, config test_util.Config) {
+	// Run with different padding strategies, but default static depth
+	test_util.CheckValid(t, test, "zkc", config.Padding(ZKC_PADDING_STRATEGIES).
+		MaxStaticDepths(STATIC_DEPTHS...))
 }

@@ -16,16 +16,10 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/test/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // DEFAULT_UTIL_CONFIG provides a default configuration for util tests.
-var DEFAULT_UTIL_CONFIG = util.DEFAULT_CONFIG.
-	Fields(field.KOALABEAR_16).
-	Constraints(true).
-	Splitting(true).
-	Bytecode(true).
-	GoGen(true)
+var DEFAULT_UTIL_CONFIG = util.DEFAULT_CONFIG
 
 func Test_ZkcUtil_Byte(t *testing.T) {
 	checkZkcUtil(t, "zkc/util/byte", DEFAULT_UTIL_CONFIG)
@@ -48,7 +42,7 @@ func Test_ZkcUtil_BitShl(t *testing.T) {
 }
 
 func Test_ZkcUtil_ByteCounting(t *testing.T) {
-	checkZkcUtil(t, "zkc/util/byte_counting", DEFAULT_UTIL_CONFIG)
+	checkZkcUtil(t, "zkc/util/byte_counting", DEFAULT_UTIL_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUtil_ByteSize(t *testing.T) {
@@ -56,8 +50,8 @@ func Test_ZkcUtil_ByteSize(t *testing.T) {
 }
 
 func Test_ZkcUtil_FillBytes(t *testing.T) {
-	// TODO: no multiply granularity for field bandwidth
-	checkZkcUtil(t, "zkc/util/fill_bytes", DEFAULT_UTIL_CONFIG.Fields(field.BLS12_377).Constraints(false))
+	// TODO: slice out of bounds
+	checkZkcUtil(t, "zkc/util/fill_bytes", DEFAULT_UTIL_CONFIG)
 }
 
 func Test_ZkcUtil_FirstByte(t *testing.T) {
@@ -96,7 +90,7 @@ func Test_ZkcUtil_SetByte(t *testing.T) {
 	checkZkcUtil(t, "zkc/util/set_byte", DEFAULT_UTIL_CONFIG)
 }
 
-func Test_ZkcUtil_Signextend(t *testing.T) {
+func Test_ZkcUtil_SignExtend(t *testing.T) {
 	checkZkcUtil(t, "zkc/util/signextend", DEFAULT_UTIL_CONFIG)
 }
 

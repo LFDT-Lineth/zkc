@@ -421,7 +421,7 @@ func buildEntryVector[W word.Word[W]](codes []Bytecode[W], copies []registerCopy
 	var ncodes = slices.Clone(codes)
 	//
 	for _, c := range copies {
-		ncodes = append(ncodes, bytecode.Move[W](c.target, c.source))
+		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source))
 	}
 	// Vectors must be non-empty in order to execute.
 	if len(ncodes) == 0 {
@@ -440,7 +440,7 @@ func buildExitVector[W word.Word[W]](codes []Bytecode[W], copies []registerCopy)
 	var ncodes []Bytecode[W]
 	//
 	for _, c := range copies {
-		ncodes = append(ncodes, bytecode.Move[W](c.target, c.source))
+		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source))
 	}
 	//
 	ncodes = append(ncodes, codes...)
@@ -505,8 +505,8 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 	case *bytecode.DivRem[W]:
 		return bytecode.NewDivRem[W](insn.Opcode, substituteId(insn.Target, sub), substituteId(insn.Dividend, sub),
 			substituteId(insn.Divisor, sub))
-	case *bytecode.Hint[W]:
-		return bytecode.NewHint[W](insn.Op, substituteRegisterVectors(insn.Targets, sub),
+	case *bytecode.Intrinsic[W]:
+		return bytecode.NewIntrinsic[W](insn.Op, substituteRegisterVectors(insn.Targets, sub),
 			substituteRegisterVectors(insn.Sources, sub))
 	case *bytecode.CheckCast[W]:
 		return bytecode.NewCheckCast[W](substituteId(insn.Target, sub), insn.Bitwidth)

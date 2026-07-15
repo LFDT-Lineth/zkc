@@ -121,7 +121,7 @@ func InlineFunctions[W word.Word[W]](program Program[W], names []string) Program
 // width). For example, consider a register "r" of width u32. Subdividing this
 // register into registers of at most 8bits will result in four limbs: r'0, r'1,
 // r'2 and r'3 where (by convention) r'0 is the least significant.
-func SplitRegisters[W word.Word[W]](cfg field.Config, program Program[W]) Program[W] {
+func SplitRegisters[W word.Word[W]](cfg WordConfig, program Program[W]) Program[W] {
 	return transform.SplitRegisters(cfg, program)
 }
 

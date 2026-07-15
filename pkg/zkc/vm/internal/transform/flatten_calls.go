@@ -122,7 +122,7 @@ func flattenCall[W word.Word[W]](call *bytecode.Call[W], snapshot []bool,
 	for i, arg := range args {
 		if snapshot[i] {
 			tmp := registers.Allocate("", registers.Register(arg).Bitwidth())
-			insns = append(insns, bytecode.Move[W](tmp, arg))
+			insns = append(insns, bytecode.Assign[W](tmp, arg))
 			args[i] = tmp
 		}
 	}

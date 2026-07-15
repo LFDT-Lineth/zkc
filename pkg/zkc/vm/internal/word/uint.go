@@ -96,6 +96,28 @@ func (p Uint) Div(w Uint) Uint {
 	return Uint{res}
 }
 
+// DwDiv implementation for Word interface.  Since Uint is unbounded there is
+// no meaningful high word; consistent with Uint.Mul (which always returns a
+// zero high word), this panics unless the receiver is zero.
+func (p Uint) DwDiv(lo, d Uint) (Uint, Uint) {
+	if p.value.Sign() != 0 {
+		panic("quotient overflow")
+	}
+	//
+	return lo.Div(d), lo.Rem(d)
+}
+
+// DwRem implementation for Word interface.  Since Uint is unbounded there is
+// no meaningful high word; consistent with Uint.Mul (which always returns a
+// zero high word), this panics unless the receiver is zero.
+func (p Uint) DwRem(lo, d Uint) Uint {
+	if p.value.Sign() != 0 {
+		panic("no meaningful high word for unbounded words")
+	}
+	//
+	return lo.Rem(d)
+}
+
 // FitsWithin implementation for Word interface.
 func (p Uint) FitsWithin(bitwidth uint) bool {
 	return uint(p.value.BitLen()) <= bitwidth

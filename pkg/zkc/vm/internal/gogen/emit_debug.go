@@ -15,6 +15,7 @@ package gogen
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -243,10 +244,15 @@ func (g *generator) printfArg(fn *descFunction, format util.Format, regs []regId
 }
 
 // multiLimbBig builds a catU64 call folding a multi-register argument's limbs
-// (least-significant first, matching formatArgument) into one *big.Int.  Each
-// limb must be a single ≤64-bit register.
+// into one *big.Int.  A register vector lays limbs out most-significant first
+// (Base is the most-significant limb; see RegisterVector.Registers), whereas
+// catU64 folds least-significant limb first, so the register list is reversed
+// before folding.  Each limb must be a single ≤64-bit register.
 func (g *generator) multiLimbBig(fn *descFunction, regs []regId) (string, error) {
 	var vals, widths []string
+	// Reverse into least-significant-limb-first order for catU64.
+	regs = slices.Clone(regs)
+	slices.Reverse(regs)
 
 	for _, id := range regs {
 		op, err := g.operand(fn, id)

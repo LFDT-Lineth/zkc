@@ -410,7 +410,10 @@ func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) vm.Pro
 	t.Helper()
 
 	var (
-		cfg = codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).FastMode(fastMode).Vectorize(true).Quiet(true)
+		cfg = codegen.DEFAULT_CONFIG.
+			Field(field.KOALABEAR_16).
+			FastMode(fastMode).
+			Quiet(true)
 		// compile into bytecode program
 		p, errs = ast.Compile(program, cfg)
 	)
@@ -937,14 +940,36 @@ func encodeInputs(p vm.Program[vm.Uint], in map[string][]uint64) map[string][]by
 		m := it.Next()
 		regs := m.DataRegisters()
 		cells := in[m.Name()]
-		words := make([]vm.Uint, len(cells))
+		// rowWidth is the total width of one row's data field.  Under register
+		// splitting a word wider than the field register (e.g. a u32 on a 16-bit
+		// field) is spread across several limb registers, so DataRegisters holds
+		// more than one entry per row and their widths sum to the logical width.
+		var rowWidth uint
+		for _, r := range regs {
+			rowWidth += r.Bitwidth().Unwrap()
+		}
 
-		for i, v := range cells {
-			if w := regs[i%len(regs)].Bitwidth().Unwrap(); w < 64 {
-				v &= (1 << w) - 1
+		words := make([]vm.Uint, len(cells)*len(regs))
+		k := 0
+		// Split each logical value across its row's limb registers, most-
+		// significant limb first (matching DataRegisters / the Base=MSB split
+		// convention), so EncodeBytes/DecodeBytes round-trip the full value
+		// rather than truncating it to the first limb.
+		for _, v := range cells {
+			hi := rowWidth
+
+			for _, r := range regs {
+				w := r.Bitwidth().Unwrap()
+				hi -= w
+				limb := v >> hi
+
+				if w < 64 {
+					limb &= (1 << w) - 1
+				}
+
+				words[k] = words[k].SetUint64(limb)
+				k++
 			}
-
-			words[i] = words[i].SetUint64(v)
 		}
 
 		out[m.Name()] = vm.EncodeBytes(words, m)

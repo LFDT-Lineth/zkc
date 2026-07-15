@@ -47,16 +47,17 @@ func Run(in map[string][]uint64) (out map[string][]uint64, err error) {
 
 // fn_main corresponds to ZkC function "main".
 func fn_main() {
-	var r0 uint64 // a
-	var r1 uint64 // b
-	var r2 uint64 // c
-	var r3 uint64 // s
-	var r4 uint64 // $4
-	var r5 uint64 // $5
-	var r6 uint64 // $6
-	var r7 uint64 // $7
-	var r8 uint64 // $8
-	var r9 uint64 // $9
+	var r0 uint64  // a
+	var r1 uint64  // b
+	var r2 uint64  // c
+	var r3 uint64  // s
+	var r4 uint64  // $4
+	var r5 uint64  // $5
+	var r6 uint64  // $6
+	var r7 uint64  // $7
+	var r8 uint64  // $8
+	var r9 uint64  // $9
+	var r10 uint64 // c$10
 	// [0.0] ldc $4 = 0x0
 	r4 = 0
 	// [0.1] read a = data[$4]
@@ -71,31 +72,33 @@ func fn_main() {
 		start := r5
 		r1 = mem_data[start+0]
 	}
-	// [0.4] add c::s = a+b
+	// [0.4] add c$10::s = a+b
 	{
 		lo, hi := bits.Add64(r0, r1, 0)
 		r3 = lo
 		lo, hi = hi, 0
-		r2 = lo & (1<<1 - 1)
+		r10 = lo & (1<<1 - 1)
 	}
-	// [0.5] ldc $6 = 0x0
+	// [0.5] mov c = c$10
+	r2 = r10
+	// [0.6] ldc $6 = 0x0
 	r6 = 0
-	// [0.6] mov $7 = s
+	// [0.7] cat $7 = s
 	r7 = r3
-	// [0.7] write result[$6] = $7
+	// [0.8] write result[$6] = $7
 	{
 		start := r6
 		mem_result = memWrite(mem_result, start+0, r7)
 	}
-	// [0.8] ldc $8 = 0x1
+	// [0.9] ldc $8 = 0x1
 	r8 = 1
-	// [0.9] mov $9 = c
+	// [0.10] cat $9 = c
 	r9 = r2
-	// [0.10] write result[$8] = $9
+	// [0.11] write result[$8] = $9
 	{
 		start := r8
 		mem_result = memWrite(mem_result, start+0, r9)
 	}
-	// [0.11] ret
+	// [0.12] ret
 	return
 }

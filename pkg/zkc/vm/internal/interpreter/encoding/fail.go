@@ -29,7 +29,7 @@ func Fail[W word.Word[W]](p *bytecode.Fail[W], env Environment[W]) []uint32 {
 // DecodeFail decodes a fail instruction, returning the index of its formatted
 // chunks, an iterator over its source register vectors and the instruction
 // width.
-func DecodeFail(pc uint32, codes []uint32) (index uint, sources OpIter, n uint32) {
+func DecodeFail(pc uint32, codes []uint32) (index uint, sources Operands, n uint32) {
 	return decodeFail_n(pc, codes)
 }
 
@@ -76,16 +76,16 @@ func encodeFail_n(index uint16, sources []RegisterVector) []uint32 {
 }
 
 // decodeFail_n decodes the operands of a fail instruction.
-func decodeFail_n(pc uint32, codes []uint32) (index uint, sources OpIter, n uint32) {
+func decodeFail_n(pc uint32, codes []uint32) (index uint, sources Operands, n uint32) {
 	var nops = 2 * uint(codes[pc]>>24)
 	//
 	index = uint(codes[pc]>>8) & 0xffff
 	//
 	if IsWideForm(pc, codes) {
-		sources = NewOp16Iter(0, nops, codes[pc+1:])
+		sources = NewWideOperands(0, nops, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(nops)
 	} else {
-		sources = NewOp8Iter(0, nops, codes[pc+1:])
+		sources = NewOperands(0, nops, codes[pc+1:])
 		n = 1 + NumCodesPackedSmall(nops)
 	}
 	//

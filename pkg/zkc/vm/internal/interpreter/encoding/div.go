@@ -23,27 +23,26 @@ func DivRem[W word.Word[W]](p *bytecode.DivRem[W]) []uint32 {
 	return encodeDivRem(p.Opcode, p.Target, p.Dividend, p.Divisor)
 }
 
-// Hint encodes a hint bytecode.  Currently the only supported operation is
-// DIV_HINT, which supplies the prover with the quotient, remainder and witness
-// for a division.
-func Hint[W word.Word[W]](p *bytecode.Hint[W]) []uint32 {
-	return encodeHint(p.Op, p.Targets, p.Sources)
+// Intrinsic encodes an intrinsic bytecode (e.g. DIV_HINT, which supplies the
+// prover with the quotient, remainder and witness for a division, or WIDE_SHL).
+func Intrinsic[W word.Word[W]](p *bytecode.Intrinsic[W]) []uint32 {
+	return encodeIntrinsic(p.Op, p.Targets, p.Sources)
 }
 
-// DecodeHint decodes a hint instruction at the given program counter.
-func DecodeHint[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
+// DecodeIntrinsic decodes an intrinsic instruction at the given program counter.
+func DecodeIntrinsic[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
 	var (
-		op, tIter, sIter, n = DecodeHintOperands(pc, codes)
+		op, tIter, sIter, n = DecodeIntrinsicOperands(pc, codes)
 		targets             = registerVectorsFromIter(tIter)
 		sources             = registerVectorsFromIter(sIter)
 	)
 	//
-	return &bytecode.Hint[W]{Op: op, Targets: targets, Sources: sources}, n
+	return &bytecode.Intrinsic[W]{Op: op, Targets: targets, Sources: sources}, n
 }
 
 // registerVectorsFromIter reconstructs the register vectors packed as (base, len)
 // pairs within the given iterator.
-func registerVectorsFromIter(iter OpIter) []RegisterVector {
+func registerVectorsFromIter(iter Operands) []RegisterVector {
 	var vecs []RegisterVector
 	//
 	for iter.HasNext() {
@@ -109,7 +108,7 @@ func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor Register
 }
 
 // ============================================================================
-// HINT instruction. Format of this instruction is:
+// INTRINSIC instruction. Format of this instruction is:
 //
 //	31                                0
 //
@@ -126,10 +125,10 @@ func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor Register
 // len) pair of u16 operands (i.e. one word per vector).
 // ============================================================================
 
-// encodeHint encodes a hint instruction, where op selects the operation and the
+// encodeIntrinsic encodes a hint instruction, where op selects the operation and the
 // target (return) and source (argument) register vectors are packed as (base,
-// len) pairs, targets first.
-func encodeHint(op Operation, targets, sources []RegisterVector) []uint32 {
+// len) byte pairs, targets first.
+func encodeIntrinsic(op Operation, targets, sources []RegisterVector) []uint32 {
 	if len(targets) == 0 || len(sources) == 0 || len(targets) >= 256 || len(sources) >= 256 {
 		panic("hint instruction operand counts not supported")
 	}
@@ -142,7 +141,7 @@ func encodeHint(op Operation, targets, sources []RegisterVector) []uint32 {
 	//
 	if IsWideRegisterVectors(targets) || IsWideRegisterVectors(sources) {
 		var (
-			codes  = []uint32{nop | nsrc | ntgt | HINT | WIDE}
+			codes  = []uint32{nop | nsrc | ntgt | INTRINSIC | WIDE}
 			shorts = append(RegisterVectorsAsShorts(targets), RegisterVectorsAsShorts(sources)...)
 		)
 		//
@@ -150,17 +149,17 @@ func encodeHint(op Operation, targets, sources []RegisterVector) []uint32 {
 	}
 	//
 	var (
-		codes = []uint32{nop | nsrc | ntgt | HINT}
+		codes = []uint32{nop | nsrc | ntgt | INTRINSIC}
 		bytes = append(RegisterVectorsAsBytes(targets), RegisterVectorsAsBytes(sources)...)
 	)
 	//
 	return append(codes, PackBytesIntoCodes(bytes)...)
 }
 
-// DecodeHintOperands decodes the operation selector along with the target and
+// DecodeIntrinsicOperands decodes the operation selector along with the target and
 // source operands of a hint instruction.  Each vector is packed as a (base,
-// len) pair, hence the iterators range over twice the vector counts.
-func DecodeHintOperands(pc uint32, codes []uint32) (op Operation, targets, sources OpIter, n uint32) {
+// len) byte pair, hence the iterators range over twice the vector counts.
+func DecodeIntrinsicOperands(pc uint32, codes []uint32) (op Operation, targets, sources Operands, n uint32) {
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
 		nsources = uint((codes[pc] >> 16) & 0xff)
@@ -169,12 +168,12 @@ func DecodeHintOperands(pc uint32, codes []uint32) (op Operation, targets, sourc
 	op = Operation((codes[pc] >> 24) & 0xff)
 	//
 	if IsWideForm(pc, codes) {
-		targets = NewOp16Iter(0, 2*ntargets, codes[pc+1:])
-		sources = NewOp16Iter(2*ntargets, 2*nsources, codes[pc+1:])
+		targets = NewWideOperands(0, 2*ntargets, codes[pc+1:])
+		sources = NewWideOperands(2*ntargets, 2*nsources, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(2*(ntargets+nsources))
 	} else {
-		targets = NewOp8Iter(0, 2*ntargets, codes[pc+1:])
-		sources = NewOp8Iter(2*ntargets, 2*nsources, codes[pc+1:])
+		targets = NewOperands(0, 2*ntargets, codes[pc+1:])
+		sources = NewOperands(2*ntargets, 2*nsources, codes[pc+1:])
 		n = 1 + NumCodesPackedSmall(2*(ntargets+nsources))
 	}
 	//

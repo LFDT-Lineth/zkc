@@ -61,6 +61,33 @@ func (p Chunk[W]) LhsBitwidth(mapping descriptor.RegisterMap[W]) uint {
 	return bitwidth
 }
 
+func (p Chunk[W]) String() string {
+	var builder strings.Builder
+	//
+	builder.WriteString("(")
+	// Write lhs
+	for i, r := range array.Reverse(p.LeftHandSide) {
+		if i != 0 {
+			builder.WriteString("::")
+		}
+		//
+		fmt.Fprintf(&builder, "r%d", r)
+	}
+	//
+	builder.WriteString(":=")
+	// Write rhs
+	for _, r := range p.RightHandSide {
+		fmt.Fprintf(&builder, "r%d", r)
+		builder.WriteString(",")
+	}
+	//
+	builder.WriteString("0x")
+	builder.WriteString(p.Constant.Text(16))
+	builder.WriteString(")")
+	//
+	return builder.String()
+}
+
 // Chunks encapsulates an array of chunks
 type Chunks[W word.Word[W]] struct {
 	chunks []Chunk[W]
@@ -106,7 +133,7 @@ func (p *Chunks[W]) String() string {
 			builder.WriteString(";")
 		}
 		//
-		builder.WriteString(chunkToString(c))
+		builder.WriteString(c.String())
 	}
 	//
 	builder.WriteString("]")
@@ -123,35 +150,6 @@ func MapChunks[W word.Word[W], T any](chunks Chunks[W], fn ChunkMapper[W, T]) []
 	}
 	//
 	return items
-}
-
-// chunkToString formats a single chunk using register numbers and a
-// hexadecimal constant for debugging output.
-func chunkToString[W word.Word[W]](p Chunk[W]) string {
-	var builder strings.Builder
-	//
-	builder.WriteString("(")
-	// Write lhs
-	for i, r := range array.Reverse(p.LeftHandSide) {
-		if i != 0 {
-			builder.WriteString("::")
-		}
-		//
-		fmt.Fprintf(&builder, "r%d", r)
-	}
-	//
-	builder.WriteString(":=")
-	// Write rhs
-	for _, r := range p.RightHandSide {
-		fmt.Fprintf(&builder, "r%d", r)
-		builder.WriteString(",")
-	}
-	//
-	builder.WriteString("0x")
-	builder.WriteString(p.Constant.Text(16))
-	builder.WriteString(")")
-	//
-	return builder.String()
 }
 
 // maxValueOf determines the maximum unsigned integer value expressible in a

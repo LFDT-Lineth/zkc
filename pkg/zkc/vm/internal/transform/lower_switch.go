@@ -118,12 +118,14 @@ func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers *regAllo
 func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 	registers *regAllocator[W]) []Bytecode[W] {
 	//
-	var codes = make([]Bytecode[W], 0, 2*len(sw.Cases))
+	var (
+		codes = make([]Bytecode[W], 0, 2*len(sw.Cases))
+		width = registers.registers[sw.Source].Bitwidth()
+	)
 	//
 	for j, cse := range sw.Cases {
 		var (
-			width = max(1, uint(cse.Value.BigInt().BitLen()))
-			creg  = registers.Allocate("", util.Some(width))
+			creg = registers.Allocate("", width)
 			// New position of this case's conditional skip.
 			position = mapping[pc] + uint(2*j) + 1
 			// New position of this case's dispatch target.

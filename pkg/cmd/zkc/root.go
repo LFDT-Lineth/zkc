@@ -38,10 +38,10 @@ var rootCmd = &cobra.Command{
 
 			if Version != "" {
 				// Built via "make"
-				fmt.Printf("%s", Version)
+				fmt.Printf("\"%s\"", Version)
 			} else if info, ok := debug.ReadBuildInfo(); ok {
 				// Built via "go install"
-				fmt.Printf("%s", info.Main.Version)
+				fmt.Printf("\"%s\"", info.Main.Version)
 			} else {
 				// Unknown, perhaps "go run"
 				fmt.Printf("(unknown version)")
@@ -111,7 +111,6 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 		Inlining(GetFlag(cmd, "inline")).
 		FastMode(fastMode).
 		Vectorize(GetFlag(cmd, "vectorize")).
-		SplitRegisters(GetFlag(cmd, "split")).
 		MaxStaticDepth(GetUint(cmd, "max_static_depth")).
 		Field(field).
 		Quiet(quiet)
@@ -134,6 +133,8 @@ func findFieldAgnosticCmd(config field.Config, cmds []FieldAgnosticCmd) (cmd Fie
 }
 
 func init() {
+	rootCmd.Flags().Bool("version", false, "Report version of this executable")
+	//
 	rootCmd.PersistentFlags().Bool("show-static", false, "Show static tables in the MIR/AIR output")
 	rootCmd.PersistentFlags().BoolP("fast", "f", false, "Fast-mode execution (no tracing, no constraints)")
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress debug output")
@@ -141,7 +142,6 @@ func init() {
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().BoolP("gogen", "g", false, "enable Go code generation")
-	rootCmd.PersistentFlags().Bool("split", false, "Apply register splitting")
 	rootCmd.PersistentFlags().Uint("max_static_depth", codegen.DEFAULT_MAX_STATIC_DEPTH,
 		"maximum depth (number of rows) of static tables")
 	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")

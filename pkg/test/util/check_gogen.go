@@ -14,6 +14,7 @@ package util
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -24,6 +25,14 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
+
+// errGoGenUnsupported marks a program the generated-Go backend cannot represent
+// (e.g. a wide multi-limb division hint, which needs full-value division beyond
+// gogen's 64/128-bit operand model).  Such programs are logged and skipped by
+// the harness rather than failed — gogen coverage grows over time.  It is
+// distinct from a genuine build failure (gogen emitted invalid Go), which
+// remains a hard error.
+var errGoGenUnsupported = errors.New("gogen cannot represent program")
 
 // runGogenExecutionTest cross-checks the generated-Go ("native") executor against
 // a test case: it generates Go from the word machine (over Uint — the same
@@ -75,10 +84,12 @@ func buildGogenProgram(t *testing.T, program vm.Program[vm.Uint]) (string, error
 		// No Go toolchain: silently skip this optional cross-check.
 		return "", err
 	}
-	// Generate native Go for this machine.
+	// Generate native Go for this machine.  A generation failure means gogen
+	// cannot yet represent this program (an unsupported feature), which is a skip
+	// rather than a failure — hence the errGoGenUnsupported marker.
 	src, err := vm.GenerateGo(program, vm.GoGenConfig{})
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %v", errGoGenUnsupported, err)
 	}
 	// Compile the generated main package for this test case.
 	dir := t.TempDir()

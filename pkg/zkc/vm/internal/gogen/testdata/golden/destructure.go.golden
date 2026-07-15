@@ -62,7 +62,7 @@ func fn_main() {
 			fail("bit overflow (value exceeds u32)")
 		}
 	}
-	// [0.2] mov hi::lo = word
+	// [0.2] cat hi::lo = word
 	{
 		v := r0
 		r2 = v & (1<<16 - 1)
@@ -71,7 +71,7 @@ func fn_main() {
 	}
 	// [0.3] ldc $4 = 0x0
 	r4 = 0
-	// [0.4] mov $5 = hi
+	// [0.4] cat $5 = hi
 	r5 = r1
 	// [0.5] write result[$4] = $5
 	{
@@ -80,7 +80,7 @@ func fn_main() {
 	}
 	// [0.6] ldc $6 = 0x1
 	r6 = 1
-	// [0.7] mov $7 = lo
+	// [0.7] cat $7 = lo
 	r7 = r2
 	// [0.8] write result[$6] = $7
 	{
