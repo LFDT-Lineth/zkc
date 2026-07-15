@@ -41,11 +41,12 @@
 // Registers and constants up to 128 bits are supported via the lo/hi pair
 // representation (including wide limbs inside a multi-register store, as the
 // bitwise-lowering helpers produce).  A native (field-element) register is a
-// single uint64 local when the field modulus fits 64 bits (its field values
-// are < P ≤ 2^64, reduced by the mod-P emitters).  Registers/constants beyond
-// 128 bits, native registers under a modulus wider than 64 bits, and moduli
-// beyond 64 bits for mod-P ops are rejected with descriptive errors; callers
-// treat these programs as out of scope, not failures.
+// single uint64 local when the field modulus fits 64 bits (a field value fits
+// uint64; the mod-P emitters reduce operands on use, so a value at rest need
+// not be reduced — as in the interpreter).  Registers/constants beyond 128
+// bits, native registers under a modulus wider than 64 bits, and moduli beyond
+// 64 bits for mod-P ops are rejected with descriptive errors; callers treat
+// these programs as out of scope, not failures.
 package gogen
 
 import (
@@ -1047,11 +1048,12 @@ func (g *generator) regWidth(fn *descFunction, id regId) (uint, error) {
 	r := fn.Register(id)
 	if r.IsNative() {
 		// A native (field-element) register is a single uint64 local when the
-		// field modulus fits 64 bits: field values are < P ≤ 2^64, and the
-		// mod-P emitters (emit_field.go) reduce operands as they combine them,
-		// matching the interpreter which reduces only in field ops.  A wider
-		// modulus (e.g. BLS12-377) needs a multi-limb representation and stays
-		// out of scope.
+		// field modulus fits 64 bits: a field value fits uint64, and the mod-P
+		// emitters (emit_field.go) reduce operands as they combine them — so a
+		// value at rest need not be reduced (a stored constant may exceed P),
+		// exactly mirroring the interpreter, which reduces only inside field
+		// ops.  A wider modulus (e.g. BLS12-377) needs a multi-limb
+		// representation and stays out of scope.
 		if g.modulus.BitLen() > 64 {
 			return 0, fmt.Errorf("gogen: native register r%d unsupported for modulus wider than 64 bits", id)
 		}

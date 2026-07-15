@@ -189,7 +189,7 @@ func (g *generator) addrExpr(fn *descFunction, mi memInfo, addr []regId) (string
 
 // dataBound bounds a value read from a scratch memory data line: its declared
 // width, or the full uint64 range for a native (field-element) line, which has
-// no fixed width (its stored field values are < P ≤ 2^64).
+// no fixed width — a field value fits uint64 but need not be reduced mod P.
 func dataBound(r descriptor.Register[word.Uint]) *big.Int {
 	if r.IsNative() {
 		return widthMax(64)

@@ -57,9 +57,16 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 		in := calleeInputs[i]
 		// A native (field-element) parameter is a single uint64 passed as-is:
 		// field values need no width check (cf. the interpreter, which copies
-		// them raw into the callee frame).
+		// them raw into the callee frame).  A wide operand would be a >64-bit
+		// value reaching a field parameter; rather than silently drop its high
+		// limb, reject it (out of scope for the single-uint64 representation).
 		if in.IsNative() {
+			if arg.wide() {
+				return fmt.Errorf("gogen: wide argument to native parameter in %q unsupported", callee.Name())
+			}
+
 			argExprs = append(argExprs, arg.expr)
+
 			continue
 		}
 
