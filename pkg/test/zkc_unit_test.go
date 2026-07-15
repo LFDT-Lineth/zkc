@@ -324,6 +324,11 @@ func Test_ZkcUnit_Basic_72(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_72", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Basic_74(t *testing.T) {
+	t.Skip("subtract with borrow")
+	checkZkcUnit(t, "zkc/unit/basic_74", DEFAULT_UNIT_CONFIG)
+}
+
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
 	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.
@@ -1269,7 +1274,7 @@ func checkZkcUnit(t *testing.T, test string, config test_util.Config) {
 	t.Run("Defined config", func(t *testing.T) {
 		test_util.CheckValid(t, test, "zkc", config.MaxStaticDepths(STATIC_DEPTHS...))
 	})
-	// Run with different padding strategies
+	// Run with different padding strategies, but default static depth
 	for name, strategy := range ZKC_PADDING_STRATEGIES {
 		t.Run(name, func(t *testing.T) {
 			test_util.CheckValid(t, test, "zkc", config.Padding(strategy))

@@ -315,6 +315,7 @@ func reassembleToTarget[W word.Word[W]](alloc Allocator[W], g uint, outs, target
 ) []Bytecode[W] {
 	//
 	var (
+		zero  W
 		insns []Bytecode[W]
 		slot  uint
 	)
@@ -326,7 +327,12 @@ func reassembleToTarget[W word.Word[W]](alloc Allocator[W], g uint, outs, target
 			end = min(slot+n, uint(len(outs)))
 		)
 		//
-		insns = append(insns, bytecode.Concat[W]([]RegisterId{tl}, outs[slot:end]))
+		if slot == end {
+			insns = append(insns, bytecode.LoadConst[W](tl, zero))
+		} else {
+			insns = append(insns, bytecode.Concat[W]([]RegisterId{tl}, outs[slot:end]))
+		}
+		//
 		slot += n
 	}
 	//
