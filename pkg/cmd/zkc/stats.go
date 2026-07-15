@@ -30,8 +30,12 @@ import (
 // their register count; all other modules report the full breakdown.
 type moduleStats struct {
 	name string
-	// kind is one of "static", "native" or "" (a regular module).
+	// kind is one of "static", "native" or "" (a regular module).  It drives
+	// which columns apply; see typ for the finer, display-only classification.
 	kind string
+	// typ is the display module type: "function", "memory", "native" or
+	// "static".
+	typ string
 	// cells is the number of cells in a static reference table (rows ×
 	// registers).  Only meaningful for static modules.
 	cells uint
@@ -57,8 +61,9 @@ type moduleStats struct {
 // PrintCompileStats prints summary statistics about the modules of a generated
 // AIR schema, one row per module.  Register widths (pre-splitting) and
 // constraint degrees are gathered from the pre-split bytecode program (ir) and
-// the post-split AIR schema respectively.
-func PrintCompileStats[F field.Element[F]](air schema.AnySchema[F], ir vm.Program[vm.Uint]) {
+// the post-split AIR schema respectively.  The order argument determines how the
+// modules are ordered (see orderModules).
+func PrintCompileStats[F field.Element[F]](air schema.AnySchema[F], ir vm.Program[vm.Uint], order string) {
 	var (
 		// Pre-split register histograms, keyed by module name.
 		preSplit = preSplitRegisters(ir)
@@ -69,26 +74,97 @@ func PrintCompileStats[F field.Element[F]](air schema.AnySchema[F], ir vm.Progra
 		stats = append(stats, summariseAirModule(iter.Next(), preSplit))
 	}
 	//
+	orderModules(stats, order)
 	printAirModuleStats(stats)
+}
+
+// ValidStatsOrder reports whether order is a recognised --stats ordering key.
+func ValidStatsOrder(order string) bool {
+	switch order {
+	case "name", "total", "complexity", "lookups":
+		return true
+	default:
+		return false
+	}
+}
+
+// orderModules reorders stats in place.  Modules are grouped primarily by type,
+// in the order function, native, RAM, ROM, WOM, static.  Within each group they
+// are ordered by the given key (name|total|complexity|lookups); static tables,
+// for which those keys are not meaningful, are always ordered by cell count
+// (largest first).
+func orderModules(stats []moduleStats, order string) {
+	sort.SliceStable(stats, func(i, j int) bool {
+		a, b := stats[i], stats[j]
+		// Primary: group by type.
+		if ra, rb := typeRank(a.typ), typeRank(b.typ); ra != rb {
+			return ra < rb
+		}
+		// Secondary: order within the group.
+		if a.typ == "static" {
+			return a.cells > b.cells
+		}
+		//
+		return lessByOrder(a, b, order)
+	})
+}
+
+// typeRank gives the ordering position of each module type: functions first,
+// then memories (RAM, ROM, WOM), then static tables last.
+func typeRank(typ string) int {
+	switch typ {
+	case "function":
+		return 0
+	case "native":
+		return 1
+	case "RAM":
+		return 2
+	case "ROM":
+		return 3
+	case "WOM":
+		return 4
+	case "static":
+		return 5
+	default:
+		return 6
+	}
+}
+
+// lessByOrder reports whether module a should sort before module b under the
+// given ordering key.  Numeric keys sort largest first; unknown keys fall back
+// to "total".
+func lessByOrder(a, b moduleStats, order string) bool {
+	switch order {
+	case "name":
+		return a.name < b.name
+	case "complexity":
+		return a.complexity > b.complexity
+	case "lookups":
+		return a.lookups > b.lookups
+	default: // "total"
+		return a.postRegs > b.postRegs
+	}
 }
 
 // preSplitInfo captures the pre-splitting register breakdown for a single
 // module of the bytecode program.
 type preSplitInfo struct {
+	// typ is the module type: "function", "memory", "native" or "static".
+	typ string
 	// widths maps register bitwidth to the number of registers of that width.
 	widths map[uint]uint
 	// native is the number of native (field) registers, which have no bitwidth.
 	native uint
 }
 
-// preSplitRegisters builds, for each module in the bytecode program, a histogram
-// mapping register bitwidth to the number of registers of that width, plus a
-// separate count of native (bitwidth-less) registers.
+// preSplitRegisters builds, for each module in the bytecode program, its type
+// and a histogram mapping register bitwidth to the number of registers of that
+// width, plus a separate count of native (bitwidth-less) registers.
 func preSplitRegisters(ir vm.Program[vm.Uint]) map[string]preSplitInfo {
 	var info = make(map[string]preSplitInfo)
 	//
 	for _, m := range ir.Modules() {
-		var entry = preSplitInfo{widths: make(map[uint]uint)}
+		var entry = preSplitInfo{typ: moduleType(m), widths: make(map[uint]uint)}
 		//
 		for _, r := range m.Registers() {
 			if bw := r.Bitwidth(); bw.HasValue() {
@@ -102,6 +178,33 @@ func preSplitRegisters(ir vm.Program[vm.Uint]) map[string]preSplitInfo {
 	}
 	//
 	return info
+}
+
+// moduleType classifies a bytecode module: a "function" (possibly "native"), or
+// a memory by kind ("static", "ROM" read-only, "WOM" write-once, "RAM"
+// read-write).
+func moduleType(m vm.Module[vm.Uint]) string {
+	switch m := m.(type) {
+	case *vm.Function[vm.Uint]:
+		if m.IsNative() {
+			return "native"
+		}
+		//
+		return "function"
+	case *vm.Memory[vm.Uint]:
+		switch {
+		case m.IsStatic():
+			return "static"
+		case m.IsReadOnly():
+			return "ROM"
+		case m.IsWriteOnly():
+			return "WOM"
+		default:
+			return "RAM"
+		}
+	default:
+		return ""
+	}
 }
 
 // summariseAirModule gathers the summary statistics for a single AIR module.
@@ -118,14 +221,17 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 	case mod.IsStatic():
 		// Static reference table: report only the number of cells.
 		stats.kind = "static"
+		stats.typ = "static"
 		stats.cells = uint(len(mod.StaticContents())) * mod.Width()
 	case mod.IsNative():
 		// Native circuit: report only the number of registers.
 		stats.kind = "native"
+		stats.typ = "native"
 		stats.postRegs = mod.Width()
 	default:
-		// Regular module: report the full breakdown.
+		// Regular module (function or memory): report the full breakdown.
 		info := preSplit[mod.Name().Name]
+		stats.typ = info.typ
 		stats.preSplit = info.widths
 		stats.preNative = info.native
 		stats.postRegs = mod.Width()
@@ -177,9 +283,11 @@ func printAirModuleStats(stats []moduleStats) {
 		degrees = collectKeys(stats, func(m moduleStats) map[uint]uint { return m.degrees })
 		cols    []*statsColumn
 	)
-	// Module name (left-aligned).
+	// Module name and type (left-aligned).
 	cols = append(cols, dataColumn(stats, "", "", "Module", true,
 		func(m moduleStats) string { return m.name }))
+	cols = append(cols, dataColumn(stats, "", "", "type", true,
+		func(m moduleStats) string { return m.typ }))
 	// Registers (pre-splitting), one sub-column per width, then native registers.
 	for _, w := range widths {
 		cols = append(cols, regularColumn(stats, "Registers", fmt.Sprintf("u%d", w),
@@ -229,7 +337,7 @@ func printAirModuleStats(stats []moduleStats) {
 			return ""
 		}))
 	//
-	renderStatsTable(cols, len(stats))
+	renderStatsTable(cols, stats)
 }
 
 // regularColumn builds a grouped data column whose cells hold a (possibly zero)
@@ -263,12 +371,12 @@ func dataColumn(stats []moduleStats, group, top, sub string, leftAlign bool,
 }
 
 // renderStatsTable prints the assembled columns: a meta-header row (with grouped
-// labels spanning their sub-columns), a sub-header row, a horizontal rule, a
-// totals row summing every column, then one row per module.
-func renderStatsTable(cols []*statsColumn, nrows int) {
-	// Compute the totals row (summing each column over all modules) up front so
-	// its width is accounted for when sizing columns.
-	totals := totalsRow(cols)
+// labels spanning their sub-columns), a sub-header row, a horizontal rule, one
+// totals row per module type, then one row per module.
+func renderStatsTable(cols []*statsColumn, stats []moduleStats) {
+	// Compute a totals row per module type up front so their widths are accounted
+	// for when sizing columns.
+	totals := typeTotals(cols, stats)
 	// Grow member columns so each group's span is wide enough for its label.
 	fitGroupLabels(cols)
 	// Total rendered width of the table (each column contributes its content
@@ -308,48 +416,88 @@ func renderStatsTable(cols []*statsColumn, nrows int) {
 	fmt.Println()
 	// Horizontal rule.
 	fmt.Println(rule)
-	// Totals row, followed by a rule separating it from the per-module rows.
-	for i, c := range cols {
-		fmt.Print(" " + align(totals[i], c.width, c.leftAlign) + " |")
+	// Per-type totals rows, followed by a rule separating them from the
+	// per-module rows.
+	for _, totalRow := range totals {
+		printRow(cols, totalRow)
 	}
 	//
-	fmt.Println()
 	fmt.Println(rule)
 	// Data rows.
-	for r := 0; r < nrows; r++ {
-		for _, c := range cols {
-			fmt.Print(" " + align(c.cells[r], c.width, c.leftAlign) + " |")
+	for r := range stats {
+		row := make([]string, len(cols))
+		for i, c := range cols {
+			row[i] = c.cells[r]
 		}
 		//
-		fmt.Println()
+		printRow(cols, row)
 	}
 }
 
-// totalsRow computes the totals row, summing the numeric cells of each column
-// over all modules.  The first (module-name) column is labelled "Total".  Column
-// widths are widened to fit the computed totals.
-func totalsRow(cols []*statsColumn) []string {
-	var totals = make([]string, len(cols))
-	//
+// printRow prints a single row of cells, padded and aligned per column.
+func printRow(cols []*statsColumn, cells []string) {
 	for i, c := range cols {
-		if i == 0 {
-			totals[i] = "Total"
-		} else {
+		fmt.Print(" " + align(cells[i], c.width, c.leftAlign) + " |")
+	}
+	//
+	fmt.Println()
+}
+
+// typeTotals computes one totals row per module type present, in type order,
+// summing the numeric cells of each column over the modules of that type.  Each
+// row is labelled "Total" in the module column and carries the type in the type
+// column.  Column widths are widened to fit the computed totals.
+func typeTotals(cols []*statsColumn, stats []moduleStats) [][]string {
+	var (
+		order = []string{"function", "native", "RAM", "ROM", "WOM", "static"}
+		rows  [][]string
+	)
+	//
+	for _, typ := range order {
+		// Skip types with no modules.
+		if !containsType(stats, typ) {
+			continue
+		}
+		//
+		row := make([]string, len(cols))
+		row[0] = "Total"
+		row[1] = typ
+		// Sum each remaining column over the modules of this type.
+		for i := 2; i < len(cols); i++ {
 			var sum uint
 			//
-			for _, cell := range c.cells {
-				if n, err := strconv.Atoi(cell); err == nil {
-					sum += uint(n)
+			for r, m := range stats {
+				if m.typ == typ {
+					if n, err := strconv.Atoi(cols[i].cells[r]); err == nil {
+						sum += uint(n)
+					}
 				}
 			}
 			//
-			totals[i] = count(sum)
+			row[i] = count(sum)
 		}
 		//
-		c.width = max(c.width, uint(len([]rune(totals[i]))))
+		rows = append(rows, row)
+	}
+	// Widen columns to fit the totals.
+	for _, row := range rows {
+		for i, c := range cols {
+			c.width = max(c.width, uint(len([]rune(row[i]))))
+		}
 	}
 	//
-	return totals
+	return rows
+}
+
+// containsType reports whether any module in stats has the given type.
+func containsType(stats []moduleStats, typ string) bool {
+	for _, m := range stats {
+		if m.typ == typ {
+			return true
+		}
+	}
+	//
+	return false
 }
 
 // fitGroupLabels widens the last member of each group so the group's span is at

@@ -14,6 +14,7 @@ package zkc
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
@@ -69,6 +70,9 @@ type CompileConfig struct {
 	// indicates whether or not to print summary statistics about the generated
 	// AIR schema.
 	stats bool
+	// order determines how modules are ordered in the --stats output
+	// (name|total|complexity|lookups).
+	order string
 	// indicates whether or not to print everything in full (e.g. including
 	// static reference tables).
 	verbose bool
@@ -86,6 +90,7 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	config.mir = GetFlag(cmd, "mir")
 	config.air = GetFlag(cmd, "air")
 	config.stats = GetFlag(cmd, "stats")
+	config.order = GetString(cmd, "order")
 	config.ir = !(config.ast || config.mir || config.air || config.stats)
 	config.verbose = GetFlag(cmd, "verbose")
 	// Build all artifacts
@@ -138,9 +143,14 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 	}
 	// Summary statistics
 	if config.stats {
+		if !ValidStatsOrder(config.order) {
+			log.Errorf("invalid --order %q (expected name|total|complexity|lookups)", config.order)
+			os.Exit(1)
+		}
+		//
 		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 		//
-		PrintCompileStats[F](air, artifacts.ir)
+		PrintCompileStats[F](air, artifacts.ir, config.order)
 	}
 }
 
@@ -698,4 +708,6 @@ func init() {
 	compileCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
 	compileCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
 	compileCmd.PersistentFlags().Bool("stats", false, "Output summary statistics")
+	compileCmd.PersistentFlags().String("order", "total",
+		"module ordering for --stats (name|total|complexity|lookups)")
 }
