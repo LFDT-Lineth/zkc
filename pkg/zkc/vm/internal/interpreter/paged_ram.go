@@ -118,8 +118,6 @@ func (p *PagedRandomAccess[W]) Initialise(contents []W) {
 // whose page has never been allocated).  A read re-stamps an already-allocated
 // cell with the current clock but never allocates a page, preserving sparsity.
 func (p *PagedRandomAccess[W]) Read(address uint64) (W, error) {
-	p.timestamp++
-	//
 	var (
 		page      = address / PAGE_SIZE
 		offset    = address % PAGE_SIZE
@@ -145,8 +143,6 @@ func (p *PagedRandomAccess[W]) Read(address uint64) (W, error) {
 // Write stores value at the given address, allocating the enclosing page if
 // needed, and stamps the cell with the current clock.
 func (p *PagedRandomAccess[W]) Write(address uint64, value W) error {
-	p.timestamp++
-	//
 	var (
 		page   = address / PAGE_SIZE
 		offset = address % PAGE_SIZE
@@ -165,6 +161,13 @@ func (p *PagedRandomAccess[W]) Write(address uint64, value W) error {
 	}
 	//
 	return nil
+}
+
+// Tick advances the access clock by one.  Called once per logical memory access
+// (one RD_PRAM/WR_PRAM instruction), before any of its data lanes are touched,
+// so all lanes share one timestamp.  See RandomAccess.Tick for the rationale.
+func (p *PagedRandomAccess[W]) Tick() {
+	p.timestamp++
 }
 
 // Contents implementation for Memory interface.

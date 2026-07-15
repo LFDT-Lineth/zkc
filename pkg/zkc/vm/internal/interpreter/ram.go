@@ -45,11 +45,6 @@ type RandomAccess[W word.Word[W]] struct {
 // the memory-consistency argument (see ram.md); a read leaves the stored value
 // unchanged.  Out-of-bounds reads are handled (they return the zero value).
 func (ram *RandomAccess[W]) Read(address uint64) (W, error) {
-	// Raising the timestamp initially means every deliberate access has a
-	// nonzero timestamp, so touched cells are identifiable in the finalization
-	// phase.
-	ram.timestamp++
-	//
 	value := ram.valueAt(address)
 	// A read stores the value back unchanged, re-stamped with this access's time.
 	ram.restamp(address, value)
@@ -66,7 +61,6 @@ func (ram *RandomAccess[W]) Read(address uint64) (W, error) {
 // Write stores value at the given address, wrapping it in a timestamped cell
 // stamped with the current clock.
 func (ram *RandomAccess[W]) Write(address uint64, value W) error {
-	ram.timestamp++
 	ram.restamp(address, value)
 	//
 	if ram.logging {
@@ -74,6 +68,17 @@ func (ram *RandomAccess[W]) Write(address uint64, value W) error {
 	}
 	//
 	return nil
+}
+
+// Tick advances the access clock by one.  Called once per logical memory access
+// (one RD_RAM/WR_RAM instruction), BEFORE any of its data lanes are touched, so
+// all lanes of a single access share one timestamp -- matching the RAM
+// constraints, where TIMESTAMP_READ/TIMESTAMP_WRITTEN are single columns while
+// the address and value columns are lane-sliced (see ram.md).  Advancing before
+// the access also keeps every deliberately-touched cell at a nonzero timestamp,
+// so touched cells stay identifiable in the finalization phase.
+func (ram *RandomAccess[W]) Tick() {
+	ram.timestamp++
 }
 
 // valueAt returns the value stored at address, or the zero value if the address
