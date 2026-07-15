@@ -277,7 +277,7 @@ func newDecomposedNaryHelper[W word.Word[W]](
 			agg = b.combineBit(key.op, agg, inp)
 		}
 
-		b.emit(bytecode.Move[W](out, agg))
+		b.emit(bytecode.Assign[W](out, agg))
 	} else {
 		// Recursive case: low and high halves share the same sub-helper
 		// because the body no longer depends on a caller-side constant.

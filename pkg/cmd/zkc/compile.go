@@ -107,7 +107,7 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 	// lower to a 64bit machine
 	var (
 		// Compile bytecode interpreter
-		bci = vm.ProgramToProgram[vm.Uint, vm.Uint64](artifacts.ir)
+		bci = vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
 	)
 	// Abstract Syntax Tree
 	if config.ast && artifacts.ast.HasValue() {

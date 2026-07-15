@@ -610,8 +610,8 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = executeDiv(p.pc, bytecodes, frame)
 		case encoding.REM:
 			p.pc, err = executeRem(p.pc, bytecodes, frame)
-		case encoding.HINT:
-			p.pc, err = p.executeHint(p.pc, bytecodes, frame)
+		case encoding.INTRINSIC:
+			p.pc, err = p.executeIntrinsic(p.pc, bytecodes, frame)
 		case encoding.ADDMOD_P:
 			p.pc, err = p.executeFieldAdd(p.pc, bytecodes, frame)
 		case encoding.SUBMOD_P:
@@ -932,7 +932,7 @@ func (p *Interpreter[W]) executeFail(pc uint32, codes []uint32, frame []W) error
 // mirroring executeFormattedChunks in the reference word machine: each chunk's
 // literal text is emitted verbatim and each formatted argument is rendered
 // against the frame.
-func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources encoding.OpIter, frame []W) string {
+func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources encoding.Operands, frame []W) string {
 	var (
 		module  = p.program.Module(p.fid)
 		builder strings.Builder
@@ -1084,17 +1084,24 @@ func executeRem[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 	return pc + n, nil
 }
 
-// executeHint implements HINT: it decodes the operation selector and dispatches
-// to the corresponding hint.  Currently the only supported operation is
-// DIV_HINT.
-func (p *Interpreter[W]) executeHint(pc uint32, codes []uint32, stack []W) (uint32, error) {
-	op, targets, sources, n := encoding.DecodeHintOperands(pc, codes)
+// executeIntrinsic implements INTRINSIC: it decodes the operation selector and
+// dispatches to the corresponding intrinsic (DIV_HINT or WIDE_SHL).
+func (p *Interpreter[W]) executeIntrinsic(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	op, targets, sources, n := encoding.DecodeIntrinsicOperands(pc, codes)
 	//
 	switch op {
 	case bytecode.DIV_HINT:
 		return p.executeDivHint(pc, n, targets, sources, stack)
+	case bytecode.WIDE_SHL:
+		return p.executeWideShlHint(pc, n, targets, sources, stack)
+	case bytecode.WIDE_SHR:
+		return p.executeWideShrHint(pc, n, targets, sources, stack)
+	case bytecode.WIDE_DIV:
+		return p.executeWideDivHint(pc, n, targets, sources, stack)
+	case bytecode.WIDE_REM:
+		return p.executeWideRemHint(pc, n, targets, sources, stack)
 	default:
-		return pc, fmt.Errorf("unknown hint operation (%d)", op)
+		return pc, fmt.Errorf("unknown intrinsic operation (%d)", op)
 	}
 }
 
@@ -1104,12 +1111,12 @@ func (p *Interpreter[W]) executeHint(pc uint32, codes []uint32, stack []W) (uint
 // of the division across the corresponding target vectors, returning an error
 // if the divisor is zero.  big.Int arithmetic is used so values spanning
 // several limbs (i.e. wider than the machine word) are handled correctly.
-func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.OpIter,
+func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.Operands,
 	stack []W) (uint32, error) {
 	var (
 		module   = p.program.Module(p.fid)
-		dividend = loadHintOperand(module, &sources, stack)
-		divisor  = loadHintOperand(module, &sources, stack)
+		dividend = loadIntrinsicOperand(module, &sources, stack)
+		divisor  = loadIntrinsicOperand(module, &sources, stack)
 	)
 	//
 	if divisor.Sign() == 0 {
@@ -1129,7 +1136,7 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 	}
 	// Distribute quotient, remainder and witness across their target vectors.
 	for _, val := range []*big.Int{q, r, w} {
-		if err := storeHintResult(module, &targets, val, stack); err != nil {
+		if err := storeIntrinsicResult(module, &targets, val, stack); err != nil {
 			return pc, err
 		}
 	}
@@ -1137,36 +1144,314 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 	return pc + n, nil
 }
 
-// loadHintOperand reconstructs the value of a single hint operand from the next
-// (base, len) register vector in the iterator, with the least-significant limb
-// held in the lowest-indexed register (matching storeAcross).
-func loadHintOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.OpIter, stack []W) *big.Int {
+// executeWideShlHint implements the WIDE_SHL hint: it computes value << shift
+// truncated to the total bitwidth of the target vector (matching the Bitwise
+// SHL instruction, which masks its result to the operation bitwidth) and
+// distributes it across the target vector.  The value is treated as a
+// little-endian sequence of machine words and shifted with the per-word carry
+// chained across the words (see shl64), so operands of any width — including
+// those wider than a double word — are handled without big.Int.
+func (p *Interpreter[W]) executeWideShlHint(pc, n uint32, targets, sources encoding.Operands,
+	stack []W) (uint32, error) {
+	var (
+		module = p.program.Module(p.fid)
+		value  = packOperand(module, &sources, stack)
+		// Peek at the target width without consuming the iterator that
+		// unpackResult reads below.
+		peek  = targets
+		width = intrinsicVectorWidth(module, &peek)
+		shift = shiftAmount(packOperand(module, &sources, stack), uint64(width))
+	)
+	//
+	unpackResult(module, &targets, shl64(value, shift), stack)
+	//
+	return pc + n, nil
+}
+
+// executeWideShrHint implements the WIDE_SHR hint: it computes value >> shift
+// truncated to the total bitwidth of the target vector (matching the Bitwise
+// SHR instruction) and distributes it across the target vector, using the same
+// word-native, carry-chained approach as executeWideShlHint (see shr64).
+func (p *Interpreter[W]) executeWideShrHint(pc, n uint32, targets, sources encoding.Operands,
+	stack []W) (uint32, error) {
+	var (
+		module = p.program.Module(p.fid)
+		value  = packOperand(module, &sources, stack)
+		peek   = targets
+		width  = intrinsicVectorWidth(module, &peek)
+		shift  = shiftAmount(packOperand(module, &sources, stack), uint64(width))
+	)
+	//
+	unpackResult(module, &targets, shr64(value, shift), stack)
+	//
+	return pc + n, nil
+}
+
+// shl64 shifts the multi-limb value held in values — a little-endian sequence of
+// machine words (values[0] least significant) — left by the given number of
+// bits, returning the (possibly longer) little-endian result.  It chains each
+// word's Shl64 carry-out (the high half) into the next word, so the value is
+// never materialised in a single fixed-width accumulator and any width is
+// handled.  A shift of zero bits degenerates to a whole-word offset.
+func shl64[W word.Word[W]](values []W, width uint64) []W {
+	var (
+		zero      W
+		bandwidth = uint64(zero.Bandwidth())
+		whole     = width / bandwidth
+		bits      = width % bandwidth
+		out       = make([]W, uint64(len(values))+whole+1)
+		carry     W
+	)
+	//
+	for i, v := range values {
+		hi, lo := v.Shl64(bits)
+		out[uint64(i)+whole] = lo.Or(carry)
+		carry = hi
+	}
+	//
+	out[uint64(len(values))+whole] = carry
+	//
+	return out
+}
+
+// shr64 shifts the multi-limb value held in values — a little-endian sequence of
+// machine words — right by the given number of bits, returning the little-endian
+// result.  Symmetric to shl64: the low bits of each next-more-significant word
+// are folded into the top of the current word.
+func shr64[W word.Word[W]](values []W, width uint64) []W {
+	var (
+		zero      W
+		bandwidth = uint64(zero.Bandwidth())
+		whole     = width / bandwidth
+		bits      = width % bandwidth
+	)
+	//
+	if whole >= uint64(len(values)) {
+		// Every bit is shifted out.
+		return []W{zero}
+	}
+	//
+	var out = make([]W, uint64(len(values))-whole)
+	//
+	for j := range out {
+		var (
+			src = uint64(j) + whole
+			val = values[src].Shr64(bits)
+		)
+		// Fold in the low bits of the next word, which move into the top of this
+		// one.
+		if bits > 0 && src+1 < uint64(len(values)) {
+			_, top := values[src+1].Shl64(bandwidth - bits)
+			val = val.Or(top)
+		}
+		//
+		out[j] = val
+	}
+	//
+	return out
+}
+
+// packOperand reads the next (base, len) register vector and returns its value
+// as a little-endian sequence of machine words (words[0] least significant).
+// The lowest-indexed register holds the most-significant limb, so limbs are read
+// least-significant first (highest index down to base) and placed at an
+// increasing bit offset, spilling into the next word as the offset crosses a
+// word boundary.  A bit cursor is used so the limb width need not divide the
+// machine word bandwidth.
+func packOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, stack []W) []W {
+	var (
+		base      = iter.Next()
+		length    = uint(iter.Next())
+		zero      W
+		bandwidth = zero.Bandwidth()
+		words     []W
+		cur       W
+		off       uint
+	)
+	//
+	for i := int(length) - 1; i >= 0; i-- {
+		var (
+			reg    = base + uint16(i)
+			w      = bitwidthOf(module, reg)
+			hi, lo = stack[reg].Shl64(uint64(off))
+		)
+		//
+		cur = cur.Or(lo)
+		off += w
+		// The word is full: emit it and carry the overflow into the next.
+		if off >= bandwidth {
+			words = append(words, cur)
+			cur = hi
+			off -= bandwidth
+		}
+	}
+	// Flush any partial final word (and guarantee at least one word).
+	if off > 0 || len(words) == 0 {
+		words = append(words, cur)
+	}
+	//
+	return words
+}
+
+// unpackResult distributes the low bits of a little-endian machine-word sequence
+// across the next (base, len) target register vector, truncating to that
+// vector's total width.  The lowest-indexed register holds the most-significant
+// limb, so limbs are written least-significant first (highest index down to
+// base), reading each limb's bits from the word stream at an increasing bit
+// offset.  Any bits above the target width (e.g. bits shifted out of range) are
+// silently dropped, so — unlike storeIntrinsicResult — there is no overflow.
+func unpackResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, words, stack []W) {
+	var (
+		base      = iter.Next()
+		length    = uint(iter.Next())
+		zero      W
+		bandwidth = zero.Bandwidth()
+		off       uint
+	)
+	//
+	for i := int(length) - 1; i >= 0; i-- {
+		var (
+			reg     = base + uint16(i)
+			w       = bitwidthOf(module, reg)
+			wordIdx = off / bandwidth
+			bitIdx  = off % bandwidth
+			val     W
+		)
+		//
+		if wordIdx < uint(len(words)) {
+			val = words[wordIdx].Shr64(uint64(bitIdx))
+			// Fold in bits from the next word when this limb straddles a word
+			// boundary.
+			if bitIdx+w > bandwidth && wordIdx+1 < uint(len(words)) {
+				_, top := words[wordIdx+1].Shl64(uint64(bandwidth - bitIdx))
+				val = val.Or(top)
+			}
+		}
+		//
+		stack[reg] = val.Slice(w)
+		off += w
+	}
+}
+
+// shiftAmount reduces a packed shift-count operand to a single uint64, clamped
+// to maxShift.  A shift of at least maxShift bits clears the whole result, so
+// any amount that does not fit in the low word — or is already >= maxShift — is
+// clamped to maxShift.  This keeps the amount word-native and bounds the
+// shl64 / shr64 allocation against a pathologically large count.
+func shiftAmount[W word.Word[W]](words []W, maxShift uint64) uint64 {
+	// A set bit above the low word implies a count of at least 2^bandwidth,
+	// which dwarfs any register width; clamp.
+	for _, w := range words[1:] {
+		if w.Cmp64(0) != 0 {
+			return maxShift
+		}
+	}
+	//
+	if words[0].Cmp64(maxShift) >= 0 {
+		return maxShift
+	}
+	//
+	return words[0].Uint64()
+}
+
+// executeWideDivHint implements the WIDE_DIV intrinsic: it reconstructs the
+// dividend and divisor arguments from their (possibly multi-limb) register
+// vectors, then assigns the quotient (dividend / divisor) to the target vector,
+// returning an error if the divisor is zero.  This mirrors the DIV instruction
+// but operates over vectored (multi-limb) operands.  big.Int arithmetic is used
+// so values spanning several limbs (i.e. wider than the machine word) are
+// handled correctly.
+func (p *Interpreter[W]) executeWideDivHint(pc, n uint32, targets, sources encoding.Operands,
+	stack []W) (uint32, error) {
+	var (
+		module   = p.program.Module(p.fid)
+		dividend = loadIntrinsicOperand(module, &sources, stack)
+		divisor  = loadIntrinsicOperand(module, &sources, stack)
+	)
+	//
+	if divisor.Sign() == 0 {
+		return pc, errors.New("division by zero")
+	}
+	//
+	if err := storeIntrinsicResult(module, &targets, new(big.Int).Quo(dividend, divisor), stack); err != nil {
+		return pc, err
+	}
+	//
+	return pc + n, nil
+}
+
+// executeWideRemHint implements the WIDE_REM intrinsic: it reconstructs the
+// dividend and divisor arguments from their (possibly multi-limb) register
+// vectors, then assigns the remainder (dividend % divisor) to the target
+// vector, returning an error if the divisor is zero.  This mirrors the REM
+// instruction but operates over vectored (multi-limb) operands.  big.Int
+// arithmetic is used so values spanning several limbs (i.e. wider than the
+// machine word) are handled correctly.
+func (p *Interpreter[W]) executeWideRemHint(pc, n uint32, targets, sources encoding.Operands,
+	stack []W) (uint32, error) {
+	var (
+		module   = p.program.Module(p.fid)
+		dividend = loadIntrinsicOperand(module, &sources, stack)
+		divisor  = loadIntrinsicOperand(module, &sources, stack)
+	)
+	//
+	if divisor.Sign() == 0 {
+		return pc, errors.New("division by zero")
+	}
+	//
+	if err := storeIntrinsicResult(module, &targets, new(big.Int).Rem(dividend, divisor), stack); err != nil {
+		return pc, err
+	}
+	//
+	return pc + n, nil
+}
+
+// intrinsicVectorWidth returns the combined bitwidth of the next (base, len) register
+// vector in the iterator, consuming that vector.
+func intrinsicVectorWidth[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands) uint {
+	var (
+		base   = iter.Next()
+		length = uint(iter.Next())
+		total  uint
+	)
+	//
+	for i := uint(0); i < length; i++ {
+		total += bitwidthOf(module, base+uint16(i))
+	}
+	//
+	return total
+}
+
+// loadIntrinsicOperand reconstructs the value of a single hint operand from the
+// next (base, len) register vector in the iterator.  Register splitting lays
+// limbs out most-significant first (see descriptor.NewLimbsMap), so the
+// lowest-indexed register (base) holds the most-significant limb.  The value is
+// therefore accumulated from the most-significant limb down, shifting the
+// running value up by each limb's width before folding the limb in.
+func loadIntrinsicOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, stack []W) *big.Int {
 	var (
 		base   = iter.Next()
 		length = uint(iter.Next())
 		value  = new(big.Int)
-		offset uint
 	)
 	//
 	for i := uint(0); i < length; i++ {
-		var (
-			reg  = base + uint16(i)
-			limb = new(big.Int).Lsh(stack[reg].BigInt(), offset)
-		)
+		var reg = base + uint16(i)
 		//
-		value.Or(value, limb)
-		//
-		offset += bitwidthOf(module, reg)
+		value.Lsh(value, bitwidthOf(module, reg))
+		value.Or(value, stack[reg].BigInt())
 	}
 	//
 	return value
 }
 
-// storeHintResult distributes value across the next (base, len) register vector
-// in the iterator, writing the least-significant limb into the lowest-indexed
-// register (matching storeAcross).  It errors if the value does not fit within
-// the vector's total width.
-func storeHintResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.OpIter,
+// storeIntrinsicResult distributes value across the next (base, len) register
+// vector in the iterator.  The lowest-indexed register (base) holds the
+// most-significant limb (matching loadIntrinsicOperand), so the least-
+// significant limb is written into the highest-indexed register and filling
+// proceeds downwards.  It errors if the value does not fit within the vector's
+// total width.
+func storeIntrinsicResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands,
 	value *big.Int, stack []W) error {
 	var (
 		base   = iter.Next()
@@ -1175,7 +1460,7 @@ func storeHintResult[W word.Word[W]](module descriptor.Module[W], iter *encoding
 		total  uint
 	)
 	//
-	for i := uint(0); i < length; i++ {
+	for i := int(length) - 1; i >= 0; i-- {
 		var (
 			reg   = base + uint16(i)
 			width = bitwidthOf(module, reg)
@@ -1226,6 +1511,12 @@ func executeSkipIf_rr[W word.Word[W], F util.Comparator[W]](pc uint32, codes []u
 // via the Comparator type parameter F.  If stack[rs0] compares to stack[rs1] as
 // required, execution jumps to the encoded target; otherwise it falls through
 // to the following bytecode.
+//
+// Register splitting lays limbs out most-significant first (see
+// descriptor.NewLimbsMap and split.ApplyLimbsMap), so the lowest-indexed
+// register (base) holds the most-significant limb.  The comparison therefore
+// scans from the most-significant limb (base) downwards, skipping past equal
+// limbs until the first difference (or the least-significant limb) decides.
 func executeSkipIf_rv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []uint32, stack []W) uint32 {
 	var (
 		cmp F
@@ -1235,14 +1526,13 @@ func executeSkipIf_rv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []u
 		target = pc + 1 + skip
 	)
 	//
-	for i := rs0.Len; i > 0; {
-		i = i - 1
+	for i := uint16(0); i < rs0.Len; i++ {
 		// Read rs0
 		val0 := stack[rs0.Base+i]
 		// Read rs1
 		val1 := stack[rs1.Base+i]
 		//
-		if i != 0 && val0.Cmp(val1) == 0 {
+		if i+1 != rs0.Len && val0.Cmp(val1) == 0 {
 			continue
 		} else if cmp.Cmp(val0, val1) {
 			// true branch
@@ -1621,7 +1911,7 @@ func executeWritePagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []
 // index, then scales that index by the number of data lines so the result
 // addresses the first word of the selected memory row.  The advanced register
 // iterator is returned so the caller can continue reading the data registers.
-func decodeAddress[W word.Word[W]](regs encoding.OpIter, geometry *descriptor.Memory[W], stack []W) uint64 {
+func decodeAddress[W word.Word[W]](regs encoding.Operands, geometry *descriptor.Memory[W], stack []W) uint64 {
 	var (
 		index      uint64
 		registers  = geometry.Registers()
@@ -1647,7 +1937,7 @@ func bitwidthOf[W word.Word[W]](module descriptor.Module[W], reg RegisterId) uin
 	return r.Bitwidth().UnwrapOr(math.MaxUint)
 }
 
-func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets encoding.OpIter, oval W,
+func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets encoding.Operands, oval W,
 	stack []W) error {
 	//
 	var (

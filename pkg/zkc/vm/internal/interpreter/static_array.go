@@ -52,6 +52,7 @@ func (p *StaticArray[W]) Initialise(contents []W) {
 
 // Read implementation for Memory interface.
 func (p *StaticArray[W]) Read(address uint64) (W, error) {
+	// perform read
 	return p.data[address], nil
 }
 
@@ -59,7 +60,7 @@ func (p *StaticArray[W]) Read(address uint64) (W, error) {
 func (p *StaticArray[W]) Write(address uint64, value W) error {
 	// ensure sufficient space
 	p.data = expand(p.data, address+1)
-	//
+	// perform write
 	p.data[address] = value
 	//
 	return nil

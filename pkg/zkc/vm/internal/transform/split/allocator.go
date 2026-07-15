@@ -39,7 +39,7 @@ type Allocator[W any] interface {
 	// Allocate a fresh register of the given width within the target module.
 	// This is presumed to be a computed register, and automatically assigned a
 	// unique name.  No assignment is included for the allocated register
-	Allocate(prefix string, width uint) RegisterId
+	Allocate(prefix string, width util.Option[uint]) RegisterId
 	// ZeroRegister returns an id for a so-called "zero" register.  That is, a
 	// register which always holds zero.
 	ZeroRegister() RegisterId
@@ -66,7 +66,7 @@ func (p *registerAllocator[W]) Name() string {
 }
 
 // Allocate implementation for the RegisterAllocator interface
-func (p *registerAllocator[W]) Allocate(prefix string, width uint) RegisterId {
+func (p *registerAllocator[W]) Allocate(prefix string, width util.Option[uint]) RegisterId {
 	var (
 		// Determine index for new register
 		index = uint(len(p.registers))
@@ -77,7 +77,7 @@ func (p *registerAllocator[W]) Allocate(prefix string, width uint) RegisterId {
 	)
 	// Allocate a new computed register.
 	p.registers = append(p.registers,
-		descriptor.NewRegister(register.COMPUTED_REGISTER, name, util.Some(width), zero))
+		descriptor.NewRegister(register.COMPUTED_REGISTER, name, width, zero))
 	//
 	return util.Cast[RegisterId](index)
 }
@@ -112,5 +112,5 @@ func (p *registerAllocator[W]) ZeroRegister() RegisterId {
 		}
 	}
 	// Allocate a new register.
-	return p.Allocate("z", 0)
+	return p.Allocate("z", util.Some[uint](0))
 }

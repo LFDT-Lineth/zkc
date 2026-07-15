@@ -969,8 +969,8 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 		return g.emitDivRem(c, fn, x)
 	case *bytecode.FieldArith[word.Uint]:
 		return g.emitFieldOp(c, fn, x)
-	case *bytecode.Hint[word.Uint]:
-		return g.emitHint(c, fn, x)
+	case *bytecode.Intrinsic[word.Uint]:
+		return g.emitIntrinsic(c, fn, x)
 	case *bytecode.Debug[word.Uint]:
 		// DEBUG (printf) has no effect on program outputs; it writes to stderr.
 		return g.emitDebug(c, fn, x)

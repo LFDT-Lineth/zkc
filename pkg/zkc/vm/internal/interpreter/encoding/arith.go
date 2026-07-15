@@ -464,7 +464,7 @@ func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterI
 // instruction, returning iterators over its target and source registers, the
 // constant operand and the instruction width.
 func DecodeArith_nm[W word.Word[W]](pc uint32, codes []uint32) (
-	targets, sources OpIter, constant W, bitwidth uint, n uint32) {
+	targets, sources Operands, constant W, bitwidth uint, n uint32) {
 	//
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
@@ -474,12 +474,12 @@ func DecodeArith_nm[W word.Word[W]](pc uint32, codes []uint32) (
 	)
 	//
 	if IsWideForm(pc, codes) {
-		targets = NewOp16Iter(0, ntargets, codes[pc+3:])
-		sources = NewOp16Iter(ntargets, nsources, codes[pc+3:])
+		targets = NewWideOperands(0, ntargets, codes[pc+3:])
+		sources = NewWideOperands(ntargets, nsources, codes[pc+3:])
 		n = 3 + NumCodesPackedWide(ntargets+nsources)
 	} else {
-		targets = NewOp8Iter(0, ntargets, codes[pc+3:])
-		sources = NewOp8Iter(ntargets, nsources, codes[pc+3:])
+		targets = NewOperands(0, ntargets, codes[pc+3:])
+		sources = NewOperands(ntargets, nsources, codes[pc+3:])
 		n = 3 + NumCodesPackedSmall(ntargets+nsources)
 	}
 	//

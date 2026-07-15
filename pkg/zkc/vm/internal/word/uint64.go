@@ -91,6 +91,28 @@ func (p Uint64) Div(w Uint64) Uint64 {
 	return Uint64{p.value / w.value}
 }
 
+// DwDiv implementation for Word interface.
+func (p Uint64) DwDiv(lo, d Uint64) (Uint64, Uint64) {
+	if d.value == 0 {
+		panic("division by zero")
+	} else if p.value >= d.value {
+		panic("quotient overflow")
+	}
+	//
+	q, r := bits.Div64(p.value, lo.value, d.value)
+	//
+	return Uint64{q}, Uint64{r}
+}
+
+// DwRem implementation for Word interface.
+func (p Uint64) DwRem(lo, d Uint64) Uint64 {
+	if d.value == 0 {
+		panic("division by zero")
+	}
+	//
+	return Uint64{bits.Rem64(p.value, lo.value, d.value)}
+}
+
 // FitsWithin implementation for Word interface.
 func (p Uint64) FitsWithin(bitwidth uint) bool {
 	if bitwidth >= 64 {

@@ -163,9 +163,9 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.Vectorize(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
-			// FIXME: this is broken as we should be splitting for the target
-			// word, not the target field.
-			program = vm.SplitRegisters(p.config.field, program)
+			// NOTE: in fast mode we split according to the target machine word,
+			// not the underlying field.
+			program = vm.SplitRegisters(p.config.word, program)
 		}
 	} else {
 		// Apply transformations required for tracing and constraint generation.
@@ -228,6 +228,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		registers []vm.Register[vm.Uint]
 		padding   vm.Uint // zero padding
 		vectors   = make([]BytecodeVector, len(fn.Code))
+		visited   = make(map[string]uint)
 	)
 	//
 	for _, v := range fn.Variables {
@@ -245,6 +246,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		}
 
 		flatten(v.DataType, v.Name, p.env, func(name string, bitwidth uint) {
+			name = normaliseVariableName(name, visited)
 			registers = append(registers, vm.NewRegister(kind, name, bitwidthOf(bitwidth), padding))
 		})
 	}
@@ -330,6 +332,17 @@ func toMemoryRegisters[W vm.Word[W]](address []VariableDescriptor, datas []Varia
 	}
 	//
 	return registers
+}
+
+func normaliseVariableName(name string, mapping map[string]uint) string {
+	if c, ok := mapping[name]; ok {
+		mapping[name] = c + 1
+		return fmt.Sprintf("%s$%d", name, c)
+	}
+	//
+	mapping[name] = 1
+	//
+	return name
 }
 
 func bitwidthOf(bitwidth uint) util.Option[uint] {

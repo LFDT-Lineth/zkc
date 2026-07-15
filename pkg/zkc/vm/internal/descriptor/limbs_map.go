@@ -32,10 +32,13 @@ type LimbId = RegisterId
 // register to those limbs into which it was subdivided.
 type LimbsMap[W any] interface {
 	RegisterMap[W]
-	// Field returns the underlying field configuration used for this mapping.
-	// This includes the field bandwidth (i.e. number of bits available in
-	// underlying field) and the maximum register width (i.e. width at which
-	// registers are capped).
+	// BandWidth returns the maximum number of bits representable in the underlying
+	// machine word.
+	BandWidth() uint
+	// RegisterWidth returns the maximum number of bits any register is permitted to
+	// have.
+	RegisterWidth() uint
+	// Field returns the underlying configuration of the target field.
 	Field() field.Config
 	// Limbs identifies the limbs into which a given register is divided.
 	// Observe that limbs are ordered by their position in the original
@@ -55,7 +58,7 @@ type LimbsMap[W any] interface {
 
 // NewLimbsMap constructs a new limbs map from a given register mapping
 // according to a given field configuration.
-func NewLimbsMap[W word.Word[W]](field field.Config, m RegisterMap[W]) LimbsMap[W] {
+func NewLimbsMap[W word.Word[W]](word word.Config, field field.Config, m RegisterMap[W]) LimbsMap[W] {
 	var (
 		regs    = m.Registers()
 		limbs   []Limb[W]
@@ -66,7 +69,7 @@ func NewLimbsMap[W word.Word[W]](field field.Config, m RegisterMap[W]) LimbsMap[
 	for i, r := range regs {
 		var (
 			// Initial split with least significant limb first
-			ls = SplitIntoLimbs(field.RegisterWidth, r)
+			ls = SplitIntoLimbs(word.RegisterWidth, r)
 			// Reverse split so most significant comes first
 			rls = array.Reverse(ls)
 		)
@@ -85,6 +88,7 @@ func NewLimbsMap[W word.Word[W]](field field.Config, m RegisterMap[W]) LimbsMap[
 	// Done
 	return limbsMap[W]{
 		m.Name(),
+		word,
 		field,
 		regs,
 		limbs,
@@ -106,7 +110,9 @@ func NewLimbsMap[W word.Word[W]](field field.Config, m RegisterMap[W]) LimbsMap[
 type limbsMap[W any] struct {
 	// Name of the module to which this mapping corresponds
 	name string
-	// Field configuration in play
+	// word configuration in play
+	word word.Config
+	// field configuration in play
 	field field.Config
 	// Set of registers in the original schema (i.e. as they were before the
 	// split)
@@ -117,7 +123,19 @@ type limbsMap[W any] struct {
 	mapping [][]LimbId
 }
 
-// Field implementation for register.Map interface
+// RegisterWidth returns the maximum number of bits any register is permitted to
+// have.
+func (p limbsMap[W]) RegisterWidth() uint {
+	return p.word.RegisterWidth
+}
+
+// BandWidth returns the maximum number of bits representable in the underlying
+// machine word.
+func (p limbsMap[W]) BandWidth() uint {
+	return p.word.BandWidth
+}
+
+// Field returns the configuration of the underlying field.
 func (p limbsMap[W]) Field() field.Config {
 	return p.field
 }
@@ -140,7 +158,7 @@ func (p limbsMap[W]) Limbs() []Limb[W] {
 // LimbsMap implementation for the register.Map interface
 func (p limbsMap[W]) LimbsMap() RegisterMap[W] {
 	return limbsMap[W]{
-		p.name, p.field, p.limbs, nil, nil,
+		p.name, p.word, p.field, p.limbs, nil, nil,
 	}
 }
 

@@ -15,6 +15,7 @@ package util
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -33,75 +34,53 @@ import (
 var (
 	// ALL_FIELDS defines the set of all known fields for testing
 	ALL_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_16, field.GF_8209}
+	// DEFAULT_WORD sets the default word for fast mode execution.
+	DEFAULT_WORD = vm.WORD_UINT128
 	// DEFAULT_FIELDS set default fields for testing
-	DEFAULT_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_16}
-	// DEFAULT_WORDS set default words for testing
-	DEFAULT_WORDS = []vm.WordConfig{vm.WORD_UINT64, vm.WORD_UINT128}
+	DEFAULT_FIELDS = []field.Config{field.KOALABEAR_16}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = Config{
-		fields:          DEFAULT_FIELDS,
-		words:           DEFAULT_WORDS,
-		constraints:     false,
-		splitting:       false,
-		bytecode:        false,
-		gogen:           false,
-		quiet:           false,
-		maxStaticDepth:  codegen.DEFAULT_MAX_STATIC_DEPTH,
-		paddingStrategy: ir.NextPowerOfTwoPadding}
+		fields:            DEFAULT_FIELDS,
+		constraints:       true,
+		splitting:         true,
+		fastModeSplitting: true,
+		gogen:             true,
+		quiet:             false,
+		maxStaticDepths:   []uint{codegen.DEFAULT_MAX_STATIC_DEPTH},
+		paddingStrategies: map[string]ir.PaddingStrategy{
+			"next-power-of-two-padding": ir.NextPowerOfTwoPadding,
+		}}
 )
 
 // Config for testing
 type Config struct {
 	// Fields to test over
 	fields []field.Config
-	// Words to test over
-	words []vm.WordConfig
 	// enable constraints checking, or not.
 	constraints bool
 	// enable register splitting
 	splitting bool
-	// enable bytecode interpreter
-	bytecode bool
+	// enable register splitting in fast mode
+	fastModeSplitting bool
 	// enable the generated-Go ("native") executor
 	gogen bool
 	// enable quiet mode, which elides printf statements and calls to #[debug]
 	// functions during code generation.
 	quiet bool
 	// determines how much front padding is added to the generated trace.
-	paddingStrategy ir.PaddingStrategy
-	// maxStaticDepth controls the maximum depth (i.e. number of rows) of static
-	// range tables.
-	maxStaticDepth uint
+	paddingStrategies map[string]ir.PaddingStrategy
+	// maxStaticDepths controls the maximum depth (i.e. number of rows) of static
+	// range tables.  Widths whose enumeration would exceed this are range-checked
+	// recursively instead.  Defaults to codegen.DEFAULT_MAX_STATIC_DEPTH.
+	maxStaticDepths []uint
 	// enable checkpoint testing.
 	checkpointing util.Option[util.Pair[string, util.Counter]]
 }
 
-// MaxStaticDepth sets the maximum depth (i.e. number of rows) of static range
+// MaxStaticDepths sets the maximum depths (i.e. number of rows) of static range
 // tables to test with.
-func (p Config) MaxStaticDepth(depth uint) Config {
-	p.maxStaticDepth = depth
-	//
-	return p
-}
-
-// Fields determines which fields to test over.
-func (p Config) Fields(fields ...field.Config) Config {
-	p.fields = fields
-	//
-	return p
-}
-
-// Words determines which words to test over.
-func (p Config) Words(words ...vm.WordConfig) Config {
-	p.words = words
-	//
-	return p
-}
-
-// Bytecode determines whether or not to use the bytecode interpreter.  This is
-// experimental but, in principle, can execute faster.
-func (p Config) Bytecode(flag bool) Config {
-	p.bytecode = flag
+func (p Config) MaxStaticDepths(depths ...uint) Config {
+	p.maxStaticDepths = depths
 	//
 	return p
 }
@@ -131,9 +110,17 @@ func (p Config) Constraints(flag bool) Config {
 	return p
 }
 
-// Splitting determines whether or not to apply register splitting.
+// Splitting determines whether or not to apply register splitting when tracing.
 func (p Config) Splitting(flag bool) Config {
 	p.splitting = flag
+	//
+	return p
+}
+
+// FastModeSplitting determines whether or not to apply register splitting in
+// fast mode.
+func (p Config) FastModeSplitting(flag bool) Config {
+	p.fastModeSplitting = flag
 	//
 	return p
 }
@@ -147,8 +134,8 @@ func (p Config) Quiet(flag bool) Config {
 }
 
 // Padding determines how much front padding is added to the generated trace.
-func (p Config) Padding(strategy ir.PaddingStrategy) Config {
-	p.paddingStrategy = strategy
+func (p Config) Padding(strategies map[string]ir.PaddingStrategy) Config {
+	p.paddingStrategies = strategies
 	//
 	return p
 }
@@ -160,20 +147,34 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 		// Parse all JSON tests
 		testcases = readTestCases(t, test)
 	)
-	// Enable testing each trace in parallel
-	t.Parallel()
 	// Check for each field requested
 	for _, f := range config.fields {
 		var (
 			testfile = fmt.Sprintf("%s.%s", test, ext)
 			// Setup default config
-			cfg = codegen.DEFAULT_CONFIG.SplitRegisters(config.splitting).Quiet(config.quiet).Field(f).
-				MaxStaticDepth(config.maxStaticDepth)
+			cfg = codegen.DEFAULT_CONFIG.
+				SplitRegisters(config.splitting).
+				Quiet(config.quiet).Field(f).
+				Word(DEFAULT_WORD)
 		)
-		// Run all tests in fast mode
-		checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(false), config.Constraints(false), testcases[f])
-		// Run all tests in tracing mode
-		checkValidInternal(t, testfile, cfg.FastMode(false), config, testcases[f])
+		// Only run fast mode tests for the default depth / padding, since
+		// neither static depth nor padding impacts on fast mode.
+		t.Run(fmt.Sprintf("%s/fastmode", f.Name), func(t *testing.T) {
+			t.Parallel()
+			//
+			checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(config.fastModeSplitting),
+				config.Constraints(false), testcases[f])
+		})
+		// Run tracing tests across differing static depths to ensure resiliance
+		// against changing the default depth.
+		for _, depth := range config.maxStaticDepths {
+			//
+			t.Run(fmt.Sprintf("%s/depth=%d", f.Name, depth), func(t *testing.T) {
+				t.Parallel()
+				// Run all tests in tracing mode
+				checkValidInternal(t, testfile, cfg.MaxStaticDepth(depth).FastMode(false), config, testcases[f])
+			})
+		}
 	}
 }
 
@@ -196,7 +197,10 @@ func checkValidInternal(t *testing.T, testfile string, cfg codegen.Config, confi
 func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, p vm.Program[vm.Uint]) {
 	var binary, err = buildGogenProgram(t, p)
 	//
-	if err != nil {
+	if errors.Is(err, errGoGenUnsupported) {
+		// gogen cannot represent this program --- fail.
+		t.Errorf("[gogen] %s: %v", testfile, err)
+	} else if err != nil {
 		t.Errorf("[gogen] %v", err)
 	} else {
 		// Log binary location
@@ -211,12 +215,12 @@ func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, p vm.Progr
 func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg codegen.Config, config Config, tests []TestCase) {
 	// Run execution tests
 	for _, testcase := range tests {
-		runExecutionTests(t, p, testcase, cfg.GetField(), config)
+		runExecutionTests(t, p, testcase)
 	}
-	// Run checkpointing tests (if requested)
-	if config.checkpointing.HasValue() {
+	// Run checkpointing tests (if requested and in fastmode)
+	if config.checkpointing.HasValue() && cfg.IsFastMode() {
 		for _, testcase := range tests {
-			runCheckpointTests(t, p, testcase, cfg.GetField(), config)
+			runCheckpointTests(t, p, testcase, config.checkpointing.Unwrap())
 		}
 	}
 	// Run constraint tests
@@ -224,41 +228,37 @@ func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg codegen.Config, 
 		for _, test := range tests {
 			// FIXME: support reject tests
 			if test.expected {
-				runConstraintTest(t, p, test, cfg, config.paddingStrategy)
+				// Test all configure padding strategies
+				for name, strategy := range config.paddingStrategies {
+					t.Run(name, func(t *testing.T) {
+						runConstraintTest(t, p, test, cfg, strategy)
+					})
+				}
 			}
 		}
 	}
 }
 
-func runExecutionTests(t *testing.T, m vm.Program[vm.Uint], tc TestCase, f field.Config, cfg Config) {
-	for _, w := range cfg.words {
-		// Check for incompatible field/word combinations.  For example, we
-		// cannot emulate a 254bit field using a 64bit word.
-		if w.BandWidth <= f.BandWidth {
-			continue
-		}
-		// Run the test
-		switch w {
-		case vm.WORD_UINT64:
-			runFixedWidthExecutionTest[vm.Uint64](t, m, tc, w)
-		case vm.WORD_UINT128:
-			runFixedWidthExecutionTest[vm.Uint128](t, m, tc, w)
-		default:
-			panic(fmt.Sprintf("unknown machine word: %s", w.Name))
-		}
+func runExecutionTests(t *testing.T, m vm.Program[vm.Uint], tc TestCase) {
+	// Run the test
+	switch DEFAULT_WORD {
+	case vm.WORD_UINT64:
+		runFixedWidthExecutionTest[vm.Uint64](t, m, tc)
+	case vm.WORD_UINT128:
+		runFixedWidthExecutionTest[vm.Uint128](t, m, tc)
+	default:
+		panic(fmt.Sprintf("unknown machine word: %s", DEFAULT_WORD.Name))
 	}
 }
 
-func runFixedWidthExecutionTest[W vm.Word[W]](t *testing.T, pU vm.Program[vm.Uint], tc TestCase,
-	w vm.WordConfig) {
+func runFixedWidthExecutionTest[W vm.Word[W]](t *testing.T, pU vm.Program[vm.Uint], tc TestCase) {
 	// Lower to fixed-width machine
 	pW := vm.ProgramToProgram[vm.Uint, W](pU)
 	// Run execution test
-	runExecutionTest(t, pW, tc, w)
+	runExecutionTest(t, pW, tc)
 }
 
-func runExecutionTest[W vm.Word[W]](t *testing.T, p vm.Program[W], test TestCase,
-	cfg vm.WordConfig) {
+func runExecutionTest[W vm.Word[W]](t *testing.T, p vm.Program[W], test TestCase) {
 	//
 	var (
 		err  error
@@ -287,7 +287,7 @@ func runExecutionTest[W vm.Word[W]](t *testing.T, p vm.Program[W], test TestCase
 	}
 	// Fail if errors found
 	for _, err := range errs {
-		t.Errorf("[%s]%s:%d %v", cfg.Name, test.filename, test.line, err)
+		t.Errorf("[%s]%s:%d %v", DEFAULT_WORD.Name, test.filename, test.line, err)
 	}
 }
 
@@ -298,35 +298,28 @@ func runExecutionTest[W vm.Word[W]](t *testing.T, p vm.Program[W], test TestCase
 // interpreter is resumed from it and run to completion, and the resulting
 // behaviour is checked against what the test expected.  Checkpoint testing is
 // (for now) restricted to the Uint128 word.
-func runCheckpointTests(t *testing.T, pU vm.Program[vm.Uint], tc TestCase, f field.Config, cfg Config) {
-	for _, w := range cfg.words {
-		// Check for incompatible field/word combinations.  For example, we
-		// cannot emulate a 254bit field using a 64bit word.
-		if w.BandWidth <= f.BandWidth {
-			continue
-		}
-		// Run the test
-		switch w {
-		case vm.WORD_UINT64:
-			// Lower machine to use 64bit words
-			pW := vm.ProgramToProgram[vm.Uint, vm.Uint64](pU)
-			// Run test
-			runFixedWidthCheckpointTest(t, pW, tc, cfg, w)
-		case vm.WORD_UINT128:
-			// Lower machine to use 128bit words
-			pW := vm.ProgramToProgram[vm.Uint, vm.Uint128](pU)
-			// Run test
-			runFixedWidthCheckpointTest(t, pW, tc, cfg, w)
-		default:
-			panic(fmt.Sprintf("unknown machine word: %s", w.Name))
-		}
+func runCheckpointTests(t *testing.T, pU vm.Program[vm.Uint], tc TestCase, spec util.Pair[string, util.Counter]) {
+	// Run the test
+	switch DEFAULT_WORD {
+	case vm.WORD_UINT64:
+		// Lower machine to use 64bit words
+		pW := vm.ProgramToProgram[vm.Uint, vm.Uint64](pU)
+		// Run test
+		runFixedWidthCheckpointTest(t, pW, tc, spec)
+	case vm.WORD_UINT128:
+		// Lower machine to use 128bit words
+		pW := vm.ProgramToProgram[vm.Uint, vm.Uint128](pU)
+		// Run test
+		runFixedWidthCheckpointTest(t, pW, tc, spec)
+	default:
+		panic(fmt.Sprintf("unknown machine word: %s", DEFAULT_WORD.Name))
 	}
 }
 
 func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m vm.Program[W], tc TestCase,
-	cfg Config, w vm.WordConfig) {
+	spec util.Pair[string, util.Counter]) {
 	//
-	program, checkpoints, outputs := bootAndCheckpoint(t, m, tc, w, cfg)
+	program, checkpoints, outputs := bootAndCheckpoint(t, m, tc, spec)
 	// Nothing to resume from (the checkpointed function ran fewer than the
 	// configured interval, or a reject test failed early): skip phase 2.
 	if len(checkpoints) == 0 {
@@ -359,17 +352,17 @@ func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m vm.Program[W], tc
 	}
 	// Report any failures, noting which checkpoint was resumed from.
 	for _, err := range errs {
-		t.Errorf("[checkpoint:%s]%s:%d (checkpoint %d/%d) %v", w.Name, tc.filename, tc.line, idx, len(checkpoints), err)
+		t.Errorf("[checkpoint:%s]%s:%d (checkpoint %d/%d) %v", DEFAULT_WORD.Name, tc.filename, tc.line,
+			idx, len(checkpoints), err)
 	}
 }
 
-func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc TestCase, w vm.WordConfig,
-	cfg Config) (vm.Program[W], []vm.CheckPoint[W], map[string][]W) {
+func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc TestCase,
+	spec util.Pair[string, util.Counter]) (vm.Program[W], []vm.CheckPoint[W], map[string][]W) {
 	//
 	var (
 		entry       vm.ProgramPoint
 		checkpoints []vm.CheckPoint[W]
-		spec        = cfg.checkpointing.Unwrap()
 		fn          = spec.Left
 		counter     = spec.Right
 		err         error
@@ -377,7 +370,7 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc Tes
 	// Locate the function whose calls are to be checkpointed.
 	fid, ok := program.HasModule(fn)
 	if !ok {
-		t.Errorf("[%s]%s:%d unknown checkpoint function %q", w.Name, tc.filename, tc.line, fn)
+		t.Errorf("[%s]%s:%d unknown checkpoint function %q", DEFAULT_WORD.Name, tc.filename, tc.line, fn)
 		return program, nil, nil
 	}
 	//
@@ -404,7 +397,7 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc Tes
 	// An accepting test's generation run is the reference execution and must
 	// succeed; a rejecting test, by contrast, is expected to fail at some point.
 	if tc.expected && err != nil {
-		t.Errorf("[%s]%s:%d checkpoint generation failed: %v", w.Name, tc.filename, tc.line, err)
+		t.Errorf("[%s]%s:%d checkpoint generation failed: %v", DEFAULT_WORD.Name, tc.filename, tc.line, err)
 		return program, nil, outputs
 	}
 	//
@@ -423,7 +416,7 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg c
 	case field.KOALABEAR_16:
 		testConstraintsWithField[koalabear.Element](t, p, test, f, cfg.GetMaxStaticDepth(), paddingStrategy)
 	case field.BLS12_377:
-		//testConstraintsWithField[bls12_377.Element](t, wm, test, f, cfg.GetMaxStaticDepth())
+		//testConstraintsWithField[bls12_377.Element](t, p, test, f, cfg.GetMaxStaticDepth())
 		panic("BLS12_377 not currently supported for tracing")
 	default:
 		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))

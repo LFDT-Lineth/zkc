@@ -147,6 +147,7 @@ func initialiseSymbolTable[W word.Word[W]](program descriptor.Program[W]) Symbol
 // function.  Here, a program point represents the start of an encoded bytecode
 // in the compiled sequence.
 func initFunctionPoints[W word.Word[W]](offset Address, fid uint16, fn Function[W], env *SymbolTable[W]) Address {
+	//
 	for pc, vec := range fn.Vectors() {
 		for cc, b := range vec.Bytecodes {
 			var (

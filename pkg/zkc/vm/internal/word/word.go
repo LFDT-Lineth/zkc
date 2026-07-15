@@ -63,6 +63,18 @@ type Word[W any] interface {
 	Cmp64(y uint64) int
 	// Div divides this word by another.  Panics on division by zero.
 	Div(W) W
+	// DwDiv divides the double word formed from this word (as the most
+	// significant part) and lo (as the least significant part) by d, returning
+	// the quotient and remainder.  Following math/bits.Div64, this panics if d
+	// is zero, or if the quotient would not fit within a single word (i.e.
+	// unless this word is strictly less than d).
+	DwDiv(lo W, d W) (q W, r W)
+	// DwRem computes the remainder of dividing the double word formed from this
+	// word (as the most significant part) and lo (as the least significant part)
+	// by d.  Following math/bits.Rem64, this panics if d is zero but, unlike
+	// DwDiv, it does not panic on quotient overflow (the remainder always fits
+	// within a single word).
+	DwRem(lo W, d W) W
 	// Check whether this value fits within the given bitwidth.
 	FitsWithin(uint) bool
 	// Multiply two words together, producing a double word.

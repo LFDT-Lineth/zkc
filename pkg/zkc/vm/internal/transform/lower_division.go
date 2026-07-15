@@ -23,12 +23,15 @@ import (
 )
 
 // LowerDivisions rewrites INT_DIV and INT_REM bytecodes into a non-deterministic
-// hint followed by arithmetic validation:
+// hint followed by arithmetic validation (see expandDivRem for the emitted
+// sequence and the rationale for its structure):
 //
 //	Hint{DIV_HINT, q, r, w, x, y}   // prover fills quotient, remainder and range witness
-//	qy = q * y
-//	z0 = x - qy - r          // written into a 0-width register: asserts == 0
-//	z1 = y - r - w - 1       // written into a 0-width register: asserts == 0
+//	qy  = q * y
+//	qyr = qy + r
+//	0   = x - qyr            // written into a 0-width register: asserts x == q*y + r
+//	rw1 = r + w + 1
+//	0   = y - rw1            // written into a 0-width register: asserts y == r + w + 1
 //
 // NOTE: this transform must run before LowerComparisons.
 func LowerDivisions[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
@@ -79,59 +82,70 @@ func lowerDivisionCode[W word.Word[W]](
 }
 
 // expandDivision replaces INT_DIV(q, x, y) with the hint+validation sequence.
-// qy holds q*y and must be 2*nX bits so the product is exact: a cheating prover
-// could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
 func expandDivision[W word.Word[W]](q, x, y bytecode.RegisterId, registers *regAllocator[W]) []Bytecode[W] {
 	var (
-		nX   = registers.Register(x).Bitwidth().Unwrap()
-		nY   = registers.Register(y).Bitwidth().Unwrap()
-		r    = registers.Allocate("", util.Some(nY))
-		w    = registers.Allocate("", util.Some(nY))
-		zero = word.Const64[W](0)
-		one  = word.Const64[W](1)
-		qy   = registers.Allocate("", util.Some(nX))
-		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
-		z0 = registers.Allocate("", util.Some[uint](0))
-		z1 = registers.Allocate("", util.Some[uint](0))
+		nX = registers.Register(x).Bitwidth().Unwrap()
+		nY = registers.Register(y).Bitwidth().Unwrap()
+		r  = registers.Allocate("", util.Some(nY))
+		w  = registers.Allocate("", util.Some(nY))
 	)
 	//
-	return []Bytecode[W]{
-		bytecode.NewHint[W](bytecode.DIV_HINT,
-			[]bytecode.RegisterVector{
-				bytecode.NewRegisterVector(q), bytecode.NewRegisterVector(r), bytecode.NewRegisterVector(w),
-			},
-			[]bytecode.RegisterVector{bytecode.NewRegisterVector(x), bytecode.NewRegisterVector(y)}),
-		bytecode.MulConst(qy, []bytecode.RegisterId{q, y}, one),
-		bytecode.SubConst(z0, []bytecode.RegisterId{x, qy, r}, zero),
-		bytecode.SubConst(z1, []bytecode.RegisterId{y, r, w}, one),
-	}
+	return expandDivRem(q, r, w, x, y, nX, nY, registers)
 }
 
 // expandRemainder replaces INT_REM(r, x, y) with the hint+validation sequence.
-// qy holds q*y and must be 2*nX bits so the product is exact: a cheating prover
-// could otherwise pick q' = q + 2^nX, satisfying q'*y + r ≡ x (mod 2^nX).
 func expandRemainder[W word.Word[W]](r, x, y bytecode.RegisterId, registers *regAllocator[W]) []Bytecode[W] {
 	var (
-		nX   = registers.Register(x).Bitwidth().Unwrap()
-		nY   = registers.Register(y).Bitwidth().Unwrap()
-		q    = registers.Allocate("", util.Some(nX))
-		w    = registers.Allocate("", util.Some(nY))
+		nX = registers.Register(x).Bitwidth().Unwrap()
+		nY = registers.Register(y).Bitwidth().Unwrap()
+		q  = registers.Allocate("", util.Some(nX))
+		w  = registers.Allocate("", util.Some(nY))
+	)
+	//
+	return expandDivRem(q, r, w, x, y, nX, nY, registers)
+}
+
+// expandDivRem builds the shared hint+validation sequence for both INT_DIV and
+// INT_REM, given the (already allocated) quotient q, remainder r and range
+// witness w registers.  It emits:
+//
+//	Hint{DIV_HINT, q, r, w, x, y}   // prover fills quotient, remainder and range witness
+//	qy  = q * y
+//	qyr = qy + r
+//	0   = x - qyr                   // asserts x == q*y + r
+//	rw1 = r + w + 1
+//	0   = y - rw1                   // asserts y == r + w + 1 (i.e. r + w < y, so r < y)
+//
+// The validity checks are deliberately structured as two-operand differences
+// asserted to be zero (x == qyr and y == rw1) rather than as a single
+// three-operand subtraction (e.g. x - qy - r == 0).  A three-operand zero
+// assertion cannot be split limb-wise without a borrow chain, and for wide
+// operands that borrow grows past the field register width.  A two-operand zero
+// assertion splits into independent per-limb equalities (see split.Subtraction),
+// which needs no borrows.
+func expandDivRem[W word.Word[W]](q, r, w, x, y bytecode.RegisterId, nX, nY uint,
+	registers *regAllocator[W]) []Bytecode[W] {
+	var (
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
 		qy   = registers.Allocate("", util.Some(nX))
+		qyr  = registers.Allocate("", util.Some(nY+1))
+		rw1  = registers.Allocate("", util.Some(nY+1))
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", util.Some[uint](0))
 		z1 = registers.Allocate("", util.Some[uint](0))
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.NewHint[W](bytecode.DIV_HINT,
+		bytecode.NewIntrinsic[W](bytecode.DIV_HINT,
 			[]bytecode.RegisterVector{
 				bytecode.NewRegisterVector(q), bytecode.NewRegisterVector(r), bytecode.NewRegisterVector(w),
 			},
 			[]bytecode.RegisterVector{bytecode.NewRegisterVector(x), bytecode.NewRegisterVector(y)}),
 		bytecode.MulConst(qy, []bytecode.RegisterId{q, y}, one),
-		bytecode.SubConst(z0, []bytecode.RegisterId{x, qy, r}, zero),
-		bytecode.SubConst(z1, []bytecode.RegisterId{y, r, w}, one),
+		bytecode.AddConst(qyr, []bytecode.RegisterId{qy, r}, zero),
+		bytecode.SubConst(z0, []bytecode.RegisterId{x, qyr}, zero),
+		bytecode.AddConst(rw1, []bytecode.RegisterId{r, w}, one),
+		bytecode.SubConst(z1, []bytecode.RegisterId{y, rw1}, zero),
 	}
 }

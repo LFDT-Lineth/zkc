@@ -39,7 +39,7 @@ func SkipIf[W word.Word[W]](pc Address, b *bytecode.SkipIf[W], env Environment[W
 	case n == m:
 		return encodeSkipIf_rv(skip, b.Left, b.Right, b.Op)
 	default:
-		panic("unsupported instruction form")
+		panic(fmt.Sprintf("unsupported instruction form (%d v %d limbs)", m, n))
 	}
 }
 

@@ -165,57 +165,52 @@ func (g *generator) emitModPHelpers(c *code) {
 	}
 }
 
-// emitHint emits the DIV_HINT hint (executeDivHint), the only supported hint
-// operation: targets[0] = q, targets[1] = r, targets[2] = w where
+// emitIntrinsic emits the DIV_HINT intrinsic (executeDivHint), the only intrinsic
+// operation gogen supports: targets[0] = q, targets[1] = r, targets[2] = w where
 //
 //	q = dividend / divisor,  r = dividend % divisor,  w = divisor - r - 1.
 //
 // A zero divisor fails.  Since r < divisor, w never underflows (the oracle's
-// underflow checks are unreachable), so none are emitted.
-func (g *generator) emitHint(c *code, fn *descFunction, x *bytecode.Hint[word.Uint]) error {
+// underflow checks are unreachable), so none are emitted.  Each operand is a
+// register vector: single-limb vectors read/write a single register, while
+// multi-limb vectors (produced by register-splitting a value on a narrow field)
+// are reconstructed / distributed across their limbs (see assembleHintOperand
+// and storeNamed).  Operands whose total width exceeds 64 bits stay unsupported.
+func (g *generator) emitIntrinsic(c *code, fn *descFunction, x *bytecode.Intrinsic[word.Uint]) error {
 	if x.Op != bytecode.DIV_HINT {
-		return fmt.Errorf("gogen: unsupported hint operation (%d)", x.Op)
+		return fmt.Errorf("gogen: unsupported intrinsic operation (%d)", x.Op)
 	}
 
 	if len(x.Sources) != 2 || len(x.Targets) != 3 {
 		return fmt.Errorf("gogen: malformed division hint (%d sources, %d targets)", len(x.Sources), len(x.Targets))
 	}
-	// gogen only supports narrow (single-limb) hint operands; a value split
-	// across several limb registers is not yet handled here.
-	sourceIds, err := hintRegisters(x.Sources)
+
+	dividend, err := g.assembleHintOperand(fn, x.Sources[0])
 	if err != nil {
 		return err
 	}
 
-	targetIds, err := hintRegisters(x.Targets)
+	divisor, err := g.assembleHintOperand(fn, x.Sources[1])
 	if err != nil {
 		return err
-	}
-
-	srcs, err := g.operands(fn, sourceIds)
-	if err != nil {
-		return err
-	}
-
-	dividend, divisor := srcs[0], srcs[1]
-	if anyWide(srcs) {
-		return fmt.Errorf("gogen: division hint operand wider than 64 bits unsupported")
 	}
 
 	if divisor.isZero() {
 		c.linef("fail(%q) // divisor is the constant zero", "division by zero")
 		return nil
 	}
+	// Each target vector is distributed least-significant-limb first (storeNamed's
+	// convention), so the register list is reversed: RegisterVector.Base holds the
+	// most-significant limb (see register_vector.go), the opposite of storeNamed.
+	targets := make([]storeView, len(x.Targets))
 
-	targets := make([]limb, len(targetIds))
-
-	for i, id := range targetIds {
-		l, err := g.limbOf(fn, id)
+	for i, vec := range x.Targets {
+		store, err := g.buildStore(fn, reversedRegisters(vec))
 		if err != nil {
 			return err
 		}
 
-		targets[i] = l
+		targets[i] = store
 	}
 
 	var inner error
@@ -237,7 +232,7 @@ func (g *generator) emitHint(c *code, fn *descFunction, x *bytecode.Hint[word.Ui
 			{expr: "r", max: bigMin(dividend.max, divisorMax)},
 			{expr: "w", max: divisorMax},
 		} {
-			if inner = g.storeNamed(c, storeView{single: &targets[i], total: targets[i].width}, op); inner != nil {
+			if inner = g.storeNamed(c, targets[i], op); inner != nil {
 				return
 			}
 		}
@@ -246,20 +241,77 @@ func (g *generator) emitHint(c *code, fn *descFunction, x *bytecode.Hint[word.Ui
 	return inner
 }
 
-// hintRegisters flattens single-register hint operand vectors into their
-// register ids.  gogen only supports narrow (single-limb) hint operands; a
-// multi-limb vector (produced by register-splitting a wide value) is not yet
-// supported here.
-func hintRegisters(vecs []bytecode.RegisterVector) ([]regId, error) {
-	ids := make([]regId, len(vecs))
+// assembleHintOperand reconstructs a (possibly multi-limb) hint operand from its
+// register vector into a single narrow (≤64-bit) uint64 expression, mirroring
+// the interpreter's loadIntrinsicOperand.  The vector's Base register holds the
+// most-significant limb, so limbs fold MSB-first: value = value<<width | limb.
+// A single-limb vector reads the register directly (preserving its sharpened
+// bound and any known value); anything wider than 64 bits stays unsupported.
+func (g *generator) assembleHintOperand(fn *descFunction, vec bytecode.RegisterVector) (operand, error) {
+	regs := vec.Registers() // Base .. Base+Len-1 == most- .. least-significant limb
 
-	for i, v := range vecs {
-		if v.Len != 1 {
-			return nil, fmt.Errorf("gogen: multi-limb division hint operand unsupported")
+	if len(regs) == 1 {
+		o, err := g.operand(fn, regs[0])
+		if err != nil {
+			return operand{}, err
+		}
+		// A single register wider than 64 bits (a lo/hi pair) has no narrow
+		// division path — reject it, matching the pre-multi-limb behaviour.
+		if o.wide() {
+			return operand{}, fmt.Errorf("gogen: division hint operand wider than 64 bits unsupported")
 		}
 
-		ids[i] = v.Base
+		return o, nil
 	}
 
-	return ids, nil
+	var (
+		exprs  = make([]string, len(regs))
+		widths = make([]uint, len(regs))
+		total  uint
+	)
+
+	for i, id := range regs {
+		o, err := g.operand(fn, id)
+		if err != nil {
+			return operand{}, err
+		}
+
+		if o.wide() {
+			return operand{}, fmt.Errorf("gogen: division hint operand wider than 64 bits unsupported")
+		}
+
+		w, err := g.regWidth(fn, id)
+		if err != nil {
+			return operand{}, err
+		}
+
+		exprs[i] = o.expr
+		widths[i] = w
+		total += w
+	}
+
+	if total > 64 {
+		return operand{}, fmt.Errorf("gogen: division hint operand wider than 64 bits unsupported")
+	}
+	// Fold MSB-first: exprs[0] is most significant, so each lower limb shifts the
+	// running value up by that limb's own width before folding it in.
+	expr := exprs[0]
+	for i := 1; i < len(exprs); i++ {
+		expr = fmt.Sprintf("(%s<<%d | %s)", expr, widths[i], exprs[i])
+	}
+
+	return operand{expr: expr, max: widthMax(total)}, nil
+}
+
+// reversedRegisters returns a hint operand vector's registers in
+// least-significant-limb-first order.  RegisterVector.Base holds the
+// most-significant limb, whereas storeNamed / buildStore distribute
+// least-significant-limb first, so the order is reversed.
+func reversedRegisters(vec bytecode.RegisterVector) []regId {
+	regs := vec.Registers()
+	for i, j := 0, len(regs)-1; i < j; i, j = i+1, j-1 {
+		regs[i], regs[j] = regs[j], regs[i]
+	}
+
+	return regs
 }

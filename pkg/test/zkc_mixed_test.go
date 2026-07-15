@@ -16,15 +16,13 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/test/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // DEFAULT_MIXED_CONFIG provides a default configuration for mixed tests.  These
 // are executed via the bytecode interpreter (in addition to the usual word
 // machine), exercising its support for native field arithmetic.
 var DEFAULT_MIXED_CONFIG = util.DEFAULT_CONFIG.
-	Fields(field.KOALABEAR_16).
-	Bytecode(true)
+	GoGen(false)
 
 // ===================================================================
 // Basic Tests
@@ -55,11 +53,7 @@ func Test_ZkcMixed_Basic_06(t *testing.T) {
 }
 
 func Test_ZkcMixed_Basic_07(t *testing.T) {
-	// NOTE: basic_07 is not yet executable under the bytecode interpreter.  Its
-	// felt->u16 casts and "::" concatenation exercise a native-register width
-	// path in the bytecode compiler which is unrelated to field arithmetic, so
-	// it runs on the slow word interpreter only for now.
-	checkZkcMixed(t, "zkc/mixed/basic_07", DEFAULT_MIXED_CONFIG.Bytecode(false))
+	checkZkcMixed(t, "zkc/mixed/basic_07", DEFAULT_MIXED_CONFIG)
 }
 
 func Test_ZkcMixed_Basic_08(t *testing.T) {
@@ -67,7 +61,11 @@ func Test_ZkcMixed_Basic_08(t *testing.T) {
 }
 
 func Test_ZkcMixed_Basic_09(t *testing.T) {
-	checkZkcMixed(t, "zkc/mixed/basic_09", DEFAULT_MIXED_CONFIG.Constraints(true))
+	checkZkcMixed(t, "zkc/mixed/basic_09", DEFAULT_MIXED_CONFIG)
+}
+
+func Test_ZkcMixed_Basic_10(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/basic_10", DEFAULT_MIXED_CONFIG)
 }
 
 // ===================================================================
@@ -79,7 +77,7 @@ func Test_ZkcMixed_Felt_Memory_01(t *testing.T) {
 }
 
 func Test_ZkcMixed_Felt_Casting_01(t *testing.T) {
-	checkZkcMixed(t, "zkc/mixed/felt_casting_01", DEFAULT_MIXED_CONFIG.Fields(field.KOALABEAR_16))
+	checkZkcMixed(t, "zkc/mixed/felt_casting_01", DEFAULT_MIXED_CONFIG)
 }
 
 // ===================================================================

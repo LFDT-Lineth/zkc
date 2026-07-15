@@ -238,10 +238,16 @@ func AddVecConst[W Word[W]](targets []RegisterId, sources []RegisterId, constant
 	return bytecode.AddVecConst(targets, sources, constant)
 }
 
-// Assign constructs a move instruction which copies the source register into
-// the target register.
+// Assign constructs a assignment which copies the source register into the
+// target register.
 func Assign[W Word[W]](target RegisterId, source RegisterId) Bytecode[W] {
-	return bytecode.Move[W](target, source)
+	return AssignV[W]([]RegisterId{target}, source)
+}
+
+// AssignV constructs a concatenation instruction which concatenates the source
+// registers and assigns to a given target register vector.
+func AssignV[W Word[W]](targets []RegisterId, sources ...RegisterId) Bytecode[W] {
+	return bytecode.Concat[W](targets, sources)
 }
 
 // Call constructs a function-call bytecode with the given flags.
@@ -389,11 +395,11 @@ func Debug[W Word[W]](chunks []FormattedChunk, sources []RegisterId) Bytecode[W]
 	return bytecode.NewDebug[W](chunks, sources)
 }
 
-// Hint constructs a hint instruction performing the given operation op (e.g.
+// Intrinsic constructs a hint instruction performing the given operation op (e.g.
 // DIV_HINT) which reads the given source (argument) register vectors and writes
 // the given target (return) register vectors.
-func Hint[W Word[W]](op bytecode.Operation, targets, sources []bytecode.RegisterVector) Bytecode[W] {
-	return bytecode.NewHint[W](op, targets, sources)
+func Intrinsic[W Word[W]](op bytecode.Operation, targets, sources []bytecode.RegisterVector) Bytecode[W] {
+	return bytecode.NewIntrinsic[W](op, targets, sources)
 }
 
 // Div constructs an integer-division instruction computing
@@ -435,12 +441,6 @@ func MulModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Byt
 // return offset.
 func Return[W Word[W]]() Bytecode[W] {
 	return bytecode.NewRet[W]()
-}
-
-// BitConcat constructs a concatenation instruction which joins the source
-// registers into the target register vector.
-func BitConcat[W Word[W]](targets []RegisterId, sources []RegisterId) Bytecode[W] {
-	return bytecode.Concat[W](targets, sources)
 }
 
 // ============================================================================
@@ -532,8 +532,8 @@ type BytecodeFail[W Word[W]] = bytecode.Fail[W]
 // BytecodeDebug is a debug bytecode.
 type BytecodeDebug[W Word[W]] = bytecode.Debug[W]
 
-// BytecodeHint is a (non-deterministic) hint bytecode.
-type BytecodeHint[W Word[W]] = bytecode.Hint[W]
+// BytecodeIntrinsic is a (non-deterministic) hint bytecode.
+type BytecodeIntrinsic[W Word[W]] = bytecode.Intrinsic[W]
 
 // BytecodeCheckCast is a width-check (cast) bytecode.
 type BytecodeCheckCast[W Word[W]] = bytecode.CheckCast[W]
