@@ -290,10 +290,13 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		vectors[i] = compiler.compileStatement(uint(i), mapping, stmt)
 	}
 	//
-	native := slices.Contains(fn.Annotations(), "native")
+	kind := vm.BYTECODE_FUNCTION
+	if slices.Contains(fn.Annotations(), "native") {
+		kind = vm.NATIVE_FUNCTION
+	}
 	// Note: compiler.registers includes any temporaries allocated during
 	// statement compilation.
-	return vm.NewBytecodeFunction(fn.Name(), native, compiler.registers, vectors...), compiler.errors
+	return vm.NewBytecodeFunction(fn.Name(), kind, compiler.registers, vectors...), compiler.errors
 }
 
 // buildMemory constructs the memory descriptor module for a resolved memory

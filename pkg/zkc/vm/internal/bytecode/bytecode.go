@@ -227,6 +227,8 @@ type ModuleInfo interface {
 	Name() string
 	// IsFunction indicates whether this module can be called.
 	IsFunction() bool
+	// HasUnsafeArgs indicates whether a function accepts maybe-undefined arguments.
+	HasUnsafeArgs() bool
 	// IsMemory indicates whether this module supports memory accesses.
 	IsMemory() bool
 	// IsReadOnly indicates whether this module forbids writes.

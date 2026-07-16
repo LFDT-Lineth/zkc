@@ -30,18 +30,21 @@ var _ Module[word.Uint] = &Function[word.Uint]{}
 // line) or backed by a native circuit rather than bytecode instructions.
 type Function[W word.Word[W]] struct {
 	moduleBase[W]
-	// Native indicates whether this function is backed by a native circuit
-	// (i.e. declared with the @native annotation) rather than by the
-	// instructions in code.
-	native bool
+	// Kind records the execution-relevant properties of this function.
+	kind FunctionKind
 	// Code defines the body of this function.
 	vectors []bytecode.Vector[W]
 }
 
 // NewFunction constructs a new function with the given components.
-func NewFunction[W word.Word[W]](name string, registers []Register[W], native bool,
+func NewFunction[W word.Word[W]](name string, registers []Register[W], kind FunctionKind,
 	code []bytecode.Vector[W]) *Function[W] {
-	return &Function[W]{newModuleBase(name, registers), native, code}
+	return &Function[W]{newModuleBase(name, registers), kind, code}
+}
+
+// Kind returns the execution kind of this function.
+func (p *Function[W]) Kind() FunctionKind {
+	return p.kind
 }
 
 // IsOneLine determines whether or not this function contains a single "line"
@@ -57,7 +60,13 @@ func (p *Function[W]) IsOneLine() bool {
 // declared with the @native annotation) rather than by the bytecode in its
 // vectors.
 func (p *Function[W]) IsNative() bool {
-	return p.native
+	return p.kind.IsNative()
+}
+
+// HasUnsafeArgs reports whether calls may supply arguments which are undefined
+// on some paths reaching the call.
+func (p *Function[W]) HasUnsafeArgs() bool {
+	return p.kind.AllowsUnsafeArgs()
 }
 
 // IsFunction identifies this module as a callable function.
@@ -122,7 +131,7 @@ func (p *Function[W]) GobEncode() ([]byte, error) {
 		return nil, err
 	}
 	//
-	if err := gobEncoder.Encode(p.native); err != nil {
+	if err := gobEncoder.Encode(&p.kind); err != nil {
 		return nil, err
 	}
 	//
@@ -152,7 +161,7 @@ func (p *Function[W]) GobDecode(data []byte) error {
 		return err
 	}
 	//
-	if err := gobDecoder.Decode(&p.native); err != nil {
+	if err := gobDecoder.Decode(&p.kind); err != nil {
 		return err
 	}
 	//

@@ -60,8 +60,8 @@ func (p *Call[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 			callee.Name(), callee.NumInputs(), len(p.Arguments)))
 	}
 
-	if len(p.Returns) != int(callee.NumOutputs()) {
-		errors = append(errors, fmt.Errorf("call to %s expects %d returns (found %d)",
+	if len(p.Returns) > int(callee.NumOutputs()) {
+		errors = append(errors, fmt.Errorf("call to %s provides only %d returns (found %d)",
 			callee.Name(), callee.NumOutputs(), len(p.Returns)))
 	}
 

@@ -79,7 +79,7 @@ func (p programToProgram[W1, W2]) lowerFunction(fn *descriptor.Function[W1]) *de
 		nvecs[i] = p.lowerVector(v)
 	}
 	//
-	return descriptor.NewFunction(fn.Name(), regs, fn.IsNative(), nvecs)
+	return descriptor.NewFunction(fn.Name(), regs, fn.Kind(), nvecs)
 }
 
 func (p programToProgram[W1, W2]) lowerMemory(m *descriptor.Memory[W1]) *descriptor.Memory[W2] {

@@ -44,6 +44,22 @@ type Module[W Word[W]] = descriptor.Module[W]
 // analysis and/or translation into constraints.
 type Function[W Word[W]] = descriptor.Function[W]
 
+// FunctionKind identifies whether a function is implemented by bytecode or a
+// native circuit and whether calls may supply undefined arguments.
+type FunctionKind = descriptor.FunctionKind
+
+// Function kinds, re-exported for use with NewBytecodeFunction.
+var (
+	// BYTECODE_FUNCTION is a safe function implemented by bytecode.
+	BYTECODE_FUNCTION = descriptor.BYTECODE_FUNCTION
+	// NATIVE_FUNCTION is a safe function backed by a native circuit.
+	NATIVE_FUNCTION = descriptor.NATIVE_FUNCTION
+	// UNSAFE_ARGS_FUNCTION is a bytecode function which may receive undefined arguments.
+	UNSAFE_ARGS_FUNCTION = descriptor.UNSAFE_ARGS_FUNCTION
+	// NATIVE_UNSAFE_ARGS_FUNCTION is a native function which may receive undefined arguments.
+	NATIVE_UNSAFE_ARGS_FUNCTION = descriptor.NATIVE_UNSAFE_ARGS_FUNCTION
+)
+
 // Register describes a register
 type Register[W Word[W]] = descriptor.Register[W]
 
@@ -152,9 +168,9 @@ func NewBytecodeVector[W word.Word[W]](codes ...Bytecode[W]) BytecodeVector[W] {
 
 // NewBytecodeFunction constructs a bytecode (descriptor) function module from its
 // registers and a body of bytecode vectors.
-func NewBytecodeFunction[W word.Word[W]](name string, native bool, registers []Register[W],
+func NewBytecodeFunction[W word.Word[W]](name string, kind FunctionKind, registers []Register[W],
 	code ...BytecodeVector[W]) *Function[W] {
-	return descriptor.NewFunction[W](name, registers, native, code)
+	return descriptor.NewFunction[W](name, registers, kind, code)
 }
 
 // NewRegister constructs a new register descriptor, where native

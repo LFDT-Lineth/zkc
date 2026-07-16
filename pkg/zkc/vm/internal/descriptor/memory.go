@@ -101,6 +101,11 @@ func (p *Memory[W]) IsFunction() bool {
 	return false
 }
 
+// HasUnsafeArgs is false because memories are not callable functions.
+func (p *Memory[W]) HasUnsafeArgs() bool {
+	return false
+}
+
 // IsMemory identifies this module as a memory.
 func (p *Memory[W]) IsMemory() bool {
 	return true

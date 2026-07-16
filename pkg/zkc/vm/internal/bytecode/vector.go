@@ -177,14 +177,16 @@ func (p *Vector[W]) validateReadWriteConflicts(env Environment[W]) []error {
 			ith      = p.Bytecodes[i]
 		)
 		// Sanity check for conflicting reads.
-		for _, r := range ith.Uses() {
-			if isZeroWidth(r, env) {
-				continue
-			}
+		if !isUnsafeCall(ith, env) {
+			for _, r := range ith.Uses() {
+				if isZeroWidth(r, env) {
+					continue
+				}
 
-			if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) && !ithState.DefinitelyAssigned(rid) {
-				errors = append(errors,
-					fmt.Errorf("conflicting read on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
+				if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) && !ithState.DefinitelyAssigned(rid) {
+					errors = append(errors,
+						fmt.Errorf("conflicting read on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
+				}
 			}
 		}
 		// Sanity check for conflicting writes.
@@ -201,6 +203,22 @@ func (p *Vector[W]) validateReadWriteConflicts(env Environment[W]) []error {
 	}
 	//
 	return errors
+}
+
+func isUnsafeCall[W word.Word[W]](code Bytecode[W], env Environment[W]) bool {
+	call, ok := code.(*Call[W])
+	if !ok {
+		return false
+	}
+
+	module := env.Module(call.Target)
+	if module.IsEmpty() {
+		return false
+	}
+
+	callee := module.Unwrap()
+
+	return callee.IsFunction() && callee.HasUnsafeArgs()
 }
 
 // validateControlFlow checks the intra-vector control-flow graph.  Every skip
