@@ -45,6 +45,10 @@ type moduleStats struct {
 	// postRegs is the number of registers after splitting (i.e. in the AIR
 	// schema).  For native modules this is the reported register count.
 	postRegs uint
+	// pcMax is the maximum program-counter value for a (non-native) function,
+	// i.e. the number of bytecode lines (indices plus the halt value).  Zero for
+	// modules without a program counter.
+	pcMax uint
 	// degrees maps each vanishing-constraint degree to the number of constraints
 	// of that degree.
 	degrees map[uint]uint
@@ -235,6 +239,8 @@ type preSplitInfo struct {
 	widths map[uint]uint
 	// native is the number of native (field) registers, which have no bitwidth.
 	native uint
+	// pcMax is the maximum program-counter value for a (non-native) function.
+	pcMax uint
 }
 
 // preSplitRegisters builds, for each module in the bytecode program, its type
@@ -245,6 +251,12 @@ func preSplitRegisters(ir vm.Program[vm.Uint]) map[string]preSplitInfo {
 	//
 	for _, m := range ir.Modules() {
 		var entry = preSplitInfo{typ: moduleType(m), widths: make(map[uint]uint)}
+		// The maximum program-counter value is the number of bytecode lines (line
+		// indices plus the one-past-the-end halt value).  Only non-native
+		// functions carry a program counter.
+		if fn, ok := m.(*vm.Function[vm.Uint]); ok && !fn.IsNative() {
+			entry.pcMax = uint(len(fn.Vectors()))
+		}
 		//
 		for _, r := range m.Registers() {
 			if bw := r.Bitwidth(); bw.HasValue() {
@@ -301,6 +313,7 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 		name:     mod.Name().String(),
 		preSplit: make(map[uint]uint),
 		degrees:  make(map[uint]uint),
+		pcMax:    preSplit[mod.Name().Name].pcMax,
 	}
 	//
 	switch {
@@ -357,6 +370,9 @@ type statsColumn struct {
 	cells []string
 	// leftAlign left-justifies the column (used for the module name).
 	leftAlign bool
+	// maxAgg makes the per-type totals row report the maximum of this column
+	// rather than the sum (used for PC_max).
+	maxAgg bool
 	// width is the computed content width (excluding padding/separators).
 	width uint
 }
@@ -378,6 +394,11 @@ func printAirModuleStats(stats []moduleStats) {
 		func(m moduleStats) string { return m.name }))
 	cols = append(cols, dataColumn(stats, "", "", "type", true,
 		func(m moduleStats) string { return m.typ }))
+	// Maximum program-counter value (functions only); totalled as a max, not sum.
+	pcCol := dataColumn(stats, "", "PC_max", "", false,
+		func(m moduleStats) string { return count(m.pcMax) })
+	pcCol.maxAgg = true
+	cols = append(cols, pcCol)
 	// Registers (pre-splitting), bucketed by width, then native registers.
 	for _, b := range regBuckets {
 		b := b
@@ -389,7 +410,7 @@ func printAirModuleStats(stats []moduleStats) {
 		func(m moduleStats) uint { return m.preNative }))
 	// Total registers post-splitting, i.e. the number of limbs (regular and
 	// native modules).
-	cols = append(cols, dataColumn(stats, "", "Total", "limbs", false,
+	cols = append(cols, dataColumn(stats, "", "Post", "Split", false,
 		func(m moduleStats) string {
 			if !m.isStatic() {
 				return count(m.postRegs)
@@ -539,9 +560,10 @@ func printRow(cols []*statsColumn, cells []string) {
 }
 
 // typeTotals computes one totals row per module type present, in type order,
-// summing the numeric cells of each column over the modules of that type.  Each
-// row is labelled "Total" in the module column and carries the type in the type
-// column.  Column widths are widened to fit the computed totals.
+// aggregating the numeric cells of each column over the modules of that type.
+// Columns are summed, except those flagged maxAgg (e.g. PC_max) which report the
+// maximum.  Each row is labelled "Total" in the module column and carries the
+// type in the type column.  Column widths are widened to fit the computed totals.
 func typeTotals(cols []*statsColumn, stats []moduleStats) [][]string {
 	var (
 		order = []string{"function", "native", "RAM", "ROM", "WOM", "static"}
@@ -557,19 +579,25 @@ func typeTotals(cols []*statsColumn, stats []moduleStats) [][]string {
 		row := make([]string, len(cols))
 		row[0] = "Total"
 		row[1] = typ
-		// Sum each remaining column over the modules of this type.
+		// Aggregate each remaining column over the modules of this type.
 		for i := 2; i < len(cols); i++ {
-			var sum uint
+			var agg uint
 			//
 			for r, m := range stats {
-				if m.typ == typ {
-					if n, err := strconv.Atoi(cols[i].cells[r]); err == nil {
-						sum += uint(n)
+				if m.typ != typ {
+					continue
+				}
+				//
+				if n, err := strconv.Atoi(cols[i].cells[r]); err == nil {
+					if cols[i].maxAgg {
+						agg = max(agg, uint(n))
+					} else {
+						agg += uint(n)
 					}
 				}
 			}
 			//
-			row[i] = count(sum)
+			row[i] = count(agg)
 		}
 		//
 		rows = append(rows, row)
