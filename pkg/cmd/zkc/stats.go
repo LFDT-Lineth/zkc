@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -358,10 +359,10 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 // two-row header and the per-module data cells.
 type statsColumn struct {
 	// group is the meta-header label spanning this column and its neighbours
-	// (e.g. "Registers"); empty for standalone columns.
+	// (e.g. "Registers (pre splitting)"); empty for standalone columns.
 	group string
 	// top is the header shown on the first row for a standalone column (e.g.
-	// "Total (post splitting)"); empty for grouped columns.
+	// "complexity"); empty for grouped columns.
 	top string
 	// sub is the header shown on the second row (e.g. "u16"); empty for
 	// standalone columns whose label lives on the first row.
@@ -373,8 +374,6 @@ type statsColumn struct {
 	// maxAgg makes the per-type totals row report the maximum of this column
 	// rather than the sum (used for PC_max).
 	maxAgg bool
-	// width is the computed content width (excluding padding/separators).
-	width uint
 }
 
 // printAirModuleStats renders the gathered per-module statistics as a single
@@ -468,102 +467,88 @@ func regularColumn(stats []moduleStats, group, sub string, get func(moduleStats)
 	})
 }
 
-// dataColumn builds a column, rendering each module's cell via get and computing
-// the column's content width from its headers and cells.
+// dataColumn builds a column, rendering each module's cell via get.
 func dataColumn(stats []moduleStats, group, top, sub string, leftAlign bool,
 	get func(moduleStats) string) *statsColumn {
 	//
 	var col = statsColumn{group: group, top: top, sub: sub, leftAlign: leftAlign}
-	// Standalone columns carry their (wider) label on the first row.
-	col.width = max(uint(len([]rune(top))), uint(len([]rune(sub))))
 	//
 	for _, m := range stats {
-		cell := get(m)
-		col.cells = append(col.cells, cell)
-		col.width = max(col.width, uint(len([]rune(cell))))
+		col.cells = append(col.cells, get(m))
 	}
 	//
 	return &col
 }
 
-// renderStatsTable prints the assembled columns: a meta-header row (with grouped
-// labels spanning their sub-columns), a sub-header row, a horizontal rule, one
-// totals row per module type, then one row per module.
+// renderStatsTable renders the assembled columns using a termio table: a
+// meta-header row (with grouped labels spanning their sub-columns), a sub-header
+// row, one totals row per module type, then one row per module, all delimited by
+// horizontal rules.
 func renderStatsTable(cols []*statsColumn, stats []moduleStats) {
-	// Compute a totals row per module type up front so their widths are accounted
-	// for when sizing columns.
-	totals := typeTotals(cols, stats)
-	// Grow member columns so each group's span is wide enough for its label.
-	fitGroupLabels(cols)
-	// Total rendered width of the table (each column contributes its content
-	// width plus a leading space, trailing space and separator).
-	var total uint
-	for _, c := range cols {
-		total += c.width + 3
+	var (
+		totals = typeTotals(cols, stats)
+		ncols  = uint(len(cols))
+		nrows  = uint(2 + len(totals) + len(stats))
+		tbl    = termio.NewFormattedTable(ncols, nrows)
+	)
+	// Column alignment.
+	for i, c := range cols {
+		if c.leftAlign {
+			tbl.SetLeftAlign(uint(i))
+		}
+	}
+	// Sub-header row (row 1).
+	for i, c := range cols {
+		tbl.Set(uint(i), 1, termio.NewText(c.sub))
+	}
+	// Data region: per-type totals rows, then one row per module.
+	row := uint(2)
+	//
+	for _, totalRow := range totals {
+		for i := range cols {
+			tbl.Set(uint(i), row, termio.NewText(totalRow[i]))
+		}
+		//
+		row++
 	}
 	//
-	rule := strings.Repeat("-", int(total))
-	// Top rule.
-	fmt.Println(rule)
-	// Meta-header row: group labels span their members; standalone labels sit in
-	// their own column.
+	for r := range stats {
+		for i, c := range cols {
+			tbl.Set(uint(i), row, termio.NewText(c.cells[r]))
+		}
+		//
+		row++
+	}
+	// Meta-header row (row 0), set last so column widths are already known: group
+	// labels span their members; standalone labels sit in their own column.
 	for i := 0; i < len(cols); {
 		if group := cols[i].group; group != "" {
-			// Emit the group label centred across the whole span of members.
 			j := i
 			for j < len(cols) && cols[j].group == group {
 				j++
 			}
 			//
-			fmt.Print(" " + center(group, spanWidth(cols[i:j])) + " |")
+			tbl.SetSpan(uint(i), 0, uint(j-i), termio.NewText(group))
 			i = j
 		} else {
-			fmt.Print(" " + center(cols[i].top, cols[i].width) + " |")
+			tbl.Set(uint(i), 0, termio.NewText(cols[i].top))
 			i++
 		}
 	}
+	// Rules: top, after the header rows, after the totals, and at the bottom.
+	tbl.SetRule(0)
+	tbl.SetRule(2)
+	tbl.SetRule(2 + uint(len(totals)))
+	tbl.SetRule(nrows)
 	//
-	fmt.Println()
-	// Sub-header row.
-	for _, c := range cols {
-		fmt.Print(" " + align(c.sub, c.width, c.leftAlign) + " |")
-	}
-	//
-	fmt.Println()
-	// Horizontal rule.
-	fmt.Println(rule)
-	// Per-type totals rows, followed by a rule separating them from the
-	// per-module rows.
-	for _, totalRow := range totals {
-		printRow(cols, totalRow)
-	}
-	//
-	fmt.Println(rule)
-	// Data rows.
-	for r := range stats {
-		row := make([]string, len(cols))
-		for i, c := range cols {
-			row[i] = c.cells[r]
-		}
-		//
-		printRow(cols, row)
-	}
-}
-
-// printRow prints a single row of cells, padded and aligned per column.
-func printRow(cols []*statsColumn, cells []string) {
-	for i, c := range cols {
-		fmt.Print(" " + align(cells[i], c.width, c.leftAlign) + " |")
-	}
-	//
-	fmt.Println()
+	tbl.Print(true)
 }
 
 // typeTotals computes one totals row per module type present, in type order,
 // aggregating the numeric cells of each column over the modules of that type.
 // Columns are summed, except those flagged maxAgg (e.g. PC_max) which report the
 // maximum.  Each row is labelled "Total" in the module column and carries the
-// type in the type column.  Column widths are widened to fit the computed totals.
+// type in the type column.
 func typeTotals(cols []*statsColumn, stats []moduleStats) [][]string {
 	var (
 		order = []string{"function", "native", "RAM", "ROM", "WOM", "static"}
@@ -602,12 +587,6 @@ func typeTotals(cols []*statsColumn, stats []moduleStats) [][]string {
 		//
 		rows = append(rows, row)
 	}
-	// Widen columns to fit the totals.
-	for _, row := range rows {
-		for i, c := range cols {
-			c.width = max(c.width, uint(len([]rune(row[i]))))
-		}
-	}
 	//
 	return rows
 }
@@ -621,69 +600,6 @@ func containsType(stats []moduleStats, typ string) bool {
 	}
 	//
 	return false
-}
-
-// fitGroupLabels widens the last member of each group so the group's span is at
-// least as wide as its meta-header label.
-func fitGroupLabels(cols []*statsColumn) {
-	for i := 0; i < len(cols); {
-		group := cols[i].group
-		if group == "" {
-			i++
-			continue
-		}
-		//
-		j := i
-		for j < len(cols) && cols[j].group == group {
-			j++
-		}
-		//
-		if deficit := len([]rune(group)) - int(spanWidth(cols[i:j])); deficit > 0 {
-			cols[j-1].width += uint(deficit)
-		}
-		//
-		i = j
-	}
-}
-
-// spanWidth returns the content width available to a merged header cell spanning
-// the given member columns, accounting for the padding and separators that would
-// otherwise sit between them.
-func spanWidth(members []*statsColumn) uint {
-	var width uint
-	//
-	for _, c := range members {
-		width += c.width
-	}
-	// Each internal boundary contributes two padding spaces plus a separator.
-	return width + uint(3*(len(members)-1))
-}
-
-// center pads s with spaces so it is centred within width.
-func center(s string, width uint) string {
-	n := len([]rune(s))
-	if uint(n) >= width {
-		return s
-	}
-	//
-	left := (int(width) - n) / 2
-	right := int(width) - n - left
-	//
-	return strings.Repeat(" ", left) + s + strings.Repeat(" ", right)
-}
-
-// align pads s to width, left- or right-justified.
-func align(s string, width uint, left bool) string {
-	pad := int(width) - len([]rune(s))
-	if pad <= 0 {
-		return s
-	}
-	//
-	if left {
-		return s + strings.Repeat(" ", pad)
-	}
-	//
-	return strings.Repeat(" ", pad) + s
 }
 
 // count renders a count as text, showing an empty cell for a zero count so that

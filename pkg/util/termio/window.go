@@ -12,7 +12,10 @@
 // SPDX-License-Identifier: Apache-2.0
 package termio
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Window provides an abstraction over an interactive terminal session.  This
 // is fairly simplistic at this stage, and supports layout of widges in a
@@ -123,6 +126,22 @@ func (p *FormattedText) PadLeft(width uint) FormattedText {
 	}
 	//
 	return FormattedText{p.format, text}
+}
+
+// Center ensures the text is at least a given width, by padding with spaces on
+// both sides (centring the content).
+func (p *FormattedText) Center(width uint) FormattedText {
+	var n = p.Len()
+	// Pad only if necessary
+	if n >= width {
+		return FormattedText{p.format, p.text}
+	}
+	//
+	left := (width - n) / 2
+	right := width - n - left
+	text := strings.Repeat(" ", int(left)) + string(p.text) + strings.Repeat(" ", int(right))
+	//
+	return FormattedText{p.format, []rune(text)}
 }
 
 // Bytes returns an ANSI-formatted byte representing of this chunk.
