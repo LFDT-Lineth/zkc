@@ -47,6 +47,9 @@ var compileCmd = &cobra.Command{
 	},
 }
 
+// compileFlags captures the permitted flag combinations for the compile command.
+var compileFlags FlagChecks
+
 // Available instances
 var compileCmds = []FieldAgnosticCmd{
 	{field.GF_251, runCompileCmd[gf251.Element]},
@@ -84,6 +87,8 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		output = GetString(cmd, "output")
 		config CompileConfig
 	)
+	// Sanity check permitted flag combinations
+	checkFlags(cmd, compileFlags)
 	//
 	config.build = build
 	config.ast = GetFlag(cmd, "ast")
@@ -719,4 +724,6 @@ func init() {
 	compileCmd.PersistentFlags().Bool("stats", false, "Output summary statistics")
 	compileCmd.PersistentFlags().String("order", "total",
 		"module ordering for --stats (name|total|complexity|lookups)")
+	// --order only affects the --stats output.
+	compileFlags.Require("order", "stats")
 }
