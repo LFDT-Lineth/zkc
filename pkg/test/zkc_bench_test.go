@@ -25,7 +25,7 @@ var DEFAULT_BENCH_CONFIG = test_util.DEFAULT_CONFIG
 // Benchmark Tests
 // ===================================================================
 func Test_ZkcBench_Blake(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG.GoGen(false).Constraints(false))
+	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_BinarySearchTree(t *testing.T) {
@@ -37,15 +37,16 @@ func Test_ZkcBench_FastPow(t *testing.T) {
 }
 
 func Test_ZkcBench_Gcd(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/gcd", DEFAULT_BENCH_CONFIG.GoGen(false))
+	checkZkcBench(t, "zkc/bench/gcd", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_Fnv1aHash(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/fnv1a_hash", DEFAULT_BENCH_CONFIG.Constraints(false))
+	// TODO: unknown error
+	checkZkcBench(t, "zkc/bench/fnv1a_hash", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_Keccakf(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG.Checkpoints("keccakf", 2).Constraints(false))
+	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG.Checkpoints("keccakf", 2))
 }
 
 // func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {
@@ -64,7 +65,6 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 // }
 
 func Test_ZkcBench_Poseidon(t *testing.T) {
-	// TODO: investigate test failures
 	checkZkcBench(t, "zkc/bench/poseidon/poseidon", DEFAULT_BENCH_CONFIG.
 		Splitting(false).Constraints(false).GoGen(false))
 }
@@ -74,22 +74,22 @@ func Test_ZkcBench_Poseidon(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcBench_Sort(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/sort", DEFAULT_BENCH_CONFIG.Checkpoints("sort_slice", 5).Constraints(false))
+	checkZkcBench(t, "zkc/bench/sort", DEFAULT_BENCH_CONFIG.Checkpoints("sort_slice", 5))
 }
 
 func Test_ZkcBench_LongDivision(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/long_division", DEFAULT_BENCH_CONFIG.Constraints(false))
+	checkZkcBench(t, "zkc/bench/long_division", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_DivRem(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/div_rem", DEFAULT_BENCH_CONFIG.GoGen(false))
+	checkZkcBench(t, "zkc/bench/div_rem", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_ModExp32(t *testing.T) {
-	t.Skip("tracing failure")
+	t.Skip("#2008 register splitting for multiplication")
 	//
 	checkZkcBench(t, "zkc/bench/modexp32",
-		DEFAULT_BENCH_CONFIG.GoGen(false).Constraints(false).FastModeSplitting(false))
+		DEFAULT_BENCH_CONFIG.GoGen(false).FastModeSplitting(false))
 }
 
 // ===================================================================

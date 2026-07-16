@@ -20,6 +20,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -55,7 +56,7 @@ func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *b
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
-		alloc   = newRegAllocator(fn.Registers())
+		alloc   = split.NewAllocator(fn)
 	)
 
 	for i, vec := range vectors {
@@ -69,7 +70,7 @@ func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *b
 
 func lowerBitwiseCode[W word.Word[W]](
 	b Bytecode[W],
-	registers *regAllocator[W],
+	registers split.Allocator[W],
 	helpers *bitwiseHelpers[W],
 ) []Bytecode[W] {
 	//
@@ -89,6 +90,33 @@ func lowerBitwiseCode[W word.Word[W]](
 	}
 }
 
+<<<<<<< HEAD
+=======
+func lowerBitwiseAndOrXor[W word.Word[W]](
+	b *bytecode.Bitwise[W],
+	registers split.Allocator[W],
+	helpers *bitwiseHelpers[W],
+) []Bytecode[W] {
+	origWidth, isPowerOfTwo := maxBitwidthOf(registers.Registers(), b.Uses()...)
+	//
+	p := origWidth
+	if !isPowerOfTwo {
+		p = util_math.NextPowerOfTwo(origWidth)
+	}
+	// After BinarizeBitwise, any non-identity constant has been
+	// materialised as a source register, so we can drop the constant
+	// argument here: at the (possibly widened) helper width the original
+	// identity mask is redundant because the cast already zero-extends
+	// inputs.
+	id := helpers.ensure(b.Op, p, 2)
+	//
+	return []Bytecode[W]{
+		bytecode.CallFun[W](uint16(id),
+			[]bytecode.RegisterId{b.Left, b.Right}, []bytecode.RegisterId{b.Target}),
+	}
+}
+
+>>>>>>> e310bfe2 (feat: various fixes for sbb)
 func lowerBitwiseShlShr[W word.Word[W]](
 	b *bytecode.Bitwise[W],
 	helpers *bitwiseHelpers[W],
@@ -106,7 +134,7 @@ func lowerBitwiseShlShr[W word.Word[W]](
 
 // inlineBitwiseNot emits ~x as (MASK - x) directly into the caller's bytecode
 // stream, where MASK = 2^width - 1.  No helper module is created.
-func inlineBitwiseNot[W word.Word[W]](b *bytecode.Bitwise[W], registers *regAllocator[W]) []Bytecode[W] {
+func inlineBitwiseNot[W word.Word[W]](b *bytecode.Bitwise[W], registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		width, _ = maxBitwidthOf(registers.Registers(), b.Uses()...)
 		maskBig  = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))

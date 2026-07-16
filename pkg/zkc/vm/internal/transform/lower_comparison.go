@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -42,7 +43,7 @@ func lowerComparisonFunction[W word.Word[W]](fn *descriptor.Function[W]) *descri
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
-		alloc   = newRegAllocator(fn.Registers())
+		alloc   = split.NewAllocator(fn)
 	)
 
 	for i, vec := range vectors {
@@ -56,7 +57,7 @@ func lowerComparisonFunction[W word.Word[W]](fn *descriptor.Function[W]) *descri
 
 func lowerComparisonCode[W word.Word[W]](
 	b Bytecode[W],
-	registers *regAllocator[W],
+	registers split.Allocator[W],
 ) []Bytecode[W] {
 	si, ok := b.(*bytecode.SkipIf[W])
 	if !ok || !isRelationalCondition(si.Op) {
@@ -88,7 +89,7 @@ func isRelationalCondition(cond bytecode.Condition) bool {
 //	SkipIf(EQ/NEQ, sign, zero, skip)
 func lowerRelationalSkipIf[W word.Word[W]](
 	si *bytecode.SkipIf[W],
-	registers *regAllocator[W],
+	registers split.Allocator[W],
 ) []Bytecode[W] {
 	lhs, rhs, skipOnZero := normalizeRelational(si)
 	lhsWidth := registers.Register(lhs).Bitwidth().Unwrap()

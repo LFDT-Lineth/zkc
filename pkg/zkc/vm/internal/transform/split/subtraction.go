@@ -14,13 +14,21 @@
 package split
 
 import (
-	"math/big"
-
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/lazy"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
+
+// partSub "partial sub" represents a subtraction created during splitting which
+// contributes towards the overall subtraction.
+type partSub[W word.Word[W]] struct {
+	targets  []RegisterId
+	sources  []RegisterId
+	constant W
+}
 
 // Subtraction splits a subtraction instruction into one (or more) subtraction
 // instructions, potentially introducing one (or more) borrow lines at the same
@@ -41,8 +49,87 @@ import (
 // the current chunk's LHS and the next chunk's RHS.
 func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
+	var pre []Bytecode[W]
+	//
+	if !requiresSplitting(mapping, insn) {
+		return remapSubtraction(mapping, insn)
+	} else if requiresBreakup(insn) {
+		pre, insn, mapping = breakupSubtraction(mapping, alloc, insn)
+	}
+	//
+	return append(pre, splitSubtraction(mapping, alloc, insn)...)
+}
+
+// Check whether this subtraction actually requires splitting or not.  This is
+// important since, if it doesn't need splitting, then it doesn't need to be
+// broken up.  A subtraction only requires splitting if it contains a source
+// register or constant which must be split, or its right-hand side exceeds the
+// target bandwidth.
+func requiresSplitting[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Arith[W]) bool {
+	var bitwidth = descriptor.BitwidthOf(mapping, insn.Target...).Unwrap()
+	//
+	for _, source := range insn.Source {
+		if len(mapping.LimbIds(source)) > 1 {
+			return true
+		}
+	}
+	// Check whether constant must be split (or not)
+	return !insn.Constant.FitsWithin(mapping.RegisterWidth()) && bitwidth < mapping.BandWidth()
+}
+
+func requiresBreakup[W word.Word[W]](insn *bytecode.Arith[W]) bool {
+	var hasConstant = insn.Constant.Cmp64(0) != 0
+	//
+	return len(insn.Source) > 2 || (len(insn.Source) == 2 && hasConstant)
+}
+
+// Remap a subtraction which does not require real splitting.
+func remapSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Arith[W]) []Bytecode[W] {
+	var (
+		targets = applyLimbsMapReversed(mapping, insn.Target...)
+		sources = applyLimbsMapReversed(mapping, insn.Source...)
+	)
+	//
+	return []Bytecode[W]{
+		bytecode.NewArith(bytecode.OP_SUB, targets, sources, insn.Constant),
+	}
+}
+
+// Break up a subtraction with more than two operands into an addition, followed
+// by a subtraction.  For example, consider the following:
+//
+// a = b - c - d
+//
+// Then this would be broken up into:
+//
+// t = c + d
+// a = b - t
+func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
+) ([]Bytecode[W], *bytecode.Arith[W], descriptor.LimbsMap[W]) {
+	var (
+		zero W
+		// Determine bitwidth of temporary register
+		bitwidth = descriptor.CalculateAddBitwidth(insn.Source[1:], insn.Constant, mapping).Unwrap()
+		// Create "fake" register to use for addition
+		tmpReg, nmapping = allocateTemporary(bitwidth, mapping, alloc)
+		// Create addition for splitting
+		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source[1:], insn.Constant)
+		// Split the addition
+		pre = Addition(nmapping, alloc, fakeAdd)
+		// create new subtraction
+		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg}, zero)
+	)
+	//
+	return pre, sub, nmapping
+}
+
+func splitSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
+) []Bytecode[W] {
+	// NOTE: by breaking up subtractions, we guarantee here that there at most
+	// two source limbs.
+	util.Assert(len(insn.Source) <= 2, "internal failure")
 	// Split into the initial set of chunks.
-	var chunks, context = initialiseLineaChunks(mapping, alloc, insn.Target, insn.Source, insn.Constant)
+	var chunks, context = initialiseSubChunks(mapping, alloc, insn.Target, insn.Source, insn.Constant)
 	// A zero assignment of the form "0 = a - b" (a zero-width target, two operands and
 	// no constant) asserts a == b.  Split limb-wise, this is exactly asserting a_i == b_i
 	// for every limb independently, which requires NO borrow chain — equal values have
@@ -56,7 +143,7 @@ func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator
 		chunks = insertSubBorrowLines(alloc, chunks)
 	}
 	// Convert chunks into assignments
-	return append(MapChunks(chunks, subAssignment[W]), context...)
+	return append(array.Map(chunks, subAssignment[W]), context...)
 }
 
 // isZeroDifference determines whether the given subtraction is a zero assignment of
@@ -77,58 +164,94 @@ func isZeroDifference[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *byte
 	return width == 0
 }
 
+// initialiseLineaChunks splits the source registers (and constant) into
+// least-significant-first chunks, then assigns target limbs to each chunk
+// according to the number of bits the corresponding RHS can produce.
+func initialiseSubChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W],
+	targets, sources []RegisterId, constant W) ([]partSub[W], []Bytecode[W]) {
+	//
+	var (
+		zero W
+		// Extract register width
+		regWidth = mapping.RegisterWidth()
+		// Determine target limbs
+		limbs = applyLimbsMapReversed(mapping, targets...)
+		// Initialise register stack
+		stack = RegisterStack[W]{limbs, alloc, nil}
+		// Initialise limb "matrix"
+		matrix = newLimbMatrix(sources, mapping)
+		// Split the cosntant
+		constants = descriptor.SplitConstant(constant, mapping.RegisterWidth())
+		//
+		nChunks, nConstants = len(matrix.chunks), len(constants)
+		codes               []partSub[W]
+	)
+	// Initialise partial additions
+	for i := range max(nChunks, nConstants) {
+		var (
+			lhs = stack.SelectExact(regWidth)
+			rhs = lazy.IfDefault(i < nChunks, lazy.Read(i, matrix.chunks))
+			c   = lazy.IfDefault(i < nConstants, lazy.Read(i, constants))
+		)
+		//
+		codes = append(codes, partSub[W]{lhs, mapSubRhs(rhs, alloc), c})
+	}
+	// Handle overhangs.  This arises e.g. when assigning a small constant to a
+	// wide target register.
+	for stack.Size() > 0 {
+		codes = append(codes, partSub[W]{[]RegisterId{stack.Pop()}, nil, zero})
+	}
+	//
+	return codes, stack.post
+}
+
+func mapSubRhs[W word.Word[W]](rhs []util.Option[RegisterId], alloc Allocator[W]) []RegisterId {
+	var res []RegisterId
+	//
+	for i, rhs := range rhs {
+		if i == 0 && rhs.IsEmpty() {
+			// allocate zero line
+			res = append(res, alloc.ZeroRegister())
+		} else if rhs.HasValue() {
+			res = append(res, rhs.Unwrap())
+		}
+	}
+	//
+	return res
+}
+
 // insertSubBorrowLines verifies that each subtraction chunk fits within its
 // assigned target limbs, returning an updated chunk sequence.  When a chunk's
 // RHS produces more bits than its LHS can hold, a borrow register is allocated
 // and spliced into the current chunk's LHS and the next chunk's RHS.  The final
 // chunk is skipped since its overflow represents the top bits with no successor
 // to absorb it.
-func insertSubBorrowLines[W word.Word[W]](alloc Allocator[W], chunks Chunks[W]) Chunks[W] {
+func insertSubBorrowLines[W word.Word[W]](alloc Allocator[W], chunks []partSub[W]) []partSub[W] {
 	//
-	for i := range chunks.Len() {
-		var (
-			ith = chunks.Ith(i)
-			lhs = ith.LhsBitwidth(alloc)
-			rhs = subRhsBitwidth(ith, alloc)
-		)
-		// check whether borrow required
-		if lhs < rhs && i+1 < chunks.Len() {
+	for i := range len(chunks) {
+		// u1 borrow lines are always required for subtraction.
+		if i+1 < len(chunks) {
 			var (
-				bitwidth = rhs - lhs
 				// allocate new borrow line
-				borrow = alloc.Allocate("b", util.Some(bitwidth))
+				borrow = alloc.Allocate("b", util.Some[uint](1))
 			)
 			// insert borrow line
-			chunks.Apply(i, appendLhsLimb[W](borrow))
-			chunks.Apply(i+1, appendRhsLimb[W](borrow))
+			chunks[i].targets = append(chunks[i].targets, borrow)
+			chunks[i+1].sources = append(chunks[i+1].sources, borrow)
 		}
 	}
 	//
 	return chunks
 }
 
-func subRhsBitwidth[W word.Word[W]](chunk Chunk[W], mapping descriptor.RegisterMap[W]) uint {
-	var rhsMaxVal big.Int
-	// Initialise max value
-	rhsMaxVal.Set(chunk.Constant.BigInt())
-	// Determine maximum expressible value
-	for _, r := range chunk.RightHandSide {
-		reg := mapping.Register(r)
-		// Accumulate maximum register value
-		rhsMaxVal.Add(&rhsMaxVal, maxValueOf(reg.Bitwidth()))
-	}
-	//
-	return uint(rhsMaxVal.BitLen())
-}
-
 // subAssignment lowers a chunk back into a concrete unsigned-subtract
 // instruction.
-func subAssignment[W word.Word[W]](chunk Chunk[W]) Bytecode[W] {
+func subAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
 	var zero W
 	// Check for non-subtraction case
-	if len(chunk.RightHandSide) == 0 {
-		return bytecode.LoadConstVec(chunk.LeftHandSide, zero)
+	if len(chunk.sources) == 0 {
+		return bytecode.LoadConstVec(chunk.targets, zero)
 	}
 	// Done
-	return bytecode.SubVecConst(chunk.LeftHandSide, chunk.RightHandSide, chunk.Constant)
+	return bytecode.SubVecConst(chunk.targets, chunk.sources, chunk.constant)
 }

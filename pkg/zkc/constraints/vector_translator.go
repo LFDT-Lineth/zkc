@@ -44,7 +44,7 @@ type VectorInsnTranslator[W vm.Word[W], F field.Element[F]] struct {
 	context     schema.ModuleId
 	pc          uint
 	vec         vm.BytecodeVector[W]
-	registers   []register.Register
+	enclosing   *vm.Function[W]
 	writeMap    dfa.Result[dfa.Writes]
 	branchTable dfa.Result[dfa.Branch]
 	framing     Framing[F]
@@ -52,12 +52,12 @@ type VectorInsnTranslator[W vm.Word[W], F field.Element[F]] struct {
 
 // NewVectorTranslator constructs a translator for a specific bytecode vector.
 func NewVectorTranslator[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, pc uint,
-	vec vm.BytecodeVector[W], framing Framing[F], registers []register.Register) VectorInsnTranslator[W, F] {
+	vec vm.BytecodeVector[W], framing Framing[F], enclosing *vm.Function[W]) VectorInsnTranslator[W, F] {
 	// generate writeMap & branch table
 	writeMap, branchTable := vec.BranchTable()
 	//
 	return VectorInsnTranslator[W, F]{
-		ctx, pc, vec, registers, writeMap, branchTable, framing,
+		ctx, pc, vec, enclosing, writeMap, branchTable, framing,
 	}
 }
 
@@ -101,18 +101,49 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Goto(uint(c.Target))
 		case *vm.BytecodeArith[W]:
-			it := InstructionTranslator[F]{p, localWrites}
+			it := InstructionTranslator[W, F]{p, localWrites}
+			//
+			switch c.Op {
+			case vm.OP_ADD:
+				local = it.translateAdd(c.Target, c.Source, c.Constant)
+			case vm.OP_MUL:
+				local = it.translateMul(c.Target, c.Source, c.Constant)
+			case vm.OP_SUB:
+				var (
+					// Determine whether this is a subtract with borrow
+					isSbb        = vm.IsSubtractWithBorrow(*c, p.enclosing)
+					hasSignedBit = hasSignedBit(c.Target, p.enclosing)
+				)
+				//
+				if isSbb && hasSignedBit {
+					local = it.translateSignedSub(c.Target, c.Source, c.Constant)
+				} else if isSbb {
+					panic("subtract with borrow bytecode missing sign bit")
+				} else {
+					local = it.translateSub(c.Target, c.Source, c.Constant)
+				}
+			default:
+				panic("unknown arithmetic operation")
+			}
 			// translate integer arithmetic assignment
-			local = it.translateArith(c.Op, toRegisterIds(c.Target), toRegisterIds(c.Source), *c.Constant.BigInt())
+
 		case *vm.BytecodeFieldArith[W]:
-			it := InstructionTranslator[F]{p, localWrites}
-			// translate field arithmetic assignment (single native target)
-			local = it.translateArith(c.Op, []register.Id{register.NewId(uint(c.Target))},
-				toRegisterIds(c.Sources), *c.Constant.BigInt())
+			it := InstructionTranslator[W, F]{p, localWrites}
+
+			switch c.Op {
+			case vm.OP_ADDMOD_P:
+				local = it.translateFieldAdd(c.Target, c.Sources, c.Constant)
+			case vm.OP_SUBMOD_P:
+				local = it.translateFieldSub(c.Target, c.Sources, c.Constant)
+			case vm.OP_MULMOD_P:
+				local = it.translateFieldMul(c.Target, c.Sources, c.Constant)
+			default:
+				panic("unknown field operation")
+			}
 		case *vm.BytecodeCat[W]:
-			it := InstructionTranslator[F]{p, localWrites}
+			it := InstructionTranslator[W, F]{p, localWrites}
 			// translate concatenation assignment
-			local = it.translateConcat(toRegisterIds(c.Targets), toRegisterIds(c.Sources), p.sourceWidths(c.Sources))
+			local = it.translateConcat(c.Targets, c.Sources, p.sourceWidths(c.Sources))
 		case *vm.BytecodeRet[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()
@@ -160,13 +191,13 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 // which registers are actually used (i.e. live) after this instruction.
 func (p *VectorInsnTranslator[W, F]) WithConstancyConstraints(writes dfa.Writes, condition Expr[F]) Expr[F] {
 	//
-	for i, reg := range p.registers {
+	for i, reg := range p.enclosing.Registers() {
 		var (
 			regId = register.NewId(uint(i))
 			// Value of register on this row of the trace.
-			r_i = mirc.Variable[register.Id, Expr[F]](regId, reg.WidthOrNative(), 0)
+			r_i = mirc.Variable[register.Id, Expr[F]](regId, reg.Bitwidth().UnwrapOr(math.MaxUint), 0)
 			// Value of register on previous row of the trace.
-			r_im1 = mirc.Variable[register.Id, Expr[F]](regId, reg.WidthOrNative(), -1)
+			r_im1 = mirc.Variable[register.Id, Expr[F]](regId, reg.Bitwidth().UnwrapOr(math.MaxUint), -1)
 		)
 		//
 		if reg.IsInput() {
@@ -224,7 +255,7 @@ func (p *VectorInsnTranslator[W, F]) ReadRegister(regId register.Id, forwarding 
 
 // Register implementation for RegisterReader interface
 func (p *VectorInsnTranslator[W, F]) Register(reg register.Id) register.Register {
-	return p.registers[reg.Unwrap()]
+	return toRegister(p.enclosing.Registers()[reg.Unwrap()])
 }
 
 // sourceWidths returns the bit widths of the given source registers, in order.
@@ -232,7 +263,7 @@ func (p *VectorInsnTranslator[W, F]) sourceWidths(ids []vm.RegisterId) []uint {
 	widths := make([]uint, len(ids))
 	//
 	for i, id := range ids {
-		widths[i] = p.registers[id].WidthOrNative()
+		widths[i] = p.enclosing.Register(id).Bitwidth().UnwrapOr(math.MaxUint)
 	}
 	//
 	return widths
@@ -293,6 +324,15 @@ func containsRegister(ids []vm.RegisterId, reg register.Id) bool {
 	}
 	//
 	return false
+}
+
+func hasSignedBit[W vm.Word[W]](target []vm.RegisterId, enclosing vm.Module[W]) bool {
+	var (
+		n    = len(target)
+		last = target[n-1]
+	)
+	// Check whether last register is binary or not.
+	return enclosing.Register(last).Bitwidth().UnwrapOr(0) == 1
 }
 
 func bitwidthOf(reg register.Register) uint {

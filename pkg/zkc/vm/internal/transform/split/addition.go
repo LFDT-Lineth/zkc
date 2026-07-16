@@ -14,13 +14,21 @@
 package split
 
 import (
-	"math/big"
-
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/lazy"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
+
+// partAdd "partial add" represents an addition created during splitting which
+// contributes towards the overall addition.
+type partAdd[W word.Word[W]] struct {
+	targets  []RegisterId
+	sources  []RegisterId
+	constant W
+}
 
 // Addition splits an add instruction into one (or more) add instructions,
 // potentially introducing one (or more) carry lines at the same time.  For
@@ -35,61 +43,105 @@ import (
 // >    x1 = y1 + c
 //
 // Where c is a newly introduced (u1) carry line.
-func Addition[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
+func Addition[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
 	var (
 		// Split into the initial set of chunks.
-		chunks, context = initialiseLineaChunks(mapping, alloc, insn.Target, insn.Source, insn.Constant)
+		chunks, context = initialiseAddChunks(mapping, alloc, insn.Target, insn.Source, insn.Constant)
 	)
 	// Next, add carry lines as needed
 	chunks = insertAddCarryLines(alloc, chunks)
 	// Convert chunks into assignments
-	return append(MapChunks(chunks, addAssignment[W]), context...)
+	return append(array.Map(chunks, addAssignment[W]), context...)
+}
+
+// initialiseLineaChunks splits the source registers (and constant) into
+// least-significant-first chunks, then assigns target limbs to each chunk
+// according to the number of bits the corresponding RHS can produce.
+func initialiseAddChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W],
+	targets, sources []RegisterId, constant W) ([]partAdd[W], []Bytecode[W]) {
+	//
+	var (
+		zero W
+		// Extract register width
+		regWidth = mapping.RegisterWidth()
+		// Determine target limbs
+		limbs = applyLimbsMapReversed(mapping, targets...)
+		// Initialise register stack
+		stack = RegisterStack[W]{limbs, alloc, nil}
+		// Initialise limb "matrix"
+		matrix = newLimbMatrix(sources, mapping)
+		// Split the cosntant
+		constants = descriptor.SplitConstant(constant, mapping.RegisterWidth())
+		//
+		nChunks, nConstants = len(matrix.chunks), len(constants)
+		codes               []partAdd[W]
+	)
+	// Initialise partial additions
+	for i := range max(nChunks, nConstants) {
+		var (
+			lhs = stack.SelectExact(regWidth)
+			rhs = lazy.IfDefault(i < nChunks, lazy.Read(i, matrix.chunks))
+			c   = lazy.IfDefault(i < nConstants, lazy.Read(i, constants))
+		)
+		//
+		codes = append(codes, partAdd[W]{lhs, mapAddRhs(rhs), c})
+	}
+	// Handle overhangs.  This arises e.g. when assigning a small constant to a
+	// wide target register.
+	for stack.Size() > 0 {
+		codes = append(codes, partAdd[W]{[]RegisterId{stack.Pop()}, nil, zero})
+	}
+	//
+	return codes, stack.post
 }
 
 // insertAddCarryLines verifies that each addition chunk fits within its
 // assigned target limbs, returning a copied chunk sequence.  It panics when a
 // chunk would overflow and therefore still requires an inserted carry line.
-func insertAddCarryLines[W word.Word[W]](alloc Allocator[W], chunks Chunks[W]) Chunks[W] {
+func insertAddCarryLines[W word.Word[W]](alloc Allocator[W], chunks []partAdd[W]) []partAdd[W] {
 	//
-	for i := range chunks.Len() {
+	for i := range len(chunks) {
 		var (
-			ith = chunks.Ith(i)
-			lhs = ith.LhsBitwidth(alloc)
-			rhs = addRhsBitwidth(ith, alloc)
+			// Determine bitwidth of left-hand side
+			lhs = descriptor.BitwidthOf(alloc, chunks[i].targets...).Unwrap()
+			// Determine bitwidth of right-hand side
+			rhs = addRhsBitwidth(chunks[i], alloc)
 		)
 		// check whether carry required
-		if lhs < rhs && i+1 < chunks.Len() {
+		if lhs < rhs && i+1 < len(chunks) {
 			var (
 				bitwidth = rhs - lhs
 				// allocate new carry line
 				carry = alloc.Allocate("c", util.Some(bitwidth))
 			)
 			// insert carry line
-			chunks.Apply(i, appendLhsLimb[W](carry))
-			chunks.Apply(i+1, appendRhsLimb[W](carry))
+			chunks[i].targets = append(chunks[i].targets, carry)
+			chunks[i+1].sources = append(chunks[i+1].sources, carry)
 		}
 	}
 	//
 	return chunks
 }
 
-func addRhsBitwidth[W word.Word[W]](chunk Chunk[W], mapping descriptor.RegisterMap[W]) uint {
-	var rhsMaxVal big.Int
-	// Initialise max value
-	rhsMaxVal.Set(chunk.Constant.BigInt())
-	// Determine maximum expressible value
-	for _, r := range chunk.RightHandSide {
-		reg := mapping.Register(r)
-		// Accumulate maximum register value
-		rhsMaxVal.Add(&rhsMaxVal, maxValueOf(reg.Bitwidth()))
+func addRhsBitwidth[W word.Word[W]](chunk partAdd[W], mapping descriptor.RegisterMap[W]) uint {
+	return descriptor.CalculateAddBitwidth(chunk.sources, chunk.constant, mapping).Unwrap()
+}
+
+func mapAddRhs(rhs []util.Option[RegisterId]) []RegisterId {
+	var res []RegisterId
+	//
+	for _, rhs := range rhs {
+		if rhs.HasValue() {
+			res = append(res, rhs.Unwrap())
+		}
 	}
 	//
-	return uint(rhsMaxVal.BitLen())
+	return res
 }
 
 // addAssignment lowers a chunk back into a concrete unsigned-add instruction.
-func addAssignment[W word.Word[W]](chunk Chunk[W]) Bytecode[W] {
+func addAssignment[W word.Word[W]](_ uint, chunk partAdd[W]) Bytecode[W] {
 	// Done
-	return bytecode.AddVecConst(chunk.LeftHandSide, chunk.RightHandSide, chunk.Constant)
+	return bytecode.AddVecConst(chunk.targets, chunk.sources, chunk.constant)
 }

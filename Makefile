@@ -54,9 +54,17 @@ zkc-lint-apply:
 	@echo ">>> Applying zkc code linting fixes..."
 	go run ./cmd/zkc format $(ZKC_LINTABLE_FILES)
 
-zkc-test: zkc-lint
-	@echo ">>> Running ZkC Tests..."
-	go test --timeout 0 -run "Test_ZkcBench|Test_ZkcUnit|Test_ZkcMixed|Test_ZkcInvalid" ./...
+zkc-unit-test: zkc-lint
+	@echo ">>> Running ZkC (Unit) Tests..."
+	go test --timeout 0 -run "Test_ZkcUnit|Test_ZkcMixed|Test_ZkcInvalid" ./...
+
+zkc-util-test: zkc-lint
+	@echo ">>> Running ZkC (Util) Tests..."
+	go test --timeout 0 -run "Test_ZkcUtil" ./...
+
+zkc-bench-test: zkc-lint
+	@echo ">>> Running ZkC (Bench) Tests..."
+	go test --timeout 0 -run "Test_ZkcBench" ./...
 
 build:
 	@echo ">>> Building ${PROJECT_NAME}... ${GOCORSET_VERSION}"

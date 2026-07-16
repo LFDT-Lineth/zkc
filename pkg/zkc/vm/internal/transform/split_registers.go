@@ -20,6 +20,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
+	split_old "github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split_old"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -91,7 +92,7 @@ func splitMemory[W word.Word[W]](mapping descriptor.LimbsMap[W], m *descriptor.M
 func splitStaticContents[W word.Word[W]](mapping descriptor.LimbsMap[W], m *descriptor.Memory[W]) []W {
 	var (
 		contents = m.StaticContents()
-		limbsMap = mapping.LimbsMap()
+		limbsMap = mapping.LimbsRegisterMap()
 		// Identify the data (output) registers, in declaration order.
 		dataIds []RegisterId
 	)
@@ -148,7 +149,7 @@ func splitCell[W word.Word[W]](value W, limbIds []RegisterId, limbsMap descripto
 func splitFunction[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descriptor.Module[W],
 	m *descriptor.Function[W]) descriptor.Module[W] {
 	var (
-		alloc = split.NewAllocator(mapping.LimbsMap())
+		alloc = split.NewAllocator(mapping.LimbsRegisterMap())
 		code  = splitBytecodeVector(mapping, mods, alloc, m.Vectors())
 	)
 	//
@@ -179,7 +180,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.Call[W]:
 			return splitCall(limbsMap, alloc, mods, c)
 		case *bytecode.Cat[W]:
-			return split.Concat(limbsMap, alloc, c)
+			return split_old.Concat(limbsMap, alloc, c)
 		case *bytecode.Debug[W]:
 			return []Bytecode[W]{&bytecode.Debug[W]{Chunks: c.Chunks, Sources: splitRegisterVectors(limbsMap, c.Sources)}}
 		case *bytecode.Fail[W]:

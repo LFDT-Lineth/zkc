@@ -14,14 +14,12 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
-package split
+package split_old
 
 import (
 	"fmt"
-	"math/big"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -152,22 +150,6 @@ func MapChunks[W word.Word[W], T any](chunks Chunks[W], fn ChunkMapper[W, T]) []
 	return items
 }
 
-// maxValueOf determines the maximum unsigned integer value expressible in a
-// given number of bits.
-func maxValueOf(bitwidth util.Option[uint]) *big.Int {
-	if bitwidth.IsEmpty() {
-		panic("cannot split field element")
-	}
-	//
-	var val = big.NewInt(1)
-	// NOTE: safe cast given check above
-	val.Lsh(val, bitwidth.Unwrap())
-	//
-	val.Sub(val, big.NewInt(1))
-	//
-	return val
-}
-
 // setLhsLimbs returns a mutator which replaces the left-hand side limbs of a
 // chunk while preserving its right-hand side and constant.
 func setLhsLimbs[W word.Word[W]](lhs ...RegisterId) ChunkMutator[W] {
@@ -187,18 +169,6 @@ func setRhsLimbs[W word.Word[W]](rhs ...RegisterId) ChunkMutator[W] {
 		return Chunk[W]{
 			LeftHandSide:  c.LeftHandSide,
 			RightHandSide: rhs,
-			Constant:      c.Constant,
-		}
-	}
-}
-
-// appendRhsLimb returns a mutator which appends one source limb to a chunk's
-// right-hand side while preserving its targets and constant.
-func appendRhsLimb[W word.Word[W]](limb RegisterId) ChunkMutator[W] {
-	return func(c Chunk[W]) Chunk[W] {
-		return Chunk[W]{
-			LeftHandSide:  c.LeftHandSide,
-			RightHandSide: append(c.RightHandSide, limb),
 			Constant:      c.Constant,
 		}
 	}
@@ -226,18 +196,6 @@ func appendLhsLimb[W word.Word[W]](limb RegisterId) ChunkMutator[W] {
 			LeftHandSide:  append(c.LeftHandSide, limb),
 			RightHandSide: c.RightHandSide,
 			Constant:      c.Constant,
-		}
-	}
-}
-
-// setRhsConstant returns a mutator which replaces a chunk's constant while
-// preserving its target and source limbs.
-func setRhsConstant[W word.Word[W]](constant W) ChunkMutator[W] {
-	return func(c Chunk[W]) Chunk[W] {
-		return Chunk[W]{
-			LeftHandSide:  c.LeftHandSide,
-			RightHandSide: c.RightHandSide,
-			Constant:      constant,
 		}
 	}
 }
