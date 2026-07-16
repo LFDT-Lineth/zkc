@@ -21,43 +21,42 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// StaticArray is a memory implementation backed by a fixed-size []W, meaning
+// StaticArray is a memory implementation backed by a fixed-size []C, meaning
 // that an out-of-bound read will panic. Reads are performed by delegating
 // address decoding to a D (an AddressDecoder) which translates the incoming
 // multi-word address tuple into a (start, end) index range, and then returning
 // the corresponding sub-slice of the backing data.
 //
 // The type parameter W is the word type (e.g. a field element or big.Int), and
-// D is the AddressDecoder strategy that encodes the layout of rows within the
-// flat slice.
-type StaticArray[W word.Word[W]] struct {
+// C is the cell type stored in the backing slice.  For most memories C is just
+// W; RAM stores TimestampedCell[W] so it can track per-cell access timestamps.
+type StaticArray[W word.Word[W], C any] struct {
 	descriptor descriptor.Memory[W]
-	data       []W
+	data       []C
 }
 
 // NewStaticArray constructs a new array initialised with a given set of values.
-func NewStaticArray[W word.Word[W]](descriptor descriptor.Memory[W], init ...W) StaticArray[W] {
-	return StaticArray[W]{descriptor, init}
+func NewStaticArray[W word.Word[W], C any](descriptor descriptor.Memory[W], init ...C) StaticArray[W, C] {
+	return StaticArray[W, C]{descriptor, init}
 }
 
 // Descriptor implementation for memory interface.
-func (p *StaticArray[W]) Descriptor() *descriptor.Memory[W] {
+func (p *StaticArray[W, C]) Descriptor() *descriptor.Memory[W] {
 	return &p.descriptor
 }
 
 // Initialise implementation for Memory interface.
-func (p *StaticArray[W]) Initialise(contents []W) {
+func (p *StaticArray[W, C]) Initialise(contents []C) {
 	p.data = contents
 }
 
 // Read implementation for Memory interface.
-func (p *StaticArray[W]) Read(address uint64) (W, error) {
-	// perform read
+func (p *StaticArray[W, C]) Read(address uint64) (C, error) {
 	return p.data[address], nil
 }
 
 // Write implementation for Memory interface.
-func (p *StaticArray[W]) Write(address uint64, value W) error {
+func (p *StaticArray[W, C]) Write(address uint64, value C) error {
 	// ensure sufficient space
 	p.data = expand(p.data, address+1)
 	// perform write
@@ -67,7 +66,7 @@ func (p *StaticArray[W]) Write(address uint64, value W) error {
 }
 
 // Contents implementation for Memory interface.
-func (p *StaticArray[W]) Contents() []W {
+func (p *StaticArray[W, C]) Contents() []C {
 	return p.data
 }
 
@@ -90,7 +89,7 @@ func expand[W any](data []W, n uint64) []W {
 // ============================================================================
 
 // nolint
-func (p *StaticArray[W]) GobEncode() ([]byte, error) {
+func (p *StaticArray[W, C]) GobEncode() ([]byte, error) {
 	var buffer bytes.Buffer
 	gobEncoder := gob.NewEncoder(&buffer)
 	//
@@ -106,7 +105,7 @@ func (p *StaticArray[W]) GobEncode() ([]byte, error) {
 }
 
 // nolint
-func (p *StaticArray[W]) GobDecode(data []byte) error {
+func (p *StaticArray[W, C]) GobDecode(data []byte) error {
 	var (
 		buffer     = bytes.NewBuffer(data)
 		gobDecoder = gob.NewDecoder(buffer)

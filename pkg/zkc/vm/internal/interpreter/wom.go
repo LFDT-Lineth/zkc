@@ -24,7 +24,7 @@ import (
 // starting from zero.  Thus, a WOM can be viewed as an output stream (which is
 // exactly what they are typically used for).
 type WriteOnce[W word.Word[W]] struct {
-	StaticArray[W]
+	StaticArray[W, W]
 	writtenToAddresses []bool
 }
 
@@ -66,7 +66,7 @@ func (p *WriteOnce[W]) Read(address uint64) (W, error) {
 // NewWriteOnce constructs an empty write-once memory.
 func NewWriteOnce[W word.Word[W]](descriptor descriptor.Memory[W]) *WriteOnce[W] {
 	return &WriteOnce[W]{
-		StaticArray:        NewStaticArray[W](descriptor),
+		StaticArray:        NewStaticArray[W, W](descriptor),
 		writtenToAddresses: []bool{},
 	}
 }
