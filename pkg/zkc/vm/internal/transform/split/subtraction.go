@@ -124,6 +124,11 @@ func subRhsBitwidth[W word.Word[W]](chunk Chunk[W], mapping descriptor.RegisterM
 // subAssignment lowers a chunk back into a concrete unsigned-subtract
 // instruction.
 func subAssignment[W word.Word[W]](chunk Chunk[W]) Bytecode[W] {
+	var zero W
+	// Check for non-subtraction case
+	if len(chunk.RightHandSide) == 0 {
+		return bytecode.LoadConstVec(chunk.LeftHandSide, zero)
+	}
 	// Done
 	return bytecode.SubVecConst(chunk.LeftHandSide, chunk.RightHandSide, chunk.Constant)
 }

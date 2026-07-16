@@ -818,9 +818,15 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (ui
 	//
 	if acc, underflow = acc.Add(constant); underflow {
 		return pc, errors.New("arithmetic underflow [2]")
-	} else if val, underflow = val.Sub(acc); underflow {
+	}
+	//
+	fmt.Printf("SUB: 0x%s - 0x%s [u%d]\n", val.Text(16), acc.Text(16), bitwidth)
+	//
+	if val, underflow = val.Sub(acc); underflow {
 		val = val.Slice(bitwidth)
 	}
+	//
+
 	//
 	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
