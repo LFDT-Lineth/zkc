@@ -1,0 +1,15 @@
+pub input data(address:u32) -> (w:u16)
+
+fn main() {
+   var arg1:u16 = data[0]
+   var arg2:u16 = data[1]
+   var arg3:u16 = data[2]
+   var res:u17
+   var b:u1
+   //
+   b::res = (arg1 - arg2 - arg3) as u18
+   //
+   if b == 0 {
+      fail
+   }
+}

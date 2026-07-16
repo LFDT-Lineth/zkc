@@ -13,6 +13,7 @@
 package encoding
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -425,7 +426,18 @@ func DecodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 // of an arithmetic instruction (ADD_nm/SUB_nm/MUL_nm).
 func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterId, sources []RegisterId,
 	constant W, env Environment[W]) []uint32 {
-	var bitwidth = calculateArithBitwidth(aop, sources, constant, env.RegisterMap())
+	var (
+		// determine total bitwidth of lhs
+		lhs_bitwidth = descriptor.BitwidthOf(env.RegisterMap(), targets...).Unwrap()
+		// determine bitwidth required for rhs
+		rhs_bitwidth = calculateArithBitwidth(aop, sources, constant, env.RegisterMap())
+		// determine overall bitwidth
+		bitwidth = max(lhs_bitwidth, rhs_bitwidth)
+		//bitwidth = rhs_bitwidth
+	)
+	//
+	fmt.Printf("Encoded lhs bitwidth = %d\n", lhs_bitwidth)
+	fmt.Printf("Encoded rhs bitwidth = %d\n", rhs_bitwidth)
 	//
 	if len(targets) == 0 {
 		panic("targetless arithmetic instructions not supported")
