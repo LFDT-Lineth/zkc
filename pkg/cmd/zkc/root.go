@@ -110,7 +110,6 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	build.config = codegen.DEFAULT_CONFIG.
 		Inlining(GetFlag(cmd, "inline")).
 		FastMode(fastMode).
-		Vectorize(GetFlag(cmd, "vectorize")).
 		MaxStaticDepth(GetUint(cmd, "max_static_depth")).
 		Field(field).
 		Quiet(quiet)

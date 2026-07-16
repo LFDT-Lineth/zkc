@@ -1031,7 +1031,7 @@ func compileUintVerbose(t testing.TB, src string) vm.Program[vm.Uint] {
 	t.Helper()
 
 	var (
-		cfg = codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).Vectorize(true).Quiet(false)
+		cfg = codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).Quiet(false)
 		// Compile source file into an AST
 		program = compileProgram(t, src)
 		// Compile AST into a bytecode program
