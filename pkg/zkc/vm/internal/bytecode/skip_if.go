@@ -54,11 +54,15 @@ func (p *SkipIf[W]) Definitions() []RegisterId {
 // right (mirroring base.SkipIf.MicroValidate): a narrower left operand could
 // not faithfully hold the value it is compared against.  When either vector
 // involves a native register (and hence has no fixed width) no check applies.
-func (p *SkipIf[W]) Validate(_ uint, _ FieldConfig, env Environment[W]) []error {
+func (p *SkipIf[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	errors := validateOperands(env, p.Left.Registers(), p.Right.Registers())
+	if len(errors) != 0 {
+		return errors
+	}
+
 	var (
-		errors []error
-		lw     = vectorBitwidth(p.Left, env)
-		rw     = vectorBitwidth(p.Right, env)
+		lw = vectorBitwidth(p.Left, env)
+		rw = vectorBitwidth(p.Right, env)
 	)
 	//
 	if lw.HasValue() && rw.HasValue() && lw.Unwrap() < rw.Unwrap() {

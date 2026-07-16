@@ -26,6 +26,14 @@ import (
 // this interface captures the register-related structure common to them.
 type Module[W word.Word[W]] interface {
 	RegisterMap[W]
+	// IsFunction indicates whether this module is a callable function.
+	IsFunction() bool
+	// IsMemory indicates whether this module supports memory accesses.
+	IsMemory() bool
+	// IsReadOnly indicates whether this module forbids writes.
+	IsReadOnly() bool
+	// IsWriteOnly indicates whether this module forbids reads.
+	IsWriteOnly() bool
 	// Inputs returns the set of input registers for this module.
 	Inputs() []Register[W]
 	// NumInputs returns the number of input registers for this module.

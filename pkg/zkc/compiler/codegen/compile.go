@@ -205,6 +205,10 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 	}
 	// Insert check casts to ensure appropriate safety checks during execution.
 	program = vm.InsertCheckCasts(program)
+	// Validate program to catch any introduced corruption as early as possible.
+	if err := vm.ValidateProgram(program); err != nil {
+		panic(err)
+	}
 	// Done
 	return program, errors
 }

@@ -96,6 +96,16 @@ func (p *Memory[W]) IsPaged() bool {
 	return p.kind.IsPaged()
 }
 
+// IsFunction identifies this module as a memory rather than a callable function.
+func (p *Memory[W]) IsFunction() bool {
+	return false
+}
+
+// IsMemory identifies this module as a memory.
+func (p *Memory[W]) IsMemory() bool {
+	return true
+}
+
 // StaticContents returns the static contents of this memory (if
 // applicable).  This will panic if !Kind().IsStatic().
 func (p *Memory[W]) StaticContents() []W {

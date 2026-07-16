@@ -60,6 +60,26 @@ func (p *Function[W]) IsNative() bool {
 	return p.native
 }
 
+// IsFunction identifies this module as a callable function.
+func (p *Function[W]) IsFunction() bool {
+	return true
+}
+
+// IsMemory identifies this module as a function rather than a memory.
+func (p *Function[W]) IsMemory() bool {
+	return false
+}
+
+// IsReadOnly is false because memory access modes do not apply to functions.
+func (p *Function[W]) IsReadOnly() bool {
+	return false
+}
+
+// IsWriteOnly is false because memory access modes do not apply to functions.
+func (p *Function[W]) IsWriteOnly() bool {
+	return false
+}
+
 // PcWidth returns the bit width required for this function's program counter
 // register, which must be able to index every code line plus the (one past the
 // end) halt value.  Only meaningful for non-atomic functions, which are the

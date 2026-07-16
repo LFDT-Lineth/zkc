@@ -125,6 +125,19 @@ func CompileProgram[W word.Word[W]](p Program[W]) BinaryProgram[W] {
 	return interpreter.CompileProgram(p, false)
 }
 
+// ValidateProgram performs various sanity checks on the bytecode vectors of
+// each function within a program.  Sanity checks include: (1) ensuring that
+// vectors themselves are well-formed (e.g. with respect to write conflicts,
+// jump/skip destinations, terminal instructions, etc); (2) that each individual
+// bytecode is well formed within its function.  For example, that: any
+// registers it refers to actually exist; that registers it uses are of the
+// correct form (e.g. some instructions cannot operate on native registers);
+// that any call targets exist and are functions and, likewise, that any memory
+// accesses exist and are memories.  It returns nil when no problems are found.
+func ValidateProgram[W word.Word[W]](p Program[W]) error {
+	return validateBytecodeProgram(p)
+}
+
 // NewBytecodeProgram assembles a bytecode program directly from pre-lowered
 // descriptor modules, bypassing the word-machine round trip.
 func NewBytecodeProgram[W word.Word[W]](field field.Config, modules ...Module[W]) Program[W] {

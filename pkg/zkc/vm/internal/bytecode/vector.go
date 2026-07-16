@@ -14,6 +14,7 @@ package bytecode
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
@@ -108,22 +109,79 @@ func (p *Vector[W]) String(env Environment[W]) string {
 // which _may_ (but not _definitely_) have been written.
 func (p *Vector[W]) Validate(field FieldConfig, env Environment[W]) []error {
 	var (
+		errors, structureSafe      = p.validateStructure(env)
+		controlErrors, controlSafe = p.validateControlFlow()
+	)
+
+	errors = append(errors, controlErrors...)
+	// Validate individual bytecodes. Each bytecode checks its operands before
+	// performing any environment lookup.
+	for _, b := range p.Bytecodes {
+		if !isNilBytecode(b) {
+			errors = append(errors, b.Validate(field, env)...)
+		}
+	}
+	// WriteMap assumes that every control-flow destination is in bounds and
+	// every bytecode is non-nil.
+	if !structureSafe || !controlSafe {
+		return errors
+	}
+
+	return append(errors, p.validateReadWriteConflicts(env)...)
+}
+
+// validateStructure checks every index which an environment lookup or jump
+// would dereference. The returned boolean indicates whether environment-
+// dependent bytecode validation and write-map construction are safe.
+func (p *Vector[W]) validateStructure(env Environment[W]) ([]error, bool) {
+	var (
+		errors []error
+		safe   = true
+	)
+
+	for i, code := range p.Bytecodes {
+		if isNilBytecode(code) {
+			errors = append(errors, fmt.Errorf("bytecode %d is nil", i))
+			safe = false
+
+			continue
+		}
+
+		for _, registers := range [][]RegisterId{code.Uses(), code.Definitions()} {
+			for _, id := range registers {
+				if uint(id) >= env.RegisterCount() {
+					safe = false
+				}
+			}
+		}
+
+		if jump, ok := code.(*Jmp[W]); ok && uint(jump.Target) >= env.VectorCount() {
+			errors = append(errors, fmt.Errorf("bytecode %d: jump target %d does not exist", i, jump.Target))
+			safe = false
+		}
+	}
+
+	return errors, safe
+}
+
+// validateReadWriteConflicts checks for ambiguous reads and writes along every
+// execution path through this vector.
+func (p *Vector[W]) validateReadWriteConflicts(env Environment[W]) []error {
+	var (
 		errors   []error
-		nCodes   = uint(len(p.Bytecodes))
 		writeMap = p.WriteMap()
 	)
-	// Validate individual bytecodes.
-	for _, b := range p.Bytecodes {
-		errors = append(errors, b.Validate(nCodes, field, env)...)
-	}
-	// Validate there are no read/write conflicts.
-	for i := range nCodes {
+	for i := range uint(len(p.Bytecodes)) {
 		var (
 			ithState = writeMap.StateOf(i)
 			ith      = p.Bytecodes[i]
 		)
 		// Sanity check for conflicting reads.
 		for _, r := range ith.Uses() {
+			if isZeroWidth(r, env) {
+				continue
+			}
+
 			if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) && !ithState.DefinitelyAssigned(rid) {
 				errors = append(errors,
 					fmt.Errorf("conflicting read on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
@@ -131,6 +189,10 @@ func (p *Vector[W]) Validate(field FieldConfig, env Environment[W]) []error {
 		}
 		// Sanity check for conflicting writes.
 		for _, r := range ith.Definitions() {
+			if isZeroWidth(r, env) {
+				continue
+			}
+
 			if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) {
 				errors = append(errors,
 					fmt.Errorf("conflicting write on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
@@ -139,6 +201,121 @@ func (p *Vector[W]) Validate(field FieldConfig, env Environment[W]) []error {
 	}
 	//
 	return errors
+}
+
+// validateControlFlow checks the intra-vector control-flow graph.  Every skip
+// destination must exist, including destinations in unreachable code, and
+// every reachable path must end in a terminal bytecode.
+func (p *Vector[W]) validateControlFlow() ([]error, bool) {
+	var (
+		errors []error
+		n      = uint(len(p.Bytecodes))
+		safe   = n != 0
+	)
+	if n == 0 {
+		return []error{fmt.Errorf("empty vector")}, false
+	}
+
+	for i, code := range p.Bytecodes {
+		if isNilBytecode(code) {
+			safe = false
+			continue
+		}
+
+		micro := uint(i)
+
+		switch code := code.(type) {
+		case *Skip[W]:
+			errors, safe = validateSkipDestination(errors, safe, micro, uint(code.Skip), n)
+		case *SkipIf[W]:
+			errors, safe = validateSkipDestination(errors, safe, micro, uint(code.Skip), n)
+		case *Switch[W]:
+			for _, c := range code.Cases {
+				errors, safe = validateSkipDestination(errors, safe, micro, uint(c.Skip), n)
+			}
+		}
+	}
+	// Explore only valid successors. Invalid destinations were reported above.
+	var (
+		visited = make([]bool, n)
+		visit   func(uint)
+	)
+
+	visit = func(micro uint) {
+		if micro >= n {
+			errors = append(errors, fmt.Errorf("reachable path falls off end of vector"))
+			safe = false
+
+			return
+		}
+
+		if visited[micro] {
+			return
+		}
+
+		visited[micro] = true
+
+		code := p.Bytecodes[micro]
+		if isNilBytecode(code) {
+			return
+		}
+
+		switch code := code.(type) {
+		case *Fail[W], *Jmp[W], *Ret[W]:
+			return
+		case *Skip[W]:
+			visitSkipDestination(micro, uint(code.Skip), n, visit)
+		case *SkipIf[W]:
+			visit(micro + 1)
+			visitSkipDestination(micro, uint(code.Skip), n, visit)
+		case *Switch[W]:
+			visit(micro + 1)
+
+			for _, c := range code.Cases {
+				visitSkipDestination(micro, uint(c.Skip), n, visit)
+			}
+		default:
+			visit(micro + 1)
+		}
+	}
+	visit(0)
+
+	return errors, safe
+}
+
+func validateSkipDestination(errors []error, safe bool, micro, skip, length uint) ([]error, bool) {
+	target := micro + skip + 1
+	if target >= length {
+		errors = append(errors, fmt.Errorf("bytecode %d: skip target %d does not exist", micro, target))
+		return errors, false
+	}
+
+	return errors, safe
+}
+
+func visitSkipDestination(micro, skip, length uint, visit func(uint)) {
+	target := micro + skip + 1
+	if target < length {
+		visit(target)
+	}
+}
+
+func isNilBytecode[W word.Word[W]](code Bytecode[W]) bool {
+	if code == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(code)
+
+	return value.Kind() == reflect.Pointer && value.IsNil()
+}
+
+// Zero-width registers are placeholders introduced by register splitting. They
+// carry no data, so apparent reads and writes to a shared placeholder cannot
+// conflict.
+func isZeroWidth[W word.Word[W]](id RegisterId, env Environment[W]) bool {
+	width := env.Register(id).Bitwidth()
+	return width.HasValue() && width.Unwrap() == 0
 }
 
 // WriteMap constructs the write map for this vector instruction.
