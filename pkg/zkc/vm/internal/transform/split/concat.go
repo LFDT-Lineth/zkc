@@ -15,11 +15,19 @@ package split
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
+
+// partCat "partial cat" represents an concatenation created during splitting which
+// contributes towards the overall concatenation.
+type partCat struct {
+	targets []RegisterId
+	sources []RegisterId
+}
 
 // Concat splits a concatenation instruction into one (or more) instructions,
 // potentially introducing one (or more) carry lines at the same time.  For
@@ -58,93 +66,77 @@ import (
 func Concat[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 	insn *bytecode.Cat[W]) []Bytecode[W] {
 	// Split into the initial set of chunks.
-	var chunks = initialiseConcatChunks(mapping, alloc, insn.Targets, insn.Sources)
+	var chunks, context = initialiseConcatChunks(mapping, alloc, insn.Targets, insn.Sources)
 	// Next, add carry lines as needed
 	chunks = insertConcatCarryLines(mapping.Field(), alloc, chunks)
 	// Convert chunks into assignments
-	return MapChunks(chunks, concatAssignment[W])
+	return append(array.Map(chunks, concatAssignment[W]), context...)
 }
 
 // initialiseAddChunks splits the addition sources and constant into
 // least-significant-first chunks, then assigns target limbs to each chunk
 // according to the number of bits the corresponding RHS can produce.
 func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
-	targets, sources []RegisterId) Chunks[W] {
+	targets, sources []RegisterId) ([]partCat, []Bytecode[W]) {
 	//
 	var (
-		limbsMap = mapping.LimbsMap()
+		limbsMap = mapping.LimbsRegisterMap()
 		// Split all source registers
 		sourceLimbs = applyLimbsMapReversed(mapping, sources...)
 		// Split all target registers
 		targetLimbs = applyLimbsMapReversed(mapping, targets...)
-		// Split source registers into initial chunks
-		chunks = splitConcatSources(mapping.BandWidth(), limbsMap, sourceLimbs)
+		// Initialise target register targetStack
+		targetStack = RegisterStack[W]{targetLimbs, alloc, nil}
+		// Initialise source register stack
+		sourceStack = RegisterStack[W]{sourceLimbs, alloc, nil}
+		//
+		codes []partCat
 	)
-	//
-	for i := uint(0); i < chunks.Len(); i++ {
+	// Keep going whilst we still have source registers
+	for sourceStack.Size() > 0 {
 		var (
-			bitwidth = concatRhsBitwidth(mapping.Field(), chunks.Ith(i), limbsMap)
+			rhs      = sourceStack.SelectUpto(mapping.BandWidth())
+			bitwidth = concatRhsBitwidth(mapping.Field(), rhs, limbsMap)
 			lhs      []RegisterId
 		)
-		// pull out targets
-		if len(targetLimbs) > 0 {
-			lhs, targetLimbs = selectLimbs(bitwidth, targetLimbs, limbsMap)
+		// Check if last chunk
+		if sourceStack.Size() == 0 {
+			//In this case, we might as well select everything which is left.
+			lhs = targetStack.SelectUpto(mapping.BandWidth() - bitwidth)
 		} else {
-			lhs = []RegisterId{alloc.ZeroRegister()}
+			lhs = targetStack.SelectExact(bitwidth)
 		}
 		// allocate selected targets
-		chunks.Apply(i, setLhsLimbs[W](lhs...))
+		codes = append(codes, partCat{lhs, rhs})
 	}
 	// Handle cases where we have more targets than necessary.  This can arise
 	// under normal circumstances, such as when assigning a small constant to a
 	// wide target register.  In this case, we simple assign each target in this
 	// "overhang" to zero.
-	for len(targetLimbs) > 0 {
-		chunks.Append(setLhsLimbs[W](targetLimbs[0]))
-		targetLimbs = targetLimbs[1:]
+	for targetStack.Size() > 0 {
+		codes = append(codes, partCat{[]RegisterId{targetStack.Pop()}, nil})
 	}
+	// Assert that we never create bytecodes for source registers.
+	util.Assert(len(sourceStack.post) == 0, "internal failure")
 	//
-	return chunks
-}
-
-// Partition the source limbs of a concatenation into chunks, each of which fits
-// within the given bandwidth.
-func splitConcatSources[W word.Word[W]](bandwidth uint, mapping descriptor.RegisterMap[W], sources []RegisterId,
-) Chunks[W] {
-	//
-	var chunks Chunks[W]
-	// Check for native assignment
-	if descriptor.HasNativeRegisterId(sources, mapping) {
-		util.Assert(len(sources) == 1, "native register has limbs")
-		chunks.Append(setRhsLimbs[W](sources...))
-	} else {
-		// Continue as normal
-		for len(sources) > 0 {
-			var limbs []RegisterId
-			//
-			limbs, sources = selectLimbs(bandwidth, sources, mapping)
-			//
-			chunks.Append(setRhsLimbs[W](limbs...))
-		}
-	}
-	//
-	return chunks
+	return codes, targetStack.post
 }
 
 // insertConcatCarryLines allocates carry registers for chunks whose RHS
 // produces more bits than its LHS can hold, splicing each carry into the
 // current chunk's LHS and the next chunk's RHS.  The final chunk is skipped
 // since its overflow represents the top bits with no successor to absorb it.
-func insertConcatCarryLines[W word.Word[W]](field field.Config, alloc Allocator[W], chunks Chunks[W]) Chunks[W] {
+func insertConcatCarryLines[W word.Word[W]](field field.Config, alloc Allocator[W], chunks []partCat) []partCat {
 	//
-	for i := range chunks.Len() {
+	for i := range len(chunks) {
 		var (
-			ith = chunks.Ith(i)
-			lhs = ith.LhsBitwidth(alloc)
-			rhs = concatRhsBitwidth(field, ith, alloc)
+			// Determine bitwidth of left-hand side
+			lhs = descriptor.BitwidthOf(alloc, chunks[i].targets...).Unwrap()
+			// Determine bitwidth of right-hand side
+			rhs = concatRhsBitwidth(field, chunks[i].sources, alloc)
 		)
 		// check whether carry required
-		if lhs < rhs && i+1 < chunks.Len() {
+		if lhs < rhs && i+1 < len(chunks) {
 			var (
 				bitwidth = rhs - lhs
 				// allocate new carry line
@@ -153,22 +145,22 @@ func insertConcatCarryLines[W word.Word[W]](field field.Config, alloc Allocator[
 			// insert carry line.  Observe that, since the carry holds the
 			// overflowing (most significant) bits of this chunk, it becomes
 			// the least significant limb of the next chunk.
-			chunks.Apply(i, appendLhsLimb[W](carry))
-			chunks.Apply(i+1, prependRhsLimb[W](carry))
+			chunks[i].targets = append(chunks[i].targets, carry)
+			chunks[i+1].sources = array.Prepend(carry, chunks[i+1].sources)
 		}
 	}
 	//
 	return chunks
 }
 
-func concatRhsBitwidth[W word.Word[W]](field field.Config, chunk Chunk[W], mapping descriptor.RegisterMap[W]) uint {
+func concatRhsBitwidth[W word.Word[W]](field field.Config, chunk []RegisterId, mapping descriptor.RegisterMap[W]) uint {
 	var bitwidth uint
 	// Handle native registers on the rhs
-	if descriptor.HasNativeRegisterId(chunk.RightHandSide, mapping) {
+	if descriptor.HasNativeRegisterId(chunk, mapping) {
 		return field.BandWidth
 	}
 	//
-	for _, r := range chunk.RightHandSide {
+	for _, r := range chunk {
 		var reg = mapping.Register(r)
 		//
 		bitwidth += reg.Bitwidth().Unwrap()
@@ -178,12 +170,12 @@ func concatRhsBitwidth[W word.Word[W]](field field.Config, chunk Chunk[W], mappi
 }
 
 // addAssignment lowers a chunk back into a concrete unsigned-add instruction.
-func concatAssignment[W word.Word[W]](chunk Chunk[W]) Bytecode[W] {
+func concatAssignment[W word.Word[W]](_ uint, chunk partCat) Bytecode[W] {
 	var zero W
 
-	if len(chunk.RightHandSide) == 0 {
-		return bytecode.LoadConstVec(chunk.LeftHandSide, zero)
+	if len(chunk.sources) == 0 {
+		return bytecode.LoadConstVec(chunk.targets, zero)
 	}
 	// Done
-	return bytecode.Concat[W](chunk.LeftHandSide, chunk.RightHandSide)
+	return bytecode.Concat[W](chunk.targets, chunk.sources)
 }

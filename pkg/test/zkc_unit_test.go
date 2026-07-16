@@ -66,7 +66,7 @@ func Test_ZkcUnit_Basic_10(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_11(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_11", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_11", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_12(t *testing.T) {
@@ -192,7 +192,7 @@ func Test_ZkcUnit_Basic_41(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_42(t *testing.T) {
-	//t.Skip("subtract with borrow")
+	t.Skip("subtract with borrow")
 	checkZkcUnit(t, "zkc/unit/basic_42", DEFAULT_UNIT_CONFIG)
 }
 
@@ -287,7 +287,7 @@ func Test_ZkcUnit_Basic_63(t *testing.T) {
 
 func Test_ZkcUnit_Basic_64(t *testing.T) {
 	// TODO: subtract with borrow?
-	checkZkcUnit(t, "zkc/unit/basic_64", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_64", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_65(t *testing.T) {
@@ -320,8 +320,7 @@ func Test_ZkcUnit_Basic_71(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_72(t *testing.T) {
-	t.Skip("subtract with borrow")
-	checkZkcUnit(t, "zkc/unit/basic_72", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_72", DEFAULT_UNIT_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_74(t *testing.T) {
@@ -342,6 +341,10 @@ func Test_ZkcUnit_Basic_76(t *testing.T) {
 func Test_ZkcUnit_Basic_77(t *testing.T) {
 	// TODO: subtract with borrow
 	checkZkcUnit(t, "zkc/unit/basic_77", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_78(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_78", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {

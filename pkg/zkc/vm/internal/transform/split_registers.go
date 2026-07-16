@@ -91,7 +91,7 @@ func splitMemory[W word.Word[W]](mapping descriptor.LimbsMap[W], m *descriptor.M
 func splitStaticContents[W word.Word[W]](mapping descriptor.LimbsMap[W], m *descriptor.Memory[W]) []W {
 	var (
 		contents = m.StaticContents()
-		limbsMap = mapping.LimbsMap()
+		limbsMap = mapping.LimbsRegisterMap()
 		// Identify the data (output) registers, in declaration order.
 		dataIds []RegisterId
 	)
@@ -148,7 +148,7 @@ func splitCell[W word.Word[W]](value W, limbIds []RegisterId, limbsMap descripto
 func splitFunction[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descriptor.Module[W],
 	m *descriptor.Function[W]) descriptor.Module[W] {
 	var (
-		alloc = split.NewAllocator(mapping.LimbsMap())
+		alloc = split.NewAllocator(mapping.LimbsRegisterMap())
 		code  = splitBytecodeVector(mapping, mods, alloc, m.Vectors())
 	)
 	//

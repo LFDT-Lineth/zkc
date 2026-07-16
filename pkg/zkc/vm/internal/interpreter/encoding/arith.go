@@ -13,7 +13,6 @@
 package encoding
 
 import (
-	"fmt"
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -433,11 +432,7 @@ func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterI
 		rhs_bitwidth = calculateArithBitwidth(aop, sources, constant, env.RegisterMap())
 		// determine overall bitwidth
 		bitwidth = max(lhs_bitwidth, rhs_bitwidth)
-		//bitwidth = rhs_bitwidth
 	)
-	//
-	fmt.Printf("Encoded lhs bitwidth = %d\n", lhs_bitwidth)
-	fmt.Printf("Encoded rhs bitwidth = %d\n", rhs_bitwidth)
 	//
 	if len(targets) == 0 {
 		panic("targetless arithmetic instructions not supported")
