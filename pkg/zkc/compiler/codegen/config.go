@@ -31,7 +31,6 @@ var DEFAULT_CONFIG = Config{
 	fastMode:       false,
 	inlining:       true,
 	quiet:          false,
-	vectorize:      true,
 	splitting:      true,
 	maxStaticDepth: DEFAULT_MAX_STATIC_DEPTH,
 }
@@ -61,15 +60,6 @@ type Config struct {
 	// quiet controls whether printf statements are emitted as VM debug
 	// instructions or skipped during code generation.
 	quiet bool
-	// vectorize controls whether the codegen pipeline runs the
-	// instruction-vectorisation pass in pkg/zkc/compiler/codegen/vectorize.go.
-	// Vectorisation merges sequences of micro-instructions that have no
-	// register conflicts into single (vector) macro-instructions, allowing
-	// the prover to handle them in one step.  Disabling it produces a less
-	// compact program but leaves the macro instruction stream identical to
-	// the codegen output, which is useful when debugging the codegen or
-	// inspecting the un-merged IR.
-	vectorize bool
 	// splitting controls whether or not register splitting is enabled.
 	splitting bool
 	// maxStaticDepth controls the maximum depth (i.e. number of rows) of static tables.
@@ -132,17 +122,6 @@ func (p Config) SplitRegisters(flag bool) Config {
 	var q = p
 	//
 	q.splitting = flag
-	//
-	return q
-}
-
-// Vectorize returns a copy of this Config in which the vectorisation pass is
-// either enabled (flag=true) or disabled (flag=false).  The receiver is left
-// unchanged, so this can be chained: codegen.DEFAULT_CONFIG.Vectorize(false).
-func (p Config) Vectorize(flag bool) Config {
-	var q = p
-	//
-	q.vectorize = flag
 	//
 	return q
 }
