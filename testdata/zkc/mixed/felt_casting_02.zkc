@@ -1,0 +1,14 @@
+pub input data(address:u16) -> (word:u32)
+
+// Round-trips a wide (u32) value through the field: u32 → 𝔽 (checked to be
+// canonical, i.e. < P) and back 𝔽 → u32.  Exercises the dedicated field-cast
+// instruction in both directions, including under register splitting.
+fn main() {
+    var v:u32 = data[0]
+    var f:𝔽 = v as 𝔽
+    var b:u32 = f as u32
+    //
+    if b != v {
+        fail
+    }
+}

@@ -113,6 +113,17 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			it := InstructionTranslator[F]{p, localWrites}
 			// translate concatenation assignment
 			local = it.translateConcat(toRegisterIds(c.Targets), toRegisterIds(c.Sources), p.sourceWidths(c.Sources))
+		case *vm.BytecodeFieldCast[W]:
+			it := InstructionTranslator[F]{p, localWrites}
+			// A field-cast is the equality "target == source" over the field: the
+			// same weighted-sum recombination as a concatenation (one side is a
+			// single native register, weight one).  Canonicality (uint→𝔽, value <
+			// P) is upheld at trace time; see note below.
+			// TODO(field-cast): for a uint→𝔽 cast whose source width exceeds the
+			// field bit-length, add a "< P" range constraint so the prover cannot
+			// present a non-canonical native value (accept traces already satisfy
+			// this, so it is a soundness-only gap; cf. read-write RAM constraints).
+			local = it.translateConcat(toRegisterIds(c.Target), toRegisterIds(c.Source), p.sourceWidths(c.Source))
 		case *vm.BytecodeRet[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()

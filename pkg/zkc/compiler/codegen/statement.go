@@ -478,14 +478,28 @@ func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.
 		e_bitwidth = data.BitWidthOf(e.Expr.Type(), p.environment)
 	)
 	//
-	if bitwidth.IsEmpty() {
+	switch {
+	case bitwidth.IsEmpty() && e_bitwidth.IsEmpty():
+		// 𝔽 → 𝔽 (no-op cast): compile the source directly into the native target.
 		return p.compileExpr(e.Expr, bitwidth, mapping, targets)
-	} else if e_bitwidth.HasValue() && e_bitwidth.Unwrap() <= bitwidth.Unwrap() {
-		// upcast
+	case bitwidth.IsEmpty():
+		// uint → 𝔽 conversion: compute the uint value, then field-cast it into the
+		// native target (which asserts the value is canonical, i.e. < P).
+		source, insns := p.compileUniformArgs(e_bitwidth, mapping, e.Expr)
+		return append(insns, vm.FieldCast[vm.Uint](targets, source))
+	case e_bitwidth.IsEmpty():
+		// 𝔽 → uint conversion: materialise the native source, then field-cast it
+		// into the uint target(s) (the target's range check enforces the width,
+		// exactly as for a narrowing integer cast).
+		source, insns := p.compileUniformArgs(util.None[uint](), mapping, e.Expr)
+		return append(insns, vm.FieldCast[vm.Uint](targets, source))
+	case e_bitwidth.Unwrap() <= bitwidth.Unwrap():
+		// uint upcast
 		return p.compileExpr(e.Expr, e_bitwidth, mapping, targets)
+	default:
+		// uint downcast (of some kind).
+		return p.compileRootExpr(e.Expr, mapping, targets)
 	}
-	// down cast (of some kind).
-	return p.compileRootExpr(e.Expr, mapping, targets)
 }
 
 func (p *StmtCompiler) compileIntConst(c vm.Uint, _ []uint, targets []vm.RegisterId,
@@ -585,7 +599,8 @@ func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], 
 		zero vm.Uint
 		reg  = []RegisterId{util.Cast[RegisterId](e.Variable)}
 	)
-	//
+	// The source of a bare field access is always native (uint→𝔽 conversions go
+	// through a field-cast; see compileCast), so this is a 𝔽→𝔽 copy.
 	return []Bytecode{vm.AddModP(target, reg, zero)}
 }
 
@@ -896,7 +911,17 @@ func (p *StmtCompiler) compileUniformArgs(bitwidth util.Option[uint], mapping []
 	for i, e := range exprs {
 		//
 		if r, ok := p.asLocalAccess(e); ok {
-			targets[i] = util.Cast[RegisterId](r.Variable)
+			var src = util.Cast[RegisterId](r.Variable)
+			// A field operand (bitwidth empty) backed by a uint register is an
+			// "x as 𝔽" cast: materialise the conversion into a native temporary so
+			// field arithmetic only ever sees native operands.
+			if bitwidth.IsEmpty() && !p.registers[src].IsNative() {
+				tmp := p.allocate(util.None[uint]())
+				insns = append(insns, vm.FieldCast[vm.Uint]([]RegisterId{tmp}, []RegisterId{src}))
+				src = tmp
+			}
+			//
+			targets[i] = src
 		} else {
 			// Allocate temporary variable
 			targets[i] = p.allocate(bitwidth)

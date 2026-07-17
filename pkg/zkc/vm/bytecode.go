@@ -437,6 +437,13 @@ func MulModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Byt
 	return bytecode.NewFieldArith(bytecode.OP_MULMOD_P, target, sources, constant)
 }
 
+// FieldCast constructs a field-cast instruction converting a value between a
+// native field register and a uint register vector (see bytecode.FieldCast).
+// The registers are listed least-significant limb first.
+func FieldCast[W Word[W]](target, source []RegisterId) Bytecode[W] {
+	return &bytecode.FieldCast[W]{Target: target, Source: source}
+}
+
 // Return constructs a return instruction with the given frame width and
 // return offset.
 func Return[W Word[W]]() Bytecode[W] {
@@ -504,6 +511,10 @@ type BytecodeFieldArith[W Word[W]] = bytecode.FieldArith[W]
 
 // BytecodeCat is a concatenation bytecode (target vector = sources joined by width).
 type BytecodeCat[W Word[W]] = bytecode.Cat[W]
+
+// BytecodeFieldCast is a field-cast bytecode (converts between a native field
+// register and a uint register vector, in either direction).
+type BytecodeFieldCast[W Word[W]] = bytecode.FieldCast[W]
 
 // BytecodeCall is a function-call bytecode.
 type BytecodeCall[W Word[W]] = bytecode.Call[W]

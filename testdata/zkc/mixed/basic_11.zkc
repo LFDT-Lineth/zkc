@@ -1,0 +1,15 @@
+pub input data(address:u16) -> (word:u32)
+
+// A wide (u32) integer embedded into the field and fed directly into a local
+// field addition.  This exercises the register-splitting path where a split
+// wide-uint operand feeds a local field-arithmetic instruction (which was
+// previously passed through unremapped, miscompiling the operands/target).
+fn main() {
+    var x:u32 = data[0]
+    var y:𝔽 = data[1] as 𝔽
+    var z:𝔽 = data[2] as 𝔽
+    //
+    if ((x as 𝔽) + y) != z {
+        fail
+    }
+}

@@ -264,6 +264,8 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 		return Fail(b, env)
 	case *bytecode.FieldArith[W]:
 		return FieldArith(b)
+	case *bytecode.FieldCast[W]:
+		return FieldCast(b)
 	case *bytecode.Skip[W]:
 		return Skip(pc, b, env)
 	case *bytecode.SkipIf[W]:

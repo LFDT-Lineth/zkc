@@ -973,6 +973,8 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 		return g.emitDivRem(c, fn, x)
 	case *bytecode.FieldArith[word.Uint]:
 		return g.emitFieldOp(c, fn, x)
+	case *bytecode.FieldCast[word.Uint]:
+		return g.emitFieldCast(c, fn, x)
 	case *bytecode.Intrinsic[word.Uint]:
 		return g.emitIntrinsic(c, fn, x)
 	case *bytecode.Debug[word.Uint]:

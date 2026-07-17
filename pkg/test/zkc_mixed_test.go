@@ -70,6 +70,10 @@ func Test_ZkcMixed_Basic_10(t *testing.T) {
 	checkZkcMixed(t, "zkc/mixed/basic_10", DEFAULT_MIXED_CONFIG)
 }
 
+func Test_ZkcMixed_Basic_11(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/basic_11", DEFAULT_MIXED_CONFIG)
+}
+
 // ===================================================================
 // Others
 // ===================================================================
@@ -80,6 +84,10 @@ func Test_ZkcMixed_Felt_Memory_01(t *testing.T) {
 
 func Test_ZkcMixed_Felt_Casting_01(t *testing.T) {
 	checkZkcMixed(t, "zkc/mixed/felt_casting_01", DEFAULT_MIXED_CONFIG)
+}
+
+func Test_ZkcMixed_Felt_Casting_02(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_casting_02", DEFAULT_MIXED_CONFIG)
 }
 
 // ===================================================================

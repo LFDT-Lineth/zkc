@@ -244,7 +244,23 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 			// bytecode.
 			return split.DivRem(limbsMap, c)
 		case *bytecode.FieldArith[W]:
-			return []Bytecode[W]{c}
+			// Field-arithmetic operands and target are native registers (produced
+			// by codegen, never split), so splitting only remaps their ids through
+			// the limbs map.  Any uint→𝔽 conversion has already been materialised
+			// into a FieldCast, so no recombination happens here.
+			return []Bytecode[W]{bytecode.NewFieldArith(c.Op,
+				split.ApplyLimbsMap(limbsMap, c.Target)[0],
+				split.ApplyLimbsMap(limbsMap, c.Sources...), c.Constant)}
+		case *bytecode.FieldCast[W]:
+			// A field-cast has a native register on one side and a uint register
+			// vector on the other; splitting maps each side onto its limbs (the
+			// native side stays a single register), and the recombination / range
+			// check is handled by the executor and constraint translator.  Limbs
+			// are reversed into least-significant-first order (the Cat convention
+			// the executor / constraint translator assume).
+			return []Bytecode[W]{&bytecode.FieldCast[W]{
+				Target: array.Reverse(split.ApplyLimbsMap(limbsMap, c.Target...)),
+				Source: array.Reverse(split.ApplyLimbsMap(limbsMap, c.Source...))}}
 		case *bytecode.Switch[W]:
 			return split.Switch(limbsMap, c)
 

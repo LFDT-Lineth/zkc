@@ -19,7 +19,7 @@ import (
 
 // Cat encodes a concatenation bytecode.
 func Cat[W word.Word[W]](p *bytecode.Cat[W]) []uint32 {
-	return encodeCat(p.Targets, p.Sources)
+	return encodeCatLike(CAT, p.Targets, p.Sources)
 }
 
 // DecodeCat decodes a concatenation instruction at the given program counter.
@@ -51,9 +51,11 @@ func DecodeCat[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) 
 // per word.
 // ============================================================================
 
-// encodeCat encodes a concatenation instruction, packing its target and source
-// registers (least-significant limb first).
-func encodeCat(targets []RegisterId, sources []RegisterId) []uint32 {
+// encodeCatLike encodes an instruction whose wire format matches CAT (a target
+// register vector followed by a source register vector, least-significant limb
+// first).  It is shared by CAT and the field-cast (CAST) instruction, which
+// differ only in opcode.
+func encodeCatLike(opcode uint32, targets []RegisterId, sources []RegisterId) []uint32 {
 	if len(targets) == 0 {
 		panic("cat requires at least one target")
 	} else if len(targets) == 0 || len(sources) == 0 {
@@ -69,13 +71,13 @@ func encodeCat(targets []RegisterId, sources []RegisterId) []uint32 {
 	)
 	//
 	if IsWideRegisters(regs...) {
-		var codes = []uint32{nsrc | ntgt | CAT | WIDE}
+		var codes = []uint32{nsrc | ntgt | opcode | WIDE}
 		//
 		return append(codes, PackShortsIntoCodes(regs)...)
 	}
 	//
 	var (
-		codes = []uint32{nsrc | ntgt | CAT}
+		codes = []uint32{nsrc | ntgt | opcode}
 		bytes = append(RegsAsBytes(targets), RegsAsBytes(sources)...)
 	)
 	//
