@@ -35,6 +35,12 @@ func LowerComparisons[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.LowerComparisons(program)
 }
 
+// LowerFieldCasts inserts canonicality checks for field conversions.
+// It must run after register splitting and before comparison lowering.
+func LowerFieldCasts[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.LowerFieldCasts(program)
+}
+
 // LowerDivisions rewrites INT_DIV and INT_REM bytecodes into a non-deterministic
 // hint followed by arithmetic validation:
 //

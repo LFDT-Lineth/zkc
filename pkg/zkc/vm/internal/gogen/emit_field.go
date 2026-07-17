@@ -120,36 +120,11 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 	return nil
 }
 
-// emitFieldCast emits a CAST: a conversion between a native field register and
-// a uint register vector.  It mirrors executeFieldCast: the source limbs are
-// recombined into a single value which is then stored into the target.
-//
-//   - to 𝔽   (native target): the value is asserted canonical (< P), unless the
-//     interval analysis already proves it (the common narrow-source case, where
-//     the check is elided).
-//   - from 𝔽 (uint target): the value is distributed across the target limbs,
-//     width-checked by storeValue exactly as for a narrowing integer cast.
-func (g *generator) emitFieldCast(c *code, fn *descFunction, x *bytecode.FieldCast[word.Uint]) error {
+func (g *generator) emitUintToField(c *code, fn *descFunction, x *bytecode.UintToField[word.Uint]) error {
 	if g.modulus.BitLen() > 64 {
-		return fmt.Errorf("gogen: field-cast unsupported for modulus wider than 64 bits")
+		return fmt.Errorf("gogen: uint-to-field unsupported for modulus wider than 64 bits")
 	}
-	// "from 𝔽": the source is a single native register whose (canonical) value is
-	// distributed across the uint target, width-checked by storeValue.
-	if !fn.Register(x.Target[0]).IsNative() {
-		src, err := g.operand(fn, x.Source[0])
-		if err != nil {
-			return err
-		}
 
-		store, err := g.buildStore(fn, x.Target)
-		if err != nil {
-			return err
-		}
-
-		return g.storeValue(c, store, src)
-	}
-	// "to 𝔽": recombine the uint source limbs (least-significant first) into the
-	// native target, then assert canonicality.
 	srcs, err := g.operands(fn, x.Source)
 	if err != nil {
 		return err
@@ -181,7 +156,7 @@ func (g *generator) emitFieldCast(c *code, fn *descFunction, x *bytecode.FieldCa
 		expr = fmt.Sprintf("(%s<<%d | %s)", expr, widths[i], srcs[i].expr)
 	}
 
-	target, err := g.limbOf(fn, x.Target[0])
+	target, err := g.limbOf(fn, x.Target)
 	if err != nil {
 		return err
 	}
@@ -197,6 +172,10 @@ func (g *generator) emitFieldCast(c *code, fn *descFunction, x *bytecode.FieldCa
 	}
 
 	return nil
+}
+
+func (g *generator) emitFieldToUint(c *code, fn *descFunction, x *bytecode.FieldToUint[word.Uint]) error {
+	return g.emitConcat(c, fn, &bytecode.Cat[word.Uint]{Targets: x.Target, Sources: []regId{x.Source}})
 }
 
 // emitModPHelpers writes the mod-P helpers (with the modulus baked in), each

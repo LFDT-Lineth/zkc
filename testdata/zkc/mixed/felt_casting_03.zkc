@@ -1,0 +1,15 @@
+pub input data(address:u16) -> (word:u32)
+
+fn main() {
+    var value:u32 = data[0]
+    var actual:u32 = increment(value as 𝔽)
+    //
+    if actual != (value + 1) {
+        fail
+    }
+}
+
+fn increment(value:𝔽) -> (result:u32) {
+    result = (value as u32) + 1
+    return
+}

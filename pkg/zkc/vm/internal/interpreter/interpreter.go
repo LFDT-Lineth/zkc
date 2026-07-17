@@ -620,8 +620,10 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = p.executeFieldMul(p.pc, bytecodes, frame)
 		case encoding.CAT:
 			p.pc, err = p.executeCat(p.pc, bytecodes, frame)
-		case encoding.CAST:
-			p.pc, err = p.executeFieldCast(p.pc, bytecodes, frame)
+		case encoding.UINT_TO_FIELD:
+			p.pc, err = p.executeUintToField(p.pc, bytecodes, frame)
+		case encoding.FIELD_TO_UINT:
+			p.pc, err = p.executeFieldToUint(p.pc, bytecodes, frame)
 		case encoding.NOT:
 			p.pc, err = executeNot(p.pc, bytecodes, frame)
 		case encoding.AND:
@@ -879,82 +881,35 @@ func (p *Interpreter[W]) executeFieldMul(pc uint32, codes []uint32, stack []W) (
 // executeCat matches executeConcat in the slow word machine.
 func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
-		targets, sources, n = encoding.DecodeCatOperands(pc, codes)
+		targets, sources, n = encoding.DecodeRegisterLists(pc, codes)
 		module              = p.program.Module(p.fid)
-		val                 W
-		width               uint
 	)
 	//
-	for sources.HasNext() {
-		var (
-			reg = sources.Next()
-		)
-		//
-		_, lo := stack[reg].Shl64(uint64(width))
-		val = val.Or(lo)
-		//
-		width = width + bitwidthOf(module, reg)
-	}
-	//
+	val := loadAcross(module, sources, stack)
+
 	return pc + n, storeAcross(pc, module, targets, val, stack)
 }
 
-// executeFieldCast implements CAST: it converts a value between a native field
-// register and a uint register vector.  The source limbs are recombined (least-
-// significant first, as for CAT) into a single value, which is then stored into
-// the target with the direction-appropriate range check:
-//
-//   - to 𝔽   (native target): the value must be canonical (< P), upholding the
-//     invariant that a native register always holds a value in [0, P).
-//   - from 𝔽 (uint target): the value is distributed across the target limbs
-//     and must fit their combined width (matching storeAcross / a narrowing
-//     integer cast).
-func (p *Interpreter[W]) executeFieldCast(pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeUintToField(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
-		tIter, sources, n = encoding.DecodeCatOperands(pc, codes)
-		module            = p.program.Module(p.fid)
-		targets           = encoding.OpIterToArray[uint16](tIter)
-		val               W
-		width             uint
+		targets, sources, n = encoding.DecodeRegisterLists(pc, codes)
+		module              = p.program.Module(p.fid)
+		val                 = loadAcross(module, sources, stack)
 	)
-	// Recombine the source limbs into a single value.
-	for sources.HasNext() {
-		reg := sources.Next()
-		//
-		_, lo := stack[reg].Shl64(uint64(width))
-		val = val.Or(lo)
-		width += bitwidthOf(module, reg)
+
+	if val.Cmp(p.modulus) >= 0 {
+		return pc, fmt.Errorf("field overflow (0x%s not in [0,P), pc=0x%x)", val.Text(16), pc)
 	}
-	// A native target is the "to 𝔽" direction and requires a canonical value.
-	if bitwidthOf(module, targets[0]) == math.MaxUint {
-		if val.Cmp(p.modulus) >= 0 {
-			return pc, fmt.Errorf("field overflow (0x%s not in [0,P), pc=0x%x)", val.Text(16), pc)
-		}
-		//
-		stack[targets[0]] = val
-		//
-		return pc + n, nil
-	}
-	// Otherwise the "from 𝔽" direction: distribute across the uint target limbs,
-	// erroring if the value does not fit their combined width.
-	var (
-		value    = val
-		bitwidth uint
-	)
-	//
-	for _, t := range targets {
-		w := bitwidthOf(module, t)
-		//
-		stack[t] = value.Slice(w)
-		value = value.Shr64(uint64(w))
-		bitwidth += w
-	}
-	//
-	if value.Cmp64(0) != 0 {
-		return pc, fmt.Errorf("bit overflow (0x%s not u%d, pc=0x%x)", val.Text(16), bitwidth, pc)
-	}
-	//
+
+	stack[targets.Next()] = val
+
 	return pc + n, nil
+}
+
+func (p *Interpreter[W]) executeFieldToUint(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	targets, sources, n := encoding.DecodeRegisterLists(pc, codes)
+	//
+	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, stack[sources.Next()], stack)
 }
 
 // executeDebug implements DEBUG: it reproduces the reference word machine's
@@ -1995,6 +1950,22 @@ func bitwidthOf[W word.Word[W]](module descriptor.Module[W], reg RegisterId) uin
 	var r = module.Register(reg)
 	//
 	return r.Bitwidth().UnwrapOr(math.MaxUint)
+}
+
+func loadAcross[W word.Word[W]](module descriptor.Module[W], sources encoding.Operands, stack []W) W {
+	var (
+		value W
+		width uint
+	)
+	//
+	for sources.HasNext() {
+		reg := sources.Next()
+		_, lo := stack[reg].Shl64(uint64(width))
+		value = value.Or(lo)
+		width += bitwidthOf(module, reg)
+	}
+	//
+	return value
 }
 
 func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets encoding.Operands, oval W,

@@ -19,52 +19,66 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// FieldCast converts a value between a native field register and a uint register
-// vector, in either direction.  It is the sole bridge across the 𝔽 / uint
-// boundary: every other bytecode operates either purely on uint registers or
-// (for field arithmetic) purely on native registers.
-//
-// Exactly one of Target / Source is native; the other is a uint register vector
-// (a single register before splitting, several limbs afterwards).  The value is
-// copied unchanged and asserted to lie in range:
-//
-//   - to 𝔽   (uint Source → native Target): the value must be canonical, i.e.
-//     strictly less than the field modulus P, upholding the invariant that a
-//     native register always holds a value in [0, P).
-//   - from 𝔽 (native Source → uint Target): the (canonical) value must fit
-//     within the total bit width of the target, exactly as for a narrowing
-//     integer cast.
-//
-// Registers are listed least-significant limb first (matching Cat).
-type FieldCast[W word.Word[W]] struct {
-	// Target receives the converted value, least-significant limb first.
-	Target []RegisterId
-	// Source holds the value being converted, least-significant limb first.
+// UintToField copies a canonical uint into a native field register.
+type UintToField[W word.Word[W]] struct {
+	Target RegisterId
 	Source []RegisterId
 }
 
-// Uses implementation for Bytecode interface.
-func (p *FieldCast[W]) Uses() []RegisterId {
+// Uses returns the uint source registers.
+func (p *UintToField[W]) Uses() []RegisterId {
 	return p.Source
 }
 
-// Definitions implementation for Bytecode interface.
-func (p *FieldCast[W]) Definitions() []RegisterId {
-	return p.Target
+// Definitions returns the native target register.
+func (p *UintToField[W]) Definitions() []RegisterId {
+	return []RegisterId{p.Target}
 }
 
-// Validate implementation for Bytecode interface.
-func (p *FieldCast[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
+// Validate implements Bytecode.
+func (p *UintToField[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *FieldCast[W]) String(env Environment[W]) string {
+func (p *UintToField[W]) String(env Environment[W]) string {
+	var builder strings.Builder
+	//
+	builder.WriteString("cast ")
+	builder.WriteString(RegisterToString(p.Target, env))
+	builder.WriteString(" = ")
+	builder.WriteString(RegistersToString(array.Reverse(p.Source), env, "::"))
+	//
+	return builder.String()
+}
+
+// FieldToUint copies a native field value into a uint register vector.
+type FieldToUint[W word.Word[W]] struct {
+	Target []RegisterId
+	Source RegisterId
+}
+
+// Uses returns the native source register.
+func (p *FieldToUint[W]) Uses() []RegisterId {
+	return []RegisterId{p.Source}
+}
+
+// Definitions returns the uint target registers.
+func (p *FieldToUint[W]) Definitions() []RegisterId {
+	return p.Target
+}
+
+// Validate implements Bytecode.
+func (p *FieldToUint[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
+	return nil
+}
+
+func (p *FieldToUint[W]) String(env Environment[W]) string {
 	var builder strings.Builder
 	//
 	builder.WriteString("cast ")
 	builder.WriteString(RegistersToString(array.Reverse(p.Target), env, "::"))
 	builder.WriteString(" = ")
-	builder.WriteString(RegistersToString(array.Reverse(p.Source), env, "::"))
+	builder.WriteString(RegisterToString(p.Source, env))
 	//
 	return builder.String()
 }

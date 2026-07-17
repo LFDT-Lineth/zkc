@@ -90,6 +90,10 @@ func Test_ZkcMixed_Felt_Casting_02(t *testing.T) {
 	checkZkcMixed(t, "zkc/mixed/felt_casting_02", DEFAULT_MIXED_CONFIG)
 }
 
+func Test_ZkcMixed_Felt_Casting_03(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_casting_03", DEFAULT_MIXED_CONFIG)
+}
+
 // ===================================================================
 // Test Helpers
 // ===================================================================

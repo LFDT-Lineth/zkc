@@ -247,20 +247,18 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 			// Field-arithmetic operands and target are native registers (produced
 			// by codegen, never split), so splitting only remaps their ids through
 			// the limbs map.  Any uint→𝔽 conversion has already been materialised
-			// into a FieldCast, so no recombination happens here.
+			// into a field conversion, so no recombination happens here.
 			return []Bytecode[W]{bytecode.NewFieldArith(c.Op,
 				split.ApplyLimbsMap(limbsMap, c.Target)[0],
 				split.ApplyLimbsMap(limbsMap, c.Sources...), c.Constant)}
-		case *bytecode.FieldCast[W]:
-			// A field-cast has a native register on one side and a uint register
-			// vector on the other; splitting maps each side onto its limbs (the
-			// native side stays a single register), and the recombination / range
-			// check is handled by the executor and constraint translator.  Limbs
-			// are reversed into least-significant-first order (the Cat convention
-			// the executor / constraint translator assume).
-			return []Bytecode[W]{&bytecode.FieldCast[W]{
-				Target: array.Reverse(split.ApplyLimbsMap(limbsMap, c.Target...)),
+		case *bytecode.UintToField[W]:
+			return []Bytecode[W]{&bytecode.UintToField[W]{
+				Target: split.ApplyLimbsMap(limbsMap, c.Target)[0],
 				Source: array.Reverse(split.ApplyLimbsMap(limbsMap, c.Source...))}}
+		case *bytecode.FieldToUint[W]:
+			return []Bytecode[W]{&bytecode.FieldToUint[W]{
+				Target: array.Reverse(split.ApplyLimbsMap(limbsMap, c.Target...)),
+				Source: split.ApplyLimbsMap(limbsMap, c.Source)[0]}}
 		case *bytecode.Switch[W]:
 			return split.Switch(limbsMap, c)
 
@@ -368,22 +366,9 @@ func argAlignment[W word.Word[W]](local []RegisterId, remote []descriptor.Regist
 	)
 	//
 	if m < n && descriptor.HasNativeRegisterId(local, alloc) {
-		// going from native register to multiple limbs.  In this case, we again
-		// have to injecte temporaries and assign them to the native register.
-		var nativeLocal = local
-		// Allocate temporaries
-		local = allocateMatchingLocals(remote, alloc)
-		// assignment native local to local
-		pre = append(pre, bytecode.Concat[W](local, nativeLocal))
-		//
+		panic("field-to-uint argument must be materialised before splitting")
 	} else if m > n && descriptor.HasNativeRegister(remote) {
-		// going to native register from multiple limbs.  In this case, we again
-		// have to injecte temporaries and assign them to the native register.
-		var locals = local
-		// Allocate temporaries
-		local = allocateMatchingLocals(remote, alloc)
-		// assignment native local to local
-		pre = append(pre, bytecode.Concat[W](local, locals))
+		panic("uint-to-field argument must be materialised before splitting")
 	} else if m < n {
 		var zreg = alloc.ZeroRegister()
 		// Less locals than remotes.  In this case, pad locals with zero
@@ -434,22 +419,9 @@ func retAlignment[W word.Word[W]](local []RegisterId, remote []descriptor.Regist
 	)
 	//
 	if m < n && descriptor.HasNativeRegisterId(local, alloc) {
-		// going to native register from multiple limbs.  In this case, we again
-		// have to injecte temporaries and assign them to the native register.
-		var nativeLocal = local
-		// Allocate temporaries
-		local = allocateMatchingLocals(remote, alloc)
-		// assignment native local to local
-		post = append(post, bytecode.Concat[W](nativeLocal, local))
-		//
+		panic("uint-to-field return must be materialised before splitting")
 	} else if m > n && descriptor.HasNativeRegister(remote) {
-		// going to multiple limbs from native register.  In this case, we again
-		// have to inject a temporary native and assign them to the native register.
-		var locals = local
-		// Allocate temporaries
-		local = allocateMatchingLocals(remote, alloc)
-		// assignment native local to local
-		post = append(post, bytecode.Concat[W](locals, local))
+		panic("field-to-uint return must be materialised before splitting")
 	} else if m < n {
 		var zreg = alloc.ZeroRegister()
 		// Less locals than remotes.  In this case, pad locals with zero

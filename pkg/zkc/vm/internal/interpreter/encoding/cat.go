@@ -19,13 +19,13 @@ import (
 
 // Cat encodes a concatenation bytecode.
 func Cat[W word.Word[W]](p *bytecode.Cat[W]) []uint32 {
-	return encodeCatLike(CAT, p.Targets, p.Sources)
+	return encodeRegisterLists(CAT, p.Targets, p.Sources)
 }
 
 // DecodeCat decodes a concatenation instruction at the given program counter.
 func DecodeCat[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
 	var (
-		tIter, sIter, n = DecodeCatOperands(pc, codes)
+		tIter, sIter, n = DecodeRegisterLists(pc, codes)
 		targets         = OpIterToArray[uint16](tIter)
 		sources         = OpIterToArray[uint16](sIter)
 	)
@@ -51,17 +51,14 @@ func DecodeCat[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) 
 // per word.
 // ============================================================================
 
-// encodeCatLike encodes an instruction whose wire format matches CAT (a target
-// register vector followed by a source register vector, least-significant limb
-// first).  It is shared by CAT and the field-cast (CAST) instruction, which
-// differ only in opcode.
-func encodeCatLike(opcode uint32, targets []RegisterId, sources []RegisterId) []uint32 {
+// encodeRegisterLists encodes target and source register lists.
+func encodeRegisterLists(opcode uint32, targets []RegisterId, sources []RegisterId) []uint32 {
 	if len(targets) == 0 {
-		panic("cat requires at least one target")
-	} else if len(targets) == 0 || len(sources) == 0 {
-		panic("cat requires at least one source")
+		panic("instruction requires at least one target")
+	} else if len(sources) == 0 {
+		panic("instruction requires at least one source")
 	} else if len(targets) >= 256 || len(sources) >= 256 {
-		panic("cat has too many operands")
+		panic("instruction has too many operands")
 	}
 	//
 	var (
@@ -84,8 +81,8 @@ func encodeCatLike(opcode uint32, targets []RegisterId, sources []RegisterId) []
 	return append(codes, PackBytesIntoCodes(bytes)...)
 }
 
-// DecodeCatOperands decodes the target and source operands of a concatenation instruction.
-func DecodeCatOperands(pc uint32, codes []uint32) (targets, sources Operands, n uint32) {
+// DecodeRegisterLists decodes target and source register lists.
+func DecodeRegisterLists(pc uint32, codes []uint32) (targets, sources Operands, n uint32) {
 	var (
 		ntargets = uint((codes[pc] >> 8) & 0xff)
 		nsources = uint((codes[pc] >> 16) & 0xff)

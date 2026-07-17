@@ -483,16 +483,11 @@ func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.
 		// 𝔽 → 𝔽 (no-op cast): compile the source directly into the native target.
 		return p.compileExpr(e.Expr, bitwidth, mapping, targets)
 	case bitwidth.IsEmpty():
-		// uint → 𝔽 conversion: compute the uint value, then field-cast it into the
-		// native target (which asserts the value is canonical, i.e. < P).
 		source, insns := p.compileUniformArgs(e_bitwidth, mapping, e.Expr)
-		return append(insns, vm.FieldCast[vm.Uint](targets, source))
+		return append(insns, vm.UintToField[vm.Uint](targets[0], source))
 	case e_bitwidth.IsEmpty():
-		// 𝔽 → uint conversion: materialise the native source, then field-cast it
-		// into the uint target(s) (the target's range check enforces the width,
-		// exactly as for a narrowing integer cast).
 		source, insns := p.compileUniformArgs(util.None[uint](), mapping, e.Expr)
-		return append(insns, vm.FieldCast[vm.Uint](targets, source))
+		return append(insns, vm.FieldToUint[vm.Uint](targets, source[0]))
 	case e_bitwidth.Unwrap() <= bitwidth.Unwrap():
 		// uint upcast
 		return p.compileExpr(e.Expr, e_bitwidth, mapping, targets)
@@ -909,25 +904,10 @@ func (p *StmtCompiler) compileUniformArgs(bitwidth util.Option[uint], mapping []
 	)
 	//
 	for i, e := range exprs {
-		//
-		if r, ok := p.asLocalAccess(e); ok {
-			var src = util.Cast[RegisterId](r.Variable)
-			// A field operand (bitwidth empty) backed by a uint register is an
-			// "x as 𝔽" cast: materialise the conversion into a native temporary so
-			// field arithmetic only ever sees native operands.
-			if bitwidth.IsEmpty() && !p.registers[src].IsNative() {
-				tmp := p.allocate(util.None[uint]())
-				insns = append(insns, vm.FieldCast[vm.Uint]([]RegisterId{tmp}, []RegisterId{src}))
-				src = tmp
-			}
-			//
-			targets[i] = src
-		} else {
-			// Allocate temporary variable
-			targets[i] = p.allocate(bitwidth)
-			// Compile expression, storing result in temporary
-			insns = append(insns, p.compileExpr(e, bitwidth, mapping, []vm.RegisterId{targets[i]})...)
-		}
+		target, extra := p.compileArg(e, bitwidth, mapping)
+		targets[i] = target
+
+		insns = append(insns, extra...)
 	}
 	//
 	return targets, insns
@@ -940,19 +920,26 @@ func (p *StmtCompiler) compileNonUniformArgs(mapping []uint, exprs ...Expr) ([]R
 	)
 	//
 	for i, e := range exprs {
-		//
-		if r, ok := p.asLocalAccess(e); ok {
-			targets[i] = util.Cast[RegisterId](r.Variable)
-		} else {
-			var bitwidth = data.BitWidthOf(e.Type(), p.environment)
-			// Allocate temporary variable
-			targets[i] = p.allocate(bitwidth)
-			// Compile expression, storing result in temporary
-			insns = append(insns, p.compileExpr(e, bitwidth, mapping, []vm.RegisterId{targets[i]})...)
-		}
+		target, extra := p.compileArg(e, data.BitWidthOf(e.Type(), p.environment), mapping)
+		targets[i] = target
+
+		insns = append(insns, extra...)
 	}
 	//
 	return targets, insns
+}
+
+func (p *StmtCompiler) compileArg(e Expr, bitwidth util.Option[uint], mapping []uint) (RegisterId, []Bytecode) {
+	if r, ok := p.asLocalAccess(e); ok {
+		source := util.Cast[RegisterId](r.Variable)
+		if bitwidth.IsEmpty() == p.registers[source].IsNative() {
+			return source, nil
+		}
+	}
+	//
+	target := p.allocate(bitwidth)
+
+	return target, p.compileExpr(e, bitwidth, mapping, []vm.RegisterId{target})
 }
 
 func (p *StmtCompiler) evalConstant(e Expr) vm.Uint {

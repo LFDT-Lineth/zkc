@@ -17,20 +17,34 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// FieldCast encodes a field-cast bytecode.  Its wire format is identical to CAT
-// (target vector then source vector), so it reuses the shared encoder and the
-// CAST opcode; the operands are decoded with DecodeCatOperands.
-func FieldCast[W word.Word[W]](p *bytecode.FieldCast[W]) []uint32 {
-	return encodeCatLike(CAST, p.Target, p.Source)
+// UintToField encodes a uint-to-field conversion.
+func UintToField[W word.Word[W]](p *bytecode.UintToField[W]) []uint32 {
+	return encodeRegisterLists(UINT_TO_FIELD, []RegisterId{p.Target}, p.Source)
 }
 
-// DecodeFieldCast decodes a field-cast instruction at the given program counter.
-func DecodeFieldCast[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
+// DecodeUintToField decodes a uint-to-field conversion.
+func DecodeUintToField[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
 	var (
-		tIter, sIter, n = DecodeCatOperands(pc, codes)
+		tIter, sIter, n = DecodeRegisterLists(pc, codes)
 		targets         = OpIterToArray[uint16](tIter)
 		sources         = OpIterToArray[uint16](sIter)
 	)
 	//
-	return &bytecode.FieldCast[W]{Target: targets, Source: sources}, n
+	return &bytecode.UintToField[W]{Target: targets[0], Source: sources}, n
+}
+
+// FieldToUint encodes a field-to-uint conversion.
+func FieldToUint[W word.Word[W]](p *bytecode.FieldToUint[W]) []uint32 {
+	return encodeRegisterLists(FIELD_TO_UINT, p.Target, []RegisterId{p.Source})
+}
+
+// DecodeFieldToUint decodes a field-to-uint conversion.
+func DecodeFieldToUint[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
+	var (
+		tIter, sIter, n = DecodeRegisterLists(pc, codes)
+		targets         = OpIterToArray[uint16](tIter)
+		sources         = OpIterToArray[uint16](sIter)
+	)
+	//
+	return &bytecode.FieldToUint[W]{Target: targets, Source: sources[0]}, n
 }
