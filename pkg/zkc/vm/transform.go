@@ -28,6 +28,16 @@ func LowerBitwise[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.LowerBitwise(program)
 }
 
+// LowerOrXorAnd rewrites bitwise AND/OR/XOR bytecodes into CALLs to helper
+// functions, returning the updated bytecode program (the helper function
+// modules are appended to it).
+//
+// NOTE: unlike LowerBitwise, this transform must be applied AFTER register
+// splitting and BEFORE range-constraint generation.
+func LowerOrXorAnd[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.LowerOrXorAnd(program)
+}
+
 // LowerComparisons rewrites SkipIf bytecodes with LT/GT/LTEQ/GTEQ conditions
 // into arithmetic-only sequences using biased subtraction and sign-bit extraction.
 // EQ and NEQ conditions are left unchanged.
