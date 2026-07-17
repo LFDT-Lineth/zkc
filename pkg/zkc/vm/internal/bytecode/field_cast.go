@@ -19,66 +19,34 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// UintToField copies a canonical uint into a native field register.
-type UintToField[W word.Word[W]] struct {
-	Target RegisterId
+// FieldCast converts between a native field register and a uint register vector.
+type FieldCast[W word.Word[W]] struct {
+	Target []RegisterId
 	Source []RegisterId
 }
 
-// Uses returns the uint source registers.
-func (p *UintToField[W]) Uses() []RegisterId {
+// Uses returns the source registers.
+func (p *FieldCast[W]) Uses() []RegisterId {
 	return p.Source
 }
 
-// Definitions returns the native target register.
-func (p *UintToField[W]) Definitions() []RegisterId {
-	return []RegisterId{p.Target}
-}
-
-// Validate implements Bytecode.
-func (p *UintToField[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
-	return nil
-}
-
-func (p *UintToField[W]) String(env Environment[W]) string {
-	var builder strings.Builder
-	//
-	builder.WriteString("cast ")
-	builder.WriteString(RegisterToString(p.Target, env))
-	builder.WriteString(" = ")
-	builder.WriteString(RegistersToString(array.Reverse(p.Source), env, "::"))
-	//
-	return builder.String()
-}
-
-// FieldToUint copies a native field value into a uint register vector.
-type FieldToUint[W word.Word[W]] struct {
-	Target []RegisterId
-	Source RegisterId
-}
-
-// Uses returns the native source register.
-func (p *FieldToUint[W]) Uses() []RegisterId {
-	return []RegisterId{p.Source}
-}
-
-// Definitions returns the uint target registers.
-func (p *FieldToUint[W]) Definitions() []RegisterId {
+// Definitions returns the target registers.
+func (p *FieldCast[W]) Definitions() []RegisterId {
 	return p.Target
 }
 
 // Validate implements Bytecode.
-func (p *FieldToUint[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
+func (p *FieldCast[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 
-func (p *FieldToUint[W]) String(env Environment[W]) string {
+func (p *FieldCast[W]) String(env Environment[W]) string {
 	var builder strings.Builder
 	//
 	builder.WriteString("cast ")
 	builder.WriteString(RegistersToString(array.Reverse(p.Target), env, "::"))
 	builder.WriteString(" = ")
-	builder.WriteString(RegisterToString(p.Source, env))
+	builder.WriteString(RegistersToString(array.Reverse(p.Source), env, "::"))
 	//
 	return builder.String()
 }

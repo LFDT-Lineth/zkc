@@ -113,14 +113,9 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			it := InstructionTranslator[F]{p, localWrites}
 			// translate concatenation assignment
 			local = it.translateConcat(toRegisterIds(c.Targets), toRegisterIds(c.Sources), p.sourceWidths(c.Sources))
-		case *vm.BytecodeUintToField[W]:
+		case *vm.BytecodeFieldCast[W]:
 			it := InstructionTranslator[F]{p, localWrites}
-			local = it.translateConcat([]register.Id{register.NewId(uint(c.Target))},
-				toRegisterIds(c.Source), p.sourceWidths(c.Source))
-		case *vm.BytecodeFieldToUint[W]:
-			it := InstructionTranslator[F]{p, localWrites}
-			local = it.translateConcat(toRegisterIds(c.Target), []register.Id{register.NewId(uint(c.Source))},
-				p.sourceWidths([]vm.RegisterId{c.Source}))
+			local = it.translateConcat(toRegisterIds(c.Target), toRegisterIds(c.Source), p.sourceWidths(c.Source))
 		case *vm.BytecodeRet[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()

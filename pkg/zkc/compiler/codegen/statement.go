@@ -484,10 +484,10 @@ func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.
 		return p.compileExpr(e.Expr, bitwidth, mapping, targets)
 	case bitwidth.IsEmpty():
 		source, insns := p.compileUniformArgs(e_bitwidth, mapping, e.Expr)
-		return append(insns, vm.UintToField[vm.Uint](targets[0], source))
+		return append(insns, vm.FieldCast[vm.Uint](targets, source))
 	case e_bitwidth.IsEmpty():
 		source, insns := p.compileUniformArgs(util.None[uint](), mapping, e.Expr)
-		return append(insns, vm.FieldToUint[vm.Uint](targets, source[0]))
+		return append(insns, vm.FieldCast[vm.Uint](targets, source))
 	case e_bitwidth.Unwrap() <= bitwidth.Unwrap():
 		// uint upcast
 		return p.compileExpr(e.Expr, e_bitwidth, mapping, targets)

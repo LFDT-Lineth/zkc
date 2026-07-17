@@ -50,14 +50,15 @@ func lowerFieldCastFunction[W word.Word[W]](fn *descriptor.Function[W], helpers 
 
 	for i, vec := range fn.Vectors() {
 		vectors[i] = vec.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
-			switch cast := insn.(type) {
-			case *bytecode.UintToField[W]:
-				return append(helpers.check(cast.Source, registers), cast)
-			case *bytecode.FieldToUint[W]:
+			if cast, ok := insn.(*bytecode.FieldCast[W]); ok {
+				if registers[cast.Target[0]].IsNative() {
+					return append(helpers.check(cast.Source, registers), cast)
+				}
+
 				return append([]Bytecode[W]{cast}, helpers.check(cast.Target, registers)...)
-			default:
-				return []Bytecode[W]{insn}
 			}
+
+			return []Bytecode[W]{insn}
 		})
 	}
 

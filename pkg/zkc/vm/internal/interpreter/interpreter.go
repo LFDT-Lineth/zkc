@@ -620,10 +620,8 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = p.executeFieldMul(p.pc, bytecodes, frame)
 		case encoding.CAT:
 			p.pc, err = p.executeCat(p.pc, bytecodes, frame)
-		case encoding.UINT_TO_FIELD:
-			p.pc, err = p.executeUintToField(p.pc, bytecodes, frame)
-		case encoding.FIELD_TO_UINT:
-			p.pc, err = p.executeFieldToUint(p.pc, bytecodes, frame)
+		case encoding.FIELD_CAST:
+			p.pc, err = p.executeFieldCast(p.pc, bytecodes, frame)
 		case encoding.NOT:
 			p.pc, err = executeNot(p.pc, bytecodes, frame)
 		case encoding.AND:
@@ -890,26 +888,25 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 	return pc + n, storeAcross(pc, module, targets, val, stack)
 }
 
-func (p *Interpreter[W]) executeUintToField(pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeFieldCast(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		targets, sources, n = encoding.DecodeRegisterLists(pc, codes)
 		module              = p.program.Module(p.fid)
 		val                 = loadAcross(module, sources, stack)
 	)
 
-	if val.Cmp(p.modulus) >= 0 {
-		return pc, fmt.Errorf("field overflow (0x%s not in [0,P), pc=0x%x)", val.Text(16), pc)
+	first := targets
+	if module.Register(first.Next()).IsNative() {
+		if val.Cmp(p.modulus) >= 0 {
+			return pc, fmt.Errorf("field overflow (0x%s not in [0,P), pc=0x%x)", val.Text(16), pc)
+		}
+
+		stack[targets.Next()] = val
+
+		return pc + n, nil
 	}
 
-	stack[targets.Next()] = val
-
-	return pc + n, nil
-}
-
-func (p *Interpreter[W]) executeFieldToUint(pc uint32, codes []uint32, stack []W) (uint32, error) {
-	targets, sources, n := encoding.DecodeRegisterLists(pc, codes)
-	//
-	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, stack[sources.Next()], stack)
+	return pc + n, storeAcross(pc, module, targets, val, stack)
 }
 
 // executeDebug implements DEBUG: it reproduces the reference word machine's

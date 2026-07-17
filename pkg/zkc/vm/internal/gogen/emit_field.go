@@ -120,43 +120,40 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 	return nil
 }
 
-func (g *generator) emitUintToField(c *code, fn *descFunction, x *bytecode.UintToField[word.Uint]) error {
-	if g.modulus.BitLen() > 64 {
-		return fmt.Errorf("gogen: uint-to-field unsupported for modulus wider than 64 bits")
-	}
-
+func (g *generator) emitFieldCast(c *code, fn *descFunction, x *bytecode.FieldCast[word.Uint]) error {
 	total := uint(0)
 
-	for _, id := range x.Source {
-		w, err := g.regWidth(fn, id)
-		if err != nil {
-			return err
+	toField := fn.Register(x.Target[0]).IsNative()
+	if toField {
+		for _, id := range x.Source {
+			w, err := g.regWidth(fn, id)
+			if err != nil {
+				return err
+			}
+
+			total += w
 		}
 
-		total += w
+		if total > 64 {
+			return fmt.Errorf("gogen: field-cast operand wider than 64 bits unsupported")
+		}
 	}
 
-	if total > 64 {
-		return fmt.Errorf("gogen: field-cast operand wider than 64 bits unsupported")
-	}
-	// Recombining the uint limbs into the native target is exactly a
-	// concatenation with a single native target.
-	cat := bytecode.Cat[word.Uint]{Targets: []regId{x.Target}, Sources: x.Source}
-	if err := g.emitConcat(c, fn, &cat); err != nil {
+	if err := g.emitConcat(c, fn, &bytecode.Cat[word.Uint]{Targets: x.Target, Sources: x.Source}); err != nil {
 		return err
 	}
+
+	if !toField {
+		return nil
+	}
 	// Canonicality check, unless the value is statically < P.
-	if bigMin(g.iv.boundOf(x.Target), widthMax(total)).Cmp(g.modulus) >= 0 {
-		c.linef("if %s >= %s {", reg(x.Target), bigLit(g.modulus))
+	if bigMin(g.iv.boundOf(x.Target[0]), widthMax(total)).Cmp(g.modulus) >= 0 {
+		c.linef("if %s >= %s {", reg(x.Target[0]), bigLit(g.modulus))
 		c.linef("fail(%q) // value exceeds the field modulus", "field overflow")
 		c.line("}")
 	}
 
 	return nil
-}
-
-func (g *generator) emitFieldToUint(c *code, fn *descFunction, x *bytecode.FieldToUint[word.Uint]) error {
-	return g.emitConcat(c, fn, &bytecode.Cat[word.Uint]{Targets: x.Target, Sources: []regId{x.Source}})
 }
 
 // emitModPHelpers writes the mod-P helpers (with the modulus baked in), each

@@ -17,12 +17,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// UintToField encodes a uint-to-field conversion.
-func UintToField[W word.Word[W]](p *bytecode.UintToField[W]) []uint32 {
-	return encodeRegisterLists(UINT_TO_FIELD, []RegisterId{p.Target}, p.Source)
-}
-
-// FieldToUint encodes a field-to-uint conversion.
-func FieldToUint[W word.Word[W]](p *bytecode.FieldToUint[W]) []uint32 {
-	return encodeRegisterLists(FIELD_TO_UINT, p.Target, []RegisterId{p.Source})
+// FieldCast encodes a conversion between uint and field registers.
+func FieldCast[W word.Word[W]](p *bytecode.FieldCast[W]) []uint32 {
+	return encodeRegisterLists(FIELD_CAST, p.Target, p.Source)
 }
