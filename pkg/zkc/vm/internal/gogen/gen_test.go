@@ -693,25 +693,24 @@ var diffCases = []diffCase{
 			{"data": {0xFFFFFFFFFFFFFFFF, 0, 0xDEADBEEF}},
 		},
 	},
-	// {
-	// 	name: "subWrap", // x - y - c: single-step two's-complement wrap on underflow
-	// 	src:  subWrapSrc,
-	// 	vectors: []map[string][]uint64{
-	// 		{"data": {10, 3}},    // 5
-	// 		{"data": {5, 10}},    // -7 -> 1017 (mod 2^10)
-	// 		{"data": {0, 255}},   // -257 -> 767
-	// 		{"data": {255, 0}},   // 253
-	// 		{"data": {0, 0}},     // -2 -> 1022
-	// 		{"data": {255, 255}}, // -2 -> 1022
-	// 	},
-	// },
+	{
+		name: "subWrap", // x - y - c: single-step two's-complement wrap on underflow
+		src:  subWrapSrc,
+		vectors: []map[string][]uint64{
+			{"data": {10, 3}},    // 5
+			{"data": {5, 10}},    // -7 -> 65529 (mod 2^16)
+			{"data": {0, 255}},   // -257 -> 65279
+			{"data": {255, 0}},   // 253
+			{"data": {0, 0}},     // -2 -> 65534
+			{"data": {255, 255}}, // -2 -> 65534
+		},
+	},
 }
 
 // subWrapSrc compiles its subtraction into a single SUB with two register
 // sources AND a constant subtrahend: the shape whose two-step (SUB_2n1 + SUBC)
 // encoding used to wrap each step separately rather than once at the
-// CalculateSubBitwidth width.  The result type is u10, so an underflow wraps
-// modulo 2^10 and the wrapped value is observable through the widening cast.
+// encoded width. The result target is u16, so an underflow wraps modulo 2^16.
 // nolint
 const subWrapSrc = `pub input data(address:u8) -> (byte:u8)
 pub output result(address:u8) -> (word:u16)
