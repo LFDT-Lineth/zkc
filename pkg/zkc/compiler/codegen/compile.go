@@ -179,9 +179,7 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		if p.config.splitting {
 			program = vm.SplitRegisters(p.config.field, program)
 		}
-		// Lower AND/OR/XOR after splitting (so the helpers operate at limb width),
-		// then flatten the CALLs it introduces (avoiding lookup row-shifts) before
-		// range constraints cover the freshly introduced helper registers.
+		// Lower AND/OR/XOR after splitting
 		program = vm.LowerOrXorAnd(program)
 		program = vm.FlattenCalls(program)
 		//

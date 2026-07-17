@@ -33,10 +33,6 @@ import (
 // helpers built here operate at the (narrow) limb width.  Halving therefore
 // starts from the limb width rather than the original register width, and the
 // helper modules — being at or below the limb width — need no further splitting.
-//
-// It must run before AddRangeConstraints so the registers of the freshly
-// introduced helper modules are range-constrained, and the introduced CALLs
-// must subsequently be flattened (see FlattenCalls) to avoid lookup row-shifts.
 func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		out = slices.Clone(program.Modules())
