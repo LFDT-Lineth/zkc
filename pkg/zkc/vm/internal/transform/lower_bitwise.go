@@ -32,8 +32,9 @@ import (
 func LowerBitwise[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		out          = slices.Clone(program.Modules())
-		amountWidths = scanShiftAmountWidths[W](out)
-		helpers      = newBitwiseHelpers[W](uint(len(out)), amountWidths)
+		amountWidths = scanShiftAmountWidths(out)
+		// Shift helpers never use static bitwise tables, so bitwiseStaticWidth=0.
+		helpers = newBitwiseHelpers[W](uint(len(out)), amountWidths, 0)
 	)
 
 	for i, mod := range out {
@@ -151,15 +152,20 @@ type bitwiseHelpers[W word.Word[W]] struct {
 	ids          map[bitwiseHelperKey]uint
 	items        []descriptor.Module[W]
 	amountWidths map[shiftKey]uint
+	// bitwiseStaticWidth is the largest width for which an AND/OR/XOR operation
+	// is realised as a static lookup table rather than a recursive helper (see
+	// ensureNary).  It is 0 for the shift-only helpers built by LowerBitwise.
+	bitwiseStaticWidth uint
 }
 
 func newBitwiseHelpers[W word.Word[W]](
-	baseID uint, amountWidths map[shiftKey]uint,
+	baseID uint, amountWidths map[shiftKey]uint, bitwiseStaticWidth uint,
 ) *bitwiseHelpers[W] {
 	return &bitwiseHelpers[W]{
-		baseID:       baseID,
-		ids:          make(map[bitwiseHelperKey]uint),
-		amountWidths: amountWidths,
+		baseID:             baseID,
+		ids:                make(map[bitwiseHelperKey]uint),
+		amountWidths:       amountWidths,
+		bitwiseStaticWidth: bitwiseStaticWidth,
 	}
 }
 
@@ -178,6 +184,8 @@ func (p *bitwiseHelpers[W]) modules() []descriptor.Module[W] {
 	return p.items
 }
 
+// ensure returns the module id of the shift (SHL/SHR) helper for the given key,
+// creating it on first use.  AND/OR/XOR go through ensureNary instead.
 func (p *bitwiseHelpers[W]) ensure(op bytecode.Operation, width uint, arity int) uint {
 	key := bitwiseHelperKey{
 		op:    op,
@@ -208,18 +216,8 @@ func (p *bitwiseHelpers[W]) ensure(op bytecode.Operation, width uint, arity int)
 
 		return id
 	}
-
-	// AND/OR/XOR: the factory may recursively call ensure for sub-helpers,
-	// which appends them to p.items.  The current module must occupy the slot
-	// AFTER all its sub-helpers (callees before callers), so its ID is derived
-	// from len(p.items) only after the factory returns.
-	mod := newDecomposedNaryHelper[W](p, key)
-
-	id := p.baseID + uint(len(p.items))
-	p.items = append(p.items, mod)
-	p.ids[key] = id
-
-	return id
+	//
+	panic(fmt.Sprintf("ensure: expected shift operation, got %d", op))
 }
 
 func helperName(key bitwiseHelperKey) string {
