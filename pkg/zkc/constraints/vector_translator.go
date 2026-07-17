@@ -120,7 +120,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 		case *vm.BytecodeFieldToUint[W]:
 			it := InstructionTranslator[F]{p, localWrites}
 			local = it.translateConcat(toRegisterIds(c.Target), []register.Id{register.NewId(uint(c.Source))},
-				[]uint{p.registers[c.Source].WidthOrNative()})
+				p.sourceWidths([]vm.RegisterId{c.Source}))
 		case *vm.BytecodeRet[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()

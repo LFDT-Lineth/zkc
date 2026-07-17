@@ -931,10 +931,7 @@ func (p *StmtCompiler) compileNonUniformArgs(mapping []uint, exprs ...Expr) ([]R
 
 func (p *StmtCompiler) compileArg(e Expr, bitwidth util.Option[uint], mapping []uint) (RegisterId, []Bytecode) {
 	if r, ok := p.asLocalAccess(e); ok {
-		source := util.Cast[RegisterId](r.Variable)
-		if bitwidth.IsEmpty() == p.registers[source].IsNative() {
-			return source, nil
-		}
+		return util.Cast[RegisterId](r.Variable), nil
 	}
 	//
 	target := p.allocate(bitwidth)
@@ -1002,11 +999,22 @@ func (p *StmtCompiler) asConstant(e Expr) (vm.Uint, bool) {
 	return w, false
 }
 
+// asLocalAccess unwraps e to a bare local-variable access, peeling casts that
+// do not cross the 𝔽/uint boundary.  A representation-changing cast is not
+// transparent — it must materialise a field-cast instruction — so it blocks
+// the peel.
 func (p *StmtCompiler) asLocalAccess(e Expr) (*expr.LocalAccess[symbol.Resolved], bool) {
 	if c, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
 		return c, true
 	} else if c, ok := e.(*expr.Cast[symbol.Resolved]); ok {
-		return p.asLocalAccess(c.Expr)
+		var (
+			outer = data.BitWidthOf(c.Type(), p.environment)
+			inner = data.BitWidthOf(c.Expr.Type(), p.environment)
+		)
+		//
+		if outer.IsEmpty() == inner.IsEmpty() {
+			return p.asLocalAccess(c.Expr)
+		}
 	}
 	//
 	return nil, false

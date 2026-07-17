@@ -55,7 +55,7 @@ func ApplyLimbsMap[W any](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) [
 // corresponding limb registers.  Observe that this splits the limbs according
 // to their natural (or little endian) ordering.  Thus, given the array
 // "[x,y,r]", this function returns "[x'0,x'1,y'0,y'1,r'0,r'1]".
-func applyLimbsMapReversed[W any](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
+func ApplyLimbsMapReversed[W any](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
 	var limbIds []RegisterId
 	//
 	for _, r := range rids {
@@ -128,7 +128,7 @@ func initialiseLineaChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc
 		// Split source registers into initial chunks
 		chunks = splitSourceRegisters(mapping, sources, constant)
 		// Determine target limbs
-		limbs = applyLimbsMapReversed(mapping, targets...)
+		limbs = ApplyLimbsMapReversed(mapping, targets...)
 	)
 	//
 	for i := uint(0); i < chunks.Len(); i++ {

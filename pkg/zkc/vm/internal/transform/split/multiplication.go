@@ -52,7 +52,7 @@ func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Alloca
 	var (
 		one         W
 		insns       []Bytecode[W]
-		targetLimbs = applyLimbsMapReversed(mapping, insn.Target...)
+		targetLimbs = ApplyLimbsMapReversed(mapping, insn.Target...)
 		targetWidth = groupWidth(alloc, targetLimbs)
 		g           = mulGranularity(mapping.RegisterWidth(), mapping.BandWidth())
 	)

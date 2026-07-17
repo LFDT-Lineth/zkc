@@ -254,10 +254,10 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.UintToField[W]:
 			return []Bytecode[W]{&bytecode.UintToField[W]{
 				Target: split.ApplyLimbsMap(limbsMap, c.Target)[0],
-				Source: array.Reverse(split.ApplyLimbsMap(limbsMap, c.Source...))}}
+				Source: split.ApplyLimbsMapReversed(limbsMap, c.Source...)}}
 		case *bytecode.FieldToUint[W]:
 			return []Bytecode[W]{&bytecode.FieldToUint[W]{
-				Target: array.Reverse(split.ApplyLimbsMap(limbsMap, c.Target...)),
+				Target: split.ApplyLimbsMapReversed(limbsMap, c.Target...),
 				Source: split.ApplyLimbsMap(limbsMap, c.Source)[0]}}
 		case *bytecode.Switch[W]:
 			return split.Switch(limbsMap, c)
@@ -493,17 +493,4 @@ func splitRegisterVectors[W any](limbsMap descriptor.LimbsMap[W],
 	}
 	//
 	return nvecs
-}
-
-func allocateMatchingLocals[W word.Word[W]](remote []descriptor.Register[W], alloc split.Allocator[W],
-) (local []RegisterId) {
-	//
-	local = make([]RegisterId, len(remote))
-	//
-	for i, r := range remote {
-		// NOTE: remote should always have valid bitwidth here.
-		local[i] = alloc.Allocate("f", r.Bitwidth())
-	}
-	//
-	return local
 }

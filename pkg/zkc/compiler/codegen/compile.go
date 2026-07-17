@@ -156,6 +156,7 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		// Apply function inlining
 		program = vm.InlineFunctions(program, inlines)
 	}
+
 	if p.config.fastMode {
 		// Apply transforms suitable for fast mode
 		program = vm.OptimizeDivisions(program)
@@ -181,7 +182,6 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		}
 
 		program = vm.LowerFieldCasts(program)
-		program = vm.LowerComparisons(program)
 		//
 		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticDepth)
 	}

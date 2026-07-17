@@ -36,7 +36,8 @@ func LowerComparisons[W word.Word[W]](program Program[W]) Program[W] {
 }
 
 // LowerFieldCasts inserts canonicality checks for field conversions.
-// It must run after register splitting and before comparison lowering.
+// It must run after register splitting; the checks it generates come out
+// already comparison-lowered.
 func LowerFieldCasts[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.LowerFieldCasts(program)
 }

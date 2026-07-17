@@ -103,12 +103,8 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 			return err
 		}
 
-		out := callee.Register(calleeOutput(callee, i))
 		// A native (field-element) output is a single uint64 result.
-		ow := uint(64)
-		if !out.IsNative() {
-			ow = out.Bitwidth().Unwrap()
-		}
+		ow := widthOf(callee.Register(calleeOutput(callee, i)))
 
 		rets[i] = ret{target: l, outWidth: ow, outWide: ow > 64}
 		// Shape mismatch or a surviving width check forces the temp path.
@@ -122,8 +118,7 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 	for i := len(x.Returns); i < int(callee.NumOutputs()); i++ {
 		discards = append(discards, "_")
 
-		out := callee.Register(calleeOutput(callee, i))
-		if !out.IsNative() && out.Bitwidth().Unwrap() > 64 {
+		if widthOf(callee.Register(calleeOutput(callee, i))) > 64 {
 			discards = append(discards, "_")
 		}
 	}

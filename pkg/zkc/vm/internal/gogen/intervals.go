@@ -64,15 +64,7 @@ func newIntervals(fn *descFunction, isBoot, disabled bool) *intervals {
 	zero := big.NewInt(0)
 
 	for i, r := range regs {
-		w := uint(128)
-
-		switch {
-		case r.IsNative():
-			// Native registers are single uint64 locals (see regWidth).
-			w = 64
-		case r.Bitwidth().Unwrap() < 128:
-			w = r.Bitwidth().Unwrap()
-		}
+		w := min(widthOf(r), 128)
 
 		iv.caps[i] = widthMax(w)
 		iv.entry[i] = zero

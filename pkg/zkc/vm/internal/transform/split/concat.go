@@ -74,9 +74,9 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 	var (
 		limbsMap = mapping.LimbsMap()
 		// Split all source registers
-		sourceLimbs = applyLimbsMapReversed(mapping, sources...)
+		sourceLimbs = ApplyLimbsMapReversed(mapping, sources...)
 		// Split all target registers
-		targetLimbs = applyLimbsMapReversed(mapping, targets...)
+		targetLimbs = ApplyLimbsMapReversed(mapping, targets...)
 		// Split source registers into initial chunks
 		chunks = splitConcatSources(mapping.BandWidth(), limbsMap, sourceLimbs)
 	)

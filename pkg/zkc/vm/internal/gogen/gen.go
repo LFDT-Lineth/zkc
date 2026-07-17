@@ -1048,6 +1048,18 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 // reg returns the Go local name for a register id.
 func reg(id regId) string { return fmt.Sprintf("r%d", id) }
 
+// widthOf returns the width of a register as represented in generated code:
+// its declared width, or 64 for a native (field-element) register, which is a
+// single uint64 local — a field value fits uint64 but need not be reduced mod
+// P (see regWidth, which additionally guards the modulus precondition).
+func widthOf(r descriptor.Register[word.Uint]) uint {
+	if r.IsNative() {
+		return 64
+	}
+
+	return r.Bitwidth().Unwrap()
+}
+
 func (g *generator) regWidth(fn *descFunction, id regId) (uint, error) {
 	r := fn.Register(id)
 	if r.IsNative() {

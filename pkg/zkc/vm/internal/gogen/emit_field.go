@@ -125,48 +125,29 @@ func (g *generator) emitUintToField(c *code, fn *descFunction, x *bytecode.UintT
 		return fmt.Errorf("gogen: uint-to-field unsupported for modulus wider than 64 bits")
 	}
 
-	srcs, err := g.operands(fn, x.Source)
-	if err != nil {
-		return err
-	}
-
-	if anyWide(srcs) {
-		return fmt.Errorf("gogen: field-cast operand wider than 64 bits unsupported")
-	}
-
-	widths := make([]uint, len(srcs))
 	total := uint(0)
 
-	for i, id := range x.Source {
+	for _, id := range x.Source {
 		w, err := g.regWidth(fn, id)
 		if err != nil {
 			return err
 		}
 
-		widths[i] = w
 		total += w
 	}
 
 	if total > 64 {
 		return fmt.Errorf("gogen: field-cast operand wider than 64 bits unsupported")
 	}
-	// Fold sources MSB-first (sources[0] lowest).
-	expr := srcs[len(srcs)-1].expr
-	for i := len(srcs) - 2; i >= 0; i-- {
-		expr = fmt.Sprintf("(%s<<%d | %s)", expr, widths[i], srcs[i].expr)
-	}
-
-	target, err := g.limbOf(fn, x.Target)
-	if err != nil {
+	// Recombining the uint limbs into the native target is exactly a
+	// concatenation with a single native target.
+	cat := bytecode.Cat[word.Uint]{Targets: []regId{x.Target}, Sources: x.Source}
+	if err := g.emitConcat(c, fn, &cat); err != nil {
 		return err
 	}
-
-	combined := operand{expr: expr, max: widthMax(total)}
-	g.assignSingle(c, target, combined)
 	// Canonicality check, unless the value is statically < P.
-	pm1 := new(big.Int).Sub(g.modulus, big.NewInt(1))
-	if combined.max.Cmp(pm1) > 0 {
-		c.linef("if %s >= %s {", target.lo(), bigLit(g.modulus))
+	if bigMin(g.iv.boundOf(x.Target), widthMax(total)).Cmp(g.modulus) >= 0 {
+		c.linef("if %s >= %s {", reg(x.Target), bigLit(g.modulus))
 		c.linef("fail(%q) // value exceeds the field modulus", "field overflow")
 		c.line("}")
 	}

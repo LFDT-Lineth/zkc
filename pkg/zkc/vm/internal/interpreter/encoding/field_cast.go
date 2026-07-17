@@ -22,29 +22,7 @@ func UintToField[W word.Word[W]](p *bytecode.UintToField[W]) []uint32 {
 	return encodeRegisterLists(UINT_TO_FIELD, []RegisterId{p.Target}, p.Source)
 }
 
-// DecodeUintToField decodes a uint-to-field conversion.
-func DecodeUintToField[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	var (
-		tIter, sIter, n = DecodeRegisterLists(pc, codes)
-		targets         = OpIterToArray[uint16](tIter)
-		sources         = OpIterToArray[uint16](sIter)
-	)
-	//
-	return &bytecode.UintToField[W]{Target: targets[0], Source: sources}, n
-}
-
 // FieldToUint encodes a field-to-uint conversion.
 func FieldToUint[W word.Word[W]](p *bytecode.FieldToUint[W]) []uint32 {
 	return encodeRegisterLists(FIELD_TO_UINT, p.Target, []RegisterId{p.Source})
-}
-
-// DecodeFieldToUint decodes a field-to-uint conversion.
-func DecodeFieldToUint[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	var (
-		tIter, sIter, n = DecodeRegisterLists(pc, codes)
-		targets         = OpIterToArray[uint16](tIter)
-		sources         = OpIterToArray[uint16](sIter)
-	)
-	//
-	return &bytecode.FieldToUint[W]{Target: targets, Source: sources[0]}, n
 }

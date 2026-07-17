@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"math/big"
 	"slices"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -43,24 +44,24 @@ func LowerFieldCasts[W word.Word[W]](program descriptor.Program[W]) descriptor.P
 func lowerFieldCastFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *fieldCastHelpers[W],
 ) *descriptor.Function[W] {
 	var (
-		alloc   = newRegAllocator(fn.Registers())
-		vectors = make([]BytecodeVector[W], len(fn.Vectors()))
+		registers = fn.Registers()
+		vectors   = make([]BytecodeVector[W], len(fn.Vectors()))
 	)
 
 	for i, vec := range fn.Vectors() {
 		vectors[i] = vec.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
 			switch cast := insn.(type) {
 			case *bytecode.UintToField[W]:
-				return append(helpers.check(cast.Source, alloc), cast)
+				return append(helpers.check(cast.Source, registers), cast)
 			case *bytecode.FieldToUint[W]:
-				return append([]Bytecode[W]{cast}, helpers.check(cast.Target, alloc)...)
+				return append([]Bytecode[W]{cast}, helpers.check(cast.Target, registers)...)
 			default:
 				return []Bytecode[W]{insn}
 			}
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), vectors)
+	return descriptor.NewFunction(fn.Name(), registers, fn.IsNative(), vectors)
 }
 
 type fieldCastHelpers[W word.Word[W]] struct {
@@ -74,16 +75,16 @@ func newFieldCastHelpers[W word.Word[W]](base uint, modulus *big.Int) *fieldCast
 	return &fieldCastHelpers[W]{base: base, modulus: modulus, ids: make(map[string]uint)}
 }
 
-func (p *fieldCastHelpers[W]) check(regs []bytecode.RegisterId, alloc *regAllocator[W]) []Bytecode[W] {
+func (p *fieldCastHelpers[W]) check(regs []bytecode.RegisterId, registers []descriptor.Register[W]) []Bytecode[W] {
 	widths := make([]uint, len(regs))
 	total := uint(0)
 
 	for i, reg := range regs {
-		widths[i] = alloc.Register(reg).Bitwidth().Unwrap()
+		widths[i] = registers[reg].Bitwidth().Unwrap()
 		total += widths[i]
 	}
-
-	if new(big.Int).Lsh(big.NewInt(1), total).Cmp(p.modulus) <= 0 {
+	// A value of total bits cannot reach P: no check needed.
+	if total < uint(p.modulus.BitLen()) {
 		return nil
 	}
 
@@ -91,8 +92,16 @@ func (p *fieldCastHelpers[W]) check(regs []bytecode.RegisterId, alloc *regAlloca
 }
 
 func (p *fieldCastHelpers[W]) ensure(widths []uint) uint {
-	key := fmt.Sprint(widths)
-	if id, ok := p.ids[key]; ok {
+	var builder strings.Builder
+
+	builder.WriteString("$field_range")
+
+	for _, w := range widths {
+		fmt.Fprintf(&builder, "_u%d", w)
+	}
+
+	name := builder.String()
+	if id, ok := p.ids[name]; ok {
 		return id
 	}
 
@@ -109,9 +118,11 @@ func (p *fieldCastHelpers[W]) ensure(widths []uint) uint {
 	alloc := newRegAllocator(regs)
 	code := append(canonicalityCode(inputs, alloc, p.modulus), bytecode.NewRet[W]())
 	id := p.base + uint(len(p.modules))
-	p.ids[key] = id
-	p.modules = append(p.modules, descriptor.NewFunction(fmt.Sprintf("$field_range_%d", len(p.modules)),
-		alloc.Registers(), false, []BytecodeVector[W]{bytecode.NewVector(code...)}))
+	p.ids[name] = id
+	// The pipeline's comparison-lowering pass has already run, so lower the
+	// helper's relational SkipIfs at construction.
+	p.modules = append(p.modules, lowerComparisonFunction(descriptor.NewFunction(name,
+		alloc.Registers(), false, []BytecodeVector[W]{bytecode.NewVector(code...)})))
 
 	return id
 }
@@ -133,23 +144,23 @@ func canonicalityCode[W word.Word[W]](regs []bytecode.RegisterId, alloc *regAllo
 
 	for i, reg := range regs {
 		width := alloc.Register(reg).Bitwidth().Unwrap()
-		limb := new(big.Int).Rsh(new(big.Int).Set(modulus), shift)
+		limb := new(big.Int).Rsh(modulus, shift)
 		limb.And(limb, new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1)))
 		limbs[i] = limbs[i].SetBigInt(limb)
 		shift += width
 	}
 
-	for i := len(regs) - 1; i >= 0; i-- {
-		width := alloc.Register(regs[i]).Bitwidth().Unwrap()
+	for i, reg := range slices.Backward(regs) {
+		width := alloc.Register(reg).Bitwidth().Unwrap()
 		constant := alloc.Allocate("", util.Some(width))
 		checks = append(checks, bytecode.LoadConst(constant, limbs[i]))
 
-		lt := bytecode.NewSkipIf[W](bytecode.CONDITION_LT, 0, regs[i], constant)
+		lt := bytecode.NewSkipIf[W](bytecode.CONDITION_LT, 0, reg, constant)
 		branches = append(branches, branch{lt, len(checks), false})
 		checks = append(checks, lt)
 
 		if i > 0 {
-			gt := bytecode.NewSkipIf[W](bytecode.CONDITION_GT, 0, regs[i], constant)
+			gt := bytecode.NewSkipIf[W](bytecode.CONDITION_GT, 0, reg, constant)
 			branches = append(branches, branch{gt, len(checks), true})
 			checks = append(checks, gt)
 		}
