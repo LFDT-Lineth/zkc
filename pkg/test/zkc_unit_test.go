@@ -607,7 +607,6 @@ func Test_ZkcUnit_While_04(t *testing.T) {
 }
 
 func Test_ZkcUnit_For_01(t *testing.T) {
-	// TODO: bitwise destruct
 	checkZkcUnit(t, "zkc/unit/for_01", DEFAULT_UNIT_CONFIG)
 }
 
