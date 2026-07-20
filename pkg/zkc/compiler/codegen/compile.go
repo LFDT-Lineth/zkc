@@ -175,11 +175,13 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.LowerSwitch(program)
 		program = vm.Vectorize(program)
 		program = vm.FactorSkipConditions(program)
-		program = vm.FlattenCalls(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
 			program = vm.SplitRegisters(p.config.field, program)
 		}
+		// Lower AND/OR/XOR after splitting
+		program = vm.LowerOrXorAnd(program, p.config.maxStaticDepth)
+		program = vm.FlattenCalls(program)
 		//
 		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticDepth)
 	}

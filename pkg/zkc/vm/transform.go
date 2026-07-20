@@ -28,6 +28,19 @@ func LowerBitwise[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.LowerBitwise(program)
 }
 
+// LowerOrXorAnd rewrites bitwise AND/OR/XOR bytecodes into either a static-table
+// lookup (a memory read) or a CALL to a recursive helper function, returning the
+// updated bytecode program (the helper / table modules are appended to it).  An
+// operation whose width is small enough that its 2^(2*width)-row truth table
+// fits within maxStaticDepth is realised as a table read; wider operations are
+// lowered recursively until their leaves are.
+//
+// NOTE: unlike LowerBitwise, this transform must be applied AFTER register
+// splitting and BEFORE range-constraint generation.
+func LowerOrXorAnd[W word.Word[W]](program Program[W], maxStaticDepth uint) Program[W] {
+	return transform.LowerOrXorAnd(program, maxStaticDepth)
+}
+
 // LowerComparisons rewrites SkipIf bytecodes with LT/GT/LTEQ/GTEQ conditions
 // into arithmetic-only sequences using biased subtraction and sign-bit extraction.
 // EQ and NEQ conditions are left unchanged.
