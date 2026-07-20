@@ -30,7 +30,7 @@ var DEFAULT_CONFIG = Config{
 	word:           vm.WORD_UINT128,
 	fastMode:       false,
 	inlining:       true,
-	quiet:          false,
+	quiet:          true,
 	splitting:      true,
 	maxStaticDepth: DEFAULT_MAX_STATIC_DEPTH,
 }
