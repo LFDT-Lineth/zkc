@@ -110,7 +110,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	build.config = codegen.DEFAULT_CONFIG.
 		Inlining(GetFlag(cmd, "inline")).
 		FastMode(fastMode).
-		MaxStaticDepth(GetUint(cmd, "max_static_depth")).
+		MaxStaticDepth(GetUint(cmd, "max-static-depth")).
 		Field(field).
 		Quiet(quiet)
 	//
@@ -141,7 +141,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().BoolP("gogen", "g", false, "enable Go code generation")
-	rootCmd.PersistentFlags().Uint("max_static_depth", codegen.DEFAULT_MAX_STATIC_DEPTH,
+	rootCmd.PersistentFlags().Uint("max-static-depth", codegen.DEFAULT_MAX_STATIC_DEPTH,
 		"maximum depth (number of rows) of static tables")
 	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")
 	// profiling commands'
