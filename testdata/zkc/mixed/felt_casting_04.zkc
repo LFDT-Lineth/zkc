@@ -1,0 +1,13 @@
+pub input data(address:u16) -> (word:u32)
+pub output result(address:u16) -> (word:u32)
+
+// Concatenation is a uint operation.  Casting its result into the field then
+// reduces the assembled integer modulo P.
+fn main() {
+    var value:u32 = data[0]
+    var hi:u16, lo:u16
+    hi::lo = value
+    //
+    var f:𝔽 = (hi::lo) as 𝔽
+    result[0] = f as u32
+}

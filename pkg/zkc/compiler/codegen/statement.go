@@ -483,11 +483,13 @@ func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.
 		// 𝔽 → 𝔽 (no-op cast): compile the source directly into the native target.
 		return p.compileExpr(e.Expr, bitwidth, mapping, targets)
 	case bitwidth.IsEmpty():
+		// uint→𝔽: assemble the source limbs and reduce modulo P.
 		source, insns := p.compileUniformArgs(e_bitwidth, mapping, e.Expr)
-		return append(insns, vm.FieldCast[vm.Uint](targets, source))
+		return append(insns, vm.UintToField[vm.Uint](targets[0], source))
 	case e_bitwidth.IsEmpty():
+		// 𝔽→uint: extract the canonical representative into the target limbs.
 		source, insns := p.compileUniformArgs(util.None[uint](), mapping, e.Expr)
-		return append(insns, vm.FieldCast[vm.Uint](targets, source))
+		return append(insns, vm.FieldToUint[vm.Uint](targets, source[0]))
 	case e_bitwidth.Unwrap() <= bitwidth.Unwrap():
 		// uint upcast
 		return p.compileExpr(e.Expr, e_bitwidth, mapping, targets)

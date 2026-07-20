@@ -120,40 +120,43 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 	return nil
 }
 
-func (g *generator) emitFieldCast(c *code, fn *descFunction, x *bytecode.FieldCast[word.Uint]) error {
+// emitUintToField assembles the uint sources into the native target — exactly a
+// concatenation with a single native target — then reduces modulo P.  The
+// reduction is elided when interval analysis proves the assembled value is
+// already canonical (< P).
+func (g *generator) emitUintToField(c *code, fn *descFunction, x *bytecode.UintToField[word.Uint]) error {
 	total := uint(0)
 
-	toField := fn.Register(x.Target[0]).IsNative()
-	if toField {
-		for _, id := range x.Source {
-			w, err := g.regWidth(fn, id)
-			if err != nil {
-				return err
-			}
-
-			total += w
+	for _, id := range x.Source {
+		w, err := g.regWidth(fn, id)
+		if err != nil {
+			return err
 		}
 
-		if total > 64 {
-			return fmt.Errorf("gogen: field-cast operand wider than 64 bits unsupported")
-		}
+		total += w
 	}
 
-	if err := g.emitConcat(c, fn, &bytecode.Cat[word.Uint]{Targets: x.Target, Sources: x.Source}); err != nil {
+	if total > 64 {
+		return fmt.Errorf("gogen: field-cast operand wider than 64 bits unsupported")
+	}
+
+	if err := g.emitConcat(c, fn, &bytecode.Cat[word.Uint]{Targets: []regId{x.Target}, Sources: x.Source}); err != nil {
 		return err
 	}
-
-	if !toField {
-		return nil
-	}
-	// Canonicality check, unless the value is statically < P.
-	if bigMin(g.iv.boundOf(x.Target[0]), widthMax(total)).Cmp(g.modulus) >= 0 {
-		c.linef("if %s >= %s {", reg(x.Target[0]), bigLit(g.modulus))
-		c.linef("fail(%q) // value exceeds the field modulus", "field overflow")
-		c.line("}")
+	// A uint-to-field cast is reduction modulo P.
+	if g.iv.boundOf(x.Target).Cmp(g.modulus) >= 0 {
+		c.linef("%s %%= %s", reg(x.Target), bigLit(g.modulus))
+		g.iv.assign(x.Target, new(big.Int).Sub(g.modulus, big.NewInt(1)))
 	}
 
 	return nil
+}
+
+// emitFieldToUint distributes the native source across the uint targets — exactly
+// a concatenation with a single native source.  The targets' range checks enforce
+// that the (canonical) value fits.
+func (g *generator) emitFieldToUint(c *code, fn *descFunction, x *bytecode.FieldToUint[word.Uint]) error {
+	return g.emitConcat(c, fn, &bytecode.Cat[word.Uint]{Targets: x.Target, Sources: []regId{x.Source}})
 }
 
 // emitModPHelpers writes the mod-P helpers (with the modulus baked in), each

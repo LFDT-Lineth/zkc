@@ -1,15 +1,14 @@
 pub input data(address:u16) -> (word:u32)
+pub output result(address:u16) -> (word:u32)
 
+// Exercise modular uint→field conversion and canonical field→uint extraction
+// across a function boundary.
 fn main() {
     var value:u32 = data[0]
-    var actual:u32 = increment(value as 𝔽)
-    //
-    if actual != (value + 1) {
-        fail
-    }
+    result[0] = canonicalise(value as 𝔽)
 }
 
-fn increment(value:𝔽) -> (result:u32) {
-    result = (value as u32) + 1
+fn canonicalise(value:𝔽) -> (result:u32) {
+    result = value as u32
     return
 }

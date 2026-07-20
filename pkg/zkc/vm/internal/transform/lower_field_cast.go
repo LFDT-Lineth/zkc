@@ -25,7 +25,9 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// LowerFieldCasts inserts the canonicality checks required by field conversions.
+// LowerFieldCasts inserts the canonicality checks required when extracting a
+// native field value into uint registers.  Uint-to-field casts reduce modulo P
+// and therefore require no range check.
 func LowerFieldCasts[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		modules = slices.Clone(program.Modules())
@@ -50,15 +52,15 @@ func lowerFieldCastFunction[W word.Word[W]](fn *descriptor.Function[W], helpers 
 
 	for i, vec := range fn.Vectors() {
 		vectors[i] = vec.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
-			if cast, ok := insn.(*bytecode.FieldCast[W]); ok {
-				if registers[cast.Target[0]].IsNative() {
-					return append(helpers.check(cast.Source, registers), cast)
-				}
-
+			switch cast := insn.(type) {
+			case *bytecode.UintToField[W]:
+				// uint→𝔽 reduces modulo P, so it needs no canonicality check.
+				return []Bytecode[W]{cast}
+			case *bytecode.FieldToUint[W]:
 				return append([]Bytecode[W]{cast}, helpers.check(cast.Target, registers)...)
+			default:
+				return []Bytecode[W]{insn}
 			}
-
-			return []Bytecode[W]{insn}
 		})
 	}
 

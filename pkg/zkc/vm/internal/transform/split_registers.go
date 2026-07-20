@@ -251,10 +251,18 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 			return []Bytecode[W]{bytecode.NewFieldArith(c.Op,
 				split.ApplyLimbsMap(limbsMap, c.Target)[0],
 				split.ApplyLimbsMap(limbsMap, c.Sources...), c.Constant)}
-		case *bytecode.FieldCast[W]:
-			return []Bytecode[W]{&bytecode.FieldCast[W]{
-				Target: split.ApplyLimbsMapReversed(limbsMap, c.Target...),
+		case *bytecode.UintToField[W]:
+			// The native target stays a single register; the uint source splits
+			// into limbs.
+			return []Bytecode[W]{&bytecode.UintToField[W]{
+				Target: split.ApplyLimbsMap(limbsMap, c.Target)[0],
 				Source: split.ApplyLimbsMapReversed(limbsMap, c.Source...)}}
+		case *bytecode.FieldToUint[W]:
+			// The uint target splits into limbs; the native source stays a single
+			// register.
+			return []Bytecode[W]{&bytecode.FieldToUint[W]{
+				Target: split.ApplyLimbsMapReversed(limbsMap, c.Target...),
+				Source: split.ApplyLimbsMap(limbsMap, c.Source)[0]}}
 		case *bytecode.Switch[W]:
 			return split.Switch(limbsMap, c)
 
