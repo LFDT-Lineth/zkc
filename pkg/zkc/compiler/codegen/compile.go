@@ -103,8 +103,19 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 	// declaration is encountered that will no longer exist, then the id for all
 	// declarations after it is shifted down.
 	for i, d := range declarations {
-		switch d.(type) {
-		case *decl.ResolvedFunction, *decl.ResolvedMemory:
+		switch d := d.(type) {
+		case *decl.ResolvedFunction:
+			// In quiet mode, #[debug] functions are dropped from the program
+			// altogether: every call site is elided during codegen, so the
+			// function itself is unreachable at the machine level.
+			if p.config.quiet && slices.Contains(d.Annotations(), "debug") {
+				mapping[i] = math.MaxUint
+				continue
+			}
+			//
+			mapping[i] = index
+			index++
+		case *decl.ResolvedMemory:
 			mapping[i] = index
 			index++
 		default:
@@ -123,8 +134,15 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 			// ignore
 		case *decl.ResolvedFunction:
 			fn, errs := p.compileFunction(uint(i), mapping, declarations)
-			modules = append(modules, fn)
 			errors = append(errors, errs...)
+			// In quiet mode, #[debug] functions are still compiled (so errors
+			// are reported consistently across modes) but their module is
+			// dropped, as no call site remains which could reach it.
+			if p.config.quiet && slices.Contains(c.Annotations(), "debug") {
+				continue
+			}
+			//
+			modules = append(modules, fn)
 			// Record functions to be inlined (see below).
 			if slices.Contains(c.Annotations(), "inline") {
 				inlines = append(inlines, c.Name())
@@ -175,11 +193,13 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.LowerSwitch(program)
 		program = vm.Vectorize(program)
 		program = vm.FactorSkipConditions(program)
-		program = vm.FlattenCalls(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
 			program = vm.SplitRegisters(p.config.field, program)
 		}
+		// Lower AND/OR/XOR after splitting
+		program = vm.LowerOrXorAnd(program, p.config.maxStaticDepth)
+		program = vm.FlattenCalls(program)
 		//
 		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticDepth)
 	}

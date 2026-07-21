@@ -96,5 +96,5 @@ var ANNOTATIONS = []Annotation{
 		"marks a read/write memory to use the paged (array of pages) layout", MEMORY_KIND),
 	// #[debug] is permitted only on function declarations.
 	NewAnnotation("debug",
-		"marks a function as debug-only, whose calls are elided (like printf) in quiet mode", FUNCTION_KIND),
+		"marks a function as debug-only, elided entirely (calls and definition) in quiet mode", FUNCTION_KIND),
 }
