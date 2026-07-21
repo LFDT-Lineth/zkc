@@ -51,7 +51,7 @@ func LowerBitwise[W word.Word[W]](program descriptor.Program[W]) descriptor.Prog
 // a per-function register allocator (for any temporaries codeFn introduces) and
 // the shared helper registry.
 func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *bitwiseHelpers[W],
-	codeFn func(Bytecode[W], *regAllocator[W], *bitwiseHelpers[W]) []Bytecode[W],
+	codeFn func(Bytecode[W], split.Allocator[W], *bitwiseHelpers[W]) []Bytecode[W],
 ) *descriptor.Function[W] {
 	var (
 		vectors = fn.Vectors()
@@ -90,33 +90,6 @@ func lowerBitwiseCode[W word.Word[W]](
 	}
 }
 
-<<<<<<< HEAD
-=======
-func lowerBitwiseAndOrXor[W word.Word[W]](
-	b *bytecode.Bitwise[W],
-	registers split.Allocator[W],
-	helpers *bitwiseHelpers[W],
-) []Bytecode[W] {
-	origWidth, isPowerOfTwo := maxBitwidthOf(registers.Registers(), b.Uses()...)
-	//
-	p := origWidth
-	if !isPowerOfTwo {
-		p = util_math.NextPowerOfTwo(origWidth)
-	}
-	// After BinarizeBitwise, any non-identity constant has been
-	// materialised as a source register, so we can drop the constant
-	// argument here: at the (possibly widened) helper width the original
-	// identity mask is redundant because the cast already zero-extends
-	// inputs.
-	id := helpers.ensure(b.Op, p, 2)
-	//
-	return []Bytecode[W]{
-		bytecode.CallFun[W](uint16(id),
-			[]bytecode.RegisterId{b.Left, b.Right}, []bytecode.RegisterId{b.Target}),
-	}
-}
-
->>>>>>> e310bfe2 (feat: various fixes for sbb)
 func lowerBitwiseShlShr[W word.Word[W]](
 	b *bytecode.Bitwise[W],
 	helpers *bitwiseHelpers[W],

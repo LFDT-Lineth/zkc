@@ -66,6 +66,10 @@ zkc-bench-test: zkc-lint
 	@echo ">>> Running ZkC (Bench) Tests..."
 	go test --timeout 0 -run "Test_ZkcBench" ./...
 
+zkc-racer-test:
+	@echo ">>> Running ZkC (Racer) Tests..."
+	go test -v -race --timeout 0 -run "Test_ZkcBench_FastPow|Test_ZkcBench_Sort" pkg/test/zkc_bench_test.go
+
 build:
 	@echo ">>> Building ${PROJECT_NAME}... ${GOCORSET_VERSION}"
 	go build -ldflags="-X '${GOCORSET_VERSION_PATH}.Version=${GOCORSET_VERSION}'" -o bin/${PROJECT_NAME} cmd/${PROJECT_NAME}/main.go

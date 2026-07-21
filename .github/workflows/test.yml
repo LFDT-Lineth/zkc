@@ -43,7 +43,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        test: [bench,util,unit]
+        test: [bench,util,unit,racer]
       fail-fast: false
     runs-on: gha-lfdt-lineth-ss-ubuntu-24-amd64-large
     steps:

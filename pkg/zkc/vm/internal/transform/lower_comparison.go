@@ -94,38 +94,27 @@ func lowerRelationalSkipIf[W word.Word[W]](
 	lhs, rhs, skipOnZero := normalizeRelational(si)
 	lhsWidth := registers.Register(lhs).Bitwidth().Unwrap()
 	rhsWidth := registers.Register(rhs).Bitwidth().Unwrap()
-
+	// Determine number of bits required to hold the result of the subtraction, plus the sign bit.
 	castBandWidth := max(lhsWidth, rhsWidth) + 1
 
 	zero := word.Const64[W](0)
-	one := word.Const64[W](1)
-
-	oneReg := registers.Allocate("", util.Some[uint](1))
-	biased := registers.Allocate("", util.Some(castBandWidth))
+	// create temporary (throw away) register
 	lo := registers.Allocate("", util.Some(castBandWidth-1))
+	// create sign bit for comparison
 	sign := registers.Allocate("", util.Some[uint](1))
-	zeroReg := registers.Allocate("", util.Some[uint](1))
-
-	// rhs is always cast to castBandWidth
-	castRhs := []Bytecode[W]{
-		bytecode.LoadConst(oneReg, one),
+	// TODO: use of zero register should be deprecated when SkipIf supports constansts.
+	zeroReg := registers.ZeroRegister()
+	//
+	insns := []Bytecode[W]{
+		// sign::lo = lhs - rhs
+		bytecode.SubVecConst([]bytecode.RegisterId{lo, sign}, []bytecode.RegisterId{lhs, rhs}, zero),
 	}
-	// when creating 1::lhs, we don't need to cast lhs if it's of size castBandWidth-1 already.
-	var castLhs = bytecode.Concat[W]([]bytecode.RegisterId{biased}, []bytecode.RegisterId{lhs, oneReg})
-
-	subtractAndDestruct := []Bytecode[W]{
-		bytecode.SubVecConst([]bytecode.RegisterId{lo, sign}, []bytecode.RegisterId{biased, rhs}, zero),
-		bytecode.LoadConst(zeroReg, zero),
-	}
-
-	insns := append(append(castRhs, castLhs), subtractAndDestruct...)
-
 	// Finally emit the SkipIf with the appropriate condition on the sign bit
 	finalCond := bytecode.CONDITION_EQ
 	if !skipOnZero {
 		finalCond = bytecode.CONDITION_NEQ
 	}
-
+	//
 	return append(insns, bytecode.NewSkipIf[W](finalCond, si.Skip, sign, zeroReg))
 }
 
@@ -149,13 +138,13 @@ func normalizeRelational[W word.Word[W]](si *bytecode.SkipIf[W]) (lhs, rhs bytec
 	//
 	switch si.Op {
 	case bytecode.CONDITION_LT:
-		return lhs, rhs, true
-	case bytecode.CONDITION_GTEQ:
 		return lhs, rhs, false
+	case bytecode.CONDITION_GTEQ:
+		return lhs, rhs, true
 	case bytecode.CONDITION_GT:
-		return rhs, lhs, true
-	case bytecode.CONDITION_LTEQ:
 		return rhs, lhs, false
+	case bytecode.CONDITION_LTEQ:
+		return rhs, lhs, true
 	default:
 		panic("normalizeRelational called with non-relational condition")
 	}
