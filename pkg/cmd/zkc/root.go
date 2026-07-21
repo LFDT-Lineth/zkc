@@ -136,7 +136,7 @@ func init() {
 	//
 	rootCmd.PersistentFlags().Bool("show-static", false, "Show static tables in the MIR/AIR output")
 	rootCmd.PersistentFlags().BoolP("fast", "f", false, "Fast-mode execution (no tracing, no constraints)")
-	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress debug output")
+	rootCmd.PersistentFlags().BoolP("quiet", "q", true, "suppress debug output")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
