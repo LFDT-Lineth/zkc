@@ -41,7 +41,6 @@ func Test_ZkcBench_Gcd(t *testing.T) {
 }
 
 func Test_ZkcBench_Fnv1aHash(t *testing.T) {
-	// TODO: unknown error
 	checkZkcBench(t, "zkc/bench/fnv1a_hash", DEFAULT_BENCH_CONFIG)
 }
 

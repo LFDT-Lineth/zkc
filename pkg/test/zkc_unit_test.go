@@ -42,7 +42,6 @@ func Test_ZkcUnit_Basic_04(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_05(t *testing.T) {
-	// TODO: support static memory for constraints
 	checkZkcUnit(t, "zkc/unit/basic_05", DEFAULT_UNIT_CONFIG)
 }
 
