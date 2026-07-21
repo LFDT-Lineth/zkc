@@ -91,15 +91,16 @@ func Vectorize[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.Vectorize(program)
 }
 
-// FlattenCalls introduces a tmp register to hold a call argument when it's rewritten in the same vector:
+// FlattenLookupAccess introduces a tmp register to hold a call (or memory access) argument 
+// when it's rewritten in the same vector:
 // 1. x = f(x)
 // 2. y = f(x); x = x + 1
 // As we want to avoid shift in lookups, we must keep the original value of x in a tmp register,
 // so that the call can be rewritten as:
 // 1. tmp = x; x = f(tmp)
 // 2. tmp = x; y = f(tmp); x = x + 1
-func FlattenCalls[W word.Word[W]](program Program[W]) Program[W] {
-	return transform.FlattenCalls(program)
+func FlattenLookupAccess[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.FlattenLookupAccess(program)
 }
 
 // FactorSkipConditions rewrites equality SkipIf bytecodes (EQ/NEQ) so that the

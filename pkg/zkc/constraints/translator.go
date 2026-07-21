@@ -82,7 +82,7 @@ func translateModule[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, m vm
 			return translateWriteOnceMemory[W, F](ctx, m)
 		}
 		//
-		return translateReadWriteMemory[W, F](ctx, m)
+		return translateReadWriteMemory[W, F](m)
 	default:
 		panic(fmt.Sprintf("unknown module \"%s\" encountered", m.Name()))
 	}
@@ -122,8 +122,7 @@ func translateWriteOnceMemory[W vm.Word[W], F field.Element[F]](
 	return translateAccessOnceMemory[W, F](ctx, m, name)
 }
 
-func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
+func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](m *vm.Memory[W]) mir.Module[F] {
 	var (
 		regs = toRegisters(m.Registers())
 		mod  *schema.Table[F, mir.Constraint[F]]
@@ -414,9 +413,9 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 	// Note that registers coming from control flow have been added to the module before this point,
 	// so they will be range-proved as well.
 	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
-	// Emit lookup constraints for any function calls made by this function.
-	addCallLookups(mod, ctx, fn, pcSelectors, ret, infos, regs)
-	// TODO: add memory read / write constraints (as lookups).
+	// Emit lookup constraints for any function calls and memory accesses made
+	// by this function.
+	addLookups(mod, ctx, fn, pcSelectors, ret, infos, regs)
 	// Done
 	return mod
 }

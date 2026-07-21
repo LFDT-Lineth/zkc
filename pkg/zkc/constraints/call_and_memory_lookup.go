@@ -31,22 +31,26 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-// addCallLookups emits a lookup constraint for every function call (Call or
-// UnconditionalCall) made by the given function.  The lookup maps the caller's
-// argument/return registers onto the callee's input/output registers.
+// addLookups emits a lookup constraint for every function call
+// and every memory access (read or write) made by the given
+// function:
+// - a call's lookup maps the caller's argument/return registers onto
+// the callee's input/output registers.
+// - a memory access's lookup maps the accessor's address/data registers
+// onto the memory table's address/data columns.
 //
-// The caller (source) side is gated on two (potentially combined) conditions:
+// The accessing (source) side is gated on two (potentially combined) conditions:
 //
-//   - Position: in a multi-line caller the call at code line k fires only on
-//     rows where the selector IS_PC_k is on; in an atomic caller
-//     every row is a call row, so there is no positional gating.
-//   - Path: a call may be executed conditionally. The branch condition under which the
-//     call is reached is materialised by FactorSkipConditions as a boolean
-//     register ("path selector"); only rows where it is on actually call.
+//   - Position: in a multi-line function the access at code line k fires only on
+//     rows where the selector IS_PC_k is on; in an OLI function,
+//     access row are gated by $ret.
+//   - Path: an access may be executed conditionally. The branch condition under
+//     which the access is reached is materialised by FactorSkipConditions as a
+//     boolean register ("path selector"); only rows where it is on actually access.
 //
 // Lookups require a register (and not an expression) as the source selector,
 // so the path selector is materialised as a fresh 1-bit register (if it is not already).
-func addCallLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	fn *vm.Function[W], pcSelectors []register.Id, ret register.Id, infos []vm.Module[W],
 	callerRegs []register.Register) {
 	//
@@ -56,39 +60,41 @@ func addCallLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 		_, branchTable := vec.BranchTable()
 		//
 		for cc, code := range vec.Bytecodes {
-			var (
-				args     []register.Id
-				returns  []register.Id
-				calleeId uint
-				// Source selector gating the call (None => unfiltered).
-				srcSelector util.Option[register.Id]
-			)
+			// Source selector gating the access: its branch condition and:
+			// - for a multi-line function, its line selector (IS_PC_*)
+			// - for a one line function, the $ret register (defining the
+			//   non-padding region)
+			// (None => unfiltered).
+			srcSelector := func() util.Option[register.Id] {
+				return lookupSourceSelector(mod, ctx, mod.Registers(),
+					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors, ret)
+			}
 			//
 			switch c := code.(type) {
 			case *vm.BytecodeCall[W]:
-				calleeId = uint(c.Target)
-				args = toRegisterIds(c.Arguments)
-				returns = toRegisterIds(c.Returns)
-
-				// A call is gated by its branch condition and:
-				// - for multi-line caller, its line selector (IS_PC_*)
-				// - for one line caller, the $ret register (defining the non-padding region)
-				srcSelector = callSourceSelector(mod, ctx, mod.Registers(),
-					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors, ret)
-			default:
-				continue
+				emitCallLookup(mod, ctx, callerRegs, uint(pc), uint(c.Target),
+					toRegisterIds(c.Arguments), toRegisterIds(c.Returns), srcSelector(), infos)
+			case *vm.BytecodeReadWrite[W]:
+				// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1807
+				// read-write (RAM) memories have no table constraints yet
+				// (see translateReadWriteMemory), so there is no sound lookup
+				// target for them.
+				if infos[c.Id].(*vm.Memory[W]).IsReadWrite() {
+					continue
+				}
+				//
+				emitMemoryLookup(mod, ctx, callerRegs, uint(pc), uint(cc), uint(c.Id),
+					toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector(), infos)
 			}
-			//
-			emitCallLookup[W](mod, ctx, callerRegs, uint(pc), calleeId, args, returns, srcSelector, infos)
 		}
 	}
 }
 
-// callSourceSelector determines the register used to gate the source (caller)
-// side of a (conditional) call's lookup constraint, given the branch condition
-// under which the call executes and the caller's per-line is_pc_* selectors
-// (empty for an atomic caller).
-func callSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+// lookupSourceSelector determines the register used to gate the source
+// (accessing) side of a (conditional) call's or memory access's lookup
+// constraint, given the branch condition under which the access executes and
+// the accessor's per-line is_pc_* selectors (empty for an atomic function).
+func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
 	ret register.Id) util.Option[register.Id] {
 	// TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1936
@@ -124,7 +130,7 @@ func callSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[
 // ("b == 0", "b != 1", a register-valued or non-{0,1} RHS, a multi-register
 // group) cannot, and fall back to a materialised path selector column.
 //
-// Such a call guard is always materialised on a 1-bit register by
+// Such a guard is always materialised on a 1-bit register by
 // FactorSkipConditions, so a wider operand here indicates a broken invariant
 // and panics.
 func singleBitGuard(cond dfa.BranchCondition, regs []register.Register) (register.Id, bool) {
@@ -153,36 +159,36 @@ func singleBitGuard(cond dfa.BranchCondition, regs []register.Register) (registe
 	// The operand must be a genuine boolean (1-bit) register.
 	id := atom.Left.Id
 	if w := regs[id.Unwrap()].Width(); w != 1 {
-		panic(fmt.Sprintf("expected 1-bit branch register for call guard, got width %d", w))
+		panic(fmt.Sprintf("expected 1-bit branch register for lookup guard, got width %d", w))
 	}
 	//
 	return id, true
 }
 
 // newPathSelector creates a fresh 1-bit column gating a conditionally executed
-// call and returns its id.  The column is filled (during trace expansion) with,
-// and constrained to equal, the boolean value of the call's (already position-
-// gated) branch condition — so it is 1 exactly on the rows which perform the
-// call.
+// call or memory access and returns its id.  The column is filled (during trace
+// expansion) with, and constrained to equal, the boolean value of the access's
+// (already position-gated) branch condition — so it is 1 exactly on the rows
+// which perform the access.
 func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition,
 ) register.Id {
 	var padding big.Int
 	// Allocate the selector column.
 	selId := register.NewId(mod.Width())
-	mod.AddRegisters(register.NewComputed(fmt.Sprintf("$call_sel_%d", selId.Unwrap()), 1, padding))
+	mod.AddRegisters(register.NewComputed(fmt.Sprintf("$lookup_sel_%d", selId.Unwrap()), 1, padding))
 	// Fill the flag selector during trace expansion with the boolean value of the condition.
 	mod.AddAssignments(assignment.NewComputedRegister[F](pathSelectorComputation(cond, regs), true, ctx, selId))
-	// Bind it for soundness: $call_sel == 1 exactly when the condition holds.
+	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.
 	mod.AddConstraints(mir.NewVanishingConstraint(
-		fmt.Sprintf("call_sel_%d", selId.Unwrap()), ctx, util.None[int](),
+		fmt.Sprintf("lookup_sel_%d", selId.Unwrap()), ctx, util.None[int](),
 		pathSelectorConstraint[F](selId, cond, regs)))
 	//
 	return selId
 }
 
-// pathSelectorConstraint builds the binding "$call_sel == 1 iff cond" as an MIR
-// logical term.
+// pathSelectorConstraint builds the binding "$lookup_sel == 1 iff cond" as an
+// MIR logical term.
 func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.BranchCondition,
 	regs []register.Register) mir.LogicalTerm[F] {
 	var (
@@ -288,6 +294,80 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 		)
 		//
 		target = lookup.FilteredVector(calleeId, ret, tgtTerms...)
+	}
+	//
+	mod.AddConstraints(mir.NewLookupConstraint(handle, []mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
+}
+
+// emitMemoryLookup constructs and adds a single lookup constraint mapping an
+// accessor's address/data registers onto the address/data columns of a memory
+// table (SROM, ROM or WOM).  Reads and writes share the same shape: both bind
+// the (address, data) tuple to a row of the table.
+//
+// The target side is gated so padding rows are never valid table entries:
+//
+//   - SROM: the table is static (fully enumerated at compile time), so every
+//     row is valid and the target is unfiltered.
+//   - ROM / WOM: the table is trace-provided, so the target is filtered on the
+//     $access_bit column, which is 1 exactly on non-padding rows.
+//
+// For a WOM this lookup also enforces write-once consistency: the table holds
+// each address exactly once (address monotony), so two writes of different
+// values to the same address cannot both match a row.
+func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
+	ctx schema.ModuleId, accessorRegs []register.Register, pc, cc, memId uint,
+	address, data []register.Id, srcSelector util.Option[register.Id], infos []vm.Module[W]) {
+	var (
+		mem     = infos[memId].(*vm.Memory[W])
+		memRegs = toRegisters(mem.Registers())
+		// The bytecode index (cc) disambiguates two accesses to the same memory
+		// on the same code line.
+		handle = fmt.Sprintf("memory_%d_%d_%d_%d", ctx, pc, cc, memId)
+		// Source ids: the accessor's address registers followed by its data
+		// registers.
+		srcIds = append(append([]register.Id{}, address...), data...)
+		// Target ids: the memory's address registers (its inputs) followed by
+		// its data registers (its outputs), which together occupy ids
+		// 0..len(memRegs).  Their count matches the number of source ids.
+		tgtIds = make([]register.Id, len(srcIds))
+	)
+	//
+	for i := range tgtIds {
+		tgtIds[i] = register.NewId(uint(i))
+	}
+	// Build the source (accessor) vector.
+	var source mir.LookupVector[F]
+
+	if srcSelector.HasValue() {
+		var (
+			selId = srcSelector.Unwrap()
+			sel   = term.RawRegisterAccess[F, mir.Term[F]](selId, 1, 0)
+		)
+
+		source = lookup.FilteredVector(ctx, sel, registerAccesses[F](accessorRegs, srcIds)...)
+	} else {
+		source = lookup.UnfilteredVector(ctx, registerAccesses[F](accessorRegs, srcIds)...)
+	}
+	// Build the target (memory) vector.
+	var (
+		target   mir.LookupVector[F]
+		tgtTerms = registerAccesses[F](memRegs, tgtIds)
+	)
+	//
+	if mem.IsStatic() {
+		// Static tables enumerate their full contents, so every row is a valid
+		// table entry and the target side is unfiltered.
+		target = lookup.UnfilteredVector(memId, tgtTerms...)
+	} else {
+		// ROM / WOM tables expose a $access_bit column which is 1 on active
+		// rows; use it as the lookup selector.  It is allocated immediately
+		// after the address/data registers (see translateAccessOnceMemory).
+		var (
+			accessId = register.NewId(uint(len(memRegs)))
+			access   = term.RawRegisterAccess[F, mir.Term[F]](accessId, 1, 0)
+		)
+		//
+		target = lookup.FilteredVector(memId, access, tgtTerms...)
 	}
 	//
 	mod.AddConstraints(mir.NewLookupConstraint(handle, []mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
