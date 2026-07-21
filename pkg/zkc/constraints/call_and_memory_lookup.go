@@ -58,36 +58,90 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 		// Branch table giving the condition under which each code in this vector
 		// is reached.
 		_, branchTable := vec.BranchTable()
-		//
-		for cc, code := range vec.Bytecodes {
-			// Source selector gating the access: its branch condition and:
+		// Group the lookup-emitting bytecodes by the branch condition under
+		// which they execute, so accesses sharing a condition share a single
+		// source selector (column).
+		for _, group := range groupLookupsByCondition(vec.Bytecodes, branchTable, infos) {
+			// Source selector gating the accesses of this group: their branch
+			// condition and:
 			// - for a multi-line function, its line selector (IS_PC_*)
 			// - for a one line function, the $ret register (defining the
 			//   non-padding region)
 			// (None => unfiltered).
-			srcSelector := func() util.Option[register.Id] {
-				return lookupSourceSelector(mod, ctx, mod.Registers(),
-					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors, ret)
-			}
+			srcSelector := lookupSourceSelector(mod, ctx, mod.Registers(),
+				group.condition, uint(pc), pcSelectors, ret)
 			//
-			switch c := code.(type) {
-			case *vm.BytecodeCall[W]:
-				emitCallLookup(mod, ctx, callerRegs, uint(pc), uint(c.Target),
-					toRegisterIds(c.Arguments), toRegisterIds(c.Returns), srcSelector(), infos)
-			case *vm.BytecodeReadWrite[W]:
-				// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1807
-				// read-write (RAM) memories have no table constraints yet
-				// (see translateReadWriteMemory), so there is no sound lookup
-				// target for them.
-				if infos[c.Id].(*vm.Memory[W]).IsReadWrite() {
-					continue
+			for _, entry := range group.entries {
+				switch c := entry.code.(type) {
+				case *vm.BytecodeCall[W]:
+					emitCallLookup(mod, ctx, callerRegs, uint(pc), uint(c.Target),
+						toRegisterIds(c.Arguments), toRegisterIds(c.Returns), srcSelector, infos)
+				case *vm.BytecodeReadWrite[W]:
+					emitMemoryLookup(mod, ctx, callerRegs, uint(pc), entry.cc, uint(c.Id),
+						toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector, infos)
 				}
-				//
-				emitMemoryLookup(mod, ctx, callerRegs, uint(pc), uint(cc), uint(c.Id),
-					toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector(), infos)
 			}
 		}
 	}
+}
+
+// lookupGroup collects the bytecodes of one vector which emit a lookup and
+// execute under the same branch condition, so they can share a single source
+// selector.
+type lookupGroup[W vm.Word[W]] struct {
+	// condition under which every bytecode of this group executes.
+	condition dfa.BranchCondition
+	// entries identifies the bytecodes (and their positions) of this group.
+	entries []lookupEntry[W]
+}
+
+// lookupEntry pairs a lookup-emitting bytecode with its position in the
+// enclosing vector.
+type lookupEntry[W vm.Word[W]] struct {
+	cc   uint
+	code vm.Bytecode[W]
+}
+
+// groupLookupsByCondition partitions the lookup-emitting bytecodes of a vector
+// (calls, and memory accesses other than RAM) by the branch condition under
+// which they execute.
+func groupLookupsByCondition[W vm.Word[W]](codes []vm.Bytecode[W], branchTable dfa.Result[dfa.Branch],
+	infos []vm.Module[W]) []lookupGroup[W] {
+	var groups []lookupGroup[W]
+	//
+outer:
+	for cc, code := range codes {
+		switch c := code.(type) {
+		case *vm.BytecodeCall[W]:
+			// always emits a lookup
+		case *vm.BytecodeReadWrite[W]:
+			// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1807
+			// read-write (RAM) memories have no table constraints yet
+			// (see translateReadWriteMemory), so there is no sound lookup
+			// target for them.
+			if infos[c.Id].(*vm.Memory[W]).IsReadWrite() {
+				continue
+			}
+		default:
+			continue
+		}
+		//
+		var (
+			condition = branchTable.StateOf(uint(cc)).Condition
+			entry     = lookupEntry[W]{uint(cc), code}
+		)
+		// Append to an existing group with the same condition (if any).
+		for i := range groups {
+			if groups[i].condition.Equals(condition) {
+				groups[i].entries = append(groups[i].entries, entry)
+				continue outer
+			}
+		}
+		//
+		groups = append(groups, lookupGroup[W]{condition, []lookupEntry[W]{entry}})
+	}
+	//
+	return groups
 }
 
 // lookupSourceSelector determines the register used to gate the source
