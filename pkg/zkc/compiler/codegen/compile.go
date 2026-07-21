@@ -199,7 +199,7 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		}
 		// Lower AND/OR/XOR after splitting
 		program = vm.LowerOrXorAnd(program, p.config.maxStaticDepth)
-		// Add tmp registers to hold lookup arguments (from calls and memread / write) 
+		// Add tmp registers to hold lookup arguments (from calls and memread / write)
 		// when they are rewritten in the same vector (ex: x = f(x) or y = f(x); x = x + 1)
 		program = vm.FlattenLookupAccess(program)
 		//

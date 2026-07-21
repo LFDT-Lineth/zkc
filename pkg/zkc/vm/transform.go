@@ -91,7 +91,7 @@ func Vectorize[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.Vectorize(program)
 }
 
-// FlattenLookupAccess introduces a tmp register to hold a call (or memory access) argument 
+// FlattenLookupAccess introduces a tmp register to hold a call (or memory access) argument
 // when it's rewritten in the same vector:
 // 1. x = f(x)
 // 2. y = f(x); x = x + 1
