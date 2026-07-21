@@ -62,29 +62,10 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 // func Test_ZkcBench_KeccakfBatched(t *testing.T) {
 // 	checkZkcBench(t, "zkc/bench/keccakf_batched", DEFAULT_BENCH_CONFIG)
 // }
-// ===================================================================
-// Poseidon tests (KoalaBear-only). felt and u32 share a lib layout that
-// differs only in the field-element representation; see poseidon/README.md.
-// ===================================================================
 
-func Test_ZkcBench_Poseidon_Felt_Small(t *testing.T) {
+func Test_ZkcBench_Poseidon(t *testing.T) {
 	// TODO: investigate test failures
-	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_range_01", DEFAULT_BENCH_CONFIG.
-		Splitting(false).Constraints(false).GoGen(false))
-}
-func Test_ZkcBench_Poseidon_Felt_Big(t *testing.T) {
-	// TODO: investigate test failures
-	checkZkcBench(t, "zkc/bench/poseidon/test/felt/poseidon_zeros_big_01", DEFAULT_BENCH_CONFIG.
-		Splitting(false).Constraints(false).GoGen(false))
-}
-func Test_ZkcBench_Poseidon_U32_Small(t *testing.T) {
-	// TODO: investigate test failures
-	checkZkcBench(t, "zkc/bench/poseidon/test/u32/poseidon_range_01", DEFAULT_BENCH_CONFIG.
-		Splitting(false).Constraints(false).GoGen(false))
-}
-func Test_ZkcBench_Poseidon_U32_Big(t *testing.T) {
-	// TODO: investigate test failures
-	checkZkcBench(t, "zkc/bench/poseidon/test/u32/poseidon_zeros_big_01", DEFAULT_BENCH_CONFIG.
+	checkZkcBench(t, "zkc/bench/poseidon/poseidon", DEFAULT_BENCH_CONFIG.
 		Splitting(false).Constraints(false).GoGen(false))
 }
 
