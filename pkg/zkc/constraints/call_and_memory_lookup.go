@@ -61,6 +61,7 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 		// Group the lookup-emitting bytecodes by the branch condition under
 		// which they execute, so accesses sharing a condition share a single
 		// source selector (column).
+		// Note that a branch that doesn't emit lookup will be skipped.
 		for _, group := range groupLookupsByCondition(vec.Bytecodes, branchTable, infos) {
 			// Source selector gating the accesses of this group: their branch
 			// condition and:
@@ -151,8 +152,6 @@ outer:
 func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
 	ret register.Id) util.Option[register.Id] {
-	// TODO: perf, see https://github.com/LFDT-Lineth/zkc/issues/1936
-	//
 	// In a multi-line caller the call only fires on rows executing its line, so
 	// fold the line's PC selector (IS_PC_k != 0) into the condition as an
 	// extra single-bit atom.  An atomic caller has no line selectors, so its
