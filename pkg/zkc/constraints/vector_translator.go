@@ -46,7 +46,7 @@ type VectorInsnTranslator[W vm.Word[W], F field.Element[F]] struct {
 	vec         vm.BytecodeVector[W]
 	enclosing   *vm.Function[W]
 	writeMap    dfa.Result[dfa.Writes]
-	branchTable dfa.Result[dfa.Branch]
+	branchTable dfa.Result[dfa.Path[W]]
 	framing     Framing[F]
 }
 
@@ -160,7 +160,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			panic(fmt.Sprintf("unexpected bytecode (%T)", c))
 		}
 		//
-		condition := mirc.TranslateBranchCondition(p.branchTable.StateOf(cc).Condition, p)
+		condition := TranslateBranchCondition(p.branchTable.StateOf(cc), p)
 		// Add control-flow requirements
 		local = mirc.If(condition, local)
 		// Include local constraint
@@ -211,13 +211,36 @@ func (p *VectorInsnTranslator[W, F]) WithConstancyConstraints(writes dfa.Writes,
 			condition = condition.And(r_i.Equals(r_im1))
 		} else if !writes.DefinitelyAssigned(regId) {
 			// Variable is sometimes (but not always) assigned by this
-			// instruction.  This is the difficult case.  First determine
-			// condition under which this register is assigned.
-			wCondition := determineWriteConditions(regId, p.branchTable, p.vec.Bytecodes)
-			// Next, negate condition to determine when it is **not** assigned
-			wCondition = wCondition.Negate()
+			// instruction.  This is the difficult case.  Determine
+			// condition under which this register is not assigned.
+			wCondition := p.determineConstancyCondition(regId, p.branchTable, p.vec.Bytecodes)
 			// Finally translate condition and include constancy constraint
-			condition = condition.And(mirc.If(mirc.TranslateBranchCondition(wCondition, p), r_i.Equals(r_im1)))
+			condition = condition.And(mirc.If(wCondition, r_i.Equals(r_im1)))
+		}
+	}
+	//
+	return condition
+}
+
+// Determine the conditions under which an assignment to a given register can
+// occur.  This is relatively straightforward to determine given the information
+// already generated.  Specifically, we already have the entry condition
+// required to execute every bytecode.  Therefore, we just need to identify
+// all bytecodes which can assign the given register and take the disjunction
+// of all their entry conditions.
+func (p *VectorInsnTranslator[W, F]) determineConstancyCondition(reg register.Id, branchTable dfa.Result[dfa.Path[W]],
+	codes []vm.Bytecode[W]) Expr[F] {
+	//
+	var condition = mirc.True[register.Id, Expr[F]]()
+	//
+	for i, c := range codes {
+		if containsRegister(c.Definitions(), reg) {
+			var (
+				pathCondition = branchTable.StateOf(uint(i))
+				nc            = TranslateNegatedBranchCondition(pathCondition, p)
+			)
+			//
+			condition = condition.And(nc)
 		}
 	}
 	//
@@ -292,26 +315,6 @@ func toRegisterIds(ids []vm.RegisterId) []register.Id {
 	}
 	//
 	return regs
-}
-
-// Determine the conditions under which an assignment to a given register can
-// occur.  This is relatively straightforward to determine given the information
-// already generated.  Specifically, we already have the entry condition
-// required to execute every bytecode.  Therefore, we just need to identify
-// all bytecodes which can assign the given register and take the disjunction
-// of all their entry conditions.
-func determineWriteConditions[W vm.Word[W]](reg register.Id, branchTable dfa.Result[dfa.Branch],
-	codes []vm.Bytecode[W]) dfa.BranchCondition {
-	//
-	var condition = dfa.FALSE
-	//
-	for i, c := range codes {
-		if containsRegister(c.Definitions(), reg) {
-			condition = condition.Or(branchTable.StateOf(uint(i)).Condition)
-		}
-	}
-	//
-	return condition
 }
 
 // containsRegister reports whether the given bytecode register identifier list
