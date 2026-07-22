@@ -26,19 +26,19 @@ import (
 type VerboseLevel int
 
 const (
-	// VERBOSE_NONE disables extra diagnostic output (the default).
-	VERBOSE_NONE VerboseLevel = iota
-	// VERBOSE_INFO enables informational logging, notably the machine
-	// execution steps reported during execution.
-	VERBOSE_INFO
-	// VERBOSE_DEBUG enables full debug output, additionally retaining and
-	// emitting printf statements.
+	// VERBOSE_INFO is the default level: only ordinary informational logging
+	VERBOSE_INFO VerboseLevel = iota
+	// VERBOSE_DEBUG enables debug logging, notably the machine execution steps
+	// reported during execution.
 	VERBOSE_DEBUG
+	// VERBOSE_PRINTF enables full output, additionally retaining and emitting
+	// printf statements.
+	VERBOSE_PRINTF
 )
 
 // GetVerboseLevel derives the verbosity from the repeatable "verbose" (-v)
-// flag: absent selects NONE, a single -v selects INFO, and -vv (or more)
-// selects DEBUG.
+// flag: absent selects INFO, a single -v selects DEBUG, and -vv (or more)
+// selects PRINTF.
 func GetVerboseLevel(cmd *cobra.Command) VerboseLevel {
 	n, err := cmd.Flags().GetCount("verbose")
 	if err != nil {
@@ -48,11 +48,11 @@ func GetVerboseLevel(cmd *cobra.Command) VerboseLevel {
 	//
 	switch {
 	case n <= 0:
-		return VERBOSE_NONE
-	case n == 1:
 		return VERBOSE_INFO
-	default:
+	case n == 1:
 		return VERBOSE_DEBUG
+	default:
+		return VERBOSE_PRINTF
 	}
 }
 

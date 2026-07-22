@@ -99,7 +99,7 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	config.ir = !(config.ast || config.mir || config.air || config.stats)
 	// Full (binary encoding + static table) output is the most detailed view,
 	// so it is gated behind the highest verbosity level.
-	config.verbose = GetVerboseLevel(cmd) >= VERBOSE_DEBUG
+	config.verbose = GetVerboseLevel(cmd) >= VERBOSE_PRINTF
 	// Build all artifacts
 	artifacts := Build[F](build, args...)
 	//

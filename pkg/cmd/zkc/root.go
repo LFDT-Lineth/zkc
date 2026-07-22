@@ -108,8 +108,9 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 		fmt.Printf("padding strategy %s unsupported\n", padding)
 		os.Exit(2)
 	}
-	// Configure log level
-	if verbosity >= VERBOSE_INFO {
+	// Configure log level.  DEBUG (and above) raises logrus to its debug level
+	// so the machine execution steps (logged via PerfStats.Log) are surfaced.
+	if verbosity >= VERBOSE_DEBUG {
 		log.SetLevel(log.DebugLevel)
 	}
 	// Configure padding strategy
@@ -122,7 +123,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 		FastMode(fastMode).
 		MaxStaticDepth(GetUint(cmd, "max-static-depth")).
 		Field(field).
-		Verbose(verbosity >= VERBOSE_DEBUG)
+		Verbose(verbosity >= VERBOSE_PRINTF)
 	//
 	return build
 }
@@ -147,7 +148,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("show-static", false, "Show static tables in the MIR/AIR output")
 	rootCmd.PersistentFlags().BoolP("fast", "f", false, "Fast-mode execution (no tracing, no constraints)")
 	rootCmd.PersistentFlags().CountP("verbose", "v",
-		"verbosity: -v (INFO) shows machine execution steps, -vv (DEBUG) additionally shows all printf output")
+		"verbosity: default INFO; -v (DEBUG) shows machine execution steps, -vv (PRINTF) additionally shows all printf output")
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().BoolP("gogen", "g", false, "enable Go code generation")
