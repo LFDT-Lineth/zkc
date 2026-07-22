@@ -64,12 +64,7 @@ func newIntervals(fn *descFunction, isBoot, disabled bool) *intervals {
 	zero := big.NewInt(0)
 
 	for i, r := range regs {
-		w := uint(128)
-		if !r.IsNative() && r.Bitwidth().Unwrap() < 128 {
-			w = r.Bitwidth().Unwrap()
-		}
-
-		iv.caps[i] = widthMax(w)
+		iv.caps[i] = widthMax(min(widthOf(r), 128))
 		iv.entry[i] = zero
 
 		if !isBoot && uint(i) < fn.NumInputs() {

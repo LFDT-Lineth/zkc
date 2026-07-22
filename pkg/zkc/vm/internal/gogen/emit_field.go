@@ -62,10 +62,11 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 	}
 
 	pm1 := new(big.Int).Sub(g.modulus, big.NewInt(1)) // results are reduced: ≤ P-1
-	g.usesBits = true                                 // the mod-P helpers build on math/bits
 
 	var expr string
 
+	// The mod-P helpers build on math/bits, so usesBits is set only where one is
+	// actually emitted — the no-source add/mul paths store a constant directly.
 	switch x.Op {
 	case bytecode.OP_ADDMOD_P:
 		// executeFieldAdd: val = constant; val = (val + src) mod P per source.
@@ -75,7 +76,7 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 			return nil
 		}
 
-		g.usesModP.add = true
+		g.usesModP.add, g.usesBits = true, true
 		expr = fmt.Sprintf("%d", konst)
 
 		for _, s := range srcs {
@@ -85,7 +86,7 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 		// executeFieldSub: val = src0 - src1 - … (mod P), then always - constant
 		// (mod P) — so the result is reduced even when the constant is zero.
 		// With no sources the seed is the zero word.
-		g.usesModP.sub = true
+		g.usesModP.sub, g.usesBits = true, true
 		expr = "0"
 
 		if len(srcs) > 0 {
@@ -104,7 +105,7 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 			return nil
 		}
 
-		g.usesModP.mul = true
+		g.usesModP.mul, g.usesBits = true, true
 		expr = fmt.Sprintf("%d", konst)
 
 		for _, s := range srcs {
@@ -117,6 +118,45 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 	g.assignSingle(c, target, operand{expr: expr, max: pm1})
 
 	return nil
+}
+
+// emitUintToField assembles the uint sources into the native target — exactly a
+// concatenation with a single native target — then reduces modulo P.  The
+// reduction is elided when interval analysis proves the assembled value is
+// already canonical (< P).
+func (g *generator) emitUintToField(c *code, fn *descFunction, x *bytecode.UintToField[word.Uint]) error {
+	total := uint(0)
+
+	for _, id := range x.Source {
+		w, err := g.regWidth(fn, id)
+		if err != nil {
+			return err
+		}
+
+		total += w
+	}
+
+	if total > 64 {
+		return fmt.Errorf("gogen: field-cast operand wider than 64 bits unsupported")
+	}
+
+	if err := g.emitConcat(c, fn, &bytecode.Cat[word.Uint]{Targets: []regId{x.Target}, Sources: x.Source}); err != nil {
+		return err
+	}
+	// A uint-to-field cast is reduction modulo P.
+	if g.iv.boundOf(x.Target).Cmp(g.modulus) >= 0 {
+		c.linef("%s %%= %s", reg(x.Target), bigLit(g.modulus))
+		g.iv.assign(x.Target, new(big.Int).Sub(g.modulus, big.NewInt(1)))
+	}
+
+	return nil
+}
+
+// emitFieldToUint distributes the native source across the uint targets — exactly
+// a concatenation with a single native source.  The targets' range checks enforce
+// that the (canonical) value fits.
+func (g *generator) emitFieldToUint(c *code, fn *descFunction, x *bytecode.FieldToUint[word.Uint]) error {
+	return g.emitConcat(c, fn, &bytecode.Cat[word.Uint]{Targets: x.Target, Sources: []regId{x.Source}})
 }
 
 // emitModPHelpers writes the mod-P helpers (with the modulus baked in), each

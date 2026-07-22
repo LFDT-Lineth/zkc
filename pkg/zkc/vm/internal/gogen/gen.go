@@ -40,9 +40,13 @@
 //
 // Registers and constants up to 128 bits are supported via the lo/hi pair
 // representation (including wide limbs inside a multi-register store, as the
-// bitwise-lowering helpers produce); registers/constants beyond 128 bits,
-// native (field-element) registers and moduli beyond 64 bits are rejected with
-// descriptive errors; callers treat these programs as out of scope, not failures.
+// bitwise-lowering helpers produce).  A native (field-element) register is a
+// single uint64 local when the field modulus fits 64 bits (a field value fits
+// uint64; the mod-P emitters reduce operands on use, so a value at rest need
+// not be reduced — as in the interpreter).  Registers/constants beyond 128
+// bits, native registers under a modulus wider than 64 bits, and moduli beyond
+// 64 bits for mod-P ops are rejected with descriptive errors; callers treat
+// these programs as out of scope, not failures.
 package gogen
 
 import (
@@ -969,6 +973,10 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 		return g.emitDivRem(c, fn, x)
 	case *bytecode.FieldArith[word.Uint]:
 		return g.emitFieldOp(c, fn, x)
+	case *bytecode.UintToField[word.Uint]:
+		return g.emitUintToField(c, fn, x)
+	case *bytecode.FieldToUint[word.Uint]:
+		return g.emitFieldToUint(c, fn, x)
 	case *bytecode.Intrinsic[word.Uint]:
 		return g.emitIntrinsic(c, fn, x)
 	case *bytecode.Debug[word.Uint]:
@@ -1040,10 +1048,33 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 // reg returns the Go local name for a register id.
 func reg(id regId) string { return fmt.Sprintf("r%d", id) }
 
+// widthOf returns the width of a register as represented in generated code:
+// its declared width, or 64 for a native (field-element) register, which is a
+// single uint64 local — a field value fits uint64 but need not be reduced mod
+// P (see regWidth, which additionally guards the modulus precondition).
+func widthOf(r descriptor.Register[word.Uint]) uint {
+	if r.IsNative() {
+		return 64
+	}
+
+	return r.Bitwidth().Unwrap()
+}
+
 func (g *generator) regWidth(fn *descFunction, id regId) (uint, error) {
 	r := fn.Register(id)
 	if r.IsNative() {
-		return 0, fmt.Errorf("gogen: native register r%d unsupported", id)
+		// A native (field-element) register is a single uint64 local when the
+		// field modulus fits 64 bits: a field value fits uint64, and the mod-P
+		// emitters (emit_field.go) reduce operands as they combine them — so a
+		// value at rest need not be reduced (a stored constant may exceed P),
+		// exactly mirroring the interpreter, which reduces only inside field
+		// ops.  A wider modulus (e.g. BLS12-377) needs a multi-limb
+		// representation and stays out of scope.
+		if g.modulus.BitLen() > 64 {
+			return 0, fmt.Errorf("gogen: native register r%d unsupported for modulus wider than 64 bits", id)
+		}
+
+		return 64, nil
 	}
 	// Registers up to 64 bits are single uint64 locals; up to 128 bits they
 	// are rN_0/rN_1 limb pairs.

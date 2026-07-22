@@ -1,4 +1,4 @@
-//error:10:5-28:cast overflows field modulus "KOALABEAR_16"
+//error:10:5-23:field overflow
 
 // ===================================================================
 // felt static table test
@@ -7,5 +7,5 @@
 // ===================================================================
 
 static felt_static(address:u8) -> (felt:𝔽) {
-    0xffffffffffffffff as 𝔽, // greatly overflows koalabear modulus
+    0xffffffffffffffff, // greatly overflows koalabear modulus
 }

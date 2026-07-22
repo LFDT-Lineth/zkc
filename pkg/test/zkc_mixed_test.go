@@ -19,10 +19,12 @@ import (
 )
 
 // DEFAULT_MIXED_CONFIG provides a default configuration for mixed tests.  These
-// are executed via the bytecode interpreter (in addition to the usual word
-// machine), exercising its support for native field arithmetic.
+// exercise native field arithmetic: they run on the bytecode interpreter and,
+// since the tested field (KoalaBear) has a modulus ≤ 64 bits, on the
+// generated-Go executor too (gogen represents a field element as a single
+// uint64 — see pkg/zkc/vm/internal/gogen).
 var DEFAULT_MIXED_CONFIG = util.DEFAULT_CONFIG.
-	GoGen(false)
+	GoGen(true)
 
 // ===================================================================
 // Basic Tests
@@ -68,6 +70,10 @@ func Test_ZkcMixed_Basic_10(t *testing.T) {
 	checkZkcMixed(t, "zkc/mixed/basic_10", DEFAULT_MIXED_CONFIG)
 }
 
+func Test_ZkcMixed_Basic_11(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/basic_11", DEFAULT_MIXED_CONFIG)
+}
+
 // ===================================================================
 // Others
 // ===================================================================
@@ -78,6 +84,26 @@ func Test_ZkcMixed_Felt_Memory_01(t *testing.T) {
 
 func Test_ZkcMixed_Felt_Casting_01(t *testing.T) {
 	checkZkcMixed(t, "zkc/mixed/felt_casting_01", DEFAULT_MIXED_CONFIG)
+}
+
+func Test_ZkcMixed_Felt_Casting_02(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_casting_02", DEFAULT_MIXED_CONFIG)
+}
+
+func Test_ZkcMixed_Felt_Casting_03(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_casting_03", DEFAULT_MIXED_CONFIG)
+}
+
+func Test_ZkcMixed_Felt_Casting_04(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_casting_04", DEFAULT_MIXED_CONFIG)
+}
+
+func Test_ZkcMixed_Felt_Casting_05(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_casting_05", DEFAULT_MIXED_CONFIG)
+}
+
+func Test_ZkcMixed_Felt_Casting_06(t *testing.T) {
+	checkZkcMixed(t, "zkc/mixed/felt_casting_06", DEFAULT_MIXED_CONFIG)
 }
 
 // ===================================================================

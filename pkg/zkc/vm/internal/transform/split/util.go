@@ -55,7 +55,7 @@ func ApplyLimbsMap[W any](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) [
 	return limbIds
 }
 
-// ApplyLimbsMapReversed maps a set of (bytecode) registers onto their
+// applyLimbsMapReversed maps a set of (bytecode) registers onto their
 // corresponding limb registers.  Observe that this splits the limbs according
 // to their natural (or little endian) ordering.  Thus, given the array
 // "[x,y,r]", this function returns "[x'0,x'1,y'0,y'1,r'0,r'1]".
@@ -67,6 +67,13 @@ func applyLimbsMapReversed[W any](limbsMap descriptor.LimbsMap[W], rids ...Regis
 	}
 	//
 	return limbIds
+}
+
+// ApplyLimbsMapReversed is the exported entry point for applyLimbsMapReversed,
+// used by field-cast splitting (UintToField / FieldToUint) in the transform
+// package, where the uint operand must be split into little-endian limb order.
+func ApplyLimbsMapReversed[W any](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
+	return applyLimbsMapReversed(limbsMap, rids...)
 }
 
 type limbMatrix[W word.Word[W]] struct {

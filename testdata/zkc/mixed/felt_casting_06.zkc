@@ -1,0 +1,14 @@
+pub output result(address:u16) -> (word:u32)
+
+static reduced(address:u8) -> (felt:𝔽) {
+    0x7f000001 as 𝔽,
+    0x7f000002 as 𝔽,
+    0xffffffff as 𝔽,
+}
+
+// Explicit constant uint→field casts in static data are folded modulo P.
+fn main() {
+    result[0] = reduced[0] as u32
+    result[1] = reduced[1] as u32
+    result[2] = reduced[2] as u32
+}

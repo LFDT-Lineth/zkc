@@ -478,14 +478,25 @@ func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.
 		e_bitwidth = data.BitWidthOf(e.Expr.Type(), p.environment)
 	)
 	//
-	if bitwidth.IsEmpty() {
+	switch {
+	case bitwidth.IsEmpty() && e_bitwidth.IsEmpty():
+		// 𝔽 → 𝔽 (no-op cast): compile the source directly into the native target.
 		return p.compileExpr(e.Expr, bitwidth, mapping, targets)
-	} else if e_bitwidth.HasValue() && e_bitwidth.Unwrap() <= bitwidth.Unwrap() {
-		// upcast
+	case bitwidth.IsEmpty():
+		// uint→𝔽: assemble the source limbs and reduce modulo P.
+		source, insns := p.compileUniformArgs(e_bitwidth, mapping, e.Expr)
+		return append(insns, vm.UintToField[vm.Uint](targets[0], source))
+	case e_bitwidth.IsEmpty():
+		// 𝔽→uint: extract the canonical representative into the target limbs.
+		source, insns := p.compileUniformArgs(util.None[uint](), mapping, e.Expr)
+		return append(insns, vm.FieldToUint[vm.Uint](targets, source[0]))
+	case e_bitwidth.Unwrap() <= bitwidth.Unwrap():
+		// uint upcast
 		return p.compileExpr(e.Expr, e_bitwidth, mapping, targets)
+	default:
+		// uint downcast (of some kind).
+		return p.compileRootExpr(e.Expr, mapping, targets)
 	}
-	// down cast (of some kind).
-	return p.compileRootExpr(e.Expr, mapping, targets)
 }
 
 func (p *StmtCompiler) compileIntConst(c vm.Uint, _ []uint, targets []vm.RegisterId,
@@ -585,7 +596,8 @@ func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], 
 		zero vm.Uint
 		reg  = []RegisterId{util.Cast[RegisterId](e.Variable)}
 	)
-	//
+	// The source of a bare field access is always native (uint→𝔽 conversions go
+	// through a field-cast; see compileCast), so this is a 𝔽→𝔽 copy.
 	return []Bytecode{vm.AddModP(target, reg, zero)}
 }
 
@@ -894,15 +906,10 @@ func (p *StmtCompiler) compileUniformArgs(bitwidth util.Option[uint], mapping []
 	)
 	//
 	for i, e := range exprs {
-		//
-		if r, ok := p.asLocalAccess(e); ok {
-			targets[i] = util.Cast[RegisterId](r.Variable)
-		} else {
-			// Allocate temporary variable
-			targets[i] = p.allocate(bitwidth)
-			// Compile expression, storing result in temporary
-			insns = append(insns, p.compileExpr(e, bitwidth, mapping, []vm.RegisterId{targets[i]})...)
-		}
+		target, extra := p.compileArg(e, bitwidth, mapping)
+		targets[i] = target
+
+		insns = append(insns, extra...)
 	}
 	//
 	return targets, insns
@@ -915,19 +922,23 @@ func (p *StmtCompiler) compileNonUniformArgs(mapping []uint, exprs ...Expr) ([]R
 	)
 	//
 	for i, e := range exprs {
-		//
-		if r, ok := p.asLocalAccess(e); ok {
-			targets[i] = util.Cast[RegisterId](r.Variable)
-		} else {
-			var bitwidth = data.BitWidthOf(e.Type(), p.environment)
-			// Allocate temporary variable
-			targets[i] = p.allocate(bitwidth)
-			// Compile expression, storing result in temporary
-			insns = append(insns, p.compileExpr(e, bitwidth, mapping, []vm.RegisterId{targets[i]})...)
-		}
+		target, extra := p.compileArg(e, data.BitWidthOf(e.Type(), p.environment), mapping)
+		targets[i] = target
+
+		insns = append(insns, extra...)
 	}
 	//
 	return targets, insns
+}
+
+func (p *StmtCompiler) compileArg(e Expr, bitwidth util.Option[uint], mapping []uint) (RegisterId, []Bytecode) {
+	if r, ok := p.asLocalAccess(e); ok {
+		return util.Cast[RegisterId](r.Variable), nil
+	}
+	//
+	target := p.allocate(bitwidth)
+
+	return target, p.compileExpr(e, bitwidth, mapping, []vm.RegisterId{target})
 }
 
 func (p *StmtCompiler) evalConstant(e Expr) vm.Uint {
@@ -990,11 +1001,22 @@ func (p *StmtCompiler) asConstant(e Expr) (vm.Uint, bool) {
 	return w, false
 }
 
+// asLocalAccess unwraps e to a bare local-variable access, peeling casts that
+// do not cross the 𝔽/uint boundary.  A representation-changing cast is not
+// transparent — it must materialise a field-cast instruction — so it blocks
+// the peel.
 func (p *StmtCompiler) asLocalAccess(e Expr) (*expr.LocalAccess[symbol.Resolved], bool) {
 	if c, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
 		return c, true
 	} else if c, ok := e.(*expr.Cast[symbol.Resolved]); ok {
-		return p.asLocalAccess(c.Expr)
+		var (
+			outer = data.BitWidthOf(c.Type(), p.environment)
+			inner = data.BitWidthOf(c.Expr.Type(), p.environment)
+		)
+		//
+		if outer.IsEmpty() == inner.IsEmpty() {
+			return p.asLocalAccess(c.Expr)
+		}
 	}
 	//
 	return nil, false
