@@ -496,11 +496,13 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 		return bytecode.CallFun[W](insn.Target, substituteIds(insn.Arguments, sub),
 			substituteIds(insn.Returns, sub))
 	case *bytecode.ReadWrite[W]:
-		if insn.Write {
-			return bytecode.NewMemWrite[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub))
+		return &bytecode.ReadWrite[W]{
+			Write:   insn.Write,
+			Id:      insn.Id,
+			Address: substituteIds(insn.Address, sub),
+			Data:    substituteIds(insn.Data, sub),
+			Stamp:   substituteIds(insn.Stamp, sub),
 		}
-		//
-		return bytecode.NewMemRead[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub))
 	case *bytecode.DivRem[W]:
 		return bytecode.NewDivRem[W](insn.Opcode, substituteId(insn.Target, sub), substituteId(insn.Dividend, sub),
 			substituteId(insn.Divisor, sub))
@@ -520,8 +522,14 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 		return &bytecode.Debug[W]{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
 	case *bytecode.Fail[W]:
 		return &bytecode.Fail[W]{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
+	case *bytecode.Jmp[W]:
+		// Unconditional jump: carries a target address, no register operands.
+		return insn
+	case *bytecode.Ret[W]:
+		// Return: reads/writes no named registers (frame machinery handles it).
+		return insn
 	default:
-		panic(fmt.Sprintf("unexpected instruction in inlined body (%T)", insn))
+		panic(fmt.Sprintf("unexpected instruction (%T)", insn))
 	}
 }
 

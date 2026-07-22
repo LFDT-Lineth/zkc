@@ -32,16 +32,25 @@ type ReadWrite[W word.Word[W]] struct {
 	Address []RegisterId
 	// Data lines identify where the data row is written.
 	Data []RegisterId
+	// Stamp holds the timestamp operand of an access to a read-write memory
+	// (i.e. the "s" in "mem[s; addr]").  It is empty for read-only / write-once
+	// memories and before timestamp threading; the ThreadTimestamps transform
+	// populates it.  A single register before register splitting; multiple limbs
+	// afterwards.
+	Stamp []RegisterId
 }
 
 // Uses implementation for Bytecode interface.  A read uses only its address
 // registers, whereas a write uses both the address and data registers.
 func (p *ReadWrite[W]) Uses() []RegisterId {
-	if p.Write {
-		return append(slices.Clone(p.Address), p.Data...)
-	}
+	uses := slices.Clone(p.Address)
 	//
-	return p.Address
+	if p.Write {
+		uses = append(uses, p.Data...)
+	}
+	// The timestamp operand (present after timestamp threading) is read by both
+	// reads and writes.
+	return append(uses, p.Stamp...)
 }
 
 // Definitions implementation for Bytecode interface.  A read defines its data
@@ -99,10 +108,15 @@ func (p *ReadWrite[W]) String(env Environment[W]) string {
 			name = module.Unwrap().Name()
 		}
 	}
-	//
-	if p.Write {
-		return fmt.Sprintf("write %s[%s] = %s", name, address, data)
+	// Render the timestamp operand as "stamp; addr" when present.
+	index := address
+	if len(p.Stamp) != 0 {
+		index = RegistersToString(p.Stamp, env, ",") + "; " + address
 	}
 	//
-	return fmt.Sprintf("read %s = %s[%s]", data, name, address)
+	if p.Write {
+		return fmt.Sprintf("write %s[%s] = %s", name, index, data)
+	}
+	//
+	return fmt.Sprintf("read %s = %s[%s]", data, name, index)
 }

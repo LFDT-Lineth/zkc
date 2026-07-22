@@ -28,6 +28,19 @@ func LowerBitwise[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.LowerBitwise(program)
 }
 
+// ThreadTimestamps threads a per-memory timestamp through every function which
+// accesses a read-write memory: it adds a stamp-in parameter and stamp-out
+// return per accessed memory, forwards them across calls, and increments the
+// stamp once per access.  Needed only for tracing / constraint generation, so it
+// is applied on the constraint path only.
+//
+// NOTE: this transform must be applied BEFORE vectorization and register
+// splitting (so the wide stamp registers and their increments are split into
+// limbs and range-checked like any other register).
+func ThreadTimestamps[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.ThreadTimestamps(program)
+}
+
 // LowerOrXorAnd rewrites bitwise AND/OR/XOR bytecodes into either a static-table
 // lookup (a memory read) or a CALL to a recursive helper function, returning the
 // updated bytecode program (the helper / table modules are appended to it).  An

@@ -219,8 +219,13 @@ func vectorizeInstruction[W word.Word[W]](pc uint, code []BytecodeVector[W]) Byt
 					// Splice the target's codes into the vector in place of the Jmp.
 					nvec = inlineJump[W](vec, index, target.Bytecodes)
 				}
-				// Accept the merge only if it stays valid.
-				if validateConflicts[W](nvec) == nil {
+				// Accept the merge only if it stays valid AND does not place more
+				// than one timestamped memory access on the same row.  Each
+				// timestamped read-write access must occupy its own trace row: it
+				// increments the threaded stamp in place (two on one row would be a
+				// conflicting write) and the caller->memory lookup carries one
+				// (address, value, stamp) tuple per row.
+				if validateConflicts[W](nvec) == nil && stampedAccesses[W](nvec) <= 1 {
 					if offset == math.MaxUint {
 						updateMicroMap(externs, index, jmpTarget, uint(len(target.Bytecodes)))
 					}
@@ -399,6 +404,21 @@ func pruneUnreachableInstructions[W word.Word[W]](insns []BytecodeVector[W]) []B
 // if none.  This considers only register conflicts (RAW with conditional writes,
 // WAW), since vectorisation rejects merges only on those grounds — never on field
 // bandwidth.
+// stampedAccesses counts the timestamped read-write memory accesses in a vector
+// (a ReadWrite whose Stamp operand is set).  Used to keep at most one such access
+// per trace row (see vectorizeInstruction).
+func stampedAccesses[W word.Word[W]](vec BytecodeVector[W]) int {
+	var count int
+	//
+	for _, b := range vec.Bytecodes {
+		if rw, ok := b.(*bytecode.ReadWrite[W]); ok && len(rw.Stamp) != 0 {
+			count++
+		}
+	}
+	//
+	return count
+}
+
 func validateConflicts[W word.Word[W]](vec BytecodeVector[W]) error {
 	var (
 		nCodes = uint(len(vec.Bytecodes))

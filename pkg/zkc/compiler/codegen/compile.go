@@ -171,6 +171,13 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 	}
 	// Construct bytecode program from descriptor modules.
 	program := vm.NewBytecodeProgram(p.config.field, modules...)
+	// Thread read-write memory timestamps.  This is only needed for tracing and
+	// constraint generation, so it is skipped in fast mode.  It runs before
+	// inlining (and before vectorisation / register splitting), so no later pass
+	// needs to preserve the effect metadata.
+	if !p.config.fastMode {
+		program = vm.ThreadTimestamps(program)
+	}
 	//
 	if p.config.inlining && len(inlines) > 0 {
 		// Apply function inlining
