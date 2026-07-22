@@ -148,7 +148,8 @@ func init() {
 	rootCmd.PersistentFlags().Bool("show-static", false, "Show static tables in the MIR/AIR output")
 	rootCmd.PersistentFlags().BoolP("fast", "f", false, "Fast-mode execution (no tracing, no constraints)")
 	rootCmd.PersistentFlags().CountP("verbose", "v",
-		"verbosity: default INFO; -v (DEBUG) shows machine execution steps, -vv (PRINTF) additionally shows all printf output")
+		"verbosity: default INFO; -v (DEBUG) shows machine execution steps, "+
+			"-vv (PRINTF) additionally shows all printf output")
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().BoolP("gogen", "g", false, "enable Go code generation")
