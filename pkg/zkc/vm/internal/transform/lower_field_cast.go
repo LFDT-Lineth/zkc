@@ -74,7 +74,7 @@ func lowerFieldCastFunction[W word.Word[W]](fn *descriptor.Function[W], helpers 
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), registers, fn.IsNative(), vectors)
+	return descriptor.NewFunction(fn.Name(), registers, fn.Kind(), vectors)
 }
 
 type fieldCastHelpers[W word.Word[W]] struct {
@@ -168,7 +168,7 @@ func (p *fieldCastHelpers[W]) ensure(widths []uint, total uint) uint {
 
 	id := p.base + uint(len(p.modules))
 	p.ids[name] = id
-	p.modules = append(p.modules, descriptor.NewFunction(name, regs, false,
+	p.modules = append(p.modules, descriptor.NewFunction(name, regs, descriptor.BYTECODE_FUNCTION,
 		[]BytecodeVector[W]{bytecode.NewVector(code...)}))
 
 	return id
