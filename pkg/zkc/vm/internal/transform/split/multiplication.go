@@ -51,11 +51,12 @@ import (
 func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
 	var (
-		one         W
-		insns       []Bytecode[W]
-		targetLimbs = applyLimbsMapReversed(mapping, insn.Target...)
-		targetWidth = groupWidth(alloc, targetLimbs)
-		g           = mulGranularity(mapping.RegisterWidth(), mapping.BandWidth())
+		one          W
+		insns        []Bytecode[W]
+		targetLimbs  = applyLimbsMapReversed(mapping, insn.Target...)
+		targetWidth  = groupWidth(alloc, targetLimbs)
+		targetWidths = registerWidths(alloc, targetLimbs)
+		g            = mulGranularity(mapping.RegisterWidth(), mapping.BandWidth(), targetWidths...)
 	)
 	//
 	one = one.SetUint64(1)
@@ -92,23 +93,53 @@ func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Alloca
 	return append(insns, assignToTarget(alloc, g, acc, targetLimbs, targetWidth)...)
 }
 
-// mulGranularity determines the sub-limb width g used for multiplication.  It is
-// the largest divisor of the field's RegisterWidth such that a partial product
-// of two g-bit values (2·g bits) fits within the field bandwidth.  Choosing a
-// divisor of RegisterWidth keeps sub-limb boundaries aligned with limb
-// boundaries.  Both the variable operands and the constant are decomposed into
-// g-bit sub-limbs (see binaryStep / scalarStep), so every partial product is at
-// most 2·g bits regardless of the constant's magnitude — hence g does not depend
-// on the constant.
-func mulGranularity(regWidth, bandWidth uint) uint {
+// mulGranularity determines the sub-limb width g used for multiplication.  It
+// is the largest divisor of RegisterWidth such that: (1) a partial product of
+// two g-bit values fits within BandWidth; and (2) every boundary between target
+// limbs is also a g-bit boundary.  The latter matters when several narrow
+// targets receive one product.  For example, a u32::u32 target on a u64 machine
+// requires g <= 32; otherwise reassembly would try to place one u64 product
+// column into the first u32 target.
+//
+// Both variable operands and the constant are decomposed into g-bit sub-limbs
+// (see binaryStep / scalarStep), so every partial product is at most 2·g bits
+// regardless of the constant's magnitude.
+func mulGranularity(regWidth, bandWidth uint, targetWidths ...uint) uint {
 	//
 	for g := regWidth; g >= 1; g-- {
-		if regWidth%g == 0 && 2*g <= bandWidth {
+		if regWidth%g == 0 && 2*g <= bandWidth && targetBoundariesAlign(g, targetWidths) {
 			return g
 		}
 	}
 	//
 	panic("cannot find multiply granularity fitting field bandwidth")
+}
+
+// targetBoundariesAlign checks that each boundary before the final target limb
+// coincides with a sub-limb boundary.  The final boundary needs no check: the
+// last multiplication column is already narrowed to the product's total width.
+func targetBoundariesAlign(g uint, widths []uint) bool {
+	var offset uint
+	//
+	for _, width := range widths[:max(0, len(widths)-1)] {
+		offset += width
+		//
+		if offset%g != 0 {
+			return false
+		}
+	}
+	//
+	return true
+}
+
+func registerWidths[W word.Word[W]](alloc Allocator[W], regs []RegisterId) []uint {
+	var widths = make([]uint, len(regs))
+	//
+	for i, reg := range regs {
+		widths[i] = alloc.Register(reg).Bitwidth().Unwrap()
+	}
+	//
+	return widths
 }
 
 // decomposeToSubLimbs splits each (RegisterWidth-aligned) limb of an operand
