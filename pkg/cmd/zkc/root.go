@@ -99,7 +99,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	var (
 		build                 BuildConfig
 		fastMode              = GetFlag(cmd, "fast")
-		verbose               = GetFlag(cmd, "verbose")
+		verbosity             = GetVerboseLevel(cmd)
 		padding               = GetString(cmd, "padding")
 		strategy, strategy_ok = ir.GetPaddingStrategy(padding)
 	)
@@ -109,7 +109,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 		os.Exit(2)
 	}
 	// Configure log level
-	if verbose {
+	if verbosity >= VERBOSE_INFO {
 		log.SetLevel(log.DebugLevel)
 	}
 	// Configure padding strategy
@@ -122,7 +122,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 		FastMode(fastMode).
 		MaxStaticDepth(GetUint(cmd, "max-static-depth")).
 		Field(field).
-		Verbose(verbose)
+		Verbose(verbosity >= VERBOSE_DEBUG)
 	//
 	return build
 }
@@ -146,7 +146,8 @@ func init() {
 	//
 	rootCmd.PersistentFlags().Bool("show-static", false, "Show static tables in the MIR/AIR output")
 	rootCmd.PersistentFlags().BoolP("fast", "f", false, "Fast-mode execution (no tracing, no constraints)")
-	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity and enable debug output")
+	rootCmd.PersistentFlags().String("verbose-level", "NONE",
+		"verbosity level: NONE (default), INFO (machine execution steps) or DEBUG (all printf output)")
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().BoolP("gogen", "g", false, "enable Go code generation")

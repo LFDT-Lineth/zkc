@@ -16,10 +16,44 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/spf13/cobra"
 )
+
+// VerboseLevel captures how much diagnostic output the zkc tooling produces.
+// The levels are ordered, so higher levels are supersets of lower ones.
+type VerboseLevel int
+
+const (
+	// VERBOSE_NONE disables extra diagnostic output (the default).
+	VERBOSE_NONE VerboseLevel = iota
+	// VERBOSE_INFO enables informational logging, notably the machine
+	// execution steps reported during execution.
+	VERBOSE_INFO
+	// VERBOSE_DEBUG enables full debug output, additionally retaining and
+	// emitting printf statements.
+	VERBOSE_DEBUG
+)
+
+// GetVerboseLevel parses the "verbose-level" flag, exiting with an error on an
+// unrecognised value.  Parsing is case-insensitive.
+func GetVerboseLevel(cmd *cobra.Command) VerboseLevel {
+	switch strings.ToUpper(strings.TrimSpace(GetString(cmd, "verbose-level"))) {
+	case "NONE":
+		return VERBOSE_NONE
+	case "INFO":
+		return VERBOSE_INFO
+	case "DEBUG":
+		return VERBOSE_DEBUG
+	default:
+		fmt.Printf("error: invalid --verbose-level %q (expected NONE, INFO or DEBUG)\n",
+			GetString(cmd, "verbose-level"))
+		os.Exit(2)
+		return VERBOSE_NONE
+	}
+}
 
 // FlagChecks provides some additional feature over the base flags package used
 // in Cobra.  Specifically, it allows to ensure certain flags are only used in
