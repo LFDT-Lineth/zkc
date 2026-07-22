@@ -331,9 +331,8 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 		tgtTerms = registerAccesses[F](calleeRegs, tgtIds)
 	)
 	// Native module don't have a $ret function
-	if callee.IsOneLine() {
-		// Atomic callees have no $ret line: every callee row is a valid table
-		// entry, so the target side is unfiltered.
+	// (do we need one ? see https://github.com/LFDT-Lineth/zkc/issues/2025)
+	if callee.IsNative() {
 		target = lookup.UnfilteredVector(calleeId, tgtTerms...)
 	} else {
 		// Both multi-line and atomic (one-line) callees expose a $ret line which is 1
