@@ -55,7 +55,7 @@ func lowerSwitchFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor
 		nvecs[i] = lowerSwitchVector(vec, alloc)
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
 }
 
 // lowerSwitchVector expands every Switch bytecode within a vector, recalculating

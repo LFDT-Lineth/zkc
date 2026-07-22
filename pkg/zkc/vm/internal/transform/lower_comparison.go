@@ -52,7 +52,7 @@ func lowerComparisonFunction[W word.Word[W]](fn *descriptor.Function[W]) *descri
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
 }
 
 func lowerComparisonCode[W word.Word[W]](

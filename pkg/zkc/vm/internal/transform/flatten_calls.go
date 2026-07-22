@@ -75,7 +75,7 @@ func flattenCallsFunction[W word.Word[W]](fn *descriptor.Function[W]) *descripto
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
 }
 
 // flattenableArgs returns, for each call in the vector, the set of argument

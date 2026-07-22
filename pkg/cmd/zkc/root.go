@@ -99,7 +99,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	var (
 		build                 BuildConfig
 		fastMode              = GetFlag(cmd, "fast")
-		quiet                 = GetFlag(cmd, "quiet")
+		verbosity             = GetVerboseLevel(cmd)
 		padding               = GetString(cmd, "padding")
 		strategy, strategy_ok = ir.GetPaddingStrategy(padding)
 	)
@@ -108,9 +108,16 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 		fmt.Printf("padding strategy %s unsupported\n", padding)
 		os.Exit(2)
 	}
-	// Configure log level
-	if GetFlag(cmd, "verbose") {
+	// Configure log level.  NONE keeps only warnings/errors, INFO adds ordinary
+	// info logging, and DEBUG (and above) raises logrus to its debug level so
+	// the machine execution steps (logged via PerfStats.Log) are surfaced.
+	switch {
+	case verbosity >= VERBOSE_DEBUG:
 		log.SetLevel(log.DebugLevel)
+	case verbosity == VERBOSE_INFO:
+		log.SetLevel(log.InfoLevel)
+	default:
+		log.SetLevel(log.WarnLevel)
 	}
 	// Configure padding strategy
 	build.padding = strategy
@@ -122,7 +129,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 		FastMode(fastMode).
 		MaxStaticDepth(GetUint(cmd, "max-static-depth")).
 		Field(field).
-		Quiet(quiet)
+		Verbose(verbosity >= VERBOSE_PRINTF)
 	//
 	return build
 }
@@ -146,8 +153,9 @@ func init() {
 	//
 	rootCmd.PersistentFlags().Bool("show-static", false, "Show static tables in the MIR/AIR output")
 	rootCmd.PersistentFlags().BoolP("fast", "f", false, "Fast-mode execution (no tracing, no constraints)")
-	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress debug output")
-	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
+	rootCmd.PersistentFlags().CountP("verbose", "v",
+		"verbosity: default NONE; -v (INFO) info logging, -vv (DEBUG) machine execution steps, "+
+			"-vvv (PRINTF) additionally all printf output")
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().BoolP("gogen", "g", false, "enable Go code generation")

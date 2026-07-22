@@ -44,8 +44,8 @@ func (p *Bitwise[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Bitwise[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *Bitwise[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	return validateOperands(env, p.Uses(), p.Definitions())
 }
 
 func (p *Bitwise[W]) String(env Environment[W]) string {

@@ -343,6 +343,10 @@ func Test_ZkcUnit_Basic_79(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_79", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Basic_80(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_80", DEFAULT_UNIT_CONFIG)
+}
+
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
 	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.
@@ -1027,22 +1031,22 @@ func Test_ZkcUnit_Printf_04(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcUnit_Debug_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/debug_01", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/debug_01", DEFAULT_UNIT_CONFIG.Verbose(true))
 }
 
 func Test_ZkcUnit_Debug_02(t *testing.T) {
-	// Quiet mode elides the call to the #[debug] function, whose body would
-	// otherwise fail.
-	checkZkcUnit(t, "zkc/unit/debug_02", DEFAULT_UNIT_CONFIG.Quiet(true))
+	// Non-verbose mode elides the call to the #[debug] function, whose body
+	// would otherwise fail.
+	checkZkcUnit(t, "zkc/unit/debug_02", DEFAULT_UNIT_CONFIG.Verbose(false))
 }
 
 func Test_ZkcUnit_Debug_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/debug_03", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/debug_03", DEFAULT_UNIT_CONFIG.Verbose(true))
 }
 
 func Test_ZkcUnit_Debug_04(t *testing.T) {
-	// As Debug_03, but in quiet mode (all debug calls elided).
-	checkZkcUnit(t, "zkc/unit/debug_03", DEFAULT_UNIT_CONFIG.Quiet(true))
+	// As Debug_03, but in verbose mode (all debug calls retained).
+	checkZkcUnit(t, "zkc/unit/debug_03", DEFAULT_UNIT_CONFIG.Verbose(true))
 }
 
 // ===================================================================

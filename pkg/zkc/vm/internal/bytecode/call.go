@@ -42,8 +42,30 @@ func (p *Call[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Call[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *Call[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	errors := validateOperands(env, p.Arguments, p.Returns)
+
+	module := env.Module(p.Target)
+	if module.IsEmpty() {
+		return append(errors, fmt.Errorf("call target %d does not exist", p.Target))
+	}
+
+	callee := module.Unwrap()
+	if !callee.IsFunction() {
+		return append(errors, fmt.Errorf("call target %d (%s) is not a function", p.Target, callee.Name()))
+	}
+
+	if len(p.Arguments) != int(callee.NumInputs()) {
+		errors = append(errors, fmt.Errorf("call to %s expects %d arguments (found %d)",
+			callee.Name(), callee.NumInputs(), len(p.Arguments)))
+	}
+
+	if len(p.Returns) > int(callee.NumOutputs()) {
+		errors = append(errors, fmt.Errorf("call to %s provides only %d returns (found %d)",
+			callee.Name(), callee.NumOutputs(), len(p.Returns)))
+	}
+
+	return errors
 }
 
 func (p *Call[W]) String(env Environment[W]) string {
@@ -60,7 +82,12 @@ func (p *Call[W]) String(env Environment[W]) string {
 		builder.WriteString(" = ")
 	}
 	//
-	fmt.Fprintf(&builder, "%s(%s)", mod.Name(), RegistersToString(p.Arguments, env, ","))
+	name := "???"
+	if mod.HasValue() {
+		name = mod.Unwrap().Name()
+	}
+
+	fmt.Fprintf(&builder, "%s(%s)", name, RegistersToString(p.Arguments, env, ","))
 	//
 	return builder.String()
 }

@@ -97,7 +97,8 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	config.stats = GetFlag(cmd, "stats")
 	config.order = GetString(cmd, "order")
 	config.ir = !(config.ast || config.mir || config.air || config.stats)
-	config.verbose = GetFlag(cmd, "verbose")
+	// Compile verbosity is the highest verbosity level.
+	config.verbose = GetVerboseLevel(cmd) >= VERBOSE_PRINTF
 	// Build all artifacts
 	artifacts := Build[F](build, args...)
 	//

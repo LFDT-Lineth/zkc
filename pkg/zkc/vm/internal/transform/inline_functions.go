@@ -172,7 +172,7 @@ func inlineAllCalls[W word.Word[W]](fn *descriptor.Function[W], calleeId uint,
 		return fn
 	}
 	//
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), code)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), code)
 }
 
 // findCall locates the first call to a given callee, returning the enclosing
@@ -637,7 +637,7 @@ func remapModuleIds[W word.Word[W]](fn *descriptor.Function[W], idMap []uint) *d
 		return fn
 	}
 	//
-	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.IsNative(), code)
+	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), code)
 }
 
 func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
