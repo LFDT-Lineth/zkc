@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -58,7 +59,7 @@ func factorSkipConditionsFunction[W word.Word[W]](fn *descriptor.Function[W]) *d
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
-		alloc   = newRegAllocator(fn.Registers())
+		alloc   = split.NewAllocator(fn)
 	)
 
 	for i, vec := range vectors {
@@ -76,11 +77,11 @@ func factorSkipConditionsFunction[W word.Word[W]](fn *descriptor.Function[W]) *d
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
 }
 
 // factorableSkips returns the set of code indices holding a SkipIf worth factoring.
-func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers *regAllocator[W]) map[uint]bool {
+func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers split.Allocator[W]) map[uint]bool {
 	factor := make(map[uint]bool)
 	//
 	for i, code := range codes {
@@ -111,7 +112,7 @@ func isEqualityCondition(cond bytecode.Condition) bool {
 // lower to an inverse normalisation.  This is only the case when some operand is
 // wider than a single bit; equality involving only bit registers is
 // normalisation-free and so factoring it would add bytecodes for no benefit.
-func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers *regAllocator[W]) bool {
+func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers split.Allocator[W]) bool {
 	for _, r := range si.Uses() {
 		reg := registers.Register(r)
 		// Native registers are full-field-width (and have no fixed bitwidth), so
@@ -130,7 +131,7 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers *regAllo
 // through to `b = 0`.
 func factorSkipIf[W word.Word[W]](
 	si *bytecode.SkipIf[W],
-	registers *regAllocator[W],
+	registers split.Allocator[W],
 ) []Bytecode[W] {
 	var (
 		zero = word.Const64[W](0)

@@ -39,18 +39,23 @@ func toRegisters[W vm.Word[W]](registers []vm.Register[W]) []register.Register {
 	var regs = make([]register.Register, len(registers))
 	//
 	for i, r := range registers {
-		var (
-			bitwidth uint = math.MaxUint
-		)
-		// Determine bitwidth (if applicable)
-		if !r.IsNative() {
-			bitwidth = r.Bitwidth().Unwrap()
-		}
-		//
-		regs[i] = register.New(r.Kind(), r.Name(), bitwidth, *r.Padding().BigInt())
+		regs[i] = toRegister(r)
 	}
 	//
 	return regs
+}
+
+// ToRegister converts a register descriptor into a schema register
+func toRegister[W vm.Word[W]](r vm.Register[W]) register.Register {
+	var (
+		bitwidth uint = math.MaxUint
+	)
+	// Determine bitwidth (if applicable)
+	if !r.IsNative() {
+		bitwidth = r.Bitwidth().Unwrap()
+	}
+	//
+	return register.New(r.Kind(), r.Name(), bitwidth, *r.Padding().BigInt())
 }
 
 // toFieldElements converts a slice of words into a slice of field elements.

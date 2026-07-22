@@ -32,7 +32,7 @@ func (p *Jmp[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Jmp[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
+func (p *Jmp[W]) Validate(_ FieldConfig, _ Environment[W]) []error {
 	return nil
 }
 

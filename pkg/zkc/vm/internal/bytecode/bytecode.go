@@ -172,10 +172,9 @@ type Bytecode[W word.Word[W]] interface {
 	// bytecode.
 	Definitions() []RegisterId
 	// Validate checks that this bytecode is well-formed, returning any errors
-	// found (or nil when it is well-formed).  Here, width is the number of
-	// bytecodes in the enclosing vector, field is the surrounding field
-	// configuration and env resolves register information.
-	Validate(width uint, field FieldConfig, env Environment[W]) []error
+	// found (or nil when it is well-formed).  Field is the surrounding field
+	// configuration and env resolves register and module information.
+	Validate(field FieldConfig, env Environment[W]) []error
 	// String returns a suitable string representation of this bytecode.
 	String(Environment[W]) string
 }
@@ -187,16 +186,21 @@ type Bytecode[W word.Word[W]] interface {
 type Environment[W word.Word[W]] interface {
 	// Name returns the name of the enclosing function.
 	Name() string
-	// HasRegister checks whether a register with the given name exists and, if
-	// so, returns its register identifier.  Otherwise, it returns none.
-	HasModule(name string) util.Option[RegisterId]
+	// HasModule checks whether a module with the given name exists and, if so,
+	// returns its module identifier. Otherwise, it returns none.
+	HasModule(name string) util.Option[ModuleId]
 	// HasRegister checks whether a register with the given name exists and, if
 	// so, returns its register identifier.  Otherwise, it returns none.
 	HasRegister(name string) util.Option[RegisterId]
-	// Register returns the ith register used in this module.
-	Module(id ModuleId) ModuleInfo
+	// Module returns information about the given module, or none if it does not
+	// exist.
+	Module(id ModuleId) util.Option[ModuleInfo]
 	// Register returns the ith register used in this module.
 	Register(id RegisterId) RegisterInfo
+	// RegisterCount returns the number of registers in the enclosing module.
+	RegisterCount() uint
+	// VectorCount returns the number of vectors in the enclosing function.
+	VectorCount() uint
 	// ValueOf optionally returns the current value held in the given register.
 	// This is used (for example) by the debugger to render register values
 	// inline within an instruction's string representation.  Environments which
@@ -219,8 +223,48 @@ type RegisterInfo interface {
 // ModuleInfo provides a minimal amount of information about a module in the
 // enclosing environment.
 type ModuleInfo interface {
-	// Name returns the  name of this register
+	// Name returns the name of this module.
 	Name() string
+	// IsFunction indicates whether this module can be called.
+	IsFunction() bool
+	// HasUnsafeArgs indicates whether a function accepts maybe-undefined arguments.
+	HasUnsafeArgs() bool
+	// IsMemory indicates whether this module supports memory accesses.
+	IsMemory() bool
+	// IsReadOnly indicates whether this module forbids writes.
+	IsReadOnly() bool
+	// IsWriteOnly indicates whether this module forbids reads.
+	IsWriteOnly() bool
+	// NumInputs returns the number of input registers in this module.
+	NumInputs() uint
+	// NumOutputs returns the number of output registers in this module.
+	NumOutputs() uint
+	// Width returns the total number of registers in this module.
+	Width() uint
+}
+
+// validateOperands ensures that every register operand exists in the enclosing
+// module. Repeated operands are reported at most once.
+func validateOperands[W word.Word[W]](env Environment[W], operands ...[]RegisterId) []error {
+	var (
+		errors []error
+		seen   = make(map[RegisterId]bool)
+	)
+
+	for _, group := range operands {
+		for _, id := range group {
+			if seen[id] {
+				continue
+			}
+
+			seen[id] = true
+			if uint(id) >= env.RegisterCount() {
+				errors = append(errors, fmt.Errorf("register %d does not exist", id))
+			}
+		}
+	}
+
+	return errors
 }
 
 // ============================================================================
@@ -332,6 +376,11 @@ func MulConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant 
 // register vector.
 func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
 	util.Assert(len(targets) > 0, "atleast one target required")
+	//
+	if len(sources) == 0 {
+		// Bypass multiplication
+		return NewArith(OP_ADD, targets, nil, constant)
+	}
 	//
 	return NewArith(OP_MUL, targets, sources, constant)
 }

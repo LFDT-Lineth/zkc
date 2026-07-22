@@ -148,7 +148,7 @@ func Sum[T any, E Expr[T, E]](exprs []E) E {
 }
 
 // Product constructs a product over one or more expressions.
-func Product[T any, E Expr[T, E]](exprs []E) E {
+func Product[T any, E Expr[T, E]](exprs ...E) E {
 	if len(exprs) == 0 {
 		return Number[T, E](0)
 	}

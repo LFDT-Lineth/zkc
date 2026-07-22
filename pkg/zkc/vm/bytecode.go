@@ -44,6 +44,22 @@ type Module[W Word[W]] = descriptor.Module[W]
 // analysis and/or translation into constraints.
 type Function[W Word[W]] = descriptor.Function[W]
 
+// FunctionKind identifies whether a function is implemented by bytecode or a
+// native circuit and whether calls may supply undefined arguments.
+type FunctionKind = descriptor.FunctionKind
+
+// Function kinds, re-exported for use with NewBytecodeFunction.
+var (
+	// BYTECODE_FUNCTION is a safe function implemented by bytecode.
+	BYTECODE_FUNCTION = descriptor.BYTECODE_FUNCTION
+	// NATIVE_FUNCTION is a safe function backed by a native circuit.
+	NATIVE_FUNCTION = descriptor.NATIVE_FUNCTION
+	// UNSAFE_ARGS_FUNCTION is a bytecode function which may receive undefined arguments.
+	UNSAFE_ARGS_FUNCTION = descriptor.UNSAFE_ARGS_FUNCTION
+	// NATIVE_UNSAFE_ARGS_FUNCTION is a native function which may receive undefined arguments.
+	NATIVE_UNSAFE_ARGS_FUNCTION = descriptor.NATIVE_UNSAFE_ARGS_FUNCTION
+)
+
 // Register describes a register
 type Register[W Word[W]] = descriptor.Register[W]
 
@@ -125,6 +141,19 @@ func CompileProgram[W word.Word[W]](p Program[W]) BinaryProgram[W] {
 	return interpreter.CompileProgram(p, false)
 }
 
+// ValidateProgram performs various sanity checks on the bytecode vectors of
+// each function within a program.  Sanity checks include: (1) ensuring that
+// vectors themselves are well-formed (e.g. with respect to write conflicts,
+// jump/skip destinations, terminal instructions, etc); (2) that each individual
+// bytecode is well formed within its function.  For example, that: any
+// registers it refers to actually exist; that registers it uses are of the
+// correct form (e.g. some instructions cannot operate on native registers);
+// that any call targets exist and are functions and, likewise, that any memory
+// accesses exist and are memories.  It returns nil when no problems are found.
+func ValidateProgram[W word.Word[W]](p Program[W]) error {
+	return validateBytecodeProgram(p)
+}
+
 // NewBytecodeProgram assembles a bytecode program directly from pre-lowered
 // descriptor modules, bypassing the word-machine round trip.
 func NewBytecodeProgram[W word.Word[W]](field field.Config, modules ...Module[W]) Program[W] {
@@ -139,9 +168,9 @@ func NewBytecodeVector[W word.Word[W]](codes ...Bytecode[W]) BytecodeVector[W] {
 
 // NewBytecodeFunction constructs a bytecode (descriptor) function module from its
 // registers and a body of bytecode vectors.
-func NewBytecodeFunction[W word.Word[W]](name string, native bool, registers []Register[W],
+func NewBytecodeFunction[W word.Word[W]](name string, kind FunctionKind, registers []Register[W],
 	code ...BytecodeVector[W]) *Function[W] {
-	return descriptor.NewFunction[W](name, registers, native, code)
+	return descriptor.NewFunction[W](name, registers, kind, code)
 }
 
 // NewRegister constructs a new register descriptor, where native
@@ -171,6 +200,16 @@ func NewInputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], p
 // which carries no fixed bit-width.
 func NewOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
 	return descriptor.NewRegister(register.OUTPUT_REGISTER, name, bitwidth, padding)
+}
+
+// IsSubtractWithBorrow checks whether or not this corresponds with a "subtract with borrow" operation, or not.
+func IsSubtractWithBorrow[W word.Word[W]](code BytecodeArith[W], env descriptor.RegisterMap[W]) bool {
+	var (
+		lhsBitwidth = descriptor.BitwidthOf(env, code.Target...).Unwrap()
+		rhsBitwidth = descriptor.CalculateSubBitwidth(code.Source, code.Constant, env).Unwrap()
+	)
+	//
+	return lhsBitwidth >= rhsBitwidth
 }
 
 // ============================================================================

@@ -106,7 +106,7 @@ type lookupEntry[W vm.Word[W]] struct {
 // groupLookupsByCondition partitions the lookup-emitting bytecodes of a vector
 // (calls, and memory accesses other than RAM) by the branch condition under
 // which they execute.
-func groupLookupsByCondition[W vm.Word[W]](codes []vm.Bytecode[W], branchTable dfa.Result[dfa.Branch],
+func groupLookupsByCondition[W vm.Word[W]](codes []vm.Bytecode[W], branchTable dfa.Result[dfa.Path[W]],
 	infos []vm.Module[W]) []lookupGroup[W] {
 	var groups []lookupGroup[W]
 	//
@@ -128,7 +128,7 @@ outer:
 		}
 		//
 		var (
-			condition = branchTable.StateOf(uint(cc)).Condition
+			condition = branchTable.StateOf(uint(cc)).Condition()
 			entry     = lookupEntry[W]{uint(cc), code}
 		)
 		// Append to an existing group with the same condition (if any).

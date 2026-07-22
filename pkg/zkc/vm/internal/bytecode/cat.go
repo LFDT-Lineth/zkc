@@ -38,8 +38,8 @@ func (p *Cat[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Cat[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *Cat[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	return validateOperands(env, p.Sources, p.Targets)
 }
 
 func (p *Cat[W]) String(env Environment[W]) string {

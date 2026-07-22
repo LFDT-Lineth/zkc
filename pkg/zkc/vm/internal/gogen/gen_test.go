@@ -698,11 +698,11 @@ var diffCases = []diffCase{
 		src:  subWrapSrc,
 		vectors: []map[string][]uint64{
 			{"data": {10, 3}},    // 5
-			{"data": {5, 10}},    // -7 -> 1017 (mod 2^10)
-			{"data": {0, 255}},   // -257 -> 767
+			{"data": {5, 10}},    // -7 -> 65529 (mod 2^16)
+			{"data": {0, 255}},   // -257 -> 65279
 			{"data": {255, 0}},   // 253
-			{"data": {0, 0}},     // -2 -> 1022
-			{"data": {255, 255}}, // -2 -> 1022
+			{"data": {0, 0}},     // -2 -> 65534
+			{"data": {255, 255}}, // -2 -> 65534
 		},
 	},
 }
@@ -710,8 +710,8 @@ var diffCases = []diffCase{
 // subWrapSrc compiles its subtraction into a single SUB with two register
 // sources AND a constant subtrahend: the shape whose two-step (SUB_2n1 + SUBC)
 // encoding used to wrap each step separately rather than once at the
-// CalculateSubBitwidth width.  The result type is u10, so an underflow wraps
-// modulo 2^10 and the wrapped value is observable through the widening cast.
+// encoded width. The result target is u16, so an underflow wraps modulo 2^16.
+// nolint
 const subWrapSrc = `pub input data(address:u8) -> (byte:u8)
 pub output result(address:u8) -> (word:u16)
 fn main() {
@@ -778,7 +778,7 @@ func TestGenSubConstWrapWidth(t *testing.T) {
 			vm.NewComputedRegister("t", u8, zero),
 			vm.NewComputedRegister("e", u8, zero),
 		}
-		main = vm.NewBytecodeFunction("main", false, regs,
+		main = vm.NewBytecodeFunction("main", vm.BYTECODE_FUNCTION, regs,
 			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(0, zero.SetUint64(1))),               // x = 1
 			vm.NewBytecodeVector[vm.Uint](vm.Sub(1, []vm.RegisterId{0}, c16.SetUint64(16))), // t = x - 16
 			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(2, c17.SetUint64(17))),               // e = 17

@@ -87,8 +87,8 @@ func (p *Intrinsic[W]) Definitions() []RegisterId {
 
 // Validate implementation for Bytecode interface.  This checks that the number
 // of arguments and returns matches what the selected operation expects.
-func (p *Intrinsic[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
-	var errs []error
+func (p *Intrinsic[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	errs := validateOperands(env, p.Uses(), p.Definitions())
 	//
 	switch p.Op {
 	case DIV_HINT:

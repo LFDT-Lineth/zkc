@@ -18,6 +18,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -56,7 +57,7 @@ func flattenLookupAccessFunction[W word.Word[W]](fn *descriptor.Function[W]) *de
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
-		alloc   = newRegAllocator(fn.Registers())
+		alloc   = split.NewAllocator(fn)
 	)
 
 	for i, vec := range vectors {
@@ -75,7 +76,7 @@ func flattenLookupAccessFunction[W word.Word[W]](fn *descriptor.Function[W]) *de
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
 }
 
 // flattenableArgs returns, for each call in the vector, the set of argument
@@ -114,7 +115,7 @@ func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
 // flattenLookupAccess expands a call, prefixing it with a snapshot ("tmp = arg") for
 // each flagged argument and rewriting the call to read those temporaries.
 func flattenLookupAccess[W word.Word[W]](code Bytecode[W], snapshot []bool,
-	registers *regAllocator[W]) []Bytecode[W] {
+	registers split.Allocator[W]) []Bytecode[W] {
 	insns, uses := snapshotUses(lookupUses(code), snapshot, registers)
 	//
 	switch c := code.(type) {
@@ -147,7 +148,7 @@ func flattenLookupAccess[W word.Word[W]](code Bytecode[W], snapshot []bool,
 }
 
 func snapshotUses[W word.Word[W]](uses []bytecode.RegisterId, snapshot []bool,
-	registers *regAllocator[W]) ([]Bytecode[W], []bytecode.RegisterId) {
+	registers split.Allocator[W]) ([]Bytecode[W], []bytecode.RegisterId) {
 	var (
 		ids   = slices.Clone(uses)
 		insns []Bytecode[W]

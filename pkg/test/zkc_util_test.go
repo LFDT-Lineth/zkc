@@ -42,7 +42,7 @@ func Test_ZkcUtil_BitShl(t *testing.T) {
 }
 
 func Test_ZkcUtil_ByteCounting(t *testing.T) {
-	checkZkcUtil(t, "zkc/util/byte_counting", DEFAULT_UTIL_CONFIG.GoGen(false))
+	checkZkcUtil(t, "zkc/util/byte_counting", DEFAULT_UTIL_CONFIG)
 }
 
 func Test_ZkcUtil_ByteSize(t *testing.T) {
@@ -50,8 +50,8 @@ func Test_ZkcUtil_ByteSize(t *testing.T) {
 }
 
 func Test_ZkcUtil_FillBytes(t *testing.T) {
-	// TODO: slice out of bounds
-	checkZkcUtil(t, "zkc/util/fill_bytes", DEFAULT_UTIL_CONFIG)
+	// #2007: support implicit sign bit
+	checkZkcUtil(t, "zkc/util/fill_bytes", DEFAULT_UTIL_CONFIG.Constraints(false))
 }
 
 func Test_ZkcUtil_FirstByte(t *testing.T) {
