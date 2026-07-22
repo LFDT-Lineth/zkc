@@ -68,7 +68,6 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 			// - for a multi-line function, its line selector (IS_PC_*)
 			// - for a one line function, the $ret register (defining the
 			//   non-padding region)
-			// (None => unfiltered).
 			srcSelector := lookupSourceSelector(mod, ctx, mod.Registers(),
 				group.condition, uint(pc), pcSelectors, ret)
 			//
@@ -149,9 +148,11 @@ outer:
 // (accessing) side of a (conditional) call's or memory access's lookup
 // constraint, given the branch condition under which the access executes and
 // the accessor's per-line is_pc_* selectors (empty for an atomic function).
+// A gating register always exists: every access is at least position-gated
+// (IS_PC_k for a multi-line function, $ret for a one-line function).
 func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
-	ret register.Id) util.Option[register.Id] {
+	ret register.Id) register.Id {
 	// In a multi-line caller the call only fires on rows executing its line, so
 	// fold the line's PC selector (IS_PC_k != 0) into the condition as an
 	// extra single-bit atom.  An atomic caller has no line selectors, so its
@@ -164,17 +165,18 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constrain
 		iomf := logical.NotEqualsConst(dfa.NewBranchId(false, ret), big.Int{})
 		cond = cond.And(logical.NewProposition(iomf))
 	}
-	// Reached on every row: no gating at all.
+	// The folded condition carries at least the position/padding atom, so it
+	// can never be trivially true.
 	if cond.IsTrue() {
-		return util.None[register.Id]()
+		panic("lookup source condition must be gated by IS_PC_k / $ret")
 	}
 	// The (gated) condition is already a single materialised boolean: reuse it
 	// directly, with no fresh column.
 	if b, ok := singleBitGuard(cond, regs); ok {
-		return util.Some(b)
+		return b
 	}
 	// General case: materialise a fresh path selector column.
-	return util.Some(newPathSelector(mod, ctx, regs, cond))
+	return newPathSelector(mod, ctx, regs, cond)
 }
 
 // singleBitGuard recognises a branch condition which is, over a single register
@@ -295,7 +297,7 @@ func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
 // caller's argument/return registers onto the callee's input/output registers.
 func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	callerRegs []register.Register, pc, calleeId uint, args, returns []register.Id,
-	srcSelector util.Option[register.Id], infos []vm.Module[W]) {
+	srcSelector register.Id, infos []vm.Module[W]) {
 	var (
 		callee     = infos[calleeId].(*vm.Function[W])
 		calleeRegs = toRegisters(callee.Registers())
@@ -313,18 +315,11 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 		tgtIds[i] = register.NewId(uint(i))
 	}
 	// Build the source (caller) vector.
-	var source mir.LookupVector[F]
-
-	if srcSelector.HasValue() {
-		var (
-			selId = srcSelector.Unwrap()
-			sel   = term.RawRegisterAccess[F, mir.Term[F]](selId, 1, 0)
-		)
-
+	var (
+		sel    = term.RawRegisterAccess[F, mir.Term[F]](srcSelector, 1, 0)
 		source = lookup.FilteredVector(ctx, sel, registerAccesses[F](callerRegs, srcIds)...)
-	} else {
-		source = lookup.UnfilteredVector(ctx, registerAccesses[F](callerRegs, srcIds)...)
-	}
+	)
+
 	// Build the target (callee) vector.
 	var (
 		target   mir.LookupVector[F]
@@ -368,7 +363,7 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 // values to the same address cannot both match a row.
 func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 	ctx schema.ModuleId, accessorRegs []register.Register, pc, cc, memId uint,
-	address, data []register.Id, srcSelector util.Option[register.Id], infos []vm.Module[W]) {
+	address, data []register.Id, srcSelector register.Id, infos []vm.Module[W]) {
 	var (
 		mem     = infos[memId].(*vm.Memory[W])
 		memRegs = toRegisters(mem.Registers())
@@ -388,18 +383,11 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir
 		tgtIds[i] = register.NewId(uint(i))
 	}
 	// Build the source (accessor) vector.
-	var source mir.LookupVector[F]
-
-	if srcSelector.HasValue() {
-		var (
-			selId = srcSelector.Unwrap()
-			sel   = term.RawRegisterAccess[F, mir.Term[F]](selId, 1, 0)
-		)
-
+	var (
+		sel    = term.RawRegisterAccess[F, mir.Term[F]](srcSelector, 1, 0)
 		source = lookup.FilteredVector(ctx, sel, registerAccesses[F](accessorRegs, srcIds)...)
-	} else {
-		source = lookup.UnfilteredVector(ctx, registerAccesses[F](accessorRegs, srcIds)...)
-	}
+	)
+
 	// Build the target (memory) vector.
 	var (
 		target   mir.LookupVector[F]
