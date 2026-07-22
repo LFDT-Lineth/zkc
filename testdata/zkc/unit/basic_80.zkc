@@ -1,0 +1,12 @@
+pub input data(address:u2) -> (value:u32)
+
+fn main() {
+    var hi:u32
+    var lo:u32
+
+    hi::lo = (data[0] as u64) * (data[1] as u64)
+
+    if hi != data[2] || lo != data[3] {
+        fail
+    }
+}
