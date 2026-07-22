@@ -30,7 +30,7 @@ var DEFAULT_CONFIG = Config{
 	word:           vm.WORD_UINT128,
 	fastMode:       false,
 	inlining:       true,
-	quiet:          true,
+	verbose:        false,
 	splitting:      true,
 	maxStaticDepth: DEFAULT_MAX_STATIC_DEPTH,
 }
@@ -57,9 +57,9 @@ type Config struct {
 	// are inlined at their call sites (and removed).  This happens before
 	// native lowering and vectorisation.
 	inlining bool
-	// quiet controls whether printf statements are emitted as VM debug
-	// instructions or skipped during code generation.
-	quiet bool
+	// verbose controls whether printf statements are emitted as VM debug
+	// instructions during code generation, or skipped (the default).
+	verbose bool
 	// splitting controls whether or not register splitting is enabled.
 	splitting bool
 	// maxStaticDepth controls the maximum depth (i.e. number of rows) of static tables.
@@ -140,12 +140,12 @@ func (p Config) IsFastMode() bool {
 	return p.fastMode
 }
 
-// Quiet returns a copy of this Config where printf statements are skipped
-// during code generation when flag=true.
-func (p Config) Quiet(flag bool) Config {
+// Verbose returns a copy of this Config where printf statements are emitted
+// during code generation when flag=true, and skipped otherwise.
+func (p Config) Verbose(flag bool) Config {
 	var q = p
 	//
-	q.quiet = flag
+	q.verbose = flag
 	//
 	return q
 }

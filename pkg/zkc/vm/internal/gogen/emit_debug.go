@@ -36,12 +36,12 @@ import (
 // padding (no base prefix, lowercase hex/bin) and %c as a single raw byte.
 //
 // The per-chunk writes use specialised primitives (WriteString / strconv /
-// big.Int) rather than fmt: a non-quiet run executes one printf per
+// big.Int) rather than fmt: a verbose run executes one printf per
 // instruction, and fmt.Fprintf would re-parse the format string and box every
 // argument on each call.  Output goes to stderr (not stdout) so it never
 // corrupts the JSON the package-main harness writes to stdout.  DEBUG
-// instructions are present only in non-quiet builds — the compiler drops printf
-// under --quiet — so this is dead code there.
+// instructions are present only in verbose builds — the compiler drops printf
+// unless --verbose is given — so this is dead code otherwise.
 func (g *generator) emitDebug(c *code, fn *descFunction, x *bytecode.Debug[word.Uint]) error {
 	g.useHelper(helperDbgWriter)
 
@@ -140,8 +140,8 @@ func formatBase(f util.Format) int {
 // the bare "machine panic" the interpreter reports; otherwise it formats the
 // message exactly as the interpreter does and panics with "machine panic:
 // <msg>".  The Run entry point recovers the failure into its error result,
-// which the harness relays on stderr.  FAIL is always compiled (quiet only
-// strips printf), so the message path is live in both modes.
+// which the harness relays on stderr.  FAIL is always compiled (non-verbose
+// mode only strips printf), so the message path is live in both modes.
 func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail[word.Uint]) error {
 	if len(x.Chunks) == 0 {
 		c.line(`panic(failure("machine panic"))`)
@@ -286,7 +286,7 @@ func (g *generator) multiLimbBig(fn *descFunction, regs []regId) (string, error)
 func (g *generator) emitPrintfHelpers(c *code) {
 	if g.usesHelper(helperDbgWriter) {
 		c.line("// dbgw buffers printf output; Run flushes it. Per-instruction printf is")
-		c.line("// the hot path of a non-quiet run, so an unbuffered os.Stderr write (a")
+		c.line("// the hot path of a verbose run, so an unbuffered os.Stderr write (a")
 		c.line("// syscall each) would dominate; one bufio.Writer amortises that.")
 		c.line("var dbgw = bufio.NewWriter(os.Stderr)")
 		c.line("")

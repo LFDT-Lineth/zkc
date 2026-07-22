@@ -105,10 +105,11 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 	for i, d := range declarations {
 		switch d := d.(type) {
 		case *decl.ResolvedFunction:
-			// In quiet mode, #[debug] functions are dropped from the program
-			// altogether: every call site is elided during codegen, so the
-			// function itself is unreachable at the machine level.
-			if p.config.quiet && slices.Contains(d.Annotations(), "debug") {
+			// Unless verbose mode is enabled, #[debug] functions are dropped
+			// from the program altogether: every call site is elided during
+			// codegen, so the function itself is unreachable at the machine
+			// level.
+			if !p.config.verbose && slices.Contains(d.Annotations(), "debug") {
 				mapping[i] = math.MaxUint
 				continue
 			}
@@ -135,10 +136,11 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		case *decl.ResolvedFunction:
 			fn, errs := p.compileFunction(uint(i), mapping, declarations)
 			errors = append(errors, errs...)
-			// In quiet mode, #[debug] functions are still compiled (so errors
-			// are reported consistently across modes) but their module is
-			// dropped, as no call site remains which could reach it.
-			if p.config.quiet && slices.Contains(c.Annotations(), "debug") {
+			// Unless verbose mode is enabled, #[debug] functions are still
+			// compiled (so errors are reported consistently across modes) but
+			// their module is dropped, as no call site remains which could
+			// reach it.
+			if !p.config.verbose && slices.Contains(c.Annotations(), "debug") {
 				continue
 			}
 			//
@@ -278,7 +280,7 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		environment: p.env,
 		field:       p.config.field,
 		srcmaps:     p.srcmaps,
-		quiet:       p.config.quiet,
+		verbose:     p.config.verbose,
 		fastMode:    p.config.fastMode,
 	}
 	//

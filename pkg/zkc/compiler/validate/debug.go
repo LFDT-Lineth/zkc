@@ -26,7 +26,8 @@ import (
 
 // DebugFunctions checks that every function marked with the #[debug]
 // annotation is safe to elide.  Calls to debug functions are dropped entirely
-// during code generation in quiet mode (like printf statements), so eliding
+// during code generation unless verbose mode is enabled (like printf
+// statements), so eliding
 // them must not change the observable state of the program.  Specifically, a
 // debug function must not:
 //

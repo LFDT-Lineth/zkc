@@ -413,7 +413,7 @@ func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) vm.Pro
 		cfg = codegen.DEFAULT_CONFIG.
 			Field(field.KOALABEAR_16).
 			FastMode(fastMode).
-			Quiet(true)
+			Verbose(false)
 		// compile into bytecode program
 		p, errs = ast.Compile(program, cfg)
 	)
@@ -979,7 +979,7 @@ func encodeInputs(p vm.Program[vm.Uint], in map[string][]uint64) map[string][]by
 }
 
 // ---------------------------------------------------------------------------
-// printf / fail messages (#1868): non-quiet builds emit printf to stderr and
+// printf / fail messages (#1868): verbose builds emit printf to stderr and
 // surface fail messages, byte-compatible with the reference interpreter.
 // ---------------------------------------------------------------------------
 
@@ -1025,13 +1025,13 @@ fn main() {
 }
 `
 
-// compileUintVerbose compiles with printf retained (Quiet(false)), unlike the
+// compileUintVerbose compiles with printf retained (Verbose(true)), unlike the
 // default helper which strips it.
 func compileUintVerbose(t testing.TB, src string) vm.Program[vm.Uint] {
 	t.Helper()
 
 	var (
-		cfg = codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).Quiet(false)
+		cfg = codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).Verbose(true)
 		// Compile source file into an AST
 		program = compileProgram(t, src)
 		// Compile AST into a bytecode program
