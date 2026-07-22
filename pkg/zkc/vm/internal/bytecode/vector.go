@@ -20,7 +20,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -192,14 +191,15 @@ func (p *Vector[W]) WriteMap() dfa.Result[dfa.Writes] {
 //
 // Observe that the optimiser automatically reduces "x!=0 && x==1" to just x==1
 // (this is why it is sometimes called _branch table optimisation_).
-func (p *Vector[W]) BranchTable() (dfa.Result[dfa.Writes], dfa.Result[dfa.Branch]) {
+func (p *Vector[W]) BranchTable() (dfa.Result[dfa.Writes], dfa.Result[dfa.Path[W]]) {
 	// Construct suitable branch table for this vector instruction.
 	var (
+		entry    = dfa.EntryPoint[W]()
 		writeMap = p.WriteMap()
 		btf      = branchTableTransfer[W](writeMap)
 	)
 	//
-	return writeMap, dfa.Construct(dfa.Branch{Condition: dfa.TRUE}, p.Bytecodes, btf)
+	return writeMap, dfa.Construct(entry, p.Bytecodes, btf)
 }
 
 // writeDfaTransfer is the data-flow transfer function for the writes analysis
@@ -251,10 +251,10 @@ func toRegisterIds(regs []RegisterId) []register.Id {
 // analysis over a bytecode vector, mirroring the instruction-level analysis
 // (see instruction.branchTableTransfer).
 func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
-) dfa.BranchTransferFunction[Bytecode[W]] {
-	return func(offset uint, code Bytecode[W], state dfa.Branch) []dfa.Transfer[dfa.Branch] {
+) dfa.PathTransferFunction[W, Bytecode[W]] {
+	return func(offset uint, code Bytecode[W], state dfa.Path[W]) []dfa.Transfer[dfa.Path[W]] {
 		var (
-			arcs   []dfa.Transfer[dfa.Branch]
+			arcs   []dfa.Transfer[dfa.Path[W]]
 			writes = writeMap.StateOf(offset)
 		)
 		//
@@ -298,12 +298,10 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
 // taken).  The empty-tail handling exists because there is no implicit
 // representation of logical truth: dfa.TRUE has no conjuncts, so the first atom
 // replaces it rather than being and-ed onto it.
-func extendSkipIf[W word.Word[W]](tail dfa.Branch, sign bool, code *SkipIf[W], writes dfa.Writes) dfa.Branch {
+func extendSkipIf[W word.Word[W]](path dfa.Path[W], sign bool, code *SkipIf[W], writes dfa.Writes) dfa.Path[W] {
 	var (
 		lhs      = toRegisterIds(code.Left.Registers())
 		rhs      = toRegisterIds(code.Right.Registers())
-		head     dfa.BranchEquality
-		tailc    = tail.Condition
 		left     = dfa.NewBranchId(writes.MayAnybeAssigned(lhs...), lhs...)
 		equality bool
 	)
@@ -318,43 +316,30 @@ func extendSkipIf[W word.Word[W]](tail dfa.Branch, sign bool, code *SkipIf[W], w
 	}
 	// Translate operation
 	if equality {
-		head = logical.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
+		return path.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	} else {
-		head = logical.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
+		return path.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	}
-	//
-	if len(tailc.Conjuncts()) == 0 {
-		return dfa.Branch{Condition: logical.NewProposition(head)}
-	}
-	//
-	return dfa.Branch{Condition: tailc.And(logical.NewProposition(head))}
 }
 
 // extendMultiway conjoins a single dispatch comparison onto the incoming branch
 // condition: "source == value" when equal is true, or "source != value"
 // otherwise.  The empty-tail handling mirrors extendSkipIf (dfa.TRUE has no
 // conjuncts, so the first atom replaces it rather than being and-ed onto it).
-func extendMultiway[W word.Word[W]](tail dfa.Branch, source dfa.BranchId, value W, equal bool) dfa.Branch {
-	var head dfa.BranchEquality
+func extendMultiway[W word.Word[W]](path dfa.Path[W], source dfa.BranchId, value W, equal bool) dfa.Path[W] {
 	//
 	if equal {
-		head = logical.EqualsConst(source, *value.BigInt())
+		return path.EqualsConst(source, value)
 	} else {
-		head = logical.NotEqualsConst(source, *value.BigInt())
+		return path.NotEqualsConst(source, value)
 	}
-	//
-	if len(tail.Condition.Conjuncts()) == 0 {
-		return dfa.Branch{Condition: logical.NewProposition(head)}
-	}
-	//
-	return dfa.Branch{Condition: tail.Condition.And(logical.NewProposition(head))}
 }
 
 // extendMultiwayDefault builds the condition under which a multiway skip falls
 // through (i.e. no case matched): the conjunction of "source != value" over
 // every case.
-func extendMultiwayDefault[W word.Word[W]](tail dfa.Branch, source dfa.BranchId, cases []SwitchCase[W]) dfa.Branch {
-	var branch = tail
+func extendMultiwayDefault[W word.Word[W]](path dfa.Path[W], source dfa.BranchId, cases []SwitchCase[W]) dfa.Path[W] {
+	var branch = path
 	//
 	for _, c := range cases {
 		branch = extendMultiway(branch, source, c.Value, false)

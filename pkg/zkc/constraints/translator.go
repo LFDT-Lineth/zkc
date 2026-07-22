@@ -283,7 +283,7 @@ func multiLineAddressConstraints[F field.Element[F]](
 	constraints := []mir.Constraint[F]{
 		// Σ_k @k[i] = ACCESS[i-1] ∙ ACCESS[i]
 		mir.NewVanishingConstraint("at_flag_sum_equals_access_bit_product", ctx, util.None[int](),
-			mirc.Sum(atFlagVars).Equals(mirc.Product([]Expr[F]{prevAccess, currAccess})).AsLogical()),
+			mirc.Sum(atFlagVars).Equals(mirc.Product(prevAccess, currAccess)).AsLogical()),
 	}
 
 	for k := range L {
@@ -388,7 +388,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 		var (
 			handle = fmt.Sprintf("pc%d", pc)
 			// construct translator for this bytecode vector
-			tr = NewVectorTranslator(ctx, uint(pc), vec, framing, regs)
+			tr = NewVectorTranslator(ctx, uint(pc), vec, framing, fn)
 			// extract logical constraint
 			constraint = tr.translate()
 		)

@@ -1,0 +1,19 @@
+pub input data(address:u32) -> (word:u32)
+
+fn main() {
+    var x:u32 = data[0]
+    var y:u32 = data[1]
+    //
+    if shr(x) != y {
+        fail
+    }
+}
+
+fn shr(x:u32) -> (y:u32) {
+    var r:u31
+    var c:u1
+    //
+    r::c = x + 0
+    //
+    y = r as u32
+}

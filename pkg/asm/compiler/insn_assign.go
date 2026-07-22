@@ -91,7 +91,7 @@ func (p *StateTranslator[F, T, E, M]) translateMonomial(mono agnostic.StaticMono
 	// Optimise for case where coeff == 1?
 	terms[n] = BigNumber[T, E](&coeff)
 	//
-	return Product(terms)
+	return Product(terms...)
 }
 
 func hasSignBit(targets []register.Id, regs []register.Register) bool {

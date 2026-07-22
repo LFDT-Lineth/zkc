@@ -18,11 +18,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -151,7 +150,7 @@ func inlineAllCalls[W word.Word[W]](fn *descriptor.Function[W], calleeId uint,
 	callee *descriptor.Function[W]) *descriptor.Function[W] {
 	//
 	var (
-		alloc   = newRegAllocator(fn.Registers())
+		alloc   = split.NewAllocator(fn)
 		code    = slices.Clone(fn.Vectors())
 		changed = false
 	)
@@ -205,7 +204,7 @@ func findCall[W word.Word[W]](code []BytecodeVector[W], calleeId uint) (uint, ui
 // Since the callee body occupies len(callee.Vectors())+1 additional vectors,
 // all jump targets beyond pc within the original code are shifted accordingly.
 func inlineCallSite[W word.Word[W]](code []BytecodeVector[W], pc, k uint, call *bytecode.Call[W],
-	callee *descriptor.Function[W], alloc *regAllocator[W]) []BytecodeVector[W] {
+	callee *descriptor.Function[W], alloc split.Allocator[W]) []BytecodeVector[W] {
 	//
 	var (
 		codes  = code[pc].Bytecodes
@@ -321,7 +320,7 @@ type registerCopy struct {
 // width.  Anything which cannot be aliased (including all temporaries) gets a
 // fresh (computed) shadow register of the same shape.
 func buildShadowMap[W word.Word[W]](call *bytecode.Call[W], callee *descriptor.Function[W],
-	alloc *regAllocator[W]) shadowMap {
+	alloc split.Allocator[W]) shadowMap {
 	//
 	var (
 		shadows    = shadowMap{registers: make([]bytecode.RegisterId, callee.Width())}
@@ -669,49 +668,4 @@ func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
 	}
 	//
 	return insn
-}
-
-// ============================================================================
-// Register allocator
-// ============================================================================
-
-// regAllocator allocates fresh caller-local shadow registers within a function
-// during inlining.  It mirrors register.Allocator, but works directly over the
-// descriptor registers carried by a bytecode function, so existing registers
-// (and their padding) are preserved verbatim rather than round-tripped through
-// the schema-register representation.
-type regAllocator[W word.Word[W]] struct {
-	registers []descriptor.Register[W]
-}
-
-// newRegAllocator constructs an allocator seeded with the given (existing)
-// registers.  Subsequently allocated registers are appended after these.
-func newRegAllocator[W word.Word[W]](registers []descriptor.Register[W]) *regAllocator[W] {
-	return &regAllocator[W]{slices.Clone(registers)}
-}
-
-// Allocate a fresh computed register of the given shape (native when the
-// bitwidth is empty), returning its identifier.  A unique name is derived from
-// the given prefix.  Computed registers sort after inputs / outputs, so
-// appending here preserves the register ordering required by a function module.
-func (p *regAllocator[W]) Allocate(prefix string, bitwidth util.Option[uint]) bytecode.RegisterId {
-	var (
-		padding W
-		index   = uint16(len(p.registers))
-		name    = fmt.Sprintf("%s$%d", prefix, index)
-	)
-	//
-	p.registers = append(p.registers, descriptor.NewRegister(register.COMPUTED_REGISTER, name, bitwidth, padding))
-	//
-	return index
-}
-
-// Registers returns the current register set, including any allocated shadows.
-func (p *regAllocator[W]) Registers() []descriptor.Register[W] {
-	return p.registers
-}
-
-// Register returns the register with the given identifier.
-func (p *regAllocator[W]) Register(id bytecode.RegisterId) descriptor.Register[W] {
-	return p.registers[id]
 }

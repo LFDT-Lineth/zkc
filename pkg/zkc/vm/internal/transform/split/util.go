@@ -19,12 +19,16 @@ package split
 import (
 	"math"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
+
+// LimbsMap provides a useful alias
+type LimbsMap[W word.Word[W]] descriptor.LimbsMap[W]
 
 // ApplyLimbsMap maps a set of (bytecode) registers onto their corresponding
 // limb registers.  Observe that this splits the limbs in "declaration order"
@@ -65,27 +69,42 @@ func applyLimbsMapReversed[W any](limbsMap descriptor.LimbsMap[W], rids ...Regis
 	return limbIds
 }
 
-// splitSourceRegisters splits each source register into limb-indexed chunks
-// and folds the corresponding limb of the instruction constant into each
-// chunk.
-func splitSourceRegisters[W word.Word[W]](mapping descriptor.LimbsMap[W], regs []RegisterId, constant W) Chunks[W] {
+type limbMatrix[W word.Word[W]] struct {
+	mapping       descriptor.LimbsMap[W]
+	chunks        [][]util.Option[RegisterId]
+	width, height int
+}
+
+func newLimbMatrix[W word.Word[W]](regs []RegisterId, mapping descriptor.LimbsMap[W]) *limbMatrix[W] {
 	var (
-		chunks Chunks[W]
+		nregs  = len(regs)
+		nlimbs int
 	)
-	// Split source registers
+	// Determine maximum number of limbs of any register
 	for _, reg := range regs {
 		// split ith register into n limbs and then allocate them across the
 		// chunks accordingly.
+		nlimbs = max(nlimbs, len(mapping.LimbIds(reg)))
+	}
+	// initialise empty chunks array
+	var chunks = make([][]util.Option[RegisterId], nlimbs)
+	//
+	for i := range chunks {
+		chunks[i] = make([]util.Option[RegisterId], nregs)
+	}
+	// fill out chunks array
+	for i, reg := range regs {
 		for j, limb := range mapping.LimbIds(reg) {
-			chunks.Apply(uint(j), appendRhsLimb[W](limb))
+			chunks[j][i] = util.Some(limb)
 		}
 	}
-	// Split constant
-	for i, c := range descriptor.SplitConstant(constant, mapping.RegisterWidth()) {
-		chunks.Apply(uint(i), setRhsConstant(c))
+	// Done
+	return &limbMatrix[W]{
+		mapping,
+		chunks,
+		nlimbs,
+		nregs,
 	}
-	//
-	return chunks
 }
 
 // SelectLimbs consumes as many register limbs as possible which fit within the
@@ -115,52 +134,71 @@ func selectLimbs[W any](bitwidth uint, targets []RegisterId, mapping descriptor.
 	return lhs, targets
 }
 
-// initialiseLineaChunks splits the source registers (and constant) into
-// least-significant-first chunks, then assigns target limbs to each chunk
-// according to the number of bits the corresponding RHS can produce.
-func initialiseLineaChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
-	targets, sources []RegisterId, constant W) (Chunks[W], []Bytecode[W]) {
-	//
-	var (
-		bytecodes []Bytecode[W]
-		// Extract register width
-		regWidth = mapping.RegisterWidth()
-		// Split source registers into initial chunks
-		chunks = splitSourceRegisters(mapping, sources, constant)
-		// Determine target limbs
-		limbs = applyLimbsMapReversed(mapping, targets...)
-	)
-	//
-	for i := uint(0); i < chunks.Len(); i++ {
-		var (
-			lhs   []RegisterId
-			codes []Bytecode[W]
-		)
-		// pull out targets
-		if len(limbs) > 0 {
-			lhs, limbs, codes = selectAlignedLimbs(regWidth, limbs, alloc)
-		} else {
-			lhs = []RegisterId{alloc.ZeroRegister()}
-		}
-		// allocate selected targets
-		chunks.Apply(i, setLhsLimbs[W](lhs...))
-		//
-		bytecodes = append(bytecodes, codes...)
-	}
-	// Handle cases where we have more targets than necessary.  This can arise
-	// under normal circumstances, such as when assigning a small constant to a
-	// wide target register.  In this case, we simple assign each target in this
-	// "overhang" to zero.
-	for len(limbs) > 0 {
-		chunks.Append(setLhsLimbs[W](limbs[0]))
-		limbs = limbs[1:]
-	}
-	//
-	return chunks, bytecodes
+// RegisterStack abstracts a set of concatenated registers, and provides
+// mechanism to extract them on a bit-by-bit basis.
+type RegisterStack[W word.Word[W]] struct {
+	// stack of registers
+	stack []RegisterId
+	// register allocator (used when splitting registers)
+	alloc Allocator[W]
+	// bytecodes created to handle splitting which should come either before or
+	// after the given instruction.
+	post []Bytecode[W]
 }
 
-// select aligned target registers
-func selectAlignedLimbs[W word.Word[W]](bitwidth uint, targets []RegisterId, alloc Allocator[W],
+// Size returns remaining height of stack
+func (p *RegisterStack[W]) Size() uint {
+	return uint(len(p.stack))
+}
+
+// Pop off next target
+func (p *RegisterStack[W]) Pop() (res RegisterId) {
+	var next = p.stack[0]
+	//
+	p.stack = p.stack[1:]
+	//
+	return next
+}
+
+// SelectExact at most n bits from the current register stack.  Specifically, if the
+// target stack has enough bits, then it always returns exactly n bits.
+func (p *RegisterStack[W]) SelectExact(nbits uint) (res []RegisterId) {
+	var post []Bytecode[W]
+	//
+	if len(p.stack) > 0 {
+		res, p.stack, post = selectAlignedTargetLimbs(nbits, p.stack, p.alloc)
+		// append any required bytecodes
+		p.post = append(p.post, post...)
+	} else {
+		res = []RegisterId{p.alloc.ZeroRegister()}
+	}
+	//
+	return res
+}
+
+// SelectUpto selects upto n bits from the stack, but it does not need to be
+// exact.
+func (p *RegisterStack[W]) SelectUpto(nbits uint) (res []RegisterId) {
+	if descriptor.HasNativeRegisterId(p.stack, p.alloc) {
+		util.Assert(len(p.stack) == 1, "native register has limbs")
+		res = p.stack
+		p.stack = nil
+
+		return res
+	}
+	//
+	if len(p.stack) > 0 {
+		res, p.stack = selectLimbs(nbits, p.stack, p.alloc)
+	} else {
+		res = []RegisterId{p.alloc.ZeroRegister()}
+	}
+	// Done
+	return res
+}
+
+// selectAlignedTargetLimbs selects n registers from the given array of target
+// registers, such that their combined width does not exceed the given target.
+func selectAlignedTargetLimbs[W word.Word[W]](bitwidth uint, targets []RegisterId, alloc Allocator[W],
 ) (selected []RegisterId, remainder []RegisterId, context []Bytecode[W]) {
 	//
 	var (
@@ -205,4 +243,73 @@ func targetWidth[W any](targets []RegisterId, mapping descriptor.RegisterMap[W])
 	}
 	//
 	return mapping.Register(targets[0]).Bitwidth().Unwrap()
+}
+
+func allocateTemporary[W word.Word[W]](bitwidth uint, mapping descriptor.LimbsMap[W], alloc Allocator[W],
+) (RegisterId, descriptor.LimbsMap[W]) {
+	var (
+		zero      W
+		temp      = descriptor.NewRegister(register.COMPUTED_REGISTER, "", util.Some(bitwidth), zero)
+		tempLimbs = descriptor.SplitIntoLimbs(mapping.RegisterWidth(), temp)
+		limbs     = make([]RegisterId, len(tempLimbs))
+		rid       = RegisterId(mapping.Width())
+		n         = len(limbs) - 1
+	)
+	// Allocate limbs in reverse order so most significant limb comes first
+	// (i.e. to ensure allocation matches what happens normally).
+	for i := range tempLimbs {
+		limbs[n-i] = alloc.Allocate("t", tempLimbs[n-i].Bitwidth())
+	}
+	//
+	return rid, limbsMapWrapper[W]{mapping, rid, temp, limbs}
+}
+
+// a minimal wrapper which allows us to "pretend" there is a mapping from an
+// imaginary register to a given set of concrete limbs.  It doesn't matter that
+// the register is imaginary as, after splitting, only the limbs will remain ---
+// and they are real.
+type limbsMapWrapper[W any] struct {
+	descriptor.LimbsMap[W]
+	// the imaginary mapping
+	id    RegisterId
+	reg   descriptor.Register[W]
+	limbs []RegisterId
+}
+
+// Limbs implementation for the LimbsMap interface
+func (p limbsMapWrapper[W]) LimbIds(reg RegisterId) []descriptor.LimbId {
+	if reg == p.id {
+		return p.limbs
+	}
+	//
+	return p.LimbsMap.LimbIds(reg)
+}
+
+// Register implementation for the LimbsMap interface
+func (p limbsMapWrapper[W]) Register(reg descriptor.LimbId) descriptor.Limb[W] {
+	if reg == p.id {
+		return p.reg
+	}
+	//
+	return p.LimbsMap.Register(reg)
+}
+
+// Limb implementation for the LimbsMap interface
+func (p limbsMapWrapper[W]) Limb(reg descriptor.LimbId) descriptor.Limb[W] {
+	panic("unsupported operation")
+}
+
+// Limbs implementation for the LimbsMap interface
+func (p limbsMapWrapper[W]) Limbs() []descriptor.Limb[W] {
+	panic("unsupported operation")
+}
+
+// LimbsMap implementation for the LimbsMap interface
+func (p limbsMapWrapper[W]) LimbsRegisterMap() descriptor.RegisterMap[W] {
+	panic("unsupported operation")
+}
+
+// Registers implementation for the LimbsMap interface
+func (p limbsMapWrapper[W]) Registers() []descriptor.Limb[W] {
+	panic("unsupported operation")
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -50,7 +51,7 @@ func lowerDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descript
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
-		alloc   = newRegAllocator(fn.Registers())
+		alloc   = split.NewAllocator(fn)
 	)
 
 	for i, vec := range vectors {
@@ -64,7 +65,7 @@ func lowerDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descript
 
 func lowerDivisionCode[W word.Word[W]](
 	b Bytecode[W],
-	registers *regAllocator[W],
+	registers split.Allocator[W],
 ) []Bytecode[W] {
 	dr, ok := b.(*bytecode.DivRem[W])
 	if !ok {
@@ -82,7 +83,7 @@ func lowerDivisionCode[W word.Word[W]](
 }
 
 // expandDivision replaces INT_DIV(q, x, y) with the hint+validation sequence.
-func expandDivision[W word.Word[W]](q, x, y bytecode.RegisterId, registers *regAllocator[W]) []Bytecode[W] {
+func expandDivision[W word.Word[W]](q, x, y bytecode.RegisterId, registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		nX = registers.Register(x).Bitwidth().Unwrap()
 		nY = registers.Register(y).Bitwidth().Unwrap()
@@ -94,7 +95,7 @@ func expandDivision[W word.Word[W]](q, x, y bytecode.RegisterId, registers *regA
 }
 
 // expandRemainder replaces INT_REM(r, x, y) with the hint+validation sequence.
-func expandRemainder[W word.Word[W]](r, x, y bytecode.RegisterId, registers *regAllocator[W]) []Bytecode[W] {
+func expandRemainder[W word.Word[W]](r, x, y bytecode.RegisterId, registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		nX = registers.Register(x).Bitwidth().Unwrap()
 		nY = registers.Register(y).Bitwidth().Unwrap()
@@ -124,7 +125,7 @@ func expandRemainder[W word.Word[W]](r, x, y bytecode.RegisterId, registers *reg
 // assertion splits into independent per-limb equalities (see split.Subtraction),
 // which needs no borrows.
 func expandDivRem[W word.Word[W]](q, r, w, x, y bytecode.RegisterId, nX, nY uint,
-	registers *regAllocator[W]) []Bytecode[W] {
+	registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)

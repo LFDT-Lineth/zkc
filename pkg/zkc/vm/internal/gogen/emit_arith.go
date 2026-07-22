@@ -61,6 +61,12 @@ func (g *generator) emitArith(c *code, fn *descFunction, x *bytecode.Arith[word.
 		if err != nil {
 			return err
 		}
+		// The general vector encoding widens arithmetic to the target width.
+		// The compact SUBC and SUB_2n1 encodings retain their source-derived
+		// wrap widths, so only mirror the target widening when SUB_nm is used.
+		if usesVectorSubEncoding(x) {
+			wrap = max(wrap, store.total)
+		}
 
 		return g.emitSub(c, srcs, konst, store, wrap)
 	case bytecode.OP_MUL:
@@ -68,6 +74,21 @@ func (g *generator) emitArith(c *code, fn *descFunction, x *bytecode.Arith[word.
 	default:
 		return fmt.Errorf("gogen: unsupported arithmetic operation (%d)", x.Op)
 	}
+}
+
+// usesVectorSubEncoding mirrors the subtraction cases selected by
+// encoding.Arith.  A one-source subtraction with a small constant uses SUBC,
+// and a two-source subtraction without a constant uses SUB_2n1.  Every other
+// subtraction uses SUB_nm, whose encoded wrap width includes the target width.
+func usesVectorSubEncoding(x *bytecode.Arith[word.Uint]) bool {
+	var (
+		n                = len(x.Source)
+		m                = len(x.Target)
+		constantIsZero   = bytecode.IsUnusedConstant(x.Op, x.Constant)
+		constantIsUint24 = x.Constant.Cmp64(0x100_0000) < 0
+	)
+
+	return !((n == 1 && m == 1 && constantIsUint24) || (n == 2 && m == 1 && constantIsZero))
 }
 
 // anyWide reports whether some operand is a lo/hi pair.
@@ -165,12 +186,12 @@ func (g *generator) emitAdd(c *code, srcs []operand, konst operand, store storeV
 	return inner
 }
 
-// subWrapWidth mirrors calculateArithBitwidth for OP_SUB: the width in which a
-// vectored subtraction is performed.  On underflow the value wraps modulo
-// 2^width (executeSub_nm), which is what places the borrow bit of a
-// subtract-with-borrow into the top target limb.  Widths are the declared
-// register widths — not the interval-sharpened bounds — because that is what
-// the reference interpreter encodes.
+// subWrapWidth mirrors CalculateSubBitwidth: the source-derived width in which
+// a subtraction is performed. On underflow the value wraps modulo 2^width,
+// which is what places the borrow bit of a subtract-with-borrow into the top
+// target limb. Widths are the declared register widths — not the
+// interval-sharpened bounds — because that is what the reference interpreter
+// encodes. The caller additionally applies the target width for SUB_nm.
 func (g *generator) subWrapWidth(fn *descFunction, sources []regId, constant word.Uint) (uint, error) {
 	lhs, err := g.regWidth(fn, sources[0])
 	if err != nil {

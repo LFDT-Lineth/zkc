@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -55,7 +56,7 @@ func flattenCallsFunction[W word.Word[W]](fn *descriptor.Function[W]) *descripto
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
-		alloc   = newRegAllocator(fn.Registers())
+		alloc   = split.NewAllocator(fn)
 	)
 
 	for i, vec := range vectors {
@@ -113,7 +114,7 @@ func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
 // flattenCall expands a call, prefixing it with a snapshot ("tmp = arg") for
 // each flagged argument and rewriting the call to read those temporaries.
 func flattenCall[W word.Word[W]](call *bytecode.Call[W], snapshot []bool,
-	registers *regAllocator[W]) []Bytecode[W] {
+	registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		args  = slices.Clone(call.Arguments)
 		insns []Bytecode[W]

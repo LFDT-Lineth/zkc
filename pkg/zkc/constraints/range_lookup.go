@@ -101,7 +101,7 @@ func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Const
 			handle := fmt.Sprintf("range_u1_%d", regId.Unwrap())
 			r := mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
 			mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](),
-				mirc.Product([]Expr[F]{r, r}).Equals(r).AsLogical()))
+				mirc.Product(r, r).Equals(r).AsLogical()))
 
 			continue
 		}

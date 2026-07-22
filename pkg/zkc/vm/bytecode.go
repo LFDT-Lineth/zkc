@@ -173,6 +173,16 @@ func NewOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], 
 	return descriptor.NewRegister(register.OUTPUT_REGISTER, name, bitwidth, padding)
 }
 
+// IsSubtractWithBorrow checks whether or not this corresponds with a "subtract with borrow" operation, or not.
+func IsSubtractWithBorrow[W word.Word[W]](code BytecodeArith[W], env descriptor.RegisterMap[W]) bool {
+	var (
+		lhsBitwidth = descriptor.BitwidthOf(env, code.Target...).Unwrap()
+		rhsBitwidth = descriptor.CalculateSubBitwidth(code.Source, code.Constant, env).Unwrap()
+	)
+	//
+	return lhsBitwidth >= rhsBitwidth
+}
+
 // ============================================================================
 // Bytecode construction
 // ============================================================================
