@@ -34,17 +34,36 @@ type Function[W word.Word[W]] struct {
 	kind FunctionKind
 	// Code defines the body of this function.
 	vectors []bytecode.Vector[W]
+	// effects records the module ids of the read-write memories this function
+	// is permitted to access (its declared "<...>" effects).  This is transient
+	// front-end information: it is populated by codegen and consumed by the
+	// timestamp-threading transform which runs immediately afterwards, so it is
+	// deliberately NOT serialised by GobEncode/GobDecode.
+	effects []ModuleId
 }
 
 // NewFunction constructs a new function with the given components.
 func NewFunction[W word.Word[W]](name string, registers []Register[W], kind FunctionKind,
 	code []bytecode.Vector[W]) *Function[W] {
-	return &Function[W]{newModuleBase(name, registers), kind, code}
+	return &Function[W]{moduleBase: newModuleBase(name, registers), kind: kind, vectors: code}
 }
 
 // Kind returns the execution kind of this function.
 func (p *Function[W]) Kind() FunctionKind {
 	return p.kind
+}
+
+// Effects returns the module ids of the read-write memories this function is
+// permitted to access (see the effects field).  May be nil (e.g. after a gob
+// round-trip, or for a function with no read-write memory effects).
+func (p *Function[W]) Effects() []ModuleId {
+	return p.effects
+}
+
+// SetEffects records the module ids of the read-write memories this function is
+// permitted to access.  Called by codegen right after construction.
+func (p *Function[W]) SetEffects(effects []ModuleId) {
+	p.effects = effects
 }
 
 // IsOneLine determines whether or not this function contains a single "line"

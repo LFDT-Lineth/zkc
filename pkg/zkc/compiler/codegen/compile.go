@@ -296,9 +296,21 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 	if slices.Contains(fn.Annotations(), "native") {
 		kind = vm.NATIVE_FUNCTION
 	}
+	// Record this function's declared memory effects, mapped from ast
+	// declaration indices to vm module ids, so the timestamp-threading transform
+	// can identify which functions access (and must thread a timestamp for) each
+	// read-write memory.
+	var effects []vm.ModuleId
+	//
+	for _, eff := range fn.Effects {
+		effects = append(effects, vm.ModuleId(mapping[eff.Index]))
+	}
 	// Note: compiler.registers includes any temporaries allocated during
 	// statement compilation.
-	return vm.NewBytecodeFunction(fn.Name(), kind, compiler.registers, vectors...), compiler.errors
+	result := vm.NewBytecodeFunction(fn.Name(), kind, compiler.registers, vectors...)
+	result.SetEffects(effects)
+	//
+	return result, compiler.errors
 }
 
 // buildMemory constructs the memory descriptor module for a resolved memory
