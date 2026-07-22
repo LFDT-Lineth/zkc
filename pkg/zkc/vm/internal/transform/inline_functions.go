@@ -492,6 +492,10 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 			insn.Constant)
 	case *bytecode.Cat[W]:
 		return bytecode.Concat[W](substituteIds(insn.Targets, sub), substituteIds(insn.Sources, sub))
+	case *bytecode.UintToField[W]:
+		return &bytecode.UintToField[W]{Target: substituteId(insn.Target, sub), Source: substituteIds(insn.Source, sub)}
+	case *bytecode.FieldToUint[W]:
+		return &bytecode.FieldToUint[W]{Target: substituteIds(insn.Target, sub), Source: substituteId(insn.Source, sub)}
 	case *bytecode.Call[W]:
 		return bytecode.CallFun[W](insn.Target, substituteIds(insn.Arguments, sub),
 			substituteIds(insn.Returns, sub))

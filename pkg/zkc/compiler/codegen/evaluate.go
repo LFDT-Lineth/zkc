@@ -185,12 +185,9 @@ func (p ConstantEvaluator) evalFieldConstant(e Expr, definition bool) (res vm.Ui
 	//
 	switch e := e.(type) {
 	case *expr.Cast[symbol.Resolved]:
+		// A uint→𝔽 cast reduces modulo P; a constant already in [0,P) is a no-op.
 		res, errorMessage = p.Eval(e.Expr, definition)
-		if res.BigInt().Cmp(fmod) >= 0 {
-			return res, fmt.Sprintf("cast overflows field modulus \"%s\"", p.field.Name)
-		}
-
-		return
+		return res.Rem(modulus), errorMessage
 	case *expr.Const[symbol.Resolved]:
 		var c vm.Uint
 		// sanity check for overflow

@@ -20,8 +20,9 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 )
 
-// Cast represents a type cast expression of the form "e as T", which truncates
-// the value of e to fit within the target type T.
+// Cast represents a type cast expression of the form "e as T". Uint narrowing
+// is checked, uint-to-field conversion reduces modulo P, and field-to-uint
+// conversion extracts the canonical representative and checks the target width.
 type Cast[S symbol.Symbol[S]] struct {
 	Expr     Expr[S]
 	CastType data.Type[S]
