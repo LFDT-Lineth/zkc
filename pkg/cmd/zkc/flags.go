@@ -50,6 +50,7 @@ func GetVerboseLevel(cmd *cobra.Command) VerboseLevel {
 	}
 	//
 	var verboseLevel VerboseLevel
+
 	switch {
 	case n <= 0:
 		verboseLevel = VERBOSE_NONE
