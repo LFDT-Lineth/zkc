@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/spf13/cobra"
@@ -37,21 +36,23 @@ const (
 	VERBOSE_DEBUG
 )
 
-// GetVerboseLevel parses the "verbose-level" flag, exiting with an error on an
-// unrecognised value.  Parsing is case-insensitive.
+// GetVerboseLevel derives the verbosity from the repeatable "verbose" (-v)
+// flag: absent selects NONE, a single -v selects INFO, and -vv (or more)
+// selects DEBUG.
 func GetVerboseLevel(cmd *cobra.Command) VerboseLevel {
-	switch strings.ToUpper(strings.TrimSpace(GetString(cmd, "verbose-level"))) {
-	case "NONE":
+	n, err := cmd.Flags().GetCount("verbose")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(4)
+	}
+	//
+	switch {
+	case n <= 0:
 		return VERBOSE_NONE
-	case "INFO":
+	case n == 1:
 		return VERBOSE_INFO
-	case "DEBUG":
-		return VERBOSE_DEBUG
 	default:
-		fmt.Printf("error: invalid --verbose-level %q (expected NONE, INFO or DEBUG)\n",
-			GetString(cmd, "verbose-level"))
-		os.Exit(2)
-		return VERBOSE_NONE
+		return VERBOSE_DEBUG
 	}
 }
 
