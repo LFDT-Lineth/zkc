@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -23,6 +24,9 @@ import (
 // NewArith constructs a new arithmetic instruction computing
 // "targets = sources[0] op sources[1] op ... op constant".
 func NewArith[W word.Word[W]](op Operation, targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	util.Assert(len(targets) > 0, "missing target register(s)")
+	util.Assert(len(sources) > 0 || op == OP_ADD, "missing source register(s)")
+	//
 	return &Arith[W]{op, constant, sources, targets}
 }
 
@@ -46,8 +50,8 @@ func (p *Arith[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Arith[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *Arith[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	return validateOperands(env, p.Source, p.Target)
 }
 
 func (p *Arith[W]) String(env Environment[W]) string {

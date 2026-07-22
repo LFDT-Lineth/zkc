@@ -41,8 +41,8 @@ func (p *DivRem[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *DivRem[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *DivRem[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	return validateOperands(env, p.Uses(), p.Definitions())
 }
 
 func (p *DivRem[W]) String(mapping Environment[W]) string {

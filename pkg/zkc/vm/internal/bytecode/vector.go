@@ -14,13 +14,13 @@ package bytecode
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -109,29 +109,92 @@ func (p *Vector[W]) String(env Environment[W]) string {
 // which _may_ (but not _definitely_) have been written.
 func (p *Vector[W]) Validate(field FieldConfig, env Environment[W]) []error {
 	var (
+		errors, structureSafe      = p.validateStructure(env)
+		controlErrors, controlSafe = p.validateControlFlow()
+	)
+
+	errors = append(errors, controlErrors...)
+	// Validate individual bytecodes. Each bytecode checks its operands before
+	// performing any environment lookup.
+	for _, b := range p.Bytecodes {
+		if !isNilBytecode(b) {
+			errors = append(errors, b.Validate(field, env)...)
+		}
+	}
+	// WriteMap assumes that every control-flow destination is in bounds and
+	// every bytecode is non-nil.
+	if !structureSafe || !controlSafe {
+		return errors
+	}
+
+	return append(errors, p.validateReadWriteConflicts(env)...)
+}
+
+// validateStructure checks every index which an environment lookup or jump
+// would dereference. The returned boolean indicates whether environment-
+// dependent bytecode validation and write-map construction are safe.
+func (p *Vector[W]) validateStructure(env Environment[W]) ([]error, bool) {
+	var (
+		errors []error
+		safe   = true
+	)
+
+	for i, code := range p.Bytecodes {
+		if isNilBytecode(code) {
+			errors = append(errors, fmt.Errorf("bytecode %d is nil", i))
+			safe = false
+
+			continue
+		}
+
+		for _, registers := range [][]RegisterId{code.Uses(), code.Definitions()} {
+			for _, id := range registers {
+				if uint(id) >= env.RegisterCount() {
+					safe = false
+				}
+			}
+		}
+
+		if jump, ok := code.(*Jmp[W]); ok && uint(jump.Target) >= env.VectorCount() {
+			errors = append(errors, fmt.Errorf("bytecode %d: jump target %d does not exist", i, jump.Target))
+			safe = false
+		}
+	}
+
+	return errors, safe
+}
+
+// validateReadWriteConflicts checks for ambiguous reads and writes along every
+// execution path through this vector.
+func (p *Vector[W]) validateReadWriteConflicts(env Environment[W]) []error {
+	var (
 		errors   []error
-		nCodes   = uint(len(p.Bytecodes))
 		writeMap = p.WriteMap()
 	)
-	// Validate individual bytecodes.
-	for _, b := range p.Bytecodes {
-		errors = append(errors, b.Validate(nCodes, field, env)...)
-	}
-	// Validate there are no read/write conflicts.
-	for i := range nCodes {
+	for i := range uint(len(p.Bytecodes)) {
 		var (
 			ithState = writeMap.StateOf(i)
 			ith      = p.Bytecodes[i]
 		)
 		// Sanity check for conflicting reads.
-		for _, r := range ith.Uses() {
-			if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) && !ithState.DefinitelyAssigned(rid) {
-				errors = append(errors,
-					fmt.Errorf("conflicting read on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
+		if !isUnsafeCall(ith, env) {
+			for _, r := range ith.Uses() {
+				if isZeroWidth(r, env) {
+					continue
+				}
+
+				if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) && !ithState.DefinitelyAssigned(rid) {
+					errors = append(errors,
+						fmt.Errorf("conflicting read on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
+				}
 			}
 		}
 		// Sanity check for conflicting writes.
 		for _, r := range ith.Definitions() {
+			if isZeroWidth(r, env) {
+				continue
+			}
+
 			if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) {
 				errors = append(errors,
 					fmt.Errorf("conflicting write on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
@@ -140,6 +203,137 @@ func (p *Vector[W]) Validate(field FieldConfig, env Environment[W]) []error {
 	}
 	//
 	return errors
+}
+
+func isUnsafeCall[W word.Word[W]](code Bytecode[W], env Environment[W]) bool {
+	call, ok := code.(*Call[W])
+	if !ok {
+		return false
+	}
+
+	module := env.Module(call.Target)
+	if module.IsEmpty() {
+		return false
+	}
+
+	callee := module.Unwrap()
+
+	return callee.IsFunction() && callee.HasUnsafeArgs()
+}
+
+// validateControlFlow checks the intra-vector control-flow graph.  Every skip
+// destination must exist, including destinations in unreachable code, and
+// every reachable path must end in a terminal bytecode.
+func (p *Vector[W]) validateControlFlow() ([]error, bool) {
+	var (
+		errors []error
+		n      = uint(len(p.Bytecodes))
+		safe   = n != 0
+	)
+	if n == 0 {
+		return []error{fmt.Errorf("empty vector")}, false
+	}
+
+	for i, code := range p.Bytecodes {
+		if isNilBytecode(code) {
+			safe = false
+			continue
+		}
+
+		micro := uint(i)
+
+		switch code := code.(type) {
+		case *Skip[W]:
+			errors, safe = validateSkipDestination(errors, safe, micro, uint(code.Skip), n)
+		case *SkipIf[W]:
+			errors, safe = validateSkipDestination(errors, safe, micro, uint(code.Skip), n)
+		case *Switch[W]:
+			for _, c := range code.Cases {
+				errors, safe = validateSkipDestination(errors, safe, micro, uint(c.Skip), n)
+			}
+		}
+	}
+	// Explore only valid successors. Invalid destinations were reported above.
+	var (
+		visited = make([]bool, n)
+		visit   func(uint)
+	)
+
+	visit = func(micro uint) {
+		if micro >= n {
+			errors = append(errors, fmt.Errorf("reachable path falls off end of vector"))
+			safe = false
+
+			return
+		}
+
+		if visited[micro] {
+			return
+		}
+
+		visited[micro] = true
+
+		code := p.Bytecodes[micro]
+		if isNilBytecode(code) {
+			return
+		}
+
+		switch code := code.(type) {
+		case *Fail[W], *Jmp[W], *Ret[W]:
+			return
+		case *Skip[W]:
+			visitSkipDestination(micro, uint(code.Skip), n, visit)
+		case *SkipIf[W]:
+			visit(micro + 1)
+			visitSkipDestination(micro, uint(code.Skip), n, visit)
+		case *Switch[W]:
+			visit(micro + 1)
+
+			for _, c := range code.Cases {
+				visitSkipDestination(micro, uint(c.Skip), n, visit)
+			}
+		default:
+			visit(micro + 1)
+		}
+	}
+	visit(0)
+
+	return errors, safe
+}
+
+func validateSkipDestination(errors []error, safe bool, micro, skip, length uint) ([]error, bool) {
+	target := micro + skip + 1
+	if target >= length {
+		errors = append(errors, fmt.Errorf("bytecode %d: skip target %d does not exist", micro, target))
+		return errors, false
+	}
+
+	return errors, safe
+}
+
+func visitSkipDestination(micro, skip, length uint, visit func(uint)) {
+	target := micro + skip + 1
+	if target < length {
+		visit(target)
+	}
+}
+
+func isNilBytecode[W word.Word[W]](code Bytecode[W]) bool {
+	if code == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(code)
+
+	return value.Kind() == reflect.Pointer && value.IsNil()
+}
+
+// Zero-width registers are placeholders introduced by register splitting. They
+// carry no data, so apparent reads and writes to a shared placeholder cannot
+// conflict.
+func isZeroWidth[W word.Word[W]](id RegisterId, env Environment[W]) bool {
+	width := env.Register(id).Bitwidth()
+	return width.HasValue() && width.Unwrap() == 0
 }
 
 // WriteMap constructs the write map for this vector instruction.
@@ -192,14 +386,15 @@ func (p *Vector[W]) WriteMap() dfa.Result[dfa.Writes] {
 //
 // Observe that the optimiser automatically reduces "x!=0 && x==1" to just x==1
 // (this is why it is sometimes called _branch table optimisation_).
-func (p *Vector[W]) BranchTable() (dfa.Result[dfa.Writes], dfa.Result[dfa.Branch]) {
+func (p *Vector[W]) BranchTable() (dfa.Result[dfa.Writes], dfa.Result[dfa.Path[W]]) {
 	// Construct suitable branch table for this vector instruction.
 	var (
+		entry    = dfa.EntryPoint[W]()
 		writeMap = p.WriteMap()
 		btf      = branchTableTransfer[W](writeMap)
 	)
 	//
-	return writeMap, dfa.Construct(dfa.Branch{Condition: dfa.TRUE}, p.Bytecodes, btf)
+	return writeMap, dfa.Construct(entry, p.Bytecodes, btf)
 }
 
 // writeDfaTransfer is the data-flow transfer function for the writes analysis
@@ -251,10 +446,10 @@ func toRegisterIds(regs []RegisterId) []register.Id {
 // analysis over a bytecode vector, mirroring the instruction-level analysis
 // (see instruction.branchTableTransfer).
 func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
-) dfa.BranchTransferFunction[Bytecode[W]] {
-	return func(offset uint, code Bytecode[W], state dfa.Branch) []dfa.Transfer[dfa.Branch] {
+) dfa.PathTransferFunction[W, Bytecode[W]] {
+	return func(offset uint, code Bytecode[W], state dfa.Path[W]) []dfa.Transfer[dfa.Path[W]] {
 		var (
-			arcs   []dfa.Transfer[dfa.Branch]
+			arcs   []dfa.Transfer[dfa.Path[W]]
 			writes = writeMap.StateOf(offset)
 		)
 		//
@@ -298,12 +493,10 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
 // taken).  The empty-tail handling exists because there is no implicit
 // representation of logical truth: dfa.TRUE has no conjuncts, so the first atom
 // replaces it rather than being and-ed onto it.
-func extendSkipIf[W word.Word[W]](tail dfa.Branch, sign bool, code *SkipIf[W], writes dfa.Writes) dfa.Branch {
+func extendSkipIf[W word.Word[W]](path dfa.Path[W], sign bool, code *SkipIf[W], writes dfa.Writes) dfa.Path[W] {
 	var (
 		lhs      = toRegisterIds(code.Left.Registers())
 		rhs      = toRegisterIds(code.Right.Registers())
-		head     dfa.BranchEquality
-		tailc    = tail.Condition
 		left     = dfa.NewBranchId(writes.MayAnybeAssigned(lhs...), lhs...)
 		equality bool
 	)
@@ -318,43 +511,30 @@ func extendSkipIf[W word.Word[W]](tail dfa.Branch, sign bool, code *SkipIf[W], w
 	}
 	// Translate operation
 	if equality {
-		head = logical.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
+		return path.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	} else {
-		head = logical.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
+		return path.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	}
-	//
-	if len(tailc.Conjuncts()) == 0 {
-		return dfa.Branch{Condition: logical.NewProposition(head)}
-	}
-	//
-	return dfa.Branch{Condition: tailc.And(logical.NewProposition(head))}
 }
 
 // extendMultiway conjoins a single dispatch comparison onto the incoming branch
 // condition: "source == value" when equal is true, or "source != value"
 // otherwise.  The empty-tail handling mirrors extendSkipIf (dfa.TRUE has no
 // conjuncts, so the first atom replaces it rather than being and-ed onto it).
-func extendMultiway[W word.Word[W]](tail dfa.Branch, source dfa.BranchId, value W, equal bool) dfa.Branch {
-	var head dfa.BranchEquality
+func extendMultiway[W word.Word[W]](path dfa.Path[W], source dfa.BranchId, value W, equal bool) dfa.Path[W] {
 	//
 	if equal {
-		head = logical.EqualsConst(source, *value.BigInt())
+		return path.EqualsConst(source, value)
 	} else {
-		head = logical.NotEqualsConst(source, *value.BigInt())
+		return path.NotEqualsConst(source, value)
 	}
-	//
-	if len(tail.Condition.Conjuncts()) == 0 {
-		return dfa.Branch{Condition: logical.NewProposition(head)}
-	}
-	//
-	return dfa.Branch{Condition: tail.Condition.And(logical.NewProposition(head))}
 }
 
 // extendMultiwayDefault builds the condition under which a multiway skip falls
 // through (i.e. no case matched): the conjunction of "source != value" over
 // every case.
-func extendMultiwayDefault[W word.Word[W]](tail dfa.Branch, source dfa.BranchId, cases []SwitchCase[W]) dfa.Branch {
-	var branch = tail
+func extendMultiwayDefault[W word.Word[W]](path dfa.Path[W], source dfa.BranchId, cases []SwitchCase[W]) dfa.Path[W] {
+	var branch = path
 	//
 	for _, c := range cases {
 		branch = extendMultiway(branch, source, c.Value, false)

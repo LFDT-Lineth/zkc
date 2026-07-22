@@ -22,6 +22,7 @@ import (
 	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -97,7 +98,7 @@ func (p *bitwiseHelpers[W]) ensureNary(op bytecode.Operation, width uint, arity 
 
 func lowerOrXorAndCode[W word.Word[W]](
 	b Bytecode[W],
-	registers *regAllocator[W],
+	registers split.Allocator[W],
 	helpers *bitwiseHelpers[W],
 ) []Bytecode[W] {
 	//
@@ -116,7 +117,7 @@ func lowerOrXorAndCode[W word.Word[W]](
 
 func lowerBitwiseAndOrXor[W word.Word[W]](
 	b *bytecode.Bitwise[W],
-	registers *regAllocator[W],
+	registers split.Allocator[W],
 	helpers *bitwiseHelpers[W],
 ) []Bytecode[W] {
 	origWidth, isPowerOfTwo := maxBitwidthOf(registers.Registers(), b.Uses()...)
@@ -144,7 +145,7 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 // using the same overflow-free arithmetic identities as combineBit (a&b = a*b;
 // a|b = a + (1-a)*b; a^b = a*(1-b) + (1-a)*b).  Temporaries are allocated in the
 // enclosing function.
-func emitUnitBitwise[W word.Word[W]](op bytecode.Operation, registers *regAllocator[W],
+func emitUnitBitwise[W word.Word[W]](op bytecode.Operation, registers split.Allocator[W],
 	target, left, right bytecode.RegisterId) []Bytecode[W] {
 	var (
 		zero = word.Const64[W](0)
@@ -267,7 +268,7 @@ func newDecomposedNaryHelper[W word.Word[W]](
 
 	b.emit(bytecode.NewRet[W]())
 
-	return descriptor.NewFunction(helperName(key), b.regs(), false,
+	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION,
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})
 }
 

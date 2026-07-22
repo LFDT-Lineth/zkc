@@ -20,6 +20,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -50,12 +51,12 @@ func LowerBitwise[W word.Word[W]](program descriptor.Program[W]) descriptor.Prog
 // a per-function register allocator (for any temporaries codeFn introduces) and
 // the shared helper registry.
 func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *bitwiseHelpers[W],
-	codeFn func(Bytecode[W], *regAllocator[W], *bitwiseHelpers[W]) []Bytecode[W],
+	codeFn func(Bytecode[W], split.Allocator[W], *bitwiseHelpers[W]) []Bytecode[W],
 ) *descriptor.Function[W] {
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
-		alloc   = newRegAllocator(fn.Registers())
+		alloc   = split.NewAllocator(fn)
 	)
 
 	for i, vec := range vectors {
@@ -64,12 +65,12 @@ func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *b
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.IsNative(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
 }
 
 func lowerBitwiseCode[W word.Word[W]](
 	b Bytecode[W],
-	registers *regAllocator[W],
+	registers split.Allocator[W],
 	helpers *bitwiseHelpers[W],
 ) []Bytecode[W] {
 	//
@@ -106,7 +107,7 @@ func lowerBitwiseShlShr[W word.Word[W]](
 
 // inlineBitwiseNot emits ~x as (MASK - x) directly into the caller's bytecode
 // stream, where MASK = 2^width - 1.  No helper module is created.
-func inlineBitwiseNot[W word.Word[W]](b *bytecode.Bitwise[W], registers *regAllocator[W]) []Bytecode[W] {
+func inlineBitwiseNot[W word.Word[W]](b *bytecode.Bitwise[W], registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		width, _ = maxBitwidthOf(registers.Registers(), b.Uses()...)
 		maskBig  = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))

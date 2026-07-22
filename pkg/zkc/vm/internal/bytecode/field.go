@@ -48,8 +48,8 @@ func (p *FieldArith[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *FieldArith[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *FieldArith[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	return validateOperands(env, p.Sources, p.Definitions())
 }
 
 func (p *FieldArith[W]) String(env Environment[W]) string {

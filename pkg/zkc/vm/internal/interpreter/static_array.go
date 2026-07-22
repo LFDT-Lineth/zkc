@@ -77,7 +77,6 @@ func (p *StaticArray[W, C]) Contents() []C {
 func expand[W any](data []W, n uint64) []W {
 	m := uint64(len(data))
 	if n > m {
-		//
 		return slices.Grow(data, int(n-m))[:n]
 	}
 	//

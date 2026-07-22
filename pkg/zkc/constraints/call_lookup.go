@@ -74,7 +74,7 @@ func addCallLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 				// - for multi-line caller, its line selector (IS_PC_*)
 				// - for one line caller, the $ret register (defining the non-padding region)
 				srcSelector = callSourceSelector(mod, ctx, mod.Registers(),
-					branchTable.StateOf(uint(cc)).Condition, uint(pc), pcSelectors, ret)
+					branchTable.StateOf(uint(cc)).Condition(), uint(pc), pcSelectors, ret)
 			default:
 				continue
 			}

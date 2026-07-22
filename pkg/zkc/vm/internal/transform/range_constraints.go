@@ -282,7 +282,8 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 	codes = appendRangeCheck(codes, hiID, s.hi, moduleOf, maxStaticWidth)
 	codes = append(codes, bytecode.NewRet[W]())
 	//
-	return descriptor.NewFunction(name, regs, false, []BytecodeVector[W]{bytecode.NewVector(codes...)})
+	return descriptor.NewFunction(name, regs, descriptor.UNSAFE_ARGS_FUNCTION,
+		[]BytecodeVector[W]{bytecode.NewVector(codes...)})
 }
 
 // appendRangeCheck appends to codes a range-check of register r (of width w)
@@ -383,5 +384,5 @@ func addRangeChecks[W word.Word[W]](mod descriptor.Module[W], idOf map[string]ui
 		})
 	}
 	//
-	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.IsNative(), nvecs)
+	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), nvecs)
 }
