@@ -45,8 +45,8 @@ type StmtCompiler struct {
 	field       field.Config
 	srcmaps     source.Maps[any]
 	errors      []source.SyntaxError
-	// quiet suppresses printf output
-	quiet bool
+	// verbose retains printf output (suppressed by default)
+	verbose bool
 	// fastMode disables constraint-only rewrites not required by the vm.
 	fastMode bool
 }
@@ -70,7 +70,7 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) Bytecod
 	case *stmt.Fail[symbol.Resolved]:
 		return p.compileFail(mapping, s.Chunks, s.Arguments)
 	case *stmt.Printf[symbol.Resolved]:
-		if p.quiet {
+		if !p.verbose {
 			return vm.NewBytecodeVector[vm.Uint]()
 		}
 		//
@@ -266,11 +266,11 @@ func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...[]vm.
 			//
 			return destructMultiway(p, e, mapping, targets, p.compileMemoryRead)
 		case *decl.ResolvedFunction:
-			// Calls to #[debug] functions are elided in quiet mode, exactly as
-			// printf statements are.  Such functions are elided as well.
-			// Note that they cannot return values or
+			// Calls to #[debug] functions are elided unless verbose mode is
+			// enabled, exactly as printf statements are.  Such functions are
+			// elided as well.  Note that they cannot return values or
 			// write memories (enforced by validate.DebugFunctions).
-			if p.quiet && slices.Contains(ext.Annotations(), "debug") {
+			if !p.verbose && slices.Contains(ext.Annotations(), "debug") {
 				return nil
 			}
 			//
