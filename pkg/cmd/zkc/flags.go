@@ -21,6 +21,53 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// VerboseLevel captures how much diagnostic output the zkc tooling produces.
+// The levels are ordered, so higher levels are supersets of lower ones.
+type VerboseLevel int
+
+const (
+	// VERBOSE_NONE is the default level: no extra output, only warnings and
+	// errors are logged.
+	VERBOSE_NONE VerboseLevel = iota
+	// VERBOSE_INFO enables ordinary informational logging.
+	VERBOSE_INFO
+	// VERBOSE_DEBUG enables debug logging, notably the machine execution steps
+	// reported during execution.
+	VERBOSE_DEBUG
+	// VERBOSE_PRINTF enables full output, additionally retaining and emitting
+	// printf statements.
+	VERBOSE_PRINTF
+)
+
+// GetVerboseLevel derives the verbosity from the repeatable "verbose" (-v)
+// flag: absent selects NONE, -v selects INFO, -vv selects DEBUG, and -vvv
+// selects PRINTF.
+func GetVerboseLevel(cmd *cobra.Command) VerboseLevel {
+	n, err := cmd.Flags().GetCount("verbose")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(4)
+	}
+	//
+	var verboseLevel VerboseLevel
+
+	switch {
+	case n <= 0:
+		verboseLevel = VERBOSE_NONE
+	case n == 1:
+		verboseLevel = VERBOSE_INFO
+	case n == 2:
+		verboseLevel = VERBOSE_DEBUG
+	case n == 3:
+		verboseLevel = VERBOSE_PRINTF
+	default:
+		fmt.Printf("error: invalid --verbose %d (expected 0, 1, 2 or 3)\n", n)
+		os.Exit(2)
+	}
+
+	return verboseLevel
+}
+
 // FlagChecks provides some additional feature over the base flags package used
 // in Cobra.  Specifically, it allows to ensure certain flags are only used in
 // conjunction with others or, conversely, that certain flags cannot be used in
