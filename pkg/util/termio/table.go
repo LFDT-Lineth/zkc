@@ -24,6 +24,13 @@ type FormattedTable struct {
 	widths []uint
 	// Table data stored in row-major format.
 	rows [][]FormattedText
+	// Number of columns each cell spans (row-major, defaults to 1).  A span
+	// greater than one merges the cell with the following columns, centring its
+	// content across them (see SetSpan).  Allocated lazily.
+	spans [][]uint
+	// Rows before which a full-width horizontal rule should be printed.  A key of
+	// len(rows) draws a trailing rule after the final row (see SetRule).
+	rules map[uint]bool
 	// Separator printed after each column (defaults to "|").
 	separator string
 	// Whether each column is left-justified (defaults to false, i.e.
@@ -41,7 +48,31 @@ func NewFormattedTable(width uint, height uint) *FormattedTable {
 		rows[i] = make([]FormattedText, width)
 	}
 
-	return &FormattedTable{widths: widths, rows: rows, separator: "|", leftAlign: leftAlign}
+	return &FormattedTable{widths: widths, rows: rows, separator: "|", leftAlign: leftAlign,
+		rules: make(map[uint]bool)}
+}
+
+// SetSpan sets a cell which spans the given number of columns, centring its
+// content across them.  Unlike Set, a spanning cell does not widen the
+// individual column it starts in; the label is expected to fit within the
+// combined width of the spanned columns.
+func (p *FormattedTable) SetSpan(col uint, row uint, span uint, val FormattedText) {
+	if p.spans == nil {
+		p.spans = make([][]uint, len(p.rows))
+	}
+	//
+	if p.spans[row] == nil {
+		p.spans[row] = make([]uint, len(p.widths))
+	}
+	//
+	p.spans[row][col] = span
+	p.rows[row][col] = val
+}
+
+// SetRule requests a full-width horizontal rule be printed immediately before
+// the given row.  Passing Height() draws a trailing rule after the final row.
+func (p *FormattedTable) SetRule(beforeRow uint) {
+	p.rules[beforeRow] = true
 }
 
 // SetSeparator sets the string printed after each column (e.g. "|" for a ruled
@@ -128,35 +159,81 @@ func (p *FormattedTable) PrintedWidth() uint {
 func (p *FormattedTable) Print(escapes bool) {
 	//
 	for i := range p.rows {
-		row := p.rows[i]
-		//
-		for j, col := range row {
-			var (
-				jth       = col
-				jth_width = p.widths[j]
-				text      string
-			)
-			// Clip anything longer than given width
-			jth = jth.Clip(0, jth_width)
-			// Pad out anything shorter than given width, justifying according
-			// to the column's alignment.
-			if p.leftAlign[j] {
-				jth = jth.PadLeft(jth_width)
-			} else {
-				jth = jth.Pad(jth_width)
-			}
-			// Print colour (if applicable)
-			if escapes {
-				text = string(jth.Bytes())
-			} else {
-				text = string(jth.text)
-			}
-			//
-			fmt.Printf(" %s %s", text, p.separator)
+		// Print a horizontal rule before this row, if requested.
+		if p.rules[uint(i)] {
+			fmt.Println(strings.Repeat("-", int(p.PrintedWidth())))
 		}
-
-		fmt.Println()
+		//
+		p.printRow(i, escapes)
 	}
+	// Print a trailing rule after the final row, if requested.
+	if p.rules[uint(len(p.rows))] {
+		fmt.Println(strings.Repeat("-", int(p.PrintedWidth())))
+	}
+}
+
+// printRow prints a single row, honouring column spans and alignment.
+func (p *FormattedTable) printRow(row int, escapes bool) {
+	cells := p.rows[row]
+	//
+	for j := 0; j < len(cells); {
+		var (
+			span  = p.spanAt(row, j)
+			width = p.widths[j]
+			jth   = cells[j]
+		)
+		// Spanning cell: centre across the combined width of the columns.
+		if span > 1 {
+			width = p.spanWidth(j, span)
+		}
+		//
+		jth = jth.Clip(0, width)
+		// Justify according to the cell's span / column alignment.
+		switch {
+		case span > 1:
+			jth = jth.Center(width)
+		case p.leftAlign[j]:
+			jth = jth.PadLeft(width)
+		default:
+			jth = jth.Pad(width)
+		}
+		// Print colour (if applicable)
+		var text string
+		if escapes {
+			text = string(jth.Bytes())
+		} else {
+			text = string(jth.text)
+		}
+		//
+		fmt.Printf(" %s %s", text, p.separator)
+		//
+		j += int(span)
+	}
+	//
+	fmt.Println()
+}
+
+// spanAt returns the number of columns the cell at (row, col) spans (1 if
+// unset).
+func (p *FormattedTable) spanAt(row int, col int) uint {
+	if p.spans == nil || p.spans[row] == nil || p.spans[row][col] == 0 {
+		return 1
+	}
+	//
+	return p.spans[row][col]
+}
+
+// spanWidth returns the content width available to a cell spanning span columns
+// starting at col, accounting for the padding and separators that would
+// otherwise sit between them.
+func (p *FormattedTable) spanWidth(col int, span uint) uint {
+	var width uint
+	//
+	for k := 0; k < int(span); k++ {
+		width += p.widths[col+k]
+	}
+	// Each internal boundary contributes two padding spaces plus a separator.
+	return width + (span-1)*(2+uint(len(p.separator)))
 }
 
 // ============================================================================

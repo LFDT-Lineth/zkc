@@ -246,7 +246,7 @@ func (p *Parser) tokenStrings(toks []lex.Token) []string {
 	return names
 }
 
-// parseConstant parses a constants declation which must be of the form
+// parseConstant parses a constants declaration which must be of the form
 //
 //	const cdef (, cdef)*
 //

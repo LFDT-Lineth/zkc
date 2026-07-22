@@ -14,6 +14,7 @@ package zkc
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
@@ -46,6 +47,9 @@ var compileCmd = &cobra.Command{
 	},
 }
 
+// compileFlags captures the permitted flag combinations for the compile command.
+var compileFlags FlagChecks
+
 // Available instances
 var compileCmds = []FieldAgnosticCmd{
 	{field.GF_251, runCompileCmd[gf251.Element]},
@@ -66,6 +70,12 @@ type CompileConfig struct {
 	mir bool
 	// indicates whether or not to print the Mid-level Intermediate Reprentation (AIR).
 	air bool
+	// indicates whether or not to print summary statistics about the generated
+	// AIR schema.
+	stats bool
+	// order determines how modules are ordered in the --stats output
+	// (name|total|complexity|lookups).
+	order string
 	// indicates whether or not to print everything in full (e.g. including
 	// static reference tables).
 	verbose bool
@@ -77,12 +87,16 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		output = GetString(cmd, "output")
 		config CompileConfig
 	)
+	// Sanity check permitted flag combinations
+	checkFlags(cmd, compileFlags)
 	//
 	config.build = build
 	config.ast = GetFlag(cmd, "ast")
 	config.mir = GetFlag(cmd, "mir")
 	config.air = GetFlag(cmd, "air")
-	config.ir = !(config.ast || config.mir || config.air)
+	config.stats = GetFlag(cmd, "stats")
+	config.order = GetString(cmd, "order")
+	config.ir = !(config.ast || config.mir || config.air || config.stats)
 	config.verbose = GetFlag(cmd, "verbose")
 	// Build all artifacts
 	artifacts := Build[F](build, args...)
@@ -131,6 +145,26 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 		//
 		debug.PrintAnySchema(air, 80, config.verbose)
+	}
+	// Summary statistics
+	if config.stats {
+		if !ValidStatsOrder(config.order) {
+			log.Errorf("invalid --order %q (expected name|total|complexity|lookups)", config.order)
+			os.Exit(1)
+		}
+		//
+		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
+		// Register counts are reported before register splitting.  Splitting is
+		// the only field-specific transform that changes register widths, so
+		// recompile the program with it disabled to recover the pre-split widths.
+		// When compiling from a prebuilt binary there is no AST to recompile, so
+		// fall back to the (already split) build.
+		preSplit := artifacts.ir
+		if artifacts.ast.HasValue() {
+			preSplit, _ = ast.Compile(artifacts.ast.Unwrap(), config.build.config.SplitRegisters(false))
+		}
+		//
+		PrintCompileStats[F](air, preSplit, config.order)
 	}
 }
 
@@ -687,4 +721,9 @@ func init() {
 	compileCmd.PersistentFlags().Bool("bci", false, "Output Bytecode Representation (BCI)")
 	compileCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
 	compileCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
+	compileCmd.PersistentFlags().Bool("stats", false, "Output summary statistics")
+	compileCmd.PersistentFlags().String("order", "total",
+		"module ordering for --stats (name|total|complexity|lookups)")
+	// --order only affects the --stats output.
+	compileFlags.Require("order", "stats")
 }

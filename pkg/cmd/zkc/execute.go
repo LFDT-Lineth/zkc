@@ -62,8 +62,8 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		errors []error
 		build  = GetBuildConfig[F](cmd, field)
 		//
-		traceConfig = constraints.DEFAULT_TRACE_CONFIG
-		// outputFile file for trace
+		traceConfig = constraints.DEFAULT_TRACE_CONFIG.WithPadding(build.padding)
+		// outputFile file for tracep
 		outputFile = GetString(cmd, "output")
 		// check constraints
 		check = GetFlag(cmd, "check")

@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -47,7 +48,7 @@ func lowerSwitchFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
-		alloc   = newRegAllocator(fn.Registers())
+		alloc   = split.NewAllocator(fn)
 	)
 
 	for i, vec := range vectors {
@@ -62,7 +63,7 @@ func lowerSwitchFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor
 // against the new layout.  Vector.Map cannot be used here: a switch case whose
 // skip is smaller than the size of its own replacement packet would be
 // misclassified as an internal skip and left unremapped.
-func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers *regAllocator[W]) BytecodeVector[W] {
+func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers split.Allocator[W]) BytecodeVector[W] {
 	var (
 		codes = vec.Bytecodes
 		// mapping[i] holds the new offset of old bytecode i, with an end
@@ -116,11 +117,11 @@ func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers *regAllo
 // executes.  The register is sized to its case's value, which cannot overflow
 // the dispatch register (see Switch.Validate).
 func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
-	registers *regAllocator[W]) []Bytecode[W] {
+	registers split.Allocator[W]) []Bytecode[W] {
 	//
 	var (
 		codes = make([]Bytecode[W], 0, 2*len(sw.Cases))
-		width = registers.registers[sw.Source].Bitwidth()
+		width = registers.Register(sw.Source).Bitwidth()
 	)
 	//
 	for j, cse := range sw.Cases {

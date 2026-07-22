@@ -50,10 +50,10 @@ type LimbsMap[W any] interface {
 	Limb(LimbId) Limb[W]
 	// Limbs returns all limbs in the mapping.
 	Limbs() []Limb[W]
-	// LimbsMap returns a register map for the limbs themselves.  This is useful
+	// LimbsRegisterMap returns a register map for the limbs themselves.  This is useful
 	// where we need a register map over the limbs, rather than the original
 	// registers.
-	LimbsMap() RegisterMap[W]
+	LimbsRegisterMap() RegisterMap[W]
 }
 
 // NewLimbsMap constructs a new limbs map from a given register mapping
@@ -140,29 +140,29 @@ func (p limbsMap[W]) Field() field.Config {
 	return p.field
 }
 
-// Limbs implementation for the register.Map interface
+// Limbs implementation for the LimbsMap interface
 func (p limbsMap[W]) LimbIds(reg RegisterId) []LimbId {
 	return p.mapping[reg]
 }
 
-// Limb implementation for the register.Map interface
+// Limb implementation for the LimbsMap interface
 func (p limbsMap[W]) Limb(reg LimbId) Limb[W] {
 	return p.limbs[reg]
 }
 
-// Limbs implementation for the register.Map interface
+// Limbs implementation for the LimbsMap interface
 func (p limbsMap[W]) Limbs() []Limb[W] {
 	return p.limbs
 }
 
-// LimbsMap implementation for the register.Map interface
-func (p limbsMap[W]) LimbsMap() RegisterMap[W] {
+// LimbsMap implementation for the LimbsMap interface
+func (p limbsMap[W]) LimbsRegisterMap() RegisterMap[W] {
 	return limbsMap[W]{
 		p.name, p.word, p.field, p.limbs, nil, nil,
 	}
 }
 
-// Name implementation for register.Map interface
+// Name implementation for LimbsMap interface
 func (p limbsMap[W]) Name() string {
 	return p.name
 }

@@ -17,6 +17,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	log "github.com/sirupsen/logrus"
@@ -96,22 +97,30 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 // mechanism for compiling constraint files across the various sub-commands.
 func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig {
 	var (
-		build    BuildConfig
-		fastMode = GetFlag(cmd, "fast")
-		quiet    = GetFlag(cmd, "quiet")
+		build                 BuildConfig
+		fastMode              = GetFlag(cmd, "fast")
+		quiet                 = GetFlag(cmd, "quiet")
+		padding               = GetString(cmd, "padding")
+		strategy, strategy_ok = ir.GetPaddingStrategy(padding)
 	)
+	//
+	if !strategy_ok {
+		fmt.Printf("padding strategy %s unsupported\n", padding)
+		os.Exit(2)
+	}
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
 		log.SetLevel(log.DebugLevel)
 	}
-	// Conmfigure go generator
+	// Configure padding strategy
+	build.padding = strategy
+	// Configure go generator
 	build.gogen = GetFlag(cmd, "gogen")
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
 		Inlining(GetFlag(cmd, "inline")).
 		FastMode(fastMode).
-		Vectorize(GetFlag(cmd, "vectorize")).
-		MaxStaticDepth(GetUint(cmd, "max_static_depth")).
+		MaxStaticDepth(GetUint(cmd, "max-static-depth")).
 		Field(field).
 		Quiet(quiet)
 	//
@@ -142,9 +151,10 @@ func init() {
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().BoolP("gogen", "g", false, "enable Go code generation")
-	rootCmd.PersistentFlags().Uint("max_static_depth", codegen.DEFAULT_MAX_STATIC_DEPTH,
+	rootCmd.PersistentFlags().Uint("max-static-depth", codegen.DEFAULT_MAX_STATIC_DEPTH,
 		"maximum depth (number of rows) of static tables")
 	rootCmd.PersistentFlags().String("field", "KOALABEAR_16", "prime field to use throughout")
+	rootCmd.PersistentFlags().String("padding", "next-power-of-two", "padding strategy to use (e.g. single-row)")
 	// profiling commands'
 	rootCmd.PersistentFlags().String("cpuprof", "", "write cpu profile to `file`")
 	rootCmd.PersistentFlags().String("memprof", "", "write memory profile to `file`")

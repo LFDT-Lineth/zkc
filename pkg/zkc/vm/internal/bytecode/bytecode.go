@@ -333,6 +333,11 @@ func MulConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant 
 func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
+	if len(sources) == 0 {
+		// Bypass multiplication
+		return NewArith(OP_ADD, targets, nil, constant)
+	}
+	//
 	return NewArith(OP_MUL, targets, sources, constant)
 }
 

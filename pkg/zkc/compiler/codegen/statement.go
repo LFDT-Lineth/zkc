@@ -66,7 +66,7 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) Bytecod
 	case *stmt.Dispatch[symbol.Resolved]:
 		return p.compileDispatch(s, mapping)
 	case *stmt.Goto[symbol.Resolved]:
-		return vm.NewBytecodeVector[vm.Uint](vm.Jump[vm.Uint](vm.Address(s.Target)))
+		return vm.NewBytecodeVector(vm.Jump[vm.Uint](vm.Address(s.Target)))
 	case *stmt.Fail[symbol.Resolved]:
 		return p.compileFail(mapping, s.Chunks, s.Arguments)
 	case *stmt.Printf[symbol.Resolved]:
@@ -76,7 +76,7 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) Bytecod
 		//
 		return p.compilePrintf(mapping, s.Chunks, s.Arguments)
 	case *stmt.Return[symbol.Resolved]:
-		return vm.NewBytecodeVector[vm.Uint](vm.Return[vm.Uint]())
+		return vm.NewBytecodeVector(vm.Return[vm.Uint]())
 	default:
 		panic("unknown statement encountered")
 	}
@@ -240,7 +240,7 @@ func (p *StmtCompiler) compileDispatch(s *stmt.Dispatch[symbol.Resolved], mappin
 		}
 	}
 	// Emit the dispatch followed by its jump table (default first).
-	insns = append(insns, vm.Switch[vm.Uint](source, cases))
+	insns = append(insns, vm.Switch(source, cases))
 	insns = append(insns, vm.Jump[vm.Uint](vm.Address(s.DefaultTarget)))
 	//
 	for _, branch := range s.Branches {
@@ -267,9 +267,9 @@ func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...[]vm.
 			return destructMultiway(p, e, mapping, targets, p.compileMemoryRead)
 		case *decl.ResolvedFunction:
 			// Calls to #[debug] functions are elided in quiet mode, exactly as
-			// printf statements are.  Such functions cannot return values or
-			// write memories (enforced by validate.DebugFunctions), so
-			// dropping the call has no effect on the surrounding computation.
+			// printf statements are.  Such functions are elided as well.
+			// Note that they cannot return values or
+			// write memories (enforced by validate.DebugFunctions).
 			if p.quiet && slices.Contains(ext.Annotations(), "debug") {
 				return nil
 			}
@@ -667,7 +667,7 @@ func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target Regis
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(util.None[uint](), mapping, nargs...)
 	// Done
-	return append(insns, vm.MulModP[vm.Uint](target, sources, constant))
+	return append(insns, vm.MulModP(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileIntDiv(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
@@ -711,12 +711,12 @@ func (p *StmtCompiler) compileIntDiv(args []Expr, bitwidth uint, mapping []uint,
 	}
 
 	// Compile all operands upfront.
-	sources, insns := p.compileUniformArgs(util.Some[uint](bitwidth), mapping, nargs...)
+	sources, insns := p.compileUniformArgs(util.Some(bitwidth), mapping, nargs...)
 	// Chain divisions left-to-right: (((a / b) / c) / ...).
 	value := sources[0]
 	//
 	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(util.Some[uint](bitwidth))
+		tmp := p.allocate(util.Some(bitwidth))
 		insns = append(insns, vm.Div[vm.Uint](tmp, value, sources[i]))
 		value = tmp
 	}

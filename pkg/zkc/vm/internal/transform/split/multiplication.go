@@ -15,6 +15,7 @@ package split
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -52,7 +53,7 @@ func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Alloca
 	var (
 		one         W
 		insns       []Bytecode[W]
-		targetLimbs = ApplyLimbsMapReversed(mapping, insn.Target...)
+		targetLimbs = applyLimbsMapReversed(mapping, insn.Target...)
 		targetWidth = groupWidth(alloc, targetLimbs)
 		g           = mulGranularity(mapping.RegisterWidth(), mapping.BandWidth())
 	)
@@ -273,7 +274,7 @@ func accumulate[W word.Word[W]](alloc Allocator[W], numCols uint, colWidth func(
 	partials map[uint][]RegisterId) ([]RegisterId, []Bytecode[W]) {
 	//
 	var (
-		chunks Chunks[W]
+		chunks = make([]partAdd[W], numCols)
 		outs   []RegisterId
 	)
 	//
@@ -281,16 +282,13 @@ func accumulate[W word.Word[W]](alloc Allocator[W], numCols uint, colWidth func(
 		var o = alloc.Allocate("m", util.Some(colWidth(c)))
 		//
 		outs = append(outs, o)
-		chunks.Apply(c, setLhsLimbs[W](o))
-		//
-		for _, pl := range partials[c] {
-			chunks.Apply(c, appendRhsLimb[W](pl))
-		}
+		chunks[c].targets = []RegisterId{o}
+		chunks[c].sources = partials[c]
 	}
 	// Thread carries between columns (reused from Addition).
 	chunks = insertAddCarryLines(alloc, chunks)
 	// Lower each column to a vectored add (reused from Addition).
-	return outs, MapChunks(chunks, addAssignment[W])
+	return outs, array.Map(chunks, addAssignment[W])
 }
 
 // singletonColumns places each sub-limb of a value into its own column (the tth

@@ -25,7 +25,7 @@ var DEFAULT_BENCH_CONFIG = test_util.DEFAULT_CONFIG
 // Benchmark Tests
 // ===================================================================
 func Test_ZkcBench_Blake(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG.Constraints(false))
+	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_BinarySearchTree(t *testing.T) {
@@ -41,11 +41,11 @@ func Test_ZkcBench_Gcd(t *testing.T) {
 }
 
 func Test_ZkcBench_Fnv1aHash(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/fnv1a_hash", DEFAULT_BENCH_CONFIG.Constraints(false))
+	checkZkcBench(t, "zkc/bench/fnv1a_hash", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_Keccakf(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG.Checkpoints("keccakf", 2).Constraints(false))
+	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG.Checkpoints("keccakf", 2))
 }
 
 // func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {
@@ -63,12 +63,22 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 // 	checkZkcBench(t, "zkc/bench/keccakf_batched", DEFAULT_BENCH_CONFIG)
 // }
 
+func Test_ZkcBench_Poseidon(t *testing.T) {
+	// #2007: support implicit sign bit
+	checkZkcBench(t, "zkc/bench/poseidon/poseidon", DEFAULT_BENCH_CONFIG.
+		Constraints(false).GoGen(false))
+}
+
+// ===================================================================
+// Other tests
+// ===================================================================
+
 func Test_ZkcBench_Sort(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/sort", DEFAULT_BENCH_CONFIG.Checkpoints("sort_slice", 5).Constraints(false))
+	checkZkcBench(t, "zkc/bench/sort", DEFAULT_BENCH_CONFIG.Checkpoints("sort_slice", 5))
 }
 
 func Test_ZkcBench_LongDivision(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/long_division", DEFAULT_BENCH_CONFIG.Constraints(false))
+	checkZkcBench(t, "zkc/bench/long_division", DEFAULT_BENCH_CONFIG)
 }
 
 func Test_ZkcBench_DivRem(t *testing.T) {
@@ -76,10 +86,10 @@ func Test_ZkcBench_DivRem(t *testing.T) {
 }
 
 func Test_ZkcBench_ModExp32(t *testing.T) {
-	t.Skip("tracing failure")
+	t.Skip("#2008 register splitting for multiplication")
 	//
 	checkZkcBench(t, "zkc/bench/modexp32",
-		DEFAULT_BENCH_CONFIG.GoGen(false).Constraints(false).FastModeSplitting(false))
+		DEFAULT_BENCH_CONFIG.GoGen(false).FastModeSplitting(false))
 }
 
 // ===================================================================

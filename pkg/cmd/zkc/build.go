@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 
+	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -52,6 +53,8 @@ type BuildConfig struct {
 	metadata []byte
 	// enable go code generator
 	gogen bool
+	// padding strategy
+	padding ir.PaddingStrategy
 }
 
 // Build applies a build configuration with a given set of source files.

@@ -26,8 +26,18 @@ import (
 )
 
 // LowerFieldCasts inserts the canonicality checks required when extracting a
-// native field value into uint registers.  Uint-to-field casts reduce modulo P
-// and therefore require no range check.
+// native field value into uint registers.  Uint→𝔽 casts reduce modulo P and
+// therefore require no check.  For 𝔽→uint, the extracted value has several
+// integer representatives (W, W+P, …) whenever the target is wide enough to
+// reach P, so a check is needed to pin the canonical one (W < P).
+//
+// The check is emitted as a high-level "value < P" comparison against the field
+// modulus.  The standard comparison-lowering (LowerComparisons) and register-
+// splitting (SplitRegisters) passes then turn it into an efficient subtract-
+// with-borrow chain (a single Arith(OP_SUB) yielding per-limb differences plus
+// a final borrow, whose sign bit is the answer), rather than a lexicographic
+// limb-by-limb comparison.  Consequently this transform MUST run before
+// LowerComparisons and SplitRegisters.
 func LowerFieldCasts[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		modules = slices.Clone(program.Modules())
@@ -78,6 +88,10 @@ func newFieldCastHelpers[W word.Word[W]](base uint, modulus *big.Int) *fieldCast
 	return &fieldCastHelpers[W]{base: base, modulus: modulus, ids: make(map[string]uint)}
 }
 
+// check returns the bytecode invoking the canonicality helper for a 𝔽→uint
+// extraction into the given target registers.  When the target is too narrow to
+// ever reach P, every value it can hold is already canonical and no check is
+// required.
 func (p *fieldCastHelpers[W]) check(regs []bytecode.RegisterId, registers []descriptor.Register[W]) []Bytecode[W] {
 	widths := make([]uint, len(regs))
 	total := uint(0)
@@ -91,10 +105,16 @@ func (p *fieldCastHelpers[W]) check(regs []bytecode.RegisterId, registers []desc
 		return nil
 	}
 
-	return []Bytecode[W]{bytecode.CallFun[W](uint16(p.ensure(widths)), regs, nil)}
+	return []Bytecode[W]{bytecode.CallFun[W](uint16(p.ensure(widths, total)), regs, nil)}
 }
 
-func (p *fieldCastHelpers[W]) ensure(widths []uint) uint {
+// ensure lazily constructs (and memoises) the canonicality helper function for a
+// target of the given limb widths.  The helper reconstructs the value from its
+// limbs and fails unless that value is a canonical field element (i.e. strictly
+// less than the modulus P).  The "value < P" test is emitted as a high-level
+// relational SkipIf; downstream passes lower it into a subtract-with-borrow
+// chain (see the package-level LowerFieldCasts comment).
+func (p *fieldCastHelpers[W]) ensure(widths []uint, total uint) uint {
 	var builder strings.Builder
 
 	builder.WriteString("$field_range")
@@ -108,78 +128,48 @@ func (p *fieldCastHelpers[W]) ensure(widths []uint) uint {
 		return id
 	}
 
-	var padding W
-
-	inputs := make([]bytecode.RegisterId, len(widths))
-
-	regs := make([]descriptor.Register[W], len(widths))
-	for i, width := range widths {
-		inputs[i] = bytecode.RegisterId(i)
-		regs[i] = descriptor.NewRegister(register.INPUT_REGISTER, fmt.Sprintf("arg%d", i), util.Some(width), padding)
-	}
-
-	alloc := newRegAllocator(regs)
-	code := append(canonicalityCode(inputs, alloc, p.modulus), bytecode.NewRet[W]())
-	id := p.base + uint(len(p.modules))
-	p.ids[name] = id
-	// The pipeline's comparison-lowering pass has already run, so lower the
-	// helper's relational SkipIfs at construction.
-	p.modules = append(p.modules, lowerComparisonFunction(descriptor.NewFunction(name,
-		alloc.Registers(), false, []BytecodeVector[W]{bytecode.NewVector(code...)})))
-
-	return id
-}
-
-func canonicalityCode[W word.Word[W]](regs []bytecode.RegisterId, alloc *regAllocator[W],
-	modulus *big.Int) []Bytecode[W] {
-	type branch struct {
-		insn      *bytecode.SkipIf[W]
-		position  int
-		failOnHit bool
-	}
-
 	var (
-		checks   []Bytecode[W]
-		branches []branch
-		shift    uint
-		limbs    = make([]W, len(regs))
+		padding W
+		regs    []descriptor.Register[W]
+		inputs  = make([]bytecode.RegisterId, len(widths))
+		code    []Bytecode[W]
+	)
+	// Input registers: the target limbs of the 𝔽→uint extraction.
+	for i, width := range widths {
+		inputs[i] = bytecode.RegisterId(len(regs))
+		regs = append(regs, descriptor.NewRegister(register.INPUT_REGISTER,
+			fmt.Sprintf("arg%d", i), util.Some(width), padding))
+	}
+	// Reconstruct the value being checked.  A single-limb target already is the
+	// value; multiple limbs are concatenated (least-significant first).
+	valueReg := inputs[0]
+	if len(inputs) > 1 {
+		valueReg = bytecode.RegisterId(len(regs))
+		regs = append(regs, descriptor.NewRegister(register.COMPUTED_REGISTER,
+			"value", util.Some(total), padding))
+		code = append(code, bytecode.Concat[W]([]bytecode.RegisterId{valueReg}, inputs))
+	}
+	// Load the modulus P into a register (SkipIf compares two registers) and
+	// fail unless the value is canonical (value < P).
+	pReg := bytecode.RegisterId(len(regs))
+	regs = append(regs, descriptor.NewRegister(register.COMPUTED_REGISTER,
+		"P", util.Some(total), padding))
+
+	var pConst W
+
+	pConst = pConst.SetBigInt(p.modulus)
+	// value < P → skip the fail (canonical); otherwise fall through and fail.
+	code = append(code,
+		bytecode.LoadConst(pReg, pConst),
+		bytecode.NewSkipIf[W](bytecode.CONDITION_LT, 1, valueReg, pReg),
+		bytecode.NewFail[W](nil, nil),
+		bytecode.NewRet[W](),
 	)
 
-	for i, reg := range regs {
-		width := alloc.Register(reg).Bitwidth().Unwrap()
-		limb := new(big.Int).Rsh(modulus, shift)
-		limb.And(limb, new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1)))
-		limbs[i] = limbs[i].SetBigInt(limb)
-		shift += width
-	}
+	id := p.base + uint(len(p.modules))
+	p.ids[name] = id
+	p.modules = append(p.modules, descriptor.NewFunction(name, regs, false,
+		[]BytecodeVector[W]{bytecode.NewVector(code...)}))
 
-	for i, reg := range slices.Backward(regs) {
-		width := alloc.Register(reg).Bitwidth().Unwrap()
-		constant := alloc.Allocate("", util.Some(width))
-		checks = append(checks, bytecode.LoadConst(constant, limbs[i]))
-
-		lt := bytecode.NewSkipIf[W](bytecode.CONDITION_LT, 0, reg, constant)
-		branches = append(branches, branch{lt, len(checks), false})
-		checks = append(checks, lt)
-
-		if i > 0 {
-			gt := bytecode.NewSkipIf[W](bytecode.CONDITION_GT, 0, reg, constant)
-			branches = append(branches, branch{gt, len(checks), true})
-			checks = append(checks, gt)
-		}
-	}
-
-	fail := len(checks)
-
-	checks = append(checks, bytecode.NewFail[W](nil, nil))
-	for _, branch := range branches {
-		target := len(checks)
-		if branch.failOnHit {
-			target = fail
-		}
-
-		branch.insn.Skip = uint16(target - branch.position - 1)
-	}
-
-	return checks
+	return id
 }
