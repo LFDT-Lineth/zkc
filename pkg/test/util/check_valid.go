@@ -45,7 +45,7 @@ var (
 		splitting:         true,
 		fastModeSplitting: true,
 		gogen:             true,
-		quiet:             false,
+		verbose:           false,
 		maxStaticDepths:   []uint{codegen.DEFAULT_MAX_STATIC_DEPTH},
 		paddingStrategies: map[string]ir.PaddingStrategy{
 			"next-power-of-two-padding": ir.NextPowerOfTwoPadding,
@@ -64,9 +64,8 @@ type Config struct {
 	fastModeSplitting bool
 	// enable the generated-Go ("native") executor
 	gogen bool
-	// enable quiet mode, which elides printf statements and calls to #[debug]
-	// functions during code generation.
-	quiet bool
+	// enable verbose mode.
+	verbose bool
 	// determines how much front padding is added to the generated trace.
 	paddingStrategies map[string]ir.PaddingStrategy
 	// maxStaticDepths controls the maximum depth (i.e. number of rows) of static
@@ -125,10 +124,10 @@ func (p Config) FastModeSplitting(flag bool) Config {
 	return p
 }
 
-// Quiet determines whether or not printf statements and calls to #[debug]
-// functions are elided during code generation.
-func (p Config) Quiet(flag bool) Config {
-	p.quiet = flag
+// Verbose determines whether or not printf statements and calls to #[debug]
+// functions are retained during code generation.
+func (p Config) Verbose(flag bool) Config {
+	p.verbose = flag
 	//
 	return p
 }
@@ -154,7 +153,7 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 			// Setup default config
 			cfg = codegen.DEFAULT_CONFIG.
 				SplitRegisters(config.splitting).
-				Quiet(config.quiet).Field(f).
+				Verbose(config.verbose).Field(f).
 				Word(DEFAULT_WORD)
 		)
 		// Only run fast mode tests for the default depth / padding, since
