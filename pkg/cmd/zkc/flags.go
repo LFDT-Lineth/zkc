@@ -26,8 +26,11 @@ import (
 type VerboseLevel int
 
 const (
-	// VERBOSE_INFO is the default level: only ordinary informational logging
-	VERBOSE_INFO VerboseLevel = iota
+	// VERBOSE_NONE is the default level: no extra output, only warnings and
+	// errors are logged.
+	VERBOSE_NONE VerboseLevel = iota
+	// VERBOSE_INFO enables ordinary informational logging.
+	VERBOSE_INFO
 	// VERBOSE_DEBUG enables debug logging, notably the machine execution steps
 	// reported during execution.
 	VERBOSE_DEBUG
@@ -37,7 +40,7 @@ const (
 )
 
 // GetVerboseLevel derives the verbosity from the repeatable "verbose" (-v)
-// flag: absent selects INFO, a single -v selects DEBUG, and -vv (or more)
+// flag: absent selects NONE, -v selects INFO, -vv selects DEBUG, and -vvv
 // selects PRINTF.
 func GetVerboseLevel(cmd *cobra.Command) VerboseLevel {
 	n, err := cmd.Flags().GetCount("verbose")
@@ -46,14 +49,22 @@ func GetVerboseLevel(cmd *cobra.Command) VerboseLevel {
 		os.Exit(4)
 	}
 	//
+	var verboseLevel VerboseLevel
 	switch {
 	case n <= 0:
-		return VERBOSE_INFO
+		verboseLevel = VERBOSE_NONE
 	case n == 1:
-		return VERBOSE_DEBUG
+		verboseLevel = VERBOSE_INFO
+	case n == 2:
+		verboseLevel = VERBOSE_DEBUG
+	case n == 3:
+		verboseLevel = VERBOSE_PRINTF
 	default:
-		return VERBOSE_PRINTF
+		fmt.Printf("error: invalid --verbose %d (expected 0, 1, 2 or 3)\n", n)
+		os.Exit(2)
 	}
+
+	return verboseLevel
 }
 
 // FlagChecks provides some additional feature over the base flags package used
