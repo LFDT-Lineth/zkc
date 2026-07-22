@@ -64,8 +64,9 @@ func Test_ZkcBench_Keccakf(t *testing.T) {
 // }
 
 func Test_ZkcBench_Poseidon(t *testing.T) {
+	// #2007: support implicit sign bit
 	checkZkcBench(t, "zkc/bench/poseidon/poseidon", DEFAULT_BENCH_CONFIG.
-		Splitting(false).Constraints(false).GoGen(false))
+		Constraints(false).GoGen(false))
 }
 
 // ===================================================================

@@ -246,7 +246,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 			// bytecode.
 			return split.DivRem(limbsMap, c)
 		case *bytecode.FieldArith[W]:
-			return []Bytecode[W]{c}
+			return []Bytecode[W]{splitFieldArith(limbsMap, c)}
 		case *bytecode.Switch[W]:
 			return split.Switch(limbsMap, c)
 
@@ -257,6 +257,22 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 			panic(fmt.Sprintf("unsupported bytecode (%T)", c))
 		}
 	})
+}
+
+// splitFieldArith remaps the native target and sources of a field arithmetic
+// instruction into the split register layout. Native registers remain single
+// limbs, but their identifiers can move when earlier integer registers expand.
+func splitFieldArith[W word.Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.FieldArith[W]) Bytecode[W] {
+	var (
+		targets = split.ApplyLimbsMap(limbsMap, c.Target)
+		sources = split.ApplyLimbsMap(limbsMap, c.Sources...)
+	)
+	// Field arithmetic is defined only over native registers, each of which
+	// remains exactly one limb after register splitting.
+	util.Assert(len(targets) == 1, "field arithmetic target has limbs")
+	util.Assert(len(sources) == len(c.Sources), "field arithmetic source has limbs")
+	//
+	return bytecode.NewFieldArith(c.Op, targets[0], sources, c.Constant)
 }
 
 // splitCall splits the registers referenced by a call.  Unlike a purely local
