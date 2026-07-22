@@ -181,7 +181,10 @@ func (p *RegisterStack[W]) SelectExact(nbits uint) (res []RegisterId) {
 func (p *RegisterStack[W]) SelectUpto(nbits uint) (res []RegisterId) {
 	if descriptor.HasNativeRegisterId(p.stack, p.alloc) {
 		util.Assert(len(p.stack) == 1, "native register has limbs")
-		return p.stack
+		res = p.stack
+		p.stack = nil
+
+		return res
 	}
 	//
 	if len(p.stack) > 0 {

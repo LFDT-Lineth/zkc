@@ -97,15 +97,12 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 		var (
 			rhs      = sourceStack.SelectUpto(mapping.BandWidth())
 			bitwidth = concatRhsBitwidth(mapping.Field(), rhs, limbsMap)
-			lhs      []RegisterId
+			// Keep target limbs intact.  Splitting a target to match the RHS
+			// exactly introduces a reconstruction bytecode which can sit after a
+			// large control-flow join and make its path condition prohibitively
+			// expensive to lower.
+			lhs = targetStack.SelectUpto(bitwidth)
 		)
-		// Check if last chunk
-		if sourceStack.Size() == 0 {
-			//In this case, we might as well select everything which is left.
-			lhs = targetStack.SelectUpto(mapping.BandWidth() - bitwidth)
-		} else {
-			lhs = targetStack.SelectExact(bitwidth)
-		}
 		// allocate selected targets
 		codes = append(codes, partCat{lhs, rhs})
 	}

@@ -20,7 +20,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split_old"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -180,8 +179,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.Call[W]:
 			return splitCall(limbsMap, alloc, mods, c)
 		case *bytecode.Cat[W]:
-			return split_old.Concat(limbsMap, alloc, c)
-			//return split.Concat(limbsMap, alloc, c)
+			return split.Concat(limbsMap, alloc, c)
 		case *bytecode.Debug[W]:
 			return []Bytecode[W]{&bytecode.Debug[W]{Chunks: c.Chunks, Sources: splitRegisterVectors(limbsMap, c.Sources)}}
 		case *bytecode.Fail[W]:
