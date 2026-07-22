@@ -152,7 +152,7 @@ func splitFunction[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descri
 		code  = splitBytecodeVector(mapping, mods, alloc, m.Vectors())
 	)
 	//
-	return descriptor.NewFunction(m.Name(), alloc.Registers(), m.IsNative(), code)
+	return descriptor.NewFunction(m.Name(), alloc.Registers(), m.Kind(), code)
 }
 
 func splitBytecodeVector[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descriptor.Module[W],

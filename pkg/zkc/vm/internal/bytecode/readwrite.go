@@ -55,8 +55,36 @@ func (p *ReadWrite[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *ReadWrite[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *ReadWrite[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	errors := validateOperands(env, p.Address, p.Data)
+
+	module := env.Module(p.Id)
+	if module.IsEmpty() {
+		return append(errors, fmt.Errorf("memory target %d does not exist", p.Id))
+	}
+
+	memory := module.Unwrap()
+	if !memory.IsMemory() {
+		return append(errors, fmt.Errorf("memory target %d (%s) is not a memory", p.Id, memory.Name()))
+	}
+
+	if p.Write && memory.IsReadOnly() {
+		errors = append(errors, fmt.Errorf("cannot write to read-only memory %s", memory.Name()))
+	} else if !p.Write && memory.IsWriteOnly() {
+		errors = append(errors, fmt.Errorf("cannot read from write-only memory %s", memory.Name()))
+	}
+
+	if len(p.Address) != int(memory.NumInputs()) {
+		errors = append(errors, fmt.Errorf("memory %s expects %d address registers (found %d)",
+			memory.Name(), memory.NumInputs(), len(p.Address)))
+	}
+
+	if len(p.Data) != int(memory.NumOutputs()) {
+		errors = append(errors, fmt.Errorf("memory %s expects %d data registers (found %d)",
+			memory.Name(), memory.NumOutputs(), len(p.Data)))
+	}
+
+	return errors
 }
 
 func (p *ReadWrite[W]) String(env Environment[W]) string {
@@ -67,7 +95,9 @@ func (p *ReadWrite[W]) String(env Environment[W]) string {
 	)
 	//
 	if env != nil {
-		name = env.Module(p.Id).Name()
+		if module := env.Module(p.Id); module.HasValue() {
+			name = module.Unwrap().Name()
+		}
 	}
 	//
 	if p.Write {

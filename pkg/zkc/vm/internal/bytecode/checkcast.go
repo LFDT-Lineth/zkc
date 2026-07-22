@@ -40,8 +40,8 @@ func (p *CheckCast[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *CheckCast[W]) Validate(_ uint, _ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *CheckCast[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	return validateOperands(env, p.Uses())
 }
 
 func (p *CheckCast[W]) String(env Environment[W]) string {

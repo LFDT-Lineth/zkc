@@ -15,7 +15,6 @@ package bytecode
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -49,42 +48,9 @@ func (p *SkipIf[W]) Definitions() []RegisterId {
 	return nil
 }
 
-// Validate implementation for Bytecode interface.  A conditional skip is
-// well-formed only when its left operand vector is at least as wide as its
-// right (mirroring base.SkipIf.MicroValidate): a narrower left operand could
-// not faithfully hold the value it is compared against.  When either vector
-// involves a native register (and hence has no fixed width) no check applies.
-func (p *SkipIf[W]) Validate(_ uint, _ FieldConfig, env Environment[W]) []error {
-	var (
-		errors []error
-		lw     = vectorBitwidth(p.Left, env)
-		rw     = vectorBitwidth(p.Right, env)
-	)
-	//
-	if lw.HasValue() && rw.HasValue() && lw.Unwrap() < rw.Unwrap() {
-		errors = append(errors, fmt.Errorf("bit overflow (u%d into u%d)", lw.Unwrap(), rw.Unwrap()))
-	}
-	//
-	return errors
-}
-
-// vectorBitwidth returns the total bitwidth of a register vector under the
-// given environment, or the empty option when any constituent register is
-// native (and hence has no fixed bitwidth).
-func vectorBitwidth[W word.Word[W]](v RegisterVector, env Environment[W]) util.Option[uint] {
-	var total uint
-	//
-	for _, r := range v.Registers() {
-		bw := env.Register(r).Bitwidth()
-		//
-		if !bw.HasValue() {
-			return util.None[uint]()
-		}
-		//
-		total += bw.Unwrap()
-	}
-	//
-	return util.Some(total)
+// Validate implementation for Bytecode interface.
+func (p *SkipIf[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+	return validateOperands(env, p.Left.Registers(), p.Right.Registers())
 }
 
 func (p *SkipIf[W]) String(env Environment[W]) string {

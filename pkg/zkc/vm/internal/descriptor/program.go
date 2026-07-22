@@ -336,14 +336,45 @@ func (p moduleEnvironment[W]) HasRegister(name string) util.Option[RegisterId] {
 	return p.modules[p.module].HasRegister(name)
 }
 
-// Register returns the ith register used in this module.
-func (p moduleEnvironment[W]) Module(id ModuleId) bytecode.ModuleInfo {
-	return p.modules[id]
+// Module returns information about the given module, or none when the module
+// identifier is invalid or refers to a nil descriptor.
+func (p moduleEnvironment[W]) Module(id ModuleId) util.Option[bytecode.ModuleInfo] {
+	if uint(id) >= uint(len(p.modules)) {
+		return util.None[bytecode.ModuleInfo]()
+	}
+
+	module := p.modules[id]
+	switch module := module.(type) {
+	case *Function[W]:
+		if module == nil {
+			return util.None[bytecode.ModuleInfo]()
+		}
+	case *Memory[W]:
+		if module == nil {
+			return util.None[bytecode.ModuleInfo]()
+		}
+	}
+
+	return util.Some[bytecode.ModuleInfo](module)
 }
 
 // Register returns the ith register used in this module.
 func (p moduleEnvironment[W]) Register(id RegisterId) bytecode.RegisterInfo {
 	return p.modules[p.module].Register(id)
+}
+
+// RegisterCount returns the number of registers in the enclosing module.
+func (p moduleEnvironment[W]) RegisterCount() uint {
+	return p.modules[p.module].Width()
+}
+
+// VectorCount returns the number of vectors in the enclosing function.
+func (p moduleEnvironment[W]) VectorCount() uint {
+	if function, ok := p.modules[p.module].(*Function[W]); ok {
+		return uint(len(function.Vectors()))
+	}
+
+	return 0
 }
 
 // ValueOf implementation for the bytecode.Environment interface.  A module

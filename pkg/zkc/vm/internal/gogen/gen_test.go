@@ -778,7 +778,7 @@ func TestGenSubConstWrapWidth(t *testing.T) {
 			vm.NewComputedRegister("t", u8, zero),
 			vm.NewComputedRegister("e", u8, zero),
 		}
-		main = vm.NewBytecodeFunction("main", false, regs,
+		main = vm.NewBytecodeFunction("main", vm.BYTECODE_FUNCTION, regs,
 			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(0, zero.SetUint64(1))),               // x = 1
 			vm.NewBytecodeVector[vm.Uint](vm.Sub(1, []vm.RegisterId{0}, c16.SetUint64(16))), // t = x - 16
 			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(2, c17.SetUint64(17))),               // e = 17
