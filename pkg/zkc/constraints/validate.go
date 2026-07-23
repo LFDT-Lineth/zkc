@@ -19,8 +19,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
@@ -28,8 +28,11 @@ import (
 // Validate the given schema by ensuring that every register in every module is referenced in at least one vanishing
 // constraint.  If any such register is encountered, this should a suitable error which identifies the enclosing module
 // and register.
-func Validate[F field.Element[F]](schema sc.AnySchema[F]) error {
-	var validated = make([]bit.Set, schema.Modules().Count())
+func Validate[F field.Element[F]](schema sc.AnySchema[F]) []error {
+	var (
+		validated = make([]bit.Set, schema.Modules().Count())
+		errors    []error
+	)
 	// Iterate each constraint, marking any registers it uses.
 	for iter := schema.Constraints(); iter.HasNext(); {
 		var c = iter.Next()
@@ -41,34 +44,56 @@ func Validate[F field.Element[F]](schema sc.AnySchema[F]) error {
 		//
 		for i, r := range mod.Registers() {
 			if !validated[mid].Contains(uint(i)) {
-				return fmt.Errorf("dangling register \"%s\" in module \"%s\"", r.Name(), mod.Name().String())
+				err := fmt.Errorf("dangling register \"%s\" in module \"%s\"", r.Name(), mod.Name().String())
+				//
+				errors = append(errors, err)
 			}
 		}
 	}
 	//
-	return nil
+	return errors
 }
 
 func validateConstraint[F field.Element[F]](c sc.Constraint[F], validations []bit.Set, schema sc.AnySchema[F]) {
 	switch c := c.(type) {
 	case air.VanishingConstraint[F]:
-		validateVanishingConstraint(c.Unwrap(), validations, schema)
+		validateVanishingConstraint(c.Unwrap(), validations)
 	case mir.VanishingConstraint[F]:
-		validateVanishingConstraint(c, validations, schema)
+		validateVanishingConstraint(c, validations)
+	case air.LookupConstraint[F]:
+		validateLookupConstraint(c.Unwrap(), validations, schema)
+	case mir.LookupConstraint[F]:
+		validateLookupConstraint(c, validations, schema)
 	}
 }
 
 func validateVanishingConstraint[F field.Element[F], T term.Testable[F]](c vanishing.Constraint[F, T],
-	validations []bit.Set, schema sc.AnySchema[F]) {
-	//
-	var (
-		mid = c.Context
-		mod = schema.Module(mid)
-	)
+	validations []bit.Set) {
 	//
 	for _, rid := range *c.Constraint.RequiredRegisters() {
-		var reg = mod.Register(register.NewId(rid))
-		fmt.Printf("Marking register %s in module %s\n", reg.Name(), mod.Name().String())
-		validations[mid].Insert(rid)
+		validations[c.Context].Insert(rid)
+	}
+}
+
+func validateLookupConstraint[F field.Element[F], T term.Evaluable[F]](c lookup.Constraint[F, T],
+	validations []bit.Set, schema sc.AnySchema[F]) {
+	//
+	validateLookupVectors(c.Targets, validations)
+	validateLookupVectors(c.Sources, validations)
+}
+
+func validateLookupVectors[F field.Element[F], T term.Evaluable[F]](vs []lookup.Vector[F, T],
+	validations []bit.Set) {
+	for _, v := range vs {
+		validateLookupVector(v, validations)
+	}
+}
+
+func validateLookupVector[F field.Element[F], T term.Evaluable[F]](v lookup.Vector[F, T],
+	validations []bit.Set) {
+	for _, e := range v.Terms {
+		for _, rid := range *e.RequiredRegisters() {
+			validations[v.Context()].Insert(rid)
+		}
 	}
 }

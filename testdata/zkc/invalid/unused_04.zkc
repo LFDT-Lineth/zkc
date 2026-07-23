@@ -1,0 +1,12 @@
+//error:3:5-16:unused variable junk
+fn f(x:u8) -> (r:u8) {
+    var junk:u8
+    r = x
+    return
+}
+
+fn main() {
+    if f(0) != 0 {
+        fail
+    }
+}

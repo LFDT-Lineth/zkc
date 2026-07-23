@@ -127,8 +127,10 @@ func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildAr
 	// Generate AIR representation
 	air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 	// Perform validation check
-	if err := constraints.Validate(air); err != nil {
-		log.Warn(err)
+	if errs := constraints.Validate(air); len(errs) > 0 {
+		for _, err := range errs {
+			log.Warn(err)
+		}
 	}
 }
 
