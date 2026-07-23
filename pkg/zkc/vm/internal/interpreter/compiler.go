@@ -248,12 +248,17 @@ func checkMemoryCount(count uint32, name string) {
 	}
 }
 
-// check whether the next bytecode to execute will terminate the enclosing
-// function, or not.
+// isVectorTerminal determines whether a breakpoint should be placed on the
+// given bytecode, so that the executing state is recorded into the trace just
+// before it runs.  This is done for the (normal) control-flow terminators of a
+// vector, i.e. jumps and returns.
+//
+// Note that `fail` is deliberately excluded here: a failing instruction records
+// its row via the failure path instead (see Interpreter.failure), which also
+// covers non-terminal failures such as arithmetic overflow.  Flagging `fail`
+// here as well would record its row twice.
 func isVectorTerminal[W word.Word[W]](b bytecode.Bytecode[W]) bool {
 	switch b.(type) {
-	case *bytecode.Fail[W]:
-		return true
 	case *bytecode.Jmp[W]:
 		return true
 	case *bytecode.Ret[W]:

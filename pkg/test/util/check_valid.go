@@ -240,15 +240,12 @@ func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg codegen.Config, 
 	// Run constraint tests
 	if config.constraints {
 		for _, test := range tests {
-			// FIXME: support reject tests
-			//if test.expected {
-			// Test all configure padding strategies
+			// Test all configured padding strategies
 			for name, strategy := range config.paddingStrategies {
 				t.Run(name, func(t *testing.T) {
 					runConstraintTest(t, p, test, cfg, strategy)
 				})
 			}
-			//}
 		}
 	}
 }

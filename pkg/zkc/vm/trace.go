@@ -42,7 +42,7 @@ type Tracer[W Word[W], F any] interface {
 // the input is malformed (e.g. is missing expected fields and/or contains
 // unexpected fields).
 func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n uint, tracer Tracer[W, F],
-) (Trace[F], map[string][]byte, bool, []error) {
+) (Trace[F], map[string][]byte, []error) {
 	//
 	var (
 		tr        rtrace.Trace[F]
@@ -79,8 +79,8 @@ func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n
 	// 	}
 	// }
 	// Execute the interpreter with appropriate breakpoints
-	if _, traceable, errs = BootAndExecute(bci, in, n); len(errs) != 0 || !traceable {
-		return tr, out, traceable, errs
+	if _, traceable, errs = BootAndExecute(bci, in, n); !traceable {
+		return tr, out, errs
 	}
 	// Finally, process memory
 	var stats = util.NewPerfStats()
@@ -96,7 +96,7 @@ func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n
 	// Encode outputs
 	out = EncodeOutputs(bci)
 	//
-	return tracer.Build(), out, true, nil
+	return tracer.Build(), out, errs
 }
 
 // State collects together information recorded when executing a single vector
