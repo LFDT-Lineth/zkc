@@ -144,6 +144,16 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			it := InstructionTranslator[W, F]{p, localWrites}
 			// translate concatenation assignment
 			local = it.translateConcat(c.Targets, c.Sources, p.sourceWidths(c.Sources))
+		case *vm.BytecodeUintToField[W]:
+			it := InstructionTranslator[W, F]{p, localWrites}
+			// uint→𝔽: the native target equals the assembled sources modulo P
+			// (field equality is modulo P, so no explicit reduction is needed).
+			local = it.translateConcat([]vm.RegisterId{c.Target}, c.Source, p.sourceWidths(c.Source))
+		case *vm.BytecodeFieldToUint[W]:
+			it := InstructionTranslator[W, F]{p, localWrites}
+			// 𝔽→uint: the assembled target limbs equal the native source.
+			local = it.translateConcat(c.Target, []vm.RegisterId{c.Source},
+				p.sourceWidths([]vm.RegisterId{c.Source}))
 		case *vm.BytecodeRet[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()

@@ -78,10 +78,10 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 				bound = maxContents(mi.contents)
 			case ramScratch:
 				expr = fmt.Sprintf("memGet(%s, start+%d)", mi.varName, i)
-				bound = widthMax(dataRegs[i].Bitwidth().Unwrap())
+				bound = widthMax(widthOf(dataRegs[i]))
 			case pagedScratch:
 				expr = fmt.Sprintf("%s.get(start + %d)", mi.varName, i)
-				bound = widthMax(dataRegs[i].Bitwidth().Unwrap())
+				bound = widthMax(widthOf(dataRegs[i]))
 			default: // input ROM: untrusted contents
 				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
 				bound = widthMax(64)

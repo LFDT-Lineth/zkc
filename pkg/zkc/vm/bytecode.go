@@ -476,6 +476,18 @@ func MulModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Byt
 	return bytecode.NewFieldArith(bytecode.OP_MULMOD_P, target, sources, constant)
 }
 
+// UintToField constructs a uint-to-field conversion, which reduces the source
+// modulo P.
+func UintToField[W Word[W]](target RegisterId, source []RegisterId) Bytecode[W] {
+	return &bytecode.UintToField[W]{Target: target, Source: source}
+}
+
+// FieldToUint constructs a field-to-uint conversion, which extracts the
+// canonical representative and fails when it does not fit the target width.
+func FieldToUint[W Word[W]](target []RegisterId, source RegisterId) Bytecode[W] {
+	return &bytecode.FieldToUint[W]{Target: target, Source: source}
+}
+
 // Return constructs a return instruction with the given frame width and
 // return offset.
 func Return[W Word[W]]() Bytecode[W] {
@@ -543,6 +555,12 @@ type BytecodeFieldArith[W Word[W]] = bytecode.FieldArith[W]
 
 // BytecodeCat is a concatenation bytecode (target vector = sources joined by width).
 type BytecodeCat[W Word[W]] = bytecode.Cat[W]
+
+// BytecodeUintToField converts a uint register vector to a native field register.
+type BytecodeUintToField[W Word[W]] = bytecode.UintToField[W]
+
+// BytecodeFieldToUint converts a native field register to a uint register vector.
+type BytecodeFieldToUint[W Word[W]] = bytecode.FieldToUint[W]
 
 // BytecodeCall is a function-call bytecode.
 type BytecodeCall[W Word[W]] = bytecode.Call[W]

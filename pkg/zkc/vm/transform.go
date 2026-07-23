@@ -48,6 +48,15 @@ func LowerComparisons[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.LowerComparisons(program)
 }
 
+// LowerFieldCasts inserts canonicality checks for extracting native field
+// values into uint registers. Uint-to-field casts reduce modulo P and need no
+// range check.
+// It must run after register splitting; the checks it generates come out
+// already comparison-lowered.
+func LowerFieldCasts[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.LowerFieldCasts(program)
+}
+
 // LowerDivisions rewrites INT_DIV and INT_REM bytecodes into a non-deterministic
 // hint followed by arithmetic validation:
 //

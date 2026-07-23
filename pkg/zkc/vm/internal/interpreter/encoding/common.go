@@ -183,8 +183,8 @@ const (
 	LDC_w
 	// DESTRUCT instruction
 	DESTRUCT
-	// CAST instruction
-	CAST
+	// UINT_TO_FIELD instruction
+	UINT_TO_FIELD
 	// ADD_2n1 instruction
 	ADD_2n1
 	// SUB_2n1 instruction [must follow ADD_2n1]
@@ -233,6 +233,8 @@ const (
 	CAT
 	// DEBUG instruction
 	DEBUG
+	// FIELD_TO_UINT instruction
+	FIELD_TO_UINT
 	//
 	MAX_BYTECODE
 )
@@ -264,6 +266,10 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 		return Fail(b, env)
 	case *bytecode.FieldArith[W]:
 		return FieldArith(b)
+	case *bytecode.UintToField[W]:
+		return UintToField(b)
+	case *bytecode.FieldToUint[W]:
+		return FieldToUint(b)
 	case *bytecode.Skip[W]:
 		return Skip(pc, b, env)
 	case *bytecode.SkipIf[W]:
