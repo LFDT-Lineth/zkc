@@ -177,7 +177,7 @@ func processConstraintBatch[F field.Element[F], C Constraint[F]](logtitle string
 						buf [2048]byte
 						n   = runtime.Stack(buf[:], false)
 					)
-					c <- batchOutcome{context, name, cov, &panicFailure{
+					c <- batchOutcome{context, name, cov, &PanicFailure{
 						fmt.Sprintf("%v", err), buf[:n],
 					}}
 				}
@@ -209,15 +209,19 @@ type batchOutcome struct {
 	error  Failure
 }
 
-type panicFailure struct {
+// PanicFailure indicates that a panic arose during constraint checking, rather
+// than an actual constraint failure.  The purpose of this is to allow the
+// testing framework to distinguish panics from actual constraint failures.
+type PanicFailure struct {
 	message    string
 	stackTrace []byte
 }
 
-func (p *panicFailure) Message() string {
+// Message returns the message associated with this panic.
+func (p *PanicFailure) Message() string {
 	return p.String()
 }
 
-func (p *panicFailure) String() string {
+func (p *PanicFailure) String() string {
 	return fmt.Sprintf("%s\n\n%s", p.message, string(p.stackTrace))
 }

@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -240,14 +241,14 @@ func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg codegen.Config, 
 	if config.constraints {
 		for _, test := range tests {
 			// FIXME: support reject tests
-			if test.expected {
-				// Test all configure padding strategies
-				for name, strategy := range config.paddingStrategies {
-					t.Run(name, func(t *testing.T) {
-						runConstraintTest(t, p, test, cfg, strategy)
-					})
-				}
+			//if test.expected {
+			// Test all configure padding strategies
+			for name, strategy := range config.paddingStrategies {
+				t.Run(name, func(t *testing.T) {
+					runConstraintTest(t, p, test, cfg, strategy)
+				})
 			}
+			//}
 		}
 	}
 }
@@ -450,13 +451,18 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.
 		// generate trace
 		_, _, tr, errs = binf.Trace(inputs, traceCfg)
 	)
-	//
+	// Fail automatically on any internal error arising during tracing
+	failIfNot[*vm.Failure](t, errs...)
+	// Check for errors
 	if test.expected {
-		// test expected to pass, but tracing generated failures.
-		failIfErrors(t, errs...)
+		// Fail on any machine failure, since this test was not expected to
+		// generate any failures.
+		failIf[*vm.Failure](t, errs...)
 	}
-	//
+	// Check constraints
 	failures := binf.Check(tr, traceCfg)
+	// Fail automatically on any panic arising during constraint checking
+	failIf[*schema.PanicFailure](t, failures...)
 	// Determine whether trace accepted or not.
 	accepted := len(failures) == 0
 	// Process what happened versus what was supposed to happen.

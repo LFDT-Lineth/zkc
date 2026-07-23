@@ -221,7 +221,9 @@ func executeWithCheckPoint[W vm.Word[W]](program vm.Program[W], spec, outputFile
 	//
 	defer closer()
 	//
-	return vm.BootAndExecute(interp, input, 131072)
+	output, _, errs := vm.BootAndExecute(interp, input, 131072)
+	//
+	return output, errs
 }
 
 // parseCheckPointSpec parses a --checkpoint specification, returning the

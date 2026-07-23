@@ -160,7 +160,9 @@ func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Fa
 // it simply extracts the outputs at the end.
 func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[string][]byte, errs []error) {
 	// Boot and execute fast machine
-	return vm.BootAndExecute(p.cachedInterpreter(), input, n)
+	output, _, errs = vm.BootAndExecute(p.cachedInterpreter(), input, n)
+	//
+	return output, errs
 }
 
 // Trace generates a suitable trace from the given inputs for the contraints
@@ -175,6 +177,7 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 ) (output map[string][]byte, rtr rtrace.Trace[F], tr trace.Trace[F], errs []error) {
 	//
 	var (
+		traceable bool
 		//
 		stats = util.NewPerfStats()
 		// Lower bytecode program
@@ -183,9 +186,9 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 		builder = tracer.NewBuilder[vm.Uint32, F, *rtrace.CompactModule[F]](prog32)
 	)
 	// Execute machine in chunks of 1K steps
-	rtr, output, errs = vm.BootAndTrace(prog32, input, math.MaxUint, builder)
+	rtr, output, traceable, errs = vm.BootAndTrace(prog32, input, math.MaxUint, builder)
 	//
-	if len(errs) == 0 {
+	if traceable {
 		// Extract AIR constraints
 		constraints := p.AirConstraints()
 		// Construct trace builder
