@@ -1,0 +1,6 @@
+//error:3:5-20:unused variable b
+fn main() {
+    var a:u8, b:u16
+    a = 0
+    return
+}
