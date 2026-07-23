@@ -111,6 +111,14 @@ func Test_Prop_30(t *testing.T) {
 	testEquivalent(t, "x==z ∧ y==x ∧ y!=z", "⊥")
 }
 
+// Regression test: closing an equivalence class of four variables must not
+// drop any of its members.  Previously, a stale atom could be closed over its
+// own in-place replacement, deriving a duplicate and silently losing the
+// connection to one variable (here "x").
+func Test_Prop_31(t *testing.T) {
+	testEquivalent(t, "w==y ∧ x==y ∧ w==z", "w==z ∧ x==z ∧ y==z")
+}
+
 // Disjunctions
 
 func Test_Prop_50(t *testing.T) {
