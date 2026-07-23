@@ -46,6 +46,7 @@ var (
 		fastModeSplitting: true,
 		gogen:             true,
 		verbose:           false,
+		sampling:          util.None[float64](),
 		maxStaticDepths:   []uint{codegen.DEFAULT_MAX_STATIC_DEPTH},
 		paddingStrategies: map[string]ir.PaddingStrategy{
 			"next-power-of-two-padding": ir.NextPowerOfTwoPadding,
@@ -66,6 +67,8 @@ type Config struct {
 	gogen bool
 	// enable verbose mode.
 	verbose bool
+	// optional sampling percentage
+	sampling util.Option[float64]
 	// determines how much front padding is added to the generated trace.
 	paddingStrategies map[string]ir.PaddingStrategy
 	// maxStaticDepths controls the maximum depth (i.e. number of rows) of static
@@ -116,6 +119,13 @@ func (p Config) Splitting(flag bool) Config {
 	return p
 }
 
+// Sampling sets the sampling ratio to use for the given constraint set.
+func (p Config) Sampling(ratio float64) Config {
+	p.sampling = util.Some(ratio)
+	//
+	return p
+}
+
 // FastModeSplitting determines whether or not to apply register splitting in
 // fast mode.
 func (p Config) FastModeSplitting(flag bool) Config {
@@ -144,7 +154,7 @@ func (p Config) Padding(strategies map[string]ir.PaddingStrategy) Config {
 func CheckValid(t *testing.T, test, ext string, config Config) {
 	var (
 		// Parse all JSON tests
-		testcases = readTestCases(t, test)
+		testcases = readTestCases(t, test, config.sampling)
 	)
 	// Check for each field requested
 	for _, f := range config.fields {
@@ -482,13 +492,20 @@ func checkExpectedOutputs[W vm.Word[W]](outputs map[string][]W, wm vm.Core[W]) [
 	return errors
 }
 
-func readTestCases(t *testing.T, test string) map[field.Config][]TestCase {
+func readTestCases(t *testing.T, test string, sampling util.Option[float64]) map[field.Config][]TestCase {
 	var tests = make(map[field.Config][]TestCase)
 	// Search for tests
 	for _, cfg := range TESTFILE_EXTENSIONS {
 		var fields []field.Config
 		// Read tests from file
 		tc := ReadTestsFile(t, cfg, test)
+		//
+		if sampling.HasValue() {
+			// determine sample size
+			var n = uint(float64(len(tc)) * sampling.Unwrap())
+			// sample test cases accordingly
+			tc = util.SampleElements(n, tc)
+		}
 		//
 		if cfg.field == nil {
 			// all fields supported

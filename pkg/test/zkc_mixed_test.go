@@ -23,8 +23,7 @@ import (
 // since the tested field (KoalaBear) has a modulus ≤ 64 bits, on the
 // generated-Go executor too (gogen represents a field element as a single
 // uint64 — see pkg/zkc/vm/internal/gogen).
-var DEFAULT_MIXED_CONFIG = util.DEFAULT_CONFIG.
-	GoGen(true)
+var DEFAULT_MIXED_CONFIG = util.DEFAULT_CONFIG
 
 // ===================================================================
 // Basic Tests

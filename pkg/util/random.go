@@ -65,7 +65,7 @@ func GenerateRandomElements[E any](n uint, elems []E) []E {
 
 // SampleElements selects exactly n elements from the given array when its
 // length is greater (otherwise returns the array untouched).
-func SampleElements[E comparable](n uint, elems []E) []E {
+func SampleElements[E any](n uint, elems []E) []E {
 	if n >= uint(len(elems)) {
 		return elems
 	}
