@@ -457,9 +457,21 @@ func (p *Conjunction[I, A]) simplify() bool {
 		done = true
 		// This is an O(n^2) operation, but we just assume the number of
 		// conjunctions (i.e. n) is small.
-		for i, ci := range p.atoms {
-			for _, cj := range p.atoms {
-				cij := ci.CloseOver(cj)
+		for i := range p.atoms {
+			for j := range p.atoms {
+				if i == j {
+					continue
+				}
+				// NOTE: both atoms must be re-read on every iteration, since
+				// earlier iterations may have rewritten them in place.  Using a
+				// stale copy of atoms[i] here can close it over its own
+				// replacement (e.g. stale "a=b" over updated "a=c" gives
+				// "b=c"), overwriting the replacement and silently losing an
+				// atom of the underlying equivalence class.
+				var (
+					ci  = p.atoms[i]
+					cij = ci.CloseOver(p.atoms[j])
+				)
 				//
 				if cij.Is(false) {
 					return false
