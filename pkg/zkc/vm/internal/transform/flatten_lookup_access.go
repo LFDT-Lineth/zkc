@@ -13,6 +13,7 @@
 package transform
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -21,7 +22,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// FlattenCalls snapshots, into a fresh temporary, each call argument whose
+// FlattenLookupAccess snapshots, into a fresh temporary, each call (or memory access) argument whose
 // register is also written at or after the call within the same vector.
 //
 // The lookup gluing a call to its callee reads the argument and return columns
@@ -40,19 +41,19 @@ import (
 // when generating arithmetic constraints (it is not required by the vm) and
 // must run after vectorisation, so the writes which would corrupt the argument
 // column share the call's vector.
-func FlattenCalls[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
+func FlattenLookupAccess[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	out := slices.Clone(program.Modules())
 
 	for i, mod := range out {
 		if fn, ok := mod.(*descriptor.Function[W]); ok {
-			out[i] = flattenCallsFunction[W](fn)
+			out[i] = flattenLookupAccessFunction(fn)
 		}
 	}
 
 	return descriptor.NewProgram(program.Field(), out...)
 }
 
-func flattenCallsFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {
+func flattenLookupAccessFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
@@ -64,11 +65,11 @@ func flattenCallsFunction[W word.Word[W]](fn *descriptor.Function[W]) *descripto
 		// snapshotted.  This needs the whole vector body (to know which registers
 		// are written at or after each call), which the Map closure cannot see one
 		// bytecode at a time.
-		snapshot := flattenableArgs[W](vec.Bytecodes)
+		snapshot := flattenableArgs(vec.Bytecodes)
 		//
 		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
-			if call, ok := ith.(*bytecode.Call[W]); ok {
-				return flattenCall[W](call, snapshot[idx], alloc)
+			if flags, ok := snapshot[idx]; ok {
+				return flattenLookupAccess(ith, flags, alloc)
 			}
 			//
 			return []Bytecode[W]{ith}
@@ -86,8 +87,8 @@ func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
 	snapshot := make(map[uint][]bool)
 	//
 	for i, code := range codes {
-		call, ok := code.(*bytecode.Call[W])
-		if !ok {
+		uses := lookupUses(code)
+		if uses == nil {
 			continue
 		}
 		// Collect the registers written from this call onwards.
@@ -99,10 +100,10 @@ func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
 			}
 		}
 		// Flag each argument coinciding with such a write.
-		args := make([]bool, len(call.Arguments))
+		args := make([]bool, len(uses))
 		//
-		for j, arg := range call.Arguments {
-			args[j] = written[arg]
+		for j, use := range uses {
+			args[j] = written[use]
 		}
 		//
 		snapshot[uint(i)] = args
@@ -111,26 +112,66 @@ func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
 	return snapshot
 }
 
-// flattenCall expands a call, prefixing it with a snapshot ("tmp = arg") for
+// flattenLookupAccess expands a call, prefixing it with a snapshot ("tmp = arg") for
 // each flagged argument and rewriting the call to read those temporaries.
-func flattenCall[W word.Word[W]](call *bytecode.Call[W], snapshot []bool,
+func flattenLookupAccess[W word.Word[W]](code Bytecode[W], snapshot []bool,
 	registers split.Allocator[W]) []Bytecode[W] {
+	insns, uses := snapshotUses(lookupUses(code), snapshot, registers)
+	//
+	switch c := code.(type) {
+	case *bytecode.Call[W]:
+		// Append the (possibly rewritten) call, preserving its flags.
+		return append(insns, &bytecode.Call[W]{
+			Target:    c.Target,
+			Arguments: uses,
+			Returns:   c.Returns,
+		})
+	case *bytecode.ReadWrite[W]:
+		var (
+			address = uses[:len(c.Address)]
+			data    = c.Data
+		)
+		//
+		if c.Write {
+			data = uses[len(c.Address):]
+		}
+		//
+		return append(insns, &bytecode.ReadWrite[W]{
+			Write:   c.Write,
+			Id:      c.Id,
+			Address: address,
+			Data:    data,
+		})
+	default:
+		panic(fmt.Sprintf("unexpected bytecode (%T)", code))
+	}
+}
+
+func snapshotUses[W word.Word[W]](uses []bytecode.RegisterId, snapshot []bool,
+	registers split.Allocator[W]) ([]Bytecode[W], []bytecode.RegisterId) {
 	var (
-		args  = slices.Clone(call.Arguments)
+		ids   = slices.Clone(uses)
 		insns []Bytecode[W]
 	)
 	//
-	for i, arg := range args {
+	for i, use := range ids {
 		if snapshot[i] {
-			tmp := registers.Allocate("", registers.Register(arg).Bitwidth())
-			insns = append(insns, bytecode.Assign[W](tmp, arg))
-			args[i] = tmp
+			tmp := registers.Allocate("", registers.Register(use).Bitwidth())
+			insns = append(insns, bytecode.Assign[W](tmp, use))
+			ids[i] = tmp
 		}
 	}
-	// Append the (possibly rewritten) call, preserving its flags.
-	return append(insns, &bytecode.Call[W]{
-		Target:    call.Target,
-		Arguments: args,
-		Returns:   call.Returns,
-	})
+	//
+	return insns, ids
+}
+
+func lookupUses[W word.Word[W]](code Bytecode[W]) []bytecode.RegisterId {
+	switch c := code.(type) {
+	case *bytecode.Call[W]:
+		return c.Arguments
+	case *bytecode.ReadWrite[W]:
+		return c.Uses()
+	default:
+		return nil
+	}
 }

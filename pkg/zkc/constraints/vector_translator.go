@@ -86,8 +86,8 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			continue
 		case *vm.BytecodeCall[W], *vm.BytecodeReadWrite[W]:
 			// Translation of calls, and memory read/write is done at the function
-			// level, as it modifies the module itself (adding source selectors),
-			// requires knowledge of target modules, etc.
+			// level (see addLookups), as it modifies the module itself (adding
+			// source selectors), requires knowledge of target modules, etc.
 			continue
 		case *vm.BytecodeCheckCast[W]:
 			// Width checks are enforced by the range-proof constraints emitted for
@@ -300,11 +300,6 @@ func (p *VectorInsnTranslator[W, F]) sourceWidths(ids []vm.RegisterId) []uint {
 	}
 	//
 	return widths
-}
-
-// nolint
-func (p *VectorInsnTranslator[W, F]) debugString(condition Expr[F]) string {
-	return condition.String(func(r register.Id) string { return p.Register(r).Name() })
 }
 
 func joinAssignments(lhs util.Option[dfa.Writes], rhs dfa.Writes) util.Option[dfa.Writes] {
