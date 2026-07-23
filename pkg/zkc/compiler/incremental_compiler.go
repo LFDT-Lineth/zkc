@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/lower"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/parser"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/validate"
 )
 
 // FileUpdate indicates that some change has been made to a given file
@@ -135,10 +136,15 @@ func (p *IncrementalCompiler) Apply(updates ...FileUpdate) []source.SyntaxError 
 
 	program, srcmaps, linkErrs = Link(items...)
 	errors = append(errors, linkErrs...)
+	// Capture variable declarations before flattening discards them (they are
+	// needed to anchor unused-variable errors on the original declaration).
+	decls := validate.CollectVariableDeclarations(program)
 	// Flatten block-level constructs (if/else, while, for) into flat if-goto form.
 	lower.Flatten(program, srcmaps)
-	// Well-formedness checks (assuming unlimited field width).
-	errors = append(errors, validateProgram(program, p.field, srcmaps)...)
+	// Well-formedness checks (assuming unlimited field width).  Any parse or
+	// link errors accumulated above mean the program is not well-formed, which
+	// some downstream checks rely upon.
+	errors = append(errors, validateProgram(program, p.field, srcmaps, len(errors) != 0, decls)...)
 	// Update internal program state.
 	p.program = program
 	p.srcmaps = srcmaps

@@ -1,0 +1,5 @@
+//error:3:5-13:unused variable a
+fn main() {
+    var a:u8
+    return
+}

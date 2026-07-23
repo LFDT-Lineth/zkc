@@ -73,10 +73,15 @@ func Compile(field field.Config, sourceFiles ...source.File,
 	program, srcmaps, linkErrs := Link(unlinkedSourceFiles...)
 	//
 	errors = append(errors, linkErrs...)
+	// Capture variable declarations before flattening discards them (they are
+	// needed to anchor unused-variable errors on the original declaration).
+	decls := validate.CollectVariableDeclarations(program)
 	// Flatten block-level constructs (if/else, switch, while, for) into flat if-goto form
 	lower.Flatten(program, srcmaps)
-	// Well-formedness checks (assuming unlimited field width).
-	errors = append(errors, validateProgram(program, field, srcmaps)...)
+	// Well-formedness checks (assuming unlimited field width).  Any parse or
+	// link errors accumulated above mean the program is not well-formed, which
+	// some downstream checks rely upon.
+	errors = append(errors, validateProgram(program, field, srcmaps, len(errors) != 0, decls)...)
 	// Lower fixed-size arrays into flat local access registers
 	if len(errors) == 0 {
 		lower.FlattenFixedArrays(field, program)
@@ -160,16 +165,23 @@ func scanForFurtherSourceFiles(sourceFile source.File, parsedSourceFile parser.U
 // number on rhs).  Likewise, variables cannot be used before they are defined,
 // and all control-flow paths must reach a "return" instruction, etc. Finally,
 // we cannot assign to an input register under the current calling convention.
-func validateProgram(program ast.Program, field field.Config, srcmaps source.Maps[any]) []source.SyntaxError {
+func validateProgram(program ast.Program, field field.Config, srcmaps source.Maps[any],
+	hasPriorErrors bool, decls validate.VariableDeclarations) []source.SyntaxError {
 	var errors []source.SyntaxError
 	// Check for cyclic definitions (constants and type aliases); if cycle is
 	// detected, skip remaining phases (for now).
 	if errors = validate.CycleDetection(program, srcmaps); len(errors) > 0 {
 		return errors
 	}
-	// Attempt to type the program; if this fails for some reaosn, skip
-	// remaining phases (for now).
+	// Attempt to type the program.
 	errors = append(errors, validate.Typing(program, field, srcmaps)...)
+	// Attempt to check that every variable in the program is used.  This is only
+	// meaningful for a well-formed program, as a variable may otherwise appear
+	// unused simply because an upstream error (e.g. an unresolved symbol in its
+	// type) prevented it from being wired up.
+	if !hasPriorErrors && len(errors) == 0 {
+		errors = append(errors, validate.VariableUses(program, field, srcmaps, decls)...)
+	}
 	// Check the entry point (if any) is well-formed.
 	errors = append(errors, validate.EntryPoint(program, srcmaps)...)
 	// Perform final validation
