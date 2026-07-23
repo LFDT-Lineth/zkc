@@ -1126,6 +1126,10 @@ func Test_ZkcUnit_SkipIf_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/skip_if_05", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_SkipIf_06(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/skip_if_06", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Padding Tests
 // ===================================================================
