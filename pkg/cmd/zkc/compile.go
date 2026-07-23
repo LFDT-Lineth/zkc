@@ -108,6 +108,8 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		// Print out requested artifacts
 		printArtifacts[F](field, artifacts, config)
 	}
+	// perform validation
+	validateArtifacts[F](field, artifacts, config)
 }
 
 func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, artifacts BuildArtifacts) {
@@ -116,6 +118,18 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, arti
 		build.config.GetMaxStaticDepth(), artifacts.ir)
 	// Write to disk
 	WriteBinaryFile(binfile, filename)
+}
+
+// Validate the given schema by ensuring that every register in every module is referenced in at least one vanishing
+// constraint.  If any such register is encountered, this should log an error which identifies the enclosing module
+// and register.
+func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
+	// Generate AIR representation
+	air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
+	// Perform validation check
+	if err := constraints.Validate(air); err != nil {
+		log.Warn(err)
+	}
 }
 
 func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
