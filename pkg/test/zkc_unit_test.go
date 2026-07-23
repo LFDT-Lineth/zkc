@@ -1203,11 +1203,11 @@ func Test_ZkcUnit_BigNum_03(t *testing.T) {
 }
 
 func Test_ZkcUnit_BigNum_04(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_04", DEFAULT_UNIT_CONFIG.GoGen(false))
+	checkZkcUnit(t, "zkc/unit/bignum_04", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_BigNum_05(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_05", DEFAULT_UNIT_CONFIG.GoGen(false))
+	checkZkcUnit(t, "zkc/unit/bignum_05", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_BigNum_06(t *testing.T) {
@@ -1255,11 +1255,11 @@ func Test_ZkcUnit_BigNum_16(t *testing.T) {
 }
 
 func Test_ZkcUnit_BigNum_17(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG.GoGen(false))
+	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_BigNum_18(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.GoGen(false))
+	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
