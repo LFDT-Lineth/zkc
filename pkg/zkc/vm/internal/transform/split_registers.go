@@ -259,6 +259,8 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 				Source: split.ApplyLimbsMap(limbsMap, c.Source)[0]}}
 		case *bytecode.Switch[W]:
 			return split.Switch(limbsMap, c)
+		case *bytecode.Dispatch[W]:
+			return split.Dispatch(limbsMap, c)
 
 		default:
 			// NOTE: checkcast does not technically need to be supported because

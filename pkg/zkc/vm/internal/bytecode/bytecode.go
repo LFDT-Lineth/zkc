@@ -513,4 +513,5 @@ func RegisterGobTypes[W word.Word[W]]() {
 	gob.Register(&Skip[W]{})
 	gob.Register(&SkipIf[W]{})
 	gob.Register(&Switch[W]{})
+	gob.Register(&Dispatch[W]{})
 }

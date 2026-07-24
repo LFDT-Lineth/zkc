@@ -23,33 +23,36 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// LowerSwitch rewrites Switch (multiway skip) bytecodes into equivalent
-// sequences of SkipIf bytecodes, using a "one-hot" encoding designed to
-// minimise the degree of the resulting constraints.  First, every case's
-// match is materialised *unconditionally* into a fresh 1-bit register via a
-// diamond (b_i = 1 when the dispatch register equals the case's value, else
-// 0).  Only then does a chain of conditional skips dispatch on those bits,
-// targeting each case's original destination; when no bit is set, control
-// falls through exactly as before.
+// LowerSwitch rewrites Switch (multiway skip) bytecodes into a one-hot
+// encoding designed to minimise the degree of the resulting constraints.
+// First, every case's match is materialised *unconditionally* into a fresh
+// 1-bit register via a diamond (b_i = 1 when the dispatch register equals the
+// case's value, else 0), and their sum — the no-default bit — is computed.  A
+// single Dispatch bytecode then transfers control on those bits, targeting
+// each case's original destination; when no bit is set, control falls through
+// exactly as before.
 //
-// Hoisting the comparisons out of the dispatch chain matters for two
-// reasons.  Firstly, every comparison executes on all paths, so the bit
-// registers are definitely assigned and need neither constancy constraints
-// nor guarding by the preceding cases' conditions — the (relatively
-// expensive, once limb-split) equality tests contribute their degree once,
-// rather than multiplied under the chain's path condition.  Secondly, the
-// dispatch chain itself then tests only 1-bit registers, whose path-condition
-// atoms have degree one (and which FactorSkipConditions, running later,
-// correctly leaves alone).  The naive lowering (compare-and-skip per case)
+// This shape matters for two reasons.  Firstly, every comparison executes on
+// all paths, so the bit registers are definitely assigned and need neither
+// constancy constraints nor guarding by the preceding cases' conditions — the
+// (relatively expensive, once limb-split) equality tests contribute their
+// degree once, rather than multiplied under the dispatch's path condition.
+// Secondly, the Dispatch bytecode declares a single degree-1 branch-condition
+// atom per case edge (its bit being set), so case-body guard degrees are
+// independent of the number of cases; only the default body pays a
+// conjunction over all bits.  The naive lowering (compare-and-skip per case)
 // instead nests each comparison under all previous non-matches, giving
-// constraint degrees which grow roughly twice as fast in the number of cases.
+// constraint degrees which grow linearly in the number of cases for every
+// branch body.
 //
 // Since case values are pairwise distinct (see Switch.Validate), at most one
-// bit is set and the first-match-wins semantics of the multiway dispatch is
-// preserved trivially.
+// bit is set — this both preserves the first-match-wins semantics of the
+// multiway dispatch trivially, and (together with the range constraints on
+// the bits) discharges the one-hot contract which makes the Dispatch branch
+// conditions sound (see the Dispatch declaration).
 //
 // NOTE: this transform must run before register splitting (which does not
-// support Switch bytecodes).
+// support Switch bytecodes with multi-limb sources).
 func LowerSwitch[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	out := slices.Clone(program.Modules())
 
@@ -129,21 +132,21 @@ func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers split.Al
 // switchPacketSize returns the number of bytecodes in the replacement packet
 // for a given Switch: five codes per case for its bit diamond (constant load,
 // comparison skip, both bit assignments and the internal skip), one code
-// computing the no-default bit (sum of the case bits), one shared
-// zero-register load, and one dispatch skip per case.
+// computing the no-default bit (sum of the case bits), and the final one-hot
+// dispatch.
 func switchPacketSize[W word.Word[W]](sw *bytecode.Switch[W]) uint {
 	if len(sw.Cases) == 0 {
 		return 0
 	}
 	//
-	return 6*uint(len(sw.Cases)) + 2
+	return 5*uint(len(sw.Cases)) + 2
 }
 
 // lowerSwitchCode expands a single Switch bytecode, located at (old) offset pc
 // within its enclosing vector, into a one-hot dispatch.  First, every case's
 // match is computed unconditionally into a fresh 1-bit register by a diamond,
-// and the no-default bit is derived from the case bits (`c_j`, `b_j`,
-// `no_default` and `zero` are fresh):
+// and the no-default bit is derived from the case bits (`c_j`, `b_j` and
+// `no_default` are fresh):
 //
 //	c_0 = v_0
 //	skip_if r == c_0 2
@@ -152,19 +155,19 @@ func switchPacketSize[W word.Word[W]](sw *bytecode.Switch[W]) uint {
 //	b_0 = 1
 //	... (one diamond per case)
 //	no_default = b_0 + ... + b_{n-1}
-//	zero = 0
 //
-// after which a chain of conditional skips dispatches on the bits:
+// after which a single Dispatch bytecode transfers control on the bits:
 //
-//	skip_if b_0 != zero <case 0 target>
-//	skip_if b_1 != zero <case 1 target>
-//	...
+//	dispatch [b_0:<case 0 target>, ..., b_{n-1}:<case n-1 target>] no_default
 //
-// Since case values are pairwise distinct (see Switch.Validate), at most one
-// case bit is set; no_default being a 1-bit register, its range constraint
-// additionally enforces that invariant on the constraint side, and it is 0
-// exactly when no case matched.  The dispatch chain does not (yet) consume
-// it — the default remains the fall-through path.
+// This satisfies the Dispatch contract (see its declaration): case values are
+// pairwise distinct (see Switch.Validate), so at most one case bit is set,
+// each bit is constrained on both arms of its diamond, and no_default — being
+// a 1-bit register — enforces the one-hot invariant via its range constraint.
+// In return, each case edge's branch condition is a single degree-1 atom (its
+// bit being set), independent of the number of cases; only the fall-through
+// (default) edge pays a conjunction over all bits, and the join after the
+// dispatch simplifies away entirely.
 //
 // Each case needs a fresh constant register since every load executes on all
 // paths.  The register is sized to the dispatch register, which the case's
@@ -205,29 +208,27 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 			bytecode.LoadConst(bits[j], one))
 	}
 	// Derive the no-default bit: no_default = b_0 + ... + b_{n-1}, which is 0
-	// exactly when no case matched.  This must sit before the dispatch chain so
-	// that it executes on every path.
+	// exactly when no case matched.  This must sit before the dispatch so that
+	// it executes on every path.
 	nodef := registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_no_default", switchIndex), util.Some[uint](1))
 	codes = append(codes,
 		// no_default = b_0 + ... + b_{n-1}
 		bytecode.AddConst(nodef, bits, zero))
-	// zero = 0
-	zreg := registers.Allocate("", util.Some[uint](1))
-	codes = append(codes, bytecode.LoadConst(zreg, zero))
 	// Dispatch on the bits, in case order.
+	var (
+		// New position of the dispatch bytecode itself.
+		position = mapping[pc] + 5*n + 1
+		dcases   = make([]bytecode.DispatchCase, n)
+	)
+	//
 	for j, cse := range sw.Cases {
-		var (
-			// New position of this case's dispatch skip.
-			position = mapping[pc] + 5*n + 2 + uint(j)
-			// New position of this case's dispatch target.
-			target = mapping[pc+uint(cse.Skip)+1]
-		)
+		// New position of this case's dispatch target.
+		target := mapping[pc+uint(cse.Skip)+1]
 		//
-		codes = append(codes,
-			bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, util.Cast[uint16](target-position-1), bits[j], zreg))
+		dcases[j] = bytecode.DispatchCase{Bit: bits[j], Skip: util.Cast[uint16](target - position - 1)}
 	}
 	//
-	return codes
+	return append(codes, bytecode.NewDispatch[W](dcases, nodef))
 }
 
 // relocateSkip recalculates the skip offset of a (conditional or unconditional)

@@ -127,6 +127,9 @@ const (
 	// SKIP_M (skip table) instruction: dispatches on a source register against a
 	// table of (value, target) pairs.
 	SKIP_M
+	// SKIP_B (skip bit-table) instruction: one-hot dispatch over a table of
+	// (bit register, target) pairs.
+	SKIP_B
 	// SEQ_rr (skip forward if equal)
 	SEQ_rr
 	// SNE_rr (skip forward if not equal)
@@ -282,6 +285,8 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 		return Ret(b, env)
 	case *bytecode.Switch[W]:
 		return Switch(b, env)
+	case *bytecode.Dispatch[W]:
+		return Dispatch(b, env)
 	default:
 		panic(fmt.Sprintf("unknown instruction encountered (%s)", b.String(nil)))
 	}
@@ -296,6 +301,9 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 		return MaxCallEncodedLength(b)
 	case *bytecode.Skip[W], *bytecode.Jmp[W]:
 		return 1
+	case *bytecode.Dispatch[W]:
+		// word 0 plus one (bit, target) pair per case.
+		return uint(1 + 2*len(b.Cases))
 	case *bytecode.SkipIf[W]:
 		// The wide form carries its base registers in an additional word.
 		if IsWideRegisters(b.Left.Base, b.Right.Base) {

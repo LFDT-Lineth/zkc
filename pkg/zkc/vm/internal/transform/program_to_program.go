@@ -160,6 +160,8 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 		return &bytecode.Skip[W2]{Skip: b.Skip}
 	case *bytecode.SkipIf[W1]:
 		return &bytecode.SkipIf[W2]{Skip: b.Skip, Left: b.Left, Right: b.Right, Op: b.Op}
+	case *bytecode.Dispatch[W1]:
+		return &bytecode.Dispatch[W2]{Cases: b.Cases, Default: b.Default}
 	default:
 		panic("unknown bytecode")
 	}

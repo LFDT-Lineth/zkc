@@ -163,7 +163,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			// constraint is generated here, since correctness is enforced by
 			// subsequent arithmetic checks.
 			continue
-		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeSwitch[W]:
+		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeSwitch[W], *vm.BytecodeDispatch[W]:
 			// control flow is captured via the branch table; no constraint here
 			continue
 		default:

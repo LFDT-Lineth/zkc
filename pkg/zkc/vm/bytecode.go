@@ -577,6 +577,9 @@ type BytecodeSkipIf[W Word[W]] = bytecode.SkipIf[W]
 // BytecodeSwitch is a multiway-skip (switch) bytecode.
 type BytecodeSwitch[W Word[W]] = bytecode.Switch[W]
 
+// BytecodeDispatch is a one-hot multiway-skip (dispatch) bytecode.
+type BytecodeDispatch[W Word[W]] = bytecode.Dispatch[W]
+
 // BytecodeJmp is an unconditional jump bytecode.
 type BytecodeJmp[W Word[W]] = bytecode.Jmp[W]
 

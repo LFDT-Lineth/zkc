@@ -251,6 +251,10 @@ func (p *Vector[W]) validateControlFlow() ([]error, bool) {
 			for _, c := range code.Cases {
 				errors, safe = validateSkipDestination(errors, safe, micro, uint(c.Skip), n)
 			}
+		case *Dispatch[W]:
+			for _, c := range code.Cases {
+				errors, safe = validateSkipDestination(errors, safe, micro, uint(c.Skip), n)
+			}
 		}
 	}
 	// Explore only valid successors. Invalid destinations were reported above.
@@ -287,6 +291,12 @@ func (p *Vector[W]) validateControlFlow() ([]error, bool) {
 			visit(micro + 1)
 			visitSkipDestination(micro, uint(code.Skip), n, visit)
 		case *Switch[W]:
+			visit(micro + 1)
+
+			for _, c := range code.Cases {
+				visitSkipDestination(micro, uint(c.Skip), n, visit)
+			}
+		case *Dispatch[W]:
 			visit(micro + 1)
 
 			for _, c := range code.Cases {
@@ -422,6 +432,13 @@ func writeDfaTransfer[W word.Word[W]](offset uint, code Bytecode[W],
 		for _, c := range code.Cases {
 			arcs = append(arcs, dfa.NewTransfer(state, offset+uint(c.Skip)+1))
 		}
+	case *Dispatch[W]:
+		// One-hot dispatch: join into each case's branch target (the dispatch
+		// writes nothing, so the propagated state is unchanged); the
+		// fall-through is added below.
+		for _, c := range code.Cases {
+			arcs = append(arcs, dfa.NewTransfer(state, offset+uint(c.Skip)+1))
+		}
 	}
 	// Construct state after this code and transfer to the following bytecode.
 	nState := state.Write(toRegisterIds(code.Definitions())...)
@@ -482,6 +499,39 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
 			}
 			//
 			return append(arcs, dfa.NewTransfer(extendMultiwayDefault(state, source, code.Cases), offset+1))
+		case *Dispatch[W]:
+			// One-hot dispatch: each edge's condition is just its own bit being
+			// set — a single degree-1 atom, rather than the conjunction of all
+			// preceding non-matches.  Dropping those prefix atoms is sound only
+			// under the Dispatch contract (see its declaration): the enclosing
+			// vector constrains the bits to be one-hot, so any satisfying trace
+			// has bit_j = 1 imply every other bit (and hence every preceding
+			// dispatch condition) clear.
+			var (
+				zero = word.Const64[W](0)
+				fall = state
+			)
+			//
+			for _, c := range code.Cases {
+				var (
+					bid = register.NewId(uint(c.Bit))
+					bit = dfa.NewBranchId(writes.MayAnybeAssigned(bid), bid)
+				)
+				//
+				arcs = append(arcs, dfa.NewTransfer(state.NotEqualsConst(bit, zero), offset+uint(c.Skip)+1))
+				// The fall-through is the syntactic complement of the case
+				// edges — every bit clear — rather than the (logically
+				// equivalent, degree-1) "default register clear".  This matters
+				// wherever the edges rejoin: the disjunction of complementary
+				// conditions simplifies back to the incoming path condition,
+				// leaving the codes after the join unguarded, whereas a
+				// default-register atom would survive the join and burden every
+				// subsequent bytecode (and the constancy analysis) with a
+				// disjunctive guard.
+				fall = fall.EqualsConst(bit, zero)
+			}
+			//
+			return append(arcs, dfa.NewTransfer(fall, offset+1))
 		}
 		// Transfer to following bytecode
 		return append(arcs, dfa.NewTransfer(state, offset+1))
@@ -650,6 +700,14 @@ func isExternalSkip[W word.Word[W]](n uint, insn Bytecode[W]) bool {
 		}
 		//
 		return false
+	case *Dispatch[W]:
+		for _, cse := range insn.Cases {
+			if uint(cse.Skip) >= n {
+				return true
+			}
+		}
+		//
+		return false
 	default:
 		return false
 	}
@@ -690,6 +748,18 @@ func remapSkip[W word.Word[W]](n, oldOffset, newOffset uint, insn Bytecode[W], m
 		}
 		//
 		return &Switch[W]{Source: insn.Source, Cases: ncases}
+	case *Dispatch[W]:
+		ncases := make([]DispatchCase, len(insn.Cases))
+		//
+		for j, cse := range insn.Cases {
+			ncases[j] = cse
+			// only external cases are remapped; internal ones are unchanged
+			if uint(cse.Skip) >= n {
+				ncases[j].Skip = remap(cse.Skip)
+			}
+		}
+		//
+		return &Dispatch[W]{Cases: ncases, Default: insn.Default}
 	default:
 		panic("unreachable")
 	}
