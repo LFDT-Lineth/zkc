@@ -48,6 +48,9 @@ type VectorInsnTranslator[W vm.Word[W], F field.Element[F]] struct {
 	writeMap    dfa.Result[dfa.Writes]
 	branchTable dfa.Result[dfa.Path[W]]
 	framing     Framing[F]
+	// oneHot holds the one-hot register groups declared by the vector's
+	// Dispatch bytecodes, used to shorten branch conditions at translation.
+	oneHot []oneHotGroup
 }
 
 // NewVectorTranslator constructs a translator for a specific bytecode vector.
@@ -58,6 +61,7 @@ func NewVectorTranslator[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, 
 	//
 	return VectorInsnTranslator[W, F]{
 		ctx, pc, vec, enclosing, writeMap, branchTable, framing,
+		collectOneHotGroups[W](vec.Bytecodes),
 	}
 }
 
@@ -170,7 +174,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			panic(fmt.Sprintf("unexpected bytecode (%T)", c))
 		}
 		//
-		condition := TranslateBranchCondition(p.branchTable.StateOf(cc), p)
+		condition := TranslateBranchCondition(p.branchTable.StateOf(cc), p.oneHot, p)
 		// Add control-flow requirements
 		local = mirc.If(condition, local)
 		// Include local constraint
@@ -247,7 +251,7 @@ func (p *VectorInsnTranslator[W, F]) determineConstancyCondition(reg register.Id
 		if containsRegister(c.Definitions(), reg) {
 			var (
 				pathCondition = branchTable.StateOf(uint(i))
-				nc            = TranslateNegatedBranchCondition(pathCondition, p)
+				nc            = TranslateNegatedBranchCondition(pathCondition, p.oneHot, p)
 			)
 			//
 			condition = condition.And(nc)

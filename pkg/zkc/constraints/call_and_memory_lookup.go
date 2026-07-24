@@ -58,11 +58,14 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 		// Branch table giving the condition under which each code in this vector
 		// is reached.
 		_, branchTable := vec.BranchTable()
+		// One-hot register groups declared by the vector's Dispatch bytecodes,
+		// used to shorten the selector conditions below.
+		oneHot := collectOneHotGroups[W](vec.Bytecodes)
 		// Group the lookup-emitting bytecodes by the branch condition under
 		// which they execute, so accesses sharing a condition share a single
 		// source selector (column).
 		// Note that a branch that doesn't emit lookup will be skipped.
-		for _, group := range groupLookupsByCondition(vec.Bytecodes, branchTable, infos) {
+		for _, group := range groupLookupsByCondition(vec.Bytecodes, branchTable, oneHot, infos) {
 			// Source selector gating the accesses of this group: their branch
 			// condition and:
 			// - for a multi-line function, its line selector (IS_PC_*)
@@ -104,9 +107,12 @@ type lookupEntry[W vm.Word[W]] struct {
 
 // groupLookupsByCondition partitions the lookup-emitting bytecodes of a vector
 // (calls, and memory accesses other than RAM) by the branch condition under
-// which they execute.
+// which they execute.  Conditions are shortened against the given one-hot
+// groups first (see rewriteOneHotConditions), so that accesses within a
+// switch's default body are gated on the default bit rather than on the
+// complement of every case bit.
 func groupLookupsByCondition[W vm.Word[W]](codes []vm.Bytecode[W], branchTable dfa.Result[dfa.Path[W]],
-	infos []vm.Module[W]) []lookupGroup[W] {
+	oneHot []oneHotGroup, infos []vm.Module[W]) []lookupGroup[W] {
 	var groups []lookupGroup[W]
 	//
 outer:
@@ -127,7 +133,7 @@ outer:
 		}
 		//
 		var (
-			condition = branchTable.StateOf(uint(cc)).Condition()
+			condition = rewriteOneHotConditions(branchTable.StateOf(uint(cc)).Condition(), oneHot)
 			entry     = lookupEntry[W]{uint(cc), code}
 		)
 		// Append to an existing group with the same condition (if any).

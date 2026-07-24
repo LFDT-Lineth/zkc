@@ -674,8 +674,8 @@ func remapPacket[W word.Word[W]](oldOffset, newOffset uint, packet []Bytecode[W]
 	)
 	//
 	for i, insn := range packet {
-		if isExternalSkip[W](n-uint(i), insn) {
-			packet[i] = remapSkip[W](n-uint(i), oldOffset, newOffset+uint(i), insn, mapping)
+		if isExternalSkip(n-uint(i), insn) {
+			packet[i] = remapSkip(n-uint(i), oldOffset, newOffset+uint(i), insn, mapping)
 		}
 	}
 }
