@@ -68,6 +68,23 @@ type Register[W Word[W]] = descriptor.Register[W]
 // bytecode RegisterId).
 type RegisterId = bytecode.RegisterId
 
+// Operand represents either a register operand, or a constant operand.
+type Operand[W Word[W]] = bytecode.Operand[W]
+
+// NewRegisterOperand creates a new operand from a set of one or more register
+// limbs, where the most significant limb comes first (i.e. has the lowest
+// index).
+func NewRegisterOperand[W word.Word[W]](limbs ...RegisterId) Operand[W] {
+	return bytecode.NewRegisterOperand[W](limbs...)
+}
+
+// NewConstantOperand creates a new operand from a set of or more constant
+// limbs, where the most significant limb comes first (i.e. has the lowest
+// index).
+func NewConstantOperand[W word.Word[W]](constant ...W) Operand[W] {
+	return bytecode.NewConstantOperand(constant...)
+}
+
 // BytecodeVector bundles together one or more bytecode instructions which, with
 // restrictions, can be executed by the underlying machine "in parallel".  The
 // approach is analoguous to the concept of "Very-Long Instruction Words (VLIW)"
@@ -332,8 +349,21 @@ func SkipTargets[W Word[W]](b Bytecode[W], from uint) []uint {
 
 // SkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
-func SkipIf[W Word[W]](op Cond, skip uint16, left, right RegisterId) Bytecode[W] {
-	return bytecode.NewSkipIf[W](op, skip, left, right)
+func SkipIf[W Word[W]](op Cond, skip uint16, left RegisterId, right Operand[W]) Bytecode[W] {
+	var lvec = bytecode.NewRegisterVector(left)
+	//
+	return bytecode.NewSkipIf(op, skip, lvec, right)
+}
+
+// SkipIfConst constructs a conditional branch instruction which jumps to the
+// target address when "left op right" holds, comparing single registers.
+func SkipIfConst[W Word[W]](op Cond, skip uint16, left RegisterId, right W) Bytecode[W] {
+	var (
+		lvec = bytecode.NewRegisterVector(left)
+		rvec = bytecode.NewConstantOperand(right)
+	)
+	//
+	return bytecode.NewSkipIf(op, skip, lvec, rvec)
 }
 
 // Switch constructs a multiway-skip (SMW) instruction which dispatches

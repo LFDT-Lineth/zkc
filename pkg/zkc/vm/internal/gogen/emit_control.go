@@ -71,12 +71,12 @@ func collectLabels(code BytecodeVector) map[pos]bool {
 // therefore compared lexicographically from Base downwards, matching
 // executeSkipIf_rv.  Two-limb elements compare their high limbs first.
 func (g *generator) condExpr(fn *descFunction, x *bytecode.SkipIf[word.Uint]) (string, error) {
-	lhsOps, err := g.operands(fn, x.Left.Registers())
+	lhsOps, err := g.registerOperands(fn, x.Left.Registers())
 	if err != nil {
 		return "", err
 	}
 
-	rhsOps, err := g.operands(fn, x.Right.Registers())
+	rhsOps, err := g.operand(fn, x.Right, uint(len(lhsOps)))
 	if err != nil {
 		return "", err
 	}
@@ -114,7 +114,7 @@ func (g *generator) condExpr(fn *descFunction, x *bytecode.SkipIf[word.Uint]) (s
 // guard, leaving any wide non-zero source to fall through.
 func (g *generator) emitMultiwaySkip(c *code, fn *descFunction, x *bytecode.Switch[word.Uint],
 	vi, ci, vecLen uint) error {
-	source, err := g.operand(fn, x.Source)
+	source, err := g.registerOperand(fn, x.Source)
 	if err != nil {
 		return err
 	}

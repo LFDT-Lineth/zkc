@@ -14,7 +14,11 @@
 package gogen
 
 import (
+	"fmt"
 	"math/big"
+
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // operand is a value read rendered as Go expression(s), together with what the
@@ -58,7 +62,42 @@ func (o operand) hiOr0() string {
 	return o.hi
 }
 
-// operand returns an operand reading a source register, bounded by the
+// operand renders a bytecode operand (register vector or constant vector) as
+// one operand per element, most-significant element first — matching the limb
+// order of both representations.  A constant vector may carry fewer limbs than
+// the n elements the context compares against (e.g. the constant zero is an
+// empty vector); it is then zero-extended at the front, mirroring the
+// reference semantics (see bytecode.asBigInt).
+func (g *generator) operand(fn *descFunction, op bytecode.Operand[word.Uint], n uint) ([]operand, error) {
+	if op.IsRegisterVector() {
+		return g.registerOperands(fn, op.AsRegisters())
+	}
+	//
+	consts := op.AsConstants()
+	if uint(len(consts)) > n {
+		return nil, fmt.Errorf("gogen: constant operand has %d limbs, expected at most %d", len(consts), n)
+	}
+
+	out := make([]operand, n)
+	pad := n - uint(len(consts))
+
+	for i := range pad {
+		out[i] = exact(big.NewInt(0))
+	}
+
+	for i, c := range consts {
+		o, err := constOperand(c)
+		if err != nil {
+			return nil, err
+		}
+
+		out[pad+uint(i)] = o
+	}
+
+	return out, nil
+}
+
+// registerOperand returns an registerOperand reading a source register, bounded by the
 // interval analysis (which never exceeds the declared width).  A zero bound
 // means the register provably holds 0 — the value is then exact, which lets
 // emitters drop dead terms.  A two-limb register reads as a pair UNLESS its
@@ -68,7 +107,7 @@ func (o operand) hiOr0() string {
 // values — the reference machine zero-initialises frames and never installs
 // their nominal constant, so they are NOT folded to literals here (their
 // interval does that, soundly, instead).
-func (g *generator) operand(fn *descFunction, id regId) (operand, error) {
+func (g *generator) registerOperand(fn *descFunction, id regId) (operand, error) {
 	w, err := g.regWidth(fn, id)
 	if err != nil {
 		return operand{}, err
@@ -91,11 +130,11 @@ func (g *generator) operand(fn *descFunction, id regId) (operand, error) {
 	return op, nil
 }
 
-func (g *generator) operands(fn *descFunction, ids []regId) ([]operand, error) {
+func (g *generator) registerOperands(fn *descFunction, ids []regId) ([]operand, error) {
 	out := make([]operand, len(ids))
 
 	for i, id := range ids {
-		o, err := g.operand(fn, id)
+		o, err := g.registerOperand(fn, id)
 		if err != nil {
 			return nil, err
 		}

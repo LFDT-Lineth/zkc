@@ -75,6 +75,10 @@ type BranchId struct {
 	Width uint
 	// Indication of whether Forwarding is active or not.
 	Forwarding bool
+	// BigEndian indicates the first register in the group (i.e. that with the
+	// lowest id) holds the most significant limb, rather than the least
+	// significant limb (which is the default).
+	BigEndian bool
 }
 
 // NewBranchId constructs a new branch id from a group of one (or more)
@@ -92,8 +96,19 @@ func NewBranchId(forwarding bool, regs ...register.Id) BranchId {
 	}
 	//
 	return BranchId{
-		regs[0], uint(len(regs)), forwarding,
+		regs[0], uint(len(regs)), forwarding, false,
 	}
+}
+
+// NewBigEndianBranchId constructs a new branch id from a group of one (or
+// more) consecutively assigned registers, where the first register (i.e. that
+// with the lowest id) holds the most significant limb.
+func NewBigEndianBranchId(forwarding bool, regs ...register.Id) BranchId {
+	var id = NewBranchId(forwarding, regs...)
+	//
+	id.BigEndian = true
+	//
+	return id
 }
 
 // Cmp implementation of the logical.Variable interface
@@ -119,7 +134,17 @@ func (p BranchId) Get(i uint) BranchId {
 	//
 	rid := register.NewId(p.Id.Unwrap() + i)
 	//
-	return BranchId{rid, 1, p.Forwarding}
+	return BranchId{rid, 1, p.Forwarding, false}
+}
+
+// Limb returns the ith least significant limb in this group as a (singleton)
+// group, taking into account whether the group is little- or big-endian.
+func (p BranchId) Limb(i uint) BranchId {
+	if p.BigEndian {
+		return p.Get(p.Width - 1 - i)
+	}
+	//
+	return p.Get(i)
 }
 
 // Registers returns the set of registers in this group.

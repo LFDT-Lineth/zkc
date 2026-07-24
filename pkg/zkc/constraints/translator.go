@@ -51,7 +51,7 @@ func GenerateMirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program
 	)
 	//
 	for i, m := range infos {
-		modules[i] = translateModule[W, F](uint(i), m, infos, rangeTables, maxStaticWidth)
+		modules[i] = translateModule[W, F](uint(i), m, infos, rangeTables, field, maxStaticWidth)
 	}
 	//
 	return schema.NewUniformSchema(modules)
@@ -69,10 +69,10 @@ func GenerateAirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program
 }
 
 func translateModule[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, m vm.Module[W],
-	infos []vm.Module[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
+	infos []vm.Module[W], rangeTables map[uint]rangeTable, field field.Config, maxStaticWidth uint) mir.Module[F] {
 	switch m := m.(type) {
 	case *vm.Function[W]:
-		return translateFunction[W, F](ctx, m, infos, rangeTables, maxStaticWidth)
+		return translateFunction[W, F](ctx, m, infos, rangeTables, field, maxStaticWidth)
 	case *vm.Memory[W]:
 		if m.IsStatic() {
 			return translateStaticMemory[W, F](ctx, m)
@@ -338,7 +338,7 @@ func multiLineAddressConstraints[F field.Element[F]](
 }
 
 func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn *vm.Function[W],
-	infos []vm.Module[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
+	infos []vm.Module[W], rangeTables map[uint]rangeTable, field field.Config, maxStaticWidth uint) mir.Module[F] {
 	var (
 		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]
@@ -393,7 +393,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 		var (
 			handle = fmt.Sprintf("pc%d", pc)
 			// construct translator for this bytecode vector
-			tr = NewVectorTranslator(ctx, uint(pc), vec, framing, fn)
+			tr = NewVectorTranslator(ctx, uint(pc), vec, framing, fn, field)
 			// extract logical constraint
 			constraint = tr.translate()
 		)
@@ -421,7 +421,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
 	// Emit lookup constraints for any function calls and memory accesses made
 	// by this function.
-	addLookups(mod, ctx, fn, pcSelectors, ret, infos, regs)
+	addLookups(mod, ctx, fn, pcSelectors, ret, infos, regs, field)
 	// Done
 	return mod
 }

@@ -159,7 +159,8 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 	case *bytecode.Skip[W1]:
 		return &bytecode.Skip[W2]{Skip: b.Skip}
 	case *bytecode.SkipIf[W1]:
-		return &bytecode.SkipIf[W2]{Skip: b.Skip, Left: b.Left, Right: b.Right, Op: b.Op}
+		right := p.convertOperandVector(b.Right)
+		return &bytecode.SkipIf[W2]{Skip: b.Skip, Left: b.Left, Right: right, Op: b.Op}
 	default:
 		panic("unknown bytecode")
 	}
@@ -183,6 +184,24 @@ func (p programToProgram[W1, W2]) convertContents(contents []W1) []W2 {
 	}
 	//
 	return out
+}
+
+func (p programToProgram[W1, W2]) convertOperandVector(o bytecode.Operand[W1]) bytecode.Operand[W2] {
+	if o.IsRegisterVector() {
+		// Easy case
+		return bytecode.NewRegisterVectorOperand[W2](o.AsRegisterVector())
+	}
+	//
+	var (
+		constants  = o.AsConstants()
+		nconstants = make([]W2, len(constants))
+	)
+	//
+	for i, c := range constants {
+		nconstants[i] = p.convertConstant(c)
+	}
+	//
+	return bytecode.NewConstantOperand(nconstants...)
 }
 
 func (p programToProgram[W1, W2]) convertConstant(c W1) W2 {
