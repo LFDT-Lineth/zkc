@@ -118,17 +118,27 @@ func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers split.Al
 	return bytecode.NewVector(ncodes...)
 }
 
+const (
+	// caseSize is the number of bytecodes in each case's bit
+	// diamond: the constant load, the comparison skip, both bit assignments
+	// and the internal skip.
+	caseSize = 5
+	// trailerSize is the number of bytecodes emitted after the
+	// diamonds: the one-register load, the bit sum, the subtraction deriving
+	// the default bit, its range check, and the final dispatch (which is
+	// always the last code of the packet).
+	trailerSize = 5
+)
+
 // switchPacketSize returns the number of bytecodes in the replacement packet
-// for a given Switch: five codes per case for its bit diamond (constant load,
-// comparison skip, both bit assignments and the internal skip), three codes
-// computing the default bit (one-register load, bit sum, subtraction), and the
-// final one-hot dispatch.
+// for a given Switch (see switchCaseDiamondSize and switchPacketTrailerSize,
+// which must move in lockstep with the codes emitted by lowerSwitchCode).
 func switchPacketSize[W word.Word[W]](sw *bytecode.Switch[W]) uint {
 	if len(sw.Cases) == 0 {
 		return 0
 	}
 	//
-	return 5*uint(len(sw.Cases)) + 4
+	return caseSize*uint(len(sw.Cases)) + trailerSize
 }
 
 // lowerSwitchCode expands a single Switch bytecode, located at (old) offset pc
@@ -224,7 +234,7 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 	// Dispatch on the bits, in case order.
 	var (
 		// New position of the dispatch bytecode itself.
-		position = mapping[pc] + 5*n + 5
+		position = mapping[pc] + caseSize*n + trailerSize - 1
 		dcases   = make([]bytecode.DispatchCase, n)
 	)
 	//
