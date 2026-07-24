@@ -632,7 +632,7 @@ func writeBytecodeFunction[W vm.Word[W]](listing *bytecodeListing, address uint3
 			} else {
 				row.text = b.String(env)
 				// A skip's range spans from this row to each of its targets.
-				for _, target := range vm.SkipTargets[W](b, idx) {
+				for _, target := range vm.SkipTargets(b, idx) {
 					flow.Add(idx, target)
 				}
 			}
