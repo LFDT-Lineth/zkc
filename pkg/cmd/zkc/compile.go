@@ -129,8 +129,10 @@ func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildAr
 	// Perform validation check
 	if errs := constraints.Validate(air); len(errs) > 0 {
 		for _, err := range errs {
-			fmt.Printf("panic: untouched register: %v\n", err)
+			log.Errorf("untouched register: %v", err)
 		}
+		//
+		os.Exit(1)
 	}
 }
 
