@@ -14,8 +14,11 @@ func (e failure) Error() string { return string(e) }
 
 func fail(msg string) { panic(failure(msg)) }
 
-var mem_data []uint64   // input ROM "data"
-var mem_result []uint64 // output WOM "result"
+// Input ROM "data".
+var mem_data []uint64
+
+// Output WOM "result".
+var mem_result []uint64
 
 func memWrite(s []uint64, addr uint64, v uint64) []uint64 {
 	if n := addr + 1; uint64(len(s)) < n {
