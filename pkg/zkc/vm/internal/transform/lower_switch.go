@@ -27,10 +27,10 @@ import (
 // encoding designed to minimise the degree of the resulting constraints.
 // First, every case's match is materialised *unconditionally* into a fresh
 // 1-bit register via a diamond (b_i = 1 when the dispatch register equals the
-// case's value, else 0), and their sum — the no-default bit — is computed.  A
-// single Dispatch bytecode then transfers control on those bits, targeting
-// each case's original destination; when no bit is set, control falls through
-// exactly as before.
+// case's value, else 0), along with the default bit — the complement of their
+// sum.  A single Dispatch bytecode then transfers control on those bits,
+// targeting each case's original destination; when no bit is set, control
+// falls through exactly as before.
 //
 // This shape matters for two reasons.  Firstly, every comparison executes on
 // all paths, so the bit registers are definitely assigned and need neither
@@ -131,22 +131,22 @@ func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers split.Al
 
 // switchPacketSize returns the number of bytecodes in the replacement packet
 // for a given Switch: five codes per case for its bit diamond (constant load,
-// comparison skip, both bit assignments and the internal skip), one code
-// computing the no-default bit (sum of the case bits), and the final one-hot
-// dispatch.
+// comparison skip, both bit assignments and the internal skip), three codes
+// computing the default bit (one-register load, bit sum, subtraction), and the
+// final one-hot dispatch.
 func switchPacketSize[W word.Word[W]](sw *bytecode.Switch[W]) uint {
 	if len(sw.Cases) == 0 {
 		return 0
 	}
 	//
-	return 5*uint(len(sw.Cases)) + 2
+	return 5*uint(len(sw.Cases)) + 4
 }
 
 // lowerSwitchCode expands a single Switch bytecode, located at (old) offset pc
 // within its enclosing vector, into a one-hot dispatch.  First, every case's
 // match is computed unconditionally into a fresh 1-bit register by a diamond,
-// and the no-default bit is derived from the case bits (`c_j`, `b_j` and
-// `no_default` are fresh):
+// and the default bit is derived from the case bits (`c_j`, `b_j`, `one`,
+// `sum` and `b_default` are fresh):
 //
 //	c_0 = v_0
 //	skip_if r == c_0 2
@@ -154,20 +154,23 @@ func switchPacketSize[W word.Word[W]](sw *bytecode.Switch[W]) uint {
 //	skip 1
 //	b_0 = 1
 //	... (one diamond per case)
-//	no_default = b_0 + ... + b_{n-1}
+//	one = 1
+//	sum = b_0 + ... + b_{n-1}
+//	b_default = one - sum
 //
 // after which a single Dispatch bytecode transfers control on the bits:
 //
-//	dispatch [b_0:<case 0 target>, ..., b_{n-1}:<case n-1 target>] no_default
+//	dispatch [b_0:<case 0 target>, ..., b_{n-1}:<case n-1 target>] b_default
 //
 // This satisfies the Dispatch contract (see its declaration): case values are
 // pairwise distinct (see Switch.Validate), so at most one case bit is set,
-// each bit is constrained on both arms of its diamond, and no_default — being
-// a 1-bit register — enforces the one-hot invariant via its range constraint.
-// In return, each case edge's branch condition is a single degree-1 atom (its
-// bit being set), independent of the number of cases; only the fall-through
-// (default) edge pays a conjunction over all bits, and the join after the
-// dispatch simplifies away entirely.
+// each bit is constrained on both arms of its diamond, and sum — being a
+// 1-bit register — enforces the one-hot invariant via its range constraint,
+// with b_default = 1 exactly when no case matched.  In return, each case
+// edge's branch condition is a single degree-1 atom (its bit being set),
+// independent of the number of cases; only the fall-through (default) edge
+// pays a conjunction over all bits, and the join after the dispatch
+// simplifies away entirely.
 //
 // Each case needs a fresh constant register since every load executes on all
 // paths.  The register is sized to the dispatch register, which the case's
@@ -207,17 +210,30 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 			// b_j = 1  (match)
 			bytecode.LoadConst(bits[j], one))
 	}
-	// Derive the no-default bit: no_default = b_0 + ... + b_{n-1}, which is 0
-	// exactly when no case matched.  This must sit before the dispatch so that
-	// it executes on every path.
-	nodef := registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_no_default", switchIndex), util.Some[uint](1))
+	// Derive the default bit: b_default = 1 - (b_0 + ... + b_{n-1}), which is 1
+	// exactly when no case matched.  The intermediate sum being a 1-bit
+	// register, its range constraint enforces at most one case bit set.  This
+	// must sit before the dispatch so that it executes on every path.
+	// TODO: we could compute b_no_default = sum instead to save one subtraction
+	// We don't do it now for simplicity.
+	var (
+		onereg = registers.Allocate("", util.Some[uint](1))
+		sumreg = registers.Allocate("", util.Some[uint](1))
+		bdef   = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_default", switchIndex), util.Some[uint](1))
+	)
+	//
 	codes = append(codes,
-		// no_default = b_0 + ... + b_{n-1}
-		bytecode.AddConst(nodef, bits, zero))
+		// one = 1
+		bytecode.LoadConst(onereg, one),
+		// sum = b_0 + ... + b_{n-1}
+		bytecode.AddConst(sumreg, bits, zero),
+		// b_default = one - sum
+		bytecode.NewArith(bytecode.OP_SUB, []descriptor.RegisterId{bdef},
+			[]descriptor.RegisterId{onereg, sumreg}, zero))
 	// Dispatch on the bits, in case order.
 	var (
 		// New position of the dispatch bytecode itself.
-		position = mapping[pc] + 5*n + 1
+		position = mapping[pc] + 5*n + 3
 		dcases   = make([]bytecode.DispatchCase, n)
 	)
 	//
@@ -228,7 +244,7 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 		dcases[j] = bytecode.DispatchCase{Bit: bits[j], Skip: util.Cast[uint16](target - position - 1)}
 	}
 	//
-	return append(codes, bytecode.NewDispatch[W](dcases, nodef))
+	return append(codes, bytecode.NewDispatch[W](dcases, bdef))
 }
 
 // relocateSkip recalculates the skip offset of a (conditional or unconditional)

@@ -31,16 +31,16 @@ type DispatchCase struct {
 // Dispatch is a one-hot multiway skip: each case's 1-bit register is examined,
 // in order, and control transfers to the target of the first bit which is set.
 // When no bit is set, control falls through to the following instruction.  The
-// Default register is a 1-bit register holding the sum of the case bits (i.e.
-// it is 0 exactly when no case bit is set); it is not needed for execution,
-// but its 1-bit range constraint enforces the one-hot invariant on the
-// constraint side.
+// Default register is a 1-bit register holding the complement of the case-bit
+// sum (i.e. it is 1 exactly when no case bit is set); it is not needed for
+// execution, but identifies the fall-through indicator for consumers with
+// one-hot knowledge.
 //
 // NOTE: this bytecode is compiler-internal — it is only ever emitted by the
 // LowerSwitch transform, under a strict contract: the enclosing vector must
 // constrain every case bit to be the indicator of a distinct dispatch
 // condition (so that at most one bit is set), and the Default register to be
-// their sum.  The branch condition derived for each case edge — "bit != 0", a
+// the complement of their sum.  The branch condition derived for each case edge — "bit != 0", a
 // single degree-1 atom rather than the conjunction of all preceding
 // non-matches — is only sound under that contract; a free-standing Dispatch
 // over unconstrained bits would allow a prover to steer execution
