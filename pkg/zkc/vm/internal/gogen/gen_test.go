@@ -203,6 +203,18 @@ fn main() {
 }
 `
 
+// wideShiftSrc forces fast-mode splitting to produce WIDE_SHL / WIDE_SHR.
+const wideShiftSrc = `pub input data(address:u8) -> (word:u256)
+pub output result(address:u8) -> (word:u256)
+fn main() {
+    var x:u256 = data[0]
+    var n:u256 = data[1]
+    result[0] = x << n
+    result[1] = x >> n
+    return
+}
+`
+
 // concatSrc exercises BIT_CONCAT: byte-swap a u16 by destructuring then
 // re-concatenating in the opposite order (sources[0] lands in the low bits).
 const concatSrc = `pub input data(address:u8) -> (w:u16)
@@ -361,6 +373,28 @@ fn main() {
 }
 `
 
+// divMod128Src is u128 division over values built from u64 inputs (a widening
+// multiply, so genuinely >64-bit values are reachable): the fast shape splits
+// it into WIDE_DIV / WIDE_REM over 64-bit words, while the lowered shape
+// produces a division HINT over 16-bit limb vectors — both the multiword
+// division paths, including their native small-value branch.
+const divMod128Src = `pub input data(address:u8) -> (word:u64)
+pub output result(address:u8) -> (word:u64)
+fn main() {
+    var x:u128 = (data[0] as u128) * (data[1] as u128)
+    var y:u128 = (data[2] as u128) * (data[3] as u128)
+    var hi:u64
+    var lo:u64
+    hi::lo = x / y
+    result[0] = lo
+    result[1] = hi
+    hi::lo = x % y
+    result[2] = lo
+    result[3] = hi
+    return
+}
+`
+
 // pagedSrc exercises the paged scratch memory across page boundaries
 // (PAGE_SIZE = 1M words): writes land in pages 0, 1 and 3, and reads hit both
 // written cells and never-written cells in allocated (page 0) and unallocated
@@ -446,6 +480,7 @@ func TestGenValidGo(t *testing.T) {
 		"recSum":       recSumSrc,
 		"bitwise":      bitwiseSrc,
 		"shift":        shiftSrc,
+		"wideShift":    wideShiftSrc,
 		"concat":       concatSrc,
 		"endian":       endianSrc,
 		"carry":        carrySrc,
@@ -683,6 +718,20 @@ var diffCases = []diffCase{
 			{"data": {0, 9}},
 			{"data": {12345678901234567, 1}},
 			{"data": {5, 0}}, // division by zero -> error
+		},
+	},
+	{
+		name: "divmod128", // multiword division: WIDE_DIV/REM (fast); wide HINT_DIVISION (lowered)
+		src:  divMod128Src,
+		vectors: []map[string][]uint64{
+			{"data": {7, 1, 3, 1}}, // small values: native branch
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFF, 3}}, // wide / wide: big.Int branch
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 1, 1}},          // wide / 1
+			{"data": {5, 1, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}},          // small / wide: q=0, r=x
+			{"data": {0xFFFFFFFFFFFFFFFF, 2, 0xFFFFFFFFFFFFFFFF, 1}},          // (2^64-1)·2 / (2^64-1)
+			{"data": {0x0123456789ABCDEF, 0xFEDCBA9876543210, 0xDEADBEEF, 0xCAFEBABE}},
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}}, // q=1, r=0
+			{"data": {7, 1, 0, 5}}, // division by zero -> error
 		},
 	},
 	{
