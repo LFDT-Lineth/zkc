@@ -86,10 +86,7 @@ func Test_ZkcBench_DivRem(t *testing.T) {
 }
 
 func Test_ZkcBench_ModExp32(t *testing.T) {
-	t.Skip("#2008 register splitting for multiplication")
-	//
-	checkZkcBench(t, "zkc/bench/modexp32",
-		DEFAULT_BENCH_CONFIG.GoGen(false).FastModeSplitting(false))
+	checkZkcBench(t, "zkc/bench/modexp32", DEFAULT_BENCH_CONFIG)
 }
 
 // ===================================================================

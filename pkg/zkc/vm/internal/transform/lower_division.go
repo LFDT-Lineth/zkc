@@ -130,8 +130,11 @@ func expandDivRem[W word.Word[W]](q, r, w, x, y bytecode.RegisterId, nX, nY uint
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
 		qy   = registers.Allocate("", util.Some(nX))
-		qyr  = registers.Allocate("", util.Some(nY+1))
-		rw1  = registers.Allocate("", util.Some(nY+1))
+		// qyr = qy + r must hold q*y + r which, by the DIV_HINT semantics
+		// (q = x/y, r = x%y), equals the dividend x exactly and so fits nX
+		// bits; the extra bit guards the addition's transient carry.
+		qyr = registers.Allocate("", util.Some(nX+1))
+		rw1 = registers.Allocate("", util.Some(nY+1))
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", util.Some[uint](0))
 		z1 = registers.Allocate("", util.Some[uint](0))
