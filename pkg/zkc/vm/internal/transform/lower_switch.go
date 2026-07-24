@@ -224,7 +224,7 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 	// Dispatch on the bits, in case order.
 	var (
 		// New position of the dispatch bytecode itself.
-		position = mapping[pc] + 5*n + 4
+		position = mapping[pc] + 5*n + 5
 		dcases   = make([]bytecode.DispatchCase, n)
 	)
 	//
