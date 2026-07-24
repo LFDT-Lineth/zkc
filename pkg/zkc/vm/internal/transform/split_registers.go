@@ -262,13 +262,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.Dispatch[W]:
 			return split.Dispatch(limbsMap, c)
 		case *bytecode.CheckCast[W]:
-			// A target which does not split keeps its cast as-is;
-			// splitting wider casts is simple but not yet implemented.
-			if limbs := split.ApplyLimbsMap(limbsMap, c.Target); len(limbs) == 1 {
-				return []Bytecode[W]{&bytecode.CheckCast[W]{Bitwidth: c.Bitwidth, Target: limbs[0]}}
-			}
-			//
-			panic("splitting checkcast for multi-limb registers not yet implemented")
+			return split.CheckCast(limbsMap, c)
 		default:
 			panic(fmt.Sprintf("unsupported bytecode (%T)", c))
 		}
