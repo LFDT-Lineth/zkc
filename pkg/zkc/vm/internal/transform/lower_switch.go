@@ -200,9 +200,9 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 			bytecode.LoadConst(bits[j], one))
 	}
 	// Derive the default bit: b_default = 1 - (b_0 + ... + b_{n-1}), which is 1
-	// exactly when no case matched.  The intermediate sum being a 1-bit
-	// register, its range constraint enforces at most one case bit set.  This
-	// must sit before the dispatch so that it executes on every path.
+	// exactly when no case matched.  Enforcing b_default to be a u1
+	// enforces that at most 1 case_* is 1.
+	//
 	// TODO: we could compute b_no_default = sum instead to save one subtraction
 	// We don't do it now for simplicity.
 	var (
@@ -218,11 +218,13 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 		bytecode.AddConst(sumreg, bits, zero),
 		// b_default = one - sum
 		bytecode.NewArith(bytecode.OP_SUB, []descriptor.RegisterId{bdef},
-			[]descriptor.RegisterId{onereg, sumreg}, zero))
+			[]descriptor.RegisterId{onereg, sumreg}, zero),
+		// Explicit range proof for b_default:
+		bytecode.NewCheckCast[W](bdef, 1))
 	// Dispatch on the bits, in case order.
 	var (
 		// New position of the dispatch bytecode itself.
-		position = mapping[pc] + 5*n + 3
+		position = mapping[pc] + 5*n + 4
 		dcases   = make([]bytecode.DispatchCase, n)
 	)
 	//
