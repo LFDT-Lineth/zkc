@@ -480,6 +480,7 @@ func TestGenValidGo(t *testing.T) {
 		"recSum":       recSumSrc,
 		"bitwise":      bitwiseSrc,
 		"shift":        shiftSrc,
+		"wideShift":    wideShiftSrc,
 		"concat":       concatSrc,
 		"endian":       endianSrc,
 		"carry":        carrySrc,
