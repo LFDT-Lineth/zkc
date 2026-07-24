@@ -243,6 +243,9 @@ const (
 	helperShl128     = "shl128"
 	helperShr128     = "shr128"
 	helperU128       = "u128"
+	helperWideInt    = "wideInt"
+	helperWideShl    = "wideShl"
+	helperWideShr    = "wideShr"
 )
 
 func (g *generator) useHelper(name string) {
@@ -391,6 +394,7 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	c.line("")
 	g.emitMemHelpers(c)
 	g.emitShiftHelpers(c)
+	g.emitWideIntHelper(c)
 	g.emitModPHelpers(c)
 
 	c.line("// Run executes the program on the given input memories, returning its")
@@ -479,7 +483,8 @@ func (g *generator) emitImports(c *code) {
 			deps = append(deps, `"fmt"`)
 		}
 
-		if g.usesHelper(helperDbgB) || g.usesHelper(helperU128) || g.usesHelper(helperCatU64) {
+		if g.usesHelper(helperDbgB) || g.usesHelper(helperU128) ||
+			g.usesHelper(helperCatU64) || g.usesHelper(helperWideInt) {
 			deps = append(deps, `"math/big"`)
 		}
 	}
