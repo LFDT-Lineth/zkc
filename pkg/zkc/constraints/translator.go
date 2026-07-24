@@ -77,12 +77,12 @@ func translateModule[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, m vm
 		if m.IsStatic() {
 			return translateStaticMemory[W, F](ctx, m)
 		} else if m.IsReadOnly() {
-			return translateReadOnlyMemory[W, F](ctx, m)
+			return translateReadOnlyMemory[W, F](ctx, m, rangeTables, maxStaticWidth)
 		} else if m.IsWriteOnly() {
-			return translateWriteOnceMemory[W, F](ctx, m)
+			return translateWriteOnceMemory[W, F](ctx, m, rangeTables, maxStaticWidth)
 		}
 		//
-		return translateReadWriteMemory[W, F](m)
+		return translateReadWriteMemory[W, F](ctx, m, rangeTables, maxStaticWidth)
 	default:
 		panic(fmt.Sprintf("unknown module \"%s\" encountered", m.Name()))
 	}
@@ -110,19 +110,20 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 }
 
 func translateReadOnlyMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
+	ctx schema.ModuleId, m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
-	return translateAccessOnceMemory[W, F](ctx, m, name)
+	return translateAccessOnceMemory[W, F](ctx, m, name, rangeTables, maxStaticWidth)
 }
 
 // Write once memory and read only memory are equivalent on the constraints level
 func translateWriteOnceMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
+	ctx schema.ModuleId, m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
-	return translateAccessOnceMemory[W, F](ctx, m, name)
+	return translateAccessOnceMemory[W, F](ctx, m, name, rangeTables, maxStaticWidth)
 }
 
-func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](m *vm.Memory[W]) mir.Module[F] {
+func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId,
+	m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	var (
 		regs = toRegisters(m.Registers())
 		mod  *schema.Table[F, mir.Constraint[F]]
@@ -135,6 +136,9 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](m *vm.Memory[W])
 	// TODO: read-write (RAM) constraints are disabled for now — the timestamp
 	// columns they rely on are not yet filled by the trace observer (see git
 	// history for the WIP body).
+
+	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
+
 	return mod
 }
 
@@ -142,7 +146,8 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](m *vm.Memory[W])
 //   - read once memory
 //   - write once memory
 func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W], name trace.ModuleName) (mod mir.Module[F]) {
+	ctx schema.ModuleId, m *vm.Memory[W], name trace.ModuleName,
+	rangeTables map[uint]rangeTable, maxStaticWidth uint) (mod mir.Module[F]) {
 	var (
 		memoryModule *schema.Table[F, mir.Constraint[F]]
 		padding      big.Int
@@ -211,6 +216,7 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 	}
 
 	memoryModule.AddConstraints(constraints...)
+	addRangeProofConstraints(memoryModule, ctx, memoryModule.Registers(), rangeTables, maxStaticWidth)
 
 	return memoryModule
 }
