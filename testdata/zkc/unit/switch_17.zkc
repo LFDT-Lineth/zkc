@@ -1,0 +1,23 @@
+pub input data(address:u8) -> (bit:u1)
+pub output out(address:u8) -> (byte:u8)
+
+fn main() {
+    var b:u1 = data[0]
+    var r:u8
+    // A switch over a 1-bit register: the one-hot encoding is redundant here
+    // (the case bits mirror the scrutinee) but must remain correct.  The
+    // default arm is dynamically unreachable.
+    switch b {
+        case 0: {
+            r = 10
+        }
+        case 1: {
+            r = 20
+        }
+        default: {
+            r = 30
+        }
+    }
+    //
+    out[0] = r
+}

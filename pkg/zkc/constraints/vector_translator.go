@@ -167,9 +167,14 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			// constraint is generated here, since correctness is enforced by
 			// subsequent arithmetic checks.
 			continue
-		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeSwitch[W], *vm.BytecodeDispatch[W]:
+		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeDispatch[W]:
 			// control flow is captured via the branch table; no constraint here
 			continue
+		case *vm.BytecodeSwitch[W]:
+			// Switch bytecodes are rewritten by LowerSwitch when compiling
+			// the bci code; one surviving to this point indicates a broken
+			// transform pipeline.
+			panic("unlowered switch bytecode reached constraint translation")
 		default:
 			panic(fmt.Sprintf("unexpected bytecode (%T)", c))
 		}

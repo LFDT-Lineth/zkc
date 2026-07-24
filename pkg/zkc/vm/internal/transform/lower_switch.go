@@ -23,36 +23,25 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// LowerSwitch rewrites Switch (multiway skip) bytecodes into a one-hot
-// encoding designed to minimise the degree of the resulting constraints.
-// First, every case's match is materialised *unconditionally* into a fresh
-// 1-bit register via a diamond (b_i = 1 when the dispatch register equals the
-// case's value, else 0), along with the default bit — the complement of their
-// sum.  A single Dispatch bytecode then transfers control on those bits,
-// targeting each case's original destination; when no bit is set, control
-// falls through exactly as before.
+// LowerSwitch rewrites Switch bytecodes:
+// switch x {
+// case 1: {do_1}
+// case 2: {do_2}
+// default: {do_default}}
 //
-// This shape matters for two reasons.  Firstly, every comparison executes on
-// all paths, so the bit registers are definitely assigned and need neither
-// constancy constraints nor guarding by the preceding cases' conditions — the
-// (relatively expensive, once limb-split) equality tests contribute their
-// degree once, rather than multiplied under the dispatch's path condition.
-// Secondly, the Dispatch bytecode declares a single degree-1 branch-condition
-// atom per case edge (its bit being set), so case-body guard degrees are
-// independent of the number of cases; only the default body pays a
-// conjunction over all bits.  The naive lowering (compare-and-skip per case)
-// instead nests each comparison under all previous non-matches, giving
-// constraint degrees which grow linearly in the number of cases for every
-// branch body.
+// into:
 //
-// Since case values are pairwise distinct (see Switch.Validate), at most one
-// bit is set — this both preserves the first-match-wins semantics of the
-// multiway dispatch trivially, and (together with the range constraints on
-// the bits) discharges the one-hot contract which makes the Dispatch branch
-// conditions sound (see the Dispatch declaration).
+// if x == 1 {b_1 = 1} else {b_1 = 0}
+// if x == 2 {b_2 = 1} else {b_2 = 0}
+// b_default = 1 - (b_1 + b_2)
 //
-// NOTE: this transform must run before register splitting (which does not
-// support Switch bytecodes with multi-limb sources).
+// dispatch [b_1: {do_1}, b_2: {do_2}] b_default
+//
+// This enables to have each do_* gated by a single degree 1 guard (b_i != 0),
+// independent of the number of cases, even for the default case.
+//
+// Note: we could transform switch under condition (don't transform for switch on u1, etc),
+// but as it may never happen when writing zkc programm, we choose to lower inconditionnaly.
 func LowerSwitch[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	out := slices.Clone(program.Modules())
 
