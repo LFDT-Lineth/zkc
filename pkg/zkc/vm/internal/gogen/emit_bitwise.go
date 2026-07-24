@@ -228,9 +228,8 @@ func orMax(a, b *big.Int) *big.Int {
 	return widthMax(uint(n))
 }
 
-// emitShiftHelpers writes the 128-bit variable shifts, each only when
-// referenced.  Counts of 128 or more clear the value, matching the unbounded
-// word semantics under a ≤128-bit mask.
+// emitShiftHelpers writes the variable-shift helpers actually referenced by
+// the generated program.
 func (g *generator) emitShiftHelpers(c *code) {
 	if g.usesHelper(helperShl128) {
 		c.line("func shl128(lo, hi, n uint64) (uint64, uint64) {")
@@ -259,6 +258,42 @@ func (g *generator) emitShiftHelpers(c *code) {
 		c.line("return lo, hi")
 		c.line("default:")
 		c.line("return lo>>n | hi<<(64-n), hi >> n")
+		c.line("}")
+		c.line("}")
+		c.line("")
+	}
+
+	if g.usesHelper(helperWideShl) {
+		c.line("// wideShl shifts little-endian words into a zeroed destination.")
+		c.line("func wideShl(dst, src []uint64, n uint64) {")
+		c.line("word, shift := int(n/64), n%64")
+		c.line("for i, v := range src {")
+		c.line("j := i + word")
+		c.line("if j >= len(dst) {")
+		c.line("break")
+		c.line("}")
+		c.line("dst[j] |= v << shift")
+		c.line("if shift != 0 && j+1 < len(dst) {")
+		c.line("dst[j+1] |= v >> (64 - shift)")
+		c.line("}")
+		c.line("}")
+		c.line("}")
+		c.line("")
+	}
+
+	if g.usesHelper(helperWideShr) {
+		c.line("// wideShr shifts little-endian words into a zeroed destination.")
+		c.line("func wideShr(dst, src []uint64, n uint64) {")
+		c.line("word, shift := int(n/64), n%64")
+		c.line("for j := range dst {")
+		c.line("i := j + word")
+		c.line("if i >= len(src) {")
+		c.line("break")
+		c.line("}")
+		c.line("dst[j] = src[i] >> shift")
+		c.line("if shift != 0 && i+1 < len(src) {")
+		c.line("dst[j] |= src[i+1] << (64 - shift)")
+		c.line("}")
 		c.line("}")
 		c.line("}")
 		c.line("")
