@@ -32,6 +32,10 @@ import (
 )
 
 var (
+	// MIN_SAMPLE_SIZE determines the least number of test cases for which
+	// sampling is permitted.  Essentially, if sampling is enabled by there are
+	// less than 10 test vectors, then it automatically causes a test failure.
+	MIN_SAMPLE_SIZE = 10
 	// ALL_FIELDS defines the set of all known fields for testing
 	ALL_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_16, field.GF_8209}
 	// DEFAULT_WORD sets the default word for fast mode execution.
@@ -498,13 +502,11 @@ func readTestCases(t *testing.T, test string, sampling util.Option[float64]) map
 	for _, cfg := range TESTFILE_EXTENSIONS {
 		var fields []field.Config
 		// Read tests from file
-		tc := ReadTestsFile(t, cfg, test)
-		//
-		if sampling.HasValue() {
-			// determine sample size
-			var n = uint(float64(len(tc)) * sampling.Unwrap())
-			// sample test cases accordingly
-			tc = util.SampleElements(n, tc)
+		tcs, ok := ReadTestsFile(t, cfg, test)
+		// Apply sampling only if the file existed, as otherwise this would trip
+		// up the built-in protections we have.
+		if ok {
+			tcs = applySampling(t, test, tcs, sampling)
 		}
 		//
 		if cfg.field == nil {
@@ -516,11 +518,27 @@ func readTestCases(t *testing.T, test string, sampling util.Option[float64]) map
 		}
 		// associate tests with appropriate fields
 		for _, f := range fields {
-			tests[f] = append(tests[f], tc...)
+			tests[f] = append(tests[f], tcs...)
 		}
 	}
 	//
 	return tests
+}
+
+func applySampling(t *testing.T, test string, tc []TestCase, sampling util.Option[float64]) []TestCase {
+	if sampling.IsEmpty() {
+		// no sampling
+		return tc
+	} else if len(tc) < MIN_SAMPLE_SIZE {
+		t.Errorf("%s: insufficient test vectors for sampling (have %d < %d)", test, len(tc), MIN_SAMPLE_SIZE)
+	} else if n := uint(float64(len(tc)) * sampling.Unwrap()); n == 0 {
+		t.Errorf("%s: sampling would elimimate all test vectors! (had %d)", test, len(tc))
+	} else {
+		// sample test cases accordingly
+		return util.SampleElements(n, tc)
+	}
+	//
+	return tc
 }
 
 // TestConfig provides a simple mechanism for searching for testfiles.

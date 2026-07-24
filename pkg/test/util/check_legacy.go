@@ -377,7 +377,7 @@ func (p *traceId) String() string {
 // ReadTracesFile reads a file containing zero or more traces expressed as JSON, where
 // each trace is on a separate line.
 func ReadTracesFile(filename string) []lt.TraceFile {
-	lines := file.ReadInputFileAsLines(filename)
+	lines, _ := file.ReadInputFileAsLines(filename)
 	traces := make([]lt.TraceFile, len(lines))
 	// Read constraints line by line
 	for i, line := range lines {

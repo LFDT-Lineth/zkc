@@ -27,6 +27,17 @@ func GenerateRandomUints(n, m uint) []uint {
 	return items
 }
 
+// GenerateRandomBytes generates n random bytes.
+func GenerateRandomBytes(n uint) []byte {
+	items := make([]byte, n)
+
+	for i := range n {
+		items[i] = byte(rand.UintN(256))
+	}
+
+	return items
+}
+
 // GenerateRandomUint64s generates n random 64bit unsigned integers in the range
 // 0..m.
 func GenerateRandomUint64s(n, m uint64) []uint64 {
@@ -71,18 +82,17 @@ func SampleElements[E any](n uint, elems []E) []E {
 	}
 	//
 	m := len(elems)
-	res := make([]E, n)
-	index := -1
-	//
-	for i := uint(0); i < n; i++ {
-		// Number of items still to choose
-		r := int(n - i)
-		// Number of items can choose from
-		left := m - index - r
-		// Choose and update index
-		index += 1 + rand.IntN(left)
-		//
-		res[i] = elems[index]
+	res := make([]E, 0, n)
+	// Number of items still to choose
+	r := int(n)
+	// Selection sampling (Knuth's Algorithm S): include each element with
+	// probability r / (m - j), which yields a uniform distribution over all
+	// n-element subsets whilst preserving order.
+	for j := 0; r > 0; j++ {
+		if rand.IntN(m-j) < r {
+			res = append(res, elems[j])
+			r--
+		}
 	}
 	//
 	return res
