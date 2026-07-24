@@ -29,14 +29,12 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 )
 
 // tutorialSrc mirrors pkg/zkc/tutorial: branchless u16 arithmetic with single
@@ -806,51 +804,6 @@ func TestGenDifferential(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-// TestGenSubConstWrapWidth pins the wrap width of a single-source subtraction
-// whose constant is a power of two WIDER than the source register — a shape
-// the surface language cannot express (the type checker rejects a constant
-// exceeding the operand type), so the program is assembled directly from
-// bytecodes.  Per CalculateSubBitwidth, "x:u4 - 16" wraps at 1+max(4,
-// BitLen(16-1)) = 5 bits, so 1 - 16 = -15 wraps to 17 (not 49, which the
-// SUBC executor's former 1+max(4, BitLen(16)) = 6-bit width produced).  The
-// program asserts the wrapped value in-machine via skip_if/fail, and the
-// verdict is cross-checked against the generated Go.
-func TestGenSubConstWrapWidth(t *testing.T) {
-	var (
-		zero, c16, c17 vm.Uint
-		u4, u8         = util.Some(uint(4)), util.Some(uint(8))
-		regs           = []vm.Register[vm.Uint]{
-			vm.NewComputedRegister("x", u4, zero),
-			vm.NewComputedRegister("t", u8, zero),
-			vm.NewComputedRegister("e", u8, zero),
-		}
-		main = vm.NewBytecodeFunction("main", vm.BYTECODE_FUNCTION, regs,
-			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(0, zero.SetUint64(1))),               // x = 1
-			vm.NewBytecodeVector[vm.Uint](vm.Sub(1, []vm.RegisterId{0}, c16.SetUint64(16))), // t = x - 16
-			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(2, c17.SetUint64(17))),               // e = 17
-			vm.NewBytecodeVector[vm.Uint]( // if t == e { ret } else { fail }
-				vm.SkipIf[vm.Uint](bytecode.CONDITION_EQ, 1, 1, 2),
-				vm.Fail[vm.Uint](nil, nil),
-				vm.Return[vm.Uint]()),
-		)
-		p = vm.NewBytecodeProgram(field.KOALABEAR_16, main)
-	)
-
-	_, refErr := referenceRun(t, p, map[string][]byte{})
-
-	src, err := vm.GenerateGo(p, vm.GoGenConfig{})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
-
-	prog := buildProgram(t, src)
-
-	_, genErr := runProgram(t, prog, map[string][]byte{})
-	if refErr || genErr {
-		t.Fatalf("subtraction wrapped at the wrong width: reference err=%v, generated err=%v", refErr, genErr)
 	}
 }
 

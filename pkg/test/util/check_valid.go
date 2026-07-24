@@ -32,6 +32,10 @@ import (
 )
 
 var (
+	// MIN_SAMPLE_SIZE determines the least number of test cases for which
+	// sampling is permitted.  Essentially, if sampling is enabled by there are
+	// less than 10 test vectors, then it automatically causes a test failure.
+	MIN_SAMPLE_SIZE = 10
 	// ALL_FIELDS defines the set of all known fields for testing
 	ALL_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_16, field.GF_8209}
 	// DEFAULT_WORD sets the default word for fast mode execution.
@@ -46,6 +50,7 @@ var (
 		fastModeSplitting: true,
 		gogen:             true,
 		verbose:           false,
+		sampling:          util.None[float64](),
 		maxStaticDepths:   []uint{codegen.DEFAULT_MAX_STATIC_DEPTH},
 		paddingStrategies: map[string]ir.PaddingStrategy{
 			"next-power-of-two-padding": ir.NextPowerOfTwoPadding,
@@ -66,6 +71,8 @@ type Config struct {
 	gogen bool
 	// enable verbose mode.
 	verbose bool
+	// optional sampling percentage
+	sampling util.Option[float64]
 	// determines how much front padding is added to the generated trace.
 	paddingStrategies map[string]ir.PaddingStrategy
 	// maxStaticDepths controls the maximum depth (i.e. number of rows) of static
@@ -116,6 +123,13 @@ func (p Config) Splitting(flag bool) Config {
 	return p
 }
 
+// Sampling sets the sampling ratio to use for the given constraint set.
+func (p Config) Sampling(ratio float64) Config {
+	p.sampling = util.Some(ratio)
+	//
+	return p
+}
+
 // FastModeSplitting determines whether or not to apply register splitting in
 // fast mode.
 func (p Config) FastModeSplitting(flag bool) Config {
@@ -144,7 +158,7 @@ func (p Config) Padding(strategies map[string]ir.PaddingStrategy) Config {
 func CheckValid(t *testing.T, test, ext string, config Config) {
 	var (
 		// Parse all JSON tests
-		testcases = readTestCases(t, test)
+		testcases = readTestCases(t, test, config.sampling)
 	)
 	// Check for each field requested
 	for _, f := range config.fields {
@@ -482,13 +496,18 @@ func checkExpectedOutputs[W vm.Word[W]](outputs map[string][]W, wm vm.Core[W]) [
 	return errors
 }
 
-func readTestCases(t *testing.T, test string) map[field.Config][]TestCase {
+func readTestCases(t *testing.T, test string, sampling util.Option[float64]) map[field.Config][]TestCase {
 	var tests = make(map[field.Config][]TestCase)
 	// Search for tests
 	for _, cfg := range TESTFILE_EXTENSIONS {
 		var fields []field.Config
 		// Read tests from file
-		tc := ReadTestsFile(t, cfg, test)
+		tcs, ok := ReadTestsFile(t, cfg, test)
+		// Apply sampling only if the file existed, as otherwise this would trip
+		// up the built-in protections we have.
+		if ok {
+			tcs = applySampling(t, test, tcs, sampling)
+		}
 		//
 		if cfg.field == nil {
 			// all fields supported
@@ -499,11 +518,27 @@ func readTestCases(t *testing.T, test string) map[field.Config][]TestCase {
 		}
 		// associate tests with appropriate fields
 		for _, f := range fields {
-			tests[f] = append(tests[f], tc...)
+			tests[f] = append(tests[f], tcs...)
 		}
 	}
 	//
 	return tests
+}
+
+func applySampling(t *testing.T, test string, tc []TestCase, sampling util.Option[float64]) []TestCase {
+	if sampling.IsEmpty() {
+		// no sampling
+		return tc
+	} else if len(tc) < MIN_SAMPLE_SIZE {
+		t.Errorf("%s: insufficient test vectors for sampling (have %d < %d)", test, len(tc), MIN_SAMPLE_SIZE)
+	} else if n := uint(float64(len(tc)) * sampling.Unwrap()); n == 0 {
+		t.Errorf("%s: sampling would elimimate all test vectors! (had %d)", test, len(tc))
+	} else {
+		// sample test cases accordingly
+		return util.SampleElements(n, tc)
+	}
+	//
+	return tc
 }
 
 // TestConfig provides a simple mechanism for searching for testfiles.
