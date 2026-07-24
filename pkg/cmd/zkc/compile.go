@@ -121,15 +121,15 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, arti
 }
 
 // Validate the given schema by ensuring that every register in every module is referenced in at least one vanishing
-// constraint.  If any such register is encountered, this should log an error which identifies the enclosing module
-// and register.
+// constraint or lookup.  If any such register is encountered, this should log an error which identifies the enclosing
+// module and register.
 func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
 	// Generate AIR representation
 	air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 	// Perform validation check
 	if errs := constraints.Validate(air); len(errs) > 0 {
 		for _, err := range errs {
-			log.Warn(err)
+			fmt.Printf("panic: untouched register: %v\n", err)
 		}
 	}
 }

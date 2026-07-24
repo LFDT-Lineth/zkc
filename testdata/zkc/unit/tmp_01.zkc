@@ -1,0 +1,16 @@
+fn f(x:u8) -> (y:u8) {
+    switch x {
+        case 1: {
+            y = 0
+        }
+        case 2: {
+            y = 0
+        }
+        case 3: {
+            y = 0
+        }
+        default: {
+            y = x
+        }
+    }
+}
