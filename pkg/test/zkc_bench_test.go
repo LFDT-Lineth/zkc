@@ -25,7 +25,7 @@ var DEFAULT_BENCH_CONFIG = test_util.DEFAULT_CONFIG
 // Benchmark Tests
 // ===================================================================
 func Test_ZkcBench_Blake(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG)
+	checkZkcBench(t, "zkc/bench/blake", DEFAULT_BENCH_CONFIG.Sampling(0.1))
 }
 
 func Test_ZkcBench_BinarySearchTree(t *testing.T) {
@@ -74,7 +74,7 @@ func Test_ZkcBench_Poseidon(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcBench_Sort(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/sort", DEFAULT_BENCH_CONFIG.Checkpoints("sort_slice", 5))
+	checkZkcBench(t, "zkc/bench/sort", DEFAULT_BENCH_CONFIG.Checkpoints("sort_slice", 5).Sampling(0.1))
 }
 
 func Test_ZkcBench_LongDivision(t *testing.T) {

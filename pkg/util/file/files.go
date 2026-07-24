@@ -66,12 +66,13 @@ func ReadAndUncompress(filename string) (string, []byte, error) {
 	return filename, data, err
 }
 
-// ReadInputFileAsLines reads an input file as a sequence of lines.
-func ReadInputFileAsLines(filename string) []string {
+// ReadInputFileAsLines reads an input file as a sequence of lines.  If the file
+// does not exist, then ok==false is returned.
+func ReadInputFileAsLines(filename string) (lines []string, ok bool) {
 	file, err := os.Open(filename)
 	// Check whether file exists
 	if errors.Is(err, os.ErrNotExist) {
-		return []string{}
+		return []string{}, false
 	} else if err != nil {
 		panic(err)
 	}
@@ -86,7 +87,7 @@ func ReadInputFileAsLines(filename string) []string {
 	}
 	//
 	bufReader := bufio.NewReaderSize(reader, 1024*128)
-	lines := make([]string, 0)
+	lines = make([]string, 0)
 	// Read file line-by-line
 	for {
 		// Read the next line
@@ -97,7 +98,7 @@ func ReadInputFileAsLines(filename string) []string {
 				panic(err)
 			}
 
-			return lines
+			return lines, true
 		}
 
 		lines = append(lines, *line)

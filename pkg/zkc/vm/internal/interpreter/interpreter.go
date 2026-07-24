@@ -800,37 +800,6 @@ func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (ui
 	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
-// executeSub_nm implements SUB_nm: it seeds the value from the first source,
-// subtracts the remaining sources and the constant, and stores the result
-// across a vector target using the same low-limb-first rule as the word
-// machine, reporting an error on underflow.
-func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
-	var (
-		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm[W](pc, codes)
-		val                                     W
-		acc                                     W
-		underflow                               bool
-	)
-	// Seed initial value
-	val = stack[sources.Next()]
-	// Subtract rest from it
-	for sources.HasNext() {
-		var src = sources.Next()
-		//
-		if acc, underflow = acc.Add(stack[src]); underflow {
-			return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
-		}
-	}
-	//
-	if acc, underflow = acc.Add(constant); underflow {
-		return pc, errors.New("arithmetic underflow [2]")
-	} else if val, underflow = val.Sub(acc); underflow {
-		val = val.Slice(bitwidth)
-	}
-	//
-	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
-}
-
 // executeMul_nm implements MUL_nm: it multiplies the constant by all sources
 // and stores the result across a vector target using the same low-limb-first
 // rule as the word machine, reporting an error on overflow.
@@ -1818,8 +1787,9 @@ func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, stack []W) (
 		//
 		var (
 			module   = p.program.Module(p.fid)
+			rd_width = module.Register(rd).Bitwidth().Unwrap()
 			rs_width = module.Register(rs).Bitwidth().Unwrap()
-			bitwidth = 1 + max(rs_width, cm1.BitLen())
+			bitwidth = max(rd_width, 1+max(rs_width, cm1.BitLen()))
 		)
 		// slice enough values
 		res = res.Slice(bitwidth)
@@ -1846,9 +1816,10 @@ func (p *Interpreter[W]) executeSub_2n1(pc uint32, codes []uint32, stack []W) (u
 	if underflow {
 		var (
 			module    = p.program.Module(p.fid)
+			rd_width  = module.Register(rd).Bitwidth().Unwrap()
 			rs0_width = module.Register(rs0).Bitwidth().Unwrap()
 			rs1_width = module.Register(rs1).Bitwidth().Unwrap()
-			bitwidth  = 1 + max(rs0_width, rs1_width)
+			bitwidth  = max(rd_width, 1+max(rs0_width, rs1_width))
 		)
 		// slice enough values
 		res = res.Slice(bitwidth)
@@ -1857,6 +1828,37 @@ func (p *Interpreter[W]) executeSub_2n1(pc uint32, codes []uint32, stack []W) (u
 	stack[rd] = res
 	//
 	return pc + n, nil
+}
+
+// executeSub_nm implements SUB_nm: it seeds the value from the first source,
+// subtracts the remaining sources and the constant, and stores the result
+// across a vector target using the same low-limb-first rule as the word
+// machine, reporting an error on underflow.
+func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm[W](pc, codes)
+		val                                     W
+		acc                                     W
+		underflow                               bool
+	)
+	// Seed initial value
+	val = stack[sources.Next()]
+	// Subtract rest from it
+	for sources.HasNext() {
+		var src = sources.Next()
+		//
+		if acc, underflow = acc.Add(stack[src]); underflow {
+			return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		}
+	}
+	//
+	if acc, underflow = acc.Add(constant); underflow {
+		return pc, fmt.Errorf("arithmetic underflow (pc=0x%x)", pc)
+	} else if val, underflow = val.Sub(acc); underflow {
+		val = val.Slice(bitwidth)
+	}
+	//
+	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeWriteWom_sn implements WR_WOM_nm: it writes ndata consecutive words

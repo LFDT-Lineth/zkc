@@ -65,14 +65,15 @@ func CompileZkc(field field.Config, srcfile source.File) []source.SyntaxError {
 }
 
 // ReadTestsFile reads a file containing zero or more tests expressed as JSON,
-// where each test is on a separate line.
-func ReadTestsFile(t *testing.T, cfg TestConfig, test string) []TestCase {
+// where each test is on a separate line.  If the file doesn't exist, then an
+// empty set of tests is returned along with false.
+func ReadTestsFile(t *testing.T, cfg TestConfig, test string) ([]TestCase, bool) {
 	//
 	var (
 		// Construct test filename
 		filename = fmt.Sprintf("%s/%s.%s", TestDir, test, cfg.extension)
 		// Read input file
-		lines = file.ReadInputFileAsLines(filename)
+		lines, exists = file.ReadInputFileAsLines(filename)
 		//
 		tests []TestCase
 	)
@@ -92,7 +93,7 @@ func ReadTestsFile(t *testing.T, cfg TestConfig, test string) []TestCase {
 		}
 	}
 
-	return tests
+	return tests, exists
 }
 
 func failIfErrors(t *testing.T, errs ...error) {
