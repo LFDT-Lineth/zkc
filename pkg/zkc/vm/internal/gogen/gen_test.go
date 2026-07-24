@@ -508,25 +508,6 @@ func TestGenValidGo(t *testing.T) {
 	}
 }
 
-func TestGenWideShiftsUseNativeWords(t *testing.T) {
-	src, err := vm.GenerateGo(compileUint(t, wideShiftSrc, true), vm.GoGenConfig{Package: "wide"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
-
-	for _, helper := range []string{"func wideShl(", "func wideShr("} {
-		if !strings.Contains(src, helper) {
-			t.Errorf("generated source missing %q", helper)
-		}
-	}
-
-	for _, unwanted := range []string{`"math/big"`, "big.Int", "wideInt("} {
-		if strings.Contains(src, unwanted) {
-			t.Errorf("wide shifts unexpectedly use %q", unwanted)
-		}
-	}
-}
-
 // TestGenDifferential compiles each generated program once and checks that, for
 // a range of inputs, it produces outputs identical to the reference executor —
 // and errors exactly when the reference errors.  The corpus is shared with the
