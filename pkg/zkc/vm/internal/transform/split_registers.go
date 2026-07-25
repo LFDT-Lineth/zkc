@@ -206,7 +206,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.Skip[W]:
 			return []Bytecode[W]{c}
 		case *bytecode.SkipIf[W]:
-			return []Bytecode[W]{splitSkipIf(limbsMap, c)}
+			return splitSkipIf(limbsMap, alloc, c)
 
 		// =======================================================
 		// Arithmetic bytecodes
@@ -340,14 +340,73 @@ func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.All
 	return join(pre, bytecode.NewMemWrite[W](c.Id, addr, data), post)
 }
 
-func splitSkipIf[W word.Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.SkipIf[W]) Bytecode[W] {
-	// Both operands are frame-local registers of equal width, so each is simply
-	// mapped onto its limbs.
-	left := split.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
-	right := split.ApplyLimbsMap(limbsMap, c.Right.Registers()...)
+func splitSkipIf[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allocator[W],
+	c *bytecode.SkipIf[W]) []Bytecode[W] {
+	// Both operands are frame-local registers, so each is simply mapped onto
+	// its limbs (most-significant first).
+	var (
+		left  = split.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
+		right = split.ApplyLimbsMap(limbsMap, c.Right.Registers()...)
+		pre   []Bytecode[W]
+	)
+	// The operands can differ in width and, hence, in limb count.
+	// Since the comparison is unsigned, zero extending the narrower operand
+	// preserves its semantics.
+	if len(left) != len(right) {
+		var (
+			n         = max(len(left), len(right))
+			lhs, lpre = zeroExtendLimbs(alloc, left, n)
+			rhs, rpre = zeroExtendLimbs(alloc, right, n)
+		)
+		//
+		left, right = lhs, rhs
+
+		pre = append(lpre, rpre...)
+	}
 	// Construct vectored form of skip_if
-	return bytecode.NewSkipIfVec[W](c.Op, c.Skip, bytecode.NewRegisterVector(left...),
-		bytecode.NewRegisterVector(right...))
+	return append(pre, bytecode.NewSkipIfVec[W](c.Op, c.Skip, bytecode.NewRegisterVector(left...),
+		bytecode.NewRegisterVector(right...)))
+}
+
+// zeroExtendLimbs zero extends an operand's limbs (most-significant first) to n
+// limbs.  Since the registers of a vector must be consecutively indexed, the
+// operand is materialised into a freshly allocated block of registers: the
+// leading (most-significant) padding limbs are assigned zero, whilst the
+// original limbs are copied into the remainder.
+func zeroExtendLimbs[W word.Word[W]](alloc split.Allocator[W], limbs []RegisterId, n int,
+) ([]RegisterId, []Bytecode[W]) {
+	//
+	var (
+		m    = len(limbs)
+		zero W
+	)
+	//
+	if m == n {
+		return limbs, nil
+	} else if descriptor.HasNativeRegisterId(limbs, alloc) {
+		// A native (field) operand has no fixed width, so cannot be aligned
+		// against a multi-limb uint operand.
+		panic("field-to-uint comparison operand must be materialised before splitting")
+	}
+	//
+	var (
+		nlimbs = make([]RegisterId, n)
+		pre    = make([]Bytecode[W], n)
+	)
+	// Allocate a consecutive block of fresh registers, zeroing the padding
+	// limbs and copying the original limbs across.
+	for i := range nlimbs {
+		if i < n-m {
+			nlimbs[i] = alloc.Allocate("z", util.Some[uint](0))
+			pre[i] = bytecode.LoadConst(nlimbs[i], zero)
+		} else {
+			source := limbs[i-(n-m)]
+			nlimbs[i] = alloc.Allocate("c", alloc.Register(source).Bitwidth())
+			pre[i] = bytecode.Assign[W](nlimbs[i], source)
+		}
+	}
+	//
+	return nlimbs, pre
 }
 
 // Argument alignment is concerned with ensuring the number of arguments matches
