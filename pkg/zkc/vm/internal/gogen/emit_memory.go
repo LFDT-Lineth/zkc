@@ -125,7 +125,7 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 		c.linef("start := %s", start)
 
 		for i, s := range x.Data {
-			src, e := g.operand(fn, s)
+			src, e := g.registerOperand(fn, s)
 			if e != nil {
 				inner = e
 				return
@@ -158,7 +158,7 @@ func (g *generator) addrExpr(fn *descFunction, mi memInfo, addr []regId) (string
 	expr := "uint64(0)"
 
 	for i, id := range addr {
-		src, err := g.operand(fn, id)
+		src, err := g.registerOperand(fn, id)
 		if err != nil {
 			return "", err
 		}

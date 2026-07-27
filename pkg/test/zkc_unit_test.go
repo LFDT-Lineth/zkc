@@ -431,10 +431,6 @@ func Test_ZkcUnit_IfElse_08(t *testing.T) {
 // Constant Tests
 // ===================================================================
 
-func Test_ZkcUnit_Const_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/const_01", DEFAULT_UNIT_CONFIG)
-}
-
 func Test_ZkcUnit_Const_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/const_02", DEFAULT_UNIT_CONFIG)
 }

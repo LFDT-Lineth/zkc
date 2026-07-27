@@ -146,6 +146,18 @@ func SplitConstant[W word.Word[W]](constant W, width uint) []W {
 	return limbs
 }
 
+// SplitConstantReversed splits a given constant into a number of "limbs". For example,
+// consider splitting the constant 0x7b2d into 8-bit limbs.  Then, this function
+// returns the array [0x7b, 0x2d].  Observe that the most significant limb is
+// always returned first (i.e. at index zero in the resulting array).
+func SplitConstantReversed[W word.Word[W]](constant W, width uint) []W {
+	var limbs = SplitConstant(constant, width)
+	//
+	array.ReverseInPlace(limbs)
+	//
+	return limbs
+}
+
 // SplitIntoLimbs splits a register into a number of limbs with the given maximum
 // bitwidth.  For the resulting array, the least significant register is first.
 // Since registers are always split to the maximum width as much as possible, it

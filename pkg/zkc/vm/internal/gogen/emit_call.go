@@ -44,7 +44,7 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 			len(x.Returns), callee.NumOutputs(), callee.Name())
 	}
 
-	args, err := g.operands(fn, x.Arguments)
+	args, err := g.registerOperands(fn, x.Arguments)
 	if err != nil {
 		return err
 	}

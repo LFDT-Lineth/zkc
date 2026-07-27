@@ -23,12 +23,11 @@ import (
 )
 
 // LowerSwitch rewrites Switch (multiway skip) bytecodes into equivalent
-// sequences of SkipIf bytecodes.  Each dispatch case becomes two codes: a
-// constant load of the case's value into a fresh register, followed by a
-// conditional (EQ) skip against the dispatch register targeting the case's
-// original destination.  Cases are tested in order, preserving the
-// first-match-wins semantics of the multiway dispatch; when no case matches,
-// control falls through exactly as before.
+// sequences of SkipIf bytecodes.  Each dispatch case becomes a conditional
+// (EQ) skip of the dispatch register against the case's (constant) value,
+// targeting the case's original destination.  Cases are tested in order,
+// preserving the first-match-wins semantics of the multiway dispatch; when no
+// case matches, control falls through exactly as before.
 //
 // NOTE: this transform must run before register splitting (which does not
 // support Switch bytecodes).
@@ -76,7 +75,7 @@ func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers split.Al
 		mapping[i] = offset
 		//
 		if sw, ok := c.(*bytecode.Switch[W]); ok {
-			offset += 2 * uint(len(sw.Cases))
+			offset += uint(len(sw.Cases))
 		} else {
 			offset++
 		}
@@ -104,38 +103,31 @@ func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers split.Al
 }
 
 // lowerSwitchCode expands a single Switch bytecode, located at (old) offset pc
-// within its enclosing vector, into a first-match-wins chain of constant loads
-// and conditional (EQ) skips:
+// within its enclosing vector, into a first-match-wins chain of conditional
+// (EQ) skips against the case values:
 //
-//	c_0 = v_0
-//	skip_if r == c_0 <case 0 target>
-//	c_1 = v_1
-//	skip_if r == c_1 <case 1 target>
+//	skip_if r == v_0 <case 0 target>
+//	skip_if r == v_1 <case 1 target>
 //	...
-//
-// Each case needs a fresh register since, on the fall-through path, every load
-// executes.  The register is sized to its case's value, which cannot overflow
-// the dispatch register (see Switch.Validate).
 func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 	registers split.Allocator[W]) []Bytecode[W] {
 	//
 	var (
-		codes = make([]Bytecode[W], 0, 2*len(sw.Cases))
-		width = registers.Register(sw.Source).Bitwidth()
+		codes = make([]Bytecode[W], 0, len(sw.Cases))
 	)
 	//
 	for j, cse := range sw.Cases {
 		var (
-			creg = registers.Allocate("", width)
 			// New position of this case's conditional skip.
-			position = mapping[pc] + uint(2*j) + 1
+			position = mapping[pc] + uint(j)
 			// New position of this case's dispatch target.
 			target = mapping[pc+uint(cse.Skip)+1]
 		)
 		//
 		codes = append(codes,
-			bytecode.LoadConst(creg, cse.Value),
-			bytecode.NewSkipIf[W](bytecode.CONDITION_EQ, util.Cast[uint16](target-position-1), sw.Source, creg))
+			bytecode.NewSkipIf[W](bytecode.CONDITION_EQ, util.Cast[uint16](target-position-1),
+				bytecode.NewRegisterVector(sw.Source),
+				bytecode.NewConstantOperand(cse.Value)))
 	}
 	//
 	return codes

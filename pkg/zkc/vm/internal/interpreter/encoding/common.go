@@ -106,7 +106,7 @@ func IsWideRegisterVectors(vecs []RegisterVector) bool {
 
 // Every instruction occupies 32 bits, where the first byte is as follows:
 //
-//	7   5 4       0
+//	7   6 5       0
 //
 // +-----+---------+
 // | : : | : : : : |
@@ -127,16 +127,16 @@ const (
 	// SKIP_M (skip table) instruction: dispatches on a source register against a
 	// table of (value, target) pairs.
 	SKIP_M
-	// SEQ_rr (skip forward if equal)
+	// SEQ_rr (skip forward if equal).  NOTE: each skip-if family carries only
+	// four conditions (EQ, NEQ, LT, GE): GT and LE are normalised away at
+	// encode time, either by swapping operands (a > b ⇔ b < a) or, for
+	// constant operands, by adjusting the constant (x > c ⇔ x >= c+1).  This
+	// keeps the opcode space compact.
 	SEQ_rr
 	// SNE_rr (skip forward if not equal)
 	SNE_rr
 	// SLT_rr (skip forward if less than)
 	SLT_rr
-	// SGT_rr (skip forward if greater than)
-	SGT_rr
-	// SLE_rr (skip forward if less than or equal)
-	SLE_rr
 	// SGE_rr (skip forward if greater than or equal)
 	SGE_rr
 	// SEQ_rv (skip forward if equal)
@@ -145,12 +145,24 @@ const (
 	SNE_rv
 	// SLT_rv (skip forward if less than)
 	SLT_rv
-	// SGT_rr (skip forward if greater than)
-	SGT_rv
-	// SLE_rv (skip forward if less than or equal)
-	SLE_rv
-	// SGE_rr (skip forward if greater than or equal)
+	// SGE_rv (skip forward if greater than or equal)
 	SGE_rv
+	// SEQ_rc (skip forward if equal to constant)
+	SEQ_rc
+	// SNE_rc (skip forward if not equal to constant)
+	SNE_rc
+	// SLT_rc (skip forward if less than constant)
+	SLT_rc
+	// SGE_rc (skip forward if greater than or equal to constant)
+	SGE_rc
+	// SEQ_rcv (skip forward if vector equal to constant vector)
+	SEQ_rcv
+	// SNE_rcv (skip forward if vector not equal to constant vector)
+	SNE_rcv
+	// SLT_rcv (skip forward if vector less than constant vector)
+	SLT_rcv
+	// SGE_rcv (skip forward if vector greater than or equal to constant vector)
+	SGE_rcv
 	// ENTER_n instruction
 	ENTER_n
 	// LEAVE_n instruction
@@ -297,12 +309,38 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 	case *bytecode.Skip[W], *bytecode.Jmp[W]:
 		return 1
 	case *bytecode.SkipIf[W]:
-		// The wide form carries its base registers in an additional word.
-		if IsWideRegisters(b.Left.Base, b.Right.Base) {
-			return 3
+		if b.Right.IsRegisterVector() {
+			// The wide form carries its base registers in an additional word.
+			if IsWideRegisters(b.Left.Base, b.Right.AsRegisterVector().Base) {
+				return 3
+			}
+			//
+			return 2
+		}
+		// Constant form: the constant vector follows inline, one element per
+		// comparison element, each as a fixed number of 32-bit limbs.
+		// Normalisation (see SkipIf) can rewrite the constant to c+1, which
+		// may need one more bit — hence BitLen()+1 below.  An empty (or
+		// short) constant vector denotes zero (extension).
+		var (
+			nv   = uint(b.Left.Len)
+			bits uint
+		)
+		//
+		for _, c := range b.Right.AsConstants() {
+			bits = max(bits, c.BitLen())
 		}
 		//
-		return 2
+		var nlimbs = max(1, (bits+1+31)/32)
+		// NOTE: this bounds both the compact single-constant form (1+nc
+		// words) and the constant-vector form it falls back to (2+nc words,
+		// or 3+nc wide) when the skip exceeds a byte.  The wide vector form
+		// carries its base register in an additional word.
+		if IsWideRegisters(b.Left.Base) {
+			return 3 + nv*nlimbs
+		}
+		//
+		return 2 + nv*nlimbs
 	default:
 		// NOTE: the maximum length of the remaining bytecodes is not dependent
 		// on this position within the encoded sequence.

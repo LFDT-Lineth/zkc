@@ -14,7 +14,9 @@ package compiler
 
 import (
 	"fmt"
+	"math"
 	"math/big"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -134,8 +136,23 @@ func expandBranchConjunct[T any, E Expr[T, E]](p dfa.BranchConjunction, reader R
 // Translate a given condition within the context of a given state translator.
 func expandBranchEquality[T any, E Expr[T, E]](p dfa.BranchEquality, reader RegisterReader[E]) dfa.BranchCondition {
 	if p.Right.HasSecond() {
-		bi := p.Right.Second()
-		rhs := splitConstant(bi, reader.RegisterWidths(p.Left.Registers()...))
+		var (
+			bi  = p.Right.Second()
+			rhs []big.Int
+		)
+		// Check for native registers used in comparisons
+		if isNative(p.Left, reader) {
+			rhs = []big.Int{bi}
+		} else {
+			// Determine limb widths, least significant limb first.
+			widths := reader.RegisterWidths(p.Left.Registers()...)
+			//
+			if p.Left.BigEndian {
+				slices.Reverse(widths)
+			}
+			//
+			rhs = splitConstant(bi, widths)
+		}
 		//
 		if p.Sign {
 			return expandBranchEqualityRegConst(p.Left, rhs)
@@ -149,6 +166,10 @@ func expandBranchEquality[T any, E Expr[T, E]](p dfa.BranchEquality, reader Regi
 	return expandBranchNonEqualityRegReg(p.Left, p.Right.First())
 }
 
+func isNative[T any, E Expr[T, E]](reg dfa.BranchId, reader RegisterReader[E]) bool {
+	return reg.Width == 1 && reader.Register(reg.Id).WidthOrNative() == math.MaxUint
+}
+
 func expandBranchEqualityRegConst(lhs dfa.BranchId, rhs []big.Int) dfa.BranchCondition {
 	var (
 		condition dfa.BranchCondition = dfa.TRUE
@@ -157,13 +178,13 @@ func expandBranchEqualityRegConst(lhs dfa.BranchId, rhs []big.Int) dfa.BranchCon
 	)
 	//
 	for i := range n {
-		ith := lhs.Get(i)
+		ith := lhs.Limb(i)
 		neq := logical.EqualsConst(ith, rhs[i])
 		condition = condition.And(logical.NewProposition(neq))
 	}
 	// expand lhs as needed
 	for i := n; i < lhs.Width; i++ {
-		ith := lhs.Get(i)
+		ith := lhs.Limb(i)
 		neq := logical.EqualsConst(ith, zero)
 		condition = condition.And(logical.NewProposition(neq))
 	}
@@ -183,13 +204,13 @@ func expandBranchNonEqualityRegConst(lhs dfa.BranchId, rhs []big.Int) dfa.Branch
 	)
 	//
 	for i := range n {
-		ith := lhs.Get(i)
+		ith := lhs.Limb(i)
 		neq := logical.NotEqualsConst(ith, rhs[i])
 		condition = condition.Or(logical.NewProposition(neq))
 	}
 	// expand rhs as needed
 	for i := n; i < lhs.Width; i++ {
-		ith := lhs.Get(i)
+		ith := lhs.Limb(i)
 		neq := logical.NotEqualsConst(ith, zero)
 		condition = condition.Or(logical.NewProposition(neq))
 	}
@@ -208,19 +229,19 @@ func expandBranchEqualityRegReg(lhs dfa.BranchId, rhs dfa.BranchId) dfa.BranchCo
 	)
 	//
 	for i := range n {
-		lth, rth := lhs.Get(i), rhs.Get(i)
+		lth, rth := lhs.Limb(i), rhs.Limb(i)
 		neq := logical.Equals(lth, rth)
 		condition = condition.And(logical.NewProposition(neq))
 	}
 	// expand lhs as needed
 	for i := n; i < lhs.Width; i++ {
-		ith := lhs.Get(i)
+		ith := lhs.Limb(i)
 		neq := logical.EqualsConst(ith, zero)
 		condition = condition.And(logical.NewProposition(neq))
 	}
 	// expand rhs as needed
 	for i := n; i < rhs.Width; i++ {
-		ith := rhs.Get(i)
+		ith := rhs.Limb(i)
 		neq := logical.EqualsConst(ith, zero)
 		condition = condition.And(logical.NewProposition(neq))
 	}
@@ -235,19 +256,19 @@ func expandBranchNonEqualityRegReg(lhs dfa.BranchId, rhs dfa.BranchId) dfa.Branc
 	)
 	//
 	for i := range n {
-		lth, rth := lhs.Get(i), rhs.Get(i)
+		lth, rth := lhs.Limb(i), rhs.Limb(i)
 		neq := logical.NotEquals(lth, rth)
 		condition = condition.Or(logical.NewProposition(neq))
 	}
 	// expand lhs as needed
 	for i := n; i < lhs.Width; i++ {
-		ith := lhs.Get(i)
+		ith := lhs.Limb(i)
 		neq := logical.NotEqualsConst(ith, zero)
 		condition = condition.Or(logical.NewProposition(neq))
 	}
 	// expand rhs as needed
 	for i := n; i < rhs.Width; i++ {
-		ith := rhs.Get(i)
+		ith := rhs.Limb(i)
 		neq := logical.NotEqualsConst(ith, zero)
 		condition = condition.Or(logical.NewProposition(neq))
 	}
