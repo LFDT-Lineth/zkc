@@ -40,16 +40,10 @@ type DispatchCase struct {
 // LowerSwitch transform, under a strict contract: the enclosing vector must
 // constrain every case bit to be the indicator of a distinct dispatch
 // condition (so that at most one bit is set), and the Default register to be
-// the complement of their sum.  The branch condition derived for each case edge — "bit != 0", a
-// single degree-1 atom rather than the conjunction of all preceding
-// non-matches — is only sound under that contract; a free-standing Dispatch
-// over unconstrained bits would allow a prover to steer execution
-// arbitrarily.  (The fall-through condition, by contrast, is the syntactic
-// complement of the case edges — every bit clear — so that the disjunction of
-// all edge conditions simplifies away wherever the edges rejoin.)
+// the complement of their sum.
 type Dispatch[W word.Word[W]] struct {
 	Cases []DispatchCase
-	// Default identifies the (1-bit) register holding the sum of the case
+	// Default identifies the (1-bit) register holding the complement of the case
 	// bits.
 	Default RegisterId
 }

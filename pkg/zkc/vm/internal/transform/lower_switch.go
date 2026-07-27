@@ -59,7 +59,7 @@ func lowerSwitchFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
 		alloc   = split.NewAllocator(fn)
-		// Number of switchCounter lowered so far within this function, used to give
+		// Number of switch lowered so far within this function, used to give
 		// each switch's bit registers a distinct, recognisable name.
 		switchCounter uint
 	)

@@ -170,7 +170,7 @@ func NewBytecodeVector[W word.Word[W]](codes ...Bytecode[W]) BytecodeVector[W] {
 // registers and a body of bytecode vectors.
 func NewBytecodeFunction[W word.Word[W]](name string, kind FunctionKind, registers []Register[W],
 	code ...BytecodeVector[W]) *Function[W] {
-	return descriptor.NewFunction[W](name, registers, kind, code)
+	return descriptor.NewFunction(name, registers, kind, code)
 }
 
 // NewRegister constructs a new register descriptor, where native
