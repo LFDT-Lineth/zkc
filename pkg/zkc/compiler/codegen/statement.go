@@ -225,7 +225,7 @@ func (p *StmtCompiler) normaliseComparison(e *expr.Cmp[symbol.Resolved], lhs, rh
 	//
 	if lhs.IsConstant() && rhs.IsConstant() {
 		// This should not be permitted
-		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e, "branch always taken")...)
+		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e, "cannot compare constants")...)
 		// Dummy result (compilation aborts on the error reported above)
 		return e.Operator, RegisterId(0), rhs
 	} else if rhs.IsConstant() {
