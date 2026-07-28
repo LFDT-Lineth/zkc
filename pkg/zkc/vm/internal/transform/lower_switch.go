@@ -124,10 +124,10 @@ const (
 	// skip.
 	caseSize = 4
 	// trailerSize is the number of bytecodes emitted after the
-	// diamonds: the one-register load, the bit sum, the subtraction deriving
-	// the default bit, its range check, and the final dispatch (which is
-	// always the last code of the packet).
-	trailerSize = 5
+	// diamonds: the one-register load, the subtraction deriving the default
+	// bit, its range check, and the final dispatch (which is always the last
+	// code of the packet).
+	trailerSize = 4
 )
 
 // switchPacketSize returns the number of bytecodes in the replacement packet
@@ -144,7 +144,7 @@ func switchPacketSize[W word.Word[W]](sw *bytecode.Switch[W]) uint {
 // lowerSwitchCode expands a single Switch bytecode, located at (old) offset pc
 // within its enclosing vector, into a one-hot dispatch.  First, every case's
 // match is computed unconditionally into a fresh 1-bit register by a diamond,
-// and the default bit is derived from the case bits (`b_j`, `one`, `sum` and
+// and the default bit is derived from the case bits (`b_j`, `one` and
 // `b_default` are fresh):
 //
 //	skip_if r == v_0 2
@@ -153,8 +153,7 @@ func switchPacketSize[W word.Word[W]](sw *bytecode.Switch[W]) uint {
 //	b_0 = 1
 //	... (one diamond per case)
 //	one = 1
-//	sum = b_0 + ... + b_{n-1}
-//	b_default = one - sum
+//	b_default = one - b_0 - ... - b_{n-1}
 //
 // after which a single Dispatch bytecode transfers control on the bits:
 //
@@ -189,7 +188,7 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 		//
 		codes = append(codes,
 			// skip_if r == v_j 2  => match, jump to "b_j = 1"
-			bytecode.NewSkipIf[W](bytecode.CONDITION_EQ, 2,
+			bytecode.NewSkipIf(bytecode.CONDITION_EQ, 2,
 				bytecode.NewRegisterVector(sw.Source),
 				bytecode.NewConstantOperand(cse.Value)),
 			// b_j = 0  (no match)
@@ -199,26 +198,23 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 			// b_j = 1  (match)
 			bytecode.LoadConst(bits[j], one))
 	}
-	// Derive the default bit: b_default = 1 - (b_0 + ... + b_{n-1}), which is 1
-	// exactly when no case matched.  Enforcing b_default to be a u1
-	// enforces that at most 1 case_* is 1.
+	// Derive the default bit: b_default = 1 - b_0 - ... - b_{n-1}, which is 1
+	// exactly when no case matched.  Enforcing b_default to be a u1 enforces
+	// that at most one b_j is 1 (each being a bit itself).
 	//
-	// TODO: we could compute b_no_default = sum instead to save one subtraction
-	// We don't do it now for simplicity.
+	// TODO: subtract directly from the constant (CSUB) once such an
+	// instruction exists, saving the one-register load.
 	var (
 		onereg = registers.Allocate("", util.Some[uint](1))
-		sumreg = registers.Allocate("", util.Some[uint](1))
 		bdef   = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_default", switchIndex), util.Some[uint](1))
 	)
-	//
+	// TODO: https://github.com/LFDT-Lineth/zkc/issues/2062
+	// use CSUB to save 1 register to load one
 	codes = append(codes,
 		// one = 1
 		bytecode.LoadConst(onereg, one),
-		// sum = b_0 + ... + b_{n-1}
-		bytecode.AddConst(sumreg, bits, zero),
-		// b_default = one - sum
-		bytecode.NewArith(bytecode.OP_SUB, []descriptor.RegisterId{bdef},
-			[]descriptor.RegisterId{onereg, sumreg}, zero),
+		// b_default = one - b_0 - ... - b_{n-1}
+		bytecode.SubConst(bdef, append([]descriptor.RegisterId{onereg}, bits...), zero),
 		// Explicit range proof for b_default:
 		bytecode.NewCheckCast[W](bdef, 1))
 	// Dispatch on the bits, in case order.
