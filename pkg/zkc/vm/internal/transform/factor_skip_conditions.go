@@ -137,15 +137,11 @@ func factorSkipIf[W word.Word[W]](
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
 		b    = registers.Allocate("", util.Some[uint](1))
-		zr   = registers.Allocate("", util.Some[uint](1))
 	)
 	//
 	return []Bytecode[W]{
-		// TODO: use skip_if vs cst, not register (cf https://github.com/LFDT-Lineth/zkc/issues/1879)
-		// zero = 0
-		bytecode.LoadConst(zr, zero),
 		// skip_if (cond) 2  => condition holds, jump to "b = 1"
-		&bytecode.SkipIf[W]{Op: si.Op, Left: si.Left, Right: si.Right, Skip: 2},
+		bytecode.NewSkipIf(si.Op, 2, si.Left, si.Right),
 		// b = 0  (condition does not hold)
 		bytecode.LoadConst(b, zero),
 		// skip 1  => jump over "b = 1"
@@ -153,6 +149,8 @@ func factorSkipIf[W word.Word[W]](
 		// b = 1  (condition holds)
 		bytecode.LoadConst(b, one),
 		// skip_if b != 0 S  (original skip, now testing the bit)
-		bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, si.Skip, b, zr),
+		bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, si.Skip,
+			bytecode.NewRegisterVector(b),
+			bytecode.NewConstantOperand[W](zero)),
 	}
 }

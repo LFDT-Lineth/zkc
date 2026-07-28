@@ -74,7 +74,7 @@ func (g *generator) emitDebug(c *code, fn *descFunction, x *bytecode.Debug[word.
 func (g *generator) emitDebugArg(c *code, fn *descFunction, format util.Format, regs []regId) error {
 	// %c writes the low byte verbatim (type-checked to a single u8).
 	if format.Code == util.FORMAT_CHR {
-		op, err := g.operand(fn, regs[0])
+		op, err := g.registerOperand(fn, regs[0])
 		if err != nil {
 			return err
 		}
@@ -90,7 +90,7 @@ func (g *generator) emitDebugArg(c *code, fn *descFunction, format util.Format, 
 	}
 
 	if len(regs) == 1 {
-		op, err := g.operand(fn, regs[0])
+		op, err := g.registerOperand(fn, regs[0])
 		if err != nil {
 			return err
 		}
@@ -211,7 +211,7 @@ func (g *generator) printfChunks(fn *descFunction, chunks []bytecode.FormattedCh
 // into a *big.Int, which fmt formats identically for %d/%x/%b.
 func (g *generator) printfArg(fn *descFunction, format util.Format, regs []regId) (string, string, error) {
 	if len(regs) == 1 {
-		op, err := g.operand(fn, regs[0])
+		op, err := g.registerOperand(fn, regs[0])
 		if err != nil {
 			return "", "", err
 		}
@@ -255,7 +255,7 @@ func (g *generator) multiLimbBig(fn *descFunction, regs []regId) (string, error)
 	slices.Reverse(regs)
 
 	for _, id := range regs {
-		op, err := g.operand(fn, id)
+		op, err := g.registerOperand(fn, id)
 		if err != nil {
 			return "", err
 		}

@@ -34,7 +34,7 @@ func (g *generator) emitBitwise(c *code, fn *descFunction, x *bytecode.Bitwise[w
 		return err
 	}
 
-	lhs, err := g.operand(fn, x.Left)
+	lhs, err := g.registerOperand(fn, x.Left)
 	if err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ func (g *generator) emitBitwise(c *code, fn *descFunction, x *bytecode.Bitwise[w
 	// read a right operand.
 	var rhs operand
 	if x.Op != bytecode.OP_NOT {
-		if rhs, err = g.operand(fn, x.Right); err != nil {
+		if rhs, err = g.registerOperand(fn, x.Right); err != nil {
 			return err
 		}
 	}
@@ -163,12 +163,12 @@ func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem[wor
 		return err
 	}
 
-	lhs, err := g.operand(fn, x.Dividend)
+	lhs, err := g.registerOperand(fn, x.Dividend)
 	if err != nil {
 		return err
 	}
 
-	rhs, err := g.operand(fn, x.Divisor)
+	rhs, err := g.registerOperand(fn, x.Divisor)
 	if err != nil {
 		return err
 	}

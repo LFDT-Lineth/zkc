@@ -12,6 +12,11 @@
 // SPDX-License-Identifier: Apache-2.0
 package util
 
+import (
+	"bytes"
+	"encoding/gob"
+)
+
 // Union represents a value which is either of the first type or of the second
 // type.
 type Union[S, T any] struct {
@@ -67,4 +72,50 @@ func (u Union[S, T]) Second() T {
 	}
 	//
 	panic("cannot take second item, as union holds first")
+}
+
+// ============================================================================
+// Encoding / Decoding
+// ============================================================================
+
+// GobEncode an option.  This allows it to be marshalled into a binary form.
+func (u *Union[S, T]) GobEncode() (data []byte, err error) {
+	var (
+		buffer     bytes.Buffer
+		gobEncoder = gob.NewEncoder(&buffer)
+	)
+	// Some
+	if err := gobEncoder.Encode(&u.sign); err != nil {
+		return nil, err
+	}
+	// Decide whether need anything else.
+	if u.sign {
+		if err := gobEncoder.Encode(&u.first); err != nil {
+			return nil, err
+		}
+	} else if err := gobEncoder.Encode(&u.second); err != nil {
+		return nil, err
+	}
+	// Success
+	return buffer.Bytes(), nil
+}
+
+// GobDecode a previously encoded option
+func (u *Union[S, T]) GobDecode(data []byte) error {
+	buffer := bytes.NewBuffer(data)
+	gobDecoder := gob.NewDecoder(buffer)
+	// Sign
+	if err := gobDecoder.Decode(&u.sign); err != nil {
+		return err
+	}
+	// Check whether value provided
+	if u.sign {
+		if err := gobDecoder.Decode(&u.first); err != nil {
+			return err
+		}
+	} else if err := gobDecoder.Decode(&u.second); err != nil {
+		return err
+	}
+	// Success!
+	return nil
 }

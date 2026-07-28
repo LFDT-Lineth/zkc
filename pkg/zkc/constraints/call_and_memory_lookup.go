@@ -50,14 +50,19 @@ import (
 //
 // Lookups require a register (and not an expression) as the source selector,
 // so the path selector is materialised as a fresh 1-bit register (if it is not already).
-func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	fn *vm.Function[W], pcSelectors []register.Id, ret register.Id, infos []vm.Module[W],
-	callerRegs []register.Register) {
+func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
+	ctx schema.ModuleId,
+	fn *vm.Function[W],
+	pcSelectors []register.Id,
+	ret register.Id,
+	infos []vm.Module[W],
+	callerRegs []register.Register,
+	field field.Config) {
 	//
 	for pc, vec := range fn.Vectors() {
 		// Branch table giving the condition under which each code in this vector
 		// is reached.
-		_, branchTable := vec.BranchTable()
+		_, branchTable := vec.BranchTable(field.RegisterWidth)
 		// One-hot register groups declared by the vector's Dispatch bytecodes,
 		// used to shorten the selector conditions below.
 		oneHot := collectOneHotGroups[W](vec.Bytecodes)

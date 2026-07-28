@@ -87,11 +87,10 @@ func newShlHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	zero := word.Const64[W](0)
 	one := word.Const64[W](1)
 
-	zeroReg := b.newComputedNamed(amtWidth)
-	b.emit(bytecode.LoadConst(zeroReg, zero))
-
 	// if n == 0: return a
-	b.emit(bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, 2, n, zeroReg))
+	b.emit(bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, 2,
+		bytecode.NewRegisterVector(n),
+		bytecode.NewConstantOperand(zero)))
 	b.emit(bytecode.AddConst(out, []bytecode.RegisterId{a}, zero))
 	b.emit(bytecode.NewRet[W]())
 
@@ -134,11 +133,10 @@ func newShrHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	zero := word.Const64[W](0)
 	one := word.Const64[W](1)
 
-	zeroReg := b.newComputedNamed(amtWidth)
-	b.emit(bytecode.LoadConst(zeroReg, zero))
-
 	// if n == 0: return a
-	b.emit(bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, 2, n, zeroReg))
+	b.emit(bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, 2,
+		bytecode.NewRegisterVector(n),
+		bytecode.NewConstantOperand(zero)))
 	b.emit(bytecode.AddConst(out, []bytecode.RegisterId{a}, zero))
 	b.emit(bytecode.NewRet[W]())
 

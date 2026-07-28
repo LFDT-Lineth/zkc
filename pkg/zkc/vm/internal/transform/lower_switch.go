@@ -120,9 +120,9 @@ func lowerSwitchVector[W word.Word[W]](vec BytecodeVector[W], registers split.Al
 
 const (
 	// caseSize is the number of bytecodes in each case's bit
-	// diamond: the constant load, the comparison skip, both bit assignments
-	// and the internal skip.
-	caseSize = 5
+	// diamond: the comparison skip, both bit assignments and the internal
+	// skip.
+	caseSize = 4
 	// trailerSize is the number of bytecodes emitted after the
 	// diamonds: the one-register load, the bit sum, the subtraction deriving
 	// the default bit, its range check, and the final dispatch (which is
@@ -144,11 +144,10 @@ func switchPacketSize[W word.Word[W]](sw *bytecode.Switch[W]) uint {
 // lowerSwitchCode expands a single Switch bytecode, located at (old) offset pc
 // within its enclosing vector, into a one-hot dispatch.  First, every case's
 // match is computed unconditionally into a fresh 1-bit register by a diamond,
-// and the default bit is derived from the case bits (`c_j`, `b_j`, `one`,
-// `sum` and `b_default` are fresh):
+// and the default bit is derived from the case bits (`b_j`, `one`, `sum` and
+// `b_default` are fresh):
 //
-//	c_0 = v_0
-//	skip_if r == c_0 2
+//	skip_if r == v_0 2
 //	b_0 = 0
 //	skip 1
 //	b_0 = 1
@@ -170,13 +169,6 @@ func switchPacketSize[W word.Word[W]](sw *bytecode.Switch[W]) uint {
 // independent of the number of cases; only the fall-through (default) edge
 // pays a conjunction over all bits, and the join after the dispatch
 // simplifies away entirely.
-//
-// Each case needs a fresh constant register since every load executes on all
-// paths.  The register is sized to the dispatch register, which the case's
-// value cannot overflow (see Switch.Validate).
-//
-// TODO: compare against constants directly, rather than loading them into
-// registers first (cf https://github.com/LFDT-Lineth/zkc/issues/1879).
 func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 	registers split.Allocator[W], switchIndex uint) []Bytecode[W] {
 	//
@@ -184,7 +176,6 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 		n     = uint(len(sw.Cases))
 		codes = make([]Bytecode[W], 0, switchPacketSize(sw))
 		bits  = make([]descriptor.RegisterId, n)
-		width = registers.Register(sw.Source).Bitwidth()
 		zero  = word.Const64[W](0)
 		one   = word.Const64[W](1)
 	)
@@ -194,14 +185,13 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 	}
 	// Materialise every case's match into a fresh bit register, unconditionally.
 	for j, cse := range sw.Cases {
-		creg := registers.Allocate("", width)
 		bits[j] = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_%d", switchIndex, j+1), util.Some[uint](1))
 		//
 		codes = append(codes,
-			// c_j = v_j
-			bytecode.LoadConst(creg, cse.Value),
-			// skip_if r == c_j 2  => match, jump to "b_j = 1"
-			bytecode.NewSkipIf[W](bytecode.CONDITION_EQ, 2, sw.Source, creg),
+			// skip_if r == v_j 2  => match, jump to "b_j = 1"
+			bytecode.NewSkipIf[W](bytecode.CONDITION_EQ, 2,
+				bytecode.NewRegisterVector(sw.Source),
+				bytecode.NewConstantOperand(cse.Value)),
 			// b_j = 0  (no match)
 			bytecode.LoadConst(bits[j], zero),
 			// skip 1  => jump over "b_j = 1"

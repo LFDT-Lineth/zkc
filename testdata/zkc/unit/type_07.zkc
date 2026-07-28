@@ -4,7 +4,8 @@ const DIV:binary = 1 / ONE
 const REM:binary = 1 % ONE
 
 fn main() {
-    if ONE != DIV || ONE == REM {
+    var one:binary = ONE
+    if one != DIV || one == REM {
         fail
     }
 }

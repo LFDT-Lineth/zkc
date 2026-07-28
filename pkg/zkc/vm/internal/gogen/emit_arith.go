@@ -39,7 +39,7 @@ func (g *generator) emitArith(c *code, fn *descFunction, x *bytecode.Arith[word.
 		return err
 	}
 
-	srcs, err := g.operands(fn, x.Source)
+	srcs, err := g.registerOperands(fn, x.Source)
 	if err != nil {
 		return err
 	}
@@ -443,7 +443,7 @@ func (g *generator) emitConcat(c *code, fn *descFunction, x *bytecode.Cat[word.U
 	total := uint(0)
 
 	for i, id := range x.Sources {
-		o, err := g.operand(fn, id)
+		o, err := g.registerOperand(fn, id)
 		if err != nil {
 			return err
 		}

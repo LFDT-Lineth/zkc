@@ -148,8 +148,9 @@ func splitCell[W word.Word[W]](value W, limbIds []RegisterId, limbsMap descripto
 func splitFunction[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descriptor.Module[W],
 	m *descriptor.Function[W]) descriptor.Module[W] {
 	var (
-		alloc = split.NewAllocator(mapping.LimbsRegisterMap())
-		code  = splitBytecodeVector(mapping, mods, alloc, m.Vectors())
+		alloc = split.NewAllocator(mapping.LimbsRegisterMap()).
+			EnforceRegisterWidth(mapping.RegisterWidth())
+		code = splitBytecodeVector(mapping, mods, alloc, m.Vectors())
 	)
 	//
 	return descriptor.NewFunction(m.Name(), alloc.Registers(), m.Kind(), code)
@@ -343,11 +344,23 @@ func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.All
 func splitSkipIf[W word.Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.SkipIf[W]) Bytecode[W] {
 	// Both operands are frame-local registers of equal width, so each is simply
 	// mapped onto its limbs.
-	left := split.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
-	right := split.ApplyLimbsMap(limbsMap, c.Right.Registers()...)
+	var (
+		left  = split.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
+		right bytecode.Operand[W]
+	)
+	// Split right-hand side according to what it is.
+	if c.Right.IsRegisterVector() {
+		limbs := split.ApplyLimbsMap(limbsMap, c.Right.AsRegisters()...)
+		right = bytecode.NewRegisterOperand[W](limbs...)
+	} else {
+		// Split the constant
+		constants := descriptor.SplitConstantReversed(c.Right.AsConstant(), limbsMap.RegisterWidth())
+		right = bytecode.NewConstantOperand(constants...)
+	}
 	// Construct vectored form of skip_if
-	return bytecode.NewSkipIfVec[W](c.Op, c.Skip, bytecode.NewRegisterVector(left...),
-		bytecode.NewRegisterVector(right...))
+	return bytecode.NewSkipIf(c.Op, c.Skip,
+		bytecode.NewRegisterVector(left...), right,
+	)
 }
 
 // Argument alignment is concerned with ensuring the number of arguments matches

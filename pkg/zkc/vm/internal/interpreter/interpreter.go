@@ -592,10 +592,6 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeSkipIf_rr[W, util.NotEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SLT_rr:
 			p.pc = executeSkipIf_rr[W, util.LessThan[W]](p.pc, bytecodes, frame)
-		case encoding.SGT_rr:
-			p.pc = executeSkipIf_rr[W, util.GreaterThan[W]](p.pc, bytecodes, frame)
-		case encoding.SLE_rr:
-			p.pc = executeSkipIf_rr[W, util.LessThanOrEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SGE_rr:
 			p.pc = executeSkipIf_rr[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SKIP_M:
@@ -608,12 +604,24 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeSkipIf_rv[W, util.NotEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SLT_rv:
 			p.pc = executeSkipIf_rv[W, util.LessThan[W]](p.pc, bytecodes, frame)
-		case encoding.SGT_rv:
-			p.pc = executeSkipIf_rv[W, util.GreaterThan[W]](p.pc, bytecodes, frame)
-		case encoding.SLE_rv:
-			p.pc = executeSkipIf_rv[W, util.LessThanOrEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SGE_rv:
 			p.pc = executeSkipIf_rv[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
+		case encoding.SEQ_rc:
+			p.pc = executeSkipIf_rc[W, util.Equal[W]](p.pc, bytecodes, frame)
+		case encoding.SNE_rc:
+			p.pc = executeSkipIf_rc[W, util.NotEqual[W]](p.pc, bytecodes, frame)
+		case encoding.SLT_rc:
+			p.pc = executeSkipIf_rc[W, util.LessThan[W]](p.pc, bytecodes, frame)
+		case encoding.SGE_rc:
+			p.pc = executeSkipIf_rc[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
+		case encoding.SEQ_rcv:
+			p.pc = executeSkipIf_rcv[W, util.Equal[W]](p.pc, bytecodes, frame)
+		case encoding.SNE_rcv:
+			p.pc = executeSkipIf_rcv[W, util.NotEqual[W]](p.pc, bytecodes, frame)
+		case encoding.SLT_rcv:
+			p.pc = executeSkipIf_rcv[W, util.LessThan[W]](p.pc, bytecodes, frame)
+		case encoding.SGE_rcv:
+			p.pc = executeSkipIf_rcv[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
 			// Input / Output Operations
 		case encoding.RD_ROM_nm:
 			p.pc = executeReadRom_sn(p.pc, bytecodes, frame, p.roms)
@@ -1507,7 +1515,8 @@ func storeIntrinsicResult[W word.Word[W]](module descriptor.Module[W], iter *enc
 }
 
 // executeSkipIf_rr implements the conditional register-register forward branch
-// bytecodes (SEQ_rr, SNE_rr, SLT_rr, SGT_rr, SLE_rr, SGE_rr).  The comparison
+// bytecodes (SEQ_rr, SNE_rr, SLT_rr, SGE_rr).  There are no GT/LE forms: the
+// encoder normalises those conditions by swapping operands.  The comparison
 // is selected via the Comparator type parameter F.  If stack[rs0] compares to
 // stack[rs1] as required, execution skips forward to the encoded target;
 // otherwise it falls through to the following bytecode.
@@ -1532,8 +1541,69 @@ func executeSkipIf_rr[W word.Word[W], F util.Comparator[W]](pc uint32, codes []u
 	return pc + n
 }
 
-// executeSkipIf_rv implements the conditional register-register branch bytecodes
-// (JEQ_rv, JNE_rv, JLT_rv, JGT_rv, JLE_rv, JGE_rv).  The comparison is selected
+// executeSkipIf_rc implements the conditional register-constant forward branch
+// bytecodes (SEQ_rc, SNE_rc, SLT_rc, SGE_rc).  There are no GT/LE forms: the
+// encoder normalises those conditions by adjusting the constant (x > c ⇔
+// x >= c+1).  The comparison is selected via the Comparator type parameter F.
+// If stack[rs0] compares to the inline constant as required, execution skips
+// forward to the encoded target; otherwise it falls through to the following
+// bytecode.
+func executeSkipIf_rc[W word.Word[W], F util.Comparator[W]](pc uint32, codes []uint32, stack []W) uint32 {
+	var (
+		c F
+		//
+		skip, rs0, constant, _, n = encoding.DecodeSkipIf_rc[W](pc, codes)
+		// Calculate skip target
+		target = pc + 1 + skip
+		// Read rs0
+		val0 = stack[rs0]
+	)
+	//
+	if c.Cmp(val0, constant) {
+		// true branch
+		return target
+	}
+	// false branch
+	return pc + n
+}
+
+// executeSkipIf_rcv implements the conditional register-vector versus
+// constant-vector forward branch bytecodes (SEQ_rcv, SNE_rcv, SLT_rcv,
+// SGE_rcv).  There are no GT/LE forms: the encoder normalises those conditions
+// by adjusting the constant (x > c ⇔ x >= c+1).  The comparison is selected
+// via the Comparator type parameter F, and proceeds lexicographically from the
+// most-significant element (base) downwards, exactly as executeSkipIf_rv.
+func executeSkipIf_rcv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []uint32, stack []W) uint32 {
+	var (
+		cmp F
+		//
+		skip, rs0, constants, _, n = encoding.DecodeSkipIf_rcv[W](pc, codes)
+		// Calculate skip target
+		target = pc + 1 + skip
+	)
+	//
+	for i := uint16(0); i < rs0.Len; i++ {
+		// Read rs0
+		val0 := stack[rs0.Base+i]
+		// Read corresponding constant element
+		val1 := constants[i]
+		//
+		if i+1 != rs0.Len && val0.Cmp(val1) == 0 {
+			continue
+		} else if cmp.Cmp(val0, val1) {
+			// true branch
+			return target
+		}
+		// false branch
+		return pc + n
+	}
+	//
+	panic("unreachable")
+}
+
+// executeSkipIf_rv implements the conditional register-vector branch bytecodes
+// (SEQ_rv, SNE_rv, SLT_rv, SGE_rv).  There are no GT/LE forms: the encoder
+// normalises those conditions by swapping operands.  The comparison is selected
 // via the Comparator type parameter F.  If stack[rs0] compares to stack[rs1] as
 // required, execution jumps to the encoded target; otherwise it falls through
 // to the following bytecode.

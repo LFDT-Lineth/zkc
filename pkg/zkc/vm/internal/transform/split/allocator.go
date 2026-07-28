@@ -50,18 +50,29 @@ type Allocator[W any] interface {
 }
 
 type registerAllocator[W any] struct {
-	name      string
+	name string
+	// max register width to permit for allocation
+	maxRegisterWidth uint
+	//
 	registers []descriptor.Register[W]
 }
 
 // NewAllocator converts a mapping into a full allocator simply by wrapping the
 // two fields.
-func NewAllocator[W any](mapping descriptor.RegisterMap[W]) Allocator[W] {
+func NewAllocator[W any](mapping descriptor.RegisterMap[W]) *registerAllocator[W] {
 	var (
 		registers = slices.Clone(mapping.Registers())
 	)
 	//
-	return &registerAllocator[W]{mapping.Name(), registers}
+	return &registerAllocator[W]{mapping.Name(), math.MaxUint, registers}
+}
+
+// EnforceRegisterWidth enforces an upper bound of the size of allocated
+// registers.  If an attempt is made to allocate a register larger than this
+// bound, then a panic will arise.
+func (p *registerAllocator[W]) EnforceRegisterWidth(width uint) *registerAllocator[W] {
+	p.maxRegisterWidth = width
+	return p
 }
 
 // Name implementation for the RegisterAllocator interface
@@ -79,6 +90,10 @@ func (p *registerAllocator[W]) Allocate(prefix string, width util.Option[uint]) 
 		// Default padding (for now)
 		zero W
 	)
+	// Sanity check allocation width
+	if width.HasValue() && width.Unwrap() > p.maxRegisterWidth {
+		panic(fmt.Sprintf("register exceeds maximum width (%d > %d)", width.Unwrap(), p.maxRegisterWidth))
+	}
 	// Allocate a new computed register.
 	p.registers = append(p.registers,
 		descriptor.NewRegister(register.COMPUTED_REGISTER, name, width, zero))
