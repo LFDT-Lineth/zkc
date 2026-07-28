@@ -84,10 +84,6 @@ func (p Uint64) Cmp64(o uint64) int {
 
 // Div implementation for Word interface.
 func (p Uint64) Div(w Uint64) Uint64 {
-	if w.value == 0 {
-		panic("division by zero")
-	}
-	//
 	return Uint64{p.value / w.value}
 }
 
@@ -106,10 +102,6 @@ func (p Uint64) DwDiv(lo, d Uint64) (Uint64, Uint64) {
 
 // DwRem implementation for Word interface.
 func (p Uint64) DwRem(lo, d Uint64) Uint64 {
-	if d.value == 0 {
-		panic("division by zero")
-	}
-	//
 	return Uint64{bits.Rem64(p.value, lo.value, d.value)}
 }
 
@@ -152,10 +144,6 @@ func (p Uint64) Or(w Uint64) Uint64 {
 
 // Rem implementation for Word interface.
 func (p Uint64) Rem(w Uint64) Uint64 {
-	if w.value == 0 {
-		panic("division by zero")
-	}
-	//
 	return Uint64{p.value % w.value}
 }
 
@@ -223,9 +211,6 @@ func (p Uint64) Sub64(w uint64) (Uint64, bool) {
 
 // SubMod implementation for Word interface.
 func (p Uint64) SubMod(w, m Uint64) Uint64 {
-	if m.value == 0 {
-		panic("modulus by zero")
-	}
 	// Reduce inputs into the range [0, m) so that the difference, taken modulo
 	// m, fits naturally into a uint64.
 	a := p.value % m.value
