@@ -202,8 +202,6 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 	// exactly when no case matched.  Enforcing b_default to be a u1 enforces
 	// that at most one b_j is 1 (each being a bit itself).
 	//
-	// TODO: subtract directly from the constant (CSUB) once such an
-	// instruction exists, saving the one-register load.
 	var (
 		onereg = registers.Allocate("", util.Some[uint](1))
 		bdef   = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_default", switchIndex), util.Some[uint](1))
