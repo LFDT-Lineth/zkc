@@ -73,9 +73,17 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 			switch mi.role {
 			case sromStatic:
 				// Baked contents: the read is a direct index (OOB panics, like
-				// StaticArray.Read) and the bound is the largest baked value.
+				// StaticArray.Read) and the bound is the largest baked value.  A
+				// narrowed element type widens back to the uint64 cell type.
 				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
+				if mi.elemType != "uint64" {
+					expr = "uint64(" + expr + ")"
+				}
+
 				bound = maxContents(mi.contents)
+			case fixedScratch:
+				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
+				bound = widthMax(widthOf(dataRegs[i]))
 			case ramScratch:
 				expr = fmt.Sprintf("memGet(%s, start+%d)", mi.varName, i)
 				bound = widthMax(widthOf(dataRegs[i]))
@@ -104,7 +112,7 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 	}
 
 	switch mi.role {
-	case womOutput, ramScratch, pagedScratch:
+	case womOutput, fixedScratch, ramScratch, pagedScratch:
 	default:
 		return fmt.Errorf("gogen: MEMORY_WRITE to read-only memory %q", mi.name)
 	}
@@ -135,9 +143,12 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 				g.checkWidth(c, src, dataRegs[i].Bitwidth().Unwrap())
 			}
 
-			if mi.role == pagedScratch {
+			switch mi.role {
+			case pagedScratch:
 				c.linef("%s.set(start+%d, %s)", mi.varName, i, src.expr)
-			} else {
+			case fixedScratch:
+				c.linef("%s[start+%d] = %s", mi.varName, i, src.expr)
+			default:
 				c.linef("%s = memWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
 			}
 		}
