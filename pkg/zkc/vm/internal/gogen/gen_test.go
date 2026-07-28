@@ -414,6 +414,22 @@ fn main<ram>() {
 }
 `
 
+// scratchSrc exercises a small read-write RAM that gogen lowers to a fixed Go
+// array (address:u4 -> 16 cells): writes including the highest valid address
+// (15), read-back, and a never-written cell that must read zero.
+const scratchSrc = `pub input data(address:u8) -> (byte:u8)
+memory scratch(address:u4) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main<scratch>() {
+    scratch[3] = data[0]
+    scratch[15] = data[1]
+    result[0] = scratch[3]
+    result[1] = scratch[15]
+    result[2] = scratch[7]
+    return
+}
+`
+
 // compileUint compiles a ZkC source string into a fresh, vectorised
 // WordMachine over vm.Uint — the machine the generator consumes and the
 // reference executor interprets.  `fastMode` selects the prover shape
@@ -488,6 +504,7 @@ func TestGenValidGo(t *testing.T) {
 		"wideReg":      wideRegSrc,
 		"wideConstAdd": wideConstAddSrc,
 		"divmod64":     divMod64Src,
+		"scratch":      scratchSrc,
 	}
 	for name, src := range srcs {
 		for _, shape := range shapes {
@@ -740,6 +757,15 @@ var diffCases = []diffCase{
 		vectors: []map[string][]uint64{
 			{"data": {1, 2, 3}},
 			{"data": {0xFFFFFFFFFFFFFFFF, 0, 0xDEADBEEF}},
+		},
+	},
+	{
+		name: "scratch", // fixed-array scratch RAM: write/read-back, zero on unwritten
+		src:  scratchSrc,
+		vectors: []map[string][]uint64{
+			{"data": {10, 20}},   // result [10, 20, 0]
+			{"data": {0, 0}},     // result [0, 0, 0]
+			{"data": {255, 128}}, // result [255, 128, 0]
 		},
 	},
 	{
