@@ -466,9 +466,9 @@ func (p *AirLowering[F]) lowerLogical(e LogicalTerm[F], airMod air.ModuleBuilder
 	case *Disjunct[F]:
 		return p.lowerDisjunct(e, airMod, bitwidths)
 	case *Equal[F]:
-		return p.lowerEqualityTo(e, airMod, bitwidths)
+		return p.lowerEqualityTo(e, airMod)
 	case *NotEqual[F]:
-		return p.lowerNonEqualityTo(e, airMod, bitwidths)
+		return p.lowerNonEqualityTo(e, airMod)
 	default:
 		name := reflect.TypeOf(e).Name()
 		panic(fmt.Sprintf("unknown MIR expression \"%s\"", name))
@@ -537,7 +537,7 @@ func (p *AirLowering[F]) lowerDisjunct(e *Disjunct[F], airMod air.ModuleBuilder[
 	return disjunction(p.lowerLogicals(nterms, airMod, bitwidths)...)
 }
 
-func (p *AirLowering[F]) lowerEqualityTo(e *Equal[F], airModule air.ModuleBuilder[F], bitwidths []uint,
+func (p *AirLowering[F]) lowerEqualityTo(e *Equal[F], airModule air.ModuleBuilder[F],
 ) []air.Term[F] {
 	//
 	var (
@@ -548,7 +548,7 @@ func (p *AirLowering[F]) lowerEqualityTo(e *Equal[F], airModule air.ModuleBuilde
 	return []air.Term[F]{term.Subtract(lhs, rhs)}
 }
 
-func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.ModuleBuilder[F], bitwidths []uint,
+func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.ModuleBuilder[F],
 ) []air.Term[F] {
 	// //
 	var (
@@ -877,27 +877,10 @@ func valueRangeOfBits(bitwidth uint) util_math.Interval {
 // have type constraints and records their maximum bitwidths arising.
 func determineTrueBitwidths[F field.Element[F]](mirModule schema.Module[F]) []uint {
 	var bitwidths = make([]uint, mirModule.Width())
-	// initialise with maximum widths
-	for i := range bitwidths {
-		bitwidths[i] = math.MaxUint
-	}
-	//
-	for iter := mirModule.Constraints(); iter.HasNext(); {
-		// Following should always hold
-		c := iter.Next().(Constraint[F])
-		// Check what kind of constraint we have
-		if v, ok := c.constraint.(RangeConstraint[F]); ok {
-			// apply constraints
-			for i, e := range v.Sources {
-				rid := e.Register().Unwrap()
-				// sanity check
-				if bitwidths[rid] != math.MaxUint {
-					panic("duplicate range constraint detected")
-				}
-				// Update bitwidth accordingly
-				bitwidths[rid] = min(bitwidths[rid], v.Bitwidths[i])
-			}
-		}
+	// put the register width into the array. Note that for zkc, all range are proven to be within the register width
+	// , so we can use the register width as the true bitwidth.
+	for i, r := range mirModule.Registers() {
+		bitwidths[i] = r.WidthOrNative()
 	}
 	//
 	return bitwidths
