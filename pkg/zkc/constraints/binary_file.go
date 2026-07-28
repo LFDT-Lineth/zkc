@@ -29,6 +29,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	tracer "github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -174,14 +175,15 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 ) (output map[string][]byte, rtr rtrace.Trace[F], tr trace.Trace[F], errs []error) {
 	//
 	var (
-		processor = &postProcess[vm.Uint32, F]{}
 		//
 		stats = util.NewPerfStats()
 		// Lower bytecode program
 		prog32 = vm.ProgramToProgram[vm.Uint, vm.Uint32](p.program)
+		//
+		builder = tracer.NewBuilder[vm.Uint32, F, *rtrace.CompactModule[F]](prog32)
 	)
 	// Execute machine in chunks of 1K steps
-	rtr, output, errs = vm.BootAndTrace(prog32, input, math.MaxUint, processor)
+	rtr, output, errs = vm.BootAndTrace(prog32, input, math.MaxUint, builder)
 	//
 	if len(errs) == 0 {
 		// Extract AIR constraints

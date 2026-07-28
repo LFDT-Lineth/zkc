@@ -10,12 +10,13 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package array
+package narray
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
@@ -37,7 +38,7 @@ type BitArray[T word.Word[T]] struct {
 	height uint
 }
 
-// NewBitArray constructs a new bit array with a given capacity.
+// NewBitArray constructs a new word array with a given capacity.
 func NewBitArray[T word.Word[T]](height uint) BitArray[T] {
 	var (
 		bytewidth = word.ByteWidth(height)
@@ -47,20 +48,27 @@ func NewBitArray[T word.Word[T]](height uint) BitArray[T] {
 	return BitArray[T]{elements, height}
 }
 
-// RawBitArray constructs a new bit array directly from raw data.
-func RawBitArray[T word.Word[T]](data []byte, height uint) *BitArray[T] {
-	return &BitArray[T]{data, height}
-}
-
 // Len returns the number of elements in this word array.
 func (p *BitArray[T]) Len() uint {
 	return p.height
 }
 
 // Append new word on this array
-func (p *BitArray[T]) Append(word T) MutArray[T] {
-	p.Pad(0, 1, word)
-	return p
+func (p *BitArray[T]) Append(val T) {
+	var (
+		// if byte length is 0, the word represents 0.  otherwise, it must be 1.
+		v = !val.IsZero()
+		// determin expected height
+		bytewidth = word.ByteWidth(p.height + 1)
+	)
+	// ensure sufficient space
+	if uint(len(p.data)) < bytewidth {
+		p.data = append(p.data, 0)
+	}
+	// write new bit
+	bit.LittleEndianWrite(v, p.data, p.height)
+	// increase height
+	p.height++
 }
 
 // BitWidth returns the width (in bits) of elements in this array.
@@ -89,58 +97,19 @@ func (p *BitArray[T]) Get(index uint) T {
 	return b
 }
 
-// Pad implementation for MutArray interface.
-func (p *BitArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
-	// Front padding
-	if n > 0 {
-		p.insertBits(n, padding)
-	}
-	// Back padding
-	if m > 0 {
-		p.appendBits(m, padding)
-	}
-	//
-	return p
-}
-
 // Set sets the field element at the given index in this array, overwriting the
 // original value.
-func (p *BitArray[T]) Set(index uint, word T) MutArray[T] {
+func (p *BitArray[T]) Set(index uint, word T) {
 	// if byte length is 0, the word represents 0.  otherwise, it must be 1.
 	var val = !word.IsZero()
 	//
 	bit.LittleEndianWrite(val, p.data, index)
-	//
-	return p
 }
 
 // SetRaw sets a raw bit at the given index in this array, overwriting the
 // original value.
 func (p *BitArray[T]) SetRaw(index uint, val bool) {
 	bit.LittleEndianWrite(val, p.data, index)
-}
-
-// Slice out a subregion of this array.
-func (p *BitArray[T]) Slice(start uint, end uint) Array[T] {
-	var (
-		height    = end - start
-		bytewidth = word.ByteWidth(height)
-	)
-	// Check for aligned slice (since this is a fast case).
-	if start%8 == 0 {
-		// Yes, easy case
-		start = start / 8
-		//
-		return &BitArray[T]{p.data[start : start+bytewidth], height}
-	}
-	// No, hard case.  We'll just do a bitcopy for now.  In theory we could
-	// improve performance by allowing BitArray to have a starting offset.  But,
-	// the use cases for Slice() are very limited at this time, so no need.
-	bytes := make([]byte, bytewidth)
-	// Copy height bits over
-	bit.LittleEndianCopy(p.data, start, bytes, 0, height)
-	// Done
-	return &BitArray[T]{bytes, height}
 }
 
 func (p *BitArray[T]) String() string {
@@ -161,36 +130,7 @@ func (p *BitArray[T]) String() string {
 	return sb.String()
 }
 
-func (p *BitArray[T]) insertBits(n uint, padding T) {
-	var (
-		height    = p.height + n
-		bytewidth = word.ByteWidth(height)
-		data      = make([]byte, bytewidth)
-	)
-	// copy
-	bit.LittleEndianCopy(p.data, 0, data, n, p.height)
-	p.data = data
-	// assign
-	for i := range n {
-		p.Set(i, padding)
-	}
-	// done
-	p.height = height
-}
-
-func (p *BitArray[T]) appendBits(n uint, padding T) {
-	var (
-		height    = p.height + n
-		bytewidth = word.ByteWidth(height)
-		data      = make([]byte, bytewidth)
-	)
-	// copy
-	copy(data, p.data)
-	p.data = data
-	// assign
-	for i := p.height; i < height; i++ {
-		p.Set(i, padding)
-	}
-	// done
-	p.height = height
+// ToLegacy implementation for MutArray interface
+func (p *BitArray[T]) ToLegacy() array.MutArray[T] {
+	return array.RawBitArray[T](p.data, p.height)
 }

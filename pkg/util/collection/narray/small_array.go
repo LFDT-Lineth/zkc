@@ -10,12 +10,13 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package array
+package narray
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
@@ -36,16 +37,9 @@ func NewSmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]](height ui
 	return SmallArray[K, T]{elements, bitwidth}
 }
 
-// RawSmallArray constructs a new array directly from raw data.
-func RawSmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]](data []K, bitwidth uint) *SmallArray[K, T] {
-	return &SmallArray[K, T]{data, bitwidth}
-}
-
 // Append new word on this array
-func (p *SmallArray[K, T]) Append(word T) MutArray[T] {
-	p.Pad(0, 1, word)
-	//
-	return p
+func (p *SmallArray[K, T]) Append(word T) {
+	p.data = append(p.data, K(word.Uint64()))
 }
 
 // Len returns the number of elements in this word array.
@@ -78,48 +72,14 @@ func (p *SmallArray[K, T]) Get(index uint) T {
 
 // Set the word at the given index in this array, overwriting the
 // original value.
-func (p *SmallArray[K, T]) Set(index uint, word T) MutArray[T] {
+func (p *SmallArray[K, T]) Set(index uint, word T) {
 	p.data[index] = K(word.Uint64())
-	return p
 }
 
 // SetRaw sets a raw value at the given index in this array, overwriting the
 // original value.
 func (p *SmallArray[K, T]) SetRaw(index uint, val K) {
 	p.data[index] = val
-}
-
-// Slice out a subregion of this array.
-func (p *SmallArray[K, T]) Slice(start uint, end uint) Array[T] {
-	return &SmallArray[K, T]{
-		p.data[start:end], p.bitwidth,
-	}
-}
-
-// Pad prepend array with n copies and append with m copies of the given padding
-// value.
-func (p *SmallArray[K, T]) Pad(n uint, m uint, padding T) MutArray[T] {
-	var (
-		// Determine new length
-		l = n + m + p.Len()
-		// Initialise new array
-		data = make([]K, l)
-		//
-		val = K(padding.Uint64())
-	)
-	// copy
-	copy(data[n:], p.data)
-	p.data = data
-	// Front padding!
-	for i := range n {
-		p.data[i] = val
-	}
-	// Back padding!
-	for i := l - m; i < l; i++ {
-		p.data[i] = val
-	}
-	//
-	return p
 }
 
 func (p *SmallArray[K, T]) String() string {
@@ -138,4 +98,9 @@ func (p *SmallArray[K, T]) String() string {
 	sb.WriteString("]")
 
 	return sb.String()
+}
+
+// ToLegacy implementation for MutArray interface
+func (p *SmallArray[K, T]) ToLegacy() array.MutArray[T] {
+	return array.RawSmallArray[K, T](p.data, p.bitwidth)
 }

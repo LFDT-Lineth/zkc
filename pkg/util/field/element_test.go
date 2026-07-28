@@ -85,3 +85,7 @@ func (e elementArray) Set(u uint, t koalabear.Element) array.MutArray[koalabear.
 func (e elementArray) Pad(u uint, u2 uint, t koalabear.Element) array.MutArray[koalabear.Element] {
 	panic("not implemented")
 }
+
+func (e elementArray) String() string {
+	panic("no implemeented")
+}

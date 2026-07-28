@@ -191,8 +191,8 @@ func printTraceStats[F field.Element[F]](rtr rtrace.Trace[F]) {
 		mod := rtr.Module(mid)
 		cells += mod.Width() * mod.Height()
 		//
-		for _, limb := range mod.Limbs().Collect() {
-			bitwidth := limb.Bitwidth()
+		for _, reg := range mod.Descriptor().Collect() {
+			bitwidth := reg.Bitwidth
 			// Native (field-element) limbs have no fixed bit-width.
 			if bitwidth.IsEmpty() {
 				native++
@@ -275,8 +275,8 @@ func printModuleStats[F field.Element[F]](rtr rtrace.Trace[F]) {
 			bytes    uint
 		)
 		// Sum per-limb bit-widths and byte requirements.
-		for _, limb := range mod.Limbs().Collect() {
-			if bw := limb.Bitwidth(); bw.HasValue() {
+		for _, reg := range mod.Descriptor().Collect() {
+			if bw := reg.Bitwidth; bw.HasValue() {
 				w := bw.Unwrap()
 				bitwidth += w
 				bytes += byteWidth(w) * lines

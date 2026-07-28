@@ -10,11 +10,13 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package array
+package narray
 
 import (
 	"fmt"
 	"strings"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 )
 
 // StaticArray implements an array of elements simply using an underlying array.
@@ -34,14 +36,9 @@ func NewStaticArray[T any](height uint, bitwidth uint) *StaticArray[T] {
 	return &StaticArray[T]{elements, bitwidth}
 }
 
-// RawStaticArray constructs a new array directly from raw data.
-func RawStaticArray[T any](data []T, bitwidth uint) *StaticArray[T] {
-	return &StaticArray[T]{data, bitwidth}
-}
-
 // Append new word on this array
-func (p *StaticArray[T]) Append(word T) MutArray[T] {
-	return p.Pad(0, 1, word)
+func (p *StaticArray[T]) Append(word T) {
+	p.data = append(p.data, word)
 }
 
 // Len returns the number of elements in this word array.
@@ -62,9 +59,8 @@ func (p *StaticArray[T]) Get(index uint) T {
 
 // Set sets the field element at the given index in this array, overwriting the
 // original value.
-func (p *StaticArray[T]) Set(index uint, word T) MutArray[T] {
+func (p *StaticArray[T]) Set(index uint, word T) {
 	p.data[index] = word
-	return p
 }
 
 // Clone makes clones of this array producing an otherwise identical copy.
@@ -75,37 +71,6 @@ func (p *StaticArray[T]) Clone() MutArray[T] {
 	copy(ndata, p.data)
 	//
 	return &StaticArray[T]{ndata, p.bitwidth}
-}
-
-// Slice out a subregion of this array.
-func (p *StaticArray[T]) Slice(start uint, end uint) Array[T] {
-	return &StaticArray[T]{
-		p.data[start:end], p.bitwidth,
-	}
-}
-
-// Pad prepend array with n copies and append with m copies of the given padding
-// value.
-func (p *StaticArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
-	var (
-		// Determine new length
-		l = n + m + p.Len()
-		// Initialise new array
-		data = make([]T, l)
-	)
-	// copy
-	copy(data[n:], p.data)
-	p.data = data
-	// Front padding!
-	for i := range n {
-		p.Set(i, padding)
-	}
-	// Back padding!
-	for i := l - m; i < l; i++ {
-		p.Set(i, padding)
-	}
-	//
-	return p
 }
 
 func (p *StaticArray[T]) String() string {
@@ -124,4 +89,9 @@ func (p *StaticArray[T]) String() string {
 	sb.WriteString("]")
 
 	return sb.String()
+}
+
+// ToLegacy implementation for MutArray interface
+func (p *StaticArray[T]) ToLegacy() array.MutArray[T] {
+	return array.RawStaticArray[T](p.data, p.bitwidth)
 }

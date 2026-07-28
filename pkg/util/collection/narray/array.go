@@ -10,12 +10,12 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package array
+package narray
 
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 )
 
 // Predicate abstracts the notion of a function which identifies something.
@@ -33,46 +33,22 @@ type Array[T any] interface {
 	Get(uint) T
 	// Returns the number of elements in this array.
 	Len() uint
-	// Slice out a subregion of this array.
-	Slice(uint, uint) Array[T]
 }
 
 // MutArray provides a generice interface to an array of elements.  Typically, we
 // are interested in arrays of field elements here.
 type MutArray[T any] interface {
 	Array[T]
-	// Append new element onto the end of array producing an updated array.  In
-	// most cases, this updates the array in place and returns it.  In some
-	// cases, it may force a change of representation (e.g. moving from a
-	// constant array).
-	Append(T) MutArray[T]
+	// Append new element onto the end of array producing an updated array.
+	// This updates the array in place, and will panic if the given value is not
+	// representable in the array.
+	Append(T)
 	// Set the element at the given index in this array, overwriting the
-	// original value. In most cases, this updates the array in place and
-	// returns it.  In some cases, it may force a change of representation (e.g.
-	// moving from a constant array).
-	Set(uint, T) MutArray[T]
-	// Insert n copies of T at start of the array and m copies at the back. In
-	// most cases, this updates the array in place and returns it.  In some
-	// cases, it may force a change of representation (e.g. moving from a
-	// constant array).
-	Pad(uint, uint, T) MutArray[T]
-}
-
-// CloneArray converts a word array for one word geometry into a mutable array
-// for another geometry.
-func CloneArray[W1 word.Word[W1], W2 word.Word[W2]](arr Array[W1], builder Builder[W2]) MutArray[W2] {
-	var res = builder.NewArray(arr.Len(), arr.BitWidth())
-	//
-	for i := range arr.Len() {
-		var (
-			w1 = arr.Get(i)
-			w2 W2
-		)
-		// Convert words
-		w2 = w2.SetBytes(w1.Bytes())
-		// Assign into new array
-		res = res.Set(i, w2)
-	}
-	// Done
-	return res
+	// original value. This updates the array in place, and will panic if the
+	// given value is not representable in the array.
+	Set(uint, T)
+	// ToLegacy (efficiently) constructs an equivalent legacy array from this
+	// array.  This should be considered a destructive operation and, hence,
+	// once done this array should no longer be used.
+	ToLegacy() array.MutArray[T]
 }

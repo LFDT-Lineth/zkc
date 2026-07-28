@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package post
+package trace
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
@@ -21,7 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-// ProcessAccessOnceMemory materializes the trace rows for a read-only (ROM) or
+// InitAccessOnceMemory initialises a trace module for a read-only (ROM) or
 // write-once (WOM) memory: one row per cell with consecutive addresses (single-
 // or multi-limb, via splitAddress) plus the cell's data.  The format of a trace
 // row for an access-once memory is:
@@ -32,55 +32,14 @@ import (
 //
 // Here, ADDRESS is the set of declared input registers, whilst DATA is the set
 // of declared output registers.
-func ProcessAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.RuntimeMemory[W]) rtrace.ArrayModule[F] {
+func initAccessOnceMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](m vm.Memory[W]) (module M) {
 	var (
-		one      = field.Uint64[F](1)
-		geometry = m.Descriptor()
-		// Extract memory contents
-		data = m.Contents()
 		// Number of address lines
-		nAddr = geometry.NumInputs()
-		// Number of data lines
-		nData = geometry.NumOutputs()
-		// Calculate height of trace based on geometry
-		height = uint64(len(data)) / uint64(nData)
-		// Determine full set of registers (inc. any selector lines required)
-		regs = determineAomRegisters(geometry.Registers(), nAddr)
-		// Construct initially empty rows
-		rows = make([][]F, height+1)
-	)
-	// Initialise first row as padding row
-	rows[0] = make([]F, len(regs))
-	// Iterate and process each row, one at a time.
-	for i := range height {
-		var row = make([]F, len(regs))
-		// copy over address lines
-		copyAddressLines(i, geometry.AddressRegisters(), row)
-		// copy over data lines
-		copyDataLines(i, geometry.DataRegisters(), data, row[nAddr:])
-		// fill out accept line (always one except in padding)
-		row[nAddr+nData] = one
-		// check for multi-lane address
-		if nAddr > 1 && i > 0 {
-			// determine least significant non-zero limb in the address line
-			k := findLeastSignificantNonZeroLimb(row[:nAddr])
-			// mark pivot for comparison
-			row[nAddr+nData+k+1] = one
-		}
-		// Done
-		rows[i+1] = row
-	}
-	//
-	return rtrace.NewArrayModule(geometry.Name(), regs, rows...)
-}
-
-// Determine the full set of registers required for the trace of this memory.
-func determineAomRegisters[W vm.Word[W]](registers []vm.Register[W], nAddressLines uint) []rtrace.Register {
-	var (
+		nAddressLines = m.NumInputs()
 		// Copy over all address / data lines
-		regs = array.Map(registers, toRtraceRegister)
+		regs = array.Map(m.Registers(), toRtraceRegister)
 		// Bitwidth for binary selector lines
-		u1 = util.Some([]uint{1})
+		u1 = util.Some[uint](1)
 	)
 	// Add access bit for distinguishing padding rows.
 	regs = append(regs, rtrace.NewRegister(io.ACCESS_BIT_NAME, u1))
@@ -93,40 +52,48 @@ func determineAomRegisters[W vm.Word[W]](registers []vm.Register[W], nAddressLin
 		}
 	}
 	//
-	return regs
+	return module.Initialise(m.Name(), regs)
 }
 
-// Taken the given address, split it into the necessary components and write
-// into the row
-func copyAddressLines[W Word[W], F Element[F]](address uint64, lines []vm.Register[W], row []F) {
-	var acc vm.Uint64
-	// Initialise accumulator
-	acc = acc.SetUint64(address)
-	// process address lines in reverse order since the most significant line
-	// always comes first.
-	for i := len(lines); i > 0; i-- {
-		var (
-			val F
-			// determine bitwidth of ith line
-			bitwidth = uint64(lines[i-1].Bitwidth().Unwrap())
-			// Slice out bitwidth bits
-			slice = acc.Slice(uint(bitwidth))
-		)
-		// Assign u64 (slice as field element)
-		row[i-1] = val.SetUint64(slice.Uint64())
-		// Shift down address
-		acc = acc.Shr64(bitwidth)
-	}
-}
-
-// Copy over the row data from the data
-func copyDataLines[W Word[W], F Element[F]](address uint64, lines []vm.Register[W], data []W, row []F) {
-	var offset = int(address) * len(lines)
-	//
-	for i := range lines {
-		var val F
+// traceAccessOnceMemory materialises the trace rows for a read-only (ROM) or
+// write-once (WOM) memory
+func traceAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.RuntimeMemory[W], module Module[F], scratch []F) {
+	var (
+		one      = field.Uint64[F](1)
+		geometry = m.Descriptor()
+		// Extract memory contents
+		data = m.Contents()
+		// Number of address lines
+		nAddr = geometry.NumInputs()
+		// Number of data lines
+		nData = geometry.NumOutputs()
+		// Calculate height of trace based on geometry
+		height = uint64(len(data)) / uint64(nData)
 		//
-		row[i] = val.SetBytes(data[offset+i].BigInt().Bytes())
+		width = module.Width()
+	)
+	// Initialise first row as padding row
+	module.Append(paddingRow(scratch[:width])...)
+	// Iterate and process each row, one at a time.
+	for i := range height {
+		var row = scratch[:width]
+		// copy over address lines
+		copyAddressLines(i, geometry.AddressRegisters(), row)
+		// copy over data lines
+		copyDataLines(i, geometry.DataRegisters(), data, row[nAddr:])
+		// zero out selectors
+		zeroOut(row[nAddr+nData:])
+		// fill out accept line (always one except in padding)
+		row[nAddr+nData] = one
+		// check for multi-lane address
+		if nAddr > 1 && i > 0 {
+			// determine least significant non-zero limb in the address line
+			k := findLeastSignificantNonZeroLimb(row[:nAddr])
+			// mark pivot for comparison
+			row[nAddr+nData+k+1] = one
+		}
+		// Done
+		module.Append(row...)
 	}
 }
 
@@ -143,4 +110,14 @@ func findLeastSignificantNonZeroLimb[F Element[F]](row []F) uint {
 	}
 	//
 	panic("memory address bandwidth exceeded")
+}
+
+func paddingRow[F Element[F]](row []F) []F {
+	var zero F
+	//
+	for i := range row {
+		row[i] = zero
+	}
+	//
+	return row
 }

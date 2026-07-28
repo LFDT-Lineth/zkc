@@ -66,8 +66,8 @@ func toFieldElements[W vm.Word[W], F field.Element[F]](contents []W) []F {
 	//
 	for i, w := range contents {
 		var f F
-
-		elements[i] = f.SetBytes(w.BigInt().Bytes())
+		// TODO: support larger fields
+		elements[i] = f.SetUint64(w.Uint64())
 	}
 	//
 	return elements
