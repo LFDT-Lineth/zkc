@@ -33,14 +33,20 @@ import (
 type SkipIf[W word.Word[W]] struct {
 	Skip  uint16
 	Left  RegisterVector
-	Right RegisterVector
+	Right Operand[W]
 	Op    Condition
 }
 
 // Uses implementation for Bytecode interface.  A conditional skip reads both
 // operand vectors being compared.
 func (p *SkipIf[W]) Uses() []RegisterId {
-	return append(p.Left.Registers(), p.Right.Registers()...)
+	var res = p.Left.Registers()
+	//
+	if p.Right.IsRegisterVector() {
+		res = append(res, p.Right.AsRegisterVector().Registers()...)
+	}
+	//
+	return res
 }
 
 // Definitions implementation for Bytecode interface.
@@ -50,14 +56,18 @@ func (p *SkipIf[W]) Definitions() []RegisterId {
 
 // Validate implementation for Bytecode interface.
 func (p *SkipIf[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	return validateOperands(env, p.Left.Registers(), p.Right.Registers())
+	if p.Right.IsRegisterVector() {
+		return validateOperands(env, p.Left.Registers(), p.Right.AsRegisterVector().Registers())
+	}
+	//
+	return validateOperands(env, p.Left.Registers())
 }
 
 func (p *SkipIf[W]) String(env Environment[W]) string {
 	var (
 		ops  string
 		src0 = RegisterVectorToString(p.Left, env)
-		src1 = RegisterVectorToString(p.Right, env)
+		src1 = p.Right.String(env)
 	)
 	//
 	switch p.Op {

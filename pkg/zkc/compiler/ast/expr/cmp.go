@@ -46,6 +46,24 @@ func (p CmpOp) Fieldable() bool {
 	return p == EQ || p == NEQ
 }
 
+// Flip the operation, so e.g. x > y becomes x < y, etc.
+func (p CmpOp) Flip() CmpOp {
+	switch p {
+	case EQ, NEQ:
+		return p
+	case LT:
+		return GT
+	case LTEQ:
+		return GTEQ
+	case GT:
+		return LT
+	case GTEQ:
+		return LTEQ
+	default:
+		panic("unreachable")
+	}
+}
+
 // Cmp represents a comparison, such as "==", ">=", etc.
 type Cmp[S symbol.Symbol[S]] struct {
 	// Operator indicates the condition

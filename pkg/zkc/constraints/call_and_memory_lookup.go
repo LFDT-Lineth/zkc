@@ -50,14 +50,19 @@ import (
 //
 // Lookups require a register (and not an expression) as the source selector,
 // so the path selector is materialised as a fresh 1-bit register (if it is not already).
-func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	fn *vm.Function[W], pcSelectors []register.Id, ret register.Id, infos []vm.Module[W],
-	callerRegs []register.Register) {
+func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
+	ctx schema.ModuleId,
+	fn *vm.Function[W],
+	pcSelectors []register.Id,
+	ret register.Id,
+	infos []vm.Module[W],
+	callerRegs []register.Register,
+	field field.Config) {
 	//
 	for pc, vec := range fn.Vectors() {
 		// Branch table giving the condition under which each code in this vector
 		// is reached.
-		_, branchTable := vec.BranchTable()
+		_, branchTable := vec.BranchTable(field.RegisterWidth)
 		// Group the lookup-emitting bytecodes by the branch condition under
 		// which they execute, so accesses sharing a condition share a single
 		// source selector (column).

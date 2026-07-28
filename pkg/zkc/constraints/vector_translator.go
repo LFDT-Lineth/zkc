@@ -52,9 +52,11 @@ type VectorInsnTranslator[W vm.Word[W], F field.Element[F]] struct {
 
 // NewVectorTranslator constructs a translator for a specific bytecode vector.
 func NewVectorTranslator[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, pc uint,
-	vec vm.BytecodeVector[W], framing Framing[F], enclosing *vm.Function[W]) VectorInsnTranslator[W, F] {
+	vec vm.BytecodeVector[W], framing Framing[F], enclosing *vm.Function[W],
+	field field.Config) VectorInsnTranslator[W, F] {
+	//
 	// generate writeMap & branch table
-	writeMap, branchTable := vec.BranchTable()
+	writeMap, branchTable := vec.BranchTable(field.RegisterWidth)
 	//
 	return VectorInsnTranslator[W, F]{
 		ctx, pc, vec, enclosing, writeMap, branchTable, framing,
@@ -262,7 +264,7 @@ func (p *VectorInsnTranslator[W, F]) RegisterWidths(regs ...io.RegisterId) []uin
 	var widths = make([]uint, len(regs))
 	//
 	for i, r := range regs {
-		widths[i] = p.Register(r).Width()
+		widths[i] = p.Register(r).WidthOrNative()
 	}
 	//
 	return widths

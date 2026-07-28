@@ -308,6 +308,9 @@ func Test_ZkcInvalid_Const_07(t *testing.T) {
 func Test_ZkcInvalid_Const_08(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/const_08")
 }
+func Test_ZkcInvalid_Const_09(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/const_09")
+}
 
 // ===================================================================
 // While Tests

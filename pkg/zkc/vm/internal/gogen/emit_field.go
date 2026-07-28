@@ -48,7 +48,7 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 
 	w := target.width
 
-	srcs, err := g.operands(fn, x.Sources)
+	srcs, err := g.registerOperands(fn, x.Sources)
 	if err != nil {
 		return err
 	}
@@ -686,7 +686,7 @@ func (g *generator) assembleHintOperand(fn *descFunction, vec bytecode.RegisterV
 	regs := vec.Registers() // Base .. Base+Len-1 == most- .. least-significant limb
 
 	if len(regs) == 1 {
-		o, err := g.operand(fn, regs[0])
+		o, err := g.registerOperand(fn, regs[0])
 		if err != nil {
 			return operand{}, err
 		}
@@ -706,7 +706,7 @@ func (g *generator) assembleHintOperand(fn *descFunction, vec bytecode.RegisterV
 	)
 
 	for i, id := range regs {
-		o, err := g.operand(fn, id)
+		o, err := g.registerOperand(fn, id)
 		if err != nil {
 			return operand{}, err
 		}
