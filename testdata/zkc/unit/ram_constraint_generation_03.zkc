@@ -1,0 +1,13 @@
+// Constraint-generation test: read-write memory with a field-element value lane.
+memory ram(address:u8) -> (v:𝔽)
+
+fn main<ram>() {
+    var f:𝔽 = 13 as 𝔽
+    ram[0] = f
+    ram[1] = f
+    var g:𝔽 = ram[0]
+    if f != g {
+        fail
+    }
+    return
+}

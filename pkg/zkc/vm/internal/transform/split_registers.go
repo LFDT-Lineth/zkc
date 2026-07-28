@@ -307,9 +307,14 @@ func splitRead[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allo
 		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
 		// Combine all together
 		pre, post = append(pre1, pre2...), append(post1, post2...)
+		//
+		read = bytecode.NewMemRead[W](c.Id, addr, data)
 	)
+	// Preserve (and split) the timestamp operand, if present.  It is an ordinary
+	// caller-frame value, so it maps onto its limbs like any other register.
+	read.Stamp = split.ApplyLimbsMap(limbsMap, c.Stamp...)
 	//
-	return join(pre, bytecode.NewMemRead[W](c.Id, addr, data), post)
+	return join(pre, read, post)
 }
 
 func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allocator[W], mods []descriptor.Module[W],
@@ -323,9 +328,14 @@ func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.All
 		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
 		// Combine all together
 		pre, post = append(pre1, pre2...), append(post1, post2...)
+		//
+		write = bytecode.NewMemWrite[W](c.Id, addr, data)
 	)
+	// Preserve (and split) the timestamp operand, if present.  It is an ordinary
+	// caller-frame value, so it maps onto its limbs like any other register.
+	write.Stamp = split.ApplyLimbsMap(limbsMap, c.Stamp...)
 	//
-	return join(pre, bytecode.NewMemWrite[W](c.Id, addr, data), post)
+	return join(pre, write, post)
 }
 
 func splitSkipIf[W word.Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.SkipIf[W]) Bytecode[W] {

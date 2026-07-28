@@ -1,0 +1,15 @@
+// Constraint-generation test: several distinct reads and writes to a read-write
+// memory (each access on its own statement / line).
+pub input data(address:u8) -> (byte:u8)
+memory ram(address:u8) -> (byte:u8)
+
+fn main<ram>() {
+    ram[0] = data[0]
+    ram[1] = data[1]
+    var a:u8 = ram[0]
+    var b:u8 = ram[1]
+    if a != b {
+        fail
+    }
+    return
+}

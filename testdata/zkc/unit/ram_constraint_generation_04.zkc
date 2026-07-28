@@ -1,0 +1,12 @@
+// Constraint-generation test: read-write memory with a mixed (integer + field
+// element) tuple value.
+pub input data(address:u16) -> (n:u16, f:𝔽)
+memory ram(addr:u16) -> (a:u16, b:𝔽)
+
+fn main<ram>() {
+    var x:u16, y:𝔽
+    ram[0] = data[0]
+    ram[1] = data[1]
+    x, y = ram[0]
+    return
+}

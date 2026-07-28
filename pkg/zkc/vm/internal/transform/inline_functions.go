@@ -667,11 +667,17 @@ func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
 		}
 	case *bytecode.ReadWrite[W]:
 		if id != uint(insn.Id) {
-			if insn.Write {
-				return bytecode.NewMemWrite[W](bytecode.ModuleId(id), insn.Address, insn.Data)
-			}
+			var rw *bytecode.ReadWrite[W]
 			//
-			return bytecode.NewMemRead[W](bytecode.ModuleId(id), insn.Address, insn.Data)
+			if insn.Write {
+				rw = bytecode.NewMemWrite[W](bytecode.ModuleId(id), insn.Address, insn.Data)
+			} else {
+				rw = bytecode.NewMemRead[W](bytecode.ModuleId(id), insn.Address, insn.Data)
+			}
+			// Preserve the timestamp operand across the module-id remap.
+			rw.Stamp = insn.Stamp
+			//
+			return rw
 		}
 	}
 	//
