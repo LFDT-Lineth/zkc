@@ -183,7 +183,7 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 			preSplit, _ = ast.Compile(artifacts.ast.Unwrap(), config.build.config.SplitRegisters(false))
 		}
 		//
-		PrintCompileStats[F](air, preSplit, config.order)
+		PrintCompileStats(air, preSplit, config.order)
 	}
 }
 

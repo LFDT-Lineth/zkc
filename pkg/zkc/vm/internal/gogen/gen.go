@@ -1105,6 +1105,8 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 		return nil
 	case *bytecode.Switch[word.Uint]:
 		return g.emitMultiwaySkip(c, fn, x, vi, ci, vecLen)
+	case *bytecode.Dispatch[word.Uint]:
+		return g.emitDispatch(c, fn, x, vi, ci, vecLen)
 	case *bytecode.Jmp[word.Uint]:
 		target := pos{uint(x.Target), 0}
 		c.linef("goto %s", labelName(target))

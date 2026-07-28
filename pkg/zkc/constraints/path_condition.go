@@ -20,19 +20,23 @@ import (
 )
 
 // TranslateBranchCondition translates a given branch condition within the
-// context of a given state reader.
+// context of a given state reader.  Complement forms over the given one-hot
+// groups are first rewritten into their single-atom equivalents (see
+// rewriteOneHotConditions).
 func TranslateBranchCondition[W vm.Word[W], F field.Element[F], E Expr[F]](p dfa.Path[W],
-	reader RegisterReader[F]) Expr[F] {
+	groups []oneHotGroup, reader RegisterReader[F]) Expr[F] {
 	//
-	return mirc.TranslateBranchCondition(p.Condition(), reader)
+	return mirc.TranslateBranchCondition(rewriteOneHotConditions(p.Condition(), groups), reader)
 }
 
 // TranslateNegatedBranchCondition translates a negated branch condition within the
-// context of a given state reader.
+// context of a given state reader.  Complement forms over the given one-hot
+// groups are first rewritten into their single-atom equivalents (see
+// rewriteOneHotConditions).
 func TranslateNegatedBranchCondition[W vm.Word[W], F field.Element[F], E Expr[F]](p dfa.Path[W],
-	reader RegisterReader[F]) Expr[F] {
+	groups []oneHotGroup, reader RegisterReader[F]) Expr[F] {
 	//
 	var condition = p.Condition()
 	//
-	return mirc.TranslateBranchCondition(condition.Negate(), reader)
+	return mirc.TranslateBranchCondition(rewriteOneHotConditions(condition.Negate(), groups), reader)
 }

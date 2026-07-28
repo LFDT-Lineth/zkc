@@ -596,6 +596,8 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeSkipIf_rr[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SKIP_M:
 			p.pc = executeSkipTable(p.pc, bytecodes, frame)
+		case encoding.SKIP_B:
+			p.pc = executeDispatch(p.pc, bytecodes, frame)
 		case encoding.SEQ_rv:
 			p.pc = executeSkipIf_rv[W, util.Equal[W]](p.pc, bytecodes, frame)
 		case encoding.SNE_rv:
@@ -1663,6 +1665,27 @@ func executeSkipTable[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint
 	}
 	// no match: fall through past the whole instruction
 	return pc + 1 + (3 * count)
+}
+
+// executeDispatch implements the SKIP_B (one-hot) dispatch: the case bits are
+// examined in order and control transfers to the (absolute) target of the
+// first bit which is set; when no bit is set, control falls through past the
+// whole instruction to the following one.
+func executeDispatch[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
+	var (
+		word0 = codes[pc]
+		count = (word0 >> 24) & 0xff
+	)
+	//
+	for i := range count {
+		var base = pc + 1 + (i * 2)
+		//
+		if stack[codes[base]].Cmp64(0) != 0 {
+			return codes[base+1]
+		}
+	}
+	// no bit set: fall through past the whole instruction
+	return pc + 1 + (2 * count)
 }
 
 // executeLdc_1 implements LDC: it loads a constant value into register rd.

@@ -1,0 +1,40 @@
+pub input data(address:u8) -> (byte:u32)
+pub output out(address:u8) -> (byte:u32)
+
+fn main() {
+    var x:u32 = data[0]
+    var y:u32 = data[1]
+    var r:u32
+    switch x {
+        case 1: {
+            // nested switch inside a case arm
+            switch y {
+                case 1: {
+                    r = 11
+                }
+                case 2: {
+                    r = 12
+                }
+                default: {
+                    r = 10
+                }
+            }
+        }
+        case 2: {
+            r = 20
+        }
+        default: {
+            // nested switch inside the default arm
+            switch y {
+                case 1: {
+                    r = 91
+                }
+                default: {
+                    r = 90
+                }
+            }
+        }
+    }
+    //
+    out[0] = r
+}

@@ -1015,6 +1015,22 @@ func Test_ZkcUnit_Switch_13(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_13", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Switch_14(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_14", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_15(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_15", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_16(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_16", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_17(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_17", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Printf Tests
 // ===================================================================

@@ -58,6 +58,10 @@ func collectLabels(code BytecodeVector) map[pos]bool {
 				for _, cse := range x.Cases {
 					labels[skipTarget(uint(vi), uint(ci), uint(cse.Skip), n)] = true
 				}
+			case *bytecode.Dispatch[word.Uint]:
+				for _, cse := range x.Cases {
+					labels[skipTarget(uint(vi), uint(ci), uint(cse.Skip), n)] = true
+				}
 			}
 		}
 	}
@@ -143,6 +147,32 @@ func (g *generator) emitMultiwaySkip(c *code, fn *descFunction, x *bytecode.Swit
 	if source.wide() {
 		c.line("}")
 	}
+	//
+	return nil
+}
+
+// emitDispatch renders a one-hot dispatch as a tagless switch over the case
+// bits: control transfers to the target of the first case whose (1-bit)
+// register is set, and falls through when none is.  This mirrors
+// interpreter.executeDispatch.
+func (g *generator) emitDispatch(c *code, fn *descFunction, x *bytecode.Dispatch[word.Uint],
+	vi, ci, vecLen uint) error {
+	c.line("switch {")
+	//
+	for _, cse := range x.Cases {
+		bit, err := g.registerOperand(fn, cse.Bit)
+		if err != nil {
+			return err
+		}
+
+		target := skipTarget(vi, ci, uint(cse.Skip), vecLen)
+		//
+		c.linef("case %s != 0:", bit.expr)
+		c.linef("goto %s", labelName(target))
+		g.iv.edgeTo(target)
+	}
+	//
+	c.line("}")
 	//
 	return nil
 }

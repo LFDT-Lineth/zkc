@@ -48,7 +48,7 @@ func FactorSkipConditions[W word.Word[W]](program descriptor.Program[W]) descrip
 
 	for i, mod := range out {
 		if fn, ok := mod.(*descriptor.Function[W]); ok {
-			out[i] = factorSkipConditionsFunction[W](fn)
+			out[i] = factorSkipConditionsFunction(fn)
 		}
 	}
 

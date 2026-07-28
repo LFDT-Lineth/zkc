@@ -40,6 +40,10 @@ type Allocator[W any] interface {
 	// This is presumed to be a computed register, and automatically assigned a
 	// unique name.  No assignment is included for the allocated register
 	Allocate(prefix string, width util.Option[uint]) RegisterId
+	// AllocateNamed allocates a fresh (computed) register of the given width
+	// bearing exactly the given name.  The caller is responsible for ensuring
+	// the name is unique within the target module.
+	AllocateNamed(name string, width util.Option[uint]) RegisterId
 	// ZeroRegister returns an id for a so-called "zero" register.  That is, a
 	// register which always holds zero.
 	ZeroRegister() RegisterId
@@ -90,6 +94,21 @@ func (p *registerAllocator[W]) Allocate(prefix string, width util.Option[uint]) 
 	if width.HasValue() && width.Unwrap() > p.maxRegisterWidth {
 		panic(fmt.Sprintf("register exceeds maximum width (%d > %d)", width.Unwrap(), p.maxRegisterWidth))
 	}
+	// Allocate a new computed register.
+	p.registers = append(p.registers,
+		descriptor.NewRegister(register.COMPUTED_REGISTER, name, width, zero))
+	//
+	return util.Cast[RegisterId](index)
+}
+
+// AllocateNamed implementation for the RegisterAllocator interface
+func (p *registerAllocator[W]) AllocateNamed(name string, width util.Option[uint]) RegisterId {
+	var (
+		index = uint(len(p.registers))
+		zero  W
+	)
+	//
+	util.Assert(!p.HasRegister(name).HasValue(), "%s", fmt.Sprintf("register \"%s\" already exists", name))
 	// Allocate a new computed register.
 	p.registers = append(p.registers,
 		descriptor.NewRegister(register.COMPUTED_REGISTER, name, width, zero))

@@ -187,7 +187,7 @@ func NewBytecodeVector[W word.Word[W]](codes ...Bytecode[W]) BytecodeVector[W] {
 // registers and a body of bytecode vectors.
 func NewBytecodeFunction[W word.Word[W]](name string, kind FunctionKind, registers []Register[W],
 	code ...BytecodeVector[W]) *Function[W] {
-	return descriptor.NewFunction[W](name, registers, kind, code)
+	return descriptor.NewFunction(name, registers, kind, code)
 }
 
 // NewRegister constructs a new register descriptor, where native
@@ -606,6 +606,9 @@ type BytecodeSkipIf[W Word[W]] = bytecode.SkipIf[W]
 
 // BytecodeSwitch is a multiway-skip (switch) bytecode.
 type BytecodeSwitch[W Word[W]] = bytecode.Switch[W]
+
+// BytecodeDispatch is a one-hot multiway-skip (dispatch) bytecode.
+type BytecodeDispatch[W Word[W]] = bytecode.Dispatch[W]
 
 // BytecodeJmp is an unconditional jump bytecode.
 type BytecodeJmp[W Word[W]] = bytecode.Jmp[W]

@@ -260,11 +260,11 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 				Source: split.ApplyLimbsMap(limbsMap, c.Source)[0]}}
 		case *bytecode.Switch[W]:
 			return split.Switch(limbsMap, c)
-
+		case *bytecode.Dispatch[W]:
+			return split.Dispatch(limbsMap, c)
+		case *bytecode.CheckCast[W]:
+			panic("CheckCast is not supposed to happen before splitting")
 		default:
-			// NOTE: checkcast does not technically need to be supported because
-			// the cast insertion phase runs after register splitting.  However,
-			// it should be noted that splitting checkcast is pretty simple.
 			panic(fmt.Sprintf("unsupported bytecode (%T)", c))
 		}
 	})
