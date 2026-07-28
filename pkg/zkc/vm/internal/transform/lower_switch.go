@@ -125,9 +125,9 @@ const (
 	caseSize = 4
 	// trailerSize is the number of bytecodes emitted after the
 	// diamonds: the one-register load, the subtraction deriving the default
-	// bit, its range check, and the final dispatch (which is always the last
+	// bit, and the final dispatch (which is always the last
 	// code of the packet).
-	trailerSize = 4
+	trailerSize = 3
 )
 
 // switchPacketSize returns the number of bytecodes in the replacement packet
@@ -212,9 +212,7 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 		// one = 1
 		bytecode.LoadConst(onereg, one),
 		// b_default = one - b_0 - ... - b_{n-1}
-		bytecode.SubConst(bdef, append([]descriptor.RegisterId{onereg}, bits...), zero),
-		// Explicit range proof for b_default:
-		bytecode.NewCheckCast[W](bdef, 1))
+		bytecode.SubConst(bdef, append([]descriptor.RegisterId{onereg}, bits...), zero))
 	// Dispatch on the bits, in case order.
 	var (
 		// New position of the dispatch bytecode itself.

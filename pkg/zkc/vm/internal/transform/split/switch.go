@@ -45,18 +45,6 @@ func Dispatch[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Dis
 	return []Bytecode[W]{&bytecode.Dispatch[W]{Cases: ncases, Default: onlyLimb(mapping, insn.Default)}}
 }
 
-// CheckCast splits a checkcast instruction.
-func CheckCast[W word.Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.CheckCast[W],
-) []Bytecode[W] {
-	// A target which does not split keeps its cast as-is;
-	// splitting wider casts is simple but not yet implemented.
-	if limbs := ApplyLimbsMap(limbsMap, c.Target); len(limbs) == 1 {
-		return []Bytecode[W]{&bytecode.CheckCast[W]{Bitwidth: c.Bitwidth, Target: limbs[0]}}
-	}
-	//
-	panic("splitting checkcast for multi-limb registers not yet implemented")
-}
-
 // onlyLimb maps a register which cannot split (e.g. a 1-bit register) into its
 // single limb within the split layout.
 func onlyLimb[W word.Word[W]](mapping descriptor.LimbsMap[W], reg bytecode.RegisterId) bytecode.RegisterId {

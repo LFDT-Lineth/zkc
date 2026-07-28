@@ -263,7 +263,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.Dispatch[W]:
 			return split.Dispatch(limbsMap, c)
 		case *bytecode.CheckCast[W]:
-			return split.CheckCast(limbsMap, c)
+			panic("CheckCast is not supposed to happen before splitting")
 		default:
 			panic(fmt.Sprintf("unsupported bytecode (%T)", c))
 		}
