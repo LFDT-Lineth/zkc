@@ -118,8 +118,6 @@ func (p *AirLowering[F]) LowerModule(index uint) {
 	var (
 		mirModule = p.mirSchema.Module(index)
 		airModule = p.airSchema.Module(index)
-		// record of true bitwidths
-		bitwidths = determineTrueBitwidths(mirModule)
 	)
 	// Add assignments.  At this time, there is nothing to do in terms of
 	// lowering.  Observe that this must be done *before* lowering assignments
@@ -134,12 +132,12 @@ func (p *AirLowering[F]) LowerModule(index uint) {
 		// Following should always hold
 		constraint := iter.Next().(Constraint[F])
 		//
-		p.lowerConstraintToAir(constraint, airModule, bitwidths)
+		p.lowerConstraintToAir(constraint, airModule)
 	}
 }
 
 // Lower a constraint to the AIR level.
-func (p *AirLowering[F]) lowerConstraintToAir(c Constraint[F], airModule air.ModuleBuilder[F], bitwidths []uint) {
+func (p *AirLowering[F]) lowerConstraintToAir(c Constraint[F], airModule air.ModuleBuilder[F]) {
 	// Check what kind of constraint we have
 	switch v := c.constraint.(type) {
 	case Assertion[F]:
@@ -155,7 +153,7 @@ func (p *AirLowering[F]) lowerConstraintToAir(c Constraint[F], airModule air.Mod
 	case SortedConstraint[F]:
 		p.lowerSortedConstraintToAir(v, airModule)
 	case VanishingConstraint[F]:
-		p.lowerVanishingConstraintToAir(v, airModule, bitwidths)
+		p.lowerVanishingConstraintToAir(v, airModule)
 	default:
 		// Should be unreachable as no other constraint types can be added to a
 		// schema.
@@ -172,11 +170,10 @@ func (p *AirLowering[F]) lowerAssertionToAir(v Assertion[F], airModule air.Modul
 // straightforward and simply relies on lowering the expression being
 // constrained.  This may result in the generation of computed columns, e.g. to
 // hold inverses, etc.
-func (p *AirLowering[F]) lowerVanishingConstraintToAir(v VanishingConstraint[F], airModule air.ModuleBuilder[F],
-	bitwidths []uint) {
+func (p *AirLowering[F]) lowerVanishingConstraintToAir(v VanishingConstraint[F], airModule air.ModuleBuilder[F]) {
 	//
 	var (
-		terms = p.lowerAndSimplifyLogicalTo(v.Constraint, airModule, bitwidths)
+		terms = p.lowerAndSimplifyLogicalTo(v.Constraint, airModule)
 	)
 	//
 	for i, air_expr := range terms {
@@ -336,13 +333,13 @@ func (p *AirLowering[F]) lowerRegisterAccesses(terms ...*RegisterAccess[F]) []*a
 }
 
 func (p *AirLowering[F]) lowerAndSimplifyLogicalTo(term LogicalTerm[F],
-	airModule air.ModuleBuilder[F], bitwidths []uint) []air.Term[F] {
+	airModule air.ModuleBuilder[F]) []air.Term[F] {
 	// Expand term to remove all syntactic sugage
 	term = p.expandLogical(true, term)
 	// Apply all reasonable simplifications
 	term = term.Simplify(false)
 	// Lower properly
-	return simplify(p.lowerLogical(term, airModule, bitwidths))
+	return simplify(p.lowerLogical(term, airModule))
 }
 
 func (p *AirLowering[F]) expandLogical(sign bool, e LogicalTerm[F]) LogicalTerm[F] {
@@ -458,13 +455,13 @@ func (p *AirLowering[F]) expandNegativeIteTo(e *Ite[F]) LogicalTerm[F] {
 	return term.Disjunction(terms...)
 }
 
-func (p *AirLowering[F]) lowerLogical(e LogicalTerm[F], airMod air.ModuleBuilder[F], bitwidths []uint) []air.Term[F] {
+func (p *AirLowering[F]) lowerLogical(e LogicalTerm[F], airMod air.ModuleBuilder[F]) []air.Term[F] {
 	//
 	switch e := e.(type) {
 	case *Conjunct[F]:
-		return p.lowerConjunct(e, airMod, bitwidths)
+		return p.lowerConjunct(e, airMod)
 	case *Disjunct[F]:
-		return p.lowerDisjunct(e, airMod, bitwidths)
+		return p.lowerDisjunct(e, airMod)
 	case *Equal[F]:
 		return p.lowerEqualityTo(e, airMod)
 	case *NotEqual[F]:
@@ -475,30 +472,30 @@ func (p *AirLowering[F]) lowerLogical(e LogicalTerm[F], airMod air.ModuleBuilder
 	}
 }
 
-func (p *AirLowering[F]) lowerLogicals(terms []LogicalTerm[F], airMod air.ModuleBuilder[F], bitwidths []uint,
+func (p *AirLowering[F]) lowerLogicals(terms []LogicalTerm[F], airMod air.ModuleBuilder[F],
 ) [][]air.Term[F] {
 	nexprs := make([][]air.Term[F], len(terms))
 
 	for i := range len(terms) {
-		nexprs[i] = p.lowerLogical(terms[i], airMod, bitwidths)
+		nexprs[i] = p.lowerLogical(terms[i], airMod)
 	}
 
 	return nexprs
 }
 
-func (p *AirLowering[F]) lowerConjunct(e *Conjunct[F], airMod air.ModuleBuilder[F], bitwidths []uint) []air.Term[F] {
+func (p *AirLowering[F]) lowerConjunct(e *Conjunct[F], airMod air.ModuleBuilder[F]) []air.Term[F] {
 	var (
 		worklist []air.Term[F]
 		sums     []air.Term[F]
 	)
 	// flatten conjuncts
-	for _, ts := range p.lowerLogicals(e.Args, airMod, bitwidths) {
+	for _, ts := range p.lowerLogicals(e.Args, airMod) {
 		worklist = array.AppendAll(worklist, ts...)
 	}
 	//
 	for len(worklist) > 0 {
 		// determine length of next conjunct
-		n := p.nextSumConjunct(bitwidths, worklist)
+		n := p.nextSumConjunct(airMod, worklist)
 		// construct next sum
 		sums = append(sums, term.Sum(worklist[:n]...))
 		// Remove n terms from worklist
@@ -508,7 +505,7 @@ func (p *AirLowering[F]) lowerConjunct(e *Conjunct[F], airMod air.ModuleBuilder[
 	return sums
 }
 
-func (p *AirLowering[F]) lowerDisjunct(e *Disjunct[F], airMod air.ModuleBuilder[F], bitwidths []uint) []air.Term[F] {
+func (p *AirLowering[F]) lowerDisjunct(e *Disjunct[F], airMod air.ModuleBuilder[F]) []air.Term[F] {
 	var (
 		zero     = term.Const64[F, Term[F]](0)
 		nterms   []LogicalTerm[F]
@@ -525,7 +522,7 @@ func (p *AirLowering[F]) lowerDisjunct(e *Disjunct[F], airMod air.ModuleBuilder[
 	// Combine non-zero checks together
 	for len(worklist) > 0 {
 		// determine length of next packet
-		n := p.nextNonZeroCheck(worklist, bitwidths)
+		n := p.nextNonZeroCheck(worklist, airMod)
 		// construct next non-zero check
 		check := term.NotEquals[F, LogicalTerm[F]](term.Sum(worklist[:n]...), zero)
 		// append check
@@ -534,7 +531,7 @@ func (p *AirLowering[F]) lowerDisjunct(e *Disjunct[F], airMod air.ModuleBuilder[
 		worklist = worklist[n:]
 	}
 	// Continue as before
-	return disjunction(p.lowerLogicals(nterms, airMod, bitwidths)...)
+	return disjunction(p.lowerLogicals(nterms, airMod)...)
 }
 
 func (p *AirLowering[F]) lowerEqualityTo(e *Equal[F], airModule air.ModuleBuilder[F],
@@ -678,7 +675,7 @@ func simplify[F field.Element[F]](terms []air.Term[F]) []air.Term[F] {
 	return nterms
 }
 
-func (p *AirLowering[F]) nextSumConjunct(bitwidths []uint, terms []air.Term[F]) (n uint) {
+func (p *AirLowering[F]) nextSumConjunct(regs register.Map, terms []air.Term[F]) (n uint) {
 	//
 	var (
 		sum big.Int
@@ -687,7 +684,7 @@ func (p *AirLowering[F]) nextSumConjunct(bitwidths []uint, terms []air.Term[F]) 
 	for i := 0; i < len(terms); i++ {
 		var (
 			ith    = terms[i]
-			values = valueRangeOf(ith, bitwidths)
+			values = valueRangeOf(ith, regs)
 			minVal = values.MinValue()
 			maxVal = values.MaxValue()
 			signed = !minVal.IsNotAnInfinity() || minVal.Sign() < 0
@@ -712,7 +709,7 @@ func (p *AirLowering[F]) nextSumConjunct(bitwidths []uint, terms []air.Term[F]) 
 	return uint(len(terms))
 }
 
-func (p *AirLowering[F]) nextNonZeroCheck(checks []Term[F], bitwidths []uint) (n uint) {
+func (p *AirLowering[F]) nextNonZeroCheck(checks []Term[F], regs register.Map) (n uint) {
 	var (
 		// Bitwidth of current check
 		sum big.Int
@@ -721,7 +718,7 @@ func (p *AirLowering[F]) nextNonZeroCheck(checks []Term[F], bitwidths []uint) (n
 	for i := 0; i < len(checks); i++ {
 		var (
 			ith          = checks[i].(*RegisterAccess[F])
-			ith_bitwidth = bitwidths[ith.Register().Unwrap()]
+			ith_bitwidth = regs.Register(ith.Register()).WidthOrNative()
 		)
 		// Sanity check bitwidth
 		if ith_bitwidth == math.MaxUint {
@@ -801,13 +798,13 @@ func disjunction[F field.Element[F]](terms ...[]air.Term[F]) []air.Term[F] {
 	return nterms
 }
 
-func valueRangeOf[F field.Element[F]](term air.Term[F], bitwidths []uint) util_math.Interval {
+func valueRangeOf[F field.Element[F]](term air.Term[F], regs register.Map) util_math.Interval {
 	switch t := term.(type) {
 	case *air.Add[F]:
 		var res util_math.Interval
 
 		for i, arg := range t.Args {
-			ith := valueRangeOf(arg, bitwidths)
+			ith := valueRangeOf(arg, regs)
 			if i == 0 {
 				res.Set(ith)
 			} else {
@@ -817,15 +814,15 @@ func valueRangeOf[F field.Element[F]](term air.Term[F], bitwidths []uint) util_m
 		//
 		return res
 	case *air.ColumnAccess[F]:
-		var rid = t.Register().Unwrap()
+		var bitwidth = regs.Register(t.Register()).WidthOrNative()
 		// NOTE: the following is necessary because MaxUint is permitted as a signal
 		// that the given register has no fixed bitwidth.  Rather, it can consume
 		// all possible values of the underlying field element.
-		if rid >= uint(len(bitwidths)) || bitwidths[rid] == math.MaxUint {
+		if bitwidth == math.MaxUint {
 			return util_math.INFINITY
 		}
 		//
-		return valueRangeOfBits(bitwidths[rid])
+		return valueRangeOfBits(bitwidth)
 	case *air.Constant[F]:
 		var c big.Int
 		// Extract big integer from field element
@@ -836,7 +833,7 @@ func valueRangeOf[F field.Element[F]](term air.Term[F], bitwidths []uint) util_m
 		var res util_math.Interval
 
 		for i, arg := range t.Args {
-			ith := valueRangeOf(arg, bitwidths)
+			ith := valueRangeOf(arg, regs)
 			if i == 0 {
 				res.Set(ith)
 			} else {
@@ -849,7 +846,7 @@ func valueRangeOf[F field.Element[F]](term air.Term[F], bitwidths []uint) util_m
 		var res util_math.Interval
 
 		for i, arg := range t.Args {
-			ith := valueRangeOf(arg, bitwidths)
+			ith := valueRangeOf(arg, regs)
 			if i == 0 {
 				res.Set(ith)
 			} else {
@@ -871,17 +868,4 @@ func valueRangeOfBits(bitwidth uint) util_math.Interval {
 	bound.Sub(bound, &biONE)
 	// Done
 	return util_math.NewInterval(biZERO, *bound)
-}
-
-// This function goes through all the registers of the module to determine which
-// have type constraints and records their maximum bitwidths arising.
-func determineTrueBitwidths[F field.Element[F]](mirModule schema.Module[F]) []uint {
-	var bitwidths = make([]uint, mirModule.Width())
-	// put the register width into the array. Note that for zkc, all range are proven to be within the register width
-	// , so we can use the register width as the true bitwidth.
-	for i, r := range mirModule.Registers() {
-		bitwidths[i] = r.WidthOrNative()
-	}
-	//
-	return bitwidths
 }
