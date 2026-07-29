@@ -63,7 +63,7 @@ func NewVectorTranslator[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, 
 	//
 	return VectorInsnTranslator[W, F]{
 		ctx, pc, vec, enclosing, writeMap, branchTable, framing,
-		collectOneHotGroups[W](vec.Bytecodes),
+		collectOneHotGroups(vec.Bytecodes),
 	}
 }
 

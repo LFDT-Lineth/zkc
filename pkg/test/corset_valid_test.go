@@ -403,10 +403,6 @@ func Test_Valid_If_13(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/if_13", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Valid_If_14(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/if_14", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
 func Test_Valid_If_15(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/if_15", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }

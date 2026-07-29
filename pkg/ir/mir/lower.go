@@ -509,22 +509,29 @@ func (p *AirLowering[F]) lowerDisjunct(e *Disjunct[F], airMod air.ModuleBuilder[
 	var (
 		zero     = term.Const64[F, Term[F]](0)
 		nterms   []LogicalTerm[F]
-		worklist []Term[F]
+		worklist []nonZeroCheck[F]
 	)
 	// Split out suitable non-zero checks
 	for _, t := range e.Args {
-		if ra := isNonZeroCheck(t); ra != nil {
-			worklist = append(worklist, ra)
+		if check, ok := isNonZeroCheck(t, airMod); ok {
+			worklist = append(worklist, check)
 		} else {
 			nterms = append(nterms, t)
 		}
 	}
 	// Combine non-zero checks together
 	for len(worklist) > 0 {
-		// determine length of next packet
-		n := p.nextNonZeroCheck(worklist, airMod)
+		var (
+			// determine length of next packet
+			n     = p.nextNonZeroCheck(worklist)
+			terms = make([]Term[F], n)
+		)
+		//
+		for i := range terms {
+			terms[i] = worklist[i].term
+		}
 		// construct next non-zero check
-		check := term.NotEquals[F, LogicalTerm[F]](term.Sum(worklist[:n]...), zero)
+		check := term.NotEquals[F, LogicalTerm[F]](term.Sum(terms...), zero)
 		// append check
 		nterms = append(nterms, check)
 		// Remove n terms from worklist
@@ -542,7 +549,7 @@ func (p *AirLowering[F]) lowerEqualityTo(e *Equal[F], airModule air.ModuleBuilde
 		rhs air.Term[F] = p.lowerTermTo(e.Rhs, airModule)
 	)
 	//
-	return []air.Term[F]{term.Subtract(lhs, rhs)}
+	return []air.Term[F]{orientedSubtract(lhs, rhs, airModule)}
 }
 
 func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.ModuleBuilder[F],
@@ -551,7 +558,7 @@ func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.Module
 	var (
 		lhs air.Term[F] = p.lowerTermTo(e.Lhs, airModule)
 		rhs air.Term[F] = p.lowerTermTo(e.Rhs, airModule)
-		eq              = term.Subtract(lhs, rhs)
+		eq              = orientedSubtract(lhs, rhs, airModule)
 	)
 	//
 	one := term.Const64[F, air.Term[F]](1)
@@ -559,6 +566,28 @@ func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.Module
 	norm_eq := p.normalise(eq, airModule)
 	// construct 1 - norm(eq)
 	return []air.Term[F]{term.Subtract(one, norm_eq)}
+}
+
+// orientedSubtract constructs a term which vanishes exactly when lhs == rhs,
+// choosing whichever orientation of the subtraction has a non-negative value
+// range (where one exists).  By default this is lhs - rhs; however, when that
+// has a non-positive range the flipped form rhs - lhs is used instead.  For
+// example, given a register x range checked to u8, x - 255 lies in [-255, 0]
+// whilst 255 - x lies in [0, 255].  A non-negative orientation allows the term
+// to be summed with other non-negative terms into a single constraint (see
+// nextSumConjunct) and avoids unnecessary squaring during normalisation.
+func orientedSubtract[F field.Element[F]](lhs, rhs air.Term[F], regs register.Map) air.Term[F] {
+	var (
+		diff   = term.Subtract(lhs, rhs)
+		values = valueRangeOf(diff, regs)
+		maxVal = values.MaxValue()
+	)
+	//
+	if maxVal.IsNotAnInfinity() && maxVal.Sign() <= 0 {
+		return term.Subtract(rhs, lhs)
+	}
+	//
+	return diff
 }
 
 // Inner form is used for recursive calls and does not repeat the constant
@@ -709,28 +738,14 @@ func (p *AirLowering[F]) nextSumConjunct(regs register.Map, terms []air.Term[F])
 	return uint(len(terms))
 }
 
-func (p *AirLowering[F]) nextNonZeroCheck(checks []Term[F], regs register.Map) (n uint) {
+func (p *AirLowering[F]) nextNonZeroCheck(checks []nonZeroCheck[F]) (n uint) {
 	var (
 		// Bitwidth of current check
 		sum big.Int
 	)
 	//
 	for i := 0; i < len(checks); i++ {
-		var (
-			ith          = checks[i].(*RegisterAccess[F])
-			ith_bitwidth = regs.Register(ith.Register()).WidthOrNative()
-		)
-		// Sanity check bitwidth
-		if ith_bitwidth == math.MaxUint {
-			// terminate packet.  Observe that, we need to make sure at least
-			// one item is included in the next packet.
-			return uint(max(1, i))
-		}
-		//
-		ithRange := valueRangeOfBits(ith_bitwidth)
-		ithMax := ithRange.MaxIntValue()
-		//
-		sum.Add(&sum, &ithMax)
+		sum.Add(&sum, &checks[i].max)
 		//
 		if sum.BitLen() > int(p.fieldBandwidth) {
 			// terminate packet here
@@ -741,32 +756,67 @@ func (p *AirLowering[F]) nextNonZeroCheck(checks []Term[F], regs register.Map) (
 	return uint(len(checks))
 }
 
-func isNonZeroCheck[F field.Element[F]](term LogicalTerm[F]) *RegisterAccess[F] {
-	if t, ok := term.(*NotEqual[F]); ok {
-		var candidate Term[F]
-		//
-		if isZero(t.Lhs) {
-			candidate = t.Rhs
-		} else if isZero(t.Rhs) {
-			candidate = t.Lhs
-		} else {
-			return nil
-		}
-		// Final check
-		if ra, ok := candidate.(*RegisterAccess[F]); ok {
-			return ra
-		}
-	}
-	//
-	return nil
+// nonZeroCheck describes a disjunct known to be equivalent to "t ≠ 0" for some
+// term t whose value lies within [0, max].  Any number of such checks can be
+// combined into a single non-zero check over their sum, provided the sum of
+// their maxima cannot overflow the underlying field (see nextNonZeroCheck).
+type nonZeroCheck[F field.Element[F]] struct {
+	// Term guaranteed to lie within [0, max].
+	term Term[F]
+	// Maximum value the term can take.
+	max big.Int
 }
 
-func isZero[F field.Element[F]](term Term[F]) bool {
-	if c, ok := term.(*Constant[F]); ok {
-		return c.Value.IsZero()
+// isNonZeroCheck attempts to view a given disjunct as a non-zero check over a
+// term with a non-negative value range (see nonZeroCheck).  Two forms are
+// recognised for a register x range checked to w bits: "x ≠ 0", which is a
+// non-zero check on x itself; and "x ≠ 2^w-1", which is a non-zero check on
+// the complement 2^w-1 - x.
+func isNonZeroCheck[F field.Element[F]](t LogicalTerm[F], regs register.Map) (nonZeroCheck[F], bool) {
+	ne, ok := t.(*NotEqual[F])
+	//
+	if !ok {
+		return nonZeroCheck[F]{}, false
+	}
+	// Normalise register access on the left, constant on the right.
+	lhs, rhs := ne.Lhs, ne.Rhs
+	//
+	if _, ok := lhs.(*Constant[F]); ok {
+		lhs, rhs = rhs, lhs
 	}
 	//
-	return false
+	ra, raOk := lhs.(*RegisterAccess[F])
+	c, cOk := rhs.(*Constant[F])
+	//
+	if !raOk || !cOk {
+		return nonZeroCheck[F]{}, false
+	}
+	// NOTE: soundness of the complement form relies on the width enforced by
+	// the register's range constraints, hence the register map width is used
+	// here rather than any (narrower) mask applied by the access itself.
+	var width = regs.Register(ra.Register()).WidthOrNative()
+	// Registers of field type have no known bound
+	if width == math.MaxUint {
+		return nonZeroCheck[F]{}, false
+	}
+
+	var (
+		bounds = valueRangeOfBits(width)
+		maxVal = bounds.MaxIntValue()
+		cVal   big.Int
+	)
+	// Extract big integer from field element
+	cVal.SetBytes(c.Value.Bytes())
+	//
+	if cVal.Sign() == 0 {
+		// x ≠ 0 is a non-zero check on x itself
+		return nonZeroCheck[F]{lhs, maxVal}, true
+	} else if cVal.Cmp(&maxVal) == 0 {
+		// x ≠ max is a non-zero check on the complement max - x
+		return nonZeroCheck[F]{term.Subtract[F, Term[F]](rhs, lhs), maxVal}, true
+	}
+	//
+	return nonZeroCheck[F]{}, false
 }
 
 // Construct the disjunction lhs v rhs, where both lhs and rhs can be
