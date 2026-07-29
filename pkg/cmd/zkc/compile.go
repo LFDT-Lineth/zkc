@@ -128,22 +128,12 @@ func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildAr
 	// Generate AIR representation
 	air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 	// validate that all registers are referenced in at least one vanishing constraint or lookup
-	untouchedRegisterErrs := constraints.Validate(air)
-	if len(untouchedRegisterErrs) > 0 {
-		for _, err := range untouchedRegisterErrs {
-			log.Errorf("untouched register: %v", err)
-		}
-	}
-	// validate static tables size
-	staticTablesSizeErrs := constraints.ValidateStaticTablesSize(air)
-	if len(staticTablesSizeErrs) > 0 {
-		for _, err := range staticTablesSizeErrs {
-			log.Errorf("static table: %v", err)
-		}
-	}
 
-	// Exit with error if any errors triggered
-	if len(untouchedRegisterErrs) > 0 || len(staticTablesSizeErrs) > 0 {
+	if errs := constraints.Validate(air); len(errs) > 0 {
+		for _, err := range errs {
+			log.Errorf("%v", err)
+		}
+		// Exit with error if any errors triggered
 		os.Exit(1)
 	}
 }

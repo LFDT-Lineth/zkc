@@ -28,11 +28,17 @@ import (
 // Validate the given schema by ensuring that every register in every module is referenced in at least one vanishing
 // constraint.  If any such register is encountered, this should a suitable error which identifies the enclosing module
 // and register.
-func Validate[F field.Element[F]](schema sc.AnySchema[F]) []error {
-	var (
-		validated = make([]bit.Set, schema.Modules().Count())
-		errors    []error
-	)
+func Validate[F field.Element[F]](schema sc.AnySchema[F]) (errs []error) {
+	// Validate constraints (e.g. no dangling registers)
+	errs = validateConstraints(schema)
+	// Validate static tables (e.g. padded correctly)
+	errs = append(errs, validateStaticTables(schema)...)
+	// Done
+	return errs
+}
+
+func validateConstraints[F field.Element[F]](schema sc.AnySchema[F]) (errs []error) {
+	var validated = make([]bit.Set, schema.Modules().Count())
 	// Iterate each constraint, marking any registers it uses.
 	for iter := schema.Constraints(); iter.HasNext(); {
 		var c = iter.Next()
@@ -41,17 +47,22 @@ func Validate[F field.Element[F]](schema sc.AnySchema[F]) []error {
 	// Validate every register was marked
 	for iter, mid := schema.Modules(), 0; iter.HasNext(); mid++ {
 		var mod = iter.Next()
-		//
+		// Static reference tables and native modules naturally have dangling
+		// registers, and can be ignored.
+		if mod.IsStatic() || mod.IsNative() {
+			continue
+		}
+		// Check everything else.
 		for i, r := range mod.Registers() {
 			if !validated[mid].Contains(uint(i)) {
 				err := fmt.Errorf("dangling register \"%s\" in module \"%s\"", r.Name(), mod.Name().String())
 				//
-				errors = append(errors, err)
+				errs = append(errs, err)
 			}
 		}
 	}
 	//
-	return errors
+	return errs
 }
 
 func validateConstraint[F field.Element[F]](c sc.Constraint[F], validations []bit.Set) {
@@ -98,15 +109,15 @@ func validateLookupVector[F field.Element[F], T term.Evaluable[F]](v lookup.Vect
 	}
 }
 
-// ValidateStaticTablesSize validates that all static tables in the given schema have a power-of-two height.
-func ValidateStaticTablesSize[F field.Element[F]](schema sc.AnySchema[F]) []error {
+// validateStaticTables validates that all static tables in the given schema have a power-of-two height.
+func validateStaticTables[F field.Element[F]](schema sc.AnySchema[F]) []error {
 	var errors []error
 
 	for iter, mid := schema.Modules(), 0; iter.HasNext(); mid++ {
 		var mod = iter.Next()
 		if mod.IsStatic() {
 			if n := uint(len(mod.StaticContents())); n == 0 || n&(n-1) != 0 {
-				err := fmt.Errorf("static table \"%s\" has non power-of-two height (%d)", mod.Name().String(), n)
+				err := fmt.Errorf("height (%d) of static table \"%s\" not power-of-two", n, mod.Name().String())
 				errors = append(errors, err)
 			}
 		}
