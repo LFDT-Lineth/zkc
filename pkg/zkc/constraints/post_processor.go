@@ -34,6 +34,10 @@ type (
 // functions, this means transcribing each state generated for the function
 // during execution.
 type postProcess[W Word[W], F Element[F]] struct {
+	// field configuration of the trace being produced; needed to size the
+	// synthetic RAM timestamp columns (which split according to the field's
+	// register width) so they match the constraint schema.
+	field field.Config
 }
 
 // TraceFunction implementation for the vm.TraceProcessor interface.
@@ -58,6 +62,6 @@ func (p *postProcess[W, F]) TraceMemory(m vm.RuntimeMemory[W]) rtrace.ArrayModul
 	case vm.PRIVATE_WRITE_ONCE_MEMORY, vm.PUBLIC_WRITE_ONCE_MEMORY:
 		return post.ProcessAccessOnceMemory[W, F](m)
 	default:
-		return post.ProcessReadWriteMemory[W, F](m)
+		return post.ProcessReadWriteMemory[W, F](m, p.field)
 	}
 }

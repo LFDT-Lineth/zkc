@@ -132,7 +132,10 @@ func (p *ComputedRegister[F]) Compute(tr trace.Trace[F], schema schema.AnySchema
 	bitwidths := make([]uint, len(p.Targets))
 	//
 	for i, target := range p.Targets {
-		bitwidths[i] = scModule.Register(target).Width()
+		// WidthOrNative (not Width) so a native (field-element) target reports the
+		// native sentinel rather than panicking; the fill then stores its value
+		// whole rather than splitting it into fixed-width limbs.
+		bitwidths[i] = scModule.Register(target).WidthOrNative()
 	}
 	// Non-recursive computations can be parallelised across rows since each
 	// row's evaluation is independent.
@@ -183,12 +186,19 @@ func (p *ComputedRegister[F]) Compute(tr trace.Trace[F], schema schema.AnySchema
 // according to the given bitwidths.
 type fieldWordSplitter[F field.Element[F]] struct {
 	widths     []uint
+	native     bool
 	limit      word.BigEndian
 	workingSet []byte
 	limbBuf    [32]byte
 }
 
 func newFieldWordSplitter[F field.Element[F]](widths []uint) fieldWordSplitter[F] {
+	// A native (field-element) target is a single limb holding the whole value:
+	// there is nothing to split, so skip the fixed-width machinery.
+	if isNativeLimbs(widths) {
+		return fieldWordSplitter[F]{widths: widths, native: true}
+	}
+	//
 	totalBits := uint(0)
 	for _, width := range widths {
 		totalBits += width
@@ -201,7 +211,22 @@ func newFieldWordSplitter[F field.Element[F]](widths []uint) fieldWordSplitter[F
 	}
 }
 
+// isNativeLimbs reports whether the limb widths describe a single native
+// (field-element) target, signalled by the native sentinel width.
+func isNativeLimbs(widths []uint) bool {
+	return len(widths) == 1 && widths[0] == math.MaxUint
+}
+
 func (s *fieldWordSplitter[F]) write(row uint, val word.BigEndian, data [][]F) bool {
+	// Native target: store the whole value; nothing to split or bound-check.
+	if s.native {
+		var element F
+
+		data[0][row] = element.SetBytes(val.Bytes())
+		//
+		return true
+	}
+	//
 	if val.Cmp(s.limit) >= 0 {
 		return false
 	}
@@ -598,6 +623,13 @@ func bwdComputation(height uint, data [][]word.BigEndian, widths []uint, expr te
 }
 
 func write(row uint, val word.BigEndian, data [][]word.BigEndian, bitwidths []uint) {
+	// Native target: store the whole value (no split).
+	if isNativeLimbs(bitwidths) {
+		data[0][row] = val
+		//
+		return
+	}
+	//
 	var elements, ok = field.SplitWord[word.BigEndian](val, bitwidths)
 	// Only write data if value was within bounds; otherwise, leave as zero
 	// (which should be caught as a constraint failure if its invalid).

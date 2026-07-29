@@ -60,15 +60,19 @@ func flattenCallsFunction[W word.Word[W]](fn *descriptor.Function[W]) *descripto
 	)
 
 	for i, vec := range vectors {
-		// Decide, for each call in this vector, which arguments must be
+		// Decide, for each call / RAM access in this vector, which operands must be
 		// snapshotted.  This needs the whole vector body (to know which registers
-		// are written at or after each call), which the Map closure cannot see one
+		// are written at or after each site), which the Map closure cannot see one
 		// bytecode at a time.
-		snapshot := flattenableArgs[W](vec.Bytecodes)
+		callSnapshot := flattenableArgs[W](vec.Bytecodes)
+		rwSnapshot := flattenableRwOperands[W](vec.Bytecodes)
 		//
 		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
-			if call, ok := ith.(*bytecode.Call[W]); ok {
-				return flattenCall[W](call, snapshot[idx], alloc)
+			switch b := ith.(type) {
+			case *bytecode.Call[W]:
+				return flattenCall[W](b, callSnapshot[idx], alloc)
+			case *bytecode.ReadWrite[W]:
+				return flattenReadWrite[W](b, rwSnapshot[idx], alloc)
 			}
 			//
 			return []Bytecode[W]{ith}
@@ -133,4 +137,105 @@ func flattenCall[W word.Word[W]](call *bytecode.Call[W], snapshot []bool,
 		Arguments: args,
 		Returns:   call.Returns,
 	})
+}
+
+// rwSnapshot flags, per operand, which of a RAM access's lookup operands must be
+// snapshotted because their register is (re)written at or after the access in
+// the same vector.
+type rwSnapshot struct {
+	address, data, stamp []bool
+}
+
+// flattenableRwOperands returns, for each read-write memory access in the vector,
+// the operand positions whose register is written at or after the access.  The
+// caller->RAM lookup reads an access's address / value / stamp columns at the
+// access's row, so an operand rewritten in that same row (e.g. a loop counter
+// used as the address, or the working stamp incremented in place) would be read
+// post-write and mismatch the RAM table.  Snapshotting fixes this, exactly as for
+// call arguments.  A read's data registers are its outputs (defined by the
+// access itself, and legitimately read post-write), so they are never flagged.
+func flattenableRwOperands[W word.Word[W]](codes []Bytecode[W]) map[uint]rwSnapshot {
+	snapshot := make(map[uint]rwSnapshot)
+	//
+	for i, code := range codes {
+		rw, ok := code.(*bytecode.ReadWrite[W])
+		if !ok || len(rw.Stamp) == 0 {
+			continue
+		}
+		// Registers written from this access onwards.
+		written := make(map[bytecode.RegisterId]bool)
+		//
+		for _, later := range codes[i:] {
+			for _, r := range later.Definitions() {
+				written[r] = true
+			}
+		}
+		//
+		snapshot[uint(i)] = rwSnapshot{
+			address: flagWritten(rw.Address, written),
+			data:    flagWritten(rw.Data, written),
+			stamp:   flagWritten(rw.Stamp, written),
+		}
+	}
+	//
+	return snapshot
+}
+
+// flagWritten reports, per register, whether it appears in the written set.
+func flagWritten(regs []bytecode.RegisterId, written map[bytecode.RegisterId]bool) []bool {
+	flags := make([]bool, len(regs))
+	//
+	for i, r := range regs {
+		flags[i] = written[r]
+	}
+	//
+	return flags
+}
+
+// flattenReadWrite expands a RAM access, prefixing it with a snapshot
+// ("tmp = operand") for each flagged address / stamp operand (and, for a write,
+// value operand), and rewriting the access to read those temporaries.  A read's
+// data registers are its outputs and are left untouched.
+func flattenReadWrite[W word.Word[W]](rw *bytecode.ReadWrite[W], snapshot rwSnapshot,
+	registers split.Allocator[W]) []Bytecode[W] {
+	//
+	var (
+		insns   []Bytecode[W]
+		address = snapshotOperands[W](rw.Address, snapshot.address, &insns, registers)
+		stamp   = snapshotOperands[W](rw.Stamp, snapshot.stamp, &insns, registers)
+		data    = slices.Clone(rw.Data)
+	)
+	// A write's data are inputs (the value written) and may need snapshotting; a
+	// read's data are outputs (the value read) and must not be touched.
+	if rw.Write {
+		data = snapshotOperands[W](rw.Data, snapshot.data, &insns, registers)
+	}
+	//
+	return append(insns, &bytecode.ReadWrite[W]{
+		Write:   rw.Write,
+		Id:      rw.Id,
+		Address: address,
+		Data:    data,
+		Stamp:   stamp,
+	})
+}
+
+// snapshotOperands returns a copy of operands in which each flagged register is
+// replaced by a fresh temporary, appending the corresponding "tmp = operand"
+// snapshot instruction to insns.
+func snapshotOperands[W word.Word[W]](operands []bytecode.RegisterId, flags []bool,
+	insns *[]Bytecode[W], registers split.Allocator[W]) []bytecode.RegisterId {
+	//
+	out := slices.Clone(operands)
+	// flags may be shorter than (or absent for) operands of an access that needs
+	// no snapshotting (e.g. a stamp-less ROM/WOM read); treat missing as false.
+	for i, r := range out {
+		if i < len(flags) && flags[i] {
+			tmp := registers.Allocate("", registers.Register(r).Bitwidth())
+			*insns = append(*insns, bytecode.Assign[W](tmp, r))
+			out[i] = tmp
+		}
+	}
+	//
+	return out
 }

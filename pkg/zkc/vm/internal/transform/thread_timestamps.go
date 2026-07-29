@@ -247,18 +247,30 @@ func threadCall[W word.Word[W]](mods []descriptor.Module[W], call *bytecode.Call
 
 // seedStamps returns the instructions initialising each working stamp at the
 // start of a function: a copy from the stamp-in parameter, or (for main) a load
-// of zero.
+// of one.
+//
+// main seeds the stamp at ONE so the first memory access carries timestamp 1
+// (timestamp 0 is reserved for the initial state of an untouched cell).  The
+// caller->RAM lookup reads the access's stamp operand, which FlattenCalls
+// snapshots to a temporary before the in-place increment, so it reads the
+// PRE-increment value: access k then carries stamp 1+k, matching the
+// interpreter's clock (which ticks before each access, so access k sees clock
+// 1+k).  The RAM consistency constraint TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 +
+// TIMESTAMP_DELTA then holds for the first access to any address (TIMESTAMP_READ
+// = 0, TIMESTAMP_DELTA >= 0).
 func seedStamps[W word.Word[W]](effects []descriptor.ModuleId,
 	cur, stampIn map[descriptor.ModuleId]bytecode.RegisterId, isMain bool) []Bytecode[W] {
 	//
 	var (
 		codes []Bytecode[W]
-		zero  W
+		one   W
 	)
+	//
+	one = one.SetUint64(1)
 	//
 	for _, e := range effects {
 		if isMain {
-			codes = append(codes, bytecode.LoadConst[W](cur[e], zero))
+			codes = append(codes, bytecode.LoadConst[W](cur[e], one))
 		} else {
 			codes = append(codes, bytecode.Concat[W](
 				[]bytecode.RegisterId{cur[e]}, []bytecode.RegisterId{stampIn[e]}))
