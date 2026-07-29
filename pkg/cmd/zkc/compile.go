@@ -133,8 +133,6 @@ func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildAr
 		for _, err := range untouchedRegister {
 			log.Errorf("untouched register: %v", err)
 		}
-		//
-		os.Exit(1)
 	}
 	// validate static tables size
 	staticTablesSizeErrs := constraints.ValidateStaticTablesSize(air)
@@ -144,6 +142,7 @@ func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildAr
 		}
 	}
 
+	// Exit with error if any errors triggered
 	if len(untouchedRegister) > 0 || len(staticTablesSizeErrs) > 0 {
 		os.Exit(1)
 	}

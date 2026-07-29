@@ -105,7 +105,7 @@ func ValidateStaticTablesSize[F field.Element[F]](schema sc.AnySchema[F]) []erro
 	for iter, mid := schema.Modules(), 0; iter.HasNext(); mid++ {
 		var mod = iter.Next()
 		if mod.IsStatic() {
-			if n := uint(len(mod.StaticContents())); n-1&n != 0 {
+			if n := uint(len(mod.StaticContents())); n == 0 || n&(n-1) != 0 {
 				err := fmt.Errorf("static table \"%s\" has non power-of-two height (%d)", mod.Name().String(), n)
 				errors = append(errors, err)
 			}
