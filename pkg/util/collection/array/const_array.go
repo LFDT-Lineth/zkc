@@ -38,11 +38,6 @@ func NewConstantArray[T word.Word[T]](height uint, bitwidth uint, value T) *Cons
 	return &ConstantArray[T]{height, bitwidth, value}
 }
 
-// Append new word on this array
-func (p *ConstantArray[T]) Append(word T) MutArray[T] {
-	return p.Pad(0, 1, word)
-}
-
 // Clone makes clones of this array producing an otherwise identical copy.
 func (p *ConstantArray[T]) Clone() MutArray[T] {
 	return &ConstantArray[T]{p.height, p.bitwidth, p.value}
@@ -82,7 +77,7 @@ func (p *ConstantArray[T]) Set(index uint, word T) MutArray[T] {
 }
 
 // Pad implementation for MutArray interface.
-func (p *ConstantArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
+func (p *ConstantArray[T]) Pad(n uint, m uint, padding T) {
 	if !padding.Equals(p.value) {
 		// NOTE: this can be implemented by changing the representation to
 		// something which can be mutated.
@@ -90,8 +85,6 @@ func (p *ConstantArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
 	}
 	//
 	p.height += n + m
-	//
-	return p
 }
 
 // Slice out a subregion of this array.

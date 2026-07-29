@@ -188,20 +188,15 @@ func allocArray[F field.Element[F]](bitwidth uint, height uint) narray.MutArray[
 	case bitwidth == 0:
 		return narray.NewConstantArray(height, 0, zero)
 	case bitwidth == 1:
-		var x = narray.NewBitArray[F](height)
-		return &x
+		return narray.NewBitArray[F](height)
 	case bitwidth <= 8 && width >= 8:
-		var x = narray.NewSmallArray[uint8, F](height, bitwidth)
-		return &x
+		return narray.NewSmallArray[uint8, F](height, bitwidth)
 	case bitwidth <= 16 && width >= 16:
-		var x = narray.NewSmallArray[uint16, F](height, bitwidth)
-		return &x
+		return narray.NewSmallArray[uint16, F](height, bitwidth)
 	case bitwidth <= 32 && width >= 32:
-		var x = narray.NewSmallArray[uint32, F](height, bitwidth)
-		return &x
+		return narray.NewSmallArray[uint32, F](height, bitwidth)
 	case bitwidth <= 64 && width >= 64:
-		var x = narray.NewSmallArray[uint64, F](height, bitwidth)
-		return &x
+		return narray.NewSmallArray[uint64, F](height, bitwidth)
 	default:
 		return narray.NewStaticArray[F](height, bitwidth)
 	}

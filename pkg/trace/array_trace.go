@@ -386,7 +386,7 @@ func (p *ArrayColumn[W]) String() string {
 func (p *ArrayColumn[W]) pad(front uint, back uint) {
 	if p.data != nil {
 		// Pad front of array
-		p.data = p.data.Pad(front, back, p.padding)
+		p.data.Pad(front, back, p.padding)
 	}
 }
 

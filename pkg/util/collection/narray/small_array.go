@@ -29,12 +29,12 @@ type SmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]] struct {
 }
 
 // NewSmallArray constructs a new word array with a given capacity.
-func NewSmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]](height uint, bitwidth uint) SmallArray[K, T] {
+func NewSmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]](height uint, bitwidth uint) *SmallArray[K, T] {
 	var (
 		elements = make([]K, height)
 	)
 	//
-	return SmallArray[K, T]{elements, bitwidth}
+	return &SmallArray[K, T]{elements, bitwidth}
 }
 
 // Append new word on this array

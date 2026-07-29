@@ -57,12 +57,6 @@ func (p *BitArray[T]) Len() uint {
 	return p.height
 }
 
-// Append new word on this array
-func (p *BitArray[T]) Append(word T) MutArray[T] {
-	p.Pad(0, 1, word)
-	return p
-}
-
 // BitWidth returns the width (in bits) of elements in this array.
 func (p *BitArray[T]) BitWidth() uint {
 	return 1
@@ -90,7 +84,7 @@ func (p *BitArray[T]) Get(index uint) T {
 }
 
 // Pad implementation for MutArray interface.
-func (p *BitArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
+func (p *BitArray[T]) Pad(n uint, m uint, padding T) {
 	// Front padding
 	if n > 0 {
 		p.insertBits(n, padding)
@@ -99,8 +93,6 @@ func (p *BitArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
 	if m > 0 {
 		p.appendBits(m, padding)
 	}
-	//
-	return p
 }
 
 // Set sets the field element at the given index in this array, overwriting the
@@ -165,10 +157,25 @@ func (p *BitArray[T]) insertBits(n uint, padding T) {
 	var (
 		height    = p.height + n
 		bytewidth = word.ByteWidth(height)
-		data      = make([]byte, bytewidth)
+		data      = p.data
 	)
-	// copy
-	bit.LittleEndianCopy(p.data, 0, data, n, p.height)
+	//
+	if uint(cap(data)) < bytewidth {
+		// Insufficient capacity: allocate exactly, copying existing bits
+		// directly into their final position.
+		data = make([]byte, bytewidth)
+		bit.LittleEndianCopy(p.data, 0, data, n, p.height)
+	} else {
+		// Sufficient capacity: extend and shift in place.  Freshly exposed
+		// bytes are zeroed so that bits beyond the new height read as zero
+		// (the shift only ever moves zeros into them).
+		oldwidth := uint(len(data))
+		data = data[:bytewidth]
+		clear(data[oldwidth:])
+		//
+		shiftBitsRight(data, p.height, n)
+	}
+	//
 	p.data = data
 	// assign
 	for i := range n {
@@ -182,10 +189,22 @@ func (p *BitArray[T]) appendBits(n uint, padding T) {
 	var (
 		height    = p.height + n
 		bytewidth = word.ByteWidth(height)
-		data      = make([]byte, bytewidth)
+		data      = p.data
 	)
-	// copy
-	copy(data, p.data)
+	//
+	if uint(cap(data)) < bytewidth {
+		// Insufficient capacity: allocate exactly, copying existing data
+		// directly into place.
+		data = make([]byte, bytewidth)
+		copy(data, p.data)
+	} else {
+		// Sufficient capacity: extend in place, zeroing freshly exposed bytes
+		// so that bits beyond the new height read as zero.
+		oldwidth := uint(len(data))
+		data = data[:bytewidth]
+		clear(data[oldwidth:])
+	}
+	//
 	p.data = data
 	// assign
 	for i := p.height; i < height; i++ {
@@ -193,4 +212,31 @@ func (p *BitArray[T]) appendBits(n uint, padding T) {
 	}
 	// done
 	p.height = height
+}
+
+// shiftBitsRight shifts the first height bits of data right (i.e. towards
+// higher bit offsets) by n positions, in place.  Bytes are processed from the
+// most significant end backwards, so the overlapping source and destination
+// regions are handled correctly (unlike bit.LittleEndianCopy, which copies
+// forwards).  The vacated low n bits are left holding garbage, which callers
+// are expected to overwrite.
+func shiftBitsRight(data []byte, height uint, n uint) {
+	if height == 0 || n == 0 {
+		return
+	}
+	//
+	var (
+		// Whole-byte and residual components of the shift.
+		k = n / 8
+		s = n % 8
+		// Last byte holding a shifted bit.
+		last = (height + n - 1) / 8
+	)
+	// NOTE: when s == 0 the second term shifts by eight which, in Go, yields
+	// zero — degenerating into a pure byte move.
+	for j := last; j > k; j-- {
+		data[j] = (data[j-k] << s) | (data[j-k-1] >> (8 - s))
+	}
+	// Lowest destination byte has no byte below it.
+	data[k] = data[0] << s
 }

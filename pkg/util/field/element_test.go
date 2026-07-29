@@ -82,7 +82,7 @@ func (e elementArray) Set(u uint, t koalabear.Element) array.MutArray[koalabear.
 	return e
 }
 
-func (e elementArray) Pad(u uint, u2 uint, t koalabear.Element) array.MutArray[koalabear.Element] {
+func (e elementArray) Pad(u uint, u2 uint, t koalabear.Element) {
 	panic("not implemented")
 }
 

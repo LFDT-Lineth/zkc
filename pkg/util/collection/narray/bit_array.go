@@ -39,13 +39,13 @@ type BitArray[T word.Word[T]] struct {
 }
 
 // NewBitArray constructs a new word array with a given capacity.
-func NewBitArray[T word.Word[T]](height uint) BitArray[T] {
+func NewBitArray[T word.Word[T]](height uint) *BitArray[T] {
 	var (
 		bytewidth = word.ByteWidth(height)
 		elements  = make([]byte, bytewidth)
 	)
 	//
-	return BitArray[T]{elements, height}
+	return &BitArray[T]{elements, height}
 }
 
 // Len returns the number of elements in this word array.

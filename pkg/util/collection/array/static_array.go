@@ -39,11 +39,6 @@ func RawStaticArray[T any](data []T, bitwidth uint) *StaticArray[T] {
 	return &StaticArray[T]{data, bitwidth}
 }
 
-// Append new word on this array
-func (p *StaticArray[T]) Append(word T) MutArray[T] {
-	return p.Pad(0, 1, word)
-}
-
 // Len returns the number of elements in this word array.
 func (p *StaticArray[T]) Len() uint {
 	//
@@ -84,28 +79,40 @@ func (p *StaticArray[T]) Slice(start uint, end uint) Array[T] {
 	}
 }
 
-// Pad prepend array with n copies and append with m copies of the given padding
-// value.
-func (p *StaticArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
+// Pad prepends this array with n copies, and appends it with m copies, of the
+// given padding value.
+func (p *StaticArray[T]) Pad(n uint, m uint, padding T) {
 	var (
+		ol = p.Len()
 		// Determine new length
-		l = n + m + p.Len()
-		// Initialise new array
-		data = make([]T, l)
+		l = n + ol + m
+		//
+		data = p.data
 	)
-	// copy
-	copy(data[n:], p.data)
-	p.data = data
+	//
+	if uint(cap(data)) < l {
+		// Insufficient capacity: allocate exactly, copying existing data
+		// directly into its final position.
+		data = make([]T, l)
+		copy(data[n:], p.data)
+	} else {
+		// Sufficient capacity: extend and shift in place.
+		data = data[:l]
+		//
+		if n > 0 {
+			copy(data[n:], data[:ol])
+		}
+	}
 	// Front padding!
 	for i := range n {
-		p.Set(i, padding)
+		data[i] = padding
 	}
 	// Back padding!
 	for i := l - m; i < l; i++ {
-		p.Set(i, padding)
+		data[i] = padding
 	}
-	//
-	return p
+	// done
+	p.data = data
 }
 
 func (p *StaticArray[T]) String() string {

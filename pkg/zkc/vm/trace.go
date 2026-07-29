@@ -61,6 +61,7 @@ func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n
 		// converted into a slice of field elements F.
 		tracer.TraceFunctionLine(State[W]{fid, pc, terminal, frame})
 	})
+	// TODO: reinstate memory log #2067
 	// Install a recording access log on each read-write memory so its reads and
 	// writes are captured during execution (consumed at post-processing by
 	// ProcessReadWriteMemory).  Trace-only: fast execution keeps the no-op log.

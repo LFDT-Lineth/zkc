@@ -191,7 +191,7 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 		// Construct trace builder
 		builder := ir.NewTraceBuilder[F]().
 			WithValidation(cfg.validate).
-			WithDefensivePadding(true).
+			WithDefensivePadding(false).
 			WithExpansionChecks(true).
 			WithExpansion(true).
 			WithParallelism(cfg.parallel).
