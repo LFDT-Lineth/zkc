@@ -65,7 +65,7 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 		_, branchTable := vec.BranchTable(field.RegisterWidth)
 		// One-hot register groups declared by the vector's Dispatch bytecodes,
 		// used to shorten the selector conditions below.
-		oneHot := collectOneHotGroups[W](vec.Bytecodes)
+		oneHot := collectOneHotGroups(vec.Bytecodes)
 		// Group the lookup-emitting bytecodes by the branch condition under
 		// which they execute, so accesses sharing a condition share a single
 		// source selector (column).
@@ -164,71 +164,27 @@ outer:
 func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
 	ret register.Id) register.Id {
-	// In a multi-line caller the call only fires on rows executing its line, so
-	// fold the line's PC selector (IS_PC_k != 0) into the condition as an
-	// extra single-bit atom.  An atomic caller has no line selectors, so its
-	// gating is the branch condition alone.
+	// Position register gating the rows of this access: the line's IS_PC_k
+	// selector for a multi-line function, or $ret for an atomic one (defining
+	// the non-padding region).
+	var position register.Id
+	//
 	if len(pcSelectors) != 0 {
-		isPc := logical.NotEqualsConst(dfa.NewBranchId(false, pcSelectors[pc]), big.Int{})
-		cond = cond.And(logical.NewProposition(isPc))
+		position = pcSelectors[pc]
 	} else {
-		// Atomic caller: also gate on $ret so padding rows don't trigger lookups.
-		iomf := logical.NotEqualsConst(dfa.NewBranchId(false, ret), big.Int{})
-		cond = cond.And(logical.NewProposition(iomf))
+		position = ret
 	}
-	// The folded condition carries at least the position/padding atom, so it
-	// can never be trivially true.
+	// An unconditional access is gated by position alone, so the position
+	// register (already 1 exactly on its rows) serves directly as selector.
 	if cond.IsTrue() {
-		panic("lookup source condition must be gated by IS_PC_k / $ret")
+		return position
 	}
-	// The (gated) condition is already a single materialised boolean: reuse it
-	// directly, with no fresh column.
-	if b, ok := singleBitGuard(cond, regs); ok {
-		return b
-	}
-	// General case: materialise a fresh path selector column.
+	// Conditional access: fold the position atom (position != 0) into the
+	// condition and materialise it as a fresh path selector column.
+	posAtom := logical.NotEqualsConst(dfa.NewBranchId(false, position), big.Int{})
+	cond = cond.And(logical.NewProposition(posAtom))
+	//
 	return newPathSelector(mod, ctx, regs, cond)
-}
-
-// singleBitGuard recognises a branch condition which is, over a single register
-// b, either "b != 0" or "b == 1" — both of which are 1 exactly when the guarded
-// path is taken, so b can serve directly as the lookup selector.  Other forms
-// ("b == 0", "b != 1", a register-valued or non-{0,1} RHS, a multi-register
-// group) cannot, and fall back to a materialised path selector column.
-//
-// Such a guard is always materialised on a 1-bit register by
-// FactorSkipConditions, so a wider operand here indicates a broken invariant
-// and panics.
-func singleBitGuard(cond dfa.BranchCondition, regs []register.Register) (register.Id, bool) {
-	conjuncts := cond.Conjuncts()
-	if len(conjuncts) != 1 {
-		return register.UnusedId(), false
-	}
-	//
-	atoms := conjuncts[0].Atoms()
-	if len(atoms) != 1 {
-		return register.UnusedId(), false
-	}
-	// Require a single register compared against a constant.
-	atom := atoms[0]
-	if atom.Left.Width != 1 || !atom.Right.HasSecond() {
-		return register.UnusedId(), false
-	}
-	// Only "b != 0" (inequality vs 0) and "b == 1" (equality vs 1) let us reuse b.
-	rhs := atom.Right.Second()
-	neqZero := !atom.Sign && rhs.Sign() == 0
-	eqOne := atom.Sign && rhs.Cmp(big.NewInt(1)) == 0
-	//
-	if !neqZero && !eqOne {
-		return register.UnusedId(), false
-	}
-	// The operand must be a genuine boolean (1-bit) register.
-	id := atom.Left.Id
-	if w := regs[id.Unwrap()].Width(); w != 1 {
-		panic(fmt.Sprintf("expected 1-bit branch register for lookup guard, got width %d", w))
-	}
-	//
-	return id, true
 }
 
 // newPathSelector creates a fresh 1-bit column gating a conditionally executed
