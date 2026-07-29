@@ -61,8 +61,6 @@ var traceFlags FlagChecks
 func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
 		build = GetBuildConfig[F](cmd, field)
-		//
-		traceConfig = constraints.DEFAULT_TRACE_CONFIG
 		// outputFile file for trace
 		outputFile = GetString(cmd, "output")
 		// check constraints
@@ -82,6 +80,10 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		fmt.Println("error: \"trace\" does not support fast mode (use \"execute\" instead)")
 		os.Exit(1)
 	}
+	// Configure tracing
+	traceConfig := constraints.DEFAULT_TRACE_CONFIG.
+		WithPadding(build.padding).
+		WithBatchSize(GetUint(cmd, "batch"))
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	artifacts := Build[F](build, args[1:]...)
 	// Translate bytecode => word machine
@@ -152,6 +154,7 @@ func init() {
 	traceCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	traceCmd.Flags().Bool("stats", false, "show overall stats for the generated trace")
 	traceCmd.Flags().BoolP("inspect", "i", false, "open the generated trace in the interactive inspector")
+	traceCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
 }
 
 // publicModule reports whether a module is publicly visible in the inspector.
