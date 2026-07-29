@@ -1,4 +1,5 @@
 fn main() {
     var items:[u8;3]
+    items[0] = 0
     return
 }

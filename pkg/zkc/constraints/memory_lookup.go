@@ -88,13 +88,13 @@ func addMemoryLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir
 	}
 	//
 	for _, memId := range order {
-		emitMemoryLookup[W, F](mod, ctx, callerRegs, memId, infos[memId].(*vm.Memory[W]), sites[memId], fieldCfg)
+		emitRamLookup[W, F](mod, ctx, callerRegs, memId, infos[memId].(*vm.Memory[W]), sites[memId], fieldCfg)
 	}
 }
 
-// emitMemoryLookup creates the RAM-port columns for one accessed memory, fills
+// emitRamLookup creates the RAM-port columns for one accessed memory, fills
 // and binds them, and emits the single caller->RAM lookup.
-func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	callerRegs []register.Register, memId uint16, mem *vm.Memory[W], sites []accessSite[W], fieldCfg field.Config) {
 	//
 	var (

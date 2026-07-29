@@ -183,7 +183,7 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		// Apply function inlining
 		program = vm.InlineFunctions(program, inlines)
 	}
-	//
+
 	if p.config.fastMode {
 		// Apply transforms suitable for fast mode
 		program = vm.OptimizeDivisions(program)
@@ -196,6 +196,13 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		}
 	} else {
 		// Apply transformations required for tracing and constraint generation.
+		//
+		// Lower field casts (𝔽↔uint) first: the canonicality check for 𝔽→uint is
+		// emitted as a high-level "value < P" comparison, which the comparison
+		// and register-splitting passes below then turn into a subtract-with-
+		// borrow chain.  It must therefore run before LowerComparisons and
+		// SplitRegisters.
+		program = vm.LowerFieldCasts(program)
 		program = vm.LowerBitwise(program)
 		program = vm.LowerDivisions(program)
 		program = vm.LowerComparisons(program)
@@ -208,7 +215,9 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		}
 		// Lower AND/OR/XOR after splitting
 		program = vm.LowerOrXorAnd(program, p.config.maxStaticDepth)
-		program = vm.FlattenCalls(program)
+		// Add tmp registers to hold lookup arguments (from calls and memread / write)
+		// when they are rewritten in the same vector (ex: x = f(x) or y = f(x); x = x + 1)
+		program = vm.FlattenLookupAccess(program)
 		//
 		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticDepth)
 	}

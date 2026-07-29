@@ -97,7 +97,8 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	config.stats = GetFlag(cmd, "stats")
 	config.order = GetString(cmd, "order")
 	config.ir = !(config.ast || config.mir || config.air || config.stats)
-	config.verbose = GetFlag(cmd, "verbose")
+	// Compile verbosity is the highest verbosity level.
+	config.verbose = GetVerboseLevel(cmd) >= VERBOSE_PRINTF
 	// Build all artifacts
 	artifacts := Build[F](build, args...)
 	//
@@ -107,6 +108,8 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		// Print out requested artifacts
 		printArtifacts[F](field, artifacts, config)
 	}
+	// perform validation
+	validateArtifacts[F](field, artifacts, config)
 }
 
 func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, artifacts BuildArtifacts) {
@@ -115,6 +118,22 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, arti
 		build.config.GetMaxStaticDepth(), artifacts.ir)
 	// Write to disk
 	WriteBinaryFile(binfile, filename)
+}
+
+// Validate the given schema by ensuring that every register in every module is referenced in at least one vanishing
+// constraint or lookup.  If any such register is encountered, this fires errors which identify the enclosing
+// modules and registers.
+func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
+	// Generate AIR representation
+	air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
+	// Perform validation check
+	if errs := constraints.Validate(air); len(errs) > 0 {
+		for _, err := range errs {
+			log.Errorf("untouched register: %v", err)
+		}
+		//
+		os.Exit(1)
+	}
 }
 
 func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
@@ -164,7 +183,7 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 			preSplit, _ = ast.Compile(artifacts.ast.Unwrap(), config.build.config.SplitRegisters(false))
 		}
 		//
-		PrintCompileStats[F](air, preSplit, config.order)
+		PrintCompileStats(air, preSplit, config.order)
 	}
 }
 
@@ -615,7 +634,7 @@ func writeBytecodeFunction[W vm.Word[W]](listing *bytecodeListing, address uint3
 			} else {
 				row.text = b.String(env)
 				// A skip's range spans from this row to each of its targets.
-				for _, target := range vm.SkipTargets[W](b, idx) {
+				for _, target := range vm.SkipTargets(b, idx) {
 					flow.Add(idx, target)
 				}
 			}

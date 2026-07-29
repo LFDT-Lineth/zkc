@@ -492,6 +492,10 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 			insn.Constant)
 	case *bytecode.Cat[W]:
 		return bytecode.Concat[W](substituteIds(insn.Targets, sub), substituteIds(insn.Sources, sub))
+	case *bytecode.UintToField[W]:
+		return &bytecode.UintToField[W]{Target: substituteId(insn.Target, sub), Source: substituteIds(insn.Source, sub)}
+	case *bytecode.FieldToUint[W]:
+		return &bytecode.FieldToUint[W]{Target: substituteIds(insn.Target, sub), Source: substituteId(insn.Source, sub)}
 	case *bytecode.Call[W]:
 		return bytecode.CallFun[W](insn.Target, substituteIds(insn.Arguments, sub),
 			substituteIds(insn.Returns, sub))
@@ -515,7 +519,7 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 		return insn
 	case *bytecode.SkipIf[W]:
 		return &bytecode.SkipIf[W]{Op: insn.Op, Skip: insn.Skip,
-			Left: substituteRegisterVector(insn.Left, sub), Right: substituteRegisterVector(insn.Right, sub)}
+			Left: substituteRegisterVector(insn.Left, sub), Right: substituteOperandVector(insn.Right, sub)}
 	case *bytecode.Switch[W]:
 		return bytecode.MultiwaySkip(substituteId(insn.Source, sub), insn.Cases)
 	case *bytecode.Debug[W]:
@@ -545,6 +549,18 @@ func substituteIds(ids []bytecode.RegisterId, sub []bytecode.RegisterId) []bytec
 	}
 	//
 	return nids
+}
+
+func substituteOperandVector[W word.Word[W]](v bytecode.Operand[W], sub []bytecode.RegisterId,
+) bytecode.Operand[W] {
+	//
+	if v.IsConstant() {
+		return v
+	}
+	//
+	rvec := substituteRegisterVector(v.AsRegisterVector(), sub)
+	//
+	return bytecode.NewRegisterVectorOperand[W](rvec)
 }
 
 // substituteRegisterVector reconstructs a register vector with each constituent register

@@ -48,16 +48,22 @@ type VectorInsnTranslator[W vm.Word[W], F field.Element[F]] struct {
 	writeMap    dfa.Result[dfa.Writes]
 	branchTable dfa.Result[dfa.Path[W]]
 	framing     Framing[F]
+	// oneHot holds the one-hot register groups declared by the vector's
+	// Dispatch bytecodes, used to shorten branch conditions at translation.
+	oneHot []oneHotGroup
 }
 
 // NewVectorTranslator constructs a translator for a specific bytecode vector.
 func NewVectorTranslator[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, pc uint,
-	vec vm.BytecodeVector[W], framing Framing[F], enclosing *vm.Function[W]) VectorInsnTranslator[W, F] {
+	vec vm.BytecodeVector[W], framing Framing[F], enclosing *vm.Function[W],
+	field field.Config) VectorInsnTranslator[W, F] {
+	//
 	// generate writeMap & branch table
-	writeMap, branchTable := vec.BranchTable()
+	writeMap, branchTable := vec.BranchTable(field.RegisterWidth)
 	//
 	return VectorInsnTranslator[W, F]{
 		ctx, pc, vec, enclosing, writeMap, branchTable, framing,
+		collectOneHotGroups[W](vec.Bytecodes),
 	}
 }
 
@@ -86,8 +92,8 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			continue
 		case *vm.BytecodeCall[W], *vm.BytecodeReadWrite[W]:
 			// Translation of calls, and memory read/write is done at the function
-			// level, as it modifies the module itself (adding source selectors),
-			// requires knowledge of target modules, etc.
+			// level (see addLookups), as it modifies the module itself (adding
+			// source selectors), requires knowledge of target modules, etc.
 			continue
 		case *vm.BytecodeCheckCast[W]:
 			// Width checks are enforced by the range-proof constraints emitted for
@@ -144,6 +150,16 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			it := InstructionTranslator[W, F]{p, localWrites}
 			// translate concatenation assignment
 			local = it.translateConcat(c.Targets, c.Sources, p.sourceWidths(c.Sources))
+		case *vm.BytecodeUintToField[W]:
+			it := InstructionTranslator[W, F]{p, localWrites}
+			// uint→𝔽: the native target equals the assembled sources modulo P
+			// (field equality is modulo P, so no explicit reduction is needed).
+			local = it.translateConcat([]vm.RegisterId{c.Target}, c.Source, p.sourceWidths(c.Source))
+		case *vm.BytecodeFieldToUint[W]:
+			it := InstructionTranslator[W, F]{p, localWrites}
+			// 𝔽→uint: the assembled target limbs equal the native source.
+			local = it.translateConcat(c.Target, []vm.RegisterId{c.Source},
+				p.sourceWidths([]vm.RegisterId{c.Source}))
 		case *vm.BytecodeRet[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Return()
@@ -153,14 +169,19 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			// constraint is generated here, since correctness is enforced by
 			// subsequent arithmetic checks.
 			continue
-		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeSwitch[W]:
+		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeDispatch[W]:
 			// control flow is captured via the branch table; no constraint here
 			continue
+		case *vm.BytecodeSwitch[W]:
+			// Switch bytecodes are rewritten by LowerSwitch when compiling
+			// the bci code; one surviving to this point indicates a broken
+			// transform pipeline.
+			panic("unlowered switch bytecode reached constraint translation")
 		default:
 			panic(fmt.Sprintf("unexpected bytecode (%T)", c))
 		}
 		//
-		condition := TranslateBranchCondition(p.branchTable.StateOf(cc), p)
+		condition := TranslateBranchCondition(p.branchTable.StateOf(cc), p.oneHot, p)
 		// Add control-flow requirements
 		local = mirc.If(condition, local)
 		// Include local constraint
@@ -237,7 +258,7 @@ func (p *VectorInsnTranslator[W, F]) determineConstancyCondition(reg register.Id
 		if containsRegister(c.Definitions(), reg) {
 			var (
 				pathCondition = branchTable.StateOf(uint(i))
-				nc            = TranslateNegatedBranchCondition(pathCondition, p)
+				nc            = TranslateNegatedBranchCondition(pathCondition, p.oneHot, p)
 			)
 			//
 			condition = condition.And(nc)
@@ -252,7 +273,7 @@ func (p *VectorInsnTranslator[W, F]) RegisterWidths(regs ...io.RegisterId) []uin
 	var widths = make([]uint, len(regs))
 	//
 	for i, r := range regs {
-		widths[i] = p.Register(r).Width()
+		widths[i] = p.Register(r).WidthOrNative()
 	}
 	//
 	return widths
@@ -290,11 +311,6 @@ func (p *VectorInsnTranslator[W, F]) sourceWidths(ids []vm.RegisterId) []uint {
 	}
 	//
 	return widths
-}
-
-// nolint
-func (p *VectorInsnTranslator[W, F]) debugString(condition Expr[F]) string {
-	return condition.String(func(r register.Id) string { return p.Register(r).Name() })
 }
 
 func joinAssignments(lhs util.Option[dfa.Writes], rhs dfa.Writes) util.Option[dfa.Writes] {

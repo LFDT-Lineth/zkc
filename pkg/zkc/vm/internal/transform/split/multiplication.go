@@ -14,6 +14,8 @@
 package split
 
 import (
+	"math/big"
+
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -54,21 +56,29 @@ func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Alloca
 		one          W
 		insns        []Bytecode[W]
 		targetLimbs  = applyLimbsMapReversed(mapping, insn.Target...)
+		sourceLimbs  = applyLimbsMapReversed(mapping, insn.Source...)
 		targetWidth  = groupWidth(alloc, targetLimbs)
 		targetWidths = registerWidths(alloc, targetLimbs)
 		g            = mulGranularity(mapping.RegisterWidth(), mapping.BandWidth(), targetWidths...)
+		operands     [][]RegisterId
 	)
 	//
 	one = one.SetUint64(1)
-	// Degenerate case: a product with no source registers is simply its
-	// constant.  Codegen does not normally emit this, but handle it anyway.
+	//
 	if len(insn.Source) == 0 {
+		// Degenerate case: a product with no source registers is simply its
+		// constant.  Codegen does not normally emit this, but handle it anyway.
 		return loadConstant(alloc, targetLimbs, insn.Constant)
+	} else if len(targetLimbs) == len(insn.Target) && len(sourceLimbs) == len(insn.Source) &&
+		multiplicationFitsBandwidth(alloc, sourceLimbs, insn.Constant, mapping.BandWidth()) {
+		// Preserve a multiplication which needs no register splitting and whose
+		// largest possible result fits within the machine bandwidth.  Besides
+		// avoiding needless temporaries, this retains the original instruction's
+		// dynamic target-overflow check.
+		return []Bytecode[W]{bytecode.MulVecConst(targetLimbs, sourceLimbs, insn.Constant)}
 	}
 	// Decompose each source operand into g-wide sub-limbs (least-significant
 	// first).
-	var operands [][]RegisterId
-	//
 	for _, s := range insn.Source {
 		subs, code := decomposeToSubLimbs(alloc, g, mapping.LimbIds(s))
 		operands = append(operands, subs)
@@ -91,6 +101,37 @@ func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Alloca
 	// Lay the full product into the target limbs, forcing any bits beyond the
 	// target width to zero (the overflow check).
 	return append(insns, assignToTarget(alloc, g, acc, targetLimbs, targetWidth)...)
+}
+
+// multiplicationFitsBandwidth determines whether the largest value this
+// multiplication can produce fits within the machine bandwidth.  The exact
+// unsigned upper bound is k * product(2^width(source)-1).
+func multiplicationFitsBandwidth[W word.Word[W]](alloc Allocator[W], sources []RegisterId, constant W,
+	bandwidth uint,
+) bool {
+	var (
+		maximum = new(big.Int).Set(constant.BigInt())
+		one     = big.NewInt(1)
+	)
+	//
+	for _, source := range sources {
+		width := alloc.Register(source).Bitwidth()
+		// Native field registers do not have a finite declared bit width and
+		// therefore cannot use the direct unsigned-multiplication path.
+		if width.IsEmpty() {
+			return false
+		}
+		// Determine the largest value representable by this source register.
+		factor := new(big.Int).Lsh(big.NewInt(1), width.Unwrap())
+		factor.Sub(factor, one)
+		maximum.Mul(maximum, factor)
+		// Stop as soon as the result is already too wide.
+		if uint(maximum.BitLen()) > bandwidth {
+			return false
+		}
+	}
+	//
+	return true
 }
 
 // mulGranularity determines the sub-limb width g used for multiplication.  It

@@ -5,7 +5,6 @@ pub output out(address:u16) -> (byte:u16)
 fn main() {
     var v:u16 = in[0]
     var w:u16
-    var b:u1
     //
     w = (v as u16) - 1
     //

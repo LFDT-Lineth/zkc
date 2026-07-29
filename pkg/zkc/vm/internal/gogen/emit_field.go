@@ -16,6 +16,7 @@ package gogen
 import (
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -47,7 +48,7 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 
 	w := target.width
 
-	srcs, err := g.operands(fn, x.Sources)
+	srcs, err := g.registerOperands(fn, x.Sources)
 	if err != nil {
 		return err
 	}
@@ -62,10 +63,11 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 	}
 
 	pm1 := new(big.Int).Sub(g.modulus, big.NewInt(1)) // results are reduced: ≤ P-1
-	g.usesBits = true                                 // the mod-P helpers build on math/bits
 
 	var expr string
 
+	// The mod-P helpers build on math/bits, so usesBits is set only where one is
+	// actually emitted — the no-source add/mul paths store a constant directly.
 	switch x.Op {
 	case bytecode.OP_ADDMOD_P:
 		// executeFieldAdd: val = constant; val = (val + src) mod P per source.
@@ -75,7 +77,7 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 			return nil
 		}
 
-		g.usesModP.add = true
+		g.usesModP.add, g.usesBits = true, true
 		expr = fmt.Sprintf("%d", konst)
 
 		for _, s := range srcs {
@@ -85,7 +87,7 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 		// executeFieldSub: val = src0 - src1 - … (mod P), then always - constant
 		// (mod P) — so the result is reduced even when the constant is zero.
 		// With no sources the seed is the zero word.
-		g.usesModP.sub = true
+		g.usesModP.sub, g.usesBits = true, true
 		expr = "0"
 
 		if len(srcs) > 0 {
@@ -104,7 +106,7 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 			return nil
 		}
 
-		g.usesModP.mul = true
+		g.usesModP.mul, g.usesBits = true, true
 		expr = fmt.Sprintf("%d", konst)
 
 		for _, s := range srcs {
@@ -117,6 +119,45 @@ func (g *generator) emitFieldOp(c *code, fn *descFunction, x *bytecode.FieldArit
 	g.assignSingle(c, target, operand{expr: expr, max: pm1})
 
 	return nil
+}
+
+// emitUintToField assembles the uint sources into the native target — exactly a
+// concatenation with a single native target — then reduces modulo P.  The
+// reduction is elided when interval analysis proves the assembled value is
+// already canonical (< P).
+func (g *generator) emitUintToField(c *code, fn *descFunction, x *bytecode.UintToField[word.Uint]) error {
+	total := uint(0)
+
+	for _, id := range x.Source {
+		w, err := g.regWidth(fn, id)
+		if err != nil {
+			return err
+		}
+
+		total += w
+	}
+
+	if total > 64 {
+		return fmt.Errorf("gogen: field-cast operand wider than 64 bits unsupported")
+	}
+
+	if err := g.emitConcat(c, fn, &bytecode.Cat[word.Uint]{Targets: []regId{x.Target}, Sources: x.Source}); err != nil {
+		return err
+	}
+	// A uint-to-field cast is reduction modulo P.
+	if g.iv.boundOf(x.Target).Cmp(g.modulus) >= 0 {
+		c.linef("%s %%= %s", reg(x.Target), bigLit(g.modulus))
+		g.iv.assign(x.Target, new(big.Int).Sub(g.modulus, big.NewInt(1)))
+	}
+
+	return nil
+}
+
+// emitFieldToUint distributes the native source across the uint targets — exactly
+// a concatenation with a single native source.  The targets' range checks enforce
+// that the (canonical) value fits.
+func (g *generator) emitFieldToUint(c *code, fn *descFunction, x *bytecode.FieldToUint[word.Uint]) error {
+	return g.emitConcat(c, fn, &bytecode.Cat[word.Uint]{Targets: x.Target, Sources: []regId{x.Source}})
 }
 
 // emitModPHelpers writes the mod-P helpers (with the modulus baked in), each
@@ -165,8 +206,67 @@ func (g *generator) emitModPHelpers(c *code) {
 	}
 }
 
-// emitIntrinsic emits the DIV_HINT intrinsic (executeDivHint), the only intrinsic
-// operation gogen supports: targets[0] = q, targets[1] = r, targets[2] = w where
+// emitWideIntHelper writes the portable uint64-word to big.Int conversion used
+// only by the multiword division fallback (see emitWideDivision).  SetBits
+// adopts the prepared word slice in one step instead of rebuilding the integer
+// through repeated shifts and ORs.  The input words are copied, not retained,
+// so callers can pass slices of stack-backed arrays without forcing them onto
+// the heap.
+func (g *generator) emitWideIntHelper(c *code) {
+	if !g.usesHelper(helperWideInt) {
+		return
+	}
+
+	c.line("func wideInt(words []uint64) (out big.Int) {")
+	c.line("if bits.UintSize == 64 {")
+	c.line("limbs := make([]big.Word, len(words))")
+	c.line("for i, word := range words {")
+	c.line("limbs[i] = big.Word(word)")
+	c.line("}")
+	c.line("out.SetBits(limbs)")
+	c.line("return out")
+	c.line("}")
+	c.line("limbs := make([]big.Word, 2*len(words))")
+	c.line("for i, word := range words {")
+	c.line("limbs[2*i] = big.Word(word)")
+	c.line("limbs[2*i+1] = big.Word(word >> 32)")
+	c.line("}")
+	c.line("out.SetBits(limbs)")
+	c.line("return out")
+	c.line("}")
+	c.line("")
+}
+
+// emitIntrinsic dispatches DIV_HINT and the wide operations introduced by
+// register splitting.  Shifts stay on native uint64 words; division and
+// remainder divide natively whenever both runtime values fit a single word,
+// falling back to big.Int only for genuinely multiword values.
+func (g *generator) emitIntrinsic(c *code, fn *descFunction, x *bytecode.Intrinsic[word.Uint]) error {
+	switch x.Op {
+	case bytecode.DIV_HINT:
+		if len(x.Sources) != 2 || len(x.Targets) != 3 {
+			return fmt.Errorf("gogen: malformed division hint (%d sources, %d targets)", len(x.Sources), len(x.Targets))
+		}
+
+		return g.emitDivHint(c, fn, x)
+	case bytecode.WIDE_SHL, bytecode.WIDE_SHR, bytecode.WIDE_DIV, bytecode.WIDE_REM:
+		if len(x.Sources) != 2 || len(x.Targets) != 1 {
+			return fmt.Errorf("gogen: malformed wide intrinsic (%d sources, %d targets)",
+				len(x.Sources), len(x.Targets))
+		}
+
+		if x.Op == bytecode.WIDE_DIV || x.Op == bytecode.WIDE_REM {
+			return g.emitWideDivision(c, fn, x)
+		}
+
+		return g.emitWideShift(c, fn, x)
+	default:
+		return fmt.Errorf("gogen: unsupported intrinsic operation (%d)", x.Op)
+	}
+}
+
+// emitDivHint emits DIV_HINT, which sets targets[0] = q, targets[1] = r,
+// targets[2] = w where
 //
 //	q = dividend / divisor,  r = dividend % divisor,  w = divisor - r - 1.
 //
@@ -175,14 +275,18 @@ func (g *generator) emitModPHelpers(c *code) {
 // register vector: single-limb vectors read/write a single register, while
 // multi-limb vectors (produced by register-splitting a value on a narrow field)
 // are reconstructed / distributed across their limbs (see assembleHintOperand
-// and storeNamed).  Operands whose total width exceeds 64 bits stay unsupported.
-func (g *generator) emitIntrinsic(c *code, fn *descFunction, x *bytecode.Intrinsic[word.Uint]) error {
-	if x.Op != bytecode.DIV_HINT {
-		return fmt.Errorf("gogen: unsupported intrinsic operation (%d)", x.Op)
-	}
+// and storeNamed).  Operands whose total width exceeds 64 bits share the
+// multiword division path (emitWideDivision).
+func (g *generator) emitDivHint(c *code, fn *descFunction, x *bytecode.Intrinsic[word.Uint]) error {
+	for _, source := range x.Sources {
+		width, err := g.vectorWidth(fn, source)
+		if err != nil {
+			return err
+		}
 
-	if len(x.Sources) != 2 || len(x.Targets) != 3 {
-		return fmt.Errorf("gogen: malformed division hint (%d sources, %d targets)", len(x.Sources), len(x.Targets))
+		if width > 64 {
+			return g.emitWideDivision(c, fn, x)
+		}
 	}
 
 	dividend, err := g.assembleHintOperand(fn, x.Sources[0])
@@ -241,6 +345,337 @@ func (g *generator) emitIntrinsic(c *code, fn *descFunction, x *bytecode.Intrins
 	return inner
 }
 
+// vectorWidth is the total bit width of a register vector.
+func (g *generator) vectorWidth(fn *descFunction, vec bytecode.RegisterVector) (uint, error) {
+	var total uint
+
+	for _, id := range vec.Registers() {
+		w, err := g.regWidth(fn, id)
+		if err != nil {
+			return 0, err
+		}
+
+		total += w
+	}
+
+	return total, nil
+}
+
+// packWords flattens a register vector into little-endian 64-bit word
+// expressions (plus the vector's total bit width).  Any limb layout is
+// accepted: full 64-bit words (fast-mode splitting), narrow limbs packed
+// several to a word (e.g. the 16-bit limbs of tracing-mode splitting), limbs
+// straddling a word boundary, and two-limb (lo/hi pair) registers.
+func (g *generator) packWords(fn *descFunction, vec bytecode.RegisterVector) ([]string, uint, error) {
+	// A piece is one Go variable holding up to 64 contiguous bits of the value.
+	type piece struct {
+		name  string
+		width uint
+	}
+
+	var (
+		pieces []piece
+		total  uint
+	)
+
+	for _, id := range reversedRegisters(vec) {
+		limb, err := g.limbOf(fn, id)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		if limb.width <= 64 {
+			pieces = append(pieces, piece{limb.lo(), limb.width})
+		} else {
+			pieces = append(pieces,
+				piece{limb.lo(), 64},
+				piece{limb.hiName(), limb.width - 64})
+		}
+
+		total += limb.width
+	}
+
+	if total == 0 {
+		return nil, 0, fmt.Errorf("gogen: wide intrinsic has an empty register vector")
+	}
+
+	parts := make([][]string, (total+63)/64)
+	offset := uint(0)
+
+	for _, p := range pieces {
+		w, shift := offset/64, offset%64
+
+		if shift == 0 {
+			parts[w] = append(parts[w], p.name)
+		} else {
+			parts[w] = append(parts[w], fmt.Sprintf("%s<<%d", p.name, shift))
+		}
+		// Bits spilling past the word boundary land in the next word.
+		if shift+p.width > 64 {
+			parts[w+1] = append(parts[w+1], fmt.Sprintf("%s>>%d", p.name, 64-shift))
+		}
+
+		offset += p.width
+	}
+
+	words := make([]string, len(parts))
+	for i, ps := range parts {
+		words[i] = strings.Join(ps, " | ")
+	}
+
+	return words, total, nil
+}
+
+// unpackWords distributes little-endian 64-bit words (word(i) yields the i'th
+// word expression) across a register vector — the reverse of packWords.  Each
+// limb takes its bits from one word (or two, when it straddles a word
+// boundary), masked to the limb's width.
+func (g *generator) unpackWords(c *code, fn *descFunction, vec bytecode.RegisterVector,
+	word func(i uint) string) error {
+	offset := uint(0)
+
+	assign := func(lvalue string, width uint) {
+		var (
+			w, shift = offset / 64, offset % 64
+			expr     = word(w)
+		)
+
+		if shift != 0 {
+			expr = fmt.Sprintf("%s>>%d", expr, shift)
+		}
+
+		if shift+width > 64 {
+			expr = fmt.Sprintf("%s | %s<<%d", expr, word(w+1), 64-shift)
+		}
+
+		c.linef("%s = %s", lvalue, maskExpr(expr, width))
+		offset += width
+	}
+
+	for _, id := range reversedRegisters(vec) {
+		limb, err := g.limbOf(fn, id)
+		if err != nil {
+			return err
+		}
+
+		if limb.width <= 64 {
+			assign(limb.lo(), limb.width)
+		} else {
+			assign(limb.lo(), 64)
+			assign(limb.hiName(), limb.width-64)
+		}
+
+		g.iv.assign(id, widthMax(limb.width))
+	}
+
+	return nil
+}
+
+// emitWideShift emits an allocation-free shift over stack-backed uint64 word
+// arrays.  A non-zero upper shift-count word, or a count at least as wide as
+// the target, leaves the zero-initialised result unchanged.
+func (g *generator) emitWideShift(c *code, fn *descFunction, x *bytecode.Intrinsic[word.Uint]) error {
+	value, _, err := g.packWords(fn, x.Sources[0])
+	if err != nil {
+		return err
+	}
+
+	amount, _, err := g.packWords(fn, x.Sources[1])
+	if err != nil {
+		return err
+	}
+
+	width, err := g.vectorWidth(fn, x.Targets[0])
+	if err != nil {
+		return err
+	}
+
+	helper := helperWideShl
+	if x.Op == bytecode.WIDE_SHR {
+		helper = helperWideShr
+	}
+	//
+	g.useHelper(helper)
+
+	condition := fmt.Sprintf("n < %d", width)
+	if len(amount) > 1 {
+		condition = fmt.Sprintf("(%s) == 0 && %s",
+			strings.Join(amount[1:], " | "), condition)
+	}
+
+	var inner error
+
+	c.block(func() {
+		c.linef("src := [...]uint64{%s}", strings.Join(value, ", "))
+		c.linef("var dst [%d]uint64", (width+63)/64)
+		c.linef("n := %s", amount[0])
+		c.linef("if %s {", condition)
+		c.linef("%s(dst[:], src[:], n)", helper)
+		c.line("}")
+		//
+		inner = g.unpackWords(c, fn, x.Targets[0], func(i uint) string {
+			return fmt.Sprintf("dst[%d]", i)
+		})
+	})
+
+	return inner
+}
+
+// emitWideDivision emits WIDE_DIV / WIDE_REM and the wide (>64-bit) form of
+// DIV_HINT.  Each operand is packed into a stack-backed word array, and values
+// that both fit their least-significant word divide natively — so big.Int is
+// confined to values that are genuinely multiword at runtime, not merely
+// wide-typed.
+func (g *generator) emitWideDivision(c *code, fn *descFunction, x *bytecode.Intrinsic[word.Uint]) error {
+	dividend, nX, err := g.packWords(fn, x.Sources[0])
+	if err != nil {
+		return err
+	}
+
+	divisor, nY, err := g.packWords(fn, x.Sources[1])
+	if err != nil {
+		return err
+	}
+	// A result is one value of the division: its local word-array name, the
+	// target vector receiving it, a bound on the value (q ≤ dividend; r < divisor
+	// and never above the dividend; w = divisor - r - 1 < divisor), and its
+	// single-word expression for the native fast path.
+	type result struct {
+		name  string
+		vec   bytecode.RegisterVector
+		bound *big.Int
+		fast  string
+	}
+
+	var (
+		divisorMax = new(big.Int).Sub(widthMax(nY), big.NewInt(1))
+		results    []result
+	)
+
+	switch x.Op {
+	case bytecode.WIDE_DIV:
+		results = []result{{"q", x.Targets[0], widthMax(nX), "a[0] / b[0]"}}
+	case bytecode.WIDE_REM:
+		results = []result{{"r", x.Targets[0], bigMin(widthMax(nX), divisorMax), "a[0] % b[0]"}}
+	default: // DIV_HINT (see emitDivHint)
+		results = []result{
+			{"q", x.Targets[0], widthMax(nX), "a[0] / b[0]"},
+			{"r", x.Targets[1], bigMin(widthMax(nX), divisorMax), "a[0] % b[0]"},
+			{"w", x.Targets[2], divisorMax, "b[0] - r[0] - 1"},
+		}
+	}
+	// Word counts per result target; also the fits-check widths.
+	widths := make([]uint, len(results))
+	for i, res := range results {
+		if widths[i], err = g.vectorWidth(fn, res.vec); err != nil {
+			return err
+		}
+	}
+	// High words of both operands: all zero at runtime means the values fit
+	// their least-significant words and divide natively.
+	var high []string
+	for i := 1; i < len(dividend); i++ {
+		high = append(high, fmt.Sprintf("a[%d]", i))
+	}
+
+	for i := 1; i < len(divisor); i++ {
+		high = append(high, fmt.Sprintf("b[%d]", i))
+	}
+
+	if len(high) > 0 {
+		g.useHelper(helperWideInt)
+		g.usesBits = true
+	}
+
+	zero := make([]string, len(divisor))
+	for i := range divisor {
+		zero[i] = fmt.Sprintf("b[%d]", i)
+	}
+
+	var inner error
+
+	c.block(func() {
+		// Packing snapshots the sources before any target register is written
+		// (a target may alias a source).
+		c.linef("a := [%d]uint64{%s}", len(dividend), strings.Join(dividend, ", "))
+		c.linef("b := [%d]uint64{%s}", len(divisor), strings.Join(divisor, ", "))
+		c.linef("if (%s) == 0 {", strings.Join(zero, " | "))
+		c.line(`fail("division by zero")`)
+		c.line("}")
+
+		for i, res := range results {
+			c.linef("var %s [%d]uint64", res.name, (widths[i]+63)/64)
+		}
+
+		if len(high) > 0 {
+			c.linef("if (%s) == 0 {", strings.Join(high, " | "))
+		}
+
+		for i, res := range results {
+			c.linef("%s[0] = %s", res.name, res.fast)
+			// A single word always fits a target of 64+ bits; narrower targets
+			// need the runtime check only when the bound does not already fit.
+			if widths[i] < 64 && !fits(res.bound, widths[i]) {
+				c.linef("if %s[0] >= 1<<%d {", res.name, widths[i])
+				c.linef("fail(%q)", widthFailMsg(widths[i]))
+				c.line("}")
+			}
+		}
+
+		if len(high) > 0 {
+			bigs := make([]string, len(results))
+			for i, res := range results {
+				bigs[i] = res.name + "b"
+			}
+
+			c.line("} else {")
+			c.line("x, y := wideInt(a[:]), wideInt(b[:])")
+			c.linef("var %s big.Int", strings.Join(bigs, ", "))
+
+			switch x.Op {
+			case bytecode.WIDE_DIV:
+				c.line("qb.Quo(&x, &y)")
+			case bytecode.WIDE_REM:
+				c.line("rb.Rem(&x, &y)")
+			default:
+				c.line("qb.QuoRem(&x, &y, &rb)")
+				c.line("wb.Sub(&y, &rb)")
+				c.line("wb.Sub(&wb, big.NewInt(1))")
+			}
+
+			for i, res := range results {
+				if !fits(res.bound, widths[i]) {
+					c.linef("if %s.BitLen() > %d {", bigs[i], widths[i])
+					c.linef("fail(%q)", widthFailMsg(widths[i]))
+					c.line("}")
+				}
+				// Extraction consumes the big value, shifting a word at a time.
+				for w := uint(0); w < (widths[i]+63)/64; w++ {
+					c.linef("%s[%d] = %s.Uint64()", res.name, w, bigs[i])
+
+					if w+1 < (widths[i]+63)/64 {
+						c.linef("%s.Rsh(&%s, 64)", bigs[i], bigs[i])
+					}
+				}
+			}
+
+			c.line("}")
+		}
+
+		for _, res := range results {
+			name := res.name
+
+			if inner = g.unpackWords(c, fn, res.vec, func(i uint) string {
+				return fmt.Sprintf("%s[%d]", name, i)
+			}); inner != nil {
+				return
+			}
+		}
+	})
+
+	return inner
+}
+
 // assembleHintOperand reconstructs a (possibly multi-limb) hint operand from its
 // register vector into a single narrow (≤64-bit) uint64 expression, mirroring
 // the interpreter's loadIntrinsicOperand.  The vector's Base register holds the
@@ -251,7 +686,7 @@ func (g *generator) assembleHintOperand(fn *descFunction, vec bytecode.RegisterV
 	regs := vec.Registers() // Base .. Base+Len-1 == most- .. least-significant limb
 
 	if len(regs) == 1 {
-		o, err := g.operand(fn, regs[0])
+		o, err := g.registerOperand(fn, regs[0])
 		if err != nil {
 			return operand{}, err
 		}
@@ -271,7 +706,7 @@ func (g *generator) assembleHintOperand(fn *descFunction, vec bytecode.RegisterV
 	)
 
 	for i, id := range regs {
-		o, err := g.operand(fn, id)
+		o, err := g.registerOperand(fn, id)
 		if err != nil {
 			return operand{}, err
 		}

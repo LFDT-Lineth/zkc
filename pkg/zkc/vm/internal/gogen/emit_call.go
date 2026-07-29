@@ -44,7 +44,7 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 			len(x.Returns), callee.NumOutputs(), callee.Name())
 	}
 
-	args, err := g.operands(fn, x.Arguments)
+	args, err := g.registerOperands(fn, x.Arguments)
 	if err != nil {
 		return err
 	}
@@ -55,8 +55,19 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 
 	for i, arg := range args {
 		in := calleeInputs[i]
+		// A native (field-element) parameter is a single uint64 passed as-is:
+		// field values need no width check (cf. the interpreter, which copies
+		// them raw into the callee frame).  A wide operand would be a >64-bit
+		// value reaching a field parameter; rather than silently drop its high
+		// limb, reject it (out of scope for the single-uint64 representation).
 		if in.IsNative() {
-			return fmt.Errorf("gogen: native parameter in %q unsupported", callee.Name())
+			if arg.wide() {
+				return fmt.Errorf("gogen: wide argument to native parameter in %q unsupported", callee.Name())
+			}
+
+			argExprs = append(argExprs, arg.expr)
+
+			continue
 		}
 
 		g.checkWidth(c, arg, in.Bitwidth().Unwrap())
@@ -92,12 +103,9 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 			return err
 		}
 
-		out := callee.Register(calleeOutput(callee, i))
-		if out.IsNative() {
-			return fmt.Errorf("gogen: native output in %q unsupported", callee.Name())
-		}
+		// A native (field-element) output is a single uint64 result.
+		ow := widthOf(callee.Register(calleeOutput(callee, i)))
 
-		ow := out.Bitwidth().Unwrap()
 		rets[i] = ret{target: l, outWidth: ow, outWide: ow > 64}
 		// Shape mismatch or a surviving width check forces the temp path.
 		if (ow > 64) != (l.width > 64) || ow > l.width {
@@ -109,7 +117,8 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 
 	for i := len(x.Returns); i < int(callee.NumOutputs()); i++ {
 		discards = append(discards, "_")
-		if callee.Register(calleeOutput(callee, i)).Bitwidth().Unwrap() > 64 {
+
+		if widthOf(callee.Register(calleeOutput(callee, i))) > 64 {
 			discards = append(discards, "_")
 		}
 	}

@@ -51,7 +51,7 @@ func GenerateMirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program
 	)
 	//
 	for i, m := range infos {
-		modules[i] = translateModule[W, F](uint(i), m, infos, field, rangeTables, maxStaticWidth)
+		modules[i] = translateModule[W, F](uint(i), m, infos, rangeTables, field, maxStaticWidth)
 	}
 	//
 	return schema.NewUniformSchema(modules)
@@ -69,17 +69,17 @@ func GenerateAirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program
 }
 
 func translateModule[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, m vm.Module[W],
-	infos []vm.Module[W], field field.Config, rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
+	infos []vm.Module[W], rangeTables map[uint]rangeTable, field field.Config, maxStaticWidth uint) mir.Module[F] {
 	switch m := m.(type) {
 	case *vm.Function[W]:
-		return translateFunction[W, F](ctx, m, infos, field, rangeTables, maxStaticWidth)
+		return translateFunction[W, F](ctx, m, infos, rangeTables, field, maxStaticWidth)
 	case *vm.Memory[W]:
 		if m.IsStatic() {
 			return translateStaticMemory[W, F](ctx, m)
 		} else if m.IsReadOnly() {
-			return translateReadOnlyMemory[W, F](ctx, m)
+			return translateReadOnlyMemory[W, F](ctx, m, rangeTables, maxStaticWidth)
 		} else if m.IsWriteOnly() {
-			return translateWriteOnceMemory[W, F](ctx, m)
+			return translateWriteOnceMemory[W, F](ctx, m, rangeTables, maxStaticWidth)
 		}
 		//
 		return translateReadWriteMemory[W, F](ctx, m, field, rangeTables, maxStaticWidth)
@@ -110,23 +110,24 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 }
 
 func translateReadOnlyMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
+	ctx schema.ModuleId, m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
-	return translateAccessOnceMemory[W, F](ctx, m, name)
+	return translateAccessOnceMemory[W, F](ctx, m, name, rangeTables, maxStaticWidth)
 }
 
 // Write once memory and read only memory are equivalent on the constraints level
 func translateWriteOnceMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
+	ctx schema.ModuleId, m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
-	return translateAccessOnceMemory[W, F](ctx, m, name)
+	return translateAccessOnceMemory[W, F](ctx, m, name, rangeTables, maxStaticWidth)
 }
 
 // translateAccessOnceMemory handles both
 //   - read once memory
 //   - write once memory
 func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W], name trace.ModuleName) (mod mir.Module[F]) {
+	ctx schema.ModuleId, m *vm.Memory[W], name trace.ModuleName,
+	rangeTables map[uint]rangeTable, maxStaticWidth uint) (mod mir.Module[F]) {
 	var (
 		memoryModule *schema.Table[F, mir.Constraint[F]]
 		padding      big.Int
@@ -195,6 +196,7 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 	}
 
 	memoryModule.AddConstraints(constraints...)
+	addRangeProofConstraints(memoryModule, ctx, memoryModule.Registers(), rangeTables, maxStaticWidth)
 
 	return memoryModule
 }
@@ -316,7 +318,7 @@ func multiLineAddressConstraints[F field.Element[F]](
 }
 
 func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn *vm.Function[W],
-	infos []vm.Module[W], fieldCfg field.Config, rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
+	infos []vm.Module[W], rangeTables map[uint]rangeTable, field field.Config, maxStaticWidth uint) mir.Module[F] {
 	var (
 		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]
@@ -371,7 +373,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 		var (
 			handle = fmt.Sprintf("pc%d", pc)
 			// construct translator for this bytecode vector
-			tr = NewVectorTranslator(ctx, uint(pc), vec, framing, fn)
+			tr = NewVectorTranslator(ctx, uint(pc), vec, framing, fn, field)
 			// extract logical constraint
 			constraint = tr.translate()
 		)
@@ -397,10 +399,11 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 	// Note that registers coming from control flow have been added to the module before this point,
 	// so they will be range-proved as well.
 	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
-	// Emit lookup constraints for any function calls made by this function.
-	addCallLookups(mod, ctx, fn, pcSelectors, ret, infos, regs)
+	// Emit lookup constraints for any function calls and non-RAM memory
+	// accesses made by this function (read-write RAM is skipped here).
+	addLookups(mod, ctx, fn, pcSelectors, ret, infos, regs, field)
 	// Emit lookup constraints for any read-write (RAM) memory accesses.
-	addMemoryLookups(mod, ctx, fn, pcSelectors, ret, infos, regs, fieldCfg)
+	addMemoryLookups(mod, ctx, fn, pcSelectors, ret, infos, regs, field)
 	// Done
 	return mod
 }

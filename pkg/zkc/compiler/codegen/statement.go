@@ -34,6 +34,9 @@ import (
 // conversion.
 type RegisterId = vm.RegisterId
 
+// Operand represents either a register operand, or a constant operand.
+type Operand[W vm.Word[W]] = vm.Operand[W]
+
 // StmtCompiler provides a working environment for compiling individual statements
 // within a given function.  For example, it provides the ability to allocate
 // new temporary registers as required.
@@ -199,10 +202,15 @@ func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, ta
 	switch e := e.(type) {
 	case *expr.Cmp[symbol.Resolved]:
 		var (
-			args, insns = p.compileNonUniformArgs(mapping, e.Left, e.Right)
+			leftWidth     = data.BitWidthOf(e.Left.Type(), p.environment)
+			rightWidth    = data.BitWidthOf(e.Right.Type(), p.environment)
+			left, lInsns  = p.compileOperand(e.Left, leftWidth, mapping)
+			right, rInsns = p.compileOperand(e.Right, rightWidth, mapping)
+			op, l, r      = p.normaliseComparison(e, left, right)
 		)
 		//
-		insns = append(insns, vm.SkipIf[vm.Uint](vm.Cond(e.Operator), 1, args[0], args[1]))
+		insns := append(lInsns, rInsns...)
+		insns = append(insns, vm.SkipIf(vm.Cond(op), 1, l, r))
 		insns = append(insns, vm.Jump[vm.Uint](vm.Address(pc+1)))
 		insns = append(insns, vm.Jump[vm.Uint](vm.Address(target)))
 		//
@@ -210,6 +218,22 @@ func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, ta
 	default:
 		panic("unknown condition encountered")
 	}
+}
+
+func (p *StmtCompiler) normaliseComparison(e *expr.Cmp[symbol.Resolved], lhs, rhs Operand[vm.Uint],
+) (expr.CmpOp, RegisterId, Operand[vm.Uint]) {
+	//
+	if lhs.IsConstant() && rhs.IsConstant() {
+		// This should not be permitted
+		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e, "cannot compare constants")...)
+		// Dummy result (compilation aborts on the error reported above)
+		return e.Operator, RegisterId(0), rhs
+	} else if rhs.IsConstant() {
+		// Easy case
+		return e.Operator, lhs.AsRegister(), rhs
+	}
+	// Harder case --- flip comparator
+	return e.Operator.Flip(), rhs.AsRegister(), lhs
 }
 
 // compileDispatch compiles a multiway dispatch into a single vector
@@ -433,13 +457,21 @@ func (p *StmtCompiler) isFieldOperation(targets []vm.RegisterId) bool {
 func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], bitwidth util.Option[uint], mapping []uint,
 	target []vm.RegisterId) []Bytecode {
 	//
-	cmp := e.Cond.(*expr.Cmp[symbol.Resolved])
-	// Lazily compile both arms — their instructions are placed inside the
-	// conditionally-skipped regions below, so only the taken arm runs.
-	trueInsns := p.compileExpr(e.IfTrue, bitwidth, mapping, target)
-	falseInsns := p.compileExpr(e.IfFalse, bitwidth, mapping, target)
-	// Evaluate condition operands (always runs).
-	condRegs, condInsns := p.compileNonUniformArgs(mapping, cmp.Left, cmp.Right)
+	var (
+		cmp = e.Cond.(*expr.Cmp[symbol.Resolved])
+		// Determine size of left+right operands
+		leftWidth  = data.BitWidthOf(cmp.Left.Type(), p.environment)
+		rightWidth = data.BitWidthOf(cmp.Right.Type(), p.environment)
+		// Lazily compile both arms — their instructions are placed inside the
+		// conditionally-skipped regions below, so only the taken arm runs.
+		trueInsns  = p.compileExpr(e.IfTrue, bitwidth, mapping, target)
+		falseInsns = p.compileExpr(e.IfFalse, bitwidth, mapping, target)
+		// Evaluate condition operands (always runs).
+		left, lInsns  = p.compileOperand(cmp.Left, leftWidth, mapping)
+		right, rInsns = p.compileOperand(cmp.Right, rightWidth, mapping)
+		op, l, r      = p.normaliseComparison(cmp, left, right)
+	)
+	//condRegs, condInsns := p.compileNonUniformArgs(mapping, cmp.Left, cmp.Right)
 	// Selection sequence (counts are in bytecodes, since the arms are already
 	// lowered):
 	//   condInsns                                  always
@@ -447,9 +479,8 @@ func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], bitwidth
 	//   falseInsns                                 (skipped on TRUE)
 	//   skip(|trueInsns|)                          jump past true arm
 	//   trueInsns                                  (skipped on FALSE)
-	insns := append([]Bytecode{}, condInsns...)
-	insns = append(insns, vm.SkipIf[vm.Uint](vm.Cond(cmp.Operator),
-		uint16(len(falseInsns)+1), condRegs[0], condRegs[1]))
+	insns := append(lInsns, rInsns...)
+	insns = append(insns, vm.SkipIf(vm.Cond(op), uint16(len(falseInsns)+1), l, r))
 	insns = append(insns, falseInsns...)
 	insns = append(insns, vm.Skip[vm.Uint](uint16(len(trueInsns))))
 	//
@@ -478,14 +509,25 @@ func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.
 		e_bitwidth = data.BitWidthOf(e.Expr.Type(), p.environment)
 	)
 	//
-	if bitwidth.IsEmpty() {
+	switch {
+	case bitwidth.IsEmpty() && e_bitwidth.IsEmpty():
+		// 𝔽 → 𝔽 (no-op cast): compile the source directly into the native target.
 		return p.compileExpr(e.Expr, bitwidth, mapping, targets)
-	} else if e_bitwidth.HasValue() && e_bitwidth.Unwrap() <= bitwidth.Unwrap() {
-		// upcast
+	case bitwidth.IsEmpty():
+		// uint→𝔽: assemble the source limbs and reduce modulo P.
+		source, insns := p.compileUniformArgs(e_bitwidth, mapping, e.Expr)
+		return append(insns, vm.UintToField[vm.Uint](targets[0], source))
+	case e_bitwidth.IsEmpty():
+		// 𝔽→uint: extract the canonical representative into the target limbs.
+		source, insns := p.compileUniformArgs(util.None[uint](), mapping, e.Expr)
+		return append(insns, vm.FieldToUint[vm.Uint](targets, source[0]))
+	case e_bitwidth.Unwrap() <= bitwidth.Unwrap():
+		// uint upcast
 		return p.compileExpr(e.Expr, e_bitwidth, mapping, targets)
+	default:
+		// uint downcast (of some kind).
+		return p.compileRootExpr(e.Expr, mapping, targets)
 	}
-	// down cast (of some kind).
-	return p.compileRootExpr(e.Expr, mapping, targets)
 }
 
 func (p *StmtCompiler) compileIntConst(c vm.Uint, _ []uint, targets []vm.RegisterId,
@@ -585,7 +627,8 @@ func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], 
 		zero vm.Uint
 		reg  = []RegisterId{util.Cast[RegisterId](e.Variable)}
 	)
-	//
+	// The source of a bare field access is always native (uint→𝔽 conversions go
+	// through a field-cast; see compileCast), so this is a 𝔽→𝔽 copy.
 	return []Bytecode{vm.AddModP(target, reg, zero)}
 }
 
@@ -894,15 +937,10 @@ func (p *StmtCompiler) compileUniformArgs(bitwidth util.Option[uint], mapping []
 	)
 	//
 	for i, e := range exprs {
-		//
-		if r, ok := p.asLocalAccess(e); ok {
-			targets[i] = util.Cast[RegisterId](r.Variable)
-		} else {
-			// Allocate temporary variable
-			targets[i] = p.allocate(bitwidth)
-			// Compile expression, storing result in temporary
-			insns = append(insns, p.compileExpr(e, bitwidth, mapping, []vm.RegisterId{targets[i]})...)
-		}
+		target, extra := p.compileArg(e, bitwidth, mapping)
+		targets[i] = target
+
+		insns = append(insns, extra...)
 	}
 	//
 	return targets, insns
@@ -915,19 +953,35 @@ func (p *StmtCompiler) compileNonUniformArgs(mapping []uint, exprs ...Expr) ([]R
 	)
 	//
 	for i, e := range exprs {
-		//
-		if r, ok := p.asLocalAccess(e); ok {
-			targets[i] = util.Cast[RegisterId](r.Variable)
-		} else {
-			var bitwidth = data.BitWidthOf(e.Type(), p.environment)
-			// Allocate temporary variable
-			targets[i] = p.allocate(bitwidth)
-			// Compile expression, storing result in temporary
-			insns = append(insns, p.compileExpr(e, bitwidth, mapping, []vm.RegisterId{targets[i]})...)
-		}
+		target, extra := p.compileArg(e, data.BitWidthOf(e.Type(), p.environment), mapping)
+		targets[i] = target
+
+		insns = append(insns, extra...)
 	}
 	//
 	return targets, insns
+}
+
+func (p *StmtCompiler) compileArg(e Expr, bitwidth util.Option[uint], mapping []uint) (RegisterId, []Bytecode) {
+	if r, ok := p.asLocalAccess(e); ok {
+		return util.Cast[RegisterId](r.Variable), nil
+	}
+	//
+	target := p.allocate(bitwidth)
+
+	return target, p.compileExpr(e, bitwidth, mapping, []vm.RegisterId{target})
+}
+
+func (p *StmtCompiler) compileOperand(e Expr, bitwidth util.Option[uint], mapping []uint,
+) (Operand[vm.Uint], []Bytecode) {
+	//
+	if c, ok := p.asConstant(e); ok {
+		return vm.NewConstantOperand(c), nil
+	}
+	//
+	target, bytecodes := p.compileArg(e, bitwidth, mapping)
+	//
+	return vm.NewRegisterOperand[vm.Uint](target), bytecodes
 }
 
 func (p *StmtCompiler) evalConstant(e Expr) vm.Uint {
@@ -990,11 +1044,22 @@ func (p *StmtCompiler) asConstant(e Expr) (vm.Uint, bool) {
 	return w, false
 }
 
+// asLocalAccess unwraps e to a bare local-variable access, peeling casts that
+// do not cross the 𝔽/uint boundary.  A representation-changing cast is not
+// transparent — it must materialise a field-cast instruction — so it blocks
+// the peel.
 func (p *StmtCompiler) asLocalAccess(e Expr) (*expr.LocalAccess[symbol.Resolved], bool) {
 	if c, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
 		return c, true
 	} else if c, ok := e.(*expr.Cast[symbol.Resolved]); ok {
-		return p.asLocalAccess(c.Expr)
+		var (
+			outer = data.BitWidthOf(c.Type(), p.environment)
+			inner = data.BitWidthOf(c.Expr.Type(), p.environment)
+		)
+		//
+		if outer.IsEmpty() == inner.IsEmpty() {
+			return p.asLocalAccess(c.Expr)
+		}
 	}
 	//
 	return nil, false

@@ -308,6 +308,9 @@ func Test_ZkcInvalid_Const_07(t *testing.T) {
 func Test_ZkcInvalid_Const_08(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/const_08")
 }
+func Test_ZkcInvalid_Const_09(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/const_09")
+}
 
 // ===================================================================
 // While Tests
@@ -937,6 +940,29 @@ func Test_ZkcInvalid_Inline_05(t *testing.T) {
 func Test_ZkcInvalid_Inline_06(t *testing.T) {
 	// Mutually recursive functions cannot be inlined.
 	checkZkcInvalid(t, "zkc/invalid/inline_06")
+}
+
+func Test_ZkcInvalid_Unused_01(t *testing.T) {
+	// A local variable which is never read or written is unused.
+	checkZkcInvalid(t, "zkc/invalid/unused_01")
+}
+
+func Test_ZkcInvalid_Unused_02(t *testing.T) {
+	// An unused local declared inside a (nested) block is still detected, and
+	// the error is anchored on its declaration.
+	checkZkcInvalid(t, "zkc/invalid/unused_02")
+}
+
+func Test_ZkcInvalid_Unused_03(t *testing.T) {
+	// In a multi-variable declaration, an unused variable is reported even when
+	// its siblings are used.
+	checkZkcInvalid(t, "zkc/invalid/unused_03")
+}
+
+func Test_ZkcInvalid_Unused_04(t *testing.T) {
+	// An unused local is detected in a non-entry function; the (used) parameter
+	// and return are not flagged.
+	checkZkcInvalid(t, "zkc/invalid/unused_04")
 }
 
 // ===================================================================

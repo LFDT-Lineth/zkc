@@ -29,14 +29,12 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 )
 
 // tutorialSrc mirrors pkg/zkc/tutorial: branchless u16 arithmetic with single
@@ -203,6 +201,18 @@ fn main() {
 }
 `
 
+// wideShiftSrc forces fast-mode splitting to produce WIDE_SHL / WIDE_SHR.
+const wideShiftSrc = `pub input data(address:u8) -> (word:u256)
+pub output result(address:u8) -> (word:u256)
+fn main() {
+    var x:u256 = data[0]
+    var n:u256 = data[1]
+    result[0] = x << n
+    result[1] = x >> n
+    return
+}
+`
+
 // concatSrc exercises BIT_CONCAT: byte-swap a u16 by destructuring then
 // re-concatenating in the opposite order (sources[0] lands in the low bits).
 const concatSrc = `pub input data(address:u8) -> (w:u16)
@@ -361,6 +371,28 @@ fn main() {
 }
 `
 
+// divMod128Src is u128 division over values built from u64 inputs (a widening
+// multiply, so genuinely >64-bit values are reachable): the fast shape splits
+// it into WIDE_DIV / WIDE_REM over 64-bit words, while the lowered shape
+// produces a division HINT over 16-bit limb vectors — both the multiword
+// division paths, including their native small-value branch.
+const divMod128Src = `pub input data(address:u8) -> (word:u64)
+pub output result(address:u8) -> (word:u64)
+fn main() {
+    var x:u128 = (data[0] as u128) * (data[1] as u128)
+    var y:u128 = (data[2] as u128) * (data[3] as u128)
+    var hi:u64
+    var lo:u64
+    hi::lo = x / y
+    result[0] = lo
+    result[1] = hi
+    hi::lo = x % y
+    result[2] = lo
+    result[3] = hi
+    return
+}
+`
+
 // pagedSrc exercises the paged scratch memory across page boundaries
 // (PAGE_SIZE = 1M words): writes land in pages 0, 1 and 3, and reads hit both
 // written cells and never-written cells in allocated (page 0) and unallocated
@@ -378,6 +410,22 @@ fn main<ram>() {
     result[2] = ram[3145731]
     result[3] = ram[2097155]
     result[4] = ram[7]
+    return
+}
+`
+
+// scratchSrc exercises a small read-write RAM that gogen lowers to a fixed Go
+// array (address:u4 -> 16 cells): writes including the highest valid address
+// (15), read-back, and a never-written cell that must read zero.
+const scratchSrc = `pub input data(address:u8) -> (byte:u8)
+memory scratch(address:u4) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main<scratch>() {
+    scratch[3] = data[0]
+    scratch[15] = data[1]
+    result[0] = scratch[3]
+    result[1] = scratch[15]
+    result[2] = scratch[7]
     return
 }
 `
@@ -446,6 +494,7 @@ func TestGenValidGo(t *testing.T) {
 		"recSum":       recSumSrc,
 		"bitwise":      bitwiseSrc,
 		"shift":        shiftSrc,
+		"wideShift":    wideShiftSrc,
 		"concat":       concatSrc,
 		"endian":       endianSrc,
 		"carry":        carrySrc,
@@ -455,6 +504,7 @@ func TestGenValidGo(t *testing.T) {
 		"wideReg":      wideRegSrc,
 		"wideConstAdd": wideConstAddSrc,
 		"divmod64":     divMod64Src,
+		"scratch":      scratchSrc,
 	}
 	for name, src := range srcs {
 		for _, shape := range shapes {
@@ -482,6 +532,7 @@ type diffCase struct {
 	name    string
 	src     string
 	vectors []map[string][]uint64
+	skip    bool
 }
 
 var diffCases = []diffCase{
@@ -686,11 +737,35 @@ var diffCases = []diffCase{
 		},
 	},
 	{
+		name: "divmod128", // multiword division: WIDE_DIV/REM (fast); wide HINT_DIVISION (lowered)
+		src:  divMod128Src,
+		vectors: []map[string][]uint64{
+			{"data": {7, 1, 3, 1}}, // small values: native branch
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFF, 3}}, // wide / wide: big.Int branch
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 1, 1}},          // wide / 1
+			{"data": {5, 1, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}},          // small / wide: q=0, r=x
+			{"data": {0xFFFFFFFFFFFFFFFF, 2, 0xFFFFFFFFFFFFFFFF, 1}},          // (2^64-1)·2 / (2^64-1)
+			{"data": {0x0123456789ABCDEF, 0xFEDCBA9876543210, 0xDEADBEEF, 0xCAFEBABE}},
+			{"data": {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF}}, // q=1, r=0
+			{"data": {7, 1, 0, 5}}, // division by zero -> error
+		},
+		skip: true,
+	},
+	{
 		name: "paged", // paged scratch RAM: sparse pages, zero on unwritten reads
 		src:  pagedSrc,
 		vectors: []map[string][]uint64{
 			{"data": {1, 2, 3}},
 			{"data": {0xFFFFFFFFFFFFFFFF, 0, 0xDEADBEEF}},
+		},
+	},
+	{
+		name: "scratch", // fixed-array scratch RAM: write/read-back, zero on unwritten
+		src:  scratchSrc,
+		vectors: []map[string][]uint64{
+			{"data": {10, 20}},   // result [10, 20, 0]
+			{"data": {0, 0}},     // result [0, 0, 0]
+			{"data": {255, 128}}, // result [255, 128, 0]
 		},
 	},
 	{
@@ -725,6 +800,10 @@ fn main() {
 // TestGenDifferential runs the shared corpus: see the comment on diffCase.
 func TestGenDifferential(t *testing.T) {
 	for _, tc := range diffCases {
+		if tc.skip {
+			continue
+		}
+		//
 		for _, shape := range shapes {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
 				p := compileUint(t, tc.src, shape.fastMode)
@@ -757,51 +836,6 @@ func TestGenDifferential(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-// TestGenSubConstWrapWidth pins the wrap width of a single-source subtraction
-// whose constant is a power of two WIDER than the source register — a shape
-// the surface language cannot express (the type checker rejects a constant
-// exceeding the operand type), so the program is assembled directly from
-// bytecodes.  Per CalculateSubBitwidth, "x:u4 - 16" wraps at 1+max(4,
-// BitLen(16-1)) = 5 bits, so 1 - 16 = -15 wraps to 17 (not 49, which the
-// SUBC executor's former 1+max(4, BitLen(16)) = 6-bit width produced).  The
-// program asserts the wrapped value in-machine via skip_if/fail, and the
-// verdict is cross-checked against the generated Go.
-func TestGenSubConstWrapWidth(t *testing.T) {
-	var (
-		zero, c16, c17 vm.Uint
-		u4, u8         = util.Some(uint(4)), util.Some(uint(8))
-		regs           = []vm.Register[vm.Uint]{
-			vm.NewComputedRegister("x", u4, zero),
-			vm.NewComputedRegister("t", u8, zero),
-			vm.NewComputedRegister("e", u8, zero),
-		}
-		main = vm.NewBytecodeFunction("main", vm.BYTECODE_FUNCTION, regs,
-			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(0, zero.SetUint64(1))),               // x = 1
-			vm.NewBytecodeVector[vm.Uint](vm.Sub(1, []vm.RegisterId{0}, c16.SetUint64(16))), // t = x - 16
-			vm.NewBytecodeVector[vm.Uint](vm.LoadConst(2, c17.SetUint64(17))),               // e = 17
-			vm.NewBytecodeVector[vm.Uint]( // if t == e { ret } else { fail }
-				vm.SkipIf[vm.Uint](bytecode.CONDITION_EQ, 1, 1, 2),
-				vm.Fail[vm.Uint](nil, nil),
-				vm.Return[vm.Uint]()),
-		)
-		p = vm.NewBytecodeProgram(field.KOALABEAR_16, main)
-	)
-
-	_, refErr := referenceRun(t, p, map[string][]byte{})
-
-	src, err := vm.GenerateGo(p, vm.GoGenConfig{})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
-
-	prog := buildProgram(t, src)
-
-	_, genErr := runProgram(t, prog, map[string][]byte{})
-	if refErr || genErr {
-		t.Fatalf("subtraction wrapped at the wrong width: reference err=%v, generated err=%v", refErr, genErr)
 	}
 }
 

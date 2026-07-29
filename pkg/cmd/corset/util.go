@@ -219,9 +219,9 @@ func ReadTraceFile(filename string) lt.TraceFile {
 // JSON, where each trace is on a separate line.
 func ReadBatchedTraceFile(filename string) []lt.TraceFile {
 	var (
-		stats  = util.NewPerfStats()
-		lines  = file.ReadInputFileAsLines(filename)
-		traces = make([]lt.TraceFile, 0)
+		stats    = util.NewPerfStats()
+		lines, _ = file.ReadInputFileAsLines(filename)
+		traces   = make([]lt.TraceFile, 0)
 	)
 	// Read constraints line by line
 	for i, line := range lines {

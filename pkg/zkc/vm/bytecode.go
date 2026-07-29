@@ -68,6 +68,23 @@ type Register[W Word[W]] = descriptor.Register[W]
 // bytecode RegisterId).
 type RegisterId = bytecode.RegisterId
 
+// Operand represents either a register operand, or a constant operand.
+type Operand[W Word[W]] = bytecode.Operand[W]
+
+// NewRegisterOperand creates a new operand from a set of one or more register
+// limbs, where the most significant limb comes first (i.e. has the lowest
+// index).
+func NewRegisterOperand[W word.Word[W]](limbs ...RegisterId) Operand[W] {
+	return bytecode.NewRegisterOperand[W](limbs...)
+}
+
+// NewConstantOperand creates a new operand from a set of or more constant
+// limbs, where the most significant limb comes first (i.e. has the lowest
+// index).
+func NewConstantOperand[W word.Word[W]](constant ...W) Operand[W] {
+	return bytecode.NewConstantOperand(constant...)
+}
+
 // BytecodeVector bundles together one or more bytecode instructions which, with
 // restrictions, can be executed by the underlying machine "in parallel".  The
 // approach is analoguous to the concept of "Very-Long Instruction Words (VLIW)"
@@ -170,7 +187,7 @@ func NewBytecodeVector[W word.Word[W]](codes ...Bytecode[W]) BytecodeVector[W] {
 // registers and a body of bytecode vectors.
 func NewBytecodeFunction[W word.Word[W]](name string, kind FunctionKind, registers []Register[W],
 	code ...BytecodeVector[W]) *Function[W] {
-	return descriptor.NewFunction[W](name, registers, kind, code)
+	return descriptor.NewFunction(name, registers, kind, code)
 }
 
 // NewRegister constructs a new register descriptor, where native
@@ -332,8 +349,21 @@ func SkipTargets[W Word[W]](b Bytecode[W], from uint) []uint {
 
 // SkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
-func SkipIf[W Word[W]](op Cond, skip uint16, left, right RegisterId) Bytecode[W] {
-	return bytecode.NewSkipIf[W](op, skip, left, right)
+func SkipIf[W Word[W]](op Cond, skip uint16, left RegisterId, right Operand[W]) Bytecode[W] {
+	var lvec = bytecode.NewRegisterVector(left)
+	//
+	return bytecode.NewSkipIf(op, skip, lvec, right)
+}
+
+// SkipIfConst constructs a conditional branch instruction which jumps to the
+// target address when "left op right" holds, comparing single registers.
+func SkipIfConst[W Word[W]](op Cond, skip uint16, left RegisterId, right W) Bytecode[W] {
+	var (
+		lvec = bytecode.NewRegisterVector(left)
+		rvec = bytecode.NewConstantOperand(right)
+	)
+	//
+	return bytecode.NewSkipIf(op, skip, lvec, rvec)
 }
 
 // Switch constructs a multiway-skip (SMW) instruction which dispatches
@@ -476,6 +506,18 @@ func MulModP[W Word[W]](target RegisterId, sources []RegisterId, constant W) Byt
 	return bytecode.NewFieldArith(bytecode.OP_MULMOD_P, target, sources, constant)
 }
 
+// UintToField constructs a uint-to-field conversion, which reduces the source
+// modulo P.
+func UintToField[W Word[W]](target RegisterId, source []RegisterId) Bytecode[W] {
+	return &bytecode.UintToField[W]{Target: target, Source: source}
+}
+
+// FieldToUint constructs a field-to-uint conversion, which extracts the
+// canonical representative and fails when it does not fit the target width.
+func FieldToUint[W Word[W]](target []RegisterId, source RegisterId) Bytecode[W] {
+	return &bytecode.FieldToUint[W]{Target: target, Source: source}
+}
+
 // Return constructs a return instruction with the given frame width and
 // return offset.
 func Return[W Word[W]]() Bytecode[W] {
@@ -544,6 +586,12 @@ type BytecodeFieldArith[W Word[W]] = bytecode.FieldArith[W]
 // BytecodeCat is a concatenation bytecode (target vector = sources joined by width).
 type BytecodeCat[W Word[W]] = bytecode.Cat[W]
 
+// BytecodeUintToField converts a uint register vector to a native field register.
+type BytecodeUintToField[W Word[W]] = bytecode.UintToField[W]
+
+// BytecodeFieldToUint converts a native field register to a uint register vector.
+type BytecodeFieldToUint[W Word[W]] = bytecode.FieldToUint[W]
+
 // BytecodeCall is a function-call bytecode.
 type BytecodeCall[W Word[W]] = bytecode.Call[W]
 
@@ -558,6 +606,9 @@ type BytecodeSkipIf[W Word[W]] = bytecode.SkipIf[W]
 
 // BytecodeSwitch is a multiway-skip (switch) bytecode.
 type BytecodeSwitch[W Word[W]] = bytecode.Switch[W]
+
+// BytecodeDispatch is a one-hot multiway-skip (dispatch) bytecode.
+type BytecodeDispatch[W Word[W]] = bytecode.Dispatch[W]
 
 // BytecodeJmp is an unconditional jump bytecode.
 type BytecodeJmp[W Word[W]] = bytecode.Jmp[W]

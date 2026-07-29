@@ -14,6 +14,7 @@ package bytecode
 
 import (
 	"fmt"
+	"math/big"
 	"reflect"
 	"strings"
 
@@ -251,6 +252,10 @@ func (p *Vector[W]) validateControlFlow() ([]error, bool) {
 			for _, c := range code.Cases {
 				errors, safe = validateSkipDestination(errors, safe, micro, uint(c.Skip), n)
 			}
+		case *Dispatch[W]:
+			for _, c := range code.Cases {
+				errors, safe = validateSkipDestination(errors, safe, micro, uint(c.Skip), n)
+			}
 		}
 	}
 	// Explore only valid successors. Invalid destinations were reported above.
@@ -287,6 +292,12 @@ func (p *Vector[W]) validateControlFlow() ([]error, bool) {
 			visit(micro + 1)
 			visitSkipDestination(micro, uint(code.Skip), n, visit)
 		case *Switch[W]:
+			visit(micro + 1)
+
+			for _, c := range code.Cases {
+				visitSkipDestination(micro, uint(c.Skip), n, visit)
+			}
+		case *Dispatch[W]:
 			visit(micro + 1)
 
 			for _, c := range code.Cases {
@@ -386,12 +397,12 @@ func (p *Vector[W]) WriteMap() dfa.Result[dfa.Writes] {
 //
 // Observe that the optimiser automatically reduces "x!=0 && x==1" to just x==1
 // (this is why it is sometimes called _branch table optimisation_).
-func (p *Vector[W]) BranchTable() (dfa.Result[dfa.Writes], dfa.Result[dfa.Path[W]]) {
+func (p *Vector[W]) BranchTable(limbWidth uint) (dfa.Result[dfa.Writes], dfa.Result[dfa.Path[W]]) {
 	// Construct suitable branch table for this vector instruction.
 	var (
 		entry    = dfa.EntryPoint[W]()
 		writeMap = p.WriteMap()
-		btf      = branchTableTransfer[W](writeMap)
+		btf      = branchTableTransfer[W](writeMap, limbWidth)
 	)
 	//
 	return writeMap, dfa.Construct(entry, p.Bytecodes, btf)
@@ -422,6 +433,13 @@ func writeDfaTransfer[W word.Word[W]](offset uint, code Bytecode[W],
 		for _, c := range code.Cases {
 			arcs = append(arcs, dfa.NewTransfer(state, offset+uint(c.Skip)+1))
 		}
+	case *Dispatch[W]:
+		// One-hot dispatch: join into each case's branch target (the dispatch
+		// writes nothing, so the propagated state is unchanged); the
+		// fall-through is added below.
+		for _, c := range code.Cases {
+			arcs = append(arcs, dfa.NewTransfer(state, offset+uint(c.Skip)+1))
+		}
 	}
 	// Construct state after this code and transfer to the following bytecode.
 	nState := state.Write(toRegisterIds(code.Definitions())...)
@@ -445,7 +463,7 @@ func toRegisterIds(regs []RegisterId) []register.Id {
 // branchTableTransfer is the data-flow transfer function for the branch-table
 // analysis over a bytecode vector, mirroring the instruction-level analysis
 // (see instruction.branchTableTransfer).
-func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
+func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes], limbWidth uint,
 ) dfa.PathTransferFunction[W, Bytecode[W]] {
 	return func(offset uint, code Bytecode[W], state dfa.Path[W]) []dfa.Transfer[dfa.Path[W]] {
 		var (
@@ -462,9 +480,9 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
 		case *SkipIf[W]:
 			var (
 				// Determine true branch
-				trueBranch = extendSkipIf(state, true, code, writes)
+				trueBranch = extendSkipIf(state, true, code, writes, limbWidth)
 				// Determine false branch
-				falseBranch = extendSkipIf(state, false, code, writes)
+				falseBranch = extendSkipIf(state, false, code, writes, limbWidth)
 			)
 			// join into branch target
 			arcs = append(arcs, dfa.NewTransfer(trueBranch, offset+uint(code.Skip)+1))
@@ -482,6 +500,39 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
 			}
 			//
 			return append(arcs, dfa.NewTransfer(extendMultiwayDefault(state, source, code.Cases), offset+1))
+		case *Dispatch[W]:
+			// One-hot dispatch: each edge's condition is just its own bit being
+			// set — a single degree-1 atom, rather than the conjunction of all
+			// preceding non-matches.  Dropping those prefix atoms is sound only
+			// under the Dispatch contract (see its declaration): the enclosing
+			// vector constrains the bits to be one-hot, so any satisfying trace
+			// has bit_j = 1 imply every other bit (and hence every preceding
+			// dispatch condition) clear.
+			var (
+				zero big.Int
+				fall = state
+			)
+			//
+			for _, c := range code.Cases {
+				var (
+					bid = register.NewId(uint(c.Bit))
+					bit = dfa.NewBranchId(writes.MayAnybeAssigned(bid), bid)
+				)
+				//
+				arcs = append(arcs, dfa.NewTransfer(state.NotEqualsConst(bit, zero), offset+uint(c.Skip)+1))
+				// The fall-through is the syntactic complement of the case
+				// edges — every bit clear — rather than the (logically
+				// equivalent, degree-1) "default register clear".  This matters
+				// wherever the edges rejoin: the disjunction of complementary
+				// conditions simplifies back to the incoming path condition,
+				// leaving the codes after the join unguarded, whereas a
+				// default-register atom would survive the join and burden every
+				// subsequent bytecode (and the constancy analysis) with a
+				// disjunctive guard.
+				fall = fall.EqualsConst(bit, zero)
+			}
+			//
+			return append(arcs, dfa.NewTransfer(fall, offset+1))
 		}
 		// Transfer to following bytecode
 		return append(arcs, dfa.NewTransfer(state, offset+1))
@@ -493,11 +544,16 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes],
 // taken).  The empty-tail handling exists because there is no implicit
 // representation of logical truth: dfa.TRUE has no conjuncts, so the first atom
 // replaces it rather than being and-ed onto it.
-func extendSkipIf[W word.Word[W]](path dfa.Path[W], sign bool, code *SkipIf[W], writes dfa.Writes) dfa.Path[W] {
+func extendSkipIf[W word.Word[W]](path dfa.Path[W], sign bool, code *SkipIf[W], writes dfa.Writes,
+	limbWidth uint) dfa.Path[W] {
+	//
 	var (
-		lhs      = toRegisterIds(code.Left.Registers())
-		rhs      = toRegisterIds(code.Right.Registers())
-		left     = dfa.NewBranchId(writes.MayAnybeAssigned(lhs...), lhs...)
+		lhs = toRegisterIds(code.Left.Registers())
+		//rhs      = toRegisterIds(code.Right.AsRegisters())
+		rhsUsed = code.Right.IsRegisterVector()
+		// NOTE: bytecode register vectors hold their most significant limb
+		// first (i.e. at the lowest register id), hence big endian.
+		left     = dfa.NewBigEndianBranchId(writes.MayAnybeAssigned(lhs...), lhs...)
 		equality bool
 	)
 	// normalise condition
@@ -510,11 +566,44 @@ func extendSkipIf[W word.Word[W]](path dfa.Path[W], sign bool, code *SkipIf[W], 
 		panic(fmt.Sprintf("unsupported skip condition (0x%x)", code.Op))
 	}
 	// Translate operation
-	if equality {
-		return path.Equals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
-	} else {
-		return path.NotEquals(left, dfa.NewBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
+	switch {
+	case equality && rhsUsed:
+		rhs := toRegisterIds(code.Right.AsRegisters())
+		return path.Equals(left, dfa.NewBigEndianBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
+	case equality && !rhsUsed:
+		// TODO: eventually we should be able to get right of asBigInt once path
+		// condition is refactored.
+		var rhs = asBigInt(limbWidth, code.Right.AsConstants()...)
+		return path.EqualsConst(left, rhs)
+	case !equality && rhsUsed:
+		rhs := toRegisterIds(code.Right.AsRegisters())
+		return path.NotEquals(left, dfa.NewBigEndianBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
+	case !equality && !rhsUsed:
+		// TODO: eventually we should be able to get right of asBigInt once path
+		// condition is refactored.
+		var rhs = asBigInt(limbWidth, code.Right.AsConstants()...)
+		return path.NotEqualsConst(left, rhs)
+	default:
+		panic("unreachable")
 	}
+}
+
+// Convert a set of zero or more constant limbs into a big integer, where limbs
+// are assumed to be arranged with the most signifciant limb first.  The width
+// is required to know how wide each limbs should be.  This function is
+// essentially the opposite of descriptor.SplitConstantReversed().
+func asBigInt[W word.Word[W]](width uint, constants ...W) big.Int {
+	var val big.Int
+	//
+	for i, c := range constants {
+		if i != 0 {
+			val.Lsh(&val, width)
+		}
+		// Add lower limb
+		val.Add(&val, c.BigInt())
+	}
+	//
+	return val
 }
 
 // extendMultiway conjoins a single dispatch comparison onto the incoming branch
@@ -524,9 +613,9 @@ func extendSkipIf[W word.Word[W]](path dfa.Path[W], sign bool, code *SkipIf[W], 
 func extendMultiway[W word.Word[W]](path dfa.Path[W], source dfa.BranchId, value W, equal bool) dfa.Path[W] {
 	//
 	if equal {
-		return path.EqualsConst(source, value)
+		return path.EqualsConst(source, *value.BigInt())
 	} else {
-		return path.NotEqualsConst(source, value)
+		return path.NotEqualsConst(source, *value.BigInt())
 	}
 }
 
@@ -624,8 +713,8 @@ func remapPacket[W word.Word[W]](oldOffset, newOffset uint, packet []Bytecode[W]
 	)
 	//
 	for i, insn := range packet {
-		if isExternalSkip[W](n-uint(i), insn) {
-			packet[i] = remapSkip[W](n-uint(i), oldOffset, newOffset+uint(i), insn, mapping)
+		if isExternalSkip(n-uint(i), insn) {
+			packet[i] = remapSkip(n-uint(i), oldOffset, newOffset+uint(i), insn, mapping)
 		}
 	}
 }
@@ -643,6 +732,14 @@ func isExternalSkip[W word.Word[W]](n uint, insn Bytecode[W]) bool {
 	case *SkipIf[W]:
 		return uint(insn.Skip) >= n
 	case *Switch[W]:
+		for _, cse := range insn.Cases {
+			if uint(cse.Skip) >= n {
+				return true
+			}
+		}
+		//
+		return false
+	case *Dispatch[W]:
 		for _, cse := range insn.Cases {
 			if uint(cse.Skip) >= n {
 				return true
@@ -690,6 +787,18 @@ func remapSkip[W word.Word[W]](n, oldOffset, newOffset uint, insn Bytecode[W], m
 		}
 		//
 		return &Switch[W]{Source: insn.Source, Cases: ncases}
+	case *Dispatch[W]:
+		ncases := make([]DispatchCase, len(insn.Cases))
+		//
+		for j, cse := range insn.Cases {
+			ncases[j] = cse
+			// only external cases are remapped; internal ones are unchanged
+			if uint(cse.Skip) >= n {
+				ncases[j].Skip = remap(cse.Skip)
+			}
+		}
+		//
+		return &Dispatch[W]{Cases: ncases, Default: insn.Default}
 	default:
 		panic("unreachable")
 	}

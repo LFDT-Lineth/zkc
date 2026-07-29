@@ -329,18 +329,7 @@ func NewSkip[W word.Word[W]](skip uint16) *Skip[W] {
 
 // NewSkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
-func NewSkipIf[W word.Word[W]](op Condition, skip uint16, left, right RegisterId) *SkipIf[W] {
-	return &SkipIf[W]{Skip: skip, Left: NewRegisterVector(left), Right: NewRegisterVector(right), Op: op}
-}
-
-// NewSkipIfVec constructs a conditional branch instruction which jumps to the
-// target address when "left op right" holds, comparing multi-limb register
-// vectors.
-func NewSkipIfVec[W word.Word[W]](op Condition, skip uint16, left, right RegisterVector) *SkipIf[W] {
-	if left.Len != right.Len {
-		panic(fmt.Sprintf("mismatched limbs (%d vs %d)", left.Len, right.Len))
-	}
-	//
+func NewSkipIf[W word.Word[W]](op Condition, skip uint16, left RegisterVector, right Operand[W]) *SkipIf[W] {
 	return &SkipIf[W]{Skip: skip, Left: left, Right: right, Op: op}
 }
 
@@ -504,6 +493,8 @@ func RegisterGobTypes[W word.Word[W]]() {
 	gob.Register(&DivRem[W]{})
 	gob.Register(&Fail[W]{})
 	gob.Register(&FieldArith[W]{})
+	gob.Register(&UintToField[W]{})
+	gob.Register(&FieldToUint[W]{})
 	gob.Register(&Intrinsic[W]{})
 	gob.Register(&Jmp[W]{})
 	gob.Register(&ReadWrite[W]{})
@@ -511,4 +502,6 @@ func RegisterGobTypes[W word.Word[W]]() {
 	gob.Register(&Skip[W]{})
 	gob.Register(&SkipIf[W]{})
 	gob.Register(&Switch[W]{})
+	gob.Register(&Dispatch[W]{})
+	gob.Register(&Operand[W]{})
 }

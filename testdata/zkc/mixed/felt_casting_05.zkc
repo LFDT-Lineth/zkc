@@ -1,0 +1,16 @@
+pub input data(address:u16) -> (word:u32)
+pub output result(address:u16) -> (word:u16)
+
+// Field→uint extracts the canonical representative and remains a checked
+// narrowing conversion.
+fn main() {
+    var f:𝔽 = data[0] as 𝔽
+    var u:u16 = f as u16
+    var roundtrip:𝔽 = u as 𝔽
+    //
+    if roundtrip != f {
+        fail
+    }
+
+    result[0] = u
+}

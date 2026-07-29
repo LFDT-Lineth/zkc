@@ -40,9 +40,13 @@
 //
 // Registers and constants up to 128 bits are supported via the lo/hi pair
 // representation (including wide limbs inside a multi-register store, as the
-// bitwise-lowering helpers produce); registers/constants beyond 128 bits,
-// native (field-element) registers and moduli beyond 64 bits are rejected with
-// descriptive errors; callers treat these programs as out of scope, not failures.
+// bitwise-lowering helpers produce).  A native (field-element) register is a
+// single uint64 local when the field modulus fits 64 bits (a field value fits
+// uint64; the mod-P emitters reduce operands on use, so a value at rest need
+// not be reduced — as in the interpreter).  Registers/constants beyond 128
+// bits, native registers under a modulus wider than 64 bits, and moduli beyond
+// 64 bits for mod-P ops are rejected with descriptive errors; callers treat
+// these programs as out of scope, not failures.
 package gogen
 
 import (
@@ -89,6 +93,7 @@ const (
 	romInput     memRole = iota // non-static read-only: loaded from the program inputs
 	womOutput                   // write-once: forms the program outputs (grow-on-write)
 	sromStatic                  // static read-only: fixed contents baked into the program
+	fixedScratch                // small read-write scratch: fixed, zero-initialised array
 	ramScratch                  // read-write scratch: zero-initialised, grows on write
 	pagedScratch                // paged read-write scratch (demand-allocated pages)
 )
@@ -105,7 +110,17 @@ type memInfo struct {
 	// contents holds the baked initial values of a static (SROM) memory; nil
 	// for all other roles.
 	contents []uint64
+	// elemType is the Go array element type of a static (SROM) memory (the
+	// narrowest that holds its contents); empty for all other roles.
+	elemType string
+	// cells is the total number of data cells for a fixed scratch memory.
+	cells uint64
 }
+
+// Fixed arrays remove grow-on-write and bounds-helper overhead from small
+// scratch memories. Keep the cap deliberately small: every Run clears the
+// array, and larger or unbounded address spaces retain the sparse VM semantics.
+const maxFixedScratchCells = 1024
 
 // pos is a 2-D program-counter position: a macro vector index plus a micro code
 // index within that vector.  It is the target of skips and jumps.
@@ -151,6 +166,8 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 				g.outputs = append(g.outputs, info)
 			case sromStatic:
 				g.sroms = append(g.sroms, info)
+			case fixedScratch:
+				g.fixeds = append(g.fixeds, info)
 			case ramScratch:
 				g.rams = append(g.rams, info)
 			case pagedScratch:
@@ -216,6 +233,7 @@ type generator struct {
 	inputs      []memInfo
 	outputs     []memInfo
 	sroms       []memInfo // static read-only memories (baked contents)
+	fixeds      []memInfo // small read-write scratch memories
 	rams        []memInfo // read-write scratch memories
 	pageds      []memInfo // paged read-write scratch memories
 	program     descriptor.Program[word.Uint]
@@ -239,6 +257,9 @@ const (
 	helperShl128     = "shl128"
 	helperShr128     = "shr128"
 	helperU128       = "u128"
+	helperWideInt    = "wideInt"
+	helperWideShl    = "wideShl"
+	helperWideShr    = "wideShr"
 )
 
 func (g *generator) useHelper(name string) {
@@ -364,29 +385,40 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	// without threading slices through every signature.  Run resets them, so
 	// the package is single-execution-at-a-time (like the VM itself).
 	for _, m := range g.inputs {
-		c.linef("var %s []uint64 // input ROM %q", m.varName, m.name)
+		c.linef("// Input ROM %q.", m.name)
+		c.linef("var %s []uint64", m.varName)
 	}
 
 	for _, m := range g.outputs {
-		c.linef("var %s []uint64 // output WOM %q", m.varName, m.name)
+		c.linef("// Output WOM %q.", m.name)
+		c.linef("var %s []uint64", m.varName)
+	}
+
+	for _, m := range g.fixeds {
+		c.linef("// Fixed scratch RAM %q.", m.name)
+		c.linef("var %s [%d]uint64", m.varName, m.cells)
 	}
 
 	for _, m := range g.rams {
-		c.linef("var %s []uint64 // scratch RAM %q", m.varName, m.name)
+		c.linef("// Scratch RAM %q.", m.name)
+		c.linef("var %s []uint64", m.varName)
 	}
 
 	for _, m := range g.pageds {
-		c.linef("var %s paged // paged RAM %q", m.varName, m.name)
+		c.linef("// Paged RAM %q.", m.name)
+		c.linef("var %s paged", m.varName)
 	}
 
 	// Static read-only memories have fixed contents baked in as a literal.
 	for _, m := range g.sroms {
-		c.linef("var %s = %s // static ROM %q", m.varName, sromLiteral(m.contents), m.name)
+		c.linef("// Static ROM %q.", m.name)
+		c.linef("var %s = %s", m.varName, sromLiteral(m))
 	}
 
 	c.line("")
 	g.emitMemHelpers(c)
 	g.emitShiftHelpers(c)
+	g.emitWideIntHelper(c)
 	g.emitModPHelpers(c)
 
 	c.line("// Run executes the program on the given input memories, returning its")
@@ -417,6 +449,10 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 		c.linef("%s = nil", m.varName)
 	}
 
+	for _, m := range g.fixeds {
+		c.linef("%s = [%d]uint64{}", m.varName, m.cells)
+	}
+
 	for _, m := range g.rams {
 		c.linef("%s = nil", m.varName)
 	}
@@ -442,6 +478,7 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 
 	if g.pkg == "main" {
 		c.raw(conversionHelpers)
+		g.emitInputDecoders(c)
 		g.emitMainHarness(c)
 	}
 }
@@ -456,7 +493,7 @@ func (g *generator) emitImports(c *code) {
 	if g.usesBits {
 		deps = append(deps, `"math/bits"`)
 	}
-	// memWrite (WOM/RAM) and paged.set both use slices.Grow.
+	// memWrite (WOM/dynamic RAM) and paged.set both use slices.Grow.
 	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.pageds) > 0 {
 		deps = append(deps, `"slices"`)
 	}
@@ -475,7 +512,8 @@ func (g *generator) emitImports(c *code) {
 			deps = append(deps, `"fmt"`)
 		}
 
-		if g.usesHelper(helperDbgB) || g.usesHelper(helperU128) || g.usesHelper(helperCatU64) {
+		if g.usesHelper(helperDbgB) || g.usesHelper(helperU128) ||
+			g.usesHelper(helperCatU64) || g.usesHelper(helperWideInt) {
 			deps = append(deps, `"math/big"`)
 		}
 	}
@@ -585,33 +623,6 @@ func parseInput(s string) []byte {
 	}
 }
 
-// decodeBytes unpacks a tightly-packed big-endian bit stream into one value per
-// data line, cycling through the line widths; a mirror of the VM's DecodeBytes
-// and the inverse of encodeBytes.
-func decodeBytes(data []byte, widths []uint) []uint64 {
-	var round uint
-	for _, w := range widths {
-		round += w
-	}
-	if round == 0 {
-		return nil
-	}
-	total := uint(len(data)) * 8
-	var out []uint64
-	for off := uint(0); total-off >= round; {
-		for _, w := range widths {
-			var v uint64
-			for i := uint(0); i < w; i++ {
-				bit := (data[(off+i)/8] >> (7 - (off+i)%8)) & 1
-				v = v<<1 | uint64(bit)
-			}
-			out = append(out, v)
-			off += w
-		}
-	}
-	return out
-}
-
 // encodeBytes packs one value per data line into a tightly-packed big-endian
 // bit stream, cycling through the line widths; a mirror of the VM's EncodeBytes
 // and the inverse of decodeBytes.
@@ -635,6 +646,82 @@ func encodeBytes(values []uint64, widths []uint) []byte {
 }
 `
 
+// genericDecodeBytes is the layout-agnostic input decoder, emitted only when
+// some input's data layout is not one of the specialized fast paths.  It
+// preallocates the output (the cell count is known from the byte length and the
+// round width), so it does not grow-and-copy while decoding.
+const genericDecodeBytes = `// decodeBytes unpacks a tightly-packed big-endian bit stream into one value per
+// data line, cycling through the line widths; a mirror of the VM's DecodeBytes
+// and the inverse of encodeBytes.
+func decodeBytes(data []byte, widths []uint) []uint64 {
+	var round uint
+	for _, w := range widths {
+		round += w
+	}
+	if round == 0 {
+		return nil
+	}
+	total := uint(len(data)) * 8
+	out := make([]uint64, 0, int(total/round)*len(widths))
+	for off := uint(0); total-off >= round; {
+		for _, w := range widths {
+			var v uint64
+			for i := uint(0); i < w; i++ {
+				bit := (data[(off+i)/8] >> (7 - (off+i)%8)) & 1
+				v = v<<1 | uint64(bit)
+			}
+			out = append(out, v)
+			off += w
+		}
+	}
+	return out
+}
+`
+
+// decodeU8Helper decodes a byte blob whose data layout is a single u8 line: one
+// cell per input byte.  This is the common case (byte-oriented input), and the
+// direct byte widen avoids the generic decoder's per-bit inner loop.
+const decodeU8Helper = `// decodeU8 unpacks a single-u8-line byte blob into one cell per input byte.
+func decodeU8(data []byte) []uint64 {
+	out := make([]uint64, len(data))
+	for i, b := range data {
+		out[i] = uint64(b)
+	}
+	return out
+}
+`
+
+// isSingleU8 reports whether a memory's data layout is a single u8 line, so its
+// byte encoding is exactly one cell per input byte (the decodeU8 fast path).
+func isSingleU8(widths []uint) bool {
+	return len(widths) == 1 && widths[0] == 8
+}
+
+// emitInputDecoders writes the input decoders the harness actually references:
+// the specialized decodeU8 for single-u8-line inputs and/or the generic decoder
+// for any other layout.
+func (g *generator) emitInputDecoders(c *code) {
+	var anyU8, anyGeneric bool
+
+	for _, m := range g.inputs {
+		if isSingleU8(m.dataWidths) {
+			anyU8 = true
+		} else {
+			anyGeneric = true
+		}
+	}
+
+	if anyU8 {
+		c.raw(decodeU8Helper)
+		c.line("")
+	}
+
+	if anyGeneric {
+		c.raw(genericDecodeBytes)
+		c.line("")
+	}
+}
+
 // emitMainHarness writes the package-main entry point.  It reads the inputs as
 // JSON (one hex/decimal string per input memory, matching `zkc exec`), decodes
 // each into its data-line cells, runs the program, and writes the outputs as
@@ -656,7 +743,13 @@ func (g *generator) emitMainHarness(c *code) {
 		c.linef(`fmt.Fprintf(os.Stderr, "decode: missing input %%q\n", %q)`, m.name)
 		c.line("os.Exit(2)")
 		c.line("}")
-		c.linef("in[%q] = decodeBytes(parseInput(rawInput), %s)", m.name, widthsLiteral(m.dataWidths))
+
+		if isSingleU8(m.dataWidths) {
+			c.linef("in[%q] = decodeU8(parseInput(rawInput))", m.name)
+		} else {
+			c.linef("in[%q] = decodeBytes(parseInput(rawInput), %s)", m.name, widthsLiteral(m.dataWidths))
+		}
+
 		c.linef("delete(raw, %q)", m.name)
 		c.line("}")
 	}
@@ -969,6 +1062,10 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 		return g.emitDivRem(c, fn, x)
 	case *bytecode.FieldArith[word.Uint]:
 		return g.emitFieldOp(c, fn, x)
+	case *bytecode.UintToField[word.Uint]:
+		return g.emitUintToField(c, fn, x)
+	case *bytecode.FieldToUint[word.Uint]:
+		return g.emitFieldToUint(c, fn, x)
 	case *bytecode.Intrinsic[word.Uint]:
 		return g.emitIntrinsic(c, fn, x)
 	case *bytecode.Debug[word.Uint]:
@@ -1008,6 +1105,8 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 		return nil
 	case *bytecode.Switch[word.Uint]:
 		return g.emitMultiwaySkip(c, fn, x, vi, ci, vecLen)
+	case *bytecode.Dispatch[word.Uint]:
+		return g.emitDispatch(c, fn, x, vi, ci, vecLen)
 	case *bytecode.Jmp[word.Uint]:
 		target := pos{uint(x.Target), 0}
 		c.linef("goto %s", labelName(target))
@@ -1040,10 +1139,33 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 // reg returns the Go local name for a register id.
 func reg(id regId) string { return fmt.Sprintf("r%d", id) }
 
+// widthOf returns the width of a register as represented in generated code:
+// its declared width, or 64 for a native (field-element) register, which is a
+// single uint64 local — a field value fits uint64 but need not be reduced mod
+// P (see regWidth, which additionally guards the modulus precondition).
+func widthOf(r descriptor.Register[word.Uint]) uint {
+	if r.IsNative() {
+		return 64
+	}
+
+	return r.Bitwidth().Unwrap()
+}
+
 func (g *generator) regWidth(fn *descFunction, id regId) (uint, error) {
 	r := fn.Register(id)
 	if r.IsNative() {
-		return 0, fmt.Errorf("gogen: native register r%d unsupported", id)
+		// A native (field-element) register is a single uint64 local when the
+		// field modulus fits 64 bits: a field value fits uint64, and the mod-P
+		// emitters (emit_field.go) reduce operands as they combine them — so a
+		// value at rest need not be reduced (a stored constant may exceed P),
+		// exactly mirroring the interpreter, which reduces only inside field
+		// ops.  A wider modulus (e.g. BLS12-377) needs a multi-limb
+		// representation and stays out of scope.
+		if g.modulus.BitLen() > 64 {
+			return 0, fmt.Errorf("gogen: native register r%d unsupported for modulus wider than 64 bits", id)
+		}
+
+		return 64, nil
 	}
 	// Registers up to 64 bits are single uint64 locals; up to 128 bits they
 	// are rN_0/rN_1 limb pairs.
@@ -1120,6 +1242,7 @@ func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, er
 		}
 
 		info.contents = contents
+		info.elemType = staticElemType(contents)
 	case m.IsPaged():
 		info.role = pagedScratch
 	case m.IsReadOnly():
@@ -1127,12 +1250,42 @@ func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, er
 	case m.IsWriteOnly():
 		info.role = womOutput
 	case m.IsReadWrite():
-		info.role = ramScratch
+		if cells, ok := fixedScratchSize(m); ok {
+			info.role = fixedScratch
+			info.cells = cells
+		} else {
+			info.role = ramScratch
+		}
 	default:
 		return info, fmt.Errorf("gogen: unsupported memory %q (%T)", m.Name(), m)
 	}
 
 	return info, nil
+}
+
+// fixedScratchSize returns the complete flattened cell count when the memory
+// geometry proves it is small. A fixed array is semantics-preserving only
+// when it covers every address accepted by the descriptor.
+func fixedScratchSize(m *descriptor.Memory[word.Uint]) (uint64, bool) {
+	cells := uint64(m.NumOutputs())
+	if cells == 0 || cells > maxFixedScratchCells {
+		return 0, false
+	}
+
+	for _, r := range m.AddressRegisters() {
+		if r.IsNative() {
+			return 0, false
+		}
+
+		w := r.Bitwidth().Unwrap()
+		if w >= 64 || cells > maxFixedScratchCells>>w {
+			return 0, false
+		}
+
+		cells <<= w
+	}
+
+	return cells, true
 }
 
 // toU64s converts SROM contents into plain uint64s for baking.
@@ -1151,14 +1304,56 @@ func toU64s(words []word.Uint) ([]uint64, error) {
 	return out, nil
 }
 
-// sromLiteral renders a Go []uint64 literal for a static memory's baked contents.
-func sromLiteral(contents []uint64) string {
-	parts := make([]string, len(contents))
-	for i, v := range contents {
-		parts[i] = fmt.Sprintf("0x%x", v)
+// sromLiteral renders a compact, fixed-size static-memory literal.  A fixed
+// array ([...]) lets the Go compiler drop bounds checks when the index is
+// provably in range, and the narrowest Go type covering every baked value keeps
+// large ROMs small (reads explicitly widen back to the VM's uint64 cell type).
+func sromLiteral(info memInfo) string {
+	elem := info.elemType
+	if len(info.contents) == 0 {
+		return "[...]" + elem + "{}"
 	}
 
-	return "[]uint64{" + strings.Join(parts, ", ") + "}"
+	var b strings.Builder
+	fmt.Fprintf(&b, "[...]%s{\n", elem)
+
+	const valuesPerLine = 8
+	for i, v := range info.contents {
+		if i%valuesPerLine == 0 {
+			b.WriteString("\t")
+		}
+
+		fmt.Fprintf(&b, "0x%x, ", v)
+
+		if i%valuesPerLine == valuesPerLine-1 || i == len(info.contents)-1 {
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("}")
+
+	return b.String()
+}
+
+// staticElemType is the narrowest unsigned Go type that holds every baked value.
+// Sizing from the actual contents (rather than the declared data-line width)
+// keeps the literal correct by construction and as small as the values allow.
+func staticElemType(contents []uint64) string {
+	var maxV uint64
+	for _, v := range contents {
+		maxV = max(maxV, v)
+	}
+
+	switch {
+	case maxV <= 0xff:
+		return "uint8"
+	case maxV <= 0xffff:
+		return "uint16"
+	case maxV <= 0xffffffff:
+		return "uint32"
+	default:
+		return "uint64"
+	}
 }
 
 // uniqueName reserves a sanitized identifier, suffixing on collision (distinct

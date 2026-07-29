@@ -1,0 +1,9 @@
+//error:5:9-19:unused variable tmp
+fn main() {
+    var i:u8 = 0
+    while i != 10 {
+        var tmp:u8
+        i = i + 1
+    }
+    return
+}

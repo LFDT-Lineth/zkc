@@ -148,8 +148,9 @@ func splitCell[W word.Word[W]](value W, limbIds []RegisterId, limbsMap descripto
 func splitFunction[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descriptor.Module[W],
 	m *descriptor.Function[W]) descriptor.Module[W] {
 	var (
-		alloc = split.NewAllocator(mapping.LimbsRegisterMap())
-		code  = splitBytecodeVector(mapping, mods, alloc, m.Vectors())
+		alloc = split.NewAllocator(mapping.LimbsRegisterMap()).
+			EnforceRegisterWidth(mapping.RegisterWidth())
+		code = splitBytecodeVector(mapping, mods, alloc, m.Vectors())
 	)
 	//
 	return descriptor.NewFunction(m.Name(), alloc.Registers(), m.Kind(), code)
@@ -245,13 +246,25 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 			return split.DivRem(limbsMap, c)
 		case *bytecode.FieldArith[W]:
 			return []Bytecode[W]{splitFieldArith(limbsMap, c)}
+		case *bytecode.UintToField[W]:
+			// The native target stays a single register; the uint source splits
+			// into limbs.
+			return []Bytecode[W]{&bytecode.UintToField[W]{
+				Target: split.ApplyLimbsMap(limbsMap, c.Target)[0],
+				Source: split.ApplyLimbsMapReversed(limbsMap, c.Source...)}}
+		case *bytecode.FieldToUint[W]:
+			// The uint target splits into limbs; the native source stays a single
+			// register.
+			return []Bytecode[W]{&bytecode.FieldToUint[W]{
+				Target: split.ApplyLimbsMapReversed(limbsMap, c.Target...),
+				Source: split.ApplyLimbsMap(limbsMap, c.Source)[0]}}
 		case *bytecode.Switch[W]:
 			return split.Switch(limbsMap, c)
-
+		case *bytecode.Dispatch[W]:
+			return split.Dispatch(limbsMap, c)
+		case *bytecode.CheckCast[W]:
+			panic("CheckCast is not supposed to happen before splitting")
 		default:
-			// NOTE: checkcast does not technically need to be supported because
-			// the cast insertion phase runs after register splitting.  However,
-			// it should be noted that splitting checkcast is pretty simple.
 			panic(fmt.Sprintf("unsupported bytecode (%T)", c))
 		}
 	})
@@ -341,11 +354,23 @@ func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.All
 func splitSkipIf[W word.Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.SkipIf[W]) Bytecode[W] {
 	// Both operands are frame-local registers of equal width, so each is simply
 	// mapped onto its limbs.
-	left := split.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
-	right := split.ApplyLimbsMap(limbsMap, c.Right.Registers()...)
+	var (
+		left  = split.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
+		right bytecode.Operand[W]
+	)
+	// Split right-hand side according to what it is.
+	if c.Right.IsRegisterVector() {
+		limbs := split.ApplyLimbsMap(limbsMap, c.Right.AsRegisters()...)
+		right = bytecode.NewRegisterOperand[W](limbs...)
+	} else {
+		// Split the constant
+		constants := descriptor.SplitConstantReversed(c.Right.AsConstant(), limbsMap.RegisterWidth())
+		right = bytecode.NewConstantOperand(constants...)
+	}
 	// Construct vectored form of skip_if
-	return bytecode.NewSkipIfVec[W](c.Op, c.Skip, bytecode.NewRegisterVector(left...),
-		bytecode.NewRegisterVector(right...))
+	return bytecode.NewSkipIf(c.Op, c.Skip,
+		bytecode.NewRegisterVector(left...), right,
+	)
 }
 
 // Argument alignment is concerned with ensuring the number of arguments matches
@@ -378,22 +403,9 @@ func argAlignment[W word.Word[W]](local []RegisterId, remote []descriptor.Regist
 	)
 	//
 	if m < n && descriptor.HasNativeRegisterId(local, alloc) {
-		// going from native register to multiple limbs.  In this case, we again
-		// have to injecte temporaries and assign them to the native register.
-		var nativeLocal = local
-		// Allocate temporaries
-		local = allocateMatchingLocals(remote, alloc)
-		// assignment native local to local
-		pre = append(pre, bytecode.Concat[W](local, nativeLocal))
-		//
+		panic("field-to-uint argument must be materialised before splitting")
 	} else if m > n && descriptor.HasNativeRegister(remote) {
-		// going to native register from multiple limbs.  In this case, we again
-		// have to injecte temporaries and assign them to the native register.
-		var locals = local
-		// Allocate temporaries
-		local = allocateMatchingLocals(remote, alloc)
-		// assignment native local to local
-		pre = append(pre, bytecode.Concat[W](local, locals))
+		panic("uint-to-field argument must be materialised before splitting")
 	} else if m < n {
 		var zreg = alloc.ZeroRegister()
 		// Less locals than remotes.  In this case, pad locals with zero
@@ -444,22 +456,9 @@ func retAlignment[W word.Word[W]](local []RegisterId, remote []descriptor.Regist
 	)
 	//
 	if m < n && descriptor.HasNativeRegisterId(local, alloc) {
-		// going to native register from multiple limbs.  In this case, we again
-		// have to injecte temporaries and assign them to the native register.
-		var nativeLocal = local
-		// Allocate temporaries
-		local = allocateMatchingLocals(remote, alloc)
-		// assignment native local to local
-		post = append(post, bytecode.Concat[W](nativeLocal, local))
-		//
+		panic("uint-to-field return must be materialised before splitting")
 	} else if m > n && descriptor.HasNativeRegister(remote) {
-		// going to multiple limbs from native register.  In this case, we again
-		// have to inject a temporary native and assign them to the native register.
-		var locals = local
-		// Allocate temporaries
-		local = allocateMatchingLocals(remote, alloc)
-		// assignment native local to local
-		post = append(post, bytecode.Concat[W](locals, local))
+		panic("field-to-uint return must be materialised before splitting")
 	} else if m < n {
 		var zreg = alloc.ZeroRegister()
 		// Less locals than remotes.  In this case, pad locals with zero
@@ -531,17 +530,4 @@ func splitRegisterVectors[W any](limbsMap descriptor.LimbsMap[W],
 	}
 	//
 	return nvecs
-}
-
-func allocateMatchingLocals[W word.Word[W]](remote []descriptor.Register[W], alloc split.Allocator[W],
-) (local []RegisterId) {
-	//
-	local = make([]RegisterId, len(remote))
-	//
-	for i, r := range remote {
-		// NOTE: remote should always have valid bitwidth here.
-		local[i] = alloc.Allocate("f", r.Bitwidth())
-	}
-	//
-	return local
 }

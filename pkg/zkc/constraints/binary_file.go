@@ -174,14 +174,14 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 ) (output map[string][]byte, rtr rtrace.Trace[F], tr trace.Trace[F], errs []error) {
 	//
 	var (
-		processor = &postProcess[vm.Uint128, F]{field: p.Field()}
+		processor = &postProcess[vm.Uint32, F]{field: p.Field()}
 		//
 		stats = util.NewPerfStats()
 		// Lower bytecode program
-		prog64 = vm.ProgramToProgram[vm.Uint, vm.Uint128](p.program)
+		prog32 = vm.ProgramToProgram[vm.Uint, vm.Uint32](p.program)
 	)
 	// Execute machine in chunks of 1K steps
-	rtr, output, errs = vm.BootAndTrace(prog64, input, math.MaxUint, processor)
+	rtr, output, errs = vm.BootAndTrace(prog32, input, math.MaxUint, processor)
 	//
 	if len(errs) == 0 {
 		// Extract AIR constraints

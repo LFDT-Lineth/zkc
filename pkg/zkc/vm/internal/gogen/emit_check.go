@@ -67,7 +67,7 @@ func (g *generator) checkWidth(c *code, op operand, w uint) {
 // dead; when it survives, flow past it proves the value fits, so the target's
 // interval is refined to the checked width.
 func (g *generator) emitCheckCast(c *code, fn *descFunction, x *bytecode.CheckCast[word.Uint]) error {
-	op, err := g.operand(fn, x.Target)
+	op, err := g.registerOperand(fn, x.Target)
 	if err != nil {
 		return err
 	}

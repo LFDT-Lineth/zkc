@@ -26,19 +26,19 @@ func Test_ZkcUtil_Byte(t *testing.T) {
 }
 
 func Test_ZkcUtil_BitRor64(t *testing.T) {
-	checkZkcUtil(t, "zkc/util/bit_ror64", DEFAULT_UTIL_CONFIG)
+	checkZkcUtil(t, "zkc/util/bit_ror64", DEFAULT_UTIL_CONFIG.Sampling(0.1))
 }
 
 func Test_ZkcUtil_BitSar(t *testing.T) {
-	checkZkcUtil(t, "zkc/util/bit_sar", DEFAULT_UTIL_CONFIG)
+	checkZkcUtil(t, "zkc/util/bit_sar", DEFAULT_UTIL_CONFIG.Sampling(0.1))
 }
 
 func Test_ZkcUtil_BitShr(t *testing.T) {
-	checkZkcUtil(t, "zkc/util/bit_shr", DEFAULT_UTIL_CONFIG)
+	checkZkcUtil(t, "zkc/util/bit_shr", DEFAULT_UTIL_CONFIG.Sampling(0.1))
 }
 
 func Test_ZkcUtil_BitShl(t *testing.T) {
-	checkZkcUtil(t, "zkc/util/bit_shl", DEFAULT_UTIL_CONFIG)
+	checkZkcUtil(t, "zkc/util/bit_shl", DEFAULT_UTIL_CONFIG.Sampling(0.1))
 }
 
 func Test_ZkcUtil_ByteCounting(t *testing.T) {

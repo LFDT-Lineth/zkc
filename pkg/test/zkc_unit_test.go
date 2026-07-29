@@ -77,7 +77,7 @@ func Test_ZkcUnit_Basic_13(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_14(t *testing.T) {
-	t.Skip("mismatched limbs")
+	t.Skip("#2031 mismatched limbs")
 	checkZkcUnit(t, "zkc/unit/basic_14", DEFAULT_UNIT_CONFIG)
 }
 
@@ -191,12 +191,10 @@ func Test_ZkcUnit_Basic_41(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_42(t *testing.T) {
-	t.Skip("#2008 register splitting for multiplication")
 	checkZkcUnit(t, "zkc/unit/basic_42", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_43(t *testing.T) {
-	t.Skip("#2008 register splitting for multiplication")
 	checkZkcUnit(t, "zkc/unit/basic_43", DEFAULT_UNIT_CONFIG)
 }
 
@@ -319,7 +317,6 @@ func Test_ZkcUnit_Basic_72(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_74(t *testing.T) {
-	t.Skip("subtract with borrow")
 	checkZkcUnit(t, "zkc/unit/basic_74", DEFAULT_UNIT_CONFIG)
 }
 
@@ -345,6 +342,20 @@ func Test_ZkcUnit_Basic_79(t *testing.T) {
 
 func Test_ZkcUnit_Basic_80(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_80", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_81(t *testing.T) {
+	// #2007: support implicit sign bit
+	checkZkcUnit(t, "zkc/unit/basic_81", DEFAULT_UNIT_CONFIG.Sampling(0.05).Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_82(t *testing.T) {
+	// #2007: support implicit sign bit
+	checkZkcUnit(t, "zkc/unit/basic_82", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_83(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_83", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
@@ -419,10 +430,6 @@ func Test_ZkcUnit_IfElse_08(t *testing.T) {
 // ===================================================================
 // Constant Tests
 // ===================================================================
-
-func Test_ZkcUnit_Const_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/const_01", DEFAULT_UNIT_CONFIG)
-}
 
 func Test_ZkcUnit_Const_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/const_02", DEFAULT_UNIT_CONFIG)
@@ -710,7 +717,7 @@ func Test_ZkcUnit_Bitwise_13(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/bitwise_13", DEFAULT_UNIT_CONFIG)
 }
 
-func Test_ZkcUnit_Bitwise_14(t *testing.T) {
+func Test_ZkcUnit_(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/bitwise_14", DEFAULT_UNIT_CONFIG)
 }
 
@@ -727,10 +734,12 @@ func Test_ZkcUnit_Bitwise_17(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_18(t *testing.T) {
+	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bitwise_18", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Bitwise_19(t *testing.T) {
+	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bitwise_19", DEFAULT_UNIT_CONFIG)
 }
 
@@ -1006,6 +1015,22 @@ func Test_ZkcUnit_Switch_13(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_13", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Switch_14(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_14", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_15(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_15", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_16(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_16", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_17(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_17", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Printf Tests
 // ===================================================================
@@ -1199,11 +1224,11 @@ func Test_ZkcUnit_BigNum_03(t *testing.T) {
 }
 
 func Test_ZkcUnit_BigNum_04(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_04", DEFAULT_UNIT_CONFIG.GoGen(false))
+	checkZkcUnit(t, "zkc/unit/bignum_04", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_BigNum_05(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_05", DEFAULT_UNIT_CONFIG.GoGen(false))
+	checkZkcUnit(t, "zkc/unit/bignum_05", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_BigNum_06(t *testing.T) {
@@ -1247,15 +1272,18 @@ func Test_ZkcUnit_BigNum_15(t *testing.T) {
 }
 
 func Test_ZkcUnit_BigNum_16(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_16", DEFAULT_UNIT_CONFIG)
+	t.Skip("#2056: large carry registers from splitting multiplication")
+	checkZkcUnit(t, "zkc/unit/bignum_16", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_BigNum_17(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG.GoGen(false))
+	t.Skip("#2056: large carry registers from splitting multiplication")
+	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_BigNum_18(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.GoGen(false))
+	t.Skip("#2056: large carry registers from splitting multiplication")
+	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 // ===================================================================

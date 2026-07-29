@@ -12,6 +12,7 @@ package dfa
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -59,10 +60,9 @@ func (p Path[W]) NotEquals(lhs, rhs BranchId) Path[W] {
 }
 
 // EqualsConst extends the current path with a new constraint that a given variable equals a given constant.
-func (p Path[W]) EqualsConst(lhs BranchId, rhs W) Path[W] {
+func (p Path[W]) EqualsConst(lhs BranchId, rhs big.Int) Path[W] {
 	var (
-		rhs_c = rhs.BigInt()
-		prop  = logical.NewProposition(logical.EqualsConst(lhs, *rhs_c))
+		prop = logical.NewProposition(logical.EqualsConst(lhs, rhs))
 	)
 	//
 	if len(p.condition.Conjuncts()) == 0 {
@@ -73,10 +73,9 @@ func (p Path[W]) EqualsConst(lhs BranchId, rhs W) Path[W] {
 }
 
 // NotEqualsConst extends the current path with a new constraint that a given variable does not equal a given constant.
-func (p Path[W]) NotEqualsConst(lhs BranchId, rhs W) Path[W] {
+func (p Path[W]) NotEqualsConst(lhs BranchId, rhs big.Int) Path[W] {
 	var (
-		rhs_c = rhs.BigInt()
-		prop  = logical.NewProposition(logical.NotEqualsConst(lhs, *rhs_c))
+		prop = logical.NewProposition(logical.NotEqualsConst(lhs, rhs))
 	)
 	//
 	if len(p.condition.Conjuncts()) == 0 {
