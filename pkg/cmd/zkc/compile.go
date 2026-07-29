@@ -128,9 +128,9 @@ func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildAr
 	// Generate AIR representation
 	air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
 	// validate that all registers are referenced in at least one vanishing constraint or lookup
-	untouchedRegister := constraints.Validate(air)
-	if len(untouchedRegister) > 0 {
-		for _, err := range untouchedRegister {
+	untouchedRegisterErrs := constraints.Validate(air)
+	if len(untouchedRegisterErrs) > 0 {
+		for _, err := range untouchedRegisterErrs {
 			log.Errorf("untouched register: %v", err)
 		}
 	}
@@ -143,7 +143,7 @@ func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildAr
 	}
 
 	// Exit with error if any errors triggered
-	if len(untouchedRegister) > 0 || len(staticTablesSizeErrs) > 0 {
+	if len(untouchedRegisterErrs) > 0 || len(staticTablesSizeErrs) > 0 {
 		os.Exit(1)
 	}
 }
