@@ -772,6 +772,7 @@ type nonZeroCheck[F field.Element[F]] struct {
 // recognised for a register x range checked to w bits: "x ≠ 0", which is a
 // non-zero check on x itself; and "x ≠ 2^w-1", which is a non-zero check on
 // the complement 2^w-1 - x.
+// Note that it heavily relies on the assumption that the register's range constraints are sound.
 func isNonZeroCheck[F field.Element[F]](t LogicalTerm[F], regs register.Map) (nonZeroCheck[F], bool) {
 	ne, ok := t.(*NotEqual[F])
 	//
