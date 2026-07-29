@@ -120,18 +120,31 @@ func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, arti
 	WriteBinaryFile(binfile, filename)
 }
 
-// Validate the given schema by ensuring that every register in every module is referenced in at least one vanishing
-// constraint or lookup.  If any such register is encountered, this fires errors which identify the enclosing
-// modules and registers.
+// Validate the given schema by ensuring that:
+// - every register in every module is referenced in at least one vanishing
+// constraint or lookup.
+// - static tables are of power of two depth
 func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
 	// Generate AIR representation
 	air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
-	// Perform validation check
-	if errs := constraints.Validate(air); len(errs) > 0 {
-		for _, err := range errs {
+	// validate that all registers are referenced in at least one vanishing constraint or lookup
+	untouchedRegister := constraints.Validate(air)
+	if len(untouchedRegister) > 0 {
+		for _, err := range untouchedRegister {
 			log.Errorf("untouched register: %v", err)
 		}
 		//
+		os.Exit(1)
+	}
+	// validate static tables size
+	staticTablesSizeErrs := constraints.ValidateStaticTablesSize(air)
+	if len(staticTablesSizeErrs) > 0 {
+		for _, err := range staticTablesSizeErrs {
+			log.Errorf("static table: %v", err)
+		}
+	}
+
+	if len(untouchedRegister) > 0 || len(staticTablesSizeErrs) > 0 {
 		os.Exit(1)
 	}
 }

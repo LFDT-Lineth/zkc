@@ -36,7 +36,7 @@ func Validate[F field.Element[F]](schema sc.AnySchema[F]) []error {
 	// Iterate each constraint, marking any registers it uses.
 	for iter := schema.Constraints(); iter.HasNext(); {
 		var c = iter.Next()
-		validateConstraint(c, validated, schema)
+		validateConstraint(c, validated)
 	}
 	// Validate every register was marked
 	for iter, mid := schema.Modules(), 0; iter.HasNext(); mid++ {
@@ -54,16 +54,16 @@ func Validate[F field.Element[F]](schema sc.AnySchema[F]) []error {
 	return errors
 }
 
-func validateConstraint[F field.Element[F]](c sc.Constraint[F], validations []bit.Set, schema sc.AnySchema[F]) {
+func validateConstraint[F field.Element[F]](c sc.Constraint[F], validations []bit.Set) {
 	switch c := c.(type) {
 	case air.VanishingConstraint[F]:
 		validateVanishingConstraint(c.Unwrap(), validations)
 	case mir.VanishingConstraint[F]:
 		validateVanishingConstraint(c, validations)
 	case air.LookupConstraint[F]:
-		validateLookupConstraint(c.Unwrap(), validations, schema)
+		validateLookupConstraint(c.Unwrap(), validations)
 	case mir.LookupConstraint[F]:
-		validateLookupConstraint(c, validations, schema)
+		validateLookupConstraint(c, validations)
 	}
 }
 
@@ -76,7 +76,7 @@ func validateVanishingConstraint[F field.Element[F], T term.Testable[F]](c vanis
 }
 
 func validateLookupConstraint[F field.Element[F], T term.Evaluable[F]](c lookup.Constraint[F, T],
-	validations []bit.Set, schema sc.AnySchema[F]) {
+	validations []bit.Set) {
 	//
 	validateLookupVectors(c.Targets, validations)
 	validateLookupVectors(c.Sources, validations)
@@ -96,4 +96,21 @@ func validateLookupVector[F field.Element[F], T term.Evaluable[F]](v lookup.Vect
 			validations[v.Context()].Insert(rid)
 		}
 	}
+}
+
+// ValidateStaticTablesSize validates that all static tables in the given schema have a power-of-two height.
+func ValidateStaticTablesSize[F field.Element[F]](schema sc.AnySchema[F]) []error {
+	var errors []error
+
+	for iter, mid := schema.Modules(), 0; iter.HasNext(); mid++ {
+		var mod = iter.Next()
+		if mod.IsStatic() {
+			if n := uint(len(mod.StaticContents())); n-1&n != 0 {
+				err := fmt.Errorf("static table \"%s\" has non power-of-two height (%d)", mod.Name().String(), n)
+				errors = append(errors, err)
+			}
+		}
+	}
+
+	return errors
 }
