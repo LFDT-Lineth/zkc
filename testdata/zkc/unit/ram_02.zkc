@@ -1,0 +1,21 @@
+// Read-feeds-write on the same address: a single statement both reads and
+// writes the memory, so it carries two timestamps.
+pub input data(address:u8) -> (byte:u8)
+memory ram(address:u8) -> (byte:u8)
+
+fn dinc<ram>(x:u8) {
+    ram[x] = ram[x] + 1
+}
+
+fn main<ram>() {
+    var addr:u8 = data[0]
+    var start:u8 = data[1]
+    var expected:u8 = data[2]
+    ram[addr] = start
+    dinc(addr)
+    dinc(addr)
+    dinc(addr)
+    if ram[addr] != expected {
+        fail
+    }
+}

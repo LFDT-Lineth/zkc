@@ -1,0 +1,41 @@
+// Two independent read-write memories: each threads its own timestamp, calls
+// forward only the effects the callee declares, and a single statement may
+// access both memories (two lookups on one row).
+pub input data(address:u8) -> (byte:u8)
+memory ram1(address:u8) -> (byte:u8)
+memory ram2(address:u8) -> (byte:u8)
+
+fn copy<ram1, ram2>(i:u8) {
+    // one statement, two distinct memories
+    ram2[i] = ram1[i]
+}
+
+fn bump<ram1>(i:u8) {
+    ram1[i] = ram1[i] + 1
+}
+
+fn main<ram1, ram2>() {
+    var a:u8 = data[0]
+    var b:u8 = data[1]
+    ram1[0] = a
+    ram2[0] = b
+    // distinct memories in a single condition
+    if ram1[0] != ram2[0] {
+        ram1[1] = 1
+    } else {
+        ram1[1] = 0
+    }
+    ram1[3] = a
+    copy(3)
+    bump(0)
+    if ram2[3] != a {
+        fail
+    }
+    var bumped:u8 = a + 1
+    if ram1[0] != bumped {
+        fail
+    }
+    if ram1[1] != data[2] {
+        fail
+    }
+}

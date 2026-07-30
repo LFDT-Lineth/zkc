@@ -1,0 +1,28 @@
+// Nested memory accesses on both sides of an assignment: the write's address
+// is itself a read, and so is the value.  Each statement performs up to three
+// timestamped accesses.
+pub input data(address:u8) -> (byte:u8)
+memory ram(address:u8) -> (byte:u8)
+
+fn main<ram>() {
+    var expected:u8 = data[0]
+    ram[0] = 3     // pointer to cell 3
+    ram[1] = 7     // pointer to cell 7
+    ram[7] = 42    // payload
+    // Nested read on the left: writes ram[3] (= ram[ram[0]]) with ram[7]'s
+    // payload.
+    ram[ram[0]] = ram[7]
+    // Nested read on the right: copies ram[7] (= ram[ram[1]]) into ram[2].
+    ram[2] = ram[ram[1]]
+    // Bare nested read.
+    var v:u8 = ram[ram[0]]
+    if ram[3] != 42 {
+        fail
+    }
+    if ram[2] != 42 {
+        fail
+    }
+    if v != expected {
+        fail
+    }
+}

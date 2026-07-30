@@ -1,0 +1,29 @@
+// Read-feeds-write across distinct addresses (the pattern used by the sort /
+// blake benchmarks), including a swap.
+pub input data(address:u8) -> (byte:u8)
+memory buf(address:u8) -> (byte:u8)
+
+fn swap<buf>(i:u8, j:u8) {
+    var tmp:u8 = buf[i]
+    buf[i] = buf[j]
+    buf[j] = tmp
+}
+
+fn main<buf>() {
+    var x:u8 = data[0]
+    var y:u8 = data[1]
+    buf[0] = x
+    buf[1] = y
+    // copy: single statement, read one cell, write another
+    buf[2] = buf[0]
+    swap(0, 1)
+    if buf[0] != y {
+        fail
+    }
+    if buf[1] != x {
+        fail
+    }
+    if buf[2] != x {
+        fail
+    }
+}

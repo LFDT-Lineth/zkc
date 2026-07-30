@@ -1,0 +1,25 @@
+// Timestamps threaded around loops: direct accesses in a loop body (the stamp
+// register is carried across iterations) and an effectful call inside a loop.
+pub input data(address:u8) -> (byte:u8)
+memory ram(address:u8) -> (byte:u8)
+
+fn store<ram>(i:u8, v:u8) {
+    ram[i] = v
+}
+
+fn main<ram>() {
+    var length:u8 = data[0]
+    var address:u8 = data[1]
+    var expected:u8 = data[2]
+    // direct write in a loop
+    for i:u8 = 0; i != length; i = i + 1 {
+        ram[i] = data[i]
+    }
+    // rewrite every cell through an effectful call in a loop
+    for j:u8 = 0; j != length; j = j + 1 {
+        store(j, data[j])
+    }
+    if ram[address] != expected {
+        fail
+    }
+}
