@@ -100,7 +100,9 @@ func OptimizeDivisions[W word.Word[W]](program Program[W]) Program[W] {
 // them, and every memory access carries a distinct timestamp in its Stamp
 // operand (the k-th access executed carries stamp-in + k).  Applied on the
 // constraint path only (the run-time memory maintains its own clock), after
-// function inlining and before vectorisation / register splitting.
+// vectorisation — so a vector is genuinely one trace row and the canonical
+// stamp register is written at most once per executed path through it — and
+// before register splitting.
 func ThreadTimestamps[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.ThreadTimestamps(program)
 }
