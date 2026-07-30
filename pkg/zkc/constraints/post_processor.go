@@ -34,6 +34,14 @@ type (
 // functions, this means transcribing each state generated for the function
 // during execution.
 type postProcess[W Word[W], F Element[F]] struct {
+	// field configures how wide values split into limb columns.  The
+	// read-write memory observer needs it because a timestamp is a
+	// stampWidth-bit value whose column count depends on the field's register
+	// width (e.g. one 32-bit timestamp becomes two u16 columns on a 16-bit
+	// field): the timestamp columns emitted here must split exactly like the
+	// caller's threaded stamp register, or the two sides could not be matched
+	// up by the (forthcoming) caller->memory lookup.
+	field field.Config
 }
 
 // TraceFunction implementation for the vm.TraceProcessor interface.
@@ -58,6 +66,6 @@ func (p *postProcess[W, F]) TraceMemory(m vm.RuntimeMemory[W]) rtrace.ArrayModul
 	case vm.PRIVATE_WRITE_ONCE_MEMORY, vm.PUBLIC_WRITE_ONCE_MEMORY:
 		return post.ProcessAccessOnceMemory[W, F](m)
 	default:
-		return post.ProcessReadWriteMemory[W, F](m)
+		return post.ProcessReadWriteMemory[W, F](m, p.field)
 	}
 }

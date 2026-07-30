@@ -13,14 +13,287 @@
 package post
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-// ProcessReadWriteMemory performs post-processing on a RAM trace.
-func ProcessReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W]) rtrace.ArrayModule[F] {
-	var regs = array.Map(m.Descriptor().Registers(), toRtraceRegister)
-	// TODO: flesh me out :)
-	return rtrace.NewArrayModule[F](m.Descriptor().Name(), regs)
+// ramStampWidth is the bit-width of a read-write memory timestamp.  It MUST match
+// the constraint side (constraints.stampWidth) and the ThreadTimestamps
+// transform, so the timestamp columns produced here split into the same limbs as
+// the schema declares.
+//
+// TODO: unify this with the other copies once a stamp-width syntax exists at
+// the ZkC source level (issue #2069).
+const ramStampWidth uint = 32
+
+// ramTraceLayout records the column offsets of a RAM trace row.  The order MUST
+// match constraints.computeRamLayout (the schema this trace is checked against):
+// [ADDRESS, VALUE_WRITTEN, EXEC, FINL, IS_WRITE, VALUE_READ, TIMESTAMP_WRITTEN,
+//
+//	TIMESTAMP_READ, TIMESTAMP_DELTA, ADDRESS_DELTA, TS_CARRY, ADDR_CARRY].
+type ramTraceLayout struct {
+	nAddr, nData, nStamp                         int
+	valueWritten, exec, finl, isWrite, valueRead int
+	tsWritten, tsRead, tsDelta                   int
+	addrDelta, tsCarry, addrCarry                int
+	width                                        int
+}
+
+func newRamTraceLayout(nAddr, nData, nStamp int) ramTraceLayout {
+	var l ramTraceLayout
+	//
+	l.nAddr, l.nData, l.nStamp = nAddr, nData, nStamp
+	// address occupies [0, nAddr); value-written [nAddr, nAddr+nData).
+	l.valueWritten = nAddr
+	base := nAddr + nData
+	l.exec = base
+	l.finl = base + 1
+	l.isWrite = base + 2
+	l.valueRead = base + 3
+	l.tsWritten = l.valueRead + nData
+	l.tsRead = l.tsWritten + nStamp
+	l.tsDelta = l.tsRead + nStamp
+	l.addrDelta = l.tsDelta + nStamp
+	l.tsCarry = l.addrDelta + nAddr
+	l.addrCarry = l.tsCarry + (nStamp - 1)
+	l.width = l.addrCarry + (nAddr - 1)
+	//
+	return l
+}
+
+// ramAccess is one logical read-write memory access reconstructed from the
+// per-lane access log: a shared timestamp / write-flag, the physical start
+// address of its lanes, and the value on each lane.
+type ramAccess[W Word[W]] struct {
+	timestamp uint64
+	isWrite   bool
+	physStart uint64
+	values    []W
+}
+
+// ProcessReadWriteMemory materialises the trace of a read-write (RAM) memory: one
+// row per logical access (grouped from the per-lane access log), in access order,
+// preceded by a padding row.  It fills the execution-phase columns declared by
+// constraints.translateReadWriteMemory; the finalization phase (FINL) is left
+// empty (the rcv/snd consistency bus and finalization rows are a follow-up), so
+// FINL-guarded columns (ADDRESS_DELTA, ADDR_CARRY) stay zero.
+func ProcessReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W],
+	fieldCfg field.Config) rtrace.ArrayModule[F] {
+	//
+	var (
+		geometry = m.Descriptor()
+		addrRegs = geometry.AddressRegisters()
+		nAddr    = int(geometry.NumInputs())
+		nData    = int(geometry.NumOutputs())
+		// Timestamp limb widths, most-significant first (matches computeRamLayout).
+		tsWidths = array.Reverse(register.LimbWidths(fieldCfg.RegisterWidth, ramStampWidth))
+		layout   = newRamTraceLayout(nAddr, nData, len(tsWidths))
+		regs     = determineRamRegisters(geometry, tsWidths)
+		accesses = groupRamAccesses(m.AccessLog(), nData)
+		// Per-physical-cell read-side state, tracked by replaying the log forward;
+		// every cell starts at value 0, timestamp 0.
+		cellValue = map[uint64]W{}
+		cellStamp = map[uint64]uint64{}
+		// Row 0 is a padding row (EXEC = FINL = 0).
+		rows = [][]F{make([]F, layout.width)}
+	)
+	//
+	for _, acc := range accesses {
+		var (
+			row     = make([]F, layout.width)
+			logical = acc.physStart / uint64(nData)
+			// Read-side: the row's cells share one last-write timestamp (accesses
+			// are row-atomic), so read it from the first lane.
+			tsRead = cellStamp[acc.physStart]
+			// The interpreter clock ticks before each access and the threaded
+			// stamps count from one, so the recorded timestamp IS the caller's
+			// stamp — no re-basing needed.  Timestamp zero is reserved for the
+			// initial state of an untouched cell (the zero value of cellStamp).
+			tsWr     = acc.timestamp
+			tsDelta  = tsWr - tsRead - 1
+			execTrue F
+		)
+		// EXEC = 1, IS_WRITE from the access; FINL = 0 (zero value).
+		row[layout.exec] = execTrue.SetUint64(1)
+		//
+		if acc.isWrite {
+			var one F
+
+			row[layout.isWrite] = one.SetUint64(1)
+		}
+		// ADDRESS (logical) split across the address lanes (offset 0).
+		copyAddressLines(logical, addrRegs, row[0:nAddr])
+		// VALUE_WRITTEN / VALUE_READ per lane.
+		for j := range nData {
+			row[layout.valueWritten+j] = wordToField[W, F](acc.values[j])
+			row[layout.valueRead+j] = wordToField[W, F](cellValue[acc.physStart+uint64(j)])
+		}
+		// TIMESTAMP_WRITTEN / READ / DELTA, split into limbs.
+		fillLimbs(row[layout.tsWritten:], tsWr, tsWidths)
+		fillLimbs(row[layout.tsRead:], tsRead, tsWidths)
+		fillLimbs(row[layout.tsDelta:], tsDelta, tsWidths)
+		// TS_CARRY: carries of the limb addition TIMESTAMP_READ + 1 + TIMESTAMP_DELTA.
+		for s, c := range timestampCarries(tsRead, tsDelta, tsWidths) {
+			var carry F
+
+			row[layout.tsCarry+s] = carry.SetUint64(c)
+		}
+		// Update the read-side state for every touched cell.
+		for j := range nData {
+			cellValue[acc.physStart+uint64(j)] = acc.values[j]
+			cellStamp[acc.physStart+uint64(j)] = tsWr
+		}
+		//
+		rows = append(rows, row)
+	}
+	//
+	return rtrace.NewArrayModule(geometry.Name(), regs, rows...)
+}
+
+// determineRamRegisters builds the ordered trace-register list for a RAM module,
+// matching the column order of constraints.computeRamLayout.
+func determineRamRegisters[W Word[W]](geometry *vm.Memory[W], tsWidths []uint) []rtrace.Register {
+	var (
+		u1   = util.Some([]uint{1})
+		regs = array.Map(geometry.Registers(), toRtraceRegister)
+	)
+	// EXEC, FINL, IS_WRITE.
+	regs = append(regs,
+		rtrace.NewRegister(io.RAM_EXEC_NAME, u1),
+		rtrace.NewRegister(io.RAM_FINL_NAME, u1),
+		rtrace.NewRegister(io.RAM_IS_WRITE_NAME, u1),
+	)
+	// VALUE_READ (same widths as the data lanes, native included).
+	for j, r := range geometry.DataRegisters() {
+		regs = append(regs, rtrace.NewRegister(io.RamLimbName(io.RAM_VALUE_READ_PREFIX, uint(j)), widthOption(r)))
+	}
+	// TIMESTAMP_WRITTEN / READ / DELTA.
+	for _, prefix := range []string{io.RAM_TS_WRITTEN_PREFIX, io.RAM_TS_READ_PREFIX, io.RAM_TS_DELTA_PREFIX} {
+		for k, w := range tsWidths {
+			regs = append(regs, rtrace.NewRegister(io.RamLimbName(prefix, uint(k)), util.Some([]uint{w})))
+		}
+	}
+	// ADDRESS_DELTA (same widths as the address lanes).
+	for j, r := range geometry.AddressRegisters() {
+		regs = append(regs, rtrace.NewRegister(io.RamLimbName(io.RAM_ADDR_DELTA_PREFIX, uint(j)), widthOption(r)))
+	}
+	// TS_CARRY / ADDR_CARRY (one fewer than their value's limbs; 1-bit).
+	for k := 0; k < len(tsWidths)-1; k++ {
+		regs = append(regs, rtrace.NewRegister(io.RamLimbName(io.RAM_TS_CARRY_PREFIX, uint(k)), u1))
+	}
+	//
+	for k := 0; k < int(geometry.NumInputs())-1; k++ {
+		regs = append(regs, rtrace.NewRegister(io.RamLimbName(io.RAM_ADDR_CARRY_PREFIX, uint(k)), u1))
+	}
+	//
+	return regs
+}
+
+// widthOption returns the rtrace bit-width option for a register: the register's
+// width, or None if it is native (a field element).
+func widthOption[W Word[W]](reg vm.Register[W]) util.Option[[]uint] {
+	if reg.IsNative() {
+		return util.None[[]uint]()
+	}
+	//
+	return util.Some([]uint{reg.Bitwidth().Unwrap()})
+}
+
+// groupRamAccesses groups the per-lane access log into logical accesses.  Every
+// lane of one logical access shares a single (Tick) timestamp and its lanes are
+// logged consecutively at ascending physical addresses, so a run of equal
+// timestamps is exactly one logical access.
+func groupRamAccesses[W Word[W]](log []vm.AccessData[W], nData int) []ramAccess[W] {
+	var out []ramAccess[W]
+	//
+	for i := 0; i < len(log); {
+		var (
+			ts  = log[i].TimestampWritten()
+			acc = ramAccess[W]{timestamp: ts, isWrite: log[i].IsWrite(), physStart: log[i].Address()}
+		)
+		//
+		for i < len(log) && log[i].TimestampWritten() == ts {
+			acc.values = append(acc.values, log[i].ValueWritten())
+			i++
+		}
+		//
+		out = append(out, acc)
+	}
+	//
+	return out
+}
+
+// fillLimbs writes value into the limb columns at the head of row, most-
+// significant limb first, matching copyAddressLines / the schema's limb order.
+func fillLimbs[F Element[F]](row []F, value uint64, widths []uint) {
+	// Most-significant limb comes first, so fill from the least significant end.
+	for i := len(widths); i > 0; i-- {
+		var (
+			f    F
+			w    = widths[i-1]
+			mask = (uint64(1) << w) - 1
+		)
+		//
+		row[i-1] = f.SetUint64(value & mask)
+		value >>= w
+	}
+}
+
+// timestampCarries returns the per-boundary carry of the multi-limb addition
+// TIMESTAMP_READ + 1 + TIMESTAMP_DELTA (= TIMESTAMP_WRITTEN), indexed by
+// significance (index 0 = carry out of the least significant limb).  Each carry
+// is 0 or 1.  widths are most-significant-limb first.
+func timestampCarries(tsRead, tsDelta uint64, widths []uint) []uint64 {
+	var (
+		L       = len(widths)
+		read    = splitLimbs(tsRead, widths)
+		delta   = splitLimbs(tsDelta, widths)
+		carries = make([]uint64, 0, max(0, L-1))
+		carry   = uint64(0)
+	)
+	// Add from the least significant limb (index L-1) up to the most significant.
+	for s := 0; s < L; s++ {
+		var (
+			i     = L - 1 - s
+			total = read[i] + delta[i] + carry
+		)
+		//
+		if s == 0 {
+			total++
+		}
+		//
+		carry = total >> widths[i]
+		//
+		if s < L-1 {
+			carries = append(carries, carry)
+		}
+	}
+	//
+	return carries
+}
+
+// splitLimbs decomposes value into limbs of the given (most-significant-first)
+// widths.
+func splitLimbs(value uint64, widths []uint) []uint64 {
+	limbs := make([]uint64, len(widths))
+	//
+	for i := len(widths); i > 0; i-- {
+		var w = widths[i-1]
+
+		limbs[i-1] = value & ((uint64(1) << w) - 1)
+		value >>= w
+	}
+	//
+	return limbs
+}
+
+// wordToField converts a machine word into a field element.
+func wordToField[W Word[W], F Element[F]](w W) F {
+	var f F
+	return f.SetBytes(w.BigInt().Bytes())
 }

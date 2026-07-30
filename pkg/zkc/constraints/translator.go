@@ -82,7 +82,7 @@ func translateModule[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, m vm
 			return translateWriteOnceMemory[W, F](ctx, m, rangeTables, maxStaticWidth)
 		}
 		//
-		return translateReadWriteMemory[W, F](ctx, m, rangeTables, maxStaticWidth)
+		return translateReadWriteMemory[W, F](ctx, m, field, rangeTables, maxStaticWidth)
 	default:
 		panic(fmt.Sprintf("unknown module \"%s\" encountered", m.Name()))
 	}
@@ -121,27 +121,6 @@ func translateWriteOnceMemory[W vm.Word[W], F field.Element[F]](
 	ctx schema.ModuleId, m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
 	return translateAccessOnceMemory[W, F](ctx, m, name, rangeTables, maxStaticWidth)
-}
-
-func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId,
-	m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
-	var (
-		regs = toRegisters(m.Registers())
-		mod  *schema.Table[F, mir.Constraint[F]]
-		name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
-	)
-	// Initialise module.  Memory modules are never native.  Read-write memories
-	// are never public outputs (only public write-only memories are).
-	mod = mod.Init(name, false, false, false, false, false, false, 0)
-	// Add all registers
-	mod.AddRegisters(regs...)
-	// TODO: read-write (RAM) constraints are disabled for now — the timestamp
-	// columns they rely on are not yet filled by the trace observer (see git
-	// history for the WIP body).
-
-	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
-
-	return mod
 }
 
 // translateAccessOnceMemory handles both

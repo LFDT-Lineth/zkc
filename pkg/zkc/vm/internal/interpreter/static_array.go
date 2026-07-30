@@ -45,6 +45,13 @@ func (p *StaticArray[W, C]) Descriptor() *descriptor.Memory[W] {
 	return &p.descriptor
 }
 
+// AccessLog implementation for the Memory interface.  A static array (ROM /
+// WOM / static ROM) does not record accesses; read-write memories override
+// this.
+func (p *StaticArray[W, C]) AccessLog() []AccessData[W] {
+	return nil
+}
+
 // Initialise implementation for Memory interface.
 func (p *StaticArray[W, C]) Initialise(contents []C) {
 	p.data = contents

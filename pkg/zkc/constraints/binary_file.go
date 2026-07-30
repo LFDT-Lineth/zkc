@@ -174,7 +174,7 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 ) (output map[string][]byte, rtr rtrace.Trace[F], tr trace.Trace[F], errs []error) {
 	//
 	var (
-		processor = &postProcess[vm.Uint32, F]{}
+		processor = &postProcess[vm.Uint32, F]{field: p.Field()}
 		//
 		stats = util.NewPerfStats()
 		// Lower bytecode program
