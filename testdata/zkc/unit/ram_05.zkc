@@ -6,9 +6,9 @@ memory ram(address:u8) -> (byte:u8)
 
 fn main<ram>() {
     var expected:u8 = data[0]
-    ram[0] = 3     // pointer to cell 3
-    ram[1] = 7     // pointer to cell 7
-    ram[7] = 42    // payload
+    ram[0] = 3 // pointer to cell 3
+    ram[1] = 7 // pointer to cell 7
+    ram[7] = 42 // payload
     // Nested read on the left: writes ram[3] (= ram[ram[0]]) with ram[7]'s
     // payload.
     ram[ram[0]] = ram[7]
