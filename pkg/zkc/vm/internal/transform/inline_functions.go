@@ -640,11 +640,13 @@ func removeModules[W word.Word[W]](modules []descriptor.Module[W], targets []uin
 	return kept
 }
 
-// remapModuleIds reconstructs a given function with all module identifiers
+// remapModuleIds reconstructs a given function with all module identifiers —
+// those embedded in its bytecodes and those of its declared memory effects —
 // substituted according to a given mapping.
 func remapModuleIds[W word.Word[W]](fn *descriptor.Function[W], idMap []uint) *descriptor.Function[W] {
 	var (
 		code    = make([]BytecodeVector[W], len(fn.Vectors()))
+		effects = fn.Effects()
 		changed = false
 	)
 	//
@@ -658,12 +660,22 @@ func remapModuleIds[W word.Word[W]](fn *descriptor.Function[W], idMap []uint) *d
 		//
 		code[i] = bytecode.NewVector(ncodes...)
 	}
+	// Remap the memory effects (memories are never removed, so every effect
+	// survives the mapping).
+	remapped := slices.Clone(effects)
+	//
+	for i, e := range effects {
+		remapped[i] = descriptor.ModuleId(idMap[e])
+		changed = changed || remapped[i] != e
+	}
+	//
+	effects = remapped
 	//
 	if !changed {
 		return fn
 	}
 	//
-	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), fn.Effects(), code)
+	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), effects, code)
 }
 
 func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
