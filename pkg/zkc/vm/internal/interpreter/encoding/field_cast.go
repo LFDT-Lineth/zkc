@@ -17,6 +17,35 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
+// ============================================================================
+// UINT_TO_FIELD / FIELD_TO_UINT instruction.  Format of these instructions is
+// the register-list layout shared with CAT (see encodeRegisterLists):
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |  nsrc  |  ntgt  |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// | tgt3   | tgt2   | tgt1   | tgt0   |
+// +--------+--------+--------+--------+
+// | ... packed source registers ...   |
+// +-----------------------------------+
+//
+// For UINT_TO_FIELD there is a single target (the field register), with the
+// sources being the uint limbs (least significant first); conversely, for
+// FIELD_TO_UINT there is a single source (the field register), with the
+// targets being the uint limbs.  The wide form retains the header but packs
+// the (now u16) target and source registers two per word:
+//
+// +--------+--------+--------+--------+
+// |  nsrc  |  ntgt  |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// |       tgt1      |       tgt0      |
+// +-----------------+-----------------+
+// | ... packed source registers ...   |
+// +-----------------------------------+
+// ============================================================================
+
 // UintToField encodes a uint-to-field conversion.
 func UintToField[W word.Word[W]](p *bytecode.UintToField[W]) []uint32 {
 	return encodeRegisterLists(UINT_TO_FIELD, []RegisterId{p.Target}, p.Source)

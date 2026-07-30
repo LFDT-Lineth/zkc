@@ -29,8 +29,8 @@ func Bitwise[W word.Word[W]](p *bytecode.Bitwise[W]) []uint32 {
 // +--------+--------+--------+--------+
 // | amount | source |   rd   | opcode |
 // +--------+--------+--------+--------+
-// |                 |     bitwidth    |
-// +--------+--------+--------+--------+
+// |       n/a       |     bitwidth    |
+// +-----------------+-----------------+
 //
 // The opcode itself distinguishes the operations, so no width is needed.  The
 // wide form carries the (now u16) destination register in the first word, with
@@ -39,8 +39,8 @@ func Bitwise[W word.Word[W]](p *bytecode.Bitwise[W]) []uint32 {
 // +--------+--------+--------+--------+
 // |        rd       |  n/a   | opcode |
 // +--------+--------+--------+--------+
-// |                 |     bitwidth    |
-// +--------+--------+--------+--------+
+// |       n/a       |     bitwidth    |
+// +-----------------+-----------------+
 // |     amount      |      source     |
 // +-----------------+-----------------+
 // ============================================================================

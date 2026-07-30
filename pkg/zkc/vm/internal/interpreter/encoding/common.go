@@ -63,7 +63,9 @@ const OPCODE_MASK = 0x3f
 // form keeps its non-register fields in the first instruction word exactly as
 // the narrow form does (where they still fit), whilst its register operands
 // move into subsequent words, packed two per word (least significant half
-// first) in the order they appear in the narrow encoding.
+// first) in the order they appear in the narrow encoding.  INVARIANT: every
+// wide form leaves bits 8-15 of its first word clear (n/a), reserving a
+// uniform spare byte adjacent to the opcode byte for future expansion.
 const WIDE = 0x40
 
 // BREAKPOINT is a modifier bit (bit 7 of the opcode byte) which, when set,
@@ -280,7 +282,7 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 	case *bytecode.Fail[W]:
 		return Fail(b, env)
 	case *bytecode.FieldArith[W]:
-		return FieldArith(b)
+		return FieldArith(b, env)
 	case *bytecode.UintToField[W]:
 		return UintToField(b)
 	case *bytecode.FieldToUint[W]:
@@ -296,9 +298,9 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 	case *bytecode.Ret[W]:
 		return Ret(b, env)
 	case *bytecode.Switch[W]:
-		return Switch(b, env)
+		return Switch(pc, b, env)
 	case *bytecode.Dispatch[W]:
-		return Dispatch(b, env)
+		return Dispatch(pc, b, env)
 	default:
 		panic(fmt.Sprintf("unknown instruction encountered (%s)", b.String(nil)))
 	}
@@ -314,8 +316,17 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 	case *bytecode.Skip[W], *bytecode.Jmp[W]:
 		return 1
 	case *bytecode.Dispatch[W]:
-		// word 0 plus one (bit, target) pair per case.
-		return uint(1 + 2*len(b.Cases))
+		// word 0 plus one (skip, bit) word per case.  NOTE: an explicit case
+		// is required (rather than falling through to Encode below) because
+		// the case skips are relative, and hence cannot be computed at a
+		// placeholder position.
+		return uint(1 + len(b.Cases))
+	case *bytecode.Switch[W]:
+		// word 0 plus one (skip, cid) word per case.  NOTE: an explicit case
+		// is required (rather than falling through to Encode below) because
+		// the case skips are relative, and hence cannot be computed at a
+		// placeholder position.
+		return uint(1 + len(b.Cases))
 	case *bytecode.SkipIf[W]:
 		if b.Right.IsRegisterVector() {
 			// The wide form carries its base registers in an additional word.
@@ -325,30 +336,11 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 			//
 			return 2
 		}
-		// Constant form: the constant vector follows inline, one element per
-		// comparison element, each as a fixed number of 32-bit limbs.
-		// Normalisation (see SkipIf) can rewrite the constant to c+1, which
-		// may need one more bit — hence BitLen()+1 below.  An empty (or
-		// short) constant vector denotes zero (extension).
-		var (
-			nv   = uint(b.Left.Len)
-			bits uint
-		)
-		//
-		for _, c := range b.Right.AsConstants() {
-			bits = max(bits, c.BitLen())
-		}
-		//
-		var nlimbs = max(1, (bits+1+31)/32)
-		// NOTE: this bounds both the compact single-constant form (1+nc
-		// words) and the constant-vector form it falls back to (2+nc words,
-		// or 3+nc wide) when the skip exceeds a byte.  The wide vector form
-		// carries its base register in an additional word.
-		if IsWideRegisters(b.Left.Base) {
-			return 3 + nv*nlimbs
-		}
-		//
-		return 2 + nv*nlimbs
+		// Constant form: bounded by the general (WIDE) constant-vector
+		// fallback, which carries its register vector and constant vector in
+		// words of their own.  The compact forms (single-word SXX_rc and
+		// two-word SXX_rcv) are always smaller.
+		return 3
 	default:
 		// NOTE: the maximum length of the remaining bytecodes is not dependent
 		// on this position within the encoded sequence.

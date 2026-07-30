@@ -39,16 +39,27 @@ func DecodeCat[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) 
 //	31                                0
 //
 // +--------+--------+--------+--------+
-// |   n/a  |  nsrc  | ntgt   | opcode |
+// |  nsrc  |  ntgt  |  n/a   | opcode |
 // +--------+--------+--------+--------+
 // | tgt3   | tgt2   | tgt1   | tgt0   |
 // +--------+--------+--------+--------+
-// | ... packed source registers ...    |
-// +------------------------------------+
+// | ... packed source registers ...   |
+// +-----------------------------------+
 //
 // The first source and target are the least-significant limbs.  The wide form
 // retains the header but packs the (now u16) target and source registers two
-// per word.
+// per word:
+//
+// +--------+--------+--------+--------+
+// |  nsrc  |  ntgt  |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// |       tgt1      |       tgt0      |
+// +-----------------+-----------------+
+// | ... packed source registers ...    |
+// +------------------------------------+
+//
+// This layout is shared by the UINT_TO_FIELD and FIELD_TO_UINT instructions
+// (see field_cast.go), which also encode via encodeRegisterLists.
 // ============================================================================
 
 // encodeRegisterLists encodes target and source register lists.
@@ -62,8 +73,8 @@ func encodeRegisterLists(opcode uint32, targets []RegisterId, sources []Register
 	}
 	//
 	var (
-		nsrc = uint32(len(sources)) << 16
-		ntgt = uint32(len(targets)) << 8
+		nsrc = uint32(len(sources)) << 24
+		ntgt = uint32(len(targets)) << 16
 		regs = append(RegsAsShorts(targets), RegsAsShorts(sources)...)
 	)
 	//
@@ -84,8 +95,8 @@ func encodeRegisterLists(opcode uint32, targets []RegisterId, sources []Register
 // DecodeRegisterLists decodes target and source register lists.
 func DecodeRegisterLists(pc uint32, codes []uint32) (targets, sources Operands, n uint32) {
 	var (
-		ntargets = uint((codes[pc] >> 8) & 0xff)
-		nsources = uint((codes[pc] >> 16) & 0xff)
+		ntargets = uint((codes[pc] >> 16) & 0xff)
+		nsources = uint((codes[pc] >> 24) & 0xff)
 	)
 	//
 	if IsWideForm(pc, codes) {

@@ -49,8 +49,18 @@ func DecodeFail(pc uint32, codes []uint32) (index uint, sources Operands, n uint
 // Here, nvecs determines the number of packed source register vectors, whilst
 // index identifies the formatted chunks (i.e. the failure message template) to
 // emit.  Each source vector is encoded as a (base, len) byte pair, packed two
-// vectors per word.  The wide form retains the header but packs each vector as
-// a (base, len) pair of u16 operands (i.e. one word per vector).
+// vectors per word.  The wide form moves the index into a word of its own
+// (leaving bits 8-23 of the first word clear, as for all wide forms) and
+// packs each vector as a (base, len) pair of u16 operands (i.e. one word per
+// vector):
+//
+// +--------+--------+--------+--------+
+// |  nvecs |       n/a       | opcode |
+// +--------+--------+--------+--------+
+// |       n/a       |      index      |
+// +-----------------+-----------------+
+// |       len0      |      base0      |
+// +-----------------+-----------------+
 // ============================================================================
 // encodeFail_n encodes a fail instruction referencing the formatted chunks at
 // the given index, packing its source register vectors.
@@ -59,7 +69,7 @@ func encodeFail_n(index uint16, sources []RegisterVector) []uint32 {
 	//
 	if IsWideRegisterVectors(sources) {
 		// nolint
-		var codes = []uint32{nsources | uint32(index)<<8 | FAIL | WIDE}
+		var codes = []uint32{nsources | FAIL | WIDE, uint32(index)}
 		//
 		return append(codes, PackShortsIntoCodes(RegisterVectorsAsShorts(sources))...)
 	}
@@ -79,12 +89,12 @@ func encodeFail_n(index uint16, sources []RegisterVector) []uint32 {
 func decodeFail_n(pc uint32, codes []uint32) (index uint, sources Operands, n uint32) {
 	var nops = 2 * uint(codes[pc]>>24)
 	//
-	index = uint(codes[pc]>>8) & 0xffff
-	//
 	if IsWideForm(pc, codes) {
-		sources = NewWideOperands(0, nops, codes[pc+1:])
-		n = 1 + NumCodesPackedWide(nops)
+		index = uint(codes[pc+1]) & 0xffff
+		sources = NewWideOperands(0, nops, codes[pc+2:])
+		n = 2 + NumCodesPackedWide(nops)
 	} else {
+		index = uint(codes[pc]>>8) & 0xffff
 		sources = NewOperands(0, nops, codes[pc+1:])
 		n = 1 + NumCodesPackedSmall(nops)
 	}

@@ -32,7 +32,7 @@ func SkipIf[W word.Word[W]](pc Address, b *bytecode.SkipIf[W], env Environment[W
 	)
 	//
 	if b.Right.IsConstant() {
-		return encodeSkipIfConstant(skip, b)
+		return encodeSkipIfConstant(skip, b, env)
 	}
 	//
 	var (
@@ -55,8 +55,8 @@ func SkipIf[W word.Word[W]](pc Address, b *bytecode.SkipIf[W], env Environment[W
 	)
 	//
 	switch {
-	case n == 1 && m == 1 && skip <= math.MaxUint8:
-		return encodeSkipIf_rr(util.Cast[uint8](skip), left.Base, right.Base, op)
+	case n == 1 && m == 1 && skip <= math.MaxUint16:
+		return encodeSkipIf_rr(util.Cast[uint16](skip), left.Base, right.Base, op)
 	case n == m:
 		return encodeSkipIf_rv(skip, left, right, op)
 	default:
@@ -71,7 +71,7 @@ func SkipIf[W word.Word[W]](pc Address, b *bytecode.SkipIf[W], env Environment[W
 // (x > c ⇔ x >= c+1, x <= c ⇔ x < c+1); when c+1 overflows, the condition is
 // statically decided and encoded as a comparison against zero which is
 // trivially false (x < 0) or trivially true (x >= 0).
-func encodeSkipIfConstant[W word.Word[W]](skip uint32, b *bytecode.SkipIf[W]) []uint32 {
+func encodeSkipIfConstant[W word.Word[W]](skip uint32, b *bytecode.SkipIf[W], env Environment[W]) []uint32 {
 	var (
 		nv = uint(b.Left.Len)
 		op = b.Op
@@ -107,14 +107,19 @@ func encodeSkipIfConstant[W word.Word[W]](skip uint32, b *bytecode.SkipIf[W]) []
 		}
 	}
 	//
-	// The compact single-constant form carries its skip as a u8 and its
-	// register as a u8 in the initial word; anything larger falls back to the
-	// general constant-vector form with a single element.
+	// The compact single-constant form carries its skip, register and constant
+	// pool identifier as u8 fields in a single word; anything larger falls
+	// back to the general constant-vector form with a single element.  NOTE:
+	// the pool identifier is stable across encoding passes (ConstantIndex
+	// interns), so this choice cannot oscillate whilst the layout reaches a
+	// fixpoint.
 	if nv == 1 && skip <= math.MaxUint8 && !IsWideRegisters(b.Left.Base) {
-		return encodeSkipIf_rc(util.Cast[uint8](skip), b.Left.Base, constants[0], op)
+		if cid := env.ConstantIndex(constants[0]); cid <= math.MaxUint8 {
+			return encodeSkipIf_rc(util.Cast[uint8](skip), b.Left.Base, uint8(cid), op)
+		}
 	}
 	//
-	return encodeSkipIf_rcv(skip, b.Left, constants, op)
+	return encodeSkipIf_rcv(skip, b.Left, constants, op, env)
 }
 
 // incrementConstants increments a constant vector (most significant element
@@ -187,23 +192,28 @@ func condFromOffset(offset uint32) Cond {
 // Here, skip is a u8 identifying the number of instructions to skip, where the
 // following instruction is considered to be at offset 0.  Likewise, rs0 and rs1
 // are u8 source registers, whilst op identifies the operation.  The wide form
-// keeps skip in place, moving the (now u16) registers into a subsequent word:
+// extends the skip to a u16 in the upper half of the first word, moving the
+// (now u16) registers into a subsequent word:
 //
 // +--------+--------+--------+--------+
-// |  skip  |       n/a       | opcode |
+// |      skip       |  n/a   | opcode |
 // +--------+--------+--------+--------+
 // |       rs0       |       rs1       |
 // +-----------------+-----------------+
+//
+// The wide form is also selected when the registers are small but the skip
+// exceeds a byte; a skip exceeding u16 falls back to the register-vector form
+// (SXX_rv), which carries a u32 skip.
 // ============================================================================
 
 // encodeSkipIf_rr encodes a register-register conditional skip instruction,
 // where op identifies the comparison.
-func encodeSkipIf_rr(skip uint8, rs0, rs1 RegisterId, op Cond) []uint32 {
+func encodeSkipIf_rr(skip uint16, rs0, rs1 RegisterId, op Cond) []uint32 {
 	// Forward branches are preferred as SKIP_IF instructions, whose offset is
 	// unsigned and hence offers a greater forward range.
-	if IsWideRegisters(rs0, rs1) {
+	if IsWideRegisters(rs0, rs1) || skip > math.MaxUint8 {
 		return []uint32{
-			uint32(skip)<<24 | (SEQ_rr + condOffset(op)) | WIDE,
+			uint32(skip)<<16 | (SEQ_rr + condOffset(op)) | WIDE,
 			uint32(rs1) | uint32(rs0)<<16,
 		}
 	}
@@ -224,13 +234,14 @@ func encodeSkipIf_rr(skip uint8, rs0, rs1 RegisterId, op Cond) []uint32 {
 // DecodeSkipIf_rr decodes the operands of a register-register conditional skip.
 func DecodeSkipIf_rr(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterId, op Cond, n uint32) {
 	op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rr)
-	skip = codes[pc] >> 24
 	//
 	if IsWideForm(pc, codes) {
+		skip = codes[pc] >> 16
 		rs1 = RegisterId(codes[pc+1] & 0xffff)
 		rs0 = RegisterId(codes[pc+1] >> 16)
 		n = 2
 	} else {
+		skip = codes[pc] >> 24
 		rs1 = RegisterId((codes[pc] >> 8) & 0xff)
 		rs0 = RegisterId((codes[pc] >> 16) & 0xff)
 		n = 1
@@ -287,209 +298,6 @@ func encodeSkipIf_rv(skip uint32, rs0, rs1 RegisterVector, op Cond) []uint32 {
 	}
 }
 
-// ============================================================================
-// seq/sne/slt,sge (skip conditional) instruction with a single register and a
-// single constant operand.  Format is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |  skip  |  rs0   |   nc   | opcode |
-// +--------+--------+--------+--------+
-// | ...... constant limb (ls) ....... |
-// +--------+--------+--------+--------+
-// |                ...                |
-// +-----------------------------------+
-//
-// Here, skip is a u8 identifying the number of instructions to skip (where the
-// following instruction is considered to be at offset 0), rs0 is the u8 source
-// register and the constant follows inline as nc 32-bit limbs (least
-// significant first).  There is no wide form: a wide (u16) register, or a skip
-// exceeding u8, falls back to the general constant-vector form (SXX_rcv) with
-// a single element.
-// ============================================================================
-
-// encodeSkipIf_rc encodes a register-constant conditional skip instruction,
-// where op identifies the (normalised) comparison.
-func encodeSkipIf_rc[W word.Word[W]](skip uint8, rs0 RegisterId, constant W, op Cond) []uint32 {
-	var (
-		// NOTE: big-endian byte ordering
-		bytes  = constant.BigInt().Bytes()
-		nlimbs = max(1, (len(bytes)+3)/4)
-		//
-		codes = make([]uint32, nlimbs+1)
-	)
-	//
-	if nlimbs > 0xff {
-		panic("constant exceeds register-constant skip form")
-	}
-
-	codes[0] = uint32(skip)<<24 | uint32(rs0)<<16 | uint32(nlimbs)<<8 | (SEQ_rc + condOffset(op))
-	// Pack bytes into limbs, least significant limb first.
-	for i, b := range bytes {
-		var k = uint(len(bytes) - 1 - i)
-		//
-		codes[1+(k/4)] |= uint32(b) << (8 * (k % 4))
-	}
-	//
-	return codes
-}
-
-// DecodeSkipIf_rc decodes the operands of a register-constant conditional
-// skip.
-func DecodeSkipIf_rc[W word.Word[W]](pc uint32, codes []uint32) (skip uint32, rs0 RegisterId, constant W,
-	op Cond, n uint32) {
-	var nlimbs = (codes[pc] >> 8) & 0xff
-	//
-	op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rc)
-	skip = codes[pc] >> 24
-	rs0 = RegisterId((codes[pc] >> 16) & 0xff)
-	// Unpack limbs, most significant limb first.  The constant was encoded
-	// from a W, so it fits: the shift never spills into hi and, since the low
-	// 32 bits are zero after shifting, the add cannot carry.
-	for i := nlimbs; i > 0; i-- {
-		_, constant = constant.Shl64(32)
-		constant, _ = constant.Add64(uint64(codes[pc+i]))
-	}
-	//
-	return skip, rs0, constant, op, nlimbs + 1
-}
-
-// ============================================================================
-// seq/sne/slt,sge (skip conditional) instruction with a register vector and a
-// constant vector operand.  Format is:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |   nv   |  rs0   |   nc   | opcode |
-// +--------+--------+--------+--------+
-// | ............. skip .............. |
-// +--------+--------+--------+--------+
-// | .... element 0, limb 0 (ls) ..... |
-// +--------+--------+--------+--------+
-// |                ...                |
-// +-----------------------------------+
-//
-// Here, rs0 is the u8 base of the register vector, nv its length and skip an
-// unsigned u32 relative offset (where the following instruction is considered
-// to be at offset 0).  The constant vector follows inline as nv elements
-// (most significant element first, mirroring the register vector layout), each
-// occupying exactly nc 32-bit limbs (least significant limb first).  The wide
-// form keeps nv, nc and skip in place, moving the (now u16) base register into
-// a word of its own, ahead of the constant limbs:
-//
-// +--------+--------+--------+--------+
-// |   nv   |  n/a   |   nc   | opcode |
-// +--------+--------+--------+--------+
-// | ............. skip .............. |
-// +--------+--------+--------+--------+
-// |       n/a       |       rs0       |
-// +-----------------+-----------------+
-// | .... element 0, limb 0 (ls) ..... |
-// +--------+--------+--------+--------+
-// ============================================================================
-
-// encodeSkipIf_rcv encodes a register vector versus constant vector
-// conditional skip instruction, where op identifies the (normalised)
-// comparison.  The constants must carry exactly one element per register (see
-// encodeSkipIfConstant, which zero-extends them).
-func encodeSkipIf_rcv[W word.Word[W]](skip uint32, rs0 RegisterVector, constants []W, op Cond) []uint32 {
-	var (
-		nv = uint(util.Cast[uint8](rs0.Len))
-		// Number of limbs per element, fixed across the vector.
-		nc    uint
-		wide  = IsWideRegisters(rs0.Base)
-		first uint
-		codes []uint32
-	)
-	// check core invariant
-	if uint(len(constants)) != nv {
-		panic(fmt.Sprintf("mismatched length for constant vector (%d vs %d)", len(constants), nv))
-	}
-	//
-	for _, c := range constants {
-		nc = max(nc, (c.BitLen()+31)/32)
-	}
-	//
-	nc = max(nc, 1)
-	//
-	if nc > 0xff {
-		panic("constant exceeds register-constant skip form")
-	}
-	//
-	if wide {
-		codes = make([]uint32, 3+(nv*nc))
-		codes[0] = uint32(nv)<<24 | uint32(nc)<<8 | (SEQ_rcv + condOffset(op)) | WIDE
-		codes[1] = skip
-		codes[2] = uint32(rs0.Base)
-		first = 3
-	} else {
-		codes = make([]uint32, 2+(nv*nc))
-		codes[0] = uint32(nv)<<24 | uint32(rs0.Base)<<16 | uint32(nc)<<8 | (SEQ_rcv + condOffset(op))
-		codes[1] = skip
-		first = 2
-	}
-	// Pack each element's bytes into its limbs, least significant limb first.
-	for e, c := range constants {
-		var (
-			// NOTE: big-endian byte ordering
-			bytes = c.BigInt().Bytes()
-			base  = first + (uint(e) * nc)
-		)
-		//
-		for i, b := range bytes {
-			var k = uint(len(bytes) - 1 - i)
-			//
-			codes[base+(k/4)] |= uint32(b) << (8 * (k % 4))
-		}
-	}
-	//
-	return codes
-}
-
-// DecodeSkipIf_rcv decodes the operands of a register vector versus constant
-// vector conditional skip.
-func DecodeSkipIf_rcv[W word.Word[W]](pc uint32, codes []uint32) (skip uint32, rs0 RegisterVector,
-	constants []W, op Cond, n uint32) {
-	var (
-		nv    = codes[pc] >> 24
-		nc    = (codes[pc] >> 8) & 0xff
-		base  RegisterId
-		first uint32
-	)
-	//
-	op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rcv)
-	skip = codes[pc+1]
-	//
-	if IsWideForm(pc, codes) {
-		base = RegisterId(codes[pc+2] & 0xffff)
-		first = pc + 3
-	} else {
-		base = RegisterId((codes[pc] >> 16) & 0xff)
-		first = pc + 2
-	}
-	//
-	constants = make([]W, nv)
-	// Unpack each element's limbs, most significant limb first.  Each element
-	// was encoded from a W, so it fits: the shift never spills into hi and,
-	// since the low 32 bits are zero after shifting, the add cannot carry.
-	for e := uint32(0); e < nv; e++ {
-		var c W
-		//
-		for i := nc; i > 0; i-- {
-			_, c = c.Shl64(32)
-			c, _ = c.Add64(uint64(codes[first+(e*nc)+i-1]))
-		}
-		//
-		constants[e] = c
-	}
-	//
-	rs0 = RegisterVector{Base: base, Len: util.Cast[uint16](uint(nv))}
-	//
-	return skip, rs0, constants, op, (first - pc) + (nv * nc)
-}
-
 // DecodeSkipIf_rv decodes the operands of a register-vector conditional branch.
 func DecodeSkipIf_rv(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterVector, op Cond, n uint32) {
 	var (
@@ -514,4 +322,159 @@ func DecodeSkipIf_rv(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterV
 	rs1 = RegisterVector{Base: rs1b, Len: nv}
 	//
 	return skip, rs0, rs1, op, n
+}
+
+// ============================================================================
+// seq/sne/slt,sge (skip conditional) instruction with a single register and a
+// single constant operand.  Format is:
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |  skip  |  rs0   |  cid   | opcode |
+// +--------+--------+--------+--------+
+//
+// Here, skip is a u8 identifying the number of instructions to skip (where the
+// following instruction is considered to be at offset 0), rs0 is the u8 source
+// register and cid is a u8 constant pool identifier for the constant operand.
+// There is no wide form: a wide (u16) register, a skip exceeding u8, or a pool
+// identifier exceeding u8 falls back to the general constant-vector form
+// (SXX_rcv) with a single element.
+// ============================================================================
+
+// encodeSkipIf_rc encodes a register-constant conditional skip instruction,
+// where op identifies the (normalised) comparison.
+func encodeSkipIf_rc(skip uint8, rs0 RegisterId, cid uint8, op Cond) []uint32 {
+	return []uint32{
+		uint32(skip)<<24 | uint32(rs0)<<16 | uint32(cid)<<8 | (SEQ_rc + condOffset(op)),
+	}
+}
+
+// DecodeSkipIf_rc decodes the operands of a register-constant conditional
+// skip.
+func DecodeSkipIf_rc[W word.Word[W]](pc uint32, codes []uint32, pool []W) (skip uint32, rs0 RegisterId,
+	constant W, op Cond, n uint32) {
+	//
+	op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rc)
+	skip = codes[pc] >> 24
+	rs0 = RegisterId((codes[pc] >> 16) & 0xff)
+	constant = pool[(codes[pc]>>8)&0xff]
+	//
+	return skip, rs0, constant, op, 1
+}
+
+// ============================================================================
+// seq/sne/slt,sge (skip conditional) instruction with a register vector and a
+// constant vector operand.  Format of the compact form is:
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |   nv   |  rs0   |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// |      skip       |  cid   |   cn   |
+// +-----------------+--------+--------+
+//
+// Here, rs0 is the u8 base of the register vector, nv its length and skip an
+// unsigned u16 relative offset (where the following instruction is considered
+// to be at offset 0).  The constant vector is described by cid and cn: a u8
+// base constant pool identifier and u8 length, such that element i of the
+// vector (most significant first, mirroring the register vector layout)
+// resides at pool index cid+i.  The general (WIDE) form serves as the
+// fallback whenever the compact fields do not fit — a wide (u16) base
+// register, or a base pool identifier exceeding u8.  It keeps the u16 skip in
+// the first word, carrying the register vector (u16 base and length) in the
+// second word and the constant vector (u16 base pool identifier and length)
+// in the third:
+//
+// +--------+--------+--------+--------+
+// |      skip       |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// |       nv        |       rs0       |
+// +-----------------+-----------------+
+// |       cn        |       cid       |
+// +-----------------+-----------------+
+//
+// There is no encoding for a skip exceeding u16 (as for SKIP, whose offset is
+// bounded by its instruction format, encoding panics instead).
+// ============================================================================
+
+// encodeSkipIf_rcv encodes a register vector versus constant vector
+// conditional skip instruction, where op identifies the (normalised)
+// comparison.  The constants must carry exactly one element per register (see
+// encodeSkipIfConstant, which zero-extends them).
+func encodeSkipIf_rcv[W word.Word[W]](skip uint32, rs0 RegisterVector, constants []W, op Cond,
+	env Environment[W]) []uint32 {
+	//
+	var (
+		nv     = uint(util.Cast[uint8](rs0.Len))
+		opcode = SEQ_rcv + condOffset(op)
+	)
+	// check core invariant
+	if uint(len(constants)) != nv {
+		panic(fmt.Sprintf("mismatched length for constant vector (%d vs %d)", len(constants), nv))
+	}
+	// Neither form can encode a skip exceeding u16.
+	if skip > math.MaxUint16 {
+		panic("skip exceeds conditional skip form")
+	}
+	// The compact form carries a u8 base pool identifier and u8 length
+	// describing the constant vector as a consecutive run of pool entries;
+	// anything larger falls back to the general (WIDE) form.  NOTE: pool
+	// identifiers are stable across encoding passes (interning), so this
+	// choice cannot oscillate whilst the layout reaches a fixpoint.
+	if !IsWideRegisters(rs0.Base) {
+		if cid := env.ConstantVectorIndex(constants); cid <= math.MaxUint8 {
+			return []uint32{
+				uint32(nv)<<24 | uint32(rs0.Base)<<16 | opcode,
+				skip<<16 | uint32(cid)<<8 | uint32(nv),
+			}
+		}
+	}
+	// General form
+	var cid = env.ConstantVectorIndex(constants)
+	//
+	return []uint32{
+		skip<<16 | opcode | WIDE,
+		uint32(nv)<<16 | uint32(rs0.Base),
+		uint32(nv)<<16 | uint32(cid),
+	}
+}
+
+// DecodeSkipIf_rcv decodes the operands of a register vector versus constant
+// vector conditional skip.
+func DecodeSkipIf_rcv[W word.Word[W]](pc uint32, codes []uint32, pool []W) (skip uint32, rs0 RegisterVector,
+	constants []W, op Cond, n uint32) {
+	//
+	op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rcv)
+	// NOTE: in both forms, the constant vector is a consecutive run of pool
+	// entries.
+	if IsWideForm(pc, codes) {
+		var (
+			cid = codes[pc+2] & 0xffff
+			cn  = codes[pc+2] >> 16
+		)
+		//
+		skip = codes[pc] >> 16
+		constants = pool[cid : cid+cn]
+		rs0 = RegisterVector{
+			Base: RegisterId(codes[pc+1] & 0xffff),
+			Len:  RegisterId(codes[pc+1] >> 16),
+		}
+		//
+		return skip, rs0, constants, op, 3
+	}
+	//
+	var (
+		nv    = codes[pc] >> 24
+		word1 = codes[pc+1]
+		cid   = (word1 >> 8) & 0xff
+		cn    = word1 & 0xff
+	)
+	//
+	skip = word1 >> 16
+	constants = pool[cid : cid+cn]
+	rs0 = RegisterVector{Base: RegisterId((codes[pc] >> 16) & 0xff), Len: util.Cast[uint16](uint(nv))}
+	//
+	return skip, rs0, constants, op, 2
 }

@@ -115,14 +115,25 @@ func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor Register
 // +--------+--------+--------+--------+
 // |   op   |  nsrc  |  ntgt  | opcode |
 // +--------+--------+--------+--------+
-// | ... packed target then source register vectors ... |
-// +-----------------------------------------------------+
+// | ... packed tgt/src reg vectors .. |
+// +-----------------------------------+
 //
 // Here, op selects the hint operation (e.g. DIV_HINT), whilst ntgt and nsrc give
 // the number of target (return) and source (argument) register vectors
 // respectively.  Each vector is packed as a (base, len) byte pair, targets
-// first.  The wide form retains the header but packs each vector as a (base,
-// len) pair of u16 operands (i.e. one word per vector).
+// first.  The wide form moves the target count into the first packed slot
+// (leaving bits 8-15 of the first word clear, as for all wide forms), with
+// each vector following as a (base, len) pair of u16 operands:
+//
+// +--------+--------+--------+--------+
+// |   op   |  nsrc  |  n/a   | opcode |
+// +--------+--------+--------+--------+
+// |    tgt0 base    |      ntgt       |
+// +-----------------+-----------------+
+// |    tgt1 base    |    tgt0 len     |
+// +-----------------+-----------------+
+// | ... packed tgt/src reg vectors .. |
+// +-----------------------------------+
 // ============================================================================
 
 // encodeIntrinsic encodes a hint instruction, where op selects the operation and the
@@ -141,9 +152,14 @@ func encodeIntrinsic(op Operation, targets, sources []RegisterVector) []uint32 {
 	//
 	if IsWideRegisterVectors(targets) || IsWideRegisterVectors(sources) {
 		var (
-			codes  = []uint32{nop | nsrc | ntgt | INTRINSIC | WIDE}
-			shorts = append(RegisterVectorsAsShorts(targets), RegisterVectorsAsShorts(sources)...)
+			codes = []uint32{nop | nsrc | INTRINSIC | WIDE}
+			// ntgt occupies the first packed slot, followed by the vectors.
+			shorts = make([]uint16, 0, 1+2*(len(targets)+len(sources)))
 		)
+		//
+		shorts = append(shorts, uint16(len(targets)))
+		shorts = append(shorts, RegisterVectorsAsShorts(targets)...)
+		shorts = append(shorts, RegisterVectorsAsShorts(sources)...)
 		//
 		return append(codes, PackShortsIntoCodes(shorts)...)
 	}
@@ -160,18 +176,19 @@ func encodeIntrinsic(op Operation, targets, sources []RegisterVector) []uint32 {
 // source operands of a hint instruction.  Each vector is packed as a (base,
 // len) byte pair, hence the iterators range over twice the vector counts.
 func DecodeIntrinsicOperands(pc uint32, codes []uint32) (op Operation, targets, sources Operands, n uint32) {
-	var (
-		ntargets = uint((codes[pc] >> 8) & 0xff)
-		nsources = uint((codes[pc] >> 16) & 0xff)
-	)
+	var nsources = uint((codes[pc] >> 16) & 0xff)
 	//
 	op = Operation((codes[pc] >> 24) & 0xff)
 	//
 	if IsWideForm(pc, codes) {
-		targets = NewWideOperands(0, 2*ntargets, codes[pc+1:])
-		sources = NewWideOperands(2*ntargets, 2*nsources, codes[pc+1:])
-		n = 1 + NumCodesPackedWide(2*(ntargets+nsources))
+		var ntargets = uint(codes[pc+1] & 0xffff)
+		//
+		targets = NewWideOperands(1, 2*ntargets, codes[pc+1:])
+		sources = NewWideOperands(1+(2*ntargets), 2*nsources, codes[pc+1:])
+		n = 1 + NumCodesPackedWide(1+2*(ntargets+nsources))
 	} else {
+		var ntargets = uint((codes[pc] >> 8) & 0xff)
+		//
 		targets = NewOperands(0, 2*ntargets, codes[pc+1:])
 		sources = NewOperands(2*ntargets, 2*nsources, codes[pc+1:])
 		n = 1 + NumCodesPackedSmall(2*(ntargets+nsources))
