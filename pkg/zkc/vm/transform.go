@@ -94,6 +94,17 @@ func OptimizeDivisions[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.OptimizeDivisions(program)
 }
 
+// ThreadTimestamps threads a per-memory timestamp through every function which
+// declares a read-write memory effect: each such function gains a stamp-in
+// input and stamp-out output per accessed read-write memory, calls forward
+// them, and every memory access carries a distinct timestamp in its Stamp
+// operand (the k-th access executed carries stamp-in + k).  Applied on the
+// constraint path only (the run-time memory maintains its own clock), after
+// function inlining and before vectorisation / register splitting.
+func ThreadTimestamps[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.ThreadTimestamps(program)
+}
+
 // Vectorize merges as many bytecodes as possible into each (vector / trace-line)
 // bytecode, subject to register-conflict (data hazard) constraints.
 func Vectorize[W word.Word[W]](program Program[W]) Program[W] {

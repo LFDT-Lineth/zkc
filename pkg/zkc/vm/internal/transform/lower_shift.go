@@ -107,7 +107,7 @@ func newShlHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	b.emit(bytecode.CallFun[W](uint16(selfID), []bytecode.RegisterId{doubled, n1}, []bytecode.RegisterId{out}))
 	b.emit(bytecode.NewRet[W]())
 
-	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION,
+	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION, nil,
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})
 }
 
@@ -154,6 +154,6 @@ func newShrHelper[W word.Word[W]](key bitwiseHelperKey, selfID uint, amtWidth ui
 	b.emit(bytecode.CallFun[W](uint16(selfID), []bytecode.RegisterId{half, n1}, []bytecode.RegisterId{out}))
 	b.emit(bytecode.NewRet[W]())
 
-	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION,
+	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION, nil,
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})
 }

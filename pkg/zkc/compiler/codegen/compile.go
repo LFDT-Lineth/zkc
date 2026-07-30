@@ -201,6 +201,16 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.LowerComparisons(program)
 		program = vm.LowerSwitch(program)
 		program = vm.Vectorize(program)
+		// Thread memory timestamps once the rows are final: every read-write
+		// memory access gains a stamp operand, and effectful functions a
+		// stamp-in/out pair, consumed by the caller->memory lookups.  Running
+		// after vectorisation lets the transform emit at most one canonical
+		// stamp write per executed path through a row (preserving one-line
+		// functions), and before register splitting so the wide stamp
+		// registers and their arithmetic are split into limbs and
+		// range-checked like any other register.  Fast mode skips this (the
+		// run-time memory maintains its own clock).
+		program = vm.ThreadTimestamps(program)
 		program = vm.FactorSkipConditions(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
@@ -305,9 +315,18 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 	if slices.Contains(fn.Annotations(), "native") {
 		kind = vm.NATIVE_FUNCTION
 	}
+	// Record this function's declared memory effects, mapped from ast
+	// declaration indices to vm module ids, so the timestamp-threading transform
+	// can identify which functions access (and must thread a timestamp for) each
+	// read-write memory.
+	var effects []vm.ModuleId
+	//
+	for _, eff := range fn.Effects {
+		effects = append(effects, vm.ModuleId(mapping[eff.Index]))
+	}
 	// Note: compiler.registers includes any temporaries allocated during
 	// statement compilation.
-	return vm.NewBytecodeFunction(fn.Name(), kind, compiler.registers, vectors...), compiler.errors
+	return vm.NewBytecodeFunction(fn.Name(), kind, compiler.registers, effects, vectors...), compiler.errors
 }
 
 // buildMemory constructs the memory descriptor module for a resolved memory

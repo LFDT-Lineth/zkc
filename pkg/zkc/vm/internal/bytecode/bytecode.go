@@ -378,9 +378,11 @@ func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 // the row located at the address given by the address registers, in the memory
 // identified by id.  The kind of memory being read (ROM, static ROM, RAM, paged
 // RAM) is not recorded here: it is resolved from the environment when the
-// instruction is encoded.
-func NewMemRead[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId) *ReadWrite[W] {
-	return &ReadWrite[W]{Write: false, Id: id, Address: address, Data: data}
+// instruction is encoded.  An optional stamp operand carries the timestamp of
+// the access (present only after timestamp threading; at most one is accepted).
+func NewMemRead[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId,
+	stamp ...[]RegisterId) *ReadWrite[W] {
+	return &ReadWrite[W]{Write: false, Id: id, Address: address, Data: data, Stamp: singleStamp(stamp)}
 }
 
 // SubConst constructs a subtraction instruction computing
@@ -402,9 +404,25 @@ func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 // written to the row located at the address given by the address registers, in
 // the memory identified by id.  The kind of memory being written (write-once,
 // RAM, paged RAM) is not recorded here: it is resolved from the environment when
-// the instruction is encoded.
-func NewMemWrite[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId) *ReadWrite[W] {
-	return &ReadWrite[W]{Write: true, Id: id, Address: address, Data: data}
+// the instruction is encoded.  An optional stamp operand carries the timestamp
+// of the access (present only after timestamp threading; at most one is
+// accepted).
+func NewMemWrite[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId,
+	stamp ...[]RegisterId) *ReadWrite[W] {
+	return &ReadWrite[W]{Write: true, Id: id, Address: address, Data: data, Stamp: singleStamp(stamp)}
+}
+
+// singleStamp unwraps the optional variadic stamp operand of NewMemRead /
+// NewMemWrite, accepting either no stamp or exactly one.
+func singleStamp(stamp [][]RegisterId) []RegisterId {
+	switch len(stamp) {
+	case 0:
+		return nil
+	case 1:
+		return stamp[0]
+	default:
+		panic("at most one stamp operand allowed")
+	}
 }
 
 // NewBitwise constructs a bitwise instruction (and/or/xor) computing

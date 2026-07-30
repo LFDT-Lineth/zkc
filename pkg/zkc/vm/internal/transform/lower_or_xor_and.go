@@ -268,7 +268,7 @@ func newDecomposedNaryHelper[W word.Word[W]](
 
 	b.emit(bytecode.NewRet[W]())
 
-	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION,
+	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION, nil,
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})
 }
 

@@ -153,7 +153,7 @@ func splitFunction[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descri
 		code = splitBytecodeVector(mapping, mods, alloc, m.Vectors())
 	)
 	//
-	return descriptor.NewFunction(m.Name(), alloc.Registers(), m.Kind(), code)
+	return descriptor.NewFunction(m.Name(), alloc.Registers(), m.Kind(), m.Effects(), code)
 }
 
 func splitBytecodeVector[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descriptor.Module[W],
@@ -318,11 +318,14 @@ func splitRead[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allo
 		// its outputs.
 		addr, pre1, post1 = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
 		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
+		// The timestamp operand (if present) is an ordinary caller-frame value,
+		// so it maps onto its limbs like any other register.
+		stamp = split.ApplyLimbsMap(limbsMap, c.Stamp...)
 		// Combine all together
 		pre, post = append(pre1, pre2...), append(post1, post2...)
 	)
 	//
-	return join(pre, bytecode.NewMemRead[W](c.Id, addr, data), post)
+	return join(pre, bytecode.NewMemRead[W](c.Id, addr, data, stamp), post)
 }
 
 func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allocator[W], mods []descriptor.Module[W],
@@ -334,11 +337,14 @@ func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.All
 		// its outputs.
 		addr, pre1, post1 = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
 		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
+		// The timestamp operand (if present) is an ordinary caller-frame value,
+		// so it maps onto its limbs like any other register.
+		stamp = split.ApplyLimbsMap(limbsMap, c.Stamp...)
 		// Combine all together
 		pre, post = append(pre1, pre2...), append(post1, post2...)
 	)
 	//
-	return join(pre, bytecode.NewMemWrite[W](c.Id, addr, data), post)
+	return join(pre, bytecode.NewMemWrite[W](c.Id, addr, data, stamp), post)
 }
 
 func splitSkipIf[W word.Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.SkipIf[W]) Bytecode[W] {
