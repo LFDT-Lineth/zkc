@@ -31,8 +31,13 @@ type ModuleView interface {
 	register.Map
 	// Module name
 	Name() module.Name
-	// IsPublic indicates whether or not this module is externally visible.
-	IsPublic() bool
+	// IsPublicOutput indicates whether or not this module represents a public
+	// output (e.g. a public ZkC output memory) and, hence, is externally
+	// visible.
+	IsPublicOutput() bool
+	// IsPrivateOutput indicates whether or not this module represents a
+	// private output.  A module cannot be both a public and private output.
+	IsPrivateOutput() bool
 	// IsSynthetic modules are generated during compilation, rather than being
 	// provided by the user.
 	IsSynthetic() bool
@@ -97,6 +102,7 @@ type Table[F field.Element[F], C Constraint[F]] struct {
 	name           module.Name
 	padding        bool
 	public         bool
+	private        bool
 	synthetic      bool
 	native         bool
 	static         bool
@@ -112,9 +118,9 @@ type Table[F field.Element[F], C Constraint[F]] struct {
 // the ZkC pipeline should ever pass true.  The static flag indicates that this
 // module is a static reference table whose contents are fixed at compile time
 // and are populated separately via SetStaticContents.
-func (p *Table[F, C]) Init(name module.Name, padding, public, synthetic, native, static bool,
+func (p *Table[F, C]) Init(name module.Name, padding, public, private, synthetic, native, static bool,
 	keys uint) *Table[F, C] {
-	return &Table[F, C]{name, padding, public, synthetic, native, static, keys, nil, nil, nil, nil}
+	return &Table[F, C]{name, padding, public, private, synthetic, native, static, keys, nil, nil, nil, nil}
 }
 
 // Assignments provides access to those assignments defined as part of this
@@ -176,9 +182,16 @@ func (p *Table[F, C]) AllowPadding() bool {
 	return p.padding
 }
 
-// IsPublic identifies whether or not this module is externally visible.
-func (p *Table[F, C]) IsPublic() bool {
+// IsPublicOutput identifies whether or not this module represents a public
+// output (e.g. a public ZkC output memory) and, hence, is externally visible.
+func (p *Table[F, C]) IsPublicOutput() bool {
 	return p.public
+}
+
+// IsPrivateOutput identifies whether or not this module represents a private
+// output.  A module cannot be both a public and private output.
+func (p *Table[F, C]) IsPrivateOutput() bool {
+	return p.private
 }
 
 // IsSynthetic modules are generated during compilation, rather than being
@@ -320,6 +333,14 @@ func (p *Table[F, M]) GobEncode() (data []byte, err error) {
 	if err := gobEncoder.Encode(p.padding); err != nil {
 		return nil, err
 	}
+	// Public
+	if err := gobEncoder.Encode(p.public); err != nil {
+		return nil, err
+	}
+	// Private
+	if err := gobEncoder.Encode(p.private); err != nil {
+		return nil, err
+	}
 	// Native
 	if err := gobEncoder.Encode(p.native); err != nil {
 		return nil, err
@@ -362,6 +383,14 @@ func (p *Table[F, M]) GobDecode(data []byte) error {
 	}
 	// Padding
 	if err := gobDecoder.Decode(&p.padding); err != nil {
+		return err
+	}
+	// Public
+	if err := gobDecoder.Decode(&p.public); err != nil {
+		return err
+	}
+	// Private
+	if err := gobDecoder.Decode(&p.private); err != nil {
 		return err
 	}
 	// Native
