@@ -34,28 +34,23 @@ const stampWidth uint = 32
 // declares a read-write memory effect.  For each such function and read-write
 // memory M it may access, it:
 //
-//   - adds an input register "M$stamp" and an output register "M$stamp_out"
-//     (the stamp flowing in and back out), placed first in the inputs /
-//     outputs.  The entry function "main" is special: it takes no parameters,
-//     so it gets no stamp in/out and instead counts from ONE — timestamp zero
-//     is reserved for the initial state of an untouched memory cell, so the
-//     memory table's ordering constraint (timestamp-read < timestamp-written)
-//     holds on the very first access.
-//   - forwards the stamp across every call to an effectful callee (by
-//     prepending it to the call's arguments and returns);
-//   - gives every memory access a distinct timestamp: the k-th access executed
+//   - adds an input register "M$stamp" and an output register "M$stamp_out",
+//     placed first in the inputs / outputs.  The entry function "main" takes
+//     no parameters, so it gets no stamp in/out and instead counts from ONE
+//     (timestamp zero is reserved for the initial state of an untouched cell);
+//   - forwards the stamp across every call to an effectful callee (prepended
+//     to the call's arguments and returns);
+//   - gives every access a distinct timestamp: the k-th access executed
 //     carries stamp_in + k, recorded in the access's Stamp operand.
 //
-// The threading is OFFSET-BASED: rather than incrementing a working register
-// once per access (which would conflict when a single row performs several
-// accesses), the transform tracks, at every program point, which register
-// holds the current stamp together with a constant offset ("the current stamp
-// is base + off").  An access at offset zero consumes its base register
-// directly, at no instruction cost; a later access on the same row consumes a
-// fresh temporary "t = base + off".  The canonical stamp register (the
-// M$stamp_out output, or a fresh computed register in main) is written at most
-// once per executed path through a row: at a return, before a jump, or when
-// falling into the next row.  In particular the common one-line function
+// The threading is offset-based: rather than incrementing a working register
+// once per access (which would conflict when one row performs several
+// accesses), the transform tracks which register holds the current stamp
+// together with a constant offset.  An access at offset zero consumes its base
+// register directly; a later access on the same row consumes a fresh temporary
+// "t = base + off".  The canonical stamp register (M$stamp_out, or a fresh
+// computed register in main) is written at most once per executed path through
+// a row.  In particular the common one-line function
 //
 //	fn f<ram>(x:u16) -> (r:u8) { r = ram[x] }
 //
@@ -64,14 +59,12 @@ const stampWidth uint = 32
 //	read r = ram[ram$stamp; x]
 //	add ram$stamp_out = ram$stamp + 1
 //
-// This is required only for tracing and constraint generation (the run-time
-// memory maintains its own clock), so it is applied on the constraint path
-// only.  It runs AFTER vectorisation — so a vector is genuinely one trace row,
-// and the canonical register is written at most once per executed path through
-// it (a second write would have blocked the vectoriser from forming the row in
-// the first place, forcing one-line functions into multi-line form) — and
-// before register splitting, so the wide stamp registers and their arithmetic
-// are split into limbs and range-checked like any other register.
+// Required only for tracing / constraint generation (the run-time memory keeps
+// its own clock), so applied on the constraint path only; runs AFTER
+// vectorisation (a vector is then genuinely one trace row — a second canonical
+// write would have stopped the vectoriser forming the row, forcing one-line
+// functions multi-line) and before register splitting (stamps split into limbs
+// and are range-checked like any other register).
 func ThreadTimestamps[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		mods = program.Modules()
@@ -142,9 +135,9 @@ type threader[W word.Word[W]] struct {
 	// main, whose stamps count from literal one).
 	stampIn map[descriptor.ModuleId]bytecode.RegisterId
 	// canonical maps each effect to its canonical stamp register: the
-	// stamp-out output register or, for main, a lazily-allocated computed
-	// register.  Every row (vector) is entered with the current stamp held in
-	// the canonical register at offset zero, except the entry row.
+	// stamp-out output or, for main, a lazily-allocated computed register.
+	// Every row except the entry row is entered with the current stamp held
+	// there, at offset zero.
 	canonical map[descriptor.ModuleId]bytecode.RegisterId
 	isMain    bool
 }
@@ -222,10 +215,9 @@ func threadFunction[W word.Word[W]](mods []descriptor.Module[W], fn *descriptor.
 	// Allocate temporaries against the remapped register set.
 	remapped := descriptor.NewFunction(fn.Name(), newRegs, fn.Kind(), fn.Effects(), nvecs)
 	t.alloc = split.NewAllocator[W](remapped)
-	// Determine the initial symbolic state of each effect's stamp: the
-	// stamp-in register or, for main, the literal ONE (timestamp zero is
-	// reserved for the initial state of an untouched cell, keeping the memory
-	// table's strict timestamp ordering satisfiable on the first access).
+	// Initial symbolic state of each effect's stamp: the stamp-in register
+	// or, for main, the literal ONE (timestamp zero is reserved for the
+	// initial state of an untouched cell).
 	entry := map[descriptor.ModuleId]stampState{}
 	//
 	for _, e := range effects {
@@ -235,10 +227,9 @@ func threadFunction[W word.Word[W]](mods []descriptor.Module[W], fn *descriptor.
 			entry[e] = stampState{util.Some(t.stampIn[e]), 0}
 		}
 	}
-	// The walk assumes every jump lands on a row entered with canonical
-	// stamps.  If the entry row is itself a jump target (e.g. the function
-	// begins with a loop header), the entry state must be materialised into
-	// the canonical registers on a preamble row of its own, and every jump
+	// Every jump lands on a row entered with canonical stamps; if the entry
+	// row is itself a jump target (e.g. a leading loop header), the entry
+	// state is materialised on a preamble row of its own and every jump
 	// target shifted by one.
 	if jumpTargets(nvecs).Contains(0) {
 		var seed []Bytecode[W]
@@ -354,39 +345,34 @@ type pendingState[W word.Word[W]] struct {
 }
 
 // rowInserts collects the instructions materialised around one original
-// instruction position during the walk.  The rebuilt layout around the
-// position is [fall..., (skip over edge)?, edge..., preEdge..., instruction]:
-// ordinary skips landing here land at the start of preEdge, retargeted
-// conditional skips at the start of edge, and a live fall-through path runs
-// fall and then jumps over the edge block.
+// instruction position.  The rebuilt layout is [fall..., (skip over edge)?,
+// edge..., preEdge..., instruction]: ordinary skips landing here land at the
+// start of preEdge, retargeted conditional skips at the start of edge, and a
+// live fall-through path runs fall and then jumps over the edge block.
 type rowInserts[W word.Word[W]] struct {
-	// fall executes on the fall-through path only: skips landing here land
-	// past it.
+	// fall executes on the fall-through path only.
 	fall []Bytecode[W]
-	// edge is the edge block: conditional skip edges retargeted to this
-	// position land at its start and run it before continuing.
+	// edge is the edge block: retargeted conditional skip edges land at its
+	// start.
 	edge []Bytecode[W]
-	// preEdge executes on EVERY path reaching this position — the fall-through
-	// path, ordinary skips landing here, and retargeted conditional edges
-	// after their edge block.  Used when this position's (single, already
-	// merged) state must be materialised for an outgoing skip edge: arrivals
-	// which land here directly would miss a fall-only insertion.
+	// preEdge executes on EVERY path reaching this position.  Used when the
+	// position's (single, already merged) state must be materialised for an
+	// outgoing skip edge: arrivals landing here directly would miss a
+	// fall-only insertion.
 	preEdge []Bytecode[W]
 	// skipOver indicates a live fall-through path enters this position, which
 	// must then jump over the edge block.
 	skipOver bool
 	// retargets lists the (source index, case index) pairs of the conditional
-	// skip edges whose landing moves to the start of the edge block.
+	// skip edges retargeted to the edge block.
 	retargets [][2]int
 }
 
 // threadVector rewrites one row: it assigns every read-write memory access its
 // stamp operand, threads calls to effectful callees, and materialises the
 // canonical stamp registers at every exit (return, jump, or fall-through into
-// the next row).  The walk is a forward scan over the row's instructions,
-// tracking the symbolic stamp states along the fall-through path and across
-// intra-row skip edges (conditional regions and the skip-based control flow
-// the vectoriser builds when merging lines).
+// the next row).  The walk is a forward scan tracking the symbolic stamp
+// states along the fall-through path and across intra-row skip edges.
 func (t *threader[W]) threadVector(vec BytecodeVector[W], states map[descriptor.ModuleId]stampState,
 ) BytecodeVector[W] {
 	var (
@@ -479,15 +465,13 @@ func (t *threader[W]) threadVector(vec BytecodeVector[W], states map[descriptor.
 }
 
 // mergeAt reconciles the fall-through state with any skip-carried states at
-// position i.  An effect needs equalising when its incoming states disagree,
-// or when the merged state is not a plain register (a later access at this
-// position must consume a register every incoming path has computed).  Each
-// incoming edge then materialises the merge register at a position executed
-// exactly on that edge: inline for the fall-through, before the skip for an
-// unconditional edge, and in an edge block at the landing for a conditional
-// edge.  When the merge point is an exit (return, jump, or the end of the
-// row), the merge register is the canonical stamp itself, so the exit needs no
-// further materialisation on any path.
+// position i.  An effect needs equalising when its incoming states disagree or
+// the merged state is not a plain register.  Each incoming edge materialises
+// the merge register at a position executed exactly on that edge: inline for
+// the fall-through, at the source's preEdge for an unconditional edge, in an
+// edge block at the landing for a conditional edge.  At an exit (return, jump,
+// end of row) the merge register is the canonical stamp itself, so the exit
+// needs no further materialisation on any path.
 func (t *threader[W]) mergeAt(insns []Bytecode[W], i int, states map[descriptor.ModuleId]stampState,
 	live bool, pending map[int][]pendingState[W], at func(int) *rowInserts[W],
 ) (map[descriptor.ModuleId]stampState, bool) {
@@ -526,10 +510,10 @@ func (t *threader[W]) mergeAt(insns []Bytecode[W], i int, states map[descriptor.
 			states[e] = s
 		}
 	}
-	// A merge point at an exit must leave every stamp in its canonical
-	// register: instructions the exit would otherwise insert live on the
-	// fall-through path only, which skip edges land past.  main's return
-	// binds no stamp outputs (and a fail aborts), so neither forces this.
+	// A merge at an exit must leave every stamp in its canonical register
+	// (the exit's own insertions are fall-only, which skip edges land past).
+	// main's return binds no stamp outputs, and a fail aborts, so neither
+	// forces this.
 	var force bool
 	//
 	switch {
@@ -590,12 +574,9 @@ func (t *threader[W]) mergeAt(insns []Bytecode[W], i int, states map[descriptor.
 			//
 			switch p.kind {
 			case uncondEdge:
-				// Every arrival at the skip's position carries the same state
-				// (the merge there already equalised them), but only the
-				// fall-through arrival would run a fall insertion — a skip
-				// landing directly on the source would bypass it.  The
-				// materialisation therefore goes into the source's preEdge
-				// segment, which every arrival executes.
+				// Into the source's preEdge segment: every arrival there
+				// carries the same (already merged) state, but a skip landing
+				// directly on the source would bypass a fall-only insertion.
 				at(p.source).preEdge = append(at(p.source).preEdge, t.materialise(ps, target))
 			case condEdge:
 				// One materialisation per effect in the shared edge block.
@@ -624,10 +605,9 @@ func (t *threader[W]) mergeAt(insns []Bytecode[W], i int, states map[descriptor.
 
 // threadBranch handles a conditional skip.  When the remainder of the row is a
 // pure jump table (the if-goto / dispatch shape), the canonical stamps are
-// materialised once, before the branch, covering every exit at minimal cost.
-// Otherwise (a conditionally-executed region, e.g. a ternary arm or a
-// vectorised if-body) the branch's state is normalised to offset zero so both
-// edges carry the same symbolic value, and the region's accesses are
+// materialised once, before the branch, covering every exit.  Otherwise (a
+// conditionally-executed region) the state is normalised to offset zero so
+// both edges carry the same symbolic value; the region's accesses are
 // reconciled at its merge point by mergeAt.
 func (t *threader[W]) threadBranch(insns []Bytecode[W], i, skip int,
 	states map[descriptor.ModuleId]stampState, pending map[int][]pendingState[W],

@@ -318,8 +318,7 @@ func splitRead[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allo
 		// its outputs.
 		addr, pre1, post1 = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
 		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
-		// The timestamp operand (if present) is an ordinary caller-frame value,
-		// so it maps onto its limbs like any other register.
+		// The timestamp operand splits like any other caller register.
 		stamp = split.ApplyLimbsMap(limbsMap, c.Stamp...)
 		// Combine all together
 		pre, post = append(pre1, pre2...), append(post1, post2...)
@@ -337,8 +336,7 @@ func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.All
 		// its outputs.
 		addr, pre1, post1 = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
 		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
-		// The timestamp operand (if present) is an ordinary caller-frame value,
-		// so it maps onto its limbs like any other register.
+		// The timestamp operand splits like any other caller register.
 		stamp = split.ApplyLimbsMap(limbsMap, c.Stamp...)
 		// Combine all together
 		pre, post = append(pre1, pre2...), append(post1, post2...)

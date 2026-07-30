@@ -33,19 +33,13 @@ type Function[W word.Word[W]] struct {
 	// Kind records the execution-relevant properties of this function.
 	kind FunctionKind
 	// Effects records the module ids of the memories this function is permitted
-	// to access (its declared "<...>" effects).  Consumed by the
-	// timestamp-threading transform to determine which functions must thread a
-	// timestamp for which read-write memory; every transform which rebuilds a
-	// function must preserve it (enforced by NewFunction's signature).
+	// to access (its declared "<...>" effects).
 	effects []ModuleId
 	// Code defines the body of this function.
 	vectors []bytecode.Vector[W]
 }
 
-// NewFunction constructs a new function with the given components.  The effects
-// are the module ids of the memories the function is permitted to access; a
-// transform rebuilding an existing function must pass that function's Effects()
-// through unchanged.
+// NewFunction constructs a new function with the given components.
 func NewFunction[W word.Word[W]](name string, registers []Register[W], kind FunctionKind,
 	effects []ModuleId, code []bytecode.Vector[W]) *Function[W] {
 	return &Function[W]{newModuleBase(name, registers), kind, effects, code}
@@ -56,9 +50,8 @@ func (p *Function[W]) Kind() FunctionKind {
 	return p.kind
 }
 
-// Effects returns the module ids of the memories this function is permitted to
-// access (see the effects field).  May be nil for a function with no declared
-// effects.
+// Effects returns the module ids of the memories this function is permitted
+// to access.
 func (p *Function[W]) Effects() []ModuleId {
 	return p.effects
 }
@@ -150,8 +143,7 @@ func (p *Function[W]) GobEncode() ([]byte, error) {
 	if err := gobEncoder.Encode(&p.kind); err != nil {
 		return nil, err
 	}
-	// Encode via a local so gob accepts a nil slice (a function with no
-	// effects).
+	// A local, so gob accepts a nil slice.
 	effects := p.effects
 	if err := gobEncoder.Encode(&effects); err != nil {
 		return nil, err

@@ -32,11 +32,9 @@ type ReadWrite[W word.Word[W]] struct {
 	Address []RegisterId
 	// Data lines identify where the data row is written.
 	Data []RegisterId
-	// Stamp lines identify the timestamp this access carries (empty before
-	// timestamp threading, and always empty in fast mode; one register after
-	// threading, multiple limbs after register splitting).  The timestamp is a
-	// pure operand: the access reads it for the caller->memory lookup but never
-	// modifies it.
+	// Stamp lines identify the timestamp this access carries: empty before
+	// timestamp threading (and always in fast mode), one register after it,
+	// several limbs after register splitting.
 	Stamp []RegisterId
 }
 

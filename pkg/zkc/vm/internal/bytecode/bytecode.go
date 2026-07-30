@@ -378,8 +378,8 @@ func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 // the row located at the address given by the address registers, in the memory
 // identified by id.  The kind of memory being read (ROM, static ROM, RAM, paged
 // RAM) is not recorded here: it is resolved from the environment when the
-// instruction is encoded.  An optional stamp operand carries the timestamp of
-// the access (present only after timestamp threading; at most one is accepted).
+// instruction is encoded.  An optional stamp operand carries the access's
+// timestamp (present only after timestamp threading).
 func NewMemRead[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId,
 	stamp ...[]RegisterId) *ReadWrite[W] {
 	return &ReadWrite[W]{Write: false, Id: id, Address: address, Data: data, Stamp: singleStamp(stamp)}
@@ -404,9 +404,8 @@ func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 // written to the row located at the address given by the address registers, in
 // the memory identified by id.  The kind of memory being written (write-once,
 // RAM, paged RAM) is not recorded here: it is resolved from the environment when
-// the instruction is encoded.  An optional stamp operand carries the timestamp
-// of the access (present only after timestamp threading; at most one is
-// accepted).
+// the instruction is encoded.  An optional stamp operand carries the access's
+// timestamp (present only after timestamp threading).
 func NewMemWrite[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId,
 	stamp ...[]RegisterId) *ReadWrite[W] {
 	return &ReadWrite[W]{Write: true, Id: id, Address: address, Data: data, Stamp: singleStamp(stamp)}
