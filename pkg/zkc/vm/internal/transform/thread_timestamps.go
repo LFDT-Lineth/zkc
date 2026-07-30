@@ -344,11 +344,13 @@ const (
 )
 
 // pendingState records a symbolic state carried into a position by a forward
-// (skip) edge, together with the index of the skip instruction it left.
+// (skip) edge, together with the index of the skip instruction it left and —
+// for a multiway (switch / dispatch) skip — which of its cases it is.
 type pendingState[W word.Word[W]] struct {
-	states map[descriptor.ModuleId]stampState
-	source int
-	kind   edgeKind
+	states  map[descriptor.ModuleId]stampState
+	source  int
+	caseIdx int
+	kind    edgeKind
 }
 
 // rowInserts collects the instructions materialised around one original
@@ -363,9 +365,9 @@ type rowInserts[W word.Word[W]] struct {
 	// skipOver indicates a live fall-through path enters this position, which
 	// must then jump over the edge block.
 	skipOver bool
-	// retargets lists the source indices of the conditional skips whose
-	// landing moves to the start of the edge block.
-	retargets []int
+	// retargets lists the (source index, case index) pairs of the conditional
+	// skip edges whose landing moves to the start of the edge block.
+	retargets [][2]int
 }
 
 // threadVector rewrites one row: it assigns every read-write memory access its
@@ -447,18 +449,18 @@ func (t *threader[W]) threadVector(vec BytecodeVector[W], states map[descriptor.
 		case *bytecode.Skip[W]:
 			// Unconditional forward edge: the state flows to the landing; the
 			// position before the skip can host edge-only instructions.
-			t.recordEdge(pending, i, int(insn.Skip), states, uncondEdge)
+			t.recordEdge(pending, i, 0, int(insn.Skip), states, uncondEdge)
 
 			live = false
 		case *bytecode.SkipIf[W]:
 			states = t.threadBranch(insns, i, int(insn.Skip), states, pending, at)
 		case *bytecode.Switch[W]:
-			for _, c := range insn.Cases {
-				states = t.threadBranchCase(insns, i, int(c.Skip), states, pending, at)
+			for ci, c := range insn.Cases {
+				states = t.threadBranchCase(insns, i, ci, int(c.Skip), states, pending, at)
 			}
 		case *bytecode.Dispatch[W]:
-			for _, c := range insn.Cases {
-				states = t.threadBranchCase(insns, i, int(c.Skip), states, pending, at)
+			for ci, c := range insn.Cases {
+				states = t.threadBranchCase(insns, i, ci, int(c.Skip), states, pending, at)
 			}
 		}
 	}
@@ -594,7 +596,7 @@ func (t *threader[W]) mergeAt(insns []Bytecode[W], i int, states map[descriptor.
 	if len(at(i).edge) != 0 {
 		for _, p := range incoming {
 			if p.kind == condEdge {
-				at(i).retargets = append(at(i).retargets, p.source)
+				at(i).retargets = append(at(i).retargets, [2]int{p.source, p.caseIdx})
 			}
 		}
 		//
@@ -622,7 +624,7 @@ func (t *threader[W]) threadBranch(insns []Bytecode[W], i, skip int,
 			states[e] = t.canonicalState(e)
 		}
 		//
-		t.recordEdge(pending, i, skip, states, condEdge)
+		t.recordEdge(pending, i, 0, skip, states, condEdge)
 		//
 		return states
 	}
@@ -636,7 +638,7 @@ func (t *threader[W]) threadBranch(insns []Bytecode[W], i, skip int,
 		}
 	}
 	//
-	t.recordEdge(pending, i, skip, states, condEdge)
+	t.recordEdge(pending, i, 0, skip, states, condEdge)
 	//
 	return states
 }
@@ -645,7 +647,7 @@ func (t *threader[W]) threadBranch(insns []Bytecode[W], i, skip int,
 // skip, sharing threadBranch's jump-table and normalisation treatments (both
 // idempotent across the cases of one instruction: after the first case the
 // states are already plain registers).
-func (t *threader[W]) threadBranchCase(insns []Bytecode[W], i, skip int,
+func (t *threader[W]) threadBranchCase(insns []Bytecode[W], i, caseIdx, skip int,
 	states map[descriptor.ModuleId]stampState, pending map[int][]pendingState[W],
 	at func(int) *rowInserts[W]) map[descriptor.ModuleId]stampState {
 	//
@@ -665,14 +667,15 @@ func (t *threader[W]) threadBranchCase(insns []Bytecode[W], i, skip int,
 		}
 	}
 	//
-	t.recordEdge(pending, i, skip, states, condEdge)
+	t.recordEdge(pending, i, caseIdx, skip, states, condEdge)
 	//
 	return states
 }
 
-// recordEdge registers a forward skip edge from instruction i with the given
-// skip amount, carrying the current states.
-func (t *threader[W]) recordEdge(pending map[int][]pendingState[W], i, skip int,
+// recordEdge registers a forward skip edge from instruction i (case caseIdx of
+// a multiway skip; zero otherwise) with the given skip amount, carrying the
+// current states.
+func (t *threader[W]) recordEdge(pending map[int][]pendingState[W], i, caseIdx, skip int,
 	states map[descriptor.ModuleId]stampState, kind edgeKind) {
 	//
 	var (
@@ -684,7 +687,7 @@ func (t *threader[W]) recordEdge(pending map[int][]pendingState[W], i, skip int,
 		copied[e] = s
 	}
 	//
-	pending[landing] = append(pending[landing], pendingState[W]{copied, i, kind})
+	pending[landing] = append(pending[landing], pendingState[W]{copied, i, caseIdx, kind})
 }
 
 // canonicalise returns the instructions materialising every effect's state
@@ -810,9 +813,9 @@ func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInse
 		insnPos = make([]int, n+1)
 		// edgeStart[i] = index of position i's edge block in the rebuilt row.
 		edgeStart = make([]int, n+1)
-		// retargeted maps the source index of a retargeted conditional skip to
-		// its landing position.
-		retargeted = map[int]int{}
+		// retargeted maps the (source index, case index) of a retargeted
+		// conditional skip edge to its landing position.
+		retargeted = map[[2]int]int{}
 		out        []Bytecode[W]
 	)
 	//
@@ -846,14 +849,15 @@ func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInse
 			out = append(out, insns[i])
 		}
 	}
-	// Recompute skip amounts: a skip from original index i with amount k lands
-	// at original index i+1+k — past that position's fall (and edge)
-	// instructions, except for a retargeted conditional skip, which lands at
-	// the start of its landing's edge block.
-	newSkip := func(i, k int) uint16 {
+	// Recompute skip amounts: the edge of case c of the skip at original index
+	// i, with amount k, lands at original index i+1+k — past that position's
+	// fall (and edge) instructions — except when retargeted, in which case it
+	// lands at the start of its landing's edge block.  (Plain and conditional
+	// skips are their own single case, index zero.)
+	newSkip := func(i, c, k int) uint16 {
 		landing := insnPos[i+1+k]
 		//
-		if l, ok := retargeted[i]; ok {
+		if l, ok := retargeted[[2]int{i, c}]; ok {
 			landing = edgeStart[l]
 		}
 		//
@@ -863,30 +867,22 @@ func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInse
 	for i := 0; i < n; i++ {
 		switch insn := insns[i].(type) {
 		case *bytecode.Skip[W]:
-			out[insnPos[i]] = bytecode.NewSkip[W](newSkip(i, int(insn.Skip)))
+			out[insnPos[i]] = bytecode.NewSkip[W](newSkip(i, 0, int(insn.Skip)))
 		case *bytecode.SkipIf[W]:
-			out[insnPos[i]] = bytecode.NewSkipIf[W](insn.Op, newSkip(i, int(insn.Skip)), insn.Left, insn.Right)
+			out[insnPos[i]] = bytecode.NewSkipIf[W](insn.Op, newSkip(i, 0, int(insn.Skip)), insn.Left, insn.Right)
 		case *bytecode.Switch[W]:
-			if _, ok := retargeted[i]; ok {
-				panic("timestamp threading: cannot retarget a switch case (unsupported control flow shape)")
-			}
-			//
 			cases := make([]bytecode.SwitchCase[W], len(insn.Cases))
 			//
 			for c, sc := range insn.Cases {
-				cases[c] = bytecode.SwitchCase[W]{Value: sc.Value, Skip: newSkip(i, int(sc.Skip))}
+				cases[c] = bytecode.SwitchCase[W]{Value: sc.Value, Skip: newSkip(i, c, int(sc.Skip))}
 			}
 			//
 			out[insnPos[i]] = bytecode.MultiwaySkip(insn.Source, cases)
 		case *bytecode.Dispatch[W]:
-			if _, ok := retargeted[i]; ok {
-				panic("timestamp threading: cannot retarget a dispatch case (unsupported control flow shape)")
-			}
-			//
 			cases := make([]bytecode.DispatchCase, len(insn.Cases))
 			//
 			for c, dc := range insn.Cases {
-				cases[c] = bytecode.DispatchCase{Bit: dc.Bit, Skip: newSkip(i, int(dc.Skip))}
+				cases[c] = bytecode.DispatchCase{Bit: dc.Bit, Skip: newSkip(i, c, int(dc.Skip))}
 			}
 			//
 			out[insnPos[i]] = bytecode.NewDispatch[W](cases, insn.Default)
