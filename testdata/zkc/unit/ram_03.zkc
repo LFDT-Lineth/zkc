@@ -3,7 +3,7 @@
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (byte:u8)
 
-fn dset<ram>(x:u8) -> (r:u8) {
+fn double_read<ram>(x:u8) -> (r:u8) {
     r = ram[x] + ram[x]
 }
 
@@ -12,7 +12,7 @@ fn main<ram>() {
     var value:u8 = data[1]
     var expected:u8 = data[2]
     ram[addr] = value
-    if dset(addr) != expected {
+    if double_read(addr) != expected {
         fail
     }
 }

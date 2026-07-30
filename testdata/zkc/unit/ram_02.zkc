@@ -3,7 +3,7 @@
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (byte:u8)
 
-fn dinc<ram>(x:u8) {
+fn inc<ram>(x:u8) {
     ram[x] = ram[x] + 1
 }
 
@@ -12,9 +12,9 @@ fn main<ram>() {
     var start:u8 = data[1]
     var expected:u8 = data[2]
     ram[addr] = start
-    dinc(addr)
-    dinc(addr)
-    dinc(addr)
+    inc(addr)
+    inc(addr)
+    inc(addr)
     if ram[addr] != expected {
         fail
     }
