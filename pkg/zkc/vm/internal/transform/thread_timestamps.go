@@ -354,7 +354,11 @@ type pendingState[W word.Word[W]] struct {
 }
 
 // rowInserts collects the instructions materialised around one original
-// instruction position during the walk.
+// instruction position during the walk.  The rebuilt layout around the
+// position is [fall..., (skip over edge)?, edge..., preEdge..., instruction]:
+// ordinary skips landing here land at the start of preEdge, retargeted
+// conditional skips at the start of edge, and a live fall-through path runs
+// fall and then jumps over the edge block.
 type rowInserts[W word.Word[W]] struct {
 	// fall executes on the fall-through path only: skips landing here land
 	// past it.
@@ -362,6 +366,12 @@ type rowInserts[W word.Word[W]] struct {
 	// edge is the edge block: conditional skip edges retargeted to this
 	// position land at its start and run it before continuing.
 	edge []Bytecode[W]
+	// preEdge executes on EVERY path reaching this position — the fall-through
+	// path, ordinary skips landing here, and retargeted conditional edges
+	// after their edge block.  Used when this position's (single, already
+	// merged) state must be materialised for an outgoing skip edge: arrivals
+	// which land here directly would miss a fall-only insertion.
+	preEdge []Bytecode[W]
 	// skipOver indicates a live fall-through path enters this position, which
 	// must then jump over the edge block.
 	skipOver bool
@@ -580,7 +590,13 @@ func (t *threader[W]) mergeAt(insns []Bytecode[W], i int, states map[descriptor.
 			//
 			switch p.kind {
 			case uncondEdge:
-				at(p.source).fall = append(at(p.source).fall, t.materialise(ps, target))
+				// Every arrival at the skip's position carries the same state
+				// (the merge there already equalised them), but only the
+				// fall-through arrival would run a fall insertion — a skip
+				// landing directly on the source would bypass it.  The
+				// materialisation therefore goes into the source's preEdge
+				// segment, which every arrival executes.
+				at(p.source).preEdge = append(at(p.source).preEdge, t.materialise(ps, target))
 			case condEdge:
 				// One materialisation per effect in the shared edge block.
 				if conditional != nil && p.source == conditional.source {
@@ -813,6 +829,9 @@ func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInse
 		insnPos = make([]int, n+1)
 		// edgeStart[i] = index of position i's edge block in the rebuilt row.
 		edgeStart = make([]int, n+1)
+		// preEdgeStart[i] = index of position i's preEdge segment (the landing
+		// anchor of ordinary skips) in the rebuilt row.
+		preEdgeStart = make([]int, n+1)
 		// retargeted maps the (source index, case index) of a retargeted
 		// conditional skip edge to its landing position.
 		retargeted = map[[2]int]int{}
@@ -829,12 +848,15 @@ func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInse
 			//
 			edgeStart[i] = len(out)
 			out = append(out, ri.edge...)
+			preEdgeStart[i] = len(out)
+			out = append(out, ri.preEdge...)
 			//
 			for _, s := range ri.retargets {
 				retargeted[s] = i
 			}
 		} else {
 			edgeStart[i] = len(out)
+			preEdgeStart[i] = len(out)
 		}
 		//
 		insnPos[i] = len(out)
@@ -850,12 +872,13 @@ func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInse
 		}
 	}
 	// Recompute skip amounts: the edge of case c of the skip at original index
-	// i, with amount k, lands at original index i+1+k — past that position's
-	// fall (and edge) instructions — except when retargeted, in which case it
-	// lands at the start of its landing's edge block.  (Plain and conditional
-	// skips are their own single case, index zero.)
+	// i, with amount k, lands at original index i+1+k — at the start of that
+	// position's preEdge segment (past its fall-only instructions) — except
+	// when retargeted, in which case it lands at the start of its landing's
+	// edge block.  (Plain and conditional skips are their own single case,
+	// index zero.)
 	newSkip := func(i, c, k int) uint16 {
-		landing := insnPos[i+1+k]
+		landing := preEdgeStart[i+1+k]
 		//
 		if l, ok := retargeted[[2]int{i, c}]; ok {
 			landing = edgeStart[l]
