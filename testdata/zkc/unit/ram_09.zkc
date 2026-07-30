@@ -1,5 +1,6 @@
 // Field-element (native) values in a read-write memory: the value columns of
 // the RAM table carry full field elements rather than fixed-width words.
+// Code lines: main = 1.
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (value:𝔽)
 
