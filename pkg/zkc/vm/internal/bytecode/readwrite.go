@@ -65,7 +65,7 @@ func (p *ReadWrite[W]) Definitions() []RegisterId {
 
 // Validate implementation for Bytecode interface.
 func (p *ReadWrite[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	errors := validateOperands(env, p.Address, p.Data)
+	errors := validateOperands(env, p.Address, p.Data, p.Stamp)
 
 	module := env.Module(p.Id)
 	if module.IsEmpty() {
