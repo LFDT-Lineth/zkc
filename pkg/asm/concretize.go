@@ -178,7 +178,7 @@ func subdivideFunction(mapping module.LimbsMap, fn *MicroFunction) *MicroFunctio
 		nbuses[i] = bus.Split(modmap, env)
 	}
 	//
-	nfn := io.NewFunction(fn.Name(), fn.IsPublic(), env.Registers(), nbuses, ninsns)
+	nfn := io.NewFunction(fn.Name(), fn.IsPublicOutput(), env.Registers(), nbuses, ninsns)
 	// Done
 	return &nfn
 }

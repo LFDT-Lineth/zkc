@@ -97,9 +97,14 @@ func (p *Module[F, T]) LengthMultiplier() uint {
 	return 1
 }
 
-// IsPublic implementation for schema.Module interface.
-func (p *Module[F, T]) IsPublic() bool {
-	return p.function.IsPublic()
+// IsPublicOutput implementation for schema.Module interface.
+func (p *Module[F, T]) IsPublicOutput() bool {
+	return p.function.IsPublicOutput()
+}
+
+// IsPrivateOutput implementation for schema.Module interface.
+func (p *Module[F, T]) IsPrivateOutput() bool {
+	return p.function.IsPrivateOutput()
 }
 
 // IsSynthetic implementation for schema.Module interface.
