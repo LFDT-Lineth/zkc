@@ -66,6 +66,12 @@ const (
 	// RAM_ADDR_CARRY_PREFIX prefixes the per-boundary carry columns witnessing the
 	// multi-limb address addition in the finalization phase.
 	RAM_ADDR_CARRY_PREFIX = "$addr_carry_"
+	// RAM_EXEC_WRITE_NAME is the binary column EXEC * IS_WRITE: the target-side
+	// selector of the caller->RAM lookup for write accesses.
+	RAM_EXEC_WRITE_NAME = "$exec_write"
+	// RAM_EXEC_READ_NAME is the binary column EXEC * (1 - IS_WRITE): the
+	// target-side selector of the caller->RAM lookup for read accesses.
+	RAM_EXEC_READ_NAME = "$exec_read"
 )
 
 // RamLimbName returns the name of the limb-k column of a RAM register family
