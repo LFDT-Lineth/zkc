@@ -1,6 +1,7 @@
 // Tuple (multi-lane) values in a read-write memory: one logical access spans
 // several physical lanes, which the trace observer groups back into a single
 // row of the RAM table.
+// Code lines: main = 1.
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (lo:u8, hi:u8)
 
