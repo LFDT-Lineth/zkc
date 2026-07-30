@@ -1,6 +1,7 @@
 // Two independent read-write memories: each threads its own timestamp, calls
 // forward only the effects the callee declares, and a single statement may
 // access both memories (two lookups on one row).
+// Code lines: main = 1, copy = 1, bump = 1 (one trace row per invocation).
 pub input data(address:u8) -> (byte:u8)
 memory ram1(address:u8) -> (byte:u8)
 memory ram2(address:u8) -> (byte:u8)

@@ -1,5 +1,6 @@
 // Timestamps threaded around loops: direct accesses in a loop body (the stamp
 // register is carried across iterations) and an effectful call inside a loop.
+// Code lines: main = 3 (looping rows repeat per iteration), store = 1.
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (byte:u8)
 

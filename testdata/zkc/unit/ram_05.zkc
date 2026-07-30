@@ -1,6 +1,7 @@
 // Nested memory accesses on both sides of an assignment: the write's address
 // is itself a read, and so is the value.  Each statement performs up to three
 // timestamped accesses.
+// Code lines: main = 1.
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (byte:u8)
 

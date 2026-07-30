@@ -1,5 +1,6 @@
 // Two reads of the same memory in a single expression (each carries its own
 // timestamp on the same row).
+// Code lines: main = 1, double_read = 1 (one trace row per invocation).
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (byte:u8)
 

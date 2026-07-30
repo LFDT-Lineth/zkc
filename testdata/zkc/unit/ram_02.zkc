@@ -1,5 +1,6 @@
 // Read-feeds-write on the same address: a single statement both reads and
 // writes the memory, so it carries two timestamps.
+// Code lines: main = 1, inc = 1 (one trace row per invocation).
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (byte:u8)
 

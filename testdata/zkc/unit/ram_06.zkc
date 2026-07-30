@@ -1,5 +1,6 @@
 // Read-feeds-write across distinct addresses (the pattern used by the sort /
 // blake benchmarks), including a swap.
+// Code lines: main = 1, swap = 1 (one trace row per invocation).
 pub input data(address:u8) -> (byte:u8)
 memory buf(address:u8) -> (byte:u8)
 
