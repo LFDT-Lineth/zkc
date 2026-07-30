@@ -839,6 +839,10 @@ func Test_ZkcUnit_Ram_08(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/ram_08", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Ram_11(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_11", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Static Initialiser Tests
 // ===================================================================
