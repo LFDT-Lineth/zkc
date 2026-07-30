@@ -103,8 +103,9 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 	mod = mod.Init(name, false, false, false, false, false, true, 0)
 	// Add all registers
 	mod.AddRegisters(regs...)
-	// Populate the table contents from the pre-loaded memory.
-	mod.SetStaticContents(foldContents(inputs, outputs, contents))
+	// Populate the table contents from the pre-loaded memory, padded to the
+	// next power-of-two height.
+	mod.SetStaticContents(padStaticTables(foldContents(inputs, outputs, contents)))
 	//
 	return mod
 }
