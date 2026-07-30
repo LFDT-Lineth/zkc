@@ -1,0 +1,19 @@
+// Tuple (multi-lane) values in a read-write memory: one logical access spans
+// several physical lanes, which the trace observer groups back into a single
+// row of the RAM table.
+pub input data(address:u8) -> (byte:u8)
+memory ram(address:u8) -> (lo:u8, hi:u8)
+
+fn main<ram>() {
+    var x:u8 = data[0]
+    var y:u8 = data[1]
+    var lo:u8, hi:u8
+    ram[3] = (x, y)
+    lo, hi = ram[3]
+    if lo != x {
+        fail
+    }
+    if hi != y {
+        fail
+    }
+}
