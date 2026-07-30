@@ -201,15 +201,11 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.LowerComparisons(program)
 		program = vm.LowerSwitch(program)
 		program = vm.Vectorize(program)
-		// Thread memory timestamps once the rows are final: every read-write
-		// memory access gains a stamp operand, and effectful functions a
-		// stamp-in/out pair, consumed by the caller->memory lookups.  Running
-		// after vectorisation lets the transform emit at most one canonical
-		// stamp write per executed path through a row (preserving one-line
-		// functions), and before register splitting so the wide stamp
-		// registers and their arithmetic are split into limbs and
-		// range-checked like any other register.  Fast mode skips this (the
-		// run-time memory maintains its own clock).
+		// Thread memory timestamps once the rows are final: after
+		// vectorisation (at most one canonical stamp write per executed path
+		// through a row, preserving one-line functions) and before register
+		// splitting (stamps split and range-check like any other register).
+		// Fast mode skips this: the run-time memory keeps its own clock.
 		program = vm.ThreadTimestamps(program)
 		program = vm.FactorSkipConditions(program)
 		// NOTE: eventually this will always be applied
