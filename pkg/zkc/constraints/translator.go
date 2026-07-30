@@ -100,7 +100,7 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 	)
 	// Initialise module as a static reference table.  Memory modules are never
 	// native.
-	mod = mod.Init(name, false, true, false, false, true, 0)
+	mod = mod.Init(name, false, false, false, false, false, true, 0)
 	// Add all registers
 	mod.AddRegisters(regs...)
 	// Populate the table contents from the pre-loaded memory, padded to the
@@ -130,8 +130,9 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](ctx schema.Modul
 		mod  *schema.Table[F, mir.Constraint[F]]
 		name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
 	)
-	// Initialise module.  Memory modules are never native.
-	mod = mod.Init(name, false, true, false, false, false, 0)
+	// Initialise module.  Memory modules are never native.  Read-write memories
+	// are never public outputs (only public write-only memories are).
+	mod = mod.Init(name, false, false, false, false, false, false, 0)
 	// Add all registers
 	mod.AddRegisters(regs...)
 	// TODO: read-write (RAM) constraints are disabled for now — the timestamp
@@ -159,7 +160,8 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 	// be true so a leading padding row is inserted, which the ACCESS[0]=0 /
 	// addresses-vanish-in-padding constraints rely on.  Memory modules are never
 	// native.
-	memoryModule = memoryModule.Init(name, true, true, false, false, false, 0)
+	memoryModule = memoryModule.Init(name, true, m.IsPublic() && m.IsWriteOnly(), !m.IsPublic() && m.IsWriteOnly(),
+		false, false, false, 0)
 	memoryModule.AddRegisters(regs...)
 
 	var access = register.NewId(memoryModule.Width())
@@ -353,7 +355,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 		ret register.Id
 	)
 	// Initialise module
-	mod = mod.Init(name, false, true, false, fn.IsNative(), false, 0)
+	mod = mod.Init(name, false, false, false, false, fn.IsNative(), false, 0)
 	// Add all registers
 	mod.AddRegisters(regs...)
 	// Native functions are backed by an external circuit, so we emit only the

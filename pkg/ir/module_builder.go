@@ -76,11 +76,11 @@ type ModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 
 // NewModuleBuilder constructs a new builder for a module with the given name.
 func NewModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]](name module.Name,
-	mid schema.ModuleId, padding, public, synthetic, static, native bool, keys uint) ModuleBuilder[F, C, T] {
+	mid schema.ModuleId, padding, public, private, synthetic, static, native bool, keys uint) ModuleBuilder[F, C, T] {
 	//
 	regmap := make(map[string]uint, 0)
 
-	return &internalModuleBuilder[F, C, T]{name, mid, padding, public, synthetic, static, native,
+	return &internalModuleBuilder[F, C, T]{name, mid, padding, public, private, synthetic, static, native,
 		keys, regmap, nil, nil, nil, nil}
 }
 
@@ -93,6 +93,8 @@ type internalModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Ex
 	padding bool
 	// Indicates whether externally visible
 	public bool
+	// Indicates whether this is a private output or not
+	private bool
 	// Indicates whether this is a synthetic module or not
 	synthetic bool
 	// Indicates whether this is a static module or not
@@ -153,9 +155,14 @@ func (p *internalModuleBuilder[F, C, T]) IsExtern() bool {
 	return false
 }
 
-// IsPublic implementation for schema.ModuleView interface.
-func (p *internalModuleBuilder[F, C, T]) IsPublic() bool {
+// IsPublicOutput implementation for schema.ModuleView interface.
+func (p *internalModuleBuilder[F, C, T]) IsPublicOutput() bool {
 	return p.public
+}
+
+// IsPrivateOutput implementation for schema.ModuleView interface.
+func (p *internalModuleBuilder[F, C, T]) IsPrivateOutput() bool {
+	return p.private
 }
 
 // IsSynthetic implementation for schema.ModuleView interface.
@@ -336,8 +343,13 @@ func (p *externalModuleBuilder[F, C, T]) IsExtern() bool {
 	return true
 }
 
-// IsPublic implementation for schema.ModuleView interface.
-func (p *externalModuleBuilder[F, C, T]) IsPublic() bool {
+// IsPublicOutput implementation for schema.ModuleView interface.
+func (p *externalModuleBuilder[F, C, T]) IsPublicOutput() bool {
+	return false
+}
+
+// IsPrivateOutput implementation for schema.ModuleView interface.
+func (p *externalModuleBuilder[F, C, T]) IsPrivateOutput() bool {
 	return false
 }
 
