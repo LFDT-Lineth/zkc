@@ -518,8 +518,7 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 	case *bytecode.Skip[W]:
 		return insn
 	case *bytecode.Jmp[W], *bytecode.Ret[W]:
-		// Register-free control flow: only present when substituting a full
-		// function body (e.g. timestamp threading), never in an inlined callee.
+		// Register-free; present only when substituting a full function body.
 		return insn
 	case *bytecode.SkipIf[W]:
 		return &bytecode.SkipIf[W]{Op: insn.Op, Skip: insn.Skip,
