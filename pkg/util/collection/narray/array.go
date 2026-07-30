@@ -13,6 +13,8 @@
 package narray
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -29,6 +31,11 @@ type Array[T any] interface {
 	BitWidth() uint
 	// Clone this array producing a mutable copy
 	Clone() MutArray[T]
+	// Encode writes the contents of this array into the given buffer, using
+	// the natural encoding for this array representation.  The encoding is
+	// self-delimiting given the length of the array (i.e. Decode can determine
+	// how many bytes to read given the number of encoded elements).
+	Encode(*bytes.Buffer)
 	// Get returns the element at the given index in this array.
 	Get(uint) T
 	// Returns the number of elements in this array.
@@ -43,6 +50,11 @@ type MutArray[T any] interface {
 	// This updates the array in place, and will panic if the given value is not
 	// representable in the array.
 	Append(T)
+	// Decode reads a given number of elements from the given buffer into this
+	// array, replacing any existing contents.  The data is expected to be in
+	// the natural encoding for this array representation (i.e. as produced by
+	// Encode).
+	Decode(uint, *bytes.Buffer) error
 	// Set the element at the given index in this array, overwriting the
 	// original value. This updates the array in place, and will panic if the
 	// given value is not representable in the array.
@@ -51,4 +63,39 @@ type MutArray[T any] interface {
 	// array.  This should be considered a destructive operation and, hence,
 	// once done this array should no longer be used.
 	ToLegacy() array.MutArray[T]
+}
+
+// writeUvarint writes an unsigned varint into the given buffer.
+func writeUvarint(buffer *bytes.Buffer, value uint64) {
+	var bytes [binary.MaxVarintLen64]byte
+	//
+	n := binary.PutUvarint(bytes[:], value)
+	buffer.Write(bytes[:n])
+}
+
+// readUvarint reads an unsigned varint from the given buffer.
+func readUvarint(buffer *bytes.Buffer) (uint64, error) {
+	return binary.ReadUvarint(buffer)
+}
+
+// writeWordBytes writes a word into the given buffer as a length-prefixed
+// sequence of raw bytes.
+func writeWordBytes(buffer *bytes.Buffer, bytes []byte) {
+	writeUvarint(buffer, uint64(len(bytes)))
+	buffer.Write(bytes)
+}
+
+// readWordBytes reads a length-prefixed sequence of raw bytes (as written by
+// writeWordBytes) from the given buffer.
+func readWordBytes(buffer *bytes.Buffer) ([]byte, error) {
+	length, err := readUvarint(buffer)
+	//
+	if err != nil {
+		return nil, err
+	} else if length > uint64(buffer.Len()) {
+		return nil, fmt.Errorf("word length %d exceeds remaining bytes %d", length, buffer.Len())
+	}
+	// Observe bytes must be cloned, since the slice returned by Next is only
+	// valid until the next buffer operation.
+	return bytes.Clone(buffer.Next(int(length))), nil
 }

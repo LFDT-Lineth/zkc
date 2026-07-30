@@ -16,30 +16,28 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
-// MarshalBinary encodes a row-major trace into a binary format.  Lengths,
-// counts and descriptor metadata are encoded as unsigned varints.  Row data is
-// encoded row-major, using unsigned LEB128 for each word value.
-func MarshalBinary[W util.BigInter, M ModuleBuilder[W, M]](tr Array[W, M]) ([]byte, error) {
+// MarshalBinary encodes a trace into a binary format.  Lengths, counts and
+// descriptor metadata are encoded as unsigned varints.  Register data is
+// encoded column-major, with each column written using the natural encoding of
+// its underlying array representation (see narray.Array.Encode).
+func MarshalBinary[T any, M ModuleBuilder[T, M]](tr Array[T, M]) ([]byte, error) {
 	var buffer bytes.Buffer
 	//
 	buffer.Write(rtraceBinaryMagic)
 	writeUvarint(&buffer, tr.Width())
 	//
 	for mid := uint(0); mid < tr.Width(); mid++ {
-		if err := marshalModule[W](&buffer, tr.Module(mid)); err != nil {
-			return nil, err
-		}
+		marshalModule(&buffer, tr.Module(mid))
 	}
 	//
 	return buffer.Bytes(), nil
 }
 
-// UnmarshalBinary decodes a row-major trace encoded by MarshalBinary.
+// UnmarshalBinary decodes a trace encoded by MarshalBinary.
 func (p *Array[T, M]) UnmarshalBinary(data []byte) error {
 	var buffer = bytes.NewBuffer(data)
 	//
@@ -55,26 +53,14 @@ func (p *Array[T, M]) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-func marshalModule[W util.BigInter](buffer *bytes.Buffer, module Module[W]) error {
+func marshalModule[T any](buffer *bytes.Buffer, module Module[T]) {
 	writeString(buffer, module.Name())
-	marshalRegisters(buffer, module.Descriptor().Collect())
+	marshalDescriptors(buffer, module.Descriptors().Collect())
 	writeUvarint(buffer, module.Height())
 	//
-	for rid := uint(0); rid < module.Height(); rid++ {
-		row := module.Row(rid)
-		//
-		if row.Width() != module.Width() {
-			return fmt.Errorf("invalid row width (have %d, expected %d)", row.Width(), module.Width())
-		}
-		//
-		for cid := uint(0); cid < row.Width(); cid++ {
-			if err := writeWordULEB128(buffer, row.Get(cid)); err != nil {
-				return err
-			}
-		}
+	for cid := uint(0); cid < module.Width(); cid++ {
+		module.Column(cid).Encode(buffer)
 	}
-	//
-	return nil
 }
 
 func unmarshalModules[T any, M ModuleBuilder[T, M]](buffer *bytes.Buffer) ([]M, error) {
@@ -94,10 +80,9 @@ func unmarshalModule[T any, M ModuleBuilder[T, M]](buffer *bytes.Buffer) (M, err
 	var (
 		r = reader{buf: buffer}
 		//
-		name      = r.str()
-		registers = readWith(&r, readRegisters)
-		height    = r.uvarint()
-		width     = len(registers)
+		name        = r.str()
+		descriptors = readWith(&r, readColumnDescriptors)
+		height      = r.uvarint()
 		//
 		module M
 	)
@@ -105,39 +90,34 @@ func unmarshalModule[T any, M ModuleBuilder[T, M]](buffer *bytes.Buffer) (M, err
 	if r.err != nil {
 		return module, r.err
 	}
-	//
-	var err error
-	//
-	rows := make([][]T, height)
-	//
-	for rid := range height {
-		rows[rid] = make([]T, width)
-		//
-		for cid := range width {
-			if rows[rid][cid], err = readWordULEB128[T](buffer); err != nil {
-				return module, err
-			}
+	// Initialise (empty) module, thereby allocating an appropriate array
+	// representation for each descriptor.
+	module = module.Initialise(name, descriptors)
+	// Decode each column in place.
+	for cid := range uint(len(descriptors)) {
+		if err := module.MutColumn(cid).Decode(height, buffer); err != nil {
+			return module, err
 		}
 	}
-	// Initialise new module
-	return module.Initialise(name, registers, rows...), nil
+	//
+	return module, nil
 }
 
-func readRegisters(buffer *bytes.Buffer) ([]Register, error) {
-	return readSlice(buffer, readRegister)
+func readColumnDescriptors(buffer *bytes.Buffer) ([]ColumnDescriptor, error) {
+	return readSlice(buffer, readColumnDescriptor)
 }
 
-func readRegister(buffer *bytes.Buffer) (Register, error) {
+func readColumnDescriptor(buffer *bytes.Buffer) (ColumnDescriptor, error) {
 	r := reader{buf: buffer}
 	//
 	name := r.str()
 	bitwidth := r.optionUint()
 	//
 	if r.err != nil {
-		return Register{}, r.err
+		return ColumnDescriptor{}, r.err
 	}
 	//
-	return Register{name, bitwidth}, nil
+	return ColumnDescriptor{name, bitwidth}, nil
 }
 
 // writeSlice writes a length-prefixed sequence of items: the count as an
@@ -196,8 +176,8 @@ func (r *reader) uvarint() uint                 { return readWith(r, readUvarint
 func (r *reader) str() string                   { return readWith(r, readString) }
 func (r *reader) optionUint() util.Option[uint] { return readWith(r, readOptionUint) }
 
-func marshalRegisters(buffer *bytes.Buffer, registers []Register) {
-	writeSlice(buffer, registers, func(buffer *bytes.Buffer, reg Register) {
+func marshalDescriptors(buffer *bytes.Buffer, descriptors []ColumnDescriptor) {
+	writeSlice(buffer, descriptors, func(buffer *bytes.Buffer, reg ColumnDescriptor) {
 		writeString(buffer, reg.Name)
 		writeOptionUint(buffer, reg.Bitwidth)
 	})
@@ -265,93 +245,4 @@ func readUvarint(buffer *bytes.Buffer) (uint, error) {
 	}
 	//
 	return uint(value), nil
-}
-
-func writeWordULEB128[W util.BigInter](buffer *bytes.Buffer, word W) error {
-	value := word.BigInt()
-	if value.Sign() < 0 {
-		return fmt.Errorf("cannot encode negative word %s", value.String())
-	}
-	//
-	writeBigULEB128(buffer, value)
-	//
-	return nil
-}
-
-func writeBigULEB128(buffer *bytes.Buffer, value *big.Int) {
-	var tmp big.Int
-	//
-	tmp.Set(value)
-	//
-	for {
-		next := byte(tmp.Uint64() & 0x7f)
-		tmp.Rsh(&tmp, 7)
-		//
-		if tmp.Sign() != 0 {
-			next |= 0x80
-		}
-		//
-		buffer.WriteByte(next)
-		//
-		if tmp.Sign() == 0 {
-			return
-		}
-	}
-}
-
-type bigIntSetter[T any] interface {
-	SetBigInt(*big.Int) T
-}
-
-func readWordULEB128[T any](buffer *bytes.Buffer) (word T, err error) {
-	value, err := readBigULEB128(buffer)
-	if err != nil {
-		return word, err
-	}
-	//
-	setter, ok := any(word).(bigIntSetter[T])
-	if !ok {
-		return word, fmt.Errorf("rtrace Array.UnmarshalBinary requires word values with SetBigInt")
-	}
-	//
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("invalid word value %s: %v", value.String(), r)
-		}
-	}()
-	//
-	word = setter.SetBigInt(value)
-	//
-	return word, nil
-}
-
-func readBigULEB128(buffer *bytes.Buffer) (*big.Int, error) {
-	var (
-		result big.Int
-		shift  uint
-	)
-	//
-	for {
-		if buffer.Len() == 0 {
-			return nil, fmt.Errorf("malformed rtrace binary: unterminated LEB128 word")
-		}
-		//
-		next, err := buffer.ReadByte()
-		if err != nil {
-			return nil, err
-		}
-		//
-		var part big.Int
-		part.SetUint64(uint64(next & 0x7f))
-		part.Lsh(&part, shift)
-		result.Add(&result, &part)
-		//
-		if next&0x80 == 0 {
-			return &result, nil
-		} else if shift+7 < shift {
-			return nil, fmt.Errorf("malformed rtrace binary: LEB128 shift overflow")
-		}
-		//
-		shift += 7
-	}
 }

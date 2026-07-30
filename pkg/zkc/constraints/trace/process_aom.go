@@ -42,13 +42,13 @@ func initAccessOnceMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](m vm.M
 		u1 = util.Some[uint](1)
 	)
 	// Add access bit for distinguishing padding rows.
-	regs = append(regs, rtrace.NewRegister(io.ACCESS_BIT_NAME, u1))
+	regs = append(regs, rtrace.NewColumnDescriptor(io.ACCESS_BIT_NAME, u1))
 	// For multi-lane memory, add one selector bit for each lane
 	if nAddressLines > 1 {
 		// Only add address selector lines if there is more than one address
 		// line.
 		for k := range nAddressLines {
-			regs = append(regs, rtrace.NewRegister(io.AtFlagName(k), u1))
+			regs = append(regs, rtrace.NewColumnDescriptor(io.AtFlagName(k), u1))
 		}
 	}
 	//

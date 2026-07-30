@@ -13,6 +13,8 @@
 package narray
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"strings"
 
@@ -51,6 +53,29 @@ func (p *SmallArray[K, T]) Len() uint {
 // BitWidth returns the width (in bits) of elements in this array.
 func (p *SmallArray[K, T]) BitWidth() uint {
 	return p.bitwidth
+}
+
+// Encode implementation for Array interface.  The natural encoding of a small
+// array is its elements written as fixed-width, little endian values.
+func (p *SmallArray[K, T]) Encode(buffer *bytes.Buffer) {
+	if err := binary.Write(buffer, binary.LittleEndian, p.data); err != nil {
+		// Unreachable, since writes to a bytes.Buffer cannot fail.
+		panic(err)
+	}
+}
+
+// Decode implementation for MutArray interface.  This reads a given number of
+// fixed-width, little endian values (as produced by Encode).
+func (p *SmallArray[K, T]) Decode(height uint, buffer *bytes.Buffer) error {
+	data := make([]K, height)
+	//
+	if err := binary.Read(buffer, binary.LittleEndian, data); err != nil {
+		return err
+	}
+	//
+	p.data = data
+	//
+	return nil
 }
 
 // Clone makes clones of this array producing an otherwise identical copy.

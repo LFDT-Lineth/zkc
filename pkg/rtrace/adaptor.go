@@ -22,9 +22,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
-// FromTrace converts a column-major trace.Trace into a row-major rtrace.Array.
-// Each source column becomes one register, and each register is backed by one
-// limb using the source column data bitwidth when available.
+// FromTrace converts a trace.Trace into a rtrace.Array, where each column in
+// the former maps into a column in the latter.
 func FromTrace[T any, M ModuleBuilder[T, M]](tr ctrace.Trace[T]) *Array[T, M] {
 	modules := make([]M, tr.Width())
 	//
@@ -35,12 +34,8 @@ func FromTrace[T any, M ModuleBuilder[T, M]](tr ctrace.Trace[T]) *Array[T, M] {
 	return NewArray(modules)
 }
 
-// ToTrace converts a row-major rtrace.Trace into a column-major trace.Trace.
-// Each limb becomes one column, named following the register splitting
-// convention: a register backed by a single limb keeps its own name, whilst
-// the limbs of a subdivided register are named "reg'0", "reg'1", etc.  Observe
-// that key columns are not reconstructed (every module reports zero keys), and
-// all columns are padded with zero.
+// ToTrace converts an rtrace.Trace into a trace.Trace, where each column in the
+// former maps into a column in the latter.
 func ToTrace[T word.Word[T]](tr Trace[T]) []lt.Module[T] {
 	var (
 		modules = make([]lt.Module[T], tr.Width())
@@ -55,23 +50,23 @@ func ToTrace[T word.Word[T]](tr Trace[T]) []lt.Module[T] {
 
 func fromTraceModule[T any, M ModuleBuilder[T, M]](module ctrace.Module[T]) M {
 	var (
-		columns    = make([]ctrace.Column[T], module.Width())
-		descriptor = make([]Register, module.Width())
+		descriptor = make([]ColumnDescriptor, module.Width())
 		rows       = make([][]T, module.Height())
 		nmod       M
 	)
 	//
 	for cid := range module.Width() {
-		col := module.Column(cid)
+		var col = module.Column(cid)
 		//
-		columns[cid] = col
-		descriptor[cid] = Register{col.Name(), traceColumnLimbWidths(col)}
+		descriptor[cid] = ColumnDescriptor{col.Name(), columnDescriptorWidth(col)}
 	}
 	//
 	for rid := range module.Height() {
 		row := make([]T, module.Width())
 		//
-		for cid, col := range columns {
+		for cid := range module.Width() {
+			var col = module.Column(cid)
+			//
 			row[cid] = col.Get(traceRowIndex(rid))
 		}
 		//
@@ -81,7 +76,7 @@ func fromTraceModule[T any, M ModuleBuilder[T, M]](module ctrace.Module[T]) M {
 	return nmod.Initialise(module.Name().String(), descriptor, rows...)
 }
 
-func traceColumnLimbWidths[T any](col ctrace.Column[T]) util.Option[uint] {
+func columnDescriptorWidth[T any](col ctrace.Column[T]) util.Option[uint] {
 	data := col.Data()
 	//
 	if data == nil {

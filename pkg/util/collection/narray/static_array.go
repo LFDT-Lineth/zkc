@@ -13,14 +13,16 @@
 package narray
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // StaticArray implements an array of elements simply using an underlying array.
-type StaticArray[T any] struct {
+type StaticArray[T word.Word[T]] struct {
 	// The data stored in this column (as bytes).
 	data []T
 	// Bitwidth of each word in this array
@@ -28,7 +30,7 @@ type StaticArray[T any] struct {
 }
 
 // NewStaticArray constructs a new word array with a given capacity.
-func NewStaticArray[T any](height uint, bitwidth uint) *StaticArray[T] {
+func NewStaticArray[T word.Word[T]](height uint, bitwidth uint) *StaticArray[T] {
 	var (
 		elements = make([]T, height)
 	)
@@ -63,6 +65,34 @@ func (p *StaticArray[T]) Set(index uint, word T) {
 	p.data[index] = word
 }
 
+// Encode implementation for Array interface.  The natural encoding of a static
+// array is its elements written as length-prefixed sequences of raw bytes.
+func (p *StaticArray[T]) Encode(buffer *bytes.Buffer) {
+	for _, w := range p.data {
+		writeWordBytes(buffer, w.Bytes())
+	}
+}
+
+// Decode implementation for MutArray interface.  This reads a given number of
+// length-prefixed words (as produced by Encode).
+func (p *StaticArray[T]) Decode(height uint, buffer *bytes.Buffer) error {
+	data := make([]T, height)
+	//
+	for i := range data {
+		bs, err := readWordBytes(buffer)
+		//
+		if err != nil {
+			return err
+		}
+		//
+		data[i] = data[i].SetBytes(bs)
+	}
+	//
+	p.data = data
+	//
+	return nil
+}
+
 // Clone makes clones of this array producing an otherwise identical copy.
 func (p *StaticArray[T]) Clone() MutArray[T] {
 	// Allocate sufficient memory
@@ -93,5 +123,5 @@ func (p *StaticArray[T]) String() string {
 
 // ToLegacy implementation for MutArray interface
 func (p *StaticArray[T]) ToLegacy() array.MutArray[T] {
-	return array.RawStaticArray[T](p.data, p.bitwidth)
+	return array.RawStaticArray(p.data, p.bitwidth)
 }

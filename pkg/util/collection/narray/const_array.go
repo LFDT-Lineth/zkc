@@ -13,6 +13,7 @@
 package narray
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -51,6 +52,29 @@ func (p *ConstantArray[T]) Append(word T) {
 // Clone makes clones of this array producing an otherwise identical copy.
 func (p *ConstantArray[T]) Clone() MutArray[T] {
 	return &ConstantArray[T]{p.height, p.bitwidth, p.value}
+}
+
+// Encode implementation for Array interface.  The natural encoding of a
+// constant array is simply its constant value, written once as a
+// length-prefixed sequence of raw bytes.
+func (p *ConstantArray[T]) Encode(buffer *bytes.Buffer) {
+	writeWordBytes(buffer, p.value.Bytes())
+}
+
+// Decode implementation for MutArray interface.  This reads the constant value
+// (as produced by Encode), and sets the array to hold the given number of
+// copies of it.
+func (p *ConstantArray[T]) Decode(height uint, buffer *bytes.Buffer) error {
+	data, err := readWordBytes(buffer)
+	//
+	if err != nil {
+		return err
+	}
+	//
+	p.value = p.value.SetBytes(data)
+	p.height = height
+	//
+	return nil
 }
 
 // Len returns the number of elements in this word array.

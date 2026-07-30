@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
 )
 
 // Trace describes a set of named modules whose data is organised by row.
@@ -33,8 +34,11 @@ type Trace[T any] interface {
 	Width() uint
 }
 
-// Module describes a module within the trace.  Every module is composed of some
-// number of rows, and has a specific width.
+// Module describes a module within the trace.  Every module is a collection of
+// zero or more data columns with the same height.  The width of a module is the
+// number of such columns it contains.  Every column in the module has a
+// "descriptor" which provides metadata about the columns, such as its name and
+// declared bitwidth, etc.
 type Module[T any] interface {
 	fmt.Stringer
 	// Append a given row onto this module.  This will panic if the length of
@@ -42,15 +46,17 @@ type Module[T any] interface {
 	Append(...T)
 	// Module name.
 	Name() string
-	// Descriptor returns the registers describing the columns of this module.
-	Descriptor() iter.Iterator[Register]
-	// RegisterAt returns the register at the given index.
-	RegisterAt(uint) Register
-	// Access a given row in this module.
-	Row(uint) Row[T]
+	// Column returns the data for the column at the given index.
+	Column(uint) narray.Array[T]
+	// Descriptors returns an iterator over the column descriptors for this
+	// module.
+	Descriptors() iter.Iterator[ColumnDescriptor]
+	// DescriptorOf returns the descriptor for a given column (as defined by its
+	// index into the module).
+	DescriptorOf(index uint) ColumnDescriptor
 	// Returns the number of columns in this module.
 	Width() uint
-	// Returns the height of this module.
+	// Returns the height (i.e. number of rows) of this module.
 	Height() uint
 	// Convert to an lt.Module[T].  This should be considered a destructive
 	// operation, so once this is done the given module is finished.
@@ -62,29 +68,24 @@ type Module[T any] interface {
 type ModuleBuilder[T any, M any] interface {
 	Module[T]
 	// Initialise a new module from a given set of rows.
-	Initialise(string, []Register, ...[]T) M
+	Initialise(string, []ColumnDescriptor, ...[]T) M
+	// MutColumn returns mutable access to the data for the given column.
+	MutColumn(uint) narray.MutArray[T]
 }
 
-// Register describes an individual register in a row-major trace module.
-type Register struct {
-	// Register name.
+// ColumnDescriptor describes an individual column in a trace module.
+type ColumnDescriptor struct {
+	// Column name.
 	Name string
-	// Register bitwidth.  If this is none, then this represents a "native
-	// register" (i.e. one backed by field elements).
+	// Column bitwidth.  If this is none, then this represents a "native column"
+	// (i.e. one backed by field elements).
 	Bitwidth util.Option[uint]
 }
 
-// NewRegister constructs a new trace register with the given name and bitwidth.
-func NewRegister(name string, bitwidth util.Option[uint]) Register {
-	return Register{name, bitwidth}
+// NewColumnDescriptor constructs a new column descriptor with the given name
+// and bitwidth.
+func NewColumnDescriptor(name string, bitwidth util.Option[uint]) ColumnDescriptor {
+	return ColumnDescriptor{name, bitwidth}
 }
 
-// Row describes an individual row of data within a trace table.
-type Row[T any] interface {
-	// Get the value in a given column of this row.
-	Get(column uint) T
-	// Returns the number of columns in this row.
-	Width() uint
-}
-
-var rtraceBinaryMagic = []byte{'r', 't', 'r', 'a', 'c', 'e', 0, 1}
+var rtraceBinaryMagic = []byte{'r', 't', 'r', 'a', 'c', 'e', 0, 2}

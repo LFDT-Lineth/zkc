@@ -13,6 +13,7 @@
 package narray
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -74,6 +75,29 @@ func (p *BitArray[T]) Append(val T) {
 // BitWidth returns the width (in bits) of elements in this array.
 func (p *BitArray[T]) BitWidth() uint {
 	return 1
+}
+
+// Encode implementation for Array interface.  The natural encoding of a bit
+// array is its packed byte representation, where eight bits are packed into
+// each byte.
+func (p *BitArray[T]) Encode(buffer *bytes.Buffer) {
+	buffer.Write(p.data)
+}
+
+// Decode implementation for MutArray interface.  This reads a packed byte
+// representation (as produced by Encode) holding the given number of bits.
+func (p *BitArray[T]) Decode(height uint, buffer *bytes.Buffer) error {
+	bytewidth := word.ByteWidth(height)
+	//
+	if uint(buffer.Len()) < bytewidth {
+		return fmt.Errorf("bit array requires %d bytes, but only %d remain", bytewidth, buffer.Len())
+	}
+	// Observe bytes must be cloned, since the slice returned by Next is only
+	// valid until the next buffer operation.
+	p.data = bytes.Clone(buffer.Next(int(bytewidth)))
+	p.height = height
+	//
+	return nil
 }
 
 // Clone makes clones of this array producing an otherwise identical copy.

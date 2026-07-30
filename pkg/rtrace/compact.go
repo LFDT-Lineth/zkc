@@ -26,31 +26,27 @@ import (
 )
 
 // CompactModule describes an individual module within a trace, and represents
-// each register within that module using a column with an appropriate (compact)
-// encoding.
+// each column within that module using an appropriate (compact) encoding.
 type CompactModule[F field.Element[F]] struct {
 	// Holds the name of this module.
 	name string
-	// Holds the register registers for this module.
-	registers []Register
+	// Holds the column descriptors for this module.
+	descriptors []ColumnDescriptor
 	// Holds the complete set of columns in this module, with one for each
-	// declared limb.
+	// descriptor.
 	columns []narray.MutArray[F]
 }
 
-// NewCompactModule constructs a module with the given name, descriptor and rows.
-// This assigns final module-wide limb identifiers and register identifiers to
-// the descriptor.
-func NewCompactModule[F field.Element[F]](name string, descriptor []Register, rows ...[]F) *CompactModule[F] {
+// NewCompactModule constructs a module with the given name, descriptors and rows.
+func NewCompactModule[F field.Element[F]](name string, descriptors []ColumnDescriptor, rows ...[]F) *CompactModule[F] {
 	var (
-		registers = slices.Clone(descriptor)
-		height    = uint(len(rows))
-		width     = uint(len(descriptor))
-		columns   = make([]narray.MutArray[F], width)
+		height  = uint(len(rows))
+		width   = uint(len(descriptors))
+		columns = make([]narray.MutArray[F], width)
 	)
 	//
-	for rid := range descriptor {
-		var bitwidth = descriptor[rid].Bitwidth.UnwrapOr(math.MaxUint)
+	for rid := range descriptors {
+		var bitwidth = descriptors[rid].Bitwidth.UnwrapOr(math.MaxUint)
 		// Allocate compact representation
 		columns[rid] = allocArray[F](bitwidth, height)
 	}
@@ -65,17 +61,17 @@ func NewCompactModule[F field.Element[F]](name string, descriptor []Register, ro
 		}
 	}
 	//
-	return &CompactModule[F]{name, registers, columns}
+	return &CompactModule[F]{name, slices.Clone(descriptors), columns}
 }
 
 // Initialise implementation for Module interface.
-func (p *CompactModule[T]) Initialise(name string, registers []Register, rows ...[]T) *CompactModule[T] {
-	return NewCompactModule(name, registers, rows...)
+func (p *CompactModule[T]) Initialise(name string, descriptors []ColumnDescriptor, rows ...[]T) *CompactModule[T] {
+	return NewCompactModule(name, descriptors, rows...)
 }
 
 // Append implementation for Module interface.
 func (p *CompactModule[T]) Append(row ...T) {
-	if len(row) != len(p.registers) {
+	if len(row) != len(p.descriptors) {
 		panic("mismatched row data")
 	}
 	// Append element for each row
@@ -89,19 +85,25 @@ func (p *CompactModule[T]) Name() string {
 	return p.name
 }
 
-// Descriptor returns the registers describing this module.
-func (p *CompactModule[T]) Descriptor() iter.Iterator[Register] {
-	return iter.NewArrayIterator(p.registers)
+// Descriptors returns an iterator over the column descriptors for this module.
+func (p *CompactModule[T]) Descriptors() iter.Iterator[ColumnDescriptor] {
+	return iter.NewArrayIterator(p.descriptors)
 }
 
-// RegisterAt returns the limb with the given index.
-func (p *CompactModule[T]) RegisterAt(index uint) Register {
-	return p.registers[index]
+// DescriptorOf returns the descriptor of the column with the given index.
+func (p *CompactModule[T]) DescriptorOf(index uint) ColumnDescriptor {
+	return p.descriptors[index]
 }
 
-// Row returns a specific row within this trace module.
-func (p *CompactModule[T]) Row(id uint) Row[T] {
-	return &compactRow[T]{p.columns, id}
+// Column returns the data for the column at the given index.
+func (p *CompactModule[T]) Column(index uint) narray.Array[T] {
+	return p.columns[index]
+}
+
+// MutColumn returns mutable access to the data for the column at the given
+// index.
+func (p *CompactModule[T]) MutColumn(index uint) narray.MutArray[T] {
+	return p.columns[index]
 }
 
 // Height returns the height of this module, meaning the number of assigned
@@ -116,7 +118,7 @@ func (p *CompactModule[T]) Height() uint {
 
 // Width returns the number of columns in this module.
 func (p *CompactModule[T]) Width() uint {
-	return uint(len(p.registers))
+	return uint(len(p.descriptors))
 }
 
 func (p *CompactModule[T]) String() string {
@@ -153,29 +155,13 @@ func (p *CompactModule[T]) ToLtModule() lt.Module[T] {
 	for i, col := range p.columns {
 		var (
 			data = col.ToLegacy()
-			name = p.registers[i].Name
+			name = p.descriptors[i].Name
 		)
 		//
 		columns[i] = lt.NewColumn(name, data)
 	}
 	//
 	return lt.NewModule(name, columns)
-}
-
-type compactRow[T any] struct {
-	columns []narray.MutArray[T]
-	// row index
-	row uint
-}
-
-// Get the value in a given column of this row.
-func (p compactRow[T]) Get(column uint) T {
-	return p.columns[column].Get(p.row)
-}
-
-// Returns the number of columns in this row.
-func (p compactRow[T]) Width() uint {
-	return uint(len(p.columns))
 }
 
 func allocArray[F field.Element[F]](bitwidth uint, height uint) narray.MutArray[F] {

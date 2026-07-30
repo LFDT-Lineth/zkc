@@ -207,12 +207,12 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 			program = vm.SplitRegisters(p.config.field, program)
 		}
 		// Lower AND/OR/XOR after splitting
-		program = vm.LowerOrXorAnd(program, p.config.maxStaticDepth)
+		program = vm.LowerOrXorAnd(program, p.config.maxStaticHeight)
 		// Add tmp registers to hold lookup arguments (from calls and memread / write)
 		// when they are rewritten in the same vector (ex: x = f(x) or y = f(x); x = x + 1)
 		program = vm.FlattenLookupAccess(program)
 		//
-		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticDepth)
+		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticHeight)
 	}
 	// Insert check casts to ensure appropriate safety checks during execution.
 	program = vm.InsertCheckCasts(program)

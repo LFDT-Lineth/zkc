@@ -51,7 +51,7 @@ func initOneLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.Fu
 	// Check whether return line required
 	if hasRet {
 		// Yes, so add one
-		regs = append(regs, rtrace.NewRegister(io.RET_NAME, util.Some[uint](1)))
+		regs = append(regs, rtrace.NewColumnDescriptor(io.RET_NAME, util.Some[uint](1)))
 	}
 	// Initialise the module
 	return module.Initialise(f.Name(), regs)
@@ -104,12 +104,12 @@ func initMultiLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.
 		u1 = util.Some[uint](1)
 	)
 	// Return Line
-	regs = append(regs, rtrace.NewRegister(io.RET_NAME, u1))
+	regs = append(regs, rtrace.NewColumnDescriptor(io.RET_NAME, u1))
 	// Program Counter
-	regs = append(regs, rtrace.NewRegister(io.PC_NAME, uPC))
+	regs = append(regs, rtrace.NewColumnDescriptor(io.PC_NAME, uPC))
 	// PC selector lines
 	for k := range nVectors {
-		regs = append(regs, rtrace.NewRegister(io.SelectorName(k), u1))
+		regs = append(regs, rtrace.NewColumnDescriptor(io.SelectorName(k), u1))
 	}
 	// Initialise the module
 	return module.Initialise(f.Name(), regs)

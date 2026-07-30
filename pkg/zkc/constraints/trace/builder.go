@@ -32,8 +32,8 @@ type (
 )
 
 // convert register descriptor into rtrace register
-func toRtraceRegister[W Word[W]](_ uint, reg vm.Register[W]) rtrace.Register {
-	return rtrace.NewRegister(reg.Name(), reg.Bitwidth())
+func toRtraceRegister[W Word[W]](_ uint, reg vm.Register[W]) rtrace.ColumnDescriptor {
+	return rtrace.NewColumnDescriptor(reg.Name(), reg.Bitwidth())
 }
 
 // Builder for post-processing recorded state for a given module.  For

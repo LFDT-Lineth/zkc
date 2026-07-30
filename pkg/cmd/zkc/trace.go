@@ -89,7 +89,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Translate bytecode => word machine
 	program := vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
 	// Wrap the word machine in a binary file for tracing / checking.
-	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticDepth(), artifacts.ir)
+	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticHeight(), artifacts.ir)
 	// =====================================================
 	// Trace
 	// =====================================================
@@ -194,7 +194,7 @@ func printTraceStats[F field.Element[F]](rtr rtrace.Trace[F]) {
 		mod := rtr.Module(mid)
 		cells += mod.Width() * mod.Height()
 		//
-		for _, reg := range mod.Descriptor().Collect() {
+		for _, reg := range mod.Descriptors().Collect() {
 			bitwidth := reg.Bitwidth
 			// Native (field-element) limbs have no fixed bit-width.
 			if bitwidth.IsEmpty() {
@@ -278,7 +278,7 @@ func printModuleStats[F field.Element[F]](rtr rtrace.Trace[F]) {
 			bytes    uint
 		)
 		// Sum per-limb bit-widths and byte requirements.
-		for _, reg := range mod.Descriptor().Collect() {
+		for _, reg := range mod.Descriptors().Collect() {
 			if bw := reg.Bitwidth; bw.HasValue() {
 				w := bw.Unwrap()
 				bitwidth += w
@@ -286,11 +286,11 @@ func printModuleStats[F field.Element[F]](rtr rtrace.Trace[F]) {
 			}
 		}
 		// Count non-zero cells.
-		for rid := range lines {
-			row := mod.Row(rid)
+		for cid := range columns {
+			col := mod.Column(cid)
 			//
-			for cid := range columns {
-				if !row.Get(cid).IsZero() {
+			for rid := range lines {
+				if !col.Get(rid).IsZero() {
 					nonzero++
 				}
 			}

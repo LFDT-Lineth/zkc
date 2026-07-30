@@ -92,7 +92,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// Translate bytecode => word machine
 	program := vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
 	// Wrap the word machine in a binary file for execution / tracing / checking.
-	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticDepth(), artifacts.ir)
+	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticHeight(), artifacts.ir)
 	// =====================================================
 	// Trace / Execute
 	// =====================================================
