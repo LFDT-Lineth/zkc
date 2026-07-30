@@ -1,5 +1,6 @@
 // A one-line effectful function: a single read, reached through a call which
 // threads the memory's timestamp in and out.
+// Code lines: main = 1, get = 1 (one trace row per invocation).
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (byte:u8)
 

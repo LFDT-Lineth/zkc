@@ -1,4 +1,5 @@
 // Two reads of the same memory inside a branch condition.
+// Code lines: main = 1, eq = 1 (one trace row per invocation).
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (byte:u8)
 

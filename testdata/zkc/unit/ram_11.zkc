@@ -1,6 +1,7 @@
 // Memory accesses inside switch arms, inside a loop: the lowered dispatch's
 // case edges land on merge points whose stamps disagree, so the threading must
 // retarget individual dispatch cases into equalising edge blocks.
+// Code lines: main = 4 (looping rows repeat per iteration).
 pub input data(address:u8) -> (byte:u8)
 memory ram(address:u8) -> (byte:u8)
 
