@@ -37,7 +37,10 @@ const stampWidth uint = 32
 //   - adds an input register "M$stamp" and an output register "M$stamp_out"
 //     (the stamp flowing in and back out), placed first in the inputs /
 //     outputs.  The entry function "main" is special: it takes no parameters,
-//     so it gets no stamp in/out and instead counts from zero.
+//     so it gets no stamp in/out and instead counts from ONE — timestamp zero
+//     is reserved for the initial state of an untouched memory cell, so the
+//     memory table's ordering constraint (timestamp-read < timestamp-written)
+//     holds on the very first access.
 //   - forwards the stamp across every call to an effectful callee (by
 //     prepending it to the call's arguments and returns);
 //   - gives every memory access a distinct timestamp: the k-th access executed
@@ -114,7 +117,7 @@ func rwMemoryEffects[W word.Word[W]](mods []descriptor.Module[W],
 // stampState records, symbolically, where the current timestamp of one memory
 // lives at a given program point: its value is base + off.  An empty base
 // means the literal value off (the entry state of "main", which counts from
-// zero).
+// one).
 type stampState struct {
 	base util.Option[bytecode.RegisterId]
 	off  uint64
@@ -136,7 +139,7 @@ type threader[W word.Word[W]] struct {
 	alloc   split.Allocator[W]
 	effects []descriptor.ModuleId
 	// stampIn maps each effect to its stamp-in input register (absent for
-	// main, whose stamps count from literal zero).
+	// main, whose stamps count from literal one).
 	stampIn map[descriptor.ModuleId]bytecode.RegisterId
 	// canonical maps each effect to its canonical stamp register: the
 	// stamp-out output register or, for main, a lazily-allocated computed
@@ -220,12 +223,14 @@ func threadFunction[W word.Word[W]](mods []descriptor.Module[W], fn *descriptor.
 	remapped := descriptor.NewFunction(fn.Name(), newRegs, fn.Kind(), fn.Effects(), nvecs)
 	t.alloc = split.NewAllocator[W](remapped)
 	// Determine the initial symbolic state of each effect's stamp: the
-	// stamp-in register, or (for main) the literal zero.
+	// stamp-in register or, for main, the literal ONE (timestamp zero is
+	// reserved for the initial state of an untouched cell, keeping the memory
+	// table's strict timestamp ordering satisfiable on the first access).
 	entry := map[descriptor.ModuleId]stampState{}
 	//
 	for _, e := range effects {
 		if isMain {
-			entry[e] = stampState{util.None[bytecode.RegisterId](), 0}
+			entry[e] = stampState{util.None[bytecode.RegisterId](), 1}
 		} else {
 			entry[e] = stampState{util.Some(t.stampIn[e]), 0}
 		}
