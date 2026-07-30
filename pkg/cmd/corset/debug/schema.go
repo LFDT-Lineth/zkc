@@ -89,6 +89,14 @@ func printModule[F field.Element[F]](module schema.Module[F], sc schema.AnySchem
 		postfix = fmt.Sprintf(" %s", name)
 	}
 
+	if module.IsPublicOutput() {
+		postfix = fmt.Sprintf("%s :public_output", postfix)
+	}
+
+	if module.IsPrivateOutput() {
+		postfix = fmt.Sprintf("%s :private_output", postfix)
+	}
+
 	if module.IsSynthetic() {
 		postfix = fmt.Sprintf("%s :synthetic", postfix)
 	}

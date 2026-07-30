@@ -120,12 +120,19 @@ func (p *Function[T]) Code() []T {
 	return p.code
 }
 
-// IsPublic determines whether or not this is an "externally visible" function
-// or not.  The differences between internal and external functions is small.
-// Specifically, internal functions are not visible in the generated trace
-// interface; likewise, they are hidden by default in the inspector.
-func (p *Function[T]) IsPublic() bool {
+// IsPublicOutput determines whether or not this is an "externally visible"
+// function (e.g. a public ZkC output memory) or not.  The differences between
+// internal and external functions is small.  Specifically, internal functions
+// are not visible in the generated trace interface; likewise, they are hidden
+// by default in the inspector.
+func (p *Function[T]) IsPublicOutput() bool {
 	return p.public
+}
+
+// IsPrivateOutput indicates whether or not this module represents a private
+// output.  At this time, functions can never be private outputs.
+func (p *Function[T]) IsPrivateOutput() bool {
+	return false
 }
 
 // IsSynthetic modules are generated during compilation, rather than being
