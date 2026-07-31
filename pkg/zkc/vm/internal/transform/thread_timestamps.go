@@ -43,14 +43,15 @@ const stampWidth uint = 32
 //   - gives every access a distinct timestamp: the k-th access executed
 //     carries stamp_in + k, recorded in the access's Stamp operand.
 //
-// The threading is offset-based: rather than incrementing a working register
-// once per access (which would conflict when one row performs several
-// accesses), the transform tracks which register holds the current stamp
-// together with a constant offset.  An access at offset zero consumes its base
-// register directly; a later access on the same row consumes a fresh temporary
-// "t = base + off".  The canonical stamp register (M$stamp_out, or a fresh
-// computed register in main) is written at most once per executed path through
-// a row.  In particular the common one-line function
+// The threading is version-based, a variation of SSA form: rather than
+// incrementing a working register once per access (which would conflict when
+// one row performs several accesses), the transform tracks which register
+// version holds the current stamp together with a constant offset.  An access
+// at offset zero consumes its base register directly; a later access on the
+// same row consumes a fresh temporary "t = base + off".  The canonical stamp
+// register (M$stamp_out, or a fresh computed register in main) is written at
+// most once per executed path through a row.  In particular the common
+// one-line function
 //
 //	fn f<ram>(x:u16) -> (r:u8) { r = ram[x] }
 //
@@ -79,7 +80,10 @@ func ThreadTimestamps[W word.Word[W]](program descriptor.Program[W]) descriptor.
 			continue
 		}
 		//
-		effects := rwMemoryEffects(mods, fn)
+		// Every declared effect names a read-write memory: the linker rejects
+		// effects on read-only / write-once memories (see checkSymbolKind in
+		// pkg/zkc/compiler/linker.go), so the list is used as-is.
+		effects := fn.Effects()
 		if len(effects) == 0 {
 			continue
 		}
@@ -88,23 +92,6 @@ func ThreadTimestamps[W word.Word[W]](program descriptor.Program[W]) descriptor.
 	}
 	//
 	return descriptor.NewProgram(program.Field(), out...)
-}
-
-// rwMemoryEffects returns the module ids of the read-write memories declared as
-// effects of the given function, preserving declaration order.  Effects naming
-// a read-only / write-once memory (which need no timestamp) are dropped.
-func rwMemoryEffects[W word.Word[W]](mods []descriptor.Module[W],
-	fn *descriptor.Function[W]) []descriptor.ModuleId {
-	//
-	var out []descriptor.ModuleId
-	//
-	for _, id := range fn.Effects() {
-		if mem, ok := mods[id].(*descriptor.Memory[W]); ok && mem.IsReadWrite() {
-			out = append(out, id)
-		}
-	}
-	//
-	return out
 }
 
 // stampState records, concretely, where the current timestamp of one memory
@@ -229,8 +216,10 @@ func (t *threader[W]) remapFunction(fn *descriptor.Function[W]) []BytecodeVector
 // initNewRegs constructs the threaded register layout, stamps first:
 // [stamp-ins, old inputs, stamp-outs, old outputs, old computed] -- recording
 // each effect's stamp-in and canonical (stamp-out) register along the way.
-// main takes no parameters, so it gets no stamp in/out; its canonical
-// registers are instead allocated lazily (see getCanonical).
+// The stamp registers of a function's memories are always allocated
+// consecutively, in effect-declaration order (once per group: all stamp-ins,
+// then all stamp-outs).  main takes no parameters, so it gets no stamp in/out;
+// its canonical registers are instead allocated lazily (see getCanonical).
 func (t *threader[W]) initNewRegs(fn *descriptor.Function[W]) []descriptor.Register[W] {
 	var (
 		oldRegs = fn.Registers()
@@ -668,8 +657,8 @@ func (t *threader[W]) threadCall(pc uint, call *bytecode.Call[W], states stamps,
 	if !ok || callee.IsNative() {
 		return nil, nil
 	}
-	//
-	effects := rwMemoryEffects(t.mods, callee)
+	// Effects are read-write memories by construction (linker-enforced).
+	effects := callee.Effects()
 	if len(effects) == 0 {
 		return nil, nil
 	}

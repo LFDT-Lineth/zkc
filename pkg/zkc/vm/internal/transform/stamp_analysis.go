@@ -292,7 +292,10 @@ func (t *threader[W]) stampArcs(insns []Bytecode[W], lands []bool, i int, entry 
 }
 
 // normaliseEntry applies the merge-point discipline to the joined entry state
-// of position i.  An effect needs equalising when its incoming states disagree
+// of position i.  In SSA terms, equalising a merge point plays the role of
+// inserting a phi node: each incoming path materialises the shared merge
+// register with its own value (see mergeAt).  An effect needs equalising when
+// its incoming states disagree
 // (stampConflict), when the shared state is not a plain register (a stamp
 // consumer at this position inserts on the fall path only, which skip edges
 // land past), or -- at an exit -- when it is not already canonical (the exit's
@@ -364,8 +367,8 @@ func (t *threader[W]) callArcState(pc uint, call *bytecode.Call[W], state stamps
 	if !ok || callee.IsNative() {
 		return state
 	}
-	//
-	effects := rwMemoryEffects(t.mods, callee)
+	// Effects are read-write memories by construction (linker-enforced).
+	effects := callee.Effects()
 	if len(effects) == 0 {
 		return state
 	}
