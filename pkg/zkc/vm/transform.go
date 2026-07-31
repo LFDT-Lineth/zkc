@@ -122,6 +122,18 @@ func FactorSkipConditions[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.FactorSkipConditions(program)
 }
 
+// FactorLimbEqualities rewrites equality SkipIf bytecodes (EQ/NEQ) comparing
+// two multi-limb register vectors, materialising each limb inequality into its
+// own fresh 1-bit register and testing the resulting bit vector against zero
+// instead.  This bounds the degree of the comparison independently of the limb
+// count (the bits being sign-definite, unlike the original limb differences).
+//
+// NOTE: This transform must run after register splitting and before range
+// constraints are added.
+func FactorLimbEqualities[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.FactorLimbEqualities(program)
+}
+
 // InlineFunctions returns an equivalent bytecode program in which every call to
 // one of the named functions has been inlined at its call site, and the named
 // function modules removed (module identifiers within Call / ReadWrite

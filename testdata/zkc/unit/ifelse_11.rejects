@@ -1,0 +1,5 @@
+{ "data": "0x0000000000000000_0000000000000000", "expected": "0x01" }
+{ "data": "0xDEADBEEFCAFEBABE_DEADBEEFCAFEBABE", "expected": "0x01" }
+{ "data": "0x0000000000000000_0000000000000001", "expected": "0x00" }
+{ "data": "0x0001000000000000_0000000000000000", "expected": "0x02" }
+{ "data": "0xFFFFFFFFFFFFFFFF_FFFFFFFFFFFFFFFE", "expected": "0x00" }
