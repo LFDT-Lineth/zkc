@@ -61,8 +61,6 @@ var traceFlags FlagChecks
 func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
 		build = GetBuildConfig[F](cmd, field)
-		//
-		traceConfig = constraints.DEFAULT_TRACE_CONFIG
 		// outputFile file for trace
 		outputFile = GetString(cmd, "output")
 		// check constraints
@@ -82,12 +80,16 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		fmt.Println("error: \"trace\" does not support fast mode (use \"execute\" instead)")
 		os.Exit(1)
 	}
+	// Configure tracing
+	traceConfig := constraints.DEFAULT_TRACE_CONFIG.
+		WithPadding(build.padding).
+		WithBatchSize(GetUint(cmd, "batch"))
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	artifacts := Build[F](build, args[1:]...)
 	// Translate bytecode => word machine
 	program := vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
 	// Wrap the word machine in a binary file for tracing / checking.
-	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticDepth(), artifacts.ir)
+	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticHeight(), artifacts.ir)
 	// =====================================================
 	// Trace
 	// =====================================================
@@ -152,6 +154,7 @@ func init() {
 	traceCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	traceCmd.Flags().Bool("stats", false, "show overall stats for the generated trace")
 	traceCmd.Flags().BoolP("inspect", "i", false, "open the generated trace in the interactive inspector")
+	traceCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
 }
 
 // publicModule reports whether a module is publicly visible in the inspector.
@@ -191,8 +194,8 @@ func printTraceStats[F field.Element[F]](rtr rtrace.Trace[F]) {
 		mod := rtr.Module(mid)
 		cells += mod.Width() * mod.Height()
 		//
-		for _, limb := range mod.Limbs().Collect() {
-			bitwidth := limb.Bitwidth()
+		for _, reg := range mod.Descriptors().Collect() {
+			bitwidth := reg.Bitwidth
 			// Native (field-element) limbs have no fixed bit-width.
 			if bitwidth.IsEmpty() {
 				native++
@@ -275,19 +278,19 @@ func printModuleStats[F field.Element[F]](rtr rtrace.Trace[F]) {
 			bytes    uint
 		)
 		// Sum per-limb bit-widths and byte requirements.
-		for _, limb := range mod.Limbs().Collect() {
-			if bw := limb.Bitwidth(); bw.HasValue() {
+		for _, reg := range mod.Descriptors().Collect() {
+			if bw := reg.Bitwidth; bw.HasValue() {
 				w := bw.Unwrap()
 				bitwidth += w
 				bytes += byteWidth(w) * lines
 			}
 		}
 		// Count non-zero cells.
-		for rid := range lines {
-			row := mod.Row(rid)
+		for cid := range columns {
+			col := mod.Column(cid)
 			//
-			for cid := range columns {
-				if !row.Get(cid).IsZero() {
+			for rid := range lines {
+				if !col.Get(rid).IsZero() {
 					nonzero++
 				}
 			}

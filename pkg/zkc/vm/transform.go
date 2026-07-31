@@ -32,13 +32,13 @@ func LowerBitwise[W word.Word[W]](program Program[W]) Program[W] {
 // lookup (a memory read) or a CALL to a recursive helper function, returning the
 // updated bytecode program (the helper / table modules are appended to it).  An
 // operation whose width is small enough that its 2^(2*width)-row truth table
-// fits within maxStaticDepth is realised as a table read; wider operations are
+// fits within maxStaticHeight is realised as a table read; wider operations are
 // lowered recursively until their leaves are.
 //
 // NOTE: unlike LowerBitwise, this transform must be applied AFTER register
 // splitting and BEFORE range-constraint generation.
-func LowerOrXorAnd[W word.Word[W]](program Program[W], maxStaticDepth uint) Program[W] {
-	return transform.LowerOrXorAnd(program, maxStaticDepth)
+func LowerOrXorAnd[W word.Word[W]](program Program[W], maxStaticHeight uint) Program[W] {
+	return transform.LowerOrXorAnd(program, maxStaticHeight)
 }
 
 // LowerComparisons rewrites SkipIf bytecodes with LT/GT/LTEQ/GTEQ conditions
@@ -151,8 +151,8 @@ func SplitRegisters[W word.Word[W]](cfg WordConfig, program Program[W]) Program[
 // AddRangeConstraints adds a range-proof constraint for each register in the program.
 // This is done by adding lookups from each (non-constant) register to a precomputed
 // table of all valid values for that register width.
-func AddRangeConstraints[W word.Word[W]](cfg field.Config, program Program[W], maxStaticDepth uint) Program[W] {
-	return transform.AddRangeConstraints(cfg, program, maxStaticDepth)
+func AddRangeConstraints[W word.Word[W]](cfg field.Config, program Program[W], maxStaticHeight uint) Program[W] {
+	return transform.AddRangeConstraints(cfg, program, maxStaticHeight)
 }
 
 // ProgramToProgram transforms a bytecode program operating over a given word

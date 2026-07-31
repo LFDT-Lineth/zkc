@@ -19,136 +19,73 @@ import (
 	ctrace "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
-// FromTrace converts a column-major trace.Trace into a row-major rtrace.Array.
-// Each source column becomes one register, and each register is backed by one
-// limb using the source column data bitwidth when available.
-func FromTrace[T any](tr ctrace.Trace[T]) *Array[T] {
-	modules := make([]ArrayModule[T], tr.Width())
+// FromTrace converts a trace.Trace into a rtrace.Array, where each column in
+// the former maps into a column in the latter.
+func FromTrace[T any, M ModuleBuilder[T, M]](tr ctrace.Trace[T]) *Array[T, M] {
+	modules := make([]M, tr.Width())
 	//
 	for mid := range tr.Width() {
-		modules[mid] = fromTraceModule(tr.Module(mid))
+		modules[mid] = fromTraceModule[T, M](tr.Module(mid))
 	}
 	//
 	return NewArray(modules)
 }
 
-// ToTrace converts a row-major rtrace.Trace into a column-major trace.Trace.
-// Each limb becomes one column, named following the register splitting
-// convention: a register backed by a single limb keeps its own name, whilst
-// the limbs of a subdivided register are named "reg'0", "reg'1", etc.  Observe
-// that key columns are not reconstructed (every module reports zero keys), and
-// all columns are padded with zero.
+// ToTrace converts an rtrace.Trace into a trace.Trace, where each column in the
+// former maps into a column in the latter.
 func ToTrace[T word.Word[T]](tr Trace[T]) []lt.Module[T] {
 	var (
-		builder = array.NewStaticBuilder[T]()
 		modules = make([]lt.Module[T], tr.Width())
 	)
 	//
 	for mid := range tr.Width() {
-		modules[mid] = toTraceModule(tr.Module(mid), builder)
+		modules[mid] = tr.Module(mid).ToLtModule()
 	}
 	//
 	return modules
 }
 
-func toTraceModule[T word.Word[T]](module Module[T], builder array.Builder[T]) lt.Module[T] {
+func fromTraceModule[T any, M ModuleBuilder[T, M]](module ctrace.Module[T]) M {
 	var (
-		names   = limbColumnNames(module)
-		columns = make([]lt.Column[T], module.Width())
-	)
-	//
-	for cid := range module.Width() {
-		columns[cid] = toTraceColumn(module, cid, names[cid], builder)
-	}
-	//
-	return lt.NewModule(ctrace.ParseModuleName(module.Name()), columns)
-}
-
-func toTraceColumn[T word.Word[T]](module Module[T], cid uint, name string, builder array.Builder[T],
-) lt.Column[T] {
-	var data = builder.NewArray(module.Height(), limbBitwidth(module.LimbAt(cid)))
-	//
-	for rid := range module.Height() {
-		data = data.Set(rid, module.Row(rid).Get(cid))
-	}
-	//
-	return lt.NewColumn(name, data)
-}
-
-// limbColumnNames determines the column name for each limb in a module,
-// following the naming convention used by register splitting (see
-// register.SplitIntoLimbs).
-func limbColumnNames[T any](module Module[T]) []string {
-	names := make([]string, 0, module.Width())
-	//
-	for iter := module.Descriptor(); iter.HasNext(); {
-		var (
-			reg   = iter.Next()
-			limbs = reg.Limbs().Collect()
-		)
-		//
-		if len(limbs) == 1 {
-			names = append(names, reg.Name())
-		} else {
-			for i := range limbs {
-				names = append(names, fmt.Sprintf("%s'%d", reg.Name(), i))
-			}
-		}
-	}
-	//
-	return names
-}
-
-// limbBitwidth returns the bitwidth of a given limb, using math.MaxUint for
-// native limbs (i.e. those backed by field elements), as per
-// register.WidthOrNative.
-func limbBitwidth(l Limb) uint {
-	if bitwidth := l.Bitwidth(); bitwidth.HasValue() {
-		return bitwidth.Unwrap()
-	}
-	//
-	return math.MaxUint
-}
-
-func fromTraceModule[T any](module ctrace.Module[T]) ArrayModule[T] {
-	var (
-		columns    = make([]ctrace.Column[T], module.Width())
-		descriptor = make([]Register, module.Width())
+		descriptor = make([]ColumnDescriptor, module.Width())
 		rows       = make([][]T, module.Height())
+		nmod       M
 	)
 	//
 	for cid := range module.Width() {
-		col := module.Column(cid)
+		var col = module.Column(cid)
 		//
-		columns[cid] = col
-		descriptor[cid] = NewRegister(col.Name(), traceColumnLimbWidths(col))
+		descriptor[cid] = ColumnDescriptor{col.Name(), columnDescriptorWidth(col)}
 	}
 	//
 	for rid := range module.Height() {
 		row := make([]T, module.Width())
 		//
-		for cid, col := range columns {
+		for cid := range module.Width() {
+			var col = module.Column(cid)
+			//
 			row[cid] = col.Get(traceRowIndex(rid))
 		}
 		//
 		rows[rid] = row
 	}
-	//
-	return NewArrayModule(module.Name().String(), descriptor, rows...)
+	// Create new module
+	return nmod.Initialise(module.Name().String(), descriptor, rows...)
 }
 
-func traceColumnLimbWidths[T any](col ctrace.Column[T]) util.Option[[]uint] {
+func columnDescriptorWidth[T any](col ctrace.Column[T]) util.Option[uint] {
 	data := col.Data()
 	//
 	if data == nil {
-		return util.None[[]uint]()
+		return util.None[uint]()
+	} else if bw := data.BitWidth(); bw != math.MaxUint {
+		return util.Some(bw)
 	}
-	//
-	return util.Some([]uint{data.BitWidth()})
+	// field element
+	return util.None[uint]()
 }
 
 func traceRowIndex(row uint) int {

@@ -12,7 +12,11 @@
 // SPDX-License-Identifier: Apache-2.0
 package array
 
-import "github.com/LFDT-Lineth/zkc/pkg/util/word"
+import (
+	"fmt"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
+)
 
 // Predicate abstracts the notion of a function which identifies something.
 type Predicate[T any] = func(T) bool
@@ -20,6 +24,7 @@ type Predicate[T any] = func(T) bool
 // Array provides a generice interface to an array of elements.  Typically, we
 // are interested in arrays of field elements here.
 type Array[T any] interface {
+	fmt.Stringer
 	// Return the number of bits required to store an element of this array.
 	BitWidth() uint
 	// Clone this array producing a mutable copy
@@ -36,21 +41,14 @@ type Array[T any] interface {
 // are interested in arrays of field elements here.
 type MutArray[T any] interface {
 	Array[T]
-	// Append new element onto the end of array producing an updated array.  In
-	// most cases, this updates the array in place and returns it.  In some
-	// cases, it may force a change of representation (e.g. moving from a
-	// constant array).
-	Append(T) MutArray[T]
 	// Set the element at the given index in this array, overwriting the
 	// original value. In most cases, this updates the array in place and
 	// returns it.  In some cases, it may force a change of representation (e.g.
 	// moving from a constant array).
 	Set(uint, T) MutArray[T]
 	// Insert n copies of T at start of the array and m copies at the back. In
-	// most cases, this updates the array in place and returns it.  In some
-	// cases, it may force a change of representation (e.g. moving from a
-	// constant array).
-	Pad(uint, uint, T) MutArray[T]
+	// most cases, this updates the array in place and returns it.
+	Pad(uint, uint, T)
 }
 
 // CloneArray converts a word array for one word geometry into a mutable array

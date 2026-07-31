@@ -37,12 +37,12 @@ import (
 //
 // It must run before AddRangeConstraints (so the freshly introduced registers
 // are range-checked) and the CALLs it introduces must subsequently be flattened.
-func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W], maxStaticDepth uint) descriptor.Program[W] {
+func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W], maxStaticHeight uint) descriptor.Program[W] {
 	var (
 		out = slices.Clone(program.Modules())
-		// maxStaticWidth is floor(log2(maxStaticDepth)); a bitwise table indexes
+		// maxStaticWidth is floor(log2(maxStaticHeight)); a bitwise table indexes
 		// two w-bit operands, so it fits only when 2w <= maxStaticWidth.
-		bitwiseStaticWidth = uint(bits.Len(maxStaticDepth)-1) / 2
+		bitwiseStaticWidth = uint(bits.Len(maxStaticHeight)-1) / 2
 		// AND/OR/XOR use no shift-amount widths.
 		helpers = newBitwiseHelpers[W](uint(len(out)), nil, bitwiseStaticWidth)
 	)
@@ -216,9 +216,9 @@ func newDecomposedNaryHelper[W word.Word[W]](
 	out := b.output
 	zero := word.Const64[W](0)
 
-	// NOTE: with a non-degenerate maxStaticDepth this recursion bottoms out in a
+	// NOTE: with a non-degenerate maxStaticHeight this recursion bottoms out in a
 	// static table (see ensureNary), so the width==1 arithmetic base below is
-	// reached only when bitwiseStaticWidth==0 (a tiny maxStaticDepth that admits
+	// reached only when bitwiseStaticWidth==0 (a tiny maxStaticHeight that admits
 	// no bitwise table at all).
 	if key.width == 1 {
 		// Base case: single-bit operation.  Seed agg with the op's identity
@@ -277,7 +277,7 @@ func newDecomposedNaryHelper[W word.Word[W]](
 // data line holding "a op b".  A read of this table (see invokeNary) becomes a
 // lookup asserting (a, b, result) is a valid row of the operation's truth
 // table.  The table enumerates every (a, b) pair, so it has 2^(2*width) rows;
-// the caller (ensureNary) only builds it when 2^(2*width) <= maxStaticDepth.
+// the caller (ensureNary) only builds it when 2^(2*width) <= maxStaticHeight.
 //
 // The row index encodes the operands as a (high) followed by b (low), matching
 // how the interpreter decodes address lines from the memory geometry (see

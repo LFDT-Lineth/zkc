@@ -162,7 +162,7 @@ func marshallUnmarshallMachine(m vm.Program[vm.Uint], f field.Config) vm.Program
 
 func roundTripMachine[F field.Element[F]](prog vm.Program[vm.Uint], f field.Config) vm.Program[vm.Uint] {
 	var (
-		original = constraints.NewBinaryFile[F](nil, nil, f, codegen.DEFAULT_MAX_STATIC_DEPTH, prog)
+		original = constraints.NewBinaryFile[F](nil, nil, f, codegen.DEFAULT_MAX_STATIC_HEIGHT, prog)
 		decoded  constraints.BinaryFile[F]
 	)
 	//
