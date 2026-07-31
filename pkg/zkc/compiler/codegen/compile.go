@@ -218,7 +218,7 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticHeight)
 	}
 	// Insert check casts to ensure appropriate safety checks during execution.
-	//TODO: this should be moved before AddRangeConstraints and consumed by it, so that
+	// TODO: this should be moved before AddRangeConstraints and consumed by it, so that
 	// range constraints are performed only for needed registers (instead of all registers).
 	program = vm.InsertCheckCasts(program)
 	// Validate program to catch any introduced corruption as early as possible.
