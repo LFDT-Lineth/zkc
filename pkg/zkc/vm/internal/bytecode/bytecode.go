@@ -412,7 +412,11 @@ func NewMemWrite[W word.Word[W]](id uint16, address []RegisterId, data []Registe
 }
 
 // singleStamp unwraps the optional variadic stamp operand of NewMemRead /
-// NewMemWrite, accepting either no stamp or exactly one.
+// NewMemWrite, accepting either no stamp or exactly one.  The variadic
+// [][]RegisterId shape only encodes optionality (a Go optional-argument
+// idiom); it does NOT limit the stamp to one lane — the single accepted
+// operand is itself a register vector, whose lanes are the stamp's limbs
+// after register splitting.
 func singleStamp(stamp [][]RegisterId) []RegisterId {
 	switch len(stamp) {
 	case 0:
