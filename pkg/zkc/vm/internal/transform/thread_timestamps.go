@@ -155,111 +155,30 @@ type threader[W word.Word[W]] struct {
 func threadFunction[W word.Word[W]](mods []descriptor.Module[W], fn *descriptor.Function[W],
 	effects []descriptor.ModuleId) *descriptor.Function[W] {
 	//
-	var (
-		isMain  = fn.Name() == "main"
-		k       = uint(len(effects))
-		oldRegs = fn.Registers()
-		ni      = fn.NumInputs()
-		padding W
-		newRegs []descriptor.Register[W]
-		t       = &threader[W]{
-			mods:      mods,
-			effects:   effects,
-			stampIn:   map[descriptor.ModuleId]bytecode.RegisterId{},
-			canonical: map[descriptor.ModuleId]bytecode.RegisterId{},
-			temps:     map[stampKey]bytecode.RegisterId{},
-			isMain:    isMain,
-		}
-	)
-	// New register layout, stamps first: [stamp-ins, old inputs, stamp-outs,
-	// old outputs, old computed].  main takes no parameters, so it gets no
-	// stamp in/out; its canonical registers are allocated lazily below.
-	if !isMain {
-		for _, e := range effects {
-			t.stampIn[e] = bytecode.RegisterId(len(newRegs))
-			newRegs = append(newRegs, descriptor.NewRegister(register.INPUT_REGISTER, stampName(mods, e),
-				util.Some(stampWidth), padding))
-		}
+	t := &threader[W]{
+		mods:      mods,
+		effects:   effects,
+		stampIn:   map[descriptor.ModuleId]bytecode.RegisterId{},
+		canonical: map[descriptor.ModuleId]bytecode.RegisterId{},
+		temps:     map[stampKey]bytecode.RegisterId{},
+		isMain:    fn.Name() == "main",
 	}
 	//
-	newRegs = append(newRegs, oldRegs[:ni]...)
-	//
-	if !isMain {
-		for _, e := range effects {
-			t.canonical[e] = bytecode.RegisterId(len(newRegs))
-			newRegs = append(newRegs, descriptor.NewRegister(register.OUTPUT_REGISTER, stampOutName(mods, e),
-				util.Some(stampWidth), padding))
-		}
-	}
-	//
-	newRegs = append(newRegs, oldRegs[ni:]...)
-	// Old->new register id remap: inserting k stamp inputs shifts old inputs
-	// by k; inserting k stamp outputs shifts old outputs and computed by a
-	// further k.  main inserts none, so the map is the identity there.
-	sub := make([]bytecode.RegisterId, len(oldRegs))
-	//
-	for x := range oldRegs {
-		id := bytecode.RegisterId(x)
-		//
-		switch {
-		case isMain:
-			sub[x] = id
-		case uint(x) < ni:
-			sub[x] = id + bytecode.RegisterId(k)
-		default:
-			sub[x] = id + bytecode.RegisterId(2*k)
-		}
-	}
-	// Remap the body onto the new register ids.
-	var (
-		vectors = fn.Vectors()
-		nvecs   = make([]BytecodeVector[W], len(vectors))
-	)
-	//
-	for vi, vec := range vectors {
-		nvecs[vi] = vec.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
-			return []Bytecode[W]{substituteRegisters[W](insn, sub)}
-		})
-	}
-	// Allocate temporaries against the remapped register set.
-	remapped := descriptor.NewFunction(fn.Name(), newRegs, fn.Kind(), fn.Effects(), nvecs)
-	t.alloc = split.NewAllocator[W](remapped)
+	nvecs := t.remapFunction(fn)
 	// Initial symbolic state of each effect's stamp: the stamp-in register
 	// or, for main, the literal ONE (timestamp zero is reserved for the
 	// initial state of an untouched cell).
 	entry := make([]stampValue, len(effects))
 	//
 	for x, e := range effects {
-		if isMain {
+		if t.isMain {
 			entry[x] = stampValue{kind: stampLiteral, off: 1}
 		} else {
 			entry[x] = stampValue{kind: stampInput, reg: t.stampIn[e]}
 		}
 	}
-	// Every jump lands on a row entered with canonical stamps; if the entry
-	// row is itself a jump target (e.g. a leading loop header), the entry
-	// state is materialised on a preamble row of its own and every jump
-	// target shifted by one.
-	if jumpTargets(nvecs).Contains(0) {
-		var seed []Bytecode[W]
-		//
-		for x, e := range effects {
-			seed = append(seed, t.materialise(t.resolve(x, entry[x]), t.getCanonical(e)))
-			entry[x] = stampValue{kind: stampCanonical}
-		}
-		//
-		nvecs = append([]BytecodeVector[W]{bytecode.NewVector(seed...)}, nvecs...)
-		//
-		for vi, vec := range nvecs {
-			nvecs[vi] = vec.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
-				if jmp, ok := insn.(*bytecode.Jmp[W]); ok {
-					return []Bytecode[W]{bytecode.Jump[W](jmp.Target + 1)}
-				}
-				//
-				return []Bytecode[W]{insn}
-			})
-		}
-	}
+	//
+	nvecs = t.seedEntryRow(nvecs, entry)
 	// Thread each row.  Every row after the first is entered with canonical
 	// stamps (each row materialises them at its exits).
 	for vi := range nvecs {
@@ -281,6 +200,124 @@ func threadFunction[W word.Word[W]](mods []descriptor.Module[W], fn *descriptor.
 	}
 	//
 	return descriptor.NewFunction(fn.Name(), t.alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
+}
+
+// remapFunction lays out the threaded function's registers (initNewRegs),
+// builds the old->new register id remap (buildFunctionMapping), then remaps
+// the body onto the new ids and prepares the temporary allocator against the
+// result.
+func (t *threader[W]) remapFunction(fn *descriptor.Function[W]) []BytecodeVector[W] {
+	var (
+		newRegs = t.initNewRegs(fn)
+		sub     = t.buildFunctionMapping(fn)
+		vectors = fn.Vectors()
+		nvecs   = make([]BytecodeVector[W], len(vectors))
+	)
+	// Remap the body onto the new register ids.
+	for vi, vec := range vectors {
+		nvecs[vi] = vec.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
+			return []Bytecode[W]{substituteRegisters[W](insn, sub)}
+		})
+	}
+	// Allocate temporaries against the remapped register set.
+	remapped := descriptor.NewFunction(fn.Name(), newRegs, fn.Kind(), fn.Effects(), nvecs)
+	t.alloc = split.NewAllocator[W](remapped)
+	//
+	return nvecs
+}
+
+// initNewRegs constructs the threaded register layout, stamps first:
+// [stamp-ins, old inputs, stamp-outs, old outputs, old computed] -- recording
+// each effect's stamp-in and canonical (stamp-out) register along the way.
+// main takes no parameters, so it gets no stamp in/out; its canonical
+// registers are instead allocated lazily (see getCanonical).
+func (t *threader[W]) initNewRegs(fn *descriptor.Function[W]) []descriptor.Register[W] {
+	var (
+		oldRegs = fn.Registers()
+		ni      = fn.NumInputs()
+		padding W
+		newRegs []descriptor.Register[W]
+	)
+	//
+	if !t.isMain {
+		for _, e := range t.effects {
+			t.stampIn[e] = bytecode.RegisterId(len(newRegs))
+			newRegs = append(newRegs, descriptor.NewRegister(register.INPUT_REGISTER, stampName(t.mods, e),
+				util.Some(stampWidth), padding))
+		}
+	}
+	//
+	newRegs = append(newRegs, oldRegs[:ni]...)
+	//
+	if !t.isMain {
+		for _, e := range t.effects {
+			t.canonical[e] = bytecode.RegisterId(len(newRegs))
+			newRegs = append(newRegs, descriptor.NewRegister(register.OUTPUT_REGISTER, stampOutName(t.mods, e),
+				util.Some(stampWidth), padding))
+		}
+	}
+	//
+	return append(newRegs, oldRegs[ni:]...)
+}
+
+// buildFunctionMapping builds the old->new register id remap: inserting k
+// stamp inputs shifts old inputs by k; inserting k stamp outputs shifts old
+// outputs and computed by a further k.  main inserts none, so the map is the
+// identity there.
+func (t *threader[W]) buildFunctionMapping(fn *descriptor.Function[W]) []bytecode.RegisterId {
+	var (
+		k   = uint(len(t.effects))
+		ni  = fn.NumInputs()
+		sub = make([]bytecode.RegisterId, len(fn.Registers()))
+	)
+	//
+	for x := range sub {
+		id := bytecode.RegisterId(x)
+		//
+		switch {
+		case t.isMain:
+			sub[x] = id
+		case uint(x) < ni:
+			sub[x] = id + bytecode.RegisterId(k)
+		default:
+			sub[x] = id + bytecode.RegisterId(2*k)
+		}
+	}
+	//
+	return sub
+}
+
+// seedEntryRow handles an entry row which is itself a jump target (e.g. a
+// leading loop header).  Every jump lands on a row entered with canonical
+// stamps, so the entry state is materialised on a preamble row of its own,
+// every jump target shifted by one, and the entry state (updated in place)
+// becomes the canonical stamps.  Rows whose entry is not a jump target are
+// returned unchanged.
+func (t *threader[W]) seedEntryRow(nvecs []BytecodeVector[W], entry []stampValue) []BytecodeVector[W] {
+	if !jumpTargets(nvecs).Contains(0) {
+		return nvecs
+	}
+	//
+	var seed []Bytecode[W]
+	//
+	for x, e := range t.effects {
+		seed = append(seed, t.materialise(t.resolve(x, entry[x]), t.getCanonical(e)))
+		entry[x] = stampValue{kind: stampCanonical}
+	}
+	//
+	nvecs = append([]BytecodeVector[W]{bytecode.NewVector(seed...)}, nvecs...)
+	//
+	for vi, vec := range nvecs {
+		nvecs[vi] = vec.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
+			if jmp, ok := insn.(*bytecode.Jmp[W]); ok {
+				return []Bytecode[W]{bytecode.Jump[W](jmp.Target + 1)}
+			}
+			//
+			return []Bytecode[W]{insn}
+		})
+	}
+	//
+	return nvecs
 }
 
 // getCanonical returns the canonical stamp register of the given effect,
