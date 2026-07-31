@@ -92,16 +92,23 @@ type ramLayout struct {
 	// tsRead is the timestamp of the LAST access to this address (zero for a
 	// first touch): the "when" of valueRead.
 	tsRead []register.Id
-	// tsDelta witnesses the strict timestamp ordering on EXEC rows:
-	// TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 + TIMESTAMP_DELTA, with
+	// tsDelta witnesses the strict timestamp orderings of both phases.  On EXEC
+	// rows: TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 + TIMESTAMP_DELTA, with
 	// TIMESTAMP_DELTA range-checked >= 0, so TIMESTAMP_READ <
-	// TIMESTAMP_WRITTEN.
+	// TIMESTAMP_WRITTEN.  On FINL rows the direction REVERSES (written = the
+	// cell's initial state, read = its final state): TIMESTAMP_READ =
+	// TIMESTAMP_WRITTEN + 1 + TIMESTAMP_DELTA, so TIMESTAMP_WRITTEN <
+	// TIMESTAMP_READ, pinning each finalized cell to one genuinely touched
+	// during execution.  Sharing the column is sound since EXEC * FINL == 0.
 	tsDelta []register.Id
 	// addrDelta witnesses the strict ADDRESS ordering of the (future) FINL
-	// phase: each touched cell must be initialised / finalised exactly once,
+	// phase: each touched cell must be initialised / finalised AT MOST once,
 	// which the table proves by listing FINL rows in strictly increasing
 	// address order — ADDRESS = prev(ADDRESS) + 1 + ADDRESS_DELTA, with
-	// ADDRESS_DELTA range-checked >= 0.  Unused (zero) on EXEC rows.
+	// ADDRESS_DELTA range-checked >= 0.  Strict monotony alone delivers
+	// uniqueness: the first FINL address is deliberately unconstrained (an
+	// anchor at zero would force an init/finalize event for address 0 even
+	// when that cell was never touched).  Unused (zero) on EXEC rows.
 	addrDelta []register.Id
 	// tsCarry / addrCarry witness the per-boundary carry of the multi-limb
 	// timestamp / address additions above.  Each has one fewer entry than the
@@ -334,29 +341,26 @@ func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 }
 
 // ramFinlConstraints builds the finalization-phase constraints (guarded by
-// FINL): the address starts at zero on the first FINL row and strictly increases
-// (via []ADDRESS_DELTA) thereafter, and every FINL row carries the cell's initial
-// state on the written side ([]VALUE_WRITTEN == 0, []TIMESTAMP_WRITTEN == 0) — the
-// "init" half of the init/finalize pair (the finalize half reads the final state
-// into []VALUE_READ / TIMESTAMP_READ, pinned by the deferred rcv/snd bus).  These
-// are vacuous until finalization rows are emitted (a follow-up PR) but are written
-// now so []ADDRESS_DELTA has a defined role and the columns are not dangling.
+// FINL): addresses strictly increase from one FINL row to the next (via
+// []ADDRESS_DELTA) — which alone guarantees at most one init/finalize event per
+// cell, so the first FINL address is deliberately unconstrained; the strict
+// timestamp ordering TIMESTAMP_READ > TIMESTAMP_WRITTEN pins each finalized cell
+// to one genuinely touched during execution (an untouched cell's final timestamp
+// is zero); and every FINL row carries the cell's initial state on the written
+// side ([]VALUE_WRITTEN == 0, []TIMESTAMP_WRITTEN == 0) — the "init" half of the
+// init/finalize pair (the finalize half reads the final state into []VALUE_READ /
+// TIMESTAMP_READ, pinned by the deferred rcv/snd bus).  These are vacuous until
+// finalization rows are emitted (a follow-up PR) but are written now so
+// []ADDRESS_DELTA has a defined role and the columns are not dangling.
 func ramFinlConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
 	var (
 		zero      = mirc.Number[register.Id, Expr[F]](0)
 		one       = mirc.Number[register.Id, Expr[F]](1)
 		finl      = mirc.Variable[register.Id, Expr[F]](l.finl, 1, 0)
 		prevFinl  = mirc.Variable[register.Id, Expr[F]](l.finl, 1, -1)
-		firstFinl = finl.Equals(one).And(prevFinl.Equals(zero))
 		laterFinl = finl.Equals(one).And(prevFinl.Equals(one))
 		cs        []mir.Constraint[F]
 	)
-	// first FINL row: []ADDRESS == 0
-	for k := range l.address {
-		addr := mirc.Variable[register.Id, Expr[F]](l.address[k], l.addrWidths[k], 0)
-		cs = append(cs, mir.NewVanishingConstraint(fmt.Sprintf("finl_first_address_%d", k), ctx, util.None[int](),
-			mirc.If(firstFinl, addr.Equals(zero)).AsLogical()))
-	}
 	// later FINL rows: []ADDRESS = prev([]ADDRESS) + 1 + []ADDRESS_DELTA (strictly
 	// increasing).  The base operand is read on the previous row (shift -1).
 	cs = append(cs, multiLimbIncrement[F](ctx, "finl_addr", l.address, l.address, l.addrDelta,
@@ -364,6 +368,17 @@ func ramFinlConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 	// every FINL row initialises its cell: the init half sends (value 0, time 0),
 	// so the written side vanishes — []VALUE_WRITTEN == 0 and []TIMESTAMP_WRITTEN == 0.
 	finlOn := finl.Equals(one)
+	// FINL rows: []TIMESTAMP_READ = []TIMESTAMP_WRITTEN + 1 + []TIMESTAMP_DELTA,
+	// i.e. TIMESTAMP_READ > TIMESTAMP_WRITTEN.  NOTE the direction is deliberately
+	// the OPPOSITE of the EXEC-phase ordering: on a FINL row the WRITTEN side is
+	// the cell's INITIAL state and the READ side its FINAL state, so the read
+	// timestamp is the later one.  Strictness pins a FINL row to a cell genuinely
+	// touched during execution (stamps count from one; timestamp zero is the
+	// untouched-cell initial state), which is what allows the first FINL address
+	// to be unconstrained.  TIMESTAMP_DELTA / TS_CARRY are reused as witnesses:
+	// EXEC * FINL == 0, so they are idle on FINL rows.
+	cs = append(cs, multiLimbIncrement[F](ctx, "finl_ts", l.tsRead, l.tsWritten, l.tsDelta,
+		l.tsCarry, l.tsWidths, 0, finlOn)...)
 	//
 	for k := range l.valueWritten {
 		vw := mirc.Variable[register.Id, Expr[F]](l.valueWritten[k], l.dataWidths[k], 0)
