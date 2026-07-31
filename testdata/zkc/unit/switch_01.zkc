@@ -56,9 +56,9 @@ fn main() {
     switch discr {
         case CASE_A: {
         }
-        default: {
-        }
         case CASE_B: {
+        }
+        default: {
         }
     }
 
@@ -75,20 +75,13 @@ fn main() {
         }
     }
 
-    switch discr {
-        default: {
-        }
-        case CASE_MATCH: {
-        }
-    }
-
     // generic case
     switch discr {
         case CASE_A, CASE_MATCH: {
         }
-        default: {
-        }
         case CASE_B: {
+        }
+        default: {
         }
     }
 

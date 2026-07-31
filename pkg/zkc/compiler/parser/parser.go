@@ -949,8 +949,10 @@ func (p *Parser) parseSwitch(env Environment) (bool, stmt.Unresolved, []source.S
 //	}
 //
 // Note: parseSwitchBody currently doesn't
-//   - scan for / flag label duplication
 //   - perform exhaustivity analysis
+//
+// (duplicate labels are flagged later, during type checking, since they are
+// compared by value)
 func (p *Parser) parseSwitchBody(env Environment) (returned bool,
 	branches []stmt.SwitchBranch[symbol.Unresolved],
 	errs []source.SyntaxError) {
@@ -964,6 +966,7 @@ func (p *Parser) parseSwitchBody(env Environment) (returned bool,
 		branchReturns             bool
 		everyBranchReturns        = true
 		bodyContainsDefaultBranch = false
+		defaultToken              lex.Token
 	)
 
 	for p.lookahead().Kind != RCURLY {
@@ -977,9 +980,10 @@ func (p *Parser) parseSwitchBody(env Environment) (returned bool,
 			return false, nil, errs
 		}
 
-		// we flag the presence of multiple default cases
-		if branch.IsDefault && bodyContainsDefaultBranch {
-			return false, nil, p.syntaxErrors(lookahead, "multiple default cases in switch statement")
+		// we flag any branch following the default case; this also rules out
+		// multiple default cases
+		if bodyContainsDefaultBranch {
+			return false, nil, p.syntaxErrors(defaultToken, "default case must be last in switch statement")
 		}
 
 		if !branchReturns {
@@ -988,6 +992,7 @@ func (p *Parser) parseSwitchBody(env Environment) (returned bool,
 
 		if branch.IsDefault {
 			bodyContainsDefaultBranch = true
+			defaultToken = lookahead
 		}
 
 		branches = append(branches, branch)
@@ -1061,6 +1066,14 @@ func (p *Parser) parseSwitchCase(env Environment) (
 
 	labels, errs = p.parseExprList(COLON, env)
 	if len(errs) > 0 {
+		// 'default' is a keyword, not an expression, so a shared case of the
+		// form "case CASE_A, default:" fails the list parse right on the
+		// 'default' token; we give it a targeted error.
+		if tok := p.lookahead(); tok.Kind == KEYWORD_DEFAULT {
+			return false, nil, nil, p.syntaxErrors(tok,
+				"default case cannot be combined with labels in switch statement")
+		}
+		//
 		return
 	}
 
@@ -1109,6 +1122,13 @@ func (p *Parser) parseSwitchDefault(env Environment) (
 	errs []source.SyntaxError) {
 	if _, errs = p.expect(KEYWORD_DEFAULT); len(errs) > 0 {
 		return
+	}
+
+	// the mirror form of a shared case, "default, CASE_A:", surfaces here as a
+	// comma where the colon is expected
+	if tok := p.lookahead(); tok.Kind == COMMA {
+		return false, nil, p.syntaxErrors(tok,
+			"default case cannot be combined with labels in switch statement")
 	}
 
 	if _, errs = p.expect(COLON); len(errs) > 0 {

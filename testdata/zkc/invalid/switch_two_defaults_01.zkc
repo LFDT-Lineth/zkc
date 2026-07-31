@@ -1,4 +1,4 @@
-//error:20:5-12:multiple default cases in switch statement
+//error:19:5-12:default case must be last in switch statement
 
 // ==============================================
 // duplicate default

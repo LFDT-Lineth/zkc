@@ -18,6 +18,7 @@ import (
 	"reflect"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -31,6 +32,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // Stmt is a convenient alias.
@@ -412,10 +414,16 @@ func (p *TypeChecker) typeIfGoto(s *stmt.IfGoto[symbol.Resolved], env VariableMa
 
 // typeDispatch type-checks a multiway dispatch by checking the discriminant
 // against each (constant) label, mirroring the per-comparison checking the
-// equivalent if-else chain would otherwise receive.
+// equivalent if-else chain would otherwise receive.  It also rejects duplicate
+// labels which, since labels are constants, are compared by value (e.g. a named
+// constant duplicates a literal of the same value).
 func (p *TypeChecker) typeDispatch(s *stmt.Dispatch[symbol.Resolved], env VariableMap, effects bit.Set,
 ) []source.SyntaxError {
-	var errors []source.SyntaxError
+	var (
+		errors    []source.SyntaxError
+		evaluator = codegen.NewConstantEvaluator(p.field, p.env, p.program.Components()...)
+		seen      []vm.Uint
+	)
 	//
 	for _, branch := range s.Branches {
 		for _, label := range branch.Labels {
@@ -425,6 +433,16 @@ func (p *TypeChecker) typeDispatch(s *stmt.Dispatch[symbol.Resolved], env Variab
 			p.srcmaps.Copy(label, cmp)
 			//
 			errors = append(errors, p.typeCondition(cmp, env, effects)...)
+			// Flag labels whose value repeats an earlier one, anchoring the
+			// error on the later occurrence.  Labels which fail to evaluate are
+			// skipped, as they have been diagnosed elsewhere.
+			if value, errMsg := evaluator.Eval(label, false); errMsg == "" {
+				if array.ContainsMatching(seen, func(v vm.Uint) bool { return v.Cmp(value) == 0 }) {
+					errors = append(errors, p.srcmaps.SyntaxErrors(label, "duplicate label in switch statement")...)
+				} else {
+					seen = append(seen, value)
+				}
+			}
 		}
 	}
 	//
