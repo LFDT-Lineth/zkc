@@ -1,7 +1,7 @@
-//error:17:18-24:duplicate label in switch statement
+//error:17:5-12:default case must be last in switch statement
 
 // ================
-// duplicate label
+// misplaced default
 // ================
 
 type exmp = u8
@@ -14,6 +14,7 @@ fn main() {
   var discr :exmp = CASE_MATCH
 
   switch discr {
-    case CASE_A, CASE_A: { }
+    default: { }
+    case CASE_A: { }
   }
 }

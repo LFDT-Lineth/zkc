@@ -36,15 +36,15 @@ import (
 // over the bytecode program (its modules, registers and bytecode vectors),
 // without going through the legacy word / field machine.
 func GenerateMirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program[W], field field.Config,
-	maxStaticDepth uint) mir.Schema[F] {
+	maxStaticHeight uint) mir.Schema[F] {
 	var (
 		infos   = program.Modules()
 		modules = make([]mir.Module[F], len(infos))
-		// maxStaticWidth is the largest X for which 2^X <= maxStaticDepth (the
-		// max static table size), i.e. floor(log2(maxStaticDepth)).
+		// maxStaticWidth is the largest X for which 2^X <= maxStaticHeight (the
+		// max static table size), i.e. floor(log2(maxStaticHeight)).
 		// It represents the maximum register width for which a static table can be use to range-check it.
 		// Wider registers require recursive range modules.
-		maxStaticWidth = uint(bits.Len(maxStaticDepth) - 1)
+		maxStaticWidth = uint(bits.Len(maxStaticHeight) - 1)
 		// Index the static range-check tables by width, so each register can be
 		// range-proved by a lookup into the matching $range_un table.
 		rangeTables = indexRangeTables[W, F](infos, maxStaticWidth)
@@ -60,9 +60,9 @@ func GenerateMirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program
 // GenerateAirConstraints is responsible for converting a bytecode program into
 // a corresponding set of AIR constraints.
 func GenerateAirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program[W], field field.Config,
-	maxStaticDepth uint) air.Schema[F] {
+	maxStaticHeight uint) air.Schema[F] {
 	var (
-		mirc = GenerateMirConstraints[W, F](program, field, maxStaticDepth)
+		mirc = GenerateMirConstraints[W, F](program, field, maxStaticHeight)
 	)
 	//
 	return mir.LowerToAir(mirc, field.BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)

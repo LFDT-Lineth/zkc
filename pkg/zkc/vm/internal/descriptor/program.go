@@ -139,14 +139,14 @@ func (p Program[W]) Field() field.Config {
 	return p.field
 }
 
-// MaxStaticDepth reports the maximum depth (i.e. number of rows) of any static
+// MaxStaticHeight reports the maximum height (i.e. number of rows) of any static
 // table used within this program.
-func (p Program[W]) MaxStaticDepth() uint {
+func (p Program[W]) MaxStaticHeight() uint {
 	var depth = uint(0)
 	//
 	for _, m := range p.modules {
 		if ith, ok := m.(*Memory[W]); ok && ith.IsStatic() {
-			depth = max(depth, ith.StaticDepth())
+			depth = max(depth, ith.StaticHeight())
 		}
 	}
 	//

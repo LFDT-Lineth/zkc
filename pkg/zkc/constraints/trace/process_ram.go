@@ -10,17 +10,21 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package post
+package trace
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-// ProcessReadWriteMemory performs post-processing on a RAM trace.
-func ProcessReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W]) rtrace.ArrayModule[F] {
-	var regs = array.Map(m.Descriptor().Registers(), toRtraceRegister)
+// InitReadWriteMemory initialises a trace module for a RandomAccessMemory.
+func initReadWriteMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](m vm.Memory[W]) (module M) {
+	var regs = array.Map(m.Registers(), toRtraceRegister)
+	//Done
+	return module.Initialise(m.Name(), regs)
+}
+
+// traceReadWriteMemory materialises the trace rows for a given RandomAccessMemory.
+func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module Module[F]) {
 	// TODO: flesh me out :)
-	return rtrace.NewArrayModule[F](m.Descriptor().Name(), regs)
 }

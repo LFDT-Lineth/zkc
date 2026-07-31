@@ -1294,7 +1294,7 @@ func Test_ZkcUnit_BigNum_18(t *testing.T) {
 // Test Helpers
 // ===================================================================
 
-var STATIC_DEPTHS = []uint{256, 1 << 12}
+var STATIC_HEIGHTS = []uint{256, 1 << 12}
 
 // ZKC_PADDING_STRATEGIES enumerates the padding strategies that every ZkC unit
 // test is exercised against (see checkZkcUnit).
@@ -1305,10 +1305,10 @@ var ZKC_PADDING_STRATEGIES = map[string]ir.PaddingStrategy{
 }
 
 // checkZkcUnit runs test for different combinations of:
-// - STATIC_DEPTHS
+// - STATIC_HEIGHTS
 // - padding strategy
 func checkZkcUnit(t *testing.T, test string, config test_util.Config) {
-	// Run with different padding strategies, but default static depth
+	// Run with different padding strategies and max static heights.
 	test_util.CheckValid(t, test, "zkc", config.Padding(ZKC_PADDING_STRATEGIES).
-		MaxStaticDepths(STATIC_DEPTHS...))
+		MaxStaticHeights(STATIC_HEIGHTS...))
 }
