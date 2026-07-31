@@ -434,8 +434,13 @@ func (p *TypeChecker) typeDispatch(s *stmt.Dispatch[symbol.Resolved], env Variab
 			//
 			errors = append(errors, p.typeCondition(cmp, env, effects)...)
 			// Flag labels whose value repeats an earlier one, anchoring the
-			// error on the later occurrence.  Labels which fail to evaluate are
-			// skipped, as they have been diagnosed elsewhere.
+			// error on the later occurrence.  Ill-typed labels are skipped
+			// (they evaluate to a spurious zero), as are labels which fail to
+			// evaluate; both have been diagnosed elsewhere.
+			if !p.env.WellFormed(label.Type()) {
+				continue
+			}
+			//
 			if value, errMsg := evaluator.Eval(label, false); errMsg == "" {
 				if array.ContainsMatching(seen, func(v vm.Uint) bool { return v.Cmp(value) == 0 }) {
 					errors = append(errors, p.srcmaps.SyntaxErrors(label, "duplicate label in switch statement")...)
