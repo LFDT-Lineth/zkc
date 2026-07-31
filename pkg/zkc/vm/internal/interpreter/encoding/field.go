@@ -69,7 +69,7 @@ func DecodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32, pool []
 // packs the source registers two per word:
 //
 // +--------+--------+--------+--------+
-// |  nsrc  |       n/a       | opcode |
+// |  nsrc  |  n/a   |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       cid       |        rd       |
 // +-----------------+-----------------+
@@ -106,7 +106,10 @@ func encodeFieldArith[W word.Word[W]](op bytecode.Operation, rd RegisterId, sour
 		return append(codes, PackBytesIntoCodes(RegsAsBytes(sources))...)
 	}
 	// Wide form: also the fallback when the pool identifier exceeds a byte.
-	var codes = []uint32{header | opcode | WIDE, cid<<16 | uint32(rd)}
+	var codes = []uint32{
+		header | (WIDE_ADDMOD_P+uint32(op-bytecode.OP_ADDMOD_P))<<8 | WIDE,
+		cid<<16 | uint32(rd),
+	}
 	//
 	return append(codes, PackShortsIntoCodes(RegsAsShorts(sources))...)
 }

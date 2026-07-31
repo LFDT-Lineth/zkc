@@ -74,7 +74,7 @@ func MaxCallEncodedLength[W word.Word[W]](p *bytecode.Call[W]) uint {
 // packed slot:
 //
 // +--------+--------+--------+--------+
-// |      width      |  n/a   | opcode |
+// |      width      |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // | ............ target ............. |
 // +--------+--------+--------+--------+
@@ -101,7 +101,7 @@ func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 
 	// absolute).
 	if width > math.MaxUint8 || !ok || IsWideRegisters(args...) {
 		codes := []uint32{
-			uint32(width)<<16 | opcode | WIDE,
+			uint32(width)<<16 | WIDE_ENTER_n<<8 | WIDE,
 			target,
 		}
 		// nargs occupies the first packed slot, followed by the arguments.
@@ -159,7 +159,7 @@ func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args
 // packs the (now u16) return registers two per word:
 //
 // +-----------------+--------+--------+
-// |      nrets      |  n/a   | opcode |
+// |      nrets      |  wop   |  WIDE  |
 // +-----------------+--------+--------+
 // |       ret1      |       ret0      |
 // +-----------------+-----------------+
@@ -175,7 +175,7 @@ func encodeLeave_n(rets []RegisterId) []uint32 {
 	var nrets = uint32(len(rets))
 	//
 	if IsWideRegisters(rets...) {
-		var codes = []uint32{nrets<<16 | LEAVE_n | WIDE}
+		var codes = []uint32{nrets<<16 | WIDE_LEAVE_n<<8 | WIDE}
 		//
 		return append(codes, PackShortsIntoCodes(RegsAsShorts(rets))...)
 	}

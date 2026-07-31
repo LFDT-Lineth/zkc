@@ -71,7 +71,7 @@ func registerVectorsFromIter(iter Operands) []RegisterVector {
 // with both source registers in a second:
 //
 // +--------+--------+--------+--------+
-// |        rd       |  n/a   | opcode |
+// |        rd       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |     divisor     |    dividend     |
 // +-----------------+-----------------+
@@ -82,7 +82,7 @@ func registerVectorsFromIter(iter Operands) []RegisterVector {
 func encodeDivRem(op uint32, rd, dividend, divisor RegisterId) []uint32 {
 	if IsWideRegisters(rd, dividend, divisor) {
 		return []uint32{
-			uint32(rd)<<16 | op | WIDE,
+			uint32(rd)<<16 | (WIDE_DIV+(op-DIV))<<8 | WIDE,
 			uint32(dividend) | uint32(divisor)<<16,
 		}
 	}
@@ -126,7 +126,7 @@ func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor Register
 // each vector following as a (base, len) pair of u16 operands:
 //
 // +--------+--------+--------+--------+
-// |   op   |  nsrc  |  n/a   | opcode |
+// |   op   |  nsrc  |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |    tgt0 base    |      ntgt       |
 // +-----------------+-----------------+
@@ -152,7 +152,7 @@ func encodeIntrinsic(op Operation, targets, sources []RegisterVector) []uint32 {
 	//
 	if IsWideRegisterVectors(targets) || IsWideRegisterVectors(sources) {
 		var (
-			codes = []uint32{nop | nsrc | INTRINSIC | WIDE}
+			codes = []uint32{nop | nsrc | WIDE_INTRINSIC<<8 | WIDE}
 			// ntgt occupies the first packed slot, followed by the vectors.
 			shorts = make([]uint16, 0, 1+2*(len(targets)+len(sources)))
 		)

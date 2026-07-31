@@ -581,9 +581,17 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			opcode     = bytecodes[p.pc] & encoding.OPCODE_MASK
 			breakpoint = bytecodes[p.pc]&encoding.BREAKPOINT != 0
 		)
-		// Check for breakpoint.
+		// Check for breakpoint.  NOTE: for wide instructions, the wide opcode
+		// (second byte) is passed through alongside the WIDE escape, allowing
+		// observers to identify the instruction (e.g. WIDE|WIDE_RET<<8).
 		if breakpoint {
-			p.breakpoint(opcode)
+			var cbop = opcode
+			//
+			if opcode == encoding.WIDE {
+				cbop |= bytecodes[p.pc] & 0xff00
+			}
+			//
+			p.breakpoint(cbop)
 		}
 		// increase step counter
 		nsteps++
@@ -591,6 +599,17 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		switch opcode & encoding.OPCODE_MASK {
 		case encoding.FAIL:
 			return nsteps, p.executeFail(p.pc, bytecodes, frame)
+		case encoding.WIDE:
+			var halt bool
+			//
+			p.pc, halt, err = p.executeWide(p.pc, bytecodes, pool, frame)
+			//
+			if halt {
+				return nsteps, err
+			}
+			// refresh the register window, since wide instructions include
+			// those (ENTER/LEAVE/RET) which change the enclosing frame.
+			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case encoding.CHECKCAST:
 			p.pc, err = p.executeCheckCast(p.pc, bytecodes, frame)
 		case encoding.DEBUG:
@@ -728,6 +747,135 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 	}
 	//
 	return nsteps, err
+}
+
+// executeWide dispatches an instruction encoded via the WIDE escape opcode,
+// switching on the wide opcode held in the second byte of its first word.  It
+// returns the next program counter, together with a halt flag signalling that
+// execution has terminated (i.e. an explicit failure, or a return from the
+// outermost frame) and any error.
+//
+//nolint:funlen
+func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack []W) (uint32, bool, error) {
+	var (
+		wopcode = (codes[pc] >> 8) & 0xff
+		err     error
+	)
+	//
+	switch wopcode {
+	case encoding.WIDE_FAIL:
+		return pc, true, p.executeFail(pc, codes, stack)
+	case encoding.WIDE_CHECKCAST:
+		pc, err = executeCheckCast(pc, codes, stack)
+	case encoding.WIDE_DEBUG:
+		pc = p.executeDebug(pc, codes, stack)
+	case encoding.WIDE_LDC_w:
+		pc = executeLdc_w(pc, codes, pool, stack)
+	case encoding.WIDE_MOVE:
+		pc = executeMove_1s1(pc, codes, stack)
+	case encoding.WIDE_ENTER_n:
+		err = p.executeEnter_n(pc, codes, stack)
+		pc = p.pc
+	case encoding.WIDE_LEAVE_n:
+		pc = p.executeLeave_n(pc, codes, stack)
+	case encoding.WIDE_RET:
+		// check for termination
+		if p.callStack.Size() == 0 {
+			return pc, true, nil
+		}
+		// normal return
+		pc, err = p.executeReturn(pc, codes)
+	case encoding.WIDE_SEQ_rr:
+		pc = executeSkipIf_rr[W, util.Equal[W]](pc, codes, stack)
+	case encoding.WIDE_SNE_rr:
+		pc = executeSkipIf_rr[W, util.NotEqual[W]](pc, codes, stack)
+	case encoding.WIDE_SLT_rr:
+		pc = executeSkipIf_rr[W, util.LessThan[W]](pc, codes, stack)
+	case encoding.WIDE_SGE_rr:
+		pc = executeSkipIf_rr[W, util.GreaterThanOrEqual[W]](pc, codes, stack)
+	case encoding.WIDE_SEQ_rv:
+		pc = executeSkipIf_rv[W, util.Equal[W]](pc, codes, stack)
+	case encoding.WIDE_SNE_rv:
+		pc = executeSkipIf_rv[W, util.NotEqual[W]](pc, codes, stack)
+	case encoding.WIDE_SLT_rv:
+		pc = executeSkipIf_rv[W, util.LessThan[W]](pc, codes, stack)
+	case encoding.WIDE_SGE_rv:
+		pc = executeSkipIf_rv[W, util.GreaterThanOrEqual[W]](pc, codes, stack)
+	case encoding.WIDE_SEQ_rcv:
+		pc = executeSkipIf_rcv[W, util.Equal[W]](pc, codes, pool, stack)
+	case encoding.WIDE_SNE_rcv:
+		pc = executeSkipIf_rcv[W, util.NotEqual[W]](pc, codes, pool, stack)
+	case encoding.WIDE_SLT_rcv:
+		pc = executeSkipIf_rcv[W, util.LessThan[W]](pc, codes, pool, stack)
+	case encoding.WIDE_SGE_rcv:
+		pc = executeSkipIf_rcv[W, util.GreaterThanOrEqual[W]](pc, codes, pool, stack)
+	case encoding.WIDE_RD_ROM_nm:
+		pc = executeReadRom_sn(pc, codes, stack, p.roms)
+	case encoding.WIDE_RD_SROM_nm:
+		pc = executeReadSrom_sn(pc, codes, stack, p.sroms)
+	case encoding.WIDE_WR_WOM_nm:
+		pc = executeWriteWom_sn(pc, codes, stack, p.woms)
+	case encoding.WIDE_RD_RAM_nm:
+		pc = executeReadRam_sn(pc, codes, stack, p.rams)
+	case encoding.WIDE_WR_RAM_nm:
+		pc = executeWriteRam_sn(pc, codes, stack, p.rams)
+	case encoding.WIDE_RD_PRAM_nm:
+		pc = executeReadPagedRam_sn(pc, codes, stack, p.prams)
+	case encoding.WIDE_WR_PRAM_nm:
+		pc = executeWritePagedRam_sn(pc, codes, stack, p.prams)
+	case encoding.WIDE_ADD_2n1:
+		pc, err = executeAdd_2n1(pc, codes, stack)
+	case encoding.WIDE_SUB_2n1:
+		pc, err = p.executeSub_2n1(pc, codes, stack)
+	case encoding.WIDE_MUL_2n1:
+		pc, err = executeMul_2n1(pc, codes, stack)
+	case encoding.WIDE_ADDC:
+		pc, err = executeAdd_1n1c(pc, codes, pool, stack)
+	case encoding.WIDE_SUBC:
+		pc, err = p.executeSub_1n1c(pc, codes, pool, stack)
+	case encoding.WIDE_MULC:
+		pc, err = executeMul_1n1c(pc, codes, pool, stack)
+	case encoding.WIDE_ADD_nm:
+		pc, err = p.executeAdd_nm(pc, codes, pool, stack)
+	case encoding.WIDE_SUB_nm:
+		pc, err = p.executeSub_nm(pc, codes, pool, stack)
+	case encoding.WIDE_MUL_nm:
+		pc, err = p.executeMul_nm(pc, codes, pool, stack)
+	case encoding.WIDE_DIV:
+		pc, err = executeDiv(pc, codes, stack)
+	case encoding.WIDE_REM:
+		pc, err = executeRem(pc, codes, stack)
+	case encoding.WIDE_INTRINSIC:
+		pc, err = p.executeIntrinsic(pc, codes, stack)
+	case encoding.WIDE_ADDMOD_P:
+		pc, err = p.executeFieldAdd(pc, codes, pool, stack)
+	case encoding.WIDE_SUBMOD_P:
+		pc, err = p.executeFieldSub(pc, codes, pool, stack)
+	case encoding.WIDE_MULMOD_P:
+		pc, err = p.executeFieldMul(pc, codes, pool, stack)
+	case encoding.WIDE_AND:
+		pc, err = executeAnd(pc, codes, stack)
+	case encoding.WIDE_OR:
+		pc, err = executeOr(pc, codes, stack)
+	case encoding.WIDE_XOR:
+		pc, err = executeXor(pc, codes, stack)
+	case encoding.WIDE_NOT:
+		pc, err = executeNot(pc, codes, stack)
+	case encoding.WIDE_SHL:
+		pc, err = executeShl(pc, codes, stack)
+	case encoding.WIDE_SHR:
+		pc, err = executeShr(pc, codes, stack)
+	case encoding.WIDE_CAT:
+		pc, err = p.executeCat(pc, codes, stack)
+	case encoding.WIDE_UINT_TO_FIELD:
+		pc, err = p.executeUintToField(pc, codes, stack)
+	case encoding.WIDE_FIELD_TO_UINT:
+		pc, err = p.executeFieldToUint(pc, codes, stack)
+	default:
+		err = fmt.Errorf("unknown wide bytecode encountered (0x%x)", wopcode)
+	}
+	//
+	return pc, false, err
 }
 
 // initialise prepares all memories for a fresh execution.  Input (read-only and

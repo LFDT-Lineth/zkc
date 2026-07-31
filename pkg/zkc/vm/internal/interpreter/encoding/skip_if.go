@@ -196,7 +196,7 @@ func condFromOffset(offset uint32) Cond {
 // (now u16) registers into a subsequent word:
 //
 // +--------+--------+--------+--------+
-// |      skip       |  n/a   | opcode |
+// |      skip       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       rs0       |       rs1       |
 // +-----------------+-----------------+
@@ -213,7 +213,7 @@ func encodeSkipIf_rr(skip uint16, rs0, rs1 RegisterId, op Cond) []uint32 {
 	// unsigned and hence offers a greater forward range.
 	if IsWideRegisters(rs0, rs1) || skip > math.MaxUint8 {
 		return []uint32{
-			uint32(skip)<<16 | (SEQ_rr + condOffset(op)) | WIDE,
+			uint32(skip)<<16 | (WIDE_SEQ_rr+condOffset(op))<<8 | WIDE,
 			uint32(rs1) | uint32(rs0)<<16,
 		}
 	}
@@ -233,14 +233,14 @@ func encodeSkipIf_rr(skip uint16, rs0, rs1 RegisterId, op Cond) []uint32 {
 
 // DecodeSkipIf_rr decodes the operands of a register-register conditional skip.
 func DecodeSkipIf_rr(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterId, op Cond, n uint32) {
-	op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rr)
-	//
 	if IsWideForm(pc, codes) {
+		op = condFromOffset(((codes[pc] >> 8) & 0xff) - WIDE_SEQ_rr)
 		skip = codes[pc] >> 16
 		rs1 = RegisterId(codes[pc+1] & 0xffff)
 		rs0 = RegisterId(codes[pc+1] >> 16)
 		n = 2
 	} else {
+		op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rr)
 		skip = codes[pc] >> 24
 		rs1 = RegisterId((codes[pc] >> 8) & 0xff)
 		rs0 = RegisterId((codes[pc] >> 16) & 0xff)
@@ -269,7 +269,7 @@ func DecodeSkipIf_rr(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterI
 // third word:
 //
 // +--------+--------+--------+--------+
-// |   nv   |       n/a       | opcode |
+// |   nv   |  n/a   |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // | ............ target ............. |
 // +--------+--------+--------+--------+
@@ -286,7 +286,7 @@ func encodeSkipIf_rv(skip uint32, rs0, rs1 RegisterVector, op Cond) []uint32 {
 	//
 	if IsWideRegisters(rs0.Base, rs1.Base) {
 		return []uint32{
-			nv | (SEQ_rv + condOffset(op)) | WIDE,
+			nv | (WIDE_SEQ_rv+condOffset(op))<<8 | WIDE,
 			skip,
 			uint32(rs1.Base) | uint32(rs0.Base)<<16,
 		}
@@ -305,14 +305,15 @@ func DecodeSkipIf_rv(pc uint32, codes []uint32) (skip uint32, rs0, rs1 RegisterV
 		nv         = RegisterId((codes[pc] >> 24) & 0xff)
 	)
 	//
-	op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rv)
 	skip = codes[pc+1]
 	//
 	if IsWideForm(pc, codes) {
+		op = condFromOffset(((codes[pc] >> 8) & 0xff) - WIDE_SEQ_rv)
 		rs1b = RegisterId(codes[pc+2] & 0xffff)
 		rs0b = RegisterId(codes[pc+2] >> 16)
 		n = 3
 	} else {
+		op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rv)
 		rs1b = RegisterId((codes[pc] >> 8) & 0xff)
 		rs0b = RegisterId((codes[pc] >> 16) & 0xff)
 		n = 2
@@ -380,7 +381,7 @@ func DecodeSkipIf_rc[W word.Word[W]](pc uint32, codes []uint32, pool []W) (skip 
 // to be at offset 0).  The constant vector is described by cid and cn: a u8
 // base constant pool identifier and u8 length, such that element i of the
 // vector (most significant first, mirroring the register vector layout)
-// resides at pool index cid+i.  The general (WIDE) form serves as the
+// resides at pool index cid+i.  The general (wide) form serves as the
 // fallback whenever the compact fields do not fit — a wide (u16) base
 // register, or a base pool identifier exceeding u8.  It keeps the u16 skip in
 // the first word, carrying the register vector (u16 base and length) in the
@@ -388,7 +389,7 @@ func DecodeSkipIf_rc[W word.Word[W]](pc uint32, codes []uint32, pool []W) (skip 
 // in the third:
 //
 // +--------+--------+--------+--------+
-// |      skip       |  n/a   | opcode |
+// |      skip       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       nv        |       rs0       |
 // +-----------------+-----------------+
@@ -420,7 +421,7 @@ func encodeSkipIf_rcv[W word.Word[W]](skip uint32, rs0 RegisterVector, constants
 	}
 	// The compact form carries a u8 base pool identifier and u8 length
 	// describing the constant vector as a consecutive run of pool entries;
-	// anything larger falls back to the general (WIDE) form.  NOTE: pool
+	// anything larger falls back to the general (wide) form.  NOTE: pool
 	// identifiers are stable across encoding passes (interning), so this
 	// choice cannot oscillate whilst the layout reaches a fixpoint.
 	if !IsWideRegisters(rs0.Base) {
@@ -435,7 +436,7 @@ func encodeSkipIf_rcv[W word.Word[W]](skip uint32, rs0 RegisterVector, constants
 	var cid = env.ConstantVectorIndex(constants)
 	//
 	return []uint32{
-		skip<<16 | opcode | WIDE,
+		skip<<16 | (WIDE_SEQ_rcv+condOffset(op))<<8 | WIDE,
 		uint32(nv)<<16 | uint32(rs0.Base),
 		uint32(nv)<<16 | uint32(cid),
 	}
@@ -446,7 +447,6 @@ func encodeSkipIf_rcv[W word.Word[W]](skip uint32, rs0 RegisterVector, constants
 func DecodeSkipIf_rcv[W word.Word[W]](pc uint32, codes []uint32, pool []W) (skip uint32, rs0 RegisterVector,
 	constants []W, op Cond, n uint32) {
 	//
-	op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rcv)
 	// NOTE: in both forms, the constant vector is a consecutive run of pool
 	// entries.
 	if IsWideForm(pc, codes) {
@@ -455,6 +455,7 @@ func DecodeSkipIf_rcv[W word.Word[W]](pc uint32, codes []uint32, pool []W) (skip
 			cn  = codes[pc+2] >> 16
 		)
 		//
+		op = condFromOffset(((codes[pc] >> 8) & 0xff) - WIDE_SEQ_rcv)
 		skip = codes[pc] >> 16
 		constants = pool[cid : cid+cn]
 		rs0 = RegisterVector{
@@ -472,6 +473,7 @@ func DecodeSkipIf_rcv[W word.Word[W]](pc uint32, codes []uint32, pool []W) (skip
 		cn    = word1 & 0xff
 	)
 	//
+	op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rcv)
 	skip = word1 >> 16
 	constants = pool[cid : cid+cn]
 	rs0 = RegisterVector{Base: RegisterId((codes[pc] >> 16) & 0xff), Len: util.Cast[uint16](uint(nv))}

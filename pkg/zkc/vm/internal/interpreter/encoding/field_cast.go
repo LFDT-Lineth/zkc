@@ -38,7 +38,7 @@ import (
 // the (now u16) target and source registers two per word:
 //
 // +--------+--------+--------+--------+
-// |  nsrc  |  ntgt  |  n/a   | opcode |
+// |  nsrc  |  ntgt  |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       tgt1      |       tgt0      |
 // +-----------------+-----------------+

@@ -48,7 +48,7 @@ func Ret[W word.Word[W]](p *bytecode.Ret[W], env Environment[W]) []uint32 {
 // all wide forms) and the (now wider) offset into a subsequent word:
 //
 // +-----------------+--------+--------+
-// |   frame width   |  n/a   | opcode |
+// |   frame width   |  wop   |  WIDE  |
 // +-----------------+--------+--------+
 // | ............ offset ............. |
 // +-----------------------------------+
@@ -76,7 +76,7 @@ func encodeRet1(width uint16, roffset uint32) []uint32 {
 	//
 	if roffset > math.MaxUint8 {
 		return []uint32{
-			_width<<16 | RET | WIDE,
+			_width<<16 | WIDE_RET<<8 | WIDE,
 			roffset,
 		}
 	}

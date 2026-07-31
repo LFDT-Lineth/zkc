@@ -51,7 +51,7 @@ func DecodeCat[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) 
 // per word:
 //
 // +--------+--------+--------+--------+
-// |  nsrc  |  ntgt  |  n/a   | opcode |
+// |  nsrc  |  ntgt  |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       tgt1      |       tgt0      |
 // +-----------------+-----------------+
@@ -79,7 +79,7 @@ func encodeRegisterLists(opcode uint32, targets []RegisterId, sources []Register
 	)
 	//
 	if IsWideRegisters(regs...) {
-		var codes = []uint32{nsrc | ntgt | opcode | WIDE}
+		var codes = []uint32{nsrc | ntgt | wideRegisterListOpcode(opcode)<<8 | WIDE}
 		//
 		return append(codes, PackShortsIntoCodes(regs)...)
 	}
@@ -90,6 +90,21 @@ func encodeRegisterLists(opcode uint32, targets []RegisterId, sources []Register
 	)
 	//
 	return append(codes, PackBytesIntoCodes(bytes)...)
+}
+
+// wideRegisterListOpcode maps a register-list opcode (CAT, UINT_TO_FIELD or
+// FIELD_TO_UINT) to its wide counterpart.
+func wideRegisterListOpcode(opcode uint32) uint32 {
+	switch opcode {
+	case CAT:
+		return WIDE_CAT
+	case UINT_TO_FIELD:
+		return WIDE_UINT_TO_FIELD
+	case FIELD_TO_UINT:
+		return WIDE_FIELD_TO_UINT
+	default:
+		panic("unknown register-list opcode")
+	}
 }
 
 // DecodeRegisterLists decodes target and source register lists.

@@ -66,7 +66,7 @@ func Arith[W word.Word[W]](p bytecode.Arith[W], env Environment[W]) []uint32 {
 // first word, with both source registers in a second:
 //
 // +--------+--------+--------+--------+
-// |        rd       |  n/a   | opcode |
+// |        rd       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       rs0       |       rs1       |
 // +-----------------+-----------------+
@@ -79,7 +79,7 @@ func encodeArith_2n1(aop bytecode.Operation, rs0, rs1, rd uint16) []uint32 {
 	//
 	if IsWideRegisters(rs0, rs1, rd) {
 		return []uint32{
-			uint32(rd)<<16 | opcode | WIDE,
+			uint32(rd)<<16 | (WIDE_ADD_2n1+uint32(aop-bytecode.OP_ADD))<<8 | WIDE,
 			uint32(rs1) | uint32(rs0)<<16,
 		}
 	}
@@ -122,7 +122,7 @@ func DecodeArith_2n1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) 
 // the (now u16) registers into a subsequent word:
 //
 // +--------+--------+--------+--------+
-// |       cid       |  n/a   | opcode |
+// |       cid       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       rs        |        rd       |
 // +-----------------+-----------------+
@@ -160,7 +160,7 @@ func encodeArith_1n1c[W word.Word[W]](aop bytecode.Operation, rs, rd uint16, con
 	// form only a u8 immediate.
 	if IsWideRegisters(rs, rd) || constant.Cmp64(0xff) > 0 {
 		return []uint32{
-			uint32(env.ConstantIndex(constant))<<16 | opcode | WIDE,
+			uint32(env.ConstantIndex(constant))<<16 | (WIDE_ADDC+uint32(aop-bytecode.OP_ADD))<<8 | WIDE,
 			uint32(rd) | uint32(rs)<<16,
 		}
 	}
@@ -245,7 +245,7 @@ func DecodeLdc_1[W word.Word[W]](pc uint32, codes []uint32) (constant W, rd uint
 // register into a subsequent word:
 //
 // +--------+--------+--------+--------+
-// |       cid       |  n/a   | opcode |
+// |       cid       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       n/a       |        rd       |
 // +-----------------+-----------------+
@@ -258,7 +258,7 @@ func encodeLdc_w[W word.Word[W]](constant W, rd uint16, env Environment[W]) []ui
 	//
 	if IsWideRegisters(rd) {
 		return []uint32{
-			cid<<16 | LDC_w | WIDE,
+			cid<<16 | WIDE_LDC_w<<8 | WIDE,
 			uint32(rd),
 		}
 	}
@@ -293,7 +293,7 @@ func DecodeLdc_w[W word.Word[W]](pc uint32, codes []uint32, pool []W) (constant 
 // The wide form moves the (now u16) registers into a subsequent word:
 //
 // +--------+--------+--------+--------+
-// |           n/a            | opcode |
+// |       n/a       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       rs        |        rd       |
 // +-----------------+-----------------+
@@ -303,7 +303,7 @@ func DecodeLdc_w[W word.Word[W]](pc uint32, codes []uint32, pool []W) (constant 
 func encodeMove_1s1(rs, rd uint16) []uint32 {
 	if IsWideRegisters(rs, rd) {
 		return []uint32{
-			MOVE | WIDE,
+			WIDE_MOVE<<8 | WIDE,
 			uint32(rd) | uint32(rs)<<16,
 		}
 	}
@@ -353,7 +353,7 @@ func DecodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 // u16) target and source registers two per word:
 //
 // +--------+--------+--------+--------+
-// |   bw   |  nsrc  |  n/a   | opcode |
+// |   bw   |  nsrc  |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |      ntgt       |       cid       |
 // +-----------------+-----------------+
@@ -394,7 +394,10 @@ func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterI
 	)
 	//
 	if IsWideRegisters(regs...) {
-		codes := []uint32{bw | nsrc | opcode | WIDE, uint32(len(targets))<<16 | cid}
+		codes := []uint32{
+			bw | nsrc | (WIDE_ADD_nm+uint32(aop-bytecode.OP_ADD))<<8 | WIDE,
+			uint32(len(targets))<<16 | cid,
+		}
 		//
 		return append(codes, PackShortsIntoCodes(regs)...)
 	}

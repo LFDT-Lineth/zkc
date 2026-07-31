@@ -49,13 +49,13 @@ func DecodeFail(pc uint32, codes []uint32) (index uint, sources Operands, n uint
 // Here, nvecs determines the number of packed source register vectors, whilst
 // index identifies the formatted chunks (i.e. the failure message template) to
 // emit.  Each source vector is encoded as a (base, len) byte pair, packed two
-// vectors per word.  The wide form moves the index into a word of its own
-// (leaving bits 8-23 of the first word clear, as for all wide forms) and
-// packs each vector as a (base, len) pair of u16 operands (i.e. one word per
-// vector):
+// vectors per word.  The wide form is dispatched via the WIDE escape opcode,
+// carrying its wide opcode (WIDE_FAIL) in the second byte; the index moves
+// into a word of its own, with each vector packed as a (base, len) pair of
+// u16 operands (i.e. one word per vector):
 //
 // +--------+--------+--------+--------+
-// |  nvecs |       n/a       | opcode |
+// |  nvecs |  n/a   |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       n/a       |      index      |
 // +-----------------+-----------------+
@@ -68,8 +68,7 @@ func encodeFail_n(index uint16, sources []RegisterVector) []uint32 {
 	var nsources = uint32(util.Cast[uint8](uint(len(sources)))) << 24
 	//
 	if IsWideRegisterVectors(sources) {
-		// nolint
-		var codes = []uint32{nsources | FAIL | WIDE, uint32(index)}
+		var codes = []uint32{nsources | WIDE_FAIL<<8 | WIDE, uint32(index)}
 		//
 		return append(codes, PackShortsIntoCodes(RegisterVectorsAsShorts(sources))...)
 	}

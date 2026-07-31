@@ -37,7 +37,7 @@ func Bitwise[W word.Word[W]](p *bytecode.Bitwise[W]) []uint32 {
 // both source registers in a third:
 //
 // +--------+--------+--------+--------+
-// |        rd       |  n/a   | opcode |
+// |        rd       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       n/a       |     bitwidth    |
 // +-----------------+-----------------+
@@ -52,7 +52,7 @@ func encodeBitwise(op bytecode.Operation, rd, lhs, rhs RegisterId, bitwidth uint
 	//
 	if IsWideRegisters(rd, lhs, rhs) {
 		return []uint32{
-			uint32(rd)<<16 | opcode | WIDE,
+			uint32(rd)<<16 | (WIDE_AND+uint32(op-bytecode.OP_AND))<<8 | WIDE,
 			uint32(bitwidth),
 			uint32(lhs) | uint32(rhs)<<16,
 		}

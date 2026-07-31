@@ -127,7 +127,7 @@ func rwModeOf(kind uint8, write bool) RwMode {
 // per word:
 //
 // +--------+--------+--------+--------+
-// |  ndata |  naddr |  n/a   | opcode |
+// |  ndata |  naddr |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       ra0       |       id        |
 // +-----------------+-----------------+
@@ -152,7 +152,7 @@ func encodeReadWrite_sn(m RwMode, id uint16, addr []RegisterId, data []RegisterI
 	//
 	if IsWideRegisters(regs...) || id > math.MaxUint8 {
 		var (
-			codes = []uint32{ndata | naddr | opcode | WIDE}
+			codes = []uint32{ndata | naddr | (WIDE_RD_ROM_nm+uint32(m.Tag()))<<8 | WIDE}
 			// The identifier occupies the first packed slot, followed by the
 			// address and data registers.
 			shorts = make([]uint16, 0, 1+len(regs))
