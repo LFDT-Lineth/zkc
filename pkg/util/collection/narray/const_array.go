@@ -10,12 +10,14 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package array
+package narray
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
@@ -38,9 +40,41 @@ func NewConstantArray[T word.Word[T]](height uint, bitwidth uint, value T) *Cons
 	return &ConstantArray[T]{height, bitwidth, value}
 }
 
+// Append new word on this array
+func (p *ConstantArray[T]) Append(word T) {
+	if word.Cmp(p.value) != 0 {
+		panic("invalid constant")
+	}
+	//
+	p.height++
+}
+
 // Clone makes clones of this array producing an otherwise identical copy.
 func (p *ConstantArray[T]) Clone() MutArray[T] {
 	return &ConstantArray[T]{p.height, p.bitwidth, p.value}
+}
+
+// Encode implementation for Array interface.  The natural encoding of a
+// constant array is simply its constant value, written once as a
+// length-prefixed sequence of raw bytes.
+func (p *ConstantArray[T]) Encode(buffer *bytes.Buffer) {
+	writeWordBytes(buffer, p.value.Bytes())
+}
+
+// Decode implementation for MutArray interface.  This reads the constant value
+// (as produced by Encode), and sets the array to hold the given number of
+// copies of it.
+func (p *ConstantArray[T]) Decode(height uint, buffer *bytes.Buffer) error {
+	data, err := readWordBytes(buffer)
+	//
+	if err != nil {
+		return err
+	}
+	//
+	p.value = p.value.SetBytes(data)
+	p.height = height
+	//
+	return nil
 }
 
 // Len returns the number of elements in this word array.
@@ -66,34 +100,12 @@ func (p *ConstantArray[T]) Get(index uint) T {
 
 // Set sets the field element at the given index in this array, overwriting the
 // original value.
-func (p *ConstantArray[T]) Set(index uint, word T) MutArray[T] {
+func (p *ConstantArray[T]) Set(index uint, word T) {
 	if !word.Equals(p.value) {
 		// NOTE: this can be implemented by changing the representation to
 		// something which can be mutated.
-		panic("unsupported operation")
+		panic("invalid constant")
 	}
-	//
-	return p
-}
-
-// Pad implementation for MutArray interface.
-func (p *ConstantArray[T]) Pad(n uint, m uint, padding T) {
-	if !padding.Equals(p.value) {
-		// NOTE: this can be implemented by changing the representation to
-		// something which can be mutated.
-		panic("unsupported operation")
-	}
-	//
-	p.height += n + m
-}
-
-// Slice out a subregion of this array.
-func (p *ConstantArray[T]) Slice(start uint, end uint) Array[T] {
-	var (
-		height = end - start
-	)
-	// Done
-	return &ConstantArray[T]{height, p.bitwidth, p.value}
 }
 
 func (p *ConstantArray[T]) String() string {
@@ -112,4 +124,9 @@ func (p *ConstantArray[T]) String() string {
 	sb.WriteString("]")
 
 	return sb.String()
+}
+
+// ToLegacy implementation for MutArray interface
+func (p *ConstantArray[T]) ToLegacy() array.MutArray[T] {
+	return array.NewConstantArray(p.height, p.bitwidth, p.value)
 }

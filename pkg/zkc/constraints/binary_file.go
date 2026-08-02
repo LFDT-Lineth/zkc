@@ -29,6 +29,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	tracer "github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -75,7 +76,7 @@ type BinaryFile[F field.Element[F]] struct {
 // the header (pass nil for none).  A field configuration is required to allow
 // clients to check they are targeting the expected field.
 func NewBinaryFile[F field.Element[F]](metadata []byte, attributes []Attribute, config field.Config,
-	maxStaticDepth uint, machine vm.Program[vm.Uint]) *BinaryFile[F] {
+	maxStaticHeight uint, machine vm.Program[vm.Uint]) *BinaryFile[F] {
 	//
 	return &BinaryFile[F]{
 		Header{ZKC_EXEC, BINFILE_MAJOR_VERSION, BINFILE_MINOR_VERSION, metadata},
@@ -105,12 +106,12 @@ func (p *BinaryFile[F]) Field() field.Config {
 	return p.program.Field()
 }
 
-// MaxStaticDepth records the maximum depth (i.e. number of rows) of static
-// tables used when this binary was compiled.  It must be carried in the file
-// so that constraints regenerated from it match those produced at compile
-// time (the range constraints baked into the machine depend on this value).
-func (p *BinaryFile[F]) MaxStaticDepth() uint {
-	return p.program.MaxStaticDepth()
+// MaxStaticHeight records the maximum height (i.e. number of rows) of static
+// tables used when this binary was compiled.  It must be carried in the file so
+// that constraints regenerated from it match those produced at compile time
+// (the range constraints baked into the machine depend on this value).
+func (p *BinaryFile[F]) MaxStaticHeight() uint {
+	return p.program.MaxStaticHeight()
 }
 
 // AirConstraints returns the arithmetic (AIR) constraints encoded in this file.
@@ -123,7 +124,7 @@ func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
 	var (
 		stats = util.NewPerfStats()
 		// Generate arithmetic intermediate representation
-		air = GenerateAirConstraints[vm.Uint, F](p.program, p.Field(), p.MaxStaticDepth())
+		air = GenerateAirConstraints[vm.Uint, F](p.program, p.Field(), p.MaxStaticHeight())
 	)
 	// cache result
 	p.constraintsCache = util.Some(air)
@@ -174,14 +175,15 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 ) (output map[string][]byte, rtr rtrace.Trace[F], tr trace.Trace[F], errs []error) {
 	//
 	var (
-		processor = &postProcess[vm.Uint32, F]{}
 		//
 		stats = util.NewPerfStats()
 		// Lower bytecode program
 		prog32 = vm.ProgramToProgram[vm.Uint, vm.Uint32](p.program)
+		//
+		builder = tracer.NewBuilder[vm.Uint32, F, *rtrace.CompactModule[F]](prog32)
 	)
 	// Execute machine in chunks of 1K steps
-	rtr, output, errs = vm.BootAndTrace(prog32, input, math.MaxUint, processor)
+	rtr, output, errs = vm.BootAndTrace(prog32, input, math.MaxUint, builder)
 	//
 	if len(errs) == 0 {
 		// Extract AIR constraints
@@ -189,7 +191,7 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 		// Construct trace builder
 		builder := ir.NewTraceBuilder[F]().
 			WithValidation(cfg.validate).
-			WithDefensivePadding(true).
+			WithDefensivePadding(false).
 			WithExpansionChecks(true).
 			WithExpansion(true).
 			WithParallelism(cfg.parallel).

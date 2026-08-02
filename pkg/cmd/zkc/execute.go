@@ -61,8 +61,6 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	var (
 		errors []error
 		build  = GetBuildConfig[F](cmd, field)
-		//
-		traceConfig = constraints.DEFAULT_TRACE_CONFIG.WithPadding(build.padding)
 		// outputFile file for tracep
 		outputFile = GetString(cmd, "output")
 		// check constraints
@@ -83,6 +81,10 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		input   map[string][]byte
 		outputs map[string][]byte
 	)
+	// Configure tracing
+	traceConfig := constraints.DEFAULT_TRACE_CONFIG.
+		WithPadding(build.padding).
+		WithBatchSize(GetUint(cmd, "batch"))
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
 	// Build artifacts (compiles source files or loads a prebuilt binary).
@@ -90,7 +92,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// Translate bytecode => word machine
 	program := vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
 	// Wrap the word machine in a binary file for execution / tracing / checking.
-	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticDepth(), artifacts.ir)
+	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticHeight(), artifacts.ir)
 	// =====================================================
 	// Trace / Execute
 	// =====================================================
@@ -179,6 +181,7 @@ func init() {
 	rootCmd.AddCommand(executeCmd)
 	executeCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
 	executeCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
+	executeCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
 	executeCmd.Flags().String("checkpoint", "",
 		"checkpoint a function: \"f:N\" on every Nth call to f, or \"f@N\" once after N calls to f")
 	executeCmd.Flags().Bool("resume", false,
