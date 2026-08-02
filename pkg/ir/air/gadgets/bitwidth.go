@@ -364,7 +364,7 @@ func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F],
 				// record have seen item
 				seen.Insert(ith)
 				// append and record
-				arr = arr.Append(ith)
+				arr.Pad(0, 1, ith)
 			}
 		}
 	}
@@ -375,7 +375,7 @@ func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F],
 			// record have seen item
 			seen.Insert(ith)
 			// append and record
-			arr = arr.Append(ith)
+			arr.Pad(0, 1, ith)
 		}
 	}
 	// Done

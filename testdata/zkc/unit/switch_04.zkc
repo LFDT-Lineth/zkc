@@ -21,11 +21,11 @@ fn main() {
         case CASE_B: {
             discr = deal_with(discr) + 1
         }
-        default: {
-            discr = 17
-        }
         case CASE_C: {
             discr = deal_with(discr) + 3
+        }
+        default: {
+            discr = 17
         }
     }
 

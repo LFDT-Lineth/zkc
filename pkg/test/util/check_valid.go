@@ -51,7 +51,7 @@ var (
 		gogen:             true,
 		verbose:           false,
 		sampling:          util.None[float64](),
-		maxStaticDepths:   []uint{codegen.DEFAULT_MAX_STATIC_DEPTH},
+		maxStaticHeights:  []uint{codegen.DEFAULT_MAX_STATIC_HEIGHT},
 		paddingStrategies: map[string]ir.PaddingStrategy{
 			"next-power-of-two-padding": ir.NextPowerOfTwoPadding,
 		}}
@@ -75,18 +75,18 @@ type Config struct {
 	sampling util.Option[float64]
 	// determines how much front padding is added to the generated trace.
 	paddingStrategies map[string]ir.PaddingStrategy
-	// maxStaticDepths controls the maximum depth (i.e. number of rows) of static
+	// maxStaticHeights controls the maximum heights (i.e. number of rows) of static
 	// range tables.  Widths whose enumeration would exceed this are range-checked
-	// recursively instead.  Defaults to codegen.DEFAULT_MAX_STATIC_DEPTH.
-	maxStaticDepths []uint
+	// recursively instead.  Defaults to codegen.DEFAULT_MAX_STATIC_HEIGHT.
+	maxStaticHeights []uint
 	// enable checkpoint testing.
 	checkpointing util.Option[util.Pair[string, util.Counter]]
 }
 
-// MaxStaticDepths sets the maximum depths (i.e. number of rows) of static range
+// MaxStaticHeights sets the maximum heights number of rows) of static range
 // tables to test with.
-func (p Config) MaxStaticDepths(depths ...uint) Config {
-	p.maxStaticDepths = depths
+func (p Config) MaxStaticHeights(heights ...uint) Config {
+	p.maxStaticHeights = heights
 	//
 	return p
 }
@@ -170,22 +170,22 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 				Verbose(config.verbose).Field(f).
 				Word(DEFAULT_WORD)
 		)
-		// Only run fast mode tests for the default depth / padding, since
-		// neither static depth nor padding impacts on fast mode.
+		// Only run fast mode tests for the default height / padding, since
+		// neither static height nor padding impacts on fast mode.
 		t.Run(fmt.Sprintf("%s/fastmode", f.Name), func(t *testing.T) {
 			t.Parallel()
 			//
 			checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(config.fastModeSplitting),
 				config.Constraints(false), testcases[f])
 		})
-		// Run tracing tests across differing static depths to ensure resiliance
-		// against changing the default depth.
-		for _, depth := range config.maxStaticDepths {
+		// Run tracing tests across differing static heights to ensure resiliance
+		// against changing the default height.
+		for _, height := range config.maxStaticHeights {
 			//
-			t.Run(fmt.Sprintf("%s/depth=%d", f.Name, depth), func(t *testing.T) {
+			t.Run(fmt.Sprintf("%s/height=%d", f.Name, height), func(t *testing.T) {
 				t.Parallel()
 				// Run all tests in tracing mode
-				checkValidInternal(t, testfile, cfg.MaxStaticDepth(depth).FastMode(false), config, testcases[f])
+				checkValidInternal(t, testfile, cfg.MaxStaticHeight(height).FastMode(false), config, testcases[f])
 			})
 		}
 	}
@@ -423,13 +423,13 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg c
 	// Dispatch based on field config
 	switch f {
 	case field.GF_251:
-		testConstraintsWithField[gf251.Element](t, p, test, f, cfg.GetMaxStaticDepth(), paddingStrategy)
+		testConstraintsWithField[gf251.Element](t, p, test, f, cfg.GetMaxStaticHeight(), paddingStrategy)
 	case field.GF_8209:
-		testConstraintsWithField[gf8209.Element](t, p, test, f, cfg.GetMaxStaticDepth(), paddingStrategy)
+		testConstraintsWithField[gf8209.Element](t, p, test, f, cfg.GetMaxStaticHeight(), paddingStrategy)
 	case field.KOALABEAR_16:
-		testConstraintsWithField[koalabear.Element](t, p, test, f, cfg.GetMaxStaticDepth(), paddingStrategy)
+		testConstraintsWithField[koalabear.Element](t, p, test, f, cfg.GetMaxStaticHeight(), paddingStrategy)
 	case field.BLS12_377:
-		//testConstraintsWithField[bls12_377.Element](t, p, test, f, cfg.GetMaxStaticDepth())
+		//testConstraintsWithField[bls12_377.Element](t, p, test, f, cfg.GetMaxStaticHeight())
 		panic("BLS12_377 not currently supported for tracing")
 	default:
 		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
@@ -437,11 +437,11 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg c
 }
 
 func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.Uint], test TestCase,
-	f field.Config, maxStaticDepth uint, paddingStrategy ir.PaddingStrategy) {
+	f field.Config, maxStaticHeight uint, paddingStrategy ir.PaddingStrategy) {
 	//
 	var (
 		// construct binary file
-		binf = constraints.NewBinaryFile[F](nil, nil, f, maxStaticDepth, p)
+		binf = constraints.NewBinaryFile[F](nil, nil, f, maxStaticHeight, p)
 		// decode inputs / outputs
 		inputs = vm.FilterInputs(p, test.data)
 		// trace configuration (optionally expanding each module up to the next

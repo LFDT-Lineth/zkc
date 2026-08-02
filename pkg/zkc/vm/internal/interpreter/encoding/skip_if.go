@@ -15,7 +15,6 @@ package encoding
 import (
 	"fmt"
 	"math"
-	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -340,22 +339,20 @@ func encodeSkipIf_rc[W word.Word[W]](skip uint8, rs0 RegisterId, constant W, op 
 // skip.
 func DecodeSkipIf_rc[W word.Word[W]](pc uint32, codes []uint32) (skip uint32, rs0 RegisterId, constant W,
 	op Cond, n uint32) {
-	var (
-		c, limb big.Int
-		nlimbs  = (codes[pc] >> 8) & 0xff
-	)
+	var nlimbs = (codes[pc] >> 8) & 0xff
 	//
 	op = condFromOffset((codes[pc] & OPCODE_MASK) - SEQ_rc)
 	skip = codes[pc] >> 24
 	rs0 = RegisterId((codes[pc] >> 16) & 0xff)
-	// Unpack limbs, most significant limb first.
+	// Unpack limbs, most significant limb first.  The constant was encoded
+	// from a W, so it fits: the shift never spills into hi and, since the low
+	// 32 bits are zero after shifting, the add cannot carry.
 	for i := nlimbs; i > 0; i-- {
-		limb.SetUint64(uint64(codes[pc+i]))
-		c.Lsh(&c, 32)
-		c.Or(&c, &limb)
+		_, constant = constant.Shl64(32)
+		constant, _ = constant.Add64(uint64(codes[pc+i]))
 	}
 	//
-	return skip, rs0, constant.SetBigInt(&c), op, nlimbs + 1
+	return skip, rs0, constant, op, nlimbs + 1
 }
 
 // ============================================================================
@@ -474,17 +471,18 @@ func DecodeSkipIf_rcv[W word.Word[W]](pc uint32, codes []uint32) (skip uint32, r
 	}
 	//
 	constants = make([]W, nv)
-	// Unpack each element's limbs, most significant limb first.
+	// Unpack each element's limbs, most significant limb first.  Each element
+	// was encoded from a W, so it fits: the shift never spills into hi and,
+	// since the low 32 bits are zero after shifting, the add cannot carry.
 	for e := uint32(0); e < nv; e++ {
-		var c, limb big.Int
+		var c W
 		//
 		for i := nc; i > 0; i-- {
-			limb.SetUint64(uint64(codes[first+(e*nc)+i-1]))
-			c.Lsh(&c, 32)
-			c.Or(&c, &limb)
+			_, c = c.Shl64(32)
+			c, _ = c.Add64(uint64(codes[first+(e*nc)+i-1]))
 		}
 		//
-		constants[e] = constants[e].SetBigInt(&c)
+		constants[e] = c
 	}
 	//
 	rs0 = RegisterVector{Base: base, Len: util.Cast[uint16](uint(nv))}

@@ -15,9 +15,9 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-// DEFAULT_MAX_STATIC_DEPTH is the default maximum depth (i.e. number of rows) of
+// DEFAULT_MAX_STATIC_HEIGHT is the default maximum height (i.e. number of rows) of
 // static tables, used when no override is supplied.  It is 2^16.
-const DEFAULT_MAX_STATIC_DEPTH uint = 65536
+const DEFAULT_MAX_STATIC_HEIGHT uint = 65536
 
 // DEFAULT_CONFIG is the configuration used when no overrides are supplied.
 // Vectorisation is enabled, which matches the behaviour expected by the
@@ -27,12 +27,12 @@ const DEFAULT_MAX_STATIC_DEPTH uint = 65536
 var DEFAULT_CONFIG = Config{
 	field: field.KOALABEAR_16,
 	// NOTE: this should be deprecated to u64 at some point.
-	word:           vm.WORD_UINT128,
-	fastMode:       false,
-	inlining:       true,
-	verbose:        false,
-	splitting:      true,
-	maxStaticDepth: DEFAULT_MAX_STATIC_DEPTH,
+	word:            vm.WORD_UINT128,
+	fastMode:        false,
+	inlining:        true,
+	verbose:         false,
+	splitting:       true,
+	maxStaticHeight: DEFAULT_MAX_STATIC_HEIGHT,
 }
 
 // Config captures the tunable aspects of the ZkC code generator.  Instances
@@ -62,10 +62,10 @@ type Config struct {
 	verbose bool
 	// splitting controls whether or not register splitting is enabled.
 	splitting bool
-	// maxStaticDepth controls the maximum depth (i.e. number of rows) of static tables.
-	// This is used to limit the size of static tables, as required by the prover.
-	// It defaults to 2^16.
-	maxStaticDepth uint
+	// maxStaticHeight controls the maximum height (i.e. number of rows) of
+	// static tables. This is used to limit the size of static tables, as
+	// required by the prover. It defaults to 2^16.
+	maxStaticHeight uint
 }
 
 // Field sets the target field configuration to use for this compiler.
@@ -91,18 +91,18 @@ func (p Config) GetField() field.Config {
 	return p.field
 }
 
-// MaxStaticDepth sets the maximum depth (ie nb of rows) of static tables.
-func (p Config) MaxStaticDepth(depth uint) Config {
+// MaxStaticHeight sets the maximum height (ie nb of rows) of static tables.
+func (p Config) MaxStaticHeight(height uint) Config {
 	var q = p
 	//
-	q.maxStaticDepth = depth
+	q.maxStaticHeight = height
 	//
 	return q
 }
 
-// GetMaxStaticDepth returns the maximum depth (ie nb of rows) of static tables.
-func (p Config) GetMaxStaticDepth() uint {
-	return p.maxStaticDepth
+// GetMaxStaticHeight returns the maximum height (ie nb of rows) of static tables.
+func (p Config) GetMaxStaticHeight() uint {
+	return p.maxStaticHeight
 }
 
 // Inlining returns a copy of this Config in which function inlining is either

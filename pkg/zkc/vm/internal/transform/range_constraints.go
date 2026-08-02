@@ -50,14 +50,14 @@ const (
 //
 // NOTE: this transform must run after register splitting.
 func AddRangeConstraints[W word.Word[W]](cfg field.Config, program descriptor.Program[W],
-	maxStaticDepth uint) descriptor.Program[W] {
+	maxStaticHeight uint) descriptor.Program[W] {
 	var (
 		modules = program.Modules()
-		// maxStaticWidth is the largest X for which 2^X <= maxStaticDepth (the
-		// max static table size), i.e. floor(log2(maxStaticDepth)).
+		// maxStaticWidth is the largest X for which 2^X <= maxStaticHeight (the
+		// max static table size), i.e. floor(log2(maxStaticHeigh)).
 		// It represents the maximum register width for which a static table can be use to range-check it.
 		// Wider registers require recursive range modules.
-		maxStaticWidth = uint(bits.Len(maxStaticDepth) - 1)
+		maxStaticWidth = uint(bits.Len(maxStaticHeight) - 1)
 	)
 
 	// First step, generate the range modules for every width which occurs on some register.
