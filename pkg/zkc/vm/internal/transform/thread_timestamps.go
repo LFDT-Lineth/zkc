@@ -452,36 +452,48 @@ func (t *threader[W]) threadVector(vec BytecodeVector[W], entry stamps) Bytecode
 			continue
 		}
 		//
-		switch insn := insns[i].(type) {
-		case *bytecode.ReadWrite[W]:
-			if x := t.effectIndex(insn.Id); x >= 0 {
-				reg, pre := t.stampRegister(t.resolve(x, states.vals[x]))
-				at(i).fall = append(at(i).fall, pre...)
-				replace[i] = withStamp(insn, reg)
-			}
-		case *bytecode.Call[W]:
-			if rebuilt, pre := t.threadCall(uint(i), insn, states); rebuilt != nil {
-				at(i).fall = append(at(i).fall, pre...)
-				replace[i] = rebuilt
-			}
-		case *bytecode.Jmp[W]:
-			// The jump target is entered with canonical stamps.
-			at(i).fall = append(at(i).fall, t.canonicalise(states)...)
-		case *bytecode.Ret[W]:
-			// Bind the stamp-out outputs (main has none and returns nothing).
-			if !t.isMain {
-				at(i).fall = append(at(i).fall, t.canonicalise(states)...)
-			}
-		case *bytecode.SkipIf[W]:
-			t.rewriteBranch(insns, i, states, at)
-		case *bytecode.Switch[W]:
-			t.rewriteBranch(insns, i, states, at)
-		case *bytecode.Dispatch[W]:
-			t.rewriteBranch(insns, i, states, at)
-		}
+		t.threadInstruction(insns, i, states, at, replace)
 	}
 	// Rebuild the row, recomputing intra-row skip amounts around insertions.
 	return rebuildVector(insns, inserts, replace)
+}
+
+// threadInstruction rewrites the instruction at position i against the (already
+// merged) state entering it: a read-write access gains its stamp operand, a
+// call to an effectful callee is threaded, an exit (jump, or return outside
+// main) materialises the canonical stamps its landing assumes, and a branch
+// places the fall-side insertions assumed by its outgoing arcs (rewriteBranch).
+// Instructions indifferent to stamps pass through untouched.
+func (t *threader[W]) threadInstruction(insns []Bytecode[W], i int, states stamps,
+	at func(int) *rowInserts[W], replace map[int]Bytecode[W]) {
+	//
+	switch insn := insns[i].(type) {
+	case *bytecode.ReadWrite[W]:
+		if x := t.effectIndex(insn.Id); x >= 0 {
+			reg, pre := t.stampRegister(t.resolve(x, states.vals[x]))
+			at(i).fall = append(at(i).fall, pre...)
+			replace[i] = withStamp(insn, reg)
+		}
+	case *bytecode.Call[W]:
+		if rebuilt, pre := t.threadCall(uint(i), insn, states); rebuilt != nil {
+			at(i).fall = append(at(i).fall, pre...)
+			replace[i] = rebuilt
+		}
+	case *bytecode.Jmp[W]:
+		// The jump target is entered with canonical stamps.
+		at(i).fall = append(at(i).fall, t.canonicalise(states)...)
+	case *bytecode.Ret[W]:
+		// Bind the stamp-out outputs (main has none and returns nothing).
+		if !t.isMain {
+			at(i).fall = append(at(i).fall, t.canonicalise(states)...)
+		}
+	case *bytecode.SkipIf[W]:
+		t.rewriteBranch(insns, i, states, at)
+	case *bytecode.Switch[W]:
+		t.rewriteBranch(insns, i, states, at)
+	case *bytecode.Dispatch[W]:
+		t.rewriteBranch(insns, i, states, at)
+	}
 }
 
 // mergeAt places the equalising materialisations at a merge point, for the
@@ -494,36 +506,10 @@ func (t *threader[W]) threadVector(vec BytecodeVector[W], entry stamps) Bytecode
 func (t *threader[W]) mergeAt(i int, merged stamps, need []bool, incoming []stampArc,
 	at func(int) *rowInserts[W]) {
 	//
-	var (
-		fall        *stampArc
-		skips       []stampArc
-		conditional *stampArc
-	)
-	//
-	for j := range incoming {
-		if incoming[j].kind == fallArc {
-			fall = &incoming[j]
-		} else {
-			skips = append(skips, incoming[j])
-		}
-	}
+	fall, skips, conditional := classifyArcs(incoming)
 	//
 	if len(skips) == 0 {
 		return
-	}
-	// Conditional edges landing here share a single edge block, so they must
-	// all carry the same states.
-	for j := range skips {
-		if skips[j].kind != condArc {
-			continue
-		}
-		//
-		if conditional == nil {
-			conditional = &skips[j]
-		} else if !stateEquals(conditional.state, skips[j].state) {
-			panic("timestamp threading: conditional skip edges with distinct stamps " +
-				"at one merge point (unsupported control flow shape)")
-		}
 	}
 	//
 	for x, e := range t.effects {
@@ -581,6 +567,36 @@ func (t *threader[W]) mergeAt(i int, merged stamps, need []bool, incoming []stam
 		//
 		at(i).skipOver = fall != nil
 	}
+}
+
+// classifyArcs partitions the arcs into a merge point: the (at most one)
+// fall-through arc, the skip arcs, and — among the latter — the representative
+// conditional arc.  Conditional edges landing at one merge point share a
+// single edge block, so they must all carry the same states; disagreeing
+// conditional edges are an unsupported control-flow shape.
+func classifyArcs(incoming []stampArc) (fall *stampArc, skips []stampArc, conditional *stampArc) {
+	for j := range incoming {
+		if incoming[j].kind == fallArc {
+			fall = &incoming[j]
+		} else {
+			skips = append(skips, incoming[j])
+		}
+	}
+	//
+	for j := range skips {
+		if skips[j].kind != condArc {
+			continue
+		}
+		//
+		if conditional == nil {
+			conditional = &skips[j]
+		} else if !stateEquals(conditional.state, skips[j].state) {
+			panic("timestamp threading: conditional skip edges with distinct stamps " +
+				"at one merge point (unsupported control flow shape)")
+		}
+	}
+	//
+	return fall, skips, conditional
 }
 
 // stateEquals reports whether two states carry identical values for every
