@@ -1,0 +1,5 @@
+;; Declared lengths >= 0xfffffffc trap with arithmetic overflow computing 4 + len.
+{ "data": "0xffffffff", "hash":"0x0000000000000000" }
+{ "data": "0xfffffffe", "hash":"0x0000000000000000" }
+{ "data": "0xfffffffd", "hash":"0x0000000000000000" }
+{ "data": "0xfffffffc", "hash":"0x0000000000000000" }

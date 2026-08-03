@@ -1,0 +1,7 @@
+;; res differs from val + 2130706432 by a small non-zero delta, hence the
+;; comparison fails modulo every field.
+{ "data": "0x00000000_7f000001" }
+{ "data": "0x00000001_7f000000" }
+{ "data": "0x00000002_7f000001" }
+{ "data": "0x00000000_7f000010" }
+{ "data": "0x00000010_7f000000" }

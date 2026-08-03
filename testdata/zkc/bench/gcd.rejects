@@ -1,0 +1,6 @@
+;; All vectors claim an incorrect gcd, forcing the final check to fail.
+{ "data": "0x00000000_00000001_00000002" }
+{ "data": "0x00000001_00000001_00000000" }
+{ "data": "0x00000006_00000004_00000004" }
+{ "data": "0x0000000c_00000008_00000002" }
+{ "data": "0xdeadbeef_deadbeef_00000001" }

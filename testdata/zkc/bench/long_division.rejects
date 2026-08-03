@@ -1,0 +1,5 @@
+;; data[2] must fit in u1: any value >= 2 traps with a bit overflow at the cast.
+{ "data": "0x00000007_00000002_00000002", "result":"0x00000003" }
+{ "data": "0x00000001_00000001_ffffffff", "result":"0x00000001" }
+{ "data": "0x00000000_00000000_00000002", "result":"0xffffffff" }
+{ "data": "0xcafebabe_00000003_00000010", "result":"0x00000001" }

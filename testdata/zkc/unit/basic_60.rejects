@@ -1,0 +1,2 @@
+;; overflow trap: in[0] + 1 does not fit in hi::lo (32 bits)
+{ "in": "0xffffffff", "out": "0x00000000" }

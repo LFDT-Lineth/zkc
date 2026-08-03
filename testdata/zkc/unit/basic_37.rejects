@@ -1,0 +1,8 @@
+{ "data": "0x0000_0001" }
+{ "data": "0x0001_0000" }
+{ "data": "0x01ff_00fe" }
+{ "data": "0xffff_0000" }
+{ "data": "0x1234_0035" }
+;; cast trap: data[1] exceeds u8
+{ "data": "0x0000_0100" }
+{ "data": "0x00ff_ffff" }
