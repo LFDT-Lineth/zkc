@@ -121,7 +121,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// =====================================================
 	// Check Constraints
 	// =====================================================
-	if check && len(errors) == 0 {
+	if check && rtr != nil {
 		checkConstraints(binfile, trace, traceConfig)
 	}
 	// =====================================================
@@ -129,7 +129,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// =====================================================
 	// Open the generated trace in the interactive inspector (if requested).  This
 	// takes over the terminal, so it runs last, after any stdout output above.
-	if inspect && len(errors) == 0 {
+	if inspect && rtr != nil {
 		// Real ZkC functions are public; synthetic modules (e.g. range-check
 		// tables) are private (hidden by default in the inspector).
 		errors = corset.InspectTrace(binfile.LimbsMap(), trace, publicModule, false, 32, 128)

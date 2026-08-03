@@ -13,7 +13,6 @@
 package interpreter
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -38,6 +37,42 @@ func ExtractExecutingState[W word.Word[W]](p *Interpreter[W]) (fid uint16, pc ui
 	lab := p.program.FunctionAt(p.pc)
 	//
 	return lab.ModuleId, uint32(lab.Point.Macro), p.dataStack.SliceEnd(uint(p.fp))
+}
+
+// Failure indicates a machine failure, such as executing a fail instruction.
+// Thus, a machine failure indicates specifically that the machine executed an
+// instruction which caused a recognised problem.  This includes executing a
+// fail instruction, but also other kinds of failures such as arithmetic
+// overflow, etc.  Machine failures are distinct from other forms of error which
+// the interpreter can return, the latter are really just internal failures that
+// should never arise.
+type Failure struct {
+	Message string
+}
+
+// Error implementation for error interface.
+func (p *Failure) Error() string {
+	return p.Message
+}
+
+// Failure constructs a suitable failure.
+func failure(msg string, values ...any) error {
+	return &Failure{fmt.Sprintf(msg, values...)}
+}
+
+// failure records the current machine state and then constructs a suitable
+// machine failure.  Recording is done by triggering the breakpoint handler
+// which, outside of tracing, is a no-op (see New).  Routing every recognised
+// runtime failure through here ensures the row which triggered the failure is
+// committed to the trace being generated, so the constraints can reject it
+// (e.g. a u32 addition which overflows leaves a wrapped result in the frame
+// that violates the corresponding arithmetic / range constraint).
+func (p *Interpreter[W]) failure(msg string, values ...any) error {
+	// Snapshot the current (failing) state.  A failing row is never a normal
+	// return, so the opcode passed to the handler is irrelevant (0 ≠ RET).
+	p.breakpoint(0)
+	//
+	return failure(msg, values...)
 }
 
 // Interpreter is a fast, register-based interpreter for the bytecode form of a
@@ -181,11 +216,11 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 		woms:    woms,
 		rams:    rams,
 		prams:   prams,
-		// Default breakpointer: panics until a real one is configured via
-		// BreakPointer, since a breakpoint is meaningless without one.
-		breakpoint: func(uint32) {
-			panic("no breakpointer configured")
-		},
+		// Default breakpointer: a no-op.  A real handler is installed via
+		// BreakPointer when tracing / debugging (see BootAndTrace, BootAndDebug).
+		// Note that failures route through this handler too (see failure), so it
+		// must be safe to invoke even when no explicit handler is configured.
+		breakpoint: func(uint32) {},
 	}
 }
 
@@ -556,7 +591,7 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		case encoding.FAIL:
 			return nsteps, p.executeFail(p.pc, bytecodes, frame)
 		case encoding.CHECKCAST:
-			p.pc, err = executeCheckCast(p.pc, bytecodes, frame)
+			p.pc, err = p.executeCheckCast(p.pc, bytecodes, frame)
 		case encoding.DEBUG:
 			p.pc = p.executeDebug(p.pc, bytecodes, frame)
 		case encoding.LDC:
@@ -639,17 +674,17 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeWritePagedRam_sn(p.pc, bytecodes, frame, p.prams)
 		// Arithmetic Operations
 		case encoding.ADD_2n1:
-			p.pc, err = executeAdd_2n1(p.pc, bytecodes, frame)
+			p.pc, err = p.executeAdd_2n1(p.pc, bytecodes, frame)
 		case encoding.ADDC:
-			p.pc, err = executeAdd_1n1c(p.pc, bytecodes, frame)
+			p.pc, err = p.executeAdd_1n1c(p.pc, bytecodes, frame)
 		case encoding.SUB_2n1:
 			p.pc, err = p.executeSub_2n1(p.pc, bytecodes, frame)
 		case encoding.SUBC:
 			p.pc, err = p.executeSub_1n1c(p.pc, bytecodes, frame)
 		case encoding.MUL_2n1:
-			p.pc, err = executeMul_2n1(p.pc, bytecodes, frame)
+			p.pc, err = p.executeMul_2n1(p.pc, bytecodes, frame)
 		case encoding.MULC:
-			p.pc, err = executeMul_1n1c(p.pc, bytecodes, frame)
+			p.pc, err = p.executeMul_1n1c(p.pc, bytecodes, frame)
 		case encoding.ADD_nm:
 			p.pc, err = p.executeAdd_nm(p.pc, bytecodes, frame)
 		case encoding.SUB_nm:
@@ -657,9 +692,9 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		case encoding.MUL_nm:
 			p.pc, err = p.executeMul_nm(p.pc, bytecodes, frame)
 		case encoding.DIV:
-			p.pc, err = executeDiv(p.pc, bytecodes, frame)
+			p.pc, err = p.executeDiv(p.pc, bytecodes, frame)
 		case encoding.REM:
-			p.pc, err = executeRem(p.pc, bytecodes, frame)
+			p.pc, err = p.executeRem(p.pc, bytecodes, frame)
 		case encoding.INTRINSIC:
 			p.pc, err = p.executeIntrinsic(p.pc, bytecodes, frame)
 		case encoding.ADDMOD_P:
@@ -801,11 +836,11 @@ func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (ui
 		val, overflow = val.Add(stack[src])
 		//
 		if overflow {
-			return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+			return pc, p.failure("arithmetic overflow")
 		}
 	}
 	//
-	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeMul_nm implements MUL_nm: it multiplies the constant by all sources
@@ -830,10 +865,10 @@ func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (ui
 	// A zero result is exact even when an intermediate product overflowed
 	// (matches executeMul in the slow word machine).
 	if overflow && val.Cmp64(0) != 0 {
-		return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic overflow")
 	}
 	//
-	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeFieldAdd implements ADDMOD_P: it sums the constant and all sources
@@ -906,7 +941,7 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 	//
 	val := loadAcross(module, sources, stack)
 
-	return pc + n, storeAcross(pc, module, targets, val, stack)
+	return pc + n, p.storeAcross(pc, module, targets, val, stack)
 }
 
 // executeUintToField assembles the uint sources and reduces the result modulo P
@@ -928,7 +963,7 @@ func (p *Interpreter[W]) executeUintToField(pc uint32, codes []uint32, stack []W
 func (p *Interpreter[W]) executeFieldToUint(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	targets, sources, n := encoding.DecodeRegisterLists(pc, codes)
 	//
-	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, stack[sources.Next()], stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, stack[sources.Next()], stack)
 }
 
 // executeDebug implements DEBUG: it reproduces the reference word machine's
@@ -956,10 +991,10 @@ func (p *Interpreter[W]) executeFail(pc uint32, codes []uint32, frame []W) error
 	)
 	//
 	if len(chunks) == 0 {
-		return errors.New("machine panic")
+		return p.failure("machine panic")
 	}
 	//
-	return fmt.Errorf("machine panic: %s", p.formatChunks(chunks, sources, frame))
+	return p.failure("%s", p.formatChunks(chunks, sources, frame))
 }
 
 // formatChunks renders a formatted-message chunk-set against the current frame,
@@ -1010,7 +1045,7 @@ func (p *Interpreter[W]) formatArgument(module descriptor.Module[W], format zkc_
 
 // executeAdd_2n1 implements ADD_2n1: stack[rd] = stack[rs0] + stack[rs1],
 // returning an error if the addition overflows the word type.
-func executeAdd_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeAdd_2n1(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rs0, rs1, rd, n = encoding.DecodeArith_2n1(pc, codes)
 		// Read rs0
@@ -1022,7 +1057,7 @@ func executeAdd_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 	)
 	// Check for overflow
 	if overflow {
-		return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic overflow")
 	}
 	//
 	stack[rd] = res
@@ -1031,7 +1066,7 @@ func executeAdd_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 }
 
 // executeAdd_1n1c implements ADDC: stack[rd] = stack[rs] + constant.
-func executeAdd_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeAdd_1n1c(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes)
 		val                 = stack[rs]
@@ -1039,7 +1074,7 @@ func executeAdd_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint
 	)
 	//
 	if overflow {
-		return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic overflow")
 	}
 	//
 	stack[rd] = res
@@ -1077,14 +1112,14 @@ func executeXor[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 // executeCheckCast implements CHECKCAST: it checks that the value in register
 // rd fits within the given bit-width, returning an error if it does not.  The
 // register itself is left unchanged.
-func executeCheckCast[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeCheckCast(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rd, bitwidth, n = encoding.DecodeCheckCast(pc, codes)
 		value           = stack[rd]
 	)
 	// perform check
 	if !value.FitsWithin(uint(bitwidth)) {
-		return pc, fmt.Errorf("bit overflow (0x%s not u%d, pc=0x%x)", value.Text(16), bitwidth, pc)
+		return pc, p.failure("bit overflow (0x%s not u%d)", value.Text(16), bitwidth)
 	}
 	//
 	return pc + n, nil
@@ -1092,11 +1127,11 @@ func executeCheckCast[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uin
 
 // executeDiv implements DIV: stack[rd] = stack[dividend] / stack[divisor],
 // returning an error if the divisor is zero.
-func executeDiv[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeDiv(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var rd, dividend, divisor, n = encoding.DecodeDivRem_2n1(pc, codes)
 	//
 	if stack[divisor].Cmp64(0) == 0 {
-		return pc, errors.New("division by zero")
+		return pc, p.failure("division by zero")
 	}
 	//
 	stack[rd] = stack[dividend].Div(stack[divisor])
@@ -1106,11 +1141,11 @@ func executeDiv[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 
 // executeRem implements REM: stack[rd] = stack[dividend] % stack[divisor],
 // returning an error if the divisor is zero.
-func executeRem[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeRem(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var rd, dividend, divisor, n = encoding.DecodeDivRem_2n1(pc, codes)
 	//
 	if stack[divisor].Cmp64(0) == 0 {
-		return pc, errors.New("division by zero")
+		return pc, p.failure("division by zero")
 	}
 	//
 	stack[rd] = stack[dividend].Rem(stack[divisor])
@@ -1154,7 +1189,7 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 	)
 	//
 	if divisor.Sign() == 0 {
-		return pc, errors.New("division by zero")
+		return pc, p.failure("division by zero")
 	}
 	//
 	var (
@@ -1166,11 +1201,11 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 	w.Sub(w, big.NewInt(1))
 	//
 	if w.Sign() < 0 {
-		return pc, errors.New("arithmetic underflow ")
+		return pc, p.failure("arithmetic underflow")
 	}
 	// Distribute quotient, remainder and witness across their target vectors.
 	for _, val := range []*big.Int{q, r, w} {
-		if err := storeIntrinsicResult(module, &targets, val, stack, pc); err != nil {
+		if err := p.storeIntrinsicResult(module, &targets, val, stack); err != nil {
 			return pc, err
 		}
 	}
@@ -1404,10 +1439,10 @@ func (p *Interpreter[W]) executeWideDivHint(pc, n uint32, targets, sources encod
 	)
 	//
 	if divisor.Sign() == 0 {
-		return pc, errors.New("division by zero")
+		return pc, p.failure("division by zero")
 	}
 	//
-	if err := storeIntrinsicResult(module, &targets, new(big.Int).Quo(dividend, divisor), stack, pc); err != nil {
+	if err := p.storeIntrinsicResult(module, &targets, new(big.Int).Quo(dividend, divisor), stack); err != nil {
 		return pc, err
 	}
 	//
@@ -1430,10 +1465,10 @@ func (p *Interpreter[W]) executeWideRemHint(pc, n uint32, targets, sources encod
 	)
 	//
 	if divisor.Sign() == 0 {
-		return pc, errors.New("division by zero")
+		return pc, p.failure("division by zero")
 	}
 	//
-	if err := storeIntrinsicResult(module, &targets, new(big.Int).Rem(dividend, divisor), stack, pc); err != nil {
+	if err := p.storeIntrinsicResult(module, &targets, new(big.Int).Rem(dividend, divisor), stack); err != nil {
 		return pc, err
 	}
 	//
@@ -1485,8 +1520,8 @@ func loadIntrinsicOperand[W word.Word[W]](module descriptor.Module[W], iter *enc
 // significant limb is written into the highest-indexed register and filling
 // proceeds downwards.  It errors if the value does not fit within the vector's
 // total width.
-func storeIntrinsicResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands,
-	value *big.Int, stack []W, pc uint32) error {
+func (p *Interpreter[W]) storeIntrinsicResult(module descriptor.Module[W], iter *encoding.Operands,
+	value *big.Int, stack []W) error {
 	var (
 		base   = iter.Next()
 		length = uint(iter.Next())
@@ -1508,7 +1543,7 @@ func storeIntrinsicResult[W word.Word[W]](module descriptor.Module[W], iter *enc
 	}
 	//
 	if acc.Sign() != 0 {
-		return fmt.Errorf("bit overflow (0x%s not u%d, pc=0x%x)", value.Text(16), total, pc)
+		return p.failure("bit overflow (0x%s not u%d)", value.Text(16), total)
 	}
 	//
 	return nil
@@ -1723,7 +1758,7 @@ func executeMove_1s1[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint3
 
 // executeMul_2n1 implements MUL_2n1: stack[rd] = stack[rs0] * stack[rs1],
 // returning an error if the multiplication overflows the word type.
-func executeMul_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeMul_2n1(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rs0, rs1, rd, n = encoding.DecodeArith_2n1(pc, codes)
 		// Read rs0
@@ -1735,7 +1770,7 @@ func executeMul_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 	)
 	// Check for overflow
 	if hi.Cmp64(0) != 0 {
-		return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic overflow")
 	}
 	//
 	stack[rd] = lo
@@ -1744,7 +1779,7 @@ func executeMul_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 }
 
 // executeMul_1n1c implements MULC: stack[rd] = stack[rs] * constant.
-func executeMul_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeMul_1n1c(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes)
 		val                 = stack[rs]
@@ -1752,7 +1787,7 @@ func executeMul_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint
 	)
 	//
 	if hi.Cmp64(0) != 0 {
-		return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic overflow")
 	}
 	//
 	stack[rd] = lo
@@ -1918,17 +1953,17 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (ui
 		var src = sources.Next()
 		//
 		if acc, underflow = acc.Add(stack[src]); underflow {
-			return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+			return pc, p.failure("arithmetic underflow")
 		}
 	}
 	//
 	if acc, underflow = acc.Add(constant); underflow {
-		return pc, fmt.Errorf("arithmetic underflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic underflow")
 	} else if val, underflow = val.Sub(acc); underflow {
 		val = val.Slice(bitwidth)
 	}
 	//
-	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeWriteWom_sn implements WR_WOM_nm: it writes ndata consecutive words
@@ -2116,7 +2151,7 @@ func loadAcross[W word.Word[W]](module descriptor.Module[W], sources encoding.Op
 	return value
 }
 
-func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets encoding.Operands, oval W,
+func (p *Interpreter[W]) storeAcross(pc uint32, module descriptor.Module[W], targets encoding.Operands, oval W,
 	stack []W) error {
 	//
 	var (
@@ -2130,14 +2165,16 @@ func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets
 			width  = bitwidthOf(module, target)
 		)
 		//
-		// Low limbs are written first, matching machine.StoreAcross.
+		// Low limbs are written first, matching machine.StoreAcross.  Note the
+		// (wrapped) limbs are written even when the value overflows below, so a
+		// trace being generated records the wrapped result the constraints reject.
 		stack[target] = value.Slice(width)
 		value = value.Shr64(uint64(width))
 		bitwidth += width
 	}
 	//
 	if value.Cmp64(0) != 0 {
-		return fmt.Errorf("bit overflow (0x%s not u%d, pc=0x%x)", oval.Text(16), bitwidth, pc)
+		return p.failure("bit overflow (0x%s not u%d, pc=0x%x)", oval.Text(16), bitwidth, pc)
 	}
 	//
 	return nil

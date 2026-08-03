@@ -145,6 +145,12 @@ type BinaryProgram[W Word[W]] = encoding.Binary[W]
 // bytecode, and is primarily for debugging and validation.
 type BytecodeEnvironment[W Word[W]] = bytecode.Environment[W]
 
+// Failure indicates a recognised machine failure arose, such as attempting to
+// execute a fail instruction.  Such a machine failure is distinct from some
+// kind of internal failure which is not expected to even happen (i.e. unless
+// there is a bug in the interpreter).
+type Failure = interpreter.Failure
+
 // NewBytecodeInterpreter constructs an interpreter for executing the given
 // bytecode program.  The modulus is the prime characteristic of the surrounding
 // field, used when executing native field instructions.

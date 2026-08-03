@@ -135,7 +135,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// =====================================================
 	// Check Constraints
 	// =====================================================
-	if check && len(errors) == 0 {
+	if check && trace != nil {
 		// NOTE: check ==> tracing
 		checkConstraints(binfile, trace, traceConfig)
 	}
@@ -221,7 +221,9 @@ func executeWithCheckPoint[W vm.Word[W]](program vm.Program[W], spec, outputFile
 	//
 	defer closer()
 	//
-	return vm.BootAndExecute(interp, input, 131072)
+	output, _, errs := vm.BootAndExecute(interp, input, 131072)
+	//
+	return output, errs
 }
 
 // parseCheckPointSpec parses a --checkpoint specification, returning the

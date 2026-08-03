@@ -160,7 +160,9 @@ func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Fa
 // it simply extracts the outputs at the end.
 func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[string][]byte, errs []error) {
 	// Boot and execute fast machine
-	return vm.BootAndExecute(p.cachedInterpreter(), input, n)
+	output, _, errs = vm.BootAndExecute(p.cachedInterpreter(), input, n)
+	//
+	return output, errs
 }
 
 // Trace generates a suitable trace from the given inputs for the contraints
@@ -175,7 +177,6 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 ) (output map[string][]byte, rtr rtrace.Trace[F], tr trace.Trace[F], errs []error) {
 	//
 	var (
-		//
 		stats = util.NewPerfStats()
 		// Lower bytecode program
 		prog32 = vm.ProgramToProgram[vm.Uint, vm.Uint32](p.program)
@@ -185,12 +186,14 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 	// Execute machine in chunks of 1K steps
 	rtr, output, errs = vm.BootAndTrace(prog32, input, math.MaxUint, builder)
 	//
-	if len(errs) == 0 {
+	if rtr != nil {
+		var berrs []error
 		// Extract AIR constraints
 		constraints := p.AirConstraints()
 		// Construct trace builder
 		builder := ir.NewTraceBuilder[F]().
-			WithValidation(cfg.validate).
+			// NOTE: never use validation, as it hides constraint failures.
+			WithValidation(false).
 			WithDefensivePadding(false).
 			WithExpansionChecks(true).
 			WithExpansion(true).
@@ -198,7 +201,9 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 			WithBatchSize(cfg.batchSize).
 			WithPadding(cfg.paddingStrategy)
 		// Build the trace (finally)
-		tr, errs = builder.Expand(constraints, rtrace.ToTrace(rtr))
+		tr, berrs = builder.Expand(constraints, rtrace.ToTrace(rtr))
+		// Include any builder errors
+		errs = append(errs, berrs...)
 	}
 	//
 	stats.Log("Trace generation")
