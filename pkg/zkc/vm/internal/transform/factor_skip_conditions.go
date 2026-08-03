@@ -77,7 +77,7 @@ func factorSkipConditionsFunction[W word.Word[W]](fn *descriptor.Function[W]) *d
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
 }
 
 // factorableSkips returns the set of code indices holding a SkipIf worth factoring.

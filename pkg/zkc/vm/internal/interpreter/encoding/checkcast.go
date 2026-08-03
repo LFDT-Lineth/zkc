@@ -30,7 +30,7 @@ import (
 // width.  The wide form moves the (now u16) register into a subsequent word:
 //
 // +--------+--------+--------+--------+
-// |    bitwidth     |  n/a   | opcode |
+// |    bitwidth     |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |       n/a       |        rd       |
 // +-----------------+-----------------+
@@ -43,7 +43,7 @@ func CheckCast[W word.Word[W]](p *bytecode.CheckCast[W]) []uint32 {
 	//
 	if IsWideRegisters(p.Target) {
 		return []uint32{
-			bitwidth | CHECKCAST | WIDE,
+			bitwidth | WIDE_CHECKCAST<<8 | WIDE,
 			uint32(p.Target),
 		}
 	}

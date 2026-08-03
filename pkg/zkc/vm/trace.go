@@ -57,7 +57,7 @@ func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n
 		// Extract state from the interpreter
 		fid, pc, frame := interpreter.ExtractExecutingState(bci)
 		// Check whether terminating state
-		terminal := opcode == encoding.RET
+		terminal := opcode == encoding.RET || opcode == encoding.WIDE|encoding.WIDE_RET<<8
 		// NOTE: don't clone the frame here (for now) since it is always
 		// converted into a slice of field elements F.
 		tracer.TraceFunctionLine(State[W]{fid, pc, terminal, frame})

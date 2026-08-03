@@ -32,19 +32,28 @@ type Function[W word.Word[W]] struct {
 	moduleBase[W]
 	// Kind records the execution-relevant properties of this function.
 	kind FunctionKind
+	// Effects records the module ids of the memories this function is permitted
+	// to access (its declared "<...>" effects).
+	effects []ModuleId
 	// Code defines the body of this function.
 	vectors []bytecode.Vector[W]
 }
 
 // NewFunction constructs a new function with the given components.
 func NewFunction[W word.Word[W]](name string, registers []Register[W], kind FunctionKind,
-	code []bytecode.Vector[W]) *Function[W] {
-	return &Function[W]{newModuleBase(name, registers), kind, code}
+	effects []ModuleId, code []bytecode.Vector[W]) *Function[W] {
+	return &Function[W]{newModuleBase(name, registers), kind, effects, code}
 }
 
 // Kind returns the execution kind of this function.
 func (p *Function[W]) Kind() FunctionKind {
 	return p.kind
+}
+
+// Effects returns the module ids of the memories this function is permitted
+// to access.
+func (p *Function[W]) Effects() []ModuleId {
+	return p.effects
 }
 
 // IsOneLine determines whether or not this function contains a single "line"
@@ -134,6 +143,11 @@ func (p *Function[W]) GobEncode() ([]byte, error) {
 	if err := gobEncoder.Encode(&p.kind); err != nil {
 		return nil, err
 	}
+	// A local, so gob accepts a nil slice.
+	effects := p.effects
+	if err := gobEncoder.Encode(&effects); err != nil {
+		return nil, err
+	}
 	//
 	if err := gobEncoder.Encode(p.vectors); err != nil {
 		return nil, err
@@ -162,6 +176,10 @@ func (p *Function[W]) GobDecode(data []byte) error {
 	}
 	//
 	if err := gobDecoder.Decode(&p.kind); err != nil {
+		return err
+	}
+	//
+	if err := gobDecoder.Decode(&p.effects); err != nil {
 		return err
 	}
 	//

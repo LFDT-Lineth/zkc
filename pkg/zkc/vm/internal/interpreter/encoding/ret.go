@@ -44,27 +44,26 @@ func Ret[W word.Word[W]](p *bytecode.Ret[W], env Environment[W]) []uint32 {
 // +--------+-----------------+--------+
 //
 // Here, offset is the u8 offset of the return registers within the frame.  The
-// wide form keeps the frame width in place, moving the (now wider) offset into
-// a subsequent word:
+// wide form moves the frame width up a byte (leaving bits 8-15 clear, as for
+// all wide forms) and the (now wider) offset into a subsequent word:
 //
-// +--------+-----------------+--------+
-// |  n/a   |   frame width   | opcode |
-// +--------+-----------------+--------+
-// | ............ offset .............. |
-// +------------------------------------+
+// +-----------------+--------+--------+
+// |   frame width   |  wop   |  WIDE  |
+// +-----------------+--------+--------+
+// | ............ offset ............. |
+// +-----------------------------------+
 // ============================================================================
 
 // DecodeRet1 decodes the operands of a return instruction.
 func DecodeRet1(pc uint32, codes []uint32) (width uint16, roffset uint32, n uint32) {
-	// RET stores frame width in bits 8..23.
-	width = uint16((codes[pc] >> 8) & 0xffff)
-	//
 	if IsWideForm(pc, codes) {
+		width = uint16(codes[pc] >> 16)
 		roffset = codes[pc+1]
 		//
 		return width, roffset, 2
 	}
 	//
+	width = uint16((codes[pc] >> 8) & 0xffff)
 	roffset = codes[pc] >> 24
 	//
 	return width, roffset, 1
@@ -77,7 +76,7 @@ func encodeRet1(width uint16, roffset uint32) []uint32 {
 	//
 	if roffset > math.MaxUint8 {
 		return []uint32{
-			_width<<8 | RET | WIDE,
+			_width<<16 | WIDE_RET<<8 | WIDE,
 			roffset,
 		}
 	}

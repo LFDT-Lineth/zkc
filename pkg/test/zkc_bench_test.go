@@ -44,25 +44,9 @@ func Test_ZkcBench_Fnv1aHash(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/fnv1a_hash", DEFAULT_BENCH_CONFIG)
 }
 
-func Test_ZkcBench_Keccakf(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/keccakf", DEFAULT_BENCH_CONFIG.Checkpoints("keccakf", 2))
+func Test_ZkcBench_Keccak(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/keccak", DEFAULT_BENCH_CONFIG.Sampling(0.1).Checkpoints("keccak_f", 10))
 }
-
-// func Test_ZkcBench_KeccakfWithPadding(t *testing.T) {
-// 	checkZkcBench(t, "zkc/bench/keccakf_with_padding",
-// 		DEFAULT_BENCH_CONFIG.Words(vm.WORD_UINT).Bytecode(false))
-// }
-
-// func Test_ZkcBench_KeccakfLe(t *testing.T) {
-// 	checkZkcBench(t, "zkc/bench/keccakf_le", DEFAULT_BENCH_CONFIG.Words(vm.WORD_UINT))
-// }
-
-// Same as Test_ZkcBench_Keccakf, but the loop is in Zkc and we have 20k test vectors
-// a single line in .accepts that packs all test vectors
-// func Test_ZkcBench_KeccakfBatched(t *testing.T) {
-// 	checkZkcBench(t, "zkc/bench/keccakf_batched", DEFAULT_BENCH_CONFIG)
-// }
-
 func Test_ZkcBench_Poseidon(t *testing.T) {
 	// #2007: support implicit sign bit
 	checkZkcBench(t, "zkc/bench/poseidon/poseidon", DEFAULT_BENCH_CONFIG.

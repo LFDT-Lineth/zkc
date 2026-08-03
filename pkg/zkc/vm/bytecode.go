@@ -189,11 +189,12 @@ func NewBytecodeVector[W word.Word[W]](codes ...Bytecode[W]) BytecodeVector[W] {
 	return bytecode.NewVector(codes...)
 }
 
-// NewBytecodeFunction constructs a bytecode (descriptor) function module from its
-// registers and a body of bytecode vectors.
+// NewBytecodeFunction constructs a bytecode (descriptor) function module from
+// its registers, declared memory effects (the module ids of the memories the
+// function may access) and a body of bytecode vectors.
 func NewBytecodeFunction[W word.Word[W]](name string, kind FunctionKind, registers []Register[W],
-	code ...BytecodeVector[W]) *Function[W] {
-	return descriptor.NewFunction(name, registers, kind, code)
+	effects []ModuleId, code ...BytecodeVector[W]) *Function[W] {
+	return descriptor.NewFunction(name, registers, kind, effects, code)
 }
 
 // NewRegister constructs a new register descriptor, where native

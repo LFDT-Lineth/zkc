@@ -1,0 +1,6 @@
+;; All vectors claim an incorrect power, forcing the final check to fail.
+{ "data": "0x0000_0000_0000" }
+{ "data": "0x0002_0001_0001" }
+{ "data": "0x0002_0002_0005" }
+{ "data": "0x0003_0002_0008" }
+{ "data": "0x000a_0001_000b" }

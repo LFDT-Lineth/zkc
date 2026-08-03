@@ -1,0 +1,11 @@
+{ "data": "0x0000_0000_0001" }
+{ "data": "0x0001_0001_0003" }
+{ "data": "0x0001_007f_00ff" }
+{ "data": "0x003f_0002_0000" }
+;; cast trap: 2*x*y exceeds u8
+{ "data": "0x0080_0001_0000" }
+{ "data": "0x00ff_00ff_0000" }
+{ "data": "0xffff_0001_0000" }
+;; cast trap: data[2] exceeds u8
+{ "data": "0x0000_0000_0100" }
+{ "data": "0x0001_0001_ffff" }

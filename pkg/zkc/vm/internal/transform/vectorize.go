@@ -118,7 +118,7 @@ func vectorizeFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.F
 	// Remove unreachable vectors and rebind jump targets.
 	insns = pruneUnreachableInstructions[W](insns)
 	//
-	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), insns)
+	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), fn.Effects(), insns)
 }
 
 // prepareCode appends a fall-through Jmp(pc+1) to any vector that does not

@@ -813,6 +813,46 @@ func Test_ZkcUnit_Shift_12(t *testing.T) {
 }
 
 // ===================================================================
+// Read-Write Memory (RAM) Tests
+// ===================================================================
+
+func Test_ZkcUnit_Ram_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_01", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_02", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_03", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_04", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_05", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_06(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_06", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_07(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_07", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_08", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_11(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_11", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
 // Static Initialiser Tests
 // ===================================================================
 

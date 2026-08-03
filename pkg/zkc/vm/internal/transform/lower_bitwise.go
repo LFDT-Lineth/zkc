@@ -65,7 +65,7 @@ func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *b
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
 }
 
 func lowerBitwiseCode[W word.Word[W]](
