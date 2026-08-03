@@ -1,0 +1,10 @@
+;; Claim 0x01 is in a tree containing only 0x00 => fail.
+{ "ins": "0x01_01", "outs": "0x00", "nodes": "0x00ffff" }
+;; Claim 0x00 is not in a tree whose root is 0x00 => fail.
+{ "ins": "0x00", "outs": "0x01_00", "nodes": "0x00ffff" }
+;; Claim 0x05 is in a tree containing {0x01, 0x0a, 0xab} => fail.
+{ "ins": "0x01_05", "outs": "0x00", "nodes": "0x0a0201_abffff_01ffff" }
+;; Claim 0xab is not in a tree containing {0x01, 0x0a, 0xab} => fail.
+{ "ins": "0x00", "outs": "0x01_ab", "nodes": "0x0a0201_abffff_01ffff" }
+;; Claim 0xac is in a tree containing {0x00, 0xab} => fail.
+{ "ins": "0x02_00_ac", "outs": "0x00", "nodes": "0x00ff01_abffff" }
