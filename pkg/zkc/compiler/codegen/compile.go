@@ -199,9 +199,9 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.LowerBitwise(program)
 		program = vm.LowerDivisions(program)
 		program = vm.LowerComparisons(program)
-		program = vm.LowerSwitch(program)
 		program = vm.Vectorize(program)
 		program = vm.FactorSkipConditions(program)
+		program = vm.LowerSwitch(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
 			program = vm.SplitRegisters(p.config.field, program)

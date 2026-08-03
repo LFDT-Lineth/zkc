@@ -66,11 +66,11 @@ func factorSkipConditionsFunction[W word.Word[W]](fn *descriptor.Function[W]) *d
 		// Decide up-front which SkipIf codes in this vector are worth factoring.
 		// This needs the whole vector body (to size each branch), which the Map
 		// closure cannot see one bytecode at a time.
-		factor := factorableSkips[W](vec.Bytecodes, alloc)
+		factor := factorableSkips(vec.Bytecodes, alloc)
 		//
 		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
 			if factor[idx] {
-				return factorSkipIf[W](ith.(*bytecode.SkipIf[W]), alloc)
+				return factorSkipIf(ith.(*bytecode.SkipIf[W]), alloc)
 			}
 			//
 			return []Bytecode[W]{ith}
@@ -91,6 +91,12 @@ func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers split.Alloca
 		}
 		// Nothing to factorize if the condition is a (in)equality on a bit register
 		if isEqualityCondition(si.Op) && !generatesInverse(si, registers) {
+			factor[uint(i)] = false
+			continue
+		}
+		// Nothing to factorize if the body of the skip is a bit equality
+		//  (like b = x == 0 ? 0 :1, as coming from lowerSwitch)
+		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
 			factor[uint(i)] = false
 			continue
 		}
@@ -125,6 +131,46 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers split.Al
 	return false
 }
 
+// bodyContainsOnlyBitEquality reports whether the SkipIf at index i heads a diamond
+// which merely selects between two constants for a single 1-bit register:
+//
+//	skip_if (cond) 2
+//	b = k0
+//	skip 1
+//	b = k1
+func bodyContainsOnlyBitEquality[W word.Word[W]](codes []Bytecode[W], i uint, registers split.Allocator[W]) bool {
+	si := codes[i].(*bytecode.SkipIf[W])
+	//
+	if si.Skip != 2 || i+3 >= uint(len(codes)) {
+		return false
+	}
+	//
+	var (
+		lo, okLo  = isLoadConst(codes[i+1])
+		mid, okSk = codes[i+2].(*bytecode.Skip[W])
+		hi, okHi  = isLoadConst(codes[i+3])
+	)
+	//
+	if !okLo || !okSk || !okHi || mid.Skip != 1 || lo != hi {
+		return false
+	}
+	//
+	bit := registers.Register(lo)
+	//
+	return !bit.IsNative() && bit.Bitwidth().Unwrap() == 1
+}
+
+// isLoadConst recognises a load-constant bytecode (as constructed by
+// bytecode.LoadConst), returning its single target register.
+func isLoadConst[W word.Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
+	if a, ok := code.(*bytecode.Arith[W]); ok &&
+		a.Op == bytecode.OP_ADD && len(a.Source) == 0 && len(a.Target) == 1 {
+		return a.Target[0], true
+	}
+	//
+	return 0, false
+}
+
 // factorSkipIf expands an equality SkipIf into the diamond described on
 // FactorSkipConditions.  The condition of the inner skip is preserved
 // (unnegated): when it holds, execution jumps to `b = 1`; otherwise it falls
@@ -149,8 +195,8 @@ func factorSkipIf[W word.Word[W]](
 		// b = 1  (condition holds)
 		bytecode.LoadConst(b, one),
 		// skip_if b != 0 S  (original skip, now testing the bit)
-		bytecode.NewSkipIf[W](bytecode.CONDITION_NEQ, si.Skip,
+		bytecode.NewSkipIf(bytecode.CONDITION_NEQ, si.Skip,
 			bytecode.NewRegisterVector(b),
-			bytecode.NewConstantOperand[W](zero)),
+			bytecode.NewConstantOperand(zero)),
 	}
 }
