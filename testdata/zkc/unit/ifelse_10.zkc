@@ -1,0 +1,21 @@
+pub input data(address:u1) -> (word:u64)
+pub input expected(address:u1) -> (val:u8)
+
+fn main() {
+    var x:u64 = data[0]
+    var y:u64 = data[1]
+    var r:u8
+    // register-register comparison of multi-limb values: after register
+    // splitting, the equality is factored into one bit per limb pair (see
+    // FactorLimbEqualities).
+    if x == y {
+        r = 1
+    } else {
+        r = 0
+    }
+    //
+    if r != expected[0] {
+        fail
+    }
+    return
+}

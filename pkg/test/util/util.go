@@ -96,12 +96,39 @@ func ReadTestsFile(t *testing.T, cfg TestConfig, test string) ([]TestCase, bool)
 	return tests, exists
 }
 
-func failIfErrors(t *testing.T, errs ...error) {
+func failIf[S, T any](t *testing.T, errs ...T) {
+	var failNow bool
 	//
-	if len(errs) > 0 {
-		for _, err := range errs {
+	for _, err := range errs {
+		var e = any(err)
+		//
+		if _, ok := e.(S); ok {
 			t.Errorf("unexpected tracing failure: %v", err)
+
+			failNow = true
 		}
+	}
+	//
+	if failNow {
+		// Don't continue
+		t.FailNow()
+	}
+}
+
+func failIfNot[S, T any](t *testing.T, errs ...T) {
+	var failNow bool
+	//
+	for _, err := range errs {
+		var e = any(err)
+		//
+		if _, ok := e.(S); !ok {
+			t.Errorf("unexpected tracing failure: %v", err)
+
+			failNow = true
+		}
+	}
+	//
+	if failNow {
 		// Don't continue
 		t.FailNow()
 	}

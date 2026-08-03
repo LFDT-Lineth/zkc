@@ -212,6 +212,9 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		if p.config.splitting {
 			program = vm.SplitRegisters(p.config.field, program)
 		}
+		// The following must be after splitting, but before range constraints:
+		// Bound the degree of multi-limb register-register equality comparisons.
+		program = vm.FactorLimbEqualities(program)
 		// Lower AND/OR/XOR after splitting
 		program = vm.LowerOrXorAnd(program, p.config.maxStaticHeight)
 		// Add tmp registers to hold lookup arguments (from calls and memread / write)
@@ -221,6 +224,8 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticHeight)
 	}
 	// Insert check casts to ensure appropriate safety checks during execution.
+	// TODO: this should be moved before AddRangeConstraints and consumed by it, so that
+	// range constraints are performed only for needed registers (instead of all registers).
 	program = vm.InsertCheckCasts(program)
 	// Validate program to catch any introduced corruption as early as possible.
 	if err := vm.ValidateProgram(program); err != nil {

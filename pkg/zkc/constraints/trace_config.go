@@ -16,10 +16,6 @@ import "github.com/LFDT-Lineth/zkc/pkg/ir"
 
 // TraceConfig provides the necessary configuration for the trace generation.
 type TraceConfig struct {
-	// Indicates whether or not to validate all column types.  That is, check
-	// that the values supplied for all columns (both input and computed) are
-	// within their declared type.
-	validate bool
 	// Determines whether or not trace expansion should be performed in
 	// parallel.  This should be the default, but a sequential option is
 	// retained for debugging purposes.
@@ -33,16 +29,7 @@ type TraceConfig struct {
 
 // DEFAULT_TRACE_CONFIG defines a default configuration for tracing.
 var DEFAULT_TRACE_CONFIG = TraceConfig{
-	validate: true, parallel: true, batchSize: 1024, paddingStrategy: ir.NextPowerOfTwoPadding}
-
-// WithValidation updates a given builder configuration to perform trace validation (or
-// not).
-func (tb TraceConfig) WithValidation(flag bool) TraceConfig {
-	ntb := tb
-	ntb.validate = flag
-	//
-	return ntb
-}
+	parallel: true, batchSize: 1024, paddingStrategy: ir.NextPowerOfTwoPadding}
 
 // WithParallelism updates a given builder configuration to allow trace expansion to be
 // performed concurrently (or not).

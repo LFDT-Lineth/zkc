@@ -56,7 +56,7 @@ type ProgramPoint = descriptor.ProgramPoint
 // than trace because it does not record any internal information about the
 // trace --- it simply extracts the outputs at the end.
 func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint,
-) (output map[string][]byte, errs []error) {
+) (output map[string][]byte, traceable bool, errs []error) {
 	//
 	var (
 		steps  uint
@@ -65,20 +65,23 @@ func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint,
 	)
 	// Execute machine in chunks of 1K steps
 	if inputs, errs = DecodeInputs(m, input); len(errs) != 0 {
-		return nil, errs
+		return nil, false, errs
 	}
 	// Boot & execute
 	if err := m.Boot("main", inputs); err != nil {
 		errs = append(errs, err)
 	} else if steps, err = ExecuteAll(m, n); err != nil {
 		errs = append(errs, err)
+		// Recognised failures don't prevent tracing.
+		_, traceable = err.(*Failure)
 	} else {
 		output = EncodeOutputs(m)
+		traceable = true
 	}
 	// Log stats
 	stats.Log(fmt.Sprintf("Machine execution (%d steps)", steps))
 	//
-	return output, errs
+	return output, traceable, errs
 }
 
 // ExecuteAll executes a given machine to completion in chunks of n steps,

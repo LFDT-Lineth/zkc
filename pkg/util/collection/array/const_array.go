@@ -67,12 +67,9 @@ func (p *ConstantArray[T]) Get(index uint) T {
 // Set sets the field element at the given index in this array, overwriting the
 // original value.
 func (p *ConstantArray[T]) Set(index uint, word T) MutArray[T] {
-	if !word.Equals(p.value) {
-		// NOTE: this can be implemented by changing the representation to
-		// something which can be mutated.
-		panic("unsupported operation")
-	}
-	//
+	// NOTE: attempting to assign a constant register any value other than the
+	// given constant cannot change the value stored in the register.  This just
+	// means that a constraint somewhere should fail.
 	return p
 }
 
