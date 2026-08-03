@@ -42,10 +42,9 @@ func NewConstantArray[T word.Word[T]](height uint, bitwidth uint, value T) *Cons
 
 // Append new word on this array
 func (p *ConstantArray[T]) Append(word T) {
-	if word.Cmp(p.value) != 0 {
-		panic("invalid constant")
-	}
-	//
+	// NOTE: attempting to assign a constant register any value other than the
+	// given constant cannot change the value stored in the register.  This just
+	// means that a constraint somewhere should fail
 	p.height++
 }
 
@@ -101,11 +100,9 @@ func (p *ConstantArray[T]) Get(index uint) T {
 // Set sets the field element at the given index in this array, overwriting the
 // original value.
 func (p *ConstantArray[T]) Set(index uint, word T) {
-	if !word.Equals(p.value) {
-		// NOTE: this can be implemented by changing the representation to
-		// something which can be mutated.
-		panic("invalid constant")
-	}
+	// NOTE: attempting to assign a constant register any value other than the
+	// given constant cannot change the value stored in the register.  This just
+	// means that a constraint somewhere should fail
 }
 
 func (p *ConstantArray[T]) String() string {

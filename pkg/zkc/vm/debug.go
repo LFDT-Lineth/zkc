@@ -40,7 +40,7 @@ func BootAndDebug[W Word[W]](program Program[W], in map[string][]byte, observer 
 		observer(State[W]{fid, pc, opcode == encoding.RET, slices.Clone(frame)})
 	})
 	// Boot and execute to completion.
-	_, errs := BootAndExecute(bci, in, math.MaxUint)
+	_, _, errs := BootAndExecute(bci, in, math.MaxUint)
 	//
 	return errs
 }

@@ -13,8 +13,6 @@
 package interpreter
 
 import (
-	"fmt"
-
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -38,7 +36,7 @@ func (p *WriteOnce[W]) markAsWrittenTo(address uint64) {
 // Write implementation for Memory interface.
 func (p *WriteOnce[W]) Write(address uint64, value W) error {
 	if p.addressInCurrentRange(address) && p.writtenToAddresses[address] {
-		return fmt.Errorf("address ≡ %x of WOM ≡ %s was already written to", address, p.descriptor.Name())
+		return failure("address (%x) of WOM \"%s\" already assigned", address, p.descriptor.Name())
 	}
 	// ensure sufficient space
 	p.data = expand(p.data, address+1)
