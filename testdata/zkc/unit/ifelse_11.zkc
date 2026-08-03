@@ -1,0 +1,25 @@
+pub input data(address:u1) -> (word:u64)
+pub input expected(address:u1) -> (val:u8)
+
+fn main() {
+    var x:u64 = data[0]
+    var y:u64 = data[1]
+    var r:u8
+    // register-register inequality of multi-limb values, nested inside
+    // another branch: exercises the NEQ polarity of FactorLimbEqualities and
+    // its interaction with enclosing path conditions.
+    if x != y {
+        if x == 0 {
+            r = 2
+        } else {
+            r = 1
+        }
+    } else {
+        r = 0
+    }
+    //
+    if r != expected[0] {
+        fail
+    }
+    return
+}
