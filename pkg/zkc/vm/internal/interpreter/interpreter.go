@@ -766,7 +766,7 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 	case encoding.WIDE_FAIL:
 		return pc, true, p.executeFail(pc, codes, stack)
 	case encoding.WIDE_CHECKCAST:
-		pc, err = executeCheckCast(pc, codes, stack)
+		pc, err = p.executeCheckCast(pc, codes, stack)
 	case encoding.WIDE_DEBUG:
 		pc = p.executeDebug(pc, codes, stack)
 	case encoding.WIDE_LDC_w:
@@ -824,17 +824,17 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 	case encoding.WIDE_WR_PRAM_nm:
 		pc = executeWritePagedRam_sn(pc, codes, stack, p.prams)
 	case encoding.WIDE_ADD_2n1:
-		pc, err = executeAdd_2n1(pc, codes, stack)
+		pc, err = p.executeAdd_2n1(pc, codes, stack)
 	case encoding.WIDE_SUB_2n1:
 		pc, err = p.executeSub_2n1(pc, codes, stack)
 	case encoding.WIDE_MUL_2n1:
-		pc, err = executeMul_2n1(pc, codes, stack)
+		pc, err = p.executeMul_2n1(pc, codes, stack)
 	case encoding.WIDE_ADDC:
-		pc, err = executeAdd_1n1c(pc, codes, pool, stack)
+		pc, err = p.executeAdd_1n1c(pc, codes, pool, stack)
 	case encoding.WIDE_SUBC:
 		pc, err = p.executeSub_1n1c(pc, codes, pool, stack)
 	case encoding.WIDE_MULC:
-		pc, err = executeMul_1n1c(pc, codes, pool, stack)
+		pc, err = p.executeMul_1n1c(pc, codes, pool, stack)
 	case encoding.WIDE_ADD_nm:
 		pc, err = p.executeAdd_nm(pc, codes, pool, stack)
 	case encoding.WIDE_SUB_nm:
@@ -842,9 +842,9 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 	case encoding.WIDE_MUL_nm:
 		pc, err = p.executeMul_nm(pc, codes, pool, stack)
 	case encoding.WIDE_DIV:
-		pc, err = executeDiv(pc, codes, stack)
+		pc, err = p.executeDiv(pc, codes, stack)
 	case encoding.WIDE_REM:
-		pc, err = executeRem(pc, codes, stack)
+		pc, err = p.executeRem(pc, codes, stack)
 	case encoding.WIDE_INTRINSIC:
 		pc, err = p.executeIntrinsic(pc, codes, stack)
 	case encoding.WIDE_ADDMOD_P:
