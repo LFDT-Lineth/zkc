@@ -45,10 +45,11 @@ func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n
 ) (Trace[F], map[string][]byte, []error) {
 	//
 	var (
-		tr   rtrace.Trace[F]
-		errs []error
-		bci  = interpreter.New(p, true)
-		out  map[string][]byte
+		tr        rtrace.Trace[F]
+		traceable bool
+		errs      []error
+		bci       = interpreter.New(p, true)
+		out       map[string][]byte
 	)
 	// Register breakpoint handler to record all states generated during
 	// tracing.
@@ -78,7 +79,7 @@ func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n
 	// 	}
 	// }
 	// Execute the interpreter with appropriate breakpoints
-	if _, errs = BootAndExecute(bci, in, n); len(errs) != 0 {
+	if _, traceable, errs = BootAndExecute(bci, in, n); !traceable {
 		return tr, out, errs
 	}
 	// Finally, process memory
@@ -95,7 +96,7 @@ func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n
 	// Encode outputs
 	out = EncodeOutputs(bci)
 	//
-	return tracer.Build(), out, nil
+	return tracer.Build(), out, errs
 }
 
 // State collects together information recorded when executing a single vector
