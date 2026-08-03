@@ -91,7 +91,10 @@ func factorLimbEqualitiesFunction[W word.Word[W]](fn *descriptor.Function[W]) *d
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
+	// The rewrite touches only equality SkipIf bytecodes and passes every other
+	// bytecode through untouched, so the function's declared memory effects are
+	// unchanged and must be preserved here.
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
 }
 
 func factorLimbEqualityCode[W word.Word[W]](b Bytecode[W], registers split.Allocator[W]) []Bytecode[W] {
