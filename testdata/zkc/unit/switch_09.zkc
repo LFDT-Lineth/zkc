@@ -53,11 +53,11 @@ fn main() {
         case 0xfa1709: {
             fail
         }
-        default: {
-            res = outputs[0]
-        }
         case 0xbeef: {
             res = outputs[1]
+        }
+        default: {
+            res = outputs[0]
         }
     }
 
