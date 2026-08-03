@@ -96,7 +96,7 @@ func fieldTestProgram[W vm.Word[W]]() vm.Program[W] {
 		field.KOALABEAR_16,
 		vm.NewBytecodeMemory[W]("data", vm.PUBLIC_READ_ONLY_MEMORY, memRegs()),
 		vm.NewBytecodeMemory[W]("result", vm.PUBLIC_WRITE_ONCE_MEMORY, memRegs()),
-		vm.NewBytecodeFunction("main", vm.BYTECODE_FUNCTION, regs, code),
+		vm.NewBytecodeFunction("main", vm.BYTECODE_FUNCTION, regs, nil, code),
 	)
 }
 

@@ -172,7 +172,7 @@ func inlineAllCalls[W word.Word[W]](fn *descriptor.Function[W], calleeId uint,
 		return fn
 	}
 	//
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), code)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), code)
 }
 
 // findCall locates the first call to a given callee, returning the enclosing
@@ -501,10 +501,12 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 			substituteIds(insn.Returns, sub))
 	case *bytecode.ReadWrite[W]:
 		if insn.Write {
-			return bytecode.NewMemWrite[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub))
+			return bytecode.NewMemWrite[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub),
+				substituteIds(insn.Stamp, sub))
 		}
 		//
-		return bytecode.NewMemRead[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub))
+		return bytecode.NewMemRead[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub),
+			substituteIds(insn.Stamp, sub))
 	case *bytecode.DivRem[W]:
 		return bytecode.NewDivRem[W](insn.Opcode, substituteId(insn.Target, sub), substituteId(insn.Dividend, sub),
 			substituteId(insn.Divisor, sub))
@@ -515,11 +517,22 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 		return bytecode.NewCheckCast[W](substituteId(insn.Target, sub), insn.Bitwidth)
 	case *bytecode.Skip[W]:
 		return insn
+	case *bytecode.Jmp[W], *bytecode.Ret[W]:
+		// Register-free; present only when substituting a full function body.
+		return insn
 	case *bytecode.SkipIf[W]:
 		return &bytecode.SkipIf[W]{Op: insn.Op, Skip: insn.Skip,
 			Left: substituteRegisterVector(insn.Left, sub), Right: substituteOperandVector(insn.Right, sub)}
 	case *bytecode.Switch[W]:
 		return bytecode.MultiwaySkip(substituteId(insn.Source, sub), insn.Cases)
+	case *bytecode.Dispatch[W]:
+		cases := make([]bytecode.DispatchCase, len(insn.Cases))
+		//
+		for i, c := range insn.Cases {
+			cases[i] = bytecode.DispatchCase{Bit: substituteId(c.Bit, sub), Skip: c.Skip}
+		}
+		//
+		return bytecode.NewDispatch[W](cases, substituteId(insn.Default, sub))
 	case *bytecode.Debug[W]:
 		return &bytecode.Debug[W]{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
 	case *bytecode.Fail[W]:
@@ -626,11 +639,13 @@ func removeModules[W word.Word[W]](modules []descriptor.Module[W], targets []uin
 	return kept
 }
 
-// remapModuleIds reconstructs a given function with all module identifiers
+// remapModuleIds reconstructs a given function with all module identifiers —
+// those embedded in its bytecodes and those of its declared memory effects —
 // substituted according to a given mapping.
 func remapModuleIds[W word.Word[W]](fn *descriptor.Function[W], idMap []uint) *descriptor.Function[W] {
 	var (
 		code    = make([]BytecodeVector[W], len(fn.Vectors()))
+		effects = fn.Effects()
 		changed = false
 	)
 	//
@@ -644,12 +659,22 @@ func remapModuleIds[W word.Word[W]](fn *descriptor.Function[W], idMap []uint) *d
 		//
 		code[i] = bytecode.NewVector(ncodes...)
 	}
+	// Remap the memory effects (memories are never removed, so every effect
+	// survives the mapping).
+	remapped := slices.Clone(effects)
+	//
+	for i, e := range effects {
+		remapped[i] = descriptor.ModuleId(idMap[e])
+		changed = changed || remapped[i] != e
+	}
+	//
+	effects = remapped
 	//
 	if !changed {
 		return fn
 	}
 	//
-	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), code)
+	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), effects, code)
 }
 
 func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
@@ -676,10 +701,10 @@ func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
 	case *bytecode.ReadWrite[W]:
 		if id != uint(insn.Id) {
 			if insn.Write {
-				return bytecode.NewMemWrite[W](bytecode.ModuleId(id), insn.Address, insn.Data)
+				return bytecode.NewMemWrite[W](bytecode.ModuleId(id), insn.Address, insn.Data, insn.Stamp)
 			}
 			//
-			return bytecode.NewMemRead[W](bytecode.ModuleId(id), insn.Address, insn.Data)
+			return bytecode.NewMemRead[W](bytecode.ModuleId(id), insn.Address, insn.Data, insn.Stamp)
 		}
 	}
 	//
