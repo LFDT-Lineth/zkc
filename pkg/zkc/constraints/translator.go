@@ -394,7 +394,13 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 	// Translate all bytecode vectors
 	for pc, vec := range fn.Vectors() {
 		var (
-			handle = fmt.Sprintf("pc%d", pc)
+			handle = func() string {
+				if fn.IsOneLine() {
+					return "inst"
+				}
+				// PC_0 is for padding
+				return fmt.Sprintf("pc%d", pc+1)
+			}()
 			// construct translator for this bytecode vector
 			tr = NewVectorTranslator(ctx, uint(pc), vec, framing, fn, field)
 			// extract logical constraint
