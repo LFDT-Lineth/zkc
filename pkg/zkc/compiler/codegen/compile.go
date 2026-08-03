@@ -199,7 +199,6 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		program = vm.LowerBitwise(program)
 		program = vm.LowerDivisions(program)
 		program = vm.LowerComparisons(program)
-		program = vm.LowerSwitch(program)
 		program = vm.Vectorize(program)
 		// Thread memory timestamps once the rows are final: after
 		// vectorisation (at most one canonical stamp write per executed path
@@ -208,6 +207,7 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		// Fast mode skips this: the run-time memory keeps its own clock.
 		program = vm.ThreadTimestamps(program)
 		program = vm.FactorSkipConditions(program)
+		program = vm.LowerSwitch(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
 			program = vm.SplitRegisters(p.config.field, program)
