@@ -40,7 +40,7 @@ func Call[W word.Word[W]](pc uint32, p *bytecode.Call[W], env Environment[W]) (c
 // ENTER/LEAVE pair (the wide form is never smaller than the narrow form).
 func MaxCallEncodedLength[W word.Word[W]](p *bytecode.Call[W]) uint {
 	var (
-		enter = 2 + NumCodesPackedWide(uint(len(p.Arguments)))
+		enter = 2 + NumCodesPackedWide(uint(len(p.Arguments))+1)
 		leave = 1 + NumCodesPackedWide(uint(len(p.Returns)))
 	)
 	//
@@ -67,15 +67,20 @@ func MaxCallEncodedLength[W word.Word[W]](p *bytecode.Call[W]) uint {
 //
 // Here, nargs determines the number of packed argument registers, whilst width
 // determines the frame width to allocate and offset determines (relative)
-// offset to the target.  The wide form carries a u16 frame width, an absolute
-// u32 target address and (now u16) argument registers packed two per word:
+// offset to the target.  The wide form carries a u16 frame width (leaving
+// bits 8-15 clear, as for all wide forms) and an absolute u32 target address,
+// with the argument count and the (now u16) argument registers packed two per
+// word — mirroring the narrow form, where nargs likewise occupies the first
+// packed slot:
 //
 // +--------+--------+--------+--------+
-// |      width      | nargs  | opcode |
+// |      width      |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // | ............ target ............. |
 // +--------+--------+--------+--------+
-// |  arg1  |  arg0   (u16 pairs) ...  |
+// |       arg0      |      nargs      |
+// +-----------------+-----------------+
+// |       arg2      |       arg1      |
 // +-----------------+-----------------+
 // ============================================================================
 
@@ -96,11 +101,13 @@ func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 
 	// absolute).
 	if width > math.MaxUint8 || !ok || IsWideRegisters(args...) {
 		codes := []uint32{
-			uint32(width)<<16 | uint32(len(args))<<8 | opcode | WIDE,
+			uint32(width)<<16 | WIDE_ENTER_n<<8 | WIDE,
 			target,
 		}
+		// nargs occupies the first packed slot, followed by the arguments.
+		shorts := append([]uint16{uint16(len(args))}, RegsAsShorts(args)...)
 		//
-		return append(codes, PackShortsIntoCodes(RegsAsShorts(args))...)
+		return append(codes, PackShortsIntoCodes(shorts)...)
 	}
 	//
 	var (
@@ -116,12 +123,12 @@ func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 
 // DecodeEnter_n decodes the operands of an enter (function entry) instruction.
 func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args Operands, n uint32) {
 	if IsWideForm(pc, codes) {
-		var nargs = uint((codes[pc] >> 8) & 0xff)
+		var nargs = uint(codes[pc+2] & 0xffff)
 		//
 		width = uint16(codes[pc] >> 16)
 		target = codes[pc+1]
-		args = NewWideOperands(0, nargs, codes[pc+2:])
-		n = 2 + NumCodesPackedWide(nargs)
+		args = NewWideOperands(1, nargs, codes[pc+2:])
+		n = 2 + NumCodesPackedWide(nargs+1)
 		//
 		return
 	}
@@ -148,8 +155,14 @@ func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args
 // +-----------------------------------+
 //
 // Here, nrets determines the number of packed return registers.  The wide form
-// retains the header but packs the (now u16) return registers two per word.
+// moves nrets up a byte (leaving bits 8-15 clear, as for all wide forms) and
+// packs the (now u16) return registers two per word:
 //
+// +-----------------+--------+--------+
+// |      nrets      |  wop   |  WIDE  |
+// +-----------------+--------+--------+
+// |       ret1      |       ret0      |
+// +-----------------+-----------------+
 // ============================================================================
 
 // encodeLeave_n encodes the LEAVE (function exit) instruction, packing the
@@ -159,16 +172,16 @@ func encodeLeave_n(rets []RegisterId) []uint32 {
 		panic("too many call returns")
 	}
 	//
-	var nrets = uint32(len(rets)) << 8
+	var nrets = uint32(len(rets))
 	//
 	if IsWideRegisters(rets...) {
-		var codes = []uint32{nrets | LEAVE_n | WIDE}
+		var codes = []uint32{nrets<<16 | WIDE_LEAVE_n<<8 | WIDE}
 		//
 		return append(codes, PackShortsIntoCodes(RegsAsShorts(rets))...)
 	}
 	//
 	var (
-		codes = []uint32{nrets | LEAVE_n}
+		codes = []uint32{nrets<<8 | LEAVE_n}
 		bytes = RegsAsBytes(rets)
 	)
 	//
@@ -177,14 +190,14 @@ func encodeLeave_n(rets []RegisterId) []uint32 {
 
 // DecodeLeave_n decodes the operands of a leave (function exit) instruction.
 func DecodeLeave_n(pc uint32, codes []uint32) (rets Operands, n uint32) {
-	var (
-		nrets = uint(codes[pc]>>8) & 0xffff
-	)
-	//
 	if IsWideForm(pc, codes) {
+		var nrets = uint(codes[pc] >> 16)
+		//
 		rets = NewWideOperands(0, nrets, codes[pc+1:])
 		n = 1 + NumCodesPackedWide(nrets)
 	} else {
+		var nrets = uint(codes[pc]>>8) & 0xffff
+		//
 		rets = NewOperands(0, nrets, codes[pc+1:])
 		n = 1 + NumCodesPackedSmall(nrets)
 	}
