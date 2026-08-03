@@ -94,9 +94,17 @@ func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers split.Alloca
 			factor[uint(i)] = false
 			continue
 		}
-		// Nothing to factorize if the body of the skip is a bit equality like b = x == 0 ? 1 :0.
-		// Note that as we lowerSwitch later, this pattern can't arise from lowerSwitch, but only
-		// directly from .zkc program.
+		// Nothing to factorize when the body is already a bit-select diamond, as
+		// written directly in .zkc by e.g. "b = x == 0 ? 1 : 0": it computes the
+		// very guard bit that factoring would introduce.
+		//
+		// NOTE: the shape is not unique to hand-written .zkc.  LowerSwitch emits
+		// one such diamond per case, and FactorLimbEqualities one per limb;
+		// neither reaches us, because both run later (see codegen/compile.go, and
+		// the ordering note on LowerSwitch).  factorSkipIf below emits it too,
+		// but its output is never re-examined, since factor[] is decided over the
+		// original vector.  Were that ordering to change, we would merely decline
+		// a factorisation which was not needed: no correctness impact.
 		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
 			factor[uint(i)] = false
 			continue
