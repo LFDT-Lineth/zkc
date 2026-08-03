@@ -1,0 +1,28 @@
+// Two reads of the same memory inside a branch condition.
+// Code lines: main = 1, eq = 1 (one trace row per invocation).
+pub input data(address:u8) -> (byte:u8)
+memory ram(address:u8) -> (byte:u8)
+
+fn eq<ram>(x:u8, y:u8) -> (r:u1) {
+    if ram[x] != ram[y] {
+        r = 0
+    } else {
+        r = 1
+    }
+}
+
+fn main<ram>() {
+    var a:u8 = data[0]
+    var b:u8 = data[1]
+    var same:u8 = data[2]
+    ram[0] = a
+    ram[1] = b
+    ram[2] = a
+    // ram[0] vs ram[2] hold the same value; ram[0] vs ram[1] per input.
+    if eq(0, 2) != 1 {
+        fail
+    }
+    if (eq(0, 1) as u8) != same {
+        fail
+    }
+}

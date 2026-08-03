@@ -29,18 +29,18 @@ func Bitwise[W word.Word[W]](p *bytecode.Bitwise[W]) []uint32 {
 // +--------+--------+--------+--------+
 // | amount | source |   rd   | opcode |
 // +--------+--------+--------+--------+
-// |                 |     bitwidth    |
-// +--------+--------+--------+--------+
+// |       n/a       |     bitwidth    |
+// +-----------------+-----------------+
 //
 // The opcode itself distinguishes the operations, so no width is needed.  The
 // wide form carries the (now u16) destination register in the first word, with
 // both source registers in a third:
 //
 // +--------+--------+--------+--------+
-// |        rd       |  n/a   | opcode |
+// |        rd       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
-// |                 |     bitwidth    |
-// +--------+--------+--------+--------+
+// |       n/a       |     bitwidth    |
+// +-----------------+-----------------+
 // |     amount      |      source     |
 // +-----------------+-----------------+
 // ============================================================================
@@ -52,7 +52,7 @@ func encodeBitwise(op bytecode.Operation, rd, lhs, rhs RegisterId, bitwidth uint
 	//
 	if IsWideRegisters(rd, lhs, rhs) {
 		return []uint32{
-			uint32(rd)<<16 | opcode | WIDE,
+			uint32(rd)<<16 | (WIDE_AND+uint32(op-bytecode.OP_AND))<<8 | WIDE,
 			uint32(bitwidth),
 			uint32(lhs) | uint32(rhs)<<16,
 		}

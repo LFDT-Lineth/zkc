@@ -1,0 +1,29 @@
+// Memory accesses inside switch arms, inside a loop: the lowered dispatch's
+// case edges land on merge points whose stamps disagree, so the threading must
+// retarget individual dispatch cases into equalising edge blocks.
+// Code lines: main = 4 (looping rows repeat per iteration).
+pub input data(address:u8) -> (byte:u8)
+memory ram(address:u8) -> (byte:u8)
+
+fn main<ram>() {
+    var n:u8 = data[0]
+    var acc:u8 = 0
+    ram[0] = 0
+    for i:u8 = 0; i != n; i = i + 1 {
+        var op:u8 = data[i]
+        switch op {
+            case 1: {
+                ram[i] = acc
+            }
+            case 2: {
+                acc = ram[0]
+            }
+            default: {
+                acc = acc + 1
+            }
+        }
+    }
+    if acc != data[n] {
+        fail
+    }
+}

@@ -14,6 +14,8 @@ package encoding
 
 import (
 	"fmt"
+	"math"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -93,6 +95,17 @@ type SymbolTable[W word.Word[W]] struct {
 	// chunks holds formatted chunks referenced (by index) from certain
 	// instructions, such as failures and debug statements.
 	chunks [][]bytecode.FormattedChunk
+	// constants is the constant pool: words referenced (by index) from
+	// instructions whose constant operand does not fit inline, in place of the
+	// constant itself.
+	constants []W
+	// cindex indexes the constant pool for interning, keyed on the constant's
+	// (big-endian) byte representation.
+	cindex map[string]uint16
+	// cvindex indexes consecutive runs of pool entries for interning constant
+	// vectors, keyed on the (length-prefixed) byte representations of their
+	// elements and mapping to the pool index of the first element.
+	cvindex map[string]uint16
 	// mapping maps either: (i) labels to their bytecode addresses; (ii)
 	// memories to their memory-specific identifiers.  This allows one, for
 	// example, to determine the starting address of a function.
@@ -102,7 +115,11 @@ type SymbolTable[W word.Word[W]] struct {
 // NewSymbolTable constructs an (initially empty) symbol table for the given
 // modules.
 func NewSymbolTable[W word.Word[W]](modules ...descriptor.Module[W]) SymbolTable[W] {
-	return SymbolTable[W]{modules, nil, make(map[Label]Symbol)}
+	return SymbolTable[W]{
+		modules, nil, nil,
+		make(map[string]uint16), make(map[string]uint16),
+		make(map[Label]Symbol),
+	}
 }
 
 // ChunksIndex returns the index identifying the given sequence of formatted
@@ -121,6 +138,78 @@ func (p *SymbolTable[W]) ChunksIndex(chunks ...bytecode.FormattedChunk) uint {
 	p.chunks = append(p.chunks, chunks)
 	//
 	return n
+}
+
+// ConstantIndex returns the constant pool index identifying the given
+// constant, interning it on first use.  That is, if an identical constant has
+// been seen before its existing index is returned; otherwise, the constant is
+// stored and a fresh index allocated.  Interning is idempotent, which matters
+// because encoding runs several times whilst the layout reaches a fixpoint.
+func (p *SymbolTable[W]) ConstantIndex(constant W) uint16 {
+	var key = string(constant.BigInt().Bytes())
+	//
+	if index, ok := p.cindex[key]; ok {
+		return index
+	}
+	// Sanity check pool capacity, since indices are encoded as u16.
+	if len(p.constants) > math.MaxUint16 {
+		panic(fmt.Sprintf("too many constant pool entries (%d)", len(p.constants)))
+	}
+	// Allocate new constant
+	var index = uint16(len(p.constants))
+	//
+	p.constants = append(p.constants, constant)
+	p.cindex[key] = index
+	//
+	return index
+}
+
+// ConstantVectorIndex returns the constant pool index of the first element of
+// the given constant vector, interning the whole vector as a consecutive run
+// of pool entries on first use.  That is, element i of the vector resides at
+// pool index ConstantVectorIndex(v)+i.  As for ConstantIndex, interning is
+// idempotent.
+func (p *SymbolTable[W]) ConstantVectorIndex(constants []W) uint16 {
+	var sb strings.Builder
+	// NOTE: elements are length-prefixed to keep the key unambiguous.
+	for _, c := range constants {
+		var bytes = c.BigInt().Bytes()
+		//
+		sb.WriteByte(byte(len(bytes) >> 8))
+		sb.WriteByte(byte(len(bytes)))
+		sb.Write(bytes)
+	}
+	//
+	var key = sb.String()
+	//
+	if index, ok := p.cvindex[key]; ok {
+		return index
+	}
+	// Sanity check pool capacity, since indices are encoded as u16.
+	if len(p.constants)+len(constants) > math.MaxUint16+1 {
+		panic(fmt.Sprintf("too many constant pool entries (%d)", len(p.constants)+len(constants)))
+	}
+	// Allocate new (consecutive) run of constants.
+	var index = uint16(len(p.constants))
+	//
+	p.constants = append(p.constants, constants...)
+	p.cvindex[key] = index
+	// Record any element not already interned individually, allowing
+	// subsequent singleton lookups to reuse this run's entries.
+	for i, c := range constants {
+		var ckey = string(c.BigInt().Bytes())
+		//
+		if _, ok := p.cindex[ckey]; !ok {
+			p.cindex[ckey] = index + uint16(i)
+		}
+	}
+	//
+	return index
+}
+
+// Constants returns the constant pool.
+func (p *SymbolTable[W]) Constants() []W {
+	return p.constants
 }
 
 // EnvironmentFor returns an Environment which views this symbol table from the

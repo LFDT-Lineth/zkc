@@ -13,6 +13,8 @@
 package encoding
 
 import (
+	"math"
+
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -60,7 +62,7 @@ func ReadWrite[W word.Word[W]](p *bytecode.ReadWrite[W], env Environment[W]) []u
 	var (
 		lab  = Label{p.Id, ProgramPoint{}}
 		sym  = env.SymbolAt(lab)
-		id   = util.Cast[uint8](sym.Offset)
+		id   = util.Cast[uint16](sym.Offset)
 		mode = rwModeOf(sym.Kind, p.Write)
 	)
 	//
@@ -119,28 +121,50 @@ func rwModeOf(kind uint8, write bool) RwMode {
 //
 //
 // Here, ra0...raN are u8 address registers, whilst rd0..rdN are u8 data
-// registers.  The wide form retains the header but packs the (now u16) address
-// and data registers two per word.
+// registers.  The wide form moves the (now u16) memory identifier into the
+// first packed slot (leaving bits 8-15 of the first word clear, as for all
+// wide forms), with the (now u16) address and data registers following two
+// per word:
+//
+// +--------+--------+--------+--------+
+// |  ndata |  naddr |  wop   |  WIDE  |
+// +--------+--------+--------+--------+
+// |       ra0       |       id        |
+// +-----------------+-----------------+
+// |       ra2       |       ra1       |
+// +-----------------+-----------------+
+// |   ... packed data registers ...   |
+// +-----------------------------------+
+//
+// The wide form is also selected when the registers are small but the memory
+// identifier exceeds a byte.
 // ============================================================================
 
 // encodeReadWrite_sn encodes a memory read/write instruction, packing its
 // address and data registers.  The opcode is determined by the read/write mode.
-func encodeReadWrite_sn(m RwMode, id uint8, addr []RegisterId, data []RegisterId) []uint32 {
+func encodeReadWrite_sn(m RwMode, id uint16, addr []RegisterId, data []RegisterId) []uint32 {
 	var (
 		opcode = RD_ROM_nm + uint32(m.Tag())
-		_id    = uint32(id) << 8
 		naddr  = uint32(util.Cast[uint8](uint(len(addr)))) << 16
 		ndata  = uint32(util.Cast[uint8](uint(len(data)))) << 24
 		regs   = append(RegsAsShorts(addr), RegsAsShorts(data)...)
 	)
 	//
-	if IsWideRegisters(regs...) {
-		var codes = []uint32{ndata | naddr | _id | opcode | WIDE}
+	if IsWideRegisters(regs...) || id > math.MaxUint8 {
+		var (
+			codes = []uint32{ndata | naddr | (WIDE_RD_ROM_nm+uint32(m.Tag()))<<8 | WIDE}
+			// The identifier occupies the first packed slot, followed by the
+			// address and data registers.
+			shorts = make([]uint16, 0, 1+len(regs))
+		)
 		//
-		return append(codes, PackShortsIntoCodes(regs)...)
+		shorts = append(shorts, id)
+		shorts = append(shorts, regs...)
+		//
+		return append(codes, PackShortsIntoCodes(shorts)...)
 	}
 	//
-	var codes = []uint32{ndata | naddr | _id | opcode}
+	var codes = []uint32{ndata | naddr | uint32(id)<<8 | opcode}
 	// construct register bytes
 	bytes := append(RegsAsBytes(addr), RegsAsBytes(data)...)
 	// pack bytes into bytecodes
@@ -151,13 +175,14 @@ func encodeReadWrite_sn(m RwMode, id uint8, addr []RegisterId, data []RegisterId
 func DecodeReadWrite_sn(pc uint32, codes []uint32) (id uint16, addr, data Operands, n uint32) {
 	naddr := uint((codes[pc] >> 16) & 0xff)
 	ndata := uint((codes[pc] >> 24) & 0xff)
-	id = uint16((codes[pc] >> 8) & 0xff)
 	//
 	if IsWideForm(pc, codes) {
-		addr = NewWideOperands(0, naddr, codes[pc+1:])
-		data = NewWideOperands(naddr, ndata, codes[pc+1:])
-		n = 1 + NumCodesPackedWide(naddr+ndata)
+		id = uint16(codes[pc+1] & 0xffff)
+		addr = NewWideOperands(1, naddr, codes[pc+1:])
+		data = NewWideOperands(1+naddr, ndata, codes[pc+1:])
+		n = 1 + NumCodesPackedWide(1+naddr+ndata)
 	} else {
+		id = uint16((codes[pc] >> 8) & 0xff)
 		addr = NewOperands(0, naddr, codes[pc+1:])
 		data = NewOperands(naddr, ndata, codes[pc+1:])
 		n = 1 + NumCodesPackedSmall(naddr+ndata)

@@ -79,7 +79,7 @@ func (p programToProgram[W1, W2]) lowerFunction(fn *descriptor.Function[W1]) *de
 		nvecs[i] = p.lowerVector(v)
 	}
 	//
-	return descriptor.NewFunction(fn.Name(), regs, fn.Kind(), nvecs)
+	return descriptor.NewFunction(fn.Name(), regs, fn.Kind(), fn.Effects(), nvecs)
 }
 
 func (p programToProgram[W1, W2]) lowerMemory(m *descriptor.Memory[W1]) *descriptor.Memory[W2] {
@@ -153,7 +153,11 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 	case *bytecode.Jmp[W1]:
 		return &bytecode.Jmp[W2]{Target: b.Target}
 	case *bytecode.ReadWrite[W1]:
-		return &bytecode.ReadWrite[W2]{Write: b.Write, Id: b.Id, Address: b.Address, Data: b.Data}
+		if b.Write {
+			return bytecode.NewMemWrite[W2](b.Id, b.Address, b.Data, b.Stamp)
+		}
+		//
+		return bytecode.NewMemRead[W2](b.Id, b.Address, b.Data, b.Stamp)
 	case *bytecode.Ret[W1]:
 		return &bytecode.Ret[W2]{}
 	case *bytecode.Skip[W1]:
