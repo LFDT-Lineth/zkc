@@ -20,10 +20,8 @@ func copyState[W Word[W], F Element[F]](st vm.State[W], fields []F) {
 	var frame = st.Frame()
 	// Copy over state registers
 	for i, v := range frame {
-		var val F
 		// Copy over data
-		// TODO: support larger word sizes.
-		fields[i] = val.SetUint64(v.Uint64())
+		fields[i] = wordToField[W, F](v)
 	}
 }
 
@@ -55,9 +53,7 @@ func copyDataLines[W Word[W], F Element[F]](address uint64, lines []vm.Register[
 	var offset = int(address) * len(lines)
 	//
 	for i := range lines {
-		var val F
-		// TODO: support larger word sizes.
-		row[i] = val.SetUint64(data[offset+i].Uint64())
+		row[i] = wordToField[W, F](data[offset+i])
 	}
 }
 
@@ -72,4 +68,10 @@ func zeroOut[F Element[F]](values []F) []F {
 	}
 	//
 	return values
+}
+
+// wordToField converts a machine word into a field element.
+func wordToField[W Word[W], F Element[F]](w W) (f F) {
+	// TODO: support larger word sizes.
+	return f.SetUint64(w.Uint64())
 }

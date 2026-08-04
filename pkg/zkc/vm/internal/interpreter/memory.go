@@ -41,6 +41,12 @@ type Memory[W word.Word[W]] interface {
 	Write(address uint64, value W) error
 	// Contents returns the contents of this memory as an array.
 	Contents() []W
+	// AccessLog returns the chronological log of reads / writes performed
+	// against this memory, or nil if it does not record accesses (only
+	// read-write memory records, and only when a recording log is installed
+	// for trace generation).  The trace observer consumes this to materialise
+	// the RAM trace.
+	AccessLog() []AccessData[W]
 }
 
 // InputOutput identifiers memory used to represent inputs or outputs.  The main
