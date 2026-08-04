@@ -298,10 +298,6 @@ func reportFailure[F field.Element[F]](failure sc.Failure, trace tr.Trace[F], ma
 		cells := f.RequiredCells(trace)
 		fmt.Printf("failing lookup constraint %s:\n", f.Handle)
 		reportRelevantCells(cells, trace, mapping, cfg)
-	} else if f, ok := failure.(*constraint.AssertionFailure[F]); ok {
-		cells := f.RequiredCells(trace)
-		fmt.Printf("failing assertion %s:\n", f.Handle)
-		reportRelevantCells(cells, trace, mapping, cfg)
 	} else if f, ok := failure.(*constraint.InternalFailure[F]); ok {
 		cells := f.RequiredCells(trace)
 		fmt.Printf("%s:\n", f.Message())

@@ -14,14 +14,9 @@ package mir
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/interleaving"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/sorted"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -37,24 +32,11 @@ type Constraint[F field.Element[F]] struct {
 	constraint schema.Constraint[F]
 }
 
-// NewAssertion constructs a new assertion
-func NewAssertion[F field.Element[F]](handle string, ctx schema.ModuleId, domain util.Option[int],
-	term constraint.Property) Constraint[F] {
-	//
-	return Constraint[F]{constraint.NewAssertion[F](handle, ctx, domain, term)}
-}
-
 // NewVanishingConstraint constructs a new vanishing constraint
 func NewVanishingConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, domain util.Option[int],
 	term LogicalTerm[F]) Constraint[F] {
 	//
 	return Constraint[F]{vanishing.NewConstraint(handle, ctx, domain, term)}
-}
-
-// NewInterleavingConstraint creates a new interleaving constraint with a given handle.
-func NewInterleavingConstraint[F field.Element[F]](handle string, targetContext schema.ModuleId,
-	sourceContext schema.ModuleId, target *VectorAccess[F], sources []*VectorAccess[F]) Constraint[F] {
-	return Constraint[F]{interleaving.NewConstraint(handle, targetContext, sourceContext, target, sources)}
 }
 
 // NewLookupConstraint creates a new lookup constraint with a given handle.
@@ -64,24 +46,11 @@ func NewLookupConstraint[F field.Element[F]](handle string, targets []LookupVect
 	return Constraint[F]{lookup.NewConstraint(handle, targets, sources)}
 }
 
-// NewPermutationConstraint creates a new permutation
-func NewPermutationConstraint[F field.Element[F]](handle string, context schema.ModuleId, targets []register.Id,
-	sources []register.Id) Constraint[F] {
-	return Constraint[F]{permutation.NewConstraint[F](handle, context, targets, sources)}
-}
-
 // NewRangeConstraint constructs a new Range constraint
 func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, registers []*RegisterAccess[F],
 	bitwidths []uint) Constraint[F] {
 	//
 	return Constraint[F]{ranged.NewConstraint(handle, ctx, registers, bitwidths)}
-}
-
-// NewSortedConstraint creates a new Sorted
-func NewSortedConstraint[F field.Element[F]](handle string, context schema.ModuleId, bitwidth uint,
-	selector util.Option[*RegisterAccess[F]], sources []*RegisterAccess[F], signs []bool, strict bool) Constraint[F] {
-	//
-	return Constraint[F]{sorted.NewConstraint(handle, context, bitwidth, selector, sources, signs, strict)}
 }
 
 // Accepts determines whether a given constraint accepts a given trace or

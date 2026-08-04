@@ -59,11 +59,6 @@ func (p *IntrinsicDefinition) IsPure() bool {
 	return true
 }
 
-// IsNative checks whether this function binding is native (or not).
-func (p *IntrinsicDefinition) IsNative() bool {
-	return false
-}
-
 // IsFinalised checks whether this binding has been finalised yet or not.
 func (p *IntrinsicDefinition) IsFinalised() bool {
 	return true

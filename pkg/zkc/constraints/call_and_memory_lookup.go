@@ -200,7 +200,7 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]]
 	selId := register.NewId(mod.Width())
 	mod.AddRegisters(register.NewComputed(fmt.Sprintf("$lookup_sel_%d", selId.Unwrap()), 1, padding))
 	// Fill the flag selector during trace expansion with the boolean value of the condition.
-	mod.AddAssignments(assignment.NewComputedRegister[F](pathSelectorComputation(cond, regs), true, ctx, selId))
+	mod.AddAssignments(assignment.NewComputedRegister[F](pathSelectorComputation(cond, regs), ctx, selId))
 	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.
 	mod.AddConstraints(mir.NewVanishingConstraint(
 		fmt.Sprintf("lookup_sel_%d", selId.Unwrap()), ctx, util.None[int](),

@@ -47,17 +47,6 @@ func Test_Bench_Multiplier(t *testing.T) {
 	util.CheckCorset(t, false, "corset/bench/multiplier", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Bench_Memory16u8(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/memory16u8", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Bench_Memory32u32(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/memory32u32", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Bench_Memory32u64(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/memory32u64", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
 func Test_Bench_Adder(t *testing.T) {
 	util.CheckCorset(t, true, "corset/bench/adder", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
@@ -92,10 +81,6 @@ func Test_Bench_Wcp(t *testing.T) {
 	util.CheckCorset(t, true, "corset/bench/wcp", field.BLS12_377, field.KOALABEAR_16)
 }
 
-func Test_Bench_Mxp(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/mxp", field.BLS12_377, field.KOALABEAR_16)
-}
-
 func Test_Bench_Shf(t *testing.T) {
 	util.CheckCorset(t, true, "corset/bench/shf", field.BLS12_377, field.KOALABEAR_16)
 }
@@ -113,11 +98,6 @@ func Test_Bench_Oob(t *testing.T) {
 func Test_Bench_Stp(t *testing.T) {
 	// FIXME: KOALABEAR_16 [PERF]
 	util.CheckCorset(t, true, "corset/bench/stp", field.BLS12_377)
-}
-
-func Test_Bench_Mmio(t *testing.T) {
-	// FIXME: KOALABEAR_16 [PERF]
-	util.CheckCorset(t, true, "corset/bench/mmio", field.BLS12_377)
 }
 
 func Test_Bench_Rom(t *testing.T) {

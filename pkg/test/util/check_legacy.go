@@ -283,7 +283,11 @@ func matchSourceFiles(test string) []string {
 			filenames = append(filenames, filename)
 		}
 	}
-	//
+	// Sanity check we found something
+	if len(filenames) == 0 {
+		panic(fmt.Sprintf("did not match any source files for test \"%s\"", test))
+	}
+	// Done
 	return filenames
 }
 

@@ -94,11 +94,7 @@ func concretizeAssignments[F1 Element[F1], F2 Element[F2]](assigns []schema.Assi
 func concretizeAssignment[F1 Element[F1], F2 Element[F2]](assign schema.Assignment[F1]) schema.Assignment[F2] {
 	switch a := assign.(type) {
 	case *assignment.ComputedRegister[F1]:
-		return assignment.NewComputedRegister[F2](a.Expr, a.Direction, a.Module, a.Targets...)
-	case *assignment.NativeComputation[F1]:
-		return assignment.NewNativeComputation[F2](a.Function, a.Targets, a.Sources)
-	case *assignment.SortedPermutation[F1]:
-		return assignment.NewSortedPermutation[F2](a.Targets, a.Signs, a.Sources)
+		return assignment.NewComputedRegister[F2](a.Expr, a.Module, a.Targets...)
 	default:
 		panic(fmt.Sprintf("unknown assignment: %s\n", reflect.TypeOf(a).String()))
 	}
@@ -121,36 +117,15 @@ func concretizeConstraints[F1 Element[F1], F2 Element[F2]](constraints []Constra
 func concretizeConstraint[F1 Element[F1], F2 Element[F2]](constraint Constraint[F1]) Constraint[F2] {
 	//
 	switch c := constraint.Unwrap().(type) {
-	case Assertion[F1]:
-		//
-		return NewAssertion[F2](c.Handle, c.Context, c.Domain, c.Property)
-	case InterleavingConstraint[F1]:
-		target := concretizeVectorAccess[F1, F2](c.Target)
-		sources := concretizeVectorAccesses[F1, F2](c.Sources)
-		//
-		return NewInterleavingConstraint(c.Handle, c.TargetContext, c.SourceContext, target, sources)
 	case LookupConstraint[F1]:
 		targets := concretizeLookupVectors[F1, F2](c.Targets)
 		sources := concretizeLookupVectors[F1, F2](c.Sources)
 		//
 		return NewLookupConstraint(c.Handle, targets, sources)
-	case PermutationConstraint[F1]:
-		return NewPermutationConstraint[F2](c.Handle, c.Context, c.Targets, c.Sources)
 	case RangeConstraint[F1]:
 		var terms = concretizeRegisterAccesses[F1, F2](c.Sources)
 		//
 		return NewRangeConstraint(c.Handle, c.Context, terms, c.Bitwidths)
-	case SortedConstraint[F1]:
-		var (
-			sources  = concretizeRegisterAccesses[F1, F2](c.Sources)
-			selector = util.None[*RegisterAccess[F2]]()
-		)
-		//
-		if c.Selector.HasValue() {
-			selector = util.Some(concretizeRegisterAccess[F1, F2](c.Selector.Unwrap()))
-		}
-		//
-		return NewSortedConstraint(c.Handle, c.Context, c.BitWidth, selector, sources, c.Signs, c.Strict)
 	case VanishingConstraint[F1]:
 		term := concretizeLogicalTerm[F1, F2](c.Constraint)
 		//
@@ -265,16 +240,6 @@ func concretizeTerms[F1 Element[F1], F2 Element[F2]](terms []Term[F1]) []Term[F2
 	//
 	for i, t := range terms {
 		nterms[i] = concretizeTerm[F1, F2](t)
-	}
-	//
-	return nterms
-}
-
-func concretizeVectorAccesses[F1 Element[F1], F2 Element[F2]](terms []*VectorAccess[F1]) []*VectorAccess[F2] {
-	var nterms = make([]*VectorAccess[F2], len(terms))
-	//
-	for i, t := range terms {
-		nterms[i] = concretizeVectorAccess[F1, F2](t)
 	}
 	//
 	return nterms

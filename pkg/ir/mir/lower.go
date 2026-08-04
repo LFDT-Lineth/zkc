@@ -141,18 +141,10 @@ func (p *AirLowering[F]) LowerModule(index uint) {
 func (p *AirLowering[F]) lowerConstraintToAir(c Constraint[F], airModule air.ModuleBuilder[F]) {
 	// Check what kind of constraint we have
 	switch v := c.constraint.(type) {
-	case Assertion[F]:
-		p.lowerAssertionToAir(v, airModule)
-	case InterleavingConstraint[F]:
-		p.lowerInterleavingConstraintToAir(v, airModule)
 	case LookupConstraint[F]:
 		p.lowerLookupConstraintToAir(v, airModule)
-	case PermutationConstraint[F]:
-		p.lowerPermutationConstraintToAir(v, airModule)
 	case RangeConstraint[F]:
 		p.lowerRangeConstraintToAir(v, airModule)
-	case SortedConstraint[F]:
-		p.lowerSortedConstraintToAir(v, airModule)
 	case VanishingConstraint[F]:
 		p.lowerVanishingConstraintToAir(v, airModule)
 	default:
@@ -160,11 +152,6 @@ func (p *AirLowering[F]) lowerConstraintToAir(c Constraint[F], airModule air.Mod
 		// schema.
 		panic("unreachable")
 	}
-}
-
-// Lowering an assertion is straightforward since its not a true constraint.
-func (p *AirLowering[F]) lowerAssertionToAir(v Assertion[F], airModule air.ModuleBuilder[F]) {
-	airModule.AddConstraint(air.NewAssertion[F](v.Handle, v.Context, v.Domain, v.Property))
 }
 
 // Lower a vanishing constraint to the AIR level.  This is relatively
@@ -186,14 +173,6 @@ func (p *AirLowering[F]) lowerVanishingConstraintToAir(v VanishingConstraint[F],
 	}
 }
 
-// Lower a permutation constraint to the AIR level.  This is trivial because
-// permutation constraints do not currently support complex forms.
-func (p *AirLowering[F]) lowerPermutationConstraintToAir(v PermutationConstraint[F], airModule air.ModuleBuilder[F]) {
-	airModule.AddConstraint(
-		air.NewPermutationConstraint[F](v.Handle, v.Context, v.Targets, v.Sources),
-	)
-}
-
 // Lower a range constraint to the AIR level.  The challenge here is that a
 // range constraint at the AIR level cannot use arbitrary expressions; rather it
 // can only constrain columns directly.  Therefore, whenever a general
@@ -210,44 +189,6 @@ func (p *AirLowering[F]) lowerRangeConstraintToAir(v RangeConstraint[F], airModu
 			WithMaxRangeConstraint(p.config.MaxRangeConstraint)
 		//
 		gadget.Constrain(ref, v.Bitwidths[i])
-	}
-}
-
-// Lower an interleaving constraint to the AIR level.  The challenge here is
-// that interleaving constraints at the AIR level cannot use arbitrary
-// expressions; rather, they can only access columns directly.  Therefore,
-// whenever a general expression is encountered, we must generate a computed
-// column to hold the value of that expression, along with appropriate
-// constraints to enforce the expected value.
-func (p *AirLowering[F]) lowerInterleavingConstraintToAir(c InterleavingConstraint[F],
-	airModule air.ModuleBuilder[F]) {
-	var (
-		n = len(c.Target.Vars)
-	)
-	//
-	for i := range n {
-		var (
-			sources = make([]*air.ColumnAccess[F], len(c.Sources))
-			ith     = c.Target.Vars[i]
-		)
-		// Lower sources
-		for j, src := range c.Sources {
-			var (
-				jth      = src.Vars[i]
-				jth_term = term.RawRegisterAccess[F, air.Term[F]](jth.Register(), jth.BitWidth(), jth.RelativeShift())
-			)
-			// Apply any mask
-			sources[j] = jth_term.Mask(jth.MaskWidth())
-		}
-		// Lower target
-		var (
-			ith_term = term.RawRegisterAccess[F, air.Term[F]](ith.Register(), ith.BitWidth(), ith.RelativeShift())
-			// Apply any mask
-			target = ith_term.Mask(ith.MaskWidth())
-		)
-		// Add constraint
-		airModule.AddConstraint(
-			air.NewInterleavingConstraint(c.Handle, c.TargetContext, c.SourceContext, *target, sources))
 	}
 }
 
@@ -287,38 +228,6 @@ func (p *AirLowering[F]) expandLookupVectorToAir(vector LookupVector[F],
 	}
 	//
 	return lookup.NewVector(vector.Module, selector, terms...)
-}
-
-// Lower a sorted constraint to the AIR level.  The challenge here is that there
-// is not concept of sorting constraints at the AIR level.  Instead, we have to
-// generate the necessary machinery to enforce the sorting constraint.
-func (p *AirLowering[F]) lowerSortedConstraintToAir(c SortedConstraint[F], airModule air.ModuleBuilder[F]) {
-	var (
-		sources = make([]register.Id, len(c.Sources))
-	)
-	//
-	for i, source := range c.Sources {
-		var ith_width = source.MaskWidth()
-		// Sanity check
-		if i < len(c.Signs) && ith_width > c.BitWidth {
-			msg := fmt.Sprintf("incompatible bitwidths (%d vs %d)", ith_width, c.BitWidth)
-			panic(msg)
-		}
-		//
-		sources[i] = source.Register()
-	}
-	// finally add the sorting constraint
-	gadget := air_gadgets.NewLexicographicSortingGadget[F](c.Handle, sources, c.BitWidth).
-		WithSigns(c.Signs...).
-		WithStrictness(c.Strict).
-		WithMaxRangeConstraint(p.config.MaxRangeConstraint)
-	// Add (optional) selector
-	if c.Selector.HasValue() {
-		selector := p.lowerTermTo(c.Selector.Unwrap(), airModule)
-		gadget.WithSelector(selector)
-	}
-	// Done
-	gadget.Apply(airModule.Id(), &p.airSchema)
 }
 
 func (p *AirLowering[F]) lowerRegisterAccesses(terms ...*RegisterAccess[F]) []*air.ColumnAccess[F] {

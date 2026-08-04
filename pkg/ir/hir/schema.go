@@ -17,12 +17,8 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/interleaving"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/sorted"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
@@ -49,24 +45,11 @@ type (
 
 // Following types capture permitted constraint forms at the HIR level.
 type (
-	// Assertion captures the notion of an arbitrary property which should hold for
-	// all acceptable traces.  However, such a property is not enforced by the
-	// prover.
-	Assertion = constraint.Assertion[word.BigEndian]
-	// InterleavingConstraint captures the essence of an interleaving constraint
-	// at the HIR level.
-	InterleavingConstraint = interleaving.Constraint[word.BigEndian, Term]
 	// LookupConstraint captures the essence of a lookup constraint at the HIR
 	// level.
 	LookupConstraint = lookup.Constraint[word.BigEndian, Term]
-	// PermutationConstraint captures the essence of a permutation constraint at the
-	// HIR level.
-	PermutationConstraint = permutation.Constraint[word.BigEndian]
 	// RangeConstraint captures the essence of a range constraints at the HIR level.
 	RangeConstraint = ranged.Constraint[word.BigEndian, Term]
-	// SortedConstraint captures the essence of a sorted constraint at the HIR
-	// level.
-	SortedConstraint = sorted.Constraint[word.BigEndian, Term]
 	// VanishingConstraint captures the essence of a vanishing constraint at the HIR
 	// level. A vanishing constraint is a row constraint which must evaluate to
 	// zero.
@@ -134,9 +117,7 @@ func SubstituteConstants(schema schema.AnySchema[word.BigEndian], mapping map[st
 func init() {
 	gob.Register(schema.Constraint[word.BigEndian](&VanishingConstraint{}))
 	gob.Register(schema.Constraint[word.BigEndian](&RangeConstraint{}))
-	gob.Register(schema.Constraint[word.BigEndian](&PermutationConstraint{}))
 	gob.Register(schema.Constraint[word.BigEndian](&LookupConstraint{}))
-	gob.Register(schema.Constraint[word.BigEndian](&SortedConstraint{}))
 	//
 	gob.Register(Term(&Add{}))
 	gob.Register(Term(&Mul{}))

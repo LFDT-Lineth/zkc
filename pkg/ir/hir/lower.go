@@ -32,7 +32,6 @@ type mirTerm = mir.Term[word.BigEndian]
 type mirLogicalTerm = mir.LogicalTerm[word.BigEndian]
 type mirModuleBuilder = mir.ModuleBuilder[word.BigEndian]
 type mirRegisterAccess = mir.RegisterAccess[word.BigEndian]
-type mirVectorAccess = mir.VectorAccess[word.BigEndian]
 
 // LowerToMir lowers (or refines) an HIR schema into an MIR schema.  That means
 // lowering all the columns and constraints, whilst adding additional columns /
@@ -122,20 +121,10 @@ func (p *MirLowering) lowerModule(hirIndex, mirIndex uint) {
 func (p *MirLowering) lowerConstraint(c Constraint, mirModule mirModuleBuilder) {
 	// Check what kind of constraint we have
 	switch v := c.constraint.(type) {
-	case Assertion:
-		p.lowerAssertion(v, mirModule)
-	case FunctionCall:
-		p.lowerFunctionCall(v, mirModule)
-	case InterleavingConstraint:
-		p.lowerInterleavingConstraint(v, mirModule)
 	case LookupConstraint:
 		p.lowerLookupConstraint(v, mirModule)
-	case PermutationConstraint:
-		p.lowerPermutationConstraint(v, mirModule)
 	case RangeConstraint:
 		p.lowerRangeConstraint(v, mirModule)
-	case SortedConstraint:
-		p.lowerSortedConstraint(v, mirModule)
 	case VanishingConstraint:
 		p.lowerVanishingConstraint(v, mirModule)
 	default:
@@ -143,46 +132,6 @@ func (p *MirLowering) lowerConstraint(c Constraint, mirModule mirModuleBuilder) 
 		// schema.
 		panic("unreachable")
 	}
-}
-
-// Lowering an assertion is straightforward since its not a true constraint.
-func (p *MirLowering) lowerAssertion(v Assertion, module mirModuleBuilder) {
-	module.AddConstraint(mir.NewAssertion[word.BigEndian](v.Handle, v.Context, v.Domain, v.Property))
-}
-
-func (p *MirLowering) lowerFunctionCall(v FunctionCall, module mirModuleBuilder) {
-	var (
-		nargs        = len(v.Arguments)
-		nrets        = len(v.Returns)
-		sources      = make([]lookup.Vector[word.BigEndian, *mirRegisterAccess], 1)
-		targets      = make([]lookup.Vector[word.BigEndian, *mirRegisterAccess], 1)
-		selector     = util.None[*mirRegisterAccess]()
-		calleeModule = p.mirSchema.Module(v.Callee)
-	)
-	// Expand arguments and returns
-	sourceTerms := p.expandTerms(module, append(v.Arguments, v.Returns...)...)
-	// Expand selector (if applicable)
-	if v.Selector.HasValue() {
-		sel := p.expandLogicalTerm(v.Selector.Unwrap(), module)
-		selector = util.Some(sel)
-	}
-	// Construct source vector
-	sources[0] = lookup.NewVector(v.Caller, selector, sourceTerms...)
-	// Construct target vector
-	targetTerms := make([]*mirRegisterAccess, nargs+nrets)
-	//
-	for i := range nargs + nrets {
-		var (
-			rid      = register.NewId(uint(i))
-			bitwidth = calleeModule.Register(rid).Width()
-		)
-		//
-		targetTerms[i] = term.RawRegisterAccess[word.BigEndian, mirTerm](rid, bitwidth, 0)
-	}
-	// Done
-	targets[0] = lookup.NewVector(v.Callee, util.None[*mirRegisterAccess](), targetTerms...)
-	// Add constraint
-	module.AddConstraint(mir.NewLookupConstraint(v.Handle, targets, sources))
 }
 
 // Lower a vanishing constraint to the MIR level.  This is relatively
@@ -195,14 +144,6 @@ func (p *MirLowering) lowerVanishingConstraint(v VanishingConstraint, module mir
 		mir.NewVanishingConstraint(v.Handle, v.Context, v.Domain, term))
 }
 
-// Lower a permutation constraint to the MIR level.  This is trivial because
-// permutation constraints do not currently support complex forms.
-func (p *MirLowering) lowerPermutationConstraint(v PermutationConstraint, module mirModuleBuilder) {
-	module.AddConstraint(
-		mir.NewPermutationConstraint[word.BigEndian](v.Handle, v.Context, v.Targets, v.Sources),
-	)
-}
-
 // Lower a range constraint to the MIR level.  Since range constraints at the
 // MIR level can only access columns directly, we must expand the source
 // expressions into computed columns with corresponding constraints.
@@ -211,20 +152,6 @@ func (p *MirLowering) lowerRangeConstraint(v RangeConstraint, module mirModuleBu
 	//
 	module.AddConstraint(
 		mir.NewRangeConstraint(v.Handle, v.Context, term, v.Bitwidths))
-}
-
-// Lower an interleaving constraint to the MIR level.  Since interleaving
-// constraints at the MIR level can only access columns directly, we must expand
-// the source expressions into computed columns with corresponding constraints.
-func (p *MirLowering) lowerInterleavingConstraint(c InterleavingConstraint, mod mirModuleBuilder) {
-	//
-	// Lower sources
-	sources := p.expandTermsAsVectors(c.Sources, mod)
-	// Lower target
-	target := p.expandTermAsVector(c.Target, mod)
-	// Add constraint
-	mod.AddConstraint(
-		mir.NewInterleavingConstraint(c.Handle, c.TargetContext, c.SourceContext, target, sources))
 }
 
 // Lower a lookup constraint to the MIR level.  Since lookup constraints at the
@@ -275,24 +202,6 @@ func (p *MirLowering) lowerLookupVector(vec lookup.Vector[word.BigEndian, Term],
 	}
 	//
 	return lookup.NewVector(vec.Module, selector, terms...)
-}
-
-// Lower a sorted constraint to the MIR level.  Since sorting constraints at the
-// MIR level can only access columns directly, we must expand the source
-// expressions into computed columns with corresponding constraints.
-func (p *MirLowering) lowerSortedConstraint(c SortedConstraint, module mirModuleBuilder) {
-	var (
-		terms    = p.expandTerms(module, c.Sources...)
-		selector util.Option[*mirRegisterAccess]
-	)
-	//
-	if c.Selector.HasValue() {
-		sel := p.expandTerm(c.Selector.Unwrap(), module)
-		selector = util.Some(sel)
-	}
-	// Add constraint
-	module.AddConstraint(
-		mir.NewSortedConstraint(c.Handle, c.Context, c.BitWidth, selector, terms, c.Signs, c.Strict))
 }
 
 func (p *MirLowering) lowerLogical(e LogicalTerm, module mirModuleBuilder) mirLogicalTerm {
@@ -372,20 +281,6 @@ func (p *MirLowering) lowerBinaryLogical(lhs, rhs Term, fn BinaryLogicalFn, modu
 	return DisjunctIfTerms(fn, lTerm, rTerm)
 }
 
-func (p *MirLowering) expandTermsAsVectors(es []Term, module mirModuleBuilder) []*mirVectorAccess {
-	vecs := make([]*mirVectorAccess, len(es))
-	//
-	for i, e := range es {
-		vecs[i] = p.expandTermAsVector(e, module)
-	}
-	//
-	return vecs
-}
-
-func (p *MirLowering) expandTermAsVector(e Term, module mirModuleBuilder) *mirVectorAccess {
-	return term.RawVectorAccess(p.expandTerms(module, e))
-}
-
 func (p *MirLowering) expandTerms(mirModule mirModuleBuilder, es ...Term) (terms []*mirRegisterAccess) {
 	//
 	terms = make([]*mirRegisterAccess, len(es))
@@ -395,16 +290,6 @@ func (p *MirLowering) expandTerms(mirModule mirModuleBuilder, es ...Term) (terms
 	}
 	//
 	return terms
-}
-
-func (p *MirLowering) expandLogicalTerm(le LogicalTerm, module mirModuleBuilder) *mir.RegisterAccess[word.BigEndian] {
-	var (
-		truth     = term.Const64[word.BigEndian, Term](1)
-		falsehood = term.Const64[word.BigEndian, Term](0)
-		expr      = term.IfElse(le, truth, falsehood)
-	)
-	// Expand if-term
-	return p.expandTerm(expr, module)
 }
 
 // Expand an arbitrary term into a column as necessary.  This is used to lower
@@ -453,7 +338,7 @@ func (p *MirLowering) expandTerm(e Term, module mirModuleBuilder) *mir.RegisterA
 		index = module.NewRegister(register.NewComputed(name, bitwidth, padding))
 		// Add assignment for filling said computed column
 		module.AddAssignment(
-			assignment.NewComputedRegister[word.BigEndian](computation, true, module.Id(), index))
+			assignment.NewComputedRegister[word.BigEndian](computation, module.Id(), index))
 		// Construct v == [e]
 		eq_e_v := expr.Equate(index, bitwidth)
 		// Ensure v == e, where v is value of computed column.
