@@ -18,7 +18,6 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -153,57 +152,6 @@ func (g *generator) pairCall(c *code, helper string, lhs, rhs operand, target li
 	})
 
 	return inner
-}
-
-// emitDivRem emits DIV / REM (executeDiv/Rem): a zero divisor fails, otherwise
-// the result is the plain Go quotient/remainder.
-func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem[word.Uint]) error {
-	target, err := g.limbOf(fn, x.Target)
-	if err != nil {
-		return err
-	}
-
-	lhs, err := g.registerOperand(fn, x.Dividend)
-	if err != nil {
-		return err
-	}
-
-	var rhs operand
-
-	if x.Divisor.IsConstant() {
-		rhs, err = constOperand(x.Divisor.AsConstant())
-	} else {
-		rhs, err = g.registerOperand(fn, x.Divisor.AsRegister())
-	}
-
-	if err != nil {
-		return err
-	}
-
-	if lhs.wide() || rhs.wide() {
-		return fmt.Errorf("gogen: division operand wider than 64 bits unsupported")
-	}
-
-	switch {
-	case rhs.isZero():
-		c.linef("fail(%q) // divisor is the constant zero", "division by zero")
-		return nil
-	case rhs.val == nil:
-		c.linef("if %s == 0 {", rhs.expr)
-		c.line(`fail("division by zero")`)
-		c.line("}")
-	}
-
-	goOp, bound := "/", lhs.max
-	if x.Opcode == encoding.REM {
-		// The remainder is below the divisor (and never above the dividend).
-		goOp = "%"
-		bound = bigMin(lhs.max, new(big.Int).Sub(rhs.max, big.NewInt(1)))
-	}
-
-	g.assignSingle(c, target, operand{expr: fmt.Sprintf("%s %s %s", lhs.expr, goOp, rhs.expr), max: bound})
-
-	return nil
 }
 
 // maskExpr masks expr to the low bitwidth bits, mirroring word.mask64: a width

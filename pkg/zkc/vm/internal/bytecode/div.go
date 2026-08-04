@@ -52,14 +52,8 @@ func (p *DivRem[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 	errs := validateOperands(env, p.Uses(), p.Definitions())
 	//
 	if p.Divisor.IsConstant() {
-		// A constant divisor is a single limb (see Intrinsic.Validate for the
-		// rationale).
-		if len(p.Divisor.AsConstants()) != 1 {
-			return append(errs, fmt.Errorf("multi-limb constant divisor"))
-		}
-		// A constant divisor of zero would unconditionally abort execution, so
-		// its presence indicates a broken transform (codegen rejects it up
-		// front).
+		// Already rejected by codegen rejects it upfront, check that it's not introduced
+		// by some lowering process.
 		if p.Divisor.AsConstant().Cmp64(0) == 0 {
 			errs = append(errs, fmt.Errorf("constant divisor is zero"))
 		}
