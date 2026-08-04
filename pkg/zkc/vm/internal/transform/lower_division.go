@@ -168,29 +168,19 @@ func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Ope
 	var (
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
-		qy   = registers.Allocate("", util.Some(nX))
+		qy   = registers.Allocate("q", util.Some(nX))
 		// qyr = qy + r must hold q*y + r which, by the DIV_HINT semantics
 		// (q = x/y, r = x%y), equals the dividend x exactly and so fits nX
 		// bits; the extra bit guards the addition's transient carry.
 		qyr = registers.Allocate("", util.Some(nX+1))
-		// rw1 = r + w + 1 holds the divisor exactly (nY bits) in honest
-		// execution, but must statically accommodate the declared widths of r
-		// and w: r may be a user register wider than the divisor (e.g. the u64
-		// target of a remainder by a narrow constant).  The extra bit guards
-		// the addition's transient carry.
+		// rw1 = r + w + 1 holds the divisor exactly (nY bits) + 1 to ensure no overflow
 		nRW = max(registers.Register(r).Bitwidth().Unwrap(),
 			registers.Register(w).Bitwidth().Unwrap()) + 1
 		rw1 = registers.Allocate("", util.Some(nRW))
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", util.Some[uint](0))
 		z1 = registers.Allocate("", util.Some[uint](0))
-		// qy = q * y and 0 = y - rw1 depend on the divisor form: a register
-		// divisor reads the register, whilst a constant divisor folds into the
-		// arithmetic constant (in particular making qy a constant scaling of q,
-		// which splits limb-wise without cross products).  For the latter the
-		// zero assertion is emitted as rw1 - y instead of y - rw1, which is
-		// equivalent (a - b == 0 iff b - a == 0) and exact in honest execution
-		// since the hint guarantees rw1 == y.
+
 		mulQY, subZ1 Bytecode[W]
 	)
 	//
@@ -203,7 +193,7 @@ func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Ope
 	}
 	//
 	return []Bytecode[W]{
-		bytecode.NewIntrinsic[W](bytecode.DIV_HINT,
+		bytecode.NewIntrinsic(bytecode.DIV_HINT,
 			[]bytecode.RegisterVector{
 				bytecode.NewRegisterVector(q), bytecode.NewRegisterVector(r), bytecode.NewRegisterVector(w),
 			},

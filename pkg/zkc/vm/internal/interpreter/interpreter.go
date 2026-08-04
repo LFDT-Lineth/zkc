@@ -1523,13 +1523,12 @@ func packOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Ope
 		cur                   W
 		off                   uint
 	)
-	// A constant operand is single-limb by construction (see split.SplitOperand)
-	// and hence already a single machine word.
+	// A constant operand is single value by construction.
 	if isConst {
 		if length != 1 {
-			panic("multi-limb constant operand")
+			panic(fmt.Sprintf("constant operand expect 1 value, got %d", length))
 		}
-		//
+
 		return []W{pool[base]}
 	}
 	//
@@ -1703,12 +1702,10 @@ func loadIntrinsicOperand[W word.Word[W]](module descriptor.Module[W], iter *enc
 	)
 	//
 	if isConst {
-		// Constant operands are single-limb by construction: their limb widths
-		// are not recorded, so a multi-limb run cannot be reconstructed.
 		if length != 1 {
-			panic("multi-limb constant operand")
+			panic(fmt.Sprintf("constant operand expect 1 value, got %d", length))
 		}
-		//
+
 		return pool[base].BigInt()
 	}
 	//
