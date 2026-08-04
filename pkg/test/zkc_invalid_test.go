@@ -733,6 +733,11 @@ func Test_ZkcInvalid_Div_07(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/div_07")
 }
 
+// division by 0
+func Test_ZkcInvalid_Div_08(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/div_08")
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================

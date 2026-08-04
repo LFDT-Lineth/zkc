@@ -924,6 +924,11 @@ func Test_ZkcUnit_Div_07(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_07", DEFAULT_UNIT_CONFIG)
 }
 
+// Division / Remainder with big int const
+func Test_ZkcUnit_Div_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/div_08", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================

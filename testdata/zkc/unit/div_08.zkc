@@ -1,0 +1,23 @@
+pub input data(address:u16) -> (v:u64)
+
+// Division / Remainder with large constants
+
+fn main() {
+    var x:u64 = data[0]
+
+    var q_exp:u64 = data[1]
+    var r_exp:u64 = data[2]
+
+    var q:u64 = x / 0xDEADBEEF
+    var r:u64 = x % 0xDEADBEEF
+
+    if q_exp != q {
+        fail
+    }
+
+    if r_exp != r {
+        fail
+    }
+
+    return
+}

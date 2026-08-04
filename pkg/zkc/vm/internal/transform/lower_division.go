@@ -173,7 +173,14 @@ func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Ope
 		// (q = x/y, r = x%y), equals the dividend x exactly and so fits nX
 		// bits; the extra bit guards the addition's transient carry.
 		qyr = registers.Allocate("", util.Some(nX+1))
-		rw1 = registers.Allocate("", util.Some(nY+1))
+		// rw1 = r + w + 1 holds the divisor exactly (nY bits) in honest
+		// execution, but must statically accommodate the declared widths of r
+		// and w: r may be a user register wider than the divisor (e.g. the u64
+		// target of a remainder by a narrow constant).  The extra bit guards
+		// the addition's transient carry.
+		nRW = max(registers.Register(r).Bitwidth().Unwrap(),
+			registers.Register(w).Bitwidth().Unwrap()) + 1
+		rw1 = registers.Allocate("", util.Some(nRW))
 		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("", util.Some[uint](0))
 		z1 = registers.Allocate("", util.Some[uint](0))
