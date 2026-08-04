@@ -57,13 +57,13 @@ func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 		target   = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Target)...)
 		dividend = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Dividend)...)
 		// Divisor operand (and any loads required to materialise it).
-		loads, divisor, divisorLen = SplitOperand(mapping, alloc, insn.Divisor)
+		loads, divisor, divisorLen = Operand(mapping, alloc, insn.Divisor)
 	)
 	// Check whether splitting actually required
 	if target.Len == 1 && dividend.Len == 1 && divisorLen == 1 {
 		if divisor.IsConstant() {
 			// No, splitting not technically required
-			return []Bytecode[W]{bytecode.NewDivRemConst[W](insn.Opcode,
+			return []Bytecode[W]{bytecode.NewDivRemConst(insn.Opcode,
 				target.Base, dividend.Base, divisor.AsConstant())}
 		}
 		// No, splitting not technically required
@@ -71,7 +71,7 @@ func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 			target.Base, dividend.Base, divisor.AsRegister()))
 	}
 	// Yes, splitting is actually required.
-	return append(loads, bytecode.NewIntrinsic[W](op,
+	return append(loads, bytecode.NewIntrinsic(op,
 		[]bytecode.RegisterVector{target},
 		[]bytecode.Operand[W]{
 			bytecode.NewRegisterVectorOperand[W](dividend),
@@ -79,14 +79,14 @@ func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 		}))
 }
 
-// SplitOperand splits an operand into limbs: a register operand becomes the
+// Operand splits an operand into limbs: a register operand becomes the
 // limb vector of its constituent registers, whilst a constant operand stays a
 // single (unsplit) constant when it fits the register width — the invariant
 // being that constant operands are always single-limb.  A constant too wide
 // for a single limb is instead materialised into freshly allocated registers
 // via the returned load bytecodes, which must precede the consuming
 // instruction.
-func SplitOperand[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
+func Operand[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 	operand bytecode.Operand[W]) (loads []Bytecode[W], out bytecode.Operand[W], n uint16) {
 	//
 	if !operand.IsConstant() {

@@ -544,7 +544,7 @@ func splitOperandVectors[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc 
 	)
 	//
 	for i, o := range ops {
-		l, op, _ := split.SplitOperand(limbsMap, alloc, o)
+		l, op, _ := split.Operand(limbsMap, alloc, o)
 		//
 		loads = append(loads, l...)
 		nops[i] = op

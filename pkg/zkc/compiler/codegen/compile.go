@@ -179,7 +179,6 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 
 	if p.config.fastMode {
 		// Apply transforms suitable for fast mode
-		program = vm.OptimizeDivisions(program)
 		program = vm.Vectorize(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {

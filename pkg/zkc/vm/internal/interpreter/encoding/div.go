@@ -221,10 +221,10 @@ func encodeIntrinsic[W word.Word[W]](op Operation, targets []RegisterVector,
 	var (
 		// Sources resolved into (base, len) pairs, with constant runs interned
 		// in the constant pool.
-		bases   = make([]uint16, len(sources))
-		lens    = make([]uint16, len(sources))
-		consts  = make([]bool, len(sources))
-		wide    = IsWideRegisterVectors(targets)
+		bases  = make([]uint16, len(sources))
+		lens   = make([]uint16, len(sources))
+		consts = make([]bool, len(sources))
+		wide   = IsWideRegisterVectors(targets)
 	)
 	// Target lengths share the packed stream with the flagged source pairs, so
 	// a target length colliding with the narrow flag also forces the wide form.
