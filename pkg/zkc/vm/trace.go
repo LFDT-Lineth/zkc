@@ -32,7 +32,7 @@ type Tracer[W Word[W], F any] interface {
 	// Append a line for the given function to the trace.
 	TraceFunctionLine(line State[W])
 	// Construct the trace for a given memory of some kind
-	TraceMemory(mid uint16, m RuntimeMemory[W])
+	TraceMemory(mid uint16, m RuntimeMemory[W], cfg field.Config)
 	// Build the final trace
 	Build() rtrace.Trace[F]
 }
@@ -48,7 +48,7 @@ func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n
 		tr        rtrace.Trace[F]
 		traceable bool
 		errs      []error
-		bci       = interpreter.New(p, true)
+		bci       = interpreter.New(p, true).WithAccessLog()
 		out       map[string][]byte
 	)
 	// Register breakpoint handler to record all states generated during
@@ -62,22 +62,6 @@ func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n
 		// converted into a slice of field elements F.
 		tracer.TraceFunctionLine(State[W]{fid, pc, terminal, frame})
 	})
-	// TODO: reinstate memory log #2067
-	// Install a recording access log on each read-write memory so its reads and
-	// writes are captured during execution (consumed at post-processing by
-	// ProcessReadWriteMemory).  Trace-only: fast execution keeps the no-op log.
-	// for i := range bci.Binary().Modules() {
-	// 	if _, isFn := bci.Binary().Module(uint16(i)).(*Function[W]); isFn {
-	// 		continue
-	// 	}
-	// 	//
-	// 	switch mem := bci.Memory(uint16(i)).(type) {
-	// 	case *interpreter.RandomAccess[W]:
-	// 		mem.SetLog(&interpreter.TraceableMemoryLog[W]{})
-	// 	case *interpreter.PagedRandomAccess[W]:
-	// 		mem.SetLog(&interpreter.TraceableMemoryLog[W]{})
-	// 	}
-	// }
 	// Execute the interpreter with appropriate breakpoints
 	if _, traceable, errs = BootAndExecute(bci, in, n); !traceable {
 		return tr, out, errs
@@ -88,7 +72,7 @@ func BootAndTrace[W Word[W], F Element[F]](p Program[W], in map[string][]byte, n
 	for i, m := range p.Modules() {
 		// Decide what we've got
 		if _, ok := m.(*Memory[W]); ok {
-			tracer.TraceMemory(uint16(i), bci.Memory(uint16(i)))
+			tracer.TraceMemory(uint16(i), bci.Memory(uint16(i)), p.Field())
 		}
 	}
 	// Log processing costs

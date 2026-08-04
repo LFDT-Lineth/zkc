@@ -66,7 +66,7 @@ func NewBuilder[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]](program v
 				modules[i] = initMultiLineFunction[W, F, M](*m)
 			}
 		case *vm.Memory[W]:
-			modules[i] = initialiseMemory[W, F, M](*m)
+			modules[i] = initialiseMemory[W, F, M](program.Field(), *m)
 		}
 		// Update maximum width
 		maxWidth = max(maxWidth, modules[i].Width())
@@ -95,7 +95,7 @@ func (p Builder[W, F, M]) TraceFunctionLine(state vm.State[W]) {
 }
 
 // TraceMemory implementation for the vm.TraceBuilder interface.
-func (p Builder[W, F, M]) TraceMemory(mid uint16, m vm.RuntimeMemory[W]) {
+func (p Builder[W, F, M]) TraceMemory(mid uint16, m vm.RuntimeMemory[W], field field.Config) {
 	var module = p.modules[mid]
 	//
 	switch m.Descriptor().Kind() {
@@ -106,11 +106,11 @@ func (p Builder[W, F, M]) TraceMemory(mid uint16, m vm.RuntimeMemory[W]) {
 	case vm.PRIVATE_WRITE_ONCE_MEMORY, vm.PUBLIC_WRITE_ONCE_MEMORY:
 		traceAccessOnceMemory(m, module, p.scratch)
 	default:
-		traceReadWriteMemory(m, module)
+		traceReadWriteMemory(m, module, field, p.scratch)
 	}
 }
 
-func initialiseMemory[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]](memory vm.Memory[W]) M {
+func initialiseMemory[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]](cfg field.Config, memory vm.Memory[W]) M {
 	switch memory.Kind() {
 	case vm.PRIVATE_STATIC_MEMORY, vm.PUBLIC_STATIC_MEMORY:
 		var empty M
@@ -123,6 +123,6 @@ func initialiseMemory[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]](mem
 	case vm.PRIVATE_WRITE_ONCE_MEMORY, vm.PUBLIC_WRITE_ONCE_MEMORY:
 		return initAccessOnceMemory[W, F, M](memory)
 	default:
-		return initReadWriteMemory[W, F, M](memory)
+		return initReadWriteMemory[W, F, M](cfg, memory)
 	}
 }

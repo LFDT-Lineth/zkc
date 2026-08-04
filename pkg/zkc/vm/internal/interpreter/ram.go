@@ -214,10 +214,10 @@ func cellsFromPage[W word.Word[W]](page checkpoint.Page[W]) []TimestampedCell[W]
 	return cells
 }
 
-// Accesses returns the ordered log of reads/writes performed since the last
+// AccessLog returns the ordered log of reads/writes performed since the last
 // Initialise.  Used by the trace observer to materialise per-access rows; nil
 // unless a recording log has been installed (i.e. in tracing mode).
-func (ram *RandomAccess[W]) Accesses() []AccessData[W] {
+func (ram *RandomAccess[W]) AccessLog() []AccessData[W] {
 	return ram.log().Accesses()
 }
 

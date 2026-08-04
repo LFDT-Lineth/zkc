@@ -68,6 +68,12 @@ func (p *PagedRandomAccess[W]) Descriptor() *descriptor.Memory[W] {
 	return &p.descriptor
 }
 
+// AccessLog implementation for the Memory interface: the chronological access
+// log (empty unless a recording log is installed for trace generation).
+func (p *PagedRandomAccess[W]) AccessLog() []AccessData[W] {
+	return p.log().Accesses()
+}
+
 // log returns this memory's access log, lazily installing the no-op log if none
 // has been set.  Trace generation installs a recording log via SetLog.
 func (p *PagedRandomAccess[W]) log() Log[W] {
