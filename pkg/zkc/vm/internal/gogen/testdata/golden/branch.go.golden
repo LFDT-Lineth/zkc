@@ -65,7 +65,7 @@ func fn_main() {
 			fail("bit overflow (value exceeds u8)")
 		}
 	}
-	// [0.2] skip_if x > a 3
+	// [0.2] skip_if x > 0xa 3
 	if r0 > uint64(10) {
 		goto L_0_6
 	}
