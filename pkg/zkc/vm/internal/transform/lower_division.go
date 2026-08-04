@@ -93,7 +93,7 @@ func lowerDivisionCode[W word.Word[W]](
 			w  = registers.Allocate("", util.Some(nY))
 		)
 		//
-		return expandDivRem(m.q, m.r, w, m.x, m.y, nX, nY, registers)
+		return expandDivRem(m.q, m.r, w, m.x, m.y, nX, registers)
 	}
 	//
 	switch dr.Opcode {
@@ -117,7 +117,7 @@ func expandDivision[W word.Word[W]](q, x bytecode.RegisterId, y bytecode.Operand
 		w  = registers.Allocate("", util.Some(nY))
 	)
 	//
-	return expandDivRem(q, r, w, x, y, nX, nY, registers)
+	return expandDivRem(q, r, w, x, y, nX, registers)
 }
 
 // expandRemainder replaces INT_REM(r, x, y) with the hint+validation sequence.
@@ -131,7 +131,7 @@ func expandRemainder[W word.Word[W]](r, x bytecode.RegisterId, y bytecode.Operan
 		w  = registers.Allocate("", util.Some(nY))
 	)
 	//
-	return expandDivRem(q, r, w, x, y, nX, nY, registers)
+	return expandDivRem(q, r, w, x, y, nX, registers)
 }
 
 // divisorWidth returns the bitwidth of the given divisor operand: the declared
@@ -163,23 +163,23 @@ func divisorWidth[W word.Word[W]](y bytecode.Operand[W], registers split.Allocat
 // operands that borrow grows past the field register width.  A two-operand zero
 // assertion splits into independent per-limb equalities (see split.Subtraction),
 // which needs no borrows.
-func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Operand[W], nX, nY uint,
+func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Operand[W], nX uint,
 	registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
-		qy   = registers.Allocate("q", util.Some(nX))
+		qy   = registers.Allocate("qy", util.Some(nX))
 		// qyr = qy + r must hold q*y + r which, by the DIV_HINT semantics
 		// (q = x/y, r = x%y), equals the dividend x exactly and so fits nX
 		// bits; the extra bit guards the addition's transient carry.
-		qyr = registers.Allocate("", util.Some(nX+1))
+		qyr = registers.Allocate("qy_plus_r", util.Some(nX+1))
 		// rw1 = r + w + 1 holds the divisor exactly (nY bits) + 1 to ensure no overflow
 		nRW = max(registers.Register(r).Bitwidth().Unwrap(),
 			registers.Register(w).Bitwidth().Unwrap()) + 1
 		rw1 = registers.Allocate("", util.Some(nRW))
-		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
-		z0 = registers.Allocate("", util.Some[uint](0))
-		z1 = registers.Allocate("", util.Some[uint](0))
+		// TODO: must separate z0 & z1 to avoid write conflict (for now).
+		z0 = registers.Allocate("zero", util.Some[uint](0))
+		z1 = registers.Allocate("zero", util.Some[uint](0))
 
 		mulQY, subZ1 Bytecode[W]
 	)
