@@ -168,7 +168,14 @@ func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem[wor
 		return err
 	}
 
-	rhs, err := g.registerOperand(fn, x.Divisor)
+	var rhs operand
+
+	if x.Divisor.IsConstant() {
+		rhs, err = constOperand(x.Divisor.AsConstant())
+	} else {
+		rhs, err = g.registerOperand(fn, x.Divisor.AsRegister())
+	}
+
 	if err != nil {
 		return err
 	}

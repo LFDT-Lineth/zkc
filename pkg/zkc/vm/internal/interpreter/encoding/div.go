@@ -13,31 +13,57 @@
 package encoding
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // DivRem encodes a division/remainder bytecode; the opcode held within the
-// bytecode selects between quotient (DIV) and remainder (REM).
-func DivRem[W word.Word[W]](p *bytecode.DivRem[W]) []uint32 {
-	return encodeDivRem(p.Opcode, p.Target, p.Dividend, p.Divisor)
+// bytecode selects between quotient (DIV) and remainder (REM).  A constant
+// divisor selects the constant form (DIVC / REMC) instead.
+func DivRem[W word.Word[W]](p *bytecode.DivRem[W], env Environment[W]) []uint32 {
+	if p.Divisor.IsConstant() {
+		return encodeDivRemC(p.Opcode, p.Target, p.Dividend, p.Divisor.AsConstant(), env)
+	}
+	//
+	return encodeDivRem(p.Opcode, p.Target, p.Dividend, p.Divisor.AsRegister())
 }
 
 // Intrinsic encodes an intrinsic bytecode (e.g. DIV_HINT, which supplies the
 // prover with the quotient, remainder and witness for a division, or WIDE_SHL).
-func Intrinsic[W word.Word[W]](p *bytecode.Intrinsic[W]) []uint32 {
-	return encodeIntrinsic(p.Op, p.Targets, p.Sources)
+func Intrinsic[W word.Word[W]](p *bytecode.Intrinsic[W], env Environment[W]) []uint32 {
+	return encodeIntrinsic(p.Op, p.Targets, p.Sources, env)
 }
 
-// DecodeIntrinsic decodes an intrinsic instruction at the given program counter.
-func DecodeIntrinsic[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
+// DecodeIntrinsic decodes an intrinsic instruction at the given program
+// counter, resolving constant sources against the given constant pool.
+func DecodeIntrinsic[W word.Word[W]](pc uint32, codes []uint32, pool []W) (Bytecode[W], uint32) {
 	var (
 		op, tIter, sIter, n = DecodeIntrinsicOperands(pc, codes)
 		targets             = registerVectorsFromIter(tIter)
-		sources             = registerVectorsFromIter(sIter)
+		sources             = operandsFromIter(sIter, pool)
 	)
 	//
 	return &bytecode.Intrinsic[W]{Op: op, Targets: targets, Sources: sources}, n
+}
+
+// operandsFromIter reconstructs the source operands packed as flagged (base,
+// len) pairs within the given iterator (see Operands.NextOperand), resolving
+// constant runs against the given constant pool.
+func operandsFromIter[W word.Word[W]](iter Operands, pool []W) []bytecode.Operand[W] {
+	var ops []bytecode.Operand[W]
+	//
+	for iter.HasNext() {
+		var base, n, isConst = iter.NextOperand()
+		//
+		if isConst {
+			ops = append(ops, bytecode.NewConstantOperand(pool[base:base+n]...))
+		} else {
+			ops = append(ops, bytecode.NewRegisterVectorOperand[W](RegisterVector{Base: base, Len: n}))
+		}
+	}
+	//
+	return ops
 }
 
 // registerVectorsFromIter reconstructs the register vectors packed as (base, len)
@@ -108,6 +134,48 @@ func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor Register
 }
 
 // ============================================================================
+// DIVC / REMC (constant divisor) instruction.  The format mirrors the
+// arithmetic-with-constant family exactly (see encodeArith_1n1c), with rs
+// holding the dividend and imm8 the small constant divisor:
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |  imm8  |   rs   |   rd   | opcode |
+// +--------+--------+--------+--------+
+//
+// The wide form replaces the constant operand with a u16 constant pool
+// identifier, moving the (now u16) registers into a subsequent word:
+//
+// +--------+--------+--------+--------+
+// |       cid       |  wop   |  WIDE  |
+// +--------+--------+--------+--------+
+// |       rs        |        rd       |
+// +-----------------+-----------------+
+//
+// The wide form is also selected when the registers are small but the
+// constant exceeds a byte.  Because the layouts coincide, decoding is shared
+// with the arithmetic family (see DecodeArith_1n1c).
+// ============================================================================
+
+// encodeDivRemC encodes a division/remainder instruction with a constant
+// divisor, where op distinguishes the two operations.
+func encodeDivRemC[W word.Word[W]](op uint32, rd, dividend RegisterId, constant W,
+	env Environment[W]) []uint32 {
+	//
+	if IsWideRegisters(rd, dividend) || constant.Cmp64(0xff) > 0 {
+		return []uint32{
+			uint32(env.ConstantIndex(constant))<<16 | (WIDE_DIVC+(op-DIV))<<8 | WIDE,
+			uint32(rd) | uint32(dividend)<<16,
+		}
+	}
+	//
+	return []uint32{
+		uint32(constant.Uint64())<<24 | uint32(dividend)<<16 | uint32(rd)<<8 | (DIVC + (op - DIV)),
+	}
+}
+
+// ============================================================================
 // INTRINSIC instruction. Format of this instruction is:
 //
 //	31                                0
@@ -136,12 +204,54 @@ func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor Register
 // +-----------------------------------+
 // ============================================================================
 
-// encodeIntrinsic encodes a hint instruction, where op selects the operation and the
-// target (return) and source (argument) register vectors are packed as (base,
-// len) byte pairs, targets first.
-func encodeIntrinsic(op Operation, targets, sources []RegisterVector) []uint32 {
+// encodeIntrinsic encodes a hint instruction, where op selects the operation
+// and the target (return) register vectors and source (argument) operands are
+// packed as (base, len) pairs, targets first.  A constant source is packed as
+// a flagged pair whose base is a constant pool index and whose length is the
+// number of pooled limbs (see Operands.NextOperand); the flag occupies the top
+// bit of the length, so the wide form is forced whenever any length (or a
+// pool index) would collide with the narrow (u8) representation.
+func encodeIntrinsic[W word.Word[W]](op Operation, targets []RegisterVector,
+	sources []bytecode.Operand[W], env Environment[W]) []uint32 {
+	//
 	if len(targets) == 0 || len(sources) == 0 || len(targets) >= 256 || len(sources) >= 256 {
 		panic("hint instruction operand counts not supported")
+	}
+	//
+	var (
+		// Sources resolved into (base, len) pairs, with constant runs interned
+		// in the constant pool.
+		bases   = make([]uint16, len(sources))
+		lens    = make([]uint16, len(sources))
+		consts  = make([]bool, len(sources))
+		wide    = IsWideRegisterVectors(targets)
+	)
+	// Target lengths share the packed stream with the flagged source pairs, so
+	// a target length colliding with the narrow flag also forces the wide form.
+	for _, t := range targets {
+		wide = wide || t.Len >= 0x80
+	}
+	//
+	for i, s := range sources {
+		if s.IsConstant() {
+			var limbs = s.AsConstants()
+			//
+			bases[i] = env.ConstantVectorIndex(limbs)
+			lens[i] = util.Cast[uint16](uint(len(limbs)))
+			consts[i] = true
+		} else {
+			var v = s.AsRegisterVector()
+			//
+			bases[i] = v.Base
+			lens[i] = v.Len
+		}
+		// Lengths carry the constant flag in their top bit, so they must stay
+		// strictly below it in either form.
+		if lens[i] >= 0x8000 {
+			panic("hint operand length collides with constant flag")
+		}
+		//
+		wide = wide || bases[i] > 0xff || lens[i] >= 0x80
 	}
 	//
 	var (
@@ -150,7 +260,7 @@ func encodeIntrinsic(op Operation, targets, sources []RegisterVector) []uint32 {
 		ntgt = uint32(len(targets)) << 8
 	)
 	//
-	if IsWideRegisterVectors(targets) || IsWideRegisterVectors(sources) {
+	if wide {
 		var (
 			codes = []uint32{nop | nsrc | WIDE_INTRINSIC<<8 | WIDE}
 			// ntgt occupies the first packed slot, followed by the vectors.
@@ -159,15 +269,34 @@ func encodeIntrinsic(op Operation, targets, sources []RegisterVector) []uint32 {
 		//
 		shorts = append(shorts, uint16(len(targets)))
 		shorts = append(shorts, RegisterVectorsAsShorts(targets)...)
-		shorts = append(shorts, RegisterVectorsAsShorts(sources)...)
+		//
+		for i := range sources {
+			var l = lens[i]
+			//
+			if consts[i] {
+				l |= 0x8000
+			}
+			//
+			shorts = append(shorts, bases[i], l)
+		}
 		//
 		return append(codes, PackShortsIntoCodes(shorts)...)
 	}
 	//
 	var (
 		codes = []uint32{nop | nsrc | ntgt | INTRINSIC}
-		bytes = append(RegisterVectorsAsBytes(targets), RegisterVectorsAsBytes(sources)...)
+		bytes = RegisterVectorsAsBytes(targets)
 	)
+	//
+	for i := range sources {
+		var l = uint8(lens[i])
+		//
+		if consts[i] {
+			l |= 0x80
+		}
+		//
+		bytes = append(bytes, uint8(bases[i]), l)
+	}
 	//
 	return append(codes, PackBytesIntoCodes(bytes)...)
 }

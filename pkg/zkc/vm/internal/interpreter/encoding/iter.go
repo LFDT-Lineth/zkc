@@ -71,6 +71,34 @@ func (p *Operands) Next() (operand uint16) {
 	return operand
 }
 
+// ConstFlag returns the bit which, when set in the length half of a packed
+// (base, len) operand pair, marks that pair as denoting a run of constant pool
+// entries (base = pool index) rather than a register vector.  The flag depends
+// on the element width of this iterator (u8 for narrow forms, u16 for wide).
+func (p *Operands) ConstFlag() uint16 {
+	if p.perWord == 2 {
+		return 0x8000
+	}
+	//
+	return 0x80
+}
+
+// NextOperand reads the next (base, n) pair from this iterator, reporting
+// whether it denotes a run of n constant pool entries starting at pool index
+// base (isConst true) or a register vector of n registers starting at register
+// base (isConst false).
+func (p *Operands) NextOperand() (base, n uint16, isConst bool) {
+	var (
+		flag = p.ConstFlag()
+		l    uint16
+	)
+	//
+	base = p.Next()
+	l = p.Next()
+	//
+	return base, l &^ flag, l&flag != 0
+}
+
 // OpIterToArray extracts n elements from the given iterator into an array.
 func OpIterToArray[T uint8 | uint16](iter Operands) []T {
 	var arr = make([]T, iter.count)

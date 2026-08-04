@@ -188,12 +188,16 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.Intrinsic[W]:
 			// Each operand (argument / return) is split into the limbs of its
 			// constituent registers, preserving the per-operand grouping so the
-			// hint's executor can still reconstruct each value.
-			return []Bytecode[W]{&bytecode.Intrinsic[W]{
+			// hint's executor can still reconstruct each value.  Constant
+			// operands stay single-limb, being materialised into registers
+			// (via preceding loads) when too wide for one limb.
+			loads, sources := splitOperandVectors(limbsMap, alloc, c.Sources)
+			//
+			return append(loads, &bytecode.Intrinsic[W]{
 				Op:      c.Op,
 				Targets: splitRegisterVectors(limbsMap, c.Targets),
-				Sources: splitRegisterVectors(limbsMap, c.Sources),
-			}}
+				Sources: sources,
+			})
 		case *bytecode.Jmp[W]:
 			return []Bytecode[W]{c}
 		case *bytecode.ReadWrite[W]:
@@ -243,7 +247,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.DivRem[W]:
 			// NOTE: only relevant for splitting fast mode (i.e. non-lowered)
 			// bytecode.
-			return split.DivRem(limbsMap, c)
+			return split.DivRem(limbsMap, alloc, c)
 		case *bytecode.FieldArith[W]:
 			return []Bytecode[W]{splitFieldArith(limbsMap, c)}
 		case *bytecode.UintToField[W]:
@@ -524,4 +528,27 @@ func splitRegisterVectors[W any](limbsMap descriptor.LimbsMap[W],
 	}
 	//
 	return nvecs
+}
+
+// splitOperandVectors splits each operand (e.g. an intrinsic argument) into
+// limbs: register vectors into the limbs of their constituent registers,
+// whilst constants stay single-limb — those too wide for one limb are
+// materialised into registers via the returned load bytecodes, which must
+// precede the consuming instruction (see split.SplitOperand).
+func splitOperandVectors[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allocator[W],
+	ops []bytecode.Operand[W]) ([]Bytecode[W], []bytecode.Operand[W]) {
+	//
+	var (
+		nops  = make([]bytecode.Operand[W], len(ops))
+		loads []Bytecode[W]
+	)
+	//
+	for i, o := range ops {
+		l, op, _ := split.SplitOperand(limbsMap, alloc, o)
+		//
+		loads = append(loads, l...)
+		nops[i] = op
+	}
+	//
+	return loads, nops
 }

@@ -733,45 +733,84 @@ func (p *StmtCompiler) compileIntDiv(args []Expr, bitwidth uint, mapping []uint,
 		}
 	}
 
-	if product.Cmp(big.NewInt(1)) != 0 {
-		nargs = append(nargs, expr.NewTypedConstant[symbol.Resolved](*product, 10, bitwidth))
+	var (
+		hasConst = product.Cmp(big.NewInt(1)) != 0
+		constant vm.Uint
+	)
+
+	if hasConst && product.Sign() == 0 {
+		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[0], "division by zero")...)
 	}
 
-	if len(nargs) < 2 {
+	if len(nargs) < 2 && !hasConst {
 		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[0], "division has no divisor")...)
 	}
 
-	// Compile all operands upfront.
+	// Compile all (non-constant) operands upfront.
 	sources, insns := p.compileUniformArgs(util.Some(bitwidth), mapping, nargs...)
-	// Chain divisions left-to-right: (((a / b) / c) / ...).
-	value := sources[0]
+	// Chain divisions left-to-right: (((a / b) / c) / ...), with the folded
+	// constant product (if any) applied by a final constant division.
+	var (
+		value = sources[0]
+		last  = len(sources) - 1
+	)
 	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(util.Some(bitwidth))
-		insns = append(insns, vm.Div[vm.Uint](tmp, value, sources[i]))
-		value = tmp
+	for i := 1; i <= last; i++ {
+		tgt := target
+		//
+		if i < last || hasConst {
+			tgt = p.allocate(util.Some(bitwidth))
+		}
+		//
+		insns = append(insns, vm.Div[vm.Uint](tgt, value, sources[i]))
+		value = tgt
 	}
 	//
-	return append(insns,
-		vm.Div[vm.Uint](target, value, sources[len(sources)-1]))
+	if hasConst {
+		insns = append(insns, vm.DivConst[vm.Uint](target, value, constant.SetBigInt(product)))
+	}
+	//
+	return insns
 }
 
 func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
 ) []Bytecode {
 	var bw = util.Some(bitwidth)
-	// Compile all operands upfront.
-	sources, insns := p.compileUniformArgs(bw, mapping, args...)
-	// Chain remainders left-to-right: (((a % b) % c) % ...).
-	value := sources[0]
-	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(bw)
-		insns = append(insns, vm.Rem[vm.Uint](tmp, value, sources[i]))
-		value = tmp
+	// Compile the dividend upfront.
+	value, insns := p.compileArg(args[0], bw, mapping)
+	// Chain remainders left-to-right: (((a % b) % c) % ...), with constant
+	// divisors applied by constant remainders rather than materialised.
+	for i := 1; i < len(args); i++ {
+		var (
+			tgt            = target
+			divisor, extra = p.compileOperand(args[i], bw, mapping)
+		)
+		//
+		insns = append(insns, extra...)
+		//
+		if i < len(args)-1 {
+			tgt = p.allocate(bw)
+		}
+		//
+		if divisor.IsConstant() {
+			constant := divisor.AsConstant()
+			//
+			if constant.Cmp64(0) == 0 {
+				p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[i], "division by zero")...)
+			} else if !constant.FitsWithin(bitwidth) {
+				msg := fmt.Sprintf("constant divisor overflows u%d", bitwidth)
+				p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[i], msg)...)
+			}
+			//
+			insns = append(insns, vm.RemConst[vm.Uint](tgt, value, constant))
+		} else {
+			insns = append(insns, vm.Rem[vm.Uint](tgt, value, divisor.AsRegister()))
+		}
+		//
+		value = tgt
 	}
 	//
-	return append(insns,
-		vm.Rem[vm.Uint](target, value, sources[len(sources)-1]))
+	return insns
 }
 
 func (p *StmtCompiler) compileBitwiseShl(args []Expr, bitwidth uint, mapping []uint, target RegisterId,

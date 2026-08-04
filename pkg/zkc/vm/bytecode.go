@@ -472,10 +472,11 @@ func Debug[W Word[W]](chunks []FormattedChunk, sources []RegisterId) Bytecode[W]
 }
 
 // Intrinsic constructs a hint instruction performing the given operation op (e.g.
-// DIV_HINT) which reads the given source (argument) register vectors and writes
+// DIV_HINT) which reads the given source (argument) operands and writes
 // the given target (return) register vectors.
-func Intrinsic[W Word[W]](op bytecode.Operation, targets, sources []bytecode.RegisterVector) Bytecode[W] {
-	return bytecode.NewIntrinsic[W](op, targets, sources)
+func Intrinsic[W Word[W]](op bytecode.Operation, targets []bytecode.RegisterVector,
+	sources []bytecode.Operand[W]) Bytecode[W] {
+	return bytecode.NewIntrinsic(op, targets, sources)
 }
 
 // Div constructs an integer-division instruction computing
@@ -484,10 +485,22 @@ func Div[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
 	return bytecode.NewDivRem[W](encoding.DIV, target, dividend, divisor)
 }
 
+// DivConst constructs an integer-division instruction computing
+// "target = dividend / divisor" for a constant divisor.
+func DivConst[W Word[W]](target, dividend RegisterId, divisor W) Bytecode[W] {
+	return bytecode.NewDivRemConst(encoding.DIV, target, dividend, divisor)
+}
+
 // Rem constructs an integer-remainder instruction computing
 // "target = dividend % divisor".
 func Rem[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
 	return bytecode.NewDivRem[W](encoding.REM, target, dividend, divisor)
+}
+
+// RemConst constructs an integer-remainder instruction computing
+// "target = dividend % divisor" for a constant divisor.
+func RemConst[W Word[W]](target, dividend RegisterId, divisor W) Bytecode[W] {
+	return bytecode.NewDivRemConst(encoding.REM, target, dividend, divisor)
 }
 
 // Fail constructs a fail instruction carrying the given formatted message.

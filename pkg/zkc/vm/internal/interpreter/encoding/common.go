@@ -241,6 +241,10 @@ const (
 	DEBUG
 	// FIELD_TO_UINT instruction
 	FIELD_TO_UINT
+	// DIVC (divide by constant) instruction
+	DIVC
+	// REMC (remainder by constant) instruction [must follow DIVC]
+	REMC
 	//
 	MAX_BYTECODE
 )
@@ -365,6 +369,11 @@ const (
 	WIDE_DEBUG
 	// WIDE_FIELD_TO_UINT instruction
 	WIDE_FIELD_TO_UINT
+	// WIDE_DIVC (divide by pooled constant) instruction
+	WIDE_DIVC
+	// WIDE_REMC (remainder by pooled constant) instruction [must follow
+	// WIDE_DIVC]
+	WIDE_REMC
 
 	//
 	MAX_WIDE_BYTECODE
@@ -390,9 +399,9 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 	case *bytecode.Debug[W]:
 		return Debug(b, env)
 	case *bytecode.DivRem[W]:
-		return DivRem(b)
+		return DivRem(b, env)
 	case *bytecode.Intrinsic[W]:
-		return Intrinsic(b)
+		return Intrinsic(b, env)
 	case *bytecode.Fail[W]:
 		return Fail(b, env)
 	case *bytecode.FieldArith[W]:

@@ -52,14 +52,15 @@ type Intrinsic[W word.Word[W]] struct {
 	Op Operation
 	// Targets receive the results (returns) written by this intrinsic.
 	Targets []RegisterVector
-	// Sources are the argument register vectors read by this intrinsic.
-	Sources []RegisterVector
+	// Sources are the arguments read by this intrinsic, each either a register
+	// vector or a (possibly multi-limb) constant.
+	Sources []Operand[W]
 }
 
 // NewIntrinsic constructs an intrinsic instruction performing the given operation
-// op (e.g. DIV_HINT) which reads the given source (argument) register vectors and
+// op (e.g. DIV_HINT) which reads the given source (argument) operands and
 // writes the given target (return) register vectors.
-func NewIntrinsic[W word.Word[W]](op Operation, targets, sources []RegisterVector) *Intrinsic[W] {
+func NewIntrinsic[W word.Word[W]](op Operation, targets []RegisterVector, sources []Operand[W]) *Intrinsic[W] {
 	return &Intrinsic[W]{Op: op, Targets: targets, Sources: sources}
 }
 
@@ -68,7 +69,9 @@ func (p *Intrinsic[W]) Uses() []RegisterId {
 	var uses []RegisterId
 	//
 	for _, s := range p.Sources {
-		uses = append(uses, s.Registers()...)
+		if s.IsRegisterVector() {
+			uses = append(uses, s.AsRegisters()...)
+		}
 	}
 	//
 	return uses
@@ -142,10 +145,18 @@ func (p *Intrinsic[W]) String(env Environment[W]) string {
 	var (
 		name    = intrinsicName(p.Op)
 		targets = registerVectorsToString(p.Targets, env, ",")
-		sources = registerVectorsToString(p.Sources, env, ", ")
+		sources strings.Builder
 	)
 	//
-	return fmt.Sprintf("%s = hint:%s(%s)", targets, name, sources)
+	for i, s := range p.Sources {
+		if i != 0 {
+			sources.WriteString(", ")
+		}
+		//
+		sources.WriteString(s.String(env))
+	}
+	//
+	return fmt.Sprintf("%s = hint:%s(%s)", targets, name, sources.String())
 }
 
 // intrinsicName returns a human-readable name for the given hint operation op.

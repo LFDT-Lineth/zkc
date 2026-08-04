@@ -115,8 +115,14 @@ func planDivisionReloads[W word.Word[W]](fn *descriptor.Function[W]) map[bytecod
 			if !ok {
 				continue
 			}
+			// Constant divisors carry no register to repurpose: they execute
+			// natively (and gogen emits a Go constant division, which the Go
+			// compiler already strength-reduces), so they are left unchanged.
+			if dr.Divisor.IsConstant() {
+				continue
+			}
 			//
-			r := dr.Divisor
+			r := dr.Divisor.AsRegister()
 			// The divisor must hold a single statically-known power-of-two constant
 			// and be read exactly once, so repurposing its value affects nothing else.
 			if defs[r] != 1 || uses[r] != 1 || !hasConst[r] {
@@ -159,17 +165,26 @@ func rewriteDivisionInsn[W word.Word[W]](insn Bytecode[W], reloads map[bytecode.
 			}
 		}
 	case *bytecode.DivRem[W]:
-		if _, ok := reloads[insn.Divisor]; ok {
-			width := uint16(regs[insn.Dividend].Bitwidth().UnwrapOr(0))
+		if insn.Divisor.IsConstant() {
+			// Constant divisors are never planned for repurposing (see
+			// planDivisionReloads).
+			break
+		}
+		//
+		if _, ok := reloads[insn.Divisor.AsRegister()]; ok {
+			var (
+				width   = uint16(regs[insn.Dividend].Bitwidth().UnwrapOr(0))
+				divisor = insn.Divisor.AsRegister()
+			)
 			//
 			switch insn.Opcode {
 			case encoding.DIV:
 				return []Bytecode[W]{
-					bytecode.NewBitwise[W](bytecode.OP_SHR, insn.Target, insn.Dividend, insn.Divisor, width),
+					bytecode.NewBitwise[W](bytecode.OP_SHR, insn.Target, insn.Dividend, divisor, width),
 				}
 			case encoding.REM:
 				return []Bytecode[W]{
-					bytecode.NewBitwise[W](bytecode.OP_AND, insn.Target, insn.Dividend, insn.Divisor, width),
+					bytecode.NewBitwise[W](bytecode.OP_AND, insn.Target, insn.Dividend, divisor, width),
 				}
 			}
 		}

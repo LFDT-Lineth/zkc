@@ -715,8 +715,12 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = p.executeDiv(p.pc, bytecodes, frame)
 		case encoding.REM:
 			p.pc, err = p.executeRem(p.pc, bytecodes, frame)
+		case encoding.DIVC:
+			p.pc, err = p.executeDivConst(p.pc, bytecodes, pool, frame)
+		case encoding.REMC:
+			p.pc, err = p.executeRemConst(p.pc, bytecodes, pool, frame)
 		case encoding.INTRINSIC:
-			p.pc, err = p.executeIntrinsic(p.pc, bytecodes, frame)
+			p.pc, err = p.executeIntrinsic(p.pc, bytecodes, pool, frame)
 		case encoding.ADDMOD_P:
 			p.pc, err = p.executeFieldAdd(p.pc, bytecodes, pool, frame)
 		case encoding.SUBMOD_P:
@@ -845,8 +849,12 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		pc, err = p.executeDiv(pc, codes, stack)
 	case encoding.WIDE_REM:
 		pc, err = p.executeRem(pc, codes, stack)
+	case encoding.WIDE_DIVC:
+		pc, err = p.executeDivConst(pc, codes, pool, stack)
+	case encoding.WIDE_REMC:
+		pc, err = p.executeRemConst(pc, codes, pool, stack)
 	case encoding.WIDE_INTRINSIC:
-		pc, err = p.executeIntrinsic(pc, codes, stack)
+		pc, err = p.executeIntrinsic(pc, codes, pool, stack)
 	case encoding.WIDE_ADDMOD_P:
 		pc, err = p.executeFieldAdd(pc, codes, pool, stack)
 	case encoding.WIDE_SUBMOD_P:
@@ -972,7 +980,7 @@ func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error
 // as the word machine, reporting an error on overflow.
 func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		targets, sources, constant, _, n = encoding.DecodeArith_nm[W](pc, codes, pool)
+		targets, sources, constant, _, n = encoding.DecodeArith_nm(pc, codes, pool)
 		val                              = constant
 	)
 	//
@@ -997,7 +1005,7 @@ func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, pool []W, stac
 // rule as the word machine, reporting an error on overflow.
 func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		targets, sources, constant, _, n = encoding.DecodeArith_nm[W](pc, codes, pool)
+		targets, sources, constant, _, n = encoding.DecodeArith_nm(pc, codes, pool)
 		val                              = constant
 		overflow                         bool
 	)
@@ -1025,7 +1033,7 @@ func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, pool []W, stac
 // single target register.  Matches executeFieldAdd in the slow word machine.
 func (p *Interpreter[W]) executeFieldAdd(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rd, sources, constant, n = encoding.DecodeFieldArithOperands[W](pc, codes, pool)
+		rd, sources, constant, n = encoding.DecodeFieldArithOperands(pc, codes, pool)
 		val                      = constant
 	)
 	//
@@ -1044,7 +1052,7 @@ func (p *Interpreter[W]) executeFieldAdd(pc uint32, codes []uint32, pool []W, st
 // register.  Matches executeFieldSub in the slow word machine.
 func (p *Interpreter[W]) executeFieldSub(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rd, sources, constant, n = encoding.DecodeFieldArithOperands[W](pc, codes, pool)
+		rd, sources, constant, n = encoding.DecodeFieldArithOperands(pc, codes, pool)
 		val                      W
 	)
 	//
@@ -1068,7 +1076,7 @@ func (p *Interpreter[W]) executeFieldSub(pc uint32, codes []uint32, pool []W, st
 // single target register.  Matches executeFieldMul in the slow word machine.
 func (p *Interpreter[W]) executeFieldMul(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rd, sources, constant, n = encoding.DecodeFieldArithOperands[W](pc, codes, pool)
+		rd, sources, constant, n = encoding.DecodeFieldArithOperands(pc, codes, pool)
 		val                      = constant
 	)
 	//
@@ -1217,7 +1225,7 @@ func (p *Interpreter[W]) executeAdd_2n1(pc uint32, codes []uint32, stack []W) (u
 // executeAdd_1n1c implements ADDC: stack[rd] = stack[rs] + constant.
 func (p *Interpreter[W]) executeAdd_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes, pool)
+		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
 		val                 = stack[rs]
 		res, overflow       = val.Add(constant)
 	)
@@ -1302,22 +1310,52 @@ func (p *Interpreter[W]) executeRem(pc uint32, codes []uint32, stack []W) (uint3
 	return pc + n, nil
 }
 
+// executeDivConst implements DIVC: stack[rd] = stack[dividend] / constant.
+// The layout coincides with the arithmetic-with-constant family, so decoding
+// is shared (see encodeDivRemC).  A zero divisor cannot be encoded (bytecode
+// validation rejects it), but is guarded regardless.
+func (p *Interpreter[W]) executeDivConst(pc uint32, codes []uint32, pool, stack []W) (uint32, error) {
+	var dividend, rd, divisor, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+	//
+	if divisor.Cmp64(0) == 0 {
+		return pc, p.failure("division by zero")
+	}
+	//
+	stack[rd] = stack[dividend].Div(divisor)
+	//
+	return pc + n, nil
+}
+
+// executeRemConst implements REMC: stack[rd] = stack[dividend] % constant (see
+// executeDivConst).
+func (p *Interpreter[W]) executeRemConst(pc uint32, codes []uint32, pool, stack []W) (uint32, error) {
+	var dividend, rd, divisor, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+	//
+	if divisor.Cmp64(0) == 0 {
+		return pc, p.failure("division by zero")
+	}
+	//
+	stack[rd] = stack[dividend].Rem(divisor)
+	//
+	return pc + n, nil
+}
+
 // executeIntrinsic implements INTRINSIC: it decodes the operation selector and
 // dispatches to the corresponding intrinsic (DIV_HINT or WIDE_SHL).
-func (p *Interpreter[W]) executeIntrinsic(pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeIntrinsic(pc uint32, codes []uint32, pool, stack []W) (uint32, error) {
 	op, targets, sources, n := encoding.DecodeIntrinsicOperands(pc, codes)
 	//
 	switch op {
 	case bytecode.DIV_HINT:
-		return p.executeDivHint(pc, n, targets, sources, stack)
+		return p.executeDivHint(pc, n, targets, sources, pool, stack)
 	case bytecode.WIDE_SHL:
-		return p.executeWideShlHint(pc, n, targets, sources, stack)
+		return p.executeWideShlHint(pc, n, targets, sources, pool, stack)
 	case bytecode.WIDE_SHR:
-		return p.executeWideShrHint(pc, n, targets, sources, stack)
+		return p.executeWideShrHint(pc, n, targets, sources, pool, stack)
 	case bytecode.WIDE_DIV:
-		return p.executeWideDivHint(pc, n, targets, sources, stack)
+		return p.executeWideDivHint(pc, n, targets, sources, pool, stack)
 	case bytecode.WIDE_REM:
-		return p.executeWideRemHint(pc, n, targets, sources, stack)
+		return p.executeWideRemHint(pc, n, targets, sources, pool, stack)
 	default:
 		return pc, fmt.Errorf("unknown intrinsic operation (%d)", op)
 	}
@@ -1330,11 +1368,11 @@ func (p *Interpreter[W]) executeIntrinsic(pc uint32, codes []uint32, stack []W) 
 // if the divisor is zero.  big.Int arithmetic is used so values spanning
 // several limbs (i.e. wider than the machine word) are handled correctly.
 func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.Operands,
-	stack []W) (uint32, error) {
+	pool, stack []W) (uint32, error) {
 	var (
 		module   = p.program.Module(p.fid)
-		dividend = loadIntrinsicOperand(module, &sources, stack)
-		divisor  = loadIntrinsicOperand(module, &sources, stack)
+		dividend = loadIntrinsicOperand(module, &sources, pool, stack)
+		divisor  = loadIntrinsicOperand(module, &sources, pool, stack)
 	)
 	//
 	if divisor.Sign() == 0 {
@@ -1370,15 +1408,15 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 // chained across the words (see shl64), so operands of any width — including
 // those wider than a double word — are handled without big.Int.
 func (p *Interpreter[W]) executeWideShlHint(pc, n uint32, targets, sources encoding.Operands,
-	stack []W) (uint32, error) {
+	pool, stack []W) (uint32, error) {
 	var (
 		module = p.program.Module(p.fid)
-		value  = packOperand(module, &sources, stack)
+		value  = packOperand(module, &sources, pool, stack)
 		// Peek at the target width without consuming the iterator that
 		// unpackResult reads below.
 		peek  = targets
 		width = intrinsicVectorWidth(module, &peek)
-		shift = shiftAmount(packOperand(module, &sources, stack), uint64(width))
+		shift = shiftAmount(packOperand(module, &sources, pool, stack), uint64(width))
 	)
 	//
 	unpackResult(module, &targets, shl64(value, shift), stack)
@@ -1391,13 +1429,13 @@ func (p *Interpreter[W]) executeWideShlHint(pc, n uint32, targets, sources encod
 // SHR instruction) and distributes it across the target vector, using the same
 // word-native, carry-chained approach as executeWideShlHint (see shr64).
 func (p *Interpreter[W]) executeWideShrHint(pc, n uint32, targets, sources encoding.Operands,
-	stack []W) (uint32, error) {
+	pool, stack []W) (uint32, error) {
 	var (
 		module = p.program.Module(p.fid)
-		value  = packOperand(module, &sources, stack)
+		value  = packOperand(module, &sources, pool, stack)
 		peek   = targets
 		width  = intrinsicVectorWidth(module, &peek)
-		shift  = shiftAmount(packOperand(module, &sources, stack), uint64(width))
+		shift  = shiftAmount(packOperand(module, &sources, pool, stack), uint64(width))
 	)
 	//
 	unpackResult(module, &targets, shr64(value, shift), stack)
@@ -1476,16 +1514,24 @@ func shr64[W word.Word[W]](values []W, width uint64) []W {
 // increasing bit offset, spilling into the next word as the offset crosses a
 // word boundary.  A bit cursor is used so the limb width need not divide the
 // machine word bandwidth.
-func packOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, stack []W) []W {
+func packOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, pool, stack []W) []W {
 	var (
-		base      = iter.Next()
-		length    = uint(iter.Next())
-		zero      W
-		bandwidth = zero.Bandwidth()
-		words     []W
-		cur       W
-		off       uint
+		base, length, isConst = iter.NextOperand()
+		zero                  W
+		bandwidth             = zero.Bandwidth()
+		words                 []W
+		cur                   W
+		off                   uint
 	)
+	// A constant operand is single-limb by construction (see split.SplitOperand)
+	// and hence already a single machine word.
+	if isConst {
+		if length != 1 {
+			panic("multi-limb constant operand")
+		}
+		//
+		return []W{pool[base]}
+	}
 	//
 	for i := int(length) - 1; i >= 0; i-- {
 		var (
@@ -1580,11 +1626,11 @@ func shiftAmount[W word.Word[W]](words []W, maxShift uint64) uint64 {
 // so values spanning several limbs (i.e. wider than the machine word) are
 // handled correctly.
 func (p *Interpreter[W]) executeWideDivHint(pc, n uint32, targets, sources encoding.Operands,
-	stack []W) (uint32, error) {
+	pool, stack []W) (uint32, error) {
 	var (
 		module   = p.program.Module(p.fid)
-		dividend = loadIntrinsicOperand(module, &sources, stack)
-		divisor  = loadIntrinsicOperand(module, &sources, stack)
+		dividend = loadIntrinsicOperand(module, &sources, pool, stack)
+		divisor  = loadIntrinsicOperand(module, &sources, pool, stack)
 	)
 	//
 	if divisor.Sign() == 0 {
@@ -1606,11 +1652,11 @@ func (p *Interpreter[W]) executeWideDivHint(pc, n uint32, targets, sources encod
 // arithmetic is used so values spanning several limbs (i.e. wider than the
 // machine word) are handled correctly.
 func (p *Interpreter[W]) executeWideRemHint(pc, n uint32, targets, sources encoding.Operands,
-	stack []W) (uint32, error) {
+	pool, stack []W) (uint32, error) {
 	var (
 		module   = p.program.Module(p.fid)
-		dividend = loadIntrinsicOperand(module, &sources, stack)
-		divisor  = loadIntrinsicOperand(module, &sources, stack)
+		dividend = loadIntrinsicOperand(module, &sources, pool, stack)
+		divisor  = loadIntrinsicOperand(module, &sources, pool, stack)
 	)
 	//
 	if divisor.Sign() == 0 {
@@ -1641,20 +1687,33 @@ func intrinsicVectorWidth[W word.Word[W]](module descriptor.Module[W], iter *enc
 }
 
 // loadIntrinsicOperand reconstructs the value of a single hint operand from the
-// next (base, len) register vector in the iterator.  Register splitting lays
-// limbs out most-significant first (see descriptor.NewLimbsMap), so the
-// lowest-indexed register (base) holds the most-significant limb.  The value is
-// therefore accumulated from the most-significant limb down, shifting the
-// running value up by each limb's width before folding the limb in.
-func loadIntrinsicOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, stack []W) *big.Int {
+// next (base, len) pair in the iterator.  A constant operand reads its (single
+// limb, see split.SplitOperand) value from the constant pool.  For a register
+// vector: register splitting lays limbs out most-significant first (see
+// descriptor.NewLimbsMap), so the lowest-indexed register (base) holds the
+// most-significant limb.  The value is therefore accumulated from the
+// most-significant limb down, shifting the running value up by each limb's
+// width before folding the limb in.
+func loadIntrinsicOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands,
+	pool, stack []W) *big.Int {
+	//
 	var (
-		base   = iter.Next()
-		length = uint(iter.Next())
-		value  = new(big.Int)
+		base, length, isConst = iter.NextOperand()
+		value                 = new(big.Int)
 	)
 	//
-	for i := uint(0); i < length; i++ {
-		var reg = base + uint16(i)
+	if isConst {
+		// Constant operands are single-limb by construction: their limb widths
+		// are not recorded, so a multi-limb run cannot be reconstructed.
+		if length != 1 {
+			panic("multi-limb constant operand")
+		}
+		//
+		return pool[base].BigInt()
+	}
+	//
+	for i := uint16(0); i < length; i++ {
+		var reg = base + i
 		//
 		value.Lsh(value, bitwidthOf(module, reg))
 		value.Or(value, stack[reg].BigInt())
@@ -1737,7 +1796,7 @@ func executeSkipIf_rc[W word.Word[W], F util.Comparator[W]](pc uint32, codes []u
 	var (
 		c F
 		//
-		skip, rs0, constant, _, n = encoding.DecodeSkipIf_rc[W](pc, codes, pool)
+		skip, rs0, constant, _, n = encoding.DecodeSkipIf_rc(pc, codes, pool)
 		// Calculate skip target
 		target = pc + 1 + skip
 		// Read rs0
@@ -1763,7 +1822,7 @@ func executeSkipIf_rcv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []
 	var (
 		cmp F
 		//
-		skip, rs0, constants, _, n = encoding.DecodeSkipIf_rcv[W](pc, codes, pool)
+		skip, rs0, constants, _, n = encoding.DecodeSkipIf_rcv(pc, codes, pool)
 		// Calculate skip target
 		target = pc + 1 + skip
 	)
@@ -1883,7 +1942,7 @@ func executeLdc_1[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
 // executeLdc_w implements LDC_w: it loads a wide constant value into register
 // rd.
 func executeLdc_w[W word.Word[W]](pc uint32, codes []uint32, pool []W, stack []W) uint32 {
-	val, rd, n := encoding.DecodeLdc_w[W](pc, codes, pool)
+	val, rd, n := encoding.DecodeLdc_w(pc, codes, pool)
 	//
 	stack[rd] = val
 	//
@@ -1929,7 +1988,7 @@ func (p *Interpreter[W]) executeMul_2n1(pc uint32, codes []uint32, stack []W) (u
 // executeMul_1n1c implements MULC: stack[rd] = stack[rs] * constant.
 func (p *Interpreter[W]) executeMul_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes, pool)
+		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
 		val                 = stack[rs]
 		hi, lo              = val.Mul(constant)
 	)
@@ -2026,7 +2085,7 @@ func executeShr[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 // executeSub_1n1c implements SUBC: stack[rd] = stack[rs] - constant.
 func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes, pool)
+		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
 		val                 = stack[rs]
 		res, underflow      = val.Sub(constant)
 	)
@@ -2089,7 +2148,7 @@ func (p *Interpreter[W]) executeSub_2n1(pc uint32, codes []uint32, stack []W) (u
 // machine, reporting an error on underflow.
 func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm[W](pc, codes, pool)
+		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm(pc, codes, pool)
 		val                                     W
 		acc                                     W
 		underflow                               bool

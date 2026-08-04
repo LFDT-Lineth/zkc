@@ -18,21 +18,28 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// DivRem computes the (truncated) integer quotient or remainder of two
-// registers.  The operation is identified by Opcode, which is one of DIV or
-// REM.  A zero divisor aborts execution with a division-by-zero error.
+// DivRem computes the (truncated) integer quotient or remainder of a register
+// by a divisor which is either a register or a constant.  The operation is
+// identified by Opcode, which is one of DIV or REM.  A zero divisor aborts
+// execution with a division-by-zero error.
 type DivRem[W word.Word[W]] struct {
 	// Opcode selects the operation (DIV or REM).
 	Opcode uint32
 	// Target receives the result.
 	Target RegisterId
-	// Dividend and Divisor are the operand registers.
-	Dividend, Divisor RegisterId
+	// Dividend is the operand register.
+	Dividend RegisterId
+	// Divisor is either a (single limb) operand register or a constant.
+	Divisor Operand[W]
 }
 
 // Uses implementation for Bytecode interface.
 func (p *DivRem[W]) Uses() []RegisterId {
-	return []RegisterId{p.Dividend, p.Divisor}
+	if p.Divisor.IsConstant() {
+		return []RegisterId{p.Dividend}
+	}
+	//
+	return []RegisterId{p.Dividend, p.Divisor.AsRegister()}
 }
 
 // Definitions implementation for Bytecode interface.
@@ -42,14 +49,21 @@ func (p *DivRem[W]) Definitions() []RegisterId {
 
 // Validate implementation for Bytecode interface.
 func (p *DivRem[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	return validateOperands(env, p.Uses(), p.Definitions())
+	errs := validateOperands(env, p.Uses(), p.Definitions())
+	// A constant divisor of zero would unconditionally abort execution, so its
+	// presence indicates a broken transform (codegen rejects it up front).
+	if p.Divisor.IsConstant() && p.Divisor.AsConstant().Cmp64(0) == 0 {
+		errs = append(errs, fmt.Errorf("constant divisor is zero"))
+	}
+	//
+	return errs
 }
 
 func (p *DivRem[W]) String(mapping Environment[W]) string {
 	var (
 		target   = RegisterToString(p.Target, mapping)
 		dividend = RegisterToString(p.Dividend, mapping)
-		divisor  = RegisterToString(p.Divisor, mapping)
+		divisor  = p.Divisor.String(mapping)
 		symbol   = "/"
 	)
 	//
