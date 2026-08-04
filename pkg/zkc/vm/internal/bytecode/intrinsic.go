@@ -92,6 +92,15 @@ func (p *Intrinsic[W]) Definitions() []RegisterId {
 // of arguments and returns matches what the selected operation expects.
 func (p *Intrinsic[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 	errs := validateOperands(env, p.Uses(), p.Definitions())
+	// Constant sources must be single-limb: their limb widths are not
+	// recorded, so a multi-limb run could be neither encoded nor reconstructed
+	// (see split.SplitOperand, which materialises over-wide constants into
+	// registers instead).
+	for _, s := range p.Sources {
+		if s.IsConstant() && len(s.AsConstants()) != 1 {
+			errs = append(errs, fmt.Errorf("multi-limb constant operand"))
+		}
+	}
 	//
 	switch p.Op {
 	case DIV_HINT:

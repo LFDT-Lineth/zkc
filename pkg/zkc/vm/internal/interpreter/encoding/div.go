@@ -13,7 +13,6 @@
 package encoding
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -49,7 +48,8 @@ func DecodeIntrinsic[W word.Word[W]](pc uint32, codes []uint32, pool []W) (Bytec
 
 // operandsFromIter reconstructs the source operands packed as flagged (base,
 // len) pairs within the given iterator (see Operands.NextOperand), resolving
-// constant runs against the given constant pool.
+// constants against the given constant pool.  Constant operands are
+// single-limb by construction (enforced when encoding, see encodeIntrinsic).
 func operandsFromIter[W word.Word[W]](iter Operands, pool []W) []bytecode.Operand[W] {
 	var ops []bytecode.Operand[W]
 	//
@@ -57,7 +57,11 @@ func operandsFromIter[W word.Word[W]](iter Operands, pool []W) []bytecode.Operan
 		var base, n, isConst = iter.NextOperand()
 		//
 		if isConst {
-			ops = append(ops, bytecode.NewConstantOperand(pool[base:base+n]...))
+			if n != 1 {
+				panic("multi-limb constant operand")
+			}
+			//
+			ops = append(ops, bytecode.NewConstantOperand(pool[base]))
 		} else {
 			ops = append(ops, bytecode.NewRegisterVectorOperand[W](RegisterVector{Base: base, Len: n}))
 		}
@@ -219,36 +223,40 @@ func encodeIntrinsic[W word.Word[W]](op Operation, targets []RegisterVector,
 	}
 	//
 	var (
-		// Sources resolved into (base, len) pairs, with constant runs interned
-		// in the constant pool.
+		// Sources resolved into (base, len) pairs, with constants interned in
+		// the constant pool.  Note that the constant flag only applies to
+		// source lengths: targets are decoded as plain register vectors, so
+		// they need no flag headroom.
 		bases  = make([]uint16, len(sources))
 		lens   = make([]uint16, len(sources))
 		consts = make([]bool, len(sources))
 		wide   = IsWideRegisterVectors(targets)
 	)
-	// Target lengths share the packed stream with the flagged source pairs, so
-	// a target length colliding with the narrow flag also forces the wide form.
-	for _, t := range targets {
-		wide = wide || t.Len >= 0x80
-	}
 	//
 	for i, s := range sources {
 		if s.IsConstant() {
 			var limbs = s.AsConstants()
+			// Constant operands are single-limb by construction (see
+			// split.SplitOperand): their limb widths are not recorded, so a
+			// multi-limb run could not be reconstructed by the interpreter.
+			// Intrinsic.Validate rejects offenders up front.
+			if len(limbs) != 1 {
+				panic("multi-limb constant operand")
+			}
 			//
-			bases[i] = env.ConstantVectorIndex(limbs)
-			lens[i] = util.Cast[uint16](uint(len(limbs)))
+			bases[i] = env.ConstantIndex(limbs[0])
+			lens[i] = 1
 			consts[i] = true
 		} else {
 			var v = s.AsRegisterVector()
 			//
 			bases[i] = v.Base
 			lens[i] = v.Len
-		}
-		// Lengths carry the constant flag in their top bit, so they must stay
-		// strictly below it in either form.
-		if lens[i] >= 0x8000 {
-			panic("hint operand length collides with constant flag")
+			// Lengths carry the constant flag in their top bit, so they must
+			// stay strictly below it in either form.
+			if lens[i] >= 0x8000 {
+				panic("hint operand length collides with constant flag")
+			}
 		}
 		//
 		wide = wide || bases[i] > 0xff || lens[i] >= 0x80

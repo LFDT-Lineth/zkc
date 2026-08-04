@@ -50,10 +50,19 @@ func (p *DivRem[W]) Definitions() []RegisterId {
 // Validate implementation for Bytecode interface.
 func (p *DivRem[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 	errs := validateOperands(env, p.Uses(), p.Definitions())
-	// A constant divisor of zero would unconditionally abort execution, so its
-	// presence indicates a broken transform (codegen rejects it up front).
-	if p.Divisor.IsConstant() && p.Divisor.AsConstant().Cmp64(0) == 0 {
-		errs = append(errs, fmt.Errorf("constant divisor is zero"))
+	//
+	if p.Divisor.IsConstant() {
+		// A constant divisor is a single limb (see Intrinsic.Validate for the
+		// rationale).
+		if len(p.Divisor.AsConstants()) != 1 {
+			return append(errs, fmt.Errorf("multi-limb constant divisor"))
+		}
+		// A constant divisor of zero would unconditionally abort execution, so
+		// its presence indicates a broken transform (codegen rejects it up
+		// front).
+		if p.Divisor.AsConstant().Cmp64(0) == 0 {
+			errs = append(errs, fmt.Errorf("constant divisor is zero"))
+		}
 	}
 	//
 	return errs
