@@ -766,7 +766,7 @@ func (p *StmtCompiler) compileIntDiv(args []Expr, bitwidth uint, mapping []uint,
 		value = tgt
 	}
 	//
-	if hasConst {
+	if hasConst && product.Sign() != 0 {
 		insns = append(insns, vm.DivConst[vm.Uint](target, value, constant.SetBigInt(product)))
 	}
 	//
