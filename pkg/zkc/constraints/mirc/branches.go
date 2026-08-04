@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package compiler
+package mirc
 
 import (
 	"fmt"
@@ -18,9 +18,9 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 )
 
 // TranslateBranchCondition translates a given branch condition within the

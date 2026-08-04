@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package compiler
+package mirc
 
 // Framing is used to manage additional registers required to ensure soundness.
 // In particular, framinging applies to multi-line functions as these require a

@@ -19,9 +19,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/corset/compiler"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/hir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
@@ -47,14 +47,14 @@ type CompilationConfig = compiler.Config
 // process can fail if the source files are mal-formed, or contain syntax errors
 // or other forms of error (e.g. type errors).
 func CompileSourceFiles(config CompilationConfig, srcfiles []source.File,
-) (asm.MicroHirProgram, SourceMap, []SyntaxError) {
+) (hir.Schema, SourceMap, []SyntaxError) {
 	// Include the standard library (if requested)
 	srcfiles = includeStdlib(config.Stdlib, srcfiles)
 	// Parse all source files (inc stdblib if applicable).
 	circuit, srcmap, errs := compiler.ParseSourceFiles(srcfiles, config)
 	// Check for parsing errors
 	if errs != nil {
-		return asm.MicroHirProgram{}, SourceMap{}, errs
+		return hir.Schema{}, SourceMap{}, errs
 	}
 	// Compile each module into the schema
 	comp := NewCompiler(circuit, srcmap).
@@ -73,7 +73,7 @@ func CompileSourceFiles(config CompilationConfig, srcfiles []source.File,
 // really helper function for e.g. the testing environment.   This process can
 // fail if the source file is mal-formed, or contains syntax errors or other
 // forms of error (e.g. type errors).
-func CompileSourceFile(config CompilationConfig, srcfile source.File) (asm.MicroHirProgram, SourceMap, []SyntaxError) {
+func CompileSourceFile(config CompilationConfig, srcfile source.File) (hir.Schema, SourceMap, []SyntaxError) {
 	return CompileSourceFiles(config, []source.File{srcfile})
 }
 
@@ -118,7 +118,7 @@ func (p *Compiler) SetAllocator(allocator func(compiler.RegisterAllocation)) *Co
 // ways if the given modules are malformed in some way.  For example, if some
 // expression refers to a non-existent module or column, or is not well-typed,
 // etc.
-func (p *Compiler) Compile(config compiler.Config) (asm.MicroHirProgram, SourceMap, []SyntaxError) {
+func (p *Compiler) Compile(config compiler.Config) (hir.Schema, SourceMap, []SyntaxError) {
 	var (
 		scope  *compiler.ModuleScope
 		errors []SyntaxError
@@ -129,20 +129,20 @@ func (p *Compiler) Compile(config compiler.Config) (asm.MicroHirProgram, SourceM
 	errors = append(errors, compiler.TypeCheckCircuit(p.srcmap, &p.circuit)...)
 	// Catch errors
 	if len(errors) > 0 {
-		return asm.MicroHirProgram{}, SourceMap{}, errors
+		return hir.Schema{}, SourceMap{}, errors
 	}
 	// Preprocess circuit to remove invocations, reductions, etc.
 	if errors = compiler.PreprocessCircuit(p.debug, p.srcmap, &p.circuit); len(errors) > 0 {
-		return asm.MicroHirProgram{}, SourceMap{}, errors
+		return hir.Schema{}, SourceMap{}, errors
 	}
 	// Convert global scope into an environment by allocating all columns.
 	environment := compiler.NewGlobalEnvironment(scope, p.allocator)
 	// Translate everything and add it to the schema.
-	asmProgram, errs := compiler.TranslateCircuit(environment, p.srcmap, &p.circuit, config)
+	schema, errs := compiler.TranslateCircuit(environment, p.srcmap, &p.circuit, config)
 	// Sanity check for errors
 	if len(errs) > 0 {
-		return asm.MicroHirProgram{}, SourceMap{}, errs
-	} else if cerrs := asmProgram.Consistent(math.MaxUint); len(cerrs) > 0 {
+		return hir.Schema{}, SourceMap{}, errs
+	} else if cerrs := schema.Consistent(math.MaxUint); len(cerrs) > 0 {
 		// Should be unreachable.
 		for _, err := range cerrs {
 			fmt.Println(err.Error())
@@ -151,9 +151,9 @@ func (p *Compiler) Compile(config compiler.Config) (asm.MicroHirProgram, SourceM
 		panic("inconsistent schema?")
 	}
 	// Construct source map
-	source_map := constructSourceMap(&asmProgram, scope, environment)
+	source_map := constructSourceMap(&schema, scope, environment)
 	// Construct binary file
-	return asmProgram, *source_map, errs
+	return schema, *source_map, errs
 }
 
 func includeStdlib(stdlib bool, srcfiles []source.File) []source.File {

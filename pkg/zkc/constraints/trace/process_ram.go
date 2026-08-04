@@ -13,7 +13,6 @@
 package trace
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -85,31 +84,31 @@ func initReadWriteMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](cfg fie
 	)
 	// EXEC, FINL, IS_WRITE.
 	regs = append(regs,
-		rtrace.NewColumnDescriptor(io.RAM_EXEC_NAME, u1),
-		rtrace.NewColumnDescriptor(io.RAM_FINL_NAME, u1),
-		rtrace.NewColumnDescriptor(io.RAM_IS_WRITE_NAME, u1),
+		rtrace.NewColumnDescriptor(RAM_EXEC_NAME, u1),
+		rtrace.NewColumnDescriptor(RAM_FINL_NAME, u1),
+		rtrace.NewColumnDescriptor(RAM_IS_WRITE_NAME, u1),
 	)
 	// VALUE_READ (same widths as the data lanes, native included).
 	for j, r := range m.DataRegisters() {
-		regs = append(regs, rtrace.NewColumnDescriptor(io.RamLimbName(io.RAM_VALUE_READ_PREFIX, uint(j)), r.Bitwidth()))
+		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_VALUE_READ_PREFIX, uint(j)), r.Bitwidth()))
 	}
 	// TIMESTAMP_WRITTEN / READ / DELTA.
-	for _, prefix := range []string{io.RAM_TS_WRITTEN_PREFIX, io.RAM_TS_READ_PREFIX, io.RAM_TS_DELTA_PREFIX} {
+	for _, prefix := range []string{RAM_TS_WRITTEN_PREFIX, RAM_TS_READ_PREFIX, RAM_TS_DELTA_PREFIX} {
 		for k, w := range tsWidths {
-			regs = append(regs, rtrace.NewColumnDescriptor(io.RamLimbName(prefix, uint(k)), util.Some(w)))
+			regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(prefix, uint(k)), util.Some(w)))
 		}
 	}
 	// ADDRESS_DELTA (same widths as the address lanes).
 	for j, r := range m.AddressRegisters() {
-		regs = append(regs, rtrace.NewColumnDescriptor(io.RamLimbName(io.RAM_ADDR_DELTA_PREFIX, uint(j)), r.Bitwidth()))
+		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_ADDR_DELTA_PREFIX, uint(j)), r.Bitwidth()))
 	}
 	// TS_CARRY / ADDR_CARRY (one fewer than their value's limbs; 1-bit).
 	for k := uint(1); k < uint(len(tsWidths)); k++ {
-		regs = append(regs, rtrace.NewColumnDescriptor(io.RamLimbName(io.RAM_TS_CARRY_PREFIX, k-1), u1))
+		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_TS_CARRY_PREFIX, k-1), u1))
 	}
 	//
 	for k := uint(1); k < m.NumInputs(); k++ {
-		regs = append(regs, rtrace.NewColumnDescriptor(io.RamLimbName(io.RAM_ADDR_CARRY_PREFIX, k-1), u1))
+		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_ADDR_CARRY_PREFIX, k-1), u1))
 	}
 	//Done
 	return module.Initialise(m.Name(), regs)

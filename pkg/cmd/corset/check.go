@@ -19,7 +19,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
 	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
@@ -180,10 +179,9 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 	schemas cmd_util.SchemaStacker[F]) {
 	//
 	var (
-		errors    []error
-		traces    []lt.TraceFile
-		ok        bool = true
-		expanding      = schemas.TraceBuilder().Expanding()
+		errors []error
+		traces []lt.TraceFile
+		ok     bool = true
 	)
 	//
 	stats := util.NewPerfStats()
@@ -198,16 +196,6 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 	} else {
 		// unbatched (i.e. normal) mode
 		traces = []lt.TraceFile{ReadTraceFile(tracefile)}
-	}
-	//
-	schema := schemas.BinaryFile().Schema
-	// Apply trace propagation
-	if expanding {
-		perf := util.NewPerfStats()
-		//
-		traces, errors = asm.PropagateAll(schema, traces)
-		//
-		perf.Log("Trace propagation")
 	}
 	// Go!
 	if len(errors) == 0 {

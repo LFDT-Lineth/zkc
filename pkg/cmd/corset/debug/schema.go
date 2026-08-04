@@ -15,9 +15,6 @@ package debug
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro"
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
@@ -54,12 +51,7 @@ func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, 
 			fmt.Println()
 		}
 		//
-		switch ith := ith.(type) {
-		case *asm.MicroModule[F]:
-			printAssemblyFunctionalUnit[micro.Instruction](ith.Function())
-		default:
-			printModule(ith, schema, width, verbose)
-		}
+		printModule(ith, schema, width, verbose)
 		//
 		first = false
 	}
@@ -226,68 +218,4 @@ func isEmptyModule[F any](module schema.Module[F]) bool {
 	return len(module.Registers()) == 0 &&
 		module.Constraints().Count() == 0 &&
 		module.Assignments().Count() == 0
-}
-
-// ==================================================================
-// Assembly Function
-// ==================================================================
-
-func printAssemblyFunctionalUnit[T io.Instruction](f io.Component[T]) {
-	printAssemblySignature[T](f)
-	printAssemblyRegisters[T](f)
-	//
-	switch f := f.(type) {
-	case *io.Function[T]:
-		for pc, insn := range f.Code() {
-			fmt.Printf("[%d]\t%s\n", pc, insn.String(f))
-		}
-	default:
-		panic("unknown component")
-	}
-	//
-	fmt.Println("}")
-}
-
-func printAssemblySignature[T io.Instruction](f io.Component[T]) {
-	first := true
-	//
-	fmt.Printf("fn %s(", f.Name())
-	//
-	for _, r := range f.Registers() {
-		if r.IsInput() {
-			if !first {
-				fmt.Printf(", ")
-			} else {
-				first = false
-			}
-			//
-			fmt.Printf("%s u%d", r.Name(), r.Width())
-		}
-	}
-	//
-	fmt.Printf(") -> (")
-	// reset
-	first = true
-	//
-	for _, r := range f.Registers() {
-		if r.IsOutput() {
-			if !first {
-				fmt.Printf(", ")
-			} else {
-				first = false
-			}
-			//
-			fmt.Printf("%s u%d", r.Name(), r.Width())
-		}
-	}
-	//
-	fmt.Println(") {")
-}
-
-func printAssemblyRegisters[T io.Instruction](f io.Component[T]) {
-	for _, r := range f.Registers() {
-		if !r.IsInput() && !r.IsOutput() {
-			fmt.Printf("\tvar %s u%d\n", r.Name(), r.Width())
-		}
-	}
 }

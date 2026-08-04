@@ -19,7 +19,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
@@ -71,20 +70,20 @@ func TranslateCircuit(
 	env Environment,
 	srcmap *source.Maps[ast.Node],
 	circuit *ast.Circuit,
-	config Config) (asm.MicroHirProgram, []SyntaxError) {
+	config Config) (hir.Schema, []SyntaxError) {
 	//
-	builder := ir.NewSchemaBuilder[word.BigEndian, hir.Constraint, hir.Term, asm.MicroComponent]()
+	builder := ir.NewSchemaBuilder[word.BigEndian, hir.Constraint, hir.Term]()
 	t := translator{env, srcmap, builder, config}
 	// Allocate all modules into schema
 	t.translateModules(circuit)
 	// Translate everything else
 	if errs := t.translateDeclarations(circuit); len(errs) > 0 {
-		return asm.MicroHirProgram{}, errs
+		return hir.Schema{}, errs
 	}
 	// Build concrete modules from schema
 	modules := ir.BuildSchema[hir.Module](t.schema)
 	// Finally, construct the asm program
-	return asm.NewMixedProgram[word.BigEndian](asm.MicroProgram{}, modules...), nil
+	return schema.NewUniformSchema(modules), nil
 }
 
 // Translator packages up information necessary for translating a circuit into

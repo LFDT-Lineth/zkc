@@ -10,14 +10,13 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package compiler
+package mirc
 
 import (
 	"fmt"
 	"math/big"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm/program"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
@@ -35,24 +34,6 @@ type ModuleBuilder[F field.Element[F]] = ir.ModuleBuilder[F, mir.Constraint[F], 
 // MirModule provides a wrapper around a corset-level module declaration.
 type MirModule[F field.Element[F]] struct {
 	Module ModuleBuilder[F]
-}
-
-// Initialise this module
-func (p MirModule[F]) Initialise(mid uint, fn MicroComponent) MirModule[F] {
-	builder := ir.NewModuleBuilder[F, mir.Constraint[F], mir.Term[F]](
-		fn.Name(), mid, false, fn.IsPublicOutput(), fn.IsPrivateOutput(), false, false, false, fn.NumInputs())
-	//
-	switch fn := fn.(type) {
-	case *MicroFunction:
-		// Add corresponding assignment for this function.
-		builder.AddAssignment(program.NewAssignment[F](mid, fn))
-	default:
-		panic("unknown component encountered")
-	}
-	//
-	p.Module = builder
-	//
-	return p
 }
 
 // NewAssignment adds a new assignment to this module.

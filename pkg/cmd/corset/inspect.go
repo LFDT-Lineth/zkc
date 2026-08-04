@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
 	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/inspector"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
@@ -77,8 +76,6 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	stats := util.NewPerfStats()
 	// Parse constraints
 	binf := stacker.BinaryFile()
-	// Determine whether expansion is being performed
-	expanding := stack.TraceBuilder().Expanding()
 	// Sanity check debug information is available.
 	srcmap, srcmap_ok := binfile.GetAttribute[*corset.SourceMap](binf)
 	//
@@ -93,11 +90,6 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	schema := stack.ConcreteSchema()
 	//
 	stats.Log("Reading trace file")
-	//
-	if expanding {
-		// Apply trace propagation
-		tracefile, errors = asm.Propagate(binf.Schema, tracefile)
-	}
 	// Apply trace expansion
 	if len(errors) != 0 && validate {
 		fmt.Println("(use --validate=false to ignore trace propagation errors)")

@@ -37,8 +37,8 @@ type mirVectorAccess = mir.VectorAccess[word.BigEndian]
 // LowerToMir lowers (or refines) an HIR schema into an MIR schema.  That means
 // lowering all the columns and constraints, whilst adding additional columns /
 // constraints as necessary to preserve the original semantics.
-func LowerToMir[E register.ConstMap](externs []E, modules []Module) []mir.Module[word.BigEndian] {
-	var lowering = NewMirLowering(externs, modules)
+func LowerToMir(modules []Module) []mir.Module[word.BigEndian] {
+	var lowering = NewMirLowering(modules)
 	//
 	return lowering.Lower()
 }
@@ -55,9 +55,9 @@ type MirLowering struct {
 }
 
 // NewMirLowering constructs an initial state for lowering a given MIR schema.
-func NewMirLowering[E register.ConstMap](externs []E, modules []Module) MirLowering {
+func NewMirLowering(modules []Module) MirLowering {
 	var (
-		mirSchema = ir.NewSchemaBuilder[word.BigEndian, mir.Constraint[word.BigEndian], mirTerm](externs...)
+		mirSchema = ir.NewSchemaBuilder[word.BigEndian, mir.Constraint[word.BigEndian], mirTerm]()
 	)
 	// Initialise MIR modules
 	for _, m := range modules {

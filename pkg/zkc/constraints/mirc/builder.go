@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package compiler
+package mirc
 
 import (
 	"math/big"
@@ -21,12 +21,21 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
+// RegisterReader is a simplified view of a translator which is suitable for
+// reading registers only.
+type RegisterReader[E any] interface {
+	// Register returns information about a given register
+	Register(register.Id) register.Register
+	// RegisterWidths returns the bitwidth of a given set of registers.
+	RegisterWidths(reg ...register.Id) []uint
+	// ReadRegister constructs a suitable accessor for referring to a given register.
+	// This applies forwarding as appropriate.
+	ReadRegister(reg register.Id, forwarding bool) E
+}
+
 // Module provides an abstraction for modules in the underlying constraint
 // system.
 type Module[F field.Element[F], T any, E Expr[T, E], M any] interface {
-	// SetName sets the name of this module.
-	Initialise(mid uint, fn MicroComponent) M
-
 	// NewAssignment adds a new assignment to this module.
 	NewAssignment(assignment schema.Assignment[F])
 

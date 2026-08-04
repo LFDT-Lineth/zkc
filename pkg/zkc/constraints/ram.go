@@ -17,8 +17,6 @@ import (
 	"math"
 	"math/big"
 
-	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -26,6 +24,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
+	tracer "github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -225,17 +225,17 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
 	mod.AddRegisters(regs...)
 	// Append the synthetic columns, in the order fixed by computeRamLayout.
 	mod.AddRegisters(
-		register.NewComputed(io.RAM_EXEC_NAME, 1, padding),
-		register.NewComputed(io.RAM_FINL_NAME, 1, padding),
-		register.NewComputed(io.RAM_IS_WRITE_NAME, 1, padding),
+		register.NewComputed(tracer.RAM_EXEC_NAME, 1, padding),
+		register.NewComputed(tracer.RAM_FINL_NAME, 1, padding),
+		register.NewComputed(tracer.RAM_IS_WRITE_NAME, 1, padding),
 	)
-	addLimbRegisters(mod, io.RAM_VALUE_READ_PREFIX, layout.dataWidths, padding)
-	addLimbRegisters(mod, io.RAM_TS_WRITTEN_PREFIX, layout.tsWidths, padding)
-	addLimbRegisters(mod, io.RAM_TS_READ_PREFIX, layout.tsWidths, padding)
-	addLimbRegisters(mod, io.RAM_TS_DELTA_PREFIX, layout.tsWidths, padding)
-	addLimbRegisters(mod, io.RAM_ADDR_DELTA_PREFIX, layout.addrWidths, padding)
-	addCarryRegisters(mod, io.RAM_TS_CARRY_PREFIX, len(layout.tsCarry), padding)
-	addCarryRegisters(mod, io.RAM_ADDR_CARRY_PREFIX, len(layout.addrCarry), padding)
+	addLimbRegisters(mod, tracer.RAM_VALUE_READ_PREFIX, layout.dataWidths, padding)
+	addLimbRegisters(mod, tracer.RAM_TS_WRITTEN_PREFIX, layout.tsWidths, padding)
+	addLimbRegisters(mod, tracer.RAM_TS_READ_PREFIX, layout.tsWidths, padding)
+	addLimbRegisters(mod, tracer.RAM_TS_DELTA_PREFIX, layout.tsWidths, padding)
+	addLimbRegisters(mod, tracer.RAM_ADDR_DELTA_PREFIX, layout.addrWidths, padding)
+	addCarryRegisters(mod, tracer.RAM_TS_CARRY_PREFIX, len(layout.tsCarry), padding)
+	addCarryRegisters(mod, tracer.RAM_ADDR_CARRY_PREFIX, len(layout.addrCarry), padding)
 	// Local (per-row) consistency constraints.
 	mod.AddConstraints(ramGeneralConstraints[F](ctx, layout)...)
 	mod.AddConstraints(ramExecConstraints[F](ctx, layout)...)
@@ -256,7 +256,7 @@ func addLimbRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]
 	prefix string, widths []uint, padding big.Int) {
 	//
 	for k, w := range widths {
-		mod.AddRegisters(register.NewComputed(io.RamLimbName(prefix, uint(k)), w, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), w, padding))
 	}
 }
 
@@ -267,7 +267,7 @@ func addCarryRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F
 	prefix string, n int, padding big.Int) {
 	//
 	for k := 0; k < n; k++ {
-		mod.AddRegisters(register.NewComputed(io.RamLimbName(prefix, uint(k)), 1, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), 1, padding))
 	}
 }
 

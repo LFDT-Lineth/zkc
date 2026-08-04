@@ -57,26 +57,20 @@ import (
 //
 // Here, c is a 1bit register introduced as part of the transformation to act as
 // a "carry" between the two constraints.
-func Subdivide[F field.Element[F], E register.ConstMap](mapping module.LimbsMap, externs []E,
-	mods []Module[F]) []Module[F] {
+func Subdivide[F field.Element[F]](mapping module.LimbsMap, mods []Module[F]) []Module[F] {
 	//
 	var (
-		builder = ir.NewSchemaBuilder[F, Constraint[F], Term[F]](externs...)
+		builder = ir.NewSchemaBuilder[F, Constraint[F], Term[F]]()
 	)
 	// Initialise subdivided modules using register limbs rather than the
-	for i, m := range mods {
+	for _, m := range mods {
 		// original registers.
 		var (
-			eid = uint(i + len(externs))
 			mid = builder.NewModule(m.Name(), m.AllowPadding(), m.IsPublicOutput(), m.IsPrivateOutput(),
 				m.IsSynthetic(), m.IsStatic(), m.IsNative(), 0)
 			module   = builder.Module(mid)
 			limbsMap = mapping.Module(mid).LimbsMap()
 		)
-		// Sanity check module identifier is consistent
-		if mid != eid {
-			panic(fmt.Sprintf("inconsistent module identifier (%d vs %d)", mid, eid))
-		}
 		// Initialise all register limbs.
 		module.NewRegisters(limbsMap.Registers()...)
 		// Assign static contents (if applicable)
@@ -88,7 +82,7 @@ func Subdivide[F field.Element[F], E register.ConstMap](mapping module.LimbsMap,
 	subdivider := &Subdivider[F]{builder, mapping}
 	// Subdivide modules
 	for i, m := range mods {
-		mid := uint(i + len(externs))
+		mid := uint(i)
 		subdivider.SubdivideModule(mid, m)
 	}
 	// Done
