@@ -15,13 +15,9 @@ package air
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/interleaving"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -39,10 +35,7 @@ import (
 type ConstraintBound[F field.Element[F]] interface {
 	schema.Constraint[F]
 
-	constraint.Assertion[F] |
-		interleaving.Constraint[F, *ColumnAccess[F]] |
-		lookup.Constraint[F, *ColumnAccess[F]] |
-		permutation.Constraint[F] |
+	lookup.Constraint[F, *ColumnAccess[F]] |
 		ranged.Constraint[F, *ColumnAccess[F]] |
 		vanishing.Constraint[F, LogicalTerm[F]]
 }
@@ -61,30 +54,11 @@ func newAir[F field.Element[F], C ConstraintBound[F]](constraint C) Air[F, C] {
 	return Air[F, C]{constraint}
 }
 
-// NewAssertion constructs a new AIR assertion
-func NewAssertion[F field.Element[F]](handle string, ctx schema.ModuleId, domain util.Option[int],
-	term constraint.Property) Assertion[F] {
-	//
-	return newAir(constraint.NewAssertion[F](handle, ctx, domain, term))
-}
-
-// NewInterleavingConstraint creates a new interleaving constraint with a given handle.
-func NewInterleavingConstraint[F field.Element[F]](handle string, targetContext schema.ModuleId,
-	sourceContext schema.ModuleId, target ColumnAccess[F], sources []*ColumnAccess[F]) Constraint[F] {
-	return newAir(interleaving.NewConstraint(handle, targetContext, sourceContext, &target, sources))
-}
-
 // NewLookupConstraint constructs a new AIR lookup constraint
 func NewLookupConstraint[F field.Element[F]](handle string, targets []lookup.Vector[F, *ColumnAccess[F]],
 	sources []lookup.Vector[F, *ColumnAccess[F]]) LookupConstraint[F] {
 	//
 	return newAir(lookup.NewConstraint(handle, targets, sources))
-}
-
-// NewPermutationConstraint creates a new permutation
-func NewPermutationConstraint[F field.Element[F]](handle string, context schema.ModuleId, targets []register.Id,
-	sources []register.Id) Constraint[F] {
-	return newAir(permutation.NewConstraint[F](handle, context, targets, sources))
 }
 
 // NewRangeConstraint constructs a new AIR range constraint

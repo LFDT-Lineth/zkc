@@ -85,27 +85,12 @@ type SchemaBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 
 // NewSchemaBuilder constructs a new schema builder with a given number of
 // externally defined modules.  Such modules are allocated module indices first.
-func NewSchemaBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T], E register.ConstMap](externs ...E,
-) SchemaBuilder[F, C, T] {
+func NewSchemaBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]]() SchemaBuilder[F, C, T] {
 	var (
-		modmap   = make(map[module.Name]uint, 0)
-		nexterns = make([]register.ConstMap, len(externs))
+		modmap = make(map[module.Name]uint, 0)
 	)
-	// Initialise module map
-	for i, m := range externs {
-		// Quick sanity check
-		if _, ok := modmap[m.Name()]; ok {
-			panic(fmt.Sprintf("duplicate module \"%s\" detected", m.Name()))
-		}
-		//
-		modmap[m.Name()] = uint(i)
-	}
-	// Convert externs
-	for i, m := range externs {
-		nexterns[i] = m
-	}
 	//
-	return SchemaBuilder[F, C, T]{modmap, nexterns, nil}
+	return SchemaBuilder[F, C, T]{modmap, nil, nil}
 }
 
 // NewModule constructs a new, empty module and returns its unique module

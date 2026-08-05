@@ -25,7 +25,6 @@ import (
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/agnostic"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -50,6 +49,9 @@ const (
 // auto-detect from runtime.GOMAXPROCS(0). This can be set from the CLI to
 // coordinate with outer-level parallelism in ParallelTraceExpansion.
 var INNER_WORKERS uint
+
+// ENABLE_PARALLEL is a config option
+const ENABLE_PARALLEL bool = true
 
 // innerWorkers returns the effective number of workers, capped to ensure each
 // goroutine processes at least minRowsPerWorker rows.
@@ -84,24 +86,20 @@ type ComputedRegister[F field.Element[F]] struct {
 	// The computation which accepts a given trace and computes
 	// the value of this column at a given row.
 	Expr term.Computation[word.BigEndian]
-	// Direction in which value is computed (true = forward, false = backward).
-	// More specifically, a forwards direction means the computation starts on
-	// the first row, whilst a backwards direction means it starts on the last.
-	Direction bool
 }
 
 // NewComputedRegister constructs a new set of computed column(s) with a given
 // determining expression.  More specifically, that expression is used to
 // compute the values for the columns during trace expansion.  For each, the
 // resulting value is split across the target columns.
-func NewComputedRegister[F field.Element[F]](expr term.Computation[word.BigEndian], dir bool, module schema.ModuleId,
+func NewComputedRegister[F field.Element[F]](expr term.Computation[word.BigEndian], module schema.ModuleId,
 	limbs ...register.Id) *ComputedRegister[F] {
 	//
 	if len(limbs) == 0 {
 		panic("computed register requires at least one limb")
 	}
 	//
-	return &ComputedRegister[F]{module, limbs, expr, dir}
+	return &ComputedRegister[F]{module, limbs, expr}
 }
 
 // Bounds determines the well-definedness bounds for this assignment for both
@@ -136,7 +134,7 @@ func (p *ComputedRegister[F]) Compute(tr trace.Trace[F], schema schema.AnySchema
 	}
 	// Non-recursive computations can be parallelised across rows since each
 	// row's evaluation is independent.
-	if !p.IsRecursive() {
+	if ENABLE_PARALLEL {
 		data := make([][]F, len(p.Targets))
 		for i := range p.Targets {
 			data[i] = make([]F, height)
@@ -156,27 +154,19 @@ func (p *ComputedRegister[F]) Compute(tr trace.Trace[F], schema schema.AnySchema
 	}
 	// Recursive computations must remain sequential since each row depends on
 	// previous rows.
-	wrapper := recursiveModule{
-		col:      p.Targets,
-		data:     make([][]word.BigEndian, len(p.Targets)),
-		trModule: trModule,
-	}
-
+	data := make([][]word.BigEndian, len(p.Targets))
+	//
 	for i := range p.Targets {
-		wrapper.data[i] = make([]word.BigEndian, height)
+		data[i] = make([]word.BigEndian, height)
 	}
-
-	if p.Direction {
-		err = fwdComputation(height, wrapper.data, bitwidths, p.Expr, &wrapper, scModule, p.Module)
-	} else {
-		err = bwdComputation(height, wrapper.data, bitwidths, p.Expr, &wrapper, scModule, p.Module)
-	}
+	//
+	err = fwdComputation(height, data, bitwidths, p.Expr, trModule, scModule, p.Module)
 	// Sanity check
 	if err != nil {
 		return nil, err
 	}
 	// Done
-	return concretizeColumns(wrapper.data, tr), err
+	return concretizeColumns(data, tr), err
 }
 
 // fieldWordSplitter splits a word.BigEndian value into per-limb field elements
@@ -339,24 +329,6 @@ func concretizeColumn[F field.Element[F]](data []word.BigEndian, tr trace.Trace[
 // etc.
 func (p *ComputedRegister[F]) Consistent(schema sc.AnySchema[F]) []error {
 	return nil
-}
-
-// IsRecursive checks whether or not this computation is recursive (i.e. the
-// target column is defined in terms of itself).
-func (p *ComputedRegister[F]) IsRecursive() bool {
-	var regs = p.Expr.RequiredRegisters()
-	// Walk through registers accessed by the computation and see whether target
-	// register is amongst them.
-	for i, iter := 0, regs.Iter(); iter.HasNext(); i++ {
-		rid := register.NewId(iter.Next())
-		// Did we find it?
-		if slices.Contains(p.Targets, rid) {
-			// Yes!
-			return true
-		}
-	}
-	//
-	return false
 }
 
 // RegistersExpanded identifies registers expanded by this assignment.
@@ -580,23 +552,6 @@ func fwdComputationDirect[F field.Element[F]](height uint, data [][]F, widths []
 	return nil
 }
 
-func bwdComputation(height uint, data [][]word.BigEndian, widths []uint, expr term.Evaluable[word.BigEndian],
-	trMod trace.Module[word.BigEndian], scMod register.Map, ctx schema.ModuleId) error {
-	// Backwards computation
-	for i := height; i > 0; i-- {
-		val, err := expr.EvalAt(int(i-1), trMod, scMod)
-		// error check
-		if err != nil {
-			e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
-			return constraint.NewInternalFailure[word.BigEndian](scMod.Name().String(), ctx, i-1, expr, e)
-		}
-		// Write data across limbs
-		write(i-1, val, data, widths)
-	}
-	//
-	return nil
-}
-
 func write(row uint, val word.BigEndian, data [][]word.BigEndian, bitwidths []uint) {
 	var elements, ok = field.SplitWord[word.BigEndian](val, bitwidths)
 	// Only write data if value was within bounds; otherwise, leave as zero
@@ -606,89 +561,6 @@ func write(row uint, val word.BigEndian, data [][]word.BigEndian, bitwidths []ui
 			data[i][row] = elements[i]
 		}
 	}
-}
-
-// RecModule is a wrapper which enables a computation to be recursive.
-// Specifically, it allows the expression being evaluated to access as it is
-// being generated.
-type recursiveModule struct {
-	col      []register.Id
-	data     [][]word.BigEndian
-	trModule trace.Module[word.BigEndian]
-}
-
-// Module implementation for trace.Module interface.
-func (p *recursiveModule) Name() module.Name {
-	return p.trModule.Name()
-}
-
-// Column implementation for trace.Module interface.
-func (p *recursiveModule) Column(index uint) trace.Column[word.BigEndian] {
-	for i, cid := range p.col {
-		if cid.Unwrap() == index {
-			return &recursiveColumn{p.data[i]}
-		}
-	}
-
-	return p.trModule.Column(index)
-}
-
-// ColumnOf implementation for trace.Module interface.
-func (p *recursiveModule) ColumnOf(string) trace.Column[word.BigEndian] {
-	// NOTE: this is marked unreachable because, as it stands, expression
-	// evaluation never calls this method.
-	panic("unreachable")
-}
-
-// FindLast implementation for the trace.Module interface.
-func (p *recursiveModule) FindLast(...word.BigEndian) uint {
-	panic("unsupported operation")
-}
-
-// Keys implementation for the trace.Module interface.
-func (p *recursiveModule) Keys() uint {
-	panic("unsupported operation")
-}
-
-// Width implementation for trace.Module interface.
-func (p *recursiveModule) Width() uint {
-	return p.trModule.Width()
-}
-
-// Height implementation for trace.Module interface.
-func (p *recursiveModule) Height() uint {
-	return p.trModule.Height()
-}
-
-// RecColumn is a wrapper which enables the array being computed to be accessed
-// during its own computation.
-type recursiveColumn struct {
-	data []word.BigEndian
-}
-
-// Holds the name of this column
-func (p *recursiveColumn) Name() string {
-	panic("unreachable")
-}
-
-// Get implementation for trace.Column interface.
-func (p *recursiveColumn) Get(row int) word.BigEndian {
-	if row < 0 || row >= len(p.data) {
-		// out-of-bounds access
-		return field.Zero[word.BigEndian]()
-	}
-	//
-	return p.data[row]
-}
-
-// Data implementation for trace.Column interface.
-func (p *recursiveColumn) Data() array.Array[word.BigEndian] {
-	panic("unreachable")
-}
-
-// Padding implementation for trace.Column interface.
-func (p *recursiveColumn) Padding() word.BigEndian {
-	panic("unreachable")
 }
 
 // ============================================================================

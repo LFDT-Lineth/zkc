@@ -17,8 +17,6 @@ import (
 	"math/big"
 	"math/bits"
 
-	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
@@ -28,6 +26,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
+	tracer "github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -144,7 +144,7 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 	memoryModule.AddRegisters(regs...)
 
 	var access = register.NewId(memoryModule.Width())
-	memoryModule.AddRegisters(register.NewComputed(io.ACCESS_BIT_NAME, 1, padding))
+	memoryModule.AddRegisters(register.NewComputed(tracer.ACCESS_BIT_NAME, 1, padding))
 
 	var (
 		addrRegs           = toRegisters(m.AddressRegisters())
@@ -262,7 +262,7 @@ func multiLineAddressConstraints[F field.Element[F]](
 	)
 	for k := range L {
 		atFlag := register.NewId(memoryModule.Width())
-		memoryModule.AddRegisters(register.NewComputed(io.AtFlagName(uint(k)), 1, padding))
+		memoryModule.AddRegisters(register.NewComputed(tracer.AtFlagName(uint(k)), 1, padding))
 		atFlagVars[k] = mirc.Variable[register.Id, Expr[F]](atFlag, 1, 0)
 		addrLimbMaxValues[k] = mirc.BigNumber[register.Id, Expr[F]](addrRegs[k].MaxValue())
 	}
@@ -352,14 +352,14 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 		)
 
 		// Create return line
-		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1, padding))
 		// Create program counter
-		mod.AddRegisters(register.NewComputed(io.PC_NAME, fn.PcWidth(), padding))
+		mod.AddRegisters(register.NewComputed(tracer.PC_NAME, fn.PcWidth(), padding))
 		// Add IS_PC_<k> program counter selectors (one per code line)
 		pcSelectors = make([]register.Id, len(fn.Vectors()))
 		for c := range pcSelectors {
 			pcSelectors[c] = register.NewId(mod.Width())
-			mod.AddRegisters(register.NewComputed(io.SelectorName(uint(c)), 1, padding))
+			mod.AddRegisters(register.NewComputed(tracer.SelectorName(uint(c)), 1, padding))
 		}
 		// Initialise multi-line framing
 		framing, constraints = initMultiLineFraming[F](ctx, pc, ret, pcSelectors, regs, len(fn.Vectors()))
@@ -368,7 +368,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 	} else {
 		framing = mirc.NewAtomicFraming[register.Id, Expr[F]]()
 
-		mod.AddRegisters(register.NewComputed(io.RET_NAME, 1, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1, padding))
 	}
 	// Translate all bytecode vectors
 	for pc, vec := range fn.Vectors() {

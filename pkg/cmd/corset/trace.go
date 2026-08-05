@@ -20,7 +20,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
 	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
@@ -281,19 +280,10 @@ func expandLtTrace[F field.Element[F]](tf lt.TraceFile, stack cmd_util.SchemaSta
 ) (tr.Trace[F], []error) {
 	//
 	var (
-		schema    = stack.BinaryFile().Schema
 		tb_errors []error
 		tp_errors []error
 		tr        trace.Trace[F]
 	)
-	// Apply trace propagation
-	if bldr.Expanding() {
-		perf := util.NewPerfStats()
-		//
-		tf, tp_errors = asm.Propagate(schema, tf)
-		//
-		perf.Log("Trace propagation")
-	}
 	// Construct expanded trace
 	tr, tb_errors = bldr.Build(stack.ConcreteSchema(), tf)
 	// Handle errors

@@ -16,12 +16,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/interleaving"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/sorted"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
@@ -57,26 +53,13 @@ type (
 
 // Following types capture permitted constraint forms at the MIR level.
 type (
-	// Assertion captures the notion of an arbitrary property which should hold for
-	// all acceptable traces.  However, such a property is not enforced by the
-	// prover.
-	Assertion[F field.Element[F]] = constraint.Assertion[F]
-	// InterleavingConstraint captures the essence of an interleaving constraint
-	// at the MIR level.
-	InterleavingConstraint[F field.Element[F]] = interleaving.Constraint[F, *VectorAccess[F]]
 	// LookupConstraint captures the essence of a lookup constraint at the MIR
 	// level.
 	LookupConstraint[F field.Element[F]] = lookup.Constraint[F, *RegisterAccess[F]]
 	// LookupVector provides a convenient shorthand
 	LookupVector[F field.Element[F]] = lookup.Vector[F, *RegisterAccess[F]]
-	// PermutationConstraint captures the essence of a permutation constraint at the
-	// MIR level.
-	PermutationConstraint[F field.Element[F]] = permutation.Constraint[F]
 	// RangeConstraint captures the essence of a range constraints at the MIR level.
 	RangeConstraint[F field.Element[F]] = ranged.Constraint[F, *RegisterAccess[F]]
-	// SortedConstraint captures the essence of a sorted constraint at the MIR
-	// level.
-	SortedConstraint[F field.Element[F]] = sorted.Constraint[F, *RegisterAccess[F]]
 	// VanishingConstraint captures the essence of a vanishing constraint at the MIR
 	// level. A vanishing constraint is a row constraint which must evaluate to
 	// zero.

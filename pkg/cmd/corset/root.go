@@ -17,7 +17,6 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
@@ -116,12 +115,9 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 	var (
 		stacker      cmd_util.SchemaStacker[F]
 		corsetConfig corset.CompilationConfig
-		asmConfig    asm.LoweringConfig
 		fieldName    = GetString(cmd, "field")
 		mirEnable    = GetFlag(cmd, "mir")
 		airEnable    = GetFlag(cmd, "air")
-		uasmEnable   = GetFlag(cmd, "uasm")
-		nasmEnable   = GetFlag(cmd, "nasm")
 		optimisation = GetUint(cmd, "opt")
 		externs      = GetStringArray(cmd, "set")
 		//
@@ -153,17 +149,16 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 	corsetConfig.EnforceTypes = GetFlag(cmd, "enforce-types")
 	corsetConfig.EnforceLimbTypes = GetFlag(cmd, "enforce-limb-types")
 	corsetConfig.Field = *fieldConfig
-	asmConfig.Field = *fieldConfig
 	// Sanity check MIR optimisation level
 	if optimisation >= uint(len(mir.OPTIMISATION_LEVELS)) {
 		fmt.Printf("invalid optimisation level %d\n", optimisation)
 		os.Exit(2)
-	} else if countFlags(uasmEnable, nasmEnable, mirEnable, airEnable) > 1 {
+	} else if countFlags(mirEnable, airEnable) > 1 {
 		fmt.Printf("cannot specify more than one of --uasm/nasm/mir/air\n")
 		os.Exit(2)
 	}
 	// If no IR was specified, set a default
-	if !airEnable && !mirEnable && !uasmEnable && !nasmEnable {
+	if !airEnable && !mirEnable {
 		switch mode {
 		case SCHEMA_DEFAULT_MIR:
 			mirEnable = true
@@ -180,18 +175,9 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 		WithBatchSize(batchSize)
 	// Configure the stack
 	stacker = stacker.
-		WithAssemblyConfig(asmConfig).
 		WithCorsetConfig(corsetConfig).
 		WithOptimisationConfig(mir.OPTIMISATION_LEVELS[optimisation]).
 		WithConstantDefinitions(externs)
-	//
-	if uasmEnable {
-		stacker = stacker.WithLayer(cmd_util.MICRO_ASM_LAYER)
-	}
-	//
-	if nasmEnable {
-		stacker = stacker.WithLayer(cmd_util.NANO_ASM_LAYER)
-	}
 	//
 	if mirEnable {
 		stacker = stacker.WithLayer(cmd_util.MIR_LAYER)
@@ -242,8 +228,6 @@ func init() {
 	// Schema stack
 	rootCmd.PersistentFlags().Bool("air", false, "include constraints at AIR level")
 	rootCmd.PersistentFlags().Bool("mir", false, "include constraints at MIR level")
-	rootCmd.PersistentFlags().Bool("uasm", false, "include constraints at micro ASM level")
-	rootCmd.PersistentFlags().Bool("nasm", false, "include constraints at nano ASM level")
 	// Trace expansion
 	rootCmd.PersistentFlags().Bool("raw", false, "assume input trace already expanded")
 	rootCmd.PersistentFlags().Bool("sequential", false, "perform sequential trace expansion")
