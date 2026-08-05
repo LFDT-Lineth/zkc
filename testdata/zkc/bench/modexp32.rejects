@@ -1,0 +1,7 @@
+;; Incorrect claimed results, forcing the final check to fail.
+{ "data": "0x00000002_00000003_00000005_00000004" }
+{ "data": "0x00000000_00000000_00000007_00000000" }
+{ "data": "0x00000005_00000003_00000001_00000001" }
+{ "data": "0x00000002_0000000a_000003e8_00000000" }
+;; Modulus of zero traps with division by zero.
+{ "data": "0x00000003_00000002_00000000_00000000" }

@@ -74,7 +74,7 @@ func optimizeDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descr
 		})
 	}
 	// Registers are reused in place, so the register set is unchanged.
-	return descriptor.NewFunction(fn.Name(), regs, fn.Kind(), nvecs)
+	return descriptor.NewFunction(fn.Name(), regs, fn.Kind(), fn.Effects(), nvecs)
 }
 
 // planDivisionReloads scans a function and returns, for each divisor register

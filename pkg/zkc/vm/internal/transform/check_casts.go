@@ -60,7 +60,7 @@ func insertFunctionCasts[W word.Word[W]](fn *descriptor.Function[W], modules []d
 		})
 	}
 	//
-	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), vectors)
+	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), fn.Effects(), vectors)
 }
 
 // castPacket returns the given bytecode wrapped with the cast checks it requires.

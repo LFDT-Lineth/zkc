@@ -1,0 +1,15 @@
+// Field-element (native) values in a read-write memory: the value columns of
+// the RAM table carry full field elements rather than fixed-width words.
+// Code lines: main = 1.
+pub input data(address:u8) -> (byte:u8)
+memory ram(address:u8) -> (value:𝔽)
+
+fn main<ram>() {
+    var a:u8 = data[0]
+    ram[0] = a as 𝔽
+    ram[1] = ram[0] * ram[0]
+    var expected:𝔽 = (data[1] as 𝔽)
+    if ram[1] != expected {
+        fail
+    }
+}

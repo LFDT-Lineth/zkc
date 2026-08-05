@@ -45,38 +45,37 @@ type RegisterVector = bytecode.RegisterVector
 // OPCODE_MASK is used to extract the actual opcode from the opcode byte.  The
 // current format of an opcode byte is:
 //
-//	7   6   5                   0
+//	7   6                       0
 //
 // +---+---+---+---+---+---+---+---+
-// | B | W |        OPCODE         |
+// | B |          OPCODE           |
 // +---+---+---+---+---+---+---+---+
 //
-// Here, B is the Breakpoint flag, W is the Wide instruction flag, whilst the
-// lower 6-bits form the opcode itself.  For reference, the breakpoint bit
-// signals a breakpoint should be triggered immediately before the current
-// instruction executes.
-const OPCODE_MASK = 0x3f
-
-// WIDE is a modifier bit (bit 6 of the opcode byte) marking the "wide" form of
-// an instruction, whose register operands are u16 rather than u8.  Wide forms
-// arise for functions with more than 256 registers.  By convention, a wide
-// form keeps its non-register fields in the first instruction word exactly as
-// the narrow form does (where they still fit), whilst its register operands
-// move into subsequent words, packed two per word (least significant half
-// first) in the order they appear in the narrow encoding.
-const WIDE = 0x40
+// Here, B is the Breakpoint flag, whilst the lower 7-bits form the opcode
+// itself.  For reference, the breakpoint bit signals a breakpoint should be
+// triggered immediately before the current instruction executes.
+const OPCODE_MASK = 0x7f
 
 // BREAKPOINT is a modifier bit (bit 7 of the opcode byte) which, when set,
 // signals that a breakpoint should be triggered immediately before the
-// instruction executes.  Like WIDE, it lies above the opcode field, so dispatch
-// (which masks with OPCODE_MASK) is unaffected and both flagged and unflagged
+// instruction executes.  It lies above the opcode field, so dispatch (which
+// masks with OPCODE_MASK) is unaffected and both flagged and unflagged
 // instructions reach the same executor.
 const BREAKPOINT = 0x80
 
-// IsWideForm checks whether the instruction word at the given position has the
-// WIDE modifier bit set (i.e. carries u16 register operands).
+// WIDE is a distinguished escape opcode (the top of the 7-bit opcode space)
+// signalling a "wide encoding".  For instructions dispatched this way, the
+// second byte of the first word (bits 8-15, which every wide form reserves)
+// holds the wide opcode itself (see the wide opcode enumeration below),
+// giving wide instructions an 8-bit opcode space of their own.  NOTE: when
+// the breakpoint flag is also set, the full first byte reads 0xFF.
+const WIDE = 0x7f
+
+// IsWideForm checks whether the instruction at the given position is a wide
+// form (i.e. carries u16 register operands), which holds exactly when its
+// opcode is the WIDE escape.
 func IsWideForm(pc uint32, codes []uint32) bool {
-	return codes[pc]&WIDE != 0
+	return codes[pc]&OPCODE_MASK == WIDE
 }
 
 // IsWideRegisters checks whether any of the given registers requires the wide
@@ -104,17 +103,9 @@ func IsWideRegisterVectors(vecs []RegisterVector) bool {
 	return false
 }
 
-// Every instruction occupies 32 bits, where the first byte is as follows:
-//
-//	7   6 5       0
-//
-// +-----+---------+
-// | : : | : : : : |
-// +-----+---------+
-//
-//	(n)   (opcode)
-//
-// Currently, n is instruction specific.
+// Every instruction occupies one or more 32-bit words, where the first byte
+// of the first word holds the breakpoint flag (bit 7) above the 7-bit opcode
+// (bits 0-6), as described for OPCODE_MASK above.
 const (
 	// FAIL instruction
 	FAIL uint32 = iota
@@ -254,6 +245,131 @@ const (
 	MAX_BYTECODE
 )
 
+// The following enumerate the "wide opcodes", which occupy a separate 8-bit
+// opcode space of their own: instructions encoded this way carry the WIDE
+// escape opcode in the first byte of their first word, with the wide opcode
+// itself in the second byte (bits 8-15) -- the byte which every wide form
+// reserves.  Each WIDE_XX opcode is the wide form of the corresponding XX
+// opcode, whose register operands are u16 rather than u8.  Wide forms arise
+// for functions with more than 256 registers.  By convention, a wide form
+// keeps its non-register fields in the first instruction word exactly as the
+// narrow form does (where they still fit), whilst its register operands move
+// into subsequent words, packed two per word (least significant half first)
+// in the order they appear in the narrow encoding.  NOTE: family contiguity
+// mirrors the narrow opcodes (e.g. WIDE_SUB_2n1 must follow WIDE_ADD_2n1),
+// since encoders and decoders compute wide opcodes by offset from the family
+// base.
+const (
+	// WIDE_FAIL instruction
+	WIDE_FAIL uint32 = iota
+	// WIDE_CHECKCAST instruction
+	WIDE_CHECKCAST
+	// WIDE_SEQ_rr (skip forward if equal)
+	WIDE_SEQ_rr
+	// WIDE_SNE_rr (skip forward if not equal)
+	WIDE_SNE_rr
+	// WIDE_SLT_rr (skip forward if less than)
+	WIDE_SLT_rr
+	// WIDE_SGE_rr (skip forward if greater than or equal)
+	WIDE_SGE_rr
+	// WIDE_SEQ_rv (skip forward if equal)
+	WIDE_SEQ_rv
+	// WIDE_SNE_rv (skip forward if not equal)
+	WIDE_SNE_rv
+	// WIDE_SLT_rv (skip forward if less than)
+	WIDE_SLT_rv
+	// WIDE_SGE_rv (skip forward if greater than or equal)
+	WIDE_SGE_rv
+	// WIDE_SEQ_rcv (skip forward if vector equal to constant vector)
+	WIDE_SEQ_rcv
+	// WIDE_SNE_rcv (skip forward if vector not equal to constant vector)
+	WIDE_SNE_rcv
+	// WIDE_SLT_rcv (skip forward if vector less than constant vector)
+	WIDE_SLT_rcv
+	// WIDE_SGE_rcv (skip forward if vector greater than or equal to constant
+	// vector)
+	WIDE_SGE_rcv
+	// WIDE_ENTER_n instruction
+	WIDE_ENTER_n
+	// WIDE_LEAVE_n instruction
+	WIDE_LEAVE_n
+	// WIDE_RET instruction
+	WIDE_RET
+	// WIDE_RD_ROM_nm instruction
+	WIDE_RD_ROM_nm
+	// WIDE_RD_SROM_nm instruction
+	WIDE_RD_SROM_nm
+	// WIDE_WR_WOM_nm instruction
+	WIDE_WR_WOM_nm
+	// WIDE_RD_RAM_nm instruction
+	WIDE_RD_RAM_nm
+	// WIDE_WR_RAM_nm instruction
+	WIDE_WR_RAM_nm
+	// WIDE_RD_PRAM_nm instruction
+	WIDE_RD_PRAM_nm
+	// WIDE_WR_PRAM_nm instruction
+	WIDE_WR_PRAM_nm
+	// WIDE_MOVE instruction
+	WIDE_MOVE
+	// WIDE_LDC_w (load wide constant) instruction
+	WIDE_LDC_w
+	// WIDE_UINT_TO_FIELD instruction
+	WIDE_UINT_TO_FIELD
+	// WIDE_ADD_2n1 instruction
+	WIDE_ADD_2n1
+	// WIDE_SUB_2n1 instruction [must follow WIDE_ADD_2n1]
+	WIDE_SUB_2n1
+	// WIDE_MUL_2n1 instruction [must follow WIDE_SUB_2n1]
+	WIDE_MUL_2n1
+	// WIDE_ADDC (add with constant) instruction
+	WIDE_ADDC
+	// WIDE_SUBC (subtract with constant) instruction
+	WIDE_SUBC
+	// WIDE_MULC (multiply with constant) instruction
+	WIDE_MULC
+	// WIDE_ADD_nm (addition with vector target) instruction
+	WIDE_ADD_nm
+	// WIDE_SUB_nm (subtraction with vector target) instruction [must follow
+	// WIDE_ADD_nm]
+	WIDE_SUB_nm
+	// WIDE_MUL_nm (multiplication with vector target) instruction [must
+	// follow WIDE_SUB_nm]
+	WIDE_MUL_nm
+	// WIDE_DIV instruction
+	WIDE_DIV
+	// WIDE_REM instruction [must follow WIDE_DIV]
+	WIDE_REM
+	// WIDE_INTRINSIC instruction
+	WIDE_INTRINSIC
+	// WIDE_ADDMOD_P instruction
+	WIDE_ADDMOD_P
+	// WIDE_SUBMOD_P instruction
+	WIDE_SUBMOD_P
+	// WIDE_MULMOD_P instruction
+	WIDE_MULMOD_P
+	// WIDE_AND instruction
+	WIDE_AND
+	// WIDE_OR instruction
+	WIDE_OR
+	// WIDE_XOR instruction
+	WIDE_XOR
+	// WIDE_NOT instruction
+	WIDE_NOT
+	// WIDE_SHL instruction
+	WIDE_SHL
+	// WIDE_SHR instruction
+	WIDE_SHR
+	// WIDE_CAT instruction
+	WIDE_CAT
+	// WIDE_DEBUG instruction
+	WIDE_DEBUG
+	// WIDE_FIELD_TO_UINT instruction
+	WIDE_FIELD_TO_UINT
+
+	//
+	MAX_WIDE_BYTECODE
+)
+
 // Encode encodes the given bytecode into its sequence of 32-bit instruction
 // words.  Here, pc is the address at which the instruction will reside within
 // the compiled sequence (needed to compute relative branch offsets), whilst env
@@ -280,7 +396,7 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 	case *bytecode.Fail[W]:
 		return Fail(b, env)
 	case *bytecode.FieldArith[W]:
-		return FieldArith(b)
+		return FieldArith(b, env)
 	case *bytecode.UintToField[W]:
 		return UintToField(b)
 	case *bytecode.FieldToUint[W]:
@@ -296,9 +412,9 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 	case *bytecode.Ret[W]:
 		return Ret(b, env)
 	case *bytecode.Switch[W]:
-		return Switch(b, env)
+		return Switch(pc, b, env)
 	case *bytecode.Dispatch[W]:
-		return Dispatch(b, env)
+		return Dispatch(pc, b, env)
 	default:
 		panic(fmt.Sprintf("unknown instruction encountered (%s)", b.String(nil)))
 	}
@@ -314,8 +430,17 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 	case *bytecode.Skip[W], *bytecode.Jmp[W]:
 		return 1
 	case *bytecode.Dispatch[W]:
-		// word 0 plus one (bit, target) pair per case.
-		return uint(1 + 2*len(b.Cases))
+		// word 0 plus one (skip, bit) word per case.  NOTE: an explicit case
+		// is required (rather than falling through to Encode below) because
+		// the case skips are relative, and hence cannot be computed at a
+		// placeholder position.
+		return uint(1 + len(b.Cases))
+	case *bytecode.Switch[W]:
+		// word 0 plus one (skip, cid) word per case.  NOTE: an explicit case
+		// is required (rather than falling through to Encode below) because
+		// the case skips are relative, and hence cannot be computed at a
+		// placeholder position.
+		return uint(1 + len(b.Cases))
 	case *bytecode.SkipIf[W]:
 		if b.Right.IsRegisterVector() {
 			// The wide form carries its base registers in an additional word.
@@ -325,30 +450,11 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 			//
 			return 2
 		}
-		// Constant form: the constant vector follows inline, one element per
-		// comparison element, each as a fixed number of 32-bit limbs.
-		// Normalisation (see SkipIf) can rewrite the constant to c+1, which
-		// may need one more bit — hence BitLen()+1 below.  An empty (or
-		// short) constant vector denotes zero (extension).
-		var (
-			nv   = uint(b.Left.Len)
-			bits uint
-		)
-		//
-		for _, c := range b.Right.AsConstants() {
-			bits = max(bits, c.BitLen())
-		}
-		//
-		var nlimbs = max(1, (bits+1+31)/32)
-		// NOTE: this bounds both the compact single-constant form (1+nc
-		// words) and the constant-vector form it falls back to (2+nc words,
-		// or 3+nc wide) when the skip exceeds a byte.  The wide vector form
-		// carries its base register in an additional word.
-		if IsWideRegisters(b.Left.Base) {
-			return 3 + nv*nlimbs
-		}
-		//
-		return 2 + nv*nlimbs
+		// Constant form: bounded by the general (wide) constant-vector
+		// fallback, which carries its register vector and constant vector in
+		// words of their own.  The compact forms (single-word SXX_rc and
+		// two-word SXX_rcv) are always smaller.
+		return 3
 	default:
 		// NOTE: the maximum length of the remaining bytecodes is not dependent
 		// on this position within the encoded sequence.
@@ -544,7 +650,13 @@ func RegisterVectorsAsShorts(vecs []RegisterVector) []uint16 {
 }
 
 func init() {
-	if MAX_BYTECODE > OPCODE_MASK+1 {
+	// NOTE: the WIDE escape occupies the top of the (7-bit) opcode space, so
+	// regular opcodes must stay strictly below it.
+	if MAX_BYTECODE > WIDE {
 		panic("overflowing opcodes")
+	}
+	// The wide opcode space is a single byte.
+	if MAX_WIDE_BYTECODE > 256 {
+		panic("overflowing wide opcodes")
 	}
 }

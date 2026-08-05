@@ -36,10 +36,6 @@ type DeclPredicate = array.Predicate[ast.Declaration]
 func ResolveCircuit(srcmap *source.Maps[ast.Node], circuit *ast.Circuit) (*ModuleScope, []SyntaxError) {
 	// Construct top-level scope
 	scope := NewModuleScope(true)
-	// Define natives
-	for _, i := range NATIVE_SIGNATURES {
-		scope.Define(&i)
-	}
 	// Define intrinsics
 	for _, i := range INTRINSICS {
 		scope.Define(&i)
@@ -293,10 +289,6 @@ func (r *resolver) declarationDependenciesAreFinalised(scope *ModuleScope,
 // Finalise a declaration.
 func (r *resolver) finaliseDeclaration(scope *ModuleScope, decl ast.Declaration) []SyntaxError {
 	switch d := decl.(type) {
-	case *ast.DefCall:
-		return r.finaliseDefCallInModule(scope, d)
-	case *ast.DefComputed:
-		return r.finaliseDefComputedInModule(d)
 	case *ast.DefConst:
 		return r.finaliseDefConstInModule(scope, d)
 	case *ast.DefConstraint:
@@ -305,102 +297,13 @@ func (r *resolver) finaliseDeclaration(scope *ModuleScope, decl ast.Declaration)
 		return r.finaliseDefFunInModule(scope, d)
 	case *ast.DefInRange:
 		return r.finaliseDefInRangeInModule(scope, d)
-	case *ast.DefInterleaved:
-		return r.finaliseDefInterleavedInModule(scope, d)
 	case *ast.DefLookup:
 		return r.finaliseDefLookupInModule(scope, d)
-	case *ast.DefPermutation:
-		return r.finaliseDefPermutationInModule(scope, d)
 	case *ast.DefPerspective:
 		return r.finaliseDefPerspectiveInModule(scope, d)
-	case *ast.DefProperty:
-		return r.finaliseDefPropertyInModule(scope, d)
-	case *ast.DefSorted:
-		return r.finaliseDefSortedInModule(scope, d)
-	case *ast.DefComputedColumn:
-		return r.finaliseDefComputedColumnInModule(scope, d)
 	}
 	//
 	return nil
-}
-
-func (r *resolver) finaliseDefCallInModule(enclosing Scope, decl *ast.DefCall) []SyntaxError {
-	var (
-		scope = NewLocalScope(enclosing, false, false, false)
-	)
-	// Resolve return expressions
-	errs1 := r.finaliseExpressionsInModule(scope, decl.Returns)
-	// Resolve argument expressions
-	errs2 := r.finaliseExpressionsInModule(scope, decl.Arguments)
-	// Combine errors
-	errors := append(errs1, errs2...)
-	// Resolve selector (if applicable)
-	if decl.Selector.HasValue() {
-		errs3 := r.finaliseExpressionInModule(scope, decl.Selector.Unwrap())
-		errors = append(errors, errs3...)
-	}
-	//
-	return errors
-}
-
-func (r *resolver) finaliseDefComputedInModule(decl *ast.DefComputed) []SyntaxError {
-	var (
-		errors    []SyntaxError
-		arguments []NativeColumn = make([]NativeColumn, len(decl.Sources))
-		binding   *NativeDefinition
-	)
-	// Initialise arguments
-	for i := 0; i < len(decl.Sources); i++ {
-		// FIXME: sanity check that these things make sense.
-		ith := decl.Sources[i].Binding().(*ast.ColumnBinding)
-		arguments[i] = NativeColumn{ith.DataType, ith.Multiplier}
-	}
-	// Extract binding
-	binding = decl.Function.Binding().(*NativeDefinition)
-	//
-	if binding.arity != uint(len(arguments)) {
-		msg := fmt.Sprintf("incorrect number of arguments (found %d)", len(arguments))
-		errors = append(errors, *r.srcmap.SyntaxError(decl.Function, msg))
-	} else {
-		// Apply definition to determine geometry of assignment
-		assignments := binding.Apply(arguments)
-		//
-		if len(assignments) > len(decl.Targets) {
-			msg := fmt.Sprintf("not enough target columns (expected %d)", len(assignments))
-			errors = append(errors, *r.srcmap.SyntaxError(decl.Function, msg))
-		} else if len(assignments) < len(decl.Targets) {
-			msg := fmt.Sprintf("too many target columns (expected %d)", len(assignments))
-			errors = append(errors, *r.srcmap.SyntaxError(decl.Function, msg))
-		} else {
-			// Finalise each target column
-			for i := 0; i < len(decl.Targets); i++ {
-				// Finalise ith target column
-				var (
-					ith_multiplier = assignments[i].multiplier
-					ith_datatype   = assignments[i].datatype
-					binding        = decl.Targets[i].Binding().(*ast.ColumnBinding)
-				)
-				// Finalise (if not already)
-				if !binding.IsFinalised() {
-					// Finalise column binding
-					binding.Finalise(ith_multiplier, ith_datatype)
-				}
-				// Check data type
-				if !ith_datatype.SubtypeOf(binding.DataType) {
-					msg := fmt.Sprintf("incompatible type (%s)", ith_datatype.String())
-					errors = append(errors, *r.srcmap.SyntaxError(decl.Targets[i], msg))
-				}
-				// Check multiplier
-				if ith_multiplier != binding.Multiplier {
-					errors = append(errors, *r.srcmap.SyntaxError(decl.Targets[i], "invalid length multiplier"))
-				}
-			}
-			// Finalise declaration
-			decl.Finalise()
-		}
-	}
-	// Done
-	return errors
 }
 
 // Finalise one or more constant definitions within a given module.
@@ -466,137 +369,10 @@ func (r *resolver) finaliseDefConstraintInModule(enclosing *ModuleScope, decl *a
 	return append(guard_errors, constraint_errors...)
 }
 
-// Finalise a vanishing constraint declaration after all symbols have been
-// resolved. This involves: (a) checking the context is valid; (b) checking the
-// expressions are well-typed.
-func (r *resolver) finaliseDefComputedColumnInModule(enclosing *ModuleScope,
-	decl *ast.DefComputedColumn) []SyntaxError {
-	// Open definition
-	enclosing.OpenDefinition(decl.Target)
-	// Construct scope in which to resolve constraint
-	scope := NewLocalScope(enclosing, false, false, false)
-	// Resolve computation body
-	computation_errors := r.finaliseExpressionInModule(scope, decl.Computation)
-	//
-	if len(computation_errors) == 0 {
-		decl.Finalise()
-	}
-	// Close definition
-	enclosing.CloseDefinition(decl.Target)
-	// Done
-	return computation_errors
-}
-
-// Finalise an interleaving assignment.  Since the assignment would already been
-// initialised, all we need to do is determine the appropriate type and length
-// multiplier for the interleaved column.  This can still result in an error,
-// for example, if the multipliers between interleaved columns are incompatible,
-// etc.
-func (r *resolver) finaliseDefInterleavedInModule(enclosing *ModuleScope, decl *ast.DefInterleaved) []SyntaxError {
-	var (
-		// Length multiplier being determined
-		length_multiplier uint
-		// Column type being determined
-		datatype ast.Type
-		// Errors discovered
-		errors []SyntaxError
-	)
-	//
-	enclosing.OpenDefinition(decl.Target)
-	// Determine type and length multiplier
-	for _, source := range decl.Sources {
-		// Lookup binding of column being interleaved.
-		if binding, ok := source.Binding().(*ast.ColumnBinding); !ok {
-			// Columns to be interleaved must have the same length multiplier.
-			err := r.srcmap.SyntaxError(source, "invalid source column")
-			errors = append(errors, *err)
-		} else if !enclosing.IsVisible(source) {
-			errors = append(errors, *r.srcmap.SyntaxError(source, "recursive definition"))
-		} else if datatype == nil {
-			length_multiplier = binding.Multiplier
-			datatype = source.Type()
-		} else if binding.Multiplier != length_multiplier {
-			// Columns to be interleaved must have the same length multiplier.
-			err := r.srcmap.SyntaxError(source, "incompatible length multiplier")
-			errors = append(errors, *err)
-		} else {
-			// Combine datatypes.
-			datatype = ast.LeastUpperBound(datatype, source.Type())
-		}
-	}
-	// Finalise details only if no errors
-	if len(errors) == 0 {
-		// Determine actual length multiplier
-		length_multiplier *= uint(len(decl.Sources))
-		// Lookup existing declaration
-		binding := decl.Target.Binding().(*ast.ColumnBinding)
-		// Finalise (if not already)
-		if !binding.IsFinalised() {
-			// Finalise column binding
-			binding.Finalise(length_multiplier, datatype)
-		}
-		// Check data type
-		if !datatype.SubtypeOf(binding.DataType) {
-			msg := fmt.Sprintf("incompatible type (%s)", datatype.String())
-			errors = append(errors, *r.srcmap.SyntaxError(decl.Target, msg))
-		}
-		// Check multiplier
-		if length_multiplier != binding.Multiplier {
-			errors = append(errors, *r.srcmap.SyntaxError(decl.Target, "invalid length multiplier"))
-		}
-		// Finalise declaration
-		decl.Finalise()
-	}
-	//
-	enclosing.CloseDefinition(decl.Target)
-	// Done
-	return errors
-}
-
-// Finalise a permutation assignment after all symbols have been resolved.  This
-// requires checking the contexts of all columns is consistent.
-func (r *resolver) finaliseDefPermutationInModule(enclosing *ModuleScope, decl *ast.DefPermutation) []SyntaxError {
-	var (
-		multiplier uint = 0
-		errors     []SyntaxError
-		started    bool
-	)
-	//
-	openDefinitions(enclosing, decl.Targets...)
-	// Finalise each column in turn
-	for i := 0; i < len(decl.Sources); i++ {
-		ith := decl.Sources[i]
-		// Lookup source of column being permuted
-		if source, ok := ith.Binding().(*ast.ColumnBinding); !ok {
-			errors = append(errors, *r.srcmap.SyntaxError(ith, "invalid source column"))
-			return errors
-		} else if !started && source.DataType.(*ast.IntType) == nil {
-			errors = append(errors, *r.srcmap.SyntaxError(ith, "fixed-width type required"))
-		} else if started && multiplier != source.Multiplier {
-			// Problem
-			errors = append(errors, *r.srcmap.SyntaxError(ith, "incompatible length multiplier"))
-		} else if !enclosing.IsVisible(ith) {
-			errors = append(errors, *r.srcmap.SyntaxError(ith, "recursive definition"))
-		} else {
-			// All good, finalise target column
-			target := decl.Targets[i].Binding().(*ast.ColumnBinding)
-			// Update with completed information
-			target.Multiplier = source.Multiplier
-			target.DataType = source.DataType
-			multiplier = source.Multiplier
-			started = true
-		}
-	}
-	//
-	closeDefinitions(enclosing, decl.Targets...)
-	// Done
-	return errors
-}
-
-// Resolve those variables appearing in the body of this property assertion.
+// Resolve those variables appearing in the body of this perspective
 func (r *resolver) finaliseDefPerspectiveInModule(enclosing Scope, decl *ast.DefPerspective) []SyntaxError {
 	scope := NewLocalScope(enclosing, false, false, false)
-	// Resolve assertion
+	// Resolve expression
 	errors := r.finaliseExpressionInModule(scope, decl.Selector)
 	// Error check
 	if len(errors) == 0 {
@@ -666,38 +442,6 @@ func (r *resolver) finaliseDefLookupInModule(enclosing Scope, decl *ast.DefLooku
 		)
 
 		errors = append(errors, errs...)
-	}
-	//
-	return errors
-}
-
-// Resolve those variables appearing in the body of this property assertion.
-func (r *resolver) finaliseDefPropertyInModule(enclosing Scope, decl *ast.DefProperty) []SyntaxError {
-	scope := NewLocalScope(enclosing, false, false, false)
-	// Resolve assertion
-	return r.finaliseExpressionInModule(scope, decl.Assertion)
-}
-
-func (r *resolver) finaliseDefSortedInModule(enclosing Scope, decl *ast.DefSorted) []SyntaxError {
-	var (
-		scope = NewLocalScope(enclosing, false, false, false)
-	)
-	// Resolve source expressions
-	errors := r.finaliseExpressionsInModule(scope, decl.Sources)
-	// Resolve (optional) selector expression
-	if decl.Selector.HasValue() {
-		r.finaliseExpressionInModule(scope, decl.Selector.Unwrap())
-	}
-	// Sanity check length multipliers
-	for _, e := range decl.Sources {
-		// Sanity check multiplier has size 1
-		if e.Context().Multiplier != 1 {
-			errors = append(errors, *r.srcmap.SyntaxError(e, "interleaved column access not permitted"))
-		}
-	}
-	// Error check
-	if len(errors) == 0 {
-		decl.Finalise()
 	}
 	//
 	return errors
@@ -981,18 +725,6 @@ func (r *resolver) constructUnknownSymbolError(symbol ast.Symbol, scope Scope) S
 	// Fall back on default.  We actually could do better here by trying to find
 	// the closest match.
 	return *r.srcmap.SyntaxError(symbol, "unknown symbol")
-}
-
-func openDefinitions[T ast.SymbolDefinition](scope *ModuleScope, defs ...T) {
-	for _, def := range defs {
-		scope.OpenDefinition(def)
-	}
-}
-
-func closeDefinitions[T ast.SymbolDefinition](scope *ModuleScope, defs ...T) {
-	for _, def := range defs {
-		scope.CloseDefinition(def)
-	}
 }
 
 // GlobalResolution maintains detailed state about the ongoing attempt to

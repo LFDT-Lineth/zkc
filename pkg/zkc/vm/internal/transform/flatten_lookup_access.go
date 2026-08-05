@@ -76,7 +76,7 @@ func flattenLookupAccessFunction[W word.Word[W]](fn *descriptor.Function[W]) *de
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
 }
 
 // flattenableArgs returns, for each call in the vector, the set of argument
@@ -127,21 +127,17 @@ func flattenLookupAccess[W word.Word[W]](code Bytecode[W], snapshot []bool,
 			Returns:   c.Returns,
 		})
 	case *bytecode.ReadWrite[W]:
-		var (
-			address = uses[:len(c.Address)]
-			data    = c.Data
-		)
+		// Uses() order is Address ++ (Data if write) ++ Stamp, so reslice the
+		// (possibly snapshotted) operands back into their fields.
+		address := uses[:len(c.Address)]
+		rest := uses[len(c.Address):]
 		//
 		if c.Write {
-			data = uses[len(c.Address):]
+			return append(insns, bytecode.NewMemWrite[W](c.Id, address, rest[:len(c.Data)], rest[len(c.Data):]))
 		}
-		//
-		return append(insns, &bytecode.ReadWrite[W]{
-			Write:   c.Write,
-			Id:      c.Id,
-			Address: address,
-			Data:    data,
-		})
+		// A read's data registers are outputs (absent from uses) and stay
+		// untouched.
+		return append(insns, bytecode.NewMemRead[W](c.Id, address, c.Data, rest))
 	default:
 		panic(fmt.Sprintf("unexpected bytecode (%T)", code))
 	}

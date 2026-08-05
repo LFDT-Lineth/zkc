@@ -1,0 +1,3 @@
+;; n = in[0] + 1 overflows u16
+{ "in": "0xffff", "out": "0x" }
+{ "in": "0xffff12344567", "out": "0x" }

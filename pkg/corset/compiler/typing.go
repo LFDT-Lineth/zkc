@@ -81,13 +81,9 @@ func (p *typeChecker) typeCheckDeclaration(decl ast.Declaration) []SyntaxError {
 	//
 	switch d := decl.(type) {
 	case *ast.DefAliases:
-	case *ast.DefCall:
-		errors = p.typeCheckDefCall(d)
 		// ignore
 	case *ast.DefColumns:
 		// ignore
-	case *ast.DefComputed:
-		// ignore (for now)
 	case *ast.DefConst:
 		errors = p.typeCheckDefConstInModule(d)
 	case *ast.DefConstraint:
@@ -96,43 +92,16 @@ func (p *typeChecker) typeCheckDeclaration(decl ast.Declaration) []SyntaxError {
 		errors = p.typeCheckDefFunInModule(d)
 	case *ast.DefInRange:
 		errors = p.typeCheckDefInRange(d)
-	case *ast.DefInterleaved:
-		// ignore
 	case *ast.DefLookup:
 		errors = p.typeCheckDefLookup(d)
-	case *ast.DefPermutation:
-		// ignore
 	case *ast.DefPerspective:
 		errors = p.typeCheckDefPerspective(d)
-	case *ast.DefProperty:
-		errors = p.typeCheckDefProperty(d)
-	case *ast.DefSorted:
-		errors = p.typeCheckDefSorted(d)
-	case *ast.DefComputedColumn:
-		errors = p.typeCheckDefComputedColumn(d)
 	default:
 		// Error handling
 		panic("unknown declaration")
 	}
 	//
 	return errors
-}
-
-// typeCheck a "defcall" declaration.
-//
-//nolint:staticcheck
-func (p *typeChecker) typeCheckDefCall(decl *ast.DefCall) []SyntaxError {
-	// typeCheck return expressions
-	_, errs1 := p.typeCheckExpressionsInModule(ast.UINT_TYPE, decl.Returns, true)
-	// typeCheck argument expressions
-	_, errs2 := p.typeCheckExpressionsInModule(ast.UINT_TYPE, decl.Arguments, true)
-	// type check selector (if applicable)
-	if decl.Selector.HasValue() {
-		_, errs3 := p.typeCheckExpressionInModule(ast.BOOL_TYPE, decl.Selector.Unwrap(), true)
-		errs2 = append(errs2, errs3...)
-	}
-	// Combine errors
-	return append(errs1, errs2...)
 }
 
 // ast.Type check one or more constant definitions within a given module.
@@ -160,14 +129,6 @@ func (p *typeChecker) typeCheckDefConstraint(decl *ast.DefConstraint) []SyntaxEr
 	_, constraint_errors := p.typeCheckExpressionInModule(ast.BOOL_TYPE, decl.Constraint, false)
 	// Combine errors
 	return append(constraint_errors, guard_errors...)
-}
-
-// typeCheck a "defconstraint" declaration.
-func (p *typeChecker) typeCheckDefComputedColumn(decl *ast.DefComputedColumn) []SyntaxError {
-	// typeCheck expression body
-	_, expr_errors := p.typeCheckExpressionInModule(ast.UINT_TYPE, decl.Computation, false)
-	// Combine errors
-	return expr_errors
 }
 
 // ast.Type check the body of a function.
@@ -237,27 +198,6 @@ func (p *typeChecker) typeCheckDefPerspective(decl *ast.DefPerspective) []Syntax
 	// typeCheck selector expression
 	_, errors := p.typeCheckExpressionInModule(ast.UINT_TYPE, decl.Selector, true)
 	// Combine errors
-	return errors
-}
-
-// typeCheck a "defproperty" declaration.
-func (p *typeChecker) typeCheckDefProperty(decl *ast.DefProperty) []SyntaxError {
-	// type check constraint body
-	_, errors := p.typeCheckExpressionInModule(ast.BOOL_TYPE, decl.Assertion, false)
-	// Done
-	return errors
-}
-
-// typeCheck a "defproperty" declaration.
-func (p *typeChecker) typeCheckDefSorted(decl *ast.DefSorted) []SyntaxError {
-	var errors []SyntaxError
-	//
-	if decl.Selector.HasValue() {
-		// FIXME: eventually, the selector should be a BOOLEAN_TYPE in order to
-		// force a suitable interpetation.
-		_, errors = p.typeCheckExpressionInModule(ast.UINT_TYPE, decl.Selector.Unwrap(), true)
-	}
-	//
 	return errors
 }
 

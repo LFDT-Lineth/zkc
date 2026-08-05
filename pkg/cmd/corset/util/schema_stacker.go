@@ -20,11 +20,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
 	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/hir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -38,12 +38,6 @@ import (
 )
 
 const (
-	// MICRO_ASM_LAYER represents the micro assembly layer which is typically
-	// vectorised and field specific.
-	MICRO_ASM_LAYER = 1
-	// NANO_ASM_LAYER represents the micro assembly layer after register
-	// splitting.
-	NANO_ASM_LAYER = 2
 	// MIR_LAYER represents Mid-level Intermediate Representation (MIR) which is
 	// a true collection of constraints and assignments.  However, it retains a
 	// more high-level perspective.
@@ -60,8 +54,6 @@ const (
 type SchemaStacker[F field.Element[F]] struct {
 	// Corset compilation config options
 	corsetConfig corset.CompilationConfig
-	// Asm lowering config options
-	asmConfig asm.LoweringConfig
 	// Mir optimisation config options
 	mirConfig mir.OptimisationConfig
 	// Configuration for trace expansion
@@ -77,15 +69,6 @@ type SchemaStacker[F field.Element[F]] struct {
 // NewSchemaStack constructs a new, but empty stack of schemas.
 func NewSchemaStack[F field.Element[F]]() *SchemaStacker[F] {
 	return &SchemaStacker[F]{}
-}
-
-// WithAssemblyConfig determines the ASM lowering configuration to use for this
-// schema stack.  This determines, amongst other things, the maximum register
-// size.
-func (p SchemaStacker[F]) WithAssemblyConfig(config asm.LoweringConfig) SchemaStacker[F] {
-	p.asmConfig = config
-	//
-	return p
 }
 
 // WithBinaryFile updates the binary file which forms the root of any constructed stacks.
@@ -152,12 +135,12 @@ func (p SchemaStacker[F]) BinaryFile() *binfile.BinaryFile {
 
 // Field returns the field configuration used within this schema stack.
 func (p SchemaStacker[F]) Field() field.Config {
-	return p.asmConfig.Field
+	return p.corsetConfig.Field
 }
 
 // Read reads one or more constraints files into this stack.
 func (p SchemaStacker[F]) Read(filenames ...string) SchemaStacker[F] {
-	bf := readConstraintFiles(p.corsetConfig, p.asmConfig, filenames)
+	bf := readConstraintFiles(p.corsetConfig, filenames)
 	p.binfile = util.Some(bf)
 	//
 	return p
@@ -171,9 +154,9 @@ func (p SchemaStacker[F]) TraceBuilder() ir.TraceBuilder[F] {
 // Build a fresh SchemaStack from this stacker.
 func (p SchemaStacker[F]) Build() SchemaStack[F] {
 	var (
-		uasmProgram asm.MicroHirProgram
-		airSchema   air.Schema[F]
-		stack       SchemaStack[F]
+		hirSchema hir.Schema
+		airSchema air.Schema[F]
+		stack     SchemaStack[F]
 	)
 	//
 	if p.binfile.HasValue() {
@@ -182,27 +165,15 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 		// Apply any user-specified values for externalised constants.
 		applyExternOverrides(p.externs, &binfile)
 		// Read out the mixed micro schema
-		uasmProgram = binfile.Schema
-		// Apply register splitting for field agnosticity
-		nasmProgram, mapping := asm.Concretize[F](p.asmConfig.Field, uasmProgram)
+		hirSchema = binfile.Schema
 		//
 		stats.Log("concretization")
-		// Compile
-		mirSchema := asm.Compile(nasmProgram)
+		// Apply register splitting for field agnosticity
+		mirSchema, mapping := mir.Concretize[word.BigEndian, F](p.corsetConfig.Field, hir.LowerToMir(hirSchema.RawModules()))
 		//
 		stats.Log("translation")
 		// Record mapping
 		stack.mapping = mapping
-		// Include (Micro) Assembly Layer (if requested)
-		if p.layers.Contains(MICRO_ASM_LAYER) {
-			stack.abstractSchemas = append(stack.abstractSchemas, &uasmProgram)
-			stack.names = append(stack.names, "UASM")
-		}
-		// Include (Micro) Assembly Layer (if requested)
-		if p.layers.Contains(NANO_ASM_LAYER) {
-			stack.concreteSchemas = append(stack.concreteSchemas, &nasmProgram)
-			stack.names = append(stack.names, "NASM")
-		}
 		// Include Mid-level IR layer (if requested)
 		if p.layers.Contains(MIR_LAYER) {
 			stack.concreteSchemas = append(stack.concreteSchemas, mirSchema)
@@ -235,8 +206,7 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 // (or without) the standard library.  Generally speaking, you want to compile
 // with the standard library.  However, some internal tests are run without
 // including the standard library to minimise the surface area.
-func readConstraintFiles(config corset.CompilationConfig, lowering asm.LoweringConfig,
-	filenames []string) binfile.BinaryFile {
+func readConstraintFiles(config corset.CompilationConfig, filenames []string) binfile.BinaryFile {
 	//
 	var err error
 	//
@@ -253,7 +223,7 @@ func readConstraintFiles(config corset.CompilationConfig, lowering asm.LoweringC
 		os.Exit(1)
 	}
 	// Must be source files
-	return CompileSourceFiles(config, lowering, filenames)
+	return CompileSourceFiles(config, filenames)
 }
 
 // ReadBinaryFile reads a binfile which includes the metadata bytes, along with
@@ -281,14 +251,13 @@ func ReadBinaryFile(filename string) binfile.BinaryFile {
 // single schema.  This can result, for example, in a syntax error, etc.  This
 // can be done with (or without) including the standard library, and also with
 // (or without) debug constraints.
-func CompileSourceFiles(config corset.CompilationConfig, asmConfig asm.LoweringConfig,
-	filenames []string) binfile.BinaryFile {
+func CompileSourceFiles(config corset.CompilationConfig, filenames []string) binfile.BinaryFile {
 	//
 	var (
-		errors            []source.SyntaxError
-		srcmap            corset.SourceMap
-		srcfiles          = make([]source.File, len(filenames))
-		mixedMicroProgram asm.MicroHirProgram
+		errors   []source.SyntaxError
+		srcmap   corset.SourceMap
+		srcfiles = make([]source.File, len(filenames))
+		schema   hir.Schema
 	)
 	// Read each file
 	for i, n := range filenames {
@@ -304,11 +273,11 @@ func CompileSourceFiles(config corset.CompilationConfig, asmConfig asm.LoweringC
 		srcfiles[i] = *source.NewSourceFile(n, bytes)
 	}
 	// Parse and compile source files
-	mixedMicroProgram, srcmap, errors = corset.CompileSourceFiles(config, srcfiles)
+	schema, srcmap, errors = corset.CompileSourceFiles(config, srcfiles)
 	// Check for any errors
 	if len(errors) == 0 {
 		attributes := []binfile.Attribute{&srcmap}
-		return *binfile.NewBinaryFile(nil, attributes, mixedMicroProgram)
+		return *binfile.NewBinaryFile(nil, attributes, schema)
 	}
 	// Report errors
 	for _, err := range errors {

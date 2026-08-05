@@ -60,7 +60,7 @@ func lowerDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descript
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
 }
 
 func lowerDivisionCode[W word.Word[W]](
