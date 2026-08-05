@@ -402,17 +402,53 @@ func (p *AirLowering[F]) lowerConjunct(e *Conjunct[F], airMod air.ModuleBuilder[
 	for _, ts := range p.lowerLogicals(e.Args, airMod) {
 		worklist = array.AppendAll(worklist, ts...)
 	}
-	//
-	for len(worklist) > 0 {
-		// determine length of next conjunct
-		n := p.nextSumConjunct(airMod, worklist)
-		// construct next sum
-		sums = append(sums, term.Sum(worklist[:n]...))
-		// Remove n terms from worklist
-		worklist = worklist[n:]
+	// Sum only terms sharing identical evaluation bounds.
+	// If not, we may end up with constraint targeting oob cells,
+	// and the whole constraint would be dropped, instead of just the oob terms.
+	for _, group := range groupTermsByBounds(worklist) {
+		for len(group) > 0 {
+			// determine length of next conjunct
+			n := p.nextSumConjunct(airMod, group)
+			// construct next sum
+			sums = append(sums, term.Sum(group[:n]...))
+			// Remove n terms from group
+			group = group[n:]
+		}
 	}
 	//
 	return sums
+}
+
+// groupTermsByBounds partitions terms into groups sharing identical evaluation
+// bounds.
+func groupTermsByBounds[F field.Element[F]](terms []air.Term[F]) [][]air.Term[F] {
+	var (
+		keys   []util.Bounds
+		groups [][]air.Term[F]
+	)
+	//
+	for _, t := range terms {
+		var (
+			bounds  = t.Bounds()
+			matched = false
+		)
+		//
+		for i, key := range keys {
+			if key == bounds {
+				groups[i] = append(groups[i], t)
+				matched = true
+
+				break
+			}
+		}
+		//
+		if !matched {
+			keys = append(keys, bounds)
+			groups = append(groups, []air.Term[F]{t})
+		}
+	}
+	//
+	return groups
 }
 
 func (p *AirLowering[F]) lowerDisjunct(e *Disjunct[F], airMod air.ModuleBuilder[F]) []air.Term[F] {
