@@ -13,6 +13,7 @@
 package transform
 
 import (
+	"fmt"
 	"math/bits"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -74,6 +75,120 @@ func scanShiftAmountWidths[W word.Word[W]](modules []descriptor.Module[W]) map[s
 	return result
 }
 
+// shiftHelperKey identifies a SHL/SHR helper module.
+type shiftHelperKey struct {
+	op    bytecode.Operation
+	width uint
+	// amtWidth is the width of the helper's arg2 (amount) register: level j of
+	// a barrel chain has amtWidth == j, while a guard carries the widest amount
+	// width seen across its call sites (always > the chain depth, so guard and
+	// level keys never collide).
+	amtWidth uint
+}
+
+// shiftHelpers is the registry of SHL/SHR helper modules built by
+// LowerBitwise: the barrel-chain levels plus (when some call site's amount
+// register is wider than the chain) a guard per (op, value-width).
+type shiftHelpers[W word.Word[W]] struct {
+	baseID       uint
+	ids          map[shiftHelperKey]uint
+	items        []descriptor.Module[W]
+	amountWidths map[shiftKey]uint
+}
+
+func newShiftHelpers[W word.Word[W]](baseID uint, amountWidths map[shiftKey]uint) *shiftHelpers[W] {
+	return &shiftHelpers[W]{
+		baseID:       baseID,
+		ids:          make(map[shiftHelperKey]uint),
+		amountWidths: amountWidths,
+	}
+}
+
+func (p *shiftHelpers[W]) modules() []descriptor.Module[W] {
+	return p.items
+}
+
+// shiftAmountWidth returns the width of the guard's arg2 for a given (opcode,
+// value-width) pair: the maximum amount register width seen across all call
+// sites, defaulting to valueWidth if no entry was recorded.
+func (p *shiftHelpers[W]) shiftAmountWidth(op bytecode.Operation, valueWidth uint) uint {
+	if w, ok := p.amountWidths[shiftKey{op: op, width: valueWidth}]; ok {
+		return w
+	}
+
+	return valueWidth
+}
+
+// ensureShift returns the module id of the shift (SHL/SHR) helper a call site
+// with the given value and amount register widths should invoke, creating any
+// missing modules.  Call sites whose amount fits the barrel chain (amtWidth <=
+// ceil(log2(width))) enter the chain directly at their own level; wider call
+// sites go through the guard, which zeroes out-of-range amounts first.
+func (p *shiftHelpers[W]) ensureShift(op bytecode.Operation, width uint, amtWidth uint) uint {
+	if op != bytecode.OP_SHL && op != bytecode.OP_SHR {
+		panic(fmt.Sprintf("ensureShift: expected shift operation, got %d", op))
+	}
+
+	if depth := shiftChainDepth(width); amtWidth <= depth {
+		return p.ensureShiftLevel(op, width, amtWidth)
+	}
+
+	return p.ensureShiftGuard(op, width)
+}
+
+// ensureShiftLevel returns the module id of barrel-chain level `level` for the
+// given (op, width), creating it — and, bottom-up, every level below it — on
+// first use.  Building level-1 first means each factory receives the id of an
+// already-registered callee, so no pre-registration is needed.
+func (p *shiftHelpers[W]) ensureShiftLevel(op bytecode.Operation, width uint, level uint) uint {
+	key := shiftHelperKey{op: op, width: width, amtWidth: level}
+
+	if id, ok := p.ids[key]; ok {
+		return id
+	}
+
+	var subID uint
+	if level > 1 {
+		subID = p.ensureShiftLevel(op, width, level-1)
+	}
+
+	id := p.baseID + uint(len(p.items))
+	p.ids[key] = id
+	p.items = append(p.items, newShiftLevelHelper[W](key, subID))
+
+	return id
+}
+
+// ensureShiftGuard returns the module id of the guard for the given (op,
+// width), creating it (and the full level chain beneath it) on first use.
+// Its arg2 width is the maximum amount width seen across all call sites, so
+// every wide call site can pass its amount register with an upcast.
+func (p *shiftHelpers[W]) ensureShiftGuard(op bytecode.Operation, width uint) uint {
+	key := shiftHelperKey{op: op, width: width, amtWidth: p.shiftAmountWidth(op, width)}
+
+	if id, ok := p.ids[key]; ok {
+		return id
+	}
+
+	var levelID uint
+
+	if depth := shiftChainDepth(width); depth > 0 {
+		levelID = p.ensureShiftLevel(op, width, depth)
+	}
+
+	id := p.baseID + uint(len(p.items))
+	p.ids[key] = id
+	p.items = append(p.items, newShiftGuardHelper[W](key, levelID))
+
+	return id
+}
+
+// shiftHelperName is the module name of a shift helper: the operation, the
+// value width and the amount (arg2) width.
+func shiftHelperName(key shiftHelperKey) string {
+	return fmt.Sprintf("$bit_%s_u%d_u%d", bitwiseOpName(key.op), key.width, key.amtWidth)
+}
+
 // newShiftLevelHelper builds level j (= key.amtWidth) of the barrel-shifter
 // chain for SHL/SHR over values of width w (= key.width):
 //
@@ -90,10 +205,10 @@ func scanShiftAmountWidths[W word.Word[W]](modules []descriptor.Module[W]) map[s
 // SHL: drop the high k bits and append k zero bits) — no field arithmetic, so
 // this works for any field modulus.
 // subID is the module id of level j-1; it is ignored when j == 1.
-func newShiftLevelHelper[W word.Word[W]](key bitwiseHelperKey, subID uint) descriptor.Module[W] {
+func newShiftLevelHelper[W word.Word[W]](key shiftHelperKey, subID uint) descriptor.Module[W] {
 	var padding W
 
-	b := newHelperBuilder[W](key.width, key.arity)
+	b := newHelperBuilder[W](key.width, 2)
 	b.base[1] = descriptor.NewRegister(register.INPUT_REGISTER, "arg2", util.Some(key.amtWidth), padding)
 
 	a, n, out := b.inputs[0], b.inputs[1], b.output
@@ -131,7 +246,7 @@ func newShiftLevelHelper[W word.Word[W]](key bitwiseHelperKey, subID uint) descr
 		b.emit(bytecode.NewRet[W]())
 	}
 
-	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION, nil,
+	return descriptor.NewFunction(shiftHelperName(key), b.regs(), descriptor.BYTECODE_FUNCTION, nil,
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})
 }
 
@@ -186,12 +301,12 @@ func shiftByConst[W word.Word[W]](b *helperBuilder[W], op bytecode.Operation,
 // bits than the value has and naturally yields zero.  For width == 1 there are
 // no levels (k == 0) and the guard degenerates to "n == 0 ? a : 0"; levelID is
 // ignored in that case.
-func newShiftGuardHelper[W word.Word[W]](key bitwiseHelperKey, levelID uint) descriptor.Module[W] {
+func newShiftGuardHelper[W word.Word[W]](key shiftHelperKey, levelID uint) descriptor.Module[W] {
 	var padding W
 
 	amtWidth := key.amtWidth
 
-	b := newHelperBuilder[W](key.width, key.arity)
+	b := newHelperBuilder[W](key.width, 2)
 	b.base[1] = descriptor.NewRegister(register.INPUT_REGISTER, "arg2", util.Some(amtWidth), padding)
 
 	a, n, out := b.inputs[0], b.inputs[1], b.output
@@ -221,6 +336,6 @@ func newShiftGuardHelper[W word.Word[W]](key bitwiseHelperKey, levelID uint) des
 	b.emit(bytecode.LoadConst(out, zero))
 	b.emit(bytecode.NewRet[W]())
 
-	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION, nil,
+	return descriptor.NewFunction(shiftHelperName(key), b.regs(), descriptor.BYTECODE_FUNCTION, nil,
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})
 }

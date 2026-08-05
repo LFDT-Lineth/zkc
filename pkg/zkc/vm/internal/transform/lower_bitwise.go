@@ -32,26 +32,28 @@ import (
 // We assume this lowering happens BEFORE vectorization and register splitting.
 func LowerBitwise[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
-		out          = slices.Clone(program.Modules())
-		amountWidths = scanShiftAmountWidths(out)
-		// Shift helpers never use static bitwise tables, so bitwiseStaticWidth=0.
-		helpers = newBitwiseHelpers[W](uint(len(out)), amountWidths, 0)
+		out     = slices.Clone(program.Modules())
+		helpers = newShiftHelpers[W](uint(len(out)), scanShiftAmountWidths(out))
 	)
 
 	for i, mod := range out {
 		if fn, ok := mod.(*descriptor.Function[W]); ok {
-			out[i] = lowerBitwiseFunction(fn, helpers, lowerBitwiseCode[W])
+			out[i] = lowerBitwiseFunction(fn, func(b Bytecode[W], alloc split.Allocator[W]) []Bytecode[W] {
+				return lowerBitwiseCode(b, alloc, helpers)
+			})
 		}
 	}
 
 	return descriptor.NewProgram(program.Field(), append(out, helpers.modules()...)...)
 }
 
-// lowerBitwiseFunction rewrites each bytecode of a function via codeFn, threading
-// a per-function register allocator (for any temporaries codeFn introduces) and
-// the shared helper registry.
-func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *bitwiseHelpers[W],
-	codeFn func(Bytecode[W], split.Allocator[W], *bitwiseHelpers[W]) []Bytecode[W],
+// lowerBitwiseFunction rewrites each bytecode of a function via codeFn,
+// threading a per-function register allocator (for any temporaries codeFn
+// introduces).  The helper registry, if any, is captured by the codeFn closure
+// — this driver is shared by LowerBitwise and LowerOrXorAnd, whose registries
+// differ.
+func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W],
+	codeFn func(Bytecode[W], split.Allocator[W]) []Bytecode[W],
 ) *descriptor.Function[W] {
 	var (
 		vectors = fn.Vectors()
@@ -61,7 +63,7 @@ func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *b
 
 	for i, vec := range vectors {
 		nvecs[i] = vec.Map(func(_ uint, b Bytecode[W]) []Bytecode[W] {
-			return codeFn(b, alloc, helpers)
+			return codeFn(b, alloc)
 		})
 	}
 
@@ -71,7 +73,7 @@ func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *b
 func lowerBitwiseCode[W word.Word[W]](
 	b Bytecode[W],
 	registers split.Allocator[W],
-	helpers *bitwiseHelpers[W],
+	helpers *shiftHelpers[W],
 ) []Bytecode[W] {
 	//
 	bw, ok := b.(*bytecode.Bitwise[W])
@@ -93,7 +95,7 @@ func lowerBitwiseCode[W word.Word[W]](
 func lowerBitwiseShlShr[W word.Word[W]](
 	b *bytecode.Bitwise[W],
 	registers split.Allocator[W],
-	helpers *bitwiseHelpers[W],
+	helpers *shiftHelpers[W],
 ) []Bytecode[W] {
 	var (
 		// NOTE: bitwidth of shift (e.g. "x << y") determined by width of first
@@ -144,143 +146,23 @@ func maxBitwidthOf[W word.Word[W]](regs []descriptor.Register[W], targets ...byt
 	return w, w&(w-1) == 0
 }
 
-type bitwiseHelperKey struct {
-	op    bytecode.Operation
-	width uint
-	arity int
-	// amtWidth is the width of a shift helper's arg2 (amount) register: level
-	// j of a barrel chain has amtWidth == j, while a guard carries the widest
-	// amount width seen across its call sites (always > the chain depth, so
-	// guard and level keys never collide).  It is 0 for non-shift helpers.
-	amtWidth uint
-}
-
-type bitwiseHelpers[W word.Word[W]] struct {
-	baseID       uint
-	ids          map[bitwiseHelperKey]uint
-	items        []descriptor.Module[W]
-	amountWidths map[shiftKey]uint
-	// bitwiseStaticWidth is the largest width for which an AND/OR/XOR operation
-	// is realised as a static lookup table rather than a recursive helper (see
-	// ensureNary).  It is 0 for the shift-only helpers built by LowerBitwise.
-	bitwiseStaticWidth uint
-}
-
-func newBitwiseHelpers[W word.Word[W]](
-	baseID uint, amountWidths map[shiftKey]uint, bitwiseStaticWidth uint,
-) *bitwiseHelpers[W] {
-	return &bitwiseHelpers[W]{
-		baseID:             baseID,
-		ids:                make(map[bitwiseHelperKey]uint),
-		amountWidths:       amountWidths,
-		bitwiseStaticWidth: bitwiseStaticWidth,
-	}
-}
-
-// shiftAmountWidth returns the canonical shift-amount register width for a
-// given (opcode, value-width) pair: the maximum seen across all call sites,
-// defaulting to valueWidth if no entry was recorded.
-func (p *bitwiseHelpers[W]) shiftAmountWidth(op bytecode.Operation, valueWidth uint) uint {
-	if w, ok := p.amountWidths[shiftKey{op: op, width: valueWidth}]; ok {
-		return w
-	}
-
-	return valueWidth
-}
-
-func (p *bitwiseHelpers[W]) modules() []descriptor.Module[W] {
-	return p.items
-}
-
-// ensureShift returns the module id of the shift (SHL/SHR) helper a call site
-// with the given value and amount register widths should invoke, creating any
-// missing modules.  Call sites whose amount fits the barrel chain (amtWidth <=
-// ceil(log2(width))) enter the chain directly at their own level; wider call
-// sites go through the guard, which zeroes out-of-range amounts first.
-// AND/OR/XOR go through ensureNary instead.
-func (p *bitwiseHelpers[W]) ensureShift(op bytecode.Operation, width uint, amtWidth uint) uint {
-	if op != bytecode.OP_SHL && op != bytecode.OP_SHR {
-		panic(fmt.Sprintf("ensureShift: expected shift operation, got %d", op))
-	}
-
-	if depth := shiftChainDepth(width); amtWidth <= depth {
-		return p.ensureShiftLevel(op, width, amtWidth)
-	}
-
-	return p.ensureShiftGuard(op, width)
-}
-
-// ensureShiftLevel returns the module id of barrel-chain level `level` for the
-// given (op, width), creating it — and, bottom-up, every level below it — on
-// first use.  Building level-1 first means each factory receives the id of an
-// already-registered callee, so no pre-registration is needed.
-func (p *bitwiseHelpers[W]) ensureShiftLevel(op bytecode.Operation, width uint, level uint) uint {
-	key := bitwiseHelperKey{op: op, width: width, arity: 2, amtWidth: level}
-
-	if id, ok := p.ids[key]; ok {
-		return id
-	}
-
-	var subID uint
-	if level > 1 {
-		subID = p.ensureShiftLevel(op, width, level-1)
-	}
-
-	id := p.baseID + uint(len(p.items))
-	p.ids[key] = id
-	p.items = append(p.items, newShiftLevelHelper[W](key, subID))
-
-	return id
-}
-
-// ensureShiftGuard returns the module id of the guard for the given (op,
-// width), creating it (and the full level chain beneath it) on first use.
-// Its arg2 width is the maximum amount width seen across all call sites, so
-// every wide call site can pass its amount register with an upcast.
-func (p *bitwiseHelpers[W]) ensureShiftGuard(op bytecode.Operation, width uint) uint {
-	key := bitwiseHelperKey{op: op, width: width, arity: 2, amtWidth: p.shiftAmountWidth(op, width)}
-
-	if id, ok := p.ids[key]; ok {
-		return id
-	}
-
-	var levelID uint
-
-	if depth := shiftChainDepth(width); depth > 0 {
-		levelID = p.ensureShiftLevel(op, width, depth)
-	}
-
-	id := p.baseID + uint(len(p.items))
-	p.ids[key] = id
-	p.items = append(p.items, newShiftGuardHelper[W](key, levelID))
-
-	return id
-}
-
-func helperName(key bitwiseHelperKey) string {
-	var op string
-
-	switch key.op {
+// bitwiseOpName is the short name used in helper module names for a bitwise
+// operation.
+func bitwiseOpName(op bytecode.Operation) string {
+	switch op {
 	case bytecode.OP_AND:
-		op = "and"
+		return "and"
 	case bytecode.OP_OR:
-		op = "or"
+		return "or"
 	case bytecode.OP_XOR:
-		op = "xor"
+		return "xor"
 	case bytecode.OP_NOT:
-		op = "not"
+		return "not"
 	case bytecode.OP_SHL:
-		op = "shl"
+		return "shl"
 	case bytecode.OP_SHR:
-		op = "shr"
+		return "shr"
 	default:
-		op = "unknown"
+		return "unknown"
 	}
-
-	if key.amtWidth > 0 {
-		// Shift helper (chain level or guard): suffix with the amount width.
-		return fmt.Sprintf("$bit_%s_u%d_u%d", op, key.width, key.amtWidth)
-	}
-
-	return fmt.Sprintf("$bit_%s_u%d", op, key.width)
 }

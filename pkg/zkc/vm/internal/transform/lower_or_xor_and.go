@@ -43,17 +43,55 @@ func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W], maxStaticHeigh
 		// maxStaticWidth is floor(log2(maxStaticHeight)); a bitwise table indexes
 		// two w-bit operands, so it fits only when 2w <= maxStaticWidth.
 		bitwiseStaticWidth = uint(bits.Len(maxStaticHeight)-1) / 2
-		// AND/OR/XOR use no shift-amount widths.
-		helpers = newBitwiseHelpers[W](uint(len(out)), nil, bitwiseStaticWidth)
+		helpers            = newBitwiseHelpers[W](uint(len(out)), bitwiseStaticWidth)
 	)
 
 	for i, mod := range out {
 		if fn, ok := mod.(*descriptor.Function[W]); ok {
-			out[i] = lowerBitwiseFunction(fn, helpers, lowerOrXorAndCode[W])
+			out[i] = lowerBitwiseFunction(fn, func(b Bytecode[W], alloc split.Allocator[W]) []Bytecode[W] {
+				return lowerOrXorAndCode(b, alloc, helpers)
+			})
 		}
 	}
 
 	return descriptor.NewProgram(program.Field(), append(out, helpers.modules()...)...)
+}
+
+// bitwiseHelperKey identifies an AND/OR/XOR helper module.
+type bitwiseHelperKey struct {
+	op    bytecode.Operation
+	width uint
+	arity int
+}
+
+// bitwiseHelpers is the registry of AND/OR/XOR helper modules built by
+// LowerOrXorAnd: static truth tables for small widths, recursive halving
+// helpers above.  SHL/SHR use the separate shiftHelpers registry (see
+// lower_shift.go).
+type bitwiseHelpers[W word.Word[W]] struct {
+	baseID uint
+	ids    map[bitwiseHelperKey]uint
+	items  []descriptor.Module[W]
+	// bitwiseStaticWidth is the largest width for which an AND/OR/XOR operation
+	// is realised as a static lookup table rather than a recursive helper (see
+	// ensureNary).
+	bitwiseStaticWidth uint
+}
+
+func newBitwiseHelpers[W word.Word[W]](baseID uint, bitwiseStaticWidth uint) *bitwiseHelpers[W] {
+	return &bitwiseHelpers[W]{
+		baseID:             baseID,
+		ids:                make(map[bitwiseHelperKey]uint),
+		bitwiseStaticWidth: bitwiseStaticWidth,
+	}
+}
+
+func (p *bitwiseHelpers[W]) modules() []descriptor.Module[W] {
+	return p.items
+}
+
+func helperName(key bitwiseHelperKey) string {
+	return fmt.Sprintf("$bit_%s_u%d", bitwiseOpName(key.op), key.width)
 }
 
 // isTableWidth reports whether an AND/OR/XOR operation of the given width is
