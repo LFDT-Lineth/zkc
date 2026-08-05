@@ -83,7 +83,7 @@ func lowerBitwiseCode[W word.Word[W]](
 	case bytecode.OP_NOT:
 		return inlineBitwiseNot(bw, registers)
 	case bytecode.OP_SHL, bytecode.OP_SHR:
-		return lowerBitwiseShlShr(bw, helpers)
+		return lowerBitwiseShlShr(bw, registers, helpers)
 	default:
 		// AND/OR/XOR are lowered after register splitting; see LowerOrXorAnd.
 		return []Bytecode[W]{b}
@@ -92,12 +92,14 @@ func lowerBitwiseCode[W word.Word[W]](
 
 func lowerBitwiseShlShr[W word.Word[W]](
 	b *bytecode.Bitwise[W],
+	registers split.Allocator[W],
 	helpers *bitwiseHelpers[W],
 ) []Bytecode[W] {
 	var (
 		// NOTE: bitwidth of shift (e.g. "x << y") determined by width of first
 		// argument only (i.e. "x").
-		id = helpers.ensure(b.Op, uint(b.Bitwidth), 2)
+		amtWidth = registers.Registers()[b.Right].Bitwidth().Unwrap()
+		id       = helpers.ensureShift(b.Op, uint(b.Bitwidth), amtWidth)
 	)
 	//
 	return []Bytecode[W]{
@@ -146,6 +148,11 @@ type bitwiseHelperKey struct {
 	op    bytecode.Operation
 	width uint
 	arity int
+	// amtWidth is the width of a shift helper's arg2 (amount) register: level
+	// j of a barrel chain has amtWidth == j, while a guard carries the widest
+	// amount width seen across its call sites (always > the chain depth, so
+	// guard and level keys never collide).  It is 0 for non-shift helpers.
+	amtWidth uint
 }
 
 type bitwiseHelpers[W word.Word[W]] struct {
@@ -185,40 +192,69 @@ func (p *bitwiseHelpers[W]) modules() []descriptor.Module[W] {
 	return p.items
 }
 
-// ensure returns the module id of the shift (SHL/SHR) helper for the given key,
-// creating it on first use.  AND/OR/XOR go through ensureNary instead.
-func (p *bitwiseHelpers[W]) ensure(op bytecode.Operation, width uint, arity int) uint {
-	key := bitwiseHelperKey{
-		op:    op,
-		width: width,
-		arity: arity,
+// ensureShift returns the module id of the shift (SHL/SHR) helper a call site
+// with the given value and amount register widths should invoke, creating any
+// missing modules.  Call sites whose amount fits the barrel chain (amtWidth <=
+// ceil(log2(width))) enter the chain directly at their own level; wider call
+// sites go through the guard, which zeroes out-of-range amounts first.
+// AND/OR/XOR go through ensureNary instead.
+func (p *bitwiseHelpers[W]) ensureShift(op bytecode.Operation, width uint, amtWidth uint) uint {
+	if op != bytecode.OP_SHL && op != bytecode.OP_SHR {
+		panic(fmt.Sprintf("ensureShift: expected shift operation, got %d", op))
 	}
+
+	if depth := shiftChainDepth(width); amtWidth <= depth {
+		return p.ensureShiftLevel(op, width, amtWidth)
+	}
+
+	return p.ensureShiftGuard(op, width)
+}
+
+// ensureShiftLevel returns the module id of barrel-chain level `level` for the
+// given (op, width), creating it — and, bottom-up, every level below it — on
+// first use.  Building level-1 first means each factory receives the id of an
+// already-registered callee, so no pre-registration is needed.
+func (p *bitwiseHelpers[W]) ensureShiftLevel(op bytecode.Operation, width uint, level uint) uint {
+	key := bitwiseHelperKey{op: op, width: width, arity: 2, amtWidth: level}
 
 	if id, ok := p.ids[key]; ok {
 		return id
 	}
 
-	// SHL/SHR are self-recursive: pre-register the ID before the factory runs
-	// so any re-entrant ensure call for the same key resolves correctly.
-	if op == bytecode.OP_SHL || op == bytecode.OP_SHR {
-		id := p.baseID + uint(len(p.items))
-		p.ids[key] = id
+	var subID uint
+	if level > 1 {
+		subID = p.ensureShiftLevel(op, width, level-1)
+	}
 
-		amtWidth := p.shiftAmountWidth(op, width)
+	id := p.baseID + uint(len(p.items))
+	p.ids[key] = id
+	p.items = append(p.items, newShiftLevelHelper[W](key, subID))
 
-		var mod descriptor.Module[W]
-		if op == bytecode.OP_SHL {
-			mod = newShlHelper[W](key, id, amtWidth)
-		} else {
-			mod = newShrHelper[W](key, id, amtWidth)
-		}
+	return id
+}
 
-		p.items = append(p.items, mod)
+// ensureShiftGuard returns the module id of the guard for the given (op,
+// width), creating it (and the full level chain beneath it) on first use.
+// Its arg2 width is the maximum amount width seen across all call sites, so
+// every wide call site can pass its amount register with an upcast.
+func (p *bitwiseHelpers[W]) ensureShiftGuard(op bytecode.Operation, width uint) uint {
+	key := bitwiseHelperKey{op: op, width: width, arity: 2, amtWidth: p.shiftAmountWidth(op, width)}
 
+	if id, ok := p.ids[key]; ok {
 		return id
 	}
-	//
-	panic(fmt.Sprintf("ensure: expected shift operation, got %d", op))
+
+	var levelID uint
+
+	if depth := shiftChainDepth(width); depth > 0 {
+		levelID = p.ensureShiftLevel(op, width, depth)
+	}
+
+	id := p.baseID + uint(len(p.items))
+	p.ids[key] = id
+	p.items = append(p.items, newShiftGuardHelper[W](key, levelID))
+
+	return id
 }
 
 func helperName(key bitwiseHelperKey) string {
@@ -239,6 +275,11 @@ func helperName(key bitwiseHelperKey) string {
 		op = "shr"
 	default:
 		op = "unknown"
+	}
+
+	if key.amtWidth > 0 {
+		// Shift helper (chain level or guard): suffix with the amount width.
+		return fmt.Sprintf("$bit_%s_u%d_u%d", op, key.width, key.amtWidth)
 	}
 
 	return fmt.Sprintf("$bit_%s_u%d", op, key.width)

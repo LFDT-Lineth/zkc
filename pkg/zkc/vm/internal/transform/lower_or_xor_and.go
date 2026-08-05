@@ -363,6 +363,10 @@ func (p *helperBuilder[W]) emit(insn Bytecode[W]) {
 	p.code = append(p.code, insn)
 }
 
+func (p *helperBuilder[W]) emitAll(insns []Bytecode[W]) {
+	p.code = append(p.code, insns...)
+}
+
 func (p *helperBuilder[W]) newComputed(prefix string) bytecode.RegisterId {
 	return p.newComputedWidth(prefix, p.width)
 }
