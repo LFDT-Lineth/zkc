@@ -91,7 +91,7 @@ func ParallelTraceExpansion[F field.Element[F]](batchsize uint, schema sc.AnySch
 			batch = expander.Next(batchsize)
 		)
 		// Process all assignments in this wave in parallel using a worker pool.
-		results := util.ParallelMap(batch, func(_ uint, ith sc.Assignment[F]) columnBatch[F] {
+		results := array.ParallelMap(batch, func(_ uint, ith sc.Assignment[F]) columnBatch[F] {
 			cols, err := ith.Compute(trace, schema)
 			return columnBatch[F]{ith.RegistersWritten(), cols, err}
 		})

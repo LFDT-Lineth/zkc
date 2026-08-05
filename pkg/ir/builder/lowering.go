@@ -81,7 +81,7 @@ func parallelLowering[F field.Element[F]](ltf lt.TraceFile) (array.Builder[F], [
 		}
 	}
 	// Lower all columns in parallel using a worker pool.
-	results := util.ParallelMap(jobs, func(_ uint, job loweringJob) result[F] {
+	results := array.ParallelMap(jobs, func(_ uint, job loweringJob) result[F] {
 		return result[F]{job.module, job.col, lowerRawColumn(job.rawCol, builder)}
 	})
 	// Construct lowered modules with enough blank columns.

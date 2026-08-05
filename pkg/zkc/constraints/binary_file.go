@@ -49,6 +49,9 @@ const BINFILE_MINOR_VERSION uint16 = 0
 // helps us identify actual binary files from corrupted files.
 var ZKC_EXEC [8]byte = [8]byte{'z', 'k', 'c', ' ', 'e', 'x', 'e', 'c'}
 
+// Tracer defines the type used for building traces.
+type Tracer[F field.Element[F]] = tracer.Builder[vm.Uint32, F, *rtrace.CompactModule[F]]
+
 // BinaryFile provides two pieces of functionality: (i) a means for serialising
 // and deserialising a set of AIR constraints; (ii) a means for generating a
 // trace for those constraints from a given set of inputs.  Thus, we can write a
@@ -268,7 +271,7 @@ func (p *BinaryFile[F]) clearCachedArtifacts() {
 
 // Check a given trace against the AIR constraints embodied in this constraints
 // file, potentially producing one (or more) constraint failures.
-func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Failure {
+func (p *BinaryFile[F]) Check(tr trace.Trace[F], config vm.TraceConfig) []schema.Failure {
 	var (
 		sc    = p.AirConstraints()
 		stats = util.NewPerfStats()
@@ -303,18 +306,16 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte) (output map[string][]by
 // The raw (row-major) trace produced by the machine is also returned, since it
 // carries the original register / limb structure before AIR expansion (e.g. for
 // reporting statistics).  It is nil when execution fails.
-func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
+func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
 ) (output map[string][]byte, rtr rtrace.Trace[F], tr trace.Trace[F], errs []error) {
 	//
 	var (
 		stats = util.NewPerfStats()
-		// Lower bytecode program
-		prog32 = p.TracingProgram()
-		//
-		builder = tracer.NewBuilder[vm.Uint32, F, *rtrace.CompactModule[F]](prog32)
+		// Initialise trace builder from configuration
+		builder = vm.NewTraceBuilder[vm.Uint32, F, Tracer[F]](cfg, p.TracingProgram())
 	)
 	// Execute machine in chunks of 1K steps
-	rtr, output, errs = vm.BootAndTrace(prog32, input, math.MaxUint, builder)
+	rtr, output, errs = builder.BootAndTrace(input)
 	//
 	if rtr != nil {
 		var berrs []error
@@ -327,9 +328,9 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 			WithDefensivePadding(false).
 			WithExpansionChecks(true).
 			WithExpansion(true).
-			WithParallelism(cfg.parallel).
-			WithBatchSize(cfg.batchSize).
-			WithPadding(cfg.paddingStrategy)
+			WithParallelism(cfg.Parallelism()).
+			WithBatchSize(cfg.BatchSize()).
+			WithPadding(cfg.PaddingStrategy())
 		// Build the trace (finally)
 		tr, berrs = builder.Expand(constraints, rtrace.ToTrace(rtr))
 		// Include any builder errors

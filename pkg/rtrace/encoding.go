@@ -54,8 +54,15 @@ func (p *Array[T, M]) UnmarshalBinary(data []byte) error {
 }
 
 func marshalModule[T any](buffer *bytes.Buffer, module Module[T]) {
+	var metadata uint
+	// Build metadata
+	if module.Descriptor().Replicated {
+		metadata |= 1
+	}
+	//
 	writeString(buffer, module.Name())
-	marshalDescriptors(buffer, module.Descriptors().Collect())
+	marshalDescriptors(buffer, module.Descriptor().Columns)
+	writeUvarint(buffer, metadata)
 	writeUvarint(buffer, module.Height())
 	//
 	for cid := uint(0); cid < module.Width(); cid++ {
@@ -82,7 +89,9 @@ func unmarshalModule[T any, M ModuleBuilder[T, M]](buffer *bytes.Buffer) (M, err
 		//
 		name        = r.str()
 		descriptors = readWith(&r, readColumnDescriptors)
+		metadata    = r.uvarint()
 		height      = r.uvarint()
+		replicated  = metadata != 0
 		//
 		module M
 	)
@@ -92,7 +101,7 @@ func unmarshalModule[T any, M ModuleBuilder[T, M]](buffer *bytes.Buffer) (M, err
 	}
 	// Initialise (empty) module, thereby allocating an appropriate array
 	// representation for each descriptor.
-	module = module.Initialise(name, descriptors)
+	module = module.Initialise(ModuleDescriptor{name, descriptors, replicated})
 	// Decode each column in place.
 	for cid := range uint(len(descriptors)) {
 		if err := module.MutColumn(cid).Decode(height, buffer); err != nil {

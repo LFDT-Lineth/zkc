@@ -120,7 +120,7 @@ func initReadWriteMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](cfg fie
 		rtrace.NewColumnDescriptor(RAM_EXEC_READ_NAME, u1),
 	)
 	//Done
-	return module.Initialise(m.Name(), regs)
+	return module.Initialise(rtrace.NewModuleDescriptor(m.Name(), regs))
 }
 
 // traceReadWriteMemory materialises the trace of a read-write (RAM) memory: one
@@ -148,8 +148,6 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		//
 		width = module.Width()
 	)
-	// Row 0 is a padding row (EXEC = FINL = 0).
-	module.Append(paddingRow(scratch[:width])...)
 	//
 	for _, acc := range accesses {
 		var (
@@ -169,6 +167,7 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		// per-kind lookup selectors follow: EXEC_WRITE = EXEC * IS_WRITE,
 		// EXEC_READ = EXEC * (1 - IS_WRITE).
 		row[layout.exec] = field.Uint64[F](1)
+		row[layout.finl] = field.Uint64[F](0)
 		row[layout.isWrite] = field.Uint1[F](acc.isWrite)
 		row[layout.execWrite] = field.Uint1[F](acc.isWrite)
 		row[layout.execRead] = field.Uint1[F](!acc.isWrite)

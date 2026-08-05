@@ -15,6 +15,7 @@ package narray
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -41,6 +42,26 @@ func NewStaticArray[T word.Word[T]](height uint, bitwidth uint) *StaticArray[T] 
 // Append new word on this array
 func (p *StaticArray[T]) Append(word T) {
 	p.data = append(p.data, word)
+}
+
+// AppendAll elements of the given array onto the this array, mutating it in
+// place.
+func (p *StaticArray[T]) AppendAll(other StaticArray[T]) {
+	// Determine height of resulting array
+	var (
+		nsize = uint(len(p.data) + len(other.data))
+		n     = nsize - uint(len(p.data))
+	)
+	// sanity check
+	if p.bitwidth != other.bitwidth {
+		panic(fmt.Sprintf("incompatible array bitwidth (u%d vs u%d)", p.bitwidth, other.bitwidth))
+	}
+	// expand data length
+	ndata := slices.Grow(p.data, int(n))[:nsize]
+	// copy data
+	copy(ndata[len(p.data):], other.data)
+	// finalisex
+	p.data = ndata
 }
 
 // Len returns the number of elements in this word array.
