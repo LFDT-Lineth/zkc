@@ -17,8 +17,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 )

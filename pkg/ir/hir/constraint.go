@@ -14,15 +14,9 @@ package hir
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/interleaving"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/sorted"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -38,37 +32,11 @@ type Constraint struct {
 	constraint schema.Constraint[word.BigEndian]
 }
 
-// NewAssertion constructs a new assertion
-func NewAssertion(handle string, ctx schema.ModuleId, domain util.Option[int], term constraint.Property,
-) Constraint {
-	//
-	return Constraint{constraint.NewAssertion[word.BigEndian](handle, ctx, domain, term)}
-}
-
 // NewVanishingConstraint constructs a new vanishing constraint
 func NewVanishingConstraint(handle string, ctx schema.ModuleId, domain util.Option[int],
 	term LogicalTerm) Constraint {
 	//
 	return Constraint{vanishing.NewConstraint(handle, ctx, domain, term)}
-}
-
-// NewFunctionCall creates a new function call with a given handle
-func NewFunctionCall(handle string, caller, callee module.Id,
-	returns []Term, args []Term, selector util.Option[LogicalTerm]) Constraint {
-	//
-	return Constraint{FunctionCall{Handle: handle,
-		Callee:    callee,
-		Caller:    caller,
-		Returns:   returns,
-		Arguments: args,
-		Selector:  selector,
-	}}
-}
-
-// NewInterleavingConstraint creates a new interleaving constraint with a given handle.
-func NewInterleavingConstraint(handle string, targetContext schema.ModuleId,
-	sourceContext schema.ModuleId, target Term, sources []Term) Constraint {
-	return Constraint{interleaving.NewConstraint(handle, targetContext, sourceContext, target, sources)}
 }
 
 // NewLookupConstraint creates a new lookup constraint with a given handle.
@@ -78,24 +46,11 @@ func NewLookupConstraint(handle string, targets []lookup.Vector[word.BigEndian, 
 	return Constraint{lookup.NewConstraint(handle, targets, sources)}
 }
 
-// NewPermutationConstraint creates a new permutation
-func NewPermutationConstraint(handle string, context schema.ModuleId, targets []register.Id,
-	sources []register.Id) Constraint {
-	return Constraint{permutation.NewConstraint[word.BigEndian](handle, context, targets, sources)}
-}
-
 // NewRangeConstraint constructs a new Range constraint
 func NewRangeConstraint(handle string, ctx schema.ModuleId, expr Term,
 	bitwidth uint) Constraint {
 	//
 	return Constraint{ranged.NewConstraint(handle, ctx, []Term{expr}, []uint{bitwidth})}
-}
-
-// NewSortedConstraint creates a new Sorted
-func NewSortedConstraint(handle string, context schema.ModuleId, bitwidth uint,
-	selector util.Option[Term], sources []Term, signs []bool, strict bool) Constraint {
-	//
-	return Constraint{sorted.NewConstraint(handle, context, bitwidth, selector, sources, signs, strict)}
 }
 
 // Accepts determines whether a given constraint accepts a given trace or

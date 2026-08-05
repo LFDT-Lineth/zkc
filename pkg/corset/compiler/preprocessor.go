@@ -16,7 +16,6 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
@@ -76,11 +75,7 @@ func (p *preprocessor) preprocessDeclaration(decl ast.Declaration) []SyntaxError
 	switch d := decl.(type) {
 	case *ast.DefAliases:
 		// ignore
-	case *ast.DefCall:
-		errors = p.preprocessDefCall(d)
 	case *ast.DefColumns:
-		// ignore
-	case *ast.DefComputed:
 		// ignore
 	case *ast.DefConst:
 		// ignore
@@ -90,51 +85,16 @@ func (p *preprocessor) preprocessDeclaration(decl ast.Declaration) []SyntaxError
 		errors = p.preprocessDefFun(d)
 	case *ast.DefInRange:
 		errors = p.preprocessDefInRange(d)
-	case *ast.DefInterleaved:
-		// ignore
 	case *ast.DefLookup:
 		errors = p.preprocessDefLookup(d)
-	case *ast.DefPermutation:
-		// ignore
 	case *ast.DefPerspective:
 		errors = p.preprocessDefPerspective(d)
-	case *ast.DefProperty:
-		errors = p.preprocessDefProperty(d)
-	case *ast.DefSorted:
-		errors = p.preprocessDefSorted(d)
-	case *ast.DefComputedColumn:
-		errors = p.preprocessDefComputedColumn(d)
 	default:
 		// Error handling
 		panic("unknown declaration")
 	}
 	//
 	return errors
-}
-
-// preprocess a "defcall" declaration.
-//
-//nolint:staticcheck
-func (p *preprocessor) preprocessDefCall(decl *ast.DefCall) []SyntaxError {
-	var (
-		errs1, errs2 []SyntaxError
-	)
-	// preprocess return expressions
-	decl.Returns, errs1 = p.preprocessExpressionsInModule(decl.Returns)
-	// preprocess argument expressions
-	decl.Arguments, errs2 = p.preprocessExpressionsInModule(decl.Arguments)
-	//
-
-	// preprocess selector (if applicable)
-	if decl.Selector.HasValue() {
-		selector, errs3 := p.preprocessExpressionInModule(decl.Selector.Unwrap())
-		//
-		decl.Selector = util.Some(selector)
-
-		errs2 = append(errs2, errs3...)
-	}
-	// Combine errors
-	return append(errs1, errs2...)
 }
 
 // preprocess a "defconstraint" declaration.
@@ -155,15 +115,6 @@ func (p *preprocessor) preprocessDefConstraint(decl *ast.DefConstraint) []Syntax
 	}
 	// Combine errors
 	return append(constraint_errors, guard_errors...)
-}
-
-// preprocess a "defcomputedcolumn" declaration.
-func (p *preprocessor) preprocessDefComputedColumn(decl *ast.DefComputedColumn) []SyntaxError {
-	var errors []SyntaxError
-	// preprocess computation body
-	decl.Computation, errors = p.preprocessExpressionInModule(decl.Computation)
-	// done
-	return errors
 }
 
 // preprocess a "deflookup" declaration.
@@ -227,27 +178,6 @@ func (p *preprocessor) preprocessDefPerspective(decl *ast.DefPerspective) []Synt
 	decl.Selector, errors = p.preprocessExpressionInModule(decl.Selector)
 	// Combine errors
 	return errors
-}
-
-// preprocess a "defproperty" declaration.
-func (p *preprocessor) preprocessDefProperty(decl *ast.DefProperty) []SyntaxError {
-	var errors []SyntaxError
-	// preprocess constraint body
-	decl.Assertion, errors = p.preprocessExpressionInModule(decl.Assertion)
-	// Done
-	return errors
-}
-
-func (p *preprocessor) preprocessDefSorted(decl *ast.DefSorted) []SyntaxError {
-	if decl.Selector.HasValue() {
-		selector, errors := p.preprocessExpressionInModule(decl.Selector.Unwrap())
-		//
-		decl.Selector = util.Some(selector)
-		//
-		return errors
-	}
-	//
-	return nil
 }
 
 // preprocess an optional expression in a given context.  That is an expression

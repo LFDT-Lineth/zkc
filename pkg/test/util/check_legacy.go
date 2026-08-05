@@ -19,7 +19,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
 	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
@@ -130,21 +129,6 @@ func checkWithField[F field.Element[F]](t *testing.T, stdlib bool, test string, 
 
 func fullCheckTraces[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, padding bool,
 	traces []lt.TraceFile, stack cmd_util.SchemaStacker[F]) {
-	//
-	if cfg.expand {
-		var errors []error
-		// Extract root schema
-		schema := stack.BinaryFile().Schema
-		// Apply trace propagation
-		if traces, errors = asm.PropagateAll(schema, traces); len(errors) != 0 && cfg.expected {
-			t.Errorf("Trace propagation failed (%s): %s", test, errors)
-			return
-		} else if len(errors) != 0 {
-			// If trace was not expected to pass and it failed, then we're all
-			// good. But, still we cannot continue with this trace.
-			return
-		}
-	}
 	// Run checks using schema compiled from source
 	checkCompilerOptimisations(t, test, cfg, traces, stack)
 	// Construct binary schema using primary stack
@@ -299,7 +283,11 @@ func matchSourceFiles(test string) []string {
 			filenames = append(filenames, filename)
 		}
 	}
-	//
+	// Sanity check we found something
+	if len(filenames) == 0 {
+		panic(fmt.Sprintf("did not match any source files for test \"%s\"", test))
+	}
+	// Done
 	return filenames
 }
 
@@ -424,19 +412,14 @@ func getSchemaStack[F field.Element[F]](stdlib bool, field field.Config, filenam
 	var (
 		stack        cmd_util.SchemaStacker[F]
 		corsetConfig corset.CompilationConfig
-		asmConfig    asm.LoweringConfig
 	)
 	// Configure corset for testing
 	corsetConfig.Legacy = true
 	corsetConfig.Stdlib = stdlib
 	corsetConfig.Field = field
-	// Configure asm for lowering
-	asmConfig.Field = field
 	//
 	stack = stack.
 		WithCorsetConfig(corsetConfig).
-		WithAssemblyConfig(asmConfig).
-		WithLayer(cmd_util.MICRO_ASM_LAYER).
 		WithLayer(cmd_util.MIR_LAYER).
 		WithLayer(cmd_util.AIR_LAYER)
 	// Read in all specified constraint files.

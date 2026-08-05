@@ -224,6 +224,21 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 	}
 }
 
+// WithAccessLog enables logging of memory accesses on each read-write memory so
+// its reads and writes are captured during execution.  This is only intended
+// to be used when tracing.
+func (p *Interpreter[W]) WithAccessLog() *Interpreter[W] {
+	for i := range p.rams {
+		p.rams[i].SetLog(&TraceableMemoryLog[W]{})
+	}
+	//
+	for i := range p.prams {
+		p.prams[i].SetLog(&TraceableMemoryLog[W]{})
+	}
+	//
+	return p
+}
+
 // BreakPointer configures the callback invoked whenever a breakpoint is
 // reached, i.e. an instruction flagged with the BREAKPOINT modifier bit (see
 // BreakPoint) is about to execute.  The callback typically snapshots the
@@ -683,7 +698,7 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		case encoding.RD_SROM_nm:
 			p.pc = executeReadSrom_sn(p.pc, bytecodes, frame, p.sroms)
 		case encoding.WR_WOM_nm:
-			p.pc = executeWriteWom_sn(p.pc, bytecodes, frame, p.woms)
+			p.pc, err = p.executeWriteWom_sn(p.pc, bytecodes, frame, p.woms)
 		case encoding.RD_RAM_nm:
 			p.pc = executeReadRam_sn(p.pc, bytecodes, frame, p.rams)
 		case encoding.WR_RAM_nm:
@@ -818,7 +833,7 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 	case encoding.WIDE_RD_SROM_nm:
 		pc = executeReadSrom_sn(pc, codes, stack, p.sroms)
 	case encoding.WIDE_WR_WOM_nm:
-		pc = executeWriteWom_sn(pc, codes, stack, p.woms)
+		pc, err = p.executeWriteWom_sn(pc, codes, stack, p.woms)
 	case encoding.WIDE_RD_RAM_nm:
 		pc = executeReadRam_sn(pc, codes, stack, p.rams)
 	case encoding.WIDE_WR_RAM_nm:
@@ -2173,8 +2188,8 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, pool []W, stac
 // executeWriteWom_sn implements WR_WOM_nm: it writes ndata consecutive words
 // from successive source registers into the write-once memory identified by id,
 // starting at the address decoded from the operand registers.
-func executeWriteWom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	woms []WriteOnce[W]) uint32 {
+func (p *Interpreter[W]) executeWriteWom_sn(pc uint32, codes []uint32, stack []W,
+	woms []WriteOnce[W]) (uint32, error) {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -2185,13 +2200,17 @@ func executeWriteWom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	address = decodeAddress(addr, wom.Descriptor(), stack)
 	//
 	for data.HasNext() {
+		// Sanity check
+		if !wom.CanWrite(address) {
+			return pc, p.failure("address %x already written for write-only memory %s", address, wom.descriptor.Name())
+		}
 		//nolint
 		wom.Write(address, stack[data.Next()])
 		//
 		address++
 	}
 	//
-	return pc + n
+	return pc + n, nil
 }
 
 // executeReadRam_sn implements RD_RAM_nm: it reads ndata consecutive words from

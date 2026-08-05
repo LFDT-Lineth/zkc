@@ -28,6 +28,12 @@ type Memory[W Word[W]] = descriptor.Memory[W]
 // accessed.
 type RuntimeMemory[W Word[W]] = interpreter.Memory[W]
 
+// AccessData records a single read-write memory access: the address, the value
+// and timestamp the cell holds after the access, and whether it was a write.
+// The trace observer consumes RuntimeMemory.AccessLog() (a slice of these) to
+// materialise the RAM trace.
+type AccessData[W Word[W]] = interpreter.AccessData[W]
+
 // MemoryKind identifies the kind of a memory: its access mode (read-only,
 // write-once or read-write), its visibility (public/private), and whether it is
 // static or paged.  Used with NewBytecodeMemory.

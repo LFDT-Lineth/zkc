@@ -53,7 +53,7 @@ func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.
 		term.Const[word.BigEndian, Term[word.BigEndian]](val))
 	// Add assignment for filling said computed column
 	module.AddAssignments(
-		assignment.NewComputedRegister[F](computation, true, mid, rid))
+		assignment.NewComputedRegister[F](computation, mid, rid))
 	// add constraint
 	module.AddConstraints(
 		NewVanishingConstraint(val.String(), mid, util.None[int](),

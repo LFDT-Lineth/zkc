@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"strings"
 
-	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
@@ -24,6 +23,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 

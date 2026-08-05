@@ -16,20 +16,15 @@ import (
 	"fmt"
 	"math"
 	"reflect"
-	"slices"
-	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
-	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/hir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -71,20 +66,20 @@ func TranslateCircuit(
 	env Environment,
 	srcmap *source.Maps[ast.Node],
 	circuit *ast.Circuit,
-	config Config) (asm.MicroHirProgram, []SyntaxError) {
+	config Config) (hir.Schema, []SyntaxError) {
 	//
-	builder := ir.NewSchemaBuilder[word.BigEndian, hir.Constraint, hir.Term, asm.MicroComponent]()
+	builder := ir.NewSchemaBuilder[word.BigEndian, hir.Constraint, hir.Term]()
 	t := translator{env, srcmap, builder, config}
 	// Allocate all modules into schema
 	t.translateModules(circuit)
 	// Translate everything else
 	if errs := t.translateDeclarations(circuit); len(errs) > 0 {
-		return asm.MicroHirProgram{}, errs
+		return hir.Schema{}, errs
 	}
 	// Build concrete modules from schema
 	modules := ir.BuildSchema[hir.Module](t.schema)
 	// Finally, construct the asm program
-	return asm.NewMixedProgram[word.BigEndian](asm.MicroProgram{}, modules...), nil
+	return schema.NewUniformSchema(modules), nil
 }
 
 // Translator packages up information necessary for translating a circuit into
@@ -252,10 +247,6 @@ func (t *translator) translateDeclaration(decl ast.Declaration, path file.Path) 
 	switch d := decl.(type) {
 	case *ast.DefAliases:
 		// Not an assignment or a constraint, hence ignore.
-	case *ast.DefCall:
-		errors = t.translateDefCall(d)
-	case *ast.DefComputed:
-		return t.translateDefComputed(d, path)
 	case *ast.DefColumns:
 		// Not an assignment or a constraint, hence ignore.
 	case *ast.DefConst:
@@ -267,219 +258,16 @@ func (t *translator) translateDeclaration(decl ast.Declaration, path file.Path) 
 		// In the future, this might change if we add support for macros to hir.
 	case *ast.DefInRange:
 		errors = t.translateDefInRange(d)
-	case *ast.DefInterleaved:
-		errors = t.translateDefInterleaved(d, path)
 	case *ast.DefLookup:
 		errors = t.translateDefLookup(d)
-	case *ast.DefPermutation:
-		t.translateDefPermutation(d, path)
 	case *ast.DefPerspective:
 		// As for defregisters, nothing generated here.
-	case *ast.DefProperty:
-		errors = t.translateDefProperty(d)
-	case *ast.DefSorted:
-		errors = t.translateDefSorted(d)
-	case *ast.DefComputedColumn:
-		errors = t.translateDefComputedColumn(d, path)
 	default:
 		// Error handling
 		panic("unknown declaration")
 	}
 	//
 	return errors
-}
-
-// Translate a "deflookup" declaration.
-func (t *translator) translateDefCall(decl *ast.DefCall) []SyntaxError {
-	var (
-		callerContext, _ = ast.ContextOfExpressions(decl.Arguments...)
-		calleeContext    = ast.NewContext(decl.Function, 1)
-		// Lookup callee module
-		calleeModule = t.moduleOf(calleeContext)
-		selector     = util.None[hir.LogicalTerm]()
-	)
-	// Translate target expressions whilst again checking for a conflicting
-	// context.
-	if callerContext.IsConflicted() {
-		// This should be unreachable, as should already have been detected
-		// during resolution.
-		return t.srcmap.SyntaxErrors(decl, "conflicting argument context")
-	} else if calleeModule == nil {
-		return t.srcmap.SyntaxErrors(decl, fmt.Sprintf("unknown function \"%s\"", decl.Function))
-	} else if !calleeModule.IsExtern() {
-		return t.srcmap.SyntaxErrors(decl, "cannot call non-assembly module")
-	}
-	// Lookup caller module
-	callerModule := t.moduleOf(callerContext)
-	// Translate returns
-	//nolint
-	rets, errs1 := t.translateExpressions(callerModule, 0, decl.Returns...)
-	// Translate arguments
-	//nolint
-	args, errs2 := t.translateExpressions(callerModule, 0, decl.Arguments...)
-	// Check arguments / returns
-	errs3 := t.checkArgsReturns(decl, rets, args, calleeModule)
-	// Combine all errors
-	errors := append(errs1, errs2...)
-	errors = append(errors, errs3...)
-	// Translate selector (if applicable)
-	if decl.Selector.HasValue() {
-		sel, errs := t.translateLogical(decl.Selector.Unwrap(), callerModule, 0)
-		selector = util.Some(sel)
-
-		errors = append(errors, errs...)
-	}
-	// Sanity check whether we can construct the constraint, or not.
-	if len(errors) == 0 {
-		handle := fmt.Sprintf("%s=>%s", callerModule.Name().Name, calleeModule.Name().Name)
-		// FIXME: Sanity check argument / return subtying
-		//
-		callerModule.AddConstraint(hir.NewFunctionCall(
-			handle, callerModule.Id(), calleeModule.Id(), rets, args, selector))
-	}
-	// Done
-	return errors
-}
-
-func (t *translator) checkArgsReturns(decl *ast.DefCall, rets, args []hir.Term, callee ModuleBuilder) []SyntaxError {
-	var (
-		errors []SyntaxError
-		nRets  = uint(len(rets))
-		nArgs  = uint(len(args))
-		n      = nRets + nArgs
-	)
-	//
-	for i := range n {
-		// Sanity check enough target registers
-		if i >= callee.Width() {
-			if i < nArgs {
-				errors = append(errors, *t.srcmap.SyntaxError(decl.Arguments[i],
-					fmt.Sprintf("too many arguments for function \"%s\"", decl.Function)))
-			} else {
-				errors = append(errors, *t.srcmap.SyntaxError(decl.Returns[i-nArgs],
-					fmt.Sprintf("too many returns for function \"%s\"", decl.Function)))
-			}
-			// Cannot continue
-			break
-		}
-		// Extract ith register
-		var ith = callee.Register(register.NewId(i))
-		// Santity arguments / returns align
-		if i < nArgs && !ith.IsInput() {
-			return append(errors, *t.srcmap.SyntaxError(decl.Arguments[i],
-				fmt.Sprintf("too many arguments for function \"%s\"", decl.Function)))
-		} else if i >= nArgs && ith.IsInput() {
-			return append(errors, *t.srcmap.SyntaxError(decl.Returns[i-nArgs],
-				fmt.Sprintf("insufficient arguments for function \"%s\"", decl.Function)))
-		} else if i >= nArgs && !ith.IsOutput() {
-			return append(errors, *t.srcmap.SyntaxError(decl.Returns[i-nArgs],
-				fmt.Sprintf("too many arguments for function \"%s\"", decl.Function)))
-		}
-		// Sanity check bitwidth
-		if i < nArgs {
-			// subtype
-			errors = append(errors, t.checkSubSuptype(true, args[i], ith.Width(), decl.Arguments[i])...)
-		} else {
-			// supertype
-			errors = append(errors, t.checkSubSuptype(false, rets[i-nArgs], ith.Width(), decl.Returns[i-nArgs])...)
-		}
-	}
-	//
-	return errors
-}
-
-func (t *translator) checkSubSuptype(subtype bool, term hir.Term, bitwidth uint, node ast.Node) []SyntaxError {
-	var (
-		// Compute value range of term
-		vals = term.ValueRange()
-		// Convert into bitwidth
-		termWidth, signed = vals.BitWidth()
-	)
-	// Sanity check signed lookup
-	if signed {
-		return t.srcmap.SyntaxErrors(node, "signed term encountered")
-	} else if subtype && termWidth > bitwidth {
-		return t.srcmap.SyntaxErrors(node, fmt.Sprintf("expected u%d, found u%d", bitwidth, termWidth))
-	} else if !subtype && termWidth < bitwidth {
-		return t.srcmap.SyntaxErrors(node, fmt.Sprintf("expected u%d, found u%d", termWidth, bitwidth))
-	}
-	//
-	return nil
-}
-
-// Translate a "defcomputedcolumn" declaration.
-func (t *translator) translateDefComputedColumn(d *ast.DefComputedColumn, path file.Path) []SyntaxError {
-	var (
-		// Determine enclosing module
-		module = t.moduleOf(d.Computation.Context())
-		// Determine direction of comptuation
-		direction = d.Target.InnerBinding().Kind != ast.COMPUTED_BWD
-		// Determine HIR identifier for target register
-		targetPath            = path.Extend(d.Target.Name())
-		targetId              = t.registerIndexOf(targetPath)
-		targetAccess hir.Term = t.registerOf(targetPath, 0)
-		// Translate computation
-		computation, errors = t.translateExpression(d.Computation, module, 0)
-	)
-	// Sanity check any compilation errors
-	if len(errors) != 0 {
-		return errors
-	}
-	// Calculate padding value
-	targetPadding := ir.PaddingFor(computation, module)
-	// Calculate and update padding value
-	module.Registers()[targetId.Unwrap()].SetPadding(&targetPadding)
-	// Add assignment
-	module.AddAssignment(assignment.NewComputedRegister[word.BigEndian](
-		term.NewComputation[word.BigEndian, hir.LogicalTerm](computation), direction,
-		module.Id(), targetId))
-	// Add constraint (defconstraint target == computation)
-	module.AddConstraint(hir.NewVanishingConstraint(
-		d.Target.Name(), module.Id(),
-		// no domain, since this is a global constraint (i.e. applies to all
-		// rows).
-		util.None[int](),
-		//
-		term.Equals[word.BigEndian, hir.LogicalTerm](targetAccess, computation),
-	))
-	// Done
-	return nil
-}
-
-// Translate a "defcomputed" declaration.
-func (t *translator) translateDefComputed(decl *ast.DefComputed, path file.Path) []SyntaxError {
-	var context ast.Context = ast.VoidContext()
-	//
-	targets := make([]register.Refs, len(decl.Targets))
-	sources := make([]register.Refs, len(decl.Sources))
-	// Identify source registers
-	for i := 0; i < len(decl.Sources); i++ {
-		ith := decl.Sources[i].Binding().(*ast.ColumnBinding)
-		source := t.env.Register(t.env.RegisterOf(&ith.Path))
-		sources[i] = t.registerRefsOf(&ith.Path)
-		// Join contexts
-		context = context.Join(source.Context)
-	}
-	// Identify target registers
-	for i := 0; i < len(decl.Targets); i++ {
-		targetPath := path.Extend(decl.Targets[i].Name())
-		target := t.env.Register(t.env.RegisterOf(targetPath))
-		targets[i] = t.registerRefsOf(targetPath)
-		// Join contexts
-		context = context.Join(target.Context)
-	}
-	// Extract the binding
-	binding := decl.Function.Binding().(*NativeDefinition)
-	// Sanity check
-	if context.IsConflicted() || context.IsVoid() {
-		return t.srcmap.SyntaxErrors(decl, "conflicting (or void) constraint context")
-	}
-	// Determine enclosing module
-	module := t.moduleOf(context)
-	// Add the assignment and check the first identifier.
-	module.AddAssignment(assignment.NewNativeComputation[word.BigEndian](binding.name, targets, sources))
-	//
-	return nil
 }
 
 // Translate a "defconstraint" declaration.
@@ -780,157 +568,6 @@ func (t *translator) translateDefInRange(decl *ast.DefInRange) []SyntaxError {
 	} else {
 		// Add translated constraint
 		module.AddConstraint(hir.NewRangeConstraint("", module.Id(), expr, decl.Bitwidth))
-	}
-	// Done
-	return errors
-}
-
-// Translate a "definterleaved" declaration.
-// nolint
-func (t *translator) translateDefInterleaved(decl *ast.DefInterleaved, path file.Path) []SyntaxError {
-	//
-	var (
-		errors []SyntaxError
-		//
-		sources = make([]register.Refs, len(decl.Sources))
-		targets = make([]register.Refs, 1)
-		//
-		sourceContext ast.Context
-		sourceTerms   = make([]hir.Term, len(decl.Sources))
-		// Lookup target register info
-		targetPath = path.Extend(decl.Target.Name())
-		targetId   = t.env.RegisterOf(targetPath)
-		target     = t.env.Register(targetId)
-	)
-	// Determine source context
-	for _, source := range decl.Sources {
-		sourceBinding := source.Binding().(*ast.ColumnBinding)
-		sourceContext = sourceContext.Join(sourceBinding.Context())
-	}
-	// Determine enclosing tgtModule
-	tgtModule := t.moduleOf(target.Context)
-	srcModule := t.moduleOf(sourceContext)
-	// Determine source register refs
-	for i, source := range decl.Sources {
-		ith, errs := t.registerOfRegisterAccess(source, 0)
-		//
-		if len(errs) == 0 {
-			sources[i] = register.NewRefs(srcModule.Id(), ith.Register())
-			sourceTerms[i] = ith
-		}
-		//
-		errors = append(errors, errs...)
-	}
-	// Determine target register refs
-	targets[0] = register.NewRefs(tgtModule.Id(), t.registerIndexOf(targetPath))
-	targetTerm := t.registerOf(targetPath, 0)
-	// Register constraint
-	tgtModule.AddConstraint(
-		hir.NewInterleavingConstraint("", tgtModule.Id(), srcModule.Id(), targetTerm, sourceTerms),
-	)
-	// Register assignment
-	tgtModule.AddAssignment(
-		assignment.NewNativeComputation[word.BigEndian]("interleave", targets, sources))
-
-	// Done
-	return errors
-}
-
-// Translate a "defpermutation" declaration.
-func (t *translator) translateDefPermutation(decl *ast.DefPermutation, path file.Path) []SyntaxError {
-	//
-	var (
-		context     ast.Context = ast.VoidContext()
-		targets                 = make([]register.Id, len(decl.Sources))
-		targetTerms             = make([]hir.Term, len(decl.Sources))
-		sources                 = make([]register.Id, len(decl.Sources))
-		handle      strings.Builder
-	)
-	//
-	for i := range decl.Sources {
-		targetPath := path.Extend(decl.Targets[i].Name())
-		targets[i] = t.registerIndexOf(targetPath)
-		targetTerms[i] = t.registerOf(targetPath, 0)
-		//
-		target := t.env.Register(t.env.RegisterOf(targetPath))
-		sourceBinding := decl.Sources[i].Binding().(*ast.ColumnBinding)
-		sources[i] = t.registerIndexOf(&sourceBinding.Path)
-		// Join contexts
-		context = context.Join(target.Context)
-		// Construct handle
-		if i >= len(decl.Signs) {
-			// No nothing
-		} else if decl.Signs[i] {
-			handle.WriteString("+")
-		} else {
-			handle.WriteString("-")
-		}
-		//
-		handle.WriteString(target.Name())
-	}
-
-	if context.IsConflicted() || context.IsVoid() {
-		return t.srcmap.SyntaxErrors(decl, "conflicting (or void) constraint context")
-	}
-	//
-	module := t.moduleOf(context)
-	// Clone the signs
-	signs := slices.Clone(decl.Signs)
-	bitwidth := determineMaxBitwidth(module, targetTerms[:len(signs)])
-	// Add assignment for computing the sorted permutation
-	module.AddAssignment(assignment.NewSortedPermutation[word.BigEndian](
-		toRegisterRefs(module.Id(), targets), signs, toRegisterRefs(module.Id(), sources)))
-	// Add Permutation Constraint
-	module.AddConstraint(hir.NewPermutationConstraint(handle.String(), module.Id(), targets, sources))
-	// Add Sorting Constraint
-	module.AddConstraint(
-		hir.NewSortedConstraint(handle.String(), module.Id(), bitwidth, util.None[hir.Term](), targetTerms, signs, false))
-	//
-	return nil
-}
-
-// Translate a "defproperty" declaration.
-func (t *translator) translateDefProperty(decl *ast.DefProperty) []SyntaxError {
-	module := t.moduleOf(decl.Assertion.Context())
-	// Translate constraint body
-	assertion, errors := t.translateLogical(decl.Assertion, module, 0)
-	//
-	if len(errors) == 0 {
-		comp := term.NewLogicalComputation[word.BigEndian, hir.LogicalTerm, hir.Term](assertion)
-		// Add translated constraint
-		module.AddConstraint(hir.NewAssertion(decl.Handle, module.Id(), decl.Domain, comp))
-	}
-	// Done
-	return errors
-}
-
-// Translate a "defsorted" declaration.
-func (t *translator) translateDefSorted(decl *ast.DefSorted) []SyntaxError {
-	var (
-		selector util.Option[hir.Term]
-		// Determine source context
-		context, _ = ast.ContextOfExpressions(decl.Sources...)
-		//
-		module = t.moduleOf(context)
-	)
-
-	// Translate source expressions
-	sources, errors := t.translateUnitExpressions(decl.Sources, module, 0)
-	// Translate (optional) selector expression
-	if decl.Selector.HasValue() {
-		sel, errs := t.translateExpression(decl.Selector.Unwrap(), module, 0)
-		selector = util.Some(sel)
-		//
-		errors = append(errors, errs...)
-	}
-	// Create construct (assuming no errors thus far)
-	if len(errors) == 0 {
-		// Clone the signs
-		signs := slices.Clone(decl.Signs)
-		bitwidth := determineMaxBitwidth(module, sources[:len(signs)])
-		// Add translated constraint
-		module.AddConstraint(
-			hir.NewSortedConstraint(decl.Handle, module.Id(), bitwidth, selector, sources, signs, decl.Strict))
 	}
 	// Done
 	return errors
@@ -1360,37 +997,6 @@ func (t *translator) registerOf(path *file.Path, shift int) *hir.RegisterAccess 
 	return RegisterAccessOf(module, reg.Name(), shift)
 }
 
-// Map columns to appropriate module register identifiers.
-func (t *translator) registerIndexOf(path *file.Path) register.Id {
-	// Determine register id
-	rid := t.env.RegisterOf(path)
-	//
-	reg := t.env.Register(rid)
-	// Lookup corresponding module builder
-	module := t.moduleOf(reg.Context)
-	//
-	if rid, ok := module.HasRegister(reg.Name()); ok {
-		return rid
-	}
-	//
-	panic("unreachable")
-}
-
-func (t *translator) registerRefsOf(path *file.Path) register.Refs {
-	// Determine register id
-	rid := t.env.RegisterOf(path)
-	//
-	reg := t.env.Register(rid)
-	// Lookup corresponding module builder
-	module := t.moduleOf(reg.Context)
-	//
-	if rid, ok := module.HasRegister(reg.Name()); ok {
-		return register.NewRefs(module.Id(), rid)
-	}
-	//
-	panic("unreachable")
-}
-
 // RegisterAccessOf returns a register accessor for the register with the given name.
 func RegisterAccessOf(module register.Map, name string, shift int) *hir.RegisterAccess {
 	// Lookup register associated with this name
@@ -1400,36 +1006,4 @@ func RegisterAccessOf(module register.Map, name string, shift int) *hir.Register
 	)
 	//
 	return term.RawRegisterAccess[word.BigEndian, hir.Term](rid, reg.Width(), shift)
-}
-
-func toRegisterRefs(context schema.ModuleId, ids []register.Id) []register.Ref {
-	var refs = make([]register.Ref, len(ids))
-	//
-	for i, id := range ids {
-		refs[i] = register.NewRef(context, id)
-	}
-	//
-	return refs
-}
-
-func determineMaxBitwidth(module ModuleBuilder, sources []hir.Term) uint {
-	// Sanity check bitwidth
-	bitwidth := uint(0)
-	//
-	for _, e := range sources {
-		// Determine bitwidth of nth term
-		switch e := e.(type) {
-		case *term.RegisterAccess[word.BigEndian, hir.Term]:
-			reg := module.Register(e.Register())
-			//
-			if reg.Width() > bitwidth {
-				bitwidth = reg.Width()
-			}
-		default:
-			// For now, we only supports simple column accesses.
-			panic("bitwidth calculation only supported for column accesses")
-		}
-	}
-	//
-	return bitwidth
 }

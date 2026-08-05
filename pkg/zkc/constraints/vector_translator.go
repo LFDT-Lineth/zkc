@@ -16,13 +16,12 @@ import (
 	"fmt"
 	"math"
 
-	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -269,7 +268,7 @@ func (p *VectorInsnTranslator[W, F]) determineConstancyCondition(reg register.Id
 }
 
 // RegisterWidths implementation for RegisterReader interface
-func (p *VectorInsnTranslator[W, F]) RegisterWidths(regs ...io.RegisterId) []uint {
+func (p *VectorInsnTranslator[W, F]) RegisterWidths(regs ...register.Id) []uint {
 	var widths = make([]uint, len(regs))
 	//
 	for i, r := range regs {

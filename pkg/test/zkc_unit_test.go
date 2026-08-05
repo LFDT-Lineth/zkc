@@ -848,6 +848,14 @@ func Test_ZkcUnit_Ram_08(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/ram_08", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Ram_09(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_09", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_10(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_10", DEFAULT_UNIT_CONFIG)
+}
+
 func Test_ZkcUnit_Ram_11(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/ram_11", DEFAULT_UNIT_CONFIG)
 }

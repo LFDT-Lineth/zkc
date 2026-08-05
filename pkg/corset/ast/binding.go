@@ -36,8 +36,6 @@ type FunctionBinding interface {
 	Binding
 	// IsPure checks whether this function binding has side-effects or not.
 	IsPure() bool
-	// IsNative checks whether this function binding is native (or not).
-	IsNative() bool
 	// Signature returns the function signature for this binding.
 	Signature() *FunctionSignature
 }
@@ -287,11 +285,6 @@ func NewDefunBinding(pure bool, paramTypes []Type, returnType Type, forced bool,
 // IsPure checks whether this is a defpurefun or not
 func (p *DefunBinding) IsPure() bool {
 	return p.Pure
-}
-
-// IsNative checks whether this function binding is native (or not).
-func (p *DefunBinding) IsNative() bool {
-	return false
 }
 
 // IsFinalised checks whether this binding has been finalised yet or not.

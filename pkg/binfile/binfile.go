@@ -19,7 +19,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/asm"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/hir"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
 )
 
@@ -41,13 +41,13 @@ type BinaryFile struct {
 	Attributes []Attribute
 	// Schema is the compiled constraint program, combining micro-level assembly
 	// instructions with a HIR constraint schema.
-	Schema asm.MicroHirProgram
+	Schema hir.Schema
 }
 
 // NewBinaryFile constructs a BinaryFile with a header stamped at the current
 // major/minor version.  metadata is an optional JSON blob stored verbatim in
 // the header (pass nil for none).
-func NewBinaryFile(metadata []byte, attributes []Attribute, schema asm.MicroHirProgram,
+func NewBinaryFile(metadata []byte, attributes []Attribute, schema hir.Schema,
 ) *BinaryFile {
 	//
 	return &BinaryFile{
@@ -218,7 +218,7 @@ func (p *Header) IsCompatible() bool {
 // Regardless of version, the file always begins with the ZKBINARY identifier
 // followed by a hand-rolled binary Header.  The encoding of everything after
 // the header is determined by the major version.
-const BINFILE_MAJOR_VERSION uint16 = 11
+const BINFILE_MAJOR_VERSION uint16 = 12
 
 // BINFILE_MINOR_VERSION is the minor version of the binary file format.  Files
 // with a lower minor version remain readable by this implementation, but files
