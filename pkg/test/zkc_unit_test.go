@@ -642,8 +642,7 @@ func Test_ZkcUnit_While_04(t *testing.T) {
 }
 
 func Test_ZkcUnit_For_01(t *testing.T) {
-	// #2094 "incorrect constraint generation for bytecode.Dispatch"
-	checkZkcUnit(t, "zkc/unit/for_01", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/for_01", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_For_02(t *testing.T) {
@@ -1062,8 +1061,7 @@ func Test_ZkcUnit_Switch_08(t *testing.T) {
 }
 
 func Test_ZkcUnit_Switch_09(t *testing.T) {
-	// #2094 "incorrect constraint generation for bytecode.Dispatch"
-	checkZkcUnit(t, "zkc/unit/switch_09", DEFAULT_UNIT_CONFIG.Constraints(false))
+	checkZkcUnit(t, "zkc/unit/switch_09", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Switch_10(t *testing.T) {
