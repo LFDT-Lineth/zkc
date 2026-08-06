@@ -13,14 +13,12 @@
 package compiler
 
 import (
-	"math/big"
-
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 )
 
 // PreprocessCircuit performs preprocessing prior to final translation.
-// Specifically, it expands all invocations, reductions and for loops.  Thus,
+// Specifically, it expands all invocations and reductions.  Thus,
 // final translation is greatly simplified after this step.
 func PreprocessCircuit(debug bool, srcmap *source.Maps[ast.Node],
 	circuit *ast.Circuit) []SyntaxError {
@@ -31,7 +29,7 @@ func PreprocessCircuit(debug bool, srcmap *source.Maps[ast.Node],
 }
 
 // Preprocessor performs preprocessing prior to final translation. Specifically,
-// it expands all invocations, reductions and for loops.  Thus, final
+// it expands all invocations and reductions.  Thus, final
 // translation is greatly simplified after this step.
 type preprocessor struct {
 	// Debug enables the use of debug constraints.
@@ -270,8 +268,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 		pow, errs2 := p.preprocessExpressionInModule(e.Pow)
 		// Done
 		nexpr, errors = &ast.Exp{Arg: arg, Pow: pow}, append(errs1, errs2...)
-	case *ast.For:
-		return p.preprocessForInModule(e)
 	case *ast.If:
 		cond, errs1 := p.preprocessExpressionInModule(e.Condition)
 		args, errs2 := p.preprocessExpressionsInModule([]ast.Expr{e.TrueBranch, e.FalseBranch})
@@ -293,8 +289,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 	case *ast.Not:
 		arg, errs := p.preprocessExpressionInModule(e.Arg)
 		nexpr, errors = &ast.Not{Arg: arg}, errs
-	case *ast.Reduce:
-		return p.preprocessReduceInModule(e)
 	case *ast.Sub:
 		args, errs := p.preprocessExpressionsInModule(e.Args)
 		nexpr, errors = &ast.Sub{Args: args}, errs
@@ -315,36 +309,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 	p.srcmap.Copy(expr, nexpr)
 	// Done
 	return nexpr, errors
-}
-
-func (p *preprocessor) preprocessForInModule(expr *ast.For) (ast.Expr, []SyntaxError) {
-	var (
-		errors  []SyntaxError
-		mapping map[uint]ast.Expr = make(map[uint]ast.Expr)
-	)
-	// Determine range for index variable
-	n := expr.End - expr.Start + 1
-	args := make([]ast.Expr, n)
-	// Expand body n times
-	for i := uint(0); i < n; i++ {
-		var errs []SyntaxError
-		// Substitute through for i
-		mapping[expr.Binding.Index] = &ast.Constant{Val: *big.NewInt(int64(i + expr.Start))}
-		ith := ast.Substitute(expr.Body, mapping, p.srcmap)
-		// preprocess subsituted expression
-		args[i], errs = p.preprocessExpressionInModule(ith)
-		errors = append(errors, errs...)
-	}
-	// Error check
-	if len(errors) != 0 {
-		return nil, errors
-	}
-	// Done
-	nexpr := &ast.List{Args: args}
-	// Copy source mapping
-	p.srcmap.Copy(expr, nexpr)
-	//
-	return nexpr, nil
 }
 
 func (p *preprocessor) preprocessLetInModule(expr *ast.Let) (ast.Expr, []SyntaxError) {
@@ -387,35 +351,4 @@ func (p *preprocessor) preprocessInvokeInModule(expr *ast.Invoke) (ast.Expr, []S
 	}
 	//
 	return nil, p.srcmap.SyntaxErrors(expr, "unbound function")
-}
-
-func (p *preprocessor) preprocessReduceInModule(expr *ast.Reduce) (ast.Expr, []SyntaxError) {
-	body, errors := p.preprocessExpressionInModule(expr.Arg)
-	//
-	if list, ok := body.(*ast.List); !ok {
-		return nil, append(errors, *p.srcmap.SyntaxError(expr.Arg, "expected list"))
-	} else if binding, ok := expr.Name.Binding().(ast.FunctionBinding); ok {
-		var reduction ast.Expr
-		// Build reduction
-		for i, arg := range list.Args {
-			arg, errs := p.preprocessExpressionInModule(arg)
-			//
-			if i == 0 {
-				reduction = arg
-			} else {
-				reduction = binding.Signature().Apply([]ast.Expr{reduction, arg}, p.srcmap)
-			}
-			// Copy source mapping (if none exists, which can arise when e.g.
-			// intrinsic applied).
-			if !p.srcmap.Has(reduction) {
-				p.srcmap.Copy(expr, reduction)
-			}
-			//
-			errors = append(errors, errs...)
-		}
-		// done
-		return reduction, errors
-	}
-	// failure
-	return nil, append(errors, *p.srcmap.SyntaxError(expr.Arg, "unbound function"))
 }

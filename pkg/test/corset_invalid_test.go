@@ -476,21 +476,6 @@ func Test_Invalid_PureFun_15(t *testing.T) {
 }
 
 // ===================================================================
-// For Loops
-// ===================================================================
-func Test_Invalid_For_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/for_invalid_01")
-}
-
-func Test_Invalid_For_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/for_invalid_02")
-}
-
-func Test_Invalid_For_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/for_invalid_03")
-}
-
-// ===================================================================
 // Arrays
 // ===================================================================
 func Test_Invalid_Array_01(t *testing.T) {
@@ -511,34 +496,6 @@ func Test_Invalid_Array_04(t *testing.T) {
 
 func Test_Invalid_Array_05(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/array_invalid_05")
-}
-
-func Test_Invalid_Array_06(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/array_invalid_06")
-}
-
-// ===================================================================
-// Reduce
-// ===================================================================
-
-func Test_Invalid_Reduce_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/reduce_invalid_01")
-}
-
-func Test_Invalid_Reduce_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/reduce_invalid_02")
-}
-
-func Test_Invalid_Reduce_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/reduce_invalid_03")
-}
-
-func Test_Invalid_Reduce_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/reduce_invalid_04")
-}
-
-func Test_Invalid_Reduce_05(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/reduce_invalid_05")
 }
 
 // ===================================================================

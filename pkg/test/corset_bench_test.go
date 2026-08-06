@@ -55,11 +55,6 @@ func Test_Bench_Fields(t *testing.T) {
 	util.CheckCorset(t, true, "corset/bench/fields", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-//#834
-// func Test_Bench_TicTacToe(t *testing.T) {
-// 	util.Check(t, true, "corset/bench/tic_tac_toe", field.BLS12_377, field.KOALABEAR_16)
-// }
-
 // NOTE: the real modules below are not tested for GF_8209 for performance
 // reasons, which is reasonable given that they all use large registers (e.g.
 // u128, etc).  This distinguishes them from those tests above, which often user
@@ -77,10 +72,6 @@ func Test_Bench_Bin(t *testing.T) {
 	util.CheckCorset(t, true, "corset/bench/bin", field.BLS12_377, field.KOALABEAR_16)
 }
 
-func Test_Bench_Wcp(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/wcp", field.BLS12_377, field.KOALABEAR_16)
-}
-
 func Test_Bench_Shf(t *testing.T) {
 	util.CheckCorset(t, true, "corset/bench/shf", field.BLS12_377, field.KOALABEAR_16)
 }
@@ -88,11 +79,6 @@ func Test_Bench_Shf(t *testing.T) {
 func Test_Bench_Euc(t *testing.T) {
 	// FIXME: KOALABEAR_16 [PERF]
 	util.CheckCorset(t, true, "corset/bench/euc", field.BLS12_377, field.KOALABEAR_16)
-}
-
-func Test_Bench_Oob(t *testing.T) {
-	// FIXME: KOALABEAR_16 [PERF]
-	util.CheckCorset(t, true, "corset/bench/oob", field.BLS12_377, field.KOALABEAR_16)
 }
 
 func Test_Bench_Stp(t *testing.T) {

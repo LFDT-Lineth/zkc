@@ -189,9 +189,7 @@ func NewParser(srcfile source.File, srcmap *source.Map[sexp.SExp], config Config
 	p.AddRecursiveListRule("::", concatParserRule)
 	p.AddRecursiveListRule("begin", beginParserRule)
 	p.AddRecursiveListRule("debug", debugParserRule)
-	p.AddListRule("for", forParserRule(parser))
 	p.AddListRule("let", letParserRule(parser))
-	p.AddListRule("reduce", reduceParserRule(parser))
 	p.AddListRule("if", ifParserRule(parser))
 	p.AddRecursiveListRule("shift", shiftParserRule)
 	p.AddDefaultListRule(invokeParserRule(parser))
@@ -1308,40 +1306,6 @@ func debugParserRule(_ string, args []ast.Expr) (ast.Expr, error) {
 	return nil, errors.New("incorrect number of arguments")
 }
 
-func forParserRule(p *Parser) sexp.ListRule[ast.Expr] {
-	return func(list *sexp.List) (ast.Expr, []SyntaxError) {
-		var (
-			errors   []SyntaxError
-			indexVar *sexp.Symbol
-		)
-		// Check we've got the expected number
-		if list.Len() != 4 {
-			msg := fmt.Sprintf("expected 3 arguments, found %d", list.Len()-1)
-			return nil, p.translator.SyntaxErrors(list, msg)
-		}
-		// Extract index variable
-		if indexVar = list.Get(1).AsSymbol(); indexVar == nil {
-			err := p.translator.SyntaxError(list.Get(1), "invalid index variable")
-			errors = append(errors, *err)
-		}
-		// Parse range
-		start, end, errs := parseForRange(p, list.Get(2))
-		// Error Check
-		errors = append(errors, errs...)
-		// Parse body
-		body, errs := p.translator.Translate(list.Get(3))
-		errors = append(errors, errs...)
-		// Error check
-		if len(errors) > 0 {
-			return nil, errors
-		}
-		// Construct expression.  At this stage, its unclear what the best type
-		// to use for the index variable is here.  Potentially, it could be
-		// refined based on the range of actual values, etc.
-		return ast.NewFor(indexVar.Value, start, end, body), nil
-	}
-}
-
 func letParserRule(p *Parser) sexp.ListRule[ast.Expr] {
 	return func(list *sexp.List) (ast.Expr, []SyntaxError) {
 		var (
@@ -1390,76 +1354,6 @@ func letParserRule(p *Parser) sexp.ListRule[ast.Expr] {
 		}
 		// Done
 		return ast.NewLet(bindings, body), nil
-	}
-}
-
-// Parse a range which, represented as a string is "[s:e]".
-func parseForRange(p *Parser, interval sexp.SExp) (uint, uint, []SyntaxError) {
-	var (
-		start int
-		end   int
-		err1  error
-		err2  error
-	)
-	// This is a bit dirty.  Essentially, we turn the sexp.Array back into a
-	// string and then parse it from there.
-	str := interval.String(false)
-	// Strip out any whitespace (which is permitted)
-	str = strings.ReplaceAll(str, " ", "")
-	// Check has form "[...]"
-	if !strings.HasPrefix(str, "[") || !strings.HasSuffix(str, "]") {
-		// error
-		return 0, 0, p.translator.SyntaxErrors(interval, "invalid interval")
-	}
-	// Split out components
-	splits := strings.Split(str[1:len(str)-1], ":")
-	// Error check
-	if len(splits) == 0 || len(splits) > 2 {
-		// error
-		return 0, 0, p.translator.SyntaxErrors(interval, "invalid interval")
-	} else if len(splits) == 1 {
-		end, err1 = strconv.Atoi(splits[0])
-		start = 1
-	} else if len(splits) == 2 {
-		start, err1 = strconv.Atoi(splits[0])
-		end, err2 = strconv.Atoi(splits[1])
-	}
-	//
-	if err1 != nil || err2 != nil {
-		return 0, 0, p.translator.SyntaxErrors(interval, "invalid interval")
-	}
-	// Success
-	return uint(start), uint(end), nil
-}
-
-func reduceParserRule(p *Parser) sexp.ListRule[ast.Expr] {
-	return func(list *sexp.List) (ast.Expr, []SyntaxError) {
-		var errors []SyntaxError
-		// Check we've got the expected number
-		if list.Len() != 3 {
-			msg := fmt.Sprintf("expected 2 arguments, found %d", list.Len()-1)
-			return nil, p.translator.SyntaxErrors(list, msg)
-		}
-		// function name
-		name := list.Get(1).AsSymbol()
-		//
-		if name == nil {
-			errors = append(errors, *p.translator.SyntaxError(list.Get(1), "invalid function"))
-		}
-		// Parse body
-		body, errs := p.translator.Translate(list.Get(2))
-		errors = append(errors, errs...)
-		// Error check
-		if len(errors) > 0 {
-			return nil, errors
-		}
-		//
-		path := file.NewRelativePath(name.Value)
-		arity := util.Some(uint(2))
-		varaccess := ast.NewVariableAccess(path, arity, nil)
-		p.mapSourceNode(name, varaccess)
-		// Done
-		return &ast.Reduce{Name: varaccess, Arg: body}, nil
 	}
 }
 
@@ -1752,9 +1646,7 @@ func isIdentifier(sexp sexp.SExp) bool {
 func isFunIdentifier(sexp sexp.SExp) bool {
 	if symbol := sexp.AsSymbol(); symbol != nil && len(symbol.Value) > 0 {
 		runes := []rune(symbol.Value)
-		if isFunctionSymbol(runes) {
-			return true
-		} else if isFunctionIdentifierStart(runes[0]) {
+		if isFunctionIdentifierStart(runes[0]) {
 			for i := 1; i < len(runes); i++ {
 				if !isIdentifierMiddle(runes[i]) {
 					return false
@@ -1778,8 +1670,4 @@ func isIdentifierMiddle(c rune) bool {
 
 func isFunctionIdentifierStart(c rune) bool {
 	return isIdentifierStart(c) || c == '~'
-}
-
-func isFunctionSymbol(runes []rune) bool {
-	return len(runes) == 1 && (runes[0] == '+' || runes[0] == '*' || runes[0] == '-' || runes[0] == '=')
 }

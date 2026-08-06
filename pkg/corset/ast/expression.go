@@ -506,80 +506,6 @@ func (e *Exp) Dependencies() []Symbol {
 }
 
 // ============================================================================
-// For
-// ============================================================================
-
-// For represents a for loop of a statically known range of values
-type For struct {
-	// Variable binding
-	Binding LocalVariableBinding
-	// Start value for Index
-	Start uint
-	// Last Value for Index
-	End uint
-	// Body of loop
-	Body Expr
-}
-
-// NewFor constructs a new for-expression given a variable name, a static index
-// range and a body.
-func NewFor(name string, start uint, end uint, body Expr) *For {
-	binding := NewLocalVariableBinding(name, UINT_TYPE)
-	return &For{binding, start, end, body}
-}
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *For) AsConstant() *big.Int {
-	body := e.Body.AsConstant()
-	// Check if can evaluate
-	if body != nil {
-		return body
-	}
-	//
-	return nil
-}
-
-// Multiplicity determines the number of values that evaluating this expression
-// can generate.
-func (e *For) Multiplicity() uint {
-	return e.End - e.Start + 1
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *For) Context() Context {
-	return e.Body.Context()
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *For) Lisp() sexp.SExp {
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("for"),
-		sexp.NewSymbol("..."),
-		e.Body.Lisp(),
-	})
-}
-
-// Dependencies needed to signal declaration.
-func (e *For) Dependencies() []Symbol {
-	// Remove occurrences of the index variable defined by this expression.  In
-	// essence, we are capturing this occurrences of this symbol.
-	var rest []Symbol
-	//
-	for _, s := range e.Body.Dependencies() {
-		p := s.Path()
-		if p.IsAbsolute() || p.Depth() != 1 || p.Head() != e.Binding.Name {
-			rest = append(rest, s)
-		}
-	}
-	//
-	return rest
-}
-
-// ============================================================================
 // If
 // ============================================================================
 
@@ -934,45 +860,6 @@ func (e *Not) Dependencies() []Symbol {
 }
 
 // ============================================================================
-// Reduction
-// ============================================================================
-
-// Reduce reduces (i.e. folds) a list using a given binary function.
-type Reduce struct {
-	Name *VariableAccess
-	Arg  Expr
-}
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Reduce) AsConstant() *big.Int {
-	// TODO: potentially we can do better here.
-	return nil
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Reduce) Context() Context {
-	return e.Arg.Context()
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Reduce) Lisp() sexp.SExp {
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("reduce"),
-		sexp.NewSymbol(e.Name.Path().String()),
-		e.Arg.Lisp()})
-}
-
-// Dependencies needed to signal declaration.
-func (e *Reduce) Dependencies() []Symbol {
-	deps := e.Arg.Dependencies()
-	return append(deps, e.Name)
-}
-
-// ============================================================================
 // Subtraction
 // ============================================================================
 
@@ -1217,9 +1104,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 		pow := Substitute(e.Pow, mapping, srcmap)
 		// Done
 		nexpr = &Exp{arg, pow}
-	case *For:
-		body := Substitute(e.Body, mapping, srcmap)
-		nexpr = &For{e.Binding, e.Start, e.End, body}
 	case *If:
 		cond := Substitute(e.Condition, mapping, srcmap)
 		trueBranch := SubstituteOptional(e.TrueBranch, mapping, srcmap)
@@ -1245,9 +1129,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 	case *Not:
 		arg := Substitute(e.Arg, mapping, srcmap)
 		nexpr = &Not{arg}
-	case *Reduce:
-		arg := Substitute(e.Arg, mapping, srcmap)
-		nexpr = &Reduce{e.Name, arg}
 	case *Sub:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &Sub{args}
@@ -1332,8 +1213,6 @@ func ShallowCopy(expr Expr) Expr {
 		return &Equation{e.Kind, e.Lhs, e.Rhs}
 	case *Exp:
 		return &Exp{e.Arg, e.Pow}
-	case *For:
-		return &For{e.Binding, e.Start, e.End, e.Body}
 	case *If:
 		return &If{e.Condition, e.TrueBranch, e.FalseBranch}
 	case *Invoke:
@@ -1346,8 +1225,6 @@ func ShallowCopy(expr Expr) Expr {
 		return &Normalise{e.Arg}
 	case *Not:
 		return &Not{e.Arg}
-	case *Reduce:
-		return &Reduce{e.Name, e.Arg}
 	case *Sub:
 		return &Sub{e.Args}
 	case *Shift:
