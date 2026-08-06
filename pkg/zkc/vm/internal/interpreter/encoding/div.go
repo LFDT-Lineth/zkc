@@ -50,59 +50,6 @@ func Intrinsic[W word.Word[W]](p *bytecode.Intrinsic[W], env Environment[W]) []u
 	return encodeIntrinsic(p.Op, p.Targets, p.Sources, env)
 }
 
-// DecodeIntrinsic decodes an intrinsic instruction at the given program
-// counter, resolving constant sources against the given constant pool.
-func DecodeIntrinsic[W word.Word[W]](pc uint32, codes []uint32, pool []W) (Bytecode[W], uint32) {
-	var (
-		op, tIter, sIter, n = DecodeIntrinsicOperands(pc, codes)
-		targets             = registerVectorsFromIter(tIter)
-		sources             = operandsFromIter(sIter, pool)
-	)
-	//
-	return &bytecode.Intrinsic[W]{Op: op, Targets: targets, Sources: sources}, n
-}
-
-// operandsFromIter reconstructs the source operands packed as flagged (base,
-// len) pairs within the given iterator (see Operands.NextOperand), resolving
-// constants against the given constant pool.  Constant operands are
-// single-limb by construction (enforced when encoding, see encodeIntrinsic).
-func operandsFromIter[W word.Word[W]](iter Operands, pool []W) []bytecode.Operand[W] {
-	var ops []bytecode.Operand[W]
-	//
-	for iter.HasNext() {
-		var base, n, isConst = iter.NextOperand()
-		//
-		if isConst {
-			if n != 1 {
-				panic("multi-limb constant operand")
-			}
-			//
-			ops = append(ops, bytecode.NewConstantOperand(pool[base]))
-		} else {
-			ops = append(ops, bytecode.NewRegisterVectorOperand[W](RegisterVector{Base: base, Len: n}))
-		}
-	}
-	//
-	return ops
-}
-
-// registerVectorsFromIter reconstructs the register vectors packed as (base, len)
-// pairs within the given iterator.
-func registerVectorsFromIter(iter Operands) []RegisterVector {
-	var vecs []RegisterVector
-	//
-	for iter.HasNext() {
-		var (
-			base = iter.Next()
-			len  = iter.Next()
-		)
-		//
-		vecs = append(vecs, RegisterVector{Base: base, Len: len})
-	}
-	//
-	return vecs
-}
-
 // ============================================================================
 // DIV / REM instruction. Format of these instructions is:
 //
