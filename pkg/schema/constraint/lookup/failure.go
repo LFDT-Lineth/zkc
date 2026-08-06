@@ -15,8 +15,8 @@ package lookup
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 )
@@ -25,10 +25,10 @@ import (
 type Failure[F any] struct {
 	// Handle of the failing constraint
 	Handle string
-	// Relevant context for source expressions.
+	// Relevant context for source registers.
 	Context schema.ModuleId
-	// Source expressions which were missing
-	Sources []term.Evaluable[F]
+	// Source registers whose values were missing
+	Sources []register.Id
 	// Row on which the constraint failed
 	Row uint
 }
@@ -45,9 +45,10 @@ func (p *Failure[F]) String() string {
 // RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
 func (p *Failure[F]) RequiredCells(_ trace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
 	res := set.NewAnySortedSet[trace.CellRef]()
-	// Handle terms
-	for _, e := range p.Sources {
-		res.InsertSorted(e.RequiredCells(int(p.Row), p.Context))
+	// Handle registers
+	for _, rid := range p.Sources {
+		ref := trace.NewColumnRef(p.Context, rid)
+		res.Insert(trace.NewCellRef(ref, int(p.Row)))
 	}
 	//
 	return res

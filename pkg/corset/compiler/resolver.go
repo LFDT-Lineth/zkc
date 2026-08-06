@@ -422,26 +422,71 @@ func (r *resolver) finaliseDefFunInModule(enclosing *ModuleScope, decl *ast.DefF
 	return errors
 }
 
-// Resolve those variables appearing in the body of this lookup constraint.
+// Resolve the columns accessed by this lookup constraint.  Observe that each
+// source (and, likewise, each target) is resolved in its own scope, since each
+// determines its own context.
 func (r *resolver) finaliseDefLookupInModule(enclosing Scope, decl *ast.DefLookup) []SyntaxError {
 	var errors []SyntaxError
-	// Resolve source expressions
+	// Resolve source columns
 	for i := range decl.Sources {
-		var (
-			scope = NewLocalScope(enclosing, true, false, false)
-			errs  = r.finaliseExpressionsInModule(scope, decl.Sources[i])
-		)
-
+		errs := r.finaliseLookupColumnsInModule(enclosing, decl.SourceSelectors[i], decl.Sources[i])
 		errors = append(errors, errs...)
 	}
-	// Resolve all target expressions
+	// Resolve all target columns
 	for i := range decl.Targets {
-		var (
-			scope = NewLocalScope(enclosing, true, false, false)
-			errs  = r.finaliseExpressionsInModule(scope, decl.Targets[i])
-		)
-
+		errs := r.finaliseLookupColumnsInModule(enclosing, decl.TargetSelectors[i], decl.Targets[i])
 		errors = append(errors, errs...)
+	}
+	//
+	return errors
+}
+
+// Resolve one side of a lookup constraint (i.e. a set of source or target
+// columns, along with their optional selector) within a single scope.  Sharing
+// the scope ensures the columns (and selector) all reside in the same context.
+func (r *resolver) finaliseLookupColumnsInModule(enclosing Scope, selector ast.TypedSymbol,
+	columns []ast.TypedSymbol) []SyntaxError {
+	//
+	var (
+		errors []SyntaxError
+		scope  = NewLocalScope(enclosing, true, false, false)
+	)
+	// Resolve each column in turn
+	for _, column := range columns {
+		if column != nil {
+			errors = append(errors, r.finaliseLookupColumnInModule(scope, column)...)
+		}
+	}
+	// Resolve selector (when present).  NOTE: the selector is resolved last so
+	// that, when its context conflicts with that of the columns it gates, the
+	// selector is the access reported as conflicting.
+	if selector != nil {
+		errors = append(errors, r.finaliseLookupColumnInModule(scope, selector)...)
+	}
+	//
+	return errors
+}
+
+// Resolve a single column access arising within a lookup constraint.  Unlike an
+// arbitrary expression, this must resolve to a column (e.g. it cannot be a
+// constant or a function parameter).
+func (r *resolver) finaliseLookupColumnInModule(scope LocalScope, symbol ast.TypedSymbol) []SyntaxError {
+	var errors []SyntaxError
+	// Resolve the underlying access
+	switch s := symbol.(type) {
+	case *ast.ArrayAccess:
+		errors = r.finaliseArrayAccessInModule(scope, s)
+	case *ast.VariableAccess:
+		errors = r.finaliseVariableInModule(scope, s)
+	default:
+		return r.srcmap.SyntaxErrors(symbol, "invalid column access")
+	}
+	// Sanity check we ended up with a column, since nothing else can be looked
+	// up (e.g. a constant cannot).
+	if len(errors) == 0 {
+		if _, ok := symbol.Binding().(*ast.ColumnBinding); !ok {
+			return r.srcmap.SyntaxErrors(symbol, "expected column")
+		}
 	}
 	//
 	return errors

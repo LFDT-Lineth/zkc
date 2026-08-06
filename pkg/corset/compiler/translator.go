@@ -329,13 +329,17 @@ func (t *translator) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 	var (
 		errors                 []SyntaxError
 		srcContext, tgtContext ast.Context
-		sources                []lookup.Vector[word.BigEndian, hir.Term]
-		targets                []lookup.Vector[word.BigEndian, hir.Term]
+		sources                []lookup.Vector
+		targets                []lookup.Vector
+		// Bitwidths of the registers making up each source / target vector.
+		srcWidths [][]uint
+		tgtWidths [][]uint
 	)
 	// Translate sources
 	for i, ith := range decl.Targets {
-		ith_targets, ctx, errs := t.translateDefLookupSources(decl.TargetSelectors[i], ith)
+		ith_targets, widths, ctx, errs := t.translateDefLookupSources(decl.TargetSelectors[i], ith)
 		targets = append(targets, ith_targets)
+		tgtWidths = append(tgtWidths, widths)
 		errors = append(errors, errs...)
 		//
 		if i == 0 {
@@ -344,8 +348,9 @@ func (t *translator) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 	}
 	// Translate targets
 	for i, ith := range decl.Sources {
-		ith_sources, ctx, errs := t.translateDefLookupSources(decl.SourceSelectors[i], ith)
+		ith_sources, widths, ctx, errs := t.translateDefLookupSources(decl.SourceSelectors[i], ith)
 		sources = append(sources, ith_sources)
+		srcWidths = append(srcWidths, widths)
 		errors = append(errors, errs...)
 		//
 		if i == 0 {
@@ -355,7 +360,7 @@ func (t *translator) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 	// Sanity check this is not an irregular lookup (since these are not
 	// currently supported) and, if so, provide a useful error message.
 	if len(errors) == 0 {
-		errors = t.checkForIrregularLookup(targets, sources, decl.Targets, decl.Sources)
+		errors = t.checkForIrregularLookup(tgtWidths, srcWidths, decl.Targets, decl.Sources)
 	}
 	// Sanity check whether we can construct the constraint, or not.
 	if len(errors) == 0 {
@@ -372,84 +377,114 @@ func (t *translator) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 	return errors
 }
 
-func (t *translator) translateDefLookupSources(selector ast.Expr,
-	sources []ast.Expr) (lookup.Vector[word.BigEndian, hir.Term], ast.Context, []SyntaxError) {
+// translateDefLookupSources translates one side of a lookup (i.e. either its
+// sources or its targets) into a corresponding lookup vector.  Since a lookup
+// vector is made up of registers, this also returns the bitwidth of each
+// register in the vector (as needed for detecting irregular lookups).
+func (t *translator) translateDefLookupSources(selector ast.TypedSymbol,
+	sources []ast.TypedSymbol) (lookup.Vector, []uint, ast.Context, []SyntaxError) {
 	// Determine context of ith set of targets
 	var (
-		context, j = ast.ContextOfExpressions(sources...)
-		vector     lookup.Vector[word.BigEndian, hir.Term]
+		context, j = ast.ContextOfSymbols(sources...)
+		sel        *hir.RegisterAccess
 	)
 	// Include selector (when present)
 	if selector != nil {
-		context = context.Join(selector.Context())
+		context = context.Join(ast.ContextOfSymbol(selector))
 	}
-	// Translate target expressions whilst again checking for a conflicting
-	// context.
+	// Translate target columns whilst again checking for a conflicting context.
 	if context.IsConflicted() {
-		var source ast.Expr
-		// Determine offending source expression
+		var source ast.TypedSymbol
+		// Determine offending source column
 		if j >= uint(len(sources)) {
 			source = selector
 		} else {
 			source = sources[j]
 		}
 		//
-		return lookup.Vector[word.BigEndian, hir.Term]{}, context, t.srcmap.SyntaxErrors(source, "conflicting context")
+		return lookup.Vector{}, nil, context, t.srcmap.SyntaxErrors(source, "conflicting context")
 	}
 	// Determine enclosing module
 	module := t.moduleOf(context)
-	// Translate source expressions
-	terms, errors := t.translateUnitExpressions(sources, module, 0)
+	// Translate source columns
+	accesses, errors := t.translateLookupColumns(sources)
 	// handle selector
 	if selector != nil {
-		s, errs := t.translateExpression(selector, module, 0)
+		s, errs := t.registerOfRegisterAccess(selector, 0)
 		errors = append(errors, errs...)
-
-		vector = lookup.FilteredVector(module.Id(), s, terms...)
-	} else {
-		vector = lookup.UnfilteredVector(module.Id(), terms...)
+		sel = s
 	}
 	// Sanity check vector
 	if len(errors) == 0 {
 		// NOTE: don't check vector if other errors, since we could have nil
 		// entries in the vector, etc.
-		errors = append(errors, t.checkLookupVector(module.IsExtern(), vector, selector, sources)...)
+		errors = append(errors, t.checkLookupVector(sel, selector)...)
+	}
+	// Don't attempt to construct the vector if anything went wrong, since some
+	// of its registers may not have been translated.
+	if len(errors) > 0 {
+		return lookup.Vector{}, nil, context, errors
 	}
 	//
-	return vector, context, errors
+	registers, widths := registersOfAccesses(accesses)
+	// Done
+	if sel != nil {
+		return lookup.FilteredVector(module.Id(), sel.Register(), registers...), widths, context, errors
+	}
+	//
+	return lookup.UnfilteredVector(module.Id(), registers...), widths, context, errors
 }
 
-func (t *translator) checkLookupVector(extern bool, vector lookup.Vector[word.BigEndian, hir.Term], selector ast.Expr,
-	terms []ast.Expr) []SyntaxError {
-	//
+// translateLookupColumns translates the column accesses making up one side of a
+// lookup into their corresponding register accesses.
+func (t *translator) translateLookupColumns(columns []ast.TypedSymbol) ([]*hir.RegisterAccess, []SyntaxError) {
 	var (
-		errors []SyntaxError
+		errors   []SyntaxError
+		accesses = make([]*hir.RegisterAccess, len(columns))
 	)
-	// Look for any negative terms
-	for i, ith := range vector.Terms {
-		if extern && !isConstantRegister(ith) {
-			errors = append(errors, *t.srcmap.SyntaxError(terms[i],
-				"arbitrary term not permitted here (i.e. only 0, 1, or register for external module)"))
+	//
+	for i, column := range columns {
+		if column == nil {
+			continue
 		}
-		// Determine value range of ith term
-		valrange := ith.ValueRange()
-		// Determine bitwidth for that range
-		_, signed := valrange.BitWidth()
-		// Sanity check signed lookups
-		if signed {
-			errors = append(errors, *t.srcmap.SyntaxError(terms[i], "signed term encountered"))
-		}
+		//
+		reg, errs := t.registerOfRegisterAccess(column, 0)
+		errors = append(errors, errs...)
+		accesses[i] = reg
 	}
+	//
+	return accesses, errors
+}
+
+// registersOfAccesses determines the registers underlying a given set of
+// register accesses, along with the bitwidth of each.
+func registersOfAccesses(accesses []*hir.RegisterAccess) ([]register.Id, []uint) {
+	var (
+		registers = make([]register.Id, len(accesses))
+		widths    = make([]uint, len(accesses))
+	)
+	//
+	for i, access := range accesses {
+		valrange := access.ValueRange()
+		registers[i] = access.Register()
+		widths[i], _ = valrange.BitWidth()
+	}
+	//
+	return registers, widths
+}
+
+// checkLookupVector sanity checks one side of a lookup.  Since the registers
+// making up a lookup vector are unsigned by construction, all that remains is
+// to check the selector (when present) is binary.
+func (t *translator) checkLookupVector(sel *hir.RegisterAccess, selector ast.TypedSymbol) []SyntaxError {
+	//
+	var errors []SyntaxError
 	// Check selector is binary
-	if vector.HasSelector() {
-		// Determine value range of ith term
-		valrange := vector.Selector.Unwrap().ValueRange()
+	if sel != nil {
+		// Determine value range of the selector
+		valrange := sel.ValueRange()
 		// Determine bitwidth for that range
-		bitwidth, signed := valrange.BitWidth()
-		// Check for signed selector
-		if signed {
-			errors = append(errors, *t.srcmap.SyntaxError(selector, "signed selector encountered"))
-		}
+		bitwidth, _ := valrange.BitWidth()
 		// Check for non-binary selector
 		if bitwidth > 1 {
 			errors = append(errors, *t.srcmap.SyntaxError(selector, "non-binary selector encountered"))
@@ -459,32 +494,18 @@ func (t *translator) checkLookupVector(extern bool, vector lookup.Vector[word.Bi
 	return errors
 }
 
-func isConstantRegister(term hir.Term) bool {
-	switch t := term.(type) {
-	case *hir.Constant:
-		val := t.Value.BigInt()
-		// Check whether valid constant
-		return val.IsUint64() && (val.Uint64() == 0 || val.Uint64() == 1)
-	case *hir.RegisterAccess:
-		return true
-	}
-	//
-	return false
-}
-
 // An irregular lookup is an awkward scenario where a source/target pairing does
 // not align properly.  This scenario is not currently supported and, hence, a
 // suitable error message must be returned.  For example, support a pairing of
 // u160 (source) into u256 (target) with a maximum register size of u160.  Then,
 // the source will decompose into a single u160 limb, whilst the target will
 // decompose into a two u128 limbs.
-func (t *translator) checkForIrregularLookup(targets []lookup.Vector[word.BigEndian, hir.Term],
-	sources []lookup.Vector[word.BigEndian, hir.Term], tgtTerms [][]ast.Expr, srcTerms [][]ast.Expr) []SyntaxError {
+func (t *translator) checkForIrregularLookup(tgtWidths [][]uint, srcWidths [][]uint,
+	tgtTerms [][]ast.TypedSymbol, srcTerms [][]ast.TypedSymbol) []SyntaxError {
+	//
 	var (
-		n         = len(sources[0].Terms)
-		srcWidths = t.determineLookupBitwidths(sources)
-		tgtWidths = t.determineLookupBitwidths(targets)
-		errors    []SyntaxError
+		n      = len(srcWidths[0])
+		errors []SyntaxError
 	)
 	//
 	for i, ith := range srcWidths {
@@ -504,26 +525,6 @@ func (t *translator) checkForIrregularLookup(targets []lookup.Vector[word.BigEnd
 	}
 	//
 	return errors
-}
-
-func (t *translator) determineLookupBitwidths(terms []lookup.Vector[word.BigEndian, hir.Term]) [][]uint {
-	var (
-		bitwidths = make([][]uint, len(terms))
-	)
-	//
-	for i := range terms {
-		ith := make([]uint, len(terms[i].Terms))
-		for j, jth := range terms[i].Terms {
-			// Determine value range of ith term
-			valrange := jth.ValueRange()
-			// Determine bitwidth for that range
-			ith[j], _ = valrange.BitWidth()
-		}
-		//
-		bitwidths[i] = ith
-	}
-	//
-	return bitwidths
 }
 
 func (t *translator) isIrregularLookup(srcWidth, tgtWidth uint) int {
@@ -571,28 +572,6 @@ func (t *translator) translateDefInRange(decl *ast.DefInRange) []SyntaxError {
 	}
 	// Done
 	return errors
-}
-
-// Translate an optional expression in a given context.  That is an expression
-// which maybe nil (i.e. doesn't exist).  In such case, nil is returned (i.e.
-// without any errors).
-func (t *translator) translateUnitExpressions(exprs []ast.Expr, module ModuleBuilder,
-	shift int) ([]hir.Term, []SyntaxError) {
-	//
-	errors := []SyntaxError{}
-	hirExprs := make([]hir.Term, len(exprs))
-	// Iterate each expression in turn
-	for i, e := range exprs {
-		if e != nil {
-			var errs []SyntaxError
-			//
-			expr, errs := t.translateExpression(e, module, shift)
-			errors = append(errors, errs...)
-			hirExprs[i] = expr
-		}
-	}
-	// Done
-	return hirExprs, errors
 }
 
 // Translate a sequence of zero or more expressions enclosed in a given module.

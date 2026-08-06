@@ -1,6 +1,7 @@
-(defpurefun ((i8 :i8 :force) x) x)
 (module m1)
-(defcolumns (sel :i1) (X :i16) (Y :i8))
+(defcolumns (sel :i1) (X :i16) (Y :i8) (tmp :i8))
+;; tmp holds the (narrowed) value of X on selected rows
+(defconstraint tmp_def () (if (== sel 1) (== tmp X)))
 
 (defclookup
   l1
@@ -9,7 +10,7 @@
   ;; source selector
   m1.sel
   ;; source column
-  ((i8 m1.X) m1.Y))
+  (m1.tmp m1.Y))
 
 (module m2)
 (defcolumns (X :i8) (Y :i8))

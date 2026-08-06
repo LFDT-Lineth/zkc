@@ -1,2 +1,4 @@
-(defcolumns (X :i16) (Y :i32))
-(deflookup test (Y) ((* X 2)))
+(defcolumns (X :i16) (Y :i32) (X2 :i17))
+;; X2 holds the value of the expression (* X 2)
+(defconstraint x2_def () (== X2 (* X 2)))
+(deflookup test (Y) (X2))

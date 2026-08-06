@@ -54,6 +54,36 @@ type TypedSymbol interface {
 	Type() Type
 }
 
+// ContextOfSymbol returns the context of a given symbol.  For a column access,
+// this is the context of the enclosing (non-virtual) module.  Anything else
+// (e.g. a constant) has no context, and the void context is returned.
+func ContextOfSymbol(symbol TypedSymbol) Context {
+	if binding, ok := symbol.Binding().(*ColumnBinding); ok {
+		return binding.Context()
+	}
+	// Anything else has no context.
+	return VoidContext()
+}
+
+// ContextOfSymbols returns the context for a set of zero or more symbols, along
+// with the index of the first symbol whose context conflicts with those seen
+// before it (or the number of symbols, if there is no conflict).  Observe that,
+// if the symbols have no context (e.g. they are all constants) then the void
+// context is returned.
+func ContextOfSymbols(symbols ...TypedSymbol) (Context, uint) {
+	context := VoidContext()
+	//
+	for i, s := range symbols {
+		context = context.Join(ContextOfSymbol(s))
+		//
+		if context.IsConflicted() {
+			return context, uint(i)
+		}
+	}
+	//
+	return context, uint(len(symbols))
+}
+
 // SymbolDefinition represents a declaration (or part thereof) which defines a
 // particular symbol.  For example, "defcolumns" will define one or more symbols
 // representing columns, etc.

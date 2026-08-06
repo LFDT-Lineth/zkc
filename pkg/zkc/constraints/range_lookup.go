@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
-	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -120,14 +119,12 @@ func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Const
 			regId  = register.NewId(uint(i))
 			handle = fmt.Sprintf("range_u%d_%d", reg.Width(), regId.Unwrap())
 			// Source: the register's value on the current row.
-			source = lookup.UnfilteredVector(ctx,
-				term.RawRegisterAccess[F, mir.Term[F]](regId, reg.Width(), 0))
+			source = lookup.UnfilteredVector(ctx, regId)
 			// Target: the enumerated value column of the matching $range_un table.
-			target = lookup.UnfilteredVector(table.module,
-				term.RawRegisterAccess[F, mir.Term[F]](table.value, reg.Width(), 0))
+			target = lookup.UnfilteredVector(table.module, table.value)
 		)
 		//
-		mod.AddConstraints(mir.NewLookupConstraint(handle,
-			[]mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
+		mod.AddConstraints(mir.NewLookupConstraint[F](handle,
+			[]mir.LookupVector{target}, []mir.LookupVector{source}))
 	}
 }

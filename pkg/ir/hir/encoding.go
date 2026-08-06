@@ -23,6 +23,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
@@ -103,11 +104,16 @@ func encode_lookup(c LookupConstraint) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-func encode_lookup_vector(vector lookup.Vector[word.BigEndian, Term], buffer *bytes.Buffer) error {
+func encode_lookup_vector(vector lookup.Vector, buffer *bytes.Buffer) error {
 	var (
 		gobEncoder = gob.NewEncoder(buffer)
 		selector   = vector.HasSelector()
+		registers  = make([]uint, len(vector.Registers))
 	)
+	// Unwrap registers making up this vector
+	for i, rid := range vector.Registers {
+		registers[i] = rid.Unwrap()
+	}
 	// Source Context
 	if err := gobEncoder.Encode(vector.Module); err != nil {
 		return err
@@ -118,12 +124,12 @@ func encode_lookup_vector(vector lookup.Vector[word.BigEndian, Term], buffer *by
 	}
 	// Selector itself (if applicable)
 	if selector {
-		if err := encode_term[LogicalTerm, Term](vector.Selector.Unwrap(), buffer); err != nil {
+		if err := gobEncoder.Encode(vector.Selector.Unwrap().Unwrap()); err != nil {
 			return err
 		}
 	}
-	// Source terms
-	return encode_nary(encode_term[LogicalTerm, Term], buffer, vector.Terms)
+	// Source registers
+	return gobEncoder.Encode(registers)
 }
 
 func encode_vanishing(c VanishingConstraint) ([]byte, error) {
@@ -214,12 +220,13 @@ func decode_lookup(data []byte) (schema.Constraint[word.BigEndian], error) {
 	return lookup, nil
 }
 
-func decode_lookup_vector(buf *bytes.Buffer) (lookup.Vector[word.BigEndian, Term], error) {
+func decode_lookup_vector(buf *bytes.Buffer) (lookup.Vector, error) {
 	var (
 		gobDecoder  = gob.NewDecoder(buf)
-		vector      lookup.Vector[word.BigEndian, Term]
+		vector      lookup.Vector
 		hasSelector bool
-		selector    Term
+		selector    uint
+		registers   []uint
 		err         error
 	)
 	// Context
@@ -232,15 +239,21 @@ func decode_lookup_vector(buf *bytes.Buffer) (lookup.Vector[word.BigEndian, Term
 	}
 	// Selector (if applicable)
 	if hasSelector {
-		if selector, err = decode_term(buf); err != nil {
+		if err = gobDecoder.Decode(&selector); err != nil {
 			return vector, err
 		}
 		// Wrap selector
-		vector.Selector = util.Some(selector)
+		vector.Selector = util.Some(register.NewId(selector))
 	}
 	// Contents
-	if vector.Terms, err = decode_nary(decode_term, buf); err != nil {
+	if err = gobDecoder.Decode(&registers); err != nil {
 		return vector, err
+	}
+	//
+	vector.Registers = make([]register.Id, len(registers))
+	// Wrap registers making up this vector
+	for i, rid := range registers {
+		vector.Registers[i] = register.NewId(rid)
 	}
 	// Done
 	return vector, nil

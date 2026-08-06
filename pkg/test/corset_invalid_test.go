@@ -377,40 +377,11 @@ func Test_Invalid_Lookup_05(t *testing.T) {
 func Test_Invalid_Lookup_06(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_06")
 }
-func Test_Invalid_Lookup_07(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_07")
-}
-func Test_Invalid_Lookup_08(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_08")
-}
-func Test_Invalid_Lookup_09(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_09")
-}
-
-func Test_Invalid_Lookup_10(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_10")
-}
-
-func Test_Invalid_Lookup_11(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_11")
-}
-func Test_Invalid_Lookup_12(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_12")
-}
-func Test_Invalid_Lookup_13(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_13")
-}
 func Test_Invalid_Lookup_14(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_14")
 }
 func Test_Invalid_Lookup_15(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_15")
-}
-func Test_Invalid_Lookup_16(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_16")
-}
-func Test_Invalid_Lookup_17(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_17")
 }
 func Test_Invalid_Lookup_18(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_18")
