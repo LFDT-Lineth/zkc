@@ -480,27 +480,15 @@ func Intrinsic[W Word[W]](op bytecode.Operation, targets []bytecode.RegisterVect
 }
 
 // Div constructs an integer-division instruction computing
-// "target = dividend / divisor".
-func Div[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
-	return bytecode.NewDivRem[W](encoding.DIV, target, dividend, divisor)
-}
-
-// DivConst constructs an integer-division instruction computing
-// "target = dividend / divisor" for a constant divisor.
-func DivConst[W Word[W]](target, dividend RegisterId, divisor W) Bytecode[W] {
-	return bytecode.NewDivRemConst(encoding.DIV, target, dividend, divisor)
+// "target = dividend / divisor" for a register or constant divisor.
+func Div[W Word[W]](target, dividend RegisterId, divisor Operand[W]) Bytecode[W] {
+	return bytecode.NewDivRem(encoding.DIV, target, dividend, divisor)
 }
 
 // Rem constructs an integer-remainder instruction computing
-// "target = dividend % divisor".
-func Rem[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
-	return bytecode.NewDivRem[W](encoding.REM, target, dividend, divisor)
-}
-
-// RemConst constructs an integer-remainder instruction computing
-// "target = dividend % divisor" for a constant divisor.
-func RemConst[W Word[W]](target, dividend RegisterId, divisor W) Bytecode[W] {
-	return bytecode.NewDivRemConst(encoding.REM, target, dividend, divisor)
+// "target = dividend % divisor" for a register or constant divisor.
+func Rem[W Word[W]](target, dividend RegisterId, divisor Operand[W]) Bytecode[W] {
+	return bytecode.NewDivRem(encoding.REM, target, dividend, divisor)
 }
 
 // Fail constructs a fail instruction carrying the given formatted message.

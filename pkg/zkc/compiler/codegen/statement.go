@@ -710,21 +710,17 @@ func (p *StmtCompiler) compileIntDiv(args []Expr, bitwidth uint, mapping []uint,
 	//
 	insns = append(insns, extra...)
 	//
+	// The type checker bounds a constant divisor to the operand type, so only
+	// the degenerate values need rejecting here.
 	if divisor.IsConstant() {
-		constant := divisor.AsConstant()
-		//
-		// The type checker bounds the divisor to the operand type, so only the
-		// degenerate values need rejecting here.
-		if constant.Cmp64(0) == 0 {
+		if divisor.AsConstant().Cmp64(0) == 0 {
 			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[1], "division by zero")...)
-		} else if constant.Cmp64(1) == 0 {
+		} else if divisor.AsConstant().Cmp64(1) == 0 {
 			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[0], "division has no divisor")...)
 		}
-		//
-		return append(insns, vm.DivConst(target, value, constant))
 	}
 	//
-	return append(insns, vm.Div[vm.Uint](target, value, divisor.AsRegister()))
+	return append(insns, vm.Div(target, value, divisor))
 }
 
 func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
@@ -737,19 +733,13 @@ func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint,
 	//
 	insns = append(insns, extra...)
 	//
-	if divisor.IsConstant() {
-		constant := divisor.AsConstant()
-		//
-		// The type checker bounds the divisor to the operand type, so only a
-		// zero divisor needs rejecting here.
-		if constant.Cmp64(0) == 0 {
-			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[1], "division by zero")...)
-		}
-		//
-		return append(insns, vm.RemConst(target, value, constant))
+	// The type checker bounds a constant divisor to the operand type, so only
+	// a zero divisor needs rejecting here.
+	if divisor.IsConstant() && divisor.AsConstant().Cmp64(0) == 0 {
+		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[1], "division by zero")...)
 	}
 	//
-	return append(insns, vm.Rem[vm.Uint](target, value, divisor.AsRegister()))
+	return append(insns, vm.Rem(target, value, divisor))
 }
 
 func (p *StmtCompiler) compileBitwiseShl(args []Expr, bitwidth uint, mapping []uint, target RegisterId,

@@ -449,15 +449,9 @@ func NewDebug[W word.Word[W]](chunks []FormattedChunk, sources []RegisterId) *De
 }
 
 // NewDivRem constructs a division/remainder instruction computing
-// "target = dividend op divisor" for a register divisor.
-func NewDivRem[W word.Word[W]](op uint32, target, dividend, divisor RegisterId) *DivRem[W] {
-	return &DivRem[W]{Opcode: op, Target: target, Dividend: dividend, Divisor: NewRegisterOperand[W](divisor)}
-}
-
-// NewDivRemConst constructs a division/remainder instruction computing
-// "target = dividend op divisor" for a constant divisor.
-func NewDivRemConst[W word.Word[W]](op uint32, target, dividend RegisterId, divisor W) *DivRem[W] {
-	return &DivRem[W]{Opcode: op, Target: target, Dividend: dividend, Divisor: NewConstantOperand(divisor)}
+// "target = dividend op divisor" for a register or constant divisor.
+func NewDivRem[W word.Word[W]](op uint32, target, dividend RegisterId, divisor Operand[W]) *DivRem[W] {
+	return &DivRem[W]{Opcode: op, Target: target, Dividend: dividend, Divisor: divisor}
 }
 
 // NewFail constructs a fail instruction carrying the given formatted message.

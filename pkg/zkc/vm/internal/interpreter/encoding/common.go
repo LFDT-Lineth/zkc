@@ -213,8 +213,12 @@ const (
 	CSUB
 	// DIV instruction
 	DIV
+	// DIVC (divide by constant) instruction
+	DIVC
 	// REM instruction
 	REM
+	// REMC (remainder by constant) instruction [must follow DIVC]
+	REMC
 	// INTRINSIC instruction (e.g. division hint, wide shift-left)
 	INTRINSIC
 	// ADDMOD_P instruction
@@ -241,10 +245,7 @@ const (
 	DEBUG
 	// FIELD_TO_UINT instruction
 	FIELD_TO_UINT
-	// DIVC (divide by constant) instruction
-	DIVC
-	// REMC (remainder by constant) instruction [must follow DIVC]
-	REMC
+
 	//
 	MAX_BYTECODE
 )
@@ -341,8 +342,13 @@ const (
 	WIDE_MUL_nm
 	// WIDE_DIV instruction
 	WIDE_DIV
+	// WIDE_DIVC (divide by pooled constant) instruction
+	WIDE_DIVC
 	// WIDE_REM instruction [must follow WIDE_DIV]
 	WIDE_REM
+	// WIDE_REMC (remainder by pooled constant) instruction [must follow
+	// WIDE_DIVC]
+	WIDE_REMC
 	// WIDE_INTRINSIC instruction
 	WIDE_INTRINSIC
 	// WIDE_ADDMOD_P instruction
@@ -369,11 +375,6 @@ const (
 	WIDE_DEBUG
 	// WIDE_FIELD_TO_UINT instruction
 	WIDE_FIELD_TO_UINT
-	// WIDE_DIVC (divide by pooled constant) instruction
-	WIDE_DIVC
-	// WIDE_REMC (remainder by pooled constant) instruction [must follow
-	// WIDE_DIVC]
-	WIDE_REMC
 
 	//
 	MAX_WIDE_BYTECODE

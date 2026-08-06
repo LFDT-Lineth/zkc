@@ -61,14 +61,9 @@ func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 	)
 	// Check whether splitting actually required
 	if target.Len == 1 && dividend.Len == 1 && divisorLen == 1 {
-		if divisor.IsConstant() {
-			// No, splitting not technically required
-			return []Bytecode[W]{bytecode.NewDivRemConst(insn.Opcode,
-				target.Base, dividend.Base, divisor.AsConstant())}
-		}
 		// No, splitting not technically required
-		return append(loads, bytecode.NewDivRem[W](insn.Opcode,
-			target.Base, dividend.Base, divisor.AsRegister()))
+		return append(loads, bytecode.NewDivRem(insn.Opcode,
+			target.Base, dividend.Base, divisor))
 	}
 	// Yes, splitting is actually required.
 	return append(loads, bytecode.NewIntrinsic(op,
