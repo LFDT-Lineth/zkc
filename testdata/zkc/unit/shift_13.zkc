@@ -1,0 +1,14 @@
+pub input in(address:u12) -> (in:u64)
+
+fn main() {
+    var x:u32 = in[0] as u32
+    var rshft:u64 = in[1]
+    var lshft:u1 = in[2] as u1
+    var r_exp:u32 = in[3] as u32
+
+    var r:u32 = (x << rshft) >> lshft
+
+    if (r != r_exp) {
+        fail
+    }
+}

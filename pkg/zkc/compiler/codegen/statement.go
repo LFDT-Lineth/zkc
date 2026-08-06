@@ -776,40 +776,41 @@ func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint,
 
 func (p *StmtCompiler) compileBitwiseShl(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
 ) []Bytecode {
-	var bw = util.Some(bitwidth)
-	// Compile all operands upfront.
-	sources, insns := p.compileUniformArgs(bw, mapping, args...)
-	// Chain shifts left-to-right: (((a << b) << c) << ...).
-	value := sources[0]
-	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(bw)
-		insns = append(insns,
-			vm.BitShl[vm.Uint](tmp, value, sources[i], util.Cast[uint16](bitwidth)))
-		value = tmp
-	}
-	//
-	return append(insns,
-		vm.BitShl[vm.Uint](target, value, sources[len(sources)-1], uint16(bitwidth)))
+	return p.compileBitwiseShift(vm.BitShl[vm.Uint], args, bitwidth, mapping, target)
 }
 
 func (p *StmtCompiler) compileBitwiseShr(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
 ) []Bytecode {
+	return p.compileBitwiseShift(vm.BitShr[vm.Uint], args, bitwidth, mapping, target)
+}
+
+// compileBitwiseShift chains shifts left-to-right: (((a << b) << c) << ...).
+// The shifted value is compiled at the shift's own width, but each amount at
+// its natural (declared) width: a narrow amount (e.g. a small constant or an
+// "as uN" cast) then enters the barrel-shifter chain at the matching level
+// rather than through the guard (see LowerBitwise).
+func (p *StmtCompiler) compileBitwiseShift(
+	shift func(RegisterId, RegisterId, RegisterId, uint16) Bytecode,
+	args []Expr, bitwidth uint, mapping []uint, target RegisterId,
+) []Bytecode {
 	var bw = util.Some(bitwidth)
-	// Compile all operands upfront.
-	sources, insns := p.compileUniformArgs(bw, mapping, args...)
-	// Chain shifts left-to-right: (((a >> b) >> c) >> ...).
-	value := sources[0]
 	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(bw)
-		insns = append(insns,
-			vm.BitShr[vm.Uint](tmp, value, sources[i], util.Cast[uint16](bitwidth)))
-		value = tmp
+	value, insns := p.compileArg(args[0], bw, mapping)
+	//
+	for i := 1; i < len(args); i++ {
+		amount, extra := p.compileArg(args[i], data.BitWidthOf(args[i].Type(), p.environment), mapping)
+		insns = append(insns, extra...)
+		//
+		tgt := target
+		if i < len(args)-1 {
+			tgt = p.allocate(bw)
+		}
+		//
+		insns = append(insns, shift(tgt, value, amount, util.Cast[uint16](bitwidth)))
+		value = tgt
 	}
 	//
-	return append(insns,
-		vm.BitShr[vm.Uint](target, value, sources[len(sources)-1], uint16(bitwidth)))
+	return insns
 }
 
 func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint, targets []vm.RegisterId,
