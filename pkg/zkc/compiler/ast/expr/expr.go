@@ -113,6 +113,9 @@ func String[S symbol.Symbol[S]](e Expr[S], mapping variable.Map[S]) string {
 	case *Div[S]:
 		exprs = e.Exprs
 		operator = "/"
+	case *DivMod[S]:
+		exprs = e.Exprs
+		operator = "/%"
 	case *LocalAccess[S]:
 		return mapping.Variable(e.Variable).Name
 	case *Mul[S]:

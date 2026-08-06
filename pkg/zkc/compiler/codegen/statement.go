@@ -277,6 +277,8 @@ func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...[]vm.
 	switch e := e.(type) {
 	case *expr.TupleInitialiser[symbol.Resolved]:
 		return p.compileTupleInitialiser(e, mapping, targets...)
+	case *expr.DivMod[symbol.Resolved]:
+		return destructMultiway(p, e, mapping, targets, p.compileDivMod)
 	case *expr.ExternAccess[symbol.Resolved]:
 		//
 		switch ext := p.components[e.Name.Index].(type) {
@@ -740,6 +742,40 @@ func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint,
 	}
 	//
 	return append(insns, vm.Rem(target, value, divisor))
+}
+
+// compileDivMod compiles the combined division/remainder ("/%") expression
+// into a single DivRem bytecode writing both the quotient (targets[0]) and the
+// remainder (targets[1]).  In fast mode a DIV / REM pair is emitted instead:
+// the combined form only pays off under the constraint lowering — one shared
+// DIV_HINT block for the pair — whilst natively two divisions are as cheap,
+// and the pair spares the combined form a dedicated encoding.
+func (p *StmtCompiler) compileDivMod(e *expr.DivMod[symbol.Resolved], mapping []uint, targets []RegisterId,
+) []Bytecode {
+	var bw = data.BitWidthOf(e.Exprs[0].Type(), p.environment)
+	// Compile the dividend upfront.
+	value, insns := p.compileArg(e.Exprs[0], bw, mapping)
+	divisor, extra := p.compileOperand(e.Exprs[1], bw, mapping)
+	//
+	insns = append(insns, extra...)
+	//
+	// The type checker bounds a constant divisor to the operand type, so only
+	// the degenerate values need rejecting here.
+	if divisor.IsConstant() {
+		if divisor.AsConstant().Cmp64(0) == 0 {
+			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e.Exprs[1], "division by zero")...)
+		} else if divisor.AsConstant().Cmp64(1) == 0 {
+			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e.Exprs[0], "division has no divisor")...)
+		}
+	}
+	//
+	if p.fastMode {
+		insns = append(insns, vm.Div(targets[0], value, divisor))
+		//
+		return append(insns, vm.Rem(targets[1], value, divisor))
+	}
+	//
+	return append(insns, vm.DivMod(targets[0], targets[1], value, divisor))
 }
 
 func (p *StmtCompiler) compileBitwiseShl(args []Expr, bitwidth uint, mapping []uint, target RegisterId,

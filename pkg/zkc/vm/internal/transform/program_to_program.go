@@ -145,7 +145,7 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 	case *bytecode.Debug[W1]:
 		return &bytecode.Debug[W2]{Chunks: b.Chunks, Sources: b.Sources}
 	case *bytecode.DivRem[W1]:
-		return &bytecode.DivRem[W2]{Opcode: b.Opcode, Target: b.Target, Dividend: b.Dividend,
+		return &bytecode.DivRem[W2]{Quotient: b.Quotient, Remainder: b.Remainder, Dividend: b.Dividend,
 			Divisor: p.convertOperandVector(b.Divisor)}
 	case *bytecode.Fail[W1]:
 		return &bytecode.Fail[W2]{Chunks: b.Chunks, Sources: b.Sources}

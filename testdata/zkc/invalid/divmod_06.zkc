@@ -1,0 +1,4 @@
+//error:3:10-16:expected type (u16,u32)
+fn f(a:u32, b:u32) -> (q:u16, r:u32) {
+  q, r = a /% b
+}

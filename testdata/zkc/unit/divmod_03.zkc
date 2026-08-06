@@ -1,0 +1,38 @@
+pub input data(address:u8) -> (v:u32)
+
+// Combined division / remainder ("/%") with a constant dividend, checked
+// against the plain "/" and "%" operators and the expected inputs.  Operands
+// are u32 so that register splitting is exercised on narrow fields.
+
+fn main() {
+    var y:u32 = data[0]
+
+    var q_exp:u32 = data[1]
+    var r_exp:u32 = data[2]
+
+    var q:u32 = 0
+    var r:u32 = 0
+
+    q, r = 1000000 /% y
+
+    var q_straight:u32 = 1000000 / y
+    var r_straight:u32 = 1000000 % y
+
+    if q != q_straight {
+        fail
+    }
+
+    if q != q_exp {
+        fail
+    }
+
+    if r != r_straight {
+        fail
+    }
+
+    if r != r_exp {
+        fail
+    }
+
+    return
+}

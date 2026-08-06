@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -429,14 +428,9 @@ func (g *generator) emitMul(c *code, srcs []operand, konst operand, store storeV
 	return inner
 }
 
-// emitDivRem emits DIV / REM (executeDiv/Rem): a zero divisor fails, otherwise
-// the result is the plain Go quotient/remainder.
+// emitDivRem emits DIV / REM / divmod (executeDiv/Rem): a zero divisor fails,
+// otherwise each present target receives the plain Go quotient / remainder.
 func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem[word.Uint]) error {
-	target, err := g.limbOf(fn, x.Target)
-	if err != nil {
-		return err
-	}
-
 	lhs, err := g.registerOperand(fn, x.Dividend)
 	if err != nil {
 		return err
@@ -468,14 +462,25 @@ func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem[wor
 		c.line("}")
 	}
 
-	goOp, bound := "/", lhs.max
-	if x.Opcode == encoding.REM {
-		// The remainder is below the divisor (and never above the dividend).
-		goOp = "%"
-		bound = bigMin(lhs.max, new(big.Int).Sub(rhs.max, big.NewInt(1)))
+	if x.Quotient.HasValue() {
+		target, err := g.limbOf(fn, x.Quotient.Unwrap())
+		if err != nil {
+			return err
+		}
+
+		g.assignSingle(c, target, operand{expr: fmt.Sprintf("%s / %s", lhs.expr, rhs.expr), max: lhs.max})
 	}
 
-	g.assignSingle(c, target, operand{expr: fmt.Sprintf("%s %s %s", lhs.expr, goOp, rhs.expr), max: bound})
+	if x.Remainder.HasValue() {
+		target, err := g.limbOf(fn, x.Remainder.Unwrap())
+		if err != nil {
+			return err
+		}
+
+		// The remainder is below the divisor (and never above the dividend).
+		bound := bigMin(lhs.max, new(big.Int).Sub(rhs.max, big.NewInt(1)))
+		g.assignSingle(c, target, operand{expr: fmt.Sprintf("%s %% %s", lhs.expr, rhs.expr), max: bound})
+	}
 
 	return nil
 }

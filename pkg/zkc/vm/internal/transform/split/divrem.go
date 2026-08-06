@@ -19,7 +19,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -42,28 +41,43 @@ import (
 func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 	insn *bytecode.DivRem[W]) []Bytecode[W] {
 	//
-	var op bytecode.Operation
+	var (
+		op       bytecode.Operation
+		targetId bytecode.RegisterId
+	)
 	//
-	switch insn.Opcode {
-	case encoding.DIV:
-		op = bytecode.WIDE_DIV
-	case encoding.REM:
-		op = bytecode.WIDE_REM
+	switch {
+	case insn.Quotient.HasValue() && insn.Remainder.HasValue():
+		// Combined divmod only exists between codegen and LowerDivisions in
+		// tracing mode; splitting never sees it (fast-mode codegen emits a
+		// DIV / REM pair instead).
+		panic("divmod must be lowered before splitting")
+	case insn.Quotient.HasValue():
+		op, targetId = bytecode.WIDE_DIV, insn.Quotient.Unwrap()
+	case insn.Remainder.HasValue():
+		op, targetId = bytecode.WIDE_REM, insn.Remainder.Unwrap()
 	default:
-		panic("expected division operation")
+		panic("division without quotient or remainder")
 	}
 	//
 	var (
-		target   = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Target)...)
+		target   = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, targetId)...)
 		dividend = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Dividend)...)
 		// Divisor operand (and any loads required to materialise it).
 		loads, divisor, divisorLen = Operand(mapping, alloc, insn.Divisor)
 	)
 	// Check whether splitting actually required
 	if target.Len == 1 && dividend.Len == 1 && divisorLen == 1 {
+		var quotient, remainder = util.None[bytecode.RegisterId](), util.None[bytecode.RegisterId]()
+		// Rebuild the (single) target option over the limb-mapped register.
+		if insn.Quotient.HasValue() {
+			quotient = util.Some(target.Base)
+		} else {
+			remainder = util.Some(target.Base)
+		}
 		// No, splitting not technically required
-		return append(loads, bytecode.NewDivRem(insn.Opcode,
-			target.Base, dividend.Base, divisor))
+		return append(loads, bytecode.NewDivRem(quotient, remainder,
+			dividend.Base, divisor))
 	}
 	// Yes, splitting is actually required.
 	return append(loads, bytecode.NewIntrinsic(op,

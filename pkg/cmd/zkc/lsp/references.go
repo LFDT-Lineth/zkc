@@ -271,6 +271,8 @@ func collectExprRefs(e expr.Resolved, target uint, out *[]any) {
 		collectExprListRefs(e.Exprs, target, out)
 	case *expr.Div[symbol.Resolved]:
 		collectExprListRefs(e.Exprs, target, out)
+	case *expr.DivMod[symbol.Resolved]:
+		collectExprListRefs(e.Exprs, target, out)
 	case *expr.LogicalAnd[symbol.Resolved]:
 		collectExprListRefs(e.Exprs, target, out)
 	case *expr.LogicalNot[symbol.Resolved]:

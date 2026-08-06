@@ -74,6 +74,7 @@ func init() {
 	DEFAULT_INSERTION_RULES[parser.SUB] = InsertSpaceAround()
 	DEFAULT_INSERTION_RULES[parser.MUL] = InsertSpaceAround()
 	DEFAULT_INSERTION_RULES[parser.DIV] = InsertSpaceAround()
+	DEFAULT_INSERTION_RULES[parser.DIV_REM] = InsertSpaceAround()
 	DEFAULT_INSERTION_RULES[parser.REM] = InsertSpaceAround()
 	// Space before and after bitwise binary operators.
 	DEFAULT_INSERTION_RULES[parser.BITWISE_AND] = InsertSpaceAround()

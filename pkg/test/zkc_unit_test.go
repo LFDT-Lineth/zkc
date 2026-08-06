@@ -961,6 +961,25 @@ func Test_ZkcUnit_Rem_04(t *testing.T) {
 }
 
 // ===================================================================
+// Combined Division / Remainder ("/%") Tests
+// ===================================================================
+
+// register divisor
+func Test_ZkcUnit_DivMod_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/divmod_01", DEFAULT_UNIT_CONFIG)
+}
+
+// constant divisor
+func Test_ZkcUnit_DivMod_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/divmod_02", DEFAULT_UNIT_CONFIG)
+}
+
+// constant dividend
+func Test_ZkcUnit_DivMod_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/divmod_03", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
 // Call Tests
 // ===================================================================
 

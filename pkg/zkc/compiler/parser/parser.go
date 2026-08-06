@@ -69,7 +69,7 @@ func Parse(srcfile *source.File) (UnlinkedSourceFile, []source.SyntaxError) {
 
 // BINOPS captures the set of binary operations
 var BINOPS = []uint{
-	SUB, MUL, ADD, DIV, REM, BITWISE_AND, BITWISE_OR, BITWISE_XOR, BITWISE_SHL,
+	SUB, MUL, ADD, DIV, DIV_REM, REM, BITWISE_AND, BITWISE_OR, BITWISE_XOR, BITWISE_SHL,
 	BITWISE_SHR, EQUALS_EQUALS, NOT_EQUALS,
 	LESS_THAN, LESS_THAN_EQUALS, GREATER_THAN, GREATER_THAN_EQUALS}
 
@@ -1725,7 +1725,7 @@ func (p *Parser) parseArithExpr(env Environment) (Expr, []source.SyntaxError) {
 			return tmp, p.syntaxErrors(p.lookahead(), "braces required")
 		}
 		// Division / remainder chains (a / b / c)  must be braced explicitly, e.g. (a / b) / c.
-		if len(args) > 1 && (kind == DIV || kind == REM) {
+		if len(args) > 1 && (kind == DIV || kind == REM || kind == DIV_REM) {
 			return tmp, p.syntaxErrors(p.lookahead(), "braces required")
 		}
 		// Consume connective
@@ -1757,6 +1757,9 @@ func (p *Parser) parseArithExpr(env Environment) (Expr, []source.SyntaxError) {
 		arg = expr.NewMul(args...)
 	case kind == DIV:
 		arg = expr.NewDiv(args...)
+	case kind == DIV_REM:
+		binary = true
+		arg = expr.NewDivMod(args[0], args[1])
 	case kind == REM:
 		arg = expr.NewRem(args...)
 	case kind == SUB:

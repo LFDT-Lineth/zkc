@@ -15,18 +15,21 @@ package bytecode
 import (
 	"fmt"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// DivRem computes the (truncated) integer quotient or remainder of a register
-// by a divisor which is either a register or a constant.  The operation is
-// identified by Opcode, which is one of DIV or REM.  A zero divisor aborts
-// execution with a division-by-zero error.
+// DivRem computes the (truncated) integer quotient and/or remainder of a
+// register by a divisor which is either a register or a constant.  At least
+// one of Quotient / Remainder is always present: quotient-only is a DIV,
+// remainder-only a REM, and both together a divmod (the source-level "/%"
+// operator), which yields both results from a single instruction.  A zero
+// divisor aborts execution with a division-by-zero error.
 type DivRem[W word.Word[W]] struct {
-	// Opcode selects the operation (DIV or REM).
-	Opcode uint32
-	// Target receives the result.
-	Target RegisterId
+	// Quotient receives the division result, when present.
+	Quotient util.Option[RegisterId]
+	// Remainder receives the remainder, when present.
+	Remainder util.Option[RegisterId]
 	// Dividend is the operand register.
 	Dividend RegisterId
 	// Divisor is either a (single limb) operand register or a constant.
@@ -44,12 +47,26 @@ func (p *DivRem[W]) Uses() []RegisterId {
 
 // Definitions implementation for Bytecode interface.
 func (p *DivRem[W]) Definitions() []RegisterId {
-	return []RegisterId{p.Target}
+	var defs []RegisterId
+	//
+	if p.Quotient.HasValue() {
+		defs = append(defs, p.Quotient.Unwrap())
+	}
+	//
+	if p.Remainder.HasValue() {
+		defs = append(defs, p.Remainder.Unwrap())
+	}
+	//
+	return defs
 }
 
 // Validate implementation for Bytecode interface.
 func (p *DivRem[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 	errs := validateOperands(env, p.Uses(), p.Definitions())
+	//
+	if p.Quotient.IsEmpty() && p.Remainder.IsEmpty() {
+		errs = append(errs, fmt.Errorf("division without quotient or remainder"))
+	}
 	//
 	if p.Divisor.IsConstant() {
 		// Already rejected by codegen rejects it upfront, check that it's not introduced
@@ -64,15 +81,20 @@ func (p *DivRem[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 
 func (p *DivRem[W]) String(mapping Environment[W]) string {
 	var (
-		target   = RegisterToString(p.Target, mapping)
 		dividend = RegisterToString(p.Dividend, mapping)
 		divisor  = p.Divisor.String(mapping)
-		symbol   = "/"
 	)
 	//
-	if p.Opcode != 0 {
-		symbol = "%"
+	switch {
+	case p.Quotient.HasValue() && p.Remainder.HasValue():
+		return fmt.Sprintf("%s, %s = %s /%% %s",
+			RegisterToString(p.Quotient.Unwrap(), mapping),
+			RegisterToString(p.Remainder.Unwrap(), mapping), dividend, divisor)
+	case p.Quotient.HasValue():
+		return fmt.Sprintf("%s = %s / %s",
+			RegisterToString(p.Quotient.Unwrap(), mapping), dividend, divisor)
+	default:
+		return fmt.Sprintf("%s = %s %% %s",
+			RegisterToString(p.Remainder.Unwrap(), mapping), dividend, divisor)
 	}
-	//
-	return fmt.Sprintf("%s = %s %s %s", target, dividend, symbol, divisor)
 }

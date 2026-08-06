@@ -773,6 +773,45 @@ func Test_ZkcInvalid_Rem_06(t *testing.T) {
 }
 
 // ===================================================================
+// Combined Division / Remainder ("/%") Tests
+// ===================================================================
+
+// single target
+func Test_ZkcInvalid_DivMod_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_01")
+}
+
+// unbraced divmod chain (a /% b /% c)
+func Test_ZkcInvalid_DivMod_02(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_02")
+}
+
+// division by 0
+func Test_ZkcInvalid_DivMod_03(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_03")
+}
+
+// too many targets
+func Test_ZkcInvalid_DivMod_04(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_04")
+}
+
+// braced divmod chain ((a /% b) /% c): the pair is not a uint operand
+func Test_ZkcInvalid_DivMod_05(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_05")
+}
+
+// mismatched target widths (q:u16, r:u32)
+func Test_ZkcInvalid_DivMod_06(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_06")
+}
+
+// mismatched operand widths (a:u32 /% b:u16)
+func Test_ZkcInvalid_DivMod_07(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_07")
+}
+
+// ===================================================================
 // Cast Tests
 // ===================================================================
 

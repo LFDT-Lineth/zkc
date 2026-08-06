@@ -254,6 +254,10 @@ func (p *TypeChecker) typeAssignment(s *stmt.Assign[symbol.Resolved], env Variab
 		//
 		return errors
 	}
+	// A divmod produces exactly the (quotient, remainder) pair.
+	if _, ok := s.Source.(*expr.DivMod[symbol.Resolved]); ok && len(s.Targets) != 2 {
+		return p.srcmaps.SyntaxErrors(s.Source, "divmod expects two targets (quotient, remainder)")
+	}
 	// Type check left-hand side
 	for i, lval := range s.Targets {
 		var lhsErrs []source.SyntaxError
@@ -645,6 +649,8 @@ func (p *TypeChecker) typeExpression(expected Type, e expr.Resolved, env Variabl
 		actual, errs = p.typeShiftExpression(expected, e.Exprs, env, effects)
 	case *expr.Div[symbol.Resolved]:
 		actual, errs = p.typeUintExpressions(expected, e.Exprs, env, effects)
+	case *expr.DivMod[symbol.Resolved]:
+		actual, errs = p.typeDivModExpr(expected, e, env, effects)
 	case *expr.Rem[symbol.Resolved]:
 		actual, errs = p.typeUintExpressions(expected, e.Exprs, env, effects)
 	case *expr.Sub[symbol.Resolved]:
@@ -1020,6 +1026,31 @@ func (p *TypeChecker) typeTernaryExpr(expected Type, e *expr.Ternary[symbol.Reso
 	}
 	//
 	return nil, errs
+}
+
+// typeDivModExpr types the combined division/remainder ("/%") expression: both
+// operands are typed like a division (uints of a common type t), and the
+// expression produces the pair (t, t) — quotient then remainder — so it is
+// only well-typed as the full source of a two-target assignment.
+func (p *TypeChecker) typeDivModExpr(expected Type, e *expr.DivMod[symbol.Resolved], env VariableMap,
+	effects bit.Set) (Type, []source.SyntaxError) {
+	// When the expected type is a pair (the two assignment targets), operands
+	// check against the first target's type; the requirement that both targets
+	// share the operand type is enforced by comparing the resulting pair
+	// against the expected type at the assignment.
+	var element Type
+	//
+	if ts := p.destructTupleType(expected); len(ts) == 2 {
+		element = ts[0]
+	}
+	//
+	actual, errs := p.typeUintExpressions(element, e.Exprs, env, effects)
+	//
+	if actual == nil {
+		return nil, errs
+	}
+	//
+	return data.FromTypes(actual, actual), errs
 }
 
 func (p *TypeChecker) typeTupleExpr(expected Type, e *expr.TupleInitialiser[symbol.Resolved], env VariableMap,

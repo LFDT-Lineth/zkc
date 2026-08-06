@@ -17,15 +17,31 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// DivRem encodes a division/remainder bytecode; the opcode held within the
-// bytecode selects between quotient (DIV) and remainder (REM).  A constant
-// divisor selects the constant form (DIVC / REMC) instead.
+// DivRem encodes a division/remainder bytecode; the target shape selects
+// between quotient (DIV) and remainder (REM).  A constant divisor selects the
+// constant form (DIVC / REMC) instead.  The combined form (both targets) has
+// no encoding: codegen only emits it in tracing mode, where LowerDivisions
+// dissolves it into a DIV_HINT block long before encoding.
 func DivRem[W word.Word[W]](p *bytecode.DivRem[W], env Environment[W]) []uint32 {
-	if p.Divisor.IsConstant() {
-		return encodeDivRemC(p.Opcode, p.Target, p.Dividend, p.Divisor.AsConstant(), env)
+	var (
+		op     uint32
+		target RegisterId
+	)
+	//
+	switch {
+	case p.Quotient.HasValue() && p.Remainder.HasValue():
+		panic("divmod must be lowered before encoding")
+	case p.Quotient.HasValue():
+		op, target = DIV, p.Quotient.Unwrap()
+	default:
+		op, target = REM, p.Remainder.Unwrap()
 	}
 	//
-	return encodeDivRem(p.Opcode, p.Target, p.Dividend, p.Divisor.AsRegister())
+	if p.Divisor.IsConstant() {
+		return encodeDivRemC(op, target, p.Dividend, p.Divisor.AsConstant(), env)
+	}
+	//
+	return encodeDivRem(op, target, p.Dividend, p.Divisor.AsRegister())
 }
 
 // Intrinsic encodes an intrinsic bytecode (e.g. DIV_HINT, which supplies the

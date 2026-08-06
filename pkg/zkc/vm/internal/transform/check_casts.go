@@ -91,7 +91,7 @@ func castPacket[W word.Word[W]](b Bytecode[W], regmap descriptor.RegisterMap[W],
 			width = dividend.Bitwidth()
 		}
 		//
-		return prepend(b, checkCast(regmap, width, b.Target))
+		return prepend(b, checkCast(regmap, width, b.Definitions()...))
 	case *bytecode.Call[W]:
 		callee := modules[b.Target]
 		pre := addOutgoingCheckCasts(regmap, b.Arguments, callee.Inputs())
