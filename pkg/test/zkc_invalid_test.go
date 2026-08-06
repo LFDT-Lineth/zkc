@@ -738,6 +738,11 @@ func Test_ZkcInvalid_Div_08(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/div_08")
 }
 
+// unbraced division chain (a / b / c)
+func Test_ZkcInvalid_Div_09(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/div_09")
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================
@@ -760,6 +765,11 @@ func Test_ZkcInvalid_Rem_04(t *testing.T) {
 
 func Test_ZkcInvalid_Rem_05(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/rem_05")
+}
+
+// unbraced remainder chain (a % b % c)
+func Test_ZkcInvalid_Rem_06(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/rem_06")
 }
 
 // ===================================================================
