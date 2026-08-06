@@ -189,15 +189,13 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 			// Each operand (argument / return) is split into the limbs of its
 			// constituent registers, preserving the per-operand grouping so the
 			// hint's executor can still reconstruct each value.  Constant
-			// operands stay single-limb, being materialised into registers
-			// (via preceding loads) when too wide for one limb.
-			loads, sources := splitOperandVectors(limbsMap, alloc, c.Sources)
-			//
-			return append(loads, &bytecode.Intrinsic[W]{
+			// operands stay a single (unsplit) value, like arithmetic
+			// immediates (see split.Operand).
+			return []Bytecode[W]{&bytecode.Intrinsic[W]{
 				Op:      c.Op,
 				Targets: splitRegisterVectors(limbsMap, c.Targets),
-				Sources: sources,
-			})
+				Sources: splitOperandVectors(limbsMap, c.Sources),
+			}}
 		case *bytecode.Jmp[W]:
 			return []Bytecode[W]{c}
 		case *bytecode.ReadWrite[W]:
@@ -247,7 +245,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.DivRem[W]:
 			// NOTE: only relevant for splitting fast mode (i.e. non-lowered)
 			// bytecode.
-			return split.DivRem(limbsMap, alloc, c)
+			return split.DivRem(limbsMap, c)
 		case *bytecode.FieldArith[W]:
 			return []Bytecode[W]{splitFieldArith(limbsMap, c)}
 		case *bytecode.UintToField[W]:
@@ -532,23 +530,15 @@ func splitRegisterVectors[W any](limbsMap descriptor.LimbsMap[W],
 
 // splitOperandVectors splits each operand (e.g. an intrinsic argument) into
 // limbs: register vectors into the limbs of their constituent registers,
-// whilst constants stay single-limb — those too wide for one limb are
-// materialised into registers via the returned load bytecodes, which must
-// precede the consuming instruction (see split.SplitOperand).
-func splitOperandVectors[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allocator[W],
-	ops []bytecode.Operand[W]) ([]Bytecode[W], []bytecode.Operand[W]) {
+// whilst constants stay a single (unsplit) value (see split.Operand).
+func splitOperandVectors[W word.Word[W]](limbsMap descriptor.LimbsMap[W],
+	ops []bytecode.Operand[W]) []bytecode.Operand[W] {
 	//
-	var (
-		nops  = make([]bytecode.Operand[W], len(ops))
-		loads []Bytecode[W]
-	)
+	var nops = make([]bytecode.Operand[W], len(ops))
 	//
 	for i, o := range ops {
-		l, op, _ := split.Operand(limbsMap, alloc, o)
-		//
-		loads = append(loads, l...)
-		nops[i] = op
+		nops[i], _ = split.Operand(limbsMap, o)
 	}
 	//
-	return loads, nops
+	return nops
 }

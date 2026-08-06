@@ -14,8 +14,6 @@
 package split
 
 import (
-	"slices"
-
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -38,8 +36,7 @@ import (
 //
 // where each operand is the limb vector of the original register (ordered
 // most-significant limb first, matching ApplyLimbsMap).
-func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
-	insn *bytecode.DivRem[W]) []Bytecode[W] {
+func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.DivRem[W]) []Bytecode[W] {
 	//
 	var (
 		op       bytecode.Operation
@@ -61,10 +58,9 @@ func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 	}
 	//
 	var (
-		target   = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, targetId)...)
-		dividend = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Dividend)...)
-		// Divisor operand (and any loads required to materialise it).
-		loads, divisor, divisorLen = Operand(mapping, alloc, insn.Divisor)
+		target              = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, targetId)...)
+		dividend            = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Dividend)...)
+		divisor, divisorLen = Operand(mapping, insn.Divisor)
 	)
 	// Check whether splitting actually required
 	if target.Len == 1 && dividend.Len == 1 && divisorLen == 1 {
@@ -76,80 +72,32 @@ func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 			remainder = util.Some(target.Base)
 		}
 		// No, splitting not technically required
-		return append(loads, bytecode.NewDivRem(quotient, remainder,
-			dividend.Base, divisor))
+		return []Bytecode[W]{bytecode.NewDivRem(quotient, remainder, dividend.Base, divisor)}
 	}
 	// Yes, splitting is actually required.
-	return append(loads, bytecode.NewIntrinsic(op,
+	return []Bytecode[W]{bytecode.NewIntrinsic(op,
 		[]bytecode.RegisterVector{target},
 		[]bytecode.Operand[W]{
 			bytecode.NewRegisterVectorOperand[W](dividend),
 			divisor,
-		}))
+		})}
 }
 
-// Operand splits an operand into limbs: a register operand becomes the
-// limb vector of its constituent registers, whilst a constant operand stays a
-// single (unsplit) constant when it fits the register width — the invariant
-// being that constant operands are always single-limb.  A constant too wide
-// for a single limb is instead materialised into freshly allocated registers
-// via the returned load bytecodes, which must precede the consuming
-// instruction.
-func Operand[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
-	operand bytecode.Operand[W]) (loads []Bytecode[W], out bytecode.Operand[W], n uint16) {
+// Operand splits an operand into limbs: a register operand becomes the limb
+// vector of its constituent registers, whilst a constant operand always stays
+// a single (unsplit) value, regardless of its width — like an arithmetic
+// immediate, it never occupies a register.  Its consumers work on the value
+// directly (the intrinsic executors reconstruct full values anyway), so it
+// need not fit the register width; only the multi-limb constant form is
+// forbidden (see Intrinsic.Validate).
+func Operand[W word.Word[W]](mapping descriptor.LimbsMap[W], operand bytecode.Operand[W],
+) (out bytecode.Operand[W], n uint16) {
 	//
-	if !operand.IsConstant() {
-		var vec = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, operand.AsRegisters()...)...)
-		//
-		return nil, bytecode.NewRegisterVectorOperand[W](vec), vec.Len
+	if operand.IsConstant() {
+		return operand, 1
 	}
 	//
-	var constant = operand.AsConstant()
+	var vec = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, operand.AsRegisters()...)...)
 	//
-	if constant.FitsWithin(mapping.RegisterWidth()) {
-		return nil, operand, 1
-	}
-	// Constant too wide for a single limb: materialise it into registers.
-	var vec bytecode.RegisterVector
-	//
-	loads, vec = materialiseConstant(alloc, constant, mapping.RegisterWidth())
-	//
-	return loads, bytecode.NewRegisterVectorOperand[W](vec), vec.Len
-}
-
-// materialiseConstant loads a constant too wide for a single limb into freshly
-// allocated (consecutive) registers of the given width, returning the loading
-// bytecodes together with the resulting register vector (most-significant limb
-// first, matching ApplyLimbsMap).
-func materialiseConstant[W word.Word[W]](alloc Allocator[W], constant W, width uint,
-) ([]Bytecode[W], bytecode.RegisterVector) {
-	// Slice the constant into limbs, least-significant first.
-	var limbs = []W{constant.Slice(width)}
-	//
-	for acc := constant.Shr64(uint64(width)); acc.Cmp64(0) > 0; acc = acc.Shr64(uint64(width)) {
-		limbs = append(limbs, acc.Slice(width))
-	}
-	// Reverse into most-significant-first order.
-	slices.Reverse(limbs)
-	//
-	var (
-		total = uint(constant.BigInt().BitLen())
-		regs  = make([]bytecode.RegisterId, len(limbs))
-		loads = make([]Bytecode[W], len(limbs))
-	)
-	//
-	for i, limb := range limbs {
-		// Every limb spans the full width except the (leftover) most
-		// significant one.
-		w := width
-		//
-		if i == 0 {
-			w = total - width*uint(len(limbs)-1)
-		}
-		//
-		regs[i] = alloc.Allocate("", util.Some(w))
-		loads[i] = bytecode.LoadConst(regs[i], limb)
-	}
-	//
-	return loads, bytecode.NewRegisterVector(regs...)
+	return bytecode.NewRegisterVectorOperand[W](vec), vec.Len
 }

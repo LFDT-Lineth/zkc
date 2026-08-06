@@ -201,9 +201,9 @@ func encodeIntrinsic[W word.Word[W]](op Operation, targets []RegisterVector,
 	for i, s := range sources {
 		if s.IsConstant() {
 			var limbs = s.AsConstants()
-			// Constant operands are single-limb by construction (see
-			// split.SplitOperand): their limb widths are not recorded, so a
-			// multi-limb run could not be reconstructed by the interpreter.
+			// Constant operands are a single value by construction (see
+			// split.Operand): limb widths are not recorded, so a multi-limb
+			// run could not be reconstructed by the interpreter.
 			// Intrinsic.Validate rejects offenders up front.
 			if len(limbs) != 1 {
 				panic("multi-limb constant operand")
