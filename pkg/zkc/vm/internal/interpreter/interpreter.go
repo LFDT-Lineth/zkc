@@ -1531,23 +1531,23 @@ func shr64[W word.Word[W]](values []W, width uint64) []W {
 // machine word bandwidth.
 func packOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, pool, stack []W) []W {
 	var (
-		base, length, isConst = iter.NextOperand()
-		zero                  W
-		bandwidth             = zero.Bandwidth()
-		words                 []W
-		cur                   W
-		off                   uint
+		base, nbOfValues, isConst = iter.NextOperand()
+		zero                      W
+		bandwidth                 = zero.Bandwidth()
+		words                     []W
+		cur                       W
+		off                       uint
 	)
 	// A constant operand is single value by construction.
 	if isConst {
-		if length != 1 {
-			panic(fmt.Sprintf("constant operand expect 1 value, got %d", length))
+		if nbOfValues != 1 {
+			panic(fmt.Sprintf("constant operand expect 1 value, got %d", nbOfValues))
 		}
 
 		return []W{pool[base]}
 	}
 	//
-	for i := int(length) - 1; i >= 0; i-- {
+	for i := int(nbOfValues) - 1; i >= 0; i-- {
 		var (
 			reg    = base + uint16(i)
 			w      = bitwidthOf(module, reg)
@@ -1712,19 +1712,19 @@ func loadIntrinsicOperand[W word.Word[W]](module descriptor.Module[W], iter *enc
 	pool, stack []W) *big.Int {
 	//
 	var (
-		base, length, isConst = iter.NextOperand()
-		value                 = new(big.Int)
+		base, nbOfValues, isConst = iter.NextOperand()
+		value                     = new(big.Int)
 	)
 	//
 	if isConst {
-		if length != 1 {
-			panic(fmt.Sprintf("constant operand expect 1 value, got %d", length))
+		if nbOfValues != 1 {
+			panic(fmt.Sprintf("constant operand expect 1 value, got %d", nbOfValues))
 		}
 
 		return pool[base].BigInt()
 	}
 	//
-	for i := uint16(0); i < length; i++ {
+	for i := uint16(0); i < nbOfValues; i++ {
 		var reg = base + i
 		//
 		value.Lsh(value, bitwidthOf(module, reg))

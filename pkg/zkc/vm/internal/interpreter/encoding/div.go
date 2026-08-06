@@ -33,8 +33,10 @@ func DivRem[W word.Word[W]](p *bytecode.DivRem[W], env Environment[W]) []uint32 
 		panic("divmod must be lowered before encoding")
 	case p.Quotient.HasValue():
 		op, target = DIV, p.Quotient.Unwrap()
-	default:
+	case p.Remainder.HasValue():
 		op, target = REM, p.Remainder.Unwrap()
+	default:
+		panic("divrem must have at least one target")
 	}
 	//
 	if p.Divisor.IsConstant() {
