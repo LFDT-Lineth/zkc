@@ -163,6 +163,6 @@ func bitwiseOpName(op bytecode.Operation) string {
 	case bytecode.OP_SHR:
 		return "shr"
 	default:
-		return "unknown"
+		panic(fmt.Sprintf("unexpected op: %v", op))
 	}
 }
