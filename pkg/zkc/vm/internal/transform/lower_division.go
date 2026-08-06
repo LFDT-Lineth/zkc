@@ -136,14 +136,18 @@ func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Ope
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
 		qy   = registers.Allocate("qy", util.Some(nX))
-		// qyr = qy + r must hold q*y + r which, by the DIV_HINT semantics
-		// (q = x/y, r = x%y), equals the dividend x exactly and so fits nX
-		// bits; the extra bit guards the addition's transient carry.
-		qyr = registers.Allocate("qy_plus_r", util.Some(nX+1))
-		// rw1 = r + w + 1 holds the divisor exactly (nY bits) + 1 to ensure no overflow
-		nRW = max(registers.Register(r).Bitwidth().Unwrap(),
-			registers.Register(w).Bitwidth().Unwrap()) + 1
-		rw1 = registers.Allocate("", util.Some(nRW))
+		qyr  = registers.Allocate("qy_plus_r", util.Some(nX))
+		// rw1 holds r + w + 1, which the zero-assert below forces to equal the
+		// divisor y — together with w's range constraint this establishes
+		// r < y.  It is sized to the widest addition operand: the sum then
+		// statically overshoots by at most one transient carry bit, which the
+		// splitter checks to zero, so any dishonest overflow is a constraint
+		// failure rather than a wrap.  With a freshly allocated remainder
+		// (lone division) this is the divisor width; with a user remainder
+		// target (remainder / divmod) it is the operand width nX.
+		rw1 = registers.Allocate("", util.Some(max(
+			registers.Register(r).Bitwidth().Unwrap(),
+			registers.Register(w).Bitwidth().Unwrap())))
 		// TODO: must separate z0 & z1 to avoid write conflict (for now).
 		z0 = registers.Allocate("zero", util.Some[uint](0))
 		z1 = registers.Allocate("zero", util.Some[uint](0))
