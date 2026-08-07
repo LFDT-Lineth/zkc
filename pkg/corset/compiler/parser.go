@@ -187,7 +187,6 @@ func NewParser(srcfile source.File, srcmap *source.Map[sexp.SExp], config Config
 	p.AddRecursiveListRule("==", eqParserRule)
 	p.AddRecursiveListRule("!=", eqParserRule)
 	p.AddRecursiveListRule("::", concatParserRule)
-	p.AddRecursiveListRule("debug", debugParserRule)
 	p.AddListRule("if", ifParserRule(parser))
 	p.AddRecursiveListRule("shift", shiftParserRule)
 	p.AddDefaultListRule(invokeParserRule(parser))
@@ -1290,14 +1289,6 @@ func (p *Parser) parseType(term sexp.SExp) (ast.Type, bool, *SyntaxError) {
 	}
 	// Done
 	return datatype, proven, nil
-}
-
-func debugParserRule(_ string, args []ast.Expr) (ast.Expr, error) {
-	if len(args) == 1 {
-		return &ast.Debug{Arg: args[0]}, nil
-	}
-	//
-	return nil, errors.New("incorrect number of arguments")
 }
 
 func constantParserRule(symbol string) (ast.Expr, bool, error) {

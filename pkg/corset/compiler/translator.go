@@ -35,8 +35,6 @@ import (
 type Config struct {
 	// Enable standard library
 	Stdlib bool
-	// Enable debug constraints
-	Debug bool
 	// Enable legacy register allocator
 	Legacy bool
 	// Enforce all types by default
@@ -272,23 +270,14 @@ func (t *translator) translateDeclaration(decl ast.Declaration, path file.Path) 
 
 // Translate a "defconstraint" declaration.
 func (t *translator) translateDefConstraint(decl *ast.DefConstraint) []SyntaxError {
-	// NOTE: a nil constraint arises when the constraint expression consists
-	// entirely of debug constraints, and debug mode is not enabled.  In such
-	// case, there is no constraint to translate.
-	if decl.Constraint == nil {
-		return nil
-	}
-	//
 	var (
 		module = t.moduleOf(decl.Constraint.Context())
 		// Translate expr body
 		expr, errors = t.translateLogical(decl.Constraint, module, 0)
 	)
-	// Apply guard
+	// NOTE: a nil expression indicates translation failed, and the
+	// corresponding errors have already been reported.
 	if expr == nil {
-		// NOTE: in this case, the constraint itself has been translated as nil.
-		// This means there is no constraint (e.g. its a debug constraint, but
-		// debug mode is not enabled).
 		return errors
 	}
 	// Apply guard (if applicable)

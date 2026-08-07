@@ -20,10 +20,10 @@ import (
 // PreprocessCircuit performs preprocessing prior to final translation.
 // Specifically, it expands all invocations and reductions.  Thus,
 // final translation is greatly simplified after this step.
-func PreprocessCircuit(debug bool, srcmap *source.Maps[ast.Node],
+func PreprocessCircuit(srcmap *source.Maps[ast.Node],
 	circuit *ast.Circuit) []SyntaxError {
 	// Construct fresh preprocessor
-	p := preprocessor{debug, srcmap}
+	p := preprocessor{srcmap}
 	// Preprocess all declarations
 	return p.preprocessDeclarations(circuit)
 }
@@ -32,8 +32,6 @@ func PreprocessCircuit(debug bool, srcmap *source.Maps[ast.Node],
 // it expands all invocations and reductions.  Thus, final
 // translation is greatly simplified after this step.
 type preprocessor struct {
-	// Debug enables the use of debug constraints.
-	debug bool
 	// Source maps nodes in the circuit back to the spans in their original
 	// source files.  This is needed when reporting syntax errors to generate
 	// highlights of the relevant source line(s) in question.
@@ -106,10 +104,6 @@ func (p *preprocessor) preprocessDefConstraint(decl *ast.DefConstraint) []Syntax
 	decl.Constraint, constraint_errors = p.preprocessExpressionInModule(decl.Constraint)
 	// preprocess (optional) guard
 	decl.Guard, guard_errors = p.preprocessOptionalExpressionInModule(decl.Guard)
-	// NOTE: decl.Constraint can be nil at this point.  This case is possible
-	// when the constraint expression consists entirely of debug constraints,
-	// and debug mode is not enabled.  Translation simply ignores such
-	// constraints.
 	// Combine errors
 	return append(constraint_errors, guard_errors...)
 }
@@ -158,8 +152,6 @@ func (p *preprocessor) preprocessOptionalExpressionInModule(expr ast.Expr) (ast.
 }
 
 // preprocess a sequence of zero or more expressions enclosed in a given module.
-// All expressions are expected to be non-voidable (see below for more on
-// voidability).
 func (p *preprocessor) preprocessExpressionsInModule(exprs []ast.Expr) ([]ast.Expr, []SyntaxError) {
 	//
 	errors := []SyntaxError{}
@@ -171,10 +163,6 @@ func (p *preprocessor) preprocessExpressionsInModule(exprs []ast.Expr) ([]ast.Ex
 			//
 			nexprs[i], errs = p.preprocessExpressionInModule(e)
 			errors = append(errors, errs...)
-			// Check for non-voidability
-			if nexprs[i] == nil {
-				errors = append(errors, *p.srcmap.SyntaxError(e, "void expression not permitted here"))
-			}
 		}
 	}
 	//
@@ -205,12 +193,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 		nexpr, errors = &ast.Connective{Sign: e.Sign, Args: args}, errs
 	case *ast.Constant:
 		return e, nil
-	case *ast.Debug:
-		if p.debug {
-			return p.preprocessExpressionInModule(e.Arg)
-		}
-		// When debug is not enabled, return "void".
-		return nil, nil
 	case *ast.Equation:
 		lhs, errs1 := p.preprocessExpressionInModule(e.Lhs)
 		rhs, errs2 := p.preprocessExpressionInModule(e.Rhs)

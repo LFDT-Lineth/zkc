@@ -57,8 +57,7 @@ func CompileSourceFiles(config CompilationConfig, srcfiles []source.File,
 		return hir.Schema{}, SourceMap{}, errs
 	}
 	// Compile each module into the schema
-	comp := NewCompiler(circuit, srcmap).
-		SetDebug(config.Debug)
+	comp := NewCompiler(circuit, srcmap)
 	// Configure register allocator (if requested)
 	if config.Legacy {
 		comp.SetAllocator(compiler.LegacyAllocator)
@@ -85,8 +84,6 @@ type Compiler struct {
 	allocator func(compiler.RegisterAllocation)
 	// A high-level definition of a Corset circuit.
 	circuit ast.Circuit
-	// Determines whether debug
-	debug bool
 	// Determines whether to apply sanity checks
 	checks bool
 	// Source maps nodes in the circuit back to the spans in their original
@@ -97,14 +94,7 @@ type Compiler struct {
 
 // NewCompiler constructs a new compiler for a given set of modules.
 func NewCompiler(circuit ast.Circuit, srcmaps *source.Maps[ast.Node]) *Compiler {
-	return &Compiler{compiler.DEFAULT_ALLOCATOR, circuit, false, true, srcmaps}
-}
-
-// SetDebug enables or disables debug mode.  In debug mode, debug constraints
-// will be compiled in.
-func (p *Compiler) SetDebug(flag bool) *Compiler {
-	p.debug = flag
-	return p
+	return &Compiler{compiler.DEFAULT_ALLOCATOR, circuit, true, srcmaps}
 }
 
 // SetAllocator overrides the default register allocator.
@@ -132,7 +122,7 @@ func (p *Compiler) Compile(config compiler.Config) (hir.Schema, SourceMap, []Syn
 		return hir.Schema{}, SourceMap{}, errors
 	}
 	// Preprocess circuit to remove invocations, reductions, etc.
-	if errors = compiler.PreprocessCircuit(p.debug, p.srcmap, &p.circuit); len(errors) > 0 {
+	if errors = compiler.PreprocessCircuit(p.srcmap, &p.circuit); len(errors) > 0 {
 		return hir.Schema{}, SourceMap{}, errors
 	}
 	// Convert global scope into an environment by allocating all columns.

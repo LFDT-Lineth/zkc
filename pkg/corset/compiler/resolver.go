@@ -522,8 +522,6 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.Constant:
 		return nil
-	case *ast.Debug:
-		return r.finaliseExpressionInModule(scope, v.Arg)
 	case *ast.Equation:
 		lhs_errs := r.finaliseExpressionInModule(scope, v.Lhs)
 		rhs_errs := r.finaliseExpressionInModule(scope, v.Rhs)

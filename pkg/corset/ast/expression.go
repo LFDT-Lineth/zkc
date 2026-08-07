@@ -327,43 +327,6 @@ func (e *Constant) Dependencies() []Symbol {
 }
 
 // ============================================================================
-// Normalise
-// ============================================================================
-
-// Debug is an optional constraint which can be specifically enabled via the
-// debug setting.  The intention of debug constraints is that they capture
-// things which are implied by other constraints.  The ability to enable them
-// can simply help with debugging, should it arise that they are not actually
-// implied.
-type Debug struct{ Arg Expr }
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Debug) AsConstant() *big.Int {
-	return nil
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Debug) Context() Context {
-	return e.Arg.Context()
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Debug) Lisp() sexp.SExp {
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("debug"),
-		e.Arg.Lisp()})
-}
-
-// Dependencies needed to signal declaration.
-func (e *Debug) Dependencies() []Symbol {
-	return e.Arg.Dependencies()
-}
-
-// ============================================================================
 // Equality
 // ============================================================================
 
@@ -963,9 +926,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 		nexpr = &Connective{e.Sign, args}
 	case *Constant:
 		return e
-	case *Debug:
-		arg := Substitute(e.Arg, mapping, srcmap)
-		nexpr = &Debug{arg}
 	case *Equation:
 		lhs := Substitute(e.Lhs, mapping, srcmap)
 		rhs := Substitute(e.Rhs, mapping, srcmap)
@@ -1072,8 +1032,6 @@ func ShallowCopy(expr Expr) Expr {
 		return &Connective{e.Sign, e.Args}
 	case *Constant:
 		return &Constant{e.Val}
-	case *Debug:
-		return &Debug{e.Arg}
 	case *Equation:
 		return &Equation{e.Kind, e.Lhs, e.Rhs}
 	case *Exp:

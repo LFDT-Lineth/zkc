@@ -284,8 +284,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 		result = ast.BOOL_TYPE
 	case *ast.Constant:
 		result = ast.NewIntType(math.NewInterval(e.Val, e.Val))
-	case *ast.Debug:
-		result, errors = p.typeCheckExpressionInModule(expected, e.Arg, functional)
 	case *ast.Equation:
 		_, errs1 := p.typeCheckExpressionInModule(ast.UINT_TYPE, e.Lhs, true)
 		_, errs2 := p.typeCheckExpressionInModule(ast.UINT_TYPE, e.Rhs, true)

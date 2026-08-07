@@ -499,18 +499,6 @@ func Test_Invalid_Array_05(t *testing.T) {
 }
 
 // ===================================================================
-// Debug
-// ===================================================================
-
-func Test_Invalid_Debug_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/debug_invalid_01")
-}
-
-func Test_Invalid_Debug_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/debug_invalid_02")
-}
-
-// ===================================================================
 // Perspectives
 // ===================================================================
 func Test_Invalid_Perspective_01(t *testing.T) {
