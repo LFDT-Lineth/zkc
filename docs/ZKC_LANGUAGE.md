@@ -469,8 +469,9 @@ results are masked to the declared bit width of the target.
 
 **Parentheses are required** when mixing operators of different kinds.
 Chains of the _same_ operator are permitted without extra parentheses,
-except for the division-like operators (`/`, `%` and `/%`) whose chains
-must always be braced explicitly:
+except for the division-like operators (`/`, `%`) whose chains
+must always be braced explicitly. Obviously, a chain of `/%`, even with brace,
+ is not possible: 
 
 ```zkc
 // OK — same operator chained
@@ -490,6 +491,9 @@ var bad2:u8 = x << y >> z
 
 // ERROR — division chain without braces
 var bad3:u8 = x / y / z
+
+//ERROR - (a /% b) is two registers, so can't apply /% on it
+var q, r:u8 q, r = (a /% b) /% c
 ```
 
 Comparison operators (used in conditions only):
