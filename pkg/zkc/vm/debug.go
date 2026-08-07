@@ -37,10 +37,12 @@ func BootAndDebug[W Word[W]](program Program[W], in map[string][]byte, observer 
 		fid, pc, frame := interpreter.ExtractExecutingState(bci)
 		// Clone the frame so the observer sees a stable snapshot which cannot be
 		// mutated by subsequent execution.
-		observer(State[W]{fid, pc, opcode == encoding.RET, slices.Clone(frame)})
+		returning := opcode == encoding.RET || opcode == encoding.WIDE|encoding.WIDE_RET<<8
+		//
+		observer(State[W]{fid, pc, returning, slices.Clone(frame)})
 	})
 	// Boot and execute to completion.
-	_, errs := BootAndExecute(bci, in, math.MaxUint)
+	_, _, errs := BootAndExecute(bci, in, math.MaxUint)
 	//
 	return errs
 }

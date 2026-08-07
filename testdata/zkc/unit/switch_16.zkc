@@ -1,0 +1,30 @@
+pub input data(address:u8) -> (byte:u32)
+pub output out(address:u8) -> (byte:u32)
+
+memory scratch(address:u8) -> (word:u32)
+
+fn main<scratch>() {
+    var x:u32 = data[0]
+    var r:u32
+    switch x {
+        case 1: {
+            // function call inside a case arm: the call lookup's source
+            // selector is gated on this arm's bit.
+            r = bump(x)
+        }
+        case 2: {
+            // RAM write + read inside a case arm.
+            scratch[0] = x
+            r = scratch[0] + 40
+        }
+        default: {
+            r = x
+        }
+    }
+    //
+    out[0] = r
+}
+
+fn bump(v:u32) -> (w:u32) {
+    w = v + 100
+}

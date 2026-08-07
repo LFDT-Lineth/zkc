@@ -43,6 +43,7 @@ func TestGolden(t *testing.T) {
 		{"call", callSrc},            // CALL / RETURN width checks
 		{"carry", carrySrc},          // 128-bit pair accumulation
 		{"divmod", divModSrc},        // INT_DIV / INT_REM
+		{"scratch", scratchSrc},      // fixed-array scratch RAM (bounded read-write)
 	}
 
 	for _, tc := range cases {

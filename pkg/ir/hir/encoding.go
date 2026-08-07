@@ -22,7 +22,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
@@ -30,16 +29,16 @@ import (
 
 const (
 	// Constraints
-	assertionTag        = byte(0)
-	interleavingTag     = byte(1)
-	lookupTag           = byte(2)
-	permutationTag      = byte(3)
-	rangeTag            = byte(4)
-	sortedUnfilteredTag = byte(5)
-	sortedFilteredTag   = byte(6)
-	vanishingTag        = byte(7)
-	fnCallTag           = byte(8)
-	fnCondCallTag       = byte(9)
+	unusedTag1    = byte(0)
+	unusedTag2    = byte(1)
+	lookupTag     = byte(2)
+	unusedTag3    = byte(3)
+	rangeTag      = byte(4)
+	unusedTag4Tag = byte(5)
+	unusedTag5Tag = byte(6)
+	vanishingTag  = byte(7)
+	unusedTag6    = byte(8)
+	unusedTag7    = byte(9)
 	// Logicals
 	conjunctTag   = byte(10)
 	disjunctTag   = byte(11)
@@ -67,129 +66,16 @@ const (
 
 func encode_constraint(constraint schema.Constraint[word.BigEndian]) ([]byte, error) {
 	switch c := constraint.(type) {
-	case Assertion:
-		return encode_assertion(c)
-	case FunctionCall:
-		return encode_fncall(c)
-	case InterleavingConstraint:
-		return encode_interleaving(c)
 	case LookupConstraint:
 		return encode_lookup(c)
-	case PermutationConstraint:
-		return encode_permutation(c)
 	case RangeConstraint:
 		return encode_range(c)
-	case SortedConstraint:
-		return encode_sorted(c)
 	case VanishingConstraint:
 		return encode_vanishing(c)
 	default:
 		name := reflect.TypeOf(constraint).String()
 		return nil, fmt.Errorf("unknown constraint: %s (%s)", name, constraint.Name())
 	}
-}
-
-func encode_assertion(c Assertion) ([]byte, error) {
-	var (
-		buffer     bytes.Buffer
-		gobEncoder = gob.NewEncoder(&buffer)
-	)
-	// Tag
-	if _, err := buffer.Write([]byte{assertionTag}); err != nil {
-		return nil, err
-	}
-	// Handle
-	if err := gobEncoder.Encode(c.Handle); err != nil {
-		return nil, err
-	}
-	// Context
-	if err := gobEncoder.Encode(c.Context); err != nil {
-		return nil, err
-	}
-	// Domain
-	if err := gobEncoder.Encode(&c.Domain); err != nil {
-		return nil, err
-	}
-	// Constraint
-	err := encode_logical[constraint.Property, term.Computation[word.BigEndian]](c.Property, &buffer)
-	// Done
-	return buffer.Bytes(), err
-}
-
-func encode_fncall(c FunctionCall) ([]byte, error) {
-	var (
-		buffer     bytes.Buffer
-		gobEncoder      = gob.NewEncoder(&buffer)
-		tag        byte = fnCallTag
-		err        error
-	)
-	//
-	if c.Selector.HasValue() {
-		tag = fnCondCallTag
-	}
-	// Tag
-	if _, err := buffer.Write([]byte{tag}); err != nil {
-		return nil, err
-	}
-	// Handle
-	if err = gobEncoder.Encode(c.Handle); err != nil {
-		return nil, err
-	}
-	// Function caller
-	if err := gobEncoder.Encode(c.Caller); err != nil {
-		return nil, err
-	}
-	// Function callee
-	if err := gobEncoder.Encode(c.Callee); err != nil {
-		return nil, err
-	}
-	// Returns
-	if err = encode_nary(encode_term[LogicalTerm, Term], &buffer, c.Returns); err != nil {
-		return nil, err
-	}
-	// Arguments
-	if err = encode_nary(encode_term[LogicalTerm, Term], &buffer, c.Arguments); err != nil {
-		return nil, err
-	}
-	// Selector (Optional)
-	if c.Selector.HasValue() {
-		err = encode_logical[LogicalTerm, Term](c.Selector.Unwrap(), &buffer)
-	}
-	//
-	return buffer.Bytes(), err
-}
-
-func encode_interleaving(c InterleavingConstraint) ([]byte, error) {
-	var (
-		buffer     bytes.Buffer
-		gobEncoder = gob.NewEncoder(&buffer)
-	)
-	// Tag
-	if _, err := buffer.Write([]byte{interleavingTag}); err != nil {
-		return nil, err
-	}
-	// Handle
-	if err := gobEncoder.Encode(c.Handle); err != nil {
-		return nil, err
-	}
-	// Target Context
-	if err := gobEncoder.Encode(c.TargetContext); err != nil {
-		return nil, err
-	}
-	// Target term
-	if err := encode_term[LogicalTerm, Term](c.Target, &buffer); err != nil {
-		return nil, err
-	}
-	// Source Context
-	if err := gobEncoder.Encode(c.SourceContext); err != nil {
-		return nil, err
-	}
-	// Source terms
-	if err := encode_nary(encode_term[LogicalTerm, Term], &buffer, c.Sources); err != nil {
-		return nil, err
-	}
-	//
-	return buffer.Bytes(), nil
 }
 
 func encode_lookup(c LookupConstraint) ([]byte, error) {
@@ -238,84 +124,6 @@ func encode_lookup_vector(vector lookup.Vector[word.BigEndian, Term], buffer *by
 	}
 	// Source terms
 	return encode_nary(encode_term[LogicalTerm, Term], buffer, vector.Terms)
-}
-
-func encode_permutation(c PermutationConstraint) ([]byte, error) {
-	var (
-		buffer     bytes.Buffer
-		gobEncoder = gob.NewEncoder(&buffer)
-	)
-	// Tag
-	if _, err := buffer.Write([]byte{permutationTag}); err != nil {
-		return nil, err
-	}
-	// Handle
-	if err := gobEncoder.Encode(c.Handle); err != nil {
-		return nil, err
-	}
-	// Column Context
-	if err := gobEncoder.Encode(c.Context); err != nil {
-		return nil, err
-	}
-	// Target terms
-	if err := gobEncoder.Encode(c.Targets); err != nil {
-		return nil, err
-	}
-	// Source terms
-	if err := gobEncoder.Encode(c.Sources); err != nil {
-		return nil, err
-	}
-	//
-	return buffer.Bytes(), nil
-}
-
-func encode_sorted(c SortedConstraint) ([]byte, error) {
-	var (
-		buffer     bytes.Buffer
-		gobEncoder = gob.NewEncoder(&buffer)
-		tag        byte
-	)
-	//
-	if c.Selector.HasValue() {
-		tag = sortedFilteredTag
-	} else {
-		tag = sortedUnfilteredTag
-	}
-	// Tag
-	if _, err := buffer.Write([]byte{tag}); err != nil {
-		return nil, err
-	}
-	// Handle
-	if err := gobEncoder.Encode(c.Handle); err != nil {
-		return nil, err
-	}
-	// Context
-	if err := gobEncoder.Encode(c.Context); err != nil {
-		return nil, err
-	}
-	// Bitwidth
-	if err := gobEncoder.Encode(c.BitWidth); err != nil {
-		return nil, err
-	}
-	// Signs
-	if err := gobEncoder.Encode(c.Signs); err != nil {
-		return nil, err
-	}
-	// Strict
-	if err := gobEncoder.Encode(c.Strict); err != nil {
-		return nil, err
-	}
-	// Optional Selector
-	if c.Selector.HasValue() {
-		// Constraint
-		if err := encode_term[LogicalTerm, Term](c.Selector.Unwrap(), &buffer); err != nil {
-			return nil, err
-		}
-	}
-	// Sources
-	err := encode_nary(encode_term[LogicalTerm, Term], &buffer, c.Sources)
-	//
-	return buffer.Bytes(), err
 }
 
 func encode_vanishing(c VanishingConstraint) ([]byte, error) {
@@ -372,134 +180,15 @@ func encode_range(c RangeConstraint) ([]byte, error) {
 
 func decode_constraint(bytes []byte) (schema.Constraint[word.BigEndian], error) {
 	switch bytes[0] {
-	case assertionTag:
-		return decode_assertion(bytes[1:])
-	case fnCallTag, fnCondCallTag:
-		return decode_fncall(bytes[0] == fnCondCallTag, bytes[1:])
-	case interleavingTag:
-		return decode_interleaving(bytes[1:])
 	case lookupTag:
 		return decode_lookup(bytes[1:])
-	case permutationTag:
-		return decode_permutation(bytes[1:])
 	case rangeTag:
 		return decode_range(bytes[1:])
-	case sortedUnfilteredTag:
-		return decode_sorted(false, bytes[1:])
-	case sortedFilteredTag:
-		return decode_sorted(true, bytes[1:])
 	case vanishingTag:
 		return decode_vanishing(bytes[1:])
 	default:
 		return nil, fmt.Errorf("unknown constraint (tag %d)", bytes[0])
 	}
-}
-
-func decode_assertion(data []byte) (schema.Constraint[word.BigEndian], error) {
-	var (
-		buffer     = bytes.NewBuffer(data)
-		gobDecoder = gob.NewDecoder(buffer)
-		property   LogicalTerm
-		assertion  Assertion
-		err        error
-	)
-	// Handle
-	if err = gobDecoder.Decode(&assertion.Handle); err != nil {
-		return assertion, err
-	}
-	// Context
-	if err = gobDecoder.Decode(&assertion.Context); err != nil {
-		return assertion, err
-	}
-	// Domain
-	if err = gobDecoder.Decode(&assertion.Domain); err != nil {
-		return assertion, err
-	}
-	//
-	property, err = decode_logical(buffer)
-	//
-	if err == nil {
-		// NOTE: the following will eventually need to be replaced if/when
-		// computations diverge from terms.  For example, computations support a
-		// more diverse set of operations than arithmetic terms.
-		assertion.Property = term.NewLogicalComputation[word.BigEndian, LogicalTerm, Term](property)
-	}
-	// Success!
-	return assertion, err
-}
-
-func decode_fncall(conditional bool, data []byte) (schema.Constraint[word.BigEndian], error) {
-	var (
-		buffer     = bytes.NewBuffer(data)
-		gobDecoder = gob.NewDecoder(buffer)
-		call       FunctionCall
-		err        error
-	)
-	// Handle
-	if err = gobDecoder.Decode(&call.Handle); err != nil {
-		return call, err
-	}
-	// Caller
-	if err = gobDecoder.Decode(&call.Caller); err != nil {
-		return call, err
-	}
-	// Callee
-	if err = gobDecoder.Decode(&call.Callee); err != nil {
-		return call, err
-	}
-	// Returns
-	if call.Returns, err = decode_nary(decode_term, buffer); err != nil {
-		return call, err
-	}
-	// Arguments
-	if call.Arguments, err = decode_nary(decode_term, buffer); err != nil {
-		return call, err
-	}
-	//
-	if conditional {
-		var selector LogicalTerm
-		//
-		if selector, err = decode_logical(buffer); err != nil {
-			return call, err
-		}
-		// Wrap selector
-		call.Selector = util.Some(selector)
-	} else {
-		call.Selector = util.None[LogicalTerm]()
-	}
-	//
-	return call, nil
-}
-
-func decode_interleaving(data []byte) (schema.Constraint[word.BigEndian], error) {
-	var (
-		buffer       = bytes.NewBuffer(data)
-		gobDecoder   = gob.NewDecoder(buffer)
-		interleaving InterleavingConstraint
-		err          error
-	)
-	// Handle
-	if err = gobDecoder.Decode(&interleaving.Handle); err != nil {
-		return interleaving, err
-	}
-	// Target Context
-	if err = gobDecoder.Decode(&interleaving.TargetContext); err != nil {
-		return interleaving, err
-	}
-	// Targets
-	if interleaving.Target, err = decode_term(buffer); err != nil {
-		return interleaving, err
-	}
-	// Source Context
-	if err = gobDecoder.Decode(&interleaving.SourceContext); err != nil {
-		return interleaving, err
-	}
-	// Sources
-	if interleaving.Sources, err = decode_nary(decode_term, buffer); err != nil {
-		return interleaving, err
-	}
-	//
-	return interleaving, nil
 }
 
 func decode_lookup(data []byte) (schema.Constraint[word.BigEndian], error) {
@@ -555,76 +244,6 @@ func decode_lookup_vector(buf *bytes.Buffer) (lookup.Vector[word.BigEndian, Term
 	}
 	// Done
 	return vector, nil
-}
-
-func decode_permutation(data []byte) (schema.Constraint[word.BigEndian], error) {
-	var (
-		buffer      = bytes.NewBuffer(data)
-		gobDecoder  = gob.NewDecoder(buffer)
-		permutation PermutationConstraint
-		err         error
-	)
-	// Handle
-	if err = gobDecoder.Decode(&permutation.Handle); err != nil {
-		return permutation, err
-	}
-	// Column Context
-	if err = gobDecoder.Decode(&permutation.Context); err != nil {
-		return permutation, err
-	}
-	// Target terms
-	if err = gobDecoder.Decode(&permutation.Targets); err != nil {
-		return permutation, err
-	}
-	// Source terms
-	if err = gobDecoder.Decode(&permutation.Sources); err != nil {
-		return permutation, err
-	}
-	//
-	return permutation, nil
-}
-
-func decode_sorted(selector bool, data []byte) (schema.Constraint[word.BigEndian], error) {
-	var (
-		buffer     = bytes.NewBuffer(data)
-		gobDecoder = gob.NewDecoder(buffer)
-		sorted     SortedConstraint
-		err        error
-	)
-	// Handle
-	if err = gobDecoder.Decode(&sorted.Handle); err != nil {
-		return nil, err
-	}
-	// Context
-	if err = gobDecoder.Decode(&sorted.Context); err != nil {
-		return nil, err
-	}
-	// Bitwidth
-	if err := gobDecoder.Decode(&sorted.BitWidth); err != nil {
-		return nil, err
-	}
-	// Signs
-	if err := gobDecoder.Decode(&sorted.Signs); err != nil {
-		return nil, err
-	}
-	// Strict
-	if err := gobDecoder.Decode(&sorted.Strict); err != nil {
-		return nil, err
-	}
-	// Optional Selector
-	if selector {
-		var term Term
-		//
-		if term, err = decode_term(buffer); err != nil {
-			return nil, err
-		}
-		//
-		sorted.Selector = util.Some(term)
-	}
-	// Sources
-	sorted.Sources, err = decode_nary(decode_term, buffer)
-	// Done
-	return sorted, err
 }
 
 func decode_range(data []byte) (schema.Constraint[word.BigEndian], error) {

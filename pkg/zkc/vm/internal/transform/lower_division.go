@@ -60,7 +60,7 @@ func lowerDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descript
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
 }
 
 func lowerDivisionCode[W word.Word[W]](
@@ -74,9 +74,9 @@ func lowerDivisionCode[W word.Word[W]](
 	//
 	switch dr.Opcode {
 	case encoding.DIV:
-		return expandDivision[W](dr.Target, dr.Dividend, dr.Divisor, registers)
+		return expandDivision(dr.Target, dr.Dividend, dr.Divisor, registers)
 	case encoding.REM:
-		return expandRemainder[W](dr.Target, dr.Dividend, dr.Divisor, registers)
+		return expandRemainder(dr.Target, dr.Dividend, dr.Divisor, registers)
 	default:
 		return []Bytecode[W]{b}
 	}

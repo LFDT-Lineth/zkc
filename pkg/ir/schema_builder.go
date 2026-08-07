@@ -26,7 +26,7 @@ import (
 // the various required components.  This provides a useful way for constructing
 // modules once all the various pieces of information have been finalised.
 type BuildableModule[F any, C schema.Constraint[F], M any] interface {
-	Init(name module.Name, padding, public, synthetic, native, static bool, keys uint) M
+	Init(name module.Name, padding, public, private, synthetic, native, static bool, keys uint) M
 	// Add one or more assignments to this buildable module
 	AddAssignments(assignments ...schema.Assignment[F])
 	// Add one or more constraints to this buildable module
@@ -56,8 +56,8 @@ func BuildModule[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T], 
 	//
 	var module M
 	// Build it
-	module = module.Init(m.Name(), m.AllowPadding(), m.IsPublic(), m.IsSynthetic(), m.IsNative(),
-		m.IsStatic(), m.Keys())
+	module = module.Init(m.Name(), m.AllowPadding(), m.IsPublicOutput(), m.IsPrivateOutput(), m.IsSynthetic(),
+		m.IsNative(), m.IsStatic(), m.Keys())
 	module.AddRegisters(m.Registers()...)
 	module.AddAssignments(m.Assignments()...)
 	module.AddConstraints(m.Constraints()...)
@@ -85,32 +85,17 @@ type SchemaBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 
 // NewSchemaBuilder constructs a new schema builder with a given number of
 // externally defined modules.  Such modules are allocated module indices first.
-func NewSchemaBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T], E register.ConstMap](externs ...E,
-) SchemaBuilder[F, C, T] {
+func NewSchemaBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]]() SchemaBuilder[F, C, T] {
 	var (
-		modmap   = make(map[module.Name]uint, 0)
-		nexterns = make([]register.ConstMap, len(externs))
+		modmap = make(map[module.Name]uint, 0)
 	)
-	// Initialise module map
-	for i, m := range externs {
-		// Quick sanity check
-		if _, ok := modmap[m.Name()]; ok {
-			panic(fmt.Sprintf("duplicate module \"%s\" detected", m.Name()))
-		}
-		//
-		modmap[m.Name()] = uint(i)
-	}
-	// Convert externs
-	for i, m := range externs {
-		nexterns[i] = m
-	}
 	//
-	return SchemaBuilder[F, C, T]{modmap, nexterns, nil}
+	return SchemaBuilder[F, C, T]{modmap, nil, nil}
 }
 
 // NewModule constructs a new, empty module and returns its unique module
 // identifier.
-func (p *SchemaBuilder[F, C, T]) NewModule(name module.Name, padding, public, synthetic, static, native bool,
+func (p *SchemaBuilder[F, C, T]) NewModule(name module.Name, padding, public, private, synthetic, static, native bool,
 	keys uint) uint {
 	var mid = uint(len(p.externs) + len(p.modules))
 	// Sanity check this module is not already declared
@@ -118,7 +103,8 @@ func (p *SchemaBuilder[F, C, T]) NewModule(name module.Name, padding, public, sy
 		panic(fmt.Sprintf("module \"%s\" already declared", name))
 	}
 	//
-	p.modules = append(p.modules, NewModuleBuilder[F, C, T](name, mid, padding, public, synthetic, static, native, keys))
+	p.modules = append(p.modules,
+		NewModuleBuilder[F, C, T](name, mid, padding, public, private, synthetic, static, native, keys))
 	p.modmap[name] = mid
 	//
 	return mid

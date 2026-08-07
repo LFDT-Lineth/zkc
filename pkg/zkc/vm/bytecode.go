@@ -68,6 +68,23 @@ type Register[W Word[W]] = descriptor.Register[W]
 // bytecode RegisterId).
 type RegisterId = bytecode.RegisterId
 
+// Operand represents either a register operand, or a constant operand.
+type Operand[W Word[W]] = bytecode.Operand[W]
+
+// NewRegisterOperand creates a new operand from a set of one or more register
+// limbs, where the most significant limb comes first (i.e. has the lowest
+// index).
+func NewRegisterOperand[W word.Word[W]](limbs ...RegisterId) Operand[W] {
+	return bytecode.NewRegisterOperand[W](limbs...)
+}
+
+// NewConstantOperand creates a new operand from a set of or more constant
+// limbs, where the most significant limb comes first (i.e. has the lowest
+// index).
+func NewConstantOperand[W word.Word[W]](constant ...W) Operand[W] {
+	return bytecode.NewConstantOperand(constant...)
+}
+
 // BytecodeVector bundles together one or more bytecode instructions which, with
 // restrictions, can be executed by the underlying machine "in parallel".  The
 // approach is analoguous to the concept of "Very-Long Instruction Words (VLIW)"
@@ -128,6 +145,12 @@ type BinaryProgram[W Word[W]] = encoding.Binary[W]
 // bytecode, and is primarily for debugging and validation.
 type BytecodeEnvironment[W Word[W]] = bytecode.Environment[W]
 
+// Failure indicates a recognised machine failure arose, such as attempting to
+// execute a fail instruction.  Such a machine failure is distinct from some
+// kind of internal failure which is not expected to even happen (i.e. unless
+// there is a bug in the interpreter).
+type Failure = interpreter.Failure
+
 // NewBytecodeInterpreter constructs an interpreter for executing the given
 // bytecode program.  The modulus is the prime characteristic of the surrounding
 // field, used when executing native field instructions.
@@ -166,11 +189,12 @@ func NewBytecodeVector[W word.Word[W]](codes ...Bytecode[W]) BytecodeVector[W] {
 	return bytecode.NewVector(codes...)
 }
 
-// NewBytecodeFunction constructs a bytecode (descriptor) function module from its
-// registers and a body of bytecode vectors.
+// NewBytecodeFunction constructs a bytecode (descriptor) function module from
+// its registers, declared memory effects (the module ids of the memories the
+// function may access) and a body of bytecode vectors.
 func NewBytecodeFunction[W word.Word[W]](name string, kind FunctionKind, registers []Register[W],
-	code ...BytecodeVector[W]) *Function[W] {
-	return descriptor.NewFunction[W](name, registers, kind, code)
+	effects []ModuleId, code ...BytecodeVector[W]) *Function[W] {
+	return descriptor.NewFunction(name, registers, kind, effects, code)
 }
 
 // NewRegister constructs a new register descriptor, where native
@@ -332,8 +356,21 @@ func SkipTargets[W Word[W]](b Bytecode[W], from uint) []uint {
 
 // SkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
-func SkipIf[W Word[W]](op Cond, skip uint16, left, right RegisterId) Bytecode[W] {
-	return bytecode.NewSkipIf[W](op, skip, left, right)
+func SkipIf[W Word[W]](op Cond, skip uint16, left RegisterId, right Operand[W]) Bytecode[W] {
+	var lvec = bytecode.NewRegisterVector(left)
+	//
+	return bytecode.NewSkipIf(op, skip, lvec, right)
+}
+
+// SkipIfConst constructs a conditional branch instruction which jumps to the
+// target address when "left op right" holds, comparing single registers.
+func SkipIfConst[W Word[W]](op Cond, skip uint16, left RegisterId, right W) Bytecode[W] {
+	var (
+		lvec = bytecode.NewRegisterVector(left)
+		rvec = bytecode.NewConstantOperand(right)
+	)
+	//
+	return bytecode.NewSkipIf(op, skip, lvec, rvec)
 }
 
 // Switch constructs a multiway-skip (SMW) instruction which dispatches
@@ -576,6 +613,9 @@ type BytecodeSkipIf[W Word[W]] = bytecode.SkipIf[W]
 
 // BytecodeSwitch is a multiway-skip (switch) bytecode.
 type BytecodeSwitch[W Word[W]] = bytecode.Switch[W]
+
+// BytecodeDispatch is a one-hot multiway-skip (dispatch) bytecode.
+type BytecodeDispatch[W Word[W]] = bytecode.Dispatch[W]
 
 // BytecodeJmp is an unconditional jump bytecode.
 type BytecodeJmp[W Word[W]] = bytecode.Jmp[W]

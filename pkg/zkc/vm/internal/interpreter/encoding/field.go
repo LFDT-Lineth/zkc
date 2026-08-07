@@ -13,50 +13,36 @@
 package encoding
 
 import (
+	"math"
+
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // FieldArith encodes a field-arithmetic bytecode (ADDMOD_P/SUBMOD_P/MULMOD_P).
-func FieldArith[W word.Word[W]](p *bytecode.FieldArith[W]) []uint32 {
-	return encodeFieldArith(p.Op, p.Target, p.Sources, p.Constant)
+func FieldArith[W word.Word[W]](p *bytecode.FieldArith[W], env Environment[W]) []uint32 {
+	return encodeFieldArith(p.Op, p.Target, p.Sources, p.Constant, env)
 }
 
 // DecodeFieldArithOperands extracts the raw operands (target register, source
 // register iterator, constant and instruction width) of a field-arithmetic
 // instruction.  It is shared by the disassembler (DecodeFieldArith) and the
 // interpreter's executor.
-func DecodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32) (
+func DecodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32, pool []W) (
 	rd RegisterId, sources Operands, constant W, n uint32) {
 	//
-	var (
-		nlimbs = (codes[pc] >> 16) & 0xff
-		nsrc   = uint((codes[pc] >> 24) & 0xff)
-		wide   = IsWideForm(pc, codes)
-		offset = pc
-		limb   W
-	)
+	var nsrc = uint((codes[pc] >> 24) & 0xff)
 	//
-	if wide {
+	if IsWideForm(pc, codes) {
 		rd = RegisterId(codes[pc+1] & 0xffff)
-		offset = pc + 1
+		constant = pool[codes[pc+1]>>16]
+		sources = NewWideOperands(0, nsrc, codes[pc+2:])
+		n = 2 + NumCodesPackedWide(nsrc)
 	} else {
 		rd = RegisterId((codes[pc] >> 8) & 0xff)
-	}
-	// Reconstruct the constant from its 32-bit limbs, most significant limb
-	// first: each limb is shifted into the low bits of the accumulator in turn.
-	for i := nlimbs; i > 0; i-- {
-		limb = limb.SetUint64(uint64(codes[offset+i]))
-		_, constant = constant.Shl64(32)
-		constant = constant.Or(limb)
-	}
-	// Source registers follow the constant limbs.
-	if wide {
-		sources = NewWideOperands(0, nsrc, codes[offset+1+nlimbs:])
-		n = 2 + nlimbs + NumCodesPackedWide(nsrc)
-	} else {
-		sources = NewOperands(0, nsrc, codes[offset+1+nlimbs:])
-		n = 1 + nlimbs + NumCodesPackedSmall(nsrc)
+		constant = pool[(codes[pc]>>16)&0xff]
+		sources = NewOperands(0, nsrc, codes[pc+1:])
+		n = 1 + NumCodesPackedSmall(nsrc)
 	}
 	//
 	return rd, sources, constant, n
@@ -68,80 +54,62 @@ func DecodeFieldArithOperands[W word.Word[W]](pc uint32, codes []uint32) (
 //	31                                0
 //
 // +--------+--------+--------+--------+
-// |  nsrc  |  ncon  |   rd   | opcode |
+// |  nsrc  |  cid   |   rd   | opcode |
 // +--------+--------+--------+--------+
-// | constant limb 0 (least significant)|
-// +------------------------------------+
-// |                ...                 |
-// +------------------------------------+
-// | constant limb ncon-1 (most sig.)   |
-// +------------------------------------+
-// | ... packed source registers ...    |
-// +------------------------------------+
+// | ... packed source registers ...   |
+// +-----------------------------------+
 //
-// Here, rd is a u8 destination register, ncon is the number of 32-bit constant
-// limbs (carried inline, least significant first, as for LDC_w) and nsrc is the
-// number of source registers (packed four-per-code after the constant).  The
-// operation itself (add, subtract or multiply, modulo the prime) is identified
-// by the opcode.  A field-sized constant can be wider than the 64 bits carried
-// by the integer vector forms, hence the inline limb encoding.  The wide form
-// moves the (now u16) destination register into a word of its own, preceding
-// the constant limbs, and packs the source registers two per word:
+// Here, rd is a u8 destination register, cid is a u8 constant pool identifier
+// for the constant operand and nsrc is the number of source registers (packed
+// four-per-code).  The operation itself (add, subtract or multiply, modulo
+// the prime) is identified by the opcode.  A field-sized constant can be
+// wider than the 64 bits carried by the integer vector forms, which the pool
+// accommodates naturally.  The wide form moves the (now u16) destination
+// register and the (now u16) pool identifier into a subsequent word, and
+// packs the source registers two per word:
 //
 // +--------+--------+--------+--------+
-// |  nsrc  |  ncon  |  n/a   | opcode |
+// |  nsrc  |  n/a   |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
-// |       n/a       |        rd       |
+// |       cid       |        rd       |
 // +-----------------+-----------------+
-// | ... constant limbs ...             |
-// +------------------------------------+
-// | ... packed source registers ...    |
-// +------------------------------------+
+// | ... packed source registers ...   |
+// +-----------------------------------+
+//
+// The wide form is also selected when the registers are small but the pool
+// identifier exceeds a byte.
 // ============================================================================
 
-// encodeFieldArith encodes a field-arithmetic instruction, carrying the
-// (possibly field-sized) constant inline as a sequence of 32-bit limbs followed
-// by the packed source registers.
-func encodeFieldArith[W word.Word[W]](op bytecode.Operation, rd RegisterId, sources []RegisterId, constant W) []uint32 {
+// encodeFieldArith encodes a field-arithmetic instruction, carrying its
+// (possibly field-sized) constant as a constant pool identifier followed by
+// the packed source registers.
+func encodeFieldArith[W word.Word[W]](op bytecode.Operation, rd RegisterId, sources []RegisterId, constant W,
+	env Environment[W]) []uint32 {
+	//
 	if len(sources) >= 256 {
 		panic("field instruction operand counts not supported")
 	}
 	//
 	var (
 		opcode = ADDMOD_P + uint32(op-bytecode.OP_ADDMOD_P)
-		// NOTE: big-endian byte ordering
-		bytes  = constant.BigInt().Bytes()
-		nlimbs = (len(bytes) + 3) / 4
 		wide   = IsWideRegisters(rd) || IsWideRegisters(sources...)
-		header = uint32(len(sources))<<24 | uint32(nlimbs)<<16
-		codes  []uint32
-		offset int
+		header = uint32(len(sources)) << 24
+		// NOTE: the pool identifier is stable across encoding passes
+		// (ConstantIndex interns), so the choice of form below cannot
+		// oscillate whilst the layout reaches a fixpoint.
+		cid = uint32(env.ConstantIndex(constant))
 	)
 	//
-	if nlimbs >= 256 {
-		panic("wide field constants not supported")
-	}
-	//
-	if wide {
-		codes = make([]uint32, nlimbs+2)
-		codes[0] = header | opcode | WIDE
-		codes[1] = uint32(rd)
-		offset = 2
-	} else {
-		codes = make([]uint32, nlimbs+1)
-		codes[0] = header | uint32(rd)<<8 | opcode
-		offset = 1
-	}
-	// Pack constant bytes into limbs, least significant limb first.
-	for i, b := range bytes {
-		var k = len(bytes) - 1 - i
+	if !wide && cid <= math.MaxUint8 {
+		var codes = []uint32{header | cid<<16 | uint32(rd)<<8 | opcode}
 		//
-		codes[offset+(k/4)] |= uint32(b) << (8 * (k % 4))
+		return append(codes, PackBytesIntoCodes(RegsAsBytes(sources))...)
 	}
-	// Append packed source registers.
-	if wide {
-		return append(codes, PackShortsIntoCodes(RegsAsShorts(sources))...)
+	// Wide form: also the fallback when the pool identifier exceeds a byte.
+	var codes = []uint32{
+		header | (WIDE_ADDMOD_P+uint32(op-bytecode.OP_ADDMOD_P))<<8 | WIDE,
+		cid<<16 | uint32(rd),
 	}
 	//
-	return append(codes, PackBytesIntoCodes(RegsAsBytes(sources))...)
+	return append(codes, PackShortsIntoCodes(RegsAsShorts(sources))...)
 }

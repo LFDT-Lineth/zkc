@@ -1,0 +1,20 @@
+pub input data(address:u8) -> (byte:u32)
+pub output out(address:u8) -> (byte:u32)
+
+fn main() {
+    var x:u32 = data[0]
+    // Each arm performs the output write itself: the write's lookup selector
+    // is gated on that arm's branch condition, the default arm's on the
+    // one-hot default bit.
+    switch x {
+        case 1: {
+            out[0] = 100
+        }
+        case 2: {
+            out[0] = 200
+        }
+        default: {
+            out[0] = x
+        }
+    }
+}

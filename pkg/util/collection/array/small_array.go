@@ -36,11 +36,9 @@ func NewSmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]](height ui
 	return SmallArray[K, T]{elements, bitwidth}
 }
 
-// Append new word on this array
-func (p *SmallArray[K, T]) Append(word T) MutArray[T] {
-	p.Pad(0, 1, word)
-	//
-	return p
+// RawSmallArray constructs a new array directly from raw data.
+func RawSmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]](data []K, bitwidth uint) *SmallArray[K, T] {
+	return &SmallArray[K, T]{data, bitwidth}
 }
 
 // Len returns the number of elements in this word array.
@@ -91,30 +89,41 @@ func (p *SmallArray[K, T]) Slice(start uint, end uint) Array[T] {
 	}
 }
 
-// Pad prepend array with n copies and append with m copies of the given padding
-// value.
-func (p *SmallArray[K, T]) Pad(n uint, m uint, padding T) MutArray[T] {
+// Pad prepends this array with n copies, and appends it with m copies, of the
+// given padding value.
+func (p *SmallArray[K, T]) Pad(n uint, m uint, padding T) {
 	var (
+		ol = p.Len()
 		// Determine new length
-		l = n + m + p.Len()
-		// Initialise new array
-		data = make([]K, l)
+		l = n + ol + m
 		//
-		val = K(padding.Uint64())
+		val  = K(padding.Uint64())
+		data = p.data
 	)
-	// copy
-	copy(data[n:], p.data)
-	p.data = data
+	//
+	if uint(cap(data)) < l {
+		// Insufficient capacity: allocate exactly, copying existing data
+		// directly into its final position.
+		data = make([]K, l)
+		copy(data[n:], p.data)
+	} else {
+		// Sufficient capacity: extend and shift in place.
+		data = data[:l]
+		//
+		if n > 0 {
+			copy(data[n:], data[:ol])
+		}
+	}
 	// Front padding!
 	for i := range n {
-		p.data[i] = val
+		data[i] = val
 	}
 	// Back padding!
 	for i := l - m; i < l; i++ {
-		p.data[i] = val
+		data[i] = val
 	}
-	//
-	return p
+	// done
+	p.data = data
 }
 
 func (p *SmallArray[K, T]) String() string {

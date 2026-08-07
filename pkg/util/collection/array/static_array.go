@@ -15,12 +15,10 @@ package array
 import (
 	"fmt"
 	"strings"
-
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // StaticArray implements an array of elements simply using an underlying array.
-type StaticArray[T word.Word[T]] struct {
+type StaticArray[T any] struct {
 	// The data stored in this column (as bytes).
 	data []T
 	// Bitwidth of each word in this array
@@ -28,7 +26,7 @@ type StaticArray[T word.Word[T]] struct {
 }
 
 // NewStaticArray constructs a new word array with a given capacity.
-func NewStaticArray[T word.Word[T]](height uint, bitwidth uint) *StaticArray[T] {
+func NewStaticArray[T any](height uint, bitwidth uint) *StaticArray[T] {
 	var (
 		elements = make([]T, height)
 	)
@@ -36,9 +34,9 @@ func NewStaticArray[T word.Word[T]](height uint, bitwidth uint) *StaticArray[T] 
 	return &StaticArray[T]{elements, bitwidth}
 }
 
-// Append new word on this array
-func (p *StaticArray[T]) Append(word T) MutArray[T] {
-	return p.Pad(0, 1, word)
+// RawStaticArray constructs a new array directly from raw data.
+func RawStaticArray[T any](data []T, bitwidth uint) *StaticArray[T] {
+	return &StaticArray[T]{data, bitwidth}
 }
 
 // Len returns the number of elements in this word array.
@@ -81,28 +79,40 @@ func (p *StaticArray[T]) Slice(start uint, end uint) Array[T] {
 	}
 }
 
-// Pad prepend array with n copies and append with m copies of the given padding
-// value.
-func (p *StaticArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
+// Pad prepends this array with n copies, and appends it with m copies, of the
+// given padding value.
+func (p *StaticArray[T]) Pad(n uint, m uint, padding T) {
 	var (
+		ol = p.Len()
 		// Determine new length
-		l = n + m + p.Len()
-		// Initialise new array
-		data = make([]T, l)
+		l = n + ol + m
+		//
+		data = p.data
 	)
-	// copy
-	copy(data[n:], p.data)
-	p.data = data
+	//
+	if uint(cap(data)) < l {
+		// Insufficient capacity: allocate exactly, copying existing data
+		// directly into its final position.
+		data = make([]T, l)
+		copy(data[n:], p.data)
+	} else {
+		// Sufficient capacity: extend and shift in place.
+		data = data[:l]
+		//
+		if n > 0 {
+			copy(data[n:], data[:ol])
+		}
+	}
 	// Front padding!
 	for i := range n {
-		p.Set(i, padding)
+		data[i] = padding
 	}
 	// Back padding!
 	for i := l - m; i < l; i++ {
-		p.Set(i, padding)
+		data[i] = padding
 	}
-	//
-	return p
+	// done
+	p.data = data
 }
 
 func (p *StaticArray[T]) String() string {

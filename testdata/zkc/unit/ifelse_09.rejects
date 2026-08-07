@@ -1,0 +1,11 @@
+{ "data": "0xFFFFFFFFFFFFFFFF", "expected": "0x03" }
+{ "data": "0xFFFFFFFFFFFFFFFF", "expected": "0x00" }
+{ "data": "0xFFFFFFFFFFFFFFFE", "expected": "0x01" }
+{ "data": "0xFFFFFFFF00000000", "expected": "0x01" }
+{ "data": "0x00000000FFFFFFFF", "expected": "0x01" }
+{ "data": "0x00000000FFFFFFFF", "expected": "0x03" }
+{ "data": "0x00000001FFFFFFFE", "expected": "0x02" }
+{ "data": "0x00000000FFFFFFFE", "expected": "0x02" }
+{ "data": "0xFFFFFFFF00000000", "expected": "0x02" }
+{ "data": "0x0000000000000000", "expected": "0x03" }
+{ "data": "0x0000000000000001", "expected": "0x00" }

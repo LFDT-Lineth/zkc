@@ -1,0 +1,20 @@
+//error:17:5-12:default case must be last in switch statement
+
+// ================
+// misplaced default
+// ================
+
+type exmp = u8
+
+const CASE_A     :exmp = 1
+const CASE_MATCH :exmp = 13
+
+fn main() {
+
+  var discr :exmp = CASE_MATCH
+
+  switch discr {
+    default: { }
+    case CASE_A: { }
+  }
+}

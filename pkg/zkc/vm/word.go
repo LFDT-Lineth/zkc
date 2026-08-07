@@ -25,6 +25,9 @@ import (
 // word.
 type WordConfig = word.Config
 
+// WORD_UINT32 provides metadata about the Uint32 word type.
+var WORD_UINT32 = WordConfig{Name: "Uint32", BandWidth: 32, RegisterWidth: 16}
+
 // WORD_UINT64 provides metadata about the Uint64 word type.
 var WORD_UINT64 = WordConfig{Name: "Uint64", BandWidth: 64, RegisterWidth: 32}
 
@@ -42,6 +45,9 @@ type Word[W any] = word.Word[W]
 
 // Uint represents an unbound unsigned integer.
 type Uint = word.Uint
+
+// Uint32 represents an 32-bit unsigned integer.
+type Uint32 = word.Uint32
 
 // Uint64 represents an 64-bit unsigned integer.
 type Uint64 = word.Uint64

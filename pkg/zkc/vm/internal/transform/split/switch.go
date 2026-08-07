@@ -30,3 +30,29 @@ func Switch[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Switc
 	//
 	panic("support splitting switch bytecodes")
 }
+
+// Dispatch splits a (one-hot) dispatch instruction.  Every register examined
+// by a dispatch is a 1-bit register and hence never splits; only the register
+// identifiers need remapping into the split layout.
+func Dispatch[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Dispatch[W],
+) []Bytecode[W] {
+	ncases := make([]bytecode.DispatchCase, len(insn.Cases))
+	//
+	for i, c := range insn.Cases {
+		ncases[i] = bytecode.DispatchCase{Bit: onlyLimb(mapping, c.Bit), Skip: c.Skip}
+	}
+	//
+	return []Bytecode[W]{&bytecode.Dispatch[W]{Cases: ncases, Default: onlyLimb(mapping, insn.Default)}}
+}
+
+// onlyLimb maps a register which cannot split (e.g. a 1-bit register) into its
+// single limb within the split layout.
+func onlyLimb[W word.Word[W]](mapping descriptor.LimbsMap[W], reg bytecode.RegisterId) bytecode.RegisterId {
+	var limbs = ApplyLimbsMap(mapping, reg)
+	//
+	if len(limbs) != 1 {
+		panic("register unexpectedly split")
+	}
+	//
+	return limbs[0]
+}

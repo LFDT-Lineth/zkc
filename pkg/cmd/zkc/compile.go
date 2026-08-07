@@ -115,23 +115,25 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, artifacts BuildArtifacts) {
 	// Construct binary file
 	var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.config.GetField(),
-		build.config.GetMaxStaticDepth(), artifacts.ir)
+		build.config.GetMaxStaticHeight(), artifacts.ir)
 	// Write to disk
 	WriteBinaryFile(binfile, filename)
 }
 
-// Validate the given schema by ensuring that every register in every module is referenced in at least one vanishing
-// constraint or lookup.  If any such register is encountered, this fires errors which identify the enclosing
-// modules and registers.
+// Validate the given schema by ensuring that:
+// - every register in every module is referenced in at least one vanishing
+// constraint or lookup.
+// - static tables are of power of two height
 func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
 	// Generate AIR representation
-	air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
-	// Perform validation check
+	air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticHeight())
+	// validate that all registers are referenced in at least one vanishing constraint or lookup
+
 	if errs := constraints.Validate(air); len(errs) > 0 {
 		for _, err := range errs {
-			log.Errorf("untouched register: %v", err)
+			log.Errorf("%v", err)
 		}
-		//
+		// Exit with error if any errors triggered
 		os.Exit(1)
 	}
 }
@@ -155,13 +157,13 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 	}
 	// Mid-level Intermediate Representation
 	if config.mir {
-		mir := constraints.GenerateMirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
+		mir := constraints.GenerateMirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticHeight())
 		//
 		debug.PrintAnySchema(mir, 80, config.verbose)
 	}
 	// // Arithmetic Intermediate Representation
 	if config.air {
-		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
+		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticHeight())
 		//
 		debug.PrintAnySchema(air, 80, config.verbose)
 	}
@@ -172,7 +174,7 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 			os.Exit(1)
 		}
 		//
-		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticDepth())
+		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticHeight())
 		// Register counts are reported before register splitting.  Splitting is
 		// the only field-specific transform that changes register widths, so
 		// recompile the program with it disabled to recover the pre-split widths.
@@ -183,7 +185,7 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 			preSplit, _ = ast.Compile(artifacts.ast.Unwrap(), config.build.config.SplitRegisters(false))
 		}
 		//
-		PrintCompileStats[F](air, preSplit, config.order)
+		PrintCompileStats(air, preSplit, config.order)
 	}
 }
 

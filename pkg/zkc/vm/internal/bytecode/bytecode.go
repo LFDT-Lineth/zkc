@@ -329,18 +329,7 @@ func NewSkip[W word.Word[W]](skip uint16) *Skip[W] {
 
 // NewSkipIf constructs a conditional branch instruction which jumps to the
 // target address when "left op right" holds, comparing single registers.
-func NewSkipIf[W word.Word[W]](op Condition, skip uint16, left, right RegisterId) *SkipIf[W] {
-	return &SkipIf[W]{Skip: skip, Left: NewRegisterVector(left), Right: NewRegisterVector(right), Op: op}
-}
-
-// NewSkipIfVec constructs a conditional branch instruction which jumps to the
-// target address when "left op right" holds, comparing multi-limb register
-// vectors.
-func NewSkipIfVec[W word.Word[W]](op Condition, skip uint16, left, right RegisterVector) *SkipIf[W] {
-	if left.Len != right.Len {
-		panic(fmt.Sprintf("mismatched limbs (%d vs %d)", left.Len, right.Len))
-	}
-	//
+func NewSkipIf[W word.Word[W]](op Condition, skip uint16, left RegisterVector, right Operand[W]) *SkipIf[W] {
 	return &SkipIf[W]{Skip: skip, Left: left, Right: right, Op: op}
 }
 
@@ -389,9 +378,11 @@ func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 // the row located at the address given by the address registers, in the memory
 // identified by id.  The kind of memory being read (ROM, static ROM, RAM, paged
 // RAM) is not recorded here: it is resolved from the environment when the
-// instruction is encoded.
-func NewMemRead[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId) *ReadWrite[W] {
-	return &ReadWrite[W]{Write: false, Id: id, Address: address, Data: data}
+// instruction is encoded.  An optional stamp operand carries the access's
+// timestamp (present only after timestamp threading).
+func NewMemRead[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId,
+	stamp ...[]RegisterId) *ReadWrite[W] {
+	return &ReadWrite[W]{Write: false, Id: id, Address: address, Data: data, Stamp: singleStamp(stamp)}
 }
 
 // SubConst constructs a subtraction instruction computing
@@ -413,9 +404,28 @@ func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 // written to the row located at the address given by the address registers, in
 // the memory identified by id.  The kind of memory being written (write-once,
 // RAM, paged RAM) is not recorded here: it is resolved from the environment when
-// the instruction is encoded.
-func NewMemWrite[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId) *ReadWrite[W] {
-	return &ReadWrite[W]{Write: true, Id: id, Address: address, Data: data}
+// the instruction is encoded.  An optional stamp operand carries the access's
+// timestamp (present only after timestamp threading).
+func NewMemWrite[W word.Word[W]](id uint16, address []RegisterId, data []RegisterId,
+	stamp ...[]RegisterId) *ReadWrite[W] {
+	return &ReadWrite[W]{Write: true, Id: id, Address: address, Data: data, Stamp: singleStamp(stamp)}
+}
+
+// singleStamp unwraps the optional variadic stamp operand of NewMemRead /
+// NewMemWrite, accepting either no stamp or exactly one.  The variadic
+// [][]RegisterId shape only encodes optionality (a Go optional-argument
+// idiom); it does NOT limit the stamp to one lane — the single accepted
+// operand is itself a register vector, whose lanes are the stamp's limbs
+// after register splitting.
+func singleStamp(stamp [][]RegisterId) []RegisterId {
+	switch len(stamp) {
+	case 0:
+		return nil
+	case 1:
+		return stamp[0]
+	default:
+		panic("at most one stamp operand allowed")
+	}
 }
 
 // NewBitwise constructs a bitwise instruction (and/or/xor) computing
@@ -513,4 +523,6 @@ func RegisterGobTypes[W word.Word[W]]() {
 	gob.Register(&Skip[W]{})
 	gob.Register(&SkipIf[W]{})
 	gob.Register(&Switch[W]{})
+	gob.Register(&Dispatch[W]{})
+	gob.Register(&Operand[W]{})
 }

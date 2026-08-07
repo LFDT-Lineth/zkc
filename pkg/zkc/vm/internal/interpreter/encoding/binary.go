@@ -28,6 +28,9 @@ type Binary[W word.Word[W]] struct {
 	env SymbolTable[W]
 	// Compiled program being executed
 	bytecodes []uint32
+	// Constant pool referenced (by index) from instructions whose constant
+	// operand is not carried inline.
+	constants []W
 	// Mapping from addresses in the encoded binary program back to their
 	// relevant labels.  This can be used to determine the function at a given
 	// address and/or the appropriate PC value.
@@ -44,12 +47,17 @@ func NewBinary[W word.Word[W]](env SymbolTable[W], bytecodes []uint32) Binary[W]
 		}
 	}
 	//
-	return Binary[W]{env, bytecodes, rmap}
+	return Binary[W]{env, bytecodes, env.Constants(), rmap}
 }
 
 // Bytecodes returns the raw bytecode sequence
 func (p Binary[W]) Bytecodes() []uint32 {
 	return p.bytecodes
+}
+
+// Constants returns the constant pool.
+func (p Binary[W]) Constants() []W {
+	return p.constants
 }
 
 // Chunks returns formatted chunks needed for I/O instructions.

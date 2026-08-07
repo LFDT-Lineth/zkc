@@ -34,6 +34,9 @@ import (
 // conversion.
 type RegisterId = vm.RegisterId
 
+// Operand represents either a register operand, or a constant operand.
+type Operand[W vm.Word[W]] = vm.Operand[W]
+
 // StmtCompiler provides a working environment for compiling individual statements
 // within a given function.  For example, it provides the ability to allocate
 // new temporary registers as required.
@@ -199,10 +202,15 @@ func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, ta
 	switch e := e.(type) {
 	case *expr.Cmp[symbol.Resolved]:
 		var (
-			args, insns = p.compileNonUniformArgs(mapping, e.Left, e.Right)
+			leftWidth     = data.BitWidthOf(e.Left.Type(), p.environment)
+			rightWidth    = data.BitWidthOf(e.Right.Type(), p.environment)
+			left, lInsns  = p.compileOperand(e.Left, leftWidth, mapping)
+			right, rInsns = p.compileOperand(e.Right, rightWidth, mapping)
+			op, l, r      = p.normaliseComparison(e, left, right)
 		)
 		//
-		insns = append(insns, vm.SkipIf[vm.Uint](vm.Cond(e.Operator), 1, args[0], args[1]))
+		insns := append(lInsns, rInsns...)
+		insns = append(insns, vm.SkipIf(vm.Cond(op), 1, l, r))
 		insns = append(insns, vm.Jump[vm.Uint](vm.Address(pc+1)))
 		insns = append(insns, vm.Jump[vm.Uint](vm.Address(target)))
 		//
@@ -210,6 +218,22 @@ func (p *StmtCompiler) compileCondition(pc uint, e Condition, mapping []uint, ta
 	default:
 		panic("unknown condition encountered")
 	}
+}
+
+func (p *StmtCompiler) normaliseComparison(e *expr.Cmp[symbol.Resolved], lhs, rhs Operand[vm.Uint],
+) (expr.CmpOp, RegisterId, Operand[vm.Uint]) {
+	//
+	if lhs.IsConstant() && rhs.IsConstant() {
+		// This should not be permitted
+		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e, "cannot compare constants")...)
+		// Dummy result (compilation aborts on the error reported above)
+		return e.Operator, RegisterId(0), rhs
+	} else if rhs.IsConstant() {
+		// Easy case
+		return e.Operator, lhs.AsRegister(), rhs
+	}
+	// Harder case --- flip comparator
+	return e.Operator.Flip(), rhs.AsRegister(), lhs
 }
 
 // compileDispatch compiles a multiway dispatch into a single vector
@@ -433,13 +457,21 @@ func (p *StmtCompiler) isFieldOperation(targets []vm.RegisterId) bool {
 func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], bitwidth util.Option[uint], mapping []uint,
 	target []vm.RegisterId) []Bytecode {
 	//
-	cmp := e.Cond.(*expr.Cmp[symbol.Resolved])
-	// Lazily compile both arms — their instructions are placed inside the
-	// conditionally-skipped regions below, so only the taken arm runs.
-	trueInsns := p.compileExpr(e.IfTrue, bitwidth, mapping, target)
-	falseInsns := p.compileExpr(e.IfFalse, bitwidth, mapping, target)
-	// Evaluate condition operands (always runs).
-	condRegs, condInsns := p.compileNonUniformArgs(mapping, cmp.Left, cmp.Right)
+	var (
+		cmp = e.Cond.(*expr.Cmp[symbol.Resolved])
+		// Determine size of left+right operands
+		leftWidth  = data.BitWidthOf(cmp.Left.Type(), p.environment)
+		rightWidth = data.BitWidthOf(cmp.Right.Type(), p.environment)
+		// Lazily compile both arms — their instructions are placed inside the
+		// conditionally-skipped regions below, so only the taken arm runs.
+		trueInsns  = p.compileExpr(e.IfTrue, bitwidth, mapping, target)
+		falseInsns = p.compileExpr(e.IfFalse, bitwidth, mapping, target)
+		// Evaluate condition operands (always runs).
+		left, lInsns  = p.compileOperand(cmp.Left, leftWidth, mapping)
+		right, rInsns = p.compileOperand(cmp.Right, rightWidth, mapping)
+		op, l, r      = p.normaliseComparison(cmp, left, right)
+	)
+	//condRegs, condInsns := p.compileNonUniformArgs(mapping, cmp.Left, cmp.Right)
 	// Selection sequence (counts are in bytecodes, since the arms are already
 	// lowered):
 	//   condInsns                                  always
@@ -447,9 +479,8 @@ func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], bitwidth
 	//   falseInsns                                 (skipped on TRUE)
 	//   skip(|trueInsns|)                          jump past true arm
 	//   trueInsns                                  (skipped on FALSE)
-	insns := append([]Bytecode{}, condInsns...)
-	insns = append(insns, vm.SkipIf[vm.Uint](vm.Cond(cmp.Operator),
-		uint16(len(falseInsns)+1), condRegs[0], condRegs[1]))
+	insns := append(lInsns, rInsns...)
+	insns = append(insns, vm.SkipIf(vm.Cond(op), uint16(len(falseInsns)+1), l, r))
 	insns = append(insns, falseInsns...)
 	insns = append(insns, vm.Skip[vm.Uint](uint16(len(trueInsns))))
 	//
@@ -745,40 +776,41 @@ func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint,
 
 func (p *StmtCompiler) compileBitwiseShl(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
 ) []Bytecode {
-	var bw = util.Some(bitwidth)
-	// Compile all operands upfront.
-	sources, insns := p.compileUniformArgs(bw, mapping, args...)
-	// Chain shifts left-to-right: (((a << b) << c) << ...).
-	value := sources[0]
-	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(bw)
-		insns = append(insns,
-			vm.BitShl[vm.Uint](tmp, value, sources[i], util.Cast[uint16](bitwidth)))
-		value = tmp
-	}
-	//
-	return append(insns,
-		vm.BitShl[vm.Uint](target, value, sources[len(sources)-1], uint16(bitwidth)))
+	return p.compileBitwiseShift(vm.BitShl[vm.Uint], args, bitwidth, mapping, target)
 }
 
 func (p *StmtCompiler) compileBitwiseShr(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
 ) []Bytecode {
+	return p.compileBitwiseShift(vm.BitShr[vm.Uint], args, bitwidth, mapping, target)
+}
+
+// compileBitwiseShift chains shifts left-to-right: (((a << b) << c) << ...).
+// The shifted value is compiled at the shift's own width, but each amount at
+// its natural (declared) width: a narrow amount (e.g. a small constant or an
+// "as uN" cast) then enters the barrel-shifter chain at the matching level
+// rather than through the guard (see LowerBitwise).
+func (p *StmtCompiler) compileBitwiseShift(
+	shift func(RegisterId, RegisterId, RegisterId, uint16) Bytecode,
+	args []Expr, bitwidth uint, mapping []uint, target RegisterId,
+) []Bytecode {
 	var bw = util.Some(bitwidth)
-	// Compile all operands upfront.
-	sources, insns := p.compileUniformArgs(bw, mapping, args...)
-	// Chain shifts left-to-right: (((a >> b) >> c) >> ...).
-	value := sources[0]
 	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(bw)
-		insns = append(insns,
-			vm.BitShr[vm.Uint](tmp, value, sources[i], util.Cast[uint16](bitwidth)))
-		value = tmp
+	value, insns := p.compileArg(args[0], bw, mapping)
+	//
+	for i := 1; i < len(args); i++ {
+		amount, extra := p.compileArg(args[i], data.BitWidthOf(args[i].Type(), p.environment), mapping)
+		insns = append(insns, extra...)
+		//
+		tgt := target
+		if i < len(args)-1 {
+			tgt = p.allocate(bw)
+		}
+		//
+		insns = append(insns, shift(tgt, value, amount, util.Cast[uint16](bitwidth)))
+		value = tgt
 	}
 	//
-	return append(insns,
-		vm.BitShr[vm.Uint](target, value, sources[len(sources)-1], uint16(bitwidth)))
+	return insns
 }
 
 func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint, targets []vm.RegisterId,
@@ -939,6 +971,18 @@ func (p *StmtCompiler) compileArg(e Expr, bitwidth util.Option[uint], mapping []
 	target := p.allocate(bitwidth)
 
 	return target, p.compileExpr(e, bitwidth, mapping, []vm.RegisterId{target})
+}
+
+func (p *StmtCompiler) compileOperand(e Expr, bitwidth util.Option[uint], mapping []uint,
+) (Operand[vm.Uint], []Bytecode) {
+	//
+	if c, ok := p.asConstant(e); ok {
+		return vm.NewConstantOperand(c), nil
+	}
+	//
+	target, bytecodes := p.compileArg(e, bitwidth, mapping)
+	//
+	return vm.NewRegisterOperand[vm.Uint](target), bytecodes
 }
 
 func (p *StmtCompiler) evalConstant(e Expr) vm.Uint {

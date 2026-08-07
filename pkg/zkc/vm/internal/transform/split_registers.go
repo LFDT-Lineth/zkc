@@ -148,11 +148,12 @@ func splitCell[W word.Word[W]](value W, limbIds []RegisterId, limbsMap descripto
 func splitFunction[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descriptor.Module[W],
 	m *descriptor.Function[W]) descriptor.Module[W] {
 	var (
-		alloc = split.NewAllocator(mapping.LimbsRegisterMap())
-		code  = splitBytecodeVector(mapping, mods, alloc, m.Vectors())
+		alloc = split.NewAllocator(mapping.LimbsRegisterMap()).
+			EnforceRegisterWidth(mapping.RegisterWidth())
+		code = splitBytecodeVector(mapping, mods, alloc, m.Vectors())
 	)
 	//
-	return descriptor.NewFunction(m.Name(), alloc.Registers(), m.Kind(), code)
+	return descriptor.NewFunction(m.Name(), alloc.Registers(), m.Kind(), m.Effects(), code)
 }
 
 func splitBytecodeVector[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descriptor.Module[W],
@@ -259,11 +260,11 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 				Source: split.ApplyLimbsMap(limbsMap, c.Source)[0]}}
 		case *bytecode.Switch[W]:
 			return split.Switch(limbsMap, c)
-
+		case *bytecode.Dispatch[W]:
+			return split.Dispatch(limbsMap, c)
+		case *bytecode.CheckCast[W]:
+			panic("CheckCast is not supposed to happen before splitting")
 		default:
-			// NOTE: checkcast does not technically need to be supported because
-			// the cast insertion phase runs after register splitting.  However,
-			// it should be noted that splitting checkcast is pretty simple.
 			panic(fmt.Sprintf("unsupported bytecode (%T)", c))
 		}
 	})
@@ -317,11 +318,13 @@ func splitRead[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allo
 		// its outputs.
 		addr, pre1, post1 = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
 		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
+		// The timestamp operand splits like any other caller register.
+		stamp = split.ApplyLimbsMap(limbsMap, c.Stamp...)
 		// Combine all together
 		pre, post = append(pre1, pre2...), append(post1, post2...)
 	)
 	//
-	return join(pre, bytecode.NewMemRead[W](c.Id, addr, data), post)
+	return join(pre, bytecode.NewMemRead[W](c.Id, addr, data, stamp), post)
 }
 
 func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.Allocator[W], mods []descriptor.Module[W],
@@ -333,21 +336,35 @@ func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.All
 		// its outputs.
 		addr, pre1, post1 = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
 		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
+		// The timestamp operand splits like any other caller register.
+		stamp = split.ApplyLimbsMap(limbsMap, c.Stamp...)
 		// Combine all together
 		pre, post = append(pre1, pre2...), append(post1, post2...)
 	)
 	//
-	return join(pre, bytecode.NewMemWrite[W](c.Id, addr, data), post)
+	return join(pre, bytecode.NewMemWrite[W](c.Id, addr, data, stamp), post)
 }
 
 func splitSkipIf[W word.Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.SkipIf[W]) Bytecode[W] {
 	// Both operands are frame-local registers of equal width, so each is simply
 	// mapped onto its limbs.
-	left := split.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
-	right := split.ApplyLimbsMap(limbsMap, c.Right.Registers()...)
+	var (
+		left  = split.ApplyLimbsMap(limbsMap, c.Left.Registers()...)
+		right bytecode.Operand[W]
+	)
+	// Split right-hand side according to what it is.
+	if c.Right.IsRegisterVector() {
+		limbs := split.ApplyLimbsMap(limbsMap, c.Right.AsRegisters()...)
+		right = bytecode.NewRegisterOperand[W](limbs...)
+	} else {
+		// Split the constant
+		constants := descriptor.SplitConstantReversed(c.Right.AsConstant(), limbsMap.RegisterWidth())
+		right = bytecode.NewConstantOperand(constants...)
+	}
 	// Construct vectored form of skip_if
-	return bytecode.NewSkipIfVec[W](c.Op, c.Skip, bytecode.NewRegisterVector(left...),
-		bytecode.NewRegisterVector(right...))
+	return bytecode.NewSkipIf(c.Op, c.Skip,
+		bytecode.NewRegisterVector(left...), right,
+	)
 }
 
 // Argument alignment is concerned with ensuring the number of arguments matches

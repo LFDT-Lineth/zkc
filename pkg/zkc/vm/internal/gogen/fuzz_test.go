@@ -44,6 +44,10 @@ func TestGenFuzz(t *testing.T) {
 	rng := rand.New(rand.NewSource(0xC0FFEE))
 
 	for _, tc := range diffCases {
+		if tc.skip {
+			continue
+		}
+		//
 		for _, shape := range shapes {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
 				m := compileUint(t, tc.src, shape.fastMode)

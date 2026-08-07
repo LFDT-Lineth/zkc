@@ -16,13 +16,12 @@ import (
 	"fmt"
 	"math"
 
-	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io"
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -48,16 +47,22 @@ type VectorInsnTranslator[W vm.Word[W], F field.Element[F]] struct {
 	writeMap    dfa.Result[dfa.Writes]
 	branchTable dfa.Result[dfa.Path[W]]
 	framing     Framing[F]
+	// oneHot holds the one-hot register groups declared by the vector's
+	// Dispatch bytecodes, used to shorten branch conditions at translation.
+	oneHot []oneHotGroup
 }
 
 // NewVectorTranslator constructs a translator for a specific bytecode vector.
 func NewVectorTranslator[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, pc uint,
-	vec vm.BytecodeVector[W], framing Framing[F], enclosing *vm.Function[W]) VectorInsnTranslator[W, F] {
+	vec vm.BytecodeVector[W], framing Framing[F], enclosing *vm.Function[W],
+	field field.Config) VectorInsnTranslator[W, F] {
+	//
 	// generate writeMap & branch table
-	writeMap, branchTable := vec.BranchTable()
+	writeMap, branchTable := vec.BranchTable(field.RegisterWidth)
 	//
 	return VectorInsnTranslator[W, F]{
 		ctx, pc, vec, enclosing, writeMap, branchTable, framing,
+		collectOneHotGroups(vec.Bytecodes),
 	}
 }
 
@@ -163,14 +168,19 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			// constraint is generated here, since correctness is enforced by
 			// subsequent arithmetic checks.
 			continue
-		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeSwitch[W]:
+		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeDispatch[W]:
 			// control flow is captured via the branch table; no constraint here
 			continue
+		case *vm.BytecodeSwitch[W]:
+			// Switch bytecodes are rewritten by LowerSwitch when compiling
+			// the bci code; one surviving to this point indicates a broken
+			// transform pipeline.
+			panic("unlowered switch bytecode reached constraint translation")
 		default:
 			panic(fmt.Sprintf("unexpected bytecode (%T)", c))
 		}
 		//
-		condition := TranslateBranchCondition(p.branchTable.StateOf(cc), p)
+		condition := TranslateBranchCondition(p.branchTable.StateOf(cc), p.oneHot, p)
 		// Add control-flow requirements
 		local = mirc.If(condition, local)
 		// Include local constraint
@@ -247,7 +257,7 @@ func (p *VectorInsnTranslator[W, F]) determineConstancyCondition(reg register.Id
 		if containsRegister(c.Definitions(), reg) {
 			var (
 				pathCondition = branchTable.StateOf(uint(i))
-				nc            = TranslateNegatedBranchCondition(pathCondition, p)
+				nc            = TranslateNegatedBranchCondition(pathCondition, p.oneHot, p)
 			)
 			//
 			condition = condition.And(nc)
@@ -258,11 +268,11 @@ func (p *VectorInsnTranslator[W, F]) determineConstancyCondition(reg register.Id
 }
 
 // RegisterWidths implementation for RegisterReader interface
-func (p *VectorInsnTranslator[W, F]) RegisterWidths(regs ...io.RegisterId) []uint {
+func (p *VectorInsnTranslator[W, F]) RegisterWidths(regs ...register.Id) []uint {
 	var widths = make([]uint, len(regs))
 	//
 	for i, r := range regs {
-		widths[i] = p.Register(r).Width()
+		widths[i] = p.Register(r).WidthOrNative()
 	}
 	//
 	return widths

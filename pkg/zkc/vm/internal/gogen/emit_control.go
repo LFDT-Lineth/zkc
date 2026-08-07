@@ -58,6 +58,10 @@ func collectLabels(code BytecodeVector) map[pos]bool {
 				for _, cse := range x.Cases {
 					labels[skipTarget(uint(vi), uint(ci), uint(cse.Skip), n)] = true
 				}
+			case *bytecode.Dispatch[word.Uint]:
+				for _, cse := range x.Cases {
+					labels[skipTarget(uint(vi), uint(ci), uint(cse.Skip), n)] = true
+				}
 			}
 		}
 	}
@@ -71,12 +75,12 @@ func collectLabels(code BytecodeVector) map[pos]bool {
 // therefore compared lexicographically from Base downwards, matching
 // executeSkipIf_rv.  Two-limb elements compare their high limbs first.
 func (g *generator) condExpr(fn *descFunction, x *bytecode.SkipIf[word.Uint]) (string, error) {
-	lhsOps, err := g.operands(fn, x.Left.Registers())
+	lhsOps, err := g.registerOperands(fn, x.Left.Registers())
 	if err != nil {
 		return "", err
 	}
 
-	rhsOps, err := g.operands(fn, x.Right.Registers())
+	rhsOps, err := g.operand(fn, x.Right, uint(len(lhsOps)))
 	if err != nil {
 		return "", err
 	}
@@ -114,7 +118,7 @@ func (g *generator) condExpr(fn *descFunction, x *bytecode.SkipIf[word.Uint]) (s
 // guard, leaving any wide non-zero source to fall through.
 func (g *generator) emitMultiwaySkip(c *code, fn *descFunction, x *bytecode.Switch[word.Uint],
 	vi, ci, vecLen uint) error {
-	source, err := g.operand(fn, x.Source)
+	source, err := g.registerOperand(fn, x.Source)
 	if err != nil {
 		return err
 	}
@@ -143,6 +147,32 @@ func (g *generator) emitMultiwaySkip(c *code, fn *descFunction, x *bytecode.Swit
 	if source.wide() {
 		c.line("}")
 	}
+	//
+	return nil
+}
+
+// emitDispatch renders a one-hot dispatch as a tagless switch over the case
+// bits: control transfers to the target of the first case whose (1-bit)
+// register is set, and falls through when none is.  This mirrors
+// interpreter.executeDispatch.
+func (g *generator) emitDispatch(c *code, fn *descFunction, x *bytecode.Dispatch[word.Uint],
+	vi, ci, vecLen uint) error {
+	c.line("switch {")
+	//
+	for _, cse := range x.Cases {
+		bit, err := g.registerOperand(fn, cse.Bit)
+		if err != nil {
+			return err
+		}
+
+		target := skipTarget(vi, ci, uint(cse.Skip), vecLen)
+		//
+		c.linef("case %s != 0:", bit.expr)
+		c.linef("goto %s", labelName(target))
+		g.iv.edgeTo(target)
+	}
+	//
+	c.line("}")
 	//
 	return nil
 }

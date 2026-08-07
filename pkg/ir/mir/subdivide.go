@@ -20,14 +20,9 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/agnostic"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/interleaving"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/sorted"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
@@ -57,26 +52,20 @@ import (
 //
 // Here, c is a 1bit register introduced as part of the transformation to act as
 // a "carry" between the two constraints.
-func Subdivide[F field.Element[F], E register.ConstMap](mapping module.LimbsMap, externs []E,
-	mods []Module[F]) []Module[F] {
+func Subdivide[F field.Element[F]](mapping module.LimbsMap, mods []Module[F]) []Module[F] {
 	//
 	var (
-		builder = ir.NewSchemaBuilder[F, Constraint[F], Term[F]](externs...)
+		builder = ir.NewSchemaBuilder[F, Constraint[F], Term[F]]()
 	)
 	// Initialise subdivided modules using register limbs rather than the
-	for i, m := range mods {
+	for _, m := range mods {
 		// original registers.
 		var (
-			eid = uint(i + len(externs))
-			mid = builder.NewModule(m.Name(), m.AllowPadding(), m.IsPublic(), m.IsSynthetic(),
-				m.IsStatic(), m.IsNative(), 0)
+			mid = builder.NewModule(m.Name(), m.AllowPadding(), m.IsPublicOutput(), m.IsPrivateOutput(),
+				m.IsSynthetic(), m.IsStatic(), m.IsNative(), 0)
 			module   = builder.Module(mid)
 			limbsMap = mapping.Module(mid).LimbsMap()
 		)
-		// Sanity check module identifier is consistent
-		if mid != eid {
-			panic(fmt.Sprintf("inconsistent module identifier (%d vs %d)", mid, eid))
-		}
 		// Initialise all register limbs.
 		module.NewRegisters(limbsMap.Registers()...)
 		// Assign static contents (if applicable)
@@ -88,7 +77,7 @@ func Subdivide[F field.Element[F], E register.ConstMap](mapping module.LimbsMap,
 	subdivider := &Subdivider[F]{builder, mapping}
 	// Subdivide modules
 	for i, m := range mods {
-		mid := uint(i + len(externs))
+		mid := uint(i)
 		subdivider.SubdivideModule(mid, m)
 	}
 	// Done
@@ -147,7 +136,7 @@ func (p *Subdivider[F]) FlushAllocator(mid module.Id, alloc agnostic.RegisterAll
 	rids := module.NewRegisters(regs[n:]...)
 	// include any additional assignments required for carry lines
 	for _, a := range alloc.Assignments() {
-		module.AddAssignment(assignment.NewComputedRegister[F](a.Right, true, mid, a.Left...))
+		module.AddAssignment(assignment.NewComputedRegister[F](a.Right, mid, a.Left...))
 	}
 	// constrain all new registers
 	for i, rid := range rids {
@@ -179,10 +168,6 @@ func (p *Subdivider[F]) subdivideAssignment(a schema.Assignment[F]) schema.Assig
 	switch a := a.(type) {
 	case *assignment.ComputedRegister[F]:
 		return p.subdivideComputedRegister(a)
-	case *assignment.NativeComputation[F]:
-		return p.subdivideNativeComputation(a)
-	case *assignment.SortedPermutation[F]:
-		return p.subdivideSortedPermutation(a)
 	default:
 		panic("unreachable")
 	}
@@ -193,58 +178,14 @@ func (p *Subdivider[F]) subdivideComputedRegister(cr *assignment.ComputedRegiste
 	var (
 		ntargets []register.Id
 		modmap   = p.mapping.Module(cr.Module)
-		expr     = term.SubdivideExpr[word.BigEndian, constraint.Property](cr.Expr, modmap)
+		expr     = term.SubdivideExpr[word.BigEndian, term.LogicalComputation[word.BigEndian]](cr.Expr, modmap)
 	)
 	//
 	for _, target := range cr.Targets {
 		ntargets = append(ntargets, modmap.LimbIds(target)...)
 	}
 	//
-	return assignment.NewComputedRegister[F](expr, cr.Direction, cr.Module, ntargets...)
-}
-
-func (p *Subdivider[F]) subdivideNativeComputation(cr *assignment.NativeComputation[F]) schema.Assignment[F] {
-	var (
-		targets = SubdivideRegisterRefs[F](p.mapping, cr.Targets...)
-		sources = SubdivideRegisterRefs[F](p.mapping, cr.Sources...)
-	)
-	//
-	return assignment.NewNativeComputation[F](cr.Function, targets, sources)
-}
-
-func (p *Subdivider[F]) subdivideSortedPermutation(sp *assignment.SortedPermutation[F]) schema.Assignment[F] {
-	var (
-		sources []register.Ref
-		targets []register.Ref
-		signs   []bool
-	)
-	//
-	for i := range len(sp.Sources) {
-		var (
-			source = sp.Sources[i]
-			target = sp.Targets[i]
-			//
-			sourceMapping = p.mapping.Module(source.Module())
-			targetMapping = p.mapping.Module(target.Module())
-			sourceLimbs   = sourceMapping.LimbIds(source.Register())
-			targetLimbs   = targetMapping.LimbIds(target.Register())
-		)
-		// Sanity check for now
-		if len(sourceLimbs) != len(targetLimbs) {
-			panic("encountered irregular permutation constraint")
-		}
-		// Append limbs in reverse order to ensure most significant limb comes first.
-		for j := len(sourceLimbs); j > 0; j-- {
-			sources = append(sources, register.NewRef(source.Module(), sourceLimbs[j-1]))
-			targets = append(targets, register.NewRef(target.Module(), targetLimbs[j-1]))
-			//
-			if i < len(sp.Signs) {
-				signs = append(signs, sp.Signs[i])
-			}
-		}
-	}
-	//
-	return assignment.NewSortedPermutation[F](targets, signs, sources)
+	return assignment.NewComputedRegister[F](expr, cr.Module, ntargets...)
 }
 
 // SubdivideRegisterRefs subdivides a set of register references according to a
@@ -268,18 +209,10 @@ func SubdivideRegisterRefs[F field.Element[F]](mapping module.LimbsMap, refs ...
 func (p *Subdivider[F]) subdivideConstraint(c Constraint[F]) Constraint[F] {
 	var constraint schema.Constraint[F]
 	switch c := c.constraint.(type) {
-	case Assertion[F]:
-		constraint = p.subdivideAssertion(c)
-	case InterleavingConstraint[F]:
-		constraint = p.subdivideInterleaving(c)
 	case LookupConstraint[F]:
 		constraint = p.subdivideLookup(c)
-	case PermutationConstraint[F]:
-		constraint = p.subdividePermutation(c)
 	case RangeConstraint[F]:
 		constraint = p.subdivideRange(c)
-	case SortedConstraint[F]:
-		constraint = p.subdivideSorted(c)
 	case VanishingConstraint[F]:
 		constraint = p.subdivideVanishing(c)
 	default:
@@ -287,54 +220,6 @@ func (p *Subdivider[F]) subdivideConstraint(c Constraint[F]) Constraint[F] {
 	}
 	//
 	return Constraint[F]{constraint}
-}
-
-// Subdivide implementation for the FieldAgnostic interface.
-func (p *Subdivider[F]) subdivideAssertion(c Assertion[F]) Assertion[F] {
-	var (
-		module = p.mapping.Module(c.Context)
-		prop   = term.SubdivideLogical[word.BigEndian, constraint.Property, term.Computation[word.BigEndian]](
-			c.Property, module)
-	)
-	// Construct split constraint
-	return constraint.NewAssertion[F](c.Handle, c.Context, c.Domain, prop)
-}
-
-// Subdivide implementation for the FieldAgnostic interface.
-func (p *Subdivider[F]) subdivideInterleaving(c InterleavingConstraint[F]) InterleavingConstraint[F] {
-	var (
-		targetModule = p.mapping.Module(c.TargetContext)
-		sourceModule = p.mapping.Module(c.SourceContext)
-		target       = subdivideVectorAccess(c.Target, targetModule)
-		sources      = subdivideVectorAccesses(c.Sources, sourceModule)
-	)
-	// Done
-	return interleaving.NewConstraint(c.Handle, c.TargetContext, c.SourceContext, target, sources)
-}
-
-// Subdivide implementation for the FieldAgnostic interface.
-func (p *Subdivider[F]) subdividePermutation(c PermutationConstraint[F]) PermutationConstraint[F] {
-	var (
-		module  = p.mapping.Module(c.Context)
-		sources []register.Id
-		targets []register.Id
-	)
-	//
-	for i := range len(c.Sources) {
-		var (
-			sourceLimbs = module.LimbIds(c.Sources[i])
-			targetLimbs = module.LimbIds(c.Targets[i])
-		)
-		// Sanity check for now
-		if len(sourceLimbs) != len(targetLimbs) {
-			panic("encountered irregular permutation constraint")
-		}
-		//
-		sources = append(sources, sourceLimbs...)
-		targets = append(targets, targetLimbs...)
-	}
-	//
-	return permutation.NewConstraint[F](c.Handle, c.Context, targets, sources)
 }
 
 // Subdivide implementation for the FieldAgnostic interface.
@@ -367,48 +252,6 @@ func (p *Subdivider[F]) subdivideRange(c RangeConstraint[F]) RangeConstraint[F] 
 	}
 	//
 	return ranged.NewConstraint(c.Handle, c.Context, terms, bitwidths)
-}
-
-// Subdivide implementation for the FieldAgnostic interface.
-func (p *Subdivider[F]) subdivideSorted(c SortedConstraint[F]) SortedConstraint[F] {
-	var (
-		modmap   = p.mapping.Module(c.Context)
-		signs    []bool
-		sources  []*RegisterAccess[F]
-		selector = util.None[*RegisterAccess[F]]()
-		bitwidth uint
-	)
-	// Split sources
-	for i, source := range c.Sources {
-		var split = subdivideRawRegisterAccess(source, modmap)
-		// Append in reverse order to ensure most signicant limb comes first.
-		for j := len(split); j > 0; j-- {
-			var (
-				jth       = split[j-1]
-				limbWidth = modmap.Limb(jth.Register()).Width()
-			)
-			//
-			sources = append(sources, jth)
-			// Update sign (if applicable)
-			if i < len(c.Signs) {
-				signs = append(signs, c.Signs[i])
-			}
-			// Update bitwidth
-			bitwidth = max(bitwidth, min(limbWidth, jth.MaskWidth()))
-		}
-	}
-	// Split optional selector
-	if c.Selector.HasValue() {
-		tmp := subdivideRawRegisterAccess(c.Selector.Unwrap(), modmap)
-		//
-		if len(tmp) != 1 {
-			panic(fmt.Sprintf("encountered irregular selectored with %d limbs.", len(tmp)))
-		}
-		//
-		selector = util.Some(tmp[0])
-	}
-	// Done
-	return sorted.NewConstraint(c.Handle, c.Context, bitwidth, selector, sources, signs, c.Strict)
 }
 
 // ============================================================================
@@ -457,20 +300,6 @@ func subdivideRegisterAccess[F field.Element[F]](expr *RegisterAccess[F], mappin
 	}
 	//
 	return term.NewVectorAccess(terms)
-}
-
-func subdivideVectorAccesses[F field.Element[F]](terms []*VectorAccess[F], mapping register.LimbsMap,
-) []*VectorAccess[F] {
-	//
-	var (
-		nterms = make([]*VectorAccess[F], len(terms))
-	)
-	// Split sources
-	for i, src := range terms {
-		nterms[i] = subdivideVectorAccess(src, mapping)
-	}
-	//
-	return nterms
 }
 
 func subdivideVectorAccess[F field.Element[F]](expr *VectorAccess[F], mapping register.LimbsMap) *VectorAccess[F] {

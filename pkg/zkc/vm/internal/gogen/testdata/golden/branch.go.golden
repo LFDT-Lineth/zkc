@@ -14,8 +14,11 @@ func (e failure) Error() string { return string(e) }
 
 func fail(msg string) { panic(failure(msg)) }
 
-var mem_data []uint64   // input ROM "data"
-var mem_result []uint64 // output WOM "result"
+// Input ROM "data".
+var mem_data []uint64
+
+// Output WOM "result".
+var mem_result []uint64
 
 func memWrite(s []uint64, addr uint64, v uint64) []uint64 {
 	if n := addr + 1; uint64(len(s)) < n {
@@ -52,7 +55,6 @@ func fn_main() {
 	var r2 uint64 // $2
 	var r3 uint64 // $3
 	var r4 uint64 // $4
-	var r5 uint64 // $5
 	// [0.0] ldc $2 = 0x0
 	r2 = 0
 	// [0.1] read x = data[$2]
@@ -63,22 +65,20 @@ func fn_main() {
 			fail("bit overflow (value exceeds u8)")
 		}
 	}
-	// [0.2] ldc $3 = 0xa
-	r3 = 0xa
-	// [0.3] skip_if x > $3 3
-	if r0 > r3 {
-		goto L_0_7
+	// [0.2] skip_if x > a 3
+	if r0 > uint64(10) {
+		goto L_0_6
 	}
-	// [0.4] add y = x+0x1
+	// [0.3] add y = x+0x1
 	r1 = uint64(1) + r0
 	if r1 >= 1<<8 {
 		fail("bit overflow (value exceeds u8)")
 	}
-	// [0.5] check y:u8
-	// [0.6] skip 2
-	goto L_0_9
-L_0_7:
-	// [0.7] sub y = x-0x1
+	// [0.4] check y:u8
+	// [0.5] skip 2
+	goto L_0_8
+L_0_6:
+	// [0.6] sub y = x-0x1
 	{
 		v, borrow := bits.Sub64(r0, uint64(1), 0)
 		if borrow != 0 {
@@ -89,17 +89,17 @@ L_0_7:
 			fail("bit overflow (value exceeds u8)")
 		}
 	}
-	// [0.8] check y:u8
-L_0_9:
-	// [0.9] ldc $4 = 0x0
-	r4 = 0
-	// [0.10] cat $5 = y
-	r5 = r1
-	// [0.11] write result[$4] = $5
+	// [0.7] check y:u8
+L_0_8:
+	// [0.8] ldc $3 = 0x0
+	r3 = 0
+	// [0.9] cat $4 = y
+	r4 = r1
+	// [0.10] write result[$3] = $4
 	{
-		start := r4
-		mem_result = memWrite(mem_result, start+0, r5)
+		start := r3
+		mem_result = memWrite(mem_result, start+0, r4)
 	}
-	// [0.12] ret
+	// [0.11] ret
 	return
 }

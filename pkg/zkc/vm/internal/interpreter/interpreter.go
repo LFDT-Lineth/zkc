@@ -13,7 +13,6 @@
 package interpreter
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -38,6 +37,42 @@ func ExtractExecutingState[W word.Word[W]](p *Interpreter[W]) (fid uint16, pc ui
 	lab := p.program.FunctionAt(p.pc)
 	//
 	return lab.ModuleId, uint32(lab.Point.Macro), p.dataStack.SliceEnd(uint(p.fp))
+}
+
+// Failure indicates a machine failure, such as executing a fail instruction.
+// Thus, a machine failure indicates specifically that the machine executed an
+// instruction which caused a recognised problem.  This includes executing a
+// fail instruction, but also other kinds of failures such as arithmetic
+// overflow, etc.  Machine failures are distinct from other forms of error which
+// the interpreter can return, the latter are really just internal failures that
+// should never arise.
+type Failure struct {
+	Message string
+}
+
+// Error implementation for error interface.
+func (p *Failure) Error() string {
+	return p.Message
+}
+
+// Failure constructs a suitable failure.
+func failure(msg string, values ...any) error {
+	return &Failure{fmt.Sprintf(msg, values...)}
+}
+
+// failure records the current machine state and then constructs a suitable
+// machine failure.  Recording is done by triggering the breakpoint handler
+// which, outside of tracing, is a no-op (see New).  Routing every recognised
+// runtime failure through here ensures the row which triggered the failure is
+// committed to the trace being generated, so the constraints can reject it
+// (e.g. a u32 addition which overflows leaves a wrapped result in the frame
+// that violates the corresponding arithmetic / range constraint).
+func (p *Interpreter[W]) failure(msg string, values ...any) error {
+	// Snapshot the current (failing) state.  A failing row is never a normal
+	// return, so the opcode passed to the handler is irrelevant (0 ≠ RET).
+	p.breakpoint(0)
+	//
+	return failure(msg, values...)
 }
 
 // Interpreter is a fast, register-based interpreter for the bytecode form of a
@@ -181,12 +216,27 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 		woms:    woms,
 		rams:    rams,
 		prams:   prams,
-		// Default breakpointer: panics until a real one is configured via
-		// BreakPointer, since a breakpoint is meaningless without one.
-		breakpoint: func(uint32) {
-			panic("no breakpointer configured")
-		},
+		// Default breakpointer: a no-op.  A real handler is installed via
+		// BreakPointer when tracing / debugging (see BootAndTrace, BootAndDebug).
+		// Note that failures route through this handler too (see failure), so it
+		// must be safe to invoke even when no explicit handler is configured.
+		breakpoint: func(uint32) {},
 	}
+}
+
+// WithAccessLog enables logging of memory accesses on each read-write memory so
+// its reads and writes are captured during execution.  This is only intended
+// to be used when tracing.
+func (p *Interpreter[W]) WithAccessLog() *Interpreter[W] {
+	for i := range p.rams {
+		p.rams[i].SetLog(&TraceableMemoryLog[W]{})
+	}
+	//
+	for i := range p.prams {
+		p.prams[i].SetLog(&TraceableMemoryLog[W]{})
+	}
+	//
+	return p
 }
 
 // BreakPointer configures the callback invoked whenever a breakpoint is
@@ -537,6 +587,7 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		err       error
 		frame     []W = p.dataStack.SliceEnd(uint(p.fp))
 		bytecodes     = p.program.Bytecodes()
+		pool          = p.program.Constants()
 	)
 	//
 	for nsteps < steps && err == nil {
@@ -545,9 +596,17 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			opcode     = bytecodes[p.pc] & encoding.OPCODE_MASK
 			breakpoint = bytecodes[p.pc]&encoding.BREAKPOINT != 0
 		)
-		// Check for breakpoint.
+		// Check for breakpoint.  NOTE: for wide instructions, the wide opcode
+		// (second byte) is passed through alongside the WIDE escape, allowing
+		// observers to identify the instruction (e.g. WIDE|WIDE_RET<<8).
 		if breakpoint {
-			p.breakpoint(opcode)
+			var cbop = opcode
+			//
+			if opcode == encoding.WIDE {
+				cbop |= bytecodes[p.pc] & 0xff00
+			}
+			//
+			p.breakpoint(cbop)
 		}
 		// increase step counter
 		nsteps++
@@ -555,14 +614,25 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 		switch opcode & encoding.OPCODE_MASK {
 		case encoding.FAIL:
 			return nsteps, p.executeFail(p.pc, bytecodes, frame)
+		case encoding.WIDE:
+			var halt bool
+			//
+			p.pc, halt, err = p.executeWide(p.pc, bytecodes, pool, frame)
+			//
+			if halt {
+				return nsteps, err
+			}
+			// refresh the register window, since wide instructions include
+			// those (ENTER/LEAVE/RET) which change the enclosing frame.
+			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case encoding.CHECKCAST:
-			p.pc, err = executeCheckCast(p.pc, bytecodes, frame)
+			p.pc, err = p.executeCheckCast(p.pc, bytecodes, frame)
 		case encoding.DEBUG:
 			p.pc = p.executeDebug(p.pc, bytecodes, frame)
 		case encoding.LDC:
 			p.pc = executeLdc_1(p.pc, bytecodes, frame)
 		case encoding.LDC_w:
-			p.pc = executeLdc_w(p.pc, bytecodes, frame)
+			p.pc = executeLdc_w(p.pc, bytecodes, pool, frame)
 		case encoding.MOVE:
 			p.pc = executeMove_1s1(p.pc, bytecodes, frame)
 		case encoding.ENTER_n:
@@ -592,33 +662,43 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeSkipIf_rr[W, util.NotEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SLT_rr:
 			p.pc = executeSkipIf_rr[W, util.LessThan[W]](p.pc, bytecodes, frame)
-		case encoding.SGT_rr:
-			p.pc = executeSkipIf_rr[W, util.GreaterThan[W]](p.pc, bytecodes, frame)
-		case encoding.SLE_rr:
-			p.pc = executeSkipIf_rr[W, util.LessThanOrEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SGE_rr:
 			p.pc = executeSkipIf_rr[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SKIP_M:
-			p.pc = executeSkipTable(p.pc, bytecodes, frame)
+			p.pc = executeSkipTable(p.pc, bytecodes, pool, frame)
+		case encoding.SKIP_B:
+			p.pc = executeDispatch(p.pc, bytecodes, frame)
 		case encoding.SEQ_rv:
 			p.pc = executeSkipIf_rv[W, util.Equal[W]](p.pc, bytecodes, frame)
 		case encoding.SNE_rv:
 			p.pc = executeSkipIf_rv[W, util.NotEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SLT_rv:
 			p.pc = executeSkipIf_rv[W, util.LessThan[W]](p.pc, bytecodes, frame)
-		case encoding.SGT_rv:
-			p.pc = executeSkipIf_rv[W, util.GreaterThan[W]](p.pc, bytecodes, frame)
-		case encoding.SLE_rv:
-			p.pc = executeSkipIf_rv[W, util.LessThanOrEqual[W]](p.pc, bytecodes, frame)
 		case encoding.SGE_rv:
 			p.pc = executeSkipIf_rv[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, frame)
+		case encoding.SEQ_rc:
+			p.pc = executeSkipIf_rc[W, util.Equal[W]](p.pc, bytecodes, pool, frame)
+		case encoding.SNE_rc:
+			p.pc = executeSkipIf_rc[W, util.NotEqual[W]](p.pc, bytecodes, pool, frame)
+		case encoding.SLT_rc:
+			p.pc = executeSkipIf_rc[W, util.LessThan[W]](p.pc, bytecodes, pool, frame)
+		case encoding.SGE_rc:
+			p.pc = executeSkipIf_rc[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, pool, frame)
+		case encoding.SEQ_rcv:
+			p.pc = executeSkipIf_rcv[W, util.Equal[W]](p.pc, bytecodes, pool, frame)
+		case encoding.SNE_rcv:
+			p.pc = executeSkipIf_rcv[W, util.NotEqual[W]](p.pc, bytecodes, pool, frame)
+		case encoding.SLT_rcv:
+			p.pc = executeSkipIf_rcv[W, util.LessThan[W]](p.pc, bytecodes, pool, frame)
+		case encoding.SGE_rcv:
+			p.pc = executeSkipIf_rcv[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, pool, frame)
 			// Input / Output Operations
 		case encoding.RD_ROM_nm:
 			p.pc = executeReadRom_sn(p.pc, bytecodes, frame, p.roms)
 		case encoding.RD_SROM_nm:
 			p.pc = executeReadSrom_sn(p.pc, bytecodes, frame, p.sroms)
 		case encoding.WR_WOM_nm:
-			p.pc = executeWriteWom_sn(p.pc, bytecodes, frame, p.woms)
+			p.pc, err = p.executeWriteWom_sn(p.pc, bytecodes, frame, p.woms)
 		case encoding.RD_RAM_nm:
 			p.pc = executeReadRam_sn(p.pc, bytecodes, frame, p.rams)
 		case encoding.WR_RAM_nm:
@@ -629,35 +709,35 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc = executeWritePagedRam_sn(p.pc, bytecodes, frame, p.prams)
 		// Arithmetic Operations
 		case encoding.ADD_2n1:
-			p.pc, err = executeAdd_2n1(p.pc, bytecodes, frame)
+			p.pc, err = p.executeAdd_2n1(p.pc, bytecodes, frame)
 		case encoding.ADDC:
-			p.pc, err = executeAdd_1n1c(p.pc, bytecodes, frame)
+			p.pc, err = p.executeAdd_1n1c(p.pc, bytecodes, pool, frame)
 		case encoding.SUB_2n1:
 			p.pc, err = p.executeSub_2n1(p.pc, bytecodes, frame)
 		case encoding.SUBC:
-			p.pc, err = p.executeSub_1n1c(p.pc, bytecodes, frame)
+			p.pc, err = p.executeSub_1n1c(p.pc, bytecodes, pool, frame)
 		case encoding.MUL_2n1:
-			p.pc, err = executeMul_2n1(p.pc, bytecodes, frame)
+			p.pc, err = p.executeMul_2n1(p.pc, bytecodes, frame)
 		case encoding.MULC:
-			p.pc, err = executeMul_1n1c(p.pc, bytecodes, frame)
+			p.pc, err = p.executeMul_1n1c(p.pc, bytecodes, pool, frame)
 		case encoding.ADD_nm:
-			p.pc, err = p.executeAdd_nm(p.pc, bytecodes, frame)
+			p.pc, err = p.executeAdd_nm(p.pc, bytecodes, pool, frame)
 		case encoding.SUB_nm:
-			p.pc, err = p.executeSub_nm(p.pc, bytecodes, frame)
+			p.pc, err = p.executeSub_nm(p.pc, bytecodes, pool, frame)
 		case encoding.MUL_nm:
-			p.pc, err = p.executeMul_nm(p.pc, bytecodes, frame)
+			p.pc, err = p.executeMul_nm(p.pc, bytecodes, pool, frame)
 		case encoding.DIV:
-			p.pc, err = executeDiv(p.pc, bytecodes, frame)
+			p.pc, err = p.executeDiv(p.pc, bytecodes, frame)
 		case encoding.REM:
-			p.pc, err = executeRem(p.pc, bytecodes, frame)
+			p.pc, err = p.executeRem(p.pc, bytecodes, frame)
 		case encoding.INTRINSIC:
 			p.pc, err = p.executeIntrinsic(p.pc, bytecodes, frame)
 		case encoding.ADDMOD_P:
-			p.pc, err = p.executeFieldAdd(p.pc, bytecodes, frame)
+			p.pc, err = p.executeFieldAdd(p.pc, bytecodes, pool, frame)
 		case encoding.SUBMOD_P:
-			p.pc, err = p.executeFieldSub(p.pc, bytecodes, frame)
+			p.pc, err = p.executeFieldSub(p.pc, bytecodes, pool, frame)
 		case encoding.MULMOD_P:
-			p.pc, err = p.executeFieldMul(p.pc, bytecodes, frame)
+			p.pc, err = p.executeFieldMul(p.pc, bytecodes, pool, frame)
 		case encoding.CAT:
 			p.pc, err = p.executeCat(p.pc, bytecodes, frame)
 		case encoding.UINT_TO_FIELD:
@@ -682,6 +762,135 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 	}
 	//
 	return nsteps, err
+}
+
+// executeWide dispatches an instruction encoded via the WIDE escape opcode,
+// switching on the wide opcode held in the second byte of its first word.  It
+// returns the next program counter, together with a halt flag signalling that
+// execution has terminated (i.e. an explicit failure, or a return from the
+// outermost frame) and any error.
+//
+//nolint:funlen
+func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack []W) (uint32, bool, error) {
+	var (
+		wopcode = (codes[pc] >> 8) & 0xff
+		err     error
+	)
+	//
+	switch wopcode {
+	case encoding.WIDE_FAIL:
+		return pc, true, p.executeFail(pc, codes, stack)
+	case encoding.WIDE_CHECKCAST:
+		pc, err = p.executeCheckCast(pc, codes, stack)
+	case encoding.WIDE_DEBUG:
+		pc = p.executeDebug(pc, codes, stack)
+	case encoding.WIDE_LDC_w:
+		pc = executeLdc_w(pc, codes, pool, stack)
+	case encoding.WIDE_MOVE:
+		pc = executeMove_1s1(pc, codes, stack)
+	case encoding.WIDE_ENTER_n:
+		err = p.executeEnter_n(pc, codes, stack)
+		pc = p.pc
+	case encoding.WIDE_LEAVE_n:
+		pc = p.executeLeave_n(pc, codes, stack)
+	case encoding.WIDE_RET:
+		// check for termination
+		if p.callStack.Size() == 0 {
+			return pc, true, nil
+		}
+		// normal return
+		pc, err = p.executeReturn(pc, codes)
+	case encoding.WIDE_SEQ_rr:
+		pc = executeSkipIf_rr[W, util.Equal[W]](pc, codes, stack)
+	case encoding.WIDE_SNE_rr:
+		pc = executeSkipIf_rr[W, util.NotEqual[W]](pc, codes, stack)
+	case encoding.WIDE_SLT_rr:
+		pc = executeSkipIf_rr[W, util.LessThan[W]](pc, codes, stack)
+	case encoding.WIDE_SGE_rr:
+		pc = executeSkipIf_rr[W, util.GreaterThanOrEqual[W]](pc, codes, stack)
+	case encoding.WIDE_SEQ_rv:
+		pc = executeSkipIf_rv[W, util.Equal[W]](pc, codes, stack)
+	case encoding.WIDE_SNE_rv:
+		pc = executeSkipIf_rv[W, util.NotEqual[W]](pc, codes, stack)
+	case encoding.WIDE_SLT_rv:
+		pc = executeSkipIf_rv[W, util.LessThan[W]](pc, codes, stack)
+	case encoding.WIDE_SGE_rv:
+		pc = executeSkipIf_rv[W, util.GreaterThanOrEqual[W]](pc, codes, stack)
+	case encoding.WIDE_SEQ_rcv:
+		pc = executeSkipIf_rcv[W, util.Equal[W]](pc, codes, pool, stack)
+	case encoding.WIDE_SNE_rcv:
+		pc = executeSkipIf_rcv[W, util.NotEqual[W]](pc, codes, pool, stack)
+	case encoding.WIDE_SLT_rcv:
+		pc = executeSkipIf_rcv[W, util.LessThan[W]](pc, codes, pool, stack)
+	case encoding.WIDE_SGE_rcv:
+		pc = executeSkipIf_rcv[W, util.GreaterThanOrEqual[W]](pc, codes, pool, stack)
+	case encoding.WIDE_RD_ROM_nm:
+		pc = executeReadRom_sn(pc, codes, stack, p.roms)
+	case encoding.WIDE_RD_SROM_nm:
+		pc = executeReadSrom_sn(pc, codes, stack, p.sroms)
+	case encoding.WIDE_WR_WOM_nm:
+		pc, err = p.executeWriteWom_sn(pc, codes, stack, p.woms)
+	case encoding.WIDE_RD_RAM_nm:
+		pc = executeReadRam_sn(pc, codes, stack, p.rams)
+	case encoding.WIDE_WR_RAM_nm:
+		pc = executeWriteRam_sn(pc, codes, stack, p.rams)
+	case encoding.WIDE_RD_PRAM_nm:
+		pc = executeReadPagedRam_sn(pc, codes, stack, p.prams)
+	case encoding.WIDE_WR_PRAM_nm:
+		pc = executeWritePagedRam_sn(pc, codes, stack, p.prams)
+	case encoding.WIDE_ADD_2n1:
+		pc, err = p.executeAdd_2n1(pc, codes, stack)
+	case encoding.WIDE_SUB_2n1:
+		pc, err = p.executeSub_2n1(pc, codes, stack)
+	case encoding.WIDE_MUL_2n1:
+		pc, err = p.executeMul_2n1(pc, codes, stack)
+	case encoding.WIDE_ADDC:
+		pc, err = p.executeAdd_1n1c(pc, codes, pool, stack)
+	case encoding.WIDE_SUBC:
+		pc, err = p.executeSub_1n1c(pc, codes, pool, stack)
+	case encoding.WIDE_MULC:
+		pc, err = p.executeMul_1n1c(pc, codes, pool, stack)
+	case encoding.WIDE_ADD_nm:
+		pc, err = p.executeAdd_nm(pc, codes, pool, stack)
+	case encoding.WIDE_SUB_nm:
+		pc, err = p.executeSub_nm(pc, codes, pool, stack)
+	case encoding.WIDE_MUL_nm:
+		pc, err = p.executeMul_nm(pc, codes, pool, stack)
+	case encoding.WIDE_DIV:
+		pc, err = p.executeDiv(pc, codes, stack)
+	case encoding.WIDE_REM:
+		pc, err = p.executeRem(pc, codes, stack)
+	case encoding.WIDE_INTRINSIC:
+		pc, err = p.executeIntrinsic(pc, codes, stack)
+	case encoding.WIDE_ADDMOD_P:
+		pc, err = p.executeFieldAdd(pc, codes, pool, stack)
+	case encoding.WIDE_SUBMOD_P:
+		pc, err = p.executeFieldSub(pc, codes, pool, stack)
+	case encoding.WIDE_MULMOD_P:
+		pc, err = p.executeFieldMul(pc, codes, pool, stack)
+	case encoding.WIDE_AND:
+		pc, err = executeAnd(pc, codes, stack)
+	case encoding.WIDE_OR:
+		pc, err = executeOr(pc, codes, stack)
+	case encoding.WIDE_XOR:
+		pc, err = executeXor(pc, codes, stack)
+	case encoding.WIDE_NOT:
+		pc, err = executeNot(pc, codes, stack)
+	case encoding.WIDE_SHL:
+		pc, err = executeShl(pc, codes, stack)
+	case encoding.WIDE_SHR:
+		pc, err = executeShr(pc, codes, stack)
+	case encoding.WIDE_CAT:
+		pc, err = p.executeCat(pc, codes, stack)
+	case encoding.WIDE_UINT_TO_FIELD:
+		pc, err = p.executeUintToField(pc, codes, stack)
+	case encoding.WIDE_FIELD_TO_UINT:
+		pc, err = p.executeFieldToUint(pc, codes, stack)
+	default:
+		err = fmt.Errorf("unknown wide bytecode encountered (0x%x)", wopcode)
+	}
+	//
+	return pc, false, err
 }
 
 // initialise prepares all memories for a fresh execution.  Input (read-only and
@@ -776,9 +985,9 @@ func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error
 // executeAdd_nm implements ADD_nm: it sums the constant and all sources and
 // stores the result across a vector target using the same low-limb-first rule
 // as the word machine, reporting an error on overflow.
-func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		targets, sources, constant, _, n = encoding.DecodeArith_nm[W](pc, codes)
+		targets, sources, constant, _, n = encoding.DecodeArith_nm[W](pc, codes, pool)
 		val                              = constant
 	)
 	//
@@ -791,19 +1000,19 @@ func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, stack []W) (ui
 		val, overflow = val.Add(stack[src])
 		//
 		if overflow {
-			return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+			return pc, p.failure("arithmetic overflow")
 		}
 	}
 	//
-	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeMul_nm implements MUL_nm: it multiplies the constant by all sources
 // and stores the result across a vector target using the same low-limb-first
 // rule as the word machine, reporting an error on overflow.
-func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		targets, sources, constant, _, n = encoding.DecodeArith_nm[W](pc, codes)
+		targets, sources, constant, _, n = encoding.DecodeArith_nm[W](pc, codes, pool)
 		val                              = constant
 		overflow                         bool
 	)
@@ -820,18 +1029,18 @@ func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, stack []W) (ui
 	// A zero result is exact even when an intermediate product overflowed
 	// (matches executeMul in the slow word machine).
 	if overflow && val.Cmp64(0) != 0 {
-		return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic overflow")
 	}
 	//
-	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeFieldAdd implements ADDMOD_P: it sums the constant and all sources
 // modulo the field's prime characteristic, storing the (reduced) result in the
 // single target register.  Matches executeFieldAdd in the slow word machine.
-func (p *Interpreter[W]) executeFieldAdd(pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeFieldAdd(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rd, sources, constant, n = encoding.DecodeFieldArithOperands[W](pc, codes)
+		rd, sources, constant, n = encoding.DecodeFieldArithOperands[W](pc, codes, pool)
 		val                      = constant
 	)
 	//
@@ -848,9 +1057,9 @@ func (p *Interpreter[W]) executeFieldAdd(pc uint32, codes []uint32, stack []W) (
 // then subtracts the remaining sources and the constant modulo the field's
 // prime characteristic, storing the (reduced) result in the single target
 // register.  Matches executeFieldSub in the slow word machine.
-func (p *Interpreter[W]) executeFieldSub(pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeFieldSub(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rd, sources, constant, n = encoding.DecodeFieldArithOperands[W](pc, codes)
+		rd, sources, constant, n = encoding.DecodeFieldArithOperands[W](pc, codes, pool)
 		val                      W
 	)
 	//
@@ -872,9 +1081,9 @@ func (p *Interpreter[W]) executeFieldSub(pc uint32, codes []uint32, stack []W) (
 // executeFieldMul implements MULMOD_P: it multiplies the constant by all sources
 // modulo the field's prime characteristic, storing the (reduced) result in the
 // single target register.  Matches executeFieldMul in the slow word machine.
-func (p *Interpreter[W]) executeFieldMul(pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeFieldMul(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rd, sources, constant, n = encoding.DecodeFieldArithOperands[W](pc, codes)
+		rd, sources, constant, n = encoding.DecodeFieldArithOperands[W](pc, codes, pool)
 		val                      = constant
 	)
 	//
@@ -896,7 +1105,7 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 	//
 	val := loadAcross(module, sources, stack)
 
-	return pc + n, storeAcross(pc, module, targets, val, stack)
+	return pc + n, p.storeAcross(pc, module, targets, val, stack)
 }
 
 // executeUintToField assembles the uint sources and reduces the result modulo P
@@ -918,7 +1127,7 @@ func (p *Interpreter[W]) executeUintToField(pc uint32, codes []uint32, stack []W
 func (p *Interpreter[W]) executeFieldToUint(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	targets, sources, n := encoding.DecodeRegisterLists(pc, codes)
 	//
-	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, stack[sources.Next()], stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, stack[sources.Next()], stack)
 }
 
 // executeDebug implements DEBUG: it reproduces the reference word machine's
@@ -946,10 +1155,10 @@ func (p *Interpreter[W]) executeFail(pc uint32, codes []uint32, frame []W) error
 	)
 	//
 	if len(chunks) == 0 {
-		return errors.New("machine panic")
+		return p.failure("machine panic")
 	}
 	//
-	return fmt.Errorf("machine panic: %s", p.formatChunks(chunks, sources, frame))
+	return p.failure("%s", p.formatChunks(chunks, sources, frame))
 }
 
 // formatChunks renders a formatted-message chunk-set against the current frame,
@@ -1000,7 +1209,7 @@ func (p *Interpreter[W]) formatArgument(module descriptor.Module[W], format zkc_
 
 // executeAdd_2n1 implements ADD_2n1: stack[rd] = stack[rs0] + stack[rs1],
 // returning an error if the addition overflows the word type.
-func executeAdd_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeAdd_2n1(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rs0, rs1, rd, n = encoding.DecodeArith_2n1(pc, codes)
 		// Read rs0
@@ -1012,7 +1221,7 @@ func executeAdd_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 	)
 	// Check for overflow
 	if overflow {
-		return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic overflow")
 	}
 	//
 	stack[rd] = res
@@ -1021,15 +1230,15 @@ func executeAdd_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 }
 
 // executeAdd_1n1c implements ADDC: stack[rd] = stack[rs] + constant.
-func executeAdd_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeAdd_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes)
+		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes, pool)
 		val                 = stack[rs]
 		res, overflow       = val.Add(constant)
 	)
 	//
 	if overflow {
-		return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic overflow")
 	}
 	//
 	stack[rd] = res
@@ -1067,14 +1276,14 @@ func executeXor[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 // executeCheckCast implements CHECKCAST: it checks that the value in register
 // rd fits within the given bit-width, returning an error if it does not.  The
 // register itself is left unchanged.
-func executeCheckCast[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeCheckCast(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rd, bitwidth, n = encoding.DecodeCheckCast(pc, codes)
 		value           = stack[rd]
 	)
 	// perform check
 	if !value.FitsWithin(uint(bitwidth)) {
-		return pc, fmt.Errorf("bit overflow (0x%s not u%d, pc=0x%x)", value.Text(16), bitwidth, pc)
+		return pc, p.failure("bit overflow (0x%s not u%d)", value.Text(16), bitwidth)
 	}
 	//
 	return pc + n, nil
@@ -1082,11 +1291,11 @@ func executeCheckCast[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uin
 
 // executeDiv implements DIV: stack[rd] = stack[dividend] / stack[divisor],
 // returning an error if the divisor is zero.
-func executeDiv[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeDiv(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var rd, dividend, divisor, n = encoding.DecodeDivRem_2n1(pc, codes)
 	//
 	if stack[divisor].Cmp64(0) == 0 {
-		return pc, errors.New("division by zero")
+		return pc, p.failure("division by zero")
 	}
 	//
 	stack[rd] = stack[dividend].Div(stack[divisor])
@@ -1096,11 +1305,11 @@ func executeDiv[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 
 // executeRem implements REM: stack[rd] = stack[dividend] % stack[divisor],
 // returning an error if the divisor is zero.
-func executeRem[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeRem(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var rd, dividend, divisor, n = encoding.DecodeDivRem_2n1(pc, codes)
 	//
 	if stack[divisor].Cmp64(0) == 0 {
-		return pc, errors.New("division by zero")
+		return pc, p.failure("division by zero")
 	}
 	//
 	stack[rd] = stack[dividend].Rem(stack[divisor])
@@ -1144,7 +1353,7 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 	)
 	//
 	if divisor.Sign() == 0 {
-		return pc, errors.New("division by zero")
+		return pc, p.failure("division by zero")
 	}
 	//
 	var (
@@ -1156,11 +1365,11 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 	w.Sub(w, big.NewInt(1))
 	//
 	if w.Sign() < 0 {
-		return pc, errors.New("arithmetic underflow ")
+		return pc, p.failure("arithmetic underflow")
 	}
 	// Distribute quotient, remainder and witness across their target vectors.
 	for _, val := range []*big.Int{q, r, w} {
-		if err := storeIntrinsicResult(module, &targets, val, stack, pc); err != nil {
+		if err := p.storeIntrinsicResult(module, &targets, val, stack); err != nil {
 			return pc, err
 		}
 	}
@@ -1394,10 +1603,10 @@ func (p *Interpreter[W]) executeWideDivHint(pc, n uint32, targets, sources encod
 	)
 	//
 	if divisor.Sign() == 0 {
-		return pc, errors.New("division by zero")
+		return pc, p.failure("division by zero")
 	}
 	//
-	if err := storeIntrinsicResult(module, &targets, new(big.Int).Quo(dividend, divisor), stack, pc); err != nil {
+	if err := p.storeIntrinsicResult(module, &targets, new(big.Int).Quo(dividend, divisor), stack); err != nil {
 		return pc, err
 	}
 	//
@@ -1420,10 +1629,10 @@ func (p *Interpreter[W]) executeWideRemHint(pc, n uint32, targets, sources encod
 	)
 	//
 	if divisor.Sign() == 0 {
-		return pc, errors.New("division by zero")
+		return pc, p.failure("division by zero")
 	}
 	//
-	if err := storeIntrinsicResult(module, &targets, new(big.Int).Rem(dividend, divisor), stack, pc); err != nil {
+	if err := p.storeIntrinsicResult(module, &targets, new(big.Int).Rem(dividend, divisor), stack); err != nil {
 		return pc, err
 	}
 	//
@@ -1475,8 +1684,8 @@ func loadIntrinsicOperand[W word.Word[W]](module descriptor.Module[W], iter *enc
 // significant limb is written into the highest-indexed register and filling
 // proceeds downwards.  It errors if the value does not fit within the vector's
 // total width.
-func storeIntrinsicResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands,
-	value *big.Int, stack []W, pc uint32) error {
+func (p *Interpreter[W]) storeIntrinsicResult(module descriptor.Module[W], iter *encoding.Operands,
+	value *big.Int, stack []W) error {
 	var (
 		base   = iter.Next()
 		length = uint(iter.Next())
@@ -1498,14 +1707,15 @@ func storeIntrinsicResult[W word.Word[W]](module descriptor.Module[W], iter *enc
 	}
 	//
 	if acc.Sign() != 0 {
-		return fmt.Errorf("bit overflow (0x%s not u%d, pc=0x%x)", value.Text(16), total, pc)
+		return p.failure("bit overflow (0x%s not u%d)", value.Text(16), total)
 	}
 	//
 	return nil
 }
 
 // executeSkipIf_rr implements the conditional register-register forward branch
-// bytecodes (SEQ_rr, SNE_rr, SLT_rr, SGT_rr, SLE_rr, SGE_rr).  The comparison
+// bytecodes (SEQ_rr, SNE_rr, SLT_rr, SGE_rr).  There are no GT/LE forms: the
+// encoder normalises those conditions by swapping operands.  The comparison
 // is selected via the Comparator type parameter F.  If stack[rs0] compares to
 // stack[rs1] as required, execution skips forward to the encoded target;
 // otherwise it falls through to the following bytecode.
@@ -1530,8 +1740,71 @@ func executeSkipIf_rr[W word.Word[W], F util.Comparator[W]](pc uint32, codes []u
 	return pc + n
 }
 
-// executeSkipIf_rv implements the conditional register-register branch bytecodes
-// (JEQ_rv, JNE_rv, JLT_rv, JGT_rv, JLE_rv, JGE_rv).  The comparison is selected
+// executeSkipIf_rc implements the conditional register-constant forward branch
+// bytecodes (SEQ_rc, SNE_rc, SLT_rc, SGE_rc).  There are no GT/LE forms: the
+// encoder normalises those conditions by adjusting the constant (x > c ⇔
+// x >= c+1).  The comparison is selected via the Comparator type parameter F.
+// If stack[rs0] compares to the inline constant as required, execution skips
+// forward to the encoded target; otherwise it falls through to the following
+// bytecode.
+func executeSkipIf_rc[W word.Word[W], F util.Comparator[W]](pc uint32, codes []uint32, pool []W,
+	stack []W) uint32 {
+	var (
+		c F
+		//
+		skip, rs0, constant, _, n = encoding.DecodeSkipIf_rc[W](pc, codes, pool)
+		// Calculate skip target
+		target = pc + 1 + skip
+		// Read rs0
+		val0 = stack[rs0]
+	)
+	//
+	if c.Cmp(val0, constant) {
+		// true branch
+		return target
+	}
+	// false branch
+	return pc + n
+}
+
+// executeSkipIf_rcv implements the conditional register-vector versus
+// constant-vector forward branch bytecodes (SEQ_rcv, SNE_rcv, SLT_rcv,
+// SGE_rcv).  There are no GT/LE forms: the encoder normalises those conditions
+// by adjusting the constant (x > c ⇔ x >= c+1).  The comparison is selected
+// via the Comparator type parameter F, and proceeds lexicographically from the
+// most-significant element (base) downwards, exactly as executeSkipIf_rv.
+func executeSkipIf_rcv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []uint32, pool []W,
+	stack []W) uint32 {
+	var (
+		cmp F
+		//
+		skip, rs0, constants, _, n = encoding.DecodeSkipIf_rcv[W](pc, codes, pool)
+		// Calculate skip target
+		target = pc + 1 + skip
+	)
+	//
+	for i := uint16(0); i < rs0.Len; i++ {
+		// Read rs0
+		val0 := stack[rs0.Base+i]
+		// Read corresponding constant element
+		val1 := constants[i]
+		//
+		if i+1 != rs0.Len && val0.Cmp(val1) == 0 {
+			continue
+		} else if cmp.Cmp(val0, val1) {
+			// true branch
+			return target
+		}
+		// false branch
+		return pc + n
+	}
+	//
+	panic("unreachable")
+}
+
+// executeSkipIf_rv implements the conditional register-vector branch bytecodes
+// (SEQ_rv, SNE_rv, SLT_rv, SGE_rv).  There are no GT/LE forms: the encoder
+// normalises those conditions by swapping operands.  The comparison is selected
 // via the Comparator type parameter F.  If stack[rs0] compares to stack[rs1] as
 // required, execution jumps to the encoded target; otherwise it falls through
 // to the following bytecode.
@@ -1573,7 +1846,7 @@ func executeSkipIf_rv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []u
 // compared against each case value and, on the first match, control transfers
 // to that case's (absolute) target; otherwise control falls through past the
 // whole instruction to the following one.
-func executeSkipTable[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
+func executeSkipTable[W word.Word[W]](pc uint32, codes []uint32, pool []W, stack []W) uint32 {
 	var (
 		word0  = codes[pc]
 		count  = (word0 >> 24) & 0xff
@@ -1582,17 +1855,35 @@ func executeSkipTable[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint
 	)
 	//
 	for i := range count {
-		var (
-			base  = pc + 1 + (i * 3)
-			value = uint64(codes[base]) | (uint64(codes[base+1]) << 32)
-		)
+		var word = codes[pc+1+i]
 		//
-		if val.Cmp64(value) == 0 {
-			return codes[base+2]
+		if val.Cmp(pool[word&0xffff]) == 0 {
+			return pc + 1 + (word >> 16)
 		}
 	}
 	// no match: fall through past the whole instruction
-	return pc + 1 + (3 * count)
+	return pc + 1 + count
+}
+
+// executeDispatch implements the SKIP_B (one-hot) dispatch: the case bits are
+// examined in order and control transfers to the (absolute) target of the
+// first bit which is set; when no bit is set, control falls through past the
+// whole instruction to the following one.
+func executeDispatch[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
+	var (
+		word0 = codes[pc]
+		count = (word0 >> 24) & 0xff
+	)
+	//
+	for i := range count {
+		var word = codes[pc+1+i]
+		//
+		if stack[word&0xffff].Cmp64(0) != 0 {
+			return pc + 1 + (word >> 16)
+		}
+	}
+	// no bit set: fall through past the whole instruction
+	return pc + 1 + count
 }
 
 // executeLdc_1 implements LDC: it loads a constant value into register rd.
@@ -1606,8 +1897,8 @@ func executeLdc_1[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
 
 // executeLdc_w implements LDC_w: it loads a wide constant value into register
 // rd.
-func executeLdc_w[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint32 {
-	val, rd, n := encoding.DecodeLdc_w[W](pc, codes)
+func executeLdc_w[W word.Word[W]](pc uint32, codes []uint32, pool []W, stack []W) uint32 {
+	val, rd, n := encoding.DecodeLdc_w[W](pc, codes, pool)
 	//
 	stack[rd] = val
 	//
@@ -1630,7 +1921,7 @@ func executeMove_1s1[W word.Word[W]](pc uint32, codes []uint32, stack []W) uint3
 
 // executeMul_2n1 implements MUL_2n1: stack[rd] = stack[rs0] * stack[rs1],
 // returning an error if the multiplication overflows the word type.
-func executeMul_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeMul_2n1(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		rs0, rs1, rd, n = encoding.DecodeArith_2n1(pc, codes)
 		// Read rs0
@@ -1642,7 +1933,7 @@ func executeMul_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 	)
 	// Check for overflow
 	if hi.Cmp64(0) != 0 {
-		return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic overflow")
 	}
 	//
 	stack[rd] = lo
@@ -1651,15 +1942,15 @@ func executeMul_2n1[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint3
 }
 
 // executeMul_1n1c implements MULC: stack[rd] = stack[rs] * constant.
-func executeMul_1n1c[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeMul_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes)
+		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes, pool)
 		val                 = stack[rs]
 		hi, lo              = val.Mul(constant)
 	)
 	//
 	if hi.Cmp64(0) != 0 {
-		return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic overflow")
 	}
 	//
 	stack[rd] = lo
@@ -1748,9 +2039,9 @@ func executeShr[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 }
 
 // executeSub_1n1c implements SUBC: stack[rd] = stack[rs] - constant.
-func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes)
+		rs, rd, constant, n = encoding.DecodeArith_1n1c[W](pc, codes, pool)
 		val                 = stack[rs]
 		res, underflow      = val.Sub(constant)
 	)
@@ -1811,9 +2102,9 @@ func (p *Interpreter[W]) executeSub_2n1(pc uint32, codes []uint32, stack []W) (u
 // subtracts the remaining sources and the constant, and stores the result
 // across a vector target using the same low-limb-first rule as the word
 // machine, reporting an error on underflow.
-func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (uint32, error) {
+func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm[W](pc, codes)
+		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm[W](pc, codes, pool)
 		val                                     W
 		acc                                     W
 		underflow                               bool
@@ -1825,24 +2116,24 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, stack []W) (ui
 		var src = sources.Next()
 		//
 		if acc, underflow = acc.Add(stack[src]); underflow {
-			return pc, fmt.Errorf("arithmetic overflow (pc=0x%x)", pc)
+			return pc, p.failure("arithmetic underflow")
 		}
 	}
 	//
 	if acc, underflow = acc.Add(constant); underflow {
-		return pc, fmt.Errorf("arithmetic underflow (pc=0x%x)", pc)
+		return pc, p.failure("arithmetic underflow")
 	} else if val, underflow = val.Sub(acc); underflow {
 		val = val.Slice(bitwidth)
 	}
 	//
-	return pc + n, storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
 }
 
 // executeWriteWom_sn implements WR_WOM_nm: it writes ndata consecutive words
 // from successive source registers into the write-once memory identified by id,
 // starting at the address decoded from the operand registers.
-func executeWriteWom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	woms []WriteOnce[W]) uint32 {
+func (p *Interpreter[W]) executeWriteWom_sn(pc uint32, codes []uint32, stack []W,
+	woms []WriteOnce[W]) (uint32, error) {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -1853,13 +2144,17 @@ func executeWriteWom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	address = decodeAddress(addr, wom.Descriptor(), stack)
 	//
 	for data.HasNext() {
+		// Sanity check
+		if !wom.CanWrite(address) {
+			return pc, p.failure("address %x already written for write-only memory %s", address, wom.descriptor.Name())
+		}
 		//nolint
 		wom.Write(address, stack[data.Next()])
 		//
 		address++
 	}
 	//
-	return pc + n
+	return pc + n, nil
 }
 
 // executeReadRam_sn implements RD_RAM_nm: it reads ndata consecutive words from
@@ -2023,7 +2318,7 @@ func loadAcross[W word.Word[W]](module descriptor.Module[W], sources encoding.Op
 	return value
 }
 
-func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets encoding.Operands, oval W,
+func (p *Interpreter[W]) storeAcross(pc uint32, module descriptor.Module[W], targets encoding.Operands, oval W,
 	stack []W) error {
 	//
 	var (
@@ -2037,14 +2332,16 @@ func storeAcross[W word.Word[W]](pc uint32, module descriptor.Module[W], targets
 			width  = bitwidthOf(module, target)
 		)
 		//
-		// Low limbs are written first, matching machine.StoreAcross.
+		// Low limbs are written first, matching machine.StoreAcross.  Note the
+		// (wrapped) limbs are written even when the value overflows below, so a
+		// trace being generated records the wrapped result the constraints reject.
 		stack[target] = value.Slice(width)
 		value = value.Shr64(uint64(width))
 		bitwidth += width
 	}
 	//
 	if value.Cmp64(0) != 0 {
-		return fmt.Errorf("bit overflow (0x%s not u%d, pc=0x%x)", oval.Text(16), bitwidth, pc)
+		return p.failure("bit overflow (0x%s not u%d, pc=0x%x)", oval.Text(16), bitwidth, pc)
 	}
 	//
 	return nil

@@ -1,0 +1,19 @@
+//error:17:18-25:default case cannot be combined with labels in switch statement
+
+// ================
+// shared default
+// ================
+
+type exmp = u8
+
+const CASE_A     :exmp = 1
+const CASE_MATCH :exmp = 13
+
+fn main() {
+
+  var discr :exmp = CASE_MATCH
+
+  switch discr {
+    case CASE_A, default: { }
+  }
+}

@@ -118,7 +118,7 @@ func vectorizeFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.F
 	// Remove unreachable vectors and rebind jump targets.
 	insns = pruneUnreachableInstructions[W](insns)
 	//
-	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), insns)
+	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), fn.Effects(), insns)
 }
 
 // prepareCode appends a fall-through Jmp(pc+1) to any vector that does not
@@ -173,6 +173,12 @@ func endsInTerminator[W word.Word[W]](codes []Bytecode[W]) bool {
 				return false
 			}
 		case *bytecode.Switch[W]:
+			for _, dc := range code.Cases {
+				if uint(i)+uint(dc.Skip)+1 >= n {
+					return false
+				}
+			}
+		case *bytecode.Dispatch[W]:
 			for _, dc := range code.Cases {
 				if uint(i)+uint(dc.Skip)+1 >= n {
 					return false
@@ -356,6 +362,17 @@ func inlineJump[W word.Word[W]](vec BytecodeVector[W], jmpIndex uint, targetCode
 			}
 			//
 			code = &bytecode.Switch[W]{Source: c.Source, Cases: ncases}
+		case *bytecode.Dispatch[W]:
+			// As for Switch above: every case's offset must be recomputed after
+			// the splice.
+			ncases := make([]bytecode.DispatchCase, len(c.Cases))
+			//
+			for k, dc := range c.Cases {
+				target := mapping[cc+1+uint(dc.Skip)]
+				ncases[k] = bytecode.DispatchCase{Bit: dc.Bit, Skip: uint16(target - npc - 1)}
+			}
+			//
+			code = &bytecode.Dispatch[W]{Cases: ncases, Default: c.Default}
 		}
 		//
 		ncodes[npc] = code

@@ -1,0 +1,8 @@
+//error:5:8-23:cannot compare constants
+const MAX_ADDR:u16 = 255
+
+fn main() {
+    if MAX_ADDR != 255 {
+        fail
+    }
+}

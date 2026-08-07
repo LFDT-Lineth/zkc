@@ -74,7 +74,7 @@ func lowerFieldCastFunction[W word.Word[W]](fn *descriptor.Function[W], helpers 
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), registers, fn.Kind(), vectors)
+	return descriptor.NewFunction(fn.Name(), registers, fn.Kind(), fn.Effects(), vectors)
 }
 
 type fieldCastHelpers[W word.Word[W]] struct {
@@ -133,6 +133,7 @@ func (p *fieldCastHelpers[W]) ensure(widths []uint, total uint) uint {
 		regs    []descriptor.Register[W]
 		inputs  = make([]bytecode.RegisterId, len(widths))
 		code    []Bytecode[W]
+		prime   W
 	)
 	// Input registers: the target limbs of the 𝔽→uint extraction.
 	for i, width := range widths {
@@ -149,26 +150,21 @@ func (p *fieldCastHelpers[W]) ensure(widths []uint, total uint) uint {
 			"value", util.Some(total), padding))
 		code = append(code, bytecode.Concat[W]([]bytecode.RegisterId{valueReg}, inputs))
 	}
-	// Load the modulus P into a register (SkipIf compares two registers) and
-	// fail unless the value is canonical (value < P).
-	pReg := bytecode.RegisterId(len(regs))
-	regs = append(regs, descriptor.NewRegister(register.COMPUTED_REGISTER,
-		"P", util.Some(total), padding))
-
-	var pConst W
-
-	pConst = pConst.SetBigInt(p.modulus)
+	// Assign the modulus
+	prime = prime.SetBigInt(p.modulus)
 	// value < P → skip the fail (canonical); otherwise fall through and fail.
 	code = append(code,
-		bytecode.LoadConst(pReg, pConst),
-		bytecode.NewSkipIf[W](bytecode.CONDITION_LT, 1, valueReg, pReg),
+		//bytecode.LoadConst(pReg, pConst),
+		bytecode.NewSkipIf[W](bytecode.CONDITION_LT, 1,
+			bytecode.NewRegisterVector(valueReg),
+			bytecode.NewConstantOperand(prime)),
 		bytecode.NewFail[W](nil, nil),
 		bytecode.NewRet[W](),
 	)
 
 	id := p.base + uint(len(p.modules))
 	p.ids[name] = id
-	p.modules = append(p.modules, descriptor.NewFunction(name, regs, descriptor.BYTECODE_FUNCTION,
+	p.modules = append(p.modules, descriptor.NewFunction(name, regs, descriptor.BYTECODE_FUNCTION, nil,
 		[]BytecodeVector[W]{bytecode.NewVector(code...)}))
 
 	return id

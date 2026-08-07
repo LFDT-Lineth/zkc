@@ -49,11 +49,23 @@ func NumberOfColumns[F any](tr Trace[F]) uint {
 // to do depends upon the fields in question, and is the caller's
 // responsibility.
 func ModuleAdapter[F1 field.Element[F1], F2 field.Element[F2]](module Module[F1]) Module[F2] {
-	return &moduleAdapter[F1, F2]{module}
+	// Wrap each column exactly once, so that Column() below is allocation-free
+	// on what is a very hot path (expression evaluation calls it for every
+	// register access on every row).
+	columns := make([]columnAdapter[F1, F2], module.Width())
+	//
+	for i := range columns {
+		columns[i] = columnAdapter[F1, F2]{module.Column(uint(i))}
+	}
+	//
+	return &moduleAdapter[F1, F2]{module, columns}
 }
 
 type moduleAdapter[F1 field.Element[F1], F2 field.Element[F2]] struct {
 	module Module[F1]
+	// Adapters for each column of the wrapped module.  These are immutable
+	// after construction, since Get may be called concurrently.
+	columns []columnAdapter[F1, F2]
 }
 
 // Module implementation for trace.Module interface.
@@ -63,7 +75,7 @@ func (p *moduleAdapter[F1, F2]) Name() ModuleName {
 
 // Column implementation for trace.Module interface.
 func (p *moduleAdapter[F1, F2]) Column(index uint) Column[F2] {
-	return &columnAdapter[F1, F2]{p.module.Column(index)}
+	return &p.columns[index]
 }
 
 // ColumnOf implementation for trace.Module interface.
@@ -107,14 +119,12 @@ func (p *columnAdapter[F1, F2]) Name() string {
 // Get implementation for trace.Column interface.
 func (p *columnAdapter[F1, F2]) Get(row int) F2 {
 	var (
-		from  = p.col.Get(row)
-		to    F2
-		check F1
+		from = p.col.Get(row)
+		to   F2
 	)
 	// Fast path: avoid expensive SetBytes round-trip for small values.
-	u := from.Uint64()
-	if from.Equals(check.SetUint64(u)) {
-		return to.SetUint64(u)
+	if from.FitsWithin(64) {
+		return to.SetUint64(from.Uint64())
 	}
 
 	return to.SetBytes(from.Bytes())

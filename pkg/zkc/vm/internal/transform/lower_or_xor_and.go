@@ -37,23 +37,61 @@ import (
 //
 // It must run before AddRangeConstraints (so the freshly introduced registers
 // are range-checked) and the CALLs it introduces must subsequently be flattened.
-func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W], maxStaticDepth uint) descriptor.Program[W] {
+func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W], maxStaticHeight uint) descriptor.Program[W] {
 	var (
 		out = slices.Clone(program.Modules())
-		// maxStaticWidth is floor(log2(maxStaticDepth)); a bitwise table indexes
+		// maxStaticWidth is floor(log2(maxStaticHeight)); a bitwise table indexes
 		// two w-bit operands, so it fits only when 2w <= maxStaticWidth.
-		bitwiseStaticWidth = uint(bits.Len(maxStaticDepth)-1) / 2
-		// AND/OR/XOR use no shift-amount widths.
-		helpers = newBitwiseHelpers[W](uint(len(out)), nil, bitwiseStaticWidth)
+		bitwiseStaticWidth = uint(bits.Len(maxStaticHeight)-1) / 2
+		helpers            = newBitwiseHelpers[W](uint(len(out)), bitwiseStaticWidth)
 	)
 
 	for i, mod := range out {
 		if fn, ok := mod.(*descriptor.Function[W]); ok {
-			out[i] = lowerBitwiseFunction(fn, helpers, lowerOrXorAndCode[W])
+			out[i] = lowerBitwiseFunction(fn, func(b Bytecode[W], alloc split.Allocator[W]) []Bytecode[W] {
+				return lowerOrXorAndCode(b, alloc, helpers)
+			})
 		}
 	}
 
 	return descriptor.NewProgram(program.Field(), append(out, helpers.modules()...)...)
+}
+
+// bitwiseHelperKey identifies an AND/OR/XOR helper module.
+type bitwiseHelperKey struct {
+	op    bytecode.Operation
+	width uint
+	arity int
+}
+
+// bitwiseHelpers is the registry of AND/OR/XOR helper modules built by
+// LowerOrXorAnd: static truth tables for small widths, recursive halving
+// helpers above.  SHL/SHR use the separate shiftHelpers registry (see
+// lower_shift.go).
+type bitwiseHelpers[W word.Word[W]] struct {
+	baseID uint
+	ids    map[bitwiseHelperKey]uint
+	items  []descriptor.Module[W]
+	// bitwiseStaticWidth is the largest width for which an AND/OR/XOR operation
+	// is realised as a static lookup table rather than a recursive helper (see
+	// ensureNary).
+	bitwiseStaticWidth uint
+}
+
+func newBitwiseHelpers[W word.Word[W]](baseID uint, bitwiseStaticWidth uint) *bitwiseHelpers[W] {
+	return &bitwiseHelpers[W]{
+		baseID:             baseID,
+		ids:                make(map[bitwiseHelperKey]uint),
+		bitwiseStaticWidth: bitwiseStaticWidth,
+	}
+}
+
+func (p *bitwiseHelpers[W]) modules() []descriptor.Module[W] {
+	return p.items
+}
+
+func helperName(key bitwiseHelperKey) string {
+	return fmt.Sprintf("$bit_%s_u%d", bitwiseOpName(key.op), key.width)
 }
 
 // isTableWidth reports whether an AND/OR/XOR operation of the given width is
@@ -216,9 +254,9 @@ func newDecomposedNaryHelper[W word.Word[W]](
 	out := b.output
 	zero := word.Const64[W](0)
 
-	// NOTE: with a non-degenerate maxStaticDepth this recursion bottoms out in a
+	// NOTE: with a non-degenerate maxStaticHeight this recursion bottoms out in a
 	// static table (see ensureNary), so the width==1 arithmetic base below is
-	// reached only when bitwiseStaticWidth==0 (a tiny maxStaticDepth that admits
+	// reached only when bitwiseStaticWidth==0 (a tiny maxStaticHeight that admits
 	// no bitwise table at all).
 	if key.width == 1 {
 		// Base case: single-bit operation.  Seed agg with the op's identity
@@ -268,7 +306,7 @@ func newDecomposedNaryHelper[W word.Word[W]](
 
 	b.emit(bytecode.NewRet[W]())
 
-	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION,
+	return descriptor.NewFunction(helperName(key), b.regs(), descriptor.BYTECODE_FUNCTION, nil,
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})
 }
 
@@ -277,7 +315,7 @@ func newDecomposedNaryHelper[W word.Word[W]](
 // data line holding "a op b".  A read of this table (see invokeNary) becomes a
 // lookup asserting (a, b, result) is a valid row of the operation's truth
 // table.  The table enumerates every (a, b) pair, so it has 2^(2*width) rows;
-// the caller (ensureNary) only builds it when 2^(2*width) <= maxStaticDepth.
+// the caller (ensureNary) only builds it when 2^(2*width) <= maxStaticHeight.
 //
 // The row index encodes the operands as a (high) followed by b (low), matching
 // how the interpreter decodes address lines from the memory geometry (see
@@ -361,6 +399,10 @@ func (p *helperBuilder[W]) regs() []descriptor.Register[W] {
 
 func (p *helperBuilder[W]) emit(insn Bytecode[W]) {
 	p.code = append(p.code, insn)
+}
+
+func (p *helperBuilder[W]) emitAll(insns []Bytecode[W]) {
+	p.code = append(p.code, insns...)
 }
 
 func (p *helperBuilder[W]) newComputed(prefix string) bytecode.RegisterId {

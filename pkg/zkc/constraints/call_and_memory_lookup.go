@@ -16,8 +16,6 @@ import (
 	"fmt"
 	"math/big"
 
-	mirc "github.com/LFDT-Lineth/zkc/pkg/asm/compiler"
-	"github.com/LFDT-Lineth/zkc/pkg/asm/io/micro/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
@@ -28,6 +26,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -50,19 +50,27 @@ import (
 //
 // Lookups require a register (and not an expression) as the source selector,
 // so the path selector is materialised as a fresh 1-bit register (if it is not already).
-func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	fn *vm.Function[W], pcSelectors []register.Id, ret register.Id, infos []vm.Module[W],
-	callerRegs []register.Register) {
+func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
+	ctx schema.ModuleId,
+	fn *vm.Function[W],
+	pcSelectors []register.Id,
+	ret register.Id,
+	infos []vm.Module[W],
+	callerRegs []register.Register,
+	field field.Config) {
 	//
 	for pc, vec := range fn.Vectors() {
 		// Branch table giving the condition under which each code in this vector
 		// is reached.
-		_, branchTable := vec.BranchTable()
+		_, branchTable := vec.BranchTable(field.RegisterWidth)
+		// One-hot register groups declared by the vector's Dispatch bytecodes,
+		// used to shorten the selector conditions below.
+		oneHot := collectOneHotGroups(vec.Bytecodes)
 		// Group the lookup-emitting bytecodes by the branch condition under
 		// which they execute, so accesses sharing a condition share a single
 		// source selector (column).
 		// Note that a branch that doesn't emit lookup will be skipped.
-		for _, group := range groupLookupsByCondition(vec.Bytecodes, branchTable, infos) {
+		for _, group := range groupLookupsByCondition(vec.Bytecodes, branchTable, oneHot, infos) {
 			// Source selector gating the accesses of this group: their branch
 			// condition and:
 			// - for a multi-line function, its line selector (IS_PC_*)
@@ -104,9 +112,12 @@ type lookupEntry[W vm.Word[W]] struct {
 
 // groupLookupsByCondition partitions the lookup-emitting bytecodes of a vector
 // (calls, and memory accesses other than RAM) by the branch condition under
-// which they execute.
+// which they execute.  Conditions are shortened against the given one-hot
+// groups first (see rewriteOneHotConditions), so that accesses within a
+// switch's default body are gated on the default bit rather than on the
+// complement of every case bit.
 func groupLookupsByCondition[W vm.Word[W]](codes []vm.Bytecode[W], branchTable dfa.Result[dfa.Path[W]],
-	infos []vm.Module[W]) []lookupGroup[W] {
+	oneHot []oneHotGroup, infos []vm.Module[W]) []lookupGroup[W] {
 	var groups []lookupGroup[W]
 	//
 outer:
@@ -127,7 +138,7 @@ outer:
 		}
 		//
 		var (
-			condition = branchTable.StateOf(uint(cc)).Condition()
+			condition = rewriteOneHotConditions(branchTable.StateOf(uint(cc)).Condition(), oneHot)
 			entry     = lookupEntry[W]{uint(cc), code}
 		)
 		// Append to an existing group with the same condition (if any).
@@ -153,71 +164,27 @@ outer:
 func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
 	ret register.Id) register.Id {
-	// In a multi-line caller the call only fires on rows executing its line, so
-	// fold the line's PC selector (IS_PC_k != 0) into the condition as an
-	// extra single-bit atom.  An atomic caller has no line selectors, so its
-	// gating is the branch condition alone.
+	// Position register gating the rows of this access: the line's IS_PC_k
+	// selector for a multi-line function, or $ret for an atomic one (defining
+	// the non-padding region).
+	var position register.Id
+	//
 	if len(pcSelectors) != 0 {
-		isPc := logical.NotEqualsConst(dfa.NewBranchId(false, pcSelectors[pc]), big.Int{})
-		cond = cond.And(logical.NewProposition(isPc))
+		position = pcSelectors[pc]
 	} else {
-		// Atomic caller: also gate on $ret so padding rows don't trigger lookups.
-		iomf := logical.NotEqualsConst(dfa.NewBranchId(false, ret), big.Int{})
-		cond = cond.And(logical.NewProposition(iomf))
+		position = ret
 	}
-	// The folded condition carries at least the position/padding atom, so it
-	// can never be trivially true.
+	// An unconditional access is gated by position alone, so the position
+	// register (already 1 exactly on its rows) serves directly as selector.
 	if cond.IsTrue() {
-		panic("lookup source condition must be gated by IS_PC_k / $ret")
+		return position
 	}
-	// The (gated) condition is already a single materialised boolean: reuse it
-	// directly, with no fresh column.
-	if b, ok := singleBitGuard(cond, regs); ok {
-		return b
-	}
-	// General case: materialise a fresh path selector column.
+	// Conditional access: fold the position atom (position != 0) into the
+	// condition and materialise it as a fresh path selector column.
+	posAtom := logical.NotEqualsConst(dfa.NewBranchId(false, position), big.Int{})
+	cond = cond.And(logical.NewProposition(posAtom))
+	//
 	return newPathSelector(mod, ctx, regs, cond)
-}
-
-// singleBitGuard recognises a branch condition which is, over a single register
-// b, either "b != 0" or "b == 1" — both of which are 1 exactly when the guarded
-// path is taken, so b can serve directly as the lookup selector.  Other forms
-// ("b == 0", "b != 1", a register-valued or non-{0,1} RHS, a multi-register
-// group) cannot, and fall back to a materialised path selector column.
-//
-// Such a guard is always materialised on a 1-bit register by
-// FactorSkipConditions, so a wider operand here indicates a broken invariant
-// and panics.
-func singleBitGuard(cond dfa.BranchCondition, regs []register.Register) (register.Id, bool) {
-	conjuncts := cond.Conjuncts()
-	if len(conjuncts) != 1 {
-		return register.UnusedId(), false
-	}
-	//
-	atoms := conjuncts[0].Atoms()
-	if len(atoms) != 1 {
-		return register.UnusedId(), false
-	}
-	// Require a single register compared against a constant.
-	atom := atoms[0]
-	if atom.Left.Width != 1 || !atom.Right.HasSecond() {
-		return register.UnusedId(), false
-	}
-	// Only "b != 0" (inequality vs 0) and "b == 1" (equality vs 1) let us reuse b.
-	rhs := atom.Right.Second()
-	neqZero := !atom.Sign && rhs.Sign() == 0
-	eqOne := atom.Sign && rhs.Cmp(big.NewInt(1)) == 0
-	//
-	if !neqZero && !eqOne {
-		return register.UnusedId(), false
-	}
-	// The operand must be a genuine boolean (1-bit) register.
-	id := atom.Left.Id
-	if w := regs[id.Unwrap()].Width(); w != 1 {
-		panic(fmt.Sprintf("expected 1-bit branch register for lookup guard, got width %d", w))
-	}
-	//
-	return id, true
 }
 
 // newPathSelector creates a fresh 1-bit column gating a conditionally executed
@@ -233,7 +200,7 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]]
 	selId := register.NewId(mod.Width())
 	mod.AddRegisters(register.NewComputed(fmt.Sprintf("$lookup_sel_%d", selId.Unwrap()), 1, padding))
 	// Fill the flag selector during trace expansion with the boolean value of the condition.
-	mod.AddAssignments(assignment.NewComputedRegister[F](pathSelectorComputation(cond, regs), true, ctx, selId))
+	mod.AddAssignments(assignment.NewComputedRegister[F](pathSelectorComputation(cond, regs), ctx, selId))
 	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.
 	mod.AddConstraints(mir.NewVanishingConstraint(
 		fmt.Sprintf("lookup_sel_%d", selId.Unwrap()), ctx, util.None[int](),

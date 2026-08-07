@@ -59,11 +59,12 @@ type AirLowering[F field.Element[F]] struct {
 // NewAirLowering constructs an initial state for lowering a given MIR schema.
 func NewAirLowering[F field.Element[F]](fieldBandwidth uint, mirSchema Schema[F]) AirLowering[F] {
 	var (
-		airSchema = ir.NewSchemaBuilder[F, air.Constraint[F], air.Term[F], air.Module[F]]()
+		airSchema = ir.NewSchemaBuilder[F, air.Constraint[F], air.Term[F]]()
 	)
 	// Initialise AIR modules
 	for _, m := range mirSchema.RawModules() {
-		airSchema.NewModule(m.Name(), m.AllowPadding(), m.IsPublic(), m.IsSynthetic(), m.IsStatic(), m.IsNative(), m.Keys())
+		airSchema.NewModule(m.Name(), m.AllowPadding(), m.IsPublicOutput(), m.IsPrivateOutput(), m.IsSynthetic(),
+			m.IsStatic(), m.IsNative(), m.Keys())
 	}
 	//
 	return AirLowering[F]{
@@ -118,8 +119,6 @@ func (p *AirLowering[F]) LowerModule(index uint) {
 	var (
 		mirModule = p.mirSchema.Module(index)
 		airModule = p.airSchema.Module(index)
-		// record of true bitwidths
-		bitwidths = determineTrueBitwidths(mirModule)
 	)
 	// Add assignments.  At this time, there is nothing to do in terms of
 	// lowering.  Observe that this must be done *before* lowering assignments
@@ -134,28 +133,20 @@ func (p *AirLowering[F]) LowerModule(index uint) {
 		// Following should always hold
 		constraint := iter.Next().(Constraint[F])
 		//
-		p.lowerConstraintToAir(constraint, airModule, bitwidths)
+		p.lowerConstraintToAir(constraint, airModule)
 	}
 }
 
 // Lower a constraint to the AIR level.
-func (p *AirLowering[F]) lowerConstraintToAir(c Constraint[F], airModule air.ModuleBuilder[F], bitwidths []uint) {
+func (p *AirLowering[F]) lowerConstraintToAir(c Constraint[F], airModule air.ModuleBuilder[F]) {
 	// Check what kind of constraint we have
 	switch v := c.constraint.(type) {
-	case Assertion[F]:
-		p.lowerAssertionToAir(v, airModule)
-	case InterleavingConstraint[F]:
-		p.lowerInterleavingConstraintToAir(v, airModule)
 	case LookupConstraint[F]:
 		p.lowerLookupConstraintToAir(v, airModule)
-	case PermutationConstraint[F]:
-		p.lowerPermutationConstraintToAir(v, airModule)
 	case RangeConstraint[F]:
 		p.lowerRangeConstraintToAir(v, airModule)
-	case SortedConstraint[F]:
-		p.lowerSortedConstraintToAir(v, airModule)
 	case VanishingConstraint[F]:
-		p.lowerVanishingConstraintToAir(v, airModule, bitwidths)
+		p.lowerVanishingConstraintToAir(v, airModule)
 	default:
 		// Should be unreachable as no other constraint types can be added to a
 		// schema.
@@ -163,20 +154,14 @@ func (p *AirLowering[F]) lowerConstraintToAir(c Constraint[F], airModule air.Mod
 	}
 }
 
-// Lowering an assertion is straightforward since its not a true constraint.
-func (p *AirLowering[F]) lowerAssertionToAir(v Assertion[F], airModule air.ModuleBuilder[F]) {
-	airModule.AddConstraint(air.NewAssertion[F](v.Handle, v.Context, v.Domain, v.Property))
-}
-
 // Lower a vanishing constraint to the AIR level.  This is relatively
 // straightforward and simply relies on lowering the expression being
 // constrained.  This may result in the generation of computed columns, e.g. to
 // hold inverses, etc.
-func (p *AirLowering[F]) lowerVanishingConstraintToAir(v VanishingConstraint[F], airModule air.ModuleBuilder[F],
-	bitwidths []uint) {
+func (p *AirLowering[F]) lowerVanishingConstraintToAir(v VanishingConstraint[F], airModule air.ModuleBuilder[F]) {
 	//
 	var (
-		terms = p.lowerAndSimplifyLogicalTo(v.Constraint, airModule, bitwidths)
+		terms = p.lowerAndSimplifyLogicalTo(v.Constraint, airModule)
 	)
 	//
 	for i, air_expr := range terms {
@@ -186,14 +171,6 @@ func (p *AirLowering[F]) lowerVanishingConstraintToAir(v VanishingConstraint[F],
 		airModule.AddConstraint(
 			air.NewVanishingConstraint(handle, v.Context, v.Domain, air_expr))
 	}
-}
-
-// Lower a permutation constraint to the AIR level.  This is trivial because
-// permutation constraints do not currently support complex forms.
-func (p *AirLowering[F]) lowerPermutationConstraintToAir(v PermutationConstraint[F], airModule air.ModuleBuilder[F]) {
-	airModule.AddConstraint(
-		air.NewPermutationConstraint[F](v.Handle, v.Context, v.Targets, v.Sources),
-	)
 }
 
 // Lower a range constraint to the AIR level.  The challenge here is that a
@@ -212,44 +189,6 @@ func (p *AirLowering[F]) lowerRangeConstraintToAir(v RangeConstraint[F], airModu
 			WithMaxRangeConstraint(p.config.MaxRangeConstraint)
 		//
 		gadget.Constrain(ref, v.Bitwidths[i])
-	}
-}
-
-// Lower an interleaving constraint to the AIR level.  The challenge here is
-// that interleaving constraints at the AIR level cannot use arbitrary
-// expressions; rather, they can only access columns directly.  Therefore,
-// whenever a general expression is encountered, we must generate a computed
-// column to hold the value of that expression, along with appropriate
-// constraints to enforce the expected value.
-func (p *AirLowering[F]) lowerInterleavingConstraintToAir(c InterleavingConstraint[F],
-	airModule air.ModuleBuilder[F]) {
-	var (
-		n = len(c.Target.Vars)
-	)
-	//
-	for i := range n {
-		var (
-			sources = make([]*air.ColumnAccess[F], len(c.Sources))
-			ith     = c.Target.Vars[i]
-		)
-		// Lower sources
-		for j, src := range c.Sources {
-			var (
-				jth      = src.Vars[i]
-				jth_term = term.RawRegisterAccess[F, air.Term[F]](jth.Register(), jth.BitWidth(), jth.RelativeShift())
-			)
-			// Apply any mask
-			sources[j] = jth_term.Mask(jth.MaskWidth())
-		}
-		// Lower target
-		var (
-			ith_term = term.RawRegisterAccess[F, air.Term[F]](ith.Register(), ith.BitWidth(), ith.RelativeShift())
-			// Apply any mask
-			target = ith_term.Mask(ith.MaskWidth())
-		)
-		// Add constraint
-		airModule.AddConstraint(
-			air.NewInterleavingConstraint(c.Handle, c.TargetContext, c.SourceContext, *target, sources))
 	}
 }
 
@@ -291,38 +230,6 @@ func (p *AirLowering[F]) expandLookupVectorToAir(vector LookupVector[F],
 	return lookup.NewVector(vector.Module, selector, terms...)
 }
 
-// Lower a sorted constraint to the AIR level.  The challenge here is that there
-// is not concept of sorting constraints at the AIR level.  Instead, we have to
-// generate the necessary machinery to enforce the sorting constraint.
-func (p *AirLowering[F]) lowerSortedConstraintToAir(c SortedConstraint[F], airModule air.ModuleBuilder[F]) {
-	var (
-		sources = make([]register.Id, len(c.Sources))
-	)
-	//
-	for i, source := range c.Sources {
-		var ith_width = source.MaskWidth()
-		// Sanity check
-		if i < len(c.Signs) && ith_width > c.BitWidth {
-			msg := fmt.Sprintf("incompatible bitwidths (%d vs %d)", ith_width, c.BitWidth)
-			panic(msg)
-		}
-		//
-		sources[i] = source.Register()
-	}
-	// finally add the sorting constraint
-	gadget := air_gadgets.NewLexicographicSortingGadget[F](c.Handle, sources, c.BitWidth).
-		WithSigns(c.Signs...).
-		WithStrictness(c.Strict).
-		WithMaxRangeConstraint(p.config.MaxRangeConstraint)
-	// Add (optional) selector
-	if c.Selector.HasValue() {
-		selector := p.lowerTermTo(c.Selector.Unwrap(), airModule)
-		gadget.WithSelector(selector)
-	}
-	// Done
-	gadget.Apply(airModule.Id(), &p.airSchema)
-}
-
 func (p *AirLowering[F]) lowerRegisterAccesses(terms ...*RegisterAccess[F]) []*air.ColumnAccess[F] {
 	var nterms = make([]*air.ColumnAccess[F], len(terms))
 	//
@@ -336,13 +243,13 @@ func (p *AirLowering[F]) lowerRegisterAccesses(terms ...*RegisterAccess[F]) []*a
 }
 
 func (p *AirLowering[F]) lowerAndSimplifyLogicalTo(term LogicalTerm[F],
-	airModule air.ModuleBuilder[F], bitwidths []uint) []air.Term[F] {
+	airModule air.ModuleBuilder[F]) []air.Term[F] {
 	// Expand term to remove all syntactic sugage
 	term = p.expandLogical(true, term)
 	// Apply all reasonable simplifications
 	term = term.Simplify(false)
 	// Lower properly
-	return simplify(p.lowerLogical(term, airModule, bitwidths))
+	return simplify(p.lowerLogical(term, airModule))
 }
 
 func (p *AirLowering[F]) expandLogical(sign bool, e LogicalTerm[F]) LogicalTerm[F] {
@@ -458,86 +365,129 @@ func (p *AirLowering[F]) expandNegativeIteTo(e *Ite[F]) LogicalTerm[F] {
 	return term.Disjunction(terms...)
 }
 
-func (p *AirLowering[F]) lowerLogical(e LogicalTerm[F], airMod air.ModuleBuilder[F], bitwidths []uint) []air.Term[F] {
+func (p *AirLowering[F]) lowerLogical(e LogicalTerm[F], airMod air.ModuleBuilder[F]) []air.Term[F] {
 	//
 	switch e := e.(type) {
 	case *Conjunct[F]:
-		return p.lowerConjunct(e, airMod, bitwidths)
+		return p.lowerConjunct(e, airMod)
 	case *Disjunct[F]:
-		return p.lowerDisjunct(e, airMod, bitwidths)
+		return p.lowerDisjunct(e, airMod)
 	case *Equal[F]:
-		return p.lowerEqualityTo(e, airMod, bitwidths)
+		return p.lowerEqualityTo(e, airMod)
 	case *NotEqual[F]:
-		return p.lowerNonEqualityTo(e, airMod, bitwidths)
+		return p.lowerNonEqualityTo(e, airMod)
 	default:
 		name := reflect.TypeOf(e).Name()
 		panic(fmt.Sprintf("unknown MIR expression \"%s\"", name))
 	}
 }
 
-func (p *AirLowering[F]) lowerLogicals(terms []LogicalTerm[F], airMod air.ModuleBuilder[F], bitwidths []uint,
+func (p *AirLowering[F]) lowerLogicals(terms []LogicalTerm[F], airMod air.ModuleBuilder[F],
 ) [][]air.Term[F] {
 	nexprs := make([][]air.Term[F], len(terms))
 
 	for i := range len(terms) {
-		nexprs[i] = p.lowerLogical(terms[i], airMod, bitwidths)
+		nexprs[i] = p.lowerLogical(terms[i], airMod)
 	}
 
 	return nexprs
 }
 
-func (p *AirLowering[F]) lowerConjunct(e *Conjunct[F], airMod air.ModuleBuilder[F], bitwidths []uint) []air.Term[F] {
+func (p *AirLowering[F]) lowerConjunct(e *Conjunct[F], airMod air.ModuleBuilder[F]) []air.Term[F] {
 	var (
 		worklist []air.Term[F]
 		sums     []air.Term[F]
 	)
 	// flatten conjuncts
-	for _, ts := range p.lowerLogicals(e.Args, airMod, bitwidths) {
+	for _, ts := range p.lowerLogicals(e.Args, airMod) {
 		worklist = array.AppendAll(worklist, ts...)
 	}
-	//
-	for len(worklist) > 0 {
-		// determine length of next conjunct
-		n := p.nextSumConjunct(bitwidths, worklist)
-		// construct next sum
-		sums = append(sums, term.Sum(worklist[:n]...))
-		// Remove n terms from worklist
-		worklist = worklist[n:]
+	// Sum only terms sharing identical evaluation bounds.
+	// If not, we may end up with constraint targeting oob cells,
+	// and the whole constraint would be dropped, instead of just the oob terms.
+	for _, group := range groupTermsByBounds(worklist) {
+		for len(group) > 0 {
+			// determine length of next conjunct
+			n := p.nextSumConjunct(airMod, group)
+			// construct next sum
+			sums = append(sums, term.Sum(group[:n]...))
+			// Remove n terms from group
+			group = group[n:]
+		}
 	}
 	//
 	return sums
 }
 
-func (p *AirLowering[F]) lowerDisjunct(e *Disjunct[F], airMod air.ModuleBuilder[F], bitwidths []uint) []air.Term[F] {
+// groupTermsByBounds partitions terms into groups sharing identical evaluation
+// bounds.
+func groupTermsByBounds[F field.Element[F]](terms []air.Term[F]) [][]air.Term[F] {
+	var (
+		keys   []util.Bounds
+		groups [][]air.Term[F]
+	)
+	//
+	for _, t := range terms {
+		var (
+			bounds  = t.Bounds()
+			matched = false
+		)
+		//
+		for i, key := range keys {
+			if key == bounds {
+				groups[i] = append(groups[i], t)
+				matched = true
+
+				break
+			}
+		}
+		//
+		if !matched {
+			keys = append(keys, bounds)
+			groups = append(groups, []air.Term[F]{t})
+		}
+	}
+	//
+	return groups
+}
+
+func (p *AirLowering[F]) lowerDisjunct(e *Disjunct[F], airMod air.ModuleBuilder[F]) []air.Term[F] {
 	var (
 		zero     = term.Const64[F, Term[F]](0)
 		nterms   []LogicalTerm[F]
-		worklist []Term[F]
+		worklist []nonZeroCheck[F]
 	)
 	// Split out suitable non-zero checks
 	for _, t := range e.Args {
-		if ra := isNonZeroCheck(t); ra != nil {
-			worklist = append(worklist, ra)
+		if check, ok := isNonZeroCheck(t, airMod); ok {
+			worklist = append(worklist, check)
 		} else {
 			nterms = append(nterms, t)
 		}
 	}
 	// Combine non-zero checks together
 	for len(worklist) > 0 {
-		// determine length of next packet
-		n := p.nextNonZeroCheck(worklist, bitwidths)
+		var (
+			// determine length of next packet
+			n     = p.nextNonZeroCheck(worklist)
+			terms = make([]Term[F], n)
+		)
+		//
+		for i := range terms {
+			terms[i] = worklist[i].term
+		}
 		// construct next non-zero check
-		check := term.NotEquals[F, LogicalTerm[F]](term.Sum(worklist[:n]...), zero)
+		check := term.NotEquals[F, LogicalTerm[F]](term.Sum(terms...), zero)
 		// append check
 		nterms = append(nterms, check)
 		// Remove n terms from worklist
 		worklist = worklist[n:]
 	}
 	// Continue as before
-	return disjunction(p.lowerLogicals(nterms, airMod, bitwidths)...)
+	return disjunction(p.lowerLogicals(nterms, airMod)...)
 }
 
-func (p *AirLowering[F]) lowerEqualityTo(e *Equal[F], airModule air.ModuleBuilder[F], bitwidths []uint,
+func (p *AirLowering[F]) lowerEqualityTo(e *Equal[F], airModule air.ModuleBuilder[F],
 ) []air.Term[F] {
 	//
 	var (
@@ -545,16 +495,16 @@ func (p *AirLowering[F]) lowerEqualityTo(e *Equal[F], airModule air.ModuleBuilde
 		rhs air.Term[F] = p.lowerTermTo(e.Rhs, airModule)
 	)
 	//
-	return []air.Term[F]{term.Subtract(lhs, rhs)}
+	return []air.Term[F]{orientedSubtract(lhs, rhs, airModule)}
 }
 
-func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.ModuleBuilder[F], bitwidths []uint,
+func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.ModuleBuilder[F],
 ) []air.Term[F] {
 	// //
 	var (
 		lhs air.Term[F] = p.lowerTermTo(e.Lhs, airModule)
 		rhs air.Term[F] = p.lowerTermTo(e.Rhs, airModule)
-		eq              = term.Subtract(lhs, rhs)
+		eq              = orientedSubtract(lhs, rhs, airModule)
 	)
 	//
 	one := term.Const64[F, air.Term[F]](1)
@@ -562,6 +512,28 @@ func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.Module
 	norm_eq := p.normalise(eq, airModule)
 	// construct 1 - norm(eq)
 	return []air.Term[F]{term.Subtract(one, norm_eq)}
+}
+
+// orientedSubtract constructs a term which vanishes exactly when lhs == rhs,
+// choosing whichever orientation of the subtraction has a non-negative value
+// range (where one exists).  By default this is lhs - rhs; however, when that
+// has a non-positive range the flipped form rhs - lhs is used instead.  For
+// example, given a register x range checked to u8, x - 255 lies in [-255, 0]
+// whilst 255 - x lies in [0, 255].  A non-negative orientation allows the term
+// to be summed with other non-negative terms into a single constraint (see
+// nextSumConjunct) and avoids unnecessary squaring during normalisation.
+func orientedSubtract[F field.Element[F]](lhs, rhs air.Term[F], regs register.Map) air.Term[F] {
+	var (
+		diff   = term.Subtract(lhs, rhs)
+		values = valueRangeOf(diff, regs)
+		maxVal = values.MaxValue()
+	)
+	//
+	if maxVal.IsNotAnInfinity() && maxVal.Sign() <= 0 {
+		return term.Subtract(rhs, lhs)
+	}
+	//
+	return diff
 }
 
 // Inner form is used for recursive calls and does not repeat the constant
@@ -678,7 +650,7 @@ func simplify[F field.Element[F]](terms []air.Term[F]) []air.Term[F] {
 	return nterms
 }
 
-func (p *AirLowering[F]) nextSumConjunct(bitwidths []uint, terms []air.Term[F]) (n uint) {
+func (p *AirLowering[F]) nextSumConjunct(regs register.Map, terms []air.Term[F]) (n uint) {
 	//
 	var (
 		sum big.Int
@@ -687,7 +659,7 @@ func (p *AirLowering[F]) nextSumConjunct(bitwidths []uint, terms []air.Term[F]) 
 	for i := 0; i < len(terms); i++ {
 		var (
 			ith    = terms[i]
-			values = valueRangeOf(ith, bitwidths)
+			values = valueRangeOf(ith, regs)
 			minVal = values.MinValue()
 			maxVal = values.MaxValue()
 			signed = !minVal.IsNotAnInfinity() || minVal.Sign() < 0
@@ -712,28 +684,14 @@ func (p *AirLowering[F]) nextSumConjunct(bitwidths []uint, terms []air.Term[F]) 
 	return uint(len(terms))
 }
 
-func (p *AirLowering[F]) nextNonZeroCheck(checks []Term[F], bitwidths []uint) (n uint) {
+func (p *AirLowering[F]) nextNonZeroCheck(checks []nonZeroCheck[F]) (n uint) {
 	var (
 		// Bitwidth of current check
 		sum big.Int
 	)
 	//
 	for i := 0; i < len(checks); i++ {
-		var (
-			ith          = checks[i].(*RegisterAccess[F])
-			ith_bitwidth = bitwidths[ith.Register().Unwrap()]
-		)
-		// Sanity check bitwidth
-		if ith_bitwidth == math.MaxUint {
-			// terminate packet.  Observe that, we need to make sure at least
-			// one item is included in the next packet.
-			return uint(max(1, i))
-		}
-		//
-		ithRange := valueRangeOfBits(ith_bitwidth)
-		ithMax := ithRange.MaxIntValue()
-		//
-		sum.Add(&sum, &ithMax)
+		sum.Add(&sum, &checks[i].max)
 		//
 		if sum.BitLen() > int(p.fieldBandwidth) {
 			// terminate packet here
@@ -744,32 +702,68 @@ func (p *AirLowering[F]) nextNonZeroCheck(checks []Term[F], bitwidths []uint) (n
 	return uint(len(checks))
 }
 
-func isNonZeroCheck[F field.Element[F]](term LogicalTerm[F]) *RegisterAccess[F] {
-	if t, ok := term.(*NotEqual[F]); ok {
-		var candidate Term[F]
-		//
-		if isZero(t.Lhs) {
-			candidate = t.Rhs
-		} else if isZero(t.Rhs) {
-			candidate = t.Lhs
-		} else {
-			return nil
-		}
-		// Final check
-		if ra, ok := candidate.(*RegisterAccess[F]); ok {
-			return ra
-		}
-	}
-	//
-	return nil
+// nonZeroCheck describes a disjunct known to be equivalent to "t ≠ 0" for some
+// term t whose value lies within [0, max].  Any number of such checks can be
+// combined into a single non-zero check over their sum, provided the sum of
+// their maxima cannot overflow the underlying field (see nextNonZeroCheck).
+type nonZeroCheck[F field.Element[F]] struct {
+	// Term guaranteed to lie within [0, max].
+	term Term[F]
+	// Maximum value the term can take.
+	max big.Int
 }
 
-func isZero[F field.Element[F]](term Term[F]) bool {
-	if c, ok := term.(*Constant[F]); ok {
-		return c.Value.IsZero()
+// isNonZeroCheck attempts to view a given disjunct as a non-zero check over a
+// term with a non-negative value range (see nonZeroCheck).  Two forms are
+// recognised for a register x range checked to w bits: "x ≠ 0", which is a
+// non-zero check on x itself; and "x ≠ 2^w-1", which is a non-zero check on
+// the complement 2^w-1 - x.
+// Note that it heavily relies on the assumption that the register's range constraints are sound.
+func isNonZeroCheck[F field.Element[F]](t LogicalTerm[F], regs register.Map) (nonZeroCheck[F], bool) {
+	ne, ok := t.(*NotEqual[F])
+	//
+	if !ok {
+		return nonZeroCheck[F]{}, false
+	}
+	// Normalise register access on the left, constant on the right.
+	lhs, rhs := ne.Lhs, ne.Rhs
+	//
+	if _, ok := lhs.(*Constant[F]); ok {
+		lhs, rhs = rhs, lhs
 	}
 	//
-	return false
+	ra, raOk := lhs.(*RegisterAccess[F])
+	c, cOk := rhs.(*Constant[F])
+	//
+	if !raOk || !cOk {
+		return nonZeroCheck[F]{}, false
+	}
+	// NOTE: soundness of the complement form relies on the width enforced by
+	// the register's range constraints, hence the register map width is used
+	// here rather than any (narrower) mask applied by the access itself.
+	var width = regs.Register(ra.Register()).WidthOrNative()
+	// Registers of field type have no known bound
+	if width == math.MaxUint {
+		return nonZeroCheck[F]{}, false
+	}
+
+	var (
+		bounds = valueRangeOfBits(width)
+		maxVal = bounds.MaxIntValue()
+		cVal   big.Int
+	)
+	// Extract big integer from field element
+	cVal.SetBytes(c.Value.Bytes())
+	//
+	if cVal.Sign() == 0 {
+		// x ≠ 0 is a non-zero check on x itself
+		return nonZeroCheck[F]{lhs, maxVal}, true
+	} else if cVal.Cmp(&maxVal) == 0 {
+		// x ≠ max is a non-zero check on the complement max - x
+		return nonZeroCheck[F]{term.Subtract[F, Term[F]](rhs, lhs), maxVal}, true
+	}
+	//
+	return nonZeroCheck[F]{}, false
 }
 
 // Construct the disjunction lhs v rhs, where both lhs and rhs can be
@@ -801,13 +795,13 @@ func disjunction[F field.Element[F]](terms ...[]air.Term[F]) []air.Term[F] {
 	return nterms
 }
 
-func valueRangeOf[F field.Element[F]](term air.Term[F], bitwidths []uint) util_math.Interval {
+func valueRangeOf[F field.Element[F]](term air.Term[F], regs register.Map) util_math.Interval {
 	switch t := term.(type) {
 	case *air.Add[F]:
 		var res util_math.Interval
 
 		for i, arg := range t.Args {
-			ith := valueRangeOf(arg, bitwidths)
+			ith := valueRangeOf(arg, regs)
 			if i == 0 {
 				res.Set(ith)
 			} else {
@@ -817,15 +811,15 @@ func valueRangeOf[F field.Element[F]](term air.Term[F], bitwidths []uint) util_m
 		//
 		return res
 	case *air.ColumnAccess[F]:
-		var rid = t.Register().Unwrap()
+		var bitwidth = regs.Register(t.Register()).WidthOrNative()
 		// NOTE: the following is necessary because MaxUint is permitted as a signal
 		// that the given register has no fixed bitwidth.  Rather, it can consume
 		// all possible values of the underlying field element.
-		if rid >= uint(len(bitwidths)) || bitwidths[rid] == math.MaxUint {
+		if bitwidth == math.MaxUint {
 			return util_math.INFINITY
 		}
 		//
-		return valueRangeOfBits(bitwidths[rid])
+		return valueRangeOfBits(bitwidth)
 	case *air.Constant[F]:
 		var c big.Int
 		// Extract big integer from field element
@@ -836,7 +830,7 @@ func valueRangeOf[F field.Element[F]](term air.Term[F], bitwidths []uint) util_m
 		var res util_math.Interval
 
 		for i, arg := range t.Args {
-			ith := valueRangeOf(arg, bitwidths)
+			ith := valueRangeOf(arg, regs)
 			if i == 0 {
 				res.Set(ith)
 			} else {
@@ -849,7 +843,7 @@ func valueRangeOf[F field.Element[F]](term air.Term[F], bitwidths []uint) util_m
 		var res util_math.Interval
 
 		for i, arg := range t.Args {
-			ith := valueRangeOf(arg, bitwidths)
+			ith := valueRangeOf(arg, regs)
 			if i == 0 {
 				res.Set(ith)
 			} else {
@@ -871,34 +865,4 @@ func valueRangeOfBits(bitwidth uint) util_math.Interval {
 	bound.Sub(bound, &biONE)
 	// Done
 	return util_math.NewInterval(biZERO, *bound)
-}
-
-// This function goes through all the registers of the module to determine which
-// have type constraints and records their maximum bitwidths arising.
-func determineTrueBitwidths[F field.Element[F]](mirModule schema.Module[F]) []uint {
-	var bitwidths = make([]uint, mirModule.Width())
-	// initialise with maximum widths
-	for i := range bitwidths {
-		bitwidths[i] = math.MaxUint
-	}
-	//
-	for iter := mirModule.Constraints(); iter.HasNext(); {
-		// Following should always hold
-		c := iter.Next().(Constraint[F])
-		// Check what kind of constraint we have
-		if v, ok := c.constraint.(RangeConstraint[F]); ok {
-			// apply constraints
-			for i, e := range v.Sources {
-				rid := e.Register().Unwrap()
-				// sanity check
-				if bitwidths[rid] != math.MaxUint {
-					panic("duplicate range constraint detected")
-				}
-				// Update bitwidth accordingly
-				bitwidths[rid] = min(bitwidths[rid], v.Bitwidths[i])
-			}
-		}
-	}
-	//
-	return bitwidths
 }

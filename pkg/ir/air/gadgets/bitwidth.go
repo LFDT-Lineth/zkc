@@ -169,7 +169,7 @@ func (p *BitwidthGadget[F]) applyRecursiveBitwidthGadget(ref register.Ref, bitwi
 func (p *BitwidthGadget[F]) constructTypeProof(handle module.Name, bitwidth uint) sc.ModuleId {
 	var (
 		// Create new module for this type proof
-		mid    = p.schema.NewModule(handle, false, false, true, false, false, 0)
+		mid    = p.schema.NewModule(handle, false, false, false, true, false, false, 0)
 		module = p.schema.Module(mid)
 		// Determine limb widths.
 		loWidth, hiWidth = determineLimbSplit(bitwidth)
@@ -364,7 +364,7 @@ func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F],
 				// record have seen item
 				seen.Insert(ith)
 				// append and record
-				arr = arr.Append(ith)
+				arr.Pad(0, 1, ith)
 			}
 		}
 	}
@@ -375,7 +375,7 @@ func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F],
 			// record have seen item
 			seen.Insert(ith)
 			// append and record
-			arr = arr.Append(ith)
+			arr.Pad(0, 1, ith)
 		}
 	}
 	// Done

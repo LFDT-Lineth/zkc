@@ -121,9 +121,9 @@ func (p *Memory[W]) StaticContents() []W {
 	panic("non-static memory has no contents")
 }
 
-// StaticDepth returns the number of rows described by this static memory.
+// StaticHeight returns the number of rows described by this static memory.
 // This will panic if !Kind().IsStatic().
-func (p *Memory[W]) StaticDepth() uint {
+func (p *Memory[W]) StaticHeight() uint {
 	if p.IsStatic() {
 		var (
 			n = uint(len(p.contents))

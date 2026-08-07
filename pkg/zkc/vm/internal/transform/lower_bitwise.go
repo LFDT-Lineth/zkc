@@ -32,26 +32,28 @@ import (
 // We assume this lowering happens BEFORE vectorization and register splitting.
 func LowerBitwise[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
-		out          = slices.Clone(program.Modules())
-		amountWidths = scanShiftAmountWidths(out)
-		// Shift helpers never use static bitwise tables, so bitwiseStaticWidth=0.
-		helpers = newBitwiseHelpers[W](uint(len(out)), amountWidths, 0)
+		out     = slices.Clone(program.Modules())
+		helpers = newShiftHelpers[W](uint(len(out)), scanShiftAmountWidths(out))
 	)
 
 	for i, mod := range out {
 		if fn, ok := mod.(*descriptor.Function[W]); ok {
-			out[i] = lowerBitwiseFunction(fn, helpers, lowerBitwiseCode[W])
+			out[i] = lowerBitwiseFunction(fn, func(b Bytecode[W], alloc split.Allocator[W]) []Bytecode[W] {
+				return lowerBitwiseCode(b, alloc, helpers)
+			})
 		}
 	}
 
 	return descriptor.NewProgram(program.Field(), append(out, helpers.modules()...)...)
 }
 
-// lowerBitwiseFunction rewrites each bytecode of a function via codeFn, threading
-// a per-function register allocator (for any temporaries codeFn introduces) and
-// the shared helper registry.
-func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *bitwiseHelpers[W],
-	codeFn func(Bytecode[W], split.Allocator[W], *bitwiseHelpers[W]) []Bytecode[W],
+// lowerBitwiseFunction rewrites each bytecode of a function via codeFn,
+// threading a per-function register allocator (for any temporaries codeFn
+// introduces).  The helper registry, if any, is captured by the codeFn closure
+// — this driver is shared by LowerBitwise and LowerOrXorAnd, whose registries
+// differ.
+func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W],
+	codeFn func(Bytecode[W], split.Allocator[W]) []Bytecode[W],
 ) *descriptor.Function[W] {
 	var (
 		vectors = fn.Vectors()
@@ -61,17 +63,17 @@ func lowerBitwiseFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *b
 
 	for i, vec := range vectors {
 		nvecs[i] = vec.Map(func(_ uint, b Bytecode[W]) []Bytecode[W] {
-			return codeFn(b, alloc, helpers)
+			return codeFn(b, alloc)
 		})
 	}
 
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), nvecs)
+	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
 }
 
 func lowerBitwiseCode[W word.Word[W]](
 	b Bytecode[W],
 	registers split.Allocator[W],
-	helpers *bitwiseHelpers[W],
+	helpers *shiftHelpers[W],
 ) []Bytecode[W] {
 	//
 	bw, ok := b.(*bytecode.Bitwise[W])
@@ -83,7 +85,7 @@ func lowerBitwiseCode[W word.Word[W]](
 	case bytecode.OP_NOT:
 		return inlineBitwiseNot(bw, registers)
 	case bytecode.OP_SHL, bytecode.OP_SHR:
-		return lowerBitwiseShlShr(bw, helpers)
+		return lowerBitwiseShlShr(bw, registers, helpers)
 	default:
 		// AND/OR/XOR are lowered after register splitting; see LowerOrXorAnd.
 		return []Bytecode[W]{b}
@@ -92,12 +94,14 @@ func lowerBitwiseCode[W word.Word[W]](
 
 func lowerBitwiseShlShr[W word.Word[W]](
 	b *bytecode.Bitwise[W],
-	helpers *bitwiseHelpers[W],
+	registers split.Allocator[W],
+	helpers *shiftHelpers[W],
 ) []Bytecode[W] {
 	var (
 		// NOTE: bitwidth of shift (e.g. "x << y") determined by width of first
 		// argument only (i.e. "x").
-		id = helpers.ensure(b.Op, uint(b.Bitwidth), 2)
+		amtWidth = registers.Registers()[b.Right].Bitwidth().Unwrap()
+		id       = helpers.ensureShift(b.Op, uint(b.Bitwidth), amtWidth)
 	)
 	//
 	return []Bytecode[W]{
@@ -142,104 +146,23 @@ func maxBitwidthOf[W word.Word[W]](regs []descriptor.Register[W], targets ...byt
 	return w, w&(w-1) == 0
 }
 
-type bitwiseHelperKey struct {
-	op    bytecode.Operation
-	width uint
-	arity int
-}
-
-type bitwiseHelpers[W word.Word[W]] struct {
-	baseID       uint
-	ids          map[bitwiseHelperKey]uint
-	items        []descriptor.Module[W]
-	amountWidths map[shiftKey]uint
-	// bitwiseStaticWidth is the largest width for which an AND/OR/XOR operation
-	// is realised as a static lookup table rather than a recursive helper (see
-	// ensureNary).  It is 0 for the shift-only helpers built by LowerBitwise.
-	bitwiseStaticWidth uint
-}
-
-func newBitwiseHelpers[W word.Word[W]](
-	baseID uint, amountWidths map[shiftKey]uint, bitwiseStaticWidth uint,
-) *bitwiseHelpers[W] {
-	return &bitwiseHelpers[W]{
-		baseID:             baseID,
-		ids:                make(map[bitwiseHelperKey]uint),
-		amountWidths:       amountWidths,
-		bitwiseStaticWidth: bitwiseStaticWidth,
-	}
-}
-
-// shiftAmountWidth returns the canonical shift-amount register width for a
-// given (opcode, value-width) pair: the maximum seen across all call sites,
-// defaulting to valueWidth if no entry was recorded.
-func (p *bitwiseHelpers[W]) shiftAmountWidth(op bytecode.Operation, valueWidth uint) uint {
-	if w, ok := p.amountWidths[shiftKey{op: op, width: valueWidth}]; ok {
-		return w
-	}
-
-	return valueWidth
-}
-
-func (p *bitwiseHelpers[W]) modules() []descriptor.Module[W] {
-	return p.items
-}
-
-// ensure returns the module id of the shift (SHL/SHR) helper for the given key,
-// creating it on first use.  AND/OR/XOR go through ensureNary instead.
-func (p *bitwiseHelpers[W]) ensure(op bytecode.Operation, width uint, arity int) uint {
-	key := bitwiseHelperKey{
-		op:    op,
-		width: width,
-		arity: arity,
-	}
-
-	if id, ok := p.ids[key]; ok {
-		return id
-	}
-
-	// SHL/SHR are self-recursive: pre-register the ID before the factory runs
-	// so any re-entrant ensure call for the same key resolves correctly.
-	if op == bytecode.OP_SHL || op == bytecode.OP_SHR {
-		id := p.baseID + uint(len(p.items))
-		p.ids[key] = id
-
-		amtWidth := p.shiftAmountWidth(op, width)
-
-		var mod descriptor.Module[W]
-		if op == bytecode.OP_SHL {
-			mod = newShlHelper[W](key, id, amtWidth)
-		} else {
-			mod = newShrHelper[W](key, id, amtWidth)
-		}
-
-		p.items = append(p.items, mod)
-
-		return id
-	}
-	//
-	panic(fmt.Sprintf("ensure: expected shift operation, got %d", op))
-}
-
-func helperName(key bitwiseHelperKey) string {
-	var op string
-
-	switch key.op {
+// bitwiseOpName is the short name used in helper module names for a bitwise
+// operation.
+func bitwiseOpName(op bytecode.Operation) string {
+	switch op {
 	case bytecode.OP_AND:
-		op = "and"
+		return "and"
 	case bytecode.OP_OR:
-		op = "or"
+		return "or"
 	case bytecode.OP_XOR:
-		op = "xor"
+		return "xor"
 	case bytecode.OP_NOT:
-		op = "not"
+		return "not"
 	case bytecode.OP_SHL:
-		op = "shl"
+		return "shl"
 	case bytecode.OP_SHR:
-		op = "shr"
+		return "shr"
 	default:
-		op = "unknown"
+		panic(fmt.Sprintf("unexpected op: %v", op))
 	}
-
-	return fmt.Sprintf("$bit_%s_u%d", op, key.width)
 }

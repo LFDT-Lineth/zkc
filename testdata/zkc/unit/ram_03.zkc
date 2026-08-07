@@ -1,0 +1,19 @@
+// Two reads of the same memory in a single expression (each carries its own
+// timestamp on the same row).
+// Code lines: main = 1, double_read = 1 (one trace row per invocation).
+pub input data(address:u8) -> (byte:u8)
+memory ram(address:u8) -> (byte:u8)
+
+fn double_read<ram>(x:u8) -> (r:u8) {
+    r = ram[x] + ram[x]
+}
+
+fn main<ram>() {
+    var addr:u8 = data[0]
+    var value:u8 = data[1]
+    var expected:u8 = data[2]
+    ram[addr] = value
+    if double_read(addr) != expected {
+        fail
+    }
+}

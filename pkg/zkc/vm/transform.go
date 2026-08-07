@@ -32,13 +32,13 @@ func LowerBitwise[W word.Word[W]](program Program[W]) Program[W] {
 // lookup (a memory read) or a CALL to a recursive helper function, returning the
 // updated bytecode program (the helper / table modules are appended to it).  An
 // operation whose width is small enough that its 2^(2*width)-row truth table
-// fits within maxStaticDepth is realised as a table read; wider operations are
+// fits within maxStaticHeight is realised as a table read; wider operations are
 // lowered recursively until their leaves are.
 //
 // NOTE: unlike LowerBitwise, this transform must be applied AFTER register
 // splitting and BEFORE range-constraint generation.
-func LowerOrXorAnd[W word.Word[W]](program Program[W], maxStaticDepth uint) Program[W] {
-	return transform.LowerOrXorAnd(program, maxStaticDepth)
+func LowerOrXorAnd[W word.Word[W]](program Program[W], maxStaticHeight uint) Program[W] {
+	return transform.LowerOrXorAnd(program, maxStaticHeight)
 }
 
 // LowerComparisons rewrites SkipIf bytecodes with LT/GT/LTEQ/GTEQ conditions
@@ -94,6 +94,19 @@ func OptimizeDivisions[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.OptimizeDivisions(program)
 }
 
+// ThreadTimestamps threads a per-memory timestamp through every function which
+// declares a read-write memory effect: each such function gains a stamp-in
+// input and stamp-out output per accessed read-write memory, calls forward
+// them, and every memory access carries a distinct timestamp in its Stamp
+// operand (the k-th access executed carries stamp-in + k).  Applied on the
+// constraint path only (the run-time memory maintains its own clock), after
+// vectorisation — so a vector is genuinely one trace row and the canonical
+// stamp register is written at most once per executed path through it — and
+// before register splitting.
+func ThreadTimestamps[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.ThreadTimestamps(program)
+}
+
 // Vectorize merges as many bytecodes as possible into each (vector / trace-line)
 // bytecode, subject to register-conflict (data hazard) constraints.
 func Vectorize[W word.Word[W]](program Program[W]) Program[W] {
@@ -120,6 +133,18 @@ func FlattenLookupAccess[W word.Word[W]](program Program[W]) Program[W] {
 // splitting.
 func FactorSkipConditions[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.FactorSkipConditions(program)
+}
+
+// FactorLimbEqualities rewrites equality SkipIf bytecodes (EQ/NEQ) comparing
+// two multi-limb register vectors, materialising each limb inequality into its
+// own fresh 1-bit register and testing the resulting bit vector against zero
+// instead.  This bounds the degree of the comparison independently of the limb
+// count (the bits being sign-definite, unlike the original limb differences).
+//
+// NOTE: This transform must run after register splitting and before range
+// constraints are added.
+func FactorLimbEqualities[W word.Word[W]](program Program[W]) Program[W] {
+	return transform.FactorLimbEqualities(program)
 }
 
 // InlineFunctions returns an equivalent bytecode program in which every call to
@@ -151,8 +176,8 @@ func SplitRegisters[W word.Word[W]](cfg WordConfig, program Program[W]) Program[
 // AddRangeConstraints adds a range-proof constraint for each register in the program.
 // This is done by adding lookups from each (non-constant) register to a precomputed
 // table of all valid values for that register width.
-func AddRangeConstraints[W word.Word[W]](cfg field.Config, program Program[W], maxStaticDepth uint) Program[W] {
-	return transform.AddRangeConstraints(cfg, program, maxStaticDepth)
+func AddRangeConstraints[W word.Word[W]](cfg field.Config, program Program[W], maxStaticHeight uint) Program[W] {
+	return transform.AddRangeConstraints(cfg, program, maxStaticHeight)
 }
 
 // ProgramToProgram transforms a bytecode program operating over a given word

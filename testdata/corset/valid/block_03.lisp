@@ -9,5 +9,3 @@
       (begin
        (== 0 (- X Y))
        (== 0 (* Y Z)))))
-;; Z is always 0!
-(defproperty a1 (== 0 Z))

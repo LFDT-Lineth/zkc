@@ -509,7 +509,12 @@ func flattenComparison(cond *expr.Cmp[symbol.Resolved], sign bool, target uint,
 	if sign {
 		ifg = &stmt.IfGoto[symbol.Resolved]{Cond: cond, Target: target}
 	} else {
-		ifg = &stmt.IfGoto[symbol.Resolved]{Cond: cond.Negate(), Target: target}
+		negated := cond.Negate()
+		// Negation constructs a fresh node, so copy over the source mapping of
+		// the original condition (e.g. for errors reported during codegen).
+		srcmaps.Copy(cond, negated)
+		//
+		ifg = &stmt.IfGoto[symbol.Resolved]{Cond: negated, Target: target}
 	}
 
 	srcmaps.Copy(orig, ifg)

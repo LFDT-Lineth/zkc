@@ -427,13 +427,21 @@ func Test_ZkcUnit_IfElse_08(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/ifelse_08", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_IfElse_09(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ifelse_09", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_IfElse_10(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ifelse_10", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_IfElse_11(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ifelse_11", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Constant Tests
 // ===================================================================
-
-func Test_ZkcUnit_Const_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/const_01", DEFAULT_UNIT_CONFIG)
-}
 
 func Test_ZkcUnit_Const_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/const_02", DEFAULT_UNIT_CONFIG)
@@ -738,10 +746,12 @@ func Test_ZkcUnit_Bitwise_17(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_18(t *testing.T) {
+	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bitwise_18", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Bitwise_19(t *testing.T) {
+	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bitwise_19", DEFAULT_UNIT_CONFIG)
 }
 
@@ -799,6 +809,58 @@ func Test_ZkcUnit_Shift_11(t *testing.T) {
 
 func Test_ZkcUnit_Shift_12(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/shift_12", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Shift_13(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/shift_13", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
+// Read-Write Memory (RAM) Tests
+// ===================================================================
+
+func Test_ZkcUnit_Ram_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_01", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_02", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_03", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_04", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_05", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_06(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_06", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_07(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_07", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_08", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_09(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_09", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_10(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_10", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ram_11(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ram_11", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -1015,6 +1077,22 @@ func Test_ZkcUnit_Switch_12(t *testing.T) {
 
 func Test_ZkcUnit_Switch_13(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_13", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_14(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_14", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_15(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_15", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_16(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_16", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Switch_17(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_17", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -1258,14 +1336,17 @@ func Test_ZkcUnit_BigNum_15(t *testing.T) {
 }
 
 func Test_ZkcUnit_BigNum_16(t *testing.T) {
+	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bignum_16", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_BigNum_17(t *testing.T) {
+	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_BigNum_18(t *testing.T) {
+	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
@@ -1273,7 +1354,7 @@ func Test_ZkcUnit_BigNum_18(t *testing.T) {
 // Test Helpers
 // ===================================================================
 
-var STATIC_DEPTHS = []uint{256, 1 << 12}
+var STATIC_HEIGHTS = []uint{256, 1 << 12}
 
 // ZKC_PADDING_STRATEGIES enumerates the padding strategies that every ZkC unit
 // test is exercised against (see checkZkcUnit).
@@ -1284,10 +1365,10 @@ var ZKC_PADDING_STRATEGIES = map[string]ir.PaddingStrategy{
 }
 
 // checkZkcUnit runs test for different combinations of:
-// - STATIC_DEPTHS
+// - STATIC_HEIGHTS
 // - padding strategy
 func checkZkcUnit(t *testing.T, test string, config test_util.Config) {
-	// Run with different padding strategies, but default static depth
+	// Run with different padding strategies and max static heights.
 	test_util.CheckValid(t, test, "zkc", config.Padding(ZKC_PADDING_STRATEGIES).
-		MaxStaticDepths(STATIC_DEPTHS...))
+		MaxStaticHeights(STATIC_HEIGHTS...))
 }

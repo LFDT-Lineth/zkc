@@ -96,12 +96,39 @@ func ReadTestsFile(t *testing.T, cfg TestConfig, test string) ([]TestCase, bool)
 	return tests, exists
 }
 
-func failIfErrors(t *testing.T, errs ...error) {
+func failIf[S, T any](t *testing.T, errs ...T) {
+	var failNow bool
 	//
-	if len(errs) > 0 {
-		for _, err := range errs {
+	for _, err := range errs {
+		var e = any(err)
+		//
+		if _, ok := e.(S); ok {
 			t.Errorf("unexpected tracing failure: %v", err)
+
+			failNow = true
 		}
+	}
+	//
+	if failNow {
+		// Don't continue
+		t.FailNow()
+	}
+}
+
+func failIfNot[S, T any](t *testing.T, errs ...T) {
+	var failNow bool
+	//
+	for _, err := range errs {
+		var e = any(err)
+		//
+		if _, ok := e.(S); !ok {
+			t.Errorf("unexpected tracing failure: %v", err)
+
+			failNow = true
+		}
+	}
+	//
+	if failNow {
 		// Don't continue
 		t.FailNow()
 	}
@@ -162,7 +189,7 @@ func marshallUnmarshallMachine(m vm.Program[vm.Uint], f field.Config) vm.Program
 
 func roundTripMachine[F field.Element[F]](prog vm.Program[vm.Uint], f field.Config) vm.Program[vm.Uint] {
 	var (
-		original = constraints.NewBinaryFile[F](nil, nil, f, codegen.DEFAULT_MAX_STATIC_DEPTH, prog)
+		original = constraints.NewBinaryFile[F](nil, nil, f, codegen.DEFAULT_MAX_STATIC_HEIGHT, prog)
 		decoded  constraints.BinaryFile[F]
 	)
 	//

@@ -1,4 +1,4 @@
-//error:17:18-23:duplicate label in switch statement
+//error:17:18-24:duplicate label in switch statement
 
 // ================
 // duplicate label

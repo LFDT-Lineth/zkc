@@ -14,12 +14,14 @@ package constraints
 
 import (
 	"math"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	pow "github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -66,8 +68,8 @@ func toFieldElements[W vm.Word[W], F field.Element[F]](contents []W) []F {
 	//
 	for i, w := range contents {
 		var f F
-
-		elements[i] = f.SetBytes(w.BigInt().Bytes())
+		// TODO: support larger fields
+		elements[i] = f.SetUint64(w.Uint64())
 	}
 	//
 	return elements
@@ -104,6 +106,22 @@ func foldContents[F field.Element[F]](inputs, outputs []register.Register, conte
 		}
 		//
 		ith[output] = contents[i]
+	}
+	//
+	return rows
+}
+
+// padStaticTables pads the rows of a static reference table to the next
+// power-of-two height, by duplicating the last row.
+func padStaticTables[F field.Element[F]](rows [][]F) [][]F {
+	if len(rows) == 0 {
+		panic("A static table can't be declared empty")
+	}
+	//
+	var target = pow.NextPowerOfTwo(uint(len(rows)))
+	//
+	for len(rows) < int(target) {
+		rows = append(rows, slices.Clone(rows[len(rows)-1]))
 	}
 	//
 	return rows

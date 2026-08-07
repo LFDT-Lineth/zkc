@@ -254,17 +254,6 @@ func Test_Invalid_Alias_07(t *testing.T) {
 }
 
 // ===================================================================
-// Property Tests
-// ===================================================================
-func Test_Invalid_Property_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/property_invalid_01")
-}
-
-func Test_Invalid_Property_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/property_invalid_02")
-}
-
-// ===================================================================
 // Shift Tests
 // ===================================================================
 
@@ -328,34 +317,6 @@ func Test_Invalid_Type_06(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/type_invalid_06")
 }
 
-func Test_Invalid_Type_07(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/type_invalid_07")
-}
-
-func Test_Invalid_Type_08(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/type_invalid_08")
-}
-
-func Test_Invalid_Type_09(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/type_invalid_09")
-}
-
-func Test_Invalid_Type_10(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/type_invalid_10")
-}
-
-func Test_Invalid_Type_11(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/type_invalid_11")
-}
-
-func Test_Invalid_Type_12(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/type_invalid_12")
-}
-
-func Test_Invalid_Type_13(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/type_invalid_13")
-}
-
 func Test_Invalid_Type_14(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/type_invalid_14")
 }
@@ -389,69 +350,6 @@ func Test_Invalid_Range_05(t *testing.T) {
 
 func Test_Invalid_Module_01(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/module_invalid_01")
-}
-
-// ===================================================================
-// Permutations
-// ===================================================================
-
-func Test_Invalid_Permute_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/permute_invalid_01")
-}
-
-func Test_Invalid_Permute_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/permute_invalid_02")
-}
-
-func Test_Invalid_Permute_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/permute_invalid_03")
-}
-
-func Test_Invalid_Permute_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/permute_invalid_04")
-}
-
-/* func Test_Invalid_Permute_05(t *testing.T) {
-	CheckInvalid(t, "corset/invalid/permute_invalid_05")
-} */
-
-func Test_Invalid_Permute_07(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/permute_invalid_07")
-}
-
-func Test_Invalid_Permute_08(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/permute_invalid_08")
-}
-func Test_Invalid_Permute_09(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/permute_invalid_09")
-}
-func Test_Invalid_Permute_10(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/permute_invalid_10")
-}
-func Test_Invalid_Permute_11(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/permute_invalid_11")
-}
-
-// ===================================================================
-// Sortings
-// ===================================================================
-
-func Test_Invalid_Sorted_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/sorted_invalid_01")
-}
-
-func Test_Invalid_Sorted_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/sorted_invalid_02")
-}
-
-func Test_Invalid_Sorted_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/sorted_invalid_03")
-}
-func Test_Invalid_Sorted_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/sorted_invalid_04")
-}
-func Test_Invalid_Sorted_05(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/sorted_invalid_05")
 }
 
 // ===================================================================
@@ -519,71 +417,6 @@ func Test_Invalid_Lookup_18(t *testing.T) {
 }
 func Test_Invalid_Lookup_19(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_19")
-}
-
-// ===================================================================
-// Interleavings
-// ===================================================================
-
-func Test_Invalid_Interleave_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_01")
-}
-
-func Test_Invalid_Interleave_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_02")
-}
-
-func Test_Invalid_Interleave_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_03")
-}
-
-func Test_Invalid_Interleave_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_04")
-}
-
-func Test_Invalid_Interleave_05(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_05")
-}
-
-func Test_Invalid_Interleave_06(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_06")
-}
-
-func Test_Invalid_Interleave_07(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_07")
-}
-
-func Test_Invalid_Interleave_08(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_08")
-}
-
-func Test_Invalid_Interleave_09(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_09")
-}
-
-func Test_Invalid_Interleave_10(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_10")
-}
-
-func Test_Invalid_Interleave_11(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_11")
-}
-
-func Test_Invalid_Interleave_12(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_12")
-}
-func Test_Invalid_Interleave_13(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_13")
-}
-
-func Test_Invalid_Interleave_14(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_14")
-}
-func Test_Invalid_Interleave_15(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_15")
-}
-func Test_Invalid_Interleave_16(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/interleave_invalid_16")
 }
 
 // ===================================================================
@@ -801,107 +634,6 @@ func Test_Invalid_Let_06(t *testing.T) {
 
 func Test_Invalid_Let_07(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/let_invalid_07")
-}
-
-// ===================================================================
-// Computed Columns
-// ===================================================================
-
-func Test_Invalid_Compute_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/compute_invalid_01")
-}
-
-func Test_Invalid_Compute_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/compute_invalid_02")
-}
-
-func Test_Invalid_Compute_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/compute_invalid_03")
-}
-
-func Test_Invalid_Compute_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/compute_invalid_04")
-}
-
-func Test_Invalid_Compute_05(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/compute_invalid_05")
-}
-
-func Test_Invalid_Compute_06(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/compute_invalid_06")
-}
-
-func Test_Invalid_Compute_07(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/compute_invalid_07")
-}
-func Test_Invalid_Compute_08(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/compute_invalid_08")
-}
-
-// ===================================================================
-// defcomputedcolumn
-// ===================================================================
-
-func Test_Invalid_ComputedColumn_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/computedcolumn_invalid_01")
-}
-
-func Test_Invalid_ComputedColumn_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/computedcolumn_invalid_02")
-}
-
-func Test_Invalid_ComputedColumn_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/computedcolumn_invalid_03")
-}
-
-func Test_Invalid_ComputedColumn_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/computedcolumn_invalid_04")
-}
-
-func Test_Invalid_ComputedColumn_05(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/computedcolumn_invalid_05")
-}
-
-func Test_Invalid_ComputedColumn_06(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/computedcolumn_invalid_06")
-}
-func Test_Invalid_ComputedColumn_07(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/computedcolumn_invalid_07")
-}
-func Test_Invalid_ComputedColumn_08(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/computedcolumn_invalid_08")
-}
-
-func Test_Invalid_ComputedColumn_09(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/computedcolumn_invalid_09")
-}
-
-//
-// #1089
-// func Test_Invalid_ComputedColumn_10(t *testing.T) {
-// 	CheckInvalid(t, "corset/invalid/computedcolumn_invalid_10")
-// }
-//
-// #1089
-// func Test_Invalid_ComputedColumn_11(t *testing.T) {
-// 	CheckInvalid(t, "corset/invalid/computedcolumn_invalid_11")
-// }
-
-// ===================================================================
-// Function calls
-// ===================================================================
-
-func Test_Invalid_FnCall_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/fncall_invalid_01")
-}
-func Test_Invalid_FnCall_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/fncall_invalid_02")
-}
-func Test_Invalid_FnCall_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/fncall_invalid_03")
-}
-func Test_Invalid_FnCall_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/fncall_invalid_04")
 }
 
 // ===================================================================
