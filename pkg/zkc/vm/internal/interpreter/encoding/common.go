@@ -346,8 +346,7 @@ const (
 	WIDE_DIVC
 	// WIDE_REM instruction [must follow WIDE_DIV]
 	WIDE_REM
-	// WIDE_REMC (remainder by pooled constant) instruction [must follow
-	// WIDE_DIVC]
+	// WIDE_REMC (remainder by pooled constant) instruction
 	WIDE_REMC
 	// WIDE_INTRINSIC instruction
 	WIDE_INTRINSIC
