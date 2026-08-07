@@ -13,9 +13,6 @@
 package lookup
 
 import (
-	"fmt"
-
-	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -34,8 +31,7 @@ type Geometry struct {
 // NewGeometry returns the calculated "geometry" for this lookup.  That
 // is, for each source/target pair, the maximum bitwidth of any source or target
 // value.
-func NewGeometry[F field.Element[F], E term.Evaluable[F], T register.Map](c Constraint[F, E],
-	mapping module.Map[T]) Geometry {
+func NewGeometry[F field.Element[F], T register.Map](c Constraint[F], mapping module.Map[T]) Geometry {
 	//
 	var geometry []uint = make([]uint, c.Sources[0].Len())
 	// Include sources
@@ -70,8 +66,7 @@ func (p *Geometry) LimbWidths(i uint) []uint {
 	return register.LimbWidths(p.config.RegisterWidth, p.geometry[i])
 }
 
-func updateGeometry[F field.Element[F], E term.Evaluable[F], T register.Map](geometry []uint, source Vector[F, E],
-	mapping module.Map[T]) {
+func updateGeometry[T register.Map](geometry []uint, source Vector, mapping module.Map[T]) {
 	//
 	var (
 		regmap = mapping.Module(source.Module)
@@ -82,14 +77,7 @@ func updateGeometry[F field.Element[F], E term.Evaluable[F], T register.Map](geo
 		panic("misaligned lookup")
 	}
 	//
-	for i, ith := range source.Terms {
-		ithRange := ith.ValueRange()
-		bitwidth, signed := ithRange.BitWidth()
-		// Sanity check
-		if signed {
-			panic(fmt.Sprintf("signed lookup encountered (%s)", ith.Lisp(true, regmap).String(true)))
-		}
-		//
-		geometry[i] = max(geometry[i], bitwidth)
+	for i, ith := range source.Registers {
+		geometry[i] = max(geometry[i], regmap.Register(ith).Width())
 	}
 }

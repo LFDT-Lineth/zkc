@@ -55,9 +55,9 @@ type (
 type (
 	// LookupConstraint captures the essence of a lookup constraint at the MIR
 	// level.
-	LookupConstraint[F field.Element[F]] = lookup.Constraint[F, *RegisterAccess[F]]
+	LookupConstraint[F field.Element[F]] = lookup.Constraint[F]
 	// LookupVector provides a convenient shorthand
-	LookupVector[F field.Element[F]] = lookup.Vector[F, *RegisterAccess[F]]
+	LookupVector = lookup.Vector
 	// RangeConstraint captures the essence of a range constraints at the MIR level.
 	RangeConstraint[F field.Element[F]] = ranged.Constraint[F, *RegisterAccess[F]]
 	// VanishingConstraint captures the essence of a vanishing constraint at the MIR

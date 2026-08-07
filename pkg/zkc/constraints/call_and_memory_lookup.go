@@ -282,35 +282,25 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 		tgtIds[i] = register.NewId(uint(i))
 	}
 	// Build the source (caller) vector.
-	var (
-		sel    = term.RawRegisterAccess[F, mir.Term[F]](srcSelector, 1, 0)
-		source = lookup.FilteredVector(ctx, sel, registerAccesses[F](callerRegs, srcIds)...)
-	)
-
+	var source = lookup.FilteredVector(ctx, srcSelector, srcIds...)
 	// Build the target (callee) vector.
-	var (
-		target   mir.LookupVector[F]
-		tgtTerms = registerAccesses[F](calleeRegs, tgtIds)
-	)
+	var target mir.LookupVector
 	// Native module don't have a $ret function
 	// (do we need one ? see https://github.com/LFDT-Lineth/zkc/issues/2025)
 	if callee.IsNative() {
-		target = lookup.UnfilteredVector(calleeId, tgtTerms...)
+		target = lookup.UnfilteredVector(calleeId, tgtIds...)
 	} else {
 		// Both multi-line and atomic (one-line) callees expose a $ret line which is 1
 		// on active rows; use it as the lookup selector.
 
 		// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
 		// Atomic callees have $ret line as well. Only OLI that touches memmory should have one.
-		var (
-			retId = register.NewId(uint(len(calleeRegs)))
-			ret   = term.RawRegisterAccess[F, mir.Term[F]](retId, 1, 0)
-		)
+		var retId = register.NewId(uint(len(calleeRegs)))
 		//
-		target = lookup.FilteredVector(calleeId, ret, tgtTerms...)
+		target = lookup.FilteredVector(calleeId, retId, tgtIds...)
 	}
 	//
-	mod.AddConstraints(mir.NewLookupConstraint(handle, []mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
+	mod.AddConstraints(mir.NewLookupConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
 }
 
 // emitMemoryLookup constructs and adds a single lookup constraint mapping an
@@ -350,44 +340,22 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir
 		tgtIds[i] = register.NewId(uint(i))
 	}
 	// Build the source (accessor) vector.
-	var (
-		sel    = term.RawRegisterAccess[F, mir.Term[F]](srcSelector, 1, 0)
-		source = lookup.FilteredVector(ctx, sel, registerAccesses[F](accessorRegs, srcIds)...)
-	)
-
+	var source = lookup.FilteredVector(ctx, srcSelector, srcIds...)
 	// Build the target (memory) vector.
-	var (
-		target   mir.LookupVector[F]
-		tgtTerms = registerAccesses[F](memRegs, tgtIds)
-	)
+	var target mir.LookupVector
 	//
 	if mem.IsStatic() {
 		// Static tables enumerate their full contents, so every row is a valid
 		// table entry and the target side is unfiltered.
-		target = lookup.UnfilteredVector(memId, tgtTerms...)
+		target = lookup.UnfilteredVector(memId, tgtIds...)
 	} else {
 		// ROM / WOM tables expose a $access_bit column which is 1 on active
 		// rows; use it as the lookup selector.  It is allocated immediately
 		// after the address/data registers (see translateAccessOnceMemory).
-		var (
-			accessId = register.NewId(uint(len(memRegs)))
-			access   = term.RawRegisterAccess[F, mir.Term[F]](accessId, 1, 0)
-		)
+		var accessId = register.NewId(uint(len(memRegs)))
 		//
-		target = lookup.FilteredVector(memId, access, tgtTerms...)
+		target = lookup.FilteredVector(memId, accessId, tgtIds...)
 	}
 	//
-	mod.AddConstraints(mir.NewLookupConstraint(handle, []mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
-}
-
-// registerAccesses builds MIR register accesses (at row offset 0) for the given
-// register ids, looking up each register's width in the supplied layout.
-func registerAccesses[F field.Element[F]](regs []register.Register, ids []register.Id) []*mir.RegisterAccess[F] {
-	terms := make([]*mir.RegisterAccess[F], len(ids))
-	//
-	for i, id := range ids {
-		terms[i] = term.RawRegisterAccess[F, mir.Term[F]](id, regs[id.Unwrap()].WidthOrNative(), 0)
-	}
-	//
-	return terms
+	mod.AddConstraints(mir.NewLookupConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
 }

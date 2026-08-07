@@ -314,21 +314,6 @@ func subdivideVectorAccess[F field.Element[F]](expr *VectorAccess[F], mapping re
 	return term.RawVectorAccess(terms)
 }
 
-func subdivideRawRegisterAccesses[F field.Element[F]](terms []*RegisterAccess[F], mapping register.LimbsMap,
-) []*VectorAccess[F] {
-	//
-	var (
-		vecs = make([]*VectorAccess[F], len(terms))
-	)
-	//
-	for i, t := range terms {
-		ith := subdivideRawRegisterAccess(t, mapping)
-		vecs[i] = term.RawVectorAccess(ith)
-	}
-	//
-	return vecs
-}
-
 func subdivideRawRegisterAccess[F field.Element[F]](expr *RegisterAccess[F], mapping register.LimbsMap,
 ) []*RegisterAccess[F] {
 	//

@@ -19,9 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -118,10 +116,9 @@ func concretizeConstraint[F1 Element[F1], F2 Element[F2]](constraint Constraint[
 	//
 	switch c := constraint.Unwrap().(type) {
 	case LookupConstraint[F1]:
-		targets := concretizeLookupVectors[F1, F2](c.Targets)
-		sources := concretizeLookupVectors[F1, F2](c.Sources)
-		//
-		return NewLookupConstraint(c.Handle, targets, sources)
+		// NOTE: lookup vectors are made up of registers and, hence, are
+		// independent of the underlying field.
+		return NewLookupConstraint[F2](c.Handle, c.Targets, c.Sources)
 	case RangeConstraint[F1]:
 		var terms = concretizeRegisterAccesses[F1, F2](c.Sources)
 		//
@@ -133,29 +130,6 @@ func concretizeConstraint[F1 Element[F1], F2 Element[F2]](constraint Constraint[
 	default:
 		panic("unreachable")
 	}
-}
-
-func concretizeLookupVectors[F1 Element[F1], F2 Element[F2]](vecs []LookupVector[F1]) []LookupVector[F2] {
-	var nvecs = make([]LookupVector[F2], len(vecs))
-	//
-	for i, vec := range vecs {
-		nvecs[i] = concretizeLookupVector[F1, F2](vec)
-	}
-	//
-	return nvecs
-}
-
-func concretizeLookupVector[F1 Element[F1], F2 Element[F2]](vec LookupVector[F1]) LookupVector[F2] {
-	var (
-		sources                                   = concretizeRegisterAccesses[F1, F2](vec.Terms)
-		selector util.Option[*RegisterAccess[F2]] = util.None[*RegisterAccess[F2]]()
-	)
-	//
-	if vec.Selector.HasValue() {
-		selector = util.Some(concretizeRegisterAccess[F1, F2](vec.Selector.Unwrap()))
-	}
-	//
-	return lookup.NewVector(vec.Module, selector, sources...)
 }
 
 // ============================================================================

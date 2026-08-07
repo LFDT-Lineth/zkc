@@ -87,26 +87,20 @@ func (p MirModule[F]) NewLookup(name string, from []register.Id, target MirModul
 	enable util.Option[register.Id]) {
 	//
 	var (
-		sources       = wrapMirRegisterAccesses[F](p.Module, from...)
-		targets       = wrapMirRegisterAccesses[F](target.Module, to...)
-		targetVectors []lookup.Vector[F, *mir.RegisterAccess[F]]
-		sourceVectors []lookup.Vector[F, *mir.RegisterAccess[F]]
+		targetVectors []lookup.Vector
+		sourceVectors []lookup.Vector
 	)
 	//
 	if enable.IsEmpty() {
-		targetVectors = append(targetVectors, lookup.UnfilteredVector(target.Module.Id(), targets...))
+		targetVectors = append(targetVectors, lookup.UnfilteredVector(target.Module.Id(), to...))
 	} else {
-		var (
-			enReg = target.Module.Register(enable.Unwrap())
-			en    = term.RawRegisterAccess[F, mir.Term[F]](enable.Unwrap(), enReg.Width(), 0)
-		)
-		//
-		targetVectors = append(targetVectors, lookup.FilteredVector(target.Module.Id(), en, targets...))
+		targetVectors = append(targetVectors,
+			lookup.FilteredVector(target.Module.Id(), enable.Unwrap(), to...))
 	}
 	//
-	sourceVectors = append(sourceVectors, lookup.UnfilteredVector(p.Module.Id(), sources...))
+	sourceVectors = append(sourceVectors, lookup.UnfilteredVector(p.Module.Id(), from...))
 	//
-	p.Module.AddConstraint(mir.NewLookupConstraint(name, targetVectors, sourceVectors))
+	p.Module.AddConstraint(mir.NewLookupConstraint[F](name, targetVectors, sourceVectors))
 }
 
 // String returns an appropriately formatted representation of the module.
@@ -274,16 +268,4 @@ func unwrapSplitMirLogicals[F field.Element[F]](head MirExpr[F], tail ...MirExpr
 	}
 	//
 	return cexprs
-}
-
-func wrapMirRegisterAccesses[F field.Element[F]](mapping register.Map, regs ...register.Id) []*mir.RegisterAccess[F] {
-	var vars = make([]*mir.RegisterAccess[F], len(regs))
-	//
-	for i, rid := range regs {
-		var reg = mapping.Register(rid)
-		//
-		vars[i] = term.RawRegisterAccess[F, mir.Term[F]](rid, reg.Width(), 0)
-	}
-	//
-	return vars
 }

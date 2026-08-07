@@ -143,22 +143,15 @@ func (p *BitwidthGadget[F]) applyRecursiveBitwidthGadget(ref register.Ref, bitwi
 	if !ok {
 		mid = p.constructTypeProof(proofHandle, bitwidth)
 	}
-	// Add lookup constraint for register into proof
-	sourceAccesses := []*air.ColumnAccess[F]{
-		// Source Value
-		term.RawRegisterAccess[F, air.Term[F]](ref.Register(), reg.Width(), 0)}
-	// NOTE: 0th column always assumed to hold full value, with others
+	// Add lookup constraint for register into proof.  NOTE: 0th register of the
+	// type proof always assumed to hold the full value, with others
 	// representing limbs, etc.
-	targetAccesses := []*air.ColumnAccess[F]{
-		// Target Value
-		term.RawRegisterAccess[F, air.Term[F]](register.NewId(0), bitwidth, 0)}
+	var (
+		targets = []lookup.Vector{lookup.UnfilteredVector(mid, register.NewId(0))}
+		sources = []lookup.Vector{lookup.UnfilteredVector(mod.Id(), ref.Register())}
+	)
 	//
-	targets := []lookup.Vector[F, *air.ColumnAccess[F]]{
-		lookup.UnfilteredVector(mid, targetAccesses...)}
-	sources := []lookup.Vector[F, *air.ColumnAccess[F]]{
-		lookup.UnfilteredVector(mod.Id(), sourceAccesses...)}
-	//
-	mod.AddConstraint(air.NewLookupConstraint(lookupHandle, targets, sources))
+	mod.AddConstraint(air.NewLookupConstraint[F](lookupHandle, targets, sources))
 	// Add column to assignment so its proof is included
 	typeModule := p.schema.Module(mid)
 	//

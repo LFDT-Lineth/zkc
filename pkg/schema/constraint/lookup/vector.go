@@ -13,122 +13,94 @@
 package lookup
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
-// Vector encapsulates all columns on one side of a lookup (i.e. it
-// represents all source columns or all target columns).
-type Vector[F any, E term.Evaluable[F]] struct {
-	// Module in which all terms are evaluated.
+// Vector encapsulates all registers on one side of a lookup (i.e. it
+// represents all source registers or all target registers).  Observe that a
+// vector can only be made up of registers (rather than arbitrary expressions).
+// Thus, anything else must be expanded into a register beforehand.
+type Vector struct {
+	// Module in which all registers are located.
 	Module schema.ModuleId
 	// Selector for this vector (optional)
-	Selector util.Option[E]
-	// Terms making up this vector.
-	Terms []E
+	Selector util.Option[register.Id]
+	// Registers making up this vector.
+	Registers []register.Id
 }
 
 // NewVector constructs a new vector in a given context with an optional selector.
-func NewVector[F any, E term.Evaluable[F]](mid schema.ModuleId, selector util.Option[E], terms ...E) Vector[F, E] {
+func NewVector(mid schema.ModuleId, selector util.Option[register.Id], registers ...register.Id) Vector {
 	if selector.HasValue() {
-		return FilteredVector(mid, selector.Unwrap(), terms...)
+		return FilteredVector(mid, selector.Unwrap(), registers...)
 	}
 	//
-	return UnfilteredVector(mid, terms...)
+	return UnfilteredVector(mid, registers...)
 }
 
 // UnfilteredVector constructs a new vector in a given context which has no selector.
-func UnfilteredVector[F any, E term.Evaluable[F]](mid schema.ModuleId, terms ...E) Vector[F, E] {
-	return Vector[F, E]{
+func UnfilteredVector(mid schema.ModuleId, registers ...register.Id) Vector {
+	return Vector{
 		mid,
-		util.None[E](),
-		terms,
+		util.None[register.Id](),
+		registers,
 	}
 }
 
 // FilteredVector constructs a new vector in a given context which has a selector.
-func FilteredVector[F any, E term.Evaluable[F]](mid schema.ModuleId, selector E, terms ...E) Vector[F, E] {
-	return Vector[F, E]{
+func FilteredVector(mid schema.ModuleId, selector register.Id, registers ...register.Id) Vector {
+	return Vector{
 		mid,
 		util.Some(selector),
-		terms,
+		registers,
 	}
 }
 
-// Bounds determines the well-definedness bounds for all terms within this vector.
-//
-//nolint:revive
-func (p *Vector[F, E]) Bounds(module uint) util.Bounds {
-	var bound util.Bounds
-	//
-	if module == p.Module {
-		// Include bounds for selector (if applicable)
-		if p.HasSelector() {
-			sel := p.Selector.Unwrap().Bounds()
-			bound.Union(&sel)
-		}
-		// Include bounds for all terms
-		for _, e := range p.Terms {
-			eth := e.Bounds()
-			bound.Union(&eth)
-		}
-	}
-	//
-	return bound
-}
-
-// Context returns the conterxt in which all terms of this vector must be
-// evaluated.
-func (p *Vector[F, E]) Context() schema.ModuleId {
+// Context returns the conterxt in which all registers of this vector are
+// located.
+func (p *Vector) Context() schema.ModuleId {
 	return p.Module
 }
 
 // HasSelector determines whether or not this lookup vector has a selector or
 // not.
-func (p *Vector[F, E]) HasSelector() bool {
+func (p *Vector) HasSelector() bool {
 	return p.Selector.HasValue()
 }
 
-// Ith returns the ith term in this vector.
-func (p *Vector[F, E]) Ith(index uint) E {
-	return p.Terms[index]
+// Ith returns the ith register in this vector.
+func (p *Vector) Ith(index uint) register.Id {
+	return p.Registers[index]
 }
 
 // Len returns the number of items in this lookup vector.  Note this doesn't
 // include the selector (since this is optional anyway).
-func (p *Vector[F, E]) Len() uint {
-	return uint(len(p.Terms))
+func (p *Vector) Len() uint {
+	return uint(len(p.Registers))
 }
 
 // Lisp returns a textual representation of this vector.
-func (p *Vector[F, E]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
-	var (
-		module = mapping.Module(p.Module)
-		terms  = sexp.EmptyList()
-	)
+func (p *Vector) Lisp(mapping register.Map) sexp.SExp {
+	var terms = sexp.EmptyList()
 	//
 	if p.HasSelector() {
-		terms.Append(p.Selector.Unwrap().Lisp(true, module))
+		terms.Append(lispOfRegister(p.Selector.Unwrap(), mapping))
 	} else {
 		terms.Append(sexp.NewSymbol("_"))
 	}
-	// Iterate source expressions
+	// Iterate source registers
 	for i := range p.Len() {
-		terms.Append(p.Ith(i).Lisp(true, module))
+		terms.Append(lispOfRegister(p.Ith(i), mapping))
 	}
 	// Done
 	return terms
 }
 
-// Substitute any matchined labelled constants within this vector
-func (p *Vector[F, E]) Substitute(mapping map[string]F) {
-	for _, ith := range p.Terms {
-		ith.Substitute(mapping)
-	}
-	// Substitute through selector (if applicable)
-	if p.HasSelector() {
-		p.Selector.Unwrap().Substitute(mapping)
-	}
+// lispOfRegister returns a textual representation of a given register in a
+// given module.
+func lispOfRegister(rid register.Id, mapping register.Map) sexp.SExp {
+	return sexp.NewSymbol(mapping.Register(rid).QualifiedName(mapping))
 }

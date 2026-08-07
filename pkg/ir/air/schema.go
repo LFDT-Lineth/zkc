@@ -65,7 +65,7 @@ type (
 	// LookupConstraint captures the essence of a lookup constraint at the AIR
 	// level.  At the AIR level, lookup constraints are only permitted between
 	// columns (i.e. not arbitrary expressions).
-	LookupConstraint[F field.Element[F]] = Air[F, lookup.Constraint[F, *ColumnAccess[F]]]
+	LookupConstraint[F field.Element[F]] = Air[F, lookup.Constraint[F]]
 	// RangeConstraint captures the essence of a range constraints at the AIR level.
 	RangeConstraint[F field.Element[F]] = Air[F, ranged.Constraint[F, *ColumnAccess[F]]]
 	// VanishingConstraint captures the essence of a vanishing constraint at the AIR level.
