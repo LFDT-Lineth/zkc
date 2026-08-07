@@ -1,4 +1,4 @@
-//error:4:3-16 conflicting write to q
+//error:4:3-16:conflicting write to q
 
 fn f(a:u32, b:u32) -> (q:u32) {
   q, q = a /% b
