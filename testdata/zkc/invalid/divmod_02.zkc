@@ -1,4 +1,4 @@
-//error:3:17-19:braces required
+//error::17-19 /% operator cannot be chained
 fn f(a:u8, b:u8, c:u8) -> (q:u8, r:u8) {
   q, r = a /% b /% c
 }

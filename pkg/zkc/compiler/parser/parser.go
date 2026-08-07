@@ -1725,8 +1725,12 @@ func (p *Parser) parseArithExpr(env Environment) (Expr, []source.SyntaxError) {
 			return tmp, p.syntaxErrors(p.lookahead(), "braces required")
 		}
 		// Division / remainder chains (a / b / c)  must be braced explicitly, e.g. (a / b) / c.
-		if len(args) > 1 && (kind == DIV || kind == REM || kind == DIV_REM) {
+		if len(args) > 1 && (kind == DIV || kind == REM) {
 			return tmp, p.syntaxErrors(p.lookahead(), "braces required")
+		}
+		// DIV_REM can't be chained, even with bracket.
+		if len(args) > 1 && kind == DIV_REM {
+			return tmp, p.syntaxErrors(p.lookahead(), "/% operator cannot be chained")
 		}
 		// Consume connective
 		p.expect(p.lookahead().Kind)

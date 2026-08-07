@@ -781,7 +781,7 @@ func Test_ZkcInvalid_DivMod_01(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/divmod_01")
 }
 
-// unbraced divmod chain (a /% b /% c)
+// divmod chain (a /% b /% c)
 func Test_ZkcInvalid_DivMod_02(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/divmod_02")
 }
