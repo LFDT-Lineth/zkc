@@ -187,26 +187,6 @@ func Test_Valid_Domain_03(t *testing.T) {
 }
 
 // ===================================================================
-// Block Tests
-// ===================================================================
-
-func Test_Valid_Block_01(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/block_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Block_02(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/block_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Block_03(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/block_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Block_04(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/block_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-// ===================================================================
 // Logical Tests
 // ===================================================================
 
@@ -801,22 +781,6 @@ func Test_Valid_Array_08(t *testing.T) {
 }
 
 // ===================================================================
-// Debug
-// ===================================================================
-
-func Test_Valid_Debug_01(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/debug_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Debug_02(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/debug_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Debug_03(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/debug_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-// ===================================================================
 // Perspectives
 // ===================================================================
 
@@ -942,10 +906,6 @@ func Test_Valid_Stdlib_01(t *testing.T) {
 
 func Test_Valid_Stdlib_02(t *testing.T) {
 	util.CheckCorset(t, true, "corset/valid/stdlib_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Stdlib_03(t *testing.T) {
-	util.CheckCorset(t, true, "corset/valid/stdlib_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Valid_Stdlib_04(t *testing.T) {

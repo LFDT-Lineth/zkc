@@ -539,8 +539,6 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		return r.finaliseExpressionsInModule(scope, []ast.Expr{v.Condition, v.TrueBranch, v.FalseBranch})
 	case *ast.Invoke:
 		return r.finaliseInvokeInModule(scope, v)
-	case *ast.List:
-		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.Mul:
 		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.Normalise:

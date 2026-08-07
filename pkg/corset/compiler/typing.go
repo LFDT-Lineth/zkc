@@ -300,13 +300,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 		result, errors = p.typeCheckIfInModule(expected, e, functional)
 	case *ast.Invoke:
 		result, errors = p.typeCheckInvokeInModule(expected, e, functional)
-	case *ast.List:
-		if functional {
-			return nil, p.srcmap.SyntaxErrors(expr, "not permitted in functional context")
-		}
-		//
-		types, errs := p.typeCheckExpressionsInModule(nil, e.Args, functional)
-		result, errors = ast.LeastUpperBound(types...), errs
 	case *ast.Mul:
 		types, errors = p.typeCheckExpressionsInModule(ast.UINT_TYPE, e.Args, true)
 		result = typeOfProduct(types...)

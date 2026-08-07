@@ -106,12 +106,10 @@ func (p *preprocessor) preprocessDefConstraint(decl *ast.DefConstraint) []Syntax
 	decl.Constraint, constraint_errors = p.preprocessExpressionInModule(decl.Constraint)
 	// preprocess (optional) guard
 	decl.Guard, guard_errors = p.preprocessOptionalExpressionInModule(decl.Guard)
-	// sanity check
-	if decl.Constraint == nil {
-		// this case is possible when the constraint expression consists
-		// entirely of debug constraints, and debug mode is not enabled.
-		decl.Constraint = &ast.List{Args: nil}
-	}
+	// NOTE: decl.Constraint can be nil at this point.  This case is possible
+	// when the constraint expression consists entirely of debug constraints,
+	// and debug mode is not enabled.  Translation simply ignores such
+	// constraints.
 	// Combine errors
 	return append(constraint_errors, guard_errors...)
 }
@@ -183,51 +181,6 @@ func (p *preprocessor) preprocessExpressionsInModule(exprs []ast.Expr) ([]ast.Ex
 	return nexprs, errors
 }
 
-// preprocess a sequence of zero or more expressions enclosed in a given module.
-// A key aspect of this function is that it additionally accounts for "voidable"
-// expressions.  That is, essentially, to account for debug constraints which
-// only exist in debug mode.  Hence, when debug mode is not enabled, then a
-// debug constraint is "void".
-func (p *preprocessor) preprocessVoidableExpressionsInModule(exprs []ast.Expr) ([]ast.Expr, []SyntaxError) {
-	//
-	errors := []SyntaxError{}
-	hirExprs := make([]ast.Expr, len(exprs))
-	nils := 0
-	// Iterate each expression in turn
-	for i, e := range exprs {
-		if e != nil {
-			var errs []SyntaxError
-			//
-			hirExprs[i], errs = p.preprocessExpressionInModule(e)
-			errors = append(errors, errs...)
-			// Update dirty flag
-			if hirExprs[i] == nil {
-				nils++
-			}
-		}
-	}
-	// Nil check.
-	if nils == 0 {
-		// Done
-		return hirExprs, errors
-	}
-	// Stip nils. Recall that nils can arise legitimately when we have debug
-	// constraints, but debug mode is not enabled.  In such case, we want to
-	// strip them out.  Since this is a rare occurrence, we try to keep the happy
-	// path efficient.
-	nHirExprs := make([]ast.Expr, len(exprs)-nils)
-	i := 0
-	// Strip out nils
-	for _, e := range hirExprs {
-		if e != nil {
-			nHirExprs[i] = e
-			i++
-		}
-	}
-	//
-	return nHirExprs, errors
-}
-
 // preprocess an expression situated in a given context.  The context is
 // necessary to resolve unqualified names (e.g. for column access, function
 // invocations, etc).
@@ -275,9 +228,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 		nexpr, errors = &ast.If{Condition: cond, TrueBranch: args[0], FalseBranch: args[1]}, append(errs1, errs2...)
 	case *ast.Invoke:
 		return p.preprocessInvokeInModule(e)
-	case *ast.List:
-		args, errs := p.preprocessVoidableExpressionsInModule(e.Args)
-		nexpr, errors = &ast.List{Args: args}, errs
 	case *ast.Mul:
 		args, errs := p.preprocessExpressionsInModule(e.Args)
 		nexpr, errors = &ast.Mul{Args: args}, errs

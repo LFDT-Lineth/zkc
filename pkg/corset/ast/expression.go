@@ -615,39 +615,6 @@ func (e *Invoke) Dependencies() []Symbol {
 }
 
 // ============================================================================
-// List
-// ============================================================================
-
-// List represents a block of zero or more expressions.
-type List struct{ Args []Expr }
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *List) AsConstant() *big.Int {
-	// Potentially we could do better here, but its not clear we need to.
-	return nil
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *List) Context() Context {
-	ctx, _ := ContextOfExpressions(e.Args...)
-	return ctx
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *List) Lisp() sexp.SExp {
-	return ListOfExpressions(sexp.NewSymbol("begin"), e.Args)
-}
-
-// Dependencies needed to signal declaration.
-func (e *List) Dependencies() []Symbol {
-	return DependenciesOfExpressions(e.Args)
-}
-
-// ============================================================================
 // Multiplication
 // ============================================================================
 
@@ -1018,9 +985,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 	case *Invoke:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &Invoke{e.Name, args}
-	case *List:
-		args := SubstituteAll(e.Args, mapping, srcmap)
-		nexpr = &List{args}
 	case *Mul:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &Mul{args}
@@ -1118,8 +1082,6 @@ func ShallowCopy(expr Expr) Expr {
 		return &If{e.Condition, e.TrueBranch, e.FalseBranch}
 	case *Invoke:
 		return &Invoke{e.Name, e.Args}
-	case *List:
-		return &List{e.Args}
 	case *Mul:
 		return &Mul{e.Args}
 	case *Normalise:

@@ -272,6 +272,13 @@ func (t *translator) translateDeclaration(decl ast.Declaration, path file.Path) 
 
 // Translate a "defconstraint" declaration.
 func (t *translator) translateDefConstraint(decl *ast.DefConstraint) []SyntaxError {
+	// NOTE: a nil constraint arises when the constraint expression consists
+	// entirely of debug constraints, and debug mode is not enabled.  In such
+	// case, there is no constraint to translate.
+	if decl.Constraint == nil {
+		return nil
+	}
+	//
 	var (
 		module = t.moduleOf(decl.Constraint.Context())
 		// Translate expr body
@@ -836,14 +843,6 @@ func (t *translator) translateLogical(expr ast.Expr, mod ModuleBuilder, shift in
 		}
 	case *ast.If:
 		return t.translateIte(e, mod, shift)
-	case *ast.List:
-		args, errs := t.translateLogicals(mod, shift, e.Args...)
-		// Sanity check void
-		if len(args) == 0 {
-			return nil, errs
-		}
-		//
-		return term.Conjunction(args...), errs
 	case *ast.Not:
 		arg, errs := t.translateLogical(e.Arg, mod, shift)
 		return term.Negation(arg), errs
