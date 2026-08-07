@@ -86,26 +86,21 @@ func validateVanishingConstraint[F field.Element[F], T term.Testable[F]](c vanis
 	}
 }
 
-func validateLookupConstraint[F field.Element[F], T term.Evaluable[F]](c lookup.Constraint[F, T],
-	validations []bit.Set) {
+func validateLookupConstraint[F field.Element[F]](c lookup.Constraint[F], validations []bit.Set) {
 	//
 	validateLookupVectors(c.Targets, validations)
 	validateLookupVectors(c.Sources, validations)
 }
 
-func validateLookupVectors[F field.Element[F], T term.Evaluable[F]](vs []lookup.Vector[F, T],
-	validations []bit.Set) {
+func validateLookupVectors(vs []lookup.Vector, validations []bit.Set) {
 	for _, v := range vs {
 		validateLookupVector(v, validations)
 	}
 }
 
-func validateLookupVector[F field.Element[F], T term.Evaluable[F]](v lookup.Vector[F, T],
-	validations []bit.Set) {
-	for _, e := range v.Terms {
-		for _, rid := range *e.RequiredRegisters() {
-			validations[v.Context()].Insert(rid)
-		}
+func validateLookupVector(v lookup.Vector, validations []bit.Set) {
+	for _, rid := range v.Registers {
+		validations[v.Context()].Insert(rid.Unwrap())
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -598,18 +599,21 @@ func (p *DefInRange) Lisp() sexp.SExp {
 // deflookup
 // ============================================================================
 
-// DefLookup represents a lookup constraint between a set N of source
-// expressions and a set of N target expressions.  The source expressions must
-// have a single context (i.e. all be in the same module) and likewise for the
-// target expressions (though the source and target contexts can differ).  The
-// constraint can be viewed as a "subset constraint".  Let the set of "source
-// tuples" be those obtained by evaluating the source expressions over all rows
-// in the source context, and likewise the "target tuples" those for the target
-// expressions in the target context.  Then the lookup constraint holds if the
-// set of source tuples is a subset of the target tuples.  This does not need to
-// be a strict subset, so the two sets can be identical.  Furthermore, these are
-// not treated as multi-sets, hence the number of occurrences of a given tuple
-// is not relevant.
+// DefLookup represents a lookup constraint between a set N of source columns
+// and a set of N target columns.  The source columns must have a single context
+// (i.e. all be in the same module) and likewise for the target columns (though
+// the source and target contexts can differ).  The constraint can be viewed as
+// a "subset constraint".  Let the set of "source tuples" be those obtained by
+// reading the source columns over all rows in the source context, and likewise
+// the "target tuples" those for the target columns in the target context.  Then
+// the lookup constraint holds if the set of source tuples is a subset of the
+// target tuples.  This does not need to be a strict subset, so the two sets can
+// be identical.  Furthermore, these are not treated as multi-sets, hence the
+// number of occurrences of a given tuple is not relevant.
+//
+// NOTE: sources and targets (along with their selectors) are column accesses
+// rather than arbitrary expressions.  This reflects what the underlying
+// constraint system supports.
 type DefLookup struct {
 	// Unique handle given to this constraint.  This is primarily useful for
 	// debugging (i.e. so we know which constraint failed, etc).
@@ -617,23 +621,23 @@ type DefLookup struct {
 	// Checked determines whether or not "type checking" is enabled for source /
 	// target pairs.
 	Checked bool
-	// Source selector expressions (nil entries mean no selector for corresponding source).
-	SourceSelectors []Expr
-	// Source expressions for lookup (i.e. these values must all be contained
-	// within the targets).
-	Sources [][]Expr
-	// Target selector expressions (nil entries mean no selector for corresponding source).
-	TargetSelectors []Expr
-	// Target expressions for lookup (i.e. these values must contain all of the
+	// Source selectors (nil entries mean no selector for corresponding source).
+	SourceSelectors []TypedSymbol
+	// Source columns for lookup (i.e. these values must all be contained within
+	// the targets).
+	Sources [][]TypedSymbol
+	// Target selectors (nil entries mean no selector for corresponding source).
+	TargetSelectors []TypedSymbol
+	// Target columns for lookup (i.e. these values must contain all of the
 	// source values, but may contain more).
-	Targets [][]Expr
-	// Indicates whether or not target and source expressions have been resolved.
+	Targets [][]TypedSymbol
+	// Indicates whether or not target and source columns have been resolved.
 	finalised bool
 }
 
 // NewDefLookup creates a new (unfinalised) lookup constraint.
-func NewDefLookup(handle string, checked bool, sourceSelectors []Expr, sources [][]Expr,
-	targetSelectors []Expr, targets [][]Expr) *DefLookup {
+func NewDefLookup(handle string, checked bool, sourceSelectors []TypedSymbol, sources [][]TypedSymbol,
+	targetSelectors []TypedSymbol, targets [][]TypedSymbol) *DefLookup {
 	//
 	return &DefLookup{handle, checked, sourceSelectors, sources, targetSelectors, targets, false}
 }
@@ -646,29 +650,26 @@ func (p *DefLookup) Definitions() iter.Iterator[SymbolDefinition] {
 
 // Dependencies needed to signal declaration.
 func (p *DefLookup) Dependencies() iter.Iterator[Symbol] {
-	var deps []Symbol
+	var (
+		sources = dependenciesOfLookupVectors(p.SourceSelectors, p.Sources)
+		targets = dependenciesOfLookupVectors(p.TargetSelectors, p.Targets)
+		viter   = iter.NewArrayIterator(append(sources, targets...))
+	)
+	// put it altogether
+	return iter.NewCastIterator[TypedSymbol, Symbol](viter)
+}
+
+// dependenciesOfLookupVectors returns the given symbols as dependencies.  That
+// is, each symbol depends only upon itself.
+func dependenciesOfLookupVectors(selectors []TypedSymbol, targets [][]TypedSymbol) []TypedSymbol {
+	// Filter out all empty selectors
+	selectors = array.Filter(selectors, func(t TypedSymbol) bool { return t != nil })
+	// Flattern targets
+	flat := array.FlatMap(targets, func(f []TypedSymbol) []TypedSymbol {
+		return f
+	})
 	//
-	for i, sources := range p.Sources {
-		ith_selector := p.SourceSelectors[i]
-		//
-		if ith_selector != nil {
-			deps = append(deps, ith_selector.Dependencies()...)
-		}
-		//
-		deps = append(deps, DependenciesOfExpressions(sources)...)
-	}
-	//
-	for i, targets := range p.Targets {
-		ith_selector := p.TargetSelectors[i]
-		//
-		if ith_selector != nil {
-			deps = append(deps, ith_selector.Dependencies()...)
-		}
-		//
-		deps = append(deps, DependenciesOfExpressions(targets)...)
-	}
-	// Combine deps
-	return iter.NewArrayIterator(deps)
+	return append(selectors, flat...)
 }
 
 // Defines checks whether this declaration defines the given symbol.  The symbol

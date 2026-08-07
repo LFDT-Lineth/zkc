@@ -7,6 +7,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/verify/picus/pcl"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -129,7 +130,7 @@ func (p *AirPicusTranslator[F]) translateLookup(v air.LookupConstraint[F], picus
 
 		source := v.Unwrap().Sources[0]
 		sourceModule := p.airSchema.Module(source.Module)
-		sourceTerm := p.lowerTerm(source.Ith(0), sourceModule)
+		sourceTerm := p.lowerRegister(source.Ith(0), 0, sourceModule)
 		upperBound := pcl.C(field.BigInt[F](*MaxValueBig(128)))
 		picusModule.AddLeqConstraint(sourceTerm, upperBound)
 	}
@@ -153,16 +154,7 @@ func (p *AirPicusTranslator[F]) lowerTerm(t air.Term[F], module schema.Module[F]
 	case *air.Constant[F]:
 		return pcl.C(e.Value)
 	case *air.ColumnAccess[F]:
-		name := module.Register(e.Register()).Name()
-		if strings.Contains(name, " ") {
-			name = fmt.Sprintf("\"%s\"", name)
-		}
-
-		if e.RelativeShift() != 0 {
-			name = fmt.Sprintf("%s_%d", name, e.RelativeShift())
-		}
-
-		return pcl.V[F](name)
+		return p.lowerRegister(e.Register(), e.RelativeShift(), module)
 	case *air.Mul[F]:
 		args := p.lowerTerms(e.Args, module)
 		return pcl.FoldBinaryE(pcl.Mul, args)
@@ -172,6 +164,21 @@ func (p *AirPicusTranslator[F]) lowerTerm(t air.Term[F], module schema.Module[F]
 	default:
 		panic(fmt.Sprintf("unknown AIR expression \"%v\"", e))
 	}
+}
+
+// lowerRegister converts an access of a given register (at a given relative
+// shift) into a PCL variable.
+func (p *AirPicusTranslator[F]) lowerRegister(rid register.Id, shift int, module schema.Module[F]) pcl.Expr[F] {
+	name := module.Register(rid).Name()
+	if strings.Contains(name, " ") {
+		name = fmt.Sprintf("\"%s\"", name)
+	}
+
+	if shift != 0 {
+		name = fmt.Sprintf("%s_%d", name, shift)
+	}
+
+	return pcl.V[F](name)
 }
 
 // lowerTerms lowers a set of zero or more AIR expressions.

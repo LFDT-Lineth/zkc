@@ -23,7 +23,6 @@ import (
 	air_gadgets "github.com/LFDT-Lineth/zkc/pkg/ir/air/gadgets"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -192,54 +191,11 @@ func (p *AirLowering[F]) lowerRangeConstraintToAir(v RangeConstraint[F], airModu
 	}
 }
 
-// Lower a lookup constraint to the AIR level.  The challenge here is that
-// lookup constraints at the AIR level cannot use arbitrary expressions; rather,
-// they can only access columns directly.  Therefore, whenever a general
-// expression is encountered, we must generate a computed column to hold the
-// value of that expression, along with appropriate constraints to enforce the
-// expected value.
+// Lower a lookup constraint to the AIR level.  Since lookup constraints are
+// made up of registers (rather than arbitrary expressions) at both levels, the
+// source and target vectors carry over unchanged.
 func (p *AirLowering[F]) lowerLookupConstraintToAir(c LookupConstraint[F], airModule air.ModuleBuilder[F]) {
-	var (
-		sources = make([]lookup.Vector[F, *air.ColumnAccess[F]], len(c.Sources))
-		targets = make([]lookup.Vector[F, *air.ColumnAccess[F]], len(c.Targets))
-	)
-	// Lower sources
-	for i, ith := range c.Sources {
-		sources[i] = p.expandLookupVectorToAir(ith)
-	}
-	// Lower targets
-	for i, ith := range c.Targets {
-		targets[i] = p.expandLookupVectorToAir(ith)
-	}
-	// Add constraint
-	airModule.AddConstraint(air.NewLookupConstraint(c.Handle, targets, sources))
-}
-
-func (p *AirLowering[F]) expandLookupVectorToAir(vector LookupVector[F],
-) lookup.Vector[F, *air.ColumnAccess[F]] {
-	var (
-		terms    = p.lowerRegisterAccesses(vector.Terms...)
-		selector util.Option[*air.ColumnAccess[F]]
-	)
-	//
-	if vector.HasSelector() {
-		sel := p.lowerRegisterAccesses(vector.Selector.Unwrap())[0]
-		selector = util.Some(sel)
-	}
-	//
-	return lookup.NewVector(vector.Module, selector, terms...)
-}
-
-func (p *AirLowering[F]) lowerRegisterAccesses(terms ...*RegisterAccess[F]) []*air.ColumnAccess[F] {
-	var nterms = make([]*air.ColumnAccess[F], len(terms))
-	//
-	for i, ith := range terms {
-		ith_term := term.RawRegisterAccess[F, air.Term[F]](ith.Register(), ith.BitWidth(), ith.RelativeShift())
-		// Apply any mask
-		nterms[i] = ith_term.Mask(ith.MaskWidth())
-	}
-	//
-	return nterms
+	airModule.AddConstraint(air.NewLookupConstraint[F](c.Handle, c.Targets, c.Sources))
 }
 
 func (p *AirLowering[F]) lowerAndSimplifyLogicalTo(term LogicalTerm[F],

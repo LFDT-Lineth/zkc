@@ -35,7 +35,7 @@ import (
 type ConstraintBound[F field.Element[F]] interface {
 	schema.Constraint[F]
 
-	lookup.Constraint[F, *ColumnAccess[F]] |
+	lookup.Constraint[F] |
 		ranged.Constraint[F, *ColumnAccess[F]] |
 		vanishing.Constraint[F, LogicalTerm[F]]
 }
@@ -55,10 +55,10 @@ func newAir[F field.Element[F], C ConstraintBound[F]](constraint C) Air[F, C] {
 }
 
 // NewLookupConstraint constructs a new AIR lookup constraint
-func NewLookupConstraint[F field.Element[F]](handle string, targets []lookup.Vector[F, *ColumnAccess[F]],
-	sources []lookup.Vector[F, *ColumnAccess[F]]) LookupConstraint[F] {
+func NewLookupConstraint[F field.Element[F]](handle string, targets []lookup.Vector,
+	sources []lookup.Vector) LookupConstraint[F] {
 	//
-	return newAir(lookup.NewConstraint(handle, targets, sources))
+	return newAir(lookup.NewConstraint[F](handle, targets, sources))
 }
 
 // NewRangeConstraint constructs a new AIR range constraint

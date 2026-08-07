@@ -40,10 +40,10 @@ func NewVanishingConstraint[F field.Element[F]](handle string, ctx schema.Module
 }
 
 // NewLookupConstraint creates a new lookup constraint with a given handle.
-func NewLookupConstraint[F field.Element[F]](handle string, targets []LookupVector[F],
-	sources []LookupVector[F]) Constraint[F] {
+func NewLookupConstraint[F field.Element[F]](handle string, targets []LookupVector,
+	sources []LookupVector) Constraint[F] {
 	//
-	return Constraint[F]{lookup.NewConstraint(handle, targets, sources)}
+	return Constraint[F]{lookup.NewConstraint[F](handle, targets, sources)}
 }
 
 // NewRangeConstraint constructs a new Range constraint

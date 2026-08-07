@@ -40,10 +40,9 @@ func NewVanishingConstraint(handle string, ctx schema.ModuleId, domain util.Opti
 }
 
 // NewLookupConstraint creates a new lookup constraint with a given handle.
-func NewLookupConstraint(handle string, targets []lookup.Vector[word.BigEndian, Term],
-	sources []lookup.Vector[word.BigEndian, Term]) Constraint {
+func NewLookupConstraint(handle string, targets []lookup.Vector, sources []lookup.Vector) Constraint {
 	//
-	return Constraint{lookup.NewConstraint(handle, targets, sources)}
+	return Constraint{lookup.NewConstraint[word.BigEndian](handle, targets, sources)}
 }
 
 // NewRangeConstraint constructs a new Range constraint
