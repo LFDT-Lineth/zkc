@@ -539,8 +539,6 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		return r.finaliseExpressionsInModule(scope, []ast.Expr{v.Condition, v.TrueBranch, v.FalseBranch})
 	case *ast.Invoke:
 		return r.finaliseInvokeInModule(scope, v)
-	case *ast.Let:
-		return r.finaliseLetInModule(scope, v)
 	case *ast.List:
 		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.Mul:
@@ -616,20 +614,6 @@ func (r *resolver) finaliseInvokeInModule(scope LocalScope, expr *ast.Invoke) []
 	}
 	//
 	return errors
-}
-
-func (r *resolver) finaliseLetInModule(scope LocalScope, expr *ast.Let) []SyntaxError {
-	nestedscope := scope.NestedScope()
-	// Declare assigned variable(s)
-	for i, letvar := range expr.Vars {
-		nestedscope.DeclareLocal(letvar.Name, &expr.Vars[i])
-	}
-	// Finalise assigned expressions
-	args_errs := r.finaliseExpressionsInModule(scope, expr.Args)
-	// Finalise body
-	body_errs := r.finaliseExpressionInModule(nestedscope, expr.Body)
-	//
-	return append(args_errs, body_errs...)
 }
 
 // Resolve a specific invocation contained within some expression which, in

@@ -933,50 +933,6 @@ func Test_Valid_Perspective_29(t *testing.T) {
 }
 
 // ===================================================================
-// Let
-// ===================================================================
-
-func Test_Valid_Let_01(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/let_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Let_02(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/let_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Let_03(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/let_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Let_04(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/let_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Let_06(t *testing.T) {
-	// FIXME: GF_8209 [???]
-	util.CheckCorset(t, false, "corset/valid/let_06", field.BLS12_377, field.KOALABEAR_16)
-}
-
-func Test_Valid_Let_07(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/let_07", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Let_08(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/let_08", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-func Test_Valid_Let_09(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/let_09", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Let_10(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/let_10", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Let_11(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/let_11", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-// ===================================================================
 // Standard Library Tests
 // ===================================================================
 

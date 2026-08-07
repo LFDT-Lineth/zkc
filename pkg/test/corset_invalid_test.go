@@ -538,33 +538,6 @@ func Test_Invalid_Perspective_08(t *testing.T) {
 }
 
 // ===================================================================
-// Perspectives
-// ===================================================================
-func Test_Invalid_Let_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/let_invalid_01")
-}
-
-func Test_Invalid_Let_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/let_invalid_02")
-}
-func Test_Invalid_Let_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/let_invalid_03")
-}
-func Test_Invalid_Let_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/let_invalid_04")
-}
-func Test_Invalid_Let_05(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/let_invalid_05")
-}
-func Test_Invalid_Let_06(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/let_invalid_06")
-}
-
-func Test_Invalid_Let_07(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/let_invalid_07")
-}
-
-// ===================================================================
 // Test Helpers
 // ===================================================================
 

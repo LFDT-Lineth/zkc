@@ -189,7 +189,6 @@ func NewParser(srcfile source.File, srcmap *source.Map[sexp.SExp], config Config
 	p.AddRecursiveListRule("::", concatParserRule)
 	p.AddRecursiveListRule("begin", beginParserRule)
 	p.AddRecursiveListRule("debug", debugParserRule)
-	p.AddListRule("let", letParserRule(parser))
 	p.AddListRule("if", ifParserRule(parser))
 	p.AddRecursiveListRule("shift", shiftParserRule)
 	p.AddDefaultListRule(invokeParserRule(parser))
@@ -1304,57 +1303,6 @@ func debugParserRule(_ string, args []ast.Expr) (ast.Expr, error) {
 	}
 	//
 	return nil, errors.New("incorrect number of arguments")
-}
-
-func letParserRule(p *Parser) sexp.ListRule[ast.Expr] {
-	return func(list *sexp.List) (ast.Expr, []SyntaxError) {
-		var (
-			errors []SyntaxError
-		)
-		// Check we've got the expected number
-		if list.Len() != 3 {
-			msg := fmt.Sprintf("expected 2 arguments, found %d", list.Len()-1)
-			return nil, p.translator.SyntaxErrors(list, msg)
-		} else if list.Get(1).AsList() == nil {
-			return nil, p.translator.SyntaxErrors(list.Get(1), "expected list")
-		}
-		// Prep assignments
-		assignments := list.Get(1).AsList()
-		bindings := make([]util.Pair[string, ast.Expr], assignments.Len())
-		names := make(map[string]bool)
-		// Parse var assignmnts
-		for i, e := range assignments.Elements {
-			// Sanity checks first
-			if ith := e.AsList(); ith == nil {
-				errors = append(errors, *p.translator.SyntaxError(e, "expected list"))
-			} else if ith.Len() != 2 {
-				errors = append(errors, *p.translator.SyntaxError(e, "malformed let assignment"))
-			} else if !isIdentifier(ith.Get(0)) {
-				errors = append(errors, *p.translator.SyntaxError(e, "invalid let name"))
-			} else {
-				name := ith.Get(0).AsSymbol().Value
-				// sanity check names are unique
-				if _, ok := names[name]; ok {
-					// name already defined
-					errors = append(errors, *p.translator.SyntaxError(ith.Get(0), "already defined"))
-				}
-				//
-				names[name] = true
-				expr, errs := p.translator.Translate(ith.Get(1))
-				errors = append(errors, errs...)
-				bindings[i] = util.NewPair(name, expr)
-			}
-		}
-		// Parse body
-		body, errs := p.translator.Translate(list.Get(2))
-		errors = append(errors, errs...)
-		// Error check
-		if len(errors) > 0 {
-			return nil, errors
-		}
-		// Done
-		return ast.NewLet(bindings, body), nil
-	}
 }
 
 func constantParserRule(symbol string) (ast.Expr, bool, error) {

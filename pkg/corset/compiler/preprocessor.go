@@ -275,8 +275,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 		nexpr, errors = &ast.If{Condition: cond, TrueBranch: args[0], FalseBranch: args[1]}, append(errs1, errs2...)
 	case *ast.Invoke:
 		return p.preprocessInvokeInModule(e)
-	case *ast.Let:
-		return p.preprocessLetInModule(e)
 	case *ast.List:
 		args, errs := p.preprocessVoidableExpressionsInModule(e.Args)
 		nexpr, errors = &ast.List{Args: args}, errs
@@ -309,25 +307,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 	p.srcmap.Copy(expr, nexpr)
 	// Done
 	return nexpr, errors
-}
-
-func (p *preprocessor) preprocessLetInModule(expr *ast.Let) (ast.Expr, []SyntaxError) {
-	var (
-		mapping map[uint]ast.Expr = make(map[uint]ast.Expr)
-		errors  []SyntaxError
-		errs    []SyntaxError
-	)
-	// Construct variable mapping and preprocess
-	for i, v := range expr.Vars {
-		mapping[v.Index], errs = p.preprocessExpressionInModule(expr.Args[i])
-		errors = append(errors, errs...)
-	}
-	// Apply substituteion
-	body := ast.Substitute(expr.Body, mapping, p.srcmap)
-	// Constinue preprocessing
-	body, errs = p.preprocessExpressionInModule(body)
-	// Done
-	return body, append(errors, errs...)
 }
 
 func (p *preprocessor) preprocessInvokeInModule(expr *ast.Invoke) (ast.Expr, []SyntaxError) {

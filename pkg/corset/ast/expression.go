@@ -615,101 +615,6 @@ func (e *Invoke) Dependencies() []Symbol {
 }
 
 // ============================================================================
-// Let
-// ============================================================================
-
-// Let is a common expression form used in programming languages, particularly
-// functional languages.  It allows us to assign a "variable" to a given
-// expression, such that we can reuse that variable in multiple places rather
-// than repeat the entire expression.  Note, however, that such variables are
-// functional in nature --- they cannot, for example, be mutated via assignment,
-// etc.
-type Let struct {
-	// The set of variables defined by this expression.
-	Vars []LocalVariableBinding
-	// Identifies the assigned expression for each variable defined.
-	Args []Expr
-	// Body of the let expression (i.e. where the variables it defines can be
-	// used).
-	Body Expr
-}
-
-// NewLet constructs a new let-expression for a given number of bindings.
-func NewLet(bindings []util.Pair[string, Expr], body Expr) *Let {
-	vars := make([]LocalVariableBinding, len(bindings))
-	exprs := make([]Expr, len(bindings))
-	//
-	for i, p := range bindings {
-		vars[i] = NewLocalVariableBinding(p.Left, UINT_TYPE)
-		exprs[i] = p.Right
-	}
-	//
-	return &Let{vars, exprs, body}
-}
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Let) AsConstant() *big.Int {
-	panic("todo")
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Let) Context() Context {
-	return e.Body.Context()
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Let) Lisp() sexp.SExp {
-	bindings := make([]sexp.SExp, len(e.Args))
-	//
-	for i := range e.Args {
-		bindings[i] = sexp.NewList([]sexp.SExp{
-			sexp.NewSymbol(e.Vars[i].Name),
-			e.Args[i].Lisp(),
-		})
-	}
-	//
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("let"),
-		sexp.NewList(bindings),
-		e.Body.Lisp(),
-	})
-}
-
-// Dependencies needed to signal declaration.
-func (e *Let) Dependencies() []Symbol {
-	// Remove occurrences of the let variables defined by this expression.  In
-	// essence, we are capturing these occurrences in the body of this
-	// expression.
-	var rest []Symbol
-	//
-	for _, s := range e.Body.Dependencies() {
-		p := s.Path()
-		if p.IsAbsolute() || p.Depth() != 1 {
-			rest = append(rest, s)
-		} else {
-			matched := false
-			// Could be a variable defined here, so check variable names.
-			for _, v := range e.Vars {
-				if p.Head() == v.Name {
-					matched = true
-					break
-				}
-			}
-			// Did we match anything?
-			if !matched {
-				rest = append(rest, s)
-			}
-		}
-	}
-	// Determine dependencies for assigned expressions
-	return append(rest, DependenciesOfExpressions(e.Args)...)
-}
-
-// ============================================================================
 // List
 // ============================================================================
 
@@ -1113,10 +1018,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 	case *Invoke:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &Invoke{e.Name, args}
-	case *Let:
-		args := SubstituteAll(e.Args, mapping, srcmap)
-		body := Substitute(e.Body, mapping, srcmap)
-		nexpr = &Let{e.Vars, args, body}
 	case *List:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &List{args}
