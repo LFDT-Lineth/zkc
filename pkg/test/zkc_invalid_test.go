@@ -811,6 +811,11 @@ func Test_ZkcInvalid_DivMod_07(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/divmod_07")
 }
 
+// divmod by overflowing cst
+func Test_ZkcInvalid_DivMod_08(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_08")
+}
+
 // ===================================================================
 // Cast Tests
 // ===================================================================
