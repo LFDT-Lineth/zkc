@@ -17,6 +17,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -47,10 +48,10 @@ func NewLookupConstraint[F field.Element[F]](handle string, targets []LookupVect
 }
 
 // NewRangeConstraint constructs a new Range constraint
-func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, registers []*RegisterAccess[F],
+func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, registers []register.Id,
 	bitwidths []uint) Constraint[F] {
 	//
-	return Constraint[F]{ranged.NewConstraint(handle, ctx, registers, bitwidths)}
+	return Constraint[F]{ranged.NewConstraint[F](handle, ctx, registers, bitwidths)}
 }
 
 // Accepts determines whether a given constraint accepts a given trace or
@@ -104,11 +105,6 @@ func (p Constraint[F]) Name() string {
 //nolint:revive
 func (p Constraint[F]) Lisp(schema schema.AnySchema[F]) sexp.SExp {
 	return p.constraint.Lisp(schema)
-}
-
-// Substitute any matchined labelled constants within this constraint
-func (p Constraint[F]) Substitute(mapping map[string]F) {
-	p.constraint.Substitute(mapping)
 }
 
 // Unwrap provides access to the underlying constraint.

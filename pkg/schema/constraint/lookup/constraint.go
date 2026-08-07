@@ -162,13 +162,6 @@ func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
 	})
 }
 
-// Substitute any matchined labelled constants within this constraint.  Since a
-// lookup is made up of registers (rather than arbitrary expressions), there is
-// nothing to substitute.
-func (p Constraint[F]) Substitute(mapping map[string]F) {
-
-}
-
 func (p *Constraint[F]) insertTargetVectors(tr trace.Trace[F], sc schema.AnySchema[F]) State[F] {
 	var (
 		st State[F]

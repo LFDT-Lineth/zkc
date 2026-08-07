@@ -27,10 +27,10 @@ import (
 
 // Register encapsulates information about a "register" in the underlying
 // constraint system.  The rough analogy is that "register allocation" is
-// applied to map Corset columns down to HIR columns (a.k.a. registers).  The
-// distinction between columns at the Corset level, and registers at the HIR
+// applied to map Corset columns down to MIR columns (a.k.a. registers).  The
+// distinction between columns at the Corset level, and registers at the MIR
 // level is necessary for two reasons: firstly, one corset column can expand to
-// several HIR registers; secondly, register allocation is applied to columns in
+// several MIR registers; secondly, register allocation is applied to columns in
 // different perspectives of the same module.
 type Register struct {
 	// Context (i.e. module + multiplier) of this register.
@@ -69,7 +69,7 @@ func (r *Register) IsInput() bool {
 }
 
 // Merge two registers together.  This means the source-level columns will be
-// allocated to the same underlying HIR column (i.e. register).
+// allocated to the same underlying MIR column (i.e. register).
 func (r *Register) Merge(other *Register) {
 	var zero big.Int
 	//
@@ -227,13 +227,13 @@ func (p *RegisterAllocationView) Merge(dst uint, src uint) {
 
 // RegisterAllocation is a generic interface to support different "regsiter
 // allocation" algorithms.  More specifically, register allocation is the
-// process of allocating columns to their underlying HIR columns (a.k.a
+// process of allocating columns to their underlying MIR columns (a.k.a
 // registers).  This is straightforward when there is a 1-1 mapping from a
-// Corset column to an HIR column.  However, this is not always the case.  For
-// example, array columns at the Corset level map to multiple columns at the HIR
+// Corset column to an MIR column.  However, this is not always the case.  For
+// example, array columns at the Corset level map to multiple columns at the MIR
 // level.  Likewise, perspectives allow columns to be reused, meaning that
 // multiple columns at the Corset level can be mapped down to just a single
-// column at the HIR level.
+// column at the MIR level.
 //
 // Notes:
 //

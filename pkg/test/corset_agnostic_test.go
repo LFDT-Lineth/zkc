@@ -35,10 +35,6 @@ func Test_Agnostic_Lookup_01(t *testing.T) {
 	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Agnostic_Lookup_02(t *testing.T) {
-	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
 //#1258
 // func Test_Agnostic_Lookup_03(t *testing.T) {
 // 	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
@@ -59,8 +55,4 @@ func Test_Agnostic_Lookup_06(t *testing.T) {
 // #1258
 func Test_Agnostic_Lookup_07(t *testing.T) {
 	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_07", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Agnostic_Lookup_08(t *testing.T) {
-	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_08", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }

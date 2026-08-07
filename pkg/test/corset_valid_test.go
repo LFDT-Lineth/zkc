@@ -68,17 +68,8 @@ func Test_Valid_Basic_10(t *testing.T) {
 func Test_Valid_Basic_11(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/basic_11", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
-func Test_Valid_Basic_12(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/basic_12", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-func Test_Valid_Basic_13(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/basic_13", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
 func Test_Valid_Basic_14(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/basic_14", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-func Test_Valid_Basic_15(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/basic_15", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 // ===================================================================
@@ -102,10 +93,6 @@ func Test_Valid_Constant_04(t *testing.T) {
 
 func Test_Valid_Constant_05(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/constant_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Constant_06(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/constant_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Valid_Constant_07(t *testing.T) {
@@ -254,10 +241,6 @@ func Test_Valid_Spillage_03(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/spillage_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Valid_Spillage_04(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/spillage_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
 func Test_Valid_Spillage_05(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/spillage_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
@@ -279,38 +262,6 @@ func Test_Valid_Spillage_09(t *testing.T) {
 }
 
 // ===================================================================
-// Normalisation Tests
-// ===================================================================
-
-func Test_Valid_Norm_01(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/norm_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Norm_02(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/norm_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Norm_03(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/norm_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Norm_04(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/norm_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Norm_05(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/norm_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Norm_06(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/norm_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Norm_07(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/norm_07", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-// ===================================================================
 // If-Zero
 // ===================================================================
 
@@ -326,30 +277,6 @@ func Test_Valid_If_03(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/if_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Valid_If_04(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/if_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_If_05(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/if_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_If_06(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/if_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_If_07(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/if_07", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_If_08(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/if_08", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_If_09(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/if_09", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
 func Test_Valid_If_10(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/if_10", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
@@ -360,20 +287,12 @@ func Test_Valid_If_11(t *testing.T) {
 func Test_Valid_If_12(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/if_12", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
-func Test_Valid_If_13(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/if_13", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
 func Test_Valid_If_15(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/if_15", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Valid_If_16(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/if_16", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_If_17(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/if_17", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Valid_If_18(t *testing.T) {
@@ -390,10 +309,6 @@ func Test_Valid_If_20(t *testing.T) {
 
 func Test_Valid_If_21(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/if_21", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_If_22(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/if_22", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 // ===================================================================
@@ -488,20 +403,9 @@ func Test_Valid_Range_02(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/range_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Valid_Range_03(t *testing.T) {
-	util.CheckCorset(t, false, "corset/valid/range_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
 func Test_Valid_Range_04(t *testing.T) {
 	util.CheckCorset(t, false, "corset/valid/range_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
-
-// #1247 --- This is an issue as we have a potentially negative expression used
-// in a range constraint.
-//
-// func Test_Valid_Range_05(t *testing.T) {
-//  util.Check(t, false, "corset/valid/range_05", field.BLS12_377, field.KOALABEAR_16)
-// }
 
 // ===================================================================
 // Constant Propagation

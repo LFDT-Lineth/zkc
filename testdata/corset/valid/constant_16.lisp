@@ -1,4 +1,4 @@
-(defconst (CHAIN :extern) 1)
+(defconst CHAIN 1)
 
 (defconst
   LIMIT_0 1000

@@ -1,7 +1,7 @@
 (defcolumns (X :i16) (Y :i16) (P :i16) (SEL :binary))
 (defpurefun (prev (X :any)) (shift X -1))
 ;; define selector function
-(defun ((selector :binary :force)) (- P (prev P)))
+(defun (selector) (- P (prev P)))
 ;; SEL holds the value of the expression (selector)
 (defconstraint sel_def () (== SEL (selector)))
 ;; example use of selector

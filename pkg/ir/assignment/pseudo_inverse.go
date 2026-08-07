@@ -156,11 +156,6 @@ func (e *PseudoInverse[F]) RequiredCells(row int, mid trace.ModuleId) *set.AnySo
 	return e.Expr.RequiredCells(row, mid)
 }
 
-// Substitute implementation for Substitutable interface.
-func (e *PseudoInverse[F]) Substitute(map[string]F) {
-	panic("unreachable")
-}
-
 func invert[F field.Element[F]](
 	data array.MutArray[F],
 	expr term.Evaluable[F],

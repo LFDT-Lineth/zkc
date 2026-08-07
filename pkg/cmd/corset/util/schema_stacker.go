@@ -14,17 +14,14 @@ package util
 
 import (
 	"fmt"
-	"math/big"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
-	"github.com/LFDT-Lineth/zkc/pkg/ir/hir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -32,7 +29,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
-	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -58,26 +54,19 @@ type SchemaStacker[F field.Element[F]] struct {
 	mirConfig mir.OptimisationConfig
 	// Configuration for trace expansion
 	traceBuilder ir.TraceBuilder[F]
-	// Externalised constant definitions
-	externs []string
 	// Layers identifies which layers are included in the stack.
 	layers bit.Set
-	// Binfile represents the top of this stack.
-	binfile util.Option[binfile.BinaryFile]
+	// Schema represents the top of this stack.  This is "abstract" in the sense
+	// that registers have not yet been split to fit the target field.
+	schema util.Option[mir.Schema[word.BigEndian]]
+	// Source map for the schema above, which maps registers and constraints
+	// back to their original source-level declarations.
+	sourceMap util.Option[corset.SourceMap]
 }
 
 // NewSchemaStack constructs a new, but empty stack of schemas.
 func NewSchemaStack[F field.Element[F]]() *SchemaStacker[F] {
 	return &SchemaStacker[F]{}
-}
-
-// WithBinaryFile updates the binary file which forms the root of any constructed stacks.
-func (p SchemaStacker[F]) WithBinaryFile(binf binfile.BinaryFile) SchemaStacker[F] {
-	var stacker = p
-	//
-	stacker.binfile = util.Some(binf)
-	//
-	return stacker
 }
 
 // WithCorsetConfig determines the compilation configuration to use for Corset.
@@ -91,14 +80,6 @@ func (p SchemaStacker[F]) WithCorsetConfig(config corset.CompilationConfig) Sche
 // layer.
 func (p SchemaStacker[F]) WithOptimisationConfig(config mir.OptimisationConfig) SchemaStacker[F] {
 	p.mirConfig = config
-	//
-	return p
-}
-
-// WithConstantDefinitions determines the externalised constant definitions to
-// apply to the constructed binary file.
-func (p SchemaStacker[F]) WithConstantDefinitions(externs []string) SchemaStacker[F] {
-	p.externs = externs
 	//
 	return p
 }
@@ -122,15 +103,21 @@ func (p SchemaStacker[F]) WithTraceBuilder(builder ir.TraceBuilder[F]) SchemaSta
 	return p
 }
 
-// HasBinaryFile determines whether or not a binary file is available
-func (p SchemaStacker[F]) HasBinaryFile() bool {
-	return p.binfile.HasValue()
+// HasSchema determines whether or not a schema is available
+func (p SchemaStacker[F]) HasSchema() bool {
+	return p.schema.HasValue()
 }
 
-// BinaryFile returns the binary file representing the top of this stack.
-func (p SchemaStacker[F]) BinaryFile() *binfile.BinaryFile {
-	bf := p.binfile.Unwrap()
-	return &bf
+// SourceMap returns the source map for the schema representing the top of this
+// stack, along with an indication of whether one is available.
+func (p SchemaStacker[F]) SourceMap() (*corset.SourceMap, bool) {
+	if !p.sourceMap.HasValue() {
+		return nil, false
+	}
+	//
+	srcmap := p.sourceMap.Unwrap()
+	//
+	return &srcmap, true
 }
 
 // Field returns the field configuration used within this schema stack.
@@ -140,8 +127,9 @@ func (p SchemaStacker[F]) Field() field.Config {
 
 // Read reads one or more constraints files into this stack.
 func (p SchemaStacker[F]) Read(filenames ...string) SchemaStacker[F] {
-	bf := readConstraintFiles(p.corsetConfig, filenames)
-	p.binfile = util.Some(bf)
+	schema, srcmap := CompileSourceFiles(p.corsetConfig, filenames)
+	p.schema = util.Some(schema)
+	p.sourceMap = util.Some(srcmap)
 	//
 	return p
 }
@@ -154,22 +142,19 @@ func (p SchemaStacker[F]) TraceBuilder() ir.TraceBuilder[F] {
 // Build a fresh SchemaStack from this stacker.
 func (p SchemaStacker[F]) Build() SchemaStack[F] {
 	var (
-		hirSchema hir.Schema
+		absSchema mir.Schema[word.BigEndian]
 		airSchema air.Schema[F]
 		stack     SchemaStack[F]
 	)
 	//
-	if p.binfile.HasValue() {
+	if p.schema.HasValue() {
 		stats := util.NewPerfStats()
-		binfile := p.binfile.Unwrap()
-		// Apply any user-specified values for externalised constants.
-		applyExternOverrides(p.externs, &binfile)
-		// Read out the mixed micro schema
-		hirSchema = binfile.Schema
+		// Read out the (abstract) schema
+		absSchema = p.schema.Unwrap()
 		//
 		stats.Log("concretization")
 		// Apply register splitting for field agnosticity
-		mirSchema, mapping := mir.Concretize[word.BigEndian, F](p.corsetConfig.Field, hir.LowerToMir(hirSchema.RawModules()))
+		mirSchema, mapping := mir.Concretize[word.BigEndian, F](p.corsetConfig.Field, absSchema.RawModules())
 		//
 		stats.Log("translation")
 		// Record mapping
@@ -191,74 +176,42 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 		}
 		// Assign trace builder with limb map
 		stack.traceBuilder = p.traceBuilder.WithRegisterMapping(mapping)
-		// Assign binfile used to build the stack
-		stack.binfile = util.Some(binfile)
+		// Assign source map used to build the stack
+		stack.sourceMap = p.sourceMap
 	}
 	//
 	return stack
 }
 
-// readConstraintFiles provides a generic interface for reading constraint files
-// in one of two ways.  If a single file is provided with the "bin" extension
-// then this is treated as a binfile (e.g. zkevm.bin).  Otherwise, the files are
-// assumed to be source (i.e. lisp) files and are read in and then compiled into
-// a binfile.  NOTES:  when source files are provided, they can be compiled with
-// (or without) the standard library.  Generally speaking, you want to compile
-// with the standard library.  However, some internal tests are run without
-// including the standard library to minimise the surface area.
-func readConstraintFiles(config corset.CompilationConfig, filenames []string) binfile.BinaryFile {
+// CompileSourceFiles accepts a set of source (i.e. lisp) files and compiles
+// them into a single schema, along with its corresponding source map.  Any
+// directories given in the list of filenames are recursively expanded first.
+// This can result, for example, in a syntax error, etc.  NOTES: source files
+// can be compiled with (or without) the standard library.  Generally speaking,
+// you want to compile with the standard library.  However, some internal tests
+// are run without including the standard library to minimise the surface area.
+func CompileSourceFiles(config corset.CompilationConfig, filenames []string,
+) (mir.Schema[word.BigEndian], corset.SourceMap) {
 	//
-	var err error
+	var (
+		err      error
+		errors   []source.SyntaxError
+		srcmap   corset.SourceMap
+		srcfiles []source.File
+		schema   mir.Schema[word.BigEndian]
+	)
 	//
 	if len(filenames) == 0 {
-		fmt.Println("source or binary constraint(s) file required.")
+		fmt.Println("source constraint(s) file required.")
 		os.Exit(5)
-	} else if len(filenames) == 1 && path.Ext(filenames[0]) == ".bin" {
-		// Single (binary) file supplied
-		return ReadBinaryFile(filenames[0])
 	}
 	// Recursively expand any directories given in the list of filenames.
 	if filenames, err = expandSourceFiles(filenames); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	// Must be source files
-	return CompileSourceFiles(config, filenames)
-}
-
-// ReadBinaryFile reads a binfile which includes the metadata bytes, along with
-// the schema, and any included attributes.
-func ReadBinaryFile(filename string) binfile.BinaryFile {
-	var binf binfile.BinaryFile
-	// Read schema file
-	data, err := os.ReadFile(filename)
-	// Handle errors
-	if err == nil {
-		err = binf.UnmarshalBinary(data)
-	}
-	// Return if no errors
-	if err == nil {
-		return binf
-	}
-	// Handle error & exit
-	fmt.Println(err)
-	os.Exit(2)
-	// unreachable
-	return binf
-}
-
-// CompileSourceFiles accepts a set of source files and compiles them into a
-// single schema.  This can result, for example, in a syntax error, etc.  This
-// can be done with (or without) including the standard library, and also with
-// (or without) debug constraints.
-func CompileSourceFiles(config corset.CompilationConfig, filenames []string) binfile.BinaryFile {
 	//
-	var (
-		errors   []source.SyntaxError
-		srcmap   corset.SourceMap
-		srcfiles = make([]source.File, len(filenames))
-		schema   hir.Schema
-	)
+	srcfiles = make([]source.File, len(filenames))
 	// Read each file
 	for i, n := range filenames {
 		log.Debug(fmt.Sprintf("including source file %s", n))
@@ -276,8 +229,7 @@ func CompileSourceFiles(config corset.CompilationConfig, filenames []string) bin
 	schema, srcmap, errors = corset.CompileSourceFiles(config, srcfiles)
 	// Check for any errors
 	if len(errors) == 0 {
-		attributes := []binfile.Attribute{&srcmap}
-		return *binfile.NewBinaryFile(nil, attributes, schema)
+		return schema, srcmap
 	}
 	// Report errors
 	for _, err := range errors {
@@ -286,7 +238,7 @@ func CompileSourceFiles(config corset.CompilationConfig, filenames []string) bin
 	// Fail
 	os.Exit(4)
 	// unreachable
-	return binfile.BinaryFile{}
+	return schema, srcmap
 }
 
 // Look through the list of filenames and identify any which are directories.
@@ -331,78 +283,6 @@ func expandDirectory(dirname string) ([]string, error) {
 	})
 	// Done
 	return filenames, err
-}
-
-// Apply any user-specified values for the given externalised constants.  Each
-// constant should be checked that it exists, to ensure assignments are not
-// silently dropped.
-func applyExternOverrides(externs []string, binf *binfile.BinaryFile) {
-	// NOTE: frMapping is to be deprecated and removed.
-	var (
-		frMapping = make(map[string]word.BigEndian)
-		biMapping = make(map[string]big.Int)
-	)
-	// Sanity check debug information is available.
-	srcmap, srcmap_ok := binfile.GetAttribute[*corset.SourceMap](binf)
-	// Check if need to do anything.
-	if len(externs) > 0 {
-		//
-		for _, item := range externs {
-			var (
-				frElement fr.Element
-				biElement big.Int
-			)
-			//
-			split := strings.Split(item, "=")
-			if len(split) != 2 {
-				fmt.Printf("malformed definition \"%s\"\n", item)
-				os.Exit(2)
-			}
-			//
-			path := strings.Split(split[0], ".")
-			// More sanity checks
-			if srcmap_ok && !checkExternExists(path, srcmap.Root) {
-				fmt.Printf("unknown externalised constant \"%s\"\n", split[0])
-				os.Exit(2)
-			} else if _, err := frElement.SetString(split[1]); err != nil {
-				fmt.Println(err.Error())
-				os.Exit(2)
-			} else if _, ok := biElement.SetString(split[1], 0); !ok {
-				fmt.Printf("error parsing string \"%s\"\n", split[1])
-				os.Exit(2)
-			}
-			//
-			frMapping[split[0]] = word.NewBigEndian(biElement.Bytes())
-			biMapping[split[0]] = biElement
-		}
-		// Substitute through constraints
-		mir.SubstituteConstants(&binf.Schema, frMapping)
-		// Update source mapping
-		srcmap.SubstituteConstants(biMapping)
-	}
-}
-
-func checkExternExists(name []string, mod corset.SourceModule) bool {
-	switch len(name) {
-	case 0:
-
-	case 1:
-		// look for it in this module
-		for _, c := range mod.Constants {
-			if name[0] == c.Name {
-				return true
-			}
-		}
-	default:
-		// look for suitable submodule
-		for _, submod := range mod.Submodules {
-			if name[0] == submod.Name {
-				return checkExternExists(name[1:], submod)
-			}
-		}
-	}
-	//
-	return false
 }
 
 // Print a syntax error with appropriate highlighting.

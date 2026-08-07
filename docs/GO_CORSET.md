@@ -50,18 +50,13 @@ range constraint (specified via the `@prove` modifier).
 ## Command-Line Interface
 
 The `go-corset` tool provides a toolbox for working with constraints
-and traces. For example, we can compile source constraint files
-(`lisp`) into binary constraint files (`bin`); or, check a trace is
-accepted by a set of constraints; or, inspect the contents of a trace
-or binary constraint file, etc. We now examine a selection of the
-most useful top-level commands:
+and traces. For example, we can check a trace is accepted by a set of
+constraints; or, inspect the contents of a trace, etc. We now examine
+a selection of the most useful top-level commands:
 
 - [`go-corset check`](#check) allows one to check whether a given
   trace (or batch of traces) satisfies a given set of constraints. If
   a failure arises, a useful error report can be provided.
-- [`go-corset compile`](#compile). This command allows one to compile a given set
-  of Corset source files into a single binary file. This is useful
-  for packaging up constraints for use with other tools, etc.
 - [`go-corset debug`](#debug). This command provides various ways of
   examining a given set of constraints. This is useful (amongst other
   things) for checking how certain constraints are compiled, or to
@@ -76,44 +71,27 @@ most useful top-level commands:
 The `go-corset check` command is used to check that one (or more)
 traces satisfy (i.e. are accepted by) a set of constraints. The
 _level_ at which checking is performed can be specified using `--air`
-(lowest), `--mir` (middle) or `--hir` (highest). Generally speaking,
-high-levels require less work to check but, at the same time, are
-further removed from the actual constraints used by the prover.
-
-### Compile
-
-The `go-corset compile` command is used to build a binary constraint
-(`bin`) file from a given set of source constraint (`lisp`) files.
-During this process, metadata can be added to the `bin` file as
-desired (e.g. `-Dcommit="0xabcdef01234"`). Likewise, the default
-value of any externalised constants can be set
-(e.g. `-Smyevm.GAS_LIMIT=0x1000`).
+(lowest) or `--mir` (highest). Generally speaking, higher levels
+require less work to check but, at the same time, are further removed
+from the actual constraints used by the prover.
 
 ### Debug
 
 The `go-corset debug` command provides insights into a given set of
 constraints. For example, one can see the low level arithmetic
 intermediate representation (AIR) generated; or, one can see summary
-statistics (e.g. number of columns, number of constraints, etc); or,
-look at any metadata embedded within a binary constraint file, etc.
+statistics (e.g. number of columns, number of constraints, etc).
 
 Useful options here include:
 
-- `--constants` will show the set of externalised constants defined
-  in the given constraints, along with their default values.
-
-- `--metadata` for a `bin` file, this will show any metadata that was
-  embedded during compilation.
+- `--source-map` will show the source map for the given constraints
+  (columns, constants, etc).
 
 - `--stats` will show summary statistics for a given set of
   constraints, such as the number of columns, constraints, lookups,
-  etc. **NOTE:** this requires one of `--air/--mir/--hir` to be
+  etc. **NOTE:** this requires one of `--air/--mir` to be
   specified (i.e. lower level representations have more
   columns/constraints which affects the stats, etc).
-
-- `--spillage` will show the spillage determined for each module in
-  the given constraints. This is the number of additional rows
-  prepended to each module by `go-corset` during trace expansion.
 
 ### Inspect
 

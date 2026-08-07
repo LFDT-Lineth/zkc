@@ -186,22 +186,22 @@ func (p *Ite[F, T]) RequiredCells(row int, mid trace.ModuleId) *set.AnySortedSet
 // ite is surprisingly tricky.  However, its useful to retain ite rathe the
 // compile it out completely as, in some cases, we can optimise things more
 // effectively.
-func (p *Ite[F, T]) Simplify(casts bool) T {
+func (p *Ite[F, T]) Simplify() T {
 	var (
-		cond        = p.Condition.Simplify(casts)
+		cond        = p.Condition.Simplify()
 		trueBranch  Logical[F, T]
 		falseBranch Logical[F, T]
 	)
 	// Handle reductive cases
 	if IsTrue(cond) {
 		if p.TrueBranch != nil {
-			return p.TrueBranch.Simplify(casts)
+			return p.TrueBranch.Simplify()
 		}
 		//
 		return True[F, T]()
 	} else if IsFalse(cond) {
 		if p.FalseBranch != nil {
-			return p.FalseBranch.Simplify(casts)
+			return p.FalseBranch.Simplify()
 		}
 		//
 		return True[F, T]()
@@ -210,7 +210,7 @@ func (p *Ite[F, T]) Simplify(casts bool) T {
 	if p.TrueBranch != nil {
 		// If the branch logically true, then we can actually drop it
 		// altogether (i.e. X || tt ==> tt)
-		if tb := p.TrueBranch.Simplify(casts); !IsTrue(tb) {
+		if tb := p.TrueBranch.Simplify(); !IsTrue(tb) {
 			trueBranch = tb
 		}
 	}
@@ -218,7 +218,7 @@ func (p *Ite[F, T]) Simplify(casts bool) T {
 	if p.FalseBranch != nil {
 		// If the branch logically true, then we can actually drop it
 		// altogether (i.e. !X || tt ==> tt)
-		if fb := p.FalseBranch.Simplify(casts); !IsTrue(fb) {
+		if fb := p.FalseBranch.Simplify(); !IsTrue(fb) {
 			falseBranch = fb
 		}
 	}
@@ -228,23 +228,10 @@ func (p *Ite[F, T]) Simplify(casts bool) T {
 	} else if trueBranch == nil && IsFalse(falseBranch.(T)) {
 		return cond
 	} else if falseBranch == nil && IsFalse(trueBranch.(T)) {
-		return Negation(cond).Simplify(casts)
+		return Negation(cond).Simplify()
 	}
 	// Finally, done.
 	var term Logical[F, T] = &Ite[F, T]{cond, trueBranch, falseBranch}
 	//
 	return term.(T)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *Ite[F, T]) Substitute(mapping map[string]F) {
-	p.Condition.Substitute(mapping)
-	//
-	if p.FalseBranch != nil {
-		p.FalseBranch.Substitute(mapping)
-	}
-	//
-	if p.TrueBranch != nil {
-		p.TrueBranch.Substitute(mapping)
-	}
 }

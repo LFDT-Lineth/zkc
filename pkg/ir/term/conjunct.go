@@ -121,9 +121,9 @@ func (p *Conjunct[F, T]) RequiredCells(row int, mid trace.ModuleId) *set.AnySort
 }
 
 // Simplify this term as much as reasonably possible.
-func (p *Conjunct[F, T]) Simplify(casts bool) T {
+func (p *Conjunct[F, T]) Simplify() T {
 	// Simplify terms
-	terms := simplifyLogicalTerms(p.Args, casts)
+	terms := simplifyLogicalTerms(p.Args)
 	// Flatten any nested conjuncts
 	terms = array.Flatten(terms, flattenConjunct[F, T])
 	// False if contains false
@@ -141,11 +141,6 @@ func (p *Conjunct[F, T]) Simplify(casts bool) T {
 	default:
 		return Conjunction(terms...)
 	}
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *Conjunct[F, T]) Substitute(mapping map[string]F) {
-	substituteTerms(mapping, p.Args...)
 }
 
 func flattenConjunct[F field.Element[F], T Logical[F, T]](term T) []T {

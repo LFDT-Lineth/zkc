@@ -26,13 +26,13 @@ type Environment interface {
 	// identifier.
 	ModuleOf(module string) uint
 	// Register returns information about a given register, based on its index
-	// (i.e. underlying HIR column identifier).
+	// (i.e. underlying MIR column identifier).
 	Register(index uint) *Register
-	// RegisterOf identifies the register (i.e. underlying (HIR) column) to
+	// RegisterOf identifies the register (i.e. underlying (MIR) column) to
 	// which a given source-level (i.e. corset) column is allocated.  This
 	// expects an absolute path.
 	RegisterOf(path *file.Path) uint
-	// RegistersOf identifies the set of registers (i.e. underlying (HIR)
+	// RegistersOf identifies the set of registers (i.e. underlying (MIR)
 	// columns) associated with a given module.
 	RegistersOf(module string) []uint
 }
@@ -44,7 +44,7 @@ type GlobalEnvironment struct {
 	modules []string
 	// Info about moduleMap
 	moduleMap map[string]uint
-	// Registers (i.e. HIR-level columns)
+	// Registers (i.e. MIR-level columns)
 	registers []Register
 	// Map source-level columns to registers
 	columnMap map[string]uint
@@ -84,12 +84,12 @@ func (p GlobalEnvironment) ModuleOf(module string) uint {
 }
 
 // Register returns information about a given register, based on its index
-// (i.e. underlying HIR column identifier).
+// (i.e. underlying MIR column identifier).
 func (p GlobalEnvironment) Register(index uint) *Register {
 	return &p.registers[index]
 }
 
-// RegisterOf identifies the register (i.e. underlying (HIR) column) to
+// RegisterOf identifies the register (i.e. underlying (MIR) column) to
 // which a given source-level (i.e. corset) column is allocated.
 func (p GlobalEnvironment) RegisterOf(column *file.Path) uint {
 	regId := p.columnMap[column.String()]
@@ -97,7 +97,7 @@ func (p GlobalEnvironment) RegisterOf(column *file.Path) uint {
 	return regId
 }
 
-// RegistersOf identifies the set of registers (i.e. underlying (HIR)
+// RegistersOf identifies the set of registers (i.e. underlying (MIR)
 // columns) associated with a given module.
 func (p GlobalEnvironment) RegistersOf(module string) []uint {
 	regs := make([]uint, 0)
