@@ -816,6 +816,26 @@ func Test_ZkcInvalid_DivMod_08(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/divmod_08")
 }
 
+// const declared for q or r
+func Test_ZkcInvalid_DivMod_09(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_09")
+}
+
+// const declared for q or r
+func Test_ZkcInvalid_DivMod_10(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_10")
+}
+
+// variable declared for both operand and result
+func Test_ZkcInvalid_DivMod_11(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_11")
+}
+
+// variable declared for both result
+func Test_ZkcInvalid_DivMod_12(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_12")
+}
+
 // ===================================================================
 // Cast Tests
 // ===================================================================
