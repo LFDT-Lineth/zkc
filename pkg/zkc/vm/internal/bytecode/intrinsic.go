@@ -92,8 +92,7 @@ func (p *Intrinsic[W]) Definitions() []RegisterId {
 // of arguments and returns matches what the selected operation expects.
 func (p *Intrinsic[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 	errs := validateOperands(env, p.Uses(), p.Definitions())
-	// Constant sources must be a single value of any width (limb widths are
-	// not recorded, so a multi-limb run could not be reconstructed).
+	// Constant sources must be a  value of any width.
 	for _, s := range p.Sources {
 		if s.IsConstant() && len(s.AsConstants()) != 1 {
 			errs = append(errs, fmt.Errorf("%d constant operand(s) found, expected 1", len(s.AsConstants())))
