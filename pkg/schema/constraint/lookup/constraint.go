@@ -16,9 +16,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -42,23 +40,20 @@ import (
 // pairs (and perhaps other constraints to ensure the required relationship) and
 // the source module is just checking that a given set of input/output pairs
 // makes sense.
-type Constraint[F field.Element[F], E term.Evaluable[F]] struct {
+type Constraint[F field.Element[F]] struct {
 	// Handle returns the handle for this lookup constraint which is simply an
 	// identifier useful when debugging (i.e. to know which lookup failed, etc).
 	Handle string
-	// Targets returns the target expressions which are used to lookup into the
-	// target expressions.  NOTE: the first element here is *always* the target
-	// selector.
-	Targets []Vector[F, E]
-	// Sources returns the source expressions which are used to lookup into the
-	// target expressions.  NOTE: the first element here is *always* the source
-	// selector.
-	Sources []Vector[F, E]
+	// Targets returns the target registers which are used to lookup into the
+	// target registers.
+	Targets []Vector
+	// Sources returns the source registers which are used to lookup into the
+	// target registers.
+	Sources []Vector
 }
 
 // NewConstraint creates a new lookup constraint with a given handle.
-func NewConstraint[F field.Element[F], E term.Evaluable[F]](handle string, targets []Vector[F, E],
-	sources []Vector[F, E]) Constraint[F, E] {
+func NewConstraint[F field.Element[F]](handle string, targets []Vector, sources []Vector) Constraint[F] {
 	var width uint
 	// Check sources
 	for i, ith := range sources {
@@ -75,7 +70,7 @@ func NewConstraint[F field.Element[F], E term.Evaluable[F]](handle string, targe
 		}
 	}
 
-	return Constraint[F, E]{Handle: handle,
+	return Constraint[F]{Handle: handle,
 		Targets: targets,
 		Sources: sources,
 	}
@@ -84,13 +79,13 @@ func NewConstraint[F field.Element[F], E term.Evaluable[F]](handle string, targe
 // Consistent applies a number of internal consistency checks.  Whilst not
 // strictly necessary, these can highlight otherwise hidden problems as an aid
 // to debugging.
-func (p Constraint[F, E]) Consistent(_ schema.AnySchema[F]) []error {
+func (p Constraint[F]) Consistent(_ schema.AnySchema[F]) []error {
 	return nil
 }
 
 // Name returns a unique name for a given constraint.  This is useful
 // purely for identifying constraints in reports, etc.
-func (p Constraint[F, E]) Name() string {
+func (p Constraint[F]) Name() string {
 	return p.Handle
 }
 
@@ -99,7 +94,7 @@ func (p Constraint[F, E]) Name() string {
 // evaluation context, though some (e.g. lookups) have more.  Note that all
 // constraints have at least one context (which we can call the "primary"
 // context).
-func (p Constraint[F, E]) Contexts() []schema.ModuleId {
+func (p Constraint[F]) Contexts() []schema.ModuleId {
 	var contexts []schema.ModuleId
 	// source contexts
 	for _, source := range p.Sources {
@@ -114,44 +109,27 @@ func (p Constraint[F, E]) Contexts() []schema.ModuleId {
 }
 
 // Bounds determines the well-definedness bounds for this constraint for both
-// the negative (left) or positive (right) directions.  For example, consider an
-// expression such as "(shift X -1)".  This is technically undefined for the
-// first row of any trace and, by association, any constraint evaluating this
-// expression on that first row is also undefined (and hence must pass).
+// the negative (left) or positive (right) directions.  Since a lookup is made
+// up of registers (rather than arbitrary expressions), it is always well
+// defined on every row.
 //
 //nolint:revive
-func (p Constraint[F, E]) Bounds(module uint) util.Bounds {
-	var bound util.Bounds
-	// sources
-	for _, ith := range p.Sources {
-		eth := ith.Bounds(module)
-		bound.Union(&eth)
-	}
-	// targets
-	for _, ith := range p.Targets {
-		eth := ith.Bounds(module)
-		bound.Union(&eth)
-	}
-	//
-	return bound
+func (p Constraint[F]) Bounds(module uint) util.Bounds {
+	return util.EMPTY_BOUND
 }
 
 // Accepts checks whether a lookup constraint into the target columns holds for
 // all rows of the source columns.
 //
 //nolint:revive
-func (p Constraint[F, E]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F]) (bit.Set, schema.Failure) {
+func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F]) (bit.Set, schema.Failure) {
 	var (
 		coverage bit.Set
-		st       State[F, E]
-		err      schema.Failure
+		// Insert all active target vectors
+		st = p.insertTargetVectors(tr, sc)
 	)
-	// Insert all active target vectors
-	if st, err = p.insertTargetVectors(tr, sc); err != nil {
-		return coverage, err
-	}
 	// Check against all active source vectors
-	if err = st.checkSourceVectors(p.Sources, tr, sc); err != nil {
+	if err := st.checkSourceVectors(p.Sources, tr); err != nil {
 		return coverage, err
 	}
 	//
@@ -162,18 +140,18 @@ func (p Constraint[F, E]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F]) (bi
 // so it can be printed.
 //
 //nolint:revive
-func (p Constraint[F, E]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
+func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
 	var (
 		sources = sexp.EmptyList()
 		targets = sexp.EmptyList()
 	)
-	// Iterate source expressions
+	// Iterate source registers
 	for _, ith := range p.Sources {
-		sources.Append(ith.Lisp(mapping))
+		sources.Append(ith.Lisp(mapping.Module(ith.Module)))
 	}
-	// Iterate target expressions
+	// Iterate target registers
 	for _, ith := range p.Targets {
-		targets.Append(ith.Lisp(mapping))
+		targets.Append(ith.Lisp(mapping.Module(ith.Module)))
 	}
 	// Done
 	return sexp.NewList([]sexp.SExp{
@@ -184,23 +162,16 @@ func (p Constraint[F, E]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
 	})
 }
 
-// Substitute any matchined labelled constants within this constraint
-func (p Constraint[F, E]) Substitute(mapping map[string]F) {
-	// Sources
-	for _, ith := range p.Sources {
-		ith.Substitute(mapping)
-	}
-	// Targets
-	for _, ith := range p.Targets {
-		ith.Substitute(mapping)
-	}
+// Substitute any matchined labelled constants within this constraint.  Since a
+// lookup is made up of registers (rather than arbitrary expressions), there is
+// nothing to substitute.
+func (p Constraint[F]) Substitute(mapping map[string]F) {
+
 }
 
-func (p *Constraint[F, E]) insertTargetVectors(tr trace.Trace[F], sc schema.AnySchema[F]) (
-	State[F, E], schema.Failure) {
-	//
+func (p *Constraint[F]) insertTargetVectors(tr trace.Trace[F], sc schema.AnySchema[F]) State[F] {
 	var (
-		st State[F, E]
+		st State[F]
 		// Determine width (in columns) of this lookup
 		width uint = p.Sources[0].Len()
 	)
@@ -219,27 +190,23 @@ func (p *Constraint[F, E]) insertTargetVectors(tr trace.Trace[F], sc schema.AnyS
 		if scModule.IsStatic() {
 			st.insertStaticTarget(scModule)
 		} else if target.HasSelector() {
-			// unfiltered
+			// filtered
 			for i := range int(height) {
-				if err := st.insertFilteredVector(i, target, trModule, scModule); err != nil {
-					return st, err
-				}
+				st.insertFilteredVector(i, target, trModule)
 			}
 		} else {
 			// unfiltered
 			for i := range int(height) {
-				if err := st.insertTargetVector(i, target, trModule, scModule); err != nil {
-					return st, err
-				}
+				st.insertTargetVector(i, target, trModule)
 			}
 		}
 	}
 	//
-	return st, nil
+	return st
 }
 
 // State is just bringing somethings together to make life simpler
-type State[F field.Element[F], E term.Evaluable[F]] struct {
+type State[F field.Element[F]] struct {
 	handle string
 	// Set of target rows
 	rows *hash.Set[hash.Array[F]]
@@ -247,27 +214,25 @@ type State[F field.Element[F], E term.Evaluable[F]] struct {
 	buffer []F
 }
 
-func (p *State[F, E]) checkSourceVectors(sources []Vector[F, E], tr trace.Trace[F], sc schema.AnySchema[F],
-) schema.Failure {
+func (p *State[F]) checkSourceVectors(sources []Vector, tr trace.Trace[F]) schema.Failure {
 	// Choose optimised loop
 	for _, source := range sources {
 		var (
 			trModule = tr.Module(source.Module)
-			scModule = sc.Module(source.Module)
 			height   = trModule.Height()
 		)
 		//
 		if source.HasSelector() {
 			// filtered
 			for i := range int(height) {
-				if err := p.checkFilteredSourceVector(i, source, trModule, scModule); err != nil {
+				if err := p.checkFilteredSourceVector(i, source, trModule); err != nil {
 					return err
 				}
 			}
 		} else {
 			// unfiltered
 			for i := range int(height) {
-				if err := p.checkSourceVector(i, source, trModule, scModule); err != nil {
+				if err := p.checkSourceVector(i, source, trModule); err != nil {
 					return err
 				}
 			}
@@ -277,49 +242,25 @@ func (p *State[F, E]) checkSourceVectors(sources []Vector[F, E], tr trace.Trace[
 	return nil
 }
 
-func (p *State[F, E]) insertFilteredVector(k int, vec Vector[F, E], trMod trace.Module[F], scMod schema.Module[F],
-) schema.Failure {
-	// If no selector, then always selected
-	var selected bool = !vec.HasSelector()
-	//
-	if vec.HasSelector() {
-		// Otherwise, check whether selector enabled (or not).
-		var (
-			selector = vec.Selector.Unwrap()
-			ith, err = selector.EvalAt(k, trMod, scMod)
-		)
-		//
-		if err != nil {
-			return constraint.NewInternalFailure[F](p.handle, vec.Module, uint(k), vec.Selector.Unwrap(), err.Error())
-		}
-		// Selected when non-zero
-		selected = !ith.IsZero()
-	}
+func (p *State[F]) insertFilteredVector(k int, vec Vector, trMod trace.Module[F]) {
 	// If row selected, then insert contents!
-	if selected {
-		return p.insertTargetVector(k, vec, trMod, scMod)
+	if isSelected(k, vec, trMod) {
+		p.insertTargetVector(k, vec, trMod)
 	}
-	//
-	return nil
 }
 
-func (p *State[F, E]) insertTargetVector(k int, vec Vector[F, E], trModule trace.Module[F],
-	scModule schema.Module[F]) schema.Failure {
-	// Check each source is included
-	if err := p.evalExprsArray(k, vec, trModule, scModule); err != nil {
-		return err
-	}
+func (p *State[F]) insertTargetVector(k int, vec Vector, trModule trace.Module[F]) {
+	// Read each register of this vector
+	p.readRegisters(k, vec, trModule)
 	// Insert item whilst checking whether the buffer was consumed or not
 	if !p.rows.Insert(hash.NewArray(p.buffer)) {
 		// Yes, buffer consumed.  Therefore, construct fresh buffer to avoid
 		// aliasing the value now stored in the hash set.
 		p.buffer = slices.Clone(p.buffer)
 	}
-	//
-	return nil
 }
 
-func (p *State[F, E]) insertStaticTarget(scModule schema.Module[F]) {
+func (p *State[F]) insertStaticTarget(scModule schema.Module[F]) {
 	var (
 		contents = scModule.StaticContents()
 	)
@@ -329,63 +270,43 @@ func (p *State[F, E]) insertStaticTarget(scModule schema.Module[F]) {
 	}
 }
 
-func (p *State[F, E]) checkFilteredSourceVector(k int, vec Vector[F, E], trModule trace.Module[F],
-	scModule schema.Module[F]) schema.Failure {
-	// If no selector, then always selected
-	var selected bool = !vec.HasSelector()
-	//
-	if vec.HasSelector() {
-		// Otherwise, check whether selector enabled (or not).
-		var (
-			selector = vec.Selector.Unwrap()
-			ith, err = selector.EvalAt(k, trModule, scModule)
-		)
-		//
-		if err != nil {
-			return constraint.NewInternalFailure[F](p.handle, vec.Module, uint(k), vec.Selector.Unwrap(), err.Error())
-		}
-		// Selected when non-zero
-		selected = !ith.IsZero()
-	}
+func (p *State[F]) checkFilteredSourceVector(k int, vec Vector, trModule trace.Module[F]) schema.Failure {
 	// If row selected, then check contents!
-	if selected {
-		return p.checkSourceVector(k, vec, trModule, scModule)
+	if isSelected(k, vec, trModule) {
+		return p.checkSourceVector(k, vec, trModule)
 	}
 	//
 	return nil
 }
 
-func (p *State[F, E]) checkSourceVector(k int, vec Vector[F, E], trModule trace.Module[F], scModule schema.Module[F],
-) schema.Failure {
-	// Check each source is included
-	if err := p.evalExprsArray(k, vec, trModule, scModule); err != nil {
-		return err
-	}
+func (p *State[F]) checkSourceVector(k int, vec Vector, trModule trace.Module[F]) schema.Failure {
+	// Read each register of this vector
+	p.readRegisters(k, vec, trModule)
 	// Check whether contained.
 	if !p.rows.Contains(hash.NewArray(p.buffer)) {
-		sources := make([]term.Evaluable[F], vec.Len())
-		for i, e := range vec.Terms {
-			sources[i] = e
-		}
-		// Construct failures
-		return &Failure[F]{p.handle, vec.Module, sources, uint(k)}
+		// Construct failure
+		return &Failure[F]{p.handle, vec.Module, slices.Clone(vec.Registers), uint(k)}
 	}
 	// success
 	return nil
 }
 
-func (p *State[F, E]) evalExprsArray(k int, vec Vector[F, E], trModule trace.Module[F], scModule schema.Module[F],
-) schema.Failure {
-	var err error
-	// Evaluate each expression in turn (remembering that the first element is
-	// the selector)
-	for i := uint(0); i < vec.Len(); i++ {
-		p.buffer[i], err = vec.Ith(i).EvalAt(k, trModule, scModule)
-		// error check
-		if err != nil {
-			return constraint.NewInternalFailure[F](p.handle, vec.Module, uint(k), vec.Ith(i), err.Error())
-		}
+// readRegisters reads the value held in each register of the given vector on
+// the given row into the temporary buffer.
+func (p *State[F]) readRegisters(k int, vec Vector, trModule trace.Module[F]) {
+	for i, rid := range vec.Registers {
+		p.buffer[i] = trModule.Column(rid.Unwrap()).Get(k)
 	}
-	// Done
-	return nil
+}
+
+// isSelected determines whether or not the given row of the given vector is
+// selected.  A row without a selector is always selected; otherwise, it is
+// selected when its selector is non-zero.
+func isSelected[F field.Element[F]](k int, vec Vector, trModule trace.Module[F]) bool {
+	// If no selector, then always selected
+	if !vec.HasSelector() {
+		return true
+	}
+	// Otherwise, selected when selector non-zero.
+	return !trModule.Column(vec.Selector.Unwrap().Unwrap()).Get(k).IsZero()
 }

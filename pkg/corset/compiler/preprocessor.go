@@ -86,7 +86,8 @@ func (p *preprocessor) preprocessDeclaration(decl ast.Declaration) []SyntaxError
 	case *ast.DefInRange:
 		errors = p.preprocessDefInRange(d)
 	case *ast.DefLookup:
-		errors = p.preprocessDefLookup(d)
+		// Sources and targets are column accesses, hence there is nothing to
+		// preprocess (e.g. no invocations or reductions to expand).
 	case *ast.DefPerspective:
 		errors = p.preprocessDefPerspective(d)
 	default:
@@ -126,38 +127,6 @@ func (p *preprocessor) preprocessDefFun(decl *ast.DefFun) []SyntaxError {
 	binding := decl.Binding().(*ast.DefunBinding)
 	// preprocess function body
 	binding.Body, errors = p.preprocessExpressionInModule(binding.Body)
-	// Combine errors
-	return errors
-}
-
-// preprocess a "deflookup" declaration.
-//
-//nolint:staticcheck
-func (p *preprocessor) preprocessDefLookup(decl *ast.DefLookup) []SyntaxError {
-	var (
-		errors       []SyntaxError
-		errs1, errs2 []SyntaxError
-	)
-	// preprocess source expressions
-	for i := range decl.Sources {
-		if decl.SourceSelectors[i] != nil {
-			decl.SourceSelectors[i], errs1 = p.preprocessExpressionInModule(decl.SourceSelectors[i])
-			errors = append(errors, errs1...)
-		}
-
-		decl.Sources[i], errs2 = p.preprocessExpressionsInModule(decl.Sources[i])
-		errors = append(errors, errs2...)
-	}
-	// preprocess all target expressions
-	for i := range decl.Targets {
-		if decl.TargetSelectors[i] != nil {
-			decl.TargetSelectors[i], errs1 = p.preprocessExpressionInModule(decl.TargetSelectors[i])
-			errors = append(errors, errs1...)
-		}
-
-		decl.Targets[i], errs2 = p.preprocessExpressionsInModule(decl.Targets[i])
-		errors = append(errors, errs2...)
-	}
 	// Combine errors
 	return errors
 }

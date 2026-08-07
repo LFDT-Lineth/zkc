@@ -148,25 +148,19 @@ func (p *typeChecker) typeCheckDefFunInModule(decl *ast.DefFun) []SyntaxError {
 }
 
 // typeCheck a "deflookup" declaration.
-//
-//nolint:staticcheck
 func (p *typeChecker) typeCheckDefLookup(decl *ast.DefLookup) []SyntaxError {
 	var (
 		errors   []SyntaxError
 		srcTypes []ast.Type
 		dstTypes []ast.Type
 	)
-	// type check source expressions
+	// Determine source column types
 	for i := range decl.Sources {
-		ts, errs := p.typeCheckExpressionsInModule(ast.UINT_TYPE, decl.Sources[i], true)
-		errors = append(errors, errs...)
-		srcTypes = ast.LeastUpperBounds(srcTypes, ts)
+		srcTypes = ast.LeastUpperBounds(srcTypes, typesOfLookupColumns(decl.Sources[i]))
 	}
-	// type check all target expressions
+	// Determine target column types
 	for i := range decl.Targets {
-		ts, errs := p.typeCheckExpressionsInModule(ast.UINT_TYPE, decl.Targets[i], true)
-		errors = append(errors, errs...)
-		dstTypes = ast.LeastUpperBounds(dstTypes, ts)
+		dstTypes = ast.LeastUpperBounds(dstTypes, typesOfLookupColumns(decl.Targets[i]))
 	}
 	// Check the types (if checking is enabled and no other upstream errors)
 	if decl.Checked && len(srcTypes) == len(dstTypes) {
@@ -180,6 +174,25 @@ func (p *typeChecker) typeCheckDefLookup(decl *ast.DefLookup) []SyntaxError {
 	}
 	// Combine errors
 	return errors
+}
+
+// typesOfLookupColumns determines the type of each column on one side of a
+// lookup.  Since these are column accesses (rather than arbitrary expressions)
+// their types are already known.  As with expressions, nil is returned if any
+// type is unknown, which indicates an upstream error (e.g. an unresolved
+// symbol) has already been reported.
+func typesOfLookupColumns(columns []ast.TypedSymbol) []ast.Type {
+	types := make([]ast.Type, len(columns))
+	//
+	for i, column := range columns {
+		if column == nil || column.Type() == nil {
+			return nil
+		}
+		//
+		types[i] = column.Type()
+	}
+	//
+	return types
 }
 
 // typeCheck a "definrange" declaration.

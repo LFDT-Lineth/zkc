@@ -21,7 +21,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -154,54 +153,11 @@ func (p *MirLowering) lowerRangeConstraint(v RangeConstraint, module mirModuleBu
 		mir.NewRangeConstraint(v.Handle, v.Context, term, v.Bitwidths))
 }
 
-// Lower a lookup constraint to the MIR level.  Since lookup constraints at the
-// MIR level can only access columns directly, we must expand the source
-// expressions into computed columns with corresponding constraints.
+// Lower a lookup constraint to the MIR level.  Since lookup constraints are
+// made up of registers (rather than arbitrary expressions) at both levels, the
+// source and target vectors carry over unchanged.
 func (p *MirLowering) lowerLookupConstraint(c LookupConstraint, mirModule mirModuleBuilder) {
-	var (
-		sources = make([]lookup.Vector[word.BigEndian, *mirRegisterAccess], len(c.Sources))
-		targets = make([]lookup.Vector[word.BigEndian, *mirRegisterAccess], len(c.Targets))
-	)
-	// Lower sources
-	for i, ith := range c.Sources {
-		sources[i] = p.lowerLookupVector(ith)
-	}
-	// Lower targets
-	for i, ith := range c.Targets {
-		targets[i] = p.lowerLookupVector(ith)
-	}
-	// Add constraint
-	mirModule.AddConstraint(mir.NewLookupConstraint(c.Handle, targets, sources))
-}
-
-func (p *MirLowering) lowerLookupVector(vec lookup.Vector[word.BigEndian, Term],
-) lookup.Vector[word.BigEndian, *mirRegisterAccess] {
-	var (
-		module   = p.mirSchema.Module(vec.Module)
-		terms    = make([]*mirRegisterAccess, len(vec.Terms))
-		selector util.Option[*mirRegisterAccess]
-	)
-	//
-	if vec.HasSelector() {
-		sel := p.expandTerm(vec.Selector.Unwrap(), module)
-		selector = util.Some(sel)
-	}
-	//
-	for i, e := range vec.Terms {
-		// Check for unsafe operation (e.g. cast)
-		var (
-			unsafe = selector.HasValue() && term.IsUnsafeExpr[word.BigEndian, LogicalTerm, Term](e)
-			expr   = e
-		)
-		//
-		if unsafe {
-			expr = term.Product(vec.Selector.Unwrap(), expr)
-		}
-		//
-		terms[i] = p.expandTerm(expr, module)
-	}
-	//
-	return lookup.NewVector(vec.Module, selector, terms...)
+	mirModule.AddConstraint(mir.NewLookupConstraint[word.BigEndian](c.Handle, c.Targets, c.Sources))
 }
 
 func (p *MirLowering) lowerLogical(e LogicalTerm, module mirModuleBuilder) mirLogicalTerm {

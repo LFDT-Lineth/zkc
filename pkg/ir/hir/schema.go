@@ -47,7 +47,7 @@ type (
 type (
 	// LookupConstraint captures the essence of a lookup constraint at the HIR
 	// level.
-	LookupConstraint = lookup.Constraint[word.BigEndian, Term]
+	LookupConstraint = lookup.Constraint[word.BigEndian]
 	// RangeConstraint captures the essence of a range constraints at the HIR level.
 	RangeConstraint = ranged.Constraint[word.BigEndian, Term]
 	// VanishingConstraint captures the essence of a vanishing constraint at the HIR
