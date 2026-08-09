@@ -78,31 +78,46 @@
 
 ;; ACC_1 (resp. ACC_2) are decomposed using upto 16 individual bytes
 ;; helds in BYTE_1 (resp. BYTE_2).
-(defconstraint byte_decompositions ()
-  (begin (byte-decomposition CT ACC_1 BYTE_1)
-         (byte-decomposition CT ACC_2 BYTE_2)
-         (byte-decomposition CT ACC_R BYTE_R)))
+(defconstraint byte_decompositions_1 ()
+         (byte-decomposition CT ACC_1 BYTE_1))
+
+(defconstraint byte_decompositions_2 ()
+         (byte-decomposition CT ACC_2 BYTE_2))
+
+(defconstraint byte_decompositions_R ()
+         (byte-decomposition CT ACC_R BYTE_R))
 
 ;; Determine which rows are constant with respect to the counter.
-(defconstraint counter-constancies ()
-  (begin (counter-constancy CT ARG_1)
-         (counter-constancy CT ARG_2)
-         (counter-constancy CT RES)
-         (counter-constancy CT CT_MAX)))
+(defconstraint counter-constancies-arg1 ()
+         (counter-constancy CT ARG_1))
+
+(defconstraint counter-constancies-arg2 ()
+         (counter-constancy CT ARG_2))
+
+(defconstraint counter-constancies-res ()
+         (counter-constancy CT RES))
+
+(defconstraint counter-constancies-ct-max ()
+         (counter-constancy CT CT_MAX))
 
 ;; ===================================================================
 ;; Target Constraints
 ;; ===================================================================
 
-(defconstraint target-constraints (:guard ST)
+(defconstraint target-constraints-arg1 (:guard ST)
   (if-eq CT CT_MAX
-         (begin
           ;; ACC_1 proves ARG_1 is small
-          (eq! ARG_1 ACC_1)
+          (eq! ARG_1 ACC_1)))
+
+(defconstraint target-constraints-arg2 (:guard ST)
+  (if-eq CT CT_MAX
           ;; ACC_2 proves ARG_2 is small
-          (eq! ARG_2 ACC_2)
+          (eq! ARG_2 ACC_2)))
+
+(defconstraint target-constraints-res (:guard ST)
+  (if-eq CT CT_MAX
           ;; ACC_R proves RES is small
-          (eq! RES ACC_R))))
+          (eq! RES ACC_R)))
 
 ;; ===================================================================
 ;; Add Logic

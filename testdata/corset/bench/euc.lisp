@@ -25,16 +25,41 @@
 (defconstraint first-row (:domain {0})
   (vanishes! IOMF))
 
-(defconstraint heartbeat ()
+;; In padding rows, nothing is done and the counter stays at zero.
+(defconstraint heartbeat-padding-done ()
   (if-zero IOMF
-           (begin (vanishes! DONE)
-                  (vanishes! (next CT)))
-           (begin (eq! (next IOMF) 1)
-                  (if-zero (- CT_MAX CT)
-                           (begin (eq! DONE 1)
-                                  (vanishes! (next CT)))
-                           (begin (vanishes! DONE)
-                                  (will-inc! CT 1))))))
+           (vanishes! DONE)))
+
+(defconstraint heartbeat-padding-counter ()
+  (if-zero IOMF
+           (vanishes! (next CT))))
+
+;; Outside of padding, the module remains active.
+(defconstraint heartbeat-iomf-latches ()
+  (if-not-zero IOMF
+               (eq! (next IOMF) 1)))
+
+;; On the final row of a frame, the division is done and the counter is reset.
+(defconstraint heartbeat-final-row-done ()
+  (if-not-zero IOMF
+               (if-zero (- CT_MAX CT)
+                        (eq! DONE 1))))
+
+(defconstraint heartbeat-final-row-counter ()
+  (if-not-zero IOMF
+               (if-zero (- CT_MAX CT)
+                        (vanishes! (next CT)))))
+
+;; On rows within a frame, the division is not done and the counter increases.
+(defconstraint heartbeat-inner-row-done ()
+  (if-not-zero IOMF
+               (if-not-zero (- CT_MAX CT)
+                            (vanishes! DONE))))
+
+(defconstraint heartbeat-inner-row-counter ()
+  (if-not-zero IOMF
+               (if-not-zero (- CT_MAX CT)
+                            (will-inc! CT 1))))
 
 (defconstraint ctmax ()
   (eq! (~ (- CT MAX_INPUT_LENGTH))
@@ -43,14 +68,20 @@
 (defconstraint counter-constancies ()
   (counter-constancy CT CT_MAX))
 
-(defconstraint byte-decomposition ()
-  (begin (byte-decomposition CT DIVISOR DIVISOR_BYTE)
-         (byte-decomposition CT QUOTIENT QUOTIENT_BYTE)
-         (byte-decomposition CT REMAINDER REMAINDER_BYTE)))
+(defconstraint byte-decomposition-divisor ()
+  (byte-decomposition CT DIVISOR DIVISOR_BYTE))
 
-(defconstraint result (:guard DONE)
-  (begin (eq! DIVIDEND
-              (+ (* DIVISOR QUOTIENT) REMAINDER))
-         (if-zero (* DIVIDEND REMAINDER)
-                  (eq! CEIL QUOTIENT)
-                  (eq! CEIL (+ QUOTIENT 1)))))
+(defconstraint byte-decomposition-quotient ()
+  (byte-decomposition CT QUOTIENT QUOTIENT_BYTE))
+
+(defconstraint byte-decomposition-remainder ()
+  (byte-decomposition CT REMAINDER REMAINDER_BYTE))
+
+(defconstraint result-euclidean-division (:guard DONE)
+  (eq! DIVIDEND
+       (+ (* DIVISOR QUOTIENT) REMAINDER)))
+
+(defconstraint result-ceiling (:guard DONE)
+  (if-zero (* DIVIDEND REMAINDER)
+           (eq! CEIL QUOTIENT)
+           (eq! CEIL (+ QUOTIENT 1))))

@@ -144,7 +144,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 	}
 	// Initial corset compilation configuration
 	corsetConfig.Stdlib = !GetFlag(cmd, "no-stdlib")
-	corsetConfig.Debug = GetFlag(cmd, "debug")
 	corsetConfig.Legacy = GetFlag(cmd, "legacy")
 	corsetConfig.EnforceTypes = GetFlag(cmd, "enforce-types")
 	corsetConfig.EnforceLimbTypes = GetFlag(cmd, "enforce-limb-types")
@@ -213,7 +212,6 @@ func init() {
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.Flags().Bool("version", false, "Report version of this executable")
 	// Corset compilation config
-	rootCmd.PersistentFlags().Bool("debug", false, "enable debugging constraints")
 	rootCmd.PersistentFlags().Bool("legacy", true, "use legacy register allocator")
 	rootCmd.PersistentFlags().Bool("no-stdlib", false, "prevent standard library from being included")
 	rootCmd.PersistentFlags().Bool("enforce-types", true, "enforce all register types")

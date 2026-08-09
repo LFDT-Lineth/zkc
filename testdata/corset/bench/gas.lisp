@@ -51,29 +51,32 @@
   (or! (will-remain-constant! IOMF) (will-inc! IOMF 1)))
 
 ;; 3
-(defconstraint iomf-vanishing-values ()
+(defconstraint iomf-vanishing-values-first ()
   (if-zero IOMF
-           (begin (vanishes! FIRST)
-                  (debug (vanishes! CT))
-                  (vanishes! (next CT))
-                  (debug (vanishes! CT_MAX))
-                  (debug (vanishes! GAS_ACTUAL))
-                  (debug (vanishes! GAS_COST))
-                  (debug (vanishes! OOGX))
-                  (debug (vanishes! XAHOY)))))
+           (vanishes! FIRST)))
+
+(defconstraint iomf-vanishing-values-counter ()
+  (if-zero IOMF
+           (vanishes! (next CT))))
 
 ;; 4
-(defconstraint instruction-counter-cycle ()
+(defconstraint instruction-counter-cycle-ct-max ()
   (if-not-zero IOMF
-               (begin (eq! CT_MAX
-                           (- 2
-                              (* XAHOY (- 1 OOGX))))
-                      (if-zero CT
-                               (eq! FIRST 1)
-                               (eq! FIRST 0))
-                      (if-eq-else CT CT_MAX
-                                  (vanishes! (next CT))
-                                  (will-inc! CT 1)))))
+               (eq! CT_MAX
+                    (- 2
+                       (* XAHOY (- 1 OOGX))))))
+
+(defconstraint instruction-counter-cycle-first ()
+  (if-not-zero IOMF
+               (if-zero CT
+                        (eq! FIRST 1)
+                        (eq! FIRST 0))))
+
+(defconstraint instruction-counter-cycle-counter ()
+  (if-not-zero IOMF
+               (if-eq-else CT CT_MAX
+                           (vanishes! (next CT))
+                           (will-inc! CT 1))))
 
 ;; 5
 (defconstraint final-row (:domain {-1})
@@ -85,55 +88,70 @@
 ;;  3.3 Constancy constraints  ;;
 ;;                             ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defconstraint counter-constancy ()
-  (begin (counter-constancy CT GAS_ACTUAL)
-         (counter-constancy CT GAS_COST)
-         (counter-constancy CT XAHOY)
-         (counter-constancy CT OOGX)))
+(defconstraint counter-constancy-gas-actual ()
+  (counter-constancy CT GAS_ACTUAL))
+
+(defconstraint counter-constancy-gas-cost ()
+  (counter-constancy CT GAS_COST))
+
+(defconstraint counter-constancy-xahoy ()
+  (counter-constancy CT XAHOY))
+
+(defconstraint counter-constancy-oogx ()
+  (counter-constancy CT OOGX))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;                                     ;;
 ;;  3.4 Populating the lookup columns  ;;
 ;;                                     ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; defining "WCP macros"
-(defun (call-to-LT k  ;; row shift parameter
-                   a  ;; arg 1 low
-                   b  ;; arg 2 low
-                   c) ;; res
-  (begin (eq! (shift WCP_ARG1_LO k) a)
-         (eq! (shift WCP_ARG2_LO k) b)
-         (eq! (shift WCP_INST k) EVM_INST_LT)
-         (eq! (shift WCP_RES k) c)))
+;; NOTE: what follows amounts to a "call to LEQ" on the current row, i.e.
+;; (0 <= GAS_ACTUAL) is TRUE.
+(defconstraint asserting-the-leftover-gas-is-nonnegative-arg1 (:guard FIRST)
+  (eq! WCP_ARG1_LO 0))
 
-(defun (call-to-LEQ k  ;; row shift parameter
-                    a  ;; arg 1 low
-                    b  ;; arg 2 low
-                    c) ;; res
-  (begin (eq! (shift WCP_ARG1_LO k) a)
-         (eq! (shift WCP_ARG2_LO k) b)
-         (eq! (shift WCP_INST k) WCP_INST_LEQ)
-         (eq! (shift WCP_RES k) c)))
+(defconstraint asserting-the-leftover-gas-is-nonnegative-arg2 (:guard FIRST)
+  (eq! WCP_ARG2_LO GAS_ACTUAL))
 
-(defconstraint asserting-the-leftover-gas-is-nonnegative (:guard FIRST)
-  (call-to-LEQ 0          ;; row shift parameter
-               0          ;; arg 1 low
-               GAS_ACTUAL ;; arg 2 low
-               1))        ;; res is TRUE!
+(defconstraint asserting-the-leftover-gas-is-nonnegative-inst (:guard FIRST)
+  (eq! WCP_INST WCP_INST_LEQ))
+
+(defconstraint asserting-the-leftover-gas-is-nonnegative-res (:guard FIRST)
+  (eq! WCP_RES 1))
 
 ;; as per the spec, this constraint the following
 ;; constraint is slightly useless ... not entirely,
 ;; though: it still asserts "smallness" so that it
 ;; should filter out MXPX induced out of gas exceptions.
-(defconstraint asserting-the-gas-cost-is-nonnegative (:guard FIRST)
-  (call-to-LEQ 1       ;; row shift parameter
-              0        ;; arg 1 low
-              GAS_COST ;; arg 2 low
-              1))      ;; res is TRUE!
+;;
+;; NOTE: what follows amounts to a "call to LEQ" on the next row, i.e.
+;; (0 <= GAS_COST) is TRUE.
+(defconstraint asserting-the-gas-cost-is-nonnegative-arg1 (:guard FIRST)
+  (eq! (shift WCP_ARG1_LO 1) 0))
 
-(defconstraint asserting-either-sufficient-gas-or-insufficient-gas (:guard FIRST)
+(defconstraint asserting-the-gas-cost-is-nonnegative-arg2 (:guard FIRST)
+  (eq! (shift WCP_ARG2_LO 1) GAS_COST))
+
+(defconstraint asserting-the-gas-cost-is-nonnegative-inst (:guard FIRST)
+  (eq! (shift WCP_INST 1) WCP_INST_LEQ))
+
+(defconstraint asserting-the-gas-cost-is-nonnegative-res (:guard FIRST)
+  (eq! (shift WCP_RES 1) 1))
+
+;; NOTE: what follows amounts to a "call to LT" two rows down, i.e.
+;; (GAS_ACTUAL < GAS_COST) is OOGX (as predicted by the HUB).
+(defconstraint asserting-either-sufficient-gas-or-insufficient-gas-arg1 (:guard FIRST)
   (if-zero (force-bin (* XAHOY (- 1 OOGX)))
-           (call-to-LT 2          ;; row shift parameter
-                       GAS_ACTUAL ;; arg 1 low
-                       GAS_COST   ;; arg 2 low
-                       OOGX)))    ;; res predicted by HUB
+           (eq! (shift WCP_ARG1_LO 2) GAS_ACTUAL)))
+
+(defconstraint asserting-either-sufficient-gas-or-insufficient-gas-arg2 (:guard FIRST)
+  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
+           (eq! (shift WCP_ARG2_LO 2) GAS_COST)))
+
+(defconstraint asserting-either-sufficient-gas-or-insufficient-gas-inst (:guard FIRST)
+  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
+           (eq! (shift WCP_INST 2) EVM_INST_LT)))
+
+(defconstraint asserting-either-sufficient-gas-or-insufficient-gas-res (:guard FIRST)
+  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
+           (eq! (shift WCP_RES 2) OOGX)))

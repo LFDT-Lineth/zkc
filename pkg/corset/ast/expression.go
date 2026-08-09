@@ -327,43 +327,6 @@ func (e *Constant) Dependencies() []Symbol {
 }
 
 // ============================================================================
-// Normalise
-// ============================================================================
-
-// Debug is an optional constraint which can be specifically enabled via the
-// debug setting.  The intention of debug constraints is that they capture
-// things which are implied by other constraints.  The ability to enable them
-// can simply help with debugging, should it arise that they are not actually
-// implied.
-type Debug struct{ Arg Expr }
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Debug) AsConstant() *big.Int {
-	return nil
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Debug) Context() Context {
-	return e.Arg.Context()
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Debug) Lisp() sexp.SExp {
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("debug"),
-		e.Arg.Lisp()})
-}
-
-// Dependencies needed to signal declaration.
-func (e *Debug) Dependencies() []Symbol {
-	return e.Arg.Dependencies()
-}
-
-// ============================================================================
 // Equality
 // ============================================================================
 
@@ -506,80 +469,6 @@ func (e *Exp) Dependencies() []Symbol {
 }
 
 // ============================================================================
-// For
-// ============================================================================
-
-// For represents a for loop of a statically known range of values
-type For struct {
-	// Variable binding
-	Binding LocalVariableBinding
-	// Start value for Index
-	Start uint
-	// Last Value for Index
-	End uint
-	// Body of loop
-	Body Expr
-}
-
-// NewFor constructs a new for-expression given a variable name, a static index
-// range and a body.
-func NewFor(name string, start uint, end uint, body Expr) *For {
-	binding := NewLocalVariableBinding(name, UINT_TYPE)
-	return &For{binding, start, end, body}
-}
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *For) AsConstant() *big.Int {
-	body := e.Body.AsConstant()
-	// Check if can evaluate
-	if body != nil {
-		return body
-	}
-	//
-	return nil
-}
-
-// Multiplicity determines the number of values that evaluating this expression
-// can generate.
-func (e *For) Multiplicity() uint {
-	return e.End - e.Start + 1
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *For) Context() Context {
-	return e.Body.Context()
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *For) Lisp() sexp.SExp {
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("for"),
-		sexp.NewSymbol("..."),
-		e.Body.Lisp(),
-	})
-}
-
-// Dependencies needed to signal declaration.
-func (e *For) Dependencies() []Symbol {
-	// Remove occurrences of the index variable defined by this expression.  In
-	// essence, we are capturing this occurrences of this symbol.
-	var rest []Symbol
-	//
-	for _, s := range e.Body.Dependencies() {
-		p := s.Path()
-		if p.IsAbsolute() || p.Depth() != 1 || p.Head() != e.Binding.Name {
-			rest = append(rest, s)
-		}
-	}
-	//
-	return rest
-}
-
-// ============================================================================
 // If
 // ============================================================================
 
@@ -686,134 +575,6 @@ func (e *Invoke) Dependencies() []Symbol {
 	// Include this expression as a symbol (which must be bound to the function
 	// being invoked)
 	return append(deps, e.Name)
-}
-
-// ============================================================================
-// Let
-// ============================================================================
-
-// Let is a common expression form used in programming languages, particularly
-// functional languages.  It allows us to assign a "variable" to a given
-// expression, such that we can reuse that variable in multiple places rather
-// than repeat the entire expression.  Note, however, that such variables are
-// functional in nature --- they cannot, for example, be mutated via assignment,
-// etc.
-type Let struct {
-	// The set of variables defined by this expression.
-	Vars []LocalVariableBinding
-	// Identifies the assigned expression for each variable defined.
-	Args []Expr
-	// Body of the let expression (i.e. where the variables it defines can be
-	// used).
-	Body Expr
-}
-
-// NewLet constructs a new let-expression for a given number of bindings.
-func NewLet(bindings []util.Pair[string, Expr], body Expr) *Let {
-	vars := make([]LocalVariableBinding, len(bindings))
-	exprs := make([]Expr, len(bindings))
-	//
-	for i, p := range bindings {
-		vars[i] = NewLocalVariableBinding(p.Left, UINT_TYPE)
-		exprs[i] = p.Right
-	}
-	//
-	return &Let{vars, exprs, body}
-}
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Let) AsConstant() *big.Int {
-	panic("todo")
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Let) Context() Context {
-	return e.Body.Context()
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Let) Lisp() sexp.SExp {
-	bindings := make([]sexp.SExp, len(e.Args))
-	//
-	for i := range e.Args {
-		bindings[i] = sexp.NewList([]sexp.SExp{
-			sexp.NewSymbol(e.Vars[i].Name),
-			e.Args[i].Lisp(),
-		})
-	}
-	//
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("let"),
-		sexp.NewList(bindings),
-		e.Body.Lisp(),
-	})
-}
-
-// Dependencies needed to signal declaration.
-func (e *Let) Dependencies() []Symbol {
-	// Remove occurrences of the let variables defined by this expression.  In
-	// essence, we are capturing these occurrences in the body of this
-	// expression.
-	var rest []Symbol
-	//
-	for _, s := range e.Body.Dependencies() {
-		p := s.Path()
-		if p.IsAbsolute() || p.Depth() != 1 {
-			rest = append(rest, s)
-		} else {
-			matched := false
-			// Could be a variable defined here, so check variable names.
-			for _, v := range e.Vars {
-				if p.Head() == v.Name {
-					matched = true
-					break
-				}
-			}
-			// Did we match anything?
-			if !matched {
-				rest = append(rest, s)
-			}
-		}
-	}
-	// Determine dependencies for assigned expressions
-	return append(rest, DependenciesOfExpressions(e.Args)...)
-}
-
-// ============================================================================
-// List
-// ============================================================================
-
-// List represents a block of zero or more expressions.
-type List struct{ Args []Expr }
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *List) AsConstant() *big.Int {
-	// Potentially we could do better here, but its not clear we need to.
-	return nil
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *List) Context() Context {
-	ctx, _ := ContextOfExpressions(e.Args...)
-	return ctx
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *List) Lisp() sexp.SExp {
-	return ListOfExpressions(sexp.NewSymbol("begin"), e.Args)
-}
-
-// Dependencies needed to signal declaration.
-func (e *List) Dependencies() []Symbol {
-	return DependenciesOfExpressions(e.Args)
 }
 
 // ============================================================================
@@ -931,45 +692,6 @@ func (e *Not) Lisp() sexp.SExp {
 // Dependencies needed to signal declaration.
 func (e *Not) Dependencies() []Symbol {
 	return e.Arg.Dependencies()
-}
-
-// ============================================================================
-// Reduction
-// ============================================================================
-
-// Reduce reduces (i.e. folds) a list using a given binary function.
-type Reduce struct {
-	Name *VariableAccess
-	Arg  Expr
-}
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Reduce) AsConstant() *big.Int {
-	// TODO: potentially we can do better here.
-	return nil
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Reduce) Context() Context {
-	return e.Arg.Context()
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Reduce) Lisp() sexp.SExp {
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("reduce"),
-		sexp.NewSymbol(e.Name.Path().String()),
-		e.Arg.Lisp()})
-}
-
-// Dependencies needed to signal declaration.
-func (e *Reduce) Dependencies() []Symbol {
-	deps := e.Arg.Dependencies()
-	return append(deps, e.Name)
 }
 
 // ============================================================================
@@ -1204,9 +926,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 		nexpr = &Connective{e.Sign, args}
 	case *Constant:
 		return e
-	case *Debug:
-		arg := Substitute(e.Arg, mapping, srcmap)
-		nexpr = &Debug{arg}
 	case *Equation:
 		lhs := Substitute(e.Lhs, mapping, srcmap)
 		rhs := Substitute(e.Rhs, mapping, srcmap)
@@ -1217,9 +936,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 		pow := Substitute(e.Pow, mapping, srcmap)
 		// Done
 		nexpr = &Exp{arg, pow}
-	case *For:
-		body := Substitute(e.Body, mapping, srcmap)
-		nexpr = &For{e.Binding, e.Start, e.End, body}
 	case *If:
 		cond := Substitute(e.Condition, mapping, srcmap)
 		trueBranch := SubstituteOptional(e.TrueBranch, mapping, srcmap)
@@ -1229,13 +945,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 	case *Invoke:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &Invoke{e.Name, args}
-	case *Let:
-		args := SubstituteAll(e.Args, mapping, srcmap)
-		body := Substitute(e.Body, mapping, srcmap)
-		nexpr = &Let{e.Vars, args, body}
-	case *List:
-		args := SubstituteAll(e.Args, mapping, srcmap)
-		nexpr = &List{args}
 	case *Mul:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &Mul{args}
@@ -1245,9 +954,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 	case *Not:
 		arg := Substitute(e.Arg, mapping, srcmap)
 		nexpr = &Not{arg}
-	case *Reduce:
-		arg := Substitute(e.Arg, mapping, srcmap)
-		nexpr = &Reduce{e.Name, arg}
 	case *Sub:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &Sub{args}
@@ -1326,28 +1032,20 @@ func ShallowCopy(expr Expr) Expr {
 		return &Connective{e.Sign, e.Args}
 	case *Constant:
 		return &Constant{e.Val}
-	case *Debug:
-		return &Debug{e.Arg}
 	case *Equation:
 		return &Equation{e.Kind, e.Lhs, e.Rhs}
 	case *Exp:
 		return &Exp{e.Arg, e.Pow}
-	case *For:
-		return &For{e.Binding, e.Start, e.End, e.Body}
 	case *If:
 		return &If{e.Condition, e.TrueBranch, e.FalseBranch}
 	case *Invoke:
 		return &Invoke{e.Name, e.Args}
-	case *List:
-		return &List{e.Args}
 	case *Mul:
 		return &Mul{e.Args}
 	case *Normalise:
 		return &Normalise{e.Arg}
 	case *Not:
 		return &Not{e.Arg}
-	case *Reduce:
-		return &Reduce{e.Name, e.Arg}
 	case *Sub:
 		return &Sub{e.Args}
 	case *Shift:

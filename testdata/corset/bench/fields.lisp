@@ -13,12 +13,11 @@
 (defpurefun (as_u8 b1 b0) (+ (* 16 b1) b0))
 
 ;; Byte decompositions
-(defconstraint decompositions ()
-  (begin
-   ;; X
-   (eq! X (as_u8 [XS 2] [XS 1]))
-   ;; Y
-   (eq! Y (as_u8 [YS 2] [YS 1]))))
+(defconstraint decompositions-x ()
+   (eq! X (as_u8 [XS 2] [XS 1])))
+
+(defconstraint decompositions-y ()
+   (eq! Y (as_u8 [YS 2] [YS 1])))
 
 ;; Constraint on lower half
 (defconstraint low4 (:guard ST)

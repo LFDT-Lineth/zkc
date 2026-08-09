@@ -561,20 +561,6 @@ func NewLocalScope(enclosing Scope, global bool, pure bool, constant bool) Local
 	return LocalScope{global, pure, constant, enclosing, &context, locals, bindings, defining}
 }
 
-// NestedScope creates a nested scope within this local scope.
-func (p LocalScope) NestedScope() LocalScope {
-	nlocals := make(map[string]uint)
-	nbindings := make([]*ast.LocalVariableBinding, len(p.bindings))
-	// Clone allocated variables
-	for k, v := range p.locals {
-		nlocals[k] = v
-	}
-	// Copy over bindings.
-	copy(nbindings, p.bindings)
-	// Done
-	return LocalScope{p.global, p.pure, p.constant, p, p.context, nlocals, nbindings, p.defining}
-}
-
 // NestedConstScope creates a nested scope within this local scope which, in
 // addition, is always pure and expects a constant value.
 func (p LocalScope) NestedConstScope() LocalScope {
