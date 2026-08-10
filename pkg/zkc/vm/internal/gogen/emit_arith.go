@@ -462,25 +462,21 @@ func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem[wor
 		c.line("}")
 	}
 
-	if x.Quotient.HasValue() {
-		target, err := g.limbOf(fn, x.Quotient.Unwrap())
-		if err != nil {
-			return err
-		}
-
-		g.assignSingle(c, target, operand{expr: fmt.Sprintf("%s / %s", lhs.expr, rhs.expr), max: lhs.max})
+	quotient, err := g.limbOf(fn, x.Quotient)
+	if err != nil {
+		return err
 	}
 
-	if x.Remainder.HasValue() {
-		target, err := g.limbOf(fn, x.Remainder.Unwrap())
-		if err != nil {
-			return err
-		}
+	g.assignSingle(c, quotient, operand{expr: fmt.Sprintf("%s / %s", lhs.expr, rhs.expr), max: lhs.max})
 
-		// The remainder is below the divisor (and never above the dividend).
-		bound := bigMin(lhs.max, new(big.Int).Sub(rhs.max, big.NewInt(1)))
-		g.assignSingle(c, target, operand{expr: fmt.Sprintf("%s %% %s", lhs.expr, rhs.expr), max: bound})
+	remainder, err := g.limbOf(fn, x.Remainder)
+	if err != nil {
+		return err
 	}
+
+	// The remainder is below the divisor (and never above the dividend).
+	bound := bigMin(lhs.max, new(big.Int).Sub(rhs.max, big.NewInt(1)))
+	g.assignSingle(c, remainder, operand{expr: fmt.Sprintf("%s %% %s", lhs.expr, rhs.expr), max: bound})
 
 	return nil
 }

@@ -721,8 +721,11 @@ func (p *StmtCompiler) compileIntDiv(args []Expr, bitwidth uint, mapping []uint,
 			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[0], "division has no divisor")...)
 		}
 	}
+	// The unwanted remainder goes into a fresh scratch register, sized to the
+	// divisor (a remainder is always below it).
+	remainder := p.allocate(divisorWidthOf(divisor, bitwidth))
 	//
-	return append(insns, vm.Div(target, value, divisor))
+	return append(insns, vm.DivMod(target, remainder, value, divisor))
 }
 
 func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
@@ -740,16 +743,27 @@ func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint,
 	if divisor.IsConstant() && divisor.AsConstant().Cmp64(0) == 0 {
 		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[1], "division by zero")...)
 	}
+	// The unwanted quotient goes into a fresh scratch register, sized to the
+	// dividend (a quotient is never above it).
+	quotient := p.allocate(util.Some(bitwidth))
 	//
-	return append(insns, vm.Rem(target, value, divisor))
+	return append(insns, vm.DivMod(quotient, target, value, divisor))
+}
+
+// divisorWidthOf returns the width required for a division's remainder: the
+// bit length of a constant divisor (the remainder is strictly below it), or
+// the full operand width for a register divisor.
+func divisorWidthOf(divisor vm.Operand[vm.Uint], bitwidth uint) util.Option[uint] {
+	if divisor.IsConstant() {
+		return util.Some(uint(divisor.AsConstant().BigInt().BitLen()))
+	}
+	//
+	return util.Some(bitwidth)
 }
 
 // compileDivMod compiles the combined division/remainder ("/%") expression
 // into a single DivRem bytecode writing both the quotient (targets[0]) and the
-// remainder (targets[1]).  In fast mode a DIV / REM pair is emitted instead:
-// the combined form only pays off under the constraint lowering — one shared
-// DIV_HINT block for the pair — whilst natively two divisions are as cheap,
-// and the pair spares the combined form a dedicated encoding.
+// remainder (targets[1]).
 func (p *StmtCompiler) compileDivMod(e *expr.DivMod[symbol.Resolved], mapping []uint, targets []RegisterId,
 ) []Bytecode {
 	var bw = data.BitWidthOf(e.Exprs[0].Type(), p.environment)
@@ -767,12 +781,6 @@ func (p *StmtCompiler) compileDivMod(e *expr.DivMod[symbol.Resolved], mapping []
 		} else if divisor.AsConstant().Cmp64(1) == 0 {
 			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e.Exprs[0], "division has no divisor")...)
 		}
-	}
-	//
-	if p.fastMode {
-		insns = append(insns, vm.Div(targets[0], value, divisor))
-		//
-		return append(insns, vm.Rem(targets[1], value, divisor))
 	}
 	//
 	return append(insns, vm.DivMod(targets[0], targets[1], value, divisor))

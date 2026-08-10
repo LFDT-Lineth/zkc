@@ -726,14 +726,10 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = p.executeSub_nm(p.pc, bytecodes, pool, frame)
 		case encoding.MUL_nm:
 			p.pc, err = p.executeMul_nm(p.pc, bytecodes, pool, frame)
-		case encoding.DIV:
-			p.pc, err = p.executeDiv(p.pc, bytecodes, frame)
-		case encoding.REM:
-			p.pc, err = p.executeRem(p.pc, bytecodes, frame)
-		case encoding.DIVC:
-			p.pc, err = p.executeDivConst(p.pc, bytecodes, pool, frame)
-		case encoding.REMC:
-			p.pc, err = p.executeRemConst(p.pc, bytecodes, pool, frame)
+		case encoding.DIVMOD:
+			p.pc, err = p.executeDivMod(p.pc, bytecodes, frame)
+		case encoding.DIVMODC:
+			p.pc, err = p.executeDivModConst(p.pc, bytecodes, pool, frame)
 		case encoding.INTRINSIC:
 			p.pc, err = p.executeIntrinsic(p.pc, bytecodes, pool, frame)
 		case encoding.ADDMOD_P:
@@ -860,14 +856,10 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		pc, err = p.executeSub_nm(pc, codes, pool, stack)
 	case encoding.WIDE_MUL_nm:
 		pc, err = p.executeMul_nm(pc, codes, pool, stack)
-	case encoding.WIDE_DIV:
-		pc, err = p.executeDiv(pc, codes, stack)
-	case encoding.WIDE_REM:
-		pc, err = p.executeRem(pc, codes, stack)
-	case encoding.WIDE_DIVC:
-		pc, err = p.executeDivConst(pc, codes, pool, stack)
-	case encoding.WIDE_REMC:
-		pc, err = p.executeRemConst(pc, codes, pool, stack)
+	case encoding.WIDE_DIVMOD:
+		pc, err = p.executeDivMod(pc, codes, stack)
+	case encoding.WIDE_DIVMODC:
+		pc, err = p.executeDivModConst(pc, codes, pool, stack)
 	case encoding.WIDE_INTRINSIC:
 		pc, err = p.executeIntrinsic(pc, codes, pool, stack)
 	case encoding.WIDE_ADDMOD_P:
@@ -1297,60 +1289,34 @@ func (p *Interpreter[W]) executeCheckCast(pc uint32, codes []uint32, stack []W) 
 	return pc + n, nil
 }
 
-// executeDiv implements DIV: stack[rd] = stack[dividend] / stack[divisor],
-// returning an error if the divisor is zero.
-func (p *Interpreter[W]) executeDiv(pc uint32, codes []uint32, stack []W) (uint32, error) {
-	var rd, dividend, divisor, n = encoding.DecodeDivRem_2n1(pc, codes)
+// executeDivMod implements DIVMOD: stack[rq] = stack[dividend] /
+// stack[divisor] and stack[rr] = stack[dividend] % stack[divisor], returning
+// an error if the divisor is zero.
+func (p *Interpreter[W]) executeDivMod(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var rq, rr, dividend, divisor, n = encoding.DecodeDivMod(pc, codes)
 	//
 	if stack[divisor].Cmp64(0) == 0 {
 		return pc, p.failure("division by zero")
 	}
 	//
-	stack[rd] = stack[dividend].Div(stack[divisor])
+	stack[rq] = stack[dividend].Div(stack[divisor])
+	stack[rr] = stack[dividend].Rem(stack[divisor])
 	//
 	return pc + n, nil
 }
 
-// executeRem implements REM: stack[rd] = stack[dividend] % stack[divisor],
-// returning an error if the divisor is zero.
-func (p *Interpreter[W]) executeRem(pc uint32, codes []uint32, stack []W) (uint32, error) {
-	var rd, dividend, divisor, n = encoding.DecodeDivRem_2n1(pc, codes)
-	//
-	if stack[divisor].Cmp64(0) == 0 {
-		return pc, p.failure("division by zero")
-	}
-	//
-	stack[rd] = stack[dividend].Rem(stack[divisor])
-	//
-	return pc + n, nil
-}
-
-// executeDivConst implements DIVC: stack[rd] = stack[dividend] / constant.
-// The layout coincides with the arithmetic-with-constant family, so decoding
-// is shared (see encodeDivRemC).  A zero divisor cannot be encoded (bytecode
-// validation rejects it), but is guarded regardless.
-func (p *Interpreter[W]) executeDivConst(pc uint32, codes []uint32, pool, stack []W) (uint32, error) {
-	var dividend, rd, divisor, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+// executeDivModConst implements DIVMODC: stack[rq] = stack[dividend] /
+// constant and stack[rr] = stack[dividend] % constant.  A zero divisor cannot
+// be encoded (bytecode validation rejects it), but is guarded regardless.
+func (p *Interpreter[W]) executeDivModConst(pc uint32, codes []uint32, pool, stack []W) (uint32, error) {
+	var rq, rr, dividend, divisor, n = encoding.DecodeDivMod_C(pc, codes, pool)
 	//
 	if divisor.Cmp64(0) == 0 {
 		return pc, p.failure("division by zero")
 	}
 	//
-	stack[rd] = stack[dividend].Div(divisor)
-	//
-	return pc + n, nil
-}
-
-// executeRemConst implements REMC: stack[rd] = stack[dividend] % constant (see
-// executeDivConst).
-func (p *Interpreter[W]) executeRemConst(pc uint32, codes []uint32, pool, stack []W) (uint32, error) {
-	var dividend, rd, divisor, n = encoding.DecodeArith_1n1c(pc, codes, pool)
-	//
-	if divisor.Cmp64(0) == 0 {
-		return pc, p.failure("division by zero")
-	}
-	//
-	stack[rd] = stack[dividend].Rem(divisor)
+	stack[rq] = stack[dividend].Div(divisor)
+	stack[rr] = stack[dividend].Rem(divisor)
 	//
 	return pc + n, nil
 }
@@ -1367,10 +1333,8 @@ func (p *Interpreter[W]) executeIntrinsic(pc uint32, codes []uint32, pool, stack
 		return p.executeWideShlHint(pc, n, targets, sources, pool, stack)
 	case bytecode.WIDE_SHR:
 		return p.executeWideShrHint(pc, n, targets, sources, pool, stack)
-	case bytecode.WIDE_DIV:
-		return p.executeWideDivHint(pc, n, targets, sources, pool, stack)
-	case bytecode.WIDE_REM:
-		return p.executeWideRemHint(pc, n, targets, sources, pool, stack)
+	case bytecode.WIDE_DIVMOD:
+		return p.executeWideDivModHint(pc, n, targets, sources, pool, stack)
 	default:
 		return pc, fmt.Errorf("unknown intrinsic operation (%d)", op)
 	}
@@ -1632,40 +1596,14 @@ func shiftAmount[W word.Word[W]](words []W, maxShift uint64) uint64 {
 	return words[0].Uint64()
 }
 
-// executeWideDivHint implements the WIDE_DIV intrinsic: it reconstructs the
-// dividend and divisor arguments from their (possibly multi-limb) register
-// vectors, then assigns the quotient (dividend / divisor) to the target vector,
-// returning an error if the divisor is zero.  This mirrors the DIV instruction
-// but operates over vectored (multi-limb) operands.  big.Int arithmetic is used
-// so values spanning several limbs (i.e. wider than the machine word) are
-// handled correctly.
-func (p *Interpreter[W]) executeWideDivHint(pc, n uint32, targets, sources encoding.Operands,
-	pool, stack []W) (uint32, error) {
-	var (
-		module   = p.program.Module(p.fid)
-		dividend = loadIntrinsicOperand(module, &sources, pool, stack)
-		divisor  = loadIntrinsicOperand(module, &sources, pool, stack)
-	)
-	//
-	if divisor.Sign() == 0 {
-		return pc, p.failure("division by zero")
-	}
-	//
-	if err := p.storeIntrinsicResult(module, &targets, new(big.Int).Quo(dividend, divisor), stack); err != nil {
-		return pc, err
-	}
-	//
-	return pc + n, nil
-}
-
-// executeWideRemHint implements the WIDE_REM intrinsic: it reconstructs the
-// dividend and divisor arguments from their (possibly multi-limb) register
-// vectors, then assigns the remainder (dividend % divisor) to the target
-// vector, returning an error if the divisor is zero.  This mirrors the REM
+// executeWideDivModHint implements the WIDE_DIVMOD intrinsic: it reconstructs
+// the dividend and divisor arguments from their (possibly multi-limb) register
+// vectors, then assigns the quotient and the remainder across the two target
+// vectors, returning an error if the divisor is zero.  This mirrors the DIVMOD
 // instruction but operates over vectored (multi-limb) operands.  big.Int
 // arithmetic is used so values spanning several limbs (i.e. wider than the
 // machine word) are handled correctly.
-func (p *Interpreter[W]) executeWideRemHint(pc, n uint32, targets, sources encoding.Operands,
+func (p *Interpreter[W]) executeWideDivModHint(pc, n uint32, targets, sources encoding.Operands,
 	pool, stack []W) (uint32, error) {
 	var (
 		module   = p.program.Module(p.fid)
@@ -1676,9 +1614,11 @@ func (p *Interpreter[W]) executeWideRemHint(pc, n uint32, targets, sources encod
 	if divisor.Sign() == 0 {
 		return pc, p.failure("division by zero")
 	}
-	//
-	if err := p.storeIntrinsicResult(module, &targets, new(big.Int).Rem(dividend, divisor), stack); err != nil {
-		return pc, err
+	// Distribute quotient and remainder across their target vectors.
+	for _, val := range []*big.Int{new(big.Int).Quo(dividend, divisor), new(big.Int).Rem(dividend, divisor)} {
+		if err := p.storeIntrinsicResult(module, &targets, val, stack); err != nil {
+			return pc, err
+		}
 	}
 	//
 	return pc + n, nil

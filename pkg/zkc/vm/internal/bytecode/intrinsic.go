@@ -39,14 +39,11 @@ import (
 //     writes exactly one return (result), computing result = value >> shift
 //     truncated to the total bitwidth of the target vector.  This mirrors the
 //     Bitwise SHR instruction but operates over vectored (multi-limb) operands.
-//   - WIDE_DIV, which reads exactly two arguments (dividend, divisor) and writes
-//     exactly one return (quotient), computing quotient = dividend / divisor.
-//     This mirrors the DIV instruction but operates over vectored (multi-limb)
-//     operands.  A zero divisor aborts execution with a division-by-zero error.
-//   - WIDE_REM, which reads exactly two arguments (dividend, divisor) and writes
-//     exactly one return (remainder), computing remainder = dividend % divisor.
-//     This mirrors the REM instruction but operates over vectored (multi-limb)
-//     operands.  A zero divisor aborts execution with a division-by-zero error.
+//   - WIDE_DIVMOD, which reads exactly two arguments (dividend, divisor) and
+//     writes exactly two returns (quotient, remainder), computing quotient =
+//     dividend / divisor and remainder = dividend % divisor.  This mirrors the
+//     DIVMOD instruction but operates over vectored (multi-limb) operands.  A
+//     zero divisor aborts execution with a division-by-zero error.
 type Intrinsic[W word.Word[W]] struct {
 	// Op selects the intrinsic operation (e.g. DIV_HINT or WIDE_SHL).
 	Op Operation
@@ -124,21 +121,13 @@ func (p *Intrinsic[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 		if len(p.Targets) != 1 {
 			errs = append(errs, fmt.Errorf("wide shr hint expects 1 return (found %d)", len(p.Targets)))
 		}
-	case WIDE_DIV:
+	case WIDE_DIVMOD:
 		if len(p.Sources) != 2 {
-			errs = append(errs, fmt.Errorf("wide div hint expects 2 arguments (found %d)", len(p.Sources)))
+			errs = append(errs, fmt.Errorf("wide divmod hint expects 2 arguments (found %d)", len(p.Sources)))
 		}
 		//
-		if len(p.Targets) != 1 {
-			errs = append(errs, fmt.Errorf("wide div hint expects 1 return (found %d)", len(p.Targets)))
-		}
-	case WIDE_REM:
-		if len(p.Sources) != 2 {
-			errs = append(errs, fmt.Errorf("wide rem hint expects 2 arguments (found %d)", len(p.Sources)))
-		}
-		//
-		if len(p.Targets) != 1 {
-			errs = append(errs, fmt.Errorf("wide rem hint expects 1 return (found %d)", len(p.Targets)))
+		if len(p.Targets) != 2 {
+			errs = append(errs, fmt.Errorf("wide divmod hint expects 2 returns (found %d)", len(p.Targets)))
 		}
 	default:
 		errs = append(errs, fmt.Errorf("unsupported hint operation (%d)", p.Op))
@@ -166,7 +155,7 @@ func (p *Intrinsic[W]) String(env Environment[W]) string {
 }
 
 // intrinsicName returns a human-readable name for the given hint operation op.
-// Currently only DIV_HINT, WIDE_SHL, WIDE_SHR, WIDE_DIV and WIDE_REM are
+// Currently only DIV_HINT, WIDE_SHL, WIDE_SHR and WIDE_DIVMOD are
 // supported; any other operation panics.
 func intrinsicName(op Operation) string {
 	switch op {
@@ -176,10 +165,8 @@ func intrinsicName(op Operation) string {
 		return "shl"
 	case WIDE_SHR:
 		return "shr"
-	case WIDE_DIV:
-		return "div"
-	case WIDE_REM:
-		return "rem"
+	case WIDE_DIVMOD:
+		return "divmod"
 	default:
 		panic("unsupported operation")
 	}

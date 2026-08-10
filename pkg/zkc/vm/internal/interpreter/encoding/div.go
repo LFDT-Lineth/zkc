@@ -17,33 +17,15 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// DivRem encodes a division/remainder bytecode; the target shape selects
-// between quotient (DIV) and remainder (REM).  A constant divisor selects the
-// constant form (DIVC / REMC) instead.  The combined form (both targets) has
-// no encoding: codegen only emits it in tracing mode, where LowerDivisions
-// dissolves it into a DIV_HINT block long before encoding.
+// DivRem encodes a combined division/remainder bytecode, writing both the
+// quotient and the remainder.  A constant divisor selects the constant form
+// (DIVMODC) instead.
 func DivRem[W word.Word[W]](p *bytecode.DivRem[W], env Environment[W]) []uint32 {
-	var (
-		op     uint32
-		target RegisterId
-	)
-	//
-	switch {
-	case p.Quotient.HasValue() && p.Remainder.HasValue():
-		panic("divmod must be lowered before encoding")
-	case p.Quotient.HasValue():
-		op, target = DIV, p.Quotient.Unwrap()
-	case p.Remainder.HasValue():
-		op, target = REM, p.Remainder.Unwrap()
-	default:
-		panic("divrem must have at least one target")
-	}
-	//
 	if p.Divisor.IsConstant() {
-		return encodeDivRemC(op, target, p.Dividend, p.Divisor.AsConstant(), env)
+		return encodeDivMod_C(p.Quotient, p.Remainder, p.Dividend, p.Divisor.AsConstant(), env)
 	}
 	//
-	return encodeDivRem(op, target, p.Dividend, p.Divisor.AsRegister())
+	return encodeDivMod(p.Quotient, p.Remainder, p.Dividend, p.Divisor.AsRegister())
 }
 
 // Intrinsic encodes an intrinsic bytecode (e.g. DIV_HINT, which supplies the
@@ -53,95 +35,135 @@ func Intrinsic[W word.Word[W]](p *bytecode.Intrinsic[W], env Environment[W]) []u
 }
 
 // ============================================================================
-// DIV / REM instruction. Format of these instructions is:
+// DIVMOD instruction, computing both the quotient (rq) and remainder (rr) of
+// dividend / divisor.  Format of this instruction is:
 //
 //	31                                0
 //
 // +--------+--------+--------+--------+
-// | divisor|dividend|   rd   | opcode |
+// | divisor|dividend|   rq   | opcode |
 // +--------+--------+--------+--------+
+// |                          |   rr   |
+// +--------------------------+--------+
 //
-// The opcode itself distinguishes the two operations, so no width is needed.
-// The wide form carries the (now u16) destination register in the first word,
-// with both source registers in a second:
+// The wide form carries the (now u16) quotient register in the first word,
+// with the remaining registers in a second and third:
 //
 // +--------+--------+--------+--------+
-// |        rd       |  wop   |  WIDE  |
+// |        rq       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
 // |     divisor     |    dividend     |
 // +-----------------+-----------------+
-// ============================================================================
-
-// encodeDivRem encodes a division/remainder instruction, where op distinguishes
-// the two operations.
-func encodeDivRem(op uint32, rd, dividend, divisor RegisterId) []uint32 {
-	if IsWideRegisters(rd, dividend, divisor) {
-		return []uint32{
-			uint32(rd)<<16 | (WIDE_DIV+(op-DIV))<<8 | WIDE,
-			uint32(dividend) | uint32(divisor)<<16,
-		}
-	}
-	//
-	return []uint32{uint32(divisor)<<24 | uint32(dividend)<<16 | uint32(rd)<<8 | op}
-}
-
-// DecodeDivRem_2n1 decodes the operands of a division/remainder instruction.
-func DecodeDivRem_2n1(pc uint32, codes []uint32) (rd, dividend, divisor RegisterId, n uint32) {
-	if IsWideForm(pc, codes) {
-		rd = RegisterId(codes[pc] >> 16)
-		dividend = RegisterId(codes[pc+1] & 0xffff)
-		divisor = RegisterId(codes[pc+1] >> 16)
-		//
-		return rd, dividend, divisor, 2
-	}
-	//
-	rd = RegisterId((codes[pc] >> 8) & 0xff)
-	dividend = RegisterId((codes[pc] >> 16) & 0xff)
-	divisor = RegisterId((codes[pc] >> 24) & 0xff)
-	//
-	return rd, dividend, divisor, 1
-}
-
-// ============================================================================
-// DIVC / REMC (constant divisor) instruction.  The format mirrors the
-// arithmetic-with-constant family exactly (see encodeArith_1n1c), with rs
-// holding the dividend and imm8 the small constant divisor:
-//
-//	31                                0
-//
-// +--------+--------+--------+--------+
-// |  imm8  |   rs   |   rd   | opcode |
-// +--------+--------+--------+--------+
-//
-// The wide form replaces the constant operand with a u16 constant pool
-// identifier, moving the (now u16) registers into a subsequent word:
-//
-// +--------+--------+--------+--------+
-// |       cid       |  wop   |  WIDE  |
-// +--------+--------+--------+--------+
-// |       rs        |        rd       |
+// |                 |       rr        |
 // +-----------------+-----------------+
-//
-// The wide form is also selected when the registers are small but the
-// constant exceeds a byte.  Because the layouts coincide, decoding is shared
-// with the arithmetic family (see DecodeArith_1n1c).
 // ============================================================================
 
-// encodeDivRemC encodes a division/remainder instruction with a constant
-// divisor, where op distinguishes the two operations.
-func encodeDivRemC[W word.Word[W]](op uint32, rd, dividend RegisterId, constant W,
-	env Environment[W]) []uint32 {
-	//
-	if IsWideRegisters(rd, dividend) || constant.Cmp64(0xff) > 0 {
+// encodeDivMod encodes a combined division/remainder instruction with a
+// register divisor.
+func encodeDivMod(rq, rr, dividend, divisor RegisterId) []uint32 {
+	if IsWideRegisters(rq, rr, dividend, divisor) {
 		return []uint32{
-			uint32(env.ConstantIndex(constant))<<16 | (WIDE_DIVC+(op-DIV))<<8 | WIDE,
-			uint32(rd) | uint32(dividend)<<16,
+			uint32(rq)<<16 | WIDE_DIVMOD<<8 | WIDE,
+			uint32(dividend) | uint32(divisor)<<16,
+			uint32(rr),
 		}
 	}
 	//
 	return []uint32{
-		uint32(constant.Uint64())<<24 | uint32(dividend)<<16 | uint32(rd)<<8 | (DIVC + (op - DIV)),
+		uint32(divisor)<<24 | uint32(dividend)<<16 | uint32(rq)<<8 | DIVMOD,
+		uint32(rr),
 	}
+}
+
+// DecodeDivMod decodes the operands of a combined division/remainder
+// instruction with a register divisor.
+func DecodeDivMod(pc uint32, codes []uint32) (rq, rr, dividend, divisor RegisterId, n uint32) {
+	if IsWideForm(pc, codes) {
+		rq = RegisterId(codes[pc] >> 16)
+		dividend = RegisterId(codes[pc+1] & 0xffff)
+		divisor = RegisterId(codes[pc+1] >> 16)
+		rr = RegisterId(codes[pc+2] & 0xffff)
+		//
+		return rq, rr, dividend, divisor, 3
+	}
+	//
+	rq = RegisterId((codes[pc] >> 8) & 0xff)
+	dividend = RegisterId((codes[pc] >> 16) & 0xff)
+	divisor = RegisterId((codes[pc] >> 24) & 0xff)
+	rr = RegisterId(codes[pc+1] & 0xff)
+	//
+	return rq, rr, dividend, divisor, 2
+}
+
+// ============================================================================
+// DIVMODC (constant divisor) instruction.  The first word mirrors the
+// arithmetic-with-constant family (see encodeArith_1n1c), with rs holding the
+// dividend and imm8 the small constant divisor; the remainder register
+// follows in a second word:
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |  imm8  |   rs   |   rq   | opcode |
+// +--------+--------+--------+--------+
+// |                          |   rr   |
+// +--------------------------+--------+
+//
+// The wide form replaces the constant operand with a u16 constant pool
+// identifier, moving the (now u16) registers into subsequent words:
+//
+// +--------+--------+--------+--------+
+// |       cid       |  wop   |  WIDE  |
+// +--------+--------+--------+--------+
+// |       rs        |        rq       |
+// +-----------------+-----------------+
+// |                 |       rr        |
+// +-----------------+-----------------+
+//
+// The wide form is also selected when the registers are small but the
+// constant exceeds a byte.
+// ============================================================================
+
+// encodeDivMod_C encodes a combined division/remainder instruction with a
+// constant divisor.
+func encodeDivMod_C[W word.Word[W]](rq, rr, dividend RegisterId, constant W,
+	env Environment[W]) []uint32 {
+	//
+	if IsWideRegisters(rq, rr, dividend) || constant.Cmp64(0xff) > 0 {
+		return []uint32{
+			uint32(env.ConstantIndex(constant))<<16 | WIDE_DIVMODC<<8 | WIDE,
+			uint32(rq) | uint32(dividend)<<16,
+			uint32(rr),
+		}
+	}
+	//
+	return []uint32{
+		uint32(constant.Uint64())<<24 | uint32(dividend)<<16 | uint32(rq)<<8 | DIVMODC,
+		uint32(rr),
+	}
+}
+
+// DecodeDivMod_C decodes the operands of a combined division/remainder
+// instruction with a constant divisor, resolving the constant against the
+// given pool.
+func DecodeDivMod_C[W word.Word[W]](pc uint32, codes []uint32, pool []W,
+) (rq, rr, dividend RegisterId, constant W, n uint32) {
+	//
+	if IsWideForm(pc, codes) {
+		rq = RegisterId(codes[pc+1] & 0xffff)
+		dividend = RegisterId(codes[pc+1] >> 16)
+		rr = RegisterId(codes[pc+2] & 0xffff)
+		constant = pool[codes[pc]>>16]
+		//
+		return rq, rr, dividend, constant, 3
+	}
+	//
+	rq = RegisterId((codes[pc] >> 8) & 0xff)
+	dividend = RegisterId((codes[pc] >> 16) & 0xff)
+	rr = RegisterId(codes[pc+1] & 0xff)
+	constant = constant.SetUint64(uint64((codes[pc] >> 24) & 0xff))
+	//
+	return rq, rr, dividend, constant, 2
 }
 
 // ============================================================================

@@ -211,14 +211,10 @@ const (
 	MUL_nm
 	// CSUB (subtract from constant) instruction
 	CSUB
-	// DIV instruction
-	DIV
-	// DIVC (divide by constant) instruction
-	DIVC
-	// REM instruction
-	REM
-	// REMC (remainder by constant) instruction [must follow DIVC]
-	REMC
+	// DIVMOD (combined division / remainder) instruction
+	DIVMOD
+	// DIVMODC (combined division / remainder by constant) instruction
+	DIVMODC
 	// INTRINSIC instruction (e.g. division hint, wide shift-left)
 	INTRINSIC
 	// ADDMOD_P instruction
@@ -340,14 +336,11 @@ const (
 	// WIDE_MUL_nm (multiplication with vector target) instruction [must
 	// follow WIDE_SUB_nm]
 	WIDE_MUL_nm
-	// WIDE_DIV instruction
-	WIDE_DIV
-	// WIDE_DIVC (divide by pooled constant) instruction
-	WIDE_DIVC
-	// WIDE_REM instruction [must follow WIDE_DIV]
-	WIDE_REM
-	// WIDE_REMC (remainder by pooled constant) instruction
-	WIDE_REMC
+	// WIDE_DIVMOD (combined division / remainder) instruction
+	WIDE_DIVMOD
+	// WIDE_DIVMODC (combined division / remainder by pooled constant)
+	// instruction
+	WIDE_DIVMODC
 	// WIDE_INTRINSIC instruction
 	WIDE_INTRINSIC
 	// WIDE_ADDMOD_P instruction

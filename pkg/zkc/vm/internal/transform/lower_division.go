@@ -62,10 +62,9 @@ func lowerDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descript
 	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
 }
 
-// lowerDivisionCode replaces a DIV / REM / divmod bytecode with the
-// hint+validation sequence (see expandDivRem).  The hint produces both
-// quotient and remainder, so whichever the bytecode does not name is written
-// to a freshly allocated register; a divmod (both present) thus shares a
+// lowerDivisionCode replaces a DIVMOD bytecode with the hint+validation
+// sequence (see expandDivRem).  The hint produces both quotient and remainder,
+// matching the bytecode's two targets exactly, so a source-level "/%" shares a
 // single block for the pair.
 func lowerDivisionCode[W word.Word[W]](b Bytecode[W], registers split.Allocator[W]) []Bytecode[W] {
 	dr, ok := b.(*bytecode.DivRem[W])
@@ -74,31 +73,14 @@ func lowerDivisionCode[W word.Word[W]](b Bytecode[W], registers split.Allocator[
 	}
 	//
 	var (
-		x    = dr.Dividend
-		y    = dr.Divisor
-		nX   = registers.Register(x).Bitwidth().Unwrap()
-		nY   = divisorWidth(y, registers)
-		w    = registers.Allocate("w", util.Some(nY))
-		q, r bytecode.RegisterId
+		x  = dr.Dividend
+		y  = dr.Divisor
+		nX = registers.Register(x).Bitwidth().Unwrap()
+		nY = divisorWidth(y, registers)
+		w  = registers.Allocate("w", util.Some(nY))
 	)
 	//
-	if !dr.Quotient.HasValue() && !dr.Remainder.HasValue() {
-		panic("At least one of quotient or remainder must be defined")
-	}
-	//
-	if dr.Quotient.HasValue() {
-		q = dr.Quotient.Unwrap()
-	} else {
-		q = registers.Allocate("q", util.Some(nX))
-	}
-	//
-	if dr.Remainder.HasValue() {
-		r = dr.Remainder.Unwrap()
-	} else {
-		r = registers.Allocate("r", util.Some(nY))
-	}
-	//
-	return expandDivRem(q, r, w, x, y, nX, registers)
+	return expandDivRem(dr.Quotient, dr.Remainder, w, x, y, nX, registers)
 }
 
 // divisorWidth returns the bitwidth of the given divisor operand: the declared

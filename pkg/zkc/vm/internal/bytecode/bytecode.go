@@ -59,7 +59,7 @@ type FieldConfig = field.Config
 // Operation identifies an operation performed by a bytecode instruction: an
 // arithmetic operation (ADD, SUB, MUL), a bitwise operation (AND, OR, XOR, NOT,
 // SHL, SHR), a field operation (ADDMOD_P, SUBMOD_P, MULMOD_P) or a hint
-// operation (DIV_HINT, WIDE_SHL, WIDE_SHR, WIDE_DIV, WIDE_REM).
+// operation (DIV_HINT, WIDE_SHL, WIDE_SHR, WIDE_DIVMOD).
 type Operation uint8
 
 // Symbol returns a suitable string representation of this operator.
@@ -150,14 +150,11 @@ const (
 	// (possibly multi-limb) value by a given amount, mirroring the Bitwise SHR
 	// instruction but operating over vectored operands (see Intrinsic).
 	WIDE_SHR
-	// WIDE_DIV is the hint operation which computes the quotient of a
-	// (possibly multi-limb) dividend and divisor, mirroring the DIV instruction
-	// but operating over vectored operands (see Intrinsic).
-	WIDE_DIV
-	// WIDE_REM is the hint operation which computes the remainder of a
-	// (possibly multi-limb) dividend and divisor, mirroring the REM instruction
-	// but operating over vectored operands (see Intrinsic).
-	WIDE_REM
+	// WIDE_DIVMOD is the hint operation which computes both the quotient and
+	// the remainder of a (possibly multi-limb) dividend and divisor, mirroring
+	// the DIVMOD instruction but operating over vectored operands (see
+	// Intrinsic).
+	WIDE_DIVMOD
 )
 
 // ============================================================================
@@ -448,11 +445,10 @@ func NewDebug[W word.Word[W]](chunks []FormattedChunk, sources []RegisterId) *De
 	})}
 }
 
-// NewDivRem constructs a division/remainder instruction computing the quotient
-// and/or remainder of "dividend / divisor" for a register or constant divisor.
-// At least one of quotient / remainder must be present.
-func NewDivRem[W word.Word[W]](quotient, remainder util.Option[RegisterId], dividend RegisterId,
-	divisor Operand[W]) *DivRem[W] {
+// NewDivRem constructs a division/remainder instruction computing both the
+// quotient and the remainder of "dividend / divisor" for a register or
+// constant divisor.
+func NewDivRem[W word.Word[W]](quotient, remainder, dividend RegisterId, divisor Operand[W]) *DivRem[W] {
 	return &DivRem[W]{Quotient: quotient, Remainder: remainder, Dividend: dividend, Divisor: divisor}
 }
 

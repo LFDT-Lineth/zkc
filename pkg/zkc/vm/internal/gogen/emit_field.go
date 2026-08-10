@@ -250,17 +250,20 @@ func (g *generator) emitIntrinsic(c *code, fn *descFunction, x *bytecode.Intrins
 		}
 
 		return g.emitDivHint(c, fn, x)
-	case bytecode.WIDE_SHL, bytecode.WIDE_SHR, bytecode.WIDE_DIV, bytecode.WIDE_REM:
+	case bytecode.WIDE_SHL, bytecode.WIDE_SHR:
 		if len(x.Sources) != 2 || len(x.Targets) != 1 {
 			return fmt.Errorf("gogen: malformed wide intrinsic (%d sources, %d targets)",
 				len(x.Sources), len(x.Targets))
 		}
 
-		if x.Op == bytecode.WIDE_DIV || x.Op == bytecode.WIDE_REM {
-			return g.emitWideDivision(c, fn, x)
+		return g.emitWideShift(c, fn, x)
+	case bytecode.WIDE_DIVMOD:
+		if len(x.Sources) != 2 || len(x.Targets) != 2 {
+			return fmt.Errorf("gogen: malformed wide intrinsic (%d sources, %d targets)",
+				len(x.Sources), len(x.Targets))
 		}
 
-		return g.emitWideShift(c, fn, x)
+		return g.emitWideDivision(c, fn, x)
 	default:
 		return fmt.Errorf("gogen: unsupported intrinsic operation (%d)", x.Op)
 	}
@@ -522,7 +525,7 @@ func (g *generator) emitWideShift(c *code, fn *descFunction, x *bytecode.Intrins
 	return inner
 }
 
-// emitWideDivision emits WIDE_DIV / WIDE_REM and the wide (>64-bit) form of
+// emitWideDivision emits WIDE_DIVMOD and the wide (>64-bit) form of
 // DIV_HINT.  Each operand is packed into a stack-backed word array, and values
 // that both fit their least-significant word divide natively — so big.Int is
 // confined to values that are genuinely multiword at runtime, not merely
@@ -554,10 +557,11 @@ func (g *generator) emitWideDivision(c *code, fn *descFunction, x *bytecode.Intr
 	)
 
 	switch x.Op {
-	case bytecode.WIDE_DIV:
-		results = []result{{"q", x.Targets[0], widthMax(nX), "a[0] / b[0]"}}
-	case bytecode.WIDE_REM:
-		results = []result{{"r", x.Targets[0], bigMin(widthMax(nX), divisorMax), "a[0] % b[0]"}}
+	case bytecode.WIDE_DIVMOD:
+		results = []result{
+			{"q", x.Targets[0], widthMax(nX), "a[0] / b[0]"},
+			{"r", x.Targets[1], bigMin(widthMax(nX), divisorMax), "a[0] % b[0]"},
+		}
 	default: // DIV_HINT (see emitDivHint)
 		results = []result{
 			{"q", x.Targets[0], widthMax(nX), "a[0] / b[0]"},
@@ -634,10 +638,8 @@ func (g *generator) emitWideDivision(c *code, fn *descFunction, x *bytecode.Intr
 			c.linef("var %s big.Int", strings.Join(bigs, ", "))
 
 			switch x.Op {
-			case bytecode.WIDE_DIV:
-				c.line("qb.Quo(&x, &y)")
-			case bytecode.WIDE_REM:
-				c.line("rb.Rem(&x, &y)")
+			case bytecode.WIDE_DIVMOD:
+				c.line("qb.QuoRem(&x, &y, &rb)")
 			default:
 				c.line("qb.QuoRem(&x, &y, &rb)")
 				c.line("wb.Sub(&y, &rb)")

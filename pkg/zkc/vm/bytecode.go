@@ -479,23 +479,12 @@ func Intrinsic[W Word[W]](op bytecode.Operation, targets []bytecode.RegisterVect
 	return bytecode.NewIntrinsic(op, targets, sources)
 }
 
-// Div constructs an integer-division instruction computing
-// "target = dividend / divisor" for a register or constant divisor.
-func Div[W Word[W]](target, dividend RegisterId, divisor Operand[W]) Bytecode[W] {
-	return bytecode.NewDivRem(util.Some(target), util.None[RegisterId](), dividend, divisor)
-}
-
-// Rem constructs an integer-remainder instruction computing
-// "target = dividend % divisor" for a register or constant divisor.
-func Rem[W Word[W]](target, dividend RegisterId, divisor Operand[W]) Bytecode[W] {
-	return bytecode.NewDivRem(util.None[RegisterId](), util.Some(target), dividend, divisor)
-}
-
-// DivMod constructs a combined division/remainder instruction computing both
-// "quotient = dividend / divisor" and "remainder = dividend % divisor" (the
-// source-level "/%" operator) for a register or constant divisor.
+// DivMod constructs a division/remainder instruction computing both
+// "quotient = dividend / divisor" and "remainder = dividend % divisor" for a
+// register or constant divisor.  A source-level "/" or "%" directs the
+// unwanted result into a fresh scratch register.
 func DivMod[W Word[W]](quotient, remainder, dividend RegisterId, divisor Operand[W]) Bytecode[W] {
-	return bytecode.NewDivRem(util.Some(quotient), util.Some(remainder), dividend, divisor)
+	return bytecode.NewDivRem(quotient, remainder, dividend, divisor)
 }
 
 // Fail constructs a fail instruction carrying the given formatted message.

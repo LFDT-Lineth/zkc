@@ -54,7 +54,11 @@ func fn_main() {
 	var r4 uint64 // $4
 	var r5 uint64 // $5
 	var r6 uint64 // $6
+	_ = r6
 	var r7 uint64 // $7
+	var r8 uint64 // $8
+	var r9 uint64 // $9
+	_ = r9
 	// [0.0] ldc $2 = 0x0
 	r2 = 0
 	// [0.1] read x = data[$2]
@@ -77,27 +81,29 @@ func fn_main() {
 	}
 	// [0.4] ldc $4 = 0x0
 	r4 = 0
-	// [0.5] $5 = x / y
+	// [0.5] $5, $6 = x /% y
 	if r1 == 0 {
 		fail("division by zero")
 	}
 	r5 = r0 / r1
+	r6 = r0 % r1
 	// [0.6] write result[$4] = $5
 	{
 		start := r4
 		mem_result = memWrite(mem_result, start+0, r5)
 	}
-	// [0.7] ldc $6 = 0x1
-	r6 = 1
-	// [0.8] $7 = x % y
+	// [0.7] ldc $7 = 0x1
+	r7 = 1
+	// [0.8] $9, $8 = x /% y
 	if r1 == 0 {
 		fail("division by zero")
 	}
-	r7 = r0 % r1
-	// [0.9] write result[$6] = $7
+	r9 = r0 / r1
+	r8 = r0 % r1
+	// [0.9] write result[$7] = $8
 	{
-		start := r6
-		mem_result = memWrite(mem_result, start+0, r7)
+		start := r7
+		mem_result = memWrite(mem_result, start+0, r8)
 	}
 	// [0.10] ret
 	return

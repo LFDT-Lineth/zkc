@@ -14,69 +14,42 @@
 package split
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// DivRem splits a DIV or REM instruction into a single WIDE_DIV / WIDE_REM
-// intrinsic operating over the limb vectors of its operands.  Like a shift (see
-// Shift), a division cannot be decomposed into independent per-limb operations
+// DivRem splits a DIVMOD instruction into a single WIDE_DIVMOD intrinsic
+// operating over the limb vectors of its operands.  Like a shift (see Shift),
+// a division cannot be decomposed into independent per-limb operations
 // because carries and borrows cross limb boundaries.  Instead the (possibly
-// multi-limb) dividend, divisor and result are handed to the corresponding wide
-// intrinsic, whose executor reconstructs each value via big.Int arithmetic (see
+// multi-limb) dividend, divisor and results are handed to the wide intrinsic,
+// whose executor reconstructs each value via big.Int arithmetic (see
 // loadIntrinsicOperand / storeIntrinsicResult).  For example, splitting
 //
-// > x = y / z            (all u16)
+// > q, r = x /% y            (all u16)
 //
-// into u8 limbs (x=x1::x0, etc.) yields
+// into u8 limbs (q=q1::q0, etc.) yields
 //
-// > x1;x0 = wide_div(y1;y0, z1;z0)
+// > q1;q0,r1;r0 = wide_divmod(x1;x0, y1;y0)
 //
 // where each operand is the limb vector of the original register (ordered
 // most-significant limb first, matching ApplyLimbsMap).
 func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.DivRem[W]) []Bytecode[W] {
-	//
 	var (
-		op       bytecode.Operation
-		targetId bytecode.RegisterId
-	)
-	//
-	switch {
-	case insn.Quotient.HasValue() && insn.Remainder.HasValue():
-		// Combined divmod only exists between codegen and LowerDivisions in
-		// tracing mode; splitting never sees it (fast-mode codegen emits a
-		// DIV / REM pair instead).
-		panic("divmod must be lowered before splitting")
-	case insn.Quotient.HasValue():
-		op, targetId = bytecode.WIDE_DIV, insn.Quotient.Unwrap()
-	case insn.Remainder.HasValue():
-		op, targetId = bytecode.WIDE_REM, insn.Remainder.Unwrap()
-	default:
-		panic("division without quotient or remainder")
-	}
-	//
-	var (
-		target              = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, targetId)...)
+		quotient            = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Quotient)...)
+		remainder           = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Remainder)...)
 		dividend            = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Dividend)...)
 		divisor, divisorLen = Operand(mapping, insn.Divisor)
 	)
 	// Check whether splitting actually required
-	if target.Len == 1 && dividend.Len == 1 && divisorLen == 1 {
-		var quotient, remainder = util.None[bytecode.RegisterId](), util.None[bytecode.RegisterId]()
-		// Rebuild the (single) target option over the limb-mapped register.
-		if insn.Quotient.HasValue() {
-			quotient = util.Some(target.Base)
-		} else {
-			remainder = util.Some(target.Base)
-		}
+	if quotient.Len == 1 && remainder.Len == 1 && dividend.Len == 1 && divisorLen == 1 {
 		// No, splitting not technically required
-		return []Bytecode[W]{bytecode.NewDivRem(quotient, remainder, dividend.Base, divisor)}
+		return []Bytecode[W]{bytecode.NewDivRem(quotient.Base, remainder.Base, dividend.Base, divisor)}
 	}
 	// Yes, splitting is actually required.
-	return []Bytecode[W]{bytecode.NewIntrinsic(op,
-		[]bytecode.RegisterVector{target},
+	return []Bytecode[W]{bytecode.NewIntrinsic(bytecode.WIDE_DIVMOD,
+		[]bytecode.RegisterVector{quotient, remainder},
 		[]bytecode.Operand[W]{
 			bytecode.NewRegisterVectorOperand[W](dividend),
 			divisor,

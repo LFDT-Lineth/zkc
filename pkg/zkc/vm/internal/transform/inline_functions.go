@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -510,13 +509,10 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 			substituteIds(insn.Stamp, sub))
 	case *bytecode.DivRem[W]:
 		return &bytecode.DivRem[W]{
-			Quotient: util.MapOption(insn.Quotient, func(id bytecode.RegisterId) bytecode.RegisterId {
-				return substituteId(id, sub)
-			}),
-			Remainder: util.MapOption(insn.Remainder, func(id bytecode.RegisterId) bytecode.RegisterId {
-				return substituteId(id, sub)
-			}),
-			Dividend: substituteId(insn.Dividend, sub), Divisor: substituteOperandVector(insn.Divisor, sub)}
+			Quotient:  substituteId(insn.Quotient, sub),
+			Remainder: substituteId(insn.Remainder, sub),
+			Dividend:  substituteId(insn.Dividend, sub),
+			Divisor:   substituteOperandVector(insn.Divisor, sub)}
 	case *bytecode.Intrinsic[W]:
 		return bytecode.NewIntrinsic[W](insn.Op, substituteRegisterVectors(insn.Targets, sub),
 			substituteOperandVectors(insn.Sources, sub))
