@@ -148,19 +148,17 @@ func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Ope
 		rw1 = registers.Allocate("rw1", util.Some(max(
 			registers.Register(r).Bitwidth().Unwrap(),
 			registers.Register(w).Bitwidth().Unwrap())))
-		// TODO: must separate z0 & z1 to avoid write conflict (for now).
-		z0 = registers.Allocate("zero", util.Some[uint](0))
-		z1 = registers.Allocate("zero", util.Some[uint](0))
+		z = registers.ZeroRegister()
 
 		mulQY, subZ1 Bytecode[W]
 	)
 	//
 	if y.IsConstant() {
 		mulQY = bytecode.MulConst(qy, []bytecode.RegisterId{q}, y.AsConstant())
-		subZ1 = bytecode.SubConst(z1, []bytecode.RegisterId{rw1}, y.AsConstant())
+		subZ1 = bytecode.SubConst(z, []bytecode.RegisterId{rw1}, y.AsConstant())
 	} else {
 		mulQY = bytecode.MulConst(qy, []bytecode.RegisterId{q, y.AsRegister()}, one)
-		subZ1 = bytecode.SubConst(z1, []bytecode.RegisterId{y.AsRegister(), rw1}, zero)
+		subZ1 = bytecode.SubConst(z, []bytecode.RegisterId{y.AsRegister(), rw1}, zero)
 	}
 	//
 	return []Bytecode[W]{
@@ -171,7 +169,7 @@ func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Ope
 			[]bytecode.Operand[W]{bytecode.NewRegisterOperand[W](x), y}),
 		mulQY,
 		bytecode.AddConst(qyr, []bytecode.RegisterId{qy, r}, zero),
-		bytecode.SubConst(z0, []bytecode.RegisterId{x, qyr}, zero),
+		bytecode.SubConst(z, []bytecode.RegisterId{x, qyr}, zero),
 		bytecode.AddConst(rw1, []bytecode.RegisterId{r, w}, one),
 		subZ1,
 	}
