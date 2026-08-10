@@ -78,7 +78,7 @@ func lowerDivisionCode[W word.Word[W]](b Bytecode[W], registers split.Allocator[
 		y    = dr.Divisor
 		nX   = registers.Register(x).Bitwidth().Unwrap()
 		nY   = divisorWidth(y, registers)
-		w    = registers.Allocate("", util.Some(nY))
+		w    = registers.Allocate("w", util.Some(nY))
 		q, r bytecode.RegisterId
 	)
 	//
@@ -89,13 +89,13 @@ func lowerDivisionCode[W word.Word[W]](b Bytecode[W], registers split.Allocator[
 	if dr.Quotient.HasValue() {
 		q = dr.Quotient.Unwrap()
 	} else {
-		q = registers.Allocate("", util.Some(nX))
+		q = registers.Allocate("q", util.Some(nX))
 	}
 	//
 	if dr.Remainder.HasValue() {
 		r = dr.Remainder.Unwrap()
 	} else {
-		r = registers.Allocate("", util.Some(nY))
+		r = registers.Allocate("r", util.Some(nY))
 	}
 	//
 	return expandDivRem(q, r, w, x, y, nX, registers)
@@ -145,7 +145,7 @@ func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Ope
 		// failure rather than a wrap.  With a freshly allocated remainder
 		// (lone division) this is the divisor width; with a user remainder
 		// target (remainder / divmod) it is the operand width nX.
-		rw1 = registers.Allocate("", util.Some(max(
+		rw1 = registers.Allocate("rw1", util.Some(max(
 			registers.Register(r).Bitwidth().Unwrap(),
 			registers.Register(w).Bitwidth().Unwrap())))
 		// TODO: must separate z0 & z1 to avoid write conflict (for now).
