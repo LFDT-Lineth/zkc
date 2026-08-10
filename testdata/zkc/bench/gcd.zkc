@@ -19,9 +19,6 @@ fn main() {
 // computed here; the recursive structure (base case a==0 => b; otherwise
 // recurse on (b % a, a)) mirrors the Dafny function exactly.
 fn gcd(a:u32, b:u32) -> (r:u32) {
-    if a == 0 {
-        r = b
-    } else {
-        r = gcd(b % a, a)
-    }
+    // r = 0
+    r = (a == 0) ? b:gcd(b % a, a)
 }
