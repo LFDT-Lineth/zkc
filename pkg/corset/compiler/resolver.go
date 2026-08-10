@@ -36,10 +36,6 @@ type DeclPredicate = array.Predicate[ast.Declaration]
 func ResolveCircuit(srcmap *source.Maps[ast.Node], circuit *ast.Circuit) (*ModuleScope, []SyntaxError) {
 	// Construct top-level scope
 	scope := NewModuleScope(true)
-	// Define intrinsics
-	for _, i := range INTRINSICS {
-		scope.Define(&i)
-	}
 	// Register modules
 	for _, m := range circuit.Modules {
 		scope.Declare(m.Name, extractSelector(nil), true)
@@ -526,8 +522,6 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.Constant:
 		return nil
-	case *ast.Debug:
-		return r.finaliseExpressionInModule(scope, v.Arg)
 	case *ast.Equation:
 		lhs_errs := r.finaliseExpressionInModule(scope, v.Lhs)
 		rhs_errs := r.finaliseExpressionInModule(scope, v.Rhs)
@@ -539,28 +533,16 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		pow_errs := r.finaliseExpressionInModule(constscope, v.Pow)
 		// combine errors
 		return append(arg_errs, pow_errs...)
-	case *ast.For:
-		nestedscope := scope.NestedScope()
-		// Declare local variable
-		nestedscope.DeclareLocal(v.Binding.Name, &v.Binding)
-		// Continue resolution
-		return r.finaliseExpressionInModule(nestedscope, v.Body)
 	case *ast.If:
 		return r.finaliseExpressionsInModule(scope, []ast.Expr{v.Condition, v.TrueBranch, v.FalseBranch})
 	case *ast.Invoke:
 		return r.finaliseInvokeInModule(scope, v)
-	case *ast.Let:
-		return r.finaliseLetInModule(scope, v)
-	case *ast.List:
-		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.Mul:
 		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.Normalise:
 		return r.finaliseExpressionInModule(scope, v.Arg)
 	case *ast.Not:
 		return r.finaliseExpressionInModule(scope, v.Arg)
-	case *ast.Reduce:
-		return r.finaliseReduceInModule(scope, v)
 	case *ast.Shift:
 		constscope := scope.NestedConstScope()
 		arg_errs := r.finaliseExpressionInModule(scope, v.Arg)
@@ -630,40 +612,9 @@ func (r *resolver) finaliseInvokeInModule(scope LocalScope, expr *ast.Invoke) []
 	return errors
 }
 
-func (r *resolver) finaliseLetInModule(scope LocalScope, expr *ast.Let) []SyntaxError {
-	nestedscope := scope.NestedScope()
-	// Declare assigned variable(s)
-	for i, letvar := range expr.Vars {
-		nestedscope.DeclareLocal(letvar.Name, &expr.Vars[i])
-	}
-	// Finalise assigned expressions
-	args_errs := r.finaliseExpressionsInModule(scope, expr.Args)
-	// Finalise body
-	body_errs := r.finaliseExpressionInModule(nestedscope, expr.Body)
-	//
-	return append(args_errs, body_errs...)
-}
-
 // Resolve a specific invocation contained within some expression which, in
 // turn, is contained within some module.  Note, qualified accesses are only
 // permitted in a global context.
-func (r *resolver) finaliseReduceInModule(scope LocalScope, expr *ast.Reduce) []SyntaxError {
-	// Resolve arguments
-	errors := r.finaliseExpressionInModule(scope, expr.Arg)
-	// Lookup the corresponding function definition.
-	if !expr.Name.IsResolved() && !scope.Bind(expr.Name) {
-		errors = append(errors, *r.srcmap.SyntaxError(expr, "unknown function"))
-	} else {
-		// Following must be true if we get here.
-		binding := expr.Name.Binding().(ast.FunctionBinding)
-
-		if scope.IsPure() && !binding.IsPure() {
-			errors = append(errors, *r.srcmap.SyntaxError(expr, "not permitted in pure context"))
-		}
-	}
-	// Done
-	return errors
-}
 
 // Resolve a specific variable access contained within some expression which, in
 // turn, is contained within some module.  Note, qualified accesses are only

@@ -23,9 +23,7 @@
 ;; For Y
 (defconstraint Y_bits () (eq! Y (bits y1 y2 y3 y4)))
 ;; Relating X and Y
-(defconstraint X_Y_bits ()
-  (begin
-   (eq!  0 y1)
-   (eq! x1 y2)
-   (eq! x2 y3)
-   (eq! x3 y4)))
+(defconstraint X_Y_bits_i () (eq!  0 y1))
+(defconstraint X_Y_bits_ii () (eq! x1 y2))
+(defconstraint X_Y_bits_iii () (eq! x2 y3))
+(defconstraint X_Y_bits_iv () (eq! x3 y4))

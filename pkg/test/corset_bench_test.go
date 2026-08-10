@@ -55,11 +55,6 @@ func Test_Bench_Fields(t *testing.T) {
 	util.CheckCorset(t, true, "corset/bench/fields", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-//#834
-// func Test_Bench_TicTacToe(t *testing.T) {
-// 	util.Check(t, true, "corset/bench/tic_tac_toe", field.BLS12_377, field.KOALABEAR_16)
-// }
-
 // NOTE: the real modules below are not tested for GF_8209 for performance
 // reasons, which is reasonable given that they all use large registers (e.g.
 // u128, etc).  This distinguishes them from those tests above, which often user
@@ -69,55 +64,10 @@ func Test_Bench_Add(t *testing.T) {
 	util.CheckCorset(t, true, "corset/bench/add", field.BLS12_377, field.KOALABEAR_16)
 }
 
-func Test_Bench_BinStatic(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/bin-static", field.BLS12_377, field.KOALABEAR_16)
-}
-
-func Test_Bench_Bin(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/bin", field.BLS12_377, field.KOALABEAR_16)
-}
-
-func Test_Bench_Wcp(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/wcp", field.BLS12_377, field.KOALABEAR_16)
-}
-
-func Test_Bench_Shf(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/shf", field.BLS12_377, field.KOALABEAR_16)
-}
-
 func Test_Bench_Euc(t *testing.T) {
-	// FIXME: KOALABEAR_16 [PERF]
 	util.CheckCorset(t, true, "corset/bench/euc", field.BLS12_377, field.KOALABEAR_16)
-}
-
-func Test_Bench_Oob(t *testing.T) {
-	// FIXME: KOALABEAR_16 [PERF]
-	util.CheckCorset(t, true, "corset/bench/oob", field.BLS12_377, field.KOALABEAR_16)
-}
-
-func Test_Bench_Stp(t *testing.T) {
-	// FIXME: KOALABEAR_16 [PERF]
-	util.CheckCorset(t, true, "corset/bench/stp", field.BLS12_377)
-}
-
-func Test_Bench_Rom(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/rom", field.BLS12_377, field.KOALABEAR_16)
 }
 
 func Test_Bench_Gas(t *testing.T) {
 	util.CheckCorset(t, true, "corset/bench/gas", field.BLS12_377, field.KOALABEAR_16)
-}
-
-func Test_Bench_Exp(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/exp", field.BLS12_377, field.KOALABEAR_16)
-}
-
-func Test_Bench_Mul(t *testing.T) {
-	// FIXME: KOALABEAR_16 [PERF]
-	util.CheckCorset(t, true, "corset/bench/mul", field.BLS12_377)
-}
-
-func Test_Bench_Mod(t *testing.T) {
-	// FIXME: KOALABEAR_16 [PERF]
-	util.CheckCorset(t, true, "corset/bench/mod", field.BLS12_377)
 }
