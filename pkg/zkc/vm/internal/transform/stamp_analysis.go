@@ -25,94 +25,70 @@ import (
 
 // This file holds the dataflow analysis half of timestamp threading: a
 // forward analysis (over the dfa framework) computing, for every position of
-// one row, where each effect's stamp symbolically lives.  The rewrite sweep in
-// thread_timestamps.go then consumes its results.  The analysis cannot
-// allocate registers, so bases created by the threading itself (call returns,
-// normalisation and merge temporaries) are identified by the position defining
-// them rather than by a register id; the sweep resolves them in the same
-// forward order, guaranteeing every base is bound before it is referenced.
+// one row, the version of each effect's stamp.  Following static single
+// assignment form, the stamp of one memory at a program point is identified
+// by a version number: the k-th movement (memory access or effectful call)
+// executed on a path advances the version from k-1 to k.  A version names a
+// register — version zero is the row's entry register, the highest version
+// live at an exit is the canonical register, every other version a fresh
+// temporary — so, unlike a position-tagged scheme, the analysis result needs
+// no later resolution step: the rewrite sweep in thread_timestamps.go binds
+// (effect, version) pairs to registers as it walks the row.
 
-// stampBaseKind enumerates the symbolic bases a stamp value can be counted
-// from.
-type stampBaseKind uint8
-
-const (
-	// stampLiteral denotes no base register: the stamp is the literal offset
-	// (the entry state of "main", which counts from one).
-	stampLiteral stampBaseKind = iota
-	// stampInput denotes a stamp-in input register, known before the analysis.
-	stampInput
-	// stampCanonical denotes the effect's canonical stamp register (the
-	// stamp-out output or, for main, a lazily-allocated computed register).
-	stampCanonical
-	// stampCallOut denotes the temporary receiving the effect's updated stamp
-	// from the call at the defining position.
-	stampCallOut
-	// stampNorm denotes the temporary created by branch-point normalisation at
-	// the defining position.
-	stampNorm
-	// stampMerge denotes the merge register allocated at the defining (landing)
-	// position.
-	stampMerge
-	// stampConflict is the join of disagreeing values (top): the incoming
-	// paths carry distinct stamps, which the landing equalises into a merge
-	// register.
-	stampConflict
-)
-
-// stampValue records, symbolically, where the current timestamp of one memory
-// lives at a given program point: its value is base + off.  It is the analysis
-// counterpart of stampState, which the rewrite sweep obtains by resolving the
-// base onto a concrete register.
-type stampValue struct {
-	kind stampBaseKind
-	// reg is the base register (stampInput only).
-	reg bytecode.RegisterId
-	// pc is the position defining the base (stampCallOut / stampNorm /
-	// stampMerge only).
-	pc uint
-	// off is the constant offset from the base.
-	off uint64
+// stampVersion records, symbolically, the current timestamp of one memory at
+// a given program point.
+type stampVersion struct {
+	// v counts the movements (memory accesses and effectful calls) executed
+	// on the longest path from the row's entry to this point; the k-th
+	// movement advances the version from k-1 to k.
+	v uint
+	// lit marks a value which is the literal constant 1 + v rather than the
+	// content of a register: the entry state of "main", which counts from one
+	// and stays literal until the first effectful call.
+	lit bool
+	// canon marks a value already materialised in the effect's canonical
+	// register: the entry state of every row after the first, and the state
+	// after the pre-branch canonicalisation in front of a jump table.
+	canon bool
 }
 
-// bump returns the value advanced by one access.
-func (v stampValue) bump() stampValue {
-	v.off++
+// bump returns the value advanced by one movement.  Literality is preserved
+// (a constant plus one is a constant); canonicity is not (the advanced value
+// lives in the next version's register).
+func (v stampVersion) bump() stampVersion {
+	return stampVersion{v: v.v + 1, lit: v.lit}
+}
+
+// join combines the values carried by two paths.  Agreeing values pass
+// through; otherwise the merged version is the largest incoming one and the
+// rewrite sweep equalises the deficient paths (see mergeAt).  Literality
+// never survives a disagreement (the constants differ); canonicity survives
+// only when every path is canonical.
+func (v stampVersion) join(o stampVersion) stampVersion {
+	if v == o {
+		return v
+	}
 	//
-	return v
-}
-
-// isPlainRegister reports whether the value is held directly in some register:
-// a known base at offset zero.
-func (v stampValue) isPlainRegister() bool {
-	return v.kind != stampLiteral && v.kind != stampConflict && v.off == 0
+	return stampVersion{v: max(v.v, o.v), canon: v.canon && o.canon}
 }
 
 // String returns a debug rendering of this value.
-func (v stampValue) String() string {
-	switch v.kind {
-	case stampLiteral:
-		return fmt.Sprintf("%d", v.off)
-	case stampInput:
-		return fmt.Sprintf("r%d+%d", v.reg, v.off)
-	case stampCanonical:
-		return fmt.Sprintf("canon+%d", v.off)
-	case stampCallOut:
-		return fmt.Sprintf("call@%d+%d", v.pc, v.off)
-	case stampNorm:
-		return fmt.Sprintf("norm@%d+%d", v.pc, v.off)
-	case stampMerge:
-		return fmt.Sprintf("merge@%d+%d", v.pc, v.off)
+func (v stampVersion) String() string {
+	switch {
+	case v.canon:
+		return fmt.Sprintf("canon@%d", v.v)
+	case v.lit:
+		return fmt.Sprintf("lit(%d)", v.v+1)
 	default:
-		return "⊤"
+		return fmt.Sprintf("v%d", v.v)
 	}
 }
 
-// stamps is the dataflow state of the timestamp analysis: one symbolic value
-// per threaded effect, in effect order.  The zero value (nil vals) is bottom,
+// stamps is the dataflow state of the timestamp analysis: one version per
+// threaded effect, in effect order.  The zero value (nil vals) is bottom,
 // i.e. an unreachable position.
 type stamps struct {
-	vals []stampValue
+	vals []stampVersion
 }
 
 // isBottom reports whether this state denotes an unreachable position.
@@ -121,24 +97,19 @@ func (p stamps) isBottom() bool {
 }
 
 // with returns a copy of this state with the given effect's value replaced.
-func (p stamps) with(x int, v stampValue) stamps {
+func (p stamps) with(x int, v stampVersion) stamps {
 	vals := slices.Clone(p.vals)
 	vals[x] = v
 	//
 	return stamps{vals}
 }
 
-// Join implementation for the dfa.State interface: values agreeing on both
-// paths pass through, disagreeing values become stampConflict.
+// Join implementation for the dfa.State interface.
 func (p stamps) Join(o stamps) stamps {
-	vals := make([]stampValue, len(p.vals))
+	vals := make([]stampVersion, len(p.vals))
 	//
 	for x := range vals {
-		if p.vals[x] == o.vals[x] {
-			vals[x] = p.vals[x]
-		} else {
-			vals[x] = stampValue{kind: stampConflict}
-		}
+		vals[x] = p.vals[x].join(o.vals[x])
 	}
 	//
 	return stamps{vals}
@@ -239,7 +210,7 @@ func (t *threader[W]) stampArcs(insns []Bytecode[W], lands []bool, i int, entry 
 		return nil
 	}
 	// Equalise the incoming paths at a merge point.
-	state, _ := t.normaliseEntry(i, entry, lands[i], t.isExitAt(insns, i))
+	state := t.normaliseEntry(entry, lands[i], t.isExitAt(insns, i))
 	//
 	fall := func(st stamps) []stampArc {
 		return []stampArc{{source: uint(i), target: uint(i + 1), kind: fallArc, state: st}}
@@ -250,14 +221,14 @@ func (t *threader[W]) stampArcs(insns []Bytecode[W], lands []bool, i int, entry 
 		// Control-flow terminators: no fall-through within the row.
 		return nil
 	case *bytecode.ReadWrite[W]:
-		// The k-th access executed carries stamp_in + k.
+		// The k-th movement executed advances the stamp to version k.
 		if x := t.effectIndex(insn.Id); x >= 0 {
 			state = state.with(x, state.vals[x].bump())
 		}
 		//
 		return fall(state)
 	case *bytecode.Call[W]:
-		return fall(t.callArcState(uint(i), insn, state))
+		return fall(t.callArcState(insn, state))
 	case *bytecode.Skip[W]:
 		return []stampArc{{source: uint(i), target: uint(i) + 1 + uint(insn.Skip), kind: uncondArc, state: state}}
 	case *bytecode.SkipIf[W]:
@@ -293,76 +264,53 @@ func (t *threader[W]) stampArcs(insns []Bytecode[W], lands []bool, i int, entry 
 
 // normaliseEntry applies the merge-point discipline to the joined entry state
 // of position i.  In SSA terms, equalising a merge point plays the role of
-// inserting a phi node: each incoming path materialises the shared merge
-// register with its own value (see mergeAt).  An effect needs equalising when
-// its incoming states disagree
-// (stampConflict), when the shared state is not a plain register (a stamp
-// consumer at this position inserts on the fall path only, which skip edges
-// land past), or -- at an exit -- when it is not already canonical (the exit's
-// own insertions are likewise fall-only).  Flagged effects are left in the
-// merge register allocated at this position, or the canonical register at an
-// exit.  Positions without incoming skip edges need no equalising.  This is
-// the single decision point shared by the analysis and the rewrite sweep, so
-// the two cannot drift.
-func (t *threader[W]) normaliseEntry(i int, entry stamps, hasEdges, isExit bool) (stamps, []bool) {
-	need := make([]bool, len(entry.vals))
-	//
-	if !hasEdges {
-		return entry, need
+// inserting a phi node: each incoming path materialises the shared register
+// with its own value (see mergeAt).  At a position with incoming skip edges
+// the joined state stands as-is — the merged version's register is made good
+// on every deficient path by mergeAt — except at an exit, where every path
+// instead leaves the stamp in the canonical register, so the state entering
+// the exit is canonical.  This is the single decision point shared by the
+// analysis and the rewrite sweep, so the two cannot drift.
+func (t *threader[W]) normaliseEntry(entry stamps, hasEdges, isExit bool) stamps {
+	if !hasEdges || !isExit {
+		return entry
 	}
 	//
 	vals := slices.Clone(entry.vals)
 	//
 	for x, v := range vals {
-		switch {
-		case v.kind == stampConflict:
-			need[x] = true
-		case !v.isPlainRegister():
-			need[x] = true
-		case isExit && v != (stampValue{kind: stampCanonical}):
-			need[x] = true
-		default:
-			continue
-		}
-		//
-		if isExit {
-			vals[x] = stampValue{kind: stampCanonical}
-		} else {
-			vals[x] = stampValue{kind: stampMerge, pc: uint(i)}
-		}
+		vals[x] = stampVersion{v: v.v, canon: true}
 	}
 	//
-	return stamps{vals}, need
+	return stamps{vals}
 }
 
 // branchState applies the branch-point treatment to the state carried by every
 // arc leaving a conditional (or multiway) skip.  When the remainder of the row
 // is a pure jump table (the if-goto / dispatch shape), the canonical stamps
-// cover every exit; otherwise the state is normalised to a plain register so
-// all edges carry the same symbolic value, and the guarded region's accesses
-// are reconciled at its merge point by normaliseEntry.
+// are materialised once, before the branch, covering every exit.  Otherwise
+// the state passes through untouched: a version is a register on every path,
+// so — unlike a base-plus-offset state — it needs no normalisation, and the
+// guarded region's accesses are reconciled at its merge point by
+// normaliseEntry / mergeAt.
 func (t *threader[W]) branchState(insns []Bytecode[W], i int, state stamps) stamps {
+	if !jumpTableFollows(insns, i) {
+		return state
+	}
+	//
 	vals := slices.Clone(state.vals)
 	//
-	if jumpTableFollows(insns, i) {
-		for x := range vals {
-			vals[x] = stampValue{kind: stampCanonical}
-		}
-	} else {
-		for x, v := range vals {
-			if !v.isPlainRegister() {
-				vals[x] = stampValue{kind: stampNorm, pc: uint(i)}
-			}
-		}
+	for x, v := range vals {
+		vals[x] = stampVersion{v: v.v, canon: true}
 	}
 	//
 	return stamps{vals}
 }
 
 // callArcState applies a call's effect to the state: each read-write memory
-// the callee declares leaves its updated stamp in the temporary received from
-// the call.
-func (t *threader[W]) callArcState(pc uint, call *bytecode.Call[W], state stamps) stamps {
+// the callee declares advances to its next version, whose register receives
+// the updated stamp directly from the call (see threadCall).
+func (t *threader[W]) callArcState(call *bytecode.Call[W], state stamps) stamps {
 	callee, ok := t.mods[call.Target].(*descriptor.Function[W])
 	if !ok || callee.IsNative() {
 		return state
@@ -382,8 +330,8 @@ func (t *threader[W]) callArcState(pc uint, call *bytecode.Call[W], state stamps
 			// the caller's.
 			panic(fmt.Sprintf("caller lacks a stamp for memory %d", e))
 		}
-		//
-		vals[x] = stampValue{kind: stampCallOut, pc: pc}
+		// The callee's stamp is dynamic, so literality is lost.
+		vals[x] = stampVersion{v: vals[x].v + 1}
 	}
 	//
 	return stamps{vals}
