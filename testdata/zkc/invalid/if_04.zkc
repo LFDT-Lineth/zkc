@@ -1,4 +1,4 @@
-//error:4:11-12:expected type u8
+//error:4:11-12:expected type u8, found u16
 fn f(x:u8, y:u16) -> (r:u8) {
   r = 0
   if x == y {

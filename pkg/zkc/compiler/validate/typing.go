@@ -254,10 +254,6 @@ func (p *TypeChecker) typeAssignment(s *stmt.Assign[symbol.Resolved], env Variab
 		//
 		return errors
 	}
-	// A divmod produces exactly the (quotient, remainder) pair.
-	if _, ok := s.Source.(*expr.DivMod[symbol.Resolved]); ok && len(s.Targets) != 2 {
-		return p.srcmaps.SyntaxErrors(s.Source, "divmod expects two targets (quotient, remainder)")
-	}
 	// Type check left-hand side
 	for i, lval := range s.Targets {
 		var lhsErrs []source.SyntaxError
@@ -1128,9 +1124,10 @@ func (p *TypeChecker) checkArrayBounds(arg expr.Resolved, fixedArray *data.Resol
 // it must be the case that both T1 and T2 are "well-formed".  The assumption is
 // that, if either type is not well-formed, some error was already reported
 // upstream for this.
-func (p *TypeChecker) checkEquiTypes(lhs, rhs Type, node any) []source.SyntaxError {
-	if p.env.WellFormed(lhs) && p.env.WellFormed(rhs) && !data.EquiTypes(lhs, rhs, p.env) {
-		return p.srcmaps.SyntaxErrors(node, fmt.Sprintf("expected type %s", rhs.String(p.env)))
+func (p *TypeChecker) checkEquiTypes(actual, expected Type, node any) []source.SyntaxError {
+	if p.env.WellFormed(actual) && p.env.WellFormed(expected) && !data.EquiTypes(actual, expected, p.env) {
+		return p.srcmaps.SyntaxErrors(node, fmt.Sprintf("expected type %s, found %s",
+			expected.String(p.env), actual.String(p.env)))
 	}
 	//
 	return nil

@@ -1,4 +1,4 @@
-//error:3:13-19:divmod expects two targets (quotient, remainder)
+//error:3:13-19:expected type (u8,u8,u8), found (u8,u8)
 fn f(a:u8, b:u8) -> (q:u8, r:u8, s:u8) {
   q, r, s = a /% b
 }

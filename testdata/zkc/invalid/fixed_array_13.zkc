@@ -1,4 +1,4 @@
-//error:7:12-16:expected type (u8,[u8;4])
+//error:7:12-16:expected type (u8,[u8;4]), found (u8,[u8;3])
 //error:17:6-7:index 3 out of bounds for array of size 3
 fn f12345(xs:[u8;4]) -> (r:u8) {
     var ys:[u8;4] = xs

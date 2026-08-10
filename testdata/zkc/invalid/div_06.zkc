@@ -1,4 +1,4 @@
-//error:3:11-14:expected type u8
+//error:3:11-14:expected type u8, found u9+
 fn f(a:u8) -> (r:u8) {
   r = a / 400
 }

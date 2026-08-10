@@ -1,4 +1,4 @@
-//error:7:12-13:expected type u16
+//error:7:12-13:expected type u16, found u32
 static mask(address:u16) -> (word:u16) {
    0x3456,0xf2f2,0x2299
 }
