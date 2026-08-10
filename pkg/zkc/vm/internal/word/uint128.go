@@ -97,6 +97,11 @@ func (p Uint128) BitLen() uint {
 	return uint(bits.Len64(p.hi)) + 64
 }
 
+// Config implementation for Word interface.
+func (p Uint128) Config() Config {
+	return WORD_UINT128
+}
+
 // Cmp implementation for Word interface.
 func (p Uint128) Cmp(o Uint128) int {
 	if c := cmp.Compare(p.hi, o.hi); c != 0 {

@@ -82,6 +82,8 @@ type Program[W word.Word[W]] struct {
 	modules []Module[W]
 	// field configuration for the target prime field
 	field field.Config
+	// maximum permitted height of static reference tables.
+	maxStaticHeight uint
 	// breakpoints records the set of instruction locations at which a breakpoint
 	// has been registered (see BreakPoint).  The compiler flags each such
 	// instruction with the BREAKPOINT modifier bit.
@@ -89,8 +91,9 @@ type Program[W word.Word[W]] struct {
 }
 
 // NewProgram creates a new program descriptor.
-func NewProgram[W word.Word[W]](field field.Config, modules ...Module[W]) Program[W] {
-	return Program[W]{modules, field, nil}
+func NewProgram[W word.Word[W]](field field.Config, maxStaticHeight uint, modules ...Module[W],
+) Program[W] {
+	return Program[W]{modules, field, maxStaticHeight, nil}
 }
 
 // BreakPoint returns a copy of this program in which a breakpoint has been
@@ -109,7 +112,7 @@ func (p Program[W]) BreakPoint(fid uint16, pc ProgramPoint) Program[W] {
 	//
 	breakpoints[BreakPointLabel{fid, pc}] = true
 	//
-	return Program[W]{p.modules, p.field, breakpoints}
+	return Program[W]{p.modules, p.field, p.maxStaticHeight, breakpoints}
 }
 
 // BreakPoints returns the set of instruction locations at which a breakpoint
@@ -142,15 +145,7 @@ func (p Program[W]) Field() field.Config {
 // MaxStaticHeight reports the maximum height (i.e. number of rows) of any static
 // table used within this program.
 func (p Program[W]) MaxStaticHeight() uint {
-	var depth = uint(0)
-	//
-	for _, m := range p.modules {
-		if ith, ok := m.(*Memory[W]); ok && ith.IsStatic() {
-			depth = max(depth, ith.StaticHeight())
-		}
-	}
-	//
-	return depth
+	return p.maxStaticHeight
 }
 
 // HasModule returns the identifier for the module with the given name, or returns
@@ -225,6 +220,11 @@ func (p *Program[W]) GobEncode() ([]byte, error) {
 	if err := gobEncoder.Encode(p.field); err != nil {
 		return nil, err
 	}
+	// Encode maximum static table height.  This must be carried in the file,
+	// since the range / bitwise tables generated downstream depend on it.
+	if err := gobEncoder.Encode(p.maxStaticHeight); err != nil {
+		return nil, err
+	}
 	// Each module, prefixed with a tag identifying its concrete type.
 	for _, m := range p.modules {
 		switch m := m.(type) {
@@ -265,6 +265,10 @@ func (p *Program[W]) GobDecode(data []byte) error {
 	}
 	// Decode field config
 	if err := gobDecoder.Decode(&p.field); err != nil {
+		return err
+	}
+	// Decode maximum static table height.
+	if err := gobDecoder.Decode(&p.maxStaticHeight); err != nil {
 		return err
 	}
 	//

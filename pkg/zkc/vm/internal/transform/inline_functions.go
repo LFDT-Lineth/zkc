@@ -53,10 +53,10 @@ import (
 // vector containing a call at the call site.  It panics on: an unknown or
 // duplicate name; a native function; the entry function "main"; or (mutual)
 // recursion amongst the named functions.
-func InlineFunctions[W word.Word[W]](program descriptor.Program[W], names []string) descriptor.Program[W] {
+func InlineFunctions[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		modules = slices.Clone(program.Modules())
-		targets = resolveInlineTargets(modules, names)
+		targets = resolveInlineTargets(modules)
 	)
 	// Inline named functions in callee-first order.  At each step, pick a
 	// target whose body no longer calls any unprocessed target; hence, by the
@@ -78,34 +78,21 @@ func InlineFunctions[W word.Word[W]](program descriptor.Program[W], names []stri
 		remaining = slices.Delete(remaining, index, index+1)
 	}
 	// Remove now-dead targets, remapping module identifiers.
-	return descriptor.NewProgram(program.Field(), removeModules(modules, targets)...)
+	return descriptor.NewProgram(program.Field(),
+		program.MaxStaticHeight(), removeModules(modules, targets)...)
 }
 
 // resolveInlineTargets maps each name to its module identifier, sanity checking
 // that every name identifies a distinct function which can actually be inlined
 // (and removed).
-func resolveInlineTargets[W word.Word[W]](modules []descriptor.Module[W], names []string) []uint {
-	var targets = make([]uint, len(names))
-	//
-	for i, name := range names {
-		index := slices.IndexFunc(modules, func(m descriptor.Module[W]) bool { return m.Name() == name })
+func resolveInlineTargets[W word.Word[W]](modules []descriptor.Module[W]) []uint {
+	var targets []uint
+	// Find all inlineable targets
+	for i, mod := range modules {
 		//
-		switch {
-		case index < 0:
-			panic(fmt.Sprintf("cannot inline unknown function \"%s\"", name))
-		case name == "main":
-			panic("cannot inline entry function \"main\"")
-		case slices.Contains(targets[:i], uint(index)):
-			panic(fmt.Sprintf("duplicate inlined function \"%s\"", name))
+		if fun, ok := mod.(*descriptor.Function[W]); ok && fun.Kind().CanInline() {
+			targets = append(targets, uint(i))
 		}
-		//
-		if fn, ok := modules[index].(*descriptor.Function[W]); !ok {
-			panic(fmt.Sprintf("cannot inline non-function \"%s\"", name))
-		} else if fn.IsNative() {
-			panic(fmt.Sprintf("cannot inline native function \"%s\"", name))
-		}
-		//
-		targets[i] = uint(index)
 	}
 	//
 	return targets
@@ -220,21 +207,26 @@ func inlineCallSite[W word.Word[W]](code []BytecodeVector[W], pc, k uint, call *
 	// with the call's argument / return registers where possible (and
 	// allocating fresh shadows otherwise).
 	shadows := buildShadowMap(call, callee, alloc)
-	// Construct entry vector (argument copies)
-	vPre := buildEntryVector[W](codes[:k], shadows.entryCopies)
+	// Jumps amongst the codes preceding the call are remapped up front, rather
+	// than at the splice below, since the fall-through jump which
+	// buildEntryVector appends targets the inlined body and must not itself be
+	// remapped.
+	preCodes := remapJumps(bytecode.NewVector(codes[:k]...), pc, delta)
+	// Construct entry vector (argument copies), falling through into the body.
+	vPre := buildEntryVector[W](preCodes.Bytecodes, shadows.entryCopies, pc+1)
 	// Construct callee body
 	body := buildInlinedBody[W](callee, shadows.registers, pc+1, exitPC)
 	// Construct exit vector (output copies)
 	vPost := buildExitVector[W](codes[k+1:], shadows.exitCopies)
 	// Splice, remapping all jumps within original caller vectors (including
-	// v_pre / v_post, whose codes originate from vector pc).
+	// v_post, whose codes originate from vector pc).
 	ncode := make([]BytecodeVector[W], 0, uint(len(code))+delta)
 	//
 	for _, v := range code[:pc] {
 		ncode = append(ncode, remapJumps(v, pc, delta))
 	}
 	//
-	ncode = append(ncode, remapJumps(vPre, pc, delta))
+	ncode = append(ncode, vPre)
 	ncode = append(ncode, body...)
 	ncode = append(ncode, remapJumps(vPost, pc, delta))
 	//
@@ -413,19 +405,31 @@ func sameShape[W word.Word[W]](a, b descriptor.Register[W]) bool {
 
 // buildEntryVector constructs the vector replacing the front portion of the
 // vector enclosing the call site.  This retains all codes preceding the call,
-// followed by copies of the argument registers into the shadowed callee inputs.
+// followed by copies of the argument registers into the shadowed callee inputs,
+// and finally an explicit jump into the callee body (which begins at bodyPC).
 // Such copies enforce the same dynamic width checks as entering the callee's
 // stack frame did.
-func buildEntryVector[W word.Word[W]](codes []Bytecode[W], copies []registerCopy) BytecodeVector[W] {
+//
+// Making the fall-through into the body explicit keeps this vector
+// self-contained, as validation requires (see bytecode.Vector.Validate) and as
+// Vectorize assumes.  It also guarantees the vector is non-empty --- as it must
+// be in order to execute --- which matters when the call was the sole code of
+// its vector and no argument copies were needed.
+func buildEntryVector[W word.Word[W]](codes []Bytecode[W], copies []registerCopy,
+	bodyPC uint) BytecodeVector[W] {
+	//
 	var ncodes = slices.Clone(codes)
 	//
 	for _, c := range copies {
 		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source))
 	}
-	// Vectors must be non-empty in order to execute.
-	if len(ncodes) == 0 {
-		ncodes = append(ncodes, bytecode.NewSkip[W](0))
-	}
+	// Fall through into the callee body, which immediately follows.  Observe
+	// that appending here cannot disturb any skip within codes, since skip
+	// targets are relative to their own position.  Indeed, a skip targeting the
+	// call itself (which checkCallSite permits) lands on the first argument copy
+	// or, when there are none, on this jump --- either way, at the callee's
+	// entry.
+	ncodes = append(ncodes, bytecode.Jump[W](bytecode.Address(bodyPC)))
 	//
 	return bytecode.NewVector(ncodes...)
 }
