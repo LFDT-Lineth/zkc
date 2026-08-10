@@ -119,18 +119,11 @@ func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Ope
 		one  = word.Const64[W](1)
 		qy   = registers.Allocate("qy", util.Some(nX))
 		qyr  = registers.Allocate("qy_plus_r", util.Some(nX))
-		// rw1 holds r + w + 1, which the zero-assert below forces to equal the
-		// divisor y — together with w's range constraint this establishes
-		// r < y.  It is sized to the widest addition operand: the sum then
-		// statically overshoots by at most one transient carry bit, which the
-		// splitter checks to zero, so any dishonest overflow is a constraint
-		// failure rather than a wrap.  With a freshly allocated remainder
-		// (lone division) this is the divisor width; with a user remainder
-		// target (remainder / divmod) it is the operand width nX.
-		rw1 = registers.Allocate("rw1", util.Some(max(
-			registers.Register(r).Bitwidth().Unwrap(),
-			registers.Register(w).Bitwidth().Unwrap())))
-		z = registers.ZeroRegister()
+		// TODO: rw1 should be of nY width, but because of
+		// https://github.com/LFDT-Lineth/zkc/issues/2117
+		// we tmp put nX here as a workaround.  Once that issue is fixed, we can use nY here.
+		rw1 = registers.Allocate("rw1", util.Some(nX))
+		z   = registers.ZeroRegister()
 
 		mulQY, subZ1 Bytecode[W]
 	)
