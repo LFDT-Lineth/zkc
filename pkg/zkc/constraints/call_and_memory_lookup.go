@@ -138,7 +138,7 @@ outer:
 		}
 		//
 		var (
-			condition = rewriteOneHotConditions(branchTable.StateOf(uint(cc)).Condition(), oneHot)
+			condition = rewriteOneHotConditions(reachCondition(branchTable.StateOf(uint(cc))), oneHot)
 			entry     = lookupEntry[W]{uint(cc), code}
 		)
 		// Append to an existing group with the same condition (if any).
