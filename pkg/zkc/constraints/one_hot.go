@@ -63,24 +63,8 @@ func collectOneHotGroups[W vm.Word[W]](codes []vm.Bytecode[W]) []oneHotGroup {
 //     replaced by (default != 0), turning the degree-n default-body guard into
 //     a single degree-1 atom;
 //
-//   - a set of conjuncts which differ only in a (b != 0) atom — sharing the
-//     same remaining atoms — and whose bits cover every bit of a group is
-//     replaced by the single conjunct (default == 0) ∧ remainder.  With an
-//     empty remainder this is the shape the complement takes after negation
-//     (e.g. within constancy conditions); with a non-empty remainder it is
-//     the shape a code's path condition takes after a dispatch whose edges
-//     rejoin while its default edge dies (e.g. a failing default): the
-//     disjunction over every surviving case edge, each carrying the same
-//     post-join atoms.
-//
-// Both substitutions preserve the condition's meaning on any trace satisfying
-// the enclosing vector's constraints (default = 1 - sum of bits, everything a
-// bit), but NOT on arbitrary traces: they must only be applied to conditions
-// of bytecodes within the vector declaring the group.  The rewrite happens
-// here — at the constraint-translation boundary — rather than in the DFA,
-// because the complement form is what lets path conditions cancel where the
-// dispatch's edges rejoin; substituting the default atom there instead would
-// burden every bytecode after the join with an irreducible disjunction.
+//   - a set of single-atom conjuncts ⋁ᵢ (cond ^ bi != 0) covering every bit of a group is
+//     replaced by the single conjunct (cond ^ default == 0).
 func rewriteOneHotConditions(cond dfa.BranchCondition, groups []oneHotGroup) dfa.BranchCondition {
 	// Nothing to rewrite in a trivial condition (and the rules below never
 	// produce one from a non-trivial condition).
@@ -151,13 +135,9 @@ func rewriteConjunct(conjunct dfa.BranchConjunction, g oneHotGroup) (dfa.BranchC
 	return conditionOfAtoms(kept), true
 }
 
-// rewriteComplementDisjuncts applies the second rewrite rule: conjuncts which
-// differ only in their (bit != 0) atom — sharing the same remaining atoms —
-// and whose bits together cover the whole group are replaced by the single
-// conjunct (default == 0) ∧ remainder.  Bare single-atom conjuncts are the
-// empty-remainder case.  Conjuncts testing several bits of the group at once
-// do not participate (under the one-hot invariant they are unsatisfiable, but
-// establishing that is not this rule's business).
+// rewriteComplementDisjuncts applies the second rewrite rule:
+// turning ⋁ᵢ (cond ^ bi != 0)
+// into (cond ^ default == 0) when the disjuncts cover every bit of a group.
 func rewriteComplementDisjuncts(cond dfa.BranchCondition, g oneHotGroup) dfa.BranchCondition {
 	var (
 		conjuncts = cond.Conjuncts()
