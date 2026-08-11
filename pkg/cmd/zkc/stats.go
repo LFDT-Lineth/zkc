@@ -55,8 +55,9 @@ type moduleStats struct {
 	degrees map[uint]uint
 	// lookups is the number of lookup constraints.
 	lookups uint
-	// complexity is a cost measure: the number of constraints weighted by the
-	// square of their degree (Σ degree²).
+	// complexity is a cost measure: each constraint weighted by the square of
+	// its degree times the number of distinct columns it reads
+	// (Σ nCols · degree²).
 	complexity uint
 }
 
@@ -345,7 +346,7 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 			case air.VanishingConstraint[F]:
 				degree := c.Complexity()
 				stats.degrees[degree]++
-				stats.complexity += degree * degree
+				stats.complexity += numColumns(c) * degree * degree
 			case air.LookupConstraint[F]:
 				stats.lookups++
 			}
@@ -353,6 +354,15 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 	}
 	//
 	return stats
+}
+
+// numColumns returns the number of distinct columns read by a vanishing
+// constraint, where a shifted access counts as a column of its own:
+// - A     · (1 - A) = 0 → 1 cols
+// - A[-1] · (1 - A) = 0 → 2 cols
+// - A     · (1 - B) = 0 → 2 cols
+func numColumns[F field.Element[F]](c air.VanishingConstraint[F]) uint {
+	return uint(len(*c.Unwrap().Constraint.RequiredCells(0, 0)))
 }
 
 // statsColumn describes a single column of the statistics table, including its
@@ -434,7 +444,7 @@ func printAirModuleStats(stats []moduleStats) {
 			//
 			return ""
 		}))
-	cols = append(cols, dataColumn(stats, "", "complexity", "(= sum d^2)", false,
+	cols = append(cols, dataColumn(stats, "", "complexity", "(= sum n.d^2)", false,
 		func(m moduleStats) string {
 			if m.isRegular() {
 				return count(m.complexity)
