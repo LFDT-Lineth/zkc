@@ -1,4 +1,4 @@
-//error:5:13-19:expected type (u16,u16)
+//error:5:13-19:expected type (u16,u16), found (u16,u8)
 output out(addr:u16) -> (lhs:u16, rhs:u16)
 
 fn f(x:u16, y:u8) {

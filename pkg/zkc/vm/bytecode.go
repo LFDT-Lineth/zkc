@@ -472,22 +472,19 @@ func Debug[W Word[W]](chunks []FormattedChunk, sources []RegisterId) Bytecode[W]
 }
 
 // Intrinsic constructs a hint instruction performing the given operation op (e.g.
-// DIV_HINT) which reads the given source (argument) register vectors and writes
+// DIV_HINT) which reads the given source (argument) operands and writes
 // the given target (return) register vectors.
-func Intrinsic[W Word[W]](op bytecode.Operation, targets, sources []bytecode.RegisterVector) Bytecode[W] {
-	return bytecode.NewIntrinsic[W](op, targets, sources)
+func Intrinsic[W Word[W]](op bytecode.Operation, targets []bytecode.RegisterVector,
+	sources []bytecode.Operand[W]) Bytecode[W] {
+	return bytecode.NewIntrinsic(op, targets, sources)
 }
 
-// Div constructs an integer-division instruction computing
-// "target = dividend / divisor".
-func Div[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
-	return bytecode.NewDivRem[W](encoding.DIV, target, dividend, divisor)
-}
-
-// Rem constructs an integer-remainder instruction computing
-// "target = dividend % divisor".
-func Rem[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
-	return bytecode.NewDivRem[W](encoding.REM, target, dividend, divisor)
+// DivMod constructs a division/remainder instruction computing both
+// "quotient = dividend / divisor" and "remainder = dividend % divisor" for a
+// register or constant divisor.  A source-level "/" or "%" directs the
+// unwanted result into a fresh scratch register.
+func DivMod[W Word[W]](quotient, remainder, dividend RegisterId, divisor Operand[W]) Bytecode[W] {
+	return bytecode.NewDivRem(quotient, remainder, dividend, divisor)
 }
 
 // Fail constructs a fail instruction carrying the given formatted message.

@@ -112,16 +112,16 @@ func (p Operand[W]) String(env Environment[W]) string {
 func constantVectorToString[W word.Word[W]](constant []W) string {
 	var (
 		n     = len(constant)
-		first = constant[0].Text(16)
+		first = "0x" + constant[0].Text(16)
 	)
 	switch n {
 	case 1:
 		return first
 	case 2:
-		var second = constant[1].Text(16)
+		var second = "0x" + constant[1].Text(16)
 		return fmt.Sprintf("%s;%s", first, second)
 	default:
-		var last = constant[n-1].Text(16)
+		var last = "0x" + constant[n-1].Text(16)
 		return fmt.Sprintf("%s;,,;%s", first, last)
 	}
 }

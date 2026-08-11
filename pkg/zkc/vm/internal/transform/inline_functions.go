@@ -508,11 +508,14 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 		return bytecode.NewMemRead[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub),
 			substituteIds(insn.Stamp, sub))
 	case *bytecode.DivRem[W]:
-		return bytecode.NewDivRem[W](insn.Opcode, substituteId(insn.Target, sub), substituteId(insn.Dividend, sub),
-			substituteId(insn.Divisor, sub))
+		return &bytecode.DivRem[W]{
+			Quotient:  substituteId(insn.Quotient, sub),
+			Remainder: substituteId(insn.Remainder, sub),
+			Dividend:  substituteId(insn.Dividend, sub),
+			Divisor:   substituteOperandVector(insn.Divisor, sub)}
 	case *bytecode.Intrinsic[W]:
 		return bytecode.NewIntrinsic[W](insn.Op, substituteRegisterVectors(insn.Targets, sub),
-			substituteRegisterVectors(insn.Sources, sub))
+			substituteOperandVectors(insn.Sources, sub))
 	case *bytecode.CheckCast[W]:
 		return bytecode.NewCheckCast[W](substituteId(insn.Target, sub), insn.Bitwidth)
 	case *bytecode.Skip[W]:
@@ -566,6 +569,17 @@ func substituteOperandVector[W word.Word[W]](v bytecode.Operand[W], sub []byteco
 	rvec := substituteRegisterVector(v.AsRegisterVector(), sub)
 	//
 	return bytecode.NewRegisterVectorOperand[W](rvec)
+}
+
+func substituteOperandVectors[W word.Word[W]](vs []bytecode.Operand[W], sub []bytecode.RegisterId,
+) []bytecode.Operand[W] {
+	var nvs = make([]bytecode.Operand[W], len(vs))
+	//
+	for i, v := range vs {
+		nvs[i] = substituteOperandVector(v, sub)
+	}
+	//
+	return nvs
 }
 
 // substituteRegisterVector reconstructs a register vector with each constituent register

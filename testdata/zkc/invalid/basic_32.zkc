@@ -1,4 +1,4 @@
-//error:8:19-26:expected type (u16,u16,u16)
+//error:8:19-26:expected type (u16,u16,u16), found (u16,u16)
 pub input data(address:u16) -> (lhs:u16, rhs:u16)
 
 // prove that two numbers add up to a third.

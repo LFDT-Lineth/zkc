@@ -16,51 +16,61 @@ package split
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// DivRem splits a DIV or REM instruction into a single WIDE_DIV / WIDE_REM
-// intrinsic operating over the limb vectors of its operands.  Like a shift (see
-// Shift), a division cannot be decomposed into independent per-limb operations
+// DivRem splits a DIVMOD instruction into a single WIDE_DIVMOD intrinsic
+// operating over the limb vectors of its operands.  Like a shift (see Shift),
+// a division cannot be decomposed into independent per-limb operations
 // because carries and borrows cross limb boundaries.  Instead the (possibly
-// multi-limb) dividend, divisor and result are handed to the corresponding wide
-// intrinsic, whose executor reconstructs each value via big.Int arithmetic (see
+// multi-limb) dividend, divisor and results are handed to the wide intrinsic,
+// whose executor reconstructs each value via big.Int arithmetic (see
 // loadIntrinsicOperand / storeIntrinsicResult).  For example, splitting
 //
-// > x = y / z            (all u16)
+// > q, r = x /% y            (all u16)
 //
-// into u8 limbs (x=x1::x0, etc.) yields
+// into u8 limbs (q=q1::q0, etc.) yields
 //
-// > x1;x0 = wide_div(y1;y0, z1;z0)
+// > q1;q0,r1;r0 = wide_divmod(x1;x0, y1;y0)
 //
 // where each operand is the limb vector of the original register (ordered
 // most-significant limb first, matching ApplyLimbsMap).
 func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.DivRem[W]) []Bytecode[W] {
-	var op bytecode.Operation
-	//
-	switch insn.Opcode {
-	case encoding.DIV:
-		op = bytecode.WIDE_DIV
-	case encoding.REM:
-		op = bytecode.WIDE_REM
-	default:
-		panic("expected division operation")
-	}
-	//
 	var (
-		target   = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Target)...)
-		dividend = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Dividend)...)
-		divisor  = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Divisor)...)
+		quotient            = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Quotient)...)
+		remainder           = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Remainder)...)
+		dividend            = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Dividend)...)
+		divisor, divisorLen = Operand(mapping, insn.Divisor)
 	)
 	// Check whether splitting actually required
-	if target.Len == 1 && dividend.Len == 1 && divisor.Len == 1 {
+	if quotient.Len == 1 && remainder.Len == 1 && dividend.Len == 1 && divisorLen == 1 {
 		// No, splitting not technically required
-		return []Bytecode[W]{bytecode.NewDivRem[W](insn.Opcode,
-			target.Base, dividend.Base, divisor.Base)}
+		return []Bytecode[W]{bytecode.NewDivRem(quotient.Base, remainder.Base, dividend.Base, divisor)}
 	}
 	// Yes, splitting is actually required.
-	return []Bytecode[W]{bytecode.NewIntrinsic[W](op,
-		[]bytecode.RegisterVector{target},
-		[]bytecode.RegisterVector{dividend, divisor})}
+	return []Bytecode[W]{bytecode.NewIntrinsic(bytecode.WIDE_DIVMOD,
+		[]bytecode.RegisterVector{quotient, remainder},
+		[]bytecode.Operand[W]{
+			bytecode.NewRegisterVectorOperand[W](dividend),
+			divisor,
+		})}
+}
+
+// Operand splits an operand into limbs: a register operand becomes the limb
+// vector of its constituent registers, whilst a constant operand always stays
+// a single (unsplit) value, regardless of its width — like an arithmetic
+// immediate, it never occupies a register.  Its consumers work on the value
+// directly (the intrinsic executors reconstruct full values anyway), so it
+// need not fit the register width; only the multi-limb constant form is
+// forbidden (see Intrinsic.Validate).
+func Operand[W word.Word[W]](mapping descriptor.LimbsMap[W], operand bytecode.Operand[W],
+) (out bytecode.Operand[W], n uint16) {
+	//
+	if operand.IsConstant() {
+		return operand, 1
+	}
+	//
+	var vec = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, operand.AsRegisters()...)...)
+	//
+	return bytecode.NewRegisterVectorOperand[W](vec), vec.Len
 }

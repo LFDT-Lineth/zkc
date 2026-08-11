@@ -1,5 +1,5 @@
-//error:4:13-14:expected type u32
-//error:4:9-14:expected type 𝔽
+//error:4:13-14:expected type u32, found 𝔽
+//error:4:9-14:expected type 𝔽, found u32
 fn f(x:u32, y:𝔽) -> (r:𝔽) {
     r = x + y
     return

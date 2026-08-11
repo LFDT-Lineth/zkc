@@ -733,6 +733,16 @@ func Test_ZkcInvalid_Div_07(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/div_07")
 }
 
+// division by 0
+func Test_ZkcInvalid_Div_08(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/div_08")
+}
+
+// unbraced division chain (a / b / c)
+func Test_ZkcInvalid_Div_09(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/div_09")
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================
@@ -755,6 +765,75 @@ func Test_ZkcInvalid_Rem_04(t *testing.T) {
 
 func Test_ZkcInvalid_Rem_05(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/rem_05")
+}
+
+// unbraced remainder chain (a % b % c)
+func Test_ZkcInvalid_Rem_06(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/rem_06")
+}
+
+// ===================================================================
+// Combined Division / Remainder ("/%") Tests
+// ===================================================================
+
+// single target
+func Test_ZkcInvalid_DivMod_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_01")
+}
+
+// divmod chain (a /% b /% c)
+func Test_ZkcInvalid_DivMod_02(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_02")
+}
+
+// division by 0
+func Test_ZkcInvalid_DivMod_03(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_03")
+}
+
+// too many targets
+func Test_ZkcInvalid_DivMod_04(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_04")
+}
+
+// braced divmod chain ((a /% b) /% c): the pair is not a uint operand
+func Test_ZkcInvalid_DivMod_05(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_05")
+}
+
+// mismatched target widths (q:u16, r:u32)
+func Test_ZkcInvalid_DivMod_06(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_06")
+}
+
+// mismatched operand widths (a:u32 /% b:u16)
+func Test_ZkcInvalid_DivMod_07(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_07")
+}
+
+// divmod by overflowing cst
+func Test_ZkcInvalid_DivMod_08(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_08")
+}
+
+// const declared for q or r
+func Test_ZkcInvalid_DivMod_09(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_09")
+}
+
+// const declared for q or r
+func Test_ZkcInvalid_DivMod_10(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_10")
+}
+
+// variable declared for both operand and result
+func Test_ZkcInvalid_DivMod_11(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_11")
+}
+
+// variable declared for both result
+func Test_ZkcInvalid_DivMod_12(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/divmod_12")
 }
 
 // ===================================================================

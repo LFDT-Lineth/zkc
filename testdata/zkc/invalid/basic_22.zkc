@@ -1,4 +1,4 @@
-//error:5:11-17:expected type u32
+//error:5:11-17:expected type u32, found u24
 const LO:u8 = 0xFF
 
 fn concat(hi:u16) -> (word:u32) {

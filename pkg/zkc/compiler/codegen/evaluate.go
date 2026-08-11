@@ -131,6 +131,10 @@ func (p ConstantEvaluator) evalIntConstant(e Expr, definition bool) (res vm.Uint
 		res = Quotient(args...)
 
 		return res, err
+	case *expr.DivMod[symbol.Resolved]:
+		// A divmod produces two values, which a constant expression cannot
+		// hold; constant contexts use "/" and "%" instead.
+		return res, "divmod not supported in constant expressions"
 	case *expr.Rem[symbol.Resolved]:
 		args, err = p.evalConstants(e.Exprs, definition)
 		res = Remainder(args...)

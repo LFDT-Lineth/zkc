@@ -179,7 +179,6 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 
 	if p.config.fastMode {
 		// Apply transforms suitable for fast mode
-		program = vm.OptimizeDivisions(program)
 		program = vm.Vectorize(program)
 		// NOTE: eventually this will always be applied
 		if p.config.splitting {
@@ -191,20 +190,14 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		// Apply transformations required for tracing and constraint generation.
 		//
 		// Lower field casts (𝔽↔uint) first: the canonicality check for 𝔽→uint is
-		// emitted as a high-level "value < P" comparison, which the comparison
-		// and register-splitting passes below then turn into a subtract-with-
-		// borrow chain.  It must therefore run before LowerComparisons and
-		// SplitRegisters.
+		// emitted as a high-level "value < P" comparison
+		// It must therefore run before LowerComparisons
 		program = vm.LowerFieldCasts(program)
 		program = vm.LowerBitwise(program)
 		program = vm.LowerDivisions(program)
 		program = vm.LowerComparisons(program)
 		program = vm.Vectorize(program)
-		// Thread memory timestamps once the rows are final: after
-		// vectorisation (at most one canonical stamp write per executed path
-		// through a row, preserving one-line functions) and before register
-		// splitting (stamps split and range-check like any other register).
-		// Fast mode skips this: the run-time memory keeps its own clock.
+		// Thread memory timestamps once the rows are final (after Vectorization).
 		program = vm.ThreadTimestamps(program)
 		program = vm.FactorSkipConditions(program)
 		program = vm.LowerSwitch(program)
@@ -213,7 +206,6 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 			program = vm.SplitRegisters(p.config.field, program)
 		}
 		// The following must be after splitting, but before range constraints:
-		// Bound the degree of multi-limb register-register equality comparisons.
 		program = vm.FactorLimbEqualities(program)
 		// Lower AND/OR/XOR after splitting
 		program = vm.LowerOrXorAnd(program, p.config.maxStaticHeight)

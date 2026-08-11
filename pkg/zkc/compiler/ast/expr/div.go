@@ -47,7 +47,7 @@ func (p *Div[S]) LocalUses() bit.Set {
 }
 
 func (p *Div[S]) String(mapping variable.Map[S]) string {
-	return String[S](p, mapping)
+	return String(p, mapping)
 }
 
 // SetType implementation for Expr interface

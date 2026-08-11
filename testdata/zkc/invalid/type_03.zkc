@@ -1,4 +1,4 @@
-//error:4:7-8:expected type bool
+//error:4:7-8:expected type bool, found u2+
 type bool = u1
 fn f(x:bool) -> (r:bool) {
   r = 2

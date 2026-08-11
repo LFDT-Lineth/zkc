@@ -935,6 +935,11 @@ func Test_ZkcUnit_Div_07(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_07", DEFAULT_UNIT_CONFIG)
 }
 
+// Division / Remainder with big int const
+func Test_ZkcUnit_Div_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/div_08", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================
@@ -953,6 +958,25 @@ func Test_ZkcUnit_Rem_03(t *testing.T) {
 
 func Test_ZkcUnit_Rem_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/rem_04", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
+// Combined Division / Remainder ("/%") Tests
+// ===================================================================
+
+// register divisor
+func Test_ZkcUnit_DivMod_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/divmod_01", DEFAULT_UNIT_CONFIG)
+}
+
+// constant divisor
+func Test_ZkcUnit_DivMod_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/divmod_02", DEFAULT_UNIT_CONFIG)
+}
+
+// constant dividend
+func Test_ZkcUnit_DivMod_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/divmod_03", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================

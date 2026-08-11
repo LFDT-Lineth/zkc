@@ -1,2 +1,2 @@
-//error:2:18-21:expected type u8
+//error:2:18-21:expected type u8, found u9+
 const LARGE:u8 = 256
