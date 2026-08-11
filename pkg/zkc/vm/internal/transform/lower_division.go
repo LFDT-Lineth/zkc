@@ -80,7 +80,7 @@ func lowerDivisionCode[W word.Word[W]](b Bytecode[W], registers split.Allocator[
 		w  = registers.Allocate("w", util.Some(nY))
 	)
 	//
-	return expandDivRem(dr.Quotient, dr.Remainder, w, x, y, nX, registers)
+	return expandDivRem(dr.Quotient, dr.Remainder, w, x, y, nX, nY, registers)
 }
 
 // divisorWidth returns the bitwidth of the given divisor operand: the declared
@@ -112,17 +112,14 @@ func divisorWidth[W word.Word[W]](y bytecode.Operand[W], registers split.Allocat
 // operands that borrow grows past the field register width.  A two-operand zero
 // assertion splits into independent per-limb equalities (see split.Subtraction),
 // which needs no borrows.
-func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Operand[W], nX uint,
+func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Operand[W], nX, nY uint,
 	registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
 		qy   = registers.Allocate("qy", util.Some(nX))
 		qyr  = registers.Allocate("qy_plus_r", util.Some(nX))
-		// TODO: rw1 should be of nY width, but because of
-		// https://github.com/LFDT-Lineth/zkc/issues/2117
-		// we tmp put nX here as a workaround.  Once that issue is fixed, we can use nY here.
-		rw1 = registers.Allocate("rw1", util.Some(nX))
+		rw1  = registers.Allocate("rw1", util.Some(nY))
 		// TODO: see https://github.com/LFDT-Lineth/zkc/issues/2119
 		// only one zero register is needed, but since this issue is fixed, it's creating multi line fct
 		z1 = registers.Allocate("z1", util.Some[uint](0))
