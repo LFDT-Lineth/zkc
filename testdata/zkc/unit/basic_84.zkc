@@ -1,0 +1,15 @@
+pub input data(addr:u16) -> (w:u48)
+
+fn main() {
+    var v:u48 = data[0]
+    var w:u16 = data[1] as u16
+    //
+    if inc(v) != w {
+        fail
+    }
+}
+
+fn inc(x:u48) -> (y:u16) {
+    y = (x as u16) + 1
+    return
+}

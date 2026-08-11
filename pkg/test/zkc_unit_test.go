@@ -358,6 +358,14 @@ func Test_ZkcUnit_Basic_83(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_83", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
+func Test_ZkcUnit_Basic_84(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_84", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_85(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_85", DEFAULT_UNIT_CONFIG)
+}
+
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
 	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.
@@ -746,12 +754,10 @@ func Test_ZkcUnit_Bitwise_17(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_18(t *testing.T) {
-	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bitwise_18", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Bitwise_19(t *testing.T) {
-	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bitwise_19", DEFAULT_UNIT_CONFIG)
 }
 
@@ -1360,17 +1366,14 @@ func Test_ZkcUnit_BigNum_15(t *testing.T) {
 }
 
 func Test_ZkcUnit_BigNum_16(t *testing.T) {
-	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bignum_16", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_BigNum_17(t *testing.T) {
-	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_BigNum_18(t *testing.T) {
-	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 

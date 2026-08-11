@@ -132,8 +132,11 @@ func insertConcatCarryLines[W word.Word[W]](field field.Config, alloc Allocator[
 			// Determine bitwidth of right-hand side
 			rhs = concatRhsBitwidth(field, chunks[i].sources, alloc)
 		)
-		// check whether carry required
-		if lhs < rhs && i+1 < len(chunks) {
+		// Check whether carry required.  NOTE: a chunk whose target limbs are
+		// exhausted has a zero-width left-hand side.  In such case, there is no
+		// value in adding carry lines.  Furthermore, doing so doesn't make
+		// sense since the carry lines would be as wide the rhs anyway.
+		if lhs > 0 && lhs < rhs && i+1 < len(chunks) {
 			var (
 				bitwidth = rhs - lhs
 				// allocate new carry line
