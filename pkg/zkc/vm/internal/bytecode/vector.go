@@ -402,7 +402,7 @@ func (p *Vector[W]) BranchTable(limbWidth uint) (dfa.Result[dfa.Writes], dfa.Res
 	var (
 		entry    = dfa.EntryPoint[W]()
 		writeMap = p.WriteMap()
-		btf      = branchTableTransfer[W](writeMap, limbWidth, uint(len(p.Bytecodes)))
+		btf      = branchTableTransfer[W](writeMap, limbWidth)
 	)
 	//
 	return writeMap, dfa.Construct(entry, p.Bytecodes, btf)
@@ -418,13 +418,7 @@ func writeDfaTransfer[W word.Word[W]](offset uint, code Bytecode[W],
 	//
 	switch code := code.(type) {
 	case *Fail[W], *Ret[W], *Jmp[W]:
-		// Control-flow terminators: no fall-through within the vector.  Note
-		// that, unlike the branch-table analysis (see branchTableTransfer),
-		// fail paths also die here: their writes stay invisible at joins,
-		// which keeps registers assigned on every surviving path "definitely
-		// assigned" (no spurious constancy constraints).  The two analyses
-		// only diverge on rows taking a fail path, which the fail's own
-		// constraint rejects.
+		// Control-flow terminators: no fall-through within the vector.
 		return nil
 	case *Skip[W]:
 		// Unconditional skip: control transfers only to the branch target.
@@ -470,7 +464,7 @@ func toRegisterIds(regs []RegisterId) []register.Id {
 // analysis over a bytecode vector, mirroring the instruction-level analysis
 // (see instruction.branchTableTransfer).
 func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes], limbWidth uint,
-	nCodes uint) dfa.PathTransferFunction[W, Bytecode[W]] {
+) dfa.PathTransferFunction[W, Bytecode[W]] {
 	return func(offset uint, code Bytecode[W], state dfa.Path[W]) []dfa.Transfer[dfa.Path[W]] {
 		var (
 			arcs   []dfa.Transfer[dfa.Path[W]]
@@ -478,27 +472,10 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes], limbWi
 		)
 		//
 		switch code := code.(type) {
-		case *Ret[W], *Jmp[W]:
+		case *Ret[W], *Jmp[W], *Fail[W]:
 			// Control-flow terminators: their paths are valid executions which
 			// genuinely never reach the subsequent codes, so they contribute
 			// nothing to the conditions of those codes.
-			return nil
-		case *Fail[W]:
-			// A fail's own constraint forces its path condition to be false on
-			// every active row of an accepting trace, so the conditions of
-			// subsequent codes may be widened by it without changing the set
-			// of accepted traces: the extra coverage only binds rows which the
-			// fail constraint already rejects.  Falling through (rather than
-			// dying, as for Ret/Jmp above) lets a failing edge's complement
-			// form cancel against its sibling edges where they rejoin.
-			// Without this, a dispatch whose default fails burdens every code
-			// after the join — and every path selector derived from one (see
-			// lookupSourceSelector) — with a disjunction over all surviving
-			// case edges.
-			if offset+1 < nCodes {
-				return append(arcs, dfa.NewTransfer(state, offset+1))
-			}
-			// Fail in terminal position: nothing follows within the vector.
 			return nil
 		case *Skip[W]:
 			// join into branch target

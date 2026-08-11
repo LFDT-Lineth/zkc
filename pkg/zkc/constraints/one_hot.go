@@ -63,9 +63,15 @@ func collectOneHotGroups[W vm.Word[W]](codes []vm.Bytecode[W]) []oneHotGroup {
 //     replaced by (default != 0), turning the degree-n default-body guard into
 //     a single degree-1 atom;
 //
-//   - a set of single-atom conjuncts (b != 0) covering every bit of a group is
-//     replaced by the single conjunct (default == 0) — the shape the
-//     complement takes after negation (e.g. within constancy conditions).
+//   - a set of conjuncts which differ only in a (b != 0) atom — sharing the
+//     same remaining atoms — and whose bits cover every bit of a group is
+//     replaced by the single conjunct (default == 0) ∧ remainder.  With an
+//     empty remainder this is the shape the complement takes after negation
+//     (e.g. within constancy conditions); with a non-empty remainder it is
+//     the shape a code's path condition takes after a dispatch whose edges
+//     rejoin while its default edge dies (e.g. a failing default): the
+//     disjunction over every surviving case edge, each carrying the same
+//     post-join atoms.
 //
 // Both substitutions preserve the condition's meaning on any trace satisfying
 // the enclosing vector's constraints (default = 1 - sum of bits, everything a
@@ -145,37 +151,125 @@ func rewriteConjunct(conjunct dfa.BranchConjunction, g oneHotGroup) (dfa.BranchC
 	return conditionOfAtoms(kept), true
 }
 
-// rewriteComplementDisjuncts applies the second rewrite rule: a set of
-// single-atom (bit != 0) conjuncts covering the whole group becomes the single
-// conjunct (default == 0).
+// rewriteComplementDisjuncts applies the second rewrite rule: conjuncts which
+// differ only in their (bit != 0) atom — sharing the same remaining atoms —
+// and whose bits together cover the whole group are replaced by the single
+// conjunct (default == 0) ∧ remainder.  Bare single-atom conjuncts are the
+// empty-remainder case.  Conjuncts testing several bits of the group at once
+// do not participate (under the one-hot invariant they are unsatisfiable, but
+// establishing that is not this rule's business).
 func rewriteComplementDisjuncts(cond dfa.BranchCondition, g oneHotGroup) dfa.BranchCondition {
 	var (
-		covered    = make(map[register.Id]bool)
-		forwarding bool
+		conjuncts = cond.Conjuncts()
+		buckets   []complementBucket
+		replaced  = make([]bool, len(conjuncts))
+		rewritten []dfa.BranchCondition
 	)
-	//
-	for _, conjunct := range cond.Conjuncts() {
-		if atoms := conjunct.Atoms(); len(atoms) == 1 && isGroupBitAtom(atoms[0], g, false) {
-			covered[atoms[0].Left.Id] = true
-			forwarding = atoms[0].Left.Forwarding
+	// Bucket the candidate conjuncts by their remainder.
+	for i, conjunct := range conjuncts {
+		if bit, rest, ok := splitGroupBitAtom(conjunct, g); ok {
+			bucketOf(&buckets, rest, bit.Left.Forwarding).add(bit.Left.Id, i)
 		}
 	}
 	// Only a complete cover of the group's bits may be substituted.
-	if len(covered) != len(g.bits) {
-		return cond
-	}
-	//
-	out := logical.NewProposition(logical.EqualsConst(dfa.NewBranchId(forwarding, g.dflt), zero))
-	//
-	for _, conjunct := range cond.Conjuncts() {
-		if atoms := conjunct.Atoms(); len(atoms) == 1 && isGroupBitAtom(atoms[0], g, false) {
+	for _, b := range buckets {
+		if len(b.covered) != len(g.bits) {
 			continue
 		}
 		//
-		out = out.Or(conditionOfAtoms(conjunct.Atoms()))
+		for _, m := range b.members {
+			replaced[m] = true
+		}
+		//
+		atoms := append(append([]dfa.BranchEquality{}, b.remainder...),
+			logical.EqualsConst(dfa.NewBranchId(b.forwarding, g.dflt), zero))
+		rewritten = append(rewritten, conditionOfAtoms(atoms))
+	}
+	//
+	if len(rewritten) == 0 {
+		return cond
+	}
+	// Reassemble: the rewritten conjuncts followed by the untouched ones.
+	out := rewritten[0]
+	//
+	for _, r := range rewritten[1:] {
+		out = out.Or(r)
+	}
+	//
+	for i, conjunct := range conjuncts {
+		if !replaced[i] {
+			out = out.Or(conditionOfAtoms(conjunct.Atoms()))
+		}
 	}
 	//
 	return out
+}
+
+// complementBucket collects the conjuncts sharing a remainder (their atoms
+// minus the single group-bit atom), together with the group bits they cover.
+type complementBucket struct {
+	remainder  []dfa.BranchEquality
+	forwarding bool
+	covered    map[register.Id]bool
+	members    []int
+}
+
+func (p *complementBucket) add(bit register.Id, member int) {
+	p.covered[bit] = true
+	p.members = append(p.members, member)
+}
+
+// bucketOf returns the bucket with the given remainder and forwarding,
+// creating it if none exists yet.
+func bucketOf(buckets *[]complementBucket, remainder []dfa.BranchEquality,
+	forwarding bool) *complementBucket {
+	//
+	for i := range *buckets {
+		b := &(*buckets)[i]
+		//
+		if b.forwarding == forwarding && equalAtoms(b.remainder, remainder) {
+			return b
+		}
+	}
+	//
+	*buckets = append(*buckets, complementBucket{remainder, forwarding,
+		make(map[register.Id]bool), nil})
+	//
+	return &(*buckets)[len(*buckets)-1]
+}
+
+// splitGroupBitAtom splits a conjunct into its (bit != 0) atom over the group
+// and the remaining atoms, provided the conjunct tests exactly one bit of the
+// group; otherwise ok is false.
+func splitGroupBitAtom(conjunct dfa.BranchConjunction, g oneHotGroup,
+) (bit dfa.BranchEquality, rest []dfa.BranchEquality, ok bool) {
+	var found int
+	//
+	for _, atom := range conjunct.Atoms() {
+		if isGroupBitAtom(atom, g, false) {
+			bit = atom
+			found++
+		} else {
+			rest = append(rest, atom)
+		}
+	}
+	//
+	return bit, rest, found == 1
+}
+
+// equalAtoms reports whether two (sorted) atom slices are identical.
+func equalAtoms(lhs, rhs []dfa.BranchEquality) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+	//
+	for i := range lhs {
+		if lhs[i].Cmp(rhs[i]) != 0 {
+			return false
+		}
+	}
+	//
+	return true
 }
 
 // isGroupBitAtom reports whether the given atom tests one of the group's bits
