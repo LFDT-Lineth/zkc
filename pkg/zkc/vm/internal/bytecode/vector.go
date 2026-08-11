@@ -473,9 +473,6 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes], limbWi
 		//
 		switch code := code.(type) {
 		case *Ret[W], *Jmp[W], *Fail[W]:
-			// Control-flow terminators: their paths are valid executions which
-			// genuinely never reach the subsequent codes, so they contribute
-			// nothing to the conditions of those codes.
 			return nil
 		case *Skip[W]:
 			// join into branch target
