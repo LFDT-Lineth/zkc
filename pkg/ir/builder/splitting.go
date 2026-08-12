@@ -85,46 +85,50 @@ func parallelTraceSplitting[F field.Element[F]](ltf lt.TraceFile, mapping module
 	[]lt.Module[F], []error) {
 	//
 	var (
-		ncols = lt.NumberOfColumns(ltf.RawModules())
-		//
-		splits = make([][][]lt.Column[F], ltf.Width())
 		// Allocate fresh array builder
 		builder = array.NewStaticBuilder[F]()
-		// Construct a communication channel split columns.
-		c = make(chan splitResult[F], ncols)
-		//
-		errors []error
+		// Collect all (module, column) pairs into a flat slice.
+		jobs = make([]splittingJob[F], 0, lt.NumberOfColumns(ltf.RawModules()))
 	)
-	// Split column concurrently
+	// Build the job list: one job per column across all modules.
 	for i := range ltf.Width() {
-		var (
-			ith = ltf.Module(i)
-			// Access mapping for enclosing module
-			modmap = mapping.ModuleOf(ith.Name())
-		)
-		// Initiali split array
-		splits[i] = make([][]lt.Column[F], ith.Width())
+		var ith = ltf.Module(i)
+		// Access mapping for enclosing module
+		var modmap = mapping.ModuleOf(ith.Name())
 		//
 		for j := range ith.Width() {
-			var jth = ith.Column(j)
-			// Start go-routine for this column
-			go func(mid, cid uint, column tr.Column[word.BigEndian], mapping module.LimbsMap) {
-				// Send outcome back
-				data, errors := splitRawColumn(column, builder, modmap)
-				c <- splitResult[F]{mid, cid, data, errors}
-			}(i, j, jth, mapping)
+			jobs = append(jobs, splittingJob[F]{i, j, ith.Column(j), modmap})
 		}
 	}
-	// Collect results
-	for range ncols {
-		// Read from channel
-		res := <-c
-		// Assign split
+	// Split all columns in parallel using a worker pool.
+	results := util.ParallelMap(jobs, func(_ uint, job splittingJob[F]) splitResult[F] {
+		data, errors := splitRawColumn(job.rawCol, builder, job.modmap)
+		return splitResult[F]{job.module, job.col, data, errors}
+	})
+	// Organise results into a per-module split structure.
+	var (
+		splits = make([][][]lt.Column[F], ltf.Width())
+		errors []error
+	)
+	//
+	for i := range ltf.Width() {
+		splits[i] = make([][]lt.Column[F], ltf.Module(i).Width())
+	}
+	//
+	for _, res := range results {
 		splits[res.module][res.column] = res.data
 		errors = append(errors, res.errors...)
 	}
 	// Flatten split
 	return builder, flatten(ltf, splits), errors
+}
+
+// splittingJob represents a single column to be split within a module.
+type splittingJob[F any] struct {
+	module uint
+	col    uint
+	rawCol tr.Column[word.BigEndian]
+	modmap register.LimbsMap
 }
 
 func flatten[W any](tf lt.TraceFile, splits [][][]lt.Column[W]) []lt.Module[W] {

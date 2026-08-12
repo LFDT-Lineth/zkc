@@ -20,7 +20,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
@@ -82,6 +81,11 @@ func (p Constraint[F]) Contexts() []schema.ModuleId {
 	return []schema.ModuleId{p.Context}
 }
 
+// Sets implementation for schema.Constraint interface.
+func (p Constraint[F]) Sets() []schema.SetId {
+	return nil
+}
+
 // Bounds determines the well-definedness bounds for this constraint for both
 // the negative (left) or positive (right) directions.  Since a range constraint
 // is made up of registers (rather than arbitrary expressions), it is always
@@ -96,16 +100,14 @@ func (p Constraint[F]) Bounds(module uint) util.Bounds {
 // nil otherwise return an error.
 //
 //nolint:revive
-func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F]) (bit.Set, schema.Failure) {
-	var coverage bit.Set
-	//
+func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F]) schema.Failure {
 	for i := range p.Sources {
 		if err := p.accepts(i, tr); err != nil {
-			return coverage, err
+			return err
 		}
 	}
 	// All good
-	return coverage, nil
+	return nil
 }
 
 // Lisp converts this schema element into a simple S-Expression, for example so

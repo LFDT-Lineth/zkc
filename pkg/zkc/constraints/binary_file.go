@@ -274,7 +274,7 @@ func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Fa
 		stats = util.NewPerfStats()
 	)
 	// Check constraints
-	failures := schema.Accepts(config.Parallelism(), config.BatchSize(), sc, tr)
+	failures := schema.Accepts(config.Parallelism(), sc, tr)
 	// Log stats
 	stats.Log("Constraint checking")
 	//

@@ -20,7 +20,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
@@ -75,6 +74,11 @@ func (p Constraint[F, T]) Contexts() []schema.ModuleId {
 	return []schema.ModuleId{p.Context}
 }
 
+// Sets implementation for schema.Constraint interface.
+func (p Constraint[F, T]) Sets() []schema.SetId {
+	return nil
+}
+
 // Bounds determines the well-definedness bounds for this constraint for both
 // the negative (left) or positive (right) directions.  For example, consider an
 // expression such as "(shift X -1)".  This is technically undefined for the
@@ -94,7 +98,7 @@ func (p Constraint[F, T]) Bounds(module uint) util.Bounds {
 // of a table.  If so, return nil otherwise return an error.
 //
 //nolint:revive
-func (p Constraint[F, T]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F]) (bit.Set, schema.Failure) {
+func (p Constraint[F, T]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F]) schema.Failure {
 	var (
 		// Handle is used for error reporting.
 		handle = constraint.DetermineHandle(p.Handle, p.Context, tr)
@@ -120,23 +124,16 @@ func (p Constraint[F, T]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F]) (bi
 	} else {
 		start = uint(domain)
 	}
-	//
-	var coverage bit.Set
 	// Check specific row
-	err, id := HoldsLocally(start, handle, p.Constraint, p.Context, trModule, scModule)
-	//
-	coverage.Insert(id)
-	//
-	return coverage, err
+	return HoldsLocally(start, handle, p.Constraint, p.Context, trModule, scModule)
 }
 
 // HoldsGlobally checks whether a given expression vanishes (i.e. evaluates to
 // zero) for all rows of a trace.  If not, report an appropriate error.
 func HoldsGlobally[F field.Element[F], T term.Testable[F]](handle string, ctx schema.ModuleId, constraint T,
-	trMod trace.Module[F], scMod schema.Module[F]) (bit.Set, schema.Failure) {
+	trMod trace.Module[F], scMod schema.Module[F]) schema.Failure {
 	//
 	var (
-		coverage bit.Set
 		// Determine height of enclosing module
 		height = trMod.Height()
 		// Determine well-definedness bounds for this constraint
@@ -146,33 +143,31 @@ func HoldsGlobally[F field.Element[F], T term.Testable[F]](handle string, ctx sc
 	if bounds.End < height {
 		// Check all in-bounds values
 		for k := bounds.Start; k < (height - bounds.End); k++ {
-			err, id := HoldsLocally(k, handle, constraint, ctx, trMod, scMod)
+			err := HoldsLocally(k, handle, constraint, ctx, trMod, scMod)
 			if err != nil {
-				return coverage, err
+				return err
 			}
-			// Update coverage
-			coverage.Insert(id)
 		}
 	}
 	// Success
-	return coverage, nil
+	return nil
 }
 
 // HoldsLocally checks whether a given constraint holds (e.g. vanishes) on a
 // specific row of a trace. If not, report an appropriate error.
 func HoldsLocally[F field.Element[F], T term.Testable[F]](k uint, handle string, term T, ctx schema.ModuleId,
-	trMod trace.Module[F], scMod schema.Module[F]) (schema.Failure, uint) {
+	trMod trace.Module[F], scMod schema.Module[F]) schema.Failure {
 	//
-	ok, id, err := term.TestAt(int(k), trMod, scMod)
+	ok, _, err := term.TestAt(int(k), trMod, scMod)
 	// Check for errors
 	if err != nil {
-		return constraint.NewInternalFailure[F](handle, ctx, k, term, err.Error()), id
+		return constraint.NewInternalFailure[F](handle, ctx, k, term, err.Error())
 	} else if !ok {
 		// Evaluation failure
-		return &Failure[F]{handle, term, ctx, k}, id
+		return &Failure[F]{handle, term, ctx, k}
 	}
 	// Success
-	return nil, id
+	return nil
 }
 
 // Lisp converts this constraint into an S-Expression.

@@ -76,6 +76,11 @@ func (p *Vector) Ith(index uint) register.Id {
 	return p.Registers[index]
 }
 
+// SetId returns the set identifier associated with this vector.
+func (p *Vector) SetId() schema.SetId {
+	return schema.NewSetId(p.Module, p.Selector, p.Registers)
+}
+
 // Len returns the number of items in this lookup vector.  Note this doesn't
 // include the selector (since this is optional anyway).
 func (p *Vector) Len() uint {
