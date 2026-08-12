@@ -141,10 +141,10 @@ func (p *registerAllocator[W]) Width() uint {
 func (p *registerAllocator[W]) ZeroRegister() RegisterId {
 	// Check for any existing zero registers;
 	for i, r := range p.registers {
-		if r.Bitwidth().UnwrapOr(math.MaxUint) == 0 {
+		if bytecode.IsZeroWidth(r) {
 			return util.Cast[RegisterId](uint(i))
 		}
 	}
 	// Allocate a new register.
-	return p.Allocate("z", util.Some[uint](0))
+	return p.Allocate("zero", util.Some[uint](0))
 }

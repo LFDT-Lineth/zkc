@@ -225,6 +225,10 @@ func (p *VectorInsnTranslator[W, F]) WithConstancyConstraints(writes dfa.Writes,
 			// I/O lines are never given constancy constraints (because they are
 			// always assigned in place).
 			continue
+		} else if vm.IsZeroWidth(reg) {
+			// Zero-width registers carry no data, hence constancy constraints
+			// on them are meaningless.
+			continue
 		} else if !writes.MaybeAssigned(regId) {
 			// Register never mutated by this instruction, so always copy value
 			// from previous row into this.

@@ -145,6 +145,15 @@ type BinaryProgram[W Word[W]] = encoding.Binary[W]
 // bytecode, and is primarily for debugging and validation.
 type BytecodeEnvironment[W Word[W]] = bytecode.Environment[W]
 
+// RegisterInfo provides a minimal amount of information about a register in the
+// enclosing function.
+type RegisterInfo = bytecode.RegisterInfo
+
+// IsZeroWidth returns true for zero-width registers.
+func IsZeroWidth(reg RegisterInfo) bool {
+	return bytecode.IsZeroWidth(reg)
+}
+
 // Failure indicates a recognised machine failure arose, such as attempting to
 // execute a fail instruction.  Such a machine failure is distinct from some
 // kind of internal failure which is not expected to even happen (i.e. unless

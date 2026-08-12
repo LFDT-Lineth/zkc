@@ -180,7 +180,7 @@ func (p *Vector[W]) validateReadWriteConflicts(env Environment[W]) []error {
 		// Sanity check for conflicting reads.
 		if !isUnsafeCall(ith, env) {
 			for _, r := range ith.Uses() {
-				if IsZeroWidth(r, env) {
+				if IsZeroWidth(env.Register(r)) {
 					continue
 				}
 
@@ -192,7 +192,7 @@ func (p *Vector[W]) validateReadWriteConflicts(env Environment[W]) []error {
 		}
 		// Sanity check for conflicting writes.
 		for _, r := range ith.Definitions() {
-			if IsZeroWidth(r, env) {
+			if IsZeroWidth(env.Register(r)) {
 				continue
 			}
 
@@ -342,8 +342,8 @@ func isNilBytecode[W word.Word[W]](code Bytecode[W]) bool {
 // IsZeroWidth returns true for zero-width registers. Zero-width registers are registers
 // that carry no data, so apparent reads and writes to a shared placeholder cannot
 // conflict.
-func IsZeroWidth[W word.Word[W]](id RegisterId, env Environment[W]) bool {
-	width := env.Register(id).Bitwidth()
+func IsZeroWidth(reg RegisterInfo) bool {
+	width := reg.Bitwidth()
 	return width.HasValue() && width.Unwrap() == 0
 }
 
