@@ -112,10 +112,10 @@ func (p Path[W]) NotEqualsConst(lhs BranchId, rhs big.Int) Path[W] {
 }
 
 // Join implementation for State interface.  Both components are joined
-// pointwise; afterwards, the dead (fail-path) condition is absorbed into the
+// pointwise; afterwards, dead (fail-path) disjuncts are absorbed into the
 // reach condition whenever that yields a strictly simpler proposition.
-// Absorption is sound — rows satisfying the dead condition are rejected by
-// the originating fail's own constraint, so widening never changes the set of
+// Absorption is sound — rows satisfying a dead disjunct are rejected by the
+// originating fail's own constraint, so widening never changes the set of
 // accepted traces.
 // We do it only when it is beneficial: where a fail's successor
 // is a sibling branch rather than a join for example.
@@ -125,11 +125,38 @@ func (p Path[W]) Join(st Path[W]) Path[W] {
 		dead      = p.dead.Or(st.dead)
 	)
 	//
-	if widened := condition.Or(dead); simpler(widened, condition) {
-		condition = widened
+	for _, d := range dead.Conjuncts() {
+		// An empty conjunction only arises from a false proposition (see
+		// logical.Truth), which holds nowhere and so has nothing to absorb;
+		// lifting it would (unsoundly) widen the condition to truth.
+		if len(d.Atoms()) == 0 {
+			continue
+		}
+		//
+		if trial := condition.Or(propositionOf(d)); simpler(trial, condition) {
+			condition = trial
+		}
 	}
 	//
 	return Path[W]{condition, dead}
+}
+
+// propositionOf lifts a single (non-empty) conjunction back into a
+// proposition holding exactly when all its atoms hold.
+func propositionOf(c BranchConjunction) BranchCondition {
+	var out BranchCondition
+	//
+	for i, atom := range c.Atoms() {
+		ith := logical.NewProposition(atom)
+		//
+		if i == 0 {
+			out = ith
+		} else {
+			out = out.And(ith)
+		}
+	}
+	//
+	return out
 }
 
 // simpler reports whether the left condition is strictly simpler than the
