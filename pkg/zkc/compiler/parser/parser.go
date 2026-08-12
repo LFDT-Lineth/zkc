@@ -576,11 +576,12 @@ func (p *Parser) parseStaticInitialiser() ([]expr.Unresolved, []source.SyntaxErr
 
 func (p *Parser) parseReadWriteMemory() (decl.Unresolved, []source.SyntaxError) {
 	var (
-		start   = p.index
-		name    string
-		errs    []source.SyntaxError
-		address []VariableDescriptor
-		data    []VariableDescriptor
+		start         = p.index
+		name          string
+		timestampType Type
+		errs          []source.SyntaxError
+		address       []VariableDescriptor
+		data          []VariableDescriptor
 	)
 	//
 	if _, errs := p.expect(KEYWORD_MEMORY); len(errs) > 0 {
@@ -588,6 +589,18 @@ func (p *Parser) parseReadWriteMemory() (decl.Unresolved, []source.SyntaxError) 
 	}
 	// Parse memory name first (function-style)
 	if name, errs = p.parseIdentifier(); len(errs) > 0 {
+		return nil, errs
+	}
+	// Parse timestamp type: [type]
+	if _, errs = p.expect(LSQUARE); len(errs) > 0 {
+		return nil, errs
+	}
+
+	if timestampType, errs = p.parseType(); len(errs) > 0 {
+		return nil, errs
+	}
+
+	if _, errs = p.expect(RSQUARE); len(errs) > 0 {
 		return nil, errs
 	}
 	// Parse address args: (type param, ...)
@@ -603,7 +616,7 @@ func (p *Parser) parseReadWriteMemory() (decl.Unresolved, []source.SyntaxError) 
 		return nil, errs
 	}
 	// Done
-	mem := decl.NewRandomAccessMemory(name, address, data)
+	mem := decl.NewRandomAccessMemory(name, timestampType, address, data)
 	//
 	p.srcmap.Put(mem, p.spanOf(start, p.index))
 	//

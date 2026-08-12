@@ -166,21 +166,28 @@ func (p *Linker) linkDeclaration(index uint) (decl.Resolved, []source.SyntaxErro
 	case *decl.UnresolvedFunction:
 		return p.linkFunction(*d)
 	case *decl.UnresolvedMemory:
-		address, errs1 := p.linkVariableDeclarations(d.Address)
-		data, errs2 := p.linkVariableDeclarations(d.Data)
+		addressVars, errs1 := p.linkVariableDeclarations(d.Address)
+		dataVars, errs2 := p.linkVariableDeclarations(d.Data)
 
 		var (
-			contents []expr.Resolved
-			errs3    []source.SyntaxError
+			timestampType data.ResolvedType
+			contents      []expr.Resolved
+			errs3         []source.SyntaxError
+			errs4         []source.SyntaxError
 		)
-		if d.Contents != nil {
-			contents, errs3 = p.linkExprs(d.Contents...)
+
+		if d.TimestampType != nil {
+			timestampType, errs3 = p.linkType(d.TimestampType)
 		}
 
-		resolved := decl.NewMemory[symbol.Resolved](d.Name(), d.Kind, address, data, contents)
+		if d.Contents != nil {
+			contents, errs4 = p.linkExprs(d.Contents...)
+		}
+
+		resolved := decl.NewMemory[symbol.Resolved](d.Name(), d.Kind, addressVars, dataVars, contents, timestampType)
 		resolved.SetAnnotations(d.Annotations())
 
-		return resolved, append(append(errs1, errs2...), errs3...)
+		return resolved, append(append(append(errs1, errs2...), errs3...), errs4...)
 	case *decl.UnresolvedTypeAlias:
 		datatype, errs := p.linkType(d.DataType)
 		//
