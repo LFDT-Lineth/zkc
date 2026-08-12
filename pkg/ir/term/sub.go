@@ -134,6 +134,7 @@ func (p *Sub[F, T]) Simplify(casts bool) T {
 	lc, l_const := lhs_t.(*Constant[F, T])
 	rc, r_const := rhs_t.(*Constant[F, T])
 	ra, r_add := rhs_t.(*Add[F, T])
+	rs, r_sub := rhs_t.(*Sub[F, T])
 	r_zero := isZero(rhs)
 	//
 	switch {
@@ -145,6 +146,22 @@ func (p *Sub[F, T]) Simplify(casts bool) T {
 		c := lc.Value.Sub(rc.Value)
 		//
 		targ = &Constant[F, T]{c}
+	case l_const && r_sub:
+		// Nested subtraction: c - (d - x₁ - ⋯ - xₙ) = (c - d) + x₁ + ⋯ + xₙ,
+		// provided d is a constant with c >= d (keeping the folded constant
+		// non-negative, as above).
+		// Note that it doesn't have any perf impact, this is just a simplification and makes
+		// the consraints easier to read.
+		//
+		var head Expr[F, T] = rs.Args[0]
+		//
+		if hc, ok := head.(*Constant[F, T]); ok && lc.Value.Cmp(hc.Value) >= 0 {
+			c := lc.Value.Sub(hc.Value)
+			//
+			return Sum(array.Prepend(Const[F, T](c), rs.Args[1:])...)
+		}
+		//
+		targ = &Sub[F, T]{[]T{lhs, rhs}}
 	case l_const && r_add:
 		nterms := array.Prepend(lhs, ra.Args)
 		// if rhs has constant, subtract it.
