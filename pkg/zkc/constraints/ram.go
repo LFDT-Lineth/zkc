@@ -116,13 +116,6 @@ type ramLayout struct {
 	// by significance (index 0 == carry out of the least significant limb).
 	tsCarry   []register.Id
 	addrCarry []register.Id
-	// execWrite / execRead select the write (EXEC * IS_WRITE) and read
-	// (EXEC * (1 - IS_WRITE)) rows of the execution phase.  They exist because
-	// a lookup's target filter must be a single column: a caller's write-site
-	// lookup targets the table filtered by execWrite, a read-site lookup by
-	// execRead, which is how each access's read/write kind is pinned.
-	execWrite register.Id
-	execRead  register.Id
 	// Limb widths (most-significant first) of the address, data and timestamp
 	// register families.
 	addrWidths []uint
@@ -173,9 +166,6 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 	layout.tsCarry = idRange(next, nStamp-1)
 	next += nStamp - 1
 	layout.addrCarry = idRange(next, nAddr-1)
-	next += nAddr - 1
-	layout.execWrite = register.NewId(next)
-	layout.execRead = register.NewId(next + 1)
 	//
 	return layout
 }
@@ -246,10 +236,6 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
 	addLimbRegisters(mod, io.RAM_ADDR_DELTA_PREFIX, layout.addrWidths, padding)
 	addCarryRegisters(mod, io.RAM_TS_CARRY_PREFIX, len(layout.tsCarry), padding)
 	addCarryRegisters(mod, io.RAM_ADDR_CARRY_PREFIX, len(layout.addrCarry), padding)
-	mod.AddRegisters(
-		register.NewComputed(io.RAM_EXEC_WRITE_NAME, 1, padding),
-		register.NewComputed(io.RAM_EXEC_READ_NAME, 1, padding),
-	)
 	// Local (per-row) consistency constraints.
 	mod.AddConstraints(ramGeneralConstraints[F](ctx, layout)...)
 	mod.AddConstraints(ramExecConstraints[F](ctx, layout)...)
@@ -300,8 +286,6 @@ func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout)
 		prevFinl  = mirc.Variable[register.Id, Expr[F]](l.finl, 1, -1)
 		prevExec  = mirc.Variable[register.Id, Expr[F]](l.exec, 1, -1)
 		prevActiv = prevExec.Add(prevFinl)
-		execWrite = mirc.Variable[register.Id, Expr[F]](l.execWrite, 1, 0)
-		execRead  = mirc.Variable[register.Id, Expr[F]](l.execRead, 1, 0)
 	)
 	//
 	return []mir.Constraint[F]{
@@ -322,13 +306,6 @@ func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout)
 		// (EXEC+FINL) nondecreasing: active[i-1] == 1 => active[i] == 1.
 		mir.NewVanishingConstraint("active_monotony", ctx, util.None[int](),
 			mirc.If(prevActiv.Equals(one), active.Equals(one)).AsLogical()),
-		// The per-kind lookup selectors are fully determined:
-		// EXEC_WRITE == EXEC * IS_WRITE, and EXEC_READ == EXEC * (1 - IS_WRITE)
-		// expressed subtraction-free as EXEC_WRITE + EXEC_READ == EXEC.
-		mir.NewVanishingConstraint("exec_write_def", ctx, util.None[int](),
-			execWrite.Equals(exec.Multiply(isWrite)).AsLogical()),
-		mir.NewVanishingConstraint("exec_read_def", ctx, util.None[int](),
-			execWrite.Add(execRead).Equals(exec).AsLogical()),
 	}
 }
 

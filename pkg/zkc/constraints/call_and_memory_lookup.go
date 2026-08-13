@@ -85,13 +85,8 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 					emitCallLookup(mod, ctx, callerRegs, uint(pc), uint(c.Target),
 						toRegisterIds(c.Arguments), toRegisterIds(c.Returns), srcSelector, infos)
 				case *vm.BytecodeReadWrite[W]:
-					if infos[c.Id].(*vm.Memory[W]).IsReadWrite() {
-						emitRamLookup(mod, ctx, callerRegs, uint(pc), entry.cc, c,
-							srcSelector, infos, field)
-					} else {
-						emitMemoryLookup(mod, ctx, callerRegs, uint(pc), entry.cc, uint(c.Id),
-							toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector, infos)
-					}
+					emitMemoryLookup(mod, ctx, callerRegs, uint(pc), entry.cc, uint(c.Id),
+						toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector, infos)
 				}
 			}
 		}
@@ -116,7 +111,7 @@ type lookupEntry[W vm.Word[W]] struct {
 }
 
 // groupLookupsByCondition partitions the lookup-emitting bytecodes of a vector
-// (calls and memory accesses) by the branch condition under
+// (calls, and memory accesses other than RAM) by the branch condition under
 // which they execute.  Conditions are shortened against the given one-hot
 // groups first (see rewriteOneHotConditions), so that accesses within a
 // switch's default body are gated on the default bit rather than on the
@@ -127,11 +122,17 @@ func groupLookupsByCondition[W vm.Word[W]](codes []vm.Bytecode[W], branchTable d
 	//
 outer:
 	for cc, code := range codes {
-		switch code.(type) {
+		switch c := code.(type) {
 		case *vm.BytecodeCall[W]:
 			// always emits a lookup
 		case *vm.BytecodeReadWrite[W]:
-			// read-write and access-once memories alike emit a lookup.
+			// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1807
+			// read-write (RAM) memories have no table constraints yet
+			// (see translateReadWriteMemory), so there is no sound lookup
+			// target for them.
+			if infos[c.Id].(*vm.Memory[W]).IsReadWrite() {
+				continue
+			}
 		default:
 			continue
 		}
@@ -375,80 +376,6 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir
 		//
 		target = lookup.FilteredVector(memId, access, tgtTerms...)
 	}
-	//
-	mod.AddConstraints(mir.NewLookupConstraint(handle, []mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
-}
-
-// emitRamLookup constructs and adds the lookup constraint tying one read-write
-// (RAM) memory access to a row of that memory's table: the accessor's address,
-// data and (threaded) timestamp registers map onto the table's ADDRESS,
-// VALUE_WRITTEN and TIMESTAMP_WRITTEN columns.  The access's read/write kind is
-// pinned by the target-side filter: a write targets the table filtered by
-// EXEC_WRITE (= EXEC * IS_WRITE), a read by EXEC_READ (= EXEC * (1-IS_WRITE)).
-// A read's data registers are its outputs — the value read back — which the
-// table exposes in VALUE_WRITTEN too, since a read row "writes back" what it
-// found (VALUE_READ == VALUE_WRITTEN there).
-//
-// Together with the table's local constraints this pins every access's row;
-// that VALUE_READ genuinely returns the last value written to the address
-// remains for the offline memory-checking bus (see translateReadWriteMemory).
-func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
-	ctx schema.ModuleId, accessorRegs []register.Register, pc, cc uint,
-	rw *vm.BytecodeReadWrite[W], srcSelector register.Id, infos []vm.Module[W],
-	fieldCfg field.Config) {
-	//
-	var (
-		mem    = infos[rw.Id].(*vm.Memory[W])
-		layout = computeRamLayout(mem, fieldCfg)
-		// The bytecode index (cc) disambiguates two accesses to the same memory
-		// on the same code line.
-		handle = fmt.Sprintf("ram_%d_%d_%d_%d", ctx, pc, cc, rw.Id)
-		// Source ids: the accessor's address, data and timestamp registers.
-		// The timestamp is threaded on the constraint path only, so it is
-		// always present here; its limbs split exactly like the table's
-		// timestamp columns (same width, same field).
-		srcIds = append(append(append([]register.Id{},
-			toRegisterIds(rw.Address)...),
-			toRegisterIds(rw.Data)...),
-			toRegisterIds(rw.Stamp)...)
-		// Target ids: the table's ADDRESS, VALUE_WRITTEN and TIMESTAMP_WRITTEN
-		// columns, in the layout's fixed order.
-		tgtIds = append(append(append([]register.Id{},
-			layout.address...),
-			layout.valueWritten...),
-			layout.tsWritten...)
-		// Target-side filter pinning the access kind.
-		kind = layout.execRead
-	)
-	//
-	if len(rw.Stamp) == 0 {
-		panic(fmt.Sprintf("read-write memory access without a threaded timestamp (%s)", handle))
-	}
-	//
-	if rw.Write {
-		kind = layout.execWrite
-	}
-	// Build the source (accessor) vector.
-	var (
-		sel    = term.RawRegisterAccess[F, mir.Term[F]](srcSelector, 1, 0)
-		source = lookup.FilteredVector(ctx, sel, registerAccesses[F](accessorRegs, srcIds)...)
-	)
-	// Build the target (table) vector.  Widths come from the layout (the
-	// synthetic timestamp columns are not part of the memory's declared
-	// registers).
-	var (
-		widths   = append(append(append([]uint{}, layout.addrWidths...), layout.dataWidths...), layout.tsWidths...)
-		tgtTerms = make([]*mir.RegisterAccess[F], len(tgtIds))
-	)
-	//
-	for i, id := range tgtIds {
-		tgtTerms[i] = term.RawRegisterAccess[F, mir.Term[F]](id, widths[i], 0)
-	}
-	//
-	var (
-		filter = term.RawRegisterAccess[F, mir.Term[F]](kind, 1, 0)
-		target = lookup.FilteredVector(uint(rw.Id), filter, tgtTerms...)
-	)
 	//
 	mod.AddConstraints(mir.NewLookupConstraint(handle, []mir.LookupVector[F]{target}, []mir.LookupVector[F]{source}))
 }

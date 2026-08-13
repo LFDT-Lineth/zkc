@@ -41,7 +41,6 @@ type ramTraceLayout struct {
 	valueWritten, exec, finl, isWrite, valueRead int
 	tsWritten, tsRead, tsDelta                   int
 	addrDelta, tsCarry, addrCarry                int
-	execWrite, execRead                          int
 	width                                        int
 }
 
@@ -62,9 +61,7 @@ func newRamTraceLayout(nAddr, nData, nStamp int) ramTraceLayout {
 	l.addrDelta = l.tsDelta + nStamp
 	l.tsCarry = l.addrDelta + nAddr
 	l.addrCarry = l.tsCarry + (nStamp - 1)
-	l.execWrite = l.addrCarry + (nAddr - 1)
-	l.execRead = l.execWrite + 1
-	l.width = l.execRead + 1
+	l.width = l.addrCarry + (nAddr - 1)
 	//
 	return l
 }
@@ -121,20 +118,13 @@ func ProcessReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W],
 			tsDelta  = tsWr - tsRead - 1
 			execTrue F
 		)
-		// EXEC = 1, IS_WRITE from the access; FINL = 0 (zero value).  The
-		// per-kind lookup selectors follow: EXEC_WRITE = EXEC * IS_WRITE,
-		// EXEC_READ = EXEC * (1 - IS_WRITE).
+		// EXEC = 1, IS_WRITE from the access; FINL = 0 (zero value).
 		row[layout.exec] = execTrue.SetUint64(1)
 		//
 		if acc.isWrite {
 			var one F
 
 			row[layout.isWrite] = one.SetUint64(1)
-			row[layout.execWrite] = one.SetUint64(1)
-		} else {
-			var one F
-
-			row[layout.execRead] = one.SetUint64(1)
 		}
 		// ADDRESS (logical) split across the address lanes (offset 0).
 		copyAddressLines(logical, addrRegs, row[0:nAddr])
@@ -200,11 +190,6 @@ func determineRamRegisters[W Word[W]](geometry *vm.Memory[W], tsWidths []uint) [
 	for k := 0; k < int(geometry.NumInputs())-1; k++ {
 		regs = append(regs, rtrace.NewRegister(io.RamLimbName(io.RAM_ADDR_CARRY_PREFIX, uint(k)), u1))
 	}
-	// EXEC_WRITE / EXEC_READ (the per-kind lookup selectors).
-	regs = append(regs,
-		rtrace.NewRegister(io.RAM_EXEC_WRITE_NAME, u1),
-		rtrace.NewRegister(io.RAM_EXEC_READ_NAME, u1),
-	)
 	//
 	return regs
 }
