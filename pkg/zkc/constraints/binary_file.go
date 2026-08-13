@@ -22,6 +22,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
@@ -53,6 +54,16 @@ var ZKC_EXEC [8]byte = [8]byte{'z', 'k', 'c', ' ', 'e', 'x', 'e', 'c'}
 // trace for those constraints from a given set of inputs.  Thus, we can write a
 // set of constraints to a binary file (e.g. on disk) which can then be read
 // back and used to generate a zero-knowledge proof.
+//
+// Only the raw program (along with the header and attributes) is serialised;
+// everything derived from it (the tracing / execution programs and the MIR /
+// AIR constraints) is compiled on demand and memoised in the caches below.
+//
+// NOTE: a BinaryFile is *not* safe for concurrent use.  Since the derived
+// artifacts are computed lazily, even apparently read-only methods (e.g.
+// AirConstraints, Check, Execute, Trace) mutate the caches.  Callers sharing a
+// BinaryFile across goroutines must therefore either provide their own
+// synchronisation, or force every artifact they need before handing it out.
 type BinaryFile[F field.Element[F]] struct {
 	// Header holds the magic identifier, version numbers, and optional JSON
 	// metadata for the file.
@@ -61,30 +72,63 @@ type BinaryFile[F field.Element[F]] struct {
 	// constraint checking but may be useful for tooling (e.g. source-column
 	// mappings for debug output).
 	attributes []Attribute
-	// Machine is the current representation of "constraints".  Its not very
-	// pretty, but right now its all we have.  This will certainly change in the
-	// near future.
+	// Program is the high-level representation of the "constraints".
 	program vm.Program[vm.Uint]
-	// cached fast machine
-	machineCache util.Option[*vm.Interpreter[vm.Uint128]]
+	// Ignores identifies pipeline stages which should be explicitly ignored
+	// when compiling downstream components (e.g. program for tracing, etc).
+	// Observe this is a property of how the artifacts below are compiled,
+	// rather than of the file itself, and is therefore not serialised.
+	ignores []string
+	// cache (fast mode) execution program
+	cachedExecutionProgram util.Option[vm.Program[vm.Uint128]]
+	// cache tracing program
+	cachedTracingProgram util.Option[vm.Program[vm.Uint32]]
+	// cached mir constraints
+	cachedMirConstraints util.Option[mir.Schema[F]]
 	// cached air constraints
-	constraintsCache util.Option[air.Schema[F]]
+	cachedAirConstraints util.Option[air.Schema[F]]
 }
 
-// NewBinaryFile constructs a BinaryFile with a header stamped at the current
-// major/minor version.  Metadata is an optional JSON blob stored verbatim in
-// the header (pass nil for none).  A field configuration is required to allow
-// clients to check they are targeting the expected field.
-func NewBinaryFile[F field.Element[F]](metadata []byte, attributes []Attribute, config field.Config,
-	maxStaticHeight uint, machine vm.Program[vm.Uint]) *BinaryFile[F] {
+// NewBinaryFile constructs a BinaryFile, for the given (raw) program, with a
+// header stamped at the current major/minor version.  Metadata is an optional
+// JSON blob stored verbatim in the header (pass nil for none), whilst
+// attributes carry supplementary information for tooling (again, pass nil for
+// none).  The field type parameter F determines the field against which the
+// program's field configuration is checked on deserialisation, and for which
+// constraints are subsequently generated.  No pipeline stages are ignored when
+// compiling the derived artifacts --- see WithIgnores for that.
+func NewBinaryFile[F field.Element[F]](metadata []byte, attributes []Attribute,
+	program vm.Program[vm.Uint]) *BinaryFile[F] {
 	//
 	return &BinaryFile[F]{
-		Header{ZKC_EXEC, BINFILE_MAJOR_VERSION, BINFILE_MINOR_VERSION, metadata},
-		attributes,
-		machine,
-		util.None[*vm.Interpreter[vm.Uint128]](),
-		util.None[air.Schema[F]](),
+		header:                 Header{ZKC_EXEC, BINFILE_MAJOR_VERSION, BINFILE_MINOR_VERSION, metadata},
+		attributes:             attributes,
+		program:                program,
+		ignores:                nil,
+		cachedExecutionProgram: util.None[vm.Program[vm.Uint128]](),
+		cachedTracingProgram:   util.None[vm.Program[vm.Uint32]](),
+		cachedMirConstraints:   util.None[mir.Schema[F]](),
+		cachedAirConstraints:   util.None[air.Schema[F]](),
 	}
+}
+
+// WithIgnores configures the set of pipeline stages to ignore when compiling
+// the artifacts derived from the raw program (i.e. the tracing / execution
+// programs and the MIR / AIR constraints).  Since this changes how those
+// artifacts are compiled, anything already cached against the previous set of
+// ignores is discarded.  This returns the receiver, allowing it to be chained
+// onto NewBinaryFile.
+func (p *BinaryFile[F]) WithIgnores(ignores ...string) *BinaryFile[F] {
+	p.ignores = ignores
+	// Discard artifacts compiled under the previous set of ignores.
+	p.clearCachedArtifacts()
+	//
+	return p
+}
+
+// Attributes returns the set of attributes embedded in this binary file.
+func (p *BinaryFile[F]) Attributes() []Attribute {
+	return p.attributes
 }
 
 // Header returns the binary file header, which contains the file version and
@@ -114,32 +158,115 @@ func (p *BinaryFile[F]) MaxStaticHeight() uint {
 	return p.program.MaxStaticHeight()
 }
 
-// AirConstraints returns the arithmetic (AIR) constraints encoded in this file.
-func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
-	// Check cache
-	if p.constraintsCache.HasValue() {
-		return p.constraintsCache.Unwrap()
-	}
-	//
-	var (
-		stats = util.NewPerfStats()
-		// Generate arithmetic intermediate representation
-		air = GenerateAirConstraints[vm.Uint, F](p.program, p.Field(), p.MaxStaticHeight())
-	)
-	// cache result
-	p.constraintsCache = util.Some(air)
-	// Log stats
-	stats.Log("Constraint compilation")
-	//
-	return air
-}
-
-// Program returns the bytecode program encoded in this file.
-func (p *BinaryFile[F]) Program() vm.Program[vm.Uint] {
+// RawProgram returns the raw bytecode program encoded in this file, which has
+// not been lowered or subject to register splitting.  As such, it is not a
+// suitable form for most use cases.
+func (p *BinaryFile[F]) RawProgram() vm.Program[vm.Uint] {
 	return p.program
 }
 
-// Check a given trace against the constraints embodied in this constraints
+// TracingProgram returns the program used for tracing.  This corresponds to the
+// raw program after lowering and register splitting as appropriate for tracing.
+// This will be constructed by compiling it from the raw program upon first
+// call, and subsequently cached.
+//
+// NOTE: this mutates the cache and is therefore not safe for concurrent use.
+func (p *BinaryFile[F]) TracingProgram() vm.Program[vm.Uint32] {
+	// Check cache
+	if !p.cachedTracingProgram.HasValue() {
+		var (
+			stats = util.NewPerfStats()
+			// Lower bytecode program
+			program = vm.TransformForTracing[vm.Uint, vm.Uint32](p.program, p.ignores...)
+		)
+		// Cache lowered program
+		p.cachedTracingProgram = util.Some(program)
+		// Log stats
+		stats.Log("Compiling tracing program")
+	}
+	//
+	return p.cachedTracingProgram.Unwrap()
+}
+
+// ExecutionProgram returns the program used for (fast mode) execution.  This
+// corresponds to the raw program after lowering and register splitting as
+// appropriate for fast-mode execution.  This will be constructed by compiling
+// it from the raw program upon first call, and subsequently cached.
+//
+// NOTE: this mutates the cache and is therefore not safe for concurrent use.
+func (p *BinaryFile[F]) ExecutionProgram() vm.Program[vm.Uint128] {
+	// Check cache
+	if !p.cachedExecutionProgram.HasValue() {
+		var (
+			stats = util.NewPerfStats()
+			// Lower bytecode program
+			program = vm.TransformForExecution[vm.Uint, vm.Uint128](p.program, p.ignores...)
+		)
+		// Cache lowered program
+		p.cachedExecutionProgram = util.Some(program)
+		// Log stats
+		stats.Log("Compiling (fast mode) execution program")
+	}
+	//
+	return p.cachedExecutionProgram.Unwrap()
+}
+
+// MirConstraints returns the mid-level (MIR) constraints generated from the
+// program encoded in this file. The constraints are constructed by compiling
+// them from the tracing program upon first call, and subsequently cached.
+// Observe that the MIR constraints should only be used for debugging purposes,
+// as they are not intended for sound constraint checking.
+//
+// NOTE: this mutates the cache and is therefore not safe for concurrent use.
+func (p *BinaryFile[F]) MirConstraints() mir.Schema[F] {
+	// Check cache
+	if !p.cachedMirConstraints.HasValue() {
+		var (
+			stats  = util.NewPerfStats()
+			tracer = p.TracingProgram()
+		)
+		// Generate + cache mid-level intermediate representation
+		p.cachedMirConstraints = util.Some(GenerateMirConstraints[vm.Uint32, F](tracer))
+		// Log stats
+		stats.Log("Compiling MIR constraints")
+	}
+	//
+	return p.cachedMirConstraints.Unwrap()
+}
+
+// AirConstraints returns the arithmetic (AIR) constraints encoded in this file.
+// The constraints are constructed by compiling them from the tracing program
+// upon first call, and subsequently cached.
+//
+// NOTE: this mutates the cache and is therefore not safe for concurrent use.
+func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
+	// Check cache
+	if !p.cachedAirConstraints.HasValue() {
+		var (
+			stats  = util.NewPerfStats()
+			tracer = p.TracingProgram()
+		)
+		// Generate + cache arithmetic intermediate representation
+		p.cachedAirConstraints = util.Some(GenerateAirConstraints[vm.Uint32, F](tracer))
+		// Log stats
+		stats.Log("Compiling AIR constraints")
+	}
+	//
+	return p.cachedAirConstraints.Unwrap()
+}
+
+// clearCachedArtifacts discards every artifact derived from the raw program,
+// such that each is recompiled on the next call to its accessor.  This is
+// necessary whenever something they were compiled against changes (i.e. the
+// program itself, or the set of ignored pipeline stages).
+func (p *BinaryFile[F]) clearCachedArtifacts() {
+	p.cachedExecutionProgram = util.None[vm.Program[vm.Uint128]]()
+	p.cachedTracingProgram = util.None[vm.Program[vm.Uint32]]()
+	p.cachedMirConstraints = util.None[mir.Schema[F]]()
+	p.cachedAirConstraints = util.None[air.Schema[F]]()
+}
+
+// Check a given trace against the AIR constraints embodied in this constraints
 // file, potentially producing one (or more) constraint failures.
 func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Failure {
 	var (
@@ -158,9 +285,12 @@ func (p *BinaryFile[F]) Check(tr trace.Trace[F], config TraceConfig) []schema.Fa
 // steps at a time, producing any outputs arising.  Execution is faster than
 // trace because it does not record any internal information about the trace ---
 // it simply extracts the outputs at the end.
-func (p *BinaryFile[F]) Execute(input map[string][]byte, n uint) (output map[string][]byte, errs []error) {
+func (p *BinaryFile[F]) Execute(input map[string][]byte) (output map[string][]byte, errs []error) {
+	var (
+		bci = vm.NewBytecodeInterpreter(p.ExecutionProgram())
+	)
 	// Boot and execute fast machine
-	output, _, errs = vm.BootAndExecute(p.cachedInterpreter(), input, n)
+	output, _, errs = vm.BootAndExecute(bci, input, math.MaxUint)
 	//
 	return output, errs
 }
@@ -179,7 +309,7 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 	var (
 		stats = util.NewPerfStats()
 		// Lower bytecode program
-		prog32 = vm.ProgramToProgram[vm.Uint, vm.Uint32](p.program)
+		prog32 = p.TracingProgram()
 		//
 		builder = tracer.NewBuilder[vm.Uint32, F, *rtrace.CompactModule[F]](prog32)
 	)
@@ -209,21 +339,6 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg TraceConfig,
 	stats.Log("Trace generation")
 	//
 	return output, rtr, tr, errs
-}
-
-func (p *BinaryFile[F]) cachedInterpreter() *vm.Interpreter[vm.Uint128] {
-	var interpreter *vm.Interpreter[vm.Uint128]
-	//
-	if !p.machineCache.HasValue() {
-		// Lower bytecode program
-		bci := vm.ProgramToProgram[vm.Uint, vm.Uint128](p.program)
-		// Construct fresh interpreter
-		interpreter = vm.NewBytecodeInterpreter(bci)
-		// Compile bytecode interpreter
-		p.machineCache = util.Some(interpreter)
-	}
-	//
-	return interpreter
 }
 
 // ============================================================================
@@ -273,6 +388,13 @@ func (p *BinaryFile[F]) UnmarshalBinary(data []byte) error {
 		// Proceed to decoding any attributes.
 		if err = decoder.Decode(&p.attributes); err == nil {
 			if err = decoder.Decode(&p.program); err == nil {
+				// Discard the ignores configured against the previous program,
+				// since they are a property of how that program was to be
+				// compiled (see WithIgnores).
+				p.ignores = nil
+				// Discard anything cached against the previous program, since
+				// this file now describes a different one.
+				p.clearCachedArtifacts()
 				// extract modulus defined used for the compiling the given
 				// constraints.
 				var mod = p.program.Field().Modulus()
