@@ -502,6 +502,11 @@ func (p *Parser) parseInputOutputMemory() (decl.Unresolved, []source.SyntaxError
 	if name, errs = p.parseIdentifier(); len(errs) > 0 {
 		return nil, errs
 	}
+	// A timestamp type is only meaningful on read-write memory, which has a
+	// timestamp to size; reject it here with a purposeful message.
+	if p.lookahead().Kind == LSQUARE {
+		return nil, p.syntaxErrors(p.lookahead(), "only read-write memory takes a timestamp type")
+	}
 	//
 	if address, errs = p.parseMemoryArgsList(variable.PARAMETER); len(errs) > 0 {
 		return nil, errs
@@ -592,6 +597,10 @@ func (p *Parser) parseReadWriteMemory() (decl.Unresolved, []source.SyntaxError) 
 		return nil, errs
 	}
 	// Parse timestamp type: [type]
+	if p.lookahead().Kind != LSQUARE {
+		return nil, p.syntaxErrors(p.lookahead(), "read-write memory requires a timestamp type")
+	}
+	//
 	if _, errs = p.expect(LSQUARE); len(errs) > 0 {
 		return nil, errs
 	}

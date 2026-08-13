@@ -1,6 +1,6 @@
 //error:12:5-25:debug function cannot call non-debug function "sum"
 //error:13:5-13:debug function cannot call non-debug function "helper"
-memory ram(address:u8) -> (byte:u8)
+memory ram[u32](address:u8) -> (byte:u8)
 
 fn main<ram>() {
     ram[0] = 1

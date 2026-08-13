@@ -608,6 +608,21 @@ func Test_ZkcInvalid_Memory_15(t *testing.T) {
 func Test_ZkcInvalid_Memory_16(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/memory_16")
 }
+func Test_ZkcInvalid_Memory_17(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/memory_17")
+}
+func Test_ZkcInvalid_Memory_18(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/memory_18")
+}
+func Test_ZkcInvalid_Memory_19(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/memory_19")
+}
+func Test_ZkcInvalid_Memory_20(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/memory_20")
+}
+func Test_ZkcInvalid_Memory_21(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/memory_21")
+}
 
 // ===================================================================
 // Felt assignment Tests
