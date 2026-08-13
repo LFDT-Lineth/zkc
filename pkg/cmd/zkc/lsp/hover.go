@@ -355,6 +355,13 @@ func formatMemoryDecl(m *decl.ResolvedMemory, env data.ResolvedEnvironment) stri
 
 	sb.WriteString(m.Name())
 
+	// Timestamp type (read-write memory only)
+	if m.TimestampType != nil {
+		sb.WriteString("[")
+		sb.WriteString(m.TimestampType.String(env))
+		sb.WriteString("]")
+	}
+
 	// Address bus
 	sb.WriteString("(")
 
