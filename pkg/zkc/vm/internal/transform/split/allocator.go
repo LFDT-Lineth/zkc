@@ -80,7 +80,7 @@ func (p *registerAllocator[W]) Name() string {
 	return p.name
 }
 
-// Allocate implementation for the RegisterAllocator interface
+// Allocate implementation for the RegisterAllocator interface.
 func (p *registerAllocator[W]) Allocate(prefix string, width util.Option[uint]) RegisterId {
 	var (
 		// Determine index for new register
@@ -90,6 +90,10 @@ func (p *registerAllocator[W]) Allocate(prefix string, width util.Option[uint]) 
 		// Default padding (for now)
 		zero W
 	)
+	// Reuse any existing zero register.
+	if width.HasValue() && width.Unwrap() == 0 {
+		return p.ZeroRegister()
+	}
 	// Sanity check allocation width
 	if width.HasValue() && width.Unwrap() > p.maxRegisterWidth {
 		panic(fmt.Sprintf("register exceeds maximum width (%d > %d)", width.Unwrap(), p.maxRegisterWidth))
@@ -146,5 +150,5 @@ func (p *registerAllocator[W]) ZeroRegister() RegisterId {
 		}
 	}
 	// Allocate a new register.
-	return p.Allocate("zero", util.Some[uint](0))
+	return p.AllocateNamed("cst_0", util.Some[uint](0))
 }
