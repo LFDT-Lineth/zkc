@@ -44,7 +44,10 @@ func LowerBitwise[W word.Word[W]](program descriptor.Program[W]) descriptor.Prog
 		}
 	}
 
-	return descriptor.NewProgram(program.Field(), append(out, helpers.modules()...)...)
+	return descriptor.NewProgram(
+		program.Field(),
+		program.MaxStaticHeight(),
+		append(out, helpers.modules()...)...)
 }
 
 // lowerBitwiseFunction rewrites each bytecode of a function via codeFn,

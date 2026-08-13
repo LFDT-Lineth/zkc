@@ -72,6 +72,14 @@ import (
 //   - Back-edges.  A goto whose target would bring control back into the vector
 //     being built (a loop) is left alone; otherwise the inliner would unfold it
 //     indefinitely.
+//
+// PRECONDITION: every vector must terminate explicitly, in a Jmp / Ret / Fail.
+// Both the merge loop and the reachability walk driving it are expressed purely
+// in terms of Jmp bytecodes, so a vector relying on implicit fall-through would
+// appear to have no successor --- whereupon its successor is pruned as
+// unreachable.  Codegen establishes this invariant (see
+// codegen.compileStatement), every transform preceding this one preserves it,
+// and bytecode.Vector.Validate enforces it.
 func Vectorize[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	modules := slices.Clone(program.Modules())
 	//
@@ -81,7 +89,7 @@ func Vectorize[W word.Word[W]](program descriptor.Program[W]) descriptor.Program
 		}
 	}
 	//
-	return descriptor.NewProgram(program.Field(), modules...)
+	return descriptor.NewProgram(program.Field(), program.MaxStaticHeight(), modules...)
 }
 
 // vectorizeFunction applies the per-function vectorisation pass, returning a new
@@ -96,10 +104,6 @@ func vectorizeFunction[W word.Word[W]](fn *descriptor.Function[W], env bytecode.
 	if n == 0 {
 		return fn
 	}
-	// Wrap every top-level vector and append a fall-through Jmp(pc+1) to those
-	// that don't already terminate.  This makes inter-vector control-flow explicit
-	// so that lastJump can drive the merge loop.
-	prepared := prepareCode(original)
 	//
 	var (
 		insns    = make([]BytecodeVector[W], n)
@@ -110,85 +114,18 @@ func vectorizeFunction[W word.Word[W]](fn *descriptor.Function[W], env bytecode.
 	visited[0] = true
 
 	worklist.Push(0)
-	// Vectorize bytecodes as much as possible.
+	// Vectorize bytecodes as much as possible.  Observe this relies on every
+	// vector terminating explicitly, since inter-vector control flow is
+	// discovered entirely through Jmp bytecodes (see Vectorize).
 	for !worklist.IsEmpty() {
 		pc := worklist.Pop()
-		insns[pc] = vectorizeInstruction(pc, prepared, env)
+		insns[pc] = vectorizeInstruction(pc, original, env)
 		markJumpTargets(insns[pc], visited, &worklist)
 	}
 	// Remove unreachable vectors and rebind jump targets.
 	insns = pruneUnreachableInstructions(insns)
 	//
 	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), fn.Effects(), insns)
-}
-
-// prepareCode appends a fall-through Jmp(pc+1) to any vector that does not
-// already terminate (i.e. whose last code is not a Jmp / Ret / Fail).  Vectors
-// are built afresh so that subsequent merge work cannot accidentally mutate the
-// input function.
-func prepareCode[W word.Word[W]](code []BytecodeVector[W]) []BytecodeVector[W] {
-	var (
-		n        = uint(len(code))
-		prepared = make([]BytecodeVector[W], n)
-	)
-	//
-	for pc, vec := range code {
-		// Clone vector
-		codes := slices.Clone(vec.Bytecodes)
-		// Append fall-through Jmp if the vector doesn't already terminate.
-		if !endsInTerminator(codes) && uint(pc)+1 < n {
-			codes = append(codes, bytecode.Jump[W](bytecode.Address(uint(pc)+1)))
-		}
-		//
-		prepared[pc] = bytecode.NewVector(codes...)
-	}
-	//
-	return prepared
-}
-
-// endsInTerminator reports whether all paths through codes terminate without
-// falling off the end: the last code must be a Jmp/Ret/Fail, AND no
-// Skip/SkipIf/Switch anywhere in the vector has a skip target past the end (which
-// would create a second exit path not visible from the last bytecode).
-func endsInTerminator[W word.Word[W]](codes []Bytecode[W]) bool {
-	n := uint(len(codes))
-	//
-	if n == 0 {
-		return false
-	}
-	//
-	switch codes[n-1].(type) {
-	case *bytecode.Jmp[W], *bytecode.Ret[W], *bytecode.Fail[W]:
-	default:
-		return false
-	}
-	// Verify no skip-bytecode can reach past the end of the vector.
-	for i, code := range codes {
-		switch code := code.(type) {
-		case *bytecode.Skip[W]:
-			if uint(i)+uint(code.Skip)+1 >= n {
-				return false
-			}
-		case *bytecode.SkipIf[W]:
-			if uint(i)+uint(code.Skip)+1 >= n {
-				return false
-			}
-		case *bytecode.Switch[W]:
-			for _, dc := range code.Cases {
-				if uint(i)+uint(dc.Skip)+1 >= n {
-					return false
-				}
-			}
-		case *bytecode.Dispatch[W]:
-			for _, dc := range code.Cases {
-				if uint(i)+uint(dc.Skip)+1 >= n {
-					return false
-				}
-			}
-		}
-	}
-	//
-	return true
 }
 
 // vectorizeInstruction greedily absorbs the targets of jumps in the vector at pc
@@ -403,15 +340,40 @@ func pruneUnreachableInstructions[W word.Word[W]](insns []BytecodeVector[W]) []B
 		kept = append(kept, insn)
 	}
 	// Rebind every Jmp.Target to its new position.
-	for _, vec := range kept {
-		for i, code := range vec.Bytecodes {
-			if jmp, ok := code.(*bytecode.Jmp[W]); ok {
-				vec.Bytecodes[i] = bytecode.Jump[W](bytecode.Address(mapping[jmp.Target]))
-			}
-		}
+	for i, vec := range kept {
+		kept[i] = rebindJumps(vec, mapping)
 	}
 	//
 	return kept
+}
+
+// rebindJumps returns a vector in which every Jmp target has been remapped
+// through the given mapping.  Observe that the vector is rebuilt, rather than
+// updated in place, since a vector which the merge loop left untouched still
+// shares its bytecodes with the function being vectorised (see
+// vectorizeInstruction).  When no target actually moves, the vector is returned
+// as is --- which is the common case, since nothing moves unless something was
+// pruned.
+func rebindJumps[W word.Word[W]](vec BytecodeVector[W], mapping []uint) BytecodeVector[W] {
+	var (
+		ncodes  = make([]Bytecode[W], len(vec.Bytecodes))
+		changed = false
+	)
+	//
+	for i, code := range vec.Bytecodes {
+		if jmp, ok := code.(*bytecode.Jmp[W]); ok && uint(jmp.Target) != mapping[jmp.Target] {
+			ncodes[i] = bytecode.Jump[W](bytecode.Address(mapping[jmp.Target]))
+			changed = true
+		} else {
+			ncodes[i] = code
+		}
+	}
+	//
+	if !changed {
+		return vec
+	}
+	//
+	return bytecode.NewVector(ncodes...)
 }
 
 // validateConflicts reports the first read/write hazard found within vec, or nil

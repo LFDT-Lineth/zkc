@@ -28,8 +28,6 @@ type Double[W Word[W]] struct {
 	hi, lo W
 }
 
-var _ Word[Double[Uint64]] = Double[Uint64]{}
-
 // Add implementation for Word interface.
 func (p Double[W]) Add(w Double[W]) (Double[W], bool) {
 	lo, carry := p.lo.Add(w.lo)

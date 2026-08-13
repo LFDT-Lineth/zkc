@@ -50,7 +50,7 @@ func LowerFieldCasts[W word.Word[W]](program descriptor.Program[W]) descriptor.P
 		}
 	}
 
-	return descriptor.NewProgram(program.Field(), append(modules, helpers.modules...)...)
+	return descriptor.NewProgram(program.Field(), program.MaxStaticHeight(), append(modules, helpers.modules...)...)
 }
 
 func lowerFieldCastFunction[W word.Word[W]](fn *descriptor.Function[W], helpers *fieldCastHelpers[W],
