@@ -29,16 +29,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-// stampWidth is the bit-width of a read-write memory timestamp.  It MUST match
-// the value used by the ThreadTimestamps transform
-// (pkg/zkc/vm/internal/transform/thread_timestamps.go), so that the caller's
-// (split) stamp limbs line up with this module's timestamp columns.
-//
-// TODO: source this per-memory once a stamp-width syntax exists at the ZkC
-// source level (issue #2069) rather than sharing a global default across
-// packages.
-const stampWidth uint = 32
-
 // ramLayout records the register ids and limb widths of every column of a
 // read-write memory (RAM) module, in the fixed order established by
 // translateReadWriteMemory.  This is the specification of how the RAM table
@@ -132,9 +122,11 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 		dataRegs = m.DataRegisters()
 		nAddr    = uint(len(addrRegs))
 		nData    = uint(len(dataRegs))
-		// Timestamp limb widths, most-significant first.  A stamp is a stampWidth
-		// register, so it splits exactly like the caller's threaded stamp.
-		tsWidths = array.Reverse(register.LimbWidths(field.RegisterWidth, stampWidth))
+		// Timestamp limb widths, most-significant first.  A stamp is a register
+		// of the memory's declared timestamp width (see "memory name[uN](...)"),
+		// carried by the descriptor, so it splits exactly like the caller's
+		// threaded stamp.
+		tsWidths = array.Reverse(register.LimbWidths(field.RegisterWidth, m.TimestampWidth()))
 		nStamp   = uint(len(tsWidths))
 		next     = nAddr + nData
 	)

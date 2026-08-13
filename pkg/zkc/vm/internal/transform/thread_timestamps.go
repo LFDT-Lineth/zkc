@@ -23,13 +23,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// stampWidth is the bit-width of a timestamp register.
-//
-// TODO: source this per-memory from a (not-yet-implemented) stamp-width syntax
-// "memory data(u48; addr:u16) -> ..." (issue #2069) rather than using a single
-// global default.
-const stampWidth uint = 32
-
 // ThreadTimestamps threads a per-memory timestamp through every function which
 // declares a read-write memory effect.  For each such function and read-write
 // memory M it may access, it:
@@ -232,7 +225,7 @@ func (t *threader[W]) initNewRegs(fn *descriptor.Function[W]) []descriptor.Regis
 		for _, e := range t.effects {
 			t.stampIn[e] = bytecode.RegisterId(len(newRegs))
 			newRegs = append(newRegs, descriptor.NewRegister(register.INPUT_REGISTER, stampName(t.mods, e),
-				util.Some(stampWidth), padding))
+				util.Some(t.timestampWidth(e)), padding))
 		}
 	}
 	//
@@ -242,7 +235,7 @@ func (t *threader[W]) initNewRegs(fn *descriptor.Function[W]) []descriptor.Regis
 		for _, e := range t.effects {
 			t.canonical[e] = bytecode.RegisterId(len(newRegs))
 			newRegs = append(newRegs, descriptor.NewRegister(register.OUTPUT_REGISTER, stampOutName(t.mods, e),
-				util.Some(stampWidth), padding))
+				util.Some(t.timestampWidth(e)), padding))
 		}
 	}
 	//
@@ -317,7 +310,7 @@ func (t *threader[W]) getCanonical(e descriptor.ModuleId) bytecode.RegisterId {
 		return r
 	}
 	//
-	r := t.alloc.AllocateNamed(stampName(t.mods, e), util.Some(stampWidth))
+	r := t.alloc.AllocateNamed(stampName(t.mods, e), util.Some(t.timestampWidth(e)))
 	t.canonical[e] = r
 	//
 	return r
@@ -367,15 +360,16 @@ func (t *threader[W]) materialise(s stampState, target bytecode.RegisterId) Byte
 	}
 }
 
-// stampRegister returns a register holding the given stamp value, together
-// with the (possibly empty) instructions computing it: the base register
-// itself when the offset is zero, and a fresh temporary otherwise.
-func (t *threader[W]) stampRegister(s stampState) (bytecode.RegisterId, []Bytecode[W]) {
+// stampRegister returns a register holding the given stamp value of the given
+// effect, together with the (possibly empty) instructions computing it: the
+// base register itself when the offset is zero, and a fresh temporary
+// otherwise.
+func (t *threader[W]) stampRegister(e descriptor.ModuleId, s stampState) (bytecode.RegisterId, []Bytecode[W]) {
 	if s.base.HasValue() && s.off == 0 {
 		return s.base.Unwrap(), nil
 	}
 	//
-	tmp := t.alloc.Allocate("stamp", util.Some(stampWidth))
+	tmp := t.alloc.Allocate("stamp", util.Some(t.timestampWidth(e)))
 	//
 	return tmp, []Bytecode[W]{t.materialise(s, tmp)}
 }
@@ -470,7 +464,7 @@ func (t *threader[W]) threadInstruction(insns []Bytecode[W], i int, states stamp
 	switch insn := insns[i].(type) {
 	case *bytecode.ReadWrite[W]:
 		if x := t.effectIndex(insn.Id); x >= 0 {
-			reg, pre := t.stampRegister(t.resolve(x, states.vals[x]))
+			reg, pre := t.stampRegister(insn.Id, t.resolve(x, states.vals[x]))
 			at(i).fall = append(at(i).fall, pre...)
 			replace[i] = withStamp(insn, reg)
 		}
@@ -523,7 +517,7 @@ func (t *threader[W]) mergeAt(i int, merged stamps, need []bool, incoming []stam
 		if merged.vals[x].kind == stampCanonical {
 			target = t.getCanonical(e)
 		} else {
-			target = t.alloc.Allocate("stamp", util.Some(stampWidth))
+			target = t.alloc.Allocate("stamp", util.Some(t.timestampWidth(e)))
 			t.temps[stampKey{e, merged.vals[x]}] = target
 		}
 		//
@@ -634,7 +628,7 @@ func (t *threader[W]) rewriteBranch(insns []Bytecode[W], i int, states stamps,
 			continue
 		}
 		//
-		tmp := t.alloc.Allocate("stamp", util.Some(stampWidth))
+		tmp := t.alloc.Allocate("stamp", util.Some(t.timestampWidth(e)))
 		t.temps[stampKey{e, stampValue{kind: stampNorm, pc: uint(i)}}] = tmp
 		at(i).fall = append(at(i).fall, t.materialise(t.resolve(x, v), tmp))
 	}
@@ -693,11 +687,11 @@ func (t *threader[W]) threadCall(pc uint, call *bytecode.Call[W], states stamps,
 			panic(fmt.Sprintf("caller lacks a stamp for memory %d", e))
 		}
 		//
-		reg, insns := t.stampRegister(t.resolve(x, states.vals[x]))
+		reg, insns := t.stampRegister(e, t.resolve(x, states.vals[x]))
 		pre = append(pre, insns...)
 		args[j] = reg
 		// Receive the callee's updated stamp into a fresh temporary.
-		returns[j] = t.alloc.Allocate("stamp", util.Some(stampWidth))
+		returns[j] = t.alloc.Allocate("stamp", util.Some(t.timestampWidth(e)))
 		t.temps[stampKey{e, stampValue{kind: stampCallOut, pc: pc}}] = returns[j]
 	}
 	//
@@ -851,6 +845,14 @@ func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInse
 	}
 	//
 	return bytecode.NewVector(out...)
+}
+
+// timestampWidth returns the declared timestamp width of the given read-write
+// memory, as carried by its descriptor (see "memory name[uN](...)").  Stamp
+// registers, temporaries and merge registers for that memory all take this
+// width, so its split limbs line up with the RAM module's timestamp columns.
+func (t *threader[W]) timestampWidth(e descriptor.ModuleId) uint {
+	return t.mods[e].(*descriptor.Memory[W]).TimestampWidth()
 }
 
 // stampName returns the name of the stamp-in register threaded for the given
