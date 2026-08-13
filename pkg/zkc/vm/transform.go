@@ -82,7 +82,10 @@ func LowerDivisions[W word.Word[W]](program Program[W]) Program[W] {
 // through exactly as before.
 //
 // NOTE: this transform must run before register splitting (which does not
-// support Switch bytecodes).
+// support Switch bytecodes), and after FactorSkipConditions: it emits one
+// bit-select diamond per case, which that pass would otherwise re-factor for no
+// gain (see bodyContainsOnlyBitEquality, whose reasoning assumes these diamonds
+// have not been introduced yet).
 func LowerSwitch[W word.Word[W]](program Program[W]) Program[W] {
 	return transform.LowerSwitch(program)
 }
