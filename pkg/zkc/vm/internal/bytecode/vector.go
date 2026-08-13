@@ -472,7 +472,7 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes], limbWi
 		)
 		//
 		switch code := code.(type) {
-		case *Ret[W], *Jmp[W], *Fail[W]:
+		case *Fail[W], *Ret[W], *Jmp[W]:
 			return nil
 		case *Skip[W]:
 			// join into branch target
