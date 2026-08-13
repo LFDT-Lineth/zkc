@@ -132,6 +132,14 @@ func (p *Conjunct[F, T]) Simplify(casts bool) T {
 	}
 	// Remove true values
 	terms = array.RemoveMatching(terms, IsTrue[F, T])
+	// Propagate unconditional facts (bare, unguarded sibling terms) into
+	// guarded terms whose condition they establish or contradict (see
+	// absorbFacts).
+	terms = absorbFacts(terms, casts)
+	// Absorption may have exposed a false term.
+	if array.ContainsMatching(terms, IsFalse) {
+		return False[F, T]()
+	}
 	// Final checks
 	switch len(terms) {
 	case 0:
