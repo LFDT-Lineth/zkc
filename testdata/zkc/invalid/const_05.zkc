@@ -1,3 +1,3 @@
-//error:3:14-15:expected type u8
+//error:3:14-15:expected type u8, found u16
 const x:u16 = 1028
 const y:u8 = x

@@ -48,17 +48,8 @@ type Function[W Word[W]] = descriptor.Function[W]
 // native circuit and whether calls may supply undefined arguments.
 type FunctionKind = descriptor.FunctionKind
 
-// Function kinds, re-exported for use with NewBytecodeFunction.
-var (
-	// BYTECODE_FUNCTION is a safe function implemented by bytecode.
-	BYTECODE_FUNCTION = descriptor.BYTECODE_FUNCTION
-	// NATIVE_FUNCTION is a safe function backed by a native circuit.
-	NATIVE_FUNCTION = descriptor.NATIVE_FUNCTION
-	// UNSAFE_ARGS_FUNCTION is a bytecode function which may receive undefined arguments.
-	UNSAFE_ARGS_FUNCTION = descriptor.UNSAFE_ARGS_FUNCTION
-	// NATIVE_UNSAFE_ARGS_FUNCTION is a native function which may receive undefined arguments.
-	NATIVE_UNSAFE_ARGS_FUNCTION = descriptor.NATIVE_UNSAFE_ARGS_FUNCTION
-)
+// DEFAULT_FUNCTION is a safe function implemented by bytecode.
+var DEFAULT_FUNCTION = descriptor.BYTECODE_FUNCTION
 
 // Register describes a register
 type Register[W Word[W]] = descriptor.Register[W]
@@ -179,8 +170,18 @@ func ValidateProgram[W word.Word[W]](p Program[W]) error {
 
 // NewBytecodeProgram assembles a bytecode program directly from pre-lowered
 // descriptor modules, bypassing the word-machine round trip.
-func NewBytecodeProgram[W word.Word[W]](field field.Config, modules ...Module[W]) Program[W] {
-	return descriptor.NewProgram(field, modules...)
+//
+// NOTE: maxStaticHeight must be non-zero.  Downstream passes derive the maximum
+// static table width from it as floor(log2(maxStaticHeight)), computed as
+// bits.Len(maxStaticHeight)-1.  A zero height silently underflows that
+// expression to the maximum uint, whereupon every register width is treated as
+// statically enumerable and table generation exhausts memory.
+func NewBytecodeProgram[W word.Word[W]](field field.Config, maxStaticHeight uint, modules ...Module[W]) Program[W] {
+	if maxStaticHeight == 0 {
+		panic("invalid maximum static table height (zero)")
+	}
+	//
+	return descriptor.NewProgram(field, maxStaticHeight, modules...)
 }
 
 // NewBytecodeVector constructs a bytecode vector (single trace line) from the
@@ -472,22 +473,19 @@ func Debug[W Word[W]](chunks []FormattedChunk, sources []RegisterId) Bytecode[W]
 }
 
 // Intrinsic constructs a hint instruction performing the given operation op (e.g.
-// DIV_HINT) which reads the given source (argument) register vectors and writes
+// DIV_HINT) which reads the given source (argument) operands and writes
 // the given target (return) register vectors.
-func Intrinsic[W Word[W]](op bytecode.Operation, targets, sources []bytecode.RegisterVector) Bytecode[W] {
-	return bytecode.NewIntrinsic[W](op, targets, sources)
+func Intrinsic[W Word[W]](op bytecode.Operation, targets []bytecode.RegisterVector,
+	sources []bytecode.Operand[W]) Bytecode[W] {
+	return bytecode.NewIntrinsic(op, targets, sources)
 }
 
-// Div constructs an integer-division instruction computing
-// "target = dividend / divisor".
-func Div[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
-	return bytecode.NewDivRem[W](encoding.DIV, target, dividend, divisor)
-}
-
-// Rem constructs an integer-remainder instruction computing
-// "target = dividend % divisor".
-func Rem[W Word[W]](target, dividend, divisor RegisterId) Bytecode[W] {
-	return bytecode.NewDivRem[W](encoding.REM, target, dividend, divisor)
+// DivMod constructs a division/remainder instruction computing both
+// "quotient = dividend / divisor" and "remainder = dividend % divisor" for a
+// register or constant divisor.  A source-level "/" or "%" directs the
+// unwanted result into a fresh scratch register.
+func DivMod[W Word[W]](quotient, remainder, dividend RegisterId, divisor Operand[W]) Bytecode[W] {
+	return bytecode.NewDivRem(quotient, remainder, dividend, divisor)
 }
 
 // Fail constructs a fail instruction carrying the given formatted message.

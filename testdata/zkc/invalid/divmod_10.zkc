@@ -1,0 +1,6 @@
+//error:5:6-7:unknown variable
+const r:u32 = 0x02
+
+fn f(a:u32, b:u32) -> (q:u32) {
+  q, r = a /% b
+}

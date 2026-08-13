@@ -45,7 +45,7 @@ func InsertCheckCasts[W word.Word[W]](program descriptor.Program[W]) descriptor.
 		}
 	}
 	//
-	return descriptor.NewProgram(program.Field(), out...)
+	return descriptor.NewProgram(program.Field(), program.MaxStaticHeight(), out...)
 }
 
 // insertFunctionCasts rewrites a single function's vectors, inserting cast checks
@@ -90,8 +90,12 @@ func castPacket[W word.Word[W]](b Bytecode[W], regmap descriptor.RegisterMap[W],
 		if dividend := regmap.Register(b.Dividend); !dividend.IsNative() {
 			width = dividend.Bitwidth()
 		}
+		// The quotient and remainder are independent values, so each gets its
+		// own cast check.
+		casts := checkCast(regmap, width, b.Quotient)
+		casts = append(casts, checkCast(regmap, width, b.Remainder)...)
 		//
-		return prepend(b, checkCast(regmap, width, b.Target))
+		return prepend(b, casts)
 	case *bytecode.Call[W]:
 		callee := modules[b.Target]
 		pre := addOutgoingCheckCasts(regmap, b.Arguments, callee.Inputs())

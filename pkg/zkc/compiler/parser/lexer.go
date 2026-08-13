@@ -129,6 +129,8 @@ const (
 	MUL
 	// DIV signals "/"
 	DIV
+	// DIV_REM signals "/%", the combined division/remainder (divmod) operator
+	DIV_REM
 	// BITWISE_AND signals "&"
 	BITWISE_AND
 	// BITWISE_OR signals "|"
@@ -246,6 +248,7 @@ var rules []lex.LexRule[rune] = []lex.LexRule[rune]{
 	lex.Rule(lex.Unit('+'), ADD),
 	lex.Rule(lex.Unit('-'), SUB),
 	lex.Rule(lex.Unit('*'), MUL),
+	lex.Rule(lex.Unit('/', '%'), DIV_REM),
 	lex.Rule(lex.Unit('/'), DIV),
 	lex.Rule(lex.Unit('%'), REM),
 	lex.Rule(lex.Unit('!'), LOGICAL_NOT),

@@ -22,47 +22,33 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 )
-
-// BuildArtifacts captures the set of outputs generated from compiling a given
-// ZkC program (e.g. AIR constraints).  Whilst the AIR artifact might be
-// considered the primary goal of compilation, the other artifacts are needed to
-// support other features.  For example, the FIR artifact is needed for trace
-// expansion, whilst the AST artifact allows the AST to be printed for debugging
-// purposes.
-type BuildArtifacts struct {
-	// Abstract Syntax Tree
-	ast util.Option[ast.Program]
-	// Word Machine
-	ir vm.Program[vm.Uint]
-	// Annotations on source-level declarations (functions and memories),
-	// keyed by declaration name.  These are not carried through to the lower
-	// levels, hence they are retained here for printing purposes.  Observe
-	// this is empty when building from a prebuilt binary.
-	annotations map[string][]string
-}
 
 // BuildConfig packages up all the requirements for building the set of target
 // artifacts.
 type BuildConfig struct {
 	// code configuration includes various things which can be turned off / on.
 	config codegen.Config
+	// fast mode determination
+	fastMode bool
 	// metadata to include in binary output file
-	metadata []byte
+	metadata util.Option[[]byte]
 	// enable go code generator
 	gogen bool
 	// padding strategy
 	padding ir.PaddingStrategy
+	// ignored pipeline stages
+	ignores []string
 }
 
 // Build applies a build configuration with a given set of source files.
-func Build[F field.Element[F]](build BuildConfig, args ...string) BuildArtifacts {
+func Build[F field.Element[F]](build BuildConfig, args ...string) (*ast.Program, *constraints.BinaryFile[F]) {
 	var (
 		errs []source.SyntaxError
-		//
-		artifacts BuildArtifacts
+		raw  vm.Program[vm.Uint]
 	)
 	// Check whether prebuilt binary supplied on command-line.
 	if len(args) > 0 && path.Ext(args[0]) == ".bin" {
@@ -71,45 +57,31 @@ func Build[F field.Element[F]](build BuildConfig, args ...string) BuildArtifacts
 			log.Error("require exactly one prebuilt binary")
 			os.Exit(6)
 		}
+		//
+		var (
+			// Read existing binary file
+			binf = ReadBinaryFile[F](args[0])
+			// Determine metadata
+			metadata = build.metadata.UnwrapOr(binf.Header().MetaData)
+		)
 		// Single (binary) file supplied
-		artifacts.ir = ReadBinaryFile[F](args[0]).Program()
-	} else {
-		var ir vm.Program[vm.Uint]
-		// Compile source files, or print errors
-		prog := CompileSourceFiles(build.config.GetField(), args...)
-		// Record AST (e.g. for debugging)
-		artifacts.ast = util.Some(prog)
-		// Record annotations for printing purposes
-		artifacts.annotations = annotationsOf(prog)
-		// Word-level Intermediate Representation
-		// Compile the AST into the top-level word machine
-		ir, errs = ast.Compile(prog, build.config)
-		//
-		artifacts.ir = ir
-		//
-		if len(errs) > 0 {
-			for _, err := range errs {
-				printSyntaxError(&err)
-			}
-			//
-			os.Exit(4)
+		return nil, constraints.NewBinaryFile[F](metadata, binf.Attributes(), binf.RawProgram()).
+			WithIgnores(build.ignores...)
+	}
+	// Compile source files, or print errors
+	prog := CompileSourceFiles(build.config.GetField(), args...)
+	// Word-level Intermediate Representation
+	// Compile the AST into the top-level word machine
+	raw, errs = ast.Compile(prog, build.config)
+	//
+	if len(errs) > 0 {
+		for _, err := range errs {
+			printSyntaxError(&err)
 		}
+		//
+		os.Exit(4)
 	}
 	//
-	return artifacts
-}
-
-// annotationsOf extracts the annotations associated with each annotated
-// declaration (i.e. function or memory) in a given program, keyed by the
-// declaration's name.
-func annotationsOf(program ast.Program) map[string][]string {
-	var annotations = make(map[string][]string)
-	//
-	for _, d := range program.Components() {
-		if annots := d.Annotations(); len(annots) > 0 {
-			annotations[d.Name()] = annots
-		}
-	}
-	//
-	return annotations
+	return &prog, constraints.NewBinaryFile[F](build.metadata.UnwrapOr(nil), nil, raw).
+		WithIgnores(build.ignores...)
 }

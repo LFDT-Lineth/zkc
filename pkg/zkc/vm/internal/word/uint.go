@@ -60,6 +60,11 @@ func (p Uint) AddMod(w, m Uint) Uint {
 	return Uint{res}
 }
 
+// Config implementation for Word interface.
+func (p Uint) Config() Config {
+	return WORD_UINT
+}
+
 // Bandwidth implementation for Word interface.
 func (p Uint) Bandwidth() uint {
 	return math.MaxUint

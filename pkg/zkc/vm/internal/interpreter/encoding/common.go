@@ -211,10 +211,10 @@ const (
 	MUL_nm
 	// CSUB (subtract from constant) instruction
 	CSUB
-	// DIV instruction
-	DIV
-	// REM instruction
-	REM
+	// DIVMOD (combined division / remainder) instruction
+	DIVMOD
+	// DIVMODC (combined division / remainder by constant) instruction
+	DIVMODC
 	// INTRINSIC instruction (e.g. division hint, wide shift-left)
 	INTRINSIC
 	// ADDMOD_P instruction
@@ -241,6 +241,7 @@ const (
 	DEBUG
 	// FIELD_TO_UINT instruction
 	FIELD_TO_UINT
+
 	//
 	MAX_BYTECODE
 )
@@ -335,10 +336,11 @@ const (
 	// WIDE_MUL_nm (multiplication with vector target) instruction [must
 	// follow WIDE_SUB_nm]
 	WIDE_MUL_nm
-	// WIDE_DIV instruction
-	WIDE_DIV
-	// WIDE_REM instruction [must follow WIDE_DIV]
-	WIDE_REM
+	// WIDE_DIVMOD (combined division / remainder) instruction
+	WIDE_DIVMOD
+	// WIDE_DIVMODC (combined division / remainder by pooled constant)
+	// instruction
+	WIDE_DIVMODC
 	// WIDE_INTRINSIC instruction
 	WIDE_INTRINSIC
 	// WIDE_ADDMOD_P instruction
@@ -390,9 +392,9 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 	case *bytecode.Debug[W]:
 		return Debug(b, env)
 	case *bytecode.DivRem[W]:
-		return DivRem(b)
+		return DivRem(b, env)
 	case *bytecode.Intrinsic[W]:
-		return Intrinsic(b)
+		return Intrinsic(b, env)
 	case *bytecode.Fail[W]:
 		return Fail(b, env)
 	case *bytecode.FieldArith[W]:

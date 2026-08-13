@@ -1,0 +1,4 @@
+//error:3:15-27:expected type u32, found u33+
+fn f(a:u32) -> (q:u32, r:u32) {
+  q, r = a /% 0x01FFFFFFFF
+}

@@ -1,3 +1,3 @@
-//error:3:19-20:expected type bool
+//error:3:19-20:expected type bool, found u2+
 type bool = u1
 const TRUE:bool = 2

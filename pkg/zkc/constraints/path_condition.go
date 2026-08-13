@@ -26,7 +26,7 @@ import (
 func TranslateBranchCondition[W vm.Word[W], F field.Element[F], E Expr[F]](p dfa.Path[W],
 	groups []oneHotGroup, reader RegisterReader[F]) Expr[F] {
 	//
-	return mirc.TranslateBranchCondition(rewriteOneHotConditions(p.Condition(), groups), reader)
+	return mirc.TranslateBranchCondition(rewriteOneHotConditions(reachCondition(p), groups), reader)
 }
 
 // TranslateNegatedBranchCondition translates a negated branch condition within the
@@ -36,7 +36,20 @@ func TranslateBranchCondition[W vm.Word[W], F field.Element[F], E Expr[F]](p dfa
 func TranslateNegatedBranchCondition[W vm.Word[W], F field.Element[F], E Expr[F]](p dfa.Path[W],
 	groups []oneHotGroup, reader RegisterReader[F]) Expr[F] {
 	//
-	var condition = p.Condition()
+	var condition = reachCondition(p)
 	//
 	return mirc.TranslateBranchCondition(rewriteOneHotConditions(condition.Negate(), groups), reader)
+}
+
+// reachCondition returns the branch condition gating a given code.  A code
+// reachable only through a preceding fail has an unsatisfiable reach
+// condition, which cannot be translated; its dead condition is used in its
+// place, which is sound since every row satisfying it is rejected by the
+// fail's own constraint (see dfa.Path.Die).
+func reachCondition[W vm.Word[W]](p dfa.Path[W]) dfa.BranchCondition {
+	if condition := p.Condition(); !condition.IsFalse() {
+		return condition
+	}
+	//
+	return p.Dead()
 }

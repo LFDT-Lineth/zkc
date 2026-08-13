@@ -45,14 +45,12 @@ var (
 	DEFAULT_FIELDS = []field.Config{field.KOALABEAR_16}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = Config{
-		fields:            DEFAULT_FIELDS,
-		constraints:       true,
-		splitting:         true,
-		fastModeSplitting: true,
-		gogen:             true,
-		verbose:           false,
-		sampling:          util.None[float64](),
-		maxStaticHeights:  []uint{codegen.DEFAULT_MAX_STATIC_HEIGHT},
+		fields:           DEFAULT_FIELDS,
+		constraints:      true,
+		gogen:            true,
+		verbose:          false,
+		sampling:         util.None[float64](),
+		maxStaticHeights: []uint{codegen.DEFAULT_MAX_STATIC_HEIGHT},
 		paddingStrategies: map[string]ir.PaddingStrategy{
 			"next-power-of-two-padding": ir.NextPowerOfTwoPadding,
 		}}
@@ -64,10 +62,6 @@ type Config struct {
 	fields []field.Config
 	// enable constraints checking, or not.
 	constraints bool
-	// enable register splitting
-	splitting bool
-	// enable register splitting in fast mode
-	fastModeSplitting bool
 	// enable the generated-Go ("native") executor
 	gogen bool
 	// enable verbose mode.
@@ -117,24 +111,9 @@ func (p Config) Constraints(flag bool) Config {
 	return p
 }
 
-// Splitting determines whether or not to apply register splitting when tracing.
-func (p Config) Splitting(flag bool) Config {
-	p.splitting = flag
-	//
-	return p
-}
-
 // Sampling sets the sampling ratio to use for the given constraint set.
 func (p Config) Sampling(ratio float64) Config {
 	p.sampling = util.Some(ratio)
-	//
-	return p
-}
-
-// FastModeSplitting determines whether or not to apply register splitting in
-// fast mode.
-func (p Config) FastModeSplitting(flag bool) Config {
-	p.fastModeSplitting = flag
 	//
 	return p
 }
@@ -154,6 +133,26 @@ func (p Config) Padding(strategies map[string]ir.PaddingStrategy) Config {
 	return p
 }
 
+// instantiate this configuration for (fast mode) execution.  Constraints are
+// never checked in fast mode, since the fast-mode pipeline does not generate
+// them.
+func (p Config) forExecution(build codegen.Config) testConfig {
+	return testConfig{p.Constraints(false), build, true}
+}
+
+// instantiate this configuration for tracing.
+func (p Config) forTracing(build codegen.Config) testConfig {
+	return testConfig{p, build, false}
+}
+
+type testConfig struct {
+	Config
+	// build config
+	build codegen.Config
+	//
+	fastMode bool
+}
+
 // CheckValid checks that a given source file compiles without any errors.
 // nolint
 func CheckValid(t *testing.T, test, ext string, config Config) {
@@ -167,17 +166,14 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 			testfile = fmt.Sprintf("%s.%s", test, ext)
 			// Setup default config
 			cfg = codegen.DEFAULT_CONFIG.
-				SplitRegisters(config.splitting).
-				Verbose(config.verbose).Field(f).
-				Word(DEFAULT_WORD)
+				Verbose(config.verbose).Field(f)
 		)
 		// Only run fast mode tests for the default height / padding, since
 		// neither static height nor padding impacts on fast mode.
 		t.Run(fmt.Sprintf("%s/fastmode", f.Name), func(t *testing.T) {
 			t.Parallel()
 			//
-			checkValidInternal(t, testfile, cfg.FastMode(true).SplitRegisters(config.fastModeSplitting),
-				config.Constraints(false), testcases[f])
+			checkValidInternal(t, testfile, config.forExecution(cfg), testcases[f])
 		})
 		// Run tracing tests across differing static heights to ensure resiliance
 		// against changing the default height.
@@ -186,29 +182,34 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 			t.Run(fmt.Sprintf("%s/height=%d", f.Name, height), func(t *testing.T) {
 				t.Parallel()
 				// Run all tests in tracing mode
-				checkValidInternal(t, testfile, cfg.MaxStaticHeight(height).FastMode(false), config, testcases[f])
+				checkValidInternal(t, testfile, config.forTracing(cfg.MaxStaticHeight(height)), testcases[f])
 			})
 		}
 	}
 }
 
-func checkValidInternal(t *testing.T, testfile string, cfg codegen.Config, config Config, testcases []TestCase) {
+func checkValidInternal(t *testing.T, testfile string, cfg testConfig, testcases []TestCase) {
 	var (
 		// Compile test program
-		p1 = compileTestProgram(t, testfile, cfg)
-		p2 = marshallUnmarshallMachine(p1, cfg.GetField())
+		p1 = compileTestProgram(t, testfile, cfg.build)
+		p2 = marshallUnmarshallMachine(p1, cfg.build.GetField())
 	)
 	// check for original machine
-	checkValidMachine(t, p1, cfg, config, testcases)
+	checkValidMachine(t, p1, cfg, testcases)
 	// check for marshalled / unmarshalled machine
-	checkValidMachine(t, p2, cfg, config, testcases)
+	checkValidMachine(t, p2, cfg, testcases)
 	// check gogen binaries (if requested)
-	if config.gogen {
+	if cfg.gogen {
 		checkValidGoGen(t, testfile, testcases, p1)
 	}
 }
 
-func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, p vm.Program[vm.Uint]) {
+func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, pU vm.Program[vm.Uint]) {
+	// Lower through the execution pipeline before handing to gogen.  GenerateGo
+	// requires Program[Uint] with registers no wider than 64 bits, so we split
+	// against a bounded word whilst staying in the Uint representation.
+	var p = vm.TransformForExecutionRaw[vm.Uint, vm.Uint](pU, vm.WORD_UINT128)
+	//
 	var binary, err = buildGogenProgram(t, p)
 	//
 	if errors.Is(err, errGoGenUnsupported) {
@@ -226,47 +227,48 @@ func checkValidGoGen(t *testing.T, testfile string, tests []TestCase, p vm.Progr
 	}
 }
 
-func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg codegen.Config, config Config, tests []TestCase) {
+func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg testConfig, tests []TestCase) {
 	// Run execution tests
 	for _, testcase := range tests {
 		runExecutionTests(t, p, testcase)
 	}
 	// Run checkpointing tests (if requested and in fastmode)
-	if config.checkpointing.HasValue() && cfg.IsFastMode() {
+	if cfg.checkpointing.HasValue() && cfg.fastMode {
 		for _, testcase := range tests {
-			runCheckpointTests(t, p, testcase, config.checkpointing.Unwrap())
+			runCheckpointTests(t, p, testcase, cfg.checkpointing.Unwrap())
 		}
 	}
 	// Run constraint tests
-	if config.constraints {
+	if cfg.constraints {
+		var field = cfg.build.GetField()
+		//
 		for _, test := range tests {
 			// Test all configured padding strategies
-			for name, strategy := range config.paddingStrategies {
+			for name, strategy := range cfg.paddingStrategies {
 				t.Run(name, func(t *testing.T) {
-					runConstraintTest(t, p, test, cfg, strategy)
+					runConstraintTest(t, p, test, field, strategy)
 				})
 			}
 		}
 	}
 }
 
-func runExecutionTests(t *testing.T, m vm.Program[vm.Uint], tc TestCase) {
+func runExecutionTests(t *testing.T, pU vm.Program[vm.Uint], tc TestCase) {
 	// Run the test
 	switch DEFAULT_WORD {
 	case vm.WORD_UINT64:
-		runFixedWidthExecutionTest[vm.Uint64](t, m, tc)
+		// Lower to fixed-width machine
+		pW := vm.TransformForExecution[vm.Uint, vm.Uint64](pU)
+		// Run execution test
+		runExecutionTest(t, pW, tc)
 	case vm.WORD_UINT128:
-		runFixedWidthExecutionTest[vm.Uint128](t, m, tc)
+		// Lower to fixed-width machine
+		pW := vm.TransformForExecution[vm.Uint, vm.Uint128](pU)
+		// Run execution test
+		runExecutionTest(t, pW, tc)
 	default:
 		panic(fmt.Sprintf("unknown machine word: %s", DEFAULT_WORD.Name))
 	}
-}
-
-func runFixedWidthExecutionTest[W vm.Word[W]](t *testing.T, pU vm.Program[vm.Uint], tc TestCase) {
-	// Lower to fixed-width machine
-	pW := vm.ProgramToProgram[vm.Uint, W](pU)
-	// Run execution test
-	runExecutionTest(t, pW, tc)
 }
 
 func runExecutionTest[W vm.Word[W]](t *testing.T, p vm.Program[W], test TestCase) {
@@ -313,13 +315,13 @@ func runCheckpointTests(t *testing.T, pU vm.Program[vm.Uint], tc TestCase, spec 
 	// Run the test
 	switch DEFAULT_WORD {
 	case vm.WORD_UINT64:
-		// Lower machine to use 64bit words
-		pW := vm.ProgramToProgram[vm.Uint, vm.Uint64](pU)
+		// Lower to fixed-width machine
+		pW := vm.TransformForExecution[vm.Uint, vm.Uint64](pU)
 		// Run test
 		runFixedWidthCheckpointTest(t, pW, tc, spec)
 	case vm.WORD_UINT128:
-		// Lower machine to use 128bit words
-		pW := vm.ProgramToProgram[vm.Uint, vm.Uint128](pU)
+		// Lower to fixed-width machine
+		pW := vm.TransformForExecution[vm.Uint, vm.Uint128](pU)
 		// Run test
 		runFixedWidthCheckpointTest(t, pW, tc, spec)
 	default:
@@ -415,19 +417,18 @@ func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc Tes
 	return program, checkpoints, outputs
 }
 
-func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg codegen.Config,
+func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, f field.Config,
 	paddingStrategy ir.PaddingStrategy) {
-	var f = cfg.GetField()
 	// Dispatch based on field config
 	switch f {
 	case field.GF_251:
-		testConstraintsWithField[gf251.Element](t, p, test, f, cfg.GetMaxStaticHeight(), paddingStrategy)
+		testConstraintsWithField[gf251.Element](t, p, test, paddingStrategy)
 	case field.GF_8209:
-		testConstraintsWithField[gf8209.Element](t, p, test, f, cfg.GetMaxStaticHeight(), paddingStrategy)
+		testConstraintsWithField[gf8209.Element](t, p, test, paddingStrategy)
 	case field.KOALABEAR_16:
-		testConstraintsWithField[koalabear.Element](t, p, test, f, cfg.GetMaxStaticHeight(), paddingStrategy)
+		testConstraintsWithField[koalabear.Element](t, p, test, paddingStrategy)
 	case field.BLS12_377:
-		//testConstraintsWithField[bls12_377.Element](t, p, test, f, cfg.GetMaxStaticHeight())
+		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for tracing")
 	default:
 		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
@@ -435,11 +436,11 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, cfg c
 }
 
 func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.Uint], test TestCase,
-	f field.Config, maxStaticHeight uint, paddingStrategy ir.PaddingStrategy) {
+	paddingStrategy ir.PaddingStrategy) {
 	//
 	var (
 		// construct binary file
-		binf = constraints.NewBinaryFile[F](nil, nil, f, maxStaticHeight, p)
+		binf = constraints.NewBinaryFile[F](nil, nil, p)
 		// decode inputs / outputs
 		inputs = vm.FilterInputs(p, test.data)
 		// trace configuration (optionally expanding each module up to the next

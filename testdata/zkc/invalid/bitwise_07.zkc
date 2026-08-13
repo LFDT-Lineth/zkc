@@ -1,4 +1,4 @@
-//error:3:7-12:expected type u4
+//error:3:7-12:expected type u4, found u8
 fn f(x:u8, y:u8) -> (r:u4) {
   r = x ^ y
   return

@@ -1,4 +1,4 @@
-//error:4:3-4:expected type u8
+//error:4:3-4:expected type u8, found u16
 const C:u16 = 256
 static mask(address:u16) -> (word:u8) {
   C
