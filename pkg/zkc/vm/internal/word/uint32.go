@@ -72,6 +72,11 @@ func (p Uint32) BitLen() uint {
 	return uint(bits.Len32(p.value))
 }
 
+// Config implementation for Word interface.
+func (p Uint32) Config() Config {
+	return WORD_UINT32
+}
+
 // Cmp implementation for Word interface.
 func (p Uint32) Cmp(o Uint32) int {
 	return cmp.Compare(p.value, o.value)

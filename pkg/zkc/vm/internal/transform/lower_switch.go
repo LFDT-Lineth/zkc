@@ -51,7 +51,7 @@ func LowerSwitch[W word.Word[W]](program descriptor.Program[W]) descriptor.Progr
 		}
 	}
 
-	return descriptor.NewProgram(program.Field(), out...)
+	return descriptor.NewProgram(program.Field(), program.MaxStaticHeight(), out...)
 }
 
 func lowerSwitchFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {

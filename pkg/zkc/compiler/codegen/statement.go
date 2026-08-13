@@ -49,8 +49,6 @@ type StmtCompiler struct {
 	errors      []source.SyntaxError
 	// verbose retains printf output (suppressed by default)
 	verbose bool
-	// fastMode disables constraint-only rewrites not required by the vm.
-	fastMode bool
 }
 
 func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) BytecodeVector {
@@ -72,17 +70,21 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) Bytecod
 	case *stmt.Fail[symbol.Resolved]:
 		return p.compileFail(mapping, s.Chunks, s.Arguments)
 	case *stmt.Printf[symbol.Resolved]:
-		if !p.verbose {
-			return vm.NewBytecodeVector[vm.Uint]()
+		if p.verbose {
+			insns = p.compilePrintf(mapping, s.Chunks, s.Arguments)
 		}
-		//
-		return p.compilePrintf(mapping, s.Chunks, s.Arguments)
 	case *stmt.Return[symbol.Resolved]:
 		return vm.NewBytecodeVector(vm.Return[vm.Uint]())
 	default:
 		panic("unknown statement encountered")
 	}
-	//
+	// Ensure vector is terminated.  Only assignments and printfs reach this
+	// point, and neither ever ends in a Jmp / Ret / Fail, so the fall-through
+	// into the following statement must be made explicit (as Vectorize requires,
+	// and bytecode.Vector.Validate enforces).  Observe that pc+1 is always in
+	// bounds, since the final statement of a function is always a return.
+	insns = append(insns, vm.Jump[vm.Uint](vm.Address(pc+1)))
+	// Done
 	return vm.NewBytecodeVector(insns...)
 }
 
@@ -152,12 +154,10 @@ func (p *StmtCompiler) mapLVals(mapping []uint, lvals []LVal) ([][]vm.RegisterId
 }
 
 func (p *StmtCompiler) compilePrintf(mapping []uint, chunks []stmt.FormattedChunk, args []Expr,
-) BytecodeVector {
+) []Bytecode {
 	nchunks, sources, insns := p.compileFormattedChunks(mapping, chunks, args)
 	//
-	insns = append(insns, vm.Debug[vm.Uint](nchunks, sources))
-	//
-	return vm.NewBytecodeVector(insns...)
+	return append(insns, vm.Debug[vm.Uint](nchunks, sources))
 }
 
 func (p *StmtCompiler) compileFail(mapping []uint, chunks []stmt.FormattedChunk, args []Expr,

@@ -460,7 +460,6 @@ func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) vm.Pro
 	var (
 		cfg = codegen.DEFAULT_CONFIG.
 			Field(field.KOALABEAR_16).
-			FastMode(fastMode).
 			Verbose(false)
 		// compile into bytecode program
 		p, errs = ast.Compile(program, cfg)
@@ -468,9 +467,14 @@ func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) vm.Pro
 	//
 	if len(errs) > 0 {
 		t.Fatalf("codegen: %v", errs)
+		return p
+	} else if fastMode {
+		// NOTE: the program stays in the Uint representation (GenerateGo
+		// requires it), but its registers are split against a bounded word.
+		return vm.TransformForExecutionRaw[vm.Uint, vm.Uint](p, vm.WORD_UINT128)
+	} else {
+		return vm.TransformForTracing[vm.Uint, vm.Uint](p)
 	}
-	//
-	return p
 }
 
 // shapes enumerates the two machine shapes every test runs against.

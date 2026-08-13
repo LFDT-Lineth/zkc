@@ -13,6 +13,7 @@
 package vm
 
 import (
+	"math"
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -33,6 +34,10 @@ var WORD_UINT64 = WordConfig{Name: "Uint64", BandWidth: 64, RegisterWidth: 32}
 
 // WORD_UINT128 provides metadata about the Uint128 word type.
 var WORD_UINT128 = WordConfig{Name: "Uint128", BandWidth: 128, RegisterWidth: 64}
+
+// WORD_UINT provides metadata about the Uint word type.  This word type should
+// not be used in practice for execution as it is highly inefficient.
+var WORD_UINT = WordConfig{Name: "Uint", BandWidth: math.MaxUint, RegisterWidth: math.MaxUint}
 
 // Word abstracts the data type (a.k.a the "machine word") used for holding
 // values within the machine.  The reason for abstracting this concept is to

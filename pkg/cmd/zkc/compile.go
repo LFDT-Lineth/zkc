@@ -20,6 +20,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -64,8 +65,8 @@ type CompileConfig struct {
 	build BuildConfig
 	// indicates whether or not to print the Abstract Syntax Tree (when available)
 	ast bool
-	// indicates whether or not to print the Intermediate Reprentation
-	ir bool
+	// indicates whether or not to print the raw Intermediate Reprentation
+	raw bool
 	// indicates whether or not to print the Mid-level Intermediate Reprentation (MIR).
 	mir bool
 	// indicates whether or not to print the Mid-level Intermediate Reprentation (AIR).
@@ -90,45 +91,71 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// Sanity check permitted flag combinations
 	checkFlags(cmd, compileFlags)
 	//
-	config.build = build
 	config.ast = GetFlag(cmd, "ast")
+	config.raw = GetFlag(cmd, "raw")
 	config.mir = GetFlag(cmd, "mir")
 	config.air = GetFlag(cmd, "air")
 	config.stats = GetFlag(cmd, "stats")
 	config.order = GetString(cmd, "order")
-	config.ir = !(config.ast || config.mir || config.air || config.stats)
 	// Compile verbosity is the highest verbosity level.
 	config.verbose = GetVerboseLevel(cmd) >= VERBOSE_PRINTF
+	// Configure metadata for the binary output file.  Observe this is left
+	// unset (rather than empty) when no definitions are given, so that metadata
+	// embedded in a prebuilt binary is preserved.
+	if cmd.Flags().Changed("define") {
+		build.metadata = util.Some(buildMetadata(GetStringArray(cmd, "define")))
+	}
+	//
+	config.build = build
 	// Build all artifacts
-	artifacts := Build[F](build, args...)
+	ast, binfile := Build[F](build, args...)
+	// Perform validation.  This comes before anything is printed or written, so
+	// that an invalid set of constraints cannot leave a binary file behind.
+	validateArtifacts(binfile)
 	//
 	if output != "" {
-		writeArtifacts[F](output, build, artifacts)
+		// Write to disk
+		WriteBinaryFile(binfile, output)
 	} else {
 		// Print out requested artifacts
-		printArtifacts[F](field, artifacts, config)
+		printArtifacts(ast, binfile, config)
 	}
-	// perform validation
-	validateArtifacts[F](field, artifacts, config)
 }
 
-func writeArtifacts[F field.Element[F]](filename string, build BuildConfig, artifacts BuildArtifacts) {
-	// Construct binary file
-	var binfile = constraints.NewBinaryFile[F](build.metadata, nil, build.config.GetField(),
-		build.config.GetMaxStaticHeight(), artifacts.ir)
-	// Write to disk
-	WriteBinaryFile(binfile, filename)
+// buildMetadata converts a set of "key=value" definitions, as given on the
+// command-line via -D, into the JSON blob embedded in the binary file header.
+func buildMetadata(items []string) []byte {
+	var metadata = make(map[string]any)
+	//
+	for _, item := range items {
+		key, value, ok := strings.Cut(item, "=")
+		//
+		if !ok {
+			fmt.Printf("malformed definition \"%s\"\n", item)
+			os.Exit(2)
+		}
+		//
+		metadata[key] = value
+	}
+	//
+	m := typed.NewMap(metadata)
+	//
+	bytes, err := m.ToJsonBytes()
+	if err != nil {
+		fmt.Printf("error encoding metadata: %s\n", err)
+		os.Exit(2)
+	}
+	//
+	return bytes
 }
 
 // Validate the given schema by ensuring that:
 // - every register in every module is referenced in at least one vanishing
 // constraint or lookup.
 // - static tables are of power of two height
-func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
-	// Generate AIR representation
-	air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticHeight())
+func validateArtifacts[F field.Element[F]](bf *constraints.BinaryFile[F]) {
+	var air = bf.AirConstraints()
 	// validate that all registers are referenced in at least one vanishing constraint or lookup
-
 	if errs := constraints.Validate(air); len(errs) > 0 {
 		for _, err := range errs {
 			log.Errorf("%v", err)
@@ -138,34 +165,33 @@ func validateArtifacts[F field.Element[F]](field field.Config, artifacts BuildAr
 	}
 }
 
-func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtifacts, config CompileConfig) {
-	// lower to a 64bit machine
-	var (
-		// Compile bytecode interpreter
-		bci = vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
-	)
+func printArtifacts[F field.Element[F]](ast *ast.Program, bf *constraints.BinaryFile[F], config CompileConfig) {
+	// Determine whether or not to print the IR
+	var ir = !(config.ast || config.mir || config.air || config.stats)
 	// Abstract Syntax Tree
-	if config.ast && artifacts.ast.HasValue() {
-		writeAbstractSyntaxTree(artifacts.ast.Unwrap())
+	if config.ast && ast != nil {
+		writeAbstractSyntaxTree(*ast)
 	} else if config.ast {
 		log.Warn("Abstract Syntax Tree unavailable")
 	}
 	// Word-level Intermediate Representation
-	if config.ir {
-		// Bytecode Intermediate Representation
-		writeBytecodeProgram(config.verbose, bci, artifacts.annotations)
+	if ir && config.raw {
+		// Raw IR
+		writeBytecodeProgram(config.verbose, ast, bf.RawProgram())
+	} else if ir && config.build.fastMode {
+		// Execution IR
+		writeBytecodeProgram(config.verbose, ast, bf.ExecutionProgram())
+	} else if ir {
+		// Tracing IR
+		writeBytecodeProgram(config.verbose, ast, bf.TracingProgram())
 	}
 	// Mid-level Intermediate Representation
 	if config.mir {
-		mir := constraints.GenerateMirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticHeight())
-		//
-		debug.PrintAnySchema(mir, 80, config.verbose)
+		debug.PrintAnySchema(bf.MirConstraints(), 80, config.verbose)
 	}
-	// // Arithmetic Intermediate Representation
+	// Arithmetic Intermediate Representation
 	if config.air {
-		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticHeight())
-		//
-		debug.PrintAnySchema(air, 80, config.verbose)
+		debug.PrintAnySchema(bf.AirConstraints(), 80, config.verbose)
 	}
 	// Summary statistics
 	if config.stats {
@@ -173,19 +199,12 @@ func printArtifacts[F field.Element[F]](field field.Config, artifacts BuildArtif
 			log.Errorf("invalid --order %q (expected name|total|complexity|lookups)", config.order)
 			os.Exit(1)
 		}
-		//
-		air := constraints.GenerateAirConstraints[vm.Uint, F](artifacts.ir, field, config.build.config.GetMaxStaticHeight())
 		// Register counts are reported before register splitting.  Splitting is
 		// the only field-specific transform that changes register widths, so
-		// recompile the program with it disabled to recover the pre-split widths.
-		// When compiling from a prebuilt binary there is no AST to recompile, so
-		// fall back to the (already split) build.
-		preSplit := artifacts.ir
-		if artifacts.ast.HasValue() {
-			preSplit, _ = ast.Compile(artifacts.ast.Unwrap(), config.build.config.SplitRegisters(false))
-		}
-		//
-		PrintCompileStats(air, preSplit, config.order)
+		// transform program with splitting disabled to recover the pre-split widths.
+		preSplit := vm.TransformForTracing[vm.Uint, vm.Uint](bf.RawProgram(), "split-registers")
+		// Print stats
+		PrintCompileStats(bf.AirConstraints(), preSplit, config.order)
 	}
 }
 
@@ -513,11 +532,12 @@ func (p *bytecodeListing) table() *termio.FormattedTable {
 	return tbl
 }
 
-func writeBytecodeProgram[W vm.Word[W]](binary bool, program vm.Program[W], annotations map[string][]string) {
+func writeBytecodeProgram[W vm.Word[W]](binary bool, ast *ast.Program, program vm.Program[W]) {
 	var (
 		bin           [][]uint32
 		address       uint32
 		encodingWidth uint
+		annotations   = annotationsOf(ast)
 	)
 	//
 	if binary {
@@ -538,6 +558,23 @@ func writeBytecodeProgram[W vm.Word[W]](binary bool, program vm.Program[W], anno
 		// Write and print this module's table
 		address, bin = writeBytecodeModule(binary, encodingWidth, uint16(i), program, m, annotations, address, bin)
 	}
+}
+
+// annotationsOf extracts the annotations associated with each annotated
+// declaration (i.e. function or memory) in a given program, keyed by the
+// declaration's name.
+func annotationsOf(program *ast.Program) map[string][]string {
+	var annotations = make(map[string][]string)
+	//
+	if program != nil {
+		for _, d := range program.Components() {
+			if annots := d.Annotations(); len(annots) > 0 {
+				annotations[d.Name()] = annots
+			}
+		}
+	}
+	//
+	return annotations
 }
 
 // writeBytecodeModule builds and prints the FormattedTable for a single module.
@@ -738,8 +775,10 @@ func fnArgs[W vm.Word[W]](regs []vm.Register[W]) string {
 func init() {
 	rootCmd.AddCommand(compileCmd)
 	compileCmd.Flags().StringP("output", "o", "", "specify output file for writing binary constraints")
+	compileCmd.Flags().StringArrayP("define", "D", nil,
+		"define a metadata attribute (as \"key=value\") to embed in the binary output file")
 	compileCmd.PersistentFlags().Bool("ast", false, "Output Abstract Syntax Tree (AST)")
-	compileCmd.PersistentFlags().Bool("bci", false, "Output Bytecode Representation (BCI)")
+	compileCmd.PersistentFlags().Bool("raw", false, "Output raw Intermediate (Bytecode) Representation (IR)")
 	compileCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
 	compileCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
 	compileCmd.PersistentFlags().Bool("stats", false, "Output summary statistics")
@@ -747,4 +786,6 @@ func init() {
 		"module ordering for --stats (name|total|complexity|lookups)")
 	// --order only affects the --stats output.
 	compileFlags.Require("order", "stats")
+	// --define only affects the binary output file.
+	compileFlags.Require("define", "output")
 }

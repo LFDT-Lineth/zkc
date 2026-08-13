@@ -49,7 +49,7 @@ func ProgramToProgram[W1 word.Word[W1], W2 word.Word[W2]](p descriptor.Program[W
 		modules[i] = lowering.lowerModule(m)
 	}
 	// Construct new program over W2
-	return descriptor.NewProgram(p.Field(), modules...)
+	return descriptor.NewProgram(p.Field(), p.MaxStaticHeight(), modules...)
 }
 
 type programToProgram[W1 word.Word[W1], W2 word.Word[W2]] struct {
