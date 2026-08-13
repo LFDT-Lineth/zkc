@@ -52,11 +52,13 @@ func validateBytecodeProgram[W word.Word[W]](program Program[W]) error {
 		}
 		// At most one zero register should exist per module.
 		var zeros []string
+
 		for _, r := range module.Registers() {
 			if IsZeroWidth(r) {
 				zeros = append(zeros, r.Name())
 			}
 		}
+
 		if len(zeros) > 1 {
 			errs = append(errs, fmt.Errorf("module %d (%s): multiple zero registers (%v)",
 				mid, module.Name(), zeros))
