@@ -19,7 +19,7 @@ import (
 
 // FunctionKind captures the execution-relevant properties of a function.
 type FunctionKind struct {
-	native, unsafeArgs bool
+	native, unsafeArgs, inline bool
 }
 
 // IsNative reports whether this function is backed by a native circuit rather
@@ -28,10 +28,40 @@ func (p FunctionKind) IsNative() bool {
 	return p.native
 }
 
+// CanInline reports whether or not this function was marked as inlineable or
+// not.
+func (p FunctionKind) CanInline() bool {
+	return p.inline
+}
+
 // AllowsUnsafeArgs reports whether calls may supply arguments which are undefined
 // on some paths reaching the call.
 func (p FunctionKind) AllowsUnsafeArgs() bool {
 	return p.unsafeArgs
+}
+
+// WithInline updates this kind as to whether it was marked as inlineable or
+// not.
+func (p FunctionKind) WithInline(flag bool) FunctionKind {
+	p.inline = flag
+	//
+	return p
+}
+
+// WithNative updates this kind as to whether it represents a native function,
+// or not.
+func (p FunctionKind) WithNative(flag bool) FunctionKind {
+	p.native = flag
+	//
+	return p
+}
+
+// WithUnsafeArgs updates the specification as to whether this support unsafe
+// args, or not.
+func (p FunctionKind) WithUnsafeArgs(flag bool) FunctionKind {
+	p.unsafeArgs = flag
+	//
+	return p
 }
 
 // GobEncode marshals this function kind.
@@ -70,11 +100,5 @@ func (p *FunctionKind) GobDecode(data []byte) error {
 
 var (
 	// BYTECODE_FUNCTION represents a safe function implemented by bytecode.
-	BYTECODE_FUNCTION = FunctionKind{false, false}
-	// NATIVE_FUNCTION represents a safe function backed by a native circuit.
-	NATIVE_FUNCTION = FunctionKind{true, false}
-	// UNSAFE_ARGS_FUNCTION represents a bytecode function which may receive undefined arguments.
-	UNSAFE_ARGS_FUNCTION = FunctionKind{false, true}
-	// NATIVE_UNSAFE_ARGS_FUNCTION represents a native function which may receive undefined arguments.
-	NATIVE_UNSAFE_ARGS_FUNCTION = FunctionKind{true, true}
+	BYTECODE_FUNCTION = FunctionKind{false, false, false}
 )

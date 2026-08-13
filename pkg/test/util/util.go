@@ -175,21 +175,21 @@ func decodeInputsOutputs[W vm.Word[W]](t *testing.T, p vm.Program[W], data map[s
 func marshallUnmarshallMachine(m vm.Program[vm.Uint], f field.Config) vm.Program[vm.Uint] {
 	switch f {
 	case field.GF_251:
-		return roundTripMachine[gf251.Element](m, f)
+		return roundTripMachine[gf251.Element](m)
 	case field.GF_8209:
-		return roundTripMachine[gf8209.Element](m, f)
+		return roundTripMachine[gf8209.Element](m)
 	case field.KOALABEAR_16:
-		return roundTripMachine[koalabear.Element](m, f)
+		return roundTripMachine[koalabear.Element](m)
 	case field.BLS12_377:
-		return roundTripMachine[bls12_377.Element](m, f)
+		return roundTripMachine[bls12_377.Element](m)
 	default:
 		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
 	}
 }
 
-func roundTripMachine[F field.Element[F]](prog vm.Program[vm.Uint], f field.Config) vm.Program[vm.Uint] {
+func roundTripMachine[F field.Element[F]](prog vm.Program[vm.Uint]) vm.Program[vm.Uint] {
 	var (
-		original = constraints.NewBinaryFile[F](nil, nil, f, codegen.DEFAULT_MAX_STATIC_HEIGHT, prog)
+		original = constraints.NewBinaryFile[F](nil, nil, prog)
 		decoded  constraints.BinaryFile[F]
 	)
 	//
@@ -202,5 +202,5 @@ func roundTripMachine[F field.Element[F]](prog vm.Program[vm.Uint], f field.Conf
 		panic(fmt.Sprintf("unmarshalling machine failed: %s", err))
 	}
 	//
-	return decoded.Program()
+	return decoded.RawProgram()
 }

@@ -148,7 +148,7 @@ func bucketCount(hist map[uint]uint, b bucket) uint {
 // constraint degrees are gathered from the pre-split bytecode program (ir) and
 // the post-split AIR schema respectively.  The order argument determines how the
 // modules are ordered (see orderModules).
-func PrintCompileStats[F field.Element[F]](air schema.AnySchema[F], ir vm.Program[vm.Uint], order string) {
+func PrintCompileStats[F field.Element[F], W vm.Word[W]](air schema.AnySchema[F], ir vm.Program[W], order string) {
 	var (
 		// Pre-split register histograms, keyed by module name.
 		preSplit = preSplitRegisters(ir)
@@ -247,7 +247,7 @@ type preSplitInfo struct {
 // preSplitRegisters builds, for each module in the bytecode program, its type
 // and a histogram mapping register bitwidth to the number of registers of that
 // width, plus a separate count of native (bitwidth-less) registers.
-func preSplitRegisters(ir vm.Program[vm.Uint]) map[string]preSplitInfo {
+func preSplitRegisters[W vm.Word[W]](ir vm.Program[W]) map[string]preSplitInfo {
 	var info = make(map[string]preSplitInfo)
 	//
 	for _, m := range ir.Modules() {
@@ -255,7 +255,7 @@ func preSplitRegisters(ir vm.Program[vm.Uint]) map[string]preSplitInfo {
 		// The maximum program-counter value is the number of bytecode lines (line
 		// indices plus the one-past-the-end halt value).  Only non-native
 		// functions carry a program counter.
-		if fn, ok := m.(*vm.Function[vm.Uint]); ok && !fn.IsNative() {
+		if fn, ok := m.(*vm.Function[W]); ok && !fn.IsNative() {
 			entry.pcMax = uint(len(fn.Vectors()))
 		}
 		//
@@ -276,15 +276,15 @@ func preSplitRegisters(ir vm.Program[vm.Uint]) map[string]preSplitInfo {
 // moduleType classifies a bytecode module: a "function" (possibly "native"), or
 // a memory by kind ("static", "ROM" read-only, "WOM" write-once, "RAM"
 // read-write).
-func moduleType(m vm.Module[vm.Uint]) string {
+func moduleType[W vm.Word[W]](m vm.Module[W]) string {
 	switch m := m.(type) {
-	case *vm.Function[vm.Uint]:
+	case *vm.Function[W]:
 		if m.IsNative() {
 			return "native"
 		}
 		//
 		return "function"
-	case *vm.Memory[vm.Uint]:
+	case *vm.Memory[W]:
 		switch {
 		case m.IsStatic():
 			return "static"

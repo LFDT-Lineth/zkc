@@ -16,10 +16,12 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -99,10 +101,14 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	var (
 		build                 BuildConfig
 		fastMode              = GetFlag(cmd, "fast")
+		maxStaticHeight       = GetUint(cmd, "max-static-height")
 		verbosity             = GetVerboseLevel(cmd)
 		padding               = GetString(cmd, "padding")
 		strategy, strategy_ok = ir.GetPaddingStrategy(padding)
+		ignores               = GetStringArray(cmd, "ignore")
 	)
+	//
+	validateIgnores(ignores)
 	//
 	if !strategy_ok {
 		fmt.Printf("padding strategy %s unsupported\n", padding)
@@ -119,16 +125,18 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	default:
 		log.SetLevel(log.WarnLevel)
 	}
+	// Configure fast mode
+	build.fastMode = fastMode
 	// Configure padding strategy
 	build.padding = strategy
 	// Configure go generator
 	build.gogen = GetFlag(cmd, "gogen")
+	// Configure ignored pipeline stages
+	build.ignores = ignores
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
-		Inlining(GetFlag(cmd, "inline")).
-		FastMode(fastMode).
-		MaxStaticHeight(GetUint(cmd, "max-static-height")).
 		Field(field).
+		MaxStaticHeight(maxStaticHeight).
 		Verbose(verbosity >= VERBOSE_PRINTF)
 	//
 	return build
@@ -148,6 +156,15 @@ func findFieldAgnosticCmd(config field.Config, cmds []FieldAgnosticCmd) (cmd Fie
 	return cmd
 }
 
+func validateIgnores(ignores []string) {
+	for _, ignore := range ignores {
+		if !slices.Contains(vm.VALID_TRANSFORMS, ignore) {
+			fmt.Printf("unknown transform \"%s\"\n", ignore)
+			os.Exit(1)
+		}
+	}
+}
+
 func init() {
 	rootCmd.Flags().Bool("version", false, "Report version of this executable")
 	//
@@ -156,6 +173,7 @@ func init() {
 	rootCmd.PersistentFlags().CountP("verbose", "v",
 		"verbosity: default NONE; -v (INFO) info logging, -vv (DEBUG) machine execution steps, "+
 			"-vvv (PRINTF) additionally all printf output")
+	rootCmd.PersistentFlags().StringArrayP("ignore", "X", nil, "Ignore pipeline stage")
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().BoolP("gogen", "g", false, "enable Go code generation")
