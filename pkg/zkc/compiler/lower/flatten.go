@@ -153,6 +153,9 @@ func lowerExpr(e expr.Resolved, srcmaps source.Maps[any]) expr.Resolved {
 		ne = expr.NewMul[symbol.Resolved](lowerExprs(t.Exprs, srcmaps)...)
 	case *expr.Div[symbol.Resolved]:
 		ne = expr.NewDiv[symbol.Resolved](lowerExprs(t.Exprs, srcmaps)...)
+	case *expr.DivMod[symbol.Resolved]:
+		args := lowerExprs(t.Exprs, srcmaps)
+		ne = expr.NewDivMod[symbol.Resolved](args[0], args[1])
 	case *expr.Rem[symbol.Resolved]:
 		ne = expr.NewRem[symbol.Resolved](lowerExprs(t.Exprs, srcmaps)...)
 	case *expr.BitwiseAnd[symbol.Resolved]:

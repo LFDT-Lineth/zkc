@@ -1,0 +1,4 @@
+//error:3:15-16:division by zero
+fn f(a:u8) -> (q:u8, r:u8) {
+  q, r = a /% 0
+}

@@ -18,44 +18,54 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// DivRem computes the (truncated) integer quotient or remainder of two
-// registers.  The operation is identified by Opcode, which is one of DIV or
-// REM.  A zero divisor aborts execution with a division-by-zero error.
+// DivRem computes the (truncated) integer quotient and remainder of a
+// register by a divisor which is either a register or a constant.  Both
+// results are always computed and written: a source-level "/" or "%" simply
+// directs the unwanted result into a fresh scratch register.
 type DivRem[W word.Word[W]] struct {
-	// Opcode selects the operation (DIV or REM).
-	Opcode uint32
-	// Target receives the result.
-	Target RegisterId
-	// Dividend and Divisor are the operand registers.
-	Dividend, Divisor RegisterId
+	// Quotient receives the division result.
+	Quotient RegisterId
+	// Remainder receives the remainder.
+	Remainder RegisterId
+	// Dividend is the operand register.
+	Dividend RegisterId
+	// Divisor is either a (single limb) operand register or a constant.
+	Divisor Operand[W]
 }
 
 // Uses implementation for Bytecode interface.
 func (p *DivRem[W]) Uses() []RegisterId {
-	return []RegisterId{p.Dividend, p.Divisor}
+	if p.Divisor.IsConstant() {
+		return []RegisterId{p.Dividend}
+	}
+	//
+	return []RegisterId{p.Dividend, p.Divisor.AsRegister()}
 }
 
 // Definitions implementation for Bytecode interface.
 func (p *DivRem[W]) Definitions() []RegisterId {
-	return []RegisterId{p.Target}
+	return []RegisterId{p.Quotient, p.Remainder}
 }
 
 // Validate implementation for Bytecode interface.
 func (p *DivRem[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	return validateOperands(env, p.Uses(), p.Definitions())
+	errs := validateOperands(env, p.Uses(), p.Definitions())
+	//
+	if p.Divisor.IsConstant() {
+		// Already rejected by codegen rejects it upfront, check that it's not introduced
+		// by some lowering process.
+		if p.Divisor.AsConstant().Cmp64(0) == 0 {
+			errs = append(errs, fmt.Errorf("constant divisor is zero"))
+		}
+	}
+	//
+	return errs
 }
 
 func (p *DivRem[W]) String(mapping Environment[W]) string {
-	var (
-		target   = RegisterToString(p.Target, mapping)
-		dividend = RegisterToString(p.Dividend, mapping)
-		divisor  = RegisterToString(p.Divisor, mapping)
-		symbol   = "/"
-	)
-	//
-	if p.Opcode != 0 {
-		symbol = "%"
-	}
-	//
-	return fmt.Sprintf("%s = %s %s %s", target, dividend, symbol, divisor)
+	return fmt.Sprintf("%s, %s = %s /%% %s",
+		RegisterToString(p.Quotient, mapping),
+		RegisterToString(p.Remainder, mapping),
+		RegisterToString(p.Dividend, mapping),
+		p.Divisor.String(mapping))
 }

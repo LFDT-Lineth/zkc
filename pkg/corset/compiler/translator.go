@@ -35,8 +35,6 @@ import (
 type Config struct {
 	// Enable standard library
 	Stdlib bool
-	// Enable debug constraints
-	Debug bool
 	// Enable legacy register allocator
 	Legacy bool
 	// Enforce all types by default
@@ -277,11 +275,9 @@ func (t *translator) translateDefConstraint(decl *ast.DefConstraint) []SyntaxErr
 		// Translate expr body
 		expr, errors = t.translateLogical(decl.Constraint, module, 0)
 	)
-	// Apply guard
+	// NOTE: a nil expression indicates translation failed, and the
+	// corresponding errors have already been reported.
 	if expr == nil {
-		// NOTE: in this case, the constraint itself has been translated as nil.
-		// This means there is no constraint (e.g. its a debug constraint, but
-		// debug mode is not enabled).
 		return errors
 	}
 	// Apply guard (if applicable)
@@ -836,14 +832,6 @@ func (t *translator) translateLogical(expr ast.Expr, mod ModuleBuilder, shift in
 		}
 	case *ast.If:
 		return t.translateIte(e, mod, shift)
-	case *ast.List:
-		args, errs := t.translateLogicals(mod, shift, e.Args...)
-		// Sanity check void
-		if len(args) == 0 {
-			return nil, errs
-		}
-		//
-		return term.Conjunction(args...), errs
 	case *ast.Not:
 		arg, errs := t.translateLogical(e.Arg, mod, shift)
 		return term.Negation(arg), errs

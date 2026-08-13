@@ -3,6 +3,8 @@
 
 (defconstraint c1 ()
   (if (== P 1)
-      (begin
-       (== Z X)
-       (== 130 (+ 123 (i1 X) Y)))))
+       (== Z X)))
+
+(defconstraint c2 ()
+  (if (== P 1)
+       (== 130 (+ 123 (i1 X) Y))))

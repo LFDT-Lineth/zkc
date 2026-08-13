@@ -1,5 +1,0 @@
-(defcolumns (X :i16) (Y :i16) (Z :i16))
-(defconstraint test ()
-  (let ((THREE 3))
-    (if (!= 0 X)
-        (== Z (if (== 0 Y) THREE 16)))))

@@ -40,7 +40,7 @@ func TypeCheckCircuit(srcmap *source.Maps[ast.Node],
 }
 
 // typeChecker performs typeChecking prior to final translation. Specifically,
-// it expands all invocations, reductions and for loops.  Thus, final
+// it expands all invocations and reductions.  Thus, final
 // translation is greatly simplified after this step.
 type typeChecker struct {
 	// Source maps nodes in the circuit back to the spans in their original
@@ -284,8 +284,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 		result = ast.BOOL_TYPE
 	case *ast.Constant:
 		result = ast.NewIntType(math.NewInterval(e.Val, e.Val))
-	case *ast.Debug:
-		result, errors = p.typeCheckExpressionInModule(expected, e.Arg, functional)
 	case *ast.Equation:
 		_, errs1 := p.typeCheckExpressionInModule(ast.UINT_TYPE, e.Lhs, true)
 		_, errs2 := p.typeCheckExpressionInModule(ast.UINT_TYPE, e.Rhs, true)
@@ -296,22 +294,10 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 		_, errs2 := p.typeCheckExpressionInModule(ast.UINT_TYPE, e.Pow, true)
 		// Done
 		result, errors = ast.UINT_TYPE, append(errs1, errs2...)
-	case *ast.For:
-		// TODO: update environment with type of index variable.
-		result, errors = p.typeCheckExpressionInModule(nil, e.Body, functional)
 	case *ast.If:
 		result, errors = p.typeCheckIfInModule(expected, e, functional)
 	case *ast.Invoke:
 		result, errors = p.typeCheckInvokeInModule(expected, e, functional)
-	case *ast.Let:
-		result, errors = p.typeCheckLetInModule(e, functional)
-	case *ast.List:
-		if functional {
-			return nil, p.srcmap.SyntaxErrors(expr, "not permitted in functional context")
-		}
-		//
-		types, errs := p.typeCheckExpressionsInModule(nil, e.Args, functional)
-		result, errors = ast.LeastUpperBound(types...), errs
 	case *ast.Mul:
 		types, errors = p.typeCheckExpressionsInModule(ast.UINT_TYPE, e.Args, true)
 		result = typeOfProduct(types...)
@@ -322,8 +308,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 	case *ast.Not:
 		_, errors = p.typeCheckExpressionInModule(ast.BOOL_TYPE, e.Arg, true)
 		result = ast.BOOL_TYPE
-	case *ast.Reduce:
-		result, errors = p.typeCheckReduceInModule(e)
 	case *ast.Shift:
 		res, arg_errs := p.typeCheckExpressionInModule(nil, e.Arg, functional)
 		_, shf_errs := p.typeCheckExpressionInModule(ast.UINT_TYPE, e.Shift, functional)
@@ -436,57 +420,6 @@ func (p *typeChecker) typeCheckInvokeInModule(expected ast.Type, expr *ast.Invok
 	// No need to report an error here, as one would already have been reported
 	// during resolution.
 	return nil, nil
-}
-
-func (p *typeChecker) typeCheckLetInModule(expr *ast.Let, functional bool) (ast.Type, []SyntaxError) {
-	// NOTE: there is a limitation here since we are using the type of the
-	// assigned expressions.  It would be nice to retain this, but it would
-	// require a more flexible notion of environment than we currently have.
-	if types, arg_errors := p.typeCheckExpressionsInModule(nil, expr.Args, true); types != nil {
-		// Update type for let-bound variables.
-		for i := range expr.Vars {
-			if types[i] != nil {
-				expr.Vars[i].DataType = types[i]
-			}
-		}
-		// ast.Type check body
-		body_t, body_errors := p.typeCheckExpressionInModule(nil, expr.Body, functional)
-		//
-		return body_t, append(arg_errors, body_errors...)
-	} else {
-		return nil, arg_errors
-	}
-}
-
-func (p *typeChecker) typeCheckReduceInModule(expr *ast.Reduce) (ast.Type, []SyntaxError) {
-	var signature *ast.FunctionSignature
-	// ast.Type check body of reduction
-	body_t, errors := p.typeCheckExpressionInModule(nil, expr.Arg, false)
-	// Following safe as resolver checked this already.
-	if binding, ok := expr.Name.Binding().(ast.FunctionBinding); ok && body_t != nil {
-		//
-		signature = binding.Signature()
-		// Check left parameter type
-		if !body_t.SubtypeOf(signature.Parameter(0)) {
-			msg := fmt.Sprintf("expected type %s (found %s)", signature.Parameter(0), body_t)
-			errors = append(errors, *p.srcmap.SyntaxError(expr.Arg, msg))
-		}
-		// Check right parameter type
-		if !body_t.SubtypeOf(signature.Parameter(1)) {
-			msg := fmt.Sprintf("expected type %s (found %s)", signature.Parameter(1), body_t)
-			errors = append(errors, *p.srcmap.SyntaxError(expr.Arg, msg))
-		}
-
-		// Error check
-		if len(errors) > 0 {
-			return nil, errors
-		}
-		//
-		return body_t, nil
-	}
-	// No need to report an error here, as one would already have been reported
-	// during resolution.
-	return nil, errors
 }
 
 func (p *typeChecker) typeCheckVariableInModule(expr *ast.VariableAccess) (ast.Type, []SyntaxError) {

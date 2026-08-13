@@ -12,7 +12,6 @@ package codegen
 
 import (
 	"fmt"
-	"math/big"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -278,6 +277,8 @@ func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...[]vm.
 	switch e := e.(type) {
 	case *expr.TupleInitialiser[symbol.Resolved]:
 		return p.compileTupleInitialiser(e, mapping, targets...)
+	case *expr.DivMod[symbol.Resolved]:
+		return destructMultiway(p, e, mapping, targets, p.compileDivMod)
 	case *expr.ExternAccess[symbol.Resolved]:
 		//
 		switch ext := p.components[e.Name.Index].(type) {
@@ -703,75 +704,86 @@ func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target Regis
 
 func (p *StmtCompiler) compileIntDiv(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
 ) []Bytecode {
-	// Fold constant divisors: a/b/2/c/3 == a/b/c/6.
-	var (
-		product = big.NewInt(1)
-		nargs   = []Expr{args[0]}
-	)
-	// args[0] is the dividend — never fold it.
-	for _, e := range args[1:] {
-		if c, ok := e.(*expr.Const[symbol.Resolved]); ok {
-			product.Mul(product, c.Constant())
-
-			if uint(product.BitLen()) > bitwidth {
-				msg := fmt.Sprintf("constant divisors overflow u%d", bitwidth)
-				p.errors = append(p.errors, p.srcmaps.SyntaxErrors(c, msg)...)
-
-				break
-			}
-		} else if p.isConstantAccess(e) {
-			product.Mul(product, p.evalConstant(e).BigInt())
-
-			if uint(product.BitLen()) > bitwidth {
-				msg := fmt.Sprintf("constant divisors overflow u%d", bitwidth)
-				p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e, msg)...)
-
-				break
-			}
-		} else {
-			nargs = append(nargs, e)
+	var bw = util.Some(bitwidth)
+	// Compile the dividend upfront.  Division is strictly binary (the parser
+	// rejects unbraced chains), so args holds exactly the dividend and divisor.
+	value, insns := p.compileArg(args[0], bw, mapping)
+	divisor, extra := p.compileOperand(args[1], bw, mapping)
+	//
+	insns = append(insns, extra...)
+	//
+	// The type checker bounds a constant divisor to the operand type, so only
+	// the degenerate values need rejecting here.
+	if divisor.IsConstant() {
+		if divisor.AsConstant().Cmp64(0) == 0 {
+			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[1], "division by zero")...)
+		} else if divisor.AsConstant().Cmp64(1) == 0 {
+			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[0], "division has no divisor")...)
 		}
 	}
-
-	if product.Cmp(big.NewInt(1)) != 0 {
-		nargs = append(nargs, expr.NewTypedConstant[symbol.Resolved](*product, 10, bitwidth))
-	}
-
-	if len(nargs) < 2 {
-		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[0], "division has no divisor")...)
-	}
-
-	// Compile all operands upfront.
-	sources, insns := p.compileUniformArgs(util.Some(bitwidth), mapping, nargs...)
-	// Chain divisions left-to-right: (((a / b) / c) / ...).
-	value := sources[0]
+	// The unwanted remainder goes into a fresh scratch register, sized to the
+	// divisor (a remainder is always below it).
+	remainder := p.allocate(divisorWidthOf(divisor, bitwidth))
 	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(util.Some(bitwidth))
-		insns = append(insns, vm.Div[vm.Uint](tmp, value, sources[i]))
-		value = tmp
-	}
-	//
-	return append(insns,
-		vm.Div[vm.Uint](target, value, sources[len(sources)-1]))
+	return append(insns, vm.DivMod(target, remainder, value, divisor))
 }
 
 func (p *StmtCompiler) compileIntRem(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
 ) []Bytecode {
 	var bw = util.Some(bitwidth)
-	// Compile all operands upfront.
-	sources, insns := p.compileUniformArgs(bw, mapping, args...)
-	// Chain remainders left-to-right: (((a % b) % c) % ...).
-	value := sources[0]
+	// Compile the dividend upfront.  Remainder is strictly binary (the parser
+	// rejects unbraced chains), so args holds exactly the dividend and divisor.
+	value, insns := p.compileArg(args[0], bw, mapping)
+	divisor, extra := p.compileOperand(args[1], bw, mapping)
 	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(bw)
-		insns = append(insns, vm.Rem[vm.Uint](tmp, value, sources[i]))
-		value = tmp
+	insns = append(insns, extra...)
+	//
+	// The type checker bounds a constant divisor to the operand type, so only
+	// a zero divisor needs rejecting here.
+	if divisor.IsConstant() && divisor.AsConstant().Cmp64(0) == 0 {
+		p.errors = append(p.errors, p.srcmaps.SyntaxErrors(args[1], "division by zero")...)
+	}
+	// The unwanted quotient goes into a fresh scratch register, sized to the
+	// dividend (a quotient is never above it).
+	quotient := p.allocate(util.Some(bitwidth))
+	//
+	return append(insns, vm.DivMod(quotient, target, value, divisor))
+}
+
+// divisorWidthOf returns the width required for a division's remainder: the
+// bit length of a constant divisor (the remainder is strictly below it), or
+// the full operand width for a register divisor.
+func divisorWidthOf(divisor vm.Operand[vm.Uint], bitwidth uint) util.Option[uint] {
+	if divisor.IsConstant() {
+		return util.Some(uint(divisor.AsConstant().BigInt().BitLen()))
 	}
 	//
-	return append(insns,
-		vm.Rem[vm.Uint](target, value, sources[len(sources)-1]))
+	return util.Some(bitwidth)
+}
+
+// compileDivMod compiles the combined division/remainder ("/%") expression
+// into a single DivRem bytecode writing both the quotient (targets[0]) and the
+// remainder (targets[1]).
+func (p *StmtCompiler) compileDivMod(e *expr.DivMod[symbol.Resolved], mapping []uint, targets []RegisterId,
+) []Bytecode {
+	var bw = data.BitWidthOf(e.Exprs[0].Type(), p.environment)
+	// Compile the dividend upfront.
+	value, insns := p.compileArg(e.Exprs[0], bw, mapping)
+	divisor, extra := p.compileOperand(e.Exprs[1], bw, mapping)
+	//
+	insns = append(insns, extra...)
+	//
+	// The type checker bounds a constant divisor to the operand type, so only
+	// the degenerate values need rejecting here.
+	if divisor.IsConstant() {
+		if divisor.AsConstant().Cmp64(0) == 0 {
+			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e.Exprs[1], "division by zero")...)
+		} else if divisor.AsConstant().Cmp64(1) == 0 {
+			p.errors = append(p.errors, p.srcmaps.SyntaxErrors(e.Exprs[0], "division has no divisor")...)
+		}
+	}
+	//
+	return append(insns, vm.DivMod(targets[0], targets[1], value, divisor))
 }
 
 func (p *StmtCompiler) compileBitwiseShl(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
@@ -862,7 +874,7 @@ func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target Regis
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(util.None[uint](), mapping, nargs...)
 	// Done
-	return append(insns, vm.SubModP[vm.Uint](target, sources, constant))
+	return append(insns, vm.SubModP(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileBitwiseAnd(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
@@ -1005,7 +1017,7 @@ func (p *StmtCompiler) allocate(bitwidth util.Option[uint]) RegisterId {
 		padding vm.Uint
 	)
 	//
-	p.registers = append(p.registers, vm.NewComputedRegister[vm.Uint](name, bitwidth, padding))
+	p.registers = append(p.registers, vm.NewComputedRegister(name, bitwidth, padding))
 	//
 	return util.Cast[RegisterId](uint(n))
 }

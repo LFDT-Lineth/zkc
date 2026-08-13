@@ -18,7 +18,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -40,7 +39,7 @@ func LowerDivisions[W word.Word[W]](program descriptor.Program[W]) descriptor.Pr
 
 	for i, mod := range out {
 		if fn, ok := mod.(*descriptor.Function[W]); ok {
-			out[i] = lowerDivisionFunction[W](fn)
+			out[i] = lowerDivisionFunction(fn)
 		}
 	}
 
@@ -56,54 +55,43 @@ func lowerDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descript
 
 	for i, vec := range vectors {
 		nvecs[i] = vec.Map(func(_ uint, b Bytecode[W]) []Bytecode[W] {
-			return lowerDivisionCode[W](b, alloc)
+			return lowerDivisionCode(b, alloc)
 		})
 	}
 
 	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
 }
 
-func lowerDivisionCode[W word.Word[W]](
-	b Bytecode[W],
-	registers split.Allocator[W],
-) []Bytecode[W] {
+// lowerDivisionCode replaces a DIVMOD bytecode with the hint+validation
+// sequence (see expandDivRem).  The hint produces both quotient and remainder,
+// matching the bytecode's two targets exactly, so a source-level "/%" shares a
+// single block for the pair.
+func lowerDivisionCode[W word.Word[W]](b Bytecode[W], registers split.Allocator[W]) []Bytecode[W] {
 	dr, ok := b.(*bytecode.DivRem[W])
 	if !ok {
 		return []Bytecode[W]{b}
 	}
 	//
-	switch dr.Opcode {
-	case encoding.DIV:
-		return expandDivision(dr.Target, dr.Dividend, dr.Divisor, registers)
-	case encoding.REM:
-		return expandRemainder(dr.Target, dr.Dividend, dr.Divisor, registers)
-	default:
-		return []Bytecode[W]{b}
+	var (
+		x  = dr.Dividend
+		y  = dr.Divisor
+		nX = registers.Register(x).Bitwidth().Unwrap()
+		nY = divisorWidth(y, registers)
+		w  = registers.Allocate("w", util.Some(nY))
+	)
+	//
+	return expandDivRem(dr.Quotient, dr.Remainder, w, x, y, nX, nY, registers)
+}
+
+// divisorWidth returns the bitwidth of the given divisor operand: the declared
+// register width for a register divisor, or the (minimal) width of the value
+// itself for a constant divisor.
+func divisorWidth[W word.Word[W]](y bytecode.Operand[W], registers split.Allocator[W]) uint {
+	if y.IsConstant() {
+		return uint(y.AsConstant().BigInt().BitLen())
 	}
-}
-
-// expandDivision replaces INT_DIV(q, x, y) with the hint+validation sequence.
-func expandDivision[W word.Word[W]](q, x, y bytecode.RegisterId, registers split.Allocator[W]) []Bytecode[W] {
-	var (
-		nX = registers.Register(x).Bitwidth().Unwrap()
-		nY = registers.Register(y).Bitwidth().Unwrap()
-		r  = registers.Allocate("", util.Some(nY))
-		w  = registers.Allocate("", util.Some(nY))
-	)
 	//
-	return expandDivRem(q, r, w, x, y, nX, nY, registers)
-}
-
-// expandRemainder replaces INT_REM(r, x, y) with the hint+validation sequence.
-func expandRemainder[W word.Word[W]](r, x, y bytecode.RegisterId, registers split.Allocator[W]) []Bytecode[W] {
-	var (
-		nX = registers.Register(x).Bitwidth().Unwrap()
-		nY = registers.Register(y).Bitwidth().Unwrap()
-		q  = registers.Allocate("", util.Some(nX))
-		w  = registers.Allocate("", util.Some(nY))
-	)
-	//
-	return expandDivRem(q, r, w, x, y, nX, nY, registers)
+	return registers.Register(y.AsRegister()).Bitwidth().Unwrap()
 }
 
 // expandDivRem builds the shared hint+validation sequence for both INT_DIV and
@@ -124,32 +112,40 @@ func expandRemainder[W word.Word[W]](r, x, y bytecode.RegisterId, registers spli
 // operands that borrow grows past the field register width.  A two-operand zero
 // assertion splits into independent per-limb equalities (see split.Subtraction),
 // which needs no borrows.
-func expandDivRem[W word.Word[W]](q, r, w, x, y bytecode.RegisterId, nX, nY uint,
+func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Operand[W], nX, nY uint,
 	registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
-		qy   = registers.Allocate("", util.Some(nX))
-		// qyr = qy + r must hold q*y + r which, by the DIV_HINT semantics
-		// (q = x/y, r = x%y), equals the dividend x exactly and so fits nX
-		// bits; the extra bit guards the addition's transient carry.
-		qyr = registers.Allocate("", util.Some(nX+1))
-		rw1 = registers.Allocate("", util.Some(nY+1))
-		// NOTE: must separate z0 & z1 to avoid write conflict (for now).
-		z0 = registers.Allocate("", util.Some[uint](0))
-		z1 = registers.Allocate("", util.Some[uint](0))
+		qy   = registers.Allocate("qy", util.Some(nX))
+		qyr  = registers.Allocate("qy_plus_r", util.Some(nX))
+		rw1  = registers.Allocate("rw1", util.Some(nY))
+		// TODO: see https://github.com/LFDT-Lineth/zkc/issues/2119
+		// only one zero register is needed, but since this issue is fixed, it's creating multi line fct
+		z1 = registers.Allocate("z1", util.Some[uint](0))
+		z2 = registers.Allocate("z2", util.Some[uint](0))
+
+		mulQY, subZ1 Bytecode[W]
 	)
 	//
+	if y.IsConstant() {
+		mulQY = bytecode.MulConst(qy, []bytecode.RegisterId{q}, y.AsConstant())
+		subZ1 = bytecode.SubConst(z1, []bytecode.RegisterId{rw1}, y.AsConstant())
+	} else {
+		mulQY = bytecode.MulConst(qy, []bytecode.RegisterId{q, y.AsRegister()}, one)
+		subZ1 = bytecode.SubConst(z1, []bytecode.RegisterId{y.AsRegister(), rw1}, zero)
+	}
+	//
 	return []Bytecode[W]{
-		bytecode.NewIntrinsic[W](bytecode.DIV_HINT,
+		bytecode.NewIntrinsic(bytecode.DIV_HINT,
 			[]bytecode.RegisterVector{
 				bytecode.NewRegisterVector(q), bytecode.NewRegisterVector(r), bytecode.NewRegisterVector(w),
 			},
-			[]bytecode.RegisterVector{bytecode.NewRegisterVector(x), bytecode.NewRegisterVector(y)}),
-		bytecode.MulConst(qy, []bytecode.RegisterId{q, y}, one),
+			[]bytecode.Operand[W]{bytecode.NewRegisterOperand[W](x), y}),
+		mulQY,
 		bytecode.AddConst(qyr, []bytecode.RegisterId{qy, r}, zero),
-		bytecode.SubConst(z0, []bytecode.RegisterId{x, qyr}, zero),
+		bytecode.SubConst(z2, []bytecode.RegisterId{x, qyr}, zero),
 		bytecode.AddConst(rw1, []bytecode.RegisterId{r, w}, one),
-		bytecode.SubConst(z1, []bytecode.RegisterId{y, rw1}, zero),
+		subZ1,
 	}
 }

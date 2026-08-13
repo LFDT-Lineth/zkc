@@ -101,14 +101,13 @@
 
 ;; plateau constraints
 (defpurefun (plateau-constraint (CT :int) (X :binary) (C :int))
-            (begin (debug (stamp-constancy CT C))
-                   (if (== C 0)
-                            (== X 1)
-                            (if (== CT 0)
-                                (vanishes! X)
-                              (if (== CT C)
-                                  (== X 1)
-                                (remained-constant! X))))))
+            (if (== C 0)
+                (== X 1)
+                (if (== CT 0)
+                    (vanishes! X)
+                  (if (== CT C)
+                      (== X 1)
+                    (remained-constant! X)))))
 
 ;; stamp constancy imposes that the column C may only
 ;; change at rows where the STAMP column changes.

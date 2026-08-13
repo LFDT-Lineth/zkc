@@ -1,0 +1,4 @@
+//error:3:13-14:braces required
+fn f(a:u8, b:u8, c:u8) -> (r:u8) {
+  r = a / b / c
+}

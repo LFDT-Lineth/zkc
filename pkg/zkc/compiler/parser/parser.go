@@ -69,7 +69,7 @@ func Parse(srcfile *source.File) (UnlinkedSourceFile, []source.SyntaxError) {
 
 // BINOPS captures the set of binary operations
 var BINOPS = []uint{
-	SUB, MUL, ADD, DIV, REM, BITWISE_AND, BITWISE_OR, BITWISE_XOR, BITWISE_SHL,
+	SUB, MUL, ADD, DIV, DIV_REM, REM, BITWISE_AND, BITWISE_OR, BITWISE_XOR, BITWISE_SHL,
 	BITWISE_SHR, EQUALS_EQUALS, NOT_EQUALS,
 	LESS_THAN, LESS_THAN_EQUALS, GREATER_THAN, GREATER_THAN_EQUALS}
 
@@ -282,7 +282,7 @@ func (p *Parser) parseConstant() ([]decl.Unresolved, []source.SyntaxError) {
 		return nil, errs
 	}
 	//
-	component := decl.NewConstant[symbol.Unresolved](name, datatype, constExpr)
+	component := decl.NewConstant(name, datatype, constExpr)
 	p.srcmap.Put(component, p.spanOf(start, end))
 	consts = append(consts, component)
 	// Parse additional comma-separated constants on the same line.
@@ -305,7 +305,7 @@ func (p *Parser) parseConstant() ([]decl.Unresolved, []source.SyntaxError) {
 			return nil, errs
 		}
 
-		component = decl.NewConstant[symbol.Unresolved](name, datatype, constExpr)
+		component = decl.NewConstant(name, datatype, constExpr)
 		p.srcmap.Put(component, p.spanOf(start, end))
 		consts = append(consts, component)
 	}
@@ -519,16 +519,16 @@ func (p *Parser) parseInputOutputMemory() (decl.Unresolved, []source.SyntaxError
 	// Construct the appropriate memory declaration
 	switch lookahead.Kind {
 	case KEYWORD_INPUT:
-		mem = decl.NewReadOnlyMemory[symbol.Unresolved](public, name, address, data)
+		mem = decl.NewReadOnlyMemory(public, name, address, data)
 	case KEYWORD_OUTPUT:
-		mem = decl.NewWriteOnceMemory[symbol.Unresolved](public, name, address, data)
+		mem = decl.NewWriteOnceMemory(public, name, address, data)
 	default: // KEYWORD_STATIC
 		contents, errs := p.parseStaticInitialiser()
 		if len(errs) > 0 {
 			return nil, errs
 		}
 		//
-		mem = decl.NewStaticMemory[symbol.Unresolved](public, name, address, data, contents)
+		mem = decl.NewStaticMemory(public, name, address, data, contents)
 	}
 	//
 	p.srcmap.Put(mem, p.spanOf(start, end))
@@ -603,7 +603,7 @@ func (p *Parser) parseReadWriteMemory() (decl.Unresolved, []source.SyntaxError) 
 		return nil, errs
 	}
 	// Done
-	mem := decl.NewRandomAccessMemory[symbol.Unresolved](name, address, data)
+	mem := decl.NewRandomAccessMemory(name, address, data)
 	//
 	p.srcmap.Put(mem, p.spanOf(start, p.index))
 	//
@@ -629,7 +629,7 @@ func (p *Parser) parseTypeAlias() (decl.Unresolved, []source.SyntaxError) {
 	}
 	// Save for source map
 	end := p.index
-	component := decl.NewTypeAlias[symbol.Unresolved](name, datatype)
+	component := decl.NewTypeAlias(name, datatype)
 	//
 	p.srcmap.Put(component, p.spanOf(start, end))
 	//
@@ -706,7 +706,7 @@ func (p *Parser) parseType() (Type, []source.SyntaxError) {
 			arrayType = data.NewUnsignedInt[symbol.Unresolved](uint(bw), false)
 		default:
 			alias := symbol.NewUnresolved(name, symbol.TYPE_ALIAS, 0)
-			arrayType = data.NewAlias[symbol.Unresolved](alias)
+			arrayType = data.NewAlias(alias)
 			p.srcmap.Put(arrayType, p.spanOf(start+1, p.index))
 		}
 		//
@@ -729,7 +729,7 @@ func (p *Parser) parseType() (Type, []source.SyntaxError) {
 			return nil, p.srcmap.SyntaxErrors(lookahead, "expected closing bracket")
 		}
 		//
-		fa := data.NewFixedArray[symbol.Unresolved](arrayType, size)
+		fa := data.NewFixedArray(arrayType, size)
 		p.srcmap.Put(fa, p.spanOf(start, p.index))
 
 		return fa, nil
@@ -738,7 +738,7 @@ func (p *Parser) parseType() (Type, []source.SyntaxError) {
 		return data.NewUnsignedInt[symbol.Unresolved](uint(bw), false), nil
 	// we assume that if not a fundamental type, it is an alias
 	default:
-		alias := data.NewAlias[symbol.Unresolved](symbol.NewUnresolved(name, symbol.TYPE_ALIAS, 0))
+		alias := data.NewAlias(symbol.NewUnresolved(name, symbol.TYPE_ALIAS, 0))
 		//
 		p.srcmap.Put(alias, p.spanOf(start, p.index))
 		//
@@ -1306,7 +1306,7 @@ func (p *Parser) parseForInit(env Environment) (stmt.Unresolved, []source.Syntax
 
 		return &stmt.VarDecl[symbol.Unresolved]{
 			Variables: []variable.Id{id},
-			Init:      util.Some[Expr](rhs),
+			Init:      util.Some(rhs),
 		}, nil
 	}
 	// Fall back to a plain assignment to an already-declared variable.
@@ -1601,7 +1601,7 @@ func (p *Parser) parseVar(env Environment) ([]stmt.Unresolved, []source.SyntaxEr
 	// Build the variable declaration with initialiser
 	insn := &stmt.VarDecl[symbol.Unresolved]{
 		Variables: []variable.Id{varId},
-		Init:      util.Some[Expr](rhs),
+		Init:      util.Some(rhs),
 	}
 	//
 	return []stmt.Unresolved{insn}, nil
@@ -1663,7 +1663,7 @@ func (p *Parser) parseExpr(env Environment) (Expr, []source.SyntaxError) {
 		return nil, errs
 	}
 
-	result := expr.NewTernary[symbol.Unresolved](ex, ifTrue, ifFalse)
+	result := expr.NewTernary(ex, ifTrue, ifFalse)
 	p.srcmap.Put(result, p.spanOf(start, p.index))
 
 	return result, nil
@@ -1724,6 +1724,14 @@ func (p *Parser) parseArithExpr(env Environment) (Expr, []source.SyntaxError) {
 		if !p.follows(kind) {
 			return tmp, p.syntaxErrors(p.lookahead(), "braces required")
 		}
+		// Division / remainder chains (a / b / c)  must be braced explicitly, e.g. (a / b) / c.
+		if len(args) > 1 && (kind == DIV || kind == REM) {
+			return tmp, p.syntaxErrors(p.lookahead(), "braces required")
+		}
+		// DIV_REM can't be chained, even with bracket.
+		if len(args) > 1 && kind == DIV_REM {
+			return tmp, p.syntaxErrors(p.lookahead(), "/% operator cannot be chained")
+		}
 		// Consume connective
 		p.expect(p.lookahead().Kind)
 		//
@@ -1753,6 +1761,9 @@ func (p *Parser) parseArithExpr(env Environment) (Expr, []source.SyntaxError) {
 		arg = expr.NewMul(args...)
 	case kind == DIV:
 		arg = expr.NewDiv(args...)
+	case kind == DIV_REM:
+		binary = true
+		arg = expr.NewDivMod(args[0], args[1])
 	case kind == REM:
 		arg = expr.NewRem(args...)
 	case kind == SUB:

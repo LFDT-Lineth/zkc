@@ -534,6 +534,9 @@ func (p *Linker) linkExpr(e expr.Unresolved) (expr.Resolved, []source.SyntaxErro
 	case *expr.Div[symbol.Unresolved]:
 		args, errors = p.linkExprs(e.Exprs...)
 		nexpr = expr.NewDiv[symbol.Resolved](args...)
+	case *expr.DivMod[symbol.Unresolved]:
+		args, errors = p.linkExprs(e.Exprs...)
+		nexpr = expr.NewDivMod[symbol.Resolved](args[0], args[1])
 	case *expr.Rem[symbol.Unresolved]:
 		args, errors = p.linkExprs(e.Exprs...)
 		nexpr = expr.NewRem[symbol.Resolved](args...)

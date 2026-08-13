@@ -62,5 +62,8 @@ func Shift[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Bitwis
 	//
 	return []Bytecode[W]{bytecode.NewIntrinsic[W](op,
 		[]bytecode.RegisterVector{target},
-		[]bytecode.RegisterVector{value, amount})}
+		[]bytecode.Operand[W]{
+			bytecode.NewRegisterVectorOperand[W](value),
+			bytecode.NewRegisterVectorOperand[W](amount),
+		})}
 }
