@@ -37,6 +37,12 @@ func (p Path[W]) Condition() BranchCondition {
 	return p.condition
 }
 
+// WithCondition returns a copy of this path with its condition replaced by
+// the given one (e.g. a simplified equivalent computed externally).
+func (p Path[W]) WithCondition(condition BranchCondition) Path[W] {
+	return Path[W]{condition}
+}
+
 // Equals extends the current path with a new constraint that two variables are equal.
 func (p Path[W]) Equals(lhs, rhs BranchId) Path[W] {
 	var prop = logical.NewProposition(logical.Equals(lhs, rhs))
