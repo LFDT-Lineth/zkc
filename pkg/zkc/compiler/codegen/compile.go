@@ -333,30 +333,33 @@ func (p *Compiler) buildMemory(program []Declaration, c *decl.ResolvedMemory,
 	//
 	switch c.Kind {
 	case decl.PRIVATE_READ_ONLY_MEMORY:
-		return vm.NewBytecodeMemory(c.Name(), vm.PRIVATE_READ_ONLY_MEMORY, regs), nil
+		return vm.NewBytecodeMemory(c.Name(), vm.PRIVATE_READ_ONLY_MEMORY, regs, 0), nil
 	case decl.PUBLIC_READ_ONLY_MEMORY:
-		return vm.NewBytecodeMemory(c.Name(), vm.PUBLIC_READ_ONLY_MEMORY, regs), nil
+		return vm.NewBytecodeMemory(c.Name(), vm.PUBLIC_READ_ONLY_MEMORY, regs, 0), nil
 	case decl.PRIVATE_WRITE_ONCE_MEMORY:
-		return vm.NewBytecodeMemory(c.Name(), vm.PRIVATE_WRITE_ONCE_MEMORY, regs), nil
+		return vm.NewBytecodeMemory(c.Name(), vm.PRIVATE_WRITE_ONCE_MEMORY, regs, 0), nil
 	case decl.PUBLIC_WRITE_ONCE_MEMORY:
-		return vm.NewBytecodeMemory(c.Name(), vm.PUBLIC_WRITE_ONCE_MEMORY, regs), nil
+		return vm.NewBytecodeMemory(c.Name(), vm.PUBLIC_WRITE_ONCE_MEMORY, regs, 0), nil
 	case decl.PRIVATE_STATIC_MEMORY:
 		// Compile the static initialiser
 		words, errs := p.compileStaticInitialisers(program, p.env, p.srcmaps, c.Contents...)
 		//
-		return vm.NewBytecodeMemory(c.Name(), vm.PRIVATE_STATIC_MEMORY, regs, words...), errs
+		return vm.NewBytecodeMemory(c.Name(), vm.PRIVATE_STATIC_MEMORY, regs, 0, words...), errs
 	case decl.PUBLIC_STATIC_MEMORY:
 		// Compile the static initialiser
 		words, errs := p.compileStaticInitialisers(program, p.env, p.srcmaps, c.Contents...)
 		//
-		return vm.NewBytecodeMemory(c.Name(), vm.PUBLIC_STATIC_MEMORY, regs, words...), errs
+		return vm.NewBytecodeMemory(c.Name(), vm.PUBLIC_STATIC_MEMORY, regs, 0, words...), errs
 	case decl.RANDOM_ACCESS_MEMORY:
+		// Extract the declared timestamp width.  Validation has already
+		// guaranteed this resolves to a fixed-width uN.
+		width := c.TimestampType.AsUint(p.env).BitWidth()
 		// Check for paged memory
 		if slices.Contains(c.Annotations(), "paged") {
-			return vm.NewBytecodeMemory(c.Name(), vm.PAGED_READWRITE_MEMORY, regs), nil
+			return vm.NewBytecodeMemory(c.Name(), vm.PAGED_READWRITE_MEMORY, regs, width), nil
 		}
 		//
-		return vm.NewBytecodeMemory(c.Name(), vm.READWRITE_MEMORY, regs), nil
+		return vm.NewBytecodeMemory(c.Name(), vm.READWRITE_MEMORY, regs, width), nil
 	default:
 		panic(fmt.Sprintf("unknown memory kind for \"%s\"", c.Name()))
 	}

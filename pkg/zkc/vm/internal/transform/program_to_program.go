@@ -92,7 +92,7 @@ func (p programToProgram[W1, W2]) lowerMemory(m *descriptor.Memory[W1]) *descrip
 		contents = p.convertContents(m.StaticContents())
 	}
 	//
-	return descriptor.NewMemory(m.Name(), regs, m.Kind(), contents)
+	return descriptor.NewMemory(m.Name(), regs, m.Kind(), contents, m.TimestampWidth())
 }
 
 func (p programToProgram[W1, W2]) lowerRegisters(regs []descriptor.Register[W1]) []descriptor.Register[W2] {

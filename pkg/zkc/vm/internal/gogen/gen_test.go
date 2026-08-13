@@ -399,7 +399,7 @@ fn main() {
 // (page 2) pages, which must read zero.
 const pagedSrc = `pub input data(address:u8) -> (word:u64)
 #[paged]
-memory ram(address:u32) -> (word:u64)
+memory ram[u32](address:u32) -> (word:u64)
 pub output result(address:u8) -> (word:u64)
 fn main<ram>() {
     ram[3] = data[0]
@@ -418,7 +418,7 @@ fn main<ram>() {
 // array (address:u4 -> 16 cells): writes including the highest valid address
 // (15), read-back, and a never-written cell that must read zero.
 const scratchSrc = `pub input data(address:u8) -> (byte:u8)
-memory scratch(address:u4) -> (byte:u8)
+memory scratch[u32](address:u4) -> (byte:u8)
 pub output result(address:u8) -> (byte:u8)
 fn main<scratch>() {
     scratch[3] = data[0]

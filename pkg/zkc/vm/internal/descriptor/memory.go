@@ -15,6 +15,7 @@ package descriptor
 import (
 	"bytes"
 	"encoding/gob"
+	"io"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -25,23 +26,24 @@ import (
 // characteristics (public/private, static, read-only, write-only, read-write).
 type Memory[W word.Word[W]] struct {
 	moduleBase[W]
-	kind     MemoryKind
-	contents []W
+	kind           MemoryKind
+	contents       []W
+	timestampWidth uint
 }
 
 // NewMemory creates a new memory module with the specified parameters. It
 // initializes a memory region with a given name, registers, kind (ROM, RAM,
-// WOM), geometry (size and layout), and initial contents (for static memories
-// only).  NOTE: this will panic is a non-static memory is created with some
-// contents.
+// WOM), geometry (size and layout), initial contents (for static memories
+// only) and timestamp width (for read-write memories only, zero otherwise).
+// NOTE: this will panic is a non-static memory is created with some contents.
 func NewMemory[W word.Word[W]](name string, registers []Register[W], kind MemoryKind,
-	contents []W) *Memory[W] {
+	contents []W, timestampWidth uint) *Memory[W] {
 	// Sanity check
 	if !kind.IsStatic() && len(contents) > 0 {
 		panic("unsupported contents for non-static memory")
 	}
 	//
-	return &Memory[W]{newModuleBase(name, registers), kind, contents}
+	return &Memory[W]{newModuleBase(name, registers), kind, contents, timestampWidth}
 }
 
 // AddressRegisters returns the set of registers making up the address lines of
@@ -59,6 +61,12 @@ func (p *Memory[W]) DataRegisters() []Register[W] {
 // Kind returns the underlying kind of memory (e.g. ROM, WOM, RAM, etc)
 func (p *Memory[W]) Kind() MemoryKind {
 	return p.kind
+}
+
+// TimestampWidth returns the bit width of this memory's timestamp.  Only
+// meaningful for read-write memories; zero for every other kind.
+func (p *Memory[W]) TimestampWidth() uint {
+	return p.timestampWidth
 }
 
 // IsPublic indicates whether this is a public input or output.
@@ -168,6 +176,10 @@ func (p *Memory[W]) GobEncode() ([]byte, error) {
 		return nil, err
 	}
 	//
+	if err := gobEncoder.Encode(p.timestampWidth); err != nil {
+		return nil, err
+	}
+	//
 	return buffer.Bytes(), nil
 }
 
@@ -193,6 +205,16 @@ func (p *Memory[W]) GobDecode(data []byte) error {
 	}
 	//
 	if err := gobDecoder.Decode(&p.contents); err != nil {
+		return err
+	}
+	// The timestamp width was added in binfile v0.1 (issue #2069); files
+	// predating it simply end here, in which case read-write memories get the
+	// then-implicit width of 32.
+	if err := gobDecoder.Decode(&p.timestampWidth); err == io.EOF {
+		if p.kind.IsReadWrite() {
+			p.timestampWidth = 32
+		}
+	} else if err != nil {
 		return err
 	}
 	// Reconstruct the module base (which recomputes the input / output counts).
