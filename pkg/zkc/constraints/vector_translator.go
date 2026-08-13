@@ -76,10 +76,6 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 		// assigns, may assign or does not assign any given registers.  This
 		// is necessary to apply constancy information.
 		assignments util.Option[dfa.Writes]
-		// Assertions collects the reach condition of every Fail bytecode in
-		// this vector, for use simplifying other writes' guard conditions
-		// (see collectAssertions / applyAssertions).
-		assertions = collectAssertions(p.vec.Bytecodes, p.branchTable)
 	)
 	//
 	for cc := range nCodes {
@@ -184,11 +180,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			panic(fmt.Sprintf("unexpected bytecode (%T)", c))
 		}
 		//
-		var (
-			path       = p.branchTable.StateOf(cc)
-			simplified = applyAssertions(path.Condition(), assertions)
-			condition  = TranslateBranchCondition(path.WithCondition(simplified), p.oneHot, p)
-		)
+		condition := TranslateBranchCondition(p.branchTable.StateOf(cc), p.oneHot, p)
 		// Add control-flow requirements
 		local = mirc.If(condition, local)
 		// Include local constraint

@@ -10,25 +10,46 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package constraints
+package bytecode
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
+
+// applyFailAssertions post-processes a completed branch table, using the
+// reach condition of every Fail bytecode in the vector to further simplify
+// every other code's branch condition.  This is applied once construction is
+// complete (rather than during downstream translation) so that every
+// consumer of the branch table benefits, not just one.
+func applyFailAssertions[W word.Word[W]](codes []Bytecode[W], table dfa.Result[dfa.Path[W]]) {
+	var assertions = collectAssertions(codes, table)
+	//
+	if len(assertions) == 0 {
+		return
+	}
+	//
+	for i := range codes {
+		var (
+			path       = table.StateOf(uint(i))
+			simplified = applyAssertions(path.Condition(), assertions)
+		)
+		//
+		table.SetStateOf(uint(i), path.WithCondition(simplified))
+	}
+}
 
 // collectAssertions scans a bytecode vector for Fail bytecodes and returns
 // the reach condition of each.  Any row satisfying one of these is rejected
 // by that fail's own constraint regardless of anything else, so each is a
 // "don't care" region that may soundly be folded into (i.e. widen) any other
-// write's guard condition within the same vector — see applyAssertions.
-func collectAssertions[W vm.Word[W]](codes []vm.Bytecode[W],
-	branchTable dfa.Result[dfa.Path[W]]) []dfa.BranchCondition {
+// code's branch condition within the same vector — see applyAssertions.
+func collectAssertions[W word.Word[W]](codes []Bytecode[W], table dfa.Result[dfa.Path[W]]) []dfa.BranchCondition {
 	var assertions []dfa.BranchCondition
 	//
 	for i, c := range codes {
-		if _, ok := c.(*vm.BytecodeFail[W]); ok {
-			assertions = append(assertions, branchTable.StateOf(uint(i)).Condition())
+		if _, ok := c.(*Fail[W]); ok {
+			assertions = append(assertions, table.StateOf(uint(i)).Condition())
 		}
 	}
 	//

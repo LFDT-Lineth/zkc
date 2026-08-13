@@ -85,6 +85,15 @@ func (p *Result[T]) StateOf(i uint) T {
 	return empty
 }
 
+// SetStateOf overwrites the state on entry to the given micro-code, replacing
+// (rather than joining with) whatever was previously recorded there.  This is
+// intended for post-processing passes which refine an already-completed
+// analysis (e.g. simplifying a state using facts not available to the
+// original transfer function).
+func (p *Result[T]) SetStateOf(i uint, st T) {
+	p.states[i] = util.Some(st)
+}
+
 // JoinInto updates the write state for a given micro-code to include that from
 // another branch.
 func (p *Result[T]) JoinInto(i uint, st T) {

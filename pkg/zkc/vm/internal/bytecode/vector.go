@@ -400,12 +400,16 @@ func (p *Vector[W]) WriteMap() dfa.Result[dfa.Writes] {
 func (p *Vector[W]) BranchTable(limbWidth uint) (dfa.Result[dfa.Writes], dfa.Result[dfa.Path[W]]) {
 	// Construct suitable branch table for this vector instruction.
 	var (
-		entry    = dfa.EntryPoint[W]()
-		writeMap = p.WriteMap()
-		btf      = branchTableTransfer[W](writeMap, limbWidth)
+		entry       = dfa.EntryPoint[W]()
+		writeMap    = p.WriteMap()
+		btf         = branchTableTransfer[W](writeMap, limbWidth)
+		branchTable = dfa.Construct(entry, p.Bytecodes, btf)
 	)
+	// Further simplify every code's branch condition using facts derived from
+	// this vector's Fail bytecodes (see applyFailAssertions).
+	applyFailAssertions(p.Bytecodes, branchTable)
 	//
-	return writeMap, dfa.Construct(entry, p.Bytecodes, btf)
+	return writeMap, branchTable
 }
 
 // writeDfaTransfer is the data-flow transfer function for the writes analysis
