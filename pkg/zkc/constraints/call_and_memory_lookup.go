@@ -77,7 +77,7 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 			// - for a one line function, the $ret register (defining the
 			//   non-padding region)
 			srcSelector := lookupSourceSelector(mod, ctx, mod.Registers(),
-				group.condition, uint(pc), pcSelectors, ret)
+				group.condition, uint(pc), pcSelectors, ret, oneHot)
 			//
 			for _, entry := range group.entries {
 				switch c := entry.code.(type) {
@@ -161,7 +161,7 @@ outer:
 // (IS_PC_k for a multi-line function, $ret for a one-line function).
 func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
-	ret register.Id) register.Id {
+	ret register.Id, oneHot []oneHotGroup) register.Id {
 	// Position register gating the rows of this access: the line's IS_PC_k
 	// selector for a multi-line function, or $ret for an atomic one (defining
 	// the non-padding region).
@@ -182,7 +182,7 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constrain
 	posAtom := logical.NotEqualsConst(dfa.NewBranchId(false, position), big.Int{})
 	cond = cond.And(logical.NewProposition(posAtom))
 	//
-	return newPathSelector(mod, ctx, regs, cond)
+	return newPathSelector(mod, ctx, regs, cond, oneHot)
 }
 
 // newPathSelector creates a fresh 1-bit column gating a conditionally executed
@@ -191,7 +191,7 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constrain
 // (already position-gated) branch condition — so it is 1 exactly on the rows
 // which perform the access.
 func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	regs []register.Register, cond dfa.BranchCondition,
+	regs []register.Register, cond dfa.BranchCondition, oneHot []oneHotGroup,
 ) register.Id {
 	var padding big.Int
 	// Allocate the selector column.
@@ -202,21 +202,67 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]]
 	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.
 	mod.AddConstraints(mir.NewVanishingConstraint(
 		fmt.Sprintf("lookup_sel_%d", selId.Unwrap()), ctx, util.None[int](),
-		pathSelectorConstraint[F](selId, cond, regs)))
+		pathSelectorConstraint[F](selId, cond, regs, oneHot)))
 	//
 	return selId
 }
 
 // pathSelectorConstraint builds the binding "$lookup_sel == 1 iff cond" as an
 // MIR logical term.
+//
+// A condition of the shape ⋁ᵢ (rest ∧ bitᵢ != 0 ∧ guardsᵢ) over distinct bits
+// of a single one-hot group (see splitOneHotDisjunction) is bound
+// arithmetically as
+//
+//	if rest { sel == Σᵢ bitᵢ·⟦guardsᵢ⟧ } else { sel == 0 }
+//
+// rather than propositionally: negating the disjunction lowers to a product
+// over all its disjuncts, so the propositional form's degree grows with the
+// number of covered cases (e.g. 29 for a lookup site reached from 28 switch
+// cases), while the arithmetic form's does not.  The two forms agree exactly
+// on traces satisfying the group's one-hot invariant — enforced by the
+// dispatch's constraints on the rows where rest (which includes the position
+// atom) holds — under which at most one bitᵢ is set and the sum is the boolean
+// "one of the disjuncts holds".
 func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.BranchCondition,
-	regs []register.Register) mir.LogicalTerm[F] {
+	regs []register.Register, oneHot []oneHotGroup) mir.LogicalTerm[F] {
 	var (
-		condition = mirc.TranslateBranchCondition(cond, callRegisterReader[F]{regs})
-		sel       = mirc.Variable[register.Id, Expr[F]](selId, 1, 0)
-		one       = mirc.Number[register.Id, Expr[F]](1)
-		zero      = mirc.Number[register.Id, Expr[F]](0)
+		sel  = mirc.Variable[register.Id, Expr[F]](selId, 1, 0)
+		one  = mirc.Number[register.Id, Expr[F]](1)
+		zero = mirc.Number[register.Id, Expr[F]](0)
 	)
+	//
+	if rest, pieces, ok := splitOneHotDisjunction(cond, oneHot); ok {
+		var (
+			remainder = mirc.TranslateBranchCondition(conditionOfAtoms(rest), callRegisterReader[F]{regs})
+			sum       Expr[F]
+		)
+		//
+		for i, piece := range pieces {
+			ith := mirc.Variable[register.Id, Expr[F]](piece.bit, 1, 0)
+			// Each guard tests a width-1 register against zero, so its 0/1
+			// indicator is the register itself (!=) or its complement (==).
+			for _, guard := range piece.guards {
+				factor := mirc.Variable[register.Id, Expr[F]](guard.Left.Id, 1, 0)
+				//
+				if guard.Sign {
+					factor = one.Subtract(factor)
+				}
+				//
+				ith = ith.Multiply(factor)
+			}
+			//
+			if i == 0 {
+				sum = ith
+			} else {
+				sum = sum.Add(ith)
+			}
+		}
+		//
+		return remainder.ThenElse(sel.Equals(sum), sel.Equals(zero)).AsLogical()
+	}
+	//
+	condition := mirc.TranslateBranchCondition(cond, callRegisterReader[F]{regs})
 	//
 	return condition.ThenElse(sel.Equals(one), sel.Equals(zero)).AsLogical()
 }
