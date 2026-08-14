@@ -214,15 +214,6 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]]
 // arithmetically as
 //
 //	if rest { sel == Σᵢ bitᵢ·⟦guardsᵢ⟧ } else { sel == 0 }
-//
-// rather than propositionally: negating the disjunction lowers to a product
-// over all its disjuncts, so the propositional form's degree grows with the
-// number of covered cases (e.g. 29 for a lookup site reached from 28 switch
-// cases), while the arithmetic form's does not.  The two forms agree exactly
-// on traces satisfying the group's one-hot invariant — enforced by the
-// dispatch's constraints on the rows where rest (which includes the position
-// atom) holds — under which at most one bitᵢ is set and the sum is the boolean
-// "one of the disjuncts holds".
 func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.BranchCondition,
 	regs []register.Register, oneHot []oneHotGroup) mir.LogicalTerm[F] {
 	var (
