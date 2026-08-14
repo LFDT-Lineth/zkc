@@ -56,7 +56,6 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 	pcSelectors []register.Id,
 	ret register.Id,
 	infos []vm.Module[W],
-	callerRegs []register.Register,
 	field field.Config) {
 	//
 	for pc, vec := range fn.Vectors() {
@@ -70,7 +69,7 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 		// which they execute, so accesses sharing a condition share a single
 		// source selector (column).
 		// Note that a branch that doesn't emit lookup will be skipped.
-		for _, group := range groupLookupsByCondition(vec.Bytecodes, branchTable, oneHot, infos) {
+		for _, group := range groupLookupsByCondition(vec.Bytecodes, branchTable, oneHot) {
 			// Source selector gating the accesses of this group: their branch
 			// condition and:
 			// - for a multi-line function, its line selector (IS_PC_*)
@@ -82,13 +81,13 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 			for _, entry := range group.entries {
 				switch c := entry.code.(type) {
 				case *vm.BytecodeCall[W]:
-					emitCallLookup(mod, ctx, callerRegs, uint(pc), uint(c.Target),
+					emitCallLookup(mod, ctx, uint(pc), uint(c.Target),
 						toRegisterIds(c.Arguments), toRegisterIds(c.Returns), srcSelector, infos)
 				case *vm.BytecodeReadWrite[W]:
 					if infos[c.Id].(*vm.Memory[W]).IsReadWrite() {
 						emitRamLookup(mod, ctx, uint(pc), entry.cc, c, srcSelector, infos, field)
 					} else {
-						emitMemoryLookup(mod, ctx, callerRegs, uint(pc), entry.cc, uint(c.Id),
+						emitMemoryLookup(mod, ctx, uint(pc), entry.cc, uint(c.Id),
 							toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector, infos)
 					}
 				}
@@ -121,7 +120,7 @@ type lookupEntry[W vm.Word[W]] struct {
 // switch's default body are gated on the default bit rather than on the
 // complement of every case bit.
 func groupLookupsByCondition[W vm.Word[W]](codes []vm.Bytecode[W], branchTable dfa.Result[dfa.Path[W]],
-	oneHot []oneHotGroup, infos []vm.Module[W]) []lookupGroup[W] {
+	oneHot []oneHotGroup) []lookupGroup[W] {
 	var groups []lookupGroup[W]
 	//
 outer:
@@ -307,7 +306,7 @@ func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
 // emitCallLookup constructs and adds a single lookup constraint mapping the
 // caller's argument/return registers onto the callee's input/output registers.
 func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	callerRegs []register.Register, pc, calleeId uint, args, returns []register.Id,
+	pc, calleeId uint, args, returns []register.Id,
 	srcSelector register.Id, infos []vm.Module[W]) {
 	var (
 		callee     = infos[calleeId].(*vm.Function[W])
@@ -363,7 +362,7 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 // each address exactly once (address monotony), so two writes of different
 // values to the same address cannot both match a row.
 func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
-	ctx schema.ModuleId, accessorRegs []register.Register, pc, cc, memId uint,
+	ctx schema.ModuleId, pc, cc, memId uint,
 	address, data []register.Id, srcSelector register.Id, infos []vm.Module[W]) {
 	var (
 		mem     = infos[memId].(*vm.Memory[W])
