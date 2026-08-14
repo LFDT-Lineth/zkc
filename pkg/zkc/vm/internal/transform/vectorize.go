@@ -85,7 +85,7 @@ func Vectorize[W word.Word[W]](program descriptor.Program[W]) descriptor.Program
 	//
 	for i, m := range modules {
 		if fn, ok := m.(*descriptor.Function[W]); ok {
-			modules[i] = vectorizeFunction(fn)
+			modules[i] = vectorizeFunction(fn, program.EnvironmentOf(uint16(i)))
 		}
 	}
 	//
@@ -94,7 +94,8 @@ func Vectorize[W word.Word[W]](program descriptor.Program[W]) descriptor.Program
 
 // vectorizeFunction applies the per-function vectorisation pass, returning a new
 // function whose code is the merged-and-pruned result.
-func vectorizeFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {
+func vectorizeFunction[W word.Word[W]](fn *descriptor.Function[W], env bytecode.Environment[W],
+) *descriptor.Function[W] {
 	var (
 		original = fn.Vectors()
 		n        = uint(len(original))
@@ -118,18 +119,19 @@ func vectorizeFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.F
 	// discovered entirely through Jmp bytecodes (see Vectorize).
 	for !worklist.IsEmpty() {
 		pc := worklist.Pop()
-		insns[pc] = vectorizeInstruction[W](pc, original)
-		markJumpTargets[W](insns[pc], visited, &worklist)
+		insns[pc] = vectorizeInstruction(pc, original, env)
+		markJumpTargets(insns[pc], visited, &worklist)
 	}
 	// Remove unreachable vectors and rebind jump targets.
-	insns = pruneUnreachableInstructions[W](insns)
+	insns = pruneUnreachableInstructions(insns)
 	//
 	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), fn.Effects(), insns)
 }
 
 // vectorizeInstruction greedily absorbs the targets of jumps in the vector at pc
 // until no further merging is legal.
-func vectorizeInstruction[W word.Word[W]](pc uint, code []BytecodeVector[W]) BytecodeVector[W] {
+func vectorizeInstruction[W word.Word[W]](pc uint, code []BytecodeVector[W], env bytecode.Environment[W],
+) BytecodeVector[W] {
 	var (
 		vec     = code[pc]
 		changed = true
@@ -142,7 +144,7 @@ func vectorizeInstruction[W word.Word[W]](pc uint, code []BytecodeVector[W]) Byt
 	for changed {
 		changed = false
 		//
-		index, ok := lastJump[W](vec.Bytecodes, uint(len(vec.Bytecodes)))
+		index, ok := lastJump(vec.Bytecodes, uint(len(vec.Bytecodes)))
 		// Try the right-most non-conflicting jump.
 		for ok {
 			jmpTarget := uint(vec.Bytecodes[index].(*bytecode.Jmp[W]).Target)
@@ -157,13 +159,13 @@ func vectorizeInstruction[W word.Word[W]](pc uint, code []BytecodeVector[W]) Byt
 				if offset != math.MaxUint {
 					// Already absorbed earlier in the same vector — replace the
 					// Jmp with a Skip to the previously inlined codes.
-					nvec = replaceJump[W](vec, index, offset)
+					nvec = replaceJump(vec, index, offset)
 				} else {
 					// Splice the target's codes into the vector in place of the Jmp.
-					nvec = inlineJump[W](vec, index, target.Bytecodes)
+					nvec = inlineJump(vec, index, target.Bytecodes)
 				}
 				// Accept the merge only if it stays valid.
-				if validateConflicts[W](nvec) == nil {
+				if validateConflicts(nvec, env) == nil {
 					if offset == math.MaxUint {
 						updateMicroMap(externs, index, jmpTarget, uint(len(target.Bytecodes)))
 					}
@@ -175,7 +177,7 @@ func vectorizeInstruction[W word.Word[W]](pc uint, code []BytecodeVector[W]) Byt
 				}
 			}
 			// Try the next jump leftward.
-			index, ok = lastJump[W](vec.Bytecodes, index)
+			index, ok = lastJump(vec.Bytecodes, index)
 		}
 	}
 	//
@@ -199,7 +201,7 @@ func lastJump[W word.Word[W]](codes []Bytecode[W], n uint) (uint, bool) {
 // markJumpTargets pushes every reachable Jmp target in the vectorised vector onto
 // the worklist for later processing.
 func markJumpTargets[W word.Word[W]](vec BytecodeVector[W], visited []bool, worklist *stack.Stack[uint]) {
-	index, found := lastJump[W](vec.Bytecodes, uint(len(vec.Bytecodes)))
+	index, found := lastJump(vec.Bytecodes, uint(len(vec.Bytecodes)))
 	for found {
 		target := uint(vec.Bytecodes[index].(*bytecode.Jmp[W]).Target)
 		//
@@ -208,7 +210,7 @@ func markJumpTargets[W word.Word[W]](vec BytecodeVector[W], visited []bool, work
 			worklist.Push(target)
 		}
 		//
-		index, found = lastJump[W](vec.Bytecodes, index)
+		index, found = lastJump(vec.Bytecodes, index)
 	}
 }
 
@@ -377,8 +379,9 @@ func rebindJumps[W word.Word[W]](vec BytecodeVector[W], mapping []uint) Bytecode
 // validateConflicts reports the first read/write hazard found within vec, or nil
 // if none.  This considers only register conflicts (RAW with conditional writes,
 // WAW), since vectorisation rejects merges only on those grounds — never on field
-// bandwidth.
-func validateConflicts[W word.Word[W]](vec BytecodeVector[W]) error {
+// bandwidth.  Zero-width registers are exempt: they carry no data, so apparent
+// hazards on a shared placeholder cannot conflict.
+func validateConflicts[W word.Word[W]](vec BytecodeVector[W], env bytecode.Environment[W]) error {
 	var (
 		nCodes = uint(len(vec.Bytecodes))
 		writes = vec.WriteMap()
@@ -389,16 +392,22 @@ func validateConflicts[W word.Word[W]](vec BytecodeVector[W]) error {
 			ithState = writes.StateOf(i)
 			ith      = vec.Bytecodes[i]
 		)
-		// RAW: reading a register whose upstream write is conditional inside the
-		// vector — no single value to forward from.
+		// Read After Write:
 		for _, r := range ith.Uses() {
+			if bytecode.IsZeroWidth(env.Register(r)) {
+				continue
+			}
+
 			if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) && !ithState.DefinitelyAssigned(rid) {
 				return fmt.Errorf("conflicting read on register %d", r)
 			}
 		}
-		// WAW: writing a register that may already have been written by an earlier
-		// code in the vector.
+		// Write after Write:
 		for _, r := range ith.Definitions() {
+			if bytecode.IsZeroWidth(env.Register(r)) {
+				continue
+			}
+
 			if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) {
 				return fmt.Errorf("conflicting write on register %d", r)
 			}
