@@ -14,11 +14,11 @@ package transform
 
 import (
 	"fmt"
-	"math/bits"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -55,7 +55,7 @@ func AddRangeConstraints[W word.Word[W]](program descriptor.Program[W]) descript
 		// max static table size), i.e. floor(log2(maxStaticHeigh)).
 		// It represents the maximum register width for which a static table can be use to range-check it.
 		// Wider registers require recursive range modules.
-		maxStaticWidth = uint(bits.Len(program.MaxStaticHeight()) - 1)
+		maxStaticWidth = math.FloorLog2(program.MaxStaticHeight())
 	)
 	// First step, generate the range modules for every width which occurs on some register.
 	var extra = generateRangeModules(modules, maxStaticWidth)

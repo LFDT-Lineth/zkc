@@ -446,7 +446,7 @@ func compileProgram(t testing.TB, src string) ast.Program {
 
 	sf := source.NewSourceFile("gogen_test.zkc", []byte(src))
 
-	program, _, errs := compiler.Compile(field.KOALABEAR_16, *sf)
+	program, _, errs := compiler.Compile(field.KOALABEAR_16, codegen.DEFAULT_MAX_STATIC_HEIGHT, *sf)
 	if len(errs) > 0 {
 		t.Fatalf("compile: %v", errs)
 	}

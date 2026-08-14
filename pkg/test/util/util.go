@@ -45,20 +45,19 @@ type TestCase struct {
 	data map[string][]byte
 }
 
-// CompileMachine compiles one or more zkc source files into a base machine for
-// executing tests with.
-func CompileMachine(field field.Config, srcfiles ...source.File) []source.SyntaxError {
-	_, _, errors := compiler.Compile(field, srcfiles...)
-	//
-	return errors
-}
-
 // CompileZkc compiles a single zkc source file, potentially producing errors.
 // This includes both the validation phase and the code generation phase.
 func CompileZkc(field field.Config, srcfile source.File) []source.SyntaxError {
-	program, _, errors := compiler.Compile(field, srcfile)
+	return CompileZkcWith(codegen.DEFAULT_CONFIG.Field(field), srcfile)
+}
+
+// CompileZkcWith compiles a single zkc source file under a given codegen
+// configuration, potentially producing errors.  This includes both the
+// validation phase and the code generation phase.
+func CompileZkcWith(config codegen.Config, srcfile source.File) []source.SyntaxError {
+	program, _, errors := compiler.Compile(config.GetField(), config.GetMaxStaticHeight(), srcfile)
 	if len(errors) == 0 {
-		_, errors = ast.Compile(program, codegen.DEFAULT_CONFIG)
+		_, errors = ast.Compile(program, config)
 	}
 	//
 	return errors
@@ -137,7 +136,7 @@ func failIfNot[S, T any](t *testing.T, errs ...T) {
 func compileTestProgram(t *testing.T, testfile string, cfg codegen.Config) (vm vm.Program[vm.Uint]) {
 	var filename = fmt.Sprintf("%s/%s", TestDir, testfile)
 	// Compile source file into Abstract Syntax Tree form.
-	program := cmd_util.CompileSourceFiles(cfg.GetField(), filename)
+	program := cmd_util.CompileSourceFiles(cfg.GetField(), cfg.GetMaxStaticHeight(), filename)
 	// Compile program into boot machine
 	vm, errs := ast.Compile(program, cfg)
 	//
