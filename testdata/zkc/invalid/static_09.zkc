@@ -1,0 +1,11 @@
+//error:2:1-38:static table tbl exceeds maximum static height of 4 rows
+static tbl(address:u16) -> (word:u16) {
+    0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8
+}
+
+pub output out(address:u16) -> (word:u16)
+
+fn main() {
+    out[0] = tbl[0]
+    return
+}

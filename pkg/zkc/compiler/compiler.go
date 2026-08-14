@@ -29,7 +29,7 @@ import (
 // dependencies into a given set of linked declarations. This includes
 // performing various checks on the files, such as type checking, etc.
 // Switch statements are lowered to a multiway-skip dispatch.
-func Compile(field field.Config, sourceFiles ...source.File,
+func Compile(field field.Config, maxStaticHeight uint, sourceFiles ...source.File,
 ) (ast.Program, source.Maps[any], []source.SyntaxError) {
 	//
 	var (
@@ -81,7 +81,7 @@ func Compile(field field.Config, sourceFiles ...source.File,
 	// Well-formedness checks (assuming unlimited field width).  Any parse or
 	// link errors accumulated above mean the program is not well-formed, which
 	// some downstream checks rely upon.
-	errors = append(errors, validateProgram(program, field, srcmaps, len(errors) != 0, decls)...)
+	errors = append(errors, validateProgram(program, field, srcmaps, len(errors) != 0, decls, maxStaticHeight)...)
 	// Lower fixed-size arrays into flat local access registers
 	if len(errors) == 0 {
 		lower.FlattenFixedArrays(field, program)
@@ -166,7 +166,7 @@ func scanForFurtherSourceFiles(sourceFile source.File, parsedSourceFile parser.U
 // and all control-flow paths must reach a "return" instruction, etc. Finally,
 // we cannot assign to an input register under the current calling convention.
 func validateProgram(program ast.Program, field field.Config, srcmaps source.Maps[any],
-	hasPriorErrors bool, decls validate.VariableDeclarations) []source.SyntaxError {
+	hasPriorErrors bool, decls validate.VariableDeclarations, maxStaticHeight uint) []source.SyntaxError {
 	var errors []source.SyntaxError
 	// Check for cyclic definitions (constants and type aliases); if cycle is
 	// detected, skip remaining phases (for now).
@@ -190,6 +190,8 @@ func validateProgram(program ast.Program, field field.Config, srcmaps source.Map
 	errors = append(errors, validate.DebugFunctions(program, srcmaps)...)
 	// Check #[inline] functions can actually be inlined
 	errors = append(errors, validate.InlineFunctions(program, srcmaps)...)
+	// Check no static tables have more rows than max-static-width
+	errors = append(errors, validate.StaticTableHeight(program, srcmaps, maxStaticHeight)...)
 	//
 	return errors
 }

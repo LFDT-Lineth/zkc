@@ -16,6 +16,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/lower"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/parser"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/validate"
@@ -54,6 +55,9 @@ func RemovedFile(filename string) FileUpdate {
 // serialising access (e.g. through a single document-update goroutine).
 type IncrementalCompiler struct {
 	field field.Config
+	// maxStaticHeight bounds the number of rows any declared static table may
+	// occupy (see validate.StaticTableHeight).
+	maxStaticHeight uint
 	// files holds the current contents of every source file known to the
 	// compiler, keyed by filename.  This map is the sole source of truth:
 	// include directives are not resolved against the filesystem, so any
@@ -96,8 +100,9 @@ func (p *IncrementalCompiler) SourceMaps() source.Maps[any] {
 // empty program.
 func NewIncrementalCompiler() *IncrementalCompiler {
 	return &IncrementalCompiler{
-		field: field.KOALABEAR_16,
-		files: make(map[string]string),
+		field:           field.KOALABEAR_16,
+		maxStaticHeight: codegen.DEFAULT_MAX_STATIC_HEIGHT,
+		files:           make(map[string]string),
 	}
 }
 
@@ -144,7 +149,7 @@ func (p *IncrementalCompiler) Apply(updates ...FileUpdate) []source.SyntaxError 
 	// Well-formedness checks (assuming unlimited field width).  Any parse or
 	// link errors accumulated above mean the program is not well-formed, which
 	// some downstream checks rely upon.
-	errors = append(errors, validateProgram(program, p.field, srcmaps, len(errors) != 0, decls)...)
+	errors = append(errors, validateProgram(program, p.field, srcmaps, len(errors) != 0, decls, p.maxStaticHeight)...)
 	// Update internal program state.
 	p.program = program
 	p.srcmaps = srcmaps

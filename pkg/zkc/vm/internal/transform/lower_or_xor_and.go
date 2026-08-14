@@ -42,10 +42,15 @@ func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W]) descriptor.Pro
 		out = slices.Clone(program.Modules())
 		// maxStaticWidth is floor(log2(maxStaticHeight)); a bitwise table indexes
 		// two w-bit operands, so it fits only when 2w <= maxStaticWidth.
-		bitwiseStaticWidth = uint(bits.Len(program.MaxStaticHeight())-1) / 2
-		helpers            = newBitwiseHelpers[W](uint(len(out)), bitwiseStaticWidth)
-	)
+		bitwiseStaticWidth = func() uint {
+			if program.MaxStaticHeight() == 0 {
+				return 0
+			}
 
+			return uint(bits.Len(program.MaxStaticHeight())-1) / 2
+		}()
+		helpers = newBitwiseHelpers[W](uint(len(out)), bitwiseStaticWidth)
+	)
 	for i, mod := range out {
 		if fn, ok := mod.(*descriptor.Function[W]); ok {
 			out[i] = lowerBitwiseFunction(fn, func(b Bytecode[W], alloc split.Allocator[W]) []Bytecode[W] {
