@@ -20,39 +20,39 @@ import (
 )
 
 func Test_Agnostic_Padding_01(t *testing.T) {
-	util.CheckCorset(t, false, "corset/agnostic/padding_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/agnostic/padding_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Agnostic_Vanish_01(t *testing.T) {
-	util.CheckCorsetNoPadding(t, false, "corset/agnostic/vanish_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorsetNoPadding(t, "corset/agnostic/vanish_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Agnostic_Vanish_02(t *testing.T) {
-	util.CheckCorsetNoPadding(t, false, "corset/agnostic/vanish_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorsetNoPadding(t, "corset/agnostic/vanish_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Agnostic_Lookup_01(t *testing.T) {
-	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorsetNoPadding(t, "corset/agnostic/lookup_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 //#1258
 // func Test_Agnostic_Lookup_03(t *testing.T) {
-// 	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+// 	util.CheckCorsetNoPadding(t, "corset/agnostic/lookup_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 // }
 
 func Test_Agnostic_Lookup_04(t *testing.T) {
-	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorsetNoPadding(t, "corset/agnostic/lookup_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Agnostic_Lookup_05(t *testing.T) {
-	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorsetNoPadding(t, "corset/agnostic/lookup_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Agnostic_Lookup_06(t *testing.T) {
-	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorsetNoPadding(t, "corset/agnostic/lookup_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 // #1258
 func Test_Agnostic_Lookup_07(t *testing.T) {
-	util.CheckCorsetNoPadding(t, false, "corset/agnostic/lookup_07", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorsetNoPadding(t, "corset/agnostic/lookup_07", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }

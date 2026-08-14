@@ -59,9 +59,7 @@ type SourceModule struct {
 	// Selector determines when this (sub)module is active.  Specifically, when
 	// it evaluates to a non-zero value the module is active.
 	Selector util.Option[string]
-	// Submodules identifies any (virtual) submodules contained within this.
-	// Currently, perspectives are the only form of submodule currently
-	// supported.
+	// Submodules identifies any submodules contained within this.
 	Submodules []SourceModule
 	// Columns identifies any columns defined in this module.  Observe that
 	// columns across modules are mapped to registers in a many-to-one fashion.
@@ -110,8 +108,6 @@ func (p *SourceModule) Flatten(predicate func(*SourceModule) bool) []SourceModul
 // same register.
 type SourceColumn struct {
 	Name string
-	// Length Multiplier of source-level column.
-	Multiplier uint
 	// Underlying bitwidth of the source-level column.
 	Bitwidth uint
 	// Provability requirement for source-level column.
@@ -122,9 +118,7 @@ type SourceColumn struct {
 	// entries in Enumerations map.  More specifically, 0=hex, 1=dec, 2=bytes.
 	Display uint
 	// Register in the generate schema to which this Corset register is mapped.
-	// Observe that this has to be a reference, rather than just an ID.  This is
-	// because a column in a given corset module may map into a different module
-	// in the underlying schema (i.e. for interleavings).
+	// Observe that this has to be a reference, rather than just an ID.
 	Register register.Ref
 }
 

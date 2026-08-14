@@ -50,8 +50,8 @@ var FIELD_REGEX *regexp.Regexp
 // rejected are rejected.  All fields provided are tested against, both with and
 // without padding (whereby every module's length is expanded up to the next
 // power of two).
-func CheckCorset(t *testing.T, stdlib bool, test string, fields ...field.Config) {
-	CheckWithFields(t, stdlib, test, true, fields...)
+func CheckCorset(t *testing.T, test string, fields ...field.Config) {
+	CheckWithFields(t, test, true, fields...)
 }
 
 // CheckCorsetNoPadding checks that all traces which we expect to be accepted
@@ -59,14 +59,14 @@ func CheckCorset(t *testing.T, stdlib bool, test string, fields ...field.Config)
 // be rejected are rejected.  All fields provided are tested against but without
 // any padding.  This is useful to reduce unnecessary testing for cases where we
 // know padding is not relevant.
-func CheckCorsetNoPadding(t *testing.T, stdlib bool, test string, fields ...field.Config) {
-	CheckWithFields(t, stdlib, test, false, fields...)
+func CheckCorsetNoPadding(t *testing.T, test string, fields ...field.Config) {
+	CheckWithFields(t, test, false, fields...)
 }
 
 // CheckWithFields checks that all traces which we expect to be accepted are
 // accepted by a given set of constraints, and all traces that we expect to be
 // rejected are rejected.  All fields provided are tested against.
-func CheckWithFields(t *testing.T, stdlib bool, test string, padding bool, fields ...field.Config) {
+func CheckWithFields(t *testing.T, test string, padding bool, fields ...field.Config) {
 	// Sanity check
 	if len(fields) == 0 {
 		panic("no field configurations")
@@ -80,26 +80,26 @@ func CheckWithFields(t *testing.T, stdlib bool, test string, padding bool, field
 		// Dispatch based on field config
 		switch f {
 		case field.GF_251:
-			checkWithField[gf251.Element](t, stdlib, test, padding, f)
+			checkWithField[gf251.Element](t, test, padding, f)
 		case field.GF_8209:
-			checkWithField[gf8209.Element](t, stdlib, test, padding, f)
+			checkWithField[gf8209.Element](t, test, padding, f)
 		case field.KOALABEAR_16:
-			checkWithField[koalabear.Element](t, stdlib, test, padding, f)
+			checkWithField[koalabear.Element](t, test, padding, f)
 		case field.BLS12_377:
-			checkWithField[bls12_377.Element](t, stdlib, test, padding, f)
+			checkWithField[bls12_377.Element](t, test, padding, f)
 		default:
 			panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
 		}
 	}
 }
 
-func checkWithField[F field.Element[F]](t *testing.T, stdlib bool, test string, padding bool,
+func checkWithField[F field.Element[F]](t *testing.T, test string, padding bool,
 	field field.Config) {
 	//
 	var (
 		filenames = matchSourceFiles(test)
 		// Configure the stack for the given field.
-		stacks = getSchemaStack[F](stdlib, field, filenames...)
+		stacks = getSchemaStack[F](field, filenames...)
 	)
 	// Record how many tests executed.
 	nTests := 0
@@ -363,7 +363,7 @@ func ReadTracesFile(filename string) []lt.TraceFile {
 	return traces
 }
 
-func getSchemaStack[F field.Element[F]](stdlib bool, field field.Config, filenames ...string,
+func getSchemaStack[F field.Element[F]](field field.Config, filenames ...string,
 ) cmd_util.SchemaStacker[F] {
 	//
 	var (
@@ -371,8 +371,6 @@ func getSchemaStack[F field.Element[F]](stdlib bool, field field.Config, filenam
 		corsetConfig corset.CompilationConfig
 	)
 	// Configure corset for testing
-	corsetConfig.Legacy = true
-	corsetConfig.Stdlib = stdlib
 	corsetConfig.Field = field
 	//
 	stack = stack.

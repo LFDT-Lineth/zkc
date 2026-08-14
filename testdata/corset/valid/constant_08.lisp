@@ -1,5 +1,3 @@
-(defpurefun (eq! x y) (== x y))
-
 (defcolumns
   (C :byte)
   (L :binary)
@@ -12,6 +10,6 @@
   LLARGEMO                                  (- LLARGE 1))
 
 (defconstraint bits-and-negs (:guard L)
-  (if (eq! C LLARGEMO)
-      (eq! N
+  (if (== C LLARGEMO)
+      (== N
 	   (shift B (- 0 LLARGEMO)))))

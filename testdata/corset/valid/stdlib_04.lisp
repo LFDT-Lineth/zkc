@@ -1,13 +1,13 @@
 (defcolumns (X :binary@prove) (Y :i16))
 
 (defconstraint old ()
-  (eq! Y
-       (+ (prev Y)
-          (* X (- X (prev X))))))
+  (== Y
+       (+ (shift Y -1)
+          (* X (- X (shift X -1))))))
 
 (defconstraint new ()
-  (if (or! (eq! X 0) (remained-constant! X))
+  (if (∨ (== X 0) (== X (shift X -1)))
            ;; == 0
-           (remained-constant! Y)
+           (== Y (shift Y -1))
            ;; == 1
-           (did-inc! Y 1)))
+           (== Y (+ (shift Y -1) 1))))

@@ -1,7 +1,0 @@
-{ "m1.SEL": [], "m1.testBYTE_1": [], "m1.testBYTE_2": [] }
-{ "m1.SEL": [0], "m1.testBYTE_1": [0], "m1.testBYTE_2": [0] }
-{ "m1.SEL": [0], "m1.testBYTE_1": [0], "m1.testBYTE_2": [1] }
-{ "m1.SEL": [0], "m1.testBYTE_1": [1], "m1.testBYTE_2": [0] }
-{ "m1.SEL": [0], "m1.testBYTE_1": [1], "m1.testBYTE_2": [1] }
-{ "m1.SEL": [1], "m1.testBYTE_1": [0], "m1.testBYTE_2": [0] }
-{ "m1.SEL": [1], "m1.testBYTE_1": [0], "m1.testBYTE_2": [1] }

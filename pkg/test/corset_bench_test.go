@@ -20,39 +20,39 @@ import (
 )
 
 func Test_Bench_Counter(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/counter", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/bench/counter", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Bench_ByteDecomp(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/byte_decomposition", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/bench/byte_decomposition", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Bench_BitDecomp(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/bit_decomposition", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/bench/bit_decomposition", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Bench_BitShift(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/bit_shift", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/bench/bit_shift", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Bench_ByteSorting(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/byte_sorting", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/bench/byte_sorting", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Bench_WordSorting(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/word_sorting", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/bench/word_sorting", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Bench_Multiplier(t *testing.T) {
-	util.CheckCorset(t, false, "corset/bench/multiplier", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/bench/multiplier", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Bench_Adder(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/adder", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/bench/adder", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 func Test_Bench_Fields(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/fields", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/bench/fields", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 // NOTE: the real modules below are not tested for GF_8209 for performance
@@ -61,13 +61,13 @@ func Test_Bench_Fields(t *testing.T) {
 // small registers (e.g. u16).
 
 func Test_Bench_Add(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/add", field.BLS12_377, field.KOALABEAR_16)
+	util.CheckCorset(t, "corset/bench/add", field.BLS12_377, field.KOALABEAR_16)
 }
 
 func Test_Bench_Euc(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/euc", field.BLS12_377, field.KOALABEAR_16)
+	util.CheckCorset(t, "corset/bench/euc", field.BLS12_377, field.KOALABEAR_16)
 }
 
 func Test_Bench_Gas(t *testing.T) {
-	util.CheckCorset(t, true, "corset/bench/gas", field.BLS12_377, field.KOALABEAR_16)
+	util.CheckCorset(t, "corset/bench/gas", field.BLS12_377, field.KOALABEAR_16)
 }

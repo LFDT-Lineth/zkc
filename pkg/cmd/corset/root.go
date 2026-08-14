@@ -142,8 +142,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 		fieldConfig.RegisterWidth = GetUint(cmd, "register-width")
 	}
 	// Initial corset compilation configuration
-	corsetConfig.Stdlib = !GetFlag(cmd, "no-stdlib")
-	corsetConfig.Legacy = GetFlag(cmd, "legacy")
 	corsetConfig.EnforceTypes = GetFlag(cmd, "enforce-types")
 	corsetConfig.EnforceLimbTypes = GetFlag(cmd, "enforce-limb-types")
 	corsetConfig.Field = *fieldConfig
@@ -210,8 +208,6 @@ func init() {
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.Flags().Bool("version", false, "Report version of this executable")
 	// Corset compilation config
-	rootCmd.PersistentFlags().Bool("legacy", true, "use legacy register allocator")
-	rootCmd.PersistentFlags().Bool("no-stdlib", false, "prevent standard library from being included")
 	rootCmd.PersistentFlags().Bool("enforce-types", true, "enforce all register types")
 	rootCmd.PersistentFlags().Bool("enforce-limb-types", true, "enforce types for limbs arising from split registers")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
