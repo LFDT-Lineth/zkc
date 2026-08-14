@@ -1069,6 +1069,10 @@ func Test_ZkcInvalid_Unused_04(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/unused_04")
 }
 
+// ===================================================================
+// Unreachable module from main
+// ===================================================================
+
 func Test_ZkcInvalid_Unreachable_01(t *testing.T) {
 	// A declared memory which is never accessed is unreachable via lookups
 	// from the entry point.
