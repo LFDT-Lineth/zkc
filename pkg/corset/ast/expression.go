@@ -174,87 +174,6 @@ func (e *ArrayAccess) Dependencies() []Symbol {
 }
 
 // ============================================================================
-// Cast
-// ============================================================================
-
-// Cast represents a user-supplied annotation indicating the given expression
-// has the given type.  This is only sound upto the user.
-type Cast struct {
-	Arg  Expr
-	Type Type
-	// Unsafe indicates this is an unsafe cast added explicitly within the
-	// constraints based on some developer knowledge.
-	Unsafe bool
-}
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Cast) AsConstant() *big.Int {
-	return e.Arg.AsConstant()
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Cast) Context() Context {
-	ctx, _ := ContextOfExpressions(e.Arg)
-	return ctx
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Cast) Lisp() sexp.SExp {
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol(e.Type.String()),
-		e.Arg.Lisp()})
-}
-
-// Dependencies needed to signal declaration.
-func (e *Cast) Dependencies() []Symbol {
-	return e.Arg.Dependencies()
-}
-
-// ============================================================================
-// Concat
-// ============================================================================
-
-// Concat represents a bitwise concatenation of expressions. For example,
-// consider the concatenation (:: X Y) where each variable is 16bits.  Then the
-// resulting concatenation is 32bits, and corresponds to (X*65536) + Y. The main
-// purpose of concetenations is to smooth the progress of migrating to a
-// field-agnostic code base.  We might imagine that this will be deprecated
-// eventually.
-type Concat struct {
-	Args []Expr
-}
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Concat) AsConstant() *big.Int {
-	// not a constant
-	return nil
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Concat) Context() Context {
-	ctx, _ := ContextOfExpressions(e.Args...)
-	return ctx
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Concat) Lisp() sexp.SExp {
-	return ListOfExpressions(sexp.NewSymbol("::"), e.Args)
-}
-
-// Dependencies needed to signal declaration.
-func (e *Concat) Dependencies() []Symbol {
-	return DependenciesOfExpressions(e.Args)
-}
-
-// ============================================================================
 // Connective
 // ============================================================================
 
@@ -420,55 +339,6 @@ func (e *Equation) RightHandSide() Expr {
 }
 
 // ============================================================================
-// Exponentiation
-// ============================================================================
-
-// Exp represents the a given value taken to a power.
-type Exp struct {
-	Arg Expr
-	Pow Expr
-}
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Exp) AsConstant() *big.Int {
-	arg := e.Arg.AsConstant()
-	pow := e.Pow.AsConstant()
-	// Check if can evaluate
-	if arg != nil && pow != nil {
-		var res big.Int
-		// Compute exponent
-		res.Exp(arg, pow, nil)
-		// Done
-		return &res
-	}
-	//
-	return nil
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Exp) Context() Context {
-	ctx, _ := ContextOfExpressions(e.Arg, e.Pow)
-	return ctx
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Exp) Lisp() sexp.SExp {
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("^"),
-		e.Arg.Lisp(),
-		e.Pow.Lisp()})
-}
-
-// Dependencies needed to signal declaration.
-func (e *Exp) Dependencies() []Symbol {
-	return DependenciesOfExpressions([]Expr{e.Arg, e.Pow})
-}
-
-// ============================================================================
 // If
 // ============================================================================
 
@@ -608,48 +478,6 @@ func (e *Mul) Lisp() sexp.SExp {
 // Dependencies needed to signal declaration.
 func (e *Mul) Dependencies() []Symbol {
 	return DependenciesOfExpressions(e.Args)
-}
-
-// ============================================================================
-// Normalise
-// ============================================================================
-
-// Normalise reduces the value of an expression to either zero (if it was zero)
-// or one (otherwise).
-type Normalise struct{ Arg Expr }
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Normalise) AsConstant() *big.Int {
-	if arg := e.Arg.AsConstant(); arg != nil {
-		if arg.Cmp(big.NewInt(0)) != 0 {
-			return big.NewInt(1)
-		}
-		// zero
-		return arg
-	}
-	//
-	return nil
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Normalise) Context() Context {
-	return e.Arg.Context()
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Normalise) Lisp() sexp.SExp {
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("~"),
-		e.Arg.Lisp()})
-}
-
-// Dependencies needed to signal declaration.
-func (e *Normalise) Dependencies() []Symbol {
-	return e.Arg.Dependencies()
 }
 
 // ============================================================================
@@ -795,7 +623,7 @@ func NewVariableAccess(path file.Path, arity util.Option[uint], binding Binding)
 // AsConstant attempts to evaluate this expression as a constant (signed) value.
 // If this expression is not constant, then nil is returned.
 func (e *VariableAccess) AsConstant() *big.Int {
-	if binding, ok := e.binding.(*ConstantBinding); ok && !binding.Extern {
+	if binding, ok := e.binding.(*ConstantBinding); ok {
 		return binding.Value.AsConstant()
 	}
 	// not a constant
@@ -918,9 +746,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 	case *Add:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &Add{args}
-	case *Cast:
-		arg := Substitute(e.Arg, mapping, srcmap)
-		nexpr = &Cast{arg, e.Type, e.Unsafe}
 	case *Connective:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &Connective{e.Sign, args}
@@ -931,11 +756,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 		rhs := Substitute(e.Rhs, mapping, srcmap)
 		// Done
 		nexpr = &Equation{e.Kind, lhs, rhs}
-	case *Exp:
-		arg := Substitute(e.Arg, mapping, srcmap)
-		pow := Substitute(e.Pow, mapping, srcmap)
-		// Done
-		nexpr = &Exp{arg, pow}
 	case *If:
 		cond := Substitute(e.Condition, mapping, srcmap)
 		trueBranch := SubstituteOptional(e.TrueBranch, mapping, srcmap)
@@ -948,9 +768,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 	case *Mul:
 		args := SubstituteAll(e.Args, mapping, srcmap)
 		nexpr = &Mul{args}
-	case *Normalise:
-		arg := Substitute(e.Arg, mapping, srcmap)
-		nexpr = &Normalise{arg}
 	case *Not:
 		arg := Substitute(e.Arg, mapping, srcmap)
 		nexpr = &Not{arg}
@@ -980,9 +797,6 @@ func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Exp
 				expr = e2
 			}
 		}
-	case *Concat:
-		args := SubstituteAll(e.Args, mapping, srcmap)
-		nexpr = &Concat{args}
 	default:
 		panic(fmt.Sprintf("unknown expression (%s)", reflect.TypeOf(expr)))
 	}
@@ -1026,24 +840,18 @@ func ShallowCopy(expr Expr) Expr {
 		return &ArrayAccess{e.Name, e.Arg, e.ArrayBinding}
 	case *Add:
 		return &Add{e.Args}
-	case *Cast:
-		return &Cast{e.Arg, e.Type, e.Unsafe}
 	case *Connective:
 		return &Connective{e.Sign, e.Args}
 	case *Constant:
 		return &Constant{e.Val}
 	case *Equation:
 		return &Equation{e.Kind, e.Lhs, e.Rhs}
-	case *Exp:
-		return &Exp{e.Arg, e.Pow}
 	case *If:
 		return &If{e.Condition, e.TrueBranch, e.FalseBranch}
 	case *Invoke:
 		return &Invoke{e.Name, e.Args}
 	case *Mul:
 		return &Mul{e.Args}
-	case *Normalise:
-		return &Normalise{e.Arg}
 	case *Not:
 		return &Not{e.Arg}
 	case *Sub:
@@ -1052,8 +860,6 @@ func ShallowCopy(expr Expr) Expr {
 		return &Shift{e.Arg, e.Shift}
 	case *VariableAccess:
 		return &VariableAccess{e.Name, e.FnArity, e.binding}
-	case *Concat:
-		return &Concat{e.Args}
 	default:
 		panic(fmt.Sprintf("unknown expression (%s)", reflect.TypeOf(expr)))
 	}

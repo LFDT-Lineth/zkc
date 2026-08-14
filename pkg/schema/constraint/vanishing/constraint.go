@@ -210,8 +210,3 @@ func (p Constraint[F, T]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
 		p.Constraint.Lisp(false, module),
 	})
 }
-
-// Substitute any matchined labelled constants within this constraint
-func (p Constraint[F, T]) Substitute(mapping map[string]F) {
-	p.Constraint.Substitute(mapping)
-}

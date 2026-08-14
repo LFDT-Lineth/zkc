@@ -65,7 +65,7 @@ type resolver struct {
 
 // Initialise all columns from their declaring constructs.
 func (r *resolver) initialiseDeclarations(scope *ModuleScope, circuit *ast.Circuit) []SyntaxError {
-	// Input columns must be allocated before assignemts, since the hir.Schema
+	// Input columns must be allocated before assignemts, since the MIR schema
 	// separates these out.
 	errs := r.initialiseDeclarationsInModule(scope, circuit.Declarations)
 	//
@@ -309,7 +309,7 @@ func (r *resolver) finaliseDefConstInModule(enclosing Scope, decl *ast.DefConst)
 	var errors []SyntaxError
 	//
 	for _, c := range decl.Constants {
-		scope := NewLocalScope(enclosing, false, true, true)
+		scope := NewLocalScope(enclosing, false, true)
 		// Resolve constant body
 		errs := r.finaliseExpressionInModule(scope, c.ConstBinding.Value)
 		// Accumulate errors
@@ -349,7 +349,7 @@ func (r *resolver) finaliseDefConstraintInModule(enclosing *ModuleScope, decl *a
 		enclosing = enclosing.Enter(perspective)
 	}
 	// Construct scope in which to resolve constraint
-	scope := NewLocalScope(enclosing, false, false, false)
+	scope := NewLocalScope(enclosing, false, false)
 	// Resolve guard
 	if decl.Guard != nil {
 		guard_errors = r.finaliseExpressionInModule(scope, decl.Guard)
@@ -367,7 +367,7 @@ func (r *resolver) finaliseDefConstraintInModule(enclosing *ModuleScope, decl *a
 
 // Resolve those variables appearing in the body of this perspective
 func (r *resolver) finaliseDefPerspectiveInModule(enclosing Scope, decl *ast.DefPerspective) []SyntaxError {
-	scope := NewLocalScope(enclosing, false, false, false)
+	scope := NewLocalScope(enclosing, false, false)
 	// Resolve expression
 	errors := r.finaliseExpressionInModule(scope, decl.Selector)
 	// Error check
@@ -379,12 +379,12 @@ func (r *resolver) finaliseDefPerspectiveInModule(enclosing Scope, decl *ast.Def
 }
 
 // Finalise a range constraint declaration after all symbols have been
-// resolved. This involves: (a) checking the context is valid; (b) checking the
-// expressions are well-typed.
+// resolved.  As for a lookup, this requires the constrained column resolves to
+// an actual column (rather than, for example, a constant).
 func (r *resolver) finaliseDefInRangeInModule(enclosing Scope, decl *ast.DefInRange) []SyntaxError {
-	var scope = NewLocalScope(enclosing, false, false, false)
-	// Resolve property body
-	errors := r.finaliseExpressionInModule(scope, decl.Expr)
+	var scope = NewLocalScope(enclosing, true, false)
+	// Resolve constrained column
+	errors := r.finaliseColumnAccessInModule(scope, decl.Column)
 	// Error check
 	if len(errors) == 0 {
 		decl.Finalise()
@@ -399,7 +399,7 @@ func (r *resolver) finaliseDefInRangeInModule(enclosing Scope, decl *ast.DefInRa
 // accessed; (d) finally, resolving any parameters used within the body of this
 // function.
 func (r *resolver) finaliseDefFunInModule(enclosing *ModuleScope, decl *ast.DefFun) []SyntaxError {
-	var scope = NewLocalScope(enclosing, true, decl.IsPure(), false)
+	var scope = NewLocalScope(enclosing, true, decl.IsPure())
 	//
 	enclosing.OpenDefinition(decl)
 	// Declare parameters in local scope
@@ -445,28 +445,28 @@ func (r *resolver) finaliseLookupColumnsInModule(enclosing Scope, selector ast.T
 	//
 	var (
 		errors []SyntaxError
-		scope  = NewLocalScope(enclosing, true, false, false)
+		scope  = NewLocalScope(enclosing, true, false)
 	)
 	// Resolve each column in turn
 	for _, column := range columns {
 		if column != nil {
-			errors = append(errors, r.finaliseLookupColumnInModule(scope, column)...)
+			errors = append(errors, r.finaliseColumnAccessInModule(scope, column)...)
 		}
 	}
 	// Resolve selector (when present).  NOTE: the selector is resolved last so
 	// that, when its context conflicts with that of the columns it gates, the
 	// selector is the access reported as conflicting.
 	if selector != nil {
-		errors = append(errors, r.finaliseLookupColumnInModule(scope, selector)...)
+		errors = append(errors, r.finaliseColumnAccessInModule(scope, selector)...)
 	}
 	//
 	return errors
 }
 
-// Resolve a single column access arising within a lookup constraint.  Unlike an
-// arbitrary expression, this must resolve to a column (e.g. it cannot be a
-// constant or a function parameter).
-func (r *resolver) finaliseLookupColumnInModule(scope LocalScope, symbol ast.TypedSymbol) []SyntaxError {
+// Resolve a single column access arising within a lookup or range constraint.
+// Unlike an arbitrary expression, this must resolve to a column (e.g. it cannot
+// be a constant or a function parameter).
+func (r *resolver) finaliseColumnAccessInModule(scope LocalScope, symbol ast.TypedSymbol) []SyntaxError {
 	var errors []SyntaxError
 	// Resolve the underlying access
 	switch s := symbol.(type) {
@@ -516,8 +516,6 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		return r.finaliseArrayAccessInModule(scope, v)
 	case *ast.Add:
 		return r.finaliseExpressionsInModule(scope, v.Args)
-	case *ast.Cast:
-		return r.finaliseExpressionInModule(scope, v.Arg)
 	case *ast.Connective:
 		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.Constant:
@@ -527,20 +525,12 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		rhs_errs := r.finaliseExpressionInModule(scope, v.Rhs)
 		// combine errors
 		return append(lhs_errs, rhs_errs...)
-	case *ast.Exp:
-		constscope := scope.NestedConstScope()
-		arg_errs := r.finaliseExpressionInModule(scope, v.Arg)
-		pow_errs := r.finaliseExpressionInModule(constscope, v.Pow)
-		// combine errors
-		return append(arg_errs, pow_errs...)
 	case *ast.If:
 		return r.finaliseExpressionsInModule(scope, []ast.Expr{v.Condition, v.TrueBranch, v.FalseBranch})
 	case *ast.Invoke:
 		return r.finaliseInvokeInModule(scope, v)
 	case *ast.Mul:
 		return r.finaliseExpressionsInModule(scope, v.Args)
-	case *ast.Normalise:
-		return r.finaliseExpressionInModule(scope, v.Arg)
 	case *ast.Not:
 		return r.finaliseExpressionInModule(scope, v.Arg)
 	case *ast.Shift:
@@ -553,8 +543,6 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.VariableAccess:
 		return r.finaliseVariableInModule(scope, v)
-	case *ast.Concat:
-		return r.finaliseExpressionsInModule(scope, v.Args)
 	default:
 		typeStr := reflect.TypeOf(expr).String()
 		msg := fmt.Sprintf("unknown expression encountered during resolution (%s)", typeStr)
@@ -642,12 +630,8 @@ func (r *resolver) finaliseVariableInModule(scope LocalScope, expr *ast.Variable
 		}
 		//
 		return nil
-	} else if binding, ok := expr.Binding().(*ast.ConstantBinding); ok {
+	} else if _, ok := expr.Binding().(*ast.ConstantBinding); ok {
 		// Constant
-		if binding.Extern && scope.IsConstant() {
-			return r.srcmap.SyntaxErrors(expr, "not permitted in const context")
-		}
-		//
 		return nil
 	} else if _, ok := expr.Binding().(*ast.LocalVariableBinding); ok {
 		// Parameter, for or let variable

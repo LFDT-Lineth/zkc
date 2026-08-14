@@ -1,6 +1,6 @@
 (defconst
-  (ONE :extern)   0x01
-  (TWO :extern)   0x02
+  ONE   0x01
+  TWO   0x02
   THREE 0x03
   FOUR  0x04
 )

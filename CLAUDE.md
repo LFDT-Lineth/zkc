@@ -66,9 +66,6 @@ formatting of the `.zkc` sources.
 # Check a trace against constraints
 ./bin/go-corset check trace.lt constraints.lisp
 
-# Compile lisp sources to binary
-./bin/go-corset compile -o out.bin constraints.lisp
-
 # Debug / inspect constraints
 ./bin/go-corset debug --air constraints.lisp
 ./bin/go-corset debug --mir constraints.lisp
@@ -86,7 +83,6 @@ Key CLI flags (available globally):
 
 - `--field <name>`: prime field to use (default `BLS12_377`; others: `KOALABEAR_16`, `GF_8209`, `GF_251`)
 - `--air / --mir`: select constraint representation level
-- `-S <module.CONST=val>`: set externalised constant values
 - `-O <n>`: optimisation level for MIR→AIR lowering
 
 ## Code navigation
@@ -107,12 +103,17 @@ The central pipeline transforms `.lisp` (Corset source) into an Arithmetic Inter
 ```
 .lisp source
   → Corset compiler (pkg/corset/)
-    → HIR schema  (pkg/ir/hir/)
-      → MIR modules  (pkg/ir/mir/)
-        → AIR schema  (pkg/ir/air/)
+    → MIR schema, field-agnostic  (pkg/ir/mir/)
+      → MIR schema, concretized   (pkg/ir/mir/, via Concretize)
+        → AIR schema              (pkg/ir/air/)
 ```
 
-Alternatively, pre-compiled `.bin` binary files can feed in at the top (read via `pkg/binfile/`).
+The Corset translator emits MIR directly. Since MIR arithmetic terms cannot
+contain conditionals, `(if c a b)` appearing in an arithmetic position is lifted
+to the logical level by case splitting — see `pkg/corset/compiler/conditional.go`.
+
+Constraints are always compiled from source; there is no serialised form of a
+compiled schema.
 
 The `SchemaStacker` in `pkg/cmd/corset/util/schema_stacker.go` orchestrates which layers are built and held in memory, controlled by the `--mir/air` CLI flags.
 
@@ -123,24 +124,22 @@ Layer constants (defined in `schema_stacker.go`):
 
 ### Key packages
 
-| Package                  | Role                                                                                                                                       |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pkg/corset/`            | Corset DSL compiler: parses `.lisp`, resolves symbols, type-checks, and emits an `hir.Schema`. Standard library embedded as `stdlib.lisp`. |
-| `pkg/corset/ast/`        | AST nodes for Corset: declarations, expressions, types, bindings                                                                           |
-| `pkg/corset/compiler/`   | Compiler internals: parser, resolver, type-checker, preprocessor, translator, register allocator                                           |
-| `pkg/ir/hir/`            | High-level IR: `LowerToMir()` — HIR modules → MIR modules                                                                                  |
-| `pkg/ir/mir/`            | Mid-level IR: `LowerToAir()` — MIR modules → AIR schema, optimiser                                                                         |
-| `pkg/ir/air/`            | AIR schema: final vanishing polynomials + gadgets                                                                                          |
-| `pkg/schema/`            | Core schema interfaces (`Schema`, `Module`, `Assignment`, `Constraint`) parameterised over field element type `F`                          |
-| `pkg/schema/constraint/` | Constraint types: vanishing, lookup, range                                                                                                 |
-| `pkg/trace/`             | Trace representation; `json/` and `lt/` (binary) format readers/writers                                                                    |
-| `pkg/binfile/`           | Binary `.bin` file serialisation (gob-encoded)                                                                                             |
-| `pkg/zkc/`               | ZK compiler / VM: a separate compiler+virtual machine (`pkg/zkc/vm/`) with ROM, RAM, WOM memories and a call stack                         |
-| `pkg/util/field/`        | Field element implementations: `bls12_377`, `koalabear`, `gf251`, `gf8209`, `mersenne31`                                                   |
-| `pkg/util/`              | General utilities: collections, iterators, source maps, math, word types                                                                   |
-| `cmd/go-corset/`         | Main entry point                                                                                                                           |
-| `pkg/cmd/corset/`        | CLI commands: check, compile, debug, inspect, trace, generate, verify                                                                      |
-| `pkg/cmd/zkc/`           | CLI commands for the ZK compiler toolchain                                                                                                 |
+| Package                  | Role                                                                                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pkg/corset/`            | Corset DSL compiler: parses `.lisp`, resolves symbols, type-checks, and emits a field-agnostic `mir.Schema`. Standard library embedded as `stdlib.lisp`. |
+| `pkg/corset/ast/`        | AST nodes for Corset: declarations, expressions, types, bindings                                                                                         |
+| `pkg/corset/compiler/`   | Compiler internals: parser, resolver, type-checker, preprocessor, translator, register allocator                                                         |
+| `pkg/ir/mir/`            | Mid-level IR: `Concretize()` — split registers for target field; `LowerToAir()` — MIR modules → AIR schema, optimiser                                    |
+| `pkg/ir/air/`            | AIR schema: final vanishing polynomials + gadgets                                                                                                        |
+| `pkg/schema/`            | Core schema interfaces (`Schema`, `Module`, `Assignment`, `Constraint`) parameterised over field element type `F`                                        |
+| `pkg/schema/constraint/` | Constraint types: vanishing, lookup, range                                                                                                               |
+| `pkg/trace/`             | Trace representation; `json/` and `lt/` (binary) format readers/writers                                                                                  |
+| `pkg/zkc/`               | ZK compiler / VM: a separate compiler+virtual machine (`pkg/zkc/vm/`) with ROM, RAM, WOM memories and a call stack                                       |
+| `pkg/util/field/`        | Field element implementations: `bls12_377`, `koalabear`, `gf251`, `gf8209`, `mersenne31`                                                                 |
+| `pkg/util/`              | General utilities: collections, iterators, source maps, math, word types                                                                                 |
+| `cmd/go-corset/`         | Main entry point                                                                                                                                         |
+| `pkg/cmd/corset/`        | CLI commands: check, debug, inspect, trace, verify                                                                                                       |
+| `pkg/cmd/zkc/`           | CLI commands for the ZK compiler toolchain                                                                                                               |
 
 ### Schema and field polymorphism
 

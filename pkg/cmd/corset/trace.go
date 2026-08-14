@@ -20,7 +20,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
@@ -110,9 +109,9 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	stack := stacker.Build()
 	builder := stack.TraceBuilder().WithPadding(padding)
 	//
-	if stacker.HasBinaryFile() {
+	if stacker.HasSchema() {
 		// Extract debug information (if available)
-		cfg.sourceMap, _ = binfile.GetAttribute[*corset.SourceMap](stacker.BinaryFile())
+		cfg.sourceMap, _ = stacker.SourceMap()
 	}
 	// Extract register mapping (for limbs)
 	cfg.mapping = stack.RegisterMapping()

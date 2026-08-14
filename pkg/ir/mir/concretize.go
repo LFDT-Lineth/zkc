@@ -120,9 +120,9 @@ func concretizeConstraint[F1 Element[F1], F2 Element[F2]](constraint Constraint[
 		// independent of the underlying field.
 		return NewLookupConstraint[F2](c.Handle, c.Targets, c.Sources)
 	case RangeConstraint[F1]:
-		var terms = concretizeRegisterAccesses[F1, F2](c.Sources)
-		//
-		return NewRangeConstraint(c.Handle, c.Context, terms, c.Bitwidths)
+		// NOTE: as for lookups, range constraints are made up of registers and,
+		// hence, are independent of the underlying field.
+		return NewRangeConstraint[F2](c.Handle, c.Context, c.Sources, c.Bitwidths)
 	case VanishingConstraint[F1]:
 		term := concretizeLogicalTerm[F1, F2](c.Constraint)
 		//
@@ -225,16 +225,14 @@ func concretizeVectorAccess[F1 Element[F1], F2 Element[F2]](expr *VectorAccess[F
 }
 
 func concretizeRegisterAccess[F1 Element[F1], F2 Element[F2]](expr *RegisterAccess[F1]) *RegisterAccess[F2] {
-	access := term.RawRegisterAccess[F2, Term[F2]](expr.Register(), expr.BitWidth(), expr.RelativeShift())
-	// Apply any mask
-	return access.Mask(expr.MaskWidth())
+	return term.RawRegisterAccess[F2, Term[F2]](expr.Register(), expr.BitWidth(), expr.RelativeShift())
 }
 
 func concretizeRegisterAccesses[F1 Element[F1], F2 Element[F2]](exprs []*RegisterAccess[F1]) []*RegisterAccess[F2] {
 	var nterms = make([]*RegisterAccess[F2], len(exprs))
 	//
 	for i, t := range exprs {
-		nterms[i] = term.RawRegisterAccess[F2, Term[F2]](t.Register(), t.BitWidth(), t.RelativeShift()).Mask(t.MaskWidth())
+		nterms[i] = term.RawRegisterAccess[F2, Term[F2]](t.Register(), t.BitWidth(), t.RelativeShift())
 	}
 	//
 	return nterms

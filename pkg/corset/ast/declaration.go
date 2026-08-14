@@ -544,16 +544,19 @@ func (p *DefConstraint) Lisp() sexp.SExp {
 // definrange
 // ============================================================================
 
-// DefInRange restricts all values for a given expression to be within a range
+// DefInRange restricts all values for a given column to be within a range
 // [0..n) for some bound n.  Any bound is supported, and the system will choose
 // the best underlying implementation as needed.
+//
+// NOTE: as for a lookup, the constrained column is a column access rather than
+// an arbitrary expression.  This reflects what the underlying constraint system
+// supports.
 type DefInRange struct {
-	// The expression whose values are being constrained to within the given
-	// bound.
-	Expr Expr
+	// The column whose values are being constrained to within the given bound.
+	Column TypedSymbol
 	// Bitwidth determines the bitwidth that this range constraint is enforcing.
 	Bitwidth uint
-	// Indicates whether or not the expression has been resolved.
+	// Indicates whether or not the column access has been resolved.
 	finalised bool
 }
 
@@ -565,7 +568,7 @@ func (p *DefInRange) Definitions() iter.Iterator[SymbolDefinition] {
 
 // Dependencies needed to signal declaration.
 func (p *DefInRange) Dependencies() iter.Iterator[Symbol] {
-	return iter.NewArrayIterator[Symbol](p.Expr.Dependencies())
+	return iter.NewArrayIterator[Symbol]([]Symbol{p.Column})
 }
 
 // Defines checks whether this declaration defines the given symbol.  The symbol
@@ -580,7 +583,7 @@ func (p *DefInRange) IsFinalised() bool {
 	return p.finalised
 }
 
-// Finalise this declaration, meaning that the expression has been resolved.
+// Finalise this declaration, meaning that the column access has been resolved.
 func (p *DefInRange) Finalise() {
 	p.finalised = true
 }
@@ -590,7 +593,7 @@ func (p *DefInRange) Finalise() {
 func (p *DefInRange) Lisp() sexp.SExp {
 	return sexp.NewList([]sexp.SExp{
 		sexp.NewSymbol("definrange"),
-		p.Expr.Lisp(),
+		p.Column.Lisp(),
 		sexp.NewSymbol(fmt.Sprintf("u%d", p.Bitwidth)),
 	})
 }

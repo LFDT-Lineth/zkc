@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/inspector"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
@@ -74,13 +73,11 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	stack := stacker.Build()
 	//
 	stats := util.NewPerfStats()
-	// Parse constraints
-	binf := stacker.BinaryFile()
 	// Sanity check debug information is available.
-	srcmap, srcmap_ok := binfile.GetAttribute[*corset.SourceMap](binf)
+	srcmap, srcmap_ok := stacker.SourceMap()
 	//
 	if !srcmap_ok {
-		fmt.Printf("binary file \"%s\" missing source map", args[1])
+		fmt.Printf("constraints \"%s\" missing source map", args[1])
 	}
 	//
 	stats.Log("Reading constraints file")

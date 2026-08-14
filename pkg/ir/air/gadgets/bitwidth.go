@@ -73,11 +73,9 @@ func (p *BitwidthGadget[F]) Constrain(ref register.Ref, bitwidth uint) {
 		return
 	case bitwidth <= p.maxRangeConstraint:
 		handle := fmt.Sprintf("%s:u%d", reg.Name(), bitwidth)
-		// Construct access to register
-		access := term.RawRegisterAccess[F, air.Term[F]](ref.Register(), reg.Width(), 0)
 		// Add range constraint
-		module.AddConstraint(air.NewRangeConstraint(handle, module.Id(),
-			[]*term.RegisterAccess[F, air.Term[F]]{access}, []uint{bitwidth}))
+		module.AddConstraint(air.NewRangeConstraint[F](handle, module.Id(),
+			[]register.Id{ref.Register()}, []uint{bitwidth}))
 		// Done
 		return
 	default:
@@ -269,11 +267,6 @@ func (p *typeDecomposition[F]) RegistersRead() []register.Ref {
 // RegistersWritten identifies registers assigned by this assignment.
 func (p *typeDecomposition[F]) RegistersWritten() []register.Ref {
 	return p.targets
-}
-
-// Substitute any matchined labelled constants within this assignment
-func (p *typeDecomposition[F]) Substitute(mapping map[string]F) {
-	// Nothing to do here.
 }
 
 // Lisp converts this schema element into a simple S-Expression, for example

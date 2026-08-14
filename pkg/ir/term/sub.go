@@ -98,11 +98,6 @@ func (p *Sub[F, T]) ShiftRange() (int, int) {
 	return shiftRangeOfTerms(p.Args...)
 }
 
-// Substitute implementation for Substitutable interface.
-func (p *Sub[F, T]) Substitute(mapping map[string]F) {
-	substituteTerms(mapping, p.Args...)
-}
-
 // ValueRange implementation for Term interface.
 func (p *Sub[F, T]) ValueRange() math.Interval {
 	var res math.Interval
@@ -120,14 +115,14 @@ func (p *Sub[F, T]) ValueRange() math.Interval {
 }
 
 // Simplify implementation for Term interface.
-func (p *Sub[F, T]) Simplify(casts bool) T {
+func (p *Sub[F, T]) Simplify() T {
 	var (
 		targ  Expr[F, T]
-		lhs   T          = p.Args[0].Simplify(casts)
+		lhs   T          = p.Args[0].Simplify()
 		lhs_t Expr[F, T] = lhs
 		// Subtraction is harder to optimise for.  What we do is view "a - b - c" as
 		// "a - (b+c)", and optimise the right-hand side as though it were addition.
-		rhs   T          = simplifySum(p.Args[1:], casts)
+		rhs   T          = simplifySum(p.Args[1:])
 		rhs_t Expr[F, T] = rhs
 	)
 	// Check what's left
