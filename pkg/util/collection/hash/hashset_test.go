@@ -14,6 +14,7 @@ package hash
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"testing"
 
@@ -95,6 +96,12 @@ func check_HashSet(t *testing.T, items []uint) {
 	for _, ith := range items {
 		if !set.Contains(testKey{ith}) {
 			t.Errorf("missing item %d: %s", ith, set.String())
+		}
+	}
+	// Sanity check iterator
+	for val := range set.Iter() {
+		if !slices.Contains(items, val.value) {
+			t.Errorf("unknown item %d: %s", val, set.String())
 		}
 	}
 }
