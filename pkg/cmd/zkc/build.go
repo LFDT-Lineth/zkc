@@ -69,7 +69,7 @@ func Build[F field.Element[F]](build BuildConfig, args ...string) (*ast.Program,
 			WithIgnores(build.ignores...)
 	}
 	// Compile source files, or print errors
-	prog := CompileSourceFiles(build.config.GetField(), args...)
+	prog := CompileSourceFiles(build.config.GetField(), build.config.GetMaxStaticHeight(), args...)
 	// Word-level Intermediate Representation
 	// Compile the AST into the top-level word machine
 	raw, errs = ast.Compile(prog, build.config)

@@ -111,7 +111,7 @@ func ParseInputFile(filename string) map[string][]byte {
 
 // CompileSourceFiles accepts a set of source files and compiles them into a
 // program.  This can result, for example, in one or more syntax errors, etc.
-func CompileSourceFiles(field field.Config, filenames ...string) ast.Program {
+func CompileSourceFiles(field field.Config, maxStaticHeight uint, filenames ...string) ast.Program {
 	//
 	var (
 		errors   []source.SyntaxError
@@ -131,7 +131,7 @@ func CompileSourceFiles(field field.Config, filenames ...string) ast.Program {
 		srcfiles[i] = *source.NewSourceFile(n, bytes)
 	}
 	// Compile source files
-	macroProgram, _, errors := compiler.Compile(field, srcfiles...)
+	macroProgram, _, errors := compiler.Compile(field, maxStaticHeight, srcfiles...)
 	// Check for errors
 	if len(errors) != 0 {
 		// Report errors
