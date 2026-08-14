@@ -45,14 +45,6 @@ type TestCase struct {
 	data map[string][]byte
 }
 
-// CompileMachine compiles one or more zkc source files into a base machine for
-// executing tests with.
-func CompileMachine(field field.Config, srcfiles ...source.File) []source.SyntaxError {
-	_, _, errors := compiler.Compile(field, codegen.DEFAULT_MAX_STATIC_HEIGHT, srcfiles...)
-	//
-	return errors
-}
-
 // CompileZkc compiles a single zkc source file, potentially producing errors.
 // This includes both the validation phase and the code generation phase.
 func CompileZkc(field field.Config, srcfile source.File) []source.SyntaxError {
