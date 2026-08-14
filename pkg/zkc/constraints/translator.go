@@ -15,7 +15,6 @@ package constraints
 import (
 	"fmt"
 	"math/big"
-	"math/bits"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
@@ -26,7 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	pow "github.com/LFDT-Lineth/zkc/pkg/util/math"
+	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
 	tracer "github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
@@ -44,13 +43,7 @@ func GenerateMirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program
 		// It represents the maximum register width for which a static table can be use to range-check it.
 		// Wider registers require recursive range modules, and the call is materialized by a function call
 		// during codegen.
-		maxStaticWidth = func() uint {
-			if program.MaxStaticHeight() == 0 {
-				return 0
-			}
-
-			return uint(bits.Len(program.MaxStaticHeight()) - 1)
-		}()
+		maxStaticWidth = util_math.FloorLog2(program.MaxStaticHeight())
 		// Index the static range-check tables by width, so each register can be
 		// range-proved by a lookup into the matching $range_un table.
 		rangeTables = indexRangeTables[W, F](infos, maxStaticWidth)
@@ -105,7 +98,7 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 		outputs = toRegisters(m.DataRegisters())
 		// Convert the static contents from words into field elements.
 		contents     = toFieldElements[W, F](m.StaticContents())
-		paddedHeight = pow.NextPowerOfTwo(uint(len(contents)))
+		paddedHeight = util_math.NextPowerOfTwo(uint(len(contents)))
 	)
 	if paddedHeight > maxStaticHeight {
 		panic(fmt.Sprintf("static memory \"%s\" exceeds maximum allowed height of %d", m.Name(), maxStaticHeight))
