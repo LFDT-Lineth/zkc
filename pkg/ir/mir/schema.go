@@ -59,7 +59,7 @@ type (
 	// LookupVector provides a convenient shorthand
 	LookupVector = lookup.Vector
 	// RangeConstraint captures the essence of a range constraints at the MIR level.
-	RangeConstraint[F field.Element[F]] = ranged.Constraint[F, *RegisterAccess[F]]
+	RangeConstraint[F field.Element[F]] = ranged.Constraint[F]
 	// VanishingConstraint captures the essence of a vanishing constraint at the MIR
 	// level. A vanishing constraint is a row constraint which must evaluate to
 	// zero.
@@ -102,13 +102,3 @@ type (
 	// at the MIR level.
 	NotEqual[F field.Element[F]] = term.NotEqual[F, LogicalTerm[F], Term[F]]
 )
-
-// SubstituteConstants substitutes the value of matching labelled constants for
-// all expressions used within the schema.
-func SubstituteConstants[F field.Element[F]](schema schema.AnySchema[F], mapping map[string]F) {
-	// Constraints
-	for iter := schema.Modules(); iter.HasNext(); {
-		module := iter.Next()
-		module.Substitute(mapping)
-	}
-}

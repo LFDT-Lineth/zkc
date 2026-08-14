@@ -532,9 +532,6 @@ type LocalScope struct {
 	// Determines whether or not this scope is "pure" (i.e. whether or not
 	// columns can be accessed, etc).
 	pure bool
-	// Determine whether or not this scope is defining a constant.  If so, then
-	// cannot access other externalised constants.
-	constant bool
 	// Represents the enclosing scope
 	enclosing Scope
 	// Context for this scope
@@ -552,17 +549,17 @@ type LocalScope struct {
 // local scope can have local variables declared within it.  A local scope can
 // also be "global" in the sense that accessing symbols from other modules is
 // permitted.
-func NewLocalScope(enclosing Scope, global bool, pure bool, constant bool) LocalScope {
+func NewLocalScope(enclosing Scope, global bool, pure bool) LocalScope {
 	context := ast.VoidContext()
 	locals := make(map[string]uint)
 	bindings := make([]*ast.LocalVariableBinding, 0)
 	defining := make(map[string]bool)
 	//
-	return LocalScope{global, pure, constant, enclosing, &context, locals, bindings, defining}
+	return LocalScope{global, pure, enclosing, &context, locals, bindings, defining}
 }
 
 // NestedConstScope creates a nested scope within this local scope which, in
-// addition, is always pure and expects a constant value.
+// addition, is always pure.
 func (p LocalScope) NestedConstScope() LocalScope {
 	nlocals := make(map[string]uint)
 	nbindings := make([]*ast.LocalVariableBinding, len(p.bindings))
@@ -573,7 +570,7 @@ func (p LocalScope) NestedConstScope() LocalScope {
 	// Copy over bindings.
 	copy(nbindings, p.bindings)
 	// Done
-	return LocalScope{p.global, true, true, p, p.context, nlocals, nbindings, p.defining}
+	return LocalScope{p.global, true, p, p.context, nlocals, nbindings, p.defining}
 }
 
 // IsVisible implemention for Scope interface.
@@ -601,12 +598,6 @@ func (p LocalScope) IsGlobal() bool {
 // or indirectly via impure invocations).
 func (p LocalScope) IsPure() bool {
 	return p.pure
-}
-
-// IsConstant determines whether or not this scope is defining a constant.  This
-// places some restrictions on what variables can be accessed, etc.
-func (p LocalScope) IsConstant() bool {
-	return p.constant
 }
 
 // IsWithin checks whether a given path is local to the enclosing module, or not.

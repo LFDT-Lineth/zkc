@@ -1,4 +1,4 @@
-(defpurefun ((eq :binary :force) (x :binary) (y :binary)) (^ (- x y) 2))
+(defpurefun (eq (x :binary) (y :binary)) (* (- x y) (- x y)))
 ;;
 (defcolumns (X :binary) (Y :binary))
 ;; X == 1 || X == Y

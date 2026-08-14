@@ -142,10 +142,10 @@ func (p *Subdivider[F]) FlushAllocator(mid module.Id, alloc agnostic.RegisterAll
 	for i, rid := range rids {
 		var (
 			ith        = regs[n+i]
-			terms      = []*RegisterAccess[F]{term.RawRegisterAccess[F, Term[F]](rid, ith.Width(), 0)}
+			sources    = []register.Id{rid}
 			bitwidths  = []uint{ith.Width()}
 			handle     = fmt.Sprintf("%s:u%d", ith.Name(), ith.Width())
-			constraint = ranged.NewConstraint[F](handle, mid, terms, bitwidths)
+			constraint = ranged.NewConstraint[F](handle, mid, sources, bitwidths)
 		)
 		//
 		module.AddConstraint(Constraint[F]{constraint})
@@ -226,21 +226,25 @@ func (p *Subdivider[F]) subdivideConstraint(c Constraint[F]) Constraint[F] {
 func (p *Subdivider[F]) subdivideRange(c RangeConstraint[F]) RangeConstraint[F] {
 	var (
 		modmap    = p.mapping.Module(c.Context)
-		terms     []*RegisterAccess[F]
+		sources   []register.Id
 		bitwidths []uint
 	)
 	//
 	for i, source := range c.Sources {
-		var (
-			split    = subdivideRawRegisterAccess(source, modmap)
-			bitwidth = c.Bitwidths[i]
-		)
-		// Include all registers
-		terms = append(terms, split...)
-		// Split bitwidths
-		for _, jth := range split {
-			var limbWidth = jth.MaskWidth()
-			//
+		var bitwidth = c.Bitwidths[i]
+		// Split source register into its constituent limbs
+		for j, limbId := range modmap.LimbIds(source) {
+			var limbWidth = modmap.Limb(limbId).Width()
+			// NOTE: as when subdividing a register access, at least one limb is
+			// always retained for any register.  This is necessary to ensure we
+			// never completely eliminate a register.  Perhaps surprisingly, it
+			// is possible for a register to have a bitwidth of 0.  This happens
+			// for "constant registers" (i.e. registers whose value constant).
+			if limbWidth == 0 && j != 0 {
+				continue
+			}
+			// Include limb, along with its portion of the original bitwidth.
+			sources = append(sources, limbId)
 			bitwidths = append(bitwidths, min(bitwidth, limbWidth))
 			//
 			if bitwidth >= limbWidth {
@@ -251,7 +255,7 @@ func (p *Subdivider[F]) subdivideRange(c RangeConstraint[F]) RangeConstraint[F] 
 		}
 	}
 	//
-	return ranged.NewConstraint(c.Handle, c.Context, terms, bitwidths)
+	return ranged.NewConstraint[F](c.Handle, c.Context, sources, bitwidths)
 }
 
 // ============================================================================
@@ -322,28 +326,20 @@ func subdivideRawRegisterAccess[F field.Element[F]](expr *RegisterAccess[F], map
 		limbs = mapping.LimbIds(expr.Register())
 		// Construct appropriate terms
 		terms []*RegisterAccess[F]
-		//
-		bitwidth = expr.MaskWidth()
 	)
 	//
 	for i, limbId := range limbs {
-		var (
-			limb      = mapping.Limb(limbId)
-			limbWidth = min(bitwidth, limb.Width())
-		)
+		var limb = mapping.Limb(limbId)
 		// NOTE: following ensures at least one limb is always added for any
 		// register.  This is necessary to ensure we never completely eliminate
 		// a register.  Perhaps surprisingly, it is possible for a register to
 		// have a bitwidth of 0.  This happens for "constant registers" (i.e.
 		// registers whose value constant).
-		if limbWidth > 0 || i == 0 {
+		if limb.Width() > 0 || i == 0 {
 			// Construct register access
-			ith := term.RawRegisterAccess[F, Term[F]](limbId, limb.Width(), expr.RelativeShift())
-			// Mask off any unrequired bits
-			terms = append(terms, ith.Mask(limbWidth))
+			terms = append(terms,
+				term.RawRegisterAccess[F, Term[F]](limbId, limb.Width(), expr.RelativeShift()))
 		}
-		//
-		bitwidth -= limbWidth
 	}
 	//
 	return terms

@@ -15,8 +15,8 @@ package ranged
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 )
@@ -27,8 +27,8 @@ type Failure[F any] struct {
 	Handle string
 	// Enclosing context
 	Context schema.ModuleId
-	// Constraint expression
-	Expr term.Evaluable[F]
+	// Constrained register
+	Source register.Id
 	// Range restriction
 	Bitwidth uint
 	// Row on which the constraint failed
@@ -46,6 +46,13 @@ func (p *Failure[F]) String() string {
 }
 
 // RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
-func (p *Failure[F]) RequiredCells(tr trace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
-	return p.Expr.RequiredCells(int(p.Row), p.Context)
+func (p *Failure[F]) RequiredCells(_ trace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
+	var (
+		res = set.NewAnySortedSet[trace.CellRef]()
+		ref = trace.NewColumnRef(p.Context, p.Source)
+	)
+	//
+	res.Insert(trace.NewCellRef(ref, int(p.Row)))
+	//
+	return res
 }

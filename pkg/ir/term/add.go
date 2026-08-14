@@ -93,13 +93,8 @@ func (p *Add[F, T]) ShiftRange() (int, int) {
 }
 
 // Simplify implementation for Term interface.
-func (p *Add[F, T]) Simplify(casts bool) T {
-	return simplifySum(p.Args, casts)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *Add[F, T]) Substitute(mapping map[string]F) {
-	substituteTerms(mapping, p.Args...)
+func (p *Add[F, T]) Simplify() T {
+	return simplifySum(p.Args)
 }
 
 // ValueRange implementation for Term interface.
@@ -118,10 +113,10 @@ func (p *Add[F, T]) ValueRange() math.Interval {
 	return res
 }
 
-func simplifySum[F field.Element[F], T Expr[F, T]](args []T, casts bool) T {
+func simplifySum[F field.Element[F], T Expr[F, T]](args []T) T {
 	var (
 		zero  F
-		terms = simplifyTerms(args, addBinOp, zero, casts)
+		terms = simplifyTerms(args, addBinOp, zero)
 		tmp   Expr[F, T]
 	)
 	// Flatten any nested sums

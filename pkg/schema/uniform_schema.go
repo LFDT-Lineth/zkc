@@ -13,8 +13,6 @@
 package schema
 
 import (
-	"bytes"
-	"encoding/gob"
 	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
@@ -116,33 +114,4 @@ func constraintsOf[F any, M Module[F]](modules []M) iter.Iterator[Constraint[F]]
 	return iter.NewFlattenIterator(arrIter, func(m M) iter.Iterator[Constraint[F]] {
 		return m.Constraints()
 	})
-}
-
-// ============================================================================
-// Encoding / Decoding
-// ============================================================================
-
-// GobEncode an option.  This allows it to be marshalled into a binary form.
-func (p UniformSchema[F, M]) GobEncode() (data []byte, err error) {
-	var buffer bytes.Buffer
-	//
-	gobEncoder := gob.NewEncoder(&buffer)
-	// Modules
-	if err := gobEncoder.Encode(&p.modules); err != nil {
-		return nil, err
-	}
-	// Done
-	return buffer.Bytes(), nil
-}
-
-// GobDecode a previously encoded option
-func (p *UniformSchema[F, M]) GobDecode(data []byte) error {
-	buffer := bytes.NewBuffer(data)
-	gobDecoder := gob.NewDecoder(buffer)
-	// Modules
-	if err := gobDecoder.Decode(&p.modules); err != nil {
-		return err
-	}
-	// Success!
-	return nil
 }

@@ -19,7 +19,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
@@ -49,8 +48,7 @@ var checkCmd = &cobra.Command{
 	Use:   "check [flags] trace_file constraint_file(s)",
 	Short: "Check a given trace against a set of constraints.",
 	Long: `Check a given trace against a set of constraints.
-	Traces can be given either as JSON or binary lt files.
-	Constraints can be given either as lisp or bin files.`,
+	Traces can be given either as JSON or binary lt files.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runFieldAgnosticCmd(cmd, args, checkCmds)
 	},
@@ -186,7 +184,7 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 	//
 	stats := util.NewPerfStats()
 	// Extract debug information (if available)
-	cfg.CorsetSourceMap, _ = binfile.GetAttribute[*corset.SourceMap](schemas.BinaryFile())
+	cfg.CorsetSourceMap, _ = schemas.SourceMap()
 	//
 	stats.Log("Reading constraints file")
 	// Parse trace file(s)

@@ -125,11 +125,6 @@ func (e *pseudoInverse[F]) Lisp(global bool, mapping register.Map) sexp.SExp {
 	})
 }
 
-// Substitute implementation for Substitutable interface.
-func (e *pseudoInverse[F]) Substitute(mapping map[string]F) {
-	panic("unreachable")
-}
-
 // ValueRange implementation for Term interface.
 func (e *pseudoInverse[F]) ValueRange() util_math.Interval {
 	// This could be managed by having a mechanism for representing infinity

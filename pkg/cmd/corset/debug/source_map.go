@@ -51,11 +51,7 @@ func printSourceMapModule(indent uint, module corset.SourceModule) {
 	for _, c := range module.Constants {
 		printIndent(indent)
 		//
-		if c.Extern {
-			fmt.Printf("extern\t")
-		} else {
-			fmt.Printf("const\t")
-		}
+		fmt.Printf("const\t")
 		//
 		if c.Bitwidth != math.MaxUint {
 			fmt.Printf("u%d ", c.Bitwidth)

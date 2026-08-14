@@ -119,7 +119,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 		mirEnable    = GetFlag(cmd, "mir")
 		airEnable    = GetFlag(cmd, "air")
 		optimisation = GetUint(cmd, "opt")
-		externs      = GetStringArray(cmd, "set")
 		//
 		parallel  = !GetFlag(cmd, "sequential")
 		batchSize = GetUint(cmd, "batch")
@@ -175,8 +174,7 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 	// Configure the stack
 	stacker = stacker.
 		WithCorsetConfig(corsetConfig).
-		WithOptimisationConfig(mir.OPTIMISATION_LEVELS[optimisation]).
-		WithConstantDefinitions(externs)
+		WithOptimisationConfig(mir.OPTIMISATION_LEVELS[optimisation])
 	//
 	if mirEnable {
 		stacker = stacker.WithLayer(cmd_util.MIR_LAYER)
@@ -235,7 +233,6 @@ func init() {
 	rootCmd.PersistentFlags().Uint("workers", 0,
 		"number of inner parallel workers per assignment during trace expansion (0=auto from GOMAXPROCS)")
 	// Misc
-	rootCmd.PersistentFlags().StringArrayP("set", "S", []string{}, "set value of externalised constant.")
 	rootCmd.PersistentFlags().Uint("exploding-multiplier", 10,
 		"set threshold above which constraints are logged as exploding.")
 }

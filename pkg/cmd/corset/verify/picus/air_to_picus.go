@@ -89,12 +89,12 @@ func (p *AirPicusTranslator[F]) translateRangeConstraint(r air.RangeConstraint[F
 	picusModule *pcl.Module[F], airModule schema.Module[F],
 ) {
 	var (
-		exprs     = r.Unwrap().Sources
+		sources   = r.Unwrap().Sources
 		bitwidths = r.Unwrap().Bitwidths
 	)
 
-	for i, e := range exprs {
-		expr := p.lowerTerm(e, airModule)
+	for i, source := range sources {
+		expr := p.lowerRegister(source, 0, airModule)
 		// 1. Get the `big.Int` representation of the max unisgned value for a given bitwidth.
 		// 2. Create a field element from the big integer.
 		// 3. Construct a PCL constant from the field element.

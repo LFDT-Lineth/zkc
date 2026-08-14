@@ -13,8 +13,6 @@
 package schema
 
 import (
-	"bytes"
-	"encoding/gob"
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
@@ -83,8 +81,6 @@ type Module[F any] interface {
 	// the static module.  NOTE: this will panic when IsStatic() is false (i.e.
 	// since only static modules can have contents).
 	StaticContents() (entries [][]F)
-	// Substitute any matchined labelled constants within this module
-	Substitute(map[string]F)
 }
 
 // ============================================================================
@@ -246,17 +242,6 @@ func (p *Table[F, C]) Registers() []register.Register {
 	return p.registers
 }
 
-// Substitute any matchined labelled constants within this module
-func (p *Table[F, C]) Substitute(mapping map[string]F) {
-	for _, c := range p.assignments {
-		c.Substitute(mapping)
-	}
-	//
-	for _, c := range p.constraints {
-		c.Substitute(mapping)
-	}
-}
-
 // Width returns the number of registers in this Table.
 func (p *Table[F, C]) Width() uint {
 	return uint(len(p.registers))
@@ -310,113 +295,4 @@ func (p *Table[F, C]) SetStaticContents(contents [][]F) {
 	}
 	//
 	p.staticContents = contents
-}
-
-// ============================================================================
-// Encoding / Decoding
-// ============================================================================
-
-// GobEncode an option.  This allows it to be marshalled into a binary form.
-func (p *Table[F, M]) GobEncode() (data []byte, err error) {
-	var buffer bytes.Buffer
-	//
-	gobEncoder := gob.NewEncoder(&buffer)
-	// Name
-	if err := gobEncoder.Encode(p.name.Name); err != nil {
-		return nil, err
-	}
-	// Multiplier
-	if err := gobEncoder.Encode(p.name.Multiplier); err != nil {
-		return nil, err
-	}
-	// Padding
-	if err := gobEncoder.Encode(p.padding); err != nil {
-		return nil, err
-	}
-	// Public
-	if err := gobEncoder.Encode(p.public); err != nil {
-		return nil, err
-	}
-	// Private
-	if err := gobEncoder.Encode(p.private); err != nil {
-		return nil, err
-	}
-	// Native
-	if err := gobEncoder.Encode(p.native); err != nil {
-		return nil, err
-	}
-	// Static
-	if err := gobEncoder.Encode(p.static); err != nil {
-		return nil, err
-	}
-	// Static contents
-	if err := gobEncoder.Encode(p.staticContents); err != nil {
-		return nil, err
-	}
-	// registers
-	if err := gobEncoder.Encode(p.registers); err != nil {
-		return nil, err
-	}
-	// constraints
-	if err := gobEncoder.Encode(p.constraints); err != nil {
-		return nil, err
-	}
-	// assignments
-	if err := gobEncoder.Encode(p.assignments); err != nil {
-		return nil, err
-	}
-	// Done
-	return buffer.Bytes(), nil
-}
-
-// GobDecode a previously encoded option
-func (p *Table[F, M]) GobDecode(data []byte) error {
-	buffer := bytes.NewBuffer(data)
-	gobDecoder := gob.NewDecoder(buffer)
-	// Name
-	if err := gobDecoder.Decode(&p.name.Name); err != nil {
-		return err
-	}
-	// Multiplier
-	if err := gobDecoder.Decode(&p.name.Multiplier); err != nil {
-		return err
-	}
-	// Padding
-	if err := gobDecoder.Decode(&p.padding); err != nil {
-		return err
-	}
-	// Public
-	if err := gobDecoder.Decode(&p.public); err != nil {
-		return err
-	}
-	// Private
-	if err := gobDecoder.Decode(&p.private); err != nil {
-		return err
-	}
-	// Native
-	if err := gobDecoder.Decode(&p.native); err != nil {
-		return err
-	}
-	// Static
-	if err := gobDecoder.Decode(&p.static); err != nil {
-		return err
-	}
-	// Static contents
-	if err := gobDecoder.Decode(&p.staticContents); err != nil {
-		return err
-	}
-	// Registers
-	if err := gobDecoder.Decode(&p.registers); err != nil {
-		return err
-	}
-	// Constraints
-	if err := gobDecoder.Decode(&p.constraints); err != nil {
-		return err
-	}
-	// Assignments
-	if err := gobDecoder.Decode(&p.assignments); err != nil {
-		return err
-	}
-	// Success!
-	return nil
 }

@@ -183,10 +183,6 @@ type ConstantBinding struct {
 	DataType Type
 	// Constant expression which, when evaluated, produces a constant Value.
 	Value Expr
-	// Determines whether this is an "externalised" constant, or not.
-	// Externalised constants are visible at the HIR level and can have their
-	// values overridden.
-	Extern bool
 	// Determines whether or not this binding is finalised (i.e. its expression
 	// has been resolved).
 	finalised bool
@@ -194,8 +190,8 @@ type ConstantBinding struct {
 
 // NewConstantBinding creates a new constant binding (which is initially not
 // finalised).
-func NewConstantBinding(path file.Path, datatype Type, value Expr, extern bool) ConstantBinding {
-	return ConstantBinding{path, datatype, value, extern, false}
+func NewConstantBinding(path file.Path, datatype Type, value Expr) ConstantBinding {
+	return ConstantBinding{path, datatype, value, false}
 }
 
 // IsFinalised checks whether this binding has been finalised yet or not.
@@ -278,7 +274,7 @@ type DefunBinding struct {
 var _ FunctionBinding = &DefunBinding{}
 
 // NewDefunBinding constructs a new function binding.
-func NewDefunBinding(pure bool, paramTypes []Type, returnType Type, forced bool, body Expr) DefunBinding {
+func NewDefunBinding(pure bool, paramTypes []Type, returnType Type, body Expr) DefunBinding {
 	return DefunBinding{pure, paramTypes, returnType, body, false}
 }
 

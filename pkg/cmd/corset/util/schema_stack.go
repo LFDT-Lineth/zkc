@@ -15,7 +15,7 @@ package util
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
+	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
@@ -30,9 +30,9 @@ import (
 // Intermediate Representation is a refinement of the Mid-level Intermediate
 // Representation, etc.
 type SchemaStack[F field.Element[F]] struct {
-	// Binfile represents the top of this stack.
-	binfile util.Option[binfile.BinaryFile]
-	// The various (abstract) layers which are refined from the binfile.
+	// Source map for the schema which forms the top of this stack.
+	sourceMap util.Option[corset.SourceMap]
+	// The various (abstract) layers which are refined from the schema.
 	abstractSchemas []schema.AnySchema[word.BigEndian]
 	// The various (concrete) layers which are refined from the abstract layers.
 	concreteSchemas []schema.AnySchema[F]
@@ -50,10 +50,16 @@ func (p *SchemaStack[F]) AbstractSchemas() []schema.AnySchema[word.BigEndian] {
 	return p.abstractSchemas
 }
 
-// BinaryFile returns the binary file representing the top of this stack.
-func (p *SchemaStack[F]) BinaryFile() *binfile.BinaryFile {
-	bf := p.binfile.Unwrap()
-	return &bf
+// SourceMap returns the source map for the schema representing the top of this
+// stack, along with an indication of whether one is available.
+func (p *SchemaStack[F]) SourceMap() (*corset.SourceMap, bool) {
+	if !p.sourceMap.HasValue() {
+		return nil, false
+	}
+	//
+	srcmap := p.sourceMap.Unwrap()
+	//
+	return &srcmap, true
 }
 
 // HasConcreteSchema returns true if there is at least one concrete schema..

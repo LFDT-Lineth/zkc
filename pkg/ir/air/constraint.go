@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -36,7 +37,7 @@ type ConstraintBound[F field.Element[F]] interface {
 	schema.Constraint[F]
 
 	lookup.Constraint[F] |
-		ranged.Constraint[F, *ColumnAccess[F]] |
+		ranged.Constraint[F] |
 		vanishing.Constraint[F, LogicalTerm[F]]
 }
 
@@ -62,10 +63,10 @@ func NewLookupConstraint[F field.Element[F]](handle string, targets []lookup.Vec
 }
 
 // NewRangeConstraint constructs a new AIR range constraint
-func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, exprs []*ColumnAccess[F],
+func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, registers []register.Id,
 	bitwidths []uint) RangeConstraint[F] {
 	//
-	return newAir(ranged.NewConstraint(handle, ctx, exprs, bitwidths))
+	return newAir(ranged.NewConstraint[F](handle, ctx, registers, bitwidths))
 }
 
 // NewVanishingConstraint constructs a new AIR vanishing constraint
@@ -141,13 +142,6 @@ func (p Air[F, C]) Name() string {
 //nolint:revive
 func (p Air[F, C]) Lisp(schema schema.AnySchema[F]) sexp.SExp {
 	return p.constraint.Lisp(schema)
-}
-
-// Substitute any matchined labelled constants within this constraint
-func (p Air[F, C]) Substitute(map[string]F) {
-	// This should never be called since AIR expressions cannot contain labelled
-	// constants.
-	panic("unreachable")
 }
 
 // Unwrap provides access to the underlying constraint.

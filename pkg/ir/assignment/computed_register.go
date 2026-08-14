@@ -13,7 +13,6 @@
 package assignment
 
 import (
-	"encoding/gob"
 	"fmt"
 	"math"
 	"runtime"
@@ -371,19 +370,6 @@ func (p *ComputedRegister[F]) RegistersWritten() []register.Ref {
 	return written
 }
 
-// Substitute any matchined labelled constants within this assignment
-func (p *ComputedRegister[F]) Substitute(mapping map[string]F) {
-	var tmp any = mapping
-	// NOTE: this is the only scenario under which this method can be called.
-	w, ok := tmp.(map[string]word.BigEndian)
-	// sanity check
-	if !ok {
-		panic("unreachable")
-	}
-	//
-	p.Expr.Substitute(w)
-}
-
 // Lisp converts this constraint into an S-Expression.
 //
 //nolint:revive
@@ -561,12 +547,4 @@ func write(row uint, val word.BigEndian, data [][]word.BigEndian, bitwidths []ui
 			data[i][row] = elements[i]
 		}
 	}
-}
-
-// ============================================================================
-// Encoding / Decoding
-// ============================================================================
-
-func init() {
-	gob.Register(sc.Assignment[word.BigEndian](&ComputedRegister[word.BigEndian]{}))
 }
