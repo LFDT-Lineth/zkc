@@ -190,7 +190,7 @@ func validateProgram(program ast.Program, field field.Config, srcmaps source.Map
 	errors = append(errors, validate.DebugFunctions(program, srcmaps)...)
 	// Check #[inline] functions can actually be inlined
 	errors = append(errors, validate.InlineFunctions(program, srcmaps)...)
-	// Check no static tables have more rows than max-static-width
+	// Check no static tables have more rows than max-static-height
 	errors = append(errors, validate.StaticTableHeight(program, srcmaps, maxStaticHeight)...)
 	//
 	return errors
