@@ -1056,6 +1056,29 @@ func Test_ZkcInvalid_Unused_04(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/unused_04")
 }
 
+func Test_ZkcInvalid_Unreachable_01(t *testing.T) {
+	// A declared memory which is never accessed is unreachable via lookups
+	// from the entry point.
+	checkZkcInvalid(t, "zkc/invalid/unreachable_01")
+}
+
+func Test_ZkcInvalid_Unreachable_02(t *testing.T) {
+	// A function which is never called is unreachable via lookups from the
+	// entry point.
+	checkZkcInvalid(t, "zkc/invalid/unreachable_02")
+}
+
+func Test_ZkcInvalid_Unreachable_03(t *testing.T) {
+	// Two functions calling each other (but never called from main) reach one
+	// another, yet neither is reachable from the entry point.
+	checkZkcInvalid(t, "zkc/invalid/unreachable_03")
+}
+
+func Test_ZkcInvalid_Unreachable_04(t *testing.T) {
+	// unreachable RAM
+	checkZkcInvalid(t, "zkc/invalid/unreachable_04")
+}
+
 // ===================================================================
 // Test Helpers
 // ===================================================================

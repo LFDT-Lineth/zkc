@@ -64,11 +64,6 @@ func validateBytecodeProgram[W word.Word[W]](program Program[W]) error {
 				mid, module.Name(), zeros))
 		}
 	}
-	// An environment stores its enclosing module as a uint16.  If the module
-	// count is already invalid, do not truncate module indices while validating.
-	if uint64(len(modules)) > uint64(math.MaxUint16)+1 {
-		return errors.Join(errs...)
-	}
 
 	for mid, module := range modules {
 		if isNilInterface(module) {

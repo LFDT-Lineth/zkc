@@ -54,11 +54,45 @@ func CompileMachine(field field.Config, srcfiles ...source.File) []source.Syntax
 }
 
 // CompileZkc compiles a single zkc source file, potentially producing errors.
-// This includes both the validation phase and the code generation phase.
+// This includes the validation phase, the code generation phase and the
+// AIR-level artifact validation (module reachability) performed by the zkc
+// compile command.
 func CompileZkc(field field.Config, srcfile source.File) []source.SyntaxError {
-	program, _, errors := compiler.Compile(field, srcfile)
+	program, srcmaps, errors := compiler.Compile(field, srcfile)
 	if len(errors) == 0 {
-		_, errors = ast.Compile(program, codegen.DEFAULT_CONFIG)
+		var vmProgram vm.Program[vm.Uint]
+		//
+		vmProgram, errors = ast.Compile(program, codegen.DEFAULT_CONFIG)
+		//
+		if len(errors) == 0 {
+			errors = checkZkcModuleReachability(program, srcmaps, vmProgram)
+		}
+	}
+	//
+	return errors
+}
+
+// checkZkcModuleReachability generates the AIR-level constraints of the given
+// (successfully compiled) program and reports, as a syntax error anchored on
+// the offending declaration, every module unreachable via lookups from the
+// entry point "main".  Unreachable modules without a matching declaration
+// (i.e. compiler-generated modules, such as $range_uN) are skipped, since they
+// can only be unreachable as a knock-on effect of an unreachable user module,
+// which is itself reported.
+func checkZkcModuleReachability(program ast.Program, srcmaps source.Maps[any],
+	vmProgram vm.Program[vm.Uint]) []source.SyntaxError {
+	var (
+		errors []source.SyntaxError
+		binf   = constraints.NewBinaryFile[koalabear.Element](nil, nil, vmProgram)
+	)
+	//
+	for _, name := range constraints.UnreachableModules(binf.AirConstraints()) {
+		for _, d := range program.Components() {
+			if d.Name() == name.Name {
+				msg := fmt.Sprintf("module \"%s\" unreachable via lookups from entry point \"main\"", name.String())
+				errors = append(errors, srcmaps.SyntaxErrors(d, msg)...)
+			}
+		}
 	}
 	//
 	return errors
