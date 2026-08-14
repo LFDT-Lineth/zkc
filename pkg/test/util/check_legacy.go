@@ -19,7 +19,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
@@ -131,8 +130,6 @@ func fullCheckTraces[F field.Element[F]](t *testing.T, test string, cfg LegacyTe
 	traces []lt.TraceFile, stack cmd_util.SchemaStacker[F]) {
 	// Run checks using schema compiled from source
 	checkCompilerOptimisations(t, test, cfg, traces, stack)
-	// Construct binary schema using primary stack
-	checkBinaryEncoding(t, test, cfg, traces, stack)
 	// Perform checks with different fields
 	checkPadding(t, test, cfg, padding, traces, stack)
 }
@@ -149,26 +146,6 @@ func checkCompilerOptimisations[F field.Element[F]](t *testing.T, test string, c
 			// Apply stack
 			checkTraces(t, test, false, opt, cfg, traces, stack)
 		}
-	}
-}
-
-// Check the binary encoding / decoding.
-func checkBinaryEncoding[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, traces []lt.TraceFile,
-	stack cmd_util.SchemaStacker[F]) {
-	//
-	name := fmt.Sprintf("%s:bin", test)
-	// Construct binary schema using primary stack
-	if binf := encodeDecodeSchema(t, *stack.BinaryFile()); binf != nil {
-		// Choose any valid optimisation level
-		opt := cfg.optlevels[0]
-		//
-		stack = stack.WithBinaryFile(*binf)
-		// Set optimisation level
-		stack = stack.WithOptimisationConfig(mir.OPTIMISATION_LEVELS[opt])
-
-		// Run checks using schema from binary file.  Observe, to try and reduce
-		// overhead of repeating all the tests we don't consider padding.
-		checkTraces(t, name, false, opt, cfg, traces, stack)
 	}
 }
 
@@ -255,7 +232,7 @@ func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf lt.Trac
 		t.Errorf("Trace expansion failed (%s): %s", id.String(), errs)
 	} else {
 		// Check Constraints
-		errs := sc.Accepts(id.parallel, 128, schema, tr)
+		errs := sc.Accepts(id.parallel, schema, tr)
 		// Determine whether trace accepted or not.
 		accepted := len(errs) == 0
 		// Process what happened versus what was supposed to happen.
@@ -384,26 +361,6 @@ func ReadTracesFile(filename string) []lt.TraceFile {
 	}
 
 	return traces
-}
-
-// This is a little test to ensure the binary file format (specifically the
-// binary encoder / decoder) works as expected.
-func encodeDecodeSchema(t *testing.T, binf binfile.BinaryFile) *binfile.BinaryFile {
-	var nbinf binfile.BinaryFile
-	// Turn the binary file into bytes
-	bytes, err := binf.MarshalBinary()
-	// Encode schema
-	if err != nil {
-		t.Error(err)
-		return nil
-	}
-	// Decode schema
-	if err := nbinf.UnmarshalBinary(bytes); err != nil {
-		t.Error(err)
-		return nil
-	}
-	//
-	return &nbinf
 }
 
 func getSchemaStack[F field.Element[F]](stdlib bool, field field.Config, filenames ...string,

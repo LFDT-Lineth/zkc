@@ -20,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -240,27 +239,6 @@ func ReadBatchedTraceFile(filename string) []lt.TraceFile {
 	stats.Log("Reading trace file")
 	//
 	return traces
-}
-
-// WriteBinaryFile writes a binary file (e.g. zkevm.bin) to disk using the given
-// binfile versioning defined in the binfile package.
-//
-//nolint:errcheck
-func WriteBinaryFile(binfile *binfile.BinaryFile, filename string) {
-	var (
-		bytes []byte
-		err   error
-	)
-	// Encode binary file as bytes
-	if bytes, err = binfile.MarshalBinary(); err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
-	// Write file
-	if err := os.WriteFile(filename, bytes, 0644); err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
 }
 
 func printTypedMetadata(indent uint, metadata typed.Map) {

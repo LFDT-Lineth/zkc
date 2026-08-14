@@ -7,6 +7,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/verify/picus/pcl"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -92,8 +93,8 @@ func (p *MirPicusTranslator[F]) translateConstraint(c mir.Constraint[F],
 func (p *MirPicusTranslator[F]) translateRangeConstraint(r mir.RangeConstraint[F],
 	picusModule *pcl.Module[F], mirModule schema.Module[F],
 ) {
-	for i, e := range r.Sources {
-		expr := p.lowerTerm(e, mirModule)
+	for i, source := range r.Sources {
+		expr := p.lowerRegister(source, 0, mirModule)
 		// 1. Get the `big.Int` representation of the max unisgned value for a given bitwidth.
 		// 2. Create a field element from the big integer.
 		// 3. Construct a PCL constant from the field element.
@@ -268,16 +269,7 @@ func (p *MirPicusTranslator[F]) lowerTerm(t mir.Term[F], module schema.Module[F]
 	case *mir.Constant[F]:
 		return pcl.C(e.Value)
 	case *mir.RegisterAccess[F]:
-		name := module.Register(e.Register()).Name()
-		if strings.Contains(name, " ") {
-			name = fmt.Sprintf("\"%s\"", name)
-		}
-
-		if e.RelativeShift() != 0 {
-			name = fmt.Sprintf("%s_%d", name, e.RelativeShift())
-		}
-
-		return pcl.V[F](name)
+		return p.lowerRegister(e.Register(), e.RelativeShift(), module)
 	case *mir.Mul[F]:
 		args := p.lowerTerms(e.Args, module)
 		return pcl.FoldBinaryE(pcl.Mul, args)
@@ -287,6 +279,21 @@ func (p *MirPicusTranslator[F]) lowerTerm(t mir.Term[F], module schema.Module[F]
 	default:
 		panic(fmt.Sprintf("unknown MIR expression \"%v\"", e))
 	}
+}
+
+// lowerRegister converts an access of a given register (at a given relative
+// shift) into a PCL variable.
+func (p *MirPicusTranslator[F]) lowerRegister(rid register.Id, shift int, module schema.Module[F]) pcl.Expr[F] {
+	name := module.Register(rid).Name()
+	if strings.Contains(name, " ") {
+		name = fmt.Sprintf("\"%s\"", name)
+	}
+
+	if shift != 0 {
+		name = fmt.Sprintf("%s_%d", name, shift)
+	}
+
+	return pcl.V[F](name)
 }
 
 // Lower a set of zero or more MIR expressions.

@@ -20,7 +20,7 @@ import (
 )
 
 // Type embodies a richer notion of type found at the Corset level, compared
-// with that found at lower levels (e.g. HIR). below.
+// with that found at lower levels (e.g. MIR). below.
 type Type interface {
 	// SubtypeOf determines whether or not this type is a subtype of another.
 	SubtypeOf(Type) bool

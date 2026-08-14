@@ -21,7 +21,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/corset/compiler"
-	"github.com/LFDT-Lineth/zkc/pkg/ir/hir"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
@@ -47,14 +47,14 @@ type CompilationConfig = compiler.Config
 // process can fail if the source files are mal-formed, or contain syntax errors
 // or other forms of error (e.g. type errors).
 func CompileSourceFiles(config CompilationConfig, srcfiles []source.File,
-) (hir.Schema, SourceMap, []SyntaxError) {
+) (mir.Schema[word.BigEndian], SourceMap, []SyntaxError) {
 	// Include the standard library (if requested)
 	srcfiles = includeStdlib(config.Stdlib, srcfiles)
 	// Parse all source files (inc stdblib if applicable).
 	circuit, srcmap, errs := compiler.ParseSourceFiles(srcfiles, config)
 	// Check for parsing errors
 	if errs != nil {
-		return hir.Schema{}, SourceMap{}, errs
+		return mir.Schema[word.BigEndian]{}, SourceMap{}, errs
 	}
 	// Compile each module into the schema
 	comp := NewCompiler(circuit, srcmap)
@@ -72,12 +72,13 @@ func CompileSourceFiles(config CompilationConfig, srcfiles []source.File,
 // really helper function for e.g. the testing environment.   This process can
 // fail if the source file is mal-formed, or contains syntax errors or other
 // forms of error (e.g. type errors).
-func CompileSourceFile(config CompilationConfig, srcfile source.File) (hir.Schema, SourceMap, []SyntaxError) {
+func CompileSourceFile(config CompilationConfig, srcfile source.File,
+) (mir.Schema[word.BigEndian], SourceMap, []SyntaxError) {
 	return CompileSourceFiles(config, []source.File{srcfile})
 }
 
 // Compiler packages up everything needed to compile a given set of module
-// definitions down into an HIR schema.  Observe that the compiler may fail if
+// definitions down into an MIR schema.  Observe that the compiler may fail if
 // the modules definitions are malformed in some way (e.g. fail type checking).
 type Compiler struct {
 	// The register allocation algorithm to be used by this compiler.
@@ -108,7 +109,7 @@ func (p *Compiler) SetAllocator(allocator func(compiler.RegisterAllocation)) *Co
 // ways if the given modules are malformed in some way.  For example, if some
 // expression refers to a non-existent module or column, or is not well-typed,
 // etc.
-func (p *Compiler) Compile(config compiler.Config) (hir.Schema, SourceMap, []SyntaxError) {
+func (p *Compiler) Compile(config compiler.Config) (mir.Schema[word.BigEndian], SourceMap, []SyntaxError) {
 	var (
 		scope  *compiler.ModuleScope
 		errors []SyntaxError
@@ -119,11 +120,11 @@ func (p *Compiler) Compile(config compiler.Config) (hir.Schema, SourceMap, []Syn
 	errors = append(errors, compiler.TypeCheckCircuit(p.srcmap, &p.circuit)...)
 	// Catch errors
 	if len(errors) > 0 {
-		return hir.Schema{}, SourceMap{}, errors
+		return mir.Schema[word.BigEndian]{}, SourceMap{}, errors
 	}
 	// Preprocess circuit to remove invocations, reductions, etc.
 	if errors = compiler.PreprocessCircuit(p.srcmap, &p.circuit); len(errors) > 0 {
-		return hir.Schema{}, SourceMap{}, errors
+		return mir.Schema[word.BigEndian]{}, SourceMap{}, errors
 	}
 	// Convert global scope into an environment by allocating all columns.
 	environment := compiler.NewGlobalEnvironment(scope, p.allocator)
@@ -131,7 +132,7 @@ func (p *Compiler) Compile(config compiler.Config) (hir.Schema, SourceMap, []Syn
 	schema, errs := compiler.TranslateCircuit(environment, p.srcmap, &p.circuit, config)
 	// Sanity check for errors
 	if len(errs) > 0 {
-		return hir.Schema{}, SourceMap{}, errs
+		return mir.Schema[word.BigEndian]{}, SourceMap{}, errs
 	} else if cerrs := schema.Consistent(math.MaxUint); len(cerrs) > 0 {
 		// Should be unreachable.
 		for _, err := range cerrs {
@@ -142,7 +143,7 @@ func (p *Compiler) Compile(config compiler.Config) (hir.Schema, SourceMap, []Syn
 	}
 	// Construct source map
 	source_map := constructSourceMap(&schema, scope, environment)
-	// Construct binary file
+	//
 	return schema, *source_map, errs
 }
 
@@ -202,7 +203,6 @@ func constructSourceModule(schema schema.AnySchema[word.BigEndian], scope *compi
 			binding.Path.Tail(),
 			*binding.Value.AsConstant(),
 			bitwidth,
-			binding.Extern,
 		})
 	}
 	//

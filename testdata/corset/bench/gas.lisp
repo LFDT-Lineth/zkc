@@ -141,17 +141,17 @@
 ;; NOTE: what follows amounts to a "call to LT" two rows down, i.e.
 ;; (GAS_ACTUAL < GAS_COST) is OOGX (as predicted by the HUB).
 (defconstraint asserting-either-sufficient-gas-or-insufficient-gas-arg1 (:guard FIRST)
-  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
+  (if-zero (* XAHOY (- 1 OOGX))
            (eq! (shift WCP_ARG1_LO 2) GAS_ACTUAL)))
 
 (defconstraint asserting-either-sufficient-gas-or-insufficient-gas-arg2 (:guard FIRST)
-  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
+  (if-zero (* XAHOY (- 1 OOGX))
            (eq! (shift WCP_ARG2_LO 2) GAS_COST)))
 
 (defconstraint asserting-either-sufficient-gas-or-insufficient-gas-inst (:guard FIRST)
-  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
+  (if-zero (* XAHOY (- 1 OOGX))
            (eq! (shift WCP_INST 2) EVM_INST_LT)))
 
 (defconstraint asserting-either-sufficient-gas-or-insufficient-gas-res (:guard FIRST)
-  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
+  (if-zero (* XAHOY (- 1 OOGX))
            (eq! (shift WCP_RES 2) OOGX)))

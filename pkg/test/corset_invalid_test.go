@@ -158,14 +158,6 @@ func Test_Invalid_Constant_10(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/constant_invalid_10")
 }
 
-func Test_Invalid_Constant_11(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_11")
-}
-
-func Test_Invalid_Constant_12(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_12")
-}
-
 func Test_Invalid_Constant_13(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/constant_invalid_13")
 }
@@ -176,10 +168,6 @@ func Test_Invalid_Constant_14(t *testing.T) {
 
 func Test_Invalid_Constant_15(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/constant_invalid_15")
-}
-
-func Test_Invalid_Constant_16(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_16")
 }
 
 func Test_Invalid_Constant_17(t *testing.T) {
@@ -200,26 +188,6 @@ func Test_Invalid_Constant_20(t *testing.T) {
 
 func Test_Invalid_Constant_21(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/constant_invalid_21")
-}
-
-func Test_Invalid_Constant_22(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_22")
-}
-
-func Test_Invalid_Constant_23(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_23")
-}
-
-func Test_Invalid_Constant_24(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_24")
-}
-
-func Test_Invalid_Constant_25(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_25")
-}
-
-func Test_Invalid_Constant_26(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_26")
 }
 
 // ===================================================================
@@ -263,14 +231,6 @@ func Test_Invalid_Shift_01(t *testing.T) {
 
 func Test_Invalid_Shift_02(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/shift_invalid_02")
-}
-
-// ===================================================================
-// Normalisation Tests
-// ===================================================================
-
-func Test_Invalid_Norm_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/norm_invalid_01")
 }
 
 // ===================================================================
@@ -342,6 +302,10 @@ func Test_Invalid_Range_04(t *testing.T) {
 }
 func Test_Invalid_Range_05(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/range_invalid_05")
+}
+
+func Test_Invalid_Range_06(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/range_invalid_06")
 }
 
 // ===================================================================

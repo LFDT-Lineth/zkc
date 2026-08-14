@@ -3,7 +3,7 @@
   LONDON_FORK 1
   SHANGHAI_FORK 2)
 
-(defconst (EVM_FORK :extern :i8) LONDON_FORK)
+(defconst (EVM_FORK :i8) LONDON_FORK)
 
 ;; Module suitable for all forks
 (module all)

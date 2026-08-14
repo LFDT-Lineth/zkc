@@ -51,7 +51,7 @@ func (p *Subdivider[F]) subdivideVanishing(vc VanishingConstraint[F]) VanishingC
 	// Flush allocator
 	p.FlushAllocator(vc.Context, alloc)
 	//
-	return vanishing.NewConstraint(vc.Handle, vc.Context, vc.Domain, term.Conjunction(context, targets).Simplify(false))
+	return vanishing.NewConstraint(vc.Handle, vc.Context, vc.Domain, term.Conjunction(context, targets).Simplify())
 }
 
 func splitLogicalTerm[F field.Element[F]](expr LogicalTerm[F], path LogicalTerm[F], mapping register.LimbsMap,

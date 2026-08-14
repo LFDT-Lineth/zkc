@@ -172,17 +172,14 @@ func (p *AirLowering[F]) lowerVanishingConstraintToAir(v VanishingConstraint[F],
 	}
 }
 
-// Lower a range constraint to the AIR level.  The challenge here is that a
-// range constraint at the AIR level cannot use arbitrary expressions; rather it
-// can only constrain columns directly.  Therefore, whenever a general
-// expression is encountered, we must generate a computed column to hold the
-// value of that expression, along with appropriate constraints to enforce the
-// expected value.
+// Lower a range constraint to the AIR level.  Since range constraints are made
+// up of registers (rather than arbitrary expressions) at both levels, this
+// simply requires applying the bitwidth gadget to each constrained register.
 func (p *AirLowering[F]) lowerRangeConstraintToAir(v RangeConstraint[F], airModule air.ModuleBuilder[F]) {
-	// Extract target expression
-	for i, e := range v.Sources {
+	// Constrain each source register in turn
+	for i, source := range v.Sources {
 		// Apply bitwidth gadget
-		ref := register.NewRef(airModule.Id(), e.Register())
+		ref := register.NewRef(airModule.Id(), source)
 		// Construct gadget
 		gadget := air_gadgets.NewBitwidthGadget(&p.airSchema).
 			WithMaxRangeConstraint(p.config.MaxRangeConstraint)
@@ -203,7 +200,7 @@ func (p *AirLowering[F]) lowerAndSimplifyLogicalTo(term LogicalTerm[F],
 	// Expand term to remove all syntactic sugage
 	term = p.expandLogical(true, term)
 	// Apply all reasonable simplifications
-	term = term.Simplify(false)
+	term = term.Simplify()
 	// Lower properly
 	return simplify(p.lowerLogical(term, airModule))
 }
@@ -503,7 +500,7 @@ func (p *AirLowering[F]) lowerTermTo(e Term[F], airModule air.ModuleBuilder[F]) 
 	case *Constant[F]:
 		return term.Const[F, air.Term[F]](e.Value)
 	case *RegisterAccess[F]:
-		return term.RawRegisterAccess[F, air.Term[F]](e.Register(), e.BitWidth(), e.RelativeShift()).Mask(e.MaskWidth())
+		return term.RawRegisterAccess[F, air.Term[F]](e.Register(), e.BitWidth(), e.RelativeShift())
 	case *Mul[F]:
 		args := p.lowerTerms(e.Args, airModule)
 		return term.Product(args...)
@@ -538,11 +535,11 @@ func (p *AirLowering[F]) lowerVectorAccess(e *VectorAccess[F], airModule air.Mod
 	for i, v := range e.Vars {
 		var (
 			limb  = airModule.Register(v.Register())
-			width = v.MaskWidth()
+			width = limb.Width()
 			ith   *air.ColumnAccess[F]
 		)
 		// Ensure limbwidth normalised
-		ith = term.RawRegisterAccess[F, air.Term[F]](v.Register(), limb.Width(), v.RelativeShift()).Mask(width)
+		ith = term.RawRegisterAccess[F, air.Term[F]](v.Register(), width, v.RelativeShift())
 		// Apply shift
 		terms[i] = term.Product(shiftTerm(ith, shift))
 		//
@@ -589,7 +586,7 @@ func (p *AirLowering[F]) normalise(arg air.Term[F], airModule air.ModuleBuilder[
 	}
 	// Construct an expression representing the normalised value of e.  That is,
 	// an expression which is 0 when e is 0, and 1 when e is non-zero.
-	arg = arg.ApplyShift(-shift).Simplify(false)
+	arg = arg.ApplyShift(-shift).Simplify()
 	norm := air_gadgets.Normalise(arg, airModule)
 	//
 	return norm.ApplyShift(shift)
@@ -600,7 +597,7 @@ func simplify[F field.Element[F]](terms []air.Term[F]) []air.Term[F] {
 	var nterms []air.Term[F] = make([]air.Term[F], len(terms))
 	//
 	for i, t := range terms {
-		nterms[i] = t.Simplify(false)
+		nterms[i] = t.Simplify()
 	}
 	//
 	return nterms

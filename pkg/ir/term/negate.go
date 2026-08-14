@@ -86,11 +86,6 @@ func (p *Negate[F, T]) Negate() T {
 }
 
 // Simplify this Negate as much as reasonably possible.
-func (p *Negate[F, T]) Simplify(casts bool) T {
-	return p.Arg.Negate().Simplify(casts)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *Negate[F, T]) Substitute(mapping map[string]F) {
-	p.Arg.Substitute(mapping)
+func (p *Negate[F, T]) Simplify() T {
+	return p.Arg.Negate().Simplify()
 }

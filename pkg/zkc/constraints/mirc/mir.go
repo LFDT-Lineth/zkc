@@ -51,12 +51,11 @@ func (p MirModule[F]) NewColumn(kind register.Type, name string, bitwidth uint, 
 		rid = p.Module.NewRegister(register.New(kind, name, bitwidth, padding))
 	)
 	//
-	terms := []*term.RegisterAccess[F, mir.Term[F]]{term.RawRegisterAccess[F, mir.Term[F]](rid, bitwidth, 0)}
 	// Add corresponding range constraint to enforce bitwidth
 	switch kind {
 	case register.INPUT_REGISTER, register.OUTPUT_REGISTER, register.COMPUTED_REGISTER:
 		p.Module.AddConstraint(
-			mir.NewRangeConstraint(name, p.Module.Id(), terms, []uint{bitwidth}))
+			mir.NewRangeConstraint[F](name, p.Module.Id(), []register.Id{rid}, []uint{bitwidth}))
 	case register.ONE_REGISTER:
 		p.addConstantConstraint(1, rid, bitwidth)
 	case register.ZERO_REGISTER:
@@ -76,7 +75,7 @@ func (p MirModule[F]) NewUnusedColumn() register.Id {
 // NewConstraint constructs a new vanishing constraint with the given name
 // within this module.
 func (p MirModule[F]) NewConstraint(name string, domain util.Option[int], constraint MirExpr[F]) {
-	e := constraint.logical.Simplify(false)
+	e := constraint.logical.Simplify()
 	//
 	p.Module.AddConstraint(
 		mir.NewVanishingConstraint(name, p.Module.Id(), domain, e))
@@ -132,7 +131,7 @@ type MirExpr[F field.Element[F]] struct {
 
 // AsLogical extracts a logical constraint from this expression.
 func (p MirExpr[F]) AsLogical() mir.LogicalTerm[F] {
-	return p.logical.Simplify(false)
+	return p.logical.Simplify()
 }
 
 // Add constructs a sum between this expression and zero or more

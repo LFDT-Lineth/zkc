@@ -102,8 +102,7 @@ func termRegAccessToPolynomial[F field.Element[F]](term RegisterAccess[F]) Polyn
 	var (
 		identifier = term.Register().
 				AccessOf(term.BitWidth()).
-				Shift(term.RelativeShift()).
-				Mask(term.MaskWidth())
+				Shift(term.RelativeShift())
 		//
 		monomial = poly.NewMonomial(biONE, identifier)
 		result   Polynomial
@@ -138,7 +137,7 @@ func termVecAccessToPolynomial[F field.Element[F]](term VectorAccess[F], _ regis
 	//
 	for i, v := range term.Vars {
 		var (
-			regWidth = v.MaskWidth()
+			regWidth = v.BitWidth()
 			ith      = termRegAccessToPolynomial(*v)
 		)
 		// Add to poly
@@ -186,7 +185,7 @@ func factoredPolynomialToTerm[F field.Element[F]](poly Polynomial) Term[F] {
 		lhs := factoredPolynomialToTerm[F](factor)
 		rhs := factoredPolynomialToTerm[F](remainder)
 		// Now recombine
-		r = term.RawRegisterAccess[F, Term[F]](rid.Id(), rid.BitWidth(), rid.RelativeShift()).Mask(rid.MaskWidth())
+		r = term.RawRegisterAccess[F, Term[F]](rid.Id(), rid.BitWidth(), rid.RelativeShift())
 		//
 		return term.Sum(term.Product[F](lhs, r), rhs)
 	}
@@ -294,8 +293,7 @@ func monomialToTerm[F field.Element[F]](monomial agnostic.DynamicMonomial) Term[
 	//
 	for i := range monomial.Len() {
 		ith := monomial.Nth(i)
-		ith_term := term.RawRegisterAccess[F, Term[F]](ith.Id(), ith.BitWidth(), ith.RelativeShift())
-		terms[i+1] = ith_term.Mask(ith.MaskWidth())
+		terms[i+1] = term.RawRegisterAccess[F, Term[F]](ith.Id(), ith.BitWidth(), ith.RelativeShift())
 	}
 	//
 	return term.Product(terms...)

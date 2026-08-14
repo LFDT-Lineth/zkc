@@ -14,7 +14,6 @@ package compiler
 
 import (
 	"fmt"
-	"math/big"
 	"reflect"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
@@ -91,7 +90,8 @@ func (p *typeChecker) typeCheckDeclaration(decl ast.Declaration) []SyntaxError {
 	case *ast.DefFun:
 		errors = p.typeCheckDefFunInModule(d)
 	case *ast.DefInRange:
-		errors = p.typeCheckDefInRange(d)
+		// Nothing to check, since the constrained column is a column access
+		// whose type is already known.
 	case *ast.DefLookup:
 		errors = p.typeCheckDefLookup(d)
 	case *ast.DefPerspective:
@@ -141,8 +141,15 @@ func (p *typeChecker) typeCheckDefFunInModule(decl *ast.DefFun) []SyntaxError {
 	if ret != nil {
 		_, functional = ret.(*ast.BoolType)
 	}
-	// Resolve body and check return
-	_, errors := p.typeCheckExpressionInModule(decl.Return(), decl.Body(), functional)
+	// Resolve body
+	actual, errors := p.typeCheckExpressionInModule(ret, decl.Body(), functional)
+	// Check the body actually produces the declared return type.  NOTE: this
+	// check was previously performed by the (now removed) cast which wrapped
+	// the body of any function declaring a return type.
+	if len(errors) == 0 && ret != nil && actual != nil && !actual.SubtypeOf(ret) {
+		msg := fmt.Sprintf("expected type %s, found %s", ret.String(), actual.String())
+		errors = append(errors, *p.srcmap.SyntaxError(decl.Body(), msg))
+	}
 	// Done
 	return errors
 }
@@ -193,14 +200,6 @@ func typesOfLookupColumns(columns []ast.TypedSymbol) []ast.Type {
 	}
 	//
 	return types
-}
-
-// typeCheck a "definrange" declaration.
-func (p *typeChecker) typeCheckDefInRange(decl *ast.DefInRange) []SyntaxError {
-	// typeCheck constraint body
-	_, errors := p.typeCheckExpressionInModule(ast.UINT_TYPE, decl.Expr, true)
-	// Done
-	return errors
 }
 
 // typeCheck a "defperspective" declaration.
@@ -270,15 +269,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 	case *ast.Add:
 		types, errors = p.typeCheckExpressionsInModule(ast.UINT_TYPE, e.Args, true)
 		result = typeOfSum(types...)
-	case *ast.Cast:
-		actual, errs := p.typeCheckExpressionInModule(nil, e.Arg, functional)
-		// Check safe casts
-		if len(errs) == 0 && actual != nil && !e.Unsafe && expected != nil && !actual.SubtypeOf(expected) {
-			msg := fmt.Sprintf("expected type %s, found %s", expected.String(), actual.String())
-			return nil, p.srcmap.SyntaxErrors(expr, msg)
-		}
-		// Discard actual type in favour of coerced type
-		result, errors = e.Type, errs
 	case *ast.Connective:
 		_, errors = p.typeCheckExpressionsInModule(ast.BOOL_TYPE, e.Args, true)
 		result = ast.BOOL_TYPE
@@ -289,11 +279,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 		_, errs2 := p.typeCheckExpressionInModule(ast.UINT_TYPE, e.Rhs, true)
 		// Done
 		result, errors = ast.BOOL_TYPE, append(errs1, errs2...)
-	case *ast.Exp:
-		_, errs1 := p.typeCheckExpressionInModule(ast.UINT_TYPE, e.Arg, true)
-		_, errs2 := p.typeCheckExpressionInModule(ast.UINT_TYPE, e.Pow, true)
-		// Done
-		result, errors = ast.UINT_TYPE, append(errs1, errs2...)
 	case *ast.If:
 		result, errors = p.typeCheckIfInModule(expected, e, functional)
 	case *ast.Invoke:
@@ -301,10 +286,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 	case *ast.Mul:
 		types, errors = p.typeCheckExpressionsInModule(ast.UINT_TYPE, e.Args, true)
 		result = typeOfProduct(types...)
-	case *ast.Normalise:
-		_, errors = p.typeCheckExpressionInModule(ast.UINT_TYPE, e.Arg, true)
-		// Normalise guaranteed to return either 0 or 1.
-		result = ast.NewUintType(1)
 	case *ast.Not:
 		_, errors = p.typeCheckExpressionInModule(ast.BOOL_TYPE, e.Arg, true)
 		result = ast.BOOL_TYPE
@@ -318,10 +299,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 		result = typeOfSubtraction(types...)
 	case *ast.VariableAccess:
 		result, errors = p.typeCheckVariableInModule(e)
-	case *ast.Concat:
-		ts, errors := p.typeCheckExpressionsInModule(ast.UINT_TYPE, e.Args, true)
-		//
-		return typeOfConcat(ts...), errors
 	default:
 		msg := fmt.Sprintf("unknown expression encountered during typing (%s)", reflect.TypeOf(expr).String())
 		return nil, p.srcmap.SyntaxErrors(expr, msg)
@@ -507,31 +484,4 @@ func typeOfProduct(types ...ast.Type) ast.Type {
 	}
 	//
 	return ast.NewIntType(values)
-}
-
-func typeOfConcat(types ...ast.Type) ast.Type {
-	var (
-		width uint
-		zero  big.Int
-		one   = big.NewInt(1)
-	)
-	//
-	for _, t := range types {
-		it, ok := t.(*ast.IntType)
-		// sanity check what we've got
-		if !ok || !t.HasUnderlying() {
-			// Unknown
-			return ast.UINT_TYPE
-		}
-		// append bitwidth
-		width += it.BitWidth()
-	}
-	//
-	var bound = big.NewInt(2)
-	// Determine bound for static type check
-	bound.Exp(bound, big.NewInt(int64(width)), nil)
-	// Subtract 1 because interval is inclusive.
-	bound.Sub(bound, one)
-	//
-	return ast.NewIntType(math.NewInterval(zero, *bound))
 }
