@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/test/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 )
 
 // ===================================================================
@@ -670,6 +671,18 @@ func Test_ZkcInvalid_Static_08(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/static_08")
 }
 
+func Test_ZkcInvalid_Static_09(t *testing.T) {
+	// A static table with more rows than the maximum static height is rejected.
+	checkZkcInvalidWith(t, "zkc/invalid/static_09", codegen.DEFAULT_CONFIG.MaxStaticHeight(4))
+}
+
+func Test_ZkcInvalid_Static_10(t *testing.T) {
+	// A static table whose row count fits the maximum static height, but whose
+	// power-of-two padded height exceeds it, is also rejected (5 rows pad to 8,
+	// which exceeds a maximum of 6).
+	checkZkcInvalidWith(t, "zkc/invalid/static_10", codegen.DEFAULT_CONFIG.MaxStaticHeight(6))
+}
+
 // ===================================================================
 // Call Tests
 // ===================================================================
@@ -1061,9 +1074,12 @@ func Test_ZkcInvalid_Unused_04(t *testing.T) {
 // ===================================================================
 
 func checkZkcInvalid(t *testing.T, test string) {
-	// Construct default compiler (for now)
+	checkZkcInvalidWith(t, test, codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16))
+}
+
+func checkZkcInvalidWith(t *testing.T, test string, config codegen.Config) {
 	var compiler = func(srcfile source.File) []source.SyntaxError {
-		return util.CompileZkc(field.KOALABEAR_16, srcfile)
+		return util.CompileZkcWith(config, srcfile)
 	}
 	//
 	util.CheckInvalid(t, test, "zkc", "//error", compiler)

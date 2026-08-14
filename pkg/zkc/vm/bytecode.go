@@ -179,17 +179,7 @@ func ValidateProgram[W word.Word[W]](p Program[W]) error {
 
 // NewBytecodeProgram assembles a bytecode program directly from pre-lowered
 // descriptor modules, bypassing the word-machine round trip.
-//
-// NOTE: maxStaticHeight must be non-zero.  Downstream passes derive the maximum
-// static table width from it as floor(log2(maxStaticHeight)), computed as
-// bits.Len(maxStaticHeight)-1.  A zero height silently underflows that
-// expression to the maximum uint, whereupon every register width is treated as
-// statically enumerable and table generation exhausts memory.
 func NewBytecodeProgram[W word.Word[W]](field field.Config, maxStaticHeight uint, modules ...Module[W]) Program[W] {
-	if maxStaticHeight == 0 {
-		panic("invalid maximum static table height (zero)")
-	}
-	//
 	return descriptor.NewProgram(field, maxStaticHeight, modules...)
 }
 
