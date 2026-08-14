@@ -120,20 +120,17 @@ func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Ope
 		qy   = registers.Allocate("qy", util.Some(nX))
 		qyr  = registers.Allocate("qy_plus_r", util.Some(nX))
 		rw1  = registers.Allocate("rw1", util.Some(nY))
-		// TODO: see https://github.com/LFDT-Lineth/zkc/issues/2119
-		// only one zero register is needed, but since this issue is fixed, it's creating multi line fct
-		z1 = registers.Allocate("z1", util.Some[uint](0))
-		z2 = registers.Allocate("z2", util.Some[uint](0))
+		z    = registers.ZeroRegister()
 
 		mulQY, subZ1 Bytecode[W]
 	)
 	//
 	if y.IsConstant() {
 		mulQY = bytecode.MulConst(qy, []bytecode.RegisterId{q}, y.AsConstant())
-		subZ1 = bytecode.SubConst(z1, []bytecode.RegisterId{rw1}, y.AsConstant())
+		subZ1 = bytecode.SubConst(z, []bytecode.RegisterId{rw1}, y.AsConstant())
 	} else {
 		mulQY = bytecode.MulConst(qy, []bytecode.RegisterId{q, y.AsRegister()}, one)
-		subZ1 = bytecode.SubConst(z1, []bytecode.RegisterId{y.AsRegister(), rw1}, zero)
+		subZ1 = bytecode.SubConst(z, []bytecode.RegisterId{y.AsRegister(), rw1}, zero)
 	}
 	//
 	return []Bytecode[W]{
@@ -144,7 +141,7 @@ func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Ope
 			[]bytecode.Operand[W]{bytecode.NewRegisterOperand[W](x), y}),
 		mulQY,
 		bytecode.AddConst(qyr, []bytecode.RegisterId{qy, r}, zero),
-		bytecode.SubConst(z2, []bytecode.RegisterId{x, qyr}, zero),
+		bytecode.SubConst(z, []bytecode.RegisterId{x, qyr}, zero),
 		bytecode.AddConst(rw1, []bytecode.RegisterId{r, w}, one),
 		subZ1,
 	}
