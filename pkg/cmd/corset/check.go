@@ -248,7 +248,7 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], tf lt.Tra
 	//
 	stats = util.NewPerfStats()
 	// Check constraints
-	if errs := sc.Accepts(builder.Parallelism(), builder.BatchSize(), schema, trace); len(errs) > 0 {
+	if errs := sc.Accepts(builder.Parallelism(), schema, trace); len(errs) > 0 {
 		ReportFailures(ir, errs, trace, builder.Mapping(), cfg)
 		return false
 	}

@@ -232,7 +232,7 @@ func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf lt.Trac
 		t.Errorf("Trace expansion failed (%s): %s", id.String(), errs)
 	} else {
 		// Check Constraints
-		errs := sc.Accepts(id.parallel, 128, schema, tr)
+		errs := sc.Accepts(id.parallel, schema, tr)
 		// Determine whether trace accepted or not.
 		accepted := len(errs) == 0
 		// Process what happened versus what was supposed to happen.

@@ -68,37 +68,43 @@ func sequentialLowering[F field.Element[F]](ltf lt.TraceFile) (array.Builder[F],
 func parallelLowering[F field.Element[F]](ltf lt.TraceFile) (array.Builder[F], []lt.Module[F]) {
 	//
 	var (
-		ncols = lt.NumberOfColumns(ltf.RawModules())
-		//
-		loweredModules []lt.Module[F] = make([]lt.Module[F], ltf.Width())
 		// Construct new pool
 		builder = array.NewStaticBuilder[F]()
-		// Construct a communication channel split columns.
-		c = make(chan result[F], ncols)
+		// Collect all (module, column) pairs into a flat slice.
+		jobs = make([]loweringJob, 0, lt.NumberOfColumns(ltf.RawModules()))
 	)
-	// Split column concurrently
+	// Build the job list: one job per column across all modules.
 	for i := range ltf.Width() {
 		var ith = ltf.Module(i)
-		// Construct enough blank columns
-		loweredModules[i] = lt.NewModule(ith.Name(), make([]lt.Column[F], ith.Width()))
-		// Dispatch go-routines to fill them
 		for j := range ith.Width() {
-			var jth = ith.Column(j)
-			go func(mid uint, cid uint, column tr.Column[word.BigEndian]) {
-				// Send outcome back
-				c <- result[F]{mid, cid, lowerRawColumn(column, builder)}
-			}(i, j, jth)
+			jobs = append(jobs, loweringJob{i, j, ith.Column(j)})
 		}
 	}
-	// Collect results
-	for range ncols {
-		// Read from channel
-		res := <-c
-		// Assign split
+	// Lower all columns in parallel using a worker pool.
+	results := util.ParallelMap(jobs, func(_ uint, job loweringJob) result[F] {
+		return result[F]{job.module, job.col, lowerRawColumn(job.rawCol, builder)}
+	})
+	// Construct lowered modules with enough blank columns.
+	loweredModules := make([]lt.Module[F], ltf.Width())
+	//
+	for i := range ltf.Width() {
+		var ith = ltf.Module(i)
+		//
+		loweredModules[i] = lt.NewModule(ith.Name(), make([]lt.Column[F], ith.Width()))
+	}
+	// Assign lowered columns into their modules.
+	for _, res := range results {
 		loweredModules[res.module].Columns[res.column] = res.data
 	}
 	// Done
 	return builder, loweredModules
+}
+
+// loweringJob represents a single column to be lowered within a module.
+type loweringJob struct {
+	module uint
+	col    uint
+	rawCol tr.Column[word.BigEndian]
 }
 
 type result[F any] struct {

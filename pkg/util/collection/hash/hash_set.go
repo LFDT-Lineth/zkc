@@ -14,6 +14,7 @@ package hash
 
 import (
 	"fmt"
+	"iter"
 	"strings"
 )
 
@@ -41,6 +42,19 @@ func (p *Set[T]) Size() uint {
 	}
 
 	return count
+}
+
+// Iter returns an iterator over the items contained in this hashset.
+func (p *Set[T]) Iter() iter.Seq[T] {
+	return func(yield func(T) bool) {
+		for _, v := range p.items {
+			for _, v := range v.items {
+				if !yield(v) {
+					return
+				}
+			}
+		}
+	}
 }
 
 // MaxBucket returns the size of the largest bucket.

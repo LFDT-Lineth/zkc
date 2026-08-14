@@ -20,7 +20,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
@@ -57,10 +56,9 @@ func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, 
 // Accepts determines whether a given constraint accepts a given trace or
 // not.  If not, a failure is produced.  Otherwise, a bitset indicating
 // branch coverage is returned.
-func (p Constraint[F]) Accepts(trace trace.Trace[F],
-	schema schema.AnySchema[F]) (bit.Set, schema.Failure) {
+func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
 	//
-	return p.constraint.Accepts(trace, schema)
+	return p.constraint.Accepts(trace, sc, ctx)
 }
 
 // Bounds determines the well-definedness bounds for this constraint in both the
@@ -91,6 +89,11 @@ func (p Constraint[F]) Complexity() uint {
 // context).
 func (p Constraint[F]) Contexts() []schema.ModuleId {
 	return p.constraint.Contexts()
+}
+
+// Sets implementation for schema.Constraint interface.
+func (p Constraint[F]) Sets() []schema.SetId {
+	return p.constraint.Sets()
 }
 
 // Name returns a unique name and case number for a given constraint.  This
