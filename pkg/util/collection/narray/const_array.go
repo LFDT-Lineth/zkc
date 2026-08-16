@@ -51,6 +51,9 @@ func (p *ConstantArray[T]) Append(word T) {
 // AppendAll elements of the given bit array onto the this array, mutating it
 // in place.
 func (p *ConstantArray[T]) AppendAll(other ConstantArray[T]) {
+	if p.value.Cmp(other.value) != 0 {
+		panic(fmt.Sprintf("cannot append %s onto constant array for %s", p.value.String(), other.value.String()))
+	}
 	// NOTE: attempting to assign a constant register any value other than the
 	// given constant cannot change the value stored in the register.  This just
 	// means that a constraint somewhere should fail

@@ -73,10 +73,12 @@ func newRamTraceLayout(nAddr, nData, nStamp int) ramTraceLayout {
 // per-lane access log: a shared timestamp / write-flag, the physical start
 // address of its lanes, and the value on each lane.
 type ramAccess[W Word[W]] struct {
-	timestamp uint64
-	isWrite   bool
-	physStart uint64
-	values    []W
+	writeStamp uint64
+	readStamp  uint64
+	isWrite    bool
+	physStart  uint64
+	writeVals  []W
+	readVals   []W
 }
 
 // InitReadWriteMemory initialises a trace module for a RandomAccessMemory.
@@ -141,10 +143,6 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, ramStampWidth))
 		layout   = newRamTraceLayout(nAddr, nData, len(tsWidths))
 		accesses = groupRamAccesses[W](m.AccessLog(), nData)
-		// Per-physical-cell read-side state, tracked by replaying the log forward;
-		// every cell starts at value 0, timestamp 0.
-		cellValue = map[uint64]W{}
-		cellStamp = map[uint64]uint64{}
 		//
 		width = module.Width()
 	)
@@ -155,12 +153,12 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 			logical = acc.physStart / uint64(nData)
 			// Read-side: the row's cells share one last-write timestamp (accesses
 			// are row-atomic), so read it from the first lane.
-			tsRead = cellStamp[acc.physStart]
+			tsRead = acc.readStamp
 			// The interpreter clock ticks before each access and the threaded
 			// stamps count from one, so the recorded timestamp IS the caller's
 			// stamp — no re-basing needed.  Timestamp zero is reserved for the
 			// initial state of an untouched cell (the zero value of cellStamp).
-			tsWr    = acc.timestamp
+			tsWr    = acc.writeStamp
 			tsDelta = tsWr - tsRead - 1
 		)
 		// EXEC = 1, IS_WRITE from the access; FINL = 0 (zero value).  The
@@ -175,8 +173,8 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		copyAddressLines(logical, addrRegs, row[0:nAddr])
 		// VALUE_WRITTEN / VALUE_READ per lane.
 		for j := range nData {
-			row[layout.valueWritten+j] = wordToField[W, F](acc.values[j])
-			row[layout.valueRead+j] = wordToField[W, F](cellValue[acc.physStart+uint64(j)])
+			row[layout.valueWritten+j] = wordToField[W, F](acc.writeVals[j])
+			row[layout.valueRead+j] = wordToField[W, F](acc.readVals[j])
 		}
 		// TIMESTAMP_WRITTEN / READ / DELTA, split into limbs.
 		fillLimbs(row[layout.tsWritten:], tsWr, tsWidths)
@@ -186,11 +184,9 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		for s, c := range timestampCarries(tsRead, tsDelta, tsWidths) {
 			row[layout.tsCarry+s] = field.Uint64[F](c)
 		}
-		// Update the read-side state for every touched cell.
-		for j := range nData {
-			cellValue[acc.physStart+uint64(j)] = acc.values[j]
-			cellStamp[acc.physStart+uint64(j)] = tsWr
-		}
+		// Zero out unused lanes
+		zeroOut(row[layout.addrDelta : layout.addrDelta+layout.nAddr])
+		zeroOut(row[layout.addrCarry : layout.addrCarry+layout.nAddr-1])
 		//
 		module.Append(row...)
 	}
@@ -205,12 +201,19 @@ func groupRamAccesses[W Word[W]](log []vm.AccessData[W], nData int) []ramAccess[
 	//
 	for i := 0; i < len(log); {
 		var (
-			ts  = log[i].TimestampWritten()
-			acc = ramAccess[W]{timestamp: ts, isWrite: log[i].IsWrite(), physStart: log[i].Address()}
+			wStamp = log[i].TimestampWritten()
+			rStamp = log[i].TimestampRead()
+			acc    = ramAccess[W]{
+				writeStamp: wStamp,
+				readStamp:  rStamp,
+				isWrite:    log[i].IsWrite(),
+				physStart:  log[i].Address(),
+			}
 		)
 		//
-		for i < len(log) && log[i].TimestampWritten() == ts {
-			acc.values = append(acc.values, log[i].ValueWritten())
+		for i < len(log) && log[i].TimestampWritten() == wStamp {
+			acc.writeVals = append(acc.writeVals, log[i].ValueWritten())
+			acc.readVals = append(acc.readVals, log[i].ValueRead())
 			i++
 		}
 		//
