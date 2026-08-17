@@ -125,14 +125,9 @@ func (p *PolyFil) ShiftRange() (int, int) {
 }
 
 // Simplify implementation for Term interface.
-func (p *PolyFil) Simplify(casts bool) Computation {
+func (p *PolyFil) Simplify() Computation {
 	// By definition, cannot further simplify a polynomial
 	return p
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *PolyFil) Substitute(mapping map[string]word.BigEndian) {
-	panic("unsupported operation")
 }
 
 // ValueRange implementation for Term interface.

@@ -198,18 +198,6 @@ func (p *Interval) Union(other Interval) Interval {
 	return Interval{p.min.Min(other.min), p.max.Max(other.max)}
 }
 
-// Exp raises this interval to a fix exponent.
-func (p *Interval) Exp(pow uint) {
-	var val Interval
-	// Clone p
-	val.Set(*p)
-	// This can be computed more efficiently perhaps by using a recursive
-	// decomposition, 2^n = 2^n/2 * 2^n/2.
-	for i := uint(1); i < pow; i++ {
-		p.Mul(val)
-	}
-}
-
 func (p *Interval) String() string {
 	return fmt.Sprintf("(%s..%s)", p.min.String(), p.max.String())
 }

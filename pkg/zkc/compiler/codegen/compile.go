@@ -94,7 +94,6 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		modules []vm.Module[vm.Uint]
 		mapping = make([]uint, len(declarations))
 		index   = uint(0)
-		inlines []string
 		errors  []source.SyntaxError
 	)
 	// Construct the mapping from ast declaration identifiers to vm module
@@ -145,10 +144,6 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 			}
 			//
 			modules = append(modules, fn)
-			// Record functions to be inlined (see below).
-			if slices.Contains(c.Annotations(), "inline") {
-				inlines = append(inlines, c.Name())
-			}
 		case *decl.ResolvedInclude:
 			// ignore
 		case *decl.ResolvedMemory:
@@ -170,55 +165,7 @@ func (p *Compiler) Compile(declarations []Declaration) (vm.Program[vm.Uint], []s
 		return vm.Program[vm.Uint]{}, errors
 	}
 	// Construct bytecode program from descriptor modules.
-	program := vm.NewBytecodeProgram(p.config.field, modules...)
-	//
-	if p.config.inlining && len(inlines) > 0 {
-		// Apply function inlining
-		program = vm.InlineFunctions(program, inlines)
-	}
-
-	if p.config.fastMode {
-		// Apply transforms suitable for fast mode
-		program = vm.Vectorize(program)
-		// NOTE: eventually this will always be applied
-		if p.config.splitting {
-			// NOTE: in fast mode we split according to the target machine word,
-			// not the underlying field.
-			program = vm.SplitRegisters(p.config.word, program)
-		}
-	} else {
-		// Apply transformations required for tracing and constraint generation.
-		//
-		// Lower field casts (𝔽↔uint) first: the canonicality check for 𝔽→uint is
-		// emitted as a high-level "value < P" comparison
-		// It must therefore run before LowerComparisons
-		program = vm.LowerFieldCasts(program)
-		program = vm.LowerBitwise(program)
-		program = vm.LowerDivisions(program)
-		program = vm.LowerComparisons(program)
-		program = vm.Vectorize(program)
-		// Thread memory timestamps once the rows are final (after Vectorization).
-		program = vm.ThreadTimestamps(program)
-		program = vm.FactorSkipConditions(program)
-		program = vm.LowerSwitch(program)
-		// NOTE: eventually this will always be applied
-		if p.config.splitting {
-			program = vm.SplitRegisters(p.config.field, program)
-		}
-		// The following must be after splitting, but before range constraints:
-		program = vm.FactorLimbEqualities(program)
-		// Lower AND/OR/XOR after splitting
-		program = vm.LowerOrXorAnd(program, p.config.maxStaticHeight)
-		// Add tmp registers to hold lookup arguments (from calls and memread / write)
-		// when they are rewritten in the same vector (ex: x = f(x) or y = f(x); x = x + 1)
-		program = vm.FlattenLookupAccess(program)
-		//
-		program = vm.AddRangeConstraints(p.config.field, program, p.config.maxStaticHeight)
-	}
-	// Insert check casts to ensure appropriate safety checks during execution.
-	// TODO: this should be moved before AddRangeConstraints and consumed by it, so that
-	// range constraints are performed only for needed registers (instead of all registers).
-	program = vm.InsertCheckCasts(program)
+	program := vm.NewBytecodeProgram(p.config.field, p.config.maxStaticHeight, modules...)
 	// Validate program to catch any introduced corruption as early as possible.
 	if err := vm.ValidateProgram(program); err != nil {
 		panic(err)
@@ -297,17 +244,14 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 		field:       p.config.field,
 		srcmaps:     p.srcmaps,
 		verbose:     p.config.verbose,
-		fastMode:    p.config.fastMode,
 	}
 	//
 	for i, stmt := range fn.Code {
 		vectors[i] = compiler.compileStatement(uint(i), mapping, stmt)
 	}
-	//
-	kind := vm.BYTECODE_FUNCTION
-	if slices.Contains(fn.Annotations(), "native") {
-		kind = vm.NATIVE_FUNCTION
-	}
+	// Determine the appropriate function kind based on the given
+	// annotations.
+	kind := buildFunctionKind(fn)
 	// Record this function's declared memory effects, mapped from ast
 	// declaration indices to vm module ids, so the timestamp-threading transform
 	// can identify which functions access (and must thread a timestamp for) each
@@ -320,6 +264,26 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 	// Note: compiler.registers includes any temporaries allocated during
 	// statement compilation.
 	return vm.NewBytecodeFunction(fn.Name(), kind, compiler.registers, effects, vectors...), compiler.errors
+}
+
+// Build the appropriate function kind based on the given function annotations.
+func buildFunctionKind(fn *decl.ResolvedFunction) vm.FunctionKind {
+	var kind = vm.DEFAULT_FUNCTION
+	//
+	for _, ann := range fn.Annotations() {
+		switch ann {
+		case "inline":
+			kind = kind.WithInline(true)
+		case "native":
+			kind = kind.WithNative(true)
+		case "debug":
+			// ignore
+		default:
+			panic(fmt.Sprintf("unknown function annotation \"%s\"", ann))
+		}
+	}
+	//
+	return kind
 }
 
 // buildMemory constructs the memory descriptor module for a resolved memory

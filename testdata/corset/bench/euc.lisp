@@ -62,8 +62,7 @@
                             (will-inc! CT 1))))
 
 (defconstraint ctmax ()
-  (eq! (~ (- CT MAX_INPUT_LENGTH))
-       1))
+  (!= CT MAX_INPUT_LENGTH))
 
 (defconstraint counter-constancies ()
   (counter-constancy CT CT_MAX))

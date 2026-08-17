@@ -120,10 +120,10 @@ func (p *NotEqual[F, S, T]) RequiredCells(row int, mid trace.ModuleId) *set.AnyS
 // Simplify this term as much as reasonably possible.
 //
 // nolint
-func (p *NotEqual[F, S, T]) Simplify(casts bool) S {
+func (p *NotEqual[F, S, T]) Simplify() S {
 	var (
-		lhs = p.Lhs.Simplify(casts)
-		rhs = p.Rhs.Simplify(casts)
+		lhs = p.Lhs.Simplify()
+		rhs = p.Rhs.Simplify()
 	)
 	//
 	lc, lok := IsConstant(lhs)
@@ -141,10 +141,4 @@ func (p *NotEqual[F, S, T]) Simplify(casts bool) S {
 	var tmp Logical[F, S] = &NotEqual[F, S, T]{lhs, rhs}
 	// Done
 	return tmp.(S)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *NotEqual[F, S, T]) Substitute(mapping map[string]F) {
-	p.Lhs.Substitute(mapping)
-	p.Rhs.Substitute(mapping)
 }

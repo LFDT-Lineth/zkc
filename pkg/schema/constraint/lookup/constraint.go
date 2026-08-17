@@ -14,16 +14,20 @@ package lookup
 
 import (
 	"fmt"
-	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
+
+// Set provides a convenient alias
+type Set[F any] = collection.Set[F]
+
+// SetId provides a convenient alias
+type SetId = schema.SetId
 
 // Constraint (sometimes also called an inclusion constraint) constrains
 // two sets of columns (potentially in different modules). Specifically, every
@@ -108,6 +112,16 @@ func (p Constraint[F]) Contexts() []schema.ModuleId {
 	return contexts
 }
 
+// Sets implementation for schema.Constraint interface.
+func (p Constraint[F]) Sets() (sets []SetId) {
+	//
+	for _, v := range p.Targets {
+		sets = append(sets, v.SetId())
+	}
+	//
+	return sets
+}
+
 // Bounds determines the well-definedness bounds for this constraint for both
 // the negative (left) or positive (right) directions.  Since a lookup is made
 // up of registers (rather than arbitrary expressions), it is always well
@@ -122,18 +136,23 @@ func (p Constraint[F]) Bounds(module uint) util.Bounds {
 // all rows of the source columns.
 //
 //nolint:revive
-func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F]) (bit.Set, schema.Failure) {
+func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
 	var (
-		coverage bit.Set
-		// Insert all active target vectors
-		st = p.insertTargetVectors(tr, sc)
+		// Load target sets
+		targets = loadSets(ctx, p.Targets...)
+		// Initialise read buffer
+		buffer = make([]F, p.Sources[0].Len())
 	)
-	// Check against all active source vectors
-	if err := st.checkSourceVectors(p.Sources, tr); err != nil {
-		return coverage, err
+	// Subset check
+	for _, source := range p.Sources {
+		var trModule = tr.Module(source.Module)
+		// Check each row in the set determined by this vector.
+		if err := p.checkSourceSet(source.SetId(), trModule, targets, buffer); err != nil {
+			return err
+		}
 	}
 	//
-	return coverage, nil
+	return nil
 }
 
 // Lisp converts this schema element into a simple S-Expression, for example
@@ -169,144 +188,60 @@ func (p Constraint[F]) Substitute(mapping map[string]F) {
 
 }
 
-func (p *Constraint[F]) insertTargetVectors(tr trace.Trace[F], sc schema.AnySchema[F]) State[F] {
-	var (
-		st State[F]
-		// Determine width (in columns) of this lookup
-		width uint = p.Sources[0].Len()
-	)
-	// Initialise target state
-	st.handle = p.Handle
-	st.rows = hash.NewSet[hash.Array[F]](tr.Module(p.Targets[0].Module).Height())
-	st.buffer = make([]F, width)
-	// Choose optimised loop
-	for _, target := range p.Targets {
-		var (
-			trModule = tr.Module(target.Module)
-			scModule = sc.Module(target.Module)
-			height   = trModule.Height()
-		)
+// Check that all rows in a given source set are contained within at least one
+// of the given target sets.
+func (p Constraint[F]) checkSourceSet(src SetId, mod trace.Module[F], sets []Set[[]F], buffer []F) schema.Failure {
+	if src.HasSelector() {
+		var selector = src.Selector().Unwrap()
 		//
-		if scModule.IsStatic() {
-			st.insertStaticTarget(scModule)
-		} else if target.HasSelector() {
-			// filtered
-			for i := range int(height) {
-				st.insertFilteredVector(i, target, trModule)
+		for row := range int(mod.Height()) {
+			if !mod.Column(selector).Get(row).IsZero() {
+				if !contains(row, src, mod, sets, buffer) {
+					return &Failure[F]{p.Handle, src, uint(row)}
+				}
 			}
-		} else {
-			// unfiltered
-			for i := range int(height) {
-				st.insertTargetVector(i, target, trModule)
+		}
+	} else {
+		// Optimised path when no selector
+		for row := range int(mod.Height()) {
+			if !contains(row, src, mod, sets, buffer) {
+				return &Failure[F]{p.Handle, src, uint(row)}
 			}
 		}
 	}
 	//
-	return st
+	return nil
 }
 
-// State is just bringing somethings together to make life simpler
-type State[F field.Element[F]] struct {
-	handle string
-	// Set of target rows
-	rows *hash.Set[hash.Array[F]]
-	// Temporary buffer to avoid lots of reallocations.
-	buffer []F
-}
-
-func (p *State[F]) checkSourceVectors(sources []Vector, tr trace.Trace[F]) schema.Failure {
-	// Choose optimised loop
-	for _, source := range sources {
-		var (
-			trModule = tr.Module(source.Module)
-			height   = trModule.Height()
-		)
-		//
-		if source.HasSelector() {
-			// filtered
-			for i := range int(height) {
-				if err := p.checkFilteredSourceVector(i, source, trModule); err != nil {
-					return err
-				}
-			}
-		} else {
-			// unfiltered
-			for i := range int(height) {
-				if err := p.checkSourceVector(i, source, trModule); err != nil {
-					return err
-				}
-			}
+// check whether the given source row is contained within any of the given sets.
+// A temporary buffer of sufficient width is provided to avoid memory
+// allocation.
+func contains[F field.Element[F]](row int, src SetId, mod trace.Module[F], sets []Set[[]F], buffer []F) bool {
+	// Read registers into buffer
+	for i := range src.Width() {
+		var rid = src.Ith(i).Unwrap()
+		// Read given row
+		buffer[i] = mod.Column(rid).Get(row)
+	}
+	// Check for containment
+	for _, set := range sets {
+		if set.Contains(buffer) {
+			return true
 		}
 	}
-	// success
-	return nil
+	//
+	return false
 }
 
-func (p *State[F]) insertFilteredVector(k int, vec Vector, trMod trace.Module[F]) {
-	// If row selected, then insert contents!
-	if isSelected(k, vec, trMod) {
-		p.insertTargetVector(k, vec, trMod)
-	}
-}
-
-func (p *State[F]) insertTargetVector(k int, vec Vector, trModule trace.Module[F]) {
-	// Read each register of this vector
-	p.readRegisters(k, vec, trModule)
-	// Insert item whilst checking whether the buffer was consumed or not
-	if !p.rows.Insert(hash.NewArray(p.buffer)) {
-		// Yes, buffer consumed.  Therefore, construct fresh buffer to avoid
-		// aliasing the value now stored in the hash set.
-		p.buffer = slices.Clone(p.buffer)
-	}
-}
-
-func (p *State[F]) insertStaticTarget(scModule schema.Module[F]) {
+// Load those sets from the context corresponding to the given vectors.
+func loadSets[F field.Element[F]](ctx schema.Context[F], vecs ...Vector) []Set[[]F] {
 	var (
-		contents = scModule.StaticContents()
+		sets = make([]Set[[]F], len(vecs))
 	)
-	// Insert all rows
-	for _, row := range contents {
-		p.rows.Insert(hash.NewArray(row))
-	}
-}
-
-func (p *State[F]) checkFilteredSourceVector(k int, vec Vector, trModule trace.Module[F]) schema.Failure {
-	// If row selected, then check contents!
-	if isSelected(k, vec, trModule) {
-		return p.checkSourceVector(k, vec, trModule)
+	// Load target sets
+	for i, v := range vecs {
+		sets[i] = ctx.Get(v.SetId())
 	}
 	//
-	return nil
-}
-
-func (p *State[F]) checkSourceVector(k int, vec Vector, trModule trace.Module[F]) schema.Failure {
-	// Read each register of this vector
-	p.readRegisters(k, vec, trModule)
-	// Check whether contained.
-	if !p.rows.Contains(hash.NewArray(p.buffer)) {
-		// Construct failure
-		return &Failure[F]{p.handle, vec.Module, slices.Clone(vec.Registers), uint(k)}
-	}
-	// success
-	return nil
-}
-
-// readRegisters reads the value held in each register of the given vector on
-// the given row into the temporary buffer.
-func (p *State[F]) readRegisters(k int, vec Vector, trModule trace.Module[F]) {
-	for i, rid := range vec.Registers {
-		p.buffer[i] = trModule.Column(rid.Unwrap()).Get(k)
-	}
-}
-
-// isSelected determines whether or not the given row of the given vector is
-// selected.  A row without a selector is always selected; otherwise, it is
-// selected when its selector is non-zero.
-func isSelected[F field.Element[F]](k int, vec Vector, trModule trace.Module[F]) bool {
-	// If no selector, then always selected
-	if !vec.HasSelector() {
-		return true
-	}
-	// Otherwise, selected when selector non-zero.
-	return !trModule.Column(vec.Selector.Unwrap().Unwrap()).Get(k).IsZero()
+	return sets
 }

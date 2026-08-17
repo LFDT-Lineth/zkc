@@ -16,9 +16,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
-	"github.com/LFDT-Lineth/zkc/pkg/corset"
+	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -32,8 +31,7 @@ var debugCmd = &cobra.Command{
 	Use:   "debug [flags] constraint_file",
 	Short: "print constraints at various levels of expansion.",
 	Long: `Print a given set of constraints at specific levels of
-	expansion in order to debug them.  Constraints can be given
-	either as lisp or bin files.`,
+	expansion in order to debug them.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runFieldAgnosticCmd(cmd, args, debugCmds)
 	},
@@ -57,87 +55,34 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	attrs := GetFlag(cmd, "attributes")
-	metadata := GetFlag(cmd, "metadata")
-	spillage := GetFlag(cmd, "spillage")
+	srcmapOnly := GetFlag(cmd, "source-map")
 	showStatic := GetFlag(cmd, "show-static")
 	textWidth := GetUint(cmd, "textwidth")
 	// Read in constraint files
 	stacker := *getSchemaStack[F](cmd, SCHEMA_DEFAULT_MIR, args...)
 	stack := stacker.Build()
-	// Print spillage info (if requested)
-	if spillage {
-		printSpillage(stack.BinaryFile(), true)
-	}
-	// Print meta-data (if requested)
-	if metadata {
-		printBinaryFileHeader(stack.BinaryFile())
-	}
-	// Print embedded attributes (if requested
-	if attrs {
-		printAttributes(stack.BinaryFile())
-	}
-	//
-	if !attrs {
+	// Print source map (if requested)
+	if srcmapOnly {
+		printSourceMap(&stack)
+	} else {
 		debug.PrintSchemas(stack, textWidth, showStatic)
 	}
 }
 
 func init() {
 	rootCmd.AddCommand(debugCmd)
-	debugCmd.Flags().Bool("attributes", false, "Print attribute information")
-	debugCmd.Flags().Bool("constants", false, "Print information about externalised constants")
-	debugCmd.Flags().Bool("metadata", false, "Print embedded metadata")
-	debugCmd.Flags().Bool("spillage", false, "Print spillage information")
+	debugCmd.Flags().Bool("source-map", false, "Print source map information")
 	debugCmd.Flags().Bool("show-static", false, "Show static tables when printing schemas")
 	debugCmd.Flags().Uint("textwidth", 130, "Set maximum textwidth to use")
 }
 
-func printAttributes(binf *binfile.BinaryFile) {
-	// Print attributes
-	for _, attr := range binf.Attributes {
-		fmt.Printf("attribute \"%s\":\n", attr.AttributeName())
-		//
-		if attr.AttributeName() == "CorsetSourceMap" {
-			debug.PrintSourceMap(attr.(*corset.SourceMap))
-		}
-	}
-}
-
-func printSpillage(binf *binfile.BinaryFile, defensive bool) {
-	// fmt.Println("Spillage:")
-	// // Compute spillage for optimisation level
-	// spillage := determineSpillage(&binf.Schema, defensive, optConfig)
-	// // Define module ID
-	// mid := uint(0)
-	// // Iterate modules and print spillage
-	// for i := uint(0); i < uint(len(spillage)); i++ {
-	// 	name := binf.Schema.Module(i).Name()
-	// 	//
-	// 	if name == "" {
-	// 		name = "<prelude>"
-	// 	}
-	// 	//
-	// 	fmt.Printf("\t%s: %d\n", name, spillage[i])
-	// 	//
-	// 	mid++
-	// }
-	panic("todo")
-}
-
-func printBinaryFileHeader(binf *binfile.BinaryFile) {
-	header := binf.Header
-	//
-	fmt.Printf("Format: %d.%d\n", header.MajorVersion, header.MinorVersion)
-	// Attempt to parse metadata
-	metadata, err := header.GetMetaData()
-	//
-	if err != nil {
-		fmt.Println(err.Error())
+func printSourceMap[F field.Element[F]](stack *cmd_util.SchemaStack[F]) {
+	srcmap, ok := stack.SourceMap()
+	// Sanity check debug information is available.
+	if !ok {
+		fmt.Println("constraints missing source map")
 		os.Exit(1)
-	} else if !metadata.IsEmpty() {
-		fmt.Println("Metadata:")
-		//
-		printTypedMetadata(1, metadata)
 	}
+	//
+	debug.PrintSourceMap(srcmap)
 }

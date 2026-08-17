@@ -80,7 +80,8 @@ func (p *preprocessor) preprocessDeclaration(decl ast.Declaration) []SyntaxError
 	case *ast.DefFun:
 		errors = p.preprocessDefFun(d)
 	case *ast.DefInRange:
-		errors = p.preprocessDefInRange(d)
+		// As for a lookup, the constrained column is a column access, hence
+		// there is nothing to preprocess.
 	case *ast.DefLookup:
 		// Sources and targets are column accesses, hence there is nothing to
 		// preprocess (e.g. no invocations or reductions to expand).
@@ -118,15 +119,6 @@ func (p *preprocessor) preprocessDefFun(decl *ast.DefFun) []SyntaxError {
 	// preprocess function body
 	binding.Body, errors = p.preprocessExpressionInModule(binding.Body)
 	// Combine errors
-	return errors
-}
-
-// preprocess a "definrange" declaration.
-func (p *preprocessor) preprocessDefInRange(decl *ast.DefInRange) []SyntaxError {
-	var errors []SyntaxError
-	// preprocess constraint body
-	decl.Expr, errors = p.preprocessExpressionInModule(decl.Expr)
-	// Done
 	return errors
 }
 
@@ -185,9 +177,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 	case *ast.Add:
 		args, errs := p.preprocessExpressionsInModule(e.Args)
 		nexpr, errors = &ast.Add{Args: args}, errs
-	case *ast.Cast:
-		arg, errs := p.preprocessExpressionInModule(e.Arg)
-		nexpr, errors = &ast.Cast{Arg: arg, Type: e.Type, Unsafe: e.Unsafe}, errs
 	case *ast.Connective:
 		args, errs := p.preprocessExpressionsInModule(e.Args)
 		nexpr, errors = &ast.Connective{Sign: e.Sign, Args: args}, errs
@@ -198,11 +187,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 		rhs, errs2 := p.preprocessExpressionInModule(e.Rhs)
 		// Done
 		nexpr, errors = &ast.Equation{Kind: e.Kind, Lhs: lhs, Rhs: rhs}, append(errs1, errs2...)
-	case *ast.Exp:
-		arg, errs1 := p.preprocessExpressionInModule(e.Arg)
-		pow, errs2 := p.preprocessExpressionInModule(e.Pow)
-		// Done
-		nexpr, errors = &ast.Exp{Arg: arg, Pow: pow}, append(errs1, errs2...)
 	case *ast.If:
 		cond, errs1 := p.preprocessExpressionInModule(e.Condition)
 		args, errs2 := p.preprocessExpressionsInModule([]ast.Expr{e.TrueBranch, e.FalseBranch})
@@ -213,9 +197,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 	case *ast.Mul:
 		args, errs := p.preprocessExpressionsInModule(e.Args)
 		nexpr, errors = &ast.Mul{Args: args}, errs
-	case *ast.Normalise:
-		arg, errs := p.preprocessExpressionInModule(e.Arg)
-		nexpr, errors = &ast.Normalise{Arg: arg}, errs
 	case *ast.Not:
 		arg, errs := p.preprocessExpressionInModule(e.Arg)
 		nexpr, errors = &ast.Not{Arg: arg}, errs
@@ -229,9 +210,6 @@ func (p *preprocessor) preprocessExpressionInModule(expr ast.Expr) (ast.Expr, []
 		nexpr, errors = &ast.Shift{Arg: arg, Shift: shift}, append(errs1, errs2...)
 	case *ast.VariableAccess:
 		return e, nil
-	case *ast.Concat:
-		args, errs := p.preprocessExpressionsInModule(e.Args)
-		nexpr, errors = &ast.Concat{Args: args}, errs
 	default:
 		return nil, p.srcmap.SyntaxErrors(expr, "unknown expression encountered during preprocessing")
 	}

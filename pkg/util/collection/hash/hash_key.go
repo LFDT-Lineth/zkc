@@ -106,6 +106,11 @@ func (p Array[F]) Equals(other Array[F]) bool {
 	return true
 }
 
+// Elements returns the underlying elements.
+func (p Array[F]) Elements() []F {
+	return p.elements
+}
+
 // Hash generat6es a 64-bit hashcode from the underlying bytes array.
 func (p Array[F]) Hash() uint64 {
 	// FNV1a hash implementation

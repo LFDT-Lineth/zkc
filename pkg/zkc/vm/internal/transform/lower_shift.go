@@ -60,7 +60,7 @@ func scanShiftAmountWidths[W word.Word[W]](modules []descriptor.Module[W]) map[s
 
 				switch bw.Op {
 				case bytecode.OP_SHL, bytecode.OP_SHR:
-					// NOTE: only the source register width is used, bot the target
+					// NOTE: only the source register width is used, not the target
 					key := shiftKey{op: bw.Op, width: uint(bw.Bitwidth)}
 					amountWidth := regs[bw.Right].Bitwidth().Unwrap()
 

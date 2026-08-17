@@ -66,9 +66,9 @@ func runGenerateCmd[F field.Element[F]](cmd *cobra.Command, args []string, field
 	// Sanity permitted flag combinations
 	checkFlags(cmd, generateFlags)
 	// Build the word machine from the source files.
-	artifacts := Build[F](build, args...)
+	_, binfile := Build[F](build, args...)
 	// Translate bytecode => word machine
-	src, err := vm.GenerateGo(artifacts.ir, vm.GoGenConfig{
+	src, err := vm.GenerateGo(binfile.RawProgram(), vm.GoGenConfig{
 		Package: packageName(pkg),
 		Source:  sourceProvenance(args),
 	})

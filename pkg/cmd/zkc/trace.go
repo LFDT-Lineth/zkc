@@ -83,18 +83,15 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Configure tracing
 	traceConfig := constraints.DEFAULT_TRACE_CONFIG.
 		WithPadding(build.padding).
-		WithBatchSize(GetUint(cmd, "batch"))
+		WithBatchSize(GetUint(cmd, "batch")).
+		WithParallelism(!GetFlag(cmd, "sequential"))
 	// Build artifacts (compiles source files or loads a prebuilt binary).
-	artifacts := Build[F](build, args[1:]...)
-	// Translate bytecode => word machine
-	program := vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
-	// Wrap the word machine in a binary file for tracing / checking.
-	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticHeight(), artifacts.ir)
+	_, binfile := Build[F](build, args[1:]...)
 	// =====================================================
 	// Trace
 	// =====================================================
 	// Parse and filter input file
-	input := vm.FilterInputs(program, ParseInputFile(args[0]))
+	input := vm.FilterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
 	// Always trace (no fast mode).  The raw (row-major) trace is retained for
 	// statistics, since it carries the original register/limb structure.
 	outputs, rtr, trace, errors := binfile.Trace(input, traceConfig)
@@ -153,6 +150,7 @@ func init() {
 	traceCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
 	traceCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	traceCmd.Flags().Bool("stats", false, "show overall stats for the generated trace")
+	traceCmd.Flags().Bool("sequential", false, "force sequential tracing")
 	traceCmd.Flags().BoolP("inspect", "i", false, "open the generated trace in the interactive inspector")
 	traceCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
 }

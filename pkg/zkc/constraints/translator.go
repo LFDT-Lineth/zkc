@@ -15,7 +15,6 @@ package constraints
 import (
 	"fmt"
 	"math/big"
-	"math/bits"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
@@ -26,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
 	tracer "github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
@@ -35,23 +35,23 @@ import (
 // a corresponding set of MIR constraints.  The translation operates directly
 // over the bytecode program (its modules, registers and bytecode vectors),
 // without going through the legacy word / field machine.
-func GenerateMirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program[W], field field.Config,
-	maxStaticHeight uint) mir.Schema[F] {
+func GenerateMirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program[W]) mir.Schema[F] {
 	var (
 		infos   = program.Modules()
 		modules = make([]mir.Module[F], len(infos))
-		// maxStaticWidth is the largest X for which 2^X <= maxStaticHeight (the
-		// max static table size), i.e. floor(log2(maxStaticHeight)).
+		// maxStaticWidth is the largest X for which 2^X <= maxStaticHeight, i.e. floor(log2(maxStaticHeight)).
 		// It represents the maximum register width for which a static table can be use to range-check it.
-		// Wider registers require recursive range modules.
-		maxStaticWidth = uint(bits.Len(maxStaticHeight) - 1)
+		// Wider registers require recursive range modules, and the call is materialized by a function call
+		// during codegen.
+		maxStaticWidth = util_math.FloorLog2(program.MaxStaticHeight())
 		// Index the static range-check tables by width, so each register can be
 		// range-proved by a lookup into the matching $range_un table.
 		rangeTables = indexRangeTables[W, F](infos, maxStaticWidth)
 	)
 	//
 	for i, m := range infos {
-		modules[i] = translateModule[W, F](uint(i), m, infos, rangeTables, field, maxStaticWidth)
+		modules[i] = translateModule[W, F](uint(i), m, infos, rangeTables, program.Field(),
+			maxStaticWidth, program.MaxStaticHeight())
 	}
 	//
 	return schema.NewUniformSchema(modules)
@@ -59,23 +59,23 @@ func GenerateMirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program
 
 // GenerateAirConstraints is responsible for converting a bytecode program into
 // a corresponding set of AIR constraints.
-func GenerateAirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program[W], field field.Config,
-	maxStaticHeight uint) air.Schema[F] {
+func GenerateAirConstraints[W vm.Word[W], F field.Element[F]](program vm.Program[W]) air.Schema[F] {
 	var (
-		mirc = GenerateMirConstraints[W, F](program, field, maxStaticHeight)
+		mirc = GenerateMirConstraints[W, F](program)
 	)
 	//
-	return mir.LowerToAir(mirc, field.BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)
+	return mir.LowerToAir(mirc, program.Field().BandWidth, mir.DEFAULT_OPTIMISATION_LEVEL)
 }
 
 func translateModule[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, m vm.Module[W],
-	infos []vm.Module[W], rangeTables map[uint]rangeTable, field field.Config, maxStaticWidth uint) mir.Module[F] {
+	infos []vm.Module[W], rangeTables map[uint]rangeTable, field field.Config, maxStaticWidth, maxStaticHeight uint,
+) mir.Module[F] {
 	switch m := m.(type) {
 	case *vm.Function[W]:
 		return translateFunction[W, F](ctx, m, infos, rangeTables, field, maxStaticWidth)
 	case *vm.Memory[W]:
 		if m.IsStatic() {
-			return translateStaticMemory[W, F](ctx, m)
+			return translateStaticMemory[W, F](ctx, m, maxStaticHeight)
 		} else if m.IsReadOnly() {
 			return translateReadOnlyMemory[W, F](ctx, m, rangeTables, maxStaticWidth)
 		} else if m.IsWriteOnly() {
@@ -88,7 +88,8 @@ func translateModule[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, m vm
 	}
 }
 
-func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
+func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, m *vm.Memory[W],
+	maxStaticHeight uint) mir.Module[F] {
 	var (
 		mod     *schema.Table[F, mir.Constraint[F]]
 		name    = trace.ModuleName{Name: m.Name(), Multiplier: 1}
@@ -96,8 +97,12 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 		inputs  = toRegisters(m.AddressRegisters())
 		outputs = toRegisters(m.DataRegisters())
 		// Convert the static contents from words into field elements.
-		contents = toFieldElements[W, F](m.StaticContents())
+		contents     = toFieldElements[W, F](m.StaticContents())
+		paddedHeight = util_math.NextPowerOfTwo(uint(len(contents)))
 	)
+	if paddedHeight > maxStaticHeight {
+		panic(fmt.Sprintf("static memory \"%s\" exceeds maximum allowed height of %d", m.Name(), maxStaticHeight))
+	}
 	// Initialise module as a static reference table.  Memory modules are never
 	// native.
 	mod = mod.Init(name, false, false, false, false, false, true, 0)

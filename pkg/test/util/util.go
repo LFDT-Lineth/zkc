@@ -45,20 +45,19 @@ type TestCase struct {
 	data map[string][]byte
 }
 
-// CompileMachine compiles one or more zkc source files into a base machine for
-// executing tests with.
-func CompileMachine(field field.Config, srcfiles ...source.File) []source.SyntaxError {
-	_, _, errors := compiler.Compile(field, srcfiles...)
-	//
-	return errors
-}
-
 // CompileZkc compiles a single zkc source file, potentially producing errors.
 // This includes both the validation phase and the code generation phase.
 func CompileZkc(field field.Config, srcfile source.File) []source.SyntaxError {
-	program, _, errors := compiler.Compile(field, srcfile)
+	return CompileZkcWith(codegen.DEFAULT_CONFIG.Field(field), srcfile)
+}
+
+// CompileZkcWith compiles a single zkc source file under a given codegen
+// configuration, potentially producing errors.  This includes both the
+// validation phase and the code generation phase.
+func CompileZkcWith(config codegen.Config, srcfile source.File) []source.SyntaxError {
+	program, _, errors := compiler.Compile(config.GetField(), config.GetMaxStaticHeight(), srcfile)
 	if len(errors) == 0 {
-		_, errors = ast.Compile(program, codegen.DEFAULT_CONFIG)
+		_, errors = ast.Compile(program, config)
 	}
 	//
 	return errors
@@ -137,7 +136,7 @@ func failIfNot[S, T any](t *testing.T, errs ...T) {
 func compileTestProgram(t *testing.T, testfile string, cfg codegen.Config) (vm vm.Program[vm.Uint]) {
 	var filename = fmt.Sprintf("%s/%s", TestDir, testfile)
 	// Compile source file into Abstract Syntax Tree form.
-	program := cmd_util.CompileSourceFiles(cfg.GetField(), filename)
+	program := cmd_util.CompileSourceFiles(cfg.GetField(), cfg.GetMaxStaticHeight(), filename)
 	// Compile program into boot machine
 	vm, errs := ast.Compile(program, cfg)
 	//
@@ -175,21 +174,21 @@ func decodeInputsOutputs[W vm.Word[W]](t *testing.T, p vm.Program[W], data map[s
 func marshallUnmarshallMachine(m vm.Program[vm.Uint], f field.Config) vm.Program[vm.Uint] {
 	switch f {
 	case field.GF_251:
-		return roundTripMachine[gf251.Element](m, f)
+		return roundTripMachine[gf251.Element](m)
 	case field.GF_8209:
-		return roundTripMachine[gf8209.Element](m, f)
+		return roundTripMachine[gf8209.Element](m)
 	case field.KOALABEAR_16:
-		return roundTripMachine[koalabear.Element](m, f)
+		return roundTripMachine[koalabear.Element](m)
 	case field.BLS12_377:
-		return roundTripMachine[bls12_377.Element](m, f)
+		return roundTripMachine[bls12_377.Element](m)
 	default:
 		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
 	}
 }
 
-func roundTripMachine[F field.Element[F]](prog vm.Program[vm.Uint], f field.Config) vm.Program[vm.Uint] {
+func roundTripMachine[F field.Element[F]](prog vm.Program[vm.Uint]) vm.Program[vm.Uint] {
 	var (
-		original = constraints.NewBinaryFile[F](nil, nil, f, codegen.DEFAULT_MAX_STATIC_HEIGHT, prog)
+		original = constraints.NewBinaryFile[F](nil, nil, prog)
 		decoded  constraints.BinaryFile[F]
 	)
 	//
@@ -202,5 +201,5 @@ func roundTripMachine[F field.Element[F]](prog vm.Program[vm.Uint], f field.Conf
 		panic(fmt.Sprintf("unmarshalling machine failed: %s", err))
 	}
 	//
-	return decoded.Program()
+	return decoded.RawProgram()
 }

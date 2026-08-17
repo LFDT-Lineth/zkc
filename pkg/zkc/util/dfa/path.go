@@ -24,12 +24,20 @@ type PathTransferFunction[W util.BigInter, I any] func(offset uint, code I, stat
 
 // EntryPoint constructs a path representing the entry point of a function.
 func EntryPoint[W util.BigInter]() Path[W] {
-	return Path[W]{logical.Truth[BranchId, BranchEquality](true)}
+	return Path[W]{
+		logical.Truth[BranchId, BranchEquality](true),
+		logical.Truth[BranchId, BranchEquality](false),
+	}
 }
 
 // Path adapts a branch condition to be an instance of State.
 type Path[W util.BigInter] struct {
 	condition BranchCondition
+	// dead holds the condition under which this code is reached only through
+	// a preceding fail.  Rows satisfying it are rejected by that fail's own
+	// constraint, so it is a "don't care" for every consumer of the reach
+	// condition: any condition may soundly be widened by (any part of) it.
+	dead BranchCondition
 }
 
 // Condition returns the underlying branch condition
@@ -37,15 +45,33 @@ func (p Path[W]) Condition() BranchCondition {
 	return p.condition
 }
 
+// Dead returns the condition under which this code is reached only through a
+// preceding fail — i.e. only on rows which the fail's constraint rejects.
+func (p Path[W]) Dead() BranchCondition {
+	return p.dead
+}
+
+// Die marks this path as dying at a fail: the resulting path's reach
+// condition is unreachable, whilst its dead condition records the conditions
+// under which the fail fires.  Successor codes joined with this path thus
+// inherit no reach condition from it, but may absorb the dead condition where
+// that simplifies (see Join).
+func (p Path[W]) Die() Path[W] {
+	return Path[W]{
+		logical.Truth[BranchId, BranchEquality](false),
+		p.condition.Or(p.dead),
+	}
+}
+
 // Equals extends the current path with a new constraint that two variables are equal.
 func (p Path[W]) Equals(lhs, rhs BranchId) Path[W] {
 	var prop = logical.NewProposition(logical.Equals(lhs, rhs))
 	//
 	if len(p.condition.Conjuncts()) == 0 {
-		return Path[W]{prop}
+		return Path[W]{prop, p.dead}
 	}
 	//
-	return Path[W]{p.condition.And(prop)}
+	return Path[W]{p.condition.And(prop), p.dead}
 }
 
 // NotEquals extends the current path with a new constraint that two variables are not equal.
@@ -53,10 +79,10 @@ func (p Path[W]) NotEquals(lhs, rhs BranchId) Path[W] {
 	var prop = logical.NewProposition(logical.NotEquals(lhs, rhs))
 	//
 	if len(p.condition.Conjuncts()) == 0 {
-		return Path[W]{prop}
+		return Path[W]{prop, p.dead}
 	}
 	//
-	return Path[W]{p.condition.And(prop)}
+	return Path[W]{p.condition.And(prop), p.dead}
 }
 
 // EqualsConst extends the current path with a new constraint that a given variable equals a given constant.
@@ -66,10 +92,10 @@ func (p Path[W]) EqualsConst(lhs BranchId, rhs big.Int) Path[W] {
 	)
 	//
 	if len(p.condition.Conjuncts()) == 0 {
-		return Path[W]{prop}
+		return Path[W]{prop, p.dead}
 	}
 	//
-	return Path[W]{p.condition.And(prop)}
+	return Path[W]{p.condition.And(prop), p.dead}
 }
 
 // NotEqualsConst extends the current path with a new constraint that a given variable does not equal a given constant.
@@ -79,17 +105,84 @@ func (p Path[W]) NotEqualsConst(lhs BranchId, rhs big.Int) Path[W] {
 	)
 	//
 	if len(p.condition.Conjuncts()) == 0 {
-		return Path[W]{prop}
+		return Path[W]{prop, p.dead}
 	}
 	//
-	return Path[W]{p.condition.And(prop)}
+	return Path[W]{p.condition.And(prop), p.dead}
 }
 
-// Join implementation for State interface
+// Join implementation for State interface.  Both components are joined
+// pointwise; afterwards, dead (fail-path) disjuncts are absorbed into the
+// reach condition whenever that yields a strictly simpler proposition.
+// Absorption is sound — rows satisfying a dead disjunct are rejected by the
+// originating fail's own constraint, so widening never changes the set of
+// accepted traces.
+// We do it only when it is beneficial: where a fail's successor
+// is a sibling branch rather than a join for example.
 func (p Path[W]) Join(st Path[W]) Path[W] {
-	return Path[W]{
-		p.condition.Or(st.condition),
+	var (
+		condition = p.condition.Or(st.condition)
+		dead      = p.dead.Or(st.dead)
+	)
+	//
+	for _, d := range dead.Conjuncts() {
+		// An empty conjunction only arises from a false proposition (see
+		// logical.Truth), which holds nowhere and so has nothing to absorb;
+		// lifting it would (unsoundly) widen the condition to truth.
+		if len(d.Atoms()) == 0 {
+			continue
+		}
+		//
+		if trial := condition.Or(propositionOf(d)); simpler(trial, condition) {
+			condition = trial
+		}
 	}
+	//
+	return Path[W]{condition, dead}
+}
+
+// propositionOf lifts a single (non-empty) conjunction back into a
+// proposition holding exactly when all its atoms hold.
+func propositionOf(c BranchConjunction) BranchCondition {
+	var out BranchCondition
+	//
+	for i, atom := range c.Atoms() {
+		ith := logical.NewProposition(atom)
+		//
+		if i == 0 {
+			out = ith
+		} else {
+			out = out.And(ith)
+		}
+	}
+	//
+	return out
+}
+
+// simpler reports whether the left condition is strictly simpler than the
+// right one, comparing (in order):
+// - the number of conjuncts
+// - the total number of atoms.
+func simpler(lhs, rhs BranchCondition) bool {
+	var ln, rn = len(lhs.Conjuncts()), len(rhs.Conjuncts())
+	//
+	if ln != rn {
+		return ln < rn
+	}
+	//
+	return atomCount(lhs) < atomCount(rhs)
+}
+
+// atomCount returns the total number of atoms across all conjuncts of the
+// given condition.
+func atomCount(p BranchCondition) int {
+	var n int
+	//
+	for _, c := range p.Conjuncts() {
+		n += len(c.Atoms())
+	}
+	//
+	return n
 }
 
 // String implementation for State interface

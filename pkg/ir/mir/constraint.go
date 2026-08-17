@@ -17,9 +17,9 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
@@ -47,19 +47,18 @@ func NewLookupConstraint[F field.Element[F]](handle string, targets []LookupVect
 }
 
 // NewRangeConstraint constructs a new Range constraint
-func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, registers []*RegisterAccess[F],
+func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, registers []register.Id,
 	bitwidths []uint) Constraint[F] {
 	//
-	return Constraint[F]{ranged.NewConstraint(handle, ctx, registers, bitwidths)}
+	return Constraint[F]{ranged.NewConstraint[F](handle, ctx, registers, bitwidths)}
 }
 
 // Accepts determines whether a given constraint accepts a given trace or
 // not.  If not, a failure is produced.  Otherwise, a bitset indicating
 // branch coverage is returned.
-func (p Constraint[F]) Accepts(trace trace.Trace[F],
-	schema schema.AnySchema[F]) (bit.Set, schema.Failure) {
+func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
 	//
-	return p.constraint.Accepts(trace, schema)
+	return p.constraint.Accepts(trace, sc, ctx)
 }
 
 // Bounds determines the well-definedness bounds for this constraint in both the
@@ -92,6 +91,11 @@ func (p Constraint[F]) Contexts() []schema.ModuleId {
 	return p.constraint.Contexts()
 }
 
+// Sets implementation for schema.Constraint interface.
+func (p Constraint[F]) Sets() []schema.SetId {
+	return p.constraint.Sets()
+}
+
 // Name returns a unique name and case number for a given constraint.  This
 // is useful purely for identifying constraints in reports, etc.
 func (p Constraint[F]) Name() string {
@@ -104,11 +108,6 @@ func (p Constraint[F]) Name() string {
 //nolint:revive
 func (p Constraint[F]) Lisp(schema schema.AnySchema[F]) sexp.SExp {
 	return p.constraint.Lisp(schema)
-}
-
-// Substitute any matchined labelled constants within this constraint
-func (p Constraint[F]) Substitute(mapping map[string]F) {
-	p.constraint.Substitute(mapping)
 }
 
 // Unwrap provides access to the underlying constraint.

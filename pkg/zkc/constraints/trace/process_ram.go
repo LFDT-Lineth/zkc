@@ -25,12 +25,14 @@ import (
 // match constraints.computeRamLayout (the schema this trace is checked against):
 // [ADDRESS, VALUE_WRITTEN, EXEC, FINL, IS_WRITE, VALUE_READ, TIMESTAMP_WRITTEN,
 //
-//	TIMESTAMP_READ, TIMESTAMP_DELTA, ADDRESS_DELTA, TS_CARRY, ADDR_CARRY].
+//	TIMESTAMP_READ, TIMESTAMP_DELTA, ADDRESS_DELTA, TS_CARRY, ADDR_CARRY,
+//	EXEC_WRITE, EXEC_READ].
 type ramTraceLayout struct {
 	nAddr, nData, nStamp                         int
 	valueWritten, exec, finl, isWrite, valueRead int
 	tsWritten, tsRead, tsDelta                   int
 	addrDelta, tsCarry, addrCarry                int
+	execWrite, execRead                          int
 	width                                        int
 }
 
@@ -51,7 +53,9 @@ func newRamTraceLayout(nAddr, nData, nStamp int) ramTraceLayout {
 	l.addrDelta = l.tsDelta + nStamp
 	l.tsCarry = l.addrDelta + nAddr
 	l.addrCarry = l.tsCarry + (nStamp - 1)
-	l.width = l.addrCarry + (nAddr - 1)
+	l.execWrite = l.addrCarry + (nAddr - 1)
+	l.execRead = l.execWrite + 1
+	l.width = l.execRead + 1
 	//
 	return l
 }
@@ -104,6 +108,11 @@ func initReadWriteMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](cfg fie
 	for k := uint(1); k < m.NumInputs(); k++ {
 		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_ADDR_CARRY_PREFIX, k-1), u1))
 	}
+	// EXEC_WRITE / EXEC_READ (the per-kind lookup selectors).
+	regs = append(regs,
+		rtrace.NewColumnDescriptor(RAM_EXEC_WRITE_NAME, u1),
+		rtrace.NewColumnDescriptor(RAM_EXEC_READ_NAME, u1),
+	)
 	//Done
 	return module.Initialise(m.Name(), regs)
 }
@@ -150,9 +159,13 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 			tsWr    = acc.timestamp
 			tsDelta = tsWr - tsRead - 1
 		)
-		// EXEC = 1, IS_WRITE from the access; FINL = 0 (zero value).
+		// EXEC = 1, IS_WRITE from the access; FINL = 0 (zero value).  The
+		// per-kind lookup selectors follow: EXEC_WRITE = EXEC * IS_WRITE,
+		// EXEC_READ = EXEC * (1 - IS_WRITE).
 		row[layout.exec] = field.Uint64[F](1)
 		row[layout.isWrite] = field.Uint1[F](acc.isWrite)
+		row[layout.execWrite] = field.Uint1[F](acc.isWrite)
+		row[layout.execRead] = field.Uint1[F](!acc.isWrite)
 		// ADDRESS (logical) split across the address lanes (offset 0).
 		copyAddressLines(logical, addrRegs, row[0:nAddr])
 		// VALUE_WRITTEN / VALUE_READ per lane.

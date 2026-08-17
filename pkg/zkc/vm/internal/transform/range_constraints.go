@@ -14,12 +14,11 @@ package transform
 
 import (
 	"fmt"
-	"math/bits"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -49,17 +48,15 @@ const (
 // Native (field-element) registers are not ranged-checked.
 //
 // NOTE: this transform must run after register splitting.
-func AddRangeConstraints[W word.Word[W]](cfg field.Config, program descriptor.Program[W],
-	maxStaticHeight uint) descriptor.Program[W] {
+func AddRangeConstraints[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		modules = program.Modules()
 		// maxStaticWidth is the largest X for which 2^X <= maxStaticHeight (the
 		// max static table size), i.e. floor(log2(maxStaticHeigh)).
 		// It represents the maximum register width for which a static table can be use to range-check it.
 		// Wider registers require recursive range modules.
-		maxStaticWidth = uint(bits.Len(maxStaticHeight) - 1)
+		maxStaticWidth = math.FloorLog2(program.MaxStaticHeight())
 	)
-
 	// First step, generate the range modules for every width which occurs on some register.
 	var extra = generateRangeModules(modules, maxStaticWidth)
 
@@ -67,7 +64,8 @@ func AddRangeConstraints[W word.Word[W]](cfg field.Config, program descriptor.Pr
 	modules = addRangeCalls(modules, extra, maxStaticWidth)
 
 	// Reassemble the program with the original modules plus the range modules.
-	return descriptor.NewProgram(program.Field(), append(slices.Clone(modules), extra...)...)
+	return descriptor.NewProgram(program.Field(),
+		program.MaxStaticHeight(), append(slices.Clone(modules), extra...)...)
 }
 
 func generateRangeModules[W word.Word[W]](modules []descriptor.Module[W],
@@ -282,7 +280,7 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 	codes = appendRangeCheck(codes, hiID, s.hi, moduleOf, maxStaticWidth)
 	codes = append(codes, bytecode.NewRet[W]())
 	//
-	return descriptor.NewFunction(name, regs, descriptor.UNSAFE_ARGS_FUNCTION, nil,
+	return descriptor.NewFunction(name, regs, descriptor.BYTECODE_FUNCTION.WithUnsafeArgs(true), nil,
 		[]BytecodeVector[W]{bytecode.NewVector(codes...)})
 }
 

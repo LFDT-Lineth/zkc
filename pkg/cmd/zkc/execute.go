@@ -72,10 +72,9 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		// resume mode: the input file holds a checkpoint (hex) to resume from,
 		// rather than an initial set of JSON inputs.  Execution then continues to
 		// completion via the fast bytecode interpreter.
-		resume   = GetFlag(cmd, "resume")
-		fastMode = build.config.IsFastMode()
+		resume = GetFlag(cmd, "resume")
 		// simple equivalence
-		tracing = !fastMode
+		tracing = !build.fastMode
 		//
 		trace   trace.Trace[F]
 		input   map[string][]byte
@@ -88,34 +87,30 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
 	// Build artifacts (compiles source files or loads a prebuilt binary).
-	artifacts := Build[F](build, args[1:]...)
-	// Translate bytecode => word machine
-	program := vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
-	// Wrap the word machine in a binary file for execution / tracing / checking.
-	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticHeight(), artifacts.ir)
+	_, binfile := Build[F](build, args[1:]...)
 	// =====================================================
 	// Trace / Execute
 	// =====================================================
 	if resume {
 		// Resume execution from the checkpoint held (in hex) in the input file,
 		// running the (unmodified) program to completion in fast mode.
-		outputs, errors = resumeFromCheckPoint(program, args[0])
+		outputs, errors = resumeFromCheckPoint(binfile.ExecutionProgram(), args[0])
 	} else {
 		// Parse an filter input file
-		input = vm.FilterInputs(program, ParseInputFile(args[0]))
+		input = vm.FilterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
 		// decide what is happening
 		if checkpoint != "" {
 			// Checkpoint the function named in the spec (periodically with "f:N", or
 			// once with "f@N") and execute in fast mode, writing the resulting
 			// checkpoints to the output file (with -o) or to stdout otherwise.
-			outputs, errors = executeWithCheckPoint(program, checkpoint, outputFile, input)
+			outputs, errors = executeWithCheckPoint(binfile.ExecutionProgram(), checkpoint, outputFile, input)
 		} else if tracing {
 			outputs, _, trace, errors = binfile.Trace(input, traceConfig)
 		} else if build.gogen {
 			// Execute via native Go generated from the word machine.
-			outputs, errors = executeWithGogen(artifacts.ir, input)
+			outputs, errors = executeWithGogen(binfile.RawProgram(), input)
 		} else {
-			outputs, errors = binfile.Execute(input, 131072)
+			outputs, errors = binfile.Execute(input)
 		}
 	}
 	// =====================================================
