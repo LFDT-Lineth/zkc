@@ -196,27 +196,33 @@ type oneHotPiece struct {
 	guards []dfa.BranchEquality
 }
 
-// splitOneHotDisjunction detects a disjunction whose disjuncts are gated on
-// the members (bits or the default register) of a single one-hot group,
-// returning the atoms shared by every disjunct (rest) and one piece per
-// member the disjunction fires on.  Under the group's one-hot invariant
-// exactly one member is set, so the pieces are mutually exclusive and
-// Σᵢ bitᵢ·⟦guardsᵢ⟧ is exactly the boolean "one of the disjuncts holds",
-// which licenses the arithmetic selector binding of pathSelectorConstraint —
-// whose degree no longer grows with the number of disjuncts.
+// splitOneHotDisjunction analyses a branch condition 'cond' to see whether it
+// is logically equivalent to a condition of the form
+//
+//	common ∧   ∨  (c ∧ guards_c)
+//	          c∈S
+//
+// where
+// - S is a collection of cases c in some one-hot-group G
+// - common is what can be factored out independently of the subcase c ∈ S
+// - guards_c, c ∈ S, are optional case-dependent refinements of the condition
+//
+// Exactly one member is ever set, so the disjunction is the sum
+// Σ_{c ∈ S} c·⟦guards_c⟧ — which lets pathSelectorConstraint bind
+// the selector at degree 1 however large S is.
 //
 // Two shapes are recognised:
 //
-//   - ⋁ᵢ (rest ∧ bitᵢ != 0 ∧ guardsᵢ): distinct positive member tests, each
+//   - ⋁ᵢ (common ∧ bitᵢ != 0 ∧ guardsᵢ): distinct positive member tests, each
 //     with per-disjunct guards (width-1 tests against zero);
 //
-//   - ⋁ᵢ (rest ∧ memberAtomsᵢ): unguarded member tests of either sign, where
+//   - ⋁ᵢ (common ∧ memberAtomsᵢ): unguarded member tests of either sign, where
 //     each disjunct denotes the set of members it fires on — (m != 0) narrows
 //     it to {m}, (m == 0) removes m — and the pieces are the union of those
 //     sets.  This absorbs disjuncts subsumed under one-hot semantics, e.g.
 //     (m == 0) ∨ (m' != 0) collapses to the members other than m.
 func splitOneHotDisjunction(cond dfa.BranchCondition, groups []oneHotGroup,
-) (rest []dfa.BranchEquality, pieces []oneHotPiece, ok bool) {
+) (common []dfa.BranchEquality, pieces []oneHotPiece, ok bool) {
 	conjuncts := cond.Conjuncts()
 	// A single disjunct already translates cheaply; the arithmetic form only
 	// pays off against a genuine disjunction.
@@ -226,12 +232,12 @@ func splitOneHotDisjunction(cond dfa.BranchCondition, groups []oneHotGroup,
 	// Each dispatch allocates fresh bit registers, so groups are disjoint and
 	// at most one can match.
 	for _, g := range groups {
-		if rest, pieces, ok = splitOneHotDisjuncts(conjuncts, g); ok {
-			return rest, pieces, true
+		if common, pieces, ok = splitOneHotDisjuncts(conjuncts, g); ok {
+			return common, pieces, true
 		}
 		//
-		if rest, pieces, ok = splitMemberSetDisjuncts(conjuncts, g); ok {
-			return rest, pieces, true
+		if common, pieces, ok = splitMemberSetDisjuncts(conjuncts, g); ok {
+			return common, pieces, true
 		}
 	}
 	//
