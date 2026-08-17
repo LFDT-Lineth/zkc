@@ -39,12 +39,6 @@ func Test_Valid_Basic_04(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/basic_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-// Ignored because uses a negative constant.
-//
-// func Test_Valid_Basic_05(t *testing.T) {
-// 	util.Check(t, false, "corset/valid/basic_05", field.BLS12_377, field.KOALABEAR_16)
-// }
-
 func Test_Valid_Basic_06(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/basic_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
@@ -361,8 +355,10 @@ func Test_Valid_Type_11(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/type_11", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
+// NOTE: excludes GF_8209 since X is a 37bit @prove column, which cannot be
+// range-checked at all within GF_8209's 13bit bandwidth.
 func Test_Valid_Type_12(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/type_12", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+	util.CheckCorset(t, "corset/valid/type_12", field.BLS12_377, field.KOALABEAR_16)
 }
 
 func Test_Valid_Type_13(t *testing.T) {
@@ -444,12 +440,6 @@ func Test_Valid_Module_09(t *testing.T) {
 func Test_Valid_Module_10(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/module_10", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
-
-// NOTE: uses conditional module
-//
-// func Test_Valid_Module_11(t *testing.T) {
-// 	test_util.Check(t, false, "corset/valid/module_11", field.BLS12_377, field.KOALABEAR_16)
-// }
 
 // ===================================================================
 // Lookups

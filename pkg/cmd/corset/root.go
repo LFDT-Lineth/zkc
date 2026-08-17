@@ -93,8 +93,6 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 		fmt.Printf("unknown field \"%s\"\n", fieldName)
 		os.Exit(3)
 	}
-	// Manage exploding multiplier
-	mir.EXPLODING_MULTIPLIER = GetUint(cmd, "exploding-multiplier")
 	// Configure inner parallelism for computed register expansion
 	assignment.INNER_WORKERS = GetUint(cmd, "workers")
 	// Find command to dispatch
@@ -228,7 +226,4 @@ func init() {
 	rootCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
 	rootCmd.PersistentFlags().Uint("workers", 0,
 		"number of inner parallel workers per assignment during trace expansion (0=auto from GOMAXPROCS)")
-	// Misc
-	rootCmd.PersistentFlags().Uint("exploding-multiplier", 10,
-		"set threshold above which constraints are logged as exploding.")
 }

@@ -28,7 +28,7 @@ test:
 
 corset-test:
 	@echo ">>> Running Corset Tests..."
-	go test --timeout 0 -run "Test_Agnostic|Test_Valid|Test_Invalid" ./...
+	go test --timeout 0 -run "Test_Valid|Test_Invalid" ./...
 
 corset-racer:
 	@echo ">>> Running Corset Racer Tests..."
@@ -40,7 +40,7 @@ corset-bench:
 
 unit-test:
 	@echo ">>> Running Unit Tests..."
-	go test --timeout 0 -skip "Test_Agnostic|Test_Bench|Test_Valid|Test_Invalid|Test_Zkc" ./...
+	go test --timeout 0 -skip "Test_Bench|Test_Valid|Test_Invalid|Test_Zkc" ./...
 
 build-zkc:
 	@echo ">>> Building zkc... ${GOCORSET_VERSION}"

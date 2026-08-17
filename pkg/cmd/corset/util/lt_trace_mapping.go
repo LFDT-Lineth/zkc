@@ -38,6 +38,15 @@ func BigWordMapping(ltf lt.TraceFile) module.LimbsMap {
 	return module.NewLimbsMap[word.BigEndian](BIG_WORD, modules...)
 }
 
+// IdentityMapping constructs a trivial (unsplit) limbs map for a set of
+// modules, where every register maps to exactly itself.  This is used in
+// place of a genuine subdivision mapping now that registers are never split
+// into limbs.
+func IdentityMapping[F field.Element[F], M register.Map](name string, modules ...M) module.LimbsMap {
+	var cfg = field.Config{Name: name, BandWidth: math.MaxUint, RegisterWidth: math.MaxUint}
+	return module.NewLimbsMap[F](cfg, modules...)
+}
+
 type dummyModule struct {
 	name      trace.ModuleName
 	registers []register.Register

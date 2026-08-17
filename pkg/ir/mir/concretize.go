@@ -19,7 +19,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -33,23 +32,16 @@ type Element[F any] = field.Element[F]
 // constants (which no longer make sense).  Furthermore, this stage can
 // technically fail if the relevant constraints cannot be correctly concretized.
 // For example, they contain a constant which does not fit within the field.
-func Concretize[F1 Element[F1], F2 Element[F2]](cfg field.Config, mods []Module[F1]) (Schema[F2], module.LimbsMap) {
-	var (
-		// Construct a limbs map which determines the mapping of all registers
-		// into their limbs.
-		mapping = module.NewLimbsMap[F1](cfg, mods...)
-		//
-		nModules = make([]Module[F2], len(mods))
-	)
+func Concretize[F1 Element[F1], F2 Element[F2]](mods []Module[F1]) Schema[F2] {
+	var nModules = make([]Module[F2], len(mods))
 	//
-	for i, m := range Subdivide(mapping, mods) {
-		// Concretize subdivided module.
+	for i, m := range mods {
 		nModules[i] = concretizeModule[F1, F2](m)
 	}
 	// compile constant registers.
 	InitialiseConstantRegisters(0, nModules)
 	//
-	return schema.NewUniformSchema(nModules), mapping
+	return schema.NewUniformSchema(nModules)
 }
 
 func concretizeModule[F1 Element[F1], F2 Element[F2]](m Module[F1]) Module[F2] {
