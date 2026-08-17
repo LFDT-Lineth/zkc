@@ -82,7 +82,7 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	//
 	stats.Log("Reading constraints file")
 	// Parse trace file
-	tracefile := ReadTraceFile(args[0])
+	tracefile := ReadTraceFile[F](args[0])
 	// Extract schema
 	schema := stack.ConcreteSchema()
 	//

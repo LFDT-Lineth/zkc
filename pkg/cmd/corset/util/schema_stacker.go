@@ -177,8 +177,6 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 			stack.concreteSchemas = append(stack.concreteSchemas, schema.Any(airSchema))
 			stack.names = append(stack.names, "AIR")
 		}
-		// Assign trace builder with limb map
-		stack.traceBuilder = p.traceBuilder.WithRegisterMapping(mapping)
 		// Assign source map used to build the stack
 		stack.sourceMap = p.sourceMap
 	}

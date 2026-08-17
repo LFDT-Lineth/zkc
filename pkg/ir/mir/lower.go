@@ -30,6 +30,11 @@ import (
 	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
 
+var (
+	biZERO big.Int = *big.NewInt(0)
+	biONE  big.Int = *big.NewInt(1)
+)
+
 // LowerToAir lowers (or refines) an MIR schema into an AIR schema.  That means
 // lowering all the columns and constraints, whilst adding additional columns /
 // constraints as necessary to preserve the original semantics.

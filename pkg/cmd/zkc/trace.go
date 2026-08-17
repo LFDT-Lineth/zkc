@@ -23,7 +23,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -116,10 +115,8 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	}
 	// write out trace (if requested)
 	if outputFile != "" {
-		// Construct trace file
-		ltf := lt.FromRawTrace(nil, trace)
 		// Write out trace file
-		WriteTraceFile(outputFile, ltf)
+		WriteTraceFile(outputFile, trace)
 	}
 	// =====================================================
 	// Check Constraints
