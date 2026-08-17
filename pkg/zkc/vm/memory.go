@@ -60,13 +60,13 @@ var (
 )
 
 // NewBytecodeMemory constructs a memory (descriptor) module directly from its
-// name, kind and registers.  Since a memory has no body, this descriptor is its
-// final form (cf. NewBytecodeFunction).  The geometry is derived from the
-// registers; timestampWidth gives the bit width of the memory's timestamp
-// (read-write memories only, zero otherwise); init supplies the static
-// contents and must be empty for non-static memories.
-func NewBytecodeMemory[W word.Word[W]](name string, kind MemoryKind, registers []Register[W],
-	timestampWidth uint, init ...W,
+// name, kind, timestamp width and registers.  Since a memory has no body, this
+// descriptor is its final form (cf. NewBytecodeFunction).  The geometry is
+// derived from the registers; timestampWidth gives the bit width of the
+// memory's timestamp (read-write memories only, zero otherwise); init supplies
+// the static contents and must be empty for non-static memories.
+func NewBytecodeMemory[W word.Word[W]](name string, kind MemoryKind, timestampWidth uint,
+	registers []Register[W], init ...W,
 ) *Memory[W] {
-	return descriptor.NewMemory(name, registers, kind, init, timestampWidth)
+	return descriptor.NewMemory(name, kind, timestampWidth, registers, init)
 }

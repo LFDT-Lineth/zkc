@@ -356,7 +356,7 @@ func newBitwiseTable[W word.Word[W]](op bytecode.Operation, width uint) descript
 	}
 	//
 	return descriptor.NewMemory(helperName(bitwiseHelperKey{op: op, width: width}),
-		regs, descriptor.PRIVATE_STATIC_MEMORY, contents, 0)
+		descriptor.PRIVATE_STATIC_MEMORY, 0, regs, contents)
 }
 
 type helperBuilder[W word.Word[W]] struct {

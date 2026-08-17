@@ -70,13 +70,13 @@ func splitMemory[W word.Word[W]](mapping descriptor.LimbsMap[W], m *descriptor.M
 	case m.IsStatic():
 		// A static ROM carries its (constant) contents, so these must be split
 		// alongside the registers: each cell value is subdivided into its limbs.
-		return descriptor.NewMemory(m.Name(), registers, m.Kind(), splitStaticContents(mapping, m), m.TimestampWidth())
+		return descriptor.NewMemory(m.Name(), m.Kind(), m.TimestampWidth(), registers, splitStaticContents(mapping, m))
 	case m.IsWriteOnly(), m.IsReadOnly(), m.IsReadWrite():
 		// Non-static memories (write-once, read-only, and read-write RAM —
 		// including paged) carry no constant contents; only their registers are
 		// split.  The associated read/write bytecodes have their address and data
 		// registers split separately (see splitRegisters for ReadWrite).
-		return descriptor.NewMemory(m.Name(), registers, m.Kind(), nil, m.TimestampWidth())
+		return descriptor.NewMemory(m.Name(), m.Kind(), m.TimestampWidth(), registers, nil)
 	default:
 		panic(fmt.Sprintf("unknown memory \"%s\"", m.Name()))
 	}

@@ -32,12 +32,13 @@ type Memory[W word.Word[W]] struct {
 }
 
 // NewMemory creates a new memory module with the specified parameters. It
-// initializes a memory region with a given name, registers, kind (ROM, RAM,
-// WOM), geometry (size and layout), initial contents (for static memories
-// only) and timestamp width (for read-write memories only, zero otherwise).
+// initializes a memory region with a given name, kind (ROM, RAM, WOM),
+// timestamp width (for read-write memories only, zero otherwise), registers
+// (whose geometry gives size and layout) and initial contents (for static
+// memories only).
 // NOTE: this will panic is a non-static memory is created with some contents.
-func NewMemory[W word.Word[W]](name string, registers []Register[W], kind MemoryKind,
-	contents []W, timestampWidth uint) *Memory[W] {
+func NewMemory[W word.Word[W]](name string, kind MemoryKind, timestampWidth uint,
+	registers []Register[W], contents []W) *Memory[W] {
 	// Sanity check
 	if !kind.IsStatic() && len(contents) > 0 {
 		panic("unsupported contents for non-static memory")

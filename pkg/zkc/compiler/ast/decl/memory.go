@@ -99,9 +99,11 @@ type Memory[S symbol.Symbol[S]] struct {
 	TimestampType data.Type[S]
 }
 
-// NewMemory constructs a new memory.
-func NewMemory[S symbol.Symbol[S]](name string, kind MemoryKind, address []variable.Descriptor[S],
-	data []variable.Descriptor[S], contents []expr.Expr[S], timestampType data.Type[S]) *Memory[S] {
+// NewMemory constructs a new memory.  Parameters follow the order of a ZkC
+// memory declaration — name, timestamp type, address lines, data lines — with
+// the static contents (which have no counterpart in the header) last.
+func NewMemory[S symbol.Symbol[S]](name string, kind MemoryKind, timestampType data.Type[S],
+	address []variable.Descriptor[S], data []variable.Descriptor[S], contents []expr.Expr[S]) *Memory[S] {
 	// sanity checks
 	if contents != nil && !kind.isStatic() {
 		panic("invalid non-static memory")

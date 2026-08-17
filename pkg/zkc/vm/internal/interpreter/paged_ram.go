@@ -140,7 +140,7 @@ func (p *PagedRandomAccess[W]) Read(address uint64) (W, error) {
 	if p.logging {
 		// Write-side only; the read-side is reconstructed at trace time by a
 		// state-tracking observer (see Log).
-		p.accessLog.Read(address, p.timestamp, value)
+		p.accessLog.Read(address, value, p.timestamp)
 	}
 	//
 	return value, nil
@@ -163,7 +163,7 @@ func (p *PagedRandomAccess[W]) Write(address uint64, value W) error {
 	p.pages[page][offset] = TimestampedCell[W]{timestamp: p.timestamp, value: value}
 	//
 	if p.logging {
-		p.accessLog.Write(address, p.timestamp, value)
+		p.accessLog.Write(address, value, p.timestamp)
 	}
 	//
 	return nil

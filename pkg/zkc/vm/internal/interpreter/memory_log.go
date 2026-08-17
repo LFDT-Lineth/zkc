@@ -33,10 +33,10 @@ import (
 type Log[W word.Word[W]] interface {
 	// Read records a read of the cell at address, which afterwards holds
 	// valueWritten (unchanged, equal to the value read) at timestampWritten.
-	Read(address uint64, timestampWritten uint64, valueWritten W)
+	Read(address uint64, valueWritten W, timestampWritten uint64)
 	// Write records a write to the cell at address, which afterwards holds
 	// valueWritten at timestampWritten.
-	Write(address uint64, timestampWritten uint64, valueWritten W)
+	Write(address uint64, valueWritten W, timestampWritten uint64)
 	// Reset clears the log so recording starts fresh (called by Initialise).
 	Reset()
 	// Accesses returns the recorded accesses in chronological order; nil for a
@@ -76,10 +76,10 @@ func (a AccessData[W]) IsWrite() bool { return a.isWrite }
 type CheckpointingMemoryLog[W word.Word[W]] struct{}
 
 // Read implementation for Log (no-op).
-func (l *CheckpointingMemoryLog[W]) Read(address uint64, timestampWritten uint64, valueWritten W) {}
+func (l *CheckpointingMemoryLog[W]) Read(address uint64, valueWritten W, timestampWritten uint64) {}
 
 // Write implementation for Log (no-op).
-func (l *CheckpointingMemoryLog[W]) Write(address uint64, timestampWritten uint64, valueWritten W) {}
+func (l *CheckpointingMemoryLog[W]) Write(address uint64, valueWritten W, timestampWritten uint64) {}
 
 // Reset implementation for Log (no-op).
 func (l *CheckpointingMemoryLog[W]) Reset() {}
@@ -98,12 +98,12 @@ type TraceableMemoryLog[W word.Word[W]] struct {
 
 // Read implementation for Log.
 // valueWritten will coincide with the read value.
-func (l *TraceableMemoryLog[W]) Read(address uint64, timestampWritten uint64, valueWritten W) {
+func (l *TraceableMemoryLog[W]) Read(address uint64, valueWritten W, timestampWritten uint64) {
 	l.accesses = append(l.accesses, AccessData[W]{address, valueWritten, timestampWritten, false})
 }
 
 // Write implementation for Log.
-func (l *TraceableMemoryLog[W]) Write(address uint64, timestampWritten uint64, valueWritten W) {
+func (l *TraceableMemoryLog[W]) Write(address uint64, valueWritten W, timestampWritten uint64) {
 	l.accesses = append(l.accesses, AccessData[W]{address, valueWritten, timestampWritten, true})
 }
 

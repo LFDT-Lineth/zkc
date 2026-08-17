@@ -184,7 +184,7 @@ func (p *Linker) linkDeclaration(index uint) (decl.Resolved, []source.SyntaxErro
 			contents, errs4 = p.linkExprs(d.Contents...)
 		}
 
-		resolved := decl.NewMemory[symbol.Resolved](d.Name(), d.Kind, addressVars, dataVars, contents, timestampType)
+		resolved := decl.NewMemory[symbol.Resolved](d.Name(), d.Kind, timestampType, addressVars, dataVars, contents)
 		resolved.SetAnnotations(d.Annotations())
 
 		return resolved, append(append(append(errs1, errs2...), errs3...), errs4...)

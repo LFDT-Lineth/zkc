@@ -52,7 +52,7 @@ func (ram *RandomAccess[W]) Read(address uint64) (W, error) {
 	if ram.logging {
 		// Write-side only; the read-side is reconstructed at trace time by a
 		// state-tracking observer (see Log).
-		ram.accessLog.Read(address, ram.timestamp, value)
+		ram.accessLog.Read(address, value, ram.timestamp)
 	}
 	//
 	return value, nil
@@ -64,7 +64,7 @@ func (ram *RandomAccess[W]) Write(address uint64, value W) error {
 	ram.restamp(address, value)
 	//
 	if ram.logging {
-		ram.accessLog.Write(address, ram.timestamp, value)
+		ram.accessLog.Write(address, value, ram.timestamp)
 	}
 	//
 	return nil
