@@ -28,6 +28,7 @@ func EntryPoint(program ast.Program, srcmaps source.Maps[any]) []source.SyntaxEr
 	var errors []source.SyntaxError
 	//
 	for _, d := range program.Components() {
+		// TODO: https://github.com/LFDT-Lineth/zkc/issues/1869 parametrize "main" name
 		if fn, ok := d.(*decl.ResolvedFunction); ok && fn.Name() == "main" && fn.NumInputs > 0 {
 			errors = append(errors,
 				srcmaps.SyntaxErrors(fn, "entry point cannot declare parameters (use an input memory)")...)
