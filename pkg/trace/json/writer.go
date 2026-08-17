@@ -17,12 +17,11 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // ToJsonString converts a trace into a JSON string.
-func ToJsonString(modules []lt.Module[word.BigEndian]) string {
+func ToJsonString[F field.Element[F]](tr trace.Trace[F]) string {
 	var (
 		builder strings.Builder
 		first   = true
@@ -30,8 +29,9 @@ func ToJsonString(modules []lt.Module[word.BigEndian]) string {
 	//
 	builder.WriteString("{")
 	//
-	for _, ith := range modules {
-		for _, jth := range ith.Columns {
+	for _, ith := range tr.Modules().Collect() {
+		for j := range ith.Width() {
+			var jth = ith.Column(j)
 			//
 			if !first {
 				builder.WriteString(", ")

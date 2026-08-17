@@ -21,8 +21,8 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -167,28 +167,17 @@ func printSyntaxError(err *source.SyntaxError) {
 
 // WriteTraceFile writes a given lt trace file to disk, either in JSON or LT
 // formats.
-func WriteTraceFile(filename string, tracefile lt.TraceFile) {
-	var (
-		err   error
-		bytes []byte
-	)
+func WriteTraceFile[F field.Element[F]](filename string, tracefile trace.Trace[F]) {
+	var err error
 	// Check file extension
 	ext := path.Ext(filename)
 	//
 	switch ext {
 	case ".json":
-		js := json.ToJsonString(tracefile.RawModules())
+		js := json.ToJsonString(tracefile)
 		//
 		if err = os.WriteFile(filename, []byte(js), 0644); err == nil {
 			return
-		}
-	case ".lt":
-		bytes, err = tracefile.MarshalBinary()
-		//
-		if err == nil {
-			if err = os.WriteFile(filename, bytes, 0644); err == nil {
-				return
-			}
 		}
 	default:
 		err = fmt.Errorf("unknown trace file format: %s", ext)

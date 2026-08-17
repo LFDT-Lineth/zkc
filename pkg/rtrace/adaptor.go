@@ -16,11 +16,17 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	ctrace "github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
+
+// ToTrace converts an rtrace.Trace into a trace.Trace, where each column in the
+// former maps into a column in the latter.
+func ToTrace[T word.Word[T]](tr Trace[T]) trace.Trace[T] {
+	panic("todo")
+}
 
 // FromTrace converts a trace.Trace into a rtrace.Array, where each column in
 // the former maps into a column in the latter.
@@ -32,20 +38,6 @@ func FromTrace[T any, M ModuleBuilder[T, M]](tr ctrace.Trace[T]) *Array[T, M] {
 	}
 	//
 	return NewArray(modules)
-}
-
-// ToTrace converts an rtrace.Trace into a trace.Trace, where each column in the
-// former maps into a column in the latter.
-func ToTrace[T word.Word[T]](tr Trace[T]) []lt.Module[T] {
-	var (
-		modules = make([]lt.Module[T], tr.Width())
-	)
-	//
-	for mid := range tr.Width() {
-		modules[mid] = tr.Module(mid).ToLtModule()
-	}
-	//
-	return modules
 }
 
 func fromTraceModule[T any, M ModuleBuilder[T, M]](module ctrace.Module[T]) M {

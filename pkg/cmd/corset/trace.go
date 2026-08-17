@@ -28,7 +28,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
@@ -66,9 +65,9 @@ var traceCmds = []FieldAgnosticCmd{
 
 func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	var (
-		ltTraces []lt.TraceFile
-		cfg      TraceConfig
-		err      error
+		traces []trace.Trace[F]
+		cfg    TraceConfig
+		err    error
 	)
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
@@ -76,7 +75,6 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	}
 	// Parse trace
 	batched := GetFlag(cmd, "batched")
-	metadata := GetFlag(cmd, "metadata")
 	output := GetString(cmd, "out")
 	//
 	cfg.columns = GetFlag(cmd, "columns")
@@ -103,7 +101,6 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	}
 	//
 	cfg.sortColumn = GetUint(cmd, "sort")
-	//ltv2 := GetFlag(cmd, "ltv2")
 	// Read in constraint files
 	stacker := *getSchemaStack[F](cmd, SCHEMA_OPTIONAL, args[1:]...)
 	stack := stacker.Build()
@@ -118,26 +115,19 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	// Parse trace file(s)
 	if batched {
 		// batched mode
-		ltTraces = ReadBatchedTraceFile(args[0])
+		traces = ReadBatchedTraceFile[F](args[0])
 	} else {
 		// unbatched (i.e. normal) mode
-		ltTraces = []lt.TraceFile{ReadTraceFile(args[0])}
-		// Print meta-data (if requested)
-		if metadata {
-			printTraceFileHeader(ltTraces[0].Header())
-		}
+		traces = []trace.Trace[F]{ReadTraceFile[F](args[0])}
 	}
 	//
 	if builder.Expanding() && !stack.HasConcreteSchema() {
 		fmt.Println("must specify one of --mir/air")
 		os.Exit(2)
 	} else if builder.Expanding() {
-		var (
-			tp_errors []error
-			traces    []trace.Trace[F]
-		)
+		var tp_errors []error
 		// Expand all the traces
-		traces, tp_errors = expandLtTraces(ltTraces, stack, builder)
+		traces, tp_errors = expandLtTraces(traces, stack, builder)
 		// Print trace info
 		for _, tf := range traces {
 			printTraceInfo(cfg, tf)
@@ -146,22 +136,16 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 		for _, err := range tp_errors {
 			log.Errorln(err)
 		}
-		// Reconstruct traces (if needed)
-		if output != "" {
-			ltTraces = reconstructLtTraces(ltTraces, traces, false)
-		}
 	} else {
 		// Use raw trace
-		for _, ltf := range ltTraces {
-			// Configure dummy mapping
-			cfg.mapping = cmd_util.BigWordMapping(ltf)
+		for _, tf := range traces {
 			// Print what we have
-			printTraceInfo(cfg, &ltf)
+			printTraceInfo(cfg, tf)
 		}
 	}
 	// Write out results (if requested)
 	if output != "" {
-		writeBatchedTracesFile(output, ltTraces...)
+		writeBatchedTracesFile(output, traces...)
 	}
 }
 
@@ -186,8 +170,6 @@ func init() {
 	traceCmd.Flags().StringP("filter", "f", "", "Filter columns matching regex")
 	traceCmd.Flags().Bool("batched", false,
 		"specify trace file is batched (i.e. contains multiple traces, one for each line)")
-	traceCmd.Flags().Bool("metadata", false, "Print embedded metadata")
-	traceCmd.Flags().Bool("ltv2", false, "Use ltv2 file format")
 }
 
 // TraceConfig packages together useful things for the various supported
@@ -232,10 +214,7 @@ func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]
 	})
 }
 
-// RawColumn provides a convenient alias
-type RawColumn = lt.Column[word.BigEndian]
-
-func expandLtTraces[F field.Element[F]](traceFiles []lt.TraceFile, stack cmd_util.SchemaStack[F],
+func expandLtTraces[F field.Element[F]](traceFiles []trace.Trace[F], stack cmd_util.SchemaStack[F],
 	bldr ir.TraceBuilder[F]) ([]tr.Trace[F], []error) {
 	//
 	var (
@@ -246,7 +225,7 @@ func expandLtTraces[F field.Element[F]](traceFiles []lt.TraceFile, stack cmd_uti
 	for i := range traceFiles {
 		var errs []error
 		//
-		traces[i], errs = expandLtTrace(traceFiles[i], stack, bldr)
+		traces[i], errs = expandTrace(traceFiles[i], stack, bldr)
 		//
 		errors = append(errors, errs...)
 	}
@@ -254,28 +233,7 @@ func expandLtTraces[F field.Element[F]](traceFiles []lt.TraceFile, stack cmd_uti
 	return traces, errors
 }
 
-func reconstructLtTraces[F field.Element[F]](ltTraces []lt.TraceFile, traces []trace.Trace[F], legacy bool,
-) []lt.TraceFile {
-	//
-	var ntraces = make([]lt.TraceFile, len(ltTraces))
-	// Convert all traces back to lt files.
-	for i := range traces {
-		var (
-			header = ltTraces[i].Header()
-			ith    = lt.FromRawTrace(header.MetaData, traces[i])
-		)
-		// Construct legacy trace file (if requested)
-		if legacy {
-			ith = lt.NewTraceFileV1(ith.Header().MetaData, ith.Heap(), ith.RawModules())
-		}
-		// Done
-		ntraces[i] = ith
-	}
-	//
-	return ntraces
-}
-
-func expandLtTrace[F field.Element[F]](tf lt.TraceFile, stack cmd_util.SchemaStack[F], bldr ir.TraceBuilder[F],
+func expandTrace[F field.Element[F]](tf trace.Trace[F], stack cmd_util.SchemaStack[F], bldr ir.TraceBuilder[F],
 ) (tr.Trace[F], []error) {
 	//
 	var (
@@ -295,21 +253,6 @@ func expandLtTrace[F field.Element[F]](tf lt.TraceFile, stack cmd_util.SchemaSta
 	}
 	// Now, reconstruct it!
 	return tr, tp_errors
-}
-
-func printTraceFileHeader(header lt.Header) {
-	fmt.Printf("Format: %d.%d\n", header.MajorVersion, header.MinorVersion)
-	// Attempt to parse metadata
-	metadata, err := header.GetMetaData()
-	//
-	if err != nil {
-		log.Errorln(err)
-		os.Exit(1)
-	} else if !metadata.IsEmpty() {
-		fmt.Println("Metadata:")
-		//
-		printTypedMetadata(1, metadata)
-	}
 }
 
 func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {

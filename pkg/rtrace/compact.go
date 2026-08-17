@@ -18,8 +18,6 @@ import (
 	"slices"
 	"strings"
 
-	ctrace "github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -143,25 +141,6 @@ func (p *CompactModule[T]) String() string {
 	id.WriteString("}")
 	// Done
 	return id.String()
-}
-
-// ToLtModule implementation for Module interface.
-func (p *CompactModule[T]) ToLtModule() lt.Module[T] {
-	var (
-		name    = ctrace.ModuleName{Name: p.name, Multiplier: 1}
-		columns = make([]lt.Column[T], len(p.columns))
-	)
-	//
-	for i, col := range p.columns {
-		var (
-			data = col.ToLegacy()
-			name = p.descriptors[i].Name
-		)
-		//
-		columns[i] = lt.NewColumn(name, data)
-	}
-	//
-	return lt.NewModule(name, columns)
 }
 
 func allocArray[F field.Element[F]](bitwidth uint, height uint) narray.MutArray[F] {
