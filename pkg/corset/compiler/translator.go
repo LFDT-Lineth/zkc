@@ -23,7 +23,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
@@ -131,7 +130,7 @@ func (t *translator) translateModules(circuit *ast.Circuit) {
 // Translate the given Corset module into its corresponding HIR module.
 func (t *translator) translateModule(name string) {
 	// Always include module (even if empty).
-	t.schema.NewModule(module.NewName(name, 1), true, true, false, false, false, false, 0)
+	t.schema.NewModule(name, true, true, false, false, false, false)
 	// Process each register in turn.
 	for _, regIndex := range t.env.RegistersOf(name) {
 		var (

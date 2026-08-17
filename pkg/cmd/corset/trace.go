@@ -297,7 +297,7 @@ func printTrace(cfg TraceConfig, window view.TraceView) {
 			// Construct & configure printer
 			tp = widget.NewTable(ith)
 			//
-			name = ith.Data().Name().String()
+			name = ith.Data().Name()
 		)
 		// Print out module name
 		if height <= 1 {
@@ -455,7 +455,7 @@ func summariseModule(mod view.ModuleView, summarisers []ModuleSummariser) []term
 		row = make([]termio.FormattedText, m)
 	)
 	//
-	row[0] = termio.NewText(mod.Data().Name().String())
+	row[0] = termio.NewText(mod.Data().Name())
 	//
 	for j, s := range summarisers {
 		row[j+1] = termio.NewText(s.summary(mod))

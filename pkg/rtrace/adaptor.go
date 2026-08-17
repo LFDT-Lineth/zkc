@@ -40,7 +40,7 @@ func ToTrace[T word.Word[T]](tr Trace[T]) trace.Trace[T] {
 
 func toTraceModule[T word.Word[T]](module Module[T]) trace.ArrayModule[T] {
 	var (
-		name    = ctrace.ModuleName{Name: module.Name(), Multiplier: 1}
+		name    = module.Name()
 		columns = make([]trace.ArrayColumn[T], module.Width())
 		zero    T
 	)
@@ -54,7 +54,7 @@ func toTraceModule[T word.Word[T]](module Module[T]) trace.ArrayModule[T] {
 		columns[cid] = trace.NewArrayColumn(desc.Name, data, zero)
 	}
 	//
-	return trace.NewArrayModule(name, 0, columns)
+	return trace.NewArrayModule(name, columns)
 }
 
 // FromTrace converts a trace.Trace into a rtrace.Array, where each column in
@@ -94,7 +94,7 @@ func fromTraceModule[T any, M ModuleBuilder[T, M]](module ctrace.Module[T]) M {
 		rows[rid] = row
 	}
 	// Create new module
-	return nmod.Initialise(NewModuleDescriptor(module.Name().String(), descriptor), rows...)
+	return nmod.Initialise(NewModuleDescriptor(module.Name(), descriptor), rows...)
 }
 
 func columnDescriptorWidth[T any](col ctrace.Column[T]) util.Option[uint] {

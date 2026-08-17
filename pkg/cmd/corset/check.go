@@ -328,7 +328,7 @@ func reportRelevantCells[F field.Element[F]](cells *set.AnySortedSet[tr.CellRef]
 			// Construct & configure printer
 			tp = widget.NewTable(window.Module(i))
 			//
-			name = ith.Data().Name().String()
+			name = ith.Data().Name()
 		)
 		// Print out module name
 		if window.Width() > 1 && name != "" {

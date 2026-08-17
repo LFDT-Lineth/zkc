@@ -75,7 +75,7 @@ func (p Context) Module() string {
 
 // ModuleName returns the name of the module represented by this context.
 func (p Context) ModuleName() module.Name {
-	return module.NewName(p.ModuleId, 1)
+	return p.ModuleId
 }
 
 // IsVoid checks whether this context is the void context (or not).  This is the

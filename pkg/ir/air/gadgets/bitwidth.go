@@ -130,7 +130,7 @@ func (p *BitwidthGadget[F]) applyBinaryGadget(ref register.Ref) {
 // recursively applied to those columns, etc.
 func (p *BitwidthGadget[F]) applyRecursiveBitwidthGadget(ref register.Ref, bitwidth uint) {
 	var (
-		proofHandle  = module.Name{Name: fmt.Sprintf("u%d", bitwidth), Multiplier: 1}
+		proofHandle  = fmt.Sprintf("u%d", bitwidth)
 		mod          = p.schema.Module(ref.Module())
 		reg          = mod.Register(ref.Register())
 		lookupHandle = fmt.Sprintf("%s:u%d", reg.Name(), bitwidth)
@@ -160,7 +160,7 @@ func (p *BitwidthGadget[F]) applyRecursiveBitwidthGadget(ref register.Ref, bitwi
 func (p *BitwidthGadget[F]) constructTypeProof(handle module.Name, bitwidth uint) sc.ModuleId {
 	var (
 		// Create new module for this type proof
-		mid    = p.schema.NewModule(handle, false, false, false, true, false, false, 0)
+		mid    = p.schema.NewModule(handle, false, false, false, true, false, false)
 		module = p.schema.Module(mid)
 		// Determine limb widths.
 		loWidth, hiWidth = determineLimbSplit(bitwidth)

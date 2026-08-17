@@ -175,7 +175,7 @@ func (p Register) Name() string {
 func (p Register) QualifiedName(mod Map) string {
 	var (
 		name    = p.name
-		modName = mod.Name().String()
+		modName = mod.Name()
 	)
 	//
 	if modName != "" {

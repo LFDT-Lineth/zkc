@@ -53,13 +53,13 @@ type Builder[F field.Element[F]] struct {
 	// When set, it overrides the public flag otherwise derived from the source
 	// map (or the default).  This is used by callers without a source map (e.g.
 	// zkc) to hide synthetic modules such as range-check tables.
-	visibility util.Option[func(tr.ModuleName) bool]
+	visibility util.Option[func(string) bool]
 }
 
 // NewBuilder constructs a default builder.
 func NewBuilder[F field.Element[F]](mapping module.LimbsMap) Builder[F] {
 	return Builder[F]{util.None[CellRefSet](), false, false, 16, 16, mapping,
-		DefaultFormatter(), util.None[corset.SourceMap](), util.None[func(tr.ModuleName) bool]()}
+		DefaultFormatter(), util.None[corset.SourceMap](), util.None[func(string) bool]()}
 }
 
 // WithCellWidth sets the maximum width of any cell in the view.
@@ -121,7 +121,7 @@ func (p Builder[F]) WithSourceMap(srcmap corset.SourceMap) Builder[F] {
 // WithVisibility applies a predicate determining whether a given module is
 // publicly visible.  When set, it overrides the public flag otherwise derived
 // from the source map (or the default).
-func (p Builder[F]) WithVisibility(public func(tr.ModuleName) bool) Builder[F] {
+func (p Builder[F]) WithVisibility(public func(string) bool) Builder[F] {
 	var builder = p
 	//
 	builder.visibility = util.Some(public)
@@ -189,7 +189,7 @@ func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], limbs bool, co
 		name    = trMod.Name()
 	)
 	//
-	if m, ok := srcmap[name.Name]; ok {
+	if m, ok := srcmap[name]; ok {
 		public = m.Public
 		// Extract column info
 		columns = extractSourceColumns(file.NewAbsolutePath(""),

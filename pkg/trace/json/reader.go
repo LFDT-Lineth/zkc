@@ -75,8 +75,7 @@ func FromBytesLegacy[F field.Element[F]](data []byte) (trace.Trace[F], error) {
 		if strData[mod] == nil {
 			strData[mod] = make(map[string][]big.Int)
 		} else if _, ok := strData[mod][col]; ok {
-			modName := trace.ParseModuleName(mod)
-			return nil, fmt.Errorf("duplicate column %s encountered", trace.QualifiedColumnName(modName, col))
+			return nil, fmt.Errorf("duplicate column %s encountered", trace.QualifiedColumnName(mod, col))
 		}
 		// Assign values
 		strData[mod][col] = rawInts
@@ -114,7 +113,7 @@ func fromBytesInternal[F field.Element[F]](rawData map[string]map[string][]big.I
 			columns = append(columns, trace.NewArrayColumn[F](col, data, zero))
 		}
 		//
-		modules = append(modules, trace.NewArrayModule[F](trace.ParseModuleName(mod), 0, columns))
+		modules = append(modules, trace.NewArrayModule[F](mod, columns))
 	}
 	//
 	return trace.NewArrayTrace(builder, modules), nil

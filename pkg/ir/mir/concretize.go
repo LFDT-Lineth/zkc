@@ -54,7 +54,7 @@ func concretizeModule[F1 Element[F1], F2 Element[F2]](m Module[F1]) Module[F2] {
 	)
 	// Initialise new module
 	r = r.Init(m.Name(), m.AllowPadding(), m.IsPublicOutput(), m.IsPrivateOutput(), m.IsSynthetic(), m.IsNative(),
-		m.IsStatic(), m.Keys())
+		m.IsStatic())
 	// Add concretized components
 	r.AddRegisters(m.Registers()...)
 	r.AddAssignments(assignments...)

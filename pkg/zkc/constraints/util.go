@@ -18,7 +18,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	pow "github.com/LFDT-Lineth/zkc/pkg/util/math"
@@ -27,8 +26,7 @@ import (
 
 func newLimbsMap[W vm.Word[W]](config field.Config, modules ...vm.Module[W]) module.LimbsMap {
 	var ms []register.Map = array.Map(modules, func(_ uint, m vm.Module[W]) register.Map {
-		name := trace.ModuleName{Name: m.Name(), Multiplier: 1}
-		return register.ArrayMap(name, toRegisters(m.Registers())...)
+		return register.ArrayMap(m.Name(), toRegisters(m.Registers())...)
 	})
 	// NOTE: generic parameter is meaningless, and only retained for backwards
 	// compatibility.

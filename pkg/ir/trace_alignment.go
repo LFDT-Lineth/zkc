@@ -23,15 +23,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
-// keyedRegisterMap extends register.Map with the number of key columns
-// associated with a module, so that alignment can preserve Module.Keys()
-// through to the resulting trace module.
-type keyedRegisterMap interface {
-	register.Map
-	// Keys returns the number of key columns in this module.
-	Keys() uint
-}
-
 // AlignTrace performs "trace alignment" on a given trace file.  That is, it
 // ensures: firstly, the order in which modules occur in the trace file matches
 // (i.e. aligns with) those in the given schema; secondly, it ensures that the
@@ -42,7 +33,7 @@ type keyedRegisterMap interface {
 // NOTE: alignment is impacted by whether or not the trace is being expanded or
 // not. Specifically, expanding traces don't need to include data for computed
 // columns, since these will be added during expansion.
-func AlignTrace[F field.Element[F], M keyedRegisterMap](schema []M, tr trace.Trace[F], expanding bool,
+func AlignTrace[F field.Element[F], M register.Map](schema []M, tr trace.Trace[F], expanding bool,
 ) (*trace.ArrayTrace[F], []error) {
 	//
 	var (
@@ -65,7 +56,7 @@ func AlignTrace[F field.Element[F], M keyedRegisterMap](schema []M, tr trace.Tra
 	return trace.NewArrayTrace(builder, modules), errors
 }
 
-func alignModules[F field.Element[F], M keyedRegisterMap](schema []M, tr trace.Trace[F], expanding bool,
+func alignModules[F field.Element[F], M register.Map](schema []M, tr trace.Trace[F], expanding bool,
 ) ([]trace.Module[F], []error) {
 	//
 	var (
@@ -77,7 +68,7 @@ func alignModules[F field.Element[F], M keyedRegisterMap](schema []M, tr trace.T
 	// Initialise module mapping
 	for i := range width {
 		ith := schema[i].Name()
-		nmods[i] = trace.NewArrayModule[F](ith, schema[i].Keys(), nil)
+		nmods[i] = trace.NewArrayModule[F](ith, nil)
 		modmap[ith] = i
 	}
 	// Rearrange layout
@@ -92,7 +83,7 @@ func alignModules[F field.Element[F], M keyedRegisterMap](schema []M, tr trace.T
 	return nmods, errs
 }
 
-func alignColumns[F field.Element[F]](mapping keyedRegisterMap, module trace.Module[F], expanding bool,
+func alignColumns[F field.Element[F]](mapping register.Map, module trace.Module[F], expanding bool,
 ) (trace.ArrayModule[F], []error) {
 	var (
 		// Errs contains the set of filling errors which are accumulated
@@ -168,5 +159,5 @@ func alignColumns[F field.Element[F]](mapping keyedRegisterMap, module trace.Mod
 		}
 	}
 	//
-	return trace.NewArrayModule(module.Name(), mapping.Keys(), ncols), errs
+	return trace.NewArrayModule(module.Name(), ncols), errs
 }

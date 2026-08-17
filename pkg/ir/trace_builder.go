@@ -271,18 +271,16 @@ func padColumns[F field.Element[F]](schema sc.AnySchema[F], tr *trace.ArrayTrace
 	// Iterate over modules
 	for i := uint(0); i < n; i++ {
 		var (
-			scMod      = schema.Module(i)
-			height     = tr.Module(i).Height()
-			multiplier = tr.Module(i).Name().Multiplier
-			logical    = height / multiplier
-			target     uint
+			scMod  = schema.Module(i)
+			height = tr.Module(i).Height()
+			target uint
 		)
 		// Skip static reference tables
 		if scMod.IsStatic() {
 			continue
 		}
 		// Apply padding strategy
-		target = strategy(logical, multiplier)
+		target = strategy(height, 1)
 		// Only pad when the module falls short of its target.
 		if target > height {
 			tr.Pad(i, target-height, 0)

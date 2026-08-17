@@ -16,18 +16,11 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
-// Name abstracts the notion of a module name, since this is made up of two
-// distinct components.
-type Name = trace.ModuleName
-
-// NewName constructs a new module name
-func NewName(name string, multiplier uint) Name {
-	return Name{Name: name, Multiplier: multiplier}
-}
+// Name abstracts the notion of a module name.
+type Name = string
 
 // Id abstracts the notion of a "module identifier"
 type Id = uint

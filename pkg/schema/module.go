@@ -71,10 +71,6 @@ type Module[F any] interface {
 	// strictly necessary, these can highlight otherwise hidden problems as an aid
 	// to debugging.
 	Consistent(fieldWidth uint, schema AnySchema[F]) []error
-	// Keys returns the number n of key columns in this module.  Key columns are
-	// always the first n columns in a module.  Such columns have the property
-	// that they can be used in conjunction with Find.
-	Keys() uint
 	// StaticContents returns the contents of this module, assuming it
 	// corresponds with a static reference table.  Each entry in the entries
 	// array returned should have Width() elements and correspond to a row in
@@ -102,7 +98,6 @@ type Table[F field.Element[F], C Constraint[F]] struct {
 	synthetic      bool
 	native         bool
 	static         bool
-	keys           uint
 	registers      []register.Register
 	constraints    []C
 	assignments    []Assignment[F]
@@ -115,8 +110,8 @@ type Table[F field.Element[F], C Constraint[F]] struct {
 // module is a static reference table whose contents are fixed at compile time
 // and are populated separately via SetStaticContents.
 func (p *Table[F, C]) Init(name module.Name, padding, public, private, synthetic, native, static bool,
-	keys uint) *Table[F, C] {
-	return &Table[F, C]{name, padding, public, private, synthetic, native, static, keys, nil, nil, nil, nil}
+) *Table[F, C] {
+	return &Table[F, C]{name, padding, public, private, synthetic, native, static, nil, nil, nil, nil}
 }
 
 // Assignments provides access to those assignments defined as part of this
@@ -164,11 +159,6 @@ func (p *Table[F, C]) HasRegister(name string) (register.Id, bool) {
 // Name returns the module name.
 func (p *Table[F, C]) Name() module.Name {
 	return p.name
-}
-
-// Keys implementation of Module interface.
-func (p *Table[F, C]) Keys() uint {
-	return p.keys
 }
 
 // AllowPadding determines whether the given module supports padding at the

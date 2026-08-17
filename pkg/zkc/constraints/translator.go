@@ -21,7 +21,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -92,7 +91,7 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 	maxStaticHeight uint) mir.Module[F] {
 	var (
 		mod     *schema.Table[F, mir.Constraint[F]]
-		name    = trace.ModuleName{Name: m.Name(), Multiplier: 1}
+		name    = m.Name()
 		regs    = toRegisters(m.Registers())
 		inputs  = toRegisters(m.AddressRegisters())
 		outputs = toRegisters(m.DataRegisters())
@@ -105,7 +104,7 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 	}
 	// Initialise module as a static reference table.  Memory modules are never
 	// native.
-	mod = mod.Init(name, false, false, false, false, false, true, 0)
+	mod = mod.Init(name, false, false, false, false, false, true)
 	// Add all registers
 	mod.AddRegisters(regs...)
 	// Populate the table contents from the pre-loaded memory, padded to the
@@ -117,14 +116,14 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 
 func translateReadOnlyMemory[W vm.Word[W], F field.Element[F]](
 	ctx schema.ModuleId, m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
-	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
+	var name = m.Name()
 	return translateAccessOnceMemory[W, F](ctx, m, name, rangeTables, maxStaticWidth)
 }
 
 // Write once memory and read only memory are equivalent on the constraints level
 func translateWriteOnceMemory[W vm.Word[W], F field.Element[F]](
 	ctx schema.ModuleId, m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
-	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
+	var name = m.Name()
 	return translateAccessOnceMemory[W, F](ctx, m, name, rangeTables, maxStaticWidth)
 }
 
@@ -132,7 +131,7 @@ func translateWriteOnceMemory[W vm.Word[W], F field.Element[F]](
 //   - read once memory
 //   - write once memory
 func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W], name trace.ModuleName,
+	ctx schema.ModuleId, m *vm.Memory[W], name string,
 	rangeTables map[uint]rangeTable, maxStaticWidth uint) (mod mir.Module[F]) {
 	var (
 		memoryModule *schema.Table[F, mir.Constraint[F]]
@@ -145,7 +144,7 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 	// addresses-vanish-in-padding constraints rely on.  Memory modules are never
 	// native.
 	memoryModule = memoryModule.Init(name, true, m.IsPublic() && m.IsWriteOnly(), !m.IsPublic() && m.IsWriteOnly(),
-		false, false, false, 0)
+		false, false, false)
 	memoryModule.AddRegisters(regs...)
 
 	var access = register.NewId(memoryModule.Width())
@@ -329,7 +328,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 	var (
 		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]
-		name    = trace.ModuleName{Name: fn.Name(), Multiplier: 1}
+		name    = fn.Name()
 		regs    = toRegisters(fn.Registers())
 		framing Framing[F]
 		// IS_PC_<k> program counter selectors, only for MLI.
@@ -339,7 +338,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 		ret register.Id
 	)
 	// Initialise module
-	mod = mod.Init(name, false, false, false, false, fn.IsNative(), false, 0)
+	mod = mod.Init(name, false, false, false, false, fn.IsNative(), false)
 	// Add all registers
 	mod.AddRegisters(regs...)
 	// Native functions are backed by an external circuit, so we emit only the

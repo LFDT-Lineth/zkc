@@ -88,8 +88,8 @@ func checkZkcModuleReachability(program ast.Program, srcmaps source.Maps[any],
 	//
 	for _, name := range constraints.UnreachableModules(binf.AirConstraints()) {
 		for _, d := range program.Components() {
-			if d.Name() == name.Name {
-				msg := fmt.Sprintf("module \"%s\" unreachable via lookups from entry point \"main\"", name.String())
+			if d.Name() == name {
+				msg := fmt.Sprintf("module \"%s\" unreachable via lookups from entry point \"main\"", name)
 				errors = append(errors, srcmaps.SyntaxErrors(d, msg)...)
 			}
 		}

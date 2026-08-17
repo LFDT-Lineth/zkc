@@ -27,19 +27,14 @@ import (
 // rows that will be added during trace expansion.  The exact value depends on
 // whether defensive padding is enabled or not.
 func RequiredPaddingRows[F any](module uint, defensive bool, schema AnySchema[F]) uint {
-	var (
-		multiplier = schema.Module(module).Name().Multiplier
-		padding    = requiredSpillage(module, schema)
-	)
+	var padding = requiredSpillage(module, schema)
 	//
 	if defensive {
 		// determine minimum levels of defensive padding required.
 		padding = max(padding, defensivePadding(module, schema))
 	}
-	// Technically, we could avoid multiplying by the multiplier here, but in
-	// practice it shouldn't matter.  That's because of the very limited ways in
-	// which interleaved columns are used in practice.
-	return padding * multiplier
+	//
+	return padding
 }
 
 // RequiredSpillage returns the minimum amount of spillage required for a given

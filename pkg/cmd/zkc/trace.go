@@ -188,7 +188,7 @@ func parseShardingConfig(spec string) vm.ShardingStrategy {
 // prefix a reliable marker.  Note the AIR schema does not set the IsSynthetic
 // flag for these modules, so the name is the only discriminator available.
 func publicModule(name module.Name) bool {
-	return !strings.HasPrefix(name.Name, "$")
+	return !strings.HasPrefix(name, "$")
 }
 
 // Column bit-width buckets reported by printTraceStats, matching those shown by
