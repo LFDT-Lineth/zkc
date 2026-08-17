@@ -180,6 +180,13 @@ func (p MirExpr[F]) Multiply(exprs ...MirExpr[F]) MirExpr[F] {
 	return MirExpr[F]{term.Product(args...), nil}
 }
 
+// Subtract constructs a difference between this expression and zero or more
+// expressions.
+func (p MirExpr[F]) Subtract(exprs ...MirExpr[F]) MirExpr[F] {
+	args := unwrapSplitMirExpr(p, exprs...)
+	return MirExpr[F]{term.Subtract(args...), nil}
+}
+
 // NotEquals constructs a non-equality between two expressions.
 func (p MirExpr[F]) NotEquals(rhs MirExpr[F]) MirExpr[F] {
 	logical := term.NotEquals[F, mir.LogicalTerm[F]](p.expr, rhs.expr)
