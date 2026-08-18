@@ -13,16 +13,16 @@
 package assignment
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // ReadRegistersRef reads the values for a given set of registers from a trace.
-func ReadRegistersRef[F field.Element[F]](trace rtrace.Trace[F], regs ...register.Ref) []narray.Array[F] {
+func ReadRegistersRef[F field.Element[F]](trace trace.Trace[F], regs ...register.Ref) []array.Array[F] {
 	var (
-		targets = make([]narray.Array[F], len(regs))
+		targets = make([]array.Array[F], len(regs))
 	)
 	// Read registers
 	for i, ref := range regs {

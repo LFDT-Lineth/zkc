@@ -10,16 +10,13 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package narray
+package array
 
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
 )
-
-// Predicate abstracts the notion of a function which identifies something.
-type Predicate[T any] = func(T) bool
 
 // Array provides a generice interface to an array of elements.  Typically, we
 // are interested in arrays of field elements here.
@@ -38,9 +35,9 @@ type Array[T any] interface {
 	Get(uint) T
 	// Returns the number of elements in this array.
 	Len() uint
-	// Insert n copies of T at start of the array and m copies at the back. In
-	// most cases, this updates the array in place and returns it.
-	Pad(uint, uint, T)
+	// Pad returns a copy of this array with n copies of the given value
+	// prepended and m copies appended.  The receiver is left unmodified.
+	Pad(uint, uint, T) MutArray[T]
 }
 
 // MutArray provides a generice interface to an array of elements.  Typically, we

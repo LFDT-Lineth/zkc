@@ -20,17 +20,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // FromBytes parses a trace expressed in JSON notation.  For example, {"X":
 // [0], "Y": [1]} is a trace containing one row of data each for two columns "X"
 // and "Y".
-func FromBytes[F field.Element[F]](data []byte) (rtrace.Trace[F], error) {
+func FromBytes[F field.Element[F]](data []byte) (trace.Trace[F], error) {
 	var (
 		rawData map[string]map[string][]big.Int
 	)
@@ -47,7 +46,7 @@ func FromBytes[F field.Element[F]](data []byte) (rtrace.Trace[F], error) {
 // FromBytesLegacy parses a trace expressed in JSON notation.  For example, {"X":
 // [0], "Y": [1]} is a trace containing one row of data each for two columns "X"
 // and "Y".
-func FromBytesLegacy[F field.Element[F]](data []byte) (rtrace.Trace[F], error) {
+func FromBytesLegacy[F field.Element[F]](data []byte) (trace.Trace[F], error) {
 	var (
 		rawData map[string][]big.Int
 		strData = make(map[string]map[string][]big.Int, 0)
@@ -78,13 +77,13 @@ func FromBytesLegacy[F field.Element[F]](data []byte) (rtrace.Trace[F], error) {
 	return fromBytesInternal[F](strData)
 }
 
-func fromBytesInternal[F field.Element[F]](rawData map[string]map[string][]big.Int) (rtrace.Trace[F], error) {
-	var modules []*rtrace.CompactModule[F]
+func fromBytesInternal[F field.Element[F]](rawData map[string]map[string][]big.Int) (trace.Trace[F], error) {
+	var modules []*trace.CompactModule[F]
 	//
 	for mod, modData := range rawData {
 		var (
-			columns     []narray.MutArray[F]
-			descriptors []rtrace.ColumnDescriptor
+			columns     []array.MutArray[F]
+			descriptors []trace.ColumnDescriptor
 		)
 		//
 		for name, rawInts := range modData {
@@ -100,22 +99,22 @@ func fromBytesInternal[F field.Element[F]](rawData map[string]map[string][]big.I
 			}
 			// Construct column
 			columns = append(columns, newArrayFromBigInts[F](bitwidth, rawInts))
-			descriptors = append(descriptors, rtrace.NewColumnDescriptor(col, bitwidth))
+			descriptors = append(descriptors, trace.NewColumnDescriptor(col, bitwidth))
 		}
 		// construct module descriptor
-		descriptor := rtrace.NewModuleDescriptor(mod, descriptors)
+		descriptor := trace.NewModuleDescriptor(mod, descriptors)
 		// append new module
-		modules = append(modules, rtrace.NewCompactModule[F](descriptor, columns...))
+		modules = append(modules, trace.NewCompactModule[F](descriptor, columns...))
 	}
 	//
-	return rtrace.NewArray(modules), nil
+	return trace.NewArray(modules), nil
 }
 
-func newArrayFromBigInts[F field.Element[F]](bitwidth util.Option[uint], data []big.Int) narray.MutArray[F] {
+func newArrayFromBigInts[F field.Element[F]](bitwidth util.Option[uint], data []big.Int) array.MutArray[F] {
 	//
 	var (
 		n   = uint(len(data))
-		arr = narray.Alloc[F](bitwidth.UnwrapOr(math.MaxUint), n)
+		arr = array.Alloc[F](bitwidth.UnwrapOr(math.MaxUint), n)
 	)
 	//
 	for i := range n {

@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package narray
+package array
 
 import (
 	"bytes"
@@ -127,31 +127,20 @@ func (p *SmallArray[K, T]) SetRaw(index uint, val K) {
 	p.data[index] = val
 }
 
-// Pad prepends this array with n copies, and appends it with m copies, of the
-// given padding value.
-func (p *SmallArray[K, T]) Pad(n uint, m uint, padding T) {
+// Pad returns a copy of this array with n copies of the given padding value
+// prepended, and m copies appended.  The receiver is left unmodified.
+func (p *SmallArray[K, T]) Pad(n uint, m uint, padding T) MutArray[T] {
 	var (
 		ol = p.Len()
 		// Determine new length
-		l = n + ol + m
-		//
-		val  = K(padding.Uint64())
-		data = p.data
+		l   = n + ol + m
+		val = K(padding.Uint64())
+		// Allocate exactly, copying existing data directly into its final
+		// position.
+		data = make([]K, l)
 	)
 	//
-	if uint(cap(data)) < l {
-		// Insufficient capacity: allocate exactly, copying existing data
-		// directly into its final position.
-		data = make([]K, l)
-		copy(data[n:], p.data)
-	} else {
-		// Sufficient capacity: extend and shift in place.
-		data = data[:l]
-		//
-		if n > 0 {
-			copy(data[n:], data[:ol])
-		}
-	}
+	copy(data[n:], p.data)
 	// Front padding!
 	for i := range n {
 		data[i] = val
@@ -160,8 +149,8 @@ func (p *SmallArray[K, T]) Pad(n uint, m uint, padding T) {
 	for i := l - m; i < l; i++ {
 		data[i] = val
 	}
-	// done
-	p.data = data
+	//
+	return &SmallArray[K, T]{data, p.bitwidth}
 }
 func (p *SmallArray[K, T]) String() string {
 	var sb strings.Builder

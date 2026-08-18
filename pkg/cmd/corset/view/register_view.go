@@ -15,8 +15,8 @@ package view
 import (
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
@@ -29,7 +29,7 @@ type RegisterView interface {
 }
 
 type registerView[F field.Element[F]] struct {
-	trace   rtrace.Module[F]
+	trace   trace.Module[F]
 	limbs   []register.LimbId
 	mapping register.LimbsMap
 }

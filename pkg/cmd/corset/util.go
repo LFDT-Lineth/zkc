@@ -20,8 +20,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace/json"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
@@ -107,7 +107,7 @@ func GetIntArray(cmd *cobra.Command, flag string) []int {
 }
 
 // nolint
-func writeBatchedTracesFile[F field.Element[F]](filename string, traces ...rtrace.Trace[F]) {
+func writeBatchedTracesFile[F field.Element[F]](filename string, traces ...trace.Trace[F]) {
 	var buf bytes.Buffer
 	// Check file extension
 	if len(traces) == 1 {
@@ -130,7 +130,7 @@ func writeBatchedTracesFile[F field.Element[F]](filename string, traces ...rtrac
 
 // Write a given trace file to disk
 // nolint
-func writeTraceFile[F field.Element[F]](filename string, tracefile rtrace.Trace[F]) {
+func writeTraceFile[F field.Element[F]](filename string, tracefile trace.Trace[F]) {
 	var err error
 	// Check file extension
 	ext := path.Ext(filename)
@@ -152,10 +152,10 @@ func writeTraceFile[F field.Element[F]](filename string, tracefile rtrace.Trace[
 
 // ReadTraceFile reads a JSON trace file and parses it into an array of raw
 // columns.
-func ReadTraceFile[F field.Element[F]](filename string) rtrace.Trace[F] {
+func ReadTraceFile[F field.Element[F]](filename string) trace.Trace[F] {
 	var (
 		stats     = util.NewPerfStats()
-		tracefile rtrace.Trace[F]
+		tracefile trace.Trace[F]
 	)
 	// Read data file
 	filename, data, err := file.ReadAndUncompress(filename)
@@ -185,11 +185,11 @@ func ReadTraceFile[F field.Element[F]](filename string) rtrace.Trace[F] {
 
 // ReadBatchedTraceFile reads a file containing zero or more traces expressed as
 // JSON, where each trace is on a separate line.
-func ReadBatchedTraceFile[F field.Element[F]](filename string) []rtrace.Trace[F] {
+func ReadBatchedTraceFile[F field.Element[F]](filename string) []trace.Trace[F] {
 	var (
 		stats    = util.NewPerfStats()
 		lines, _ = file.ReadInputFileAsLines(filename)
-		traces   = make([]rtrace.Trace[F], 0)
+		traces   = make([]trace.Trace[F], 0)
 	)
 	// Read constraints line by line
 	for i, line := range lines {

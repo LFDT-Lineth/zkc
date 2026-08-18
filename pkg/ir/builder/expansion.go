@@ -19,15 +19,13 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // TraceExpansion expands a given trace according to a given schema. More
 // specifically, that means computing the actual values for any assignments.
 // This is done using a straightforward sequential algorithm.
-func TraceExpansion[F field.Element[F]](parallel bool, batchsize uint, schema sc.AnySchema[F],
-	trace ArrayTrace[F]) error {
+func TraceExpansion[F field.Element[F]](config Config, schema sc.AnySchema[F], trace ArrayTrace[F]) error {
 	//
 	var (
 		err error
@@ -35,9 +33,9 @@ func TraceExpansion[F field.Element[F]](parallel bool, batchsize uint, schema sc
 		stats = util.NewPerfStats()
 	)
 	//
-	if parallel {
+	if config.Parallel {
 		// Run (parallel) trace expansion
-		err = ParallelTraceExpansion(batchsize, schema, trace)
+		err = ParallelTraceExpansion(config.BatchSize, schema, trace)
 	} else {
 		err = SequentialTraceExpansion(schema, trace)
 	}
@@ -57,7 +55,7 @@ func SequentialTraceExpansion[F field.Element[F]](schema sc.AnySchema[F], trace 
 	)
 	// Compute each assignment in turn
 	for !expander.Done() {
-		var cols []narray.MutArray[F]
+		var cols []array.MutArray[F]
 		// Get next assignment
 		ith := expander.Next(1)[0]
 		// Compute ith assignment(s)
@@ -114,7 +112,7 @@ func ParallelTraceExpansion[F field.Element[F]](batchsize uint, schema sc.AnySch
 // Fill a set of columns with their computed results.  The column index is that
 // of the first column in the sequence, and subsequent columns are index
 // consecutively.
-func fillComputedColumns[F field.Element[F]](refs []register.Ref, cols []narray.MutArray[F], trace ArrayTrace[F]) {
+func fillComputedColumns[F field.Element[F]](refs []register.Ref, cols []array.MutArray[F], trace ArrayTrace[F]) {
 	// Add all columns
 	for i, ref := range refs {
 		var (
@@ -132,7 +130,7 @@ type columnBatch[F field.Element[F]] struct {
 	// Target registers for this batch
 	targets []register.Ref
 	// The computed columns in this batch.
-	columns []narray.MutArray[F]
+	columns []array.MutArray[F]
 	// An error (should one arise)
 	err error
 }

@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/assert"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 )
@@ -58,7 +58,7 @@ func (e elementArray) BitWidth() uint {
 	panic("not implemented")
 }
 
-func (e elementArray) Clone() narray.MutArray[koalabear.Element] {
+func (e elementArray) Clone() array.MutArray[koalabear.Element] {
 	return slices.Clone(e)
 }
 
@@ -86,7 +86,7 @@ func (e elementArray) Set(u uint, t koalabear.Element) {
 	e[u] = t
 }
 
-func (e elementArray) Pad(u uint, u2 uint, t koalabear.Element) {
+func (e elementArray) Pad(u uint, u2 uint, t koalabear.Element) array.MutArray[koalabear.Element] {
 	panic("not implemented")
 }
 

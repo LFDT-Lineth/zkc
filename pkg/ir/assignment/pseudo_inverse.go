@@ -18,13 +18,11 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -59,7 +57,7 @@ func (e *PseudoInverse[F]) Bounds(mid schema.ModuleId) util.Bounds {
 }
 
 // Compute performs the inversion.
-func (e *PseudoInverse[F]) Compute(tr rtrace.Trace[F], schema schema.AnySchema[F]) ([]narray.MutArray[F], error) {
+func (e *PseudoInverse[F]) Compute(tr trace.Trace[F], schema schema.AnySchema[F]) ([]array.MutArray[F], error) {
 	var (
 		trModule = tr.Module(e.Target.Module())
 		scModule = schema.Module(e.Target.Module())
@@ -73,7 +71,7 @@ func (e *PseudoInverse[F]) Compute(tr rtrace.Trace[F], schema schema.AnySchema[F
 	// values outside the range of the computed register, but which we still
 	// want to check are actually rejected (i.e. since they are simulating what
 	// an attacker might do).
-	data := narray.Alloc[F](math.MaxUint, height)
+	data := array.Alloc[F](math.MaxUint, height)
 	// Expand the trace
 	data, err = invert(data, e.Expr, trModule, scModule)
 	// Sanity check
@@ -81,7 +79,7 @@ func (e *PseudoInverse[F]) Compute(tr rtrace.Trace[F], schema schema.AnySchema[F
 		return nil, err
 	}
 	// Done
-	return []narray.MutArray[F]{data}, err
+	return []array.MutArray[F]{data}, err
 }
 
 // Consistent performs some simple checks that the given assignment is
@@ -159,11 +157,11 @@ func (e *PseudoInverse[F]) RequiredCells(row int, mid trace.ModuleId) *set.AnySo
 }
 
 func invert[F field.Element[F]](
-	data narray.MutArray[F],
+	data array.MutArray[F],
 	expr term.Evaluable[F],
-	trMod rtrace.Module[F],
+	trMod trace.Module[F],
 	scMod schema.Module[F],
-) (narray.MutArray[F], error) {
+) (array.MutArray[F], error) {
 	// Forwards computation
 	for i := range data.Len() {
 		val, err := expr.EvalAt(i, trMod, scMod)

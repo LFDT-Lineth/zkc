@@ -15,20 +15,39 @@ package builder
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // ArrayModule provides a convenient alias.
-type ArrayModule[F field.Element[F]] = *rtrace.CompactModule[F]
+type ArrayModule[F field.Element[F]] = *trace.CompactModule[F]
 
 // ArrayTrace provides a convenient alias.
-type ArrayTrace[F field.Element[F]] = *rtrace.Array[F, ArrayModule[F]]
+type ArrayTrace[F field.Element[F]] = *trace.Array[F, ArrayModule[F]]
 
-// AlignTrace performs "trace alignment" on a given trace file.  That is, it
+// PaddingStrategy captures the notion of an algorithm that determines how much front padding is added to each module
+// when expanding a trace (see TraceBuilder.WithPadding).
+type PaddingStrategy func(height, multiplier uint) uint
+
+// Config provides some configuration parameters for the various top-level
+// builder functions.
+type Config struct {
+	// Parallel indicates whether or not to use parallelisation when possible.
+	Parallel bool
+	// BatchSize indicates size of assignment batches to use when parallelising.
+	BatchSize uint
+	// Expanding indicates whether or not traces are being actively expanded (or
+	// not).
+	Expanding bool
+	// Padding indicates the padding strategy to use.
+	Padding PaddingStrategy
+}
+
+// AlignAndPad performs "trace alignment" on a given trace file.  That is, it
 // ensures: firstly, the order in which modules occur in the trace file matches
 // (i.e. aligns with) those in the given schema; secondly, it ensures that the
 // columns within each module match (i.e. align with) those of the corresponding
@@ -38,12 +57,13 @@ type ArrayTrace[F field.Element[F]] = *rtrace.Array[F, ArrayModule[F]]
 // NOTE: alignment is impacted by whether or not the trace is being expanded or
 // not. Specifically, expanding traces don't need to include data for computed
 // columns, since these will be added during expansion.
-func AlignTrace[F field.Element[F], M register.Map](schema []M, tr rtrace.Trace[F], expanding bool,
+func AlignAndPad[F field.Element[F]](config Config, schema sc.AnySchema[F], tr trace.Trace[F],
 ) (ArrayTrace[F], []error) {
 	//
 	var (
+		stats   = util.NewPerfStats()
 		errors  []error
-		modules = make([]ArrayModule[F], len(schema))
+		modules = make([]ArrayModule[F], schema.Width())
 		modmap  = make(map[string]uint)
 		seen    = make([]bool, tr.Width())
 	)
@@ -52,15 +72,27 @@ func AlignTrace[F field.Element[F], M register.Map](schema []M, tr rtrace.Trace[
 		modmap[tr.Module(i).Name()] = i
 	}
 	// Align modules one-by-one
-	for i, m := range schema {
-		var errs []error
-		if index, ok := modmap[m.Name()]; ok {
-			modules[i], errs = alignModule(m, tr.Module(index), expanding)
+	for i := range schema.Width() {
+		var (
+			errs  []error
+			trMod trace.Module[F]
+			scMod = schema.Module(i)
+		)
+		if index, ok := modmap[scMod.Name()]; ok {
+			trMod = tr.Module(index)
 			// Mark module as seen
 			seen[index] = true
-		} else if expanding {
-			errs = []error{fmt.Errorf("missing module '%s' in trace", m.Name())}
+		} else {
+			// Module is entirely absent from the trace.  This is not
+			// necessarily an error: e.g. a module with no input/output
+			// registers (or, for an expanding trace, one whose registers are
+			// all computed) is legitimately allowed to have no presence in
+			// the trace at all.  Any genuinely missing data is detected
+			// below, on a column-by-column basis.
+			trMod = trace.NewCompactModule[F](trace.NewModuleDescriptor(scMod.Name(), nil))
 		}
+		// Align trace
+		modules[i], errs = alignModule(config, scMod, trMod)
 		// Append any errors arising.
 		errors = append(errors, errs...)
 	}
@@ -72,11 +104,18 @@ func AlignTrace[F field.Element[F], M register.Map](schema []M, tr rtrace.Trace[
 			errors = append(errors, fmt.Errorf("unknown module '%s' in trace", ith.Name()))
 		}
 	}
+	// Pad modules as required
+	padded, errs := padModules(config, schema, modules)
+	modules = padded
+	//
+	errors = append(errors, errs...)
+	//
+	stats.Log("Trace alignment and padding")
 	// Done
-	return rtrace.NewArray(modules), errors
+	return trace.NewArray(modules), errors
 }
 
-func alignModule[F field.Element[F], M register.Map](scMod M, trMod rtrace.Module[F], expanding bool,
+func alignModule[F field.Element[F]](config Config, scMod sc.Module[F], trMod trace.Module[F],
 ) (ArrayModule[F], []error) {
 	var (
 		errors []error
@@ -84,8 +123,8 @@ func alignModule[F field.Element[F], M register.Map](scMod M, trMod rtrace.Modul
 		// Height is used to sanity check the height of all columns in this
 		// modules to ensure they are consistent.
 		height      uint
-		descriptors = make([]rtrace.ColumnDescriptor, width)
-		columns     = make([]narray.MutArray[F], width)
+		descriptors = make([]trace.ColumnDescriptor, width)
+		columns     = make([]array.MutArray[F], width)
 		regmap      = make(map[string]uint)
 		seen        = make([]bool, trMod.Width())
 	)
@@ -112,16 +151,16 @@ func alignModule[F field.Element[F], M register.Map](scMod M, trMod rtrace.Modul
 			var r = scMod.Register(register.NewId(cid))
 			//
 			if r.IsNative() {
-				descriptors[i] = rtrace.NewColumnDescriptor(r.Name(), util.None[uint]())
+				descriptors[cid] = trace.NewColumnDescriptor(r.Name(), util.None[uint]())
 			} else {
-				descriptors[i] = rtrace.NewColumnDescriptor(r.Name(), util.Some(r.Width()))
+				descriptors[cid] = trace.NewColumnDescriptor(r.Name(), util.Some(r.Width()))
 			}
 			// Clone underlying data
-			columns[cid] = trMod.Column(i).Clone()
+			columns[cid] = trMod.MutColumn(i)
 			// Mark column as seen
 			seen[cid] = true
 			// Update maximum height
-			height = max(height, columns[i].Len())
+			height = max(height, columns[cid].Len())
 		}
 		// Append any errors arising.
 		errors = append(errors, errs...)
@@ -136,11 +175,11 @@ func alignModule[F field.Element[F], M register.Map](scMod M, trMod rtrace.Modul
 		if reg.IsInputOutput() && col == nil && height != 0 {
 			errors = append(errors,
 				fmt.Errorf("missing input/output column '%s' from module '%s' of trace", reg.Name(), scMod.Name()))
-		} else if !expanding && col == nil {
+		} else if !config.Expanding && col == nil {
 			errors = append(errors,
 				fmt.Errorf("missing computed column '%s' from module '%s' of expanded trace", reg.Name(), scMod.Name()))
 		}
 	}
 	// Done
-	return rtrace.NewCompactModule(rtrace.NewModuleDescriptor(scMod.Name(), descriptors), columns...), errors
+	return trace.NewCompactModule(trace.NewModuleDescriptor(scMod.Name(), descriptors), columns...), errors
 }

@@ -22,7 +22,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
@@ -75,7 +75,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		// simple equivalence
 		tracing = !build.fastMode
 		//
-		trace   rtrace.Trace[F]
+		trace   trace.Trace[F]
 		input   map[string][]byte
 		outputs map[string][]byte
 	)
@@ -144,7 +144,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	}
 }
 
-func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F], tr rtrace.Trace[F],
+func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F], tr trace.Trace[F],
 	cfg vm.TraceConfig) {
 	//
 	var checkConfig corset.CheckConfig

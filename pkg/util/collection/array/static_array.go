@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package narray
+package array
 
 import (
 	"bytes"
@@ -123,30 +123,19 @@ func (p *StaticArray[T]) Clone() MutArray[T] {
 	return &StaticArray[T]{ndata, p.bitwidth}
 }
 
-// Pad prepends this array with n copies, and appends it with m copies, of the
-// given padding value.
-func (p *StaticArray[T]) Pad(n uint, m uint, padding T) {
+// Pad returns a copy of this array with n copies of the given padding value
+// prepended, and m copies appended.  The receiver is left unmodified.
+func (p *StaticArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
 	var (
 		ol = p.Len()
 		// Determine new length
 		l = n + ol + m
-		//
-		data = p.data
+		// Allocate exactly, copying existing data directly into its final
+		// position.
+		data = make([]T, l)
 	)
 	//
-	if uint(cap(data)) < l {
-		// Insufficient capacity: allocate exactly, copying existing data
-		// directly into its final position.
-		data = make([]T, l)
-		copy(data[n:], p.data)
-	} else {
-		// Sufficient capacity: extend and shift in place.
-		data = data[:l]
-		//
-		if n > 0 {
-			copy(data[n:], data[:ol])
-		}
-	}
+	copy(data[n:], p.data)
 	// Front padding!
 	for i := range n {
 		data[i] = padding
@@ -155,8 +144,8 @@ func (p *StaticArray[T]) Pad(n uint, m uint, padding T) {
 	for i := l - m; i < l; i++ {
 		data[i] = padding
 	}
-	// done
-	p.data = data
+	//
+	return &StaticArray[T]{data, p.bitwidth}
 }
 func (p *StaticArray[T]) String() string {
 	var sb strings.Builder

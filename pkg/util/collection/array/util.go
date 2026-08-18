@@ -420,6 +420,15 @@ func Map[S, T any](items []S, mapping func(uint, S) T) []T {
 	return nitems
 }
 
+// Apply a function over every element of an array.  This may seem like a
+// slightly odd function, since its really just a for-loop.  However, the point
+// is that it provides mirror for ParallelApply.
+func Apply[S any](items []S, fn func(uint, S)) {
+	for i, t := range items {
+		fn(uint(i), t)
+	}
+}
+
 // MergeSorted combines two sorted arrays whilst maintaining the sorted
 // invariant.  You can think of this as first appending the second array to the
 // first, then sorting the result.  In fact, it uses a merge sort which is

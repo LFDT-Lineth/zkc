@@ -20,8 +20,8 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -70,7 +70,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		// extract sharding config
 		sharding = GetString(cmd, "sharding")
 		//
-		trace   rtrace.Trace[F]
+		trace   trace.Trace[F]
 		outputs map[string][]byte
 	)
 	// Sanity permitted flag combinations
@@ -205,7 +205,7 @@ const (
 // traced cells (both human-readable and raw) plus a breakdown of columns by
 // bit-width.  Columns backed by field elements (i.e. native registers, which
 // have no fixed bit-width) are reported separately.
-func printTraceStats[F field.Element[F]](rtr rtrace.Trace[F]) {
+func printTraceStats[F field.Element[F]](rtr trace.Trace[F]) {
 	var (
 		cells  uint
 		counts = make([]uint, len(traceStatBuckets))
@@ -280,7 +280,7 @@ var moduleStatTitles = []string{"columns", "lines", "bitwidth", "cells", "nonzer
 // the column count, line (row) count, total bit-width, total cells, non-zero
 // cells and total bytes.  Native (field-element) limbs, which have no fixed
 // bit-width, are excluded from the bit-width and byte totals.
-func printModuleStats[F field.Element[F]](rtr rtrace.Trace[F]) {
+func printModuleStats[F field.Element[F]](rtr trace.Trace[F]) {
 	var (
 		n   = rtr.Width()
 		tbl = termio.NewFormattedTable(uint(len(moduleStatTitles))+1, n+1)

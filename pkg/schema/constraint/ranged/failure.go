@@ -15,7 +15,6 @@ package ranged
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -47,7 +46,7 @@ func (p *Failure[F]) String() string {
 }
 
 // RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
-func (p *Failure[F]) RequiredCells(_ rtrace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
+func (p *Failure[F]) RequiredCells(_ trace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
 	var (
 		res = set.NewAnySortedSet[trace.CellRef]()
 		ref = trace.NewColumnRef(p.Context, p.Source)

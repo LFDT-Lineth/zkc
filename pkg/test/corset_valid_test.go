@@ -62,9 +62,6 @@ func Test_Valid_Basic_10(t *testing.T) {
 func Test_Valid_Basic_11(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/basic_11", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
-func Test_Valid_Basic_14(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/basic_14", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
 
 // ===================================================================
 // Constants Tests
@@ -279,9 +276,9 @@ func Test_Valid_If_20(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/if_20", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Valid_If_21(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/if_21", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
+// NOTE: if_21 exercised the ":padding" column attribute, which has been
+// removed along with padding support; its fixtures moved to
+// testdata/corset/unsupported/valid.
 
 // ===================================================================
 // Guards
@@ -525,9 +522,9 @@ func Test_Valid_Lookup_22(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/lookup_22", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Valid_Lookup_23(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/lookup_23", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
+// NOTE: lookup_23 exercised the ":padding" column attribute, which has been
+// removed along with padding support; its fixtures moved to
+// testdata/corset/unsupported/valid.
 
 func Test_Valid_Lookup_24(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/lookup_24", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)

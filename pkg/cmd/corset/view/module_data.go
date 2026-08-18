@@ -18,10 +18,10 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
@@ -97,14 +97,14 @@ type moduleData[F field.Element[F]] struct {
 	// public modifier
 	public bool
 	// Trace provides the raw data for this view
-	trace rtrace.Module[F]
+	trace trace.Module[F]
 	// Set of column titles
 	columns []util.Option[string]
 	// Set of rows in this window
 	rows []SourceColumn
 }
 
-func newModuleData[F field.Element[F]](id sc.ModuleId, mapping register.LimbsMap, trace rtrace.Module[F], public bool,
+func newModuleData[F field.Element[F]](id sc.ModuleId, mapping register.LimbsMap, trace trace.Module[F], public bool,
 	enums []corset.Enumeration, rows []SourceColumn) *moduleData[F] {
 	//
 	return &moduleData[F]{id, trace.Height(), mapping, enums, public, trace, nil, rows}

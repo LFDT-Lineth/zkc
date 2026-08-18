@@ -16,13 +16,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // ToJsonString converts a trace into a JSON string.
-func ToJsonString[F field.Element[F]](tr rtrace.Trace[F]) string {
+func ToJsonString[F field.Element[F]](tr trace.Trace[F]) string {
 	var (
 		builder strings.Builder
 		first   = true

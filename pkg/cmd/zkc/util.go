@@ -21,8 +21,8 @@ import (
 	"runtime/pprof"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace/json"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -177,7 +177,7 @@ func printSyntaxError(err *source.SyntaxError) {
 }
 
 // WriteTraceFile writes a given trace to disk in JSON format.
-func WriteTraceFile[F field.Element[F]](filename string, tracefile rtrace.Trace[F]) {
+func WriteTraceFile[F field.Element[F]](filename string, tracefile trace.Trace[F]) {
 	var err error
 	// Check file extension
 	ext := path.Ext(filename)

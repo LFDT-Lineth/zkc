@@ -16,9 +16,9 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -98,7 +98,7 @@ func (p Constraint[F, T]) Bounds(module uint) util.Bounds {
 // of a table.  If so, return nil otherwise return an error.
 //
 //nolint:revive
-func (p Constraint[F, T]) Accepts(tr rtrace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F]) schema.Failure {
+func (p Constraint[F, T]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F]) schema.Failure {
 	var (
 		// Handle is used for error reporting.
 		handle = constraint.DetermineHandle(p.Handle, p.Context, tr)
@@ -131,7 +131,7 @@ func (p Constraint[F, T]) Accepts(tr rtrace.Trace[F], sc schema.AnySchema[F], _ 
 // HoldsGlobally checks whether a given expression vanishes (i.e. evaluates to
 // zero) for all rows of a trace.  If not, report an appropriate error.
 func HoldsGlobally[F field.Element[F], T term.Testable[F]](handle string, ctx schema.ModuleId, constraint T,
-	trMod rtrace.Module[F], scMod schema.Module[F]) schema.Failure {
+	trMod trace.Module[F], scMod schema.Module[F]) schema.Failure {
 	//
 	var (
 		// Determine height of enclosing module
@@ -156,7 +156,7 @@ func HoldsGlobally[F field.Element[F], T term.Testable[F]](handle string, ctx sc
 // HoldsLocally checks whether a given constraint holds (e.g. vanishes) on a
 // specific row of a trace. If not, report an appropriate error.
 func HoldsLocally[F field.Element[F], T term.Testable[F]](k uint, handle string, term T, ctx schema.ModuleId,
-	trMod rtrace.Module[F], scMod schema.Module[F]) schema.Failure {
+	trMod trace.Module[F], scMod schema.Module[F]) schema.Failure {
 	//
 	ok, _, err := term.TestAt(k, trMod, scMod)
 	// Check for errors

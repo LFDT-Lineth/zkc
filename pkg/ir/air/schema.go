@@ -15,7 +15,6 @@ package air
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
@@ -101,7 +100,7 @@ func (p LogicalTerm[F]) Bounds() util.Bounds {
 }
 
 // TestAt implementation for Testable interface.
-func (p LogicalTerm[F]) TestAt(k uint, tr rtrace.Module[F], sc register.Map) (bool, uint, error) {
+func (p LogicalTerm[F]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, uint, error) {
 	var (
 		val, err = p.Term.EvalAt(k, tr, sc)
 		zero     F

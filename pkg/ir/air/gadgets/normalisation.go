@@ -19,7 +19,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -87,7 +86,7 @@ type pseudoInverse[F field.Element[F]] struct {
 
 // EvalAt computes the multiplicative inverse of a given expression at a given
 // row in the table.
-func (e *pseudoInverse[F]) EvalAt(k uint, tr rtrace.Module[F], sc register.Map) (F, error) {
+func (e *pseudoInverse[F]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
 	// Convert expression into something which can be evaluated, then evaluate
 	// it.
 	val, err := e.Expr.EvalAt(k, tr, sc)

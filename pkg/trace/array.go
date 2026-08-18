@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package rtrace
+package trace
 
 import (
 	"math"
@@ -51,6 +51,13 @@ func (p *Array[T, M]) Module(module uint) Module[T] {
 // RawModule returns a specific (raw) module in this trace.
 func (p *Array[T, M]) RawModule(module uint) M {
 	return p.modules[module]
+}
+
+// SetRawModule replaces a specific (raw) module in this trace.  This is
+// necessary, for example, after an operation (such as Pad) which returns a
+// new module rather than updating the original in place.
+func (p *Array[T, M]) SetRawModule(module uint, m M) {
+	p.modules[module] = m
 }
 
 // Modules returns an iterator over the modules in this trace.

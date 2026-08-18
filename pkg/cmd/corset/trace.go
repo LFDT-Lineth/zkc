@@ -24,7 +24,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -65,7 +64,7 @@ var traceCmds = []FieldAgnosticCmd{
 
 func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	var (
-		traces []rtrace.Trace[F]
+		traces []tr.Trace[F]
 		cfg    TraceConfig
 		err    error
 	)
@@ -118,7 +117,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 		traces = ReadBatchedTraceFile[F](args[0])
 	} else {
 		// unbatched (i.e. normal) mode
-		traces = []rtrace.Trace[F]{ReadTraceFile[F](args[0])}
+		traces = []tr.Trace[F]{ReadTraceFile[F](args[0])}
 	}
 	//
 	if builder.Expanding() && !stack.HasConcreteSchema() {
@@ -203,7 +202,7 @@ type TraceConfig struct {
 	stats bool
 }
 
-func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace rtrace.Trace[F]) view.TraceFilter {
+func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) view.TraceFilter {
 	return view.NewTraceFilter(func(mid module.Id) view.ModuleFilter {
 		return view.NewModuleFilter(cfg.startRow, cfg.endRow, func(col view.SourceColumn) bool {
 			// Construct fully qualified name
@@ -214,11 +213,11 @@ func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace rtrace.Trac
 	})
 }
 
-func expandLtTraces[F field.Element[F]](traceFiles []rtrace.Trace[F], stack cmd_util.SchemaStack[F],
-	bldr ir.TraceBuilder[F]) ([]rtrace.Trace[F], []error) {
+func expandLtTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.SchemaStack[F],
+	bldr ir.TraceBuilder[F]) ([]tr.Trace[F], []error) {
 	//
 	var (
-		traces = make([]rtrace.Trace[F], len(traceFiles))
+		traces = make([]tr.Trace[F], len(traceFiles))
 		errors []error
 	)
 	//
@@ -233,13 +232,13 @@ func expandLtTraces[F field.Element[F]](traceFiles []rtrace.Trace[F], stack cmd_
 	return traces, errors
 }
 
-func expandTrace[F field.Element[F]](tf rtrace.Trace[F], stack cmd_util.SchemaStack[F], bldr ir.TraceBuilder[F],
-) (rtrace.Trace[F], []error) {
+func expandTrace[F field.Element[F]](tf tr.Trace[F], stack cmd_util.SchemaStack[F], bldr ir.TraceBuilder[F],
+) (tr.Trace[F], []error) {
 	//
 	var (
 		tb_errors []error
 		tp_errors []error
-		tr        rtrace.Trace[F]
+		tr        tr.Trace[F]
 	)
 	// Construct expanded trace
 	tr, tb_errors = bldr.Build(stack.ConcreteSchema(), tf)
@@ -255,7 +254,7 @@ func expandTrace[F field.Element[F]](tf rtrace.Trace[F], stack cmd_util.SchemaSt
 	return tr, tp_errors
 }
 
-func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace rtrace.Trace[F]) {
+func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {
 	// Construct trace window
 	view := view.NewBuilder[F](cfg.mapping).
 		WithCellWidth(cfg.maxCellWidth).

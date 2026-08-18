@@ -556,6 +556,19 @@ func (p *Interpreter[W]) Binary() encoding.Binary[W] {
 	return p.program
 }
 
+// ExtractMemory returns a mapping of the runtime memories
+func (p *Interpreter[W]) ExtractMemory() (mems []util.Pair[uint16, Memory[W]]) {
+	for i, m := range p.program.Modules() {
+		if _, ok := m.(*descriptor.Memory[W]); ok {
+			var mem = p.Memory(uint16(i))
+			//
+			mems = append(mems, util.NewPair(uint16(i), mem))
+		}
+	}
+	//
+	return mems
+}
+
 // Memory provides access to the underlying memory corresponding to a given
 // module identifier.
 func (p *Interpreter[W]) Memory(mid uint16) Memory[W] {

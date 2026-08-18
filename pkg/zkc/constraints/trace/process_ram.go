@@ -13,8 +13,8 @@
 package trace
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -84,45 +84,45 @@ type ramAccess[W Word[W]] struct {
 // InitReadWriteMemory initialises a trace module for a RandomAccessMemory.
 func initReadWriteMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](cfg field.Config, m vm.Memory[W]) (module M) {
 	var (
-		regs     = array.Map(m.Registers(), toRtraceRegister)
+		regs     = array.Map(m.Registers(), toTraceRegister)
 		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, ramStampWidth))
 		u1       = util.Some[uint](1)
 	)
 	// EXEC, FINL, IS_WRITE.
 	regs = append(regs,
-		rtrace.NewColumnDescriptor(RAM_EXEC_NAME, u1),
-		rtrace.NewColumnDescriptor(RAM_FINL_NAME, u1),
-		rtrace.NewColumnDescriptor(RAM_IS_WRITE_NAME, u1),
+		trace.NewColumnDescriptor(RAM_EXEC_NAME, u1),
+		trace.NewColumnDescriptor(RAM_FINL_NAME, u1),
+		trace.NewColumnDescriptor(RAM_IS_WRITE_NAME, u1),
 	)
 	// VALUE_READ (same widths as the data lanes, native included).
 	for j, r := range m.DataRegisters() {
-		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_VALUE_READ_PREFIX, uint(j)), r.Bitwidth()))
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_VALUE_READ_PREFIX, uint(j)), r.Bitwidth()))
 	}
 	// TIMESTAMP_WRITTEN / READ / DELTA.
 	for _, prefix := range []string{RAM_TS_WRITTEN_PREFIX, RAM_TS_READ_PREFIX, RAM_TS_DELTA_PREFIX} {
 		for k, w := range tsWidths {
-			regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(prefix, uint(k)), util.Some(w)))
+			regs = append(regs, trace.NewColumnDescriptor(RamLimbName(prefix, uint(k)), util.Some(w)))
 		}
 	}
 	// ADDRESS_DELTA (same widths as the address lanes).
 	for j, r := range m.AddressRegisters() {
-		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_ADDR_DELTA_PREFIX, uint(j)), r.Bitwidth()))
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_ADDR_DELTA_PREFIX, uint(j)), r.Bitwidth()))
 	}
 	// TS_CARRY / ADDR_CARRY (one fewer than their value's limbs; 1-bit).
 	for k := uint(1); k < uint(len(tsWidths)); k++ {
-		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_TS_CARRY_PREFIX, k-1), u1))
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_TS_CARRY_PREFIX, k-1), u1))
 	}
 	//
 	for k := uint(1); k < m.NumInputs(); k++ {
-		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_ADDR_CARRY_PREFIX, k-1), u1))
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_ADDR_CARRY_PREFIX, k-1), u1))
 	}
 	// EXEC_WRITE / EXEC_READ (the per-kind lookup selectors).
 	regs = append(regs,
-		rtrace.NewColumnDescriptor(RAM_EXEC_WRITE_NAME, u1),
-		rtrace.NewColumnDescriptor(RAM_EXEC_READ_NAME, u1),
+		trace.NewColumnDescriptor(RAM_EXEC_WRITE_NAME, u1),
+		trace.NewColumnDescriptor(RAM_EXEC_READ_NAME, u1),
 	)
 	//Done
-	return module.Initialise(rtrace.NewModuleDescriptor(m.Name(), regs))
+	return module.Initialise(trace.NewModuleDescriptor(m.Name(), regs))
 }
 
 // traceReadWriteMemory materialises the trace of a read-write (RAM) memory: one

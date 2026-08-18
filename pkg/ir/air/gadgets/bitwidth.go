@@ -18,14 +18,14 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
@@ -221,8 +221,8 @@ func (p *typeDecomposition[F]) AddSource(source register.Ref) {
 
 // Compute computes the values of columns defined by this assignment.
 // This requires computing the value of each byte column in the decomposition.
-func (p *typeDecomposition[F]) Compute(tr rtrace.Trace[F], schema sc.AnySchema[F],
-) ([]narray.MutArray[F], error) {
+func (p *typeDecomposition[F]) Compute(tr trace.Trace[F], schema sc.AnySchema[F],
+) ([]array.MutArray[F], error) {
 	// Read inputs
 	sources := assignment.ReadRegistersRef(tr, p.sources...)
 	// Combine all sources
@@ -328,11 +328,11 @@ func determineLimbSplit(bitwidth uint) (uint, uint) {
 
 // Combine all values from the given source registers into a single array of
 // data, whilst eliminating duplicates.
-func combineSources[F field.Element[F]](bitwidth uint, sources []narray.Array[F]) narray.MutArray[F] {
+func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F]) array.MutArray[F] {
 	//
 	var (
 		n    = sources[0].Len()
-		arr  = narray.Alloc[F](bitwidth, 0)
+		arr  = array.Alloc[F](bitwidth, 0)
 		seen = hash.NewSet[F](n)
 	)
 	// Add all values
@@ -353,12 +353,12 @@ func combineSources[F field.Element[F]](bitwidth uint, sources []narray.Array[F]
 	return arr
 }
 
-func computeDecomposition[F field.Element[F]](loWidth, hiWidth uint, vArr narray.MutArray[F],
-) []narray.MutArray[F] {
+func computeDecomposition[F field.Element[F]](loWidth, hiWidth uint, vArr array.MutArray[F],
+) []array.MutArray[F] {
 	//
 	var (
-		vLoArr = narray.Alloc[F](loWidth, vArr.Len())
-		vHiArr = narray.Alloc[F](hiWidth, vArr.Len())
+		vLoArr = array.Alloc[F](loWidth, vArr.Len())
+		vHiArr = array.Alloc[F](hiWidth, vArr.Len())
 	)
 	//
 	for i := range vArr.Len() {
@@ -368,7 +368,7 @@ func computeDecomposition[F field.Element[F]](loWidth, hiWidth uint, vArr narray
 		vHiArr.Set(i, hi)
 	}
 	//
-	return []narray.MutArray[F]{vArr, vLoArr, vHiArr}
+	return []array.MutArray[F]{vArr, vLoArr, vHiArr}
 }
 
 // Decompose a given field element into its least and most significant limbs,

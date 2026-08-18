@@ -13,10 +13,10 @@
 package schema
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
@@ -39,7 +39,7 @@ type Assignment[F any] interface {
 	// assignment depends must exist (e.g. are either inputs or have been
 	// computed already).  Computed columns do not exist in the original trace,
 	// but are added during trace expansion to form the final trace.
-	Compute(rtrace.Trace[F], AnySchema[F]) ([]narray.MutArray[F], error)
+	Compute(trace.Trace[F], AnySchema[F]) ([]array.MutArray[F], error)
 	// Consistent applies a number of internal consistency checks.  Whilst not
 	// strictly necessary, these can highlight otherwise hidden problems as an aid
 	// to debugging.

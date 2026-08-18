@@ -17,9 +17,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -32,7 +32,7 @@ type Constraint[F any] interface {
 	// Accepts determines whether a given constraint accepts a given trace or
 	// not.  If not, a failure is produced.  Otherwise, a bitset indicating
 	// branch coverage is returned.
-	Accepts(rtrace.Trace[F], AnySchema[F], Context[F]) Failure
+	Accepts(trace.Trace[F], AnySchema[F], Context[F]) Failure
 	// Determine the well-definedness bounds for this constraint in both the
 	// negative (left) or positive (right) directions.  For example, consider an
 	// expression such as "(shift X -1)".  This is technically undefined for the

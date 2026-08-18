@@ -16,7 +16,6 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -74,7 +73,7 @@ func (p *Constant[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Constant[F, T]) EvalAt(k uint, _ rtrace.Module[F], _ register.Map) (F, error) {
+func (p *Constant[F, T]) EvalAt(k uint, _ trace.Module[F], _ register.Map) (F, error) {
 	return p.Value, nil
 }
 

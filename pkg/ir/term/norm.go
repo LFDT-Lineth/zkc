@@ -15,7 +15,6 @@ package term
 import (
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -47,7 +46,7 @@ func (p *Norm[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Norm[F, T]) EvalAt(k uint, tr rtrace.Module[F], sc register.Map) (F, error) {
+func (p *Norm[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
 	// Check whether argument evaluates to zero or not.
 	val, err := p.Arg.EvalAt(k, tr, sc)
 	// Normalise value (if necessary)

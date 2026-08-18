@@ -18,7 +18,7 @@ import (
 	"runtime"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -57,7 +57,7 @@ type setChunk struct {
 // SeqBuildContext constructs the context from a given schema and trace.
 // Essentially, this means traversing the schema looking for lookups and
 // constructing their sets.  NOTE: this is done sequentially
-func SeqBuildContext[F field.Element[F]](tr rtrace.Trace[F], sc AnySchema[F]) Context[F] {
+func SeqBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Context[F] {
 	var (
 		stats   = util.NewPerfStats()
 		context = make(map[string]*hash.Set[hash.Array[F]])
@@ -81,7 +81,7 @@ func SeqBuildContext[F field.Element[F]](tr rtrace.Trace[F], sc AnySchema[F]) Co
 // are then constructed in parallel via array.ParallelMap (the "map" phase).
 // Chunks belonging to the same set are then merged back together (the
 // "reduce" phase), which is likewise done in parallel across sets.
-func ParBuildContext[F field.Element[F]](tr rtrace.Trace[F], sc AnySchema[F]) Context[F] {
+func ParBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Context[F] {
 	var (
 		stats          = util.NewPerfStats()
 		context        = make(map[string]*hash.Set[hash.Array[F]])
@@ -125,7 +125,7 @@ func ParBuildContext[F field.Element[F]](tr rtrace.Trace[F], sc AnySchema[F]) Co
 // returns the number of chunks generated for each set (aligned with sids), so
 // callers can recover the chunks belonging to a given set without a map
 // lookup.
-func determineChunks[F field.Element[F]](sids []SetId, tr rtrace.Trace[F], sc AnySchema[F]) ([]setChunk, []uint) {
+func determineChunks[F field.Element[F]](sids []SetId, tr trace.Trace[F], sc AnySchema[F]) ([]setChunk, []uint) {
 	var (
 		heights = make([]uint, len(sids))
 		total   uint
@@ -161,7 +161,7 @@ func determineChunks[F field.Element[F]](sids []SetId, tr rtrace.Trace[F], sc An
 
 // setHeight determines the number of candidate (static or dynamic) rows from
 // which the given set is constructed.
-func setHeight[F field.Element[F]](id SetId, tr rtrace.Trace[F], sc AnySchema[F]) uint {
+func setHeight[F field.Element[F]](id SetId, tr trace.Trace[F], sc AnySchema[F]) uint {
 	scModule := sc.Module(id.Module())
 	//
 	if scModule.IsStatic() {
@@ -213,7 +213,7 @@ func determineSets[F field.Element[F]](sc AnySchema[F]) []SetId {
 
 // buildSetChunk constructs the (partial) set of rows determined by a given
 // chunk.
-func buildSetChunk[F field.Element[F]](c setChunk, tr rtrace.Trace[F], sc AnySchema[F]) Set[F] {
+func buildSetChunk[F field.Element[F]](c setChunk, tr trace.Trace[F], sc AnySchema[F]) Set[F] {
 	scModule := sc.Module(c.id.Module())
 	//
 	if scModule.IsStatic() {
@@ -246,7 +246,7 @@ func buildStaticSetChunk[F field.Element[F]](c setChunk, sm Module[F]) Set[F] {
 	return data
 }
 
-func buildDynamicSetChunk[F field.Element[F]](c setChunk, trModule rtrace.Module[F]) Set[F] {
+func buildDynamicSetChunk[F field.Element[F]](c setChunk, trModule trace.Module[F]) Set[F] {
 	var (
 		buffer = make([]F, c.id.Width())
 		data   = hash.NewSet[hash.Array[F]]((c.end - c.start) >> 4)
@@ -270,7 +270,7 @@ func buildDynamicSetChunk[F field.Element[F]](c setChunk, trModule rtrace.Module
 
 // readRegisters reads the value held in each register of the given vector on
 // the given row into the temporary buffer.
-func readRegisters[F field.Element[F]](k uint, id SetId, trModule rtrace.Module[F], buffer []F) {
+func readRegisters[F field.Element[F]](k uint, id SetId, trModule trace.Module[F], buffer []F) {
 	for i := range id.Width() {
 		rid := id.Ith(i)
 		buffer[i] = trModule.Column(rid.Unwrap()).Get(k)
@@ -289,7 +289,7 @@ func readStaticRegisters[F field.Element[F]](id SetId, row []F, buffer []F) {
 // isSelected determines whether or not the given row of the given vector is
 // selected.  A row without a selector is always selected; otherwise, it is
 // selected when its selector is non-zero.
-func isSelected[F field.Element[F]](k uint, id SetId, trModule rtrace.Module[F]) bool {
+func isSelected[F field.Element[F]](k uint, id SetId, trModule trace.Module[F]) bool {
 	// If no selector, then always selected
 	if !id.HasSelector() {
 		return true

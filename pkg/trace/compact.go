@@ -10,14 +10,14 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package rtrace
+package trace
 
 import (
 	"fmt"
 	"math"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -30,11 +30,11 @@ type CompactModule[F field.Element[F]] struct {
 	descriptor ModuleDescriptor
 	// Holds the complete set of columns in this module, with one for each
 	// descriptor.
-	columns []narray.MutArray[F]
+	columns []array.MutArray[F]
 }
 
 // NewCompactModule constructs a module with the given name, descriptors and rows.
-func NewCompactModule[F field.Element[F]](descriptor ModuleDescriptor, data ...narray.MutArray[F]) *CompactModule[F] {
+func NewCompactModule[F field.Element[F]](descriptor ModuleDescriptor, data ...array.MutArray[F]) *CompactModule[F] {
 	var height uint
 	// Sanity check
 	if uint(len(data)) != descriptor.Width() {
@@ -58,20 +58,27 @@ func NewCompactModule[F field.Element[F]](descriptor ModuleDescriptor, data ...n
 	return &CompactModule[F]{height, descriptor, data}
 }
 
-// Initialise implementation for Module interface.
-func (p *CompactModule[F]) Initialise(descriptor ModuleDescriptor) *CompactModule[F] {
+// InitCompactModule constructs a new empty module with appropriately allocated
+// (but zero-height) columns for each descriptor.
+func InitCompactModule[F field.Element[F]](descriptor ModuleDescriptor) *CompactModule[F] {
 	var (
 		width   = descriptor.Width()
-		columns = make([]narray.MutArray[F], width)
+		columns = make([]array.MutArray[F], width)
 	)
 	//
 	for rid := range descriptor.Columns {
 		var bitwidth = descriptor.Columns[rid].Bitwidth.UnwrapOr(math.MaxUint)
 		// Allocate compact representation
-		columns[rid] = narray.Alloc[F](bitwidth, 0)
+		columns[rid] = array.Alloc[F](bitwidth, 0)
 	}
 	//
 	return &CompactModule[F]{0, descriptor, columns}
+}
+
+// Initialise implementation for ModuleBuilder interface.  This constructs a new
+// empty module; the receiver is not used.
+func (p *CompactModule[F]) Initialise(descriptor ModuleDescriptor) *CompactModule[F] {
+	return InitCompactModule[F](descriptor)
 }
 
 // Append implementation for Module interface.
@@ -88,9 +95,16 @@ func (p *CompactModule[F]) Append(row ...F) {
 }
 
 // Expand a given column in this module
-func (p *CompactModule[F]) Expand(col uint, data narray.MutArray[F]) {
+func (p *CompactModule[F]) Expand(col uint, data array.MutArray[F]) {
 	if p.columns[col] != nil {
 		panic("cannot expand non-empty column")
+	} else if p.untouched() {
+		// This module has no columns assigned yet (e.g. it is an entirely
+		// computed module, such as a lookup table, which has no natural
+		// presence in the original trace).  In this case, its recorded height
+		// is just a placeholder rather than an established fact, so the first
+		// column expanded determines the real height.
+		p.height = data.Len()
 	} else if data.Len() != p.height {
 		panic(fmt.Sprintf("invalid column height (%d vs %d)", data.Len(), p.height))
 	}
@@ -98,39 +112,65 @@ func (p *CompactModule[F]) Expand(col uint, data narray.MutArray[F]) {
 	p.columns[col] = data
 }
 
+// untouched determines whether or not any column in this module has been
+// assigned data yet.
+func (p *CompactModule[F]) untouched() bool {
+	for _, col := range p.columns {
+		if col != nil {
+			return false
+		}
+	}
+	//
+	return true
+}
+
 // Join a given module into this by appending all rows of each column onto the
 // corresponding column in this module.
-func (p *CompactModule[T]) Join(m Module[T]) {
+func (p *CompactModule[F]) Join(m Module[F]) {
 	if p.Width() != m.Width() {
 		panic(fmt.Sprintf("cannot join mismatched modules '%s' (%d columns) vs '%s' (%d columns)",
 			p.descriptor.Name, p.Width(), m.Descriptor().Name, m.Width()))
 	}
 	//
 	for i := range p.Width() {
-		narray.AppendOnto(p.columns[i], m.Column(i))
+		array.AppendOnto(p.columns[i], m.Column(i))
 	}
 	// Increment height
 	p.height += m.Height()
 }
 
+// Clone this module, such that mutating the clone (or the original)
+// afterwards has no effect on the other.
+func (p *CompactModule[F]) Clone() *CompactModule[F] {
+	columns := make([]array.MutArray[F], len(p.columns))
+	//
+	for i, col := range p.columns {
+		if col != nil {
+			columns[i] = col.Clone()
+		}
+	}
+	//
+	return &CompactModule[F]{p.height, p.descriptor, columns}
+}
+
 // Name returns the name of this module.
-func (p *CompactModule[T]) Name() string {
+func (p *CompactModule[F]) Name() string {
 	return p.descriptor.Name
 }
 
 // Descriptor returns the descriptor of this module.
-func (p *CompactModule[T]) Descriptor() ModuleDescriptor {
+func (p *CompactModule[F]) Descriptor() ModuleDescriptor {
 	return p.descriptor
 }
 
 // Column returns the data for the column at the given index.
-func (p *CompactModule[F]) Column(index uint) narray.Array[F] {
+func (p *CompactModule[F]) Column(index uint) array.Array[F] {
 	return p.columns[index]
 }
 
 // MutColumn returns mutable access to the data for the column at the given
 // index.
-func (p *CompactModule[F]) MutColumn(index uint) narray.MutArray[F] {
+func (p *CompactModule[F]) MutColumn(index uint) array.MutArray[F] {
 	return p.columns[index]
 }
 
@@ -140,21 +180,25 @@ func (p *CompactModule[F]) Height() uint {
 	return p.height
 }
 
-// Pad this module by a given amount of front/back padding
-func (p *CompactModule[F]) Pad(front, back uint) {
-	var zero F
+// Pad returns a copy of this module with the given amount of front/back
+// padding added.  The receiver itself is left unmodified.
+func (p *CompactModule[F]) Pad(front, back uint) *CompactModule[F] {
+	var (
+		zero    F
+		columns = make([]array.MutArray[F], len(p.columns))
+	)
 	//
-	for i := range p.columns {
-		if p.columns[i] != nil {
-			p.columns[i].Pad(front, back, zero)
+	for i, col := range p.columns {
+		if col != nil {
+			columns[i] = col.Pad(front, back, zero)
 		}
 	}
-	// Increment height
-	p.height += front + back
+	//
+	return &CompactModule[F]{p.height + front + back, p.descriptor, columns}
 }
 
 // Width returns the number of columns in this module.
-func (p *CompactModule[T]) Width() uint {
+func (p *CompactModule[F]) Width() uint {
 	return uint(len(p.descriptor.Columns))
 }
 

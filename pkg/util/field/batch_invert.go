@@ -13,12 +13,12 @@
 package field
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
 )
 
 // BatchInvert efficiently inverts the list of elements s, in place.
-func BatchInvert[T Element[T]](s narray.MutArray[T]) {
+func BatchInvert[T Element[T]](s array.MutArray[T]) {
 	if s.Len() == 0 {
 		return
 	}

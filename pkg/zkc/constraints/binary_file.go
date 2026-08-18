@@ -23,9 +23,9 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -49,7 +49,7 @@ const BINFILE_MINOR_VERSION uint16 = 0
 var ZKC_EXEC [8]byte = [8]byte{'z', 'k', 'c', ' ', 'e', 'x', 'e', 'c'}
 
 // Tracer defines the type used for building traces.
-type Tracer[F field.Element[F]] = tracer.Builder[vm.Uint32, F, *rtrace.CompactModule[F]]
+type Tracer[F field.Element[F]] = tracer.Builder[vm.Uint32, F, *trace.CompactModule[F]]
 
 // BinaryFile provides two pieces of functionality: (i) a means for serialising
 // and deserialising a set of AIR constraints; (ii) a means for generating a
@@ -270,7 +270,7 @@ func (p *BinaryFile[F]) clearCachedArtifacts() {
 
 // Check a given trace against the AIR constraints embodied in this constraints
 // file, potentially producing one (or more) constraint failures.
-func (p *BinaryFile[F]) Check(tr rtrace.Trace[F], config vm.TraceConfig) []schema.Failure {
+func (p *BinaryFile[F]) Check(tr trace.Trace[F], config vm.TraceConfig) []schema.Failure {
 	var (
 		sc    = p.AirConstraints()
 		stats = util.NewPerfStats()
@@ -306,7 +306,7 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte) (output map[string][]by
 // carries the original register / limb structure before AIR expansion (e.g. for
 // reporting statistics).  It is nil when execution fails.
 func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
-) (output map[string][]byte, rtr rtrace.Trace[F], errs []error) {
+) (output map[string][]byte, rtr trace.Trace[F], errs []error) {
 	//
 	var (
 		stats = util.NewPerfStats()

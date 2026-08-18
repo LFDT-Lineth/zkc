@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package narray
+package array
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"

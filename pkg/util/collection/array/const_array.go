@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package narray
+package array
 
 import (
 	"bytes"
@@ -116,15 +116,16 @@ func (p *ConstantArray[T]) Set(index uint, word T) {
 	// means that a constraint somewhere should fail
 }
 
-// Pad implementation for MutArray interface.
-func (p *ConstantArray[T]) Pad(n uint, m uint, padding T) {
+// Pad implementation for MutArray interface.  The receiver is left
+// unmodified.
+func (p *ConstantArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
 	if !padding.Equals(p.value) {
 		// NOTE: this can be implemented by changing the representation to
 		// something which can be mutated.
 		panic("unsupported operation")
 	}
 	//
-	p.height += n + m
+	return &ConstantArray[T]{p.height + n + m, p.bitwidth, p.value}
 }
 
 func (p *ConstantArray[T]) String() string {

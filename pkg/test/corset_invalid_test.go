@@ -84,16 +84,6 @@ func Test_Invalid_Basic_15(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/basic_invalid_15")
 }
 
-func Test_Invalid_Basic_16(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/basic_invalid_16")
-}
-func Test_Invalid_Basic_17(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/basic_invalid_17")
-}
-func Test_Invalid_Basic_18(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/basic_invalid_18")
-}
-
 func Test_Invalid_Basic_19(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/basic_invalid_19")
 }

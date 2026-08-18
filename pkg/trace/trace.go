@@ -10,14 +10,14 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package rtrace
+package trace
 
 import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
 )
 
 // Trace describes a set of named modules whose data is organised by row.
@@ -46,7 +46,10 @@ type Module[T any] interface {
 	// Module name.
 	Name() string
 	// Column returns the data for the column at the given index.
-	Column(uint) narray.Array[T]
+	Column(uint) array.Array[T]
+	// MutColumn returns a mutable reference to the underlying data of the given
+	// column.
+	MutColumn(uint) array.MutArray[T]
 	// Descriptor returns the descriptor of this module.
 	Descriptor() ModuleDescriptor
 	// Returns the number of columns in this module.
@@ -61,8 +64,6 @@ type ModuleBuilder[T any, M any] interface {
 	Module[T]
 	// Initialise a new module from a given set of rows.
 	Initialise(ModuleDescriptor) M
-	// MutColumn returns mutable access to the data for the given column.
-	MutColumn(uint) narray.MutArray[T]
 }
 
 // ModuleDescriptor describes an individual module within a trace, including all
@@ -107,4 +108,4 @@ func NewColumnDescriptor(name string, bitwidth util.Option[uint]) ColumnDescript
 	return ColumnDescriptor{name, bitwidth}
 }
 
-var rtraceBinaryMagic = []byte{'r', 't', 'r', 'a', 'c', 'e', 0, 2}
+var traceBinaryMagic = []byte{'r', 't', 'r', 'a', 'c', 'e', 0, 2}

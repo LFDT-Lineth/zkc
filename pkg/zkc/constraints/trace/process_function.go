@@ -13,7 +13,7 @@
 package trace
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -45,15 +45,15 @@ func initOneLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.Fu
 		// Native functions do not (currently) have return lines
 		hasRet = !f.IsNative()
 		// Copy over all parameter / return lines
-		regs = array.Map(f.Registers(), toRtraceRegister)
+		regs = array.Map(f.Registers(), toTraceRegister)
 	)
 	// Check whether return line required
 	if hasRet {
 		// Yes, so add one
-		regs = append(regs, rtrace.NewColumnDescriptor(RET_NAME, util.Some[uint](1)))
+		regs = append(regs, trace.NewColumnDescriptor(RET_NAME, util.Some[uint](1)))
 	}
 	// Initialise the module
-	return module.Initialise(rtrace.NewModuleDescriptor(f.Name(), regs))
+	return module.Initialise(trace.NewModuleDescriptor(f.Name(), regs))
 }
 
 // traceOneLineFunction materialises a trace row for a one-line function.
@@ -95,7 +95,7 @@ func initMultiLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.
 	var (
 		nVectors = uint(len(f.Vectors()))
 		// Copy over all address / data lines
-		regs = array.Map(f.Registers(), toRtraceRegister)
+		regs = array.Map(f.Registers(), toTraceRegister)
 		// Calculate bitwidth for PC register (recall that PC==0 is reserved for
 		// padding).
 		uPC = util.Some(bit.Width(nVectors + 1))
@@ -103,15 +103,15 @@ func initMultiLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.
 		u1 = util.Some[uint](1)
 	)
 	// Return Line
-	regs = append(regs, rtrace.NewColumnDescriptor(RET_NAME, u1))
+	regs = append(regs, trace.NewColumnDescriptor(RET_NAME, u1))
 	// Program Counter
-	regs = append(regs, rtrace.NewColumnDescriptor(PC_NAME, uPC))
+	regs = append(regs, trace.NewColumnDescriptor(PC_NAME, uPC))
 	// PC selector lines
 	for k := range nVectors {
-		regs = append(regs, rtrace.NewColumnDescriptor(SelectorName(k), u1))
+		regs = append(regs, trace.NewColumnDescriptor(SelectorName(k), u1))
 	}
 	// Initialise the module
-	return module.Initialise(rtrace.NewModuleDescriptor(f.Name(), regs))
+	return module.Initialise(trace.NewModuleDescriptor(f.Name(), regs))
 }
 
 // traceMultiLineFunction materialises a trace row a multi-line function

@@ -15,7 +15,6 @@ package builder
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -27,13 +26,13 @@ import (
 // TraceValidation validates that values held in trace columns match the
 // expected type.  This is really a sanity check that the trace is not
 // malformed.
-func TraceValidation[F field.Element[F]](parallel bool, schema sc.AnySchema[F], trace rtrace.Trace[F]) []error {
+func TraceValidation[F field.Element[F]](config Config, schema sc.AnySchema[F], trace trace.Trace[F]) []error {
 	var (
 		errors []error
 		// Start timer
 		stats = util.NewPerfStats()
-		// Flattern all columns
-		columns, errs = flatternTrace(schema, trace)
+		// Flatten all columns
+		columns, errs = flattenTrace(schema, trace)
 		// Mapping function
 		mapfn = func(_ uint, p util.Pair[uint, uint]) error {
 			var (
@@ -46,7 +45,7 @@ func TraceValidation[F field.Element[F]](parallel bool, schema sc.AnySchema[F], 
 		}
 	)
 	//
-	if parallel {
+	if config.Parallel {
 		// Run parallel map
 		errors = array.ParallelMap(columns, mapfn)
 	} else {
@@ -61,7 +60,7 @@ func TraceValidation[F field.Element[F]](parallel bool, schema sc.AnySchema[F], 
 	return append(errs, errors...)
 }
 
-func flatternTrace[F field.Element[F]](schema sc.AnySchema[F], tr rtrace.Trace[F]) ([]util.Pair[uint, uint], []error) {
+func flattenTrace[F field.Element[F]](schema sc.AnySchema[F], tr trace.Trace[F]) ([]util.Pair[uint, uint], []error) {
 	var (
 		errors []error
 		//
@@ -77,7 +76,7 @@ func flatternTrace[F field.Element[F]](schema sc.AnySchema[F], tr rtrace.Trace[F
 			err := fmt.Errorf("unknown module %s in trace", tr.Module(i).Name())
 			errors = append(errors, err)
 		} else {
-			var cols, errs = flatternColumns(i, schema.Module(i), tr.Module(i))
+			var cols, errs = flattenColumns(i, schema.Module(i), tr.Module(i))
 			//
 			columns = append(columns, cols...)
 			errors = append(errors, errs...)
@@ -87,7 +86,7 @@ func flatternTrace[F field.Element[F]](schema sc.AnySchema[F], tr rtrace.Trace[F
 	return columns, errors
 }
 
-func flatternColumns[F field.Element[F]](mid uint, scMod sc.Module[F], trMod rtrace.Module[F],
+func flattenColumns[F field.Element[F]](mid uint, scMod sc.Module[F], trMod trace.Module[F],
 ) ([]util.Pair[uint, uint], []error) {
 	var (
 		errors []error
@@ -119,7 +118,7 @@ func flatternColumns[F field.Element[F]](mid uint, scMod sc.Module[F], trMod rtr
 }
 
 // Validate that all elements of a given column fit within a given bitwidth.
-func validateColumnBitWidth[F field.Element[F]](rid register.Id, smod sc.Module[F], tmod rtrace.Module[F]) error {
+func validateColumnBitWidth[F field.Element[F]](rid register.Id, smod sc.Module[F], tmod trace.Module[F]) error {
 	var (
 		reg = smod.Register(rid)
 		col = tmod.Column(rid.Unwrap())

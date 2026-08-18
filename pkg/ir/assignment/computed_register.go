@@ -17,16 +17,14 @@ import (
 	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
-	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // ComputedRegister describes a column whose values are computed on-demand, rather
@@ -37,7 +35,7 @@ import (
 // the user is expanded by determining the value of all computed columns.
 type ComputedRegister[F field.Element[F]] struct {
 	// Module in which expression is evaluated
-	Module schema.ModuleId
+	Module sc.ModuleId
 	// Target index for computed column
 	Target register.Id
 	// The computation which accepts a given trace and computes
@@ -50,7 +48,7 @@ type ComputedRegister[F field.Element[F]] struct {
 // compute the values for the columns during trace expansion.  For each, the
 // resulting value is split across the target columns.
 func NewComputedRegister[F field.Element[F]](target register.Id, expr term.Computation[F],
-	module schema.ModuleId) *ComputedRegister[F] {
+	module sc.ModuleId) *ComputedRegister[F] {
 	//
 	return &ComputedRegister[F]{module, target, expr}
 }
@@ -71,11 +69,12 @@ func (p *ComputedRegister[F]) Bounds(mid sc.ModuleId) util.Bounds {
 // Compute the values of columns defined by this assignment. Specifically, this
 // creates a new column which contains the result of evaluating a given
 // expression on each row.
-func (p *ComputedRegister[F]) Compute(tr rtrace.Trace[F], schema schema.AnySchema[F],
-) ([]narray.MutArray[F], error) {
+func (p *ComputedRegister[F]) Compute(tr trace.Trace[F], schema sc.AnySchema[F],
+) ([]array.MutArray[F], error) {
 	var (
 		trModule = tr.Module(p.Module)
 		scModule = schema.Module(p.Module)
+
 		// Determine multiplied height
 		height = trModule.Height()
 		// FIXME: using a large bitwidth here ensures the underlying data is
@@ -84,8 +83,8 @@ func (p *ComputedRegister[F]) Compute(tr rtrace.Trace[F], schema schema.AnySchem
 		// values outside the range of the computed register, but which we still
 		// want to check are actually rejected (i.e. since they are simulating what
 		// an attacker might do).
-		data = narray.Alloc[F](math.MaxUint, height)
-		// Run computatiuon
+		data = array.Alloc[F](math.MaxUint, height)
+		// Run computation
 		err = fwdComputation(height, data, p.Expr, trModule, scModule, p.Module)
 	)
 	// Sanity check
@@ -93,7 +92,7 @@ func (p *ComputedRegister[F]) Compute(tr rtrace.Trace[F], schema schema.AnySchem
 		return nil, err
 	}
 	// Done
-	return []narray.MutArray[F]{data}, err
+	return []array.MutArray[F]{data}, err
 }
 
 // Consistent performs some simple checks that the given assignment is
@@ -157,15 +156,15 @@ func (p *ComputedRegister[F]) Lisp(schema sc.AnySchema[F]) sexp.SExp {
 		})
 }
 
-func fwdComputation[F field.Element[F]](height uint, data narray.MutArray[F], expr term.Evaluable[F],
-	trMod rtrace.Module[F], scMod register.Map, ctx schema.ModuleId) error {
+func fwdComputation[F field.Element[F]](height uint, data array.MutArray[F], expr term.Evaluable[F],
+	trMod trace.Module[F], scMod register.Map, ctx sc.ModuleId) error {
 	// Forwards computation
 	for i := range height {
 		val, err := expr.EvalAt(i, trMod, scMod)
 		// error check
 		if err != nil {
 			e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
-			return constraint.NewInternalFailure[word.BigEndian](scMod.Name(), ctx, i, expr, e)
+			return constraint.NewInternalFailure[F](scMod.Name(), ctx, i, expr, e)
 		}
 		// Write data
 		data.Set(i, val)
