@@ -16,11 +16,46 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	ctrace "github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
+
+// ToTrace converts an rtrace.Trace into a trace.Trace, where each column in the
+// former maps into a column in the latter.
+func ToTrace[T word.Word[T]](tr Trace[T]) trace.Trace[T] {
+	var (
+		builder = array.NewStaticBuilder[T]()
+		modules = make([]trace.ArrayModule[T], tr.Width())
+	)
+	//
+	for mid := range tr.Width() {
+		modules[mid] = toTraceModule(tr.Module(mid))
+	}
+	//
+	return trace.NewArrayTrace(builder, modules)
+}
+
+func toTraceModule[T word.Word[T]](module Module[T]) trace.ArrayModule[T] {
+	var (
+		name    = module.Name()
+		columns = make([]trace.ArrayColumn[T], module.Width())
+		zero    T
+	)
+	//
+	for cid := range module.Width() {
+		var (
+			data = module.Column(cid).Clone().ToLegacy()
+			desc = module.Descriptor().Columns[cid]
+		)
+		//
+		columns[cid] = trace.NewArrayColumn(desc.Name, data, zero)
+	}
+	//
+	return trace.NewArrayModule(name, columns)
+}
 
 // FromTrace converts a trace.Trace into a rtrace.Array, where each column in
 // the former maps into a column in the latter.
@@ -32,20 +67,6 @@ func FromTrace[T any, M ModuleBuilder[T, M]](tr ctrace.Trace[T]) *Array[T, M] {
 	}
 	//
 	return NewArray(modules)
-}
-
-// ToTrace converts an rtrace.Trace into a trace.Trace, where each column in the
-// former maps into a column in the latter.
-func ToTrace[T word.Word[T]](tr Trace[T]) []lt.Module[T] {
-	var (
-		modules = make([]lt.Module[T], tr.Width())
-	)
-	//
-	for mid := range tr.Width() {
-		modules[mid] = tr.Module(mid).ToLtModule()
-	}
-	//
-	return modules
 }
 
 func fromTraceModule[T any, M ModuleBuilder[T, M]](module ctrace.Module[T]) M {
@@ -73,7 +94,7 @@ func fromTraceModule[T any, M ModuleBuilder[T, M]](module ctrace.Module[T]) M {
 		rows[rid] = row
 	}
 	// Create new module
-	return nmod.Initialise(module.Name().String(), descriptor, rows...)
+	return nmod.Initialise(NewModuleDescriptor(module.Name(), descriptor), rows...)
 }
 
 func columnDescriptorWidth[T any](col ctrace.Column[T]) util.Option[uint] {

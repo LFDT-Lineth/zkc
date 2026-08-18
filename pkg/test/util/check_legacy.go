@@ -19,15 +19,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -51,8 +50,8 @@ var FIELD_REGEX *regexp.Regexp
 // rejected are rejected.  All fields provided are tested against, both with and
 // without padding (whereby every module's length is expanded up to the next
 // power of two).
-func CheckCorset(t *testing.T, stdlib bool, test string, fields ...field.Config) {
-	CheckWithFields(t, stdlib, test, true, fields...)
+func CheckCorset(t *testing.T, test string, fields ...field.Config) {
+	CheckWithFields(t, test, true, fields...)
 }
 
 // CheckCorsetNoPadding checks that all traces which we expect to be accepted
@@ -60,14 +59,14 @@ func CheckCorset(t *testing.T, stdlib bool, test string, fields ...field.Config)
 // be rejected are rejected.  All fields provided are tested against but without
 // any padding.  This is useful to reduce unnecessary testing for cases where we
 // know padding is not relevant.
-func CheckCorsetNoPadding(t *testing.T, stdlib bool, test string, fields ...field.Config) {
-	CheckWithFields(t, stdlib, test, false, fields...)
+func CheckCorsetNoPadding(t *testing.T, test string, fields ...field.Config) {
+	CheckWithFields(t, test, false, fields...)
 }
 
 // CheckWithFields checks that all traces which we expect to be accepted are
 // accepted by a given set of constraints, and all traces that we expect to be
 // rejected are rejected.  All fields provided are tested against.
-func CheckWithFields(t *testing.T, stdlib bool, test string, padding bool, fields ...field.Config) {
+func CheckWithFields(t *testing.T, test string, padding bool, fields ...field.Config) {
 	// Sanity check
 	if len(fields) == 0 {
 		panic("no field configurations")
@@ -81,38 +80,38 @@ func CheckWithFields(t *testing.T, stdlib bool, test string, padding bool, field
 		// Dispatch based on field config
 		switch f {
 		case field.GF_251:
-			checkWithField[gf251.Element](t, stdlib, test, padding, f)
+			checkWithField[gf251.Element](t, test, padding, f)
 		case field.GF_8209:
-			checkWithField[gf8209.Element](t, stdlib, test, padding, f)
+			checkWithField[gf8209.Element](t, test, padding, f)
 		case field.KOALABEAR_16:
-			checkWithField[koalabear.Element](t, stdlib, test, padding, f)
+			checkWithField[koalabear.Element](t, test, padding, f)
 		case field.BLS12_377:
-			checkWithField[bls12_377.Element](t, stdlib, test, padding, f)
+			checkWithField[bls12_377.Element](t, test, padding, f)
 		default:
 			panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
 		}
 	}
 }
 
-func checkWithField[F field.Element[F]](t *testing.T, stdlib bool, test string, padding bool,
+func checkWithField[F field.Element[F]](t *testing.T, test string, padding bool,
 	field field.Config) {
 	//
 	var (
 		filenames = matchSourceFiles(test)
 		// Configure the stack for the given field.
-		stacks = getSchemaStack[F](stdlib, field, filenames...)
+		stacks = getSchemaStack[F](field, filenames...)
 	)
 	// Record how many tests executed.
 	nTests := 0
 	// Iterate possible testfile extensions
 	for _, cfg := range LEGACY_TESTFILE_EXTENSIONS {
-		var traces []lt.TraceFile
+		var traces []trace.Trace[F]
 		// Construct test filename
 		testFilename := fmt.Sprintf("%s/%s.%s", TestDir, test, cfg.extension)
 		// Sanity check field aligns
 		if cfg.field == "" || cfg.field == field.Name {
 			// Read traces from file
-			traces = ReadTracesFile(testFilename)
+			traces = ReadTracesFile[F](testFilename)
 			if len(traces) > 0 {
 				// Run tests
 				fullCheckTraces(t, testFilename, cfg, padding, traces, stacks)
@@ -128,18 +127,16 @@ func checkWithField[F field.Element[F]](t *testing.T, stdlib bool, test string, 
 }
 
 func fullCheckTraces[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, padding bool,
-	traces []lt.TraceFile, stack cmd_util.SchemaStacker[F]) {
+	traces []trace.Trace[F], stack cmd_util.SchemaStacker[F]) {
 	// Run checks using schema compiled from source
 	checkCompilerOptimisations(t, test, cfg, traces, stack)
-	// Construct binary schema using primary stack
-	checkBinaryEncoding(t, test, cfg, traces, stack)
 	// Perform checks with different fields
 	checkPadding(t, test, cfg, padding, traces, stack)
 }
 
 // Sanity check same outcome for all optimisation levels
 func checkCompilerOptimisations[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig,
-	traces []lt.TraceFile, stack cmd_util.SchemaStacker[F]) {
+	traces []trace.Trace[F], stack cmd_util.SchemaStacker[F]) {
 	// Run checks using schema compiled from source
 	for _, opt := range cfg.optlevels {
 		// Only check optimisation levels other than the default.
@@ -152,30 +149,10 @@ func checkCompilerOptimisations[F field.Element[F]](t *testing.T, test string, c
 	}
 }
 
-// Check the binary encoding / decoding.
-func checkBinaryEncoding[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, traces []lt.TraceFile,
-	stack cmd_util.SchemaStacker[F]) {
-	//
-	name := fmt.Sprintf("%s:bin", test)
-	// Construct binary schema using primary stack
-	if binf := encodeDecodeSchema(t, *stack.BinaryFile()); binf != nil {
-		// Choose any valid optimisation level
-		opt := cfg.optlevels[0]
-		//
-		stack = stack.WithBinaryFile(*binf)
-		// Set optimisation level
-		stack = stack.WithOptimisationConfig(mir.OPTIMISATION_LEVELS[opt])
-
-		// Run checks using schema from binary file.  Observe, to try and reduce
-		// overhead of repeating all the tests we don't consider padding.
-		checkTraces(t, name, false, opt, cfg, traces, stack)
-	}
-}
-
 // Run default optimisation over all fields, and check padding for the primary
 // stack only.
 func checkPadding[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, padding bool,
-	traces []lt.TraceFile, stack cmd_util.SchemaStacker[F]) {
+	traces []trace.Trace[F], stack cmd_util.SchemaStacker[F]) {
 	//
 	if cfg.field == "" || cfg.field == stack.Field().Name {
 		// Set default optimisation level
@@ -188,7 +165,7 @@ func checkPadding[F field.Element[F]](t *testing.T, test string, cfg LegacyTestC
 // Check a given set of tests have an expected outcome (i.e. are
 // either accepted or rejected) by a given set of constraints.
 func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, opt uint, cfg LegacyTestConfig,
-	traces []lt.TraceFile, stacker cmd_util.SchemaStacker[F]) {
+	traces []trace.Trace[F], stacker cmd_util.SchemaStacker[F]) {
 	// For unexpected traces, we never want to explore padding (because that's
 	// the whole point of unexpanded traces --- they are raw).
 	if !cfg.expand {
@@ -217,7 +194,7 @@ func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, op
 					// in production); therefore, we just restrict how much its used.
 					var parallel = (i == 0)
 					//
-					if tf.RawModules() != nil {
+					if tf != nil {
 						// Construct trace identifier
 						id := traceId{stack.RegisterMapping().Field().Name, ir, test,
 							cfg.expected, cfg.expand, cfg.validate, opt, parallel, i + 1, padding}
@@ -234,7 +211,7 @@ func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, op
 	}
 }
 
-func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf lt.TraceFile, id traceId,
+func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf trace.Trace[F], id traceId,
 	schema sc.Schema[F, C], mapping module.LimbsMap) {
 	// Map the legacy padding toggle onto a padding strategy.
 	paddingStrategy := ir.NaryRowPadding(0)
@@ -249,13 +226,13 @@ func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf lt.Trac
 		WithParallelism(id.parallel).
 		WithRegisterMapping(mapping).
 		WithBatchSize(128).
-		Build(sc.Any(schema), tf.Clone())
+		Build(sc.Any(schema), tf)
 	// Sanity check construction
 	if len(errs) > 0 {
 		t.Errorf("Trace expansion failed (%s): %s", id.String(), errs)
 	} else {
 		// Check Constraints
-		errs := sc.Accepts(id.parallel, 128, schema, tr)
+		errs := sc.Accepts(id.parallel, schema, tr)
 		// Determine whether trace accepted or not.
 		accepted := len(errs) == 0
 		// Process what happened versus what was supposed to happen.
@@ -312,6 +289,11 @@ var LEGACY_TESTFILE_EXTENSIONS []LegacyTestConfig = []LegacyTestConfig{
 	{"accepts.bz2", true, true, true, "", allOptLevels},
 	{"auto.accepts", true, true, true, "", allOptLevels},
 	{"auto.accepts.bz2", true, true, true, "", allOptLevels},
+	{"bls12_377.accepts", true, true, true, "BLS12_377", allOptLevels},
+	{"koalabear_16.accepts", true, true, true, "KOALABEAR_16", allOptLevels},
+	{"gf_8209.accepts", true, true, true, "GF_8209", allOptLevels},
+	{"bls12_377.accepts.bz2", true, true, true, "BLS12_377", allOptLevels},
+	{"koalabear_16.accepts.bz2", true, true, true, "KOALABEAR_16", allOptLevels},
 	{"expanded.accepts", true, false, false, "BLS12_377", allOptLevels},
 	{"expanded.O1.accepts", true, false, false, "BLS12_377", defaultOptLevel},
 	// should all fail
@@ -364,49 +346,29 @@ func (p *traceId) String() string {
 
 // ReadTracesFile reads a file containing zero or more traces expressed as JSON, where
 // each trace is on a separate line.
-func ReadTracesFile(filename string) []lt.TraceFile {
+func ReadTracesFile[F field.Element[F]](filename string) []trace.Trace[F] {
 	lines, _ := file.ReadInputFileAsLines(filename)
-	traces := make([]lt.TraceFile, len(lines))
+	traces := make([]trace.Trace[F], len(lines))
 	// Read constraints line by line
 	for i, line := range lines {
 		// Parse input line as JSON
 		if line != "" && !strings.HasPrefix(line, ";;") {
 			// Read traces
-			pool, tf, err := json.FromBytes([]byte(line))
+			tf, err := json.FromBytes[F]([]byte(line))
 			//
 			if err != nil {
 				msg := fmt.Sprintf("%s:%d: %s", filename, i+1, err)
 				panic(msg)
 			}
 
-			traces[i] = lt.NewTraceFile(nil, pool, tf)
+			traces[i] = tf
 		}
 	}
 
 	return traces
 }
 
-// This is a little test to ensure the binary file format (specifically the
-// binary encoder / decoder) works as expected.
-func encodeDecodeSchema(t *testing.T, binf binfile.BinaryFile) *binfile.BinaryFile {
-	var nbinf binfile.BinaryFile
-	// Turn the binary file into bytes
-	bytes, err := binf.MarshalBinary()
-	// Encode schema
-	if err != nil {
-		t.Error(err)
-		return nil
-	}
-	// Decode schema
-	if err := nbinf.UnmarshalBinary(bytes); err != nil {
-		t.Error(err)
-		return nil
-	}
-	//
-	return &nbinf
-}
-
-func getSchemaStack[F field.Element[F]](stdlib bool, field field.Config, filenames ...string,
+func getSchemaStack[F field.Element[F]](field field.Config, filenames ...string,
 ) cmd_util.SchemaStacker[F] {
 	//
 	var (
@@ -414,8 +376,6 @@ func getSchemaStack[F field.Element[F]](stdlib bool, field field.Config, filenam
 		corsetConfig corset.CompilationConfig
 	)
 	// Configure corset for testing
-	corsetConfig.Legacy = true
-	corsetConfig.Stdlib = stdlib
 	corsetConfig.Field = field
 	//
 	stack = stack.

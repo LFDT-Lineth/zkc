@@ -16,7 +16,6 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 )
@@ -25,10 +24,8 @@ import (
 type Failure[F any] struct {
 	// Handle of the failing constraint
 	Handle string
-	// Relevant context for source registers.
-	Context schema.ModuleId
-	// Source registers whose values were missing
-	Sources []register.Id
+	// SourceId gives the set identifier of the source
+	SourceId schema.SetId
 	// Row on which the constraint failed
 	Row uint
 }
@@ -46,8 +43,10 @@ func (p *Failure[F]) String() string {
 func (p *Failure[F]) RequiredCells(_ trace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
 	res := set.NewAnySortedSet[trace.CellRef]()
 	// Handle registers
-	for _, rid := range p.Sources {
-		ref := trace.NewColumnRef(p.Context, rid)
+	for i := range p.SourceId.Width() {
+		var rid = p.SourceId.Ith(i)
+		//
+		ref := trace.NewColumnRef(p.SourceId.Module(), rid)
 		res.Insert(trace.NewCellRef(ref, int(p.Row)))
 	}
 	//

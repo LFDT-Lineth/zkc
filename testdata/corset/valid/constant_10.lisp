@@ -1,7 +1,7 @@
 (defcolumns (X :i16) (Y :i16))
 (defconst
   N 4
-  TWO_N (^ 2 N))
+  TWO_N (* N N))
 
-;; X == Y * 2^n
+;; X == Y * 16
 (defconstraint c1 () (== X (* Y TWO_N)))

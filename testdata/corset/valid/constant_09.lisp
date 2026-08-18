@@ -1,6 +1,3 @@
-(defpurefun (eq! x y) (== x y))
-(defpurefun (if-eq x val (then :any)) (if (eq! x val) then))
-;;
 (defcolumns
   (CT :byte)
   (IS_SLT :binary@prove)
@@ -17,5 +14,5 @@
   LLARGEMO                                  (- LLARGE 1))
 
 (defconstraint bits-and-negs (:guard IS_SLT)
-  (if-eq CT LLARGEMO
-        (eq! NEG_2 (shift BITS (- 0 7)))))
+  (if (== CT LLARGEMO)
+        (== NEG_2 (shift BITS (- 0 7)))))

@@ -48,7 +48,7 @@ func (p *AirPicusTranslator[F]) TranslateModule(i uint) {
 		return
 	}
 	// initialize the corresponding PCL module
-	picusModule := p.picusProgram.AddModule(airModule.Name().String())
+	picusModule := p.picusProgram.AddModule(airModule.Name())
 	// register inputs and outputs from MIR inputs/outputs
 	for _, register := range airModule.Registers() {
 		picusVar := pcl.V[F](register.Name())
@@ -89,12 +89,12 @@ func (p *AirPicusTranslator[F]) translateRangeConstraint(r air.RangeConstraint[F
 	picusModule *pcl.Module[F], airModule schema.Module[F],
 ) {
 	var (
-		exprs     = r.Unwrap().Sources
+		sources   = r.Unwrap().Sources
 		bitwidths = r.Unwrap().Bitwidths
 	)
 
-	for i, e := range exprs {
-		expr := p.lowerTerm(e, airModule)
+	for i, source := range sources {
+		expr := p.lowerRegister(source, 0, airModule)
 		// 1. Get the `big.Int` representation of the max unisgned value for a given bitwidth.
 		// 2. Create a field element from the big integer.
 		// 3. Construct a PCL constant from the field element.
@@ -124,7 +124,7 @@ func (p *AirPicusTranslator[F]) translateLookup(v air.LookupConstraint[F], picus
 		target := v.Unwrap().Targets[0]
 
 		targetModule := p.airSchema.Module(target.Module)
-		if targetModule.Name().Name != "u128" {
+		if targetModule.Name() != "u128" {
 			panic(fmt.Sprintf("Unhandled lookup target: %s", targetModule.Name()))
 		}
 

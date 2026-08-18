@@ -51,11 +51,7 @@ func printSourceMapModule(indent uint, module corset.SourceModule) {
 	for _, c := range module.Constants {
 		printIndent(indent)
 		//
-		if c.Extern {
-			fmt.Printf("extern\t")
-		} else {
-			fmt.Printf("const\t")
-		}
+		fmt.Printf("const\t")
 		//
 		if c.Bitwidth != math.MaxUint {
 			fmt.Printf("u%d ", c.Bitwidth)
@@ -88,10 +84,6 @@ func sourceColumnAttrs(col corset.SourceColumn) []string {
 	var attrs []string
 	//
 	attrs = append(attrs, fmt.Sprintf("r%d", col.Register.Column().Unwrap()))
-	//
-	if col.Multiplier != 1 {
-		attrs = append(attrs, fmt.Sprintf("×%d", col.Multiplier))
-	}
 	//
 	if col.Computed {
 		attrs = append(attrs, "computed")

@@ -15,12 +15,8 @@ package rtrace
 import (
 	"fmt"
 	"math"
-	"slices"
 	"strings"
 
-	ctrace "github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
@@ -28,25 +24,23 @@ import (
 // CompactModule describes an individual module within a trace, and represents
 // each column within that module using an appropriate (compact) encoding.
 type CompactModule[F field.Element[F]] struct {
-	// Holds the name of this module.
-	name string
-	// Holds the column descriptors for this module.
-	descriptors []ColumnDescriptor
+	// Holds the descriptor for this module.
+	descriptor ModuleDescriptor
 	// Holds the complete set of columns in this module, with one for each
 	// descriptor.
 	columns []narray.MutArray[F]
 }
 
 // NewCompactModule constructs a module with the given name, descriptors and rows.
-func NewCompactModule[F field.Element[F]](name string, descriptors []ColumnDescriptor, rows ...[]F) *CompactModule[F] {
+func NewCompactModule[F field.Element[F]](descriptor ModuleDescriptor, rows ...[]F) *CompactModule[F] {
 	var (
 		height  = uint(len(rows))
-		width   = uint(len(descriptors))
+		width   = uint(len(descriptor.Columns))
 		columns = make([]narray.MutArray[F], width)
 	)
 	//
-	for rid := range descriptors {
-		var bitwidth = descriptors[rid].Bitwidth.UnwrapOr(math.MaxUint)
+	for rid := range descriptor.Columns {
+		var bitwidth = descriptor.Columns[rid].Bitwidth.UnwrapOr(math.MaxUint)
 		// Allocate compact representation
 		columns[rid] = allocArray[F](bitwidth, height)
 	}
@@ -61,17 +55,17 @@ func NewCompactModule[F field.Element[F]](name string, descriptors []ColumnDescr
 		}
 	}
 	//
-	return &CompactModule[F]{name, slices.Clone(descriptors), columns}
+	return &CompactModule[F]{descriptor, columns}
 }
 
 // Initialise implementation for Module interface.
-func (p *CompactModule[T]) Initialise(name string, descriptors []ColumnDescriptor, rows ...[]T) *CompactModule[T] {
-	return NewCompactModule(name, descriptors, rows...)
+func (p *CompactModule[T]) Initialise(descriptor ModuleDescriptor, rows ...[]T) *CompactModule[T] {
+	return NewCompactModule(descriptor, rows...)
 }
 
 // Append implementation for Module interface.
 func (p *CompactModule[T]) Append(row ...T) {
-	if len(row) != len(p.descriptors) {
+	if len(row) != len(p.descriptor.Columns) {
 		panic("mismatched row data")
 	}
 	// Append element for each row
@@ -80,19 +74,26 @@ func (p *CompactModule[T]) Append(row ...T) {
 	}
 }
 
+// Join a given module into this by appending all rows of each column onto the
+// corresponding column in this module.
+func (p *CompactModule[T]) Join(m Module[T]) {
+	if p.Width() != m.Width() {
+		panic("cannot join mismatched modules")
+	}
+	//
+	for i := range p.Width() {
+		narray.AppendOnto(p.columns[i], m.Column(i))
+	}
+}
+
 // Name returns the name of this module.
 func (p *CompactModule[T]) Name() string {
-	return p.name
+	return p.descriptor.Name
 }
 
-// Descriptors returns an iterator over the column descriptors for this module.
-func (p *CompactModule[T]) Descriptors() iter.Iterator[ColumnDescriptor] {
-	return iter.NewArrayIterator(p.descriptors)
-}
-
-// DescriptorOf returns the descriptor of the column with the given index.
-func (p *CompactModule[T]) DescriptorOf(index uint) ColumnDescriptor {
-	return p.descriptors[index]
+// Descriptor returns the descriptor of this module.
+func (p *CompactModule[T]) Descriptor() ModuleDescriptor {
+	return p.descriptor
 }
 
 // Column returns the data for the column at the given index.
@@ -118,16 +119,16 @@ func (p *CompactModule[T]) Height() uint {
 
 // Width returns the number of columns in this module.
 func (p *CompactModule[T]) Width() uint {
-	return uint(len(p.descriptors))
+	return uint(len(p.descriptor.Columns))
 }
 
 func (p *CompactModule[T]) String() string {
 	var id strings.Builder
 	//
-	if p.name == "" {
+	if p.descriptor.Name == "" {
 		id.WriteString("∅")
 	} else {
-		id.WriteString(p.name)
+		id.WriteString(p.descriptor.Name)
 	}
 
 	id.WriteString("={")
@@ -143,25 +144,6 @@ func (p *CompactModule[T]) String() string {
 	id.WriteString("}")
 	// Done
 	return id.String()
-}
-
-// ToLtModule implementation for Module interface.
-func (p *CompactModule[T]) ToLtModule() lt.Module[T] {
-	var (
-		name    = ctrace.ModuleName{Name: p.name, Multiplier: 1}
-		columns = make([]lt.Column[T], len(p.columns))
-	)
-	//
-	for i, col := range p.columns {
-		var (
-			data = col.ToLegacy()
-			name = p.descriptors[i].Name
-		)
-		//
-		columns[i] = lt.NewColumn(name, data)
-	}
-	//
-	return lt.NewModule(name, columns)
 }
 
 func allocArray[F field.Element[F]](bitwidth uint, height uint) narray.MutArray[F] {

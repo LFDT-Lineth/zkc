@@ -15,6 +15,7 @@ package narray
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -70,6 +71,24 @@ func (p *BitArray[T]) Append(val T) {
 	bit.LittleEndianWrite(v, p.data, p.height)
 	// increase height
 	p.height++
+}
+
+// AppendAll elements of the given bit array onto the this array, mutating it
+// in place.
+func (p *BitArray[T]) AppendAll(other BitArray[T]) {
+	// Determine height of resulting array
+	var (
+		nsize = word.ByteWidth(p.height + other.height)
+		n     = nsize - uint(len(p.data))
+	)
+	//
+	ndata := slices.Grow(p.data, int(n))
+	// expand data length
+	p.data = ndata[:nsize]
+	// fast bit copy
+	bit.LittleEndianCopy(other.data, 0, p.data, p.height, other.height)
+	// update height
+	p.height += other.height
 }
 
 // BitWidth returns the width (in bits) of elements in this array.

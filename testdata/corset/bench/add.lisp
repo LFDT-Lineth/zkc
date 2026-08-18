@@ -27,28 +27,28 @@
   THETA 340282366920938463463374607431768211456) ;; note that 340282366920938463463374607431768211456 = 256^16
 
 (defconstraint stamp-constancy-arg-1-hi ()
-  (stamp-constancy STAMP ARG_1_HI))
+  (if (== (shift STAMP 1) STAMP) (== (shift ARG_1_HI 1) ARG_1_HI)))
 
 (defconstraint stamp-constancy-arg-1-lo ()
-  (stamp-constancy STAMP ARG_1_LO))
+  (if (== (shift STAMP 1) STAMP) (== (shift ARG_1_LO 1) ARG_1_LO)))
 
 (defconstraint stamp-constancy-arg-2-hi ()
-  (stamp-constancy STAMP ARG_2_HI))
+  (if (== (shift STAMP 1) STAMP) (== (shift ARG_2_HI 1) ARG_2_HI)))
 
 (defconstraint stamp-constancy-arg-2-lo ()
-  (stamp-constancy STAMP ARG_2_LO))
+  (if (== (shift STAMP 1) STAMP) (== (shift ARG_2_LO 1) ARG_2_LO)))
 
 (defconstraint stamp-constancy-res-hi ()
-  (stamp-constancy STAMP RES_HI))
+  (if (== (shift STAMP 1) STAMP) (== (shift RES_HI 1) RES_HI)))
 
 (defconstraint stamp-constancy-res-lo ()
-  (stamp-constancy STAMP RES_LO))
+  (if (== (shift STAMP 1) STAMP) (== (shift RES_LO 1) RES_LO)))
 
 (defconstraint stamp-constancy-inst ()
-  (stamp-constancy STAMP INST))
+  (if (== (shift STAMP 1) STAMP) (== (shift INST 1) INST)))
 
 (defconstraint stamp-constancy-ct-max ()
-  (stamp-constancy STAMP CT_MAX))
+  (if (== (shift STAMP 1) STAMP) (== (shift CT_MAX 1) CT_MAX)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;                     ;;
@@ -65,25 +65,25 @@
 
 ;; Stamp either constant is increases by 1
 (defconstraint heartbeat-stamp-increments ()
-  (∨ (will-remain-constant! STAMP) (will-inc! STAMP 1)))
+  (∨ (== (shift STAMP 1) STAMP) (== (shift STAMP 1) (+ STAMP 1))))
 
 ;; When stamp increases, counter is reset
 (defconstraint heartbeat-counter-reset ()
-  (if (¬ (will-remain-constant! STAMP))
-      (== (next CT) 0)))
+  (if (¬ (== (shift STAMP 1) STAMP))
+      (== (shift CT 1) 0)))
 
 ;; outside of padding, instruction either ADD or SUB
 (defconstraint heartbeat-instruction ()
   (if (!= STAMP 0)
-      (∨ (eq! INST EVM_INST_ADD) (eq! INST EVM_INST_SUB))))
+      (∨ (== INST EVM_INST_ADD) (== INST EVM_INST_SUB))))
 
 (defconstraint heartbeat-counter-increments ()
   (if (!= STAMP 0)
       (if (== CT CT_MAX)
           ;; After last row of frame, stamp increases
-          (will-inc! STAMP 1)
+          (== (shift STAMP 1) (+ STAMP 1))
           ;; On rows within frame, counter increases
-          (will-inc! CT 1))))
+          (== (shift CT 1) (+ CT 1)))))
 
 ;; (CT < LLARGE) ∧ (CT_MAX > 0)
 (defconstraint heartbeat-counter-bounds ()
@@ -99,10 +99,10 @@
 ;;                                                   ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defconstraint byte-decomposition-acc-1 ()
-  (byte-decomposition CT ACC_1 BYTE_1))
+  (if (== CT 0) (== ACC_1 BYTE_1) (== ACC_1 (+ (* 256 (shift ACC_1 -1)) BYTE_1))))
 
 (defconstraint byte-decomposition-acc-2 ()
-  (byte-decomposition CT ACC_2 BYTE_2))
+  (if (== CT 0) (== ACC_2 BYTE_2) (== ACC_2 (+ (* 256 (shift ACC_2 -1)) BYTE_2))))
 
 ;; TODO: bytehood constraints
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -129,7 +129,7 @@
       (if (!= INST EVM_INST_SUB)
           (== (+ ARG_1_HI ARG_2_HI OVERFLOW)
               (+ RES_HI
-                 (* THETA (prev OVERFLOW)))))))
+                 (* THETA (shift OVERFLOW -1)))))))
 
 (defconstraint adder-subtraction-lo (:guard STAMP)
   (if (== CT CT_MAX)
@@ -142,4 +142,4 @@
       (if (!= INST EVM_INST_ADD)
           (== (+ RES_HI ARG_2_HI OVERFLOW)
               (+ ARG_1_HI
-                 (* THETA (prev OVERFLOW)))))))
+                 (* THETA (shift OVERFLOW -1)))))))

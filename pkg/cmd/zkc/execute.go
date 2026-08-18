@@ -23,7 +23,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
@@ -72,50 +71,45 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		// resume mode: the input file holds a checkpoint (hex) to resume from,
 		// rather than an initial set of JSON inputs.  Execution then continues to
 		// completion via the fast bytecode interpreter.
-		resume   = GetFlag(cmd, "resume")
-		fastMode = build.config.IsFastMode()
+		resume = GetFlag(cmd, "resume")
 		// simple equivalence
-		tracing = !fastMode
+		tracing = !build.fastMode
 		//
 		trace   trace.Trace[F]
 		input   map[string][]byte
 		outputs map[string][]byte
 	)
 	// Configure tracing
-	traceConfig := constraints.DEFAULT_TRACE_CONFIG.
+	traceConfig := vm.DEFAULT_TRACE_CONFIG.
 		WithPadding(build.padding).
 		WithBatchSize(GetUint(cmd, "batch"))
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
 	// Build artifacts (compiles source files or loads a prebuilt binary).
-	artifacts := Build[F](build, args[1:]...)
-	// Translate bytecode => word machine
-	program := vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
-	// Wrap the word machine in a binary file for execution / tracing / checking.
-	binfile := constraints.NewBinaryFile[F](nil, nil, field, build.config.GetMaxStaticHeight(), artifacts.ir)
+	_, binfile := Build[F](build, args[1:]...)
 	// =====================================================
 	// Trace / Execute
 	// =====================================================
 	if resume {
 		// Resume execution from the checkpoint held (in hex) in the input file,
 		// running the (unmodified) program to completion in fast mode.
-		outputs, errors = resumeFromCheckPoint(program, args[0])
+		outputs, errors = resumeFromCheckPoint(binfile.ExecutionProgram(), args[0])
 	} else {
 		// Parse an filter input file
-		input = vm.FilterInputs(program, ParseInputFile(args[0]))
+		input = filterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
 		// decide what is happening
 		if checkpoint != "" {
 			// Checkpoint the function named in the spec (periodically with "f:N", or
 			// once with "f@N") and execute in fast mode, writing the resulting
 			// checkpoints to the output file (with -o) or to stdout otherwise.
-			outputs, errors = executeWithCheckPoint(program, checkpoint, outputFile, input)
+			outputs, errors = executeWithCheckPoint(binfile.ExecutionProgram(), checkpoint, outputFile, input)
 		} else if tracing {
 			outputs, _, trace, errors = binfile.Trace(input, traceConfig)
 		} else if build.gogen {
 			// Execute via native Go generated from the word machine.
-			outputs, errors = executeWithGogen(artifacts.ir, input)
+			outputs, errors = executeWithGogen(binfile.RawProgram(), input)
 		} else {
-			outputs, errors = binfile.Execute(input, 131072)
+			outputs, errors = binfile.Execute(input)
 		}
 	}
 	// =====================================================
@@ -127,10 +121,8 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	}
 	// write out trace (if requested)
 	if tracing && outputFile != "" {
-		// Construct trace file
-		ltf := lt.FromRawTrace(nil, trace)
 		// Write out trace file
-		WriteTraceFile(outputFile, ltf)
+		WriteTraceFile(outputFile, trace)
 	}
 	// =====================================================
 	// Check Constraints
@@ -153,7 +145,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 }
 
 func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F], tr trace.Trace[F],
-	cfg constraints.TraceConfig) {
+	cfg vm.TraceConfig) {
 	//
 	var checkConfig corset.CheckConfig
 	// Set sensible defaults (for now)
@@ -330,22 +322,20 @@ func newCheckPointInterpreter[W vm.Word[W]](p vm.Program[W], fn string, clk util
 	interp := vm.NewBytecodeInterpreter(p)
 	// Write a checkpoint as a hex string, one per line.  The counter governs how
 	// frequently this actually fires: it triggers every interval entries of fn.
-	emit := func(_ uint32) {
+	emit := func(_ uint32) bool {
 		// Only record once every interval-th invocation of fn.
-		if !clk.Tick() {
-			return
+		if clk.Tick() {
+			bytes, err := interp.CheckPoint().MarshalBinary()
+			if err != nil {
+				log.Errorf("encoding checkpoint: %s", err)
+				return true
+			} else if _, err := fmt.Fprintf(out, "0x%s\n", hex.EncodeToString(bytes)); err != nil {
+				log.Errorf("encoding checkpoint: %s", err)
+				return true
+			}
 		}
 		//
-		bytes, err := interp.CheckPoint().MarshalBinary()
-		if err != nil {
-			log.Errorf("encoding checkpoint: %s", err)
-			return
-		}
-		//
-		if _, err := fmt.Fprintf(out, "0x%s\n", hex.EncodeToString(bytes)); err != nil {
-			log.Errorf("encoding checkpoint: %s", err)
-			return
-		}
+		return false
 	}
 	//
 	interp.BreakPointer(emit)

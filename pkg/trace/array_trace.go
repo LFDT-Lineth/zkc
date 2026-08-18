@@ -15,7 +15,6 @@ package trace
 import (
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -46,7 +45,7 @@ func (p *ArrayTrace[W]) Column(cref ColumnRef) Column[W] {
 
 // HasModule determines whether this trace has a module with the given name and,
 // if so, what its module index is.
-func (p *ArrayTrace[W]) HasModule(module ModuleName) (uint, bool) {
+func (p *ArrayTrace[W]) HasModule(module string) (uint, bool) {
 	// Linea scan through list of modules
 	for mid, mod := range p.modules {
 		if mod.name == module {
@@ -113,12 +112,9 @@ func (p *ArrayTrace[W]) String() string {
 // ArrayModule describes an individual module within a trace.
 type ArrayModule[W word.Word[W]] struct {
 	// Holds the name of this module
-	name ModuleName
+	name string
 	// Holds the height of all columns within this module.
 	height uint
-	// Number of keys which can be used for searching in this module.  Cannot
-	// exceed the number of columns, but it can be zero.
-	numKeys uint
 	// Holds the complete set of columns in this trace.  The index of each
 	// column in this array uniquely identifies it, and is referred to as the
 	// "column index".
@@ -127,7 +123,7 @@ type ArrayModule[W word.Word[W]] struct {
 
 // NewArrayModule constructs a module with the given name and an (as yet)
 // unspecified height.
-func NewArrayModule[W word.Word[W]](name ModuleName, keys uint, columns []ArrayColumn[W]) ArrayModule[W] {
+func NewArrayModule[W word.Word[W]](name string, columns []ArrayColumn[W]) ArrayModule[W] {
 	var (
 		height uint = 0
 		first       = true
@@ -143,18 +139,12 @@ func NewArrayModule[W word.Word[W]](name ModuleName, keys uint, columns []ArrayC
 			panic(fmt.Sprintf("invalid column height (have %d, expected %d)", c.Height(), height))
 		}
 	}
-	// Sanity check height is a multiple of the length multiplier
-	if name.Multiplier == 0 {
-		panic(fmt.Sprintf("invalid length multiplier (%d)", name.Multiplier))
-	} else if height%name.Multiplier != 0 {
-		panic(fmt.Sprintf("invalid module height (have %d, expected multiple of %d)", height, name.Multiplier))
-	}
 	//
-	return ArrayModule[W]{name, height, keys, columns}
+	return ArrayModule[W]{name, height, columns}
 }
 
 // Name returns the name of this module.
-func (p ArrayModule[W]) Name() ModuleName {
+func (p ArrayModule[W]) Name() string {
 	return p.name
 }
 
@@ -172,29 +162,6 @@ func (p ArrayModule[W]) ColumnOf(name string) Column[W] {
 	}
 	//
 	panic(fmt.Sprintf("unknown column \"%s\"", name))
-}
-
-// FindLast implementation for the trace.Module interface.
-func (p ArrayModule[W]) FindLast(keys ...W) uint {
-	if uint(len(keys)) != p.numKeys {
-		panic(fmt.Sprintf("incorrect number of keys provided (was %d, expected %d)", len(keys), p.numKeys))
-	}
-	// Search for given keys
-	index := sort.Search(int(p.height), func(row int) bool {
-		return rowLessThanEquals(keys, uint(row), p.columns)
-	})
-	// Sanity check result
-	if uint(index) < p.height && rowEquals(uint(index), p.columns, keys) {
-		// Shift along to last index
-		return findLastFrom(uint(index), p.height, p.columns, keys)
-	}
-	//
-	return math.MaxUint
-}
-
-// Keys implementation for the trace.Module interface.
-func (p ArrayModule[W]) Keys() uint {
-	return p.numKeys
 }
 
 // Height returns the height of this module, meaning the number of assigned
@@ -235,9 +202,8 @@ func (p *ArrayModule[W]) FillColumn(cid uint, data array.MutArray[W]) bool {
 // was not previously reset; or, if the column heights are inconsistent.
 func (p *ArrayModule[W]) Resize() {
 	var (
-		multiplier      = p.name.Multiplier
-		nsize      uint = math.MaxUint
-		first      bool = true
+		nsize uint = math.MaxUint
+		first bool = true
 	)
 	//
 	for i := 0; i != len(p.columns); i++ {
@@ -252,10 +218,6 @@ func (p *ArrayModule[W]) Resize() {
 			panic(fmt.Sprintf("incompatible column heights (%d vs %d)", nsize, data.Len()))
 		}
 	}
-	// Sanity check height is a multiple of the length multiplier
-	if nsize%multiplier != 0 {
-		panic(fmt.Sprintf("invalid module height (have %d, expected multiple of %d)", nsize, multiplier))
-	}
 	// Done
 	p.height = nsize
 }
@@ -263,15 +225,6 @@ func (p *ArrayModule[W]) Resize() {
 // Pad prepends (front) and appends (back) all columns in this module with a
 // given number of padding rows.
 func (p *ArrayModule[W]) Pad(front uint, back uint) {
-	var (
-		multiplier = p.name.Multiplier
-	)
-	//
-	if front%multiplier != 0 {
-		panic(fmt.Sprintf("invalid front padding (have %d, expected multiple of %d)", front, multiplier))
-	} else if back%multiplier != 0 {
-		panic(fmt.Sprintf("invalid back padding (have %d, expected multiple of %d)", back, multiplier))
-	}
 	// Update height accordingly
 	p.height += front + back
 	// Padd each column contained within this module.
@@ -281,15 +234,12 @@ func (p *ArrayModule[W]) Pad(front uint, back uint) {
 }
 
 func (p *ArrayModule[W]) String() string {
-	var (
-		id   strings.Builder
-		name = p.name.String()
-	)
+	var id strings.Builder
 	//
-	if name == "" {
+	if p.name == "" {
 		id.WriteString("∅")
 	} else {
-		id.WriteString(name)
+		id.WriteString(p.name)
 	}
 
 	id.WriteString("={")
@@ -388,49 +338,4 @@ func (p *ArrayColumn[W]) pad(front uint, back uint) {
 		// Pad front of array
 		p.data.Pad(front, back, p.padding)
 	}
-}
-
-func findLastFrom[W word.Word[W]](row, height uint, columns []ArrayColumn[W], keys []W) uint {
-	for (row+1) < height && rowEquals(row+1, columns, keys) {
-		row = row + 1
-	}
-	//
-	return row
-}
-
-func rowLessThanEquals[W word.Word[W]](keys []W, row uint, columns []ArrayColumn[W]) bool {
-	var n = len(keys)
-	// NOTE: since register limbs are split with the least significant having
-	// the lowest index, they are sorted in a right-to-left fashion by
-	// io.Executor.  This ensures that, after register splitting, all instances
-	// remain in sorted order.  Therefore, we have to reflect this here.
-	for k := n; k > 0; {
-		k--
-		//
-		kth := columns[k].data.Get(row)
-		//
-		if c := keys[k].Cmp(kth); c > 0 {
-			// miss
-			return false
-		} else if c < 0 {
-			// hit
-			return true
-		}
-	}
-	//
-	return true
-}
-
-func rowEquals[W word.Word[W]](row uint, columns []ArrayColumn[W], keys []W) bool {
-	var n = len(keys)
-	//
-	for k := range n {
-		kth := columns[k].data.Get(row)
-		if !kth.Equals(keys[k]) {
-			// miss
-			return false
-		}
-	}
-	//
-	return true
 }

@@ -17,29 +17,24 @@ import (
 	"runtime"
 
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	log "github.com/sirupsen/logrus"
 )
 
 // RequiredPaddingRows determines the number of additional (spillage / padding)
 // rows that will be added during trace expansion.  The exact value depends on
 // whether defensive padding is enabled or not.
 func RequiredPaddingRows[F any](module uint, defensive bool, schema AnySchema[F]) uint {
-	var (
-		multiplier = schema.Module(module).Name().Multiplier
-		padding    = requiredSpillage(module, schema)
-	)
+	var padding = requiredSpillage(module, schema)
 	//
 	if defensive {
 		// determine minimum levels of defensive padding required.
 		padding = max(padding, defensivePadding(module, schema))
 	}
-	// Technically, we could avoid multiplying by the multiplier here, but in
-	// practice it shouldn't matter.  That's because of the very limited ways in
-	// which interleaved columns are used in practice.
-	return padding * multiplier
+	//
+	return padding
 }
 
 // RequiredSpillage returns the minimum amount of spillage required for a given
@@ -98,18 +93,18 @@ func defensivePadding[F any](module uint, schema AnySchema[F]) uint {
 // constraint which does not hold.
 //
 //nolint:revive
-func Accepts[F field.Element[F], C Constraint[F]](parallel bool, batchsize uint, schema Schema[F, C],
+func Accepts[F field.Element[F], C Constraint[F]](parallel bool, schema Schema[F, C],
 	trace tr.Trace[F]) []Failure {
 	//
-	return accepts(parallel, batchsize, schema.Constraints(), trace, schema, "Constraint")
+	return accepts(parallel, schema.Constraints(), trace, schema)
 }
 
 //nolint:revive
-func accepts[F field.Element[F], C Constraint[F]](parallel bool, batchsize uint, iter iter.Iterator[C],
-	trace tr.Trace[F], schema Schema[F, C], kind string) []Failure {
+func accepts[F field.Element[F], C Constraint[F]](parallel bool, iter iter.Iterator[C],
+	trace tr.Trace[F], schema Schema[F, C]) []Failure {
 	//
 	if parallel {
-		return parallelAccepts(batchsize, iter, trace, schema, kind)
+		return parallelAccepts(iter, trace, schema)
 	}
 	// sequential
 	return sequentialAccepts(iter, trace, schema)
@@ -118,12 +113,16 @@ func accepts[F field.Element[F], C Constraint[F]](parallel bool, batchsize uint,
 func sequentialAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace tr.Trace[F],
 	schema Schema[F, C]) []Failure {
 	//
-	errors := make([]Failure, 0)
+	var (
+		context = SeqBuildContext(trace, Any(schema))
+		errors  = make([]Failure, 0)
+	)
+
 	//
 	for iter.HasNext() {
 		ith := iter.Next()
 		//
-		_, err := ith.Accepts(trace, Any(schema))
+		err := ith.Accepts(trace, Any(schema), context)
 		if err != nil {
 			errors = append(errors, err)
 		}
@@ -132,81 +131,48 @@ func sequentialAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C
 	return errors
 }
 
-func parallelAccepts[F field.Element[F], C Constraint[F]](batchsize uint, iter iter.Iterator[C], trace tr.Trace[F],
-	schema Schema[F, C], kind string) []Failure {
-	//
-	errors := make([]Failure, 0)
-	// Initialise batch number (for debugging purposes)
-	batch := uint(0)
-	// Process constraints in batches
-	for iter.HasNext() {
-		errs := processConstraintBatch(kind, batch, batchsize, iter, trace, schema)
-		errors = append(errors, errs...)
-		// Increment batch number
-		batch++
-	}
-	// Success
-	return errors
-}
-
-// Process a given set of constraints in a single batch whilst recording all constraint failures.
-func processConstraintBatch[F field.Element[F], C Constraint[F]](logtitle string, batch uint, batchsize uint,
-	iter iter.Iterator[C], trace tr.Trace[F], schema Schema[F, C]) []Failure {
-	//
-	n := uint(0)
-	c := make(chan batchOutcome, batchsize)
-	errors := make([]Failure, 0)
-	stats := util.NewPerfStats()
-	// Launch at most 100 go-routines.
-	for ; n < batchsize && iter.HasNext(); n++ {
-		// Get ith constraint
-		ith := iter.Next()
-		// Launch checker for constraint
-		go func() {
-			var (
-				context = ith.Contexts()[0]
-				name    = ith.Name()
-				cov     bit.Set
-			)
-			// Setup panic intercept
-			defer func() {
-				var err = recover()
-				//
-				if err != nil {
-					var (
-						buf [2048]byte
-						n   = runtime.Stack(buf[:], false)
-					)
-					c <- batchOutcome{context, name, cov, &PanicFailure{
-						fmt.Sprintf("%v", err), buf[:n],
-					}}
-				}
-			}()
-			// Check and send outcome back
-			cov, err := ith.Accepts(trace, Any(schema))
-			//
-			c <- batchOutcome{context, name, cov, err}
-		}()
-	}
-	//
-	for i := uint(0); i < n; i++ {
-		p := <-c
-		// Read from channel
-		if p.error != nil {
-			errors = append(errors, p.error)
+func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace tr.Trace[F],
+	schema Schema[F, C]) (errors []Failure) {
+	var (
+		context = ParBuildContext(trace, Any(schema))
+		// Collect all constraints into a slice so we can use ParallelMap.
+		constraints = iter.Collect()
+	)
+	// Process all constraints in parallel using a worker pool.
+	errors = array.ParallelMap(constraints, func(i uint, constraint C) Failure {
+		if i%1000 == 0 {
+			var percent float64 = float64(100*i) / float64(len(constraints))
+			log.Debug(fmt.Sprintf("Checking constraints [%0.1f%%]", percent))
 		}
-	}
-	// Log stats about this batch
-	stats.Log(fmt.Sprintf("%s batch %d (%d items)", logtitle, batch, n))
+		//
+		return processConstraint(constraint, trace, schema, context)
+	})
+
 	//
-	return errors
+	return array.Filter(errors, func(f Failure) bool { return f != nil })
 }
 
-type batchOutcome struct {
-	module uint
-	handle string
-	data   bit.Set
-	error  Failure
+// processConstraint checks a given constraint against the trace, intercepting any
+// panic and converting it into a PanicFailure.
+func processConstraint[F field.Element[F], C Constraint[F]](ith C, trace tr.Trace[F], schema Schema[F, C],
+	ctx Context[F]) (res Failure) {
+	// Setup panic intercept
+	defer func() {
+		var err = recover()
+		//
+		if err != nil {
+			var (
+				buf [2048]byte
+				n   = runtime.Stack(buf[:], false)
+			)
+			// override return
+			res = &PanicFailure{fmt.Sprintf("%v", err), buf[:n]}
+		}
+	}()
+	// Check and send outcome back
+	err := ith.Accepts(trace, Any(schema), ctx)
+	//
+	return err
 }
 
 // PanicFailure indicates that a panic arose during constraint checking, rather

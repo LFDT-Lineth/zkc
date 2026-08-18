@@ -56,7 +56,6 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 	pcSelectors []register.Id,
 	ret register.Id,
 	infos []vm.Module[W],
-	callerRegs []register.Register,
 	field field.Config) {
 	//
 	for pc, vec := range fn.Vectors() {
@@ -70,23 +69,27 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 		// which they execute, so accesses sharing a condition share a single
 		// source selector (column).
 		// Note that a branch that doesn't emit lookup will be skipped.
-		for _, group := range groupLookupsByCondition(vec.Bytecodes, branchTable, oneHot, infos) {
+		for _, group := range groupLookupsByCondition(vec.Bytecodes, branchTable, oneHot) {
 			// Source selector gating the accesses of this group: their branch
 			// condition and:
 			// - for a multi-line function, its line selector (IS_PC_*)
 			// - for a one line function, the $ret register (defining the
 			//   non-padding region)
 			srcSelector := lookupSourceSelector(mod, ctx, mod.Registers(),
-				group.condition, uint(pc), pcSelectors, ret)
+				group.condition, uint(pc), pcSelectors, ret, oneHot)
 			//
 			for _, entry := range group.entries {
 				switch c := entry.code.(type) {
 				case *vm.BytecodeCall[W]:
-					emitCallLookup(mod, ctx, callerRegs, uint(pc), uint(c.Target),
+					emitCallLookup(mod, ctx, uint(pc), uint(c.Target),
 						toRegisterIds(c.Arguments), toRegisterIds(c.Returns), srcSelector, infos)
 				case *vm.BytecodeReadWrite[W]:
-					emitMemoryLookup(mod, ctx, callerRegs, uint(pc), entry.cc, uint(c.Id),
-						toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector, infos)
+					if infos[c.Id].(*vm.Memory[W]).IsReadWrite() {
+						emitRamLookup(mod, ctx, uint(pc), entry.cc, c, srcSelector, infos, field)
+					} else {
+						emitMemoryLookup(mod, ctx, uint(pc), entry.cc, uint(c.Id),
+							toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector, infos)
+					}
 				}
 			}
 		}
@@ -111,34 +114,28 @@ type lookupEntry[W vm.Word[W]] struct {
 }
 
 // groupLookupsByCondition partitions the lookup-emitting bytecodes of a vector
-// (calls, and memory accesses other than RAM) by the branch condition under
+// (calls and memory accesses) by the branch condition under
 // which they execute.  Conditions are shortened against the given one-hot
 // groups first (see rewriteOneHotConditions), so that accesses within a
 // switch's default body are gated on the default bit rather than on the
 // complement of every case bit.
 func groupLookupsByCondition[W vm.Word[W]](codes []vm.Bytecode[W], branchTable dfa.Result[dfa.Path[W]],
-	oneHot []oneHotGroup, infos []vm.Module[W]) []lookupGroup[W] {
+	oneHot []oneHotGroup) []lookupGroup[W] {
 	var groups []lookupGroup[W]
 	//
 outer:
 	for cc, code := range codes {
-		switch c := code.(type) {
+		switch code.(type) {
 		case *vm.BytecodeCall[W]:
 			// always emits a lookup
 		case *vm.BytecodeReadWrite[W]:
-			// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1807
-			// read-write (RAM) memories have no table constraints yet
-			// (see translateReadWriteMemory), so there is no sound lookup
-			// target for them.
-			if infos[c.Id].(*vm.Memory[W]).IsReadWrite() {
-				continue
-			}
+			// read-write and access-once memories alike emit a lookup.
 		default:
 			continue
 		}
 		//
 		var (
-			condition = rewriteOneHotConditions(branchTable.StateOf(uint(cc)).Condition(), oneHot)
+			condition = rewriteOneHotConditions(reachCondition(branchTable.StateOf(uint(cc))), oneHot)
 			entry     = lookupEntry[W]{uint(cc), code}
 		)
 		// Append to an existing group with the same condition (if any).
@@ -163,7 +160,7 @@ outer:
 // (IS_PC_k for a multi-line function, $ret for a one-line function).
 func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
-	ret register.Id) register.Id {
+	ret register.Id, oneHot []oneHotGroup) register.Id {
 	// Position register gating the rows of this access: the line's IS_PC_k
 	// selector for a multi-line function, or $ret for an atomic one (defining
 	// the non-padding region).
@@ -184,7 +181,7 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constrain
 	posAtom := logical.NotEqualsConst(dfa.NewBranchId(false, position), big.Int{})
 	cond = cond.And(logical.NewProposition(posAtom))
 	//
-	return newPathSelector(mod, ctx, regs, cond)
+	return newPathSelector(mod, ctx, regs, cond, oneHot)
 }
 
 // newPathSelector creates a fresh 1-bit column gating a conditionally executed
@@ -193,7 +190,7 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constrain
 // (already position-gated) branch condition — so it is 1 exactly on the rows
 // which perform the access.
 func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	regs []register.Register, cond dfa.BranchCondition,
+	regs []register.Register, cond dfa.BranchCondition, oneHot []oneHotGroup,
 ) register.Id {
 	var padding big.Int
 	// Allocate the selector column.
@@ -204,21 +201,58 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]]
 	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.
 	mod.AddConstraints(mir.NewVanishingConstraint(
 		fmt.Sprintf("lookup_sel_%d", selId.Unwrap()), ctx, util.None[int](),
-		pathSelectorConstraint[F](selId, cond, regs)))
+		pathSelectorConstraint[F](selId, cond, regs, oneHot)))
 	//
 	return selId
 }
 
 // pathSelectorConstraint builds the binding "$lookup_sel == 1 iff cond" as an
 // MIR logical term.
+//
+// A condition of the shape ⋁ᵢ (rest ∧ bitᵢ != 0 ∧ guardsᵢ) over distinct bits
+// of a single one-hot group (see splitOneHotDisjunction) is bound
+// arithmetically as
+//
+//	if rest { sel == Σᵢ bitᵢ·⟦guardsᵢ⟧ } else { sel == 0 }
 func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.BranchCondition,
-	regs []register.Register) mir.LogicalTerm[F] {
+	regs []register.Register, oneHot []oneHotGroup) mir.LogicalTerm[F] {
 	var (
-		condition = mirc.TranslateBranchCondition(cond, callRegisterReader[F]{regs})
-		sel       = mirc.Variable[register.Id, Expr[F]](selId, 1, 0)
-		one       = mirc.Number[register.Id, Expr[F]](1)
-		zero      = mirc.Number[register.Id, Expr[F]](0)
+		sel  = mirc.Variable[register.Id, Expr[F]](selId, 1, 0)
+		one  = mirc.Number[register.Id, Expr[F]](1)
+		zero = mirc.Number[register.Id, Expr[F]](0)
 	)
+	//
+	if rest, pieces, ok := splitOneHotDisjunction(cond, oneHot); ok {
+		var (
+			remainder = mirc.TranslateBranchCondition(conditionOfAtoms(rest), callRegisterReader[F]{regs})
+			sum       Expr[F]
+		)
+		//
+		for i, piece := range pieces {
+			ith := mirc.Variable[register.Id, Expr[F]](piece.bit, 1, 0)
+			// Each guard tests a width-1 register against zero, so its 0/1
+			// indicator is the register itself (!=) or its complement (==).
+			for _, guard := range piece.guards {
+				factor := mirc.Variable[register.Id, Expr[F]](guard.Left.Id, 1, 0)
+				//
+				if guard.Sign {
+					factor = one.Subtract(factor)
+				}
+				//
+				ith = ith.Multiply(factor)
+			}
+			//
+			if i == 0 {
+				sum = ith
+			} else {
+				sum = sum.Add(ith)
+			}
+		}
+		//
+		return remainder.ThenElse(sel.Equals(sum), sel.Equals(zero)).AsLogical()
+	}
+	//
+	condition := mirc.TranslateBranchCondition(cond, callRegisterReader[F]{regs})
 	//
 	return condition.ThenElse(sel.Equals(one), sel.Equals(zero)).AsLogical()
 }
@@ -263,7 +297,7 @@ func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
 // emitCallLookup constructs and adds a single lookup constraint mapping the
 // caller's argument/return registers onto the callee's input/output registers.
 func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	callerRegs []register.Register, pc, calleeId uint, args, returns []register.Id,
+	pc, calleeId uint, args, returns []register.Id,
 	srcSelector register.Id, infos []vm.Module[W]) {
 	var (
 		callee     = infos[calleeId].(*vm.Function[W])
@@ -319,7 +353,7 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 // each address exactly once (address monotony), so two writes of different
 // values to the same address cannot both match a row.
 func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
-	ctx schema.ModuleId, accessorRegs []register.Register, pc, cc, memId uint,
+	ctx schema.ModuleId, pc, cc, memId uint,
 	address, data []register.Id, srcSelector register.Id, infos []vm.Module[W]) {
 	var (
 		mem     = infos[memId].(*vm.Memory[W])
@@ -356,6 +390,63 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir
 		//
 		target = lookup.FilteredVector(memId, accessId, tgtIds...)
 	}
+	//
+	mod.AddConstraints(mir.NewLookupConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
+}
+
+// emitRamLookup constructs and adds the lookup constraint tying one read-write
+// (RAM) memory access to a row of that memory's table: the accessor's address,
+// data and (threaded) timestamp registers map onto the table's ADDRESS,
+// VALUE_WRITTEN and TIMESTAMP_WRITTEN columns.  The access's read/write kind is
+// pinned by the target-side filter: a write targets the table filtered by
+// EXEC_WRITE (= EXEC * IS_WRITE), a read by EXEC_READ (= EXEC * (1-IS_WRITE)).
+// A read's data registers are its outputs — the value read back — which the
+// table exposes in VALUE_WRITTEN too, since a read row "writes back" what it
+// found (VALUE_READ == VALUE_WRITTEN there).
+//
+// Together with the table's local constraints this pins every access's row;
+// that VALUE_READ genuinely returns the last value written to the address
+// remains for the offline memory-checking bus (see translateReadWriteMemory).
+func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
+	ctx schema.ModuleId, pc, cc uint, rw *vm.BytecodeReadWrite[W],
+	srcSelector register.Id, infos []vm.Module[W], fieldCfg field.Config) {
+	//
+	var (
+		mem    = infos[rw.Id].(*vm.Memory[W])
+		layout = computeRamLayout(mem, fieldCfg)
+		// The bytecode index (cc) disambiguates two accesses to the same memory
+		// on the same code line.
+		handle = fmt.Sprintf("ram_%d_%d_%d_%d", ctx, pc, cc, rw.Id)
+		// Source ids: the accessor's address, data and timestamp registers.
+		// The timestamp is threaded on the constraint path only, so it is
+		// always present here; its limbs split exactly like the table's
+		// timestamp columns (same width, same field).
+		srcIds = append(append(append([]register.Id{},
+			toRegisterIds(rw.Address)...),
+			toRegisterIds(rw.Data)...),
+			toRegisterIds(rw.Stamp)...)
+		// Target ids: the table's ADDRESS, VALUE_WRITTEN and TIMESTAMP_WRITTEN
+		// columns, in the layout's fixed order.
+		tgtIds = append(append(append([]register.Id{},
+			layout.address...),
+			layout.valueWritten...),
+			layout.tsWritten...)
+		// Target-side filter pinning the access kind.
+		kind = layout.execRead
+	)
+	//
+	if len(rw.Stamp) == 0 {
+		panic(fmt.Sprintf("read-write memory access without a threaded timestamp (%s)", handle))
+	}
+	//
+	if rw.Write {
+		kind = layout.execWrite
+	}
+	//
+	var (
+		source = lookup.FilteredVector(ctx, srcSelector, srcIds...)
+		target = lookup.FilteredVector(uint(rw.Id), kind, tgtIds...)
+	)
 	//
 	mod.AddConstraints(mir.NewLookupConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
 }

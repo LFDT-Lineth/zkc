@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/inspector"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
@@ -74,18 +73,16 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	stack := stacker.Build()
 	//
 	stats := util.NewPerfStats()
-	// Parse constraints
-	binf := stacker.BinaryFile()
 	// Sanity check debug information is available.
-	srcmap, srcmap_ok := binfile.GetAttribute[*corset.SourceMap](binf)
+	srcmap, srcmap_ok := stacker.SourceMap()
 	//
 	if !srcmap_ok {
-		fmt.Printf("binary file \"%s\" missing source map", args[1])
+		fmt.Printf("constraints \"%s\" missing source map", args[1])
 	}
 	//
 	stats.Log("Reading constraints file")
 	// Parse trace file
-	tracefile := ReadTraceFile(args[0])
+	tracefile := ReadTraceFile[F](args[0])
 	// Extract schema
 	schema := stack.ConcreteSchema()
 	//
@@ -121,7 +118,7 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 // (shown by default); when nil, all modules are public.  Callers use this to
 // hide synthetic modules such as range-check tables.
 func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F],
-	public func(tr.ModuleName) bool, limbs bool, cellWidth, titleWidth uint) []error {
+	public func(string) bool, limbs bool, cellWidth, titleWidth uint) []error {
 	//
 	term, err := termio.NewTerminal()
 	if err != nil {

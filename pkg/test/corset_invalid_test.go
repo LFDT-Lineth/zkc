@@ -158,28 +158,12 @@ func Test_Invalid_Constant_10(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/constant_invalid_10")
 }
 
-func Test_Invalid_Constant_11(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_11")
-}
-
-func Test_Invalid_Constant_12(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_12")
-}
-
 func Test_Invalid_Constant_13(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/constant_invalid_13")
 }
 
 func Test_Invalid_Constant_14(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/constant_invalid_14")
-}
-
-func Test_Invalid_Constant_15(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_15")
-}
-
-func Test_Invalid_Constant_16(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_16")
 }
 
 func Test_Invalid_Constant_17(t *testing.T) {
@@ -202,57 +186,6 @@ func Test_Invalid_Constant_21(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/constant_invalid_21")
 }
 
-func Test_Invalid_Constant_22(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_22")
-}
-
-func Test_Invalid_Constant_23(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_23")
-}
-
-func Test_Invalid_Constant_24(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_24")
-}
-
-func Test_Invalid_Constant_25(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_25")
-}
-
-func Test_Invalid_Constant_26(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/constant_invalid_26")
-}
-
-// ===================================================================
-// Alias Tests
-// ===================================================================
-func Test_Invalid_Alias_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/alias_invalid_01")
-}
-
-func Test_Invalid_Alias_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/alias_invalid_02")
-}
-
-func Test_Invalid_Alias_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/alias_invalid_03")
-}
-
-func Test_Invalid_Alias_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/alias_invalid_04")
-}
-
-func Test_Invalid_Alias_05(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/alias_invalid_05")
-}
-
-func Test_Invalid_Alias_06(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/alias_invalid_06")
-}
-
-func Test_Invalid_Alias_07(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/alias_invalid_07")
-}
-
 // ===================================================================
 // Shift Tests
 // ===================================================================
@@ -263,14 +196,6 @@ func Test_Invalid_Shift_01(t *testing.T) {
 
 func Test_Invalid_Shift_02(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/shift_invalid_02")
-}
-
-// ===================================================================
-// Normalisation Tests
-// ===================================================================
-
-func Test_Invalid_Norm_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/norm_invalid_01")
 }
 
 // ===================================================================
@@ -344,6 +269,10 @@ func Test_Invalid_Range_05(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/range_invalid_05")
 }
 
+func Test_Invalid_Range_06(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/range_invalid_06")
+}
+
 // ===================================================================
 // Modules
 // ===================================================================
@@ -391,91 +320,6 @@ func Test_Invalid_Lookup_19(t *testing.T) {
 }
 
 // ===================================================================
-// Functions
-// ===================================================================
-
-func Test_Invalid_Fun_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/fun_invalid_01")
-}
-
-func Test_Invalid_Fun_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/fun_invalid_02")
-}
-
-func Test_Invalid_Fun_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/fun_invalid_03")
-}
-
-func Test_Invalid_Fun_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/fun_invalid_04")
-}
-
-// ===================================================================
-// Pure Functions
-// ===================================================================
-
-func Test_Invalid_PureFun_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_01")
-}
-
-func Test_Invalid_PureFun_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_02")
-}
-
-func Test_Invalid_PureFun_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_03")
-}
-
-func Test_Invalid_PureFun_04(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_04")
-}
-
-func Test_Invalid_PureFun_05(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_05")
-}
-
-func Test_Invalid_PureFun_06(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_06")
-}
-
-func Test_Invalid_PureFun_07(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_07")
-}
-
-func Test_Invalid_PureFun_08(t *testing.T) {
-	// tricky one
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_08")
-}
-
-func Test_Invalid_PureFun_09(t *testing.T) {
-	// tricky one
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_09")
-}
-
-func Test_Invalid_PureFun_10(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_10")
-}
-
-func Test_Invalid_PureFun_11(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_11")
-}
-
-func Test_Invalid_PureFun_12(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_12")
-}
-
-func Test_Invalid_PureFun_13(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_13")
-}
-
-func Test_Invalid_PureFun_14(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_14")
-}
-func Test_Invalid_PureFun_15(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/purefun_invalid_15")
-}
-
-// ===================================================================
 // Arrays
 // ===================================================================
 func Test_Invalid_Array_01(t *testing.T) {
@@ -496,33 +340,6 @@ func Test_Invalid_Array_04(t *testing.T) {
 
 func Test_Invalid_Array_05(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/array_invalid_05")
-}
-
-// ===================================================================
-// Perspectives
-// ===================================================================
-func Test_Invalid_Perspective_01(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/perspective_invalid_01")
-}
-
-func Test_Invalid_Perspective_02(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/perspective_invalid_02")
-}
-
-func Test_Invalid_Perspective_03(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/perspective_invalid_03")
-}
-
-func Test_Invalid_Perspective_05(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/perspective_invalid_05")
-}
-
-func Test_Invalid_Perspective_06(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/perspective_invalid_06")
-}
-
-func Test_Invalid_Perspective_08(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/perspective_invalid_08")
 }
 
 // ===================================================================

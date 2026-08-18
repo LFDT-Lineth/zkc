@@ -149,7 +149,7 @@ func bucketCount(hist map[uint]uint, b bucket) uint {
 // constraint degrees are gathered from the pre-split bytecode program (ir) and
 // the post-split AIR schema respectively.  The order argument determines how the
 // modules are ordered (see orderModules).
-func PrintCompileStats[F field.Element[F]](air schema.AnySchema[F], ir vm.Program[vm.Uint], order string) {
+func PrintCompileStats[F field.Element[F], W vm.Word[W]](air schema.AnySchema[F], ir vm.Program[W], order string) {
 	var (
 		// Pre-split register histograms, keyed by module name.
 		preSplit = preSplitRegisters(ir)
@@ -248,7 +248,7 @@ type preSplitInfo struct {
 // preSplitRegisters builds, for each module in the bytecode program, its type
 // and a histogram mapping register bitwidth to the number of registers of that
 // width, plus a separate count of native (bitwidth-less) registers.
-func preSplitRegisters(ir vm.Program[vm.Uint]) map[string]preSplitInfo {
+func preSplitRegisters[W vm.Word[W]](ir vm.Program[W]) map[string]preSplitInfo {
 	var info = make(map[string]preSplitInfo)
 	//
 	for _, m := range ir.Modules() {
@@ -256,7 +256,7 @@ func preSplitRegisters(ir vm.Program[vm.Uint]) map[string]preSplitInfo {
 		// The maximum program-counter value is the number of bytecode lines (line
 		// indices plus the one-past-the-end halt value).  Only non-native
 		// functions carry a program counter.
-		if fn, ok := m.(*vm.Function[vm.Uint]); ok && !fn.IsNative() {
+		if fn, ok := m.(*vm.Function[W]); ok && !fn.IsNative() {
 			entry.pcMax = uint(len(fn.Vectors()))
 		}
 		//
@@ -277,15 +277,15 @@ func preSplitRegisters(ir vm.Program[vm.Uint]) map[string]preSplitInfo {
 // moduleType classifies a bytecode module: a "function" (possibly "native"), or
 // a memory by kind ("static", "ROM" read-only, "WOM" write-once, "RAM"
 // read-write).
-func moduleType(m vm.Module[vm.Uint]) string {
+func moduleType[W vm.Word[W]](m vm.Module[W]) string {
 	switch m := m.(type) {
-	case *vm.Function[vm.Uint]:
+	case *vm.Function[W]:
 		if m.IsNative() {
 			return "native"
 		}
 		//
 		return "function"
-	case *vm.Memory[vm.Uint]:
+	case *vm.Memory[W]:
 		switch {
 		case m.IsStatic():
 			return "static"
@@ -312,10 +312,10 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 	preSplit map[string]preSplitInfo) moduleStats {
 	//
 	var stats = moduleStats{
-		name:     mod.Name().String(),
+		name:     mod.Name(),
 		preSplit: make(map[uint]uint),
 		degrees:  make(map[uint]uint),
-		pcMax:    preSplit[mod.Name().Name].pcMax,
+		pcMax:    preSplit[mod.Name()].pcMax,
 	}
 	//
 	switch {
@@ -329,14 +329,14 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 		stats.postRegs = mod.Width()
 	default:
 		// Regular module (function or memory): report the full breakdown.
-		info := preSplit[mod.Name().Name]
+		info := preSplit[mod.Name()]
 		stats.typ = info.typ
 		stats.postRegs = mod.Width()
 		// Pre-split register widths are only meaningful (and field-independent)
 		// for user-defined modules.  Compiler-generated modules (e.g. the
 		// recursive $range_* range checkers) have no pre-split form and their
 		// register widths depend on the field, so leave those columns blank.
-		if !isGenerated(mod.Name().Name) {
+		if !isGenerated(mod.Name()) {
 			stats.preSplit = info.widths
 			stats.preNative = info.native
 		}

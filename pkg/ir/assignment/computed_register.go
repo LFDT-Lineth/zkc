@@ -13,7 +13,6 @@
 package assignment
 
 import (
-	"encoding/gob"
 	"fmt"
 	"math"
 	"runtime"
@@ -371,19 +370,6 @@ func (p *ComputedRegister[F]) RegistersWritten() []register.Ref {
 	return written
 }
 
-// Substitute any matchined labelled constants within this assignment
-func (p *ComputedRegister[F]) Substitute(mapping map[string]F) {
-	var tmp any = mapping
-	// NOTE: this is the only scenario under which this method can be called.
-	w, ok := tmp.(map[string]word.BigEndian)
-	// sanity check
-	if !ok {
-		panic("unreachable")
-	}
-	//
-	p.Expr.Substitute(w)
-}
-
 // Lisp converts this constraint into an S-Expression.
 //
 //nolint:revive
@@ -422,7 +408,7 @@ func fwdComputation(height uint, data [][]word.BigEndian, widths []uint, expr te
 		// error check
 		if err != nil {
 			e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
-			return constraint.NewInternalFailure[word.BigEndian](scMod.Name().String(), ctx, i, expr, e)
+			return constraint.NewInternalFailure[word.BigEndian](scMod.Name(), ctx, i, expr, e)
 		}
 		// Write data across limbs
 		write(i, val, data, widths)
@@ -469,7 +455,7 @@ func fwdComputationParallelDirect[F field.Element[F]](height uint, data [][]F, w
 
 					if firstErr == nil {
 						e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
-						firstErr = constraint.NewInternalFailure[word.BigEndian](scMod.Name().String(), ctx, i, expr, e)
+						firstErr = constraint.NewInternalFailure[word.BigEndian](scMod.Name(), ctx, i, expr, e)
 					}
 
 					mu.Unlock()
@@ -543,7 +529,7 @@ func fwdComputationDirect[F field.Element[F]](height uint, data [][]F, widths []
 		val, err := expr.EvalAt(int(i), trMod, scMod)
 		if err != nil {
 			e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
-			return constraint.NewInternalFailure[word.BigEndian](scMod.Name().String(), ctx, i, expr, e)
+			return constraint.NewInternalFailure[word.BigEndian](scMod.Name(), ctx, i, expr, e)
 		}
 
 		splitter.write(i, val, data)
@@ -561,12 +547,4 @@ func write(row uint, val word.BigEndian, data [][]word.BigEndian, bitwidths []ui
 			data[i][row] = elements[i]
 		}
 	}
-}
-
-// ============================================================================
-// Encoding / Decoding
-// ============================================================================
-
-func init() {
-	gob.Register(sc.Assignment[word.BigEndian](&ComputedRegister[word.BigEndian]{}))
 }

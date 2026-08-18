@@ -50,11 +50,19 @@ func validateBytecodeProgram[W word.Word[W]](program Program[W]) error {
 			errs = append(errs, fmt.Errorf("module %d (%s): too many registers (%d)",
 				mid, module.Name(), module.Width()))
 		}
-	}
-	// An environment stores its enclosing module as a uint16.  If the module
-	// count is already invalid, do not truncate module indices while validating.
-	if uint64(len(modules)) > uint64(math.MaxUint16)+1 {
-		return errors.Join(errs...)
+		// At most one zero register should exist per module.
+		var zeros []string
+
+		for _, r := range module.Registers() {
+			if IsZeroWidth(r) {
+				zeros = append(zeros, r.Name())
+			}
+		}
+
+		if len(zeros) > 1 {
+			errs = append(errs, fmt.Errorf("module %d (%s): multiple zero registers (%v)",
+				mid, module.Name(), zeros))
+		}
 	}
 
 	for mid, module := range modules {

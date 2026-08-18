@@ -134,21 +134,14 @@ func (p *IfZero[F, S, T]) ValueRange() math.Interval {
 	return trueBounds.Union(falseBounds)
 }
 
-// Substitute implementation for Substitutable interface.
-func (p *IfZero[F, S, T]) Substitute(mapping map[string]F) {
-	p.Condition.Substitute(mapping)
-	p.FalseBranch.Substitute(mapping)
-	p.TrueBranch.Substitute(mapping)
-}
-
 // Simplify implementation for Term interface.
 //
 // nolint
-func (p *IfZero[F, S, T]) Simplify(casts bool) T {
+func (p *IfZero[F, S, T]) Simplify() T {
 	var (
-		cond        = p.Condition.Simplify(casts)
-		trueBranch  = p.TrueBranch.Simplify(casts)
-		falseBranch = p.FalseBranch.Simplify(casts)
+		cond        = p.Condition.Simplify()
+		trueBranch  = p.TrueBranch.Simplify()
+		falseBranch = p.FalseBranch.Simplify()
 	)
 	// Handle reductive cases
 	if IsTrue(cond) {

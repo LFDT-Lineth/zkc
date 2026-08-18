@@ -17,7 +17,6 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/poly"
 )
@@ -173,7 +172,7 @@ func (p *registerAllocator[T]) Assignments() []util.Pair[[]Id, T] {
 }
 
 // Name implementation for RegisterMapping interface
-func (p *registerAllocator[T]) Name() trace.ModuleName {
+func (p *registerAllocator[T]) Name() string {
 	return p.mapping.Name()
 }
 

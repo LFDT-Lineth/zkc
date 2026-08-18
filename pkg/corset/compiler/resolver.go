@@ -14,7 +14,6 @@ package compiler
 
 import (
 	"fmt"
-	"math"
 	"reflect"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
@@ -38,7 +37,7 @@ func ResolveCircuit(srcmap *source.Maps[ast.Node], circuit *ast.Circuit) (*Modul
 	scope := NewModuleScope(true)
 	// Register modules
 	for _, m := range circuit.Modules {
-		scope.Declare(m.Name, extractSelector(nil), true)
+		scope.Declare(m.Name, util.None[string](), true)
 	}
 	// Construct resolver
 	r := resolver{srcmap}
@@ -65,7 +64,7 @@ type resolver struct {
 
 // Initialise all columns from their declaring constructs.
 func (r *resolver) initialiseDeclarations(scope *ModuleScope, circuit *ast.Circuit) []SyntaxError {
-	// Input columns must be allocated before assignemts, since the hir.Schema
+	// Input columns must be allocated before assignemts, since the MIR schema
 	// separates these out.
 	errs := r.initialiseDeclarationsInModule(scope, circuit.Declarations)
 	//
@@ -87,18 +86,7 @@ func (r *resolver) initialiseDeclarations(scope *ModuleScope, circuit *ast.Circu
 // contexts, etc).
 func (r *resolver) initialiseDeclarationsInModule(scope *ModuleScope, decls []ast.Declaration) []SyntaxError {
 	errors := make([]SyntaxError, 0)
-	// First, initialise any perspectives as submodules of the given scope.  Its
-	// slightly frustrating that we have to do this separately, but the
-	// non-lexical nature of perspectives forces our hand.
-	for _, d := range decls {
-		if def, ok := d.(*ast.DefPerspective); ok {
-			// Attempt to declare the perspective.  Note, we don't need to check
-			// whether or not this succeeds here as, if it fails, this will be
-			// caught below.
-			scope.Declare(def.Name(), extractSelector(def.Selector), true)
-		}
-	}
-	// Second, initialise all symbol (e.g. column) definitions.
+	// Initialise all symbol (e.g. column) definitions.
 	for _, d := range decls {
 		for iter := d.Definitions(); iter.HasNext(); {
 			def := iter.Next()
@@ -110,77 +98,7 @@ func (r *resolver) initialiseDeclarationsInModule(scope *ModuleScope, decls []as
 			}
 		}
 	}
-	// Third, intialise aliases
-	if errors := r.initialiseAliasesInModule(scope, decls); len(errors) > 0 {
-		return errors
-	}
 	//
-	return errors
-}
-
-// This is really broken.  The problem is that we need to translate the selector
-// expression within the translator.  But, setting that all up is not
-// straightforward.  This should be done in the future!
-func extractSelector(selector ast.Expr) util.Option[string] {
-	if selector == nil {
-		return util.None[string]()
-	}
-	//
-	if e, ok := selector.(*ast.VariableAccess); ok && e.Name.Depth() == 1 {
-		return util.Some(e.Name.Get(0))
-	}
-	// FIXME: #630
-	panic("unsupported selector")
-}
-
-// Initialise all alias declarations in the given module scope.  This means
-// declaring them within the module scope, whilst also supporting aliases of
-// aliases, etc.  Since the order of aliases is unspecified, this means we have
-// to iterate the alias declarations until a fixed point is reached.  Once that
-// is done, if there are any aliases left unallocated then they indicate errors.
-func (r *resolver) initialiseAliasesInModule(scope *ModuleScope, decls []ast.Declaration) []SyntaxError {
-	// Apply any aliases
-	errors := make([]SyntaxError, 0)
-	visited := make(map[string]ast.Declaration)
-	changed := true
-	// Iterate aliases to fixed point (i.e. until no new aliases discovered)
-	for changed {
-		changed = false
-		// Look for all aliases
-		for _, d := range decls {
-			if a, ok := d.(*ast.DefAliases); ok {
-				for i, alias := range a.Aliases {
-					symbol := a.Symbols[i]
-					if _, ok := visited[alias.Name]; !ok {
-						// Attempt to make the alias
-						if change := scope.Alias(alias.Name, symbol); change {
-							visited[alias.Name] = d
-							changed = true
-						}
-					}
-				}
-			}
-		}
-	}
-	// Check for any aliases which remain incomplete
-	for _, decl := range decls {
-		if a, ok := decl.(*ast.DefAliases); ok {
-			for i, alias := range a.Aliases {
-				symbol := a.Symbols[i]
-				// Check whether it already exists (or not)
-				if d, ok := visited[alias.Name]; ok && d == decl {
-					continue
-				} else if scope.Binding(alias.Name, symbol.Arity()) != nil {
-					err := r.srcmap.SyntaxError(alias, "symbol already exists")
-					errors = append(errors, *err)
-				} else {
-					err := r.srcmap.SyntaxError(symbol, "unknown symbol")
-					errors = append(errors, *err)
-				}
-			}
-		}
-	}
-	// Done
 	return errors
 }
 
@@ -209,9 +127,9 @@ func (r *resolver) resolveDeclarations(scope *ModuleScope, circuit *ast.Circuit)
 // Finalise a subset of declarations in a given module.  This requires an
 // iterative process as we cannot finalise an arbitrary declaration until all of
 // its dependencies have been themselves finalised.  For example, a function
-// which depends upon an interleaved column.  Until the interleaved column is
-// finalised, its type won't be available and, hence, we cannot type the
-// function.
+// which depends upon another, not-yet-finalised function.  Until that function
+// is finalised, its type won't be available and, hence, we cannot type the
+// dependent function.
 func (r *resolver) finaliseDeclarationsInModule(scope *ModuleScope, decls []ast.Declaration, state ModuleResolution) {
 	for i, decl := range decls {
 		// Check whether included and already finalised
@@ -245,24 +163,12 @@ func (r *resolver) declarationDependenciesAreFinalised(scope *ModuleScope,
 		errors    []SyntaxError
 		finalised bool = true
 	)
-	// DefConstraints require special handling because they can be associated
-	// with a perspective.  Perspectives are challenging here because they are
-	// effectively non-lexical scopes, which is not a good fit for the module
-	// tree structure used.
-	if dc, ok := decl.(*ast.DefConstraint); ok && dc.Perspective != nil {
-		if dc.Perspective.IsResolved() || scope.Bind(dc.Perspective) {
-			// Temporarily enter the perspective for the purposes of resolving
-			// symbols within this declaration.
-			scope = scope.Enter(dc.Perspective.Name())
-		}
-	}
 	//
 	for iter := decl.Dependencies(); iter.HasNext(); {
 		symbol := iter.Next()
 		// Attempt to resolve
 		if !symbol.IsResolved() && !scope.Bind(symbol) {
-			// try to report more useful error
-			errors = append(errors, r.constructUnknownSymbolError(symbol, scope))
+			errors = append(errors, *r.srcmap.SyntaxError(symbol, "unknown symbol"))
 			// not finalised yet
 			finalised = false
 		} else {
@@ -289,14 +195,10 @@ func (r *resolver) finaliseDeclaration(scope *ModuleScope, decl ast.Declaration)
 		return r.finaliseDefConstInModule(scope, d)
 	case *ast.DefConstraint:
 		return r.finaliseDefConstraintInModule(scope, d)
-	case *ast.DefFun:
-		return r.finaliseDefFunInModule(scope, d)
 	case *ast.DefInRange:
 		return r.finaliseDefInRangeInModule(scope, d)
 	case *ast.DefLookup:
 		return r.finaliseDefLookupInModule(scope, d)
-	case *ast.DefPerspective:
-		return r.finaliseDefPerspectiveInModule(scope, d)
 	}
 	//
 	return nil
@@ -309,7 +211,7 @@ func (r *resolver) finaliseDefConstInModule(enclosing Scope, decl *ast.DefConst)
 	var errors []SyntaxError
 	//
 	for _, c := range decl.Constants {
-		scope := NewLocalScope(enclosing, false, true, true)
+		scope := NewLocalScope(enclosing, false, true)
 		// Resolve constant body
 		errs := r.finaliseExpressionInModule(scope, c.ConstBinding.Value)
 		// Accumulate errors
@@ -342,14 +244,8 @@ func (r *resolver) finaliseDefConstInModule(enclosing Scope, decl *ast.DefConst)
 // expressions are well-typed.
 func (r *resolver) finaliseDefConstraintInModule(enclosing *ModuleScope, decl *ast.DefConstraint) []SyntaxError {
 	var guard_errors []SyntaxError
-	// Identifiery enclosing perspective (if applicable)
-	if decl.Perspective != nil {
-		// As before, we must temporarily enter the perspective here.
-		perspective := decl.Perspective.Name()
-		enclosing = enclosing.Enter(perspective)
-	}
 	// Construct scope in which to resolve constraint
-	scope := NewLocalScope(enclosing, false, false, false)
+	scope := NewLocalScope(enclosing, false, false)
 	// Resolve guard
 	if decl.Guard != nil {
 		guard_errors = r.finaliseExpressionInModule(scope, decl.Guard)
@@ -365,55 +261,17 @@ func (r *resolver) finaliseDefConstraintInModule(enclosing *ModuleScope, decl *a
 	return append(guard_errors, constraint_errors...)
 }
 
-// Resolve those variables appearing in the body of this perspective
-func (r *resolver) finaliseDefPerspectiveInModule(enclosing Scope, decl *ast.DefPerspective) []SyntaxError {
-	scope := NewLocalScope(enclosing, false, false, false)
-	// Resolve expression
-	errors := r.finaliseExpressionInModule(scope, decl.Selector)
-	// Error check
-	if len(errors) == 0 {
-		decl.Finalise()
-	}
-	// Done
-	return errors
-}
-
 // Finalise a range constraint declaration after all symbols have been
-// resolved. This involves: (a) checking the context is valid; (b) checking the
-// expressions are well-typed.
+// resolved.  As for a lookup, this requires the constrained column resolves to
+// an actual column (rather than, for example, a constant).
 func (r *resolver) finaliseDefInRangeInModule(enclosing Scope, decl *ast.DefInRange) []SyntaxError {
-	var scope = NewLocalScope(enclosing, false, false, false)
-	// Resolve property body
-	errors := r.finaliseExpressionInModule(scope, decl.Expr)
+	var scope = NewLocalScope(enclosing, true, false)
+	// Resolve constrained column
+	errors := r.finaliseColumnAccessInModule(scope, decl.Column)
 	// Error check
 	if len(errors) == 0 {
 		decl.Finalise()
 	}
-	// Done
-	return errors
-}
-
-// Finalise a function definition after all symbols have been resolved. This
-// involves: (a) checking the context is valid for the body; (b) checking the
-// body is well-typed; (c) for pure functions checking that no columns are
-// accessed; (d) finally, resolving any parameters used within the body of this
-// function.
-func (r *resolver) finaliseDefFunInModule(enclosing *ModuleScope, decl *ast.DefFun) []SyntaxError {
-	var scope = NewLocalScope(enclosing, true, decl.IsPure(), false)
-	//
-	enclosing.OpenDefinition(decl)
-	// Declare parameters in local scope
-	for _, p := range decl.Parameters() {
-		scope.DeclareLocal(p.Binding.Name, &p.Binding)
-	}
-	// Resolve property body
-	errors := r.finaliseExpressionInModule(scope, decl.Body())
-	// Finalise declaration
-	if len(errors) == 0 {
-		decl.Finalise()
-	}
-	//
-	enclosing.CloseDefinition(decl)
 	// Done
 	return errors
 }
@@ -445,28 +303,28 @@ func (r *resolver) finaliseLookupColumnsInModule(enclosing Scope, selector ast.T
 	//
 	var (
 		errors []SyntaxError
-		scope  = NewLocalScope(enclosing, true, false, false)
+		scope  = NewLocalScope(enclosing, true, false)
 	)
 	// Resolve each column in turn
 	for _, column := range columns {
 		if column != nil {
-			errors = append(errors, r.finaliseLookupColumnInModule(scope, column)...)
+			errors = append(errors, r.finaliseColumnAccessInModule(scope, column)...)
 		}
 	}
 	// Resolve selector (when present).  NOTE: the selector is resolved last so
 	// that, when its context conflicts with that of the columns it gates, the
 	// selector is the access reported as conflicting.
 	if selector != nil {
-		errors = append(errors, r.finaliseLookupColumnInModule(scope, selector)...)
+		errors = append(errors, r.finaliseColumnAccessInModule(scope, selector)...)
 	}
 	//
 	return errors
 }
 
-// Resolve a single column access arising within a lookup constraint.  Unlike an
-// arbitrary expression, this must resolve to a column (e.g. it cannot be a
-// constant or a function parameter).
-func (r *resolver) finaliseLookupColumnInModule(scope LocalScope, symbol ast.TypedSymbol) []SyntaxError {
+// Resolve a single column access arising within a lookup or range constraint.
+// Unlike an arbitrary expression, this must resolve to a column (e.g. it cannot
+// be a constant or a function parameter).
+func (r *resolver) finaliseColumnAccessInModule(scope LocalScope, symbol ast.TypedSymbol) []SyntaxError {
 	var errors []SyntaxError
 	// Resolve the underlying access
 	switch s := symbol.(type) {
@@ -516,8 +374,6 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		return r.finaliseArrayAccessInModule(scope, v)
 	case *ast.Add:
 		return r.finaliseExpressionsInModule(scope, v.Args)
-	case *ast.Cast:
-		return r.finaliseExpressionInModule(scope, v.Arg)
 	case *ast.Connective:
 		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.Constant:
@@ -527,20 +383,10 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		rhs_errs := r.finaliseExpressionInModule(scope, v.Rhs)
 		// combine errors
 		return append(lhs_errs, rhs_errs...)
-	case *ast.Exp:
-		constscope := scope.NestedConstScope()
-		arg_errs := r.finaliseExpressionInModule(scope, v.Arg)
-		pow_errs := r.finaliseExpressionInModule(constscope, v.Pow)
-		// combine errors
-		return append(arg_errs, pow_errs...)
 	case *ast.If:
 		return r.finaliseExpressionsInModule(scope, []ast.Expr{v.Condition, v.TrueBranch, v.FalseBranch})
-	case *ast.Invoke:
-		return r.finaliseInvokeInModule(scope, v)
 	case *ast.Mul:
 		return r.finaliseExpressionsInModule(scope, v.Args)
-	case *ast.Normalise:
-		return r.finaliseExpressionInModule(scope, v.Arg)
 	case *ast.Not:
 		return r.finaliseExpressionInModule(scope, v.Arg)
 	case *ast.Shift:
@@ -553,8 +399,6 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.VariableAccess:
 		return r.finaliseVariableInModule(scope, v)
-	case *ast.Concat:
-		return r.finaliseExpressionsInModule(scope, v.Args)
 	default:
 		typeStr := reflect.TypeOf(expr).String()
 		msg := fmt.Sprintf("unknown expression encountered during resolution (%s)", typeStr)
@@ -579,42 +423,6 @@ func (r *resolver) finaliseArrayAccessInModule(scope LocalScope, expr *ast.Array
 	// All good
 	return errors
 }
-
-// Resolve a specific invocation contained within some expression which, in
-// turn, is contained within some module.  Note, qualified accesses are only
-// permitted in a global context.
-func (r *resolver) finaliseInvokeInModule(scope LocalScope, expr *ast.Invoke) []SyntaxError {
-	var errors []SyntaxError
-	// Lookup the corresponding function definition.
-	if !expr.Name.IsResolved() && !scope.Bind(expr.Name) {
-		return append(errors, *r.srcmap.SyntaxError(expr.Name, "unknown function"))
-	} else if !scope.IsVisible(expr.Name) {
-		return r.srcmap.SyntaxErrors(expr, "recursion not permitted here")
-	}
-	// Resolve arguments
-	errors = r.finaliseExpressionsInModule(scope, expr.Args)
-	// Following must be true if we get here.
-	binding := expr.Name.Binding().(ast.FunctionBinding)
-	// Check purity
-	if scope.IsPure() && !binding.IsPure() {
-		errors = append(errors, *r.srcmap.SyntaxError(expr.Name, "not permitted in pure context"))
-	}
-	// Check provide correct number of arguments
-	if binding.Signature() == nil {
-		// NOTE: this should only be possible for native definitions which, at
-		// the time of writing, cannot be called from arbitrary expressions.
-		errors = append(errors, *r.srcmap.SyntaxError(expr.Name, "native invocation not permitted"))
-	} else if binding.Signature().Arity() != uint(len(expr.Args)) {
-		msg := fmt.Sprintf("incorrect number of arguments (found %d)", len(expr.Args))
-		errors = append(errors, *r.srcmap.SyntaxError(expr, msg))
-	}
-	//
-	return errors
-}
-
-// Resolve a specific invocation contained within some expression which, in
-// turn, is contained within some module.  Note, qualified accesses are only
-// permitted in a global context.
 
 // Resolve a specific variable access contained within some expression which, in
 // turn, is contained within some module.  Note, qualified accesses are only
@@ -642,85 +450,12 @@ func (r *resolver) finaliseVariableInModule(scope LocalScope, expr *ast.Variable
 		}
 		//
 		return nil
-	} else if binding, ok := expr.Binding().(*ast.ConstantBinding); ok {
+	} else if _, ok := expr.Binding().(*ast.ConstantBinding); ok {
 		// Constant
-		if binding.Extern && scope.IsConstant() {
-			return r.srcmap.SyntaxErrors(expr, "not permitted in const context")
-		}
-		//
 		return nil
-	} else if _, ok := expr.Binding().(*ast.LocalVariableBinding); ok {
-		// Parameter, for or let variable
-		return nil
-	} else if _, ok := expr.Binding().(ast.FunctionBinding); ok {
-		// Function doesn't makes sense here.
-		return r.srcmap.SyntaxErrors(expr, "refers to a function")
 	}
 	// Should be unreachable.
 	return r.srcmap.SyntaxErrors(expr, "unknown symbol kind")
-}
-
-// The purpose of this function is to construct a much more useful error message
-// than the default "unknown symbol".  For example, if we have use a function
-// but given an incorrect number of arguments, then we want to know this.
-func (r *resolver) constructUnknownSymbolError(symbol ast.Symbol, scope Scope) SyntaxError {
-	name := symbol.Path().Tail()
-	parent := symbol.Path().Parent()
-	//
-	if symbol.Arity().HasValue() {
-		var (
-			aboveArity int = math.MaxInt
-			belowArity int = math.MinInt
-			belowCount     = 0
-			aboveCount     = 0
-			arity          = symbol.Arity().Unwrap()
-		)
-		//
-		for _, bid := range scope.Bindings(*parent) {
-			if bid.name == name && bid.arity.HasValue() {
-				bidArity := bid.arity.Unwrap()
-				//
-				if bidArity < arity {
-					belowArity = max(belowArity, int(bidArity))
-					belowCount++
-				} else if bidArity > arity {
-					aboveArity = min(aboveArity, int(bidArity))
-					aboveCount++
-				}
-			}
-		}
-		// Report useful error if we found something.
-		if belowCount > 0 || aboveCount > 0 {
-			var (
-				str      string
-				belowStr = fmt.Sprintf("%d", belowArity)
-				aboveStr = fmt.Sprintf("%d", aboveArity)
-			)
-			//
-			if belowCount > 1 {
-				belowStr = fmt.Sprintf("%s (or less)", belowStr)
-			}
-			//
-			if aboveCount > 1 {
-				aboveStr = fmt.Sprintf("%s (or more)", aboveStr)
-			}
-			// Determine best error
-			if belowCount > 0 && aboveCount > 0 {
-				str = fmt.Sprintf("%s or %s", belowStr, aboveStr)
-			} else if aboveArity != math.MaxInt {
-				str = aboveStr
-			} else if belowArity != math.MinInt {
-				str = belowStr
-			}
-			//
-			msg := fmt.Sprintf("found %d arguments, expected %s", arity, str)
-			//
-			return *r.srcmap.SyntaxError(symbol, msg)
-		}
-	}
-	// Fall back on default.  We actually could do better here by trying to find
-	// the closest match.
-	return *r.srcmap.SyntaxError(symbol, "unknown symbol")
 }
 
 // GlobalResolution maintains detailed state about the ongoing attempt to

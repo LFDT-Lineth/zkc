@@ -15,7 +15,6 @@ package rtrace
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
@@ -48,19 +47,12 @@ type Module[T any] interface {
 	Name() string
 	// Column returns the data for the column at the given index.
 	Column(uint) narray.Array[T]
-	// Descriptors returns an iterator over the column descriptors for this
-	// module.
-	Descriptors() iter.Iterator[ColumnDescriptor]
-	// DescriptorOf returns the descriptor for a given column (as defined by its
-	// index into the module).
-	DescriptorOf(index uint) ColumnDescriptor
+	// Descriptor returns the descriptor of this module.
+	Descriptor() ModuleDescriptor
 	// Returns the number of columns in this module.
 	Width() uint
 	// Returns the height (i.e. number of rows) of this module.
 	Height() uint
-	// Convert to an lt.Module[T].  This should be considered a destructive
-	// operation, so once this is done the given module is finished.
-	ToLtModule() lt.Module[T]
 }
 
 // ModuleBuilder describes an extended module which can be used for the purposes
@@ -68,9 +60,31 @@ type Module[T any] interface {
 type ModuleBuilder[T any, M any] interface {
 	Module[T]
 	// Initialise a new module from a given set of rows.
-	Initialise(string, []ColumnDescriptor, ...[]T) M
+	Initialise(ModuleDescriptor, ...[]T) M
 	// MutColumn returns mutable access to the data for the given column.
 	MutColumn(uint) narray.MutArray[T]
+}
+
+// ModuleDescriptor describes an individual module within a trace, including all
+// of its columns.
+type ModuleDescriptor struct {
+	Name string
+	// Descriptors for all columns
+	Columns []ColumnDescriptor
+	// Flag indicating replication (or not).
+	Replicated bool
+}
+
+// NewModuleDescriptor constructs a straightforward module descriptor (i.e. with
+// no additional metadata).
+func NewModuleDescriptor(name string, columns []ColumnDescriptor) ModuleDescriptor {
+	return ModuleDescriptor{name, columns, false}
+}
+
+// WithReplication sets the replication metadata for this module to the given flag.
+func (p ModuleDescriptor) WithReplication(flag bool) ModuleDescriptor {
+	p.Replicated = flag
+	return p
 }
 
 // ColumnDescriptor describes an individual column in a trace module.

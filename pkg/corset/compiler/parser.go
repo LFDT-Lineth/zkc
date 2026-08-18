@@ -24,7 +24,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -179,17 +178,14 @@ func NewParser(srcfile source.File, srcmap *source.Map[sexp.SExp], config Config
 	p.AddRecursiveListRule("+", addParserRule)
 	p.AddRecursiveListRule("-", subParserRule)
 	p.AddRecursiveListRule("*", mulParserRule)
-	p.AddRecursiveListRule("~", normParserRule)
-	p.AddRecursiveListRule("^", powParserRule)
 	p.AddRecursiveListRule("¬", logicalNegationRule)
 	p.AddRecursiveListRule("∨", logicalParserRule)
 	p.AddRecursiveListRule("∧", logicalParserRule)
 	p.AddRecursiveListRule("==", eqParserRule)
 	p.AddRecursiveListRule("!=", eqParserRule)
-	p.AddRecursiveListRule("::", concatParserRule)
 	p.AddListRule("if", ifParserRule(parser))
 	p.AddRecursiveListRule("shift", shiftParserRule)
-	p.AddDefaultListRule(invokeParserRule(parser))
+	p.AddDefaultListRule(unknownExpressionParserRule(parser))
 	p.AddDefaultRecursiveArrayRule(arrayAccessParserRule)
 	//
 	return parser
@@ -276,18 +272,12 @@ func (p *Parser) parseDeclaration(module file.Path, s *sexp.List) (ast.Declarati
 		errors []SyntaxError
 	)
 	//
-	if s.MatchSymbols(1, "defalias") {
-		decl, errors = p.parseDefAlias(s.Elements)
-	} else if s.MatchSymbols(1, "defcolumns") {
+	if s.MatchSymbols(1, "defcolumns") {
 		decl, errors = p.parseDefColumns(module, s)
 	} else if s.Len() > 1 && s.MatchSymbols(1, "defconst") {
 		decl, errors = p.parseDefConst(module, s.Elements)
 	} else if s.Len() == 4 && s.MatchSymbols(2, "defconstraint") {
 		decl, errors = p.parseDefConstraint(module, s.Elements)
-	} else if s.Len() == 3 && s.MatchSymbols(1, "defpurefun") {
-		decl, errors = p.parseDefFun(module, true, s.Elements)
-	} else if s.Len() == 3 && s.MatchSymbols(1, "defun") {
-		decl, errors = p.parseDefFun(module, false, s.Elements)
 	} else if s.Len() == 3 && s.MatchSymbols(1, "definrange") {
 		decl, errors = p.parseDefInRange(s.Elements)
 	} else if s.Len() == 4 && s.MatchSymbols(1, "deflookup") {
@@ -296,8 +286,6 @@ func (p *Parser) parseDeclaration(module file.Path, s *sexp.List) (ast.Declarati
 		decl, errors = p.parseDefConditionalLookup(module, s.Elements)
 	} else if s.Len() == 4 && s.MatchSymbols(1, "defmlookup") {
 		decl, errors = p.parseDefMultiLookup(module, s.Elements)
-	} else if s.Len() == 4 && s.MatchSymbols(2, "defperspective") {
-		decl, errors = p.parseDefPerspective(module, s.Elements)
 	} else {
 		errors = p.translator.SyntaxErrors(s, "malformed declaration")
 	}
@@ -307,41 +295,6 @@ func (p *Parser) parseDeclaration(module file.Path, s *sexp.List) (ast.Declarati
 	}
 	// done
 	return decl, errors
-}
-
-// Parse an alias declaration
-func (p *Parser) parseDefAlias(elements []sexp.SExp) (ast.Declaration, []SyntaxError) {
-	var (
-		errors  []SyntaxError
-		aliases []*ast.DefAlias
-		names   []ast.Symbol
-	)
-
-	for i := 1; i < len(elements); i += 2 {
-		// Sanity check first
-		if i+1 == len(elements) {
-			// Uneven number of constant declarations!
-			errors = append(errors, *p.translator.SyntaxError(elements[i], "missing alias definition"))
-		} else if !isEitherOrIdentifier(elements[i], false) {
-			// ast.Symbol expected!
-			errors = append(errors, *p.translator.SyntaxError(elements[i], "invalid alias name"))
-		} else if !isEitherOrIdentifier(elements[i+1], false) {
-			// ast.Symbol expected!
-			errors = append(errors, *p.translator.SyntaxError(elements[i+1], "invalid alias definition"))
-		} else {
-			alias := ast.NewDefAlias(elements[i].AsSymbol().Value)
-			path := file.NewRelativePath(elements[i+1].AsSymbol().Value)
-			name := ast.NewUnboundName[ast.Binding](path, ast.NON_FUNCTION)
-			//
-			p.mapSourceNode(elements[i], alias)
-			p.mapSourceNode(elements[i+1], name)
-			//
-			aliases = append(aliases, alias)
-			names = append(names, name)
-		}
-	}
-	// Done
-	return ast.NewDefAliases(aliases, names), errors
 }
 
 // Parse a column declaration
@@ -356,7 +309,7 @@ func (p *Parser) parseDefColumns(module file.Path, l *sexp.List) (ast.Declaratio
 	var errors []SyntaxError
 	// Process column declarations one by one.
 	for i := 1; i < len(l.Elements); i++ {
-		decl, err := p.parseColumnDeclaration(module, module, false, 1, l.Elements[i])
+		decl, err := p.parseColumnDeclaration(module, module, false, l.Elements[i])
 		// Extract column name
 		if err != nil {
 			errors = append(errors, *err)
@@ -372,7 +325,7 @@ func (p *Parser) parseDefColumns(module file.Path, l *sexp.List) (ast.Declaratio
 	return ast.NewDefColumns(columns), nil
 }
 
-func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, computed bool, multiplier int,
+func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, computed bool,
 	e sexp.SExp) (*ast.DefColumn, *SyntaxError) {
 	//
 	var (
@@ -382,7 +335,6 @@ func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, compu
 		binding = ast.ColumnBinding{
 			ColumnContext: context,
 			Kind:          ast.NOT_COMPUTED,
-			Multiplier:    uint(multiplier),
 			MustProve:     p.config.EnforceTypes,
 			Padding:       zero,
 			Display:       "hex",
@@ -414,9 +366,8 @@ func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, compu
 	}
 	// Final sanity checks
 	if computed && binding.DataType == nil {
-		// computed columns initially have multiplier 0 in order to signal that
-		// this needs to be subsequently determined from context.
-		binding.Multiplier = 0
+		// computed columns initially have no type, since this needs to be
+		// subsequently determined from context.
 		binding.DataType = ast.UINT_TYPE
 	} else if !binding.DataType.HasUnderlying() {
 		return nil, p.translator.SyntaxError(e, "invalid column type")
@@ -588,40 +539,38 @@ func (p *Parser) parseDefConstUnit(module file.Path, head sexp.SExp,
 		datatype ast.Type
 		errors   []SyntaxError
 		expr     ast.Expr
-		extern   bool
 	)
 	// Parse head
-	if name, datatype, extern, errors = p.parseDefConstHead(head); len(errors) > 0 {
+	if name, datatype, errors = p.parseDefConstHead(head); len(errors) > 0 {
 		return nil, errors
 	} else if expr, errors = p.translator.Translate(value); len(errors) > 0 {
 		return nil, errors
 	}
 	// Looks good
 	path := module.Extend(name.Value)
-	def := &ast.DefConstUnit{ConstBinding: ast.NewConstantBinding(*path, datatype, expr, extern)}
+	def := &ast.DefConstUnit{ConstBinding: ast.NewConstantBinding(*path, datatype, expr)}
 	// Map to source node
 	p.mapSourceNode(value, def)
 	// Done
 	return def, nil
 }
 
-func (p *Parser) parseDefConstHead(head sexp.SExp) (*sexp.Symbol, ast.Type, bool, []SyntaxError) {
+func (p *Parser) parseDefConstHead(head sexp.SExp) (*sexp.Symbol, ast.Type, []SyntaxError) {
 	var (
 		list     = head.AsList()
 		datatype ast.Type
-		extern   bool
 	)
 
 	// Parse the head
 	if isIdentifier(head) {
 		// no attributes provided
-		return head.AsSymbol(), nil, false, nil
+		return head.AsSymbol(), nil, nil
 	} else if list == nil {
-		return nil, nil, false, p.translator.SyntaxErrors(head, "invalid constant name")
+		return nil, nil, p.translator.SyntaxErrors(head, "invalid constant name")
 	} else if list.Len() < 2 {
-		return nil, nil, false, p.translator.SyntaxErrors(list, "invalid constant declaration")
+		return nil, nil, p.translator.SyntaxErrors(list, "invalid constant declaration")
 	} else if !isIdentifier(list.Get(0)) {
-		return nil, nil, false, p.translator.SyntaxErrors(list.Get(0), "invalid constant name")
+		return nil, nil, p.translator.SyntaxErrors(list.Get(0), "invalid constant name")
 	}
 	//
 	for i := 1; i < list.Len(); i++ {
@@ -633,24 +582,19 @@ func (p *Parser) parseDefConstHead(head sexp.SExp) (*sexp.Symbol, ast.Type, bool
 		sym := list.Get(i).AsSymbol()
 		// Catch error
 		if sym == nil {
-			return nil, nil, false, p.translator.SyntaxErrors(list.Get(i), "invalid constant attribute")
+			return nil, nil, p.translator.SyntaxErrors(list.Get(i), "invalid constant attribute")
 		}
-		// Parse attribute
-		switch sym.Value {
-		case ":extern":
-			extern = true
-		default:
-			datatype, prove, err = p.parseType(list.Get(i))
-			// Handle errors
-			if err != nil {
-				return nil, nil, false, []SyntaxError{*err}
-			} else if prove && !p.config.EnforceTypes {
-				return nil, nil, false, p.translator.SyntaxErrors(list, "constants cannot have proven types")
-			}
+		//
+		datatype, prove, err = p.parseType(sym)
+		// Handle errors
+		if err != nil {
+			return nil, nil, []SyntaxError{*err}
+		} else if prove && !p.config.EnforceTypes {
+			return nil, nil, p.translator.SyntaxErrors(list, "constants cannot have proven types")
 		}
 	}
 	// Sanity check type
-	return list.Get(0).AsSymbol(), datatype, extern, nil
+	return list.Get(0).AsSymbol(), datatype, nil
 }
 
 // Parse a vanishing declaration
@@ -672,7 +616,7 @@ func (p *Parser) parseDefConstraint(module file.Path, elements []sexp.SExp) (ast
 	}
 	// Vanishing constraints do not have global scope, hence qualified column
 	// accesses are not permitted.
-	domain, guard, perspective, errs := p.parseConstraintAttributes(module, elements[2])
+	domain, guard, errs := p.parseConstraintAttributes(elements[2])
 	errors = append(errors, errs...)
 	// Translate expression
 	expr, errs := p.translator.Translate(elements[3])
@@ -682,7 +626,7 @@ func (p *Parser) parseDefConstraint(module file.Path, elements []sexp.SExp) (ast
 		return nil, errors
 	}
 	// Done
-	return ast.NewDefConstraint(handle, domain, guard, perspective, expr), nil
+	return ast.NewDefConstraint(handle, domain, guard, expr), nil
 }
 
 // Parse a lookup declaration
@@ -887,15 +831,13 @@ func (p *Parser) parseDefLookupSources(handle string, element sexp.SExp) ([]ast.
 	sources = make([]ast.TypedSymbol, sexpSources.Len())
 	//
 	for i := 0; i != sexpSources.Len(); i++ {
-		var errs []SyntaxError
+		msg := fmt.Sprintf("malformed %s column", handle)
 		// Sources must be column accesses, rather than arbitrary expressions.
-		if symbol := sexpSources.Get(i).AsSymbol(); symbol == nil {
-			msg := fmt.Sprintf("malformed %s column", handle)
-			errors = append(errors, *p.translator.SyntaxError(sexpSources.Get(i), msg))
-		} else {
-			sources[i], errs = p.parseDefLookupSource(symbol)
-			errors = append(errors, errs...)
-		}
+		ith, errs := p.parseColumnAccess(sexpSources.Get(i), msg)
+		//
+		sources[i] = ith
+		//
+		errors = append(errors, errs...)
 	}
 	//
 	return sources, errors
@@ -905,206 +847,26 @@ func (p *Parser) parseDefLookupSources(handle string, element sexp.SExp) ([]ast.
 // targets it gates, must be a column access rather than an arbitrary
 // expression.
 func (p *Parser) parseDefLookupSelector(element sexp.SExp) (ast.TypedSymbol, []SyntaxError) {
-	symbol := element.AsSymbol()
-	//
-	if symbol == nil {
-		return nil, p.translator.SyntaxErrors(element, "malformed selector")
-	}
-	//
-	return p.parseDefLookupSource(symbol)
+	return p.parseColumnAccess(element, "malformed selector")
 }
 
-func (p *Parser) parseDefLookupSource(source *sexp.Symbol) (ast.TypedSymbol, []SyntaxError) {
-	if path, err := parseQualifiableName(source.Value); err != nil {
+// Parse a column access, as arises (for example) within a lookup or range
+// constraint.  Such accesses must be simple (qualifiable) names, rather than
+// arbitrary expressions.  The given message is reported when this is not the
+// case.
+func (p *Parser) parseColumnAccess(element sexp.SExp, msg string) (ast.TypedSymbol, []SyntaxError) {
+	source := element.AsSymbol()
+	//
+	if source == nil {
+		return nil, p.translator.SyntaxErrors(element, msg)
+	} else if path, err := parseQualifiableName(source.Value); err != nil {
 		return nil, p.translator.SyntaxErrors(source, err.Error())
 	} else {
-		varAccess := ast.NewVariableAccess(path, ast.NON_FUNCTION, nil)
+		varAccess := ast.NewVariableAccess(path, nil)
 		p.mapSourceNode(source, varAccess)
 
 		return varAccess, nil
 	}
-}
-
-// Parse a perspective declaration
-func (p *Parser) parseDefPerspective(module file.Path, elements []sexp.SExp) (ast.Declaration, []SyntaxError) {
-	var (
-		errors       []SyntaxError
-		sexp_columns *sexp.List = elements[3].AsList()
-		columns      []*ast.DefColumn
-		perspective  *ast.PerspectiveName
-	)
-	// Check for columns
-	if sexp_columns == nil {
-		errors = append(errors, *p.translator.SyntaxError(elements[3], "expected column declarations"))
-	}
-	// Translate selector
-	selector, errs := p.translator.Translate(elements[2])
-	errors = append(errors, errs...)
-	// Parse perspective selector
-	binding := ast.NewPerspectiveBinding(selector)
-	// Parse perspective name
-	if perspective, errs = parseSymbolName(p, elements[1], module, ast.NON_FUNCTION, binding); len(errs) != 0 {
-		errors = append(errors, errs...)
-	}
-	// Process column declarations one by one.
-	if sexp_columns != nil && perspective != nil {
-		columns = make([]*ast.DefColumn, sexp_columns.Len())
-
-		for i := 0; i < len(sexp_columns.Elements); i++ {
-			decl, err := p.parseColumnDeclaration(module, *perspective.Path(), false, 1, sexp_columns.Elements[i])
-			// Extract column name
-			if err != nil {
-				errors = append(errors, *err)
-			}
-			// Assign the declaration
-			columns[i] = decl
-		}
-	}
-	// Error check
-	if len(errors) != 0 {
-		return nil, errors
-	}
-	//
-	return ast.NewDefPerspective(perspective, selector, columns), nil
-}
-
-// Parse a function declaration
-func (p *Parser) parseDefFun(module file.Path, pure bool, elements []sexp.SExp) (ast.Declaration, []SyntaxError) {
-	var (
-		name      *sexp.Symbol
-		ret       ast.Type
-		forced    bool
-		params    []*ast.DefParameter
-		errors    []SyntaxError
-		signature *sexp.List = elements[1].AsList()
-	)
-	// Parse signature
-	if signature == nil || signature.Len() == 0 {
-		err := p.translator.SyntaxError(elements[1], "malformed function signature")
-		errors = append(errors, *err)
-	} else {
-		name, ret, forced, params, errors = p.parseFunSignature(signature.Elements)
-	}
-	// Translate expression
-	body, errs := p.translator.Translate(elements[2])
-	// Apply return type
-	if ret != nil {
-		// TODO: the notion of "forcing" should be deprecated in favour of
-		// explicit type casts.
-		body = &ast.Cast{Arg: body, Type: ret, Unsafe: forced}
-		p.mapSourceNode(elements[2], body)
-	}
-	//
-	errors = append(errors, errs...)
-	// Check for errors
-	if len(errors) > 0 {
-		return nil, errors
-	}
-	// Extract parameter types
-	paramTypes := make([]ast.Type, len(params))
-	for i, p := range params {
-		paramTypes[i] = p.Binding.DataType
-	}
-	// Construct binding
-	path := module.Extend(name.Value)
-	binding := ast.NewDefunBinding(pure, paramTypes, ret, forced, body)
-	fn_name := ast.NewFunctionName(*path, &binding)
-	// Update source mapping
-	p.mapSourceNode(name, fn_name)
-	//
-	return ast.NewDefFun(fn_name, params, ret), nil
-}
-
-func (p *Parser) parseFunSignature(elements []sexp.SExp) (*sexp.Symbol,
-	ast.Type, bool, []*ast.DefParameter, []SyntaxError) {
-	//
-	var params []*ast.DefParameter = make([]*ast.DefParameter, len(elements)-1)
-	// Parse name and (optional) return type
-	name, ret, forced, errors := p.parseFunctionNameReturn(elements[0])
-	// Parse parameters
-	for i := 0; i < len(params); i = i + 1 {
-		var errs []SyntaxError
-
-		if params[i], errs = p.parseFunctionParameter(elements[i+1]); len(errs) > 0 {
-			errors = append(errors, errs...)
-		}
-	}
-	// Check for any errors arising
-	if len(errors) > 0 {
-		return nil, nil, false, nil, errors
-	}
-	//
-	return name, ret, forced, params, nil
-}
-
-func (p *Parser) parseFunctionNameReturn(element sexp.SExp) (*sexp.Symbol, ast.Type, bool, []SyntaxError) {
-	var (
-		err    *SyntaxError
-		name   sexp.SExp
-		ret    ast.Type = nil
-		forced bool
-		symbol *sexp.Symbol = element.AsSymbol()
-		list   *sexp.List   = element.AsList()
-	)
-	//
-	if symbol != nil {
-		name = symbol
-	} else {
-		// Check all modifiers
-		for i, element := range list.Elements {
-			symbol := element.AsSymbol()
-			// Check what we have
-			if symbol == nil {
-				err := p.translator.SyntaxError(element, "modifier expected")
-				return nil, nil, false, []SyntaxError{*err}
-			} else if i == 0 {
-				name = symbol
-			} else {
-				switch symbol.Value {
-				case ":force":
-					forced = true
-				default:
-					if ret, _, err = p.parseType(element); err != nil {
-						return nil, nil, false, []SyntaxError{*err}
-					}
-				}
-			}
-		}
-	}
-	//
-	if isFunIdentifier(name) {
-		return name.AsSymbol(), ret, forced, nil
-	} else {
-		// Must be non-identifier symbol
-		err = p.translator.SyntaxError(element, "invalid function name")
-		return nil, nil, false, []SyntaxError{*err}
-	}
-}
-
-func (p *Parser) parseFunctionParameter(element sexp.SExp) (*ast.DefParameter, []SyntaxError) {
-	list := element.AsList()
-	//
-	if isIdentifier(element) {
-		return ast.NewDefParameter(element.AsSymbol().Value, ast.UINT_TYPE), nil
-	} else if list == nil || list.Len() != 2 || !isIdentifier(list.Get(0)) {
-		// Construct error message (for now)
-		err := p.translator.SyntaxError(element, "malformed parameter declaration")
-		//
-		return nil, []SyntaxError{*err}
-	}
-	// Parse the type
-	datatype, prove, err := p.parseType(list.Get(1))
-	//
-	if err != nil {
-		return nil, []SyntaxError{*err}
-	} else if prove && !p.config.EnforceTypes {
-		// Parameters cannot be marked @prove
-		err := p.translator.SyntaxError(element, "malformed parameter declaration")
-		//
-		return nil, []SyntaxError{*err}
-	}
-	// Done
-	return ast.NewDefParameter(list.Get(0).AsSymbol().Value, datatype), nil
 }
 
 // Parse a range declaration
@@ -1113,8 +875,9 @@ func (p *Parser) parseDefInRange(elements []sexp.SExp) (ast.Declaration, []Synta
 		bound int
 		err   error
 	)
-	// Translate expression
-	expr, errors := p.translator.Translate(elements[1])
+	// Parse constrained column.  As for a lookup, this must be a column access
+	// rather than an arbitrary expression.
+	column, errors := p.parseColumnAccess(elements[1], "malformed column")
 	// Check & parse bound
 	if elements[2].AsSymbol() == nil {
 		errors = append(errors, *p.translator.SyntaxError(elements[2], "malformed bound"))
@@ -1129,7 +892,7 @@ func (p *Parser) parseDefInRange(elements []sexp.SExp) (ast.Declaration, []Synta
 	// constraints are now compiled into table lookups, it is simpler to limit
 	// them accordingly.
 	if bitwidth := bitwidth(bound); bitwidth != math.MaxUint {
-		return &ast.DefInRange{Expr: expr, Bitwidth: bitwidth}, nil
+		return &ast.DefInRange{Column: column, Bitwidth: bitwidth}, nil
 	}
 	//
 	return nil, p.translator.SyntaxErrors(elements[2], "bound not power of 2")
@@ -1151,13 +914,13 @@ func bitwidth(bound int) uint {
 	return math.MaxUint
 }
 
-func (p *Parser) parseConstraintAttributes(module file.Path, attributes sexp.SExp) (domain util.Option[int],
-	guard ast.Expr, perspective *ast.PerspectiveName, err []SyntaxError) {
+func (p *Parser) parseConstraintAttributes(attributes sexp.SExp) (domain util.Option[int],
+	guard ast.Expr, err []SyntaxError) {
 	//
 	var errors []SyntaxError
 	// Check attribute list is a list
 	if attributes.AsList() == nil {
-		return util.None[int](), nil, nil, p.translator.SyntaxErrors(attributes, "expected attribute list")
+		return util.None[int](), nil, p.translator.SyntaxErrors(attributes, "expected attribute list")
 	}
 	// Deconstruct as list
 	attrs := attributes.AsList()
@@ -1177,9 +940,6 @@ func (p *Parser) parseConstraintAttributes(module file.Path, attributes sexp.SEx
 			case ":guard":
 				i++
 				guard, errs = p.translator.Translate(attrs.Get(i))
-			case ":perspective":
-				i++
-				perspective, errs = parseSymbolName[*ast.PerspectiveBinding](p, attrs.Get(i), module, ast.NON_FUNCTION, nil)
 			default:
 				errs = p.translator.SyntaxErrors(ith, "unknown attribute")
 			}
@@ -1191,26 +951,10 @@ func (p *Parser) parseConstraintAttributes(module file.Path, attributes sexp.SEx
 	}
 	// Error Check
 	if len(errors) != 0 {
-		return util.None[int](), nil, nil, errors
+		return util.None[int](), nil, errors
 	}
 	// Done
-	return domain, guard, perspective, nil
-}
-
-// Parse a symbol name, which will include a binding.
-func parseSymbolName[T ast.Binding](p *Parser, symbol sexp.SExp, module file.Path, arity util.Option[uint],
-	binding T) (*ast.Name[T], []SyntaxError) {
-	//
-	if !isEitherOrIdentifier(symbol, arity.HasValue()) {
-		return nil, p.translator.SyntaxErrors(symbol, "expected identifier")
-	}
-	// Extract
-	path := module.Extend(symbol.AsSymbol().Value)
-	name := ast.NewBoundName(*path, arity, binding)
-	// Update source mapping
-	p.mapSourceNode(symbol, name)
-	// Construct
-	return name, nil
+	return domain, guard, nil
 }
 
 func (p *Parser) parseDomainAttribute(attribute sexp.SExp) (domain util.Option[int], err []SyntaxError) {
@@ -1314,7 +1058,7 @@ func varAccessParserRule(col string) (ast.Expr, bool, error) {
 		return nil, true, err
 	}
 	//
-	return ast.NewVariableAccess(path, ast.NON_FUNCTION, nil), true, nil
+	return ast.NewVariableAccess(path, nil), true, nil
 }
 
 func arrayAccessParserRule(name string, args []ast.Expr) (ast.Expr, error) {
@@ -1333,14 +1077,6 @@ func arrayAccessParserRule(name string, args []ast.Expr) (ast.Expr, error) {
 
 func addParserRule(_ string, args []ast.Expr) (ast.Expr, error) {
 	return &ast.Add{Args: args}, nil
-}
-
-func concatParserRule(_ string, args []ast.Expr) (ast.Expr, error) {
-	// Reverse the order as we want most significant to be highest in the actual
-	// array.
-	array.ReverseInPlace(args)
-	//
-	return &ast.Concat{Args: args}, nil
 }
 
 func subParserRule(_ string, args []ast.Expr) (ast.Expr, error) {
@@ -1380,47 +1116,9 @@ func ifParserRule(p *Parser) sexp.ListRule[ast.Expr] {
 	}
 }
 
-func invokeParserRule(p *Parser) sexp.ListRule[ast.Expr] {
+func unknownExpressionParserRule(p *Parser) sexp.ListRule[ast.Expr] {
 	return func(list *sexp.List) (ast.Expr, []SyntaxError) {
-		var (
-			varaccess *ast.VariableAccess
-			errors    []SyntaxError
-		)
-		//
-		if list.Len() == 0 || list.Get(0).AsSymbol() == nil {
-			return nil, p.translator.SyntaxErrors(list, "invalid invocation")
-		}
-		// Extract function name
-		name := list.Get(0).AsSymbol()
-		// Sanity check what we have
-		if !isFunIdentifier(name) {
-			errors = append(errors, *p.translator.SyntaxError(list.Get(0), "invalid function name"))
-		}
-		// Handle qualified accesses (where permitted)
-		path, err := parseQualifiableName(name.Value)
-		//
-		if err != nil {
-			return nil, p.translator.SyntaxErrors(list.Get(0), "invalid function name")
-		} else {
-			arity := util.Some(uint(list.Len() - 1))
-			varaccess = ast.NewVariableAccess(path, arity, nil)
-		}
-		// Parse arguments
-		args := make([]ast.Expr, list.Len()-1)
-		for i := 0; i < len(args); i++ {
-			var errs []SyntaxError
-			//
-			args[i], errs = p.translator.Translate(list.Get(i + 1))
-			errors = append(errors, errs...)
-		}
-		// Error check
-		if len(errors) > 0 {
-			return nil, errors
-		}
-		//
-		p.mapSourceNode(list.Get(0), varaccess)
-		// Done
-		return &ast.Invoke{Name: varaccess, Args: args}, nil
+		return nil, p.translator.SyntaxErrors(list, "unknown expression form")
 	}
 }
 
@@ -1430,14 +1128,6 @@ func shiftParserRule(_ string, args []ast.Expr) (ast.Expr, error) {
 	}
 	// Done
 	return &ast.Shift{Arg: args[0], Shift: args[1]}, nil
-}
-
-func powParserRule(_ string, args []ast.Expr) (ast.Expr, error) {
-	if len(args) != 2 {
-		return nil, errors.New("incorrect number of arguments")
-	}
-	// Done
-	return &ast.Exp{Arg: args[0], Pow: args[1]}, nil
 }
 
 func eqParserRule(op string, args []ast.Expr) (ast.Expr, error) {
@@ -1478,14 +1168,6 @@ func logicalNegationRule(op string, args []ast.Expr) (ast.Expr, error) {
 	return &ast.Not{Arg: args[0]}, nil
 }
 
-func normParserRule(_ string, args []ast.Expr) (ast.Expr, error) {
-	if len(args) != 1 {
-		return nil, errors.New("incorrect number of arguments")
-	}
-
-	return &ast.Normalise{Arg: args[0]}, nil
-}
-
 func parseConstant(symbol string) (constant big.Int, ok bool, err error) {
 	var (
 		base int
@@ -1513,47 +1195,19 @@ func parseConstant(symbol string) (constant big.Int, ok bool, err error) {
 	return num, true, nil
 }
 
-// Parse a name which can be (optionally) adorned with either a module or
-// perspective qualifier, or both.
+// Parse a name which can be (optionally) adorned with a module qualifier.
 func parseQualifiableName(qualName string) (path file.Path, err error) {
 	// Look for module qualification
 	split := strings.Split(qualName, ".")
 	switch len(split) {
 	case 1:
-		return parsePerspectifiableName(qualName)
-	case 2:
-		module := split[0]
-		path, err := parsePerspectifiableName(split[1])
-
-		return *path.PushRoot(module), err
-	default:
-		return path, errors.New("malformed qualified name")
-	}
-}
-
-// Parse a name which can (optionally) adorned with a perspective qualifier
-func parsePerspectifiableName(qualName string) (path file.Path, err error) {
-	// Look for module qualification
-	split := strings.Split(qualName, "/")
-	switch len(split) {
-	case 1:
 		return file.NewRelativePath(split[0]), nil
 	case 2:
-		return file.NewRelativePath(split[0], split[1]), nil
+		relative := file.NewRelativePath(split[1])
+		return *relative.PushRoot(split[0]), nil
 	default:
 		return path, errors.New("malformed qualified name")
 	}
-}
-
-// Attempt to parse an S-Expression as an identifier, return nil if this fails.
-// The function flag switches this to identifiers suitable for functions and
-// invocations.
-func isEitherOrIdentifier(sexp sexp.SExp, function bool) bool {
-	if function {
-		return isFunIdentifier(sexp)
-	}
-	//
-	return isIdentifier(sexp)
 }
 
 // Attempt to parse an S-Expression as an identifier suitable for something
@@ -1575,33 +1229,10 @@ func isIdentifier(sexp sexp.SExp) bool {
 	return false
 }
 
-// Attempt to parse an S-Expression as an identifier suitable for something
-// which is not a function (e.g. column, constant, etc).
-func isFunIdentifier(sexp sexp.SExp) bool {
-	if symbol := sexp.AsSymbol(); symbol != nil && len(symbol.Value) > 0 {
-		runes := []rune(symbol.Value)
-		if isFunctionIdentifierStart(runes[0]) {
-			for i := 1; i < len(runes); i++ {
-				if !isIdentifierMiddle(runes[i]) {
-					return false
-				}
-			}
-			// Success
-			return true
-		}
-	}
-	// Fail
-	return false
-}
-
 func isIdentifierStart(c rune) bool {
 	return unicode.IsLetter(c) || c == '_' || c == '\'' || c == '$'
 }
 
 func isIdentifierMiddle(c rune) bool {
 	return unicode.IsDigit(c) || isIdentifierStart(c) || c == '-' || c == '!' || c == '@'
-}
-
-func isFunctionIdentifierStart(c rune) bool {
-	return isIdentifierStart(c) || c == '~'
 }

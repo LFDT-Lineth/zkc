@@ -18,12 +18,6 @@
   (WCP_INST                             :byte@prove :display :opcode)
   (WCP_RES                              :binary@prove))
 
-(defalias
-  IOMF  INPUTS_AND_OUTPUTS_ARE_MEANINGFUL
-  XAHOY EXCEPTIONS_AHOY
-  OOGX  OUT_OF_GAS_EXCEPTION)
-
-
 (module gas)
 
 ;;;;;;;;;;;;;;;;;;;;;;
@@ -32,8 +26,8 @@
 ;;                  ;;
 ;;;;;;;;;;;;;;;;;;;;;;
 (defconstraint binary-constraints ()
-  (if-not-zero OOGX
-              (eq! XAHOY 1)))
+  (if (!= OUT_OF_GAS_EXCEPTION 0)
+      (== EXCEPTIONS_AHOY 1)))
 
 ;; others are done with binary@prove in columns.lisp
 
@@ -44,44 +38,45 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 1
 (defconstraint first-row (:domain {0})
-  (vanishes! IOMF))
+  (== INPUTS_AND_OUTPUTS_ARE_MEANINGFUL 0))
 
 ;; 2
 (defconstraint iomf-increments ()
-  (or! (will-remain-constant! IOMF) (will-inc! IOMF 1)))
+  (∨ (== (shift INPUTS_AND_OUTPUTS_ARE_MEANINGFUL 1) INPUTS_AND_OUTPUTS_ARE_MEANINGFUL)
+     (== (shift INPUTS_AND_OUTPUTS_ARE_MEANINGFUL 1) (+ INPUTS_AND_OUTPUTS_ARE_MEANINGFUL 1))))
 
 ;; 3
 (defconstraint iomf-vanishing-values-first ()
-  (if-zero IOMF
-           (vanishes! FIRST)))
+  (if (== INPUTS_AND_OUTPUTS_ARE_MEANINGFUL 0)
+      (== FIRST 0)))
 
 (defconstraint iomf-vanishing-values-counter ()
-  (if-zero IOMF
-           (vanishes! (next CT))))
+  (if (== INPUTS_AND_OUTPUTS_ARE_MEANINGFUL 0)
+      (== (shift CT 1) 0)))
 
 ;; 4
 (defconstraint instruction-counter-cycle-ct-max ()
-  (if-not-zero IOMF
-               (eq! CT_MAX
-                    (- 2
-                       (* XAHOY (- 1 OOGX))))))
+  (if (!= INPUTS_AND_OUTPUTS_ARE_MEANINGFUL 0)
+      (== CT_MAX
+          (- 2
+             (* EXCEPTIONS_AHOY (- 1 OUT_OF_GAS_EXCEPTION))))))
 
 (defconstraint instruction-counter-cycle-first ()
-  (if-not-zero IOMF
-               (if-zero CT
-                        (eq! FIRST 1)
-                        (eq! FIRST 0))))
+  (if (!= INPUTS_AND_OUTPUTS_ARE_MEANINGFUL 0)
+      (if (== CT 0)
+          (== FIRST 1)
+          (== FIRST 0))))
 
 (defconstraint instruction-counter-cycle-counter ()
-  (if-not-zero IOMF
-               (if-eq-else CT CT_MAX
-                           (vanishes! (next CT))
-                           (will-inc! CT 1))))
+  (if (!= INPUTS_AND_OUTPUTS_ARE_MEANINGFUL 0)
+      (if (== CT CT_MAX)
+          (== (shift CT 1) 0)
+          (== (shift CT 1) (+ CT 1)))))
 
 ;; 5
 (defconstraint final-row (:domain {-1})
-  (if-not-zero IOMF
-               (eq! CT CT_MAX)))
+  (if (!= INPUTS_AND_OUTPUTS_ARE_MEANINGFUL 0)
+      (== CT CT_MAX)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;                             ;;
@@ -89,16 +84,16 @@
 ;;                             ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defconstraint counter-constancy-gas-actual ()
-  (counter-constancy CT GAS_ACTUAL))
+  (if (!= CT 0) (== GAS_ACTUAL (shift GAS_ACTUAL -1))))
 
 (defconstraint counter-constancy-gas-cost ()
-  (counter-constancy CT GAS_COST))
+  (if (!= CT 0) (== GAS_COST (shift GAS_COST -1))))
 
 (defconstraint counter-constancy-xahoy ()
-  (counter-constancy CT XAHOY))
+  (if (!= CT 0) (== EXCEPTIONS_AHOY (shift EXCEPTIONS_AHOY -1))))
 
 (defconstraint counter-constancy-oogx ()
-  (counter-constancy CT OOGX))
+  (if (!= CT 0) (== OUT_OF_GAS_EXCEPTION (shift OUT_OF_GAS_EXCEPTION -1))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;                                     ;;
@@ -108,16 +103,16 @@
 ;; NOTE: what follows amounts to a "call to LEQ" on the current row, i.e.
 ;; (0 <= GAS_ACTUAL) is TRUE.
 (defconstraint asserting-the-leftover-gas-is-nonnegative-arg1 (:guard FIRST)
-  (eq! WCP_ARG1_LO 0))
+  (== WCP_ARG1_LO 0))
 
 (defconstraint asserting-the-leftover-gas-is-nonnegative-arg2 (:guard FIRST)
-  (eq! WCP_ARG2_LO GAS_ACTUAL))
+  (== WCP_ARG2_LO GAS_ACTUAL))
 
 (defconstraint asserting-the-leftover-gas-is-nonnegative-inst (:guard FIRST)
-  (eq! WCP_INST WCP_INST_LEQ))
+  (== WCP_INST WCP_INST_LEQ))
 
 (defconstraint asserting-the-leftover-gas-is-nonnegative-res (:guard FIRST)
-  (eq! WCP_RES 1))
+  (== WCP_RES 1))
 
 ;; as per the spec, this constraint the following
 ;; constraint is slightly useless ... not entirely,
@@ -127,31 +122,31 @@
 ;; NOTE: what follows amounts to a "call to LEQ" on the next row, i.e.
 ;; (0 <= GAS_COST) is TRUE.
 (defconstraint asserting-the-gas-cost-is-nonnegative-arg1 (:guard FIRST)
-  (eq! (shift WCP_ARG1_LO 1) 0))
+  (== (shift WCP_ARG1_LO 1) 0))
 
 (defconstraint asserting-the-gas-cost-is-nonnegative-arg2 (:guard FIRST)
-  (eq! (shift WCP_ARG2_LO 1) GAS_COST))
+  (== (shift WCP_ARG2_LO 1) GAS_COST))
 
 (defconstraint asserting-the-gas-cost-is-nonnegative-inst (:guard FIRST)
-  (eq! (shift WCP_INST 1) WCP_INST_LEQ))
+  (== (shift WCP_INST 1) WCP_INST_LEQ))
 
 (defconstraint asserting-the-gas-cost-is-nonnegative-res (:guard FIRST)
-  (eq! (shift WCP_RES 1) 1))
+  (== (shift WCP_RES 1) 1))
 
 ;; NOTE: what follows amounts to a "call to LT" two rows down, i.e.
-;; (GAS_ACTUAL < GAS_COST) is OOGX (as predicted by the HUB).
+;; (GAS_ACTUAL < GAS_COST) is OUT_OF_GAS_EXCEPTION (as predicted by the HUB).
 (defconstraint asserting-either-sufficient-gas-or-insufficient-gas-arg1 (:guard FIRST)
-  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
-           (eq! (shift WCP_ARG1_LO 2) GAS_ACTUAL)))
+  (if (== (* EXCEPTIONS_AHOY (- 1 OUT_OF_GAS_EXCEPTION)) 0)
+      (== (shift WCP_ARG1_LO 2) GAS_ACTUAL)))
 
 (defconstraint asserting-either-sufficient-gas-or-insufficient-gas-arg2 (:guard FIRST)
-  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
-           (eq! (shift WCP_ARG2_LO 2) GAS_COST)))
+  (if (== (* EXCEPTIONS_AHOY (- 1 OUT_OF_GAS_EXCEPTION)) 0)
+      (== (shift WCP_ARG2_LO 2) GAS_COST)))
 
 (defconstraint asserting-either-sufficient-gas-or-insufficient-gas-inst (:guard FIRST)
-  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
-           (eq! (shift WCP_INST 2) EVM_INST_LT)))
+  (if (== (* EXCEPTIONS_AHOY (- 1 OUT_OF_GAS_EXCEPTION)) 0)
+      (== (shift WCP_INST 2) EVM_INST_LT)))
 
 (defconstraint asserting-either-sufficient-gas-or-insufficient-gas-res (:guard FIRST)
-  (if-zero (force-bin (* XAHOY (- 1 OOGX)))
-           (eq! (shift WCP_RES 2) OOGX)))
+  (if (== (* EXCEPTIONS_AHOY (- 1 OUT_OF_GAS_EXCEPTION)) 0)
+      (== (shift WCP_RES 2) OUT_OF_GAS_EXCEPTION)))

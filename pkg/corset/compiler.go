@@ -13,26 +13,18 @@
 package corset
 
 import (
-	_ "embed"
 	"fmt"
 	"math"
-	"strconv"
-	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/corset/compiler"
-	"github.com/LFDT-Lineth/zkc/pkg/ir/hir"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
-
-// STDLIB is an import of the standard library.
-//
-//go:embed stdlib.lisp
-var STDLIB []byte
 
 // SyntaxError defines the kind of errors that can be reported by this compiler.
 // Syntax errors are always associated with some line in one of the original
@@ -47,23 +39,15 @@ type CompilationConfig = compiler.Config
 // process can fail if the source files are mal-formed, or contain syntax errors
 // or other forms of error (e.g. type errors).
 func CompileSourceFiles(config CompilationConfig, srcfiles []source.File,
-) (hir.Schema, SourceMap, []SyntaxError) {
-	// Include the standard library (if requested)
-	srcfiles = includeStdlib(config.Stdlib, srcfiles)
-	// Parse all source files (inc stdblib if applicable).
+) (mir.Schema[word.BigEndian], SourceMap, []SyntaxError) {
+	// Parse all source files.
 	circuit, srcmap, errs := compiler.ParseSourceFiles(srcfiles, config)
 	// Check for parsing errors
 	if errs != nil {
-		return hir.Schema{}, SourceMap{}, errs
+		return mir.Schema[word.BigEndian]{}, SourceMap{}, errs
 	}
 	// Compile each module into the schema
 	comp := NewCompiler(circuit, srcmap)
-	// Configure register allocator (if requested)
-	if config.Legacy {
-		comp.SetAllocator(compiler.LegacyAllocator)
-	} else {
-		comp.SetAllocator(compiler.ImprovedAllocator)
-	}
 	//
 	return comp.Compile(config)
 }
@@ -72,16 +56,15 @@ func CompileSourceFiles(config CompilationConfig, srcfiles []source.File,
 // really helper function for e.g. the testing environment.   This process can
 // fail if the source file is mal-formed, or contains syntax errors or other
 // forms of error (e.g. type errors).
-func CompileSourceFile(config CompilationConfig, srcfile source.File) (hir.Schema, SourceMap, []SyntaxError) {
+func CompileSourceFile(config CompilationConfig, srcfile source.File,
+) (mir.Schema[word.BigEndian], SourceMap, []SyntaxError) {
 	return CompileSourceFiles(config, []source.File{srcfile})
 }
 
 // Compiler packages up everything needed to compile a given set of module
-// definitions down into an HIR schema.  Observe that the compiler may fail if
+// definitions down into an MIR schema.  Observe that the compiler may fail if
 // the modules definitions are malformed in some way (e.g. fail type checking).
 type Compiler struct {
-	// The register allocation algorithm to be used by this compiler.
-	allocator func(compiler.RegisterAllocation)
 	// A high-level definition of a Corset circuit.
 	circuit ast.Circuit
 	// Determines whether to apply sanity checks
@@ -94,13 +77,7 @@ type Compiler struct {
 
 // NewCompiler constructs a new compiler for a given set of modules.
 func NewCompiler(circuit ast.Circuit, srcmaps *source.Maps[ast.Node]) *Compiler {
-	return &Compiler{compiler.DEFAULT_ALLOCATOR, circuit, true, srcmaps}
-}
-
-// SetAllocator overrides the default register allocator.
-func (p *Compiler) SetAllocator(allocator func(compiler.RegisterAllocation)) *Compiler {
-	p.allocator = allocator
-	return p
+	return &Compiler{circuit, true, srcmaps}
 }
 
 // Compile is the top-level function for the corset compiler which actually
@@ -108,7 +85,7 @@ func (p *Compiler) SetAllocator(allocator func(compiler.RegisterAllocation)) *Co
 // ways if the given modules are malformed in some way.  For example, if some
 // expression refers to a non-existent module or column, or is not well-typed,
 // etc.
-func (p *Compiler) Compile(config compiler.Config) (hir.Schema, SourceMap, []SyntaxError) {
+func (p *Compiler) Compile(config compiler.Config) (mir.Schema[word.BigEndian], SourceMap, []SyntaxError) {
 	var (
 		scope  *compiler.ModuleScope
 		errors []SyntaxError
@@ -119,19 +96,15 @@ func (p *Compiler) Compile(config compiler.Config) (hir.Schema, SourceMap, []Syn
 	errors = append(errors, compiler.TypeCheckCircuit(p.srcmap, &p.circuit)...)
 	// Catch errors
 	if len(errors) > 0 {
-		return hir.Schema{}, SourceMap{}, errors
-	}
-	// Preprocess circuit to remove invocations, reductions, etc.
-	if errors = compiler.PreprocessCircuit(p.srcmap, &p.circuit); len(errors) > 0 {
-		return hir.Schema{}, SourceMap{}, errors
+		return mir.Schema[word.BigEndian]{}, SourceMap{}, errors
 	}
 	// Convert global scope into an environment by allocating all columns.
-	environment := compiler.NewGlobalEnvironment(scope, p.allocator)
+	environment := compiler.NewGlobalEnvironment(scope)
 	// Translate everything and add it to the schema.
 	schema, errs := compiler.TranslateCircuit(environment, p.srcmap, &p.circuit, config)
 	// Sanity check for errors
 	if len(errs) > 0 {
-		return hir.Schema{}, SourceMap{}, errs
+		return mir.Schema[word.BigEndian]{}, SourceMap{}, errs
 	} else if cerrs := schema.Consistent(math.MaxUint); len(cerrs) > 0 {
 		// Should be unreachable.
 		for _, err := range cerrs {
@@ -142,19 +115,8 @@ func (p *Compiler) Compile(config compiler.Config) (hir.Schema, SourceMap, []Syn
 	}
 	// Construct source map
 	source_map := constructSourceMap(&schema, scope, environment)
-	// Construct binary file
+	//
 	return schema, *source_map, errs
-}
-
-func includeStdlib(stdlib bool, srcfiles []source.File) []source.File {
-	if stdlib {
-		// Include stdlib file
-		srcfile := source.NewSourceFile("stdlib.lisp", STDLIB)
-		// Append to srcfile list
-		srcfiles = append(srcfiles, *srcfile)
-	}
-	// Not included
-	return srcfiles
 }
 
 func constructSourceMap(schema schema.AnySchema[word.BigEndian], scope *compiler.ModuleScope,
@@ -175,14 +137,13 @@ func constructSourceModule(schema schema.AnySchema[word.BigEndian], scope *compi
 	// Map source-level columns
 	for _, col := range scope.DestructuredColumns() {
 		// Determine register allocated to this (destructured) column.
-		ref := determineRegisterRef(col.Name, schema, env)
+		ref := determineRegisterRef(col.Path, schema, env)
 		// Determine (unqualified) column name
-		name := col.Name.Tail()
+		name := col.Path.Tail()
 		//
 		display := constructDisplayModifier(col.Display)
 		// Translate register source into source column
 		srcCol := SourceColumn{name,
-			col.Multiplier,
 			col.Bitwidth,
 			col.MustProve,
 			col.Computed,
@@ -202,7 +163,6 @@ func constructSourceModule(schema schema.AnySchema[word.BigEndian], scope *compi
 			binding.Path.Tail(),
 			*binding.Value.AsConstant(),
 			bitwidth,
-			binding.Extern,
 		})
 	}
 	//
@@ -265,30 +225,6 @@ func constructDisplayModifier(modifier string) uint {
 // OPCODE_ENUMERATION provides a default enumeration for the existing ":opcode"
 // display modifier.
 var OPCODE_ENUMERATION map[uint64]string = map[uint64]string{}
-
-// ContextOf attempts to reconstruct an AST context from a given module name.
-// This is helpful if we want to know the "root" module for a given family of
-// related modules (i.e. modules from the same Corset module which have
-// different length multipliers).
-func ContextOf(name string) ast.Context {
-	var (
-		split      = strings.Split(name, "×")
-		multiplier = 1
-		err        error
-	)
-	//
-	if len(split) == 2 {
-		multiplier, err = strconv.Atoi(split[1])
-		//
-		if err != nil {
-			panic(fmt.Sprintf("invalid module name %s", name))
-		}
-	} else if len(split) != 1 {
-		panic(fmt.Sprintf("invalid module name %s", name))
-	}
-	//
-	return ast.NewContext(split[0], uint(multiplier))
-}
 
 func init() {
 	OPCODE_ENUMERATION[0x0] = "STOP"

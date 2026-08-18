@@ -20,16 +20,12 @@ import (
 )
 
 // QualifiedColumnName returns the fully qualified name of a given column.
-func QualifiedColumnName(module ModuleName, column string) string {
-	var (
-		name = module.String()
-	)
-	//
-	if name == "" {
+func QualifiedColumnName(module string, column string) string {
+	if module == "" {
 		return column
 	}
 
-	return fmt.Sprintf("%s.%s", name, column)
+	return fmt.Sprintf("%s.%s", module, column)
 }
 
 // NumberOfColumns returns the total number of all columns in the given trace.
@@ -69,7 +65,7 @@ type moduleAdapter[F1 field.Element[F1], F2 field.Element[F2]] struct {
 }
 
 // Module implementation for trace.Module interface.
-func (p *moduleAdapter[F1, F2]) Name() ModuleName {
+func (p *moduleAdapter[F1, F2]) Name() string {
 	return p.module.Name()
 }
 
@@ -83,16 +79,6 @@ func (p *moduleAdapter[F1, F2]) ColumnOf(string) Column[F2] {
 	// NOTE: this is marked unreachable because, as it stands, expression
 	// evaluation never calls this method.
 	panic("unreachable")
-}
-
-// FindLast implementation for the trace.Module interface.
-func (p *moduleAdapter[F1, F2]) FindLast(...F2) uint {
-	panic("unsupported operation")
-}
-
-// Keys implementation for the trace.Module interface.
-func (p *moduleAdapter[F1, F2]) Keys() uint {
-	panic("unsupported operation")
 }
 
 // Width implementation for trace.Module interface.

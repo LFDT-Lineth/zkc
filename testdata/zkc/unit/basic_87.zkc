@@ -1,0 +1,23 @@
+input data(c:u16) -> (b:u8)
+output out(c:u16) -> (b:u8)
+memory ram(addr:u16) -> (b:u8)
+
+fn main<ram>() {
+    var n:u16 = data[0] as u16
+    //
+    for i:u16 = 0; i<n; i = i + 1 {
+        copy(i)
+    }
+    //
+    for i:u16 = 0; i<n; i = i + 1 {
+        write(i)
+    }
+}
+
+fn copy<ram>(i:u16) {
+    ram[i] = data[i + 1]
+}
+
+fn write<ram>(i:u16) {
+    out[i] = ram[i]
+}

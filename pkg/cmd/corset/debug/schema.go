@@ -63,7 +63,7 @@ func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, 
 
 func printModule[F field.Element[F]](module schema.Module[F], sc schema.AnySchema[F], width uint, verbose bool) {
 	var (
-		name      = module.Name().String()
+		name      = module.Name()
 		formatter = sexp.NewFormatter(width, true)
 		postfix   string
 	)

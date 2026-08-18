@@ -17,8 +17,10 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // AlignTrace performs "trace alignment" on a given trace file.  That is, it
@@ -31,40 +33,46 @@ import (
 // NOTE: alignment is impacted by whether or not the trace is being expanded or
 // not. Specifically, expanding traces don't need to include data for computed
 // columns, since these will be added during expansion.
-func AlignTrace[F any, M register.Map](schema []M, trace []lt.Module[F], expanding bool,
-) ([]lt.Module[F], []error) {
+func AlignTrace[F field.Element[F], M register.Map](schema []M, tr trace.Trace[F], expanding bool,
+) (*trace.ArrayTrace[F], []error) {
 	//
-	var errors []error
+	var (
+		errors   []error
+		errs     []error
+		omodules []trace.Module[F]
+		modules  = make([]trace.ArrayModule[F], len(schema))
+		builder  = array.NewStaticBuilder[F]()
+	)
 	// First, align modules
-	if trace, errors = alignModules(schema, trace, expanding); len(errors) > 0 {
+	if omodules, errors = alignModules(schema, tr, expanding); len(errors) > 0 {
 		return nil, errors
 	}
 	// Second, align columns within modules
 	for i, m := range schema {
-		cols, errs := alignColumns(m, trace[i].Columns, expanding)
+		modules[i], errs = alignColumns(m, omodules[i], expanding)
 		errors = append(errors, errs...)
-		trace[i].Columns = cols
 	}
 	// Done
-	return trace, errors
+	return trace.NewArrayTrace(builder, modules), errors
 }
 
-func alignModules[F any, M register.Map](schema []M, mods []lt.Module[F], expanding bool) ([]lt.Module[F], []error) {
+func alignModules[F field.Element[F], M register.Map](schema []M, tr trace.Trace[F], expanding bool,
+) ([]trace.Module[F], []error) {
 	//
 	var (
 		width  = uint(len(schema))
 		modmap = make(map[module.Name]uint)
-		nmods  = make([]lt.Module[F], width)
+		nmods  = make([]trace.Module[F], width)
 		errs   []error
 	)
 	// Initialise module mapping
 	for i := range width {
 		ith := schema[i].Name()
-		nmods[i] = lt.NewModule[F](ith, nil)
+		nmods[i] = trace.NewArrayModule[F](ith, nil)
 		modmap[ith] = i
 	}
 	// Rearrange layout
-	for _, m := range mods {
+	for _, m := range tr.Modules().Collect() {
 		if index, ok := modmap[m.Name()]; ok {
 			nmods[index] = m
 		} else if expanding {
@@ -75,7 +83,8 @@ func alignModules[F any, M register.Map](schema []M, mods []lt.Module[F], expand
 	return nmods, errs
 }
 
-func alignColumns[F any](mapping register.Map, columns []lt.Column[F], expanding bool) ([]lt.Column[F], []error) {
+func alignColumns[F field.Element[F]](mapping register.Map, module trace.Module[F], expanding bool,
+) (trace.ArrayModule[F], []error) {
 	var (
 		// Errs contains the set of filling errors which are accumulated
 		errs  []error
@@ -90,17 +99,23 @@ func alignColumns[F any](mapping register.Map, columns []lt.Column[F], expanding
 		colmap = make(map[string]uint, width)
 		seen   = make([]bool, width)
 		//
-		ncols = make([]lt.Column[F], width)
+		ncols = make([]trace.ArrayColumn[F], width)
 	)
 	// Initialise column map
 	for i := range width {
-		ith := mapping.Register(register.NewId(i))
-		ncols[i] = lt.NewColumn[F](ith.Name(), nil)
+		var (
+			ith     = mapping.Register(register.NewId(i))
+			padding F
+		)
+
+		padding = padding.SetBytes(ith.Padding().Bytes())
+		ncols[i] = trace.NewArrayColumn(ith.Name(), nil, padding)
 		colmap[ith.Name()] = i
 	}
 	// Assign data for each column given
-	for _, col := range columns {
+	for i := range module.Width() {
 		var (
+			col  = module.Column(i)
 			data = col.Data()
 			// Determine enclosiong module height
 			cid, ok = colmap[col.Name()]
@@ -112,7 +127,11 @@ func alignColumns[F any](mapping register.Map, columns []lt.Column[F], expanding
 			errs = append(errs, fmt.Errorf("duplicate column '%s' in trace", tr.QualifiedColumnName(mapping.Name(), col.Name())))
 		} else {
 			seen[cid] = true
-			ncols[cid] = col
+			// NOTE: preserve the padding value already established above
+			// (from the register's declared padding), rather than the raw
+			// column's own padding (which is always zero for freshly parsed
+			// input traces).
+			ncols[cid] = trace.NewArrayColumn(col.Name(), col.Data().Clone(), ncols[cid].Padding())
 			// Update height
 			if isEmpty && data != nil {
 				height = data.Len()
@@ -140,5 +159,5 @@ func alignColumns[F any](mapping register.Map, columns []lt.Column[F], expanding
 		}
 	}
 	//
-	return ncols, errs
+	return trace.NewArrayModule(module.Name(), ncols), errs
 }
