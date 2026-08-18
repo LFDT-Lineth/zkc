@@ -120,8 +120,8 @@ type Builder[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]] struct {
 	scratch []F
 }
 
-// NewBuilder initialises a new trace builder from a given program.
-func NewBuilder[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]](program vm.Program[W]) Builder[W, F, M] {
+// Init initialises a new trace builder from a given program.
+func (p Builder[W, F, M]) Init(program vm.Program[W]) Builder[W, F, M] {
 	var (
 		maxWidth uint
 		//
@@ -188,7 +188,7 @@ func initialiseMemory[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]](cfg
 		// ProcessStaticMemory does what is required to represent a static memory within
 		// a trace.  Specifically, static memories do exist in the trace, but only to
 		// ensure alignment of module identifiers.  Hence, they always have an empty trace.
-		return empty.Initialise(memory.Name(), nil)
+		return empty.Initialise(rtrace.NewModuleDescriptor(memory.Name(), nil))
 	case vm.PRIVATE_READ_ONLY_MEMORY, vm.PUBLIC_READ_ONLY_MEMORY:
 		return initAccessOnceMemory[W, F, M](memory)
 	case vm.PRIVATE_WRITE_ONCE_MEMORY, vm.PUBLIC_WRITE_ONCE_MEMORY:

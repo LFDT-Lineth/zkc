@@ -81,7 +81,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		outputs map[string][]byte
 	)
 	// Configure tracing
-	traceConfig := constraints.DEFAULT_TRACE_CONFIG.
+	traceConfig := vm.DEFAULT_TRACE_CONFIG.
 		WithPadding(build.padding).
 		WithBatchSize(GetUint(cmd, "batch"))
 	// Sanity permitted flag combinations
@@ -97,7 +97,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 		outputs, errors = resumeFromCheckPoint(binfile.ExecutionProgram(), args[0])
 	} else {
 		// Parse an filter input file
-		input = vm.FilterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
+		input = filterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
 		// decide what is happening
 		if checkpoint != "" {
 			// Checkpoint the function named in the spec (periodically with "f:N", or
@@ -148,7 +148,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 }
 
 func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F], tr trace.Trace[F],
-	cfg constraints.TraceConfig) {
+	cfg vm.TraceConfig) {
 	//
 	var checkConfig corset.CheckConfig
 	// Set sensible defaults (for now)
@@ -325,22 +325,20 @@ func newCheckPointInterpreter[W vm.Word[W]](p vm.Program[W], fn string, clk util
 	interp := vm.NewBytecodeInterpreter(p)
 	// Write a checkpoint as a hex string, one per line.  The counter governs how
 	// frequently this actually fires: it triggers every interval entries of fn.
-	emit := func(_ uint32) {
+	emit := func(_ uint32) bool {
 		// Only record once every interval-th invocation of fn.
-		if !clk.Tick() {
-			return
+		if clk.Tick() {
+			bytes, err := interp.CheckPoint().MarshalBinary()
+			if err != nil {
+				log.Errorf("encoding checkpoint: %s", err)
+				return true
+			} else if _, err := fmt.Fprintf(out, "0x%s\n", hex.EncodeToString(bytes)); err != nil {
+				log.Errorf("encoding checkpoint: %s", err)
+				return true
+			}
 		}
 		//
-		bytes, err := interp.CheckPoint().MarshalBinary()
-		if err != nil {
-			log.Errorf("encoding checkpoint: %s", err)
-			return
-		}
-		//
-		if _, err := fmt.Fprintf(out, "0x%s\n", hex.EncodeToString(bytes)); err != nil {
-			log.Errorf("encoding checkpoint: %s", err)
-			return
-		}
+		return false
 	}
 	//
 	interp.BreakPointer(emit)

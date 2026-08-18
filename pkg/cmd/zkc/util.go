@@ -30,9 +30,20 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
+
+func filterInputs[W vm.Word[W], T any](p vm.Program[W], input map[string][]T) map[string][]T {
+	inputs, ignored := vm.FilterInputs(p, input)
+	//
+	for _, field := range ignored {
+		log.Warn("ignoring input/output \"", field, "\"")
+	}
+	//
+	return inputs
+}
 
 func startCpuProfiling(cmd *cobra.Command) *os.File {
 	if filename := GetString(cmd, "cpuprof"); filename != "" {

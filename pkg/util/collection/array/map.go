@@ -10,17 +10,20 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package util
+package array
 
 import (
 	"runtime"
 	"sync"
 )
 
-// ParallelMap maps every element in a given array to a corresponding element of
-// another type.  This is parallelised using a worker pool whose size is bounded
-// by the number of available CPUs, making it safe to use even with large input
-// slices or relatively cheap mapper functions.
+// ParallelMap behaves exactly like Map, mapping every element in a given array
+// to a corresponding element of another type, but parallelises the work using a
+// worker pool whose size is bounded by the number of available CPUs, making it
+// safe to use even with large input slices or relatively cheap mapper
+// functions.
+//
+// Map (in util.go) provides the sequential alternative.
 func ParallelMap[T any, S any](items []T, mapper func(uint, T) S) []S {
 	var (
 		results = make([]S, len(items))

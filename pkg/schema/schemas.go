@@ -17,7 +17,6 @@ import (
 	"runtime"
 
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -145,7 +144,7 @@ func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C],
 		constraints = iter.Collect()
 	)
 	// Process all constraints in parallel using a worker pool.
-	errors = util.ParallelMap(constraints, func(i uint, constraint C) Failure {
+	errors = array.ParallelMap(constraints, func(i uint, constraint C) Failure {
 		if i%1000 == 0 {
 			var percent float64 = float64(100*i) / float64(len(constraints))
 			log.Debug(fmt.Sprintf("Checking constraints [%0.1f%%]", percent))

@@ -50,8 +50,11 @@ func initAccessOnceMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](m vm.M
 			regs = append(regs, rtrace.NewColumnDescriptor(AtFlagName(k), u1))
 		}
 	}
+	// ROM/WOM are always replicated
+	descriptor := rtrace.NewModuleDescriptor(m.Name(), regs).
+		WithReplication(true)
 	//
-	return module.Initialise(m.Name(), regs)
+	return module.Initialise(descriptor)
 }
 
 // traceAccessOnceMemory materialises the trace rows for a read-only (ROM) or

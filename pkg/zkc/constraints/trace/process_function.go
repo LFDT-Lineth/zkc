@@ -53,7 +53,7 @@ func initOneLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.Fu
 		regs = append(regs, rtrace.NewColumnDescriptor(RET_NAME, util.Some[uint](1)))
 	}
 	// Initialise the module
-	return module.Initialise(f.Name(), regs)
+	return module.Initialise(rtrace.NewModuleDescriptor(f.Name(), regs))
 }
 
 // traceOneLineFunction materialises a trace row for a one-line function.
@@ -111,7 +111,7 @@ func initMultiLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.
 		regs = append(regs, rtrace.NewColumnDescriptor(SelectorName(k), u1))
 	}
 	// Initialise the module
-	return module.Initialise(f.Name(), regs)
+	return module.Initialise(rtrace.NewModuleDescriptor(f.Name(), regs))
 }
 
 // traceMultiLineFunction materialises a trace row a multi-line function

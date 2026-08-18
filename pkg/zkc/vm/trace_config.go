@@ -10,9 +10,28 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package constraints
+package vm
 
-import "github.com/LFDT-Lineth/zkc/pkg/ir"
+import (
+	"github.com/LFDT-Lineth/zkc/pkg/ir"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+)
+
+// ShardingStrategy is used to configure parallel tracing.
+type ShardingStrategy struct {
+	// Function around which sharding pivots.  That is, the function for which
+	// checkpoints are made.
+	shardFunction string
+	// Maximum executions of the given function to execute in each shard.
+	shardSteps uint64
+}
+
+// NewShardingStrategy constructs a simple strategy which splits the trace into
+// some number of shards, where each shard represents at most n executions of
+// the given function.
+func NewShardingStrategy(fun string, n uint64) ShardingStrategy {
+	return ShardingStrategy{fun, n}
+}
 
 // TraceConfig provides the necessary configuration for the trace generation.
 type TraceConfig struct {
@@ -25,6 +44,8 @@ type TraceConfig struct {
 	// Determines how much front padding is added to the generated trace (see
 	// ir.TraceBuilder.WithPadding).
 	paddingStrategy ir.PaddingStrategy
+	// Specifies whether or not to use a sharding strategy.
+	shardingStrategy util.Option[ShardingStrategy]
 }
 
 // DEFAULT_TRACE_CONFIG defines a default configuration for tracing.
@@ -34,28 +55,33 @@ var DEFAULT_TRACE_CONFIG = TraceConfig{
 // WithParallelism updates a given builder configuration to allow trace expansion to be
 // performed concurrently (or not).
 func (tb TraceConfig) WithParallelism(flag bool) TraceConfig {
-	ntb := tb
-	ntb.parallel = flag
+	tb.parallel = flag
 	//
-	return ntb
+	return tb
 }
 
 // WithBatchSize sets the maximum number of batches to run in parallel during trace
 // expansion.
 func (tb TraceConfig) WithBatchSize(batchSize uint) TraceConfig {
-	ntb := tb
-	ntb.batchSize = batchSize
+	tb.batchSize = batchSize
 	//
-	return ntb
+	return tb
 }
 
-// WithPadding updates a given builder configuration to control how much front
-// padding is added to the generated trace (see ir.PaddingStrategy).
+// WithPadding updates the trace configuration to control how much front padding
+// is added to the generated trace (see ir.PaddingStrategy).
 func (tb TraceConfig) WithPadding(strategy ir.PaddingStrategy) TraceConfig {
-	ntb := tb
-	ntb.paddingStrategy = strategy
+	tb.paddingStrategy = strategy
 	//
-	return ntb
+	return tb
+}
+
+// WithSharding updates the trace configuration to employ a specific sharding
+// strategy.  Otherwise, by default, no sharding is performed.
+func (tb TraceConfig) WithSharding(strategy ShardingStrategy) TraceConfig {
+	tb.shardingStrategy = util.Some(strategy)
+	//
+	return tb
 }
 
 // PaddingStrategy returns the padding strategy configured for this builder.

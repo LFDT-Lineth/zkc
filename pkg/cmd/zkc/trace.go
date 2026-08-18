@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
@@ -29,7 +30,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -69,6 +69,8 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		stats = GetFlag(cmd, "stats")
 		// open trace in the interactive inspector
 		inspect = GetFlag(cmd, "inspect")
+		// extract sharding config
+		sharding = GetString(cmd, "sharding")
 		//
 		trace   trace.Trace[F]
 		outputs map[string][]byte
@@ -81,17 +83,21 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		os.Exit(1)
 	}
 	// Configure tracing
-	traceConfig := constraints.DEFAULT_TRACE_CONFIG.
+	traceConfig := vm.DEFAULT_TRACE_CONFIG.
 		WithPadding(build.padding).
 		WithBatchSize(GetUint(cmd, "batch")).
 		WithParallelism(!GetFlag(cmd, "sequential"))
+		//
+	if sharding != "" {
+		traceConfig = traceConfig.WithSharding(parseShardingConfig(sharding))
+	}
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	_, binfile := Build[F](build, args[1:]...)
 	// =====================================================
 	// Trace
 	// =====================================================
 	// Parse and filter input file
-	input := vm.FilterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
+	input := filterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
 	// Always trace (no fast mode).  The raw (row-major) trace is retained for
 	// statistics, since it carries the original register/limb structure.
 	outputs, rtr, trace, errors := binfile.Trace(input, traceConfig)
@@ -148,11 +154,33 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 func init() {
 	rootCmd.AddCommand(traceCmd)
 	traceCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
+	traceCmd.Flags().String("sharding", "", "specify sharding strategy")
 	traceCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	traceCmd.Flags().Bool("stats", false, "show overall stats for the generated trace")
 	traceCmd.Flags().Bool("sequential", false, "force sequential tracing")
 	traceCmd.Flags().BoolP("inspect", "i", false, "open the generated trace in the interactive inspector")
 	traceCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
+}
+
+func parseShardingConfig(spec string) vm.ShardingStrategy {
+	var (
+		colon = strings.LastIndex(spec, ":")
+	)
+	//
+	if colon < 0 {
+		fmt.Printf("invalid sharding spec \"%s\" (expected \"<function>:<n>\")\n", spec)
+		os.Exit(1)
+	}
+	//
+	fn, istr := spec[:colon], spec[colon+1:]
+	n, err := strconv.ParseUint(istr, 10, 64)
+	//
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+	//
+	return vm.NewShardingStrategy(fn, n)
 }
 
 // publicModule reports whether a module is publicly visible in the inspector.
@@ -192,7 +220,7 @@ func printTraceStats[F field.Element[F]](rtr rtrace.Trace[F]) {
 		mod := rtr.Module(mid)
 		cells += mod.Width() * mod.Height()
 		//
-		for _, reg := range mod.Descriptors().Collect() {
+		for _, reg := range mod.Descriptor().Columns {
 			bitwidth := reg.Bitwidth
 			// Native (field-element) limbs have no fixed bit-width.
 			if bitwidth.IsEmpty() {
@@ -276,7 +304,7 @@ func printModuleStats[F field.Element[F]](rtr rtrace.Trace[F]) {
 			bytes    uint
 		)
 		// Sum per-limb bit-widths and byte requirements.
-		for _, reg := range mod.Descriptors().Collect() {
+		for _, reg := range mod.Descriptor().Columns {
 			if bw := reg.Bitwidth; bw.HasValue() {
 				w := bw.Unwrap()
 				bitwidth += w

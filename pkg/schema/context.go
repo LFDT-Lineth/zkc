@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -77,7 +78,7 @@ func SeqBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Con
 // ParBuildContext constructs the context from a given schema and trace, using
 // a map-reduce strategy.  Each set is first split into one or more row-range
 // chunks (so a single large set does not bottleneck the whole process), which
-// are then constructed in parallel via util.ParallelMap (the "map" phase).
+// are then constructed in parallel via array.ParallelMap (the "map" phase).
 // Chunks belonging to the same set are then merged back together (the
 // "reduce" phase), which is likewise done in parallel across sets.
 func ParBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Context[F] {
@@ -87,7 +88,7 @@ func ParBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Con
 		sids           = determineSets(sc)
 		chunks, counts = determineChunks(sids, tr, sc)
 		// map phase: build every chunk in parallel
-		partials = util.ParallelMap(chunks, func(_ uint, c setChunk) Set[F] {
+		partials = array.ParallelMap(chunks, func(_ uint, c setChunk) Set[F] {
 			return buildSetChunk(c, tr, sc)
 		})
 		// group chunk results by their originating set.  Since chunks are
@@ -101,7 +102,7 @@ func ParBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Con
 		offset += counts[i]
 	}
 	// reduce phase: merge the chunks of each set in parallel
-	merged := util.ParallelMap(sids, func(i uint, sid SetId) Set[F] {
+	merged := array.ParallelMap(sids, func(i uint, sid SetId) Set[F] {
 		return mergeSets(groups[i])
 	})
 	//

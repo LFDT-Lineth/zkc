@@ -45,7 +45,7 @@ func Test_ZkcBench_Fnv1aHash(t *testing.T) {
 }
 
 func Test_ZkcBench_Keccak(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/keccak", DEFAULT_BENCH_CONFIG.Sampling(0.1).Checkpoints("keccak_f", 10))
+	checkZkcBench(t, "zkc/bench/keccak", DEFAULT_BENCH_CONFIG.Sampling(0.1).ParallelTracing("keccak_f", 10))
 }
 func Test_ZkcBench_Poseidon(t *testing.T) {
 	// #2007: support implicit sign bit
@@ -58,7 +58,7 @@ func Test_ZkcBench_Poseidon(t *testing.T) {
 // ===================================================================
 
 func Test_ZkcBench_Sort(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/sort", DEFAULT_BENCH_CONFIG.Checkpoints("sort_slice", 5).Sampling(0.1))
+	checkZkcBench(t, "zkc/bench/sort", DEFAULT_BENCH_CONFIG.Sampling(0.1).ParallelTracing("sort_slice", 5))
 }
 
 func Test_ZkcBench_LongDivision(t *testing.T) {

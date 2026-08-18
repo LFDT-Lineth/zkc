@@ -33,13 +33,15 @@ func BootAndDebug[W Word[W]](program Program[W], in map[string][]byte, observer 
 	bci := interpreter.New(program, true)
 	// Register a breakpoint handler which reports the executing state to the
 	// observer.
-	bci = bci.BreakPointer(func(opcode uint32) {
+	bci = bci.BreakPointer(func(opcode uint32) bool {
 		fid, pc, frame := interpreter.ExtractExecutingState(bci)
 		// Clone the frame so the observer sees a stable snapshot which cannot be
 		// mutated by subsequent execution.
 		returning := opcode == encoding.RET || opcode == encoding.WIDE|encoding.WIDE_RET<<8
 		//
 		observer(State[W]{fid, pc, returning, slices.Clone(frame)})
+		// don't interrupt interpeter
+		return false
 	})
 	// Boot and execute to completion.
 	_, _, errs := BootAndExecute(bci, in, math.MaxUint)

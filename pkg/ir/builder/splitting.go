@@ -101,7 +101,7 @@ func parallelTraceSplitting[F field.Element[F]](ltf lt.TraceFile, mapping module
 		}
 	}
 	// Split all columns in parallel using a worker pool.
-	results := util.ParallelMap(jobs, func(_ uint, job splittingJob[F]) splitResult[F] {
+	results := array.ParallelMap(jobs, func(_ uint, job splittingJob[F]) splitResult[F] {
 		data, errors := splitRawColumn(job.rawCol, builder, job.modmap)
 		return splitResult[F]{job.module, job.col, data, errors}
 	})
