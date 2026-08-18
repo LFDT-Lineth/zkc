@@ -211,16 +211,9 @@ type oneHotPiece struct {
 // Σ_{c ∈ S} c·⟦guards_c⟧ — which lets pathSelectorConstraint bind
 // the selector at degree 1 however large S is.
 //
-// Two shapes are recognised:
-//
-//   - ⋁ᵢ (common ∧ bitᵢ != 0 ∧ guardsᵢ): distinct positive member tests, each
-//     with per-disjunct guards (width-1 tests against zero);
-//
-//   - ⋁ᵢ (common ∧ memberAtomsᵢ): unguarded member tests of either sign, where
-//     each disjunct denotes the set of members it fires on — (m != 0) narrows
-//     it to {m}, (m == 0) removes m — and the pieces are the union of those
-//     sets.  This absorbs disjuncts subsumed under one-hot semantics, e.g.
-//     (m == 0) ∨ (m' != 0) collapses to the members other than m.
+// Each disjunct fires on a set of cases: start from all of them, then (c != 0)
+// narrows the set to {c} and (c == 0) drops c from it.  A disjunct with no case
+// atom keeps all cases.  S is the union of those sets.
 func splitOneHotDisjunction(cond dfa.BranchCondition, groups []oneHotGroup,
 ) (common []dfa.BranchEquality, pieces []oneHotPiece, ok bool) {
 	conjuncts := cond.Conjuncts()
@@ -232,11 +225,7 @@ func splitOneHotDisjunction(cond dfa.BranchCondition, groups []oneHotGroup,
 	// Each dispatch allocates fresh bit registers, so groups are disjoint and
 	// at most one can match.
 	for _, g := range groups {
-		if common, pieces, ok = splitOneHotDisjuncts(conjuncts, g); ok {
-			return common, pieces, true
-		}
-		//
-		if common, pieces, ok = splitMemberSetDisjuncts(conjuncts, g); ok {
+		if common, pieces, ok = splitDisjuncts(conjuncts, g); ok {
 			return common, pieces, true
 		}
 	}
@@ -244,112 +233,93 @@ func splitOneHotDisjunction(cond dfa.BranchCondition, groups []oneHotGroup,
 	return nil, nil, false
 }
 
-// splitOneHotDisjuncts attempts the split of splitOneHotDisjunction against a
-// single one-hot group.
-func splitOneHotDisjuncts(conjuncts []dfa.BranchConjunction, g oneHotGroup,
-) (rest []dfa.BranchEquality, pieces []oneHotPiece, ok bool) {
+// splitDisjuncts performs the analysis of splitOneHotDisjunction against a
+// single one-hot group.  Every disjunct contributes the members it can fire on
+// — no member atom at all means any member, (m != 0) narrows to m, (m == 0)
+// removes m — together with the guards it imposes on them.  A member reached
+// from several disjuncts keeps the weakest requirement: an unguarded
+// occurrence subsumes a guarded one, and two differing guard sets are declined
+// (their disjunction is not expressible as a guard list).
+func splitDisjuncts(conjuncts []dfa.BranchConjunction, g oneHotGroup,
+) (common []dfa.BranchEquality, pieces []oneHotPiece, ok bool) {
 	var (
-		covered    = make(map[register.Id]bool, len(conjuncts))
-		remainders = make([][]dfa.BranchEquality, len(conjuncts))
+		sets   = make([]map[register.Id]bool, len(conjuncts))
+		others = make([][]dfa.BranchEquality, len(conjuncts))
+		guards = make([][]dfa.BranchEquality, len(conjuncts))
+		byId   = make(map[register.Id][]dfa.BranchEquality)
 	)
-	// Every disjunct must test exactly one distinct member of the group.
+	// Split every disjunct into the members it fires on and its other atoms.
 	for i, conjunct := range conjuncts {
-		bit, ith, ok := splitGroupMemberAtom(conjunct, g)
+		sets[i] = g.members()
 		//
-		if !ok || covered[bit.Left.Id] {
-			return nil, nil, false
+		for _, atom := range conjunct.Atoms() {
+			switch {
+			case !isIndicatorAtom(atom) || !g.isMember(atom.Left.Id):
+				others[i] = append(others[i], atom)
+			case atom.Sign:
+				// (m == 0): the active member is not m.
+				delete(sets[i], atom.Left.Id)
+			case sets[i][atom.Left.Id]:
+				// (m != 0): the active member is m.
+				sets[i] = map[register.Id]bool{atom.Left.Id: true}
+			default:
+				// (m != 0) contradicting an earlier atom: fires never.
+				sets[i] = nil
+			}
 		}
-		//
-		covered[bit.Left.Id] = true
-		remainders[i] = ith
-
-		pieces = append(pieces, oneHotPiece{bit: bit.Left.Id})
 	}
-	// The shared remainder: atoms common to every disjunct (always at least
-	// the position atom folded in by lookupSourceSelector).
-	rest = remainders[0]
+	// The shared side condition: atoms common to every disjunct (always at
+	// least the position atom folded in by lookupSourceSelector).
+	common = others[0]
 	//
-	for _, remainder := range remainders[1:] {
-		rest = intersectAtoms(rest, remainder)
+	for _, other := range others[1:] {
+		common = intersectAtoms(common, other)
 	}
-	// Whatever a disjunct tests beyond the shared remainder must be a guard.
-	for i, remainder := range remainders {
-		for _, atom := range remainder {
-			if containsAtom(rest, atom) {
+	// Whatever a disjunct requires beyond the shared side condition guards its
+	// members, so it must admit an arithmetic 0/1 indicator.
+	for i, other := range others {
+		for _, atom := range other {
+			if containsAtom(common, atom) {
 				continue
 			} else if !isIndicatorAtom(atom) {
 				return nil, nil, false
 			}
 			//
-			pieces[i].guards = append(pieces[i].guards, atom)
+			guards[i] = append(guards[i], atom)
 		}
 	}
-	//
-	return rest, pieces, true
-}
-
-// splitMemberSetDisjuncts attempts the split of splitOneHotDisjunction in its
-// unguarded form: every disjunct shares the same remainder and constrains the
-// group's active member only through member atoms (of either sign).  Each
-// disjunct then denotes a set of members — a positive atom (m != 0) narrows it
-// to {m}, a negative atom (m == 0) removes m — and, since exactly one member
-// is set, the disjunction fires exactly when the active member lies in the
-// union of those sets.
-func splitMemberSetDisjuncts(conjuncts []dfa.BranchConjunction, g oneHotGroup,
-) (rest []dfa.BranchEquality, pieces []oneHotPiece, ok bool) {
-	var union = make(map[register.Id]bool)
-	//
-	for i, conjunct := range conjuncts {
-		var (
-			set = g.members()
-			ith []dfa.BranchEquality
-		)
-		//
-		for _, atom := range conjunct.Atoms() {
-			switch {
-			case !isIndicatorAtom(atom) || !g.isMember(atom.Left.Id):
-				ith = append(ith, atom)
-			case atom.Sign:
-				// (m == 0): the active member is not m.
-				delete(set, atom.Left.Id)
-			case set[atom.Left.Id]:
-				// (m != 0): the active member is m.
-				set = map[register.Id]bool{atom.Left.Id: true}
-			default:
-				// (m != 0) contradicting an earlier atom: fires never.
-				set = nil
+	// Accumulate each member's guards over the disjuncts it appears in.
+	for i, set := range sets {
+		for m := range set {
+			switch prev, seen := byId[m]; {
+			case !seen:
+				byId[m] = guards[i]
+			case len(prev) == 0 || len(guards[i]) == 0:
+				byId[m] = nil
+			case !equalAtoms(prev, guards[i]):
+				return nil, nil, false
 			}
 		}
-		// All disjuncts must share the same remainder.
-		if i == 0 {
-			rest = ith
-		} else if !equalAtoms(rest, ith) {
-			return nil, nil, false
-		}
-		//
-		for m := range set {
-			union[m] = true
-		}
 	}
-	// An empty union means the condition cannot fire at all; leave that
+	// An empty member set means the condition cannot fire at all; leave that
 	// (unexpected) case to the propositional translation.
-	if len(union) == 0 {
+	if len(byId) == 0 {
 		return nil, nil, false
 	}
 	// Order the pieces by register id, for determinism.
-	members := make([]register.Id, 0, len(union))
+	ids := make([]register.Id, 0, len(byId))
 	//
-	for m := range union {
-		members = append(members, m)
+	for m := range byId {
+		ids = append(ids, m)
 	}
 	//
-	slices.SortFunc(members, func(l, r register.Id) int { return cmp.Compare(l.Unwrap(), r.Unwrap()) })
+	slices.SortFunc(ids, func(l, r register.Id) int { return cmp.Compare(l.Unwrap(), r.Unwrap()) })
 	//
-	for _, m := range members {
-		pieces = append(pieces, oneHotPiece{bit: m})
+	for _, m := range ids {
+		pieces = append(pieces, oneHotPiece{bit: m, guards: byId[m]})
 	}
 	//
-	return rest, pieces, true
+	return common, pieces, true
 }
 
 // members returns the member set of the group: its bits plus the default
@@ -370,33 +340,6 @@ func (g oneHotGroup) members() map[register.Id]bool {
 // of its bits or its default register).
 func (g oneHotGroup) isMember(id register.Id) bool {
 	return g.bits[id] || id == g.dflt
-}
-
-// splitGroupMemberAtom splits a conjunct into its (member != 0) atom over the
-// group — where a member is either one of the group's bits or its default
-// register — and the remaining atoms, provided the conjunct tests exactly one
-// member; otherwise ok is false.
-func splitGroupMemberAtom(conjunct dfa.BranchConjunction, g oneHotGroup,
-) (member dfa.BranchEquality, rest []dfa.BranchEquality, ok bool) {
-	var found int
-	//
-	for _, atom := range conjunct.Atoms() {
-		if isGroupMemberAtom(atom, g) {
-			member = atom
-			found++
-		} else {
-			rest = append(rest, atom)
-		}
-	}
-	//
-	return member, rest, found == 1
-}
-
-// isGroupMemberAtom reports whether the given atom tests one of the group's
-// members (a bit or the default register) as non-zero.
-func isGroupMemberAtom(atom dfa.BranchEquality, g oneHotGroup) bool {
-	return !atom.Sign && isIndicatorAtom(atom) &&
-		(g.bits[atom.Left.Id] || atom.Left.Id == g.dflt)
 }
 
 // intersectAtoms returns the atoms of lhs also present in rhs, preserving
