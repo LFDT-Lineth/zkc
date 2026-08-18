@@ -408,7 +408,7 @@ func fwdComputation(height uint, data [][]word.BigEndian, widths []uint, expr te
 		// error check
 		if err != nil {
 			e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
-			return constraint.NewInternalFailure[word.BigEndian](scMod.Name().String(), ctx, i, expr, e)
+			return constraint.NewInternalFailure[word.BigEndian](scMod.Name(), ctx, i, expr, e)
 		}
 		// Write data across limbs
 		write(i, val, data, widths)
@@ -455,7 +455,7 @@ func fwdComputationParallelDirect[F field.Element[F]](height uint, data [][]F, w
 
 					if firstErr == nil {
 						e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
-						firstErr = constraint.NewInternalFailure[word.BigEndian](scMod.Name().String(), ctx, i, expr, e)
+						firstErr = constraint.NewInternalFailure[word.BigEndian](scMod.Name(), ctx, i, expr, e)
 					}
 
 					mu.Unlock()
@@ -529,7 +529,7 @@ func fwdComputationDirect[F field.Element[F]](height uint, data [][]F, widths []
 		val, err := expr.EvalAt(int(i), trMod, scMod)
 		if err != nil {
 			e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
-			return constraint.NewInternalFailure[word.BigEndian](scMod.Name().String(), ctx, i, expr, e)
+			return constraint.NewInternalFailure[word.BigEndian](scMod.Name(), ctx, i, expr, e)
 		}
 
 		splitter.write(i, val, data)

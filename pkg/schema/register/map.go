@@ -15,8 +15,6 @@ package register
 import (
 	"fmt"
 	"strings"
-
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 )
 
 // Map provides a generic interface for entities which hold information
@@ -24,8 +22,8 @@ import (
 type Map interface {
 	fmt.Stringer
 	// Name returns the name given to the enclosing entity (i.e. module or
-	// function), along with its multiplier.
-	Name() trace.ModuleName
+	// function).
+	Name() string
 	// HasRegister checks whether a register with the given name exists and, if
 	// so, returns its register identifier.  Otherwise, it returns false.
 	HasRegister(name string) (Id, bool)
@@ -54,7 +52,7 @@ func MapToString(p Map) string {
 	var builder strings.Builder
 	//
 	builder.WriteString("{")
-	builder.WriteString(p.Name().String())
+	builder.WriteString(p.Name())
 	builder.WriteString(":")
 	//
 	for i, r := range p.Registers() {
@@ -71,16 +69,16 @@ func MapToString(p Map) string {
 }
 
 // ArrayMap constructs a register map from an array of registers.
-func ArrayMap(name trace.ModuleName, regs ...Register) Map {
+func ArrayMap(name string, regs ...Register) Map {
 	return &arrayMap{name, regs}
 }
 
 type arrayMap struct {
-	name trace.ModuleName
+	name string
 	regs []Register
 }
 
-func (p *arrayMap) Name() trace.ModuleName {
+func (p *arrayMap) Name() string {
 	return p.name
 }
 

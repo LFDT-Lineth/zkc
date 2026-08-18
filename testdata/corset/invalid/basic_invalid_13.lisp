@@ -2,6 +2,5 @@
 (module mmio)
 
 (defcolumns (COUNTER :dac))
-(defalias CT COUNTER)
 
 (module mmio)

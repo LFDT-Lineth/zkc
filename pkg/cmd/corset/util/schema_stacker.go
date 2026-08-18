@@ -153,8 +153,11 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 		absSchema = p.schema.Unwrap()
 		//
 		stats.Log("concretization")
-		// Apply register splitting for field agnosticity
-		mirSchema, mapping := mir.Concretize[word.BigEndian, F](p.corsetConfig.Field, absSchema.RawModules())
+		// Concretize schema for the target field.
+		mirSchema := mir.Concretize[word.BigEndian, F](absSchema.RawModules())
+		// Construct a trivial (unsplit) register mapping, since registers are
+		// no longer subdivided into limbs.
+		mapping := IdentityMapping[F](p.corsetConfig.Field.Name, mirSchema.RawModules()...)
 		//
 		stats.Log("translation")
 		// Record mapping
@@ -174,8 +177,6 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 			stack.concreteSchemas = append(stack.concreteSchemas, schema.Any(airSchema))
 			stack.names = append(stack.names, "AIR")
 		}
-		// Assign trace builder with limb map
-		stack.traceBuilder = p.traceBuilder.WithRegisterMapping(mapping)
 		// Assign source map used to build the stack
 		stack.sourceMap = p.sourceMap
 	}

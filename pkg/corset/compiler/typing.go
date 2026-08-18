@@ -28,8 +28,7 @@ import (
 type SyntaxError = source.SyntaxError
 
 // TypeCheckCircuit performs a type checking pass over the circuit to ensure
-// types are used correctly.  Additionally, this resolves some ambiguities
-// arising from the possibility of overloading function calls, etc.
+// types are used correctly.
 func TypeCheckCircuit(srcmap *source.Maps[ast.Node],
 	circuit *ast.Circuit) []SyntaxError {
 	// Construct fresh typeChecker
@@ -38,9 +37,7 @@ func TypeCheckCircuit(srcmap *source.Maps[ast.Node],
 	return p.typeCheckDeclarations(circuit)
 }
 
-// typeChecker performs typeChecking prior to final translation. Specifically,
-// it expands all invocations and reductions.  Thus, final
-// translation is greatly simplified after this step.
+// typeChecker performs typeChecking prior to final translation.
 type typeChecker struct {
 	// Source maps nodes in the circuit back to the spans in their original
 	// source files.  This is needed when reporting syntax errors to generate
@@ -79,23 +76,17 @@ func (p *typeChecker) typeCheckDeclaration(decl ast.Declaration) []SyntaxError {
 	var errors []SyntaxError
 	//
 	switch d := decl.(type) {
-	case *ast.DefAliases:
-		// ignore
 	case *ast.DefColumns:
 		// ignore
 	case *ast.DefConst:
 		errors = p.typeCheckDefConstInModule(d)
 	case *ast.DefConstraint:
 		errors = p.typeCheckDefConstraint(d)
-	case *ast.DefFun:
-		errors = p.typeCheckDefFunInModule(d)
 	case *ast.DefInRange:
 		// Nothing to check, since the constrained column is a column access
 		// whose type is already known.
 	case *ast.DefLookup:
 		errors = p.typeCheckDefLookup(d)
-	case *ast.DefPerspective:
-		errors = p.typeCheckDefPerspective(d)
 	default:
 		// Error handling
 		panic("unknown declaration")
@@ -129,29 +120,6 @@ func (p *typeChecker) typeCheckDefConstraint(decl *ast.DefConstraint) []SyntaxEr
 	_, constraint_errors := p.typeCheckExpressionInModule(ast.BOOL_TYPE, decl.Constraint, false)
 	// Combine errors
 	return append(constraint_errors, guard_errors...)
-}
-
-// ast.Type check the body of a function.
-func (p *typeChecker) typeCheckDefFunInModule(decl *ast.DefFun) []SyntaxError {
-	var (
-		functional bool
-		ret        ast.Type = decl.Return()
-	)
-	//
-	if ret != nil {
-		_, functional = ret.(*ast.BoolType)
-	}
-	// Resolve body
-	actual, errors := p.typeCheckExpressionInModule(ret, decl.Body(), functional)
-	// Check the body actually produces the declared return type.  NOTE: this
-	// check was previously performed by the (now removed) cast which wrapped
-	// the body of any function declaring a return type.
-	if len(errors) == 0 && ret != nil && actual != nil && !actual.SubtypeOf(ret) {
-		msg := fmt.Sprintf("expected type %s, found %s", ret.String(), actual.String())
-		errors = append(errors, *p.srcmap.SyntaxError(decl.Body(), msg))
-	}
-	// Done
-	return errors
 }
 
 // typeCheck a "deflookup" declaration.
@@ -200,17 +168,6 @@ func typesOfLookupColumns(columns []ast.TypedSymbol) []ast.Type {
 	}
 	//
 	return types
-}
-
-// typeCheck a "defperspective" declaration.
-func (p *typeChecker) typeCheckDefPerspective(decl *ast.DefPerspective) []SyntaxError {
-	// FIXME: eventually, the selector should be a BOOLEAN_TYPE in order to
-	// force a suitable interpretation.
-	//
-	// typeCheck selector expression
-	_, errors := p.typeCheckExpressionInModule(ast.UINT_TYPE, decl.Selector, true)
-	// Combine errors
-	return errors
 }
 
 // typeCheck an optional expression in a given context.  That is an expression
@@ -281,8 +238,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 		result, errors = ast.BOOL_TYPE, append(errs1, errs2...)
 	case *ast.If:
 		result, errors = p.typeCheckIfInModule(expected, e, functional)
-	case *ast.Invoke:
-		result, errors = p.typeCheckInvokeInModule(expected, e, functional)
 	case *ast.Mul:
 		types, errors = p.typeCheckExpressionsInModule(ast.UINT_TYPE, e.Args, true)
 		result = typeOfProduct(types...)
@@ -356,49 +311,6 @@ func (p *typeChecker) typeCheckIfInModule(expected ast.Type, expr *ast.If, funct
 	return res_t, nil
 }
 
-func (p *typeChecker) typeCheckInvokeInModule(expected ast.Type, expr *ast.Invoke,
-	functional bool) (ast.Type, []SyntaxError) {
-	var (
-		ret    ast.Type
-		errors []SyntaxError
-	)
-	//
-	if binding, ok := expr.Name.Binding().(ast.FunctionBinding); ok {
-		// Sanity check this is not an invocation on a native definition (which,
-		// currently, do not have signatures).
-		if sig := binding.Signature(); sig != nil {
-			//
-			for i := uint(0); i != sig.Arity(); i++ {
-				_, errs := p.typeCheckExpressionInModule(sig.Parameter(i), expr.Args[i], functional)
-				errors = append(errors, errs...)
-			}
-			// Check whether return type given (or not).
-			if len(errors) > 0 {
-				return nil, errors
-			} else if ret = sig.Return(); ret != nil {
-				return ret, errors
-			}
-			// TODO: this is potentially expensive, and it would likely be good if we
-			// could avoid it.
-			body := sig.Apply(expr.Args, p.srcmap)
-			// Dig out the type
-			ret, errors = p.typeCheckExpressionInModule(nil, body, functional)
-			//
-			if len(errors) > 0 {
-				return nil, errors
-			} else if expected != nil && ret != nil && !ret.SubtypeOf(expected) {
-				msg := fmt.Sprintf("expected %s, found %s", expected.String(), ret.String())
-				return nil, p.srcmap.SyntaxErrors(expr, msg)
-			}
-			//
-			return ret, nil
-		}
-	}
-	// No need to report an error here, as one would already have been reported
-	// during resolution.
-	return nil, nil
-}
-
 func (p *typeChecker) typeCheckVariableInModule(expr *ast.VariableAccess) (ast.Type, []SyntaxError) {
 	// Check what we've got.
 	if !expr.IsResolved() {
@@ -408,9 +320,6 @@ func (p *typeChecker) typeCheckVariableInModule(expr *ast.VariableAccess) (ast.T
 	} else if binding, ok := expr.Binding().(*ast.ConstantBinding); ok {
 		// Constant
 		return p.typeCheckExpressionInModule(binding.DataType, binding.Value, true)
-	} else if binding, ok := expr.Binding().(*ast.LocalVariableBinding); ok {
-		// Parameter, for or let variable
-		return binding.DataType, nil
 	}
 	// NOTE: we don't return an error here, since this case would have already
 	// been caught by the resolver and we don't want to double up on errors.

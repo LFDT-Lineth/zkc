@@ -332,7 +332,7 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
 			WithBatchSize(cfg.BatchSize()).
 			WithPadding(cfg.PaddingStrategy())
 		// Build the trace (finally)
-		tr, berrs = builder.Expand(constraints, rtrace.ToTrace(rtr))
+		tr, berrs = builder.Build(constraints, rtrace.ToTrace(rtr))
 		// Include any builder errors
 		errs = append(errs, berrs...)
 	}

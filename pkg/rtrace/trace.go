@@ -15,7 +15,6 @@ package rtrace
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
@@ -54,9 +53,6 @@ type Module[T any] interface {
 	Width() uint
 	// Returns the height (i.e. number of rows) of this module.
 	Height() uint
-	// Convert to an lt.Module[T].  This should be considered a destructive
-	// operation, so once this is done the given module is finished.
-	ToLtModule() lt.Module[T]
 }
 
 // ModuleBuilder describes an extended module which can be used for the purposes

@@ -82,7 +82,7 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	//
 	stats.Log("Reading constraints file")
 	// Parse trace file
-	tracefile := ReadTraceFile(args[0])
+	tracefile := ReadTraceFile[F](args[0])
 	// Extract schema
 	schema := stack.ConcreteSchema()
 	//
@@ -118,7 +118,7 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 // (shown by default); when nil, all modules are public.  Callers use this to
 // hide synthetic modules such as range-check tables.
 func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F],
-	public func(tr.ModuleName) bool, limbs bool, cellWidth, titleWidth uint) []error {
+	public func(string) bool, limbs bool, cellWidth, titleWidth uint) []error {
 	//
 	term, err := termio.NewTerminal()
 	if err != nil {

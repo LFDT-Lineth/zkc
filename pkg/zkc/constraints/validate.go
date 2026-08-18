@@ -21,7 +21,6 @@ import (
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
@@ -58,7 +57,7 @@ func validateConstraints[F field.Element[F]](schema sc.AnySchema[F]) (errs []err
 		// Check everything else.
 		for i, r := range mod.Registers() {
 			if !validated[mid].Contains(uint(i)) {
-				err := fmt.Errorf("dangling register \"%s\" in module \"%s\"", r.Name(), mod.Name().String())
+				err := fmt.Errorf("dangling register \"%s\" in module \"%s\"", r.Name(), mod.Name())
 				//
 				errs = append(errs, err)
 			}
@@ -113,7 +112,7 @@ func validateModuleReachability[F field.Element[F]](schema sc.AnySchema[F]) (err
 	// TODO: https://github.com/LFDT-Lineth/zkc/issues/1869 parametrize "main" name
 	for _, name := range UnreachableModules(schema) {
 		errs = append(errs, fmt.Errorf("module \"%s\" unreachable via lookups from entry point \"main\"",
-			name.String()))
+			name))
 	}
 	//
 	return errs
@@ -125,7 +124,7 @@ func validateModuleReachability[F field.Element[F]](schema sc.AnySchema[F]) (err
 // that module; it emanates from the modules its source vectors sit in.  When
 // the schema has no "main" module there is no entry point, and every module is
 // considered reachable.
-func UnreachableModules[F field.Element[F]](schema sc.AnySchema[F]) (unreachable []trace.ModuleName) {
+func UnreachableModules[F field.Element[F]](schema sc.AnySchema[F]) (unreachable []string) {
 	var (
 		reached  = make([]bool, schema.Modules().Count())
 		outgoing = make(map[sc.ModuleId][]sc.ModuleId)
@@ -134,7 +133,7 @@ func UnreachableModules[F field.Element[F]](schema sc.AnySchema[F]) (unreachable
 	// Seed the traversal with the entry point; without one, nothing to check.
 	// TODO: https://github.com/LFDT-Lineth/zkc/issues/1869 parametrize "main" name
 	for iter, mid := schema.Modules(), sc.ModuleId(0); iter.HasNext(); mid++ {
-		if iter.Next().Name().Name == "main" {
+		if iter.Next().Name() == "main" {
 			reached[mid] = true
 			worklist = append(worklist, mid)
 		}
@@ -192,7 +191,7 @@ func validateStaticTables[F field.Element[F]](schema sc.AnySchema[F]) []error {
 		var mod = iter.Next()
 		if mod.IsStatic() {
 			if n := uint(len(mod.StaticContents())); n == 0 || n&(n-1) != 0 {
-				err := fmt.Errorf("height (%d) of static table \"%s\" not power-of-two", n, mod.Name().String())
+				err := fmt.Errorf("height (%d) of static table \"%s\" not power-of-two", n, mod.Name())
 				errors = append(errors, err)
 			}
 		}

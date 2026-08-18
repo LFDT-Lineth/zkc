@@ -15,24 +15,8 @@ package rtrace
 import (
 	"sync"
 
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
-
-// ToTrace converts an rtrace.Trace into a trace.Trace, where each column in the
-// former maps into a column in the latter.
-func ToTrace[T word.Word[T]](tr Trace[T]) []lt.Module[T] {
-	var (
-		modules = make([]lt.Module[T], tr.Width())
-	)
-	//
-	for mid := range tr.Width() {
-		modules[mid] = tr.Module(mid).ToLtModule()
-	}
-	//
-	return modules
-}
 
 // Reduce combines a sequence of aligned traces into a single trace.  Two traces
 // are aligned when they have the same width and modules sharing a name also

@@ -23,7 +23,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
@@ -33,10 +32,6 @@ import (
 
 // Config encapsulates various options which can affect compilation.
 type Config struct {
-	// Enable standard library
-	Stdlib bool
-	// Enable legacy register allocator
-	Legacy bool
 	// Enforce all types by default
 	EnforceTypes bool
 	// Enforce types for all limbs arising from splitting registers
@@ -132,38 +127,12 @@ func (t *translator) translateModules(circuit *ast.Circuit) {
 	}
 }
 
-// Translate the given Corset module into a family of one (or more) MIR modules.
-// Normally, every Corset module corresponds to exactly one MIR module. More
-// specifically, there will be one module for each distinct length multiplier.
-// Thus, in the presence of interleavings, a Corset module will map to more than
-// one MIR module.
+// Translate the given Corset module into its corresponding HIR module.
 func (t *translator) translateModule(name string) {
-	// Always include module with base multiplier (even if empty).
-	t.schema.NewModule(module.NewName(name, 1), true, true, false, false, false, false, 0)
-	// Initialise the corresponding family of MIR modules.
-	for _, regIndex := range t.env.RegistersOf(name) {
-		var (
-			// Identify register info
-			regInfo = t.env.Register(regIndex)
-			// Determine corresponding module name
-			moduleName = regInfo.Context.ModuleName()
-		)
-		// Check whether module created this already (or not)
-		if _, ok := t.schema.HasModule(moduleName); !ok {
-			// No, therefore create new module.
-			t.schema.NewModule(moduleName, true, true, false, false, false, false, 0)
-		}
-	}
-	// Translate all corset registers in this module into MIR registers across
-	// the corresponding *family* of modules.
-	t.translateModuleRegisters(t.env.RegistersOf(name))
-}
-
-// Add all registers defined in the given Corset module into registers in one
-// (or more) MIR modules.
-func (t *translator) translateModuleRegisters(corsetRegisters []uint) {
+	// Always include module (even if empty).
+	t.schema.NewModule(name, true, true, false, false, false, false)
 	// Process each register in turn.
-	for _, regIndex := range corsetRegisters {
+	for _, regIndex := range t.env.RegistersOf(name) {
 		var (
 			// Identify register info
 			regInfo = t.env.Register(regIndex)
@@ -185,49 +154,17 @@ func (t *translator) translateModuleRegisters(corsetRegisters []uint) {
 	}
 }
 
-// Translate any type constraints applicable for the given register.  Type
-// constraints are determined by the source-level registers and, hence, there are
-// several cases to consider:
-//
-// (1) none of the source-level registers allocated to this register was marked
-// provable. Therefore, no need to do anything.
-//
-// (2) all source-level registers allocated to this register which are marked
-// provable have the same type which, furthermore, is the largest type of any
-// register allocated to this register.  In this case, we can use a single
-// (global) constraint for the entire register.
-//
-// (3) source-level registers allocated to this register which are marked provable
-// have the same type, but this is not the largest of any allocated to this
-// register.  In fact, only binary@prove is supported here and we can assume
-// each register is allocated to a different perspective.
-//
-// Any other cases are considered to be erroneous register allocations, and will
-// lead to a panic.
+// Translate the type constraint applicable for the given register (if any).
+// This is required when the register's source column is marked provable, or
+// when the compiler is configured to enforce types more broadly.
 func (t *translator) translateTypeConstraints(reg Register, mod ModuleBuilder) {
 	var (
 		regWidth = reg.Bitwidth
-		required = t.config.EnforceTypes || (t.config.EnforceLimbTypes && regWidth > t.config.Field.RegisterWidth)
+		required = reg.MustProve || t.config.EnforceTypes ||
+			(t.config.EnforceLimbTypes && regWidth > t.config.Field.RegisterWidth)
 	)
-	// Check for provability
-	for _, col := range reg.Sources {
-		if col.MustProve {
-			required = true
-			break
-		}
-	}
 	// Apply provability (if it is required)
 	if required {
-		// For now, enforce all source registers have matching bitwidth.
-		for _, col := range reg.Sources {
-			// Determine bitwidth
-			colWidth := col.Bitwidth
-			// Sanity check (for now)
-			if col.MustProve && colWidth != regWidth {
-				// Currently, mixed-width proving types are not supported.
-				panic("cannot (currently) prove type of mixed-width register")
-			}
-		}
 		// Determine register being constrained
 		rid, _ := mod.HasRegister(reg.Name())
 		// Add appropriate type constraint
@@ -270,23 +207,16 @@ func (t *translator) translateDeclaration(decl ast.Declaration, path file.Path) 
 	var errors []SyntaxError
 	//
 	switch d := decl.(type) {
-	case *ast.DefAliases:
-		// Not an assignment or a constraint, hence ignore.
 	case *ast.DefColumns:
 		// Not an assignment or a constraint, hence ignore.
 	case *ast.DefConst:
 		// For now, constants are always compiled out when going down to MIR.
 	case *ast.DefConstraint:
 		errors = t.translateDefConstraint(d)
-	case *ast.DefFun:
-		// For now, functions are always compiled out when going down to MIR.
-		// In the future, this might change if we add support for macros to MIR.
 	case *ast.DefInRange:
 		errors = t.translateDefInRange(d)
 	case *ast.DefLookup:
 		errors = t.translateDefLookup(d)
-	case *ast.DefPerspective:
-		// As for defregisters, nothing generated here.
 	default:
 		// Error handling
 		panic("unknown declaration")
@@ -316,15 +246,6 @@ func (t *translator) translateDefConstraint(decl *ast.DefConstraint) []SyntaxErr
 		// Combine errors
 		errors = append(errors, guardErrors...)
 	}
-	// Apply perspective selector (if applicable)
-	if decl.Perspective != nil {
-		// Translate (optional) perspective selector
-		sexpr, selectorErrors := t.translateSelectorInModule(decl.Perspective, module)
-		selector := equateZero(sexpr)
-		expr = term.IfThenElse(selector, nil, expr)
-		// Combine errors
-		errors = append(errors, selectorErrors...)
-	}
 	// Sanity check
 	if len(errors) == 0 {
 		// Add translated constraint
@@ -332,19 +253,6 @@ func (t *translator) translateDefConstraint(decl *ast.DefConstraint) []SyntaxErr
 	}
 	// Done
 	return errors
-}
-
-// Translate the selector for the perspective of a defconstraint.  Observe that
-// a defconstraint may not be part of a perspective and, hence, would have no
-// selector.
-func (t *translator) translateSelectorInModule(perspective *ast.PerspectiveName,
-	module ModuleBuilder) (mirTerm, []SyntaxError) {
-	//
-	if perspective != nil {
-		return t.translateExpression(perspective.InnerBinding().Selector, module, 0)
-	}
-	//
-	return nil, nil
 }
 
 // Translate a "deflookup" declaration.

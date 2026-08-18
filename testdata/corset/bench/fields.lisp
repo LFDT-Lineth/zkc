@@ -9,20 +9,17 @@
     ;; Carry flag
     (CARRY :binary@prove))
 
-;; Constructs two nibbles into a byte
-(defpurefun (as_u8 b1 b0) (+ (* 16 b1) b0))
-
 ;; Byte decompositions
 (defconstraint decompositions-x ()
-   (eq! X (as_u8 [XS 2] [XS 1])))
+   (== X (+ (* 16 [XS 2]) [XS 1])))
 
 (defconstraint decompositions-y ()
-   (eq! Y (as_u8 [YS 2] [YS 1])))
+   (== Y (+ (* 16 [YS 2]) [YS 1])))
 
 ;; Constraint on lower half
 (defconstraint low4 (:guard ST)
-  (vanishes! (+ (* 16 CARRY) (- [XS 1] [YS 1] 1))))
+  (== (+ (* 16 CARRY) (- [XS 1] [YS 1] 1)) 0))
 
 ;; Constraint on upper half
 (defconstraint high4 (:guard ST)
-  (vanishes! (- [XS 2] [YS 2] CARRY)))
+  (== (- [XS 2] [YS 2] CARRY) 0))

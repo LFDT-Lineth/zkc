@@ -20,7 +20,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -143,7 +142,6 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
 	//
 	var (
 		mod     *schema.Table[F, mir.Constraint[F]]
-		name    = trace.ModuleName{Name: m.Name(), Multiplier: 1}
 		regs    = toRegisters(m.Registers())
 		layout  = computeRamLayout(m, field)
 		padding big.Int
@@ -151,7 +149,7 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
 	// Initialise module.  AllowPadding is true so a leading padding row exists
 	// (EXEC == FINL == 0 there).  A read-write memory is internal state: it is
 	// neither a public input nor a public output, and never native.
-	mod = mod.Init(name, true, false, false, false, false, false, 0)
+	mod = mod.Init(m.Name(), true, false, false, false, false, false)
 	mod.AddRegisters(regs...)
 	// Append the synthetic columns, in the order fixed by computeRamLayout.
 	mod.AddRegisters(

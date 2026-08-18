@@ -177,7 +177,7 @@ func (p Constraint[F, T]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
 	var (
 		module  = mapping.Module(p.Context)
 		name    string
-		modName        = module.Name().String()
+		modName        = module.Name()
 		vanish  string = "vanish"
 	)
 	// Construct qualified name

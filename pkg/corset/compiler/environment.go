@@ -13,7 +13,6 @@
 package compiler
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
@@ -51,10 +50,8 @@ type GlobalEnvironment struct {
 }
 
 // NewGlobalEnvironment constructs a new global environment from a global scope
-// by allocating appropriate identifiers to all columns.  This process is
-// parameterised upon a given register allocator, thus enabling different
-// allocation algorithms.
-func NewGlobalEnvironment(root *ModuleScope, allocator func(RegisterAllocation)) GlobalEnvironment {
+// by allocating appropriate identifiers to all columns.
+func NewGlobalEnvironment(root *ModuleScope) GlobalEnvironment {
 	// Sanity Check
 	if !root.IsRoot() {
 		// Definitely should be unreachable.
@@ -66,8 +63,6 @@ func NewGlobalEnvironment(root *ModuleScope, allocator func(RegisterAllocation))
 	env := GlobalEnvironment{nil, nil, nil, nil}
 	env.initModules(modules)
 	env.initColumnsAndRegisters(modules)
-	// Apply register allocation.
-	env.applyRegisterAllocation(allocator)
 	// Done
 	return env
 }
@@ -167,70 +162,16 @@ func (p *GlobalEnvironment) initColumnsAndRegisters(modules []*ModuleScope) {
 			}
 		}
 	}
-	// Apply aliases
-	for _, m := range modules {
-		for id, binding_id := range m.ids {
-			if binding, ok := m.bindings[binding_id].binding.(*ast.ColumnBinding); ok && !id.IsFunction() {
-				orig := binding.Path.String()
-				alias := m.path.Extend(id.name).String()
-				p.columnMap[alias] = p.columnMap[orig]
-			}
-		}
-	}
 }
 
 // Allocate a source-level column into this environment.  Since a source-level
 // column can correspond to multiple underling registers, this can result in the
 // allocation of a number of registers (based on the columns type).  For
 // example, an array of length n will allocate n registers, etc.
-func (p *GlobalEnvironment) allocateRegister(source RegisterSource) {
-	module := source.Context.String()
-	//
+func (p *GlobalEnvironment) allocateRegister(source Register) {
 	regId := uint(len(p.registers))
 	// Allocate register
-	p.registers = append(p.registers, Register{
-		ast.NewContext(module, source.Multiplier),
-		source.Bitwidth,
-		source.Padding,
-		[]RegisterSource{source},
-		nil,
-	})
+	p.registers = append(p.registers, source)
 	// Map column to register
-	p.columnMap[source.Name.String()] = regId
-}
-
-// Apply the given register allocator to each module of this environment in turn.
-func (p *GlobalEnvironment) applyRegisterAllocation(allocator func(RegisterAllocation)) {
-	// Apply to each module in turn
-	for m := range p.moduleMap {
-		// Determine register subset for this module
-		view := p.RegistersOf(m)
-		// Apply allocation to this subset
-		allocator(&RegisterAllocationView{view, p})
-	}
-	// Remove inactive registers.  This is necessary because register allocation
-	// marks a register as inactive when they its merged into another, but does
-	// not actually delete the register.
-	mapping := make([]uint, len(p.registers))
-	// Overallocate set of new registers
-	nregisters := make([]Register, len(p.registers))
-	// Index into nregisters
-	j := uint(0)
-	// Build mapping and remove registers
-	for i := 0; i < len(p.registers); i++ {
-		ith := p.registers[i]
-		//
-		if ith.IsActive() {
-			mapping[i] = j
-			nregisters[j] = ith
-			j++
-		}
-	}
-	// Update the columns maps, etc.
-	for col, reg := range p.columnMap {
-		// Safe since as neither adding nor removing entry from map.
-		p.columnMap[col] = mapping[reg]
-	}
-	// Copy over new register set, whilst slicing off inactive ones.
-	p.registers = nregisters[0:j]
+	p.columnMap[source.Path.String()] = regId
 }

@@ -13,13 +13,9 @@
 package ast
 
 import (
-	"fmt"
 	"math/big"
-	"reflect"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
-	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
@@ -85,12 +81,6 @@ type ArrayAccess struct {
 	Name         file.Path
 	Arg          Expr
 	ArrayBinding Binding
-}
-
-// Arity indicates whether or not this is a function and, if so, what arity
-// (i.e. how many arguments) the function has.
-func (e *ArrayAccess) Arity() util.Option[uint] {
-	return NON_FUNCTION
 }
 
 // IsResolved checks whether this symbol has been resolved already, or not.
@@ -410,44 +400,6 @@ func (e *If) Dependencies() []Symbol {
 }
 
 // ============================================================================
-// Function Invocation
-// ============================================================================
-
-// Invoke represents an attempt to invoke a given function.
-type Invoke struct {
-	Name *VariableAccess
-	Args []Expr
-}
-
-// AsConstant attempts to evaluate this expression as a constant (signed) value.
-// If this expression is not constant, then nil is returned.
-func (e *Invoke) AsConstant() *big.Int {
-	panic("unreachable")
-}
-
-// Context returns the context for this expression.  Observe that the
-// expression must have been resolved for this to be defined (i.e. it may
-// panic if it has not been resolved yet).
-func (e *Invoke) Context() Context {
-	ctx, _ := ContextOfExpressions(e.Args...)
-	return ctx
-}
-
-// Lisp converts this schema element into a simple S-Expression, for example
-// so it can be printed.
-func (e *Invoke) Lisp() sexp.SExp {
-	return ListOfExpressions(e.Name.Lisp(), e.Args)
-}
-
-// Dependencies needed to signal declaration.
-func (e *Invoke) Dependencies() []Symbol {
-	deps := DependenciesOfExpressions(e.Args)
-	// Include this expression as a symbol (which must be bound to the function
-	// being invoked)
-	return append(deps, e.Name)
-}
-
-// ============================================================================
 // Multiplication
 // ============================================================================
 
@@ -609,15 +561,13 @@ func (e *Shift) Dependencies() []Symbol {
 // as a function parameter).
 type VariableAccess struct {
 	Name    file.Path
-	FnArity util.Option[uint]
 	binding Binding
 }
 
 // NewVariableAccess creates a new variable access with the given (optionally
-// qualified) path that may (or may not) refer to a function, and which has a
-// given initial binding (which can be nil).
-func NewVariableAccess(path file.Path, arity util.Option[uint], binding Binding) *VariableAccess {
-	return &VariableAccess{path, arity, binding}
+// qualified) path, and which has a given initial binding (which can be nil).
+func NewVariableAccess(path file.Path, binding Binding) *VariableAccess {
+	return &VariableAccess{path, binding}
 }
 
 // AsConstant attempts to evaluate this expression as a constant (signed) value.
@@ -635,12 +585,6 @@ func (e *VariableAccess) Path() *file.Path {
 	return &e.Name
 }
 
-// Arity indicates whether or not this is a function and, if so, what arity
-// (i.e. how many arguments) the function has.
-func (e *VariableAccess) Arity() util.Option[uint] {
-	return e.FnArity
-}
-
 // IsResolved checks whether this symbol has been resolved already, or not.
 func (e *VariableAccess) IsResolved() bool {
 	return e.binding != nil
@@ -649,16 +593,10 @@ func (e *VariableAccess) IsResolved() bool {
 // Resolve this symbol by associating it with the binding associated with
 // the definition of the symbol to which this refers.
 func (e *VariableAccess) Resolve(binding Binding) bool {
-	isFunction := e.FnArity.HasValue()
-	//
 	if binding == nil {
 		panic("empty binding")
 	} else if e.binding != nil {
 		panic("already resolved")
-	} else if _, ok := binding.(FunctionBinding); ok && !isFunction {
-		return false
-	} else if _, ok := binding.(FunctionBinding); !ok && isFunction {
-		return false
 	}
 	//
 	e.binding = binding
@@ -680,8 +618,6 @@ func (e *VariableAccess) Context() Context {
 	if binding, ok := e.binding.(*ColumnBinding); ok {
 		return binding.Context()
 	} else if _, ok := e.Binding().(*ConstantBinding); ok {
-		return VoidContext()
-	} else if _, ok := e.Binding().(*LocalVariableBinding); ok {
 		return VoidContext()
 	}
 	//
@@ -730,139 +666,6 @@ func ContextOfExpressions[E Expr](exprs ...E) (Context, uint) {
 	}
 	//
 	return context, uint(len(exprs))
-}
-
-// Substitute variables (such as for function parameters) in this expression
-// based on a mapping of said variables to expressions.  Furthermore, an
-// (optional) source map is provided which will be updated, such that the
-// freshly created expressions are mapped to their corresponding nodes.
-func Substitute(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Expr {
-	var nexpr Expr
-	//
-	switch e := expr.(type) {
-	case *ArrayAccess:
-		arg := Substitute(e.Arg, mapping, srcmap)
-		nexpr = &ArrayAccess{e.Name, arg, e.ArrayBinding}
-	case *Add:
-		args := SubstituteAll(e.Args, mapping, srcmap)
-		nexpr = &Add{args}
-	case *Connective:
-		args := SubstituteAll(e.Args, mapping, srcmap)
-		nexpr = &Connective{e.Sign, args}
-	case *Constant:
-		return e
-	case *Equation:
-		lhs := Substitute(e.Lhs, mapping, srcmap)
-		rhs := Substitute(e.Rhs, mapping, srcmap)
-		// Done
-		nexpr = &Equation{e.Kind, lhs, rhs}
-	case *If:
-		cond := Substitute(e.Condition, mapping, srcmap)
-		trueBranch := SubstituteOptional(e.TrueBranch, mapping, srcmap)
-		falseBranch := SubstituteOptional(e.FalseBranch, mapping, srcmap)
-		// Construct appropriate if form
-		nexpr = &If{cond, trueBranch, falseBranch}
-	case *Invoke:
-		args := SubstituteAll(e.Args, mapping, srcmap)
-		nexpr = &Invoke{e.Name, args}
-	case *Mul:
-		args := SubstituteAll(e.Args, mapping, srcmap)
-		nexpr = &Mul{args}
-	case *Not:
-		arg := Substitute(e.Arg, mapping, srcmap)
-		nexpr = &Not{arg}
-	case *Sub:
-		args := SubstituteAll(e.Args, mapping, srcmap)
-		nexpr = &Sub{args}
-	case *Shift:
-		arg := Substitute(e.Arg, mapping, srcmap)
-		shift := Substitute(e.Shift, mapping, srcmap)
-		nexpr = &Shift{arg, shift}
-	case *VariableAccess:
-		//
-		if b, ok1 := e.binding.(*LocalVariableBinding); !ok1 {
-			return e
-		} else if e2, ok2 := mapping[b.Index]; !ok2 {
-			return e
-		} else {
-			// Shallow copy the node to ensure it is unique and, hence, can have
-			// the source mapping associated with e.
-			nexpr = ShallowCopy(e2)
-			// Copy source mapping from e2 (if such mapping exists).
-			if srcmap.Has(e2) {
-				// NOTE: in some unexpected situations (particularly around
-				// intrinsics) e2 may not have any source mapping.  Whilst this
-				// is the preferred source of mapping information, we can use
-				// the original expression as a backup.
-				expr = e2
-			}
-		}
-	default:
-		panic(fmt.Sprintf("unknown expression (%s)", reflect.TypeOf(expr)))
-	}
-	// Copy over source information
-	if srcmap != nil {
-		srcmap.Copy(expr, nexpr)
-	}
-	// Done
-	return nexpr
-}
-
-// SubstituteAll substitutes all variables found in a given set of
-// expressions.
-func SubstituteAll(exprs []Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) []Expr {
-	nexprs := make([]Expr, len(exprs))
-	//
-	for i := 0; i < len(nexprs); i++ {
-		nexprs[i] = Substitute(exprs[i], mapping, srcmap)
-	}
-	//
-	return nexprs
-}
-
-// SubstituteOptional substitutes through an expression which is
-// optional (i.e. might be nil).  In such case, nil is returned.
-func SubstituteOptional(expr Expr, mapping map[uint]Expr, srcmap *source.Maps[Node]) Expr {
-	if expr != nil {
-		expr = Substitute(expr, mapping, srcmap)
-	}
-	//
-	return expr
-}
-
-// ShallowCopy creates a copy of the expression itself, but not those
-// expressions it contains (if any).  This is useful in e.g. situations where we
-// want to associate different source file information with a specific expression.
-func ShallowCopy(expr Expr) Expr {
-	//
-	switch e := expr.(type) {
-	case *ArrayAccess:
-		return &ArrayAccess{e.Name, e.Arg, e.ArrayBinding}
-	case *Add:
-		return &Add{e.Args}
-	case *Connective:
-		return &Connective{e.Sign, e.Args}
-	case *Constant:
-		return &Constant{e.Val}
-	case *Equation:
-		return &Equation{e.Kind, e.Lhs, e.Rhs}
-	case *If:
-		return &If{e.Condition, e.TrueBranch, e.FalseBranch}
-	case *Invoke:
-		return &Invoke{e.Name, e.Args}
-	case *Mul:
-		return &Mul{e.Args}
-	case *Not:
-		return &Not{e.Arg}
-	case *Sub:
-		return &Sub{e.Args}
-	case *Shift:
-		return &Shift{e.Arg, e.Shift}
-	case *VariableAccess:
-		return &VariableAccess{e.Name, e.FnArity, e.binding}
-	default:
-		panic(fmt.Sprintf("unknown expression (%s)", reflect.TypeOf(expr)))
-	}
 }
 
 // DependenciesOfExpressions determines the dependencies for a given set of zero
