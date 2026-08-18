@@ -241,6 +241,28 @@ const (
 	DEBUG
 	// FIELD_TO_UINT instruction
 	FIELD_TO_UINT
+	// CAT_2n1 instruction: dedicated (narrow-only) encoding of CAT for the
+	// common two-target, one-source shape, distributing a single source
+	// register across two targets without the general register-list
+	// machinery.  Added at the end of the enum (rather than alongside CAT) so
+	// existing opcode values are undisturbed.
+	CAT_2n1
+	// ENTER_2 instruction: dedicated (narrow-only) encoding of ENTER_n for the
+	// common single-argument call, binding its one argument directly rather
+	// than through the general register-list machinery.
+	ENTER_2
+	// LEAVE_2 instruction: dedicated (narrow-only) encoding of LEAVE_n for the
+	// common single-return call, binding its one return directly rather than
+	// through the general register-list machinery.
+	LEAVE_2
+	// CAT_1n instruction: dedicated (narrow-only) encoding of CAT for the
+	// one-source, N-target shape, distributing a single source register
+	// across N targets without the general register-list machinery.
+	CAT_1n
+	// CAT_n1 instruction: dedicated (narrow-only) encoding of CAT for the
+	// N-source, one-target shape, combining N source registers into a
+	// single target without the general register-list machinery.
+	CAT_n1
 
 	//
 	MAX_BYTECODE
@@ -438,11 +460,11 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 		// placeholder position.
 		return uint(1 + len(b.Cases))
 	case *bytecode.Switch[W]:
-		// word 0 plus one (skip, cid) word per case.  NOTE: an explicit case
-		// is required (rather than falling through to Encode below) because
-		// the case skips are relative, and hence cannot be computed at a
-		// placeholder position.
-		return uint(1 + len(b.Cases))
+		// word 0 plus one u16 skip per case, packed two per word.  NOTE: an
+		// explicit case is required (rather than falling through to Encode
+		// below) because the case skips are relative, and hence cannot be
+		// computed at a placeholder position.
+		return uint(1 + NumCodesPackedWide(uint(len(b.Cases))))
 	case *bytecode.SkipIf[W]:
 		if b.Right.IsRegisterVector() {
 			// The wide form carries its base registers in an additional word.

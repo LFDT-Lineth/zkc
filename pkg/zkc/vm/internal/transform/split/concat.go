@@ -177,5 +177,5 @@ func concatAssignment[W word.Word[W]](_ uint, chunk partCat) Bytecode[W] {
 		return bytecode.LoadConstVec(chunk.targets, zero)
 	}
 	// Done
-	return bytecode.Concat[W](chunk.targets, chunk.sources)
+	return bytecode.AssignV[W](chunk.targets, chunk.sources...)
 }

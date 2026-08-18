@@ -282,7 +282,7 @@ func shiftByConst[W word.Word[W]](b *helperBuilder[W], op bytecode.Operation,
 		return []Bytecode[W]{
 			bytecode.AddVec[W]([]bytecode.RegisterId{keep, drop}, []bytecode.RegisterId{a}),
 			bytecode.LoadConst(zeros, zero),
-			bytecode.Concat[W]([]bytecode.RegisterId{target}, []bytecode.RegisterId{zeros, keep}),
+			bytecode.AssignV[W]([]bytecode.RegisterId{target}, zeros, keep),
 		}
 	default:
 		panic("expected shift operation")

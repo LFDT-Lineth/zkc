@@ -304,13 +304,13 @@ func AddVecConst[W Word[W]](targets []RegisterId, sources []RegisterId, constant
 // Assign constructs a assignment which copies the source register into the
 // target register.
 func Assign[W Word[W]](target RegisterId, source RegisterId) Bytecode[W] {
-	return AssignV[W]([]RegisterId{target}, source)
+	return bytecode.Assign[W](target, source)
 }
 
 // AssignV constructs a concatenation instruction which concatenates the source
 // registers and assigns to a given target register vector.
 func AssignV[W Word[W]](targets []RegisterId, sources ...RegisterId) Bytecode[W] {
-	return bytecode.Concat[W](targets, sources)
+	return bytecode.AssignV[W](targets, sources...)
 }
 
 // Call constructs a function-call bytecode with the given flags.

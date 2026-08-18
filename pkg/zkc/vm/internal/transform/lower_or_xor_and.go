@@ -300,7 +300,7 @@ func newDecomposedNaryHelper[W word.Word[W]](
 		b.emit(invokeNary[W](subID, isTable, lowSrcs, resLow))
 		b.emit(invokeNary[W](subID, isTable, highSrcs, resHigh))
 
-		b.emit(bytecode.Concat[W]([]bytecode.RegisterId{out}, []bytecode.RegisterId{resLow, resHigh}))
+		b.emit(bytecode.AssignV[W]([]bytecode.RegisterId{out}, resLow, resHigh))
 	}
 
 	b.emit(bytecode.NewRet[W]())

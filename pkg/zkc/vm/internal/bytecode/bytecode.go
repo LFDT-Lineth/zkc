@@ -303,8 +303,23 @@ func AddVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 
 // Assign constructs a move instruction which copies the source register into the
 // target register.
-func Assign[W word.Word[W]](target RegisterId, source RegisterId) *Cat[W] {
-	return Concat[W]([]RegisterId{target}, []RegisterId{source})
+func Assign[W word.Word[W]](target RegisterId, source RegisterId) *Arith[W] {
+	var zero W
+	//
+	return NewArith(OP_ADD, []RegisterId{target}, []RegisterId{source}, zero)
+}
+
+// AssignV constructs a concatenation instruction which joins the source
+// registers into the target register vector.
+func AssignV[W word.Word[W]](targets []RegisterId, sources ...RegisterId) Bytecode[W] {
+	util.Assert(len(targets) > 0, "at least one target required")
+	util.Assert(len(sources) > 0, "at least one source required")
+	// Avoid (expensive) concat instruction
+	if len(targets) == 1 && len(sources) == 1 {
+		return Assign[W](targets[0], sources[0])
+	}
+	//
+	return &Cat[W]{Targets: targets, Sources: sources}
 }
 
 // CallFun constructs a function-call bytecode with the given flags.
@@ -469,15 +484,6 @@ func NewFieldArith[W word.Word[W]](op Operation, target RegisterId, sources []Re
 // offset.
 func NewRet[W word.Word[W]]() *Ret[W] {
 	return &Ret[W]{}
-}
-
-// Concat constructs a concatenation instruction which joins the source
-// registers into the target register vector.
-func Concat[W word.Word[W]](targets []RegisterId, sources []RegisterId) *Cat[W] {
-	util.Assert(len(targets) > 0, "at least one target required")
-	util.Assert(len(sources) > 0, "at least one source required")
-	//
-	return &Cat[W]{Targets: targets, Sources: sources}
 }
 
 // IsUnusedConstant checks whether a given constant is the "identity element".

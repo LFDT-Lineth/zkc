@@ -86,7 +86,7 @@ func fn_main() {
 	r2 = r10
 	// [0.6] ldc $6 = 0x0
 	r6 = 0
-	// [0.7] cat $7 = s
+	// [0.7] mov $7 = s
 	r7 = r3
 	// [0.8] write result[$6] = $7
 	{
@@ -95,7 +95,7 @@ func fn_main() {
 	}
 	// [0.9] ldc $8 = 0x1
 	r8 = 1
-	// [0.10] cat $9 = c
+	// [0.10] mov $9 = c
 	r9 = r2
 	// [0.11] write result[$8] = $9
 	{
