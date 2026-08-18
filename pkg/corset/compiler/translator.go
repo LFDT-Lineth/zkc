@@ -143,9 +143,9 @@ func (t *translator) translateModule(name string) {
 		)
 		// Declare corresponding register
 		if regInfo.IsInput() {
-			reg = register.NewInput(regInfo.Name(), regInfo.Bitwidth, regInfo.Padding)
+			reg = register.NewInput(regInfo.Name(), regInfo.Bitwidth)
 		} else {
-			reg = register.NewComputed(regInfo.Name(), regInfo.Bitwidth, regInfo.Padding)
+			reg = register.NewComputed(regInfo.Name(), regInfo.Bitwidth)
 		}
 		// Add the register
 		module.NewRegister(reg)

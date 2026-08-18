@@ -13,6 +13,7 @@
 package term
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -55,7 +56,7 @@ func (p *Negate[F, T]) Bounds() util.Bounds {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Negate[F, T]) TestAt(k int, tr trace.Module[F], sc register.Map) (bool, uint, error) {
+func (p *Negate[F, T]) TestAt(k uint, tr rtrace.Module[F], sc register.Map) (bool, uint, error) {
 	val, branch, err := p.Arg.TestAt(k, tr, sc)
 	//
 	return !val, branch, err

@@ -15,10 +15,10 @@ package ranged
 import (
 	"fmt"
 
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -100,7 +100,7 @@ func (p Constraint[F]) Bounds(module uint) util.Bounds {
 // nil otherwise return an error.
 //
 //nolint:revive
-func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F]) schema.Failure {
+func (p Constraint[F]) Accepts(tr rtrace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F]) schema.Failure {
 	for i := range p.Sources {
 		if err := p.accepts(i, tr); err != nil {
 			return err
@@ -135,7 +135,7 @@ func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
 
 // accepts checks the ith register of this constraint holds within its
 // corresponding bound on every row of the enclosing module.
-func (p Constraint[F]) accepts(i int, tr trace.Trace[F]) schema.Failure {
+func (p Constraint[F]) accepts(i int, tr rtrace.Trace[F]) schema.Failure {
 	var (
 		trModule = tr.Module(p.Context)
 		handle   = constraint.DetermineHandle(p.Handle, p.Context, tr)
@@ -146,11 +146,11 @@ func (p Constraint[F]) accepts(i int, tr trace.Trace[F]) schema.Failure {
 		bound = field.TwoPowN[F](bitwidth)
 	)
 	// Iterate every row
-	for k := range int(trModule.Height()) {
+	for k := range trModule.Height() {
 		// Perform the range check
 		if column.Get(k).Cmp(bound) >= 0 {
 			// Evaluation failure
-			return &Failure[F]{handle, p.Context, source, bitwidth, uint(k)}
+			return &Failure[F]{handle, p.Context, source, bitwidth, k}
 		}
 	}
 	// All good

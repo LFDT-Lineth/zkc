@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
@@ -124,6 +123,41 @@ func (p *StaticArray[T]) Clone() MutArray[T] {
 	return &StaticArray[T]{ndata, p.bitwidth}
 }
 
+// Pad prepends this array with n copies, and appends it with m copies, of the
+// given padding value.
+func (p *StaticArray[T]) Pad(n uint, m uint, padding T) {
+	var (
+		ol = p.Len()
+		// Determine new length
+		l = n + ol + m
+		//
+		data = p.data
+	)
+	//
+	if uint(cap(data)) < l {
+		// Insufficient capacity: allocate exactly, copying existing data
+		// directly into its final position.
+		data = make([]T, l)
+		copy(data[n:], p.data)
+	} else {
+		// Sufficient capacity: extend and shift in place.
+		data = data[:l]
+		//
+		if n > 0 {
+			copy(data[n:], data[:ol])
+		}
+	}
+	// Front padding!
+	for i := range n {
+		data[i] = padding
+	}
+	// Back padding!
+	for i := l - m; i < l; i++ {
+		data[i] = padding
+	}
+	// done
+	p.data = data
+}
 func (p *StaticArray[T]) String() string {
 	var sb strings.Builder
 
@@ -140,9 +174,4 @@ func (p *StaticArray[T]) String() string {
 	sb.WriteString("]")
 
 	return sb.String()
-}
-
-// ToLegacy implementation for MutArray interface
-func (p *StaticArray[T]) ToLegacy() array.MutArray[T] {
-	return array.RawStaticArray(p.data, p.bitwidth)
 }

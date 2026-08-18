@@ -15,8 +15,8 @@ package view
 import (
 	"math/big"
 
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
@@ -29,7 +29,7 @@ type RegisterView interface {
 }
 
 type registerView[F field.Element[F]] struct {
-	trace   tr.Module[F]
+	trace   rtrace.Module[F]
 	limbs   []register.LimbId
 	mapping register.LimbsMap
 }
@@ -52,7 +52,7 @@ func (p *registerView[F]) Get(row uint) big.Int {
 	//
 	for _, lid := range p.limbs {
 		var (
-			data    = p.trace.Column(lid.Unwrap()).Data()
+			data    = p.trace.Column(lid.Unwrap())
 			element = data.Get(row)
 			val     big.Int
 		)

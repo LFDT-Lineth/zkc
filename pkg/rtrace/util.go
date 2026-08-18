@@ -76,12 +76,13 @@ func ParallelReduce[F field.Element[F]](traces []Trace[F]) Trace[F] {
 // traces.  The module name and descriptor are taken from the first trace, which
 // aligned traces guarantee match those of every other trace.
 func reduceModule[F field.Element[F]](mid uint, descriptor ModuleDescriptor, traces []Trace[F]) *CompactModule[F] {
+	var tmp CompactModule[F]
 	// Check whether replicating
 	if descriptor.Replicated {
 		return reduceReplicatedModule(mid, descriptor, traces)
 	}
 	//
-	acc := NewCompactModule[F](descriptor)
+	acc := tmp.Initialise(descriptor)
 	//
 	for i := range traces {
 		acc.Join(traces[i].Module(mid))
@@ -93,9 +94,10 @@ func reduceModule[F field.Element[F]](mid uint, descriptor ModuleDescriptor, tra
 func reduceReplicatedModule[F field.Element[F]](mid uint, descriptor ModuleDescriptor, traces []Trace[F],
 ) *CompactModule[F] {
 	var (
+		tmp    CompactModule[F]
 		winner Module[F]
 		height uint
-		acc    = NewCompactModule[F](descriptor)
+		acc    = tmp.Initialise(descriptor)
 	)
 	// Find tallest module
 	for i := range traces {

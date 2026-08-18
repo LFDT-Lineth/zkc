@@ -23,13 +23,13 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
@@ -178,7 +178,7 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 	//
 	var (
 		errors []error
-		traces []trace.Trace[F]
+		traces []rtrace.Trace[F]
 		ok     bool = true
 	)
 	//
@@ -193,7 +193,7 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 		traces = ReadBatchedTraceFile[F](tracefile)
 	} else {
 		// unbatched (i.e. normal) mode
-		traces = []trace.Trace[F]{ReadTraceFile[F](tracefile)}
+		traces = []rtrace.Trace[F]{ReadTraceFile[F](tracefile)}
 	}
 	// Go!
 	if len(errors) == 0 {
@@ -209,7 +209,8 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 	}
 }
 
-func checkTraces[F field.Element[F]](traces []trace.Trace[F], stacker cmd_util.SchemaStacker[F], cfg CheckConfig) bool {
+func checkTraces[F field.Element[F]](traces []rtrace.Trace[F], stacker cmd_util.SchemaStacker[F],
+	cfg CheckConfig) bool {
 	//
 	for _, tf := range traces {
 		// Configure stack.  This is important to ensure true separation
@@ -232,7 +233,7 @@ func checkTraces[F field.Element[F]](traces []trace.Trace[F], stacker cmd_util.S
 
 // CheckTrace checks a given set of constraints against a given trace file using
 // a configured trace builder and check configuration.
-func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], tf trace.Trace[F], builder ir.TraceBuilder[F],
+func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], tf rtrace.Trace[F], builder ir.TraceBuilder[F],
 	cfg CheckConfig) bool {
 	// begin performance measurement
 	stats := util.NewPerfStats()
@@ -260,8 +261,8 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], tf trace.
 
 // ReportFailures reports constraint failures, whilst providing contextual
 // information (when requested).
-func ReportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace tr.Trace[F], mapping module.LimbsMap,
-	cfg CheckConfig) {
+func ReportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace rtrace.Trace[F],
+	mapping module.LimbsMap, cfg CheckConfig) {
 	//
 	var (
 		errs = make([]error, len(failures))
@@ -281,7 +282,7 @@ func ReportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace 
 }
 
 // Print a human-readable report detailing the given failure
-func reportFailure[F field.Element[F]](failure sc.Failure, trace tr.Trace[F], mapping module.LimbsMap,
+func reportFailure[F field.Element[F]](failure sc.Failure, trace rtrace.Trace[F], mapping module.LimbsMap,
 	cfg CheckConfig) {
 	//
 	if f, ok := failure.(*vanishing.Failure[F]); ok {
@@ -304,7 +305,7 @@ func reportFailure[F field.Element[F]](failure sc.Failure, trace tr.Trace[F], ma
 }
 
 // Print a human-readable report detailing the given failure with a vanishing constraint.
-func reportRelevantCells[F field.Element[F]](cells *set.AnySortedSet[tr.CellRef], trace tr.Trace[F],
+func reportRelevantCells[F field.Element[F]](cells *set.AnySortedSet[tr.CellRef], trace rtrace.Trace[F],
 	mapping module.LimbsMap, cfg CheckConfig) {
 	// Construct trace window
 	builder := view.NewBuilder[F](mapping).

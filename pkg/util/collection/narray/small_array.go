@@ -19,7 +19,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
@@ -128,6 +127,42 @@ func (p *SmallArray[K, T]) SetRaw(index uint, val K) {
 	p.data[index] = val
 }
 
+// Pad prepends this array with n copies, and appends it with m copies, of the
+// given padding value.
+func (p *SmallArray[K, T]) Pad(n uint, m uint, padding T) {
+	var (
+		ol = p.Len()
+		// Determine new length
+		l = n + ol + m
+		//
+		val  = K(padding.Uint64())
+		data = p.data
+	)
+	//
+	if uint(cap(data)) < l {
+		// Insufficient capacity: allocate exactly, copying existing data
+		// directly into its final position.
+		data = make([]K, l)
+		copy(data[n:], p.data)
+	} else {
+		// Sufficient capacity: extend and shift in place.
+		data = data[:l]
+		//
+		if n > 0 {
+			copy(data[n:], data[:ol])
+		}
+	}
+	// Front padding!
+	for i := range n {
+		data[i] = val
+	}
+	// Back padding!
+	for i := l - m; i < l; i++ {
+		data[i] = val
+	}
+	// done
+	p.data = data
+}
 func (p *SmallArray[K, T]) String() string {
 	var sb strings.Builder
 
@@ -144,9 +179,4 @@ func (p *SmallArray[K, T]) String() string {
 	sb.WriteString("]")
 
 	return sb.String()
-}
-
-// ToLegacy implementation for MutArray interface
-func (p *SmallArray[K, T]) ToLegacy() array.MutArray[T] {
-	return array.RawSmallArray[K, T](p.data, p.bitwidth)
 }

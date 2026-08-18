@@ -30,24 +30,7 @@ type LimbId = Id
 // is only the most significant register which may (in some cases) have fewer
 // bits than the maximum allowed.
 func SplitIntoLimbs(maxWidth uint, r Register) []Register {
-	var (
-		limbWidths = LimbWidths(maxWidth, r.Width())
-		limbs      = make([]Register, len(limbWidths))
-		// Split padding value
-		padding = SplitConstant(*r.Padding(), limbWidths...)
-	)
-	// Special case when register doesn't require splitting.  This is useful
-	// because we want to retain the original register name exactly.
-	if len(limbs) <= 1 {
-		return []Register{r}
-	}
-	//
-	for i, limbWidth := range limbWidths {
-		ith_name := fmt.Sprintf("%s'%d", r.Name(), i)
-		limbs[i] = New(r.Kind(), ith_name, limbWidth, padding[i])
-	}
-	//
-	return limbs
+	panic("delete me")
 }
 
 // LimbWidths determines the limb widths for any register of the given size.

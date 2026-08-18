@@ -24,6 +24,8 @@ import (
 // CompactModule describes an individual module within a trace, and represents
 // each column within that module using an appropriate (compact) encoding.
 type CompactModule[F field.Element[F]] struct {
+	// Recorded height of module
+	height uint
 	// Holds the descriptor for this module.
 	descriptor ModuleDescriptor
 	// Holds the complete set of columns in this module, with one for each
@@ -32,39 +34,48 @@ type CompactModule[F field.Element[F]] struct {
 }
 
 // NewCompactModule constructs a module with the given name, descriptors and rows.
-func NewCompactModule[F field.Element[F]](descriptor ModuleDescriptor, rows ...[]F) *CompactModule[F] {
+func NewCompactModule[F field.Element[F]](descriptor ModuleDescriptor, data ...narray.MutArray[F]) *CompactModule[F] {
+	var height uint
+	// Sanity check
+	if uint(len(data)) != descriptor.Width() {
+		panic(fmt.Sprintf("incorrect number of data columns for module '%s' (%d vs %d)",
+			descriptor.Name, len(data), descriptor.Width()))
+	}
+	// Determine maximum height
+	for _, col := range data {
+		if col != nil {
+			height = max(height, col.Len())
+		}
+	}
+	// Check matching heights
+	for i, col := range data {
+		if col != nil && col.Len() != height {
+			panic(fmt.Sprintf("column %s has mismatched height (%d vs %d)",
+				descriptor.Columns[i].Name, col.Len(), height))
+		}
+	}
+	//
+	return &CompactModule[F]{height, descriptor, data}
+}
+
+// Initialise implementation for Module interface.
+func (p *CompactModule[F]) Initialise(descriptor ModuleDescriptor) *CompactModule[F] {
 	var (
-		height  = uint(len(rows))
-		width   = uint(len(descriptor.Columns))
+		width   = descriptor.Width()
 		columns = make([]narray.MutArray[F], width)
 	)
 	//
 	for rid := range descriptor.Columns {
 		var bitwidth = descriptor.Columns[rid].Bitwidth.UnwrapOr(math.MaxUint)
 		// Allocate compact representation
-		columns[rid] = allocArray[F](bitwidth, height)
-	}
-	// Initialise given rows
-	for i, row := range rows {
-		if uint(len(row)) != width {
-			panic(fmt.Sprintf("invalid row width (have %d, expected %d)", len(row), width))
-		}
-		//
-		for j, w := range row {
-			columns[j].Set(uint(i), w)
-		}
+		columns[rid] = narray.Alloc[F](bitwidth, 0)
 	}
 	//
-	return &CompactModule[F]{descriptor, columns}
-}
-
-// Initialise implementation for Module interface.
-func (p *CompactModule[T]) Initialise(descriptor ModuleDescriptor, rows ...[]T) *CompactModule[T] {
-	return NewCompactModule(descriptor, rows...)
+	return &CompactModule[F]{0, descriptor, columns}
 }
 
 // Append implementation for Module interface.
-func (p *CompactModule[T]) Append(row ...T) {
+func (p *CompactModule[F]) Append(row ...F) {
 	if len(row) != len(p.descriptor.Columns) {
 		panic("mismatched row data")
 	}
@@ -72,18 +83,34 @@ func (p *CompactModule[T]) Append(row ...T) {
 	for i, v := range row {
 		p.columns[i].Append(v)
 	}
+	// Increment height
+	p.height++
+}
+
+// Expand a given column in this module
+func (p *CompactModule[F]) Expand(col uint, data narray.MutArray[F]) {
+	if p.columns[col] != nil {
+		panic("cannot expand non-empty column")
+	} else if data.Len() != p.height {
+		panic(fmt.Sprintf("invalid column height (%d vs %d)", data.Len(), p.height))
+	}
+	//
+	p.columns[col] = data
 }
 
 // Join a given module into this by appending all rows of each column onto the
 // corresponding column in this module.
 func (p *CompactModule[T]) Join(m Module[T]) {
 	if p.Width() != m.Width() {
-		panic("cannot join mismatched modules")
+		panic(fmt.Sprintf("cannot join mismatched modules '%s' (%d columns) vs '%s' (%d columns)",
+			p.descriptor.Name, p.Width(), m.Descriptor().Name, m.Width()))
 	}
 	//
 	for i := range p.Width() {
 		narray.AppendOnto(p.columns[i], m.Column(i))
 	}
+	// Increment height
+	p.height += m.Height()
 }
 
 // Name returns the name of this module.
@@ -97,24 +124,33 @@ func (p *CompactModule[T]) Descriptor() ModuleDescriptor {
 }
 
 // Column returns the data for the column at the given index.
-func (p *CompactModule[T]) Column(index uint) narray.Array[T] {
+func (p *CompactModule[F]) Column(index uint) narray.Array[F] {
 	return p.columns[index]
 }
 
 // MutColumn returns mutable access to the data for the column at the given
 // index.
-func (p *CompactModule[T]) MutColumn(index uint) narray.MutArray[T] {
+func (p *CompactModule[F]) MutColumn(index uint) narray.MutArray[F] {
 	return p.columns[index]
 }
 
 // Height returns the height of this module, meaning the number of assigned
 // rows.
-func (p *CompactModule[T]) Height() uint {
-	if len(p.columns) == 0 {
-		return 0
-	}
+func (p *CompactModule[F]) Height() uint {
+	return p.height
+}
+
+// Pad this module by a given amount of front/back padding
+func (p *CompactModule[F]) Pad(front, back uint) {
+	var zero F
 	//
-	return p.columns[0].Len()
+	for i := range p.columns {
+		if p.columns[i] != nil {
+			p.columns[i].Pad(front, back, zero)
+		}
+	}
+	// Increment height
+	p.height += front + back
 }
 
 // Width returns the number of columns in this module.
@@ -122,7 +158,7 @@ func (p *CompactModule[T]) Width() uint {
 	return uint(len(p.descriptor.Columns))
 }
 
-func (p *CompactModule[T]) String() string {
+func (p *CompactModule[F]) String() string {
 	var id strings.Builder
 	//
 	if p.descriptor.Name == "" {
@@ -144,28 +180,4 @@ func (p *CompactModule[T]) String() string {
 	id.WriteString("}")
 	// Done
 	return id.String()
-}
-
-func allocArray[F field.Element[F]](bitwidth uint, height uint) narray.MutArray[F] {
-	var (
-		zero  F
-		width = zero.Modulus().BitLen()
-	)
-	// Construct column
-	switch {
-	case bitwidth == 0:
-		return narray.NewConstantArray(height, 0, zero)
-	case bitwidth == 1:
-		return narray.NewBitArray[F](height)
-	case bitwidth <= 8 && width >= 8:
-		return narray.NewSmallArray[uint8, F](height, bitwidth)
-	case bitwidth <= 16 && width >= 16:
-		return narray.NewSmallArray[uint16, F](height, bitwidth)
-	case bitwidth <= 32 && width >= 32:
-		return narray.NewSmallArray[uint32, F](height, bitwidth)
-	case bitwidth <= 64 && width >= 64:
-		return narray.NewSmallArray[uint64, F](height, bitwidth)
-	default:
-		return narray.NewStaticArray[F](height, bitwidth)
-	}
 }

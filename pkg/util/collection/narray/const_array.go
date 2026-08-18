@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
@@ -117,6 +116,17 @@ func (p *ConstantArray[T]) Set(index uint, word T) {
 	// means that a constraint somewhere should fail
 }
 
+// Pad implementation for MutArray interface.
+func (p *ConstantArray[T]) Pad(n uint, m uint, padding T) {
+	if !padding.Equals(p.value) {
+		// NOTE: this can be implemented by changing the representation to
+		// something which can be mutated.
+		panic("unsupported operation")
+	}
+	//
+	p.height += n + m
+}
+
 func (p *ConstantArray[T]) String() string {
 	var sb strings.Builder
 
@@ -133,9 +143,4 @@ func (p *ConstantArray[T]) String() string {
 	sb.WriteString("]")
 
 	return sb.String()
-}
-
-// ToLegacy implementation for MutArray interface
-func (p *ConstantArray[T]) ToLegacy() array.MutArray[T] {
-	return array.NewConstantArray(p.height, p.bitwidth, p.value)
 }

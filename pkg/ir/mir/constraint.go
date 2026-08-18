@@ -13,12 +13,12 @@
 package mir
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -56,7 +56,7 @@ func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, 
 // Accepts determines whether a given constraint accepts a given trace or
 // not.  If not, a failure is produced.  Otherwise, a bitset indicating
 // branch coverage is returned.
-func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
+func (p Constraint[F]) Accepts(trace rtrace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
 	//
 	return p.constraint.Accepts(trace, sc, ctx)
 }

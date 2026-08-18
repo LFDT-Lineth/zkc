@@ -60,7 +60,7 @@ type Module[T any] interface {
 type ModuleBuilder[T any, M any] interface {
 	Module[T]
 	// Initialise a new module from a given set of rows.
-	Initialise(ModuleDescriptor, ...[]T) M
+	Initialise(ModuleDescriptor) M
 	// MutColumn returns mutable access to the data for the given column.
 	MutColumn(uint) narray.MutArray[T]
 }
@@ -79,6 +79,11 @@ type ModuleDescriptor struct {
 // no additional metadata).
 func NewModuleDescriptor(name string, columns []ColumnDescriptor) ModuleDescriptor {
 	return ModuleDescriptor{name, columns, false}
+}
+
+// Width returns the number of columns in this module.
+func (p ModuleDescriptor) Width() uint {
+	return uint(len(p.Columns))
 }
 
 // WithReplication sets the replication metadata for this module to the given flag.

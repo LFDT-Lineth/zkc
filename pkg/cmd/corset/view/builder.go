@@ -14,6 +14,7 @@ package view
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -130,7 +131,7 @@ func (p Builder[F]) WithVisibility(public func(string) bool) Builder[F] {
 }
 
 // Build the viewing window for this trace.
-func (p Builder[F]) Build(trace tr.Trace[F]) TraceView {
+func (p Builder[F]) Build(trace rtrace.Trace[F]) TraceView {
 	var windows []ModuleView
 	//
 	srcmap, enums := extractSourceMap(p.srcmap)
@@ -179,7 +180,7 @@ func extractSourceMap(optSrcmap util.Option[corset.SourceMap]) (map[string]corse
 	return mapping, enums
 }
 
-func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], limbs bool, computed bool,
+func extractSourceMapData[F field.Element[F]](trMod rtrace.Module[F], limbs bool, computed bool,
 	srcmap map[string]corset.SourceModule, mapping register.LimbsMap) (bool, []SourceColumn) {
 	//
 	var (
@@ -205,13 +206,13 @@ func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], limbs bool, co
 	if computed {
 		// Add any registers not already seen
 		for i := range trMod.Width() {
-			ith := trMod.Column(i)
+			ith := trMod.Descriptor().Columns[i]
 			//
 			if _, ok := seen[i]; !ok {
 				rid := register.NewId(i)
 				//
 				columns = append(columns, SourceColumn{
-					Name:     ith.Name(),
+					Name:     ith.Name,
 					Display:  0,
 					Computed: true,
 					Selector: util.None[string](),

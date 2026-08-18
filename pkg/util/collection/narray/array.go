@@ -16,8 +16,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 )
 
 // Predicate abstracts the notion of a function which identifies something.
@@ -40,6 +38,9 @@ type Array[T any] interface {
 	Get(uint) T
 	// Returns the number of elements in this array.
 	Len() uint
+	// Insert n copies of T at start of the array and m copies at the back. In
+	// most cases, this updates the array in place and returns it.
+	Pad(uint, uint, T)
 }
 
 // MutArray provides a generice interface to an array of elements.  Typically, we
@@ -59,10 +60,6 @@ type MutArray[T any] interface {
 	// original value. This updates the array in place, and will panic if the
 	// given value is not representable in the array.
 	Set(uint, T)
-	// ToLegacy (efficiently) constructs an equivalent legacy array from this
-	// array.  This should be considered a destructive operation and, hence,
-	// once done this array should no longer be used.
-	ToLegacy() array.MutArray[T]
 }
 
 // writeUvarint writes an unsigned varint into the given buffer.

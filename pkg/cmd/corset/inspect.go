@@ -19,8 +19,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/inspector"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
-	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
@@ -52,7 +52,7 @@ var inspectCmds = []FieldAgnosticCmd{
 func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	var (
 		errors []error
-		trace  tr.Trace[F]
+		trace  rtrace.Trace[F]
 	)
 	//
 	if len(args) != 2 {
@@ -117,7 +117,7 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 // The optional "public" predicate determines which modules are publicly visible
 // (shown by default); when nil, all modules are public.  Callers use this to
 // hide synthetic modules such as range-check tables.
-func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F],
+func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace rtrace.Trace[F],
 	public func(string) bool, limbs bool, cellWidth, titleWidth uint) []error {
 	//
 	term, err := termio.NewTerminal()
@@ -148,7 +148,7 @@ func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F]
 }
 
 // Inspect a given trace using a given schema.
-func inspect[F field.Element[F]](mapping module.LimbsMap, srcmap *corset.SourceMap, trace tr.Trace[F],
+func inspect[F field.Element[F]](mapping module.LimbsMap, srcmap *corset.SourceMap, trace rtrace.Trace[F],
 	limbs bool, cellWidth, titleWidth uint) []error {
 	// Construct inspector window
 	inspector := construct(mapping, trace, srcmap, limbs, cellWidth, titleWidth)
@@ -160,7 +160,7 @@ func inspect[F field.Element[F]](mapping module.LimbsMap, srcmap *corset.SourceM
 	return inspector.Start()
 }
 
-func construct[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F], srcmap *corset.SourceMap, limbs bool,
+func construct[F field.Element[F]](mapping module.LimbsMap, trace rtrace.Trace[F], srcmap *corset.SourceMap, limbs bool,
 	cellWidth, titleWidth uint) *inspector.Inspector {
 	//
 	term, err := termio.NewTerminal()

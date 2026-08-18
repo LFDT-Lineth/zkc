@@ -26,7 +26,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -271,7 +270,7 @@ func (p *BinaryFile[F]) clearCachedArtifacts() {
 
 // Check a given trace against the AIR constraints embodied in this constraints
 // file, potentially producing one (or more) constraint failures.
-func (p *BinaryFile[F]) Check(tr trace.Trace[F], config vm.TraceConfig) []schema.Failure {
+func (p *BinaryFile[F]) Check(tr rtrace.Trace[F], config vm.TraceConfig) []schema.Failure {
 	var (
 		sc    = p.AirConstraints()
 		stats = util.NewPerfStats()
@@ -307,7 +306,7 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte) (output map[string][]by
 // carries the original register / limb structure before AIR expansion (e.g. for
 // reporting statistics).  It is nil when execution fails.
 func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
-) (output map[string][]byte, rtr rtrace.Trace[F], tr trace.Trace[F], errs []error) {
+) (output map[string][]byte, rtr rtrace.Trace[F], errs []error) {
 	//
 	var (
 		stats = util.NewPerfStats()
@@ -332,14 +331,14 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
 			WithBatchSize(cfg.BatchSize()).
 			WithPadding(cfg.PaddingStrategy())
 		// Build the trace (finally)
-		tr, berrs = builder.Build(constraints, rtrace.ToTrace(rtr))
+		rtr, berrs = builder.Build(constraints, rtr)
 		// Include any builder errors
 		errs = append(errs, berrs...)
 	}
 	//
 	stats.Log("Trace generation")
 	//
-	return output, rtr, tr, errs
+	return output, rtr, errs
 }
 
 // ============================================================================

@@ -23,10 +23,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace/json"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -105,7 +105,7 @@ func checkWithField[F field.Element[F]](t *testing.T, test string, padding bool,
 	nTests := 0
 	// Iterate possible testfile extensions
 	for _, cfg := range LEGACY_TESTFILE_EXTENSIONS {
-		var traces []trace.Trace[F]
+		var traces []rtrace.Trace[F]
 		// Construct test filename
 		testFilename := fmt.Sprintf("%s/%s.%s", TestDir, test, cfg.extension)
 		// Sanity check field aligns
@@ -127,7 +127,7 @@ func checkWithField[F field.Element[F]](t *testing.T, test string, padding bool,
 }
 
 func fullCheckTraces[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, padding bool,
-	traces []trace.Trace[F], stack cmd_util.SchemaStacker[F]) {
+	traces []rtrace.Trace[F], stack cmd_util.SchemaStacker[F]) {
 	// Run checks using schema compiled from source
 	checkCompilerOptimisations(t, test, cfg, traces, stack)
 	// Perform checks with different fields
@@ -136,7 +136,7 @@ func fullCheckTraces[F field.Element[F]](t *testing.T, test string, cfg LegacyTe
 
 // Sanity check same outcome for all optimisation levels
 func checkCompilerOptimisations[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig,
-	traces []trace.Trace[F], stack cmd_util.SchemaStacker[F]) {
+	traces []rtrace.Trace[F], stack cmd_util.SchemaStacker[F]) {
 	// Run checks using schema compiled from source
 	for _, opt := range cfg.optlevels {
 		// Only check optimisation levels other than the default.
@@ -152,7 +152,7 @@ func checkCompilerOptimisations[F field.Element[F]](t *testing.T, test string, c
 // Run default optimisation over all fields, and check padding for the primary
 // stack only.
 func checkPadding[F field.Element[F]](t *testing.T, test string, cfg LegacyTestConfig, padding bool,
-	traces []trace.Trace[F], stack cmd_util.SchemaStacker[F]) {
+	traces []rtrace.Trace[F], stack cmd_util.SchemaStacker[F]) {
 	//
 	if cfg.field == "" || cfg.field == stack.Field().Name {
 		// Set default optimisation level
@@ -165,7 +165,7 @@ func checkPadding[F field.Element[F]](t *testing.T, test string, cfg LegacyTestC
 // Check a given set of tests have an expected outcome (i.e. are
 // either accepted or rejected) by a given set of constraints.
 func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, opt uint, cfg LegacyTestConfig,
-	traces []trace.Trace[F], stacker cmd_util.SchemaStacker[F]) {
+	traces []rtrace.Trace[F], stacker cmd_util.SchemaStacker[F]) {
 	// For unexpected traces, we never want to explore padding (because that's
 	// the whole point of unexpanded traces --- they are raw).
 	if !cfg.expand {
@@ -211,7 +211,7 @@ func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, op
 	}
 }
 
-func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf trace.Trace[F], id traceId,
+func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf rtrace.Trace[F], id traceId,
 	schema sc.Schema[F, C], mapping module.LimbsMap) {
 	// Map the legacy padding toggle onto a padding strategy.
 	paddingStrategy := ir.NaryRowPadding(0)
@@ -346,9 +346,9 @@ func (p *traceId) String() string {
 
 // ReadTracesFile reads a file containing zero or more traces expressed as JSON, where
 // each trace is on a separate line.
-func ReadTracesFile[F field.Element[F]](filename string) []trace.Trace[F] {
+func ReadTracesFile[F field.Element[F]](filename string) []rtrace.Trace[F] {
 	lines, _ := file.ReadInputFileAsLines(filename)
-	traces := make([]trace.Trace[F], len(lines))
+	traces := make([]rtrace.Trace[F], len(lines))
 	// Read constraints line by line
 	for i, line := range lines {
 		// Parse input line as JSON

@@ -13,6 +13,7 @@
 package term
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -66,7 +67,7 @@ func (p *IfZero[F, S, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *IfZero[F, S, T]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *IfZero[F, S, T]) EvalAt(k uint, tr rtrace.Module[F], sc register.Map) (F, error) {
 	// Evaluate condition
 	cond, _, err := p.Condition.TestAt(k, tr, sc)
 	//

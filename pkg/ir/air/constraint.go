@@ -14,12 +14,12 @@ package air
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -83,7 +83,7 @@ func (p Air[F, C]) Air() {
 // Accepts determines whether a given constraint accepts a given trace or
 // not.  If not, a failure is produced.  Otherwise, a bitset indicating
 // branch coverage is returned.
-func (p Air[F, C]) Accepts(trace trace.Trace[F], schema schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
+func (p Air[F, C]) Accepts(trace rtrace.Trace[F], schema schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
 	return p.constraint.Accepts(trace, schema, ctx)
 }
 

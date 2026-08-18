@@ -13,12 +13,13 @@
 package field
 
 import (
+	"bytes"
 	"math/rand"
 	"slices"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/assert"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 )
@@ -57,7 +58,7 @@ func (e elementArray) BitWidth() uint {
 	panic("not implemented")
 }
 
-func (e elementArray) Clone() array.MutArray[koalabear.Element] {
+func (e elementArray) Clone() narray.MutArray[koalabear.Element] {
 	return slices.Clone(e)
 }
 
@@ -69,17 +70,20 @@ func (e elementArray) Len() uint {
 	return uint(len(e))
 }
 
-func (e elementArray) Slice(u uint, u2 uint) array.Array[koalabear.Element] {
-	return e[u:u2]
-}
-
-func (e elementArray) Append(t koalabear.Element) array.MutArray[koalabear.Element] {
+func (e elementArray) Decode(uint, *bytes.Buffer) error {
 	panic("not implemented")
 }
 
-func (e elementArray) Set(u uint, t koalabear.Element) array.MutArray[koalabear.Element] {
+func (e elementArray) Encode(*bytes.Buffer) {
+	panic("not implemented")
+}
+
+func (e elementArray) Append(t koalabear.Element) {
+	panic("not implemented")
+}
+
+func (e elementArray) Set(u uint, t koalabear.Element) {
 	e[u] = t
-	return e
 }
 
 func (e elementArray) Pad(u uint, u2 uint, t koalabear.Element) {

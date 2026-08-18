@@ -20,6 +20,9 @@ import (
 	"strings"
 )
 
+// Predicate abstracts the notion of a function which identifies something.
+type Predicate[T any] = func(T) bool
+
 // Comparable interface which can be implemented by non-primitive types.
 type Comparable[T any] interface {
 	// Cmp returns < 0 if this is less than other, or 0 if they are equal, or >

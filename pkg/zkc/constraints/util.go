@@ -53,9 +53,14 @@ func toRegister[W vm.Word[W]](r vm.Register[W]) register.Register {
 	// Determine bitwidth (if applicable)
 	if !r.IsNative() {
 		bitwidth = r.Bitwidth().Unwrap()
+	} else if r.Padding().Cmp64(0) != 0 {
+		// NOTE: this is a stop-gap measure to ensure no padding values are
+		// dropped.  Eventually, the notion of padding would be dropped entirely
+		// from the concept of a register.
+		panic("non-zero padding unsupported")
 	}
 	//
-	return register.New(r.Kind(), r.Name(), bitwidth, *r.Padding().BigInt())
+	return register.New(r.Kind(), r.Name(), bitwidth)
 }
 
 // toFieldElements converts a slice of words into a slice of field elements.

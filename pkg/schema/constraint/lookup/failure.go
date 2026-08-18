@@ -15,6 +15,7 @@ package lookup
 import (
 	"fmt"
 
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
@@ -40,7 +41,7 @@ func (p *Failure[F]) String() string {
 }
 
 // RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
-func (p *Failure[F]) RequiredCells(_ trace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
+func (p *Failure[F]) RequiredCells(_ rtrace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
 	res := set.NewAnySortedSet[trace.CellRef]()
 	// Handle registers
 	for i := range p.SourceId.Width() {

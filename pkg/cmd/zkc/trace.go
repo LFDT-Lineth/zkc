@@ -22,7 +22,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -71,7 +70,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		// extract sharding config
 		sharding = GetString(cmd, "sharding")
 		//
-		trace   trace.Trace[F]
+		trace   rtrace.Trace[F]
 		outputs map[string][]byte
 	)
 	// Sanity permitted flag combinations
@@ -99,7 +98,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	input := filterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
 	// Always trace (no fast mode).  The raw (row-major) trace is retained for
 	// statistics, since it carries the original register/limb structure.
-	outputs, rtr, trace, errors := binfile.Trace(input, traceConfig)
+	outputs, trace, errors := binfile.Trace(input, traceConfig)
 	// =====================================================
 	// Generate output
 	// =====================================================
@@ -110,8 +109,8 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// print trace statistics (if requested).  Only meaningful when a trace was
 	// actually generated (i.e. no execution errors).
 	if stats && len(errors) == 0 {
-		printTraceStats(rtr)
-		printModuleStats(rtr)
+		printTraceStats(trace)
+		printModuleStats(trace)
 	}
 	// write out trace (if requested)
 	if outputFile != "" {
@@ -121,7 +120,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// =====================================================
 	// Check Constraints
 	// =====================================================
-	if check && rtr != nil {
+	if check && trace != nil {
 		checkConstraints(binfile, trace, traceConfig)
 	}
 	// =====================================================
@@ -129,7 +128,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// =====================================================
 	// Open the generated trace in the interactive inspector (if requested).  This
 	// takes over the terminal, so it runs last, after any stdout output above.
-	if inspect && rtr != nil {
+	if inspect && trace != nil {
 		// Real ZkC functions are public; synthetic modules (e.g. range-check
 		// tables) are private (hidden by default in the inspector).
 		errors = corset.InspectTrace(binfile.LimbsMap(), trace, publicModule, false, 32, 128)

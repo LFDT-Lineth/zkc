@@ -96,9 +96,14 @@ func ToRegisters[W word.Word[W]](registers ...Register[W]) []register.Register {
 		// Determine bitwidth (if applicable)
 		if !r.IsNative() {
 			bitwidth = r.bitwidth.Unwrap()
+		} else if r.Padding().Cmp64(0) != 0 {
+			// NOTE: this is a stop-gap measure to ensure no padding values are
+			// dropped.  Eventually, the notion of padding would be dropped entirely
+			// from the concept of a register.
+			panic("non-zero padding unsupported")
 		}
 		//
-		regs[i] = register.New(r.kind, r.name, bitwidth, *r.padding.BigInt())
+		regs[i] = register.New(r.kind, r.name, bitwidth)
 	}
 	//
 	return regs

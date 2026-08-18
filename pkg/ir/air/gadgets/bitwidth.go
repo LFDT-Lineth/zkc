@@ -14,19 +14,18 @@ package gadgets
 
 import (
 	"fmt"
-	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/narray"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
@@ -166,13 +165,11 @@ func (p *BitwidthGadget[F]) constructTypeProof(handle module.Name, bitwidth uint
 		loWidth, hiWidth = determineLimbSplit(bitwidth)
 		// Compute 2^loWidth to use as coefficient
 		coeff = field.TwoPowN[F](loWidth)
-		// Default padding
-		zero big.Int
 	)
 	// Construct registers and their decompositions
-	vid := module.NewRegister(register.NewComputed("V", bitwidth, zero))
-	vidLo := module.NewRegister(register.NewComputed("V'0", loWidth, zero))
-	vidHi := module.NewRegister(register.NewComputed("V'1", hiWidth, zero))
+	vid := module.NewRegister(register.NewComputed("V", bitwidth))
+	vidLo := module.NewRegister(register.NewComputed("V'0", loWidth))
+	vidHi := module.NewRegister(register.NewComputed("V'1", hiWidth))
 	// Ensure lo/hi are decomposition of original
 	module.AddConstraint(
 		air.NewVanishingConstraint("decomposition", mid, util.None[int](),
@@ -224,15 +221,14 @@ func (p *typeDecomposition[F]) AddSource(source register.Ref) {
 
 // Compute computes the values of columns defined by this assignment.
 // This requires computing the value of each byte column in the decomposition.
-func (p *typeDecomposition[F]) Compute(tr trace.Trace[F], schema sc.AnySchema[F],
-) ([]array.MutArray[F], error) {
+func (p *typeDecomposition[F]) Compute(tr rtrace.Trace[F], schema sc.AnySchema[F],
+) ([]narray.MutArray[F], error) {
 	// Read inputs
 	sources := assignment.ReadRegistersRef(tr, p.sources...)
-	padding := assignment.ReadPadding(tr, p.sources...)
 	// Combine all sources
-	combined := combineSources(p.loWidth+p.hiWidth, sources, padding, tr.Builder())
+	combined := combineSources(p.loWidth+p.hiWidth, sources)
 	// Generate decomposition
-	data := computeDecomposition(p.loWidth, p.hiWidth, combined, tr.Builder())
+	data := computeDecomposition(p.loWidth, p.hiWidth, combined)
 	// Done
 	return data, nil
 }
@@ -332,12 +328,11 @@ func determineLimbSplit(bitwidth uint) (uint, uint) {
 
 // Combine all values from the given source registers into a single array of
 // data, whilst eliminating duplicates.
-func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F], padding []F,
-	pool array.Builder[F]) array.MutArray[F] {
+func combineSources[F field.Element[F]](bitwidth uint, sources []narray.Array[F]) narray.MutArray[F] {
 	//
 	var (
 		n    = sources[0].Len()
-		arr  = pool.NewArray(0, bitwidth)
+		arr  = narray.Alloc[F](bitwidth, 0)
 		seen = hash.NewSet[F](n)
 	)
 	// Add all values
@@ -349,41 +344,31 @@ func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F],
 			if !seen.Contains(ith) {
 				// record have seen item
 				seen.Insert(ith)
-				// append and record
-				arr.Pad(0, 1, ith)
+				// append item
+				arr.Append(ith)
 			}
-		}
-	}
-	// Add all padding values
-	for _, ith := range padding {
-		// Add item if not already seen
-		if !seen.Contains(ith) {
-			// record have seen item
-			seen.Insert(ith)
-			// append and record
-			arr.Pad(0, 1, ith)
 		}
 	}
 	// Done
 	return arr
 }
 
-func computeDecomposition[F field.Element[F]](loWidth, hiWidth uint, vArr array.MutArray[F],
-	builder array.Builder[F]) []array.MutArray[F] {
+func computeDecomposition[F field.Element[F]](loWidth, hiWidth uint, vArr narray.MutArray[F],
+) []narray.MutArray[F] {
 	//
 	var (
-		vLoArr = builder.NewArray(vArr.Len(), loWidth)
-		vHiArr = builder.NewArray(vArr.Len(), hiWidth)
+		vLoArr = narray.Alloc[F](loWidth, vArr.Len())
+		vHiArr = narray.Alloc[F](hiWidth, vArr.Len())
 	)
 	//
 	for i := range vArr.Len() {
 		ith := vArr.Get(i)
 		lo, hi := decompose(loWidth, ith)
-		vLoArr = vLoArr.Set(i, lo)
-		vHiArr = vHiArr.Set(i, hi)
+		vLoArr.Set(i, lo)
+		vHiArr.Set(i, hi)
 	}
 	//
-	return []array.MutArray[F]{vArr, vLoArr, vHiArr}
+	return []narray.MutArray[F]{vArr, vLoArr, vHiArr}
 }
 
 // Decompose a given field element into its least and most significant limbs,
