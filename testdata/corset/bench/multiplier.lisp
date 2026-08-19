@@ -35,58 +35,56 @@
 
 ;; ST either remains constant, or increments by one.
 (defconstraint increment ()
-  (or!
+  (if
    ;; ST[k] == ST[k+1]
    (== ST (shift ST 1))
+   (== 0 0)
    ;; Or, ST[k]+1 == ST[k+1]
-   (== (+ 1 ST) (next ST))))
+   (== (+ 1 ST) (shift ST 1))))
 
 ;; If ST changes, counter resets to zero.
 (defconstraint reset ()
-  (or!
+  (if
    ;; ST[k] == ST[k+1]
    (== ST (shift ST 1))
+   (== 0 0)
    ;; Or, CT[k+1] == 0
-   (== (next CT) 0)))
+   (== (shift CT 1) 0)))
 
 ;; Increment or reset counter
 (defconstraint heartbeat (:guard ST)
   ;; If CT[k] == 3
   (if (== CT 3)
       ;; Then, ST[k]+1 = ST[k+1]
-      (== (next ST) (+ 1 ST))
+      (== (shift ST 1) (+ 1 ST))
       ;; Else, CT[k]+1 == CT[k+1]
-      (== (+ 1 CT) (next CT))))
+      (== (+ 1 CT) (shift CT 1))))
 
 ;; ===================================================================
 ;; Multipilier
 ;; ===================================================================
 
+;; RES() == (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0])
+
 (defconstraint line_1 (:guard ST)
   (if (== CT 0)
-      (== (RES) (* [ARG1 0] [ARG2 0]))))
+      (== (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0])
+          (* [ARG1 0] [ARG2 0]))))
 
 (defconstraint line_2 (:guard ST)
   (if (== CT 1)
-      (== (RES) (+ (prev (RES)) (* 16 [ARG1 0] [ARG2 1])))))
+      (== (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0])
+          (+ (shift (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0]) -1)
+             (* 16 [ARG1 0] [ARG2 1])))))
 
 (defconstraint line_3 (:guard ST)
   (if (== CT 2)
-      (== (RES) (+ (prev (RES)) (* 16 [ARG1 1] [ARG2 0])))))
+      (== (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0])
+          (+ (shift (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0]) -1)
+             (* 16 [ARG1 1] [ARG2 0])))))
 
 (defconstraint line_4 (:guard ST)
   (if (== CT 3)
-      (== (RES) (+ (prev (RES)) (* 256 [ARG1 1] [ARG2 1])))))
-
-;; ===================================================================
-;; Helpers
-;; ===================================================================
-
-(defun (RES) (as_u16 [RES 3] [RES 2] [RES 1] [RES 0]))
-
-;;
-(defpurefun (as_u16 n3 n2 n1 n0) (+ (* 4096 n3) (* 256 n2) (* 16 n1) n0))
-;; from stdlib
-(defpurefun (or! (a :bool) (b :bool)) (if a (== 0 0) b))
-(defpurefun (next X) (shift X 1))
-(defpurefun (prev X) (shift X -1))
+      (== (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0])
+          (+ (shift (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0]) -1)
+             (* 256 [ARG1 1] [ARG2 1])))))

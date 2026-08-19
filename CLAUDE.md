@@ -43,8 +43,8 @@ make zkc-bench-test  # go test -run "Test_ZkcBench"
 # Cheap "everything else" — skips Bench/Corset/Zkc system tests (fast)
 make unit-test
 
-# Corset constraint tests (valid/invalid/agnostic) — slow (minutes)
-make corset-test   # go test -run "Test_Agnostic|Test_Valid|Test_Invalid"
+# Corset constraint tests (valid/invalid) — slow (minutes)
+make corset-test   # go test -run "Test_Valid|Test_Invalid"
 make corset-bench  # go test -run "Test_Bench" (slowest; -p 1)
 
 # Run a single named test
@@ -124,22 +124,22 @@ Layer constants (defined in `schema_stacker.go`):
 
 ### Key packages
 
-| Package                  | Role                                                                                                                                                     |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pkg/corset/`            | Corset DSL compiler: parses `.lisp`, resolves symbols, type-checks, and emits a field-agnostic `mir.Schema`. Standard library embedded as `stdlib.lisp`. |
-| `pkg/corset/ast/`        | AST nodes for Corset: declarations, expressions, types, bindings                                                                                         |
-| `pkg/corset/compiler/`   | Compiler internals: parser, resolver, type-checker, preprocessor, translator, register allocator                                                         |
-| `pkg/ir/mir/`            | Mid-level IR: `Concretize()` — split registers for target field; `LowerToAir()` — MIR modules → AIR schema, optimiser                                    |
-| `pkg/ir/air/`            | AIR schema: final vanishing polynomials + gadgets                                                                                                        |
-| `pkg/schema/`            | Core schema interfaces (`Schema`, `Module`, `Assignment`, `Constraint`) parameterised over field element type `F`                                        |
-| `pkg/schema/constraint/` | Constraint types: vanishing, lookup, range                                                                                                               |
-| `pkg/trace/`             | Trace representation; `json/` and `lt/` (binary) format readers/writers                                                                                  |
-| `pkg/zkc/`               | ZK compiler / VM: a separate compiler+virtual machine (`pkg/zkc/vm/`) with ROM, RAM, WOM memories and a call stack                                       |
-| `pkg/util/field/`        | Field element implementations: `bls12_377`, `koalabear`, `gf251`, `gf8209`, `mersenne31`                                                                 |
-| `pkg/util/`              | General utilities: collections, iterators, source maps, math, word types                                                                                 |
-| `cmd/go-corset/`         | Main entry point                                                                                                                                         |
-| `pkg/cmd/corset/`        | CLI commands: check, debug, inspect, trace, verify                                                                                                       |
-| `pkg/cmd/zkc/`           | CLI commands for the ZK compiler toolchain                                                                                                               |
+| Package                  | Role                                                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `pkg/corset/`            | Corset DSL compiler: parses `.lisp`, resolves symbols, type-checks, and emits a field-agnostic `mir.Schema`.          |
+| `pkg/corset/ast/`        | AST nodes for Corset: declarations, expressions, types, bindings                                                      |
+| `pkg/corset/compiler/`   | Compiler internals: parser, resolver, type-checker, translator, register allocator                                    |
+| `pkg/ir/mir/`            | Mid-level IR: `Concretize()` — split registers for target field; `LowerToAir()` — MIR modules → AIR schema, optimiser |
+| `pkg/ir/air/`            | AIR schema: final vanishing polynomials + gadgets                                                                     |
+| `pkg/schema/`            | Core schema interfaces (`Schema`, `Module`, `Assignment`, `Constraint`) parameterised over field element type `F`     |
+| `pkg/schema/constraint/` | Constraint types: vanishing, lookup, range                                                                            |
+| `pkg/trace/`             | Trace representation; `json/` and `lt/` (binary) format readers/writers                                               |
+| `pkg/zkc/`               | ZK compiler / VM: a separate compiler+virtual machine (`pkg/zkc/vm/`) with ROM, RAM, WOM memories and a call stack    |
+| `pkg/util/field/`        | Field element implementations: `bls12_377`, `koalabear`, `gf251`, `gf8209`, `mersenne31`                              |
+| `pkg/util/`              | General utilities: collections, iterators, source maps, math, word types                                              |
+| `cmd/go-corset/`         | Main entry point                                                                                                      |
+| `pkg/cmd/corset/`        | CLI commands: check, debug, inspect, trace, verify                                                                    |
+| `pkg/cmd/zkc/`           | CLI commands for the ZK compiler toolchain                                                                            |
 
 ### Schema and field polymorphism
 
@@ -151,14 +151,13 @@ Tests live in `pkg/test/` and are named following the pattern:
 
 - `Test_Valid_*` — traces that must be accepted by constraints
 - `Test_Invalid_*` — traces that must be rejected
-- `Test_Agnostic_*` — field-agnostic tests
 - `Test_Bench_*` — corset benchmark tests
 - `Test_ZkcUnit_*` / `Test_ZkcMixed_*` / `Test_ZkcInvalid_*` — ZkC compiler/VM tests
 - `Test_ZkcUtil_*` / `Test_ZkcBench_*` — ZkC utility and benchmark tests
 
 Test fixtures are in `testdata/`:
 
-- `testdata/corset/valid/`, `testdata/corset/invalid/`, `testdata/corset/agnostic/`, `testdata/corset/bench/`
+- `testdata/corset/valid/`, `testdata/corset/invalid/`, `testdata/corset/bench/`
 - `testdata/zkc/unit/`, `testdata/zkc/invalid/`, `testdata/zkc/mixed/`, `testdata/zkc/util/`, `testdata/zkc/bench/`
 
 Each test case consists of a `.lisp` (or `.zkc`) source file plus `.accepts` / `.rejects` JSON trace files. Tests run against multiple fields simultaneously (e.g. `BLS12_377`, `KOALABEAR_16`, `GF_8209`).

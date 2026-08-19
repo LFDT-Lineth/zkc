@@ -30,9 +30,6 @@ type Scope interface {
 	// indicates whether successful or not.
 	Bind(ast.Symbol) bool
 
-	// Bindings returns all binding identifiers within a given path.
-	Bindings(file.Path) []BindingId
-
 	// Check whether a given path is within the enclosing module, or not.
 	IsWithin(file.Path) bool
 
@@ -44,31 +41,9 @@ type Scope interface {
 	IsVisible(ast.Symbol) bool
 }
 
-// BindingId is an identifier is used to distinguish different forms of binding,
-// as some forms are known from their use.  Specifically, at the current time,
-// only functions are distinguished from other categories (e.g. columns,
-// parameters, etc).
-type BindingId struct {
-	// Name of the binding
-	name string
-	// Indicates whether function binding (or not) and, if so, what arity the
-	// function has.
-	arity util.Option[uint]
-}
-
-// IsFunction checks whether or not this binding identifier refers to a function
-// definition or not.
-func (b BindingId) IsFunction() bool {
-	return b.arity.HasValue()
-}
-
-func (b BindingId) String() string {
-	if b.arity.HasValue() {
-		return fmt.Sprintf("%s(%d)", b.name, b.arity.Unwrap())
-	}
-	//
-	return b.name
-}
+// BindingId identifies a binding (e.g. a column or constant) by its
+// (unqualified) name within the scope in which it is declared.
+type BindingId = string
 
 // =============================================================================
 // Module Scope
@@ -152,7 +127,7 @@ func (p *ModuleScope) IsVisible(symbol ast.Symbol) bool {
 	}
 	// Relative path from this scope, or possibly an absolute path if this is
 	// the root scope.
-	found, visible := p.isVisibleInner(*symbol.Path(), symbol)
+	found, visible := p.isVisibleInner(*symbol.Path())
 	// If not found, traverse upwards.
 	if !found && p.parent != nil {
 		return p.parent.IsVisible(symbol)
@@ -161,12 +136,12 @@ func (p *ModuleScope) IsVisible(symbol ast.Symbol) bool {
 	return visible
 }
 
-func (p *ModuleScope) isVisibleInner(path file.Path, symbol ast.Symbol) (found, visible bool) {
-	var id = BindingId{path.Tail(), symbol.Arity()}
+func (p *ModuleScope) isVisibleInner(path file.Path) (found, visible bool) {
+	var id = path.Tail()
 	//
 	if submod, ok := p.submodmap[path.Head()]; ok && path.Depth() > 1 {
 		// Indicates the symbol could be within submodule, so go look in there.
-		return submod.isVisibleInner(*path.Dehead(), symbol)
+		return submod.isVisibleInner(*path.Dehead())
 	} else if index, ok := p.ids[id]; ok && path.Depth() == 1 {
 		box := p.bindings[index]
 		return true, !box.open || box.binding.IsRecursive()
@@ -195,9 +170,9 @@ func (p *ModuleScope) Selector() util.Option[string] {
 // DestructuredColumns returns the set of (destructured) columns defined within
 // this module scope.  That is, source-level columns which are broken down into
 // their atomic components.
-func (p *ModuleScope) DestructuredColumns() []RegisterSource {
+func (p *ModuleScope) DestructuredColumns() []Register {
 	var (
-		sources []RegisterSource
+		sources []Register
 		owner   file.Path = p.Owner().path
 	)
 	//
@@ -265,19 +240,8 @@ func (p *ModuleScope) Declare(submodule string, selector util.Option[string], pu
 	return true
 }
 
-// Binding returns information about the binding of a particular symbol defined
-// in this module.
-func (p *ModuleScope) Binding(name string, arity util.Option[uint]) ast.Binding {
-	// construct binding identifier
-	if bid, ok := p.ids[BindingId{name, arity}]; ok {
-		return p.bindings[bid].binding
-	}
-	// Failure
-	return nil
-}
-
 // Bind looks up a given variable being referenced within a given module.  For a
-// root context, this is either a column, an alias or a function declaration.
+// root context, this is either a column or a constant declaration.
 func (p *ModuleScope) Bind(symbol ast.Symbol) bool {
 	// Split the two cases: absolute versus relative.
 	if symbol.Path().IsAbsolute() && p.parent != nil {
@@ -304,7 +268,7 @@ func (p *ModuleScope) innerBind(path *file.Path, symbol ast.Symbol) bool {
 	// something in a subscope.
 	if path.Depth() == 1 {
 		// Must be something in this scope,.
-		id := BindingId{symbol.Path().Tail(), symbol.Arity()}
+		id := symbol.Path().Tail()
 		// Look for it.
 		if bid, ok := p.ids[id]; ok {
 			// Extract binding
@@ -320,38 +284,6 @@ func (p *ModuleScope) innerBind(path *file.Path, symbol ast.Symbol) bool {
 	return false
 }
 
-// Bindings returns all binding identifiers within a given path.
-func (p *ModuleScope) Bindings(path file.Path) []BindingId {
-	var bindings []BindingId
-	// Split the two cases: absolute versus relative.
-	if path.IsAbsolute() && p.parent != nil {
-		// Absolute path, and this is not the root scope.  Therefore, simply
-		// pass this up to the root scope for further processing.
-		return p.parent.Bindings(path)
-	} else if p.parent != nil {
-		bindings = p.parent.Bindings(path)
-	}
-	//
-	return append(bindings, p.innerBindings(path)...)
-}
-
-func (p *ModuleScope) innerBindings(path file.Path) []BindingId {
-	if path.Depth() == 0 {
-		var bindings []BindingId
-		//
-		for id := range p.ids {
-			bindings = append(bindings, id)
-		}
-		//
-		return bindings
-	} else if submod, ok := p.submodmap[path.Head()]; ok {
-		// Looks like this could be in the child scope, so continue searching there.
-		return submod.innerBindings(*path.Dehead())
-	}
-	//
-	return nil
-}
-
 // Enter returns a given submodule within this module.
 func (p *ModuleScope) Enter(submodule string) *ModuleScope {
 	if child, ok := p.submodmap[submodule]; ok {
@@ -360,34 +292,6 @@ func (p *ModuleScope) Enter(submodule string) *ModuleScope {
 	}
 	// Should be unreachable.
 	panic("unknown submodule")
-}
-
-// Alias constructs an alias for an existing symbol.  If the symbol does not
-// exist, then this returns false.
-func (p *ModuleScope) Alias(alias string, symbol ast.Symbol) bool {
-	// Sanity checks.  These are required for now, since we cannot alias
-	// bindings in another scope at this time.
-	if symbol.Path().IsAbsolute() || symbol.Path().Depth() != 1 {
-		// This should be unreachable at the moment.
-		panic(fmt.Sprintf("qualified aliases not supported %s", symbol.Path().String()))
-	}
-	// Extract symbol name
-	name := symbol.Path().Head()
-	// construct symbol identifier
-	symbol_id := BindingId{name, symbol.Arity()}
-	// construct alias identifier
-	alias_id := BindingId{alias, symbol.Arity()}
-	// Check alias does not already exist
-	if _, ok := p.ids[alias_id]; !ok {
-		// Check symbol being aliased exists
-		if id, ok := p.ids[symbol_id]; ok {
-			p.ids[alias_id] = id
-			// Done
-			return true
-		}
-	}
-	// ast.Symbol not known (yet)
-	return false
 }
 
 // Define a new symbol within this scope.
@@ -412,13 +316,13 @@ func (p *ModuleScope) Define(symbol ast.SymbolDefinition) bool {
 		return false
 	}
 	// construct binding identifier
-	id := BindingId{symbol.Name(), symbol.Arity()}
+	id := symbol.Name()
 	// Sanity check not already declared
 	if _, ok := p.ids[id]; ok {
 		// Yes, already declared.
 		return false
 	}
-	// ast.Symbol not previously declared, so no need to consider overloadings.
+	// ast.Symbol not previously declared.
 	bid := uint(len(p.bindings))
 	p.bindings = append(p.bindings, boxedBinding{false, symbol.Binding()})
 	p.ids[id] = bid
@@ -443,7 +347,7 @@ func (p *ModuleScope) setDefinition(status bool, symbol ast.SymbolDefinition) {
 		panic("symbol definition not permitted")
 	}
 	// construct binding identifier
-	id := BindingId{symbol.Name(), symbol.Arity()}
+	id := symbol.Name()
 	// Sanity check not already declared
 	if index, ok := p.ids[id]; ok {
 		p.bindings[index].open = status
@@ -466,7 +370,7 @@ func (p *ModuleScope) Flatten() []*ModuleScope {
 }
 
 func (p *ModuleScope) destructureColumn(column *ast.ColumnBinding, ctx file.Path, path file.Path,
-	datatype ast.Type) []RegisterSource {
+	datatype ast.Type) []Register {
 	// Check for base base
 	if int_t, ok := datatype.(*ast.IntType); ok {
 		return p.destructureAtomicColumn(column, ctx, path, int_t.BitWidth())
@@ -480,9 +384,9 @@ func (p *ModuleScope) destructureColumn(column *ast.ColumnBinding, ctx file.Path
 
 // Allocate an array type
 func (p *ModuleScope) destructureArrayColumn(col *ast.ColumnBinding, ctx file.Path, path file.Path,
-	arrtype *ast.ArrayType) []RegisterSource {
+	arrtype *ast.ArrayType) []Register {
 	//
-	var sources []RegisterSource
+	var sources []Register
 	// Allocate n columns
 	for i := arrtype.MinIndex(); i <= arrtype.MaxIndex(); i++ {
 		ith_name := fmt.Sprintf("%s_%d", path.Tail(), i)
@@ -495,19 +399,18 @@ func (p *ModuleScope) destructureArrayColumn(col *ast.ColumnBinding, ctx file.Pa
 
 // Destructure atomic column
 func (p *ModuleScope) destructureAtomicColumn(column *ast.ColumnBinding, ctx file.Path, path file.Path,
-	bitwidth uint) []RegisterSource {
+	bitwidth uint) []Register {
 	// Construct register source.
-	source := RegisterSource{
-		ctx,
+	source := Register{
+		ast.NewContext(ctx.String()),
 		path,
-		column.Multiplier,
 		bitwidth,
 		column.MustProve,
 		column.IsComputed(),
-		column.Padding,
-		column.Display}
+		column.Display,
+		nil}
 	//
-	return []RegisterSource{source}
+	return []Register{source}
 }
 
 // BoxedBinding simply wraps a given binding with a boolean used to indicate
@@ -523,10 +426,10 @@ type boxedBinding struct {
 // Local Scope
 // =============================================================================
 
-// LocalScope represents a simple implementation of scope in which local
-// variables can be declared.  A local scope must have a single context
-// associated with it, and this will be inferred by resolving those expressions
-// which must be evaluated within.
+// LocalScope represents a simple implementation of scope used when resolving
+// expressions within a constraint, lookup or range declaration.  A local scope
+// must have a single context associated with it, and this will be inferred by
+// resolving those expressions which must be evaluated within.
 type LocalScope struct {
 	global bool
 	// Determines whether or not this scope is "pure" (i.e. whether or not
@@ -536,54 +439,25 @@ type LocalScope struct {
 	enclosing Scope
 	// Context for this scope
 	context *ast.Context
-	// Maps inputs parameters to the declaration index.
-	locals map[string]uint
-	// Actual parameter bindings
-	bindings []*ast.LocalVariableBinding
-	// Set of variables being defined in this scope.  This is used to check
-	// recursive definitions.
-	defining map[string]bool
 }
 
-// NewLocalScope constructs a new local scope within a given enclosing scope.  A
-// local scope can have local variables declared within it.  A local scope can
-// also be "global" in the sense that accessing symbols from other modules is
-// permitted.
+// NewLocalScope constructs a new local scope within a given enclosing scope.
+// A local scope can also be "global" in the sense that accessing symbols from
+// other modules is permitted.
 func NewLocalScope(enclosing Scope, global bool, pure bool) LocalScope {
 	context := ast.VoidContext()
-	locals := make(map[string]uint)
-	bindings := make([]*ast.LocalVariableBinding, 0)
-	defining := make(map[string]bool)
 	//
-	return LocalScope{global, pure, enclosing, &context, locals, bindings, defining}
+	return LocalScope{global, pure, enclosing, &context}
 }
 
 // NestedConstScope creates a nested scope within this local scope which, in
 // addition, is always pure.
 func (p LocalScope) NestedConstScope() LocalScope {
-	nlocals := make(map[string]uint)
-	nbindings := make([]*ast.LocalVariableBinding, len(p.bindings))
-	// Clone allocated variables
-	for k, v := range p.locals {
-		nlocals[k] = v
-	}
-	// Copy over bindings.
-	copy(nbindings, p.bindings)
-	// Done
-	return LocalScope{p.global, true, p, p.context, nlocals, nbindings, p.defining}
+	return LocalScope{p.global, true, p, p.context}
 }
 
 // IsVisible implemention for Scope interface.
 func (p LocalScope) IsVisible(symbol ast.Symbol) bool {
-	path := *symbol.Path()
-	// Determine whether this symbol could be a local variable or not.
-	localVar := symbol.Arity().IsEmpty() && !path.IsAbsolute() && path.Depth() == 1
-	// Check whether this is a local variable access.
-	if _, ok := p.locals[path.Head()]; ok && localVar {
-		// Local variables are always visible as they cannot be defined recursively.
-		return true
-	}
-	//
 	return p.enclosing.IsVisible(symbol)
 }
 
@@ -594,8 +468,7 @@ func (p LocalScope) IsGlobal() bool {
 }
 
 // IsPure determines whether or not this scope is pure.  That is, whether or not
-// expressions in this scope are permitted to access columns (either directly,
-// or indirectly via impure invocations).
+// expressions in this scope are permitted to access columns.
 func (p LocalScope) IsPure() bool {
 	return p.pure
 }
@@ -614,50 +487,8 @@ func (p LocalScope) FixContext(context ast.Context) bool {
 	return !p.context.IsConflicted()
 }
 
-// Bind looks up a given variable or function being referenced either within the
-// enclosing scope (module==nil) or within a specified module.
+// Bind looks up a given variable being referenced either within the enclosing
+// scope (module==nil) or within a specified module.
 func (p LocalScope) Bind(symbol ast.Symbol) bool {
-	path := symbol.Path()
-	// Determine whether this symbol could be a local variable or not.
-	localVar := symbol.Arity().IsEmpty() && !path.IsAbsolute() && path.Depth() == 1
-	// Check whether this is a local variable access.
-	if id, ok := p.locals[path.Head()]; ok && localVar {
-		// Yes, this is a local variable access.
-		return symbol.Resolve(p.bindings[id])
-	}
-	// No, this is not a local variable access.
 	return p.enclosing.Bind(symbol)
-}
-
-// Bindings returns all binding identifiers within a given path.
-func (p LocalScope) Bindings(path file.Path) []BindingId {
-	// Split the two cases: absolute versus relative.
-	if path.IsAbsolute() && p.enclosing != nil {
-		// Absolute path, and this is not the root scope.  Therefore, simply
-		// pass this up to the root scope for further processing.
-		return p.enclosing.Bindings(path)
-	} else if path.Depth() == 0 {
-		// Collage all binding ids.
-		bindings := make([]BindingId, len(p.locals))
-		i := 0
-		//
-		for name := range p.locals {
-			bindings[i] = BindingId{name, util.None[uint]()}
-			i++
-		}
-		//
-		return bindings
-	}
-	// nothing found
-	return nil
-}
-
-// DeclareLocal registers a new local variable (e.g. a parameter).
-func (p *LocalScope) DeclareLocal(name string, binding *ast.LocalVariableBinding) uint {
-	index := uint(len(p.locals))
-	binding.Finalise(index)
-	p.locals[name] = index
-	p.bindings = append(p.bindings, binding)
-	// Return variable index
-	return index
 }

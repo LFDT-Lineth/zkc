@@ -128,22 +128,22 @@ func (p *PagedRandomAccess[W]) Read(address uint64) (W, error) {
 		page      = address / PAGE_SIZE
 		offset    = address % PAGE_SIZE
 		allocated = page < uint64(len(p.pages)) && p.pages[page] != nil
-		value     W
+		cell      TimestampedCell[W]
 	)
 	//
 	if allocated {
-		value = p.pages[page][offset].value
+		cell = p.pages[page][offset]
 		// Re-stamp the existing cell (value unchanged); never allocate on a read.
-		p.pages[page][offset] = TimestampedCell[W]{timestamp: p.timestamp, value: value}
+		p.pages[page][offset] = TimestampedCell[W]{timestamp: p.timestamp, value: cell.value}
 	}
 	//
 	if p.logging {
 		// Write-side only; the read-side is reconstructed at trace time by a
 		// state-tracking observer (see Log).
-		p.accessLog.Read(address, value, p.timestamp)
+		p.accessLog.Read(address, cell.timestamp, p.timestamp, cell.value)
 	}
 	//
-	return value, nil
+	return cell.value, nil
 }
 
 // Write stores value at the given address, allocating the enclosing page if
@@ -159,11 +159,13 @@ func (p *PagedRandomAccess[W]) Write(address uint64, value W) error {
 	if p.pages[page] == nil {
 		p.pages[page] = make([]TimestampedCell[W], PAGE_SIZE)
 	}
+	// read out current contents of call
+	curr := p.pages[page][offset]
 	//
 	p.pages[page][offset] = TimestampedCell[W]{timestamp: p.timestamp, value: value}
 	//
 	if p.logging {
-		p.accessLog.Write(address, value, p.timestamp)
+		p.accessLog.Write(address, curr.timestamp, p.timestamp, curr.value, value)
 	}
 	//
 	return nil

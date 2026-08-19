@@ -85,10 +85,6 @@ func sourceColumnAttrs(col corset.SourceColumn) []string {
 	//
 	attrs = append(attrs, fmt.Sprintf("r%d", col.Register.Column().Unwrap()))
 	//
-	if col.Multiplier != 1 {
-		attrs = append(attrs, fmt.Sprintf("×%d", col.Multiplier))
-	}
-	//
 	if col.Computed {
 		attrs = append(attrs, "computed")
 	}

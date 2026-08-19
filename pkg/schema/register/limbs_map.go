@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -99,7 +98,7 @@ func NewLimbsMap[F any](field field.Config, module Map) limbsMap {
 // if the original register was computed, then the limbs should be also, etc.
 type limbsMap struct {
 	// Name of the module to which this mapping corresponds
-	name trace.ModuleName
+	name string
 	// Field configuration in play
 	field field.Config
 	// Set of registers in the original schema (i.e. as they were before the
@@ -139,7 +138,7 @@ func (p limbsMap) LimbsMap() Map {
 }
 
 // Name implementation for register.Map interface
-func (p limbsMap) Name() trace.ModuleName {
+func (p limbsMap) Name() string {
 	return p.name
 }
 
@@ -229,7 +228,7 @@ func LimbsMapToString(p LimbsMap) string {
 	var builder strings.Builder
 	//
 	builder.WriteString("{")
-	builder.WriteString(p.Name().String())
+	builder.WriteString(p.Name())
 	builder.WriteString(":")
 	//
 	for i, r := range p.Registers() {

@@ -1,4 +1,3 @@
-(deflookup test (m1.Y) (m1.Z))
+(deflookup test (m1.Y) (m1.X))
 (module m1)
-(defalias Z X)
 (defcolumns (X :i16) (Y :i16))

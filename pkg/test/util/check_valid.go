@@ -17,7 +17,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/rand"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
@@ -39,8 +38,6 @@ var (
 	MIN_SAMPLE_SIZE = 10
 	// ALL_FIELDS defines the set of all known fields for testing
 	ALL_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_16, field.GF_8209}
-	// DEFAULT_WORD sets the default word for fast mode execution.
-	DEFAULT_WORD = vm.WORD_UINT128
 	// DEFAULT_FIELDS set default fields for testing
 	DEFAULT_FIELDS = []field.Config{field.KOALABEAR_16}
 	// DEFAULT_CONFIG sets a default testing configuration
@@ -75,7 +72,7 @@ type Config struct {
 	// recursively instead.  Defaults to codegen.DEFAULT_MAX_STATIC_HEIGHT.
 	maxStaticHeights []uint
 	// enable checkpoint testing.
-	checkpointing util.Option[util.Pair[string, util.Counter]]
+	parallelTracing util.Option[vm.ShardingStrategy]
 }
 
 // MaxStaticHeights sets the maximum heights number of rows) of static range
@@ -96,10 +93,10 @@ func (p Config) GoGen(flag bool) Config {
 	return p
 }
 
-// Checkpoints enables checkpoint testing with checkpoints at every n ZkC
+// ParallelTracing enables trace parallelisation with checkpoints at every n ZkC
 // instructions.
-func (p Config) Checkpoints(fn string, n uint64) Config {
-	p.checkpointing = util.Some(util.NewPair(fn, util.NewCounter(n)))
+func (p Config) ParallelTracing(fn string, n uint64) Config {
+	p.parallelTracing = util.Some(vm.NewShardingStrategy(fn, n))
 	//
 	return p
 }
@@ -232,201 +229,97 @@ func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg testConfig, test
 	for _, testcase := range tests {
 		runExecutionTests(t, p, testcase)
 	}
-	// Run checkpointing tests (if requested and in fastmode)
-	if cfg.checkpointing.HasValue() && cfg.fastMode {
-		for _, testcase := range tests {
-			runCheckpointTests(t, p, testcase, cfg.checkpointing.Unwrap())
-		}
-	}
 	// Run constraint tests
 	if cfg.constraints {
 		var field = cfg.build.GetField()
-		//
+		// Sequential tracing
 		for _, test := range tests {
 			// Test all configured padding strategies
 			for name, strategy := range cfg.paddingStrategies {
+				traceCfg := vm.DEFAULT_TRACE_CONFIG.WithPadding(strategy)
+				//
 				t.Run(name, func(t *testing.T) {
-					runConstraintTest(t, p, test, field, strategy)
+					runConstraintTest(t, p, test, field, traceCfg)
+				})
+			}
+			// Parallel tracing (if requested)
+			if cfg.parallelTracing.HasValue() {
+				traceCfg := vm.DEFAULT_TRACE_CONFIG.WithSharding(cfg.parallelTracing.Unwrap())
+				//
+				t.Run("parallel-tracing", func(t *testing.T) {
+					runConstraintTest(t, p, test, field, traceCfg)
 				})
 			}
 		}
 	}
 }
 
-func runExecutionTests(t *testing.T, pU vm.Program[vm.Uint], tc TestCase) {
-	// Run the test
-	switch DEFAULT_WORD {
-	case vm.WORD_UINT64:
-		// Lower to fixed-width machine
-		pW := vm.TransformForExecution[vm.Uint, vm.Uint64](pU)
-		// Run execution test
-		runExecutionTest(t, pW, tc)
-	case vm.WORD_UINT128:
-		// Lower to fixed-width machine
-		pW := vm.TransformForExecution[vm.Uint, vm.Uint128](pU)
-		// Run execution test
-		runExecutionTest(t, pW, tc)
+func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestCase) {
+	// Dispatch based on field config
+	switch p.Field() {
+	case field.GF_251:
+		runExecutionTest[gf251.Element](t, p, test)
+	case field.GF_8209:
+		runExecutionTest[gf8209.Element](t, p, test)
+	case field.KOALABEAR_16:
+		runExecutionTest[koalabear.Element](t, p, test)
+	case field.BLS12_377:
+		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
+		panic("BLS12_377 not currently supported for execution")
 	default:
-		panic(fmt.Sprintf("unknown machine word: %s", DEFAULT_WORD.Name))
+		panic(fmt.Sprintf("unknown field configuration: %s", p.Field().Name))
 	}
 }
 
-func runExecutionTest[W vm.Word[W]](t *testing.T, p vm.Program[W], test TestCase) {
+func runExecutionTest[F field.Element[F]](t *testing.T, p vm.Program[vm.Uint], test TestCase) {
 	//
 	var (
-		err  error
-		errs []error
 		// decode inputs / outputs
-		inputs, outputs = decodeInputsOutputs(t, p, test.data)
-		// construct interpreter
-		interpreter = vm.NewBytecodeInterpreter(p)
+		inputs, _ = vm.FilterInputs(p, test.data)
+		// construct binary file
+		binf = constraints.NewBinaryFile[F](nil, nil, p)
 	)
-	// Boot & Execute machine
-	if err = interpreter.Boot("main", inputs); err == nil {
-		// Execute it
-		if _, err = vm.ExecuteAll(interpreter, 131072); err == nil && test.expected {
-			// Check outputs match
-			errs = append(errs, checkExpectedOutputs(outputs, interpreter)...)
-		} else if err == nil && !test.expected {
-			errs = append(errs, fmt.Errorf("test accepted incorrectly"))
-		} else if !test.expected {
-			// prevent error as this was expected
-			err = nil
+	//
+	if actuals, errs := binf.Execute(inputs); len(errs) == 0 {
+		// Check outputs line up
+		for name, actual := range actuals {
+			if expected, ok := test.data[name]; ok {
+				//
+				if !bytes.Equal(expected, actual) {
+					t.Errorf("test (%s:%d) has incorrect output (expected 0x%s, actual 0x%s)",
+						test.filename, test.line, hex.EncodeToString(expected), hex.EncodeToString(actual))
+				}
+			}
+		}
+		// Sanity check enough outputs
+		if uint(len(actuals)) != p.Outputs().Count() {
+			t.Errorf("test (%s:%d) has incorrect output (expected %d outputs, got %d)",
+				test.filename, test.line, p.Outputs().Count(), len(actuals))
+		}
+	} else {
+		// Fail automatically on any panic arising during execution
+		failIf[*schema.PanicFailure](t, errs...)
+		// Determine whether test accepted or not.
+		accepted := len(errs) == 0
+		// Process what happened versus what was supposed to happen.
+		if !accepted && test.expected {
+			t.Errorf("test incorrectly (%s:%d): %s", test.filename, test.line, errs)
+		} else if accepted && !test.expected {
+			//printTrace(tr)
+			t.Errorf("test incorrectly (%s:%d)", test.filename, test.line)
 		}
 	}
-	// Include single error
-	if err != nil {
-		errs = append(errs, err)
-	}
-	// Fail if errors found
-	for _, err := range errs {
-		t.Errorf("[%s]%s:%d %v", DEFAULT_WORD.Name, test.filename, test.line, err)
-	}
 }
 
-// runCheckpointTests exercises checkpoint/resume for a single test case.  The
-// program is first run, under the fast bytecode interpreter, to generate a
-// sequence of checkpoints (taken at the interval configured via
-// Config.Checkpoints).  One checkpoint is then chosen at random, a fresh
-// interpreter is resumed from it and run to completion, and the resulting
-// behaviour is checked against what the test expected.  Checkpoint testing is
-// (for now) restricted to the Uint128 word.
-func runCheckpointTests(t *testing.T, pU vm.Program[vm.Uint], tc TestCase, spec util.Pair[string, util.Counter]) {
-	// Run the test
-	switch DEFAULT_WORD {
-	case vm.WORD_UINT64:
-		// Lower to fixed-width machine
-		pW := vm.TransformForExecution[vm.Uint, vm.Uint64](pU)
-		// Run test
-		runFixedWidthCheckpointTest(t, pW, tc, spec)
-	case vm.WORD_UINT128:
-		// Lower to fixed-width machine
-		pW := vm.TransformForExecution[vm.Uint, vm.Uint128](pU)
-		// Run test
-		runFixedWidthCheckpointTest(t, pW, tc, spec)
-	default:
-		panic(fmt.Sprintf("unknown machine word: %s", DEFAULT_WORD.Name))
-	}
-}
-
-func runFixedWidthCheckpointTest[W vm.Word[W]](t *testing.T, m vm.Program[W], tc TestCase,
-	spec util.Pair[string, util.Counter]) {
-	//
-	program, checkpoints, outputs := bootAndCheckpoint(t, m, tc, spec)
-	// Nothing to resume from (the checkpointed function ran fewer than the
-	// configured interval, or a reject test failed early): skip phase 2.
-	if len(checkpoints) == 0 {
-		return
-	}
-	//
-	t.Logf("Generated %d checkpoints for %s", len(checkpoints), tc.filename)
-	//
-	var (
-		idx     = rand.Intn(len(checkpoints))
-		resumed = vm.NewBytecodeInterpreter(program)
-		errs    []error
-	)
-	// Phase 2: resume a fresh interpreter from a randomly-chosen checkpoint and
-	// run it to completion.  The resume runs against the *plain* program: the
-	// checkpoints share its coordinates (see Program.BreakPoint), and it has no
-	// breakpoint to re-trigger.
-	resumed.Restore(checkpoints[idx])
-	//
-	_, err := vm.ExecuteAll(resumed, 131072)
-	//
-	if err == nil && tc.expected {
-		// Resumed execution succeeded: check it produced the expected outputs.
-		errs = append(errs, checkExpectedOutputs(outputs, resumed)...)
-	} else if err == nil && !tc.expected {
-		errs = append(errs, fmt.Errorf("test accepted incorrectly"))
-	} else if tc.expected {
-		// Resumed execution failed, but the test was expected to pass.
-		errs = append(errs, err)
-	}
-	// Report any failures, noting which checkpoint was resumed from.
-	for _, err := range errs {
-		t.Errorf("[checkpoint:%s]%s:%d (checkpoint %d/%d) %v", DEFAULT_WORD.Name, tc.filename, tc.line,
-			idx, len(checkpoints), err)
-	}
-}
-
-func bootAndCheckpoint[W vm.Word[W]](t *testing.T, program vm.Program[W], tc TestCase,
-	spec util.Pair[string, util.Counter]) (vm.Program[W], []vm.CheckPoint[W], map[string][]W) {
-	//
-	var (
-		entry       vm.ProgramPoint
-		checkpoints []vm.CheckPoint[W]
-		fn          = spec.Left
-		counter     = spec.Right
-		err         error
-	)
-	// Locate the function whose calls are to be checkpointed.
-	fid, ok := program.HasModule(fn)
-	if !ok {
-		t.Errorf("[%s]%s:%d unknown checkpoint function %q", DEFAULT_WORD.Name, tc.filename, tc.line, fn)
-		return program, nil, nil
-	}
-	//
-	var (
-		// decode inputs/outputs
-		inputs, outputs = decodeInputsOutputs(t, program, tc.data)
-		// construct interpreter with a breakpoint at fn's entry
-		interpreter = vm.NewBytecodeInterpreter(program.BreakPoint(fid, entry))
-	)
-	// Phase 1: run the program (with a breakpoint at fn's entry) to completion,
-	// collecting the checkpoints it produces.  The counter governs how frequently
-	// a checkpoint is actually recorded.
-	gen := interpreter.
-		BreakPointer(func(_ uint32) {
-			if counter.Tick() {
-				checkpoints = append(checkpoints, interpreter.CheckPoint())
-			}
-		})
-	//
-	if err = gen.Boot("main", inputs); err == nil {
-		_, err = vm.ExecuteAll(gen, 131072)
-	}
-	//
-	// An accepting test's generation run is the reference execution and must
-	// succeed; a rejecting test, by contrast, is expected to fail at some point.
-	if tc.expected && err != nil {
-		t.Errorf("[%s]%s:%d checkpoint generation failed: %v", DEFAULT_WORD.Name, tc.filename, tc.line, err)
-		return program, nil, outputs
-	}
-	//
-	return program, checkpoints, outputs
-}
-
-func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, f field.Config,
-	paddingStrategy ir.PaddingStrategy) {
+func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, f field.Config, traceCfg vm.TraceConfig) {
 	// Dispatch based on field config
 	switch f {
 	case field.GF_251:
-		testConstraintsWithField[gf251.Element](t, p, test, paddingStrategy)
+		testConstraintsWithField[gf251.Element](t, p, test, traceCfg)
 	case field.GF_8209:
-		testConstraintsWithField[gf8209.Element](t, p, test, paddingStrategy)
+		testConstraintsWithField[gf8209.Element](t, p, test, traceCfg)
 	case field.KOALABEAR_16:
-		testConstraintsWithField[koalabear.Element](t, p, test, paddingStrategy)
+		testConstraintsWithField[koalabear.Element](t, p, test, traceCfg)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for tracing")
@@ -436,18 +329,15 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, f fie
 }
 
 func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.Uint], test TestCase,
-	paddingStrategy ir.PaddingStrategy) {
+	traceCfg vm.TraceConfig) {
 	//
 	var (
 		// construct binary file
 		binf = constraints.NewBinaryFile[F](nil, nil, p)
 		// decode inputs / outputs
-		inputs = vm.FilterInputs(p, test.data)
-		// trace configuration (optionally expanding each module up to the next
-		// power of two)
-		traceCfg = constraints.DEFAULT_TRACE_CONFIG.WithPadding(paddingStrategy)
+		inputs, _ = vm.FilterInputs(p, test.data)
 		// generate trace
-		_, _, tr, errs = binf.Trace(inputs, traceCfg)
+		_, tr, errs = binf.Trace(inputs, traceCfg)
 	)
 	// Fail automatically on any internal error arising during tracing
 	failIfNot[*vm.Failure](t, errs...)
@@ -470,34 +360,6 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.
 		//printTrace(tr)
 		t.Errorf("Trace accepted incorrectly (%s:%d)", test.filename, test.line)
 	}
-}
-
-func checkExpectedOutputs[W vm.Word[W]](outputs map[string][]W, wm vm.Core[W]) []error {
-	var errors []error
-	//
-	for iter := wm.Outputs(); iter.HasNext(); {
-		var (
-			mem  = iter.Next()
-			name = mem.Descriptor().Name()
-		)
-		//
-		if output, ok := outputs[name]; ok {
-			// Compare canonical byte encodings rather than the raw cell arrays:
-			// a memory whose live cell-count is odd encodes the same bytes as an
-			// expected value that (being byte-granular input) carries a trailing
-			// padding cell, so a length-sensitive array compare would spuriously
-			// fail.  This mirrors compareGogenOutputs.
-			expected := vm.EncodeBytes(output, *mem.Descriptor())
-			actual := vm.EncodeBytes(mem.Contents(), *mem.Descriptor())
-			//
-			if !bytes.Equal(expected, actual) {
-				errors = append(errors, fmt.Errorf("incorrect output (expected 0x%s, actual 0x%s)",
-					hex.EncodeToString(expected), hex.EncodeToString(actual)))
-			}
-		}
-	}
-	//
-	return errors
 }
 
 func readTestCases(t *testing.T, test string, sampling util.Option[float64]) map[field.Config][]TestCase {

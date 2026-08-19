@@ -46,18 +46,53 @@ type TestCase struct {
 }
 
 // CompileZkc compiles a single zkc source file, potentially producing errors.
-// This includes both the validation phase and the code generation phase.
+// This includes the validation phase, the code generation phase and the
+// AIR-level artifact validation (module reachability) performed by the zkc
+// compile command.
 func CompileZkc(field field.Config, srcfile source.File) []source.SyntaxError {
 	return CompileZkcWith(codegen.DEFAULT_CONFIG.Field(field), srcfile)
 }
 
 // CompileZkcWith compiles a single zkc source file under a given codegen
-// configuration, potentially producing errors.  This includes both the
-// validation phase and the code generation phase.
+// configuration, potentially producing errors.  This includes the validation
+// phase, the code generation phase and the AIR-level artifact validation
+// (module reachability) performed by the zkc compile command.
 func CompileZkcWith(config codegen.Config, srcfile source.File) []source.SyntaxError {
-	program, _, errors := compiler.Compile(config.GetField(), config.GetMaxStaticHeight(), srcfile)
+	program, srcmaps, errors := compiler.Compile(config.GetField(), config.GetMaxStaticHeight(), srcfile)
 	if len(errors) == 0 {
-		_, errors = ast.Compile(program, config)
+		var vmProgram vm.Program[vm.Uint]
+		//
+		vmProgram, errors = ast.Compile(program, config)
+		//
+		if len(errors) == 0 {
+			errors = checkZkcModuleReachability(program, srcmaps, vmProgram)
+		}
+	}
+	//
+	return errors
+}
+
+// checkZkcModuleReachability generates the AIR-level constraints of the given
+// (successfully compiled) program and reports, as a syntax error anchored on
+// the offending declaration, every module unreachable via lookups from the
+// entry point "main".  Unreachable modules without a matching declaration
+// (i.e. compiler-generated modules, such as $range_uN) are skipped, since they
+// can only be unreachable as a knock-on effect of an unreachable user module,
+// which is itself reported.
+func checkZkcModuleReachability(program ast.Program, srcmaps source.Maps[any],
+	vmProgram vm.Program[vm.Uint]) []source.SyntaxError {
+	var (
+		errors []source.SyntaxError
+		binf   = constraints.NewBinaryFile[koalabear.Element](nil, nil, vmProgram)
+	)
+	//
+	for _, name := range constraints.UnreachableModules(binf.AirConstraints()) {
+		for _, d := range program.Components() {
+			if d.Name() == name {
+				msg := fmt.Sprintf("module \"%s\" unreachable via lookups from entry point \"main\"", name)
+				errors = append(errors, srcmaps.SyntaxErrors(d, msg)...)
+			}
+		}
 	}
 	//
 	return errors

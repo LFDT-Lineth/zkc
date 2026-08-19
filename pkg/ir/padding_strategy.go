@@ -16,7 +16,7 @@ import util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 
 // PaddingStrategy captures the notion of an algorithm that determines how much front padding is added to each module
 // when expanding a trace (see TraceBuilder.WithPadding).
-type PaddingStrategy func(height, multiplier uint) uint
+type PaddingStrategy = func(height, multiplier uint) uint
 
 // PADDING_STRATEGIES maps the name of each strategy (as accepted on the command
 // line) to its value.

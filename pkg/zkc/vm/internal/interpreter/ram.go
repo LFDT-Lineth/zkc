@@ -45,14 +45,14 @@ type RandomAccess[W word.Word[W]] struct {
 // the memory-consistency argument (see ram.md); a read leaves the stored value
 // unchanged.  Out-of-bounds reads are handled (they return the zero value).
 func (ram *RandomAccess[W]) Read(address uint64) (W, error) {
-	value := ram.valueAt(address)
+	value, readStamp := ram.valueAt(address)
 	// A read stores the value back unchanged, re-stamped with this access's time.
 	ram.restamp(address, value)
 	//
 	if ram.logging {
 		// Write-side only; the read-side is reconstructed at trace time by a
 		// state-tracking observer (see Log).
-		ram.accessLog.Read(address, value, ram.timestamp)
+		ram.accessLog.Read(address, readStamp, ram.timestamp, value)
 	}
 	//
 	return value, nil
@@ -60,11 +60,13 @@ func (ram *RandomAccess[W]) Read(address uint64) (W, error) {
 
 // Write stores value at the given address, wrapping it in a timestamped cell
 // stamped with the current clock.
-func (ram *RandomAccess[W]) Write(address uint64, value W) error {
-	ram.restamp(address, value)
+func (ram *RandomAccess[W]) Write(address uint64, newValue W) error {
+	oldValue, readStamp := ram.valueAt(address)
+	//
+	ram.restamp(address, newValue)
 	//
 	if ram.logging {
-		ram.accessLog.Write(address, value, ram.timestamp)
+		ram.accessLog.Write(address, readStamp, ram.timestamp, oldValue, newValue)
 	}
 	//
 	return nil
@@ -83,14 +85,16 @@ func (ram *RandomAccess[W]) Tick() {
 
 // valueAt returns the value stored at address, or the zero value if the address
 // has never been written (including out-of-range addresses).
-func (ram *RandomAccess[W]) valueAt(address uint64) W {
+func (ram *RandomAccess[W]) valueAt(address uint64) (W, uint64) {
 	var value W
 	//
 	if address < uint64(len(ram.data)) {
-		value = ram.data[address].value
+		cell := ram.data[address]
+		//
+		return cell.value, cell.timestamp
 	}
 	//
-	return value
+	return value, 0
 }
 
 // restamp stores value at address, stamped with the current clock, growing the

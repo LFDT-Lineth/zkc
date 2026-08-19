@@ -18,9 +18,9 @@ import (
 )
 
 // BatchInvert efficiently inverts the list of elements s, in place.
-func BatchInvert[T Element[T]](s array.MutArray[T]) array.MutArray[T] {
+func BatchInvert[T Element[T]](s array.MutArray[T]) {
 	if s.Len() == 0 {
-		return s
+		return
 	}
 	//
 	var (
@@ -35,7 +35,7 @@ func BatchInvert[T Element[T]](s array.MutArray[T]) array.MutArray[T] {
 	isZero.Set(s.Len()-1, s.Get(s.Len()-1).IsZero())
 
 	if isZero.Get(s.Len() - 1) {
-		s = s.Set(s.Len()-1, one)
+		s.Set(s.Len()-1, one)
 	}
 
 	m[s.Len()-1] = s.Get(s.Len() - 1)
@@ -44,7 +44,7 @@ func BatchInvert[T Element[T]](s array.MutArray[T]) array.MutArray[T] {
 		isZero.Set(uint(i), s.Get(uint(i)).IsZero())
 
 		if isZero.Get(uint(i)) {
-			s = s.Set(uint(i), one)
+			s.Set(uint(i), one)
 		}
 
 		m[i] = m[i+1].Mul(s.Get(uint(i)))
@@ -55,19 +55,17 @@ func BatchInvert[T Element[T]](s array.MutArray[T]) array.MutArray[T] {
 	for i := range s.Len() - 1 {
 		// inv = s[i]⁻¹ * s[i+1]⁻¹ * ...
 		newInv := inv.Mul(s.Get(i))
-		s = s.Set(i, inv.Mul(m[i+1]))
+		s.Set(i, inv.Mul(m[i+1]))
 		inv = newInv
 		// inv = s[i+1]⁻¹ * s[i+2]⁻¹ * ...
 		if isZero.Get(i) {
-			s = s.Set(i, zero)
+			s.Set(i, zero)
 		}
 	}
 
-	s = s.Set(s.Len()-1, inv)
+	s.Set(s.Len()-1, inv)
 
 	if isZero.Get(s.Len() - 1) {
-		s = s.Set(s.Len()-1, zero)
+		s.Set(s.Len()-1, zero)
 	}
-	//
-	return s
 }

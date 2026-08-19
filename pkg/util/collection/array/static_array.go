@@ -13,12 +13,16 @@
 package array
 
 import (
+	"bytes"
 	"fmt"
+	"slices"
 	"strings"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // StaticArray implements an array of elements simply using an underlying array.
-type StaticArray[T any] struct {
+type StaticArray[T word.Word[T]] struct {
 	// The data stored in this column (as bytes).
 	data []T
 	// Bitwidth of each word in this array
@@ -26,7 +30,7 @@ type StaticArray[T any] struct {
 }
 
 // NewStaticArray constructs a new word array with a given capacity.
-func NewStaticArray[T any](height uint, bitwidth uint) *StaticArray[T] {
+func NewStaticArray[T word.Word[T]](height uint, bitwidth uint) *StaticArray[T] {
 	var (
 		elements = make([]T, height)
 	)
@@ -34,9 +38,29 @@ func NewStaticArray[T any](height uint, bitwidth uint) *StaticArray[T] {
 	return &StaticArray[T]{elements, bitwidth}
 }
 
-// RawStaticArray constructs a new array directly from raw data.
-func RawStaticArray[T any](data []T, bitwidth uint) *StaticArray[T] {
-	return &StaticArray[T]{data, bitwidth}
+// Append new word on this array
+func (p *StaticArray[T]) Append(word T) {
+	p.data = append(p.data, word)
+}
+
+// AppendAll elements of the given array onto the this array, mutating it in
+// place.
+func (p *StaticArray[T]) AppendAll(other StaticArray[T]) {
+	// Determine height of resulting array
+	var (
+		nsize = uint(len(p.data) + len(other.data))
+		n     = nsize - uint(len(p.data))
+	)
+	// sanity check
+	if p.bitwidth != other.bitwidth {
+		panic(fmt.Sprintf("incompatible array bitwidth (u%d vs u%d)", p.bitwidth, other.bitwidth))
+	}
+	// expand data length
+	ndata := slices.Grow(p.data, int(n))[:nsize]
+	// copy data
+	copy(ndata[len(p.data):], other.data)
+	// finalisex
+	p.data = ndata
 }
 
 // Len returns the number of elements in this word array.
@@ -57,9 +81,36 @@ func (p *StaticArray[T]) Get(index uint) T {
 
 // Set sets the field element at the given index in this array, overwriting the
 // original value.
-func (p *StaticArray[T]) Set(index uint, word T) MutArray[T] {
+func (p *StaticArray[T]) Set(index uint, word T) {
 	p.data[index] = word
-	return p
+}
+
+// Encode implementation for Array interface.  The natural encoding of a static
+// array is its elements written as length-prefixed sequences of raw bytes.
+func (p *StaticArray[T]) Encode(buffer *bytes.Buffer) {
+	for _, w := range p.data {
+		writeWordBytes(buffer, w.Bytes())
+	}
+}
+
+// Decode implementation for MutArray interface.  This reads a given number of
+// length-prefixed words (as produced by Encode).
+func (p *StaticArray[T]) Decode(height uint, buffer *bytes.Buffer) error {
+	data := make([]T, height)
+	//
+	for i := range data {
+		bs, err := readWordBytes(buffer)
+		//
+		if err != nil {
+			return err
+		}
+		//
+		data[i] = data[i].SetBytes(bs)
+	}
+	//
+	p.data = data
+	//
+	return nil
 }
 
 // Clone makes clones of this array producing an otherwise identical copy.
@@ -72,37 +123,19 @@ func (p *StaticArray[T]) Clone() MutArray[T] {
 	return &StaticArray[T]{ndata, p.bitwidth}
 }
 
-// Slice out a subregion of this array.
-func (p *StaticArray[T]) Slice(start uint, end uint) Array[T] {
-	return &StaticArray[T]{
-		p.data[start:end], p.bitwidth,
-	}
-}
-
-// Pad prepends this array with n copies, and appends it with m copies, of the
-// given padding value.
-func (p *StaticArray[T]) Pad(n uint, m uint, padding T) {
+// Pad returns a copy of this array with n copies of the given padding value
+// prepended, and m copies appended.  The receiver is left unmodified.
+func (p *StaticArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
 	var (
 		ol = p.Len()
 		// Determine new length
 		l = n + ol + m
-		//
-		data = p.data
+		// Allocate exactly, copying existing data directly into its final
+		// position.
+		data = make([]T, l)
 	)
 	//
-	if uint(cap(data)) < l {
-		// Insufficient capacity: allocate exactly, copying existing data
-		// directly into its final position.
-		data = make([]T, l)
-		copy(data[n:], p.data)
-	} else {
-		// Sufficient capacity: extend and shift in place.
-		data = data[:l]
-		//
-		if n > 0 {
-			copy(data[n:], data[:ol])
-		}
-	}
+	copy(data[n:], p.data)
 	// Front padding!
 	for i := range n {
 		data[i] = padding
@@ -111,10 +144,9 @@ func (p *StaticArray[T]) Pad(n uint, m uint, padding T) {
 	for i := l - m; i < l; i++ {
 		data[i] = padding
 	}
-	// done
-	p.data = data
+	//
+	return &StaticArray[T]{data, p.bitwidth}
 }
-
 func (p *StaticArray[T]) String() string {
 	var sb strings.Builder
 

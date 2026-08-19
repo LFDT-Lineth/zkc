@@ -14,7 +14,6 @@ package ast
 
 import (
 	"fmt"
-	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -67,85 +66,6 @@ type Declaration interface {
 	Defines(Symbol) bool
 	// Check whether this declaration is finalised already.
 	IsFinalised() bool
-}
-
-// ============================================================================
-// defalias
-// ============================================================================
-
-// DefAliases represents the declaration of one or more aliases.  That is,
-// alternate names for existing symbols.
-type DefAliases struct {
-	// Aliases
-	Aliases []*DefAlias
-	// Symbols being aliased
-	Symbols []Symbol
-}
-
-// NewDefAliases constructs a new instance of DefAliases.
-func NewDefAliases(aliases []*DefAlias, symbols []Symbol) *DefAliases {
-	return &DefAliases{aliases, symbols}
-}
-
-// Dependencies needed to signal declaration.
-func (p *DefAliases) Dependencies() iter.Iterator[Symbol] {
-	return iter.NewArrayIterator[Symbol](nil)
-}
-
-// Definitions returns the set of symbols defined by this declaration.  Observe
-// that these may not yet have been finalised.
-func (p *DefAliases) Definitions() iter.Iterator[SymbolDefinition] {
-	return iter.NewArrayIterator[SymbolDefinition](nil)
-}
-
-// Defines checks whether this declaration defines the given symbol.  The symbol
-// in question needs to have been resolved already for this to make sense.
-func (p *DefAliases) Defines(symbol Symbol) bool {
-	// fine because defaliases gets special treatment.
-	return false
-}
-
-// IsFinalised checks whether this declaration has already been finalised.  If
-// so, then we don't need to finalise it again.
-func (p *DefAliases) IsFinalised() bool {
-	// Fine because defaliases doesn't really do anything with its symbols.
-	return true
-}
-
-// Lisp converts this node into its lisp representation.  This is primarily used
-// for debugging purposes.
-//
-//nolint:revive
-func (p *DefAliases) Lisp() sexp.SExp {
-	pairs := sexp.EmptyList()
-	//
-	for i, a := range p.Aliases {
-		pairs.Append(sexp.NewSymbol(a.Name))
-		pairs.Append(p.Symbols[i].Lisp())
-	}
-	//
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("defalias"), pairs,
-	})
-}
-
-// DefAlias provides a node on which to hang source information to an alias name.
-type DefAlias struct {
-	// Name of the alias
-	Name string
-}
-
-// NewDefAlias constructs a new instance of DefAlias.
-func NewDefAlias(name string) *DefAlias {
-	return &DefAlias{name}
-}
-
-// Lisp converts this node into its lisp representation.  This is primarily used
-// for debugging purposes.
-//
-//nolint:revive
-func (p *DefAlias) Lisp() sexp.SExp {
-	return sexp.NewSymbol(p.Name)
 }
 
 // ============================================================================
@@ -221,23 +141,6 @@ func NewDefColumn(binding ColumnBinding) *DefColumn {
 	return &DefColumn{binding}
 }
 
-// NewDefComputedColumn constructs a new column declaration for a computed
-// column.  Such a column cannot be finalised yet, since its type and multiplier
-// remains to be determined, etc.
-func NewDefComputedColumn(context file.Path, name file.Path) *DefColumn {
-	var padding big.Int
-	//
-	binding := ColumnBinding{context, name, nil, false, 0, COMPUTED, padding, "hex"}
-	//
-	return &DefColumn{binding}
-}
-
-// Arity indicates whether or not this is a function and, if so, what arity
-// (i.e. how many arguments) the function has.
-func (e *DefColumn) Arity() util.Option[uint] {
-	return NON_FUNCTION
-}
-
 // Binding returns the allocated binding for this symbol (which may or may not
 // be finalised).
 func (e *DefColumn) Binding() Binding {
@@ -272,18 +175,6 @@ func (e *DefColumn) DataType() Type {
 	return e.binding.DataType
 }
 
-// LengthMultiplier returns the length multiplier of this column (where the
-// height of this column is determined as the product of the enclosing module's
-// height and this length multiplier).  If this column have not yet been
-// finalised, then this will panic.
-func (e *DefColumn) LengthMultiplier() uint {
-	if !e.binding.IsFinalised() {
-		panic("unfinalised column")
-	}
-	//
-	return e.binding.Multiplier
-}
-
 // MustProve determines whether or not the type of this column must be
 // established by the prover (e.g. a range constraint or similar).
 func (e *DefColumn) MustProve() bool {
@@ -307,11 +198,6 @@ func (e *DefColumn) Lisp() sexp.SExp {
 		}
 
 		list.Append(sexp.NewSymbol(datatype))
-	}
-	//
-	if e.binding.Multiplier != 1 {
-		list.Append(sexp.NewSymbol(":multiplier"))
-		list.Append(sexp.NewSymbol(fmt.Sprintf("%d", e.binding.Multiplier)))
 	}
 	//
 	if list.Len() == 1 {
@@ -397,12 +283,6 @@ type DefConstUnit struct {
 	ConstBinding ConstantBinding
 }
 
-// Arity indicates whether or not this is a function and, if so, what arity
-// (i.e. how many arguments) the function has.
-func (e *DefConstUnit) Arity() util.Option[uint] {
-	return NON_FUNCTION
-}
-
 // Binding returns the allocated binding for this symbol (which may or may not
 // be finalised).
 func (e *DefConstUnit) Binding() Binding {
@@ -443,8 +323,7 @@ func (e *DefConstUnit) Lisp() sexp.SExp {
 // to a non-zero value for the constraint to be considered active.  The
 // expression for a constraint must have a single context.  That is, it can only
 // be applied to columns within the same module (i.e. to ensure they have the
-// same height).  Furthermore, within a given module, we require that all
-// columns accessed by the constraint have the same length multiplier.
+// same height).
 type DefConstraint struct {
 	// Unique handle given to this constraint.  This is primarily useful for
 	// debugging (i.e. so we know which constraint failed, etc).
@@ -459,9 +338,6 @@ type DefConstraint struct {
 	// constraint is active; otherwise, its inactive. Nil is permitted to
 	// indicate no guard is present.
 	Guard Expr
-	// Perspective identifies the perspective to which this constraint is
-	// associated (if any).
-	Perspective *PerspectiveName
 	// The constraint itself which (when active) should evaluate to zero for the
 	// relevant set of rows.
 	Constraint Expr
@@ -470,9 +346,8 @@ type DefConstraint struct {
 }
 
 // NewDefConstraint constructs a new (unfinalised) constraint.
-func NewDefConstraint(handle string, domain util.Option[int], guard Expr, perspective *PerspectiveName,
-	constraint Expr) *DefConstraint {
-	return &DefConstraint{handle, domain, guard, perspective, constraint, false}
+func NewDefConstraint(handle string, domain util.Option[int], guard Expr, constraint Expr) *DefConstraint {
+	return &DefConstraint{handle, domain, guard, constraint, false}
 }
 
 // Definitions returns the set of symbols defined by this declaration.  Observe
@@ -487,10 +362,6 @@ func (p *DefConstraint) Dependencies() iter.Iterator[Symbol] {
 	// Extract guard's dependencies (if applicable)
 	if p.Guard != nil {
 		deps = p.Guard.Dependencies()
-	}
-	// Extract perspective (if applicable)
-	if p.Perspective != nil {
-		deps = append(deps, p.Perspective)
 	}
 	// Extract bodies dependencies
 	deps = append(deps, p.Constraint.Dependencies()...)
@@ -741,257 +612,4 @@ func (p *DefLookup) Lisp() sexp.SExp {
 		sexp.NewList(sourceSelectors),
 		sexp.NewList(sources),
 	})
-}
-
-// ============================================================================
-// defperspective
-// ============================================================================
-
-// DefPerspective captures the definition of a perspective, its selector and  a
-// set of one or more columns being declared within.
-type DefPerspective struct {
-	// Name of the perspective.
-	symbol *PerspectiveName
-	// Selector for the perspective.
-	Selector Expr
-	// Columns defined in this perspective.
-	Columns []*DefColumn
-}
-
-// NewDefPerspective constructs a new (unfinalised) perspective declaration.
-func NewDefPerspective(name *PerspectiveName, selector Expr, columns []*DefColumn) *DefPerspective {
-	return &DefPerspective{name, selector, columns}
-}
-
-// Name returns the (unqualified) name of this symbol.  For example, "X" for
-// a column X defined in a module m1.
-func (p *DefPerspective) Name() string {
-	return p.symbol.Path().Tail()
-}
-
-// Path returns the qualified name (i.e. absolute path) of this symbol.  For
-// example, "m1.X" for a column X defined in module m1.
-func (p *DefPerspective) Path() *file.Path {
-	return &p.symbol.path
-}
-
-// Arity indicates whether or not this is a function and, if so, what arity
-// (i.e. how many arguments) the function has.
-func (p *DefPerspective) Arity() util.Option[uint] {
-	return NON_FUNCTION
-}
-
-// Finalise this perspective, which indicates the selector expression has been
-// finalised.
-func (p *DefPerspective) Finalise() {
-	p.symbol.binding.Finalise()
-}
-
-// Binding returns the allocated binding for this symbol (which may or may not
-// be finalised).
-func (p *DefPerspective) Binding() Binding {
-	return p.symbol.binding
-}
-
-// Dependencies needed to signal declaration.
-func (p *DefPerspective) Dependencies() iter.Iterator[Symbol] {
-	return iter.NewArrayIterator(p.Selector.Dependencies())
-}
-
-// Definitions returns the set of symbols defined by this declaration.  Observe
-// that these may not yet have been finalised.
-func (p *DefPerspective) Definitions() iter.Iterator[SymbolDefinition] {
-	iter1 := iter.NewArrayIterator(p.Columns)
-	iter2 := iter.NewCastIterator[*DefColumn, SymbolDefinition](iter1)
-	iter3 := iter.NewUnitIterator[SymbolDefinition](p)
-	// Construct casting iterator
-	return iter2.Append(iter3)
-}
-
-// Defines checks whether this declaration defines the given symbol.  The symbol
-// in question needs to have been resolved already for this to make sense.
-func (p *DefPerspective) Defines(symbol Symbol) bool {
-	for _, sym := range p.Columns {
-		if &sym.binding == symbol.Binding() {
-			return true
-		}
-	}
-	//
-	return false
-}
-
-// IsFinalised checks whether this declaration has already been finalised.  If
-// so, then we don't need to finalise it again.
-func (p *DefPerspective) IsFinalised() bool {
-	return p.symbol.binding.IsFinalised()
-}
-
-// Lisp converts this node into its lisp representation.  This is primarily used
-// for debugging purposes.
-func (p *DefPerspective) Lisp() sexp.SExp {
-	columns := make([]sexp.SExp, len(p.Columns))
-	//
-	for i := range columns {
-		columns[i] = p.Columns[i].Lisp()
-	}
-	//
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("defperspective"),
-		p.Selector.Lisp(),
-		sexp.NewList(columns),
-	})
-}
-
-// ============================================================================
-// defpurefun & defun
-// ============================================================================
-
-// DefFun represents defines a (possibly pure) "function" (which, in actuality,
-// is more like a macro).  Specifically, whenever an invocation of this function
-// is encountered we can imagine that, in the final constraint set, the body of
-// the function is inlined at the point of the call.  A pure function is not
-// permitted to access any columns in scope (i.e. it can only manipulate its
-// parameters).  In contrast, an impure function can access those columns
-// defined within its enclosing context.
-type DefFun struct {
-	symbol *FunctionName
-	// Parameters
-	parameters []*DefParameter
-	// Return
-	ret Type
-}
-
-var _ SymbolDefinition = &DefFun{}
-
-// NewDefFun constructs a new (unfinalised) function declaration.
-func NewDefFun(name *FunctionName, parameters []*DefParameter, ret Type) *DefFun {
-	return &DefFun{name, parameters, ret}
-}
-
-// Arity indicates whether or not this is a function and, if so, what arity
-// (i.e. how many arguments) the function has.
-func (p *DefFun) Arity() util.Option[uint] {
-	return util.Some(uint(len(p.parameters)))
-}
-
-// IsPure indicates whether or not this is a pure function.  That is, a function
-// which is not permitted to access any columns from the enclosing environment
-// (either directly itself, or indirectly via functions it calls).
-func (p *DefFun) IsPure() bool {
-	return p.symbol.binding.Pure
-}
-
-// Parameters returns information about the parameters defined by this
-// declaration.
-func (p *DefFun) Parameters() []*DefParameter {
-	return p.parameters
-}
-
-// Return returns the return type of this declaration, which can be nil if no
-// return type was given explicitly.
-func (p *DefFun) Return() Type {
-	return p.ret
-}
-
-// Body Access information about the parameters defined by this declaration.
-func (p *DefFun) Body() Expr {
-	return p.symbol.binding.Body
-}
-
-// Binding returns the allocated binding for this symbol (which may or may not
-// be finalised).
-func (p *DefFun) Binding() Binding {
-	return p.symbol.binding
-}
-
-// Name returns the (unqualified) name of this symbol.  For example, "X" for
-// a column X defined in a module m1.
-func (p *DefFun) Name() string {
-	return p.symbol.Path().Tail()
-}
-
-// Path returns the qualified name (i.e. absolute path) of this symbol.  For
-// example, "m1.X" for a column X defined in module m1.
-func (p *DefFun) Path() *file.Path {
-	return &p.symbol.path
-}
-
-// Finalise this declaration
-func (p *DefFun) Finalise() {
-	p.symbol.binding.Finalise()
-}
-
-// Definitions returns the set of symbols defined by this declaration.  Observe
-// that these may not yet have been finalised.
-func (p *DefFun) Definitions() iter.Iterator[SymbolDefinition] {
-	iterator := iter.NewUnitIterator(p.symbol)
-	return iter.NewCastIterator[*FunctionName, SymbolDefinition](iterator)
-}
-
-// Dependencies needed to signal declaration.
-func (p *DefFun) Dependencies() iter.Iterator[Symbol] {
-	deps := p.symbol.binding.Body.Dependencies()
-	ndeps := make([]Symbol, 0)
-	// Filter out all parameters declared in this function, since these are not
-	// external dependencies.
-	for _, d := range deps {
-		n := d.Path()
-		if n.IsAbsolute() || d.Arity().HasValue() || n.Depth() > 1 || !p.hasParameter(n.Head()) {
-			ndeps = append(ndeps, d)
-		}
-	}
-	// Done
-	return iter.NewArrayIterator(ndeps)
-}
-
-// Defines checks whether this declaration defines the given symbol.  The symbol
-// in question needs to have been resolved already for this to make sense.
-func (p *DefFun) Defines(symbol Symbol) bool {
-	return p.symbol.binding == symbol.Binding()
-}
-
-// IsFinalised checks whether this declaration has already been finalised.  If
-// so, then we don't need to finalise it again.
-func (p *DefFun) IsFinalised() bool {
-	return p.symbol.binding.IsFinalised()
-}
-
-// Lisp converts this node into its lisp representation.  This is primarily used
-// for debugging purposes.
-func (p *DefFun) Lisp() sexp.SExp {
-	return sexp.NewList([]sexp.SExp{
-		sexp.NewSymbol("defun"),
-		sexp.NewSymbol(p.symbol.path.Tail()),
-		sexp.NewSymbol("..."), // todo
-	})
-}
-
-// hasParameter checks whether this function has a parameter with the given
-// name, or not.
-func (p *DefFun) hasParameter(name string) bool {
-	for _, v := range p.parameters {
-		if v.Binding.Name == name {
-			return true
-		}
-	}
-	//
-	return false
-}
-
-// DefParameter packages together those piece relevant to declaring an individual
-// parameter, such its name and type.
-type DefParameter struct {
-	Binding LocalVariableBinding
-}
-
-// NewDefParameter constructs a new parameter declaration.
-func NewDefParameter(name string, datatype Type) *DefParameter {
-	binding := NewLocalVariableBinding(name, datatype)
-	return &DefParameter{binding}
-}
-
-// Lisp converts this node into its lisp representation.  This is primarily used
-// for debugging purposes.
-func (p *DefParameter) Lisp() sexp.SExp {
-	return sexp.NewSymbol(p.Binding.Name)
 }

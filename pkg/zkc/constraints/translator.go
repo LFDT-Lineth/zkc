@@ -14,14 +14,12 @@ package constraints
 
 import (
 	"fmt"
-	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -92,7 +90,7 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 	maxStaticHeight uint) mir.Module[F] {
 	var (
 		mod     *schema.Table[F, mir.Constraint[F]]
-		name    = trace.ModuleName{Name: m.Name(), Multiplier: 1}
+		name    = m.Name()
 		regs    = toRegisters(m.Registers())
 		inputs  = toRegisters(m.AddressRegisters())
 		outputs = toRegisters(m.DataRegisters())
@@ -105,7 +103,7 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 	}
 	// Initialise module as a static reference table.  Memory modules are never
 	// native.
-	mod = mod.Init(name, false, false, false, false, false, true, 0)
+	mod = mod.Init(name, false, false, false, false, false, true)
 	// Add all registers
 	mod.AddRegisters(regs...)
 	// Populate the table contents from the pre-loaded memory, padded to the
@@ -117,14 +115,14 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 
 func translateReadOnlyMemory[W vm.Word[W], F field.Element[F]](
 	ctx schema.ModuleId, m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
-	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
+	var name = m.Name()
 	return translateAccessOnceMemory[W, F](ctx, m, name, rangeTables, maxStaticWidth)
 }
 
 // Write once memory and read only memory are equivalent on the constraints level
 func translateWriteOnceMemory[W vm.Word[W], F field.Element[F]](
 	ctx schema.ModuleId, m *vm.Memory[W], rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
-	var name = trace.ModuleName{Name: m.Name(), Multiplier: 1}
+	var name = m.Name()
 	return translateAccessOnceMemory[W, F](ctx, m, name, rangeTables, maxStaticWidth)
 }
 
@@ -132,11 +130,10 @@ func translateWriteOnceMemory[W vm.Word[W], F field.Element[F]](
 //   - read once memory
 //   - write once memory
 func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W], name trace.ModuleName,
+	ctx schema.ModuleId, m *vm.Memory[W], name string,
 	rangeTables map[uint]rangeTable, maxStaticWidth uint) (mod mir.Module[F]) {
 	var (
 		memoryModule *schema.Table[F, mir.Constraint[F]]
-		padding      big.Int
 		regs         = toRegisters(m.Registers())
 	)
 
@@ -145,11 +142,11 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 	// addresses-vanish-in-padding constraints rely on.  Memory modules are never
 	// native.
 	memoryModule = memoryModule.Init(name, true, m.IsPublic() && m.IsWriteOnly(), !m.IsPublic() && m.IsWriteOnly(),
-		false, false, false, 0)
+		false, false, false)
 	memoryModule.AddRegisters(regs...)
 
 	var access = register.NewId(memoryModule.Width())
-	memoryModule.AddRegisters(register.NewComputed(tracer.ACCESS_BIT_NAME, 1, padding))
+	memoryModule.AddRegisters(register.NewComputed(tracer.ACCESS_BIT_NAME, 1))
 
 	var (
 		addrRegs           = toRegisters(m.AddressRegisters())
@@ -196,7 +193,7 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 
 	if isMultiLineAddress {
 		constraints = append(constraints,
-			multiLineAddressConstraints(ctx, memoryModule, addrRegs, prevAccess, currAccess, zero, one, padding)...)
+			multiLineAddressConstraints(ctx, memoryModule, addrRegs, prevAccess, currAccess, zero, one)...)
 	} else {
 		constraints = append(constraints,
 			singleLineAddressConstraints(ctx, addrRegs, currAccess, nextAccess, zero, one)...)
@@ -247,8 +244,7 @@ func singleLineAddressConstraints[F field.Element[F]](
 //   - [b]ADDRESS[i-1] = max, [b]ADDRESS[i] = 0    for k < b < L    (roll over)
 func multiLineAddressConstraints[F field.Element[F]](
 	ctx schema.ModuleId, memoryModule *schema.Table[F, mir.Constraint[F]], addrRegs []register.Register,
-	prevAccess, currAccess, zero, one Expr[F], padding big.Int,
-) []mir.Constraint[F] {
+	prevAccess, currAccess, zero, one Expr[F]) []mir.Constraint[F] {
 	var (
 		L            = len(addrRegs)
 		prevAddrRegs = make([]Expr[F], L)
@@ -267,7 +263,7 @@ func multiLineAddressConstraints[F field.Element[F]](
 	)
 	for k := range L {
 		atFlag := register.NewId(memoryModule.Width())
-		memoryModule.AddRegisters(register.NewComputed(tracer.AtFlagName(uint(k)), 1, padding))
+		memoryModule.AddRegisters(register.NewComputed(tracer.AtFlagName(uint(k)), 1))
 		atFlagVars[k] = mirc.Variable[register.Id, Expr[F]](atFlag, 1, 0)
 		addrLimbMaxValues[k] = mirc.BigNumber[register.Id, Expr[F]](addrRegs[k].MaxValue())
 	}
@@ -327,9 +323,8 @@ func multiLineAddressConstraints[F field.Element[F]](
 func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn *vm.Function[W],
 	infos []vm.Module[W], rangeTables map[uint]rangeTable, field field.Config, maxStaticWidth uint) mir.Module[F] {
 	var (
-		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]
-		name    = trace.ModuleName{Name: fn.Name(), Multiplier: 1}
+		name    = fn.Name()
 		regs    = toRegisters(fn.Registers())
 		framing Framing[F]
 		// IS_PC_<k> program counter selectors, only for MLI.
@@ -339,7 +334,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 		ret register.Id
 	)
 	// Initialise module
-	mod = mod.Init(name, false, false, false, false, fn.IsNative(), false, 0)
+	mod = mod.Init(name, false, false, false, false, fn.IsNative(), false)
 	// Add all registers
 	mod.AddRegisters(regs...)
 	// Native functions are backed by an external circuit, so we emit only the
@@ -357,14 +352,14 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 		)
 
 		// Create return line
-		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1))
 		// Create program counter
-		mod.AddRegisters(register.NewComputed(tracer.PC_NAME, fn.PcWidth(), padding))
+		mod.AddRegisters(register.NewComputed(tracer.PC_NAME, fn.PcWidth()))
 		// Add IS_PC_<k> program counter selectors (one per code line)
 		pcSelectors = make([]register.Id, len(fn.Vectors()))
 		for c := range pcSelectors {
 			pcSelectors[c] = register.NewId(mod.Width())
-			mod.AddRegisters(register.NewComputed(tracer.SelectorName(uint(c)), 1, padding))
+			mod.AddRegisters(register.NewComputed(tracer.SelectorName(uint(c)), 1))
 		}
 		// Initialise multi-line framing
 		framing, constraints = initMultiLineFraming[F](ctx, pc, ret, pcSelectors, regs, len(fn.Vectors()))
@@ -373,7 +368,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 	} else {
 		framing = mirc.NewAtomicFraming[register.Id, Expr[F]]()
 
-		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1))
 	}
 	// Translate all bytecode vectors
 	for pc, vec := range fn.Vectors() {
@@ -414,7 +409,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
 	// Emit lookup constraints for any function calls and memory accesses made
 	// by this function.
-	addLookups(mod, ctx, fn, pcSelectors, ret, infos, regs, field)
+	addLookups(mod, ctx, fn, pcSelectors, ret, infos, field)
 	// Done
 	return mod
 }

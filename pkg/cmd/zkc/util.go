@@ -21,8 +21,8 @@ import (
 	"runtime/pprof"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -30,9 +30,20 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
+
+func filterInputs[W vm.Word[W], T any](p vm.Program[W], input map[string][]T) map[string][]T {
+	inputs, ignored := vm.FilterInputs(p, input)
+	//
+	for _, field := range ignored {
+		log.Warn("ignoring input/output \"", field, "\"")
+	}
+	//
+	return inputs
+}
 
 func startCpuProfiling(cmd *cobra.Command) *os.File {
 	if filename := GetString(cmd, "cpuprof"); filename != "" {
@@ -165,30 +176,18 @@ func printSyntaxError(err *source.SyntaxError) {
 	fmt.Println(strings.Repeat("^", length))
 }
 
-// WriteTraceFile writes a given lt trace file to disk, either in JSON or LT
-// formats.
-func WriteTraceFile(filename string, tracefile lt.TraceFile) {
-	var (
-		err   error
-		bytes []byte
-	)
+// WriteTraceFile writes a given trace to disk in JSON format.
+func WriteTraceFile[F field.Element[F]](filename string, tracefile trace.Trace[F]) {
+	var err error
 	// Check file extension
 	ext := path.Ext(filename)
 	//
 	switch ext {
 	case ".json":
-		js := json.ToJsonString(tracefile.RawModules())
+		js := json.ToJsonString(tracefile)
 		//
 		if err = os.WriteFile(filename, []byte(js), 0644); err == nil {
 			return
-		}
-	case ".lt":
-		bytes, err = tracefile.MarshalBinary()
-		//
-		if err == nil {
-			if err = os.WriteFile(filename, bytes, 0644); err == nil {
-				return
-			}
 		}
 	default:
 		err = fmt.Errorf("unknown trace file format: %s", ext)

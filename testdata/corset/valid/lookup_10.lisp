@@ -1,7 +1,5 @@
-(defun (selector) (* m1.X 2))
-
 (module m1)
 (defcolumns (X :i16) (Y :i17) (X2 :i17))
-;; X2 holds the value of the expression (selector)
-(defconstraint x2_def () (== X2 (selector)))
+;; X2 holds the value of the expression (* X 2)
+(defconstraint x2_def () (== X2 (* X 2)))
 (deflookup test (Y) (X2))

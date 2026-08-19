@@ -311,10 +311,10 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 	preSplit map[string]preSplitInfo) moduleStats {
 	//
 	var stats = moduleStats{
-		name:     mod.Name().String(),
+		name:     mod.Name(),
 		preSplit: make(map[uint]uint),
 		degrees:  make(map[uint]uint),
-		pcMax:    preSplit[mod.Name().Name].pcMax,
+		pcMax:    preSplit[mod.Name()].pcMax,
 	}
 	//
 	switch {
@@ -328,14 +328,14 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 		stats.postRegs = mod.Width()
 	default:
 		// Regular module (function or memory): report the full breakdown.
-		info := preSplit[mod.Name().Name]
+		info := preSplit[mod.Name()]
 		stats.typ = info.typ
 		stats.postRegs = mod.Width()
 		// Pre-split register widths are only meaningful (and field-independent)
 		// for user-defined modules.  Compiler-generated modules (e.g. the
 		// recursive $range_* range checkers) have no pre-split form and their
 		// register widths depend on the field, so leave those columns blank.
-		if !isGenerated(mod.Name().Name) {
+		if !isGenerated(mod.Name()) {
 			stats.preSplit = info.widths
 			stats.preNative = info.native
 		}

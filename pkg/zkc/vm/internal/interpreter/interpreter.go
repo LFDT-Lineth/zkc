@@ -138,8 +138,10 @@ type Interpreter[W word.Word[W]] struct {
 	// about to execute.  The callback typically snapshots the current machine
 	// state itself (see CheckPoint) and is responsible for governing how
 	// frequently it actually acts.  Configured via the BreakPointer builder
-	// method; defaults to a panicking stub until one has been set.
-	breakpoint func(uint32)
+	// method; defaults to a panicking stub until one has been set.  Finally,
+	// the breakpoint function may "interrupt" the interpreter's execution by
+	// returning true.
+	breakpoint func(uint32) (interrupt bool)
 }
 
 // StackFrame captures relevant information about all functions currently
@@ -220,8 +222,15 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 		// BreakPointer when tracing / debugging (see BootAndTrace, BootAndDebug).
 		// Note that failures route through this handler too (see failure), so it
 		// must be safe to invoke even when no explicit handler is configured.
-		breakpoint: func(uint32) {},
+		breakpoint: func(uint32) bool { return false },
 	}
+}
+
+// ProgramCounter returns the current PC for the interpreter.  Observe that this
+// indentifies the next encoded instruction to execture, and is unrelated to the
+// (two dimensional) program counter of a bytecode function.
+func (p *Interpreter[W]) ProgramCounter() uint32 {
+	return p.pc
 }
 
 // WithAccessLog enables logging of memory accesses on each read-write memory so
@@ -245,7 +254,7 @@ func (p *Interpreter[W]) WithAccessLog() *Interpreter[W] {
 // current machine state itself (see CheckPoint) and is responsible for
 // governing how frequently it actually acts.  It returns the interpreter to
 // allow method chaining.
-func (p *Interpreter[W]) BreakPointer(breakpointer func(uint32)) *Interpreter[W] {
+func (p *Interpreter[W]) BreakPointer(breakpointer func(uint32) bool) *Interpreter[W] {
 	//
 	p.breakpoint = breakpointer
 	//
@@ -547,6 +556,19 @@ func (p *Interpreter[W]) Binary() encoding.Binary[W] {
 	return p.program
 }
 
+// ExtractMemory returns a mapping of the runtime memories
+func (p *Interpreter[W]) ExtractMemory() (mems []util.Pair[uint16, Memory[W]]) {
+	for i, m := range p.program.Modules() {
+		if _, ok := m.(*descriptor.Memory[W]); ok {
+			var mem = p.Memory(uint16(i))
+			//
+			mems = append(mems, util.NewPair(uint16(i), mem))
+		}
+	}
+	//
+	return mems
+}
+
 // Memory provides access to the underlying memory corresponding to a given
 // module identifier.
 func (p *Interpreter[W]) Memory(mid uint16) Memory[W] {
@@ -605,8 +627,11 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			if opcode == encoding.WIDE {
 				cbop |= bytecodes[p.pc] & 0xff00
 			}
-			//
-			p.breakpoint(cbop)
+			// Apply breakpoint and interrupt if requested
+			if p.breakpoint(cbop) {
+				// fire interrupt
+				break
+			}
 		}
 		// increase step counter
 		nsteps++

@@ -8,4 +8,4 @@
 (defcolumns (Delta :i8@prove))
 
 ;; Delta == X - X[i-1]
-(defconstraint sort () (eq! Delta (- X (shift X -1))))
+(defconstraint sort () (== Delta (- X (shift X -1))))

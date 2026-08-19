@@ -30,7 +30,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -178,7 +177,7 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 	//
 	var (
 		errors []error
-		traces []lt.TraceFile
+		traces []tr.Trace[F]
 		ok     bool = true
 	)
 	//
@@ -190,10 +189,10 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 	// Parse trace file(s)
 	if batched {
 		// batched mode
-		traces = ReadBatchedTraceFile(tracefile)
+		traces = ReadBatchedTraceFile[F](tracefile)
 	} else {
 		// unbatched (i.e. normal) mode
-		traces = []lt.TraceFile{ReadTraceFile(tracefile)}
+		traces = []tr.Trace[F]{ReadTraceFile[F](tracefile)}
 	}
 	// Go!
 	if len(errors) == 0 {
@@ -209,7 +208,8 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 	}
 }
 
-func checkTraces[F field.Element[F]](traces []lt.TraceFile, stacker cmd_util.SchemaStacker[F], cfg CheckConfig) bool {
+func checkTraces[F field.Element[F]](traces []tr.Trace[F], stacker cmd_util.SchemaStacker[F],
+	cfg CheckConfig) bool {
 	//
 	for _, tf := range traces {
 		// Configure stack.  This is important to ensure true separation
@@ -232,7 +232,7 @@ func checkTraces[F field.Element[F]](traces []lt.TraceFile, stacker cmd_util.Sch
 
 // CheckTrace checks a given set of constraints against a given trace file using
 // a configured trace builder and check configuration.
-func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], tf lt.TraceFile, builder ir.TraceBuilder[F],
+func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], tf tr.Trace[F], builder ir.TraceBuilder[F],
 	cfg CheckConfig) bool {
 	// begin performance measurement
 	stats := util.NewPerfStats()
@@ -260,8 +260,8 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], tf lt.Tra
 
 // ReportFailures reports constraint failures, whilst providing contextual
 // information (when requested).
-func ReportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace tr.Trace[F], mapping module.LimbsMap,
-	cfg CheckConfig) {
+func ReportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace tr.Trace[F],
+	mapping module.LimbsMap, cfg CheckConfig) {
 	//
 	var (
 		errs = make([]error, len(failures))
@@ -328,7 +328,7 @@ func reportRelevantCells[F field.Element[F]](cells *set.AnySortedSet[tr.CellRef]
 			// Construct & configure printer
 			tp = widget.NewTable(window.Module(i))
 			//
-			name = ith.Data().Name().String()
+			name = ith.Data().Name()
 		)
 		// Print out module name
 		if window.Width() > 1 && name != "" {

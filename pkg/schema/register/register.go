@@ -21,6 +21,10 @@ import (
 	"math/big"
 )
 
+var (
+	one big.Int
+)
+
 // Register represents a specific register in the schema that, eventually, will
 // be mapped to one (or more) columns in the trace.  Observe that multiple
 // registers can end up being mapped to the same column via "register
@@ -35,40 +39,38 @@ type Register struct {
 	name string
 	// Width (in bits) of this register
 	width uint
-	// Determines what value will be used to pad this register.
-	padding big.Int
 }
 
 // New constructs a new register of a given kind (i.e. input, output or
 // computed) with the given name and bitwidth.
-func New(kind Type, name string, bitwidth uint, padding big.Int) Register {
-	return Register{kind, name, bitwidth, padding}
+func New(kind Type, name string, bitwidth uint) Register {
+	return Register{kind, name, bitwidth}
 }
 
 // NewNative constructs a new "native" register.  That is, a register backed by
 // a field element rather than a fixed-width unsigned integer.  Such registers
 // have no fixed bitwidth and can hold any value representable in the
 // underlying field.
-func NewNative(kind Type, name string, padding big.Int) Register {
-	return New(kind, name, math.MaxUint, padding)
+func NewNative(kind Type, name string) Register {
+	return New(kind, name, math.MaxUint)
 }
 
 // NewInput constructs a new input register with the given name and
 // bitwidth.
-func NewInput(name string, bitwidth uint, padding big.Int) Register {
-	return Register{INPUT_REGISTER, name, bitwidth, padding}
+func NewInput(name string, bitwidth uint) Register {
+	return Register{INPUT_REGISTER, name, bitwidth}
 }
 
 // NewOutput constructs a new output register with the given name and
 // bitwidth.
-func NewOutput(name string, bitwidth uint, padding big.Int) Register {
-	return Register{OUTPUT_REGISTER, name, bitwidth, padding}
+func NewOutput(name string, bitwidth uint) Register {
+	return Register{OUTPUT_REGISTER, name, bitwidth}
 }
 
 // NewComputed constructs a new computed register with the given name and
 // bitwidth.
-func NewComputed(name string, bitwidth uint, padding big.Int) Register {
-	return Register{COMPUTED_REGISTER, name, bitwidth, padding}
+func NewComputed(name string, bitwidth uint) Register {
+	return Register{COMPUTED_REGISTER, name, bitwidth}
 }
 
 // NewConst constructs a new "constant register".  That is a register which
@@ -79,9 +81,9 @@ func NewConst(value uint8) Register {
 	//
 	switch value {
 	case 0:
-		return Register{ZERO_REGISTER, name, 0, *big.NewInt(0)}
+		return Register{ZERO_REGISTER, name, 0}
 	case 1:
-		return Register{ONE_REGISTER, name, 1, *big.NewInt(1)}
+		return Register{ONE_REGISTER, name, 1}
 	default:
 		panic(fmt.Sprintf("unsupported constant register (%d)", value))
 	}
@@ -175,7 +177,7 @@ func (p Register) Name() string {
 func (p Register) QualifiedName(mod Map) string {
 	var (
 		name    = p.name
-		modName = mod.Name().String()
+		modName = mod.Name()
 	)
 	//
 	if modName != "" {
@@ -185,32 +187,12 @@ func (p Register) QualifiedName(mod Map) string {
 	return name
 }
 
-// Padding determines what value will be used to padd this register.
-func (p *Register) Padding() *big.Int {
-	return &p.padding
-}
-
-// SetPadding updates the padding value to use for this register.
-func (p *Register) SetPadding(padding *big.Int) {
-	switch p.kind {
-	case ZERO_REGISTER, ONE_REGISTER:
-		if padding.IsUint64() && padding.Uint64() == uint64(p.ConstValue()) {
-			return
-		}
-		// Sanity Check
-		panic(fmt.Sprintf(
-			"cannot overide padding of constant register (%s vs %d)", padding.String(), p.ConstValue()))
-	}
-	//
-	p.padding.Set(padding)
-}
-
 func (p Register) String() string {
 	if p.IsNative() {
-		return fmt.Sprintf("%s:𝔽:0x%s", p.name, p.padding.Text(16))
+		return fmt.Sprintf("%s:𝔽", p.name)
 	}
 	//
-	return fmt.Sprintf("%s:u%d:0x%s", p.name, p.width, p.padding.Text(16))
+	return fmt.Sprintf("%s:u%d", p.name, p.width)
 }
 
 // Width determines the bitwidth of this register.  This panics if called on a
@@ -266,10 +248,6 @@ func (p *Register) MarshalBinary() (data []byte, err error) {
 	if err := writeByteArray(buffer, []byte(p.name)); err != nil {
 		return nil, err
 	}
-	// Read register padding
-	if err := writeByteArray(buffer, p.padding.Bytes()); err != nil {
-		return nil, err
-	}
 	// Success
 	return buffer.Bytes(), nil
 }
@@ -277,11 +255,11 @@ func (p *Register) MarshalBinary() (data []byte, err error) {
 // UnmarshalBinary unmarshals a register
 func (p *Register) UnmarshalBinary(data []byte) error {
 	var (
-		buffer        = bytes.NewBuffer(data)
-		kind          uint8
-		width         uint16
-		name, padding []byte
-		err           error
+		buffer = bytes.NewBuffer(data)
+		kind   uint8
+		width  uint16
+		name   []byte
+		err    error
 	)
 	// Register kind
 	if err := binary.Read(buffer, binary.BigEndian, &kind); err != nil {
@@ -295,10 +273,6 @@ func (p *Register) UnmarshalBinary(data []byte) error {
 	if name, err = readByteArray(buffer); err != nil {
 		return err
 	}
-	// Read register padding
-	if padding, err = readByteArray(buffer); err != nil {
-		return err
-	}
 	//
 	p.kind = Type{kind}
 	if width == nativeWidthSentinel {
@@ -308,7 +282,6 @@ func (p *Register) UnmarshalBinary(data []byte) error {
 	}
 	//
 	p.name = string(name)
-	p.padding.SetBytes(padding)
 	// Success!
 	return nil
 }
@@ -375,4 +348,8 @@ func WidthOfRegisters(regs []Register, rids []Id) uint {
 	}
 	//
 	return width
+}
+
+func init() {
+	one = *big.NewInt(1)
 }

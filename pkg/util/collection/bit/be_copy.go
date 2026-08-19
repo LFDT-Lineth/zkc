@@ -13,22 +13,22 @@
 package bit
 
 // BigEndianCopy copies n bits starting a given bit offset from a given byte
-// array source into a given destination (at a given offset) assuming a little
+// array source into a given destination (at a given offset) assuming a big
 // endian layout of bytes.  For example, consider the array [0x90,0x7] which is
 // [0b10010000,0b00000111].  Then, the bit offsets can be viewed as follows:
 //
-// +---+---+---+---+---+---+---+---+ +---+---+---+---+---+---+---+---+
-// | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 1 |
-// +---+---+---+---+---+---+---+---+ +---+---+---+---+---+---+---+---+
-// | 00| 01| 02| 03| 04| 05| 06| 07| | 08| 09| 10| 11| 12| 13| 14| 15|
+// +---+---+---+---+---+---+---+---+  +---+---+---+---+---+---+---+---+
+// | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 |  | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 1 |
+// +---+---+---+---+---+---+---+---+  +---+---+---+---+---+---+---+---+
+// | 00| 01| 02| 03| 04| 05| 06| 07|  | 08| 09| 10| 11| 12| 13| 14| 15|
 //
 // Now, consider copying 8 bits starting at offset 3.  This represents the
 // following bits:
 //
-// +---+---+---+---+---+---+---+---+ +---+---+---+---+---+---+---+---+
-// |   |   |   | X | X | X | X | X | | X | X | X |   |   |   |   |   |
-// +---+---+---+---+---+---+---+---+ +---+---+---+---+---+---+---+---+
-// | 00| 01| 02| 03| 04| 05| 06| 07| | 08| 09| 10| 11| 12| 13| 14| 15|
+// +---+---+---+---+---+---+---+---+  +---+---+---+---+---+---+---+---+
+// |   |   |   | X | X | X | X | X |  | X | X | X |   |   |   |   |   |
+// +---+---+---+---+---+---+---+---+  +---+---+---+---+---+---+---+---+
+// | 00| 01| 02| 03| 04| 05| 06| 07|  | 08| 09| 10| 11| 12| 13| 14| 15|
 //
 // As such, we see how the big end treatment of bytes impacts the bits which are
 // copied.

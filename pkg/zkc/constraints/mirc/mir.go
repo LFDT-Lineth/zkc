@@ -43,12 +43,11 @@ func (p MirModule[F]) NewAssignment(assignment schema.Assignment[F]) {
 
 // NewColumn constructs a new column of the given name and bitwidth within
 // this module.
-func (p MirModule[F]) NewColumn(kind register.Type, name string, bitwidth uint, padding big.Int,
-) register.Id {
+func (p MirModule[F]) NewColumn(kind register.Type, name string, bitwidth uint) register.Id {
 	//
 	var (
 		// Add new register
-		rid = p.Module.NewRegister(register.New(kind, name, bitwidth, padding))
+		rid = p.Module.NewRegister(register.New(kind, name, bitwidth))
 	)
 	//
 	// Add corresponding range constraint to enforce bitwidth
@@ -178,6 +177,13 @@ func (p MirExpr[F]) ThenElse(trueBranch MirExpr[F], falseBranch MirExpr[F]) MirE
 func (p MirExpr[F]) Multiply(exprs ...MirExpr[F]) MirExpr[F] {
 	args := unwrapSplitMirExpr(p, exprs...)
 	return MirExpr[F]{term.Product(args...), nil}
+}
+
+// Subtract constructs a difference between this expression and zero or more
+// expressions.
+func (p MirExpr[F]) Subtract(exprs ...MirExpr[F]) MirExpr[F] {
+	args := unwrapSplitMirExpr(p, exprs...)
+	return MirExpr[F]{term.Subtract(args...), nil}
 }
 
 // NotEquals constructs a non-equality between two expressions.

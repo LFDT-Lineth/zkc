@@ -53,7 +53,7 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	_, binf := Build[F](build, args[1:]...)
 	// Filter out unnecessary inputs
-	input = vm.FilterInputs(binf.RawProgram(), input)
+	input = filterInputs(binf.RawProgram(), input)
 	// Construct a trace observer which prints each executed trace line, with
 	// register values rendered inline.
 	observer := NewDebugger(binf.ExecutionProgram())

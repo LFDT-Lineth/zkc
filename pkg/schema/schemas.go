@@ -16,8 +16,7 @@ import (
 	"fmt"
 	"runtime"
 
-	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -28,19 +27,14 @@ import (
 // rows that will be added during trace expansion.  The exact value depends on
 // whether defensive padding is enabled or not.
 func RequiredPaddingRows[F any](module uint, defensive bool, schema AnySchema[F]) uint {
-	var (
-		multiplier = schema.Module(module).Name().Multiplier
-		padding    = requiredSpillage(module, schema)
-	)
+	var padding = requiredSpillage(module, schema)
 	//
 	if defensive {
 		// determine minimum levels of defensive padding required.
 		padding = max(padding, defensivePadding(module, schema))
 	}
-	// Technically, we could avoid multiplying by the multiplier here, but in
-	// practice it shouldn't matter.  That's because of the very limited ways in
-	// which interleaved columns are used in practice.
-	return padding * multiplier
+	//
+	return padding
 }
 
 // RequiredSpillage returns the minimum amount of spillage required for a given
@@ -100,14 +94,14 @@ func defensivePadding[F any](module uint, schema AnySchema[F]) uint {
 //
 //nolint:revive
 func Accepts[F field.Element[F], C Constraint[F]](parallel bool, schema Schema[F, C],
-	trace tr.Trace[F]) []Failure {
+	trace trace.Trace[F]) []Failure {
 	//
 	return accepts(parallel, schema.Constraints(), trace, schema)
 }
 
 //nolint:revive
 func accepts[F field.Element[F], C Constraint[F]](parallel bool, iter iter.Iterator[C],
-	trace tr.Trace[F], schema Schema[F, C]) []Failure {
+	trace trace.Trace[F], schema Schema[F, C]) []Failure {
 	//
 	if parallel {
 		return parallelAccepts(iter, trace, schema)
@@ -116,7 +110,7 @@ func accepts[F field.Element[F], C Constraint[F]](parallel bool, iter iter.Itera
 	return sequentialAccepts(iter, trace, schema)
 }
 
-func sequentialAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace tr.Trace[F],
+func sequentialAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace trace.Trace[F],
 	schema Schema[F, C]) []Failure {
 	//
 	var (
@@ -137,7 +131,7 @@ func sequentialAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C
 	return errors
 }
 
-func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace tr.Trace[F],
+func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace trace.Trace[F],
 	schema Schema[F, C]) (errors []Failure) {
 	var (
 		context = ParBuildContext(trace, Any(schema))
@@ -145,7 +139,7 @@ func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C],
 		constraints = iter.Collect()
 	)
 	// Process all constraints in parallel using a worker pool.
-	errors = util.ParallelMap(constraints, func(i uint, constraint C) Failure {
+	errors = array.ParallelMap(constraints, func(i uint, constraint C) Failure {
 		if i%1000 == 0 {
 			var percent float64 = float64(100*i) / float64(len(constraints))
 			log.Debug(fmt.Sprintf("Checking constraints [%0.1f%%]", percent))
@@ -160,7 +154,7 @@ func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C],
 
 // processConstraint checks a given constraint against the trace, intercepting any
 // panic and converting it into a PanicFailure.
-func processConstraint[F field.Element[F], C Constraint[F]](ith C, trace tr.Trace[F], schema Schema[F, C],
+func processConstraint[F field.Element[F], C Constraint[F]](ith C, trace trace.Trace[F], schema Schema[F, C],
 	ctx Context[F]) (res Failure) {
 	// Setup panic intercept
 	defer func() {

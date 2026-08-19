@@ -46,7 +46,7 @@ func (p *Norm[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Norm[F, T]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *Norm[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
 	// Check whether argument evaluates to zero or not.
 	val, err := p.Arg.EvalAt(k, tr, sc)
 	// Normalise value (if necessary)

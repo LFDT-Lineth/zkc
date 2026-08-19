@@ -15,7 +15,7 @@ package trace
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
@@ -28,9 +28,9 @@ type (
 	// Memory provides a useful alias
 	Memory[W Word[W]] = vm.RuntimeMemory[W]
 	// Module provides a useful alias
-	Module[F any] = rtrace.Module[F]
+	Module[F any] = trace.Module[F]
 	// ModuleBuilder provides a useful alias
-	ModuleBuilder[F any, M rtrace.Module[F]] = rtrace.ModuleBuilder[F, M]
+	ModuleBuilder[F any, M trace.Module[F]] = trace.ModuleBuilder[F, M]
 )
 
 const (
@@ -102,9 +102,9 @@ func AtFlagName(k uint) string {
 	return fmt.Sprintf("%s%d", AT_FLAG_PREFIX, k)
 }
 
-// convert register descriptor into rtrace register
-func toRtraceRegister[W Word[W]](_ uint, reg vm.Register[W]) rtrace.ColumnDescriptor {
-	return rtrace.NewColumnDescriptor(reg.Name(), reg.Bitwidth())
+// convert register descriptor into trace register
+func toTraceRegister[W Word[W]](_ uint, reg vm.Register[W]) trace.ColumnDescriptor {
+	return trace.NewColumnDescriptor(reg.Name(), reg.Bitwidth())
 }
 
 // Builder for post-processing recorded state for a given module.  For
@@ -112,7 +112,7 @@ func toRtraceRegister[W Word[W]](_ uint, reg vm.Register[W]) rtrace.ColumnDescri
 // auxiliary registers as required (e.g. for selector bits, etc).  For
 // functions, this means transcribing each state generated for the function
 // during execution.
-type Builder[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]] struct {
+type Builder[W Word[W], F Element[F], M trace.ModuleBuilder[F, M]] struct {
 	descriptors []vm.Module[W]
 	// set of modules actively being traced
 	modules []M
@@ -120,8 +120,8 @@ type Builder[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]] struct {
 	scratch []F
 }
 
-// NewBuilder initialises a new trace builder from a given program.
-func NewBuilder[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]](program vm.Program[W]) Builder[W, F, M] {
+// Init initialises a new trace builder from a given program.
+func (p Builder[W, F, M]) Init(program vm.Program[W]) Builder[W, F, M] {
 	var (
 		maxWidth uint
 		//
@@ -147,8 +147,8 @@ func NewBuilder[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]](program v
 }
 
 // Build implementation for TraceBuilder interface.
-func (p Builder[W, F, M]) Build() rtrace.Trace[F] {
-	return rtrace.NewArray(p.modules)
+func (p Builder[W, F, M]) Build() trace.Trace[F] {
+	return trace.NewArray(p.modules)
 }
 
 // TraceFunctionLine implementation for the vm.TraceBuilder interface.
@@ -181,14 +181,14 @@ func (p Builder[W, F, M]) TraceMemory(mid uint16, m vm.RuntimeMemory[W], field f
 	}
 }
 
-func initialiseMemory[W Word[W], F Element[F], M rtrace.ModuleBuilder[F, M]](cfg field.Config, memory vm.Memory[W]) M {
+func initialiseMemory[W Word[W], F Element[F], M trace.ModuleBuilder[F, M]](cfg field.Config, memory vm.Memory[W]) M {
 	switch memory.Kind() {
 	case vm.PRIVATE_STATIC_MEMORY, vm.PUBLIC_STATIC_MEMORY:
 		var empty M
 		// ProcessStaticMemory does what is required to represent a static memory within
 		// a trace.  Specifically, static memories do exist in the trace, but only to
 		// ensure alignment of module identifiers.  Hence, they always have an empty trace.
-		return empty.Initialise(memory.Name(), nil)
+		return empty.Initialise(trace.NewModuleDescriptor(memory.Name(), nil))
 	case vm.PRIVATE_READ_ONLY_MEMORY, vm.PUBLIC_READ_ONLY_MEMORY:
 		return initAccessOnceMemory[W, F, M](memory)
 	case vm.PRIVATE_WRITE_ONCE_MEMORY, vm.PUBLIC_WRITE_ONCE_MEMORY:
