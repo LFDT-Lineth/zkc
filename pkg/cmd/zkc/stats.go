@@ -14,11 +14,13 @@ package zkc
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
@@ -27,6 +29,12 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	"golang.org/x/term"
 )
+
+// dnKey identifies one cell of the joint distribution of vanishing constraint
+// degrees and the number of distinct cells they read.
+type dnKey struct {
+	degree, cells uint
+}
 
 // moduleStats captures the summary information gathered for a single module of
 // the generated AIR schema.  Which fields are populated depends on the module
@@ -53,12 +61,11 @@ type moduleStats struct {
 	// i.e. the number of bytecode lines (indices plus the halt value).  Zero for
 	// modules without a program counter.
 	pcMax uint
-	// degrees maps each vanishing-constraint degree to the number of constraints
-	// of that degree.
-	degrees map[uint]uint
-	// dn is a histogram of (degree, nCells) pairs over the module's vanishing
+	// dn is a histogram of (degree, cells) pairs over the module's vanishing
 	// constraints, i.e. the joint distribution behind the complexity measure.
-	dn map[[2]uint]uint
+	// The per-degree histogram used by the main table is its margin (see
+	// degreeHistogram).
+	dn map[dnKey]uint
 	// lookups is the number of lookup constraints.
 	lookups uint
 	// complexity is a cost measure: each constraint weighted by the square of
@@ -137,6 +144,18 @@ func maxKey(stats []moduleStats, sel func(moduleStats) map[uint]uint) uint {
 	return m
 }
 
+// degreeHistogram collapses the joint (degree, cells) distribution onto degrees
+// alone, giving the number of vanishing constraints of each degree.
+func (m moduleStats) degreeHistogram() map[uint]uint {
+	hist := make(map[uint]uint, len(m.dn))
+	//
+	for k, c := range m.dn {
+		hist[k.degree] += c
+	}
+	//
+	return hist
+}
+
 // bucketCount sums the counts in hist whose key falls within bucket b.
 func bucketCount(hist map[uint]uint, b bucket) uint {
 	var n uint
@@ -150,15 +169,31 @@ func bucketCount(hist map[uint]uint, b bucket) uint {
 	return n
 }
 
+// stdoutIsTerminal reports whether stdout is a terminal.  The answer cannot
+// change during a run, so it is resolved once rather than per formatted cell.
+var stdoutIsTerminal = sync.OnceValue(func() bool {
+	return term.IsTerminal(int(os.Stdout.Fd()))
+})
+
 // emphasise renders text in bold, but only when stdout is a terminal: piping
-// the table into a file or pager should not litter it with escape codes.
+// the table into a file or pager should not litter it with escape codes.  The
+// text is emboldened as a whole, so callers must pad it beforehand — padding
+// afterwards would count the escape bytes towards the field width.
 func emphasise(text string) string {
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
+	if !stdoutIsTerminal() {
 		return text
 	}
 	//
 	return termio.BoldAnsiEscape().Build() + text + termio.ResetAnsiEscape().Build()
 }
+
+// Column widths of the degree / cell-count matrix: the row label, each degree
+// column, and the row-total column.
+const (
+	dnLabelWidth = 6
+	dnCellWidth  = 8
+	dnTotalWidth = 10
+)
 
 // printDegreeCellMatrix prints the joint distribution of vanishing constraint
 // degrees and cell counts across all modules, as two side-by-side tables: one
@@ -169,34 +204,28 @@ func emphasise(text string) string {
 // where the constraints are.
 func printDegreeCellMatrix(stats []moduleStats) {
 	var (
-		counts = make(map[[2]uint]uint)
-		cost   = make(map[[2]uint]uint)
-		degs   []uint
-		cells  []uint
+		counts  = make(map[dnKey]uint)
+		cost    = make(map[dnKey]uint)
+		degSeen = make(map[uint]bool)
+		nSeen   = make(map[uint]bool)
 	)
 	//
 	for _, m := range stats {
 		for k, c := range m.dn {
-			d, n := k[0], k[1]
 			counts[k] += c
-			cost[k] += n * d * d * c
+			degSeen[k.degree] = true
+			nSeen[k.cells] = true
 		}
 	}
-	// Collect the degrees and cell counts actually occurring.
-	for k := range counts {
-		if !slices.Contains(degs, k[0]) {
-			degs = append(degs, k[0])
-		}
-		//
-		if !slices.Contains(cells, k[1]) {
-			cells = append(cells, k[1])
-		}
+	// Each cell's complexity is determined by its count, so derive rather than
+	// accumulate it separately.
+	for k, c := range counts {
+		cost[k] = k.cells * k.degree * k.degree * c
 	}
-	//
-	slices.Sort(degs)
-	slices.Sort(cells)
 	//
 	var (
+		degs  = slices.Sorted(maps.Keys(degSeen))
+		cells = slices.Sorted(maps.Keys(nSeen))
 		left  = renderDegreeCellTable("constraint count", degs, cells, counts, false)
 		right = renderDegreeCellTable("share of total complexity (%)", degs, cells, cost, true)
 	)
@@ -213,75 +242,78 @@ func printDegreeCellMatrix(stats []moduleStats) {
 // lines.  Entries are taken from weights; when share is set each is reported as
 // a percentage of the table's grand total rather than as a raw count.  Both
 // tables share a layout so they line up when printed side by side.
-func renderDegreeCellTable(title string, degs, cells []uint, weights map[[2]uint]uint,
+func renderDegreeCellTable(title string, degs, cells []uint, weights map[dnKey]uint,
 	share bool) []string {
 	//
 	var (
 		lines    []string
 		colTotal = make(map[uint]uint)
 		grand    uint
-		width    = 8 + 8*len(degs) + 10
+		width    = dnLabelWidth + 2 + dnCellWidth*len(degs) + dnTotalWidth
 	)
 	// Grand total first, since the shares are relative to it.
 	for _, w := range weights {
 		grand += w
 	}
-	// Format one entry.  Absent (n,d) pairs are left blank so the shape stands
-	// out; in the
-	// share table the body cells below one percent are elided too, and those at
-	// five percent or more are emboldened.  Totals always show their value.
-	entry := func(w uint, total bool) string {
+	// Format one entry to the given width.  An absent (d,n) pair is left blank
+	// so the shape of the distribution stands out.  In the share table, body
+	// cells below one percent are elided too, and those at five percent or more
+	// are emboldened; totals always show their value.  Padding happens before
+	// emboldening, since escape bytes would otherwise count towards the width.
+	entry := func(w uint, cellWidth int, elide bool) string {
 		if w == 0 {
-			return fmt.Sprintf("%8s", "")
+			return fmt.Sprintf("%*s", cellWidth, "")
 		} else if !share {
-			return fmt.Sprintf("%8d", w)
+			return fmt.Sprintf("%*d", cellWidth, w)
 		}
 		//
 		pct := 100.0 * float64(w) / float64(max(grand, 1))
 		//
 		switch {
-		case pct < 1.0 && !total:
-			return fmt.Sprintf("%8s", "_")
+		case elide && pct < 1.0:
+			return fmt.Sprintf("%*s", cellWidth, "_")
 		case pct >= 5.0:
-			return emphasise(fmt.Sprintf("%8.2f", pct))
+			return emphasise(fmt.Sprintf("%*.2f", cellWidth, pct))
 		default:
-			return fmt.Sprintf("%8.2f", pct)
+			return fmt.Sprintf("%*.2f", cellWidth, pct)
 		}
 	}
-	//
-	header := fmt.Sprintf("%6s |", "n\\d")
-	//
-	for _, d := range degs {
-		header += fmt.Sprintf("%8d", d)
-	}
-	//
-	header += fmt.Sprintf("%10s", "total")
-	lines = append(lines, fmt.Sprintf("%-*s", width, title), header, strings.Repeat("-", width))
-	// One row per cell count.
-	for _, n := range cells {
+	// A row of the table: a label, one entry per degree, and the row total.
+	row := func(label string, cell func(d uint) uint, elide bool) string {
 		var (
-			row      = fmt.Sprintf("%6d |", n)
-			rowTotal uint
+			line  = fmt.Sprintf("%*s |", dnLabelWidth, label)
+			total uint
 		)
 		//
 		for _, d := range degs {
-			w := weights[[2]uint{d, n}]
-			rowTotal += w
-			colTotal[d] += w
-			row += entry(w, false)
+			w := cell(d)
+			total += w
+			line += entry(w, dnCellWidth, elide)
 		}
 		//
-		lines = append(lines, row+fmt.Sprintf("%10s", strings.TrimSpace(entry(rowTotal, true))))
+		return line + entry(total, dnTotalWidth, false)
 	}
-	// Column totals.
-	footer := fmt.Sprintf("%6s |", "total")
+	//
+	header := fmt.Sprintf("%*s |", dnLabelWidth, "n\\d")
 	//
 	for _, d := range degs {
-		footer += entry(colTotal[d], true)
+		header += fmt.Sprintf("%*d", dnCellWidth, d)
 	}
 	//
-	footer += fmt.Sprintf("%10s", strings.TrimSpace(entry(grand, true)))
-	lines = append(lines, strings.Repeat("-", width), footer)
+	header += fmt.Sprintf("%*s", dnTotalWidth, "total")
+	lines = append(lines, fmt.Sprintf("%-*s", width, title), header, strings.Repeat("-", width))
+	// One row per cell count, accumulating the column totals as we go.
+	for _, n := range cells {
+		lines = append(lines, row(fmt.Sprintf("%d", n), func(d uint) uint {
+			w := weights[dnKey{d, n}]
+			colTotal[d] += w
+			//
+			return w
+		}, true))
+	}
+	// The totals row is just a row whose cells are the column totals.
+	lines = append(lines, strings.Repeat("-", width),
+		row("total", func(d uint) uint { return colTotal[d] }, false))
 	//
 	return lines
 }
@@ -462,8 +494,7 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 	var stats = moduleStats{
 		name:     mod.Name(),
 		preSplit: make(map[uint]uint),
-		degrees:  make(map[uint]uint),
-		dn:       make(map[[2]uint]uint),
+		dn:       make(map[dnKey]uint),
 		pcMax:    preSplit[mod.Name()].pcMax,
 	}
 	//
@@ -495,8 +526,7 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 			case air.VanishingConstraint[F]:
 				degree := c.Complexity()
 				nCells := numColumns(c)
-				stats.degrees[degree]++
-				stats.dn[[2]uint{degree, nCells}]++
+				stats.dn[dnKey{degree, nCells}]++
 				stats.complexity += nCells * degree * degree
 			case air.LookupConstraint[F]:
 				stats.lookups++
@@ -513,7 +543,10 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 // - A[-1] · (1 - A) = 0 → 2 cols
 // - A     · (1 - B) = 0 → 2 cols
 func numColumns[F field.Element[F]](c air.VanishingConstraint[F]) uint {
-	return uint(len(*c.Unwrap().Constraint.RequiredCells(0, 0)))
+	v := c.Unwrap()
+	// Row zero is an arbitrary base: shifts are relative to it, so the number of
+	// distinct cells does not depend on the choice.
+	return uint(len(*v.Constraint.RequiredCells(0, v.Context)))
 }
 
 // statsColumn describes a single column of the statistics table, including its
@@ -546,7 +579,7 @@ func printAirModuleStats(stats []moduleStats) {
 	// Give the open-ended final buckets an upper bound reflecting the largest
 	// register width / constraint degree actually present.
 	maxWidth := maxKey(stats, func(m moduleStats) map[uint]uint { return m.preSplit })
-	maxDegree := maxKey(stats, func(m moduleStats) map[uint]uint { return m.degrees })
+	maxDegree := maxKey(stats, moduleStats.degreeHistogram)
 	regBuckets := closeFinalBucket(registerBuckets, "u", maxWidth)
 	degBuckets := closeFinalBucket(degreeBuckets, "d", maxDegree)
 	// Module name and type (left-aligned).
@@ -584,7 +617,7 @@ func printAirModuleStats(stats []moduleStats) {
 	for _, b := range degBuckets {
 		b := b
 		cols = append(cols, regularColumn(stats, "Vanishing constraints (by degree)", b.label,
-			func(m moduleStats) uint { return bucketCount(m.degrees, b) }))
+			func(m moduleStats) uint { return bucketCount(m.degreeHistogram(), b) }))
 	}
 	// Lookups, complexity (regular modules only).
 	cols = append(cols, dataColumn(stats, "", "lookups", "", false,
