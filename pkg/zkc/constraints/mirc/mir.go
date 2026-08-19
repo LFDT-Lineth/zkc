@@ -43,12 +43,11 @@ func (p MirModule[F]) NewAssignment(assignment schema.Assignment[F]) {
 
 // NewColumn constructs a new column of the given name and bitwidth within
 // this module.
-func (p MirModule[F]) NewColumn(kind register.Type, name string, bitwidth uint, padding big.Int,
-) register.Id {
+func (p MirModule[F]) NewColumn(kind register.Type, name string, bitwidth uint) register.Id {
 	//
 	var (
 		// Add new register
-		rid = p.Module.NewRegister(register.New(kind, name, bitwidth, padding))
+		rid = p.Module.NewRegister(register.New(kind, name, bitwidth))
 	)
 	//
 	// Add corresponding range constraint to enforce bitwidth

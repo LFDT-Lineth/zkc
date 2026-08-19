@@ -14,7 +14,6 @@ package constraints
 
 import (
 	"fmt"
-	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
@@ -135,7 +134,6 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 	rangeTables map[uint]rangeTable, maxStaticWidth uint) (mod mir.Module[F]) {
 	var (
 		memoryModule *schema.Table[F, mir.Constraint[F]]
-		padding      big.Int
 		regs         = toRegisters(m.Registers())
 	)
 
@@ -148,7 +146,7 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 	memoryModule.AddRegisters(regs...)
 
 	var access = register.NewId(memoryModule.Width())
-	memoryModule.AddRegisters(register.NewComputed(tracer.ACCESS_BIT_NAME, 1, padding))
+	memoryModule.AddRegisters(register.NewComputed(tracer.ACCESS_BIT_NAME, 1))
 
 	var (
 		addrRegs           = toRegisters(m.AddressRegisters())
@@ -195,7 +193,7 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 
 	if isMultiLineAddress {
 		constraints = append(constraints,
-			multiLineAddressConstraints(ctx, memoryModule, addrRegs, prevAccess, currAccess, zero, one, padding)...)
+			multiLineAddressConstraints(ctx, memoryModule, addrRegs, prevAccess, currAccess, zero, one)...)
 	} else {
 		constraints = append(constraints,
 			singleLineAddressConstraints(ctx, addrRegs, currAccess, nextAccess, zero, one)...)
@@ -246,8 +244,7 @@ func singleLineAddressConstraints[F field.Element[F]](
 //   - [b]ADDRESS[i-1] = max, [b]ADDRESS[i] = 0    for k < b < L    (roll over)
 func multiLineAddressConstraints[F field.Element[F]](
 	ctx schema.ModuleId, memoryModule *schema.Table[F, mir.Constraint[F]], addrRegs []register.Register,
-	prevAccess, currAccess, zero, one Expr[F], padding big.Int,
-) []mir.Constraint[F] {
+	prevAccess, currAccess, zero, one Expr[F]) []mir.Constraint[F] {
 	var (
 		L            = len(addrRegs)
 		prevAddrRegs = make([]Expr[F], L)
@@ -266,7 +263,7 @@ func multiLineAddressConstraints[F field.Element[F]](
 	)
 	for k := range L {
 		atFlag := register.NewId(memoryModule.Width())
-		memoryModule.AddRegisters(register.NewComputed(tracer.AtFlagName(uint(k)), 1, padding))
+		memoryModule.AddRegisters(register.NewComputed(tracer.AtFlagName(uint(k)), 1))
 		atFlagVars[k] = mirc.Variable[register.Id, Expr[F]](atFlag, 1, 0)
 		addrLimbMaxValues[k] = mirc.BigNumber[register.Id, Expr[F]](addrRegs[k].MaxValue())
 	}
@@ -326,7 +323,6 @@ func multiLineAddressConstraints[F field.Element[F]](
 func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn *vm.Function[W],
 	infos []vm.Module[W], rangeTables map[uint]rangeTable, field field.Config, maxStaticWidth uint) mir.Module[F] {
 	var (
-		padding big.Int
 		mod     *schema.Table[F, mir.Constraint[F]]
 		name    = fn.Name()
 		regs    = toRegisters(fn.Registers())
@@ -356,14 +352,14 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 		)
 
 		// Create return line
-		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1))
 		// Create program counter
-		mod.AddRegisters(register.NewComputed(tracer.PC_NAME, fn.PcWidth(), padding))
+		mod.AddRegisters(register.NewComputed(tracer.PC_NAME, fn.PcWidth()))
 		// Add IS_PC_<k> program counter selectors (one per code line)
 		pcSelectors = make([]register.Id, len(fn.Vectors()))
 		for c := range pcSelectors {
 			pcSelectors[c] = register.NewId(mod.Width())
-			mod.AddRegisters(register.NewComputed(tracer.SelectorName(uint(c)), 1, padding))
+			mod.AddRegisters(register.NewComputed(tracer.SelectorName(uint(c)), 1))
 		}
 		// Initialise multi-line framing
 		framing, constraints = initMultiLineFraming[F](ctx, pc, ret, pcSelectors, regs, len(fn.Vectors()))
@@ -372,7 +368,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 	} else {
 		framing = mirc.NewAtomicFraming[register.Id, Expr[F]]()
 
-		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1))
 	}
 	// Translate all bytecode vectors
 	for pc, vec := range fn.Vectors() {

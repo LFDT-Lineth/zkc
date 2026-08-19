@@ -13,7 +13,7 @@
 package trace
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -36,22 +36,22 @@ func initAccessOnceMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](m vm.M
 		// Number of address lines
 		nAddressLines = m.NumInputs()
 		// Copy over all address / data lines
-		regs = array.Map(m.Registers(), toRtraceRegister)
+		regs = array.Map(m.Registers(), toTraceRegister)
 		// Bitwidth for binary selector lines
 		u1 = util.Some[uint](1)
 	)
 	// Add access bit for distinguishing padding rows.
-	regs = append(regs, rtrace.NewColumnDescriptor(ACCESS_BIT_NAME, u1))
+	regs = append(regs, trace.NewColumnDescriptor(ACCESS_BIT_NAME, u1))
 	// For multi-lane memory, add one selector bit for each lane
 	if nAddressLines > 1 {
 		// Only add address selector lines if there is more than one address
 		// line.
 		for k := range nAddressLines {
-			regs = append(regs, rtrace.NewColumnDescriptor(AtFlagName(k), u1))
+			regs = append(regs, trace.NewColumnDescriptor(AtFlagName(k), u1))
 		}
 	}
 	// ROM/WOM are always replicated
-	descriptor := rtrace.NewModuleDescriptor(m.Name(), regs).
+	descriptor := trace.NewModuleDescriptor(m.Name(), regs).
 		WithReplication(true)
 	//
 	return module.Initialise(descriptor)

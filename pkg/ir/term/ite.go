@@ -110,7 +110,7 @@ func (p *Ite[F, S]) Negate() S {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Ite[F, T]) TestAt(k int, tr trace.Module[F], sc register.Map) (bool, uint, error) {
+func (p *Ite[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, uint, error) {
 	// Evaluate condition
 	cond, branch, err := p.Condition.TestAt(k, tr, sc)
 	//

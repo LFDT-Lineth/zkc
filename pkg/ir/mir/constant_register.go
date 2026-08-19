@@ -19,7 +19,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // InitialiseConstantRegisters initialises any constant registers declared
@@ -46,14 +45,14 @@ func InitialiseConstantRegisters[F Element[F]](offset uint, modules []Module[F])
 func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.Id, module Module[F]) {
 	var (
 		reg = module.Register(rid)
-		val = field.Uint64[word.BigEndian](uint64(reg.ConstValue()))
+		val = field.Uint64[F](uint64(reg.ConstValue()))
 	)
 	// Construct computation
-	computation := term.NewComputation[word.BigEndian, LogicalTerm[word.BigEndian]](
-		term.Const[word.BigEndian, Term[word.BigEndian]](val))
+	computation := term.NewComputation[F, LogicalTerm[F]](
+		term.Const[F, Term[F]](val))
 	// Add assignment for filling said computed column
 	module.AddAssignments(
-		assignment.NewComputedRegister[F](computation, mid, rid))
+		assignment.NewComputedRegister[F](rid, computation, mid))
 	// add constraint
 	module.AddConstraints(
 		NewVanishingConstraint(val.String(), mid, util.None[int](),

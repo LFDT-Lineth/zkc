@@ -141,10 +141,9 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
 	rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
 	//
 	var (
-		mod     *schema.Table[F, mir.Constraint[F]]
-		regs    = toRegisters(m.Registers())
-		layout  = computeRamLayout(m, field)
-		padding big.Int
+		mod    *schema.Table[F, mir.Constraint[F]]
+		regs   = toRegisters(m.Registers())
+		layout = computeRamLayout(m, field)
 	)
 	// Initialise module.  AllowPadding is true so a leading padding row exists
 	// (EXEC == FINL == 0 there).  A read-write memory is internal state: it is
@@ -153,20 +152,20 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
 	mod.AddRegisters(regs...)
 	// Append the synthetic columns, in the order fixed by computeRamLayout.
 	mod.AddRegisters(
-		register.NewComputed(tracer.RAM_EXEC_NAME, 1, padding),
-		register.NewComputed(tracer.RAM_FINL_NAME, 1, padding),
-		register.NewComputed(tracer.RAM_IS_WRITE_NAME, 1, padding),
+		register.NewComputed(tracer.RAM_EXEC_NAME, 1),
+		register.NewComputed(tracer.RAM_FINL_NAME, 1),
+		register.NewComputed(tracer.RAM_IS_WRITE_NAME, 1),
 	)
-	addLimbRegisters(mod, tracer.RAM_VALUE_READ_PREFIX, layout.dataWidths, padding)
-	addLimbRegisters(mod, tracer.RAM_TS_WRITTEN_PREFIX, layout.tsWidths, padding)
-	addLimbRegisters(mod, tracer.RAM_TS_READ_PREFIX, layout.tsWidths, padding)
-	addLimbRegisters(mod, tracer.RAM_TS_DELTA_PREFIX, layout.tsWidths, padding)
-	addLimbRegisters(mod, tracer.RAM_ADDR_DELTA_PREFIX, layout.addrWidths, padding)
-	addCarryRegisters(mod, tracer.RAM_TS_CARRY_PREFIX, len(layout.tsCarry), padding)
-	addCarryRegisters(mod, tracer.RAM_ADDR_CARRY_PREFIX, len(layout.addrCarry), padding)
+	addLimbRegisters(mod, tracer.RAM_VALUE_READ_PREFIX, layout.dataWidths)
+	addLimbRegisters(mod, tracer.RAM_TS_WRITTEN_PREFIX, layout.tsWidths)
+	addLimbRegisters(mod, tracer.RAM_TS_READ_PREFIX, layout.tsWidths)
+	addLimbRegisters(mod, tracer.RAM_TS_DELTA_PREFIX, layout.tsWidths)
+	addLimbRegisters(mod, tracer.RAM_ADDR_DELTA_PREFIX, layout.addrWidths)
+	addCarryRegisters(mod, tracer.RAM_TS_CARRY_PREFIX, len(layout.tsCarry))
+	addCarryRegisters(mod, tracer.RAM_ADDR_CARRY_PREFIX, len(layout.addrCarry))
 	mod.AddRegisters(
-		register.NewComputed(tracer.RAM_EXEC_WRITE_NAME, 1, padding),
-		register.NewComputed(tracer.RAM_EXEC_READ_NAME, 1, padding),
+		register.NewComputed(tracer.RAM_EXEC_WRITE_NAME, 1),
+		register.NewComputed(tracer.RAM_EXEC_READ_NAME, 1),
 	)
 	// Local (per-row) consistency constraints.
 	mod.AddConstraints(ramGeneralConstraints[F](ctx, layout)...)
@@ -265,10 +264,10 @@ func widthsOf[W vm.Word[W]](regs []vm.Register[W]) []uint {
 // addLimbRegisters appends one computed register per given limb width, named
 // "<prefix><k>".
 func addLimbRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
-	prefix string, widths []uint, padding big.Int) {
+	prefix string, widths []uint) {
 	//
 	for k, w := range widths {
-		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), w, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), w))
 	}
 }
 
@@ -276,10 +275,10 @@ func addLimbRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]
 // "<prefix><k>".  A carry out of a two-operand limb addition is always in {0,1},
 // so one bit suffices.
 func addCarryRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
-	prefix string, n int, padding big.Int) {
+	prefix string, n int) {
 	//
 	for k := 0; k < n; k++ {
-		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), 1, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), 1))
 	}
 }
 

@@ -62,7 +62,7 @@ func (p *Mul[F, T]) ApplyShift(shift int) T {
 func (p *Mul[F, T]) Bounds() util.Bounds { return util.BoundsForArray(p.Args) }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Mul[F, T]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *Mul[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
 	// Evaluate first argument
 	val, err := p.Args[0].EvalAt(k, tr, sc)
 	// Continue evaluating the rest

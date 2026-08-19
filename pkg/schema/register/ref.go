@@ -48,17 +48,6 @@ func (p *Refs) Registers() []Id {
 	return p.regs
 }
 
-// Apply a given mapping to this set of registers.
-func (p *Refs) Apply(mapping LimbsMap) Refs {
-	var nids []Id
-
-	for _, ith := range p.regs {
-		nids = append(nids, mapping.LimbIds(ith)...)
-	}
-
-	return NewRefs(p.mid, nids...)
-}
-
 // AsRefArray converts a register refs array into an array of register ref.
 func AsRefArray(p Refs) []Ref {
 	var nrefs = make([]Ref, len(p.regs))

@@ -10,16 +10,39 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package narray
+package array
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
+
+// Alloc allocates a new array suitable for holding elements upto the given
+// bitwidth, and initialises it with default values upto the given height.
+func Alloc[F word.Word[F]](bitwidth uint, height uint) MutArray[F] {
+	var zero F
+	// Construct column
+	switch {
+	case bitwidth == 0:
+		return NewConstantArray(height, 0, zero)
+	case bitwidth == 1:
+		return NewBitArray[F](height)
+	case bitwidth <= 8:
+		return NewSmallArray[uint8, F](height, bitwidth)
+	case bitwidth <= 16:
+		return NewSmallArray[uint16, F](height, bitwidth)
+	case bitwidth <= 32:
+		return NewSmallArray[uint32, F](height, bitwidth)
+	case bitwidth <= 64:
+		return NewSmallArray[uint64, F](height, bitwidth)
+	default:
+		return NewStaticArray[F](height, bitwidth)
+	}
+}
 
 // AppendOnto attempts to efficiently append the contents of the right array
 // onto the left array.  This currently assumes that the type and bitwidth of
 // the two arrays matches exactly, and will panic otherwise.
-func AppendOnto[F field.Element[F]](left MutArray[F], right Array[F]) {
+func AppendOnto[F word.Word[F]](left MutArray[F], right Array[F]) {
 	switch left := left.(type) {
 	case *ConstantArray[F]:
 		var right = right.(*ConstantArray[F])

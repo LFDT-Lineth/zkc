@@ -26,7 +26,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -65,7 +64,7 @@ var traceCmds = []FieldAgnosticCmd{
 
 func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	var (
-		traces []trace.Trace[F]
+		traces []tr.Trace[F]
 		cfg    TraceConfig
 		err    error
 	)
@@ -118,7 +117,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 		traces = ReadBatchedTraceFile[F](args[0])
 	} else {
 		// unbatched (i.e. normal) mode
-		traces = []trace.Trace[F]{ReadTraceFile[F](args[0])}
+		traces = []tr.Trace[F]{ReadTraceFile[F](args[0])}
 	}
 	//
 	if builder.Expanding() && !stack.HasConcreteSchema() {
@@ -214,7 +213,7 @@ func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]
 	})
 }
 
-func expandLtTraces[F field.Element[F]](traceFiles []trace.Trace[F], stack cmd_util.SchemaStack[F],
+func expandLtTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.SchemaStack[F],
 	bldr ir.TraceBuilder[F]) ([]tr.Trace[F], []error) {
 	//
 	var (
@@ -233,13 +232,13 @@ func expandLtTraces[F field.Element[F]](traceFiles []trace.Trace[F], stack cmd_u
 	return traces, errors
 }
 
-func expandTrace[F field.Element[F]](tf trace.Trace[F], stack cmd_util.SchemaStack[F], bldr ir.TraceBuilder[F],
+func expandTrace[F field.Element[F]](tf tr.Trace[F], stack cmd_util.SchemaStack[F], bldr ir.TraceBuilder[F],
 ) (tr.Trace[F], []error) {
 	//
 	var (
 		tb_errors []error
 		tp_errors []error
-		tr        trace.Trace[F]
+		tr        tr.Trace[F]
 	)
 	// Construct expanded trace
 	tr, tb_errors = bldr.Build(stack.ConcreteSchema(), tf)

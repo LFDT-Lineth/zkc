@@ -20,7 +20,6 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -99,7 +98,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	input := filterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
 	// Always trace (no fast mode).  The raw (row-major) trace is retained for
 	// statistics, since it carries the original register/limb structure.
-	outputs, rtr, trace, errors := binfile.Trace(input, traceConfig)
+	outputs, trace, errors := binfile.Trace(input, traceConfig)
 	// =====================================================
 	// Generate output
 	// =====================================================
@@ -110,8 +109,8 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// print trace statistics (if requested).  Only meaningful when a trace was
 	// actually generated (i.e. no execution errors).
 	if stats && len(errors) == 0 {
-		printTraceStats(rtr)
-		printModuleStats(rtr)
+		printTraceStats(trace)
+		printModuleStats(trace)
 	}
 	// write out trace (if requested)
 	if outputFile != "" {
@@ -121,7 +120,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// =====================================================
 	// Check Constraints
 	// =====================================================
-	if check && rtr != nil {
+	if check && trace != nil {
 		checkConstraints(binfile, trace, traceConfig)
 	}
 	// =====================================================
@@ -129,7 +128,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// =====================================================
 	// Open the generated trace in the interactive inspector (if requested).  This
 	// takes over the terminal, so it runs last, after any stdout output above.
-	if inspect && rtr != nil {
+	if inspect && trace != nil {
 		// Real ZkC functions are public; synthetic modules (e.g. range-check
 		// tables) are private (hidden by default in the inspector).
 		errors = corset.InspectTrace(binfile.LimbsMap(), trace, publicModule, false, 32, 128)
@@ -206,7 +205,7 @@ const (
 // traced cells (both human-readable and raw) plus a breakdown of columns by
 // bit-width.  Columns backed by field elements (i.e. native registers, which
 // have no fixed bit-width) are reported separately.
-func printTraceStats[F field.Element[F]](rtr rtrace.Trace[F]) {
+func printTraceStats[F field.Element[F]](rtr trace.Trace[F]) {
 	var (
 		cells  uint
 		counts = make([]uint, len(traceStatBuckets))
@@ -281,7 +280,7 @@ var moduleStatTitles = []string{"columns", "lines", "bitwidth", "cells", "nonzer
 // the column count, line (row) count, total bit-width, total cells, non-zero
 // cells and total bytes.  Native (field-element) limbs, which have no fixed
 // bit-width, are excluded from the bit-width and byte totals.
-func printModuleStats[F field.Element[F]](rtr rtrace.Trace[F]) {
+func printModuleStats[F field.Element[F]](rtr trace.Trace[F]) {
 	var (
 		n   = rtr.Width()
 		tbl = termio.NewFormattedTable(uint(len(moduleStatTitles))+1, n+1)
