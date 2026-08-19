@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
@@ -43,19 +44,21 @@ const stampWidth uint = 32
 //   - gives every access a distinct timestamp: the k-th access executed
 //     carries stamp_in + k, recorded in the access's Stamp operand.
 //
-// The threading is version-based, a variation of SSA form: rather than
-// incrementing a working register once per access (which would conflict when
-// one row performs several accesses), the transform tracks which register
-// version holds the current stamp together with a constant offset.  An access
-// at offset zero consumes its base register directly; a later access on the
-// same row consumes a fresh temporary "t = base + off".  The canonical stamp
-// register (M$stamp_out, or a fresh computed register in main) is written at
-// most once per executed path through a row.  In particular the common
-// one-line function
+// The threading is version-based, following SSA form (see #2099): within one
+// row, the k-th movement (access or effectful call) executed on a path
+// advances the stamp from version k-1 to version k, and each version names
+// one register — version zero the row's entry register, the LARGEST version
+// live at an exit the canonical stamp register (M$stamp_out, or a fresh
+// computed register in main), every other version a fresh temporary.  Paths
+// meeting with different versions are equalised by copies into the largest
+// incoming version's register, placed on the deficient paths only.  The
+// canonical register is thereby written at most once per executed path
+// through a row.  In particular the common one-line function
 //
 //	fn f<ram>(x:u16) -> (r:u8) { r = ram[x] }
 //
-// costs exactly one added instruction:
+// costs exactly one added instruction (the advance past its single access is
+// the exit's largest version, so it targets the canonical register directly):
 //
 //	read r = ram[ram$stamp; x]
 //	add ram$stamp_out = ram$stamp + 1
@@ -94,28 +97,26 @@ func ThreadTimestamps[W word.Word[W]](program descriptor.Program[W]) descriptor.
 	return descriptor.NewProgram(program.Field(), program.MaxStaticHeight(), out...)
 }
 
-// stampState records, concretely, where the current timestamp of one memory
-// lives at a given program point: its value is base + off.  An empty base
-// means the literal value off (the entry state of "main", which counts from
-// one).  This is the currency of the rewrite sweep; the analysis works on its
-// symbolic counterpart, stampValue.
-type stampState struct {
-	base util.Option[bytecode.RegisterId]
-	off  uint64
+// stampLoc records where a stamp value concretely lives: a register, or —
+// when reg is empty — the literal constant off (the entry state of "main",
+// which counts from one).
+type stampLoc struct {
+	reg util.Option[bytecode.RegisterId]
+	off uint64
 }
 
-// equals reports whether two states denote the same value.
-func (s stampState) equals(o stampState) bool {
-	return s.base == o.base && s.off == o.off
+// is reports whether this location is exactly the given register.
+func (s stampLoc) is(reg bytecode.RegisterId) bool {
+	return s.reg == util.Some(reg)
 }
 
-// stampKey identifies one concrete register allocated by the rewrite sweep for
-// a position-tagged base: the temporary receiving a call's updated stamp, a
-// normalisation temporary, or a merge register.
+// stampKey identifies one version of one effect's stamp within the current
+// row, for the version -> register binding.
 type stampKey struct {
-	effect descriptor.ModuleId
-	// base is the defining stampValue, at offset zero.
-	base stampValue
+	// effect indexes the threader's effects.
+	effect int
+	// v is the version number.
+	v uint
 }
 
 // threader carries the per-function context of the threading.
@@ -129,11 +130,23 @@ type threader[W word.Word[W]] struct {
 	// canonical maps each effect to its canonical stamp register: the
 	// stamp-out output or, for main, a lazily-allocated computed register.
 	// Every row except the entry row is entered with the current stamp held
-	// there, at offset zero.
+	// there.
 	canonical map[descriptor.ModuleId]bytecode.RegisterId
-	// temps maps each position-tagged base created by the analysis to the
-	// register the rewrite sweep allocated for it (see resolve).
-	temps  map[stampKey]bytecode.RegisterId
+	// regs binds each (effect, version) of the current row to its register:
+	// version zero is prebound to the row's entry register, the largest exit
+	// version binds to the canonical register, and every other version gets a
+	// fresh temporary on first use (see getReg).  Reset per row.
+	regs map[stampKey]bytecode.RegisterId
+	// used records the versions whose value the rewrite actually consumed
+	// (via resolveLoc); the bump defining an unconsumed version — e.g. the
+	// advance past the last access before a fail — is retracted before the
+	// row is rebuilt.  Reset per row.
+	used map[stampKey]bool
+	// kmax records, per effect, the largest version live at any exit of the
+	// current row; that version's register is the canonical register, so the
+	// final movement before an exit advances the stamp directly into it.
+	// Reset per row.
+	kmax   []uint
 	isMain bool
 }
 
@@ -147,7 +160,6 @@ func threadFunction[W word.Word[W]](mods []descriptor.Module[W], fn *descriptor.
 		effects:   effects,
 		stampIn:   map[descriptor.ModuleId]bytecode.RegisterId{},
 		canonical: map[descriptor.ModuleId]bytecode.RegisterId{},
-		temps:     map[stampKey]bytecode.RegisterId{},
 		isMain:    fn.Name() == "main",
 	}
 	//
@@ -155,21 +167,17 @@ func threadFunction[W word.Word[W]](mods []descriptor.Module[W], fn *descriptor.
 	// Initial symbolic state of each effect's stamp: the stamp-in register
 	// or, for main, the literal ONE (timestamp zero is reserved for the
 	// initial state of an untouched cell).
-	entry := make([]stampValue, len(effects))
+	entry := make([]stampVersion, len(effects))
 	//
-	for x, e := range effects {
-		if t.isMain {
-			entry[x] = stampValue{kind: stampLiteral, off: 1}
-		} else {
-			entry[x] = stampValue{kind: stampInput, reg: t.stampIn[e]}
-		}
+	for x := range effects {
+		entry[x] = stampVersion{lit: t.isMain}
 	}
 	//
 	nvecs = t.seedEntryRow(nvecs, entry)
 	// Thread each row.  Every row after the first is entered with canonical
 	// stamps (each row materialises them at its exits).
 	for vi := range nvecs {
-		vals := make([]stampValue, len(effects))
+		vals := make([]stampVersion, len(effects))
 		//
 		if vi == 0 {
 			copy(vals, entry)
@@ -179,7 +187,7 @@ func threadFunction[W word.Word[W]](mods []descriptor.Module[W], fn *descriptor.
 				// where it is allocated on first use) it precedes the row's
 				// temporaries in the register order.
 				_ = t.getCanonical(e)
-				vals[x] = stampValue{kind: stampCanonical}
+				vals[x] = stampVersion{canon: true}
 			}
 		}
 		//
@@ -282,7 +290,7 @@ func (t *threader[W]) buildFunctionMapping(fn *descriptor.Function[W]) []bytecod
 // every jump target shifted by one, and the entry state (updated in place)
 // becomes the canonical stamps.  Rows whose entry is not a jump target are
 // returned unchanged.
-func (t *threader[W]) seedEntryRow(nvecs []BytecodeVector[W], entry []stampValue) []BytecodeVector[W] {
+func (t *threader[W]) seedEntryRow(nvecs []BytecodeVector[W], entry []stampVersion) []BytecodeVector[W] {
 	if !jumpTargets(nvecs).Contains(0) {
 		return nvecs
 	}
@@ -290,8 +298,14 @@ func (t *threader[W]) seedEntryRow(nvecs []BytecodeVector[W], entry []stampValue
 	var seed []Bytecode[W]
 	//
 	for x, e := range t.effects {
-		seed = append(seed, t.materialise(t.resolve(x, entry[x]), t.getCanonical(e)))
-		entry[x] = stampValue{kind: stampCanonical}
+		loc := stampLoc{off: 1}
+		//
+		if !t.isMain {
+			loc = stampLoc{reg: util.Some(t.stampIn[e])}
+		}
+		//
+		seed = append(seed, t.materialise(loc, t.getCanonical(e)))
+		entry[x] = stampVersion{canon: true}
 	}
 	//
 	nvecs = append([]BytecodeVector[W]{bytecode.NewVector(seed...)}, nvecs...)
@@ -323,78 +337,100 @@ func (t *threader[W]) getCanonical(e descriptor.ModuleId) bytecode.RegisterId {
 	return r
 }
 
-// resolve maps the symbolic stamp value of the x-th effect onto the concrete
-// state used by the rewrite sweep.  Position-tagged bases resolve to the
-// registers recorded when the sweep passed their defining position, which the
-// forward sweep order guarantees has already happened.
-func (t *threader[W]) resolve(x int, v stampValue) stampState {
-	switch v.kind {
-	case stampLiteral:
-		return stampState{util.None[bytecode.RegisterId](), v.off}
-	case stampInput:
-		return stampState{util.Some(v.reg), v.off}
-	case stampCanonical:
-		return stampState{util.Some(t.getCanonical(t.effects[x])), v.off}
-	case stampCallOut, stampNorm, stampMerge:
-		base := v
-		base.off = 0
-		//
-		reg, ok := t.temps[stampKey{t.effects[x], base}]
-		if !ok {
-			panic("unresolved stamp temporary")
-		}
-		//
-		return stampState{util.Some(reg), v.off}
+// getReg returns the register bound to the given version of the x-th effect's
+// stamp: the canonical register for the largest exit version of the row, a
+// fresh temporary otherwise (version zero is prebound by beginRow).
+func (t *threader[W]) getReg(x int, v uint) bytecode.RegisterId {
+	key := stampKey{x, v}
+	//
+	if r, ok := t.regs[key]; ok {
+		return r
+	}
+	//
+	var r bytecode.RegisterId
+	//
+	if v == t.kmax[x] && v > 0 {
+		r = t.getCanonical(t.effects[x])
+	} else {
+		r = t.alloc.Allocate("stamp", util.Some(stampWidth))
+	}
+	//
+	t.regs[key] = r
+	//
+	return r
+}
+
+// resolveLoc maps the symbolic stamp value of the x-th effect onto its
+// concrete location, recording the consumption of its version (which keeps
+// the bump defining it alive, see retractBumps).
+func (t *threader[W]) resolveLoc(x int, v stampVersion) stampLoc {
+	switch {
+	case v.canon:
+		return stampLoc{reg: util.Some(t.getCanonical(t.effects[x]))}
+	case v.lit:
+		return stampLoc{off: uint64(v.v) + 1}
 	default:
-		panic("cannot resolve a conflicted stamp")
+		t.used[stampKey{x, v.v}] = true
+		//
+		return stampLoc{reg: util.Some(t.getReg(x, v.v))}
 	}
 }
 
-// materialise returns an instruction storing the given stamp value into the
+// materialise returns an instruction storing the given stamp location into the
 // given register.
-func (t *threader[W]) materialise(s stampState, target bytecode.RegisterId) Bytecode[W] {
+func (t *threader[W]) materialise(s stampLoc, target bytecode.RegisterId) Bytecode[W] {
+	if s.reg.HasValue() {
+		return bytecode.Assign[W](target, s.reg.Unwrap())
+	}
+	//
 	var constant W
 	//
 	constant = constant.SetUint64(s.off)
 	//
-	switch {
-	case s.base.IsEmpty():
-		return bytecode.LoadConst(target, constant)
-	case s.off == 0:
-		return bytecode.Assign[W](target, s.base.Unwrap())
-	default:
-		return bytecode.AddConst(target, []bytecode.RegisterId{s.base.Unwrap()}, constant)
-	}
+	return bytecode.LoadConst(target, constant)
 }
 
-// stampRegister returns a register holding the given stamp value, together
-// with the (possibly empty) instructions computing it: the base register
-// itself when the offset is zero, and a fresh temporary otherwise.
-func (t *threader[W]) stampRegister(s stampState) (bytecode.RegisterId, []Bytecode[W]) {
-	if s.base.HasValue() && s.off == 0 {
-		return s.base.Unwrap(), nil
+// stampOperand returns a register holding the given stamp value, together
+// with the (possibly empty) instructions computing it: the version's register
+// directly, or — for a literal — a fresh temporary loaded with the constant.
+// The caller places the returned instructions in the position's preEdge
+// segment, which executes on every path reaching it (a constant is
+// path-independent, so this is sound even at a merge point).
+func (t *threader[W]) stampOperand(x int, v stampVersion) (bytecode.RegisterId, []Bytecode[W]) {
+	loc := t.resolveLoc(x, v)
+	//
+	if loc.reg.HasValue() {
+		return loc.reg.Unwrap(), nil
 	}
 	//
 	tmp := t.alloc.Allocate("stamp", util.Some(stampWidth))
 	//
-	return tmp, []Bytecode[W]{t.materialise(s, tmp)}
+	return tmp, []Bytecode[W]{t.materialise(loc, tmp)}
 }
 
 // rowInserts collects the instructions materialised around one original
-// instruction position.  The rebuilt layout is [fall..., (skip over edge)?,
-// edge..., preEdge..., instruction]: ordinary skips landing here land at the
-// start of preEdge, retargeted conditional skips at the start of edge, and a
-// live fall-through path runs fall and then jumps over the edge block.
+// instruction position.  The rebuilt layout is [bumps..., fall..., (skip over
+// edge)?, edge..., preEdge..., instruction]: ordinary skips landing here land
+// at the start of preEdge, retargeted conditional skips at the start of edge,
+// and a live fall-through path runs bumps and fall and then jumps over the
+// edge block.
 type rowInserts[W word.Word[W]] struct {
+	// bumps holds the version-advancing additions of a movement at the
+	// previous position (which necessarily falls through to this one); kept
+	// separate from fall so that an unconsumed version's bump can be
+	// retracted (see retractBumps).
+	bumps []Bytecode[W]
+	// bumpKeys identifies, in step with bumps, the version each bump defines.
+	bumpKeys []stampKey
 	// fall executes on the fall-through path only.
 	fall []Bytecode[W]
 	// edge is the edge block: retargeted conditional skip edges land at its
 	// start.
 	edge []Bytecode[W]
-	// preEdge executes on EVERY path reaching this position.  Used when the
-	// position's (single, already merged) state must be materialised for an
-	// outgoing skip edge: arrivals landing here directly would miss a
-	// fall-only insertion.
+	// preEdge executes on EVERY path reaching this position.  Used for the
+	// (path-independent) literal materialisations feeding an instruction's
+	// stamp operand: arrivals landing here directly would miss a fall-only
+	// insertion.
 	preEdge []Bytecode[W]
 	// skipOver indicates a live fall-through path enters this position, which
 	// must then jump over the edge block.
@@ -405,14 +441,16 @@ type rowInserts[W word.Word[W]] struct {
 }
 
 // threadVector rewrites one row in two phases.  First, a forward dataflow
-// analysis (analyseStamps) computes the symbolic stamp state entering every
+// analysis (analyseStamps) computes the stamp version entering every
 // position, together with the state carried along every control-flow arc.
 // Then a rewrite sweep walks the row once more: it equalises the incoming
 // paths at each merge point (mergeAt), assigns every read-write memory access
-// its stamp operand, threads calls to effectful callees, and materialises the
-// canonical stamp registers at every exit (return, jump, or fall-through into
-// the next row) — resolving the analysis's position-tagged bases onto the
-// registers it allocates along the way.
+// its stamp operand and advances the version (the bump), threads calls to
+// effectful callees, and materialises the canonical stamp registers at every
+// exit (return, jump, or fall-through into the next row).  Versions bind to
+// registers by construction — entry register, canonical register, or fresh
+// temporary — so nothing is left to resolve after the sweep, beyond
+// retracting the bumps of unconsumed versions.
 func (t *threader[W]) threadVector(vec BytecodeVector[W], entry stamps) BytecodeVector[W] {
 	var (
 		insns = vec.Bytecodes
@@ -425,6 +463,8 @@ func (t *threader[W]) threadVector(vec BytecodeVector[W], entry stamps) Bytecode
 	)
 	//
 	result, incoming, lands := t.analyseStamps(insns, entry)
+	//
+	t.beginRow(insns, result, entry)
 	//
 	at := func(i int) *rowInserts[W] {
 		if inserts[i] == nil {
@@ -441,8 +481,8 @@ func (t *threader[W]) threadVector(vec BytecodeVector[W], entry stamps) Bytecode
 			continue
 		}
 		// Equalise the incoming paths at a merge point.
-		states, need := t.normaliseEntry(i, st, lands[i], t.isExitAt(insns, i))
-		t.mergeAt(i, states, need, incoming[i], at)
+		states := t.normaliseEntry(st, lands[i], t.isExitAt(insns, i))
+		t.mergeAt(i, states, incoming[i], at)
 		//
 		if i == n {
 			// A path reaching the end of the row falls into the next row,
@@ -454,29 +494,96 @@ func (t *threader[W]) threadVector(vec BytecodeVector[W], entry stamps) Bytecode
 		//
 		t.threadInstruction(insns, i, states, at, replace)
 	}
+	//
+	t.retractBumps(inserts)
 	// Rebuild the row, recomputing intra-row skip amounts around insertions.
 	return rebuildVector(insns, inserts, replace)
 }
 
+// beginRow resets the per-row threading state: the version -> register
+// binding (version zero prebound to the row's entry register, when that is a
+// plain register) and, per effect, the largest version live at any exit —
+// whose register is the canonical stamp, so the final movement before an exit
+// advances the stamp directly into it.
+func (t *threader[W]) beginRow(insns []Bytecode[W], result dfa.Result[stamps], entry stamps) {
+	t.regs = map[stampKey]bytecode.RegisterId{}
+	t.used = map[stampKey]bool{}
+	t.kmax = make([]uint, len(t.effects))
+	//
+	for x, v := range entry.vals {
+		if !v.lit && !v.canon {
+			t.regs[stampKey{x, 0}] = t.stampIn[t.effects[x]]
+		}
+	}
+	//
+	for i := 0; i <= len(insns); i++ {
+		st := result.StateOf(uint(i))
+		//
+		if st.isBottom() || !t.isExitAt(insns, i) {
+			continue
+		}
+		//
+		for x, v := range st.vals {
+			t.kmax[x] = max(t.kmax[x], v.v)
+		}
+	}
+}
+
+// retractBumps drops the bump of every version the rewrite never consumed
+// (e.g. the advance past the last access on a path ending in a fail), so a
+// movement whose updated stamp is never observed costs nothing.
+func (t *threader[W]) retractBumps(inserts map[int]*rowInserts[W]) {
+	for _, ri := range inserts {
+		var (
+			bumps []Bytecode[W]
+			keys  []stampKey
+		)
+		//
+		for j, key := range ri.bumpKeys {
+			if t.used[key] {
+				bumps = append(bumps, ri.bumps[j])
+				keys = append(keys, key)
+			}
+		}
+		//
+		ri.bumps, ri.bumpKeys = bumps, keys
+	}
+}
+
 // threadInstruction rewrites the instruction at position i against the (already
-// merged) state entering it: a read-write access gains its stamp operand, a
-// call to an effectful callee is threaded, an exit (jump, or return outside
-// main) materialises the canonical stamps its landing assumes, and a branch
-// places the fall-side insertions assumed by its outgoing arcs (rewriteBranch).
-// Instructions indifferent to stamps pass through untouched.
+// merged) state entering it: a read-write access gains its stamp operand and
+// advances the version, a call to an effectful callee is threaded, an exit
+// (jump, or return outside main) materialises the canonical stamps its landing
+// assumes, and a branch in front of a jump table canonicalises once for every
+// exit of the table (rewriteBranch).  Instructions indifferent to stamps pass
+// through untouched.
 func (t *threader[W]) threadInstruction(insns []Bytecode[W], i int, states stamps,
 	at func(int) *rowInserts[W], replace map[int]Bytecode[W]) {
 	//
 	switch insn := insns[i].(type) {
 	case *bytecode.ReadWrite[W]:
 		if x := t.effectIndex(insn.Id); x >= 0 {
-			reg, pre := t.stampRegister(t.resolve(x, states.vals[x]))
-			at(i).fall = append(at(i).fall, pre...)
+			s := states.vals[x]
+			reg, pre := t.stampOperand(x, s)
+			at(i).preEdge = append(at(i).preEdge, pre...)
 			replace[i] = withStamp(insn, reg)
+			// Advance to the next version: its register receives the current
+			// stamp plus one.  A literal advances for free (the next version
+			// is a constant too); every path through the access falls through
+			// to position i+1, so the bump is placed there.
+			if !s.lit {
+				var one W
+				//
+				one = one.SetUint64(1)
+				next := stampKey{x, s.v + 1}
+				at(i + 1).bumps = append(at(i+1).bumps,
+					bytecode.AddConst(t.getReg(x, next.v), []bytecode.RegisterId{reg}, one))
+				at(i + 1).bumpKeys = append(at(i+1).bumpKeys, next)
+			}
 		}
 	case *bytecode.Call[W]:
-		if rebuilt, pre := t.threadCall(uint(i), insn, states); rebuilt != nil {
-			at(i).fall = append(at(i).fall, pre...)
+		if rebuilt, pre := t.threadCall(insn, states); rebuilt != nil {
+			at(i).preEdge = append(at(i).preEdge, pre...)
 			replace[i] = rebuilt
 		}
 	case *bytecode.Jmp[W]:
@@ -496,14 +603,14 @@ func (t *threader[W]) threadInstruction(insns []Bytecode[W], i int, states stamp
 	}
 }
 
-// mergeAt places the equalising materialisations at a merge point, for the
-// effects normaliseEntry flagged.  Each incoming path materialises the merge
-// register at a position executed exactly on that path: inline for the
+// mergeAt places the equalising materialisations at a merge point.  Each
+// incoming path whose stamp is not already in the merged version's register
+// materialises it at a position executed exactly on that path: inline for the
 // fall-through, at the source's preEdge for an unconditional edge, in an edge
 // block at the landing for a conditional edge.  At an exit (return, jump, end
-// of row) the merge register is the canonical stamp itself, so the exit needs
-// no further materialisation on any path.
-func (t *threader[W]) mergeAt(i int, merged stamps, need []bool, incoming []stampArc,
+// of row) the target is the canonical stamp itself, so the exit needs no
+// further materialisation on any path.
+func (t *threader[W]) mergeAt(i int, merged stamps, incoming []stampArc,
 	at func(int) *rowInserts[W]) {
 	//
 	fall, skips, conditional := classifyArcs(incoming)
@@ -513,32 +620,32 @@ func (t *threader[W]) mergeAt(i int, merged stamps, need []bool, incoming []stam
 	}
 	//
 	for x, e := range t.effects {
-		if !need[x] {
+		m := merged.vals[x]
+		// A literal is path-independent: its consumers materialise the
+		// constant themselves.
+		if m.lit {
 			continue
 		}
-		// Choose the merge register: the canonical stamp at an exit, a fresh
-		// temporary otherwise.
+		// The merge register: the canonical stamp at an exit (or when every
+		// path is already canonical), the merged version's register otherwise.
 		var target bytecode.RegisterId
 		//
-		if merged.vals[x].kind == stampCanonical {
+		if m.canon {
 			target = t.getCanonical(e)
 		} else {
-			target = t.alloc.Allocate("stamp", util.Some(stampWidth))
-			t.temps[stampKey{e, merged.vals[x]}] = target
+			target = t.getReg(x, m.v)
 		}
 		//
-		mergedState := stampState{util.Some(target), 0}
-		//
 		if fall != nil {
-			if s := t.resolve(x, fall.state.vals[x]); !s.equals(mergedState) {
-				at(i).fall = append(at(i).fall, t.materialise(s, target))
+			if loc := t.resolveLoc(x, fall.state.vals[x]); !loc.is(target) {
+				at(i).fall = append(at(i).fall, t.materialise(loc, target))
 			}
 		}
 		//
 		for _, p := range skips {
-			ps := t.resolve(x, p.state.vals[x])
+			loc := t.resolveLoc(x, p.state.vals[x])
 			//
-			if ps.equals(mergedState) {
+			if loc.is(target) {
 				continue
 			}
 			//
@@ -547,11 +654,11 @@ func (t *threader[W]) mergeAt(i int, merged stamps, need []bool, incoming []stam
 				// Into the source's preEdge segment: every arrival there
 				// carries the same (already merged) state, but a skip landing
 				// directly on the source would bypass a fall-only insertion.
-				at(int(p.source)).preEdge = append(at(int(p.source)).preEdge, t.materialise(ps, target))
+				at(int(p.source)).preEdge = append(at(int(p.source)).preEdge, t.materialise(loc, target))
 			case condArc:
 				// One materialisation per effect in the shared edge block.
 				if p.source == conditional.source {
-					at(i).edge = append(at(i).edge, t.materialise(ps, target))
+					at(i).edge = append(at(i).edge, t.materialise(loc, target))
 				}
 			}
 		}
@@ -611,51 +718,36 @@ func stateEquals(p, o stamps) bool {
 	return true
 }
 
-// rewriteBranch places the fall-side insertions the analysis assumed at a
-// conditional (or multiway) skip (see branchState).  When the remainder of the
-// row is a pure jump table, the canonical stamps are materialised once, before
-// the branch, covering every exit.  Otherwise every state not already a plain
-// register is normalised into a fresh temporary, so all outgoing edges carry
-// the same symbolic value; the guarded region's accesses are reconciled at its
-// merge point by mergeAt.
+// rewriteBranch handles a conditional (or multiway) skip.  When the remainder
+// of the row is a pure jump table, the canonical stamps are materialised once,
+// before the branch, covering every exit (see branchState).  Otherwise nothing
+// is placed here: a version is a register on every path, so all outgoing edges
+// carry the same symbolic value as-is, and the guarded region's accesses are
+// reconciled at its merge point by mergeAt.
 func (t *threader[W]) rewriteBranch(insns []Bytecode[W], i int, states stamps,
 	at func(int) *rowInserts[W]) {
 	//
 	if jumpTableFollows(insns, i) {
 		at(i).fall = append(at(i).fall, t.canonicalise(states)...)
-		//
-		return
-	}
-	//
-	for x, e := range t.effects {
-		v := states.vals[x]
-		//
-		if v.isPlainRegister() {
-			continue
-		}
-		//
-		tmp := t.alloc.Allocate("stamp", util.Some(stampWidth))
-		t.temps[stampKey{e, stampValue{kind: stampNorm, pc: uint(i)}}] = tmp
-		at(i).fall = append(at(i).fall, t.materialise(t.resolve(x, v), tmp))
 	}
 }
 
 // canonicalise returns the instructions materialising every effect's state
-// into its canonical register, skipping effects already canonical.
+// into its canonical register, skipping effects already there.
 func (t *threader[W]) canonicalise(states stamps) []Bytecode[W] {
 	var out []Bytecode[W]
 	//
 	for x, e := range t.effects {
 		var (
 			target = t.getCanonical(e)
-			s      = t.resolve(x, states.vals[x])
+			loc    = t.resolveLoc(x, states.vals[x])
 		)
 		//
-		if s.equals(stampState{util.Some(target), 0}) {
+		if loc.is(target) {
 			continue
 		}
 		//
-		out = append(out, t.materialise(s, target))
+		out = append(out, t.materialise(loc, target))
 	}
 	//
 	return out
@@ -663,10 +755,9 @@ func (t *threader[W]) canonicalise(states stamps) []Bytecode[W] {
 
 // threadCall rewrites a call to an effectful callee: for each read-write
 // memory the callee declares, the caller's current stamp is passed as a
-// (prepended) argument and the updated stamp received into a fresh temporary,
-// recorded under the call's position so later positions can resolve it.
-// Returns nil when the callee needs no threading.
-func (t *threader[W]) threadCall(pc uint, call *bytecode.Call[W], states stamps,
+// (prepended) argument and the updated stamp received directly into the next
+// version's register.  Returns nil when the callee needs no threading.
+func (t *threader[W]) threadCall(call *bytecode.Call[W], states stamps,
 ) (Bytecode[W], []Bytecode[W]) {
 	//
 	callee, ok := t.mods[call.Target].(*descriptor.Function[W])
@@ -693,12 +784,12 @@ func (t *threader[W]) threadCall(pc uint, call *bytecode.Call[W], states stamps,
 			panic(fmt.Sprintf("caller lacks a stamp for memory %d", e))
 		}
 		//
-		reg, insns := t.stampRegister(t.resolve(x, states.vals[x]))
+		s := states.vals[x]
+		reg, insns := t.stampOperand(x, s)
 		pre = append(pre, insns...)
 		args[j] = reg
-		// Receive the callee's updated stamp into a fresh temporary.
-		returns[j] = t.alloc.Allocate("stamp", util.Some(stampWidth))
-		t.temps[stampKey{e, stampValue{kind: stampCallOut, pc: pc}}] = returns[j]
+		// Receive the callee's updated stamp into the next version's register.
+		returns[j] = t.getReg(x, s.v+1)
 	}
 	//
 	return bytecode.CallFun[W](call.Target,
@@ -752,11 +843,11 @@ func (p *targetSet) Contains(v uint32) bool { return p.targets[v] }
 // rebuildVector reassembles a row from its original instructions, the
 // materialisations around each original index, and the per-index replacements
 // — recomputing every intra-row skip amount around the insertions.  Around
-// each original position the layout is [fall..., (skip-over), edge block...,
-// instruction]: fall instructions execute on the fall-through path only
-// (ordinary skips land past them), conditional skips retargeted to this
-// position land at the start of the edge block, and a live fall-through path
-// jumps over the block.
+// each original position the layout is [bumps..., fall..., (skip-over), edge
+// block..., preEdge..., instruction]: bump and fall instructions execute on
+// the fall-through path only (ordinary skips land past them, at the start of
+// preEdge), conditional skips retargeted to this position land at the start
+// of the edge block, and a live fall-through path jumps over the block.
 func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInserts[W],
 	replace map[int]Bytecode[W]) BytecodeVector[W] {
 	//
@@ -778,6 +869,7 @@ func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInse
 	//
 	for i := 0; i <= n; i++ {
 		if ri := inserts[i]; ri != nil {
+			out = append(out, ri.bumps...)
 			out = append(out, ri.fall...)
 			//
 			if len(ri.edge) != 0 && ri.skipOver {
