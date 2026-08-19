@@ -13,13 +13,14 @@
 package vm
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Trace defines the type of a general trace
-type Trace[F field.Element[F]] = rtrace.Trace[F]
+type Trace[F field.Element[F]] = trace.Trace[F]
 
 // Element defines the type of field elements
 type Element[F any] = field.Element[F]
@@ -34,7 +35,7 @@ type Tracer[W Word[W], F Element[F], T any] interface {
 	// Construct the trace for a given memory of some kind
 	TraceMemory(mid uint16, m RuntimeMemory[W], cfg field.Config)
 	// Build the final trace
-	Build() rtrace.Trace[F]
+	Build() trace.Trace[F]
 }
 
 // TraceBuilder provides a generic mechanism for tracing a given program, and
@@ -58,7 +59,7 @@ func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T]](config TraceCon
 // the input is malformed (e.g. is missing expected fields and/or contains
 // unexpected fields).
 func (p TraceBuilder[W, F, T]) BootAndTrace(inputs map[string][]byte,
-) (trace rtrace.Trace[F], outputs map[string][]byte, errors []error) {
+) (tr trace.Trace[F], outputs map[string][]byte, errors []error) {
 	// Check whether we have a sharding strategy
 	if p.config.shardingStrategy.IsEmpty() {
 		// no strategy, therefore trace sequentially
@@ -66,13 +67,22 @@ func (p TraceBuilder[W, F, T]) BootAndTrace(inputs map[string][]byte,
 	}
 	// apply sharding strategy
 	shards, outputs, errors := p.checkpointAndTrace(inputs)
+	// Perform trace reduction
+	var stats = util.NewPerfStats()
 	// Recombine shards
 	if p.config.parallel {
 		// Parallel
-		return rtrace.ParallelReduce(shards), outputs, errors
+		tr = trace.ParallelReduce(shards)
+		//
+		stats.Log("Trace reduction (parallel)")
+	} else {
+		// Sequential
+		tr = trace.Reduce(shards)
+		//
+		stats.Log("Trace reduction (sequential)")
 	}
-	// Sequential
-	return rtrace.Reduce(shards), outputs, errors
+	//
+	return tr, outputs, errors
 }
 
 // BootAndTraceShards shards generates a given number of shards from a given

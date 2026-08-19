@@ -10,11 +10,10 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package rtrace
+package trace
 
 import (
-	"sync"
-
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -43,31 +42,22 @@ func Reduce[F field.Element[F]](traces []Trace[F]) Trace[F] {
 
 // ParallelReduce behaves exactly like Reduce, combining a sequence of aligned
 // traces into a single trace, but reduces each module of the result
-// concurrently using one goroutine per module.
+// concurrently using a worker pool.
 func ParallelReduce[F field.Element[F]](traces []Trace[F]) Trace[F] {
 	if len(traces) == 0 {
 		return nil
 	}
 	//
 	width := traces[0].Width()
-	modules := make([]*CompactModule[F], width)
+	descriptors := make([]ModuleDescriptor, width)
 	//
-	var wg sync.WaitGroup
-	// Reduce each module independently.  Goroutines write to disjoint slots of
-	// the modules slice, so no further synchronisation is required.
 	for mid := range width {
-		var descriptor = traces[0].Module(mid).Descriptor()
-		//
-		wg.Add(1)
-		//
-		go func(mid uint) {
-			defer wg.Done()
-			//
-			modules[mid] = reduceModule(mid, descriptor, traces)
-		}(mid)
+		descriptors[mid] = traces[0].Module(mid).Descriptor()
 	}
 	//
-	wg.Wait()
+	modules := array.ParallelMap(descriptors, func(mid uint, descriptor ModuleDescriptor) *CompactModule[F] {
+		return reduceModule(mid, descriptor, traces)
+	})
 	//
 	return NewArray(modules)
 }
@@ -81,7 +71,7 @@ func reduceModule[F field.Element[F]](mid uint, descriptor ModuleDescriptor, tra
 		return reduceReplicatedModule(mid, descriptor, traces)
 	}
 	//
-	acc := NewCompactModule[F](descriptor)
+	acc := InitCompactModule[F](descriptor)
 	//
 	for i := range traces {
 		acc.Join(traces[i].Module(mid))
@@ -95,7 +85,7 @@ func reduceReplicatedModule[F field.Element[F]](mid uint, descriptor ModuleDescr
 	var (
 		winner Module[F]
 		height uint
-		acc    = NewCompactModule[F](descriptor)
+		acc    = InitCompactModule[F](descriptor)
 	)
 	// Find tallest module
 	for i := range traces {

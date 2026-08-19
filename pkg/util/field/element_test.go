@@ -13,6 +13,7 @@
 package field
 
 import (
+	"bytes"
 	"math/rand"
 	"slices"
 	"testing"
@@ -69,20 +70,23 @@ func (e elementArray) Len() uint {
 	return uint(len(e))
 }
 
-func (e elementArray) Slice(u uint, u2 uint) array.Array[koalabear.Element] {
-	return e[u:u2]
-}
-
-func (e elementArray) Append(t koalabear.Element) array.MutArray[koalabear.Element] {
+func (e elementArray) Decode(uint, *bytes.Buffer) error {
 	panic("not implemented")
 }
 
-func (e elementArray) Set(u uint, t koalabear.Element) array.MutArray[koalabear.Element] {
-	e[u] = t
-	return e
+func (e elementArray) Encode(*bytes.Buffer) {
+	panic("not implemented")
 }
 
-func (e elementArray) Pad(u uint, u2 uint, t koalabear.Element) {
+func (e elementArray) Append(t koalabear.Element) {
+	panic("not implemented")
+}
+
+func (e elementArray) Set(u uint, t koalabear.Element) {
+	e[u] = t
+}
+
+func (e elementArray) Pad(u uint, u2 uint, t koalabear.Element) array.MutArray[koalabear.Element] {
 	panic("not implemented")
 }
 

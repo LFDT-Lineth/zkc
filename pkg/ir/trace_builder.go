@@ -159,69 +159,69 @@ func (tb TraceBuilder[F]) Mapping() module.LimbsMap {
 // Build attempts to construct a trace for a given schema, producing errors if
 // there are inconsistencies (e.g. missing columns, duplicate columns, etc).
 func (tb TraceBuilder[F]) Build(schema sc.AnySchema[F], tf trace.Trace[F]) (tr trace.Trace[F], errs []error) {
-	var atr *trace.ArrayTrace[F]
-	// Apply trace alignment to after lowering.
-	if atr, errs = AlignTrace(schema.Modules().Collect(), tf, tb.expand); len(errs) > 0 {
+	var (
+		atr    builder.ArrayTrace[F]
+		config = builder.Config{
+			Parallel:  tb.parallel,
+			BatchSize: tb.batchSize,
+			Expanding: tb.expand,
+			Padding:   tb.paddingStrategy,
+		}
+	)
+	// Apply trace alignment and padding
+	if atr, errs = builder.AlignAndPad(config, schema, tf); len(errs) > 0 {
 		return nil, errs
 	}
-	// Apply trace expansion
-	return tb.innerBuild(schema, atr)
-}
-
-func (tb TraceBuilder[F]) innerBuild(schema sc.AnySchema[F], tr *trace.ArrayTrace[F],
-) (trace.Trace[F], []error) {
-	var errors []error
-	// Initialise the actual trace object
+	// Apply trace expansion (if requested)
 	if tb.expand {
 		// Save original line counts
-		moduleHeights := determineModuleHeights(tr)
+		moduleHeights := determineModuleHeights(atr)
 		// Apply spillage
-		addSpillageAndDefensivePadding(tb.defensive, tr, schema)
+		addSpillageAndDefensivePadding(tb.defensive, atr, schema)
 		// Sanity checks
 		if tb.checks {
-			if err := checkModuleHeights(moduleHeights, tb.defensive, tr, schema); err != nil {
-				return nil, append(errors, err)
+			if err := checkModuleHeights(moduleHeights, tb.defensive, atr, schema); err != nil {
+				return nil, append(errs, err)
 			}
 		}
 		// Expand trace
-		if err := builder.TraceExpansion(tb.parallel, tb.batchSize, schema, tr); err != nil {
-			return nil, append(errors, err)
+		if err := builder.TraceExpansion(config, schema, atr); err != nil {
+			return nil, append(errs, err)
 		}
 		// Validate expanded trace
 		if tb.validate {
 			// Run (parallel) trace validation
-			if errs := builder.TraceValidation(tb.parallel, schema, tr); len(errs) > 0 {
+			if errs := builder.TraceValidation(config, schema, atr); len(errs) > 0 {
 				return nil, errs
 			}
 		}
 	}
-
-	// Padding
-	padColumns(schema, tr, tb.paddingStrategy)
 	//
-	return tr, errors
+	return atr, errs
 }
 
 // pad each module with its given level of spillage and (optionally) ensure a
 // given level of defensive padding.
-func addSpillageAndDefensivePadding[F field.Element[F]](defensive bool, tr *trace.ArrayTrace[F],
+func addSpillageAndDefensivePadding[F field.Element[F]](defensive bool, tr builder.ArrayTrace[F],
 	schema sc.AnySchema[F]) {
 	//
 	n := tr.Modules().Count()
 	// Iterate over modules
 	for i := uint(0); i < n; i++ {
+		var trMod = tr.RawModule(i)
 		// Compute extra padding rows required
 		padding := sc.RequiredPaddingRows(i, defensive, schema)
 		// Don't pad unless we have to
 		if padding > 0 {
-			// Pad extract rows with 0
-			tr.Pad(i, padding, 0)
+			// Pad extract rows with 0, and store the resulting (fresh) module
+			// back into the trace, since Pad no longer updates in place.
+			tr.SetRawModule(i, trMod.Pad(padding, 0))
 		}
 	}
 }
 
 // determineModuleHeights returns the height for each module in the trace.
-func determineModuleHeights[F field.Element[F]](tr trace.Trace[F]) []uint {
+func determineModuleHeights[F field.Element[F]](tr builder.ArrayTrace[F]) []uint {
 	n := tr.Modules().Count()
 	mid := 0
 	heights := make([]uint, n)
@@ -237,7 +237,7 @@ func determineModuleHeights[F field.Element[F]](tr trace.Trace[F]) []uint {
 
 // checkModuleHeights checks the expanded heights match exactly what was
 // expected.
-func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr trace.Trace[F],
+func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr builder.ArrayTrace[F],
 	schema sc.AnySchema[F]) error {
 	//
 	expanded := determineModuleHeights(tr)
@@ -255,35 +255,4 @@ func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr 
 	}
 	//
 	return nil
-}
-
-// padColumns prepends front padding rows to every module in a given trace,
-// according to the given strategy.  Observe that this applies on top of any
-// spillage and/or defensive padding already applied.
-//
-// For each module, the target height is computed on its logical height (i.e.
-// its height divided by its length multiplier) and then scaled back by the
-// multiplier.  This ensures the amount of padding added is always a multiple of
-// the multiplier, as required by ArrayModule.Pad (relevant for interleaved
-// corset modules, whose multiplier can exceed one).
-func padColumns[F field.Element[F]](schema sc.AnySchema[F], tr *trace.ArrayTrace[F], strategy PaddingStrategy) {
-	n := tr.Modules().Count()
-	// Iterate over modules
-	for i := uint(0); i < n; i++ {
-		var (
-			scMod  = schema.Module(i)
-			height = tr.Module(i).Height()
-			target uint
-		)
-		// Skip static reference tables
-		if scMod.IsStatic() {
-			continue
-		}
-		// Apply padding strategy
-		target = strategy(height, 1)
-		// Only pad when the module falls short of its target.
-		if target > height {
-			tr.Pad(i, target-height, 0)
-		}
-	}
 }

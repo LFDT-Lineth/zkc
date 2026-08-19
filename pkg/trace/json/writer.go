@@ -31,7 +31,10 @@ func ToJsonString[F field.Element[F]](tr trace.Trace[F]) string {
 	//
 	for _, ith := range tr.Modules().Collect() {
 		for j := range ith.Width() {
-			var jth = ith.Column(j)
+			var (
+				name = ith.Descriptor().Name
+				data = ith.Column(j)
+			)
 			//
 			if !first {
 				builder.WriteString(", ")
@@ -40,19 +43,17 @@ func ToJsonString[F field.Element[F]](tr trace.Trace[F]) string {
 			first = false
 			//
 			builder.WriteString("\"")
-			// Construct qualified column name
-			name := trace.QualifiedColumnName(ith.Name(), jth.Name())
+			// Construct qualified column qual_name
+			qual_name := trace.QualifiedColumnName(ith.Name(), name)
 			// Apply bitwidth restrictions (if applicable)
-			if bitwidth := jth.Data().BitWidth(); bitwidth < 256 {
+			if bitwidth := data.BitWidth(); bitwidth < 256 {
 				// For now, always assume unsigned int.
-				name = fmt.Sprintf("%s@u%d", name, bitwidth)
+				qual_name = fmt.Sprintf("%s@u%d", qual_name, bitwidth)
 			}
 			// Write out column name
-			builder.WriteString(name)
+			builder.WriteString(qual_name)
 			//
 			builder.WriteString("\": [")
-
-			data := jth.Data()
 
 			for j := range data.Len() {
 				if j != 0 {

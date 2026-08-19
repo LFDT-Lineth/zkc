@@ -17,6 +17,7 @@ import (
 	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
@@ -177,13 +178,14 @@ func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], inp
 	if output, traceable, errs = BootAndExecute(bci, input, math.MaxUint); !traceable {
 		return nil, nil, errs
 	}
-	// Apply any post processing
-	for i, m := range pr.Modules() {
-		// Decide what we've got
-		if _, ok := m.(*Memory[W]); ok {
-			tracer.TraceMemory(uint16(i), bci.Memory(uint16(i)), pr.Field())
-		}
-	}
+	//
+	var stats = util.NewPerfStats()
+	// Apply post processing
+	array.Apply(bci.ExtractMemory(), func(_ uint, p util.Pair[uint16, RuntimeMemory[W]]) {
+		tracer.TraceMemory(p.Left, p.Right, pr.Field())
+	})
+	// Done
+	stats.Log("Trace processing")
 	// Success, build trace
 	return tracer.Build(), output, errs
 }
@@ -218,13 +220,14 @@ func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W
 	if traceable, errs = RestoreAndExecute(bci, cp, math.MaxUint); !traceable {
 		return nil, errs
 	}
+	//
+	var stats = util.NewPerfStats()
 	// Apply post processing
-	for i, m := range pr.Modules() {
-		// Decide what we've got
-		if _, ok := m.(*Memory[W]); ok {
-			tracer.TraceMemory(uint16(i), bci.Memory(uint16(i)), pr.Field())
-		}
-	}
+	array.Apply(bci.ExtractMemory(), func(_ uint, p util.Pair[uint16, RuntimeMemory[W]]) {
+		tracer.TraceMemory(p.Left, p.Right, pr.Field())
+	})
+	// Done
+	stats.Log("Trace processing")
 	//
 	return tracer.Build(), errs
 }

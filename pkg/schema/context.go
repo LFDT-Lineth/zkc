@@ -252,7 +252,7 @@ func buildDynamicSetChunk[F field.Element[F]](c setChunk, trModule trace.Module[
 		data   = hash.NewSet[hash.Array[F]]((c.end - c.start) >> 4)
 	)
 	//
-	for i := int(c.start); i < int(c.end); i++ {
+	for i := c.start; i < c.end; i++ {
 		if isSelected(i, c.id, trModule) {
 			// Read each register of this vector
 			readRegisters(i, c.id, trModule, buffer)
@@ -270,7 +270,7 @@ func buildDynamicSetChunk[F field.Element[F]](c setChunk, trModule trace.Module[
 
 // readRegisters reads the value held in each register of the given vector on
 // the given row into the temporary buffer.
-func readRegisters[F field.Element[F]](k int, id SetId, trModule trace.Module[F], buffer []F) {
+func readRegisters[F field.Element[F]](k uint, id SetId, trModule trace.Module[F], buffer []F) {
 	for i := range id.Width() {
 		rid := id.Ith(i)
 		buffer[i] = trModule.Column(rid.Unwrap()).Get(k)
@@ -289,7 +289,7 @@ func readStaticRegisters[F field.Element[F]](id SetId, row []F, buffer []F) {
 // isSelected determines whether or not the given row of the given vector is
 // selected.  A row without a selector is always selected; otherwise, it is
 // selected when its selector is non-zero.
-func isSelected[F field.Element[F]](k int, id SetId, trModule trace.Module[F]) bool {
+func isSelected[F field.Element[F]](k uint, id SetId, trModule trace.Module[F]) bool {
 	// If no selector, then always selected
 	if !id.HasSelector() {
 		return true

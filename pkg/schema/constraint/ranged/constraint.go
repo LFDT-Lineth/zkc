@@ -146,11 +146,11 @@ func (p Constraint[F]) accepts(i int, tr trace.Trace[F]) schema.Failure {
 		bound = field.TwoPowN[F](bitwidth)
 	)
 	// Iterate every row
-	for k := range int(trModule.Height()) {
+	for k := range trModule.Height() {
 		// Perform the range check
 		if column.Get(k).Cmp(bound) >= 0 {
 			// Evaluation failure
-			return &Failure[F]{handle, p.Context, source, bitwidth, uint(k)}
+			return &Failure[F]{handle, p.Context, source, bitwidth, k}
 		}
 	}
 	// All good

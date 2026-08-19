@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -82,12 +81,8 @@ func concretizeAssignments[F1 Element[F1], F2 Element[F2]](assigns []schema.Assi
 }
 
 func concretizeAssignment[F1 Element[F1], F2 Element[F2]](assign schema.Assignment[F1]) schema.Assignment[F2] {
-	switch a := assign.(type) {
-	case *assignment.ComputedRegister[F1]:
-		return assignment.NewComputedRegister[F2](a.Expr, a.Module, a.Targets...)
-	default:
-		panic(fmt.Sprintf("unknown assignment: %s\n", reflect.TypeOf(a).String()))
-	}
+	// TODO: we actually never concretize assignments any more.
+	panic(fmt.Sprintf("unknown assignment: %s\n", reflect.TypeOf(assign).String()))
 }
 
 // ============================================================================

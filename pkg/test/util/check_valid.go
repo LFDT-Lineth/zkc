@@ -337,7 +337,7 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.
 		// decode inputs / outputs
 		inputs, _ = vm.FilterInputs(p, test.data)
 		// generate trace
-		_, _, tr, errs = binf.Trace(inputs, traceCfg)
+		_, tr, errs = binf.Trace(inputs, traceCfg)
 	)
 	// Fail automatically on any internal error arising during tracing
 	failIfNot[*vm.Failure](t, errs...)

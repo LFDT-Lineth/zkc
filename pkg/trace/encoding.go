@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package rtrace
+package trace
 
 import (
 	"bytes"
@@ -23,11 +23,11 @@ import (
 // MarshalBinary encodes a trace into a binary format.  Lengths, counts and
 // descriptor metadata are encoded as unsigned varints.  Register data is
 // encoded column-major, with each column written using the natural encoding of
-// its underlying array representation (see narray.Array.Encode).
+// its underlying array representation (see array.Array.Encode).
 func MarshalBinary[T any, M ModuleBuilder[T, M]](tr Array[T, M]) ([]byte, error) {
 	var buffer bytes.Buffer
 	//
-	buffer.Write(rtraceBinaryMagic)
+	buffer.Write(traceBinaryMagic)
 	writeUvarint(&buffer, tr.Width())
 	//
 	for mid := uint(0); mid < tr.Width(); mid++ {
@@ -71,12 +71,12 @@ func marshalModule[T any](buffer *bytes.Buffer, module Module[T]) {
 }
 
 func unmarshalModules[T any, M ModuleBuilder[T, M]](buffer *bytes.Buffer) ([]M, error) {
-	if buffer.Len() < len(rtraceBinaryMagic) {
+	if buffer.Len() < len(traceBinaryMagic) {
 		return nil, fmt.Errorf("malformed rtrace binary: missing header")
 	}
 	//
-	magic := buffer.Next(len(rtraceBinaryMagic))
-	if !bytes.Equal(magic, rtraceBinaryMagic) {
+	magic := buffer.Next(len(traceBinaryMagic))
+	if !bytes.Equal(magic, traceBinaryMagic) {
 		return nil, fmt.Errorf("malformed rtrace binary: invalid header")
 	}
 	//

@@ -158,7 +158,7 @@ func HoldsGlobally[F field.Element[F], T term.Testable[F]](handle string, ctx sc
 func HoldsLocally[F field.Element[F], T term.Testable[F]](k uint, handle string, term T, ctx schema.ModuleId,
 	trMod trace.Module[F], scMod schema.Module[F]) schema.Failure {
 	//
-	ok, _, err := term.TestAt(int(k), trMod, scMod)
+	ok, _, err := term.TestAt(k, trMod, scMod)
 	// Check for errors
 	if err != nil {
 		return constraint.NewInternalFailure[F](handle, ctx, k, term, err.Error())

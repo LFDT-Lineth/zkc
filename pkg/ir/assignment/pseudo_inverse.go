@@ -71,7 +71,7 @@ func (e *PseudoInverse[F]) Compute(tr trace.Trace[F], schema schema.AnySchema[F]
 	// values outside the range of the computed register, but which we still
 	// want to check are actually rejected (i.e. since they are simulating what
 	// an attacker might do).
-	data := tr.Builder().NewArray(height, math.MaxUint)
+	data := array.Alloc[F](math.MaxUint, height)
 	// Expand the trace
 	data, err = invert(data, e.Expr, trModule, scModule)
 	// Sanity check
@@ -164,17 +164,16 @@ func invert[F field.Element[F]](
 ) (array.MutArray[F], error) {
 	// Forwards computation
 	for i := range data.Len() {
-		val, err := expr.EvalAt(int(i), trMod, scMod)
+		val, err := expr.EvalAt(i, trMod, scMod)
 		// error check
 		if err != nil {
 			return data, err
 		}
 		//
-		data = data.Set(i, val)
+		data.Set(i, val)
 	}
-
-	data = field.BatchInvert(data)
-
+	//
+	field.BatchInvert(data)
 	//
 	return data, nil
 }

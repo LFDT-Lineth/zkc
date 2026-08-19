@@ -25,7 +25,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
@@ -192,12 +191,11 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constrain
 func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, oneHot []oneHotGroup,
 ) register.Id {
-	var padding big.Int
 	// Allocate the selector column.
 	selId := register.NewId(mod.Width())
-	mod.AddRegisters(register.NewComputed(fmt.Sprintf("$lookup_sel_%d", selId.Unwrap()), 1, padding))
+	mod.AddRegisters(register.NewComputed(fmt.Sprintf("$lookup_sel_%d", selId.Unwrap()), 1))
 	// Fill the flag selector during trace expansion with the boolean value of the condition.
-	mod.AddAssignments(assignment.NewComputedRegister[F](pathSelectorComputation(cond, regs), ctx, selId))
+	mod.AddAssignments(assignment.NewComputedRegister[F](selId, pathSelectorComputation[F](cond, regs), ctx))
 	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.
 	mod.AddConstraints(mir.NewVanishingConstraint(
 		fmt.Sprintf("lookup_sel_%d", selId.Unwrap()), ctx, util.None[int](),
@@ -259,13 +257,14 @@ func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.Bran
 
 // pathSelectorComputation builds the trace-expansion computation for a path
 // selector: the boolean value of the branch condition (1 when taken, else 0).
-func pathSelectorComputation(cond dfa.BranchCondition, regs []register.Register) term.Computation[word.BigEndian] {
+func pathSelectorComputation[F field.Element[F]](cond dfa.BranchCondition, regs []register.Register,
+) term.Computation[F] {
 	var (
-		condition = mirc.TranslateBranchCondition(cond, callRegisterReader[word.BigEndian]{regs})
-		logical   = term.NewLogicalComputation[word.BigEndian, mir.LogicalTerm[word.BigEndian],
-			mir.Term[word.BigEndian]](condition.AsLogical())
-		one  = term.Const[word.BigEndian, term.Computation[word.BigEndian]](field.One[word.BigEndian]())
-		zero = term.Const[word.BigEndian, term.Computation[word.BigEndian]](field.Zero[word.BigEndian]())
+		condition = mirc.TranslateBranchCondition(cond, callRegisterReader[F]{regs})
+		logical   = term.NewLogicalComputation[F, mir.LogicalTerm[F],
+			mir.Term[F]](condition.AsLogical())
+		one  = term.Const[F, term.Computation[F]](field.One[F]())
+		zero = term.Const[F, term.Computation[F]](field.Zero[F]())
 	)
 	//
 	return term.IfElse(logical, one, zero)

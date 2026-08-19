@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"runtime"
 
-	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -94,14 +94,14 @@ func defensivePadding[F any](module uint, schema AnySchema[F]) uint {
 //
 //nolint:revive
 func Accepts[F field.Element[F], C Constraint[F]](parallel bool, schema Schema[F, C],
-	trace tr.Trace[F]) []Failure {
+	trace trace.Trace[F]) []Failure {
 	//
 	return accepts(parallel, schema.Constraints(), trace, schema)
 }
 
 //nolint:revive
 func accepts[F field.Element[F], C Constraint[F]](parallel bool, iter iter.Iterator[C],
-	trace tr.Trace[F], schema Schema[F, C]) []Failure {
+	trace trace.Trace[F], schema Schema[F, C]) []Failure {
 	//
 	if parallel {
 		return parallelAccepts(iter, trace, schema)
@@ -110,7 +110,7 @@ func accepts[F field.Element[F], C Constraint[F]](parallel bool, iter iter.Itera
 	return sequentialAccepts(iter, trace, schema)
 }
 
-func sequentialAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace tr.Trace[F],
+func sequentialAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace trace.Trace[F],
 	schema Schema[F, C]) []Failure {
 	//
 	var (
@@ -131,7 +131,7 @@ func sequentialAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C
 	return errors
 }
 
-func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace tr.Trace[F],
+func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace trace.Trace[F],
 	schema Schema[F, C]) (errors []Failure) {
 	var (
 		context = ParBuildContext(trace, Any(schema))
@@ -154,7 +154,7 @@ func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C],
 
 // processConstraint checks a given constraint against the trace, intercepting any
 // panic and converting it into a PanicFailure.
-func processConstraint[F field.Element[F], C Constraint[F]](ith C, trace tr.Trace[F], schema Schema[F, C],
+func processConstraint[F field.Element[F], C Constraint[F]](ith C, trace trace.Trace[F], schema Schema[F, C],
 	ctx Context[F]) (res Failure) {
 	// Setup panic intercept
 	defer func() {

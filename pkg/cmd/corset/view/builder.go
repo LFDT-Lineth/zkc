@@ -205,13 +205,13 @@ func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], limbs bool, co
 	if computed {
 		// Add any registers not already seen
 		for i := range trMod.Width() {
-			ith := trMod.Column(i)
+			ith := trMod.Descriptor().Columns[i]
 			//
 			if _, ok := seen[i]; !ok {
 				rid := register.NewId(i)
 				//
 				columns = append(columns, SourceColumn{
-					Name:     ith.Name(),
+					Name:     ith.Name,
 					Display:  0,
 					Computed: true,
 					Selector: util.None[string](),

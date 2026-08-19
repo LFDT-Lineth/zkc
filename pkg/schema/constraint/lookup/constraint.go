@@ -194,18 +194,18 @@ func (p Constraint[F]) checkSourceSet(src SetId, mod trace.Module[F], sets []Set
 	if src.HasSelector() {
 		var selector = src.Selector().Unwrap()
 		//
-		for row := range int(mod.Height()) {
+		for row := range mod.Height() {
 			if !mod.Column(selector).Get(row).IsZero() {
 				if !contains(row, src, mod, sets, buffer) {
-					return &Failure[F]{p.Handle, src, uint(row)}
+					return &Failure[F]{p.Handle, src, row}
 				}
 			}
 		}
 	} else {
 		// Optimised path when no selector
-		for row := range int(mod.Height()) {
+		for row := range mod.Height() {
 			if !contains(row, src, mod, sets, buffer) {
-				return &Failure[F]{p.Handle, src, uint(row)}
+				return &Failure[F]{p.Handle, src, row}
 			}
 		}
 	}
@@ -216,7 +216,7 @@ func (p Constraint[F]) checkSourceSet(src SetId, mod trace.Module[F], sets []Set
 // check whether the given source row is contained within any of the given sets.
 // A temporary buffer of sufficient width is provided to avoid memory
 // allocation.
-func contains[F field.Element[F]](row int, src SetId, mod trace.Module[F], sets []Set[[]F], buffer []F) bool {
+func contains[F field.Element[F]](row uint, src SetId, mod trace.Module[F], sets []Set[[]F], buffer []F) bool {
 	// Read registers into buffer
 	for i := range src.Width() {
 		var rid = src.Ith(i).Unwrap()

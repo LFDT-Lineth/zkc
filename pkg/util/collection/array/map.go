@@ -58,3 +58,41 @@ func ParallelMap[T any, S any](items []T, mapper func(uint, T) S) []S {
 	//
 	return results
 }
+
+// ParallelApply invokes fn once for every element in a given array, purely
+// for its side effects, parallelising the work using a worker pool whose size
+// is bounded by the number of available CPUs.
+//
+// This is the side-effecting counterpart to ParallelMap, for cases where no
+// result slice is needed.
+func ParallelApply[T any](items []T, fn func(uint, T)) {
+	var (
+		n = len(items)
+		// Determine number of workers.
+		workers = min(n, runtime.NumCPU())
+		// worker pool
+		wg sync.WaitGroup
+		// Channel from which workers pull indices to process.
+		ch = make(chan int, workers)
+	)
+	// Start workers.
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		//
+		go func() {
+			defer wg.Done()
+			// Process indices until channel is closed.
+			for i := range ch {
+				fn(uint(i), items[i])
+			}
+		}()
+	}
+	// Distribute work.
+	for i := range n {
+		ch <- i
+	}
+	// Signal workers to stop.
+	close(ch)
+	// Wait for all workers to finish.
+	wg.Wait()
+}

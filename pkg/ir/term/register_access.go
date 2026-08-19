@@ -115,16 +115,17 @@ func (p *RegisterAccess[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *RegisterAccess[F, T]) EvalAt(k int, module trace.Module[F], _ register.Map) (F, error) {
+func (p *RegisterAccess[F, T]) EvalAt(k uint, module trace.Module[F], _ register.Map) (F, error) {
 	var (
-		val = module.Column(p.register.Unwrap()).Get(k + p.shift)
-		err error
+		err    error
+		row    = uint(int(k) + p.shift)
+		column = module.Column(p.register.Unwrap())
+		val    F
 	)
-	// // Dynamic cast
-	// if p.bitwidth != math.MaxUint && val.Cmp(p.bound) >= 0 {
-	// 	// Construct error
-	// 	err = fmt.Errorf("read failure (value %s not u%d)", val.String(), p.bitwidth)
-	// }
+	// Bounds check
+	if row < column.Len() {
+		val = column.Get(row)
+	}
 	//
 	return val, err
 }

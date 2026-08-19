@@ -33,8 +33,6 @@ func SplitIntoLimbs(maxWidth uint, r Register) []Register {
 	var (
 		limbWidths = LimbWidths(maxWidth, r.Width())
 		limbs      = make([]Register, len(limbWidths))
-		// Split padding value
-		padding = SplitConstant(*r.Padding(), limbWidths...)
 	)
 	// Special case when register doesn't require splitting.  This is useful
 	// because we want to retain the original register name exactly.
@@ -43,8 +41,8 @@ func SplitIntoLimbs(maxWidth uint, r Register) []Register {
 	}
 	//
 	for i, limbWidth := range limbWidths {
-		ith_name := fmt.Sprintf("%s'%d", r.Name(), i)
-		limbs[i] = New(r.Kind(), ith_name, limbWidth, padding[i])
+		ithName := fmt.Sprintf("%s'%d", r.Name(), i)
+		limbs[i] = New(r.Kind(), ithName, limbWidth)
 	}
 	//
 	return limbs

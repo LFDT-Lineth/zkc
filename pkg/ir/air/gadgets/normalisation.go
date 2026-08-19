@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
@@ -53,15 +52,13 @@ func applyPseudoInverseGadget[F field.Element[F]](e air.Term[F], module air.Modu
 		name = ie.Lisp(true, module).String(false)
 		// Look up column
 		index, ok = module.HasRegister(name)
-		// Default padding (for now)
-		padding = ir.PaddingFor[F](ie, module)
 		// Indicate column has "field element width".
 		bitwidth uint = math.MaxUint
 	)
 	// Add new column (if it does not already exist)
 	if !ok {
 		// Add computed register.
-		index = module.NewRegister(register.NewComputed(name, bitwidth, padding))
+		index = module.NewRegister(register.NewComputed(name, bitwidth))
 		target := register.NewRef(module.Id(), index)
 		// Add inverse assignment
 		module.AddAssignment(assignment.NewPseudoInverse(target, e))
@@ -89,7 +86,7 @@ type pseudoInverse[F field.Element[F]] struct {
 
 // EvalAt computes the multiplicative inverse of a given expression at a given
 // row in the table.
-func (e *pseudoInverse[F]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, error) {
+func (e *pseudoInverse[F]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
 	// Convert expression into something which can be evaluated, then evaluate
 	// it.
 	val, err := e.Expr.EvalAt(k, tr, sc)

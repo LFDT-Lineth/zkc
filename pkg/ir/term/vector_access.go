@@ -59,7 +59,7 @@ func (p *VectorAccess[F, T]) ApplyShift(shift int) T {
 func (p *VectorAccess[F, T]) Bounds() util.Bounds { return util.BoundsForArray(p.Vars) }
 
 // EvalAt implementation for Evaluable interface.
-func (p *VectorAccess[F, T]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *VectorAccess[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
 	var shift = p.Vars[0].BitWidth()
 	// Evaluate first argument
 	val, err := p.Vars[0].EvalAt(k, tr, sc)

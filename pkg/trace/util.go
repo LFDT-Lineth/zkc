@@ -14,9 +14,6 @@ package trace
 
 import (
 	"fmt"
-
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // QualifiedColumnName returns the fully qualified name of a given column.
@@ -26,102 +23,4 @@ func QualifiedColumnName(module string, column string) string {
 	}
 
 	return fmt.Sprintf("%s.%s", module, column)
-}
-
-// NumberOfColumns returns the total number of all columns in the given trace.
-func NumberOfColumns[F any](tr Trace[F]) uint {
-	var count = uint(0)
-	//
-	for i := range tr.Width() {
-		ith := tr.Module(i)
-		count += ith.Width()
-	}
-	//
-	return count
-}
-
-// ModuleAdapter provides a generic mechanism for making a trace module in one
-// field look like a trace module in another field.  Whether or not this is safe
-// to do depends upon the fields in question, and is the caller's
-// responsibility.
-func ModuleAdapter[F1 field.Element[F1], F2 field.Element[F2]](module Module[F1]) Module[F2] {
-	// Wrap each column exactly once, so that Column() below is allocation-free
-	// on what is a very hot path (expression evaluation calls it for every
-	// register access on every row).
-	columns := make([]columnAdapter[F1, F2], module.Width())
-	//
-	for i := range columns {
-		columns[i] = columnAdapter[F1, F2]{module.Column(uint(i))}
-	}
-	//
-	return &moduleAdapter[F1, F2]{module, columns}
-}
-
-type moduleAdapter[F1 field.Element[F1], F2 field.Element[F2]] struct {
-	module Module[F1]
-	// Adapters for each column of the wrapped module.  These are immutable
-	// after construction, since Get may be called concurrently.
-	columns []columnAdapter[F1, F2]
-}
-
-// Module implementation for trace.Module interface.
-func (p *moduleAdapter[F1, F2]) Name() string {
-	return p.module.Name()
-}
-
-// Column implementation for trace.Module interface.
-func (p *moduleAdapter[F1, F2]) Column(index uint) Column[F2] {
-	return &p.columns[index]
-}
-
-// ColumnOf implementation for trace.Module interface.
-func (p *moduleAdapter[F1, F2]) ColumnOf(string) Column[F2] {
-	// NOTE: this is marked unreachable because, as it stands, expression
-	// evaluation never calls this method.
-	panic("unreachable")
-}
-
-// Width implementation for trace.Module interface.
-func (p *moduleAdapter[F1, F2]) Width() uint {
-	return p.module.Width()
-}
-
-// Height implementation for trace.Module interface.
-func (p *moduleAdapter[F1, F2]) Height() uint {
-	return p.module.Height()
-}
-
-// RecColumn is a wrapper which enables the array being computed to be accessed
-// during its own computation.
-type columnAdapter[F1 field.Element[F1], F2 field.Element[F2]] struct {
-	col Column[F1]
-}
-
-// Holds the name of this column
-func (p *columnAdapter[F1, F2]) Name() string {
-	return p.col.Name()
-}
-
-// Get implementation for trace.Column interface.
-func (p *columnAdapter[F1, F2]) Get(row int) F2 {
-	var (
-		from = p.col.Get(row)
-		to   F2
-	)
-	// Fast path: avoid expensive SetBytes round-trip for small values.
-	if from.FitsWithin(64) {
-		return to.SetUint64(from.Uint64())
-	}
-
-	return to.SetBytes(from.Bytes())
-}
-
-// Data implementation for trace.Column interface.
-func (p *columnAdapter[F1, F2]) Data() array.Array[F2] {
-	panic("unreachable")
-}
-
-// Padding implementation for trace.Column interface.
-func (p *columnAdapter[F1, F2]) Padding() F2 {
-	panic("unreachable")
 }

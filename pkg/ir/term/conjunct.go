@@ -84,7 +84,7 @@ func (p *Conjunct[F, S]) Negate() S {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Conjunct[F, T]) TestAt(k int, tr trace.Module[F], sc register.Map) (bool, uint, error) {
+func (p *Conjunct[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, uint, error) {
 	//
 	for _, disjunct := range p.Args {
 		val, _, err := disjunct.TestAt(k, tr, sc)
