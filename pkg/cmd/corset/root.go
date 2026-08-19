@@ -20,7 +20,6 @@ import (
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
-	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/spf13/cobra"
@@ -93,10 +92,6 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 		fmt.Printf("unknown field \"%s\"\n", fieldName)
 		os.Exit(3)
 	}
-	// Manage exploding multiplier
-	mir.EXPLODING_MULTIPLIER = GetUint(cmd, "exploding-multiplier")
-	// Configure inner parallelism for computed register expansion
-	assignment.INNER_WORKERS = GetUint(cmd, "workers")
 	// Find command to dispatch
 	for _, c := range cmds {
 		if c.Field == *config {
@@ -119,7 +114,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 		mirEnable    = GetFlag(cmd, "mir")
 		airEnable    = GetFlag(cmd, "air")
 		optimisation = GetUint(cmd, "opt")
-		externs      = GetStringArray(cmd, "set")
 		//
 		parallel  = !GetFlag(cmd, "sequential")
 		batchSize = GetUint(cmd, "batch")
@@ -143,8 +137,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 		fieldConfig.RegisterWidth = GetUint(cmd, "register-width")
 	}
 	// Initial corset compilation configuration
-	corsetConfig.Stdlib = !GetFlag(cmd, "no-stdlib")
-	corsetConfig.Legacy = GetFlag(cmd, "legacy")
 	corsetConfig.EnforceTypes = GetFlag(cmd, "enforce-types")
 	corsetConfig.EnforceLimbTypes = GetFlag(cmd, "enforce-limb-types")
 	corsetConfig.Field = *fieldConfig
@@ -175,8 +167,7 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 	// Configure the stack
 	stacker = stacker.
 		WithCorsetConfig(corsetConfig).
-		WithOptimisationConfig(mir.OPTIMISATION_LEVELS[optimisation]).
-		WithConstantDefinitions(externs)
+		WithOptimisationConfig(mir.OPTIMISATION_LEVELS[optimisation])
 	//
 	if mirEnable {
 		stacker = stacker.WithLayer(cmd_util.MIR_LAYER)
@@ -212,8 +203,6 @@ func init() {
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.Flags().Bool("version", false, "Report version of this executable")
 	// Corset compilation config
-	rootCmd.PersistentFlags().Bool("legacy", true, "use legacy register allocator")
-	rootCmd.PersistentFlags().Bool("no-stdlib", false, "prevent standard library from being included")
 	rootCmd.PersistentFlags().Bool("enforce-types", true, "enforce all register types")
 	rootCmd.PersistentFlags().Bool("enforce-limb-types", true, "enforce types for limbs arising from split registers")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
@@ -232,10 +221,4 @@ func init() {
 	rootCmd.PersistentFlags().Bool("defensive", true, "defensively pad modules")
 	rootCmd.PersistentFlags().Bool("validate", true, "apply trace validation")
 	rootCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
-	rootCmd.PersistentFlags().Uint("workers", 0,
-		"number of inner parallel workers per assignment during trace expansion (0=auto from GOMAXPROCS)")
-	// Misc
-	rootCmd.PersistentFlags().StringArrayP("set", "S", []string{}, "set value of externalised constant.")
-	rootCmd.PersistentFlags().Uint("exploding-multiplier", 10,
-		"set threshold above which constraints are logged as exploding.")
 }

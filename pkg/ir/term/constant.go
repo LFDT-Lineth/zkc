@@ -73,7 +73,7 @@ func (p *Constant[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Constant[F, T]) EvalAt(k int, _ trace.Module[F], _ register.Map) (F, error) {
+func (p *Constant[F, T]) EvalAt(k uint, _ trace.Module[F], _ register.Map) (F, error) {
 	return p.Value, nil
 }
 
@@ -106,13 +106,8 @@ func (p *Constant[F, T]) ShiftRange() (int, int) {
 	return math.MaxInt, math.MinInt
 }
 
-// Substitute implementation for Substitutable interface.
-func (p *Constant[F, T]) Substitute(mapping map[string]F) {
-
-}
-
 // Simplify implementation for Term interface.
-func (p *Constant[F, T]) Simplify(casts bool) T {
+func (p *Constant[F, T]) Simplify() T {
 	var tmp Expr[F, T] = p
 	return tmp.(T)
 }

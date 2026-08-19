@@ -1,4 +1,4 @@
-//error:6:7-12:expected type u16
+//error:6:7-12:expected type u16, found u32
 pub output res(address:u16) -> (word:u16)
 
 fn test(index:u32) {

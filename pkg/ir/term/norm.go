@@ -46,7 +46,7 @@ func (p *Norm[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Norm[F, T]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *Norm[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
 	// Check whether argument evaluates to zero or not.
 	val, err := p.Arg.EvalAt(k, tr, sc)
 	// Normalise value (if necessary)
@@ -86,9 +86,9 @@ func (p *Norm[F, T]) ShiftRange() (int, int) {
 }
 
 // Simplify implementation for Term interface.
-func (p *Norm[F, T]) Simplify(casts bool) T {
+func (p *Norm[F, T]) Simplify() T {
 	var (
-		arg  T          = p.Arg.Simplify(casts)
+		arg  T          = p.Arg.Simplify()
 		targ Expr[F, T] = arg
 	)
 	//
@@ -105,11 +105,6 @@ func (p *Norm[F, T]) Simplify(casts bool) T {
 	}
 	//
 	return targ.(T)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *Norm[F, T]) Substitute(mapping map[string]F) {
-	p.Arg.Substitute(mapping)
 }
 
 // ValueRange implementation for Term interface.

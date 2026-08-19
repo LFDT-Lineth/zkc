@@ -59,15 +59,15 @@ func (p *VectorAccess[F, T]) ApplyShift(shift int) T {
 func (p *VectorAccess[F, T]) Bounds() util.Bounds { return util.BoundsForArray(p.Vars) }
 
 // EvalAt implementation for Evaluable interface.
-func (p *VectorAccess[F, T]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, error) {
-	var shift = p.Vars[0].MaskWidth()
+func (p *VectorAccess[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
+	var shift = p.Vars[0].BitWidth()
 	// Evaluate first argument
 	val, err := p.Vars[0].EvalAt(k, tr, sc)
 	// Continue evaluating the rest
 	for i := 1; err == nil && i < len(p.Vars); i++ {
 		var (
 			ith       F
-			ith_width = p.Vars[i].MaskWidth()
+			ith_width = p.Vars[i].BitWidth()
 		)
 		// Evaluate ith argument
 		ith, err = p.Vars[i].EvalAt(k, tr, sc)
@@ -108,14 +108,9 @@ func (p *VectorAccess[F, T]) ShiftRange() (int, int) {
 }
 
 // Simplify implementation for Term interface.
-func (p *VectorAccess[F, T]) Simplify(casts bool) T {
+func (p *VectorAccess[F, T]) Simplify() T {
 	var term Expr[F, T] = p
 	return term.(T)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *VectorAccess[F, T]) Substitute(mapping map[string]F) {
-	substituteTerms(mapping, p.Vars...)
 }
 
 // ValueRange implementation for Term interface.
@@ -123,7 +118,7 @@ func (p *VectorAccess[F, T]) ValueRange() util_math.Interval {
 	var width = uint(0)
 	// Determine total bitwidth of the vector
 	for _, arg := range p.Vars {
-		width += arg.MaskWidth()
+		width += arg.BitWidth()
 	}
 	//
 	return valueRangeOfBits(width)

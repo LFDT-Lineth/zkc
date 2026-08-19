@@ -1,4 +1,4 @@
-//error:7:10-11:expected type u32
+//error:7:10-11:expected type u32, found u16
 //error:9:1-2:return r possibly undefined
 const X:u16 = 123
 

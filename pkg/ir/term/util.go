@@ -101,13 +101,6 @@ func requiredCellsOfTerms[T Contextual](args []T, row int, tr trace.ModuleId) *s
 	})
 }
 
-func substituteTerms[F any, T Substitutable[F]](mapping map[string]F, terms ...T) {
-	//
-	for _, term := range terms {
-		term.Substitute(mapping)
-	}
-}
-
 func shiftRangeOfTerms[E any, T Shiftable[E]](terms ...T) (int, int) {
 	minShift := math.MaxInt
 	maxShift := math.MinInt
@@ -134,11 +127,11 @@ func applyShiftOfTerms[T Shiftable[T]](terms []T, shift int) []T {
 type binop[F any] func(F, F) F
 
 // Simplify logical terms
-func simplifyLogicalTerms[F field.Element[F], T Logical[F, T]](terms []T, casts bool) []T {
+func simplifyLogicalTerms[F field.Element[F], T Logical[F, T]](terms []T) []T {
 	var nterms = make([]T, len(terms))
 	//
 	for i, t := range terms {
-		nterms[i] = t.Simplify(casts)
+		nterms[i] = t.Simplify()
 	}
 	//
 	return nterms
@@ -147,7 +140,7 @@ func simplifyLogicalTerms[F field.Element[F], T Logical[F, T]](terms []T, casts 
 // General purpose constant propagation mechanism.  This reduces all terms to
 // constants (where possible) and combines terms according to a given
 // combinator.
-func simplifyTerms[F field.Element[F], T Expr[F, T]](terms []T, fn binop[F], acc F, casts bool) []T {
+func simplifyTerms[F field.Element[F], T Expr[F, T]](terms []T, fn binop[F], acc F) []T {
 	// Count how many terms reduced to constants.
 	var (
 		count  = 0
@@ -156,7 +149,7 @@ func simplifyTerms[F field.Element[F], T Expr[F, T]](terms []T, fn binop[F], acc
 	)
 	// Propagate through all children
 	for i, e := range terms {
-		nterms[i] = e.Simplify(casts)
+		nterms[i] = e.Simplify()
 		ith = nterms[i]
 		// Check for constant
 		c, ok := ith.(*Constant[F, T])

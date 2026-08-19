@@ -80,7 +80,7 @@ func semTokForKind(kind uint) (uint32, bool) {
 	case parser.NUMBER:
 		return semTokNumber, true
 	// Operators and punctuation-like tokens that carry meaning
-	case parser.ADD, parser.SUB, parser.MUL, parser.DIV, parser.REM,
+	case parser.ADD, parser.SUB, parser.MUL, parser.DIV, parser.DIV_REM, parser.REM,
 		parser.EQUALS, parser.EQUALS_EQUALS, parser.NOT_EQUALS,
 		parser.LESS_THAN, parser.LESS_THAN_EQUALS,
 		parser.GREATER_THAN, parser.GREATER_THAN_EQUALS,

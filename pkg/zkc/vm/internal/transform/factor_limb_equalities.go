@@ -75,7 +75,7 @@ func FactorLimbEqualities[W word.Word[W]](program descriptor.Program[W]) descrip
 		}
 	}
 
-	return descriptor.NewProgram(program.Field(), out...)
+	return descriptor.NewProgram(program.Field(), program.MaxStaticHeight(), out...)
 }
 
 func factorLimbEqualitiesFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {

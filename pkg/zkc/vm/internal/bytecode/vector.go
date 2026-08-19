@@ -180,7 +180,7 @@ func (p *Vector[W]) validateReadWriteConflicts(env Environment[W]) []error {
 		// Sanity check for conflicting reads.
 		if !isUnsafeCall(ith, env) {
 			for _, r := range ith.Uses() {
-				if isZeroWidth(r, env) {
+				if IsZeroWidth(env.Register(r)) {
 					continue
 				}
 
@@ -192,7 +192,7 @@ func (p *Vector[W]) validateReadWriteConflicts(env Environment[W]) []error {
 		}
 		// Sanity check for conflicting writes.
 		for _, r := range ith.Definitions() {
-			if isZeroWidth(r, env) {
+			if IsZeroWidth(env.Register(r)) {
 				continue
 			}
 
@@ -339,11 +339,11 @@ func isNilBytecode[W word.Word[W]](code Bytecode[W]) bool {
 	return value.Kind() == reflect.Pointer && value.IsNil()
 }
 
-// Zero-width registers are placeholders introduced by register splitting. They
-// carry no data, so apparent reads and writes to a shared placeholder cannot
+// IsZeroWidth returns true for zero-width registers. Zero-width registers are registers
+// that carry no data, so apparent reads and writes to a shared placeholder cannot
 // conflict.
-func isZeroWidth[W word.Word[W]](id RegisterId, env Environment[W]) bool {
-	width := env.Register(id).Bitwidth()
+func IsZeroWidth(reg RegisterInfo) bool {
+	width := reg.Bitwidth()
 	return width.HasValue() && width.Unwrap() == 0
 }
 
@@ -402,7 +402,7 @@ func (p *Vector[W]) BranchTable(limbWidth uint) (dfa.Result[dfa.Writes], dfa.Res
 	var (
 		entry    = dfa.EntryPoint[W]()
 		writeMap = p.WriteMap()
-		btf      = branchTableTransfer[W](writeMap, limbWidth)
+		btf      = branchTableTransfer[W](writeMap, limbWidth, uint(len(p.Bytecodes)))
 	)
 	//
 	return writeMap, dfa.Construct(entry, p.Bytecodes, btf)
@@ -464,7 +464,7 @@ func toRegisterIds(regs []RegisterId) []register.Id {
 // analysis over a bytecode vector, mirroring the instruction-level analysis
 // (see instruction.branchTableTransfer).
 func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes], limbWidth uint,
-) dfa.PathTransferFunction[W, Bytecode[W]] {
+	nCodes uint) dfa.PathTransferFunction[W, Bytecode[W]] {
 	return func(offset uint, code Bytecode[W], state dfa.Path[W]) []dfa.Transfer[dfa.Path[W]] {
 		var (
 			arcs   []dfa.Transfer[dfa.Path[W]]
@@ -472,7 +472,21 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes], limbWi
 		)
 		//
 		switch code := code.(type) {
-		case *Fail[W], *Ret[W], *Jmp[W]:
+		case *Ret[W], *Jmp[W]:
+			// Control-flow terminators: their paths are valid executions which
+			// genuinely never reach the subsequent codes, so they contribute
+			// nothing to the conditions of those codes.
+			return nil
+		case *Fail[W]:
+			// A fail's path also terminates, but — unlike Ret/Jmp — every row
+			// taking it is rejected by the fail's own constraint, so it falls
+			// through as a *dying* path: it contributes no reach condition,
+			// only a "don't care" condition which joins may absorb where that
+			// simplifies (see dfa.Path.Die and dfa.Path.Join).
+			if offset+1 < nCodes {
+				return append(arcs, dfa.NewTransfer(state.Die(), offset+1))
+			}
+			// Fail in terminal position: nothing follows within the vector.
 			return nil
 		case *Skip[W]:
 			// join into branch target

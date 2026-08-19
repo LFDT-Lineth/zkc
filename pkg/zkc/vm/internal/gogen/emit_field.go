@@ -15,6 +15,7 @@ package gogen
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 
@@ -249,17 +250,20 @@ func (g *generator) emitIntrinsic(c *code, fn *descFunction, x *bytecode.Intrins
 		}
 
 		return g.emitDivHint(c, fn, x)
-	case bytecode.WIDE_SHL, bytecode.WIDE_SHR, bytecode.WIDE_DIV, bytecode.WIDE_REM:
+	case bytecode.WIDE_SHL, bytecode.WIDE_SHR:
 		if len(x.Sources) != 2 || len(x.Targets) != 1 {
 			return fmt.Errorf("gogen: malformed wide intrinsic (%d sources, %d targets)",
 				len(x.Sources), len(x.Targets))
 		}
 
-		if x.Op == bytecode.WIDE_DIV || x.Op == bytecode.WIDE_REM {
-			return g.emitWideDivision(c, fn, x)
+		return g.emitWideShift(c, fn, x)
+	case bytecode.WIDE_DIVMOD:
+		if len(x.Sources) != 2 || len(x.Targets) != 2 {
+			return fmt.Errorf("gogen: malformed wide intrinsic (%d sources, %d targets)",
+				len(x.Sources), len(x.Targets))
 		}
 
-		return g.emitWideShift(c, fn, x)
+		return g.emitWideDivision(c, fn, x)
 	default:
 		return fmt.Errorf("gogen: unsupported intrinsic operation (%d)", x.Op)
 	}
@@ -279,7 +283,7 @@ func (g *generator) emitIntrinsic(c *code, fn *descFunction, x *bytecode.Intrins
 // multiword division path (emitWideDivision).
 func (g *generator) emitDivHint(c *code, fn *descFunction, x *bytecode.Intrinsic[word.Uint]) error {
 	for _, source := range x.Sources {
-		width, err := g.vectorWidth(fn, source)
+		width, err := g.operandWidth(fn, source)
 		if err != nil {
 			return err
 		}
@@ -289,12 +293,12 @@ func (g *generator) emitDivHint(c *code, fn *descFunction, x *bytecode.Intrinsic
 		}
 	}
 
-	dividend, err := g.assembleHintOperand(fn, x.Sources[0])
+	dividend, err := g.assembleIntrinsicOperand(fn, x.Sources[0])
 	if err != nil {
 		return err
 	}
 
-	divisor, err := g.assembleHintOperand(fn, x.Sources[1])
+	divisor, err := g.assembleIntrinsicOperand(fn, x.Sources[1])
 	if err != nil {
 		return err
 	}
@@ -475,12 +479,12 @@ func (g *generator) unpackWords(c *code, fn *descFunction, vec bytecode.Register
 // arrays.  A non-zero upper shift-count word, or a count at least as wide as
 // the target, leaves the zero-initialised result unchanged.
 func (g *generator) emitWideShift(c *code, fn *descFunction, x *bytecode.Intrinsic[word.Uint]) error {
-	value, _, err := g.packWords(fn, x.Sources[0])
+	value, _, err := g.packOperandWords(fn, x.Sources[0])
 	if err != nil {
 		return err
 	}
 
-	amount, _, err := g.packWords(fn, x.Sources[1])
+	amount, _, err := g.packOperandWords(fn, x.Sources[1])
 	if err != nil {
 		return err
 	}
@@ -521,18 +525,18 @@ func (g *generator) emitWideShift(c *code, fn *descFunction, x *bytecode.Intrins
 	return inner
 }
 
-// emitWideDivision emits WIDE_DIV / WIDE_REM and the wide (>64-bit) form of
+// emitWideDivision emits WIDE_DIVMOD and the wide (>64-bit) form of
 // DIV_HINT.  Each operand is packed into a stack-backed word array, and values
 // that both fit their least-significant word divide natively — so big.Int is
 // confined to values that are genuinely multiword at runtime, not merely
 // wide-typed.
 func (g *generator) emitWideDivision(c *code, fn *descFunction, x *bytecode.Intrinsic[word.Uint]) error {
-	dividend, nX, err := g.packWords(fn, x.Sources[0])
+	dividend, nX, err := g.packOperandWords(fn, x.Sources[0])
 	if err != nil {
 		return err
 	}
 
-	divisor, nY, err := g.packWords(fn, x.Sources[1])
+	divisor, nY, err := g.packOperandWords(fn, x.Sources[1])
 	if err != nil {
 		return err
 	}
@@ -553,10 +557,11 @@ func (g *generator) emitWideDivision(c *code, fn *descFunction, x *bytecode.Intr
 	)
 
 	switch x.Op {
-	case bytecode.WIDE_DIV:
-		results = []result{{"q", x.Targets[0], widthMax(nX), "a[0] / b[0]"}}
-	case bytecode.WIDE_REM:
-		results = []result{{"r", x.Targets[0], bigMin(widthMax(nX), divisorMax), "a[0] % b[0]"}}
+	case bytecode.WIDE_DIVMOD:
+		results = []result{
+			{"q", x.Targets[0], widthMax(nX), "a[0] / b[0]"},
+			{"r", x.Targets[1], bigMin(widthMax(nX), divisorMax), "a[0] % b[0]"},
+		}
 	default: // DIV_HINT (see emitDivHint)
 		results = []result{
 			{"q", x.Targets[0], widthMax(nX), "a[0] / b[0]"},
@@ -633,10 +638,8 @@ func (g *generator) emitWideDivision(c *code, fn *descFunction, x *bytecode.Intr
 			c.linef("var %s big.Int", strings.Join(bigs, ", "))
 
 			switch x.Op {
-			case bytecode.WIDE_DIV:
-				c.line("qb.Quo(&x, &y)")
-			case bytecode.WIDE_REM:
-				c.line("rb.Rem(&x, &y)")
+			case bytecode.WIDE_DIVMOD:
+				c.line("qb.QuoRem(&x, &y, &rb)")
 			default:
 				c.line("qb.QuoRem(&x, &y, &rb)")
 				c.line("wb.Sub(&y, &rb)")
@@ -736,6 +739,53 @@ func (g *generator) assembleHintOperand(fn *descFunction, vec bytecode.RegisterV
 	}
 
 	return operand{expr: expr, max: widthMax(total)}, nil
+}
+
+// operandWidth returns the total bit width of an intrinsic operand: the
+// combined register width for a register vector, or the (minimal) value width
+// for a constant.
+func (g *generator) operandWidth(fn *descFunction, op bytecode.Operand[word.Uint]) (uint, error) {
+	if op.IsConstant() {
+		return uint(max(op.AsConstant().BigInt().BitLen(), 1)), nil
+	}
+	//
+	return g.vectorWidth(fn, op.AsRegisterVector())
+}
+
+// assembleIntrinsicOperand reconstructs a hint operand into a single operand
+// expression: register vectors via assembleHintOperand, and (single limb)
+// constants as exact immediates.
+func (g *generator) assembleIntrinsicOperand(fn *descFunction, op bytecode.Operand[word.Uint]) (operand, error) {
+	if op.IsConstant() {
+		return constOperand(op.AsConstant())
+	}
+	//
+	return g.assembleHintOperand(fn, op.AsRegisterVector())
+}
+
+// packOperandWords flattens an intrinsic operand into little-endian 64-bit
+// word expressions (plus its total bit width): register vectors via packWords,
+// and (single limb) constants as hex literals.
+func (g *generator) packOperandWords(fn *descFunction, op bytecode.Operand[word.Uint]) ([]string, uint, error) {
+	if !op.IsConstant() {
+		return g.packWords(fn, op.AsRegisterVector())
+	}
+	//
+	var (
+		value = op.AsConstant().BigInt()
+		width = uint(max(value.BitLen(), 1))
+		mask  = new(big.Int).SetUint64(math.MaxUint64)
+		words []string
+	)
+	//
+	for shift := uint(0); shift < width; shift += 64 {
+		word := new(big.Int).Rsh(value, shift)
+		word.And(word, mask)
+		//
+		words = append(words, fmt.Sprintf("%#x", word.Uint64()))
+	}
+	//
+	return words, width, nil
 }
 
 // reversedRegisters returns a hint operand vector's registers in

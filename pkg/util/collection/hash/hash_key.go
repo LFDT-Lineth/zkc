@@ -14,6 +14,7 @@ package hash
 
 import (
 	"bytes"
+	"fmt"
 	"hash/fnv"
 )
 
@@ -31,6 +32,32 @@ type Hasher[T any] interface {
 	Equals(T) bool
 	// Return a suitable hashcode.
 	Hash() uint64
+}
+
+// Uint64Key provides a simple wrapper around a uint64.
+type Uint64Key struct {
+	value uint64
+}
+
+// NewUint64Key constructs a new bytes key.
+func NewUint64Key(key uint64) Uint64Key {
+	return Uint64Key{key}
+}
+
+// Equals compares two Uint64Keys to check whether they represent the same
+// underlying byte array (or not).
+func (p Uint64Key) Equals(other Uint64Key) bool {
+	return p.value == other.value
+}
+
+// Hash generates a 64-bit hashcode from the underlying value.
+func (p Uint64Key) Hash() uint64 {
+	// This is a deliberate act to limit the qualitfy of this hash function.
+	return p.value
+}
+
+func (p Uint64Key) String() string {
+	return fmt.Sprintf("%d", p.value)
 }
 
 // ============================================================================
@@ -104,6 +131,11 @@ func (p Array[F]) Equals(other Array[F]) bool {
 	}
 	//
 	return true
+}
+
+// Elements returns the underlying elements.
+func (p Array[F]) Elements() []F {
+	return p.elements
 }
 
 // Hash generat6es a 64-bit hashcode from the underlying bytes array.

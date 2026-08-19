@@ -358,6 +358,22 @@ func Test_ZkcUnit_Basic_83(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_83", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
+func Test_ZkcUnit_Basic_84(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_84", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_85(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_85", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_86(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_86", DEFAULT_UNIT_CONFIG.ParallelTracing("copy", 1))
+}
+
+func Test_ZkcUnit_Basic_87(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_87", DEFAULT_UNIT_CONFIG.ParallelTracing("copy", 1))
+}
+
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
 	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.
@@ -746,12 +762,10 @@ func Test_ZkcUnit_Bitwise_17(t *testing.T) {
 }
 
 func Test_ZkcUnit_Bitwise_18(t *testing.T) {
-	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bitwise_18", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Bitwise_19(t *testing.T) {
-	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bitwise_19", DEFAULT_UNIT_CONFIG)
 }
 
@@ -935,6 +949,11 @@ func Test_ZkcUnit_Div_07(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/div_07", DEFAULT_UNIT_CONFIG)
 }
 
+// Division / Remainder with big int const
+func Test_ZkcUnit_Div_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/div_08", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Remainder Tests
 // ===================================================================
@@ -953,6 +972,25 @@ func Test_ZkcUnit_Rem_03(t *testing.T) {
 
 func Test_ZkcUnit_Rem_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/rem_04", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
+// Combined Division / Remainder ("/%") Tests
+// ===================================================================
+
+// register divisor
+func Test_ZkcUnit_DivMod_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/divmod_01", DEFAULT_UNIT_CONFIG)
+}
+
+// constant divisor
+func Test_ZkcUnit_DivMod_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/divmod_02", DEFAULT_UNIT_CONFIG)
+}
+
+// constant dividend
+func Test_ZkcUnit_DivMod_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/divmod_03", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
@@ -1336,17 +1374,14 @@ func Test_ZkcUnit_BigNum_15(t *testing.T) {
 }
 
 func Test_ZkcUnit_BigNum_16(t *testing.T) {
-	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bignum_16", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_BigNum_17(t *testing.T) {
-	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 
 func Test_ZkcUnit_BigNum_18(t *testing.T) {
-	t.Skip("#2056: large carry registers from splitting multiplication")
 	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.Sampling(0.01))
 }
 

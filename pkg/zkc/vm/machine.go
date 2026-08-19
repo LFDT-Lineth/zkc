@@ -14,12 +14,14 @@ package vm
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
-	log "github.com/sirupsen/logrus"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 )
 
 // Core provides a minimal interface for booting and executing a machine with a
@@ -38,6 +40,10 @@ type Core[W Word[W]] interface {
 	Inputs() iter.Iterator[interpreter.InputOutput[W]]
 	// Return array of output memories
 	Outputs() iter.Iterator[interpreter.InputOutput[W]]
+	// Restore this machine from a given checkpoint.  This does not continue
+	// executiong, but simply initialises the machine state to match the
+	// checkpoint.
+	Restore(CheckPoint[W])
 }
 
 // ProgramPoint identifies a specific bytecode instruction within a given
@@ -51,10 +57,13 @@ type ProgramPoint = descriptor.ProgramPoint
 // Constructors
 // ============================================================================
 
-// BootAndExecute executes the program embodied by these constraints in chunks
-// of n steps at a time, producing any outputs arising.  Execution is faster
-// than trace because it does not record any internal information about the
-// trace --- it simply extracts the outputs at the end.
+// BootAndExecute boots the given machine from the inputs, executes it in chunks
+// of n steps at a time, and extracts any outputs arising.  Two kinds of error
+// can arise during this: (i) a recognised machine failure which is expected
+// under the right circumstances (e.g. executing a fail instruction); (ii) an
+// internal machine failure which is not expected (and signals some kind of bug
+// somewhere).  The traceable flag holds when the given execution can be traced
+// (i.e. when no errors in the latter category arise).
 func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint,
 ) (output map[string][]byte, traceable bool, errs []error) {
 	//
@@ -84,6 +93,176 @@ func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint,
 	return output, traceable, errs
 }
 
+// BootAndCheckpoint boots a given program from a given set of inputs and
+// checkpoints it according to a given strategy.  This produces some number of
+// checkpoints, the final outputs, an indication as to whether this execution can
+// be traced, and any errors arising.
+func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string][]byte, strategy ShardingStrategy,
+) (checkpoints []CheckPoint[W], outputs map[string][]byte, traceable bool, errors []error) {
+	var (
+		err   error
+		steps uint
+		stats = util.NewPerfStats()
+		// specify how many steps each shard will be
+		clk = util.NewCounter(strategy.shardSteps)
+		//
+		inputs map[string][]W
+	)
+	// Locate the function whose calls are to be checkpointed.
+	fid, ok := pr.HasModule(strategy.shardFunction)
+	if !ok {
+		return nil, nil, false, []error{
+			fmt.Errorf("unknown function \"%s\"", strategy.shardFunction),
+		}
+	}
+	// Register a breakpoint at fn's entry and build an interpreter for the
+	// result, so the breakpointer fires each time fn is entered.
+	bci := NewBytecodeInterpreter(pr.BreakPoint(fid, ProgramPoint{Macro: 0, Micro: 0}))
+	// Write a checkpoint as a hex string, one per line.  The counter governs how
+	// frequently this actually fires: it triggers every interval entries of fn.
+	bci.BreakPointer(func(_ uint32) bool {
+		// Only record once every interval-th invocation of fn.
+		if clk.Tick() {
+			// Append next checkoint
+			checkpoints = append(checkpoints, bci.CheckPoint())
+		}
+		// Don't interrupt
+		return false
+	})
+	// Decode inputs and boot machine
+	if inputs, errors = DecodeInputs(bci, in); len(errors) != 0 {
+		return nil, nil, false, errors
+	} else if err := bci.Boot("main", inputs); err != nil {
+		return nil, nil, false, append(errors, err)
+	}
+	// Set initial checkpoint to from beginning of execution until the first
+	// time the target function is executed.
+	checkpoints = append(checkpoints, bci.CheckPoint())
+	// Execute machine to generate checkpoints
+	if steps, err = ExecuteAll(bci, math.MaxUint); err != nil {
+		errors = append(errors, err)
+		// Recognised failures don't prevent tracing.
+		_, traceable = err.(*Failure)
+	} else {
+		// Encode outputs
+		outputs = EncodeOutputs(bci)
+		traceable = true
+	}
+	// Log stats
+	stats.Log(fmt.Sprintf("Machine execution (%d steps, %d checkpoints)", steps, len(checkpoints)))
+	// Done
+	return checkpoints, outputs, traceable, errors
+}
+
+// BootAndTrace boots a machine from the given inputs and traces according to
+// the given strategy.  Two kinds of error can arise during this: (i) a
+// recognised machine failure which is expected under the right circumstances
+// (e.g. executing a fail instruction); (ii) an internal machine failure which
+// is not expected (and signals some kind of bug somewhere).  The traceable flag
+// holds when the given execution can be traced (i.e. when no errors in the
+// latter category arise).
+func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], input map[string][]byte,
+) (trace Trace[F], output map[string][]byte, errs []error) {
+	//
+	var (
+		// constracter tracer
+		tracer T
+		//
+		traceable bool
+	)
+	// Initialise the tracer
+	tracer = tracer.Init(pr)
+	// construct tracing interpreter
+	bci := constructTracingInterpreter(pr, tracer)
+	// Execute machine in chunks of 1K steps
+	if output, traceable, errs = BootAndExecute(bci, input, math.MaxUint); !traceable {
+		return nil, nil, errs
+	}
+	//
+	var stats = util.NewPerfStats()
+	// Apply post processing
+	array.Apply(bci.ExtractMemory(), func(_ uint, p util.Pair[uint16, RuntimeMemory[W]]) {
+		tracer.TraceMemory(p.Left, p.Right, pr.Field())
+	})
+	// Done
+	stats.Log("Trace processing")
+	// Success, build trace
+	return tracer.Build(), output, errs
+}
+
+// RestoreAndTraceFor restores a machine from the given checkpoint and traces
+// according to the given strategy.  Two kinds of error can arise during this:
+// (i) a recognised machine failure which is expected under the right
+// circumstances (e.g. executing a fail instruction); (ii) an internal machine
+// failure which is not expected (and signals some kind of bug somewhere).  The
+// traceable flag holds when the given execution can be traced (i.e. when no
+// errors in the latter category arise).
+func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], cp CheckPoint[W],
+	fn string, nsteps uint64) (trace Trace[F], errs []error) {
+	//
+	var (
+		// constracter tracer
+		tracer T
+		//
+		traceable bool
+	)
+	// Initialise the tracer
+	tracer = tracer.Init(pr)
+	// construct tracing interpreter
+	bci := constructTraceForInterpreter(pr, fn, nsteps, tracer)
+	// Sanity check error arising construct the interpreter.
+	if bci == nil {
+		return nil, []error{
+			fmt.Errorf("unknown function \"%s\"", fn),
+		}
+	}
+	// Execute the given machine
+	if traceable, errs = RestoreAndExecute(bci, cp, math.MaxUint); !traceable {
+		return nil, errs
+	}
+	//
+	var stats = util.NewPerfStats()
+	// Apply post processing
+	array.Apply(bci.ExtractMemory(), func(_ uint, p util.Pair[uint16, RuntimeMemory[W]]) {
+		tracer.TraceMemory(p.Left, p.Right, pr.Field())
+	})
+	// Done
+	stats.Log("Trace processing")
+	//
+	return tracer.Build(), errs
+}
+
+// RestoreAndExecute restores the given machine from a checkpoint, and continues
+// executing in chunks of n steps at a time.  Two kinds of error can arise
+// during this: (i) a recognised machine failure which is expected under the
+// right circumstances (e.g. executing a fail instruction); (ii) an internal
+// machine failure which is not expected (and signals some kind of bug
+// somewhere).  The traceable flag holds when the given execution can be traced
+// (i.e. when no errors in the latter category arise).
+func RestoreAndExecute[W Word[W], M Core[W]](m M, cp CheckPoint[W], n uint) (traceable bool, errs []error) {
+	//
+	var (
+		steps uint
+		err   error
+		stats = util.NewPerfStats()
+	)
+	// Restore machine state from checkpoint
+	m.Restore(cp)
+	// Execute until termination or interruption.
+	if steps, err = ExecuteAll(m, n); err != nil {
+		errs = append(errs, err)
+		// Recognised failures don't prevent tracing.
+		_, traceable = err.(*Failure)
+	} else {
+		// Success
+		traceable = true
+	}
+	// Log stats
+	stats.Log(fmt.Sprintf("Machine resumed execution (%d steps)", steps))
+	//
+	return traceable, errs
+}
+
 // ExecuteAll executes a given machine to completion in chunks of n steps,
 // returning the number of steps executed and/or any error arising.
 func ExecuteAll[W Word[W], M Core[W]](machine M, n uint) (uint, error) {
@@ -104,8 +283,11 @@ func ExecuteAll[W Word[W], M Core[W]](machine M, n uint) (uint, error) {
 
 // FilterInputs restricts the given set of (parsed) inputs to the program's
 // declared input memories.
-func FilterInputs[W Word[W], T any](p Program[W], input map[string][]T) map[string][]T {
-	inputs := make(map[string][]T)
+func FilterInputs[W Word[W], T any](p Program[W], input map[string][]T) (map[string][]T, []string) {
+	var (
+		inputs  = make(map[string][]T)
+		ignores []string
+	)
 	//
 	for it := p.Inputs(); it.HasNext(); {
 		in := it.Next()
@@ -116,11 +298,11 @@ func FilterInputs[W Word[W], T any](p Program[W], input map[string][]T) map[stri
 	// Sanity check what was actually filtered out
 	for k := range input {
 		if _, ok := inputs[k]; !ok {
-			log.Warn("ignoring input/output \"", k, "\"")
+			ignores = append(ignores, k)
 		}
 	}
 	//
-	return inputs
+	return inputs, ignores
 }
 
 // DecodeInputsOutputs decodes  given set of input and output bytes
@@ -217,4 +399,75 @@ func EncodeOutputs[W Word[W], M Core[W]](m M) map[string][]byte {
 	}
 	//
 	return outputs
+}
+
+// ======================================================================================
+// Helpers
+// ======================================================================================
+
+func constructTracingInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], tracer T,
+) *interpreter.Interpreter[W] {
+	//
+	var bci = interpreter.New(pr, true).WithAccessLog()
+	// Register breakpoint handler to record all states generated during
+	// tracing.
+	bci = bci.BreakPointer(func(opcode uint32) bool {
+		// Extract state from the interpreter
+		fid, pc, frame := interpreter.ExtractExecutingState(bci)
+		// Check whether terminating state
+		terminal := opcode == encoding.RET || opcode == encoding.WIDE|encoding.WIDE_RET<<8
+		// NOTE: don't clone the frame here (for now) since it is always
+		// converted into a slice of field elements F.
+		tracer.TraceFunctionLine(State[W]{fid, pc, terminal, frame})
+		// don't interrupt
+		return false
+	})
+	//
+	return bci
+}
+
+func constructTraceForInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], fn string, nsteps uint64,
+	tracer T) *interpreter.Interpreter[W] {
+	var (
+		funId uint16
+		ok    bool
+		clk   = util.NewCounter(nsteps)
+	)
+	// Locate function to be sharded.
+	if funId, ok = pr.HasModule(fn); !ok {
+		return nil
+	}
+	// Register breakpoint at start of target function.
+	pr = pr.BreakPoint(funId, ProgramPoint{Macro: 0, Micro: 0})
+	// Construct interpreter with breakpoint
+	var (
+		// Construct tracing interpreter
+		bci = interpreter.New(pr, true).WithAccessLog()
+		// Identify pc of break point in binary encoding
+		bp, bp_ok = bci.Binary().AddressOf(funId)
+	)
+	// Sanity check
+	if !bp_ok {
+		panic(fmt.Sprintf("missing breakpoint address for %s", fn))
+	}
+	// Register breakpoint handler to record all states generated during
+	// tracing.
+	bci = bci.BreakPointer(func(opcode uint32) bool {
+		// Check whether break point for step count (or not).
+		if bci.ProgramCounter() == bp.Offset {
+			// interrupt when counter finished
+			return clk.Tick()
+		}
+		// Extract state from the interpreter
+		fid, pc, frame := interpreter.ExtractExecutingState(bci)
+		// Check whether terminating state
+		terminal := opcode == encoding.RET || opcode == encoding.WIDE|encoding.WIDE_RET<<8
+		// NOTE: don't clone the frame here (for now) since it is always
+		// converted into a slice of field elements F.
+		tracer.TraceFunctionLine(State[W]{fid, pc, terminal, frame})
+		// don't interrupt
+		return false
+	})
+	//
+	return bci
 }

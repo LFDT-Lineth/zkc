@@ -40,8 +40,6 @@ type RegisterAccess[F field.Element[F], T Expr[F, T]] struct {
 	// Bitwidth of register being accessed.  This can be MaxUint to signal it
 	// has "field width".
 	bitwidth uint
-	// Mask determines what subset of bitwidth is actively used.
-	maskwidth uint
 	// Relative shift of access.  This indicates on which row (relative to the
 	// current row) the given register is being read.
 	shift int
@@ -59,7 +57,7 @@ func NewRegisterAccess[F field.Element[F], T Expr[F, T]](register register.Id, b
 func RawRegisterAccess[F field.Element[F], T Expr[F, T]](register register.Id, bitwidth uint, shift int,
 ) *RegisterAccess[F, T] {
 	//
-	return &RegisterAccess[F, T]{register, bitwidth, bitwidth, shift}
+	return &RegisterAccess[F, T]{register, bitwidth, shift}
 }
 
 // FieldAccess constructs an AIR expression representing the value of a given
@@ -70,7 +68,7 @@ func RawRegisterAccess[F field.Element[F], T Expr[F, T]](register register.Id, b
 func FieldAccess[F field.Element[F], T Expr[F, T]](register register.Id, shift int,
 ) *RegisterAccess[F, T] {
 	//
-	return &RegisterAccess[F, T]{register, math.MaxUint, math.MaxUint, shift}
+	return &RegisterAccess[F, T]{register, math.MaxUint, shift}
 }
 
 // Air indicates this term can be used at the AIR level.
@@ -87,31 +85,7 @@ func (p *RegisterAccess[F, T]) HasFieldType() bool {
 	return p.bitwidth == math.MaxUint
 }
 
-// Mask constructs a variation on this register access which only uses the
-// "masked" portion of the given register.  For example, this can be used to
-// implement a cast.
-func (p *RegisterAccess[F, T]) Mask(maskwidth uint) *RegisterAccess[F, T] {
-	// Sanity check mask
-	if maskwidth > p.bitwidth {
-		panic(fmt.Sprintf("invalid mask (u%d > u%d)", maskwidth, p.bitwidth))
-	} else if p.HasFieldType() && maskwidth != math.MaxUint {
-		panic("cannot mask a register of field type")
-	}
-	//
-	return &RegisterAccess[F, T]{p.register, p.bitwidth, maskwidth, p.shift}
-}
-
-// MaskWidth returns the portion of the underlying column / register actually
-// read by this access.  For example, given a register of type u16 we might only
-// be accessing the first u8 portion.  In such case, the access is acting like a
-// cast.
-func (p *RegisterAccess[F, T]) MaskWidth() uint {
-	return p.maskwidth
-}
-
 // BitWidth returns the declared bitwidth of the variable being accessed.
-// Observe that the actual width of this access may be smaller than this if a
-// mask is being applied.
 func (p *RegisterAccess[F, T]) BitWidth() uint {
 	return p.bitwidth
 }
@@ -124,7 +98,7 @@ func (p *RegisterAccess[F, T]) RelativeShift() int {
 // ApplyShift implementation for Term interface.
 func (p *RegisterAccess[F, T]) ApplyShift(shift int) T {
 	var reg Expr[F, T] = &RegisterAccess[F, T]{
-		p.register, p.bitwidth, p.maskwidth, p.shift + shift,
+		p.register, p.bitwidth, p.shift + shift,
 	}
 	//
 	return reg.(T)
@@ -141,16 +115,17 @@ func (p *RegisterAccess[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *RegisterAccess[F, T]) EvalAt(k int, module trace.Module[F], _ register.Map) (F, error) {
+func (p *RegisterAccess[F, T]) EvalAt(k uint, module trace.Module[F], _ register.Map) (F, error) {
 	var (
-		val = module.Column(p.register.Unwrap()).Get(k + p.shift)
-		err error
+		err    error
+		row    = uint(int(k) + p.shift)
+		column = module.Column(p.register.Unwrap())
+		val    F
 	)
-	// // Dynamic cast
-	// if p.bitwidth != math.MaxUint && val.Cmp(p.bound) >= 0 {
-	// 	// Construct error
-	// 	err = fmt.Errorf("read failure (value %s not u%d)", val.String(), p.bitwidth)
-	// }
+	// Bounds check
+	if row < column.Len() {
+		val = column.Get(row)
+	}
 	//
 	return val, err
 }
@@ -179,11 +154,6 @@ func (p *RegisterAccess[F, T]) Lisp(global bool, mapping register.Map) sexp.SExp
 		shift := sexp.NewSymbol(fmt.Sprintf("%d", p.shift))
 		//
 		access = sexp.NewList([]sexp.SExp{sexp.NewSymbol("shift"), access, shift})
-	}
-	//
-	if p.maskwidth != p.bitwidth {
-		tw := fmt.Sprintf("u%d", p.maskwidth)
-		access = sexp.NewList([]sexp.SExp{sexp.NewSymbol(tw), access})
 	}
 	//
 	return access
@@ -215,14 +185,9 @@ func (p *RegisterAccess[F, T]) ShiftRange() (int, int) {
 }
 
 // Simplify implementation for Term interface.
-func (p *RegisterAccess[F, T]) Simplify(casts bool) T {
+func (p *RegisterAccess[F, T]) Simplify() T {
 	var tmp Expr[F, T] = p
 	return tmp.(T)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *RegisterAccess[F, T]) Substitute(mapping map[string]F) {
-
 }
 
 // ValueRange implementation for Term interface.
@@ -234,7 +199,7 @@ func (p *RegisterAccess[F, T]) ValueRange() util_math.Interval {
 		return util_math.INFINITY
 	}
 	//
-	return valueRangeOfBits(p.maskwidth)
+	return valueRangeOfBits(p.bitwidth)
 }
 
 func valueRangeOfBits(bitwidth uint) util_math.Interval {
@@ -262,10 +227,6 @@ func (p *RegisterAccess[F, T]) MarshalBinary() ([]byte, error) {
 	if err := binary.Write(&buf, binary.BigEndian, uint16(p.bitwidth)); err != nil {
 		return nil, err
 	}
-	// Maskwidth
-	if err := binary.Write(&buf, binary.BigEndian, uint16(p.maskwidth)); err != nil {
-		return nil, err
-	}
 	// Shift
 	if err := binary.Write(&buf, binary.BigEndian, int16(p.RelativeShift())); err != nil {
 		return nil, err
@@ -284,10 +245,9 @@ func (p *RegisterAccess[F, T]) UnmarshalBinary(data []byte) error {
 // This should match exactly the encoding above.
 func (p *RegisterAccess[F, T]) UnmarshalBuffer(buf *bytes.Buffer) error {
 	var (
-		index     uint16
-		bitwidth  uint16
-		maskwidth uint16
-		shift     int16
+		index    uint16
+		bitwidth uint16
+		shift    int16
 	)
 	// Register index
 	if err := binary.Read(buf, binary.BigEndian, &index); err != nil {
@@ -295,10 +255,6 @@ func (p *RegisterAccess[F, T]) UnmarshalBuffer(buf *bytes.Buffer) error {
 	}
 	// Register bitwidth
 	if err := binary.Read(buf, binary.BigEndian, &bitwidth); err != nil {
-		return err
-	}
-	// Register maskwidth
-	if err := binary.Read(buf, binary.BigEndian, &maskwidth); err != nil {
 		return err
 	}
 	// Register shift
@@ -315,7 +271,6 @@ func (p *RegisterAccess[F, T]) UnmarshalBuffer(buf *bytes.Buffer) error {
 	*p = RegisterAccess[F, T]{
 		register.NewId(uint(index)),
 		normBitwidth,
-		uint(maskwidth),
 		int(shift),
 	}
 	// Done

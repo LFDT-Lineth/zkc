@@ -16,10 +16,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -33,23 +31,16 @@ type Element[F any] = field.Element[F]
 // constants (which no longer make sense).  Furthermore, this stage can
 // technically fail if the relevant constraints cannot be correctly concretized.
 // For example, they contain a constant which does not fit within the field.
-func Concretize[F1 Element[F1], F2 Element[F2]](cfg field.Config, mods []Module[F1]) (Schema[F2], module.LimbsMap) {
-	var (
-		// Construct a limbs map which determines the mapping of all registers
-		// into their limbs.
-		mapping = module.NewLimbsMap[F1](cfg, mods...)
-		//
-		nModules = make([]Module[F2], len(mods))
-	)
+func Concretize[F1 Element[F1], F2 Element[F2]](mods []Module[F1]) Schema[F2] {
+	var nModules = make([]Module[F2], len(mods))
 	//
-	for i, m := range Subdivide(mapping, mods) {
-		// Concretize subdivided module.
+	for i, m := range mods {
 		nModules[i] = concretizeModule[F1, F2](m)
 	}
 	// compile constant registers.
 	InitialiseConstantRegisters(0, nModules)
 	//
-	return schema.NewUniformSchema(nModules), mapping
+	return schema.NewUniformSchema(nModules)
 }
 
 func concretizeModule[F1 Element[F1], F2 Element[F2]](m Module[F1]) Module[F2] {
@@ -62,7 +53,7 @@ func concretizeModule[F1 Element[F1], F2 Element[F2]](m Module[F1]) Module[F2] {
 	)
 	// Initialise new module
 	r = r.Init(m.Name(), m.AllowPadding(), m.IsPublicOutput(), m.IsPrivateOutput(), m.IsSynthetic(), m.IsNative(),
-		m.IsStatic(), m.Keys())
+		m.IsStatic())
 	// Add concretized components
 	r.AddRegisters(m.Registers()...)
 	r.AddAssignments(assignments...)
@@ -90,12 +81,8 @@ func concretizeAssignments[F1 Element[F1], F2 Element[F2]](assigns []schema.Assi
 }
 
 func concretizeAssignment[F1 Element[F1], F2 Element[F2]](assign schema.Assignment[F1]) schema.Assignment[F2] {
-	switch a := assign.(type) {
-	case *assignment.ComputedRegister[F1]:
-		return assignment.NewComputedRegister[F2](a.Expr, a.Module, a.Targets...)
-	default:
-		panic(fmt.Sprintf("unknown assignment: %s\n", reflect.TypeOf(a).String()))
-	}
+	// TODO: we actually never concretize assignments any more.
+	panic(fmt.Sprintf("unknown assignment: %s\n", reflect.TypeOf(assign).String()))
 }
 
 // ============================================================================
@@ -120,9 +107,9 @@ func concretizeConstraint[F1 Element[F1], F2 Element[F2]](constraint Constraint[
 		// independent of the underlying field.
 		return NewLookupConstraint[F2](c.Handle, c.Targets, c.Sources)
 	case RangeConstraint[F1]:
-		var terms = concretizeRegisterAccesses[F1, F2](c.Sources)
-		//
-		return NewRangeConstraint(c.Handle, c.Context, terms, c.Bitwidths)
+		// NOTE: as for lookups, range constraints are made up of registers and,
+		// hence, are independent of the underlying field.
+		return NewRangeConstraint[F2](c.Handle, c.Context, c.Sources, c.Bitwidths)
 	case VanishingConstraint[F1]:
 		term := concretizeLogicalTerm[F1, F2](c.Constraint)
 		//
@@ -225,16 +212,14 @@ func concretizeVectorAccess[F1 Element[F1], F2 Element[F2]](expr *VectorAccess[F
 }
 
 func concretizeRegisterAccess[F1 Element[F1], F2 Element[F2]](expr *RegisterAccess[F1]) *RegisterAccess[F2] {
-	access := term.RawRegisterAccess[F2, Term[F2]](expr.Register(), expr.BitWidth(), expr.RelativeShift())
-	// Apply any mask
-	return access.Mask(expr.MaskWidth())
+	return term.RawRegisterAccess[F2, Term[F2]](expr.Register(), expr.BitWidth(), expr.RelativeShift())
 }
 
 func concretizeRegisterAccesses[F1 Element[F1], F2 Element[F2]](exprs []*RegisterAccess[F1]) []*RegisterAccess[F2] {
 	var nterms = make([]*RegisterAccess[F2], len(exprs))
 	//
 	for i, t := range exprs {
-		nterms[i] = term.RawRegisterAccess[F2, Term[F2]](t.Register(), t.BitWidth(), t.RelativeShift()).Mask(t.MaskWidth())
+		nterms[i] = term.RawRegisterAccess[F2, Term[F2]](t.Register(), t.BitWidth(), t.RelativeShift())
 	}
 	//
 	return nterms

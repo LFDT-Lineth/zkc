@@ -32,11 +32,11 @@ import (
 // the previous access's write-side at that address, or the initial 0).
 type Log[W word.Word[W]] interface {
 	// Read records a read of the cell at address, which afterwards holds
-	// valueWritten (unchanged, equal to the value read) at timestampWritten.
-	Read(address uint64, timestampWritten uint64, valueWritten W)
+	// writeVal (unchanged, equal to the value read) at writeStamp.
+	Read(address uint64, readStamp, writeStamp uint64, valueRead W)
 	// Write records a write to the cell at address, which afterwards holds
-	// valueWritten at timestampWritten.
-	Write(address uint64, timestampWritten uint64, valueWritten W)
+	// writeVal at writeStamp.
+	Write(address uint64, readStamp, writeStamp uint64, valueRead, valueWritten W)
 	// Reset clears the log so recording starts fresh (called by Initialise).
 	Reset()
 	// Accesses returns the recorded accesses in chronological order; nil for a
@@ -52,20 +52,28 @@ type Log[W word.Word[W]] interface {
 // timestamp the cell holds AFTER the access, and whether the access was
 // a write.
 type AccessData[W word.Word[W]] struct {
-	address   uint64
-	value     W
-	timestamp uint64
-	isWrite   bool
+	address      uint64
+	valueRead    W
+	readStamp    uint64
+	valueWritten W
+	writeStamp   uint64
+	isWrite      bool
 }
 
 // Address returns the address touched by this access.
 func (a AccessData[W]) Address() uint64 { return a.address }
 
+// ValueRead returns the value the cell holds after this access.
+func (a AccessData[W]) ValueRead() W { return a.valueRead }
+
 // ValueWritten returns the value the cell holds after this access.
-func (a AccessData[W]) ValueWritten() W { return a.value }
+func (a AccessData[W]) ValueWritten() W { return a.valueWritten }
+
+// TimestampRead returns the timestamp the cell held before this access.
+func (a AccessData[W]) TimestampRead() uint64 { return a.readStamp }
 
 // TimestampWritten returns the timestamp the cell holds after this access.
-func (a AccessData[W]) TimestampWritten() uint64 { return a.timestamp }
+func (a AccessData[W]) TimestampWritten() uint64 { return a.writeStamp }
 
 // IsWrite reports whether this access was a write (true) or a read (false).
 func (a AccessData[W]) IsWrite() bool { return a.isWrite }
@@ -76,10 +84,12 @@ func (a AccessData[W]) IsWrite() bool { return a.isWrite }
 type CheckpointingMemoryLog[W word.Word[W]] struct{}
 
 // Read implementation for Log (no-op).
-func (l *CheckpointingMemoryLog[W]) Read(address uint64, timestampWritten uint64, valueWritten W) {}
+func (l *CheckpointingMemoryLog[W]) Read(address uint64, readStamp, writeStamp uint64, valueRead W) {
+}
 
 // Write implementation for Log (no-op).
-func (l *CheckpointingMemoryLog[W]) Write(address uint64, timestampWritten uint64, valueWritten W) {}
+func (l *CheckpointingMemoryLog[W]) Write(address uint64, readStamp, writeStamp uint64, valueRead, valueWritten W) {
+}
 
 // Reset implementation for Log (no-op).
 func (l *CheckpointingMemoryLog[W]) Reset() {}
@@ -98,13 +108,13 @@ type TraceableMemoryLog[W word.Word[W]] struct {
 
 // Read implementation for Log.
 // valueWritten will coincide with the read value.
-func (l *TraceableMemoryLog[W]) Read(address uint64, timestampWritten uint64, valueWritten W) {
-	l.accesses = append(l.accesses, AccessData[W]{address, valueWritten, timestampWritten, false})
+func (l *TraceableMemoryLog[W]) Read(address uint64, readStamp, writeStamp uint64, valueRead W) {
+	l.accesses = append(l.accesses, AccessData[W]{address, valueRead, readStamp, valueRead, writeStamp, false})
 }
 
 // Write implementation for Log.
-func (l *TraceableMemoryLog[W]) Write(address uint64, timestampWritten uint64, valueWritten W) {
-	l.accesses = append(l.accesses, AccessData[W]{address, valueWritten, timestampWritten, true})
+func (l *TraceableMemoryLog[W]) Write(address uint64, readStamp, writeStamp uint64, valueRead, valueWritten W) {
+	l.accesses = append(l.accesses, AccessData[W]{address, valueRead, readStamp, valueWritten, writeStamp, true})
 }
 
 // Reset implementation for Log.

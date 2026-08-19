@@ -20,7 +20,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -55,7 +54,7 @@ const stampWidth uint = 32
 //   - outputs  : []VALUE_WRITTEN           (declared data lines)
 //   - computed : EXEC, FINL, IS_WRITE, []VALUE_READ, []TIMESTAMP_WRITTEN,
 //     []TIMESTAMP_READ, []TIMESTAMP_DELTA, []ADDRESS_DELTA,
-//     []TS_CARRY, []ADDR_CARRY
+//     []TS_CARRY, []ADDR_CARRY, EXEC_WRITE, EXEC_READ
 //
 // All limb slices are most-significant-limb first (matching declaration /
 // "big endian" order used by ApplyLimbsMap and the module register order).
@@ -116,11 +115,70 @@ type ramLayout struct {
 	// by significance (index 0 == carry out of the least significant limb).
 	tsCarry   []register.Id
 	addrCarry []register.Id
+	// execWrite / execRead select the write (EXEC * IS_WRITE) and read
+	// (EXEC * (1 - IS_WRITE)) rows of the execution phase.  They exist because
+	// a lookup's target filter must be a single column: a caller's write-site
+	// lookup targets the table filtered by execWrite, a read-site lookup by
+	// execRead, which is how each access's read/write kind is pinned.
+	execWrite register.Id
+	execRead  register.Id
 	// Limb widths (most-significant first) of the address, data and timestamp
 	// register families.
 	addrWidths []uint
 	dataWidths []uint
 	tsWidths   []uint
+}
+
+// translateReadWriteMemory builds the MIR module for a read-write (RAM) memory:
+// the declared address / data columns plus the synthetic phase, value-read,
+// timestamp and delta columns, together with the local (per-row) consistency
+// constraints of the RAM spec.  The offline memory-checking bus (rcv/snd) and
+// the finalization rows are deferred to a follow-up PR; the finalization-phase
+// constraints below are therefore written but vacuous (no FINL rows are emitted
+// yet).
+func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
+	ctx schema.ModuleId, m *vm.Memory[W], field field.Config,
+	rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
+	//
+	var (
+		mod    *schema.Table[F, mir.Constraint[F]]
+		regs   = toRegisters(m.Registers())
+		layout = computeRamLayout(m, field)
+	)
+	// Initialise module.  AllowPadding is true so a leading padding row exists
+	// (EXEC == FINL == 0 there).  A read-write memory is internal state: it is
+	// neither a public input nor a public output, and never native.
+	mod = mod.Init(m.Name(), true, false, false, false, false, false)
+	mod.AddRegisters(regs...)
+	// Append the synthetic columns, in the order fixed by computeRamLayout.
+	mod.AddRegisters(
+		register.NewComputed(tracer.RAM_EXEC_NAME, 1),
+		register.NewComputed(tracer.RAM_FINL_NAME, 1),
+		register.NewComputed(tracer.RAM_IS_WRITE_NAME, 1),
+	)
+	addLimbRegisters(mod, tracer.RAM_VALUE_READ_PREFIX, layout.dataWidths)
+	addLimbRegisters(mod, tracer.RAM_TS_WRITTEN_PREFIX, layout.tsWidths)
+	addLimbRegisters(mod, tracer.RAM_TS_READ_PREFIX, layout.tsWidths)
+	addLimbRegisters(mod, tracer.RAM_TS_DELTA_PREFIX, layout.tsWidths)
+	addLimbRegisters(mod, tracer.RAM_ADDR_DELTA_PREFIX, layout.addrWidths)
+	addCarryRegisters(mod, tracer.RAM_TS_CARRY_PREFIX, len(layout.tsCarry))
+	addCarryRegisters(mod, tracer.RAM_ADDR_CARRY_PREFIX, len(layout.addrCarry))
+	mod.AddRegisters(
+		register.NewComputed(tracer.RAM_EXEC_WRITE_NAME, 1),
+		register.NewComputed(tracer.RAM_EXEC_READ_NAME, 1),
+	)
+	// Local (per-row) consistency constraints.
+	mod.AddConstraints(ramGeneralConstraints[F](ctx, layout)...)
+	mod.AddConstraints(ramExecConstraints[F](ctx, layout)...)
+	mod.AddConstraints(ramFinlConstraints[F](ctx, layout)...)
+	// Range-prove every column.  This covers the internally-witnessed columns
+	// (value-read, timestamp-read, deltas, carries) which — unlike the address /
+	// value / timestamp-written columns pinned by the caller lookup — are not
+	// otherwise constrained.  1-bit columns (phase bits, carries) get an r*r==r
+	// constraint; wider columns a range-table lookup.
+	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
+	//
+	return mod
 }
 
 // computeRamLayout determines the full column layout of a RAM module for the
@@ -166,6 +224,9 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 	layout.tsCarry = idRange(next, nStamp-1)
 	next += nStamp - 1
 	layout.addrCarry = idRange(next, nAddr-1)
+	next += nAddr - 1
+	layout.execWrite = register.NewId(next)
+	layout.execRead = register.NewId(next + 1)
 	//
 	return layout
 }
@@ -200,63 +261,13 @@ func widthsOf[W vm.Word[W]](regs []vm.Register[W]) []uint {
 	return widths
 }
 
-// translateReadWriteMemory builds the MIR module for a read-write (RAM) memory:
-// the declared address / data columns plus the synthetic phase, value-read,
-// timestamp and delta columns, together with the local (per-row) consistency
-// constraints of the RAM spec.  The offline memory-checking bus (rcv/snd) and
-// the finalization rows are deferred to a follow-up PR; the finalization-phase
-// constraints below are therefore written but vacuous (no FINL rows are emitted
-// yet).
-func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W], field field.Config,
-	rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
-	//
-	var (
-		mod     *schema.Table[F, mir.Constraint[F]]
-		name    = trace.ModuleName{Name: m.Name(), Multiplier: 1}
-		regs    = toRegisters(m.Registers())
-		layout  = computeRamLayout(m, field)
-		padding big.Int
-	)
-	// Initialise module.  AllowPadding is true so a leading padding row exists
-	// (EXEC == FINL == 0 there).  A read-write memory is internal state: it is
-	// neither a public input nor a public output, and never native.
-	mod = mod.Init(name, true, false, false, false, false, false, 0)
-	mod.AddRegisters(regs...)
-	// Append the synthetic columns, in the order fixed by computeRamLayout.
-	mod.AddRegisters(
-		register.NewComputed(tracer.RAM_EXEC_NAME, 1, padding),
-		register.NewComputed(tracer.RAM_FINL_NAME, 1, padding),
-		register.NewComputed(tracer.RAM_IS_WRITE_NAME, 1, padding),
-	)
-	addLimbRegisters(mod, tracer.RAM_VALUE_READ_PREFIX, layout.dataWidths, padding)
-	addLimbRegisters(mod, tracer.RAM_TS_WRITTEN_PREFIX, layout.tsWidths, padding)
-	addLimbRegisters(mod, tracer.RAM_TS_READ_PREFIX, layout.tsWidths, padding)
-	addLimbRegisters(mod, tracer.RAM_TS_DELTA_PREFIX, layout.tsWidths, padding)
-	addLimbRegisters(mod, tracer.RAM_ADDR_DELTA_PREFIX, layout.addrWidths, padding)
-	addCarryRegisters(mod, tracer.RAM_TS_CARRY_PREFIX, len(layout.tsCarry), padding)
-	addCarryRegisters(mod, tracer.RAM_ADDR_CARRY_PREFIX, len(layout.addrCarry), padding)
-	// Local (per-row) consistency constraints.
-	mod.AddConstraints(ramGeneralConstraints[F](ctx, layout)...)
-	mod.AddConstraints(ramExecConstraints[F](ctx, layout)...)
-	mod.AddConstraints(ramFinlConstraints[F](ctx, layout)...)
-	// Range-prove every column.  This covers the internally-witnessed columns
-	// (value-read, timestamp-read, deltas, carries) which — unlike the address /
-	// value / timestamp-written columns pinned by the caller lookup — are not
-	// otherwise constrained.  1-bit columns (phase bits, carries) get an r*r==r
-	// constraint; wider columns a range-table lookup.
-	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
-	//
-	return mod
-}
-
 // addLimbRegisters appends one computed register per given limb width, named
 // "<prefix><k>".
 func addLimbRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
-	prefix string, widths []uint, padding big.Int) {
+	prefix string, widths []uint) {
 	//
 	for k, w := range widths {
-		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), w, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), w))
 	}
 }
 
@@ -264,10 +275,10 @@ func addLimbRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]
 // "<prefix><k>".  A carry out of a two-operand limb addition is always in {0,1},
 // so one bit suffices.
 func addCarryRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
-	prefix string, n int, padding big.Int) {
+	prefix string, n int) {
 	//
 	for k := 0; k < n; k++ {
-		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), 1, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), 1))
 	}
 }
 
@@ -286,6 +297,8 @@ func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout)
 		prevFinl  = mirc.Variable[register.Id, Expr[F]](l.finl, 1, -1)
 		prevExec  = mirc.Variable[register.Id, Expr[F]](l.exec, 1, -1)
 		prevActiv = prevExec.Add(prevFinl)
+		execWrite = mirc.Variable[register.Id, Expr[F]](l.execWrite, 1, 0)
+		execRead  = mirc.Variable[register.Id, Expr[F]](l.execRead, 1, 0)
 	)
 	//
 	return []mir.Constraint[F]{
@@ -306,6 +319,13 @@ func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout)
 		// (EXEC+FINL) nondecreasing: active[i-1] == 1 => active[i] == 1.
 		mir.NewVanishingConstraint("active_monotony", ctx, util.None[int](),
 			mirc.If(prevActiv.Equals(one), active.Equals(one)).AsLogical()),
+		// The per-kind lookup selectors are fully determined:
+		// EXEC_WRITE == EXEC * IS_WRITE, and EXEC_READ == EXEC * (1 - IS_WRITE)
+		// expressed subtraction-free as EXEC_WRITE + EXEC_READ == EXEC.
+		mir.NewVanishingConstraint("exec_write_def", ctx, util.None[int](),
+			execWrite.Equals(exec.Multiply(isWrite)).AsLogical()),
+		mir.NewVanishingConstraint("exec_read_def", ctx, util.None[int](),
+			execWrite.Add(execRead).Equals(exec).AsLogical()),
 	}
 }
 

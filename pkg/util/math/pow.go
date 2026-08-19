@@ -62,3 +62,12 @@ func NegPow2(n uint) *big.Int {
 	val := Pow2(n)
 	return val.Neg(val)
 }
+
+// FloorLog2 computes the floor of the base-2 logarithm of a given number, returning 0 for 0.
+func FloorLog2(n uint) uint {
+	if n == 0 {
+		return 0
+	}
+
+	return uint(bits.Len(n) - 1)
+}

@@ -49,7 +49,7 @@ func ProgramToProgram[W1 word.Word[W1], W2 word.Word[W2]](p descriptor.Program[W
 		modules[i] = lowering.lowerModule(m)
 	}
 	// Construct new program over W2
-	return descriptor.NewProgram(p.Field(), modules...)
+	return descriptor.NewProgram(p.Field(), p.MaxStaticHeight(), modules...)
 }
 
 type programToProgram[W1 word.Word[W1], W2 word.Word[W2]] struct {
@@ -145,11 +145,18 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 	case *bytecode.Debug[W1]:
 		return &bytecode.Debug[W2]{Chunks: b.Chunks, Sources: b.Sources}
 	case *bytecode.DivRem[W1]:
-		return &bytecode.DivRem[W2]{Opcode: b.Opcode, Target: b.Target, Dividend: b.Dividend, Divisor: b.Divisor}
+		return &bytecode.DivRem[W2]{Quotient: b.Quotient, Remainder: b.Remainder, Dividend: b.Dividend,
+			Divisor: p.convertOperandVector(b.Divisor)}
 	case *bytecode.Fail[W1]:
 		return &bytecode.Fail[W2]{Chunks: b.Chunks, Sources: b.Sources}
 	case *bytecode.Intrinsic[W1]:
-		return &bytecode.Intrinsic[W2]{Op: b.Op, Targets: b.Targets, Sources: b.Sources}
+		var sources = make([]bytecode.Operand[W2], len(b.Sources))
+		//
+		for i, s := range b.Sources {
+			sources[i] = p.convertOperandVector(s)
+		}
+		//
+		return &bytecode.Intrinsic[W2]{Op: b.Op, Targets: b.Targets, Sources: sources}
 	case *bytecode.Jmp[W1]:
 		return &bytecode.Jmp[W2]{Target: b.Target}
 	case *bytecode.ReadWrite[W1]:

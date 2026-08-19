@@ -1,4 +1,4 @@
-//error:8:14-21:expected type (u16,u16)
+//error:8:14-21:expected type (u16,u16), found (u16,u16,u16)
 memory ram(addr:u16) -> (a:u16, b:u16)
 pub input data(address:u16) -> (lhs:u16, rhs:u16, val:u16)
 

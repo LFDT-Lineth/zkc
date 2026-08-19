@@ -51,18 +51,15 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	//
 	input := ParseInputFile(args[0])
 	// Build artifacts (compiles source files or loads a prebuilt binary).
-	artifacts := Build[F](build, args[1:]...)
-	// Lower the bytecode program to a fixed-width form the bytecode interpreter
-	// can execute (mirroring the execute / trace commands).
-	program := vm.ProgramToProgram[vm.Uint, vm.Uint128](artifacts.ir)
+	_, binf := Build[F](build, args[1:]...)
 	// Filter out unnecessary inputs
-	input = vm.FilterInputs(program, input)
+	input = filterInputs(binf.RawProgram(), input)
 	// Construct a trace observer which prints each executed trace line, with
 	// register values rendered inline.
-	observer := NewDebugger(program)
+	observer := NewDebugger(binf.ExecutionProgram())
 	// Boot & execute via the bytecode interpreter, printing a trace line for
 	// each executed bytecode vector.
-	errs := vm.BootAndDebug(program, input, observer.Observe)
+	errs := vm.BootAndDebug(binf.ExecutionProgram(), input, observer.Observe)
 	//
 	if len(errs) > 0 {
 		for _, e := range errs {

@@ -13,9 +13,6 @@
 package register
 
 import (
-	"bytes"
-	"encoding/gob"
-
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 )
 
@@ -51,17 +48,6 @@ func (p *Refs) Registers() []Id {
 	return p.regs
 }
 
-// Apply a given mapping to this set of registers.
-func (p *Refs) Apply(mapping LimbsMap) Refs {
-	var nids []Id
-
-	for _, ith := range p.regs {
-		nids = append(nids, mapping.LimbIds(ith)...)
-	}
-
-	return NewRefs(p.mid, nids...)
-}
-
 // AsRefArray converts a register refs array into an array of register ref.
 func AsRefArray(p Refs) []Ref {
 	var nrefs = make([]Ref, len(p.regs))
@@ -71,44 +57,4 @@ func AsRefArray(p Refs) []Ref {
 	}
 	//
 	return nrefs
-}
-
-// ============================================================================
-// Encoding / Decoding
-// ============================================================================
-
-// GobEncode an option.  This allows it to be marshalled into a binary form.
-func (p Refs) GobEncode() (data []byte, err error) {
-	var (
-		buffer     bytes.Buffer
-		gobEncoder = gob.NewEncoder(&buffer)
-	)
-	//
-	if err = gobEncoder.Encode(&p.mid); err != nil {
-		return nil, err
-	}
-	//
-	if err = gobEncoder.Encode(&p.regs); err != nil {
-		return nil, err
-	}
-	// Done
-	return buffer.Bytes(), nil
-}
-
-// GobDecode a previously encoded option
-func (p *Refs) GobDecode(data []byte) error {
-	var (
-		buffer     = bytes.NewBuffer(data)
-		gobDecoder = gob.NewDecoder(buffer)
-	)
-	//
-	if err := gobDecoder.Decode(&p.mid); err != nil {
-		return err
-	}
-	//
-	if err := gobDecoder.Decode(&p.regs); err != nil {
-		return err
-	}
-	// Success!
-	return nil
 }

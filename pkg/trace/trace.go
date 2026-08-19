@@ -13,171 +13,99 @@
 package trace
 
 import (
-	"cmp"
 	"fmt"
-	"strconv"
-	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 )
 
-// Trace describes a set of named columns.  Columns are not required to have the
-// same height and can be either "data" columns or "computed" columns.
-type Trace[F any] interface {
-	// Provides agnostic mechanism for constructing arrays
-	Builder() array.Builder[F]
-	// Access a given column difrtly via a reference.
-	Column(ColumnRef) Column[F]
+// Trace describes a set of named modules whose data is organised by row.
+type Trace[T any] interface {
 	// Determine whether this trace has a module with the given name and, if so,
 	// what its module index is.
-	HasModule(name ModuleName) (uint, bool)
+	HasModule(name string) (uint, bool)
 	// Access a given module in this trace.
-	Module(ModuleId) Module[F]
-	// Returns an iterator over the contained modules
-	Modules() iter.Iterator[Module[F]]
+	Module(uint) Module[T]
+	// Returns an iterator over the contained modules.
+	Modules() iter.Iterator[Module[T]]
 	// Returns the number of modules in this trace.
 	Width() uint
 }
 
-// Module describes a module within the trace.  Every module is composed of some
-// number of columns, and has a specific height.
+// Module describes a module within the trace.  Every module is a collection of
+// zero or more data columns with the same height.  The width of a module is the
+// number of such columns it contains.  Every column in the module has a
+// "descriptor" which provides metadata about the columns, such as its name and
+// declared bitwidth, etc.
 type Module[T any] interface {
-	// Module name
-	Name() ModuleName
-	// Access a given column in this module.
-	Column(uint) Column[T]
-	// Access a given column by its name.
-	ColumnOf(string) Column[T]
-	// Keys returns the number n of key columns in this module.  Key columns are
-	// always the first n columns in a module.  Such columns have the property
-	// that they can be used in conjunction with Find.
-	Keys() uint
-	// FindLast finds the last row with matching keys.  If no such row exists,
-	// this returns math.MaxUint.  Otherwise, it returns the last (i.e. highest)
-	// matching row.  Furthermore, if too few or too many keys are provided then
-	// this will panic.
-	FindLast(...T) uint
+	fmt.Stringer
+	// Append a given row onto this module.  This will panic if the length of
+	// this row does not match the width of this module.
+	Append(...T)
+	// Module name.
+	Name() string
+	// Column returns the data for the column at the given index.
+	Column(uint) array.Array[T]
+	// MutColumn returns a mutable reference to the underlying data of the given
+	// column.
+	MutColumn(uint) array.MutArray[T]
+	// Descriptor returns the descriptor of this module.
+	Descriptor() ModuleDescriptor
 	// Returns the number of columns in this module.
 	Width() uint
-	// Returns the height of this module.
+	// Returns the height (i.e. number of rows) of this module.
 	Height() uint
 }
 
-// Column describes an individual column of data within a trace table.
-type Column[T any] interface {
-	// Holds the name of this column
-	Name() string
-	// Get the value at a given row in this column.  If the row is
-	// out-of-bounds, then the column's padding value is returned instead.
-	// Thus, this function always succeeds.
-	Get(row int) T
-	// Access the underlying data array for this column.  This is useful in
-	// situations where we want to clone the entire column, etc.
-	Data() array.Array[T]
-	// Padding returns the value which will be used for padding this column.
-	Padding() T
+// ModuleBuilder describes an extended module which can be used for the purposes
+// of constructing new modules.
+type ModuleBuilder[T any, M any] interface {
+	Module[T]
+	// Initialise a new module from a given set of rows.
+	Initialise(ModuleDescriptor) M
 }
 
-// ModuleName abstracts the notion of a module name, since this is made up of
-// two distinct components.
-type ModuleName struct {
-	// Name of the module (excluding multiplier)
+// ModuleDescriptor describes an individual module within a trace, including all
+// of its columns.
+type ModuleDescriptor struct {
 	Name string
-	// Multiplier for the module
-	Multiplier uint
+	// Descriptors for all columns
+	Columns []ColumnDescriptor
+	// Flag indicating replication (or not).
+	Replicated bool
 }
 
-// Cmp two module names
-func (p ModuleName) Cmp(q ModuleName) int {
-	if c := strings.Compare(p.Name, q.Name); c != 0 {
-		return c
-	}
-	//
-	return cmp.Compare(p.Multiplier, q.Multiplier)
+// NewModuleDescriptor constructs a straightforward module descriptor (i.e. with
+// no additional metadata).
+func NewModuleDescriptor(name string, columns []ColumnDescriptor) ModuleDescriptor {
+	return ModuleDescriptor{name, columns, false}
 }
 
-func (p ModuleName) String() string {
-	if p.Multiplier == 1 {
-		return p.Name
-	}
-	//
-	return fmt.Sprintf("%s×%d", p.Name, p.Multiplier)
+// Width returns the number of columns in this module.
+func (p ModuleDescriptor) Width() uint {
+	return uint(len(p.Columns))
 }
 
-// ParseModuleName parses a string formatted as a module name into a ModuleName
-// structure.  This will panic if the string is malformed.
-func ParseModuleName(name string) ModuleName {
-	var (
-		splits     = strings.Split(name, "×")
-		multiplier uint
-	)
-	//
-	switch {
-	case len(splits) == 1:
-		multiplier = 1
-	case len(splits) == 2:
-		tmp, err := strconv.Atoi(splits[1])
-		//
-		if err != nil {
-			panic(err.Error())
-		} else if tmp <= 0 {
-			panic(fmt.Sprintf("invalid module name \"%s\"", name))
-		}
-		//
-		multiplier = uint(tmp)
-	default:
-		panic(fmt.Sprintf("invalid module name \"%s\"", name))
-	}
-	// Done
-	return ModuleName{splits[0], multiplier}
+// WithReplication sets the replication metadata for this module to the given flag.
+func (p ModuleDescriptor) WithReplication(flag bool) ModuleDescriptor {
+	p.Replicated = flag
+	return p
 }
 
-// Module2String returns a string representation of a module which is primiarily
-// useful for debugging.
-func Module2String[F fmt.Stringer](module Module[F]) string {
-	var builder strings.Builder
-	//
-	builder.WriteString(module.Name().String())
-	builder.WriteString("=>")
-	//
-	for i := range module.Width() {
-		if i != 0 {
-			builder.WriteString(";")
-		}
-		//
-		builder.WriteString(Column2String(module.Column(i)))
-	}
-	//
-	return builder.String()
+// ColumnDescriptor describes an individual column in a trace module.
+type ColumnDescriptor struct {
+	// Column name.
+	Name string
+	// Column bitwidth.  If this is none, then this represents a "native column"
+	// (i.e. one backed by field elements).
+	Bitwidth util.Option[uint]
 }
 
-// Column2String returns a string representation of a column which is primiarily
-// useful for debugging.
-func Column2String[F fmt.Stringer](col Column[F]) string {
-	var (
-		builder strings.Builder
-		data    = col.Data()
-	)
-	//
-	builder.WriteString(col.Name())
-	builder.WriteString(":")
-	//
-	if data == nil {
-		builder.WriteString("∅")
-	} else {
-		builder.WriteString("[")
-		//
-		for i := range data.Len() {
-			if i != 0 {
-				builder.WriteString(",")
-			}
-			//
-			builder.WriteString(data.Get(i).String())
-		}
-		//
-		builder.WriteString("]")
-	}
-	//
-	return builder.String()
+// NewColumnDescriptor constructs a new column descriptor with the given name
+// and bitwidth.
+func NewColumnDescriptor(name string, bitwidth util.Option[uint]) ColumnDescriptor {
+	return ColumnDescriptor{name, bitwidth}
 }
+
+var traceBinaryMagic = []byte{'r', 't', 'r', 'a', 'c', 'e', 0, 2}

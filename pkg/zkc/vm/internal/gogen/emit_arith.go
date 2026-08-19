@@ -428,6 +428,59 @@ func (g *generator) emitMul(c *code, srcs []operand, konst operand, store storeV
 	return inner
 }
 
+// emitDivRem emits DIV / REM / divmod (executeDiv/Rem): a zero divisor fails,
+// otherwise each present target receives the plain Go quotient / remainder.
+func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem[word.Uint]) error {
+	lhs, err := g.registerOperand(fn, x.Dividend)
+	if err != nil {
+		return err
+	}
+
+	var rhs operand
+
+	if x.Divisor.IsConstant() {
+		rhs, err = constOperand(x.Divisor.AsConstant())
+	} else {
+		rhs, err = g.registerOperand(fn, x.Divisor.AsRegister())
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if lhs.wide() || rhs.wide() {
+		return fmt.Errorf("gogen: division operand wider than 64 bits unsupported")
+	}
+
+	switch {
+	case rhs.isZero():
+		c.linef("fail(%q) // divisor is the constant zero", "division by zero")
+		return nil
+	case rhs.val == nil:
+		c.linef("if %s == 0 {", rhs.expr)
+		c.line(`fail("division by zero")`)
+		c.line("}")
+	}
+
+	quotient, err := g.limbOf(fn, x.Quotient)
+	if err != nil {
+		return err
+	}
+
+	g.assignSingle(c, quotient, operand{expr: fmt.Sprintf("%s / %s", lhs.expr, rhs.expr), max: lhs.max})
+
+	remainder, err := g.limbOf(fn, x.Remainder)
+	if err != nil {
+		return err
+	}
+
+	// The remainder is below the divisor (and never above the dividend).
+	bound := bigMin(lhs.max, new(big.Int).Sub(rhs.max, big.NewInt(1)))
+	g.assignSingle(c, remainder, operand{expr: fmt.Sprintf("%s %% %s", lhs.expr, rhs.expr), max: bound})
+
+	return nil
+}
+
 // emitConcat emits a CAT (`tn::…::t0 = sn::…::s0`): the sources pack into one
 // value with sources[0] in the least-significant bits (executeCat), which is
 // then stored across the (possibly multi-limb) target.  Widths are the

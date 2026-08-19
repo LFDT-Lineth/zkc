@@ -21,22 +21,15 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/pool"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
-
-// ArrayBuilder provides a usefuil alias
-type ArrayBuilder = array.DynamicBuilder[word.BigEndian, *pool.LocalHeap[word.BigEndian]]
-
-// WordHeap provides a usefuil alias
-type WordHeap = pool.LocalHeap[word.BigEndian]
 
 // FromBytes parses a trace expressed in JSON notation.  For example, {"X":
 // [0], "Y": [1]} is a trace containing one row of data each for two columns "X"
 // and "Y".
-func FromBytes(data []byte) (WordHeap, []lt.Module[word.BigEndian], error) {
+func FromBytes[F field.Element[F]](data []byte) (trace.Trace[F], error) {
 	var (
 		rawData map[string]map[string][]big.Int
 	)
@@ -44,16 +37,16 @@ func FromBytes(data []byte) (WordHeap, []lt.Module[word.BigEndian], error) {
 	jsonErr := json.Unmarshal(data, &rawData)
 	if jsonErr != nil {
 		// Failed, so try and fall back on the legacy format.
-		return FromBytesLegacy(data)
+		return FromBytesLegacy[F](data)
 	}
 	//
-	return fromBytesInternal(rawData)
+	return fromBytesInternal[F](rawData)
 }
 
 // FromBytesLegacy parses a trace expressed in JSON notation.  For example, {"X":
 // [0], "Y": [1]} is a trace containing one row of data each for two columns "X"
 // and "Y".
-func FromBytesLegacy(data []byte) (WordHeap, []lt.Module[word.BigEndian], error) {
+func FromBytesLegacy[F field.Element[F]](data []byte) (trace.Trace[F], error) {
 	var (
 		rawData map[string][]big.Int
 		strData = make(map[string]map[string][]big.Int, 0)
@@ -61,7 +54,7 @@ func FromBytesLegacy(data []byte) (WordHeap, []lt.Module[word.BigEndian], error)
 	// Unmarshall
 	jsonErr := json.Unmarshal(data, &rawData)
 	if jsonErr != nil {
-		return WordHeap{}, nil, jsonErr
+		return nil, jsonErr
 	}
 	//
 	for name, rawInts := range rawData {
@@ -69,67 +62,65 @@ func FromBytesLegacy(data []byte) (WordHeap, []lt.Module[word.BigEndian], error)
 		mod, col, error := splitQualifiedColumnName(name)
 		// error check
 		if error != nil {
-			return WordHeap{}, nil, error
+			return nil, error
 		}
 		// Sanity check existing module data
 		if strData[mod] == nil {
 			strData[mod] = make(map[string][]big.Int)
 		} else if _, ok := strData[mod][col]; ok {
-			modName := trace.ParseModuleName(mod)
-			return WordHeap{}, nil, fmt.Errorf("duplicate column %s encountered", trace.QualifiedColumnName(modName, col))
+			return nil, fmt.Errorf("duplicate column %s encountered", trace.QualifiedColumnName(mod, col))
 		}
 		// Assign values
 		strData[mod][col] = rawInts
 	}
 	// Done.
-	return fromBytesInternal(strData)
+	return fromBytesInternal[F](strData)
 }
 
-func fromBytesInternal(rawData map[string]map[string][]big.Int) (WordHeap, []lt.Module[word.BigEndian], error) {
-	var (
-		modules []lt.Module[word.BigEndian]
-		// Intialise builder
-		heap    = pool.NewLocalHeap[word.BigEndian]()
-		builder = array.NewDynamicBuilder(heap)
-	)
+func fromBytesInternal[F field.Element[F]](rawData map[string]map[string][]big.Int) (trace.Trace[F], error) {
+	var modules []*trace.CompactModule[F]
 	//
 	for mod, modData := range rawData {
-		var columns []lt.Column[word.BigEndian]
+		var (
+			columns     []array.MutArray[F]
+			descriptors []trace.ColumnDescriptor
+		)
 		//
 		for name, rawInts := range modData {
 			col, bitwidth, error := splitColumnBitwidth(name)
 			// error check
 			if error != nil {
-				return WordHeap{}, nil, error
+				return nil, error
 			}
 			// Validate data array
 			if row := validateBigInts(bitwidth, rawInts); row != math.MaxUint {
-				return WordHeap{}, nil, fmt.Errorf("column %s out-of-bounds (row %d, value %s)",
+				return nil, fmt.Errorf("column %s out-of-bounds (row %d, value %s)",
 					name, row, rawInts[row].String())
 			}
-			// Construct data array
-			data := newArrayFromBigInts(bitwidth, rawInts, builder)
 			// Construct column
-			columns = append(columns, lt.NewColumn[word.BigEndian](col, data))
+			columns = append(columns, newArrayFromBigInts[F](bitwidth, rawInts))
+			descriptors = append(descriptors, trace.NewColumnDescriptor(col, bitwidth))
 		}
-		//
-		modules = append(modules, lt.NewModule[word.BigEndian](trace.ParseModuleName(mod), columns))
+		// construct module descriptor
+		descriptor := trace.NewModuleDescriptor(mod, descriptors)
+		// append new module
+		modules = append(modules, trace.NewCompactModule[F](descriptor, columns...))
 	}
 	//
-	return *heap, modules, nil
+	return trace.NewArray(modules), nil
 }
 
-func newArrayFromBigInts(bitwidth uint, data []big.Int, pool ArrayBuilder) array.MutArray[word.BigEndian] {
+func newArrayFromBigInts[F field.Element[F]](bitwidth util.Option[uint], data []big.Int) array.MutArray[F] {
 	//
 	var (
 		n   = uint(len(data))
-		arr = pool.NewArray(n, bitwidth)
+		arr = array.Alloc[F](bitwidth.UnwrapOr(math.MaxUint), n)
 	)
 	//
 	for i := range n {
-		ithBytes := data[i].Bytes()
+		var val F
 		//
-		arr = arr.Set(i, word.NewBigEndian(ithBytes))
+		arr.Set(i, val.SetBytes(data[i].Bytes()))
 	}
 	//
 	return arr
@@ -148,7 +139,7 @@ func splitQualifiedColumnName(name string) (string, string, error) {
 	return "", name, nil
 }
 
-func splitColumnBitwidth(name string) (string, uint, error) {
+func splitColumnBitwidth(name string) (string, util.Option[uint], error) {
 	var (
 		err      error
 		bitwidth uint64
@@ -157,31 +148,33 @@ func splitColumnBitwidth(name string) (string, uint, error) {
 	//
 	if len(bits) == 1 {
 		// no bitwidth given
-		return bits[0], 256, nil
+		return bits[0], util.None[uint](), nil
 	} else if len(bits) > 2 || len(bits[1]) < 2 {
-		return "", 0, fmt.Errorf("malformed column name \"%s\"", name)
+		return "", util.None[uint](), fmt.Errorf("malformed column name \"%s\"", name)
 	} else if bits[1][0] != 'u' {
-		return "", 0, fmt.Errorf("malformed column type \"%s\"", bits[1])
+		return "", util.None[uint](), fmt.Errorf("malformed column type \"%s\"", bits[1])
 	}
 	// Extract colwidth, whilst ignoring column type (for now)
 	colwidth := bits[1][1:]
 	//
 	if bitwidth, err = strconv.ParseUint(colwidth, 10, 17); err != nil {
 		// failure
-		return "", 0, err
+		return "", util.None[uint](), err
 	}
 	//
-	return bits[0], uint(bitwidth), nil
+	return bits[0], util.Some(uint(bitwidth)), nil
 }
 
-func validateBigInts(bitwidth uint, data []big.Int) uint {
-	var zero = big.NewInt(0)
-	//
-	for i, val := range data {
-		if val.Cmp(zero) < 0 {
-			return uint(i)
-		} else if uint(val.BitLen()) > bitwidth {
-			return uint(i)
+func validateBigInts(bitwidth util.Option[uint], data []big.Int) uint {
+	if bitwidth.HasValue() {
+		var zero = big.NewInt(0)
+		//
+		for i, val := range data {
+			if val.Cmp(zero) < 0 {
+				return uint(i)
+			} else if uint(val.BitLen()) > bitwidth.Unwrap() {
+				return uint(i)
+			}
 		}
 	}
 	//

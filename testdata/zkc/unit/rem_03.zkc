@@ -7,7 +7,7 @@ fn main() {
     var c:u8 = data[2]
     var z:u8 = data[3]
 
-    if (a % b % 5 % c % 3) != z {
+    if ((((a % b) % 5) % c) % 3) != z {
         fail
     }
 }

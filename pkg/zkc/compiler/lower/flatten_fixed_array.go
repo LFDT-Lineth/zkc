@@ -214,6 +214,9 @@ func expandArrayExpression(e expr.Resolved, varMapping []VarMapping, env ast.Env
 	case *expr.Div[symbol.Resolved]:
 		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
+	case *expr.DivMod[symbol.Resolved]:
+		expandArrayExpressions(e.Exprs, varMapping, env)
+		return e
 	case *expr.Rem[symbol.Resolved]:
 		expandArrayExpressions(e.Exprs, varMapping, env)
 		return e
@@ -610,6 +613,11 @@ func cloneExpr(e expr.Resolved) expr.Resolved {
 		c.Exprs = cloneExprs(e.Exprs)
 
 		return &c
+	case *expr.DivMod[symbol.Resolved]:
+		c := *e
+		c.Exprs = cloneExprs(e.Exprs)
+
+		return &c
 	case *expr.Rem[symbol.Resolved]:
 		c := *e
 		c.Exprs = cloneExprs(e.Exprs)
@@ -822,6 +830,9 @@ func (p *Rewriter) rewriteArrayExpression(e expr.Resolved) expr.Resolved {
 		p.rewriteArrayExpressions(e.Exprs)
 		return e
 	case *expr.Div[symbol.Resolved]:
+		p.rewriteArrayExpressions(e.Exprs)
+		return e
+	case *expr.DivMod[symbol.Resolved]:
 		p.rewriteArrayExpressions(e.Exprs)
 		return e
 	case *expr.Rem[symbol.Resolved]:

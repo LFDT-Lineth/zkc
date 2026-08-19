@@ -55,7 +55,7 @@ func (p *Negate[F, T]) Bounds() util.Bounds {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Negate[F, T]) TestAt(k int, tr trace.Module[F], sc register.Map) (bool, uint, error) {
+func (p *Negate[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, uint, error) {
 	val, branch, err := p.Arg.TestAt(k, tr, sc)
 	//
 	return !val, branch, err
@@ -86,11 +86,6 @@ func (p *Negate[F, T]) Negate() T {
 }
 
 // Simplify this Negate as much as reasonably possible.
-func (p *Negate[F, T]) Simplify(casts bool) T {
-	return p.Arg.Negate().Simplify(casts)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *Negate[F, T]) Substitute(mapping map[string]F) {
-	p.Arg.Substitute(mapping)
+func (p *Negate[F, T]) Simplify() T {
+	return p.Arg.Negate().Simplify()
 }

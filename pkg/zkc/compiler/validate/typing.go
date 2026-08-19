@@ -645,6 +645,8 @@ func (p *TypeChecker) typeExpression(expected Type, e expr.Resolved, env Variabl
 		actual, errs = p.typeShiftExpression(expected, e.Exprs, env, effects)
 	case *expr.Div[symbol.Resolved]:
 		actual, errs = p.typeUintExpressions(expected, e.Exprs, env, effects)
+	case *expr.DivMod[symbol.Resolved]:
+		actual, errs = p.typeDivModExpr(expected, e, env, effects)
 	case *expr.Rem[symbol.Resolved]:
 		actual, errs = p.typeUintExpressions(expected, e.Exprs, env, effects)
 	case *expr.Sub[symbol.Resolved]:
@@ -1022,6 +1024,31 @@ func (p *TypeChecker) typeTernaryExpr(expected Type, e *expr.Ternary[symbol.Reso
 	return nil, errs
 }
 
+// typeDivModExpr types the combined division/remainder ("/%") expression: both
+// operands are typed like a division (uints of a common type t), and the
+// expression produces the pair (t, t) — quotient then remainder — so it is
+// only well-typed as the full source of a two-target assignment.
+func (p *TypeChecker) typeDivModExpr(expected Type, e *expr.DivMod[symbol.Resolved], env VariableMap,
+	effects bit.Set) (Type, []source.SyntaxError) {
+	// When the expected type is a pair (the two assignment targets), operands
+	// check against the first target's type; the requirement that both targets
+	// share the operand type is enforced by comparing the resulting pair
+	// against the expected type at the assignment.
+	var element Type
+	//
+	if ts := p.destructTupleType(expected); len(ts) == 2 {
+		element = ts[0]
+	}
+	//
+	actual, errs := p.typeUintExpressions(element, e.Exprs, env, effects)
+	//
+	if actual == nil {
+		return nil, errs
+	}
+	//
+	return data.FromTypes(actual, actual), errs
+}
+
 func (p *TypeChecker) typeTupleExpr(expected Type, e *expr.TupleInitialiser[symbol.Resolved], env VariableMap,
 	effects bit.Set) (Type, []source.SyntaxError) {
 	//
@@ -1097,9 +1124,10 @@ func (p *TypeChecker) checkArrayBounds(arg expr.Resolved, fixedArray *data.Resol
 // it must be the case that both T1 and T2 are "well-formed".  The assumption is
 // that, if either type is not well-formed, some error was already reported
 // upstream for this.
-func (p *TypeChecker) checkEquiTypes(lhs, rhs Type, node any) []source.SyntaxError {
-	if p.env.WellFormed(lhs) && p.env.WellFormed(rhs) && !data.EquiTypes(lhs, rhs, p.env) {
-		return p.srcmaps.SyntaxErrors(node, fmt.Sprintf("expected type %s", rhs.String(p.env)))
+func (p *TypeChecker) checkEquiTypes(actual, expected Type, node any) []source.SyntaxError {
+	if p.env.WellFormed(actual) && p.env.WellFormed(expected) && !data.EquiTypes(actual, expected, p.env) {
+		return p.srcmaps.SyntaxErrors(node, fmt.Sprintf("expected type %s, found %s",
+			expected.String(p.env), actual.String(p.env)))
 	}
 	//
 	return nil

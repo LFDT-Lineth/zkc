@@ -284,7 +284,13 @@ fn compute() -> (val u32, err u1) {
 ```
 
 Here we see that, since `compute()` has two returns the corresponding
-function call requires two target variables.
+function call requires two target variables.  The divmod operator `/%`
+likewise has arity `2`, producing the quotient and the remainder together
+(see [Expressions](#expressions)):
+
+```zkc
+q, r = a /% b
+```
 
 A **destructuring assignment** splits a given value across a number of
 smaller variables. The leftmost variable receives the **most
@@ -420,17 +426,30 @@ fn f(x:word) -> (r:u8) {
 
 ZkC supports the following arithmetic operators:
 
-| Operator | Meaning        |
-| -------- | -------------- |
-| `a + b`  | addition       |
-| `a - b`  | subtraction    |
-| `a * b`  | multiplication |
-| `a / b`  | division       |
-| `a % b`  | remainder      |
+| Operator | Meaning                         |
+| -------- | ------------------------------- |
+| `a + b`  | addition                        |
+| `a - b`  | subtraction                     |
+| `a * b`  | multiplication                  |
+| `a / b`  | division                        |
+| `a % b`  | remainder                       |
+| `a /% b` | division and remainder (divmod) |
 
 All operands of an arithmetic operator must have the same type. The result type
 equals the operand type. Overflow/underflow results in failure. Division or
 remainder by zero results in failure.
+
+The divmod operator `a /% b` produces **two** values — the quotient and the
+remainder — and must therefore be used as the full source of a two-target
+assignment:
+
+```zkc
+q, r = a /% b   // q = a / b, r = a % b
+```
+
+Both targets and both operands must have the same type. Under constraint
+generation the pair shares a single division hint, making `/%` cheaper than
+computing `/` and `%` separately.
 
 Bitwise operators:
 
@@ -449,7 +468,10 @@ amount must be the same type as the value being shifted; left-shift
 results are masked to the declared bit width of the target.
 
 **Parentheses are required** when mixing operators of different kinds.
-Chains of the _same_ operator are permitted without extra parentheses:
+Chains of the _same_ operator are permitted without extra parentheses,
+except for the division-like operators (`/`, `%`) whose chains
+must always be braced explicitly. Obviously, a chain of `/%`, even with
+braces, is not possible:
 
 ```zkc
 // OK — same operator chained
@@ -460,9 +482,18 @@ var s:u8 = x << 1 << 2
 var t:u8 = (x & y) | z
 var u:u8 = (x << 2) >> 1
 
+// OK — division chain, disambiguated with braces
+var v:u8 = (x / y) / z
+
 // ERROR — mixing operators without braces
 var bad:u8 = x & y | z
 var bad2:u8 = x << y >> z
+
+// ERROR — division chain without braces
+var bad3:u8 = x / y / z
+
+// ERROR — (a /% b) is a pair of values, so /% cannot apply to it
+q, r = (a /% b) /% c
 ```
 
 Comparison operators (used in conditions only):

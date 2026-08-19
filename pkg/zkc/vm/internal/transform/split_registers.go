@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
@@ -33,7 +34,7 @@ type RegisterId = descriptor.RegisterId
 // "r" of width u32. Subdividing this register into registers of at most 8bits
 // will result in four limbs: r'0, r'1, r'2 and r'3 where (by convention) r'0 is
 // the least significant.
-func SplitRegisters[W word.Word[W]](cfg word.Config, program descriptor.Program[W]) descriptor.Program[W] {
+func SplitRegisters[W word.Word[W]](target field.Config, program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		mods = program.Modules()
 		//
@@ -42,12 +43,12 @@ func SplitRegisters[W word.Word[W]](cfg word.Config, program descriptor.Program[
 	//
 	for i, ith := range mods {
 		// construct limbs map for this module
-		mapping := descriptor.NewLimbsMap(cfg, program.Field(), ith)
+		mapping := descriptor.NewLimbsMap(target, program.Field(), ith)
 		// split the module
 		out[i] = splitModule(mapping, mods, ith)
 	}
 	//
-	return descriptor.NewProgram(program.Field(), out...)
+	return descriptor.NewProgram(program.Field(), program.MaxStaticHeight(), out...)
 }
 
 func splitModule[W word.Word[W]](mapping descriptor.LimbsMap[W], mods []descriptor.Module[W],
@@ -188,11 +189,13 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.Intrinsic[W]:
 			// Each operand (argument / return) is split into the limbs of its
 			// constituent registers, preserving the per-operand grouping so the
-			// hint's executor can still reconstruct each value.
+			// hint's executor can still reconstruct each value.  Constant
+			// operands stay a single (unsplit) value, like arithmetic
+			// immediates (see split.Operand).
 			return []Bytecode[W]{&bytecode.Intrinsic[W]{
 				Op:      c.Op,
 				Targets: splitRegisterVectors(limbsMap, c.Targets),
-				Sources: splitRegisterVectors(limbsMap, c.Sources),
+				Sources: splitOperandVectors(limbsMap, c.Sources),
 			}}
 		case *bytecode.Jmp[W]:
 			return []Bytecode[W]{c}
@@ -524,4 +527,19 @@ func splitRegisterVectors[W any](limbsMap descriptor.LimbsMap[W],
 	}
 	//
 	return nvecs
+}
+
+// splitOperandVectors splits each operand (e.g. an intrinsic argument) into
+// limbs: register vectors into the limbs of their constituent registers,
+// whilst constants stay a single (unsplit) value (see split.Operand).
+func splitOperandVectors[W word.Word[W]](limbsMap descriptor.LimbsMap[W],
+	ops []bytecode.Operand[W]) []bytecode.Operand[W] {
+	//
+	var nops = make([]bytecode.Operand[W], len(ops))
+	//
+	for i, o := range ops {
+		nops[i], _ = split.Operand(limbsMap, o)
+	}
+	//
+	return nops
 }

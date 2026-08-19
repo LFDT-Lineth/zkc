@@ -14,7 +14,6 @@ package gadgets
 
 import (
 	"fmt"
-	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
@@ -73,11 +72,9 @@ func (p *BitwidthGadget[F]) Constrain(ref register.Ref, bitwidth uint) {
 		return
 	case bitwidth <= p.maxRangeConstraint:
 		handle := fmt.Sprintf("%s:u%d", reg.Name(), bitwidth)
-		// Construct access to register
-		access := term.RawRegisterAccess[F, air.Term[F]](ref.Register(), reg.Width(), 0)
 		// Add range constraint
-		module.AddConstraint(air.NewRangeConstraint(handle, module.Id(),
-			[]*term.RegisterAccess[F, air.Term[F]]{access}, []uint{bitwidth}))
+		module.AddConstraint(air.NewRangeConstraint[F](handle, module.Id(),
+			[]register.Id{ref.Register()}, []uint{bitwidth}))
 		// Done
 		return
 	default:
@@ -132,7 +129,7 @@ func (p *BitwidthGadget[F]) applyBinaryGadget(ref register.Ref) {
 // recursively applied to those columns, etc.
 func (p *BitwidthGadget[F]) applyRecursiveBitwidthGadget(ref register.Ref, bitwidth uint) {
 	var (
-		proofHandle  = module.Name{Name: fmt.Sprintf("u%d", bitwidth), Multiplier: 1}
+		proofHandle  = fmt.Sprintf("u%d", bitwidth)
 		mod          = p.schema.Module(ref.Module())
 		reg          = mod.Register(ref.Register())
 		lookupHandle = fmt.Sprintf("%s:u%d", reg.Name(), bitwidth)
@@ -162,19 +159,17 @@ func (p *BitwidthGadget[F]) applyRecursiveBitwidthGadget(ref register.Ref, bitwi
 func (p *BitwidthGadget[F]) constructTypeProof(handle module.Name, bitwidth uint) sc.ModuleId {
 	var (
 		// Create new module for this type proof
-		mid    = p.schema.NewModule(handle, false, false, false, true, false, false, 0)
+		mid    = p.schema.NewModule(handle, false, false, false, true, false, false)
 		module = p.schema.Module(mid)
 		// Determine limb widths.
 		loWidth, hiWidth = determineLimbSplit(bitwidth)
 		// Compute 2^loWidth to use as coefficient
 		coeff = field.TwoPowN[F](loWidth)
-		// Default padding
-		zero big.Int
 	)
 	// Construct registers and their decompositions
-	vid := module.NewRegister(register.NewComputed("V", bitwidth, zero))
-	vidLo := module.NewRegister(register.NewComputed("V'0", loWidth, zero))
-	vidHi := module.NewRegister(register.NewComputed("V'1", hiWidth, zero))
+	vid := module.NewRegister(register.NewComputed("V", bitwidth))
+	vidLo := module.NewRegister(register.NewComputed("V'0", loWidth))
+	vidHi := module.NewRegister(register.NewComputed("V'1", hiWidth))
 	// Ensure lo/hi are decomposition of original
 	module.AddConstraint(
 		air.NewVanishingConstraint("decomposition", mid, util.None[int](),
@@ -230,11 +225,10 @@ func (p *typeDecomposition[F]) Compute(tr trace.Trace[F], schema sc.AnySchema[F]
 ) ([]array.MutArray[F], error) {
 	// Read inputs
 	sources := assignment.ReadRegistersRef(tr, p.sources...)
-	padding := assignment.ReadPadding(tr, p.sources...)
 	// Combine all sources
-	combined := combineSources(p.loWidth+p.hiWidth, sources, padding, tr.Builder())
+	combined := combineSources(p.loWidth+p.hiWidth, sources)
 	// Generate decomposition
-	data := computeDecomposition(p.loWidth, p.hiWidth, combined, tr.Builder())
+	data := computeDecomposition(p.loWidth, p.hiWidth, combined)
 	// Done
 	return data, nil
 }
@@ -269,11 +263,6 @@ func (p *typeDecomposition[F]) RegistersRead() []register.Ref {
 // RegistersWritten identifies registers assigned by this assignment.
 func (p *typeDecomposition[F]) RegistersWritten() []register.Ref {
 	return p.targets
-}
-
-// Substitute any matchined labelled constants within this assignment
-func (p *typeDecomposition[F]) Substitute(mapping map[string]F) {
-	// Nothing to do here.
 }
 
 // Lisp converts this schema element into a simple S-Expression, for example
@@ -339,12 +328,11 @@ func determineLimbSplit(bitwidth uint) (uint, uint) {
 
 // Combine all values from the given source registers into a single array of
 // data, whilst eliminating duplicates.
-func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F], padding []F,
-	pool array.Builder[F]) array.MutArray[F] {
+func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F]) array.MutArray[F] {
 	//
 	var (
 		n    = sources[0].Len()
-		arr  = pool.NewArray(0, bitwidth)
+		arr  = array.Alloc[F](bitwidth, 0)
 		seen = hash.NewSet[F](n)
 	)
 	// Add all values
@@ -356,19 +344,9 @@ func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F],
 			if !seen.Contains(ith) {
 				// record have seen item
 				seen.Insert(ith)
-				// append and record
-				arr.Pad(0, 1, ith)
+				// append item
+				arr.Append(ith)
 			}
-		}
-	}
-	// Add all padding values
-	for _, ith := range padding {
-		// Add item if not already seen
-		if !seen.Contains(ith) {
-			// record have seen item
-			seen.Insert(ith)
-			// append and record
-			arr.Pad(0, 1, ith)
 		}
 	}
 	// Done
@@ -376,18 +354,18 @@ func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F],
 }
 
 func computeDecomposition[F field.Element[F]](loWidth, hiWidth uint, vArr array.MutArray[F],
-	builder array.Builder[F]) []array.MutArray[F] {
+) []array.MutArray[F] {
 	//
 	var (
-		vLoArr = builder.NewArray(vArr.Len(), loWidth)
-		vHiArr = builder.NewArray(vArr.Len(), hiWidth)
+		vLoArr = array.Alloc[F](loWidth, vArr.Len())
+		vHiArr = array.Alloc[F](hiWidth, vArr.Len())
 	)
 	//
 	for i := range vArr.Len() {
 		ith := vArr.Get(i)
 		lo, hi := decompose(loWidth, ith)
-		vLoArr = vLoArr.Set(i, lo)
-		vHiArr = vHiArr.Set(i, hi)
+		vLoArr.Set(i, lo)
+		vHiArr.Set(i, hi)
 	}
 	//
 	return []array.MutArray[F]{vArr, vLoArr, vHiArr}

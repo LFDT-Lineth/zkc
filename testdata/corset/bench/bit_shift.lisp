@@ -11,19 +11,12 @@
   (y3 :binary@prove)
   (y4 :binary@prove))
 
-;; Combine bits into a nibble
-(defpurefun (bits a1 a2 a3 a4)
-  (+ (* 1 a1)
-     (* 2 a2)
-     (* 4 a3)
-     (* 8 a4)))
-
 ;; For X
-(defconstraint X_bits () (eq! X (bits x1 x2 x3 x4)))
+(defconstraint X_bits () (== X (+ (* 1 x1) (* 2 x2) (* 4 x3) (* 8 x4))))
 ;; For Y
-(defconstraint Y_bits () (eq! Y (bits y1 y2 y3 y4)))
+(defconstraint Y_bits () (== Y (+ (* 1 y1) (* 2 y2) (* 4 y3) (* 8 y4))))
 ;; Relating X and Y
-(defconstraint X_Y_bits_i () (eq!  0 y1))
-(defconstraint X_Y_bits_ii () (eq! x1 y2))
-(defconstraint X_Y_bits_iii () (eq! x2 y3))
-(defconstraint X_Y_bits_iv () (eq! x3 y4))
+(defconstraint X_Y_bits_i () (==  0 y1))
+(defconstraint X_Y_bits_ii () (== x1 y2))
+(defconstraint X_Y_bits_iii () (== x2 y3))
+(defconstraint X_Y_bits_iv () (== x3 y4))

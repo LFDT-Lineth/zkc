@@ -62,7 +62,7 @@ func (p *Mul[F, T]) ApplyShift(shift int) T {
 func (p *Mul[F, T]) Bounds() util.Bounds { return util.BoundsForArray(p.Args) }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Mul[F, T]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *Mul[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
 	// Evaluate first argument
 	val, err := p.Args[0].EvalAt(k, tr, sc)
 	// Continue evaluating the rest
@@ -107,20 +107,15 @@ func (p *Mul[F, T]) ShiftRange() (int, int) {
 	return shiftRangeOfTerms(p.Args...)
 }
 
-// Substitute implementation for Substitutable interface.
-func (p *Mul[F, T]) Substitute(mapping map[string]F) {
-	substituteTerms(mapping, p.Args...)
-}
-
 // Simplify implementation for Term interface.
-func (p *Mul[F, T]) Simplify(casts bool) T {
+func (p *Mul[F, T]) Simplify() T {
 	var (
 		zero F = field.Zero[F]()
 		one  F = field.One[F]()
 		targ Expr[F, T]
 	)
 	//
-	terms := simplifyTerms(p.Args, mulBinOp, one, casts)
+	terms := simplifyTerms(p.Args, mulBinOp, one)
 	// Flatten any nested products
 	terms = array.Flatten(terms, flattenMul[F])
 	// Check for zero

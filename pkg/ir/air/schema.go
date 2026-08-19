@@ -67,7 +67,7 @@ type (
 	// columns (i.e. not arbitrary expressions).
 	LookupConstraint[F field.Element[F]] = Air[F, lookup.Constraint[F]]
 	// RangeConstraint captures the essence of a range constraints at the AIR level.
-	RangeConstraint[F field.Element[F]] = Air[F, ranged.Constraint[F, *ColumnAccess[F]]]
+	RangeConstraint[F field.Element[F]] = Air[F, ranged.Constraint[F]]
 	// VanishingConstraint captures the essence of a vanishing constraint at the AIR level.
 	VanishingConstraint[F field.Element[F]] = Air[F, vanishing.Constraint[F, LogicalTerm[F]]]
 )
@@ -100,7 +100,7 @@ func (p LogicalTerm[F]) Bounds() util.Bounds {
 }
 
 // TestAt implementation for Testable interface.
-func (p LogicalTerm[F]) TestAt(k int, tr trace.Module[F], sc register.Map) (bool, uint, error) {
+func (p LogicalTerm[F]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, uint, error) {
 	var (
 		val, err = p.Term.EvalAt(k, tr, sc)
 		zero     F
@@ -127,9 +127,4 @@ func (p LogicalTerm[F]) RequiredRegisters() *set.SortedSet[uint] {
 // RequiredCells implementation for Contextual interface
 func (p LogicalTerm[F]) RequiredCells(row int, mid trace.ModuleId) *set.AnySortedSet[trace.CellRef] {
 	return p.Term.RequiredCells(row, mid)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p LogicalTerm[F]) Substitute(mapping map[string]F) {
-	p.Term.Substitute(mapping)
 }

@@ -1,4 +1,3 @@
-;;error:4:19-22:not permitted in pure context
+;;error:3:18-19:not permitted in pure context
 (defcolumns (A :i16))
-(defun (get) A)
-(defconst BROKEN (get))
+(defconst BROKEN A)

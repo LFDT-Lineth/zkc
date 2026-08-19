@@ -20,14 +20,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
-	"github.com/LFDT-Lineth/zkc/pkg/trace/lt"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/pool"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/spf13/cobra"
 )
 
@@ -110,7 +107,7 @@ func GetIntArray(cmd *cobra.Command, flag string) []int {
 }
 
 // nolint
-func writeBatchedTracesFile(filename string, traces ...lt.TraceFile) {
+func writeBatchedTracesFile[F field.Element[F]](filename string, traces ...trace.Trace[F]) {
 	var buf bytes.Buffer
 	// Check file extension
 	if len(traces) == 1 {
@@ -119,7 +116,7 @@ func writeBatchedTracesFile(filename string, traces ...lt.TraceFile) {
 	}
 	// Always write JSON in batched mode
 	for _, trace := range traces {
-		js := json.ToJsonString(trace.RawModules())
+		js := json.ToJsonString(trace)
 		buf.WriteString(js)
 		buf.WriteString("\n")
 	}
@@ -133,27 +130,17 @@ func writeBatchedTracesFile(filename string, traces ...lt.TraceFile) {
 
 // Write a given trace file to disk
 // nolint
-func writeTraceFile(filename string, tracefile lt.TraceFile) {
+func writeTraceFile[F field.Element[F]](filename string, tracefile trace.Trace[F]) {
 	var err error
-
-	var bytes []byte
 	// Check file extension
 	ext := path.Ext(filename)
 	//
 	switch ext {
 	case ".json":
-		js := json.ToJsonString(tracefile.RawModules())
+		js := json.ToJsonString(tracefile)
 		//
 		if err = os.WriteFile(filename, []byte(js), 0644); err == nil {
 			return
-		}
-	case ".lt", ".ltv2":
-		bytes, err = tracefile.MarshalBinary()
-		//
-		if err == nil {
-			if err = os.WriteFile(filename, bytes, 0644); err == nil {
-				return
-			}
 		}
 	default:
 		err = fmt.Errorf("unknown trace file format: %s", ext)
@@ -163,15 +150,12 @@ func writeTraceFile(filename string, tracefile lt.TraceFile) {
 	os.Exit(4)
 }
 
-// ReadTraceFile reads a trace file (either binary lt or json), and parses it
-// into an array of raw columns.  The determination of what kind of trace file
-// (i.e. binary or json) is based on the extension.
-func ReadTraceFile(filename string) lt.TraceFile {
+// ReadTraceFile reads a JSON trace file and parses it into an array of raw
+// columns.
+func ReadTraceFile[F field.Element[F]](filename string) trace.Trace[F] {
 	var (
 		stats     = util.NewPerfStats()
-		modules   []lt.Module[word.BigEndian]
-		pool      pool.LocalHeap[word.BigEndian]
-		tracefile lt.TraceFile
+		tracefile trace.Trace[F]
 	)
 	// Read data file
 	filename, data, err := file.ReadAndUncompress(filename)
@@ -182,22 +166,7 @@ func ReadTraceFile(filename string) lt.TraceFile {
 		//
 		switch ext {
 		case ".json":
-			pool, modules, err = json.FromBytes(data)
-			if err == nil {
-				tracefile = lt.NewTraceFile(nil, pool, modules)
-			}
-		case ".lt", ".ltv2":
-			// Check for legacy format
-			if !lt.IsTraceFile(data) {
-				// legacy format
-				pool, modules, err = lt.FromBytesV1(data)
-				if err == nil {
-					tracefile = lt.NewTraceFileV1(nil, pool, modules)
-				}
-			} else {
-				err = tracefile.UnmarshalBinary(data)
-			}
-			//
+			tracefile, err = json.FromBytes[F](data)
 		default:
 			err = fmt.Errorf("unknown trace file format: %s", ext)
 		}
@@ -205,83 +174,38 @@ func ReadTraceFile(filename string) lt.TraceFile {
 	//
 	stats.Log("Reading trace file")
 	//
-	if err == nil {
-		return tracefile
+	if err != nil {
+		// Handle error
+		fmt.Println(err)
+		os.Exit(2)
 	}
-	// Handle error
-	fmt.Println(err)
-	os.Exit(2)
-	// unreachable
-	return lt.TraceFile{}
+	//
+	return tracefile
 }
 
 // ReadBatchedTraceFile reads a file containing zero or more traces expressed as
 // JSON, where each trace is on a separate line.
-func ReadBatchedTraceFile(filename string) []lt.TraceFile {
+func ReadBatchedTraceFile[F field.Element[F]](filename string) []trace.Trace[F] {
 	var (
 		stats    = util.NewPerfStats()
 		lines, _ = file.ReadInputFileAsLines(filename)
-		traces   = make([]lt.TraceFile, 0)
+		traces   = make([]trace.Trace[F], 0)
 	)
 	// Read constraints line by line
 	for i, line := range lines {
 		// Parse input line as JSON
 		if line != "" && !strings.HasPrefix(line, ";;") {
-			pool, cols, err := json.FromBytes([]byte(line))
+			trace, err := json.FromBytes[F]([]byte(line))
 			if err != nil {
 				msg := fmt.Sprintf("%s:%d: %s", filename, i+1, err)
 				panic(msg)
 			}
 
-			traces = append(traces, lt.NewTraceFile(nil, pool, cols))
+			traces = append(traces, trace)
 		}
 	}
 	//
 	stats.Log("Reading trace file")
 	//
 	return traces
-}
-
-// WriteBinaryFile writes a binary file (e.g. zkevm.bin) to disk using the given
-// binfile versioning defined in the binfile package.
-//
-//nolint:errcheck
-func WriteBinaryFile(binfile *binfile.BinaryFile, filename string) {
-	var (
-		bytes []byte
-		err   error
-	)
-	// Encode binary file as bytes
-	if bytes, err = binfile.MarshalBinary(); err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
-	// Write file
-	if err := os.WriteFile(filename, bytes, 0644); err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
-}
-
-func printTypedMetadata(indent uint, metadata typed.Map) {
-	for _, k := range metadata.Keys() {
-		printIndent(indent)
-		//
-		if val, ok := metadata.String(k); ok {
-			fmt.Printf("%s: %s\n", k, val)
-		} else if val, ok := metadata.Map(k); ok {
-			fmt.Printf("%s:\n", k)
-			printTypedMetadata(indent+1, val)
-		} else if metadata.Nil(k) {
-			fmt.Printf("%s: (nil)\n", k)
-		} else {
-			fmt.Printf("%s: ???\n", k)
-		}
-	}
-}
-
-func printIndent(indent uint) {
-	for i := uint(0); i < indent; i++ {
-		fmt.Print("\t")
-	}
 }

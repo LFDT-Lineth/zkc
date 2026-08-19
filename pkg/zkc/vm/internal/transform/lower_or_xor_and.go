@@ -14,7 +14,6 @@ package transform
 
 import (
 	"fmt"
-	"math/bits"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -37,15 +36,14 @@ import (
 //
 // It must run before AddRangeConstraints (so the freshly introduced registers
 // are range-checked) and the CALLs it introduces must subsequently be flattened.
-func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W], maxStaticHeight uint) descriptor.Program[W] {
+func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		out = slices.Clone(program.Modules())
 		// maxStaticWidth is floor(log2(maxStaticHeight)); a bitwise table indexes
 		// two w-bit operands, so it fits only when 2w <= maxStaticWidth.
-		bitwiseStaticWidth = uint(bits.Len(maxStaticHeight)-1) / 2
+		bitwiseStaticWidth = util_math.FloorLog2(program.MaxStaticHeight()) / 2
 		helpers            = newBitwiseHelpers[W](uint(len(out)), bitwiseStaticWidth)
 	)
-
 	for i, mod := range out {
 		if fn, ok := mod.(*descriptor.Function[W]); ok {
 			out[i] = lowerBitwiseFunction(fn, func(b Bytecode[W], alloc split.Allocator[W]) []Bytecode[W] {
@@ -53,8 +51,9 @@ func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W], maxStaticHeigh
 			})
 		}
 	}
-
-	return descriptor.NewProgram(program.Field(), append(out, helpers.modules()...)...)
+	//
+	return descriptor.NewProgram(program.Field(),
+		program.MaxStaticHeight(), append(out, helpers.modules()...)...)
 }
 
 // bitwiseHelperKey identifies an AND/OR/XOR helper module.

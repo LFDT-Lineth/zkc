@@ -15,6 +15,7 @@ package inspector
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
@@ -95,12 +96,12 @@ func NewInspector(term *termio.Terminal, trace view.TraceView) *Inspector {
 			rName = trace.Module(r).Data().Name()
 		)
 		//
-		return lName.Cmp(rName)
+		return strings.Compare(lName, rName)
 	})
 	// Filter out non-public modules
 	ntrace = ntrace.Filter(view.NewTraceFilter(func(mid schema.ModuleId) view.ModuleFilter {
 		ith := trace.Module(mid)
-		if ith.Data().Name().Name != "" {
+		if ith.Data().Name() != "" {
 			if ith.Data().IsPublic() {
 				numVisible++
 			}
@@ -431,7 +432,7 @@ func initInspectorTabs(showAllModules bool, states []ModuleState) *widget.Tabs[u
 
 	for i, state := range states {
 		if state.public || showAllModules {
-			name := state.view.Data().Name().String()
+			name := state.view.Data().Name()
 			tabs = append(tabs, util.NewPair(name, uint(i)))
 		}
 	}

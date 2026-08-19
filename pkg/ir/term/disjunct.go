@@ -84,7 +84,7 @@ func (p *Disjunct[F, S]) Negate() S {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Disjunct[F, T]) TestAt(k int, tr trace.Module[F], sc register.Map) (bool, uint, error) {
+func (p *Disjunct[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, uint, error) {
 	//
 	for _, disjunct := range p.Args {
 		val, _, err := disjunct.TestAt(k, tr, sc)
@@ -121,9 +121,9 @@ func (p *Disjunct[F, T]) RequiredCells(row int, mid trace.ModuleId) *set.AnySort
 }
 
 // Simplify this term as much as reasonably possible.
-func (p *Disjunct[F, T]) Simplify(casts bool) T {
+func (p *Disjunct[F, T]) Simplify() T {
 	// Simplify terms
-	terms := simplifyLogicalTerms(p.Args, casts)
+	terms := simplifyLogicalTerms(p.Args)
 	// Flatten any nested disjuncts
 	terms = array.Flatten(terms, flattenDisjunct[F, T])
 	// True if contains True
@@ -141,11 +141,6 @@ func (p *Disjunct[F, T]) Simplify(casts bool) T {
 	default:
 		return Disjunction(terms...)
 	}
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *Disjunct[F, T]) Substitute(mapping map[string]F) {
-	substituteTerms(mapping, p.Args...)
 }
 
 func flattenDisjunct[F field.Element[F], T Logical[F, T]](term T) []T {

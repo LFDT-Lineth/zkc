@@ -13,7 +13,10 @@
 package array
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
@@ -28,17 +31,37 @@ type SmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]] struct {
 }
 
 // NewSmallArray constructs a new word array with a given capacity.
-func NewSmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]](height uint, bitwidth uint) SmallArray[K, T] {
+func NewSmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]](height uint, bitwidth uint) *SmallArray[K, T] {
 	var (
 		elements = make([]K, height)
 	)
 	//
-	return SmallArray[K, T]{elements, bitwidth}
+	return &SmallArray[K, T]{elements, bitwidth}
 }
 
-// RawSmallArray constructs a new array directly from raw data.
-func RawSmallArray[K uint8 | uint16 | uint32 | uint64, T word.Word[T]](data []K, bitwidth uint) *SmallArray[K, T] {
-	return &SmallArray[K, T]{data, bitwidth}
+// Append new word on this array
+func (p *SmallArray[K, T]) Append(word T) {
+	p.data = append(p.data, K(word.Uint64()))
+}
+
+// AppendAll elements of the given array onto the this array, mutating it in
+// place.
+func (p *SmallArray[K, T]) AppendAll(other SmallArray[K, T]) {
+	// Determine height of resulting array
+	var (
+		nsize = uint(len(p.data) + len(other.data))
+		n     = nsize - uint(len(p.data))
+	)
+	// sanity check
+	if p.bitwidth != other.bitwidth {
+		panic(fmt.Sprintf("incompatible array bitwidth (u%d vs u%d)", p.bitwidth, other.bitwidth))
+	}
+	// expand data length
+	ndata := slices.Grow(p.data, int(n))[:nsize]
+	// copy data
+	copy(ndata[len(p.data):], other.data)
+	// finalisex
+	p.data = ndata
 }
 
 // Len returns the number of elements in this word array.
@@ -50,6 +73,29 @@ func (p *SmallArray[K, T]) Len() uint {
 // BitWidth returns the width (in bits) of elements in this array.
 func (p *SmallArray[K, T]) BitWidth() uint {
 	return p.bitwidth
+}
+
+// Encode implementation for Array interface.  The natural encoding of a small
+// array is its elements written as fixed-width, little endian values.
+func (p *SmallArray[K, T]) Encode(buffer *bytes.Buffer) {
+	if err := binary.Write(buffer, binary.LittleEndian, p.data); err != nil {
+		// Unreachable, since writes to a bytes.Buffer cannot fail.
+		panic(err)
+	}
+}
+
+// Decode implementation for MutArray interface.  This reads a given number of
+// fixed-width, little endian values (as produced by Encode).
+func (p *SmallArray[K, T]) Decode(height uint, buffer *bytes.Buffer) error {
+	data := make([]K, height)
+	//
+	if err := binary.Read(buffer, binary.LittleEndian, data); err != nil {
+		return err
+	}
+	//
+	p.data = data
+	//
+	return nil
 }
 
 // Clone makes clones of this array producing an otherwise identical copy.
@@ -71,9 +117,8 @@ func (p *SmallArray[K, T]) Get(index uint) T {
 
 // Set the word at the given index in this array, overwriting the
 // original value.
-func (p *SmallArray[K, T]) Set(index uint, word T) MutArray[T] {
+func (p *SmallArray[K, T]) Set(index uint, word T) {
 	p.data[index] = K(word.Uint64())
-	return p
 }
 
 // SetRaw sets a raw value at the given index in this array, overwriting the
@@ -82,38 +127,20 @@ func (p *SmallArray[K, T]) SetRaw(index uint, val K) {
 	p.data[index] = val
 }
 
-// Slice out a subregion of this array.
-func (p *SmallArray[K, T]) Slice(start uint, end uint) Array[T] {
-	return &SmallArray[K, T]{
-		p.data[start:end], p.bitwidth,
-	}
-}
-
-// Pad prepends this array with n copies, and appends it with m copies, of the
-// given padding value.
-func (p *SmallArray[K, T]) Pad(n uint, m uint, padding T) {
+// Pad returns a copy of this array with n copies of the given padding value
+// prepended, and m copies appended.  The receiver is left unmodified.
+func (p *SmallArray[K, T]) Pad(n uint, m uint, padding T) MutArray[T] {
 	var (
 		ol = p.Len()
 		// Determine new length
-		l = n + ol + m
-		//
-		val  = K(padding.Uint64())
-		data = p.data
+		l   = n + ol + m
+		val = K(padding.Uint64())
+		// Allocate exactly, copying existing data directly into its final
+		// position.
+		data = make([]K, l)
 	)
 	//
-	if uint(cap(data)) < l {
-		// Insufficient capacity: allocate exactly, copying existing data
-		// directly into its final position.
-		data = make([]K, l)
-		copy(data[n:], p.data)
-	} else {
-		// Sufficient capacity: extend and shift in place.
-		data = data[:l]
-		//
-		if n > 0 {
-			copy(data[n:], data[:ol])
-		}
-	}
+	copy(data[n:], p.data)
 	// Front padding!
 	for i := range n {
 		data[i] = val
@@ -122,10 +149,9 @@ func (p *SmallArray[K, T]) Pad(n uint, m uint, padding T) {
 	for i := l - m; i < l; i++ {
 		data[i] = val
 	}
-	// done
-	p.data = data
+	//
+	return &SmallArray[K, T]{data, p.bitwidth}
 }
-
 func (p *SmallArray[K, T]) String() string {
 	var sb strings.Builder
 

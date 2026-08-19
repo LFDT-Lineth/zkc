@@ -58,7 +58,7 @@ func (p *Add[F, T]) ApplyShift(shift int) T {
 func (p *Add[F, T]) Bounds() util.Bounds { return util.BoundsForArray(p.Args) }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Add[F, T]) EvalAt(k int, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *Add[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
 	// Evaluate first argument
 	val, err := p.Args[0].EvalAt(k, tr, sc)
 	// Continue evaluating the rest
@@ -93,13 +93,8 @@ func (p *Add[F, T]) ShiftRange() (int, int) {
 }
 
 // Simplify implementation for Term interface.
-func (p *Add[F, T]) Simplify(casts bool) T {
-	return simplifySum(p.Args, casts)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *Add[F, T]) Substitute(mapping map[string]F) {
-	substituteTerms(mapping, p.Args...)
+func (p *Add[F, T]) Simplify() T {
+	return simplifySum(p.Args)
 }
 
 // ValueRange implementation for Term interface.
@@ -118,10 +113,10 @@ func (p *Add[F, T]) ValueRange() math.Interval {
 	return res
 }
 
-func simplifySum[F field.Element[F], T Expr[F, T]](args []T, casts bool) T {
+func simplifySum[F field.Element[F], T Expr[F, T]](args []T) T {
 	var (
 		zero  F
-		terms = simplifyTerms(args, addBinOp, zero, casts)
+		terms = simplifyTerms(args, addBinOp, zero)
 		tmp   Expr[F, T]
 	)
 	// Flatten any nested sums

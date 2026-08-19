@@ -20,6 +20,9 @@ import (
 	"strings"
 )
 
+// Predicate abstracts the notion of a function which identifies something.
+type Predicate[T any] = func(T) bool
+
 // Comparable interface which can be implemented by non-primitive types.
 type Comparable[T any] interface {
 	// Cmp returns < 0 if this is less than other, or 0 if they are equal, or >
@@ -415,6 +418,15 @@ func Map[S, T any](items []S, mapping func(uint, S) T) []T {
 	}
 	//
 	return nitems
+}
+
+// Apply a function over every element of an array.  This may seem like a
+// slightly odd function, since its really just a for-loop.  However, the point
+// is that it provides mirror for ParallelApply.
+func Apply[S any](items []S, fn func(uint, S)) {
+	for i, t := range items {
+		fn(uint(i), t)
+	}
 }
 
 // MergeSorted combines two sorted arrays whilst maintaining the sorted

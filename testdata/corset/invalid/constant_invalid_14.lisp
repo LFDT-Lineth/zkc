@@ -1,6 +1,5 @@
-;;error:6:42-45:not permitted in pure context
-;;error:6:76-79:not permitted in pure context
-;;error:6:22-83:expected bool, found i20
+;;error:5:41-42:not permitted in pure context
+;;error:5:67-68:not permitted in pure context
+;;error:5:22-71:expected bool, found i20
 (defcolumns (CT :i4) (X :i16))
-(defun (ONE) X)
-(defconstraint c1 () (* (- CT (shift CT (ONE))) (- (+ CT (ONE)) (shift CT (ONE)))))
+(defconstraint c1 () (* (- CT (shift CT X)) (- (+ CT X) (shift CT X))))

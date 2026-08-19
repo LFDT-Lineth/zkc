@@ -94,7 +94,7 @@ func ThreadTimestamps[W word.Word[W]](program descriptor.Program[W]) descriptor.
 		out[i] = threadFunction(mods, fn, effects)
 	}
 	//
-	return descriptor.NewProgram(program.Field(), out...)
+	return descriptor.NewProgram(program.Field(), program.MaxStaticHeight(), out...)
 }
 
 // stampLoc records where a stamp value concretely lives: a register, or —

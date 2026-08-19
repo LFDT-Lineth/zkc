@@ -13,46 +13,28 @@
 package corset
 
 import (
-	"encoding/gob"
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/binfile"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
-	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
-// SourceMap is a binary file attribute which provides debugging
-// information about the relationship between registers and source-level
-// columns.  This is used, for example, within the inspector.
+// SourceMap provides debugging information about the relationship between
+// registers and source-level columns.  This is used, for example, within the
+// inspector.
 type SourceMap struct {
-	// Root module correspond to the top-level HIR modules.  Thus, indicates into
-	// this table correspond to HIR module indices, etc.
+	// Root module correspond to the top-level MIR modules.  Thus, indicates into
+	// this table correspond to MIR module indices, etc.
 	Root SourceModule
 	// Enumerations are custom types for display.  For example, we might want to
 	// display opcodes as ADD, MUl, SUB, etc.
 	Enumerations []Enumeration
 }
 
-// AttributeName returns the name of the binary file attribute that this will
-// generate.  This is used, for example, when listing attributes contained
-// within a binary file.
-func (p *SourceMap) AttributeName() string {
-	return "CorsetSourceMap"
-}
-
 // Flatten modules in this tree matching a given criteria
 func (p *SourceMap) Flatten(predicate func(*SourceModule) bool) []SourceModule {
 	return p.Root.Flatten(predicate)
-}
-
-// SubstituteConstants updates the recorded value of constants within this
-// source map.  This is typically done in conjunction with a substitution
-// through the schema, in order to keep them both in sync.
-func (p *SourceMap) SubstituteConstants(mapping map[string]big.Int) {
-	path := file.NewAbsolutePath()
-	p.Root.SubstituteConstants(path, mapping)
 }
 
 // Enumeration is a mapping from field elements to explicitly given names.  For
@@ -61,8 +43,8 @@ type Enumeration map[uint64]string
 
 // SourceModule represents an entity at the source-level which groups together
 // related columns.  Modules can be either concrete (in which case they
-// correspond with HIR modules) or virtual (in which case they are encoded
-// within an HIR module).
+// correspond with MIR modules) or virtual (in which case they are encoded
+// within an MIR module).
 type SourceModule struct {
 	// Name of this submodule.
 	Name string
@@ -77,9 +59,7 @@ type SourceModule struct {
 	// Selector determines when this (sub)module is active.  Specifically, when
 	// it evaluates to a non-zero value the module is active.
 	Selector util.Option[string]
-	// Submodules identifies any (virtual) submodules contained within this.
-	// Currently, perspectives are the only form of submodule currently
-	// supported.
+	// Submodules identifies any submodules contained within this.
 	Submodules []SourceModule
 	// Columns identifies any columns defined in this module.  Observe that
 	// columns across modules are mapped to registers in a many-to-one fashion.
@@ -123,35 +103,11 @@ func (p *SourceModule) Flatten(predicate func(*SourceModule) bool) []SourceModul
 	return modules
 }
 
-// SubstituteConstants updates the recorded value of constants within this
-// source map.  This is typically done in conjunction with a substitution
-// through the schema, in order to keep them both in sync.
-func (p *SourceModule) SubstituteConstants(path file.Path, mapping map[string]big.Int) {
-	// check all local constants
-	for i := range p.Constants {
-		ith := &p.Constants[i]
-		if ith.Extern {
-			ith_name := path.Extend(ith.Name).String()
-			//
-			if nval, ok := mapping[ith_name]; ok {
-				ith.Value = nval
-			}
-		}
-	}
-	// recurse submodules
-	for i := range p.Submodules {
-		ith := &p.Submodules[i]
-		ith.SubstituteConstants(*path.Extend(ith.Name), mapping)
-	}
-}
-
 // SourceColumn represents a source-level column which is mapped to a given MIR
 // register.  Observe that multiplie source-level columns can be mapped to the
 // same register.
 type SourceColumn struct {
 	Name string
-	// Length Multiplier of source-level column.
-	Multiplier uint
 	// Underlying bitwidth of the source-level column.
 	Bitwidth uint
 	// Provability requirement for source-level column.
@@ -162,9 +118,7 @@ type SourceColumn struct {
 	// entries in Enumerations map.  More specifically, 0=hex, 1=dec, 2=bytes.
 	Display uint
 	// Register in the generate schema to which this Corset register is mapped.
-	// Observe that this has to be a reference, rather than just an ID.  This is
-	// because a column in a given corset module may map into a different module
-	// in the underlying schema (i.e. for interleavings).
+	// Observe that this has to be a reference, rather than just an ID.
 	Register register.Ref
 }
 
@@ -181,8 +135,7 @@ const DISPLAY_BYTES = uint(2)
 const DISPLAY_CUSTOM = uint(256)
 
 // SourceConstant provides information about constant values which are exposed
-// to the trace generator.  Such constants can, in some cases, be modified to
-// reflect different environments (e.g. different chains, gas limits, etc).
+// to the trace generator.
 type SourceConstant struct {
 	Name string
 	// value of the constant
@@ -190,9 +143,6 @@ type SourceConstant struct {
 	// Explicit bitwidth for this constant.  This maybe math.MaxUint if no type
 	// was given and, instead, the type should be inferred from context.
 	Bitwidth uint
-	// Indicates whether this is an "externally visible" constant.  That is, one
-	// whose value can be changed after the fact.
-	Extern bool
 }
 
 // Identify all fundamental columns declared in this module.  The visited set is
@@ -218,8 +168,4 @@ func determineRegisters(module SourceModule, width uint, visited *bit.Set) []Sou
 	}
 	// Done
 	return cols
-}
-
-func init() {
-	gob.Register(binfile.Attribute(&SourceMap{}))
 }

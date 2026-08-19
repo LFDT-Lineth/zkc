@@ -62,7 +62,7 @@ func (p *Equal[F, S, T]) Bounds() util.Bounds {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Equal[F, S, T]) TestAt(k int, tr trace.Module[F], sc register.Map) (bool, uint, error) {
+func (p *Equal[F, S, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, uint, error) {
 	lhs, err1 := p.Lhs.EvalAt(k, tr, sc)
 	rhs, err2 := p.Rhs.EvalAt(k, tr, sc)
 	// error check
@@ -114,10 +114,10 @@ func (p *Equal[F, S, T]) RequiredCells(row int, mid trace.ModuleId) *set.AnySort
 
 // Simplify this term as much as reasonably possible.
 // nolint
-func (p *Equal[F, S, T]) Simplify(casts bool) S {
+func (p *Equal[F, S, T]) Simplify() S {
 	var (
-		lhs = p.Lhs.Simplify(casts)
-		rhs = p.Rhs.Simplify(casts)
+		lhs = p.Lhs.Simplify()
+		rhs = p.Rhs.Simplify()
 	)
 	//
 	lc, lok := IsConstant(lhs)
@@ -135,10 +135,4 @@ func (p *Equal[F, S, T]) Simplify(casts bool) S {
 	var tmp Logical[F, S] = &Equal[F, S, T]{lhs, rhs}
 	// Done
 	return tmp.(S)
-}
-
-// Substitute implementation for Substitutable interface.
-func (p *Equal[F, S, T]) Substitute(mapping map[string]F) {
-	p.Lhs.Substitute(mapping)
-	p.Rhs.Substitute(mapping)
 }

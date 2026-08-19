@@ -13,6 +13,7 @@
 package word
 
 import (
+	"math"
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -22,6 +23,19 @@ import (
 
 // Config is (for now) simply an alias for field config.
 type Config = field.Config
+
+// WORD_UINT32 provides metadata about the Uint32 word type.
+var WORD_UINT32 = Config{Name: "Uint32", BandWidth: 32, RegisterWidth: 16}
+
+// WORD_UINT64 provides metadata about the Uint64 word type.
+var WORD_UINT64 = Config{Name: "Uint64", BandWidth: 64, RegisterWidth: 32}
+
+// WORD_UINT128 provides metadata about the Uint128 word type.
+var WORD_UINT128 = Config{Name: "Uint128", BandWidth: 128, RegisterWidth: 64}
+
+// WORD_UINT provides metadata about the Uint word type.  This word type should
+// not be used in practice for execution as it is highly inefficient.
+var WORD_UINT = Config{Name: "Uint", BandWidth: math.MaxUint, RegisterWidth: math.MaxUint}
 
 // Base captures the minimal set of requirements for a word used in the base
 // machine.
@@ -50,6 +64,8 @@ type Word[W any] interface {
 	AddMod(W, W) W
 	// Bitwise AND of two words.
 	And(W) W
+	// Returns the corresponding word configuration
+	Config() Config
 	// Returns the maximum number of bits of information a word this type can
 	// hold.
 	Bandwidth() uint

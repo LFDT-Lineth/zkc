@@ -13,8 +13,8 @@
 package trace
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/rtrace"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -34,12 +34,14 @@ const ramStampWidth uint = 32
 // match constraints.computeRamLayout (the schema this trace is checked against):
 // [ADDRESS, VALUE_WRITTEN, EXEC, FINL, IS_WRITE, VALUE_READ, TIMESTAMP_WRITTEN,
 //
-//	TIMESTAMP_READ, TIMESTAMP_DELTA, ADDRESS_DELTA, TS_CARRY, ADDR_CARRY].
+//	TIMESTAMP_READ, TIMESTAMP_DELTA, ADDRESS_DELTA, TS_CARRY, ADDR_CARRY,
+//	EXEC_WRITE, EXEC_READ].
 type ramTraceLayout struct {
 	nAddr, nData, nStamp                         int
 	valueWritten, exec, finl, isWrite, valueRead int
 	tsWritten, tsRead, tsDelta                   int
 	addrDelta, tsCarry, addrCarry                int
+	execWrite, execRead                          int
 	width                                        int
 }
 
@@ -60,7 +62,9 @@ func newRamTraceLayout(nAddr, nData, nStamp int) ramTraceLayout {
 	l.addrDelta = l.tsDelta + nStamp
 	l.tsCarry = l.addrDelta + nAddr
 	l.addrCarry = l.tsCarry + (nStamp - 1)
-	l.width = l.addrCarry + (nAddr - 1)
+	l.execWrite = l.addrCarry + (nAddr - 1)
+	l.execRead = l.execWrite + 1
+	l.width = l.execRead + 1
 	//
 	return l
 }
@@ -69,49 +73,56 @@ func newRamTraceLayout(nAddr, nData, nStamp int) ramTraceLayout {
 // per-lane access log: a shared timestamp / write-flag, the physical start
 // address of its lanes, and the value on each lane.
 type ramAccess[W Word[W]] struct {
-	timestamp uint64
-	isWrite   bool
-	physStart uint64
-	values    []W
+	writeStamp uint64
+	readStamp  uint64
+	isWrite    bool
+	physStart  uint64
+	writeVals  []W
+	readVals   []W
 }
 
 // InitReadWriteMemory initialises a trace module for a RandomAccessMemory.
 func initReadWriteMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](cfg field.Config, m vm.Memory[W]) (module M) {
 	var (
-		regs     = array.Map(m.Registers(), toRtraceRegister)
+		regs     = array.Map(m.Registers(), toTraceRegister)
 		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, ramStampWidth))
 		u1       = util.Some[uint](1)
 	)
 	// EXEC, FINL, IS_WRITE.
 	regs = append(regs,
-		rtrace.NewColumnDescriptor(RAM_EXEC_NAME, u1),
-		rtrace.NewColumnDescriptor(RAM_FINL_NAME, u1),
-		rtrace.NewColumnDescriptor(RAM_IS_WRITE_NAME, u1),
+		trace.NewColumnDescriptor(RAM_EXEC_NAME, u1),
+		trace.NewColumnDescriptor(RAM_FINL_NAME, u1),
+		trace.NewColumnDescriptor(RAM_IS_WRITE_NAME, u1),
 	)
 	// VALUE_READ (same widths as the data lanes, native included).
 	for j, r := range m.DataRegisters() {
-		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_VALUE_READ_PREFIX, uint(j)), r.Bitwidth()))
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_VALUE_READ_PREFIX, uint(j)), r.Bitwidth()))
 	}
 	// TIMESTAMP_WRITTEN / READ / DELTA.
 	for _, prefix := range []string{RAM_TS_WRITTEN_PREFIX, RAM_TS_READ_PREFIX, RAM_TS_DELTA_PREFIX} {
 		for k, w := range tsWidths {
-			regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(prefix, uint(k)), util.Some(w)))
+			regs = append(regs, trace.NewColumnDescriptor(RamLimbName(prefix, uint(k)), util.Some(w)))
 		}
 	}
 	// ADDRESS_DELTA (same widths as the address lanes).
 	for j, r := range m.AddressRegisters() {
-		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_ADDR_DELTA_PREFIX, uint(j)), r.Bitwidth()))
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_ADDR_DELTA_PREFIX, uint(j)), r.Bitwidth()))
 	}
 	// TS_CARRY / ADDR_CARRY (one fewer than their value's limbs; 1-bit).
 	for k := uint(1); k < uint(len(tsWidths)); k++ {
-		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_TS_CARRY_PREFIX, k-1), u1))
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_TS_CARRY_PREFIX, k-1), u1))
 	}
 	//
 	for k := uint(1); k < m.NumInputs(); k++ {
-		regs = append(regs, rtrace.NewColumnDescriptor(RamLimbName(RAM_ADDR_CARRY_PREFIX, k-1), u1))
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_ADDR_CARRY_PREFIX, k-1), u1))
 	}
+	// EXEC_WRITE / EXEC_READ (the per-kind lookup selectors).
+	regs = append(regs,
+		trace.NewColumnDescriptor(RAM_EXEC_WRITE_NAME, u1),
+		trace.NewColumnDescriptor(RAM_EXEC_READ_NAME, u1),
+	)
 	//Done
-	return module.Initialise(m.Name(), regs)
+	return module.Initialise(trace.NewModuleDescriptor(m.Name(), regs))
 }
 
 // traceReadWriteMemory materialises the trace of a read-write (RAM) memory: one
@@ -132,15 +143,9 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, ramStampWidth))
 		layout   = newRamTraceLayout(nAddr, nData, len(tsWidths))
 		accesses = groupRamAccesses[W](m.AccessLog(), nData)
-		// Per-physical-cell read-side state, tracked by replaying the log forward;
-		// every cell starts at value 0, timestamp 0.
-		cellValue = map[uint64]W{}
-		cellStamp = map[uint64]uint64{}
 		//
 		width = module.Width()
 	)
-	// Row 0 is a padding row (EXEC = FINL = 0).
-	module.Append(paddingRow(scratch[:width])...)
 	//
 	for _, acc := range accesses {
 		var (
@@ -148,23 +153,28 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 			logical = acc.physStart / uint64(nData)
 			// Read-side: the row's cells share one last-write timestamp (accesses
 			// are row-atomic), so read it from the first lane.
-			tsRead = cellStamp[acc.physStart]
+			tsRead = acc.readStamp
 			// The interpreter clock ticks before each access and the threaded
 			// stamps count from one, so the recorded timestamp IS the caller's
 			// stamp — no re-basing needed.  Timestamp zero is reserved for the
 			// initial state of an untouched cell (the zero value of cellStamp).
-			tsWr    = acc.timestamp
+			tsWr    = acc.writeStamp
 			tsDelta = tsWr - tsRead - 1
 		)
-		// EXEC = 1, IS_WRITE from the access; FINL = 0 (zero value).
+		// EXEC = 1, IS_WRITE from the access; FINL = 0 (zero value).  The
+		// per-kind lookup selectors follow: EXEC_WRITE = EXEC * IS_WRITE,
+		// EXEC_READ = EXEC * (1 - IS_WRITE).
 		row[layout.exec] = field.Uint64[F](1)
+		row[layout.finl] = field.Uint64[F](0)
 		row[layout.isWrite] = field.Uint1[F](acc.isWrite)
+		row[layout.execWrite] = field.Uint1[F](acc.isWrite)
+		row[layout.execRead] = field.Uint1[F](!acc.isWrite)
 		// ADDRESS (logical) split across the address lanes (offset 0).
 		copyAddressLines(logical, addrRegs, row[0:nAddr])
 		// VALUE_WRITTEN / VALUE_READ per lane.
 		for j := range nData {
-			row[layout.valueWritten+j] = wordToField[W, F](acc.values[j])
-			row[layout.valueRead+j] = wordToField[W, F](cellValue[acc.physStart+uint64(j)])
+			row[layout.valueWritten+j] = wordToField[W, F](acc.writeVals[j])
+			row[layout.valueRead+j] = wordToField[W, F](acc.readVals[j])
 		}
 		// TIMESTAMP_WRITTEN / READ / DELTA, split into limbs.
 		fillLimbs(row[layout.tsWritten:], tsWr, tsWidths)
@@ -174,11 +184,9 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		for s, c := range timestampCarries(tsRead, tsDelta, tsWidths) {
 			row[layout.tsCarry+s] = field.Uint64[F](c)
 		}
-		// Update the read-side state for every touched cell.
-		for j := range nData {
-			cellValue[acc.physStart+uint64(j)] = acc.values[j]
-			cellStamp[acc.physStart+uint64(j)] = tsWr
-		}
+		// Zero out unused lanes
+		zeroOut(row[layout.addrDelta : layout.addrDelta+layout.nAddr])
+		zeroOut(row[layout.addrCarry : layout.addrCarry+layout.nAddr-1])
 		//
 		module.Append(row...)
 	}
@@ -193,12 +201,19 @@ func groupRamAccesses[W Word[W]](log []vm.AccessData[W], nData int) []ramAccess[
 	//
 	for i := 0; i < len(log); {
 		var (
-			ts  = log[i].TimestampWritten()
-			acc = ramAccess[W]{timestamp: ts, isWrite: log[i].IsWrite(), physStart: log[i].Address()}
+			wStamp = log[i].TimestampWritten()
+			rStamp = log[i].TimestampRead()
+			acc    = ramAccess[W]{
+				writeStamp: wStamp,
+				readStamp:  rStamp,
+				isWrite:    log[i].IsWrite(),
+				physStart:  log[i].Address(),
+			}
 		)
 		//
-		for i < len(log) && log[i].TimestampWritten() == ts {
-			acc.values = append(acc.values, log[i].ValueWritten())
+		for i < len(log) && log[i].TimestampWritten() == wStamp {
+			acc.writeVals = append(acc.writeVals, log[i].ValueWritten())
+			acc.readVals = append(acc.readVals, log[i].ValueRead())
 			i++
 		}
 		//
