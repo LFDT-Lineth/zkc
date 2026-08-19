@@ -1,6 +1,6 @@
-//error:3:1-39:module "ghost" unreachable via lookups from entry point "main"
+//error:3:1-44:module "ghost" unreachable via lookups from entry point "main"
 pub input data(address:u16) -> (byte:u8)
-memory ghost(address:u16) -> (byte:u8)
+memory ghost[u32](address:u16) -> (byte:u8)
 pub output result(address:u16) -> (byte:u8)
 
 fn main<ghost>() {

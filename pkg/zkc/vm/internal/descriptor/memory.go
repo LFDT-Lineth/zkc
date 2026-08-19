@@ -15,8 +15,8 @@ package descriptor
 import (
 	"bytes"
 	"encoding/gob"
-	"io"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -28,20 +28,25 @@ type Memory[W word.Word[W]] struct {
 	moduleBase[W]
 	kind           MemoryKind
 	contents       []W
-	timestampWidth uint
+	timestampWidth util.Option[uint]
 }
 
 // NewMemory creates a new memory module with the specified parameters. It
 // initializes a memory region with a given name, kind (ROM, RAM, WOM),
-// timestamp width (for read-write memories only, zero otherwise), registers
+// timestamp width (present exactly for read-write memories), registers
 // (whose geometry gives size and layout) and initial contents (for static
 // memories only).
-// NOTE: this will panic is a non-static memory is created with some contents.
-func NewMemory[W word.Word[W]](name string, kind MemoryKind, timestampWidth uint,
+// NOTE: this will panic if a non-static memory is created with some contents,
+// or if the timestamp width is not given exactly when the kind requires one.
+func NewMemory[W word.Word[W]](name string, kind MemoryKind, timestampWidth util.Option[uint],
 	registers []Register[W], contents []W) *Memory[W] {
 	// Sanity check
 	if !kind.IsStatic() && len(contents) > 0 {
 		panic("unsupported contents for non-static memory")
+	}
+	// A timestamp width is meaningful exactly when the kind carries a timestamp.
+	if timestampWidth.HasValue() != kind.HasTimestamp() {
+		panic("timestamp width must be provided exactly for read-write memory")
 	}
 	//
 	return &Memory[W]{newModuleBase(name, registers), kind, contents, timestampWidth}
@@ -64,9 +69,11 @@ func (p *Memory[W]) Kind() MemoryKind {
 	return p.kind
 }
 
-// TimestampWidth returns the bit width of this memory's timestamp.  Only
-// meaningful for read-write memories; zero for every other kind.
-func (p *Memory[W]) TimestampWidth() uint {
+// TimestampWidth returns the bit width of this memory's timestamp, which is
+// present exactly when Kind().HasTimestamp() holds (i.e. for read-write
+// memories).  Rebuild sites forward it untouched; consumers that have already
+// established the memory is read-write unwrap it.
+func (p *Memory[W]) TimestampWidth() util.Option[uint] {
 	return p.timestampWidth
 }
 
@@ -177,7 +184,7 @@ func (p *Memory[W]) GobEncode() ([]byte, error) {
 		return nil, err
 	}
 	//
-	if err := gobEncoder.Encode(p.timestampWidth); err != nil {
+	if err := gobEncoder.Encode(&p.timestampWidth); err != nil {
 		return nil, err
 	}
 	//
@@ -208,14 +215,8 @@ func (p *Memory[W]) GobDecode(data []byte) error {
 	if err := gobDecoder.Decode(&p.contents); err != nil {
 		return err
 	}
-	// The timestamp width was added in binfile v0.1 (issue #2069); files
-	// predating it simply end here, in which case read-write memories get the
-	// then-implicit width of 32.
-	if err := gobDecoder.Decode(&p.timestampWidth); err == io.EOF {
-		if p.kind.IsReadWrite() {
-			p.timestampWidth = 32
-		}
-	} else if err != nil {
+	//
+	if err := gobDecoder.Decode(&p.timestampWidth); err != nil {
 		return err
 	}
 	// Reconstruct the module base (which recomputes the input / output counts).

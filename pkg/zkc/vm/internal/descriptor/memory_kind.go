@@ -57,6 +57,14 @@ func (p MemoryKind) IsPaged() bool {
 	return p.paged
 }
 
+// HasTimestamp indicates whether cells of this memory carry an access
+// timestamp.  Only read-write memories do: their consistency argument orders
+// accesses to the same cell in time, whereas read-only and write-once memories
+// have no such ordering to enforce.
+func (p MemoryKind) HasTimestamp() bool {
+	return p.IsReadWrite()
+}
+
 // ============================================================================
 // Encoding / Decoding
 // ============================================================================

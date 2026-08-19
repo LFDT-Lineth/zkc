@@ -242,7 +242,7 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) descriptor.Mod
 		contents[i] = w.SetUint64(uint64(i))
 	}
 	//
-	return descriptor.NewMemory(name, descriptor.PRIVATE_STATIC_MEMORY, 0, regs, contents)
+	return descriptor.NewMemory(name, descriptor.PRIVATE_STATIC_MEMORY, util.None[uint](), regs, contents)
 }
 
 // newRecursiveRangeModule constructs the range module for a width > maxStaticWidth.  It is a

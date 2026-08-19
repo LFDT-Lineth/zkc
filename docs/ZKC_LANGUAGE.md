@@ -59,14 +59,19 @@ Every read-write memory must declare a _timestamp type_ in square
 brackets after its name: a fixed-width unsigned integer of at most 64
 bits (a type alias resolving to one is also accepted). Internally,
 every access to the memory is numbered by a timestamp of this width,
-so the declared width caps the number of accesses the memory supports
-in a single execution — `memory buffer[u32]` allows roughly four
-billion accesses, while a `[u8]` memory allows only 255. Exceeding the
-cap fails at trace-generation time. A wider timestamp costs more
-columns in the generated constraint system, so the width should be
-chosen to comfortably bound the expected access count and no more.
-Only read-write memories take a timestamp type: `input`, `output` and
-`static` memories are not timestamped.
+counting from 1 (the stamp `0` marks a cell that was never touched).
+The declared width therefore caps the number of accesses the memory
+supports in a single execution at `2^N - 1`, and at `2^N - 2` when
+those accesses sit in a loop, since each iteration computes the next
+stamp before testing whether to exit. So `memory buffer[u32]` allows
+roughly four billion accesses, whereas a `[u8]` memory allows only a
+couple hundred (254 in a loop). Exceeding the cap fails at
+trace-generation time with a bit overflow. A wider timestamp costs
+more columns in the generated
+constraint system, so the width should be chosen to comfortably bound
+the expected access count and no more. Only read-write memories take a
+timestamp type: `input`, `output` and `static` memories are not
+timestamped.
 
 The _geometry_ of a memory determines its maximum size and
 organisation. For `data_len` the _address space_ is a `u1` whilst the

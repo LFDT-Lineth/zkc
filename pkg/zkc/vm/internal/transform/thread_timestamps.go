@@ -852,7 +852,7 @@ func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInse
 // registers, temporaries and merge registers for that memory all take this
 // width, so its split limbs line up with the RAM module's timestamp columns.
 func (t *threader[W]) timestampWidth(e descriptor.ModuleId) uint {
-	return t.mods[e].(*descriptor.Memory[W]).TimestampWidth()
+	return t.mods[e].(*descriptor.Memory[W]).TimestampWidth().Unwrap()
 }
 
 // stampName returns the name of the stamp-in register threaded for the given

@@ -13,6 +13,7 @@
 package vm
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -63,9 +64,9 @@ var (
 // name, kind, timestamp width and registers.  Since a memory has no body, this
 // descriptor is its final form (cf. NewBytecodeFunction).  The geometry is
 // derived from the registers; timestampWidth gives the bit width of the
-// memory's timestamp (read-write memories only, zero otherwise); init supplies
-// the static contents and must be empty for non-static memories.
-func NewBytecodeMemory[W word.Word[W]](name string, kind MemoryKind, timestampWidth uint,
+// memory's timestamp and must be present exactly for read-write memories; init
+// supplies the static contents and must be empty for non-static memories.
+func NewBytecodeMemory[W word.Word[W]](name string, kind MemoryKind, timestampWidth util.Option[uint],
 	registers []Register[W], init ...W,
 ) *Memory[W] {
 	return descriptor.NewMemory(name, kind, timestampWidth, registers, init)

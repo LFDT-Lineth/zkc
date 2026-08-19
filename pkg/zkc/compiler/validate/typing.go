@@ -237,7 +237,7 @@ func (p *TypeChecker) typeMemory(c *decl.ResolvedMemory) []source.SyntaxError {
 	}
 	//
 	switch {
-	case c.RequiresTimestampType():
+	case c.HasTimestamp():
 		if c.TimestampType != nil { // nil signals an upstream error, already reported
 			if t := c.TimestampType.AsUint(p.env); t == nil || t.IsOpen() {
 				errors = append(errors, p.srcmaps.SyntaxErrors(c, "timestamp type must be a fixed-width uN")...)

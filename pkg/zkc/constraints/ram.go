@@ -184,7 +184,7 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 		// of the memory's declared timestamp width (see "memory name[uN](...)"),
 		// carried by the descriptor, so it splits exactly like the caller's
 		// threaded stamp.
-		tsWidths = array.Reverse(register.LimbWidths(field.RegisterWidth, m.TimestampWidth()))
+		tsWidths = array.Reverse(register.LimbWidths(field.RegisterWidth, m.TimestampWidth().Unwrap()))
 		nStamp   = uint(len(tsWidths))
 		next     = nAddr + nData
 	)

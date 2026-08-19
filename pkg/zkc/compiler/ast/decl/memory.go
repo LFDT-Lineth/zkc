@@ -56,9 +56,10 @@ func (kind MemoryKind) isStatic() bool {
 	}
 }
 
-// RequiresTimestampType reports whether this memory kind carries a timestamp
-// type (true only for read-write memory).
-func (kind MemoryKind) RequiresTimestampType() bool {
+// HasTimestamp reports whether cells of this memory kind carry an access
+// timestamp, and hence require a declared timestamp width (true only for
+// read-write memory).
+func (kind MemoryKind) HasTimestamp() bool {
 	switch kind {
 	case RANDOM_ACCESS_MEMORY:
 		return true
@@ -219,8 +220,9 @@ func (p *Memory[S]) IsWriteable() bool {
 	}
 }
 
-// RequiresTimestampType reports whether this memory carries a timestamp type
-// (true only for read-write memory).
-func (p *Memory[S]) RequiresTimestampType() bool {
-	return p.Kind.RequiresTimestampType()
+// HasTimestamp reports whether cells of this memory carry an access timestamp,
+// and hence require a declared timestamp width (true only for read-write
+// memory).
+func (p *Memory[S]) HasTimestamp() bool {
+	return p.Kind.HasTimestamp()
 }
