@@ -15,6 +15,7 @@ package split
 
 import (
 	"math/big"
+	"math/bits"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -34,7 +35,8 @@ import (
 //  1. A multiply granularity g is chosen (see mulGranularity) such that a
 //     partial product of two g-bit values fits the field bandwidth.  Each
 //     operand — and the constant — is decomposed (least-significant first) into
-//     g-bit sub-limbs.
+//     g-bit sub-limbs on a grid starting at bit zero of the operand; since g
+//     need not divide the register width, a sub-limb may span a limb boundary.
 //  2. For a binary product a·b, every partial product aᵢ·bⱼ is materialised into
 //     fresh sub-limb registers via a narrow MulVecConst and bucketed against its
 //     column weight (i+j, plus the sub-limb offset within the product).  The
@@ -53,14 +55,12 @@ import (
 func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
 	var (
-		one          W
-		insns        []Bytecode[W]
-		targetLimbs  = applyLimbsMapReversed(mapping, insn.Target...)
-		sourceLimbs  = applyLimbsMapReversed(mapping, insn.Source...)
-		targetWidth  = groupWidth(alloc, targetLimbs)
-		targetWidths = registerWidths(alloc, targetLimbs)
-		g            = mulGranularity(mapping.RegisterWidth(), mapping.BandWidth(), targetWidths...)
-		operands     [][]RegisterId
+		one         W
+		insns       []Bytecode[W]
+		targetLimbs = applyLimbsMapReversed(mapping, insn.Target...)
+		sourceLimbs = applyLimbsMapReversed(mapping, insn.Source...)
+		targetWidth = groupWidth(alloc, targetLimbs)
+		operands    [][]RegisterId
 	)
 	//
 	one = one.SetUint64(1)
@@ -77,6 +77,10 @@ func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Alloca
 		// dynamic target-overflow check.
 		return []Bytecode[W]{bytecode.MulVecConst(targetLimbs, sourceLimbs, insn.Constant)}
 	}
+	// Choose the multiply granularity for the full product width (the sum of
+	// the operand widths plus the constant's width bounds the product).
+	g := mulGranularity(mapping.RegisterWidth(), mapping.BandWidth(),
+		groupWidth(alloc, sourceLimbs)+uint(insn.Constant.BigInt().BitLen()))
 	// Decompose each source operand into g-wide sub-limbs (least-significant
 	// first).
 	for _, s := range insn.Source {
@@ -135,42 +139,37 @@ func multiplicationFitsBandwidth[W word.Word[W]](alloc Allocator[W], sources []R
 }
 
 // mulGranularity determines the sub-limb width g used for multiplication.  It
-// is the largest divisor of RegisterWidth such that: (1) a partial product of
-// two g-bit values fits within BandWidth; and (2) every boundary between target
-// limbs is also a g-bit boundary.  The latter matters when several narrow
-// targets receive one product.  For example, a u32::u32 target on a u64 machine
-// requires g <= 32; otherwise reassembly would try to place one u64 product
-// column into the first u32 target.
+// is the largest g <= min(RegisterWidth, BandWidth/2) — so a partial product of
+// two g-bit sub-limbs fits within BandWidth — for which the column
+// accumulation provably cannot wrap the field modulus.  A product of the given
+// full width has at most T = 2·ceil(productWidth/g) partial-product sub-limbs
+// in any accumulation column (one low and one high piece per contributing
+// partial product); with the threaded carry, every column sum stays below
+// (T+1)·2^g by induction (a carry is at most the previous sum shifted down by
+// g, i.e. at most T).  Requiring g + bitlen(T+1) <= BandWidth therefore keeps
+// every column addition faithful over the integers.
+//
+// When no g satisfies that bound (only tiny testing fields), fall back to the
+// legacy rule — the largest divisor of RegisterWidth with 2·g <= BandWidth —
+// preserving the previous behaviour rather than rejecting the program.
 //
 // Both variable operands and the constant are decomposed into g-bit sub-limbs
 // (see binaryStep / scalarStep), so every partial product is at most 2·g bits
-// regardless of the constant's magnitude.
-func mulGranularity(regWidth, bandWidth uint, targetWidths ...uint) uint {
+// regardless of the constant's magnitude.  Since g need not divide the
+// register width, sub-limbs are cut on a grid which may cross limb boundaries
+// (see decomposeToSubLimbs / reassembleToTarget).
+func mulGranularity(regWidth, bandWidth, productWidth uint) uint {
 	//
-	for g := regWidth; g >= 1; g-- {
-		if regWidth%g == 0 && 2*g <= bandWidth && targetBoundariesAlign(g, targetWidths) {
+	for g := min(regWidth, bandWidth/2); g >= 1; g-- {
+		var terms = 2*ceilDiv(productWidth, g) + 1
+		// Either the column accumulation fits the bandwidth, or we have reached
+		// the legacy (divisor-rule) granularity.
+		if g+uint(bits.Len(terms)) <= bandWidth || regWidth%g == 0 {
 			return g
 		}
 	}
 	//
 	panic("cannot find multiply granularity fitting field bandwidth")
-}
-
-// targetBoundariesAlign checks that each boundary before the final target limb
-// coincides with a sub-limb boundary.  The final boundary needs no check: the
-// last multiplication column is already narrowed to the product's total width.
-func targetBoundariesAlign(g uint, widths []uint) bool {
-	var offset uint
-	//
-	for _, width := range widths[:max(0, len(widths)-1)] {
-		offset += width
-		//
-		if offset%g != 0 {
-			return false
-		}
-	}
-	//
-	return true
 }
 
 func registerWidths[W word.Word[W]](alloc Allocator[W], regs []RegisterId) []uint {
@@ -183,33 +182,131 @@ func registerWidths[W word.Word[W]](alloc Allocator[W], regs []RegisterId) []uin
 	return widths
 }
 
-// decomposeToSubLimbs splits each (RegisterWidth-aligned) limb of an operand
-// into g-wide sub-limbs, least-significant first, emitting a destructure
-// (vectored add) for any limb wider than g.  A limb already no wider than g is
-// used directly.
+// decomposeToSubLimbs re-expresses an operand's (little-endian) limbs as
+// g-wide sub-limbs cut on a grid starting at bit zero of the operand,
+// least-significant first.  Since g need not divide the limb widths, a
+// sub-limb may span a limb boundary: each limb is destructured (one vectored
+// add) at the grid boundaries crossing it, and the pieces of each grid cell
+// are then joined (one concatenation each).  A limb or piece which already
+// spans a whole cell is used directly, so an aligned grid emits exactly one
+// destructure per over-wide limb — as before.
 func decomposeToSubLimbs[W word.Word[W]](alloc Allocator[W], g uint, limbs []RegisterId,
 ) ([]RegisterId, []Bytecode[W]) {
 	//
 	var (
-		subs  []RegisterId
-		insns []Bytecode[W]
+		widths        = gridWidths(groupWidth(alloc, limbs), g)
+		pieces, insns = splitAtBoundaries(alloc, "s", limbs, widths)
+		subs          []RegisterId
 	)
 	//
-	for _, limb := range limbs {
-		var w = alloc.Register(limb).Bitwidth().Unwrap()
+	for _, width := range widths {
+		var cell []RegisterId
 		//
-		if w <= g {
-			subs = append(subs, limb)
-			continue
+		cell, pieces = takePieces(alloc, pieces, width)
+		//
+		if len(cell) == 1 {
+			subs = append(subs, cell[0])
+		} else {
+			var sub = alloc.Allocate("s", util.Some(width))
+			//
+			insns = append(insns, bytecode.Concat[W]([]RegisterId{sub}, cell))
+			subs = append(subs, sub)
 		}
-		// Wider than g: destructure into g-wide pieces.
-		var pieces = allocSubLimbs(alloc, "s", g, w)
-		//
-		insns = append(insns, bytecode.AddVec[W](pieces, []RegisterId{limb}))
-		subs = append(subs, pieces...)
 	}
 	//
 	return subs, insns
+}
+
+// splitAtBoundaries destructures a little-endian register group such that
+// every boundary of the given widths (cumulative bit offsets within the group)
+// coincides with a register boundary, returning the resulting little-endian
+// piece sequence.  A register which no boundary crosses is passed through
+// untouched; every other register is destructured at the boundaries crossing
+// it (one vectored add each).  Zero-width registers carry no bits and are
+// dropped.
+func splitAtBoundaries[W word.Word[W]](alloc Allocator[W], prefix string, group []RegisterId, widths []uint,
+) ([]RegisterId, []Bytecode[W]) {
+	//
+	var (
+		pieces []RegisterId
+		insns  []Bytecode[W]
+		cuts   []uint
+		offset uint
+	)
+	//
+	for _, width := range widths {
+		offset += width
+		cuts = append(cuts, offset)
+	}
+	//
+	offset = 0
+	//
+	for _, reg := range group {
+		var (
+			width       = alloc.Register(reg).Bitwidth().Unwrap()
+			lo          = offset
+			pieceWidths []uint
+		)
+		// Determine the boundaries falling strictly inside this register.
+		for _, cut := range cuts {
+			if cut > lo && cut < offset+width {
+				pieceWidths = append(pieceWidths, cut-lo)
+				lo = cut
+			}
+		}
+		//
+		switch {
+		case width == 0:
+			// contributes no bits
+		case len(pieceWidths) == 0:
+			pieces = append(pieces, reg)
+		default:
+			pieceWidths = append(pieceWidths, offset+width-lo)
+			//
+			var ps = make([]RegisterId, len(pieceWidths))
+			//
+			for i, w := range pieceWidths {
+				ps[i] = alloc.Allocate(prefix, util.Some(w))
+			}
+			//
+			insns = append(insns, bytecode.AddVec[W](ps, []RegisterId{reg}))
+			pieces = append(pieces, ps...)
+		}
+		//
+		offset += width
+	}
+	//
+	return pieces, insns
+}
+
+// takePieces consumes leading pieces totalling exactly width bits, returning
+// them along with the remaining pieces.  The pieces were cut at the consumer's
+// boundaries (see splitAtBoundaries), so the total always lands exactly.
+func takePieces[W word.Word[W]](alloc Allocator[W], pieces []RegisterId, width uint,
+) (cell, rest []RegisterId) {
+	var total uint
+	//
+	for total < width {
+		total += alloc.Register(pieces[0]).Bitwidth().Unwrap()
+		cell, pieces = append(cell, pieces[0]), pieces[1:]
+	}
+	//
+	util.Assert(total == width, "piece boundary mismatch")
+	//
+	return cell, pieces
+}
+
+// gridWidths returns the widths of the ceil(total/g) grid cells spanning total
+// bits: each cell is g bits except the most-significant, which holds the
+// remainder.
+func gridWidths(total, g uint) []uint {
+	var widths []uint
+	//
+	for off := uint(0); off < total; off += g {
+		widths = append(widths, min(g, total-off))
+	}
+	//
+	return widths
 }
 
 // scalarStep multiplies the sub-limb accumulator a by the constant k.  The
@@ -297,7 +394,7 @@ func assignToTarget[W word.Word[W]](alloc Allocator[W], g uint, product, targetL
 	// returns 0), which forces those product bits to zero — the overflow check.
 	outs, insns := accumulate(alloc, numCols, columnWidth(targetWidth, g), partials)
 	//
-	return append(insns, reassembleToTarget(alloc, g, outs, targetLimbs)...)
+	return append(insns, reassembleToTarget(alloc, outs, targetLimbs)...)
 }
 
 // bucket records each sub-limb of a partial product against its column weight.
@@ -377,33 +474,31 @@ func singletonColumns(subs []RegisterId) map[uint][]RegisterId {
 }
 
 // reassembleToTarget joins the low column sub-limbs into the target's
-// RegisterWidth limbs, emitting one concatenation per target limb.  Because g
-// divides RegisterWidth, every target-limb boundary is also a sub-limb
-// boundary, so each target limb consumes a whole number of consecutive column
-// sub-limbs.  Any higher (zero-width) columns are left untouched.
-func reassembleToTarget[W word.Word[W]](alloc Allocator[W], g uint, outs, targetLimbs []RegisterId,
+// RegisterWidth limbs, emitting one concatenation per target limb.  Since the
+// column grid need not align with the target-limb boundaries, each column
+// output which a boundary crosses is first destructured at that boundary (see
+// splitAtBoundaries); every target limb is then a whole number of consecutive
+// pieces.  The higher (zero-width) overflow columns carry no bits and are
+// dropped.
+func reassembleToTarget[W word.Word[W]](alloc Allocator[W], outs, targetLimbs []RegisterId,
 ) []Bytecode[W] {
 	//
 	var (
-		zero  W
-		insns []Bytecode[W]
-		slot  uint
+		zero          W
+		widths        = registerWidths(alloc, targetLimbs)
+		pieces, insns = splitAtBoundaries(alloc, "r", outs, widths)
 	)
 	//
-	for _, tl := range targetLimbs {
-		var (
-			tw  = alloc.Register(tl).Bitwidth().Unwrap()
-			n   = ceilDiv(tw, g)
-			end = min(slot+n, uint(len(outs)))
-		)
+	for i, tl := range targetLimbs {
+		var cell []RegisterId
 		//
-		if slot == end {
+		cell, pieces = takePieces(alloc, pieces, widths[i])
+		//
+		if len(cell) == 0 {
 			insns = append(insns, bytecode.LoadConst(tl, zero))
 		} else {
-			insns = append(insns, bytecode.Concat[W]([]RegisterId{tl}, outs[slot:end]))
+			insns = append(insns, bytecode.Concat[W]([]RegisterId{tl}, cell))
 		}
-		//
-		slot += n
 	}
 	//
 	return insns
