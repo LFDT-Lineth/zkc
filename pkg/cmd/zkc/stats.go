@@ -14,6 +14,8 @@ package zkc
 
 import (
 	"fmt"
+	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"golang.org/x/term"
 )
 
 // moduleStats captures the summary information gathered for a single module of
@@ -53,6 +56,9 @@ type moduleStats struct {
 	// degrees maps each vanishing-constraint degree to the number of constraints
 	// of that degree.
 	degrees map[uint]uint
+	// dn is a histogram of (degree, nCells) pairs over the module's vanishing
+	// constraints, i.e. the joint distribution behind the complexity measure.
+	dn map[[2]uint]uint
 	// lookups is the number of lookup constraints.
 	lookups uint
 	// complexity is a cost measure: each constraint weighted by the square of
@@ -144,12 +150,150 @@ func bucketCount(hist map[uint]uint, b bucket) uint {
 	return n
 }
 
+// emphasise renders text in bold, but only when stdout is a terminal: piping
+// the table into a file or pager should not litter it with escape codes.
+func emphasise(text string) string {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return text
+	}
+	//
+	return termio.BoldAnsiEscape().Build() + text + termio.ResetAnsiEscape().Build()
+}
+
+// printDegreeCellMatrix prints the joint distribution of vanishing constraint
+// degrees and cell counts across all modules, as two side-by-side tables: one
+// column per degree d, one row per cell count n.  The left table gives the
+// number of constraints of degree d reading n distinct cells; the right gives
+// what share of the total complexity (Σ n·d²) those constraints account for,
+// so the two together show where the cost actually sits rather than merely
+// where the constraints are.
+func printDegreeCellMatrix(stats []moduleStats) {
+	var (
+		counts = make(map[[2]uint]uint)
+		cost   = make(map[[2]uint]uint)
+		degs   []uint
+		cells  []uint
+	)
+	//
+	for _, m := range stats {
+		for k, c := range m.dn {
+			d, n := k[0], k[1]
+			counts[k] += c
+			cost[k] += n * d * d * c
+		}
+	}
+	// Collect the degrees and cell counts actually occurring.
+	for k := range counts {
+		if !slices.Contains(degs, k[0]) {
+			degs = append(degs, k[0])
+		}
+		//
+		if !slices.Contains(cells, k[1]) {
+			cells = append(cells, k[1])
+		}
+	}
+	//
+	slices.Sort(degs)
+	slices.Sort(cells)
+	//
+	var (
+		left  = renderDegreeCellTable("constraint count", degs, cells, counts, false)
+		right = renderDegreeCellTable("share of total complexity (%)", degs, cells, cost, true)
+	)
+	//
+	fmt.Println()
+	fmt.Println("Vanishing constraints by degree (d) and distinct cells read (n):")
+	//
+	for i := range left {
+		fmt.Printf("%s    %s\n", left[i], right[i])
+	}
+}
+
+// renderDegreeCellTable lays out one (degree, cell count) table as a slice of
+// lines.  Entries are taken from weights; when share is set each is reported as
+// a percentage of the table's grand total rather than as a raw count.  Both
+// tables share a layout so they line up when printed side by side.
+func renderDegreeCellTable(title string, degs, cells []uint, weights map[[2]uint]uint,
+	share bool) []string {
+	//
+	var (
+		lines    []string
+		colTotal = make(map[uint]uint)
+		grand    uint
+		width    = 8 + 8*len(degs) + 10
+	)
+	// Grand total first, since the shares are relative to it.
+	for _, w := range weights {
+		grand += w
+	}
+	// Format one entry.  Absent (n,d) pairs are left blank so the shape stands
+	// out; in the
+	// share table the body cells below one percent are elided too, and those at
+	// five percent or more are emboldened.  Totals always show their value.
+	entry := func(w uint, total bool) string {
+		if w == 0 {
+			return fmt.Sprintf("%8s", "")
+		} else if !share {
+			return fmt.Sprintf("%8d", w)
+		}
+		//
+		pct := 100.0 * float64(w) / float64(max(grand, 1))
+		//
+		switch {
+		case pct < 1.0 && !total:
+			return fmt.Sprintf("%8s", "_")
+		case pct >= 5.0:
+			return emphasise(fmt.Sprintf("%8.2f", pct))
+		default:
+			return fmt.Sprintf("%8.2f", pct)
+		}
+	}
+	//
+	header := fmt.Sprintf("%6s |", "n\\d")
+	//
+	for _, d := range degs {
+		header += fmt.Sprintf("%8d", d)
+	}
+	//
+	header += fmt.Sprintf("%10s", "total")
+	lines = append(lines, fmt.Sprintf("%-*s", width, title), header, strings.Repeat("-", width))
+	// One row per cell count.
+	for _, n := range cells {
+		var (
+			row      = fmt.Sprintf("%6d |", n)
+			rowTotal uint
+		)
+		//
+		for _, d := range degs {
+			w := weights[[2]uint{d, n}]
+			rowTotal += w
+			colTotal[d] += w
+			row += entry(w, false)
+		}
+		//
+		lines = append(lines, row+fmt.Sprintf("%10s", strings.TrimSpace(entry(rowTotal, true))))
+	}
+	// Column totals.
+	footer := fmt.Sprintf("%6s |", "total")
+	//
+	for _, d := range degs {
+		footer += entry(colTotal[d], true)
+	}
+	//
+	footer += fmt.Sprintf("%10s", strings.TrimSpace(entry(grand, true)))
+	lines = append(lines, strings.Repeat("-", width), footer)
+	//
+	return lines
+}
+
 // PrintCompileStats prints summary statistics about the modules of a generated
-// AIR schema, one row per module.  Register widths (pre-splitting) and
+// AIR schema, one row per module.  When matrix is set (-v), the degree / cell
+// count distribution behind the complexity column is reported as well.  Register widths (pre-splitting) and
 // constraint degrees are gathered from the pre-split bytecode program (ir) and
 // the post-split AIR schema respectively.  The order argument determines how the
 // modules are ordered (see orderModules).
-func PrintCompileStats[F field.Element[F], W vm.Word[W]](air schema.AnySchema[F], ir vm.Program[W], order string) {
+func PrintCompileStats[F field.Element[F], W vm.Word[W]](air schema.AnySchema[F], ir vm.Program[W],
+	order string, matrix bool) {
 	var (
 		// Pre-split register histograms, keyed by module name.
 		preSplit = preSplitRegisters(ir)
@@ -162,6 +306,10 @@ func PrintCompileStats[F field.Element[F], W vm.Word[W]](air schema.AnySchema[F]
 	//
 	orderModules(stats, order)
 	printAirModuleStats(stats)
+	// The joint (degree, nCells) distribution behind the complexity column.
+	if matrix {
+		printDegreeCellMatrix(stats)
+	}
 }
 
 // ValidStatsOrder reports whether order is a recognised --stats ordering key.
@@ -315,6 +463,7 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 		name:     mod.Name(),
 		preSplit: make(map[uint]uint),
 		degrees:  make(map[uint]uint),
+		dn:       make(map[[2]uint]uint),
 		pcMax:    preSplit[mod.Name()].pcMax,
 	}
 	//
@@ -345,8 +494,10 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 			switch c := iter.Next().(type) {
 			case air.VanishingConstraint[F]:
 				degree := c.Complexity()
+				nCells := numColumns(c)
 				stats.degrees[degree]++
-				stats.complexity += numColumns(c) * degree * degree
+				stats.dn[[2]uint{degree, nCells}]++
+				stats.complexity += nCells * degree * degree
 			case air.LookupConstraint[F]:
 				stats.lookups++
 			}
