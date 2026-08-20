@@ -389,6 +389,8 @@ const (
 	WIDE_DEBUG
 	// WIDE_FIELD_TO_UINT instruction
 	WIDE_FIELD_TO_UINT
+	// WIDE_SKIP_M instruction
+	WIDE_SKIP_M
 
 	//
 	MAX_WIDE_BYTECODE
@@ -460,11 +462,14 @@ func MaxEncodedLength[W word.Word[W]](b bytecode.Bytecode[W], env Environment[W]
 		// placeholder position.
 		return uint(1 + len(b.Cases))
 	case *bytecode.Switch[W]:
-		// word 0 plus one u16 skip per case, packed two per word.  NOTE: an
-		// explicit case is required (rather than falling through to Encode
+		// word 0, plus word 1 for the wide form's source register / base pool
+		// identifier, plus one u16 skip per case, packed two per word.  NOTE:
+		// an explicit case is required (rather than falling through to Encode
 		// below) because the case skips are relative, and hence cannot be
-		// computed at a placeholder position.
-		return uint(1 + NumCodesPackedWide(uint(len(b.Cases))))
+		// computed at a placeholder position.  The wide form's extra word is
+		// always accounted for here, since the fixpoint iteration must start
+		// from a conservative (maximal) size.
+		return uint(2 + NumCodesPackedWide(uint(len(b.Cases))))
 	case *bytecode.SkipIf[W]:
 		if b.Right.IsRegisterVector() {
 			// The wide form carries its base registers in an additional word.

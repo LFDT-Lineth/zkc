@@ -925,6 +925,8 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		pc, err = p.executeUintToField(pc, codes, stack)
 	case encoding.WIDE_FIELD_TO_UINT:
 		pc, err = p.executeFieldToUint(pc, codes, stack)
+	case encoding.WIDE_SKIP_M:
+		pc = executeWideSkipTable(pc, codes, pool, stack)
 	default:
 		err = fmt.Errorf("unknown wide bytecode encountered (0x%x)", wopcode)
 	}
@@ -2008,6 +2010,37 @@ func executeSkipTable[W word.Word[W]](pc uint32, codes []uint32, pool []W, stack
 	}
 	// no match: fall through past the whole instruction
 	return pc + 1 + nwords
+}
+
+// executeWideSkipTable implements the wide form of the SKIP_M dispatch (see
+// executeSkipTable), for a source register or base pool identifier exceeding
+// u8.  The source register, base pool identifier and count are read from the
+// dedicated second word rather than word 0; the packed skips follow exactly
+// as in the narrow form, just shifted one word later.  As for the narrow
+// form, a matched case's skip is relative to pc+1 (matching the offset
+// computed at encode time), whilst the no-match fall-through lands on the
+// true next instruction, past the (wider) header.
+func executeWideSkipTable[W word.Word[W]](pc uint32, codes []uint32, pool []W, stack []W) uint32 {
+	var (
+		count  = codes[pc] >> 16
+		word1  = codes[pc+1]
+		cid    = word1 >> 16
+		source = word1 & 0xffff
+		val    = stack[source]
+		nwords = encoding.NumCodesPackedWide(uint(count))
+	)
+	//
+	if mid, ok := slices.BinarySearchFunc(pool[cid:cid+count], val, W.Cmp); ok {
+		var skipWord = codes[pc+2+(uint32(mid)/2)]
+		//
+		if mid%2 == 0 {
+			return pc + 1 + (skipWord & 0xffff)
+		}
+		//
+		return pc + 1 + (skipWord >> 16)
+	}
+	// no match: fall through past the whole instruction
+	return pc + 2 + nwords
 }
 
 // executeDispatch implements the SKIP_B (one-hot) dispatch: the case bits are
