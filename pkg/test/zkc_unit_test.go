@@ -1147,6 +1147,18 @@ func Test_ZkcUnit_Switch_18(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_18", DEFAULT_UNIT_CONFIG)
 }
 
+// EXPECTED TO FAIL: a switch with more than 255 cases requires the wide
+// SKIP_M form (case count exceeding u8), but is currently unreachable
+// end-to-end -- switch codegen merges every case's exit through a single
+// vectorised arithmetic instruction, one operand per case, and
+// encodeArith_vec (pkg/zkc/vm/internal/interpreter/encoding/arith.go) panics
+// beyond 255 operands, independently of SKIP_M.  Remove this skip once that
+// separate limit is widened and this test passes.
+func Test_ZkcUnit_Switch_19(t *testing.T) {
+	t.Skip("arith.go: encodeArith_vec panics beyond 255 vector operands, blocking >255-case switches")
+	checkZkcUnit(t, "zkc/unit/switch_19", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Printf Tests
 // ===================================================================

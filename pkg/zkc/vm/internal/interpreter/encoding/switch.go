@@ -47,12 +47,14 @@ import (
 // the case whose pooled value matches the source register; if none match,
 // control falls through past the whole instruction.
 //
-// The compact form above requires both the source register and the base pool
-// identifier to fit within a byte; if either overflows, the wide form serves
-// as the fallback, moving both to a full u16 field in a dedicated second
-// word (leaving bits 8-15 of word 0 clear, as for all wide forms) whilst
-// count moves up to occupy the top halfword of word 0.  The packed skips
-// follow exactly as in the narrow form, just shifted one word later:
+// The compact form above requires the case count, source register and base
+// pool identifier to each fit within a byte; if any overflows, the wide form
+// serves as the fallback, moving the source register and base pool
+// identifier to a full u16 field each in a dedicated second word (leaving
+// bits 8-15 of word 0 clear, as for all wide forms) whilst count moves up to
+// occupy the top halfword of word 0 -- a full u16, giving the wide form room
+// for up to 65535 cases.  The packed skips follow exactly as in the narrow
+// form, just shifted one word later:
 //
 // +--------+--------+--------+--------+
 // |      count      |  wop   |  WIDE  |
@@ -71,10 +73,10 @@ import (
 // Switch encodes a multiway-skip (switch) bytecode, which dispatches on a source
 // register against a table of (value, skip) pairs.
 func Switch[W word.Word[W]](pc Address, p *bytecode.Switch[W], env Environment[W]) []uint32 {
-	// count occupies a single byte (bits 24..31) of word 0, in both the
-	// narrow and wide forms.
-	if len(p.Cases) > math.MaxUint8 {
-		panic("support wide multiway skip")
+	// The wide form's count field is a full u16 (see above), the hard upper
+	// bound on the number of cases a single switch instruction can encode.
+	if len(p.Cases) > math.MaxUint16 {
+		panic("too many switch cases")
 	}
 	// Sort a copy of the cases by dispatch value, so that the encoded
 	// constant vector is in ascending order and the interpreter can binary
@@ -111,9 +113,10 @@ func Switch[W word.Word[W]](pc Address, p *bytecode.Switch[W], env Environment[W
 	// Intern the (sorted) case values as a single consecutive run in the
 	// constant pool.
 	var cid = env.ConstantVectorIndex(constants)
-	// The compact form requires both the source register and the base pool
-	// identifier to fit within a byte; otherwise, fall back to the wide form.
-	if cid > math.MaxUint8 || IsWideRegisters(p.Source) {
+	// The compact form requires the case count, source register and base
+	// pool identifier to each fit within a byte; otherwise, fall back to the
+	// wide form.
+	if len(cases) > math.MaxUint8 || cid > math.MaxUint8 || IsWideRegisters(p.Source) {
 		// word 0: count | wop | WIDE; word 1: cid | source
 		var codes = []uint32{
 			uint32(len(cases))<<16 | WIDE_SKIP_M<<8 | WIDE,
