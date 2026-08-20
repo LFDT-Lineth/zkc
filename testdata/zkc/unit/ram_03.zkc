@@ -2,7 +2,7 @@
 // timestamp on the same row).
 // Code lines: main = 1, double_read = 1 (one trace row per invocation).
 pub input data(address:u8) -> (byte:u8)
-memory ram(address:u8) -> (byte:u8)
+memory ram[u32](address:u8) -> (byte:u8)
 
 fn double_read<ram>(x:u8) -> (r:u8) {
     r = ram[x] + ram[x]

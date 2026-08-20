@@ -1,0 +1,6 @@
+//error:2:1-43:timestamp width must be between u1 and u64
+memory buffer[u65](addr:u16) -> (bytes:u8)
+
+fn main<buffer>() {
+    buffer[0] = 1
+}

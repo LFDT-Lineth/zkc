@@ -9,7 +9,7 @@
 // The initial code rejected `ram[a,b] = ...` at linking even though
 // the read `ram[a,b]` was accepted; the fix uses uint(len(index)).
 pub input data(address:u8) -> (byte:u8)
-memory ram(a:u8, b:u8) -> (byte:u8)
+memory ram[u32](a:u8, b:u8) -> (byte:u8)
 
 fn main<ram>() {
     var p:u8 = data[0]

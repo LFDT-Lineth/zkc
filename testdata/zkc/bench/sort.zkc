@@ -1,7 +1,7 @@
 pub input data_len(address:u1) -> (len:u32)
 pub input data_in(address:u32) -> (bytes:u8)
 pub output data_out(address:u32) -> (bytes:u8)
-memory buffer(address:u32) -> (bytes:u8)
+memory buffer[u32](address:u32) -> (bytes:u8)
 
 fn main<buffer>() {
     var len:u32 = data_len[0]

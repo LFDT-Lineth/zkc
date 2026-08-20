@@ -40,9 +40,12 @@ import (
 const BINFILE_MAJOR_VERSION uint16 = 0
 
 // BINFILE_MINOR_VERSION is the minor version of the binary file format.  Files
-// with a lower minor version remain readable by this implementation, but files
 // produced by this implementation may not be readable by older versions.
-const BINFILE_MINOR_VERSION uint16 = 0
+//
+// History: v0.1 added the per-memory timestamp width (issue #2069).  Binary
+// files are assumed to be compiled to the current format: there is no
+// compatibility shim for v0.0 files, which fail to decode.
+const BINFILE_MINOR_VERSION uint16 = 1
 
 // ZKC_EXEC is used as the file identifier for binary file types.  This just
 // helps us identify actual binary files from corrupted files.
@@ -424,7 +427,9 @@ type Header struct {
 	// considered compatible.
 	MajorVersion uint16
 	// MinorVersion must be ≤ BINFILE_MINOR_VERSION for the file to be
-	// considered compatible (older minor versions remain readable).
+	// considered compatible.  Note this header check alone does not make an
+	// older minor version decodable: the payload is assumed to be in the
+	// current format (see BINFILE_MINOR_VERSION).
 	MinorVersion uint16
 	// MetaData is an optional JSON blob carrying key/value pairs (e.g. the
 	// source file path, compiler version, or build timestamp).

@@ -11,6 +11,8 @@
 package decl
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
+
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/expr"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
@@ -44,6 +46,28 @@ const (
 	RANDOM_ACCESS_MEMORY
 )
 
+// isStatic reports whether this kind is a static reference memory.
+func (kind MemoryKind) isStatic() bool {
+	switch kind {
+	case PRIVATE_STATIC_MEMORY, PUBLIC_STATIC_MEMORY:
+		return true
+	default:
+		return false
+	}
+}
+
+// HasTimestamp reports whether cells of this memory kind carry an access
+// timestamp, and hence require a declared timestamp width (true only for
+// read-write memory).
+func (kind MemoryKind) HasTimestamp() bool {
+	switch kind {
+	case RANDOM_ACCESS_MEMORY:
+		return true
+	default:
+		return false
+	}
+}
+
 // ResolvedMemory represents a memory whose external identifiers are otherwise resolved.
 // As such, it should not be possible that such a declaration refers to unknown
 // (or otherwise incorrect) external components.
@@ -72,26 +96,31 @@ type Memory[S symbol.Symbol[S]] struct {
 	// Contents (for static memory only). Each element is a compile-time constant
 	// expression.
 	Contents []expr.Expr[S]
+	// timestamp type (ram only)
+	TimestampType data.Type[S]
 }
 
-// NewMemory constructs a new memory.
-func NewMemory[S symbol.Symbol[S]](name string, kind MemoryKind, address []variable.Descriptor[S],
-	data []variable.Descriptor[S], contents []expr.Expr[S]) *Memory[S] {
+// NewMemory constructs a new memory.  Parameters follow the order of a ZkC
+// memory declaration — name, timestamp type, address lines, data lines — with
+// the static contents (which have no counterpart in the header) last.
+func NewMemory[S symbol.Symbol[S]](name string, kind MemoryKind, timestampType data.Type[S],
+	address []variable.Descriptor[S], data []variable.Descriptor[S], contents []expr.Expr[S]) *Memory[S] {
 	// sanity checks
-	if contents != nil && kind != PUBLIC_STATIC_MEMORY && kind != PRIVATE_STATIC_MEMORY {
+	if contents != nil && !kind.isStatic() {
 		panic("invalid non-static memory")
-	} else if contents == nil && (kind == PUBLIC_STATIC_MEMORY || kind == PRIVATE_STATIC_MEMORY) {
+	} else if contents == nil && kind.isStatic() {
 		panic("invalid static memory")
 	}
 	//
-	return &Memory[S]{name: name, Kind: kind, Address: address, Data: data, Contents: contents}
+	return &Memory[S]{name: name, Kind: kind, Address: address, Data: data, Contents: contents,
+		TimestampType: timestampType}
 }
 
 // NewRandomAccessMemory constructs a new random access memory.
-func NewRandomAccessMemory[S symbol.Symbol[S]](name string, address []variable.Descriptor[S],
-	data []variable.Descriptor[S]) *Memory[S] {
+func NewRandomAccessMemory[S symbol.Symbol[S]](name string, timestampType data.Type[S],
+	address []variable.Descriptor[S], data []variable.Descriptor[S]) *Memory[S] {
 	//
-	return &Memory[S]{name: name, Kind: RANDOM_ACCESS_MEMORY, Address: address, Data: data}
+	return &Memory[S]{name: name, Kind: RANDOM_ACCESS_MEMORY, Address: address, Data: data, TimestampType: timestampType}
 }
 
 // NewReadOnlyMemory constructs a new read-only access memory.
@@ -162,7 +191,7 @@ func (p *Memory[S]) IsOutput() bool {
 
 // IsStatic determines whether or not this is a static input memory
 func (p *Memory[S]) IsStatic() bool {
-	return p.Kind == PRIVATE_STATIC_MEMORY || p.Kind == PUBLIC_STATIC_MEMORY
+	return p.Kind.isStatic()
 }
 
 // IsReadable checks whether this memory can be read or not.
@@ -189,4 +218,11 @@ func (p *Memory[S]) IsWriteable() bool {
 	default:
 		return false
 	}
+}
+
+// HasTimestamp reports whether cells of this memory carry an access timestamp,
+// and hence require a declared timestamp width (true only for read-write
+// memory).
+func (p *Memory[S]) HasTimestamp() bool {
+	return p.Kind.HasTimestamp()
 }

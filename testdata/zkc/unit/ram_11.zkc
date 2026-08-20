@@ -3,7 +3,7 @@
 // retarget individual dispatch cases into equalising edge blocks.
 // Code lines: main = 4 (looping rows repeat per iteration).
 pub input data(address:u8) -> (byte:u8)
-memory ram(address:u8) -> (byte:u8)
+memory ram[u32](address:u8) -> (byte:u8)
 
 fn main<ram>() {
     var n:u8 = data[0]

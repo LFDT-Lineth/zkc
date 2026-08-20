@@ -1,0 +1,15 @@
+// Two read-write memories with DIFFERENT timestamp widths touched on the same
+// row: the threader must size each memory's stamp registers per effect (a u16
+// stamp is a single limb on KOALABEAR_16, a u48 one is three).
+pub input data(address:u8) -> (byte:u8)
+memory narrow[u16](address:u8) -> (byte:u8)
+memory wide[u48](address:u8) -> (byte:u8)
+
+fn main<narrow, wide>() {
+    var v:u8 = data[0]
+    narrow[0] = v
+    wide[1] = narrow[0]
+    if wide[1] != v {
+        fail
+    }
+}

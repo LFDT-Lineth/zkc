@@ -1,0 +1,6 @@
+//error:2:1-46:timestamp type must be a fixed-width uN
+memory buffer[[u8;4]](addr:u16) -> (bytes:u8)
+
+fn main<buffer>() {
+    buffer[0] = 1
+}

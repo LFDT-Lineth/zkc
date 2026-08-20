@@ -284,8 +284,14 @@ func writeMemory(m *decl.ResolvedMemory, env data.ResolvedEnvironment) {
 	case decl.RANDOM_ACCESS_MEMORY:
 		fmt.Printf("memory")
 	}
+
+	fmt.Printf(" %s", m.Name())
+	// timestamp type (read-write memory only)
+	if m.TimestampType != nil {
+		fmt.Printf("[%s]", m.TimestampType.String(env))
+	}
 	// address lines
-	fmt.Printf(" %s(", m.Name())
+	fmt.Printf("(")
 	writeMemoryParams(m.Address, env)
 	fmt.Printf(") -> (")
 	writeMemoryParams(m.Data, env)
@@ -745,9 +751,15 @@ func signatureOf[W vm.Word[W]](m vm.Module[W]) string {
 		returns = array.Filter(m.Registers(), func(r vm.Register[W]) bool {
 			return r.IsOutput()
 		})
+		// Read-write memories carry their timestamp width in the signature.
+		stamp string
 	)
 	//
-	return fmt.Sprintf("%s(%s) -> (%s)", m.Name(), fnArgs(args), fnArgs(returns))
+	if mem, ok := m.(*vm.Memory[W]); ok && mem.IsReadWrite() {
+		stamp = fmt.Sprintf("[u%d]", mem.TimestampWidth().Unwrap())
+	}
+	//
+	return fmt.Sprintf("%s%s(%s) -> (%s)", m.Name(), stamp, fnArgs(args), fnArgs(returns))
 }
 
 func fnArgs[W vm.Word[W]](regs []vm.Register[W]) string {

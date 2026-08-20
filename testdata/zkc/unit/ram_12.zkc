@@ -1,0 +1,20 @@
+// A non-default timestamp width, declared through a type alias: u48 splits
+// into three 16-bit limbs on KOALABEAR_16 (two carries), exercising variable
+// timestamp limb counts end to end (issue #2069).
+type WideTimestamps = u48
+
+pub input data(address:u8) -> (byte:u8)
+memory ram[WideTimestamps](address:u8) -> (byte:u8)
+
+fn get<ram>(x:u8) -> (r:u8) {
+    r = ram[x]
+}
+
+fn main<ram>() {
+    var addr:u8 = data[0]
+    var value:u8 = data[1]
+    ram[addr] = value
+    if get(addr) != value {
+        fail
+    }
+}

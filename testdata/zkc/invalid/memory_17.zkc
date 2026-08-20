@@ -1,0 +1,6 @@
+//error:2:14-15:read-write memory requires a timestamp type
+memory buffer(addr:u16) -> (bytes:u8)
+
+fn main<buffer>() {
+    buffer[0] = 1
+}
