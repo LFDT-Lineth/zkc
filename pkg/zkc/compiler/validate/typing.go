@@ -149,6 +149,8 @@ func (p *TypeChecker) finaliseDeclaredType(datatype data.ResolvedType) (errors [
 		for i := range t.Width() {
 			errors = append(errors, p.finaliseDeclaredType(t.Ith(i))...)
 		}
+		//
+		return errors
 	}
 	//
 	panic(fmt.Sprintf("unknown type encountered (%s)", datatype.String(p.env)))
