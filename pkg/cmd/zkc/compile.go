@@ -74,6 +74,9 @@ type CompileConfig struct {
 	// indicates whether or not to print summary statistics about the generated
 	// AIR schema.
 	stats bool
+	// statsMatrix enables the secondary --stats output (the degree/cell matrix),
+	// which -v turns on
+	statsMatrix bool
 	// order determines how modules are ordered in the --stats output
 	// (name|total|complexity|lookups).
 	order string
@@ -97,6 +100,7 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	config.air = GetFlag(cmd, "air")
 	config.stats = GetFlag(cmd, "stats")
 	config.order = GetString(cmd, "order")
+	config.statsMatrix = GetVerboseLevel(cmd) >= VERBOSE_INFO
 	// Compile verbosity is the highest verbosity level.
 	config.verbose = GetVerboseLevel(cmd) >= VERBOSE_PRINTF
 	// Configure metadata for the binary output file.  Observe this is left
@@ -204,7 +208,7 @@ func printArtifacts[F field.Element[F]](ast *ast.Program, bf *constraints.Binary
 		// transform program with splitting disabled to recover the pre-split widths.
 		preSplit := vm.TransformForTracing[vm.Uint, vm.Uint](bf.RawProgram(), "split-registers")
 		// Print stats
-		PrintCompileStats(bf.AirConstraints(), preSplit, config.order)
+		PrintCompileStats(bf.AirConstraints(), preSplit, config.order, config.statsMatrix)
 	}
 }
 
