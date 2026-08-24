@@ -6,7 +6,7 @@ fn main() {
     var mid:u32 = data[1]
     var hi:u32 = data[2]
 
-    if  ! (low <= mid && mid <= hi) {
+    if !(low <= mid && mid <= hi) {
         fail
     }
 }

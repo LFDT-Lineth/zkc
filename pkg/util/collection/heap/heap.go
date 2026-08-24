@@ -41,6 +41,25 @@ func (p *Heap[T]) Alloc(n uint) {
 	clear(p.data[offset:])
 }
 
+// Resize the heap to hold exactly n elements, either by allocating or
+// deallocating slots as required.  When growing, the newly exposed region is
+// zeroed to avoid leaking stale values (see Alloc for the rationale); when
+// shrinking, capacity is retained for subsequent expansion.
+func (p *Heap[T]) Resize(n uint) {
+	var osize = uint(len(p.data))
+	//
+	if n == osize {
+		// nothing to do
+		return
+	} else if n < osize {
+		// shrink: retain capacity
+		p.data = p.data[:n]
+	} else {
+		// grow: ensure capacity, then expand length and zero the new region.
+		p.Alloc(n - osize)
+	}
+}
+
 // Push exactly one item onto the heap.  This allocates space for one item, and
 // sets that item accordingly.
 func (p *Heap[T]) Push(item T) {

@@ -87,7 +87,6 @@ func init() {
 	DEFAULT_INSERTION_RULES[parser.COMMA] = InsertSpaceAfter()
 	DEFAULT_INSERTION_RULES[parser.SEMICOLON] = InsertSemicolonSpace()
 	DEFAULT_INSERTION_RULES[parser.QMARK] = InsertSpaceAround()
-	DEFAULT_INSERTION_RULES[parser.SHRIEK] = InsertSpaceAround()
 	// Space before opening braces (unless already spaced), newline+indent after (unless one follows already).
 	DEFAULT_INSERTION_RULES[parser.LCURLY] = InsertForOpenCurly(DEFAULT_INDENTATION)
 	// Newline+indent before closing braces (unless a newline already precedes it).
