@@ -1,5 +1,5 @@
 //error:10:5-11:debug function cannot write memory
-memory ram(address:u8) -> (byte:u8)
+memory ram[u32](address:u8) -> (byte:u8)
 
 fn main<ram>() {
     report()

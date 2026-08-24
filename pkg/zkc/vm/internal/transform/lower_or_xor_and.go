@@ -300,7 +300,7 @@ func newDecomposedNaryHelper[W word.Word[W]](
 		b.emit(invokeNary[W](subID, isTable, lowSrcs, resLow))
 		b.emit(invokeNary[W](subID, isTable, highSrcs, resHigh))
 
-		b.emit(bytecode.Concat[W]([]bytecode.RegisterId{out}, []bytecode.RegisterId{resLow, resHigh}))
+		b.emit(bytecode.AssignV[W]([]bytecode.RegisterId{out}, resLow, resHigh))
 	}
 
 	b.emit(bytecode.NewRet[W]())
@@ -355,7 +355,7 @@ func newBitwiseTable[W word.Word[W]](op bytecode.Operation, width uint) descript
 	}
 	//
 	return descriptor.NewMemory(helperName(bitwiseHelperKey{op: op, width: width}),
-		regs, descriptor.PRIVATE_STATIC_MEMORY, contents)
+		descriptor.PRIVATE_STATIC_MEMORY, util.None[uint](), regs, contents)
 }
 
 type helperBuilder[W word.Word[W]] struct {

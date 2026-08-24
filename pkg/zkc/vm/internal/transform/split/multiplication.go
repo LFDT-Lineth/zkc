@@ -209,7 +209,7 @@ func decomposeToSubLimbs[W word.Word[W]](alloc Allocator[W], g uint, limbs []Reg
 		} else {
 			var sub = alloc.Allocate("s", util.Some(width))
 			//
-			insns = append(insns, bytecode.Concat[W]([]RegisterId{sub}, cell))
+			insns = append(insns, bytecode.AssignV[W]([]RegisterId{sub}, cell...))
 			subs = append(subs, sub)
 		}
 	}
@@ -497,7 +497,7 @@ func reassembleToTarget[W word.Word[W]](alloc Allocator[W], outs, targetLimbs []
 		if len(cell) == 0 {
 			insns = append(insns, bytecode.LoadConst(tl, zero))
 		} else {
-			insns = append(insns, bytecode.Concat[W]([]RegisterId{tl}, cell))
+			insns = append(insns, bytecode.AssignV[W]([]RegisterId{tl}, cell...))
 		}
 	}
 	//

@@ -10,7 +10,7 @@ pub input message(address:u32) -> (byte:u8)
 // Holds output digest in bytes
 pub output digest(address:u8) -> (elem:u8)
 // Represents interpreter RAM
-memory ram(index:u64) -> (st:u8)
+memory ram[u32](index:u64) -> (st:u8)
 
 fn main<ram, poseidon_state>() {
     var n:u32 = length[0]

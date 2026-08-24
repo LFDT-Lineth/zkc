@@ -85,10 +85,17 @@ func MaxCallEncodedLength[W word.Word[W]](p *bytecode.Call[W]) uint {
 // ============================================================================
 
 // encodeEnter_n encodes the ENTER (function entry) instruction, computing the
-// relative branch offset to the target.
+// relative branch offset to the target.  The single-argument case is
+// dispatched to the dedicated ENTER_2 form, which covers the full RegisterId
+// range and any branch distance -- so only the frame width can force a
+// fallback to the general encoding below.
 func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 {
 	if len(args) > math.MaxUint8 {
 		panic("too many call arguments")
+	}
+	//
+	if len(args) == 1 && width <= math.MaxUint8 {
+		return encodeEnter_2(pc, target, width, args[0])
 	}
 	//
 	var (
@@ -144,6 +151,47 @@ func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args
 }
 
 // ============================================================================
+// ENTER_2 instruction: the dedicated single-argument form of ENTER_n. Format
+// is:
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |      arg0       | width  | opcode |
+// +--------+--------+--------+--------+
+// | ................ roff ............ |
+// +--------+--------+--------+--------+
+//
+// Here, width matches the general narrow form (a u8 frame width), whilst
+// arg0 is a full u16 argument register -- the entire RegisterId range, so
+// (unlike the general narrow form) an argument register can never force a
+// fallback.  roff is a full u32 relative branch offset (target - (pc+1)),
+// computed and reconstructed with plain wrapping arithmetic rather than the
+// signed, bit-width-limited scheme GetRelativeOffset uses elsewhere, so it
+// likewise never overflows.  There is no wide form: only a frame width
+// exceeding u8 falls back to the general ENTER_n encoding instead.
+// ============================================================================
+
+// encodeEnter_2 encodes a single-argument ENTER instruction.
+func encodeEnter_2(pc, target uint32, width uint16, arg RegisterId) []uint32 {
+	return []uint32{
+		uint32(arg)<<16 | uint32(width)<<8 | ENTER_2,
+		target - (pc + 1),
+	}
+}
+
+// DecodeEnter_2 decodes the operands of a single-argument enter (function
+// entry) instruction.
+func DecodeEnter_2(pc uint32, codes []uint32) (width uint16, target uint32, arg RegisterId, n uint32) {
+	width = uint16((codes[pc] >> 8) & 0xff)
+	arg = RegisterId(codes[pc] >> 16)
+	target = (pc + 1) + codes[pc+1]
+	n = 2
+
+	return
+}
+
+// ============================================================================
 // LEAVE_n instruction. Format is:
 //
 //	31                                0
@@ -166,10 +214,17 @@ func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args
 // ============================================================================
 
 // encodeLeave_n encodes the LEAVE (function exit) instruction, packing the
-// return registers.
+// return registers.  The single-return case is dispatched to the dedicated
+// LEAVE_2 form when it fits narrow; there is no wide form for LEAVE_2 --
+// anything which would otherwise need the wide form falls through to the
+// general encoding below instead.
 func encodeLeave_n(rets []RegisterId) []uint32 {
 	if len(rets) > math.MaxUint16 {
 		panic("too many call returns")
+	}
+	//
+	if len(rets) == 1 && !IsWideRegisters(rets[0]) {
+		return encodeLeave_2(rets[0])
 	}
 	//
 	var nrets = uint32(len(rets))
@@ -202,5 +257,36 @@ func DecodeLeave_n(pc uint32, codes []uint32) (rets Operands, n uint32) {
 		n = 1 + NumCodesPackedSmall(nrets)
 	}
 	//
+	return
+}
+
+// ============================================================================
+// LEAVE_2 instruction: the dedicated single-return form of LEAVE_n. Format
+// is:
+//
+//	31                                0
+//
+// +--------+--------+--------+--------+
+// |  ret0  |       n/a       | opcode |
+// +--------+--------+--------+--------+
+//
+// Here, ret0 is the single u8 return register, packed directly into the
+// header word's otherwise-unused top byte -- so, unlike the general form,
+// LEAVE_2 needs no second (packed) word at all.  There is no wide form: a
+// return register which doesn't fit falls back to the general LEAVE_n
+// encoding instead.
+// ============================================================================
+
+// encodeLeave_2 encodes a single-return LEAVE instruction.
+func encodeLeave_2(ret RegisterId) []uint32 {
+	return []uint32{uint32(ret)<<24 | LEAVE_2}
+}
+
+// DecodeLeave_2 decodes the operand of a single-return leave (function exit)
+// instruction.
+func DecodeLeave_2(pc uint32, codes []uint32) (ret RegisterId, n uint32) {
+	ret = RegisterId(codes[pc] >> 24)
+	n = 1
+
 	return
 }

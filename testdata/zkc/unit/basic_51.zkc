@@ -4,7 +4,7 @@
 // accepts confirm a split RAM round-trips values correctly.
 pub input data(address:u8) -> (word:u32)
 pub output out(address:u8) -> (word:u32)
-memory ram(address:u32) -> (word:u32)
+memory ram[u32](address:u32) -> (word:u32)
 
 fn main<ram>() {
     ram[0] = data[0]

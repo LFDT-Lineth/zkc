@@ -21,15 +21,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-// ramStampWidth is the bit-width of a read-write memory timestamp.  It MUST match
-// the constraint side (constraints.stampWidth) and the ThreadTimestamps
-// transform, so the timestamp columns produced here split into the same limbs as
-// the schema declares.
-//
-// TODO: unify this with the other copies once a stamp-width syntax exists at
-// the ZkC source level (issue #2069).
-const ramStampWidth uint = 32
-
 // ramTraceLayout records the column offsets of a RAM trace row.  The order MUST
 // match constraints.computeRamLayout (the schema this trace is checked against):
 // [ADDRESS, VALUE_WRITTEN, EXEC, FINL, IS_WRITE, VALUE_READ, TIMESTAMP_WRITTEN,
@@ -84,8 +75,11 @@ type ramAccess[W Word[W]] struct {
 // InitReadWriteMemory initialises a trace module for a RandomAccessMemory.
 func initReadWriteMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](cfg field.Config, m vm.Memory[W]) (module M) {
 	var (
-		regs     = array.Map(m.Registers(), toTraceRegister)
-		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, ramStampWidth))
+		regs = array.Map(m.Registers(), toTraceRegister)
+		// Timestamp limb widths, most-significant first: the memory's declared
+		// timestamp width splits exactly as on the constraint side
+		// (constraints.computeRamLayout).
+		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, m.TimestampWidth().Unwrap()))
 		u1       = util.Some[uint](1)
 	)
 	// EXEC, FINL, IS_WRITE.
@@ -140,7 +134,7 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		nAddr    = int(geometry.NumInputs())
 		nData    = int(geometry.NumOutputs())
 		// Timestamp limb widths, most-significant first (matches computeRamLayout).
-		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, ramStampWidth))
+		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, geometry.TimestampWidth().Unwrap()))
 		layout   = newRamTraceLayout(nAddr, nData, len(tsWidths))
 		accesses = groupRamAccesses[W](m.AccessLog(), nData)
 		//

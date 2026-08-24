@@ -1,7 +1,7 @@
 pub input data(address:u8) -> (byte:u32)
 pub output out(address:u8) -> (byte:u32)
 
-memory scratch(address:u8) -> (word:u32)
+memory scratch[u32](address:u8) -> (word:u32)
 
 fn main<scratch>() {
     var x:u32 = data[0]

@@ -2,7 +2,7 @@
 // memory test: reads and writes to felt memory
 // ===================================================================
 
-memory felt_memory(address:u8) -> (felt:𝔽)
+memory felt_memory[u32](address:u8) -> (felt:𝔽)
 
 fn main<felt_memory>() {
     var felt:𝔽 = 13

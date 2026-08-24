@@ -135,6 +135,11 @@ func memDetail(m *decl.ResolvedMemory, env data.ResolvedEnvironment) string {
 		kind = "memory"
 	}
 
+	// Timestamp type (read-write memory only)
+	if m.TimestampType != nil {
+		kind += " [" + dataTypeToString(m.TimestampType, env) + "]"
+	}
+
 	s := kind + " ("
 
 	for i, v := range m.Address {

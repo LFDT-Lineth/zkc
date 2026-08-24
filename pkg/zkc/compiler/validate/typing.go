@@ -50,17 +50,16 @@ type VariableMap = variable.Map[symbol.Resolved]
 // Typing validates that each declaration in a program is "correctly typed". For
 // example, the following constant declaration is ill-typed:
 //
-// constant u8 MAX_U8 = 256
+// const MAX_U8:u8 = 256
 //
 // The reason being that the constant's value does not fit in a u8.  Likewise,
 // this set of declarations are ill-typed:
 //
-//	 public input u8[u8] ROM
+//	pub input ROM(addr:u8) -> (b:u8)
 //
-//		function f(val u8) -> (r u10) {
-//		  r = ROM + 1
-//		  return
-//		}
+//	fn f(val:u8) -> (r:u10) {
+//		r = ROM + 1
+//	}
 //
 // The problem above is that ROM is an input memory and, hence, ROM+1 does not
 // make sense.
@@ -86,6 +85,7 @@ func Typing(program ast.Program, field field.Config, srcmaps source.Maps[any]) [
 		case *decl.ResolvedMemory:
 			errors = append(errors, typer.finaliseVariableDescriptors(d.Address)...)
 			errors = append(errors, typer.finaliseVariableDescriptors(d.Data)...)
+			errors = append(errors, typer.finaliseDeclaredType(d.TimestampType)...)
 		case *decl.ResolvedTypeAlias:
 			errors = append(errors, typer.finaliseDeclaredType(d.DataType)...)
 		}
@@ -100,7 +100,7 @@ func Typing(program ast.Program, field field.Config, srcmaps source.Maps[any]) [
 		case *decl.ResolvedInclude:
 			// ignore
 		case *decl.ResolvedMemory:
-			errors = append(errors, typer.typeMemory(*d)...)
+			errors = append(errors, typer.typeMemory(d)...)
 		case *decl.ResolvedTypeAlias:
 		default:
 			panic(fmt.Sprintf("unknown component: %s", reflect.TypeOf(d).String()))
@@ -149,6 +149,8 @@ func (p *TypeChecker) finaliseDeclaredType(datatype data.ResolvedType) (errors [
 		for i := range t.Width() {
 			errors = append(errors, p.finaliseDeclaredType(t.Ith(i))...)
 		}
+		//
+		return errors
 	}
 	//
 	panic(fmt.Sprintf("unknown type encountered (%s)", datatype.String(p.env)))
@@ -218,7 +220,7 @@ func (p *TypeChecker) typeFunction(fn decl.ResolvedFunction) []source.SyntaxErro
 	return errors
 }
 
-func (p *TypeChecker) typeMemory(c decl.ResolvedMemory) []source.SyntaxError {
+func (p *TypeChecker) typeMemory(c *decl.ResolvedMemory) []source.SyntaxError {
 	var (
 		errors       []source.SyntaxError
 		dataType     = variable.DescriptorsToType(c.Data...)
@@ -234,6 +236,19 @@ func (p *TypeChecker) typeMemory(c decl.ResolvedMemory) []source.SyntaxError {
 				errors = append(errors, p.checkEquiTypes(valType, dataType, v)...)
 			}
 		}
+	}
+	//
+	switch {
+	case c.HasTimestamp():
+		if c.TimestampType != nil { // nil signals an upstream error, already reported
+			if t := c.TimestampType.AsUint(p.env); t == nil || t.IsOpen() {
+				errors = append(errors, p.srcmaps.SyntaxErrors(c, "timestamp type must be a fixed-width uN")...)
+			} else if t.BitWidth() == 0 || t.BitWidth() > 64 {
+				errors = append(errors, p.srcmaps.SyntaxErrors(c, "timestamp width must be between u1 and u64")...)
+			}
+		}
+	case c.TimestampType != nil:
+		errors = append(errors, p.srcmaps.SyntaxErrors(c, "only read-write memory takes a timestamp type")...)
 	}
 	//
 	return errors

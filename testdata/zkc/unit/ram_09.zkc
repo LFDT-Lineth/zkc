@@ -2,7 +2,7 @@
 // the RAM table carry full field elements rather than fixed-width words.
 // Code lines: main = 1.
 pub input data(address:u8) -> (byte:u8)
-memory ram(address:u8) -> (value:𝔽)
+memory ram[u32](address:u8) -> (value:𝔽)
 
 fn main<ram>() {
     var a:u8 = data[0]

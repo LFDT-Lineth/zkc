@@ -664,8 +664,16 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			err = p.executeEnter_n(p.pc, bytecodes, frame)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
+		case encoding.ENTER_2:
+			err = p.executeEnter_2(p.pc, bytecodes, frame)
+			// refresh the register window.
+			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case encoding.LEAVE_n:
 			p.pc = p.executeLeave_n(p.pc, bytecodes, frame)
+			// refresh the register window.
+			frame = p.dataStack.SliceEnd(uint(p.fp))
+		case encoding.LEAVE_2:
+			p.pc = p.executeLeave_2(p.pc, bytecodes, frame)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case encoding.RET:
@@ -765,6 +773,12 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = p.executeFieldMul(p.pc, bytecodes, pool, frame)
 		case encoding.CAT:
 			p.pc, err = p.executeCat(p.pc, bytecodes, frame)
+		case encoding.CAT_2n1:
+			p.pc, err = p.executeCat_2n1(p.pc, bytecodes, frame)
+		case encoding.CAT_1n:
+			p.pc, err = p.executeCat_1n(p.pc, bytecodes, frame)
+		case encoding.CAT_n1:
+			p.pc, err = p.executeCat_n1(p.pc, bytecodes, frame)
 		case encoding.UINT_TO_FIELD:
 			p.pc, err = p.executeUintToField(p.pc, bytecodes, frame)
 		case encoding.FIELD_TO_UINT:
@@ -911,6 +925,8 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		pc, err = p.executeUintToField(pc, codes, stack)
 	case encoding.WIDE_FIELD_TO_UINT:
 		pc, err = p.executeFieldToUint(pc, codes, stack)
+	case encoding.WIDE_SKIP_M:
+		pc = executeWideSkipTable(pc, codes, pool, stack)
 	default:
 		err = fmt.Errorf("unknown wide bytecode encountered (0x%x)", wopcode)
 	}
@@ -993,6 +1009,44 @@ func (p *Interpreter[W]) executeLeave_n(pc uint32, codes []uint32, stack []W) ui
 	return pc + n
 }
 
+// executeLeave_2 implements LEAVE_2: the dedicated single-return form of
+// LEAVE_n.  It binds the one return register directly, without the general
+// register-list (Operands) machinery.
+func (p *Interpreter[W]) executeLeave_2(pc uint32, codes []uint32, stack []W) uint32 {
+	var (
+		ret, n = encoding.DecodeLeave_2(pc, codes)
+	)
+	// copy the one return from the callee frame
+	stack[ret] = p.dataStack.Get(uint(p.rp))
+	// drop callee frame
+	p.dataStack.Free(uint(p.rw))
+	//
+	return pc + n
+}
+
+// executeEnter_2 implements ENTER_2: the dedicated single-argument form of
+// ENTER_n.  It binds the one argument register directly, without the general
+// register-list (Operands) machinery.
+func (p *Interpreter[W]) executeEnter_2(pc uint32, codes []uint32, stack []W) error {
+	var (
+		width, target, arg, n = encoding.DecodeEnter_2(pc, codes)
+		// determine callee frame pointer
+		calleeFp = p.fp + uint32(len(stack))
+	)
+	// allocate callee frame
+	p.dataStack.Alloc(uint(width))
+	// save function pointer and return address
+	p.callStack.Push(checkpoint.NewStackFrame(p.fid, p.fp, p.pc+n))
+	// copy the one argument into the callee frame
+	p.dataStack.Set(uint(calleeFp), stack[arg])
+	// FIXME: following to be deprecated
+	p.fid = p.program.FunctionAt(target).ModuleId
+	p.fp = calleeFp
+	p.pc = target
+	//
+	return nil
+}
+
 func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error) {
 	var (
 		frame             = p.callStack.Pop()
@@ -1029,7 +1083,7 @@ func (p *Interpreter[W]) executeAdd_nm(pc uint32, codes []uint32, pool []W, stac
 		}
 	}
 	//
-	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid).Registers(), targets, val, stack)
 }
 
 // executeMul_nm implements MUL_nm: it multiplies the constant by all sources
@@ -1057,7 +1111,7 @@ func (p *Interpreter[W]) executeMul_nm(pc uint32, codes []uint32, pool []W, stac
 		return pc, p.failure("arithmetic overflow")
 	}
 	//
-	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid).Registers(), targets, val, stack)
 }
 
 // executeFieldAdd implements ADDMOD_P: it sums the constant and all sources
@@ -1125,12 +1179,79 @@ func (p *Interpreter[W]) executeFieldMul(pc uint32, codes []uint32, pool []W, st
 func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		targets, sources, n = encoding.DecodeRegisterLists(pc, codes)
-		module              = p.program.Module(p.fid)
+		regs                = p.program.Module(p.fid).Registers()
 	)
 	//
-	val := loadAcross(module, sources, stack)
+	val := loadAcross(regs, sources, stack)
 
-	return pc + n, p.storeAcross(pc, module, targets, val, stack)
+	return pc + n, p.storeAcross(pc, regs, targets, val, stack)
+}
+
+// executeCat_2n1 implements CAT_2n1: the dedicated two-target, one-source form
+// of CAT.  It distributes the single source register's value across the two
+// target registers, low limb (t0) first, exactly as the general form's
+// storeAcross would -- but without the register-list (Operands) machinery,
+// since both targets are fixed operands here.  Unlike storeAcross, no overflow
+// check is performed: CAT_2n1 only ever arises from splitting an already
+// width-exact concatenation (see split/concat.go's carry-line insertion, and
+// InsertCheckCasts's explicit exclusion of concat), so the source is
+// guaranteed to fit within the combined target width by construction.
+func (p *Interpreter[W]) executeCat_2n1(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rs, t0, t1, n = encoding.DecodeCat_2n1(pc, codes)
+		regs          = p.program.Module(p.fid).Registers()
+		value         = stack[rs]
+		w0            = bitwidthOf(regs, t0)
+	)
+	//
+	stack[t0] = value.Slice(w0)
+	stack[t1] = value.Shr64(uint64(w0)).Slice(bitwidthOf(regs, t1))
+	//
+	return pc + n, nil
+}
+
+// executeCat_1n implements CAT_1n: the dedicated one-source, N-target form of
+// CAT.  It distributes the single source register's value across the target
+// registers, low limb first, exactly as the general form's storeAcross would
+// -- but without the register-list (Operands) machinery on the source side,
+// since there is only ever one source here.  As for CAT_2n1, no overflow
+// check is performed (see executeCat_2n1's comment for why).
+func (p *Interpreter[W]) executeCat_1n(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rs, targets, n = encoding.DecodeCat_1n(pc, codes)
+		regs           = p.program.Module(p.fid).Registers()
+		value          = stack[rs]
+	)
+	//
+	for targets.HasNext() {
+		var (
+			target = targets.Next()
+			width  = bitwidthOf(regs, target)
+		)
+		//
+		stack[target] = value.Slice(width)
+		value = value.Shr64(uint64(width))
+	}
+	//
+	return pc + n, nil
+}
+
+// executeCat_n1 implements CAT_n1: the dedicated N-source, one-target form of
+// CAT.  It combines the source registers into a single value (low limb
+// first, via loadAcross) and writes it directly to the one target register.
+// Unlike the general form's storeAcross, the result is not re-sliced to the
+// target's declared width: for the same reason CAT_2n1 needs no overflow
+// check, the combined value is already guaranteed to fit, so a truncating
+// slice would be a no-op here.
+func (p *Interpreter[W]) executeCat_n1(pc uint32, codes []uint32, stack []W) (uint32, error) {
+	var (
+		rd, sources, n = encoding.DecodeCat_n1(pc, codes)
+		regs           = p.program.Module(p.fid).Registers()
+	)
+	//
+	stack[rd] = loadAcross(regs, sources, stack)
+	//
+	return pc + n, nil
 }
 
 // executeUintToField assembles the uint sources and reduces the result modulo P
@@ -1138,8 +1259,8 @@ func (p *Interpreter[W]) executeCat(pc uint32, codes []uint32, stack []W) (uint3
 func (p *Interpreter[W]) executeUintToField(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var (
 		targets, sources, n = encoding.DecodeRegisterLists(pc, codes)
-		module              = p.program.Module(p.fid)
-		val                 = loadAcross(module, sources, stack)
+		regs                = p.program.Module(p.fid).Registers()
+		val                 = loadAcross(regs, sources, stack)
 	)
 	//
 	stack[targets.Next()] = val.Rem(p.modulus)
@@ -1152,7 +1273,7 @@ func (p *Interpreter[W]) executeUintToField(pc uint32, codes []uint32, stack []W
 func (p *Interpreter[W]) executeFieldToUint(pc uint32, codes []uint32, stack []W) (uint32, error) {
 	targets, sources, n := encoding.DecodeRegisterLists(pc, codes)
 	//
-	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, stack[sources.Next()], stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid).Registers(), targets, stack[sources.Next()], stack)
 }
 
 // executeDebug implements DEBUG: it reproduces the reference word machine's
@@ -1192,7 +1313,7 @@ func (p *Interpreter[W]) executeFail(pc uint32, codes []uint32, frame []W) error
 // against the frame.
 func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources encoding.Operands, frame []W) string {
 	var (
-		module  = p.program.Module(p.fid)
+		regs    = p.program.Module(p.fid).Registers()
 		builder strings.Builder
 	)
 	//
@@ -1206,7 +1327,7 @@ func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources 
 				vec  = bytecode.RegisterVector{Base: base, Len: len}
 			)
 			//
-			builder.WriteString(p.formatArgument(module, chunk.Format, vec, frame))
+			builder.WriteString(p.formatArgument(regs, chunk.Format, vec, frame))
 		}
 	}
 	//
@@ -1217,7 +1338,7 @@ func (p *Interpreter[W]) formatChunks(chunks []bytecode.FormattedChunk, sources 
 // and renders it with the given format, mirroring formatWord in the reference
 // word machine: limbs are accumulated most-significant first, shifting by each
 // limb's bitwidth, and the shared Format.Render produces the final text.
-func (p *Interpreter[W]) formatArgument(module descriptor.Module[W], format zkc_util.Format,
+func (p *Interpreter[W]) formatArgument(regs []descriptor.Register[W], format zkc_util.Format,
 	vec bytecode.RegisterVector, frame []W) string {
 	//
 	var value big.Int
@@ -1225,7 +1346,7 @@ func (p *Interpreter[W]) formatArgument(module descriptor.Module[W], format zkc_
 	for i := uint16(0); i < vec.Len; i++ {
 		var reg = vec.Base + i
 		// Shift accumulator by this limb's width, then add the limb.
-		value.Lsh(&value, bitwidthOf(module, reg))
+		value.Lsh(&value, bitwidthOf(regs, reg))
 		value.Add(&value, frame[reg].BigInt())
 	}
 	//
@@ -1374,9 +1495,9 @@ func (p *Interpreter[W]) executeIntrinsic(pc uint32, codes []uint32, pool, stack
 func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.Operands,
 	pool, stack []W) (uint32, error) {
 	var (
-		module   = p.program.Module(p.fid)
-		dividend = loadIntrinsicOperand(module, &sources, pool, stack)
-		divisor  = loadIntrinsicOperand(module, &sources, pool, stack)
+		regs     = p.program.Module(p.fid).Registers()
+		dividend = loadIntrinsicOperand(regs, &sources, pool, stack)
+		divisor  = loadIntrinsicOperand(regs, &sources, pool, stack)
 	)
 	//
 	if divisor.Sign() == 0 {
@@ -1396,7 +1517,7 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 	}
 	// Distribute quotient, remainder and witness across their target vectors.
 	for _, val := range []*big.Int{q, r, w} {
-		if err := p.storeIntrinsicResult(module, &targets, val, stack); err != nil {
+		if err := p.storeIntrinsicResult(regs, &targets, val, stack); err != nil {
 			return pc, err
 		}
 	}
@@ -1414,16 +1535,16 @@ func (p *Interpreter[W]) executeDivHint(pc, n uint32, targets, sources encoding.
 func (p *Interpreter[W]) executeWideShlHint(pc, n uint32, targets, sources encoding.Operands,
 	pool, stack []W) (uint32, error) {
 	var (
-		module = p.program.Module(p.fid)
-		value  = packOperand(module, &sources, pool, stack)
+		regs  = p.program.Module(p.fid).Registers()
+		value = packOperand(regs, &sources, pool, stack)
 		// Peek at the target width without consuming the iterator that
 		// unpackResult reads below.
 		peek  = targets
-		width = intrinsicVectorWidth(module, &peek)
-		shift = shiftAmount(packOperand(module, &sources, pool, stack), uint64(width))
+		width = intrinsicVectorWidth(regs, &peek)
+		shift = shiftAmount(packOperand(regs, &sources, pool, stack), uint64(width))
 	)
 	//
-	unpackResult(module, &targets, shl64(value, shift), stack)
+	unpackResult(regs, &targets, shl64(value, shift), stack)
 	//
 	return pc + n, nil
 }
@@ -1435,14 +1556,14 @@ func (p *Interpreter[W]) executeWideShlHint(pc, n uint32, targets, sources encod
 func (p *Interpreter[W]) executeWideShrHint(pc, n uint32, targets, sources encoding.Operands,
 	pool, stack []W) (uint32, error) {
 	var (
-		module = p.program.Module(p.fid)
-		value  = packOperand(module, &sources, pool, stack)
-		peek   = targets
-		width  = intrinsicVectorWidth(module, &peek)
-		shift  = shiftAmount(packOperand(module, &sources, pool, stack), uint64(width))
+		regs  = p.program.Module(p.fid).Registers()
+		value = packOperand(regs, &sources, pool, stack)
+		peek  = targets
+		width = intrinsicVectorWidth(regs, &peek)
+		shift = shiftAmount(packOperand(regs, &sources, pool, stack), uint64(width))
 	)
 	//
-	unpackResult(module, &targets, shr64(value, shift), stack)
+	unpackResult(regs, &targets, shr64(value, shift), stack)
 	//
 	return pc + n, nil
 }
@@ -1518,7 +1639,7 @@ func shr64[W word.Word[W]](values []W, width uint64) []W {
 // increasing bit offset, spilling into the next word as the offset crosses a
 // word boundary.  A bit cursor is used so the limb width need not divide the
 // machine word bandwidth.
-func packOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, pool, stack []W) []W {
+func packOperand[W word.Word[W]](regs []descriptor.Register[W], iter *encoding.Operands, pool, stack []W) []W {
 	var (
 		base, nbOfValues, isConst = iter.NextOperand()
 		zero                      W
@@ -1539,7 +1660,7 @@ func packOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Ope
 	for i := int(nbOfValues) - 1; i >= 0; i-- {
 		var (
 			reg    = base + uint16(i)
-			w      = bitwidthOf(module, reg)
+			w      = bitwidthOf(regs, reg)
 			hi, lo = stack[reg].Shl64(uint64(off))
 		)
 		//
@@ -1567,7 +1688,7 @@ func packOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Ope
 // base), reading each limb's bits from the word stream at an increasing bit
 // offset.  Any bits above the target width (e.g. bits shifted out of range) are
 // silently dropped, so — unlike storeIntrinsicResult — there is no overflow.
-func unpackResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands, words, stack []W) {
+func unpackResult[W word.Word[W]](regs []descriptor.Register[W], iter *encoding.Operands, words, stack []W) {
 	var (
 		base      = iter.Next()
 		length    = uint(iter.Next())
@@ -1579,7 +1700,7 @@ func unpackResult[W word.Word[W]](module descriptor.Module[W], iter *encoding.Op
 	for i := int(length) - 1; i >= 0; i-- {
 		var (
 			reg     = base + uint16(i)
-			w       = bitwidthOf(module, reg)
+			w       = bitwidthOf(regs, reg)
 			wordIdx = off / bandwidth
 			bitIdx  = off % bandwidth
 			val     W
@@ -1631,9 +1752,9 @@ func shiftAmount[W word.Word[W]](words []W, maxShift uint64) uint64 {
 func (p *Interpreter[W]) executeWideDivModHint(pc, n uint32, targets, sources encoding.Operands,
 	pool, stack []W) (uint32, error) {
 	var (
-		module   = p.program.Module(p.fid)
-		dividend = loadIntrinsicOperand(module, &sources, pool, stack)
-		divisor  = loadIntrinsicOperand(module, &sources, pool, stack)
+		regs     = p.program.Module(p.fid).Registers()
+		dividend = loadIntrinsicOperand(regs, &sources, pool, stack)
+		divisor  = loadIntrinsicOperand(regs, &sources, pool, stack)
 	)
 	//
 	if divisor.Sign() == 0 {
@@ -1641,7 +1762,7 @@ func (p *Interpreter[W]) executeWideDivModHint(pc, n uint32, targets, sources en
 	}
 	// Distribute quotient and remainder across their target vectors.
 	for _, val := range []*big.Int{new(big.Int).Quo(dividend, divisor), new(big.Int).Rem(dividend, divisor)} {
-		if err := p.storeIntrinsicResult(module, &targets, val, stack); err != nil {
+		if err := p.storeIntrinsicResult(regs, &targets, val, stack); err != nil {
 			return pc, err
 		}
 	}
@@ -1651,7 +1772,7 @@ func (p *Interpreter[W]) executeWideDivModHint(pc, n uint32, targets, sources en
 
 // intrinsicVectorWidth returns the combined bitwidth of the next (base, len) register
 // vector in the iterator, consuming that vector.
-func intrinsicVectorWidth[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands) uint {
+func intrinsicVectorWidth[W any](regs []descriptor.Register[W], iter *encoding.Operands) uint {
 	var (
 		base   = iter.Next()
 		length = uint(iter.Next())
@@ -1659,7 +1780,7 @@ func intrinsicVectorWidth[W word.Word[W]](module descriptor.Module[W], iter *enc
 	)
 	//
 	for i := uint(0); i < length; i++ {
-		total += bitwidthOf(module, base+uint16(i))
+		total += bitwidthOf(regs, base+uint16(i))
 	}
 	//
 	return total
@@ -1673,7 +1794,7 @@ func intrinsicVectorWidth[W word.Word[W]](module descriptor.Module[W], iter *enc
 // most-significant limb.  The value is therefore accumulated from the
 // most-significant limb down, shifting the running value up by each limb's
 // width before folding the limb in.
-func loadIntrinsicOperand[W word.Word[W]](module descriptor.Module[W], iter *encoding.Operands,
+func loadIntrinsicOperand[W word.Word[W]](regs []descriptor.Register[W], iter *encoding.Operands,
 	pool, stack []W) *big.Int {
 	//
 	var (
@@ -1692,7 +1813,7 @@ func loadIntrinsicOperand[W word.Word[W]](module descriptor.Module[W], iter *enc
 	for i := uint16(0); i < nbOfValues; i++ {
 		var reg = base + i
 		//
-		value.Lsh(value, bitwidthOf(module, reg))
+		value.Lsh(value, bitwidthOf(regs, reg))
 		value.Or(value, stack[reg].BigInt())
 	}
 	//
@@ -1705,7 +1826,7 @@ func loadIntrinsicOperand[W word.Word[W]](module descriptor.Module[W], iter *enc
 // significant limb is written into the highest-indexed register and filling
 // proceeds downwards.  It errors if the value does not fit within the vector's
 // total width.
-func (p *Interpreter[W]) storeIntrinsicResult(module descriptor.Module[W], iter *encoding.Operands,
+func (p *Interpreter[W]) storeIntrinsicResult(regs []descriptor.Register[W], iter *encoding.Operands,
 	value *big.Int, stack []W) error {
 	var (
 		base   = iter.Next()
@@ -1717,7 +1838,7 @@ func (p *Interpreter[W]) storeIntrinsicResult(module descriptor.Module[W], iter 
 	for i := int(length) - 1; i >= 0; i-- {
 		var (
 			reg   = base + uint16(i)
-			width = bitwidthOf(module, reg)
+			width = bitwidthOf(regs, reg)
 			mask  = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))
 			limb  W
 		)
@@ -1864,26 +1985,62 @@ func executeSkipIf_rv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []u
 }
 
 // executeSkipTable implements the SMW dispatch: the source register is
-// compared against each case value and, on the first match, control transfers
-// to that case's (absolute) target; otherwise control falls through past the
-// whole instruction to the following one.
+// binary searched against the case values (held, in ascending order, as a
+// consecutive run of the constant pool starting at cid) and, on a match,
+// control skips forward to that case's target; otherwise control falls
+// through past the whole instruction to the following one.
 func executeSkipTable[W word.Word[W]](pc uint32, codes []uint32, pool []W, stack []W) uint32 {
 	var (
 		word0  = codes[pc]
 		count  = (word0 >> 24) & 0xff
-		source = (word0 >> 8) & 0xffff
+		cid    = (word0 >> 16) & 0xff
+		source = (word0 >> 8) & 0xff
 		val    = stack[source]
+		nwords = encoding.NumCodesPackedWide(uint(count))
 	)
 	//
-	for i := range count {
-		var word = codes[pc+1+i]
+	if mid, ok := slices.BinarySearchFunc(pool[cid:cid+count], val, W.Cmp); ok {
+		var skipWord = codes[pc+1+(uint32(mid)/2)]
 		//
-		if val.Cmp(pool[word&0xffff]) == 0 {
-			return pc + 1 + (word >> 16)
+		if mid%2 == 0 {
+			return pc + 1 + (skipWord & 0xffff)
 		}
+		//
+		return pc + 1 + (skipWord >> 16)
 	}
 	// no match: fall through past the whole instruction
-	return pc + 1 + count
+	return pc + 1 + nwords
+}
+
+// executeWideSkipTable implements the wide form of the SKIP_M dispatch (see
+// executeSkipTable), for a source register or base pool identifier exceeding
+// u8.  The source register, base pool identifier and count are read from the
+// dedicated second word rather than word 0; the packed skips follow exactly
+// as in the narrow form, just shifted one word later.  As for the narrow
+// form, a matched case's skip is relative to pc+1 (matching the offset
+// computed at encode time), whilst the no-match fall-through lands on the
+// true next instruction, past the (wider) header.
+func executeWideSkipTable[W word.Word[W]](pc uint32, codes []uint32, pool []W, stack []W) uint32 {
+	var (
+		count  = codes[pc] >> 16
+		word1  = codes[pc+1]
+		cid    = word1 >> 16
+		source = word1 & 0xffff
+		val    = stack[source]
+		nwords = encoding.NumCodesPackedWide(uint(count))
+	)
+	//
+	if mid, ok := slices.BinarySearchFunc(pool[cid:cid+count], val, W.Cmp); ok {
+		var skipWord = codes[pc+2+(uint32(mid)/2)]
+		//
+		if mid%2 == 0 {
+			return pc + 1 + (skipWord & 0xffff)
+		}
+		//
+		return pc + 1 + (skipWord >> 16)
+	}
+	// no match: fall through past the whole instruction
+	return pc + 2 + nwords
 }
 
 // executeDispatch implements the SKIP_B (one-hot) dispatch: the case bits are
@@ -2147,7 +2304,7 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, pool []W, stac
 		val = val.Slice(bitwidth)
 	}
 	//
-	return pc + n, p.storeAcross(pc, p.program.Module(p.fid), targets, val, stack)
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid).Registers(), targets, val, stack)
 }
 
 // executeWriteWom_sn implements WR_WOM_nm: it writes ndata consecutive words
@@ -2317,13 +2474,17 @@ func decodeAddress[W word.Word[W]](regs encoding.Operands, geometry *descriptor.
 	return index * uint64(numOutputs)
 }
 
-func bitwidthOf[W word.Word[W]](module descriptor.Module[W], reg RegisterId) uint {
-	var r = module.Register(reg)
-	//
-	return r.Bitwidth().UnwrapOr(math.MaxUint)
+// bitwidthOf looks up a register's bitwidth directly in the module's register
+// slice.  Callers should fetch this slice once (via Module.Registers()) and
+// reuse it across a loop of registers, rather than calling Module.Register
+// per register: since Module is an interface, each such call is an
+// unavoidable dynamic dispatch, whereas indexing the concrete slice returned
+// by Registers() is not.
+func bitwidthOf[W any](regs []descriptor.Register[W], reg RegisterId) uint {
+	return regs[reg].Bitwidth().UnwrapOr(math.MaxUint)
 }
 
-func loadAcross[W word.Word[W]](module descriptor.Module[W], sources encoding.Operands, stack []W) W {
+func loadAcross[W word.Word[W]](regs []descriptor.Register[W], sources encoding.Operands, stack []W) W {
 	var (
 		value W
 		width uint
@@ -2333,13 +2494,13 @@ func loadAcross[W word.Word[W]](module descriptor.Module[W], sources encoding.Op
 		reg := sources.Next()
 		_, lo := stack[reg].Shl64(uint64(width))
 		value = value.Or(lo)
-		width += bitwidthOf(module, reg)
+		width += bitwidthOf(regs, reg)
 	}
 	//
 	return value
 }
 
-func (p *Interpreter[W]) storeAcross(pc uint32, module descriptor.Module[W], targets encoding.Operands, oval W,
+func (p *Interpreter[W]) storeAcross(pc uint32, regs []descriptor.Register[W], targets encoding.Operands, oval W,
 	stack []W) error {
 	//
 	var (
@@ -2350,7 +2511,7 @@ func (p *Interpreter[W]) storeAcross(pc uint32, module descriptor.Module[W], tar
 	for targets.HasNext() {
 		var (
 			target = targets.Next()
-			width  = bitwidthOf(module, target)
+			width  = bitwidthOf(regs, target)
 		)
 		//
 		// Low limbs are written first, matching machine.StoreAcross.  Note the

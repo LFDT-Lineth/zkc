@@ -101,7 +101,7 @@ func fn_main() {
 	// [0.7] check sum:u16
 	// [0.8] ldc $7 = 0x0
 	r7 = 0
-	// [0.9] cat $8 = sum
+	// [0.9] mov $8 = sum
 	r8 = r3
 	// [0.10] write result[$7] = $8
 	{

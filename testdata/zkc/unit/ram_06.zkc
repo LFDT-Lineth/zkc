@@ -2,7 +2,7 @@
 // blake benchmarks), including a swap.
 // Code lines: main = 1, swap = 1 (one trace row per invocation).
 pub input data(address:u8) -> (byte:u8)
-memory buf(address:u8) -> (byte:u8)
+memory buf[u32](address:u8) -> (byte:u8)
 
 fn swap<buf>(i:u8, j:u8) {
     var tmp:u8 = buf[i]

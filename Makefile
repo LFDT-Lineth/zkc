@@ -1,6 +1,6 @@
 GOCORSET_VERSION:=$(shell git describe --always --tags)
 GOCORSET_VERSION_PATH:="github.com/LFDT-Lineth/zkc/pkg/cmd"
-GOLANGCI_VERSION:=2.12.2
+GOLANGCI_VERSION:=2.13.0
 PROJECT_NAME:=go-corset
 GOPATH_BIN:=$(shell go env GOPATH)/bin
 ZKC_LINTABLE_FILES=$(shell find testdata/zkc -name "*.zkc" -not -path "*/invalid/*")

@@ -14,6 +14,7 @@ package encoding
 
 import (
 	"math"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -25,72 +26,112 @@ import (
 //	31                                0
 //
 // +--------+--------+--------+--------+
-// |  count |     source      | opcode |
+// |  count |  cid   | source | opcode |
 // +--------+--------+--------+--------+
-// |  case 0: skip   |  case 0: cid    |
+// |  case 1: skip   |  case 0: skip   |
 // +-----------------+-----------------+
 // |                ...                |
 // +-----------------+-----------------+
-// |  count-1: skip  |  count-1: cid   |
+//
+// Here, source is the u8 register being switched upon and count gives the
+// number of cases which follow.  Each case's dispatch value is held in the
+// constant pool as a consecutive run of count entries starting at the u8
+// base pool identifier cid (i.e. case i's value resides at pool index
+// cid+i), interned as a constant vector via ConstantVectorIndex, in
+// ascending order (allowing the interpreter to dispatch via binary search
+// rather than a linear scan).  Each case also carries an
+// unsigned u16 relative skip offset (where offset 0 refers to the word
+// immediately following the header word(s) -- i.e. pc+1 in the narrow form --
+// packed two per word (least significant half first, in the same (sorted)
+// case order as the constant vector).  Control skips forward to the target of
+// the case whose pooled value matches the source register; if none match,
+// control falls through past the whole instruction.
+//
+// The compact form above requires the case count, source register and base
+// pool identifier to each fit within a byte; if any overflows, the wide form
+// serves as the fallback, moving the source register and base pool
+// identifier to a full u16 field each in a dedicated second word (leaving
+// bits 8-15 of word 0 clear, as for all wide forms) whilst count moves up to
+// occupy the top halfword of word 0 -- a full u16, giving the wide form room
+// for up to 65535 cases.  The packed skips follow exactly as in the narrow
+// form, just shifted one word later:
+//
+// +--------+--------+--------+--------+
+// |      count      |  wop   |  WIDE  |
+// +--------+--------+--------+--------+
+// |       cid       |      source     |
+// +-----------------+-----------------+
+// |  case 1: skip   |  case 0: skip   |
+// +-----------------+-----------------+
+// |                ...                |
 // +-----------------+-----------------+
 //
-// Here, source identifies the register being switched upon and count gives the
-// number of cases which follow, one word each.  Each case is encoded as a u16
-// constant pool identifier for its value together with an unsigned u16
-// relative skip offset (where the following instruction is considered to be
-// at offset 0, as for the other skip forms).  Control skips forward to the
-// target of the first case whose value matches the source register.  There is
-// no encoding for a skip exceeding u16 (encoding panics instead).
+// There is no wide encoding for a skip exceeding u16 (as for the other skip
+// forms, encoding panics instead).
 // ============================================================================
 
 // Switch encodes a multiway-skip (switch) bytecode, which dispatches on a source
 // register against a table of (value, skip) pairs.
 func Switch[W word.Word[W]](pc Address, p *bytecode.Switch[W], env Environment[W]) []uint32 {
-	// count occupies a single byte (bits 24..31) of word 0.
-	if len(p.Cases) > math.MaxUint8 {
-		panic("too many cases in multiway skip")
+	// The wide form's count field is a full u16 (see above), the hard upper
+	// bound on the number of cases a single switch instruction can encode.
+	if len(p.Cases) > math.MaxUint16 {
+		panic("too many switch cases")
 	}
-	// word 0: count | source | opcode
-	var codes = []uint32{uint32(len(p.Cases))<<24 | uint32(p.Source)<<8 | SKIP_M}
-	// Append one (skip, cid) word per case.
-	for _, c := range p.Cases {
+	// Sort a copy of the cases by dispatch value, so that the encoded
+	// constant vector is in ascending order and the interpreter can binary
+	// search it.  NOTE: dispatch values are guaranteed unique (see
+	// Switch.Validate), so this order is well-defined and stable across the
+	// repeated encoding passes taken to reach a layout fixpoint.  A copy is
+	// sorted (rather than p.Cases in place) since the same bytecode value is
+	// re-encoded across those passes.
+	var cases = slices.Clone(p.Cases)
+	slices.SortFunc(cases, func(a, b bytecode.SwitchCase[W]) int {
+		return a.Value.Cmp(b.Value)
+	})
+	//
+	var (
+		skips     = make([]uint16, len(cases))
+		constants = make([]W, len(cases))
+	)
+	//
+	for i, c := range cases {
 		var (
 			// Resolve this case's target program point, ...
 			target = env.Point().Skip(uint(c.Skip))
 			// ... then its relative offset from the following instruction.
 			skip = env.OffsetFor(env.enclosing, target) - (pc + 1)
-			//
-			cid = env.ConstantIndex(c.Value)
 		)
 		//
 		if skip > math.MaxUint16 {
-			panic("skip exceeds multiway skip form")
+			panic("support wide multiway skip")
 		}
 		//
-		codes = append(codes, skip<<16|uint32(cid))
+		skips[i] = uint16(skip)
+		constants[i] = c.Value
 	}
+	// Intern the (sorted) case values as a single consecutive run in the
+	// constant pool.
+	var cid = env.ConstantVectorIndex(constants)
+	// The compact form requires the case count, source register and base
+	// pool identifier to each fit within a byte; otherwise, fall back to the
+	// wide form.
+	if len(cases) > math.MaxUint8 || cid > math.MaxUint8 || IsWideRegisters(p.Source) {
+		// word 0: count | wop | WIDE; word 1: cid | source
+		var codes = []uint32{
+			uint32(len(cases))<<16 | WIDE_SKIP_M<<8 | WIDE,
+			uint32(cid)<<16 | uint32(p.Source),
+		}
+		//
+		return append(codes, PackShortsIntoCodes(skips)...)
+	}
+	// word 0: count | cid | source | opcode
+	var codes = []uint32{uint32(len(cases))<<24 | uint32(cid)<<16 | uint32(p.Source)<<8 | SKIP_M}
 	//
-	return codes
+	return append(codes, PackShortsIntoCodes(skips)...)
 }
 
 // DecodeSkipTable decodes an SMW instruction at the given program counter.
 func DecodeSkipTable[W word.Word[W]](pc uint32, codes []uint32) (Bytecode[W], uint32) {
-	// var (
-	// 	word0  = codes[pc]
-	// 	count  = (word0 >> 24) & 0xff
-	// 	source = Reg((word0 >> 8) & 0xffff)
-	// 	cases  = make([]bytecode.SwitchCase, count)
-	// )
-	// //
-	// for i := range count {
-	// 	var word = codes[pc+1+i]
-	// 	//
-	// 	cases[i] = bytecode.SwitchCase{
-	// 		Value: pool[word&0xffff],
-	// 		Skip:  word >> 16,
-	// 	}
-	// }
-	// //
-	// return &bytecode.Switch{Source: source, Cases: cases}, 1 + count
 	panic("not efficient")
 }
