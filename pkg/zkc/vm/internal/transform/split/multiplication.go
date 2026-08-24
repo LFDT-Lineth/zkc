@@ -30,44 +30,60 @@ import (
 // emitted multiply and addition fits within the field bandwidth on its own).
 // It does NOT rely on any downstream constraint-level splitting.
 //
-// The approach is schoolbook long multiplication over "sub-limbs":
+// The approach is schoolbook long multiplication over g-bit "sub-limbs", with
+// the granularity g chosen by mulGranularity such that everything below
+// provably fits the field bandwidth.  Operands are cut on a g-grid from bit
+// zero (see decomposeToSubLimbs); each partial product aᵢ·bⱼ is then at most
+// 2·g bits — a low and a high half landing in adjacent weight columns — and
+// each column is summed by a single add whose carry feeds the column above.
+// For two 2-sub-limb operands:
 //
-//  1. A multiply granularity g is chosen (see mulGranularity) such that a
-//     partial product of two g-bit values fits the field bandwidth.  Each
-//     operand — and the constant — is decomposed (least-significant first) into
-//     g-bit sub-limbs on a grid starting at bit zero of the operand; since g
-//     need not divide the register width, a sub-limb may span a limb boundary.
-//  2. For a binary product a·b, every partial product aᵢ·bⱼ is materialised into
-//     fresh sub-limb registers via a narrow MulVecConst and bucketed against its
-//     column weight (i+j, plus the sub-limb offset within the product).  The
-//     constant k is decomposed into g-bit sub-limbs and folded in via an initial
-//     scalar pass; n-ary products are reduced to a left-fold of binary products.
-//     Each fold keeps the full product width, since the multiply is
-//     overflow-checked rather than truncating.
-//  3. Each column is a multi-operand addition with a threaded carry: a carry
-//     from column c always has weight c+1, so it is spliced into the next
-//     column's sources.  A column which is already exactly its output — a
-//     single partial of exactly the column width and no incoming carry — is
-//     passed through without emitting anything.
-//  4. The final accumulation lays its columns straight into the target grid
-//     (see targetLayout): column widths are clamped to the target width, so
-//     bits beyond it land in zero-width outputs which force them to zero —
-//     exactly the overflow check the unsplit multiply performs (a product that
-//     does not fit the target makes the constraints unsatisfiable / aborts
-//     execution) — and outputs are cut at the target-limb boundaries, so the
-//     target limbs are reassembled by concatenation alone.
+//	                        a₁     a₀
+//	             ×          b₁     b₀
+//	             ─────────────────────
+//	                     a₀b₀ʰ  a₀b₀ˡ      one narrow mul per pair;
+//	              a₁b₀ʰ  a₁b₀ˡ             ˡ/ʰ = low/high g bits, at
+//	              a₀b₁ʰ  a₀b₁ˡ             column weight i+j / i+j+1
+//	       a₁b₁ʰ  a₁b₁ˡ
+//	             ─────────────────────
+//	out₃ ⟵c₂⟵ out₂ ⟵c₁⟵ out₁    out₀       one add per column, carries
+//	                                       threaded into the next column
+//
+// The constant k is cut into g-bit chunks and folded in the same way by an
+// initial scalar pass, and an n-ary product is a left-fold of binary steps —
+// each fold keeps the full product width, since the multiply is
+// overflow-checked rather than truncating.
+//
+// The FINAL fold is fused with the assignment to the target.  Instead of
+// producing the product on its own g-grid and then reshaping it —
+//
+//	naive:  accumulate columns → clamp each column to the target width
+//	        → re-cut at the target-limb boundaries → concatenate
+//	        (a mov chain per column)
+//
+// — its columns are laid straight onto the target grid (see targetLayout):
+// each column add writes output pieces already clamped and already cut at the
+// limb boundaries, and a column which is already identical to its output is
+// passed through without emitting anything.  For u16 × u16 → u32 with g = 15:
+//
+//	  col 2       col 1            col 0
+//	|── 2 ──|─────── 15 ──────|─────── 15 ───────|  product columns
+//	   m₂       p₁       p₀      (pass-through)     add c::p₁::p₀ = …
+//	|── 2 ──|── 14 ───|─ 1 ──|─────── 15 ───────|   add m₂ = …
+//	└────── hi ───────┘└────────── lo ──────────┘   one cat per limb
+//
+// Product bits at or beyond the target width fall into zero-width columns,
+// whose adds are satisfiable only by zero: exactly the overflow check the
+// unsplit multiply performs (a product that does not fit the target makes the
+// constraints unsatisfiable / aborts execution).
 func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
 	var (
-		one         W
 		insns       []Bytecode[W]
 		targetLimbs = applyLimbsMapReversed(mapping, insn.Target...)
 		sourceLimbs = applyLimbsMapReversed(mapping, insn.Source...)
-		targetWidth = groupWidth(alloc, targetLimbs)
 		operands    [][]RegisterId
 	)
-	//
-	one = one.SetUint64(1)
 	//
 	if len(insn.Source) == 0 {
 		// Degenerate case: a product with no source registers is simply its
@@ -92,46 +108,50 @@ func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Alloca
 		operands = append(operands, subs)
 		insns = append(insns, code...)
 	}
-	// Fold the operands (and constant) left-to-right into a single sub-limb
-	// accumulator; the last fold accumulates straight onto the target grid.
+	// Fold the operands (and constant) left-to-right into a running product.
+	// Intermediate folds accumulate onto the running product's own g-grid; the
+	// last fold accumulates straight onto the target grid (the fusion pictured
+	// above), after which only concatenations remain.
 	var (
-		acc = operands[0]
-		// The final accumulation lays its columns straight into the target grid
-		// (see targetLayout), which both performs the overflow check and cuts
-		// the outputs ready for reassembly into the target limbs.
-		final  = targetLayout(alloc, g, targetLimbs, targetWidth)
+		acc    = operands[0]
+		width  = groupWidth(alloc, acc)
+		final  = targetLayout(g, registerWidths(alloc, targetLimbs))
+		folds  = len(operands) - 1
 		scalar = insn.Constant.Cmp64(1) != 0
 	)
-	// Apply the constant via an initial scalar-multiply pass (k == 1 is the
-	// identity and needs no pass).
+	//
 	if scalar {
-		outs, code := scalarStep(alloc, g, acc, insn.Constant, lastLayout(len(operands) == 1, final))
+		// Fold in the constant via an initial scalar pass (k == 1 is the
+		// identity and needs no pass).
+		width += uint(insn.Constant.BigInt().BitLen())
+		layout := final
+		//
+		if folds > 0 {
+			layout = foldLayout(width, g)
+		}
+		//
+		outs, code := scalarStep(alloc, g, acc, insn.Constant, layout)
 		acc, insns = outs, append(insns, code...)
-	}
-	// Multiply in each remaining operand.
-	for i, b := range operands[1:] {
-		outs, code := binaryStep(alloc, g, acc, b, one, lastLayout(i == len(operands)-2, final))
-		acc, insns = outs, append(insns, code...)
-	}
-	// Degenerate one-operand identity product: no fold step ran, so re-chunk
-	// the decomposed operand onto the target grid directly.
-	if !scalar && len(operands) == 1 {
+	} else if folds == 0 {
+		// A single operand times one: nothing to fold, so re-chunk the
+		// decomposed operand onto the target grid directly.
 		outs, code := accumulate(alloc, g, final, singletonColumns(acc))
 		acc, insns = outs, append(insns, code...)
 	}
-	// Reassemble the target-grid columns into the target limbs.
-	return append(insns, reassembleToTarget(alloc, acc, targetLimbs)...)
-}
-
-// lastLayout selects the layout override for a fold step: the final step
-// accumulates onto the target grid, intermediate steps keep the default
-// full-width grid.
-func lastLayout(last bool, final colLayout) util.Option[colLayout] {
-	if last {
-		return util.Some(final)
+	// Fold in each remaining operand.
+	for i, b := range operands[1:] {
+		width += groupWidth(alloc, b)
+		layout := final
+		//
+		if i+1 < folds {
+			layout = foldLayout(width, g)
+		}
+		//
+		outs, code := binaryStep(alloc, g, acc, b, layout)
+		acc, insns = outs, append(insns, code...)
 	}
-	//
-	return util.None[colLayout]()
+	// Concatenate the target-grid pieces into the target limbs.
+	return append(insns, reassembleToTarget(alloc, acc, targetLimbs)...)
 }
 
 // multiplicationFitsBandwidth determines whether the largest value this
@@ -184,7 +204,7 @@ func multiplicationFitsBandwidth[W word.Word[W]](alloc Allocator[W], sources []R
 // (see binaryStep / scalarStep), so every partial product is at most 2·g bits
 // regardless of the constant's magnitude.  Since g need not divide the
 // register width, sub-limbs are cut on a grid which may cross limb boundaries
-// (see decomposeToSubLimbs / reassembleToTarget).
+// (see decomposeToSubLimbs / targetLayout).
 func mulGranularity(regWidth, bandWidth, productWidth uint) uint {
 	//
 	for g := min(regWidth, bandWidth/2); g >= 1; g-- {
@@ -210,13 +230,18 @@ func registerWidths[W word.Word[W]](alloc Allocator[W], regs []RegisterId) []uin
 }
 
 // decomposeToSubLimbs re-expresses an operand's (little-endian) limbs as
-// g-wide sub-limbs cut on a grid starting at bit zero of the operand,
-// least-significant first.  Since g need not divide the limb widths, a
-// sub-limb may span a limb boundary: each limb is destructured (one vectored
-// add) at the grid boundaries crossing it, and the pieces of each grid cell
-// are then joined (one concatenation each).  A limb or piece which already
-// spans a whole cell is used directly, so an aligned grid emits exactly one
-// destructure per over-wide limb — as before.
+// g-wide sub-limbs cut on a grid starting at bit zero of the operand.  Since g
+// need not divide the limb widths, a sub-limb may span a limb boundary, so the
+// limbs are cut at both sets of boundaries and the pieces of each grid cell
+// then joined; e.g. for two u16 limbs with g = 15:
+//
+//	limbs:   |─────── 16 ──────|─────── 16 ───────|      RegisterWidth limbs
+//	g-grid:  |────── 15 ──────|─────── 15 ──────|─2─|    wanted sub-limbs
+//	pieces:  |────── 15 ──────|─1─|──── 14 ─────|─2─|    cut at both
+//
+// Each limb crossed by a grid boundary is destructured once (a vectored add),
+// each grid cell spanning several pieces is joined once (a concatenation), and
+// a limb or piece already spanning a whole cell is used directly.
 func decomposeToSubLimbs[W word.Word[W]](alloc Allocator[W], g uint, limbs []RegisterId,
 ) ([]RegisterId, []Bytecode[W]) {
 	//
@@ -344,14 +369,13 @@ func gridWidths(total, g uint) []uint {
 // two g-bit values it is at most 2·g bits, so however wide k is the multiply
 // still fits the field bandwidth (see mulGranularity).  Zero sub-limbs of k are
 // skipped: they contribute nothing to any column.
-func scalarStep[W word.Word[W]](alloc Allocator[W], g uint, a []RegisterId, k W, layout util.Option[colLayout],
+func scalarStep[W word.Word[W]](alloc Allocator[W], g uint, a []RegisterId, k W, layout [][]uint,
 ) ([]RegisterId, []Bytecode[W]) {
 	//
 	var (
-		kSubs     = descriptor.SplitConstant(k, g)
-		fullWidth = uint(k.BigInt().BitLen()) + groupWidth(alloc, a)
-		partials  = map[uint][]RegisterId{}
-		insns     []Bytecode[W]
+		kSubs    = descriptor.SplitConstant(k, g)
+		partials = map[uint][]RegisterId{}
+		insns    []Bytecode[W]
 	)
 	//
 	for i, ai := range a {
@@ -369,22 +393,24 @@ func scalarStep[W word.Word[W]](alloc Allocator[W], g uint, a []RegisterId, k W,
 		}
 	}
 	//
-	outs, code := accumulate(alloc, g, layout.UnwrapOr(foldLayout(fullWidth, g)), partials)
+	outs, code := accumulate(alloc, g, layout, partials)
 	//
 	return outs, append(insns, code...)
 }
 
 // binaryStep multiplies two sub-limb operands together, materialising every
 // partial product aᵢ·bⱼ into fresh sub-limbs, bucketing them by column weight
-// and accumulating the columns into the full-width product.
-func binaryStep[W word.Word[W]](alloc Allocator[W], g uint, a, b []RegisterId, one W, layout util.Option[colLayout],
+// and accumulating the columns onto the given layout.
+func binaryStep[W word.Word[W]](alloc Allocator[W], g uint, a, b []RegisterId, layout [][]uint,
 ) ([]RegisterId, []Bytecode[W]) {
 	//
 	var (
-		fullWidth = groupWidth(alloc, a) + groupWidth(alloc, b)
-		partials  = map[uint][]RegisterId{}
-		insns     []Bytecode[W]
+		one      W
+		partials = map[uint][]RegisterId{}
+		insns    []Bytecode[W]
 	)
+	//
+	one = one.SetUint64(1)
 	//
 	for i, ai := range a {
 		var wa = alloc.Register(ai).Bitwidth().Unwrap()
@@ -400,62 +426,71 @@ func binaryStep[W word.Word[W]](alloc Allocator[W], g uint, a, b []RegisterId, o
 		}
 	}
 	//
-	outs, code := accumulate(alloc, g, layout.UnwrapOr(foldLayout(fullWidth, g)), partials)
+	outs, code := accumulate(alloc, g, layout, partials)
 	//
 	return outs, append(insns, code...)
 }
 
-// colLayout describes the column layout of an accumulation: at least floor
-// columns (buckets beyond it extend the count), with column c's output cut
-// into pieces(c) — little-endian piece widths summing to the column's width.
-type colLayout struct {
-	floor  uint
-	pieces func(uint) []uint
-}
+// A column layout gives, for each accumulation column, the widths of its
+// output pieces (little-endian, summing to the column's width).  Columns
+// beyond the layout are zero-width: their contents are forced to zero.
 
-// foldLayout is the layout of an intermediate accumulation holding a value of
-// the given total width: one output piece per column, g bits except the
-// most-significant which holds the remainder.
-func foldLayout(total, g uint) colLayout {
-	var width = columnWidth(total, g)
+// foldLayout is the layout of an intermediate fold holding a value of the
+// given total width: one whole output per column — g bits each, with the
+// most-significant column holding the remainder.
+func foldLayout(total, g uint) [][]uint {
+	var layout [][]uint
 	//
-	return colLayout{ceilDiv(total, g), func(c uint) []uint { return []uint{width(c)} }}
-}
-
-// targetLayout is the layout of the final accumulation, which lays the product
-// straight into the target grid.  Column widths are clamped to the target
-// width, so product bits at or beyond it land in zero-width outputs which
-// force them to zero — the overflow check.  Each column's output is cut at the
-// target-limb boundaries falling strictly inside it, so the target limbs can
-// be reassembled from whole pieces by concatenation alone.
-func targetLayout[W word.Word[W]](alloc Allocator[W], g uint, targetLimbs []RegisterId, targetWidth uint) colLayout {
-	var (
-		width = columnWidth(targetWidth, g)
-		cuts  []uint
-		off   uint
-	)
-	// Determine the cumulative target-limb boundaries.
-	for _, tl := range targetLimbs {
-		off += alloc.Register(tl).Bitwidth().Unwrap()
-		cuts = append(cuts, off)
+	for _, width := range gridWidths(total, g) {
+		layout = append(layout, []uint{width})
 	}
 	//
-	return colLayout{ceilDiv(targetWidth, g), func(c uint) []uint {
+	return layout
+}
+
+// targetLayout is the layout of the final fold, which lays the product
+// straight onto the target: the target's bits are cut first on the g-grid and
+// then at the limb boundaries, so every output piece falls entirely within one
+// target limb and the limbs are reassembled by concatenation alone:
+//
+//	g-grid:  |───── col 0 ─────|───── col 1 ─────|─ col 2 ─|
+//	limbs:   |────── limb 0 ──────|─────── limb 1 ─────────|
+//	pieces:  |─────── p₀ ──────|p₁|────── p₂ ─────|── p₃ ──|
+//
+//	⟹  layout [[p₀] [p₁ p₂] [p₃]]
+//
+// Product bits at or beyond the target width fall into columns outside this
+// layout — zero-width, forcing them to zero: the overflow check.
+func targetLayout(g uint, limbWidths []uint) [][]uint {
+	var (
+		layout [][]uint
+		cuts   []uint
+		total  uint
+	)
+	// Determine the cumulative limb boundaries.
+	for _, width := range limbWidths {
+		total += width
+		cuts = append(cuts, total)
+	}
+	// Cut each grid cell at the limb boundaries falling strictly inside it.
+	for lo := uint(0); lo < total; lo += g {
 		var (
-			lo     = c * g
-			hi     = lo + width(c)
-			widths []uint
+			pieces []uint
+			hi     = min(lo+g, total)
+			at     = lo
 		)
 		//
 		for _, cut := range cuts {
-			if cut > lo && cut < hi {
-				widths = append(widths, cut-lo)
-				lo = cut
+			if cut > at && cut < hi {
+				pieces = append(pieces, cut-at)
+				at = cut
 			}
 		}
 		//
-		return append(widths, hi-lo)
-	}}
+		layout = append(layout, append(pieces, hi-at))
+	}
+	//
+	return layout
 }
 
 // bucket records each sub-limb of a partial product against its column weight.
@@ -469,55 +504,52 @@ func bucket(partials map[uint][]RegisterId, base uint, pp []RegisterId) {
 	}
 }
 
-// columnWidth returns a column-width function for a value of the given total
-// bit-width: column c holds min(g, total - c·g) bits, and zero once the column
-// lies entirely at or beyond total.  A zero-width column forces its bits to
-// zero, which is how bits beyond a target width are rejected as overflow.
-func columnWidth(total, g uint) func(uint) uint {
-	return func(c uint) uint {
-		if lo := c * g; lo < total {
-			return min(g, total-lo)
-		}
-		//
-		return 0
-	}
-}
-
-// accumulate lowers a set of weight-bucketed sub-limbs into the layout's
-// output pieces, threading carries between columns: each column is a
-// multi-operand add whose overflow (a carry of weight column+1) is spliced
-// into the next column's sources.  A column which is already exactly its
-// output — a single partial of exactly the column's single piece, with no
-// incoming carry — is passed through without emitting anything.
+// accumulate sums each column's bucketed sub-limbs — plus the carry from the
+// column below — into that column's output pieces, one vectored add per
+// column:
 //
-// Only a full-granularity column (width g) receives a carry.  A clamped
-// column (width < g, cut short by the target width or the value's tail) gets
-// none: for any in-range value its sum provably fits the clamped width — the
-// low columns reconstruct at most the whole value, so a sum reaching bits
-// beyond it would exceed the value's bound — hence an add which overflows a
-// clamped column rejects exactly the out-of-range products (the overflow
-// check) and never a valid one.
-func accumulate[W word.Word[W]](alloc Allocator[W], g uint, layout colLayout, partials map[uint][]RegisterId,
+//	add  carry :: pieceₙ ‥ piece₀  =  partials[c]… (+ previous carry)
+//
+// A carry holds the bits of the column sum above 2^g and so has weight c+1: it
+// is spliced into the next column's sources.  Two rules apply:
+//
+//   - Pass-through: a column holding a single partial of exactly its single
+//     piece already IS its output — no instruction is emitted.
+//
+//   - Only a full g-bit column carries.  A clamped column (width < g — cut
+//     short by the target width or by the value's own tail) gets no carry: for
+//     any in-range value its sum provably fits the clamped width (the columns
+//     reconstruct the value, so a sum reaching the clamped-off bits would
+//     exceed the value's bound).  Its add therefore rejects exactly the
+//     out-of-range products — the overflow check — and never a valid one.
+//     This also keeps every carry small (rhs − g bits) whatever the layout.
+func accumulate[W word.Word[W]](alloc Allocator[W], g uint, layout [][]uint, partials map[uint][]RegisterId,
 ) ([]RegisterId, []Bytecode[W]) {
 	//
 	var (
 		zero    W
-		numCols = layout.floor
+		numCols = uint(len(layout))
 		carry   = util.None[RegisterId]()
 		outs    []RegisterId
 		insns   []Bytecode[W]
 	)
-	// Ensure every bucketed sub-limb has a home.
-	for w := range partials {
-		numCols = max(numCols, w+1)
+	// Ensure every bucketed sub-limb has a home (columns beyond the layout are
+	// zero-width, forcing their contents to zero).
+	for c := range partials {
+		numCols = max(numCols, c+1)
 	}
 	//
 	for c := range numCols {
 		var (
-			pieces  = layout.pieces(c)
-			width   = math.Sum(pieces...)
+			pieces  = []uint{0}
 			sources = partials[c]
 		)
+		//
+		if c < uint(len(layout)) {
+			pieces = layout[c]
+		}
+		//
+		width := math.Sum(pieces...)
 		// Splice in the carry from the previous column.
 		if carry.HasValue() {
 			sources = append(sources, carry.Unwrap())
@@ -537,9 +569,9 @@ func accumulate[W word.Word[W]](alloc Allocator[W], g uint, layout colLayout, pa
 		}
 		//
 		outs = append(outs, targets...)
-		// Allocate a carry when a full-granularity column's sum can overflow
-		// its output (see above: clamped columns must not overflow, and the
-		// final column has nowhere to carry to).
+		// Add a carry when a full g-bit column's sum can overflow its output
+		// (clamped columns must not overflow, and the final column has nowhere
+		// to carry to).
 		rhs := descriptor.CalculateAddBitwidth(sources, zero, alloc).Unwrap()
 		//
 		if width == g && rhs > width && c+1 < numCols {
