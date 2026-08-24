@@ -1141,6 +1141,24 @@ func Test_ZkcUnit_Switch_17(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/switch_17", DEFAULT_UNIT_CONFIG)
 }
 
+// Regression test: forces a wide multiway skip (SKIP_M with a constant pool
+// base index exceeding u8) -- see pkg/zkc/vm/internal/interpreter/encoding/switch.go.
+func Test_ZkcUnit_Switch_18(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/switch_18", DEFAULT_UNIT_CONFIG)
+}
+
+// EXPECTED TO FAIL: a switch with more than 255 cases requires the wide
+// SKIP_M form (case count exceeding u8), but is currently unreachable
+// end-to-end -- switch codegen merges every case's exit through a single
+// vectorised arithmetic instruction, one operand per case, and
+// encodeArith_vec (pkg/zkc/vm/internal/interpreter/encoding/arith.go) panics
+// beyond 255 operands, independently of SKIP_M.  Remove this skip once that
+// separate limit is widened and this test passes.
+func Test_ZkcUnit_Switch_19(t *testing.T) {
+	t.Skip("arith.go: encodeArith_vec panics beyond 255 vector operands, blocking >255-case switches")
+	checkZkcUnit(t, "zkc/unit/switch_19", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Printf Tests
 // ===================================================================
@@ -1259,6 +1277,16 @@ func Test_ZkcUnit_SkipIf_04(t *testing.T) {
 
 func Test_ZkcUnit_SkipIf_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/skip_if_05", DEFAULT_UNIT_CONFIG)
+}
+
+// EXPECTED TO FAIL: a long non-foldable XOR chain inflates range-check codegen
+// enough, under a small max-static-height, to overflow the u16 skip bound of
+// the general SkipIf encoding -- see encodeSkipIf_rcv in
+// pkg/zkc/vm/internal/interpreter/encoding/skip_if.go.  Remove this skip once
+// a wider fallback form is implemented and this test passes.
+func Test_ZkcUnit_SkipIf_06(t *testing.T) {
+	t.Skip("skip_if.go: SkipIf skip distance exceeds u16 at small max-static-height")
+	checkZkcUnit(t, "zkc/unit/skip_if_06", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
