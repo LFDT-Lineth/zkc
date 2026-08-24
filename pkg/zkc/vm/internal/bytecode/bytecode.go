@@ -487,10 +487,14 @@ func NewFieldArith[W word.Word[W]](op Operation, target RegisterId, sources []Re
 	return &FieldArith[W]{Op: op, Target: target, Sources: sources, Constant: constant}
 }
 
-// NewRet constructs a return instruction with the given frame width and return
-// offset.
+// NewDone constructs a done instruction.
+func NewDone[W word.Word[W]]() *Ret[W] {
+	return &Ret[W]{true}
+}
+
+// NewRet constructs a return instruction.
 func NewRet[W word.Word[W]]() *Ret[W] {
-	return &Ret[W]{}
+	return &Ret[W]{false}
 }
 
 // IsUnusedConstant checks whether a given constant is the "identity element".

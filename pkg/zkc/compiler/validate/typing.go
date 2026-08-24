@@ -208,6 +208,10 @@ func (p *TypeChecker) typeFunction(fn decl.ResolvedFunction) []source.SyntaxErro
 			errors = append(errors, p.typeAssignment(s, &fn, effects)...)
 		case *stmt.Fail[symbol.Resolved]:
 			errors = append(errors, p.typeFormatArgs(s.Chunks, s.Arguments, &fn, effects)...)
+		case *stmt.Done[symbol.Resolved]:
+			if !fn.NoReturn {
+				errors = append(errors, *p.srcmaps.SyntaxError(s, "cannot use done in a function which returns"))
+			}
 		case *stmt.NeverCall[symbol.Resolved]:
 			errors = append(errors, p.typeNeverCall(s, &fn, effects)...)
 		case *stmt.IfGoto[symbol.Resolved]:

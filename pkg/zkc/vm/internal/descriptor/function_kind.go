@@ -19,7 +19,7 @@ import (
 
 // FunctionKind captures the execution-relevant properties of a function.
 type FunctionKind struct {
-	native, unsafeArgs, inline bool
+	native, unsafeArgs, inline, never bool
 }
 
 // IsNative reports whether this function is backed by a native circuit rather
@@ -32,6 +32,11 @@ func (p FunctionKind) IsNative() bool {
 // not.
 func (p FunctionKind) CanInline() bool {
 	return p.inline
+}
+
+// NonReturning reports whether or not this function returns or not.
+func (p FunctionKind) NonReturning() bool {
+	return p.never
 }
 
 // AllowsUnsafeArgs reports whether calls may supply arguments which are undefined
@@ -64,6 +69,14 @@ func (p FunctionKind) WithUnsafeArgs(flag bool) FunctionKind {
 	return p
 }
 
+// WithNoReturn updates the specification as to whether this is a "no return"
+// function, or not.
+func (p FunctionKind) WithNoReturn(flag bool) FunctionKind {
+	p.never = flag
+	//
+	return p
+}
+
 // GobEncode marshals this function kind.
 //
 // nolint
@@ -78,6 +91,11 @@ func (p *FunctionKind) GobEncode() ([]byte, error) {
 	if err := gobEncoder.Encode(p.unsafeArgs); err != nil {
 		return nil, err
 	}
+	//
+	if err := gobEncoder.Encode(p.never); err != nil {
+		return nil, err
+	}
+
 	//
 	return buffer.Bytes(), nil
 }
@@ -95,10 +113,18 @@ func (p *FunctionKind) GobDecode(data []byte) error {
 		return err
 	}
 	//
-	return gobDecoder.Decode(&p.unsafeArgs)
+	if err := gobDecoder.Decode(&p.unsafeArgs); err != nil {
+		return err
+	}
+	//
+	if err := gobDecoder.Decode(&p.never); err != nil {
+		return err
+	}
+	//
+	return nil
 }
 
 var (
 	// BYTECODE_FUNCTION represents a safe function implemented by bytecode.
-	BYTECODE_FUNCTION = FunctionKind{false, false, false}
+	BYTECODE_FUNCTION = FunctionKind{false, false, false, false}
 )

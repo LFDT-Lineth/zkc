@@ -685,6 +685,9 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = p.executeReturn(p.pc, bytecodes)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
+		case encoding.DONE:
+			// Termination
+			return nsteps, nil
 		case encoding.JMP:
 			p.pc, _ = encoding.DecodeJmp1(p.pc, bytecodes)
 		case encoding.SKIP:

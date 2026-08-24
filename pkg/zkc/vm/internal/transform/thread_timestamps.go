@@ -231,7 +231,7 @@ func (t *threader[W]) initNewRegs(fn *descriptor.Function[W]) []descriptor.Regis
 	//
 	newRegs = append(newRegs, oldRegs[:ni]...)
 	//
-	if !t.isMain {
+	if !t.isMain && !fn.Kind().NonReturning() {
 		for _, e := range t.effects {
 			t.canonical[e] = bytecode.RegisterId(len(newRegs))
 			newRegs = append(newRegs, descriptor.NewRegister(register.OUTPUT_REGISTER, stampOutName(t.mods, e),
@@ -259,7 +259,7 @@ func (t *threader[W]) buildFunctionMapping(fn *descriptor.Function[W]) []bytecod
 		switch {
 		case t.isMain:
 			sub[x] = id
-		case uint(x) < ni:
+		case uint(x) < ni || fn.Kind().NonReturning():
 			sub[x] = id + bytecode.RegisterId(k)
 		default:
 			sub[x] = id + bytecode.RegisterId(2*k)

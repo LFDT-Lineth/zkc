@@ -531,8 +531,12 @@ func FieldToUint[W Word[W]](target []RegisterId, source RegisterId) Bytecode[W] 
 	return &bytecode.FieldToUint[W]{Target: target, Source: source}
 }
 
-// Return constructs a return instruction with the given frame width and
-// return offset.
+// Done constructs a done instruction.
+func Done[W Word[W]]() Bytecode[W] {
+	return bytecode.NewDone[W]()
+}
+
+// Return constructs a return instruction.
 func Return[W Word[W]]() Bytecode[W] {
 	return bytecode.NewRet[W]()
 }

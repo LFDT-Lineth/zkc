@@ -1,9 +1,9 @@
 input data(addr:u8) -> (b:u8)
 
 fn main() {
-  f!(data[0])
+    f ! (data[0])
 }
 
-fn f(x:u8) -> ! {
-   fail
+fn f(x:u8) ->  ! {
+    fail
 }

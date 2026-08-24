@@ -167,7 +167,7 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 		//
 		return bytecode.NewMemRead[W2](b.Id, b.Address, b.Data, b.Stamp)
 	case *bytecode.Ret[W1]:
-		return &bytecode.Ret[W2]{}
+		return &bytecode.Ret[W2]{Done: b.Done}
 	case *bytecode.Skip[W1]:
 		return &bytecode.Skip[W2]{Skip: b.Skip}
 	case *bytecode.SkipIf[W1]:

@@ -18,6 +18,8 @@ import (
 
 // Ret (return from function call) instruction.
 type Ret[W word.Word[W]] struct {
+	// Done indicates whether or not this is, in fact, a "done" terminator.
+	Done bool
 }
 
 // Uses implementation for Bytecode interface.  The copying of return values is
@@ -38,5 +40,9 @@ func (p *Ret[W]) Validate(_ FieldConfig, _ Environment[W]) []error {
 }
 
 func (p *Ret[W]) String(_ Environment[W]) string {
+	if p.Done {
+		return "done"
+	}
+	//
 	return "ret"
 }

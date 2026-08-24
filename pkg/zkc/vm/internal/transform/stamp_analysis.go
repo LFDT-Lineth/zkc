@@ -441,20 +441,20 @@ func (t *threader[W]) skipLandings(insns []Bytecode[W]) []bool {
 	return lands
 }
 
-// isExitAt reports whether position i is an exit which must be entered with
-// the stamps in their canonical registers on every path: a jump, a non-main
-// return (main binds no stamp outputs), or the end of the row.  A fail
-// aborts, so it does not force this.
+// isExitAt reports whether position i is an exit which must be entered with the
+// stamps in their canonical registers on every path: a jump, a non-main return
+// (main binds no stamp outputs), or the end of the row.  A fail aborts, so it
+// does not force this.
 func (t *threader[W]) isExitAt(insns []Bytecode[W], i int) bool {
 	if i == len(insns) {
 		return true
 	}
 	//
-	switch insns[i].(type) {
+	switch b := insns[i].(type) {
 	case *bytecode.Jmp[W]:
 		return true
 	case *bytecode.Ret[W]:
-		return !t.isMain
+		return !t.isMain && !b.Done
 	}
 	//
 	return false

@@ -468,6 +468,10 @@ func buildInlinedBody[W word.Word[W]](callee *descriptor.Function[W], shadows []
 		body[i] = v.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
 			switch insn := insn.(type) {
 			case *bytecode.Ret[W]:
+				if insn.Done {
+					return []Bytecode[W]{insn}
+				}
+				//
 				return []Bytecode[W]{bytecode.Jump[W](bytecode.Address(exitPC))}
 			case *bytecode.Jmp[W]:
 				return []Bytecode[W]{bytecode.Jump[W](bytecode.Address(base) + insn.Target)}

@@ -753,6 +753,10 @@ func Test_ZkcInvalid_Call_13(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/call_13")
 }
 
+func Test_ZkcInvalid_Call_14(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/call_14")
+}
+
 // ===================================================================
 // Division Tests
 // ===================================================================

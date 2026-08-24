@@ -75,7 +75,8 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) Bytecod
 		}
 	case *stmt.NeverCall[symbol.Resolved]:
 		return p.compileNeverCall(mapping, s.Name, s.Args)
-
+	case *stmt.Done[symbol.Resolved]:
+		return vm.NewBytecodeVector(vm.Done[vm.Uint]())
 	case *stmt.Return[symbol.Resolved]:
 		return vm.NewBytecodeVector(vm.Return[vm.Uint]())
 	default:

@@ -163,6 +163,8 @@ const (
 	LEAVE_n
 	// RET instruction
 	RET
+	// DONE instruction
+	DONE
 	// RD_ROM_nm instruction
 	RD_ROM_nm
 	// RD_SROM_nm instruction
