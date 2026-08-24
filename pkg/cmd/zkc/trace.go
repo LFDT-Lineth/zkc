@@ -22,11 +22,13 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
@@ -272,19 +274,30 @@ func humanCount(total uint) string {
 }
 
 // Per-module summary column titles, matching those shown by the corset "trace
-// --modules" command.
-var moduleStatTitles = []string{"columns", "lines", "bitwidth", "cells", "nonzero", "bytes"}
+// --modules" command (plus a "unique" column reporting deduplicated lines).
+var moduleStatTitles = []string{"columns", "lines", "unique", "bitwidth", "cells", "nonzero", "bytes"}
 
 // printModuleStats prints a per-module summary for a raw (row-major) trace, much
 // like the corset trace command's module listing.  For each module it reports
-// the column count, line (row) count, total bit-width, total cells, non-zero
-// cells and total bytes.  Native (field-element) limbs, which have no fixed
-// bit-width, are excluded from the bit-width and byte totals.
+// the column count, line (row) count, unique line count (i.e. after duplicate
+// rows are removed), total bit-width, total cells, non-zero cells and total
+// bytes.  Native (field-element) limbs, which have no fixed bit-width, are
+// excluded from the bit-width and byte totals.
 func printModuleStats[F field.Element[F]](rtr trace.Trace[F]) {
 	var (
-		n   = rtr.Width()
-		tbl = termio.NewFormattedTable(uint(len(moduleStatTitles))+1, n+1)
+		n       = rtr.Width()
+		tbl     = termio.NewFormattedTable(uint(len(moduleStatTitles))+1, n+1)
+		modules = make([]trace.Module[F], n)
 	)
+	//
+	for mid := range n {
+		modules[mid] = rtr.Module(mid)
+	}
+	// Compute unique line counts across all modules in parallel, since
+	// deduplication requires scanning every cell of every module.
+	uniques := array.ParallelMap(modules, func(_ uint, mod trace.Module[F]) uint {
+		return uniqueLines(mod)
+	})
 	// Set column titles (leaving the top-left cell blank, as corset does).
 	for i, title := range moduleStatTitles {
 		tbl.Set(uint(i)+1, 0, termio.NewText(title))
@@ -292,7 +305,7 @@ func printModuleStats[F field.Element[F]](rtr trace.Trace[F]) {
 	// Compute a summary row for each module.
 	for mid := range n {
 		var (
-			mod      = rtr.Module(mid)
+			mod      = modules[mid]
 			columns  = mod.Width()
 			lines    = mod.Height()
 			bitwidth uint
@@ -322,6 +335,7 @@ func printModuleStats[F field.Element[F]](rtr trace.Trace[F]) {
 			termio.NewText(mod.Name()),
 			termio.NewText(fmt.Sprintf("%d", columns)),
 			termio.NewText(fmt.Sprintf("%d", lines)),
+			termio.NewText(fmt.Sprintf("%d", uniques[mid])),
 			termio.NewText(fmt.Sprintf("%d", bitwidth)),
 			termio.NewText(fmt.Sprintf("%d", columns*lines)),
 			termio.NewText(fmt.Sprintf("%d", nonzero)),
@@ -334,8 +348,43 @@ func printModuleStats[F field.Element[F]](rtr trace.Trace[F]) {
 	// horizontal rule as wide as the module table.
 	fmt.Println(strings.Repeat("-", int(tbl.PrintedWidth())))
 	// Sort modules (descending) by cell count, skipping the title row.
-	tbl.Sort(1, termio.NewTableSorter().SortNumericalColumn(4).Invert())
+	tbl.Sort(1, termio.NewTableSorter().SortNumericalColumn(5).Invert())
 	tbl.Print(true)
+}
+
+// uniqueLines counts the number of distinct lines (rows) in a module's trace,
+// i.e. its line count after duplicate lines are removed, rounded up to the
+// next power of two (as the prover pads module heights to a power of two).
+// Note this means an empty module still reports one unique line.  Each row is
+// keyed by the concatenation of its cells' raw bytes, with every cell
+// length-prefixed so that boundaries between variable-length encodings remain
+// unambiguous.
+func uniqueLines[F field.Element[F]](mod trace.Module[F]) uint {
+	var (
+		lines   = mod.Height()
+		columns = mod.Width()
+		seen    = make(map[string]struct{}, lines)
+		cols    = make([]array.Array[F], columns)
+		key     []byte
+	)
+	//
+	for cid := range columns {
+		cols[cid] = mod.Column(cid)
+	}
+	//
+	for rid := range lines {
+		key = key[:0]
+		//
+		for cid := range columns {
+			bytes := cols[cid].Get(rid).Bytes()
+			key = append(key, byte(len(bytes)))
+			key = append(key, bytes...)
+		}
+		//
+		seen[string(key)] = struct{}{}
+	}
+	//
+	return math.NextPowerOfTwo(uint(len(seen)))
 }
 
 // byteWidth returns the number of bytes required to hold a value of the given
