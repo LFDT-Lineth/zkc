@@ -1,0 +1,8 @@
+//error:3:8-9:expected type u32, found u16
+fn f(x:u32, y:u16) -> (r:u32) {
+  g!(x+y)
+}
+
+fn g(x:u32) -> ! {
+   fail
+}

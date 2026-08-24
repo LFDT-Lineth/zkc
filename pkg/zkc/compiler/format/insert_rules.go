@@ -37,6 +37,7 @@ func init() {
 	// 'fail' optionally takes a formatted message; only insert a space when one
 	// is actually present, so a bare `fail` does not gain a trailing space.
 	DEFAULT_INSERTION_RULES[parser.KEYWORD_FAIL] = InsertSpaceAfterIfString()
+	DEFAULT_INSERTION_RULES[parser.KEYWORD_DONE] = InsertSpaceAfterIfString()
 	DEFAULT_INSERTION_RULES[parser.KEYWORD_FN] = InsertAfter(ONE_SPACE)
 	DEFAULT_INSERTION_RULES[parser.KEYWORD_FOR] = InsertAfter(ONE_SPACE)
 	DEFAULT_INSERTION_RULES[parser.KEYWORD_IF] = InsertAfter(ONE_SPACE)
@@ -86,6 +87,7 @@ func init() {
 	DEFAULT_INSERTION_RULES[parser.COMMA] = InsertSpaceAfter()
 	DEFAULT_INSERTION_RULES[parser.SEMICOLON] = InsertSemicolonSpace()
 	DEFAULT_INSERTION_RULES[parser.QMARK] = InsertSpaceAround()
+	DEFAULT_INSERTION_RULES[parser.SHRIEK] = InsertSpaceAround()
 	// Space before opening braces (unless already spaced), newline+indent after (unless one follows already).
 	DEFAULT_INSERTION_RULES[parser.LCURLY] = InsertForOpenCurly(DEFAULT_INDENTATION)
 	// Newline+indent before closing braces (unless a newline already precedes it).

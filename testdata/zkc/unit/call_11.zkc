@@ -1,0 +1,13 @@
+input data(addr:u8) -> (b:u8)
+
+fn main() {
+  f!(data[0])
+}
+
+fn f(x:u8) -> ! {
+   if x == 0 {
+      fail
+   }
+   //
+   done
+}

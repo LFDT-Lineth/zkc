@@ -550,9 +550,13 @@ func branchTerminates(stmts []stmt.Resolved) bool {
 		return true
 	case *stmt.Continue[symbol.Resolved]:
 		return true
+	case *stmt.Done[symbol.Resolved]:
+		return true
 	case *stmt.Return[symbol.Resolved]:
 		return true
 	case *stmt.Fail[symbol.Resolved]:
+		return true
+	case *stmt.NeverCall[symbol.Resolved]:
 		return true
 	case *stmt.Goto[symbol.Resolved]:
 		return true

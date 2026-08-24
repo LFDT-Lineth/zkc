@@ -695,9 +695,9 @@ func (t *threader[W]) threadCall(pc uint, call *bytecode.Call[W], states stamps,
 		t.temps[stampKey{e, stampValue{kind: stampCallOut, pc: pc}}] = returns[j]
 	}
 	//
-	return bytecode.CallFun[W](call.Target,
+	return bytecode.NeverCallFun[W](call.Target,
 		append(args, call.Arguments...),
-		append(returns, call.Returns...)), pre
+		append(returns, call.Returns...), call.Never), pre
 }
 
 // withStamp rebuilds a memory access with the given stamp operand.

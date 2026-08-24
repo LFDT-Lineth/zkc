@@ -324,7 +324,13 @@ func AssignV[W word.Word[W]](targets []RegisterId, sources ...RegisterId) Byteco
 
 // CallFun constructs a function-call bytecode with the given flags.
 func CallFun[W word.Word[W]](target ModuleId, args []RegisterId, returns []RegisterId) *Call[W] {
-	return &Call[W]{target, args, returns}
+	return &Call[W]{target, args, returns, false}
+}
+
+// NeverCallFun constructs a (potentially) non-returning function-call bytecode
+// with the given flags.
+func NeverCallFun[W word.Word[W]](target ModuleId, args []RegisterId, returns []RegisterId, never bool) *Call[W] {
+	return &Call[W]{target, args, returns, never}
 }
 
 // Jump creates an unconditional jump instruction transferring control to the

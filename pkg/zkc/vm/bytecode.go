@@ -318,6 +318,12 @@ func Call[W Word[W]](target ModuleId, args []RegisterId, returns []RegisterId) B
 	return bytecode.CallFun[W](target, args, returns)
 }
 
+// NeverCall constructs a "non-returning" function-call bytecode with the given
+// flags.
+func NeverCall[W Word[W]](target ModuleId, args []RegisterId, returns []RegisterId) Bytecode[W] {
+	return bytecode.NeverCallFun[W](target, args, returns, true)
+}
+
 // Jump creates an unconditional jump instruction transferring control to the
 // given target address.
 func Jump[W Word[W]](target Address) Bytecode[W] {

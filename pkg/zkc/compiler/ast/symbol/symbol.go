@@ -39,8 +39,10 @@ const (
 	// WRITEABLE_MEMORY identifies a memory which can be written (i.e. an
 	// output memory, or a read/write memory, etc).
 	WRITEABLE_MEMORY
-	// FUNCTION identifies a function symbol.
-	FUNCTION
+	// RETURN_FUNCTION identifies a function symbol which returns.
+	RETURN_FUNCTION
+	// NORETURN_FUNCTION identifies a no-return function symbol.
+	NORETURN_FUNCTION
 	// CONSTANT identifies a constant symbol.
 	CONSTANT
 	// TYPE_ALIAS identifies a alias symbol.
