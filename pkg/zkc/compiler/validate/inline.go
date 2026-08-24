@@ -29,10 +29,14 @@ import (
 //
 // (2) marked #[native], since native functions have no body to inline;
 //
-// (3) (mutually) recursive with other inlined functions, since inlining such
+// (3) non-returning (i.e. declared "-> !"), since a non-returning function
+// terminates the enclosing frame rather than resuming its caller, meaning
+// there is nothing for the residual code after the call site to inline into;
+//
+// (4) (mutually) recursive with other inlined functions, since inlining such
 // functions can never terminate.
 //
-// Observe that (3) only rejects recursive cycles consisting entirely of
+// Observe that (4) only rejects recursive cycles consisting entirely of
 // inlined functions.  Recursion through a non-inlined function is fine, since
 // the residual call to that function simply remains in the inlined body.
 func InlineFunctions(program ast.Program, srcmaps source.Maps[any]) []source.SyntaxError {
@@ -54,6 +58,8 @@ func InlineFunctions(program ast.Program, srcmaps source.Maps[any]) []source.Syn
 			errors = append(errors, srcmaps.SyntaxErrors(fn, "cannot inline entry function")...)
 		case slices.Contains(fn.Annotations(), "native"):
 			errors = append(errors, srcmaps.SyntaxErrors(fn, "cannot inline native function")...)
+		case fn.NoReturn:
+			errors = append(errors, srcmaps.SyntaxErrors(fn, "cannot inline non-returning function")...)
 		default:
 			remaining = append(remaining, uint(i))
 		}

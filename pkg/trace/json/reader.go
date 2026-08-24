@@ -26,36 +26,52 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
-// FromBytes parses a trace expressed in JSON notation.  For example, {"X":
-// [0], "Y": [1]} is a trace containing one row of data each for two columns "X"
-// and "Y".
-func FromBytes[F field.Element[F]](data []byte) (trace.Trace[F], error) {
+// FromBytes parses a sharded trace expressed in JSON notation.  For example,
+// {"X": [0], "Y": [1]} is a trace containing one row of data each for two
+// columns "X" and "Y".
+func FromBytes[F field.Element[F]](data []byte) (tr trace.Trace[F], err error) {
 	var (
-		rawData map[string]map[string][]big.Int
+		shard           trace.Shard[F]
+		unsharded       map[string]map[string][]big.Int
+		sharded         []map[string]map[string][]big.Int
+		legacyUnsharded map[string][]big.Int
+		legacySharded   []map[string][]big.Int
 	)
 	// Attempt to unmarshall
-	jsonErr := json.Unmarshal(data, &rawData)
-	if jsonErr != nil {
-		// Failed, so try and fall back on the legacy format.
-		return FromBytesLegacy[F](data)
+	if err = json.Unmarshal(data, &sharded); err == nil {
+		for _, data := range sharded {
+			if shard, err = fromBytesInternal[F](data); err != nil {
+				return nil, err
+			}
+			//
+			tr = append(tr, shard)
+		}
+	} else if err = json.Unmarshal(data, &legacySharded); err == nil {
+		for _, data := range legacySharded {
+			if shard, err = fromBytesLegacy[F](data); err != nil {
+				return nil, err
+			}
+			//
+			tr = append(tr, shard)
+		}
+	} else if err = json.Unmarshal(data, &unsharded); err == nil {
+		shard, err = fromBytesInternal[F](unsharded)
+		tr = trace.Trace[F]{shard}
+	} else if err = json.Unmarshal(data, &legacyUnsharded); err == nil {
+		shard, err = fromBytesLegacy[F](legacyUnsharded)
+		tr = trace.Trace[F]{shard}
 	}
 	//
-	return fromBytesInternal[F](rawData)
+	return tr, err
 }
 
 // FromBytesLegacy parses a trace expressed in JSON notation.  For example, {"X":
 // [0], "Y": [1]} is a trace containing one row of data each for two columns "X"
 // and "Y".
-func FromBytesLegacy[F field.Element[F]](data []byte) (trace.Trace[F], error) {
+func fromBytesLegacy[F field.Element[F]](rawData map[string][]big.Int) (trace.Shard[F], error) {
 	var (
-		rawData map[string][]big.Int
 		strData = make(map[string]map[string][]big.Int, 0)
 	)
-	// Unmarshall
-	jsonErr := json.Unmarshal(data, &rawData)
-	if jsonErr != nil {
-		return nil, jsonErr
-	}
 	//
 	for name, rawInts := range rawData {
 		// Translate raw bigints into raw field elements
@@ -77,7 +93,7 @@ func FromBytesLegacy[F field.Element[F]](data []byte) (trace.Trace[F], error) {
 	return fromBytesInternal[F](strData)
 }
 
-func fromBytesInternal[F field.Element[F]](rawData map[string]map[string][]big.Int) (trace.Trace[F], error) {
+func fromBytesInternal[F field.Element[F]](rawData map[string]map[string][]big.Int) (trace.Shard[F], error) {
 	var modules []*trace.CompactModule[F]
 	//
 	for mod, modData := range rawData {

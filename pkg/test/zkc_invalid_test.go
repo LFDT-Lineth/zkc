@@ -1089,6 +1089,11 @@ func Test_ZkcInvalid_Inline_06(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/inline_06")
 }
 
+func Test_ZkcInvalid_Inline_07(t *testing.T) {
+	// Non-returning functions cannot be inlined.
+	checkZkcInvalid(t, "zkc/invalid/inline_07")
+}
+
 func Test_ZkcInvalid_Unused_01(t *testing.T) {
 	// A local variable which is never read or written is unused.
 	checkZkcInvalid(t, "zkc/invalid/unused_01")
@@ -1137,6 +1142,15 @@ func Test_ZkcInvalid_Unreachable_03(t *testing.T) {
 func Test_ZkcInvalid_Unreachable_04(t *testing.T) {
 	// unreachable RAM
 	checkZkcInvalid(t, "zkc/invalid/unreachable_04")
+}
+
+// ===================================================================
+// Global Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Global_01(t *testing.T) {
+	// unreachable RAM
+	checkZkcInvalid(t, "zkc/invalid/global_01")
 }
 
 // ===================================================================

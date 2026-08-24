@@ -221,7 +221,7 @@ func (p *typeDecomposition[F]) AddSource(source register.Ref) {
 
 // Compute computes the values of columns defined by this assignment.
 // This requires computing the value of each byte column in the decomposition.
-func (p *typeDecomposition[F]) Compute(tr trace.Trace[F], schema sc.AnySchema[F],
+func (p *typeDecomposition[F]) Compute(tr trace.Shard[F], schema sc.AnySchema[F],
 ) ([]array.MutArray[F], error) {
 	// Read inputs
 	sources := assignment.ReadRegistersRef(tr, p.sources...)

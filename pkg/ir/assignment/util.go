@@ -20,7 +20,7 @@ import (
 )
 
 // ReadRegistersRef reads the values for a given set of registers from a trace.
-func ReadRegistersRef[F field.Element[F]](trace trace.Trace[F], regs ...register.Ref) []array.Array[F] {
+func ReadRegistersRef[F field.Element[F]](trace trace.Shard[F], regs ...register.Ref) []array.Array[F] {
 	var (
 		targets = make([]array.Array[F], len(regs))
 	)

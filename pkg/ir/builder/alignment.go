@@ -57,7 +57,7 @@ type Config struct {
 // NOTE: alignment is impacted by whether or not the trace is being expanded or
 // not. Specifically, expanding traces don't need to include data for computed
 // columns, since these will be added during expansion.
-func AlignAndPad[F field.Element[F]](config Config, schema sc.AnySchema[F], tr trace.Trace[F],
+func AlignAndPad[F field.Element[F]](config Config, schema sc.AnySchema[F], tr trace.Shard[F],
 ) (ArrayTrace[F], []error) {
 	//
 	var (

@@ -17,7 +17,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/builder"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
@@ -44,15 +43,12 @@ type TraceBuilder[F field.Element[F]] struct {
 	parallel bool
 	// Specify the maximum size of any dispatched batch.
 	batchSize uint
-	// Mapping specifies whether or not columns in the trace need to be split to
-	// match the given field configuration.
-	mapping module.LimbsMap
 }
 
 // NewTraceBuilder constructs a default trace builder.  The idea is that this
 // could then be customized as needed following the builder pattern.
 func NewTraceBuilder[F field.Element[F]]() TraceBuilder[F] {
-	return TraceBuilder[F]{true, true, NextPowerOfTwoPadding, true, math.MaxUint, nil}
+	return TraceBuilder[F]{true, true, NextPowerOfTwoPadding, true, math.MaxUint}
 }
 
 // WithExpansion updates a given builder configuration to perform trace expansion (or
@@ -60,15 +56,6 @@ func NewTraceBuilder[F field.Element[F]]() TraceBuilder[F] {
 func (tb TraceBuilder[F]) WithExpansion(flag bool) TraceBuilder[F] {
 	ntb := tb
 	ntb.expand = flag
-	//
-	return ntb
-}
-
-// WithRegisterMapping updates a given builder configuration to split the trace
-// according to a given mapping of registers.
-func (tb TraceBuilder[F]) WithRegisterMapping(mapping module.LimbsMap) TraceBuilder[F] {
-	ntb := tb
-	ntb.mapping = mapping
 	//
 	return ntb
 }
@@ -123,14 +110,9 @@ func (tb TraceBuilder[F]) BatchSize() uint {
 	return tb.batchSize
 }
 
-// Mapping returns the mapping from registers to limbs used with this builder.
-func (tb TraceBuilder[F]) Mapping() module.LimbsMap {
-	return tb.mapping
-}
-
 // Build attempts to construct a trace for a given schema, producing errors if
 // there are inconsistencies (e.g. missing columns, duplicate columns, etc).
-func (tb TraceBuilder[F]) Build(schema sc.AnySchema[F], tf trace.Trace[F]) (tr trace.Trace[F], errs []error) {
+func (tb TraceBuilder[F]) Build(schema sc.AnySchema[F], tf trace.Shard[F]) (tr trace.Shard[F], errs []error) {
 	var (
 		atr    builder.ArrayTrace[F]
 		config = builder.Config{

@@ -24,15 +24,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -176,11 +171,7 @@ type CheckConfig struct {
 func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, tracefile string,
 	schemas cmd_util.SchemaStacker[F]) {
 	//
-	var (
-		errors []error
-		traces []tr.Trace[F]
-		ok     bool = true
-	)
+	var traces []tr.Trace[F]
 	//
 	stats := util.NewPerfStats()
 	// Extract debug information (if available)
@@ -196,15 +187,7 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 		traces = []tr.Trace[F]{ReadTraceFile[F](tracefile)}
 	}
 	// Go!
-	if len(errors) == 0 {
-		ok = checkTraces(traces, schemas, cfg) && ok
-	}
-	// Handle errors
-	if !ok || len(errors) > 0 {
-		for _, err := range errors {
-			log.Errorf("%s\n", err.Error())
-		}
-		//
+	if ok := checkTraces(traces, schemas, cfg); !ok {
 		os.Exit(1)
 	}
 }
@@ -212,7 +195,7 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 func checkTraces[F field.Element[F]](traces []tr.Trace[F], stacker cmd_util.SchemaStacker[F],
 	cfg CheckConfig) bool {
 	//
-	for _, tf := range traces {
+	for _, trace := range traces {
 		// Configure stack.  This is important to ensure true separation
 		// between runs (e.g. for the io.Executor).
 		stack := stacker.Build()
@@ -223,7 +206,7 @@ func checkTraces[F field.Element[F]](traces []tr.Trace[F], stacker cmd_util.Sche
 		// identify schema name
 		ir := stack.ConcreteIrName()
 		//
-		if ok := CheckTrace(ir, schema, tf, builder, cfg); !ok {
+		if ok := CheckTrace(ir, schema, builder, cfg, trace); !ok {
 			return false
 		}
 	}
@@ -233,24 +216,36 @@ func checkTraces[F field.Element[F]](traces []tr.Trace[F], stacker cmd_util.Sche
 
 // CheckTrace checks a given set of constraints against a given trace file using
 // a configured trace builder and check configuration.
-func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], tf tr.Trace[F], builder ir.TraceBuilder[F],
-	cfg CheckConfig) bool {
+func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], builder ir.TraceBuilder[F],
+	cfg CheckConfig, trace tr.Trace[F]) bool {
 	// begin performance measurement
-	stats := util.NewPerfStats()
-	trace, errs := builder.Build(schema, tf)
+	var (
+		mapping          = module.IdentityMap[F](schema.Modules().Collect()...)
+		stats            = util.NewPerfStats()
+		recoverable bool = true
+		errs        []error
+	)
+	//
+	for i, shard := range trace {
+		var es []error
+
+		trace[i], es = builder.Build(schema, shard)
+		errs = append(errs, es...)
+		recoverable = recoverable && (trace[i] != nil)
+	}
 	// Log cost of expansion
 	stats.Log("Expanding trace columns")
 	// Report any errors
 	reportErrors(ir, errs)
 	// Check whether considered unrecoverable
-	if trace == nil || len(errs) > 0 {
+	if !recoverable || len(errs) > 0 {
 		return false
 	}
 	//
 	stats = util.NewPerfStats()
 	// Check constraints
 	if errs := sc.Accepts(builder.Parallelism(), schema, trace); len(errs) > 0 {
-		ReportFailures(ir, errs, trace, builder.Mapping(), cfg)
+		ReportFailures(ir, mapping, cfg, trace, errs)
 		return false
 	}
 	//
@@ -261,15 +256,13 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], tf tr.Tra
 
 // ReportFailures reports constraint failures, whilst providing contextual
 // information (when requested).
-func ReportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace tr.Trace[F],
-	mapping module.LimbsMap, cfg CheckConfig) {
+func ReportFailures[F field.Element[F]](ir string,
+	mapping module.LimbsMap, cfg CheckConfig, trace tr.Trace[F], failures []sc.Failure[F]) {
 	//
-	var (
-		errs = make([]error, len(failures))
-	)
+	var errs = make([]error, len(failures))
 	//
-	for i, f := range failures {
-		errs[i] = errors.New(f.Message())
+	for j, f := range failures {
+		errs[j] = errors.New(f.Message())
 	}
 	// First, log errors
 	reportErrors(ir, errs)
@@ -282,34 +275,33 @@ func ReportFailures[F field.Element[F]](ir string, failures []sc.Failure, trace 
 }
 
 // Print a human-readable report detailing the given failure
-func reportFailure[F field.Element[F]](failure sc.Failure, trace tr.Trace[F], mapping module.LimbsMap,
+func reportFailure[F field.Element[F]](failure sc.Failure[F], trace tr.Trace[F], mapping module.LimbsMap,
 	cfg CheckConfig) {
+	// Identify all relevant cells
+	var cells = failure.RequiredCells(trace)
+	fmt.Printf("failing constraint %s:\n", failure.Handle())
 	//
-	if f, ok := failure.(*vanishing.Failure[F]); ok {
-		cells := f.RequiredCells(trace)
-		fmt.Printf("failing constraint %s:\n", f.Handle)
-		reportRelevantCells(cells, trace, mapping, cfg)
-	} else if f, ok := failure.(*ranged.Failure[F]); ok {
-		cells := f.RequiredCells(trace)
-		fmt.Printf("failing range constraint %s:\n", f.Handle)
-		reportRelevantCells(cells, trace, mapping, cfg)
-	} else if f, ok := failure.(*lookup.Failure[F]); ok {
-		cells := f.RequiredCells(trace)
-		fmt.Printf("failing lookup constraint %s:\n", f.Handle)
-		reportRelevantCells(cells, trace, mapping, cfg)
-	} else if f, ok := failure.(*bus.Failure[F]); ok {
-		cells := f.RequiredCells(trace)
-		fmt.Printf("failing bus constraint %s:\n", f.Handle)
-		reportRelevantCells(cells, trace, mapping, cfg)
-	} else if f, ok := failure.(*constraint.InternalFailure[F]); ok {
-		cells := f.RequiredCells(trace)
-		fmt.Printf("%s:\n", f.Message())
-		reportRelevantCells(cells, trace, mapping, cfg)
+	for i, shard := range trace {
+		// Filter out cells relevant to the given shard
+		var (
+			lsharded = array.Filter(cells, func(r tr.ShardedCellRef) bool {
+				return r.Shard == uint(i)
+			})
+			// Map to cell refs
+			lcells = array.Map(lsharded, func(_ uint, r tr.ShardedCellRef) tr.CellRef {
+				return r.Ref
+			})
+		)
+		// Check whether anything to report for this
+		if len(lcells) > 0 {
+			// Print out cells for the given shard.
+			reportRelevantCells(lcells, shard, mapping, cfg)
+		}
 	}
 }
 
 // Print a human-readable report detailing the given failure with a vanishing constraint.
-func reportRelevantCells[F field.Element[F]](cells *set.AnySortedSet[tr.CellRef], trace tr.Trace[F],
+func reportRelevantCells[F field.Element[F]](cells []tr.CellRef, trace tr.Shard[F],
 	mapping module.LimbsMap, cfg CheckConfig) {
 	// Construct trace window
 	builder := view.NewBuilder[F](mapping).
@@ -317,7 +309,7 @@ func reportRelevantCells[F field.Element[F]](cells *set.AnySortedSet[tr.CellRef]
 		WithComputed(cfg.ReportComputed).
 		WithCellWidth(cfg.ReportCellWidth).
 		WithTitleWidth(cfg.ReportTitleWidth).
-		WithFormatting(view.NewCellFormatter(*cells, cfg.AnsiEscapes))
+		WithFormatting(view.NewCellFormatter(cells, cfg.AnsiEscapes))
 		//
 	if cfg.CorsetSourceMap != nil {
 		builder = builder.WithSourceMap(*cfg.CorsetSourceMap)
@@ -325,7 +317,7 @@ func reportRelevantCells[F field.Element[F]](cells *set.AnySortedSet[tr.CellRef]
 	// Build window
 	window := builder.Build(trace)
 	// Focus window on those cells relevant to the failure
-	window = window.Filter(view.FilterForCells(*cells, cfg.ReportPadding))
+	window = window.Filter(view.FilterForCells(cells, cfg.ReportPadding))
 	// Print all windows
 	for i := range window.Width() {
 		var (

@@ -35,7 +35,20 @@ func NewLimbsMap[F any, M register.Map](field field.Config, modules ...M) LimbsM
 		mappings = append(mappings, regmap)
 	}
 	//
-	return limbsMap[register.LimbsMap]{field, mappings}
+	return limbsMap[register.LimbsMap]{mappings}
+}
+
+// IdentityMap constructs a "identity" mapping which maps each register to
+// itself.
+func IdentityMap[F any, M register.Map](modules ...M) LimbsMap {
+	var mappings []register.LimbsMap
+	//
+	for _, m := range modules {
+		regmap := register.IdentityMap[F](m)
+		mappings = append(mappings, regmap)
+	}
+	//
+	return limbsMap[register.LimbsMap]{mappings}
 }
 
 // ============================================================================
@@ -45,13 +58,7 @@ func NewLimbsMap[F any, M register.Map](field field.Config, modules ...M) LimbsM
 // limbsMap provides a straightforward implementation of the schema.LimbMap
 // interface.
 type limbsMap[T register.Map] struct {
-	field   field.Config
 	modules []T
-}
-
-// Field implementation for schema.LimbMap interface
-func (p limbsMap[T]) Field() field.Config {
-	return p.field
 }
 
 // Module implementation for register.RegisterMappings interface
@@ -79,8 +86,6 @@ func (p limbsMap[T]) String() string {
 	var builder strings.Builder
 	//
 	builder.WriteString("[")
-	builder.WriteString(p.field.Name)
-	builder.WriteString(":")
 	//
 	for i, m := range p.modules {
 		if i != 0 {

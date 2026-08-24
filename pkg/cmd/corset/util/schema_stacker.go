@@ -24,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -157,11 +158,11 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 		mirSchema := mir.Concretize[word.BigEndian, F](absSchema.RawModules())
 		// Construct a trivial (unsplit) register mapping, since registers are
 		// no longer subdivided into limbs.
-		mapping := IdentityMapping[F](p.corsetConfig.Field.Name, mirSchema.RawModules()...)
-		//
 		stats.Log("translation")
 		// Record mapping
-		stack.mapping = mapping
+		stack.mapping = module.IdentityMap[F](mirSchema.Modules().Collect()...)
+		// Copy over builder
+		stack.traceBuilder = p.traceBuilder
 		// Include Mid-level IR layer (if requested)
 		if p.layers.Contains(MIR_LAYER) {
 			stack.concreteSchemas = append(stack.concreteSchemas, mirSchema)

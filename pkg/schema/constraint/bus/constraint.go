@@ -17,6 +17,7 @@ import (
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
@@ -44,18 +45,14 @@ type Constraint[F field.Element[F]] struct {
 // NewConstraint creates a bus constraint, requiring all ports share one width.
 func NewConstraint[F field.Element[F]](handle string, sends []Port, receives []Port) Constraint[F] {
 	var width uint
-	//
-	for i, ith := range sends {
-		if i != 0 && ith.Len() != width {
-			panic("inconsistent number of send registers on bus")
-		}
-
-		width = ith.Len()
-	}
-	//
-	for _, ith := range receives {
-		if ith.Len() != width {
-			panic("inconsistent number of receive registers on bus")
+	// Take the width from whichever side has ports, rather than from the sends
+	// alone.  A bus missing one direction entirely is a user error reported by
+	// Consistent, so it must not panic here.
+	for i, ith := range slices.Concat(sends, receives) {
+		if i == 0 {
+			width = ith.Len()
+		} else if ith.Len() != width {
+			panic(fmt.Sprintf("inconsistent port widths on bus %q (%d vs %d)", handle, width, ith.Len()))
 		}
 	}
 
@@ -134,19 +131,13 @@ func (p Constraint[F]) Bounds(module uint) util.Bounds {
 	return util.EMPTY_BOUND
 }
 
-// Accepts checks whether the bus balances within a single trace.
-//
-//nolint:revive
-func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
-	return p.AcceptsGroup(tr)
-}
-
-// AcceptsGroup checks whether the bus balances across a group of traces
+// Accepts checks whether the bus balances across a group of traces
 // judged together.
-func (p Constraint[F]) AcceptsGroup(traces ...trace.Trace[F]) schema.Failure {
+func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F],
+) (failures []schema.Failure[F]) {
 	tally := hash.NewMap[hash.Array[F], int](32)
 	//
-	for _, tr := range traces {
+	for _, tr := range trace {
 		p.accumulate(tr, p.Sends, tally, 1)
 		p.accumulate(tr, p.Receives, tally, -1)
 	}
@@ -158,51 +149,43 @@ func (p Constraint[F]) AcceptsGroup(traces ...trace.Trace[F]) schema.Failure {
 		if pair.Right != 0 {
 			var (
 				message  = pair.Left.Elements()
-				sent     = p.count(traces, p.Sends, message)
-				received = p.count(traces, p.Receives, message)
+				sent     = p.count(trace, p.Sends, message)
+				received = p.count(trace, p.Receives, message)
 			)
 			//
-			return &Failure[F]{p.Handle, message, sent, received, p.Sends, p.Receives}
+			failures = append(failures, &Failure[F]{p.Handle, message, sent, received, p.Sends, p.Receives})
 		}
 	}
 	//
-	return nil
-}
-
-// NetTally computes one trace's tally (sends minus receives), allowing a
-// checking harness to combine shards by addition.
-func (p Constraint[F]) NetTally(tr trace.Trace[F]) *Tally[F] {
-	tally := hash.NewMap[hash.Array[F], int](32)
-	//
-	p.accumulate(tr, p.Sends, tally, 1)
-	p.accumulate(tr, p.Receives, tally, -1)
-	//
-	return tally
+	return failures
 }
 
 // accumulate adds the given sign to the tally for every selected row of each
 // port.
-func (p Constraint[F]) accumulate(tr trace.Trace[F], ports []Port, tally *Tally[F], sign int) {
+func (p Constraint[F]) accumulate(tr trace.Shard[F], ports []Port, tally *Tally[F], sign int) {
+	// add is the tally update applied to each selected row.
+	var add = func(count int) int { return count + sign }
+	//
 	for _, port := range ports {
 		var trModule = tr.Module(port.Module)
+		// Allocate scratch space for this port.
+		var buffer = make([]F, port.Len())
 		//
 		for row := range trModule.Height() {
-			if trModule.Column(port.Selector.Unwrap()).Get(row).IsZero() {
-				continue
+			if isSelected(row, port.Selector, trModule) {
+				//
+				for i, rid := range port.Registers {
+					buffer[i] = trModule.Column(rid.Unwrap()).Get(row)
+				}
+				//
+				var key = hash.NewArray(buffer)
+				// Insert item whilst checking whether the buffer was consumed or not
+				if !tally.Update(key, add, sign) {
+					// Yes, buffer consumed.  Therefore, construct fresh buffer to avoid
+					// aliasing the value now stored in the hash set.
+					buffer = slices.Clone(buffer)
+				}
 			}
-			//
-			var message = make([]F, port.Len())
-			//
-			for i, rid := range port.Registers {
-				message[i] = trModule.Column(rid.Unwrap()).Get(row)
-			}
-			//
-			var (
-				key      = hash.NewArray(message)
-				count, _ = tally.Get(key)
-			)
-			//
-			tally.Insert(key, count+sign)
 		}
 	}
 }
@@ -210,7 +193,7 @@ func (p Constraint[F]) accumulate(tr trace.Trace[F], ports []Port, tally *Tally[
 // count returns how many times the given message is contributed by the given
 // ports across all traces.  This rescans the traces, which is fine since it
 // only ever runs when reporting a failure.
-func (p Constraint[F]) count(traces []trace.Trace[F], ports []Port, message []F) uint {
+func (p Constraint[F]) count(traces trace.Trace[F], ports []Port, message []F) uint {
 	var n uint
 	//
 	for _, tr := range traces {
@@ -218,21 +201,19 @@ func (p Constraint[F]) count(traces []trace.Trace[F], ports []Port, message []F)
 			var trModule = tr.Module(port.Module)
 			//
 			for row := range trModule.Height() {
-				if trModule.Column(port.Selector.Unwrap()).Get(row).IsZero() {
-					continue
-				}
-				//
-				var matches = true
-				//
-				for i, rid := range port.Registers {
-					if !trModule.Column(rid.Unwrap()).Get(row).Equals(message[i]) {
-						matches = false
-						break
+				if isSelected(row, port.Selector, trModule) {
+					var matches = true
+					//
+					for i, rid := range port.Registers {
+						if !trModule.Column(rid.Unwrap()).Get(row).Equals(message[i]) {
+							matches = false
+							break
+						}
 					}
-				}
-				//
-				if matches {
-					n++
+					//
+					if matches {
+						n++
+					}
 				}
 			}
 		}
@@ -264,4 +245,12 @@ func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
 		sends,
 		receives,
 	})
+}
+
+// isSelected determines whether or not the given row of the given vector is
+// selected.  A row without a selector is always selected; otherwise, it is
+// selected when its selector is non-zero.
+func isSelected[F field.Element[F]](k uint, id register.Id, trModule trace.Module[F]) bool {
+	// Otherwise, selected when selector non-zero.
+	return !trModule.Column(id.Unwrap()).Get(k).IsZero()
 }

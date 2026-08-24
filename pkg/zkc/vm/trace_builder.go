@@ -14,13 +14,12 @@ package vm
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Trace defines the type of a general trace
-type Trace[F field.Element[F]] = trace.Trace[F]
+type Trace[F field.Element[F]] = trace.Shard[F]
 
 // Element defines the type of field elements
 type Element[F any] = field.Element[F]
@@ -35,7 +34,7 @@ type Tracer[W Word[W], F Element[F], T any] interface {
 	// Construct the trace for a given memory of some kind
 	TraceMemory(mid uint16, m RuntimeMemory[W], cfg field.Config)
 	// Build the final trace
-	Build() trace.Trace[F]
+	Build() trace.Shard[F]
 }
 
 // TraceBuilder provides a generic mechanism for tracing a given program, and
@@ -59,42 +58,22 @@ func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T]](config TraceCon
 // the input is malformed (e.g. is missing expected fields and/or contains
 // unexpected fields).
 func (p TraceBuilder[W, F, T]) BootAndTrace(inputs map[string][]byte,
-) (tr trace.Trace[F], outputs map[string][]byte, errors []error) {
+) (shards trace.Trace[F], outputs map[string][]byte, errors []error) {
 	// Check whether we have a sharding strategy
 	if p.config.shardingStrategy.IsEmpty() {
+		var tr trace.Shard[F]
 		// no strategy, therefore trace sequentially
-		return BootAndTrace[W, F, T](p.tracing, inputs)
+		tr, outputs, errors = BootAndTrace[W, F, T](p.tracing, inputs)
+		//
+		return trace.Trace[F]{tr}, outputs, errors
 	}
 	// apply sharding strategy
-	shards, outputs, errors := p.checkpointAndTrace(inputs)
-	// Perform trace reduction
-	var stats = util.NewPerfStats()
-	// Recombine shards
-	if p.config.parallel {
-		// Parallel
-		tr = trace.ParallelReduce(shards)
-		//
-		stats.Log("Trace reduction (parallel)")
-	} else {
-		// Sequential
-		tr = trace.Reduce(shards)
-		//
-		stats.Log("Trace reduction (sequential)")
-	}
-	//
-	return tr, outputs, errors
+	return p.bootAndTraceShards(inputs)
 }
 
-// BootAndTraceShards shards generates a given number of shards from a given
-// program.
-func (p TraceBuilder[W, F, T]) BootAndTraceShards(inputs map[string][]byte,
-) (traces []Trace[F], outputs map[string][]byte, errors []error) {
-	panic("todo")
-}
-
-// Parallel BootAndTrace performs sharding according to the given sharding
+// Sharded BootAndTrace performs sharding according to the given sharding
 // strategy.
-func (p TraceBuilder[W, F, T]) checkpointAndTrace(inputs map[string][]byte,
+func (p TraceBuilder[W, F, T]) bootAndTraceShards(inputs map[string][]byte,
 ) ([]Trace[F], map[string][]byte, []error) {
 	var (
 		strategy = p.config.shardingStrategy.Unwrap()

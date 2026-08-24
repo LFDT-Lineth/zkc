@@ -1,4 +1,4 @@
 ;; send on bus1 answered on bus2 - buses must not cancel against each other
-{"alpha.S1": [1], "alpha.S2": [0], "alpha.A": [5], "beta.R1": [0], "beta.R2": [1], "beta.X": [5]}
+{"sndr.S1": [1], "sndr.S2": [0], "sndr.A": [5], "rcvr.R1": [0], "rcvr.R2": [1], "rcvr.X": [5]}
 ;; bus1 balanced, bus2 not
-{"alpha.S1": [1], "alpha.S2": [1], "alpha.A": [5], "beta.R1": [1], "beta.R2": [0], "beta.X": [5]}
+{"sndr.S1": [1], "sndr.S2": [1], "sndr.A": [5], "rcvr.R1": [1], "rcvr.R2": [0], "rcvr.X": [5]}

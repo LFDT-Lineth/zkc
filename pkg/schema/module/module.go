@@ -16,7 +16,6 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Name abstracts the notion of a module name.
@@ -29,11 +28,6 @@ type Id = uint
 // maps.
 type Map[T register.Map] interface {
 	fmt.Stringer
-	// Field returns the underlying field configuration used for this mapping.
-	// This includes the field bandwidth (i.e. number of bits available in
-	// underlying field) and the maximum register width (i.e. width at which
-	// registers are capped).
-	Field() field.Config
 	// Module returns register mapping information for the given module.
 	Module(Id) T
 	// ModuleOf returns register mapping information for the given module.
@@ -43,8 +37,8 @@ type Map[T register.Map] interface {
 }
 
 // NewMap constructs a new module map
-func NewMap[T register.Map](field field.Config, modules []T) Map[T] {
-	return limbsMap[T]{field, modules}
+func NewMap[T register.Map](modules []T) Map[T] {
+	return limbsMap[T]{modules}
 }
 
 // Apply converts a module map of one kind into a module map of another kind.
@@ -57,5 +51,5 @@ func Apply[S, T register.Map](mapping Map[S], fn func(S) T) Map[T] {
 		mods[i] = fn(mapping.Module(i))
 	}
 	//
-	return NewMap(mapping.Field(), mods)
+	return NewMap(mods)
 }

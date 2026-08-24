@@ -24,11 +24,6 @@ import (
 // register to those limbs into which it was subdivided.
 type LimbsMap interface {
 	Map
-	// Field returns the underlying field configuration used for this mapping.
-	// This includes the field bandwidth (i.e. number of bits available in
-	// underlying field) and the maximum register width (i.e. width at which
-	// registers are capped).
-	Field() field.Config
 	// Limbs identifies the limbs into which a given register is divided.
 	// Observe that limbs are ordered by their position in the original
 	// register.  In particular, the first limb (i.e. at index 0) is always
@@ -78,7 +73,29 @@ func NewLimbsMap[F any](field field.Config, module Map) limbsMap {
 	// Done
 	return limbsMap{
 		module.Name(),
-		field,
+		regs,
+		limbs,
+		mapping,
+	}
+}
+
+// IdentityMap constructs an identity mapping which maps each register to
+// itself, etc.
+func IdentityMap[F any](module Map) limbsMap {
+	var (
+		regs    = module.Registers()
+		limbs   []Limb
+		mapping = make([][]LimbId, len(regs))
+	)
+	// Split up limbs
+	for i, r := range regs {
+		limbs = append(limbs, r)
+		// Assign mapping
+		mapping[i] = []Id{NewId(uint(i))}
+	}
+	// Done
+	return limbsMap{
+		module.Name(),
 		regs,
 		limbs,
 		mapping,
@@ -99,8 +116,6 @@ func NewLimbsMap[F any](field field.Config, module Map) limbsMap {
 type limbsMap struct {
 	// Name of the module to which this mapping corresponds
 	name string
-	// Field configuration in play
-	field field.Config
 	// Set of registers in the original schema (i.e. as they were before the
 	// split)
 	registers []Register
@@ -108,11 +123,6 @@ type limbsMap struct {
 	limbs []Limb
 	// Mapping for each register above to its corresponding set of limbs.
 	mapping [][]LimbId
-}
-
-// Field implementation for register.Map interface
-func (p limbsMap) Field() field.Config {
-	return p.field
 }
 
 // Limbs implementation for the register.Map interface
@@ -133,7 +143,7 @@ func (p limbsMap) Limbs() []Limb {
 // LimbsMap implementation for the register.Map interface
 func (p limbsMap) LimbsMap() Map {
 	return limbsMap{
-		p.name, p.field, p.limbs, nil, nil,
+		p.name, p.limbs, nil, nil,
 	}
 }
 

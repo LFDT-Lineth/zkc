@@ -130,7 +130,7 @@ func (p Builder[F]) WithVisibility(public func(string) bool) Builder[F] {
 }
 
 // Build the viewing window for this trace.
-func (p Builder[F]) Build(trace tr.Trace[F]) TraceView {
+func (p Builder[F]) Build(trace tr.Shard[F]) TraceView {
 	var windows []ModuleView
 	//
 	srcmap, enums := extractSourceMap(p.srcmap)

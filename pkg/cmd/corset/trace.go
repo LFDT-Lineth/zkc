@@ -202,7 +202,7 @@ type TraceConfig struct {
 	stats bool
 }
 
-func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) view.TraceFilter {
+func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Shard[F]) view.TraceFilter {
 	return view.NewTraceFilter(func(mid module.Id) view.ModuleFilter {
 		return view.NewModuleFilter(cfg.startRow, cfg.endRow, func(col view.SourceColumn) bool {
 			// Construct fully qualified name
@@ -238,52 +238,63 @@ func expandTrace[F field.Element[F]](tf tr.Trace[F], stack cmd_util.SchemaStack[
 	var (
 		tb_errors []error
 		tp_errors []error
-		tr        tr.Trace[F]
+		tr        = make(tr.Trace[F], len(tf))
 	)
-	// Construct expanded trace
-	tr, tb_errors = bldr.Build(stack.ConcreteSchema(), tf)
-	// Handle errors
-	if len(tb_errors) > 0 {
-		for _, err := range tb_errors {
-			log.Errorln(err)
+	//
+	for i, shard := range tf {
+		// Construct expanded trace
+		tr[i], tb_errors = bldr.Build(stack.ConcreteSchema(), shard)
+		// Handle errors
+		if len(tb_errors) > 0 {
+			for _, err := range tb_errors {
+				log.Errorln(err)
+			}
+			//
+			os.Exit(1)
 		}
-		//
-		os.Exit(1)
 	}
 	// Now, reconstruct it!
 	return tr, tp_errors
 }
 
 func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {
-	// Construct trace window
-	view := view.NewBuilder[F](cfg.mapping).
-		WithCellWidth(cfg.maxCellWidth).
-		WithTitleWidth(cfg.maxTitleWidth).
-		WithLimbs(cfg.showLimbs).
-		WithComputed(cfg.showComputed)
-	// Add source map (if applicable)
-	if cfg.sourceMap != nil {
-		view = view.WithSourceMap(*cfg.sourceMap)
-	}
-	// Construct viewing window
-	window := view.Build(trace)
-	// Construct & apply trace filter
-	window = window.Filter(constructTraceFilter(cfg, trace))
-	// Print column summaries (if requested)
-	if cfg.columns {
-		listColumns(cfg, window)
-	}
-	// Print module summaries (if requested)
-	if cfg.modules {
-		listModules(cfg, window)
-	}
-	// Print trace summary (if requested)
-	if cfg.stats {
-		summaryStats(window)
-	}
-	// Print full trace (if requested)
-	if cfg.trace {
-		printTrace(window)
+	for i, shard := range trace {
+		//
+		if len(trace) > 0 {
+			fmt.Println()
+			fmt.Printf("Shard #%d\n", i)
+			fmt.Println(strings.Repeat("-", int(80)))
+		}
+		// Construct trace window
+		view := view.NewBuilder[F](cfg.mapping).
+			WithCellWidth(cfg.maxCellWidth).
+			WithTitleWidth(cfg.maxTitleWidth).
+			WithLimbs(cfg.showLimbs).
+			WithComputed(cfg.showComputed)
+		// Add source map (if applicable)
+		if cfg.sourceMap != nil {
+			view = view.WithSourceMap(*cfg.sourceMap)
+		}
+		// Construct viewing window
+		window := view.Build(shard)
+		// Construct & apply trace filter
+		window = window.Filter(constructTraceFilter(cfg, shard))
+		// Print column summaries (if requested)
+		if cfg.columns {
+			listColumns(cfg, window)
+		}
+		// Print module summaries (if requested)
+		if cfg.modules {
+			listModules(cfg, window)
+		}
+		// Print trace summary (if requested)
+		if cfg.stats {
+			summaryStats(window)
+		}
+		// Print full trace (if requested)
+		if cfg.trace {
+			printTrace(cfg, window)
+		}
 	}
 }
 

@@ -129,7 +129,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// =====================================================
 	if check && trace != nil {
 		// NOTE: check ==> tracing
-		checkConstraints(binfile, trace, traceConfig)
+		checkConstraints(binfile, traceConfig, trace)
 	}
 	// =====================================================
 	// Report Execution Failures
@@ -144,8 +144,8 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	}
 }
 
-func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F], tr trace.Trace[F],
-	cfg vm.TraceConfig) {
+func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F],
+	cfg vm.TraceConfig, trace trace.Trace[F]) {
 	//
 	var checkConfig corset.CheckConfig
 	// Set sensible defaults (for now)
@@ -159,8 +159,8 @@ func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F], tr
 	// Construct limbs map
 	mapping := binfile.LimbsMap()
 	// Run the check
-	if failures := binfile.Check(tr, cfg); len(failures) > 0 {
-		corset.ReportFailures("AIR", failures, tr, mapping, checkConfig)
+	if failures := binfile.Check(cfg, trace); len(failures) > 0 {
+		corset.ReportFailures("AIR", mapping, checkConfig, trace, failures)
 	}
 }
 

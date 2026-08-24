@@ -19,13 +19,18 @@ import (
 
 // FunctionKind captures the execution-relevant properties of a function.
 type FunctionKind struct {
-	native, unsafeArgs, inline, never bool
+	native, unsafeArgs, inline, never, global bool
 }
 
 // IsNative reports whether this function is backed by a native circuit rather
 // than bytecode instructions.
 func (p FunctionKind) IsNative() bool {
 	return p.native
+}
+
+// IsGlobal reports whether this function must support cross-shard calls (or not).
+func (p FunctionKind) IsGlobal() bool {
+	return p.global
 }
 
 // CanInline reports whether or not this function was marked as inlineable or
@@ -57,6 +62,14 @@ func (p FunctionKind) WithInline(flag bool) FunctionKind {
 // or not.
 func (p FunctionKind) WithNative(flag bool) FunctionKind {
 	p.native = flag
+	//
+	return p
+}
+
+// WithGlobal updates this kind as to whether it represents a global function,
+// or not.
+func (p FunctionKind) WithGlobal(flag bool) FunctionKind {
+	p.global = flag
 	//
 	return p
 }
@@ -133,5 +146,5 @@ func (p *FunctionKind) GobDecode(data []byte) error {
 
 var (
 	// BYTECODE_FUNCTION represents a safe function implemented by bytecode.
-	BYTECODE_FUNCTION = FunctionKind{false, false, false, false}
+	BYTECODE_FUNCTION = FunctionKind{false, false, false, false, false}
 )

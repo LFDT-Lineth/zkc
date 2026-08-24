@@ -273,13 +273,13 @@ func (p *BinaryFile[F]) clearCachedArtifacts() {
 
 // Check a given trace against the AIR constraints embodied in this constraints
 // file, potentially producing one (or more) constraint failures.
-func (p *BinaryFile[F]) Check(tr trace.Trace[F], config vm.TraceConfig) []schema.Failure {
+func (p *BinaryFile[F]) Check(config vm.TraceConfig, trace trace.Trace[F]) []schema.Failure[F] {
 	var (
 		sc    = p.AirConstraints()
 		stats = util.NewPerfStats()
 	)
 	// Check constraints
-	failures := schema.Accepts(config.Parallelism(), sc, tr)
+	failures := schema.Accepts(config.Parallelism(), sc, trace)
 	// Log stats
 	stats.Log("Constraint checking")
 	//
@@ -309,7 +309,7 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte) (output map[string][]by
 // carries the original register / limb structure before AIR expansion (e.g. for
 // reporting statistics).  It is nil when execution fails.
 func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
-) (output map[string][]byte, rtr trace.Trace[F], errs []error) {
+) (output map[string][]byte, trace trace.Trace[F], errs []error) {
 	//
 	var (
 		stats = util.NewPerfStats()
@@ -317,9 +317,9 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
 		builder = vm.NewTraceBuilder[vm.Uint32, F, Tracer[F]](cfg, p.TracingProgram())
 	)
 	// Execute machine in chunks of 1K steps
-	rtr, output, errs = builder.BootAndTrace(input)
+	trace, output, errs = builder.BootAndTrace(input)
 	//
-	if rtr != nil {
+	if len(trace) > 0 {
 		var berrs []error
 		// Extract AIR constraints
 		constraints := p.AirConstraints()
@@ -331,15 +331,18 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
 			WithParallelism(cfg.Parallelism()).
 			WithBatchSize(cfg.BatchSize()).
 			WithPadding(cfg.PaddingStrategy())
-		// Build the trace (finally)
-		rtr, berrs = builder.Build(constraints, rtr)
-		// Include any builder errors
-		errs = append(errs, berrs...)
+		// Expand shards one-by-one
+		for i, shard := range trace {
+			// Build the trace (finally)
+			trace[i], berrs = builder.Build(constraints, shard)
+			// Include any builder errors
+			errs = append(errs, berrs...)
+		}
 	}
 	//
-	stats.Log("Trace generation")
+	stats.Log(fmt.Sprintf("Trace generation (%d shards)", len(trace)))
 	//
-	return output, rtr, errs
+	return output, trace, errs
 }
 
 // ============================================================================

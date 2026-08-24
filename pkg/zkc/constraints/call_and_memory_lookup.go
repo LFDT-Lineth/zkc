@@ -80,8 +80,13 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 			for _, entry := range group.entries {
 				switch c := entry.code.(type) {
 				case *vm.BytecodeCall[W]:
+					// TODO: put global functions "on the bus"
+					//
+					// var global = infos[c.Target].(*vm.Function[W]).Kind().IsGlobal()
+					//
 					emitCallLookup(mod, ctx, uint(pc), uint(c.Target),
 						toRegisterIds(c.Arguments), toRegisterIds(c.Returns), srcSelector, infos)
+
 				case *vm.BytecodeReadWrite[W]:
 					if infos[c.Id].(*vm.Memory[W]).IsReadWrite() {
 						emitRamLookup(mod, ctx, uint(pc), entry.cc, c, srcSelector, infos, field)
