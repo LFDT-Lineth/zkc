@@ -272,9 +272,12 @@ const (
 	ORC
 	// XORC (xor with constant) instruction [must follow ORC]
 	XORC
-	// TAILCALL_n instruction: identical to ENTER_n in every respect (same
-	// payload layout, same execution), but distinguished as a call occurring
-	// in tail position.
+	// TAILCALL_n instruction: a call in tail position, sharing ENTER_n's
+	// payload layout but executed differently.  Emitted only for calls to
+	// no-return functions, which never return to their caller: rather than
+	// allocating a fresh frame and pushing a call-stack record, the caller's
+	// frame is zeroed and reused (resized to the callee's width) with the
+	// arguments copied into place.
 	TAILCALL_n
 	// TAILCALL_2 instruction: dedicated (narrow-only) encoding of TAILCALL_n
 	// for the common single-argument call, exactly as ENTER_2 is to ENTER_n.

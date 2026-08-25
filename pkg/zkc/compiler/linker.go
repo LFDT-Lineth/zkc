@@ -703,6 +703,7 @@ func checkSymbolKind(d decl.Unresolved, sym symbol.Unresolved) (msg string, err 
 		if _, ok := d.(*decl.UnresolvedTypeAlias); !ok {
 			return "invalid type alias", true
 		}
+	case symbol.UNKNOWN:
 	default:
 		panic("unknown symbol kind")
 	}

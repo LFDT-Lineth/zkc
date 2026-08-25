@@ -17,7 +17,9 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 )
 
-// Done exits the innermost enclosing loop.
+// Done terminates the entire program successfully.  It is only permitted
+// within no-return functions, marking the point at which such a function
+// completes without failure (similar, in some sense, to os.Exit(0)).
 type Done[S symbol.Symbol[S]] struct {
 	// dummy forces heap allocation
 	//nolint
