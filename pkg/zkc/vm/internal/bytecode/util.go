@@ -15,6 +15,7 @@ package bytecode
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -60,6 +61,10 @@ func RegisterVectorToString[W word.Word[W]](reg RegisterVector, mapping Environm
 // Environment.ValueOf), that value is appended inline as "[0xVAL]"; this is how
 // the debugger renders register values within an instruction's string.
 func RegisterToString[W word.Word[W]](reg RegisterId, env Environment[W]) string {
+	if reg == DISCARD {
+		return "_"
+	}
+	//
 	if env == nil {
 		return fmt.Sprintf("?%d", reg)
 	}
@@ -76,6 +81,25 @@ func RegisterToString[W word.Word[W]](reg RegisterId, env Environment[W]) string
 // ============================================================================
 // Helpers
 // ============================================================================
+
+// boundRegisters filters any DISCARD entries out of the given register list,
+// leaving only registers actually bound.  The original list is returned
+// (unchanged) when it contains no DISCARD entries.
+func boundRegisters(regs []RegisterId) []RegisterId {
+	if !slices.Contains(regs, DISCARD) {
+		return regs
+	}
+	//
+	var bound = make([]RegisterId, 0, len(regs)-1)
+	//
+	for _, r := range regs {
+		if r != DISCARD {
+			bound = append(bound, r)
+		}
+	}
+	//
+	return bound
+}
 
 // CheckSmallArgs panics if the given arguments cannot be encoded as a "small"
 // (single-byte) operand list, since wide read/write instructions are unsupported.

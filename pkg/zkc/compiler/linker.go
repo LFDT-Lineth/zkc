@@ -435,6 +435,8 @@ func (p *Linker) linkLVal(lv lval.Unresolved) (lval.Resolved, []source.SyntaxErr
 	switch lv := lv.(type) {
 	case *lval.Variable[symbol.Unresolved]:
 		nlval = lval.NewVariable[symbol.Resolved](lv.Ids...)
+	case *lval.Discard[symbol.Unresolved]:
+		nlval = lval.NewDiscard[symbol.Resolved]()
 	case *lval.Array[symbol.Unresolved]:
 		index, errs1 := p.linkExpr(lv.Arg)
 		nlval = lval.NewArray[symbol.Resolved](lv.Id, index)

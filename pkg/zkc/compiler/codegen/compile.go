@@ -182,17 +182,28 @@ func (p *Compiler) compileStaticInitialisers(
 ) ([]vm.Uint, []source.SyntaxError) {
 	//
 	var (
-		words     = make([]vm.Uint, len(contents))
+		words     []vm.Uint
 		errors    []source.SyntaxError
 		evaluator = NewConstantEvaluator(p.config.field, env, components...)
 	)
 	//
-	for i, v := range contents {
-		var errMsg string
-
-		words[i], errMsg = evaluator.Eval(v, true)
-		if errMsg != "" {
-			errors = append(errors, srcmaps.SyntaxErrors(v, errMsg)...)
+	for _, v := range contents {
+		// A tuple row initialises a multi-column memory: it contributes one
+		// word per data column, flattened row-major (matching the storage
+		// layout assumed by e.g. Memory.StaticHeight and decodeAddress).
+		var exprs = []expr.Resolved{v}
+		//
+		if tuple, ok := v.(*expr.TupleInitialiser[symbol.Resolved]); ok {
+			exprs = tuple.Exprs
+		}
+		//
+		for _, e := range exprs {
+			word, errMsg := evaluator.Eval(e, true)
+			if errMsg != "" {
+				errors = append(errors, srcmaps.SyntaxErrors(e, errMsg)...)
+			}
+			//
+			words = append(words, word)
 		}
 	}
 

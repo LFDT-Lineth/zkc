@@ -112,6 +112,12 @@ func (p *StmtCompiler) mapLVals(mapping []uint, lvals []LVal) ([][]vm.RegisterId
 	//
 	for _, lv := range lvals {
 		switch lv := lv.(type) {
+		case *lval.Discard[symbol.Resolved]:
+			// A discarded ("_") return value binds no register: the DISCARD
+			// pseudo register keeps the target list positionally aligned with
+			// the callee's outputs (resp. a static memory's data lines)
+			// without allocating anything.
+			regs = append(regs, []vm.RegisterId{vm.DISCARD})
 		case *lval.Variable[symbol.Resolved]:
 			var ids = make([]RegisterId, len(lv.Ids))
 
@@ -423,13 +429,13 @@ func destructMultiway[T any](p *StmtCompiler, args T, mapping []uint, targets []
 	var tmps = make([]RegisterId, len(targets))
 	//
 	for i, v := range targets {
-		var bitwidth = p.bitwidthOf(v...)
-		//
+		// NOTE: a singleton target may be the DISCARD pseudo register, which
+		// backs no actual register and hence has no bitwidth.
 		if len(v) == 1 {
 			tmps[i] = v[0]
 		} else {
 			// Allocate temporary
-			tmps[i] = p.allocate(bitwidth)
+			tmps[i] = p.allocate(p.bitwidthOf(v...))
 		}
 	}
 	// Translate expression

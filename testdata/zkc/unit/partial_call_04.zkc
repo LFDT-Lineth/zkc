@@ -1,0 +1,21 @@
+pub input data(address:u16) -> (byte:u16)
+
+fn main() {
+    var x:u16 = data[0]
+    var res1:u16
+    var res2:u16
+    res1, _, res2 = copy(x)
+    if (res1 != x) {
+        fail
+    }
+    if (res2 != x) {
+        fail
+    }
+}
+
+fn copy(x:u16) -> (res1:u16, res2:u16, res3:u16) {
+    res1 = x
+    res2 = x
+    res3 = x
+}
+

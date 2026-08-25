@@ -1,0 +1,7 @@
+//error:4:8-9:"_" is reserved symbol for discarding variables
+
+fn f(x:u16) -> (y:u16) {
+   var _:u16
+   _ = x
+   y = x
+}

@@ -1,0 +1,11 @@
+//error:3:12-19:mismatched return values (expected 3, found 2)
+fn f(x:u16) -> (res:u16) {
+    x, _ = copy(x)
+    res = x
+}
+
+fn copy(x:u16)->(res1:u16, res2:u16, res3:u16) {
+res1= x
+res2 = x
+res3 = x
+}

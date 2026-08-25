@@ -1,0 +1,5 @@
+//error:3:4-5:"_" is reserved symbol for discarding variables
+
+fn _(x:u16) -> (y:u16){
+   y = x
+}

@@ -53,12 +53,14 @@ func (p *ReadWrite[W]) Uses() []RegisterId {
 
 // Definitions implementation for Bytecode interface.  A read defines its data
 // registers, whereas a write defines nothing in the surrounding frame.
+// Discarded data lines of a (static) read bind no register, so they are
+// excluded.
 func (p *ReadWrite[W]) Definitions() []RegisterId {
 	if p.Write {
 		return nil
 	}
 	//
-	return p.Data
+	return boundRegisters(p.Data)
 }
 
 // Validate implementation for Bytecode interface.
@@ -89,6 +91,11 @@ func (p *ReadWrite[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 	if len(p.Data) != int(memory.NumOutputs()) {
 		errors = append(errors, fmt.Errorf("memory %s expects %d data registers (found %d)",
 			memory.Name(), memory.NumOutputs(), len(p.Data)))
+	}
+	// Only the data lines of a read can be discarded.
+	if slices.Contains(p.Address, DISCARD) || slices.Contains(p.Stamp, DISCARD) ||
+		(p.Write && slices.Contains(p.Data, DISCARD)) {
+		errors = append(errors, fmt.Errorf("memory %s access discards an operand", memory.Name()))
 	}
 
 	return errors

@@ -342,8 +342,10 @@ func buildShadowMap[W word.Word[W]](call *bytecode.Call[W], callee *descriptor.F
 				ret       = call.Returns[j]
 				duplicate = slices.Contains(call.Returns[:j], ret) || slices.Contains(call.Returns[j+1:], ret)
 			)
-			//
-			if sameShape(callerRegs[ret], r) && !duplicate && !slices.Contains(elidedArgs, ret) {
+			// A discarded return binds no caller register, so it cannot be
+			// aliased (it gets a fresh shadow and no exit copy below).
+			if ret != bytecode.DISCARD && sameShape(callerRegs[ret], r) && !duplicate &&
+				!slices.Contains(elidedArgs, ret) {
 				alias, aliased = ret, true
 			}
 		}
@@ -366,8 +368,9 @@ func buildShadowMap[W word.Word[W]](call *bytecode.Call[W], callee *descriptor.F
 		} else if j := index - numInputs; j < numOutputs {
 			// Where the same register receives several outputs, retain only the
 			// last copy (matching the last-wins semantics of returning from a
-			// stack frame) since sequential copies would conflict.
-			if !slices.Contains(call.Returns[j+1:], call.Returns[j]) {
+			// stack frame) since sequential copies would conflict.  A discarded
+			// return receives no copy at all.
+			if call.Returns[j] != bytecode.DISCARD && !slices.Contains(call.Returns[j+1:], call.Returns[j]) {
 				shadows.exitCopies = append(shadows.exitCopies,
 					registerCopy{call.Returns[j], shadows.registers[i]})
 			}
@@ -557,7 +560,12 @@ func substituteIds(ids []bytecode.RegisterId, sub []bytecode.RegisterId) []bytec
 	var nids = make([]bytecode.RegisterId, len(ids))
 	//
 	for i, id := range ids {
-		nids[i] = sub[id]
+		// A discarded binding has no register to substitute.
+		if id == bytecode.DISCARD {
+			nids[i] = id
+		} else {
+			nids[i] = sub[id]
+		}
 	}
 	//
 	return nids

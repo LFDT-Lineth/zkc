@@ -15,6 +15,7 @@ package bytecode
 import (
 	"encoding/gob"
 	"fmt"
+	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -43,6 +44,15 @@ const (
 
 // RegisterId just provides a convenient alias to make the code more readable.
 type RegisterId = uint16
+
+// DISCARD is a pseudo register id marking a discarded ("_") return value in a
+// call's return list, or a discarded data line in a static memory read.  It
+// keeps the list positionally aligned with the callee's outputs (resp. the
+// memory's data lines) whilst binding nothing: no caller register --- and
+// hence no trace column --- ever backs a discarded position.  A DISCARD entry
+// never survives into the interpreter's instruction encoding (see
+// encoding.Call), and is skipped when a call's lookup constraint is emitted.
+const DISCARD RegisterId = math.MaxUint16
 
 // ModuleId represents module identifiers
 type ModuleId = uint16
@@ -250,7 +260,8 @@ func validateOperands[W word.Word[W]](env Environment[W], operands ...[]Register
 
 	for _, group := range operands {
 		for _, id := range group {
-			if seen[id] {
+			// A discarded position binds no register.
+			if id == DISCARD || seen[id] {
 				continue
 			}
 
