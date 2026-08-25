@@ -155,7 +155,7 @@ func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F], tr
 	checkConfig.ReportPadding = 2
 	checkConfig.ReportLimbs = true
 	checkConfig.ReportComputed = true
-	checkConfig.AnsiEscapes = true
+	checkConfig.AnsiEscapes = AnsiEscapes
 	// Construct limbs map
 	mapping := binfile.LimbsMap()
 	// Run the check

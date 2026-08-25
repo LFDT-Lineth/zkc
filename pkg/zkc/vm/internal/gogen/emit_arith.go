@@ -506,13 +506,14 @@ func (g *generator) emitConcat(c *code, fn *descFunction, x *bytecode.Cat[word.U
 			return err
 		}
 
-		if o.wide() {
-			return fmt.Errorf("gogen: concatenation source wider than 64 bits unsupported")
-		}
-
 		srcs[i] = o
 		widths[i] = w
 		total += w
+	}
+	// A single source (wide or narrow) moves across unchanged: storeValue
+	// distributes it, using its interval bound (tighter than widthMax(total)).
+	if len(srcs) == 1 {
+		return g.storeValue(c, store, srcs[0])
 	}
 
 	bound := widthMax(total)
@@ -544,14 +545,23 @@ func (g *generator) emitConcat(c *code, fn *descFunction, x *bytecode.Cat[word.U
 	var inner error
 
 	c.block(func() {
-		c.linef("lo, hi := %s, uint64(0)", srcs[len(srcs)-1].expr)
+		last := srcs[len(srcs)-1]
+		c.linef("lo, hi := %s, uint64(%s)", last.expr, last.hiOr0())
 
 		for i := len(srcs) - 2; i >= 0; i-- {
 			w := widths[i]
-			if w == 64 {
+
+			switch {
+			case w > 64:
+				// The bits accumulated so far occupy at most total-w < 64 bits,
+				// all in lo (hi is zero); the incoming pair fills lo and the
+				// low w-64 bits of hi, below the shifted accumulated bits.
+				c.linef("hi = lo<<%d | %s", w-64, srcs[i].hiOr0())
+				c.linef("lo = %s", srcs[i].expr)
+			case w == 64:
 				c.line("hi = lo")
 				c.linef("lo = %s", srcs[i].expr)
-			} else {
+			default:
 				c.linef("hi = hi<<%d | lo>>%d", w, 64-w)
 				c.linef("lo = lo<<%d | %s", w, srcs[i].expr)
 			}
