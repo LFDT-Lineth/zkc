@@ -30,6 +30,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -123,19 +124,19 @@ func checkWithField[F field.Element[F]](t *testing.T, test string, padding bool,
 		// Record how many tests we found
 		nTests += len(traces)
 	}
-	// Iterate possible group (i.e. sharded) testfile extensions
+	// Iterate possible sharded testfile extensions
 	for _, cfg := range SHARDED_TESTFILE_EXTENSIONS {
 		testFilename := fmt.Sprintf("%s/%s.%s", TestDir, test, cfg.extension)
 		//
 		if cfg.field == "" || cfg.field == field.Name {
-			groups := ReadShardedTracesFile[F](testFilename)
+			shardSets := ReadShardedTracesFile[F](testFilename)
 			//
-			if len(groups) > 0 {
+			if len(shardSets) > 0 {
 				stack := stacks.WithOptimisationConfig(mir.DEFAULT_OPTIMISATION_LEVEL)
-				checkShardedTraces(t, testFilename, padding, mir.DEFAULT_OPTIMISATION_INDEX, cfg, groups, stack)
+				checkShardedTraces(t, testFilename, padding, mir.DEFAULT_OPTIMISATION_INDEX, cfg, shardSets, stack)
 			}
 			//
-			nTests += len(groups)
+			nTests += len(shardSets)
 		}
 	}
 	// Sanity check at least one trace found.
@@ -329,52 +330,51 @@ var LEGACY_TESTFILE_EXTENSIONS []LegacyTestConfig = []LegacyTestConfig{
 
 // SHARDED_TESTFILE_EXTENSIONS identifies the file extensions used for sharded
 // tests.  Each line of such a file holds a JSON array of traces, forming one
-// group of shards judged together: every shard must pass all non-bus
-// constraints on its own, whilst bus balance is required of the group as a
-// whole (not of any single shard).
+// complete set of shards judged together: every shard must pass all non-bus
+// constraints on its own, whilst bus balance is required of all the shards at
+// once (never of any single shard).
 var SHARDED_TESTFILE_EXTENSIONS []LegacyTestConfig = []LegacyTestConfig{
 	{"shards.accepts", true, true, true, "", defaultOptLevel},
 	{"shards.rejects", false, true, false, "", defaultOptLevel},
 }
 
-// ReadShardedTracesFile reads a file containing zero or more trace groups
-// expressed as JSON, where each group is on a separate line and consists of
-// an array of traces (i.e. shards).
+// ReadShardedTracesFile reads a file containing zero or more sets of shards
+// expressed as JSON, where each set is on a separate line and consists of an
+// array of traces (i.e. shards).
 func ReadShardedTracesFile[F field.Element[F]](filename string) [][]trace.Trace[F] {
 	lines, _ := file.ReadInputFileAsLines(filename)
-	groups := make([][]trace.Trace[F], len(lines))
+	shardSets := make([][]trace.Trace[F], len(lines))
 	//
 	for i, line := range lines {
 		if line != "" && !strings.HasPrefix(line, ";;") {
-			var shards []stdjson.RawMessage
+			var rawShards []stdjson.RawMessage
 			//
-			if err := stdjson.Unmarshal([]byte(line), &shards); err != nil {
+			if err := stdjson.Unmarshal([]byte(line), &rawShards); err != nil {
 				panic(fmt.Sprintf("%s:%d: %s", filename, i+1, err))
 			}
 			//
-			group := make([]trace.Trace[F], len(shards))
+			shards := make([]trace.Trace[F], len(rawShards))
 			//
-			for j, raw := range shards {
+			for j, raw := range rawShards {
 				tf, err := json.FromBytes[F](raw)
 				//
 				if err != nil {
 					panic(fmt.Sprintf("%s:%d: shard %d: %s", filename, i+1, j+1, err))
 				}
 				//
-				group[j] = tf
+				shards[j] = tf
 			}
 			//
-			groups[i] = group
+			shardSets[i] = shards
 		}
 	}
 	//
-	return groups
+	return shardSets
 }
 
-// Check a given set of trace groups have an expected outcome, mirroring
-// checkTraces.
+// Check each set of shards has an expected outcome, mirroring checkTraces.
 func checkShardedTraces[F field.Element[F]](t *testing.T, test string, padding bool, opt uint,
-	cfg LegacyTestConfig, groups [][]trace.Trace[F], stacker cmd_util.SchemaStacker[F]) {
+	cfg LegacyTestConfig, shardSets [][]trace.Trace[F], stacker cmd_util.SchemaStacker[F]) {
 	//
 	paddings := []bool{false}
 	if padding {
@@ -388,12 +388,12 @@ func checkShardedTraces[F field.Element[F]](t *testing.T, test string, padding b
 			t.Parallel()
 			//
 			for _, ir := range []string{"MIR", "AIR"} {
-				for i, group := range groups {
-					if group != nil {
+				for i, shards := range shardSets {
+					if shards != nil {
 						id := traceId{stack.RegisterMapping().Field().Name, ir, test,
 							cfg.expected, cfg.expand, cfg.validate, opt, false, i + 1, padding}
 						//
-						checkShardGroup(t, group, id, stack.ConcreteSchemaOf(ir), stack.RegisterMapping())
+						checkShards(t, shards, id, stack.ConcreteSchemaOf(ir), stack.RegisterMapping())
 					}
 				}
 			}
@@ -401,20 +401,24 @@ func checkShardedTraces[F field.Element[F]](t *testing.T, test string, padding b
 	}
 }
 
-// checkShardGroup checks one group of shards: each shard is built and
-// checked locally (any non-bus failure marks a broken fixture, regardless of
-// the expected outcome), then every bus is required to balance across the
-// whole group.  Only the group-level verdict is compared against the
-// expected outcome.
-func checkShardGroup[F field.Element[F], C sc.Constraint[F]](t *testing.T, group []trace.Trace[F], id traceId,
+// checkShards checks a sharded trace.  Each shard is built and
+// checked against the non-bus constraints, where any failure marks a broken
+// fixture regardless of the expected outcome.  Every bus is then required to
+// balance across all the shards at once, and only that verdict is compared
+// against the expected outcome.  The shards must be complete: a bus does not
+// balance over a subset of them.
+func checkShards[F field.Element[F], C sc.Constraint[F]](t *testing.T, shards []trace.Trace[F], id traceId,
 	schema sc.Schema[F, C], mapping module.LimbsMap) {
 	//
 	var (
-		built    = make([]trace.Trace[F], len(group))
+		built    = make([]trace.Trace[F], len(shards))
 		failures []sc.Failure
+		// Sort the constraints once: buses are judged across all shards below,
+		// everything else is judged shard by shard.
+		busConstraints, otherConstraints = getBusAndOtherConstraints(schema)
 	)
 	// Build and locally check every shard
-	for i, tf := range group {
+	for i, tf := range shards {
 		paddingStrategy := ir.NaryRowPadding(0)
 		if id.padding {
 			paddingStrategy = ir.NextPowerOfTwoPadding
@@ -432,19 +436,17 @@ func checkShardGroup[F field.Element[F], C sc.Constraint[F]](t *testing.T, group
 			t.Errorf("Shard %d expansion failed (%s): %s", i+1, id.String(), errs)
 			return
 		}
-		// Check shard locally, ignoring bus failures (balance is a property
-		// of the group, not of any single shard).
-		for _, err := range sc.Accepts(false, schema, tr) {
-			if _, isBus := err.(*bus.Failure[F]); !isBus {
-				t.Errorf("Shard %d locally invalid (%s): %s", i+1, id.String(), err.Message())
-				return
-			}
+		// Check the shard against the non-bus constraints only.  A fresh
+		// iterator is needed each time round, since one is consumed by use.
+		for _, err := range sc.AcceptsSubset(false, schema, tr, iter.NewArrayIterator(otherConstraints)) {
+			t.Errorf("Shard %d locally invalid (%s): %s", i+1, id.String(), err.Message())
+			return
 		}
 		//
 		built[i] = tr
 	}
-	// Check every bus balances across the whole group.
-	for _, busc := range busConstraintsOf(schema) {
+	// Check every bus balances across the full sharded trace.
+	for _, busc := range busConstraints {
 		if failure := busc.AcceptsGroup(built...); failure != nil {
 			failures = append(failures, failure)
 		}
@@ -453,29 +455,37 @@ func checkShardGroup[F field.Element[F], C sc.Constraint[F]](t *testing.T, group
 	accepted := len(failures) == 0
 	//
 	if !accepted && id.expected {
-		t.Errorf("Group rejected incorrectly (%s): %s", id.String(), failures)
+		t.Errorf("Shards rejected incorrectly (%s): %s", id.String(), failures)
 	} else if accepted && !id.expected {
-		t.Errorf("Group accepted incorrectly (%s)", id.String())
+		t.Errorf("Shards accepted incorrectly (%s)", id.String())
 	}
 }
 
-// busConstraintsOf extracts the bus constraints of a schema, looking through
-// the MIR / AIR wrappers.
-func busConstraintsOf[F field.Element[F], C sc.Constraint[F]](schema sc.Schema[F, C]) []bus.Constraint[F] {
-	var buses []bus.Constraint[F]
+// getBusAndOtherConstraints sorts a schema's constraints into two groups: the
+// bus constraints, and all the others.  Looks through the MIR / AIR wrappers to
+// recognise a bus.
+func getBusAndOtherConstraints[F field.Element[F], C sc.Constraint[F]](schema sc.Schema[F, C]) (
+	busConstraints []bus.Constraint[F], otherConstraints []C) {
 	//
-	for iter := schema.Constraints(); iter.HasNext(); {
-		switch c := any(iter.Next()).(type) {
+	// NOTE: not named "iter", which would shadow the iter package.
+	for constraints := schema.Constraints(); constraints.HasNext(); {
+		var ith = constraints.Next()
+		//
+		switch c := any(ith).(type) {
 		case mir.Constraint[F]:
 			if b, ok := c.Unwrap().(bus.Constraint[F]); ok {
-				buses = append(buses, b)
+				busConstraints = append(busConstraints, b)
+				continue
 			}
 		case air.BusConstraint[F]:
-			buses = append(buses, c.Unwrap())
+			busConstraints = append(busConstraints, c.Unwrap())
+			continue
 		}
+		//
+		otherConstraints = append(otherConstraints, ith)
 	}
 	//
-	return buses
+	return busConstraints, otherConstraints
 }
 
 // A trace identifier uniquely identifies a specific trace within a given test.

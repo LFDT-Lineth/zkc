@@ -99,6 +99,14 @@ func Accepts[F field.Element[F], C Constraint[F]](parallel bool, schema Schema[F
 	return accepts(parallel, schema.Constraints(), trace, schema)
 }
 
+// AcceptsSubset checks the given subset of a schema's constraints against a
+// trace: bus constraints can't be checked on a single shard of a sharded trace.
+func AcceptsSubset[F field.Element[F], C Constraint[F]](parallel bool, schema Schema[F, C],
+	trace trace.Trace[F], constraints iter.Iterator[C]) []Failure {
+	//
+	return accepts(parallel, constraints, trace, schema)
+}
+
 //nolint:revive
 func accepts[F field.Element[F], C Constraint[F]](parallel bool, iter iter.Iterator[C],
 	trace trace.Trace[F], schema Schema[F, C]) []Failure {
