@@ -257,6 +257,12 @@ func (t *threader[W]) stampArcs(insns []Bytecode[W], lands []bool, i int, entry 
 		//
 		return fall(state)
 	case *bytecode.Call[W]:
+		// A never-returning call is a control-flow terminator: no fall-through,
+		// and no updated stamp is received (see threadCall).
+		if insn.Never {
+			return nil
+		}
+		//
 		return fall(t.callArcState(uint(i), insn, state))
 	case *bytecode.Skip[W]:
 		return []stampArc{{source: uint(i), target: uint(i) + 1 + uint(insn.Skip), kind: uncondArc, state: state}}
@@ -415,6 +421,11 @@ func (t *threader[W]) skipLandings(insns []Bytecode[W]) []bool {
 		//
 		switch insn := insns[i].(type) {
 		case *bytecode.Jmp[W], *bytecode.Ret[W], *bytecode.Fail[W]:
+		case *bytecode.Call[W]:
+			// A never-returning call is a control-flow terminator.
+			if !insn.Never {
+				reach[i+1] = true
+			}
 		case *bytecode.Skip[W]:
 			land(i, insn.Skip)
 		case *bytecode.SkipIf[W]:

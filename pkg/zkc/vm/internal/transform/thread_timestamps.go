@@ -303,14 +303,21 @@ func (t *threader[W]) seedEntryRow(nvecs []BytecodeVector[W], entry []stampValue
 }
 
 // getCanonical returns the canonical stamp register of the given effect,
-// allocating it on first use for main (whose canonical registers are ordinary
-// computed registers rather than outputs).
+// allocating it on first use for functions without stamp-out outputs (main and
+// non-returning functions, whose canonical registers are ordinary computed
+// registers instead).
 func (t *threader[W]) getCanonical(e descriptor.ModuleId) bytecode.RegisterId {
 	if r, ok := t.canonical[e]; ok {
 		return r
 	}
+	// A non-returning function already has a stamp-in input named "M$stamp",
+	// so its canonical register takes the stamp-out name instead.
+	name := stampName(t.mods, e)
+	if !t.isMain {
+		name = stampOutName(t.mods, e)
+	}
 	//
-	r := t.alloc.AllocateNamed(stampName(t.mods, e), util.Some(t.timestampWidth(e)))
+	r := t.alloc.AllocateNamed(name, util.Some(t.timestampWidth(e)))
 	t.canonical[e] = r
 	//
 	return r
@@ -477,8 +484,9 @@ func (t *threader[W]) threadInstruction(insns []Bytecode[W], i int, states stamp
 		// The jump target is entered with canonical stamps.
 		at(i).fall = append(at(i).fall, t.canonicalise(states)...)
 	case *bytecode.Ret[W]:
-		// Bind the stamp-out outputs (main has none and returns nothing).
-		if !t.isMain {
+		// Bind the stamp-out outputs (main has none and returns nothing, and a
+		// done terminator halts the program without binding outputs).
+		if !t.isMain && !insn.Done {
 			at(i).fall = append(at(i).fall, t.canonicalise(states)...)
 		}
 	case *bytecode.SkipIf[W]:
@@ -676,8 +684,12 @@ func (t *threader[W]) threadCall(pc uint, call *bytecode.Call[W], states stamps,
 	var (
 		pre     []Bytecode[W]
 		args    = make([]bytecode.RegisterId, len(effects))
-		returns = make([]bytecode.RegisterId, len(effects))
+		returns []bytecode.RegisterId
 	)
+	// Check for never-returning call
+	if !call.Never {
+		returns = make([]bytecode.RegisterId, len(effects))
+	}
 	//
 	for j, e := range effects {
 		x := t.effectIndex(e)
@@ -690,9 +702,12 @@ func (t *threader[W]) threadCall(pc uint, call *bytecode.Call[W], states stamps,
 		reg, insns := t.stampRegister(e, t.resolve(x, states.vals[x]))
 		pre = append(pre, insns...)
 		args[j] = reg
-		// Receive the callee's updated stamp into a fresh temporary.
-		returns[j] = t.alloc.Allocate("stamp", util.Some(t.timestampWidth(e)))
-		t.temps[stampKey{e, stampValue{kind: stampCallOut, pc: pc}}] = returns[j]
+		// Don't thread return stamp for non-return calls
+		if !call.Never {
+			// Receive the callee's updated stamp into a fresh temporary.
+			returns[j] = t.alloc.Allocate("stamp", util.Some(t.timestampWidth(e)))
+			t.temps[stampKey{e, stampValue{kind: stampCallOut, pc: pc}}] = returns[j]
+		}
 	}
 	//
 	return bytecode.NeverCallFun[W](call.Target,
