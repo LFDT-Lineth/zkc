@@ -89,10 +89,20 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 		case *vm.BytecodeDebug[W]:
 			// no-operation
 			continue
-		case *vm.BytecodeCall[W], *vm.BytecodeReadWrite[W]:
-			// Translation of calls, and memory read/write is done at the function
-			// level (see addLookups), as it modifies the module itself (adding
-			// source selectors), requires knowledge of target modules, etc.
+		case *vm.BytecodeCall[W]:
+			if !c.Never {
+				// Translation of calls is done at the function level (see
+				// addLookups), as it modifies the module itself (adding source
+				// selectors), requires knowledge of target modules, etc.
+				continue
+			}
+			//
+			assignments = joinAssignments(assignments, localWrites)
+			local = p.framing.Return()
+		case *vm.BytecodeReadWrite[W]:
+			// Translation of memory read/write is done at the function level
+			// (see addLookups), as it modifies the module itself (adding source
+			// selectors), requires knowledge of target modules, etc.
 			continue
 		case *vm.BytecodeCheckCast[W]:
 			// Width checks are enforced by the range-proof constraints emitted for

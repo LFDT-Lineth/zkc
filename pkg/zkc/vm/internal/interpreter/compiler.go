@@ -258,11 +258,15 @@ func checkMemoryCount(count uint32, name string) {
 // covers non-terminal failures such as arithmetic overflow.  Flagging `fail`
 // here as well would record its row twice.
 func isVectorTerminal[W word.Word[W]](b bytecode.Bytecode[W]) bool {
-	switch b.(type) {
+	switch b := b.(type) {
 	case *bytecode.Jmp[W]:
 		return true
 	case *bytecode.Ret[W]:
 		return true
+	case *bytecode.Call[W]:
+		// A tail call terminates its vector (the frame is reused rather than
+		// returned to), so its row must be recorded here.
+		return b.Never
 	default:
 		return false
 	}

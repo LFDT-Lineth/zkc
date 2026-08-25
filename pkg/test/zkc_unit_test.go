@@ -386,6 +386,10 @@ func Test_ZkcUnit_Basic_90(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_90", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Basic_91(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_91", DEFAULT_UNIT_CONFIG)
+}
+
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
 	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.
