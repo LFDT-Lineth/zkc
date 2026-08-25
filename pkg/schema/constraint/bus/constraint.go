@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -180,21 +181,40 @@ func (p Constraint[F]) NetTally(tr trace.Trace[F]) *Tally[F] {
 	return tally
 }
 
+// portColumns looks up a port's selector column and its message columns.  Doing
+// this once per port keeps the lookups out of the row loops below, where they
+// would otherwise be repeated on every single row.
+func portColumns[F field.Element[F]](trModule trace.Module[F], port Port) (
+	selectorCol array.Array[F], messageCols []array.Array[F]) {
+	//
+	selectorCol = trModule.Column(port.Selector.Unwrap())
+	messageCols = make([]array.Array[F], port.Len())
+	//
+	for i, rid := range port.Registers {
+		messageCols[i] = trModule.Column(rid.Unwrap())
+	}
+	//
+	return selectorCol, messageCols
+}
+
 // accumulate adds the given sign to the tally for every selected row of each
 // port.
 func (p Constraint[F]) accumulate(tr trace.Trace[F], ports []Port, tally *Tally[F], sign int) {
 	for _, port := range ports {
-		var trModule = tr.Module(port.Module)
+		var (
+			trModule                 = tr.Module(port.Module)
+			selectorCol, messageCols = portColumns(trModule, port)
+		)
 		//
 		for row := range trModule.Height() {
-			if trModule.Column(port.Selector.Unwrap()).Get(row).IsZero() {
+			if selectorCol.Get(row).IsZero() {
 				continue
 			}
 			//
-			var message = make([]F, port.Len())
+			var message = make([]F, len(messageCols))
 			//
-			for i, rid := range port.Registers {
-				message[i] = trModule.Column(rid.Unwrap()).Get(row)
+			for i, col := range messageCols {
+				message[i] = col.Get(row)
 			}
 			//
 			var (
@@ -215,17 +235,20 @@ func (p Constraint[F]) count(traces []trace.Trace[F], ports []Port, message []F)
 	//
 	for _, tr := range traces {
 		for _, port := range ports {
-			var trModule = tr.Module(port.Module)
+			var (
+				trModule                 = tr.Module(port.Module)
+				selectorCol, messageCols = portColumns(trModule, port)
+			)
 			//
 			for row := range trModule.Height() {
-				if trModule.Column(port.Selector.Unwrap()).Get(row).IsZero() {
+				if selectorCol.Get(row).IsZero() {
 					continue
 				}
 				//
 				var matches = true
 				//
-				for i, rid := range port.Registers {
-					if !trModule.Column(rid.Unwrap()).Get(row).Equals(message[i]) {
+				for i, col := range messageCols {
+					if !col.Get(row).Equals(message[i]) {
 						matches = false
 						break
 					}

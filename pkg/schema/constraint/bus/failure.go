@@ -77,17 +77,20 @@ func (p *Failure[F]) RequiredCells(tr trace.Trace[F]) *set.AnySortedSet[trace.Ce
 // requiredCellsOfPort adds the cells of the port's selected rows holding the
 // offending message.
 func (p *Failure[F]) requiredCellsOfPort(tr trace.Trace[F], port Port, res *set.AnySortedSet[trace.CellRef]) {
-	var trModule = tr.Module(port.Module)
+	var (
+		trModule                 = tr.Module(port.Module)
+		selectorCol, messageCols = portColumns(trModule, port)
+	)
 	//
 	for row := range trModule.Height() {
-		if trModule.Column(port.Selector.Unwrap()).Get(row).IsZero() {
+		if selectorCol.Get(row).IsZero() {
 			continue
 		}
 		//
 		var matches = true
 		//
-		for i, rid := range port.Registers {
-			if !trModule.Column(rid.Unwrap()).Get(row).Equals(p.Unbalanced[i]) {
+		for i, col := range messageCols {
+			if !col.Get(row).Equals(p.Unbalanced[i]) {
 				matches = false
 				break
 			}
