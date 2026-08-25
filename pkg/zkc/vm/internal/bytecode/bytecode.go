@@ -441,8 +441,9 @@ func singleStamp(stamp [][]RegisterId) []RegisterId {
 }
 
 // NewBitwise constructs a bitwise instruction (and/or/xor) computing
-// "target = left op right".
-func NewBitwise[W word.Word[W]](op Operation, target, left, right RegisterId, bitwidth uint16) *Bitwise[W] {
+// "target = left op right" for a register or (AND/OR/XOR only) constant right
+// operand.
+func NewBitwise[W word.Word[W]](op Operation, target, left RegisterId, right Operand[W], bitwidth uint16) *Bitwise[W] {
 	return &Bitwise[W]{Op: op, Target: target, Left: left, Right: right, Bitwidth: bitwidth}
 }
 

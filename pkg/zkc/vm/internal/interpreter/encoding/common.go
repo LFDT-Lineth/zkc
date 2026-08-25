@@ -263,6 +263,13 @@ const (
 	// N-source, one-target shape, combining N source registers into a
 	// single target without the general register-list machinery.
 	CAT_n1
+	// ANDC (and with constant) instruction.  Added at the end of the enum
+	// (rather than alongside AND) so existing opcode values are undisturbed.
+	ANDC
+	// ORC (or with constant) instruction [must follow ANDC]
+	ORC
+	// XORC (xor with constant) instruction [must follow ORC]
+	XORC
 
 	//
 	MAX_BYTECODE
@@ -391,6 +398,12 @@ const (
 	WIDE_FIELD_TO_UINT
 	// WIDE_SKIP_M instruction
 	WIDE_SKIP_M
+	// WIDE_ANDC (and with constant) instruction
+	WIDE_ANDC
+	// WIDE_ORC (or with constant) instruction [must follow WIDE_ANDC]
+	WIDE_ORC
+	// WIDE_XORC (xor with constant) instruction [must follow WIDE_ORC]
+	WIDE_XORC
 
 	//
 	MAX_WIDE_BYTECODE
@@ -406,7 +419,7 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 	case *bytecode.Arith[W]:
 		return Arith(*b, env)
 	case *bytecode.Bitwise[W]:
-		return Bitwise(b)
+		return Bitwise(b, env)
 	case *bytecode.Call[W]:
 		return Call(pc, b, env)
 	case *bytecode.Cat[W]:

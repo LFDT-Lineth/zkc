@@ -879,20 +879,68 @@ func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target Regis
 
 func (p *StmtCompiler) compileBitwiseAnd(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
 ) []Bytecode {
-	var bw = util.Some(bitwidth)
-	// Compile arguments
-	sources, insns := p.compileUniformArgs(bw, mapping, args...)
-	// Chain left-to-right: (((a & b) & c) & ...).
+	return p.compileBitwiseChain(vm.BitAnd[vm.Uint], BitwiseAnd[vm.Uint], args, bitwidth, mapping, target)
+}
+
+// compileBitwiseChain compiles an n-ary AND/OR/XOR chain, such as
+// (((a & b) & c) & ...).  Since these operations are associative and
+// commutative, all constant arguments are folded together (via fold) and
+// absorbed as the constant operand of the final instruction — mirroring how
+// constants are absorbed into the arithmetic instructions (cf. compileIntSub).
+// Register arguments chain left-to-right.
+func (p *StmtCompiler) compileBitwiseChain(
+	op func(RegisterId, RegisterId, Operand[vm.Uint], uint16) Bytecode,
+	fold func(...vm.Uint) vm.Uint,
+	args []Expr, bitwidth uint, mapping []uint, target RegisterId,
+) []Bytecode {
+	var (
+		bw       = util.Some(bitwidth)
+		bw16     = util.Cast[uint16](bitwidth)
+		constant vm.Uint
+		hasConst bool
+		nargs    []Expr
+	)
+	//
+	for _, e := range args {
+		if c, ok := p.asConstant(e); ok {
+			if hasConst {
+				constant = fold(constant, c)
+			} else {
+				constant, hasConst = c, true
+			}
+		} else {
+			nargs = append(nargs, e)
+		}
+	}
+	// Compile register arguments
+	sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
+	// Degenerate case: every argument is constant.
+	if len(sources) == 0 {
+		return append(insns, vm.LoadConst(target, constant))
+	}
+	// Chain left-to-right; the final step lands in the target unless a
+	// constant remains to be absorbed.
 	value := sources[0]
 	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(bw)
-		insns = append(insns, vm.BitAnd[vm.Uint](tmp, value, sources[i], util.Cast[uint16](bitwidth)))
-		value = tmp
+	for i := 1; i < len(sources); i++ {
+		tgt := target
+		if i < len(sources)-1 || hasConst {
+			tgt = p.allocate(bw)
+		}
+		//
+		insns = append(insns, op(tgt, value, vm.NewRegisterOperand[vm.Uint](sources[i]), bw16))
+		value = tgt
 	}
 	//
-	return append(insns,
-		vm.BitAnd[vm.Uint](target, value, sources[len(sources)-1], uint16(bitwidth)))
+	switch {
+	case hasConst:
+		insns = append(insns, op(target, value, vm.NewConstantOperand(constant), bw16))
+	case len(sources) == 1:
+		// Single register argument: a (self-operating) copy into the target.
+		insns = append(insns, op(target, value, vm.NewRegisterOperand[vm.Uint](value), bw16))
+	}
+	//
+	return insns
 }
 
 func (p *StmtCompiler) compileBitwiseNot(e *expr.BitwiseNot[symbol.Resolved], bitwidth uint, mapping []uint,
@@ -907,38 +955,12 @@ func (p *StmtCompiler) compileBitwiseNot(e *expr.BitwiseNot[symbol.Resolved], bi
 
 func (p *StmtCompiler) compileBitwiseOr(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
 ) []Bytecode {
-	var bw = util.Some(bitwidth)
-	// Compile arguments
-	sources, insns := p.compileUniformArgs(bw, mapping, args...)
-	// Chain left-to-right: (((a | b) | c) | ...).
-	value := sources[0]
-	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(bw)
-		insns = append(insns, vm.BitOr[vm.Uint](tmp, value, sources[i], uint16(bitwidth)))
-		value = tmp
-	}
-	//
-	return append(insns,
-		vm.BitOr[vm.Uint](target, value, sources[len(sources)-1], uint16(bitwidth)))
+	return p.compileBitwiseChain(vm.BitOr[vm.Uint], BitwiseOr[vm.Uint], args, bitwidth, mapping, target)
 }
 
 func (p *StmtCompiler) compileBitwiseXor(args []Expr, bitwidth uint, mapping []uint, target RegisterId,
 ) []Bytecode {
-	var bw = util.Some(bitwidth)
-	// Compile arguments
-	sources, insns := p.compileUniformArgs(bw, mapping, args...)
-	// Chain left-to-right: (((a ^ b) ^ c) ^ ...).
-	value := sources[0]
-	//
-	for i := 1; i < len(sources)-1; i++ {
-		tmp := p.allocate(bw)
-		insns = append(insns, vm.BitXor[vm.Uint](tmp, value, sources[i], util.Cast[uint16](bitwidth)))
-		value = tmp
-	}
-	//
-	return append(insns,
-		vm.BitXor[vm.Uint](target, value, sources[len(sources)-1], uint16(bitwidth)))
+	return p.compileBitwiseChain(vm.BitXor[vm.Uint], BitwiseXor[vm.Uint], args, bitwidth, mapping, target)
 }
 
 func (p *StmtCompiler) compileUniformArgs(bitwidth util.Option[uint], mapping []uint, exprs ...Expr,

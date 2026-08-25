@@ -787,10 +787,16 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = executeNot(p.pc, bytecodes, frame)
 		case encoding.AND:
 			p.pc, err = executeAnd(p.pc, bytecodes, frame)
+		case encoding.ANDC:
+			p.pc, err = executeAnd_1n1c(p.pc, bytecodes, pool, frame)
 		case encoding.OR:
 			p.pc, err = executeOr(p.pc, bytecodes, frame)
+		case encoding.ORC:
+			p.pc, err = executeOr_1n1c(p.pc, bytecodes, pool, frame)
 		case encoding.XOR:
 			p.pc, err = executeXor(p.pc, bytecodes, frame)
+		case encoding.XORC:
+			p.pc, err = executeXor_1n1c(p.pc, bytecodes, pool, frame)
 		case encoding.SHL:
 			p.pc, err = executeShl(p.pc, bytecodes, frame)
 		case encoding.SHR:
@@ -909,10 +915,16 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		pc, err = p.executeFieldMul(pc, codes, pool, stack)
 	case encoding.WIDE_AND:
 		pc, err = executeAnd(pc, codes, stack)
+	case encoding.WIDE_ANDC:
+		pc, err = executeAnd_1n1c(pc, codes, pool, stack)
 	case encoding.WIDE_OR:
 		pc, err = executeOr(pc, codes, stack)
+	case encoding.WIDE_ORC:
+		pc, err = executeOr_1n1c(pc, codes, pool, stack)
 	case encoding.WIDE_XOR:
 		pc, err = executeXor(pc, codes, stack)
+	case encoding.WIDE_XORC:
+		pc, err = executeXor_1n1c(pc, codes, pool, stack)
 	case encoding.WIDE_NOT:
 		pc, err = executeNot(pc, codes, stack)
 	case encoding.WIDE_SHL:
@@ -1401,6 +1413,15 @@ func executeAnd[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 	return pc + n, nil
 }
 
+// executeAnd_1n1c implements ANDC: stack[rd] = stack[lhs] & constant.
+func executeAnd_1n1c[W word.Word[W]](pc uint32, codes []uint32, pool, stack []W) (uint32, error) {
+	var rd, lhs, constant, _, n = encoding.DecodeBitwise_1n1c(pc, codes, pool)
+	//
+	stack[rd] = stack[lhs].And(constant)
+	//
+	return pc + n, nil
+}
+
 // executeOr implements OR: stack[rd] = stack[lhs] | stack[rhs].
 func executeOr[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var rd, lhs, rhs, _, n = encoding.DecodeBitwise_2n1(pc, codes)
@@ -1410,11 +1431,29 @@ func executeOr[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, er
 	return pc + n, nil
 }
 
+// executeOr_1n1c implements ORC: stack[rd] = stack[lhs] | constant.
+func executeOr_1n1c[W word.Word[W]](pc uint32, codes []uint32, pool, stack []W) (uint32, error) {
+	var rd, lhs, constant, _, n = encoding.DecodeBitwise_1n1c(pc, codes, pool)
+	//
+	stack[rd] = stack[lhs].Or(constant)
+	//
+	return pc + n, nil
+}
+
 // executeXor implements XOR: stack[rd] = stack[lhs] ^ stack[rhs].
 func executeXor[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, error) {
 	var rd, lhs, rhs, _, n = encoding.DecodeBitwise_2n1(pc, codes)
 	//
 	stack[rd] = stack[lhs].Xor(stack[rhs])
+	//
+	return pc + n, nil
+}
+
+// executeXor_1n1c implements XORC: stack[rd] = stack[lhs] ^ constant.
+func executeXor_1n1c[W word.Word[W]](pc uint32, codes []uint32, pool, stack []W) (uint32, error) {
+	var rd, lhs, constant, _, n = encoding.DecodeBitwise_1n1c(pc, codes, pool)
+	//
+	stack[rd] = stack[lhs].Xor(constant)
 	//
 	return pc + n, nil
 }

@@ -18,24 +18,34 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// Bitwise computes a binary bitwise operation between two registers.  The
-// operation is identified by Opcode, which is one of AND, OR or XOR.
+// Bitwise computes a binary bitwise operation between a register and a second
+// operand.  The operation is identified by Opcode, which is one of AND, OR or
+// XOR.
 type Bitwise[W word.Word[W]] struct {
 	// Opcode selects the operation (AND, OR or XOR).
 	Op Operation
 	// Target receives the result.
 	Target RegisterId
-	// Left and Right are the operand registers.
-	Left, Right RegisterId
+	// Left is the first operand register.
+	Left RegisterId
+	// Right is the second operand: either a register or (for AND/OR/XOR only)
+	// a constant.  A NOT carries its single operand duplicated across Left and
+	// Right, whilst for SHL/SHR the right operand (i.e. shift amount) is
+	// always a register.
+	Right Operand[W]
 	// Bitwidth of operands
 	Bitwidth uint16
 }
 
-// Uses implementation for Bytecode interface.  A NOT carries its single operand
-// duplicated across Left and Right (see compileNot), so returning both is
-// always correct.
+// Uses implementation for Bytecode interface.  A constant right operand
+// contributes no register uses; a NOT carries its single operand duplicated
+// across Left and Right (see compileNot), so returning both is always correct.
 func (p *Bitwise[W]) Uses() []RegisterId {
-	return []RegisterId{p.Left, p.Right}
+	if p.Right.IsConstant() {
+		return []RegisterId{p.Left}
+	}
+	//
+	return []RegisterId{p.Left, p.Right.AsRegister()}
 }
 
 // Definitions implementation for Bytecode interface.
@@ -45,14 +55,31 @@ func (p *Bitwise[W]) Definitions() []RegisterId {
 
 // Validate implementation for Bytecode interface.
 func (p *Bitwise[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	return validateOperands(env, p.Uses(), p.Definitions())
+	var errors = validateOperands(env, p.Uses(), p.Definitions())
+	//
+	if p.Right.IsConstant() {
+		// Only AND/OR/XOR support a constant operand: NOT is unary, whilst
+		// shifts always read their amount from a register.
+		switch p.Op {
+		case OP_AND, OP_OR, OP_XOR:
+			// permitted
+		default:
+			return append(errors, fmt.Errorf("constant operand invalid for %s", p.Op.Prefix()))
+		}
+		//
+		if !p.Right.AsConstant().FitsWithin(uint(p.Bitwidth)) {
+			errors = append(errors, fmt.Errorf("constant operand exceeds u%d", p.Bitwidth))
+		}
+	}
+	//
+	return errors
 }
 
 func (p *Bitwise[W]) String(env Environment[W]) string {
 	var (
 		tgt = RegisterToString(p.Target, env)
 		lhs = RegisterToString(p.Left, env)
-		rhs = RegisterToString(p.Right, env)
+		rhs = p.Right.String(env)
 	)
 	//
 	switch p.Op {
