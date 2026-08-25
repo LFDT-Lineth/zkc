@@ -1,0 +1,8 @@
+;; a group of one: must balance like a plain trace
+[{"alpha.SEL": [1], "alpha.A": [5], "alpha.B": [7], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}]
+;; shard 1 only sends, shard 2 only receives; balanced together, not alone
+[{"alpha.SEL": [1,1], "alpha.A": [5,9], "alpha.B": [7,2], "beta.SEL": [0], "beta.X": [0], "beta.Y": [0]}, {"alpha.SEL": [0], "alpha.A": [0], "alpha.B": [0], "beta.SEL": [1,1], "beta.X": [9,5], "beta.Y": [2,7]}]
+;; duplicate message: sent twice in shard 1, received once in each shard
+[{"alpha.SEL": [1,1], "alpha.A": [5,5], "alpha.B": [7,7], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}, {"alpha.SEL": [0], "alpha.A": [0], "alpha.B": [0], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}]
+;; three shards of differing heights, all traffic crossing shard seams
+[{"alpha.SEL": [1,0,1], "alpha.A": [5,0,9], "alpha.B": [7,0,2], "beta.SEL": [0], "beta.X": [0], "beta.Y": [0]}, {"alpha.SEL": [1], "alpha.A": [3], "alpha.B": [4], "beta.SEL": [1,0], "beta.X": [9,0], "beta.Y": [2,0]}, {"alpha.SEL": [0,0], "alpha.A": [0,0], "alpha.B": [0,0], "beta.SEL": [1,1], "beta.X": [5,3], "beta.Y": [7,4]}]

@@ -1,0 +1,6 @@
+;; each shard clean on its own, but the received value differs from the sent one
+[{"alpha.SEL": [1], "alpha.A": [5], "alpha.B": [7], "beta.SEL": [0], "beta.X": [0], "beta.Y": [0]}, {"alpha.SEL": [0], "alpha.A": [0], "alpha.B": [0], "beta.SEL": [1], "beta.X": [5], "beta.Y": [8]}]
+;; two sends across the group, three receives of the same message
+[{"alpha.SEL": [1,1], "alpha.A": [5,5], "alpha.B": [7,7], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}, {"alpha.SEL": [0], "alpha.A": [0], "alpha.B": [0], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}, {"alpha.SEL": [0], "alpha.A": [0], "alpha.B": [0], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}]
+;; a single-shard group that does not balance
+[{"alpha.SEL": [1], "alpha.A": [5], "alpha.B": [7], "beta.SEL": [0], "beta.X": [0], "beta.Y": [0]}]

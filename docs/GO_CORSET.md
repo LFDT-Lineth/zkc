@@ -26,7 +26,21 @@ The purpose of Corset is to provide a human-friendly language for
 writing arithmetic constraints. Corset constraints are compiled down
 into an _Arithmetic Intermediate Representation (AIR)_ consisting of:
 (1) _vanishing constraints_; (2) _range constraints_; (3) _lookup
-arguments_; and (4) _permutation arguments_.
+arguments_; and (4) _bus constraints_.
+
+A bus constraint requires that the multiset of messages sent on a named
+bus equals the multiset received on it. Modules participate through
+`defsend` / `defrecv` declarations of the form:
+
+```lisp
+(defsend HANDLE BUS SELECTOR (COLUMNS...))
+(defrecv HANDLE BUS SELECTOR (COLUMNS...))
+```
+
+On every row where `SELECTOR` (a binary column, mandatory) is one, the
+values of `COLUMNS` form one message. Any number of senders and
+receivers may share a bus name; unlike a lookup, duplicates matter (two
+identical sends require two identical receives).
 
 An example constraint set written in Corset is:
 

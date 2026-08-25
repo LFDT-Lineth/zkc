@@ -1,0 +1,8 @@
+;; single message, sent and received
+{"alpha.SEL": [1], "alpha.A": [5], "alpha.B": [7], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}
+;; order scrambled, junk on unselected row
+{"alpha.SEL": [1,0,1], "alpha.A": [5,999,9], "alpha.B": [7,999,2], "beta.SEL": [1,1], "beta.X": [9,5], "beta.Y": [2,7]}
+;; duplicate message, twice sent and twice received
+{"alpha.SEL": [1,1], "alpha.A": [5,5], "alpha.B": [7,7], "beta.SEL": [1,1], "beta.X": [5,5], "beta.Y": [7,7]}
+;; nothing on the bus at all, junk on every unselected row
+{"alpha.SEL": [0,0], "alpha.A": [3,4], "alpha.B": [5,6], "beta.SEL": [0], "beta.X": [8], "beta.Y": [9]}

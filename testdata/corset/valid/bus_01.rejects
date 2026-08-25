@@ -1,0 +1,10 @@
+;; send never received
+{"alpha.SEL": [1], "alpha.A": [5], "alpha.B": [7], "beta.SEL": [0], "beta.X": [0], "beta.Y": [0]}
+;; receive never sent
+{"alpha.SEL": [0], "alpha.A": [0], "alpha.B": [0], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}
+;; two identical sends, only one receive
+{"alpha.SEL": [1,1], "alpha.A": [5,5], "alpha.B": [7,7], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}
+;; received value differs from sent value
+{"alpha.SEL": [1], "alpha.A": [5], "alpha.B": [7], "beta.SEL": [1], "beta.X": [5], "beta.Y": [8]}
+;; same number of messages on both sides, but counts per message differ
+{"alpha.SEL": [1,1], "alpha.A": [5,9], "alpha.B": [7,2], "beta.SEL": [1,1], "beta.X": [5,5], "beta.Y": [7,7]}

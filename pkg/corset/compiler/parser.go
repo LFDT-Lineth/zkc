@@ -286,6 +286,10 @@ func (p *Parser) parseDeclaration(module file.Path, s *sexp.List) (ast.Declarati
 		decl, errors = p.parseDefConditionalLookup(module, s.Elements)
 	} else if s.Len() == 4 && s.MatchSymbols(1, "defmlookup") {
 		decl, errors = p.parseDefMultiLookup(module, s.Elements)
+	} else if s.Len() == 5 && s.MatchSymbols(1, "defsend") {
+		decl, errors = p.parseDefSendReceive(module, s.Elements, true)
+	} else if s.Len() == 5 && s.MatchSymbols(1, "defrecv") {
+		decl, errors = p.parseDefSendReceive(module, s.Elements, false)
 	} else {
 		errors = p.translator.SyntaxErrors(s, "malformed declaration")
 	}
@@ -813,6 +817,51 @@ func (p *Parser) parseDefLookupSources(handle string, element sexp.SExp) ([]ast.
 	}
 	//
 	return sources, errors
+}
+
+// Parse a send / receive (i.e. bus port) declaration of the form
+// "(defsend HANDLE BUS SELECTOR (COLUMNS...))" (likewise defrecv).
+func (p *Parser) parseDefSendReceive(module file.Path, elements []sexp.SExp,
+	isSend bool) (ast.Declaration, []SyntaxError) {
+	//
+	var errors []SyntaxError
+	// Sanity check handle
+	if !isIdentifier(elements[1]) {
+		return nil, p.translator.SyntaxErrors(elements[1], "malformed handle")
+	}
+	//
+	handle := elements[1].AsSymbol().Value
+	// Generate qualified name
+	qualifiedHandle := fmt.Sprintf("%s:%s", module.String(), handle)
+	// Check for duplicate
+	if _, ok := p.handles[qualifiedHandle]; ok {
+		return nil, p.translator.SyntaxErrors(elements[1], "duplicate handle")
+	}
+	//
+	p.handles[qualifiedHandle] = true
+	// Sanity check bus name.  Bus names form a global namespace and are never
+	// resolved as symbols, hence a plain identifier is all that is required.
+	if !isIdentifier(elements[2]) {
+		return nil, p.translator.SyntaxErrors(elements[2], "malformed bus name")
+	}
+	//
+	busName := elements[2].AsSymbol().Value
+	// Parse (mandatory) selector
+	selector, errs := p.parseColumnAccess(elements[3], "malformed selector")
+	errors = append(errors, errs...)
+	// Parse message columns
+	columns, errs := p.parseDefLookupSources("bus", elements[4])
+	errors = append(errors, errs...)
+	//
+	if len(errs) == 0 && len(columns) == 0 {
+		errors = append(errors, *p.translator.SyntaxError(elements[4], "empty bus columns"))
+	}
+	// Error check
+	if len(errors) != 0 {
+		return nil, errors
+	}
+	// Done
+	return ast.NewDefSendReceive(handle, busName, isSend, selector, columns), nil
 }
 
 // Parse the selector of a (conditional) lookup which, as for the sources /

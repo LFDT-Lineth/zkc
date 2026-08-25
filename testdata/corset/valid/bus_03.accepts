@@ -1,0 +1,4 @@
+;; two senders, two receivers: (5,7) crosses s1->r2, (9,2) crosses s2->r1, (4,4) sent by both senders and received by both receivers
+{"s1.SEL": [1,1], "s1.A": [5,4], "s1.B": [7,4], "s2.SEL": [1,1], "s2.A": [9,4], "s2.B": [2,4], "r1.SEL": [1,1], "r1.X": [4,9], "r1.Y": [4,2], "r2.SEL": [1,1], "r2.X": [4,5], "r2.Y": [4,7]}
+;; single sender active, single receiver active
+{"s1.SEL": [1], "s1.A": [5], "s1.B": [7], "s2.SEL": [0], "s2.A": [0], "s2.B": [0], "r1.SEL": [0], "r1.X": [0], "r1.Y": [0], "r2.SEL": [1], "r2.X": [5], "r2.Y": [7]}

@@ -16,6 +16,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
@@ -53,6 +54,12 @@ type (
 
 // Following types capture permitted constraint forms at the MIR level.
 type (
+	// BusConstraint captures the essence of a bus constraint at the MIR
+	// level.  A bus requires that the multiset of all messages sent on it
+	// equals the multiset of all messages received on it.
+	BusConstraint[F field.Element[F]] = bus.Constraint[F]
+	// BusPort provides a convenient shorthand
+	BusPort = bus.Port
 	// LookupConstraint captures the essence of a lookup constraint at the MIR
 	// level.
 	LookupConstraint[F field.Element[F]] = lookup.Constraint[F]
