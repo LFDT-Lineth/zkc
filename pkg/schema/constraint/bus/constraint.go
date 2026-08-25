@@ -24,8 +24,11 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
-// Multiset maps each message to its number of occurrences.
-type Multiset[F field.Element[F]] = hash.Map[hash.Array[F], uint]
+// Tally maps each message to its net count (sends minus receives).  A bus
+// balances exactly when every net count is zero.  Net counts halve the
+// memory of separate send / receive multisets; the per-side counts are
+// reconstructed by rescanning, on failure only.
+type Tally[F field.Element[F]] = hash.Map[hash.Array[F], int]
 
 // Constraint (a "bus") requires that the multiset of messages sent on the bus
 // equals the multiset received on it.
@@ -141,45 +144,45 @@ func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], ctx sc
 // AcceptsGroup checks whether the bus balances across a group of traces
 // judged together.
 func (p Constraint[F]) AcceptsGroup(traces ...trace.Trace[F]) schema.Failure {
-	var (
-		sends    = hash.NewMap[hash.Array[F], uint](32)
-		receives = hash.NewMap[hash.Array[F], uint](32)
-	)
+	tally := hash.NewMap[hash.Array[F], int](32)
 	//
 	for _, tr := range traces {
-		p.accumulate(tr, p.Sends, sends)
-		p.accumulate(tr, p.Receives, receives)
+		p.accumulate(tr, p.Sends, tally, 1)
+		p.accumulate(tr, p.Receives, tally, -1)
 	}
-	//
-	if failure := p.compareMultisets(sends, receives); failure != nil {
-		return failure
-	}
-	// Catch messages received but never sent.
-	for iter := receives.KeyValues(); iter.HasNext(); {
+	// The bus balances exactly when every net count is zero.  Iteration
+	// order — hence which unbalanced message is reported — is unspecified.
+	for iter := tally.KeyValues(); iter.HasNext(); {
 		var pair = iter.Next()
 		//
-		if _, ok := sends.Get(pair.Left); !ok {
-			return &Failure[F]{p.Handle, pair.Left.Elements(), 0, pair.Right, p.Sends, p.Receives}
+		if pair.Right != 0 {
+			var (
+				message  = pair.Left.Elements()
+				sent     = p.count(traces, p.Sends, message)
+				received = p.count(traces, p.Receives, message)
+			)
+			//
+			return &Failure[F]{p.Handle, message, sent, received, p.Sends, p.Receives}
 		}
 	}
 	//
 	return nil
 }
 
-// Multisets computes one trace's send and receive multisets, allowing a
-// checking harness to combine shards itself.
-func (p Constraint[F]) Multisets(tr trace.Trace[F]) (sends *Multiset[F], receives *Multiset[F]) {
-	sends = hash.NewMap[hash.Array[F], uint](32)
-	receives = hash.NewMap[hash.Array[F], uint](32)
+// NetTally computes one trace's tally (sends minus receives), allowing a
+// checking harness to combine shards by addition.
+func (p Constraint[F]) NetTally(tr trace.Trace[F]) *Tally[F] {
+	tally := hash.NewMap[hash.Array[F], int](32)
 	//
-	p.accumulate(tr, p.Sends, sends)
-	p.accumulate(tr, p.Receives, receives)
+	p.accumulate(tr, p.Sends, tally, 1)
+	p.accumulate(tr, p.Receives, tally, -1)
 	//
-	return sends, receives
+	return tally
 }
 
-// accumulate adds one message per selected row of each port.
-func (p Constraint[F]) accumulate(tr trace.Trace[F], ports []Port, multiset *Multiset[F]) {
+// accumulate adds the given sign to the tally for every selected row of each
+// port.
+func (p Constraint[F]) accumulate(tr trace.Trace[F], ports []Port, tally *Tally[F], sign int) {
 	for _, port := range ports {
 		var trModule = tr.Module(port.Module)
 		//
@@ -196,30 +199,46 @@ func (p Constraint[F]) accumulate(tr trace.Trace[F], ports []Port, multiset *Mul
 			//
 			var (
 				key      = hash.NewArray(message)
-				count, _ = multiset.Get(key)
+				count, _ = tally.Get(key)
 			)
 			//
-			multiset.Insert(key, count+1)
+			tally.Insert(key, count+sign)
 		}
 	}
 }
 
-// compareMultisets returns a failure for the first message whose send and
-// receive counts differ.  Iteration order — hence which message is reported —
-// is unspecified.
-func (p Constraint[F]) compareMultisets(sends *Multiset[F], receives *Multiset[F]) schema.Failure {
-	for iter := sends.KeyValues(); iter.HasNext(); {
-		var (
-			pair        = iter.Next()
-			received, _ = receives.Get(pair.Left)
-		)
-		//
-		if pair.Right != received {
-			return &Failure[F]{p.Handle, pair.Left.Elements(), pair.Right, received, p.Sends, p.Receives}
+// count returns how many times the given message is contributed by the given
+// ports across all traces.  This rescans the traces, which is fine since it
+// only ever runs when reporting a failure.
+func (p Constraint[F]) count(traces []trace.Trace[F], ports []Port, message []F) uint {
+	var n uint
+	//
+	for _, tr := range traces {
+		for _, port := range ports {
+			var trModule = tr.Module(port.Module)
+			//
+			for row := range trModule.Height() {
+				if trModule.Column(port.Selector.Unwrap()).Get(row).IsZero() {
+					continue
+				}
+				//
+				var matches = true
+				//
+				for i, rid := range port.Registers {
+					if !trModule.Column(rid.Unwrap()).Get(row).Equals(message[i]) {
+						matches = false
+						break
+					}
+				}
+				//
+				if matches {
+					n++
+				}
+			}
 		}
 	}
 	//
-	return nil
+	return n
 }
 
 // Lisp converts this constraint into an S-Expression.
