@@ -1,0 +1,27 @@
+pub input data(address:u16) -> (word:u64)
+
+// Regression test (#2167): a concatenation whose single source is a wide
+// (u128) register, as arises when the product is bound to an intermediate
+// variable before being split.
+fn main() {
+    var lhs:u64 = data[0]
+    var rhs:u64 = data[1]
+    var ehi:u64 = data[2]
+    var elo:u64 = data[3]
+    //
+    var hi:u64
+    var lo:u64
+    hi, lo = mul64_ss(lhs, rhs)
+    //
+    if hi != ehi {
+        fail
+    }
+    if lo != elo {
+        fail
+    }
+}
+
+fn mul64_ss(lhs:u64, rhs:u64) -> (hi:u64, lo:u64) {
+    var val:u128 = (lhs as u128) * (rhs as u128)
+    hi::lo = val
+}
