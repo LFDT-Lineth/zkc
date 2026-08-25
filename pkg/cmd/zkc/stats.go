@@ -735,7 +735,7 @@ func renderStatsTable(cols []*statsColumn, stats []moduleStats) {
 	tbl.SetRule(2 + uint(len(totals)))
 	tbl.SetRule(nrows)
 	//
-	tbl.Print(true)
+	tbl.Print(AnsiEscapes)
 }
 
 // typeTotals computes one totals row per module type present, in type order,

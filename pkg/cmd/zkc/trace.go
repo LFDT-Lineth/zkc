@@ -253,7 +253,7 @@ func printTraceStats[F field.Element[F]](rtr trace.Trace[F]) {
 	}
 	//
 	tbl.SetMaxWidths(64)
-	tbl.Print(true)
+	tbl.Print(AnsiEscapes)
 }
 
 // humanCount formats a (potentially large) count using K/M/G suffixes, matching
@@ -335,7 +335,7 @@ func printModuleStats[F field.Element[F]](rtr trace.Trace[F]) {
 	fmt.Println(strings.Repeat("-", int(tbl.PrintedWidth())))
 	// Sort modules (descending) by cell count, skipping the title row.
 	tbl.Sort(1, termio.NewTableSorter().SortNumericalColumn(4).Invert())
-	tbl.Print(true)
+	tbl.Print(AnsiEscapes)
 }
 
 // byteWidth returns the number of bytes required to hold a value of the given

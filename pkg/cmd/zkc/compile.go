@@ -80,6 +80,8 @@ type CompileConfig struct {
 	// order determines how modules are ordered in the --stats output
 	// (name|total|complexity|lookups).
 	order string
+	// indicates whether or not to print skip arrows
+	skipArrows bool
 	// indicates whether or not to print everything in full (e.g. including
 	// static reference tables).
 	verbose bool
@@ -100,6 +102,7 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	config.air = GetFlag(cmd, "air")
 	config.stats = GetFlag(cmd, "stats")
 	config.order = GetString(cmd, "order")
+	config.skipArrows = GetFlag(cmd, "show-skips")
 	config.statsMatrix = GetVerboseLevel(cmd) >= VERBOSE_INFO
 	// Compile verbosity is the highest verbosity level.
 	config.verbose = GetVerboseLevel(cmd) >= VERBOSE_PRINTF
@@ -181,13 +184,13 @@ func printArtifacts[F field.Element[F]](ast *ast.Program, bf *constraints.Binary
 	// Word-level Intermediate Representation
 	if ir && config.raw {
 		// Raw IR
-		writeBytecodeProgram(config.verbose, ast, bf.RawProgram())
+		writeBytecodeProgram(config.verbose, ast, bf.RawProgram(), config)
 	} else if ir && config.build.fastMode {
 		// Execution IR
-		writeBytecodeProgram(config.verbose, ast, bf.ExecutionProgram())
+		writeBytecodeProgram(config.verbose, ast, bf.ExecutionProgram(), config)
 	} else if ir {
 		// Tracing IR
-		writeBytecodeProgram(config.verbose, ast, bf.TracingProgram())
+		writeBytecodeProgram(config.verbose, ast, bf.TracingProgram(), config)
 	}
 	// Mid-level Intermediate Representation
 	if config.mir {
@@ -542,7 +545,7 @@ func (p *bytecodeListing) table() *termio.FormattedTable {
 	return tbl
 }
 
-func writeBytecodeProgram[W vm.Word[W]](binary bool, ast *ast.Program, program vm.Program[W]) {
+func writeBytecodeProgram[W vm.Word[W]](binary bool, ast *ast.Program, program vm.Program[W], config CompileConfig) {
 	var (
 		bin           [][]uint32
 		address       uint32
@@ -566,7 +569,8 @@ func writeBytecodeProgram[W vm.Word[W]](binary bool, ast *ast.Program, program v
 			fmt.Println()
 		}
 		// Write and print this module's table
-		address, bin = writeBytecodeModule(binary, encodingWidth, uint16(i), program, m, annotations, address, bin)
+		address, bin = writeBytecodeModule(binary, encodingWidth, uint16(i), program, m, annotations,
+			address, bin, config.skipArrows)
 	}
 }
 
@@ -591,7 +595,7 @@ func annotationsOf(program *ast.Program) map[string][]string {
 // The encoding stream (bin) and running instruction address are threaded
 // through (and returned) since they accumulate across the whole program.
 func writeBytecodeModule[W vm.Word[W]](binary bool, encodingWidth uint, fid uint16, program vm.Program[W],
-	m vm.Module[W], annotations map[string][]string, address uint32, bin [][]uint32) (uint32, [][]uint32) {
+	m vm.Module[W], annotations map[string][]string, address uint32, bin [][]uint32, arrows bool) (uint32, [][]uint32) {
 	//
 	listing := &bytecodeListing{binary: binary, encodingWidth: encodingWidth}
 	// Write any annotations for this module
@@ -601,7 +605,7 @@ func writeBytecodeModule[W vm.Word[W]](binary bool, encodingWidth uint, fid uint
 	// Write module contents
 	switch m := m.(type) {
 	case *vm.Function[W]:
-		address, bin = writeBytecodeFunction(listing, address, program.EnvironmentOf(fid), m, bin)
+		address, bin = writeBytecodeFunction(listing, address, program.EnvironmentOf(fid), m, bin, arrows)
 	case *vm.Memory[W]:
 		writeBytecodeMemory(listing, m)
 	default:
@@ -610,7 +614,7 @@ func writeBytecodeModule[W vm.Word[W]](binary bool, encodingWidth uint, fid uint
 	//
 	writeModuleSignature(m)
 	// Print this module's table
-	listing.table().Print(true)
+	listing.table().Print(AnsiEscapes)
 	//
 	return address, bin
 }
@@ -644,10 +648,10 @@ func writeModuleSignature[W vm.Word[W]](m vm.Module[W]) {
 }
 
 func writeBytecodeFunction[W vm.Word[W]](listing *bytecodeListing, address uint32, env vm.BytecodeEnvironment[W],
-	f *vm.Function[W], bin [][]uint32) (uint32, [][]uint32) {
+	f *vm.Function[W], bin [][]uint32, skips bool) (uint32, [][]uint32) {
 	for _, r := range f.Registers() {
 		if !r.IsInputOutput() {
-			listing.addDeclaration(fmt.Sprintf("  %s %s", regType(r), r.Name()))
+			listing.addDeclaration(fmt.Sprintf("  var %s:%s", r.Name(), regType(r)))
 		}
 	}
 	// First pass: gather each bytecode's display fields, and record the
@@ -692,11 +696,19 @@ func writeBytecodeFunction[W vm.Word[W]](listing *bytecodeListing, address uint3
 			idx++
 		}
 	}
-	// Render the flow graph across all bytecode rows of this function.
-	arrows := flow.Render(idx)
-	// Second pass: emit each instruction row alongside its flow-graph column.
-	for i, row := range insns {
-		listing.addInstruction(row.address, row.encoding, row.marker, row.text, arrows[i])
+	//
+	if skips {
+		// Render the flow graph across all bytecode rows of this function.
+		arrows := flow.Render(idx)
+		// Second pass: emit each instruction row alongside its flow-graph column.
+		for i, row := range insns {
+			listing.addInstruction(row.address, row.encoding, row.marker, row.text, arrows[i])
+		}
+	} else {
+		// Don't print skip arrows
+		for _, row := range insns {
+			listing.addInstruction(row.address, row.encoding, row.marker, row.text, "")
+		}
 	}
 	//
 	return address, bin
@@ -798,6 +810,7 @@ func init() {
 	compileCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
 	compileCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
 	compileCmd.PersistentFlags().Bool("stats", false, "Output summary statistics")
+	compileCmd.PersistentFlags().Bool("show-skips", true, "Show skip arrows explicitly")
 	compileCmd.PersistentFlags().String("order", "total",
 		"module ordering for --stats (name|total|complexity|lookups)")
 	// --order only affects the --stats output.
