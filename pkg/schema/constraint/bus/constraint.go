@@ -170,17 +170,6 @@ func (p Constraint[F]) AcceptsGroup(traces ...trace.Trace[F]) schema.Failure {
 	return nil
 }
 
-// NetTally computes one trace's tally (sends minus receives), allowing a
-// checking harness to combine shards by addition.
-func (p Constraint[F]) NetTally(tr trace.Trace[F]) *Tally[F] {
-	tally := hash.NewMap[hash.Array[F], int](32)
-	//
-	p.accumulate(tr, p.Sends, tally, 1)
-	p.accumulate(tr, p.Receives, tally, -1)
-	//
-	return tally
-}
-
 // portColumns looks up a port's selector column and its message columns.  Doing
 // this once per port keeps the lookups out of the row loops below, where they
 // would otherwise be repeated on every single row.
