@@ -152,7 +152,7 @@ func (t *translator) translateModules(circuit *ast.Circuit) {
 // Translate the given Corset module into its corresponding HIR module.
 func (t *translator) translateModule(name string) {
 	// Always include module (even if empty).
-	t.schema.NewModule(name, true, true, false, false, false, false)
+	t.schema.NewModule(name, true, false, false, false, false)
 	// Process each register in turn.
 	for _, regIndex := range t.env.RegistersOf(name) {
 		var (

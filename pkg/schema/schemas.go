@@ -43,12 +43,8 @@ func RequiredPaddingRows[F any](module uint, defensive bool, schema AnySchema[F]
 // outside of the user's control are determined.
 func requiredSpillage[F any](module uint, schema AnySchema[F]) uint {
 	var mod = schema.Module(module)
-	// Sanity check whether padding is allowed for this module.
-	if !mod.AllowPadding() {
-		return 0
-	}
-	// For modules that allow padding we currently (for legacy reasons) always
-	// ensure an initial padding row is present.
+	// For legacy reasons, we currently always ensure an initial padding row is
+	// present.
 	mx := uint(1)
 	// Determine if any more spillage required
 	for i := mod.Assignments(); i.HasNext(); {
@@ -70,18 +66,12 @@ func requiredSpillage[F any](module uint, schema AnySchema[F]) uint {
 // only front padding is considered because, for now, we assume the prover will
 // only pad at the front.
 func defensivePadding[F any](module uint, schema AnySchema[F]) uint {
-	var (
-		mod   = schema.Module(module)
-		front = uint(0)
-	)
-	// Check whether module supports defensive padding, or not.
-	if mod.AllowPadding() {
-		// Determine maximum amounts of defensive padding required for constraints.
-		for i := schema.Constraints(); i.HasNext(); {
-			bounds := i.Next().Bounds(module)
-			//
-			front = max(front, bounds.Start)
-		}
+	var front = uint(0)
+	// Determine maximum amounts of defensive padding required for constraints.
+	for i := schema.Constraints(); i.HasNext(); {
+		bounds := i.Next().Bounds(module)
+		//
+		front = max(front, bounds.Start)
 	}
 	//
 	return front
