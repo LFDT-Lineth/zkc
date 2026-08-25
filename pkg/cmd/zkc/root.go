@@ -30,11 +30,21 @@ import (
 // install".
 var Version string
 
+// AnsiEscapes determine whether or not to output with ANSI escapes enabled.
+var AnsiEscapes bool
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "zkc",
 	Short: "A compiler for the ZkC language.",
 	Long:  "A compiler (and general toolbox) for the ZkC language.",
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Read the --ansi-escapes flag once here so that every subcommand
+		// (including those that do not route through runFieldAgnosticCmd,
+		// such as `format` and `lsp`) honours it.
+		AnsiEscapes = GetFlag(cmd, "ansi-escapes")
+		return nil
+	},
 	Run: func(cmd *cobra.Command, args []string) {
 		if GetFlag(cmd, "version") {
 			fmt.Print("zkc ")
@@ -184,4 +194,6 @@ func init() {
 	// profiling commands'
 	rootCmd.PersistentFlags().String("cpuprof", "", "write cpu profile to `file`")
 	rootCmd.PersistentFlags().String("memprof", "", "write memory profile to `file`")
+	rootCmd.PersistentFlags().Bool("ansi-escapes", true,
+		"specify whether to allow ANSI escapes or not (e.g. for colour reports)")
 }
