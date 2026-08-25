@@ -157,8 +157,50 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 	registers split.Allocator[W],
 	helpers *bitwiseHelpers[W],
 ) []Bytecode[W] {
+	// If the right operand is a constant we can bypass in some cases:
+	// - c is operator's identity  (0b0.. for OR, 0b1.. for AND, 0b0.. for XOR)
+	// result is 0 (c = 0b0.. for AND)
+	// result is 0b1.. (c = 0b1.. for OR)
+	// - c is behaving as a NOT (0b1.. for XOR)
+	if b.Right.IsConstant() {
+		var registerWidth = b.Bitwidth
+
+		if resIsId(b.Op, registerWidth, uint(b.Right.AsConstant().Uint64())) {
+			return []Bytecode[W]{bytecode.AddConst(b.Target, []bytecode.RegisterId{b.Left}, word.Const64[W](0))}
+		}
+
+		if resultIsNull(b.Op, uint(b.Right.AsConstant().Uint64())) {
+			zeroReg := registers.ZeroRegister()
+
+			return []Bytecode[W]{
+				bytecode.AddConst(b.Target, []bytecode.RegisterId{zeroReg}, word.Const64[W](0))}
+		}
+
+		if resultIsMax(b.Op, registerWidth, uint(b.Right.AsConstant().Uint64())) {
+			maxReg := registers.Allocate("", util.Some(uint(b.Bitwidth)))
+			maxValue := (1 << registerWidth) - 1
+
+			return []Bytecode[W]{
+				bytecode.LoadConst(maxReg, word.Const64[W](uint64(maxValue))),
+				bytecode.AddConst(b.Target, []bytecode.RegisterId{maxReg}, word.Const64[W](0))}
+		}
+
+		if resultIsNot(b.Op, registerWidth, uint(b.Right.AsConstant().Uint64())) {
+			maxReg := registers.Allocate("", util.Some(uint(b.Bitwidth)))
+			maxValue := (1 << registerWidth) - 1
+
+			// TODO: CSUB, see: https://github.com/LFDT-Lineth/zkc/issues/2062
+			return []Bytecode[W]{
+				bytecode.LoadConst(maxReg, word.Const64[W](uint64(maxValue))),
+				bytecode.SubConst(b.Target, []bytecode.RegisterId{maxReg, b.Left}, word.Const64[W](0)),
+			}
+		}
+	}
+
 	// Materialise a constant right operand into a register, since both the
 	// unit-arithmetic and table paths below operate on registers only.
+
+	// TODO: constant register, see: https://github.com/LFDT-Lineth/zkc/issues/1838
 	right, pre := materialiseRight(b, registers)
 	//
 	origWidth, isPowerOfTwo := maxBitwidthOf(registers.Registers(), b.Left, right)
@@ -167,6 +209,7 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 	if !isPowerOfTwo {
 		p = util_math.NextPowerOfTwo(origWidth)
 	}
+
 	// Single-bit operations are cheap arithmetic (a&b = a*b, etc.);
 	// inline them rather than calling a (static or not) table.
 	if p == 1 {
@@ -496,6 +539,50 @@ func (p *helperBuilder[W]) combineBit(op bytecode.Operation, lhs, rhs bytecode.R
 		p.emit(bytecode.AddConst(res, []bytecode.RegisterId{l, r}, zero))
 
 		return res
+	default:
+		panic(fmt.Sprintf("unsupported bit combine opcode: %d", op))
+	}
+}
+
+func resIsId(op bytecode.Operation, registerWidth uint16, constant uint) bool {
+	switch op {
+	case bytecode.OP_AND:
+		return constant == (1<<registerWidth)-1
+	case bytecode.OP_OR, bytecode.OP_XOR:
+		return constant == 0
+	default:
+		panic(fmt.Sprintf("unsupported bit combine opcode: %d", op))
+	}
+}
+
+func resultIsNull(op bytecode.Operation, constant uint) bool {
+	switch op {
+	case bytecode.OP_AND:
+		return constant == 0
+	case bytecode.OP_OR, bytecode.OP_XOR:
+		return false
+	default:
+		panic(fmt.Sprintf("unsupported bit combine opcode: %d", op))
+	}
+}
+
+func resultIsMax(op bytecode.Operation, registerWidth uint16, constant uint) bool {
+	switch op {
+	case bytecode.OP_OR:
+		return constant == (1<<registerWidth)-1
+	case bytecode.OP_AND, bytecode.OP_XOR:
+		return false
+	default:
+		panic(fmt.Sprintf("unsupported bit combine opcode: %d", op))
+	}
+}
+
+func resultIsNot(op bytecode.Operation, registerWidth uint16, constant uint) bool {
+	switch op {
+	case bytecode.OP_XOR:
+		return constant == (1<<registerWidth)-1
+	case bytecode.OP_AND, bytecode.OP_OR:
+		return false
 	default:
 		panic(fmt.Sprintf("unsupported bit combine opcode: %d", op))
 	}

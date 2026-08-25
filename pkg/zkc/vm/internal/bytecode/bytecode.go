@@ -347,6 +347,7 @@ func NewSkipIf[W word.Word[W]](op Condition, skip uint16, left RegisterVector, r
 
 // LoadConst constructs a load-constant (LDC) instruction which assigns the
 // given constant to the target register.
+// TODO: constant register, see: https://github.com/LFDT-Lineth/zkc/issues/1838
 func LoadConst[W word.Word[W]](target RegisterId, constant W) *Arith[W] {
 	return NewArith(OP_ADD, []RegisterId{target}, nil, constant)
 }

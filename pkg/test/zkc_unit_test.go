@@ -777,6 +777,12 @@ func Test_ZkcUnit_Bitwise_20(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/bitwise_20", DEFAULT_UNIT_CONFIG)
 }
 
+// This tests that AND/OR/XOR with unity/absorbing constants don't produce lookups and
+// BIT/AND/XOR module
+func Test_ZkcUnit_Bitwise_21(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bitwise_21", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Shift Tests
 // ===================================================================
