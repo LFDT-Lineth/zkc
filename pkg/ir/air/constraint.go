@@ -15,6 +15,7 @@ package air
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
@@ -31,11 +32,13 @@ import (
 
 // ConstraintBound limits the permitted set of underlying constraints.  This
 // should never change, unless the underlying prover changes in some way to
-// offer different or more fundamental primitives.
+// offer different or more fundamental primitives (as it did for the bus
+// constraint).
 type ConstraintBound[F field.Element[F]] interface {
 	schema.Constraint[F]
 
-	lookup.Constraint[F] |
+	bus.Constraint[F] |
+		lookup.Constraint[F] |
 		ranged.Constraint[F] |
 		vanishing.Constraint[F, LogicalTerm[F]]
 }
@@ -52,6 +55,13 @@ type Air[F field.Element[F], C ConstraintBound[F]] struct {
 // to avoid lots of generic types.
 func newAir[F field.Element[F], C ConstraintBound[F]](constraint C) Air[F, C] {
 	return Air[F, C]{constraint}
+}
+
+// NewBusConstraint constructs a new AIR bus constraint
+func NewBusConstraint[F field.Element[F]](handle string, sends []bus.Port,
+	receives []bus.Port) BusConstraint[F] {
+	//
+	return newAir(bus.NewConstraint[F](handle, sends, receives))
 }
 
 // NewLookupConstraint constructs a new AIR lookup constraint

@@ -25,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
@@ -295,6 +296,10 @@ func reportFailure[F field.Element[F]](failure sc.Failure, trace tr.Trace[F], ma
 	} else if f, ok := failure.(*lookup.Failure[F]); ok {
 		cells := f.RequiredCells(trace)
 		fmt.Printf("failing lookup constraint %s:\n", f.Handle)
+		reportRelevantCells(cells, trace, mapping, cfg)
+	} else if f, ok := failure.(*bus.Failure[F]); ok {
+		cells := f.RequiredCells(trace)
+		fmt.Printf("failing bus constraint %s:\n", f.Handle)
 		reportRelevantCells(cells, trace, mapping, cfg)
 	} else if f, ok := failure.(*constraint.InternalFailure[F]); ok {
 		cells := f.RequiredCells(trace)
