@@ -131,7 +131,8 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 	// parameterised over W nonetheless, so each must be re-expressed as its W2
 	// instantiation (copying its word-agnostic fields verbatim).
 	case *bytecode.Bitwise[W1]:
-		return &bytecode.Bitwise[W2]{Op: b.Op, Target: b.Target, Left: b.Left, Right: b.Right, Bitwidth: b.Bitwidth}
+		return &bytecode.Bitwise[W2]{Op: b.Op, Target: b.Target, Left: b.Left,
+			Right: p.convertOperandVector(b.Right), Bitwidth: b.Bitwidth}
 	case *bytecode.Call[W1]:
 		return &bytecode.Call[W2]{Target: b.Target, Arguments: b.Arguments, Returns: b.Returns}
 	case *bytecode.Cat[W1]:

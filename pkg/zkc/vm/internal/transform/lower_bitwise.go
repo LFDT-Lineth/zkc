@@ -101,14 +101,17 @@ func lowerBitwiseShlShr[W word.Word[W]](
 	helpers *shiftHelpers[W],
 ) []Bytecode[W] {
 	var (
+		// NOTE: the shift amount is always a register (constant operands are
+		// only supported for AND/OR/XOR).
+		amount = b.Right.AsRegister()
 		// NOTE: bitwidth of shift (e.g. "x << y") determined by width of first
 		// argument only (i.e. "x").
-		amtWidth = registers.Registers()[b.Right].Bitwidth().Unwrap()
+		amtWidth = registers.Registers()[amount].Bitwidth().Unwrap()
 		id       = helpers.ensureShift(b.Op, uint(b.Bitwidth), amtWidth)
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.CallFun[W](uint16(id), []bytecode.RegisterId{b.Left, b.Right}, []bytecode.RegisterId{b.Target}),
+		bytecode.CallFun[W](uint16(id), []bytecode.RegisterId{b.Left, amount}, []bytecode.RegisterId{b.Target}),
 	}
 }
 

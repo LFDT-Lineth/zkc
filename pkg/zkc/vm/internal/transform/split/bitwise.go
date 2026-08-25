@@ -37,6 +37,10 @@ import (
 // that splitting bitwise operations is relatively straightforward.
 func Bitwise[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Bitwise[W],
 ) []Bytecode[W] {
+	if insn.Right.IsConstant() {
+		return bitwiseConst(mapping, alloc, insn)
+	}
+	//
 	var (
 		zero      W
 		bytecodes []Bytecode[W]
@@ -45,7 +49,7 @@ func Bitwise[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 		// bit-position-aligned).
 		targets = mapping.LimbIds(insn.Target)
 		left    = mapping.LimbIds(insn.Left)
-		right   = mapping.LimbIds(insn.Right)
+		right   = mapping.LimbIds(insn.Right.AsRegister())
 		//
 		n = max(len(targets), len(left), len(right))
 	)
@@ -110,7 +114,8 @@ func newAndBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ..
 		return bytecode.LoadConst(target, zero)
 	}
 	//
-	return bytecode.NewBitwise[W](bytecode.OP_AND, target, sources[0], sources[1], util.Cast[uint16](bitwidth))
+	return bytecode.NewBitwise(bytecode.OP_AND, target, sources[0],
+		bytecode.NewRegisterOperand[W](sources[1]), util.Cast[uint16](bitwidth))
 }
 
 func newOrBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ...RegisterId) Bytecode[W] {
@@ -118,7 +123,8 @@ func newOrBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ...
 		return bytecode.Assign[W](target, sources[0])
 	}
 	//
-	return bytecode.NewBitwise[W](bytecode.OP_OR, target, sources[0], sources[1], util.Cast[uint16](bitwidth))
+	return bytecode.NewBitwise(bytecode.OP_OR, target, sources[0],
+		bytecode.NewRegisterOperand[W](sources[1]), util.Cast[uint16](bitwidth))
 }
 
 func newXorBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ...RegisterId) Bytecode[W] {
@@ -129,10 +135,68 @@ func newXorBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ..
 		return bytecode.Assign[W](target, sources[0])
 	}
 	//
-	return bytecode.NewBitwise[W](bytecode.OP_XOR, target, sources[0], sources[1], util.Cast[uint16](bitwidth))
+	return bytecode.NewBitwise(bytecode.OP_XOR, target, sources[0],
+		bytecode.NewRegisterOperand[W](sources[1]), util.Cast[uint16](bitwidth))
 }
 
 func newNotBytecode[W word.Word[W]](bitwidth uint, target RegisterId, source RegisterId) Bytecode[W] {
 	//
-	return bytecode.NewBitwise[W](bytecode.OP_NOT, target, source, source, util.Cast[uint16](bitwidth))
+	return bytecode.NewBitwise(bytecode.OP_NOT, target, source,
+		bytecode.NewRegisterOperand[W](source), util.Cast[uint16](bitwidth))
+}
+
+// bitwiseConst splits a bitwise AND, OR or XOR against a constant operand into
+// one instruction per limb, mirroring the register case above: the constant is
+// split at the same width as the register limbs (least-significant limb first,
+// matching LimbIds), zero-extended as required.  Where the left operand has no
+// limb at a given position, its (zero-extended) limb yields "0 op climb", which
+// has no register to read and so is loaded directly — the analog of the
+// one-source cases in newAndBytecode et al.
+func bitwiseConst[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Bitwise[W],
+) []Bytecode[W] {
+	var (
+		zero      W
+		bytecodes []Bytecode[W]
+		//
+		targets = mapping.LimbIds(insn.Target)
+		left    = mapping.LimbIds(insn.Left)
+		climbs  = descriptor.SplitConstant(insn.Right.AsConstant(), mapping.RegisterWidth())
+		//
+		n = max(len(targets), len(left), len(climbs))
+	)
+	//
+	for i := range n {
+		var (
+			target RegisterId
+			code   Bytecode[W]
+			// climb is zero when the constant has no limb at this position.
+			climb W
+		)
+		//
+		if i >= len(targets) {
+			target = alloc.ZeroRegister()
+		} else {
+			target = targets[i]
+		}
+		//
+		if i < len(climbs) {
+			climb = climbs[i]
+		}
+		//
+		switch {
+		case i < len(left):
+			bitwidth := max(mapping.Limb(left[i]).Bitwidth().Unwrap(), climb.BitLen())
+			code = bytecode.NewBitwise(insn.Op, target, left[i],
+				bytecode.NewConstantOperand(climb), util.Cast[uint16](bitwidth))
+		case insn.Op == bytecode.OP_AND:
+			code = bytecode.LoadConst(target, zero)
+		default:
+			// OR/XOR: 0 op climb == climb.
+			code = bytecode.LoadConst(target, climb)
+		}
+		//
+		bytecodes = append(bytecodes, code)
+	}
+	//
+	return bytecodes
 }

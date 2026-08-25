@@ -157,7 +157,11 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 	registers split.Allocator[W],
 	helpers *bitwiseHelpers[W],
 ) []Bytecode[W] {
-	origWidth, isPowerOfTwo := maxBitwidthOf(registers.Registers(), b.Uses()...)
+	// Materialise a constant right operand into a register, since both the
+	// unit-arithmetic and table paths below operate on registers only.
+	right, pre := materialiseRight(b, registers)
+	//
+	origWidth, isPowerOfTwo := maxBitwidthOf(registers.Registers(), b.Left, right)
 	//
 	p := origWidth
 	if !isPowerOfTwo {
@@ -166,16 +170,32 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 	// Single-bit operations are cheap arithmetic (a&b = a*b, etc.);
 	// inline them rather than calling a (static or not) table.
 	if p == 1 {
-		return emitUnitBitwise(b.Op, registers, b.Target, b.Left, b.Right)
+		return append(pre, emitUnitBitwise(b.Op, registers, b.Target, b.Left, right)...)
 	}
-	// Both operands are registers (any constant operand was materialised into a
-	// register upstream), so lowering only needs the (power-of-two) operand
-	// width p: a table read when p is small enough, otherwise a recursive helper.
+	// Both operands are now registers, so lowering only needs the
+	// (power-of-two) operand width p: a table read when p is small enough,
+	// otherwise a recursive helper.
 	id, isTable := helpers.ensureNary(b.Op, p, 2)
 	//
-	return []Bytecode[W]{
-		invokeNary[W](id, isTable, []bytecode.RegisterId{b.Left, b.Right}, b.Target),
+	return append(pre,
+		invokeNary[W](id, isTable, []bytecode.RegisterId{b.Left, right}, b.Target),
+	)
+}
+
+// materialiseRight returns the right operand of a bitwise instruction as a
+// register, loading a constant operand into a freshly allocated register of
+// the instruction's width.  This is the single chokepoint through which
+// constant operands are materialised, so that a future pass can deduplicate
+// repeated constants here.
+func materialiseRight[W word.Word[W]](b *bytecode.Bitwise[W], registers split.Allocator[W],
+) (bytecode.RegisterId, []Bytecode[W]) {
+	if !b.Right.IsConstant() {
+		return b.Right.AsRegister(), nil
 	}
+	//
+	reg := registers.Allocate("", util.Some(uint(b.Bitwidth)))
+	//
+	return reg, []Bytecode[W]{bytecode.LoadConst(reg, b.Right.AsConstant())}
 }
 
 // emitUnitBitwise inlines a single-bit AND/OR/XOR of left and right into target,

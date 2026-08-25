@@ -423,41 +423,44 @@ func MemWrite[W Word[W]](id uint16, address []RegisterId, data []RegisterId) Byt
 }
 
 // BitAnd constructs a bitwise-and instruction computing
-// "target = left & right".  bitwidth is the operand/result width in bits.
-func BitAnd[W Word[W]](target, left, right RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise[W](bytecode.OP_AND, target, left, right, bitwidth)
+// "target = left & right" for a register or constant right operand.  bitwidth
+// is the operand/result width in bits.
+func BitAnd[W Word[W]](target, left RegisterId, right Operand[W], bitwidth uint16) Bytecode[W] {
+	return bytecode.NewBitwise(bytecode.OP_AND, target, left, right, bitwidth)
 }
 
 // BitOr constructs a bitwise-or instruction computing
-// "target = left | right".  bitwidth is the operand/result width in bits.
-func BitOr[W Word[W]](target, left, right RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise[W](bytecode.OP_OR, target, left, right, bitwidth)
+// "target = left | right" for a register or constant right operand.  bitwidth
+// is the operand/result width in bits.
+func BitOr[W Word[W]](target, left RegisterId, right Operand[W], bitwidth uint16) Bytecode[W] {
+	return bytecode.NewBitwise(bytecode.OP_OR, target, left, right, bitwidth)
 }
 
 // BitXor constructs a bitwise-xor instruction computing
-// "target = left ^ right".  bitwidth is the operand/result width in bits.
-func BitXor[W Word[W]](target, left, right RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise[W](bytecode.OP_XOR, target, left, right, bitwidth)
+// "target = left ^ right" for a register or constant right operand.  bitwidth
+// is the operand/result width in bits.
+func BitXor[W Word[W]](target, left RegisterId, right Operand[W], bitwidth uint16) Bytecode[W] {
+	return bytecode.NewBitwise(bytecode.OP_XOR, target, left, right, bitwidth)
 }
 
 // BitNot constructs a bitwise-not instruction computing
 // "target = ^source".  bitwidth is the width (in bits) the complement is taken
 // within, so the result holds only the low bitwidth bits of ^source.
 func BitNot[W Word[W]](target, source RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise[W](bytecode.OP_NOT, target, source, source, bitwidth)
+	return bytecode.NewBitwise(bytecode.OP_NOT, target, source, NewRegisterOperand[W](source), bitwidth)
 }
 
 // BitShl constructs a logical shift-left instruction computing
 // "target = left << right".  bitwidth is the result width in bits; bits shifted
 // out beyond it are discarded.
 func BitShl[W Word[W]](target, left, right RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise[W](bytecode.OP_SHL, target, left, right, bitwidth)
+	return bytecode.NewBitwise(bytecode.OP_SHL, target, left, NewRegisterOperand[W](right), bitwidth)
 }
 
 // BitShr constructs a logical shift-right instruction computing
 // "target = left >> right".  bitwidth is the operand/result width in bits.
 func BitShr[W Word[W]](target, left, right RegisterId, bitwidth uint16) Bytecode[W] {
-	return bytecode.NewBitwise[W](bytecode.OP_SHR, target, left, right, bitwidth)
+	return bytecode.NewBitwise(bytecode.OP_SHR, target, left, NewRegisterOperand[W](right), bitwidth)
 }
 
 // CheckCast constructs a check-cast instruction asserting that the given

@@ -125,10 +125,8 @@ func groupLookupsByCondition[W vm.Word[W]](codes []vm.Bytecode[W], branchTable d
 outer:
 	for cc, code := range codes {
 		switch code.(type) {
-		case *vm.BytecodeCall[W]:
-			// always emits a lookup
-		case *vm.BytecodeReadWrite[W]:
-			// read-write and access-once memories alike emit a lookup.
+		case *vm.BytecodeCall[W], *vm.BytecodeReadWrite[W]:
+			// functiun call and memory access emit lookups
 		default:
 			continue
 		}
@@ -195,7 +193,7 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]]
 	selId := register.NewId(mod.Width())
 	mod.AddRegisters(register.NewComputed(fmt.Sprintf("$lookup_sel_%d", selId.Unwrap()), 1))
 	// Fill the flag selector during trace expansion with the boolean value of the condition.
-	mod.AddAssignments(assignment.NewComputedRegister[F](selId, pathSelectorComputation[F](cond, regs), ctx))
+	mod.AddAssignments(assignment.NewComputedRegister(selId, pathSelectorComputation[F](cond, regs), ctx))
 	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.
 	mod.AddConstraints(mir.NewVanishingConstraint(
 		fmt.Sprintf("lookup_sel_%d", selId.Unwrap()), ctx, util.None[int](),
