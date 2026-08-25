@@ -39,10 +39,17 @@ func (g *generator) emitBitwise(c *code, fn *descFunction, x *bytecode.Bitwise[w
 	}
 
 	// NOT is unary (its operand is duplicated across Left and Right); the rest
-	// read a right operand.
+	// read a right operand, which is a constant for the ANDC/ORC/XORC forms.
 	var rhs operand
+
 	if x.Op != bytecode.OP_NOT {
-		if rhs, err = g.registerOperand(fn, x.Right); err != nil {
+		if x.Right.IsConstant() {
+			rhs, err = constOperand(x.Right.AsConstant())
+		} else {
+			rhs, err = g.registerOperand(fn, x.Right.AsRegister())
+		}
+		//
+		if err != nil {
 			return err
 		}
 	}

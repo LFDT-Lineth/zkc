@@ -489,8 +489,8 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 	case *bytecode.Arith[W]:
 		return bytecode.NewArith(insn.Op, substituteIds(insn.Target, sub), substituteIds(insn.Source, sub), insn.Constant)
 	case *bytecode.Bitwise[W]:
-		return bytecode.NewBitwise[W](insn.Op, substituteId(insn.Target, sub), substituteId(insn.Left, sub),
-			substituteId(insn.Right, sub), insn.Bitwidth)
+		return bytecode.NewBitwise(insn.Op, substituteId(insn.Target, sub), substituteId(insn.Left, sub),
+			substituteOperandVector(insn.Right, sub), insn.Bitwidth)
 	case *bytecode.FieldArith[W]:
 		return bytecode.NewFieldArith(insn.Op, substituteId(insn.Target, sub), substituteIds(insn.Sources, sub),
 			insn.Constant)
