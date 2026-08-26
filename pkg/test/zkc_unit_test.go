@@ -378,6 +378,18 @@ func Test_ZkcUnit_Basic_88(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_88", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Basic_89(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_89", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_90(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_90", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_91(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_91", DEFAULT_UNIT_CONFIG)
+}
+
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
 	// Multi-line address access-once memory: a read-only ROM and a write-once
 	// WOM, exercising the access bit and at_flag carry columns end-to-end.
@@ -777,6 +789,12 @@ func Test_ZkcUnit_Bitwise_20(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/bitwise_20", DEFAULT_UNIT_CONFIG)
 }
 
+// This tests that AND/OR/XOR with unity/absorbing constants don't produce lookups and
+// BIT/AND/XOR module
+func Test_ZkcUnit_Bitwise_21(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/bitwise_21", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Shift Tests
 // ===================================================================
@@ -1043,6 +1061,13 @@ func Test_ZkcUnit_Call_08(t *testing.T) {
 
 func Test_ZkcUnit_Call_09(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_09", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Call_10(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/call_10", DEFAULT_UNIT_CONFIG)
+}
+func Test_ZkcUnit_Call_11(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/call_11", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================

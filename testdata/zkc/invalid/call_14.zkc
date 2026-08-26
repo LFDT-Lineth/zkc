@@ -1,0 +1,8 @@
+//error:4:5-9:cannot use done in a function which returns
+fn f(x:u32) -> (r:u32) {
+  if x == 0 {
+    done
+  } else {
+    r = x
+  }
+}

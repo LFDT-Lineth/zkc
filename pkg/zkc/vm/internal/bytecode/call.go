@@ -27,6 +27,8 @@ type Call[W word.Word[W]] struct {
 	Arguments []RegisterId
 	// Returns are caller-frame registers receiving callee outputs.
 	Returns []RegisterId
+	// Never indicates whether or not this function call can return
+	Never bool
 }
 
 // Uses implementation for Bytecode interface.  A call reads the argument
@@ -75,7 +77,13 @@ func (p *Call[W]) String(env Environment[W]) string {
 		mod = env.Module(p.Target)
 	)
 	//
-	builder.WriteString("call ")
+	builder.WriteString("call")
+	//
+	if p.Never {
+		builder.WriteString("!")
+	}
+	//
+	builder.WriteString(" ")
 	//
 	if len(p.Returns) > 0 {
 		builder.WriteString(RegistersToString(p.Returns, env, ","))

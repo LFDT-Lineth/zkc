@@ -45,7 +45,7 @@ func (p Unresolved) IsMemory() bool {
 
 // IsFunction implementation for Symbol interface
 func (p Unresolved) IsFunction() bool {
-	return p.Kind == FUNCTION
+	return p.Kind == RETURN_FUNCTION || p.Kind == NORETURN_FUNCTION
 }
 
 // Cmp implementation for set.Comparable interface

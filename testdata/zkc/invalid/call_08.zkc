@@ -1,0 +1,6 @@
+//error:6:1-2:cannot return from no-return function
+fn f(x:u32) -> ! {
+  var r:u32
+
+  r = x + 1
+}

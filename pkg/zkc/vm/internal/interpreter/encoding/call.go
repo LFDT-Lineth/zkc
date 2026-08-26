@@ -29,8 +29,13 @@ func Call[W word.Word[W]](pc uint32, p *bytecode.Call[W], env Environment[W]) (c
 		// Extract frame width
 		width = uint16(env.Module(p.Target).Width())
 	)
+	// Check for never call
+	if p.Never {
+		// Encode enter
+		return append(codes, encodeTailCall(pc, offset, width, p.Arguments)...)
+	}
 	// Encode enter
-	codes = append(codes, encodeEnter_n(pc, offset, width, p.Arguments)...)
+	codes = append(codes, encodeEnter(pc, offset, width, p.Arguments)...)
 	// Encode leave
 	return append(codes, encodeLeave_n(p.Returns)...)
 }
@@ -45,6 +50,30 @@ func MaxCallEncodedLength[W word.Word[W]](p *bytecode.Call[W]) uint {
 	)
 	//
 	return uint(enter + leave)
+}
+
+func encodeEnter(pc, target uint32, width uint16, args []RegisterId) []uint32 {
+	if len(args) > math.MaxUint8 {
+		panic("too many call arguments")
+	}
+	//
+	if len(args) == 1 && width <= math.MaxUint8 {
+		return encodeEnter_2(pc, target, width, args[0], ENTER_2)
+	}
+	//
+	return encodeEnter_n(pc, target, width, args, ENTER_n, WIDE_ENTER_n)
+}
+
+func encodeTailCall(pc, target uint32, width uint16, args []RegisterId) []uint32 {
+	if len(args) > math.MaxUint8 {
+		panic("too many call arguments")
+	}
+	//
+	if len(args) == 1 && width <= math.MaxUint8 {
+		return encodeEnter_2(pc, target, width, args[0], TAILCALL_2)
+	}
+	//
+	return encodeEnter_n(pc, target, width, args, TAILCALL_n, WIDE_TAILCALL_n)
 }
 
 // NOTE: a call bytecode compiles down into a pair of instructions, ENTER/LEAVE.
@@ -89,18 +118,9 @@ func MaxCallEncodedLength[W word.Word[W]](p *bytecode.Call[W]) uint {
 // dispatched to the dedicated ENTER_2 form, which covers the full RegisterId
 // range and any branch distance -- so only the frame width can force a
 // fallback to the general encoding below.
-func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 {
-	if len(args) > math.MaxUint8 {
-		panic("too many call arguments")
-	}
-	//
-	if len(args) == 1 && width <= math.MaxUint8 {
-		return encodeEnter_2(pc, target, width, args[0])
-	}
-	//
+func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId, opcode, wopcode uint32) []uint32 {
 	var (
 		roff, ok = GetRelativeOffset(pc, target, 16)
-		opcode   = ENTER_n
 	)
 	// The wide form is required whenever the frame width or an argument
 	// register overflows a byte, and also rescues relative branch targets which
@@ -108,7 +128,7 @@ func encodeEnter_n(pc, target uint32, width uint16, args []RegisterId) []uint32 
 	// absolute).
 	if width > math.MaxUint8 || !ok || IsWideRegisters(args...) {
 		codes := []uint32{
-			uint32(width)<<16 | WIDE_ENTER_n<<8 | WIDE,
+			uint32(width)<<16 | wopcode<<8 | WIDE,
 			target,
 		}
 		// nargs occupies the first packed slot, followed by the arguments.
@@ -173,9 +193,9 @@ func DecodeEnter_n(pc uint32, codes []uint32) (width uint16, target uint32, args
 // ============================================================================
 
 // encodeEnter_2 encodes a single-argument ENTER instruction.
-func encodeEnter_2(pc, target uint32, width uint16, arg RegisterId) []uint32 {
+func encodeEnter_2(pc, target uint32, width uint16, arg RegisterId, op uint32) []uint32 {
 	return []uint32{
-		uint32(arg)<<16 | uint32(width)<<8 | ENTER_2,
+		uint32(arg)<<16 | uint32(width)<<8 | op,
 		target - (pc + 1),
 	}
 }

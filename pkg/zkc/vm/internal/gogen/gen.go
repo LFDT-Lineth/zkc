@@ -253,6 +253,7 @@ const (
 	helperDbgB       = "dbgB"
 	helperDbgU       = "dbgU"
 	helperDbgWriter  = "dbgw"
+	helperDone       = "done"
 	helperFmtSprintf = "fmt.Sprintf"
 	helperShl128     = "shl128"
 	helperShr128     = "shr128"
@@ -378,6 +379,11 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	c.line("")
 	g.emitImports(c)
 	emitFailureHelpers(c)
+
+	if g.usesHelper(helperDone) {
+		emitDoneHelpers(c)
+	}
+
 	g.emitPrintfHelpers(c)
 
 	// Memories are shared across the call stack, so they live as package-level
@@ -431,14 +437,34 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 		c.line("defer dbgw.Flush()")
 	}
 
+	// A DONE (see doneSignal) unwinds via panic just like a failure, but from
+	// arbitrarily deep in the call stack it must still report success with
+	// whatever outputs were written before it fired — so output collection
+	// happens here in the defer, on every path except a genuine failure,
+	// rather than only after fn_main() returns normally.
 	c.line("defer func() {")
-	c.line("if r := recover(); r != nil {")
+	c.line("r := recover()")
 	c.line("if f, ok := r.(failure); ok {")
 	c.line("out, err = nil, f")
 	c.line("return")
 	c.line("}")
-	c.line("panic(r)")
+	c.line("if r != nil {")
+
+	if g.usesHelper(helperDone) {
+		c.line("if _, ok := r.(doneSignal); !ok {")
+		c.line("panic(r)")
+		c.line("}")
+	} else {
+		c.line("panic(r)")
+	}
+
 	c.line("}")
+	c.line("out = map[string][]uint64{}")
+
+	for _, m := range g.outputs {
+		c.linef("out[%q] = %s", m.name, m.varName)
+	}
+
 	c.line("}()")
 
 	for _, m := range g.inputs {
@@ -461,14 +487,9 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 		c.linef("%s = paged{}", m.varName)
 	}
 
+	// Output collection now happens in the defer above, on every return path.
 	c.line("fn_main()")
-	c.line("out = map[string][]uint64{}")
-
-	for _, m := range g.outputs {
-		c.linef("out[%q] = %s", m.name, m.varName)
-	}
-
-	c.line("return out, nil")
+	c.line("return")
 	c.line("}")
 	c.line("")
 
@@ -1115,7 +1136,13 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 
 		return nil
 	case *bytecode.Ret[word.Uint]:
-		c.line(g.returnOk())
+		if x.Done {
+			g.useHelper(helperDone)
+			c.line("done()")
+		} else {
+			c.line(g.returnOk())
+		}
+
 		g.iv.endOfFlow()
 
 		return nil

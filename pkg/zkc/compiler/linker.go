@@ -236,7 +236,7 @@ func (p *Linker) linkFunction(fn decl.UnresolvedFunction) (decl.Resolved, []sour
 	//
 	vars, errs2 := p.linkVariableDeclarations(fn.Variables)
 	//
-	resolved := decl.NewFunction(fn.Name(), effects, vars, code)
+	resolved := decl.NewFunction(fn.Name(), effects, fn.NoReturn, vars, code)
 	resolved.SetAnnotations(fn.Annotations())
 	//
 	return resolved, append(errs1, errs2...)
@@ -292,12 +292,24 @@ func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.Synta
 		ninsn = &stmt.Break[symbol.Resolved]{}
 	case *stmt.Continue[symbol.Unresolved]:
 		ninsn = &stmt.Continue[symbol.Resolved]{}
+	case *stmt.Done[symbol.Unresolved]:
+		ninsn = &stmt.Done[symbol.Resolved]{}
 	case *stmt.Fail[symbol.Unresolved]:
 		var args []expr.Expr[symbol.Resolved]
 		//
 		args, errors = p.linkExprs(s.Arguments...)
 		//
 		ninsn = &stmt.Fail[symbol.Resolved]{Chunks: s.Chunks, Arguments: args}
+	case *stmt.NeverCall[symbol.Unresolved]:
+		var args []expr.Expr[symbol.Resolved]
+		// attempt to resolve this non-local access
+		sym, errs := p.resolve(s.Name, s)
+		//
+		args, errors = p.linkExprs(s.Args...)
+		// combine errors
+		errors = append(errors, errs...)
+		//
+		ninsn = &stmt.NeverCall[symbol.Resolved]{Name: sym, Args: args}
 	case *stmt.For[symbol.Unresolved]:
 		init, errs1 := p.linkStatement(s.Init)
 		cond, errs2 := p.linkExpr(s.Cond)
@@ -640,15 +652,10 @@ func (p *Linker) resolve(name symbol.Unresolved, node any) (symbol.Resolved, []s
 	var sym symbol.Resolved
 	//
 	for i, c := range p.declarations {
-		nIns, _ := c.Arity()
 		// first, check whether name matches
 		if c.Name() == name.Name {
 			// now, check arity
-			if nIns > name.Inputs {
-				return sym, p.srcmaps.SyntaxErrors(node, fmt.Sprintf("insufficient arguments (expected %d)", nIns))
-			} else if nIns < name.Inputs && !name.HasAnyArity() {
-				return sym, p.srcmaps.SyntaxErrors(node, fmt.Sprintf("too many arguments (expected %d)", nIns))
-			} else if msg, err := checkSymbolKind(c, name); err {
+			if msg, err := checkSymbolKind(c, name); err {
 				return sym, p.srcmaps.SyntaxErrors(node, msg)
 			}
 			// hit
@@ -662,39 +669,49 @@ func (p *Linker) resolve(name symbol.Unresolved, node any) (symbol.Resolved, []s
 // Attempt to determine whether or not the given symbol kind matches the
 // declaration.
 func checkSymbolKind(d decl.Unresolved, sym symbol.Unresolved) (msg string, err bool) {
-	var nIns, _ = d.Arity()
+	var (
+		nIns, _ = d.Arity()
+	)
 	//
 	switch sym.Kind {
 	case symbol.MEMORY_EFFECT:
-		if mem, ok := d.(*decl.UnresolvedMemory); ok && mem.IsReadable() && mem.IsWriteable() {
-			return "", false
+		if mem, ok := d.(*decl.UnresolvedMemory); !ok || !mem.IsReadable() || !mem.IsWriteable() {
+			return "invalid read/write memory", true
 		}
-		//
-		return "invalid read/write memory", true
 	case symbol.READABLE_MEMORY:
-		if mem, ok := d.(*decl.UnresolvedMemory); ok && mem.IsReadable() {
-			return "", false
+		if mem, ok := d.(*decl.UnresolvedMemory); !ok || !mem.IsReadable() {
+			return "invalid memory read", true
 		}
-		//
-		return "invalid memory read", true
 	case symbol.WRITEABLE_MEMORY:
-		if mem, ok := d.(*decl.UnresolvedMemory); ok && mem.IsWriteable() {
-			return "", false
+		if mem, ok := d.(*decl.UnresolvedMemory); !ok || !mem.IsWriteable() {
+			return "invalid memory write", true
 		}
-		//
-		return "invalid memory write", true
-	case symbol.FUNCTION:
+	case symbol.RETURN_FUNCTION:
+		if f, ok := d.(*decl.UnresolvedFunction); !ok {
+			return "invalid function call", true
+		} else if f.NoReturn {
+			return "invalid call to function which does not return", true
+		}
+	case symbol.NORETURN_FUNCTION:
+		if f, ok := d.(*decl.UnresolvedFunction); !ok {
+			return "invalid function call", true
+		} else if !f.NoReturn {
+			return "invalid (no return) call to function which returns", true
+		}
 	case symbol.CONSTANT:
 	case symbol.TYPE_ALIAS:
-		if _, ok := d.(*decl.UnresolvedTypeAlias); ok {
-			return "", false
+		if _, ok := d.(*decl.UnresolvedTypeAlias); !ok {
+			return "invalid type alias", true
 		}
-		//
-		return "invalid type alias", true
+	case symbol.UNKNOWN:
+	default:
+		panic("unknown symbol kind")
 	}
 	// Final arity check
-	if nIns != sym.Inputs {
-		return fmt.Sprintf("incorrect number of arguments (expected %d)", nIns), true
+	if nIns > sym.Inputs {
+		return fmt.Sprintf("insufficient arguments (expected %d)", nIns), true
+	} else if nIns < sym.Inputs && !sym.HasAnyArity() {
+		return fmt.Sprintf("too many arguments (expected %d)", nIns), true
 	}
 	// No mismatch
 	return "", false

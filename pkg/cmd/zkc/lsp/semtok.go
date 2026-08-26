@@ -62,7 +62,7 @@ func semTokForKind(kind uint) (uint32, bool) {
 	switch kind {
 	// Keywords
 	case parser.KEYWORD_AS, parser.KEYWORD_BREAK, parser.KEYWORD_CONST,
-		parser.KEYWORD_CONTINUE, parser.KEYWORD_ELSE, parser.KEYWORD_FAIL,
+		parser.KEYWORD_CONTINUE, parser.KEYWORD_DONE, parser.KEYWORD_ELSE, parser.KEYWORD_FAIL,
 		parser.KEYWORD_FN, parser.KEYWORD_FOR, parser.KEYWORD_IF,
 		parser.KEYWORD_SWITCH, parser.KEYWORD_CASE, parser.KEYWORD_DEFAULT,
 		parser.KEYWORD_INCLUDE, parser.KEYWORD_INPUT, parser.KEYWORD_MEMORY,
@@ -84,10 +84,10 @@ func semTokForKind(kind uint) (uint32, bool) {
 		parser.EQUALS, parser.EQUALS_EQUALS, parser.NOT_EQUALS,
 		parser.LESS_THAN, parser.LESS_THAN_EQUALS,
 		parser.GREATER_THAN, parser.GREATER_THAN_EQUALS,
-		parser.LOGICAL_AND, parser.LOGICAL_OR, parser.LOGICAL_NOT,
+		parser.LOGICAL_AND, parser.LOGICAL_OR,
 		parser.BITWISE_AND, parser.BITWISE_OR, parser.BITWISE_XOR,
 		parser.BITWISE_NOT, parser.BITWISE_SHL, parser.BITWISE_SHR,
-		parser.RIGHTARROW, parser.QMARK:
+		parser.RIGHTARROW, parser.QMARK, parser.SHRIEK:
 		return semTokOperator, true
 	// Identifiers — emitted as 'variable'; future work can refine via AST
 	case parser.IDENTIFIER:

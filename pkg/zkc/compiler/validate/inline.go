@@ -117,6 +117,8 @@ func externUsesOfStmt(s stmt.Resolved) set.AnySortedSet[symbol.Resolved] {
 		return *set.UnionAnySortedSets(s.Arguments, externUsesOf)
 	case *stmt.IfGoto[symbol.Resolved]:
 		return s.Cond.ExternUses()
+	case *stmt.NeverCall[symbol.Resolved]:
+		return *set.UnionAnySortedSets(s.Args, externUsesOf)
 	case *stmt.Printf[symbol.Resolved]:
 		return *set.UnionAnySortedSets(s.Arguments, externUsesOf)
 	case *stmt.VarDecl[symbol.Resolved]:

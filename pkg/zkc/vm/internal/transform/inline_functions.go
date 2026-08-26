@@ -468,6 +468,10 @@ func buildInlinedBody[W word.Word[W]](callee *descriptor.Function[W], shadows []
 		body[i] = v.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
 			switch insn := insn.(type) {
 			case *bytecode.Ret[W]:
+				if insn.Done {
+					return []Bytecode[W]{insn}
+				}
+				//
 				return []Bytecode[W]{bytecode.Jump[W](bytecode.Address(exitPC))}
 			case *bytecode.Jmp[W]:
 				return []Bytecode[W]{bytecode.Jump[W](bytecode.Address(base) + insn.Target)}
@@ -501,8 +505,8 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 	case *bytecode.FieldToUint[W]:
 		return &bytecode.FieldToUint[W]{Target: substituteIds(insn.Target, sub), Source: substituteId(insn.Source, sub)}
 	case *bytecode.Call[W]:
-		return bytecode.CallFun[W](insn.Target, substituteIds(insn.Arguments, sub),
-			substituteIds(insn.Returns, sub))
+		return bytecode.NeverCallFun[W](insn.Target, substituteIds(insn.Arguments, sub),
+			substituteIds(insn.Returns, sub), insn.Never)
 	case *bytecode.ReadWrite[W]:
 		if insn.Write {
 			return bytecode.NewMemWrite[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub),
@@ -714,7 +718,7 @@ func remapModuleId[W word.Word[W]](insn Bytecode[W], idMap []uint) Bytecode[W] {
 	switch insn := insn.(type) {
 	case *bytecode.Call[W]:
 		if id != uint(insn.Target) {
-			return bytecode.CallFun[W](bytecode.ModuleId(id), insn.Arguments, insn.Returns)
+			return bytecode.NeverCallFun[W](bytecode.ModuleId(id), insn.Arguments, insn.Returns, insn.Never)
 		}
 	case *bytecode.ReadWrite[W]:
 		if id != uint(insn.Id) {

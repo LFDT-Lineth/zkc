@@ -134,7 +134,7 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 		return &bytecode.Bitwise[W2]{Op: b.Op, Target: b.Target, Left: b.Left,
 			Right: p.convertOperandVector(b.Right), Bitwidth: b.Bitwidth}
 	case *bytecode.Call[W1]:
-		return &bytecode.Call[W2]{Target: b.Target, Arguments: b.Arguments, Returns: b.Returns}
+		return &bytecode.Call[W2]{Target: b.Target, Arguments: b.Arguments, Returns: b.Returns, Never: b.Never}
 	case *bytecode.Cat[W1]:
 		return &bytecode.Cat[W2]{Targets: b.Targets, Sources: b.Sources}
 	case *bytecode.UintToField[W1]:
@@ -167,7 +167,7 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 		//
 		return bytecode.NewMemRead[W2](b.Id, b.Address, b.Data, b.Stamp)
 	case *bytecode.Ret[W1]:
-		return &bytecode.Ret[W2]{}
+		return &bytecode.Ret[W2]{Done: b.Done}
 	case *bytecode.Skip[W1]:
 		return &bytecode.Skip[W2]{Skip: b.Skip}
 	case *bytecode.SkipIf[W1]:

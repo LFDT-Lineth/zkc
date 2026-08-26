@@ -1,4 +1,4 @@
-//error:5:7-12:expected type u16
+//error:5:7-12:invalid function call
 pub input in(address:u16) -> (flag:u1, data:u8)
 
 fn f(x:u8) -> (r:u16) {
