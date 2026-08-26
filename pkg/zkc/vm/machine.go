@@ -414,11 +414,9 @@ func constructTracingInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr 
 	bci = bci.BreakPointer(func(opcode uint32) bool {
 		// Extract state from the interpreter
 		fid, pc, frame := interpreter.ExtractExecutingState(bci)
-		// Check whether terminating state
-		terminal := opcode == encoding.RET || opcode == encoding.WIDE|encoding.WIDE_RET<<8
 		// NOTE: don't clone the frame here (for now) since it is always
 		// converted into a slice of field elements F.
-		tracer.TraceFunctionLine(State[W]{fid, pc, terminal, frame})
+		tracer.TraceFunctionLine(State[W]{fid, pc, isTerminalOpcode(opcode), frame})
 		// don't interrupt
 		return false
 	})
@@ -460,14 +458,29 @@ func constructTraceForInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr
 		}
 		// Extract state from the interpreter
 		fid, pc, frame := interpreter.ExtractExecutingState(bci)
-		// Check whether terminating state
-		terminal := opcode == encoding.RET || opcode == encoding.WIDE|encoding.WIDE_RET<<8
 		// NOTE: don't clone the frame here (for now) since it is always
 		// converted into a slice of field elements F.
-		tracer.TraceFunctionLine(State[W]{fid, pc, terminal, frame})
+		tracer.TraceFunctionLine(State[W]{fid, pc, isTerminalOpcode(opcode), frame})
 		// don't interrupt
 		return false
 	})
 	//
 	return bci
+}
+
+// isTerminalOpcode determines whether the given (encoded) opcode ends the
+// enclosing function's frame, meaning the state recorded for it is a terminal
+// state (i.e. $ret is set on its trace row).  This holds for returns and dones,
+// and also for tail calls since these reuse the frame rather than returning to
+// it.
+func isTerminalOpcode(opcode uint32) bool {
+	switch opcode {
+	case encoding.RET, encoding.DONE,
+		encoding.TAILCALL_2, encoding.TAILCALL_n,
+		encoding.WIDE | encoding.WIDE_RET<<8,
+		encoding.WIDE | encoding.WIDE_TAILCALL_n<<8:
+		return true
+	default:
+		return false
+	}
 }

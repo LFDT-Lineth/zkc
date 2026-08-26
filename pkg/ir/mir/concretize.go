@@ -102,6 +102,10 @@ func concretizeConstraints[F1 Element[F1], F2 Element[F2]](constraints []Constra
 func concretizeConstraint[F1 Element[F1], F2 Element[F2]](constraint Constraint[F1]) Constraint[F2] {
 	//
 	switch c := constraint.Unwrap().(type) {
+	case BusConstraint[F1]:
+		// NOTE: bus ports are made up of registers and, hence, are
+		// independent of the underlying field.
+		return NewBusConstraint[F2](c.Handle, c.Sends, c.Receives)
 	case LookupConstraint[F1]:
 		// NOTE: lookup vectors are made up of registers and, hence, are
 		// independent of the underlying field.

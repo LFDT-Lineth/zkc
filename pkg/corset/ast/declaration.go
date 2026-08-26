@@ -613,3 +613,95 @@ func (p *DefLookup) Lisp() sexp.SExp {
 		sexp.NewList(sources),
 	})
 }
+
+// ============================================================================
+// defsend / defrecv
+// ============================================================================
+
+// DefSendReceive represents one port of a bus.  That is, a declaration that,
+// on every row where the selector is non-zero, the given columns form a
+// message sent (or received) on the named bus.  All ports sharing a bus name
+// are merged into a single bus constraint during translation, which requires
+// everything sent on a bus to also be received on it (and vice versa).
+//
+// NOTE: the selector and columns are column accesses rather than arbitrary
+// expressions, and the selector is mandatory (padding rows must stay off the
+// bus).
+type DefSendReceive struct {
+	// Unique handle given to this declaration, useful for debugging.
+	Handle string
+	// Bus is the name of the bus.  Bus names form a global namespace, and a
+	// bus exists simply by virtue of being named by some port.
+	Bus string
+	// IsSend distinguishes a send port (true) from a receive port (false).
+	IsSend bool
+	// Selector gates which rows contribute a message.
+	Selector TypedSymbol
+	// Columns making up the message.
+	Columns []TypedSymbol
+	// Indicates whether or not the selector and columns have been resolved.
+	finalised bool
+}
+
+// NewDefSendReceive creates a new (unfinalised) send / receive declaration.
+func NewDefSendReceive(handle string, bus string, isSend bool, selector TypedSymbol,
+	columns []TypedSymbol) *DefSendReceive {
+	//
+	return &DefSendReceive{handle, bus, isSend, selector, columns, false}
+}
+
+// Definitions returns the set of symbols defined by this declaration.
+func (p *DefSendReceive) Definitions() iter.Iterator[SymbolDefinition] {
+	return iter.NewArrayIterator[SymbolDefinition](nil)
+}
+
+// Dependencies needed to signal declaration.
+func (p *DefSendReceive) Dependencies() iter.Iterator[Symbol] {
+	var (
+		symbols = append([]TypedSymbol{p.Selector}, p.Columns...)
+		viter   = iter.NewArrayIterator(symbols)
+	)
+	//
+	return iter.NewCastIterator[TypedSymbol, Symbol](viter)
+}
+
+// Defines checks whether this declaration defines the given symbol.
+func (p *DefSendReceive) Defines(symbol Symbol) bool {
+	return false
+}
+
+// IsFinalised checks whether this declaration has already been finalised.
+func (p *DefSendReceive) IsFinalised() bool {
+	return p.finalised
+}
+
+// Finalise this declaration, meaning its selector and columns have been
+// resolved.
+func (p *DefSendReceive) Finalise() {
+	p.finalised = true
+}
+
+// Lisp converts this node into its lisp representation.  This is primarily
+// used for debugging purposes.
+func (p *DefSendReceive) Lisp() sexp.SExp {
+	var (
+		keyword = "defsend"
+		columns = make([]sexp.SExp, len(p.Columns))
+	)
+	//
+	if !p.IsSend {
+		keyword = "defrecv"
+	}
+	//
+	for i, c := range p.Columns {
+		columns[i] = c.Lisp()
+	}
+	//
+	return sexp.NewList([]sexp.SExp{
+		sexp.NewSymbol(keyword),
+		sexp.NewSymbol(p.Handle),
+		sexp.NewSymbol(p.Bus),
+		p.Selector.Lisp(),
+		sexp.NewList(columns),
+	})
+}

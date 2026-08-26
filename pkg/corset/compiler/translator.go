@@ -89,11 +89,15 @@ func TranslateCircuit(
 	config Config) (mir.Schema[word.BigEndian], []SyntaxError) {
 	//
 	builder := ir.NewSchemaBuilder[word.BigEndian, mir.Constraint[word.BigEndian], mirTerm]()
-	t := translator{env, srcmap, builder, config}
+	t := translator{env, srcmap, builder, config, make(map[string][]busPort), nil}
 	// Allocate all modules into schema
 	t.translateModules(circuit)
 	// Translate everything else
 	if errs := t.translateDeclarations(circuit); len(errs) > 0 {
+		return mir.Schema[word.BigEndian]{}, errs
+	}
+	// Merge send / receive ports into bus constraints, now all are known.
+	if errs := t.translateBuses(); len(errs) > 0 {
 		return mir.Schema[word.BigEndian]{}, errs
 	}
 	// Build concrete modules from schema
@@ -116,6 +120,24 @@ type translator struct {
 	schema SchemaBuilder
 	// compilation configuration
 	config Config
+	// Ports declared by defsend / defrecv, keyed by bus name, pending the
+	// per-bus merge (see translateBuses).
+	busPorts map[string][]busPort
+	// Bus names in order of first declaration, for deterministic output.
+	busOrder []string
+}
+
+// busPort is one translated defsend / defrecv declaration, awaiting the
+// per-bus merge.
+type busPort struct {
+	// decl is the source declaration, for error reporting.
+	decl *ast.DefSendReceive
+	// module in which the port resides.
+	module ModuleBuilder
+	// port as it will appear in the bus constraint.
+	port mir.BusPort
+	// widths of the port's registers, for regularity checking.
+	widths []uint
 }
 
 func (t *translator) translateModules(circuit *ast.Circuit) {
@@ -217,6 +239,8 @@ func (t *translator) translateDeclaration(decl ast.Declaration, path file.Path) 
 		errors = t.translateDefInRange(d)
 	case *ast.DefLookup:
 		errors = t.translateDefLookup(d)
+	case *ast.DefSendReceive:
+		errors = t.translateDefSendReceive(d)
 	default:
 		// Error handling
 		panic("unknown declaration")
@@ -364,6 +388,125 @@ func (t *translator) translateDefLookupSources(selector ast.TypedSymbol,
 	}
 	//
 	return lookup.UnfilteredVector(module.Id(), registers...), widths, context, errors
+}
+
+// Translate a "defsend" or "defrecv" declaration into a pending bus port.
+// The bus constraints themselves are only constructed once every port is
+// known (see translateBuses).
+func (t *translator) translateDefSendReceive(decl *ast.DefSendReceive) []SyntaxError {
+	var (
+		context, j = ast.ContextOfSymbols(decl.Columns...)
+		sel        *mirRegisterAccess
+	)
+	//
+	context = context.Join(ast.ContextOfSymbol(decl.Selector))
+	// Check for a conflicting context.
+	if context.IsConflicted() {
+		var source ast.TypedSymbol
+		// Determine offending column
+		if j >= uint(len(decl.Columns)) {
+			source = decl.Selector
+		} else {
+			source = decl.Columns[j]
+		}
+		//
+		return t.srcmap.SyntaxErrors(source, "conflicting context")
+	}
+	// Determine enclosing module
+	module := t.moduleOf(context)
+	// Translate message columns
+	accesses, errors := t.translateLookupColumns(decl.Columns)
+	// Translate selector
+	sel, errs := t.registerOfRegisterAccess(decl.Selector, 0)
+	errors = append(errors, errs...)
+	//
+	if len(errors) == 0 {
+		errors = append(errors, t.checkLookupVector(sel, decl.Selector)...)
+	}
+	//
+	if len(errors) > 0 {
+		return errors
+	}
+	//
+	registers, widths := registersOfAccesses(accesses)
+	port := mir.BusPort{Module: module.Id(), Selector: sel.Register(), Registers: registers}
+	// Record port under its bus, tracking first-use order of bus names.
+	if _, ok := t.busPorts[decl.Bus]; !ok {
+		t.busOrder = append(t.busOrder, decl.Bus)
+	}
+	//
+	t.busPorts[decl.Bus] = append(t.busPorts[decl.Bus], busPort{decl, module, port, widths})
+	//
+	return nil
+}
+
+// translateBuses merges the ports gathered for each bus into one bus
+// constraint per bus.  This runs after all declarations have been translated
+// (a bus's ports can be declared anywhere), and only when they translated
+// cleanly.
+func (t *translator) translateBuses() []SyntaxError {
+	var errors []SyntaxError
+	//
+	for _, busName := range t.busOrder {
+		errors = append(errors, t.translateBus(busName, t.busPorts[busName])...)
+	}
+	//
+	return errors
+}
+
+// translateBus checks that the ports of one bus agree (same column count,
+// regular limb decompositions, both directions present) and constructs the
+// corresponding constraint.  The constraint is added to the first port's
+// module; placement is cosmetic, but must be deterministic.
+func (t *translator) translateBus(busName string, ports []busPort) []SyntaxError {
+	var (
+		errors          []SyntaxError
+		sends, receives []mir.BusPort
+		first           = ports[0]
+	)
+	//
+	for _, ith := range ports {
+		if ith.port.Len() != first.port.Len() {
+			msg := fmt.Sprintf("bus port has %d columns, expected %d", ith.port.Len(), first.port.Len())
+			errors = append(errors, *t.srcmap.SyntaxError(ith.decl, msg))
+			//
+			continue
+		}
+		// Check limb decompositions align (mirrors lookup regularity).  With
+		// no register width configured there is no splitting, hence nothing
+		// to misalign.
+		for k := range first.widths {
+			if t.config.Field.RegisterWidth == 0 {
+				break
+			} else if t.isIrregularLookup(ith.widths[k], first.widths[k]) != 0 {
+				errors = append(errors, *t.srcmap.SyntaxError(ith.decl.Columns[k], "irregular bus port detected"))
+			}
+		}
+		//
+		if ith.decl.IsSend {
+			sends = append(sends, ith.port)
+		} else {
+			receives = append(receives, ith.port)
+		}
+	}
+	// Check both directions are present.
+	if len(errors) == 0 && len(sends) == 0 {
+		errors = append(errors, *t.srcmap.SyntaxError(first.decl,
+			fmt.Sprintf("bus %q has receives but no sends", busName)))
+	}
+	//
+	if len(errors) == 0 && len(receives) == 0 {
+		errors = append(errors, *t.srcmap.SyntaxError(first.decl,
+			fmt.Sprintf("bus %q has sends but no receives", busName)))
+	}
+	//
+	if len(errors) > 0 {
+		return errors
+	}
+	//
+	first.module.AddConstraint(mir.NewBusConstraint[word.BigEndian](busName, sends, receives))
+	//
+	return nil
 }
 
 // translateLookupColumns translates the column accesses making up one side of a

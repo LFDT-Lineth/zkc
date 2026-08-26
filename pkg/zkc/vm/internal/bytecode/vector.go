@@ -303,6 +303,11 @@ func (p *Vector[W]) validateControlFlow() ([]error, bool) {
 			for _, c := range code.Cases {
 				visitSkipDestination(micro, uint(c.Skip), n, visit)
 			}
+		case *Call[W]:
+			// Handle never call
+			if !code.Never {
+				visit(micro + 1)
+			}
 		default:
 			visit(micro + 1)
 		}
@@ -440,6 +445,11 @@ func writeDfaTransfer[W word.Word[W]](offset uint, code Bytecode[W],
 		for _, c := range code.Cases {
 			arcs = append(arcs, dfa.NewTransfer(state, offset+uint(c.Skip)+1))
 		}
+	case *Call[W]:
+		if code.Never {
+			// Control-flow terminator: no fall-through within vector
+			return nil
+		}
 	}
 	// Construct state after this code and transfer to the following bytecode.
 	nState := state.Write(toRegisterIds(code.Definitions())...)
@@ -477,6 +487,11 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes], limbWi
 			// genuinely never reach the subsequent codes, so they contribute
 			// nothing to the conditions of those codes.
 			return nil
+		case *Call[W]:
+			if code.Never {
+				// Control-flow terminator (see above)
+				return nil
+			}
 		case *Fail[W]:
 			// A fail's path also terminates, but — unlike Ret/Jmp — every row
 			// taking it is rejected by the fail's own constraint, so it falls

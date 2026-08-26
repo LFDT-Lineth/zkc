@@ -1,0 +1,22 @@
+input data(addr:u16) -> (b:u8)
+memory ram[u32](addr:u16) -> (b:u8)
+
+fn main<ram>() {
+    var n:u16 = data[0]::data[1]
+    // copy data into ram
+    for i:u16 = 0; i<n; i = i + 1 {
+        ram[i + 1] = data[i + 2]
+    }
+    // check elements in ram are non-zero
+    checkNonZero!(n)
+}
+
+fn checkNonZero<ram>(n:u16) -> ! {
+    if n == 0 {
+        done
+    } else if ram[n] == 0 {
+        fail
+    }
+    //
+    checkNonZero!(n - 1)
+}

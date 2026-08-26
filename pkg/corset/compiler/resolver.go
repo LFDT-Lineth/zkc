@@ -199,6 +199,8 @@ func (r *resolver) finaliseDeclaration(scope *ModuleScope, decl ast.Declaration)
 		return r.finaliseDefInRangeInModule(scope, d)
 	case *ast.DefLookup:
 		return r.finaliseDefLookupInModule(scope, d)
+	case *ast.DefSendReceive:
+		return r.finaliseDefSendReceiveInModule(scope, d)
 	}
 	//
 	return nil
@@ -290,6 +292,18 @@ func (r *resolver) finaliseDefLookupInModule(enclosing Scope, decl *ast.DefLooku
 	for i := range decl.Targets {
 		errs := r.finaliseLookupColumnsInModule(enclosing, decl.TargetSelectors[i], decl.Targets[i])
 		errors = append(errors, errs...)
+	}
+	//
+	return errors
+}
+
+// Resolve the columns accessed by a send / receive declaration.  A single
+// scope is shared so the selector and columns all reside in the same context.
+func (r *resolver) finaliseDefSendReceiveInModule(enclosing Scope, decl *ast.DefSendReceive) []SyntaxError {
+	errors := r.finaliseLookupColumnsInModule(enclosing, decl.Selector, decl.Columns)
+	//
+	if len(errors) == 0 {
+		decl.Finalise()
 	}
 	//
 	return errors

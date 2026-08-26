@@ -74,6 +74,10 @@ func (p *Tuple[S]) Flatten(prefix string, env Environment[S], constructor func(n
 func (p *Tuple[S]) String(env Environment[S]) string {
 	var builder strings.Builder
 	//
+	if len(p.elements) == 0 {
+		return "void"
+	}
+	//
 	builder.WriteString("(")
 	//
 	for i, element := range p.elements {

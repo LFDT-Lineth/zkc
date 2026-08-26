@@ -145,6 +145,8 @@ func (p *AirLowering[F]) LowerModule(index uint) {
 func (p *AirLowering[F]) lowerConstraintToAir(c Constraint[F], airModule air.ModuleBuilder[F]) {
 	// Check what kind of constraint we have
 	switch v := c.constraint.(type) {
+	case BusConstraint[F]:
+		p.lowerBusConstraintToAir(v, airModule)
 	case LookupConstraint[F]:
 		p.lowerLookupConstraintToAir(v, airModule)
 	case RangeConstraint[F]:
@@ -198,6 +200,13 @@ func (p *AirLowering[F]) lowerRangeConstraintToAir(v RangeConstraint[F], airModu
 // source and target vectors carry over unchanged.
 func (p *AirLowering[F]) lowerLookupConstraintToAir(c LookupConstraint[F], airModule air.ModuleBuilder[F]) {
 	airModule.AddConstraint(air.NewLookupConstraint[F](c.Handle, c.Targets, c.Sources))
+}
+
+// Lower a bus constraint to the AIR level.  Since bus constraints are made up
+// of registers (rather than arbitrary expressions) at both levels, the ports
+// carry over unchanged.
+func (p *AirLowering[F]) lowerBusConstraintToAir(c BusConstraint[F], airModule air.ModuleBuilder[F]) {
+	airModule.AddConstraint(air.NewBusConstraint[F](c.Handle, c.Sends, c.Receives))
 }
 
 func (p *AirLowering[F]) lowerAndSimplifyLogicalTo(term LogicalTerm[F],

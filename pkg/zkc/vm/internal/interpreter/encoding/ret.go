@@ -31,6 +31,10 @@ func Ret[W word.Word[W]](p *bytecode.Ret[W], env Environment[W]) []uint32 {
 		offset = module.NumInputs()
 	)
 	//
+	if p.Done {
+		return []uint32{DONE}
+	}
+	//
 	return encodeRet1(width, uint32(offset))
 }
 

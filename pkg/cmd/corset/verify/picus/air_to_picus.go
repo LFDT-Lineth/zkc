@@ -79,6 +79,8 @@ func (p *AirPicusTranslator[F]) translateConstraint(c air.Constraint[F],
 		p.translateLookup(v, picusModule)
 	case air.RangeConstraint[F]:
 		p.translateRangeConstraint(v, picusModule, airModule)
+	case air.BusConstraint[F]:
+		panic("bus constraints are not supported by the Picus backend")
 	default:
 		panic(fmt.Sprintf("Unhandled constraint: %s", v.Name()))
 	}

@@ -784,7 +784,12 @@ func (p *Rewriter) rewriteFixedArrayStmt(s stmt.Resolved) stmt.Resolved {
 		}
 		//
 		return s
-	case *stmt.Return[symbol.Resolved], *stmt.Goto[symbol.Resolved], *stmt.Fail[symbol.Resolved]:
+	case *stmt.NeverCall[symbol.Resolved]:
+		p.rewriteArrayExpressions(s.Args)
+		return s
+	case *stmt.Done[symbol.Resolved], *stmt.Return[symbol.Resolved]:
+		return s
+	case *stmt.Goto[symbol.Resolved], *stmt.Fail[symbol.Resolved]:
 		return s
 	default:
 		panic(fmt.Sprintf("unknown statement encountered during fixed-array lowering: %T", s))

@@ -1,4 +1,4 @@
-//error:7:10-14:too many arguments (expected 0)
+//error:7:10-14:invalid function call
 //error:9:1-2:return r possibly undefined
 const X:u32 = 123
 

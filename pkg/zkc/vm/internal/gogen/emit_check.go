@@ -95,3 +95,17 @@ func emitFailureHelpers(c *code) {
 	c.line("func fail(msg string) { panic(failure(msg)) }")
 	c.line("")
 }
+
+// emitDoneHelpers writes the doneSignal type and the done helper.  A DONE
+// terminates the whole program successfully from within a no-return
+// function, however deeply nested the call — like fail, this unwinds via
+// panic rather than an ordinary return, but Run recovers it as success
+// rather than an error.
+func emitDoneHelpers(c *code) {
+	c.line("// doneSignal marks early, successful termination via `done`; Run")
+	c.line("// recovers it and reports success rather than an error.")
+	c.line("type doneSignal struct{}")
+	c.line("")
+	c.line("func done() { panic(doneSignal{}) }")
+	c.line("")
+}

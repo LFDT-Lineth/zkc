@@ -77,6 +77,8 @@ func (p *debugChecker) checkFunction(fn *decl.ResolvedFunction) []source.SyntaxE
 			errors = append(errors, p.checkAssign(s)...)
 		case *stmt.Fail[symbol.Resolved]:
 			errors = append(errors, p.checkCallees(s, *set.UnionAnySortedSets(s.Arguments, externUsesOf))...)
+		case *stmt.NeverCall[symbol.Resolved]:
+			errors = append(errors, p.checkCallees(s, *set.UnionAnySortedSets(s.Args, externUsesOf))...)
 		case *stmt.IfGoto[symbol.Resolved]:
 			errors = append(errors, p.checkCallees(s, s.Cond.ExternUses())...)
 		case *stmt.Printf[symbol.Resolved]:
