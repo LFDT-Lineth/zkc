@@ -310,6 +310,32 @@ func Test_Invalid_Lookup_19(t *testing.T) {
 }
 
 // ===================================================================
+// Bus (send / receive) Tests
+// ===================================================================
+
+func Test_Invalid_Bus_01(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/bus_invalid_01")
+}
+func Test_Invalid_Bus_02(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/bus_invalid_02")
+}
+func Test_Invalid_Bus_03(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/bus_invalid_03")
+}
+func Test_Invalid_Bus_04(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/bus_invalid_04")
+}
+func Test_Invalid_Bus_05(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/bus_invalid_05")
+}
+func Test_Invalid_Bus_06(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/bus_invalid_06")
+}
+func Test_Invalid_Bus_07(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/bus_invalid_07")
+}
+
+// ===================================================================
 // Arrays
 // ===================================================================
 func Test_Invalid_Array_01(t *testing.T) {

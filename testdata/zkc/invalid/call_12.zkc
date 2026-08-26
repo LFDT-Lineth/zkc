@@ -1,0 +1,8 @@
+//error:3:11-18:expected type u32, found void
+fn f(x:u32) -> (r:u32) {
+  r = 1 + g!(x+1)
+}
+
+fn g(x:u32) -> ! {
+  fail
+}

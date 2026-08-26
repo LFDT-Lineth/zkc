@@ -87,6 +87,10 @@ func (p *typeChecker) typeCheckDeclaration(decl ast.Declaration) []SyntaxError {
 		// whose type is already known.
 	case *ast.DefLookup:
 		errors = p.typeCheckDefLookup(d)
+	case *ast.DefSendReceive:
+		// Nothing to check per declaration: a bus is symmetric (no
+		// source-into-target direction), and cross-port checks happen at
+		// translation, where the ports of a bus are merged.
 	default:
 		// Error handling
 		panic("unknown declaration")

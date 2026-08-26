@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -77,6 +78,10 @@ func validateConstraint[F field.Element[F]](c sc.Constraint[F], validations []bi
 		validateLookupConstraint(c.Unwrap(), validations)
 	case mir.LookupConstraint[F]:
 		validateLookupConstraint(c, validations)
+	case air.BusConstraint[F]:
+		validateBusConstraint(c.Unwrap(), validations)
+	case mir.BusConstraint[F]:
+		validateBusConstraint(c, validations)
 	}
 }
 
@@ -103,6 +108,19 @@ func validateLookupVectors(vs []lookup.Vector, validations []bit.Set) {
 func validateLookupVector(v lookup.Vector, validations []bit.Set) {
 	for _, rid := range v.Registers {
 		validations[v.Context()].Insert(rid.Unwrap())
+	}
+}
+
+// validateBusConstraint marks all registers used by the given bus constraint.
+func validateBusConstraint[F field.Element[F]](c bus.Constraint[F], validations []bit.Set) {
+	for _, ports := range [][]bus.Port{c.Sends, c.Receives} {
+		for _, port := range ports {
+			validations[port.Module].Insert(port.Selector.Unwrap())
+			//
+			for _, rid := range port.Registers {
+				validations[port.Module].Insert(rid.Unwrap())
+			}
+		}
 	}
 }
 

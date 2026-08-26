@@ -120,6 +120,8 @@ type Interpreter[W word.Word[W]] struct {
 	dataStack heap.Heap[W]
 	// Call stack holding caller state for nested calls.
 	callStack heap.Heap[StackFrame]
+	// Scratch space (i.e. for tail calls)
+	scratch heap.Heap[W]
 	// Static read-only memories: read-only memories whose contents are fixed and
 	// not provided as inputs.
 	sroms []StaticReadOnly[W]
@@ -668,6 +670,14 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			err = p.executeEnter_2(p.pc, bytecodes, frame)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
+		case encoding.TAILCALL_n:
+			err = p.executeTailCall_n(p.pc, bytecodes, frame)
+			// refresh the register window.
+			frame = p.dataStack.SliceEnd(uint(p.fp))
+		case encoding.TAILCALL_2:
+			err = p.executeTailCall_2(p.pc, bytecodes, frame)
+			// refresh the register window.
+			frame = p.dataStack.SliceEnd(uint(p.fp))
 		case encoding.LEAVE_n:
 			p.pc = p.executeLeave_n(p.pc, bytecodes, frame)
 			// refresh the register window.
@@ -685,6 +695,9 @@ func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
 			p.pc, err = p.executeReturn(p.pc, bytecodes)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
+		case encoding.DONE:
+			// Termination
+			return nsteps, nil
 		case encoding.JMP:
 			p.pc, _ = encoding.DecodeJmp1(p.pc, bytecodes)
 		case encoding.SKIP:
@@ -835,6 +848,9 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		pc = executeMove_1s1(pc, codes, stack)
 	case encoding.WIDE_ENTER_n:
 		err = p.executeEnter_n(pc, codes, stack)
+		pc = p.pc
+	case encoding.WIDE_TAILCALL_n:
+		err = p.executeTailCall_n(pc, codes, stack)
 		pc = p.pc
 	case encoding.WIDE_LEAVE_n:
 		pc = p.executeLeave_n(pc, codes, stack)
@@ -999,9 +1015,82 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 	for i := uint(calleeFp); args.HasNext(); i++ {
 		p.dataStack.Set(i, stack[args.Next()])
 	}
-	// FIXME: following to be deprecated
+	//
 	p.fid = p.program.FunctionAt(target).ModuleId
 	p.fp = calleeFp
+	p.pc = target
+	//
+	return nil
+}
+
+// executeEnter_2 implements ENTER_2: the dedicated single-argument form of
+// ENTER_n.  It binds the one argument register directly, without the general
+// register-list (Operands) machinery.
+func (p *Interpreter[W]) executeEnter_2(pc uint32, codes []uint32, stack []W) error {
+	var (
+		width, target, arg, n = encoding.DecodeEnter_2(pc, codes)
+		// determine callee frame pointer
+		calleeFp = p.fp + uint32(len(stack))
+	)
+	// allocate callee frame
+	p.dataStack.Alloc(uint(width))
+	// save function pointer and return address
+	p.callStack.Push(checkpoint.NewStackFrame(p.fid, p.fp, p.pc+n))
+	// copy the one argument into the callee frame
+	p.dataStack.Set(uint(calleeFp), stack[arg])
+	//
+	p.fid = p.program.FunctionAt(target).ModuleId
+	p.fp = calleeFp
+	p.pc = target
+	//
+	return nil
+}
+
+// executeTailCall_n implements TAILCALL_n: a call to a no-return function,
+// which reuses the caller's frame rather than allocating a new one (no
+// call-stack record is pushed, since the callee never returns).  The arguments
+// are staged through the scratch buffer, since freeing the caller frame
+// invalidates them in place.
+func (p *Interpreter[W]) executeTailCall_n(pc uint32, codes []uint32, stack []W) error {
+	var (
+		width, target, args, _ = encoding.DecodeEnter_n(pc, codes)
+	)
+	// move argument(s) into scratch buffer
+	for args.HasNext() {
+		p.scratch.Push(stack[args.Next()])
+	}
+	// resize caller frame, whilst ensuring all zeroed out.
+	p.dataStack.Free(uint(len(stack)))
+	p.dataStack.Alloc(uint(width))
+	// assign from scratch into frame
+	for i := uint(0); i < p.scratch.Size(); i++ {
+		p.dataStack.Set(i+uint(p.fp), p.scratch.Get(i))
+	}
+	// clear scratch
+	p.scratch.Clear()
+	//
+	p.fid = p.program.FunctionAt(target).ModuleId
+	p.pc = target
+	//
+	return nil
+}
+
+// executeTailCall_2 implements TAILCALL_2: the dedicated single-argument form
+// of executeTailCall_n.  The one argument is saved before the frame is freed,
+// since freeing invalidates it in place.
+func (p *Interpreter[W]) executeTailCall_2(pc uint32, codes []uint32, stack []W) error {
+	var (
+		width, target, arg, _ = encoding.DecodeEnter_2(pc, codes)
+		//
+		tmp = stack[arg]
+	)
+	// resize caller frame, whilst ensuring all zeroed out.
+	p.dataStack.Free(uint(len(stack)))
+	p.dataStack.Alloc(uint(width))
+	// copy the one argument into the callee frame
+	p.dataStack.Set(uint(p.fp), tmp)
+	//
+	p.fid = p.program.FunctionAt(target).ModuleId
 	p.pc = target
 	//
 	return nil
@@ -1034,29 +1123,6 @@ func (p *Interpreter[W]) executeLeave_2(pc uint32, codes []uint32, stack []W) ui
 	p.dataStack.Free(uint(p.rw))
 	//
 	return pc + n
-}
-
-// executeEnter_2 implements ENTER_2: the dedicated single-argument form of
-// ENTER_n.  It binds the one argument register directly, without the general
-// register-list (Operands) machinery.
-func (p *Interpreter[W]) executeEnter_2(pc uint32, codes []uint32, stack []W) error {
-	var (
-		width, target, arg, n = encoding.DecodeEnter_2(pc, codes)
-		// determine callee frame pointer
-		calleeFp = p.fp + uint32(len(stack))
-	)
-	// allocate callee frame
-	p.dataStack.Alloc(uint(width))
-	// save function pointer and return address
-	p.callStack.Push(checkpoint.NewStackFrame(p.fid, p.fp, p.pc+n))
-	// copy the one argument into the callee frame
-	p.dataStack.Set(uint(calleeFp), stack[arg])
-	// FIXME: following to be deprecated
-	p.fid = p.program.FunctionAt(target).ModuleId
-	p.fp = calleeFp
-	p.pc = target
-	//
-	return nil
 }
 
 func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error) {

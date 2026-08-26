@@ -14,6 +14,7 @@ package mir
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
@@ -44,6 +45,13 @@ func NewLookupConstraint[F field.Element[F]](handle string, targets []LookupVect
 	sources []LookupVector) Constraint[F] {
 	//
 	return Constraint[F]{lookup.NewConstraint[F](handle, targets, sources)}
+}
+
+// NewBusConstraint creates a new bus constraint with a given handle (i.e. the
+// bus name).
+func NewBusConstraint[F field.Element[F]](handle string, sends []BusPort, receives []BusPort) Constraint[F] {
+	//
+	return Constraint[F]{bus.NewConstraint[F](handle, sends, receives)}
 }
 
 // NewRangeConstraint constructs a new Range constraint

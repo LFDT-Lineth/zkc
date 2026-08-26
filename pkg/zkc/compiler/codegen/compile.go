@@ -294,6 +294,10 @@ func buildFunctionKind(fn *decl.ResolvedFunction) vm.FunctionKind {
 		}
 	}
 	//
+	if fn.NoReturn {
+		kind = kind.WithNoReturn(true)
+	}
+	//
 	return kind
 }
 

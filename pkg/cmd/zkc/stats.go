@@ -68,6 +68,8 @@ type moduleStats struct {
 	dn map[dnKey]uint
 	// lookups is the number of lookup constraints.
 	lookups uint
+	// buses is the number of bus constraints.
+	buses uint
 	// complexity is a cost measure: each constraint weighted by the square of
 	// its degree times the number of distinct columns it reads
 	// (Σ nCols · degree²).
@@ -530,6 +532,8 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 				stats.complexity += nCells * degree * degree
 			case air.LookupConstraint[F]:
 				stats.lookups++
+			case air.BusConstraint[F]:
+				stats.buses++
 			}
 		}
 	}
@@ -628,6 +632,18 @@ func printAirModuleStats(stats []moduleStats) {
 			//
 			return ""
 		}))
+	// Buses (only shown once bus constraints exist).
+	if slices.ContainsFunc(stats, func(m moduleStats) bool { return m.buses > 0 }) {
+		cols = append(cols, dataColumn(stats, "", "buses", "", false,
+			func(m moduleStats) string {
+				if m.isRegular() {
+					return count(m.buses)
+				}
+				//
+				return ""
+			}))
+	}
+	//
 	cols = append(cols, dataColumn(stats, "", "complexity", "(= sum n.d^2)", false,
 		func(m moduleStats) string {
 			if m.isRegular() {

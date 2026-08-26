@@ -61,9 +61,11 @@ const (
 	KEYWORD_CONTINUE
 	// KEYWORD_CONST signals a constant declaration
 	KEYWORD_CONST
+	// KEYWORD_DONE signals a done statement
+	KEYWORD_DONE
 	// KEYWORD_ELSE signals an else branch
 	KEYWORD_ELSE
-	// KEYWORD_FAIL signals a return statement
+	// KEYWORD_FAIL signals a fail statement
 	KEYWORD_FAIL
 	// KEYWORD_FN signals a function declaration
 	KEYWORD_FN
@@ -119,8 +121,6 @@ const (
 	LOGICAL_AND
 	// LOGICAL_OR signals "||"
 	LOGICAL_OR
-	// LOGICAL_NOT signals "!"
-	LOGICAL_NOT
 	// ADD signals "+"
 	ADD
 	// SUB signals "-"
@@ -147,6 +147,8 @@ const (
 	REM
 	// QMARK signals "?"
 	QMARK
+	// SHRIEK signals "!"
+	SHRIEK
 	// HASH signals "#"
 	HASH
 	// AT signals "@"
@@ -251,7 +253,6 @@ var rules []lex.LexRule[rune] = []lex.LexRule[rune]{
 	lex.Rule(lex.Unit('/', '%'), DIV_REM),
 	lex.Rule(lex.Unit('/'), DIV),
 	lex.Rule(lex.Unit('%'), REM),
-	lex.Rule(lex.Unit('!'), LOGICAL_NOT),
 	lex.Rule(lex.Unit('&', '&'), LOGICAL_AND),
 	lex.Rule(lex.Unit('|', '|'), LOGICAL_OR),
 	lex.Rule(lex.Unit('&'), BITWISE_AND),
@@ -259,6 +260,7 @@ var rules []lex.LexRule[rune] = []lex.LexRule[rune]{
 	lex.Rule(lex.Unit('^'), BITWISE_XOR),
 	lex.Rule(lex.Unit('~'), BITWISE_NOT),
 	lex.Rule(lex.Unit('?'), QMARK),
+	lex.Rule(lex.Unit('!'), SHRIEK),
 	lex.Rule(lex.Unit('#'), HASH),
 	lex.Rule(lex.Unit('@'), AT),
 	lex.Rule(whitespace, WHITESPACE),
@@ -281,6 +283,7 @@ var keywords = map[string]uint{
 	"break":    KEYWORD_BREAK,
 	"const":    KEYWORD_CONST,
 	"continue": KEYWORD_CONTINUE,
+	"done":     KEYWORD_DONE,
 	"else":     KEYWORD_ELSE,
 	"fail":     KEYWORD_FAIL,
 	"fn":       KEYWORD_FN,

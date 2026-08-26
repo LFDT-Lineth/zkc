@@ -550,6 +550,23 @@ func Test_Valid_Lookup_30(t *testing.T) {
 }
 
 // ===================================================================
+// Bus (send / receive) Tests
+// ===================================================================
+
+func Test_Valid_Bus_01(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/bus_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+func Test_Valid_Bus_02(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/bus_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+func Test_Valid_Bus_03(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/bus_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+func Test_Valid_Bus_05(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/bus_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+// ===================================================================
 // Arrays
 // ===================================================================
 

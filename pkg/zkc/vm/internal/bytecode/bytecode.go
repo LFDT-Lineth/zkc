@@ -335,7 +335,13 @@ func AssignV[W word.Word[W]](targets []RegisterId, sources ...RegisterId) Byteco
 
 // CallFun constructs a function-call bytecode with the given flags.
 func CallFun[W word.Word[W]](target ModuleId, args []RegisterId, returns []RegisterId) *Call[W] {
-	return &Call[W]{target, args, returns}
+	return &Call[W]{target, args, returns, false}
+}
+
+// NeverCallFun constructs a (potentially) non-returning function-call bytecode
+// with the given flags.
+func NeverCallFun[W word.Word[W]](target ModuleId, args []RegisterId, returns []RegisterId, never bool) *Call[W] {
+	return &Call[W]{target, args, returns, never}
 }
 
 // Jump creates an unconditional jump instruction transferring control to the
@@ -492,10 +498,14 @@ func NewFieldArith[W word.Word[W]](op Operation, target RegisterId, sources []Re
 	return &FieldArith[W]{Op: op, Target: target, Sources: sources, Constant: constant}
 }
 
-// NewRet constructs a return instruction with the given frame width and return
-// offset.
+// NewDone constructs a done instruction.
+func NewDone[W word.Word[W]]() *Ret[W] {
+	return &Ret[W]{true}
+}
+
+// NewRet constructs a return instruction.
 func NewRet[W word.Word[W]]() *Ret[W] {
-	return &Ret[W]{}
+	return &Ret[W]{false}
 }
 
 // IsUnusedConstant checks whether a given constant is the "identity element".

@@ -341,6 +341,7 @@ func (p *Parser) parseFunction() (decl.Unresolved, []source.SyntaxError) {
 		name     string
 		code     []stmt.Unresolved
 		errs     []source.SyntaxError
+		noret    bool
 		returned bool
 	)
 	// Parse function declaration
@@ -363,8 +364,10 @@ func (p *Parser) parseFunction() (decl.Unresolved, []source.SyntaxError) {
 	}
 	// Parse optional '->'
 	if p.match(RIGHTARROW) {
-		// Parse returns
-		if errs = p.parseArgsList(variable.RETURN, env); len(errs) > 0 {
+		// Check for noreturn function
+		if p.match(SHRIEK) {
+			noret = true
+		} else if errs = p.parseArgsList(variable.RETURN, env); len(errs) > 0 {
 			return nil, errs
 		}
 	}
@@ -383,7 +386,7 @@ func (p *Parser) parseFunction() (decl.Unresolved, []source.SyntaxError) {
 		p.srcmap.Put(stmt, p.previousToken().Span)
 	}
 	// Construct function
-	fn := decl.NewFunction(name, env.Effects(), env.Variables(), code)
+	fn := decl.NewFunction(name, env.Effects(), noret, env.Variables(), code)
 	//
 	p.srcmap.Put(fn, p.spanOf(start, end))
 	// Done
@@ -854,6 +857,8 @@ func (p *Parser) parseStatement(env Environment,
 		returned, insn, errs = p.parseBreak(env)
 	case KEYWORD_CONTINUE:
 		returned, insn, errs = p.parseContinue(env)
+	case KEYWORD_DONE:
+		returned, insn, errs = p.parseDone()
 	case KEYWORD_FAIL:
 		returned, insn, errs = p.parseFail(env)
 	case KEYWORD_FOR:
@@ -874,6 +879,10 @@ func (p *Parser) parseStatement(env Environment,
 		// Detect a bare function call statement: name(...) with no assignment.
 		if p.index+1 < len(p.tokens) && p.tokens[p.index+1].Kind == LBRACE {
 			insn, errs = p.parseCallStatement(env)
+		} else if p.index+1 < len(p.tokens) && p.tokens[p.index+1].Kind == SHRIEK {
+			insn, errs = p.parseCallStatement(env)
+			// mark "no return"
+			returned = true
 		} else {
 			insn, errs = p.parseAssignment(env)
 		}
@@ -926,8 +935,13 @@ func (p *Parser) parseCallStatement(env Environment) (stmt.Unresolved, []source.
 	//
 	if len(errs) > 0 {
 		return nil, errs
-	} else if ea, ok := call.(*expr.ExternAccess[symbol.Unresolved]); ok && ea.Name.Kind == symbol.FUNCTION {
+	} else if ea, ok := call.(*expr.ExternAccess[symbol.Unresolved]); ok && ea.Name.IsFunction() {
 		// Yes, its a function call
+		if ea.Name.Kind == symbol.NORETURN_FUNCTION {
+			// Abnormal "no return" function call
+			return &stmt.NeverCall[symbol.Unresolved]{Name: ea.Name, Args: ea.Args}, nil
+		}
+		// Normal function call
 		return &stmt.Assign[symbol.Unresolved]{Targets: nil, Source: call}, nil
 	}
 	// No, its some other kind of expression.
@@ -1341,6 +1355,14 @@ func (p *Parser) parseReturn() (bool, stmt.Unresolved, []source.SyntaxError) {
 	}
 	//
 	return true, &stmt.Return[symbol.Unresolved]{}, nil
+}
+
+func (p *Parser) parseDone() (bool, stmt.Unresolved, []source.SyntaxError) {
+	if _, errs := p.expect(KEYWORD_DONE); len(errs) > 0 {
+		return true, nil, errs
+	}
+	//
+	return true, &stmt.Done[symbol.Unresolved]{}, nil
 }
 
 func (p *Parser) parseFail(env Environment) (bool, stmt.Unresolved, []source.SyntaxError) {
@@ -1877,8 +1899,8 @@ func (p *Parser) parseUnitExpr(env Environment) (Expr, []source.SyntaxError) {
 		if len(errors) == 0 {
 			nexpr = expr.NewBitwiseNot(operand)
 		}
-	case LOGICAL_NOT:
-		p.match(LOGICAL_NOT)
+	case SHRIEK:
+		p.match(SHRIEK)
 
 		var operand Expr
 
@@ -1968,23 +1990,34 @@ func (p *Parser) parseAccessExpr(env Environment) (Expr, []source.SyntaxError) {
 
 	isDeclared := env.IsDeclaredVariable(name)
 	if !isDeclared {
+		var (
+			kind symbol.Kind
+			args []Expr
+		)
 		// now, extern access check for function call or memory access
 		if len(errs) == 0 && p.match(LSQUARE) {
-			var args []Expr
-			//
 			args, errs = p.parseExprList(RSQUARE, env)
-			//
-			nexpr = expr.NewExternAccess(symbol.NewUnresolved(name, symbol.READABLE_MEMORY, uint(len(args))), args...)
+			kind = symbol.READABLE_MEMORY
 		} else if len(errs) == 0 && p.match(LBRACE) {
-			var args []Expr
-			//
+			// Normal function call
 			args, errs = p.parseExprList(RBRACE, env)
-			//
-			nexpr = expr.NewExternAccess(symbol.NewUnresolved(name, symbol.FUNCTION, uint(len(args))), args...)
+			kind = symbol.RETURN_FUNCTION
+		} else if len(errs) == 0 && p.match(SHRIEK) {
+			// Expecting a left-branch here
+			if _, errs := p.expect(LBRACE); len(errs) > 0 {
+				return nil, errs
+			}
+			// Abnormal "no return" function call
+			args, errs = p.parseExprList(RBRACE, env)
+			kind = symbol.NORETURN_FUNCTION
 		} else {
 			// Constant access
-			nexpr = expr.NewExternAccess(symbol.NewUnresolved(name, symbol.CONSTANT, 0))
+			kind = symbol.CONSTANT
 		}
+		// construct symbol
+		symbol := symbol.NewUnresolved(name, kind, uint(len(args)))
+		// construct external access
+		nexpr = expr.NewExternAccess(symbol, args...)
 	} else {
 		rid := env.LookupVariable(name)
 		if !p.match(LSQUARE) {
