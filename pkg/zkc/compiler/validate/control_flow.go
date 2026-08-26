@@ -119,10 +119,15 @@ func applyInstructionSemantics(worklist *Worklist, fn decl.ResolvedFunction, src
 		worklist.Join(insn.DefaultTarget, state)
 	case *stmt.Return[symbol.Resolved]:
 		// Check all outputs are assigned
-		errs := checkOutputsAssigned(insn, state, fn, srcmaps)
-		errors = append(errors, errs...)
-	case *stmt.Fail[symbol.Resolved]:
+		errors = append(errors, checkOutputsAssigned(insn, state, fn, srcmaps)...)
+		// If this is a no-return function, then problem.
+		if fn.NoReturn {
+			errors = append(errors, *srcmaps.SyntaxError(insn, "cannot return from no-return function"))
+		}
+	case *stmt.Fail[symbol.Resolved], *stmt.Done[symbol.Resolved]:
 		// Nothing to do here
+	case *stmt.NeverCall[symbol.Resolved]:
+		// Nothing to do here either
 	default:
 		// fall through cases
 		worklist.Join(pc+1, state)

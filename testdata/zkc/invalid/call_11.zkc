@@ -1,0 +1,8 @@
+//error:6:5-12:invalid (no return) call to function which returns
+fn f(x:u32) -> (r:u32) {
+  if x == 0 {
+    r = 1
+  } else {
+    f!(x+1)
+  }
+}

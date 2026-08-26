@@ -1,0 +1,16 @@
+input data(addr:u16) -> (b:u8)
+
+fn main() {
+    var n:u16 = data[0]::data[1]
+    checkNonZero!(n)
+}
+
+fn checkNonZero(n:u16) -> ! {
+    if n == 0 {
+        done
+    } else if data[n + 1] == 0 {
+        fail
+    }
+    //
+    checkNonZero!(n - 1)
+}

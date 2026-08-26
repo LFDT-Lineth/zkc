@@ -729,6 +729,34 @@ func Test_ZkcInvalid_Call_07(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/call_07")
 }
 
+func Test_ZkcInvalid_Call_08(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/call_08")
+}
+
+func Test_ZkcInvalid_Call_09(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/call_09")
+}
+
+func Test_ZkcInvalid_Call_10(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/call_10")
+}
+
+func Test_ZkcInvalid_Call_11(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/call_11")
+}
+
+func Test_ZkcInvalid_Call_12(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/call_12")
+}
+
+func Test_ZkcInvalid_Call_13(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/call_13")
+}
+
+func Test_ZkcInvalid_Call_14(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/call_14")
+}
+
 // ===================================================================
 // Division Tests
 // ===================================================================

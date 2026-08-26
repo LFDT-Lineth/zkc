@@ -48,6 +48,8 @@ type Function[S symbol.Symbol[S]] struct {
 	// Effects describes zero or more external memories which this function is
 	// permitted to access.
 	Effects []*S
+	// NoReturn signals whether or not this is a "no return" function.
+	NoReturn bool
 	// Variables describes zero or more variables of a given width.  Each
 	// variable can be designated as an input / output or temporary.
 	Variables []variable.Descriptor[S]
@@ -60,7 +62,7 @@ type Function[S symbol.Symbol[S]] struct {
 }
 
 // NewFunction constructs a new function with the given variables and code
-func NewFunction[S symbol.Symbol[S]](name string, effects []*S, vars []variable.Descriptor[S],
+func NewFunction[S symbol.Symbol[S]](name string, effects []*S, noret bool, vars []variable.Descriptor[S],
 	code []stmt.Stmt[S]) *Function[S] {
 	//
 	var (
@@ -71,6 +73,7 @@ func NewFunction[S symbol.Symbol[S]](name string, effects []*S, vars []variable.
 	return &Function[S]{
 		name:       name,
 		Effects:    effects,
+		NoReturn:   noret,
 		Variables:  vars,
 		NumInputs:  numInputs,
 		NumOutputs: numOutputs,

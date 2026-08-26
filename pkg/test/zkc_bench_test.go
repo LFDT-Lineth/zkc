@@ -36,6 +36,10 @@ func Test_ZkcBench_FastPow(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/fast_pow", DEFAULT_BENCH_CONFIG)
 }
 
+func Test_ZkcBench_RecPow(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/rec_pow", DEFAULT_BENCH_CONFIG)
+}
+
 func Test_ZkcBench_Gcd(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/gcd", DEFAULT_BENCH_CONFIG)
 }

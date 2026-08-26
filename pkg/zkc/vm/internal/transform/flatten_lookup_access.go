@@ -121,11 +121,7 @@ func flattenLookupAccess[W word.Word[W]](code Bytecode[W], snapshot []bool,
 	switch c := code.(type) {
 	case *bytecode.Call[W]:
 		// Append the (possibly rewritten) call, preserving its flags.
-		return append(insns, &bytecode.Call[W]{
-			Target:    c.Target,
-			Arguments: uses,
-			Returns:   c.Returns,
-		})
+		return append(insns, bytecode.NeverCallFun[W](c.Target, uses, c.Returns, c.Never))
 	case *bytecode.ReadWrite[W]:
 		// Uses() order is Address ++ (Data if write) ++ Stamp, so reslice the
 		// (possibly snapshotted) operands back into their fields.

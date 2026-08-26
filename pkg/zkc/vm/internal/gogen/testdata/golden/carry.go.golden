@@ -32,20 +32,21 @@ func memWrite(s []uint64, addr uint64, v uint64) []uint64 {
 // output memories, or an error if the execution fails (a rejected trace).
 func Run(in map[string][]uint64) (out map[string][]uint64, err error) {
 	defer func() {
-		if r := recover(); r != nil {
-			if f, ok := r.(failure); ok {
-				out, err = nil, f
-				return
-			}
+		r := recover()
+		if f, ok := r.(failure); ok {
+			out, err = nil, f
+			return
+		}
+		if r != nil {
 			panic(r)
 		}
+		out = map[string][]uint64{}
+		out["result"] = mem_result
 	}()
 	mem_data = in["data"]
 	mem_result = nil
 	fn_main()
-	out = map[string][]uint64{}
-	out["result"] = mem_result
-	return out, nil
+	return
 }
 
 // fn_main corresponds to ZkC function "main".

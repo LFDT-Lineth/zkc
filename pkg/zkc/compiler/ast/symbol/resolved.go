@@ -33,7 +33,7 @@ func (p Resolved) IsMemory() bool {
 
 // IsFunction implementation for Symbol interface
 func (p Resolved) IsFunction() bool {
-	return p.Kind == FUNCTION
+	return p.Kind == RETURN_FUNCTION || p.Kind == NORETURN_FUNCTION
 }
 
 // IsUnknown implementation

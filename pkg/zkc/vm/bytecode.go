@@ -318,6 +318,12 @@ func Call[W Word[W]](target ModuleId, args []RegisterId, returns []RegisterId) B
 	return bytecode.CallFun[W](target, args, returns)
 }
 
+// NeverCall constructs a "non-returning" function-call bytecode with the given
+// flags.
+func NeverCall[W Word[W]](target ModuleId, args []RegisterId, returns []RegisterId) Bytecode[W] {
+	return bytecode.NeverCallFun[W](target, args, returns, true)
+}
+
 // Jump creates an unconditional jump instruction transferring control to the
 // given target address.
 func Jump[W Word[W]](target Address) Bytecode[W] {
@@ -525,8 +531,12 @@ func FieldToUint[W Word[W]](target []RegisterId, source RegisterId) Bytecode[W] 
 	return &bytecode.FieldToUint[W]{Target: target, Source: source}
 }
 
-// Return constructs a return instruction with the given frame width and
-// return offset.
+// Done constructs a done instruction.
+func Done[W Word[W]]() Bytecode[W] {
+	return bytecode.NewDone[W]()
+}
+
+// Return constructs a return instruction.
 func Return[W Word[W]]() Bytecode[W] {
 	return bytecode.NewRet[W]()
 }

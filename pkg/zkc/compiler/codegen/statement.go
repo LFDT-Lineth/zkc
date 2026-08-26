@@ -73,6 +73,10 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) Bytecod
 		if p.verbose {
 			insns = p.compilePrintf(mapping, s.Chunks, s.Arguments)
 		}
+	case *stmt.NeverCall[symbol.Resolved]:
+		return p.compileNeverCall(mapping, s.Name, s.Args)
+	case *stmt.Done[symbol.Resolved]:
+		return vm.NewBytecodeVector(vm.Done[vm.Uint]())
 	case *stmt.Return[symbol.Resolved]:
 		return vm.NewBytecodeVector(vm.Return[vm.Uint]())
 	default:
@@ -167,6 +171,19 @@ func (p *StmtCompiler) compileFail(mapping []uint, chunks []stmt.FormattedChunk,
 	//
 	insns = append(insns, vm.Fail[vm.Uint](nchunks, sources))
 	//
+	return vm.NewBytecodeVector(insns...)
+}
+
+func (p *StmtCompiler) compileNeverCall(mapping []uint, name symbol.Resolved, args []Expr) BytecodeVector {
+	var (
+		// Determine vm module identifier
+		id = vm.ModuleId(mapping[name.Index])
+	)
+	// Compile arguments
+	arguments, insns := p.compileNonUniformArgs(mapping, args...)
+	// Append function call
+	insns = append(insns, vm.NeverCall[vm.Uint](id, arguments, nil))
+	// Done
 	return vm.NewBytecodeVector(insns...)
 }
 

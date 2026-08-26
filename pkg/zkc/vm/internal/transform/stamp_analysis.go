@@ -257,6 +257,12 @@ func (t *threader[W]) stampArcs(insns []Bytecode[W], lands []bool, i int, entry 
 		//
 		return fall(state)
 	case *bytecode.Call[W]:
+		// A never-returning call is a control-flow terminator: no fall-through,
+		// and no updated stamp is received (see threadCall).
+		if insn.Never {
+			return nil
+		}
+		//
 		return fall(t.callArcState(uint(i), insn, state))
 	case *bytecode.Skip[W]:
 		return []stampArc{{source: uint(i), target: uint(i) + 1 + uint(insn.Skip), kind: uncondArc, state: state}}
@@ -415,6 +421,11 @@ func (t *threader[W]) skipLandings(insns []Bytecode[W]) []bool {
 		//
 		switch insn := insns[i].(type) {
 		case *bytecode.Jmp[W], *bytecode.Ret[W], *bytecode.Fail[W]:
+		case *bytecode.Call[W]:
+			// A never-returning call is a control-flow terminator.
+			if !insn.Never {
+				reach[i+1] = true
+			}
 		case *bytecode.Skip[W]:
 			land(i, insn.Skip)
 		case *bytecode.SkipIf[W]:
@@ -441,20 +452,20 @@ func (t *threader[W]) skipLandings(insns []Bytecode[W]) []bool {
 	return lands
 }
 
-// isExitAt reports whether position i is an exit which must be entered with
-// the stamps in their canonical registers on every path: a jump, a non-main
-// return (main binds no stamp outputs), or the end of the row.  A fail
-// aborts, so it does not force this.
+// isExitAt reports whether position i is an exit which must be entered with the
+// stamps in their canonical registers on every path: a jump, a non-main return
+// (main binds no stamp outputs), or the end of the row.  A fail aborts, so it
+// does not force this.
 func (t *threader[W]) isExitAt(insns []Bytecode[W], i int) bool {
 	if i == len(insns) {
 		return true
 	}
 	//
-	switch insns[i].(type) {
+	switch b := insns[i].(type) {
 	case *bytecode.Jmp[W]:
 		return true
 	case *bytecode.Ret[W]:
-		return !t.isMain
+		return !t.isMain && !b.Done
 	}
 	//
 	return false
