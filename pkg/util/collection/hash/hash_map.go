@@ -90,6 +90,42 @@ func (p *Map[K, V]) Insert(key K, value V) bool {
 	return r
 }
 
+// Update changes the value stored under a key in place. Its three arguments are
+// - key: the key to look up
+// - clone: a means of cloning the key (whose buffer the caller may reuse)
+// - fn: a transformation to apply to the value at that key
+//
+// The value is given as a function: only the map knows the current value;
+// providing fn lets us apply transformations à la v → v+1 or v-1 without
+// knowledge of the underlying value v.  It also costs one hash, where a Get
+// followed by an Insert costs two.
+//
+// The key is cloned only when genuinely new, and never retained otherwise.  That
+// is what lets a caller look up with a buffer it goes on to overwrite, so do not
+// "simplify" this to retain key directly.
+func (p *Map[K, V]) Update(key K, clone func(K) K, fn func(V) V) {
+	var (
+		hash   = key.Hash()
+		bucket = p.buckets[hash]
+	)
+	// Key already present: update the value in place.  The copied bucket shares
+	// its backing arrays with the one held by the map, so this writes through
+	// and no write back is required.
+	for i, k := range bucket.keys {
+		if key.Equals(k) {
+			bucket.values[i] = fn(bucket.values[i])
+			return
+		}
+	}
+	// Key absent: append it, which requires writing the bucket back since
+	// append may reallocate.
+	var empty V
+	//
+	bucket.keys = append(bucket.keys, clone(key))
+	bucket.values = append(bucket.values, fn(empty))
+	p.buckets[hash] = bucket
+}
+
 // ContainsKey checks whether the given item is contained within this map, or not.
 //
 //nolint:revive

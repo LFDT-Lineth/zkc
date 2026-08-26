@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"fmt"
 	"hash/fnv"
+	"slices"
 )
 
 // A reasonably simple hashset implementation which permits collisions.  Observe
@@ -136,6 +137,13 @@ func (p Array[F]) Equals(other Array[F]) bool {
 // Elements returns the underlying elements.
 func (p Array[F]) Elements() []F {
 	return p.elements
+}
+
+// Clone returns a copy of this array owning its own elements.  This allows an
+// array to be built in a reusable buffer for lookup purposes, and copied only
+// when it must be retained (e.g. as a key in a Map).
+func (p Array[F]) Clone() Array[F] {
+	return Array[F]{slices.Clone(p.elements)}
 }
 
 // Hash generat6es a 64-bit hashcode from the underlying bytes array.

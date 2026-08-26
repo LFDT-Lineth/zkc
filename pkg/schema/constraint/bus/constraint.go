@@ -189,10 +189,17 @@ func portColumns[F field.Element[F]](trModule trace.Module[F], port Port) (
 // accumulate adds the given sign to the tally for every selected row of each
 // port.
 func (p Constraint[F]) accumulate(tr trace.Trace[F], ports []Port, tally *Tally[F], sign int) {
+	// add is the tally update applied to each selected row.
+	var add = func(count int) int { return count + sign }
+	//
 	for _, port := range ports {
 		var (
 			trModule                 = tr.Module(port.Module)
 			selectorCol, messageCols = portColumns(trModule, port)
+			// Scratch space for reading a row's message.  Reused across rows,
+			// which is safe because Update only retains a key when it is new,
+			// and then only a clone of it.
+			message = make([]F, len(messageCols))
 		)
 		//
 		for row := range trModule.Height() {
@@ -200,18 +207,11 @@ func (p Constraint[F]) accumulate(tr trace.Trace[F], ports []Port, tally *Tally[
 				continue
 			}
 			//
-			var message = make([]F, len(messageCols))
-			//
 			for i, col := range messageCols {
 				message[i] = col.Get(row)
 			}
 			//
-			var (
-				key      = hash.NewArray(message)
-				count, _ = tally.Get(key)
-			)
-			//
-			tally.Insert(key, count+sign)
+			tally.Update(hash.NewArray(message), hash.Array[F].Clone, add)
 		}
 	}
 }
