@@ -1128,7 +1128,7 @@ func Test_ZkcInvalid_Unreachable_04(t *testing.T) {
 }
 
 // ===================================================================
-// Unreachable module from main
+// Partial call tests
 // ===================================================================
 func Test_ZkcInvalid_Partial_call_01(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/partial_call_01")
@@ -1140,6 +1140,10 @@ func Test_ZkcInvalid_Partial_call_02(t *testing.T) {
 
 func Test_ZkcInvalid_Partial_call_03(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/partial_call_03")
+}
+
+func Test_ZkcInvalid_Partial_call_04(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/partial_call_04")
 }
 
 // ===================================================================
