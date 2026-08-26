@@ -45,18 +45,14 @@ type Constraint[F field.Element[F]] struct {
 // NewConstraint creates a bus constraint, requiring all ports share one width.
 func NewConstraint[F field.Element[F]](handle string, sends []Port, receives []Port) Constraint[F] {
 	var width uint
-	//
-	for i, ith := range sends {
-		if i != 0 && ith.Len() != width {
-			panic("inconsistent number of send registers on bus")
-		}
-
-		width = ith.Len()
-	}
-	//
-	for _, ith := range receives {
-		if ith.Len() != width {
-			panic("inconsistent number of receive registers on bus")
+	// Take the width from whichever side has ports, rather than from the sends
+	// alone.  A bus missing one direction entirely is a user error reported by
+	// Consistent, so it must not panic here.
+	for i, ith := range slices.Concat(sends, receives) {
+		if i == 0 {
+			width = ith.Len()
+		} else if ith.Len() != width {
+			panic(fmt.Sprintf("inconsistent port widths on bus %q (%d vs %d)", handle, width, ith.Len()))
 		}
 	}
 

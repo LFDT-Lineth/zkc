@@ -130,13 +130,24 @@ func checkWithField[F field.Element[F]](t *testing.T, test string, padding bool,
 		//
 		if cfg.field == "" || cfg.field == field.Name {
 			shardSets := ReadShardedTracesFile[F](testFilename)
+			// ReadShardedTracesFile returns one entry per line of the file,
+			// comments and blank lines yielding nil.  Hence count the non-nil
+			// entries, not the lines: a fixture of nothing but comments would
+			// otherwise satisfy the sanity check below whilst checking nothing.
+			nShardSets := 0
 			//
-			if len(shardSets) > 0 {
+			for _, shards := range shardSets {
+				if shards != nil {
+					nShardSets++
+				}
+			}
+			//
+			if nShardSets > 0 {
 				stack := stacks.WithOptimisationConfig(mir.DEFAULT_OPTIMISATION_LEVEL)
 				checkShardedTraces(t, testFilename, padding, mir.DEFAULT_OPTIMISATION_INDEX, cfg, shardSets, stack)
 			}
 			//
-			nTests += len(shardSets)
+			nTests += nShardSets
 		}
 	}
 	// Sanity check at least one trace found.
