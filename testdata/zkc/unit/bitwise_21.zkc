@@ -1,0 +1,23 @@
+pub input data(address:u2) -> (w:u32)
+
+fn main() {
+    var x:u32 = data[0]
+    var exp_res_and:u32 = data[1]
+    var exp_res_or:u32 = data[2]
+    var exp_res_xor:u32 = data[3]
+
+    var res_and:u32 = x & 0x0000FFFF
+    var res_or:u32 = x | 0x0000FFFF
+    var res_xor:u32 = x ^ 0x0000FFFF
+
+    if (exp_res_and != res_and) {
+        fail
+    }
+    if (exp_res_or != res_or) {
+        fail
+    }
+    if (exp_res_xor != res_xor) {
+        fail
+    }
+}
+
