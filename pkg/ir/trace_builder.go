@@ -13,7 +13,6 @@
 package ir
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/builder"
@@ -27,12 +26,6 @@ import (
 // schema and set of input columns.  The goal is to encapsulate all of the logic
 // around building a trace.
 type TraceBuilder[F field.Element[F]] struct {
-	// Indicates whether or not to perform defensive padding.  This is where
-	// padding rows are appended and/or prepended to ensure no constraint in the
-	// active region of the trace is clipped.  Whilst not strictly necessary,
-	// this can be helpful for identifying invalid constraints which are only
-	// exposed with a given amount of padding.
-	defensive bool
 	// Indicates whether or not to perform trace expansion.  The default should
 	// be to apply trace expansion.  However, for testing purposes, it can be
 	// useful to provide an already expanded trace to ensure a set of
@@ -42,10 +35,6 @@ type TraceBuilder[F field.Element[F]] struct {
 	// that the values supplied for all columns (both input and computed) are
 	// within their declared type.
 	validate bool
-	// Indicates whether or not to apply other sanity checks, such as ensuring
-	// the number of lines actually added to a trace matches the expected
-	// amount.
-	checks bool
 	// Determines how much front padding is applied to each module in the
 	// trace.  See PaddingStrategy for the available strategies.
 	paddingStrategy PaddingStrategy
@@ -63,24 +52,7 @@ type TraceBuilder[F field.Element[F]] struct {
 // NewTraceBuilder constructs a default trace builder.  The idea is that this
 // could then be customized as needed following the builder pattern.
 func NewTraceBuilder[F field.Element[F]]() TraceBuilder[F] {
-	return TraceBuilder[F]{true, true, true, true, NextPowerOfTwoPadding, true, math.MaxUint, nil}
-}
-
-// WithDefensivePadding updates a given builder configuration to apply defensive padding
-// (or not).
-func (tb TraceBuilder[F]) WithDefensivePadding(flag bool) TraceBuilder[F] {
-	ntb := tb
-	ntb.defensive = flag
-	//
-	return ntb
-}
-
-// WithExpansionChecks enables runtime safety checks on the expanded trace.
-func (tb TraceBuilder[F]) WithExpansionChecks(flag bool) TraceBuilder[F] {
-	ntb := tb
-	ntb.checks = flag
-	//
-	return ntb
+	return TraceBuilder[F]{true, true, NextPowerOfTwoPadding, true, math.MaxUint, nil}
 }
 
 // WithExpansion updates a given builder configuration to perform trace expansion (or
@@ -174,16 +146,6 @@ func (tb TraceBuilder[F]) Build(schema sc.AnySchema[F], tf trace.Trace[F]) (tr t
 	}
 	// Apply trace expansion (if requested)
 	if tb.expand {
-		// Save original line counts
-		moduleHeights := determineModuleHeights(atr)
-		// Apply spillage
-		addSpillageAndDefensivePadding(tb.defensive, atr, schema)
-		// Sanity checks
-		if tb.checks {
-			if err := checkModuleHeights(moduleHeights, tb.defensive, atr, schema); err != nil {
-				return nil, append(errs, err)
-			}
-		}
 		// Expand trace
 		if err := builder.TraceExpansion(config, schema, atr); err != nil {
 			return nil, append(errs, err)
@@ -198,61 +160,4 @@ func (tb TraceBuilder[F]) Build(schema sc.AnySchema[F], tf trace.Trace[F]) (tr t
 	}
 	//
 	return atr, errs
-}
-
-// pad each module with its given level of spillage and (optionally) ensure a
-// given level of defensive padding.
-func addSpillageAndDefensivePadding[F field.Element[F]](defensive bool, tr builder.ArrayTrace[F],
-	schema sc.AnySchema[F]) {
-	//
-	n := tr.Modules().Count()
-	// Iterate over modules
-	for i := uint(0); i < n; i++ {
-		var trMod = tr.RawModule(i)
-		// Compute extra padding rows required
-		padding := sc.RequiredPaddingRows(i, defensive, schema)
-		// Don't pad unless we have to
-		if padding > 0 {
-			// Pad extract rows with 0, and store the resulting (fresh) module
-			// back into the trace, since Pad no longer updates in place.
-			tr.SetRawModule(i, trMod.Pad(padding, 0))
-		}
-	}
-}
-
-// determineModuleHeights returns the height for each module in the trace.
-func determineModuleHeights[F field.Element[F]](tr builder.ArrayTrace[F]) []uint {
-	n := tr.Modules().Count()
-	mid := 0
-	heights := make([]uint, n)
-	// Iterate over modules
-	for iter := tr.Modules(); iter.HasNext(); {
-		ith := iter.Next()
-		heights[mid] = ith.Height()
-		mid++
-	}
-	//
-	return heights
-}
-
-// checkModuleHeights checks the expanded heights match exactly what was
-// expected.
-func checkModuleHeights[F field.Element[F]](original []uint, defensive bool, tr builder.ArrayTrace[F],
-	schema sc.AnySchema[F]) error {
-	//
-	expanded := determineModuleHeights(tr)
-	//
-	for mid := uint(0); mid < uint(len(expanded)); mid++ {
-		spillage := sc.RequiredPaddingRows(mid, defensive, schema)
-		expected := original[mid] + spillage
-		// Perform the check
-		if expected != expanded[mid] {
-			name := schema.Module(mid).Name()
-			//
-			return fmt.Errorf(
-				"inconsistent expanded trace height for %s (was %d but expected %d)", name, expanded[mid], expected)
-		}
-	}
-	//
-	return nil
 }

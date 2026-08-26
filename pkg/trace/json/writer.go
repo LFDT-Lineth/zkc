@@ -32,9 +32,15 @@ func ToJsonString[F field.Element[F]](tr trace.Trace[F]) string {
 	for _, ith := range tr.Modules().Collect() {
 		for j := range ith.Width() {
 			var (
-				name = ith.Descriptor().Name
+				name = ith.Descriptor().Columns[j].Name
 				data = ith.Column(j)
 			)
+			// Columns of a static reference table (e.g. a "$range_uN" lookup
+			// table) carry no trace data, since their contents are fixed by the
+			// schema.  Such columns are simply omitted.
+			if data == nil {
+				continue
+			}
 			//
 			if !first {
 				builder.WriteString(", ")

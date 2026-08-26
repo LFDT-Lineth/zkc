@@ -26,19 +26,19 @@ import (
 // TraceValidation validates that values held in trace columns match the
 // expected type.  This is really a sanity check that the trace is not
 // malformed.
-func TraceValidation[F field.Element[F]](config Config, schema sc.AnySchema[F], trace trace.Trace[F]) []error {
+func TraceValidation[F field.Element[F]](config Config, schema sc.AnySchema[F], tr trace.Trace[F]) []error {
 	var (
 		errors []error
 		// Start timer
 		stats = util.NewPerfStats()
 		// Flatten all columns
-		columns, errs = flattenTrace(schema, trace)
+		columns, errs = flattenTrace(schema, tr)
 		// Mapping function
-		mapfn = func(_ uint, p util.Pair[uint, uint]) error {
+		mapfn = func(_ uint, c trace.ColumnRef) error {
 			var (
-				smod = schema.Module(p.Left)
-				tmod = trace.Module(p.Left)
-				rid  = register.NewId(p.Right)
+				smod = schema.Module(c.Module())
+				tmod = tr.Module(c.Module())
+				rid  = c.Column()
 			)
 
 			return validateColumnBitWidth(rid, smod, tmod)
@@ -60,11 +60,11 @@ func TraceValidation[F field.Element[F]](config Config, schema sc.AnySchema[F], 
 	return append(errs, errors...)
 }
 
-func flattenTrace[F field.Element[F]](schema sc.AnySchema[F], tr trace.Trace[F]) ([]util.Pair[uint, uint], []error) {
+func flattenTrace[F field.Element[F]](schema sc.AnySchema[F], tr trace.Trace[F]) ([]trace.ColumnRef, []error) {
 	var (
 		errors []error
 		//
-		columns []util.Pair[uint, uint]
+		columns []trace.ColumnRef
 	)
 	//
 	for i := uint(0); i < max(schema.Width(), tr.Width()); i++ {
@@ -87,13 +87,13 @@ func flattenTrace[F field.Element[F]](schema sc.AnySchema[F], tr trace.Trace[F])
 }
 
 func flattenColumns[F field.Element[F]](mid uint, scMod sc.Module[F], trMod trace.Module[F],
-) ([]util.Pair[uint, uint], []error) {
+) ([]trace.ColumnRef, []error) {
 	var (
 		errors []error
 		// Extract module registers
 		registers = scMod.Registers()
 		//
-		columns []util.Pair[uint, uint]
+		columns []trace.ColumnRef
 	)
 	// Sanity check
 	if scMod.Name() != trMod.Name() {
@@ -109,7 +109,7 @@ func flattenColumns[F field.Element[F]](mid uint, scMod sc.Module[F], trMod trac
 				err := fmt.Errorf("unknown column %s.%s in trace", trMod.Name(), trMod.Descriptor().Columns[i].Name)
 				errors = append(errors, err)
 			} else {
-				columns = append(columns, util.NewPair(mid, i))
+				columns = append(columns, trace.NewColumnRef(mid, register.NewId(i)))
 			}
 		}
 	}

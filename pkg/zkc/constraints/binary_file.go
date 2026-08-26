@@ -327,8 +327,6 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
 		builder := ir.NewTraceBuilder[F]().
 			// NOTE: never use validation, as it hides constraint failures.
 			WithValidation(false).
-			WithDefensivePadding(false).
-			WithExpansionChecks(true).
 			WithExpansion(true).
 			WithParallelism(cfg.Parallelism()).
 			WithBatchSize(cfg.BatchSize()).

@@ -126,7 +126,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	} else if builder.Expanding() {
 		var tp_errors []error
 		// Expand all the traces
-		traces, tp_errors = expandLtTraces(traces, stack, builder)
+		traces, tp_errors = expandTraces(traces, stack, builder)
 		// Print trace info
 		for _, tf := range traces {
 			printTraceInfo(cfg, tf)
@@ -213,7 +213,7 @@ func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]
 	})
 }
 
-func expandLtTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.SchemaStack[F],
+func expandTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.SchemaStack[F],
 	bldr ir.TraceBuilder[F]) ([]tr.Trace[F], []error) {
 	//
 	var (
