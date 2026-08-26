@@ -13,8 +13,6 @@
 package transform
 
 import (
-	"slices"
-
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -35,31 +33,7 @@ import (
 //
 // NOTE: this transform must run before LowerComparisons.
 func LowerDivisions[W word.Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
-	out := slices.Clone(program.Modules())
-
-	for i, mod := range out {
-		if fn, ok := mod.(*descriptor.Function[W]); ok {
-			out[i] = lowerDivisionFunction(fn)
-		}
-	}
-
-	return descriptor.NewProgram(program.Field(), program.MaxStaticHeight(), out...)
-}
-
-func lowerDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descriptor.Function[W] {
-	var (
-		vectors = fn.Vectors()
-		nvecs   = make([]BytecodeVector[W], len(vectors))
-		alloc   = split.NewAllocator(fn)
-	)
-
-	for i, vec := range vectors {
-		nvecs[i] = vec.Map(func(_ uint, b Bytecode[W]) []Bytecode[W] {
-			return lowerDivisionCode(b, alloc)
-		})
-	}
-
-	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
+	return ApplyRewrite(lowerDivisionCode[W], program)
 }
 
 // lowerDivisionCode replaces a DIVMOD bytecode with the hint+validation
