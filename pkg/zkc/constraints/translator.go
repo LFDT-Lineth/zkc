@@ -96,7 +96,7 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 		outputs = toRegisters(m.DataRegisters())
 		// Convert the static contents from words into field elements.
 		contents     = toFieldElements[W, F](m.StaticContents())
-		paddedHeight = util_math.NextPowerOfTwo(uint(len(contents)))
+		paddedHeight = util_math.NextPowerOfTwo(m.StaticHeight())
 	)
 	if paddedHeight > maxStaticHeight {
 		panic(fmt.Sprintf("static memory \"%s\" exceeds maximum allowed height of %d", m.Name(), maxStaticHeight))
