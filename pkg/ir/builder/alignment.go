@@ -128,11 +128,21 @@ func alignModule[F field.Element[F]](config Config, scMod sc.Module[F], trMod tr
 		regmap      = make(map[string]uint)
 		seen        = make([]bool, trMod.Width())
 	)
-	// Initialise column map
+	// Initialise column map and descriptors.  NOTE: every register of the schema
+	// gets a descriptor, regardless of whether the corresponding column is
+	// actually present in the trace.  This matters for those which are not
+	// (e.g. a computed column, or a column of a static reference table), since
+	// they are otherwise left nameless.
 	for i := range width {
-		var rid = register.NewId(i)
+		var r = scMod.Register(register.NewId(i))
 		//
-		regmap[scMod.Register(rid).Name()] = i
+		regmap[r.Name()] = i
+		//
+		if r.IsNative() {
+			descriptors[i] = trace.NewColumnDescriptor(r.Name(), util.None[uint]())
+		} else {
+			descriptors[i] = trace.NewColumnDescriptor(r.Name(), util.Some(r.Width()))
+		}
 	}
 	// Align columns one-by-one
 	for i := range trMod.Width() {
@@ -148,13 +158,6 @@ func alignModule[F field.Element[F]](config Config, scMod sc.Module[F], trMod tr
 		} else if ok := seen[cid]; ok {
 			errs = append(errs, fmt.Errorf("duplicate column '%s' in module '%s' of trace", ith.Name, trMod.Name()))
 		} else {
-			var r = scMod.Register(register.NewId(cid))
-			//
-			if r.IsNative() {
-				descriptors[cid] = trace.NewColumnDescriptor(r.Name(), util.None[uint]())
-			} else {
-				descriptors[cid] = trace.NewColumnDescriptor(r.Name(), util.Some(r.Width()))
-			}
 			// Clone underlying data
 			columns[cid] = trMod.MutColumn(i)
 			// Mark column as seen
