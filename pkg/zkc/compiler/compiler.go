@@ -124,7 +124,7 @@ func scanForFurtherSourceFiles(sourceFile source.File, parsedSourceFile parser.U
 		if inc, ok := d.(*decl.Include[symbol.Unresolved]); ok {
 			// check if file is already provided in the knownSourceFiles map, if so, ignore it.
 			pattern := canonicalPath(filepath.Join(dir, inc.Pattern()))
-			if knownSourceFiles[pattern] == true {
+			if knownSourceFiles[pattern] {
 				continue
 			}
 			// otherwise, we find the file from the filesystem and add it to the furtherSourceFiles list.
