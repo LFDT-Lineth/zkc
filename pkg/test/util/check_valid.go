@@ -95,6 +95,16 @@ func (p Config) GoGen(flag bool) Config {
 
 // ParallelTracing enables trace parallelisation with checkpoints at every n ZkC
 // instructions.
+//
+// NOTE: this is currently broken for any program declaring a read-write memory,
+// and so must not be enabled for one.  Each shard is traced independently and
+// the results concatenated by trace.Reduce, so the leading RAM padding row
+// emitted by traceReadWriteMemory appears once per shard rather than once per
+// trace.  That leaves inactive rows scattered through the reduced module, which
+// violates the "active_monotony" constraint.  ROM/WOM are unaffected, as their
+// modules are replicated (reduction keeps a single copy), hence programs
+// without a read-write memory can still be sharded.  To be fixed separately,
+// after which the callers marked "restore ParallelTracing" can be reinstated.
 func (p Config) ParallelTracing(fn string, n uint64) Config {
 	p.parallelTracing = util.Some(vm.NewShardingStrategy(fn, n))
 	//

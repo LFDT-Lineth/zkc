@@ -136,8 +136,9 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
 		layout = computeRamLayout(m, field)
 	)
 	// Initialise module.  Note a leading padding row exists (EXEC == FINL == 0
-	// there), inserted during trace expansion.  A read-write memory is internal
-	// state: it is neither a public input nor a public output, and never native.
+	// there), emitted by the tracer (see traceReadWriteMemory).  A read-write
+	// memory is internal state: it is neither a public input nor a public
+	// output, and never native.
 	mod = mod.Init(m.Name(), false, false, false, false, false)
 	mod.AddRegisters(regs...)
 	// Append the synthetic columns, in the order fixed by computeRamLayout.
