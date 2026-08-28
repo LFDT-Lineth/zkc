@@ -1,4 +1,4 @@
-include "keccak/impl.zkc"
+include "keccak/impl_wide.zkc"
 
 // length of keccak message
 pub input length(offset:u1) -> (length:u32)
