@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/builder"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -112,11 +113,33 @@ func (tb TraceBuilder[F]) BatchSize() uint {
 
 // Build attempts to construct a trace for a given schema, producing errors if
 // there are inconsistencies (e.g. missing columns, duplicate columns, etc).
-func (tb TraceBuilder[F]) Build(schema sc.AnySchema[F], tf trace.Shard[F]) (tr trace.Shard[F], errs []error) {
+func (tb TraceBuilder[F]) Build(schema sc.AnySchema[F], tf trace.Trace[F]) (tr trace.Trace[F], errs []error) {
 	var (
-		atr    builder.ArrayTrace[F]
+		shards = make([]trace.Shard[F], len(tf))
+		errors = make([][]error, len(tf))
+		// Trace Expander function
+		expandFn = func(i uint, shard trace.Shard[F]) {
+			shards[i], errors[i] = tb.buildShard(schema, i, shard)
+		}
+	)
+	// Build the trace (using parallelism if requested).
+	if tb.parallel {
+		array.ParallelApply(tf, expandFn)
+	} else {
+		array.Apply(tf, expandFn)
+	}
+	// Flattern errors
+	return shards, array.FlatMap(errors, func(es []error) []error { return es })
+}
+
+func (tb TraceBuilder[F]) buildShard(schema sc.AnySchema[F], shard uint, tf trace.Shard[F],
+) (tr trace.Shard[F], errs []error) {
+	//
+	var (
+		atr builder.ArrayTrace[F]
+		//
 		config = builder.Config{
-			Parallel:  tb.parallel,
+			Parallel:  false,
 			BatchSize: tb.batchSize,
 			Expanding: tb.expand,
 			Padding:   tb.paddingStrategy,

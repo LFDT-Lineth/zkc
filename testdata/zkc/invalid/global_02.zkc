@@ -1,0 +1,11 @@
+//error:5:1-16:global function must not be native
+// global functions must not be native.
+#[native]
+#[global]
+fn f(x:u8) -> ! {
+    fail
+}
+
+fn main() {
+    f!(0)
+}

@@ -113,6 +113,10 @@ func (p *FunctionKind) GobEncode() ([]byte, error) {
 		return nil, err
 	}
 	//
+	if err := gobEncoder.Encode(p.global); err != nil {
+		return nil, err
+	}
+	//
 	return buffer.Bytes(), nil
 }
 
@@ -138,6 +142,10 @@ func (p *FunctionKind) GobDecode(data []byte) error {
 	}
 	//
 	if err := gobDecoder.Decode(&p.never); err != nil {
+		return err
+	}
+	//
+	if err := gobDecoder.Decode(&p.global); err != nil {
 		return err
 	}
 	//

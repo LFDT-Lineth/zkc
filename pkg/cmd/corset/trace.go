@@ -224,37 +224,12 @@ func expandTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.S
 	for i := range traceFiles {
 		var errs []error
 		//
-		traces[i], errs = expandTrace(traceFiles[i], stack, bldr)
+		traces[i], errs = bldr.Build(stack.ConcreteSchema(), traceFiles[i])
 		//
 		errors = append(errors, errs...)
 	}
 	//
 	return traces, errors
-}
-
-func expandTrace[F field.Element[F]](tf tr.Trace[F], stack cmd_util.SchemaStack[F], bldr ir.TraceBuilder[F],
-) (tr.Trace[F], []error) {
-	//
-	var (
-		tb_errors []error
-		tp_errors []error
-		tr        = make(tr.Trace[F], len(tf))
-	)
-	//
-	for i, shard := range tf {
-		// Construct expanded trace
-		tr[i], tb_errors = bldr.Build(stack.ConcreteSchema(), shard)
-		// Handle errors
-		if len(tb_errors) > 0 {
-			for _, err := range tb_errors {
-				log.Errorln(err)
-			}
-			//
-			os.Exit(1)
-		}
-	}
-	// Now, reconstruct it!
-	return tr, tp_errors
 }
 
 func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {
@@ -293,7 +268,7 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {
 		}
 		// Print full trace (if requested)
 		if cfg.trace {
-			printTrace(cfg, window)
+			printTrace(window)
 		}
 	}
 }
@@ -305,14 +280,16 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {
 // which was hidden.
 func PrintTrace[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F],
 	limbs bool, cellWidth, titleWidth uint) {
-	// Build the viewing window (no source map, so show computed registers).
-	builder := view.NewBuilder[F](mapping).
-		WithCellWidth(cellWidth).
-		WithTitleWidth(titleWidth).
-		WithLimbs(limbs).
-		WithComputed(true)
-	//
-	printTrace(builder.Build(trace))
+	for _, shard := range trace {
+		// Build the viewing window (no source map, so show computed registers).
+		builder := view.NewBuilder[F](mapping).
+			WithCellWidth(cellWidth).
+			WithTitleWidth(titleWidth).
+			WithLimbs(limbs).
+			WithComputed(true)
+		//
+		printTrace(builder.Build(shard))
+	}
 }
 
 func printTrace(window view.TraceView) {

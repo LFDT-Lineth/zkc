@@ -16,6 +16,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	log "github.com/sirupsen/logrus"
 )
 
 // Trace defines the type of a general trace
@@ -41,16 +42,17 @@ type Tracer[W Word[W], F Element[F], T any] interface {
 // abstracts the myriad different ways this can be done (e.g. sharding,
 // parallelism, etc).
 type TraceBuilder[W Word[W], F field.Element[F], T Tracer[W, F, T]] struct {
-	config  TraceConfig
-	tracing Program[W]
+	config    TraceConfig
+	execution Program[W]
+	tracing   Program[W]
 }
 
 // NewTraceBuilder constructs a default tracer builder which, most likely,
 // should be further configured before use.
 func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T]](config TraceConfig,
-	tracing Program[W]) TraceBuilder[W, F, T] {
+	execution Program[W], tracing Program[W]) TraceBuilder[W, F, T] {
 	//
-	return TraceBuilder[W, F, T]{config, tracing}
+	return TraceBuilder[W, F, T]{config, execution, tracing}
 }
 
 // BootAndTrace generates a suitable trace from the given inputs for the contraints
@@ -78,7 +80,7 @@ func (p TraceBuilder[W, F, T]) bootAndTraceShards(inputs map[string][]byte,
 	var (
 		strategy = p.config.shardingStrategy.Unwrap()
 		// fast mode execution to generate checkpoints
-		checkpoints, outputs, traceable, errors = BootAndCheckpoint(p.tracing, inputs, strategy)
+		checkpoints, outputs, traceable, errors = BootAndCheckpoint(p.execution, inputs, strategy)
 		//
 		traces = make([]Trace[F], len(checkpoints))
 	)
@@ -108,7 +110,11 @@ func (p TraceBuilder[W, F, T]) traceCheckPoints(checkpoints []CheckPoint[W]) (jo
 		strategy = p.config.shardingStrategy.Unwrap()
 		// Construct tracing function
 		traceFn = func(i uint, cp CheckPoint[W]) traceJob[F] {
-			var steps = strategy.shardSteps
+			var (
+				steps = strategy.shardSteps
+				trace Trace[F]
+				errs  []error
+			)
 			// Increment steps for all except first shard to account for the
 			// fact that restoring at the exact point the breakpoint was
 			// triggered will naturally trigger it again.
@@ -116,7 +122,9 @@ func (p TraceBuilder[W, F, T]) traceCheckPoints(checkpoints []CheckPoint[W]) (jo
 				steps++
 			}
 			// Trace ith shard
-			var trace, errs = RestoreAndTraceFor[W, F, T](p.tracing, cp, strategy.shardFunction, steps)
+			steps, trace, errs = RestoreAndTraceFor[W, F, T](p.tracing, cp, strategy.shardFunction, steps)
+			// Log stats
+			log.Debug("[SHARD ", i, "] machine resumed execution (", steps, " steps)")
 			// Done
 			return traceJob[F]{trace, errs}
 		}

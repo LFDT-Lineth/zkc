@@ -218,12 +218,10 @@ func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, op
 func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf trace.Trace[F], id traceId,
 	schema sc.Schema[F, C]) {
 	var (
-		errors []error
 		// Map the legacy padding toggle onto a padding strategy.
 		paddingStrategy = ir.NaryRowPadding(0)
-		//
-		shards = make(trace.Trace[F], len(tf))
 	)
+	//
 	if id.padding {
 		paddingStrategy = ir.NextPowerOfTwoPadding
 	}
@@ -235,13 +233,11 @@ func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf trace.T
 		WithParallelism(id.parallel).
 		WithBatchSize(128)
 	// Construct the trace
-	for i, shard := range tf {
-		shards[i], errors = builder.Build(sc.Any(schema), shard)
-		//
-		if len(errors) > 0 {
-			t.Errorf("Trace expansion failed (%s): %s", id.String(), errors)
-			return
-		}
+	shards, errors := builder.Build(sc.Any(schema), tf)
+	// Check for errors
+	if len(errors) > 0 {
+		t.Errorf("Trace expansion failed (%s): %s", id.String(), errors)
+		return
 	}
 	// Check Constraints
 	errs := sc.Accepts(id.parallel, schema, shards)

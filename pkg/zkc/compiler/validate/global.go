@@ -19,11 +19,16 @@ import (
 )
 
 // GlobalFunctions checks that every function marked with the #[global]
-// annotation is declared as non-returning (i.e. "-> !").  A global function is
-// placed "on the bus" so that it can be called from another shard.  Since
-// caller and callee may then reside in different shards, there is no way to
-// thread the callee's results back to the caller.  Hence, a global function
-// which returns is rejected here.
+// annotation can actually be placed "on the bus" so that it can be called from
+// another shard.  Specifically, a global function must not be:
+//
+// (1) returning (i.e. anything other than "-> !"), since caller and callee may
+// then reside in different shards and there is no way to thread the callee's
+// results back to the caller;
+//
+// (2) marked #[native], since a native function is backed by an external
+// circuit and, hence, has no activity ($ret) line to serve as the selector of
+// the bus's receive port.
 func GlobalFunctions(program ast.Program, srcmaps source.Maps[any]) []source.SyntaxError {
 	var errors []source.SyntaxError
 	//
@@ -36,6 +41,10 @@ func GlobalFunctions(program ast.Program, srcmaps source.Maps[any]) []source.Syn
 		//
 		if !fn.NoReturn {
 			errors = append(errors, srcmaps.SyntaxErrors(fn, "global function must not return")...)
+		}
+		//
+		if slices.Contains(fn.Annotations(), "native") {
+			errors = append(errors, srcmaps.SyntaxErrors(fn, "global function must not be native")...)
 		}
 	}
 	//

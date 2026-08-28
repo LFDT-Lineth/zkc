@@ -42,8 +42,11 @@ func NewPerfStats() *PerfStats {
 }
 
 // Reset the performance counter
-func (p *PerfStats) Reset() {
-	var m runtime.MemStats
+func (p *PerfStats) Reset() uint {
+	var (
+		m        runtime.MemStats
+		exectime = time.Since(p.startTime).Seconds()
+	)
 	//
 	p.startTime = time.Now()
 	//
@@ -51,6 +54,8 @@ func (p *PerfStats) Reset() {
 	//
 	p.startMem = m.TotalAlloc
 	p.startGc = m.NumGC
+	//
+	return uint(exectime)
 }
 
 // Log logs the difference between the state now and as it was when the PerfStats object was created.

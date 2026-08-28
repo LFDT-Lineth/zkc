@@ -35,7 +35,7 @@ type Core[W Word[W]] interface {
 	Boot(fun string, input map[string][]W) error
 	// Execute the machine for the given number of steps, returning the actual
 	// number of steps executed and an error (if execution failed).
-	Execute(steps uint) (uint, error)
+	Execute(steps uint64) (uint64, error)
 	// Return array of (non-static) input memories
 	Inputs() iter.Iterator[interpreter.InputOutput[W]]
 	// Return array of output memories
@@ -64,11 +64,11 @@ type ProgramPoint = descriptor.ProgramPoint
 // internal machine failure which is not expected (and signals some kind of bug
 // somewhere).  The traceable flag holds when the given execution can be traced
 // (i.e. when no errors in the latter category arise).
-func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint,
+func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint64,
 ) (output map[string][]byte, traceable bool, errs []error) {
 	//
 	var (
-		steps  uint
+		steps  uint64
 		inputs map[string][]W
 		stats  = util.NewPerfStats()
 	)
@@ -101,7 +101,7 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string][]byte, strategy 
 ) (checkpoints []CheckPoint[W], outputs map[string][]byte, traceable bool, errors []error) {
 	var (
 		err   error
-		steps uint
+		steps uint64
 		stats = util.NewPerfStats()
 		// specify how many steps each shard will be
 		clk = util.NewCounter(strategy.shardSteps)
@@ -198,7 +198,7 @@ func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], inp
 // traceable flag holds when the given execution can be traced (i.e. when no
 // errors in the latter category arise).
 func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], cp CheckPoint[W],
-	fn string, nsteps uint64) (trace Trace[F], errs []error) {
+	fn string, nsteps uint64) (steps uint64, trace Trace[F], errs []error) {
 	//
 	var (
 		// constracter tracer
@@ -212,24 +212,20 @@ func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W
 	bci := constructTraceForInterpreter(pr, fn, nsteps, tracer)
 	// Sanity check error arising construct the interpreter.
 	if bci == nil {
-		return nil, []error{
+		return 0, nil, []error{
 			fmt.Errorf("unknown function \"%s\"", fn),
 		}
 	}
 	// Execute the given machine
-	if traceable, errs = RestoreAndExecute(bci, cp, math.MaxUint); !traceable {
-		return nil, errs
+	if steps, traceable, errs = RestoreAndExecute(bci, cp, math.MaxUint); !traceable {
+		return steps, nil, errs
 	}
-	//
-	var stats = util.NewPerfStats()
 	// Apply post processing
 	array.Apply(bci.ExtractMemory(), func(_ uint, p util.Pair[uint16, RuntimeMemory[W]]) {
 		tracer.TraceMemory(p.Left, p.Right, pr.Field())
 	})
-	// Done
-	stats.Log("Trace processing")
 	//
-	return tracer.Build(), errs
+	return steps, tracer.Build(), errs
 }
 
 // RestoreAndExecute restores the given machine from a checkpoint, and continues
@@ -239,12 +235,11 @@ func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W
 // machine failure which is not expected (and signals some kind of bug
 // somewhere).  The traceable flag holds when the given execution can be traced
 // (i.e. when no errors in the latter category arise).
-func RestoreAndExecute[W Word[W], M Core[W]](m M, cp CheckPoint[W], n uint) (traceable bool, errs []error) {
+func RestoreAndExecute[W Word[W], M Core[W]](m M, cp CheckPoint[W], n uint64,
+) (steps uint64, traceable bool, errs []error) {
 	//
 	var (
-		steps uint
-		err   error
-		stats = util.NewPerfStats()
+		err error
 	)
 	// Restore machine state from checkpoint
 	m.Restore(cp)
@@ -257,16 +252,14 @@ func RestoreAndExecute[W Word[W], M Core[W]](m M, cp CheckPoint[W], n uint) (tra
 		// Success
 		traceable = true
 	}
-	// Log stats
-	stats.Log(fmt.Sprintf("Machine resumed execution (%d steps)", steps))
 	//
-	return traceable, errs
+	return steps, traceable, errs
 }
 
 // ExecuteAll executes a given machine to completion in chunks of n steps,
 // returning the number of steps executed and/or any error arising.
-func ExecuteAll[W Word[W], M Core[W]](machine M, n uint) (uint, error) {
-	var nsteps uint
+func ExecuteAll[W Word[W], M Core[W]](machine M, n uint64) (uint64, error) {
+	var nsteps uint64
 	//
 	for {
 		// Execute upto n steps

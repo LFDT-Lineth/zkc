@@ -126,14 +126,12 @@ type ramLayout struct {
 // the finalization rows are deferred to a follow-up PR; the finalization-phase
 // constraints below are therefore written but vacuous (no FINL rows are emitted
 // yet).
-func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
-	ctx schema.ModuleId, m *vm.Memory[W], field field.Config,
-	rangeTables map[uint]rangeTable, maxStaticWidth uint) mir.Module[F] {
+func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
 	//
 	var (
 		mod    *schema.Table[F, mir.Constraint[F]]
 		regs   = toRegisters(m.Registers())
-		layout = computeRamLayout(m, field)
+		layout = computeRamLayout(m, p.program.Field())
 	)
 	// Initialise module.  Note a leading padding row exists (EXEC == FINL == 0
 	// there), emitted by the tracer (see traceReadWriteMemory).  A read-write
@@ -167,7 +165,7 @@ func translateReadWriteMemory[W vm.Word[W], F field.Element[F]](
 	// value / timestamp-written columns pinned by the caller lookup — are not
 	// otherwise constrained.  1-bit columns (phase bits, carries) get an r*r==r
 	// constraint; wider columns a range-table lookup.
-	addRangeProofConstraints(mod, ctx, mod.Registers(), rangeTables, maxStaticWidth)
+	p.addRangeProofConstraints(mod, ctx, mod.Registers())
 	//
 	return mod
 }

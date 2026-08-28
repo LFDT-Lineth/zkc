@@ -61,7 +61,6 @@ func AlignAndPad[F field.Element[F]](config Config, schema sc.AnySchema[F], tr t
 ) (ArrayTrace[F], []error) {
 	//
 	var (
-		stats   = util.NewPerfStats()
 		errors  []error
 		modules = make([]ArrayModule[F], schema.Width())
 		modmap  = make(map[string]uint)
@@ -109,8 +108,6 @@ func AlignAndPad[F field.Element[F]](config Config, schema sc.AnySchema[F], tr t
 	modules = padded
 	//
 	errors = append(errors, errs...)
-	//
-	stats.Log("Trace alignment and padding")
 	// Done
 	return trace.NewArray(modules), errors
 }

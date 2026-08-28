@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
@@ -94,7 +95,10 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	} else if len(tracefile) != 1 {
 		errors = append(errors, fmt.Errorf("cannot inspect multiple shards"))
 	} else {
-		trace, errors = stack.TraceBuilder().Build(schema, tracefile[0])
+		var shards []tr.Shard[F]
+
+		shards, errors = stack.TraceBuilder().Build(schema, []tr.Shard[F]{tracefile[0]})
+		trace = shards[0]
 	}
 	//
 	if len(errors) == 0 {

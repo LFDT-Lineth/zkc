@@ -309,40 +309,48 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte) (output map[string][]by
 // carries the original register / limb structure before AIR expansion (e.g. for
 // reporting statistics).  It is nil when execution fails.
 func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
-) (output map[string][]byte, trace trace.Trace[F], errs []error) {
+) (output map[string][]byte, trace trace.Trace[F], errors []error) {
 	//
 	var (
 		stats = util.NewPerfStats()
 		// Initialise trace builder from configuration
-		builder = vm.NewTraceBuilder[vm.Uint32, F, Tracer[F]](cfg, p.TracingProgram())
+		builder = vm.NewTraceBuilder[vm.Uint32, F, Tracer[F]](cfg, p.TracingProgram(), p.TracingProgram())
 	)
 	// Execute machine in chunks of 1K steps
-	trace, output, errs = builder.BootAndTrace(input)
-	//
-	if len(trace) > 0 {
-		var berrs []error
-		// Extract AIR constraints
-		constraints := p.AirConstraints()
-		// Construct trace builder
-		builder := ir.NewTraceBuilder[F]().
-			// NOTE: never use validation, as it hides constraint failures.
-			WithValidation(false).
-			WithExpansion(true).
-			WithParallelism(cfg.Parallelism()).
-			WithBatchSize(cfg.BatchSize()).
-			WithPadding(cfg.PaddingStrategy())
-		// Expand shards one-by-one
-		for i, shard := range trace {
-			// Build the trace (finally)
-			trace[i], berrs = builder.Build(constraints, shard)
-			// Include any builder errors
-			errs = append(errs, berrs...)
-		}
-	}
+	trace, output, errors = builder.BootAndTrace(input)
 	//
 	stats.Log(fmt.Sprintf("Trace generation (%d shards)", len(trace)))
 	//
-	return output, trace, errs
+	if len(trace) > 0 {
+		var errs []error
+		// Construct trace builder
+		trace, errs = p.expandTrace(cfg, trace)
+		// Include any expansion errors
+		errors = append(errors, errs...)
+	}
+	//
+	return output, trace, errors
+}
+
+func (p *BinaryFile[F]) expandTrace(cfg vm.TraceConfig, tr trace.Trace[F]) (trace.Trace[F], []error) {
+	//
+	var (
+		stats       = util.NewPerfStats()
+		constraints = p.AirConstraints()
+		// Construct trace builder
+		builder = ir.NewTraceBuilder[F]().
+			// NOTE: never use validation, as it hides constraint failures.
+			WithValidation(false).
+			WithParallelism(cfg.Parallelism()).
+			WithExpansion(true).
+			WithPadding(cfg.PaddingStrategy())
+	)
+	// Apply trace expansion
+	etr, errors := builder.Build(constraints, tr)
+	//
+	stats.Log(fmt.Sprintf("Trace expansion (%d shards)", len(etr)))
+	//
+	return etr, errors
 }
 
 // ============================================================================

@@ -1153,6 +1153,11 @@ func Test_ZkcInvalid_Global_01(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/global_01")
 }
 
+func Test_ZkcInvalid_Global_02(t *testing.T) {
+	// native global function
+	checkZkcInvalid(t, "zkc/invalid/global_02")
+}
+
 // ===================================================================
 // Test Helpers
 // ===================================================================

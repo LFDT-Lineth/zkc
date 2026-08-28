@@ -379,15 +379,15 @@ func Test_ZkcUnit_Basic_88(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_89(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_89", DEFAULT_UNIT_CONFIG.Sharding("checkNonZero", 1))
+	checkZkcUnit(t, "zkc/unit/basic_89", DEFAULT_UNIT_CONFIG.Sharding("checkNonZero", 256))
 }
 
 func Test_ZkcUnit_Basic_90(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_90", DEFAULT_UNIT_CONFIG.Sharding("checkNonZero", 1))
+	checkZkcUnit(t, "zkc/unit/basic_90", DEFAULT_UNIT_CONFIG.Sharding("checkNonZero", 256))
 }
 
 func Test_ZkcUnit_Basic_91(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_91", DEFAULT_UNIT_CONFIG.Sharding("checkNonZero", 1))
+	checkZkcUnit(t, "zkc/unit/basic_91", DEFAULT_UNIT_CONFIG.Sharding("checkNonZero", 256))
 }
 
 func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
