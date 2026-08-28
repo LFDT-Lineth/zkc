@@ -1,0 +1,349 @@
+include "constants.zkc"
+include "utils.zkc"
+include "memory.zkc"
+include "write.zkc"
+include "type.zkc"
+
+// Implementation of the keccak hash function
+// - state size = 1600 bits
+// - little endian inputs
+//
+// WIDE-CALL VARIANT: the 25 state lanes are threaded through keccak_f /
+// keccak_round as parameters and returns, so the permutation touches no
+// memory at all; keccak_state is only used as a 17-lane scratch (PIB)
+// while building the final padded block, whose padding index is dynamic.
+// This trades two very wide call signatures (50 u64 values) for the
+// elimination of all per-round state-memory traffic.
+//
+// See impl_narrow.zkc for the memory-based twin, and keep the two in
+// sync when touching the round logic.
+
+// ===================================================================
+// Keccak-f[1600] parameters and constants
+// ===================================================================
+
+// 5x5xW state with W = 64 (5x5x64 = 1600 bits)
+type lane = u64
+
+// KECCAK_ROUNDS = number of rounds = 12 + 2 * l with 2^l = W
+const KECCAK_ROUNDS:u5 = 24
+
+// ===================================================================
+// Main function
+// ===================================================================
+
+fn keccak<ram, keccak_state>(msg_address:Address, msg_length:u32, output_address:Address) {
+
+    printf "\n"
+    printf "msg_address: %x\n", msg_address
+    printf "msg_length: %x\n", msg_length
+    printf "output_address: %x\n", output_address
+
+    // the 25 state lanes A[x][y], named s{x}{y}, held in registers
+    var s00:u64 = 0
+    var s01:u64 = 0
+    var s02:u64 = 0
+    var s03:u64 = 0
+    var s04:u64 = 0
+    var s10:u64 = 0
+    var s11:u64 = 0
+    var s12:u64 = 0
+    var s13:u64 = 0
+    var s14:u64 = 0
+    var s20:u64 = 0
+    var s21:u64 = 0
+    var s22:u64 = 0
+    var s23:u64 = 0
+    var s24:u64 = 0
+    var s30:u64 = 0
+    var s31:u64 = 0
+    var s32:u64 = 0
+    var s33:u64 = 0
+    var s34:u64 = 0
+    var s40:u64 = 0
+    var s41:u64 = 0
+    var s42:u64 = 0
+    var s43:u64 = 0
+    var s44:u64 = 0
+
+    // =======================================================================================
+    // absorbing phase: full blocks (no padding)
+    // =======================================================================================
+
+    // NOTE: no division — the loop guard replaces `msg_length / 136`, and what
+    // is left in `remaining` afterwards replaces `msg_length % 136`; the loop
+    // paid a comparison per block either way.
+    var curr_address:Address = msg_address
+    var remaining:u32 = msg_length
+    while remaining >= BLOCK_BYTE_LENGTH {
+        // XOR the 17 block lanes into the state: block lane i is A[i%5][i/5]
+        s00 = s00 ^ read_64(curr_address)
+        s10 = s10 ^ read_64(curr_address + 8)
+        s20 = s20 ^ read_64(curr_address + 16)
+        s30 = s30 ^ read_64(curr_address + 24)
+        s40 = s40 ^ read_64(curr_address + 32)
+        s01 = s01 ^ read_64(curr_address + 40)
+        s11 = s11 ^ read_64(curr_address + 48)
+        s21 = s21 ^ read_64(curr_address + 56)
+        s31 = s31 ^ read_64(curr_address + 64)
+        s41 = s41 ^ read_64(curr_address + 72)
+        s02 = s02 ^ read_64(curr_address + 80)
+        s12 = s12 ^ read_64(curr_address + 88)
+        s22 = s22 ^ read_64(curr_address + 96)
+        s32 = s32 ^ read_64(curr_address + 104)
+        s42 = s42 ^ read_64(curr_address + 112)
+        s03 = s03 ^ read_64(curr_address + 120)
+        s13 = s13 ^ read_64(curr_address + 128)
+
+        s00, s01, s02, s03, s04, s10, s11, s12, s13, s14, s20, s21, s22, s23, s24, s30, s31, s32, s33, s34, s40, s41, s42, s43, s44 = keccak_f(s00, s01, s02, s03, s04, s10, s11, s12, s13, s14, s20, s21, s22, s23, s24, s30, s31, s32, s33, s34, s40, s41, s42, s43, s44)
+
+        curr_address = curr_address + (BLOCK_BYTE_LENGTH as Address)
+        remaining = remaining - BLOCK_BYTE_LENGTH
+    }
+
+    // =======================================================================================
+    // absorbing phase: the final padded block (always present)
+    // =======================================================================================
+
+    // The padding position is dynamic, so the 17-lane padded block is
+    // staged in the PIB scratch memory (the only remaining memory use).
+    // remaining < 136, so `/% 8` is just a bit split: top 5 bits :: low 3 bits
+    var n_full_words:u5
+    var n_bytes:u3
+    n_full_words::n_bytes = (remaining as u8)
+
+    var final_word_in_block:u1 = n_full_words == 16 ? 1:0
+
+    for limb:u7 = 0; limb<n_full_words as u7; limb = limb + 1 {
+        keccak_state[PIB + limb] = read_64(curr_address + (8 * (limb as Address)))
+    }
+    curr_address = curr_address + (8 * (n_full_words as Address))
+    keccak_state[PIB + (n_full_words as u7)] = read_and_pad_64(curr_address, n_bytes, final_word_in_block)
+
+    // the code below should only trigger if n_full_words < 16 = 17 - 1
+    // the above "read_and_pad_64" call didn't fill the final word, so
+    // more padding happens: zero words followed by a terminating 1
+    if final_word_in_block != 1 {
+        for limb:u8 = (n_full_words as u8) + 1; limb<16; limb = limb + 1 {
+            keccak_state[PIB + (limb as u7)] = 0
+        }
+        keccak_state[PIB + 16] = FINAL_RIGHT_PADDING
+    }
+
+    // XOR the padded block into the state and permute
+    s00 = s00 ^ keccak_state[PIB]
+    s10 = s10 ^ keccak_state[PIB + 1]
+    s20 = s20 ^ keccak_state[PIB + 2]
+    s30 = s30 ^ keccak_state[PIB + 3]
+    s40 = s40 ^ keccak_state[PIB + 4]
+    s01 = s01 ^ keccak_state[PIB + 5]
+    s11 = s11 ^ keccak_state[PIB + 6]
+    s21 = s21 ^ keccak_state[PIB + 7]
+    s31 = s31 ^ keccak_state[PIB + 8]
+    s41 = s41 ^ keccak_state[PIB + 9]
+    s02 = s02 ^ keccak_state[PIB + 10]
+    s12 = s12 ^ keccak_state[PIB + 11]
+    s22 = s22 ^ keccak_state[PIB + 12]
+    s32 = s32 ^ keccak_state[PIB + 13]
+    s42 = s42 ^ keccak_state[PIB + 14]
+    s03 = s03 ^ keccak_state[PIB + 15]
+    s13 = s13 ^ keccak_state[PIB + 16]
+
+    s00, s01, s02, s03, s04, s10, s11, s12, s13, s14, s20, s21, s22, s23, s24, s30, s31, s32, s33, s34, s40, s41, s42, s43, s44 = keccak_f(s00, s01, s02, s03, s04, s10, s11, s12, s13, s14, s20, s21, s22, s23, s24, s30, s31, s32, s33, s34, s40, s41, s42, s43, s44)
+
+    // =======================================================================================
+    // squeezing phase: digest = first four lanes A[0][0], A[1][0], A[2][0], A[3][0]
+    // =======================================================================================
+
+    write_64(output_address + (0 * 8), s00)
+    write_64(output_address + (1 * 8), s10)
+    write_64(output_address + (2 * 8), s20)
+    write_64(output_address + (3 * 8), s30)
+
+    print_hash(s00, s10, s20, s30)
+}
+
+// print_hash prints the hash in BIG-ENDIAN convention
+#[debug]
+fn print_hash(h0:u64, h1:u64, h2:u64, h3:u64) {
+    printf "\nkeccak hash:\t"
+    print_big_endian(h0)
+    print_big_endian(h1)
+    print_big_endian(h2)
+    print_big_endian(h3)
+    printf "\n"
+}
+
+// print_big_endian prints a u64 in BIG-ENDIAN convention
+#[debug]
+fn print_big_endian(val:u64) {
+    var b7:u8, b6:u8, b5:u8, b4:u8, b3:u8, b2:u8, b1:u8, b0:u8
+    b7::b6::b5::b4::b3::b2::b1::b0 = val
+    printf "%x%x%x%x%x%x%x%x", b0, b1, b2, b3, b4, b5, b6, b7
+}
+
+// ===================================================================
+// The Keccak-f permutation — pure function, no memory effects
+// ===================================================================
+
+fn keccak_f(i00:u64, i01:u64, i02:u64, i03:u64, i04:u64, i10:u64, i11:u64, i12:u64, i13:u64, i14:u64, i20:u64, i21:u64, i22:u64, i23:u64, i24:u64, i30:u64, i31:u64, i32:u64, i33:u64, i34:u64, i40:u64, i41:u64, i42:u64, i43:u64, i44:u64) -> (o00:u64, o01:u64, o02:u64, o03:u64, o04:u64, o10:u64, o11:u64, o12:u64, o13:u64, o14:u64, o20:u64, o21:u64, o22:u64, o23:u64, o24:u64, o30:u64, o31:u64, o32:u64, o33:u64, o34:u64, o40:u64, o41:u64, o42:u64, o43:u64, o44:u64) {
+    o00 = i00
+    o01 = i01
+    o02 = i02
+    o03 = i03
+    o04 = i04
+    o10 = i10
+    o11 = i11
+    o12 = i12
+    o13 = i13
+    o14 = i14
+    o20 = i20
+    o21 = i21
+    o22 = i22
+    o23 = i23
+    o24 = i24
+    o30 = i30
+    o31 = i31
+    o32 = i32
+    o33 = i33
+    o34 = i34
+    o40 = i40
+    o41 = i41
+    o42 = i42
+    o43 = i43
+    o44 = i44
+    for j:u5 = 0; j<KECCAK_ROUNDS; j = j + 1 {
+        var round_constant:u64 = RC[j]
+        o00, o01, o02, o03, o04, o10, o11, o12, o13, o14, o20, o21, o22, o23, o24, o30, o31, o32, o33, o34, o40, o41, o42, o43, o44 = keccak_round(o00, o01, o02, o03, o04, o10, o11, o12, o13, o14, o20, o21, o22, o23, o24, o30, o31, o32, o33, o34, o40, o41, o42, o43, o44, round_constant)
+    }
+}
+
+// KECCAK ROUND (fully fused): theta, rho, pi, chi, iota in one pass.
+// Pure function: 25 lanes in, 25 lanes out, no memory access at all.
+fn keccak_round(a00:u64, a01:u64, a02:u64, a03:u64, a04:u64, a10:u64, a11:u64, a12:u64, a13:u64, a14:u64, a20:u64, a21:u64, a22:u64, a23:u64, a24:u64, a30:u64, a31:u64, a32:u64, a33:u64, a34:u64, a40:u64, a41:u64, a42:u64, a43:u64, a44:u64, round_constant:u64) -> (o00:u64, o01:u64, o02:u64, o03:u64, o04:u64, o10:u64, o11:u64, o12:u64, o13:u64, o14:u64, o20:u64, o21:u64, o22:u64, o23:u64, o24:u64, o30:u64, o31:u64, o32:u64, o33:u64, o34:u64, o40:u64, o41:u64, o42:u64, o43:u64, o44:u64) {
+
+    // ---- theta: column parities C, then D = C[x-1] ^ rotl1(C[x+1]) ----
+    var c0:u64 = a00 ^ a01 ^ a02 ^ a03 ^ a04
+    var c1:u64 = a10 ^ a11 ^ a12 ^ a13 ^ a14
+    var c2:u64 = a20 ^ a21 ^ a22 ^ a23 ^ a24
+    var c3:u64 = a30 ^ a31 ^ a32 ^ a33 ^ a34
+    var c4:u64 = a40 ^ a41 ^ a42 ^ a43 ^ a44
+
+    var t1h:u1, t1l:u63
+    t1h::t1l = c2
+    var d1:u64 = c0 ^ (t1l::t1h)
+    var t2h:u1, t2l:u63
+    t2h::t2l = c3
+    var d2:u64 = c1 ^ (t2l::t2h)
+    var t3h:u1, t3l:u63
+    t3h::t3l = c4
+    var d3:u64 = c2 ^ (t3l::t3h)
+    var t4h:u1, t4l:u63
+    t4h::t4l = c0
+    var d4:u64 = c3 ^ (t4l::t4h)
+    var t0h:u1, t0l:u63
+    t0h::t0l = c1
+    var d0:u64 = c4 ^ (t0l::t0h)
+
+    // ---- rho + pi: B[y][(2x+3y)%5] = rotl(A[x][y] ^ D[x], r[x][y]) ----
+    var b00:u64 = a00 ^ d0
+    var r36h:u36, r36l:u28
+    r36h::r36l = a01 ^ d0
+    var b13:u64 = r36l::r36h
+    var r3h:u3, r3l:u61
+    r3h::r3l = a02 ^ d0
+    var b21:u64 = r3l::r3h
+    var r41h:u41, r41l:u23
+    r41h::r41l = a03 ^ d0
+    var b34:u64 = r41l::r41h
+    var r18h:u18, r18l:u46
+    r18h::r18l = a04 ^ d0
+    var b42:u64 = r18l::r18h
+    var r1h:u1, r1l:u63
+    r1h::r1l = a10 ^ d1
+    var b02:u64 = r1l::r1h
+    var r44h:u44, r44l:u20
+    r44h::r44l = a11 ^ d1
+    var b10:u64 = r44l::r44h
+    var r10h:u10, r10l:u54
+    r10h::r10l = a12 ^ d1
+    var b23:u64 = r10l::r10h
+    var r45h:u45, r45l:u19
+    r45h::r45l = a13 ^ d1
+    var b31:u64 = r45l::r45h
+    var r2h:u2, r2l:u62
+    r2h::r2l = a14 ^ d1
+    var b44:u64 = r2l::r2h
+    var r62h:u62, r62l:u2
+    r62h::r62l = a20 ^ d2
+    var b04:u64 = r62l::r62h
+    var r6h:u6, r6l:u58
+    r6h::r6l = a21 ^ d2
+    var b12:u64 = r6l::r6h
+    var r43h:u43, r43l:u21
+    r43h::r43l = a22 ^ d2
+    var b20:u64 = r43l::r43h
+    var r15h:u15, r15m:u34, r15b:u15
+    r15h::r15m::r15b = a23 ^ d2
+    var b33:u64 = r15m::r15b::r15h
+    var r61h:u61, r61l:u3
+    r61h::r61l = a24 ^ d2
+    var b41:u64 = r61l::r61h
+    var r28h:u28, r28l:u36
+    r28h::r28l = a30 ^ d3
+    var b01:u64 = r28l::r28h
+    var r55h:u55, r55l:u9
+    r55h::r55l = a31 ^ d3
+    var b14:u64 = r55l::r55h
+    var r25h:u25, r25l:u39
+    r25h::r25l = a32 ^ d3
+    var b22:u64 = r25l::r25h
+    var r21h:u21, r21l:u43
+    r21h::r21l = a33 ^ d3
+    var b30:u64 = r21l::r21h
+    var r56h:u56, r56l:u8
+    r56h::r56l = a34 ^ d3
+    var b43:u64 = r56l::r56h
+    var r27h:u27, r27l:u37
+    r27h::r27l = a40 ^ d4
+    var b03:u64 = r27l::r27h
+    var r20h:u20, r20l:u44
+    r20h::r20l = a41 ^ d4
+    var b11:u64 = r20l::r20h
+    var r39h:u39, r39l:u25
+    r39h::r39l = a42 ^ d4
+    var b24:u64 = r39l::r39h
+    var r8h:u8, r8l:u56
+    r8h::r8l = a43 ^ d4
+    var b32:u64 = r8l::r8h
+    var r14h:u14, r14l:u50
+    r14h::r14l = a44 ^ d4
+    var b40:u64 = r14l::r14h
+
+    // ---- chi (+ iota on lane [0][0]): A = B ^ (~B[x+1] & B[x+2]) ----
+    o00 = (b00 ^ ((~b10) & b20)) ^ round_constant
+    o01 = (b01 ^ ((~b11) & b21))
+    o02 = (b02 ^ ((~b12) & b22))
+    o03 = (b03 ^ ((~b13) & b23))
+    o04 = (b04 ^ ((~b14) & b24))
+    o10 = (b10 ^ ((~b20) & b30))
+    o11 = (b11 ^ ((~b21) & b31))
+    o12 = (b12 ^ ((~b22) & b32))
+    o13 = (b13 ^ ((~b23) & b33))
+    o14 = (b14 ^ ((~b24) & b34))
+    o20 = (b20 ^ ((~b30) & b40))
+    o21 = (b21 ^ ((~b31) & b41))
+    o22 = (b22 ^ ((~b32) & b42))
+    o23 = (b23 ^ ((~b33) & b43))
+    o24 = (b24 ^ ((~b34) & b44))
+    o30 = (b30 ^ ((~b40) & b00))
+    o31 = (b31 ^ ((~b41) & b01))
+    o32 = (b32 ^ ((~b42) & b02))
+    o33 = (b33 ^ ((~b43) & b03))
+    o34 = (b34 ^ ((~b44) & b04))
+    o40 = (b40 ^ ((~b00) & b10))
+    o41 = (b41 ^ ((~b01) & b11))
+    o42 = (b42 ^ ((~b02) & b12))
+    o43 = (b43 ^ ((~b03) & b13))
+    o44 = (b44 ^ ((~b04) & b14))
+}

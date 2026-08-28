@@ -1,0 +1,65 @@
+include "keccak/impl_narrow.zkc"
+
+// length of keccak message
+pub input length(offset:u1) -> (length:u32)
+// bytes for keccak message
+pub input message(offset:u32) -> (byte:u8)
+// storage for generated hash
+pub output hash(offset:u32) -> (byte:u8)
+
+fn main<ram, keccak_state>() {
+    // determine message length
+    var length:u32 = length[0]
+    // copy input message into RAM
+    copyInput(0, length)
+    // perform keccak
+    keccak(0, length, 0)
+    //
+    copyOutput()
+}
+
+fn copyInput<ram>(address:u64, len:u32) {
+    var n:u32, w:u32, t:u2
+    var i:u32 = 0
+    var ptr:u64 = address
+    //
+    n::t = (len as u34)
+    //
+    for j:u32 = 0; j<n; j = j + 1 {
+        w = message[i + 3]::message[i + 2]::message[i + 1]::message[i]
+        ram[ptr] = w
+        ptr = ptr + 1
+        i = i + 4
+    }
+    // handle last word
+    switch t {
+        case 3: {
+            w = (message[i + 2]::message[i + 1]::message[i]) as u32
+        }
+        case 2: {
+            w = (message[i + 1]::message[i]) as u32
+        }
+        case 1: {
+            w = message[i] as u32
+        }
+        default: {
+            return
+        }
+    }
+    //
+    ram[ptr] = w
+}
+
+fn copyOutput<ram>() {
+    var b0:u8, b1:u8, b2:u8, b3:u8
+    var j:u32 = 0
+    //
+    for i:u64 = 0; i<8; i = i + 1 {
+        b3::b2::b1::b0 = ram[i]
+        hash[j + 3] = b3
+        hash[j + 2] = b2
+        hash[j + 1] = b1
+        hash[j] = b0
+        j = j + 4
+    }
+}

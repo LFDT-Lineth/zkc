@@ -26,20 +26,5 @@ static RC(address:u5) -> (rc:u64) {
     0x8000000080008008
 }
 
-// Rotation offsets values
-// column 5 to 7 are unused and filled with 0
-static rot_offset(x:u3, y:u3) -> (offset:u6) {
-    0, 36, 3, 41, 18, 0, 0, 0,
-    1, 44, 10, 45, 2, 0, 0, 0,
-    62, 6, 43, 15, 61, 0, 0, 0,
-    28, 55, 25, 21, 56, 0, 0, 0,
-    27, 20, 39, 8, 14, 0, 0, 0
-}
-
-// Accelerator function for modulo 5
-static mod5(address:u5) -> (result:u3) {
-    0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4
-}
-
 const BLOCK_BYTE_LENGTH:u32 = 136
 const BLOCK_BYTE_LENGTH_MINUS_ONE:u32 = 135

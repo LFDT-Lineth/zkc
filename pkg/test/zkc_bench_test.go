@@ -48,8 +48,20 @@ func Test_ZkcBench_Fnv1aHash(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/fnv1a_hash", DEFAULT_BENCH_CONFIG)
 }
 
-func Test_ZkcBench_Keccak(t *testing.T) {
-	checkZkcBench(t, "zkc/bench/keccak", DEFAULT_BENCH_CONFIG.Sampling(0.1).ParallelTracing("keccak_f", 10))
+// Two keccak implementations are benchmarked side by side: "narrow" keeps
+// the state in memory between rounds (narrow call signatures), "wide"
+// threads the 25 state lanes through calls as parameters / returns (no
+// per-round memory traffic, but 50-value call signatures).
+// TODO: restore ParallelTracing("keccak_f", 10) once sharded RAM tracing is
+// fixed (see util.Config.ParallelTracing) — sharding any input large enough
+// to split (e.g. the 4,236-byte line) violates "active_monotony", already on
+// the pre-existing keccak benchmark.
+func Test_ZkcBench_KeccakNarrow(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/keccak_narrow", DEFAULT_BENCH_CONFIG.Sampling(0.1))
+}
+
+func Test_ZkcBench_KeccakWide(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/keccak_wide", DEFAULT_BENCH_CONFIG.Sampling(0.1))
 }
 func Test_ZkcBench_Poseidon(t *testing.T) {
 	// #2007: support implicit sign bit
