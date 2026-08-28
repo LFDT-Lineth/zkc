@@ -65,6 +65,8 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		check = GetFlag(cmd, "check")
 		// show trace statistics
 		stats = GetFlag(cmd, "stats")
+		// print entire trace
+		showTrace = GetFlag(cmd, "print")
 		// open trace in the interactive inspector
 		inspect = GetFlag(cmd, "inspect")
 		// extract sharding config
@@ -112,6 +114,12 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		printTraceStats(trace)
 		printModuleStats(trace)
 	}
+	// print entire trace (if requested).  Unlike the inspector, there is no way
+	// to reveal a module which was hidden, so everything carrying data is shown
+	// (this excludes, for example, the static range-check tables).
+	if showTrace && trace != nil {
+		corset.PrintTrace(binfile.LimbsMap(), trace, false, 32, 128)
+	}
 	// write out trace (if requested)
 	if outputFile != "" {
 		// Write out trace file
@@ -153,6 +161,7 @@ func init() {
 	traceCmd.Flags().String("sharding", "", "specify sharding strategy")
 	traceCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	traceCmd.Flags().Bool("stats", false, "show overall stats for the generated trace")
+	traceCmd.Flags().BoolP("print", "p", false, "print the generated trace")
 	traceCmd.Flags().Bool("sequential", false, "force sequential tracing")
 	traceCmd.Flags().BoolP("inspect", "i", false, "open the generated trace in the interactive inspector")
 	traceCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")

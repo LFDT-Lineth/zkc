@@ -103,7 +103,7 @@ func translateStaticMemory[W vm.Word[W], F field.Element[F]](_ schema.ModuleId, 
 	}
 	// Initialise module as a static reference table.  Memory modules are never
 	// native.
-	mod = mod.Init(name, false, false, false, false, false, true)
+	mod = mod.Init(name, false, false, false, false, true)
 	// Add all registers
 	mod.AddRegisters(regs...)
 	// Populate the table contents from the pre-loaded memory, padded to the
@@ -137,11 +137,10 @@ func translateAccessOnceMemory[W vm.Word[W], F field.Element[F]](
 		regs         = toRegisters(m.Registers())
 	)
 
-	// Initialise module and add all registers.  AllowPadding (first flag) must
-	// be true so a leading padding row is inserted, which the ACCESS[0]=0 /
-	// addresses-vanish-in-padding constraints rely on.  Memory modules are never
-	// native.
-	memoryModule = memoryModule.Init(name, true, m.IsPublic() && m.IsWriteOnly(), !m.IsPublic() && m.IsWriteOnly(),
+	// Initialise module and add all registers.  Note the ACCESS[0]=0 /
+	// addresses-vanish-in-padding constraints rely on the leading padding row
+	// inserted during trace expansion.  Memory modules are never native.
+	memoryModule = memoryModule.Init(name, m.IsPublic() && m.IsWriteOnly(), !m.IsPublic() && m.IsWriteOnly(),
 		false, false, false)
 	memoryModule.AddRegisters(regs...)
 
@@ -334,7 +333,7 @@ func translateFunction[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, fn
 		ret register.Id
 	)
 	// Initialise module
-	mod = mod.Init(name, false, false, false, false, fn.IsNative(), false)
+	mod = mod.Init(name, false, false, false, fn.IsNative(), false)
 	// Add all registers
 	mod.AddRegisters(regs...)
 	// Native functions are backed by an external circuit, so we emit only the

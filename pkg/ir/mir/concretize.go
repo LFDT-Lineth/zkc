@@ -52,7 +52,7 @@ func concretizeModule[F1 Element[F1], F2 Element[F2]](m Module[F1]) Module[F2] {
 		constraints = concretizeConstraints[F1, F2](m.RawConstraints())
 	)
 	// Initialise new module
-	r = r.Init(m.Name(), m.AllowPadding(), m.IsPublicOutput(), m.IsPrivateOutput(), m.IsSynthetic(), m.IsNative(),
+	r = r.Init(m.Name(), m.IsPublicOutput(), m.IsPrivateOutput(), m.IsSynthetic(), m.IsNative(),
 		m.IsStatic())
 	// Add concretized components
 	r.AddRegisters(m.Registers()...)

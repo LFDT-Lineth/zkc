@@ -126,7 +126,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	} else if builder.Expanding() {
 		var tp_errors []error
 		// Expand all the traces
-		traces, tp_errors = expandLtTraces(traces, stack, builder)
+		traces, tp_errors = expandTraces(traces, stack, builder)
 		// Print trace info
 		for _, tf := range traces {
 			printTraceInfo(cfg, tf)
@@ -213,7 +213,7 @@ func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]
 	})
 }
 
-func expandLtTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.SchemaStack[F],
+func expandTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.SchemaStack[F],
 	bldr ir.TraceBuilder[F]) ([]tr.Trace[F], []error) {
 	//
 	var (
@@ -283,26 +283,48 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {
 	}
 	// Print full trace (if requested)
 	if cfg.trace {
-		printTrace(cfg, window)
+		printTrace(window)
 	}
 }
 
-func printTrace(cfg TraceConfig, window view.TraceView) {
+// PrintTrace prints out a given trace in tabular form, with one table per
+// module.  This is the non-interactive counterpart of InspectTrace, and
+// produces the same output as "go-corset trace --print".  Every module holding
+// data is printed, since (unlike the inspector) there is no way to reveal one
+// which was hidden.
+func PrintTrace[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F],
+	limbs bool, cellWidth, titleWidth uint) {
+	// Build the viewing window (no source map, so show computed registers).
+	builder := view.NewBuilder[F](mapping).
+		WithCellWidth(cellWidth).
+		WithTitleWidth(titleWidth).
+		WithLimbs(limbs).
+		WithComputed(true)
+	//
+	printTrace(builder.Build(trace))
+}
+
+func printTrace(window view.TraceView) {
 	// Print all windows
 	for i := range window.Width() {
 		var (
-			ith       = window.Module(i)
-			_, height = ith.Dimensions()
+			ith           = window.Module(i)
+			width, height = ith.Dimensions()
 			// Construct & configure printer
 			tp = widget.NewTable(ith)
 			//
 			name = ith.Data().Name()
 		)
-		// Print out module name
-		if height <= 1 {
-			// Don't bother print empty modules
+		// NOTE: dimensions include the row / column titles, hence the
+		// comparisons against one rather than zero.
+		if height <= 1 || width <= 1 {
+			// Don't bother printing modules with no columns, or no rows.  The
+			// latter includes static reference tables (e.g. a "$range_uN"
+			// lookup table), whose contents are fixed by the schema and hence
+			// carry no trace data at all.
 			continue
 		} else if window.Width() > 1 && name != "" {
+			// Print out module name
 			fmt.Printf("%s:\n", name)
 		}
 		// Print out report
