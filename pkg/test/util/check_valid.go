@@ -71,8 +71,8 @@ type Config struct {
 	// range tables.  Widths whose enumeration would exceed this are range-checked
 	// recursively instead.  Defaults to codegen.DEFAULT_MAX_STATIC_HEIGHT.
 	maxStaticHeights []uint
-	// enable checkpoint testing.
-	parallelTracing util.Option[vm.ShardingStrategy]
+	// enable sharding.
+	sharding util.Option[vm.ShardingStrategy]
 }
 
 // MaxStaticHeights sets the maximum heights number of rows) of static range
@@ -93,20 +93,9 @@ func (p Config) GoGen(flag bool) Config {
 	return p
 }
 
-// ParallelTracing enables trace parallelisation with checkpoints at every n ZkC
-// instructions.
-//
-// NOTE: this is currently broken for any program declaring a read-write memory,
-// and so must not be enabled for one.  Each shard is traced independently and
-// the results concatenated by trace.Reduce, so the leading RAM padding row
-// emitted by traceReadWriteMemory appears once per shard rather than once per
-// trace.  That leaves inactive rows scattered through the reduced module, which
-// violates the "active_monotony" constraint.  ROM/WOM are unaffected, as their
-// modules are replicated (reduction keeps a single copy), hence programs
-// without a read-write memory can still be sharded.  To be fixed separately,
-// after which the callers marked "restore ParallelTracing" can be reinstated.
-func (p Config) ParallelTracing(fn string, n uint64) Config {
-	p.parallelTracing = util.Some(vm.NewShardingStrategy(fn, n))
+// Sharding enables trace sharding with checkpoints at every n ZkC instructions.
+func (p Config) Sharding(fn string, n uint64) Config {
+	p.sharding = util.Some(vm.NewShardingStrategy(fn, n))
 	//
 	return p
 }
@@ -253,10 +242,10 @@ func checkValidMachine(t *testing.T, p vm.Program[vm.Uint], cfg testConfig, test
 				})
 			}
 			// Parallel tracing (if requested)
-			if cfg.parallelTracing.HasValue() {
-				traceCfg := vm.DEFAULT_TRACE_CONFIG.WithSharding(cfg.parallelTracing.Unwrap())
+			if cfg.sharding.HasValue() {
+				traceCfg := vm.DEFAULT_TRACE_CONFIG.WithSharding(cfg.sharding.Unwrap())
 				//
-				t.Run("parallel-tracing", func(t *testing.T) {
+				t.Run("sharded-tracing", func(t *testing.T) {
 					runConstraintTest(t, p, test, field, traceCfg)
 				})
 			}
@@ -308,7 +297,7 @@ func runExecutionTest[F field.Element[F]](t *testing.T, p vm.Program[vm.Uint], t
 		}
 	} else {
 		// Fail automatically on any panic arising during execution
-		failIf[*schema.PanicFailure](t, errs...)
+		failIf[*schema.PanicFailure[F]](t, errs...)
 		// Determine whether test accepted or not.
 		accepted := len(errs) == 0
 		// Process what happened versus what was supposed to happen.
@@ -358,9 +347,9 @@ func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.
 		failIf[*vm.Failure](t, errs...)
 	}
 	// Check constraints
-	failures := binf.Check(tr, traceCfg)
+	failures := binf.Check(traceCfg, tr)
 	// Fail automatically on any panic arising during constraint checking
-	failIf[*schema.PanicFailure](t, failures...)
+	failIf[*schema.PanicFailure[F]](t, failures...)
 	// Determine whether trace accepted or not.
 	accepted := len(failures) == 0
 	// Process what happened versus what was supposed to happen.

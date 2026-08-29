@@ -20,8 +20,12 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 )
 
-// Trace describes a set of named modules whose data is organised by row.
-type Trace[T any] interface {
+// Trace represents a complete (sharded) trace.  That is, an array of shards.
+type Trace[T any] []Shard[T]
+
+// Shard forms part of a trace, and describes a set of named modules whose data
+// is organised by row.
+type Shard[T any] interface {
 	// Determine whether this trace has a module with the given name and, if so,
 	// what its module index is.
 	HasModule(name string) (uint, bool)

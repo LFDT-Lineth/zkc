@@ -18,7 +18,6 @@ import (
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
@@ -26,11 +25,9 @@ import (
 // TraceValidation validates that values held in trace columns match the
 // expected type.  This is really a sanity check that the trace is not
 // malformed.
-func TraceValidation[F field.Element[F]](config Config, schema sc.AnySchema[F], tr trace.Trace[F]) []error {
+func TraceValidation[F field.Element[F]](config Config, schema sc.AnySchema[F], tr trace.Shard[F]) []error {
 	var (
 		errors []error
-		// Start timer
-		stats = util.NewPerfStats()
 		// Flatten all columns
 		columns, errs = flattenTrace(schema, tr)
 		// Mapping function
@@ -54,13 +51,11 @@ func TraceValidation[F field.Element[F]](config Config, schema sc.AnySchema[F], 
 	}
 	// Filter our any nil errors
 	errors = array.Filter(errors, func(e error) bool { return e != nil })
-	// Log stats
-	stats.Log("Trace validation")
 	// Done
 	return append(errs, errors...)
 }
 
-func flattenTrace[F field.Element[F]](schema sc.AnySchema[F], tr trace.Trace[F]) ([]trace.ColumnRef, []error) {
+func flattenTrace[F field.Element[F]](schema sc.AnySchema[F], tr trace.Shard[F]) ([]trace.ColumnRef, []error) {
 	var (
 		errors []error
 		//

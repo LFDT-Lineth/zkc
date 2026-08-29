@@ -20,6 +20,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -38,6 +39,11 @@ import (
 // - a memory access's lookup maps the accessor's address/data registers
 // onto the memory table's address/data columns.
 //
+// Calls into a global function are the exception: they are placed "on the bus"
+// instead, since caller and callee may reside in different shards (see
+// emitCallBus).  Their send ports are accumulated in buses, rather than being
+// emitted here.
+//
 // The accessing (source) side is gated on two (potentially combined) conditions:
 //
 //   - Position: in a multi-line function the access at code line k fires only on
@@ -49,13 +55,16 @@ import (
 //
 // Lookups require a register (and not an expression) as the source selector,
 // so the path selector is materialised as a fresh 1-bit register (if it is not already).
-func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
+func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F, mir.Constraint[F]],
 	ctx schema.ModuleId,
 	fn *vm.Function[W],
 	pcSelectors []register.Id,
-	ret register.Id,
-	infos []vm.Module[W],
-	field field.Config) {
+	ret register.Id) {
+	//
+	var (
+		field   = p.program.Field()
+		modules = p.program.Modules()
+	)
 	//
 	for pc, vec := range fn.Vectors() {
 		// Branch table giving the condition under which each code in this vector
@@ -80,14 +89,22 @@ func addLookups[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Const
 			for _, entry := range group.entries {
 				switch c := entry.code.(type) {
 				case *vm.BytecodeCall[W]:
-					emitCallLookup(mod, ctx, uint(pc), uint(c.Target),
-						toRegisterIds(c.Arguments), toRegisterIds(c.Returns), srcSelector, infos)
-				case *vm.BytecodeReadWrite[W]:
-					if infos[c.Id].(*vm.Memory[W]).IsReadWrite() {
-						emitRamLookup(mod, ctx, uint(pc), entry.cc, c, srcSelector, infos, field)
+					if callee := modules[c.Target].(*vm.Function[W]); callee.Kind().IsGlobal() {
+						// Global function calls go "on the bus" rather than
+						// using shard-local lookups.
+						p.addSendPort(c.Target,
+							bus.NewPort(ctx, srcSelector, toRegisterIds(c.Arguments)...))
 					} else {
-						emitMemoryLookup(mod, ctx, uint(pc), entry.cc, uint(c.Id),
-							toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector, infos)
+						// Local function calls use shard-local lookups
+						emitCallLookup(mod, ctx, uint(pc), c.Target,
+							toRegisterIds(c.Arguments), toRegisterIds(c.Returns), srcSelector, p.program)
+					}
+				case *vm.BytecodeReadWrite[W]:
+					if modules[c.Id].(*vm.Memory[W]).IsReadWrite() {
+						emitRamLookup(mod, ctx, uint(pc), entry.cc, c, srcSelector, p.program)
+					} else {
+						emitMemoryLookup(mod, ctx, uint(pc), entry.cc, c.Id,
+							toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector, p.program)
 					}
 				}
 			}
@@ -294,10 +311,9 @@ func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
 // emitCallLookup constructs and adds a single lookup constraint mapping the
 // caller's argument/return registers onto the callee's input/output registers.
 func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	pc, calleeId uint, args, returns []register.Id,
-	srcSelector register.Id, infos []vm.Module[W]) {
+	pc uint, calleeId uint16, args, returns []register.Id, srcSelector register.Id, program vm.Program[W]) {
 	var (
-		callee     = infos[calleeId].(*vm.Function[W])
+		callee     = program.Module(calleeId).(*vm.Function[W])
 		calleeRegs = toRegisters(callee.Registers())
 		handle     = fmt.Sprintf("call_%d_%d_%d", ctx, pc, calleeId)
 		// Source ids: the caller's argument registers followed by its return
@@ -319,7 +335,7 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 	// Native module don't have a $ret function
 	// (do we need one ? see https://github.com/LFDT-Lineth/zkc/issues/2025)
 	if callee.IsNative() {
-		target = lookup.UnfilteredVector(calleeId, tgtIds...)
+		target = lookup.UnfilteredVector(uint(calleeId), tgtIds...)
 	} else {
 		// Both multi-line and atomic (one-line) callees expose a $ret line which is 1
 		// on active rows; use it as the lookup selector.
@@ -328,10 +344,51 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 		// Atomic callees have $ret line as well. Only OLI that touches memmory should have one.
 		var retId = register.NewId(uint(len(calleeRegs)))
 		//
-		target = lookup.FilteredVector(calleeId, retId, tgtIds...)
+		target = lookup.FilteredVector(uint(calleeId), retId, tgtIds...)
 	}
 	//
 	mod.AddConstraints(mir.NewLookupConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
+}
+
+// emitCallBus constructs and adds the bus connecting every call site of a
+// global callee (its send ports) to that callee's activation rows (its single
+// receive port).  A bus is used here, rather than a lookup, because a lookup
+// holds shard-locally whereas a bus balances across every shard of a trace.
+// Thus, a call made in one shard can be matched by an activation recorded in
+// another.
+//
+// The receive port is gated on the callee's $ret line, which is 1 on exactly
+// one row of each activation.  Since a global function cannot return, the
+// message consists of the callee's input registers alone; these are constant
+// throughout a frame and, hence, still hold the arguments on the $ret row.
+func (p *constraintTranslator[W, F]) emitCallBus(mod *schema.Table[F, mir.Constraint[F]],
+	calleeId vm.ModuleId, callee *vm.Function[W]) {
+	//
+	var (
+		// Send ports of every call site, as accumulated whilst translating the
+		// enclosing callers.
+		sends  = p.sendPorts[calleeId]
+		handle = fmt.Sprintf("bus_%s", callee.Name())
+		// $ret is allocated immediately after the callee's registers (see
+		// translateFunction).
+		retId = register.NewId(uint(len(callee.Registers())))
+		// Message: the callee's input registers, which occupy ids
+		// 0..NumInputs().
+		tgtIds = make([]register.Id, callee.NumInputs())
+	)
+	//
+	for i := range tgtIds {
+		tgtIds[i] = register.NewId(uint(i))
+	}
+	// Sanity check every call site agrees with the callee's arity.
+	for _, send := range sends {
+		if send.Len() != uint(len(tgtIds)) {
+			panic(fmt.Sprintf("incorrect number of arguments for call to \"%s\"", callee.Name()))
+		}
+	}
+	//
+	mod.AddConstraints(mir.NewBusConstraint[F](handle, sends,
+		[]mir.BusPort{bus.NewPort(uint(calleeId), retId, tgtIds...)}))
 }
 
 // emitMemoryLookup constructs and adds a single lookup constraint mapping an
@@ -350,10 +407,10 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 // each address exactly once (address monotony), so two writes of different
 // values to the same address cannot both match a row.
 func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
-	ctx schema.ModuleId, pc, cc, memId uint,
-	address, data []register.Id, srcSelector register.Id, infos []vm.Module[W]) {
+	ctx schema.ModuleId, pc, cc uint, memId uint16,
+	address, data []register.Id, srcSelector register.Id, program vm.Program[W]) {
 	var (
-		mem     = infos[memId].(*vm.Memory[W])
+		mem     = program.Module(memId).(*vm.Memory[W])
 		memRegs = toRegisters(mem.Registers())
 		// The bytecode index (cc) disambiguates two accesses to the same memory
 		// on the same code line.
@@ -378,14 +435,14 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir
 	if mem.IsStatic() {
 		// Static tables enumerate their full contents, so every row is a valid
 		// table entry and the target side is unfiltered.
-		target = lookup.UnfilteredVector(memId, tgtIds...)
+		target = lookup.UnfilteredVector(uint(memId), tgtIds...)
 	} else {
 		// ROM / WOM tables expose a $access_bit column which is 1 on active
 		// rows; use it as the lookup selector.  It is allocated immediately
 		// after the address/data registers (see translateAccessOnceMemory).
 		var accessId = register.NewId(uint(len(memRegs)))
 		//
-		target = lookup.FilteredVector(memId, accessId, tgtIds...)
+		target = lookup.FilteredVector(uint(memId), accessId, tgtIds...)
 	}
 	//
 	mod.AddConstraints(mir.NewLookupConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
@@ -406,11 +463,11 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir
 // remains for the offline memory-checking bus (see translateReadWriteMemory).
 func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
 	ctx schema.ModuleId, pc, cc uint, rw *vm.BytecodeReadWrite[W],
-	srcSelector register.Id, infos []vm.Module[W], fieldCfg field.Config) {
+	srcSelector register.Id, program vm.Program[W]) {
 	//
 	var (
-		mem    = infos[rw.Id].(*vm.Memory[W])
-		layout = computeRamLayout(mem, fieldCfg)
+		mem    = program.Module(rw.Id).(*vm.Memory[W])
+		layout = computeRamLayout(mem, program.Field())
 		// The bytecode index (cc) disambiguates two accesses to the same memory
 		// on the same code line.
 		handle = fmt.Sprintf("ram_%d_%d_%d_%d", ctx, pc, cc, rw.Id)

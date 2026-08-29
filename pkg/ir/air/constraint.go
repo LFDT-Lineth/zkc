@@ -93,7 +93,8 @@ func (p Air[F, C]) Air() {
 // Accepts determines whether a given constraint accepts a given trace or
 // not.  If not, a failure is produced.  Otherwise, a bitset indicating
 // branch coverage is returned.
-func (p Air[F, C]) Accepts(trace trace.Trace[F], schema schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
+func (p Air[F, C]) Accepts(trace trace.Trace[F], schema schema.AnySchema[F], ctx schema.Context[F],
+) []schema.Failure[F] {
 	return p.constraint.Accepts(trace, schema, ctx)
 }
 

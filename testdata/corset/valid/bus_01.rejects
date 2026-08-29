@@ -1,10 +1,16 @@
 ;; send never received
-{"alpha.SEL": [1], "alpha.A": [5], "alpha.B": [7], "beta.SEL": [0], "beta.X": [0], "beta.Y": [0]}
+{"sndr.SEL": [1], "sndr.A": [5], "sndr.B": [7], "rcvr.SEL": [0], "rcvr.X": [0], "rcvr.Y": [0]}
 ;; receive never sent
-{"alpha.SEL": [0], "alpha.A": [0], "alpha.B": [0], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}
+{"sndr.SEL": [0], "sndr.A": [0], "sndr.B": [0], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [7]}
 ;; two identical sends, only one receive
-{"alpha.SEL": [1,1], "alpha.A": [5,5], "alpha.B": [7,7], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}
+{"sndr.SEL": [1,1], "sndr.A": [5,5], "sndr.B": [7,7], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [7]}
 ;; received value differs from sent value
-{"alpha.SEL": [1], "alpha.A": [5], "alpha.B": [7], "beta.SEL": [1], "beta.X": [5], "beta.Y": [8]}
+{"sndr.SEL": [1], "sndr.A": [5], "sndr.B": [7], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [8]}
 ;; same number of messages on both sides, but counts per message differ
-{"alpha.SEL": [1,1], "alpha.A": [5,9], "alpha.B": [7,2], "beta.SEL": [1,1], "beta.X": [5,5], "beta.Y": [7,7]}
+{"sndr.SEL": [1,1], "sndr.A": [5,9], "sndr.B": [7,2], "rcvr.SEL": [1,1], "rcvr.X": [5,5], "rcvr.Y": [7,7]}
+;; each shard clean on its own, but the received value differs from the sent one
+[{"sndr.SEL": [1], "sndr.A": [5], "sndr.B": [7], "rcvr.SEL": [0], "rcvr.X": [0], "rcvr.Y": [0]}, {"sndr.SEL": [0], "sndr.A": [0], "sndr.B": [0], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [8]}]
+;; two sends across the group, three receives of the same message
+[{"sndr.SEL": [1,1], "sndr.A": [5,5], "sndr.B": [7,7], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [7]}, {"sndr.SEL": [0], "sndr.A": [0], "sndr.B": [0], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [7]}, {"sndr.SEL": [0], "sndr.A": [0], "sndr.B": [0], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [7]}]
+;; a single-shard group that does not balance
+[{"sndr.SEL": [1], "sndr.A": [5], "sndr.B": [7], "rcvr.SEL": [0], "rcvr.X": [0], "rcvr.Y": [0]}]

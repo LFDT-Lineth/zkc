@@ -136,10 +136,23 @@ func (p Constraint[F]) Bounds(module uint) util.Bounds {
 // all rows of the source columns.
 //
 //nolint:revive
-func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
+func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F],
+) (failures []schema.Failure[F]) {
+	//
+	for i, ith := range tr {
+		if f := p.accepts(uint(i), ith, sc, ctx); f != nil {
+			failures = append(failures, f)
+		}
+	}
+	//
+	return failures
+}
+
+func (p Constraint[F]) accepts(shard uint, tr trace.Shard[F], sc schema.AnySchema[F], ctx schema.Context[F],
+) schema.Failure[F] {
 	var (
 		// Load target sets
-		targets = loadSets(ctx, p.Targets...)
+		targets = loadSets(shard, ctx, p.Targets...)
 		// Initialise read buffer
 		buffer = make([]F, p.Sources[0].Len())
 	)
@@ -147,7 +160,7 @@ func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], ctx sc
 	for _, source := range p.Sources {
 		var trModule = tr.Module(source.Module)
 		// Check each row in the set determined by this vector.
-		if err := p.checkSourceSet(source.SetId(), trModule, targets, buffer); err != nil {
+		if err := p.checkSourceSet(source.SetId(), shard, trModule, targets, buffer); err != nil {
 			return err
 		}
 	}
@@ -190,14 +203,15 @@ func (p Constraint[F]) Substitute(mapping map[string]F) {
 
 // Check that all rows in a given source set are contained within at least one
 // of the given target sets.
-func (p Constraint[F]) checkSourceSet(src SetId, mod trace.Module[F], sets []Set[[]F], buffer []F) schema.Failure {
+func (p Constraint[F]) checkSourceSet(src SetId, shard uint, mod trace.Module[F], sets []Set[[]F],
+	buffer []F) schema.Failure[F] {
 	if src.HasSelector() {
 		var selector = src.Selector().Unwrap()
 		//
 		for row := range mod.Height() {
 			if !mod.Column(selector).Get(row).IsZero() {
 				if !contains(row, src, mod, sets, buffer) {
-					return &Failure[F]{p.Handle, src, row}
+					return &Failure[F]{p.Handle, src, row, shard}
 				}
 			}
 		}
@@ -205,7 +219,7 @@ func (p Constraint[F]) checkSourceSet(src SetId, mod trace.Module[F], sets []Set
 		// Optimised path when no selector
 		for row := range mod.Height() {
 			if !contains(row, src, mod, sets, buffer) {
-				return &Failure[F]{p.Handle, src, row}
+				return &Failure[F]{p.Handle, src, row, shard}
 			}
 		}
 	}
@@ -234,13 +248,13 @@ func contains[F field.Element[F]](row uint, src SetId, mod trace.Module[F], sets
 }
 
 // Load those sets from the context corresponding to the given vectors.
-func loadSets[F field.Element[F]](ctx schema.Context[F], vecs ...Vector) []Set[[]F] {
+func loadSets[F field.Element[F]](shard uint, ctx schema.Context[F], vecs ...Vector) []Set[[]F] {
 	var (
 		sets = make([]Set[[]F], len(vecs))
 	)
 	// Load target sets
 	for i, v := range vecs {
-		sets[i] = ctx.Get(v.SetId())
+		sets[i] = ctx.Get(shard, v.SetId())
 	}
 	//
 	return sets

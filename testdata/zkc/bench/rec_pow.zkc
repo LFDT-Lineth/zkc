@@ -9,6 +9,7 @@ fn main() {
     pow!(k, n as u32, 1, res)
 }
 
+#[global]
 fn pow(i:u16, acc:u32, actual:u32, expected:u32) -> ! {
     var b:u1
     var res:u32

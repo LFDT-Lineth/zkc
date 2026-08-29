@@ -22,7 +22,7 @@ import (
 // share the same module index and matching register (and hence limb)
 // descriptors.  For each module, the rows of every input trace are
 // concatenated, in trace order, into the corresponding module of the result.
-func Reduce[F field.Element[F]](traces []Trace[F]) Trace[F] {
+func Reduce[F field.Element[F]](traces []Shard[F]) Shard[F] {
 	if len(traces) == 0 {
 		return nil
 	}
@@ -43,7 +43,7 @@ func Reduce[F field.Element[F]](traces []Trace[F]) Trace[F] {
 // ParallelReduce behaves exactly like Reduce, combining a sequence of aligned
 // traces into a single trace, but reduces each module of the result
 // concurrently using a worker pool.
-func ParallelReduce[F field.Element[F]](traces []Trace[F]) Trace[F] {
+func ParallelReduce[F field.Element[F]](traces []Shard[F]) Shard[F] {
 	if len(traces) == 0 {
 		return nil
 	}
@@ -65,7 +65,7 @@ func ParallelReduce[F field.Element[F]](traces []Trace[F]) Trace[F] {
 // reduceModule concatenates the rows of the module at a given index across all
 // traces.  The module name and descriptor are taken from the first trace, which
 // aligned traces guarantee match those of every other trace.
-func reduceModule[F field.Element[F]](mid uint, descriptor ModuleDescriptor, traces []Trace[F]) *CompactModule[F] {
+func reduceModule[F field.Element[F]](mid uint, descriptor ModuleDescriptor, traces []Shard[F]) *CompactModule[F] {
 	// Check whether replicating
 	if descriptor.Replicated {
 		return reduceReplicatedModule(mid, descriptor, traces)
@@ -80,7 +80,7 @@ func reduceModule[F field.Element[F]](mid uint, descriptor ModuleDescriptor, tra
 	return acc
 }
 
-func reduceReplicatedModule[F field.Element[F]](mid uint, descriptor ModuleDescriptor, traces []Trace[F],
+func reduceReplicatedModule[F field.Element[F]](mid uint, descriptor ModuleDescriptor, traces []Shard[F],
 ) *CompactModule[F] {
 	var (
 		winner Module[F]

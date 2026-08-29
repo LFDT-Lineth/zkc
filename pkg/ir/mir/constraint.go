@@ -61,10 +61,9 @@ func NewRangeConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, 
 	return Constraint[F]{ranged.NewConstraint[F](handle, ctx, registers, bitwidths)}
 }
 
-// Accepts determines whether a given constraint accepts a given trace or
-// not.  If not, a failure is produced.  Otherwise, a bitset indicating
-// branch coverage is returned.
-func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F]) schema.Failure {
+// Accepts implementation of schema.Constraint interface.
+func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F],
+) []schema.Failure[F] {
 	//
 	return p.constraint.Accepts(trace, sc, ctx)
 }

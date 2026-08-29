@@ -274,10 +274,7 @@ const (
 	XORC
 	// TAILCALL_n instruction: a call in tail position, sharing ENTER_n's
 	// payload layout but executed differently.  Emitted only for calls to
-	// no-return functions, which never return to their caller: rather than
-	// allocating a fresh frame and pushing a call-stack record, the caller's
-	// frame is zeroed and reused (resized to the callee's width) with the
-	// arguments copied into place.
+	// no-return functions, which never return to their caller.
 	TAILCALL_n
 	// TAILCALL_2 instruction: dedicated (narrow-only) encoding of TAILCALL_n
 	// for the common single-argument call, exactly as ENTER_2 is to ENTER_n.
@@ -415,10 +412,7 @@ const (
 	WIDE_ORC
 	// WIDE_XORC (xor with constant) instruction [must follow WIDE_ORC]
 	WIDE_XORC
-	// WIDE_TAILCALL_n instruction: the wide form of TAILCALL_n, exactly as
-	// WIDE_ENTER_n is to ENTER_n.  There is no wide form of TAILCALL_2, just
-	// as there is none for ENTER_2: a frame width or argument register which
-	// doesn't fit falls back to the general TAILCALL_n encoding instead.
+	// WIDE_TAILCALL_n instruction:
 	WIDE_TAILCALL_n
 	//
 	MAX_WIDE_BYTECODE

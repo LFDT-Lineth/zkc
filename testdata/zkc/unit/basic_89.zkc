@@ -5,6 +5,7 @@ fn main() {
     checkNonZero!(n)
 }
 
+#[global]
 fn checkNonZero(n:u16) -> ! {
     if n == 0 {
         done

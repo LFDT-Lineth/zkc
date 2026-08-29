@@ -1,6 +1,6 @@
 ;; one message per bus, each answered on its own bus
-{"alpha.S1": [1,0], "alpha.S2": [0,1], "alpha.A": [5,9], "beta.R1": [1,0], "beta.R2": [0,1], "beta.X": [5,9]}
+{"sndr.S1": [1,0], "sndr.S2": [0,1], "sndr.A": [5,9], "rcvr.R1": [1,0], "rcvr.R2": [0,1], "rcvr.X": [5,9]}
 ;; same value on both buses simultaneously
-{"alpha.S1": [1], "alpha.S2": [1], "alpha.A": [5], "beta.R1": [1], "beta.R2": [1], "beta.X": [5]}
+{"sndr.S1": [1], "sndr.S2": [1], "sndr.A": [5], "rcvr.R1": [1], "rcvr.R2": [1], "rcvr.X": [5]}
 ;; both buses empty
-{"alpha.S1": [0], "alpha.S2": [0], "alpha.A": [7], "beta.R1": [0], "beta.R2": [0], "beta.X": [7]}
+{"sndr.S1": [0], "sndr.S2": [0], "sndr.A": [7], "rcvr.R1": [0], "rcvr.R2": [0], "rcvr.X": [7]}
