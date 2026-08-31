@@ -154,8 +154,8 @@ func writeTraceFile[F field.Element[F]](filename string, tracefile trace.Trace[F
 // columns.
 func ReadTraceFile[F field.Element[F]](filename string) trace.Trace[F] {
 	var (
-		stats     = util.NewPerfStats()
-		tracefile trace.Trace[F]
+		stats  = util.NewPerfStats()
+		shards trace.Trace[F]
 	)
 	// Read data file
 	filename, data, err := file.ReadAndUncompress(filename)
@@ -166,7 +166,7 @@ func ReadTraceFile[F field.Element[F]](filename string) trace.Trace[F] {
 		//
 		switch ext {
 		case ".json":
-			tracefile, err = json.FromBytes[F](data)
+			shards, err = json.FromBytes[F](data)
 		default:
 			err = fmt.Errorf("unknown trace file format: %s", ext)
 		}
@@ -180,7 +180,7 @@ func ReadTraceFile[F field.Element[F]](filename string) trace.Trace[F] {
 		os.Exit(2)
 	}
 	//
-	return tracefile
+	return shards
 }
 
 // ReadBatchedTraceFile reads a file containing zero or more traces expressed as

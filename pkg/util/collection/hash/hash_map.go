@@ -73,7 +73,8 @@ func (p *Map[K, V]) KeyValues() iter.Iterator[util.Pair[K, V]] {
 }
 
 // Insert a new item into this map, returning true if it was already contained
-// and false otherwise.
+// and false otherwise.  Observe that, if this returns false then the key is
+// consumed by this function.
 //
 //nolint:revive
 func (p *Map[K, V]) Insert(key K, value V) bool {
@@ -88,6 +89,30 @@ func (p *Map[K, V]) Insert(key K, value V) bool {
 	p.buckets[hash] = b1
 	// Done
 	return r
+}
+
+// Update a given function to a value in the map (if it already exists), or
+// insert a given initial value.  This returning true if it was already
+// contained and false otherwise.  Observe that, if this returns false then the
+// key is consumed by this function.
+func (p *Map[K, V]) Update(key K, fn func(V) V, init V) bool {
+	var (
+		hash = key.Hash()
+		b1   = p.buckets[hash]
+	)
+	// Key already present, apply function to value and update in place.
+	for i, k := range b1.keys {
+		if key.Equals(k) {
+			b1.values[i] = fn(b1.values[i])
+			return true
+		}
+	}
+	// Key not present, so insert initial value.
+	b1.keys = append(b1.keys, key)
+	b1.values = append(b1.values, init)
+	p.buckets[hash] = b1
+	// No present
+	return false
 }
 
 // ContainsKey checks whether the given item is contained within this map, or not.

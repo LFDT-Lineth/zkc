@@ -771,8 +771,16 @@ func typeTotals(cols []*statsColumn, stats []moduleStats) [][]string {
 			continue
 		}
 		//
+		var typeCount uint
+
+		for _, m := range stats {
+			if m.typ == typ {
+				typeCount++
+			}
+		}
+		//
 		row := make([]string, len(cols))
-		row[0] = "Total"
+		row[0] = fmt.Sprintf("Total: %d", typeCount)
 		row[1] = typ
 		// Aggregate each remaining column over the modules of this type.
 		for i := 2; i < len(cols); i++ {

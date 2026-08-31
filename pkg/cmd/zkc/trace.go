@@ -65,6 +65,8 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		check = GetFlag(cmd, "check")
 		// show trace statistics
 		stats = GetFlag(cmd, "stats")
+		// print entire trace
+		showTrace = GetFlag(cmd, "print")
 		// open trace in the interactive inspector
 		inspect = GetFlag(cmd, "inspect")
 		// extract sharding config
@@ -109,8 +111,14 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// print trace statistics (if requested).  Only meaningful when a trace was
 	// actually generated (i.e. no execution errors).
 	if stats && len(errors) == 0 {
-		printTraceStats(trace)
-		printModuleStats(trace)
+		printTraceStats(trace...)
+		printModuleStats(trace...)
+	}
+	// print entire trace (if requested).  Unlike the inspector, there is no way
+	// to reveal a module which was hidden, so everything carrying data is shown
+	// (this excludes, for example, the static range-check tables).
+	if showTrace && trace != nil {
+		corset.PrintTrace(binfile.LimbsMap(), trace, false, 32, 128)
 	}
 	// write out trace (if requested)
 	if outputFile != "" {
@@ -121,17 +129,21 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// Check Constraints
 	// =====================================================
 	if check && trace != nil {
-		checkConstraints(binfile, trace, traceConfig)
+		checkConstraints(binfile, traceConfig, trace)
 	}
 	// =====================================================
 	// Inspect
 	// =====================================================
 	// Open the generated trace in the interactive inspector (if requested).  This
 	// takes over the terminal, so it runs last, after any stdout output above.
-	if inspect && trace != nil {
+	if inspect && len(trace) == 1 {
 		// Real ZkC functions are public; synthetic modules (e.g. range-check
 		// tables) are private (hidden by default in the inspector).
-		errors = corset.InspectTrace(binfile.LimbsMap(), trace, publicModule, false, 32, 128)
+		errors = corset.InspectTrace(binfile.LimbsMap(), trace[0], publicModule, false, 32, 128)
+	} else if inspect && len(trace) > 0 {
+		errors = append(errors, fmt.Errorf("cannot inspect multiple trace shards"))
+	} else if inspect {
+		errors = append(errors, fmt.Errorf("cannot inspect zero trace shards"))
 	}
 	// =====================================================
 	// Report Execution Failures
@@ -153,6 +165,7 @@ func init() {
 	traceCmd.Flags().String("sharding", "", "specify sharding strategy")
 	traceCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	traceCmd.Flags().Bool("stats", false, "show overall stats for the generated trace")
+	traceCmd.Flags().BoolP("print", "p", false, "print the generated trace")
 	traceCmd.Flags().Bool("sequential", false, "force sequential tracing")
 	traceCmd.Flags().BoolP("inspect", "i", false, "open the generated trace in the interactive inspector")
 	traceCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
@@ -205,15 +218,21 @@ const (
 // traced cells (both human-readable and raw) plus a breakdown of columns by
 // bit-width.  Columns backed by field elements (i.e. native registers, which
 // have no fixed bit-width) are reported separately.
-func printTraceStats[F field.Element[F]](rtr trace.Trace[F]) {
+func printTraceStats[F field.Element[F]](shards ...trace.Shard[F]) {
+	for _, shard := range shards {
+		printShardStats(shard)
+	}
+}
+
+func printShardStats[F field.Element[F]](shard trace.Shard[F]) {
 	var (
 		cells  uint
 		counts = make([]uint, len(traceStatBuckets))
 		native uint
 	)
 	// Tally cells and per-column bit-widths across all modules.
-	for mid := range rtr.Width() {
-		mod := rtr.Module(mid)
+	for mid := range shard.Width() {
+		mod := shard.Module(mid)
 		cells += mod.Width() * mod.Height()
 		//
 		for _, reg := range mod.Descriptor().Columns {
@@ -280,9 +299,15 @@ var moduleStatTitles = []string{"columns", "lines", "bitwidth", "cells", "nonzer
 // the column count, line (row) count, total bit-width, total cells, non-zero
 // cells and total bytes.  Native (field-element) limbs, which have no fixed
 // bit-width, are excluded from the bit-width and byte totals.
-func printModuleStats[F field.Element[F]](rtr trace.Trace[F]) {
+func printModuleStats[F field.Element[F]](shards ...trace.Shard[F]) {
+	for _, shard := range shards {
+		printShardModuleStats(shard)
+	}
+}
+
+func printShardModuleStats[F field.Element[F]](shard trace.Shard[F]) {
 	var (
-		n   = rtr.Width()
+		n   = shard.Width()
 		tbl = termio.NewFormattedTable(uint(len(moduleStatTitles))+1, n+1)
 	)
 	// Set column titles (leaving the top-left cell blank, as corset does).
@@ -292,7 +317,7 @@ func printModuleStats[F field.Element[F]](rtr trace.Trace[F]) {
 	// Compute a summary row for each module.
 	for mid := range n {
 		var (
-			mod      = rtr.Module(mid)
+			mod      = shard.Module(mid)
 			columns  = mod.Width()
 			lines    = mod.Height()
 			bitwidth uint

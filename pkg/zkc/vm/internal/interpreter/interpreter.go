@@ -605,9 +605,9 @@ func (p *Interpreter[W]) Memory(mid uint16) Memory[W] {
 // its outermost frame (RET with an empty call stack) or an error occurs (e.g.
 // arithmetic overflow, or an explicit FAIL).  It returns the number of steps
 // actually executed together with any error.
-func (p *Interpreter[W]) Execute(steps uint) (uint, error) {
+func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 	var (
-		nsteps    = uint(0)
+		nsteps    = uint64(0)
 		err       error
 		frame     []W = p.dataStack.SliceEnd(uint(p.fp))
 		bytecodes     = p.program.Bytecodes()

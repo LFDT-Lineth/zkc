@@ -140,7 +140,9 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		//
 		width = module.Width()
 	)
-	//
+	// Initialise first row as padding row.
+	module.Append(paddingRow(scratch[:width])...)
+	// Iterate and process each access, one at a time.
 	for _, acc := range accesses {
 		var (
 			row     = scratch[:width]

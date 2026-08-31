@@ -23,7 +23,7 @@ import (
 // a lookup where (X Y) looksup into (A B).  Suppose X is 16bit and Y is 32bit,
 // whilst A is 64bit and B is 8bit. Then, the geometry of the lookup is [16,32].
 type Geometry struct {
-	config field.Config
+	//config field.Config
 	// bitwidth for each source/target pairing
 	geometry []uint
 }
@@ -43,28 +43,28 @@ func NewGeometry[F field.Element[F], T register.Map](c Constraint[F], mapping mo
 		updateGeometry(geometry, target, mapping)
 	}
 	//
-	return Geometry{mapping.Field(), geometry}
+	return Geometry{geometry}
 }
 
 // BandWidth returns maximum field bandwidth available in the field.
-func (p *Geometry) BandWidth() uint {
-	return p.config.BandWidth
-}
+// func (p *Geometry) BandWidth() uint {
+// 	return p.config.BandWidth
+// }
 
-// RegisterWidth returns maximum permitted register width for the field.
-func (p *Geometry) RegisterWidth() uint {
-	return p.config.RegisterWidth
-}
+// // RegisterWidth returns maximum permitted register width for the field.
+// func (p *Geometry) RegisterWidth() uint {
+// 	return p.config.RegisterWidth
+// }
 
-// LimbWidths returns the bitwidths for the required limbs for a given
-// source/target pairing in the lookup.
-func (p *Geometry) LimbWidths(i uint) []uint {
-	if p.geometry[i] == 0 {
-		return nil
-	}
-	//
-	return register.LimbWidths(p.config.RegisterWidth, p.geometry[i])
-}
+// // LimbWidths returns the bitwidths for the required limbs for a given
+// // source/target pairing in the lookup.
+// func (p *Geometry) LimbWidths(i uint) []uint {
+// 	if p.geometry[i] == 0 {
+// 		return nil
+// 	}
+// 	//
+// 	return register.LimbWidths(p.config.RegisterWidth, p.geometry[i])
+// }
 
 func updateGeometry[T register.Map](geometry []uint, source Vector, mapping module.Map[T]) {
 	//

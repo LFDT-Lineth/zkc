@@ -69,7 +69,7 @@ func (p *ComputedRegister[F]) Bounds(mid sc.ModuleId) util.Bounds {
 // Compute the values of columns defined by this assignment. Specifically, this
 // creates a new column which contains the result of evaluating a given
 // expression on each row.
-func (p *ComputedRegister[F]) Compute(tr trace.Trace[F], schema sc.AnySchema[F],
+func (p *ComputedRegister[F]) Compute(tr trace.Shard[F], schema sc.AnySchema[F],
 ) ([]array.MutArray[F], error) {
 	var (
 		trModule = tr.Module(p.Module)
@@ -164,7 +164,7 @@ func fwdComputation[F field.Element[F]](height uint, data array.MutArray[F], exp
 		// error check
 		if err != nil {
 			e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
-			return constraint.NewInternalFailure[F](scMod.Name(), ctx, i, expr, e)
+			return constraint.NewInternalFailure[F](scMod.Name(), ctx, i, e)
 		}
 		// Write data
 		data.Set(i, val)

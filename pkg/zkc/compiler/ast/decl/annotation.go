@@ -98,4 +98,6 @@ var ANNOTATIONS = []Annotation{
 	NewAnnotation("debug",
 		"marks a function as debug-only, elided entirely (calls and definition) unless verbose mode is enabled",
 		FUNCTION_KIND),
+	//
+	NewAnnotation("global", "marks a function which supports cross-shard calling", FUNCTION_KIND),
 }

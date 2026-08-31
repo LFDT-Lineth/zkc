@@ -15,7 +15,6 @@ package constraint
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
@@ -30,17 +29,20 @@ type InternalFailure[F any] struct {
 	context schema.ModuleId
 	// Row on which the constraint failed
 	row uint
-	// Cells involved (if any)
-	term term.Contextual
 	// Error message
 	error string
 }
 
 // NewInternalFailure constructs a new internal failure object.
-func NewInternalFailure[F any](handle string, ctx schema.ModuleId, row uint, term term.Contextual,
+func NewInternalFailure[F any](handle string, ctx schema.ModuleId, row uint,
 	err string) *InternalFailure[F] {
 	//
-	return &InternalFailure[F]{handle, ctx, row, term, err}
+	return &InternalFailure[F]{handle, ctx, row, err}
+}
+
+// Handle implementation for schema.Failure interface.
+func (p *InternalFailure[F]) Handle() string {
+	return p.handle
 }
 
 // Error provides a suitable error message
@@ -54,10 +56,6 @@ func (p *InternalFailure[F]) Message() string {
 }
 
 // RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
-func (p *InternalFailure[F]) RequiredCells(tr trace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
-	if p.term != nil {
-		return p.term.RequiredCells(int(p.row), p.context)
-	}
-	// Empty set
-	return set.NewAnySortedSet[trace.CellRef]()
+func (p *InternalFailure[F]) RequiredCells(_ trace.Trace[F]) set.AnySortedSet[trace.ShardedCellRef] {
+	return nil
 }

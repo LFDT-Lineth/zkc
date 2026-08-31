@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
@@ -24,7 +25,7 @@ import (
 // Failure records a message sent and received a differing number of times.
 type Failure[F field.Element[F]] struct {
 	// Handle (i.e. bus name) of the failing constraint
-	Handle string
+	Bus string
 	// Unbalanced is the offending message
 	Unbalanced []F
 	// Sent is the number of times the message was sent
@@ -35,6 +36,11 @@ type Failure[F field.Element[F]] struct {
 	Sends []Port
 	// Receives are the receive ports of the failing constraint
 	Receives []Port
+}
+
+// Handle implementation of schema.Failure interface
+func (p *Failure[F]) Handle() string {
+	return p.Bus
 }
 
 // Message provides a suitable error message
@@ -50,7 +56,7 @@ func (p *Failure[F]) Message() string {
 	}
 	//
 	return fmt.Sprintf("bus \"%s\" unbalanced: message (%s) sent %d time(s), received %d time(s)",
-		p.Handle, builder.String(), p.Sent, p.Received)
+		p.Handle(), builder.String(), p.Sent, p.Received)
 }
 
 func (p *Failure[F]) String() string {
@@ -60,23 +66,27 @@ func (p *Failure[F]) String() string {
 // RequiredCells identifies the cells contributing the offending message
 // (selectors included).  Rescanning the trace is fine here, as this only ever
 // runs on a failure.
-func (p *Failure[F]) RequiredCells(tr trace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
-	res := set.NewAnySortedSet[trace.CellRef]()
+func (p *Failure[F]) RequiredCells(trace tr.Trace[F]) set.AnySortedSet[tr.ShardedCellRef] {
+	res := set.NewAnySortedSet[tr.ShardedCellRef]()
 	//
-	for _, port := range p.Sends {
-		p.requiredCellsOfPort(tr, port, res)
+	for shard, tr := range trace {
+		for _, port := range p.Sends {
+			p.requiredCellsOfPort(uint(shard), tr, port, res)
+		}
+		//
+		for _, port := range p.Receives {
+			p.requiredCellsOfPort(uint(shard), tr, port, res)
+		}
 	}
 	//
-	for _, port := range p.Receives {
-		p.requiredCellsOfPort(tr, port, res)
-	}
-	//
-	return res
+	return *res
 }
 
 // requiredCellsOfPort adds the cells of the port's selected rows holding the
 // offending message.
-func (p *Failure[F]) requiredCellsOfPort(tr trace.Trace[F], port Port, res *set.AnySortedSet[trace.CellRef]) {
+func (p *Failure[F]) requiredCellsOfPort(shard uint, tr trace.Shard[F], port Port,
+	res *set.AnySortedSet[trace.ShardedCellRef]) {
+	//
 	var trModule = tr.Module(port.Module)
 	//
 	for row := range trModule.Height() {
@@ -95,11 +105,11 @@ func (p *Failure[F]) requiredCellsOfPort(tr trace.Trace[F], port Port, res *set.
 		//
 		if matches {
 			selRef := trace.NewColumnRef(port.Module, port.Selector)
-			res.Insert(trace.NewCellRef(selRef, int(row)))
+			res.Insert(trace.NewShardedCellRef(shard, selRef, int(row)))
 			//
 			for _, rid := range port.Registers {
 				ref := trace.NewColumnRef(port.Module, rid)
-				res.Insert(trace.NewCellRef(ref, int(row)))
+				res.Insert(trace.NewShardedCellRef(shard, ref, int(row)))
 			}
 		}
 	}

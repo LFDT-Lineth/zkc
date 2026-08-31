@@ -15,7 +15,9 @@ package schema
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 )
 
 // Any converts a concrete schema into a generic view of the schema.
@@ -67,7 +69,11 @@ type Schema[F any, C any] interface {
 
 // Failure embodies structured information about a failing constraint.
 // This includes the constraint itself, along with the row
-type Failure interface {
+type Failure[F any] interface {
+	// Handle returns the handling of the constraints which caused the failure.
+	Handle() string
 	// Provides a suitable error message
 	Message() string
+	// Identify set of cells relevant to the error.
+	RequiredCells(trace.Trace[F]) set.AnySortedSet[trace.ShardedCellRef]
 }

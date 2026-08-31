@@ -49,11 +49,12 @@ type rangeTable struct {
 // n <= maxStaticWidth; wider registers are range-checked recursively by
 // a call (lowered via addCallLookups), so only the static tables are collected
 // here.
-func indexRangeTables[W vm.Word[W], F field.Element[F]](modules []vm.Module[W],
-	maxStaticWidth uint) map[uint]rangeTable {
-	tables := make(map[uint]rangeTable)
+func indexRangeTables[W vm.Word[W], F field.Element[F]](program vm.Program[W], maxStaticWidth uint,
+) map[uint]rangeTable {
 	//
-	for id, m := range modules {
+	var tables = make(map[uint]rangeTable)
+	//
+	for id, m := range program.Modules() {
 		// Only the fully-enumerated static tables serve as direct lookup targets;
 		mem, ok := m.(*vm.Memory[W])
 		if !ok || !mem.IsStatic() || !strings.HasPrefix(m.Name(), rangeModulePrefix) {
@@ -83,8 +84,8 @@ func indexRangeTables[W vm.Word[W], F field.Element[F]](modules []vm.Module[W],
 // range-checked at runtime by a recursive call which addCallLookups lowers into
 // a lookup.  Native (field-element) and zero-width registers are not
 // range-checked at all.
-func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	regs []register.Register, tables map[uint]rangeTable, maxStaticWidth uint) {
+func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[F, mir.Constraint[F]],
+	ctx schema.ModuleId, regs []register.Register) {
 	// TODO: lots of perf possible here, see
 	// https://github.com/LFDT-Lineth/zkc/issues/1907
 	// https://github.com/LFDT-Lineth/zkc/issues/1911
@@ -105,10 +106,10 @@ func addRangeProofConstraints[F field.Element[F]](mod *schema.Table[F, mir.Const
 			continue
 		}
 		//
-		table, ok := tables[reg.Width()]
+		table, ok := p.rangeTables[reg.Width()]
 		if !ok {
 			// a width <= maxStaticWidth must always have a static table.
-			if reg.Width() <= maxStaticWidth {
+			if reg.Width() <= p.maxStaticWidth {
 				panic(fmt.Sprintf("missing static range table for width %d", reg.Width()))
 			}
 			// Wider registers are range-checked recursively via a call lookup.

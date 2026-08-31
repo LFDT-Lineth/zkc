@@ -29,8 +29,6 @@ func TraceExpansion[F field.Element[F]](config Config, schema sc.AnySchema[F], t
 	//
 	var (
 		err error
-		// Start timer
-		stats = util.NewPerfStats()
 	)
 	//
 	if config.Parallel {
@@ -39,8 +37,6 @@ func TraceExpansion[F field.Element[F]](config Config, schema sc.AnySchema[F], t
 	} else {
 		err = SequentialTraceExpansion(schema, trace)
 	}
-	// Log stats
-	stats.Log("Trace expansion")
 	//
 	return err
 }

@@ -566,6 +566,10 @@ func Test_Valid_Bus_05(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/bus_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
+func Test_Valid_Bus_06(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/bus_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
 // ===================================================================
 // Arrays
 // ===================================================================

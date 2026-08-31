@@ -125,7 +125,7 @@ func validateBusConstraint[F field.Element[F]](c bus.Constraint[F], validations 
 }
 
 // validateModuleReachability checks that every module is reached by some chain
-// of lookups originating in the entry point "main".
+// of lookups (or buses) originating in the entry point "main".
 func validateModuleReachability[F field.Element[F]](schema sc.AnySchema[F]) (errs []error) {
 	// TODO: https://github.com/LFDT-Lineth/zkc/issues/1869 parametrize "main" name
 	for _, name := range UnreachableModules(schema) {
@@ -137,11 +137,13 @@ func validateModuleReachability[F field.Element[F]](schema sc.AnySchema[F]) (err
 }
 
 // UnreachableModules returns the name of every module in the given schema which
-// cannot be reached by any chain of lookups originating in the entry point
-// "main".  A lookup reaches a module when one of its target vectors sits in
-// that module; it emanates from the modules its source vectors sit in.  When
-// the schema has no "main" module there is no entry point, and every module is
-// considered reachable.
+// cannot be reached by any chain of lookups (or buses) originating in the entry
+// point "main".  A lookup reaches a module when one of its target vectors sits
+// in that module; it emanates from the modules its source vectors sit in.
+// Likewise, a bus reaches the modules of its receive ports and emanates from
+// those of its send ports (this is how a call into a global function is
+// connected, see emitCallBus).  When the schema has no "main" module there is
+// no entry point, and every module is considered reachable.
 func UnreachableModules[F field.Element[F]](schema sc.AnySchema[F]) (unreachable []string) {
 	var (
 		reached  = make([]bool, schema.Modules().Count())
@@ -160,16 +162,20 @@ func UnreachableModules[F field.Element[F]](schema sc.AnySchema[F]) (unreachable
 	if len(worklist) == 0 {
 		return nil
 	}
-	// Index every lookup by the modules it emanates from.
+	// Index every lookup and bus by the modules it emanates from.
 	for iter := schema.Constraints(); iter.HasNext(); {
 		switch c := iter.Next().(type) {
 		case air.LookupConstraint[F]:
 			indexLookupEdges(c.Unwrap(), outgoing)
 		case mir.LookupConstraint[F]:
 			indexLookupEdges(c, outgoing)
+		case air.BusConstraint[F]:
+			indexBusEdges(c.Unwrap(), outgoing)
+		case mir.BusConstraint[F]:
+			indexBusEdges(c, outgoing)
 		}
 	}
-	// Follow lookups from reached modules until a fixpoint is hit.
+	// Follow lookups and buses from reached modules until a fixpoint is hit.
 	for len(worklist) > 0 {
 		mid := worklist[len(worklist)-1]
 		worklist = worklist[:len(worklist)-1]
@@ -197,6 +203,16 @@ func indexLookupEdges[F field.Element[F]](c lookup.Constraint[F], outgoing map[s
 	for _, src := range c.Sources {
 		for _, tgt := range c.Targets {
 			outgoing[src.Context()] = append(outgoing[src.Context()], tgt.Context())
+		}
+	}
+}
+
+// indexBusEdges records, for each module sending on the given bus, the modules
+// receiving from it.
+func indexBusEdges[F field.Element[F]](c bus.Constraint[F], outgoing map[sc.ModuleId][]sc.ModuleId) {
+	for _, send := range c.Sends {
+		for _, receive := range c.Receives {
+			outgoing[send.Context()] = append(outgoing[send.Context()], receive.Context())
 		}
 	}
 }

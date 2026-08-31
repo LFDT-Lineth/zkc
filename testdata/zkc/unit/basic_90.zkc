@@ -11,6 +11,7 @@ fn main<ram>() {
     checkNonZero!(n)
 }
 
+#[global]
 fn checkNonZero<ram>(n:u16) -> ! {
     if n == 0 {
         done

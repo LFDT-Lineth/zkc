@@ -67,7 +67,7 @@ func NewAirLowering[F field.Element[F]](fieldBandwidth uint, mirSchema Schema[F]
 	)
 	// Initialise AIR modules
 	for _, m := range mirSchema.RawModules() {
-		airSchema.NewModule(m.Name(), m.AllowPadding(), m.IsPublicOutput(), m.IsPrivateOutput(), m.IsSynthetic(),
+		airSchema.NewModule(m.Name(), m.IsPublicOutput(), m.IsPrivateOutput(), m.IsSynthetic(),
 			m.IsStatic(), m.IsNative())
 	}
 	//

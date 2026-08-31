@@ -117,7 +117,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 		//
 		parallel  = !GetFlag(cmd, "sequential")
 		batchSize = GetUint(cmd, "batch")
-		defensive = GetFlag(cmd, "defensive")
 		expand    = !GetFlag(cmd, "raw")
 		validate  = GetFlag(cmd, "validate")
 	)
@@ -160,7 +159,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 	// Construct trace builder
 	builder := ir.NewTraceBuilder[F]().
 		WithValidation(validate).
-		WithDefensivePadding(defensive).
 		WithExpansion(expand).
 		WithParallelism(parallel).
 		WithBatchSize(batchSize)
@@ -218,7 +216,6 @@ func init() {
 	// Trace expansion
 	rootCmd.PersistentFlags().Bool("raw", false, "assume input trace already expanded")
 	rootCmd.PersistentFlags().Bool("sequential", false, "perform sequential trace expansion")
-	rootCmd.PersistentFlags().Bool("defensive", true, "defensively pad modules")
 	rootCmd.PersistentFlags().Bool("validate", true, "apply trace validation")
 	rootCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
 }

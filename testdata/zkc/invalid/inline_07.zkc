@@ -1,0 +1,9 @@
+//error:3:1-16:cannot inline non-returning function
+#[inline]
+fn f(x:u8) -> ! {
+    fail
+}
+
+fn main() {
+    f!(0)
+}

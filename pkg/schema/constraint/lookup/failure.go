@@ -23,16 +23,23 @@ import (
 // Failure provides structural information about a failing lookup constraint.
 type Failure[F any] struct {
 	// Handle of the failing constraint
-	Handle string
+	LookupHandle string
 	// SourceId gives the set identifier of the source
 	SourceId schema.SetId
 	// Row on which the constraint failed
 	Row uint
+	// Shard on which the constraint failed
+	Shard uint
+}
+
+// Handle implementation of schema.Failure interface
+func (p *Failure[F]) Handle() string {
+	return p.LookupHandle
 }
 
 // Message provides a suitable error message
 func (p *Failure[F]) Message() string {
-	return fmt.Sprintf("lookup \"%s\" failed (row %d)", p.Handle, p.Row)
+	return fmt.Sprintf("lookup \"%s\" failed (row %d, shard %d)", p.Handle(), p.Row, p.Shard)
 }
 
 func (p *Failure[F]) String() string {
@@ -40,15 +47,15 @@ func (p *Failure[F]) String() string {
 }
 
 // RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
-func (p *Failure[F]) RequiredCells(_ trace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
-	res := set.NewAnySortedSet[trace.CellRef]()
+func (p *Failure[F]) RequiredCells(_ trace.Trace[F]) set.AnySortedSet[trace.ShardedCellRef] {
+	res := set.NewAnySortedSet[trace.ShardedCellRef]()
 	// Handle registers
 	for i := range p.SourceId.Width() {
 		var rid = p.SourceId.Ith(i)
 		//
 		ref := trace.NewColumnRef(p.SourceId.Module(), rid)
-		res.Insert(trace.NewCellRef(ref, int(p.Row)))
+		res.Insert(trace.NewShardedCellRef(p.Shard, ref, int(p.Row)))
 	}
 	//
-	return res
+	return *res
 }
