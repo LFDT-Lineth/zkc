@@ -1,0 +1,10 @@
+//error:3:5-19:at least one return argument must be used
+fn f(x:u16) -> (res:u16) {
+    _, _ = copy(x)
+    res = x
+}
+
+fn copy(x:u16)->(res1:u16, res2:u16) {
+res1= x
+res2 = x
+}

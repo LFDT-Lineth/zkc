@@ -265,7 +265,7 @@ func (p *Parser) parseConstant() ([]decl.Unresolved, []source.SyntaxError) {
 	// Parse const declaration
 	if _, errs := p.expect(KEYWORD_CONST); len(errs) > 0 {
 		return nil, errs
-	} else if name, errs = p.parseIdentifier(); len(errs) > 0 {
+	} else if name, errs = p.parseDeclaredIdentifier(); len(errs) > 0 {
 		return nil, errs
 	} else if _, errs = p.expect(COLON); len(errs) > 0 {
 		return nil, errs
@@ -288,7 +288,7 @@ func (p *Parser) parseConstant() ([]decl.Unresolved, []source.SyntaxError) {
 	// Parse additional comma-separated constants on the same line.
 	for p.match(COMMA) {
 		start = p.index
-		if name, errs = p.parseIdentifier(); len(errs) > 0 {
+		if name, errs = p.parseDeclaredIdentifier(); len(errs) > 0 {
 			return nil, errs
 		} else if _, errs = p.expect(COLON); len(errs) > 0 {
 			return nil, errs
@@ -349,7 +349,7 @@ func (p *Parser) parseFunction() (decl.Unresolved, []source.SyntaxError) {
 		return nil, errs
 	}
 	// Parse function name
-	if name, errs = p.parseIdentifier(); len(errs) > 0 {
+	if name, errs = p.parseDeclaredIdentifier(); len(errs) > 0 {
 		return nil, errs
 	}
 	// Check for any effects
@@ -456,7 +456,7 @@ func (p *Parser) parseArgsList(kind variable.Kind, env Environment) []source.Syn
 		// save lookahead here so errors point at the name token
 		lookahead := p.lookahead()
 		// parse name first (new syntax: name:type)
-		if arg, errs = p.parseIdentifier(); len(errs) > 0 {
+		if arg, errs = p.parseDeclaredIdentifier(); len(errs) > 0 {
 			return errs
 		} else if env.IsDeclared(arg) {
 			return p.syntaxErrors(lookahead, "variable already declared")
@@ -502,7 +502,7 @@ func (p *Parser) parseInputOutputMemory() (decl.Unresolved, []source.SyntaxError
 		return nil, p.syntaxErrors(lookahead, "unknown declaration")
 	}
 	// Parse the shared header: name(address) -> (data)
-	if name, errs = p.parseIdentifier(); len(errs) > 0 {
+	if name, errs = p.parseDeclaredIdentifier(); len(errs) > 0 {
 		return nil, errs
 	}
 	// A timestamp type is only meaningful on read-write memory, which has a
@@ -596,7 +596,7 @@ func (p *Parser) parseReadWriteMemory() (decl.Unresolved, []source.SyntaxError) 
 		return nil, errs
 	}
 	// Parse memory name first (function-style)
-	if name, errs = p.parseIdentifier(); len(errs) > 0 {
+	if name, errs = p.parseDeclaredIdentifier(); len(errs) > 0 {
 		return nil, errs
 	}
 	// Parse timestamp type: [type]
@@ -645,7 +645,7 @@ func (p *Parser) parseTypeAlias() (decl.Unresolved, []source.SyntaxError) {
 	// Parse type declaration
 	if _, errs := p.expect(KEYWORD_TYPE); len(errs) > 0 {
 		return nil, errs
-	} else if name, errs = p.parseIdentifier(); len(errs) > 0 {
+	} else if name, errs = p.parseDeclaredIdentifier(); len(errs) > 0 {
 		return nil, errs
 	} else if _, errs = p.expect(EQUALS); len(errs) > 0 {
 		return nil, errs
@@ -683,7 +683,7 @@ func (p *Parser) parseMemoryArgsList(kind variable.Kind) ([]VariableDescriptor, 
 		}
 
 		var pname string
-		if pname, errs = p.parseIdentifier(); len(errs) > 0 {
+		if pname, errs = p.parseDeclaredIdentifier(); len(errs) > 0 {
 			return nil, errs
 		}
 
@@ -1310,7 +1310,7 @@ func (p *Parser) parseForInit(env Environment) (stmt.Unresolved, []source.Syntax
 		// Inline variable declaration
 		lookahead := p.lookahead()
 
-		name, errs := p.parseIdentifier()
+		name, errs := p.parseDeclaredIdentifier()
 		if len(errs) > 0 {
 			return nil, errs
 		} else if env.IsDeclared(name) {
@@ -1592,7 +1592,7 @@ func (p *Parser) parseVar(env Environment) ([]stmt.Unresolved, []source.SyntaxEr
 		// Store lookahead for error reporting
 		lookahead := p.lookahead()
 		//
-		name, errs := p.parseIdentifier()
+		name, errs := p.parseDeclaredIdentifier()
 		//
 		if len(errs) > 0 {
 			return nil, errs
@@ -1975,12 +1975,18 @@ func (p *Parser) parseTupleExpr(env Environment) (Expr, []source.SyntaxError) {
 
 func (p *Parser) parseAccessExpr(env Environment) (Expr, []source.SyntaxError) {
 	var (
-		nexpr Expr
-		errs  []source.SyntaxError
-		name  string
+		nexpr     Expr
+		errs      []source.SyntaxError
+		name      string
+		lookahead = p.lookahead()
 	)
 	//
-	name, errs = p.parseIdentifier()
+	name, errs = p.parseDeclaredIdentifier()
+	// "_" only ever discards a return value on the left-hand side of an
+	// assignment; it cannot be read (nor name a function or memory).
+	if len(errs) == 0 && name == "_" {
+		return nil, p.syntaxErrors(lookahead, "\"_\" is reserved symbol for discarding variables")
+	}
 
 	isDeclared := env.IsDeclaredVariable(name)
 	if !isDeclared {
@@ -2100,6 +2106,16 @@ func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
 	)
 	//
 	switch {
+	case reg == "_":
+		// "_" as an assignment target discards the corresponding return value of a
+		// function call (or static memory read).
+		{
+			lv = lval.NewDiscard[symbol.Unresolved]()
+			// update source mapping
+			p.srcmap.Put(lv, p.spanOf(start, p.index))
+			//
+			return lv, nil
+		}
 	case !lSquareFollows && isDeclaredVariable:
 		// Plain register, possibly the head of a "::" destructuring chain.
 		var vars = []variable.Id{env.LookupVariable(reg)}
@@ -2144,6 +2160,22 @@ func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
 	p.srcmap.Put(lv, p.spanOf(start, p.index))
 	//
 	return lv, nil
+}
+
+// parseDeclaredIdentifier expects an IDENTIFIER token introducing a new name
+// (e.g. a variable, function or memory declaration).  The wildcard "_" is
+// rejected here, being reserved for discarding return values in assignments.
+func (p *Parser) parseDeclaredIdentifier() (string, []source.SyntaxError) {
+	var (
+		lookahead  = p.lookahead()
+		name, errs = p.parseIdentifier()
+	)
+	//
+	if len(errs) == 0 && name == "_" {
+		return "", p.syntaxErrors(lookahead, "\"_\" is reserved symbol for discarding variables")
+	}
+	//
+	return name, errs
 }
 
 // parseIdentifier expects an IDENTIFIER token

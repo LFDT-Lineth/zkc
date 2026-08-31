@@ -14,6 +14,7 @@ package encoding
 
 import (
 	"math"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -37,7 +38,35 @@ func Call[W word.Word[W]](pc uint32, p *bytecode.Call[W], env Environment[W]) (c
 	// Encode enter
 	codes = append(codes, encodeEnter(pc, offset, width, p.Arguments)...)
 	// Encode leave
-	return append(codes, encodeLeave_n(p.Returns)...)
+	return append(codes, encodeLeave_n(substituteDiscardedRegisters(p.Returns))...)
+}
+
+// substituteDiscardedRegisters rewrites a binding list which may contain discarded (DISCARD)
+// entries into an equivalent dense list. Trailing discarded slots are removed.
+// For example, _, y = f(x) becomes y, y = f(x)
+func substituteDiscardedRegisters(regs []RegisterId) []RegisterId {
+	if !slices.Contains(regs, bytecode.DISCARD) {
+		return regs
+	}
+	//
+	var (
+		dense = make([]RegisterId, len(regs))
+		next  = bytecode.DISCARD
+		n     = 0
+	)
+	// Bind each discarded slot to the register of the next bound slot, working
+	// backwards so that register is already known when the slot is reached.
+	for i := len(regs) - 1; i >= 0; i-- {
+		if regs[i] != bytecode.DISCARD {
+			next = regs[i]
+			// Record where the trailing discarded slots (if any) begin.
+			n = max(n, i+1)
+		}
+		//
+		dense[i] = next
+	}
+	// Drop trailing discarded slots.
+	return dense[:n]
 }
 
 // MaxCallEncodedLength returns the maximum length (in u32 words) which an

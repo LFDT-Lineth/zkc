@@ -59,6 +59,9 @@ type Register[W Word[W]] = descriptor.Register[W]
 // bytecode RegisterId).
 type RegisterId = bytecode.RegisterId
 
+// DISCARD is a pseudo register id marking a discarded ("_") return value.
+const DISCARD = bytecode.DISCARD
+
 // Operand represents either a register operand, or a constant operand.
 type Operand[W Word[W]] = bytecode.Operand[W]
 

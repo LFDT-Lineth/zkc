@@ -1,0 +1,12 @@
+//error:6:8-9:"_" is reserved symbol for discarding variables
+
+fn f(x:u16) -> (y:u16) {
+   var tmp:u16
+   tmp, _ = copy(x)
+   y = _
+}
+
+fn copy(x:u16) -> (y:u16, z:u16){
+   y = x
+   z = x
+}

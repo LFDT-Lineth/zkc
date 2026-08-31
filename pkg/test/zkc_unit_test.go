@@ -1375,6 +1375,7 @@ func Test_ZkcUnit_RangeCheck_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/range_check_05", DEFAULT_UNIT_CONFIG)
 }
 
+// ===================================================================
 // Big Tests
 // ===================================================================
 
@@ -1448,6 +1449,34 @@ func Test_ZkcUnit_BigNum_17(t *testing.T) {
 
 func Test_ZkcUnit_BigNum_18(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.Sampling(0.01))
+}
+
+// ===================================================================
+// Partial call tests
+// ===================================================================
+// This test perform a partial call res, _ = f(x)
+func Test_ZkcUnit_partial_call_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/partial_call_01", DEFAULT_UNIT_CONFIG)
+}
+
+// This test perform a partial call _, res = f(x)
+func Test_ZkcUnit_partial_call_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/partial_call_02", DEFAULT_UNIT_CONFIG)
+}
+
+// This test perform a partial call _, res, _ = f(x)
+func Test_ZkcUnit_partial_call_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/partial_call_03", DEFAULT_UNIT_CONFIG)
+}
+
+// This test perform a partial call res, _, res = f(x)
+func Test_ZkcUnit_partial_call_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/partial_call_04", DEFAULT_UNIT_CONFIG)
+}
+
+// This test perform a partial static call res, _ = static(x)
+func Test_ZkcUnit_partial_call_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/partial_call_05", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================

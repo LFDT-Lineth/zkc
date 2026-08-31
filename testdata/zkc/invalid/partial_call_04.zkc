@@ -1,0 +1,17 @@
+//error:7:12-18:cannot discard data read from non-static memory
+//error:13:17-22:expected type (u8,u8), found u8
+pub input data(address:u8) -> (byte:u8)
+memory ram[u32](address:u8) -> (byte:u8, other:u8)
+
+fn get<ram>(x:u8) -> (r:u8) {
+    r, _ = ram[x]
+}
+
+fn main<ram>() {
+    var addr:u8 = data[0]
+    var value:u8 = data[1]
+    ram[addr] = value
+    if get(addr) != value {
+        fail
+    }
+}

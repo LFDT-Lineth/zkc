@@ -59,6 +59,12 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 		c.linef("start := %s", start)
 
 		for i, d := range x.Data {
+			// A discarded data line binds no register: skip the load (the
+			// address offset i is explicit, so later lines are unaffected).
+			if d == bytecode.DISCARD {
+				continue
+			}
+
 			l, e := g.limbOf(fn, d)
 			if e != nil {
 				inner = e

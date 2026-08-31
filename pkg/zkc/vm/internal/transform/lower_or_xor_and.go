@@ -58,9 +58,18 @@ func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W]) descriptor.Pro
 
 // bitwiseHelperKey identifies an AND/OR/XOR helper module.
 type bitwiseHelperKey struct {
-	op    bytecode.Operation
 	width uint
 	arity int
+}
+
+// bitwiseOps enumerates the three operations served by a merged bitwise
+// helper, in the (fixed) order of its result columns / output registers.
+var bitwiseOps = []bytecode.Operation{bytecode.OP_AND, bytecode.OP_OR, bytecode.OP_XOR}
+
+// bitwiseOpIndex returns the position of the given operation's result among a
+// merged helper's outputs (see bitwiseOps).
+func bitwiseOpIndex(op bytecode.Operation) int {
+	return slices.Index(bitwiseOps, op)
 }
 
 // bitwiseHelpers is the registry of AND/OR/XOR helper modules built by
@@ -90,7 +99,7 @@ func (p *bitwiseHelpers[W]) modules() []descriptor.Module[W] {
 }
 
 func helperName(key bitwiseHelperKey) string {
-	return fmt.Sprintf("$bit_%s_u%d", bitwiseOpName(key.op), key.width)
+	return fmt.Sprintf("$bit_xoa_u%d", key.width)
 }
 
 // isTableWidth reports whether an AND/OR/XOR operation of the given width is
@@ -102,12 +111,12 @@ func (p *bitwiseHelpers[W]) isTableWidth(width uint) bool {
 	return width >= 2 && width <= p.bitwiseStaticWidth
 }
 
-// ensureNary returns the module id of the AND/OR/XOR helper for (op, width,
-// arity), creating it on first use, together with a flag indicating whether
-// that module is a static table (invoked by a memory read) rather than a
-// recursive helper function (invoked by a call).
-func (p *bitwiseHelpers[W]) ensureNary(op bytecode.Operation, width uint, arity int) (uint, bool) {
-	key := bitwiseHelperKey{op: op, width: width, arity: arity}
+// ensureNary returns the module id of the merged AND/OR/XOR helper for
+// (width, arity), creating it on first use, together with a flag indicating
+// whether that module is a static table (invoked by a memory read) rather
+// than a recursive helper function (invoked by a call).
+func (p *bitwiseHelpers[W]) ensureNary(width uint, arity int) (uint, bool) {
+	key := bitwiseHelperKey{width: width, arity: arity}
 	//
 	if id, ok := p.ids[key]; ok {
 		return id, p.isTableWidth(width)
@@ -116,7 +125,7 @@ func (p *bitwiseHelpers[W]) ensureNary(op bytecode.Operation, width uint, arity 
 	// sub-dependencies, so the id can be assigned immediately.
 	if p.isTableWidth(width) {
 		id := p.baseID + uint(len(p.items))
-		p.items = append(p.items, newBitwiseTable[W](op, width))
+		p.items = append(p.items, newBitwiseTable[W](width))
 		p.ids[key] = id
 		//
 		return id, true
@@ -218,10 +227,12 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 	// Both operands are now registers, so lowering only needs the
 	// (power-of-two) operand width p: a table read when p is small enough,
 	// otherwise a recursive helper.
-	id, isTable := helpers.ensureNary(b.Op, p, 2)
+	id, isTable := helpers.ensureNary(p, 2)
+	targets := []bytecode.RegisterId{bytecode.DISCARD, bytecode.DISCARD, bytecode.DISCARD}
+	targets[bitwiseOpIndex(b.Op)] = b.Target
 	//
 	return append(pre,
-		invokeNary[W](id, isTable, []bytecode.RegisterId{b.Left, right}, b.Target),
+		invokeNary[W](id, isTable, []bytecode.RegisterId{b.Left, right}, targets),
 	)
 }
 
@@ -287,33 +298,29 @@ func emitUnitBitwise[W word.Word[W]](op bytecode.Operation, registers split.Allo
 	}
 }
 
-// invokeNary emits the bytecode invoking an AND/OR/XOR helper: a memory read
-// when the helper is a static table (see ensureNary), otherwise a call.
+// invokeNary emits the bytecode invoking a merged AND/OR/XOR helper: a memory
+// read when the helper is a static table (see ensureNary), otherwise a call.
+// The targets bind the helper's per-operation results (in bitwiseOps order);
+// unwanted results are marked DISCARD.
 func invokeNary[W word.Word[W]](id uint, isTable bool, sources []bytecode.RegisterId,
-	target bytecode.RegisterId) Bytecode[W] {
+	targets []bytecode.RegisterId) Bytecode[W] {
 	if isTable {
 		// Table read: the source operands are the (a, b) address lines and the
-		// result is the single data line.
-		return bytecode.NewMemRead[W](uint16(id), sources, []bytecode.RegisterId{target})
+		// results are the (per-operation) data lines.
+		return bytecode.NewMemRead[W](uint16(id), sources, targets)
 	}
 	//
-	return bytecode.CallFun[W](uint16(id), sources, []bytecode.RegisterId{target})
+	return bytecode.CallFun[W](uint16(id), sources, targets)
 }
 
-// newDecomposedNaryHelper builds a helper module for bitwise AND/OR/XOR using
-// recursive halving.  Each module body is O(arity) instructions: it splits
-// every source into two half-wide pieces, invokes a single half-wide sub-helper
-// (a static table or a narrower recursive helper) for each piece, and
-// recombines.  The body depends only on (op, width, arity) — operands are always
-// registers — so a single helper per key is sufficient and shared across all
-// call sites.
+// newDecomposedNaryHelper builds the helper module for bitwise
+// AND/OR/XOR using recursive halving.
 func newDecomposedNaryHelper[W word.Word[W]](
 	helpers *bitwiseHelpers[W],
 	key bitwiseHelperKey,
 ) descriptor.Module[W] {
-	b := newHelperBuilder[W](key.width, key.arity)
+	b := newBitwiseHelperBuilder[W](key.width, key.arity)
 
-	out := b.output
 	zero := word.Const64[W](0)
 
 	// NOTE: with a non-degenerate maxStaticHeight this recursion bottoms out in a
@@ -321,49 +328,60 @@ func newDecomposedNaryHelper[W word.Word[W]](
 	// reached only when bitwiseStaticWidth==0 (a tiny maxStaticHeight that admits
 	// no bitwise table at all).
 	if key.width == 1 {
-		// Base case: single-bit operation.  Seed agg with the op's identity
-		// (1 for AND, 0 for OR/XOR) then fold each source in via the
-		// appropriate pairwise combinator.
-		agg := b.newComputed("agg")
+		// Base case: single-bit operations.  For each operation, seed agg with
+		// its identity (1 for AND, 0 for OR/XOR) then fold each source in via
+		// the appropriate pairwise combinator.
+		for i, op := range bitwiseOps {
+			agg := b.newComputed("agg")
 
-		if key.op == bytecode.OP_AND {
-			one := word.Const64[W](1)
-			b.emit(bytecode.LoadConst(agg, one))
-		} else {
-			b.emit(bytecode.LoadConst(agg, zero))
+			if op == bytecode.OP_AND {
+				one := word.Const64[W](1)
+				b.emit(bytecode.LoadConst(agg, one))
+			} else {
+				b.emit(bytecode.LoadConst(agg, zero))
+			}
+
+			for _, inp := range b.inputs {
+				agg = b.combineBit(op, agg, inp)
+			}
+
+			b.emit(bytecode.Assign[W](b.outputs[i], agg))
 		}
-
-		for _, inp := range b.inputs {
-			agg = b.combineBit(key.op, agg, inp)
-		}
-
-		b.emit(bytecode.Assign[W](out, agg))
 	} else {
 		// Recursive case: low and high halves share the same sub-helper
 		// (which may be a static table or a narrower recursive helper) because
 		// the body no longer depends on a caller-side constant.
 		half := key.width / 2
-		subID, isTable := helpers.ensureNary(key.op, half, key.arity)
+		subID, isTable := helpers.ensureNary(half, key.arity)
 
 		lowSrcs := make([]bytecode.RegisterId, key.arity)
 		highSrcs := make([]bytecode.RegisterId, key.arity)
 
 		for i, arg := range b.inputs {
-			lo := b.newComputedNamed(half)
-			hi := b.newComputedNamed(half)
+			lo := b.newComputedWidth(fmt.Sprintf("arg_%d_lo", i+1), half)
+			hi := b.newComputedWidth(fmt.Sprintf("arg_%d_hi", i+1), half)
 			// UintDestruct: split arg into [lo, hi] (little-endian limbs).
 			b.emit(bytecode.AddVec[W]([]bytecode.RegisterId{lo, hi}, []bytecode.RegisterId{arg}))
 			lowSrcs[i] = lo
 			highSrcs[i] = hi
 		}
 
-		resLow := b.newComputedNamed(half)
-		resHigh := b.newComputedNamed(half)
+		resLow := make([]bytecode.RegisterId, len(bitwiseOps))
+		resHigh := make([]bytecode.RegisterId, len(bitwiseOps))
+
+		resLow[0] = b.newComputedWidth("resLow_AND", half)
+		resHigh[0] = b.newComputedWidth("resHigh_AND", half)
+		resLow[1] = b.newComputedWidth("resLow_OR", half)
+		resHigh[1] = b.newComputedWidth("resHigh_OR", half)
+		resLow[2] = b.newComputedWidth("resLow_XOR", half)
+		resHigh[2] = b.newComputedWidth("resHigh_XOR", half)
 
 		b.emit(invokeNary[W](subID, isTable, lowSrcs, resLow))
 		b.emit(invokeNary[W](subID, isTable, highSrcs, resHigh))
 
-		b.emit(bytecode.AssignV[W]([]bytecode.RegisterId{out}, resLow, resHigh))
+		for i := range bitwiseOps {
+			b.emit(bytecode.AssignV[W]([]bytecode.RegisterId{b.outputs[i]}, resLow[i], resHigh[i]))
+		}
 	}
 
 	b.emit(bytecode.NewRet[W]())
@@ -372,26 +390,24 @@ func newDecomposedNaryHelper[W word.Word[W]](
 		[]BytecodeVector[W]{bytecode.NewVector(b.code...)})
 }
 
-// newBitwiseTable builds a static read-only table for a single bitwise
-// operation of the given width: a memory with two address lines (a, b) and one
-// data line holding "a op b".  A read of this table (see invokeNary) becomes a
-// lookup asserting (a, b, result) is a valid row of the operation's truth
-// table.  The table enumerates every (a, b) pair, so it has 2^(2*width) rows;
-// the caller (ensureNary) only builds it when 2^(2*width) <= maxStaticHeight.
-//
-// The row index encodes the operands as a (high) followed by b (low), matching
-// how the interpreter decodes address lines from the memory geometry (see
-// decodeAddress), so a = row >> width and b = row mod 2^width.
-func newBitwiseTable[W word.Word[W]](op bytecode.Operation, width uint) descriptor.Module[W] {
+// newBitwiseTable builds the (merged) static read-only truth table of the
+// given width: a memory with two address lines (a, b) and one data line per
+// operation, holding "a&b", "a|b" and "a^b" (in bitwiseOps order).
+// The table enumerates every (a, b) pair,
+// so it has 2^(2*width) rows; the caller (ensureNary) only builds it when
+// 2^(2*width) <= maxStaticHeight.
+func newBitwiseTable[W word.Word[W]](width uint) descriptor.Module[W] {
 	var (
 		padding  W
 		mask     = (uint64(1) << width) - 1
 		rows     = uint64(1) << (2 * width)
-		contents = make([]W, rows)
+		contents = make([]W, 0, rows*uint64(len(bitwiseOps)))
 		regs     = []descriptor.Register[W]{
 			descriptor.NewRegister(register.INPUT_REGISTER, "a", util.Some(width), padding),
 			descriptor.NewRegister(register.INPUT_REGISTER, "b", util.Some(width), padding),
-			descriptor.NewRegister(register.OUTPUT_REGISTER, "r", util.Some(width), padding),
+			descriptor.NewRegister(register.OUTPUT_REGISTER, "and", util.Some(width), padding),
+			descriptor.NewRegister(register.OUTPUT_REGISTER, "or", util.Some(width), padding),
+			descriptor.NewRegister(register.OUTPUT_REGISTER, "xor", util.Some(width), padding),
 		}
 	)
 	//
@@ -399,42 +415,31 @@ func newBitwiseTable[W word.Word[W]](op bytecode.Operation, width uint) descript
 		var (
 			a = row >> width
 			b = row & mask
-			r uint64
 			w W
 		)
 		//
-		switch op {
-		case bytecode.OP_AND:
-			r = a & b
-		case bytecode.OP_OR:
-			r = a | b
-		case bytecode.OP_XOR:
-			r = a ^ b
-		default:
-			panic(fmt.Sprintf("unsupported bitwise table operation: %d", op))
-		}
-		//
-		contents[row] = w.SetUint64(r)
+		contents = append(contents, w.SetUint64(a&b), w.SetUint64(a|b), w.SetUint64(a^b))
 	}
 	//
-	return descriptor.NewMemory(helperName(bitwiseHelperKey{op: op, width: width}),
+	return descriptor.NewMemory(helperName(bitwiseHelperKey{width: width}),
 		descriptor.PRIVATE_STATIC_MEMORY, util.None[uint](), regs, contents)
 }
 
-type helperBuilder[W word.Word[W]] struct {
+type bitwiseHelperBuilder[W word.Word[W]] struct {
 	width   uint
 	inputs  []bytecode.RegisterId
-	output  bytecode.RegisterId
+	outputs []bytecode.RegisterId
 	base    []descriptor.Register[W]
 	code    []Bytecode[W]
 	nextTmp uint
 }
 
-func newHelperBuilder[W word.Word[W]](width uint, arity int) *helperBuilder[W] {
+func newBitwiseHelperBuilder[W word.Word[W]](width uint, arity int) *bitwiseHelperBuilder[W] {
 	var (
 		padding W
-		base    = make([]descriptor.Register[W], 0, arity+1)
+		base    = make([]descriptor.Register[W], 0, arity+len(bitwiseOps))
 		inputs  = make([]bytecode.RegisterId, arity)
+		outputs = make([]bytecode.RegisterId, len(bitwiseOps))
 	)
 
 	for i := 0; i < arity; i++ {
@@ -442,58 +447,47 @@ func newHelperBuilder[W word.Word[W]](width uint, arity int) *helperBuilder[W] {
 		base = append(base, descriptor.NewRegister(register.INPUT_REGISTER,
 			fmt.Sprintf("arg%d", i+1), util.Some(width), padding))
 	}
+	// One output per operation, in bitwiseOps order (immediately after the
+	// inputs, matching how a call binds callee outputs).
+	for i, op := range bitwiseOps {
+		outputs[i] = bytecode.RegisterId(arity + i)
 
-	output := bytecode.RegisterId(arity)
+		base = append(base, descriptor.NewRegister(register.OUTPUT_REGISTER,
+			bitwiseOpName(op), util.Some(width), padding))
+	}
 
-	base = append(base, descriptor.NewRegister(register.OUTPUT_REGISTER, "out", util.Some(width), padding))
-
-	return &helperBuilder[W]{
-		width:  width,
-		inputs: inputs,
-		output: output,
-		base:   base,
+	return &bitwiseHelperBuilder[W]{
+		width:   width,
+		inputs:  inputs,
+		outputs: outputs,
+		base:    base,
 	}
 }
 
-func (p *helperBuilder[W]) regs() []descriptor.Register[W] {
+func (p *bitwiseHelperBuilder[W]) regs() []descriptor.Register[W] {
 	return p.base
 }
 
-func (p *helperBuilder[W]) emit(insn Bytecode[W]) {
+func (p *bitwiseHelperBuilder[W]) emit(insn Bytecode[W]) {
 	p.code = append(p.code, insn)
 }
 
-func (p *helperBuilder[W]) emitAll(insns []Bytecode[W]) {
-	p.code = append(p.code, insns...)
-}
-
-func (p *helperBuilder[W]) newComputed(prefix string) bytecode.RegisterId {
+func (p *bitwiseHelperBuilder[W]) newComputed(prefix string) bytecode.RegisterId {
 	return p.newComputedWidth(prefix, p.width)
 }
 
-func (p *helperBuilder[W]) newComputedWidth(prefix string, width uint) bytecode.RegisterId {
+func (p *bitwiseHelperBuilder[W]) newComputedWidth(prefix string, width uint) bytecode.RegisterId {
 	var padding W
 
 	id := bytecode.RegisterId(len(p.base))
-	name := fmt.Sprintf("%s%d", prefix, p.nextTmp)
+	name := fmt.Sprintf("%s_$%d", prefix, p.nextTmp)
 	p.base = append(p.base, descriptor.NewRegister(register.COMPUTED_REGISTER, name, util.Some(width), padding))
 	p.nextTmp++
 
 	return id
 }
 
-func (p *helperBuilder[W]) newComputedNamed(width uint) bytecode.RegisterId {
-	var padding W
-
-	id := bytecode.RegisterId(len(p.base))
-	name := fmt.Sprintf("$%d", p.nextTmp)
-	p.base = append(p.base, descriptor.NewRegister(register.COMPUTED_REGISTER, name, util.Some(width), padding))
-	p.nextTmp++
-
-	return id
-}
-
-func (p *helperBuilder[W]) combineBit(op bytecode.Operation, lhs, rhs bytecode.RegisterId) bytecode.RegisterId {
+func (p *bitwiseHelperBuilder[W]) combineBit(op bytecode.Operation, lhs, rhs bytecode.RegisterId) bytecode.RegisterId {
 	zero := word.Const64[W](0)
 	one := word.Const64[W](1)
 

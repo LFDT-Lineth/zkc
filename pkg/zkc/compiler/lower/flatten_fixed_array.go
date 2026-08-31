@@ -943,6 +943,9 @@ func (p *Rewriter) rewriteLValArray(l lval.Resolved) lval.Resolved {
 	case *lval.MemAccess[symbol.Resolved]:
 		p.rewriteArrayExpressions(l.Args)
 		return l
+	case *lval.Discard[symbol.Resolved]:
+		// Nothing to rewrite: a discard references no variable.
+		return l
 	default:
 		panic(fmt.Sprintf("unknown lval encountered during fixed-array lowering: %T", l))
 	}

@@ -65,8 +65,15 @@ func ReadWrite[W word.Word[W]](p *bytecode.ReadWrite[W], env Environment[W]) []u
 		id   = util.Cast[uint16](sym.Offset)
 		mode = rwModeOf(sym.Kind, p.Write)
 	)
+	// A (static) read may discard some of its data lines; densify them so the
+	// positional executor binds every remaining line correctly.
+	data := p.Data
 	//
-	return encodeReadWrite_sn(mode, id, p.Address, p.Data)
+	if !p.Write {
+		data = substituteDiscardedRegisters(data)
+	}
+	//
+	return encodeReadWrite_sn(mode, id, p.Address, data)
 }
 
 // rwModeOf determines the read/write mode from a memory's symbol kind and

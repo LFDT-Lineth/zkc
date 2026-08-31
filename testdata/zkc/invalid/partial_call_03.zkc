@@ -1,0 +1,10 @@
+//error:3:15-22:mismatched return values (expected 2, found 3)
+fn f(x:u16) -> (res:u16) {
+    x, _, _ = copy(x)
+    res = x
+}
+
+fn copy(x:u16)->(res1:u16, res2:u16) {
+res1= x
+res2 = x
+}

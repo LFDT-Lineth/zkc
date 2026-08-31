@@ -1,0 +1,26 @@
+pub input data(address:u16) -> (byte:u16)
+
+// A two-column static table whose hi column is 16 times its lo column, so
+// that a value read from one column predicts the other.
+static tbl(address:u16) -> (lo:u16, hi:u16) {
+    (0x0a, 0xa0),
+    (0x0b, 0xb0)
+}
+
+// This test performs partial static memory reads, discarding one data column
+// of each read: no caller register (and hence no trace column) backs the
+// discarded column, and the read's lookup binds only the bound one.
+fn main() {
+    var i:u16 = data[0]
+    var lo:u16
+    var hi:u16
+
+    lo, _ = tbl[i]
+    _, hi = tbl[i]
+
+    if (lo * 0x10) != hi {
+        fail
+    }
+
+    return
+}

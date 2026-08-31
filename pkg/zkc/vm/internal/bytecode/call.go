@@ -14,6 +14,7 @@ package bytecode
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -38,9 +39,10 @@ func (p *Call[W]) Uses() []RegisterId {
 }
 
 // Definitions implementation for Bytecode interface.  A call writes the callee's
-// outputs into the return registers of the caller's frame.
+// outputs into the return registers of the caller's frame.  Discarded returns
+// bind no register, so they are excluded.
 func (p *Call[W]) Definitions() []RegisterId {
-	return p.Returns
+	return boundRegisters(p.Returns)
 }
 
 // Validate implementation for Bytecode interface.
@@ -65,6 +67,10 @@ func (p *Call[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 	if len(p.Returns) > int(callee.NumOutputs()) {
 		errors = append(errors, fmt.Errorf("call to %s provides only %d returns (found %d)",
 			callee.Name(), callee.NumOutputs(), len(p.Returns)))
+	}
+	// Only returns can be discarded.
+	if slices.Contains(p.Arguments, DISCARD) {
+		errors = append(errors, fmt.Errorf("call to %s discards an argument", callee.Name()))
 	}
 
 	return errors

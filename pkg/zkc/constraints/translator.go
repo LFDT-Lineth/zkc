@@ -133,7 +133,7 @@ func (p *constraintTranslator[W, F]) translateStaticMemory(_ schema.ModuleId, m 
 		outputs = toRegisters(m.DataRegisters())
 		// Convert the static contents from words into field elements.
 		contents        = toFieldElements[W, F](m.StaticContents())
-		paddedHeight    = util_math.NextPowerOfTwo(uint(len(contents)))
+		paddedHeight    = util_math.NextPowerOfTwo(m.StaticHeight())
 		maxStaticHeight = p.program.MaxStaticHeight()
 	)
 	if paddedHeight > maxStaticHeight {

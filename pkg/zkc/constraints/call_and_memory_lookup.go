@@ -316,17 +316,26 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 		callee     = program.Module(calleeId).(*vm.Function[W])
 		calleeRegs = toRegisters(callee.Registers())
 		handle     = fmt.Sprintf("call_%d_%d_%d", ctx, pc, calleeId)
-		// Source ids: the caller's argument registers followed by its return
-		// registers.
-		srcIds = append(append([]register.Id{}, args...), returns...)
-		// Target ids: the callee's input registers (0..nInputs) followed by its
-		// output registers (nInputs..nInputs+nOutputs).  Their count matches the
-		// number of source ids.
-		tgtIds = make([]register.Id, len(srcIds))
+		discard    = register.NewId(uint(vm.DISCARD))
+		// Source ids: the caller's argument registers followed by its (bound)
+		// return registers.
+		srcIds []register.Id
+		// Target ids: the callee's input registers (0..nInputs) followed by
+		// its output registers (nInputs..nInputs+nOutputs), aligned
+		// positionally with the arguments/returns.
+		tgtIds []register.Id
 	)
-	//
-	for i := range tgtIds {
-		tgtIds[i] = register.NewId(uint(i))
+	// A discarded return binds no caller register, so its (source, target)
+	// column pair is simply omitted from the lookup.  This remains sound: the
+	// callee-side output column is still fully constrained by the callee's own
+	// table, and nothing on the caller side depends on its value.
+	for i, id := range append(append([]register.Id{}, args...), returns...) {
+		if id == discard {
+			continue
+		}
+		//
+		srcIds = append(srcIds, id)
+		tgtIds = append(tgtIds, register.NewId(uint(i)))
 	}
 	// Build the source (caller) vector.
 	var source = lookup.FilteredVector(ctx, srcSelector, srcIds...)
@@ -414,18 +423,27 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir
 		memRegs = toRegisters(mem.Registers())
 		// The bytecode index (cc) disambiguates two accesses to the same memory
 		// on the same code line.
-		handle = fmt.Sprintf("memory_%d_%d_%d_%d", ctx, pc, cc, memId)
-		// Source ids: the accessor's address registers followed by its data
-		// registers.
-		srcIds = append(append([]register.Id{}, address...), data...)
+		handle  = fmt.Sprintf("memory_%d_%d_%d_%d", ctx, pc, cc, memId)
+		discard = register.NewId(uint(vm.DISCARD))
+		// Source ids: the accessor's address registers followed by its (bound)
+		// data registers.
+		srcIds []register.Id
 		// Target ids: the memory's address registers (its inputs) followed by
 		// its data registers (its outputs), which together occupy ids
-		// 0..len(memRegs).  Their count matches the number of source ids.
-		tgtIds = make([]register.Id, len(srcIds))
+		// 0..len(memRegs), aligned positionally with the address/data.
+		tgtIds []register.Id
 	)
-	//
-	for i := range tgtIds {
-		tgtIds[i] = register.NewId(uint(i))
+	// A discarded data line of a (static) read binds no accessor register, so
+	// its (source, target) column pair is simply omitted from the lookup.  This
+	// remains sound: the table row is fixed at compile time, and nothing on the
+	// accessor side depends on the omitted column's value.
+	for i, id := range append(append([]register.Id{}, address...), data...) {
+		if id == discard {
+			continue
+		}
+		//
+		srcIds = append(srcIds, id)
+		tgtIds = append(tgtIds, register.NewId(uint(i)))
 	}
 	// Build the source (accessor) vector.
 	var source = lookup.FilteredVector(ctx, srcSelector, srcIds...)

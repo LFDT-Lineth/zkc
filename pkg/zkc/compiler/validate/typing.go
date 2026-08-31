@@ -262,42 +262,107 @@ func (p *TypeChecker) typeMemory(c *decl.ResolvedMemory) []source.SyntaxError {
 
 func (p *TypeChecker) typeAssignment(s *stmt.Assign[symbol.Resolved], env VariableMap, effects bit.Set,
 ) []source.SyntaxError {
-	var (
-		errors []source.SyntaxError
-		types  = make([]Type, len(s.Targets))
-	)
-	// Sanity check assignment arity
+	var errors []source.SyntaxError
+	// Special case for empty targets: source is still typed for side effects.
 	if len(s.Targets) == 0 {
-		// Special case for empty targets.  This can only arise for a function
-		// call which does not assign any return values.  This ensures that, in
-		// such case, the source expression is typed.
 		_, errors = p.typeExpression(nil, s.Source, env, effects)
-		//
 		return errors
 	}
-	// Type check left-hand side
-	for i, lval := range s.Targets {
+	// Partial assignment: one or more targets are the wildcard "_".
+	// Discarding is only meaningful for sources whose return types are fixed by
+	// a declaration (function calls and static memory reads).
+	if array.ContainsMatching(s.Targets, isDiscard) {
+		if errs := p.checkDiscardableSource(s.Source); len(errs) > 0 {
+			return errs
+		}
+		// Require at least one bound target.
+		if !array.ContainsMatching(s.Targets, func(lv LVal) bool { return !isDiscard(lv) }) {
+			return p.srcmaps.SyntaxErrors(s, "at least one return argument must be used")
+		}
+		// Type the RHS with no expected type; callee declaration fixes the types.
+		rhs_t, rhsErrs := p.typeExpression(nil, s.Source, env, effects)
+
+		errors = append(errors, rhsErrs...)
+		if !p.env.WellFormed(rhs_t) {
+			return errors
+		}
+		// Destructure RHS into one type per return position.
+		returns := p.destructTupleType(rhs_t)
+		if len(returns) == 0 {
+			returns = []Type{rhs_t}
+		}
+		// Arity check.
+		if len(returns) != len(s.Targets) {
+			return append(errors, p.srcmaps.SyntaxErrors(s.Source,
+				fmt.Sprintf("mismatched return values (expected %d, found %d)", len(returns), len(s.Targets)))...)
+		}
+		// Positional type check for bound (non-discard) targets.
+		for i, target := range s.Targets {
+			if isDiscard(target) {
+				continue
+			}
+
+			ith_t, errs := p.typeLval(target, env, effects)
+
+			errors = append(errors, errs...)
+			if len(errs) == 0 {
+				errors = append(errors, p.checkEquiTypes(returns[i], ith_t, target)...)
+			}
+		}
+
+		return append(errors, checkTargets(s, env, p.srcmaps)...)
+	}
+	// Full assignment: build expected type from all lhs targets, then match RHS.
+	types := make([]Type, len(s.Targets))
+	for i, lv := range s.Targets {
 		var lhsErrs []source.SyntaxError
-		// type lval
-		types[i], lhsErrs = p.typeLval(lval, env, effects)
-		// Accumulate lhs errors
+
+		types[i], lhsErrs = p.typeLval(lv, env, effects)
 		errors = append(errors, lhsErrs...)
 	}
-	// Type check right-hand side
-	var (
-		// Construct lhs type (potentially as a tuple)
-		lhs_t          = data.FromTypes(types...)
-		rhs_t, rhsErrs = p.typeExpression(lhs_t, s.Source, env, effects)
-	)
-	// Account for rhs errrors
+
+	lhs_t := data.FromTypes(types...)
+	rhs_t, rhsErrs := p.typeExpression(lhs_t, s.Source, env, effects)
+
 	errors = append(errors, rhsErrs...)
-	// accumulate errors
 	if p.env.WellFormed(lhs_t) && p.env.WellFormed(rhs_t) {
-		// resolve fixed-array size in whole assignments
 		errors = append(errors, p.checkEquiTypes(rhs_t, lhs_t, s.Source)...)
 	}
-	//
+
 	return append(errors, checkTargets(s, env, p.srcmaps)...)
+}
+
+// checkDiscardableSource checks that the source of an assignment with
+// discarded ("_") targets is a function call or a static memory read.  In
+// particular, reads of ROM / RAM / WOM memories cannot discard data lines.
+func (p *TypeChecker) checkDiscardableSource(e expr.Resolved) []source.SyntaxError {
+	if ext, ok := e.(*expr.ExternAccess[symbol.Resolved]); ok {
+		// Unknown external access signals a linking error reported earlier in
+		// the compilation pipeline.
+		if ext.Name.IsUnknown() {
+			return nil
+		}
+		//
+		switch c := p.lookup(ext.Name).(type) {
+		case *decl.ResolvedFunction:
+			return nil
+		case *decl.ResolvedMemory:
+			if c.IsStatic() {
+				return nil
+			}
+			//
+			return p.srcmaps.SyntaxErrors(e, "cannot discard data read from non-static memory")
+		}
+	}
+	//
+	return p.srcmaps.SyntaxErrors(e, "expected function call or static memory read")
+}
+
+// isDiscard checks whether the given lval is the wildcard "_".
+func isDiscard(lv LVal) bool {
+	_, ok := lv.(*lval.Discard[symbol.Resolved])
+	//
+	return ok
 }
 
 func (p *TypeChecker) typeLval(target LVal, env VariableMap, effects bit.Set) (Type, []source.SyntaxError) {

@@ -87,26 +87,33 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 	// extra tuple slots of wide outputs feeding narrow logic) are planned
 	// below.  The plain tuple assignment applies only when every taken return
 	// matches its target's shape with no check; anything else routes through
-	// block-scoped temporaries and storeValue.
+	// block-scoped temporaries and storeValue.  A discarded (DISCARD) return
+	// binds nothing: it becomes a blank at its tuple position.
 	type ret struct {
 		target   limb
 		outWidth uint
 		outWide  bool
+		bound    bool
 	}
 
 	rets := make([]ret, len(x.Returns))
 	direct := true
 
 	for i, target := range x.Returns {
+		// A native (field-element) output is a single uint64 result.
+		ow := widthOf(callee.Register(calleeOutput(callee, i)))
+
+		if target == bytecode.DISCARD {
+			rets[i] = ret{outWidth: ow, outWide: ow > 64}
+			continue
+		}
+
 		l, err := g.limbOf(fn, target)
 		if err != nil {
 			return err
 		}
 
-		// A native (field-element) output is a single uint64 result.
-		ow := widthOf(callee.Register(calleeOutput(callee, i)))
-
-		rets[i] = ret{target: l, outWidth: ow, outWide: ow > 64}
+		rets[i] = ret{target: l, outWidth: ow, outWide: ow > 64, bound: true}
 		// Shape mismatch or a surviving width check forces the temp path.
 		if (ow > 64) != (l.width > 64) || ow > l.width {
 			direct = false
@@ -127,6 +134,16 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 		targets := []string{}
 
 		for _, r := range rets {
+			// A discarded return becomes a blank (one per tuple slot).
+			if !r.bound {
+				targets = append(targets, "_")
+				if r.outWide {
+					targets = append(targets, "_")
+				}
+
+				continue
+			}
+
 			targets = append(targets, r.target.lo())
 			if r.target.width > 64 {
 				targets = append(targets, r.target.hiName())
@@ -147,6 +164,16 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 		vals := make([]operand, len(rets))
 
 		for i, r := range rets {
+			// A discarded return becomes a blank (one per tuple slot).
+			if !r.bound {
+				tmps = append(tmps, "_")
+				if r.outWide {
+					tmps = append(tmps, "_")
+				}
+
+				continue
+			}
+
 			lo := fmt.Sprintf("t%d", i)
 			vals[i] = operand{expr: lo, max: widthMax(r.outWidth)}
 			tmps = append(tmps, lo)
@@ -161,6 +188,10 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 		c.linef("%s := %s", strings.Join(append(tmps, discards...), ", "), call)
 
 		for i, r := range rets {
+			if !r.bound {
+				continue
+			}
+
 			if inner = g.storeValue(c, storeView{single: &rets[i].target, total: r.target.width}, vals[i]); inner != nil {
 				return
 			}

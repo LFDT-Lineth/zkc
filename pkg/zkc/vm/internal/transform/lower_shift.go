@@ -189,6 +189,58 @@ func shiftHelperName(key shiftHelperKey) string {
 	return fmt.Sprintf("$bit_%s_u%d_u%d", bitwiseOpName(key.op), key.width, key.amtWidth)
 }
 
+// shiftHelperBuilder accumulates the registers and code of a shift helper
+// function: a value input (arg1), an amount input (arg2), a single output
+// register, and any computed temporaries.
+type shiftHelperBuilder[W word.Word[W]] struct {
+	width   uint
+	value   bytecode.RegisterId
+	amount  bytecode.RegisterId
+	output  bytecode.RegisterId
+	base    []descriptor.Register[W]
+	code    []Bytecode[W]
+	nextTmp uint
+}
+
+func newShiftHelperBuilder[W word.Word[W]](width, amtWidth uint) *shiftHelperBuilder[W] {
+	var padding W
+	//
+	return &shiftHelperBuilder[W]{
+		width:  width,
+		value:  bytecode.RegisterId(0),
+		amount: bytecode.RegisterId(1),
+		output: bytecode.RegisterId(2),
+		base: []descriptor.Register[W]{
+			descriptor.NewRegister(register.INPUT_REGISTER, "arg1", util.Some(width), padding),
+			descriptor.NewRegister(register.INPUT_REGISTER, "arg2", util.Some(amtWidth), padding),
+			descriptor.NewRegister(register.OUTPUT_REGISTER, "out", util.Some(width), padding),
+		},
+	}
+}
+
+func (p *shiftHelperBuilder[W]) regs() []descriptor.Register[W] {
+	return p.base
+}
+
+func (p *shiftHelperBuilder[W]) emit(insn Bytecode[W]) {
+	p.code = append(p.code, insn)
+}
+
+func (p *shiftHelperBuilder[W]) emitAll(insns []Bytecode[W]) {
+	p.code = append(p.code, insns...)
+}
+
+func (p *shiftHelperBuilder[W]) newComputedWidth(prefix string, width uint) bytecode.RegisterId {
+	var padding W
+
+	id := bytecode.RegisterId(len(p.base))
+	name := fmt.Sprintf("%s%d", prefix, p.nextTmp)
+	p.base = append(p.base, descriptor.NewRegister(register.COMPUTED_REGISTER, name, util.Some(width), padding))
+	p.nextTmp++
+
+	return id
+}
+
 // newShiftLevelHelper builds level j (= key.amtWidth) of the barrel-shifter
 // chain for SHL/SHR over values of width w (= key.width):
 //
@@ -206,12 +258,9 @@ func shiftHelperName(key shiftHelperKey) string {
 // this works for any field modulus.
 // subID is the module id of level j-1; it is ignored when j == 1.
 func newShiftLevelHelper[W word.Word[W]](key shiftHelperKey, subID uint) descriptor.Module[W] {
-	var padding W
+	b := newShiftHelperBuilder[W](key.width, key.amtWidth)
 
-	b := newHelperBuilder[W](key.width, 2)
-	b.base[1] = descriptor.NewRegister(register.INPUT_REGISTER, "arg2", util.Some(key.amtWidth), padding)
-
-	a, n, out := b.inputs[0], b.inputs[1], b.output
+	a, n, out := b.value, b.amount, b.output
 	width := key.width
 	level := key.amtWidth
 	zero := word.Const64[W](0)
@@ -258,7 +307,7 @@ func newShiftLevelHelper[W word.Word[W]](key shiftHelperKey, subID uint) descrip
 //	     (zero-extended via AddConst, since high < 2^(width-shift)).
 //	SHL: Destruct a into [low:u(width-shift), drop:u_shift]; target = zeros:low
 //	     via Concat with a constant-zero register in the low bits.
-func shiftByConst[W word.Word[W]](b *helperBuilder[W], op bytecode.Operation,
+func shiftByConst[W word.Word[W]](b *shiftHelperBuilder[W], op bytecode.Operation,
 	target, a bytecode.RegisterId, shift uint,
 ) []Bytecode[W] {
 	var (
@@ -302,14 +351,11 @@ func shiftByConst[W word.Word[W]](b *helperBuilder[W], op bytecode.Operation,
 // no levels (k == 0) and the guard degenerates to "n == 0 ? a : 0"; levelID is
 // ignored in that case.
 func newShiftGuardHelper[W word.Word[W]](key shiftHelperKey, levelID uint) descriptor.Module[W] {
-	var padding W
-
 	amtWidth := key.amtWidth
 
-	b := newHelperBuilder[W](key.width, 2)
-	b.base[1] = descriptor.NewRegister(register.INPUT_REGISTER, "arg2", util.Some(amtWidth), padding)
+	b := newShiftHelperBuilder[W](key.width, amtWidth)
 
-	a, n, out := b.inputs[0], b.inputs[1], b.output
+	a, n, out := b.value, b.amount, b.output
 	depth := shiftChainDepth(key.width)
 	zero := word.Const64[W](0)
 

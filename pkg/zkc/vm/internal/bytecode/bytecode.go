@@ -15,6 +15,7 @@ package bytecode
 import (
 	"encoding/gob"
 	"fmt"
+	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -43,6 +44,9 @@ const (
 
 // RegisterId just provides a convenient alias to make the code more readable.
 type RegisterId = uint16
+
+// DISCARD is a pseudo register id marking a discarded ("_") return value.
+const DISCARD RegisterId = math.MaxUint16
 
 // ModuleId represents module identifiers
 type ModuleId = uint16
@@ -250,7 +254,8 @@ func validateOperands[W word.Word[W]](env Environment[W], operands ...[]Register
 
 	for _, group := range operands {
 		for _, id := range group {
-			if seen[id] {
+			// A discarded position binds no register.
+			if id == DISCARD || seen[id] {
 				continue
 			}
 

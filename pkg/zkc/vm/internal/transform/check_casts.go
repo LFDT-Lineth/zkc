@@ -167,6 +167,11 @@ func addIncomingCheckCasts[W word.Word[W]](regmap descriptor.RegisterMap[W], sou
 	var codes []Bytecode[W]
 	//
 	for i, target := range targets {
+		// A discarded return binds no register, so there is nothing to check.
+		if target == bytecode.DISCARD {
+			continue
+		}
+		//
 		var (
 			src = sources[i]
 			dst = regmap.Register(target)

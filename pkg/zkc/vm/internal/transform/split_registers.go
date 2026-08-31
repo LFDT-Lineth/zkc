@@ -493,6 +493,17 @@ func alignArgsReturns[W word.Word[W]](
 	var regWidth = limbsMap.RegisterWidth()
 	//
 	for i, local := range locals {
+		// A discarded return has no local register: it stays discarded across
+		// splitting, occupying one (discarded) slot per remote limb so the
+		// boundary remains positionally aligned with the remote registers.
+		if local == bytecode.DISCARD {
+			for range descriptor.SplitIntoLimbs(regWidth, remotes[i]) {
+				boundary = append(boundary, bytecode.DISCARD)
+			}
+			//
+			continue
+		}
+		//
 		var (
 			// Local limbs, least-significant first.
 			ithLocals = limbsMap.LimbIds(local)

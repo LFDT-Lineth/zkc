@@ -181,6 +181,22 @@ func Test_ZkcInvalid_Basic_41(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/basic_41")
 }
 
+func Test_ZkcInvalid_Basic_42(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/basic_42")
+}
+
+func Test_ZkcInvalid_Basic_43(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/basic_43")
+}
+
+func Test_ZkcInvalid_Basic_44(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/basic_44")
+}
+
+func Test_ZkcInvalid_Basic_45(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/basic_45")
+}
+
 // ===================================================================
 // Native Field Tests
 // ===================================================================
@@ -1142,6 +1158,25 @@ func Test_ZkcInvalid_Unreachable_03(t *testing.T) {
 func Test_ZkcInvalid_Unreachable_04(t *testing.T) {
 	// unreachable RAM
 	checkZkcInvalid(t, "zkc/invalid/unreachable_04")
+}
+
+// ===================================================================
+// Partial call tests
+// ===================================================================
+func Test_ZkcInvalid_Partial_call_01(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/partial_call_01")
+}
+
+func Test_ZkcInvalid_Partial_call_02(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/partial_call_02")
+}
+
+func Test_ZkcInvalid_Partial_call_03(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/partial_call_03")
+}
+
+func Test_ZkcInvalid_Partial_call_04(t *testing.T) {
+	checkZkcInvalid(t, "zkc/invalid/partial_call_04")
 }
 
 // ===================================================================
