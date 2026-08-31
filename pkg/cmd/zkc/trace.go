@@ -16,18 +16,23 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -58,6 +63,10 @@ var traceFlags FlagChecks
 
 func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
+		statsCfg traceStatsConfig[F]
+		//
+		moduleSummarisers = moduleSummarisers[F]()
+		//
 		build = GetBuildConfig[F](cmd, field)
 		// outputFile file for trace
 		outputFile = GetString(cmd, "output")
@@ -72,6 +81,8 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		// extract sharding config
 		sharding = GetString(cmd, "sharding")
 		//
+		includes = GetStringArray(cmd, "include")
+		//
 		trace   trace.Trace[F]
 		outputs map[string][]byte
 	)
@@ -82,6 +93,13 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		fmt.Println("error: \"trace\" does not support fast mode (use \"execute\" instead)")
 		os.Exit(1)
 	}
+	// Configure stats
+	statsCfg.human = !GetFlag(cmd, "raw")
+	statsCfg.maxCellWidth = GetUint(cmd, "cell-width")
+	statsCfg.summarisers = array.Filter(moduleSummarisers, func(m ModuleSummariser[F]) bool {
+		return slices.Contains(includes, m.Name)
+	})
+	statsCfg.sortedBy = util.Some(GetUint(cmd, "sort"))
 	// Configure tracing
 	traceConfig := vm.DEFAULT_TRACE_CONFIG.
 		WithPadding(build.padding).
@@ -111,8 +129,8 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 	// print trace statistics (if requested).  Only meaningful when a trace was
 	// actually generated (i.e. no execution errors).
 	if stats && len(errors) == 0 {
-		printTraceStats(trace...)
-		printModuleStats(trace...)
+		printTraceStats(statsCfg, trace...)
+		printModuleStats(statsCfg, trace...)
 	}
 	// print entire trace (if requested).  Unlike the inspector, there is no way
 	// to reveal a module which was hidden, so everything carrying data is shown
@@ -160,15 +178,20 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 
 //nolint:errcheck
 func init() {
-	rootCmd.AddCommand(traceCmd)
 	traceCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
 	traceCmd.Flags().String("sharding", "", "specify sharding strategy")
 	traceCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	traceCmd.Flags().Bool("stats", false, "show overall stats for the generated trace")
+	traceCmd.Flags().BoolP("raw", "r", false, "show raw stats (rather than human-readable stats like 1K 234M 2G, etc)")
+	traceCmd.Flags().Uint("sort", 1, "sort table column")
+	traceCmd.Flags().Uint("cell-width", 32, "specify maximum display width for a cell")
+	traceCmd.Flags().StringArrayP("include", "i", []string{"columns", "lines", "cells", "bytes"},
+		fmt.Sprintf("specify information to include in module summaries: %s", moduleSummariserOptions[koalabear.Element]()))
 	traceCmd.Flags().BoolP("print", "p", false, "print the generated trace")
 	traceCmd.Flags().Bool("sequential", false, "force sequential tracing")
-	traceCmd.Flags().BoolP("inspect", "i", false, "open the generated trace in the interactive inspector")
+	traceCmd.Flags().Bool("inspect", false, "open the generated trace in the interactive inspector")
 	traceCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
+	rootCmd.AddCommand(traceCmd)
 }
 
 func parseShardingConfig(spec string) vm.ShardingStrategy {
@@ -203,10 +226,6 @@ func publicModule(name module.Name) bool {
 	return !strings.HasPrefix(name, "$")
 }
 
-// Column bit-width buckets reported by printTraceStats, matching those shown by
-// the corset "trace --stats" command.
-var traceStatBuckets = []struct{ lo, hi uint }{{1, 8}, {9, 16}, {17, 32}, {33, 128}, {129, 256}}
-
 const (
 	oneK = 1000
 	oneM = oneK * oneK
@@ -218,159 +237,206 @@ const (
 // traced cells (both human-readable and raw) plus a breakdown of columns by
 // bit-width.  Columns backed by field elements (i.e. native registers, which
 // have no fixed bit-width) are reported separately.
-func printTraceStats[F field.Element[F]](shards ...trace.Shard[F]) {
-	for _, shard := range shards {
-		printShardStats(shard)
-	}
-}
-
-func printShardStats[F field.Element[F]](shard trace.Shard[F]) {
-	var (
-		cells  uint
-		counts = make([]uint, len(traceStatBuckets))
-		native uint
-	)
-	// Tally cells and per-column bit-widths across all modules.
-	for mid := range shard.Width() {
-		mod := shard.Module(mid)
-		cells += mod.Width() * mod.Height()
-		//
-		for _, reg := range mod.Descriptor().Columns {
-			bitwidth := reg.Bitwidth
-			// Native (field-element) limbs have no fixed bit-width.
-			if bitwidth.IsEmpty() {
-				native++
-				continue
-			}
-			// Otherwise, place the limb in its matching bit-width bucket.
-			for i, b := range traceStatBuckets {
-				if w := bitwidth.Unwrap(); w >= b.lo && w <= b.hi {
-					counts[i]++
-					break
-				}
-			}
-		}
-	}
-	// Assemble the stats table.
-	rows := [][2]string{
-		{"Cells", humanCount(cells)},
-		{"Cells (raw)", fmt.Sprintf("%d", cells)},
-	}
-	//
-	for i, b := range traceStatBuckets {
-		rows = append(rows, [2]string{fmt.Sprintf("Columns (%d..%d bits)", b.lo, b.hi), fmt.Sprintf("%d", counts[i])})
-	}
-	//
-	if native > 0 {
-		rows = append(rows, [2]string{"Columns (native)", fmt.Sprintf("%d", native)})
-	}
+func printTraceStats[F field.Element[F]](cfg traceStatsConfig[F], shards ...trace.Shard[F]) {
 	// Render it.
-	tbl := termio.NewFormattedTable(2, uint(len(rows)))
+	tbl := termio.NewFormattedTable(3, uint(len(shards)+1))
 	//
-	for i, row := range rows {
-		tbl.SetRow(uint(i), termio.NewText(row[0]), termio.NewText(row[1]))
+	tbl.SetRow(0, termio.NewText("shard"), termio.NewText("cells"), termio.NewText("bytes"))
+	tbl.SetRule(1)
+	//
+	for i, shard := range shards {
+		var (
+			cells, bytes = getShardStats(shard)
+			sid          = fmt.Sprintf("%d", i)
+		)
+		//
+		cs := humanCount(cfg.human, cells)
+		bs := humanCount(cfg.human, bytes)
+		//
+		tbl.SetRow(uint(i+1), termio.NewText(sid), termio.NewText(cs), termio.NewText(bs))
 	}
 	//
 	tbl.SetMaxWidths(64)
 	tbl.Print(AnsiEscapes)
 }
 
+func getShardStats[F field.Element[F]](shard trace.Shard[F]) (uint64, uint64) {
+	var (
+		cells uint64
+		bytes uint64
+	)
+	// Tally cells and per-column bit-widths across all modules.
+	for mid := range shard.Width() {
+		mod := shard.Module(mid)
+		cells += uint64(mod.Width()) * uint64(mod.Height())
+		bytes += moduleBytesSummariser(mod)
+	}
+	//
+	return cells, bytes
+}
+
 // humanCount formats a (potentially large) count using K/M/G suffixes, matching
 // the corset trace command's cell-count formatting.
-func humanCount(total uint) string {
+func humanCount(enable bool, total uint64) string {
 	switch {
-	case total > oneG:
+	case enable && total > oneG:
 		return fmt.Sprintf("%.01fG", float64(total)/oneG)
-	case total > oneM:
+	case enable && total > oneM:
 		return fmt.Sprintf("%.01fM", float64(total)/oneM)
-	case total > oneK:
+	case enable && total > oneK:
 		return fmt.Sprintf("%.01fK", float64(total)/oneK)
 	default:
 		return fmt.Sprintf("%d", total)
 	}
 }
 
-// Per-module summary column titles, matching those shown by the corset "trace
-// --modules" command.
-var moduleStatTitles = []string{"columns", "lines", "bitwidth", "cells", "nonzero", "bytes"}
+type traceStatsConfig[F field.Element[F]] struct {
+	human        bool
+	summarisers  []ModuleSummariser[F]
+	sortedBy     util.Option[uint]
+	maxCellWidth uint
+}
 
 // printModuleStats prints a per-module summary for a raw (row-major) trace, much
 // like the corset trace command's module listing.  For each module it reports
 // the column count, line (row) count, total bit-width, total cells, non-zero
 // cells and total bytes.  Native (field-element) limbs, which have no fixed
 // bit-width, are excluded from the bit-width and byte totals.
-func printModuleStats[F field.Element[F]](shards ...trace.Shard[F]) {
+func printModuleStats[F field.Element[F]](cfg traceStatsConfig[F], shards ...trace.Shard[F]) {
 	for _, shard := range shards {
-		printShardModuleStats(shard)
+		printShardModuleStats(cfg, shard)
 	}
 }
 
-func printShardModuleStats[F field.Element[F]](shard trace.Shard[F]) {
+func printShardModuleStats[F field.Element[F]](cfg traceStatsConfig[F], shard trace.Shard[F]) {
 	var (
 		n   = shard.Width()
-		tbl = termio.NewFormattedTable(uint(len(moduleStatTitles))+1, n+1)
+		tbl = termio.NewFormattedTable(uint(len(cfg.summarisers))+1, n+1)
 	)
 	// Set column titles (leaving the top-left cell blank, as corset does).
-	for i, title := range moduleStatTitles {
-		tbl.Set(uint(i)+1, 0, termio.NewText(title))
-	}
-	// Compute a summary row for each module.
-	for mid := range n {
-		var (
-			mod      = shard.Module(mid)
-			columns  = mod.Width()
-			lines    = mod.Height()
-			bitwidth uint
-			nonzero  uint
-			bytes    uint
-		)
-		// Sum per-limb bit-widths and byte requirements.
-		for _, reg := range mod.Descriptor().Columns {
-			if bw := reg.Bitwidth; bw.HasValue() {
-				w := bw.Unwrap()
-				bitwidth += w
-				bytes += byteWidth(w) * lines
-			}
-		}
-		// Count non-zero cells.
-		for cid := range columns {
-			col := mod.Column(cid)
-			//
-			for rid := range lines {
-				if !col.Get(rid).IsZero() {
-					nonzero++
-				}
-			}
-		}
-		//
-		tbl.SetRow(mid+1,
-			termio.NewText(mod.Name()),
-			termio.NewText(fmt.Sprintf("%d", columns)),
-			termio.NewText(fmt.Sprintf("%d", lines)),
-			termio.NewText(fmt.Sprintf("%d", bitwidth)),
-			termio.NewText(fmt.Sprintf("%d", columns*lines)),
-			termio.NewText(fmt.Sprintf("%d", nonzero)),
-			termio.NewText(fmt.Sprintf("%d", bytes)),
-		)
+	for i, s := range cfg.summarisers {
+		tbl.Set(uint(i)+1, 0, termio.NewText(s.Name))
 	}
 	//
-	tbl.SetMaxWidths(64)
+	for mid := range n {
+		var (
+			mod = shard.Module(mid)
+			row = make([]termio.FormattedText, len(cfg.summarisers)+1)
+		)
+		//
+		row[0] = termio.NewText(mod.Name())
+		//
+		for i, summary := range cfg.summarisers {
+			var count = summary.Summary(mod)
+			//
+			row[i+1] = termio.NewText(humanCount(cfg.human, count))
+		}
+		//
+		tbl.SetRow(mid+1, row...)
+	}
+	//
+	tbl.SetMaxWidths(cfg.maxCellWidth)
 	// Separate the summary stats (above) from the per-module stats (below) with a
 	// horizontal rule as wide as the module table.
 	fmt.Println(strings.Repeat("-", int(tbl.PrintedWidth())))
 	// Sort modules (descending) by cell count, skipping the title row.
-	tbl.Sort(1, termio.NewTableSorter().SortNumericalColumn(4).Invert())
+	if cfg.sortedBy.HasValue() {
+		sorter := termio.NewTableSorter().
+			SortNumericalColumn(cfg.sortedBy.Unwrap()).
+			Invert()
+			//
+		tbl.Sort(1, sorter)
+	}
+	//
 	tbl.Print(AnsiEscapes)
 }
 
-// byteWidth returns the number of bytes required to hold a value of the given
-// bit-width (i.e. the bit-width rounded up to the nearest byte).
-func byteWidth(bitwidth uint) uint {
-	w := bitwidth / 8
+// ============================================================================
+// Module Summarisers
+// ============================================================================
+
+// ModuleSummariser abstracts the notion of a function which summarises the
+// contents of a given column.
+type ModuleSummariser[F field.Element[F]] struct {
+	Name        string
+	Description string
+	Summary     func(trace.Module[F]) uint64
+}
+
+// Used to show the available options on the command-line.
+func moduleSummariserOptions[F field.Element[F]]() string {
+	summarisers := "\n"
 	//
-	if bitwidth%8 != 0 {
-		w++
+	for _, s := range moduleSummarisers[F]() {
+		summarisers = fmt.Sprintf("%s--- %s (%s)\n", summarisers, s.Name, s.Description)
 	}
 	//
-	return w
+	return summarisers
+}
+
+// moduleSummarisers provides a list of suitable summarisers.
+func moduleSummarisers[F field.Element[F]]() []ModuleSummariser[F] {
+	return []ModuleSummariser[F]{
+		{"columns", "column count for module", moduleColumnSummariser[F]},
+		{"lines", "line count for module", moduleLineSummariser[F]},
+		{"cells", "total number of cells traced for module", moduleCellSummariser[F]},
+		{"bytes", "total number of bytes used to hold trace", moduleBytesSummariser[F]},
+		{"unique", "total number of unique cells traced for module", moduleUniqueSummariser[F]},
+	}
+}
+
+func moduleColumnSummariser[F field.Element[F]](mod trace.Module[F]) uint64 {
+	return uint64(mod.Width())
+}
+
+func moduleCellSummariser[F field.Element[F]](mod trace.Module[F]) uint64 {
+	return uint64(mod.Height()) * uint64(mod.Width())
+}
+
+func moduleLineSummariser[F field.Element[F]](mod trace.Module[F]) uint64 {
+	return uint64(mod.Height())
+}
+
+func moduleBytesSummariser[F field.Element[F]](mod trace.Module[F]) uint64 {
+	var count uint64
+	//
+	for i := range mod.Descriptor().Columns {
+		var data = mod.Column(uint(i))
+		//
+		if data != nil {
+			count += uint64(data.Bytes())
+		}
+	}
+	//
+	return count
+}
+
+func moduleUniqueSummariser[F field.Element[F]](mod trace.Module[F]) uint64 {
+	var count uint64
+	//
+	for i := range mod.Descriptor().Columns {
+		var data = mod.Column(uint(i))
+		//
+		if data != nil {
+			count += uniqueElementsSummariser(data)
+		}
+	}
+	//
+	return count
+}
+
+func uniqueElementsSummariser[F field.Element[F]](data array.Array[F]) uint64 {
+	//
+	elems := hash.NewSet[word.BigEndian](data.Len() / 2)
+	// Add all the elements
+	for i := uint(0); i < data.Len(); i++ {
+		var (
+			ith  = data.Get(i)
+			word word.BigEndian
+		)
+		//
+		elems.Insert(word.SetBytes(ith.Bytes()))
+	}
+	// Done
+	return uint64(elems.Size())
 }

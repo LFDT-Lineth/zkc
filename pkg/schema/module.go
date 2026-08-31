@@ -55,7 +55,7 @@ type ModuleView interface {
 
 // Module represents a "table" within a schema which contains zero or more rows
 // for a given set of registers.
-type Module[F any] interface {
+type Module[F field.Element[F]] interface {
 	ModuleView
 	// Assignments returns an iterator over the assignments of this module.
 	// These are the computations used to assign values to all computed columns

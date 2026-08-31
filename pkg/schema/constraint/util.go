@@ -18,12 +18,14 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // CheckConsistent performs a simple consistency check for terms in a given
 // module.  Specifically, to check that: (1) the module exists; (2) all used
 // registers existing with then given module.
-func CheckConsistent[F any, E term.Contextual](module uint, schema schema.AnySchema[F], terms ...E) []error {
+func CheckConsistent[F field.Element[F], E term.Contextual](module uint, schema schema.AnySchema[F], terms ...E,
+) []error {
 	var errs []error
 	// Sanity check module
 	if module >= schema.Width() {
@@ -49,7 +51,7 @@ func CheckConsistent[F any, E term.Contextual](module uint, schema schema.AnySch
 
 // DetermineHandle is a very simple helper which determines a suitable qualified
 // name for the given constraint handle.
-func DetermineHandle[F any](handle string, ctx schema.ModuleId, tr trace.Shard[F]) string {
+func DetermineHandle[F field.Element[F]](handle string, ctx schema.ModuleId, tr trace.Shard[F]) string {
 	modName := tr.Module(ctx).Name()
 	//
 	return trace.QualifiedColumnName(modName, handle)

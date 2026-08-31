@@ -40,7 +40,7 @@ type Transcriber[W Word[W], F Element[F]] func(state vm.State[W]) []F
 // function occupies exactly one active row; padding rows are left at 0.
 // TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
 // OLI won't have a $ret column
-func initOneLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.Function[W]) (module M) {
+func initOneLineFunction[W Word[W], F Element[F]](f vm.Function[W]) (module *trace.ModuleBuilder[F]) {
 	var (
 		// Native functions do not (currently) have return lines
 		hasRet = !f.IsNative()
@@ -53,12 +53,12 @@ func initOneLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.Fu
 		regs = append(regs, trace.NewColumnDescriptor(RET_NAME, util.Some[uint](1)))
 	}
 	// Initialise the module
-	return module.Initialise(trace.NewModuleDescriptor(f.Name(), regs))
+	return trace.InitModuleBuilder[F](trace.NewModuleDescriptor(f.Name(), regs))
 }
 
 // traceOneLineFunction materialises a trace row for a one-line function.
-func traceOneLineFunction[W Word[W], F Element[F]](f vm.Function[W], m Module[F], st vm.State[W], scratch []F,
-) {
+func traceOneLineFunction[W Word[W], F Element[F]](f vm.Function[W], m *trace.ModuleBuilder[F], st vm.State[W],
+	scratch []F) {
 	//
 	var (
 		one    = field.Uint64[F](1)
@@ -91,7 +91,7 @@ func traceOneLineFunction[W Word[W], F Element[F]](f vm.Function[W], m Module[F]
 // +----------+-----+----+--------+--------+-----+
 //
 // Here, REGS is the set of registers declared by the given function.
-func initMultiLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.Function[W]) (module M) {
+func initMultiLineFunction[W Word[W], F Element[F]](f vm.Function[W]) (module *trace.ModuleBuilder[F]) {
 	var (
 		nVectors = uint(len(f.Vectors()))
 		// Copy over all address / data lines
@@ -111,11 +111,11 @@ func initMultiLineFunction[W Word[W], F Element[F], M ModuleBuilder[F, M]](f vm.
 		regs = append(regs, trace.NewColumnDescriptor(SelectorName(k), u1))
 	}
 	// Initialise the module
-	return module.Initialise(trace.NewModuleDescriptor(f.Name(), regs))
+	return trace.InitModuleBuilder[F](trace.NewModuleDescriptor(f.Name(), regs))
 }
 
 // traceMultiLineFunction materialises a trace row a multi-line function
-func traceMultiLineFunction[W Word[W], F Element[F]](m Module[F], st vm.State[W], scratch []F) {
+func traceMultiLineFunction[W Word[W], F Element[F]](m *trace.ModuleBuilder[F], st vm.State[W], scratch []F) {
 	//
 	var (
 		one = field.Uint64[F](1)

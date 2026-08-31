@@ -18,7 +18,6 @@ import (
 	"os"
 	"runtime"
 	"runtime/pprof"
-	"slices"
 
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
@@ -221,21 +220,18 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], builder i
 	cfg CheckConfig, trace tr.Trace[F]) bool {
 	// begin performance measurement
 	var (
-		mapping     = module.IdentityMap[F](schema.Modules().Collect()...)
-		stats       = util.NewPerfStats()
-		recoverable bool
-		errs        []error
+		mapping = module.IdentityMap[F](schema.Modules().Collect()...)
+		stats   = util.NewPerfStats()
+		errs    []error
 	)
 	//
 	trace, errs = builder.Build(schema, trace)
-	// Check whether any invalid traces
-	recoverable = !slices.Contains(trace, nil)
 	// Log cost of expansion
 	stats.Log("Expanding trace columns")
 	// Report any errors
 	reportErrors(ir, errs)
 	// Check whether considered unrecoverable
-	if !recoverable || len(errs) > 0 {
+	if len(errs) > 0 {
 		return false
 	}
 	//

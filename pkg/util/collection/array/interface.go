@@ -24,39 +24,29 @@ type Array[T any] interface {
 	fmt.Stringer
 	// Return the number of bits required to store an element of this array.
 	BitWidth() uint
-	// Clone this array producing a mutable copy
-	Clone() MutArray[T]
-	// Encode writes the contents of this array into the given buffer, using
-	// the natural encoding for this array representation.  The encoding is
-	// self-delimiting given the length of the array (i.e. Decode can determine
-	// how many bytes to read given the number of encoded elements).
-	Encode(*bytes.Buffer)
+	// Bytes returns (approximately) the number of bytes required to store the
+	// data of this column.
+	Bytes() uint
 	// Get returns the element at the given index in this array.
 	Get(uint) T
 	// Returns the number of elements in this array.
 	Len() uint
-	// Pad returns a copy of this array with n copies of the given value
-	// prepended and m copies appended.  The receiver is left unmodified.
-	Pad(uint, uint, T) MutArray[T]
+	// Pad returns a copy of this array padding with n zero values prepended.
+	// The receiver is left unmodified.
+	Pad(uint) Array[T]
 }
 
 // MutArray provides a generice interface to an array of elements.  Typically, we
 // are interested in arrays of field elements here.
 type MutArray[T any] interface {
-	Array[T]
+	// Build the given array
+	Build() Array[T]
 	// Append new element onto the end of array producing an updated array.
 	// This updates the array in place, and will panic if the given value is not
 	// representable in the array.
-	Append(T)
-	// Decode reads a given number of elements from the given buffer into this
-	// array, replacing any existing contents.  The data is expected to be in
-	// the natural encoding for this array representation (i.e. as produced by
-	// Encode).
-	Decode(uint, *bytes.Buffer) error
-	// Set the element at the given index in this array, overwriting the
-	// original value. This updates the array in place, and will panic if the
-	// given value is not representable in the array.
-	Set(uint, T)
+	Append(T) MutArray[T]
+	// Returns current height of array being built
+	Height() uint
 }
 
 // writeUvarint writes an unsigned varint into the given buffer.

@@ -16,44 +16,79 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // MarshalBinary encodes a trace into a binary format.  Lengths, counts and
 // descriptor metadata are encoded as unsigned varints.  Register data is
 // encoded column-major, with each column written using the natural encoding of
 // its underlying array representation (see array.Array.Encode).
-func MarshalBinary[T any, M ModuleBuilder[T, M]](tr Array[T, M]) ([]byte, error) {
-	var buffer bytes.Buffer
+func MarshalBinary[F field.Element[F]](tr Trace[F]) ([]byte, error) {
+	var (
+		buffer  bytes.Buffer
+		nShards = uint(len(tr))
+		width   = tr[0].Width()
+	)
 	//
 	buffer.Write(traceBinaryMagic)
-	writeUvarint(&buffer, tr.Width())
+	// Write number of shards recorded
+	writeUvarint(&buffer, nShards)
+	// Write number of modules in each shard
+	writeUvarint(&buffer, width)
 	//
-	for mid := uint(0); mid < tr.Width(); mid++ {
-		marshalModule(&buffer, tr.Module(mid))
+	for _, shard := range tr {
+		if shard.Width() != width {
+			panic("malformed trace")
+		}
+		//
+		for mid := uint(0); mid < shard.Width(); mid++ {
+			marshalModule(&buffer, shard.Module(mid))
+		}
 	}
 	//
 	return buffer.Bytes(), nil
 }
 
 // UnmarshalBinary decodes a trace encoded by MarshalBinary.
-func (p *Array[T, M]) UnmarshalBinary(data []byte) error {
-	var buffer = bytes.NewBuffer(data)
+func (p *Trace[F]) UnmarshalBinary(data []byte) (err error) {
+	var (
+		buffer   = bytes.NewBuffer(data)
+		nShards  uint
+		nModules uint
+	)
+	// Sanity check magic
+	magic := buffer.Next(len(traceBinaryMagic))
 	//
-	modules, err := unmarshalModules[T, M](buffer)
-	if err != nil {
+	if len(magic) != len(traceBinaryMagic) || !bytes.Equal(magic, traceBinaryMagic) {
+		return fmt.Errorf("malformed binary: invalid header")
+	} else if nShards, err = readUvarint(buffer); err != nil {
 		return err
-	} else if buffer.Len() != 0 {
-		return fmt.Errorf("malformed rtrace binary: %d trailing bytes", buffer.Len())
+	} else if nModules, err = readUvarint(buffer); err != nil {
+		return err
 	}
 	//
-	p.modules = modules
+	*p = make([]Shard[F], nShards)
+	//
+	for shard := range nShards {
+		var ith = make([]Module[F], nModules)
+		//
+		for mid := range nModules {
+			if ith[mid], err = unmarshalModule[F](buffer); err != nil {
+				return err
+			}
+		}
+		// Construct ith shard
+		(*p)[shard] = NewShard(ith)
+	}
 	//
 	return nil
 }
 
-func marshalModule[T any](buffer *bytes.Buffer, module Module[T]) {
+func marshalModule[F field.Element[F]](buffer *bytes.Buffer, module Module[F]) {
 	var metadata uint
 	// Build metadata
 	if module.Descriptor().Replicated {
@@ -66,24 +101,11 @@ func marshalModule[T any](buffer *bytes.Buffer, module Module[T]) {
 	writeUvarint(buffer, module.Height())
 	//
 	for cid := uint(0); cid < module.Width(); cid++ {
-		module.Column(cid).Encode(buffer)
+		array.Encode(module.Column(cid), buffer)
 	}
 }
 
-func unmarshalModules[T any, M ModuleBuilder[T, M]](buffer *bytes.Buffer) ([]M, error) {
-	if buffer.Len() < len(traceBinaryMagic) {
-		return nil, fmt.Errorf("malformed rtrace binary: missing header")
-	}
-	//
-	magic := buffer.Next(len(traceBinaryMagic))
-	if !bytes.Equal(magic, traceBinaryMagic) {
-		return nil, fmt.Errorf("malformed rtrace binary: invalid header")
-	}
-	//
-	return readSlice(buffer, unmarshalModule[T, M])
-}
-
-func unmarshalModule[T any, M ModuleBuilder[T, M]](buffer *bytes.Buffer) (M, error) {
+func unmarshalModule[F field.Element[F]](buffer *bytes.Buffer) (module Module[F], err error) {
 	var (
 		r = reader{buf: buffer}
 		//
@@ -92,22 +114,23 @@ func unmarshalModule[T any, M ModuleBuilder[T, M]](buffer *bytes.Buffer) (M, err
 		metadata    = r.uvarint()
 		height      = r.uvarint()
 		replicated  = metadata != 0
-		//
-		module M
+		columns     = make([]array.Array[F], len(descriptors))
 	)
 	//
 	if r.err != nil {
 		return module, r.err
 	}
-	// Initialise (empty) module, thereby allocating an appropriate array
-	// representation for each descriptor.
-	module = module.Initialise(ModuleDescriptor{name, descriptors, replicated})
 	// Decode each column in place.
-	for cid := range uint(len(descriptors)) {
-		if err := module.MutColumn(cid).Decode(height, buffer); err != nil {
+	for cid, descriptor := range descriptors {
+		bitwidth := descriptor.Bitwidth.UnwrapOr(math.MaxUint)
+		//
+		if columns[cid], err = array.Decode[F](bitwidth, height, buffer); err != nil {
 			return module, err
 		}
 	}
+	// Initialise (empty) module, thereby allocating an appropriate array
+	// representation for each descriptor.
+	module = NewModule(ModuleDescriptor{name, descriptors, replicated}, columns...)
 	//
 	return module, nil
 }

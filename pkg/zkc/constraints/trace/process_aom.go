@@ -31,7 +31,7 @@ import (
 //
 // Here, ADDRESS is the set of declared input registers, whilst DATA is the set
 // of declared output registers.
-func initAccessOnceMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](m vm.Memory[W]) (module M) {
+func initAccessOnceMemory[W Word[W], F Element[F]](m vm.Memory[W]) (module *trace.ModuleBuilder[F]) {
 	var (
 		// Number of address lines
 		nAddressLines = m.NumInputs()
@@ -54,12 +54,13 @@ func initAccessOnceMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](m vm.M
 	descriptor := trace.NewModuleDescriptor(m.Name(), regs).
 		WithReplication(true)
 	//
-	return module.Initialise(descriptor)
+	return trace.InitModuleBuilder[F](descriptor)
 }
 
 // traceAccessOnceMemory materialises the trace rows for a read-only (ROM) or
 // write-once (WOM) memory
-func traceAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.RuntimeMemory[W], module Module[F], scratch []F) {
+func traceAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.RuntimeMemory[W], module *trace.ModuleBuilder[F],
+	scratch []F) {
 	var (
 		one      = field.Uint64[F](1)
 		geometry = m.Descriptor()

@@ -57,29 +57,19 @@ func (e *PseudoInverse[F]) Bounds(mid schema.ModuleId) util.Bounds {
 }
 
 // Compute performs the inversion.
-func (e *PseudoInverse[F]) Compute(tr trace.Shard[F], schema schema.AnySchema[F]) ([]array.MutArray[F], error) {
+func (e *PseudoInverse[F]) Compute(tr trace.Shard[F], schema schema.AnySchema[F]) ([]array.Array[F], error) {
 	var (
 		trModule = tr.Module(e.Target.Module())
 		scModule = schema.Module(e.Target.Module())
-		err      error
 	)
-	// Determine multiplied height
-	height := trModule.Height()
-	// FIXME: using a large bitwidth here ensures the underlying data is
-	// represented using a full field element, rather than e.g. some smaller
-	// number of bytes.  This is needed to handle reject tests which can produce
-	// values outside the range of the computed register, but which we still
-	// want to check are actually rejected (i.e. since they are simulating what
-	// an attacker might do).
-	data := array.Alloc[F](math.MaxUint, height)
 	// Expand the trace
-	data, err = invert(data, e.Expr, trModule, scModule)
+	data, err := invert(e.Expr, trModule, scModule)
 	// Sanity check
 	if err != nil {
 		return nil, err
 	}
 	// Done
-	return []array.MutArray[F]{data}, err
+	return []array.Array[F]{data}, err
 }
 
 // Consistent performs some simple checks that the given assignment is
@@ -157,23 +147,29 @@ func (e *PseudoInverse[F]) RequiredCells(row int, mid trace.ModuleId) *set.AnySo
 }
 
 func invert[F field.Element[F]](
-	data array.MutArray[F],
 	expr term.Evaluable[F],
 	trMod trace.Module[F],
 	scMod schema.Module[F],
-) (array.MutArray[F], error) {
+) (array.Array[F], error) {
+	// FIXME: this process is relatively inefficient for modules with
+	// signifciant padding.  In particular, because it enumerates each padding
+	// value individually, rather than treating them as one large chunk.
+	data := make([]F, trMod.Height())
 	// Forwards computation
-	for i := range data.Len() {
+	for i := range trMod.Height() {
 		val, err := expr.EvalAt(i, trMod, scMod)
 		// error check
 		if err != nil {
-			return data, err
+			return nil, err
 		}
 		//
-		data.Set(i, val)
+		data[i] = val
 	}
-	//
+	// Apply the batch inversion algorithm.
 	field.BatchInvert(data)
-	//
-	return data, nil
+	// NOTE: using a large bitwidth here ensures the underlying data is
+	// represented using a full field element, rather than e.g. some smaller
+	// number of bytes.  This is necessary since the inverse of a value can
+	// occupy anything.
+	return array.NewStaticArray(math.MaxUint, data...).Build(), nil
 }

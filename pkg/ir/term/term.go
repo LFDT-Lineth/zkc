@@ -42,7 +42,7 @@ type Contextual interface {
 // produce an evaluation point.  For example, expressions in the
 // Mid-Level or Arithmetic-Level IR can all be evaluated at rows of a
 // table.
-type Evaluable[F any] interface {
+type Evaluable[F field.Element[F]] interface {
 	util.Boundable
 	Contextual
 	// EvalAt evaluates this expression in a given tabular context.
@@ -75,7 +75,7 @@ type Shiftable[T any] interface {
 }
 
 // Expr represents a component of an MIR/AIR expression.
-type Expr[F any, T any] interface {
+type Expr[F field.Element[F], T any] interface {
 	Contextual
 	Shiftable[T]
 	Evaluable[F]
@@ -98,7 +98,7 @@ type Costable interface {
 // Evaluable is that, for historical reasons, logical constraints cannot be
 // Evaluable (i.e. because they return multiple values, rather than a single
 // value).  However, such constraints remain testable.
-type Testable[F any] interface {
+type Testable[F field.Element[F]] interface {
 	util.Boundable
 	Contextual
 	// TestAt evaluates this expression in a given tabular context and checks it
@@ -114,7 +114,7 @@ type Testable[F any] interface {
 
 // Logical represents a term which can be tested for truth or falsehood.
 // For example, an equality comparing two arithmetic terms is a logical term.
-type Logical[F any, T any] interface {
+type Logical[F field.Element[F], T any] interface {
 	Contextual
 	Shiftable[T]
 	Testable[F]

@@ -13,61 +13,85 @@
 package trace
 
 import (
-	"fmt"
+	"math"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Trace represents a complete (sharded) trace.  That is, an array of shards.
-type Trace[T any] []Shard[T]
+type Trace[F field.Element[F]] []Shard[F]
 
-// Shard forms part of a trace, and describes a set of named modules whose data
-// is organised by row.
-type Shard[T any] interface {
-	// Determine whether this trace has a module with the given name and, if so,
-	// what its module index is.
-	HasModule(name string) (uint, bool)
-	// Access a given module in this trace.
-	Module(uint) Module[T]
-	// Returns an iterator over the contained modules.
-	Modules() iter.Iterator[Module[T]]
-	// Returns the number of modules in this trace.
-	Width() uint
+// Shard describes an immutable set of named modules whose data is organised by
+// columns.
+type Shard[F field.Element[F]] struct {
+	// Holds the set of modules in this trace.  The index of each module in this
+	// array uniquely identifies it, and is referred to as the "module index".
+	modules []Module[F]
 }
 
-// Module describes a module within the trace.  Every module is a collection of
-// zero or more data columns with the same height.  The width of a module is the
-// number of such columns it contains.  Every column in the module has a
-// "descriptor" which provides metadata about the columns, such as its name and
-// declared bitwidth, etc.
-type Module[T any] interface {
-	fmt.Stringer
-	// Append a given row onto this module.  This will panic if the length of
-	// this row does not match the width of this module.
-	Append(...T)
-	// Module name.
-	Name() string
-	// Column returns the data for the column at the given index.
-	Column(uint) array.Array[T]
-	// MutColumn returns a mutable reference to the underlying data of the given
-	// column.
-	MutColumn(uint) array.MutArray[T]
-	// Descriptor returns the descriptor of this module.
-	Descriptor() ModuleDescriptor
-	// Returns the number of columns in this module.
-	Width() uint
-	// Returns the height (i.e. number of rows) of this module.
-	Height() uint
+// NewShard constructs a new shard from a given set of module traces.
+func NewShard[F field.Element[F]](modules []Module[F]) Shard[F] {
+	return Shard[F]{modules}
 }
 
-// ModuleBuilder describes an extended module which can be used for the purposes
-// of constructing new modules.
-type ModuleBuilder[T any, M any] interface {
-	Module[T]
-	// Initialise a new module from a given set of rows.
-	Initialise(ModuleDescriptor) M
+// IsEmpty determines whether or not this shard is completely empty.
+func (p Shard[F]) IsEmpty() bool {
+	return p.modules == nil
+}
+
+// HasModule determines whether this trace has a module with the given name and,
+// if so, what its module index is.
+func (p Shard[F]) HasModule(name string) (uint, bool) {
+	for mid, mod := range p.modules {
+		if mod.Name() == name {
+			return uint(mid), true
+		}
+	}
+	//
+	return math.MaxUint, false
+}
+
+// Module returns a specific module in this trace.
+func (p Shard[F]) Module(module uint) Module[F] {
+	return p.modules[module]
+}
+
+// RawModule returns a specific (raw) module in this trace.
+func (p Shard[F]) RawModule(module uint) Module[F] {
+	return p.modules[module]
+}
+
+// Modules returns an iterator over the modules in this trace.
+func (p Shard[F]) Modules() iter.Iterator[Module[F]] {
+	it := iter.NewArrayIterator(p.modules)
+	//
+	return iter.NewCastIterator[Module[F], Module[F]](it)
+}
+
+// Width returns the number of modules in this trace.
+func (p Shard[F]) Width() uint {
+	return uint(len(p.modules))
+}
+
+func (p Shard[F]) String() string {
+	var id strings.Builder
+
+	id.WriteString("{")
+	//
+	for i, m := range p.modules {
+		if i != 0 {
+			id.WriteString(", ")
+		}
+		//
+		id.WriteString(m.String())
+	}
+	//
+	id.WriteString("}")
+	//
+	return id.String()
 }
 
 // ModuleDescriptor describes an individual module within a trace, including all

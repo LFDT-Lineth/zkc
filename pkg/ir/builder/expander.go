@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Expander encapsulates key state required in order to expand traces safely
@@ -27,7 +28,7 @@ import (
 // However, some assignments must be run before others.  For example, if one
 // assignment depends upon a column which is computed by another, then the
 // latter must go first.
-type Expander[F any] struct {
+type Expander[F field.Element[F]] struct {
 	// Width records the number of modules in the schema.
 	width uint
 	// Set of assignments yet to run
@@ -39,7 +40,7 @@ type Expander[F any] struct {
 }
 
 // NewExpander constructs a new trace expander for a given set of assignments.
-func NewExpander[F any](width uint, assignments iter.Iterator[sc.Assignment[F]]) Expander[F] {
+func NewExpander[F field.Element[F]](width uint, assignments iter.Iterator[sc.Assignment[F]]) Expander[F] {
 	var (
 		notReady  bit.Set
 		expanding bit.Set

@@ -62,7 +62,7 @@ func isOne[F field.Element[F], T Expr[F, T]](term T) bool {
 	return false
 }
 
-func lispOfLogicalTerms[F any, T Logical[F, T]](global bool, mapping register.Map, op string,
+func lispOfLogicalTerms[F field.Element[F], T Logical[F, T]](global bool, mapping register.Map, op string,
 	exprs []T) sexp.SExp {
 	//
 	arr := make([]sexp.SExp, 1+len(exprs))
@@ -79,7 +79,8 @@ func lispOfLogicalTerms[F any, T Logical[F, T]](global bool, mapping register.Ma
 	return sexp.NewList(arr)
 }
 
-func lispOfTerms[F any, E any, T Expr[F, E]](global bool, mapping register.Map, op string, exprs []T) sexp.SExp {
+func lispOfTerms[F field.Element[F], E any, T Expr[F, E]](global bool, mapping register.Map, op string, exprs []T,
+) sexp.SExp {
 	arr := make([]sexp.SExp, 1+len(exprs))
 	arr[0] = sexp.NewSymbol(op)
 	// Translate arguments

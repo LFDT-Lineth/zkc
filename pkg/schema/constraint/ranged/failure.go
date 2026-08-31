@@ -19,10 +19,11 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Failure provides structural information about a failing type constraint.
-type Failure[F any] struct {
+type Failure[F field.Element[F]] struct {
 	// Handle of the failing constraint
 	RangeHandle string
 	// Enclosing context

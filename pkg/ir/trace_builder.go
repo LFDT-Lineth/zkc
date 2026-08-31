@@ -136,7 +136,7 @@ func (tb TraceBuilder[F]) buildShard(schema sc.AnySchema[F], shard uint, tf trac
 ) (tr trace.Shard[F], errs []error) {
 	//
 	var (
-		atr builder.ArrayTrace[F]
+		atr trace.Shard[F]
 		//
 		config = builder.Config{
 			Parallel:  false,
@@ -147,19 +147,20 @@ func (tb TraceBuilder[F]) buildShard(schema sc.AnySchema[F], shard uint, tf trac
 	)
 	// Apply trace alignment and padding
 	if atr, errs = builder.AlignAndPad(config, schema, tf); len(errs) > 0 {
-		return nil, errs
+		return atr, errs
 	}
 	// Apply trace expansion (if requested)
 	if tb.expand {
+		var err error
 		// Expand trace
-		if err := builder.TraceExpansion(config, schema, atr); err != nil {
-			return nil, append(errs, err)
+		if atr, err = builder.TraceExpansion(config, schema, atr); err != nil {
+			return atr, append(errs, err)
 		}
 		// Validate expanded trace
 		if tb.validate {
 			// Run (parallel) trace validation
-			if errs := builder.TraceValidation(config, schema, atr); len(errs) > 0 {
-				return nil, errs
+			if errs = builder.TraceValidation(config, schema, atr); len(errs) > 0 {
+				return atr, errs
 			}
 		}
 	}

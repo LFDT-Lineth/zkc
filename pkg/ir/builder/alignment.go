@@ -23,12 +23,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
-// ArrayModule provides a convenient alias.
-type ArrayModule[F field.Element[F]] = *trace.CompactModule[F]
-
-// ArrayTrace provides a convenient alias.
-type ArrayTrace[F field.Element[F]] = *trace.Array[F, ArrayModule[F]]
-
 // PaddingStrategy captures the notion of an algorithm that determines how much front padding is added to each module
 // when expanding a trace (see TraceBuilder.WithPadding).
 type PaddingStrategy func(height, multiplier uint) uint
@@ -58,11 +52,11 @@ type Config struct {
 // not. Specifically, expanding traces don't need to include data for computed
 // columns, since these will be added during expansion.
 func AlignAndPad[F field.Element[F]](config Config, schema sc.AnySchema[F], tr trace.Shard[F],
-) (ArrayTrace[F], []error) {
+) (trace.Shard[F], []error) {
 	//
 	var (
 		errors  []error
-		modules = make([]ArrayModule[F], schema.Width())
+		modules = make([]trace.Module[F], schema.Width())
 		modmap  = make(map[string]uint)
 		seen    = make([]bool, tr.Width())
 	)
@@ -88,7 +82,7 @@ func AlignAndPad[F field.Element[F]](config Config, schema sc.AnySchema[F], tr t
 			// all computed) is legitimately allowed to have no presence in
 			// the trace at all.  Any genuinely missing data is detected
 			// below, on a column-by-column basis.
-			trMod = trace.NewCompactModule[F](trace.NewModuleDescriptor(scMod.Name(), nil))
+			trMod = trace.NewModule[F](trace.NewModuleDescriptor(scMod.Name(), nil))
 		}
 		// Align trace
 		modules[i], errs = alignModule(config, scMod, trMod)
@@ -109,11 +103,11 @@ func AlignAndPad[F field.Element[F]](config Config, schema sc.AnySchema[F], tr t
 	//
 	errors = append(errors, errs...)
 	// Done
-	return trace.NewArray(modules), errors
+	return trace.NewShard(modules), errors
 }
 
 func alignModule[F field.Element[F]](config Config, scMod sc.Module[F], trMod trace.Module[F],
-) (ArrayModule[F], []error) {
+) (trace.Module[F], []error) {
 	var (
 		errors []error
 		width  = uint(len(scMod.Registers()))
@@ -121,7 +115,7 @@ func alignModule[F field.Element[F]](config Config, scMod sc.Module[F], trMod tr
 		// modules to ensure they are consistent.
 		height      uint
 		descriptors = make([]trace.ColumnDescriptor, width)
-		columns     = make([]array.MutArray[F], width)
+		columns     = make([]array.Array[F], width)
 		regmap      = make(map[string]uint)
 		seen        = make([]bool, trMod.Width())
 	)
@@ -156,7 +150,7 @@ func alignModule[F field.Element[F]](config Config, scMod sc.Module[F], trMod tr
 			errs = append(errs, fmt.Errorf("duplicate column '%s' in module '%s' of trace", ith.Name, trMod.Name()))
 		} else {
 			// Clone underlying data
-			columns[cid] = trMod.MutColumn(i)
+			columns[cid] = trMod.Column(i)
 			// Mark column as seen
 			seen[cid] = true
 			// Update maximum height
@@ -181,5 +175,5 @@ func alignModule[F field.Element[F]](config Config, scMod sc.Module[F], trMod tr
 		}
 	}
 	// Done
-	return trace.NewCompactModule(trace.NewModuleDescriptor(scMod.Name(), descriptors), columns...), errors
+	return trace.NewModule(trace.NewModuleDescriptor(scMod.Name(), descriptors), columns...), errors
 }

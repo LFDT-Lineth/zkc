@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
@@ -28,9 +29,7 @@ type (
 	// Memory provides a useful alias
 	Memory[W Word[W]] = vm.RuntimeMemory[W]
 	// Module provides a useful alias
-	Module[F any] = trace.Module[F]
-	// ModuleBuilder provides a useful alias
-	ModuleBuilder[F any, M trace.Module[F]] = trace.ModuleBuilder[F, M]
+	Module[F field.Element[F]] = trace.Module[F]
 )
 
 const (
@@ -112,47 +111,51 @@ func toTraceRegister[W Word[W]](_ uint, reg vm.Register[W]) trace.ColumnDescript
 // auxiliary registers as required (e.g. for selector bits, etc).  For
 // functions, this means transcribing each state generated for the function
 // during execution.
-type Builder[W Word[W], F Element[F], M trace.ModuleBuilder[F, M]] struct {
+type Builder[W Word[W], F Element[F]] struct {
 	descriptors []vm.Module[W]
 	// set of modules actively being traced
-	modules []M
+	modules []*trace.ModuleBuilder[F]
 	// scratch memory area, used to avoid memory allocation.
 	scratch []F
 }
 
 // Init initialises a new trace builder from a given program.
-func (p Builder[W, F, M]) Init(program vm.Program[W]) Builder[W, F, M] {
+func (p Builder[W, F]) Init(program vm.Program[W]) Builder[W, F] {
 	var (
 		maxWidth uint
 		//
-		modules = make([]M, len(program.Modules()))
+		modules = make([]*trace.ModuleBuilder[F], len(program.Modules()))
 	)
 	//
 	for i, m := range program.Modules() {
 		switch m := m.(type) {
 		case *vm.Function[W]:
 			if m.IsOneLine() {
-				modules[i] = initOneLineFunction[W, F, M](*m)
+				modules[i] = initOneLineFunction[W, F](*m)
 			} else {
-				modules[i] = initMultiLineFunction[W, F, M](*m)
+				modules[i] = initMultiLineFunction[W, F](*m)
 			}
 		case *vm.Memory[W]:
-			modules[i] = initialiseMemory[W, F, M](program.Field(), *m)
+			modules[i] = initialiseMemory[W, F](program.Field(), *m)
 		}
 		// Update maximum width
 		maxWidth = max(maxWidth, modules[i].Width())
 	}
 	// allocate scratch memory
-	return Builder[W, F, M]{program.Modules(), modules, make([]F, maxWidth)}
+	return Builder[W, F]{program.Modules(), modules, make([]F, maxWidth)}
 }
 
 // Build implementation for TraceBuilder interface.
-func (p Builder[W, F, M]) Build() trace.Shard[F] {
-	return trace.NewArray(p.modules)
+func (p Builder[W, F]) Build() trace.Shard[F] {
+	var tr = trace.NewShard(array.Map(p.modules, func(_ uint, b *trace.ModuleBuilder[F]) trace.Module[F] {
+		return b.Build()
+	}))
+	//
+	return tr
 }
 
 // TraceFunctionLine implementation for the vm.TraceBuilder interface.
-func (p Builder[W, F, M]) TraceFunctionLine(state vm.State[W]) {
+func (p Builder[W, F]) TraceFunctionLine(state vm.State[W]) {
 	var (
 		mod = p.modules[state.Fid()]
 		f   = p.descriptors[state.Fid()].(*vm.Function[W])
@@ -166,7 +169,7 @@ func (p Builder[W, F, M]) TraceFunctionLine(state vm.State[W]) {
 }
 
 // TraceMemory implementation for the vm.TraceBuilder interface.
-func (p Builder[W, F, M]) TraceMemory(mid uint16, m vm.RuntimeMemory[W], field field.Config) {
+func (p Builder[W, F]) TraceMemory(mid uint16, m vm.RuntimeMemory[W], field field.Config) {
 	var module = p.modules[mid]
 	//
 	switch m.Descriptor().Kind() {
@@ -181,19 +184,18 @@ func (p Builder[W, F, M]) TraceMemory(mid uint16, m vm.RuntimeMemory[W], field f
 	}
 }
 
-func initialiseMemory[W Word[W], F Element[F], M trace.ModuleBuilder[F, M]](cfg field.Config, memory vm.Memory[W]) M {
+func initialiseMemory[W Word[W], F Element[F]](cfg field.Config, memory vm.Memory[W]) *trace.ModuleBuilder[F] {
 	switch memory.Kind() {
 	case vm.PRIVATE_STATIC_MEMORY, vm.PUBLIC_STATIC_MEMORY:
-		var empty M
 		// ProcessStaticMemory does what is required to represent a static memory within
 		// a trace.  Specifically, static memories do exist in the trace, but only to
 		// ensure alignment of module identifiers.  Hence, they always have an empty trace.
-		return empty.Initialise(trace.NewModuleDescriptor(memory.Name(), nil))
+		return trace.InitModuleBuilder[F](trace.NewModuleDescriptor(memory.Name(), nil))
 	case vm.PRIVATE_READ_ONLY_MEMORY, vm.PUBLIC_READ_ONLY_MEMORY:
-		return initAccessOnceMemory[W, F, M](memory)
+		return initAccessOnceMemory[W, F](memory)
 	case vm.PRIVATE_WRITE_ONCE_MEMORY, vm.PUBLIC_WRITE_ONCE_MEMORY:
-		return initAccessOnceMemory[W, F, M](memory)
+		return initAccessOnceMemory[W, F](memory)
 	default:
-		return initReadWriteMemory[W, F, M](cfg, memory)
+		return initReadWriteMemory[W, F](cfg, memory)
 	}
 }

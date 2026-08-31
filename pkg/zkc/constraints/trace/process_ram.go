@@ -73,7 +73,7 @@ type ramAccess[W Word[W]] struct {
 }
 
 // InitReadWriteMemory initialises a trace module for a RandomAccessMemory.
-func initReadWriteMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](cfg field.Config, m vm.Memory[W]) (module M) {
+func initReadWriteMemory[W Word[W], F Element[F]](cfg field.Config, m vm.Memory[W]) (module *trace.ModuleBuilder[F]) {
 	var (
 		regs = array.Map(m.Registers(), toTraceRegister)
 		// Timestamp limb widths, most-significant first: the memory's declared
@@ -115,8 +115,8 @@ func initReadWriteMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](cfg fie
 		trace.NewColumnDescriptor(RAM_EXEC_WRITE_NAME, u1),
 		trace.NewColumnDescriptor(RAM_EXEC_READ_NAME, u1),
 	)
-	//Done
-	return module.Initialise(trace.NewModuleDescriptor(m.Name(), regs))
+	// Done
+	return trace.InitModuleBuilder[F](trace.NewModuleDescriptor(m.Name(), regs))
 }
 
 // traceReadWriteMemory materialises the trace of a read-write (RAM) memory: one
@@ -125,8 +125,8 @@ func initReadWriteMemory[W Word[W], F Element[F], M ModuleBuilder[F, M]](cfg fie
 // constraints.translateReadWriteMemory; the finalization phase (FINL) is left
 // empty (the rcv/snd consistency bus and finalization rows are a follow-up), so
 // FINL-guarded columns (ADDRESS_DELTA, ADDR_CARRY) stay zero.
-func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module Module[F], cfg field.Config,
-	scratch []F) {
+func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module *trace.ModuleBuilder[F],
+	cfg field.Config, scratch []F) {
 	//
 	var (
 		geometry = m.Descriptor()

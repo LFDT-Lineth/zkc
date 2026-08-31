@@ -162,7 +162,7 @@ func printStaticContents[F field.Element[F]](module schema.Module[F], verbose bo
 	}
 }
 
-func printRegisters[F any](module schema.Module[F], prefix string, filter func(register.Register) bool) {
+func printRegisters[F field.Element[F]](module schema.Module[F], prefix string, filter func(register.Register) bool) {
 	var (
 		regT string
 	)
@@ -190,7 +190,7 @@ func printRegisters[F any](module schema.Module[F], prefix string, filter func(r
 	}
 }
 
-func countRegisters[F any](module schema.Module[F], filter func(register.Register) bool) uint {
+func countRegisters[F field.Element[F]](module schema.Module[F], filter func(register.Register) bool) uint {
 	var count = uint(0)
 	//
 	for _, r := range module.Registers() {
@@ -212,7 +212,7 @@ func requiresSpacing[F field.Element[F]](c schema.Constraint[F]) bool {
 	return false
 }
 
-func isEmptyModule[F any](module schema.Module[F]) bool {
+func isEmptyModule[F field.Element[F]](module schema.Module[F]) bool {
 	return len(module.Registers()) == 0 &&
 		module.Constraints().Count() == 0 &&
 		module.Assignments().Count() == 0

@@ -25,7 +25,7 @@ import (
 // BuildableModule embodies the notion of a module which can be initialised from
 // the various required components.  This provides a useful way for constructing
 // modules once all the various pieces of information have been finalised.
-type BuildableModule[F any, C schema.Constraint[F], M any] interface {
+type BuildableModule[F field.Element[F], C schema.Constraint[F], M any] interface {
 	Init(name module.Name, public, private, synthetic, native, static bool) M
 	// Add one or more assignments to this buildable module
 	AddAssignments(assignments ...schema.Assignment[F])

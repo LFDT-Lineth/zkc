@@ -222,7 +222,7 @@ func (p *typeDecomposition[F]) AddSource(source register.Ref) {
 // Compute computes the values of columns defined by this assignment.
 // This requires computing the value of each byte column in the decomposition.
 func (p *typeDecomposition[F]) Compute(tr trace.Shard[F], schema sc.AnySchema[F],
-) ([]array.MutArray[F], error) {
+) ([]array.Array[F], error) {
 	// Read inputs
 	sources := assignment.ReadRegistersRef(tr, p.sources...)
 	// Combine all sources
@@ -328,11 +328,11 @@ func determineLimbSplit(bitwidth uint) (uint, uint) {
 
 // Combine all values from the given source registers into a single array of
 // data, whilst eliminating duplicates.
-func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F]) array.MutArray[F] {
+func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F]) array.Array[F] {
 	//
 	var (
 		n    = sources[0].Len()
-		arr  = array.Alloc[F](bitwidth, 0)
+		arr  = array.Alloc[F](bitwidth)
 		seen = hash.NewSet[F](n)
 	)
 	// Add all values
@@ -345,30 +345,30 @@ func combineSources[F field.Element[F]](bitwidth uint, sources []array.Array[F])
 				// record have seen item
 				seen.Insert(ith)
 				// append item
-				arr.Append(ith)
+				arr = arr.Append(ith)
 			}
 		}
 	}
 	// Done
-	return arr
+	return arr.Build()
 }
 
-func computeDecomposition[F field.Element[F]](loWidth, hiWidth uint, vArr array.MutArray[F],
-) []array.MutArray[F] {
+func computeDecomposition[F field.Element[F]](loWidth, hiWidth uint, vArr array.Array[F],
+) []array.Array[F] {
 	//
 	var (
-		vLoArr = array.Alloc[F](loWidth, vArr.Len())
-		vHiArr = array.Alloc[F](hiWidth, vArr.Len())
+		vLoArr = array.Alloc[F](loWidth)
+		vHiArr = array.Alloc[F](hiWidth)
 	)
 	//
 	for i := range vArr.Len() {
 		ith := vArr.Get(i)
 		lo, hi := decompose(loWidth, ith)
-		vLoArr.Set(i, lo)
-		vHiArr.Set(i, hi)
+		vLoArr = vLoArr.Append(lo)
+		vHiArr = vHiArr.Append(hi)
 	}
 	//
-	return []array.MutArray[F]{vArr, vLoArr, vHiArr}
+	return []array.Array[F]{vArr, vLoArr.Build(), vHiArr.Build()}
 }
 
 // Decompose a given field element into its least and most significant limbs,

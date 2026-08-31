@@ -38,12 +38,12 @@ type (
 	Schema[F field.Element[F]] = schema.UniformSchema[F, Module[F]]
 	// Term represents the fundamental for arithmetic expressions in the MIR
 	// representation.
-	Term[F any] interface {
+	Term[F field.Element[F]] interface {
 		term.Expr[F, Term[F]]
 	}
 	// LogicalTerm represents the fundamental for logical expressions in the MIR
 	// representation.
-	LogicalTerm[F any] interface {
+	LogicalTerm[F field.Element[F]] interface {
 		term.Logical[F, LogicalTerm[F]]
 	}
 	// Computation captures the notion of computations used in a small number of places.

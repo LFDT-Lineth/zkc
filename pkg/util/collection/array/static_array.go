@@ -13,13 +13,23 @@
 package array
 
 import (
-	"bytes"
 	"fmt"
 	"slices"
 	"strings"
+	"unsafe"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
+
+// NewStaticArray constructs a new static array from the given elements.
+func NewStaticArray[T word.Word[T]](bitwidth uint, elements ...T) *StaticArray[T] {
+	//
+	return &StaticArray[T]{elements, bitwidth}
+}
+
+// =================================================================================
+// Implementation
+// =================================================================================
 
 // StaticArray implements an array of elements simply using an underlying array.
 type StaticArray[T word.Word[T]] struct {
@@ -29,18 +39,66 @@ type StaticArray[T word.Word[T]] struct {
 	bitwidth uint
 }
 
-// NewStaticArray constructs a new word array with a given capacity.
-func NewStaticArray[T word.Word[T]](height uint, bitwidth uint) *StaticArray[T] {
+// Bytes implementation for Array interface
+func (p StaticArray[T]) Bytes() uint {
 	var (
-		elements = make([]T, height)
+		tmp T
+		// NOTE: this works correctly only for fixed-width word types.
+		n = uint(unsafe.Sizeof(tmp))
 	)
 	//
-	return &StaticArray[T]{elements, bitwidth}
+	return n * p.Len()
 }
 
+// Len returns the number of elements in this word array.
+func (p StaticArray[T]) Len() uint {
+	//
+	return uint(len(p.data))
+}
+
+// BitWidth returns the width (in bits) of elements in this array.
+func (p StaticArray[T]) BitWidth() uint {
+	return p.bitwidth
+}
+
+// Get returns the field element at the given index in this array.
+func (p StaticArray[T]) Get(index uint) T {
+	return p.data[index]
+}
+
+// Pad returns a copy of this array with n copies of the given padding value
+// prepended, and m copies appended.  The receiver is left unmodified.
+func (p StaticArray[T]) Pad(n uint) Array[T] {
+	return NewPaddedArray(p).Pad(n)
+}
+
+func (p StaticArray[T]) String() string {
+	var sb strings.Builder
+
+	sb.WriteString("[")
+
+	for i := range p.Len() {
+		if i != 0 {
+			sb.WriteString(",")
+		}
+
+		fmt.Fprintf(&sb, "%v", p.Get(i))
+	}
+
+	sb.WriteString("]")
+
+	return sb.String()
+}
+
+// =================================================================================
+// MutArray Implementation
+// =================================================================================
+
 // Append new word on this array
-func (p *StaticArray[T]) Append(word T) {
+func (p *StaticArray[T]) Append(word T) MutArray[T] {
 	p.data = append(p.data, word)
+	//
+	return p
 }
 
 // AppendAll elements of the given array onto the this array, mutating it in
@@ -63,104 +121,19 @@ func (p *StaticArray[T]) AppendAll(other StaticArray[T]) {
 	p.data = ndata
 }
 
-// Len returns the number of elements in this word array.
-func (p *StaticArray[T]) Len() uint {
-	//
-	return uint(len(p.data))
+// Build implementation for the array.Builder interface.  This simply means that
+// a static array is its own builder.
+func (p *StaticArray[T]) Build() Array[T] {
+	return p
 }
 
-// BitWidth returns the width (in bits) of elements in this array.
-func (p *StaticArray[T]) BitWidth() uint {
-	return p.bitwidth
-}
-
-// Get returns the field element at the given index in this array.
-func (p *StaticArray[T]) Get(index uint) T {
-	return p.data[index]
+// Height implementation of MutArray interface
+func (p *StaticArray[T]) Height() uint {
+	return p.Len()
 }
 
 // Set sets the field element at the given index in this array, overwriting the
 // original value.
 func (p *StaticArray[T]) Set(index uint, word T) {
 	p.data[index] = word
-}
-
-// Encode implementation for Array interface.  The natural encoding of a static
-// array is its elements written as length-prefixed sequences of raw bytes.
-func (p *StaticArray[T]) Encode(buffer *bytes.Buffer) {
-	for _, w := range p.data {
-		writeWordBytes(buffer, w.Bytes())
-	}
-}
-
-// Decode implementation for MutArray interface.  This reads a given number of
-// length-prefixed words (as produced by Encode).
-func (p *StaticArray[T]) Decode(height uint, buffer *bytes.Buffer) error {
-	data := make([]T, height)
-	//
-	for i := range data {
-		bs, err := readWordBytes(buffer)
-		//
-		if err != nil {
-			return err
-		}
-		//
-		data[i] = data[i].SetBytes(bs)
-	}
-	//
-	p.data = data
-	//
-	return nil
-}
-
-// Clone makes clones of this array producing an otherwise identical copy.
-func (p *StaticArray[T]) Clone() MutArray[T] {
-	// Allocate sufficient memory
-	ndata := make([]T, uint(len(p.data)))
-	// Copy over the data
-	copy(ndata, p.data)
-	//
-	return &StaticArray[T]{ndata, p.bitwidth}
-}
-
-// Pad returns a copy of this array with n copies of the given padding value
-// prepended, and m copies appended.  The receiver is left unmodified.
-func (p *StaticArray[T]) Pad(n uint, m uint, padding T) MutArray[T] {
-	var (
-		ol = p.Len()
-		// Determine new length
-		l = n + ol + m
-		// Allocate exactly, copying existing data directly into its final
-		// position.
-		data = make([]T, l)
-	)
-	//
-	copy(data[n:], p.data)
-	// Front padding!
-	for i := range n {
-		data[i] = padding
-	}
-	// Back padding!
-	for i := l - m; i < l; i++ {
-		data[i] = padding
-	}
-	//
-	return &StaticArray[T]{data, p.bitwidth}
-}
-func (p *StaticArray[T]) String() string {
-	var sb strings.Builder
-
-	sb.WriteString("[")
-
-	for i := range p.Len() {
-		if i != 0 {
-			sb.WriteString(",")
-		}
-
-		fmt.Fprintf(&sb, "%v", p.Get(i))
-	}
-
-	sb.WriteString("]")
-
-	return sb.String()
 }

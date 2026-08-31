@@ -56,6 +56,17 @@ func Expand[T any](data []T, n uint) []T {
 	return data[:nsize]
 }
 
+// Fill constructs an array of a given size filled with the given item.
+func Fill[T any](n uint, item T) []T {
+	var nslice = make([]T, n)
+	// Pad out remainder
+	for i := uint(0); i < n; i++ {
+		nslice[i] = item
+	}
+	//
+	return nslice
+}
+
 // FrontPad pads an array upto a given length n with a given item.
 // Specifically, new items are inserted at the front of the array.
 func FrontPad[T any](slice []T, n uint, item T) []T {

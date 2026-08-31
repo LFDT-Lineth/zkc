@@ -18,16 +18,17 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Any converts a concrete schema into a generic view of the schema.
-func Any[F any, C Constraint[F]](schema Schema[F, C]) AnySchema[F] {
+func Any[F field.Element[F], C Constraint[F]](schema Schema[F, C]) AnySchema[F] {
 	return schema.(Schema[F, Constraint[F]])
 }
 
 // AnySchema captures a generic view of a schema, which is useful in situations
 // where exactly details about the schema are not important.
-type AnySchema[F any] Schema[F, Constraint[F]]
+type AnySchema[F field.Element[F]] Schema[F, Constraint[F]]
 
 // ============================================================================
 
@@ -38,7 +39,7 @@ type AnySchema[F any] Schema[F, Constraint[F]]
 // in the final trace, whilst constraints are properties which should hold for
 // any acceptable trace.  Finally, assignments represent arbitrary computations
 // which "assign" values to registers during "trace expansion".
-type Schema[F any, C any] interface {
+type Schema[F field.Element[F], C any] interface {
 	// Assignments returns an iterator over the assignments of this schema.
 	// That is, the set of computations used to determine values for all
 	// computed columns.
@@ -69,7 +70,7 @@ type Schema[F any, C any] interface {
 
 // Failure embodies structured information about a failing constraint.
 // This includes the constraint itself, along with the row
-type Failure[F any] interface {
+type Failure[F field.Element[F]] interface {
 	// Handle returns the handling of the constraints which caused the failure.
 	Handle() string
 	// Provides a suitable error message

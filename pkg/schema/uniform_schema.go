@@ -18,16 +18,17 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // UniformSchema represents the simplest kind of schema which contains only
 // modules of the same kind (e.g. all MIR modules).
-type UniformSchema[F any, M Module[F]] struct {
+type UniformSchema[F field.Element[F], M Module[F]] struct {
 	modules []M
 }
 
 // NewUniformSchema constructs a new schema comprising the given modules.
-func NewUniformSchema[F any, M Module[F]](modules []M) UniformSchema[F, M] {
+func NewUniformSchema[F field.Element[F], M Module[F]](modules []M) UniformSchema[F, M] {
 	return UniformSchema[F, M]{modules}
 }
 
@@ -98,7 +99,7 @@ func (p UniformSchema[F, M]) Width() uint {
 
 // Extract an iterator over all the constraints in a given array using a
 // projecting iterator.
-func assignmentsOf[F any, M Module[F]](modules []M) iter.Iterator[Assignment[F]] {
+func assignmentsOf[F field.Element[F], M Module[F]](modules []M) iter.Iterator[Assignment[F]] {
 	arrIter := iter.NewArrayIterator(modules)
 	//
 	return iter.NewFlattenIterator(arrIter, func(m M) iter.Iterator[Assignment[F]] {
@@ -108,7 +109,7 @@ func assignmentsOf[F any, M Module[F]](modules []M) iter.Iterator[Assignment[F]]
 
 // Extract an iterator over all the constraints in a given array using a
 // projecting iterator.
-func constraintsOf[F any, M Module[F]](modules []M) iter.Iterator[Constraint[F]] {
+func constraintsOf[F field.Element[F], M Module[F]](modules []M) iter.Iterator[Constraint[F]] {
 	arrIter := iter.NewArrayIterator(modules)
 	//
 	return iter.NewFlattenIterator(arrIter, func(m M) iter.Iterator[Constraint[F]] {

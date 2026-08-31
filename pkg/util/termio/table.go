@@ -279,14 +279,18 @@ func (p TableSorter) SortColumn(col uint) TableSorter {
 // SortNumericalColumn adds a sort by the given column to the table sorter.
 func (p TableSorter) SortNumericalColumn(col uint) TableSorter {
 	return func(lhs []FormattedText, rhs []FormattedText) int {
-		var l, r string
 		// Try parent sort
 		if c := p(lhs, rhs); c != 0 {
 			return c
 		}
 		//
-		l = string(lhs[col].text)
-		r = string(rhs[col].text)
+		var (
+			lv = string(lhs[col].text)
+			rv = string(rhs[col].text)
+		)
+		//
+		l := parseNumericColumn(lv)
+		r := parseNumericColumn(rv)
 		//
 		if len(l) < len(r) {
 			return -1
@@ -295,5 +299,24 @@ func (p TableSorter) SortNumericalColumn(col uint) TableSorter {
 		}
 		// Now try this sort
 		return strings.Compare(l, r)
+	}
+}
+
+func parseNumericColumn(text string) string {
+	var (
+		gtext, giga = strings.CutSuffix(text, "G")
+		mtext, mega = strings.CutSuffix(text, "M")
+		ktext, kilo = strings.CutSuffix(text, "K")
+	)
+	// Account for "human-readable" forms.
+	switch {
+	case giga:
+		return fmt.Sprintf("%s000000000", gtext)
+	case mega:
+		return fmt.Sprintf("%s000000", mtext)
+	case kilo:
+		return fmt.Sprintf("%s000", ktext)
+	default:
+		return text
 	}
 }

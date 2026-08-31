@@ -15,7 +15,6 @@ package field
 import (
 	"bytes"
 	"math/rand"
-	"slices"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/assert"
@@ -58,10 +57,6 @@ func (e elementArray) BitWidth() uint {
 	panic("not implemented")
 }
 
-func (e elementArray) Clone() array.MutArray[koalabear.Element] {
-	return slices.Clone(e)
-}
-
 func (e elementArray) Get(u uint) koalabear.Element {
 	return e[u]
 }
@@ -86,7 +81,7 @@ func (e elementArray) Set(u uint, t koalabear.Element) {
 	e[u] = t
 }
 
-func (e elementArray) Pad(u uint, u2 uint, t koalabear.Element) array.MutArray[koalabear.Element] {
+func (e elementArray) Pad(u uint, u2 uint, t koalabear.Element) array.Array[koalabear.Element] {
 	panic("not implemented")
 }
 

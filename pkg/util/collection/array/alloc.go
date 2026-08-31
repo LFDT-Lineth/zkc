@@ -13,59 +13,42 @@
 package array
 
 import (
+	"math"
+	"math/bits"
+
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
-// Alloc allocates a new array suitable for holding elements upto the given
-// bitwidth, and initialises it with default values upto the given height.
-func Alloc[F word.Word[F]](bitwidth uint, height uint) MutArray[F] {
+// Alloc allocates a new array holding the given elements and which can hold any
+// element upto the given bitwidth.  The given array maybe consumed by this
+// array.
+func Alloc[F word.Word[F]](bitwidth uint) MutArray[F] {
 	var zero F
 	// Construct column
 	switch {
 	case bitwidth == 0:
-		return NewConstantArray(height, 0, zero)
+		return NewConstantArray(0, 0, zero)
 	case bitwidth == 1:
-		return NewBitArray[F](height)
+		return NewBitArray[F](0, false)
 	case bitwidth <= 8:
-		return NewSmallArray[uint8, F](height, bitwidth)
+		return NewSmallArray[uint8, F](bitwidth, 0, 0)
 	case bitwidth <= 16:
-		return NewSmallArray[uint16, F](height, bitwidth)
+		return NewSmallArray[uint16, F](bitwidth, 0, 0)
 	case bitwidth <= 32:
-		return NewSmallArray[uint32, F](height, bitwidth)
+		return NewSmallArray[uint32, F](bitwidth, 0, 0)
 	case bitwidth <= 64:
-		return NewSmallArray[uint64, F](height, bitwidth)
+		return NewSmallArray[uint64, F](bitwidth, 0, 0)
 	default:
-		return NewStaticArray[F](height, bitwidth)
+		return NewStaticArray[F](bitwidth)
 	}
 }
 
-// AppendOnto attempts to efficiently append the contents of the right array
-// onto the left array.  This currently assumes that the type and bitwidth of
-// the two arrays matches exactly, and will panic otherwise.
-func AppendOnto[F word.Word[F]](left MutArray[F], right Array[F]) {
-	switch left := left.(type) {
-	case *ConstantArray[F]:
-		var right = right.(*ConstantArray[F])
-		left.AppendAll(*right)
-	case *BitArray[F]:
-		var right = right.(*BitArray[F])
-		left.AppendAll(*right)
-	case *SmallArray[uint8, F]:
-		var right = right.(*SmallArray[uint8, F])
-		left.AppendAll(*right)
-	case *SmallArray[uint16, F]:
-		var right = right.(*SmallArray[uint16, F])
-		left.AppendAll(*right)
-	case *SmallArray[uint32, F]:
-		var right = right.(*SmallArray[uint32, F])
-		left.AppendAll(*right)
-	case *SmallArray[uint64, F]:
-		var right = right.(*SmallArray[uint64, F])
-		left.AppendAll(*right)
-	case *StaticArray[F]:
-		var right = right.(*StaticArray[F])
-		left.AppendAll(*right)
-	default:
-		panic("unknown array")
+// bitwidth of returns the (approximate) bitwidth of a given value appropriate
+// for determine a suitable column width to use.
+func bitwidthOf[F word.Word[F]](val F) uint {
+	if val.FitsWithin(64) {
+		return uint(bits.Len64(val.Uint64()))
 	}
+	//
+	return math.MaxUint
 }
