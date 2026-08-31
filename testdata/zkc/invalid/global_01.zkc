@@ -1,0 +1,10 @@
+//error:4:1-23:global function must not return
+// global functions must not return.
+#[global]
+fn f(x:u16) -> (y:u16) {
+  y = x
+}
+
+fn main() {
+    var x:u16 = f(0)
+}

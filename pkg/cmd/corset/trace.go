@@ -126,7 +126,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	} else if builder.Expanding() {
 		var tp_errors []error
 		// Expand all the traces
-		traces, tp_errors = expandLtTraces(traces, stack, builder)
+		traces, tp_errors = expandTraces(traces, stack, builder)
 		// Print trace info
 		for _, tf := range traces {
 			printTraceInfo(cfg, tf)
@@ -202,7 +202,7 @@ type TraceConfig struct {
 	stats bool
 }
 
-func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) view.TraceFilter {
+func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Shard[F]) view.TraceFilter {
 	return view.NewTraceFilter(func(mid module.Id) view.ModuleFilter {
 		return view.NewModuleFilter(cfg.startRow, cfg.endRow, func(col view.SourceColumn) bool {
 			// Construct fully qualified name
@@ -213,7 +213,7 @@ func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]
 	})
 }
 
-func expandLtTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.SchemaStack[F],
+func expandTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.SchemaStack[F],
 	bldr ir.TraceBuilder[F]) ([]tr.Trace[F], []error) {
 	//
 	var (
@@ -224,7 +224,7 @@ func expandLtTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util
 	for i := range traceFiles {
 		var errs []error
 		//
-		traces[i], errs = expandTrace(traceFiles[i], stack, bldr)
+		traces[i], errs = bldr.Build(stack.ConcreteSchema(), traceFiles[i])
 		//
 		errors = append(errors, errs...)
 	}
@@ -232,77 +232,87 @@ func expandLtTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util
 	return traces, errors
 }
 
-func expandTrace[F field.Element[F]](tf tr.Trace[F], stack cmd_util.SchemaStack[F], bldr ir.TraceBuilder[F],
-) (tr.Trace[F], []error) {
-	//
-	var (
-		tb_errors []error
-		tp_errors []error
-		tr        tr.Trace[F]
-	)
-	// Construct expanded trace
-	tr, tb_errors = bldr.Build(stack.ConcreteSchema(), tf)
-	// Handle errors
-	if len(tb_errors) > 0 {
-		for _, err := range tb_errors {
-			log.Errorln(err)
-		}
-		//
-		os.Exit(1)
-	}
-	// Now, reconstruct it!
-	return tr, tp_errors
-}
-
 func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {
-	// Construct trace window
-	view := view.NewBuilder[F](cfg.mapping).
-		WithCellWidth(cfg.maxCellWidth).
-		WithTitleWidth(cfg.maxTitleWidth).
-		WithLimbs(cfg.showLimbs).
-		WithComputed(cfg.showComputed)
-	// Add source map (if applicable)
-	if cfg.sourceMap != nil {
-		view = view.WithSourceMap(*cfg.sourceMap)
-	}
-	// Construct viewing window
-	window := view.Build(trace)
-	// Construct & apply trace filter
-	window = window.Filter(constructTraceFilter(cfg, trace))
-	// Print column summaries (if requested)
-	if cfg.columns {
-		listColumns(cfg, window)
-	}
-	// Print module summaries (if requested)
-	if cfg.modules {
-		listModules(cfg, window)
-	}
-	// Print trace summary (if requested)
-	if cfg.stats {
-		summaryStats(window)
-	}
-	// Print full trace (if requested)
-	if cfg.trace {
-		printTrace(cfg, window)
+	for i, shard := range trace {
+		//
+		if len(trace) > 0 {
+			fmt.Println()
+			fmt.Printf("Shard #%d\n", i)
+			fmt.Println(strings.Repeat("-", int(80)))
+		}
+		// Construct trace window
+		view := view.NewBuilder[F](cfg.mapping).
+			WithCellWidth(cfg.maxCellWidth).
+			WithTitleWidth(cfg.maxTitleWidth).
+			WithLimbs(cfg.showLimbs).
+			WithComputed(cfg.showComputed)
+		// Add source map (if applicable)
+		if cfg.sourceMap != nil {
+			view = view.WithSourceMap(*cfg.sourceMap)
+		}
+		// Construct viewing window
+		window := view.Build(shard)
+		// Construct & apply trace filter
+		window = window.Filter(constructTraceFilter(cfg, shard))
+		// Print column summaries (if requested)
+		if cfg.columns {
+			listColumns(cfg, window)
+		}
+		// Print module summaries (if requested)
+		if cfg.modules {
+			listModules(cfg, window)
+		}
+		// Print trace summary (if requested)
+		if cfg.stats {
+			summaryStats(window)
+		}
+		// Print full trace (if requested)
+		if cfg.trace {
+			printTrace(window)
+		}
 	}
 }
 
-func printTrace(cfg TraceConfig, window view.TraceView) {
+// PrintTrace prints out a given trace in tabular form, with one table per
+// module.  This is the non-interactive counterpart of InspectTrace, and
+// produces the same output as "go-corset trace --print".  Every module holding
+// data is printed, since (unlike the inspector) there is no way to reveal one
+// which was hidden.
+func PrintTrace[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F],
+	limbs bool, cellWidth, titleWidth uint) {
+	for _, shard := range trace {
+		// Build the viewing window (no source map, so show computed registers).
+		builder := view.NewBuilder[F](mapping).
+			WithCellWidth(cellWidth).
+			WithTitleWidth(titleWidth).
+			WithLimbs(limbs).
+			WithComputed(true)
+		//
+		printTrace(builder.Build(shard))
+	}
+}
+
+func printTrace(window view.TraceView) {
 	// Print all windows
 	for i := range window.Width() {
 		var (
-			ith       = window.Module(i)
-			_, height = ith.Dimensions()
+			ith           = window.Module(i)
+			width, height = ith.Dimensions()
 			// Construct & configure printer
 			tp = widget.NewTable(ith)
 			//
 			name = ith.Data().Name()
 		)
-		// Print out module name
-		if height <= 1 {
-			// Don't bother print empty modules
+		// NOTE: dimensions include the row / column titles, hence the
+		// comparisons against one rather than zero.
+		if height <= 1 || width <= 1 {
+			// Don't bother printing modules with no columns, or no rows.  The
+			// latter includes static reference tables (e.g. a "$range_uN"
+			// lookup table), whose contents are fixed by the schema and hence
+			// carry no trace data at all.
 			continue
 		} else if window.Width() > 1 && name != "" {
+			// Print out module name
 			fmt.Printf("%s:\n", name)
 		}
 		// Print out report

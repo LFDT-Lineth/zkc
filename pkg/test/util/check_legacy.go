@@ -13,7 +13,6 @@
 package util
 
 import (
-	stdjson "encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -23,11 +22,8 @@ import (
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
-	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -106,6 +102,8 @@ func checkWithField[F field.Element[F]](t *testing.T, test string, padding bool,
 	)
 	// Record how many tests executed.
 	nTests := 0
+	// Check for deprecated extensions
+	checkForDeprecatedTests(t, test)
 	// Iterate possible testfile extensions
 	for _, cfg := range LEGACY_TESTFILE_EXTENSIONS {
 		var traces []trace.Trace[F]
@@ -116,27 +114,15 @@ func checkWithField[F field.Element[F]](t *testing.T, test string, padding bool,
 			// Read traces from file
 			traces = ReadTracesFile[F](testFilename)
 			if len(traces) > 0 {
+				var tmp = cfg
+				// Update field name
+				tmp.field = field.Name
 				// Run tests
-				fullCheckTraces(t, testFilename, cfg, padding, traces, stacks)
+				fullCheckTraces(t, testFilename, tmp, padding, traces, stacks)
 			}
 		}
 		// Record how many tests we found
 		nTests += len(traces)
-	}
-	// Iterate possible group (i.e. sharded) testfile extensions
-	for _, cfg := range SHARDED_TESTFILE_EXTENSIONS {
-		testFilename := fmt.Sprintf("%s/%s.%s", TestDir, test, cfg.extension)
-		//
-		if cfg.field == "" || cfg.field == field.Name {
-			groups := ReadShardedTracesFile[F](testFilename)
-			//
-			if len(groups) > 0 {
-				stack := stacks.WithOptimisationConfig(mir.DEFAULT_OPTIMISATION_LEVEL)
-				checkShardedTraces(t, testFilename, padding, mir.DEFAULT_OPTIMISATION_INDEX, cfg, groups, stack)
-			}
-			//
-			nTests += len(groups)
-		}
 	}
 	// Sanity check at least one trace found.
 	if nTests == 0 {
@@ -214,13 +200,13 @@ func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, op
 					//
 					if tf != nil {
 						// Construct trace identifier
-						id := traceId{stack.RegisterMapping().Field().Name, ir, test,
+						id := traceId{cfg.field, ir, test,
 							cfg.expected, cfg.expand, cfg.validate, opt, parallel, i + 1, padding}
 						//
 						if cfg.expand || ir == "AIR" {
 							// Always check if expansion required, otherwise
 							// only check AIR constraints.
-							checkTrace(t, tf, id, stack.ConcreteSchemaOf(ir), stack.RegisterMapping())
+							checkTrace(t, tf, id, stack.ConcreteSchemaOf(ir))
 						}
 					}
 				}
@@ -230,37 +216,40 @@ func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, op
 }
 
 func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf trace.Trace[F], id traceId,
-	schema sc.Schema[F, C], mapping module.LimbsMap) {
-	// Map the legacy padding toggle onto a padding strategy.
-	paddingStrategy := ir.NaryRowPadding(0)
+	schema sc.Schema[F, C]) {
+	var (
+		// Map the legacy padding toggle onto a padding strategy.
+		paddingStrategy = ir.NaryRowPadding(0)
+	)
+	//
 	if id.padding {
 		paddingStrategy = ir.NextPowerOfTwoPadding
 	}
-	// Construct the trace
-	tr, errs := ir.NewTraceBuilder[F]().
+	// Construct builder
+	builder := ir.NewTraceBuilder[F]().
 		WithExpansion(id.expand).
 		WithValidation(id.validate).
 		WithPadding(paddingStrategy).
 		WithParallelism(id.parallel).
-		WithRegisterMapping(mapping).
-		WithBatchSize(128).
-		Build(sc.Any(schema), tf)
-	// Sanity check construction
-	if len(errs) > 0 {
-		t.Errorf("Trace expansion failed (%s): %s", id.String(), errs)
-	} else {
-		// Check Constraints
-		errs := sc.Accepts(id.parallel, schema, tr)
-		// Determine whether trace accepted or not.
-		accepted := len(errs) == 0
-		// Process what happened versus what was supposed to happen.
-		if !accepted && id.expected {
-			//table.PrintTrace(tr)
-			t.Errorf("Trace rejected incorrectly (%s): %s", id.String(), errs)
-		} else if accepted && !id.expected {
-			//printTrace(tr)
-			t.Errorf("Trace accepted incorrectly (%s)", id.String())
-		}
+		WithBatchSize(128)
+	// Construct the trace
+	shards, errors := builder.Build(sc.Any(schema), tf)
+	// Check for errors
+	if len(errors) > 0 {
+		t.Errorf("Trace expansion failed (%s): %s", id.String(), errors)
+		return
+	}
+	// Check Constraints
+	errs := sc.Accepts(id.parallel, schema, shards)
+	// Determine whether trace accepted or not.
+	accepted := len(errs) == 0
+	// Process what happened versus what was supposed to happen.
+	if !accepted && id.expected {
+		//table.PrintTrace(tr)
+		t.Errorf("Trace rejected incorrectly (%s): %s", id.String(), errs)
+	} else if accepted && !id.expected {
+		//printTrace(tr)
+		t.Errorf("Trace accepted incorrectly (%s)", id.String())
 	}
 }
 
@@ -307,175 +296,45 @@ var LEGACY_TESTFILE_EXTENSIONS []LegacyTestConfig = []LegacyTestConfig{
 	{"accepts.bz2", true, true, true, "", allOptLevels},
 	{"auto.accepts", true, true, true, "", allOptLevels},
 	{"auto.accepts.bz2", true, true, true, "", allOptLevels},
+	{"expanded.accepts", true, false, false, "", defaultOptLevel},
+	{"expanded.bls12_377.accepts", true, false, false, "BLS12_377", defaultOptLevel},
 	{"bls12_377.accepts", true, true, true, "BLS12_377", allOptLevels},
 	{"koalabear_16.accepts", true, true, true, "KOALABEAR_16", allOptLevels},
 	{"gf_8209.accepts", true, true, true, "GF_8209", allOptLevels},
 	{"bls12_377.accepts.bz2", true, true, true, "BLS12_377", allOptLevels},
 	{"koalabear_16.accepts.bz2", true, true, true, "KOALABEAR_16", allOptLevels},
-	{"expanded.accepts", true, false, false, "BLS12_377", allOptLevels},
-	{"expanded.O1.accepts", true, false, false, "BLS12_377", defaultOptLevel},
 	// should all fail
 	{"rejects", false, true, false, "", allOptLevels},
 	{"rejects.bz2", false, true, false, "", allOptLevels},
 	{"auto.rejects", false, true, false, "", allOptLevels},
+	{"auto.rejects.bz2", false, true, false, "", allOptLevels},
+	{"expanded.rejects", false, false, false, "", defaultOptLevel},
+	{"expanded.bls12_377.rejects", false, false, false, "BLS12_377", defaultOptLevel},
 	{"bls12_377.rejects", false, true, false, "BLS12_377", allOptLevels},
 	{"koalabear_16.rejects", false, true, false, "KOALABEAR_16", defaultOptLevel},
 	{"gf_8209.rejects", false, true, false, "GF_8209", defaultOptLevel},
 	{"expanded.koalabear_16.rejects", false, false, false, "KOALABEAR_16", defaultOptLevel},
 	{"expanded.gf_8209.rejects", false, false, false, "GF_8209", defaultOptLevel},
-	{"expanded.rejects", false, false, false, "BLS12_377", allOptLevels},
-	{"expanded.O1.rejects", false, false, false, "BLS12_377", defaultOptLevel},
 }
 
-// SHARDED_TESTFILE_EXTENSIONS identifies the file extensions used for sharded
-// tests.  Each line of such a file holds a JSON array of traces, forming one
-// group of shards judged together: every shard must pass all non-bus
-// constraints on its own, whilst bus balance is required of the group as a
-// whole (not of any single shard).
-var SHARDED_TESTFILE_EXTENSIONS []LegacyTestConfig = []LegacyTestConfig{
-	{"shards.accepts", true, true, true, "", defaultOptLevel},
-	{"shards.rejects", false, true, false, "", defaultOptLevel},
+// LEGACY_DEPRECATED_EXTENSIONS clarifies test extensions which are no longer
+// supported.  Any test having one of these extensions is rejected outright.
+// Basically, all test vectors must now specify their field explicitly.
+var LEGACY_DEPRECATED_EXTENSIONS []string = []string{
+	"expanded.O1.accepts",
+	// rejects
+	"expanded.O1.rejects",
 }
 
-// ReadShardedTracesFile reads a file containing zero or more trace groups
-// expressed as JSON, where each group is on a separate line and consists of
-// an array of traces (i.e. shards).
-func ReadShardedTracesFile[F field.Element[F]](filename string) [][]trace.Trace[F] {
-	lines, _ := file.ReadInputFileAsLines(filename)
-	groups := make([][]trace.Trace[F], len(lines))
-	//
-	for i, line := range lines {
-		if line != "" && !strings.HasPrefix(line, ";;") {
-			var shards []stdjson.RawMessage
-			//
-			if err := stdjson.Unmarshal([]byte(line), &shards); err != nil {
-				panic(fmt.Sprintf("%s:%d: %s", filename, i+1, err))
-			}
-			//
-			group := make([]trace.Trace[F], len(shards))
-			//
-			for j, raw := range shards {
-				tf, err := json.FromBytes[F](raw)
-				//
-				if err != nil {
-					panic(fmt.Sprintf("%s:%d: shard %d: %s", filename, i+1, j+1, err))
-				}
-				//
-				group[j] = tf
-			}
-			//
-			groups[i] = group
+func checkForDeprecatedTests(t *testing.T, test string) {
+	// Iterate possible testfile extensions
+	for _, ext := range LEGACY_DEPRECATED_EXTENSIONS {
+		filename := fmt.Sprintf("%s.%s", test, ext)
+		// Construct test filename
+		if _, err := os.Stat(fmt.Sprintf("%s/%s", TestDir, filename)); os.IsNotExist(err) {
+			continue
 		}
 	}
-	//
-	return groups
-}
-
-// Check a given set of trace groups have an expected outcome, mirroring
-// checkTraces.
-func checkShardedTraces[F field.Element[F]](t *testing.T, test string, padding bool, opt uint,
-	cfg LegacyTestConfig, groups [][]trace.Trace[F], stacker cmd_util.SchemaStacker[F]) {
-	//
-	paddings := []bool{false}
-	if padding {
-		paddings = append(paddings, true)
-	}
-	//
-	stack := stacker.Build()
-	//
-	for _, padding := range paddings {
-		t.Run(test, func(t *testing.T) {
-			t.Parallel()
-			//
-			for _, ir := range []string{"MIR", "AIR"} {
-				for i, group := range groups {
-					if group != nil {
-						id := traceId{stack.RegisterMapping().Field().Name, ir, test,
-							cfg.expected, cfg.expand, cfg.validate, opt, false, i + 1, padding}
-						//
-						checkShardGroup(t, group, id, stack.ConcreteSchemaOf(ir), stack.RegisterMapping())
-					}
-				}
-			}
-		})
-	}
-}
-
-// checkShardGroup checks one group of shards: each shard is built and
-// checked locally (any non-bus failure marks a broken fixture, regardless of
-// the expected outcome), then every bus is required to balance across the
-// whole group.  Only the group-level verdict is compared against the
-// expected outcome.
-func checkShardGroup[F field.Element[F], C sc.Constraint[F]](t *testing.T, group []trace.Trace[F], id traceId,
-	schema sc.Schema[F, C], mapping module.LimbsMap) {
-	//
-	var (
-		built    = make([]trace.Trace[F], len(group))
-		failures []sc.Failure
-	)
-	// Build and locally check every shard
-	for i, tf := range group {
-		paddingStrategy := ir.NaryRowPadding(0)
-		if id.padding {
-			paddingStrategy = ir.NextPowerOfTwoPadding
-		}
-		//
-		tr, errs := ir.NewTraceBuilder[F]().
-			WithExpansion(id.expand).
-			WithValidation(id.validate).
-			WithPadding(paddingStrategy).
-			WithRegisterMapping(mapping).
-			WithBatchSize(128).
-			Build(sc.Any(schema), tf)
-		//
-		if len(errs) > 0 {
-			t.Errorf("Shard %d expansion failed (%s): %s", i+1, id.String(), errs)
-			return
-		}
-		// Check shard locally, ignoring bus failures (balance is a property
-		// of the group, not of any single shard).
-		for _, err := range sc.Accepts(false, schema, tr) {
-			if _, isBus := err.(*bus.Failure[F]); !isBus {
-				t.Errorf("Shard %d locally invalid (%s): %s", i+1, id.String(), err.Message())
-				return
-			}
-		}
-		//
-		built[i] = tr
-	}
-	// Check every bus balances across the whole group.
-	for _, busc := range busConstraintsOf(schema) {
-		if failure := busc.AcceptsGroup(built...); failure != nil {
-			failures = append(failures, failure)
-		}
-	}
-	//
-	accepted := len(failures) == 0
-	//
-	if !accepted && id.expected {
-		t.Errorf("Group rejected incorrectly (%s): %s", id.String(), failures)
-	} else if accepted && !id.expected {
-		t.Errorf("Group accepted incorrectly (%s)", id.String())
-	}
-}
-
-// busConstraintsOf extracts the bus constraints of a schema, looking through
-// the MIR / AIR wrappers.
-func busConstraintsOf[F field.Element[F], C sc.Constraint[F]](schema sc.Schema[F, C]) []bus.Constraint[F] {
-	var buses []bus.Constraint[F]
-	//
-	for iter := schema.Constraints(); iter.HasNext(); {
-		switch c := any(iter.Next()).(type) {
-		case mir.Constraint[F]:
-			if b, ok := c.Unwrap().(bus.Constraint[F]); ok {
-				buses = append(buses, b)
-			}
-		case air.BusConstraint[F]:
-			buses = append(buses, c.Unwrap())
-		}
-	}
-	//
-	return buses
 }
 
 // A trace identifier uniquely identifies a specific trace within a given test.

@@ -334,6 +334,9 @@ func Test_Invalid_Bus_06(t *testing.T) {
 func Test_Invalid_Bus_07(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/bus_invalid_07")
 }
+func Test_Invalid_Bus_08(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/bus_invalid_08")
+}
 
 // ===================================================================
 // Arrays

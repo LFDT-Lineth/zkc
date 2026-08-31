@@ -45,6 +45,29 @@ func (p CellRef) Cmp(q CellRef) int {
 	return c
 }
 
+// ShardedCellRef identifies a unique cell within a given table.
+type ShardedCellRef struct {
+	// Shard containing the given cell
+	Shard uint
+	// Reference of the given cell
+	Ref CellRef
+}
+
+// NewShardedCellRef constructs a new (sharded) cell reference.
+func NewShardedCellRef(shard uint, column ColumnRef, row int) ShardedCellRef {
+	return ShardedCellRef{shard, NewCellRef(column, row)}
+}
+
+// Cmp implementation for the set.Comparable interface. This allows a CellRef to
+// be used in an AnySortedSet.
+func (p ShardedCellRef) Cmp(q ShardedCellRef) int {
+	if c := cmp.Compare(p.Shard, q.Shard); c != 0 {
+		return c
+	}
+	//
+	return p.Ref.Cmp(q.Ref)
+}
+
 // ============================================================================
 
 // ColumnRef abstracts a complete (i.e. global) Column identifier.

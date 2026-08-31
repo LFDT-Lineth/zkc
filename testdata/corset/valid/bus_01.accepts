@@ -1,8 +1,16 @@
 ;; single message, sent and received
-{"alpha.SEL": [1], "alpha.A": [5], "alpha.B": [7], "beta.SEL": [1], "beta.X": [5], "beta.Y": [7]}
+{"sndr.SEL": [1], "sndr.A": [5], "sndr.B": [7], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [7]}
 ;; order scrambled, junk on unselected row
-{"alpha.SEL": [1,0,1], "alpha.A": [5,999,9], "alpha.B": [7,999,2], "beta.SEL": [1,1], "beta.X": [9,5], "beta.Y": [2,7]}
+{"sndr.SEL": [1,0,1], "sndr.A": [5,999,9], "sndr.B": [7,999,2], "rcvr.SEL": [1,1], "rcvr.X": [9,5], "rcvr.Y": [2,7]}
 ;; duplicate message, twice sent and twice received
-{"alpha.SEL": [1,1], "alpha.A": [5,5], "alpha.B": [7,7], "beta.SEL": [1,1], "beta.X": [5,5], "beta.Y": [7,7]}
+{"sndr.SEL": [1,1], "sndr.A": [5,5], "sndr.B": [7,7], "rcvr.SEL": [1,1], "rcvr.X": [5,5], "rcvr.Y": [7,7]}
 ;; nothing on the bus at all, junk on every unselected row
-{"alpha.SEL": [0,0], "alpha.A": [3,4], "alpha.B": [5,6], "beta.SEL": [0], "beta.X": [8], "beta.Y": [9]}
+{"sndr.SEL": [0,0], "sndr.A": [3,4], "sndr.B": [5,6], "rcvr.SEL": [0], "rcvr.X": [8], "rcvr.Y": [9]}
+;; mono-shard
+[{"sndr.SEL": [1], "sndr.A": [5], "sndr.B": [7], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [7]}]
+;; shard 1 sends, shard 2 receives; balanced together, not alone
+[{"sndr.SEL": [1,1], "sndr.A": [5,9], "sndr.B": [7,2], "rcvr.SEL": [0], "rcvr.X": [0], "rcvr.Y": [0]}, {"sndr.SEL": [0], "sndr.A": [0], "sndr.B": [0], "rcvr.SEL": [1,1], "rcvr.X": [9,5], "rcvr.Y": [2,7]}]
+;; duplicate message: sent twice in shard 1, received once in each shard
+[{"sndr.SEL": [1,1], "sndr.A": [5,5], "sndr.B": [7,7], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [7]}, {"sndr.SEL": [0], "sndr.A": [0], "sndr.B": [0], "rcvr.SEL": [1], "rcvr.X": [5], "rcvr.Y": [7]}]
+;; three shards of differing heights, all traffic crossing shard seams
+[{"sndr.SEL": [1,0,1], "sndr.A": [5,0,9], "sndr.B": [7,0,2], "rcvr.SEL": [0], "rcvr.X": [0], "rcvr.Y": [0]}, {"sndr.SEL": [1], "sndr.A": [3], "sndr.B": [4], "rcvr.SEL": [1,0], "rcvr.X": [9,0], "rcvr.Y": [2,0]}, {"sndr.SEL": [0,0], "sndr.A": [0,0], "sndr.B": [0,0], "rcvr.SEL": [1,1], "rcvr.X": [5,3], "rcvr.Y": [7,4]}]

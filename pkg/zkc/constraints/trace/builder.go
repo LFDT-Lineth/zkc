@@ -147,7 +147,7 @@ func (p Builder[W, F, M]) Init(program vm.Program[W]) Builder[W, F, M] {
 }
 
 // Build implementation for TraceBuilder interface.
-func (p Builder[W, F, M]) Build() trace.Trace[F] {
+func (p Builder[W, F, M]) Build() trace.Shard[F] {
 	return trace.NewArray(p.modules)
 }
 

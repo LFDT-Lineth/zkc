@@ -24,6 +24,26 @@ import (
 func ToJsonString[F field.Element[F]](tr trace.Trace[F]) string {
 	var (
 		builder strings.Builder
+	)
+	//
+	if len(tr) == 1 {
+		return toJsonString(tr[0])
+	}
+	//
+	for i, shard := range tr {
+		if i != 0 {
+			builder.WriteString(", ")
+		}
+		//
+		builder.WriteString(toJsonString(shard))
+	}
+	//
+	return builder.String()
+}
+
+func toJsonString[F field.Element[F]](tr trace.Shard[F]) string {
+	var (
+		builder strings.Builder
 		first   = true
 	)
 	//
@@ -32,9 +52,15 @@ func ToJsonString[F field.Element[F]](tr trace.Trace[F]) string {
 	for _, ith := range tr.Modules().Collect() {
 		for j := range ith.Width() {
 			var (
-				name = ith.Descriptor().Name
+				name = ith.Descriptor().Columns[j].Name
 				data = ith.Column(j)
 			)
+			// Columns of a static reference table (e.g. a "$range_uN" lookup
+			// table) carry no trace data, since their contents are fixed by the
+			// schema.  Such columns are simply omitted.
+			if data == nil {
+				continue
+			}
 			//
 			if !first {
 				builder.WriteString(", ")
@@ -45,6 +71,14 @@ func ToJsonString[F field.Element[F]](tr trace.Trace[F]) string {
 			builder.WriteString("\"")
 			// Construct qualified column qual_name
 			qual_name := trace.QualifiedColumnName(ith.Name(), name)
+			// Sanity check
+			if data == nil {
+				// Write out column name
+				builder.WriteString(qual_name)
+				builder.WriteString("\": []")
+				//
+				continue
+			}
 			// Apply bitwidth restrictions (if applicable)
 			if bitwidth := data.BitWidth(); bitwidth < 256 {
 				// For now, always assume unsigned int.

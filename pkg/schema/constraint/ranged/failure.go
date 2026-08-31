@@ -24,7 +24,7 @@ import (
 // Failure provides structural information about a failing type constraint.
 type Failure[F any] struct {
 	// Handle of the failing constraint
-	Handle string
+	RangeHandle string
 	// Enclosing context
 	Context schema.ModuleId
 	// Constrained register
@@ -33,12 +33,19 @@ type Failure[F any] struct {
 	Bitwidth uint
 	// Row on which the constraint failed
 	Row uint
+	// Shard on which the constraint failed
+	Shard uint
+}
+
+// Handle implementation of schema.Failure interface
+func (p *Failure[F]) Handle() string {
+	return p.RangeHandle
 }
 
 // Message provides a suitable error message
 func (p *Failure[F]) Message() string {
 	// Construct useful error message
-	return fmt.Sprintf("range \"%s\" is u%d does not hold (row %d)", p.Handle, p.Bitwidth, p.Row)
+	return fmt.Sprintf("range \"%s\" is u%d does not hold (row %d, shard %d)", p.Handle(), p.Bitwidth, p.Row, p.Shard)
 }
 
 func (p *Failure[F]) String() string {
@@ -46,13 +53,13 @@ func (p *Failure[F]) String() string {
 }
 
 // RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
-func (p *Failure[F]) RequiredCells(_ trace.Trace[F]) *set.AnySortedSet[trace.CellRef] {
+func (p *Failure[F]) RequiredCells(_ trace.Trace[F]) set.AnySortedSet[trace.ShardedCellRef] {
 	var (
-		res = set.NewAnySortedSet[trace.CellRef]()
+		res = set.NewAnySortedSet[trace.ShardedCellRef]()
 		ref = trace.NewColumnRef(p.Context, p.Source)
 	)
 	//
-	res.Insert(trace.NewCellRef(ref, int(p.Row)))
+	res.Insert(trace.NewShardedCellRef(p.Shard, ref, int(p.Row)))
 	//
-	return res
+	return *res
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
@@ -52,7 +53,7 @@ var inspectCmds = []FieldAgnosticCmd{
 func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	var (
 		errors []error
-		trace  trace.Trace[F]
+		trace  trace.Shard[F]
 	)
 	//
 	if len(args) != 2 {
@@ -91,13 +92,19 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	if len(errors) != 0 && validate {
 		fmt.Println("(use --validate=false to ignore trace propagation errors)")
 		fmt.Println()
+	} else if len(tracefile) != 1 {
+		errors = append(errors, fmt.Errorf("cannot inspect multiple shards"))
 	} else {
-		trace, errors = stack.TraceBuilder().Build(schema, tracefile)
+		var shards []tr.Shard[F]
+
+		shards, errors = stack.TraceBuilder().Build(schema, []tr.Shard[F]{tracefile[0]})
+		trace = shards[0]
 	}
 	//
 	if len(errors) == 0 {
+		mapping := module.IdentityMap[F](schema.Modules().Collect()...)
 		// Run the inspector.
-		errors = inspect(stack.TraceBuilder().Mapping(), srcmap, trace, showLimbs, cellWidth, titleWidth)
+		errors = inspect(mapping, srcmap, trace, showLimbs, cellWidth, titleWidth)
 	}
 	// Sanity check what happened
 	if len(errors) > 0 {
@@ -117,7 +124,7 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 // The optional "public" predicate determines which modules are publicly visible
 // (shown by default); when nil, all modules are public.  Callers use this to
 // hide synthetic modules such as range-check tables.
-func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace trace.Trace[F],
+func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace trace.Shard[F],
 	public func(string) bool, limbs bool, cellWidth, titleWidth uint) []error {
 	//
 	term, err := termio.NewTerminal()
@@ -148,7 +155,7 @@ func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace trace.Trace
 }
 
 // Inspect a given trace using a given schema.
-func inspect[F field.Element[F]](mapping module.LimbsMap, srcmap *corset.SourceMap, trace trace.Trace[F],
+func inspect[F field.Element[F]](mapping module.LimbsMap, srcmap *corset.SourceMap, trace trace.Shard[F],
 	limbs bool, cellWidth, titleWidth uint) []error {
 	// Construct inspector window
 	inspector := construct(mapping, trace, srcmap, limbs, cellWidth, titleWidth)
@@ -160,7 +167,7 @@ func inspect[F field.Element[F]](mapping module.LimbsMap, srcmap *corset.SourceM
 	return inspector.Start()
 }
 
-func construct[F field.Element[F]](mapping module.LimbsMap, trace trace.Trace[F], srcmap *corset.SourceMap, limbs bool,
+func construct[F field.Element[F]](mapping module.LimbsMap, trace trace.Shard[F], srcmap *corset.SourceMap, limbs bool,
 	cellWidth, titleWidth uint) *inspector.Inspector {
 	//
 	term, err := termio.NewTerminal()

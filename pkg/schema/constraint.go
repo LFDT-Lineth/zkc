@@ -29,10 +29,10 @@ import (
 // Constraint represents an element which can "accept" a trace, or either reject
 // with an error (or eventually perhaps report a warning).
 type Constraint[F any] interface {
-	// Accepts determines whether a given constraint accepts a given trace or
-	// not.  If not, a failure is produced.  Otherwise, a bitset indicating
-	// branch coverage is returned.
-	Accepts(trace.Trace[F], AnySchema[F], Context[F]) Failure
+	// Accepts determines whether a given (local) constraint accepts a given set
+	// of traces or not.  If not, a failure is produced.  Observe that, for
+	// global constraints, this is a no-op.
+	Accepts(trace.Trace[F], AnySchema[F], Context[F]) []Failure[F]
 	// Determine the well-definedness bounds for this constraint in both the
 	// negative (left) or positive (right) directions.  For example, consider an
 	// expression such as "(shift X -1)".  This is technically undefined for the
@@ -64,9 +64,9 @@ type Constraint[F any] interface {
 // whilst checking constraints.  For example, it provides cached access to data
 // for lookups to prevent the need to recompute this for individual lookups.
 type Context[F any] interface {
-	// LookupSet returns a given module viewed as a set from the perspective of
-	// a given set of columns, with an optional selector.
-	Get(SetId) collection.Set[[]F]
+	// Get returns a given module viewed in a given shard as a set from the
+	// perspective of a given set of columns, with an optional selector.
+	Get(shard uint, id SetId) collection.Set[[]F]
 }
 
 // SetId provides a generic mechanism for referring to a particular set of data

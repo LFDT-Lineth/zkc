@@ -100,14 +100,18 @@ func (p Constraint[F]) Bounds(module uint) util.Bounds {
 // nil otherwise return an error.
 //
 //nolint:revive
-func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F]) schema.Failure {
-	for i := range p.Sources {
-		if err := p.accepts(i, tr); err != nil {
-			return err
+func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F],
+) (failures []schema.Failure[F]) {
+	//
+	for shard, tr := range trace {
+		for i := range p.Sources {
+			if err := p.accepts(i, uint(shard), tr); err != nil {
+				failures = append(failures, err)
+			}
 		}
 	}
-	// All good
-	return nil
+	// done
+	return failures
 }
 
 // Lisp converts this schema element into a simple S-Expression, for example so
@@ -135,7 +139,7 @@ func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
 
 // accepts checks the ith register of this constraint holds within its
 // corresponding bound on every row of the enclosing module.
-func (p Constraint[F]) accepts(i int, tr trace.Trace[F]) schema.Failure {
+func (p Constraint[F]) accepts(i int, shard uint, tr trace.Shard[F]) schema.Failure[F] {
 	var (
 		trModule = tr.Module(p.Context)
 		handle   = constraint.DetermineHandle(p.Handle, p.Context, tr)
@@ -150,7 +154,7 @@ func (p Constraint[F]) accepts(i int, tr trace.Trace[F]) schema.Failure {
 		// Perform the range check
 		if column.Get(k).Cmp(bound) >= 0 {
 			// Evaluation failure
-			return &Failure[F]{handle, p.Context, source, bitwidth, k}
+			return &Failure[F]{handle, p.Context, source, bitwidth, k, shard}
 		}
 	}
 	// All good

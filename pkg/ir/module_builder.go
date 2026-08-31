@@ -37,9 +37,6 @@ type ModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 	AddAssignment(assignment schema.Assignment[F])
 	// AddConstraint adds a new constraint to this module.
 	AddConstraint(constraint C)
-	// AllowPadding determines whether the given module allows an initial
-	// padding row, or not.
-	AllowPadding() bool
 	// Assignments returns those assignments added to this module.
 	Assignments() []schema.Assignment[F]
 	// Constraints returns those constraints added to this module.
@@ -72,11 +69,11 @@ type ModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 
 // NewModuleBuilder constructs a new builder for a module with the given name.
 func NewModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]](name module.Name,
-	mid schema.ModuleId, padding, public, private, synthetic, static, native bool) ModuleBuilder[F, C, T] {
+	mid schema.ModuleId, public, private, synthetic, static, native bool) ModuleBuilder[F, C, T] {
 	//
 	regmap := make(map[string]uint, 0)
 
-	return &internalModuleBuilder[F, C, T]{name, mid, padding, public, private, synthetic, static, native,
+	return &internalModuleBuilder[F, C, T]{name, mid, public, private, synthetic, static, native,
 		regmap, nil, nil, nil, nil}
 }
 
@@ -85,8 +82,6 @@ type internalModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Ex
 	name module.Name
 	// Id of this module
 	moduleId schema.ModuleId
-	// Indicates whether padding supported for this module
-	padding bool
 	// Indicates whether externally visible
 	public bool
 	// Indicates whether this is a private output or not
@@ -132,11 +127,6 @@ func (p *internalModuleBuilder[F, C, T]) Constraints() []C {
 // Id implementation for ModuleBuilder interface.
 func (p *internalModuleBuilder[F, C, T]) Id() uint {
 	return p.moduleId
-}
-
-// AllowPadding implementation for ModuleBuilder interface.
-func (p *internalModuleBuilder[F, C, T]) AllowPadding() bool {
-	return p.padding
 }
 
 // IsExtern implementation for ModuleBuilder interface.
@@ -315,11 +305,6 @@ func (p *externalModuleBuilder[F, C, T]) Constraints() []C {
 // Id implementation for ModuleBuilder interface.
 func (p *externalModuleBuilder[F, C, T]) Id() uint {
 	return p.moduleId
-}
-
-// AllowPadding implementation for ModuleBuilder interface.
-func (p *externalModuleBuilder[F, C, T]) AllowPadding() bool {
-	return false
 }
 
 // IsExtern implementation for ModuleBuilder interface.

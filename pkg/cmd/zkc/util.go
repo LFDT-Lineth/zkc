@@ -177,15 +177,16 @@ func printSyntaxError(err *source.SyntaxError) {
 }
 
 // WriteTraceFile writes a given trace to disk in JSON format.
-func WriteTraceFile[F field.Element[F]](filename string, tracefile trace.Trace[F]) {
+func WriteTraceFile[F field.Element[F]](filename string, trace trace.Trace[F]) {
 	var err error
 	// Check file extension
 	ext := path.Ext(filename)
 	//
 	switch ext {
 	case ".json":
-		js := json.ToJsonString(tracefile)
-		//
+		// Append data for each shard
+		js := json.ToJsonString(trace)
+		// Write out final data
 		if err = os.WriteFile(filename, []byte(js), 0644); err == nil {
 			return
 		}

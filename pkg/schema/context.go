@@ -15,7 +15,6 @@ package schema
 import (
 	"fmt"
 	"iter"
-	"runtime"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -30,28 +29,10 @@ import (
 // Set provides a convenient alias
 type Set[F field.Element[F]] = *hash.Set[hash.Array[F]]
 
-// chunksPerWorker determines how many chunks, on average, each available
-// processor should receive when building sets in parallel.  Using more
-// chunks than workers allows the workload to be rebalanced dynamically: a
-// worker which finishes its chunks early can pick up further chunks, rather
-// than sitting idle whilst a single large chunk is still being built
-// elsewhere.
-const chunksPerWorker = 10
-
-// determineChunkSize computes a suitable chunk size for parallel set
-// construction, based on the total number of candidate rows across all sets
-// and the number of available processors.  Aiming for chunksPerWorker chunks
-// per processor balances parallelism against the overhead of the reduce
-// phase (more, smaller chunks means more merging work later).
-func determineChunkSize(totalRows uint) uint {
-	return max(1, totalRows/(uint(runtime.NumCPU())*chunksPerWorker))
-}
-
-// setChunk identifies a sub-range of rows within the set determined by a
-// given SetId.
-type setChunk struct {
-	id         SetId
-	start, end uint
+// ChunkId identifies a particular set within a given shard.
+type ChunkId struct {
+	shard uint
+	id    SetId
 }
 
 // SeqBuildContext constructs the context from a given schema and trace.
@@ -59,20 +40,25 @@ type setChunk struct {
 // constructing their sets.  NOTE: this is done sequentially
 func SeqBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Context[F] {
 	var (
-		stats   = util.NewPerfStats()
-		context = make(map[string]*hash.Set[hash.Array[F]])
-		sids    = determineSets(sc)
+		stats    = util.NewPerfStats()
+		contexts []map[string]*hash.Set[hash.Array[F]]
+		sids     = determineSets(sc)
 	)
-	// sequential set construction (as a single chunk per set)
-	for _, sid := range sids {
-		height := setHeight(sid, tr, sc)
-		// Construct data for this set
-		context[sid.String()] = buildSetChunk(setChunk{sid, 0, height}, tr, sc)
+	// Build context for each shard
+	for i := range tr {
+		var context = make(map[string]*hash.Set[hash.Array[F]])
+		// sequential set construction (as a single chunk per set)
+		for _, sid := range sids {
+			// Construct data for this set
+			context[sid.String()] = buildSetChunk(ChunkId{uint(i), sid}, tr, sc)
+		}
+		//
+		contexts = append(contexts, context)
 	}
 	//
-	stats.Log(fmt.Sprintf("Building context (%d sets; sequential)", len(context)))
+	stats.Log(fmt.Sprintf("Building context (%d sets in sequence)", len(sids)*len(tr)))
 	//
-	return contextImpl[F]{context}
+	return contextImpl[F]{contexts}
 }
 
 // ParBuildContext constructs the context from a given schema and trace, using
@@ -83,36 +69,26 @@ func SeqBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Con
 // "reduce" phase), which is likewise done in parallel across sets.
 func ParBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Context[F] {
 	var (
-		stats          = util.NewPerfStats()
-		context        = make(map[string]*hash.Set[hash.Array[F]])
-		sids           = determineSets(sc)
-		chunks, counts = determineChunks(sids, tr, sc)
-		// map phase: build every chunk in parallel
-		partials = array.ParallelMap(chunks, func(_ uint, c setChunk) Set[F] {
+		stats    = util.NewPerfStats()
+		contexts = make([]map[string]*hash.Set[hash.Array[F]], len(tr))
+		chunks   = determineChunks(tr, sc)
+		// build every chunk in parallel
+		sets = array.ParallelMap(chunks, func(_ uint, c ChunkId) Set[F] {
 			return buildSetChunk(c, tr, sc)
 		})
-		// group chunk results by their originating set.  Since chunks are
-		// generated in sids order (see determineChunks), the ith set's chunks
-		// form a contiguous run of counts[i] entries within partials.
-		groups = make([][]Set[F], len(sids))
 	)
-	//
-	for i, offset := 0, uint(0); i < len(sids); i++ {
-		groups[i] = partials[offset : offset+counts[i]]
-		offset += counts[i]
+	// Initialise context for each shard
+	for i := range tr {
+		contexts[i] = make(map[string]*hash.Set[hash.Array[F]])
 	}
-	// reduce phase: merge the chunks of each set in parallel
-	merged := array.ParallelMap(sids, func(i uint, sid SetId) Set[F] {
-		return mergeSets(groups[i])
-	})
-	//
-	for i, sid := range sids {
-		context[sid.String()] = merged[i]
+	// Flattern individual sets into their shards
+	for i, chunk := range chunks {
+		contexts[chunk.shard][chunk.id.String()] = sets[i]
 	}
 	//
-	stats.Log(fmt.Sprintf("Building context (%d sets, %d chunks; parallel)", len(sids), len(chunks)))
+	stats.Log(fmt.Sprintf("Building context (%d sets in parallel)", len(chunks)))
 	//
-	return contextImpl[F]{context}
+	return contextImpl[F]{contexts}
 }
 
 // determineChunks splits every set identified by sids into one or more
@@ -125,75 +101,21 @@ func ParBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Con
 // returns the number of chunks generated for each set (aligned with sids), so
 // callers can recover the chunks belonging to a given set without a map
 // lookup.
-func determineChunks[F field.Element[F]](sids []SetId, tr trace.Trace[F], sc AnySchema[F]) ([]setChunk, []uint) {
+func determineChunks[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) []ChunkId {
 	var (
-		heights = make([]uint, len(sids))
-		total   uint
-	)
-	// Determine height of every set, and the total number of rows overall.
-	for i, sid := range sids {
-		heights[i] = setHeight(sid, tr, sc)
-		total += heights[i]
-	}
-	//
-	var (
-		size   = determineChunkSize(total)
-		chunks []setChunk
-		counts = make([]uint, len(sids))
+		sids  = determineSets(sc)
+		sets  = make([]ChunkId, len(sids)*len(tr))
+		index = 0
 	)
 	//
-	for i, height := range heights {
-		if height == 0 {
-			chunks = append(chunks, setChunk{sids[i], 0, 0})
-			counts[i] = 1
-
-			continue
-		}
-		//
-		for start := uint(0); start < height; start += size {
-			chunks = append(chunks, setChunk{sids[i], start, min(start+size, height)})
-			counts[i]++
+	for i := range tr {
+		for _, sid := range sids {
+			sets[index] = ChunkId{uint(i), sid}
+			index++
 		}
 	}
 	//
-	return chunks, counts
-}
-
-// setHeight determines the number of candidate (static or dynamic) rows from
-// which the given set is constructed.
-func setHeight[F field.Element[F]](id SetId, tr trace.Trace[F], sc AnySchema[F]) uint {
-	scModule := sc.Module(id.Module())
-	//
-	if scModule.IsStatic() {
-		return uint(len(scModule.StaticContents()))
-	}
-	//
-	return tr.Module(id.Module()).Height()
-}
-
-// mergeSets combines one or more partial sets (constructed from disjoint
-// row-range chunks of the same underlying set) into a single set.
-func mergeSets[F field.Element[F]](partials []Set[F]) Set[F] {
-	// Common case: set was constructed as a single chunk.
-	if len(partials) == 1 {
-		return partials[0]
-	}
-	//
-	var size uint
-	//
-	for _, p := range partials {
-		size += p.Size()
-	}
-	//
-	merged := hash.NewSet[hash.Array[F]](size >> 4)
-	//
-	for _, p := range partials {
-		for v := range p.Iter() {
-			merged.Insert(v)
-		}
-	}
-	//
-	return merged
+	return sets
 }
 
 // DetermineSets extracts all unique set identifiers from lookup constraints.
@@ -213,27 +135,30 @@ func determineSets[F field.Element[F]](sc AnySchema[F]) []SetId {
 
 // buildSetChunk constructs the (partial) set of rows determined by a given
 // chunk.
-func buildSetChunk[F field.Element[F]](c setChunk, tr trace.Trace[F], sc AnySchema[F]) Set[F] {
-	scModule := sc.Module(c.id.Module())
+func buildSetChunk[F field.Element[F]](c ChunkId, tr trace.Trace[F], sc AnySchema[F]) Set[F] {
+	var (
+		scModule = sc.Module(c.id.Module())
+		trModule = tr[c.shard].Module(c.id.Module())
+	)
 	//
 	if scModule.IsStatic() {
-		return buildStaticSetChunk(c, scModule)
+		return buildStaticSetChunk(c.id, scModule)
 	}
 	//
-	return buildDynamicSetChunk(c, tr.Module(c.id.Module()))
+	return buildDynamicSetChunk(c.id, trModule)
 }
 
-func buildStaticSetChunk[F field.Element[F]](c setChunk, sm Module[F]) Set[F] {
+func buildStaticSetChunk[F field.Element[F]](id SetId, sm Module[F]) Set[F] {
 	var (
-		buffer   = make([]F, c.id.Width())
-		contents = sm.StaticContents()[c.start:c.end]
-		data     = hash.NewSet[hash.Array[F]](uint(len(contents)) >> 4)
+		buffer   = make([]F, id.Width())
+		contents = sm.StaticContents()
+		data     = hash.NewSet[hash.Array[F]](uint(len(contents)))
 	)
 	// Insert all selected rows within this chunk
 	for _, row := range contents {
-		if isStaticSelected(c.id, row) {
+		if isStaticSelected(id, row) {
 			// Read each register of this vector
-			readStaticRegisters(c.id, row, buffer)
+			readStaticRegisters(id, row, buffer)
 			// Insert item whilst checking whether the buffer was consumed or not
 			if !data.Insert(hash.NewArray(buffer)) {
 				// Yes, buffer consumed.  Therefore, construct fresh buffer to avoid
@@ -246,16 +171,16 @@ func buildStaticSetChunk[F field.Element[F]](c setChunk, sm Module[F]) Set[F] {
 	return data
 }
 
-func buildDynamicSetChunk[F field.Element[F]](c setChunk, trModule trace.Module[F]) Set[F] {
+func buildDynamicSetChunk[F field.Element[F]](id SetId, trModule trace.Module[F]) Set[F] {
 	var (
-		buffer = make([]F, c.id.Width())
-		data   = hash.NewSet[hash.Array[F]]((c.end - c.start) >> 4)
+		buffer = make([]F, id.Width())
+		data   = hash.NewSet[hash.Array[F]](trModule.Height() >> 4)
 	)
 	//
-	for i := c.start; i < c.end; i++ {
-		if isSelected(i, c.id, trModule) {
+	for i := range trModule.Height() {
+		if isSelected(i, id, trModule) {
 			// Read each register of this vector
-			readRegisters(i, c.id, trModule, buffer)
+			readRegisters(i, id, trModule, buffer)
 			// Insert item whilst checking whether the buffer was consumed or not
 			if !data.Insert(hash.NewArray(buffer)) {
 				// Yes, buffer consumed.  Therefore, construct fresh buffer to avoid
@@ -316,12 +241,12 @@ func isStaticSelected[F field.Element[F]](id SetId, row []F) bool {
 
 // Context provides suitable constrant context
 type contextImpl[F field.Element[F]] struct {
-	sets map[string]*hash.Set[hash.Array[F]]
+	sets []map[string]*hash.Set[hash.Array[F]]
 }
 
 // Get implementation of Context interface.
-func (p contextImpl[F]) Get(id SetId) collection.Set[[]F] {
-	if set, ok := p.sets[id.String()]; ok {
+func (p contextImpl[F]) Get(shard uint, id SetId) collection.Set[[]F] {
+	if set, ok := p.sets[shard][id.String()]; ok {
 		return contextSet[F]{set}
 	}
 	//

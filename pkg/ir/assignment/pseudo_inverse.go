@@ -57,7 +57,7 @@ func (e *PseudoInverse[F]) Bounds(mid schema.ModuleId) util.Bounds {
 }
 
 // Compute performs the inversion.
-func (e *PseudoInverse[F]) Compute(tr trace.Trace[F], schema schema.AnySchema[F]) ([]array.MutArray[F], error) {
+func (e *PseudoInverse[F]) Compute(tr trace.Shard[F], schema schema.AnySchema[F]) ([]array.MutArray[F], error) {
 	var (
 		trModule = tr.Module(e.Target.Module())
 		scModule = schema.Module(e.Target.Module())

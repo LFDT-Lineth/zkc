@@ -57,9 +57,6 @@ type ModuleView interface {
 // for a given set of registers.
 type Module[F any] interface {
 	ModuleView
-	// AllowPadding determines whether the given module allows an initial
-	// padding row, or not.
-	AllowPadding() bool
 	// Assignments returns an iterator over the assignments of this module.
 	// These are the computations used to assign values to all computed columns
 	// in this module.
@@ -92,7 +89,6 @@ type Module[F any] interface {
 // relatively straightforward.
 type Table[F field.Element[F], C Constraint[F]] struct {
 	name           module.Name
-	padding        bool
 	public         bool
 	private        bool
 	synthetic      bool
@@ -109,9 +105,9 @@ type Table[F field.Element[F], C Constraint[F]] struct {
 // the ZkC pipeline should ever pass true.  The static flag indicates that this
 // module is a static reference table whose contents are fixed at compile time
 // and are populated separately via SetStaticContents.
-func (p *Table[F, C]) Init(name module.Name, padding, public, private, synthetic, native, static bool,
+func (p *Table[F, C]) Init(name module.Name, public, private, synthetic, native, static bool,
 ) *Table[F, C] {
-	return &Table[F, C]{name, padding, public, private, synthetic, native, static, nil, nil, nil, nil}
+	return &Table[F, C]{name, public, private, synthetic, native, static, nil, nil, nil, nil}
 }
 
 // Assignments provides access to those assignments defined as part of this
@@ -159,13 +155,6 @@ func (p *Table[F, C]) HasRegister(name string) (register.Id, bool) {
 // Name returns the module name.
 func (p *Table[F, C]) Name() module.Name {
 	return p.name
-}
-
-// AllowPadding determines whether the given module supports padding at the
-// beginning of the module.  This is necessary because legacy modules expect an
-// initial padding row, and allow defensive padding as well.
-func (p *Table[F, C]) AllowPadding() bool {
-	return p.padding
 }
 
 // IsPublicOutput identifies whether or not this module represents a public

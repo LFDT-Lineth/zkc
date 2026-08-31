@@ -49,7 +49,7 @@ func CheckConsistent[F any, E term.Contextual](module uint, schema schema.AnySch
 
 // DetermineHandle is a very simple helper which determines a suitable qualified
 // name for the given constraint handle.
-func DetermineHandle[F any](handle string, ctx schema.ModuleId, tr trace.Trace[F]) string {
+func DetermineHandle[F any](handle string, ctx schema.ModuleId, tr trace.Shard[F]) string {
 	modName := tr.Module(ctx).Name()
 	//
 	return trace.QualifiedColumnName(modName, handle)

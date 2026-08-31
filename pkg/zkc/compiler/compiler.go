@@ -122,11 +122,13 @@ func scanForFurtherSourceFiles(sourceFile source.File, parsedSourceFile parser.U
 	//
 	for _, d := range parsedSourceFile.Declarations {
 		if inc, ok := d.(*decl.Include[symbol.Unresolved]); ok {
-			var (
-				pattern      = filepath.Join(dir, inc.Pattern())
-				matches, err = filepath.Glob(pattern)
-			)
-			//
+			// check if file is already provided in the knownSourceFiles map, if so, ignore it.
+			pattern := canonicalPath(filepath.Join(dir, inc.Pattern()))
+			if knownSourceFiles[pattern] {
+				continue
+			}
+			// otherwise, we find the file from the filesystem and add it to the furtherSourceFiles list.
+			matches, err := filepath.Glob(pattern)
 			if err != nil {
 				errors = append(errors, *parsedSourceFile.SourceMap.SyntaxError(inc, err.Error()))
 				continue
@@ -190,6 +192,8 @@ func validateProgram(program ast.Program, field field.Config, srcmaps source.Map
 	errors = append(errors, validate.DebugFunctions(program, srcmaps)...)
 	// Check #[inline] functions can actually be inlined
 	errors = append(errors, validate.InlineFunctions(program, srcmaps)...)
+	// Check #[global] functions can actually be placed on the bus
+	errors = append(errors, validate.GlobalFunctions(program, srcmaps)...)
 	// Check no static tables have more rows than max-static-height
 	errors = append(errors, validate.StaticTableHeight(program, srcmaps, maxStaticHeight)...)
 	//

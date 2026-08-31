@@ -287,6 +287,8 @@ func buildFunctionKind(fn *decl.ResolvedFunction) vm.FunctionKind {
 			kind = kind.WithInline(true)
 		case "native":
 			kind = kind.WithNative(true)
+		case "global":
+			kind = kind.WithGlobal(true)
 		case "debug":
 			// ignore
 		default:
