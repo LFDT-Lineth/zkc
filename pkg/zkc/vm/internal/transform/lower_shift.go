@@ -84,6 +84,9 @@ type shiftHelperKey struct {
 	// width seen across its call sites (always > the chain depth, so guard and
 	// level keys never collide).
 	amtWidth uint
+	// rot separates rotation helpers (see ensureRot) from shift helpers: a
+	// rotation chain reuses op to select its direction (OP_SHL: left).
+	rot bool
 }
 
 // shiftHelpers is the registry of SHL/SHR helper modules built by

@@ -1,0 +1,5 @@
+{ "data": "0x000100020008", "amount": "0b0001" }
+{ "data": "0x800000010004", "amount": "0b0001" }
+{ "data": "0xabcdabcd5e6d", "amount": "0b0000" }
+{ "data": "0xabcdd5e65e6d", "amount": "0b1111" }
+{ "data": "0x12341a0991a0", "amount": "0b0111" }

@@ -851,6 +851,10 @@ func Test_ZkcUnit_Shift_13(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/shift_13", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Rotate_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/rotate_01", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Read-Write Memory (RAM) Tests
 // ===================================================================

@@ -1,0 +1,23 @@
+pub input data(address:u2) -> (word:u16)
+pub input amount(offset:u1) -> (n:u4)
+
+// prove that ((x << n) | (x >> (16 - n))) == y (i.e. rotate left), for both
+// variable and constant rotation amounts
+fn main() {
+    var x:u16 = data[0]
+    var y:u16 = data[1]
+    var z:u16 = data[2]
+    var n:u4 = amount[0]
+    var shift:u5 = 16 - (n as u5)
+
+    // variable amount
+    if ((x << n) | (x >> shift)) != y {
+        fail
+    }
+    // constant amount
+    if ((x << 3) | (x >> 13)) != z {
+        fail
+    }
+
+    return
+}
