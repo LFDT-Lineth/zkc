@@ -59,11 +59,7 @@ type Register[W Word[W]] = descriptor.Register[W]
 // bytecode RegisterId).
 type RegisterId = bytecode.RegisterId
 
-// DISCARD is a pseudo register id marking a discarded ("_") return value in a
-// call's return list, or a discarded data line in a static memory read.  It
-// keeps the list positionally aligned with the callee's outputs (resp. the
-// memory's data lines) whilst binding nothing: no caller register --- and
-// hence no trace column --- ever backs a discarded position.
+// DISCARD is a pseudo register id marking a discarded ("_") return value.
 const DISCARD = bytecode.DISCARD
 
 // Operand represents either a register operand, or a constant operand.

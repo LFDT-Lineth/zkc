@@ -15,8 +15,9 @@ package bytecode
 import (
 	"fmt"
 	"math"
-	"slices"
 	"strings"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -83,22 +84,9 @@ func RegisterToString[W word.Word[W]](reg RegisterId, env Environment[W]) string
 // ============================================================================
 
 // boundRegisters filters any DISCARD entries out of the given register list,
-// leaving only registers actually bound.  The original list is returned
-// (unchanged) when it contains no DISCARD entries.
+// leaving only registers actually bound.
 func boundRegisters(regs []RegisterId) []RegisterId {
-	if !slices.Contains(regs, DISCARD) {
-		return regs
-	}
-	//
-	var bound = make([]RegisterId, 0, len(regs)-1)
-	//
-	for _, r := range regs {
-		if r != DISCARD {
-			bound = append(bound, r)
-		}
-	}
-	//
-	return bound
+	return array.Filter(regs, func(r RegisterId) bool { return r != DISCARD })
 }
 
 // CheckSmallArgs panics if the given arguments cannot be encoded as a "small"

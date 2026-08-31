@@ -45,13 +45,7 @@ const (
 // RegisterId just provides a convenient alias to make the code more readable.
 type RegisterId = uint16
 
-// DISCARD is a pseudo register id marking a discarded ("_") return value in a
-// call's return list, or a discarded data line in a static memory read.  It
-// keeps the list positionally aligned with the callee's outputs (resp. the
-// memory's data lines) whilst binding nothing: no caller register --- and
-// hence no trace column --- ever backs a discarded position.  A DISCARD entry
-// never survives into the interpreter's instruction encoding (see
-// encoding.Call), and is skipped when a call's lookup constraint is emitted.
+// DISCARD is a pseudo register id marking a discarded ("_") return value.
 const DISCARD RegisterId = math.MaxUint16
 
 // ModuleId represents module identifiers

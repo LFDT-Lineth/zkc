@@ -70,7 +70,7 @@ func ReadWrite[W word.Word[W]](p *bytecode.ReadWrite[W], env Environment[W]) []u
 	data := p.Data
 	//
 	if !p.Write {
-		data = denseBindings(data)
+		data = substituteDiscardedRegisters(data)
 	}
 	//
 	return encodeReadWrite_sn(mode, id, p.Address, data)

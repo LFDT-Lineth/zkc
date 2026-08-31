@@ -318,6 +318,8 @@ func (p *TypeChecker) typePartialAssignment(s *stmt.Assign[symbol.Resolved], env
 		return errs
 	}
 	// Sanity check at least one return value is bound
+	// Note: there are no strong reason to not accept _ = f(x), but as there are no use case at the moment,
+	// we introduce this safeguard.
 	if !array.ContainsMatching(s.Targets, func(lv LVal) bool { return !isDiscard(lv) }) {
 		return p.srcmaps.SyntaxErrors(s, "at least one return argument must be used")
 	}

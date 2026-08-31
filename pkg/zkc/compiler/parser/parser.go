@@ -1981,7 +1981,7 @@ func (p *Parser) parseAccessExpr(env Environment) (Expr, []source.SyntaxError) {
 		lookahead = p.lookahead()
 	)
 	//
-	name, errs = p.parseIdentifier()
+	name, errs = p.parseDeclaredIdentifier()
 	// "_" only ever discards a return value on the left-hand side of an
 	// assignment; it cannot be read (nor name a function or memory).
 	if len(errs) == 0 && name == "_" {
@@ -2099,15 +2099,6 @@ func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
 	if len(errs) > 0 {
 		return lv, errs
 	}
-	// "_" as an assignment target discards the corresponding return value of a
-	// function call (or static memory read).
-	if reg == "_" {
-		lv = lval.NewDiscard[symbol.Unresolved]()
-		// update source mapping
-		p.srcmap.Put(lv, p.spanOf(start, p.index))
-		//
-		return lv, nil
-	}
 	//
 	var (
 		isDeclaredVariable = env.IsDeclaredVariable(reg)
@@ -2115,6 +2106,16 @@ func (p *Parser) parseLVal(env Environment) (LVal, []source.SyntaxError) {
 	)
 	//
 	switch {
+	case reg == "_":
+		// "_" as an assignment target discards the corresponding return value of a
+		// function call (or static memory read).
+		{
+			lv = lval.NewDiscard[symbol.Unresolved]()
+			// update source mapping
+			p.srcmap.Put(lv, p.spanOf(start, p.index))
+			//
+			return lv, nil
+		}
 	case !lSquareFollows && isDeclaredVariable:
 		// Plain register, possibly the head of a "::" destructuring chain.
 		var vars = []variable.Id{env.LookupVariable(reg)}

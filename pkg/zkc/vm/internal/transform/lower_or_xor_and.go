@@ -56,7 +56,7 @@ func LowerOrXorAnd[W word.Word[W]](program descriptor.Program[W]) descriptor.Pro
 		program.MaxStaticHeight(), append(out, helpers.modules()...)...)
 }
 
-// bitwiseHelperKey identifies a AND/OR/XOR helper module.
+// bitwiseHelperKey identifies an AND/OR/XOR helper module.
 type bitwiseHelperKey struct {
 	width uint
 	arity int
@@ -99,7 +99,7 @@ func (p *bitwiseHelpers[W]) modules() []descriptor.Module[W] {
 }
 
 func helperName(key bitwiseHelperKey) string {
-	return fmt.Sprintf("$bit_AndOrXor_u%d", key.width)
+	return fmt.Sprintf("$bit_xoa_u%d", key.width)
 }
 
 // isTableWidth reports whether an AND/OR/XOR operation of the given width is
