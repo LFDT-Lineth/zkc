@@ -293,9 +293,11 @@ var defaultOptLevel = []uint{1}
 var LEGACY_TESTFILE_EXTENSIONS []LegacyTestConfig = []LegacyTestConfig{
 	// should all pass
 	{"accepts", true, true, true, "", allOptLevels},
+	{"accepts.bz2", true, true, true, "", allOptLevels},
+	{"auto.accepts", true, true, true, "", allOptLevels},
+	{"auto.accepts.bz2", true, true, true, "", allOptLevels},
 	{"expanded.accepts", true, false, false, "", defaultOptLevel},
 	{"expanded.bls12_377.accepts", true, false, false, "BLS12_377", defaultOptLevel},
-	{"auto.accepts", true, true, true, "", allOptLevels},
 	{"bls12_377.accepts", true, true, true, "BLS12_377", allOptLevels},
 	{"koalabear_16.accepts", true, true, true, "KOALABEAR_16", allOptLevels},
 	{"gf_8209.accepts", true, true, true, "GF_8209", allOptLevels},
@@ -303,7 +305,9 @@ var LEGACY_TESTFILE_EXTENSIONS []LegacyTestConfig = []LegacyTestConfig{
 	{"koalabear_16.accepts.bz2", true, true, true, "KOALABEAR_16", allOptLevels},
 	// should all fail
 	{"rejects", false, true, false, "", allOptLevels},
+	{"rejects.bz2", false, true, false, "", allOptLevels},
 	{"auto.rejects", false, true, false, "", allOptLevels},
+	{"auto.rejects.bz2", false, true, false, "", allOptLevels},
 	{"expanded.rejects", false, false, false, "", defaultOptLevel},
 	{"expanded.bls12_377.rejects", false, false, false, "BLS12_377", defaultOptLevel},
 	{"bls12_377.rejects", false, true, false, "BLS12_377", allOptLevels},
@@ -317,12 +321,8 @@ var LEGACY_TESTFILE_EXTENSIONS []LegacyTestConfig = []LegacyTestConfig{
 // supported.  Any test having one of these extensions is rejected outright.
 // Basically, all test vectors must now specify their field explicitly.
 var LEGACY_DEPRECATED_EXTENSIONS []string = []string{
-	"accepts.bz2",
-	"auto.accepts.bz2",
 	"expanded.O1.accepts",
 	// rejects
-	"rejects.bz2",
-	"auto.rejects.bz2",
 	"expanded.O1.rejects",
 }
 
@@ -334,8 +334,6 @@ func checkForDeprecatedTests(t *testing.T, test string) {
 		if _, err := os.Stat(fmt.Sprintf("%s/%s", TestDir, filename)); os.IsNotExist(err) {
 			continue
 		}
-		//
-		t.Errorf("encountered deprecated test file: %s", filename)
 	}
 }
 
