@@ -18,8 +18,11 @@ type Page struct {
 	address uint64
 	// Data holds the words stored in this page, beginning at address.
 	data []byte
-	// timestamps, when non-nil, holds the per-cell timestamp parallel to data
+	// timestamps, when non-nil, holds one timestamp per logical row of data
 	// (used for read/write memories whose cells are timestamped); nil otherwise.
+	// Timestamps are per-row rather than per-cell so that they remain valid
+	// when a checkpoint is restored on a machine of a different word width
+	// (where rows divide into a different number of cells).
 	timestamps []uint64
 }
 
@@ -29,8 +32,8 @@ func NewPage(address uint64, data []byte) Page {
 	return Page{address: address, data: data}
 }
 
-// NewStampedPage constructs a page carrying a per-cell timestamp alongside
-// each data word; len(timestamps) must equal len(data).
+// NewStampedPage constructs a page carrying one timestamp per logical row of
+// the given data.
 func NewStampedPage(address uint64, data []byte, timestamps []uint64) Page {
 	return Page{address: address, data: data, timestamps: timestamps}
 }

@@ -110,7 +110,12 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 
 // emitMemWrite emits a write to a writable memory: decode the address,
 // width-check each value against the memory's data register, and store
-// grow-on-write.
+// grow-on-write.  A write-once (WOM) output additionally requires the address
+// to be at or beyond the memory's current height: cells are written
+// consecutively, so (as in executeWriteWom_sn) any address below the height
+// has already been written and the write fails.  Since the lines of one write
+// occupy consecutive cells, checking the start address alone is equivalent to
+// the interpreter's per-cell check.
 func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrite[word.Uint]) error {
 	mi, ok := g.memByID[uint(x.Id)]
 	if !ok {
@@ -138,6 +143,12 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 	c.block(func() {
 		c.linef("start := %s", start)
 
+		if mi.role == womOutput {
+			c.linef("if start < uint64(len(%s)) {", mi.varName)
+			c.linef("fail(%q)", womFailMsg(mi.name))
+			c.line("}")
+		}
+
 		for i, s := range x.Data {
 			src, e := g.registerOperand(fn, s)
 			if e != nil {
@@ -161,6 +172,12 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 	})
 
 	return inner
+}
+
+// womFailMsg is the failure reported when a write-once memory cell is written
+// a second time (mirroring the interpreter's executeWriteWom_sn message).
+func womFailMsg(name string) string {
+	return fmt.Sprintf("address already written for write-only memory %s", name)
 }
 
 // addrExpr mirrors the interpreter's decodeAddress: fold the address registers

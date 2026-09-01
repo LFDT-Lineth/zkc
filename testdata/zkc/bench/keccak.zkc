@@ -56,10 +56,10 @@ fn copyOutput<ram>() {
     //
     for i:u64 = 0; i<8; i = i + 1 {
         b3::b2::b1::b0 = ram[i]
-        hash[j + 3] = b3
-        hash[j + 2] = b2
-        hash[j + 1] = b1
         hash[j] = b0
+        hash[j + 1] = b1
+        hash[j + 2] = b2
+        hash[j + 3] = b3
         j = j + 4
     }
 }

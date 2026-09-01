@@ -35,12 +35,12 @@ func (p *StaticReadOnly[W]) Initialise(contents []W) {
 }
 
 // Checkpoint implementation for memory interface
-func (p *StaticReadOnly[W]) Checkpoint(_ uint16) checkpoint.Memory {
+func (p *StaticReadOnly[W]) Checkpoint(_ uint16, _ word.Config) checkpoint.Memory {
 	panic("unsupported operation")
 }
 
 // Restore implementation for memory interface
-func (p *StaticReadOnly[W]) Restore(_ checkpoint.Memory) {
+func (p *StaticReadOnly[W]) Restore(_ checkpoint.Memory, _ word.Config) {
 	panic("unsupported operation")
 }
 

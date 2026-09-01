@@ -105,6 +105,10 @@ type Interpreter[W word.Word[W]] struct {
 	// Prime modulus of the surrounding field, needed to simulate native field
 	// instructions (ADDMOD_P, SUBMOD_P and MULMOD_P).
 	modulus W
+	// Configuration of the surrounding field, which determines (amongst other
+	// things) the encoded width of native registers within a checkpoint (see
+	// Pack).
+	field word.Config
 	// Current function module identifier.
 	fid uint16
 	// Program counter: offset into program.bytecodes of the next bytecode to
@@ -224,6 +228,7 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 	return &Interpreter[W]{
 		program: compiled,
 		modulus: prime,
+		field:   program.Field(),
 		pc:      0,
 		fp:      0,
 		rp:      0,
@@ -335,17 +340,23 @@ func (p *Interpreter[W]) Outputs() iter.Iterator[InputOutput[W]] {
 }
 
 // CheckPoint relevant state of the interpreter, such that execution can be
-// resumed from this point.
+// resumed from this point.  Observe that any threaded stamp-in inputs (see
+// ThreadTimestamps) are excluded from the packed arguments: they are not
+// meaningful across machines of different word widths (e.g. fast mode has no
+// such registers), and are instead reconstructed from the memory clocks upon
+// restore (see Restore).
 func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint {
 	var (
 		fun = p.program.Module(p.fid).(*descriptor.Function[W])
-		// Determine start/end of arguments
-		start = uint(p.fp)
-		end   = start + fun.NumInputs()
+		// Determine number of leading stamp-in inputs (to be excluded)
+		k = p.numStampInputs(fun)
+		// Determine start/end of remaining arguments
+		start = uint(p.fp) + k
+		end   = uint(p.fp) + fun.NumInputs()
 		// Extract arguments
 		frame = p.dataStack.Slice(start, end)
 		// Pack into bytes
-		args     []byte = Pack(fun.Inputs(), frame)
+		args     []byte = Pack(p.field, fun.Inputs()[k:], frame)
 		memories []checkpoint.Memory
 	)
 	// Pack memories
@@ -358,7 +369,7 @@ func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint {
 		if mem, ok := m.(*descriptor.Memory[W]); ok && !mem.IsStatic() {
 			var ith = p.Memory(mid)
 			//
-			memories = append(memories, ith.Checkpoint(mid))
+			memories = append(memories, ith.Checkpoint(mid, p.field))
 		}
 	}
 	//
@@ -375,7 +386,10 @@ func (p *Interpreter[W]) Restore(cp checkpoint.CheckPoint) {
 	var (
 		memories = cp.Memories()
 		sym, ok  = p.Binary().AddressOf(cp.Function())
-		fun      = p.Binary().Module(cp.Function())
+		fun      = p.program.Module(cp.Function()).(*descriptor.Function[W])
+		// Determine number of leading stamp-in inputs (which were excluded from
+		// the packed arguments --- see CheckPoint).
+		k = p.numStampInputs(fun)
 	)
 	//
 	util.Assert(ok, "cannot restore checkpoint")
@@ -392,8 +406,8 @@ func (p *Interpreter[W]) Restore(cp checkpoint.CheckPoint) {
 	p.dataStack.Alloc(fun.Width())
 	// Restore arguments into the frame's input slots (which Alloc has already
 	// reserved, mirroring the ENTER_n call convention).
-	for i, val := range Unpack(fun.Inputs(), cp.ArgumentBytes()) {
-		p.dataStack.Set(uint(i), val)
+	for i, val := range Unpack(p.field, fun.Inputs()[k:], cp.ArgumentBytes()) {
+		p.dataStack.Set(k+uint(i), val)
 	}
 	// Restore memories
 	for i, m := range p.program.Modules() {
@@ -402,11 +416,87 @@ func (p *Interpreter[W]) Restore(cp checkpoint.CheckPoint) {
 		if mem, ok := m.(*descriptor.Memory[W]); ok && !mem.IsStatic() {
 			var ith = p.Memory(mid)
 			// Restore ith memory from checkpoint
-			ith.Restore(memories[0])
+			ith.Restore(memories[0], p.field)
 			// Pop checkpoint
 			memories = memories[1:]
 		}
 	}
+	// Seed the threaded stamp-in inputs (if any) from the restored memory
+	// clocks.
+	p.seedStampInputs(fun, cp.Memories())
+}
+
+// numStampInputs returns the number of leading input registers of the given
+// function which are threaded stamp-in registers (or limbs thereof).  The
+// ThreadTimestamps transform places one stamp-in register per read-write
+// memory effect at the front of a function's inputs (each possibly split into
+// several limbs); programs which have not been threaded (e.g. for fast mode
+// execution) have none.
+func (p *Interpreter[W]) numStampInputs(fun *descriptor.Function[W]) uint {
+	var (
+		inputs = fun.Inputs()
+		n      uint
+	)
+	//
+	for _, e := range fun.Effects() {
+		var name = p.program.Module(e).Name() + "$stamp"
+		//
+		for n < uint(len(inputs)) && isLimbOf(inputs[n].Name(), name) {
+			n++
+		}
+	}
+	//
+	return n
+}
+
+// seedStampInputs initialises the threaded stamp-in inputs (if any) of the
+// given function from the given memory clocks.  Since the runtime clock ticks
+// before each access and the first access of the restored shard carries
+// exactly its stamp-in value (see ThreadTimestamps), each stamp-in is seeded
+// with clock+1.  This reconstructs the value the caller would have forwarded,
+// which cannot be transferred via the packed arguments (the checkpoint may
+// originate from a machine without threaded stamps --- see CheckPoint).
+func (p *Interpreter[W]) seedStampInputs(fun *descriptor.Function[W], memories []checkpoint.Memory) {
+	var (
+		inputs = fun.Inputs()
+		clocks = make(map[uint16]uint64, len(memories))
+		n      uint
+	)
+	//
+	for _, m := range memories {
+		clocks[m.ModuleId()] = m.Clock()
+	}
+	//
+	for _, e := range fun.Effects() {
+		var (
+			name  = p.program.Module(e).Name() + "$stamp"
+			stamp = clocks[e] + 1
+			start = n
+		)
+		// Determine the limb group of this stamp register.
+		for n < uint(len(inputs)) && isLimbOf(inputs[n].Name(), name) {
+			n++
+		}
+		// Fan the stamp out across the limbs, which are ordered most
+		// significant first.
+		for i := n; i > start; i-- {
+			var width = inputs[i-1].Bitwidth().Unwrap()
+			//
+			if width >= 64 {
+				p.dataStack.Set(i-1, word.Const64[W](stamp))
+				stamp = 0
+			} else {
+				p.dataStack.Set(i-1, word.Const64[W](stamp&((1<<width)-1)))
+				stamp >>= width
+			}
+		}
+	}
+}
+
+// isLimbOf checks whether a register with the given name is the register base
+// itself, or one of its limbs (named "base'k" after register splitting).
+func isLimbOf(name, base string) bool {
+	return name == base || strings.HasPrefix(name, base+"'")
 }
 
 // Binary provides access to the compiled program binary being executed.
