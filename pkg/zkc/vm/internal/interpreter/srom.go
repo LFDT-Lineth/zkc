@@ -13,6 +13,7 @@
 package interpreter
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -31,6 +32,16 @@ func (p *StaticReadOnly[W]) Initialise(contents []W) {
 	if len(contents) > 0 {
 		panic("cannot initialise static read only memory")
 	}
+}
+
+// Checkpoint implementation for memory interface
+func (p *StaticReadOnly[W]) Checkpoint(_ uint16) checkpoint.Memory {
+	panic("unsupported operation")
+}
+
+// Restore implementation for memory interface
+func (p *StaticReadOnly[W]) Restore(_ checkpoint.Memory) {
+	panic("unsupported operation")
 }
 
 // NewStatic constructs a static read-only memory pre-loaded with the

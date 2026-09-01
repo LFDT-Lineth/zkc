@@ -105,11 +105,11 @@ func (p TraceBuilder[W, F, T]) bootAndTraceShards(inputs map[string][]byte,
 	return shards, outputs, errors
 }
 
-func (p TraceBuilder[W, F, T]) traceCheckPoints(checkpoints []CheckPoint[W]) (jobs []traceJob[F]) {
+func (p TraceBuilder[W, F, T]) traceCheckPoints(checkpoints []CheckPoint) (jobs []traceJob[F]) {
 	var (
 		strategy = p.config.shardingStrategy.Unwrap()
 		// Construct tracing function
-		traceFn = func(i uint, cp CheckPoint[W]) traceJob[F] {
+		traceFn = func(i uint, cp CheckPoint) traceJob[F] {
 			var (
 				steps = strategy.shardSteps
 				trace Shard[F]

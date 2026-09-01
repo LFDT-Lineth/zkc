@@ -13,6 +13,7 @@
 package interpreter
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -41,6 +42,10 @@ type Memory[W word.Word[W]] interface {
 	Write(address uint64, value W) error
 	// Contents returns the contents of this memory as an array.
 	Contents() []W
+	//
+	Checkpoint(mid uint16) checkpoint.Memory
+	//
+	Restore(checkpoint.Memory)
 	// AccessLog returns the chronological log of reads / writes performed
 	// against this memory, or nil if it does not record accesses (only
 	// read-write memory records, and only when a recording log is installed
@@ -60,4 +65,26 @@ type InputOutput[W word.Word[W]] interface {
 	// Initialise this memory with the given contents.  This will overwrite any
 	// existing contents.
 	Initialise(contents []W)
+}
+
+// Pack a given set of words into a given set of bytes, according to a given set
+// of descriptors.
+func Pack[W word.Word[W]](regs []descriptor.Register[W], data []W) []byte {
+	panic("todo")
+}
+
+// PackTimed packs a given set of (timestamped) words into a given set of bytes,
+// according to a given set of descriptors.
+func PackTimed[W word.Word[W]](regs []descriptor.Register[W], data []TimestampedCell[W]) ([]byte, []uint64) {
+	panic("todo")
+}
+
+// Unpack a set of words from a given set of bytes.
+func Unpack[W word.Word[W]](regs []descriptor.Register[W], data []byte) []W {
+	panic("todo")
+}
+
+// UnpackTimed unpacks a set of (timestamped) words from a given set of bytes.
+func UnpackTimed[W word.Word[W]](regs descriptor.Memory[W], data []byte, stamps []uint64) []TimestampedCell[W] {
+	panic("todo")
 }

@@ -13,6 +13,7 @@
 package interpreter
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -35,6 +36,16 @@ type ReadOnly[W word.Word[W]] struct {
 // Write implementation for Memory interface.
 func (p *ReadOnly[W]) Write(address uint64, value W) error {
 	panic("unsupported operation for read-only memory")
+}
+
+// Checkpoint implementation for memory interface
+func (p *ReadOnly[W]) Checkpoint(_ uint16) checkpoint.Memory {
+	panic("unsupported operation")
+}
+
+// Restore implementation for memory interface
+func (p *ReadOnly[W]) Restore(pages checkpoint.Memory) {
+	panic("unsupported operation")
 }
 
 // NewReadOnly constructs a new read-only memory initialised with a given set of values.
