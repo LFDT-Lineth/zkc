@@ -19,6 +19,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	lword "github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -141,6 +142,17 @@ func NewRegister[W any](kind register.Type, name string, bitwidth util.Option[ui
 // returns none in such cases.
 func (p Register[W]) Bitwidth() util.Option[uint] {
 	return p.bitwidth
+}
+
+// Bytewidth determines the number of bytes required to hold any value stored in
+// this register (if applicable).  Observe that native registers have no
+// explicit bytewidth and, hence, this simply returns none in such cases.
+func (p Register[W]) Bytewidth() util.Option[uint] {
+	if p.bitwidth.HasValue() {
+		return util.Some(lword.ByteWidth(p.bitwidth.Unwrap()))
+	}
+	//
+	return util.None[uint]()
 }
 
 // Kind returns the kind of this register (e.g. input, output, computed).

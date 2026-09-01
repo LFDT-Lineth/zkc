@@ -51,7 +51,7 @@ type CheckPoint struct {
 // retained by reference, so callers which intend to continue mutating the
 // underlying storage (e.g. an interpreter's live stacks) should pass copies.
 func NewCheckPoint(function uint16, args []byte, memory []Memory) CheckPoint {
-	return CheckPoint{}
+	return CheckPoint{function, args, memory}
 }
 
 // Function returns the identifier of the executing function.

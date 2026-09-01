@@ -351,8 +351,11 @@ func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint {
 	// Pack memories
 	for i, m := range p.program.Modules() {
 		var mid = uint16(i)
-		// Note that ROMs/SROMs are not checkpointed.
-		if m.IsMemory() && !m.IsReadOnly() {
+		// Note that static memories (SROMs) are not checkpointed, since their
+		// contents form part of the program itself.  Non-static ROMs (i.e.
+		// inputs) are checkpointed, since a restored machine has no other way to
+		// recover them.
+		if mem, ok := m.(*descriptor.Memory[W]); ok && !mem.IsStatic() {
 			var ith = p.Memory(mid)
 			//
 			memories = append(memories, ith.Checkpoint(mid))
@@ -387,15 +390,16 @@ func (p *Interpreter[W]) Restore(cp checkpoint.CheckPoint) {
 	p.callStack.Clear()
 	p.dataStack.Clear()
 	p.dataStack.Alloc(fun.Width())
-	// Restore stack frame
-	for _, val := range Unpack(fun.Inputs(), cp.ArgumentBytes()) {
-		p.dataStack.Push(val)
+	// Restore arguments into the frame's input slots (which Alloc has already
+	// reserved, mirroring the ENTER_n call convention).
+	for i, val := range Unpack(fun.Inputs(), cp.ArgumentBytes()) {
+		p.dataStack.Set(uint(i), val)
 	}
 	// Restore memories
 	for i, m := range p.program.Modules() {
 		var mid = uint16(i)
-		// Note that ROMs/SROMs are not checkpointed
-		if m.IsMemory() && !m.IsReadOnly() {
+		// Note that static memories (SROMs) are not checkpointed (see CheckPoint)
+		if mem, ok := m.(*descriptor.Memory[W]); ok && !mem.IsStatic() {
 			var ith = p.Memory(mid)
 			// Restore ith memory from checkpoint
 			ith.Restore(memories[0])
