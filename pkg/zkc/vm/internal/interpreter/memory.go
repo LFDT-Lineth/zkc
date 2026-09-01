@@ -13,6 +13,10 @@
 package interpreter
 
 import (
+	"math/big"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	lword "github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -68,23 +72,125 @@ type InputOutput[W word.Word[W]] interface {
 }
 
 // Pack a given set of words into a given set of bytes, according to a given set
-// of descriptors.
+// of descriptors.  Cells map onto registers in a round-robin fashion (i.e. cell
+// i is described by regs[i % len(regs)]), matching the flat layout of both
+// memory contents and stack frames.  Each cell is encoded big endian using a
+// fixed number of bytes determined by its register (see Register.Bytewidth) or,
+// for native registers, by the full bandwidth of the machine word.  Since the
+// geometry is fixed, Unpack can reconstruct the original words from the bytes
+// alone.
 func Pack[W word.Word[W]](regs []descriptor.Register[W], data []W) []byte {
-	panic("todo")
+	var (
+		offset, total uint
+		zero          W
+		// Fallback width for native registers.
+		native = lword.ByteWidth(zero.Bandwidth())
+	)
+	// Determine total number of bytes required.
+	for i := range data {
+		total += regs[i%len(regs)].Bytewidth().UnwrapOr(native)
+	}
+	//
+	bytes := make([]byte, total)
+	//
+	for i, ith := range data {
+		n := regs[i%len(regs)].Bytewidth().UnwrapOr(native)
+		packCell(bytes[offset:offset+n], ith)
+		offset += n
+	}
+	//
+	return bytes
 }
 
 // PackTimed packs a given set of (timestamped) words into a given set of bytes,
-// according to a given set of descriptors.
+// according to a given set of descriptors.  The values are encoded exactly as
+// for Pack, whilst the timestamps are returned separately (one per cell).
 func PackTimed[W word.Word[W]](regs []descriptor.Register[W], data []TimestampedCell[W]) ([]byte, []uint64) {
-	panic("todo")
+	var (
+		values = make([]W, len(data))
+		stamps = make([]uint64, len(data))
+	)
+	//
+	for i, cell := range data {
+		values[i] = cell.value
+		stamps[i] = cell.timestamp
+	}
+	//
+	return Pack(regs, values), stamps
 }
 
-// Unpack a set of words from a given set of bytes.
+// Unpack a set of words from a given set of bytes.  This is the inverse of
+// Pack: the number of cells is determined entirely by the length of the data
+// and the (fixed) encoded width of each register.
 func Unpack[W word.Word[W]](regs []descriptor.Register[W], data []byte) []W {
-	panic("todo")
+	var (
+		words  []W
+		offset uint
+		zero   W
+		// Fallback width for native registers.
+		native = lword.ByteWidth(zero.Bandwidth())
+	)
+	//
+	for i := 0; offset < uint(len(data)); i++ {
+		n := regs[i%len(regs)].Bytewidth().UnwrapOr(native)
+		//
+		words = append(words, unpackCell[W](data[offset:offset+n]))
+		offset += n
+	}
+	//
+	return words
 }
 
 // UnpackTimed unpacks a set of (timestamped) words from a given set of bytes.
-func UnpackTimed[W word.Word[W]](regs descriptor.Memory[W], data []byte, stamps []uint64) []TimestampedCell[W] {
-	panic("todo")
+// This is the inverse of PackTimed, recombining each decoded value with its
+// corresponding timestamp.
+func UnpackTimed[W word.Word[W]](mem descriptor.Memory[W], data []byte, stamps []uint64) []TimestampedCell[W] {
+	var values = Unpack(mem.DataRegisters(), data)
+	// Sanity check timestamps line up with decoded cells.
+	util.Assert(len(values) == len(stamps), "malformed page (%d cells, but %d timestamps)", len(values), len(stamps))
+	//
+	cells := make([]TimestampedCell[W], len(values))
+	//
+	for i, value := range values {
+		cells[i] = TimestampedCell[W]{timestamp: stamps[i], value: value}
+	}
+	//
+	return cells
+}
+
+// packCell encodes a single value big endian into the given buffer, whose
+// length determines the encoded width.  This will panic if the value does not
+// fit within the buffer (implying it exceeded its register's width).
+func packCell[W word.Word[W]](buf []byte, value W) {
+	// Fast path avoids big.Int allocation for cells of at most 64 bits.
+	if len(buf) <= 8 {
+		v := value.Uint64()
+		//
+		for i := len(buf) - 1; i >= 0; i-- {
+			buf[i] = byte(v)
+			v >>= 8
+		}
+		//
+		util.Assert(v == 0, "value %s exceeds cell width (%d bytes)", value.Text(16), len(buf))
+	} else {
+		value.BigInt().FillBytes(buf)
+	}
+}
+
+// unpackCell decodes a single (big endian) value from the given buffer, being
+// the inverse of packCell.
+func unpackCell[W word.Word[W]](buf []byte) W {
+	var value W
+	// Fast path avoids big.Int allocation for cells of at most 64 bits.
+	if len(buf) <= 8 {
+		var v uint64
+		//
+		for _, b := range buf {
+			v = (v << 8) | uint64(b)
+		}
+		//
+		return value.SetUint64(v)
+	}
+	//
+	return value.SetBigInt(new(big.Int).SetBytes(buf))
 }

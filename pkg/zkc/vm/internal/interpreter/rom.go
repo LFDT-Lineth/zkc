@@ -13,6 +13,7 @@
 package interpreter
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -38,14 +39,25 @@ func (p *ReadOnly[W]) Write(address uint64, value W) error {
 	panic("unsupported operation for read-only memory")
 }
 
-// Checkpoint implementation for memory interface
-func (p *ReadOnly[W]) Checkpoint(_ uint16) checkpoint.Memory {
-	panic("unsupported operation")
+// Checkpoint implementation for memory interface.  Whilst the contents of a
+// (non-static) ROM never change during execution, they are inputs to the
+// machine and, hence, must be captured for a restored machine to read them.
+func (p *ReadOnly[W]) Checkpoint(mid uint16) checkpoint.Memory {
+	var (
+		bytes = Pack(p.descriptor.DataRegisters(), p.data)
+		page  = checkpoint.NewPage(0, bytes)
+	)
+	//
+	return checkpoint.NewMemory(mid, 0, page)
 }
 
 // Restore implementation for memory interface
-func (p *ReadOnly[W]) Restore(pages checkpoint.Memory) {
-	panic("unsupported operation")
+func (p *ReadOnly[W]) Restore(m checkpoint.Memory) {
+	var pages = m.Pages()
+	// Sanity check
+	util.Assert(len(pages) == 1, "read-only memory requires one page")
+	// Unpack data
+	p.data = Unpack(p.descriptor.DataRegisters(), pages[0].Bytes())
 }
 
 // NewReadOnly constructs a new read-only memory initialised with a given set of values.
