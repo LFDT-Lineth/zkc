@@ -282,10 +282,10 @@ Only a single variable may carry an initialiser per declaration statement.
 target(s) = expression
 ```
 
-Expressions have a notion called their _arity_ which determine how
-many values they produce. In most cases, the arity of an expression
+Expressions have a notion called their __ which determine how
+many values they produce. In most cases, the  of an expression
 is `1` --- meaning it produces exactly one value. For example, the
-expression `a + b` has arity `1`. In contrast, a function call has an
+expression `a + b` has  `1`. In contrast, a function call has an
 arity which corresponds to the number of return values the called
 function produces. The following illustrates:
 
@@ -308,6 +308,21 @@ likewise has arity `2`, producing the quotient and the remainder together
 
 ```zkc
 q, r = a /% b
+```
+
+Note that you can discard some of the function call' returns using `_`.
+During the constraint generation, this reduces the number of generated registers.
+```zkc
+fn main() {
+  ...
+  // discard the "val" return 
+  _, err = compute()
+  ...
+}
+
+fn compute() -> (val u32, err u1) {
+  ...
+}
 ```
 
 A **destructuring assignment** splits a given value across a number of
