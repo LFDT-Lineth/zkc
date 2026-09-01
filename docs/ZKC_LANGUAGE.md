@@ -315,7 +315,7 @@ During constraint generation, this reduces the number of generated registers.
 ```zkc
 fn main() {
   ...
-  // discard the "val" return 
+  // discard the `val` return value
   _, err = compute()
   ...
 }
