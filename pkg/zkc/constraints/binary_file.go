@@ -314,7 +314,7 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
 	var (
 		stats = util.NewPerfStats()
 		// Initialise trace builder from configuration
-		builder = vm.NewTraceBuilder[vm.Uint32, F, Tracer[F]](cfg, p.TracingProgram(), p.TracingProgram())
+		builder = vm.NewTraceBuilder[vm.Uint32, F, Tracer[F]](cfg, p.ExecutionProgram(), p.TracingProgram())
 	)
 	// Execute machine in chunks of 1K steps
 	trace, output, errors = builder.BootAndTrace(input)

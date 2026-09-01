@@ -166,9 +166,9 @@ func (ram *RandomAccess[W]) Initialise(contents []W) {
 }
 
 // Checkpoint implementation for memory interface
-func (ram *RandomAccess[W]) Checkpoint(mid uint16) checkpoint.Memory {
+func (ram *RandomAccess[W]) Checkpoint(mid uint16, field word.Config) checkpoint.Memory {
 	var (
-		bytes, stamps = PackTimed(ram.descriptor.DataRegisters(), ram.data)
+		bytes, stamps = PackTimed(field, ram.descriptor.DataRegisters(), ram.data)
 		page          = checkpoint.NewStampedPage(0, bytes, stamps)
 	)
 
@@ -176,14 +176,14 @@ func (ram *RandomAccess[W]) Checkpoint(mid uint16) checkpoint.Memory {
 }
 
 // Restore implementation for memory interface
-func (ram *RandomAccess[W]) Restore(m checkpoint.Memory) {
+func (ram *RandomAccess[W]) Restore(m checkpoint.Memory, field word.Config) {
 	var pages = m.Pages()
 	// Sanity check
 	util.Assert(len(pages) == 1, "random access memory requires one page")
 	// Unpack data
 	ram.timestamp = m.Clock()
 	ram.log().Reset()
-	ram.data = UnpackTimed(ram.descriptor, pages[0].Bytes(), pages[0].Stamps())
+	ram.data = UnpackTimed(field, ram.descriptor, pages[0].Bytes(), pages[0].Stamps())
 }
 
 // AccessLog returns the ordered log of reads/writes performed since the last

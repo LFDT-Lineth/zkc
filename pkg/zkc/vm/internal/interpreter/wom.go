@@ -54,9 +54,9 @@ func (p *WriteOnce[W]) CanWrite(address uint64) bool {
 }
 
 // Checkpoint implementation for memory interface
-func (p *WriteOnce[W]) Checkpoint(mid uint16) checkpoint.Memory {
+func (p *WriteOnce[W]) Checkpoint(mid uint16, field word.Config) checkpoint.Memory {
 	var (
-		bytes = Pack(p.descriptor.DataRegisters(), p.data)
+		bytes = Pack(field, p.descriptor.DataRegisters(), p.data)
 		page  = checkpoint.NewPage(0, bytes)
 	)
 	//
@@ -64,12 +64,12 @@ func (p *WriteOnce[W]) Checkpoint(mid uint16) checkpoint.Memory {
 }
 
 // Restore implementation for memory interface
-func (p *WriteOnce[W]) Restore(m checkpoint.Memory) {
+func (p *WriteOnce[W]) Restore(m checkpoint.Memory, field word.Config) {
 	var pages = m.Pages()
 	// Sanity check
 	util.Assert(len(pages) == 1, "write once memory requires one page")
 	// Unpack data
-	p.data = Unpack(p.descriptor.DataRegisters(), pages[0].Bytes())
+	p.data = Unpack(field, p.descriptor.DataRegisters(), pages[0].Bytes())
 }
 
 // NewWriteOnce constructs an empty write-once memory.

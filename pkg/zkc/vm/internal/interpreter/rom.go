@@ -42,9 +42,9 @@ func (p *ReadOnly[W]) Write(address uint64, value W) error {
 // Checkpoint implementation for memory interface.  Whilst the contents of a
 // (non-static) ROM never change during execution, they are inputs to the
 // machine and, hence, must be captured for a restored machine to read them.
-func (p *ReadOnly[W]) Checkpoint(mid uint16) checkpoint.Memory {
+func (p *ReadOnly[W]) Checkpoint(mid uint16, field word.Config) checkpoint.Memory {
 	var (
-		bytes = Pack(p.descriptor.DataRegisters(), p.data)
+		bytes = Pack(field, p.descriptor.DataRegisters(), p.data)
 		page  = checkpoint.NewPage(0, bytes)
 	)
 	//
@@ -52,12 +52,12 @@ func (p *ReadOnly[W]) Checkpoint(mid uint16) checkpoint.Memory {
 }
 
 // Restore implementation for memory interface
-func (p *ReadOnly[W]) Restore(m checkpoint.Memory) {
+func (p *ReadOnly[W]) Restore(m checkpoint.Memory, field word.Config) {
 	var pages = m.Pages()
 	// Sanity check
 	util.Assert(len(pages) == 1, "read-only memory requires one page")
 	// Unpack data
-	p.data = Unpack(p.descriptor.DataRegisters(), pages[0].Bytes())
+	p.data = Unpack(field, p.descriptor.DataRegisters(), pages[0].Bytes())
 }
 
 // NewReadOnly constructs a new read-only memory initialised with a given set of values.

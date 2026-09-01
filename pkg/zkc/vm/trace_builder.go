@@ -41,25 +41,25 @@ type Tracer[W Word[W], F Element[F], T any] interface {
 // TraceBuilder provides a generic mechanism for tracing a given program, and
 // abstracts the myriad different ways this can be done (e.g. sharding,
 // parallelism, etc).
-type TraceBuilder[W Word[W], F field.Element[F], T Tracer[W, F, T]] struct {
+type TraceBuilder[W Word[W], F field.Element[F], T Tracer[W, F, T], E Word[E]] struct {
 	config    TraceConfig
-	execution Program[W]
+	execution Program[E]
 	tracing   Program[W]
 }
 
 // NewTraceBuilder constructs a default tracer builder which, most likely,
 // should be further configured before use.
-func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T]](config TraceConfig,
-	execution Program[W], tracing Program[W]) TraceBuilder[W, F, T] {
+func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T], E Word[E]](config TraceConfig,
+	execution Program[E], tracing Program[W]) TraceBuilder[W, F, T, E] {
 	//
-	return TraceBuilder[W, F, T]{config, execution, tracing}
+	return TraceBuilder[W, F, T, E]{config, execution, tracing}
 }
 
 // BootAndTrace generates a suitable trace from the given inputs for the contraints
 // embodied in this file.  This can return one (or more) errors if, for example,
 // the input is malformed (e.g. is missing expected fields and/or contains
 // unexpected fields).
-func (p TraceBuilder[W, F, T]) BootAndTrace(inputs map[string][]byte,
+func (p TraceBuilder[W, F, T, E]) BootAndTrace(inputs map[string][]byte,
 ) (shards trace.Trace[F], outputs map[string][]byte, errors []error) {
 	// Check whether we have a sharding strategy
 	if p.config.shardingStrategy.IsEmpty() {
@@ -75,7 +75,7 @@ func (p TraceBuilder[W, F, T]) BootAndTrace(inputs map[string][]byte,
 
 // Sharded BootAndTrace performs sharding according to the given sharding
 // strategy.
-func (p TraceBuilder[W, F, T]) bootAndTraceShards(inputs map[string][]byte,
+func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string][]byte,
 ) (trace.Trace[F], map[string][]byte, []error) {
 	var (
 		strategy = p.config.shardingStrategy.Unwrap()
@@ -105,7 +105,7 @@ func (p TraceBuilder[W, F, T]) bootAndTraceShards(inputs map[string][]byte,
 	return shards, outputs, errors
 }
 
-func (p TraceBuilder[W, F, T]) traceCheckPoints(checkpoints []CheckPoint) (jobs []traceJob[F]) {
+func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint) (jobs []traceJob[F]) {
 	var (
 		strategy = p.config.shardingStrategy.Unwrap()
 		// Construct tracing function

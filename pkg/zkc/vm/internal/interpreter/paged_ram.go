@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"encoding/gob"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -182,15 +183,26 @@ func (p *PagedRandomAccess[W]) Contents() []W {
 	panic("unsupported operation")
 }
 
-// Checkpoint implementation for memory interface
-func (p *PagedRandomAccess[W]) Checkpoint(mid uint16) checkpoint.Memory {
-	var pages []checkpoint.Page
+// Checkpoint implementation for memory interface.  Observe that checkpoint
+// page addresses are given in logical rows (not machine cells), since rows are
+// geometry independent: a checkpoint taken on a machine of one word width
+// (e.g. fast mode) can be restored on a machine of another (e.g. tracing),
+// where the same rows divide into a different number of cells and, hence,
+// different machine pages (see Restore).
+func (p *PagedRandomAccess[W]) Checkpoint(mid uint16, field word.Config) checkpoint.Memory {
+	var (
+		pages []checkpoint.Page
+		lanes = uint64(len(p.descriptor.DataRegisters()))
+	)
+	// Page boundaries must be row aligned, otherwise the round-robin packing
+	// (which restarts at the first data register on every page) is invalid.
+	util.Assert(PAGE_SIZE%lanes == 0, "page size not divisible by %d data lanes", lanes)
 	//
 	for i, page := range p.pages {
 		if page != nil {
 			var (
-				address       = uint64(i) * PAGE_SIZE
-				bytes, stamps = PackTimed(p.descriptor.DataRegisters(), page)
+				address       = uint64(i) * (PAGE_SIZE / lanes)
+				bytes, stamps = PackTimed(field, p.descriptor.DataRegisters(), page)
 			)
 			//
 			pages = append(pages, checkpoint.NewStampedPage(address, bytes, stamps))
@@ -200,19 +212,39 @@ func (p *PagedRandomAccess[W]) Checkpoint(mid uint16) checkpoint.Memory {
 	return checkpoint.NewMemory(mid, p.timestamp, pages...)
 }
 
-// Restore implementation for memory interface
-func (p *PagedRandomAccess[W]) Restore(m checkpoint.Memory) {
+// Restore implementation for memory interface.  Since checkpoint pages are
+// addressed by logical row and may originate from a machine of a different
+// word width (whose pages cover a different number of rows), each decoded
+// cell is re-chunked into whichever of this machine's pages it falls within.
+func (p *PagedRandomAccess[W]) Restore(m checkpoint.Memory, field word.Config) {
+	var lanes = uint64(len(p.descriptor.DataRegisters()))
 	//
 	p.timestamp = m.Clock()
 	p.log().Reset()
+	p.pages = nil
 	//
 	for _, page := range m.Pages() {
 		var (
-			pageIdx = page.Address() / PAGE_SIZE
+			cells = UnpackTimed(field, p.descriptor, page.Bytes(), page.Stamps())
+			// Determine address (in cells) of the first decoded cell.
+			start = page.Address() * lanes
 		)
 		//
-		p.pages = expand(p.pages, pageIdx+1)
-		p.pages[pageIdx] = UnpackTimed(p.descriptor, page.Bytes(), page.Stamps())
+		for i, cell := range cells {
+			var (
+				address = start + uint64(i)
+				pageIdx = address / PAGE_SIZE
+				offset  = address % PAGE_SIZE
+			)
+			//
+			p.pages = expand(p.pages, pageIdx+1)
+			//
+			if p.pages[pageIdx] == nil {
+				p.pages[pageIdx] = make([]TimestampedCell[W], PAGE_SIZE)
+			}
+			//
+			p.pages[pageIdx][offset] = cell
+		}
 	}
 }
 
