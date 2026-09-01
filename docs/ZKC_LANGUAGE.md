@@ -310,6 +310,21 @@ likewise has arity `2`, producing the quotient and the remainder together
 q, r = a /% b
 ```
 
+Note that you can discard some of a function call's return values using `_`.
+During constraint generation, this reduces the number of generated registers.
+```zkc
+fn main() {
+  ...
+  // discard the `val` return value
+  _, err = compute()
+  ...
+}
+
+fn compute() -> (val u32, err u1) {
+  ...
+}
+```
+
 A **destructuring assignment** splits a given value across a number of
 smaller variables. The leftmost variable receives the **most
 significant** bits; the rightmost receives the **least significant**
