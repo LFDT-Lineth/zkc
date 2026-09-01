@@ -16,7 +16,6 @@ import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -183,63 +182,38 @@ func (p *PagedRandomAccess[W]) Contents() []W {
 	panic("unsupported operation")
 }
 
-// Pages returns an iterator over the allocated pages backing this memory.  Each
-// yielded page covers the PAGE_SIZE cells beginning at physical address
-// i*PAGE_SIZE (where i is its page number), carrying both the values and their
-// per-cell timestamps; pages which have never been written are omitted.
-func (p *PagedRandomAccess[W]) Pages() iter.Iterator[checkpoint.Page[W]] {
-	var pages []checkpoint.Page[W]
+// Checkpoint implementation for memory interface
+func (p *PagedRandomAccess[W]) Checkpoint(mid uint16) checkpoint.Memory {
+	var pages []checkpoint.Page
 	//
 	for i, page := range p.pages {
 		if page != nil {
 			var (
-				address    = uint64(i) * PAGE_SIZE
-				data       = make([]W, len(page))
-				timestamps = make([]uint64, len(page))
+				address       = uint64(i) * PAGE_SIZE
+				bytes, stamps = PackTimed(p.descriptor.DataRegisters(), page)
 			)
 			//
-			for j, cell := range page {
-				data[j] = cell.value
-				timestamps[j] = cell.timestamp
-			}
-			//
-			pages = append(pages, checkpoint.NewTimestampedPage(address, data, timestamps))
+			pages = append(pages, checkpoint.NewStampedPage(address, bytes, stamps))
 		}
 	}
 	//
-	return iter.NewArrayIterator(pages)
+	return checkpoint.NewMemory(mid, p.timestamp, pages...)
 }
 
-// RestoreCells re-seeds the memory from a checkpoint snapshot, installing each
-// captured page at its recorded address.  Call Reset first to set the clock and
-// clear any prior state.
-func (p *PagedRandomAccess[W]) RestoreCells(pages []checkpoint.Page[W]) {
-	for _, page := range pages {
-		p.RestorePage(page.Address(), cellsFromPage(page))
-	}
-}
-
-// RestorePage re-seeds a single page (beginning at the given physical address,
-// which must be page-aligned) from a snapshot of timestamped cells.  Used on
-// resume from a checkpoint.
-func (p *PagedRandomAccess[W]) RestorePage(address uint64, cells []TimestampedCell[W]) {
-	var (
-		pageIdx = address / PAGE_SIZE
-		page    = make([]TimestampedCell[W], PAGE_SIZE)
-	)
+// Restore implementation for memory interface
+func (p *PagedRandomAccess[W]) Restore(m checkpoint.Memory) {
 	//
-	copy(page, cells)
-	//
-	p.pages = expand(p.pages, pageIdx+1)
-	p.pages[pageIdx] = page
-}
-
-// Reset clears all pages and the access log, and resets the clock to the given
-// value.  Used on resume before the captured pages are restored.
-func (p *PagedRandomAccess[W]) Reset(clock uint64) {
-	p.pages = nil
-	p.timestamp = clock
+	p.timestamp = m.Clock()
 	p.log().Reset()
+	//
+	for _, page := range m.Pages() {
+		var (
+			pageIdx = page.Address() / PAGE_SIZE
+		)
+		//
+		p.pages = expand(p.pages, pageIdx+1)
+		p.pages[pageIdx] = UnpackTimed(p.descriptor, page.Bytes(), page.Stamps())
+	}
 }
 
 // ============================================================================
