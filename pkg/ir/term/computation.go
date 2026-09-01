@@ -20,13 +20,13 @@ import (
 
 // Computation represents an "unbound" term.  That is, it captures any possible
 // term (i.e. rather than a fixed set as for MIR or AIR, etc).
-type Computation[F any] interface {
+type Computation[F field.Element[F]] interface {
 	Expr[F, Computation[F]]
 }
 
 // LogicalComputation represents an "unbound" term.  That is, it captures any
 // possible term (i.e. rather than a fixed set as for MIR or AIR, etc).
-type LogicalComputation[F any] interface {
+type LogicalComputation[F field.Element[F]] interface {
 	Logical[F, LogicalComputation[F]]
 }
 

@@ -19,8 +19,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Trace defines the type of a general trace
-type Trace[F field.Element[F]] = trace.Shard[F]
+// Shard defines a component of a trace.
+type Shard[F field.Element[F]] = trace.Shard[F]
 
 // Element defines the type of field elements
 type Element[F any] = field.Element[F]
@@ -76,13 +76,13 @@ func (p TraceBuilder[W, F, T]) BootAndTrace(inputs map[string][]byte,
 // Sharded BootAndTrace performs sharding according to the given sharding
 // strategy.
 func (p TraceBuilder[W, F, T]) bootAndTraceShards(inputs map[string][]byte,
-) ([]Trace[F], map[string][]byte, []error) {
+) (trace.Trace[F], map[string][]byte, []error) {
 	var (
 		strategy = p.config.shardingStrategy.Unwrap()
 		// fast mode execution to generate checkpoints
 		checkpoints, outputs, traceable, errors = BootAndCheckpoint(p.execution, inputs, strategy)
 		//
-		traces = make([]Trace[F], len(checkpoints))
+		shards = make([]Shard[F], len(checkpoints))
 	)
 	// Sanity check
 	if traceable {
@@ -92,9 +92,9 @@ func (p TraceBuilder[W, F, T]) bootAndTraceShards(inputs map[string][]byte,
 		for i, ith := range results {
 			errors = append(errors, ith.errors...)
 			// Record trace
-			traces[i] = ith.trace
+			shards[i] = ith.trace
 			// Record overall traceability
-			traceable = traceable && traces[i] != nil
+			traceable = traceable && !shards[i].IsEmpty()
 		}
 	}
 	//
@@ -102,7 +102,7 @@ func (p TraceBuilder[W, F, T]) bootAndTraceShards(inputs map[string][]byte,
 		return nil, outputs, errors
 	}
 	//
-	return traces, outputs, errors
+	return shards, outputs, errors
 }
 
 func (p TraceBuilder[W, F, T]) traceCheckPoints(checkpoints []CheckPoint[W]) (jobs []traceJob[F]) {
@@ -112,7 +112,7 @@ func (p TraceBuilder[W, F, T]) traceCheckPoints(checkpoints []CheckPoint[W]) (jo
 		traceFn = func(i uint, cp CheckPoint[W]) traceJob[F] {
 			var (
 				steps = strategy.shardSteps
-				trace Trace[F]
+				trace Shard[F]
 				errs  []error
 			)
 			// Increment steps for all except first shard to account for the
@@ -139,7 +139,7 @@ func (p TraceBuilder[W, F, T]) traceCheckPoints(checkpoints []CheckPoint[W]) (jo
 }
 
 type traceJob[F Element[F]] struct {
-	trace  Trace[F]
+	trace  Shard[F]
 	errors []error
 }
 

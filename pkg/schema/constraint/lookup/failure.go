@@ -18,10 +18,11 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Failure provides structural information about a failing lookup constraint.
-type Failure[F any] struct {
+type Failure[F field.Element[F]] struct {
 	// Handle of the failing constraint
 	LookupHandle string
 	// SourceId gives the set identifier of the source

@@ -52,7 +52,7 @@ const BINFILE_MINOR_VERSION uint16 = 1
 var ZKC_EXEC [8]byte = [8]byte{'z', 'k', 'c', ' ', 'e', 'x', 'e', 'c'}
 
 // Tracer defines the type used for building traces.
-type Tracer[F field.Element[F]] = tracer.Builder[vm.Uint32, F, *trace.CompactModule[F]]
+type Tracer[F field.Element[F]] = tracer.Builder[vm.Uint32, F]
 
 // BinaryFile provides two pieces of functionality: (i) a means for serialising
 // and deserialising a set of AIR constraints; (ii) a means for generating a

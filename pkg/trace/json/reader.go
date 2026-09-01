@@ -78,13 +78,13 @@ func fromBytesLegacy[F field.Element[F]](rawData map[string][]big.Int) (trace.Sh
 		mod, col, error := splitQualifiedColumnName(name)
 		// error check
 		if error != nil {
-			return nil, error
+			return trace.Shard[F]{}, error
 		}
 		// Sanity check existing module data
 		if strData[mod] == nil {
 			strData[mod] = make(map[string][]big.Int)
 		} else if _, ok := strData[mod][col]; ok {
-			return nil, fmt.Errorf("duplicate column %s encountered", trace.QualifiedColumnName(mod, col))
+			return trace.Shard[F]{}, fmt.Errorf("duplicate column %s encountered", trace.QualifiedColumnName(mod, col))
 		}
 		// Assign values
 		strData[mod][col] = rawInts
@@ -94,11 +94,11 @@ func fromBytesLegacy[F field.Element[F]](rawData map[string][]big.Int) (trace.Sh
 }
 
 func fromBytesInternal[F field.Element[F]](rawData map[string]map[string][]big.Int) (trace.Shard[F], error) {
-	var modules []*trace.CompactModule[F]
+	var modules []trace.Module[F]
 	//
 	for mod, modData := range rawData {
 		var (
-			columns     []array.MutArray[F]
+			columns     []array.Array[F]
 			descriptors []trace.ColumnDescriptor
 		)
 		//
@@ -106,11 +106,11 @@ func fromBytesInternal[F field.Element[F]](rawData map[string]map[string][]big.I
 			col, bitwidth, error := splitColumnBitwidth(name)
 			// error check
 			if error != nil {
-				return nil, error
+				return trace.Shard[F]{}, error
 			}
 			// Validate data array
 			if row := validateBigInts(bitwidth, rawInts); row != math.MaxUint {
-				return nil, fmt.Errorf("column %s out-of-bounds (row %d, value %s)",
+				return trace.Shard[F]{}, fmt.Errorf("column %s out-of-bounds (row %d, value %s)",
 					name, row, rawInts[row].String())
 			}
 			// Construct column
@@ -120,26 +120,26 @@ func fromBytesInternal[F field.Element[F]](rawData map[string]map[string][]big.I
 		// construct module descriptor
 		descriptor := trace.NewModuleDescriptor(mod, descriptors)
 		// append new module
-		modules = append(modules, trace.NewCompactModule[F](descriptor, columns...))
+		modules = append(modules, trace.NewModule[F](descriptor, columns...))
 	}
 	//
-	return trace.NewArray(modules), nil
+	return trace.NewShard(modules), nil
 }
 
-func newArrayFromBigInts[F field.Element[F]](bitwidth util.Option[uint], data []big.Int) array.MutArray[F] {
+func newArrayFromBigInts[F field.Element[F]](bitwidth util.Option[uint], data []big.Int) array.Array[F] {
 	//
 	var (
 		n   = uint(len(data))
-		arr = array.Alloc[F](bitwidth.UnwrapOr(math.MaxUint), n)
+		arr = array.Alloc[F](bitwidth.UnwrapOr(math.MaxUint))
 	)
 	//
 	for i := range n {
 		var val F
 		//
-		arr.Set(i, val.SetBytes(data[i].Bytes()))
+		arr = arr.Append(val.SetBytes(data[i].Bytes()))
 	}
 	//
-	return arr
+	return arr.Build()
 }
 
 // SplitQualifiedColumnName splits a qualified column name into its module and

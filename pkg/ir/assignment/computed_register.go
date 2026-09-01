@@ -70,11 +70,10 @@ func (p *ComputedRegister[F]) Bounds(mid sc.ModuleId) util.Bounds {
 // creates a new column which contains the result of evaluating a given
 // expression on each row.
 func (p *ComputedRegister[F]) Compute(tr trace.Shard[F], schema sc.AnySchema[F],
-) ([]array.MutArray[F], error) {
+) ([]array.Array[F], error) {
 	var (
 		trModule = tr.Module(p.Module)
 		scModule = schema.Module(p.Module)
-
 		// Determine multiplied height
 		height = trModule.Height()
 		// FIXME: using a large bitwidth here ensures the underlying data is
@@ -83,16 +82,21 @@ func (p *ComputedRegister[F]) Compute(tr trace.Shard[F], schema sc.AnySchema[F],
 		// values outside the range of the computed register, but which we still
 		// want to check are actually rejected (i.e. since they are simulating what
 		// an attacker might do).
-		data = array.Alloc[F](math.MaxUint, height)
-		// Run computation
-		err = fwdComputation(height, data, p.Expr, trModule, scModule, p.Module)
+		data = array.Alloc[F](math.MaxUint)
 	)
-	// Sanity check
-	if err != nil {
-		return nil, err
+	// Forwards computation
+	for i := range height {
+		val, err := p.Expr.EvalAt(i, trModule, scModule)
+		// error check
+		if err != nil {
+			e := fmt.Sprintf("%s for %s", err.Error(), p.Expr.Lisp(false, scModule).String(true))
+			return nil, constraint.NewInternalFailure[F](scModule.Name(), p.Module, i, e)
+		}
+		// Write data
+		data = data.Append(val)
 	}
 	// Done
-	return []array.MutArray[F]{data}, err
+	return []array.Array[F]{data.Build()}, nil
 }
 
 // Consistent performs some simple checks that the given assignment is
@@ -154,21 +158,4 @@ func (p *ComputedRegister[F]) Lisp(schema sc.AnySchema[F]) sexp.SExp {
 			target,
 			p.Expr.Lisp(false, module),
 		})
-}
-
-func fwdComputation[F field.Element[F]](height uint, data array.MutArray[F], expr term.Evaluable[F],
-	trMod trace.Module[F], scMod register.Map, ctx sc.ModuleId) error {
-	// Forwards computation
-	for i := range height {
-		val, err := expr.EvalAt(i, trMod, scMod)
-		// error check
-		if err != nil {
-			e := fmt.Sprintf("%s for %s", err.Error(), expr.Lisp(false, scMod).String(true))
-			return constraint.NewInternalFailure[F](scMod.Name(), ctx, i, e)
-		}
-		// Write data
-		data.Set(i, val)
-	}
-	//
-	return nil
 }

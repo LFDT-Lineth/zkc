@@ -30,13 +30,13 @@ import (
 // directly from the trace given to AlignAndPad, and that trace can be shared
 // with (and reused by) the caller, so the modules returned from here must
 // never retain that aliasing.
-func padModules[F field.Element[F]](config Config, schema sc.AnySchema[F], mods []ArrayModule[F],
-) ([]ArrayModule[F], []error) {
+func padModules[F field.Element[F]](config Config, schema sc.AnySchema[F], mods []trace.Module[F],
+) ([]trace.Module[F], []error) {
 	var (
 		// Determine the set of minimal trace sizes
 		minimums      = determineMinimumTraceHeight(schema)
-		columns, errs = flattenTrace(schema, trace.NewArray(mods))
-		data          []array.MutArray[F]
+		columns, errs = flattenTrace(schema, trace.NewShard(mods))
+		data          []array.Array[F]
 		mapfn         = paddingMapFn(config, schema, mods, minimums)
 	)
 	//
@@ -54,13 +54,13 @@ func padModules[F field.Element[F]](config Config, schema sc.AnySchema[F], mods 
 // Columns belonging to a static module, and columns which are not yet
 // assigned (e.g. an unfilled computed column, prior to expansion), are passed
 // through unchanged.
-func paddingMapFn[F field.Element[F]](config Config, schema sc.AnySchema[F], mods []ArrayModule[F],
-	minimums []uint) func(uint, trace.ColumnRef) array.MutArray[F] {
+func paddingMapFn[F field.Element[F]](config Config, schema sc.AnySchema[F], mods []trace.Module[F],
+	minimums []uint) func(uint, trace.ColumnRef) array.Array[F] {
 	//
-	return func(_ uint, p trace.ColumnRef) array.MutArray[F] {
+	return func(_ uint, p trace.ColumnRef) array.Array[F] {
 		var (
 			mid   = p.Module()
-			col   = mods[mid].MutColumn(p.Column().Unwrap())
+			col   = mods[mid].Column(p.Column().Unwrap())
 			scMod = schema.Module(mid)
 		)
 		//
@@ -69,7 +69,6 @@ func paddingMapFn[F field.Element[F]](config Config, schema sc.AnySchema[F], mod
 		}
 		//
 		var (
-			zero   F
 			height = mods[mid].Height()
 			// calculate taget height, whilst ensuring minimum enforced.
 			target = config.Padding(max(minimums[mid], height), 1)
@@ -80,7 +79,7 @@ func paddingMapFn[F field.Element[F]](config Config, schema sc.AnySchema[F], mod
 			front = target - height
 		}
 		//
-		return col.Pad(front, 0, zero)
+		return col.Pad(front)
 	}
 }
 
@@ -118,25 +117,25 @@ func determineMinimumTraceHeight[F field.Element[F]](schema sc.AnySchema[F]) []u
 // produced by mapping over the (module,column) pairs from flattenTrace --
 // back into their enclosing modules, using each module's original descriptor
 // (which padding never changes).
-func rebuildModules[F field.Element[F]](mods []ArrayModule[F], columns []trace.ColumnRef,
-	padded []array.MutArray[F]) []ArrayModule[F] {
+func rebuildModules[F field.Element[F]](mods []trace.Module[F], columns []trace.ColumnRef,
+	padded []array.Array[F]) []trace.Module[F] {
 	var (
-		result  = make([]ArrayModule[F], len(mods))
-		buffers = make([][]array.MutArray[F], len(mods))
+		result  = make([]trace.Module[F], len(mods))
+		buffers = make([][]array.Array[F], len(mods))
 	)
 	// Regroup padded columns by their enclosing module.
 	for i, p := range columns {
 		var mid = p.Module()
 		//
 		if buffers[mid] == nil {
-			buffers[mid] = make([]array.MutArray[F], mods[mid].Width())
+			buffers[mid] = make([]array.Array[F], mods[mid].Width())
 		}
 		//
 		buffers[mid][p.Column().Unwrap()] = padded[i]
 	}
 	// Reconstruct each module using its original descriptor.
 	for mid, mod := range mods {
-		result[mid] = trace.NewCompactModule(mod.Descriptor(), buffers[mid]...)
+		result[mid] = trace.NewModule(mod.Descriptor(), buffers[mid]...)
 	}
 	//
 	return result

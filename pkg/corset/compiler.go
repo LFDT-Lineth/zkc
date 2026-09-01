@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
@@ -184,7 +185,7 @@ func constructSourceModule(schema schema.AnySchema[word.BigEndian], scope *compi
 
 // Determine the reference reference in the schema which corresponds with a
 // given (Corset) path.
-func determineRegisterRef[F any](path file.Path, sc schema.AnySchema[F], env compiler.GlobalEnvironment,
+func determineRegisterRef[F field.Element[F]](path file.Path, sc schema.AnySchema[F], env compiler.GlobalEnvironment,
 ) register.Ref {
 	var (
 		mid schema.ModuleId

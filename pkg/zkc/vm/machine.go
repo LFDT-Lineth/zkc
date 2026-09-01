@@ -162,7 +162,7 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string][]byte, strategy 
 // holds when the given execution can be traced (i.e. when no errors in the
 // latter category arise).
 func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], input map[string][]byte,
-) (trace Trace[F], output map[string][]byte, errs []error) {
+) (trace Shard[F], output map[string][]byte, errs []error) {
 	//
 	var (
 		// constracter tracer
@@ -176,7 +176,7 @@ func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], inp
 	bci := constructTracingInterpreter(pr, tracer)
 	// Execute machine in chunks of 1K steps
 	if output, traceable, errs = BootAndExecute(bci, input, math.MaxUint); !traceable {
-		return nil, nil, errs
+		return Shard[F]{}, nil, errs
 	}
 	//
 	var stats = util.NewPerfStats()
@@ -198,7 +198,7 @@ func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], inp
 // traceable flag holds when the given execution can be traced (i.e. when no
 // errors in the latter category arise).
 func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], cp CheckPoint[W],
-	fn string, nsteps uint64) (steps uint64, trace Trace[F], errs []error) {
+	fn string, nsteps uint64) (steps uint64, trace Shard[F], errs []error) {
 	//
 	var (
 		// constracter tracer
@@ -212,13 +212,13 @@ func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W
 	bci := constructTraceForInterpreter(pr, fn, nsteps, tracer)
 	// Sanity check error arising construct the interpreter.
 	if bci == nil {
-		return 0, nil, []error{
+		return 0, Shard[F]{}, []error{
 			fmt.Errorf("unknown function \"%s\"", fn),
 		}
 	}
 	// Execute the given machine
 	if steps, traceable, errs = RestoreAndExecute(bci, cp, math.MaxUint); !traceable {
-		return steps, nil, errs
+		return steps, Shard[F]{}, errs
 	}
 	// Apply post processing
 	array.Apply(bci.ExtractMemory(), func(_ uint, p util.Pair[uint16, RuntimeMemory[W]]) {

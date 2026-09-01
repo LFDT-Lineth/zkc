@@ -23,12 +23,13 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
 // Constraint represents an element which can "accept" a trace, or either reject
 // with an error (or eventually perhaps report a warning).
-type Constraint[F any] interface {
+type Constraint[F field.Element[F]] interface {
 	// Accepts determines whether a given (local) constraint accepts a given set
 	// of traces or not.  If not, a failure is produced.  Observe that, for
 	// global constraints, this is a no-op.

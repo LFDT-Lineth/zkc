@@ -18,11 +18,12 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // InternalFailure is a generic mechanism for reporting failures, particularly
 // as arising from evaluation of a given expression.
-type InternalFailure[F any] struct {
+type InternalFailure[F field.Element[F]] struct {
 	// Handle of the failing constraint
 	handle string
 	// Module in which constraint failed.
@@ -34,7 +35,7 @@ type InternalFailure[F any] struct {
 }
 
 // NewInternalFailure constructs a new internal failure object.
-func NewInternalFailure[F any](handle string, ctx schema.ModuleId, row uint,
+func NewInternalFailure[F field.Element[F]](handle string, ctx schema.ModuleId, row uint,
 	err string) *InternalFailure[F] {
 	//
 	return &InternalFailure[F]{handle, ctx, row, err}

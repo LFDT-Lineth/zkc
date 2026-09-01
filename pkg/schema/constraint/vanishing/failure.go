@@ -20,10 +20,11 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Failure provides structural information about a failing vanishing constraint.
-type Failure[F any] struct {
+type Failure[F field.Element[F]] struct {
 	// Handle of the failing constraint
 	VanishingHandle string
 	// Constraint expression

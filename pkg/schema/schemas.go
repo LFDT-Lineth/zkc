@@ -107,7 +107,7 @@ func processConstraint[F field.Element[F], C Constraint[F]](ith C, trace trace.T
 // PanicFailure indicates that a panic arose during constraint checking, rather
 // than an actual constraint failure.  The purpose of this is to allow the
 // testing framework to distinguish panics from actual constraint failures.
-type PanicFailure[F any] struct {
+type PanicFailure[F field.Element[F]] struct {
 	handle     string
 	message    string
 	stackTrace []byte

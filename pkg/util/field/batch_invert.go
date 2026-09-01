@@ -13,59 +13,59 @@
 package field
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 )
 
 // BatchInvert efficiently inverts the list of elements s, in place.
-func BatchInvert[T Element[T]](s array.MutArray[T]) {
-	if s.Len() == 0 {
+func BatchInvert[T Element[T]](s []T) {
+	if len(s) == 0 {
 		return
 	}
 	//
 	var (
 		zero = Zero[T]()
 		one  = One[T]()
+		last = uint(len(s) - 1)
 		// identifies entries which are zero
-		isZero = bit.NewSet(s.Len())
+		isZero = bit.NewSet(uint(len(s)))
 
-		m = make([]T, s.Len()) // m[i] = s[i] * s[i+1] * ...
+		m = make([]T, len(s)) // m[i] = s[i] * s[i+1] * ...
 	)
 	//
-	isZero.Set(s.Len()-1, s.Get(s.Len()-1).IsZero())
+	isZero.Set(last, s[last].IsZero())
 
-	if isZero.Get(s.Len() - 1) {
-		s.Set(s.Len()-1, one)
+	if isZero.Get(last) {
+		s[last] = one
 	}
 
-	m[s.Len()-1] = s.Get(s.Len() - 1)
+	m[last] = s[last]
 
-	for i := int(s.Len()) - 2; i >= 0; i-- {
-		isZero.Set(uint(i), s.Get(uint(i)).IsZero())
+	for i := len(s) - 2; i >= 0; i-- {
+		isZero.Set(uint(i), s[uint(i)].IsZero())
 
 		if isZero.Get(uint(i)) {
-			s.Set(uint(i), one)
+			s[uint(i)] = one
 		}
 
-		m[i] = m[i+1].Mul(s.Get(uint(i)))
+		m[i] = m[i+1].Mul(s[uint(i)])
 	}
 
 	inv := m[0].Inverse() // inv = s[0]⁻¹ * s[1]⁻¹ * ...
 
-	for i := range s.Len() - 1 {
+	for i := range len(s) - 1 {
 		// inv = s[i]⁻¹ * s[i+1]⁻¹ * ...
-		newInv := inv.Mul(s.Get(i))
-		s.Set(i, inv.Mul(m[i+1]))
+		newInv := inv.Mul(s[i])
+		s[i] = inv.Mul(m[i+1])
 		inv = newInv
 		// inv = s[i+1]⁻¹ * s[i+2]⁻¹ * ...
-		if isZero.Get(i) {
-			s.Set(i, zero)
+		if isZero.Get(uint(i)) {
+			s[i] = zero
 		}
 	}
 
-	s.Set(s.Len()-1, inv)
+	s[last] = inv
 
-	if isZero.Get(s.Len() - 1) {
-		s.Set(s.Len()-1, zero)
+	if isZero.Get(last) {
+		s[last] = zero
 	}
 }
