@@ -282,10 +282,10 @@ Only a single variable may carry an initialiser per declaration statement.
 target(s) = expression
 ```
 
-Expressions have a notion called their __ which determine how
-many values they produce. In most cases, the  of an expression
+Expressions have a notion called their _arity_ which determine how
+many values they produce. In most cases, the arity of an expression
 is `1` --- meaning it produces exactly one value. For example, the
-expression `a + b` has  `1`. In contrast, a function call has an
+expression `a + b` has arity `1`. In contrast, a function call has an
 arity which corresponds to the number of return values the called
 function produces. The following illustrates:
 
