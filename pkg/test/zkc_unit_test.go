@@ -1070,6 +1070,10 @@ func Test_ZkcUnit_Call_11(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/call_11", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Call_12(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/call_12", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Ternary Tests
 // ===================================================================

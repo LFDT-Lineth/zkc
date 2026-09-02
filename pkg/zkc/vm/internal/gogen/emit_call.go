@@ -25,7 +25,8 @@ import (
 // against the callee's input registers, and returns are width-checked against
 // the caller's target registers.  Checks the bounds prove dead are omitted, so
 // the common case is a plain Go call.  A two-limb register expands to two
-// parameters / results.
+// parameters / results.  A self tail call is lowered as a jump back to the
+// function entry instead, since Go performs no tail-call optimisation.
 func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Uint]) error {
 	callee, ok := g.funcByID[uint(x.Target)]
 	if !ok {
@@ -76,6 +77,40 @@ func (g *generator) emitCall(c *code, fn *descFunction, x *bytecode.Call[word.Ui
 		if in.Bitwidth().Unwrap() > 64 {
 			argExprs = append(argExprs, arg.hiOr0())
 		}
+	}
+
+	// A self tail call (call! to the enclosing function) becomes a jump back to
+	// the entry label: parameters are rebound in one tuple assignment (every
+	// right-hand side is evaluated before any store, so shuffles are safe) and
+	// locals are re-zeroed by re-executing their declarations, mirroring the
+	// interpreter's frame reuse (TAILCALL_n) — the native stack stays flat.
+	// The width checks above keep the rebound parameters within their declared
+	// widths, so the function-entry interval state already covers the back edge.
+	if x.Never && callee == fn && !g.cur.isBoot {
+		params := []string{}
+
+		for i := range calleeInputs {
+			l, err := g.limbOf(fn, regId(i))
+			if err != nil {
+				return err
+			}
+
+			params = append(params, l.lo())
+			if l.width > 64 {
+				params = append(params, l.hiName())
+			}
+		}
+
+		if len(params) > 0 {
+			c.linef("%s = %s", strings.Join(params, ", "), strings.Join(argExprs, ", "))
+		}
+
+		c.line("goto entry")
+
+		g.cur.tailLoop = true
+		g.iv.endOfFlow()
+
+		return nil
 	}
 
 	call := fmt.Sprintf("%s(%s)", goFuncName(callee), strings.Join(argExprs, ", "))
