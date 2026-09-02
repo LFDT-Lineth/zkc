@@ -105,6 +105,10 @@ type Interpreter[W word.Word[W]] struct {
 	// Prime modulus of the surrounding field, needed to simulate native field
 	// instructions (ADDMOD_P, SUBMOD_P and MULMOD_P).
 	modulus W
+	// Configuration of the surrounding field, which determines (amongst other
+	// things) the encoded width of native registers within a checkpoint (see
+	// Pack).
+	field word.Config
 	// Current function module identifier.
 	fid uint16
 	// Program counter: offset into program.bytecodes of the next bytecode to
@@ -151,7 +155,20 @@ type Interpreter[W word.Word[W]] struct {
 // being executed.  The purpose of a stack frame is to record the Frame Pointer
 // (FP) and Program Counter (PC) of the relevant function so that these can be
 // restored when it becomes the active function.
-type StackFrame = checkpoint.StackFrame
+type StackFrame struct {
+	// module identifier of the executing function.
+	FunctionId uint16
+	// frame pointer of the executing function.
+	FramePointer uint32
+	// program counter identifies next bytecode to execute.
+	ProgramCounter uint32
+}
+
+// NewStackFrame constructs a stack frame recording the function identifier,
+// frame pointer and program counter of a paused function.
+func NewStackFrame(fid uint16, fp uint32, pc uint32) StackFrame {
+	return StackFrame{fid, fp, pc}
+}
 
 // New constructs a new bytecode interpreter for the given program.
 // The program's memory modules are partitioned by access discipline (static
@@ -211,6 +228,7 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 	return &Interpreter[W]{
 		program: compiled,
 		modulus: prime,
+		field:   program.Field(),
 		pc:      0,
 		fp:      0,
 		rp:      0,
@@ -321,103 +339,41 @@ func (p *Interpreter[W]) Outputs() iter.Iterator[InputOutput[W]] {
 	return iter.NewArrayIterator(outputs)
 }
 
-// CheckPoint captures the current state of this interpreter as a checkpoint,
-// from which execution can later be resumed (see checkpoint.CheckPoint).  The
-// returned checkpoint records:
-//
-//   - the call stack of paused callers, with the currently executing frame
-//     pushed on top so that the full active call chain is self-contained;
-//   - the data stack holding the activation records (registers) of all active
-//     frames;
-//   - a snapshot of every read-only input memory and every mutable
-//     Static read-only memories form part of the fixed program and are not
-//     captured.
-//
-// The data and call stacks are copied so that the checkpoint is unaffected by
-// any subsequent execution of the interpreter.
-func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint[W] {
+// CheckPoint relevant state of the interpreter, such that execution can be
+// resumed from this point.  Observe that any threaded stamp-in inputs (see
+// ThreadTimestamps) are excluded from the packed arguments: they are not
+// meaningful across machines of different word widths (e.g. fast mode has no
+// such registers), and are instead reconstructed from the memory clocks upon
+// restore (see Restore).
+func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint {
 	var (
-		callStack = slices.Clone(p.callStack.SliceEnd(0))
-		dataStack = slices.Clone(p.dataStack.SliceEnd(0))
-		memory    []checkpoint.Memory[W]
+		fun = p.program.Module(p.fid).(*descriptor.Function[W])
+		// Determine number of leading stamp-in inputs (to be excluded)
+		k = p.numStampInputs(fun)
+		// Determine start/end of remaining arguments
+		start = uint(p.fp) + k
+		end   = uint(p.fp) + fun.NumInputs()
+		// Extract arguments
+		frame = p.dataStack.Slice(start, end)
+		// Pack into bytes
+		args     []byte = Pack(p.field, fun.Inputs()[k:], frame)
+		memories []checkpoint.Memory
 	)
-	// Record the currently executing frame as the top of the call stack, so the
-	// checkpoint fully describes the active call chain.
-	callStack = append(callStack, checkpoint.NewStackFrame(p.fid, p.fp, p.pc))
-	// Snapshot read-only input memories and mutable memories.
-	for i := range p.roms {
-		memory = append(memory, p.snapshotMemory(&p.roms[i]))
-	}
-	//
-	for i := range p.woms {
-		memory = append(memory, p.snapshotMemory(&p.woms[i]))
-	}
-	//
-	for i := range p.rams {
-		memory = append(memory, p.snapshotMemory(&p.rams[i]))
-	}
-	//
-	for i := range p.prams {
-		memory = append(memory, p.snapshotPagedMemory(&p.prams[i]))
-	}
-	//
-	return checkpoint.NewCheckPoint(callStack, dataStack, memory)
-}
-
-// snapshotMemory captures the full contents of a flat memory as a single
-// checkpoint page beginning at address zero.  The memory's module identifier is
-// recovered from the program by name.
-func (p *Interpreter[W]) snapshotMemory(mem Memory[W]) checkpoint.Memory[W] {
-	var (
-		moduleId, _ = p.program.HasModule(mem.Descriptor().Name())
-		page, clock = flatPage(mem)
-	)
-	//
-	return checkpoint.NewMemory(moduleId, []checkpoint.Page[W]{page}, clock)
-}
-
-// flatPage captures a flat memory as a single checkpoint page at address zero,
-// along with its access clock.  A random-access memory is captured with its
-// per-cell timestamps and clock, so the timestamps survive the checkpoint;
-// other flat memories (ROM/WOM) have no timestamps and are captured by value
-// only (clock zero).
-func flatPage[W word.Word[W]](mem Memory[W]) (checkpoint.Page[W], uint64) {
-	if ram, ok := mem.(*RandomAccess[W]); ok {
-		var (
-			cells      = ram.Cells()
-			data       = make([]W, len(cells))
-			timestamps = make([]uint64, len(cells))
-		)
-		//
-		for i, cell := range cells {
-			data[i] = cell.Value()
-			timestamps[i] = cell.Timestamp()
+	// Pack memories
+	for i, m := range p.program.Modules() {
+		var mid = uint16(i)
+		// Note that static memories (SROMs) are not checkpointed, since their
+		// contents form part of the program itself.  Non-static ROMs (i.e.
+		// inputs) are checkpointed, since a restored machine has no other way to
+		// recover them.
+		if mem, ok := m.(*descriptor.Memory[W]); ok && !mem.IsStatic() {
+			var ith = p.Memory(mid)
+			//
+			memories = append(memories, ith.Checkpoint(mid, p.field))
 		}
-		//
-		return checkpoint.NewTimestampedPage(0, data, timestamps), ram.Clock()
 	}
 	//
-	return checkpoint.NewPage(0, slices.Clone(mem.Contents())), 0
-}
-
-// snapshotPagedMemory captures a paged random-access memory as one checkpoint
-// page per allocated memory page, preserving the sparse layout: page i in the
-// backing table begins at physical address i*PAGE_SIZE.  Pages which have never
-// been written (nil) are omitted.  The memory's module identifier is recovered
-// from the program by name.
-func (p *Interpreter[W]) snapshotPagedMemory(mem *PagedRandomAccess[W]) checkpoint.Memory[W] {
-	var (
-		moduleID, _ = p.program.HasModule(mem.Descriptor().Name())
-		pages       []checkpoint.Page[W]
-	)
-	//
-	for it := mem.Pages(); it.HasNext(); {
-		// Pages already yields freshly-allocated, caller-owned pages (it splits
-		// the live cells into new data/timestamp columns), so no clone is needed.
-		pages = append(pages, it.Next())
-	}
-	//
-	return checkpoint.NewMemory(moduleID, pages, mem.Clock())
+	return checkpoint.NewCheckPoint(p.fid, args, memories)
 }
 
 // Restore resets this interpreter to the state captured by the given checkpoint
@@ -426,131 +382,121 @@ func (p *Interpreter[W]) snapshotPagedMemory(mem *PagedRandomAccess[W]) checkpoi
 // executing frame (the top of the checkpoint's call stack) is unpacked into the
 // active fid/fp/pc.  The checkpoint's slices are copied into the interpreter, so
 // the checkpoint remains valid for subsequent restores.
-func (p *Interpreter[W]) Restore(cp checkpoint.CheckPoint[W]) {
+func (p *Interpreter[W]) Restore(cp checkpoint.CheckPoint) {
 	var (
-		frames = cp.CallStack()
-		// The topmost frame records the currently executing function (see
-		// CheckPoint); the remainder are the paused callers.
-		active = frames[len(frames)-1]
+		memories = cp.Memories()
+		sym, ok  = p.Binary().AddressOf(cp.Function())
+		fun      = p.program.Module(cp.Function()).(*descriptor.Function[W])
+		// Determine number of leading stamp-in inputs (which were excluded from
+		// the packed arguments --- see CheckPoint).
+		k = p.numStampInputs(fun)
 	)
-	// Restore the active frame.
-	p.fid = active.FunctionId
-	p.fp = active.FramePointer
-	p.pc = active.ProgramCounter
-	// Reset the return pointer/width: these are transient and meaningful only
-	// mid-return, so a checkpoint never captures an in-flight value.
+	//
+	util.Assert(ok, "cannot restore checkpoint")
+	//
+	p.fid = cp.Function()
+	p.fp = 0
+	p.pc = sym.Offset
+	// Reset return pointer/width
 	p.rp = 0
 	p.rw = 0
-	// Restore the paused callers.
+	// Restore stack frame
 	p.callStack.Clear()
-	//
-	for _, f := range frames[:len(frames)-1] {
-		p.callStack.Push(f)
-	}
-	// Restore the data stack.
-	var data = cp.DataStack()
-
 	p.dataStack.Clear()
-	p.dataStack.Alloc(uint(len(data)))
-	copy(p.dataStack.SliceEnd(0), data)
-	// Restore captured memories.
-	for _, m := range cp.Memories() {
-		p.restoreMemory(m)
+	p.dataStack.Alloc(fun.Width())
+	// Restore arguments into the frame's input slots (which Alloc has already
+	// reserved, mirroring the ENTER_n call convention).
+	for i, val := range Unpack(p.field, fun.Inputs()[k:], cp.ArgumentBytes()) {
+		p.dataStack.Set(k+uint(i), val)
 	}
+	// Restore memories
+	for i, m := range p.program.Modules() {
+		var mid = uint16(i)
+		// Note that static memories (SROMs) are not checkpointed (see CheckPoint)
+		if mem, ok := m.(*descriptor.Memory[W]); ok && !mem.IsStatic() {
+			var ith = p.Memory(mid)
+			// Restore ith memory from checkpoint
+			ith.Restore(memories[0], p.field)
+			// Pop checkpoint
+			memories = memories[1:]
+		}
+	}
+	// Seed the threaded stamp-in inputs (if any) from the restored memory
+	// clocks.
+	p.seedStampInputs(fun, cp.Memories())
 }
 
-// restoreMemory overwrites the contents of the live memory identified by the
-// snapshot's module identifier.  Read-only input memories are restored by
-// replacing their flat contents directly, whilst mutable memories are first
-// cleared and then each captured page is written back at its recorded address.
-// Writing page-by-page preserves the sparse layout of paged memories (only
-// captured pages are materialised).
-func (p *Interpreter[W]) restoreMemory(snapshot checkpoint.Memory[W]) {
-	// snapshot is the checkpointed image (stored as pages, whatever the memory
-	// kind); mem is the live memory being restored.
-	var mem = p.findMemory(p.program.Module(snapshot.ModuleId()).Name())
-	// Read/write memories (paged or not) restore their timestamped cells and
-	// clock directly -- Reset to a clean slate, then re-install the captured
-	// contents -- so per-cell timestamps survive the checkpoint (rather than
-	// being re-stamped by a replay of writes).  Read-only memories (ROM) cannot
-	// be written cell-by-cell, so they are restored by replacing their flat
-	// contents; other mutable memories (write-once) are cleared then replayed.
-	switch mem := mem.(type) {
-	case *RandomAccess[W]:
-		mem.Reset(snapshot.Clock())
-		mem.RestoreCells(snapshot.Pages())
-	case *PagedRandomAccess[W]:
-		mem.Reset(snapshot.Clock())
-		mem.RestoreCells(snapshot.Pages())
-	default:
-		if mem.Descriptor().IsReadOnly() {
-			mem.Initialise(flattenMemory(snapshot.Pages()))
-			return
-		}
-		// Write-once: clear then replay each captured page cell-by-cell.
-		mem.Initialise(nil)
+// numStampInputs returns the number of leading input registers of the given
+// function which are threaded stamp-in registers (or limbs thereof).  The
+// ThreadTimestamps transform places one stamp-in register per read-write
+// memory effect at the front of a function's inputs (each possibly split into
+// several limbs); programs which have not been threaded (e.g. for fast mode
+// execution) have none.
+func (p *Interpreter[W]) numStampInputs(fun *descriptor.Function[W]) uint {
+	var (
+		inputs = fun.Inputs()
+		n      uint
+	)
+	//
+	for _, e := range fun.Effects() {
+		var name = p.program.Module(e).Name() + "$stamp"
 		//
-		for _, page := range snapshot.Pages() {
-			var address = page.Address()
+		for n < uint(len(inputs)) && isLimbOf(inputs[n].Name(), name) {
+			n++
+		}
+	}
+	//
+	return n
+}
+
+// seedStampInputs initialises the threaded stamp-in inputs (if any) of the
+// given function from the given memory clocks.  Since the runtime clock ticks
+// before each access and the first access of the restored shard carries
+// exactly its stamp-in value (see ThreadTimestamps), each stamp-in is seeded
+// with clock+1.  This reconstructs the value the caller would have forwarded,
+// which cannot be transferred via the packed arguments (the checkpoint may
+// originate from a machine without threaded stamps --- see CheckPoint).
+func (p *Interpreter[W]) seedStampInputs(fun *descriptor.Function[W], memories []checkpoint.Memory) {
+	var (
+		inputs = fun.Inputs()
+		clocks = make(map[uint16]uint64, len(memories))
+		n      uint
+	)
+	//
+	for _, m := range memories {
+		clocks[m.ModuleId()] = m.Clock()
+	}
+	//
+	for _, e := range fun.Effects() {
+		var (
+			name  = p.program.Module(e).Name() + "$stamp"
+			stamp = clocks[e] + 1
+			start = n
+		)
+		// Determine the limb group of this stamp register.
+		for n < uint(len(inputs)) && isLimbOf(inputs[n].Name(), name) {
+			n++
+		}
+		// Fan the stamp out across the limbs, which are ordered most
+		// significant first.
+		for i := n; i > start; i-- {
+			var width = inputs[i-1].Bitwidth().Unwrap()
 			//
-			for _, w := range page.Data() {
-				//nolint
-				mem.Write(address, w)
-				//
-				address++
+			if width >= 64 {
+				p.dataStack.Set(i-1, word.Const64[W](stamp))
+				stamp = 0
+			} else {
+				p.dataStack.Set(i-1, word.Const64[W](stamp&((1<<width)-1)))
+				stamp >>= width
 			}
 		}
 	}
 }
 
-// flattenMemory converts a page-based checkpoint snapshot into flat contents.
-// This is used for ROMs, whose checkpoint snapshots are full flat pages.
-func flattenMemory[W word.Word[W]](pages []checkpoint.Page[W]) []W {
-	var size uint64
-	//
-	for _, page := range pages {
-		size = max(size, page.Address()+uint64(len(page.Data())))
-	}
-	//
-	contents := make([]W, size)
-	//
-	for _, page := range pages {
-		copy(contents[page.Address():], page.Data())
-	}
-	//
-	return contents
-}
-
-// findMemory locates the live checkpointable memory with the given module name
-// amongst the read-only input, write-once, random-access and paged random-access
-// memories.  It panics if no such memory exists, as a checkpoint should only
-// ever reference memories belonging to the program being executed.
-func (p *Interpreter[W]) findMemory(name string) Memory[W] {
-	for i := range p.roms {
-		if p.roms[i].Descriptor().Name() == name {
-			return &p.roms[i]
-		}
-	}
-	//
-	for i := range p.woms {
-		if p.woms[i].Descriptor().Name() == name {
-			return &p.woms[i]
-		}
-	}
-	//
-	for i := range p.rams {
-		if p.rams[i].Descriptor().Name() == name {
-			return &p.rams[i]
-		}
-	}
-	//
-	for i := range p.prams {
-		if p.prams[i].Descriptor().Name() == name {
-			return &p.prams[i]
-		}
-	}
-	//
-	panic(fmt.Sprintf("unknown memory \"%s\"", name))
+// isLimbOf checks whether a register with the given name is the register base
+// itself, or one of its limbs (named "base'k" after register splitting).
+func isLimbOf(name, base string) bool {
+	return name == base || strings.HasPrefix(name, base+"'")
 }
 
 // Binary provides access to the compiled program binary being executed.
@@ -1010,7 +956,7 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 	// allocate callee frame
 	p.dataStack.Alloc(uint(width))
 	// save function pointer and return address
-	p.callStack.Push(checkpoint.NewStackFrame(p.fid, p.fp, p.pc+n))
+	p.callStack.Push(NewStackFrame(p.fid, p.fp, p.pc+n))
 	// copy arguments into callee frame
 	for i := uint(calleeFp); args.HasNext(); i++ {
 		p.dataStack.Set(i, stack[args.Next()])
@@ -1035,7 +981,7 @@ func (p *Interpreter[W]) executeEnter_2(pc uint32, codes []uint32, stack []W) er
 	// allocate callee frame
 	p.dataStack.Alloc(uint(width))
 	// save function pointer and return address
-	p.callStack.Push(checkpoint.NewStackFrame(p.fid, p.fp, p.pc+n))
+	p.callStack.Push(NewStackFrame(p.fid, p.fp, p.pc+n))
 	// copy the one argument into the callee frame
 	p.dataStack.Set(uint(calleeFp), stack[arg])
 	//

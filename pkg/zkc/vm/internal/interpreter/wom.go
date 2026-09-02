@@ -13,6 +13,8 @@
 package interpreter
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -23,14 +25,6 @@ import (
 // exactly what they are typically used for).
 type WriteOnce[W word.Word[W]] struct {
 	StaticArray[W, W]
-	writtenToAddresses []bool
-}
-
-func (p *WriteOnce[W]) addressInCurrentRange(address uint64) bool {
-	return address < uint64(len(p.writtenToAddresses))
-}
-func (p *WriteOnce[W]) markAsWrittenTo(address uint64) {
-	p.writtenToAddresses[address] = true
 }
 
 // Write implementation for Memory interface.
@@ -38,9 +32,6 @@ func (p *WriteOnce[W]) Write(address uint64, value W) error {
 	// ensure sufficient space
 	p.data = expand(p.data, address+1)
 	p.data[address] = value
-	// same
-	p.writtenToAddresses = expand(p.writtenToAddresses, address+1)
-	p.markAsWrittenTo(address)
 	//
 	return nil
 }
@@ -50,7 +41,6 @@ func (p *WriteOnce[W]) Write(address uint64, value W) error {
 // every execution (Boot calls Initialise on each memory before running).
 func (p *WriteOnce[W]) Initialise(contents []W) {
 	p.StaticArray.Initialise(contents)
-	p.writtenToAddresses = make([]bool, len(contents))
 }
 
 // Read implementation for Memory interface.
@@ -60,13 +50,31 @@ func (p *WriteOnce[W]) Read(address uint64) (W, error) {
 
 // CanWrite determines whether a given address can be written (or not).
 func (p *WriteOnce[W]) CanWrite(address uint64) bool {
-	return !p.addressInCurrentRange(address) || !p.writtenToAddresses[address]
+	return address >= uint64(len(p.data))
+}
+
+// Checkpoint implementation for memory interface
+func (p *WriteOnce[W]) Checkpoint(mid uint16, field word.Config) checkpoint.Memory {
+	var (
+		bytes = Pack(field, p.descriptor.DataRegisters(), p.data)
+		page  = checkpoint.NewPage(0, bytes)
+	)
+	//
+	return checkpoint.NewMemory(mid, 0, page)
+}
+
+// Restore implementation for memory interface
+func (p *WriteOnce[W]) Restore(m checkpoint.Memory, field word.Config) {
+	var pages = m.Pages()
+	// Sanity check
+	util.Assert(len(pages) == 1, "write once memory requires one page")
+	// Unpack data
+	p.data = Unpack(field, p.descriptor.DataRegisters(), pages[0].Bytes())
 }
 
 // NewWriteOnce constructs an empty write-once memory.
 func NewWriteOnce[W word.Word[W]](descriptor descriptor.Memory[W]) *WriteOnce[W] {
 	return &WriteOnce[W]{
-		StaticArray:        NewStaticArray[W, W](descriptor),
-		writtenToAddresses: []bool{},
+		StaticArray: NewStaticArray[W, W](descriptor),
 	}
 }

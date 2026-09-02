@@ -43,7 +43,7 @@ type Core[W Word[W]] interface {
 	// Restore this machine from a given checkpoint.  This does not continue
 	// executiong, but simply initialises the machine state to match the
 	// checkpoint.
-	Restore(CheckPoint[W])
+	Restore(CheckPoint)
 }
 
 // ProgramPoint identifies a specific bytecode instruction within a given
@@ -98,7 +98,7 @@ func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint64
 // checkpoints, the final outputs, an indication as to whether this execution can
 // be traced, and any errors arising.
 func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string][]byte, strategy ShardingStrategy,
-) (checkpoints []CheckPoint[W], outputs map[string][]byte, traceable bool, errors []error) {
+) (checkpoints []CheckPoint, outputs map[string][]byte, traceable bool, errors []error) {
 	var (
 		err   error
 		steps uint64
@@ -197,7 +197,7 @@ func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], inp
 // failure which is not expected (and signals some kind of bug somewhere).  The
 // traceable flag holds when the given execution can be traced (i.e. when no
 // errors in the latter category arise).
-func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], cp CheckPoint[W],
+func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], cp CheckPoint,
 	fn string, nsteps uint64) (steps uint64, trace Shard[F], errs []error) {
 	//
 	var (
@@ -235,7 +235,7 @@ func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W
 // machine failure which is not expected (and signals some kind of bug
 // somewhere).  The traceable flag holds when the given execution can be traced
 // (i.e. when no errors in the latter category arise).
-func RestoreAndExecute[W Word[W], M Core[W]](m M, cp CheckPoint[W], n uint64,
+func RestoreAndExecute[W Word[W], M Core[W]](m M, cp CheckPoint, n uint64,
 ) (steps uint64, traceable bool, errs []error) {
 	//
 	var (

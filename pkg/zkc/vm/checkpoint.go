@@ -14,7 +14,6 @@ package vm
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // CheckPoint represents a captured state of an executing machine, such that
@@ -42,4 +41,4 @@ import (
 // steps of execution.  The purpose of this is to allow a program's execution to
 // be broken up into multiple checkpoints, such that each checkpoint only stores
 // the data it requires for executing its portion of the overall execution.
-type CheckPoint[W word.Word[W]] = checkpoint.CheckPoint[W]
+type CheckPoint = checkpoint.CheckPoint
