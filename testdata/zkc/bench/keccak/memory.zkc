@@ -6,14 +6,3 @@ include "type.zkc"
 // (e.g., .data, .rodata).
 #[paged]
 memory ram[u32](address:Address) -> (word:u32)
-
-// keccak scratch memory: five 8-aligned state rows (ROW0..ROW4, 5 slots used
-// per row — narrow variant only) and the 17-lane padded input block at PIB
-// (both variants).
-memory keccak_state[u32](address:u7) -> (state:lane)
-const ROW0:u7 = 0
-const ROW1:u7 = 8
-const ROW2:u7 = 16
-const ROW3:u7 = 24
-const ROW4:u7 = 32
-const PIB:u7 = 40

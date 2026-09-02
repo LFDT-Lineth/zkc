@@ -1,6 +1,7 @@
 include "constants.zkc"
 include "utils.zkc"
 include "memory.zkc"
+include "state.zkc"
 include "write.zkc"
 include "type.zkc"
 
@@ -12,7 +13,12 @@ include "type.zkc"
 // between rounds; keccak_round reads them once into locals, computes the
 // fully fused round (theta, rho, pi, chi, iota) in registers, and writes
 // them back.  Function signatures stay narrow (1 argument), at the cost of
-// 50 state-memory accesses per round.
+// 50 state-memory accesses per round.  As in the wide variant, the keccak
+// padding is applied to the message in place, in ram, so the final block is
+// absorbed by exactly the same code as every full block.
+//
+// NOTE: keccak writes the padding into ram in the [msg_length, block boundary)
+// range immediately after the message; that range must be free for it to use.
 //
 // See impl_wide.zkc for the register-threaded twin, and keep the two in
 // sync when touching the round logic.
@@ -87,80 +93,75 @@ fn absorbing_phase<ram, keccak_state>(msg_length:u32, msg_address:Address) {
     var curr_address:Address = msg_address
 
     // =======================================================================================
-    // building full blocks (no padding), XORing them into the state,
-    // and calling keccak_f
+    // absorbing the blocks that DO NOT require padding
     // =======================================================================================
 
-    // we build the blocks that DO NOT require padding and call keccak_f on them.
     // NOTE: no division — the loop guard replaces `msg_length / 136`, and what
     // is left in `remaining` afterwards replaces `msg_length % 136`; the loop
     // paid a comparison per block either way.
     var remaining:u32 = msg_length
     while remaining >= BLOCK_BYTE_LENGTH {
-        for limb:u5 = 0; limb<17; limb = limb + 1 {
-            keccak_state[PIB + (limb as u7)] = read_64(curr_address + (8 * (limb as Address)))
-        }
-
-        xor_padded_input_block_into_state()
-        keccak_f()
+        absorb_block(curr_address)
 
         curr_address = curr_address + (BLOCK_BYTE_LENGTH as Address)
         remaining = remaining - BLOCK_BYTE_LENGTH
     }
 
     // =======================================================================================
-    // building the final padded block, XORing it into the state,
-    // and calling keccak_f
+    // absorbing the final padded block (always present)
     // =======================================================================================
 
-    // final block, DOES require padding --- always
-    // n_full_words ∈ {0, 1, ..., 16}
-    // remaining < 136, so `/% 8` is just a bit split: top 5 bits :: low 3 bits
+    // Pad the tail of the message in place so the final block can go through
+    // absorb_block unchanged.  remaining < 136, so `/% 8` is just a bit split:
+    // top 5 bits :: low 3 bits.
     var n_full_words:u5
     var n_bytes:u3
     n_full_words::n_bytes = (remaining as u8)
 
     var final_word_in_block:u1 = n_full_words == 16 ? 1:0
 
-    for limb:u7 = 0; limb<n_full_words as u7; limb = limb + 1 {
-        keccak_state[PIB + limb] = read_64(curr_address + (8 * (limb as Address)))
-    }
-    curr_address = curr_address + (8 * (n_full_words as Address))
-    keccak_state[PIB + (n_full_words as u7)] = read_and_pad_64(curr_address, n_bytes as u3, final_word_in_block)
+    // the word straddling the end of the message keeps its message bytes and
+    // gains the 0x01 (and, if it is the last word of the block, the 0x80).
+    var pad_address:Address = curr_address + (8 * (n_full_words as Address))
+    write_64(pad_address, read_and_pad_64(pad_address, n_bytes, final_word_in_block))
 
     // the code below should only trigger if n_full_words < 16 = 17 - 1
     // the above "read_and_pad_64" call didn't fill the final word, so
     // more padding happens: zero words followed by a terminating 1
     if final_word_in_block != 1 {
         for limb:u8 = (n_full_words as u8) + 1; limb<16; limb = limb + 1 {
-            keccak_state[PIB + (limb as u7)] = 0
+            pad_address = pad_address + 8
+            write_64(pad_address, 0)
         }
-        keccak_state[PIB + 16] = FINAL_RIGHT_PADDING
+        write_64(curr_address + 128, FINAL_RIGHT_PADDING)
     }
 
-    xor_padded_input_block_into_state()
-    keccak_f()
+    absorb_block(curr_address)
 }
 
-// xor_padded_input_block_into_state does exactly what its name suggests
-fn xor_padded_input_block_into_state<keccak_state>() {
-    keccak_state[ROW0] = keccak_state[ROW0] ^ keccak_state[PIB]
-    keccak_state[ROW1] = keccak_state[ROW1] ^ keccak_state[PIB + 1]
-    keccak_state[ROW2] = keccak_state[ROW2] ^ keccak_state[PIB + 2]
-    keccak_state[ROW3] = keccak_state[ROW3] ^ keccak_state[PIB + 3]
-    keccak_state[ROW4] = keccak_state[ROW4] ^ keccak_state[PIB + 4]
-    keccak_state[ROW0 + 1] = keccak_state[ROW0 + 1] ^ keccak_state[PIB + 5]
-    keccak_state[ROW1 + 1] = keccak_state[ROW1 + 1] ^ keccak_state[PIB + 6]
-    keccak_state[ROW2 + 1] = keccak_state[ROW2 + 1] ^ keccak_state[PIB + 7]
-    keccak_state[ROW3 + 1] = keccak_state[ROW3 + 1] ^ keccak_state[PIB + 8]
-    keccak_state[ROW4 + 1] = keccak_state[ROW4 + 1] ^ keccak_state[PIB + 9]
-    keccak_state[ROW0 + 2] = keccak_state[ROW0 + 2] ^ keccak_state[PIB + 10]
-    keccak_state[ROW1 + 2] = keccak_state[ROW1 + 2] ^ keccak_state[PIB + 11]
-    keccak_state[ROW2 + 2] = keccak_state[ROW2 + 2] ^ keccak_state[PIB + 12]
-    keccak_state[ROW3 + 2] = keccak_state[ROW3 + 2] ^ keccak_state[PIB + 13]
-    keccak_state[ROW4 + 2] = keccak_state[ROW4 + 2] ^ keccak_state[PIB + 14]
-    keccak_state[ROW0 + 3] = keccak_state[ROW0 + 3] ^ keccak_state[PIB + 15]
-    keccak_state[ROW1 + 3] = keccak_state[ROW1 + 3] ^ keccak_state[PIB + 16]
+// absorb_block XORs the 17 rate lanes of the block at `base` into the state
+// and then applies the full Keccak-f[1600] permutation.  Block lane i is
+// A[i%5][i/5].
+fn absorb_block<ram, keccak_state>(base:Address) {
+    keccak_state[ROW0] = keccak_state[ROW0] ^ read_64(base)
+    keccak_state[ROW1] = keccak_state[ROW1] ^ read_64(base + 8)
+    keccak_state[ROW2] = keccak_state[ROW2] ^ read_64(base + 16)
+    keccak_state[ROW3] = keccak_state[ROW3] ^ read_64(base + 24)
+    keccak_state[ROW4] = keccak_state[ROW4] ^ read_64(base + 32)
+    keccak_state[ROW0 + 1] = keccak_state[ROW0 + 1] ^ read_64(base + 40)
+    keccak_state[ROW1 + 1] = keccak_state[ROW1 + 1] ^ read_64(base + 48)
+    keccak_state[ROW2 + 1] = keccak_state[ROW2 + 1] ^ read_64(base + 56)
+    keccak_state[ROW3 + 1] = keccak_state[ROW3 + 1] ^ read_64(base + 64)
+    keccak_state[ROW4 + 1] = keccak_state[ROW4 + 1] ^ read_64(base + 72)
+    keccak_state[ROW0 + 2] = keccak_state[ROW0 + 2] ^ read_64(base + 80)
+    keccak_state[ROW1 + 2] = keccak_state[ROW1 + 2] ^ read_64(base + 88)
+    keccak_state[ROW2 + 2] = keccak_state[ROW2 + 2] ^ read_64(base + 96)
+    keccak_state[ROW3 + 2] = keccak_state[ROW3 + 2] ^ read_64(base + 104)
+    keccak_state[ROW4 + 2] = keccak_state[ROW4 + 2] ^ read_64(base + 112)
+    keccak_state[ROW0 + 3] = keccak_state[ROW0 + 3] ^ read_64(base + 120)
+    keccak_state[ROW1 + 3] = keccak_state[ROW1 + 3] ^ read_64(base + 128)
+
+    keccak_f()
 }
 
 fn squeezing_phase<ram, keccak_state>(output_address:Address) {

@@ -7,7 +7,7 @@ pub input message(offset:u32) -> (byte:u8)
 // storage for generated hash
 pub output hash(offset:u32) -> (byte:u8)
 
-fn main<ram, keccak_state>() {
+fn main<ram>() {
     // determine message length
     var length:u32 = length[0]
     // copy input message into RAM

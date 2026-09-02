@@ -1,0 +1,11 @@
+include "memory.zkc"
+include "type.zkc"
+
+// keccak state memory (narrow variant only): five 8-aligned rows, five lanes
+// used per row.  The wide variant keeps the state in registers instead.
+memory keccak_state[u32](address:u7) -> (state:lane)
+const ROW0:u7 = 0
+const ROW1:u7 = 8
+const ROW2:u7 = 16
+const ROW3:u7 = 24
+const ROW4:u7 = 32
