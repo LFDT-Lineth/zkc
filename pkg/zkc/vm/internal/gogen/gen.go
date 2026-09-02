@@ -287,6 +287,7 @@ func cloneHelpers(src map[string]bool) map[string]bool {
 type fnView struct {
 	isBoot   bool     // the boot frame ('main'); its outputs are discarded
 	outNames []string // output result names, limb-expanded (empty for boot)
+	tailLoop bool     // body contains a self tail call, needing the entry label
 }
 
 // reachableFunctions returns the ids of the functions reachable from the entry
@@ -914,6 +915,12 @@ func (g *generator) emitFunction(c *code, id uint, fn *descFunction) error {
 
 	c.commentf("%s corresponds to ZkC function %q.", goFuncName(fn), fn.Name())
 	c.linef("func %s(%s)%s {", goFuncName(fn), strings.Join(paramFmt, ", "), retType)
+	// The self-tail-call back edge lands BEFORE the local declarations, so each
+	// iteration re-executes them and starts from a zeroed frame, exactly like
+	// the interpreter's frame reuse.
+	if g.cur.tailLoop {
+		c.line("entry:")
+	}
 
 	used, read := usedRegisters(body.String())
 
@@ -1040,7 +1047,7 @@ func (g *generator) emitFunctionBody(c *code, id uint, fn *descFunction) error {
 		c.linef("%s:", labelName(end))
 	}
 
-	if labels[end] || !endsTerminated(code) {
+	if labels[end] || !endsTerminated(code, id) {
 		c.line(`panic(failure("machine fell off end of function"))`)
 	}
 
@@ -1049,7 +1056,8 @@ func (g *generator) emitFunctionBody(c *code, id uint, fn *descFunction) error {
 
 // endsTerminated reports whether the final instruction of the code (if any)
 // unconditionally transfers control, i.e. execution cannot fall off the end.
-func endsTerminated(code BytecodeVector) bool {
+// A self tail call counts: it is emitted as an unconditional goto.
+func endsTerminated(code BytecodeVector, id uint) bool {
 	if len(code) == 0 {
 		return false
 	}
@@ -1060,9 +1068,11 @@ func endsTerminated(code BytecodeVector) bool {
 		return false
 	}
 
-	switch last[len(last)-1].(type) {
+	switch b := last[len(last)-1].(type) {
 	case *bytecode.Skip[word.Uint], *bytecode.Jmp[word.Uint], *bytecode.Ret[word.Uint], *bytecode.Fail[word.Uint]:
 		return true
+	case *bytecode.Call[word.Uint]:
+		return b.Never && uint(b.Target) == id
 	default:
 		return false
 	}
