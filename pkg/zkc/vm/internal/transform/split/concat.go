@@ -66,21 +66,20 @@ type partCat struct {
 func Concat[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 	insn *bytecode.Cat[W]) []Bytecode[W] {
 	// Split into the initial set of chunks.
-	var chunks, context = initialiseConcatChunks(mapping, alloc, insn.Targets, insn.Sources)
+	var chunks, pre, context = initialiseConcatChunks(mapping, alloc, insn.Targets, insn.Sources)
 	// Next, add carry lines as needed
 	chunks = insertConcatCarryLines(mapping.Field(), alloc, chunks)
 	// Convert chunks into assignments
-	return append(array.Map(chunks, concatAssignment[W]), context...)
+	return append(append(pre, array.Map(chunks, concatAssignment[W])...), context...)
 }
 
 // initialiseAddChunks splits the addition sources and constant into
 // least-significant-first chunks, then assigns target limbs to each chunk
 // according to the number of bits the corresponding RHS can produce.
 func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
-	targets, sources []RegisterId) ([]partCat, []Bytecode[W]) {
+	targets, sources []RegisterId) ([]partCat, []Bytecode[W], []Bytecode[W]) {
 	//
 	var (
-		limbsMap = mapping.LimbsRegisterMap()
 		// Split all source registers
 		sourceLimbs = applyLimbsMapReversed(mapping, sources...)
 		// Split all target registers
@@ -91,18 +90,31 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 		sourceStack = RegisterStack[W]{sourceLimbs, alloc, nil}
 		//
 		codes []partCat
+		pre   []Bytecode[W]
 	)
 	// Keep going whilst we still have source registers
 	for sourceStack.Size() > 0 {
 		var (
 			rhs      = sourceStack.SelectUpto(mapping.BandWidth())
-			bitwidth = concatRhsBitwidth(mapping.Field(), rhs, limbsMap)
+			bitwidth = concatRhsBitwidth(mapping.Field(), rhs, alloc)
 			// Keep target limbs intact.  Splitting a target to match the RHS
 			// exactly introduces a reconstruction bytecode which can sit after a
 			// large control-flow join and make its path condition prohibitively
 			// expensive to lower.
 			lhs = targetStack.SelectUpto(bitwidth)
 		)
+		// A force-selected target limb can be wider than this chunk's sources:
+		// e.g. a u15 source limb whose successor would exceed the bandwidth,
+		// selected against a u16 target limb.  Zero-padding mid-stream would
+		// shift every remaining source bit out of position, so instead borrow
+		// the missing low bits from the next source limb(s), destructing a limb
+		// when only part of it is needed.
+		if lhsWidth := descriptor.BitwidthOf(alloc, lhs...).Unwrap(); lhsWidth > bitwidth {
+			var borrows []Bytecode[W]
+
+			rhs, borrows = borrowConcatSources(alloc, &sourceStack, rhs, bitwidth, lhsWidth)
+			pre = append(pre, borrows...)
+		}
 		// allocate selected targets
 		codes = append(codes, partCat{lhs, rhs})
 	}
@@ -116,7 +128,46 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 	// Assert that we never create bytecodes for source registers.
 	util.Assert(len(sourceStack.post) == 0, "internal failure")
 	//
-	return codes, targetStack.post
+	return codes, pre, targetStack.post
+}
+
+// borrowConcatSources widens a chunk's sources from bitwidth up to lhsWidth by
+// consuming further limbs from the source stack: a limb no wider than the
+// deficit is taken whole, while a wider one is destructed into a borrowed low
+// part and a remainder (pushed back for the next chunk).  It returns the
+// widened sources and the destruct bytecodes (which must execute before the
+// chunk assignments).  If the stack empties first the deficit remains, which
+// is fine: the chunk is then final and zero-extends.
+func borrowConcatSources[W word.Word[W]](alloc Allocator[W], sourceStack *RegisterStack[W],
+	rhs []RegisterId, bitwidth, lhsWidth uint,
+) ([]RegisterId, []Bytecode[W]) {
+	var pre []Bytecode[W]
+	//
+	for bitwidth < lhsWidth && sourceStack.Size() > 0 &&
+		!descriptor.HasNativeRegisterId(sourceStack.stack, alloc) {
+		var (
+			need      = lhsWidth - bitwidth
+			next      = sourceStack.Pop()
+			nextWidth = alloc.Register(next).Bitwidth().Unwrap()
+		)
+		//
+		if nextWidth <= need {
+			rhs = append(rhs, next)
+			bitwidth += nextWidth
+		} else {
+			var (
+				lo = alloc.Allocate("b", util.Some(need))
+				hi = alloc.Allocate("b", util.Some(nextWidth-need))
+			)
+			//
+			pre = append(pre, bytecode.AddVec[W]([]RegisterId{lo, hi}, []RegisterId{next}))
+			rhs = append(rhs, lo)
+			sourceStack.stack = array.Prepend(hi, sourceStack.stack)
+			bitwidth += need
+		}
+	}
+	//
+	return rhs, pre
 }
 
 // insertConcatCarryLines allocates carry registers for chunks whose RHS
