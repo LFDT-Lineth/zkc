@@ -1,0 +1,19 @@
+input data(addr:u8) -> (b:u8)
+
+fn main() {
+    walk!(data[0], data[1] as u16, data[2] as u16, data[3]::data[4])
+}
+
+// Self tail call whose arguments swap on every step: (n, a, b) becomes
+// (n - 1, b, a + 1).  After n steps, a must equal expected.
+fn walk(n:u8, a:u16, b:u16, expected:u16) -> ! {
+    if n == 0 {
+        if a != expected {
+            fail
+        }
+        //
+        done
+    }
+    //
+    walk!(n - 1, b, a + 1, expected)
+}
