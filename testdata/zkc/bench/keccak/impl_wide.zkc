@@ -128,23 +128,24 @@ fn keccak<ram>(msg_address:Address, msg_length:u32, output_address:Address) {
     print_hash(s00, s10, s20, s30)
 }
 
-// print_hash prints the hash in BIG-ENDIAN convention
+// print_hash prints the digest in the standard keccak hex order
 #[debug]
 fn print_hash(h0:u64, h1:u64, h2:u64, h3:u64) {
     printf "\nkeccak hash:\t"
-    print_big_endian(h0)
-    print_big_endian(h1)
-    print_big_endian(h2)
-    print_big_endian(h3)
+    print_lane(h0)
+    print_lane(h1)
+    print_lane(h2)
+    print_lane(h3)
     printf "\n"
 }
 
-// print_big_endian prints a u64 in BIG-ENDIAN convention
+// print_lane prints the eight bytes of a state lane least-significant-first,
+// which is the little-endian serialisation keccak specifies for the digest.
 #[debug]
-fn print_big_endian(val:u64) {
+fn print_lane(val:u64) {
     var b7:u8, b6:u8, b5:u8, b4:u8, b3:u8, b2:u8, b1:u8, b0:u8
     b7::b6::b5::b4::b3::b2::b1::b0 = val
-    printf "%x%x%x%x%x%x%x%x", b0, b1, b2, b3, b4, b5, b6, b7
+    printf "%02x%02x%02x%02x%02x%02x%02x%02x", b0, b1, b2, b3, b4, b5, b6, b7
 }
 
 // ===================================================================
