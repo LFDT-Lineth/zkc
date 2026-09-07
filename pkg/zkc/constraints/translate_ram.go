@@ -30,11 +30,9 @@ import (
 
 // ramLayout records the register ids and limb widths of every column of a
 // read-write memory (RAM) module, in the fixed order established by
-// translateReadWriteMemory.  This is the specification of how the RAM table
-// works: one row per memory access (plus, in a follow-up, one row per touched
-// cell for initialisation / finalisation), with per-row constraints tying the
-// timestamps together and — once the offline memory-checking bus lands —
-// receive/send pairs proving every read returns the last value written.  Both
+// translateReadWriteMemory: one row per memory access, in access order, with
+// per-row constraints tying the timestamps together.  Cross-row consistency
+// (permuted block, bus, finalizer) is added by follow-up PRs of #2160.  Both
 // the module translation (which creates the columns) and the trace observer /
 // caller->RAM lookup (which reference them by position) derive the layout from
 // this helper so all sides stay in lock-step.
@@ -42,16 +40,14 @@ import (
 // Register order is [inputs, outputs, computed]:
 //   - inputs   : []ADDRESS                 (declared address lines)
 //   - outputs  : []VALUE_WRITTEN           (declared data lines)
-//   - computed : EXEC, FINL, IS_WRITE, []VALUE_READ, []TIMESTAMP_WRITTEN,
-//     []TIMESTAMP_READ, []TIMESTAMP_DELTA, []ADDRESS_DELTA,
-//     []TS_CARRY, []ADDR_CARRY, EXEC_WRITE, EXEC_READ
+//   - computed : EXEC, IS_WRITE, []VALUE_READ, []TIMESTAMP_WRITTEN,
+//     []TIMESTAMP_READ, []TIMESTAMP_DELTA, []TS_CARRY, EXEC_WRITE, EXEC_READ,
+//     []TS_INCREMENT_CARRY
 //
 // All limb slices are most-significant-limb first (matching declaration /
 // "big endian" order used by ApplyLimbsMap and the module register order).
 type ramLayout struct {
-	// address is the cell accessed by this row: on an EXEC row, the address of
-	// the guest program's access; on a (future) FINL row, the cell being
-	// initialised / finalised.
+	// address is the cell accessed by this row.
 	address []register.Id
 	// valueWritten is the value the cell holds immediately AFTER this row's
 	// access: the value written (for a write) or, for a read, the value read
@@ -59,13 +55,8 @@ type ramLayout struct {
 	// found).  This is the column the caller's lookup pins for both kinds of
 	// access.
 	valueWritten []register.Id
-	// exec is a binary phase flag: 1 on the rows mirroring the guest program's
-	// accesses (one row per access, in access order).
+	// exec is 1 on every real row (one per access, in access order), 0 on padding.
 	exec register.Id
-	// finl is a binary phase flag: 1 on the initialisation / finalisation rows
-	// (one per touched cell) which a follow-up PR will emit; mutually
-	// exclusive with exec.
-	finl register.Id
 	// isWrite distinguishes a write access (1) from a read access (0).
 	isWrite register.Id
 	// valueRead is the value the cell held immediately BEFORE this row's
@@ -81,30 +72,12 @@ type ramLayout struct {
 	// tsRead is the timestamp of the LAST access to this address (zero for a
 	// first touch): the "when" of valueRead.
 	tsRead []register.Id
-	// tsDelta witnesses the strict timestamp orderings of both phases.  On EXEC
-	// rows: TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 + TIMESTAMP_DELTA, with
-	// TIMESTAMP_DELTA range-checked >= 0, so TIMESTAMP_READ <
-	// TIMESTAMP_WRITTEN.  On FINL rows the direction REVERSES (written = the
-	// cell's initial state, read = its final state): TIMESTAMP_READ =
-	// TIMESTAMP_WRITTEN + 1 + TIMESTAMP_DELTA, so TIMESTAMP_WRITTEN <
-	// TIMESTAMP_READ, pinning each finalized cell to one genuinely touched
-	// during execution.  Sharing the column is sound since EXEC * FINL == 0.
+	// tsDelta witnesses TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 + TIMESTAMP_DELTA
+	// (range-checked >= 0), i.e. TIMESTAMP_READ < TIMESTAMP_WRITTEN.
 	tsDelta []register.Id
-	// addrDelta witnesses the strict ADDRESS ordering of the (future) FINL
-	// phase: each touched cell must be initialised / finalised AT MOST once,
-	// which the table proves by listing FINL rows in strictly increasing
-	// address order — ADDRESS = prev(ADDRESS) + 1 + ADDRESS_DELTA, with
-	// ADDRESS_DELTA range-checked >= 0.  Strict monotony alone delivers
-	// uniqueness: the first FINL address is deliberately unconstrained (an
-	// anchor at zero would force an init/finalize event for address 0 even
-	// when that cell was never touched).  Unused (zero) on EXEC rows.
-	addrDelta []register.Id
-	// tsCarry / addrCarry witness the per-boundary carry of the multi-limb
-	// timestamp / address additions above.  Each has one fewer entry than the
-	// value it carries (the most significant limb produces no carry), indexed
-	// by significance (index 0 == carry out of the least significant limb).
-	tsCarry   []register.Id
-	addrCarry []register.Id
+	// tsCarry witnesses the per-boundary carries of that multi-limb addition:
+	// one fewer entry than the timestamp has limbs, indexed by significance.
+	tsCarry []register.Id
 	// execWrite / execRead select the write (EXEC * IS_WRITE) and read
 	// (EXEC * (1 - IS_WRITE)) rows of the execution phase.  They exist because
 	// a lookup's target filter must be a single column: a caller's write-site
@@ -112,20 +85,18 @@ type ramLayout struct {
 	// execRead, which is how each access's read/write kind is pinned.
 	execWrite register.Id
 	execRead  register.Id
-	// Limb widths (most-significant first) of the address, data and timestamp
-	// register families.
-	addrWidths []uint
+	// tsIncrementCarry witnesses the carries of the cross-row increment
+	// TIMESTAMP_WRITTEN = prev(TIMESTAMP_WRITTEN) + 1 (tsCarry serves the same-row sum).
+	tsIncrementCarry []register.Id
+	// Limb widths (most-significant first) of the data and timestamp register
+	// families.
 	dataWidths []uint
 	tsWidths   []uint
 }
 
 // translateReadWriteMemory builds the MIR module for a read-write (RAM) memory:
-// the declared address / data columns plus the synthetic phase, value-read,
-// timestamp and delta columns, together with the local (per-row) consistency
-// constraints of the RAM spec.  The offline memory-checking bus (rcv/snd) and
-// the finalization rows are deferred to a follow-up PR; the finalization-phase
-// constraints below are therefore written but vacuous (no FINL rows are emitted
-// yet).
+// the declared address / data columns plus the synthetic columns, together with
+// the per-row constraints.
 func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
 	//
 	var (
@@ -133,33 +104,30 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 		regs   = toRegisters(m.Registers())
 		layout = computeRamLayout(m, p.program.Field())
 	)
-	// Initialise module.  Note a leading padding row exists (EXEC == FINL == 0
-	// there), emitted by the tracer (see traceReadWriteMemory).  A read-write
-	// memory is internal state: it is neither a public input nor a public
-	// output, and never native.
+	// Initialise module.  Note a leading padding row exists (EXEC == 0 there),
+	// emitted by the tracer (see traceReadWriteMemory).  A read-write memory is
+	// internal state: neither a public input nor a public output, never native.
 	mod = mod.Init(m.Name(), false, false, false, false, false)
 	mod.AddRegisters(regs...)
 	// Append the synthetic columns, in the order fixed by computeRamLayout.
 	mod.AddRegisters(
 		register.NewComputed(tracer.RAM_EXEC_NAME, 1),
-		register.NewComputed(tracer.RAM_FINL_NAME, 1),
 		register.NewComputed(tracer.RAM_IS_WRITE_NAME, 1),
 	)
 	addLimbRegisters(mod, tracer.RAM_VALUE_READ_PREFIX, layout.dataWidths)
 	addLimbRegisters(mod, tracer.RAM_TS_WRITTEN_PREFIX, layout.tsWidths)
 	addLimbRegisters(mod, tracer.RAM_TS_READ_PREFIX, layout.tsWidths)
 	addLimbRegisters(mod, tracer.RAM_TS_DELTA_PREFIX, layout.tsWidths)
-	addLimbRegisters(mod, tracer.RAM_ADDR_DELTA_PREFIX, layout.addrWidths)
 	addCarryRegisters(mod, tracer.RAM_TS_CARRY_PREFIX, len(layout.tsCarry))
-	addCarryRegisters(mod, tracer.RAM_ADDR_CARRY_PREFIX, len(layout.addrCarry))
 	mod.AddRegisters(
 		register.NewComputed(tracer.RAM_EXEC_WRITE_NAME, 1),
 		register.NewComputed(tracer.RAM_EXEC_READ_NAME, 1),
 	)
-	// Local (per-row) consistency constraints.
+	addCarryRegisters(mod, tracer.RAM_TS_INCREMENT_CARRY_PREFIX, len(layout.tsIncrementCarry))
+	// Per-row constraints.
 	mod.AddConstraints(ramGeneralConstraints[F](ctx, layout)...)
 	mod.AddConstraints(ramExecConstraints[F](ctx, layout)...)
-	mod.AddConstraints(ramFinlConstraints[F](ctx, layout)...)
+	mod.AddConstraints(ramChronologyConstraints[F](ctx, layout)...)
 	// Range-prove every column.  This covers the internally-witnessed columns
 	// (value-read, timestamp-read, deltas, carries) which — unlike the address /
 	// value / timestamp-written columns pinned by the caller lookup — are not
@@ -189,7 +157,6 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 	)
 	//
 	layout := ramLayout{
-		addrWidths: widthsOf(addrRegs),
 		dataWidths: widthsOf(dataRegs),
 		tsWidths:   tsWidths,
 	}
@@ -198,9 +165,8 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 	layout.valueWritten = idRange(nAddr, nData)
 	// computed columns follow, in declaration order
 	layout.exec = register.NewId(next)
-	layout.finl = register.NewId(next + 1)
-	layout.isWrite = register.NewId(next + 2)
-	next += 3
+	layout.isWrite = register.NewId(next + 1)
+	next += 2
 	//
 	layout.valueRead = idRange(next, nData)
 	next += nData
@@ -210,14 +176,13 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 	next += nStamp
 	layout.tsDelta = idRange(next, nStamp)
 	next += nStamp
-	layout.addrDelta = idRange(next, nAddr)
-	next += nAddr
 	layout.tsCarry = idRange(next, nStamp-1)
 	next += nStamp - 1
-	layout.addrCarry = idRange(next, nAddr-1)
-	next += nAddr - 1
 	layout.execWrite = register.NewId(next)
 	layout.execRead = register.NewId(next + 1)
+	next += 2
+	// Appended last so the ids above (used by the caller lookup) are unchanged.
+	layout.tsIncrementCarry = idRange(next, nStamp-1)
 	//
 	return layout
 }
@@ -273,21 +238,16 @@ func addCarryRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F
 	}
 }
 
-// ramGeneralConstraints builds the phase-bit constraints shared by both phases:
-// binarity of EXEC, FINL, IS_WRITE and (EXEC+FINL); a leading padding row; and
-// the "activity" monotonicities (FINL and EXEC+FINL nondecreasing).  Together
-// these force the row layout [padding..][EXEC..][FINL..].
+// ramGeneralConstraints builds the row-shape constraints: binarity of EXEC and
+// IS_WRITE, a leading padding row, EXEC nondecreasing (so the layout is
+// [padding..][EXEC..]), and the definitions of the lookup selectors.
 func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
 	var (
 		zero      = mirc.Number[register.Id, Expr[F]](0)
 		one       = mirc.Number[register.Id, Expr[F]](1)
 		exec      = mirc.Variable[register.Id, Expr[F]](l.exec, 1, 0)
-		finl      = mirc.Variable[register.Id, Expr[F]](l.finl, 1, 0)
 		isWrite   = mirc.Variable[register.Id, Expr[F]](l.isWrite, 1, 0)
-		active    = exec.Add(finl)
-		prevFinl  = mirc.Variable[register.Id, Expr[F]](l.finl, 1, -1)
 		prevExec  = mirc.Variable[register.Id, Expr[F]](l.exec, 1, -1)
-		prevActiv = prevExec.Add(prevFinl)
 		execWrite = mirc.Variable[register.Id, Expr[F]](l.execWrite, 1, 0)
 		execRead  = mirc.Variable[register.Id, Expr[F]](l.execRead, 1, 0)
 	)
@@ -295,21 +255,13 @@ func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout)
 	return []mir.Constraint[F]{
 		// binary columns
 		binaryConstraint[F]("exec_is_binary", ctx, exec),
-		binaryConstraint[F]("finl_is_binary", ctx, finl),
 		binaryConstraint[F]("is_write_is_binary", ctx, isWrite),
-		// EXEC and FINL (each already binary) are mutually exclusive: EXEC*FINL == 0
-		// (equivalently EXEC+FINL is binary).
-		mir.NewVanishingConstraint("exec_and_finl_are_binary_exclusive", ctx, util.None[int](),
-			exec.Multiply(finl).Equals(zero).AsLogical()),
-		// leading padding row: EXEC[0] == FINL[0] == 0.
+		// leading padding row: EXEC[0] == 0.
 		mir.NewVanishingConstraint("exec_vanishes_in_padding", ctx, util.Some(0),
-			active.Equals(zero).AsLogical()),
-		// FINL nondecreasing: FINL[i-1] == 1 => FINL[i] == 1.
-		mir.NewVanishingConstraint("finl_monotony", ctx, util.None[int](),
-			mirc.If(prevFinl.Equals(one), finl.Equals(one)).AsLogical()),
-		// (EXEC+FINL) nondecreasing: active[i-1] == 1 => active[i] == 1.
-		mir.NewVanishingConstraint("active_monotony", ctx, util.None[int](),
-			mirc.If(prevActiv.Equals(one), active.Equals(one)).AsLogical()),
+			exec.Equals(zero).AsLogical()),
+		// EXEC nondecreasing: EXEC[i-1] == 1 => EXEC[i] == 1.
+		mir.NewVanishingConstraint("exec_monotony", ctx, util.None[int](),
+			mirc.If(prevExec.Equals(one), exec.Equals(one)).AsLogical()),
 		// The per-kind lookup selectors are fully determined:
 		// EXEC_WRITE == EXEC * IS_WRITE, and EXEC_READ == EXEC * (1 - IS_WRITE)
 		// expressed subtraction-free as EXEC_WRITE + EXEC_READ == EXEC.
@@ -351,59 +303,19 @@ func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 	return cs
 }
 
-// ramFinlConstraints builds the finalization-phase constraints (guarded by
-// FINL): addresses strictly increase from one FINL row to the next (via
-// []ADDRESS_DELTA) — which alone guarantees at most one init/finalize event per
-// cell, so the first FINL address is deliberately unconstrained; the strict
-// timestamp ordering TIMESTAMP_READ > TIMESTAMP_WRITTEN pins each finalized cell
-// to one genuinely touched during execution (an untouched cell's final timestamp
-// is zero); and every FINL row carries the cell's initial state on the written
-// side ([]VALUE_WRITTEN == 0, []TIMESTAMP_WRITTEN == 0) — the "init" half of the
-// init/finalize pair (the finalize half reads the final state into []VALUE_READ /
-// TIMESTAMP_READ, pinned by the deferred rcv/snd bus).  These are vacuous until
-// finalization rows are emitted (a follow-up PR) but are written now so
-// []ADDRESS_DELTA has a defined role and the columns are not dangling.
-func ramFinlConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
+// ramChronologyConstraints builds the chronology constraint: on consecutive
+// EXEC rows, TIMESTAMP_WRITTEN = prev(TIMESTAMP_WRITTEN) + 1 (the clock ticks
+// once per access).  A shard's first EXEC row is unconstrained.
+func ramChronologyConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
 	var (
-		zero      = mirc.Number[register.Id, Expr[F]](0)
-		one       = mirc.Number[register.Id, Expr[F]](1)
-		finl      = mirc.Variable[register.Id, Expr[F]](l.finl, 1, 0)
-		prevFinl  = mirc.Variable[register.Id, Expr[F]](l.finl, 1, -1)
-		laterFinl = finl.Equals(one).And(prevFinl.Equals(one))
-		cs        []mir.Constraint[F]
+		one      = mirc.Number[register.Id, Expr[F]](1)
+		exec     = mirc.Variable[register.Id, Expr[F]](l.exec, 1, 0)
+		prevExec = mirc.Variable[register.Id, Expr[F]](l.exec, 1, -1)
+		bothExec = prevExec.Equals(one).And(exec.Equals(one))
 	)
-	// later FINL rows: []ADDRESS = prev([]ADDRESS) + 1 + []ADDRESS_DELTA (strictly
-	// increasing).  The base operand is read on the previous row (shift -1).
-	cs = append(cs, multiLimbIncrement[F](ctx, "finl_addr", l.address, l.address, l.addrDelta,
-		l.addrCarry, l.addrWidths, -1, laterFinl)...)
-	// every FINL row initialises its cell: the init half sends (value 0, time 0),
-	// so the written side vanishes — []VALUE_WRITTEN == 0 and []TIMESTAMP_WRITTEN == 0.
-	finlOn := finl.Equals(one)
-	// FINL rows: []TIMESTAMP_READ = []TIMESTAMP_WRITTEN + 1 + []TIMESTAMP_DELTA,
-	// i.e. TIMESTAMP_READ > TIMESTAMP_WRITTEN.  NOTE the direction is deliberately
-	// the OPPOSITE of the EXEC-phase ordering: on a FINL row the WRITTEN side is
-	// the cell's INITIAL state and the READ side its FINAL state, so the read
-	// timestamp is the later one.  Strictness pins a FINL row to a cell genuinely
-	// touched during execution (stamps count from one; timestamp zero is the
-	// untouched-cell initial state), which is what allows the first FINL address
-	// to be unconstrained.  TIMESTAMP_DELTA / TS_CARRY are reused as witnesses:
-	// EXEC * FINL == 0, so they are idle on FINL rows.
-	cs = append(cs, multiLimbIncrement[F](ctx, "finl_ts", l.tsRead, l.tsWritten, l.tsDelta,
-		l.tsCarry, l.tsWidths, 0, finlOn)...)
 	//
-	for k := range l.valueWritten {
-		vw := mirc.Variable[register.Id, Expr[F]](l.valueWritten[k], l.dataWidths[k], 0)
-		cs = append(cs, mir.NewVanishingConstraint(fmt.Sprintf("finl_value_written_zero_%d", k), ctx, util.None[int](),
-			mirc.If(finlOn, vw.Equals(zero)).AsLogical()))
-	}
-	//
-	for k := range l.tsWritten {
-		tw := mirc.Variable[register.Id, Expr[F]](l.tsWritten[k], l.tsWidths[k], 0)
-		cs = append(cs, mir.NewVanishingConstraint(fmt.Sprintf("finl_ts_written_zero_%d", k), ctx, util.None[int](),
-			mirc.If(finlOn, tw.Equals(zero)).AsLogical()))
-	}
-	//
-	return cs
+	return multiLimbIncrement[F](ctx, "ts_increment", l.tsWritten, l.tsWritten, nil,
+		l.tsIncrementCarry, l.tsWidths, -1, bothExec)
 }
 
 // multiLimbIncrement emits the constraints proving the multi-limb relation
@@ -412,9 +324,10 @@ func ramFinlConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 //
 // over limb slices given most-significant-limb first.  `base` limbs are read at
 // row offset `baseShift` (0 for the same row, -1 for the previous row); `out`,
-// `delta` and `carry` on the current row.  `carry` (length len(out)-1, indexed
-// by significance) witnesses the carry out of each limb; the most significant
-// limb must produce no carry.  Every constraint is guarded by `guard`.
+// `delta` and `carry` on the current row.  A nil `delta` means a plain
+// increment (delta = 0).  `carry` (length len(out)-1, indexed by significance)
+// witnesses the carry out of each limb; the most significant limb must produce
+// no carry.  Every constraint is guarded by `guard`.
 func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
 	out, base, delta, carry []register.Id, widths []uint, baseShift int, guard Expr[F],
 ) []mir.Constraint[F] {
@@ -430,13 +343,16 @@ func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
 			i      = L - 1 - s
 			w      = widths[i]
 			outVar = mirc.Variable[register.Id, Expr[F]](out[i], w, 0)
-			// left-hand side: base + delta (+ carry-in) (+ 1 at the least
+			// left-hand side: base (+ delta) (+ carry-in) (+ 1 at the least
 			// significant limb).
-			lhs = mirc.Variable[register.Id, Expr[F]](base[i], w, baseShift).
-				Add(mirc.Variable[register.Id, Expr[F]](delta[i], w, 0))
+			lhs = mirc.Variable[register.Id, Expr[F]](base[i], w, baseShift)
 			// right-hand side accumulates the output limb and the outgoing carry.
 			rhs = outVar
 		)
+		//
+		if delta != nil {
+			lhs = lhs.Add(mirc.Variable[register.Id, Expr[F]](delta[i], w, 0))
+		}
 		// carry into this limb (from the less significant boundary)
 		if s > 0 {
 			lhs = lhs.Add(mirc.Variable[register.Id, Expr[F]](carry[s-1], 1, 0))

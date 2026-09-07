@@ -23,17 +23,16 @@ import (
 
 // ramTraceLayout records the column offsets of a RAM trace row.  The order MUST
 // match constraints.computeRamLayout (the schema this trace is checked against):
-// [ADDRESS, VALUE_WRITTEN, EXEC, FINL, IS_WRITE, VALUE_READ, TIMESTAMP_WRITTEN,
+// [ADDRESS, VALUE_WRITTEN, EXEC, IS_WRITE, VALUE_READ, TIMESTAMP_WRITTEN,
 //
-//	TIMESTAMP_READ, TIMESTAMP_DELTA, ADDRESS_DELTA, TS_CARRY, ADDR_CARRY,
-//	EXEC_WRITE, EXEC_READ].
+//	TIMESTAMP_READ, TIMESTAMP_DELTA, TS_CARRY, EXEC_WRITE, EXEC_READ,
+//	TS_INCREMENT_CARRY].
 type ramTraceLayout struct {
-	nAddr, nData, nStamp                         int
-	valueWritten, exec, finl, isWrite, valueRead int
-	tsWritten, tsRead, tsDelta                   int
-	addrDelta, tsCarry, addrCarry                int
-	execWrite, execRead                          int
-	width                                        int
+	nAddr, nData, nStamp                   int
+	valueWritten, exec, isWrite, valueRead int
+	tsWritten, tsRead, tsDelta, tsCarry    int
+	execWrite, execRead, tsIncrementCarry  int
+	width                                  int
 }
 
 func newRamTraceLayout(nAddr, nData, nStamp int) ramTraceLayout {
@@ -44,18 +43,16 @@ func newRamTraceLayout(nAddr, nData, nStamp int) ramTraceLayout {
 	l.valueWritten = nAddr
 	base := nAddr + nData
 	l.exec = base
-	l.finl = base + 1
-	l.isWrite = base + 2
-	l.valueRead = base + 3
+	l.isWrite = base + 1
+	l.valueRead = base + 2
 	l.tsWritten = l.valueRead + nData
 	l.tsRead = l.tsWritten + nStamp
 	l.tsDelta = l.tsRead + nStamp
-	l.addrDelta = l.tsDelta + nStamp
-	l.tsCarry = l.addrDelta + nAddr
-	l.addrCarry = l.tsCarry + (nStamp - 1)
-	l.execWrite = l.addrCarry + (nAddr - 1)
+	l.tsCarry = l.tsDelta + nStamp
+	l.execWrite = l.tsCarry + (nStamp - 1)
 	l.execRead = l.execWrite + 1
-	l.width = l.execRead + 1
+	l.tsIncrementCarry = l.execRead + 1
+	l.width = l.tsIncrementCarry + (nStamp - 1)
 	//
 	return l
 }
@@ -82,10 +79,9 @@ func initReadWriteMemory[W Word[W], F Element[F]](cfg field.Config, m vm.Memory[
 		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, m.TimestampWidth().Unwrap()))
 		u1       = util.Some[uint](1)
 	)
-	// EXEC, FINL, IS_WRITE.
+	// EXEC, IS_WRITE.
 	regs = append(regs,
 		trace.NewColumnDescriptor(RAM_EXEC_NAME, u1),
-		trace.NewColumnDescriptor(RAM_FINL_NAME, u1),
 		trace.NewColumnDescriptor(RAM_IS_WRITE_NAME, u1),
 	)
 	// VALUE_READ (same widths as the data lanes, native included).
@@ -98,33 +94,26 @@ func initReadWriteMemory[W Word[W], F Element[F]](cfg field.Config, m vm.Memory[
 			regs = append(regs, trace.NewColumnDescriptor(RamLimbName(prefix, uint(k)), util.Some(w)))
 		}
 	}
-	// ADDRESS_DELTA (same widths as the address lanes).
-	for j, r := range m.AddressRegisters() {
-		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_ADDR_DELTA_PREFIX, uint(j)), r.Bitwidth()))
-	}
-	// TS_CARRY / ADDR_CARRY (one fewer than their value's limbs; 1-bit).
+	// TS_CARRY (one fewer than the timestamp's limbs; 1-bit).
 	for k := uint(1); k < uint(len(tsWidths)); k++ {
 		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_TS_CARRY_PREFIX, k-1), u1))
-	}
-	//
-	for k := uint(1); k < m.NumInputs(); k++ {
-		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_ADDR_CARRY_PREFIX, k-1), u1))
 	}
 	// EXEC_WRITE / EXEC_READ (the per-kind lookup selectors).
 	regs = append(regs,
 		trace.NewColumnDescriptor(RAM_EXEC_WRITE_NAME, u1),
 		trace.NewColumnDescriptor(RAM_EXEC_READ_NAME, u1),
 	)
+	// TS_INCREMENT_CARRY (one fewer than the timestamp's limbs; 1-bit).
+	for k := uint(1); k < uint(len(tsWidths)); k++ {
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_TS_INCREMENT_CARRY_PREFIX, k-1), u1))
+	}
 	// Done
 	return trace.InitModuleBuilder[F](trace.NewModuleDescriptor(m.Name(), regs))
 }
 
 // traceReadWriteMemory materialises the trace of a read-write (RAM) memory: one
 // row per logical access (grouped from the per-lane access log), in access order,
-// preceded by a padding row.  It fills the execution-phase columns declared by
-// constraints.translateReadWriteMemory; the finalization phase (FINL) is left
-// empty (the rcv/snd consistency bus and finalization rows are a follow-up), so
-// FINL-guarded columns (ADDRESS_DELTA, ADDR_CARRY) stay zero.
+// preceded by a padding row.  Column order follows constraints.computeRamLayout.
 func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module *trace.ModuleBuilder[F],
 	cfg field.Config, scratch []F) {
 	//
@@ -139,6 +128,8 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		accesses = groupRamAccesses[W](m.AccessLog(), nData)
 		//
 		width = module.Width()
+		// previous row's TIMESTAMP_WRITTEN (0 before the first access).
+		prevTsWr uint64
 	)
 	// Initialise first row as padding row.
 	module.Append(paddingRow(scratch[:width])...)
@@ -157,11 +148,9 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 			tsWr    = acc.writeStamp
 			tsDelta = tsWr - tsRead - 1
 		)
-		// EXEC = 1, IS_WRITE from the access; FINL = 0 (zero value).  The
-		// per-kind lookup selectors follow: EXEC_WRITE = EXEC * IS_WRITE,
-		// EXEC_READ = EXEC * (1 - IS_WRITE).
+		// EXEC = 1, IS_WRITE from the access; lookup selectors EXEC_WRITE =
+		// EXEC * IS_WRITE, EXEC_READ = EXEC * (1 - IS_WRITE).
 		row[layout.exec] = field.Uint64[F](1)
-		row[layout.finl] = field.Uint64[F](0)
 		row[layout.isWrite] = field.Uint1[F](acc.isWrite)
 		row[layout.execWrite] = field.Uint1[F](acc.isWrite)
 		row[layout.execRead] = field.Uint1[F](!acc.isWrite)
@@ -180,9 +169,12 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		for s, c := range timestampCarries(tsRead, tsDelta, tsWidths) {
 			row[layout.tsCarry+s] = field.Uint64[F](c)
 		}
-		// Zero out unused lanes
-		zeroOut(row[layout.addrDelta : layout.addrDelta+layout.nAddr])
-		zeroOut(row[layout.addrCarry : layout.addrCarry+layout.nAddr-1])
+		// TS_INCREMENT_CARRY: carries of prev(TIMESTAMP_WRITTEN) + 1.
+		for s, c := range timestampCarries(prevTsWr, 0, tsWidths) {
+			row[layout.tsIncrementCarry+s] = field.Uint64[F](c)
+		}
+		//
+		prevTsWr = tsWr
 		//
 		module.Append(row...)
 	}
