@@ -42,7 +42,7 @@ import (
 //   - outputs  : []VALUE_WRITTEN           (declared data lines)
 //   - computed : EXEC, IS_WRITE, []VALUE_READ, []TIMESTAMP_WRITTEN,
 //     []TIMESTAMP_READ, []TIMESTAMP_DELTA, []TS_CARRY, EXEC_WRITE, EXEC_READ,
-//     []TS_INCREMENT_CARRY
+//     []TEMPORAL_TS, []TEMPORAL_TS_CARRY
 //
 // All limb slices are most-significant-limb first (matching declaration /
 // "big endian" order used by ApplyLimbsMap and the module register order).
@@ -85,9 +85,11 @@ type ramLayout struct {
 	// execRead, which is how each access's read/write kind is pinned.
 	execWrite register.Id
 	execRead  register.Id
-	// tsIncrementCarry witnesses the carries of the cross-row increment
-	// TIMESTAMP_WRITTEN = prev(TIMESTAMP_WRITTEN) + 1 (tsCarry serves the same-row sum).
-	tsIncrementCarry []register.Id
+	// temporalTs is the shard's clock: TEMPORAL_TS = prev(TEMPORAL_TS) + 1 on
+	// consecutive real rows.  A permutation against tsWritten is added by #2206.
+	temporalTs []register.Id
+	// temporalTsCarry witnesses the carries of that increment.
+	temporalTsCarry []register.Id
 	// Limb widths (most-significant first) of the data and timestamp register
 	// families.
 	dataWidths []uint
@@ -123,7 +125,8 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 		register.NewComputed(tracer.RAM_EXEC_WRITE_NAME, 1),
 		register.NewComputed(tracer.RAM_EXEC_READ_NAME, 1),
 	)
-	addCarryRegisters(mod, tracer.RAM_TS_INCREMENT_CARRY_PREFIX, len(layout.tsIncrementCarry))
+	addLimbRegisters(mod, tracer.RAM_TEMPORAL_TS_PREFIX, layout.tsWidths)
+	addCarryRegisters(mod, tracer.RAM_TEMPORAL_TS_CARRY_PREFIX, len(layout.temporalTsCarry))
 	// Per-row constraints.
 	mod.AddConstraints(ramGeneralConstraints[F](ctx, layout)...)
 	mod.AddConstraints(ramExecConstraints[F](ctx, layout)...)
@@ -182,7 +185,9 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 	layout.execRead = register.NewId(next + 1)
 	next += 2
 	// Appended last so the ids above (used by the caller lookup) are unchanged.
-	layout.tsIncrementCarry = idRange(next, nStamp-1)
+	layout.temporalTs = idRange(next, nStamp)
+	next += nStamp
+	layout.temporalTsCarry = idRange(next, nStamp-1)
 	//
 	return layout
 }
@@ -303,9 +308,9 @@ func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 	return cs
 }
 
-// ramChronologyConstraints builds the chronology constraint: on consecutive
-// EXEC rows, TIMESTAMP_WRITTEN = prev(TIMESTAMP_WRITTEN) + 1 (the clock ticks
-// once per access).  A shard's first EXEC row is unconstrained.
+// ramChronologyConstraints builds the clock constraint: on consecutive EXEC
+// rows, TEMPORAL_TS = prev(TEMPORAL_TS) + 1.  A shard's first EXEC row is
+// unconstrained.
 func ramChronologyConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
 	var (
 		one      = mirc.Number[register.Id, Expr[F]](1)
@@ -314,8 +319,8 @@ func ramChronologyConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayo
 		bothExec = prevExec.Equals(one).And(exec.Equals(one))
 	)
 	//
-	return multiLimbIncrement[F](ctx, "ts_increment", l.tsWritten, l.tsWritten, nil,
-		l.tsIncrementCarry, l.tsWidths, -1, bothExec)
+	return multiLimbIncrement[F](ctx, "temporal_ts_increment", l.temporalTs, l.temporalTs, nil,
+		l.temporalTsCarry, l.tsWidths, -1, bothExec)
 }
 
 // multiLimbIncrement emits the constraints proving the multi-limb relation

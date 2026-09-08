@@ -26,12 +26,13 @@ import (
 // [ADDRESS, VALUE_WRITTEN, EXEC, IS_WRITE, VALUE_READ, TIMESTAMP_WRITTEN,
 //
 //	TIMESTAMP_READ, TIMESTAMP_DELTA, TS_CARRY, EXEC_WRITE, EXEC_READ,
-//	TS_INCREMENT_CARRY].
+//	TEMPORAL_TS, TEMPORAL_TS_CARRY].
 type ramTraceLayout struct {
 	nAddr, nData, nStamp                   int
 	valueWritten, exec, isWrite, valueRead int
 	tsWritten, tsRead, tsDelta, tsCarry    int
-	execWrite, execRead, tsIncrementCarry  int
+	execWrite, execRead                    int
+	temporalTs, temporalTsCarry            int
 	width                                  int
 }
 
@@ -51,8 +52,9 @@ func newRamTraceLayout(nAddr, nData, nStamp int) ramTraceLayout {
 	l.tsCarry = l.tsDelta + nStamp
 	l.execWrite = l.tsCarry + (nStamp - 1)
 	l.execRead = l.execWrite + 1
-	l.tsIncrementCarry = l.execRead + 1
-	l.width = l.tsIncrementCarry + (nStamp - 1)
+	l.temporalTs = l.execRead + 1
+	l.temporalTsCarry = l.temporalTs + nStamp
+	l.width = l.temporalTsCarry + (nStamp - 1)
 	//
 	return l
 }
@@ -103,9 +105,13 @@ func initReadWriteMemory[W Word[W], F Element[F]](cfg field.Config, m vm.Memory[
 		trace.NewColumnDescriptor(RAM_EXEC_WRITE_NAME, u1),
 		trace.NewColumnDescriptor(RAM_EXEC_READ_NAME, u1),
 	)
-	// TS_INCREMENT_CARRY (one fewer than the timestamp's limbs; 1-bit).
+	// TEMPORAL_TS (timestamp limbs) and its carries (one fewer; 1-bit).
+	for k, w := range tsWidths {
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_TEMPORAL_TS_PREFIX, uint(k)), util.Some(w)))
+	}
+	//
 	for k := uint(1); k < uint(len(tsWidths)); k++ {
-		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_TS_INCREMENT_CARRY_PREFIX, k-1), u1))
+		regs = append(regs, trace.NewColumnDescriptor(RamLimbName(RAM_TEMPORAL_TS_CARRY_PREFIX, k-1), u1))
 	}
 	// Done
 	return trace.InitModuleBuilder[F](trace.NewModuleDescriptor(m.Name(), regs))
@@ -128,13 +134,14 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		accesses = groupRamAccesses[W](m.AccessLog(), nData)
 		//
 		width = module.Width()
-		// previous row's TIMESTAMP_WRITTEN (0 before the first access).
-		prevTsWr uint64
+		// TEMPORAL_TS of the previous row; the first real row gets the shard's
+		// first stamp.
+		prevTemporal uint64
 	)
 	// Initialise first row as padding row.
 	module.Append(paddingRow(scratch[:width])...)
 	// Iterate and process each access, one at a time.
-	for _, acc := range accesses {
+	for i, acc := range accesses {
 		var (
 			row     = scratch[:width]
 			logical = acc.physStart / uint64(nData)
@@ -169,12 +176,15 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		for s, c := range timestampCarries(tsRead, tsDelta, tsWidths) {
 			row[layout.tsCarry+s] = field.Uint64[F](c)
 		}
-		// TS_INCREMENT_CARRY: carries of prev(TIMESTAMP_WRITTEN) + 1.
-		for s, c := range timestampCarries(prevTsWr, 0, tsWidths) {
-			row[layout.tsIncrementCarry+s] = field.Uint64[F](c)
+		// TEMPORAL_TS = first stamp + row index; carries of prev(TEMPORAL_TS) + 1.
+		temporal := accesses[0].writeStamp + uint64(i)
+		fillLimbs(row[layout.temporalTs:], temporal, tsWidths)
+		//
+		for s, c := range timestampCarries(prevTemporal, 0, tsWidths) {
+			row[layout.temporalTsCarry+s] = field.Uint64[F](c)
 		}
 		//
-		prevTsWr = tsWr
+		prevTemporal = temporal
 		//
 		module.Append(row...)
 	}

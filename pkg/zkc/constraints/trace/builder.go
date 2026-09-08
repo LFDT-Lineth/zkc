@@ -71,9 +71,11 @@ const (
 	// RAM_EXEC_READ_NAME is the binary column EXEC * (1 - IS_WRITE): the
 	// target-side selector of the caller->RAM lookup for read accesses.
 	RAM_EXEC_READ_NAME = "$exec_read"
-	// RAM_TS_INCREMENT_CARRY_PREFIX prefixes the carry columns of the cross-row
-	// increment TIMESTAMP_WRITTEN = prev(TIMESTAMP_WRITTEN) + 1.
-	RAM_TS_INCREMENT_CARRY_PREFIX = "$ts_increment_carry_"
+	// RAM_TEMPORAL_TS_PREFIX prefixes the per-limb temporal timestamp columns:
+	// the shard's clock, counting up by one on every real row.
+	RAM_TEMPORAL_TS_PREFIX = "$temporal_ts_"
+	// RAM_TEMPORAL_TS_CARRY_PREFIX prefixes the carry columns of that increment.
+	RAM_TEMPORAL_TS_CARRY_PREFIX = "$temporal_ts_carry_"
 )
 
 // RamLimbName returns the name of the limb-k column of a RAM register family
