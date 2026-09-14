@@ -296,19 +296,20 @@ func LowerDivisions[W word.Word[W]]() Transform[W] {
 }
 
 // LowerSwitch rewrites Switch (multiway skip) bytecodes into equivalent
-// sequences of SkipIf bytecodes.  Each dispatch case becomes a constant load
-// of the case's value into a fresh register, followed by a conditional (EQ)
-// skip against the dispatch register targeting the case's original
-// destination.  Cases are tested in order, preserving the first-match-wins
-// semantics of the multiway dispatch; when no case matches, control falls
-// through exactly as before.
+// sequences of SkipIf bytecodes.  Each dispatch case becomes a constant load of
+// the case's value into a fresh register, followed by a conditional (EQ) skip
+// against the dispatch register targeting the case's original destination.
+// Cases are tested in order, preserving the first-match-wins semantics of the
+// multiway dispatch; when no case matches, control falls through exactly as
+// before.
 //
 // NOTE: this transform must run before register splitting (which does not
-// support Switch bytecodes).
+// support Switch bytecodes) and after FactorSkipConditions (to avoid
+// refactoring bit-select diamonds emitted when lowering switches).
 func LowerSwitch[W word.Word[W]]() Transform[W] {
 	var (
 		transformer  = transform.LowerSwitch[W]
-		precondition = before(SPLIT_REGISTERS)
+		precondition = and(before(SPLIT_REGISTERS), after(FACTOR_SKIP_CONDITIONS))
 	)
 	//
 	return Transform[W]{LOWER_SWITCH, precondition, transformer}
