@@ -94,9 +94,10 @@ func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers split.Alloca
 			factor[uint(i)] = false
 			continue
 		}
+
 		// Nothing to factorize if the body of the skip is a bit equality like b = x == 0 ? 1 :0.
 		// Note that as we lowerSwitch later, this pattern can't arise from lowerSwitch, but only
-		// directly from .zkc program.
+		// directly from .zkc program or other lowering steps (FactorLimbEqualities ...)
 		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
 			factor[uint(i)] = false
 			continue
