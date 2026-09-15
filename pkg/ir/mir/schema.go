@@ -21,7 +21,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // Following types capture top-level abstractions at the MIR level.
@@ -46,10 +45,6 @@ type (
 	LogicalTerm[F field.Element[F]] interface {
 		term.Logical[F, LogicalTerm[F]]
 	}
-	// Computation captures the notion of computations used in a small number of places.
-	Computation = term.Computation[word.BigEndian]
-	// LogicalComputation captures the notion of computations used in a small number of places.
-	LogicalComputation = term.LogicalComputation[word.BigEndian]
 )
 
 // Following types capture permitted constraint forms at the MIR level.

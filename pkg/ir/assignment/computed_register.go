@@ -33,24 +33,24 @@ import (
 // expectation that this computation is acyclic.  Furthermore, computed columns
 // give rise to "trace expansion".  That is where the initial trace provided by
 // the user is expanded by determining the value of all computed columns.
-type ComputedRegister[F field.Element[F]] struct {
+type ComputedRegister[F field.Element[F], E term.Expr[F, E]] struct {
 	// Module in which expression is evaluated
 	Module sc.ModuleId
 	// Target index for computed column
 	Target register.Id
 	// The computation which accepts a given trace and computes
 	// the value of this column at a given row.
-	Expr term.Computation[F]
+	Expr E
 }
 
 // NewComputedRegister constructs a new set of computed column(s) with a given
 // determining expression.  More specifically, that expression is used to
 // compute the values for the columns during trace expansion.  For each, the
 // resulting value is split across the target columns.
-func NewComputedRegister[F field.Element[F]](target register.Id, expr term.Computation[F],
-	module sc.ModuleId) *ComputedRegister[F] {
+func NewComputedRegister[F field.Element[F], E term.Expr[F, E]](target register.Id, expr E,
+	module sc.ModuleId) *ComputedRegister[F, E] {
 	//
-	return &ComputedRegister[F]{module, target, expr}
+	return &ComputedRegister[F, E]{module, target, expr}
 }
 
 // Bounds determines the well-definedness bounds for this assignment for both
@@ -58,7 +58,7 @@ func NewComputedRegister[F field.Element[F]](target register.Id, expr term.Compu
 // expression such as "(shift X -1)".  This is technically undefined for the
 // first row of any trace and, by association, any constraint evaluating this
 // expression on that first row is also undefined (and hence must pass).
-func (p *ComputedRegister[F]) Bounds(mid sc.ModuleId) util.Bounds {
+func (p *ComputedRegister[F, E]) Bounds(mid sc.ModuleId) util.Bounds {
 	if mid == p.Module {
 		return p.Expr.Bounds()
 	}
@@ -69,7 +69,7 @@ func (p *ComputedRegister[F]) Bounds(mid sc.ModuleId) util.Bounds {
 // Compute the values of columns defined by this assignment. Specifically, this
 // creates a new column which contains the result of evaluating a given
 // expression on each row.
-func (p *ComputedRegister[F]) Compute(tr trace.Shard[F], schema sc.AnySchema[F],
+func (p *ComputedRegister[F, E]) Compute(tr trace.Shard[F], schema sc.AnySchema[F],
 ) ([]array.Array[F], error) {
 	var (
 		trModule = tr.Module(p.Module)
@@ -103,18 +103,18 @@ func (p *ComputedRegister[F]) Compute(tr trace.Shard[F], schema sc.AnySchema[F],
 // consistent with its enclosing schema This provides a double check of certain
 // key properties, such as that registers used for assignments are valid,
 // etc.
-func (p *ComputedRegister[F]) Consistent(schema sc.AnySchema[F]) []error {
+func (p *ComputedRegister[F, E]) Consistent(schema sc.AnySchema[F]) []error {
 	return nil
 }
 
 // RegistersExpanded identifies registers expanded by this assignment.
-func (p *ComputedRegister[F]) RegistersExpanded() []register.Ref {
+func (p *ComputedRegister[F, E]) RegistersExpanded() []register.Ref {
 	return nil
 }
 
 // RegistersRead returns the set of columns that this assignment depends upon.
 // That can include both input columns, as well as other computed columns.
-func (p *ComputedRegister[F]) RegistersRead() []register.Ref {
+func (p *ComputedRegister[F, E]) RegistersRead() []register.Ref {
 	var (
 		module = p.Module
 		regs   = p.Expr.RequiredRegisters()
@@ -130,14 +130,14 @@ func (p *ComputedRegister[F]) RegistersRead() []register.Ref {
 }
 
 // RegistersWritten identifies registers assigned by this assignment.
-func (p *ComputedRegister[F]) RegistersWritten() []register.Ref {
+func (p *ComputedRegister[F, E]) RegistersWritten() []register.Ref {
 	return []register.Ref{register.NewRef(p.Module, p.Target)}
 }
 
 // Lisp converts this constraint into an S-Expression.
 //
 //nolint:revive
-func (p *ComputedRegister[F]) Lisp(schema sc.AnySchema[F]) sexp.SExp {
+func (p *ComputedRegister[F, E]) Lisp(schema sc.AnySchema[F]) sexp.SExp {
 	var (
 		module   = schema.Module(p.Module)
 		target   sexp.SExp
