@@ -26,9 +26,9 @@ import (
 // characteristics (public/private, static, read-only, write-only, read-write).
 type Memory[W word.Word[W]] struct {
 	moduleBase[W]
-	kind           MemoryKind
-	contents       []W
-	timestampWidth util.Option[uint]
+	kind       MemoryKind
+	contents   []W
+	stampWidth util.Option[uint]
 }
 
 // NewMemory creates a new memory module with the specified parameters. It
@@ -38,18 +38,14 @@ type Memory[W word.Word[W]] struct {
 // memories only).
 // NOTE: this will panic if a non-static memory is created with some contents,
 // or if the timestamp width is not given exactly when the kind requires one.
-func NewMemory[W word.Word[W]](name string, kind MemoryKind, timestampWidth util.Option[uint],
+func NewMemory[W word.Word[W]](name string, kind MemoryKind, stampWidth util.Option[uint],
 	registers []Register[W], contents []W) *Memory[W] {
-	// Sanity check
-	if !kind.IsStatic() && len(contents) > 0 {
-		panic("unsupported contents for non-static memory")
-	}
+	// Sanity checks
+	util.Assert(kind.IsStatic() || len(contents) == 0, "unsupported contents for non-static memory")
 	// A timestamp width is meaningful exactly when the kind carries a timestamp.
-	if timestampWidth.HasValue() != kind.HasTimestamp() {
-		panic("timestamp width must be provided exactly for read-write memory")
-	}
+	util.Assert(stampWidth.HasValue() == kind.HasTimestamp(), "stampWidth required for read-write memory")
 	//
-	return &Memory[W]{newModuleBase(name, registers), kind, contents, timestampWidth}
+	return &Memory[W]{newModuleBase(name, registers), kind, contents, stampWidth}
 }
 
 // AddressRegisters returns the set of registers making up the address lines of
@@ -69,12 +65,12 @@ func (p *Memory[W]) Kind() MemoryKind {
 	return p.kind
 }
 
-// TimestampWidth returns the bit width of this memory's timestamp, which is
+// StampWidth returns the bit width of this memory's timestamp, which is
 // present exactly when Kind().HasTimestamp() holds (i.e. for read-write
 // memories).  Rebuild sites forward it untouched; consumers that have already
 // established the memory is read-write unwrap it.
-func (p *Memory[W]) TimestampWidth() util.Option[uint] {
-	return p.timestampWidth
+func (p *Memory[W]) StampWidth() util.Option[uint] {
+	return p.stampWidth
 }
 
 // IsPublic indicates whether this is a public input or output.
@@ -184,7 +180,7 @@ func (p *Memory[W]) GobEncode() ([]byte, error) {
 		return nil, err
 	}
 	//
-	if err := gobEncoder.Encode(&p.timestampWidth); err != nil {
+	if err := gobEncoder.Encode(&p.stampWidth); err != nil {
 		return nil, err
 	}
 	//
@@ -216,7 +212,7 @@ func (p *Memory[W]) GobDecode(data []byte) error {
 		return err
 	}
 	//
-	if err := gobDecoder.Decode(&p.timestampWidth); err != nil {
+	if err := gobDecoder.Decode(&p.stampWidth); err != nil {
 		return err
 	}
 	// Reconstruct the module base (which recomputes the input / output counts).

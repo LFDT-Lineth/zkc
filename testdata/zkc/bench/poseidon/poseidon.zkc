@@ -27,10 +27,10 @@ fn main<ram, poseidon_state>() {
         var b3:u8, b2:u8, b1:u8, b0:u8
         b3::b2::b1::b0 = (poseidon_state[i] as u32)
         // Write in little endian order
-        digest[digest_address + 3] = b3
-        digest[digest_address + 2] = b2
-        digest[digest_address + 1] = b1
         digest[digest_address + 0] = b0
+        digest[digest_address + 1] = b1
+        digest[digest_address + 2] = b2
+        digest[digest_address + 3] = b3
         //
         digest_address = digest_address + 4
     }

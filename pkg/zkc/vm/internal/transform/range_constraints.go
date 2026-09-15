@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -232,7 +231,7 @@ func newStaticRangeTable[W word.Word[W]](name string, width uint) descriptor.Mod
 		rows     = 1 << width
 		contents = make([]W, rows)
 		regs     = []descriptor.Register[W]{
-			descriptor.NewRegister(register.OUTPUT_REGISTER, rangeValueName, util.Some(width), padding),
+			descriptor.NewOutputRegister(rangeValueName, util.Some(width), padding),
 		}
 	)
 	// Enumerate 0 .. 2^width - 1.
@@ -259,9 +258,9 @@ func newRecursiveRangeModule[W word.Word[W]](name string, width uint, s rangeSpl
 	var (
 		padding W
 		regs    = []descriptor.Register[W]{
-			descriptor.NewRegister(register.INPUT_REGISTER, rangeValueName, util.Some(width), padding),
-			descriptor.NewRegister(register.COMPUTED_REGISTER, rangeLoName, util.Some(s.lo), padding),
-			descriptor.NewRegister(register.COMPUTED_REGISTER, rangeHiName, util.Some(s.hi), padding),
+			descriptor.NewInputRegister(rangeValueName, util.Some(width), padding),
+			descriptor.NewComputedRegister(rangeLoName, util.Some(s.lo), padding),
+			descriptor.NewComputedRegister(rangeHiName, util.Some(s.hi), padding),
 		}
 		// Register ids follow declaration order: value=0, lo=1, hi=2.
 		valID = bytecode.RegisterId(0)

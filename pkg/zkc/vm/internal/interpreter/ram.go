@@ -15,8 +15,8 @@ package interpreter
 import (
 	"bytes"
 	"encoding/gob"
-	"fmt"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -165,57 +165,25 @@ func (ram *RandomAccess[W]) Initialise(contents []W) {
 	ram.timestamp = 0
 }
 
-// Reset clears all contents and the access log, and sets the clock to the given
-// value.  Used on resume before the captured cells are restored -- mirrors
-// PagedRandomAccess.Reset, so both RAMs restore as Reset-then-install.
-func (ram *RandomAccess[W]) Reset(clock uint64) {
-	ram.data = nil
-	ram.timestamp = clock
-	ram.log().Reset()
-}
-
-// RestoreCells re-seeds the memory from a checkpoint snapshot's pages (e.g. on
-// resume).  A flat memory is stored as a single page at address zero, so this
-// unpacks that page into cells.  Call Reset first to set the clock and clear any
-// prior state.  Takes the checkpoint's page representation (shared with
-// PagedRandomAccess) so both memories restore identically.
-func (ram *RandomAccess[W]) RestoreCells(pages []checkpoint.Page[W]) {
-	// A flat memory is captured as a single page at address zero; more than one
-	// page means a corrupt or mismatched snapshot.
-	if len(pages) > 1 {
-		panic(fmt.Sprintf("flat memory %q: expected at most one checkpoint page, got %d",
-			ram.Descriptor().Name(), len(pages)))
-	}
-	//
-	if len(pages) == 1 {
-		ram.data = cellsFromPage(pages[0])
-	}
-}
-
-// cellsFromPage zips a checkpoint page's parallel value/timestamp columns into a
-// fresh slice of timestamped cells.  The columns are stored separately in
-// checkpoint.Page because that (lower-level) package cannot reference this
-// package's TimestampedCell type.  Used to turn a captured page back into the
-// cells a RAM restores from (a flat RAM's single page, or each page of a paged
-// RAM).
-func cellsFromPage[W word.Word[W]](page checkpoint.Page[W]) []TimestampedCell[W] {
+// Checkpoint implementation for memory interface
+func (ram *RandomAccess[W]) Checkpoint(mid uint16, field word.Config) checkpoint.Memory {
 	var (
-		data       = page.Data()
-		timestamps = page.Timestamps()
-		cells      = make([]TimestampedCell[W], len(data))
+		bytes, stamps = PackTimed(field, ram.descriptor.DataRegisters(), ram.data)
+		page          = checkpoint.NewStampedPage(0, bytes, stamps)
 	)
-	//
-	for i, value := range data {
-		var ts uint64
-		//
-		if i < len(timestamps) {
-			ts = timestamps[i]
-		}
-		//
-		cells[i] = TimestampedCell[W]{timestamp: ts, value: value}
-	}
-	//
-	return cells
+
+	return checkpoint.NewMemory(mid, ram.timestamp, page)
+}
+
+// Restore implementation for memory interface
+func (ram *RandomAccess[W]) Restore(m checkpoint.Memory, field word.Config) {
+	var pages = m.Pages()
+	// Sanity check
+	util.Assert(len(pages) == 1, "random access memory requires one page")
+	// Unpack data
+	ram.timestamp = m.Clock()
+	ram.log().Reset()
+	ram.data = UnpackTimed(field, ram.descriptor, pages[0].Bytes(), pages[0].Stamps())
 }
 
 // AccessLog returns the ordered log of reads/writes performed since the last

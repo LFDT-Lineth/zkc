@@ -22,7 +22,7 @@ import (
 
 // Limb is simply a regsiter descriptor being used specifically to represent a
 // limb of some register after splitting.
-type Limb[W any] = Register[W]
+type Limb[W word.Word[W]] = Register[W]
 
 // LimbId is a register ID used to represent a "limb".
 type LimbId = RegisterId
@@ -30,7 +30,7 @@ type LimbId = RegisterId
 // LimbsMap provides a high-level mapping of all registers before and
 // after subdivision occurs within a given module.  That is, it maps a given
 // register to those limbs into which it was subdivided.
-type LimbsMap[W any] interface {
+type LimbsMap[W word.Word[W]] interface {
 	RegisterMap[W]
 	// BandWidth returns the maximum number of bits representable in the underlying
 	// machine word.
@@ -107,7 +107,7 @@ func NewLimbsMap[W word.Word[W]](word word.Config, field field.Config, m Registe
 // be many limbs for a single register above.  It should always be the case that
 // the total width of limbs matches that of the original register.  Furthermore,
 // if the original register was computed, then the limbs should be also, etc.
-type limbsMap[W any] struct {
+type limbsMap[W word.Word[W]] struct {
 	// Name of the module to which this mapping corresponds
 	name string
 	// word configuration in play

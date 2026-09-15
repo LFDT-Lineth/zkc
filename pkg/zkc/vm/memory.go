@@ -29,6 +29,11 @@ type Memory[W Word[W]] = descriptor.Memory[W]
 // accessed.
 type RuntimeMemory[W Word[W]] = interpreter.Memory[W]
 
+// RuntimeReadWriteMemory captures the notion of an executing (read/write)
+// memory, rather than a simple static descriptor.  That is, one whose current
+// contents can be accessed.
+type RuntimeReadWriteMemory[W Word[W]] = interpreter.ReadWriteMemory[W]
+
 // AccessData records a single read-write memory access: the address, the value
 // and timestamp the cell holds after the access, and whether it was a write.
 // The trace observer consumes RuntimeMemory.AccessLog() (a slice of these) to

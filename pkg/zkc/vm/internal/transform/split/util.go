@@ -19,7 +19,6 @@ package split
 import (
 	"math"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -43,7 +42,7 @@ type LimbsMap[W word.Word[W]] descriptor.LimbsMap[W]
 //
 // Observe that x'1 is the most significant limb of x, etc.  Thus, given the
 // array "[x,y,r]", this function returns "[x'1,x'0,y'1,y'0,r'1,r'0]"
-func ApplyLimbsMap[W any](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
+func ApplyLimbsMap[W word.Word[W]](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
 	var limbIds []RegisterId
 	//
 	for _, r := range rids {
@@ -59,7 +58,7 @@ func ApplyLimbsMap[W any](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) [
 // corresponding limb registers.  Observe that this splits the limbs according
 // to their natural (or little endian) ordering.  Thus, given the array
 // "[x,y,r]", this function returns "[x'0,x'1,y'0,y'1,r'0,r'1]".
-func applyLimbsMapReversed[W any](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
+func applyLimbsMapReversed[W word.Word[W]](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
 	var limbIds []RegisterId
 	//
 	for _, r := range rids {
@@ -72,7 +71,7 @@ func applyLimbsMapReversed[W any](limbsMap descriptor.LimbsMap[W], rids ...Regis
 // ApplyLimbsMapReversed is the exported entry point for applyLimbsMapReversed,
 // used by field-cast splitting (UintToField / FieldToUint) in the transform
 // package, where the uint operand must be split into little-endian limb order.
-func ApplyLimbsMapReversed[W any](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
+func ApplyLimbsMapReversed[W word.Word[W]](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
 	return applyLimbsMapReversed(limbsMap, rids...)
 }
 
@@ -118,7 +117,7 @@ func newLimbMatrix[W word.Word[W]](regs []RegisterId, mapping descriptor.LimbsMa
 // given bitwidth, returning the selection along with what's left.  This
 // function will always select at least one limb and (in this case only) the
 // selected bitwidth can exceed that requested.
-func selectLimbs[W any](bitwidth uint, targets []RegisterId, mapping descriptor.RegisterMap[W],
+func selectLimbs[W word.Word[W]](bitwidth uint, targets []RegisterId, mapping descriptor.RegisterMap[W],
 ) (selected []RegisterId, remainder []RegisterId) {
 	//
 	var lhs []RegisterId
@@ -244,7 +243,7 @@ func selectAlignedTargetLimbs[W word.Word[W]](bitwidth uint, targets []RegisterI
 
 // targetWidth determines the bitwidth of the first target.  If no target
 // exists, it returns a large bitwidth to prevent further selection.
-func targetWidth[W any](targets []RegisterId, mapping descriptor.RegisterMap[W]) uint {
+func targetWidth[W word.Word[W]](targets []RegisterId, mapping descriptor.RegisterMap[W]) uint {
 	if len(targets) == 0 {
 		return math.MaxUint
 	}
@@ -256,7 +255,7 @@ func allocateTemporary[W word.Word[W]](bitwidth uint, mapping descriptor.LimbsMa
 ) (RegisterId, descriptor.LimbsMap[W]) {
 	var (
 		zero      W
-		temp      = descriptor.NewRegister(register.COMPUTED_REGISTER, "", util.Some(bitwidth), zero)
+		temp      = descriptor.NewComputedRegister("", util.Some(bitwidth), zero)
 		tempLimbs = descriptor.SplitIntoLimbs(mapping.RegisterWidth(), temp)
 		limbs     = make([]RegisterId, len(tempLimbs))
 		rid       = RegisterId(mapping.Width())
@@ -275,7 +274,7 @@ func allocateTemporary[W word.Word[W]](bitwidth uint, mapping descriptor.LimbsMa
 // imaginary register to a given set of concrete limbs.  It doesn't matter that
 // the register is imaginary as, after splitting, only the limbs will remain ---
 // and they are real.
-type limbsMapWrapper[W any] struct {
+type limbsMapWrapper[W word.Word[W]] struct {
 	descriptor.LimbsMap[W]
 	// the imaginary mapping
 	id    RegisterId

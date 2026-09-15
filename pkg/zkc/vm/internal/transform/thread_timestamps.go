@@ -15,7 +15,6 @@ package transform
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -224,7 +223,7 @@ func (t *threader[W]) initNewRegs(fn *descriptor.Function[W]) []descriptor.Regis
 	if !t.isMain {
 		for _, e := range t.effects {
 			t.stampIn[e] = bytecode.RegisterId(len(newRegs))
-			newRegs = append(newRegs, descriptor.NewRegister(register.INPUT_REGISTER, stampName(t.mods, e),
+			newRegs = append(newRegs, descriptor.NewStampInputRegister(stampName(t.mods, e),
 				util.Some(t.timestampWidth(e)), padding))
 		}
 	}
@@ -234,7 +233,7 @@ func (t *threader[W]) initNewRegs(fn *descriptor.Function[W]) []descriptor.Regis
 	if !t.isMain && !fn.Kind().NonReturning() {
 		for _, e := range t.effects {
 			t.canonical[e] = bytecode.RegisterId(len(newRegs))
-			newRegs = append(newRegs, descriptor.NewRegister(register.OUTPUT_REGISTER, stampOutName(t.mods, e),
+			newRegs = append(newRegs, descriptor.NewStampOutputRegister(stampOutName(t.mods, e),
 				util.Some(t.timestampWidth(e)), padding))
 		}
 	}
@@ -867,7 +866,7 @@ func rebuildVector[W word.Word[W]](insns []Bytecode[W], inserts map[int]*rowInse
 // registers, temporaries and merge registers for that memory all take this
 // width, so its split limbs line up with the RAM module's timestamp columns.
 func (t *threader[W]) timestampWidth(e descriptor.ModuleId) uint {
-	return t.mods[e].(*descriptor.Memory[W]).TimestampWidth().Unwrap()
+	return t.mods[e].(*descriptor.Memory[W]).StampWidth().Unwrap()
 }
 
 // stampName returns the name of the stamp-in register threaded for the given

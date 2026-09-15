@@ -16,7 +16,7 @@ import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -183,63 +183,69 @@ func (p *PagedRandomAccess[W]) Contents() []W {
 	panic("unsupported operation")
 }
 
-// Pages returns an iterator over the allocated pages backing this memory.  Each
-// yielded page covers the PAGE_SIZE cells beginning at physical address
-// i*PAGE_SIZE (where i is its page number), carrying both the values and their
-// per-cell timestamps; pages which have never been written are omitted.
-func (p *PagedRandomAccess[W]) Pages() iter.Iterator[checkpoint.Page[W]] {
-	var pages []checkpoint.Page[W]
+// Checkpoint implementation for memory interface.  Observe that checkpoint
+// page addresses are given in logical rows (not machine cells), since rows are
+// geometry independent: a checkpoint taken on a machine of one word width
+// (e.g. fast mode) can be restored on a machine of another (e.g. tracing),
+// where the same rows divide into a different number of cells and, hence,
+// different machine pages (see Restore).
+func (p *PagedRandomAccess[W]) Checkpoint(mid uint16, field word.Config) checkpoint.Memory {
+	var (
+		pages []checkpoint.Page
+		lanes = uint64(len(p.descriptor.DataRegisters()))
+	)
+	// Page boundaries must be row aligned, otherwise the round-robin packing
+	// (which restarts at the first data register on every page) is invalid.
+	util.Assert(PAGE_SIZE%lanes == 0, "page size not divisible by %d data lanes", lanes)
 	//
 	for i, page := range p.pages {
 		if page != nil {
 			var (
-				address    = uint64(i) * PAGE_SIZE
-				data       = make([]W, len(page))
-				timestamps = make([]uint64, len(page))
+				address       = uint64(i) * (PAGE_SIZE / lanes)
+				bytes, stamps = PackTimed(field, p.descriptor.DataRegisters(), page)
 			)
 			//
-			for j, cell := range page {
-				data[j] = cell.value
-				timestamps[j] = cell.timestamp
-			}
-			//
-			pages = append(pages, checkpoint.NewTimestampedPage(address, data, timestamps))
+			pages = append(pages, checkpoint.NewStampedPage(address, bytes, stamps))
 		}
 	}
 	//
-	return iter.NewArrayIterator(pages)
+	return checkpoint.NewMemory(mid, p.timestamp, pages...)
 }
 
-// RestoreCells re-seeds the memory from a checkpoint snapshot, installing each
-// captured page at its recorded address.  Call Reset first to set the clock and
-// clear any prior state.
-func (p *PagedRandomAccess[W]) RestoreCells(pages []checkpoint.Page[W]) {
-	for _, page := range pages {
-		p.RestorePage(page.Address(), cellsFromPage(page))
-	}
-}
-
-// RestorePage re-seeds a single page (beginning at the given physical address,
-// which must be page-aligned) from a snapshot of timestamped cells.  Used on
-// resume from a checkpoint.
-func (p *PagedRandomAccess[W]) RestorePage(address uint64, cells []TimestampedCell[W]) {
-	var (
-		pageIdx = address / PAGE_SIZE
-		page    = make([]TimestampedCell[W], PAGE_SIZE)
-	)
+// Restore implementation for memory interface.  Since checkpoint pages are
+// addressed by logical row and may originate from a machine of a different
+// word width (whose pages cover a different number of rows), each decoded
+// cell is re-chunked into whichever of this machine's pages it falls within.
+func (p *PagedRandomAccess[W]) Restore(m checkpoint.Memory, field word.Config) {
+	var lanes = uint64(len(p.descriptor.DataRegisters()))
 	//
-	copy(page, cells)
-	//
-	p.pages = expand(p.pages, pageIdx+1)
-	p.pages[pageIdx] = page
-}
-
-// Reset clears all pages and the access log, and resets the clock to the given
-// value.  Used on resume before the captured pages are restored.
-func (p *PagedRandomAccess[W]) Reset(clock uint64) {
-	p.pages = nil
-	p.timestamp = clock
+	p.timestamp = m.Clock()
 	p.log().Reset()
+	p.pages = nil
+	//
+	for _, page := range m.Pages() {
+		var (
+			cells = UnpackTimed(field, p.descriptor, page.Bytes(), page.Stamps())
+			// Determine address (in cells) of the first decoded cell.
+			start = page.Address() * lanes
+		)
+		//
+		for i, cell := range cells {
+			var (
+				address = start + uint64(i)
+				pageIdx = address / PAGE_SIZE
+				offset  = address % PAGE_SIZE
+			)
+			//
+			p.pages = expand(p.pages, pageIdx+1)
+			//
+			if p.pages[pageIdx] == nil {
+				p.pages[pageIdx] = make([]TimestampedCell[W], PAGE_SIZE)
+			}
+			//
+			p.pages[pageIdx][offset] = cell
+		}
+	}
 }
 
 // ============================================================================

@@ -99,6 +99,9 @@ L_0_8:
 	// [0.10] write result[$3] = $4
 	{
 		start := r3
+		if start < uint64(len(mem_result)) {
+			fail("address already written for write-only memory result")
+		}
 		mem_result = memWrite(mem_result, start+0, r4)
 	}
 	// [0.11] ret

@@ -1,0 +1,7 @@
+output WOM(address_1:u8) -> (value:u4)
+
+fn main<>() {
+    WOM[0] = 0
+    WOM[0] = 1
+    WOM[0] = 2
+}

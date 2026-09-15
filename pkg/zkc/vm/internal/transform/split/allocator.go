@@ -18,7 +18,6 @@ import (
 	"math"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -34,7 +33,7 @@ type RegisterId = descriptor.RegisterId
 // Allocator extends a register mapping with the ability to allocate new
 // registers as necessary.  This is useful, for example,  in the context of
 // register splitting for introducing new carry registers.
-type Allocator[W any] interface {
+type Allocator[W word.Word[W]] interface {
 	descriptor.RegisterMap[W]
 	// Allocate a fresh register of the given width within the target module.
 	// This is presumed to be a computed register, and automatically assigned a
@@ -49,7 +48,7 @@ type Allocator[W any] interface {
 	ZeroRegister() RegisterId
 }
 
-type registerAllocator[W any] struct {
+type registerAllocator[W word.Word[W]] struct {
 	name string
 	// max register width to permit for allocation
 	maxRegisterWidth uint
@@ -59,7 +58,7 @@ type registerAllocator[W any] struct {
 
 // NewAllocator converts a mapping into a full allocator simply by wrapping the
 // two fields.
-func NewAllocator[W any](mapping descriptor.RegisterMap[W]) *registerAllocator[W] {
+func NewAllocator[W word.Word[W]](mapping descriptor.RegisterMap[W]) *registerAllocator[W] {
 	var (
 		registers = slices.Clone(mapping.Registers())
 	)
@@ -99,8 +98,7 @@ func (p *registerAllocator[W]) Allocate(prefix string, width util.Option[uint]) 
 		panic(fmt.Sprintf("register exceeds maximum width (%d > %d)", width.Unwrap(), p.maxRegisterWidth))
 	}
 	// Allocate a new computed register.
-	p.registers = append(p.registers,
-		descriptor.NewRegister(register.COMPUTED_REGISTER, name, width, zero))
+	p.registers = append(p.registers, descriptor.NewComputedRegister(name, width, zero))
 	//
 	return util.Cast[RegisterId](index)
 }
@@ -114,8 +112,7 @@ func (p *registerAllocator[W]) AllocateNamed(name string, width util.Option[uint
 	//
 	util.Assert(!p.HasRegister(name).HasValue(), "%s", fmt.Sprintf("register \"%s\" already exists", name))
 	// Allocate a new computed register.
-	p.registers = append(p.registers,
-		descriptor.NewRegister(register.COMPUTED_REGISTER, name, width, zero))
+	p.registers = append(p.registers, descriptor.NewComputedRegister(name, width, zero))
 	//
 	return util.Cast[RegisterId](index)
 }

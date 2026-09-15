@@ -390,39 +390,6 @@ func Test_ZkcUnit_Basic_91(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_91", DEFAULT_UNIT_CONFIG.Sharding("checkNonZero", 256))
 }
 
-func Test_ZkcUnit_AccessOnceMemory_01(t *testing.T) {
-	// Multi-line address access-once memory: a read-only ROM and a write-once
-	// WOM, exercising the access bit and at_flag carry columns end-to-end.
-	checkZkcUnit(t, "zkc/unit/access_once_memory_01", DEFAULT_UNIT_CONFIG)
-}
-
-// DEFERRED: access_once_memory_02 is a multi-line double-write that must be
-// REJECTED. The interpreter rejects it (WriteOnce.Write), but the harness can't
-// assert that yet — it skips constraint tests for .rejects, and the backends it
-// runs for .rejects (word-machine exec, gogen) don't enforce write-once.
-// See wom-double-write-reject-gap.md.
-// func Test_ZkcUnit_AccessOnceMemory_02(t *testing.T) {
-// 	checkZkcUnit(t, "zkc/unit/access_once_memory_02", DEFAULT_UNIT_CONFIG)
-// }
-
-func Test_ZkcUnit_AccessOnceMemory_03(t *testing.T) {
-	// Multi-line address access-once memory: a read-only ROM and a write-once
-	// WOM, exercising the access bit and at_flag carry columns end-to-end.
-	checkZkcUnit(t, "zkc/unit/access_once_memory_03", DEFAULT_UNIT_CONFIG)
-}
-
-// DEFERRED: access_once_memory_04 (single-line double-write) — same reason as
-// _02; see wom-double-write-reject-gap.md.
-// func Test_ZkcUnit_AccessOnceMemory_04(t *testing.T) {
-// 	checkZkcUnit(t, "zkc/unit/access_once_memory_04", DEFAULT_UNIT_CONFIG)
-// }
-
-func Test_ZkcUnit_AccessOnceMemory_05(t *testing.T) {
-	// Multi-line address access-once memory: a read-only ROM and a write-once
-	// WOM, exercising the access bit and at_flag carry columns end-to-end.
-	checkZkcUnit(t, "zkc/unit/access_once_memory_05", DEFAULT_UNIT_CONFIG)
-}
-
 // ===================================================================
 // If-Else-If Tests
 // ===================================================================
@@ -854,6 +821,30 @@ func Test_ZkcUnit_Shift_13(t *testing.T) {
 // a mix of shr and shl with small & big shifted and shifting value
 func Test_ZkcUnit_Shift_14(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/shift_14", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
+// Write-Once Memory (WOM) Tests
+// ===================================================================
+
+func Test_ZkcUnit_WriteOnceMemory_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/wom_01", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_WriteOnceMemory_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/wom_02", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_WriteOnceMemory_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/wom_03", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_WriteOnceMemory_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/wom_04", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_WriteOnceMemory_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/wom_05", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================

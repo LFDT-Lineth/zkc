@@ -78,7 +78,7 @@ func initReadWriteMemory[W Word[W], F Element[F]](cfg field.Config, m vm.Memory[
 		// Timestamp limb widths, most-significant first: the memory's declared
 		// timestamp width splits exactly as on the constraint side
 		// (constraints.computeRamLayout).
-		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, m.TimestampWidth().Unwrap()))
+		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, m.StampWidth().Unwrap()))
 		u1       = util.Some[uint](1)
 	)
 	// EXEC, IS_WRITE.
@@ -120,7 +120,7 @@ func initReadWriteMemory[W Word[W], F Element[F]](cfg field.Config, m vm.Memory[
 // traceReadWriteMemory materialises the trace of a read-write (RAM) memory: one
 // row per logical access (grouped from the per-lane access log), in access order,
 // preceded by a padding row.  Column order follows constraints.computeRamLayout.
-func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module *trace.ModuleBuilder[F],
+func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeReadWriteMemory[W], module *trace.ModuleBuilder[F],
 	cfg field.Config, scratch []F) {
 	//
 	var (
@@ -129,7 +129,7 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeMemory[W], module
 		nAddr    = int(geometry.NumInputs())
 		nData    = int(geometry.NumOutputs())
 		// Timestamp limb widths, most-significant first (matches computeRamLayout).
-		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, geometry.TimestampWidth().Unwrap()))
+		tsWidths = array.Reverse(register.LimbWidths(cfg.RegisterWidth, geometry.StampWidth().Unwrap()))
 		layout   = newRamTraceLayout(nAddr, nData, len(tsWidths))
 		accesses = groupRamAccesses[W](m.AccessLog(), nData)
 		//

@@ -71,13 +71,13 @@ func splitMemory[W word.Word[W]](mapping descriptor.LimbsMap[W], m *descriptor.M
 	case m.IsStatic():
 		// A static ROM carries its (constant) contents, so these must be split
 		// alongside the registers: each cell value is subdivided into its limbs.
-		return descriptor.NewMemory(m.Name(), m.Kind(), m.TimestampWidth(), registers, splitStaticContents(mapping, m))
+		return descriptor.NewMemory(m.Name(), m.Kind(), m.StampWidth(), registers, splitStaticContents(mapping, m))
 	case m.IsWriteOnly(), m.IsReadOnly(), m.IsReadWrite():
 		// Non-static memories (write-once, read-only, and read-write RAM —
 		// including paged) carry no constant contents; only their registers are
 		// split.  The associated read/write bytecodes have their address and data
 		// registers split separately (see splitRegisters for ReadWrite).
-		return descriptor.NewMemory(m.Name(), m.Kind(), m.TimestampWidth(), registers, nil)
+		return descriptor.NewMemory(m.Name(), m.Kind(), m.StampWidth(), registers, nil)
 	default:
 		panic(fmt.Sprintf("unknown memory \"%s\"", m.Name()))
 	}
@@ -529,7 +529,7 @@ func join[W word.Word[W]](pre []Bytecode[W], insn Bytecode[W], post []Bytecode[W
 
 // splitRegisterVectors splits each register vector (e.g. a debug / fail formatted
 // argument) into the limbs of its constituent registers.
-func splitRegisterVectors[W any](limbsMap descriptor.LimbsMap[W],
+func splitRegisterVectors[W word.Word[W]](limbsMap descriptor.LimbsMap[W],
 	vecs []bytecode.RegisterVector) []bytecode.RegisterVector {
 	var nvecs = make([]bytecode.RegisterVector, len(vecs))
 	//

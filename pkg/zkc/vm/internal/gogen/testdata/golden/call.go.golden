@@ -69,6 +69,9 @@ func fn_main() {
 	// [0.4] write result[$0] = $1
 	{
 		start := r0
+		if start < uint64(len(mem_result)) {
+			fail("address already written for write-only memory result")
+		}
 		mem_result = memWrite(mem_result, start+0, r1)
 	}
 	// [0.5] ret
