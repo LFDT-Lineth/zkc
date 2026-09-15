@@ -16,6 +16,7 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	lword "github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -54,6 +55,13 @@ type Memory[W word.Word[W]] interface {
 	// configuration determines the encoded width of any native registers (see
 	// Unpack).
 	Restore(m checkpoint.Memory, field word.Config)
+}
+
+// ReadWriteMemory provides a generic interface suitable for read-write memories.
+type ReadWriteMemory[W word.Word[W]] interface {
+	Memory[W]
+	// Clock returns the current value of this RAM's access clock.
+	Clock() uint64
 	// AccessLog returns the chronological log of reads / writes performed
 	// against this memory, or nil if it does not record accesses (only
 	// read-write memory records, and only when a recording log is installed
@@ -62,7 +70,7 @@ type Memory[W word.Word[W]] interface {
 	AccessLog() []AccessData[W]
 }
 
-// InputOutput identifiers memory used to represent inputs or outputs.  The main
+// InputOutput identifies memory used to represent inputs or outputs.  The main
 // purpose of this is to enable inspection of said memory to ensure e.g. the
 // correct outputs are produced.
 type InputOutput[W word.Word[W]] interface {
@@ -148,6 +156,38 @@ func Unpack[W word.Word[W]](field word.Config, regs []descriptor.Register[W], da
 		words = append(words, unpackCell[W](data[offset:offset+n]))
 		offset += n
 	}
+	//
+	return words
+}
+
+// Unpack64 unpacks a set of words from a uint64 according to a given width
+// description.
+func Unpack64[W word.Word[W]](field word.Config, width util.Option[uint], data uint64) (words []W) {
+	var (
+		tmp  W
+		mask = (uint64(1) << field.RegisterWidth) - 1
+	)
+	// Check for native field
+	if width.IsEmpty() {
+		return []W{tmp.SetUint64(data)}
+	} else if field.RegisterWidth >= 64 {
+		return []W{tmp.SetUint64(data)}
+	}
+	//
+	nbits := width.Unwrap()
+	//
+	for nbits > 0 {
+		words = append(words, tmp.SetUint64(data&mask))
+		data = data >> field.RegisterWidth
+		//
+		if nbits > field.RegisterWidth {
+			nbits = nbits - field.RegisterWidth
+		} else {
+			nbits = 0
+		}
+	}
+	// Convert to big endian
+	array.ReverseInPlace(words)
 	//
 	return words
 }

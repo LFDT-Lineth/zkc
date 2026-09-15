@@ -15,7 +15,6 @@ import (
 	"math"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
@@ -228,22 +227,24 @@ func (p *Compiler) compileFunction(id uint, mapping []uint, program []Declaratio
 	)
 	//
 	for _, v := range fn.Variables {
-		var kind register.Type
-
-		switch v.Kind {
-		case variable.PARAMETER:
-			kind = register.INPUT_REGISTER
-		case variable.RETURN:
-			kind = register.OUTPUT_REGISTER
-		case variable.LOCAL:
-			kind = register.COMPUTED_REGISTER
-		default:
-			panic(fmt.Sprintf("unexpected variable kind %d", v.Kind))
-		}
-
+		//
 		flatten(v.DataType, v.Name, p.env, func(name string, bitwidth uint) {
+			var reg vm.Register[vm.Uint]
+			// Normalise variable name to avoid clashes
 			name = normaliseVariableName(name, visited)
-			registers = append(registers, vm.NewRegister(kind, name, bitwidthOf(bitwidth), padding))
+			//
+			switch v.Kind {
+			case variable.PARAMETER:
+				reg = vm.NewInputRegister(name, bitwidthOf(bitwidth), padding)
+			case variable.RETURN:
+				reg = vm.NewOutputRegister(name, bitwidthOf(bitwidth), padding)
+			case variable.LOCAL:
+				reg = vm.NewComputedRegister(name, bitwidthOf(bitwidth), padding)
+			default:
+				panic(fmt.Sprintf("unexpected variable kind %d", v.Kind))
+			}
+			//
+			registers = append(registers, reg)
 		})
 	}
 	//

@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"math/bits"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -201,10 +200,10 @@ func newShiftHelperBuilder[W word.Word[W]](width, amtWidth uint) *shiftHelperBui
 		outShl: bytecode.RegisterId(2),
 		outShr: bytecode.RegisterId(3),
 		base: []descriptor.Register[W]{
-			descriptor.NewRegister(register.INPUT_REGISTER, "arg1", util.Some(width), padding),
-			descriptor.NewRegister(register.INPUT_REGISTER, "arg2", util.Some(amtWidth), padding),
-			descriptor.NewRegister(register.OUTPUT_REGISTER, "out_shl", util.Some(width), padding),
-			descriptor.NewRegister(register.OUTPUT_REGISTER, "out_shr", util.Some(width), padding),
+			descriptor.NewInputRegister("arg1", util.Some(width), padding),
+			descriptor.NewInputRegister("arg2", util.Some(amtWidth), padding),
+			descriptor.NewOutputRegister("out_shl", util.Some(width), padding),
+			descriptor.NewOutputRegister("out_shr", util.Some(width), padding),
 		},
 	}
 }
@@ -226,7 +225,7 @@ func (p *shiftHelperBuilder[W]) newComputedWidth(prefix string, width uint) byte
 
 	id := bytecode.RegisterId(len(p.base))
 	name := fmt.Sprintf("%s%d", prefix, p.nextTmp)
-	p.base = append(p.base, descriptor.NewRegister(register.COMPUTED_REGISTER, name, util.Some(width), padding))
+	p.base = append(p.base, descriptor.NewComputedRegister(name, util.Some(width), padding))
 	p.nextTmp++
 
 	return id

@@ -14,11 +14,12 @@ package descriptor
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // RegisterMap provides a generic interface for entities which hold information
 // about registers.
-type RegisterMap[W any] interface {
+type RegisterMap[W word.Word[W]] interface {
 	//fmt.Stringer
 	// Name returns the name given to the enclosing entity (i.e. module or
 	// function).

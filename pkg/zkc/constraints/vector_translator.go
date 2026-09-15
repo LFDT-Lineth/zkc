@@ -312,7 +312,7 @@ func (p *VectorInsnTranslator[W, F]) ReadRegister(regId register.Id, forwarding 
 
 // Register implementation for RegisterReader interface
 func (p *VectorInsnTranslator[W, F]) Register(reg register.Id) register.Register {
-	return toRegister(p.enclosing.Registers()[reg.Unwrap()])
+	return p.enclosing.Registers()[reg.Unwrap()].ToRawRegister()
 }
 
 // sourceWidths returns the bit widths of the given source registers, in order.

@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -403,11 +402,11 @@ func newBitwiseTable[W word.Word[W]](width uint) descriptor.Module[W] {
 		rows     = uint64(1) << (2 * width)
 		contents = make([]W, 0, rows*uint64(len(bitwiseOps)))
 		regs     = []descriptor.Register[W]{
-			descriptor.NewRegister(register.INPUT_REGISTER, "a", util.Some(width), padding),
-			descriptor.NewRegister(register.INPUT_REGISTER, "b", util.Some(width), padding),
-			descriptor.NewRegister(register.OUTPUT_REGISTER, "and", util.Some(width), padding),
-			descriptor.NewRegister(register.OUTPUT_REGISTER, "or", util.Some(width), padding),
-			descriptor.NewRegister(register.OUTPUT_REGISTER, "xor", util.Some(width), padding),
+			descriptor.NewInputRegister("a", util.Some(width), padding),
+			descriptor.NewInputRegister("b", util.Some(width), padding),
+			descriptor.NewOutputRegister("and", util.Some(width), padding),
+			descriptor.NewOutputRegister("or", util.Some(width), padding),
+			descriptor.NewOutputRegister("xor", util.Some(width), padding),
 		}
 	)
 	//
@@ -444,7 +443,7 @@ func newBitwiseHelperBuilder[W word.Word[W]](width uint, arity int) *bitwiseHelp
 
 	for i := 0; i < arity; i++ {
 		inputs[i] = bytecode.RegisterId(i)
-		base = append(base, descriptor.NewRegister(register.INPUT_REGISTER,
+		base = append(base, descriptor.NewInputRegister(
 			fmt.Sprintf("arg%d", i+1), util.Some(width), padding))
 	}
 	// One output per operation, in bitwiseOps order (immediately after the
@@ -452,8 +451,7 @@ func newBitwiseHelperBuilder[W word.Word[W]](width uint, arity int) *bitwiseHelp
 	for i, op := range bitwiseOps {
 		outputs[i] = bytecode.RegisterId(arity + i)
 
-		base = append(base, descriptor.NewRegister(register.OUTPUT_REGISTER,
-			bitwiseOpName(op), util.Some(width), padding))
+		base = append(base, descriptor.NewOutputRegister(bitwiseOpName(op), util.Some(width), padding))
 	}
 
 	return &bitwiseHelperBuilder[W]{
@@ -481,7 +479,7 @@ func (p *bitwiseHelperBuilder[W]) newComputedWidth(prefix string, width uint) by
 
 	id := bytecode.RegisterId(len(p.base))
 	name := fmt.Sprintf("%s_$%d", prefix, p.nextTmp)
-	p.base = append(p.base, descriptor.NewRegister(register.COMPUTED_REGISTER, name, util.Some(width), padding))
+	p.base = append(p.base, descriptor.NewComputedRegister(name, util.Some(width), padding))
 	p.nextTmp++
 
 	return id

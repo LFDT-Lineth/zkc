@@ -43,7 +43,7 @@ func (p Page) Bytes() []byte {
 	return p.data
 }
 
-// Stamps returns the timestamp associated with each distinct cell.
+// Stamps returns the timestamp associated with each distinct row.
 func (p Page) Stamps() []uint64 {
 	return p.timestamps
 }

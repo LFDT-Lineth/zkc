@@ -13,7 +13,6 @@
 package constraints
 
 import (
-	"math"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
@@ -39,28 +38,10 @@ func toRegisters[W vm.Word[W]](registers []vm.Register[W]) []register.Register {
 	var regs = make([]register.Register, len(registers))
 	//
 	for i, r := range registers {
-		regs[i] = toRegister(r)
+		regs[i] = r.ToRawRegister()
 	}
 	//
 	return regs
-}
-
-// ToRegister converts a register descriptor into a schema register
-func toRegister[W vm.Word[W]](r vm.Register[W]) register.Register {
-	var (
-		bitwidth uint = math.MaxUint
-	)
-	// Determine bitwidth (if applicable)
-	if !r.IsNative() {
-		bitwidth = r.Bitwidth().Unwrap()
-	} else if r.Padding().Cmp64(0) != 0 {
-		// NOTE: this is a stop-gap measure to ensure no padding values are
-		// dropped.  Eventually, the notion of padding would be dropped entirely
-		// from the concept of a register.
-		panic("non-zero padding unsupported")
-	}
-	//
-	return register.New(r.Kind(), r.Name(), bitwidth)
 }
 
 // toFieldElements converts a slice of words into a slice of field elements.

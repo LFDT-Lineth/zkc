@@ -13,7 +13,6 @@
 package vm
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
@@ -200,33 +199,39 @@ func NewBytecodeFunction[W word.Word[W]](name string, kind FunctionKind, registe
 	return descriptor.NewFunction(name, registers, kind, effects, code)
 }
 
-// NewRegister constructs a new register descriptor, where native
-// registers are indicated by the absence of any specific bitwidth.
-func NewRegister[W word.Word[W]](kind register.Type, name string, bitwidth util.Option[uint],
-	padding W) Register[W] {
-	//
-	return descriptor.NewRegister(kind, name, bitwidth, padding)
-}
-
 // NewComputedRegister constructs a computed register descriptor of the given
 // name and bit-width.  A bit-width of math.MaxUint yields a native (field)
 // register, which carries no fixed bit-width.
 func NewComputedRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	return descriptor.NewRegister(register.COMPUTED_REGISTER, name, bitwidth, padding)
+	return descriptor.NewComputedRegister(name, bitwidth, padding)
 }
 
 // NewInputRegister constructs an input register descriptor of the given name
 // and bit-width.  A bit-width of math.MaxUint yields a native (field) register,
 // which carries no fixed bit-width.
 func NewInputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	return descriptor.NewRegister(register.INPUT_REGISTER, name, bitwidth, padding)
+	return descriptor.NewInputRegister(name, bitwidth, padding)
 }
 
 // NewOutputRegister constructs an output register descriptor of the given name
 // and bit-width.  A bit-width of math.MaxUint yields a native (field) register,
 // which carries no fixed bit-width.
 func NewOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	return descriptor.NewRegister(register.OUTPUT_REGISTER, name, bitwidth, padding)
+	return descriptor.NewOutputRegister(name, bitwidth, padding)
+}
+
+// NewStampInputRegister constructs an input register descriptor of the given name
+// and bit-width.  A bit-width of math.MaxUint yields a native (field) register,
+// which carries no fixed bit-width.
+func NewStampInputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
+	return descriptor.NewStampInputRegister(name, bitwidth, padding)
+}
+
+// NewStampOutputRegister constructs an output register descriptor of the given name
+// and bit-width.  A bit-width of math.MaxUint yields a native (field) register,
+// which carries no fixed bit-width.
+func NewStampOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
+	return descriptor.NewStampOutputRegister(name, bitwidth, padding)
 }
 
 // IsSubtractWithBorrow checks whether or not this corresponds with a "subtract with borrow" operation, or not.

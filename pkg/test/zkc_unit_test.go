@@ -843,7 +843,7 @@ func Test_ZkcUnit_WriteOnceMemory_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/wom_04", DEFAULT_UNIT_CONFIG)
 }
 
-func Test_ZkcUnit_WruiteOnceMemory_05(t *testing.T) {
+func Test_ZkcUnit_WriteOnceMemory_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/wom_05", DEFAULT_UNIT_CONFIG)
 }
 

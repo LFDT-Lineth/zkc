@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -138,16 +137,14 @@ func (p *fieldCastHelpers[W]) ensure(widths []uint, total uint) uint {
 	// Input registers: the target limbs of the 𝔽→uint extraction.
 	for i, width := range widths {
 		inputs[i] = bytecode.RegisterId(len(regs))
-		regs = append(regs, descriptor.NewRegister(register.INPUT_REGISTER,
-			fmt.Sprintf("arg%d", i), util.Some(width), padding))
+		regs = append(regs, descriptor.NewInputRegister(fmt.Sprintf("arg%d", i), util.Some(width), padding))
 	}
 	// Reconstruct the value being checked.  A single-limb target already is the
 	// value; multiple limbs are concatenated (least-significant first).
 	valueReg := inputs[0]
 	if len(inputs) > 1 {
 		valueReg = bytecode.RegisterId(len(regs))
-		regs = append(regs, descriptor.NewRegister(register.COMPUTED_REGISTER,
-			"value", util.Some(total), padding))
+		regs = append(regs, descriptor.NewComputedRegister("value", util.Some(total), padding))
 		code = append(code, bytecode.AssignV[W]([]bytecode.RegisterId{valueReg}, inputs...))
 	}
 	// Assign the modulus

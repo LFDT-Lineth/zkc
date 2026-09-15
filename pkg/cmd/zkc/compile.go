@@ -768,7 +768,7 @@ func signatureOf[W vm.Word[W]](m vm.Module[W]) string {
 	)
 	//
 	if mem, ok := m.(*vm.Memory[W]); ok && mem.IsReadWrite() {
-		stamp = fmt.Sprintf("[u%d]", mem.TimestampWidth().Unwrap())
+		stamp = fmt.Sprintf("[u%d]", mem.StampWidth().Unwrap())
 	}
 	//
 	return fmt.Sprintf("%s%s(%s) -> (%s)", m.Name(), stamp, fnArgs(args), fnArgs(returns))

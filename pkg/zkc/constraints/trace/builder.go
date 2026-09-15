@@ -176,7 +176,7 @@ func (p Builder[W, F]) TraceMemory(mid uint16, m vm.RuntimeMemory[W], field fiel
 	case vm.PRIVATE_WRITE_ONCE_MEMORY, vm.PUBLIC_WRITE_ONCE_MEMORY:
 		traceAccessOnceMemory(m, module, p.scratch)
 	default:
-		traceReadWriteMemory(m, module, field, p.scratch)
+		traceReadWriteMemory(m.(vm.RuntimeReadWriteMemory[W]), module, field, p.scratch)
 	}
 }
 
