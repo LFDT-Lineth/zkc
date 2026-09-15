@@ -48,9 +48,6 @@ const (
 	// RAM_EXEC_NAME is the binary flag marking a read-write memory (RAM) row as
 	// belonging to the guest-program execution phase.
 	RAM_EXEC_NAME = "$exec"
-	// RAM_FINL_NAME is the binary flag marking a RAM row as belonging to the
-	// initialization / finalization phase.
-	RAM_FINL_NAME = "$finl"
 	// RAM_IS_WRITE_NAME is the binary flag distinguishing a RAM write (1) from a
 	// RAM read (0).
 	RAM_IS_WRITE_NAME = "$is_write"
@@ -65,21 +62,20 @@ const (
 	// RAM_TS_DELTA_PREFIX prefixes the per-limb timestamp-delta columns (the gap
 	// enforcing TIMESTAMP_READ < TIMESTAMP_WRITTEN).
 	RAM_TS_DELTA_PREFIX = "$ts_delta_"
-	// RAM_ADDR_DELTA_PREFIX prefixes the per-limb address-delta columns (used to
-	// prove address monotony in the finalization phase).
-	RAM_ADDR_DELTA_PREFIX = "$addr_delta_"
 	// RAM_TS_CARRY_PREFIX prefixes the per-boundary carry columns witnessing the
 	// multi-limb timestamp addition TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 + TIMESTAMP_DELTA.
 	RAM_TS_CARRY_PREFIX = "$ts_carry_"
-	// RAM_ADDR_CARRY_PREFIX prefixes the per-boundary carry columns witnessing the
-	// multi-limb address addition in the finalization phase.
-	RAM_ADDR_CARRY_PREFIX = "$addr_carry_"
 	// RAM_EXEC_WRITE_NAME is the binary column EXEC * IS_WRITE: the target-side
 	// selector of the caller->RAM lookup for write accesses.
 	RAM_EXEC_WRITE_NAME = "$exec_write"
 	// RAM_EXEC_READ_NAME is the binary column EXEC * (1 - IS_WRITE): the
 	// target-side selector of the caller->RAM lookup for read accesses.
 	RAM_EXEC_READ_NAME = "$exec_read"
+	// RAM_TEMPORAL_TS_PREFIX prefixes the per-limb temporal timestamp columns:
+	// the shard's clock, counting up by one on every real row.
+	RAM_TEMPORAL_TS_PREFIX = "$temporal_ts_"
+	// RAM_TEMPORAL_TS_CARRY_PREFIX prefixes the carry columns of that increment.
+	RAM_TEMPORAL_TS_CARRY_PREFIX = "$temporal_ts_carry_"
 )
 
 // RamLimbName returns the name of the limb-k column of a RAM register family
