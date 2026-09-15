@@ -273,16 +273,14 @@ func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.Bran
 // pathSelectorComputation builds the trace-expansion computation for a path
 // selector: the boolean value of the branch condition (1 when taken, else 0).
 func pathSelectorComputation[F field.Element[F]](cond dfa.BranchCondition, regs []register.Register,
-) term.Computation[F] {
+) mir.Term[F] {
 	var (
 		condition = mirc.TranslateBranchCondition(cond, callRegisterReader[F]{regs})
-		logical   = term.NewLogicalComputation[F, mir.LogicalTerm[F],
-			mir.Term[F]](condition.AsLogical())
-		one  = term.Const[F, term.Computation[F]](field.One[F]())
-		zero = term.Const[F, term.Computation[F]](field.Zero[F]())
+		one       = term.Const[F, mir.Term[F]](field.One[F]())
+		zero      = term.Const[F, mir.Term[F]](field.Zero[F]())
 	)
 	//
-	return term.IfElse(logical, one, zero)
+	return term.IfElse(condition.AsLogical(), one, zero)
 }
 
 // callRegisterReader is a minimal mirc.RegisterReader over a register layout,
