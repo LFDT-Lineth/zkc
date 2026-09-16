@@ -47,12 +47,9 @@ func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.
 		reg = module.Register(rid)
 		val = field.Uint64[F](uint64(reg.ConstValue()))
 	)
-	// Construct computation
-	computation := term.NewComputation[F, LogicalTerm[F]](
-		term.Const[F, Term[F]](val))
 	// Add assignment for filling said computed column
 	module.AddAssignments(
-		assignment.NewComputedRegister[F](rid, computation, mid))
+		assignment.NewComputedRegister[F](rid, term.Const[F, Term[F]](val), mid))
 	// add constraint
 	module.AddConstraints(
 		NewVanishingConstraint(val.String(), mid, util.None[int](),
