@@ -1,0 +1,928 @@
+// Regression test (KNOWN LIMITATION -- see t.Skip below): forces a switch
+// with more than 255 cases (n=300), which alone drives both the case count
+// and the interned constant-vector base pool index past u8, requiring the
+// wide SKIP_M form -- see pkg/zkc/vm/internal/interpreter/encoding/switch.go.
+// This is currently unreachable end-to-end: switch codegen merges every
+// case's exit through a single vectorised arithmetic instruction, one
+// operand per case, and encodeArith_vec (pkg/zkc/vm/internal/interpreter/
+// encoding/arith.go) panics with "vector arithmetic operand counts not
+// supported" for 256 or more operands -- confirmed this fires even with
+// empty case bodies, so it is inherent to the case count alone and unrelated
+// to SKIP_M.
+input inputs(c:u1) -> (d:u16)
+input outputs(c:u1) -> (out:u16)
+
+fn main() {
+    var discr:u16 = inputs[0]
+    var result:u16 = 0
+
+    switch discr {
+        case 0: {
+            result = 0
+        }
+        case 1: {
+            result = 2
+        }
+        case 2: {
+            result = 4
+        }
+        case 3: {
+            result = 6
+        }
+        case 4: {
+            result = 8
+        }
+        case 5: {
+            result = 10
+        }
+        case 6: {
+            result = 12
+        }
+        case 7: {
+            result = 14
+        }
+        case 8: {
+            result = 16
+        }
+        case 9: {
+            result = 18
+        }
+        case 10: {
+            result = 20
+        }
+        case 11: {
+            result = 22
+        }
+        case 12: {
+            result = 24
+        }
+        case 13: {
+            result = 26
+        }
+        case 14: {
+            result = 28
+        }
+        case 15: {
+            result = 30
+        }
+        case 16: {
+            result = 32
+        }
+        case 17: {
+            result = 34
+        }
+        case 18: {
+            result = 36
+        }
+        case 19: {
+            result = 38
+        }
+        case 20: {
+            result = 40
+        }
+        case 21: {
+            result = 42
+        }
+        case 22: {
+            result = 44
+        }
+        case 23: {
+            result = 46
+        }
+        case 24: {
+            result = 48
+        }
+        case 25: {
+            result = 50
+        }
+        case 26: {
+            result = 52
+        }
+        case 27: {
+            result = 54
+        }
+        case 28: {
+            result = 56
+        }
+        case 29: {
+            result = 58
+        }
+        case 30: {
+            result = 60
+        }
+        case 31: {
+            result = 62
+        }
+        case 32: {
+            result = 64
+        }
+        case 33: {
+            result = 66
+        }
+        case 34: {
+            result = 68
+        }
+        case 35: {
+            result = 70
+        }
+        case 36: {
+            result = 72
+        }
+        case 37: {
+            result = 74
+        }
+        case 38: {
+            result = 76
+        }
+        case 39: {
+            result = 78
+        }
+        case 40: {
+            result = 80
+        }
+        case 41: {
+            result = 82
+        }
+        case 42: {
+            result = 84
+        }
+        case 43: {
+            result = 86
+        }
+        case 44: {
+            result = 88
+        }
+        case 45: {
+            result = 90
+        }
+        case 46: {
+            result = 92
+        }
+        case 47: {
+            result = 94
+        }
+        case 48: {
+            result = 96
+        }
+        case 49: {
+            result = 98
+        }
+        case 50: {
+            result = 100
+        }
+        case 51: {
+            result = 102
+        }
+        case 52: {
+            result = 104
+        }
+        case 53: {
+            result = 106
+        }
+        case 54: {
+            result = 108
+        }
+        case 55: {
+            result = 110
+        }
+        case 56: {
+            result = 112
+        }
+        case 57: {
+            result = 114
+        }
+        case 58: {
+            result = 116
+        }
+        case 59: {
+            result = 118
+        }
+        case 60: {
+            result = 120
+        }
+        case 61: {
+            result = 122
+        }
+        case 62: {
+            result = 124
+        }
+        case 63: {
+            result = 126
+        }
+        case 64: {
+            result = 128
+        }
+        case 65: {
+            result = 130
+        }
+        case 66: {
+            result = 132
+        }
+        case 67: {
+            result = 134
+        }
+        case 68: {
+            result = 136
+        }
+        case 69: {
+            result = 138
+        }
+        case 70: {
+            result = 140
+        }
+        case 71: {
+            result = 142
+        }
+        case 72: {
+            result = 144
+        }
+        case 73: {
+            result = 146
+        }
+        case 74: {
+            result = 148
+        }
+        case 75: {
+            result = 150
+        }
+        case 76: {
+            result = 152
+        }
+        case 77: {
+            result = 154
+        }
+        case 78: {
+            result = 156
+        }
+        case 79: {
+            result = 158
+        }
+        case 80: {
+            result = 160
+        }
+        case 81: {
+            result = 162
+        }
+        case 82: {
+            result = 164
+        }
+        case 83: {
+            result = 166
+        }
+        case 84: {
+            result = 168
+        }
+        case 85: {
+            result = 170
+        }
+        case 86: {
+            result = 172
+        }
+        case 87: {
+            result = 174
+        }
+        case 88: {
+            result = 176
+        }
+        case 89: {
+            result = 178
+        }
+        case 90: {
+            result = 180
+        }
+        case 91: {
+            result = 182
+        }
+        case 92: {
+            result = 184
+        }
+        case 93: {
+            result = 186
+        }
+        case 94: {
+            result = 188
+        }
+        case 95: {
+            result = 190
+        }
+        case 96: {
+            result = 192
+        }
+        case 97: {
+            result = 194
+        }
+        case 98: {
+            result = 196
+        }
+        case 99: {
+            result = 198
+        }
+        case 100: {
+            result = 200
+        }
+        case 101: {
+            result = 202
+        }
+        case 102: {
+            result = 204
+        }
+        case 103: {
+            result = 206
+        }
+        case 104: {
+            result = 208
+        }
+        case 105: {
+            result = 210
+        }
+        case 106: {
+            result = 212
+        }
+        case 107: {
+            result = 214
+        }
+        case 108: {
+            result = 216
+        }
+        case 109: {
+            result = 218
+        }
+        case 110: {
+            result = 220
+        }
+        case 111: {
+            result = 222
+        }
+        case 112: {
+            result = 224
+        }
+        case 113: {
+            result = 226
+        }
+        case 114: {
+            result = 228
+        }
+        case 115: {
+            result = 230
+        }
+        case 116: {
+            result = 232
+        }
+        case 117: {
+            result = 234
+        }
+        case 118: {
+            result = 236
+        }
+        case 119: {
+            result = 238
+        }
+        case 120: {
+            result = 240
+        }
+        case 121: {
+            result = 242
+        }
+        case 122: {
+            result = 244
+        }
+        case 123: {
+            result = 246
+        }
+        case 124: {
+            result = 248
+        }
+        case 125: {
+            result = 250
+        }
+        case 126: {
+            result = 252
+        }
+        case 127: {
+            result = 254
+        }
+        case 128: {
+            result = 256
+        }
+        case 129: {
+            result = 258
+        }
+        case 130: {
+            result = 260
+        }
+        case 131: {
+            result = 262
+        }
+        case 132: {
+            result = 264
+        }
+        case 133: {
+            result = 266
+        }
+        case 134: {
+            result = 268
+        }
+        case 135: {
+            result = 270
+        }
+        case 136: {
+            result = 272
+        }
+        case 137: {
+            result = 274
+        }
+        case 138: {
+            result = 276
+        }
+        case 139: {
+            result = 278
+        }
+        case 140: {
+            result = 280
+        }
+        case 141: {
+            result = 282
+        }
+        case 142: {
+            result = 284
+        }
+        case 143: {
+            result = 286
+        }
+        case 144: {
+            result = 288
+        }
+        case 145: {
+            result = 290
+        }
+        case 146: {
+            result = 292
+        }
+        case 147: {
+            result = 294
+        }
+        case 148: {
+            result = 296
+        }
+        case 149: {
+            result = 298
+        }
+        case 150: {
+            result = 300
+        }
+        case 151: {
+            result = 302
+        }
+        case 152: {
+            result = 304
+        }
+        case 153: {
+            result = 306
+        }
+        case 154: {
+            result = 308
+        }
+        case 155: {
+            result = 310
+        }
+        case 156: {
+            result = 312
+        }
+        case 157: {
+            result = 314
+        }
+        case 158: {
+            result = 316
+        }
+        case 159: {
+            result = 318
+        }
+        case 160: {
+            result = 320
+        }
+        case 161: {
+            result = 322
+        }
+        case 162: {
+            result = 324
+        }
+        case 163: {
+            result = 326
+        }
+        case 164: {
+            result = 328
+        }
+        case 165: {
+            result = 330
+        }
+        case 166: {
+            result = 332
+        }
+        case 167: {
+            result = 334
+        }
+        case 168: {
+            result = 336
+        }
+        case 169: {
+            result = 338
+        }
+        case 170: {
+            result = 340
+        }
+        case 171: {
+            result = 342
+        }
+        case 172: {
+            result = 344
+        }
+        case 173: {
+            result = 346
+        }
+        case 174: {
+            result = 348
+        }
+        case 175: {
+            result = 350
+        }
+        case 176: {
+            result = 352
+        }
+        case 177: {
+            result = 354
+        }
+        case 178: {
+            result = 356
+        }
+        case 179: {
+            result = 358
+        }
+        case 180: {
+            result = 360
+        }
+        case 181: {
+            result = 362
+        }
+        case 182: {
+            result = 364
+        }
+        case 183: {
+            result = 366
+        }
+        case 184: {
+            result = 368
+        }
+        case 185: {
+            result = 370
+        }
+        case 186: {
+            result = 372
+        }
+        case 187: {
+            result = 374
+        }
+        case 188: {
+            result = 376
+        }
+        case 189: {
+            result = 378
+        }
+        case 190: {
+            result = 380
+        }
+        case 191: {
+            result = 382
+        }
+        case 192: {
+            result = 384
+        }
+        case 193: {
+            result = 386
+        }
+        case 194: {
+            result = 388
+        }
+        case 195: {
+            result = 390
+        }
+        case 196: {
+            result = 392
+        }
+        case 197: {
+            result = 394
+        }
+        case 198: {
+            result = 396
+        }
+        case 199: {
+            result = 398
+        }
+        case 200: {
+            result = 400
+        }
+        case 201: {
+            result = 402
+        }
+        case 202: {
+            result = 404
+        }
+        case 203: {
+            result = 406
+        }
+        case 204: {
+            result = 408
+        }
+        case 205: {
+            result = 410
+        }
+        case 206: {
+            result = 412
+        }
+        case 207: {
+            result = 414
+        }
+        case 208: {
+            result = 416
+        }
+        case 209: {
+            result = 418
+        }
+        case 210: {
+            result = 420
+        }
+        case 211: {
+            result = 422
+        }
+        case 212: {
+            result = 424
+        }
+        case 213: {
+            result = 426
+        }
+        case 214: {
+            result = 428
+        }
+        case 215: {
+            result = 430
+        }
+        case 216: {
+            result = 432
+        }
+        case 217: {
+            result = 434
+        }
+        case 218: {
+            result = 436
+        }
+        case 219: {
+            result = 438
+        }
+        case 220: {
+            result = 440
+        }
+        case 221: {
+            result = 442
+        }
+        case 222: {
+            result = 444
+        }
+        case 223: {
+            result = 446
+        }
+        case 224: {
+            result = 448
+        }
+        case 225: {
+            result = 450
+        }
+        case 226: {
+            result = 452
+        }
+        case 227: {
+            result = 454
+        }
+        case 228: {
+            result = 456
+        }
+        case 229: {
+            result = 458
+        }
+        case 230: {
+            result = 460
+        }
+        case 231: {
+            result = 462
+        }
+        case 232: {
+            result = 464
+        }
+        case 233: {
+            result = 466
+        }
+        case 234: {
+            result = 468
+        }
+        case 235: {
+            result = 470
+        }
+        case 236: {
+            result = 472
+        }
+        case 237: {
+            result = 474
+        }
+        case 238: {
+            result = 476
+        }
+        case 239: {
+            result = 478
+        }
+        case 240: {
+            result = 480
+        }
+        case 241: {
+            result = 482
+        }
+        case 242: {
+            result = 484
+        }
+        case 243: {
+            result = 486
+        }
+        case 244: {
+            result = 488
+        }
+        case 245: {
+            result = 490
+        }
+        case 246: {
+            result = 492
+        }
+        case 247: {
+            result = 494
+        }
+        case 248: {
+            result = 496
+        }
+        case 249: {
+            result = 498
+        }
+        case 250: {
+            result = 500
+        }
+        case 251: {
+            result = 502
+        }
+        case 252: {
+            result = 504
+        }
+        case 253: {
+            result = 506
+        }
+        case 254: {
+            result = 508
+        }
+        case 255: {
+            result = 510
+        }
+        case 256: {
+            result = 512
+        }
+        case 257: {
+            result = 514
+        }
+        case 258: {
+            result = 516
+        }
+        case 259: {
+            result = 518
+        }
+        case 260: {
+            result = 520
+        }
+        case 261: {
+            result = 522
+        }
+        case 262: {
+            result = 524
+        }
+        case 263: {
+            result = 526
+        }
+        case 264: {
+            result = 528
+        }
+        case 265: {
+            result = 530
+        }
+        case 266: {
+            result = 532
+        }
+        case 267: {
+            result = 534
+        }
+        case 268: {
+            result = 536
+        }
+        case 269: {
+            result = 538
+        }
+        case 270: {
+            result = 540
+        }
+        case 271: {
+            result = 542
+        }
+        case 272: {
+            result = 544
+        }
+        case 273: {
+            result = 546
+        }
+        case 274: {
+            result = 548
+        }
+        case 275: {
+            result = 550
+        }
+        case 276: {
+            result = 552
+        }
+        case 277: {
+            result = 554
+        }
+        case 278: {
+            result = 556
+        }
+        case 279: {
+            result = 558
+        }
+        case 280: {
+            result = 560
+        }
+        case 281: {
+            result = 562
+        }
+        case 282: {
+            result = 564
+        }
+        case 283: {
+            result = 566
+        }
+        case 284: {
+            result = 568
+        }
+        case 285: {
+            result = 570
+        }
+        case 286: {
+            result = 572
+        }
+        case 287: {
+            result = 574
+        }
+        case 288: {
+            result = 576
+        }
+        case 289: {
+            result = 578
+        }
+        case 290: {
+            result = 580
+        }
+        case 291: {
+            result = 582
+        }
+        case 292: {
+            result = 584
+        }
+        case 293: {
+            result = 586
+        }
+        case 294: {
+            result = 588
+        }
+        case 295: {
+            result = 590
+        }
+        case 296: {
+            result = 592
+        }
+        case 297: {
+            result = 594
+        }
+        case 298: {
+            result = 596
+        }
+        case 299: {
+            result = 598
+        }
+        default: {
+            result = 9999
+        }
+    }
+
+    if result != outputs[0] {
+        fail
+    }
+}

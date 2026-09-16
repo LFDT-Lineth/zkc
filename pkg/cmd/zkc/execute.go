@@ -47,6 +47,7 @@ var executeCmds = []FieldAgnosticCmd{
 	{field.GF_251, runExecuteCmd[gf251.Element]},
 	{field.GF_8209, runExecuteCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runExecuteCmd[koalabear.Element]},
+	{field.KOALABEAR_24, runExecuteCmd[koalabear.Element]},
 	{field.BLS12_377, runExecuteCmd[bls12_377.Element]},
 }
 

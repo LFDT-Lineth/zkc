@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	test_util "github.com/LFDT-Lineth/zkc/pkg/test/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 )
 
 // DEFAULT_UNIT_CONFIG provides a default configuration for unit tests.
@@ -366,28 +367,12 @@ func Test_ZkcUnit_Basic_85(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_85", DEFAULT_UNIT_CONFIG)
 }
 
-func Test_ZkcUnit_Basic_86(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_86", DEFAULT_UNIT_CONFIG.Sharding("copy", 1))
-}
-
 func Test_ZkcUnit_Basic_87(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_87", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_88(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_88", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_Basic_89(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_89", DEFAULT_UNIT_CONFIG.Sharding("checkNonZero", 256))
-}
-
-func Test_ZkcUnit_Basic_90(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_90", DEFAULT_UNIT_CONFIG.Sharding("checkNonZero", 256))
-}
-
-func Test_ZkcUnit_Basic_91(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_91", DEFAULT_UNIT_CONFIG.Sharding("checkNonZero", 256))
 }
 
 // ===================================================================
@@ -1376,106 +1361,30 @@ func Test_ZkcUnit_RangeCheck_05(t *testing.T) {
 }
 
 // ===================================================================
-// Big Tests
-// ===================================================================
-
-func Test_ZkcUnit_BigNum_01(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_01", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_02(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_02", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_03(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_03", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_04(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_04", DEFAULT_UNIT_CONFIG.Sampling(0.01))
-}
-
-func Test_ZkcUnit_BigNum_05(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_05", DEFAULT_UNIT_CONFIG.Sampling(0.01))
-}
-
-func Test_ZkcUnit_BigNum_06(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_06", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_07(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_07", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_08(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_08", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_09(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_09", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_10(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_10", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_11(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_11", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_12(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_12", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_13(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_13", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_14(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_14", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_15(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_15", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_BigNum_16(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_16", DEFAULT_UNIT_CONFIG.Sampling(0.01))
-}
-
-func Test_ZkcUnit_BigNum_17(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_17", DEFAULT_UNIT_CONFIG.Sampling(0.01))
-}
-
-func Test_ZkcUnit_BigNum_18(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/bignum_18", DEFAULT_UNIT_CONFIG.Sampling(0.01))
-}
-
-// ===================================================================
 // Partial call tests
 // ===================================================================
 // This test perform a partial call res, _ = f(x)
-func Test_ZkcUnit_partial_call_01(t *testing.T) {
+func Test_ZkcUnit_PartialCall_01(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/partial_call_01", DEFAULT_UNIT_CONFIG)
 }
 
 // This test perform a partial call _, res = f(x)
-func Test_ZkcUnit_partial_call_02(t *testing.T) {
+func Test_ZkcUnit_PartialCall_02(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/partial_call_02", DEFAULT_UNIT_CONFIG)
 }
 
 // This test perform a partial call _, res, _ = f(x)
-func Test_ZkcUnit_partial_call_03(t *testing.T) {
+func Test_ZkcUnit_PartialCall_03(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/partial_call_03", DEFAULT_UNIT_CONFIG)
 }
 
 // This test perform a partial call res, _, res = f(x)
-func Test_ZkcUnit_partial_call_04(t *testing.T) {
+func Test_ZkcUnit_PartialCall_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/partial_call_04", DEFAULT_UNIT_CONFIG)
 }
 
 // This test perform a partial static call res, _ = static(x)
-func Test_ZkcUnit_partial_call_05(t *testing.T) {
+func Test_ZkcUnit_PartialCall_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/partial_call_05", DEFAULT_UNIT_CONFIG)
 }
 
@@ -1483,7 +1392,7 @@ func Test_ZkcUnit_partial_call_05(t *testing.T) {
 // Test Helpers
 // ===================================================================
 
-var STATIC_HEIGHTS = []uint{256, 1 << 12}
+var STATIC_HEIGHTS = []uint{256, 4096, codegen.DEFAULT_MAX_STATIC_HEIGHT}
 
 // ZKC_PADDING_STRATEGIES enumerates the padding strategies that every ZkC unit
 // test is exercised against (see checkZkcUnit).

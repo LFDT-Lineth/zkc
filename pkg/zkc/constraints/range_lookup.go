@@ -82,8 +82,14 @@ func indexRangeTables[W vm.Word[W], F field.Element[F]](program vm.Program[W], m
 //
 // Registers wider than maxStaticWidth have no static table; they are
 // range-checked at runtime by a recursive call which addCallLookups lowers into
-// a lookup.  Native (field-element) and zero-width registers are not
-// range-checked at all.
+// a lookup.  Native (field-element) registers are not range-checked at all.
+//
+// Zero-width registers (e.g. the shared zero register used to pad lookups
+// against wider memories / callees) are constrained to be exactly zero.  This
+// is essential for soundness: such registers appear as ordinary columns in
+// call and memory lookups, where they stand in for limbs that must be zero.
+// Without this constraint, a prover could assign them arbitrary values and
+// thereby bypass the implied range check on the narrower side of the lookup.
 func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[F, mir.Constraint[F]],
 	ctx schema.ModuleId, regs []register.Register) {
 	// TODO: lots of perf possible here, see
@@ -91,7 +97,17 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 	// https://github.com/LFDT-Lineth/zkc/issues/1911
 	for i, reg := range regs {
 		// Native registers are not range-checked.
-		if reg.IsNative() || reg.Width() == 0 {
+		if reg.IsNative() {
+			continue
+		}
+		// Zero-width registers can only hold zero, enforced with r == 0.
+		if reg.Width() == 0 {
+			regId := register.NewId(uint(i))
+			handle := fmt.Sprintf("range_u0_%d", regId.Unwrap())
+			r := mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
+			mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](),
+				r.Equals(mirc.Number[register.Id, Expr[F]](0)).AsLogical()))
+
 			continue
 		}
 		// u1 registers are not range-checked with a static table, but with a

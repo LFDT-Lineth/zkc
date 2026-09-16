@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/test/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // DEFAULT_MIXED_CONFIG provides a default configuration for mixed tests.  These
@@ -50,7 +51,8 @@ func Test_ZkcMixed_Basic_05(t *testing.T) {
 }
 
 func Test_ZkcMixed_Basic_06(t *testing.T) {
-	checkZkcMixed(t, "zkc/mixed/basic_06", DEFAULT_MIXED_CONFIG)
+	// NOTE: designed specifically for KOALABEAR.
+	checkZkcMixed(t, "zkc/mixed/basic_06", DEFAULT_MIXED_CONFIG.Fields(field.KOALABEAR_16))
 }
 
 func Test_ZkcMixed_Basic_07(t *testing.T) {
@@ -58,7 +60,8 @@ func Test_ZkcMixed_Basic_07(t *testing.T) {
 }
 
 func Test_ZkcMixed_Basic_08(t *testing.T) {
-	checkZkcMixed(t, "zkc/mixed/basic_08", DEFAULT_MIXED_CONFIG)
+	// NOTE: designed specifically for KOALABEAR.
+	checkZkcMixed(t, "zkc/mixed/basic_08", DEFAULT_MIXED_CONFIG.Fields(field.KOALABEAR_16))
 }
 
 func Test_ZkcMixed_Basic_09(t *testing.T) {
@@ -82,7 +85,8 @@ func Test_ZkcMixed_Felt_Memory_01(t *testing.T) {
 }
 
 func Test_ZkcMixed_Felt_Casting_01(t *testing.T) {
-	checkZkcMixed(t, "zkc/mixed/felt_casting_01", DEFAULT_MIXED_CONFIG)
+	// NOTE: designed specifically for KOALABEAR.
+	checkZkcMixed(t, "zkc/mixed/felt_casting_01", DEFAULT_MIXED_CONFIG.Fields(field.KOALABEAR_16))
 }
 
 func Test_ZkcMixed_Felt_Casting_02(t *testing.T) {

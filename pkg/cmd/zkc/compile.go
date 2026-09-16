@@ -56,6 +56,7 @@ var compileCmds = []FieldAgnosticCmd{
 	{field.GF_251, runCompileCmd[gf251.Element]},
 	{field.GF_8209, runCompileCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runCompileCmd[koalabear.Element]},
+	{field.KOALABEAR_24, runCompileCmd[koalabear.Element]},
 	{field.BLS12_377, runCompileCmd[bls12_377.Element]},
 }
 

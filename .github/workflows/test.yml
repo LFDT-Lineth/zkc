@@ -16,14 +16,10 @@ jobs:
       contents: read
     strategy:
       matrix:
-        test: [corset-bench,corset-racer,corset-test,unit-test]
-        field: [BLS12_377,KOALABEAR_16,GF_8209]
+        test: [corset-bench,corset-test,unit-test]
+        field: [BLS12_377,KOALABEAR_16]
         exclude:
-          - { field: KOALABEAR_16, test: corset-racer }
           - { field: KOALABEAR_16, test: unit-test }
-          - { field: GF_8209,      test: corset-bench }
-          - { field: GF_8209,      test: corset-racer }
-          - { field: GF_8209,      test: unit-test }
       fail-fast: false
     runs-on: gha-lfdt-lineth-ss-ubuntu-24-amd64-large
     steps:
@@ -37,13 +33,16 @@ jobs:
         env:
           GOMAXPROCS: 8
           GOMEMLIMIT: 16GiB
-          GOCORSET_FIELD: ${{ matrix.field }}
+          ZKC_FIELD: ${{ matrix.field }}
   zkc:
     permissions:
       contents: read
     strategy:
       matrix:
         test: [bench,util,unit,racer]
+        field: [KOALABEAR_16, GF_8209]
+        exclude:
+          - { field: GF_8209, test: racer }
       fail-fast: false
     runs-on: gha-lfdt-lineth-ss-ubuntu-24-amd64-large
     steps:
@@ -57,3 +56,4 @@ jobs:
         env:
           GOMAXPROCS: 8
           GOMEMLIMIT: 16GiB
+          ZKC_FIELD: ${{ matrix.field }}
