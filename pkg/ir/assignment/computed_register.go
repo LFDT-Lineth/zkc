@@ -69,7 +69,7 @@ func (p *ComputedRegister[F, E]) Bounds(mid sc.ModuleId) util.Bounds {
 // Compute the values of columns defined by this assignment. Specifically, this
 // creates a new column which contains the result of evaluating a given
 // expression on each row.
-func (p *ComputedRegister[F, E]) Compute(tr trace.Shard[F], schema sc.AnySchema[F],
+func (p *ComputedRegister[F, E]) Compute(tr trace.Shard[F], schema sc.Schema[F],
 ) ([]array.Array[F], error) {
 	var (
 		trModule = tr.Module(p.Module)
@@ -103,7 +103,7 @@ func (p *ComputedRegister[F, E]) Compute(tr trace.Shard[F], schema sc.AnySchema[
 // consistent with its enclosing schema This provides a double check of certain
 // key properties, such as that registers used for assignments are valid,
 // etc.
-func (p *ComputedRegister[F, E]) Consistent(schema sc.AnySchema[F]) []error {
+func (p *ComputedRegister[F, E]) Consistent(schema sc.Schema[F]) []error {
 	return nil
 }
 
@@ -137,7 +137,7 @@ func (p *ComputedRegister[F, E]) RegistersWritten() []register.Ref {
 // Lisp converts this constraint into an S-Expression.
 //
 //nolint:revive
-func (p *ComputedRegister[F, E]) Lisp(schema sc.AnySchema[F]) sexp.SExp {
+func (p *ComputedRegister[F, E]) Lisp(schema sc.Schema[F]) sexp.SExp {
 	var (
 		module   = schema.Module(p.Module)
 		target   sexp.SExp

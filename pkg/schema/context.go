@@ -38,7 +38,7 @@ type ChunkId struct {
 // SeqBuildContext constructs the context from a given schema and trace.
 // Essentially, this means traversing the schema looking for lookups and
 // constructing their sets.  NOTE: this is done sequentially
-func SeqBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Context[F] {
+func SeqBuildContext[F field.Element[F]](tr trace.Trace[F], sc Schema[F]) Context[F] {
 	var (
 		stats    = util.NewPerfStats()
 		contexts []map[string]*hash.Set[hash.Array[F]]
@@ -67,7 +67,7 @@ func SeqBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Con
 // are then constructed in parallel via array.ParallelMap (the "map" phase).
 // Chunks belonging to the same set are then merged back together (the
 // "reduce" phase), which is likewise done in parallel across sets.
-func ParBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Context[F] {
+func ParBuildContext[F field.Element[F]](tr trace.Trace[F], sc Schema[F]) Context[F] {
 	var (
 		stats    = util.NewPerfStats()
 		contexts = make([]map[string]*hash.Set[hash.Array[F]], len(tr))
@@ -101,7 +101,7 @@ func ParBuildContext[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) Con
 // returns the number of chunks generated for each set (aligned with sids), so
 // callers can recover the chunks belonging to a given set without a map
 // lookup.
-func determineChunks[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) []ChunkId {
+func determineChunks[F field.Element[F]](tr trace.Trace[F], sc Schema[F]) []ChunkId {
 	var (
 		sids  = determineSets(sc)
 		sets  = make([]ChunkId, len(sids)*len(tr))
@@ -119,7 +119,7 @@ func determineChunks[F field.Element[F]](tr trace.Trace[F], sc AnySchema[F]) []C
 }
 
 // DetermineSets extracts all unique set identifiers from lookup constraints.
-func determineSets[F field.Element[F]](sc AnySchema[F]) []SetId {
+func determineSets[F field.Element[F]](sc Schema[F]) []SetId {
 	var sets set.AnySortedSet[SetId]
 	//
 	for iter := sc.Constraints(); iter.HasNext(); {
@@ -135,7 +135,7 @@ func determineSets[F field.Element[F]](sc AnySchema[F]) []SetId {
 
 // buildSetChunk constructs the (partial) set of rows determined by a given
 // chunk.
-func buildSetChunk[F field.Element[F]](c ChunkId, tr trace.Trace[F], sc AnySchema[F]) Set[F] {
+func buildSetChunk[F field.Element[F]](c ChunkId, tr trace.Trace[F], sc Schema[F]) Set[F] {
 	var (
 		scModule = sc.Module(c.id.Module())
 		trModule = tr[c.shard].Module(c.id.Module())

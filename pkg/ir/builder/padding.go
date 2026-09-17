@@ -30,7 +30,7 @@ import (
 // directly from the trace given to AlignAndPad, and that trace can be shared
 // with (and reused by) the caller, so the modules returned from here must
 // never retain that aliasing.
-func padModules[F field.Element[F]](config Config, schema sc.AnySchema[F], mods []trace.Module[F],
+func padModules[F field.Element[F]](config Config, schema sc.Schema[F], mods []trace.Module[F],
 ) ([]trace.Module[F], []error) {
 	var (
 		// Determine the set of minimal trace sizes
@@ -54,7 +54,7 @@ func padModules[F field.Element[F]](config Config, schema sc.AnySchema[F], mods 
 // Columns belonging to a static module, and columns which are not yet
 // assigned (e.g. an unfilled computed column, prior to expansion), are passed
 // through unchanged.
-func paddingMapFn[F field.Element[F]](config Config, schema sc.AnySchema[F], mods []trace.Module[F],
+func paddingMapFn[F field.Element[F]](config Config, schema sc.Schema[F], mods []trace.Module[F],
 	minimums []uint) func(uint, trace.ColumnRef) array.Array[F] {
 	//
 	return func(_ uint, p trace.ColumnRef) array.Array[F] {
@@ -89,7 +89,7 @@ func paddingMapFn[F field.Element[F]](config Config, schema sc.AnySchema[F], mod
 // have N+M+1 minimum rows.  Thus, for a module with no shifted columns, the
 // minimum height is 1.  Whilst for a module with -1 and +2 shifts, the minimum
 // height is 4.
-func determineMinimumTraceHeight[F field.Element[F]](schema sc.AnySchema[F]) []uint {
+func determineMinimumTraceHeight[F field.Element[F]](schema sc.Schema[F]) []uint {
 	var (
 		minimums = make([]uint, schema.Width())
 	)

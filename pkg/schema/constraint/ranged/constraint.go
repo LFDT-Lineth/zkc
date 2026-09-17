@@ -55,7 +55,7 @@ func NewConstraint[F field.Element[F]](handle string, context schema.ModuleId,
 // Consistent applies a number of internal consistency checks.  Whilst not
 // strictly necessary, these can highlight otherwise hidden problems as an aid
 // to debugging.
-func (p Constraint[F]) Consistent(schema schema.AnySchema[F]) []error {
+func (p Constraint[F]) Consistent(schema schema.Schema[F]) []error {
 	var errors []error
 	//
 	if len(p.Bitwidths) != len(p.Sources) {
@@ -100,7 +100,7 @@ func (p Constraint[F]) Bounds(module uint) util.Bounds {
 // nil otherwise return an error.
 //
 //nolint:revive
-func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F],
+func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.Schema[F], _ schema.Context[F],
 ) (failures []schema.Failure[F]) {
 	//
 	for shard, tr := range trace {
@@ -118,7 +118,7 @@ func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], _ s
 // it can be printed.
 //
 //nolint:revive
-func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
+func (p Constraint[F]) Lisp(mapping schema.Schema[F]) sexp.SExp {
 	var (
 		module = mapping.Module(p.Context)
 		pairs  = make([]sexp.SExp, len(p.Sources))

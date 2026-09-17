@@ -29,7 +29,7 @@ import (
 // Validate the given schema by ensuring that every register in every module is referenced in at least one vanishing
 // constraint.  If any such register is encountered, this should a suitable error which identifies the enclosing module
 // and register.
-func Validate[F field.Element[F]](schema sc.AnySchema[F]) (errs []error) {
+func Validate[F field.Element[F]](schema sc.Schema[F]) (errs []error) {
 	// Validate constraints (e.g. no dangling registers)
 	errs = validateConstraints(schema)
 	// Validate static tables (e.g. padded correctly)
@@ -40,7 +40,7 @@ func Validate[F field.Element[F]](schema sc.AnySchema[F]) (errs []error) {
 	return errs
 }
 
-func validateConstraints[F field.Element[F]](schema sc.AnySchema[F]) (errs []error) {
+func validateConstraints[F field.Element[F]](schema sc.Schema[F]) (errs []error) {
 	var validated = make([]bit.Set, schema.Modules().Count())
 	// Iterate each constraint, marking any registers it uses.
 	for iter := schema.Constraints(); iter.HasNext(); {
@@ -71,16 +71,12 @@ func validateConstraints[F field.Element[F]](schema sc.AnySchema[F]) (errs []err
 func validateConstraint[F field.Element[F]](c sc.Constraint[F], validations []bit.Set) {
 	switch c := c.(type) {
 	case air.VanishingConstraint[F]:
-		validateVanishingConstraint(c.Unwrap(), validations)
+		validateVanishingConstraint(c, validations)
 	case mir.VanishingConstraint[F]:
 		validateVanishingConstraint(c, validations)
-	case air.LookupConstraint[F]:
-		validateLookupConstraint(c.Unwrap(), validations)
-	case mir.LookupConstraint[F]:
+	case lookup.Constraint[F]:
 		validateLookupConstraint(c, validations)
-	case air.BusConstraint[F]:
-		validateBusConstraint(c.Unwrap(), validations)
-	case mir.BusConstraint[F]:
+	case bus.Constraint[F]:
 		validateBusConstraint(c, validations)
 	}
 }
@@ -126,7 +122,7 @@ func validateBusConstraint[F field.Element[F]](c bus.Constraint[F], validations 
 
 // validateModuleReachability checks that every module is reached by some chain
 // of lookups (or buses) originating in the entry point "main".
-func validateModuleReachability[F field.Element[F]](schema sc.AnySchema[F]) (errs []error) {
+func validateModuleReachability[F field.Element[F]](schema sc.Schema[F]) (errs []error) {
 	// TODO: https://github.com/LFDT-Lineth/zkc/issues/1869 parametrize "main" name
 	for _, name := range UnreachableModules(schema) {
 		errs = append(errs, fmt.Errorf("module \"%s\" unreachable via lookups from entry point \"main\"",
@@ -144,7 +140,7 @@ func validateModuleReachability[F field.Element[F]](schema sc.AnySchema[F]) (err
 // those of its send ports (this is how a call into a global function is
 // connected, see emitCallBus).  When the schema has no "main" module there is
 // no entry point, and every module is considered reachable.
-func UnreachableModules[F field.Element[F]](schema sc.AnySchema[F]) (unreachable []string) {
+func UnreachableModules[F field.Element[F]](schema sc.Schema[F]) (unreachable []string) {
 	var (
 		reached  = make([]bool, schema.Modules().Count())
 		outgoing = make(map[sc.ModuleId][]sc.ModuleId)
@@ -165,13 +161,9 @@ func UnreachableModules[F field.Element[F]](schema sc.AnySchema[F]) (unreachable
 	// Index every lookup and bus by the modules it emanates from.
 	for iter := schema.Constraints(); iter.HasNext(); {
 		switch c := iter.Next().(type) {
-		case air.LookupConstraint[F]:
-			indexLookupEdges(c.Unwrap(), outgoing)
-		case mir.LookupConstraint[F]:
+		case lookup.Constraint[F]:
 			indexLookupEdges(c, outgoing)
-		case air.BusConstraint[F]:
-			indexBusEdges(c.Unwrap(), outgoing)
-		case mir.BusConstraint[F]:
+		case bus.Constraint[F]:
 			indexBusEdges(c, outgoing)
 		}
 	}
@@ -218,7 +210,7 @@ func indexBusEdges[F field.Element[F]](c bus.Constraint[F], outgoing map[sc.Modu
 }
 
 // validateStaticTables validates that all static tables in the given schema have a power-of-two height.
-func validateStaticTables[F field.Element[F]](schema sc.AnySchema[F]) []error {
+func validateStaticTables[F field.Element[F]](schema sc.Schema[F]) []error {
 	var errors []error
 
 	for iter, mid := schema.Modules(), 0; iter.HasNext(); mid++ {

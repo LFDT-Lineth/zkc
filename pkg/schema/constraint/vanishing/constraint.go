@@ -55,7 +55,7 @@ func NewConstraint[F field.Element[F], T term.Testable[F]](handle string, contex
 // Consistent applies a number of internal consistency checks.  Whilst not
 // strictly necessary, these can highlight otherwise hidden problems as an aid
 // to debugging.
-func (p Constraint[F, T]) Consistent(schema schema.AnySchema[F]) []error {
+func (p Constraint[F, T]) Consistent(schema schema.Schema[F]) []error {
 	return constraint.CheckConsistent(p.Context, schema, p.Constraint)
 }
 
@@ -98,7 +98,7 @@ func (p Constraint[F, T]) Bounds(module uint) util.Bounds {
 // of a table.  If so, return nil otherwise return an error.
 //
 //nolint:revive
-func (p Constraint[F, T]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F],
+func (p Constraint[F, T]) Accepts(tr trace.Trace[F], sc schema.Schema[F], _ schema.Context[F],
 ) (failures []schema.Failure[F]) {
 	//
 	for i, ith := range tr {
@@ -110,7 +110,7 @@ func (p Constraint[F, T]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], _ s
 	return failures
 }
 
-func (p Constraint[F, T]) accepts(shard uint, tr trace.Shard[F], sc schema.AnySchema[F]) schema.Failure[F] {
+func (p Constraint[F, T]) accepts(shard uint, tr trace.Shard[F], sc schema.Schema[F]) schema.Failure[F] {
 	var (
 		// Handle is used for error reporting.
 		handle = constraint.DetermineHandle(p.Handle, p.Context, tr)
@@ -185,7 +185,7 @@ func HoldsLocally[F field.Element[F], T term.Testable[F]](k uint, handle string,
 // Lisp converts this constraint into an S-Expression.
 //
 //nolint:revive
-func (p Constraint[F, T]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
+func (p Constraint[F, T]) Lisp(mapping schema.Schema[F]) sexp.SExp {
 	var (
 		module  = mapping.Module(p.Context)
 		name    string

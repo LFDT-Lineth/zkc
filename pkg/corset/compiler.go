@@ -120,14 +120,14 @@ func (p *Compiler) Compile(config compiler.Config) (mir.Schema[word.BigEndian], 
 	return schema, *source_map, errs
 }
 
-func constructSourceMap(schema schema.AnySchema[word.BigEndian], scope *compiler.ModuleScope,
+func constructSourceMap(schema schema.Schema[word.BigEndian], scope *compiler.ModuleScope,
 	env compiler.GlobalEnvironment) *SourceMap {
 	//
 	enumerations := []Enumeration{OPCODE_ENUMERATION}
 	return &SourceMap{constructSourceModule(schema, scope, env), enumerations}
 }
 
-func constructSourceModule(schema schema.AnySchema[word.BigEndian], scope *compiler.ModuleScope,
+func constructSourceModule(schema schema.Schema[word.BigEndian], scope *compiler.ModuleScope,
 	env compiler.GlobalEnvironment) SourceModule {
 	//
 	var (
@@ -185,7 +185,7 @@ func constructSourceModule(schema schema.AnySchema[word.BigEndian], scope *compi
 
 // Determine the reference reference in the schema which corresponds with a
 // given (Corset) path.
-func determineRegisterRef[F field.Element[F]](path file.Path, sc schema.AnySchema[F], env compiler.GlobalEnvironment,
+func determineRegisterRef[F field.Element[F]](path file.Path, sc schema.Schema[F], env compiler.GlobalEnvironment,
 ) register.Ref {
 	var (
 		mid schema.ModuleId
