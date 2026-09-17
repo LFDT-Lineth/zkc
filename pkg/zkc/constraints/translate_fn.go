@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -29,7 +30,7 @@ import (
 
 func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *vm.Function[W]) mir.Module[F] {
 	var (
-		mod     *schema.Table[F, mir.Constraint[F]]
+		mod     *schema.Table[F, schema.Constraint[F]]
 		name    = fn.Name()
 		regs    = toRegisters(fn.Registers())
 		framing Framing[F]
@@ -53,7 +54,7 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 	// Add control registers for Multi Line Instruction
 	if !fn.IsOneLine() {
 		var (
-			constraints []mir.Constraint[F]
+			constraints []schema.Constraint[F]
 			pc          = register.NewId(mod.Width() + 1)
 		)
 
@@ -104,7 +105,7 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 			constraint = mirc.If(iomf, constraint)
 		}
 		// translate into MIR constraints
-		mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](), constraint.AsLogical()))
+		mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](), constraint.AsLogical()))
 	}
 	// Add range proof constraints for all registers.
 	// Note: while adding lookups from calls and memory read/write  might add (bit) registers,
@@ -122,7 +123,7 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 
 func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id, pcSelectors []register.Id,
 	regs []register.Register, numLines int,
-) (Framing[F], []mir.Constraint[F]) {
+) (Framing[F], []schema.Constraint[F]) {
 	var (
 		// determine suitable width of PC register
 		pcWidth = bit.Width(uint(1 + numLines))
@@ -137,16 +138,16 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 		one     = mirc.Number[register.Id, Expr[F]](1)
 	)
 	// PC[i]==0 ==> RET[i]==0 (prevents lookup in padding)
-	padding := mir.NewVanishingConstraint("padding", ctx, util.None[int](),
+	padding := vanishing.NewConstraint("padding", ctx, util.None[int](),
 		mirc.If(pc_i.Equals(zero), ret_i.Equals(zero)).AsLogical())
 	// PC[i-1]==0 && PC[i]!=0 ==> PC[i]==1
-	init := mir.NewVanishingConstraint("init", ctx, util.None[int](),
+	init := vanishing.NewConstraint("init", ctx, util.None[int](),
 		mirc.If(pc_im1.Equals(zero), mirc.If(pc_i.NotEquals(zero), pc_i.Equals(one))).AsLogical())
 	// RET[i-1]!=0 ==> PC[i]==1
-	reset := mir.NewVanishingConstraint("reset", ctx, util.None[int](),
+	reset := vanishing.NewConstraint("reset", ctx, util.None[int](),
 		mirc.If(ret_im1.NotEquals(zero), pc_i.Equals(one)).AsLogical())
 	// PC[0] != 0 ==> PC[0] == 1
-	first := mir.NewVanishingConstraint("first", ctx, util.Some(0),
+	first := vanishing.NewConstraint("first", ctx, util.Some(0),
 		mirc.If(pc_i.NotEquals(zero), pc_i.Equals(one)).AsLogical())
 	// Build one-hot selector terms.  The selector for code line c is 1
 	// exactly when PC==c+1 (PC==0 is reserved for padding).
@@ -163,14 +164,14 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 	// S = sum of selectors (the activity indicator).
 	sum := mirc.Sum(selectorTerms)
 	// PC == sum_c (c+1)*IS_PC_c (reconstruction)
-	decoding := mir.NewVanishingConstraint("pc_decoding", ctx, util.None[int](),
+	decoding := vanishing.NewConstraint("pc_decoding", ctx, util.None[int](),
 		pc_i.Equals(mirc.Sum(weightedTerms)).AsLogical())
 	// PC*S == PC i.e. exactly one selector is 1 whenever PC!=0 (and, via
 	// pc_decoding, none when PC==0).
-	exclusivity := mir.NewVanishingConstraint("is_pc_exclusivity", ctx, util.None[int](),
+	exclusivity := vanishing.NewConstraint("is_pc_exclusivity", ctx, util.None[int](),
 		pc_i.Multiply(sum).Equals(pc_i).AsLogical())
 	//
-	constraints := []mir.Constraint[F]{padding, init, reset, first, decoding, exclusivity}
+	constraints := []schema.Constraint[F]{padding, init, reset, first, decoding, exclusivity}
 	// Add constancies for all input registers (if applicable):
 	for i, r := range regs {
 		if r.IsInput() {
@@ -182,7 +183,7 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 			)
 			// (5)    (PC[i]!=0 && PC[i]!=1 ==> reg[i] = reg[i-1]
 			constraints = append(constraints,
-				mir.NewVanishingConstraint(name, ctx, util.None[int](),
+				vanishing.NewConstraint(name, ctx, util.None[int](),
 					mirc.If(pc_i.NotEquals(zero), mirc.If(pc_i.NotEquals(one), reg_i.Equals(reg_im1))).AsLogical()))
 		}
 	}

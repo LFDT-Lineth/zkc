@@ -40,11 +40,11 @@ type Assignment[F field.Element[F]] interface {
 	// assignment depends must exist (e.g. are either inputs or have been
 	// computed already).  Computed columns do not exist in the original trace,
 	// but are added during trace expansion to form the final trace.
-	Compute(trace.Shard[F], AnySchema[F]) ([]array.Array[F], error)
+	Compute(trace.Shard[F], Schema[F]) ([]array.Array[F], error)
 	// Consistent applies a number of internal consistency checks.  Whilst not
 	// strictly necessary, these can highlight otherwise hidden problems as an aid
 	// to debugging.
-	Consistent(AnySchema[F]) []error
+	Consistent(Schema[F]) []error
 	// Identifier registers which are expanded by this assignment.  A register
 	// is expanded when its length maybe changed.  For example, when going from
 	// a trace which contains only rows of input/output values to a trace where
@@ -58,5 +58,5 @@ type Assignment[F field.Element[F]] interface {
 	RegistersWritten() []register.Ref
 	// Lisp converts this schema element into a simple S-Expression, for example
 	// so it can be printed.
-	Lisp(AnySchema[F]) sexp.SExp
+	Lisp(Schema[F]) sexp.SExp
 }

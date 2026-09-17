@@ -23,11 +23,12 @@ import (
 	"sync"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
-	"golang.org/x/term"
+	xterm "golang.org/x/term"
 )
 
 // dnKey identifies one cell of the joint distribution of vanishing constraint
@@ -174,7 +175,7 @@ func bucketCount(hist map[uint]uint, b bucket) uint {
 // stdoutIsTerminal reports whether stdout is a terminal.  The answer cannot
 // change during a run, so it is resolved once rather than per formatted cell.
 var stdoutIsTerminal = sync.OnceValue(func() bool {
-	return term.IsTerminal(int(os.Stdout.Fd()))
+	return xterm.IsTerminal(int(os.Stdout.Fd()))
 })
 
 // emphasise renders text in bold, but only when stdout is a terminal: piping
@@ -326,7 +327,7 @@ func renderDegreeCellTable(title string, degs, cells []uint, weights map[dnKey]u
 // constraint degrees are gathered from the pre-split bytecode program (ir) and
 // the post-split AIR schema respectively.  The order argument determines how the
 // modules are ordered (see orderModules).
-func PrintCompileStats[F field.Element[F], W vm.Word[W]](air schema.AnySchema[F], ir vm.Program[W],
+func PrintCompileStats[F field.Element[F], W vm.Word[W]](air schema.Schema[F], ir vm.Program[W],
 	order string, matrix bool) {
 	var (
 		// Pre-split register histograms, keyed by module name.
@@ -526,7 +527,7 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 		for iter := mod.Constraints(); iter.HasNext(); {
 			switch c := iter.Next().(type) {
 			case air.VanishingConstraint[F]:
-				degree := c.Complexity()
+				degree := term.ComplexityOfTerm(c.Constraint.Term)
 				nCells := numColumns(c)
 				stats.dn[dnKey{degree, nCells}]++
 				stats.complexity += nCells * degree * degree
@@ -547,10 +548,9 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 // - A[-1] · (1 - A) = 0 → 2 cols
 // - A     · (1 - B) = 0 → 2 cols
 func numColumns[F field.Element[F]](c air.VanishingConstraint[F]) uint {
-	v := c.Unwrap()
 	// Row zero is an arbitrary base: shifts are relative to it, so the number of
 	// distinct cells does not depend on the choice.
-	return uint(len(*v.Constraint.RequiredCells(0, v.Context)))
+	return uint(len(*c.Constraint.RequiredCells(0, c.Context)))
 }
 
 // statsColumn describes a single column of the statistics table, including its

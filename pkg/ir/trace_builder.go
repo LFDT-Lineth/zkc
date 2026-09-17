@@ -113,7 +113,7 @@ func (tb TraceBuilder[F]) BatchSize() uint {
 
 // Build attempts to construct a trace for a given schema, producing errors if
 // there are inconsistencies (e.g. missing columns, duplicate columns, etc).
-func (tb TraceBuilder[F]) Build(schema sc.AnySchema[F], tf trace.Trace[F]) (tr trace.Trace[F], errs []error) {
+func (tb TraceBuilder[F]) Build(schema sc.Schema[F], tf trace.Trace[F]) (tr trace.Trace[F], errs []error) {
 	var (
 		shards = make([]trace.Shard[F], len(tf))
 		errors = make([][]error, len(tf))
@@ -132,7 +132,7 @@ func (tb TraceBuilder[F]) Build(schema sc.AnySchema[F], tf trace.Trace[F]) (tr t
 	return shards, array.FlatMap(errors, func(es []error) []error { return es })
 }
 
-func (tb TraceBuilder[F]) buildShard(schema sc.AnySchema[F], shard uint, tf trace.Shard[F],
+func (tb TraceBuilder[F]) buildShard(schema sc.Schema[F], shard uint, tf trace.Shard[F],
 ) (tr trace.Shard[F], errs []error) {
 	//
 	var (

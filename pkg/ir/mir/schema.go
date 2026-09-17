@@ -26,12 +26,12 @@ import (
 // Following types capture top-level abstractions at the MIR level.
 type (
 	// SchemaBuilder is used for building the MIR schemas
-	SchemaBuilder[F field.Element[F]] = ir.SchemaBuilder[F, Constraint[F], Term[F]]
+	SchemaBuilder[F field.Element[F]] = ir.SchemaBuilder[F, Term[F]]
 	// ModuleBuilder is used for building various MIR modules.
-	ModuleBuilder[F field.Element[F]] = ir.ModuleBuilder[F, Constraint[F], Term[F]]
+	ModuleBuilder[F field.Element[F]] = ir.ModuleBuilder[F, Term[F]]
 	// Module captures the essence of a module at the MIR level.  Specifically, it
 	// is limited to only those constraint forms permitted at the MIR level.
-	Module[F field.Element[F]] = *schema.Table[F, Constraint[F]]
+	Module[F field.Element[F]] = *schema.Table[F, schema.Constraint[F]]
 	// Schema captures the notion of an MIR schema which is uniform and consists of
 	// MIR modules only.
 	Schema[F field.Element[F]] = schema.UniformSchema[F, Module[F]]

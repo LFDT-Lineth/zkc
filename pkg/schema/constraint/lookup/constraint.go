@@ -83,7 +83,7 @@ func NewConstraint[F field.Element[F]](handle string, targets []Vector, sources 
 // Consistent applies a number of internal consistency checks.  Whilst not
 // strictly necessary, these can highlight otherwise hidden problems as an aid
 // to debugging.
-func (p Constraint[F]) Consistent(_ schema.AnySchema[F]) []error {
+func (p Constraint[F]) Consistent(_ schema.Schema[F]) []error {
 	return nil
 }
 
@@ -136,7 +136,7 @@ func (p Constraint[F]) Bounds(module uint) util.Bounds {
 // all rows of the source columns.
 //
 //nolint:revive
-func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F],
+func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.Schema[F], ctx schema.Context[F],
 ) (failures []schema.Failure[F]) {
 	//
 	for i, ith := range tr {
@@ -148,7 +148,7 @@ func (p Constraint[F]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], ctx sc
 	return failures
 }
 
-func (p Constraint[F]) accepts(shard uint, tr trace.Shard[F], sc schema.AnySchema[F], ctx schema.Context[F],
+func (p Constraint[F]) accepts(shard uint, tr trace.Shard[F], sc schema.Schema[F], ctx schema.Context[F],
 ) schema.Failure[F] {
 	var (
 		// Load target sets
@@ -172,7 +172,7 @@ func (p Constraint[F]) accepts(shard uint, tr trace.Shard[F], sc schema.AnySchem
 // so it can be printed.
 //
 //nolint:revive
-func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
+func (p Constraint[F]) Lisp(mapping schema.Schema[F]) sexp.SExp {
 	var (
 		sources = sexp.EmptyList()
 		targets = sexp.EmptyList()

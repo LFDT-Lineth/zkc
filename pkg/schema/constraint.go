@@ -33,7 +33,7 @@ type Constraint[F field.Element[F]] interface {
 	// Accepts determines whether a given (local) constraint accepts a given set
 	// of traces or not.  If not, a failure is produced.  Observe that, for
 	// global constraints, this is a no-op.
-	Accepts(trace.Trace[F], AnySchema[F], Context[F]) []Failure[F]
+	Accepts(trace.Trace[F], Schema[F], Context[F]) []Failure[F]
 	// Determine the well-definedness bounds for this constraint in both the
 	// negative (left) or positive (right) directions.  For example, consider an
 	// expression such as "(shift X -1)".  This is technically undefined for the
@@ -43,7 +43,7 @@ type Constraint[F field.Element[F]] interface {
 	// Consistent applies a number of internal consistency checks.  Whilst not
 	// strictly necessary, these can highlight otherwise hidden problems as an aid
 	// to debugging.
-	Consistent(AnySchema[F]) []error
+	Consistent(Schema[F]) []error
 	// Contexts returns the evaluation contexts (i.e. enclosing module + length
 	// multiplier) for this constraint.  Most constraints have only a single
 	// evaluation context, though some (e.g. lookups) have more.  Note that all
@@ -58,7 +58,7 @@ type Constraint[F field.Element[F]] interface {
 	Name() string
 	// Lisp converts this schema element into a simple S-Expression, for example
 	// so it can be printed.
-	Lisp(AnySchema[F]) sexp.SExp
+	Lisp(Schema[F]) sexp.SExp
 }
 
 // Context provides a single reference point for reusing contextual information

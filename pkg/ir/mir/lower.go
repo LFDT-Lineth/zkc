@@ -23,6 +23,8 @@ import (
 	air_gadgets "github.com/LFDT-Lineth/zkc/pkg/ir/air/gadgets"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -63,7 +65,7 @@ type AirLowering[F field.Element[F]] struct {
 // NewAirLowering constructs an initial state for lowering a given MIR schema.
 func NewAirLowering[F field.Element[F]](fieldBandwidth uint, mirSchema Schema[F]) AirLowering[F] {
 	var (
-		airSchema = ir.NewSchemaBuilder[F, air.Constraint[F], air.Term[F]]()
+		airSchema = ir.NewSchemaBuilder[F, air.Term[F]]()
 	)
 	// Initialise AIR modules
 	for _, m := range mirSchema.RawModules() {
@@ -134,17 +136,14 @@ func (p *AirLowering[F]) LowerModule(index uint) {
 	}
 	// Lower constraints
 	for iter := mirModule.Constraints(); iter.HasNext(); {
-		// Following should always hold
-		constraint := iter.Next().(Constraint[F])
-		//
-		p.lowerConstraintToAir(constraint, airModule)
+		p.lowerConstraintToAir(iter.Next(), airModule)
 	}
 }
 
 // Lower a constraint to the AIR level.
-func (p *AirLowering[F]) lowerConstraintToAir(c Constraint[F], airModule air.ModuleBuilder[F]) {
+func (p *AirLowering[F]) lowerConstraintToAir(c schema.Constraint[F], airModule air.ModuleBuilder[F]) {
 	// Check what kind of constraint we have
-	switch v := c.constraint.(type) {
+	switch v := c.(type) {
 	case BusConstraint[F]:
 		p.lowerBusConstraintToAir(v, airModule)
 	case LookupConstraint[F]:
@@ -199,14 +198,14 @@ func (p *AirLowering[F]) lowerRangeConstraintToAir(v RangeConstraint[F], airModu
 // made up of registers (rather than arbitrary expressions) at both levels, the
 // source and target vectors carry over unchanged.
 func (p *AirLowering[F]) lowerLookupConstraintToAir(c LookupConstraint[F], airModule air.ModuleBuilder[F]) {
-	airModule.AddConstraint(air.NewLookupConstraint[F](c.Handle, c.Targets, c.Sources))
+	airModule.AddConstraint(lookup.NewConstraint[F](c.Handle, c.Targets, c.Sources))
 }
 
 // Lower a bus constraint to the AIR level.  Since bus constraints are made up
 // of registers (rather than arbitrary expressions) at both levels, the ports
 // carry over unchanged.
 func (p *AirLowering[F]) lowerBusConstraintToAir(c BusConstraint[F], airModule air.ModuleBuilder[F]) {
-	airModule.AddConstraint(air.NewBusConstraint[F](c.Handle, c.Sends, c.Receives))
+	airModule.AddConstraint(bus.NewConstraint[F](c.Handle, c.Sends, c.Receives))
 }
 
 func (p *AirLowering[F]) lowerAndSimplifyLogicalTo(term LogicalTerm[F],

@@ -19,6 +19,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -102,7 +103,7 @@ type ramLayout struct {
 func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
 	//
 	var (
-		mod    *schema.Table[F, mir.Constraint[F]]
+		mod    *schema.Table[F, schema.Constraint[F]]
 		regs   = toRegisters(m.Registers())
 		layout = computeRamLayout(m, p.program.Field())
 	)
@@ -224,7 +225,7 @@ func widthsOf[W vm.Word[W]](regs []vm.Register[W]) []uint {
 
 // addLimbRegisters appends one computed register per given limb width, named
 // "<prefix><k>".
-func addLimbRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
+func addLimbRegisters[F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]],
 	prefix string, widths []uint) {
 	//
 	for k, w := range widths {
@@ -235,7 +236,7 @@ func addLimbRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]
 // addCarryRegisters appends n single-bit computed carry registers named
 // "<prefix><k>".  A carry out of a two-operand limb addition is always in {0,1},
 // so one bit suffices.
-func addCarryRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
+func addCarryRegisters[F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]],
 	prefix string, n int) {
 	//
 	for k := 0; k < n; k++ {
@@ -246,7 +247,7 @@ func addCarryRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F
 // ramGeneralConstraints builds the row-shape constraints: binarity of EXEC and
 // IS_WRITE, a leading padding row, EXEC nondecreasing (so the layout is
 // [padding..][EXEC..]), and the definitions of the lookup selectors.
-func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
+func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []schema.Constraint[F] {
 	var (
 		zero      = mirc.Number[register.Id, Expr[F]](0)
 		one       = mirc.Number[register.Id, Expr[F]](1)
@@ -257,22 +258,22 @@ func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout)
 		execRead  = mirc.Variable[register.Id, Expr[F]](l.execRead, 1, 0)
 	)
 	//
-	return []mir.Constraint[F]{
+	return []schema.Constraint[F]{
 		// binary columns
 		binaryConstraint[F]("exec_is_binary", ctx, exec),
 		binaryConstraint[F]("is_write_is_binary", ctx, isWrite),
 		// leading padding row: EXEC[0] == 0.
-		mir.NewVanishingConstraint("exec_vanishes_in_padding", ctx, util.Some(0),
+		vanishing.NewConstraint("exec_vanishes_in_padding", ctx, util.Some(0),
 			exec.Equals(zero).AsLogical()),
 		// EXEC nondecreasing: EXEC[i-1] == 1 => EXEC[i] == 1.
-		mir.NewVanishingConstraint("exec_monotony", ctx, util.None[int](),
+		vanishing.NewConstraint("exec_monotony", ctx, util.None[int](),
 			mirc.If(prevExec.Equals(one), exec.Equals(one)).AsLogical()),
 		// The per-kind lookup selectors are fully determined:
 		// EXEC_WRITE == EXEC * IS_WRITE, and EXEC_READ == EXEC * (1 - IS_WRITE)
 		// expressed subtraction-free as EXEC_WRITE + EXEC_READ == EXEC.
-		mir.NewVanishingConstraint("exec_write_def", ctx, util.None[int](),
+		vanishing.NewConstraint("exec_write_def", ctx, util.None[int](),
 			execWrite.Equals(exec.Multiply(isWrite)).AsLogical()),
-		mir.NewVanishingConstraint("exec_read_def", ctx, util.None[int](),
+		vanishing.NewConstraint("exec_read_def", ctx, util.None[int](),
 			execWrite.Add(execRead).Equals(exec).AsLogical()),
 	}
 }
@@ -281,13 +282,13 @@ func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout)
 // the timestamp ordering TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 + TIMESTAMP_DELTA
 // (which entails TIMESTAMP_READ < TIMESTAMP_WRITTEN), and — for reads — the
 // equality []VALUE_READ == []VALUE_WRITTEN.
-func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
+func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []schema.Constraint[F] {
 	var (
 		zero    = mirc.Number[register.Id, Expr[F]](0)
 		exec    = mirc.Variable[register.Id, Expr[F]](l.exec, 1, 0)
 		isWrite = mirc.Variable[register.Id, Expr[F]](l.isWrite, 1, 0)
 		execOn  = exec.NotEquals(zero)
-		cs      []mir.Constraint[F]
+		cs      []schema.Constraint[F]
 	)
 	// TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 + TIMESTAMP_DELTA
 	cs = append(cs, multiLimbIncrement[F](ctx, "ts", l.tsWritten, l.tsRead, l.tsDelta,
@@ -301,7 +302,7 @@ func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 			vw = mirc.Variable[register.Id, Expr[F]](l.valueWritten[k], l.dataWidths[k], 0)
 		)
 
-		cs = append(cs, mir.NewVanishingConstraint(fmt.Sprintf("read_value_%d", k), ctx, util.None[int](),
+		cs = append(cs, vanishing.NewConstraint(fmt.Sprintf("read_value_%d", k), ctx, util.None[int](),
 			mirc.If(readOn, vr.Equals(vw)).AsLogical()))
 	}
 	//
@@ -311,7 +312,7 @@ func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 // ramChronologyConstraints builds the clock constraint: on consecutive EXEC
 // rows, TEMPORAL_TS = prev(TEMPORAL_TS) + 1.  A shard's first EXEC row is
 // unconstrained.
-func ramChronologyConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
+func ramChronologyConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []schema.Constraint[F] {
 	var (
 		one      = mirc.Number[register.Id, Expr[F]](1)
 		exec     = mirc.Variable[register.Id, Expr[F]](l.exec, 1, 0)
@@ -335,11 +336,11 @@ func ramChronologyConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayo
 // no carry.  Every constraint is guarded by `guard`.
 func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
 	out, base, delta, carry []register.Id, widths []uint, baseShift int, guard Expr[F],
-) []mir.Constraint[F] {
+) []schema.Constraint[F] {
 	var (
 		one = mirc.Number[register.Id, Expr[F]](1)
 		L   = len(out)
-		cs  = make([]mir.Constraint[F], 0, L)
+		cs  = make([]schema.Constraint[F], 0, L)
 	)
 	// Iterate by significance s (0 == least significant).  In the MSB-first
 	// arrays, significance s lives at index i = L-1-s.
@@ -373,7 +374,7 @@ func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
 				Multiply(mirc.BigNumber[register.Id, Expr[F]](shift)))
 		}
 		//
-		cs = append(cs, mir.NewVanishingConstraint(fmt.Sprintf("%s_add_limb_%d", prefix, s), ctx, util.None[int](),
+		cs = append(cs, vanishing.NewConstraint(fmt.Sprintf("%s_add_limb_%d", prefix, s), ctx, util.None[int](),
 			mirc.If(guard, lhs.Equals(rhs)).AsLogical()))
 	}
 	//
@@ -381,7 +382,7 @@ func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
 }
 
 // binaryConstraint builds "e * e == e", asserting e is 0 or 1.
-func binaryConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, e Expr[F]) mir.Constraint[F] {
-	return mir.NewVanishingConstraint(handle, ctx, util.None[int](),
+func binaryConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, e Expr[F]) schema.Constraint[F] {
+	return vanishing.NewConstraint(handle, ctx, util.None[int](),
 		e.Multiply(e).Equals(e).AsLogical())
 }

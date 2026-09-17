@@ -18,7 +18,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	log "github.com/sirupsen/logrus"
@@ -30,29 +29,29 @@ import (
 // constraint which does not hold.
 //
 //nolint:revive
-func Accepts[F field.Element[F], C Constraint[F]](parallel bool, schema Schema[F, C],
+func Accepts[F field.Element[F]](parallel bool, schema Schema[F],
 	trace trace.Trace[F]) (failures []Failure[F]) {
+	var constraints = schema.Constraints().Collect()
 	//
 	if parallel {
-		return parallelAccepts(schema.Constraints(), trace, schema)
+		return parallelAccepts(constraints, trace, schema)
 	}
 	// sequential
-	return sequentialAccepts(schema.Constraints(), trace, schema)
+	return sequentialAccepts(constraints, trace, schema)
 }
 
-func sequentialAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace trace.Trace[F],
-	schema Schema[F, C]) []Failure[F] {
+func sequentialAccepts[F field.Element[F]](cs []Constraint[F], trace trace.Trace[F],
+	schema Schema[F]) []Failure[F] {
 	//
 	var (
-		context = SeqBuildContext(trace, Any(schema))
+		context = SeqBuildContext(trace, schema)
 		errors  = make([]Failure[F], 0)
 	)
 	//
-	for iter.HasNext() {
+	for _, ith := range cs {
 		var (
-			ith = iter.Next()
 			//
-			errs = ith.Accepts(trace, Any(schema), context)
+			errs = ith.Accepts(trace, schema, context)
 		)
 		//
 		errors = append(errors, errs...)
@@ -61,15 +60,13 @@ func sequentialAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C
 	return errors
 }
 
-func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C], trace trace.Trace[F],
-	schema Schema[F, C]) (errors []Failure[F]) {
+func parallelAccepts[F field.Element[F]](constraints []Constraint[F], trace trace.Trace[F],
+	schema Schema[F]) (errors []Failure[F]) {
 	var (
-		context = ParBuildContext(trace, Any(schema))
-		// Collect all constraints into a slice so we can use ParallelMap.
-		constraints = iter.Collect()
+		context = ParBuildContext(trace, schema)
 	)
 	// Process all constraints in parallel using a worker pool.
-	errs := array.ParallelMap(constraints, func(i uint, constraint C) []Failure[F] {
+	errs := array.ParallelMap(constraints, func(i uint, constraint Constraint[F]) []Failure[F] {
 		if i%1000 == 0 {
 			var percent float64 = float64(100*i) / float64(len(constraints))
 			log.Debug(fmt.Sprintf("Checking constraints [%0.1f%%]", percent))
@@ -83,8 +80,8 @@ func parallelAccepts[F field.Element[F], C Constraint[F]](iter iter.Iterator[C],
 
 // processConstraint checks a given constraint against the trace, intercepting any
 // panic and converting it into a PanicFailure.
-func processConstraint[F field.Element[F], C Constraint[F]](ith C, trace trace.Trace[F],
-	schema Schema[F, C], ctx Context[F]) (res []Failure[F]) {
+func processConstraint[F field.Element[F]](ith Constraint[F], trace trace.Trace[F],
+	schema Schema[F], ctx Context[F]) (res []Failure[F]) {
 	// Setup panic intercept
 	defer func() {
 		var err = recover()
@@ -101,7 +98,7 @@ func processConstraint[F field.Element[F], C Constraint[F]](ith C, trace trace.T
 		}
 	}()
 	// Check and send outcome back
-	return ith.Accepts(trace, Any(schema), ctx)
+	return ith.Accepts(trace, schema, ctx)
 }
 
 // PanicFailure indicates that a panic arose during constraint checking, rather

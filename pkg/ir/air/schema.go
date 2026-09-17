@@ -36,13 +36,7 @@ type (
 	Schema[F field.Element[F]] = schema.UniformSchema[F, Module[F]]
 	// Module captures the essence of a module at the AIR level.  Specifically, it
 	// is limited to only those constraint forms permitted at the AIR level.
-	Module[F field.Element[F]] = *schema.Table[F, Constraint[F]]
-	// Constraint captures the essence of a constraint at the AIR level.
-	Constraint[F field.Element[F]] interface {
-		schema.Constraint[F]
-		// Air marks the constraints as been valid for the AIR representation.
-		Air()
-	}
+	Module[F field.Element[F]] = *schema.Table[F, schema.Constraint[F]]
 	// Term represents the fundamental for arithmetic expressions in the AIR
 	// representation.  This should only support addition, subtraction and
 	// multiplication of constants and column accesses.  No other terms are
@@ -56,9 +50,9 @@ type (
 
 type (
 	// SchemaBuilder is used for building the AIR schemas
-	SchemaBuilder[F field.Element[F]] = ir.SchemaBuilder[F, Constraint[F], Term[F]]
+	SchemaBuilder[F field.Element[F]] = ir.SchemaBuilder[F, Term[F]]
 	// ModuleBuilder is used for building various AIR modules.
-	ModuleBuilder[F field.Element[F]] = ir.ModuleBuilder[F, Constraint[F], Term[F]]
+	ModuleBuilder[F field.Element[F]] = ir.ModuleBuilder[F, Term[F]]
 )
 
 // Following types capture permitted constraint forms at the AIR level.
@@ -66,15 +60,15 @@ type (
 	// BusConstraint captures the essence of a bus constraint at the AIR
 	// level.  As with lookups, buses are only permitted between columns
 	// (i.e. not arbitrary expressions).
-	BusConstraint[F field.Element[F]] = Air[F, bus.Constraint[F]]
+	BusConstraint[F field.Element[F]] = bus.Constraint[F]
 	// LookupConstraint captures the essence of a lookup constraint at the AIR
 	// level.  At the AIR level, lookup constraints are only permitted between
 	// columns (i.e. not arbitrary expressions).
-	LookupConstraint[F field.Element[F]] = Air[F, lookup.Constraint[F]]
+	LookupConstraint[F field.Element[F]] = lookup.Constraint[F]
 	// RangeConstraint captures the essence of a range constraints at the AIR level.
-	RangeConstraint[F field.Element[F]] = Air[F, ranged.Constraint[F]]
+	RangeConstraint[F field.Element[F]] = ranged.Constraint[F]
 	// VanishingConstraint captures the essence of a vanishing constraint at the AIR level.
-	VanishingConstraint[F field.Element[F]] = Air[F, vanishing.Constraint[F, LogicalTerm[F]]]
+	VanishingConstraint[F field.Element[F]] = vanishing.Constraint[F, LogicalTerm[F]]
 )
 
 // Following types capture permitted expression forms at the AIR level.
@@ -92,6 +86,13 @@ type (
 	// Sub represents the subtraction over zero or more expressions.
 	Sub[F field.Element[F]] = term.Sub[F, Term[F]]
 )
+
+// NewVanishingConstraint constructs a new AIR vanishing constraint
+func NewVanishingConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, domain util.Option[int],
+	term Term[F]) VanishingConstraint[F] {
+	//
+	return vanishing.NewConstraint(handle, ctx, domain, LogicalTerm[F]{term})
+}
 
 // LogicalTerm provides a wrapper around a given term allowing to be "testable".
 // That is, it provides a default TestAt implementation.

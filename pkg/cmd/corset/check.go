@@ -216,7 +216,7 @@ func checkTraces[F field.Element[F]](traces []tr.Trace[F], stacker cmd_util.Sche
 
 // CheckTrace checks a given set of constraints against a given trace file using
 // a configured trace builder and check configuration.
-func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], builder ir.TraceBuilder[F],
+func CheckTrace[F field.Element[F]](ir string, schema sc.Schema[F], builder ir.TraceBuilder[F],
 	cfg CheckConfig, trace tr.Trace[F]) bool {
 	// begin performance measurement
 	var (

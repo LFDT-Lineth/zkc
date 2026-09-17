@@ -22,6 +22,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -29,7 +31,7 @@ import (
 
 // ModuleBuilder is used within this translator for building the various modules
 // which are contained within the mixed MIR schema.
-type ModuleBuilder[F field.Element[F]] = ir.ModuleBuilder[F, mir.Constraint[F], mir.Term[F]]
+type ModuleBuilder[F field.Element[F]] = ir.ModuleBuilder[F, mir.Term[F]]
 
 // MirModule provides a wrapper around a corset-level module declaration.
 type MirModule[F field.Element[F]] struct {
@@ -54,7 +56,7 @@ func (p MirModule[F]) NewColumn(kind register.Type, name string, bitwidth uint) 
 	switch kind {
 	case register.INPUT_REGISTER, register.OUTPUT_REGISTER, register.COMPUTED_REGISTER:
 		p.Module.AddConstraint(
-			mir.NewRangeConstraint[F](name, p.Module.Id(), []register.Id{rid}, []uint{bitwidth}))
+			ranged.NewConstraint[F](name, p.Module.Id(), []register.Id{rid}, []uint{bitwidth}))
 	case register.ONE_REGISTER:
 		p.addConstantConstraint(1, rid, bitwidth)
 	case register.ZERO_REGISTER:
@@ -77,7 +79,7 @@ func (p MirModule[F]) NewConstraint(name string, domain util.Option[int], constr
 	e := constraint.logical.Simplify()
 	//
 	p.Module.AddConstraint(
-		mir.NewVanishingConstraint(name, p.Module.Id(), domain, e))
+		vanishing.NewConstraint(name, p.Module.Id(), domain, e))
 }
 
 // NewLookup constructs a new lookup constraint
@@ -98,7 +100,7 @@ func (p MirModule[F]) NewLookup(name string, from []register.Id, target MirModul
 	//
 	sourceVectors = append(sourceVectors, lookup.UnfilteredVector(p.Module.Id(), from...))
 	//
-	p.Module.AddConstraint(mir.NewLookupConstraint[F](name, targetVectors, sourceVectors))
+	p.Module.AddConstraint(lookup.NewConstraint[F](name, targetVectors, sourceVectors))
 }
 
 // String returns an appropriately formatted representation of the module.
@@ -115,7 +117,7 @@ func (p MirModule[F]) String() string {
 func (p MirModule[F]) addConstantConstraint(value uint64, rid register.Id, bitwidth uint) {
 	name := fmt.Sprintf("%d", value)
 	//
-	p.Module.AddConstraint(mir.NewVanishingConstraint(name, p.Module.Id(), util.None[int](),
+	p.Module.AddConstraint(vanishing.NewConstraint(name, p.Module.Id(), util.None[int](),
 		term.Equals[F, mir.LogicalTerm[F], mir.Term[F]](
 			term.NewRegisterAccess[F, mir.Term[F]](rid, bitwidth, 0),
 			term.Const64[F, mir.Term[F]](value))))

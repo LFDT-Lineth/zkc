@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -90,7 +91,7 @@ func indexRangeTables[W vm.Word[W], F field.Element[F]](program vm.Program[W], m
 // call and memory lookups, where they stand in for limbs that must be zero.
 // Without this constraint, a prover could assign them arbitrary values and
 // thereby bypass the implied range check on the narrower side of the lookup.
-func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[F, mir.Constraint[F]],
+func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[F, schema.Constraint[F]],
 	ctx schema.ModuleId, regs []register.Register) {
 	// TODO: lots of perf possible here, see
 	// https://github.com/LFDT-Lineth/zkc/issues/1907
@@ -105,7 +106,7 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 			regId := register.NewId(uint(i))
 			handle := fmt.Sprintf("range_u0_%d", regId.Unwrap())
 			r := mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
-			mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](),
+			mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
 				r.Equals(mirc.Number[register.Id, Expr[F]](0)).AsLogical()))
 
 			continue
@@ -116,7 +117,7 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 			regId := register.NewId(uint(i))
 			handle := fmt.Sprintf("range_u1_%d", regId.Unwrap())
 			r := mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
-			mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](),
+			mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
 				mirc.Product(r, r).Equals(r).AsLogical()))
 
 			continue
@@ -141,7 +142,7 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 			target = lookup.UnfilteredVector(table.module, table.value)
 		)
 		//
-		mod.AddConstraints(mir.NewLookupConstraint[F](handle,
+		mod.AddConstraints(lookup.NewConstraint[F](handle,
 			[]mir.LookupVector{target}, []mir.LookupVector{source}))
 	}
 }
