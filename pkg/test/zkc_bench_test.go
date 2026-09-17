@@ -48,6 +48,10 @@ func Test_ZkcBench_Fnv1aHash(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/fnv1a_hash", DEFAULT_BENCH_CONFIG)
 }
 
+func Test_ZkcBench_RecFnv1aHash(t *testing.T) {
+	checkZkcBench(t, "zkc/bench/rec_fnv1a_hash", DEFAULT_BENCH_CONFIG.Sharding("hasher", 5))
+}
+
 func Test_ZkcBench_Keccak(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/keccak", DEFAULT_BENCH_CONFIG.Sampling(0.1))
 }
