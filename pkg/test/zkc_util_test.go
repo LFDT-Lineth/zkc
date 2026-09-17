@@ -99,6 +99,102 @@ func Test_ZkcUtil_SwitchEndian(t *testing.T) {
 }
 
 // ===================================================================
+// BigNum Tests
+// ===================================================================
+
+func Test_ZkcUtil_BigNum_01(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_01", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_02(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_02", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_03(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_03", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_04(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_04", DEFAULT_UTIL_CONFIG.Sampling(0.01))
+}
+
+func Test_ZkcUtil_BigNum_05(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_05", DEFAULT_UTIL_CONFIG.Sampling(0.01))
+}
+
+func Test_ZkcUtil_BigNum_06(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_06", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_07(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_07", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_08(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_08", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_09(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_09", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_10(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_10", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_11(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_11", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_12(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_12", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_13(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_13", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_14(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_14", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_15(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_15", DEFAULT_UTIL_CONFIG)
+}
+
+func Test_ZkcUtil_BigNum_16(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_16", DEFAULT_UTIL_CONFIG.Sampling(0.01))
+}
+
+func Test_ZkcUtil_BigNum_17(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_17", DEFAULT_UTIL_CONFIG.Sampling(0.01))
+}
+
+func Test_ZkcUtil_BigNum_18(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/bignum_18", DEFAULT_UTIL_CONFIG.Sampling(0.01))
+}
+
+// ===================================================================
+// Sharding Tests
+// ===================================================================
+
+func Test_ZkcUtil_Sharding_01(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/sharding_01", DEFAULT_UTIL_CONFIG.Sharding("copy", 1))
+}
+
+func Test_ZkcUtil_Sharding_02(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/sharding_02", DEFAULT_UTIL_CONFIG.Sharding("checkNonZero", 256))
+}
+
+func Test_ZkcUtil_Sharding_03(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/sharding_03", DEFAULT_UTIL_CONFIG.Sharding("checkNonZero", 256))
+}
+
+func Test_ZkcUtil_Sharding_04(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/sharding_04", DEFAULT_UTIL_CONFIG.Sharding("checkNonZero", 256))
+}
+
+// ===================================================================
 // Test Helpers
 // ===================================================================
 

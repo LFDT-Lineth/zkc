@@ -37,9 +37,9 @@ var (
 	// less than 10 test vectors, then it automatically causes a test failure.
 	MIN_SAMPLE_SIZE = 10
 	// ALL_FIELDS defines the set of all known fields for testing
-	ALL_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_16, field.GF_8209}
+	ALL_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_24, field.KOALABEAR_16, field.GF_8209, field.GF_251}
 	// DEFAULT_FIELDS set default fields for testing
-	DEFAULT_FIELDS = []field.Config{field.KOALABEAR_16}
+	DEFAULT_FIELDS = []field.Config{field.KOALABEAR_16, field.GF_8209}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = Config{
 		fields:           DEFAULT_FIELDS,
@@ -107,6 +107,15 @@ func (p Config) Constraints(flag bool) Config {
 	return p
 }
 
+// Fields overrides the default set of fields to use for testing.  This is
+// useful, for example, when a given test only supports a subset of the default
+// fields.
+func (p Config) Fields(fields ...field.Config) Config {
+	p.fields = fields
+	//
+	return p
+}
+
 // Sampling sets the sampling ratio to use for the given constraint set.
 func (p Config) Sampling(ratio float64) Config {
 	p.sampling = util.Some(ratio)
@@ -158,6 +167,11 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 	)
 	// Check for each field requested
 	for _, f := range config.fields {
+		// Check whether field is active
+		if !FIELD_REGEX.MatchString(f.Name) {
+			continue
+		}
+		// Continue
 		var (
 			testfile = fmt.Sprintf("%s.%s", test, ext)
 			// Setup default config
@@ -174,11 +188,18 @@ func CheckValid(t *testing.T, test, ext string, config Config) {
 		// Run tracing tests across differing static heights to ensure resiliance
 		// against changing the default height.
 		for _, height := range config.maxStaticHeights {
+			var ith_config = config
+			// Only test different padding stratgies for the default static
+			// height.  This just prevents testing all combinations of padding
+			// strategy / static height.
+			if height != codegen.DEFAULT_MAX_STATIC_HEIGHT {
+				ith_config = ith_config.Padding(DEFAULT_CONFIG.paddingStrategies)
+			}
 			//
 			t.Run(fmt.Sprintf("%s/height=%d", f.Name, height), func(t *testing.T) {
 				t.Parallel()
 				// Run all tests in tracing mode
-				checkValidInternal(t, testfile, config.forTracing(cfg.MaxStaticHeight(height)), testcases[f])
+				checkValidInternal(t, testfile, ith_config.forTracing(cfg.MaxStaticHeight(height)), testcases[f])
 			})
 		}
 	}
@@ -260,7 +281,7 @@ func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestCase) {
 		runExecutionTest[gf251.Element](t, p, test)
 	case field.GF_8209:
 		runExecutionTest[gf8209.Element](t, p, test)
-	case field.KOALABEAR_16:
+	case field.KOALABEAR_16, field.KOALABEAR_24:
 		runExecutionTest[koalabear.Element](t, p, test)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
@@ -317,7 +338,7 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestCase, f fie
 		testConstraintsWithField[gf251.Element](t, p, test, traceCfg)
 	case field.GF_8209:
 		testConstraintsWithField[gf8209.Element](t, p, test, traceCfg)
-	case field.KOALABEAR_16:
+	case field.KOALABEAR_16, field.KOALABEAR_24:
 		testConstraintsWithField[koalabear.Element](t, p, test, traceCfg)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)

@@ -55,6 +55,7 @@ var traceCmds = []FieldAgnosticCmd{
 	{field.GF_251, runTraceCmd[gf251.Element]},
 	{field.GF_8209, runTraceCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runTraceCmd[koalabear.Element]},
+	{field.KOALABEAR_24, runTraceCmd[koalabear.Element]},
 	{field.BLS12_377, runTraceCmd[bls12_377.Element]},
 }
 

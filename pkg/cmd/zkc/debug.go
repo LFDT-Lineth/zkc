@@ -41,6 +41,7 @@ var debugCmds = []FieldAgnosticCmd{
 	{field.GF_251, runDebugCmd[gf251.Element]},
 	{field.GF_8209, runDebugCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runDebugCmd[koalabear.Element]},
+	{field.KOALABEAR_24, runDebugCmd[koalabear.Element]},
 	{field.BLS12_377, runDebugCmd[bls12_377.Element]},
 }
 

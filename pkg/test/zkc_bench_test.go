@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	test_util "github.com/LFDT-Lineth/zkc/pkg/test/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // DEFAULT_BENCH_CONFIG provides a default configuration for bench tests.
@@ -56,9 +57,11 @@ func Test_ZkcBench_Keccak(t *testing.T) {
 	checkZkcBench(t, "zkc/bench/keccak", DEFAULT_BENCH_CONFIG.Sampling(0.1))
 }
 func Test_ZkcBench_Poseidon(t *testing.T) {
-	// #2007: support implicit sign bit
+	// NOTE: this test is specifically designed for KOALABEAR.
 	checkZkcBench(t, "zkc/bench/poseidon/poseidon", DEFAULT_BENCH_CONFIG.
-		Constraints(false).GoGen(false))
+		Fields(field.KOALABEAR_16).
+		// #2007: support implicit sign bit
+		Constraints(false))
 }
 
 // ===================================================================

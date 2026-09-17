@@ -212,7 +212,7 @@ func marshallUnmarshallMachine(m vm.Program[vm.Uint], f field.Config) vm.Program
 		return roundTripMachine[gf251.Element](m)
 	case field.GF_8209:
 		return roundTripMachine[gf8209.Element](m)
-	case field.KOALABEAR_16:
+	case field.KOALABEAR_16, field.KOALABEAR_24:
 		return roundTripMachine[koalabear.Element](m)
 	case field.BLS12_377:
 		return roundTripMachine[bls12_377.Element](m)

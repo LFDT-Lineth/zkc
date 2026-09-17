@@ -1,0 +1,5 @@
+{ "inputs": "0x0000", "outputs": "0x0000" }
+{ "inputs": "0x0096", "outputs": "0x012c" }
+{ "inputs": "0x012b", "outputs": "0x0256" }
+{ "inputs": "0x012c", "outputs": "0x270f" }
+{ "inputs": "0xffff", "outputs": "0x270f" }

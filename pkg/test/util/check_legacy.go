@@ -26,6 +26,7 @@ import (
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -82,7 +83,7 @@ func CheckWithFields(t *testing.T, test string, padding bool, fields ...field.Co
 			checkWithField[gf251.Element](t, test, padding, f)
 		case field.GF_8209:
 			checkWithField[gf8209.Element](t, test, padding, f)
-		case field.KOALABEAR_16:
+		case field.KOALABEAR_16, field.KOALABEAR_24:
 			checkWithField[koalabear.Element](t, test, padding, f)
 		case field.BLS12_377:
 			checkWithField[bls12_377.Element](t, test, padding, f)
@@ -420,13 +421,23 @@ func init() {
 		err   error
 	)
 	// Check whether a field regex is specified in the environment.
-	if val, ok := os.LookupEnv("GOCORSET_FIELD"); ok {
+	if val, ok := os.LookupEnv("ZKC_FIELD"); ok {
 		regex = val
 	}
 	// Compile the regex
 	FIELD_REGEX, err = regexp.Compile(regex)
-	//
+	// Sanity check regexp makes sense
 	if err != nil {
-		panic(fmt.Sprintf("GOCORSET_FIELD is malformed: %s", err.Error()))
+		panic(fmt.Sprintf("ZKC_FIELD is malformed: %s", err.Error()))
 	}
+	// Sanity check it matches at least one
+	for _, f := range ALL_FIELDS {
+		if FIELD_REGEX.MatchString(f.Name) {
+			return
+		}
+	}
+	// Generate suitable error
+	fields := array.Map(ALL_FIELDS, func(_ uint, f field.Config) string { return f.Name })
+	// Force failure
+	panic(fmt.Sprintf("ZKC_FIELD is malformed: %s does not match field in %v", regex, fields))
 }
