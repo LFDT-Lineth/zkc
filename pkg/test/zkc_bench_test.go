@@ -88,6 +88,6 @@ func Test_ZkcBench_ModExp32(t *testing.T) {
 // Test Helpers
 // ===================================================================
 
-func checkZkcBench(t *testing.T, test string, config test_util.Config) {
-	test_util.CheckValid(t, test, "zkc", config)
+func checkZkcBench(t *testing.T, test string, config test_util.TestConfig) {
+	test_util.CheckValid(t, test, config)
 }

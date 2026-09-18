@@ -31,7 +31,16 @@ type PerfStats struct {
 }
 
 // NewPerfStats creates a new snapshot of the current amount of memory allocated.
+// This returns nil when debug logging is disabled, in which case every method
+// below is a no-op.  That matters because runtime.ReadMemStats stops the world,
+// and these counters sit on hot paths (e.g. tracing / constraint checking, which
+// run once per test vector).  Taking the decision once, here, also ensures a
+// snapshot is never compared against a baseline which was never recorded.
 func NewPerfStats() *PerfStats {
+	if !log.IsLevelEnabled(log.DebugLevel) {
+		return nil
+	}
+	//
 	var m runtime.MemStats
 
 	startTime := time.Now()
@@ -43,6 +52,10 @@ func NewPerfStats() *PerfStats {
 
 // Reset the performance counter
 func (p *PerfStats) Reset() uint {
+	if p == nil {
+		return 0
+	}
+	//
 	var (
 		m        runtime.MemStats
 		exectime = time.Since(p.startTime).Seconds()
@@ -60,12 +73,21 @@ func (p *PerfStats) Reset() uint {
 
 // Log logs the difference between the state now and as it was when the PerfStats object was created.
 func (p *PerfStats) Log(prefix string) {
-	log.Debugf("%s took %s", prefix, p.String())
+	if p == nil {
+		return
+	}
+	// NOTE: p is passed here (rather than p.String()) so that the snapshot is
+	// taken only if the message is actually formatted.
+	log.Debugf("%s took %s", prefix, p)
 	p.Reset()
 }
 
 // String provides a string representation of the usage thus far.
 func (p *PerfStats) String() string {
+	if p == nil {
+		return "(disabled)"
+	}
+	//
 	var m runtime.MemStats
 
 	runtime.ReadMemStats(&m)

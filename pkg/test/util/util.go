@@ -14,7 +14,6 @@ package util
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/zkc"
@@ -23,18 +22,16 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
-	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
-	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-// TestCase represents a line in a file
-type TestCase struct {
+// TestVector represents a line in a file
+type TestVector struct {
 	// name of enclosing file
 	filename string
 	// line in the file reprensented by this test
@@ -98,38 +95,6 @@ func checkZkcModuleReachability(program ast.Program, srcmaps source.Maps[any],
 	return errors
 }
 
-// ReadTestsFile reads a file containing zero or more tests expressed as JSON,
-// where each test is on a separate line.  If the file doesn't exist, then an
-// empty set of tests is returned along with false.
-func ReadTestsFile(t *testing.T, cfg TestConfig, test string) ([]TestCase, bool) {
-	//
-	var (
-		// Construct test filename
-		filename = fmt.Sprintf("%s/%s.%s", TestDir, test, cfg.extension)
-		// Read input file
-		lines, exists = file.ReadInputFileAsLines(filename)
-		//
-		tests []TestCase
-	)
-	// Read constraints line by line
-	for i, line := range lines {
-		// Parse input line as JSON
-		if line != "" && !strings.HasPrefix(line, ";;") {
-			// Read inputs / outputs
-			data, err := zkc_util.ParseJsonInputFile([]byte(line))
-			//
-			if err != nil {
-				msg := fmt.Sprintf("%s:%d: %s", filename, i+1, err)
-				panic(msg)
-			}
-			//
-			tests = append(tests, TestCase{filename, uint(i + 1), cfg.expected, data})
-		}
-	}
-
-	return tests, exists
-}
-
 func failIf[S, T any](t *testing.T, errs ...T) {
 	var failNow bool
 	//
@@ -168,22 +133,18 @@ func failIfNot[S, T any](t *testing.T, errs ...T) {
 	}
 }
 
-func compileTestProgram(t *testing.T, testfile string, cfg codegen.Config) (vm vm.Program[vm.Uint]) {
-	var filename = fmt.Sprintf("%s/%s", TestDir, testfile)
+func compileTestProgram(testfile, ext string, cfg codegen.Config) (vm vm.Program[vm.Uint], err error) {
+	var filename = fmt.Sprintf("%s/%s.%s", TestDir, testfile, ext)
 	// Compile source file into Abstract Syntax Tree form.
 	program := cmd_util.CompileSourceFiles(cfg.GetField(), cfg.GetMaxStaticHeight(), filename)
 	// Compile program into boot machine
 	vm, errs := ast.Compile(program, cfg)
 	//
 	if len(errs) > 0 {
-		for _, err := range errs {
-			t.Errorf("%s", err.Error())
-		}
-
-		t.FailNow()
+		return vm, fmt.Errorf("error:%s:%v", filename, errs)
 	}
 	//
-	return vm
+	return vm, nil
 }
 
 func decodeInputsOutputs[W vm.Word[W]](t *testing.T, p vm.Program[W], data map[string][]byte,

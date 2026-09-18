@@ -113,6 +113,6 @@ func Test_ZkcMixed_Felt_Casting_06(t *testing.T) {
 // Test Helpers
 // ===================================================================
 
-func checkZkcMixed(t *testing.T, test string, config util.Config) {
-	util.CheckValid(t, test, "zkc", config)
+func checkZkcMixed(t *testing.T, test string, config util.TestConfig) {
+	util.CheckValid(t, test, config)
 }
