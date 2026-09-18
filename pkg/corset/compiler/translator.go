@@ -22,7 +22,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
@@ -88,7 +91,7 @@ func TranslateCircuit(
 	circuit *ast.Circuit,
 	config Config) (mir.Schema[word.BigEndian], []SyntaxError) {
 	//
-	builder := ir.NewSchemaBuilder[word.BigEndian, mir.Constraint[word.BigEndian], mirTerm]()
+	builder := ir.NewSchemaBuilder[word.BigEndian, mirTerm]()
 	t := translator{env, srcmap, builder, config, make(map[string][]busPort), nil}
 	// Allocate all modules into schema
 	t.translateModules(circuit)
@@ -190,7 +193,7 @@ func (t *translator) translateTypeConstraints(reg Register, mod ModuleBuilder) {
 		// Determine register being constrained
 		rid, _ := mod.HasRegister(reg.Name())
 		// Add appropriate type constraint
-		constraint := mir.NewRangeConstraint[word.BigEndian](reg.Name(), mod.Id(),
+		constraint := ranged.NewConstraint[word.BigEndian](reg.Name(), mod.Id(),
 			[]register.Id{rid}, []uint{reg.Bitwidth})
 		//
 		mod.AddConstraint(constraint)
@@ -273,7 +276,7 @@ func (t *translator) translateDefConstraint(decl *ast.DefConstraint) []SyntaxErr
 	// Sanity check
 	if len(errors) == 0 {
 		// Add translated constraint
-		module.AddConstraint(mir.NewVanishingConstraint(decl.Handle, module.Id(), decl.Domain, expr))
+		module.AddConstraint(vanishing.NewConstraint(decl.Handle, module.Id(), decl.Domain, expr))
 	}
 	// Done
 	return errors
@@ -326,7 +329,7 @@ func (t *translator) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 			module = t.moduleOf(tgtContext)
 		}
 		// Add translated constraint
-		module.AddConstraint(mir.NewLookupConstraint[word.BigEndian](decl.Handle, targets, sources))
+		module.AddConstraint(lookup.NewConstraint[word.BigEndian](decl.Handle, targets, sources))
 	}
 	// Done
 	return errors
@@ -504,7 +507,7 @@ func (t *translator) translateBus(busName string, ports []busPort) []SyntaxError
 		return errors
 	}
 	//
-	first.module.AddConstraint(mir.NewBusConstraint[word.BigEndian](busName, sends, receives))
+	first.module.AddConstraint(bus.NewConstraint[word.BigEndian](busName, sends, receives))
 	//
 	return nil
 }
@@ -634,7 +637,7 @@ func (t *translator) translateDefInRange(decl *ast.DefInRange) []SyntaxError {
 	//
 	if len(errors) == 0 {
 		// Add translated constraint
-		module.AddConstraint(mir.NewRangeConstraint[word.BigEndian]("", module.Id(),
+		module.AddConstraint(ranged.NewConstraint[word.BigEndian]("", module.Id(),
 			[]register.Id{access.Register()}, []uint{decl.Bitwidth}))
 	}
 	// Done

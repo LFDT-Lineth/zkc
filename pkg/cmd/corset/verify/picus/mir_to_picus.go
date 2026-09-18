@@ -68,24 +68,23 @@ func (p *MirPicusTranslator[F]) TranslateModule(i uint) {
 
 	// build PCL constraints from MIR constraints
 	for iter := mirModule.Constraints(); iter.HasNext(); {
-		constraint := iter.Next().(mir.Constraint[F])
-		p.translateConstraint(constraint, picusModule, mirModule)
+		p.translateConstraint(iter.Next(), picusModule, mirModule)
 	}
 }
 
 // translateConstraint translates MIR constraints into PCL constraints.
 // The built constraints are implicitly added to `picusModule`
-func (p *MirPicusTranslator[F]) translateConstraint(c mir.Constraint[F],
+func (p *MirPicusTranslator[F]) translateConstraint(c schema.Constraint[F],
 	picusModule *pcl.Module[F], mirModule schema.Module[F],
 ) {
 	// Check what kind of constraint we have
-	switch v := c.Unwrap().(type) {
+	switch v := c.(type) {
 	case mir.RangeConstraint[F]:
 		p.translateRangeConstraint(v, picusModule, mirModule)
 	case mir.VanishingConstraint[F]:
 		p.translateVanishing(v, picusModule, mirModule)
 	default:
-		panic(fmt.Sprintf("Unhandled constraint: %s", c.Unwrap()))
+		panic(fmt.Sprintf("Unhandled constraint: %s", c))
 	}
 }
 

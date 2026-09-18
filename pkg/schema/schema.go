@@ -21,17 +21,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
-// Any converts a concrete schema into a generic view of the schema.
-func Any[F field.Element[F], C Constraint[F]](schema Schema[F, C]) AnySchema[F] {
-	return schema.(Schema[F, Constraint[F]])
-}
-
-// AnySchema captures a generic view of a schema, which is useful in situations
-// where exactly details about the schema are not important.
-type AnySchema[F field.Element[F]] Schema[F, Constraint[F]]
-
-// ============================================================================
-
 // Schema provides a fundamental interface which attempts to capture the essence
 // of an arithmetisation.  For simplicity, a schema consists entirely of one or
 // more modules, where each module comprises some number of registers,
@@ -39,7 +28,7 @@ type AnySchema[F field.Element[F]] Schema[F, Constraint[F]]
 // in the final trace, whilst constraints are properties which should hold for
 // any acceptable trace.  Finally, assignments represent arbitrary computations
 // which "assign" values to registers during "trace expansion".
-type Schema[F field.Element[F], C any] interface {
+type Schema[F field.Element[F]] interface {
 	// Assignments returns an iterator over the assignments of this schema.
 	// That is, the set of computations used to determine values for all
 	// computed columns.
@@ -53,7 +42,7 @@ type Schema[F field.Element[F], C any] interface {
 	// speaking, are not constraints in the true sense.  That is, they are never
 	// compiled into vanishing polynomials but, instead, are used purely for
 	// debugging.
-	Constraints() iter.Iterator[C]
+	Constraints() iter.Iterator[Constraint[F]]
 	// HasModule checks whether a module with the given name exists and, if so,
 	// returns its module identifier.  Otherwise, it returns false.
 	HasModule(name module.Name) (ModuleId, bool)

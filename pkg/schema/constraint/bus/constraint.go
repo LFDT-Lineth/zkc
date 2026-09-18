@@ -63,7 +63,7 @@ func NewConstraint[F field.Element[F]](handle string, sends []Port, receives []P
 }
 
 // Consistent applies a number of internal consistency checks.
-func (p Constraint[F]) Consistent(sc schema.AnySchema[F]) []error {
+func (p Constraint[F]) Consistent(sc schema.Schema[F]) []error {
 	var (
 		errors []error
 		width  uint
@@ -133,7 +133,7 @@ func (p Constraint[F]) Bounds(module uint) util.Bounds {
 
 // Accepts checks whether the bus balances across a group of traces
 // judged together.
-func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F],
+func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.Schema[F], ctx schema.Context[F],
 ) (failures []schema.Failure[F]) {
 	tally := hash.NewMap[hash.Array[F], int](32)
 	//
@@ -225,7 +225,7 @@ func (p Constraint[F]) count(traces trace.Trace[F], ports []Port, message []F) u
 // Lisp converts this constraint into an S-Expression.
 //
 //nolint:revive
-func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
+func (p Constraint[F]) Lisp(mapping schema.Schema[F]) sexp.SExp {
 	var (
 		sends    = sexp.EmptyList()
 		receives = sexp.EmptyList()
