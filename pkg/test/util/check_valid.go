@@ -57,6 +57,7 @@ var (
 // nolint
 func CheckValid(t *testing.T, zkcfile string, config TestConfig) {
 	var (
+		// FIXME: make parallel!!
 		// generate actual tests for the given file.
 		testcases = config.GenerateTests(t, zkcfile)
 	)
