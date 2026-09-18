@@ -79,9 +79,9 @@ func (p *MirPicusTranslator[F]) translateConstraint(c schema.Constraint[F],
 ) {
 	// Check what kind of constraint we have
 	switch v := c.(type) {
-	case mir.RangeConstraint[F]:
+	case *mir.RangeConstraint[F]:
 		p.translateRangeConstraint(v, picusModule, mirModule)
-	case mir.VanishingConstraint[F]:
+	case *mir.VanishingConstraint[F]:
 		p.translateVanishing(v, picusModule, mirModule)
 	default:
 		panic(fmt.Sprintf("Unhandled constraint: %s", c))
@@ -89,22 +89,20 @@ func (p *MirPicusTranslator[F]) translateConstraint(c schema.Constraint[F],
 }
 
 // translateRangeConstraint translates a MIR range constraint `r` to a PCL less than constraint.
-func (p *MirPicusTranslator[F]) translateRangeConstraint(r mir.RangeConstraint[F],
+func (p *MirPicusTranslator[F]) translateRangeConstraint(r *mir.RangeConstraint[F],
 	picusModule *pcl.Module[F], mirModule schema.Module[F],
 ) {
-	for i, source := range r.Sources {
-		expr := p.lowerRegister(source, 0, mirModule)
-		// 1. Get the `big.Int` representation of the max unisgned value for a given bitwidth.
-		// 2. Create a field element from the big integer.
-		// 3. Construct a PCL constant from the field element.
-		upperBound := pcl.C(field.BigInt[F](*MaxValueBig(int(r.Bitwidths[i]))))
-		// Add (assert (<= `expr` `upperBound`))
-		picusModule.AddLeqConstraint(expr, upperBound)
-	}
+	expr := p.lowerRegister(r.Source, 0, mirModule)
+	// 1. Get the `big.Int` representation of the max unisgned value for a given bitwidth.
+	// 2. Create a field element from the big integer.
+	// 3. Construct a PCL constant from the field element.
+	upperBound := pcl.C(field.BigInt[F](*MaxValueBig(int(r.Bitwidth))))
+	// Add (assert (<= `expr` `upperBound`))
+	picusModule.AddLeqConstraint(expr, upperBound)
 }
 
 // translateVanishing translates an MIR vanishing constraint into one or more PCL constraints.
-func (p *MirPicusTranslator[F]) translateVanishing(v mir.VanishingConstraint[F],
+func (p *MirPicusTranslator[F]) translateVanishing(v *mir.VanishingConstraint[F],
 	picusModule *pcl.Module[F], mirModule schema.Module[F],
 ) {
 	if v.Domain.HasValue() {

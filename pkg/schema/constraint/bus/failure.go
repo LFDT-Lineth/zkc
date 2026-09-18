@@ -28,10 +28,8 @@ type Failure[F field.Element[F]] struct {
 	Bus string
 	// Unbalanced is the offending message
 	Unbalanced []F
-	// Sent is the number of times the message was sent
-	Sent uint
-	// Received is the number of times the message was received
-	Received uint
+	// Tally is the overall send/receive tally
+	Tally int
 	// Sends are the send ports of the failing constraint
 	Sends []Port
 	// Receives are the receive ports of the failing constraint
@@ -55,8 +53,8 @@ func (p *Failure[F]) Message() string {
 		builder.WriteString(ith.String())
 	}
 	//
-	return fmt.Sprintf("bus \"%s\" unbalanced: message (%s) sent %d time(s), received %d time(s)",
-		p.Handle(), builder.String(), p.Sent, p.Received)
+	return fmt.Sprintf("bus \"%s\" unbalanced: message (%s) send / receive tally %d",
+		p.Handle(), builder.String(), p.Tally)
 }
 
 func (p *Failure[F]) String() string {

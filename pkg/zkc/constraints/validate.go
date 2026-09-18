@@ -70,18 +70,18 @@ func validateConstraints[F field.Element[F]](schema sc.Schema[F]) (errs []error)
 
 func validateConstraint[F field.Element[F]](c sc.Constraint[F], validations []bit.Set) {
 	switch c := c.(type) {
-	case air.VanishingConstraint[F]:
+	case *air.VanishingConstraint[F]:
 		validateVanishingConstraint(c, validations)
-	case mir.VanishingConstraint[F]:
+	case *mir.VanishingConstraint[F]:
 		validateVanishingConstraint(c, validations)
-	case lookup.Constraint[F]:
+	case *lookup.Constraint[F]:
 		validateLookupConstraint(c, validations)
-	case bus.Constraint[F]:
+	case *bus.Constraint[F]:
 		validateBusConstraint(c, validations)
 	}
 }
 
-func validateVanishingConstraint[F field.Element[F], T term.Testable[F]](c vanishing.Constraint[F, T],
+func validateVanishingConstraint[F field.Element[F], T term.Testable[F]](c *vanishing.Constraint[F, T],
 	validations []bit.Set) {
 	//
 	for _, rid := range *c.Constraint.RequiredRegisters() {
@@ -89,7 +89,7 @@ func validateVanishingConstraint[F field.Element[F], T term.Testable[F]](c vanis
 	}
 }
 
-func validateLookupConstraint[F field.Element[F]](c lookup.Constraint[F], validations []bit.Set) {
+func validateLookupConstraint[F field.Element[F]](c *lookup.Constraint[F], validations []bit.Set) {
 	//
 	validateLookupVectors(c.Targets, validations)
 	validateLookupVectors(c.Sources, validations)
@@ -108,7 +108,7 @@ func validateLookupVector(v lookup.Vector, validations []bit.Set) {
 }
 
 // validateBusConstraint marks all registers used by the given bus constraint.
-func validateBusConstraint[F field.Element[F]](c bus.Constraint[F], validations []bit.Set) {
+func validateBusConstraint[F field.Element[F]](c *bus.Constraint[F], validations []bit.Set) {
 	for _, ports := range [][]bus.Port{c.Sends, c.Receives} {
 		for _, port := range ports {
 			validations[port.Module].Insert(port.Selector.Unwrap())
@@ -161,9 +161,9 @@ func UnreachableModules[F field.Element[F]](schema sc.Schema[F]) (unreachable []
 	// Index every lookup and bus by the modules it emanates from.
 	for iter := schema.Constraints(); iter.HasNext(); {
 		switch c := iter.Next().(type) {
-		case lookup.Constraint[F]:
+		case *lookup.Constraint[F]:
 			indexLookupEdges(c, outgoing)
-		case bus.Constraint[F]:
+		case *bus.Constraint[F]:
 			indexBusEdges(c, outgoing)
 		}
 	}
@@ -191,7 +191,7 @@ func UnreachableModules[F field.Element[F]](schema sc.Schema[F]) (unreachable []
 
 // indexLookupEdges records, for each source module of the given lookup, the
 // target modules the lookup reaches.
-func indexLookupEdges[F field.Element[F]](c lookup.Constraint[F], outgoing map[sc.ModuleId][]sc.ModuleId) {
+func indexLookupEdges[F field.Element[F]](c *lookup.Constraint[F], outgoing map[sc.ModuleId][]sc.ModuleId) {
 	for _, src := range c.Sources {
 		for _, tgt := range c.Targets {
 			outgoing[src.Context()] = append(outgoing[src.Context()], tgt.Context())
@@ -201,7 +201,7 @@ func indexLookupEdges[F field.Element[F]](c lookup.Constraint[F], outgoing map[s
 
 // indexBusEdges records, for each module sending on the given bus, the modules
 // receiving from it.
-func indexBusEdges[F field.Element[F]](c bus.Constraint[F], outgoing map[sc.ModuleId][]sc.ModuleId) {
+func indexBusEdges[F field.Element[F]](c *bus.Constraint[F], outgoing map[sc.ModuleId][]sc.ModuleId) {
 	for _, send := range c.Sends {
 		for _, receive := range c.Receives {
 			outgoing[send.Context()] = append(outgoing[send.Context()], receive.Context())

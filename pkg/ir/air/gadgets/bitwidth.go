@@ -74,8 +74,7 @@ func (p *BitwidthGadget[F]) Constrain(ref register.Ref, bitwidth uint) {
 	case bitwidth <= p.maxRangeConstraint:
 		handle := fmt.Sprintf("%s:u%d", reg.Name(), bitwidth)
 		// Add range constraint
-		module.AddConstraint(ranged.NewConstraint[F](handle, module.Id(),
-			[]register.Id{ref.Register()}, []uint{bitwidth}))
+		module.AddConstraint(ranged.NewConstraint[F](handle, module.Id(), ref.Register(), bitwidth))
 		// Done
 		return
 	default:

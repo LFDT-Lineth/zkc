@@ -10,15 +10,17 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package schema
+package checker
 
 import (
 	"fmt"
 	"iter"
 	"slices"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
@@ -29,93 +31,60 @@ import (
 // Set provides a convenient alias
 type Set[F field.Element[F]] = *hash.Set[hash.Array[F]]
 
-// ChunkId identifies a particular set within a given shard.
-type ChunkId struct {
-	shard uint
-	id    SetId
+// SetId provides a convenient alias
+type SetId = constraint.SetId
+
+// Schema provides a convenient alias
+type Schema[F field.Element[F]] = schema.Schema[F]
+
+// Context provides a single reference point for reusing contextual information
+// whilst checking constraints.  For example, it provides cached access to data
+// for lookups to prevent the need to recompute this for individual lookups.
+type Context[F any] interface {
+	// Get returns a given module viewed in a given shard as a set from the
+	// perspective of a given set of columns, with an optional selector.
+	Get(id SetId) collection.Set[[]F]
 }
 
-// SeqBuildContext constructs the context from a given schema and trace.
+// seqBuildContext constructs the context from a given schema and trace.
 // Essentially, this means traversing the schema looking for lookups and
 // constructing their sets.  NOTE: this is done sequentially
-func SeqBuildContext[F field.Element[F]](tr trace.Trace[F], sc Schema[F]) Context[F] {
+func seqBuildContext[F field.Element[F]](tr trace.Shard[F], sc Schema[F]) Context[F] {
 	var (
-		stats    = util.NewPerfStats()
-		contexts []map[string]*hash.Set[hash.Array[F]]
-		sids     = determineSets(sc)
+		context = make(map[string]*hash.Set[hash.Array[F]])
+		sids    = determineSets(sc)
 	)
-	// Build context for each shard
-	for i := range tr {
-		var context = make(map[string]*hash.Set[hash.Array[F]])
-		// sequential set construction (as a single chunk per set)
-		for _, sid := range sids {
-			// Construct data for this set
-			context[sid.String()] = buildSetChunk(ChunkId{uint(i), sid}, tr, sc)
-		}
-		//
-		contexts = append(contexts, context)
+	// sequential set construction (as a single chunk per set)
+	for _, sid := range sids {
+		// Construct data for this set
+		context[sid.String()] = buildSetChunk(sid, tr, sc)
 	}
 	//
-	stats.Log(fmt.Sprintf("Building context (%d sets in sequence)", len(sids)*len(tr)))
-	//
-	return contextImpl[F]{contexts}
+	return contextImpl[F]{context}
 }
 
-// ParBuildContext constructs the context from a given schema and trace, using
+// parBuildContext constructs the context from a given schema and trace, using
 // a map-reduce strategy.  Each set is first split into one or more row-range
 // chunks (so a single large set does not bottleneck the whole process), which
 // are then constructed in parallel via array.ParallelMap (the "map" phase).
 // Chunks belonging to the same set are then merged back together (the
 // "reduce" phase), which is likewise done in parallel across sets.
-func ParBuildContext[F field.Element[F]](tr trace.Trace[F], sc Schema[F]) Context[F] {
+func parBuildContext[F field.Element[F]](tr trace.Shard[F], sc Schema[F]) Context[F] {
 	var (
-		stats    = util.NewPerfStats()
-		contexts = make([]map[string]*hash.Set[hash.Array[F]], len(tr))
-		chunks   = determineChunks(tr, sc)
+		context = make(map[string]*hash.Set[hash.Array[F]])
+		// Determine sets to build
+		sids = determineSets(sc)
 		// build every chunk in parallel
-		sets = array.ParallelMap(chunks, func(_ uint, c ChunkId) Set[F] {
+		sets = array.ParallelMap(sids, func(_ uint, c SetId) Set[F] {
 			return buildSetChunk(c, tr, sc)
 		})
 	)
-	// Initialise context for each shard
-	for i := range tr {
-		contexts[i] = make(map[string]*hash.Set[hash.Array[F]])
-	}
-	// Flattern individual sets into their shards
-	for i, chunk := range chunks {
-		contexts[chunk.shard][chunk.id.String()] = sets[i]
+	// Flattern individual sets
+	for i, id := range sids {
+		context[id.String()] = sets[i]
 	}
 	//
-	stats.Log(fmt.Sprintf("Building context (%d sets in parallel)", len(chunks)))
-	//
-	return contextImpl[F]{contexts}
-}
-
-// determineChunks splits every set identified by sids into one or more
-// row-range chunks suitable for parallel construction.  The chunk size is
-// determined dynamically from the total number of candidate rows across all
-// sets (see determineChunkSize), rather than being fixed, so it scales with
-// both the workload and the number of available processors.  Sets are always
-// given at least one chunk (which may be empty), so every set ends up
-// represented in the resulting context.  Alongside the flat chunk list, it
-// returns the number of chunks generated for each set (aligned with sids), so
-// callers can recover the chunks belonging to a given set without a map
-// lookup.
-func determineChunks[F field.Element[F]](tr trace.Trace[F], sc Schema[F]) []ChunkId {
-	var (
-		sids  = determineSets(sc)
-		sets  = make([]ChunkId, len(sids)*len(tr))
-		index = 0
-	)
-	//
-	for i := range tr {
-		for _, sid := range sids {
-			sets[index] = ChunkId{uint(i), sid}
-			index++
-		}
-	}
-	//
-	return sets
+	return contextImpl[F]{context}
 }
 
 // DetermineSets extracts all unique set identifiers from lookup constraints.
@@ -125,7 +94,7 @@ func determineSets[F field.Element[F]](sc Schema[F]) []SetId {
 	for iter := sc.Constraints(); iter.HasNext(); {
 		var ith = iter.Next()
 		//
-		for _, sid := range ith.Sets() {
+		for _, sid := range targetSetsOf(ith) {
 			sets.Insert(sid)
 		}
 	}
@@ -133,22 +102,33 @@ func determineSets[F field.Element[F]](sc Schema[F]) []SetId {
 	return sets.ToArray()
 }
 
+// Determine whether given constraint encodes any sets
+func targetSetsOf[F field.Element[F]](c Constraint[F]) (sets []SetId) {
+	if c, ok := c.(*lookup.Constraint[F]); ok {
+		for _, v := range c.Targets {
+			sets = append(sets, constraint.NewSetId(v.Module, v.Selector, v.Registers))
+		}
+	}
+	//
+	return sets
+}
+
 // buildSetChunk constructs the (partial) set of rows determined by a given
 // chunk.
-func buildSetChunk[F field.Element[F]](c ChunkId, tr trace.Trace[F], sc Schema[F]) Set[F] {
+func buildSetChunk[F field.Element[F]](id SetId, tr trace.Shard[F], sc Schema[F]) Set[F] {
 	var (
-		scModule = sc.Module(c.id.Module())
-		trModule = tr[c.shard].Module(c.id.Module())
+		scModule = sc.Module(id.Module())
+		trModule = tr.Module(id.Module())
 	)
 	//
 	if scModule.IsStatic() {
-		return buildStaticSetChunk(c.id, scModule)
+		return buildStaticSetChunk(id, scModule)
 	}
 	//
-	return buildDynamicSetChunk(c.id, trModule)
+	return buildDynamicSetChunk(id, trModule)
 }
 
-func buildStaticSetChunk[F field.Element[F]](id SetId, sm Module[F]) Set[F] {
+func buildStaticSetChunk[F field.Element[F]](id SetId, sm schema.Module[F]) Set[F] {
 	var (
 		buffer   = make([]F, id.Width())
 		contents = sm.StaticContents()
@@ -241,12 +221,12 @@ func isStaticSelected[F field.Element[F]](id SetId, row []F) bool {
 
 // Context provides suitable constrant context
 type contextImpl[F field.Element[F]] struct {
-	sets []map[string]*hash.Set[hash.Array[F]]
+	sets map[string]*hash.Set[hash.Array[F]]
 }
 
 // Get implementation of Context interface.
-func (p contextImpl[F]) Get(shard uint, id SetId) collection.Set[[]F] {
-	if set, ok := p.sets[shard][id.String()]; ok {
+func (p contextImpl[F]) Get(id SetId) collection.Set[[]F] {
+	if set, ok := p.sets[id.String()]; ok {
 		return contextSet[F]{set}
 	}
 	//

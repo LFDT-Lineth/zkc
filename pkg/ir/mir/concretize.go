@@ -106,19 +106,19 @@ func concretizeConstraints[F1 Element[F1], F2 Element[F2]](cs []schema.Constrain
 func concretizeConstraint[F1 Element[F1], F2 Element[F2]](constraint schema.Constraint[F1]) schema.Constraint[F2] {
 	//
 	switch c := constraint.(type) {
-	case BusConstraint[F1]:
+	case *BusConstraint[F1]:
 		// NOTE: bus ports are made up of registers and, hence, are
 		// independent of the underlying field.
 		return bus.NewConstraint[F2](c.Handle, c.Sends, c.Receives)
-	case LookupConstraint[F1]:
+	case *LookupConstraint[F1]:
 		// NOTE: lookup vectors are made up of registers and, hence, are
 		// independent of the underlying field.
 		return lookup.NewConstraint[F2](c.Handle, c.Targets, c.Sources)
-	case RangeConstraint[F1]:
+	case *RangeConstraint[F1]:
 		// NOTE: as for lookups, range constraints are made up of registers and,
 		// hence, are independent of the underlying field.
-		return ranged.NewConstraint[F2](c.Handle, c.Context, c.Sources, c.Bitwidths)
-	case VanishingConstraint[F1]:
+		return ranged.NewConstraint[F2](c.Handle, c.Context, c.Source, c.Bitwidth)
+	case *VanishingConstraint[F1]:
 		term := concretizeLogicalTerm[F1, F2](c.Constraint)
 		//
 		return vanishing.NewConstraint(c.Handle, c.Context, c.Domain, term)

@@ -24,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/checker"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -243,8 +244,11 @@ func checkTrace[F field.Element[F]](t *testing.T, tf trace.Trace[F], id traceId,
 		t.Errorf("Trace expansion failed (%s): %s", id.String(), errors)
 		return
 	}
+	// Construct constraint checker
+	checker := checker.New(schema).
+		WithParallelism(id.parallel)
 	// Check Constraints
-	errs := sc.Accepts(id.parallel, schema, shards)
+	errs := checker.Check(shards)
 	// Determine whether trace accepted or not.
 	accepted := len(errs) == 0
 	// Process what happened versus what was supposed to happen.

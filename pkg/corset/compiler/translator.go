@@ -193,8 +193,7 @@ func (t *translator) translateTypeConstraints(reg Register, mod ModuleBuilder) {
 		// Determine register being constrained
 		rid, _ := mod.HasRegister(reg.Name())
 		// Add appropriate type constraint
-		constraint := ranged.NewConstraint[word.BigEndian](reg.Name(), mod.Id(),
-			[]register.Id{rid}, []uint{reg.Bitwidth})
+		constraint := ranged.NewConstraint[word.BigEndian](reg.Name(), mod.Id(), rid, reg.Bitwidth)
 		//
 		mod.AddConstraint(constraint)
 	}
@@ -637,8 +636,7 @@ func (t *translator) translateDefInRange(decl *ast.DefInRange) []SyntaxError {
 	//
 	if len(errors) == 0 {
 		// Add translated constraint
-		module.AddConstraint(ranged.NewConstraint[word.BigEndian]("", module.Id(),
-			[]register.Id{access.Register()}, []uint{decl.Bitwidth}))
+		module.AddConstraint(ranged.NewConstraint[word.BigEndian]("", module.Id(), access.Register(), decl.Bitwidth))
 	}
 	// Done
 	return errors

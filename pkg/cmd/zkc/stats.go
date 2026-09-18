@@ -526,14 +526,14 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 		//
 		for iter := mod.Constraints(); iter.HasNext(); {
 			switch c := iter.Next().(type) {
-			case air.VanishingConstraint[F]:
+			case *air.VanishingConstraint[F]:
 				degree := term.ComplexityOfTerm(c.Constraint.Term)
 				nCells := numColumns(c)
 				stats.dn[dnKey{degree, nCells}]++
 				stats.complexity += nCells * degree * degree
-			case air.LookupConstraint[F]:
+			case *air.LookupConstraint[F]:
 				stats.lookups++
-			case air.BusConstraint[F]:
+			case *air.BusConstraint[F]:
 				stats.buses++
 			}
 		}
@@ -547,7 +547,7 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 // - A     · (1 - A) = 0 → 1 cols
 // - A[-1] · (1 - A) = 0 → 2 cols
 // - A     · (1 - B) = 0 → 2 cols
-func numColumns[F field.Element[F]](c air.VanishingConstraint[F]) uint {
+func numColumns[F field.Element[F]](c *air.VanishingConstraint[F]) uint {
 	// Row zero is an arbitrary base: shifts are relative to it, so the number of
 	// distinct cells does not depend on the choice.
 	return uint(len(*c.Constraint.RequiredCells(0, c.Context)))

@@ -144,13 +144,13 @@ func (p *AirLowering[F]) LowerModule(index uint) {
 func (p *AirLowering[F]) lowerConstraintToAir(c schema.Constraint[F], airModule air.ModuleBuilder[F]) {
 	// Check what kind of constraint we have
 	switch v := c.(type) {
-	case BusConstraint[F]:
+	case *BusConstraint[F]:
 		p.lowerBusConstraintToAir(v, airModule)
-	case LookupConstraint[F]:
+	case *LookupConstraint[F]:
 		p.lowerLookupConstraintToAir(v, airModule)
-	case RangeConstraint[F]:
+	case *RangeConstraint[F]:
 		p.lowerRangeConstraintToAir(v, airModule)
-	case VanishingConstraint[F]:
+	case *VanishingConstraint[F]:
 		p.lowerVanishingConstraintToAir(v, airModule)
 	default:
 		// Should be unreachable as no other constraint types can be added to a
@@ -163,7 +163,7 @@ func (p *AirLowering[F]) lowerConstraintToAir(c schema.Constraint[F], airModule 
 // straightforward and simply relies on lowering the expression being
 // constrained.  This may result in the generation of computed columns, e.g. to
 // hold inverses, etc.
-func (p *AirLowering[F]) lowerVanishingConstraintToAir(v VanishingConstraint[F], airModule air.ModuleBuilder[F]) {
+func (p *AirLowering[F]) lowerVanishingConstraintToAir(v *VanishingConstraint[F], airModule air.ModuleBuilder[F]) {
 	//
 	var (
 		terms = p.lowerAndSimplifyLogicalTo(v.Constraint, airModule)
@@ -180,31 +180,28 @@ func (p *AirLowering[F]) lowerVanishingConstraintToAir(v VanishingConstraint[F],
 
 // Lower a range constraint to the AIR level.  Since range constraints are made
 // up of registers (rather than arbitrary expressions) at both levels, this
-// simply requires applying the bitwidth gadget to each constrained register.
-func (p *AirLowering[F]) lowerRangeConstraintToAir(v RangeConstraint[F], airModule air.ModuleBuilder[F]) {
-	// Constrain each source register in turn
-	for i, source := range v.Sources {
-		// Apply bitwidth gadget
-		ref := register.NewRef(airModule.Id(), source)
-		// Construct gadget
-		gadget := air_gadgets.NewBitwidthGadget(&p.airSchema).
-			WithMaxRangeConstraint(p.config.MaxRangeConstraint)
-		//
-		gadget.Constrain(ref, v.Bitwidths[i])
-	}
+// simply requires applying the bitwidth gadget to the constrained register.
+func (p *AirLowering[F]) lowerRangeConstraintToAir(v *RangeConstraint[F], airModule air.ModuleBuilder[F]) {
+	// Apply bitwidth gadget
+	ref := register.NewRef(airModule.Id(), v.Source)
+	// Construct gadget
+	gadget := air_gadgets.NewBitwidthGadget(&p.airSchema).
+		WithMaxRangeConstraint(p.config.MaxRangeConstraint)
+	//
+	gadget.Constrain(ref, v.Bitwidth)
 }
 
 // Lower a lookup constraint to the AIR level.  Since lookup constraints are
 // made up of registers (rather than arbitrary expressions) at both levels, the
 // source and target vectors carry over unchanged.
-func (p *AirLowering[F]) lowerLookupConstraintToAir(c LookupConstraint[F], airModule air.ModuleBuilder[F]) {
+func (p *AirLowering[F]) lowerLookupConstraintToAir(c *LookupConstraint[F], airModule air.ModuleBuilder[F]) {
 	airModule.AddConstraint(lookup.NewConstraint[F](c.Handle, c.Targets, c.Sources))
 }
 
 // Lower a bus constraint to the AIR level.  Since bus constraints are made up
 // of registers (rather than arbitrary expressions) at both levels, the ports
 // carry over unchanged.
-func (p *AirLowering[F]) lowerBusConstraintToAir(c BusConstraint[F], airModule air.ModuleBuilder[F]) {
+func (p *AirLowering[F]) lowerBusConstraintToAir(c *BusConstraint[F], airModule air.ModuleBuilder[F]) {
 	airModule.AddConstraint(bus.NewConstraint[F](c.Handle, c.Sends, c.Receives))
 }
 

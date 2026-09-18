@@ -24,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/checker"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -284,11 +285,13 @@ func (p *BinaryFile[F, W]) clearCachedArtifacts() {
 // file, potentially producing one (or more) constraint failures.
 func (p *BinaryFile[F, W]) Check(config vm.TraceConfig, trace trace.Trace[F]) []schema.Failure[F] {
 	var (
-		sc    = p.AirConstraints()
 		stats = util.NewPerfStats()
+		// Construct constraint checker
+		checker = checker.New(p.AirConstraints()).
+			WithParallelism(config.Parallelism())
 	)
 	// Check constraints
-	failures := schema.Accepts(config.Parallelism(), sc, trace)
+	failures := checker.Check(trace)
 	// Log stats
 	stats.Log("Constraint checking")
 	//

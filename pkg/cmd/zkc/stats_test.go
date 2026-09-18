@@ -32,7 +32,7 @@ func access(r uint, shift int) air.Term[F] {
 }
 
 // vanishing wraps a term as the vanishing constraint "term == 0".
-func vanishing(t air.Term[F]) air.VanishingConstraint[F] {
+func vanishing(t air.Term[F]) *air.VanishingConstraint[F] {
 	return air.NewVanishingConstraint("test", 0, util.None[int](), t)
 }
 

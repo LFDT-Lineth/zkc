@@ -89,7 +89,7 @@ type (
 
 // NewVanishingConstraint constructs a new AIR vanishing constraint
 func NewVanishingConstraint[F field.Element[F]](handle string, ctx schema.ModuleId, domain util.Option[int],
-	term Term[F]) VanishingConstraint[F] {
+	term Term[F]) *VanishingConstraint[F] {
 	//
 	return vanishing.NewConstraint(handle, ctx, domain, LogicalTerm[F]{term})
 }

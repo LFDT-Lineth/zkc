@@ -15,7 +15,7 @@ package lookup
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -26,7 +26,7 @@ type Failure[F field.Element[F]] struct {
 	// Handle of the failing constraint
 	LookupHandle string
 	// SourceId gives the set identifier of the source
-	SourceId schema.SetId
+	SourceId constraint.SetId
 	// Row on which the constraint failed
 	Row uint
 	// Shard on which the constraint failed

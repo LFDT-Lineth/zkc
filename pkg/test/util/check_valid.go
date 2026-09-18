@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
-	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -158,7 +158,7 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 		}
 	} else {
 		// Fail automatically on any panic arising during execution
-		failIf[*schema.PanicFailure[F]](t, errs...)
+		failIf[*constraint.PanicFailure[F]](t, errs...)
 		// Determine whether test accepted or not.
 		accepted := len(errs) == 0
 		// Process what happened versus what was supposed to happen.
@@ -212,7 +212,7 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 	// Check constraints
 	failures := binf.Check(traceCfg, tr)
 	// Fail automatically on any panic arising during constraint checking
-	failIf[*schema.PanicFailure[F]](t, failures...)
+	failIf[*constraint.PanicFailure[F]](t, failures...)
 	// Determine whether trace accepted or not.
 	accepted := len(failures) == 0
 	// Process what happened versus what was supposed to happen.

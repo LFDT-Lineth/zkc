@@ -24,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/checker"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -236,10 +237,13 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.Schema[F], builder ir.T
 	if len(errs) > 0 {
 		return false
 	}
+	// Construct constraint checker
+	checker := checker.New(schema).
+		WithParallelism(builder.Parallelism())
 	//
 	stats = util.NewPerfStats()
 	// Check constraints
-	if errs := sc.Accepts(builder.Parallelism(), schema, trace); len(errs) > 0 {
+	if errs := checker.Check(trace); len(errs) > 0 {
 		ReportFailures(ir, mapping, cfg, trace, errs)
 		return false
 	}
