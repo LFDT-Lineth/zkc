@@ -46,7 +46,7 @@ var errGoGenUnsupported = errors.New("gogen cannot represent program")
 // (there is no enclosing t.Run), so it must never call t.Skip / t.Fatal — doing so
 // would abort the surrounding bytecode and constraint checks.  Unsupported programs
 // are logged and skipped; only genuine mismatches use t.Errorf.
-func runGogenExecutionTest(t *testing.T, program vm.Program[vm.Uint], prog string, test TestCase) {
+func runGogenExecutionTest(t *testing.T, program vm.Program[vm.Uint], prog string, test TestVector) {
 	var (
 		_, outputs = decodeInputsOutputs(t, program, test.data)
 	)

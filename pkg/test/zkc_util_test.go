@@ -198,6 +198,6 @@ func Test_ZkcUtil_Sharding_04(t *testing.T) {
 // Test Helpers
 // ===================================================================
 
-func checkZkcUtil(t *testing.T, test string, config util.Config) {
-	util.CheckValid(t, test, "zkc", config)
+func checkZkcUtil(t *testing.T, test string, config util.TestConfig) {
+	util.CheckValid(t, test, config)
 }

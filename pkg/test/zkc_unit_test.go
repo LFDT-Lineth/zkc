@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	test_util "github.com/LFDT-Lineth/zkc/pkg/test/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 )
 
@@ -1396,17 +1397,17 @@ var STATIC_HEIGHTS = []uint{256, 4096, codegen.DEFAULT_MAX_STATIC_HEIGHT}
 
 // ZKC_PADDING_STRATEGIES enumerates the padding strategies that every ZkC unit
 // test is exercised against (see checkZkcUnit).
-var ZKC_PADDING_STRATEGIES = map[string]ir.PaddingStrategy{
-	"single-row-padding":        ir.NaryRowPadding(1),
-	"double-row-padding":        ir.NaryRowPadding(2),
-	"next-power-of-two-padding": ir.NextPowerOfTwoPadding,
+var ZKC_PADDING_STRATEGIES = []util.Pair[string, ir.PaddingStrategy]{
+	util.NewPair("single-row-padding", ir.NaryRowPadding(1)),
+	util.NewPair("double-row-padding", ir.NaryRowPadding(2)),
+	util.NewPair("next-power-of-two-padding", ir.NextPowerOfTwoPadding),
 }
 
 // checkZkcUnit runs test for different combinations of:
 // - STATIC_HEIGHTS
 // - padding strategy
-func checkZkcUnit(t *testing.T, test string, config test_util.Config) {
+func checkZkcUnit(t *testing.T, test string, config test_util.TestConfig) {
 	// Run with different padding strategies and max static heights.
-	test_util.CheckValid(t, test, "zkc", config.Padding(ZKC_PADDING_STRATEGIES).
+	test_util.CheckValid(t, test, config.Padding(ZKC_PADDING_STRATEGIES).
 		MaxStaticHeights(STATIC_HEIGHTS...))
 }
