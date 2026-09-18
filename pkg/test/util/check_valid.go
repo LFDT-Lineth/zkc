@@ -56,8 +56,13 @@ var (
 // CheckValid checks that a given source file compiles without any errors.
 // nolint
 func CheckValid(t *testing.T, zkcfile string, config TestConfig) {
+	// Run in parallel with the other files under test.  Test generation
+	// compiles the program (once per field / height) and builds the gogen
+	// binary, none of which is parallelised internally.  Without this, that
+	// work is serialised across every file in the suite.
+	t.Parallel()
+	//
 	var (
-		// FIXME: make parallel!!
 		// generate actual tests for the given file.
 		testcases = config.GenerateTests(t, zkcfile)
 	)
