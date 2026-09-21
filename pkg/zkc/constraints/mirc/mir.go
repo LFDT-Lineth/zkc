@@ -13,142 +13,41 @@
 package mirc
 
 import (
-	"fmt"
 	"math/big"
-	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
-	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
-// ModuleBuilder is used within this translator for building the various modules
-// which are contained within the mixed MIR schema.
-type ModuleBuilder[F field.Element[F]] = ir.ModuleBuilder[F, mir.Constraint[F], mir.Term[F]]
-
-// MirModule provides a wrapper around a corset-level module declaration.
-type MirModule[F field.Element[F]] struct {
-	Module ModuleBuilder[F]
-}
-
-// NewAssignment adds a new assignment to this module.
-func (p MirModule[F]) NewAssignment(assignment schema.Assignment[F]) {
-	p.Module.AddAssignment(assignment)
-}
-
-// NewColumn constructs a new column of the given name and bitwidth within
-// this module.
-func (p MirModule[F]) NewColumn(kind register.Type, name string, bitwidth uint) register.Id {
-	//
-	var (
-		// Add new register
-		rid = p.Module.NewRegister(register.New(kind, name, bitwidth))
-	)
-	//
-	// Add corresponding range constraint to enforce bitwidth
-	switch kind {
-	case register.INPUT_REGISTER, register.OUTPUT_REGISTER, register.COMPUTED_REGISTER:
-		p.Module.AddConstraint(
-			mir.NewRangeConstraint[F](name, p.Module.Id(), []register.Id{rid}, []uint{bitwidth}))
-	case register.ONE_REGISTER:
-		p.addConstantConstraint(1, rid, bitwidth)
-	case register.ZERO_REGISTER:
-		p.addConstantConstraint(0, rid, bitwidth)
-	default:
-		panic("unknown register kind encountered")
-	}
-	// Done
-	return rid
-}
-
-// NewUnusedColumn constructs an empty (i.e. unused) column identifier.
-func (p MirModule[F]) NewUnusedColumn() register.Id {
-	return register.UnusedId()
-}
-
-// NewConstraint constructs a new vanishing constraint with the given name
-// within this module.
-func (p MirModule[F]) NewConstraint(name string, domain util.Option[int], constraint MirExpr[F]) {
-	e := constraint.logical.Simplify()
-	//
-	p.Module.AddConstraint(
-		mir.NewVanishingConstraint(name, p.Module.Id(), domain, e))
-}
-
-// NewLookup constructs a new lookup constraint
-func (p MirModule[F]) NewLookup(name string, from []register.Id, target MirModule[F], to []register.Id,
-	enable util.Option[register.Id]) {
-	//
-	var (
-		targetVectors []lookup.Vector
-		sourceVectors []lookup.Vector
-	)
-	//
-	if enable.IsEmpty() {
-		targetVectors = append(targetVectors, lookup.UnfilteredVector(target.Module.Id(), to...))
-	} else {
-		targetVectors = append(targetVectors,
-			lookup.FilteredVector(target.Module.Id(), enable.Unwrap(), to...))
-	}
-	//
-	sourceVectors = append(sourceVectors, lookup.UnfilteredVector(p.Module.Id(), from...))
-	//
-	p.Module.AddConstraint(mir.NewLookupConstraint[F](name, targetVectors, sourceVectors))
-}
-
-// String returns an appropriately formatted representation of the module.
-func (p MirModule[F]) String() string {
-	var builder strings.Builder
-	//
-	for _, r := range p.Module.Registers() {
-		fmt.Fprintf(&builder, "var %s\n", r.String())
-	}
-	//
-	return builder.String()
-}
-
-func (p MirModule[F]) addConstantConstraint(value uint64, rid register.Id, bitwidth uint) {
-	name := fmt.Sprintf("%d", value)
-	//
-	p.Module.AddConstraint(mir.NewVanishingConstraint(name, p.Module.Id(), util.None[int](),
-		term.Equals[F, mir.LogicalTerm[F], mir.Term[F]](
-			term.NewRegisterAccess[F, mir.Term[F]](rid, bitwidth, 0),
-			term.Const64[F, mir.Term[F]](value))))
-}
-
-// MirExpr is a wrapper around a corset expression which provides the
+// Expr is a wrapper around a corset expression which provides the
 // necessary interface.
-type MirExpr[F field.Element[F]] struct {
+type Expr[F field.Element[F]] struct {
 	expr    mir.Term[F]
 	logical mir.LogicalTerm[F]
 }
 
 // AsLogical extracts a logical constraint from this expression.
-func (p MirExpr[F]) AsLogical() mir.LogicalTerm[F] {
+func (p Expr[F]) AsLogical() mir.LogicalTerm[F] {
 	return p.logical.Simplify()
 }
 
 // Add constructs a sum between this expression and zero or more
-func (p MirExpr[F]) Add(exprs ...MirExpr[F]) MirExpr[F] {
+func (p Expr[F]) Add(exprs ...Expr[F]) Expr[F] {
 	args := unwrapSplitMirExpr(p, exprs...)
-	return MirExpr[F]{term.Sum(args...), nil}
+	return Expr[F]{term.Sum(args...), nil}
 }
 
 // And constructs a conjunction between this expression and zero or more
 // expressions.
-func (p MirExpr[F]) And(exprs ...MirExpr[F]) MirExpr[F] {
+func (p Expr[F]) And(exprs ...Expr[F]) Expr[F] {
 	args := unwrapSplitMirLogicals(p, exprs...)
-	return MirExpr[F]{nil, term.Conjunction(args...)}
+	return Expr[F]{nil, term.Conjunction(args...)}
 }
 
 // Equals constructs an equality between two expressions.
-func (p MirExpr[F]) Equals(rhs MirExpr[F]) MirExpr[F] {
+func (p Expr[F]) Equals(rhs Expr[F]) Expr[F] {
 	if p.expr == nil {
 		panic("invalid left argument")
 	} else if rhs.expr == nil {
@@ -157,54 +56,54 @@ func (p MirExpr[F]) Equals(rhs MirExpr[F]) MirExpr[F] {
 	//
 	logical := term.Equals[F, mir.LogicalTerm[F]](p.expr, rhs.expr)
 	//
-	return MirExpr[F]{nil, logical}
+	return Expr[F]{nil, logical}
 }
 
 // Then constructs an implication between two expressions.
-func (p MirExpr[F]) Then(trueBranch MirExpr[F]) MirExpr[F] {
+func (p Expr[F]) Then(trueBranch Expr[F]) Expr[F] {
 	logical := term.IfThenElse(p.logical, trueBranch.logical, nil)
-	return MirExpr[F]{nil, logical}
+	return Expr[F]{nil, logical}
 }
 
 // ThenElse constructs an if-then-else expression with this expression
 // acting as the condition.
-func (p MirExpr[F]) ThenElse(trueBranch MirExpr[F], falseBranch MirExpr[F]) MirExpr[F] {
+func (p Expr[F]) ThenElse(trueBranch Expr[F], falseBranch Expr[F]) Expr[F] {
 	logical := term.IfThenElse(p.logical, trueBranch.logical, falseBranch.logical)
-	return MirExpr[F]{nil, logical}
+	return Expr[F]{nil, logical}
 }
 
 // Multiply constructs a product between this expression and zero or more
 // expressions.
-func (p MirExpr[F]) Multiply(exprs ...MirExpr[F]) MirExpr[F] {
+func (p Expr[F]) Multiply(exprs ...Expr[F]) Expr[F] {
 	args := unwrapSplitMirExpr(p, exprs...)
-	return MirExpr[F]{term.Product(args...), nil}
+	return Expr[F]{term.Product(args...), nil}
 }
 
 // Subtract constructs a difference between this expression and zero or more
 // expressions.
-func (p MirExpr[F]) Subtract(exprs ...MirExpr[F]) MirExpr[F] {
+func (p Expr[F]) Subtract(exprs ...Expr[F]) Expr[F] {
 	args := unwrapSplitMirExpr(p, exprs...)
-	return MirExpr[F]{term.Subtract(args...), nil}
+	return Expr[F]{term.Subtract(args...), nil}
 }
 
 // NotEquals constructs a non-equality between two expressions.
-func (p MirExpr[F]) NotEquals(rhs MirExpr[F]) MirExpr[F] {
+func (p Expr[F]) NotEquals(rhs Expr[F]) Expr[F] {
 	logical := term.NotEquals[F, mir.LogicalTerm[F]](p.expr, rhs.expr)
-	return MirExpr[F]{nil, logical}
+	return Expr[F]{nil, logical}
 }
 
 // Bool constructs a truth or falsehood
-func (p MirExpr[F]) Bool(val bool) MirExpr[F] {
+func (p Expr[F]) Bool(val bool) Expr[F] {
 	if val {
 		// empty conjunction is true
-		return MirExpr[F]{nil, term.Conjunction[F, mir.LogicalTerm[F]]()}
+		return Expr[F]{nil, term.Conjunction[F, mir.LogicalTerm[F]]()}
 	}
 	// empty disjunction is false
-	return MirExpr[F]{nil, term.Disjunction[F, mir.LogicalTerm[F]]()}
+	return Expr[F]{nil, term.Disjunction[F, mir.LogicalTerm[F]]()}
 }
 
 // BigInt constructs a constant expression from a big integer.
-func (p MirExpr[F]) BigInt(number big.Int) MirExpr[F] {
+func (p Expr[F]) BigInt(number big.Int) Expr[F] {
 	// Not power of 2
 	var (
 		num F
@@ -219,23 +118,22 @@ func (p MirExpr[F]) BigInt(number big.Int) MirExpr[F] {
 	//
 	num = num.SetBytes(n.Bytes())
 	//
-	return MirExpr[F]{term.Const[F, mir.Term[F]](num), nil}
+	return Expr[F]{term.Const[F, mir.Term[F]](num), nil}
 }
 
 // Or constructs a disjunction between this expression and zero or more
 // expressions.
-func (p MirExpr[F]) Or(exprs ...MirExpr[F]) MirExpr[F] {
+func (p Expr[F]) Or(exprs ...Expr[F]) Expr[F] {
 	args := unwrapSplitMirLogicals(p, exprs...)
-	return MirExpr[F]{nil, term.Disjunction(args...)}
+	return Expr[F]{nil, term.Disjunction(args...)}
 }
 
 // Variable constructs a variable with a given shift.
-func (p MirExpr[F]) Variable(_index vm.RegisterId, bitwidth uint, shift int) MirExpr[F] {
-	var index = register.NewId(uint(_index))
-	return MirExpr[F]{term.NewRegisterAccess[F, mir.Term[F]](index, bitwidth, shift), nil}
+func (p Expr[F]) Variable(index register.Id, bitwidth uint, shift int) Expr[F] {
+	return Expr[F]{term.NewRegisterAccess[F, mir.Term[F]](index, bitwidth, shift), nil}
 }
 
-func (p MirExpr[F]) String(func(vm.RegisterId) string) string {
+func (p Expr[F]) String(func(register.Id) string) string {
 	if p.expr != nil {
 		return p.expr.Lisp(false, nil).String(false)
 	} else if p.logical != nil {
@@ -245,7 +143,7 @@ func (p MirExpr[F]) String(func(vm.RegisterId) string) string {
 	}
 }
 
-func unwrapSplitMirExpr[F field.Element[F]](head MirExpr[F], tail ...MirExpr[F]) []mir.Term[F] {
+func unwrapSplitMirExpr[F field.Element[F]](head Expr[F], tail ...Expr[F]) []mir.Term[F] {
 	cexprs := make([]mir.Term[F], len(tail)+1)
 	//
 	cexprs[0] = head.expr
@@ -261,7 +159,7 @@ func unwrapSplitMirExpr[F field.Element[F]](head MirExpr[F], tail ...MirExpr[F])
 	return cexprs
 }
 
-func unwrapSplitMirLogicals[F field.Element[F]](head MirExpr[F], tail ...MirExpr[F]) []mir.LogicalTerm[F] {
+func unwrapSplitMirLogicals[F field.Element[F]](head Expr[F], tail ...Expr[F]) []mir.LogicalTerm[F] {
 	cexprs := make([]mir.LogicalTerm[F], len(tail)+1)
 	//
 	cexprs[0] = head.logical

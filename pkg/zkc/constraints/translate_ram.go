@@ -48,48 +48,48 @@ import (
 // "big endian" order used by ApplyLimbsMap and the module register order).
 type ramLayout struct {
 	// address is the cell accessed by this row.
-	address []vm.RegisterId
+	address []register.Id
 	// valueWritten is the value the cell holds immediately AFTER this row's
 	// access: the value written (for a write) or, for a read, the value read
 	// back (a read leaves the cell unchanged, so it "writes back" what it
 	// found).  This is the column the caller's lookup pins for both kinds of
 	// access.
-	valueWritten []vm.RegisterId
+	valueWritten []register.Id
 	// exec is 1 on every real row (one per access, in access order), 0 on padding.
-	exec vm.RegisterId
+	exec register.Id
 	// isWrite distinguishes a write access (1) from a read access (0).
-	isWrite vm.RegisterId
+	isWrite register.Id
 	// valueRead is the value the cell held immediately BEFORE this row's
 	// access, i.e. the value the last access to this address wrote.  For a
 	// read, VALUE_READ == VALUE_WRITTEN (enforced here); that VALUE_READ is
 	// genuinely the last write's value is the receive/send consistency
 	// argument deferred with the bus.
-	valueRead []vm.RegisterId
+	valueRead []register.Id
 	// tsWritten is this access's timestamp: the caller's threaded stamp
 	// (stamps count from one; timestamp zero is reserved for the initial state
 	// of an untouched cell).
-	tsWritten []vm.RegisterId
+	tsWritten []register.Id
 	// tsRead is the timestamp of the LAST access to this address (zero for a
 	// first touch): the "when" of valueRead.
-	tsRead []vm.RegisterId
+	tsRead []register.Id
 	// tsDelta witnesses TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 + TIMESTAMP_DELTA
 	// (range-checked >= 0), i.e. TIMESTAMP_READ < TIMESTAMP_WRITTEN.
-	tsDelta []vm.RegisterId
+	tsDelta []register.Id
 	// tsCarry witnesses the per-boundary carries of that multi-limb addition:
 	// one fewer entry than the timestamp has limbs, indexed by significance.
-	tsCarry []vm.RegisterId
+	tsCarry []register.Id
 	// execWrite / execRead select the write (EXEC * IS_WRITE) and read
 	// (EXEC * (1 - IS_WRITE)) rows of the execution phase.  They exist because
 	// a lookup's target filter must be a single column: a caller's write-site
 	// lookup targets the table filtered by execWrite, a read-site lookup by
 	// execRead, which is how each access's read/write kind is pinned.
-	execWrite vm.RegisterId
-	execRead  vm.RegisterId
+	execWrite register.Id
+	execRead  register.Id
 	// temporalTs is the shard's clock: TEMPORAL_TS = prev(TEMPORAL_TS) + 1 on
 	// consecutive real rows.  A permutation against tsWritten is added by #2206.
-	temporalTs []vm.RegisterId
+	temporalTs []register.Id
 	// temporalTsCarry witnesses the carries of that increment.
-	temporalTsCarry []vm.RegisterId
+	temporalTsCarry []register.Id
 	// Limb widths (most-significant first) of the data and timestamp register
 	// families.
 	dataWidths []uint
@@ -167,8 +167,8 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 	layout.address = idRange(0, nAddr)
 	layout.valueWritten = idRange(nAddr, nData)
 	// computed columns follow, in declaration order
-	layout.exec = vm.RegisterId(next)
-	layout.isWrite = vm.RegisterId(next + 1)
+	layout.exec = register.NewId(next)
+	layout.isWrite = register.NewId(next + 1)
 	next += 2
 	//
 	layout.valueRead = idRange(next, nData)
@@ -181,8 +181,8 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 	next += nStamp
 	layout.tsCarry = idRange(next, nStamp-1)
 	next += nStamp - 1
-	layout.execWrite = vm.RegisterId(next)
-	layout.execRead = vm.RegisterId(next + 1)
+	layout.execWrite = register.NewId(next)
+	layout.execRead = register.NewId(next + 1)
 	next += 2
 	// Appended last so the ids above (used by the caller lookup) are unchanged.
 	layout.temporalTs = idRange(next, nStamp)
@@ -193,11 +193,11 @@ func computeRamLayout[W vm.Word[W]](m *vm.Memory[W], field field.Config) ramLayo
 }
 
 // idRange returns the contiguous register ids [start, start+n).
-func idRange(start, n uint) []vm.RegisterId {
-	ids := make([]vm.RegisterId, n)
+func idRange(start, n uint) []register.Id {
+	ids := make([]register.Id, n)
 	//
 	for i := range ids {
-		ids[i] = vm.RegisterId(start + uint(i))
+		ids[i] = register.NewId(start + uint(i))
 	}
 	//
 	return ids
@@ -248,13 +248,13 @@ func addCarryRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F
 // [padding..][EXEC..]), and the definitions of the lookup selectors.
 func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
 	var (
-		zero      = mirc.Number[vm.RegisterId, Expr[F]](0)
-		one       = mirc.Number[vm.RegisterId, Expr[F]](1)
-		exec      = mirc.Variable[vm.RegisterId, Expr[F]](l.exec, 1, 0)
-		isWrite   = mirc.Variable[vm.RegisterId, Expr[F]](l.isWrite, 1, 0)
-		prevExec  = mirc.Variable[vm.RegisterId, Expr[F]](l.exec, 1, -1)
-		execWrite = mirc.Variable[vm.RegisterId, Expr[F]](l.execWrite, 1, 0)
-		execRead  = mirc.Variable[vm.RegisterId, Expr[F]](l.execRead, 1, 0)
+		zero      = mirc.Number[F](0)
+		one       = mirc.Number[F](1)
+		exec      = mirc.Variable[F](l.exec, 1, 0)
+		isWrite   = mirc.Variable[F](l.isWrite, 1, 0)
+		prevExec  = mirc.Variable[F](l.exec, 1, -1)
+		execWrite = mirc.Variable[F](l.execWrite, 1, 0)
+		execRead  = mirc.Variable[F](l.execRead, 1, 0)
 	)
 	//
 	return []mir.Constraint[F]{
@@ -283,9 +283,9 @@ func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout)
 // equality []VALUE_READ == []VALUE_WRITTEN.
 func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
 	var (
-		zero    = mirc.Number[vm.RegisterId, Expr[F]](0)
-		exec    = mirc.Variable[vm.RegisterId, Expr[F]](l.exec, 1, 0)
-		isWrite = mirc.Variable[vm.RegisterId, Expr[F]](l.isWrite, 1, 0)
+		zero    = mirc.Number[F](0)
+		exec    = mirc.Variable[F](l.exec, 1, 0)
+		isWrite = mirc.Variable[F](l.isWrite, 1, 0)
 		execOn  = exec.NotEquals(zero)
 		cs      []mir.Constraint[F]
 	)
@@ -297,8 +297,8 @@ func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 	//
 	for k := range l.valueRead {
 		var (
-			vr = mirc.Variable[vm.RegisterId, Expr[F]](l.valueRead[k], l.dataWidths[k], 0)
-			vw = mirc.Variable[vm.RegisterId, Expr[F]](l.valueWritten[k], l.dataWidths[k], 0)
+			vr = mirc.Variable[F](l.valueRead[k], l.dataWidths[k], 0)
+			vw = mirc.Variable[F](l.valueWritten[k], l.dataWidths[k], 0)
 		)
 
 		cs = append(cs, mir.NewVanishingConstraint(fmt.Sprintf("read_value_%d", k), ctx, util.None[int](),
@@ -313,9 +313,9 @@ func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 // unconstrained.
 func ramChronologyConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
 	var (
-		one      = mirc.Number[vm.RegisterId, Expr[F]](1)
-		exec     = mirc.Variable[vm.RegisterId, Expr[F]](l.exec, 1, 0)
-		prevExec = mirc.Variable[vm.RegisterId, Expr[F]](l.exec, 1, -1)
+		one      = mirc.Number[F](1)
+		exec     = mirc.Variable[F](l.exec, 1, 0)
+		prevExec = mirc.Variable[F](l.exec, 1, -1)
 		bothExec = prevExec.Equals(one).And(exec.Equals(one))
 	)
 	//
@@ -334,10 +334,10 @@ func ramChronologyConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayo
 // witnesses the carry out of each limb; the most significant limb must produce
 // no carry.  Every constraint is guarded by `guard`.
 func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
-	out, base, delta, carry []vm.RegisterId, widths []uint, baseShift int, guard Expr[F],
+	out, base, delta, carry []register.Id, widths []uint, baseShift int, guard Expr[F],
 ) []mir.Constraint[F] {
 	var (
-		one = mirc.Number[vm.RegisterId, Expr[F]](1)
+		one = mirc.Number[F](1)
 		L   = len(out)
 		cs  = make([]mir.Constraint[F], 0, L)
 	)
@@ -347,20 +347,20 @@ func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
 		var (
 			i      = L - 1 - s
 			w      = widths[i]
-			outVar = mirc.Variable[vm.RegisterId, Expr[F]](out[i], w, 0)
+			outVar = mirc.Variable[F](out[i], w, 0)
 			// left-hand side: base (+ delta) (+ carry-in) (+ 1 at the least
 			// significant limb).
-			lhs = mirc.Variable[vm.RegisterId, Expr[F]](base[i], w, baseShift)
+			lhs = mirc.Variable[F](base[i], w, baseShift)
 			// right-hand side accumulates the output limb and the outgoing carry.
 			rhs = outVar
 		)
 		//
 		if delta != nil {
-			lhs = lhs.Add(mirc.Variable[vm.RegisterId, Expr[F]](delta[i], w, 0))
+			lhs = lhs.Add(mirc.Variable[F](delta[i], w, 0))
 		}
 		// carry into this limb (from the less significant boundary)
 		if s > 0 {
-			lhs = lhs.Add(mirc.Variable[vm.RegisterId, Expr[F]](carry[s-1], 1, 0))
+			lhs = lhs.Add(mirc.Variable[F](carry[s-1], 1, 0))
 		}
 		// the +1 lands on the least significant limb
 		if s == 0 {
@@ -369,8 +369,8 @@ func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
 		// carry out of this limb (none for the most significant limb)
 		if s < L-1 {
 			shift := new(big.Int).Lsh(big.NewInt(1), w)
-			rhs = rhs.Add(mirc.Variable[vm.RegisterId, Expr[F]](carry[s], 1, 0).
-				Multiply(mirc.BigNumber[vm.RegisterId, Expr[F]](shift)))
+			rhs = rhs.Add(mirc.Variable[F](carry[s], 1, 0).
+				Multiply(mirc.BigNumber[F](shift)))
 		}
 		//
 		cs = append(cs, mir.NewVanishingConstraint(fmt.Sprintf("%s_add_limb_%d", prefix, s), ctx, util.None[int](),

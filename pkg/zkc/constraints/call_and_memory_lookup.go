@@ -58,8 +58,8 @@ import (
 func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F, mir.Constraint[F]],
 	ctx schema.ModuleId,
 	fn *vm.Function[W],
-	pcSelectors []vm.RegisterId,
-	ret vm.RegisterId) {
+	pcSelectors []register.Id,
+	ret register.Id) {
 	//
 	var (
 		field   = p.program.Field()
@@ -93,18 +93,18 @@ func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F, mir.Constra
 						// Global function calls go "on the bus" rather than
 						// using shard-local lookups.
 						p.addSendPort(c.Target,
-							bus.NewPort(ctx, srcSelector, toRegisterIds(c.Arguments)...))
+							bus.NewPort(ctx, srcSelector, mirc.ToRegisterIds(c.Arguments)...))
 					} else {
 						// Local function calls use shard-local lookups
 						emitCallLookup(mod, ctx, uint(pc), c.Target,
-							toRegisterIds(c.Arguments), toRegisterIds(c.Returns), srcSelector, p.program)
+							mirc.ToRegisterIds(c.Arguments), mirc.ToRegisterIds(c.Returns), srcSelector, p.program)
 					}
 				case *vm.BytecodeReadWrite[W]:
 					if modules[c.Id].(*vm.Memory[W]).IsReadWrite() {
 						emitRamLookup(mod, ctx, uint(pc), entry.cc, c, srcSelector, p.program)
 					} else {
 						emitMemoryLookup(mod, ctx, uint(pc), entry.cc, c.Id,
-							toRegisterIds(c.Address), toRegisterIds(c.Data), srcSelector, p.program)
+							mirc.ToRegisterIds(c.Address), mirc.ToRegisterIds(c.Data), srcSelector, p.program)
 					}
 				}
 			}
@@ -173,17 +173,17 @@ outer:
 // A gating register always exists: every access is at least position-gated
 // (IS_PC_k for a multi-line function, $ret for a one-line function).
 func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
-	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []vm.RegisterId,
-	ret vm.RegisterId, oneHot []oneHotGroup) register.Id {
+	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
+	ret register.Id, oneHot []oneHotGroup) register.Id {
 	// Position register gating the rows of this access: the line's IS_PC_k
 	// selector for a multi-line function, or $ret for an atomic one (defining
 	// the non-padding region).
 	var position register.Id
 	//
 	if len(pcSelectors) != 0 {
-		position = register.NewId(uint(pcSelectors[pc]))
+		position = pcSelectors[pc]
 	} else {
-		position = register.NewId(uint(ret))
+		position = ret
 	}
 	// An unconditional access is gated by position alone, so the position
 	// register (already 1 exactly on its rows) serves directly as selector.
@@ -192,7 +192,7 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constrain
 	}
 	// Conditional access: fold the position atom (position != 0) into the
 	// condition and materialise it as a fresh path selector column.
-	posId := dfa.NewBranchId(false, vm.RegisterId(position.Unwrap()))
+	posId := dfa.NewBranchId(false, util.Cast[vm.RegisterId](position.Unwrap()))
 	posAtom := logical.NotEqualsConst(posId, big.Int{})
 	cond = cond.And(logical.NewProposition(posAtom))
 	//
@@ -216,7 +216,7 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]]
 	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.
 	mod.AddConstraints(mir.NewVanishingConstraint(
 		fmt.Sprintf("lookup_sel_%d", selId.Unwrap()), ctx, util.None[int](),
-		pathSelectorConstraint[F](vm.RegisterId(selId.Unwrap()), cond, regs, oneHot)))
+		pathSelectorConstraint[F](selId, cond, regs, oneHot)))
 	//
 	return selId
 }
@@ -229,12 +229,12 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]]
 // arithmetically as
 //
 //	if rest { sel == Σᵢ bitᵢ·⟦guardsᵢ⟧ } else { sel == 0 }
-func pathSelectorConstraint[F field.Element[F]](selId vm.RegisterId, cond dfa.BranchCondition,
+func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.BranchCondition,
 	regs []register.Register, oneHot []oneHotGroup) mir.LogicalTerm[F] {
 	var (
-		sel  = mirc.Variable[vm.RegisterId, Expr[F]](selId, 1, 0)
-		one  = mirc.Number[vm.RegisterId, Expr[F]](1)
-		zero = mirc.Number[vm.RegisterId, Expr[F]](0)
+		sel  = mirc.Variable[F](selId, 1, 0)
+		one  = mirc.Number[F](1)
+		zero = mirc.Number[F](0)
 	)
 	//
 	if rest, pieces, ok := splitOneHotDisjunction(cond, oneHot); ok {
@@ -245,13 +245,15 @@ func pathSelectorConstraint[F field.Element[F]](selId vm.RegisterId, cond dfa.Br
 		//
 		for i, piece := range pieces {
 			var (
-				ith = mirc.Variable[vm.RegisterId, Expr[F]](piece.bit, 1, 0)
+				ithBit = register.NewId(uint(piece.bit))
+				ith    = mirc.Variable[F](ithBit, 1, 0)
 			)
 			// Each guard tests a width-1 register against zero, so its 0/1
 			// indicator is the register itself (!=) or its complement (==).
 			for _, guard := range piece.guards {
 				var (
-					factor = mirc.Variable[vm.RegisterId, Expr[F]](guard.Left.Id, 1, 0)
+					leftId = register.NewId(uint(guard.Left.Id))
+					factor = mirc.Variable[F](leftId, 1, 0)
 				)
 				//
 				if guard.Sign {
@@ -296,22 +298,22 @@ type callRegisterReader[F field.Element[F]] struct {
 	regs []register.Register
 }
 
-func (p callRegisterReader[F]) Register(id vm.RegisterId) register.Register {
-	return p.regs[id]
+func (p callRegisterReader[F]) Register(id register.Id) register.Register {
+	return p.regs[id.Unwrap()]
 }
 
-func (p callRegisterReader[F]) RegisterWidths(ids ...vm.RegisterId) []uint {
+func (p callRegisterReader[F]) RegisterWidths(ids ...register.Id) []uint {
 	widths := make([]uint, len(ids))
 	//
 	for i, id := range ids {
-		widths[i] = p.regs[id].Width()
+		widths[i] = p.regs[id.Unwrap()].Width()
 	}
 	//
 	return widths
 }
 
-func (p callRegisterReader[F]) ReadRegister(id vm.RegisterId, _ bool) Expr[F] {
-	return mirc.Variable[vm.RegisterId, Expr[F]](id, p.regs[id].Width(), 0)
+func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
+	return mirc.Variable[F](id, p.regs[id.Unwrap()].Width(), 0)
 }
 
 // emitCallLookup constructs and adds a single lookup constraint mapping the
@@ -500,17 +502,17 @@ func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Co
 		// always present here; its limbs split exactly like the table's
 		// timestamp columns (same width, same field).
 		srcIds = append(append(append([]register.Id{},
-			toRegisterIds(rw.Address)...),
-			toRegisterIds(rw.Data)...),
-			toRegisterIds(rw.Stamp)...)
+			mirc.ToRegisterIds(rw.Address)...),
+			mirc.ToRegisterIds(rw.Data)...),
+			mirc.ToRegisterIds(rw.Stamp)...)
 		// Target ids: the table's ADDRESS, VALUE_WRITTEN and TIMESTAMP_WRITTEN
 		// columns, in the layout's fixed order.
 		tgtIds = append(append(append([]register.Id{},
-			toRegisterIds(layout.address)...),
-			toRegisterIds(layout.valueWritten)...),
-			toRegisterIds(layout.tsWritten)...)
+			layout.address...),
+			layout.valueWritten...),
+			layout.tsWritten...)
 		// Target-side filter pinning the access kind.
-		kind = register.NewId(uint(layout.execRead))
+		kind = layout.execRead
 	)
 	//
 	if len(rw.Stamp) == 0 {
@@ -518,7 +520,7 @@ func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Co
 	}
 	//
 	if rw.Write {
-		kind = register.NewId(uint(layout.execWrite))
+		kind = layout.execWrite
 	}
 	//
 	var (

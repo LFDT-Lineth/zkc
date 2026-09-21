@@ -18,18 +18,19 @@ import (
 	"math/big"
 	"slices"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // TranslateBranchCondition translates a given branch condition within the
 // context of a given state reader.
-func TranslateBranchCondition[T any, E Expr[T, E]](p dfa.BranchCondition, reader RegisterReader[E]) E {
-	var condition E
+func TranslateBranchCondition[F field.Element[F]](p dfa.BranchCondition, reader RegisterReader[F]) Expr[F] {
+	var condition Expr[F]
 	// Sanity check for obvious cases
 	if p.IsTrue() {
-		var zero = BigNumber[T, E](big.NewInt(0))
+		var zero = BigNumber[F](big.NewInt(0))
 		return zero.Equals(zero)
 	} else if p.IsFalse() {
 		panic("unreachable")
@@ -54,8 +55,8 @@ func TranslateBranchCondition[T any, E Expr[T, E]](p dfa.BranchCondition, reader
 
 // Translate a given branch condition within the context of a given state
 // reader.
-func translateBranchConjunct[T any, E Expr[T, E]](p dfa.BranchConjunction, reader RegisterReader[E]) E {
-	var condition E
+func translateBranchConjunct[F field.Element[F]](p dfa.BranchConjunction, reader RegisterReader[F]) Expr[F] {
+	var condition Expr[F]
 	//
 	for i, atom := range p.Atoms() {
 		ith := translateBranchEquality(atom, reader)
@@ -71,15 +72,15 @@ func translateBranchConjunct[T any, E Expr[T, E]](p dfa.BranchConjunction, reade
 }
 
 // Translate a given condition within the context of a given state translator.
-func translateBranchEquality[T any, E Expr[T, E]](p dfa.BranchEquality, reader RegisterReader[E]) E {
+func translateBranchEquality[F field.Element[F]](p dfa.BranchEquality, reader RegisterReader[F]) Expr[F] {
 	var (
 		left  = ReadRegister(p.Left, reader)
-		right E
+		right Expr[F]
 	)
 	//
 	if p.Right.HasSecond() {
 		bi := p.Right.Second()
-		right = BigNumber[T, E](&bi)
+		right = BigNumber[F](&bi)
 	} else {
 		right = ReadRegister(p.Right.First(), reader)
 	}
@@ -93,15 +94,17 @@ func translateBranchEquality[T any, E Expr[T, E]](p dfa.BranchEquality, reader R
 
 // ReadRegister constructs a suitable accessor for referring to a given register.
 // This applies forwarding as appropriate.
-func ReadRegister[T any, E Expr[T, E]](reg dfa.BranchId, reader RegisterReader[E]) E {
+func ReadRegister[F field.Element[F]](reg dfa.BranchId, reader RegisterReader[F]) Expr[F] {
+	var rid = register.NewId(uint(reg.Id))
+	//
 	if reg.Width != 1 {
 		panic("invalid singleton group it")
 	}
 	//
-	return reader.ReadRegister(reg.Id, reg.Forwarding)
+	return reader.ReadRegister(rid, reg.Forwarding)
 }
 
-func expandBranchCondition[T any, E Expr[T, E]](p dfa.BranchCondition, reader RegisterReader[E]) dfa.BranchCondition {
+func expandBranchCondition[F field.Element[F]](p dfa.BranchCondition, reader RegisterReader[F]) dfa.BranchCondition {
 	var condition dfa.BranchCondition = dfa.FALSE
 	//
 	for i, atom := range p.Conjuncts() {
@@ -117,7 +120,7 @@ func expandBranchCondition[T any, E Expr[T, E]](p dfa.BranchCondition, reader Re
 	return condition
 }
 
-func expandBranchConjunct[T any, E Expr[T, E]](p dfa.BranchConjunction, reader RegisterReader[E]) dfa.BranchCondition {
+func expandBranchConjunct[F field.Element[F]](p dfa.BranchConjunction, reader RegisterReader[F]) dfa.BranchCondition {
 	var condition dfa.BranchCondition = dfa.TRUE
 	//
 	for i, atom := range p.Atoms() {
@@ -134,7 +137,7 @@ func expandBranchConjunct[T any, E Expr[T, E]](p dfa.BranchConjunction, reader R
 }
 
 // Translate a given condition within the context of a given state translator.
-func expandBranchEquality[T any, E Expr[T, E]](p dfa.BranchEquality, reader RegisterReader[E]) dfa.BranchCondition {
+func expandBranchEquality[F field.Element[F]](p dfa.BranchEquality, reader RegisterReader[F]) dfa.BranchCondition {
 	if p.Right.HasSecond() {
 		var (
 			bi  = p.Right.Second()
@@ -144,8 +147,9 @@ func expandBranchEquality[T any, E Expr[T, E]](p dfa.BranchEquality, reader Regi
 		if isNative(p.Left, reader) {
 			rhs = []big.Int{bi}
 		} else {
+			leftRegs := ToRegisterIds(p.Left.Registers())
 			// Determine limb widths, least significant limb first.
-			widths := reader.RegisterWidths(p.Left.Registers()...)
+			widths := reader.RegisterWidths(leftRegs...)
 			//
 			if p.Left.BigEndian {
 				slices.Reverse(widths)
@@ -166,8 +170,10 @@ func expandBranchEquality[T any, E Expr[T, E]](p dfa.BranchEquality, reader Regi
 	return expandBranchNonEqualityRegReg(p.Left, p.Right.First())
 }
 
-func isNative[T any, E Expr[T, E]](reg dfa.BranchId, reader RegisterReader[E]) bool {
-	return reg.Width == 1 && reader.Register(reg.Id).WidthOrNative() == math.MaxUint
+func isNative[F field.Element[F]](reg dfa.BranchId, reader RegisterReader[F]) bool {
+	var rid = register.NewId(uint(reg.Id))
+	//
+	return reg.Width == 1 && reader.Register(rid).WidthOrNative() == math.MaxUint
 }
 
 func expandBranchEqualityRegConst(lhs dfa.BranchId, rhs []big.Int) dfa.BranchCondition {
@@ -312,17 +318,18 @@ func splitConstant(constant big.Int, widths []uint) []big.Int {
 
 // this is primarily for debugging purposes
 // nolint
-func groupId2String[T any](reader RegisterReader[T]) func(dfa.BranchId) string {
+func groupId2String[F field.Element[F]](reader RegisterReader[F]) func(dfa.BranchId) string {
 	return func(gid dfa.BranchId) string {
 		var (
-			first = reader.Register(gid.Id).Name()
+			rid   = register.NewId(uint(gid.Id))
+			first = reader.Register(rid).Name()
 			id    string
 		)
 		//
 		if gid.Width == 1 {
 			id = first
 		} else {
-			last := reader.Register(gid.Id + vm.RegisterId(gid.Width) - 1).Name()
+			last := reader.Register(register.NewId(rid.Unwrap() + gid.Width - 1)).Name()
 			id = fmt.Sprintf("{%s..%s}", first, last)
 		}
 		//

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
@@ -31,8 +32,9 @@ type InstructionTranslator[W vm.Word[W], F field.Element[F]] struct {
 
 // ReadRegister reads a given register whilst applying forwarding as needed
 // depending on the given writes set.
-func (p *InstructionTranslator[W, F]) ReadRegister(rid vm.RegisterId) Expr[F] {
-	return p.reader.ReadRegister(rid, p.writes.MaybeAssigned(rid))
+func (p *InstructionTranslator[W, F]) ReadRegister(_rid vm.RegisterId) Expr[F] {
+	var rid = register.NewId((uint(_rid)))
+	return p.reader.ReadRegister(rid, p.writes.MaybeAssigned(_rid))
 }
 
 // WriteAndShiftRegisters constructs suitable accessors for the those registers
@@ -43,16 +45,17 @@ func (p *InstructionTranslator[W, F]) WriteAndShiftRegisters(targets ...vm.Regis
 	lhs := make([]Expr[F], len(targets))
 	offset := big.NewInt(1)
 	// build up the lhs
-	for i, dst := range targets {
+	for i, _dst := range targets {
 		var (
+			dst       = register.NewId(uint(_dst))
 			ith       = p.reader.Register(dst)
 			ith_width = bitwidthOf(ith)
 		)
 		//
-		lhs[i] = mirc.Variable[vm.RegisterId, Expr[F]](dst, ith_width, 0)
+		lhs[i] = mirc.Variable[F](dst, ith_width, 0)
 		//
 		if i != 0 {
-			lhs[i] = mirc.BigNumber[vm.RegisterId, Expr[F]](offset).Multiply(lhs[i])
+			lhs[i] = mirc.BigNumber[F](offset).Multiply(lhs[i])
 		}
 		// left shift offset by given register width.
 		if !ith.IsNative() {
@@ -84,7 +87,7 @@ func (p *InstructionTranslator[W, F]) translateAdd(targets, sources []vm.Registe
 	}
 	// Optimise case where coeff == 0
 	if constant.Cmp64(0) != 0 {
-		rhs = append(rhs, mirc.BigNumber[vm.RegisterId, Expr[F]](constant.BigInt()))
+		rhs = append(rhs, mirc.BigNumber[F](constant.BigInt()))
 	}
 	//
 	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
@@ -102,7 +105,7 @@ func (p *InstructionTranslator[W, F]) translateMul(targets, sources []vm.Registe
 	}
 	// Optimise case where coeff == 1
 	if constant.Cmp64(1) != 0 {
-		rhs = append(rhs, mirc.BigNumber[vm.RegisterId, Expr[F]](constant.BigInt()))
+		rhs = append(rhs, mirc.BigNumber[F](constant.BigInt()))
 	}
 	//
 	return mirc.Sum(lhs).Equals(mirc.Product(rhs...))
@@ -111,7 +114,7 @@ func (p *InstructionTranslator[W, F]) translateMul(targets, sources []vm.Registe
 func (p *InstructionTranslator[W, F]) translateSub(targets, sources []vm.RegisterId,
 	constant W) Expr[F] {
 	var (
-		minusOne           = mirc.BigNumber[vm.RegisterId, Expr[F]](big.NewInt(-1))
+		minusOne           = mirc.BigNumber[F](big.NewInt(-1))
 		lhs                = p.WriteAndShiftRegisters(targets...)
 		rhs      []Expr[F] = make([]Expr[F], len(sources))
 	)
@@ -127,7 +130,7 @@ func (p *InstructionTranslator[W, F]) translateSub(targets, sources []vm.Registe
 	if constant.Cmp64(0) != 0 {
 		var c = constant.BigInt()
 		//
-		rhs = append(rhs, mirc.BigNumber[vm.RegisterId, Expr[F]](c.Neg(c)))
+		rhs = append(rhs, mirc.BigNumber[F](c.Neg(c)))
 	}
 	//
 	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
@@ -136,7 +139,7 @@ func (p *InstructionTranslator[W, F]) translateSub(targets, sources []vm.Registe
 func (p *InstructionTranslator[W, F]) translateSignedSub(targets, sources []vm.RegisterId,
 	constant W) Expr[F] {
 	var (
-		minusOne           = mirc.BigNumber[vm.RegisterId, Expr[F]](big.NewInt(-1))
+		minusOne           = mirc.BigNumber[F](big.NewInt(-1))
 		lhs                = p.WriteAndShiftRegisters(targets...)
 		rhs      []Expr[F] = make([]Expr[F], len(sources))
 	)
@@ -152,7 +155,7 @@ func (p *InstructionTranslator[W, F]) translateSignedSub(targets, sources []vm.R
 	if constant.Cmp64(0) != 0 {
 		var c = constant.BigInt()
 		//
-		rhs = append(rhs, mirc.BigNumber[vm.RegisterId, Expr[F]](c.Neg(c)))
+		rhs = append(rhs, mirc.BigNumber[F](c.Neg(c)))
 	}
 	// Rebalance equation
 	lhs, rhs = rebalanceSubtraction(lhs, rhs)
@@ -206,7 +209,7 @@ func (p *InstructionTranslator[W, F]) translateConcat(targets, sources []vm.Regi
 	)
 	//
 	for i := range len(sources) {
-		var coeff = mirc.BigNumber[vm.RegisterId, Expr[F]](acc)
+		var coeff = mirc.BigNumber[F](acc)
 		// Construct shifted term
 		rhs[i] = mirc.Product(coeff, p.ReadRegister(sources[i]))
 		// Shift the running weight left by this source's bit width (unless this
