@@ -25,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // ModuleBuilder is used within this translator for building the various modules
@@ -229,11 +230,12 @@ func (p MirExpr[F]) Or(exprs ...MirExpr[F]) MirExpr[F] {
 }
 
 // Variable constructs a variable with a given shift.
-func (p MirExpr[F]) Variable(index register.Id, bitwidth uint, shift int) MirExpr[F] {
+func (p MirExpr[F]) Variable(_index vm.RegisterId, bitwidth uint, shift int) MirExpr[F] {
+	var index = register.NewId(uint(_index))
 	return MirExpr[F]{term.NewRegisterAccess[F, mir.Term[F]](index, bitwidth, shift), nil}
 }
 
-func (p MirExpr[F]) String(func(register.Id) string) string {
+func (p MirExpr[F]) String(func(vm.RegisterId) string) string {
 	if p.expr != nil {
 		return p.expr.Lisp(false, nil).String(false)
 	} else if p.logical != nil {

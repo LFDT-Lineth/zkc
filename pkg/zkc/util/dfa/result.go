@@ -13,7 +13,6 @@ package dfa
 import (
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 )
 
@@ -60,7 +59,7 @@ func NewTransfer[T any](state T, target uint) Transfer[T] {
 // instructions.
 type State[T any] interface {
 	// String representation (primarily used for debugging)
-	String(register.Map) string
+	String(func(RegisterId) string) string
 	// Join combines two states together to produce a state representing both.
 	// Typically, this happens when two paths converge on the same location and
 	// the states from them are combined.
@@ -102,7 +101,7 @@ func (p *Result[T]) JoinInto(i uint, st T) {
 	p.states[i] = util.Some(nst)
 }
 
-func (p *Result[T]) String(rmap register.Map) string {
+func (p *Result[T]) String(rmap func(RegisterId) string) string {
 	var builder strings.Builder
 	//
 	for _, st := range p.states {

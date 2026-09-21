@@ -17,7 +17,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -145,7 +144,7 @@ func (p stamps) Join(o stamps) stamps {
 }
 
 // String implementation for the dfa.State interface (debugging only).
-func (p stamps) String(register.Map) string {
+func (p stamps) String(func(RegisterId) string) string {
 	if p.isBottom() {
 		return "⊥"
 	}

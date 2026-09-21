@@ -34,10 +34,10 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 		regs    = toRegisters(fn.Registers())
 		framing Framing[F]
 		// IS_PC_<k> program counter selectors, only for MLI.
-		pcSelectors []register.Id
+		pcSelectors []vm.RegisterId
 		// $ret register, used to guard lookup for OLI.
 		// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
-		ret register.Id
+		ret vm.RegisterId
 	)
 	// Initialise module
 	mod = mod.Init(name, false, false, false, fn.IsNative(), false)
@@ -49,22 +49,21 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 		return mod
 	}
 
-	ret = register.NewId(mod.Width())
+	ret = vm.RegisterId(mod.Width())
 	// Add control registers for Multi Line Instruction
 	if !fn.IsOneLine() {
 		var (
 			constraints []mir.Constraint[F]
-			pc          = register.NewId(mod.Width() + 1)
+			pc          = vm.RegisterId(mod.Width() + 1)
 		)
-
 		// Create return line
 		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1))
 		// Create program counter
 		mod.AddRegisters(register.NewComputed(tracer.PC_NAME, fn.PcWidth()))
 		// Add IS_PC_<k> program counter selectors (one per code line)
-		pcSelectors = make([]register.Id, len(fn.Vectors()))
+		pcSelectors = make([]vm.RegisterId, len(fn.Vectors()))
 		for c := range pcSelectors {
-			pcSelectors[c] = register.NewId(mod.Width())
+			pcSelectors[c] = vm.RegisterId(mod.Width())
 			mod.AddRegisters(register.NewComputed(tracer.SelectorName(uint(c)), 1))
 		}
 		// Initialise multi-line framing
@@ -72,7 +71,7 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 		// Include framing constraints
 		mod.AddConstraints(constraints...)
 	} else {
-		framing = mirc.NewAtomicFraming[register.Id, Expr[F]]()
+		framing = mirc.NewAtomicFraming[vm.RegisterId, Expr[F]]()
 
 		mod.AddRegisters(register.NewComputed(tracer.RET_NAME, 1))
 	}
@@ -99,8 +98,8 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 		// see https://github.com/LFDT-Lineth/zkc/issues/1975
 		// Note: we might still need to do it for OLI touching memory.
 		if fn.IsOneLine() {
-			iomf := mirc.Variable[register.Id, Expr[F]](ret, 1, 0).
-				NotEquals(mirc.Number[register.Id, Expr[F]](0))
+			iomf := mirc.Variable[vm.RegisterId, Expr[F]](ret, 1, 0).
+				NotEquals(mirc.Number[vm.RegisterId, Expr[F]](0))
 			constraint = mirc.If(iomf, constraint)
 		}
 		// translate into MIR constraints
@@ -120,7 +119,7 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 	return mod
 }
 
-func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id, pcSelectors []register.Id,
+func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret vm.RegisterId, pcSelectors []vm.RegisterId,
 	regs []register.Register, numLines int,
 ) (Framing[F], []mir.Constraint[F]) {
 	var (
@@ -129,12 +128,12 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 		// set with of RET register
 		retWidth = uint(1)
 		//
-		pc_i    = mirc.Variable[register.Id, Expr[F]](pc, pcWidth, 0)
-		pc_im1  = mirc.Variable[register.Id, Expr[F]](pc, pcWidth, -1)
-		ret_i   = mirc.Variable[register.Id, Expr[F]](ret, retWidth, 0)
-		ret_im1 = mirc.Variable[register.Id, Expr[F]](ret, retWidth, -1)
-		zero    = mirc.Number[register.Id, Expr[F]](0)
-		one     = mirc.Number[register.Id, Expr[F]](1)
+		pc_i    = mirc.Variable[vm.RegisterId, Expr[F]](pc, pcWidth, 0)
+		pc_im1  = mirc.Variable[vm.RegisterId, Expr[F]](pc, pcWidth, -1)
+		ret_i   = mirc.Variable[vm.RegisterId, Expr[F]](ret, retWidth, 0)
+		ret_im1 = mirc.Variable[vm.RegisterId, Expr[F]](ret, retWidth, -1)
+		zero    = mirc.Number[vm.RegisterId, Expr[F]](0)
+		one     = mirc.Number[vm.RegisterId, Expr[F]](1)
 	)
 	// PC[i]==0 ==> RET[i]==0 (prevents lookup in padding)
 	padding := mir.NewVanishingConstraint("padding", ctx, util.None[int](),
@@ -156,9 +155,9 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 	)
 	//
 	for c, sel := range pcSelectors {
-		sel_i := mirc.Variable[register.Id, Expr[F]](sel, 1, 0)
+		sel_i := mirc.Variable[vm.RegisterId, Expr[F]](sel, 1, 0)
 		selectorTerms[c] = sel_i
-		weightedTerms[c] = mirc.Number[register.Id, Expr[F]](uint(c + 1)).Multiply(sel_i)
+		weightedTerms[c] = mirc.Number[vm.RegisterId, Expr[F]](uint(c + 1)).Multiply(sel_i)
 	}
 	// S = sum of selectors (the activity indicator).
 	sum := mirc.Sum(selectorTerms)
@@ -175,10 +174,10 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 	for i, r := range regs {
 		if r.IsInput() {
 			var (
-				ith     = register.NewId(uint(i))
+				ith     = vm.RegisterId(i)
 				name    = fmt.Sprintf("const_%s", r.Name())
-				reg_i   = mirc.Variable[register.Id, Expr[F]](ith, r.Width(), 0)
-				reg_im1 = mirc.Variable[register.Id, Expr[F]](ith, r.Width(), -1)
+				reg_i   = mirc.Variable[vm.RegisterId, Expr[F]](ith, r.Width(), 0)
+				reg_im1 = mirc.Variable[vm.RegisterId, Expr[F]](ith, r.Width(), -1)
 			)
 			// (5)    (PC[i]!=0 && PC[i]!=1 ==> reg[i] = reg[i-1]
 			constraints = append(constraints,
@@ -187,5 +186,5 @@ func initMultiLineFraming[F field.Element[F]](ctx module.Id, pc, ret register.Id
 		}
 	}
 	//
-	return mirc.NewMultiLineFraming[register.Id, Expr[F]](pc, pcWidth, ret, 1, pcSelectors), constraints
+	return mirc.NewMultiLineFraming[vm.RegisterId, Expr[F]](pc, pcWidth, ret, 1, pcSelectors), constraints
 }

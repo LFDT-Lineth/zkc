@@ -13,9 +13,11 @@ package dfa
 import (
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 )
+
+// RegisterId provides an useful alias
+type RegisterId = uint16
 
 // Writes identifies, for a set of registers, whether each may have been
 // written (i.e. maybe assigned) and, furthermore, whether it has definitely
@@ -47,13 +49,13 @@ func (p Writes) Clone() Writes {
 
 // Write constructs a write state representing the give state after a set of
 // writes have occurred.
-func (p Writes) Write(regs ...register.Id) Writes {
+func (p Writes) Write(regs ...RegisterId) Writes {
 	var nst = p.Clone()
 	//
 	for _, r := range regs {
-		nst.maxRegister = max(nst.maxRegister, r.Unwrap())
-		nst.definiteWrites.Insert(r.Unwrap())
-		nst.maybeWrites.Insert(r.Unwrap())
+		nst.maxRegister = max(nst.maxRegister, uint(r))
+		nst.definiteWrites.Insert(uint(r))
+		nst.maybeWrites.Insert(uint(r))
 	}
 	//
 	return nst
@@ -66,7 +68,7 @@ func (p Writes) Join(q Writes) Writes {
 	nst.maxRegister = max(p.maxRegister, q.maxRegister)
 	//
 	for i := range nst.maxRegister + 1 {
-		rid := register.NewId(i)
+		rid := RegisterId(i)
 		//
 		if p.DefinitelyAssigned(rid) && q.DefinitelyAssigned(rid) {
 			nst.definiteWrites.Insert(i)
@@ -81,15 +83,15 @@ func (p Writes) Join(q Writes) Writes {
 
 // MaybeAssigned determines whether or not a give register may have been
 // assigned.
-func (p Writes) MaybeAssigned(reg register.Id) bool {
-	return p.maybeWrites.Contains(reg.Unwrap())
+func (p Writes) MaybeAssigned(reg RegisterId) bool {
+	return p.maybeWrites.Contains(uint(reg))
 }
 
 // MayAnybeAssigned determines whether or not any of the given registers may have been
 // assigned.
-func (p Writes) MayAnybeAssigned(regs ...register.Id) bool {
+func (p Writes) MayAnybeAssigned(regs ...RegisterId) bool {
 	for _, r := range regs {
-		if p.maybeWrites.Contains(r.Unwrap()) {
+		if p.maybeWrites.Contains(uint(r)) {
 			return true
 		}
 	}
@@ -100,20 +102,21 @@ func (p Writes) MayAnybeAssigned(regs ...register.Id) bool {
 // DefinitelyAssigned determines whether or not a give register has definitely
 // been assigned.  Observe that, for any register r, it follows that
 // DefinitelyAssigned(r) implies MaybeAssigned(r).
-func (p Writes) DefinitelyAssigned(reg register.Id) bool {
-	return p.definiteWrites.Contains(reg.Unwrap())
+func (p Writes) DefinitelyAssigned(reg RegisterId) bool {
+	return p.definiteWrites.Contains(uint(reg))
 }
 
-func (p Writes) String(rmap register.Map) string {
+func (p Writes) String(rmap func(RegisterId) string) string {
 	var (
 		builder strings.Builder
 		first   = true
-		nRegs   = uint(len(rmap.Registers()))
 	)
 	//
 	builder.WriteString("{")
 	//
-	for i := uint(0); i < nRegs; i++ {
+	for i := range p.maxRegister + 1 {
+		var rid = RegisterId(i)
+		//
 		if !p.maybeWrites.Contains(i) {
 			continue
 		}
@@ -128,12 +131,7 @@ func (p Writes) String(rmap register.Map) string {
 			builder.WriteString("?")
 		}
 		//
-		var (
-			rid  = register.NewId(i)
-			name = rmap.Register(rid).Name()
-		)
-		//
-		builder.WriteString(name)
+		builder.WriteString(rmap(rid))
 	}
 	//
 	builder.WriteString("}")

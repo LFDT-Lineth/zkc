@@ -19,18 +19,19 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // RegisterReader is a simplified view of a translator which is suitable for
 // reading registers only.
 type RegisterReader[E any] interface {
 	// Register returns information about a given register
-	Register(register.Id) register.Register
+	Register(vm.RegisterId) register.Register
 	// RegisterWidths returns the bitwidth of a given set of registers.
-	RegisterWidths(reg ...register.Id) []uint
+	RegisterWidths(reg ...vm.RegisterId) []uint
 	// ReadRegister constructs a suitable accessor for referring to a given register.
 	// This applies forwarding as appropriate.
-	ReadRegister(reg register.Id, forwarding bool) E
+	ReadRegister(reg vm.RegisterId, forwarding bool) E
 }
 
 // Module provides an abstraction for modules in the underlying constraint

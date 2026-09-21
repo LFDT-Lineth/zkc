@@ -18,9 +18,9 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // TranslateBranchCondition translates a given branch condition within the
@@ -322,7 +322,7 @@ func groupId2String[T any](reader RegisterReader[T]) func(dfa.BranchId) string {
 		if gid.Width == 1 {
 			id = first
 		} else {
-			last := reader.Register(register.NewId(gid.Id.Unwrap() + gid.Width - 1)).Name()
+			last := reader.Register(gid.Id + vm.RegisterId(gid.Width) - 1).Name()
 			id = fmt.Sprintf("{%s..%s}", first, last)
 		}
 		//
