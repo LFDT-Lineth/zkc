@@ -22,6 +22,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -42,6 +43,7 @@ var debugCmds = []FieldAgnosticCmd{
 	{field.GF_251, runDebugCmd[gf251.Element]},
 	{field.GF_8209, runDebugCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runDebugCmd[koalabear.Element]},
+	{field.GOLDILOCKS_32, runDebugCmd[goldilocks.Element]},
 	{field.BLS12_377, runDebugCmd[bls12_377.Element]},
 }
 

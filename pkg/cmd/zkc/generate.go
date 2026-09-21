@@ -23,6 +23,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
@@ -48,6 +49,7 @@ var generateCmds = []FieldAgnosticCmd{
 	{field.GF_8209, runGenerateCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runGenerateCmd[koalabear.Element]},
 	{field.KOALABEAR_24, runGenerateCmd[koalabear.Element]},
+	{field.GOLDILOCKS_32, runGenerateCmd[goldilocks.Element]},
 	{field.BLS12_377, runGenerateCmd[bls12_377.Element]},
 }
 

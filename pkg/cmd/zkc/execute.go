@@ -25,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
@@ -48,6 +49,7 @@ var executeCmds = []FieldAgnosticCmd{
 	{field.GF_8209, runExecuteCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runExecuteCmd[koalabear.Element]},
 	{field.KOALABEAR_24, runExecuteCmd[koalabear.Element]},
+	{field.GOLDILOCKS_32, runExecuteCmd[goldilocks.Element]},
 	{field.BLS12_377, runExecuteCmd[bls12_377.Element]},
 }
 

@@ -32,6 +32,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio/widget"
 	log "github.com/sirupsen/logrus"
@@ -54,6 +55,7 @@ var checkCmds = []FieldAgnosticCmd{
 	{field.GF_251, runCheckCmd[gf251.Element]},
 	{field.GF_8209, runCheckCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runCheckCmd[koalabear.Element]},
+	{field.GOLDILOCKS_32, runCheckCmd[goldilocks.Element]},
 	{field.BLS12_377, runCheckCmd[bls12_377.Element]},
 }
 

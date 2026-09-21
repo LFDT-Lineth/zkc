@@ -25,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
@@ -57,6 +58,7 @@ var compileCmds = []FieldAgnosticCmd{
 	{field.GF_8209, runCompileCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runCompileCmd[koalabear.Element]},
 	{field.KOALABEAR_24, runCompileCmd[koalabear.Element]},
+	{field.GOLDILOCKS_32, runCompileCmd[goldilocks.Element]},
 	{field.BLS12_377, runCompileCmd[bls12_377.Element]},
 }
 

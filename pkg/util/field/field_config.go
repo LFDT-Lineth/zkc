@@ -16,6 +16,7 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 )
 
@@ -31,6 +32,9 @@ var KOALABEAR_16 = Config{"KOALABEAR_16", 30, 16}
 // KOALABEAR_24 corresponds to the KoalaBear field with a 24bit register size.
 var KOALABEAR_24 = Config{"KOALABEAR_24", 30, 24}
 
+// GOLDILOCKS_32 corresponds to the Goldilocks field with a 32bit register size.
+var GOLDILOCKS_32 = Config{"GOLDILOCKS_32", 63, 32}
+
 // BLS12_377 is the defacto default field at this time.
 var BLS12_377 = Config{"BLS12_377", 252, 160}
 
@@ -40,6 +44,7 @@ var FIELD_CONFIGS = []Config{
 	GF_8209,
 	KOALABEAR_16,
 	KOALABEAR_24,
+	GOLDILOCKS_32,
 	BLS12_377,
 }
 
@@ -64,6 +69,8 @@ func (p Config) Modulus() *big.Int {
 		return big.NewInt(8209)
 	case KOALABEAR_16, KOALABEAR_24:
 		return big.NewInt(koalabear.Modulus)
+	case GOLDILOCKS_32:
+		return goldilocks.Modulus
 	case BLS12_377:
 		return bls12_377.Modulus
 	default:

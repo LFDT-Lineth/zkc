@@ -24,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
@@ -115,6 +116,8 @@ func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestVector) {
 		runExecutionTest[gf8209.Element](t, p, test)
 	case field.KOALABEAR_16, field.KOALABEAR_24:
 		runExecutionTest[koalabear.Element](t, p, test)
+	case field.GOLDILOCKS_32:
+		runExecutionTest[goldilocks.Element](t, p, test)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for execution")
@@ -172,6 +175,8 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestVector, f f
 		testConstraintsWithField[gf8209.Element](t, p, test, traceCfg)
 	case field.KOALABEAR_16, field.KOALABEAR_24:
 		testConstraintsWithField[koalabear.Element](t, p, test, traceCfg)
+	case field.GOLDILOCKS_32:
+		testConstraintsWithField[goldilocks.Element](t, p, test, traceCfg)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for tracing")

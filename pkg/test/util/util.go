@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
@@ -175,6 +176,8 @@ func marshallUnmarshallMachine(m vm.Program[vm.Uint], f field.Config) vm.Program
 		return roundTripMachine[gf8209.Element](m)
 	case field.KOALABEAR_16, field.KOALABEAR_24:
 		return roundTripMachine[koalabear.Element](m)
+	case field.GOLDILOCKS_32:
+		return roundTripMachine[goldilocks.Element](m)
 	case field.BLS12_377:
 		return roundTripMachine[bls12_377.Element](m)
 	default:
