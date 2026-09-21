@@ -42,9 +42,11 @@ func (x Element) Hash() uint64 {
 	return (hash ^ uint64(x[0])) * prime64
 }
 
-// FitsWithin implementation for word.Word interface.
+// FitsWithin implementation for word.Word interface.  This concerns the
+// numerical value of the element, hence it must be derived from Uint64 (which
+// converts out of Montgomery form) rather than from the raw limb.
 func (x Element) FitsWithin(bitwidth uint) bool {
-	return (x[0] >> bitwidth) == 0
+	return (x.Uint64() >> bitwidth) == 0
 }
 
 // SetBytes implementation for word.Word interface.

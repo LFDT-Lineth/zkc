@@ -53,18 +53,18 @@ support fast mode or checkpointing.`,
 
 // Available instances
 var traceCmds = []FieldAgnosticCmd{
-	{field.GF_251, runTraceCmd[gf251.Element]},
-	{field.GF_8209, runTraceCmd[gf8209.Element]},
-	{field.KOALABEAR_16, runTraceCmd[koalabear.Element]},
-	{field.KOALABEAR_24, runTraceCmd[koalabear.Element]},
-	{field.GOLDILOCKS_32, runTraceCmd[goldilocks.Element]},
-	{field.BLS12_377, runTraceCmd[bls12_377.Element]},
+	{field.GF_251, runTraceCmd[gf251.Element, vm.Uint32]},
+	{field.GF_8209, runTraceCmd[gf8209.Element, vm.Uint32]},
+	{field.KOALABEAR_16, runTraceCmd[koalabear.Element, vm.Uint32]},
+	{field.KOALABEAR_24, runTraceCmd[koalabear.Element, vm.Uint32]},
+	{field.GOLDILOCKS_32, runTraceCmd[goldilocks.Element, vm.Uint64]},
+	{field.BLS12_377, runTraceCmd[bls12_377.Element, vm.Uint128]},
 }
 
 // Permitted flag combinations
 var traceFlags FlagChecks
 
-func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
+func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
 		statsCfg traceStatsConfig[F]
 		//
@@ -113,7 +113,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string, field fi
 		traceConfig = traceConfig.WithSharding(parseShardingConfig(sharding))
 	}
 	// Build artifacts (compiles source files or loads a prebuilt binary).
-	_, binfile := Build[F](build, args[1:]...)
+	_, binfile := Build[F, W](build, args[1:]...)
 	// =====================================================
 	// Trace
 	// =====================================================

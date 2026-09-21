@@ -45,7 +45,9 @@ type BuildConfig struct {
 }
 
 // Build applies a build configuration with a given set of source files.
-func Build[F field.Element[F]](build BuildConfig, args ...string) (*ast.Program, *constraints.BinaryFile[F]) {
+func Build[F field.Element[F], W vm.Word[W]](build BuildConfig, args ...string,
+) (*ast.Program, *constraints.BinaryFile[F, W]) {
+	//
 	var (
 		errs []source.SyntaxError
 		raw  vm.Program[vm.Uint]
@@ -60,12 +62,12 @@ func Build[F field.Element[F]](build BuildConfig, args ...string) (*ast.Program,
 		//
 		var (
 			// Read existing binary file
-			binf = ReadBinaryFile[F](args[0])
+			binf = ReadBinaryFile[F, W](args[0])
 			// Determine metadata
 			metadata = build.metadata.UnwrapOr(binf.Header().MetaData)
 		)
 		// Single (binary) file supplied
-		return nil, constraints.NewBinaryFile[F](metadata, binf.Attributes(), binf.RawProgram()).
+		return nil, constraints.NewBinaryFile[F, W](metadata, binf.Attributes(), binf.RawProgram()).
 			WithIgnores(build.ignores...)
 	}
 	// Compile source files, or print errors
@@ -82,6 +84,6 @@ func Build[F field.Element[F]](build BuildConfig, args ...string) (*ast.Program,
 		os.Exit(4)
 	}
 	//
-	return &prog, constraints.NewBinaryFile[F](build.metadata.UnwrapOr(nil), nil, raw).
+	return &prog, constraints.NewBinaryFile[F, W](build.metadata.UnwrapOr(nil), nil, raw).
 		WithIgnores(build.ignores...)
 }

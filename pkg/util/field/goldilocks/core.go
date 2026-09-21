@@ -13,14 +13,16 @@
 package goldilocks
 
 import (
-	"fmt"
 	"math/big"
 
 	"github.com/consensys/gnark-crypto/field/goldilocks"
 )
 
 var (
-	// Modulus defines the prime used for this finite field.
+	// Modulus defines the prime used for this finite field.  Observe that
+	// goldilocks.Modulus() allocates a fresh big.Int on every call, so the value
+	// is cached here once and shared thereafter.  Callers must treat it as
+	// read-only.
 	Modulus = goldilocks.Modulus()
 )
 
@@ -63,9 +65,11 @@ func (x Element) IsZero() bool {
 	return x.Element.IsZero()
 }
 
-// Modulus implementation for the Element interface
+// Modulus implementation for the Element interface.  This returns the shared
+// Modulus value, rather than allocating a fresh big.Int per call, and must
+// therefore be treated as read-only by callers.
 func (x Element) Modulus() *big.Int {
-	return goldilocks.Modulus()
+	return Modulus
 }
 
 // Mul x * y
@@ -84,20 +88,6 @@ func (x Element) Sub(y Element) Element {
 	elem.Sub(&x.Element, &y.Element)
 	//
 	return Element{elem}
-}
-
-// ToUint32 returns the numerical value of x.
-func (x Element) ToUint32() uint32 {
-	if !x.IsUint64() {
-		panic(fmt.Errorf("cannot convert to uint64: %s", x.String()))
-	}
-
-	i := x.Uint64()
-	if i >= 1<<32 {
-		panic(fmt.Errorf("cannot convert to uint32: %d", i))
-	}
-
-	return uint32(i)
 }
 
 // Bytes returns the big-endian encoded value of the Element, possibly with leading zeros.

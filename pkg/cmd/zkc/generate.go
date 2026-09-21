@@ -45,18 +45,18 @@ importable package suitable for go:generate + ahead-of-time compilation.`,
 
 // Available instances
 var generateCmds = []FieldAgnosticCmd{
-	{field.GF_251, runGenerateCmd[gf251.Element]},
-	{field.GF_8209, runGenerateCmd[gf8209.Element]},
-	{field.KOALABEAR_16, runGenerateCmd[koalabear.Element]},
-	{field.KOALABEAR_24, runGenerateCmd[koalabear.Element]},
-	{field.GOLDILOCKS_32, runGenerateCmd[goldilocks.Element]},
-	{field.BLS12_377, runGenerateCmd[bls12_377.Element]},
+	{field.GF_251, runGenerateCmd[gf251.Element, vm.Uint32]},
+	{field.GF_8209, runGenerateCmd[gf8209.Element, vm.Uint32]},
+	{field.KOALABEAR_16, runGenerateCmd[koalabear.Element, vm.Uint32]},
+	{field.KOALABEAR_24, runGenerateCmd[koalabear.Element, vm.Uint32]},
+	{field.GOLDILOCKS_32, runGenerateCmd[goldilocks.Element, vm.Uint64]},
+	{field.BLS12_377, runGenerateCmd[bls12_377.Element, vm.Uint128]},
 }
 
 // Permitted flag combinations
 var generateFlags FlagChecks
 
-func runGenerateCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
+func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
 		build  = GetBuildConfig[F](cmd, field)
 		output = GetString(cmd, "output")
@@ -69,7 +69,7 @@ func runGenerateCmd[F field.Element[F]](cmd *cobra.Command, args []string, field
 	// Sanity permitted flag combinations
 	checkFlags(cmd, generateFlags)
 	// Build the word machine from the source files.
-	_, binfile := Build[F](build, args...)
+	_, binfile := Build[F, W](build, args...)
 	// Translate bytecode => word machine
 	src, err := vm.GenerateGo(binfile.RawProgram(), vm.GoGenConfig{
 		Package: packageName(pkg),

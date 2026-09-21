@@ -45,18 +45,18 @@ var executeCmd = &cobra.Command{
 
 // Available instances
 var executeCmds = []FieldAgnosticCmd{
-	{field.GF_251, runExecuteCmd[gf251.Element]},
-	{field.GF_8209, runExecuteCmd[gf8209.Element]},
-	{field.KOALABEAR_16, runExecuteCmd[koalabear.Element]},
-	{field.KOALABEAR_24, runExecuteCmd[koalabear.Element]},
-	{field.GOLDILOCKS_32, runExecuteCmd[goldilocks.Element]},
-	{field.BLS12_377, runExecuteCmd[bls12_377.Element]},
+	{field.GF_251, runExecuteCmd[gf251.Element, vm.Uint32]},
+	{field.GF_8209, runExecuteCmd[gf8209.Element, vm.Uint32]},
+	{field.KOALABEAR_16, runExecuteCmd[koalabear.Element, vm.Uint32]},
+	{field.KOALABEAR_24, runExecuteCmd[koalabear.Element, vm.Uint32]},
+	{field.GOLDILOCKS_32, runExecuteCmd[goldilocks.Element, vm.Uint64]},
+	{field.BLS12_377, runExecuteCmd[bls12_377.Element, vm.Uint128]},
 }
 
 // Permitted flag combinations
 var executeFlags FlagChecks
 
-func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
+func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
 		errors []error
 		build  = GetBuildConfig[F](cmd, field)
@@ -78,7 +78,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
 	// Build artifacts (compiles source files or loads a prebuilt binary).
-	_, binfile := Build[F](build, args[1:]...)
+	_, binfile := Build[F, W](build, args[1:]...)
 	// =====================================================
 	// Trace / Execute
 	// =====================================================
@@ -125,7 +125,7 @@ func runExecuteCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	}
 }
 
-func checkConstraints[F field.Element[F]](binfile *constraints.BinaryFile[F],
+func checkConstraints[F field.Element[F], W vm.Word[W]](binfile *constraints.BinaryFile[F, W],
 	cfg vm.TraceConfig, trace trace.Trace[F]) {
 	//
 	var checkConfig corset.CheckConfig

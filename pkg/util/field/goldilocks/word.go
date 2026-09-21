@@ -42,9 +42,14 @@ func (x Element) Hash() uint64 {
 	return (offset64 ^ x.Element[0]) * prime64
 }
 
-// FitsWithin implementation for word.Word interface.
+// FitsWithin implementation for word.Word interface.  This concerns the
+// numerical value of the element, hence it must be derived from Uint64 (which
+// converts out of Montgomery form) rather than from the raw limb.  Note that
+// goldilocks.BitLen reads the raw limb without converting, unlike Bits / Cmp,
+// so it is not usable here.  Shifting by 64 or more is well defined in Go for
+// an unsigned value, yielding zero, so wide bitwidths need no special case.
 func (x Element) FitsWithin(bitwidth uint) bool {
-	return uint(x.BitLen()) <= bitwidth
+	return (x.Uint64() >> bitwidth) == 0
 }
 
 // SetBytes implementation for word.Word interface.

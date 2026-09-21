@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         test: [corset-bench,corset-test,unit-test]
-        field: [BLS12_377,KOALABEAR_16]
+        field: [BLS12_377,GOLDILOCKS_32,KOALABEAR_16]
         exclude:
           - { field: KOALABEAR_16, test: unit-test }
       fail-fast: false
@@ -40,8 +40,9 @@ jobs:
     strategy:
       matrix:
         test: [bench,util,unit,racer]
-        field: [KOALABEAR_16, GF_8209]
+        field: [GOLDILOCKS_32,KOALABEAR_16, GF_8209]
         exclude:
+          - { field: GOLDILOCKS_32, test: racer }
           - { field: GF_8209, test: racer }
       fail-fast: false
     runs-on: gha-lfdt-lineth-ss-ubuntu-24-amd64-large

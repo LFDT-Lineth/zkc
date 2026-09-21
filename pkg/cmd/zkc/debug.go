@@ -39,22 +39,22 @@ var debugCmd = &cobra.Command{
 
 // Available instances
 var debugCmds = []FieldAgnosticCmd{
-	{field.GF_251, runDebugCmd[gf251.Element]},
-	{field.GF_8209, runDebugCmd[gf8209.Element]},
-	{field.KOALABEAR_16, runDebugCmd[koalabear.Element]},
-	{field.KOALABEAR_24, runDebugCmd[koalabear.Element]},
-	{field.GOLDILOCKS_32, runDebugCmd[goldilocks.Element]},
-	{field.BLS12_377, runDebugCmd[bls12_377.Element]},
+	{field.GF_251, runDebugCmd[gf251.Element, vm.Uint32]},
+	{field.GF_8209, runDebugCmd[gf8209.Element, vm.Uint32]},
+	{field.KOALABEAR_16, runDebugCmd[koalabear.Element, vm.Uint32]},
+	{field.KOALABEAR_24, runDebugCmd[koalabear.Element, vm.Uint32]},
+	{field.GOLDILOCKS_32, runDebugCmd[goldilocks.Element, vm.Uint64]},
+	{field.BLS12_377, runDebugCmd[bls12_377.Element, vm.Uint128]},
 }
 
-func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
+func runDebugCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
 		build = GetBuildConfig[F](cmd, field)
 	)
 	//
 	input := ParseInputFile(args[0])
 	// Build artifacts (compiles source files or loads a prebuilt binary).
-	_, binf := Build[F](build, args[1:]...)
+	_, binf := Build[F, W](build, args[1:]...)
 	// Filter out unnecessary inputs
 	input = filterInputs(binf.RawProgram(), input)
 	// Construct a trace observer which prints each executed trace line, with
