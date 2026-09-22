@@ -18,7 +18,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
@@ -184,7 +183,7 @@ func (p *Vector[W]) validateReadWriteConflicts(env Environment[W]) []error {
 					continue
 				}
 
-				if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) && !ithState.DefinitelyAssigned(rid) {
+				if ithState.MaybeAssigned(r) && !ithState.DefinitelyAssigned(r) {
 					errors = append(errors,
 						fmt.Errorf("conflicting read on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
 				}
@@ -196,7 +195,7 @@ func (p *Vector[W]) validateReadWriteConflicts(env Environment[W]) []error {
 				continue
 			}
 
-			if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) {
+			if ithState.MaybeAssigned(r) {
 				errors = append(errors,
 					fmt.Errorf("conflicting write on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
 			}
@@ -452,22 +451,10 @@ func writeDfaTransfer[W word.Word[W]](offset uint, code Bytecode[W],
 		}
 	}
 	// Construct state after this code and transfer to the following bytecode.
-	nState := state.Write(toRegisterIds(code.Definitions())...)
+	nState := state.Write(code.Definitions()...)
 	arcs = append(arcs, dfa.NewTransfer(nState, offset+1))
 	//
 	return arcs
-}
-
-// toRegisterIds converts a slice of bytecode-level registers (Reg) into the
-// register.Id currency used by the data-flow writes analysis.
-func toRegisterIds(regs []RegisterId) []register.Id {
-	ids := make([]register.Id, len(regs))
-	//
-	for i, r := range regs {
-		ids[i] = register.NewId(uint(r))
-	}
-	//
-	return ids
 }
 
 // branchTableTransfer is the data-flow transfer function for the branch-table
@@ -520,8 +507,7 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes], limbWi
 		case *Switch[W]:
 			// Each case is reached when the source register equals that case's
 			// value; the fall-through is reached only when no value matches.
-			sid := register.NewId(uint(code.Source))
-			source := dfa.NewBranchId(writes.MayAnybeAssigned(sid), sid)
+			source := dfa.NewBranchId(writes.MayAnybeAssigned(code.Source), code.Source)
 			//
 			for _, c := range code.Cases {
 				branch := extendMultiway(state, source, c.Value, true)
@@ -544,8 +530,7 @@ func branchTableTransfer[W word.Word[W]](writeMap dfa.Result[dfa.Writes], limbWi
 			//
 			for _, c := range code.Cases {
 				var (
-					bid = register.NewId(uint(c.Bit))
-					bit = dfa.NewBranchId(writes.MayAnybeAssigned(bid), bid)
+					bit = dfa.NewBranchId(writes.MayAnybeAssigned(c.Bit), c.Bit)
 				)
 				//
 				arcs = append(arcs, dfa.NewTransfer(state.NotEqualsConst(bit, zero), offset+uint(c.Skip)+1))
@@ -577,8 +562,7 @@ func extendSkipIf[W word.Word[W]](path dfa.Path[W], sign bool, code *SkipIf[W], 
 	limbWidth uint) dfa.Path[W] {
 	//
 	var (
-		lhs = toRegisterIds(code.Left.Registers())
-		//rhs      = toRegisterIds(code.Right.AsRegisters())
+		lhs     = code.Left.Registers()
 		rhsUsed = code.Right.IsRegisterVector()
 		// NOTE: bytecode register vectors hold their most significant limb
 		// first (i.e. at the lowest register id), hence big endian.
@@ -597,7 +581,7 @@ func extendSkipIf[W word.Word[W]](path dfa.Path[W], sign bool, code *SkipIf[W], 
 	// Translate operation
 	switch {
 	case equality && rhsUsed:
-		rhs := toRegisterIds(code.Right.AsRegisters())
+		rhs := code.Right.AsRegisters()
 		return path.Equals(left, dfa.NewBigEndianBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	case equality && !rhsUsed:
 		// TODO: eventually we should be able to get right of asBigInt once path
@@ -605,7 +589,7 @@ func extendSkipIf[W word.Word[W]](path dfa.Path[W], sign bool, code *SkipIf[W], 
 		var rhs = asBigInt(limbWidth, code.Right.AsConstants()...)
 		return path.EqualsConst(left, rhs)
 	case !equality && rhsUsed:
-		rhs := toRegisterIds(code.Right.AsRegisters())
+		rhs := code.Right.AsRegisters()
 		return path.NotEquals(left, dfa.NewBigEndianBranchId(writes.MayAnybeAssigned(rhs...), rhs...))
 	case !equality && !rhsUsed:
 		// TODO: eventually we should be able to get right of asBigInt once path

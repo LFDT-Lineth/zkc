@@ -248,13 +248,13 @@ func addCarryRegisters[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F
 // [padding..][EXEC..]), and the definitions of the lookup selectors.
 func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
 	var (
-		zero      = mirc.Number[register.Id, Expr[F]](0)
-		one       = mirc.Number[register.Id, Expr[F]](1)
-		exec      = mirc.Variable[register.Id, Expr[F]](l.exec, 1, 0)
-		isWrite   = mirc.Variable[register.Id, Expr[F]](l.isWrite, 1, 0)
-		prevExec  = mirc.Variable[register.Id, Expr[F]](l.exec, 1, -1)
-		execWrite = mirc.Variable[register.Id, Expr[F]](l.execWrite, 1, 0)
-		execRead  = mirc.Variable[register.Id, Expr[F]](l.execRead, 1, 0)
+		zero      = mirc.Number[F](0)
+		one       = mirc.Number[F](1)
+		exec      = mirc.Variable[F](l.exec, 1, 0)
+		isWrite   = mirc.Variable[F](l.isWrite, 1, 0)
+		prevExec  = mirc.Variable[F](l.exec, 1, -1)
+		execWrite = mirc.Variable[F](l.execWrite, 1, 0)
+		execRead  = mirc.Variable[F](l.execRead, 1, 0)
 	)
 	//
 	return []mir.Constraint[F]{
@@ -283,9 +283,9 @@ func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout)
 // equality []VALUE_READ == []VALUE_WRITTEN.
 func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
 	var (
-		zero    = mirc.Number[register.Id, Expr[F]](0)
-		exec    = mirc.Variable[register.Id, Expr[F]](l.exec, 1, 0)
-		isWrite = mirc.Variable[register.Id, Expr[F]](l.isWrite, 1, 0)
+		zero    = mirc.Number[F](0)
+		exec    = mirc.Variable[F](l.exec, 1, 0)
+		isWrite = mirc.Variable[F](l.isWrite, 1, 0)
 		execOn  = exec.NotEquals(zero)
 		cs      []mir.Constraint[F]
 	)
@@ -297,8 +297,8 @@ func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 	//
 	for k := range l.valueRead {
 		var (
-			vr = mirc.Variable[register.Id, Expr[F]](l.valueRead[k], l.dataWidths[k], 0)
-			vw = mirc.Variable[register.Id, Expr[F]](l.valueWritten[k], l.dataWidths[k], 0)
+			vr = mirc.Variable[F](l.valueRead[k], l.dataWidths[k], 0)
+			vw = mirc.Variable[F](l.valueWritten[k], l.dataWidths[k], 0)
 		)
 
 		cs = append(cs, mir.NewVanishingConstraint(fmt.Sprintf("read_value_%d", k), ctx, util.None[int](),
@@ -313,9 +313,9 @@ func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 // unconstrained.
 func ramChronologyConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []mir.Constraint[F] {
 	var (
-		one      = mirc.Number[register.Id, Expr[F]](1)
-		exec     = mirc.Variable[register.Id, Expr[F]](l.exec, 1, 0)
-		prevExec = mirc.Variable[register.Id, Expr[F]](l.exec, 1, -1)
+		one      = mirc.Number[F](1)
+		exec     = mirc.Variable[F](l.exec, 1, 0)
+		prevExec = mirc.Variable[F](l.exec, 1, -1)
 		bothExec = prevExec.Equals(one).And(exec.Equals(one))
 	)
 	//
@@ -337,7 +337,7 @@ func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
 	out, base, delta, carry []register.Id, widths []uint, baseShift int, guard Expr[F],
 ) []mir.Constraint[F] {
 	var (
-		one = mirc.Number[register.Id, Expr[F]](1)
+		one = mirc.Number[F](1)
 		L   = len(out)
 		cs  = make([]mir.Constraint[F], 0, L)
 	)
@@ -347,20 +347,20 @@ func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
 		var (
 			i      = L - 1 - s
 			w      = widths[i]
-			outVar = mirc.Variable[register.Id, Expr[F]](out[i], w, 0)
+			outVar = mirc.Variable[F](out[i], w, 0)
 			// left-hand side: base (+ delta) (+ carry-in) (+ 1 at the least
 			// significant limb).
-			lhs = mirc.Variable[register.Id, Expr[F]](base[i], w, baseShift)
+			lhs = mirc.Variable[F](base[i], w, baseShift)
 			// right-hand side accumulates the output limb and the outgoing carry.
 			rhs = outVar
 		)
 		//
 		if delta != nil {
-			lhs = lhs.Add(mirc.Variable[register.Id, Expr[F]](delta[i], w, 0))
+			lhs = lhs.Add(mirc.Variable[F](delta[i], w, 0))
 		}
 		// carry into this limb (from the less significant boundary)
 		if s > 0 {
-			lhs = lhs.Add(mirc.Variable[register.Id, Expr[F]](carry[s-1], 1, 0))
+			lhs = lhs.Add(mirc.Variable[F](carry[s-1], 1, 0))
 		}
 		// the +1 lands on the least significant limb
 		if s == 0 {
@@ -369,8 +369,8 @@ func multiLimbIncrement[F field.Element[F]](ctx schema.ModuleId, prefix string,
 		// carry out of this limb (none for the most significant limb)
 		if s < L-1 {
 			shift := new(big.Int).Lsh(big.NewInt(1), w)
-			rhs = rhs.Add(mirc.Variable[register.Id, Expr[F]](carry[s], 1, 0).
-				Multiply(mirc.BigNumber[register.Id, Expr[F]](shift)))
+			rhs = rhs.Add(mirc.Variable[F](carry[s], 1, 0).
+				Multiply(mirc.BigNumber[F](shift)))
 		}
 		//
 		cs = append(cs, mir.NewVanishingConstraint(fmt.Sprintf("%s_add_limb_%d", prefix, s), ctx, util.None[int](),

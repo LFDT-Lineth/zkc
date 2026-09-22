@@ -45,8 +45,8 @@ func validateBytecodeProgram[W word.Word[W]](program Program[W]) error {
 		} else {
 			names[module.Name()] = uint(mid)
 		}
-
-		if uint64(module.Width()) > uint64(math.MaxUint16)+1 {
+		// Note: DISCARD cannot be a valid register identifier.
+		if uint64(module.Width()) > uint64(math.MaxUint16) {
 			errs = append(errs, fmt.Errorf("module %d (%s): too many registers (%d)",
 				mid, module.Name(), module.Width()))
 		}

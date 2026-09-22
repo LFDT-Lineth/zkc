@@ -17,7 +17,6 @@ import (
 	"math"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/stack"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -398,7 +397,7 @@ func validateConflicts[W word.Word[W]](vec BytecodeVector[W], env bytecode.Envir
 				continue
 			}
 
-			if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) && !ithState.DefinitelyAssigned(rid) {
+			if ithState.MaybeAssigned(r) && !ithState.DefinitelyAssigned(r) {
 				return fmt.Errorf("conflicting read on register %d", r)
 			}
 		}
@@ -408,7 +407,7 @@ func validateConflicts[W word.Word[W]](vec BytecodeVector[W], env bytecode.Envir
 				continue
 			}
 
-			if rid := register.NewId(uint(r)); ithState.MaybeAssigned(rid) {
+			if ithState.MaybeAssigned(r) {
 				return fmt.Errorf("conflicting write on register %d", r)
 			}
 		}

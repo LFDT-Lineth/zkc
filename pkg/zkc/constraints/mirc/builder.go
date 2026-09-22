@@ -15,103 +15,27 @@ package mirc
 import (
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
 // RegisterReader is a simplified view of a translator which is suitable for
 // reading registers only.
-type RegisterReader[E any] interface {
+type RegisterReader[F field.Element[F]] interface {
 	// Register returns information about a given register
 	Register(register.Id) register.Register
 	// RegisterWidths returns the bitwidth of a given set of registers.
 	RegisterWidths(reg ...register.Id) []uint
 	// ReadRegister constructs a suitable accessor for referring to a given register.
 	// This applies forwarding as appropriate.
-	ReadRegister(reg register.Id, forwarding bool) E
-}
-
-// Module provides an abstraction for modules in the underlying constraint
-// system.
-type Module[F field.Element[F], T any, E Expr[T, E], M any] interface {
-	// NewAssignment adds a new assignment to this module.
-	NewAssignment(assignment schema.Assignment[F])
-
-	// NewColumn constructs a new column of the given name and bitwidth within
-	// this module.
-	NewColumn(kind register.Type, name string, bitwidth uint, padding big.Int) T
-
-	// NewUnusedColumn constructs an empty (i.e. unused) column identifier.
-	NewUnusedColumn() T
-
-	// NewConstraint constructs a new vanishing constraint with the given name
-	// within this module.  An optional "domain" can be given which determines
-	// whether or not this is a "local" or "global" constraint.  Specifically, a
-	// local constraint applies only on one row whereas a global constraints
-	// applies on all rows.  The domain (if supplied) determines the row where a
-	// local constraint applies, with negative values being offset from the last
-	// row.  Thus, a domain value of 0 (reps -1) represents the first (resp.
-	// last) row of the module.
-	NewConstraint(name string, domain util.Option[int], expr E)
-
-	// NewLookup constructs a new lookup constraint
-	NewLookup(name string, from []T, target M, to []T, enable util.Option[T])
-
-	// String returns an appropriately formatted representation of the module.
-	String() string
-}
-
-// Expr provides an abstraction over expressions in the constraint language.
-// Using an abstraction, rather than concrete constraint expressions directly,
-// makes it relatively easier to support multiple target languages.
-type Expr[T, E any] interface {
-	// Add constructs a sum between this expression and zero or more
-	Add(exprs ...E) E
-
-	// And constructs a conjunction between this expression and zero or more
-	// expressions.
-	And(...E) E
-
-	// Bool constructs a logical truth or falsehood
-	Bool(bool) E
-
-	// Equals constructs an equality between two expressions.
-	Equals(rhs E) E
-
-	// Then constructs an implication between two expressions.
-	Then(trueBranch E) E
-
-	// ThenElse constructs an if-then-else expression with this expression
-	// acting as the condition.
-	ThenElse(trueBranch E, falseBranch E) E
-
-	// Multiply constructs a product between this expression and zero or more
-	// expressions.
-	Multiply(...E) E
-
-	// NotEquals constructs a non-equality between two expressions.
-	NotEquals(rhs E) E
-
-	// Number constructs a constant expression.
-	BigInt(number big.Int) E
-
-	// Or constructs a disjunction between this expression and zero or more
-	// expressions.
-	Or(...E) E
-
-	// Variable constructs a variable with a given shift.
-	Variable(name T, bitwidth uint, shift int) E
-
-	// String returns a suitable string representation
-	String(func(T) string) string
+	ReadRegister(reg register.Id, forwarding bool) Expr[F]
 }
 
 // BigNumber constructs a constant expression from a big integer.
-func BigNumber[T any, E Expr[T, E]](c *big.Int) E {
+func BigNumber[F field.Element[F]](c *big.Int) Expr[F] {
 	var (
-		empty E
+		empty Expr[F]
 		val   big.Int
 	)
 	// Clone big integer
@@ -121,61 +45,73 @@ func BigNumber[T any, E Expr[T, E]](c *big.Int) E {
 }
 
 // False constructs an expression which never holds.
-func False[T any, E Expr[T, E]]() E {
-	var empty E
+func False[F field.Element[F]]() Expr[F] {
+	var empty Expr[F]
 	//
 	return empty.Bool(false)
 }
 
 // If constructs an if-then expression.
-func If[T any, E Expr[T, E]](condition E, trueBranch E) E {
+func If[F field.Element[F]](condition Expr[F], trueBranch Expr[F]) Expr[F] {
 	return condition.Then(trueBranch)
 }
 
 // IfElse constructs an if-then-else expression.
-func IfElse[T any, E Expr[T, E]](condition E, trueBranch E, falseBranch E) E {
+func IfElse[F field.Element[F]](condition Expr[F], trueBranch Expr[F], falseBranch Expr[F]) Expr[F] {
 	return condition.ThenElse(trueBranch, falseBranch)
 }
 
 // Number constructs a constant expression from an unsigned integer.
-func Number[T any, E Expr[T, E]](c uint) E {
-	return BigNumber[T, E](big.NewInt(int64(c)))
+func Number[F field.Element[F]](c uint) Expr[F] {
+	return BigNumber[F](big.NewInt(int64(c)))
 }
 
 // Or constructs a disjunction.
-func Or[T any, E Expr[T, E]](first E, rest ...E) E {
+func Or[F field.Element[F]](first Expr[F], rest ...Expr[F]) Expr[F] {
 	return first.Or(rest...)
 }
 
 // Sum constructs a sum over one or more expressions.
-func Sum[T any, E Expr[T, E]](exprs []E) E {
+func Sum[F field.Element[F]](exprs []Expr[F]) Expr[F] {
 	if len(exprs) == 0 {
-		return Number[T, E](0)
+		return Number[F](0)
 	}
 	//
 	return exprs[0].Add(exprs[1:]...)
 }
 
 // Product constructs a product over one or more expressions.
-func Product[T any, E Expr[T, E]](exprs ...E) E {
+func Product[F field.Element[F]](exprs ...Expr[F]) Expr[F] {
 	if len(exprs) == 0 {
-		return Number[T, E](0)
+		return Number[F](0)
 	}
 	//
 	return exprs[0].Multiply(exprs[1:]...)
 }
 
 // True constructs an expression which always holds.
-func True[T any, E Expr[T, E]]() E {
-	var empty E
+func True[F field.Element[F]]() Expr[F] {
+	var empty Expr[F]
 	//
 	return empty.Bool(true)
 }
 
 // Variable is just a convenient wrapper for creating abstract expressions
 // representing variable accesses.
-func Variable[T any, E Expr[T, E]](id T, bitwidth uint, shift int) E {
-	var empty E
+func Variable[F field.Element[F]](id register.Id, bitwidth uint, shift int) Expr[F] {
+	var empty Expr[F]
 	//
 	return empty.Variable(id, bitwidth, shift)
+}
+
+// ToRegisterIds converts a slice of bytecode register identifiers into schema
+// register identifiers.
+func ToRegisterIds(ids []vm.RegisterId) []register.Id {
+	regs := make([]register.Id, len(ids))
+	//
+	for i, id := range ids {
+		regs[i] = register.NewId(uint(id))
+	}
+	//
+	return regs
 }

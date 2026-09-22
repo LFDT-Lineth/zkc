@@ -14,7 +14,6 @@ import (
 	"cmp"
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
 )
 
@@ -50,9 +49,9 @@ func (p Branch) Join(st Branch) Branch {
 }
 
 // String implementation for State interface
-func (p Branch) String(mapping register.Map) string {
+func (p Branch) String(mapping func(RegisterId) string) string {
 	return p.Condition.String(func(rid BranchId) string {
-		var name = mapping.Register(rid.Id).Name()
+		var name = mapping(rid.Id)
 		//
 		if rid.Forwarding {
 			return name
@@ -70,7 +69,7 @@ func (p Branch) String(mapping register.Map) string {
 // need to be "forwarded" to the point where they are used.
 type BranchId struct {
 	// First underlying register in group
-	Id register.Id
+	Id RegisterId
 	// Number of registers in group
 	Width uint
 	// Indication of whether Forwarding is active or not.
@@ -83,12 +82,12 @@ type BranchId struct {
 
 // NewBranchId constructs a new branch id from a group of one (or more)
 // consecutively assigned registers.
-func NewBranchId(forwarding bool, regs ...register.Id) BranchId {
-	var first = regs[0].Unwrap()
+func NewBranchId(forwarding bool, regs ...RegisterId) BranchId {
+	var first = regs[0]
 	// Sanity check all registers in the vector are allocated in the expected
 	// order (i.e. consecutively, starting from the least significant limb).
 	for i := range len(regs) {
-		expected := register.NewId(first + uint(i))
+		expected := first + RegisterId(i)
 		//
 		if regs[i] != expected {
 			panic("invalid register group")
@@ -103,7 +102,7 @@ func NewBranchId(forwarding bool, regs ...register.Id) BranchId {
 // NewBigEndianBranchId constructs a new branch id from a group of one (or
 // more) consecutively assigned registers, where the first register (i.e. that
 // with the lowest id) holds the most significant limb.
-func NewBigEndianBranchId(forwarding bool, regs ...register.Id) BranchId {
+func NewBigEndianBranchId(forwarding bool, regs ...RegisterId) BranchId {
 	var id = NewBranchId(forwarding, regs...)
 	//
 	id.BigEndian = true
@@ -114,7 +113,7 @@ func NewBigEndianBranchId(forwarding bool, regs ...register.Id) BranchId {
 // Cmp implementation of the logical.Variable interface
 func (p BranchId) Cmp(o BranchId) int {
 	if p.Forwarding == o.Forwarding {
-		if c := p.Id.Cmp(o.Id); c != 0 {
+		if c := cmp.Compare(p.Id, o.Id); c != 0 {
 			return c
 		}
 		//
@@ -132,7 +131,7 @@ func (p BranchId) Get(i uint) BranchId {
 		panic("invalid group member")
 	}
 	//
-	rid := register.NewId(p.Id.Unwrap() + i)
+	rid := p.Id + RegisterId(i)
 	//
 	return BranchId{rid, 1, p.Forwarding, false}
 }
@@ -148,14 +147,13 @@ func (p BranchId) Limb(i uint) BranchId {
 }
 
 // Registers returns the set of registers in this group.
-func (p BranchId) Registers() []register.Id {
+func (p BranchId) Registers() []RegisterId {
 	var (
-		first = p.Id.Unwrap()
-		regs  = make([]register.Id, p.Width)
+		regs = make([]RegisterId, p.Width)
 	)
 	//
 	for i := range p.Width {
-		regs[i] = register.NewId(first + i)
+		regs[i] = p.Id + RegisterId(i)
 	}
 	//
 	return regs
@@ -164,7 +162,7 @@ func (p BranchId) Registers() []register.Id {
 // String implementation of the logical.Variable interface
 func (p BranchId) String() string {
 	var (
-		first = p.Id.Unwrap()
+		first = uint(p.Id)
 		last  = first + p.Width - 1
 		id    = fmt.Sprintf("{%d...%d}", first, last)
 	)
