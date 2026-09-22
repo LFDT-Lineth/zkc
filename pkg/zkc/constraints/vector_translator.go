@@ -26,16 +26,13 @@ import (
 )
 
 // Expr is a useful alias for an MIR expression
-type Expr[F field.Element[F]] = mirc.MirExpr[F]
-
-// Module is a useful alias for an MIR module.
-type Module[F field.Element[F]] = mirc.MirModule[F]
+type Expr[F field.Element[F]] = mirc.Expr[F]
 
 // Framing is a useful alias
-type Framing[F field.Element[F]] = mirc.Framing[register.Id, Expr[F]]
+type Framing[F field.Element[F]] = mirc.Framing[F]
 
 // RegisterReader is a conenvient alias
-type RegisterReader[F field.Element[F]] = mirc.RegisterReader[Expr[F]]
+type RegisterReader[F field.Element[F]] = mirc.RegisterReader[F]
 
 // VectorInsnTranslator encapsulates general information related to the mapping from
 // a bytecode vector into to MIR constraints.
@@ -69,7 +66,7 @@ func NewVectorTranslator[W vm.Word[W], F field.Element[F]](ctx schema.ModuleId, 
 func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 	//
 	var (
-		constraint = mirc.True[register.Id, Expr[F]]()
+		constraint = mirc.True[F]()
 		//
 		nCodes = uint(len(p.vec.Bytecodes))
 		// Assignments determines whether the given bytecode definitely
@@ -111,7 +108,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			continue
 		case *vm.BytecodeFail[W]:
 			assignments = joinAssignments(assignments, localWrites)
-			local = mirc.False[register.Id, Expr[F]]()
+			local = mirc.False[F]()
 		case *vm.BytecodeJmp[W]:
 			assignments = joinAssignments(assignments, localWrites)
 			local = p.framing.Goto(uint(c.Target))
@@ -225,9 +222,9 @@ func (p *VectorInsnTranslator[W, F]) WithConstancyConstraints(writes dfa.Writes,
 		var (
 			regId = register.NewId(uint(i))
 			// Value of register on this row of the trace.
-			r_i = mirc.Variable[register.Id, Expr[F]](regId, reg.Bitwidth().UnwrapOr(math.MaxUint), 0)
+			r_i = mirc.Variable[F](regId, reg.Bitwidth().UnwrapOr(math.MaxUint), 0)
 			// Value of register on previous row of the trace.
-			r_im1 = mirc.Variable[register.Id, Expr[F]](regId, reg.Bitwidth().UnwrapOr(math.MaxUint), -1)
+			r_im1 = mirc.Variable[F](regId, reg.Bitwidth().UnwrapOr(math.MaxUint), -1)
 		)
 		//
 		if reg.IsInput() {
@@ -239,11 +236,11 @@ func (p *VectorInsnTranslator[W, F]) WithConstancyConstraints(writes dfa.Writes,
 			// Zero-width registers carry no data, hence constancy constraints
 			// on them are meaningless.
 			continue
-		} else if !writes.MaybeAssigned(regId) {
+		} else if !writes.MaybeAssigned(vm.RegisterId(i)) {
 			// Register never mutated by this instruction, so always copy value
 			// from previous row into this.
 			condition = condition.And(r_i.Equals(r_im1))
-		} else if !writes.DefinitelyAssigned(regId) {
+		} else if !writes.DefinitelyAssigned(vm.RegisterId(i)) {
 			// Variable is sometimes (but not always) assigned by this
 			// instruction.  This is the difficult case.  Determine
 			// condition under which this register is not assigned.
@@ -265,7 +262,7 @@ func (p *VectorInsnTranslator[W, F]) WithConstancyConstraints(writes dfa.Writes,
 func (p *VectorInsnTranslator[W, F]) determineConstancyCondition(reg register.Id, branchTable dfa.Result[dfa.Path[W]],
 	codes []vm.Bytecode[W]) Expr[F] {
 	//
-	var condition = mirc.True[register.Id, Expr[F]]()
+	var condition = mirc.True[F]()
 	//
 	for i, c := range codes {
 		if containsRegister(c.Definitions(), reg) {
@@ -301,13 +298,13 @@ func (p *VectorInsnTranslator[W, F]) ReadRegister(regId register.Id, forwarding 
 	//
 	if reg.IsInput() {
 		// Inputs don't need to refer back
-		return mirc.Variable[register.Id, Expr[F]](regId, bitwidthOf(reg), 0)
+		return mirc.Variable[F](regId, bitwidthOf(reg), 0)
 	} else if forwarding {
 		// Forwarded
-		return mirc.Variable[register.Id, Expr[F]](regId, bitwidthOf(reg), 0)
+		return mirc.Variable[F](regId, bitwidthOf(reg), 0)
 	}
 	// Not forwarded
-	return mirc.Variable[register.Id, Expr[F]](regId, bitwidthOf(reg), -1)
+	return mirc.Variable[F](regId, bitwidthOf(reg), -1)
 }
 
 // Register implementation for RegisterReader interface
@@ -332,18 +329,6 @@ func joinAssignments(lhs util.Option[dfa.Writes], rhs dfa.Writes) util.Option[df
 	}
 	//
 	return util.Some(rhs)
-}
-
-// toRegisterIds converts a slice of bytecode register identifiers into schema
-// register identifiers.
-func toRegisterIds(ids []vm.RegisterId) []register.Id {
-	regs := make([]register.Id, len(ids))
-	//
-	for i, id := range ids {
-		regs[i] = register.NewId(uint(id))
-	}
-	//
-	return regs
 }
 
 // containsRegister reports whether the given bytecode register identifier list

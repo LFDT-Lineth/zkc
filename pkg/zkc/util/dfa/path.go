@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
 )
@@ -186,14 +185,20 @@ func atomCount(p BranchCondition) int {
 }
 
 // String implementation for State interface
-func (p Path[W]) String(mapping register.Map) string {
-	return p.condition.String(func(rid BranchId) string {
-		var name = mapping.Register(rid.Id).Name()
-		//
-		if rid.Forwarding {
-			return name
+func (p Path[W]) String(mapping func(RegisterId) string) string {
+	var rmap func(BranchId) string
+	//
+	if mapping != nil {
+		rmap = func(rid BranchId) string {
+			var name = mapping(rid.Id)
+			//
+			if rid.Forwarding {
+				return name
+			}
+			//
+			return fmt.Sprintf("'%s", name)
 		}
-		//
-		return fmt.Sprintf("'%s", name)
-	})
+	}
+	//
+	return p.condition.String(rmap)
 }

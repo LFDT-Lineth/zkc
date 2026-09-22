@@ -17,7 +17,6 @@ import (
 	"math/big"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/logical"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
@@ -30,9 +29,9 @@ import (
 // constraints, "default != 0" holds exactly when every bit is clear.
 type oneHotGroup struct {
 	// bits of the group (the dispatch's case bits).
-	bits map[register.Id]bool
+	bits map[vm.RegisterId]bool
 	// dflt is the default register: 1 exactly when every bit is clear.
-	dflt register.Id
+	dflt vm.RegisterId
 }
 
 // collectOneHotGroups gathers the one-hot groups declared by the Dispatch
@@ -44,13 +43,13 @@ func collectOneHotGroups[W vm.Word[W]](codes []vm.Bytecode[W]) []oneHotGroup {
 	//
 	for _, code := range codes {
 		if d, ok := code.(*vm.BytecodeDispatch[W]); ok {
-			bits := make(map[register.Id]bool, len(d.Cases))
+			bits := make(map[vm.RegisterId]bool, len(d.Cases))
 			//
 			for _, c := range d.Cases {
-				bits[register.NewId(uint(c.Bit))] = true
+				bits[c.Bit] = true
 			}
 			//
-			groups = append(groups, oneHotGroup{bits, register.NewId(uint(d.Default))})
+			groups = append(groups, oneHotGroup{bits, d.Default})
 		}
 	}
 	//
@@ -192,7 +191,7 @@ func rewriteComplementDisjuncts(cond dfa.BranchCondition, g oneHotGroup) dfa.Bra
 // disjunct's atoms beyond the shared remainder, each a width-1 register tested
 // against zero (so it admits an arithmetic 0/1 indicator).
 type oneHotPiece struct {
-	bit    register.Id
+	bit    vm.RegisterId
 	guards []dfa.BranchEquality
 }
 
@@ -243,10 +242,10 @@ func splitOneHotDisjunction(cond dfa.BranchCondition, groups []oneHotGroup,
 func splitDisjuncts(conjuncts []dfa.BranchConjunction, g oneHotGroup,
 ) (common []dfa.BranchEquality, pieces []oneHotPiece, ok bool) {
 	var (
-		sets   = make([]map[register.Id]bool, len(conjuncts))
+		sets   = make([]map[vm.RegisterId]bool, len(conjuncts))
 		others = make([][]dfa.BranchEquality, len(conjuncts))
 		guards = make([][]dfa.BranchEquality, len(conjuncts))
-		byId   = make(map[register.Id][]dfa.BranchEquality)
+		byId   = make(map[vm.RegisterId][]dfa.BranchEquality)
 	)
 	// Split every disjunct into the members it fires on and its other atoms.
 	for i, conjunct := range conjuncts {
@@ -261,7 +260,7 @@ func splitDisjuncts(conjuncts []dfa.BranchConjunction, g oneHotGroup,
 				delete(sets[i], atom.Left.Id)
 			case sets[i][atom.Left.Id]:
 				// (m != 0): the active member is m.
-				sets[i] = map[register.Id]bool{atom.Left.Id: true}
+				sets[i] = map[vm.RegisterId]bool{atom.Left.Id: true}
 			default:
 				// (m != 0) contradicting an earlier atom: fires never.
 				sets[i] = nil
@@ -307,13 +306,13 @@ func splitDisjuncts(conjuncts []dfa.BranchConjunction, g oneHotGroup,
 		return nil, nil, false
 	}
 	// Order the pieces by register id, for determinism.
-	ids := make([]register.Id, 0, len(byId))
+	ids := make([]vm.RegisterId, 0, len(byId))
 	//
 	for m := range byId {
 		ids = append(ids, m)
 	}
 	//
-	slices.SortFunc(ids, func(l, r register.Id) int { return cmp.Compare(l.Unwrap(), r.Unwrap()) })
+	slices.SortFunc(ids, func(l, r vm.RegisterId) int { return cmp.Compare(l, r) })
 	//
 	for _, m := range ids {
 		pieces = append(pieces, oneHotPiece{bit: m, guards: byId[m]})
@@ -324,8 +323,8 @@ func splitDisjuncts(conjuncts []dfa.BranchConjunction, g oneHotGroup,
 
 // members returns the member set of the group: its bits plus the default
 // register.
-func (g oneHotGroup) members() map[register.Id]bool {
-	out := make(map[register.Id]bool, len(g.bits)+1)
+func (g oneHotGroup) members() map[vm.RegisterId]bool {
+	out := make(map[vm.RegisterId]bool, len(g.bits)+1)
 	//
 	for bit := range g.bits {
 		out[bit] = true
@@ -338,7 +337,7 @@ func (g oneHotGroup) members() map[register.Id]bool {
 
 // isMember reports whether the given register is a member of the group (one
 // of its bits or its default register).
-func (g oneHotGroup) isMember(id register.Id) bool {
+func (g oneHotGroup) isMember(id vm.RegisterId) bool {
 	return g.bits[id] || id == g.dflt
 }
 
@@ -385,11 +384,11 @@ func isIndicatorAtom(atom dfa.BranchEquality) bool {
 type complementBucket struct {
 	remainder  []dfa.BranchEquality
 	forwarding bool
-	covered    map[register.Id]bool
+	covered    map[vm.RegisterId]bool
 	members    []int
 }
 
-func (p *complementBucket) add(bit register.Id, member int) {
+func (p *complementBucket) add(bit vm.RegisterId, member int) {
 	p.covered[bit] = true
 	p.members = append(p.members, member)
 }
@@ -408,7 +407,7 @@ func bucketOf(buckets *[]complementBucket, remainder []dfa.BranchEquality,
 	}
 	//
 	*buckets = append(*buckets, complementBucket{remainder, forwarding,
-		make(map[register.Id]bool), nil})
+		make(map[vm.RegisterId]bool), nil})
 	//
 	return &(*buckets)[len(*buckets)-1]
 }
