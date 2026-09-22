@@ -56,41 +56,13 @@ func (p *InternalFailure[F]) Message() string {
 	return fmt.Sprintf("%s (row %d) - %s", p.handle, p.row, p.error)
 }
 
-// RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
-func (p *InternalFailure[F]) RequiredCells(_ trace.Trace[F]) set.AnySortedSet[trace.ShardedCellRef] {
-	return nil
-}
-
-// PanicFailure indicates that a panic arose during constraint checking, rather
-// than an actual constraint failure.  The purpose of this is to allow the
-// testing framework to distinguish panics from actual constraint failures.
-type PanicFailure[F field.Element[F]] struct {
-	handle     string
-	message    string
-	stackTrace []byte
-}
-
-// NewPanicFailure constructs a new panic failure object.
-func NewPanicFailure[F field.Element[F]](handle, message string, stackTrace []byte) *PanicFailure[F] {
-	//
-	return &PanicFailure[F]{handle, message, stackTrace}
-}
-
-// Handle implementation for schema.Failure interface.
-func (p *PanicFailure[F]) Handle() string {
-	return p.handle
-}
-
-// Message returns the message associated with this panic.
-func (p *PanicFailure[F]) Message() string {
-	return p.String()
+// Trace implementation of schema.Failure interface.  Internal failures carry
+// no trace data, hence this is always the empty shard.
+func (p *InternalFailure[F]) Trace() trace.Shard[F] {
+	return trace.Shard[F]{}
 }
 
 // RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
-func (p *PanicFailure[F]) RequiredCells(_ trace.Trace[F]) set.AnySortedSet[trace.ShardedCellRef] {
+func (p *InternalFailure[F]) RequiredCells() set.AnySortedSet[trace.CellRef] {
 	return nil
-}
-
-func (p *PanicFailure[F]) String() string {
-	return fmt.Sprintf("%s\n\n%s", p.message, string(p.stackTrace))
 }

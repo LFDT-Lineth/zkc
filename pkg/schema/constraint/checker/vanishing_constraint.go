@@ -13,28 +13,53 @@
 package checker
 
 import (
+	"fmt"
+
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
+// VanishingFailure provides structural information about a failing vanishing constraint.
+type VanishingFailure[F field.Element[F]] struct {
+	rowFailure[F]
+	// Constraint expression
+	constraint term.Testable[F]
+	// Module where constraint failed
+	context schema.ModuleId
+}
+
+// Message provides a suitable error message
+func (p *VanishingFailure[F]) Message() string {
+	// Construct useful error message
+	return fmt.Sprintf("constraint \"%s\" does not hold (row %d, shard %d)", p.handle, p.row, p.shardId)
+}
+
+// RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
+func (p *VanishingFailure[F]) RequiredCells() set.AnySortedSet[trace.CellRef] {
+	return *p.constraint.RequiredCells(int(p.row), p.context)
+}
+
+func (p *VanishingFailure[F]) String() string {
+	return p.Message()
+}
+
 func processVanishingConstraint[F field.Element[F], T term.Testable[F]](
-	cp ConstraintProcessor[F], c *vanishing.Constraint[F, T]) []Failure[F] {
+	cp ConstraintProcessor[F], c *vanishing.Constraint[F, T]) (State[F], []Failure[F]) {
 	//
 	var (
+		state State[F]
 		// Handle is used for error reporting.
 		handle = constraint.DetermineHandle(c.Handle, c.Context, cp.shard)
-		// Determine enclosing module
-		trModule = cp.shard.Module(c.Context)
-		scModule = cp.parent.schema.Module(c.Context)
 	)
 	//
 	if c.Domain.IsEmpty() {
 		// Global Constraint
-		return HoldsGlobally(handle, c.Context, c.Constraint, cp.shardId, trModule, scModule)
+		return state, holdsGlobally(cp, handle, c.Context, c.Constraint)
 	}
 	// Extract domain
 	domain := c.Domain.Unwrap()
@@ -50,17 +75,17 @@ func processVanishingConstraint[F field.Element[F], T term.Testable[F]](
 		start = uint(domain)
 	}
 	// Check specific row
-	return HoldsLocally(start, handle, c.Constraint, c.Context, cp.shardId, trModule, scModule)
+	return state, holdsLocally(cp, start, handle, c.Context, c.Constraint)
 }
 
-// HoldsGlobally checks whether a given expression vanishes (i.e. evaluates to
+// holdsGlobally checks whether a given expression vanishes (i.e. evaluates to
 // zero) for all rows of a trace.  If not, report an appropriate error.
-func HoldsGlobally[F field.Element[F], T term.Testable[F]](handle string, ctx schema.ModuleId, constraint T,
-	shard uint, trMod trace.Module[F], scMod schema.Module[F]) []Failure[F] {
+func holdsGlobally[F field.Element[F], T term.Testable[F]](cp ConstraintProcessor[F], handle string,
+	ctx schema.ModuleId, constraint T) []Failure[F] {
 	//
 	var (
 		// Determine height of enclosing module
-		height = trMod.Height()
+		height = cp.shard.Module(ctx).Height()
 		// Determine well-definedness bounds for this constraint
 		bounds = constraint.Bounds()
 	)
@@ -68,7 +93,7 @@ func HoldsGlobally[F field.Element[F], T term.Testable[F]](handle string, ctx sc
 	if bounds.End < height {
 		// Check all in-bounds values
 		for k := bounds.Start; k < (height - bounds.End); k++ {
-			if errs := HoldsLocally(k, handle, constraint, ctx, shard, trMod, scMod); len(errs) > 0 {
+			if errs := holdsLocally(cp, k, handle, ctx, constraint); len(errs) > 0 {
 				return errs
 			}
 		}
@@ -77,23 +102,23 @@ func HoldsGlobally[F field.Element[F], T term.Testable[F]](handle string, ctx sc
 	return nil
 }
 
-// HoldsLocally checks whether a given constraint holds (e.g. vanishes) on a
+// holdsLocally checks whether a given constraint holds (e.g. vanishes) on a
 // specific row of a trace. If not, report an appropriate error.
-func HoldsLocally[F field.Element[F], T term.Testable[F]](k uint, handle string, term T, ctx schema.ModuleId,
-	shard uint, trMod trace.Module[F], scMod schema.Module[F]) []Failure[F] {
+func holdsLocally[F field.Element[F], T term.Testable[F]](cp ConstraintProcessor[F], k uint, handle string,
+	ctx schema.ModuleId, term T) []Failure[F] {
 	//
-	ok, _, err := term.TestAt(k, trMod, scMod)
+	var (
+		trMod = cp.shard.Module(ctx)
+		scMod = cp.parent.schema.Module(ctx)
+	)
+	//
+	ok, err := term.TestAt(k, trMod, scMod)
 	// Check for errors
 	if err != nil {
 		return []Failure[F]{constraint.NewInternalFailure[F](handle, ctx, k, err.Error())}
 	} else if !ok {
 		// Evaluation failure
-		return []Failure[F]{&vanishing.Failure[F]{
-			VanishingHandle: handle,
-			Constraint:      term,
-			Context:         ctx,
-			Row:             k,
-			Shard:           shard}}
+		return []Failure[F]{&VanishingFailure[F]{newRowFailure(handle, k, cp), term, ctx}}
 	}
 	// Success
 	return nil

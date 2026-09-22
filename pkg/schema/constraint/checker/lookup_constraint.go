@@ -13,15 +13,51 @@
 package checker
 
 import (
+	"fmt"
+
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
-func processLookupConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *lookup.Constraint[F]) []Failure[F] {
+// LookupFailure provides structural information about a failing lookup constraint.
+type LookupFailure[F field.Element[F]] struct {
+	rowFailure[F]
+	// sourceId gives the set identifier of the source
+	sourceId constraint.SetId
+}
+
+// Message provides a suitable error message
+func (p *LookupFailure[F]) Message() string {
+	return fmt.Sprintf("lookup \"%s\" failed (row %d, shard %d)", p.handle, p.row, p.shardId)
+}
+
+func (p *LookupFailure[F]) String() string {
+	return p.Message()
+}
+
+// RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
+func (p *LookupFailure[F]) RequiredCells() set.AnySortedSet[trace.CellRef] {
+	res := set.NewAnySortedSet[trace.CellRef]()
+	// Handle registers
+	for i := range p.sourceId.Width() {
+		var rid = p.sourceId.Ith(i)
+		//
+		ref := trace.NewColumnRef(p.sourceId.Module(), rid)
+		res.Insert(trace.NewCellRef(ref, int(p.row)))
+	}
+	//
+	return *res
+}
+
+func processLookupConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *lookup.Constraint[F],
+) (State[F], []Failure[F]) {
 	var (
+		state State[F]
 		// Load target sets
 		targets = loadSets(cp.context, c.Targets...)
 		// Initialise read buffer
@@ -32,50 +68,42 @@ func processLookupConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *l
 	// Subset check
 	for _, source := range c.Sources {
 		var (
-			trModule = cp.shard.Module(source.Module)
-			srcId    = constraint.NewSetId(source.Module, source.Selector, source.Registers)
+			srcId = constraint.NewSetId(source.Module, source.Selector, source.Registers)
+			// Determine first failing row (if any)
+			witness = inclusionCheck(cp.shard.Module(source.Module), srcId, targets, buffer)
 		)
-		// Check each row in the set determined by this vector.
-		if err := checkSourceSet(c.Handle, srcId, cp.shardId, trModule, targets, buffer); err != nil {
-			failures = append(failures, err)
+		//
+		if witness.HasValue() {
+			failures = append(failures, &LookupFailure[F]{newRowFailure(c.Handle, witness.Unwrap(), cp), srcId})
 		}
 	}
 	//
-	return failures
+	return state, failures
 }
 
-// Check that all rows in a given source set are contained within at least one
-// of the given target sets.
-func checkSourceSet[F field.Element[F]](handle string, src SetId, shard uint, mod trace.Module[F],
-	sets []collection.Set[[]F], buffer []F) Failure[F] {
+// inclusionCheck checks whether all (selected) rows of the given source set are
+// contained within any of the given target sets and, if not, returns a witness
+// to this fact (i.e. a row not found in any of the target sets).
+func inclusionCheck[F field.Element[F]](mod trace.Module[F], src SetId, sets []collection.Set[[]F],
+	buffer []F) util.Option[uint] {
 	if src.HasSelector() {
 		var selector = src.Selector().Unwrap()
 		//
 		for row := range mod.Height() {
-			if !mod.Column(selector).Get(row).IsZero() {
-				if !contains(row, src, mod, sets, buffer) {
-					return &lookup.Failure[F]{
-						LookupHandle: handle,
-						SourceId:     src,
-						Row:          row,
-						Shard:        shard}
-				}
+			if !mod.Column(selector).Get(row).IsZero() && !contains(row, src, mod, sets, buffer) {
+				return util.Some(row)
 			}
 		}
 	} else {
 		// Optimised path when no selector
 		for row := range mod.Height() {
 			if !contains(row, src, mod, sets, buffer) {
-				return &lookup.Failure[F]{
-					LookupHandle: handle,
-					SourceId:     src,
-					Row:          row,
-					Shard:        shard}
+				return util.Some(row)
 			}
 		}
 	}
 	//
-	return nil
+	return util.None[uint]()
 }
 
 // check whether the given source row is contained within any of the given sets.

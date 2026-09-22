@@ -13,13 +13,54 @@
 package checker
 
 import (
+	"fmt"
+
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
-func processRangeConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *ranged.Constraint[F]) []Failure[F] {
+// RangeFailure provides structural information about a failing type constraint.
+type RangeFailure[F field.Element[F]] struct {
+	rowFailure[F]
+	// Enclosing context
+	context schema.ModuleId
+	// Constrained register
+	source register.Id
+	// Range restriction
+	bitwidth uint
+}
+
+// Message provides a suitable error message
+func (p *RangeFailure[F]) Message() string {
+	// Construct useful error message
+	return fmt.Sprintf("range \"%s\" is u%d does not hold (row %d, shard %d)", p.handle, p.bitwidth, p.row, p.shardId)
+}
+
+func (p *RangeFailure[F]) String() string {
+	return p.Message()
+}
+
+// RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
+func (p *RangeFailure[F]) RequiredCells() set.AnySortedSet[trace.CellRef] {
 	var (
+		res = set.NewAnySortedSet[trace.CellRef]()
+		ref = trace.NewColumnRef(p.context, p.source)
+	)
+	//
+	res.Insert(trace.NewCellRef(ref, int(p.row)))
+	//
+	return *res
+}
+
+func processRangeConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *ranged.Constraint[F],
+) (State[F], []Failure[F]) {
+	var (
+		state    State[F]
 		trModule = cp.shard.Module(c.Context)
 		handle   = constraint.DetermineHandle(c.Handle, c.Context, cp.shard)
 		column   = trModule.Column(c.Source.Unwrap())
@@ -32,15 +73,9 @@ func processRangeConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *ra
 		// Perform the range check
 		if column.Get(k).Cmp(bound) >= 0 {
 			// Evaluation failure
-			failures = append(failures, &ranged.Failure[F]{
-				RangeHandle: handle,
-				Context:     c.Context,
-				Source:      c.Source,
-				Bitwidth:    c.Bitwidth,
-				Row:         k,
-				Shard:       cp.shardId})
+			failures = append(failures, &RangeFailure[F]{newRowFailure(handle, k, cp), c.Context, c.Source, c.Bitwidth})
 		}
 	}
 	// All good
-	return failures
+	return state, failures
 }

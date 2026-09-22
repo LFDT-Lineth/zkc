@@ -119,7 +119,7 @@ func (tb TraceBuilder[F]) Build(schema sc.Schema[F], tf trace.Trace[F]) (tr trac
 		errors = make([][]error, len(tf))
 		// Trace Expander function
 		expandFn = func(i uint, shard trace.Shard[F]) {
-			shards[i], errors[i] = tb.buildShard(schema, i, shard)
+			shards[i], errors[i] = tb.BuildShard(schema, shard)
 		}
 	)
 	// Build the trace (using parallelism if requested).
@@ -132,8 +132,8 @@ func (tb TraceBuilder[F]) Build(schema sc.Schema[F], tf trace.Trace[F]) (tr trac
 	return shards, array.FlatMap(errors, func(es []error) []error { return es })
 }
 
-func (tb TraceBuilder[F]) buildShard(schema sc.Schema[F], shard uint, tf trace.Shard[F],
-) (tr trace.Shard[F], errs []error) {
+// BuildShard performs (sequential) trace expansion on a single shard.
+func (tb TraceBuilder[F]) BuildShard(schema sc.Schema[F], tf trace.Shard[F]) (tr trace.Shard[F], errs []error) {
 	//
 	var (
 		atr trace.Shard[F]

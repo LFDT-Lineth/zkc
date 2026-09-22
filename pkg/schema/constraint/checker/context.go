@@ -64,11 +64,7 @@ func seqBuildContext[F field.Element[F]](tr trace.Shard[F], sc Schema[F]) Contex
 }
 
 // parBuildContext constructs the context from a given schema and trace, using
-// a map-reduce strategy.  Each set is first split into one or more row-range
-// chunks (so a single large set does not bottleneck the whole process), which
-// are then constructed in parallel via array.ParallelMap (the "map" phase).
-// Chunks belonging to the same set are then merged back together (the
-// "reduce" phase), which is likewise done in parallel across sets.
+// a parallel map.
 func parBuildContext[F field.Element[F]](tr trace.Shard[F], sc Schema[F]) Context[F] {
 	var (
 		context = make(map[string]*hash.Set[hash.Array[F]])

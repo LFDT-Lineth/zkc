@@ -64,6 +64,11 @@ type Failure[F field.Element[F]] interface {
 	Handle() string
 	// Provides a suitable error message
 	Message() string
-	// Identify set of cells relevant to the error.
-	RequiredCells(trace.Trace[F]) set.AnySortedSet[trace.ShardedCellRef]
+	// Trace returns the shard in which this failure arose.  For failures which
+	// span shards (e.g. an unbalanced bus) this is the empty shard.
+	Trace() trace.Shard[F]
+	// RequiredCells identifies the set of cells within Trace() which are
+	// relevant to this failure.  This is empty when no cells can be sensibly
+	// identified (e.g. because the failure spans shards).
+	RequiredCells() set.AnySortedSet[trace.CellRef]
 }

@@ -157,8 +157,6 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 				test.filename, test.line, p.Outputs().Count(), len(actuals))
 		}
 	} else {
-		// Fail automatically on any panic arising during execution
-		failIf[*constraint.PanicFailure[F]](t, errs...)
 		// Determine whether test accepted or not.
 		accepted := len(errs) == 0
 		// Process what happened versus what was supposed to happen.
@@ -201,18 +199,22 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 		// generate trace
 		_, tr, errs = binf.Trace(inputs, traceCfg)
 	)
+	// Check whether a trace was actually generated.
+	if tr.IsEmpty() {
+		failNow(t, errs...)
+	}
+	// Check constraints
+	failures, errors := binf.Check(traceCfg, tr.Unwrap())
 	// Fail automatically on any internal error arising during tracing
-	failIfNot[*vm.Failure](t, errs...)
-	// Check for errors
+	failIfNot[*vm.Failure](t, errors...)
+	// Check for unexpected failures errors
 	if test.expected {
 		// Fail on any machine failure, since this test was not expected to
 		// generate any failures.
 		failIf[*vm.Failure](t, errs...)
 	}
-	// Check constraints
-	failures := binf.Check(traceCfg, tr)
-	// Fail automatically on any panic arising during constraint checking
-	failIf[*constraint.PanicFailure[F]](t, failures...)
+	// Fail automatically on any internal arising during constraint checking
+	failIf[*constraint.InternalFailure[F]](t, failures...)
 	// Determine whether trace accepted or not.
 	accepted := len(failures) == 0
 	// Process what happened versus what was supposed to happen.

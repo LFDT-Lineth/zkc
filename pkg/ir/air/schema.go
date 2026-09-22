@@ -106,17 +106,17 @@ func (p LogicalTerm[F]) Bounds() util.Bounds {
 }
 
 // TestAt implementation for Testable interface.
-func (p LogicalTerm[F]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, uint, error) {
+func (p LogicalTerm[F]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, error) {
 	var (
 		val, err = p.Term.EvalAt(k, tr, sc)
 		zero     F
 	)
 	//
 	if err != nil {
-		return false, 0, err
+		return false, err
 	}
 	//
-	return val.Cmp(zero) == 0, 0, nil
+	return val.Cmp(zero) == 0, nil
 }
 
 // Lisp returns a lisp representation of this NotEqual, which is useful for

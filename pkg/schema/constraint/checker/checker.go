@@ -19,7 +19,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
@@ -27,7 +26,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -76,67 +74,94 @@ func (p Checker[F]) WithParallelism(enable bool) Checker[F] {
 	return p
 }
 
-// Check the given trace against the schema associated with this checker,
-// returning any constraint failures encountered.  A key challenge with this
-// feature is to check constraints without holding the entire trace in memory at
-// once.  Instead, it holds one shard in memory at a time.  Note, however, that
-// global (i.e. bus) constraints require state to be shared across all shards.
-func (p Checker[F]) Check(trace trace.Trace[F]) (failures []Failure[F]) {
+// CheckStrict provides slightly simpler interface when all shards of a given
+// trace are already computed.
+func (p Checker[F]) CheckStrict(trace trace.Trace[F]) (failures []Failure[F], errors []error) {
 	var (
-		// Initialise state for state constraints
-		state = array.Map(p.constraints, initialiseGlobalConstraint[F])
+		mapper = func(id uint, shard Shard[F]) Result[F] {
+			return p.processShard(id, shard)
+		}
+		//
+		result Result[F]
 	)
 	//
-	for id, shard := range trace {
-		var stats = util.NewPerfStats()
-		// process shard
-		fs := p.processShard(state, uint(id), shard)
-		//
-		failures = append(failures, fs...)
-		//
-		stats.Log(fmt.Sprintf("[SHARD %d] checked with %d failures", id, len(fs)))
+	if p.parallel {
+		result = array.ParallelMapReduce(trace, mapper, resultReducer)
+	} else {
+		result = array.MapReduce(trace, mapper, resultReducer)
 	}
 	// Finalise global constraints
-	return append(failures, p.finaliseGlobalConstraints(state)...)
+	return append(result.failures, p.finaliseGlobalConstraints(result)...), result.errors
 }
 
-func (p Checker[F]) finaliseGlobalConstraints(state []State[F]) (failures []Failure[F]) {
-	// Check for bus constraints (as these are currently the only global constraints)
-	for i, c := range p.constraints {
-		if c, ok := c.(*bus.Constraint[F]); ok {
-			failures = append(failures, finaliseBusConstraint(c, state[i])...)
+// CheckLazy checks the given trace against the schema associated with this
+// checker, returning any constraint failures encountered.  This is done lazily
+// to ensure that shards are processed one-at-a-time.
+func (p Checker[F]) CheckLazy(tr trace.LazyTrace[F]) (failures []Failure[F], errors []error) {
+	var (
+		result  Result[F]
+		results = make([]Result[F], tr.Len())
+	)
+	// Lazy map
+	errors = tr.Apply(func(id uint, shard trace.Shard[F]) {
+		results[id] = p.processShard(id, shard)
+	})
+	// Lazy reduce
+	if p.parallel {
+		result = array.ParallelReduce(results, resultReducer)
+	} else {
+		result = array.Reduce(results, resultReducer)
+	}
+	// Finalise global constraints
+	failures = append(result.failures, p.finaliseGlobalConstraints(result)...)
+	// Combine all errors together
+	return failures, append(errors, result.errors...)
+}
+
+func (p Checker[F]) finaliseGlobalConstraints(result Result[F]) (failures []Failure[F]) {
+	if result.state != nil {
+		// Check for bus constraints (as these are currently the only global constraints)
+		for i, c := range p.constraints {
+			if c, ok := c.(*bus.Constraint[F]); ok {
+				failures = append(failures, finaliseBusConstraint(c, result.state[i])...)
+			}
 		}
 	}
 	//
 	return failures
 }
 
-func (p Checker[F]) processShard(state []State[F], shardId uint, shard Shard[F]) []Failure[F] {
+func (p Checker[F]) processShard(id uint, shard Shard[F]) (res Result[F]) {
 	var (
+		stats = util.NewPerfStats()
 		// Build the shard context
 		context = p.buildShardContext(shard)
 		// Construct constraint processor
-		processor = func(i uint, c Constraint[F]) []Failure[F] {
-			// Construct constraint processor
-			var cp = ConstraintProcessor[F]{
-				p, context, state[i], shardId, shard,
-			}
-			// Process constrant
-			return cp.processConstraint(c)
+		processor = ConstraintProcessor[F]{
+			p, context, id, shard,
 		}
-		//
-		errors [][]Failure[F]
 	)
 	//
-	if p.parallel {
-		errors = array.ParallelMap(p.constraints, processor)
-	} else {
-		errors = array.Map(p.constraints, processor)
-	}
+	res.state = make([]State[F], len(p.constraints))
 	//
-	return array.FlatMap(errors, func(fs []schema.Failure[F]) []Failure[F] {
-		return fs
-	})
+	for i, c := range p.constraints {
+		var (
+			fails []Failure[F]
+			err   error
+		)
+		// Process ith constraint
+		res.state[i], fails, err = processor.processConstraint(c)
+		// Append any failures arising
+		res.failures = append(res.failures, fails...)
+		// Append error if arising
+		if err != nil {
+			res.errors = append(res.errors, err)
+		}
+	}
+	// Log stats
+	stats.Log(fmt.Sprintf("[SHARD %d] checked with %d failures", id, len(res.failures)))
+	// Done
+	return res
 }
 
 func (p Checker[F]) buildShardContext(shard Shard[F]) Context[F] {
@@ -147,15 +172,56 @@ func (p Checker[F]) buildShardContext(shard Shard[F]) Context[F] {
 	return seqBuildContext(shard, p.schema)
 }
 
-func initialiseGlobalConstraint[F field.Element[F]](_ uint, c Constraint[F]) State[F] {
-	var state State[F]
-	// Check for bus constraints (as these are currently the only global constraints)
-	if _, ok := c.(*bus.Constraint[F]); ok {
-		// Initialise the tally
-		state.data = hash.NewMap[hash.Array[F], int](32)
+// Result represents the result from processing a given shard.
+type Result[F field.Element[F]] struct {
+	state    []State[F]
+	failures []Failure[F]
+	errors   []error
+}
+
+func resultReducer[F field.Element[F]](lhs, rhs Result[F]) Result[F] {
+	var (
+		// Combine all failures
+		failures = append(lhs.failures, rhs.failures...)
+		// Combine all errors
+		errors = append(lhs.errors, rhs.errors...)
+
+		state []State[F]
+	)
+	// Check for error cases
+	if lhs.state == nil {
+		state = rhs.state
+	} else if rhs.state == nil {
+		state = lhs.state
+	} else {
+		// Initialise state
+		state = lhs.state
+		// Reduce states
+		for i := range state {
+			state[i] = joinStates(lhs.state[i], rhs.state[i])
+		}
 	}
 	//
-	return state
+	return Result[F]{state, failures, errors}
+}
+
+func joinStates[F field.Element[F]](l, r State[F]) State[F] {
+	if l.data == nil {
+		return r
+	} else if r.data == nil {
+		return l
+	}
+	// Insert all items from left into right
+	for iter := r.data.KeyValues(); iter.HasNext(); {
+		var (
+			kv    = iter.Next()
+			lv, _ = l.data.Get(kv.Left)
+		)
+		//
+		l.data.Insert(kv.Left, lv+kv.Right)
+	}
+	//
+	return l
 }
 
 // ConstraintProcessor encapsulates all data required for processing a given
@@ -164,43 +230,52 @@ type ConstraintProcessor[F field.Element[F]] struct {
 	parent Checker[F]
 	// Generated context (for this shard)
 	context Context[F]
-	// Global state (for this constraint)
-	state State[F]
 	// Shard Index
 	shardId uint
 	// Shard data
 	shard trace.Shard[F]
 }
 
-func (cp ConstraintProcessor[F]) processConstraint(c Constraint[F]) (res []Failure[F]) {
+func (cp ConstraintProcessor[F]) processConstraint(c Constraint[F]) (st State[F], fails []Failure[F], err error) {
 	// Setup panic intercept
 	defer func() {
-		var err = recover()
+		var e = recover()
 		//
-		if err != nil {
+		if e != nil {
 			var (
 				buf [2048]byte
 				n   = runtime.Stack(buf[:], false)
 			)
 			// override return
-			res = []Failure[F]{
-				constraint.NewPanicFailure[F](c.Name(), fmt.Sprintf("%v", err), buf[:n]),
-			}
+			err = &Panic{c.Name(), fmt.Sprintf("%v", e), buf[:n]}
 		}
 	}()
 	//
 	switch c := c.(type) {
 	case *bus.Constraint[F]:
-		return processBusConstraint(cp, c)
+		st, fails = processBusConstraint(cp, c)
 	case *lookup.Constraint[F]:
-		return processLookupConstraint(cp, c)
+		st, fails = processLookupConstraint(cp, c)
 	case *ranged.Constraint[F]:
-		return processRangeConstraint(cp, c)
+		st, fails = processRangeConstraint(cp, c)
 	case *vanishing.Constraint[F, air.LogicalTerm[F]]:
-		return processVanishingConstraint(cp, c)
+		st, fails = processVanishingConstraint(cp, c)
 	case *vanishing.Constraint[F, mir.LogicalTerm[F]]:
-		return processVanishingConstraint(cp, c)
+		st, fails = processVanishingConstraint(cp, c)
 	default:
 		panic(fmt.Sprintf("unknown constraint type for \"%s\"", c.Name()))
 	}
+	//
+	return st, fails, err
+}
+
+// Panic indicates that a panic arose during constraint checking.
+type Panic struct {
+	handle     string
+	message    string
+	stackTrace []byte
+}
+
+func (p *Panic) Error() string {
+	return fmt.Sprintf("%s:%s\n\n%s", p.handle, p.message, string(p.stackTrace))
 }

@@ -13,14 +13,69 @@
 package checker
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
+
+// BusFailure records a message sent and received a differing number of times.
+type BusFailure[F field.Element[F]] struct {
+	// Handle (i.e. bus name) of the failing constraint
+	handle string
+	// unbalanced is the offending message
+	unbalanced []F
+	// tally is the overall send/receive tally
+	tally int
+	// sends are the send ports of the failing constraint
+	sends []bus.Port
+	// receives are the receive ports of the failing constraint
+	receives []bus.Port
+}
+
+// Handle implementation of schema.Failure interface
+func (p *BusFailure[F]) Handle() string {
+	return p.handle
+}
+
+// Message provides a suitable error message
+func (p *BusFailure[F]) Message() string {
+	var builder strings.Builder
+	//
+	for i, ith := range p.unbalanced {
+		if i != 0 {
+			builder.WriteString(",")
+		}
+		//
+		builder.WriteString(ith.String())
+	}
+	//
+	return fmt.Sprintf("bus \"%s\" unbalanced: message (%s) send / receive tally %d",
+		p.Handle(), builder.String(), p.tally)
+}
+
+func (p *BusFailure[F]) String() string {
+	return p.Message()
+}
+
+// Trace implementation of schema.Failure interface.  A bus imbalance spans
+// every shard of the trace, hence there is no single shard to return.
+func (p *BusFailure[F]) Trace() trace.Shard[F] {
+	return trace.Shard[F]{}
+}
+
+// RequiredCells implementation of schema.Failure interface.  A bus imbalance
+// spans every shard of the trace, so there is no sensible set of cells to
+// report and this is always empty.
+func (p *BusFailure[F]) RequiredCells() set.AnySortedSet[trace.CellRef] {
+	return nil
+}
 
 func finaliseBusConstraint[F field.Element[F]](c *bus.Constraint[F], state State[F]) (failures []Failure[F]) {
 	var (
@@ -33,12 +88,12 @@ func finaliseBusConstraint[F field.Element[F]](c *bus.Constraint[F], state State
 		//
 		if pair.Right != 0 {
 			//
-			failures = append(failures, &bus.Failure[F]{
-				Bus:        c.Handle,
-				Unbalanced: pair.Left.Elements(),
-				Tally:      pair.Right,
-				Sends:      c.Sends,
-				Receives:   c.Receives,
+			failures = append(failures, &BusFailure[F]{
+				handle:     c.Handle,
+				unbalanced: pair.Left.Elements(),
+				tally:      pair.Right,
+				sends:      c.Sends,
+				receives:   c.Receives,
 			})
 		}
 	}
@@ -46,11 +101,15 @@ func finaliseBusConstraint[F field.Element[F]](c *bus.Constraint[F], state State
 	return failures
 }
 
-func processBusConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *bus.Constraint[F]) (failures []Failure[F]) {
-	accumulate(cp.shard, c.Sends, cp.state.data, 1)
-	accumulate(cp.shard, c.Receives, cp.state.data, -1)
+func processBusConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *bus.Constraint[F],
+) (state State[F], failures []Failure[F]) {
+	var (
+		tally = hash.NewMap[hash.Array[F], int](32)
+	)
+	accumulate(cp.shard, c.Sends, tally, 1)
+	accumulate(cp.shard, c.Receives, tally, -1)
 	//
-	return nil
+	return State[F]{tally}, nil
 }
 
 func accumulate[F field.Element[F]](tr trace.Shard[F], ports []bus.Port, tally *bus.Tally[F], sign int) {

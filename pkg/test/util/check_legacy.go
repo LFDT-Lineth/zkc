@@ -248,11 +248,13 @@ func checkTrace[F field.Element[F]](t *testing.T, tf trace.Trace[F], id traceId,
 	checker := checker.New(schema).
 		WithParallelism(id.parallel)
 	// Check Constraints
-	errs := checker.Check(shards)
+	fails, errs := checker.CheckStrict(shards)
 	// Determine whether trace accepted or not.
-	accepted := len(errs) == 0
+	accepted := len(fails) == 0
 	// Process what happened versus what was supposed to happen.
-	if !accepted && id.expected {
+	if len(errs) > 0 {
+		t.Errorf("Checker panic (%s): %s", id.String(), errs)
+	} else if !accepted && id.expected {
 		//table.PrintTrace(tr)
 		t.Errorf("Trace rejected incorrectly (%s): %s", id.String(), errs)
 	} else if accepted && !id.expected {

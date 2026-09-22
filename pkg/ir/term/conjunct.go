@@ -84,20 +84,20 @@ func (p *Conjunct[F, S]) Negate() S {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Conjunct[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, uint, error) {
+func (p *Conjunct[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, error) {
 	//
 	for _, disjunct := range p.Args {
-		val, _, err := disjunct.TestAt(k, tr, sc)
+		val, err := disjunct.TestAt(k, tr, sc)
 		//
 		if err != nil {
-			return val, 0, err
+			return val, err
 		} else if !val {
 			// Failure
-			return val, 0, nil
+			return val, nil
 		}
 	}
 	// Success
-	return true, 0, nil
+	return true, nil
 }
 
 // Lisp returns a lisp representation of this equation, which is useful for
