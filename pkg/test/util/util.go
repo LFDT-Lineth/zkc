@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
@@ -78,9 +79,30 @@ func CompileZkcWith(config codegen.Config, srcfile source.File) []source.SyntaxE
 // which is itself reported.
 func checkZkcModuleReachability(program ast.Program, srcmaps source.Maps[any],
 	vmProgram vm.Program[vm.Uint]) []source.SyntaxError {
+	// Dispatch based on field config
+	switch vmProgram.Field() {
+	case field.GF_251:
+		return checkZkcModuleReachabilityFor[gf251.Element, vm.Uint32](program, srcmaps, vmProgram)
+	case field.GF_8209:
+		return checkZkcModuleReachabilityFor[gf8209.Element, vm.Uint32](program, srcmaps, vmProgram)
+	case field.KOALABEAR_16, field.KOALABEAR_24:
+		return checkZkcModuleReachabilityFor[koalabear.Element, vm.Uint32](program, srcmaps, vmProgram)
+	case field.GOLDILOCKS_32:
+		return checkZkcModuleReachabilityFor[goldilocks.Element, vm.Uint64](program, srcmaps, vmProgram)
+	case field.BLS12_377:
+		return checkZkcModuleReachabilityFor[bls12_377.Element, vm.Uint128](program, srcmaps, vmProgram)
+	default:
+		panic(fmt.Sprintf("unknown field configuration: %s", vmProgram.Field().Name))
+	}
+}
+
+// checkZkcModuleReachabilityFor implements checkZkcModuleReachability for a
+// given field element type F and tracing word W.
+func checkZkcModuleReachabilityFor[F field.Element[F], W vm.Word[W]](program ast.Program,
+	srcmaps source.Maps[any], vmProgram vm.Program[vm.Uint]) []source.SyntaxError {
 	var (
 		errors []source.SyntaxError
-		binf   = constraints.NewBinaryFile[koalabear.Element](nil, nil, vmProgram)
+		binf   = constraints.NewBinaryFile[F, W](nil, nil, vmProgram)
 	)
 	//
 	for _, name := range constraints.UnreachableModules(binf.AirConstraints()) {
@@ -149,7 +171,7 @@ func compileTestProgram(testfile, ext string, cfg codegen.Config) (vm vm.Program
 
 func decodeInputsOutputs[W vm.Word[W]](t *testing.T, p vm.Program[W], data map[string][]byte,
 ) (inputs map[string][]W, outputs map[string][]W) {
-	inputs, outputs, errs := vm.DecodeInputsOutputs[W](p, data)
+	inputs, outputs, errs := vm.DecodeInputsOutputs(p, data)
 	//
 	if len(errs) > 0 {
 		for _, err := range errs {
@@ -170,22 +192,24 @@ func decodeInputsOutputs[W vm.Word[W]](t *testing.T, p vm.Program[W], data map[s
 func marshallUnmarshallMachine(m vm.Program[vm.Uint], f field.Config) vm.Program[vm.Uint] {
 	switch f {
 	case field.GF_251:
-		return roundTripMachine[gf251.Element](m)
+		return roundTripMachine[gf251.Element, vm.Uint32](m)
 	case field.GF_8209:
-		return roundTripMachine[gf8209.Element](m)
+		return roundTripMachine[gf8209.Element, vm.Uint32](m)
 	case field.KOALABEAR_16, field.KOALABEAR_24:
-		return roundTripMachine[koalabear.Element](m)
+		return roundTripMachine[koalabear.Element, vm.Uint32](m)
+	case field.GOLDILOCKS_32:
+		return roundTripMachine[goldilocks.Element, vm.Uint64](m)
 	case field.BLS12_377:
-		return roundTripMachine[bls12_377.Element](m)
+		return roundTripMachine[bls12_377.Element, vm.Uint128](m)
 	default:
 		panic(fmt.Sprintf("unknown field configuration: %s", f.Name))
 	}
 }
 
-func roundTripMachine[F field.Element[F]](prog vm.Program[vm.Uint]) vm.Program[vm.Uint] {
+func roundTripMachine[F field.Element[F], W vm.Word[W]](prog vm.Program[vm.Uint]) vm.Program[vm.Uint] {
 	var (
-		original = constraints.NewBinaryFile[F](nil, nil, prog)
-		decoded  constraints.BinaryFile[F]
+		original = constraints.NewBinaryFile[F, W](nil, nil, prog)
+		decoded  constraints.BinaryFile[F, W]
 	)
 	//
 	data, err := original.MarshalBinary()

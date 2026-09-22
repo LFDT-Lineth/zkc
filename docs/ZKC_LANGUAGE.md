@@ -312,6 +312,7 @@ q, r = a /% b
 
 Note that you can discard some of a function call's return values using `_`.
 During constraint generation, this reduces the number of generated registers.
+
 ```zkc
 fn main() {
   ...
@@ -613,7 +614,7 @@ zkc compile [--field BLS12_377] [--ir] file.zkc ...
 zkc execute [--field BLS12_377] input.json file.zkc ...
 ```
 
-Available fields: `BLS12_377` (default), `KOALABEAR_16`, `GF_8209`, `GF_251`.
+Available fields: `BLS12_377` (default), `GOLDILOCKS_32`, `KOALABEAR_16`, `GF_8209`, `GF_251`.
 
 ## Further Reading
 

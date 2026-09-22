@@ -52,7 +52,7 @@ const BINFILE_MINOR_VERSION uint16 = 1
 var ZKC_EXEC [8]byte = [8]byte{'z', 'k', 'c', ' ', 'e', 'x', 'e', 'c'}
 
 // Tracer defines the type used for building traces.
-type Tracer[F field.Element[F]] = tracer.Builder[vm.Uint32, F]
+type Tracer[F field.Element[F], W vm.Word[W]] = tracer.Builder[W, F]
 
 // BinaryFile provides two pieces of functionality: (i) a means for serialising
 // and deserialising a set of AIR constraints; (ii) a means for generating a
@@ -69,7 +69,7 @@ type Tracer[F field.Element[F]] = tracer.Builder[vm.Uint32, F]
 // AirConstraints, Check, Execute, Trace) mutate the caches.  Callers sharing a
 // BinaryFile across goroutines must therefore either provide their own
 // synchronisation, or force every artifact they need before handing it out.
-type BinaryFile[F field.Element[F]] struct {
+type BinaryFile[F field.Element[F], W vm.Word[W]] struct {
 	// Header holds the magic identifier, version numbers, and optional JSON
 	// metadata for the file.
 	header Header
@@ -87,7 +87,7 @@ type BinaryFile[F field.Element[F]] struct {
 	// cache (fast mode) execution program
 	cachedExecutionProgram util.Option[vm.Program[vm.Uint128]]
 	// cache tracing program
-	cachedTracingProgram util.Option[vm.Program[vm.Uint32]]
+	cachedTracingProgram util.Option[vm.Program[W]]
 	// cached mir constraints
 	cachedMirConstraints util.Option[mir.Schema[F]]
 	// cached air constraints
@@ -102,16 +102,25 @@ type BinaryFile[F field.Element[F]] struct {
 // program's field configuration is checked on deserialisation, and for which
 // constraints are subsequently generated.  No pipeline stages are ignored when
 // compiling the derived artifacts --- see WithIgnores for that.
-func NewBinaryFile[F field.Element[F]](metadata []byte, attributes []Attribute,
-	program vm.Program[vm.Uint]) *BinaryFile[F] {
+func NewBinaryFile[F field.Element[F], W vm.Word[W]](metadata []byte, attributes []Attribute,
+	program vm.Program[vm.Uint]) *BinaryFile[F, W] {
 	//
-	return &BinaryFile[F]{
+	var word W
+	// Sanity check the tracing word has sufficient bandwidth to hold elements
+	// of the target field.  Otherwise, any attempt to trace or execute the
+	// program would fail deep within the interpreter.
+	if word.Bandwidth() < program.Field().BandWidth {
+		panic(fmt.Sprintf("tracing word %s (u%d) has insufficient bandwidth for field %s (u%d)",
+			word.Config().Name, word.Bandwidth(), program.Field().Name, program.Field().BandWidth))
+	}
+	//
+	return &BinaryFile[F, W]{
 		header:                 Header{ZKC_EXEC, BINFILE_MAJOR_VERSION, BINFILE_MINOR_VERSION, metadata},
 		attributes:             attributes,
 		program:                program,
 		ignores:                nil,
 		cachedExecutionProgram: util.None[vm.Program[vm.Uint128]](),
-		cachedTracingProgram:   util.None[vm.Program[vm.Uint32]](),
+		cachedTracingProgram:   util.None[vm.Program[W]](),
 		cachedMirConstraints:   util.None[mir.Schema[F]](),
 		cachedAirConstraints:   util.None[air.Schema[F]](),
 	}
@@ -123,7 +132,7 @@ func NewBinaryFile[F field.Element[F]](metadata []byte, attributes []Attribute,
 // artifacts are compiled, anything already cached against the previous set of
 // ignores is discarded.  This returns the receiver, allowing it to be chained
 // onto NewBinaryFile.
-func (p *BinaryFile[F]) WithIgnores(ignores ...string) *BinaryFile[F] {
+func (p *BinaryFile[F, W]) WithIgnores(ignores ...string) *BinaryFile[F, W] {
 	p.ignores = ignores
 	// Discard artifacts compiled under the previous set of ignores.
 	p.clearCachedArtifacts()
@@ -132,26 +141,26 @@ func (p *BinaryFile[F]) WithIgnores(ignores ...string) *BinaryFile[F] {
 }
 
 // Attributes returns the set of attributes embedded in this binary file.
-func (p *BinaryFile[F]) Attributes() []Attribute {
+func (p *BinaryFile[F, W]) Attributes() []Attribute {
 	return p.attributes
 }
 
 // Header returns the binary file header, which contains the file version and
 // optional metadata.
-func (p *BinaryFile[F]) Header() Header {
+func (p *BinaryFile[F, W]) Header() Header {
 	return p.header
 }
 
 // LimbsMap provides a mapping from top-level registers to register limbs.  This
 // is useful to understand the mapping before / after register splitting.
-func (p *BinaryFile[F]) LimbsMap() module.LimbsMap {
+func (p *BinaryFile[F, W]) LimbsMap() module.LimbsMap {
 	return newLimbsMap(p.program.Field(), p.program.Modules()...)
 }
 
 // Field returns the field configuration for which this binary file is compiled.
 // The primary purpose of this is to allow sanity check that the fields match
 // between the client and what is embedded in this file.
-func (p *BinaryFile[F]) Field() field.Config {
+func (p *BinaryFile[F, W]) Field() field.Config {
 	return p.program.Field()
 }
 
@@ -159,14 +168,14 @@ func (p *BinaryFile[F]) Field() field.Config {
 // tables used when this binary was compiled.  It must be carried in the file so
 // that constraints regenerated from it match those produced at compile time
 // (the range constraints baked into the machine depend on this value).
-func (p *BinaryFile[F]) MaxStaticHeight() uint {
+func (p *BinaryFile[F, W]) MaxStaticHeight() uint {
 	return p.program.MaxStaticHeight()
 }
 
 // RawProgram returns the raw bytecode program encoded in this file, which has
 // not been lowered or subject to register splitting.  As such, it is not a
 // suitable form for most use cases.
-func (p *BinaryFile[F]) RawProgram() vm.Program[vm.Uint] {
+func (p *BinaryFile[F, W]) RawProgram() vm.Program[vm.Uint] {
 	return p.program
 }
 
@@ -176,13 +185,13 @@ func (p *BinaryFile[F]) RawProgram() vm.Program[vm.Uint] {
 // call, and subsequently cached.
 //
 // NOTE: this mutates the cache and is therefore not safe for concurrent use.
-func (p *BinaryFile[F]) TracingProgram() vm.Program[vm.Uint32] {
+func (p *BinaryFile[F, W]) TracingProgram() vm.Program[W] {
 	// Check cache
 	if !p.cachedTracingProgram.HasValue() {
 		var (
 			stats = util.NewPerfStats()
 			// Lower bytecode program
-			program = vm.TransformForTracing[vm.Uint, vm.Uint32](p.program, p.ignores...)
+			program = vm.TransformForTracing[vm.Uint, W](p.program, p.ignores...)
 		)
 		// Cache lowered program
 		p.cachedTracingProgram = util.Some(program)
@@ -199,7 +208,7 @@ func (p *BinaryFile[F]) TracingProgram() vm.Program[vm.Uint32] {
 // it from the raw program upon first call, and subsequently cached.
 //
 // NOTE: this mutates the cache and is therefore not safe for concurrent use.
-func (p *BinaryFile[F]) ExecutionProgram() vm.Program[vm.Uint128] {
+func (p *BinaryFile[F, W]) ExecutionProgram() vm.Program[vm.Uint128] {
 	// Check cache
 	if !p.cachedExecutionProgram.HasValue() {
 		var (
@@ -223,7 +232,7 @@ func (p *BinaryFile[F]) ExecutionProgram() vm.Program[vm.Uint128] {
 // as they are not intended for sound constraint checking.
 //
 // NOTE: this mutates the cache and is therefore not safe for concurrent use.
-func (p *BinaryFile[F]) MirConstraints() mir.Schema[F] {
+func (p *BinaryFile[F, W]) MirConstraints() mir.Schema[F] {
 	// Check cache
 	if !p.cachedMirConstraints.HasValue() {
 		var (
@@ -231,7 +240,7 @@ func (p *BinaryFile[F]) MirConstraints() mir.Schema[F] {
 			tracer = p.TracingProgram()
 		)
 		// Generate + cache mid-level intermediate representation
-		p.cachedMirConstraints = util.Some(GenerateMirConstraints[vm.Uint32, F](tracer))
+		p.cachedMirConstraints = util.Some(GenerateMirConstraints[W, F](tracer))
 		// Log stats
 		stats.Log("Compiling MIR constraints")
 	}
@@ -244,7 +253,7 @@ func (p *BinaryFile[F]) MirConstraints() mir.Schema[F] {
 // upon first call, and subsequently cached.
 //
 // NOTE: this mutates the cache and is therefore not safe for concurrent use.
-func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
+func (p *BinaryFile[F, W]) AirConstraints() air.Schema[F] {
 	// Check cache
 	if !p.cachedAirConstraints.HasValue() {
 		var (
@@ -252,7 +261,7 @@ func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
 			tracer = p.TracingProgram()
 		)
 		// Generate + cache arithmetic intermediate representation
-		p.cachedAirConstraints = util.Some(GenerateAirConstraints[vm.Uint32, F](tracer))
+		p.cachedAirConstraints = util.Some(GenerateAirConstraints[W, F](tracer))
 		// Log stats
 		stats.Log("Compiling AIR constraints")
 	}
@@ -264,16 +273,16 @@ func (p *BinaryFile[F]) AirConstraints() air.Schema[F] {
 // such that each is recompiled on the next call to its accessor.  This is
 // necessary whenever something they were compiled against changes (i.e. the
 // program itself, or the set of ignored pipeline stages).
-func (p *BinaryFile[F]) clearCachedArtifacts() {
+func (p *BinaryFile[F, W]) clearCachedArtifacts() {
 	p.cachedExecutionProgram = util.None[vm.Program[vm.Uint128]]()
-	p.cachedTracingProgram = util.None[vm.Program[vm.Uint32]]()
+	p.cachedTracingProgram = util.None[vm.Program[W]]()
 	p.cachedMirConstraints = util.None[mir.Schema[F]]()
 	p.cachedAirConstraints = util.None[air.Schema[F]]()
 }
 
 // Check a given trace against the AIR constraints embodied in this constraints
 // file, potentially producing one (or more) constraint failures.
-func (p *BinaryFile[F]) Check(config vm.TraceConfig, trace trace.Trace[F]) []schema.Failure[F] {
+func (p *BinaryFile[F, W]) Check(config vm.TraceConfig, trace trace.Trace[F]) []schema.Failure[F] {
 	var (
 		sc    = p.AirConstraints()
 		stats = util.NewPerfStats()
@@ -290,7 +299,7 @@ func (p *BinaryFile[F]) Check(config vm.TraceConfig, trace trace.Trace[F]) []sch
 // steps at a time, producing any outputs arising.  Execution is faster than
 // trace because it does not record any internal information about the trace ---
 // it simply extracts the outputs at the end.
-func (p *BinaryFile[F]) Execute(input map[string][]byte) (output map[string][]byte, errs []error) {
+func (p *BinaryFile[F, W]) Execute(input map[string][]byte) (output map[string][]byte, errs []error) {
 	var (
 		bci = vm.NewBytecodeInterpreter(p.ExecutionProgram())
 	)
@@ -308,13 +317,13 @@ func (p *BinaryFile[F]) Execute(input map[string][]byte) (output map[string][]by
 // The raw (row-major) trace produced by the machine is also returned, since it
 // carries the original register / limb structure before AIR expansion (e.g. for
 // reporting statistics).  It is nil when execution fails.
-func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
+func (p *BinaryFile[F, W]) Trace(input map[string][]byte, cfg vm.TraceConfig,
 ) (output map[string][]byte, trace trace.Trace[F], errors []error) {
 	//
 	var (
 		stats = util.NewPerfStats()
 		// Initialise trace builder from configuration
-		builder = vm.NewTraceBuilder[vm.Uint32, F, Tracer[F]](cfg, p.ExecutionProgram(), p.TracingProgram())
+		builder = vm.NewTraceBuilder[W, F, Tracer[F, W]](cfg, p.ExecutionProgram(), p.TracingProgram())
 	)
 	// Execute machine in chunks of 1K steps
 	trace, output, errors = builder.BootAndTrace(input)
@@ -332,7 +341,7 @@ func (p *BinaryFile[F]) Trace(input map[string][]byte, cfg vm.TraceConfig,
 	return output, trace, errors
 }
 
-func (p *BinaryFile[F]) expandTrace(cfg vm.TraceConfig, tr trace.Trace[F]) (trace.Trace[F], []error) {
+func (p *BinaryFile[F, W]) expandTrace(cfg vm.TraceConfig, tr trace.Trace[F]) (trace.Trace[F], []error) {
 	//
 	var (
 		stats       = util.NewPerfStats()
@@ -358,7 +367,7 @@ func (p *BinaryFile[F]) expandTrace(cfg vm.TraceConfig, tr trace.Trace[F]) (trac
 // ============================================================================
 
 // MarshalBinary converts the BinaryFile into a sequence of bytes.
-func (p *BinaryFile[F]) MarshalBinary() ([]byte, error) {
+func (p *BinaryFile[F, W]) MarshalBinary() ([]byte, error) {
 	var (
 		buffer     bytes.Buffer
 		gobEncoder *gob.Encoder = gob.NewEncoder(&buffer)
@@ -385,7 +394,7 @@ func (p *BinaryFile[F]) MarshalBinary() ([]byte, error) {
 
 // UnmarshalBinary initialises this BinaryFile from a given set of data bytes.
 // This should match exactly the encoding above.
-func (p *BinaryFile[F]) UnmarshalBinary(data []byte) error {
+func (p *BinaryFile[F, W]) UnmarshalBinary(data []byte) error {
 	var (
 		err     error
 		element F
@@ -590,7 +599,7 @@ type Attribute interface {
 
 // GetAttribute returns the first instance of a given attribute, or nil if none
 // exists.
-func GetAttribute[T Attribute, F field.Element[F]](binf *BinaryFile[F]) (T, bool) {
+func GetAttribute[T Attribute, F field.Element[F], W vm.Word[W]](binf *BinaryFile[F, W]) (T, bool) {
 	var empty T
 	//
 	for _, attr := range binf.attributes {

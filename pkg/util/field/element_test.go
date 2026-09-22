@@ -14,12 +14,16 @@ package field
 
 import (
 	"bytes"
-	"math/rand"
+	"math/big"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/assert"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 )
 
@@ -27,6 +31,61 @@ func init() {
 	// make sure the interface is adhered to.
 	_ = Element[koalabear.Element](koalabear.Element{})
 	_ = Element[bls12_377.Element](bls12_377.Element{})
+}
+
+// TestFitsWithin checks FitsWithin reports whether the *numerical* value of an
+// element fits a given bitwidth.  Every one of these fields holds its value in
+// Montgomery form, so an implementation reading the raw representation reports
+// nonsense for small values (e.g. the Montgomery form of 1 is a large limb).
+func TestFitsWithin(t *testing.T) {
+	// Widths are checked up to each field's bit capacity, since values at or
+	// above a field's modulus wrap around.
+	fits := func(t *testing.T, name string, fitsWithin func(*big.Int, uint) bool, capacity uint) {
+		// Zero fits any width, including zero.
+		assert.True(t, fitsWithin(big.NewInt(0), 0), "%s: 0 in u0", name)
+		assert.True(t, fitsWithin(big.NewInt(0), capacity), "%s: 0 in u%d", name, capacity)
+		// Nothing else fits a zero width.
+		assert.False(t, fitsWithin(big.NewInt(1), 0), "%s: 1 in u0", name)
+		// Boundary at each width below the field's capacity: 2^k-1 fits k bits,
+		// whilst 2^k does not.  Sweeping every width exercises each limb
+		// boundary for the multi-limb fields.
+		for k := uint(1); k < capacity; k++ {
+			at := new(big.Int).Lsh(big.NewInt(1), k)
+			below := new(big.Int).Sub(at, big.NewInt(1))
+			//
+			assert.True(t, fitsWithin(below, k), "%s: %s in u%d", name, below, k)
+			assert.False(t, fitsWithin(at, k), "%s: %s in u%d", name, at, k)
+			// A value needing k bits does not fit k-1 bits.
+			assert.False(t, fitsWithin(below, k-1), "%s: %s in u%d", name, below, k-1)
+		}
+	}
+	//
+	fits(t, "koalabear", func(v *big.Int, w uint) bool {
+		var e koalabear.Element
+		return e.SetBytes(v.Bytes()).FitsWithin(w)
+	}, 30)
+	//
+	fits(t, "gf8209", func(v *big.Int, w uint) bool {
+		var e gf8209.Element
+		return e.SetBytes(v.Bytes()).FitsWithin(w)
+	}, 13)
+	//
+	fits(t, "gf251", func(v *big.Int, w uint) bool {
+		var e gf251.Element
+		return e.SetBytes(v.Bytes()).FitsWithin(w)
+	}, 7)
+	//
+	fits(t, "goldilocks", func(v *big.Int, w uint) bool {
+		var e goldilocks.Element
+		return e.SetBytes(v.Bytes()).FitsWithin(w)
+	}, 63)
+	// The modulus is 253 bits wide, so 252 is the largest width every value is
+	// guaranteed to be representable below.  This is the only field whose values
+	// span multiple limbs, hence the only one exercising the wide branches.
+	fits(t, "bls12_377", func(v *big.Int, w uint) bool {
+		var e bls12_377.Element
+		return e.SetBytes(v.Bytes()).FitsWithin(w)
+	}, 252)
 }
 
 func TestBatchInvert(t *testing.T) {

@@ -28,7 +28,10 @@ type Word[T any] interface {
 	Cmp64(y uint64) int
 	// Check whether two items are equal (or not).
 	Equals(T) bool
-	// Check whether this value fits within the given bitwidth.
+	// Check whether the numerical value of this word fits within the given
+	// bitwidth.  Observe this concerns the value, not its representation: for an
+	// encoded word (e.g. one held in Montgomery form) the encoding must be
+	// converted away first, unlike Bytes below.
 	FitsWithin(uint) bool
 	// Return a suitable hashcode.
 	Hash() uint64

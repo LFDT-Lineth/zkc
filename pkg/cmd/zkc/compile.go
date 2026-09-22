@@ -25,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
@@ -53,11 +54,12 @@ var compileFlags FlagChecks
 
 // Available instances
 var compileCmds = []FieldAgnosticCmd{
-	{field.GF_251, runCompileCmd[gf251.Element]},
-	{field.GF_8209, runCompileCmd[gf8209.Element]},
-	{field.KOALABEAR_16, runCompileCmd[koalabear.Element]},
-	{field.KOALABEAR_24, runCompileCmd[koalabear.Element]},
-	{field.BLS12_377, runCompileCmd[bls12_377.Element]},
+	{field.GF_251, runCompileCmd[gf251.Element, vm.Uint32]},
+	{field.GF_8209, runCompileCmd[gf8209.Element, vm.Uint32]},
+	{field.KOALABEAR_16, runCompileCmd[koalabear.Element, vm.Uint32]},
+	{field.KOALABEAR_24, runCompileCmd[koalabear.Element, vm.Uint32]},
+	{field.GOLDILOCKS_32, runCompileCmd[goldilocks.Element, vm.Uint64]},
+	{field.BLS12_377, runCompileCmd[bls12_377.Element, vm.Uint128]},
 }
 
 // CompileConfig brings together various configuration options specific to this
@@ -88,7 +90,7 @@ type CompileConfig struct {
 	verbose bool
 }
 
-func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field field.Config) {
+func runCompileCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
 		build  = GetBuildConfig[F](cmd, field)
 		output = GetString(cmd, "output")
@@ -116,7 +118,7 @@ func runCompileCmd[F field.Element[F]](cmd *cobra.Command, args []string, field 
 	//
 	config.build = build
 	// Build all artifacts
-	ast, binfile := Build[F](build, args...)
+	ast, binfile := Build[F, W](build, args...)
 	// Perform validation.  This comes before anything is printed or written, so
 	// that an invalid set of constraints cannot leave a binary file behind.
 	validateArtifacts(binfile)
@@ -161,7 +163,7 @@ func buildMetadata(items []string) []byte {
 // - every register in every module is referenced in at least one vanishing
 // constraint or lookup.
 // - static tables are of power of two height
-func validateArtifacts[F field.Element[F]](bf *constraints.BinaryFile[F]) {
+func validateArtifacts[F field.Element[F], W vm.Word[W]](bf *constraints.BinaryFile[F, W]) {
 	var air = bf.AirConstraints()
 	// validate that all registers are referenced in at least one vanishing constraint or lookup
 	if errs := constraints.Validate(air); len(errs) > 0 {
@@ -173,7 +175,8 @@ func validateArtifacts[F field.Element[F]](bf *constraints.BinaryFile[F]) {
 	}
 }
 
-func printArtifacts[F field.Element[F]](ast *ast.Program, bf *constraints.BinaryFile[F], config CompileConfig) {
+func printArtifacts[F field.Element[F], W vm.Word[W]](ast *ast.Program, bf *constraints.BinaryFile[F, W],
+	config CompileConfig) {
 	// Determine whether or not to print the IR
 	var ir = !(config.ast || config.mir || config.air || config.stats)
 	// Abstract Syntax Tree

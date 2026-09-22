@@ -15,6 +15,8 @@ package bls12_377
 import (
 	"cmp"
 	"math/big"
+
+	"github.com/consensys/gnark-crypto/ecc/bls12-377/fr"
 )
 
 const (
@@ -49,9 +51,15 @@ func (x Element) Hash() uint64 {
 	return hash
 }
 
-// FitsWithin implementation for word.Word interface.
+// FitsWithin implementation for word.Word interface.  This concerns the
+// numerical value of the element, hence the check is made against the canonical
+// limbs returned by Bits (which converts out of Montgomery form).  Note that
+// fr.BitLen walks the raw limbs without converting, so it cannot be applied to
+// the element directly.
 func (x Element) FitsWithin(bitwidth uint) bool {
-	return uint(x.BitLen()) <= bitwidth
+	canonical := fr.Element(x.Bits())
+	//
+	return uint(canonical.BitLen()) <= bitwidth
 }
 
 // SetBytes implementation for word.Word interface.

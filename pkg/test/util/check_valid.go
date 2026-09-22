@@ -24,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
@@ -38,9 +39,14 @@ var (
 	// DEFAULT_PADDING sets the default strategy to use
 	DEFAULT_PADDING = util.NewPair("next-power-of-two-padding", ir.NextPowerOfTwoPadding)
 	// ALL_FIELDS defines the set of all known fields for testing
-	ALL_FIELDS = []field.Config{field.BLS12_377, field.KOALABEAR_24, field.KOALABEAR_16, field.GF_8209, field.GF_251}
+	ALL_FIELDS = []field.Config{field.BLS12_377,
+		field.GOLDILOCKS_32,
+		field.KOALABEAR_24,
+		field.KOALABEAR_16,
+		field.GF_8209,
+		field.GF_251}
 	// DEFAULT_FIELDS set default fields for testing
-	DEFAULT_FIELDS = []field.Config{field.KOALABEAR_16, field.GF_8209}
+	DEFAULT_FIELDS = []field.Config{field.GOLDILOCKS_32, field.KOALABEAR_16, field.GF_8209}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = TestConfig{
 		fields:            DEFAULT_FIELDS,
@@ -110,11 +116,13 @@ func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestVector) {
 	// Dispatch based on field config
 	switch p.Field() {
 	case field.GF_251:
-		runExecutionTest[gf251.Element](t, p, test)
+		runExecutionTest[gf251.Element, vm.Uint32](t, p, test)
 	case field.GF_8209:
-		runExecutionTest[gf8209.Element](t, p, test)
+		runExecutionTest[gf8209.Element, vm.Uint32](t, p, test)
 	case field.KOALABEAR_16, field.KOALABEAR_24:
-		runExecutionTest[koalabear.Element](t, p, test)
+		runExecutionTest[koalabear.Element, vm.Uint32](t, p, test)
+	case field.GOLDILOCKS_32:
+		runExecutionTest[goldilocks.Element, vm.Uint64](t, p, test)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for execution")
@@ -123,13 +131,13 @@ func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestVector) {
 	}
 }
 
-func runExecutionTest[F field.Element[F]](t *testing.T, p vm.Program[vm.Uint], test TestVector) {
+func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Program[vm.Uint], test TestVector) {
 	//
 	var (
 		// decode inputs / outputs
 		inputs, _ = vm.FilterInputs(p, test.data)
 		// construct binary file
-		binf = constraints.NewBinaryFile[F](nil, nil, p)
+		binf = constraints.NewBinaryFile[F, W](nil, nil, p)
 	)
 	//
 	if actuals, errs := binf.Execute(inputs); len(errs) == 0 {
@@ -167,11 +175,13 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestVector, f f
 	// Dispatch based on field config
 	switch f {
 	case field.GF_251:
-		testConstraintsWithField[gf251.Element](t, p, test, traceCfg)
+		testConstraintsWithField[gf251.Element, vm.Uint32](t, p, test, traceCfg)
 	case field.GF_8209:
-		testConstraintsWithField[gf8209.Element](t, p, test, traceCfg)
+		testConstraintsWithField[gf8209.Element, vm.Uint32](t, p, test, traceCfg)
 	case field.KOALABEAR_16, field.KOALABEAR_24:
-		testConstraintsWithField[koalabear.Element](t, p, test, traceCfg)
+		testConstraintsWithField[koalabear.Element, vm.Uint32](t, p, test, traceCfg)
+	case field.GOLDILOCKS_32:
+		testConstraintsWithField[goldilocks.Element, vm.Uint64](t, p, test, traceCfg)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for tracing")
@@ -180,12 +190,12 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestVector, f f
 	}
 }
 
-func testConstraintsWithField[F field.Element[F]](t *testing.T, p vm.Program[vm.Uint], test TestVector,
+func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Program[vm.Uint], test TestVector,
 	traceCfg vm.TraceConfig) {
 	//
 	var (
 		// construct binary file
-		binf = constraints.NewBinaryFile[F](nil, nil, p)
+		binf = constraints.NewBinaryFile[F, W](nil, nil, p)
 		// decode inputs / outputs
 		inputs, _ = vm.FilterInputs(p, test.data)
 		// generate trace
