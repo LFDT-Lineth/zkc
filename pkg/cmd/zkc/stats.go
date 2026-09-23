@@ -615,6 +615,18 @@ func printAirModuleStats(stats []moduleStats) {
 			//
 			return ""
 		}))
+	// Total columns as actually seen by the prover, i.e. the post-split column
+	// count plus an extra column for every three lookup constraints.
+	// TODO: add the bus columns as well
+	// TODO: add the permutation argument columns
+	cols = append(cols, dataColumn(stats, "", "Total", "Prover¹", false,
+		func(m moduleStats) string {
+			if !m.isStatic() {
+				return count(m.postRegs + (m.lookups+2)/3)
+			}
+			//
+			return ""
+		}))
 	// Vanishing constraints bucketed by degree.  Note this is specifically the
 	// vanishing-constraint breakdown; other AIR constraint kinds (range,
 	// permutation, ...) are not counted here (lookups have their own column).
@@ -663,6 +675,7 @@ func printAirModuleStats(stats []moduleStats) {
 		}))
 	//
 	renderStatsTable(cols, stats)
+	fmt.Println("¹: Number of split columns + 1 column every 3 lookups")
 }
 
 // regularColumn builds a grouped data column whose cells hold a (possibly zero)
