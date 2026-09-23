@@ -103,10 +103,10 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 		// Zero-width registers can only hold zero, enforced with r == 0.
 		if reg.Width() == 0 {
 			regId := register.NewId(uint(i))
-			handle := fmt.Sprintf("range_u0_%d", regId.Unwrap())
-			r := mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
+			handle := fmt.Sprintf("range_u0_%d", regId)
+			r := mirc.Variable[F](regId, reg.Width(), 0)
 			mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](),
-				r.Equals(mirc.Number[register.Id, Expr[F]](0)).AsLogical()))
+				r.Equals(mirc.Number[F](0)).AsLogical()))
 
 			continue
 		}
@@ -114,8 +114,8 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 		// constraint r * r == r (equivalently r * (1 - r) == 0).
 		if reg.Width() == 1 {
 			regId := register.NewId(uint(i))
-			handle := fmt.Sprintf("range_u1_%d", regId.Unwrap())
-			r := mirc.Variable[register.Id, Expr[F]](regId, reg.Width(), 0)
+			handle := fmt.Sprintf("range_u1_%d", regId)
+			r := mirc.Variable[F](regId, reg.Width(), 0)
 			mod.AddConstraints(mir.NewVanishingConstraint(handle, ctx, util.None[int](),
 				mirc.Product(r, r).Equals(r).AsLogical()))
 

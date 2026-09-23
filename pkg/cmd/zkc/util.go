@@ -202,7 +202,7 @@ func WriteTraceFile[F field.Element[F]](filename string, trace trace.Trace[F]) {
 // binfile versioning defined in the binfile package.
 //
 //nolint:errcheck
-func WriteBinaryFile[F field.Element[F]](binfile *constraints.BinaryFile[F], filename string) {
+func WriteBinaryFile[F field.Element[F], W vm.Word[W]](binfile *constraints.BinaryFile[F, W], filename string) {
 	var (
 		bytes []byte
 		err   error
@@ -223,8 +223,8 @@ func WriteBinaryFile[F field.Element[F]](binfile *constraints.BinaryFile[F], fil
 }
 
 // ReadBinaryFile reads a binary constraints file from disk
-func ReadBinaryFile[F field.Element[F]](filename string) *constraints.BinaryFile[F] {
-	var binf constraints.BinaryFile[F]
+func ReadBinaryFile[F field.Element[F], W vm.Word[W]](filename string) *constraints.BinaryFile[F, W] {
+	var binf constraints.BinaryFile[F, W]
 	// Read schema file
 	data, err := os.ReadFile(filename)
 	// Handle errors

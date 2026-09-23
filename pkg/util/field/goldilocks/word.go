@@ -10,13 +10,11 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package gf8209
+package goldilocks
 
 import (
 	"cmp"
 	"math/big"
-
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 const (
@@ -26,55 +24,59 @@ const (
 
 // Cmp64 returns 1 if x > y, 0 if x = y, and -1 if x < y.
 func (x Element) Cmp64(y uint64) int {
-	return cmp.Compare(uint64(x.ToUint32()), y)
+	if x.IsUint64() {
+		return cmp.Compare(x.Uint64(), y)
+	}
+	//
+	return 1
 }
 
 // Equals implementation for hash.Hasher interface
 func (x Element) Equals(o Element) bool {
-	return x == o
+	return x.Element == o.Element
 }
 
 // Hash implementation for hash.Hasher interface
 func (x Element) Hash() uint64 {
-	// FNV1a hash implementation (unrolled)
-	hash := offset64
-	//
-	return (hash ^ uint64(x[0])) * prime64
+	// FNV1a hash implementation
+	return (offset64 ^ x.Element[0]) * prime64
 }
 
 // FitsWithin implementation for word.Word interface.  This concerns the
 // numerical value of the element, hence it must be derived from Uint64 (which
-// converts out of Montgomery form) rather than from the raw limb.
+// converts out of Montgomery form) rather than from the raw limb.  Note that
+// goldilocks.BitLen reads the raw limb without converting, unlike Bits / Cmp,
+// so it is not usable here.  Shifting by 64 or more is well defined in Go for
+// an unsigned value, yielding zero, so wide bitwidths need no special case.
 func (x Element) FitsWithin(bitwidth uint) bool {
 	return (x.Uint64() >> bitwidth) == 0
 }
 
 // SetBytes implementation for word.Word interface.
-func (x Element) SetBytes(bs []byte) Element {
-	var v uint32
+func (x Element) SetBytes(bytes []byte) Element {
+	x.Element.SetBytes(bytes)
 	//
-	for _, b := range word.TrimLeadingZeros(bs) {
-		v = (v << 8) | uint32(b)
-	}
-	//
-	return New(v)
+	return x
 }
 
-// SetUint64 implementation for word.Word interface
+// SetUint64 implementation for word.Word interface.
 func (x Element) SetUint64(val uint64) Element {
-	var elem Element
+	x.Element.SetUint64(val)
 	//
-	return elem.AddUint32(uint32(val))
+	return x
 }
 
 // Uint64 implementation for word.Word interface.
 func (x Element) Uint64() uint64 {
-	return uint64(x.ToUint32())
+	return x.Element.Uint64()
 }
 
 // BigInt implementation for word.Word interface.
 func (x Element) BigInt() *big.Int {
-	var val big.Int
+	var (
+		val   big.Int
+		bytes = x.Element.Bytes()
+	)
 	//
-	return val.SetUint64(x.Uint64())
+	return val.SetBytes(bytes[:])
 }

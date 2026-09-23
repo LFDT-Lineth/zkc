@@ -81,7 +81,7 @@ formatting of the `.zkc` sources.
 
 Key CLI flags (available globally):
 
-- `--field <name>`: prime field to use (default `BLS12_377`; others: `KOALABEAR_16`, `GF_8209`, `GF_251`)
+- `--field <name>`: prime field to use (default `BLS12_377`; others: `GOLDILOCKS_32`, `KOALABEAR_16`, `GF_8209`, `GF_251`)
 - `--air / --mir`: select constraint representation level
 - `-O <n>`: optimisation level for MIR→AIR lowering
 
