@@ -95,10 +95,12 @@ func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers split.Alloca
 			continue
 		}
 
-		// Nothing to factorize if the body of the skip is a bit equality like b = x == 0 ? 1 :0.
-		// Note that as we lowerSwitch later, this pattern can't arise from lowerSwitch, but only
-		// directly from .zkc program or other lowering steps (FactorLimbEqualities ...)
-		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
+		// Nothing to factorize if the body is already a const-select diamond
+		// (z = cond ? k0 : k1), of any width.  Wrapping it would only insert a
+		// second diamond for no sharing: the skip guards just those two loads.
+		// Note that as we lowerSwitch later, this pattern can't arise from
+		// lowerSwitch, but only directly from .zkc (e.g. a ternary).
+		if bodyIsConstSelectDiamond(codes, uint(i)) {
 			factor[uint(i)] = false
 			continue
 		}
@@ -136,14 +138,15 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers split.Al
 	return false
 }
 
-// bodyContainsOnlyBitEquality reports whether the SkipIf at index i heads a diamond
-// which merely selects between two constants for a single 1-bit register:
+// bodyIsConstSelectDiamond reports whether the SkipIf at index i heads a
+// diamond which merely selects between two constants for a single register
+// of any width (including native):
 //
 //	skip_if (cond) 2
-//	b = k0
+//	z = k0
 //	skip 1
-//	b = k1
-func bodyContainsOnlyBitEquality[W word.Word[W]](codes []Bytecode[W], i uint, registers split.Allocator[W]) bool {
+//	z = k1
+func bodyIsConstSelectDiamond[W word.Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	//
 	if si.Skip != 2 || i+3 >= uint(len(codes)) {
@@ -156,13 +159,7 @@ func bodyContainsOnlyBitEquality[W word.Word[W]](codes []Bytecode[W], i uint, re
 		hi, okHi  = isLoadConst(codes[i+3])
 	)
 	//
-	if !okLo || !okSk || !okHi || mid.Skip != 1 || lo != hi {
-		return false
-	}
-	//
-	bit := registers.Register(lo)
-	//
-	return !bit.IsNative() && bit.Bitwidth().Unwrap() == 1
+	return okLo && okSk && okHi && mid.Skip == 1 && lo == hi
 }
 
 // isLoadConst recognises a load-constant bytecode (as constructed by
