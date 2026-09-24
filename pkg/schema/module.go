@@ -230,22 +230,6 @@ func (p *Table[F, C]) String() string {
 	return register.MapToString(p)
 }
 
-// ConstRegister implementation for register.ConstMap interface
-func (p *Table[F, C]) ConstRegister(constant uint8) register.Id {
-	var (
-		name  = fmt.Sprintf("%d", constant)
-		nregs = uint(len(p.registers))
-	)
-	// Check whether register already exists
-	if rid, ok := p.HasRegister(name); ok {
-		return rid
-	}
-	// Allocate constant register
-	p.registers = append(p.registers, register.NewConst(constant))
-	//
-	return register.NewId(nregs)
-}
-
 // ============================================================================
 // Mutators
 // ============================================================================

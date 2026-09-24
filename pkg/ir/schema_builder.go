@@ -78,7 +78,7 @@ type SchemaBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 	// Externs represent modules which have already been constructed.  These
 	// will be given the lower module identifiers, since they are already
 	// packaged and, hence, we must avoid breaking thein linkage.
-	externs []register.ConstMap
+	externs []register.Map
 	// Modules being constructed
 	modules []ModuleBuilder[F, C, T]
 }
@@ -111,7 +111,7 @@ func (p *SchemaBuilder[F, C, T]) NewModule(name module.Name, public, private, sy
 }
 
 // Externs provides direct access to the external modules.
-func (p *SchemaBuilder[F, C, T]) Externs() []register.ConstMap {
+func (p *SchemaBuilder[F, C, T]) Externs() []register.Map {
 	return p.externs
 }
 

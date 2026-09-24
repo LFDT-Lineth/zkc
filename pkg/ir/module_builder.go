@@ -51,10 +51,6 @@ type ModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]
 	// NewRegisters declares zero or more new registers within the module being
 	// built.  This will panic if a register of the same name already exists.
 	NewRegisters(registers ...register.Register) []register.Id
-	// ZeroRegister returns an ID for the "zero register".  That is, a register
-	// which is always zero.  If no such register exists already, one is
-	// created.
-	ConstRegister(constant uint8) register.Id
 	// SetStaticContents sets the contents of this static reference table.  It
 	// panics if invoked on a non-static module.
 	SetStaticContents(contents [][]F)
@@ -232,17 +228,6 @@ func (p *internalModuleBuilder[F, C, T]) String() string {
 	return register.MapToString(p)
 }
 
-// ZeroRegister implementation for ModuleBuilder interface.
-func (p *internalModuleBuilder[F, C, T]) ConstRegister(constant uint8) register.Id {
-	var name = fmt.Sprintf("%d", constant)
-	// Check whether register already exists
-	if rid, ok := p.HasRegister(name); ok {
-		return rid
-	}
-	// If not, create a new one.
-	return p.NewRegister(register.NewConst(constant))
-}
-
 func (p *internalModuleBuilder[F, C, T]) SetStaticContents(contents [][]F) {
 	if !p.IsStatic() {
 		panic("cannot set static contents for non-static module")
@@ -268,7 +253,7 @@ func (p *internalModuleBuilder[F, C, T]) StaticContents() (contents [][]F) {
 // NewExternModuleBuilder constructs a new builder suitable for external
 // modules.  These are just used for linking purposes.
 func NewExternModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]](mid schema.ModuleId,
-	module register.ConstMap) ModuleBuilder[F, C, T] {
+	module register.Map) ModuleBuilder[F, C, T] {
 	return &externalModuleBuilder[F, C, T]{mid, module}
 }
 
@@ -279,7 +264,7 @@ type externalModuleBuilder[F field.Element[F], C schema.Constraint[F], T term.Ex
 	// Id of this module
 	moduleId schema.ModuleId
 	// External source
-	module register.ConstMap
+	module register.Map
 }
 
 // AddAssignment implementation for ModuleBuilder interface.
@@ -390,9 +375,4 @@ func (p *externalModuleBuilder[F, C, T]) StaticContents() (contents [][]F) {
 
 func (p *externalModuleBuilder[F, C, T]) String() string {
 	return register.MapToString(p)
-}
-
-// ZeroRegister implementation for ModuleBuilder interface.
-func (p *externalModuleBuilder[F, C, T]) ConstRegister(constant uint8) register.Id {
-	return p.module.ConstRegister(constant)
 }

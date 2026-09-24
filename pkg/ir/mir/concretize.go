@@ -37,8 +37,6 @@ func Concretize[F1 Element[F1], F2 Element[F2]](mods []Module[F1]) Schema[F2] {
 	for i, m := range mods {
 		nModules[i] = concretizeModule[F1, F2](m)
 	}
-	// compile constant registers.
-	InitialiseConstantRegisters(0, nModules)
 	//
 	return schema.NewUniformSchema(nModules)
 }
