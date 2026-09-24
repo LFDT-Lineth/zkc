@@ -143,7 +143,7 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers split.Al
 // Recognised layouts (S = skip amount):
 //
 //	S=1:  skip_if (cond) 1 ; {ldc z | jmp/skip/fail}
-//	S=2:  skip_if (cond) 2 ; z=k0 ; skip 1 ; z=k1
+//	S=2:  skip_if (cond) 2 ; z=k0 ; {skip 1 | jmp} ; z=k1
 func bodyIsConstSelectDiamond[W word.Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	var (
@@ -164,12 +164,22 @@ func bodyIsConstSelectDiamond[W word.Word[W]](codes []Bytecode[W], i uint) bool 
 			return false
 		}
 		lo, okLo := isLoadConst(codes[i+1])
-		mid, okSk := codes[i+2].(*bytecode.Skip[W])
+		okSkOrJmp := isSkipOneOrJmp(codes[i+2])
 		hi, okHi := isLoadConst(codes[taken])
-		return okLo && okSk && okHi && mid.Skip == 1 && lo == hi
+		return okLo && okHi && lo == hi && okSkOrJmp
 	default:
 		return false
 	}
+}
+
+// isSkipOneOrJmp is the middle of an S=2 const-select diamond: skip the else
+// ldc in-vector (skip 1) or by leaving the vector (jmp).
+func isSkipOneOrJmp[W word.Word[W]](code Bytecode[W]) bool {
+	if skip, ok := code.(*bytecode.Skip[W]); ok {
+		return skip.Skip == 1
+	}
+	_, jmp := code.(*bytecode.Jmp[W])
+	return jmp
 }
 
 func isControlOnly[W word.Word[W]](code Bytecode[W]) bool {
