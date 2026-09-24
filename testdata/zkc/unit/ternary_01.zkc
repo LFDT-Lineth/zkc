@@ -7,6 +7,7 @@ fn main() -> () {
     var result:u8 = data[3]
 
     var computedResult:u8
+    // Register mux (mov, not ldc): FactorSkipConditions must not wrap this.
     computedResult = cond != 0 ? valueTrue:valueFalse
 
     if result != computedResult {
