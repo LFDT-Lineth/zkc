@@ -1,0 +1,17 @@
+pub input data(address:u8) -> (byte:u8)
+
+fn main() {
+    var cond:u8 = data[0]
+    var expected:u8 = data[1]
+    var z:u8 = 0
+
+    // skip_if amount 1 (then-body on the next vector): do not wrap.
+    if cond != 0 {
+        z = 1
+    }
+
+    if z != expected {
+        fail
+    }
+    return
+}
