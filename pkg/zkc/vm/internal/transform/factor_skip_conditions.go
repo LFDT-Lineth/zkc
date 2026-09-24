@@ -142,11 +142,11 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers split.Al
 //
 // Recognised layouts (S = skip amount):
 //
-//	S=1:   skip_if (cond) 1 ; {ldc z | jmp/skip/fail}
+//	S=1:   skip_if (cond) 1 ; <one opcode>   // one write or control (jmp/ret/fail/…)
 //	S>=2:  skip_if (cond) S ; (z_i=…)×n ; {skip n | jmp} ; (z_i=…)×n
 //	       with n = S-1 and matching target registers (ldc, mov, or other
 //	       single-target write)
-//	S>0:   skip_if (cond) S ; {jmp/skip/skip_if/fail}...
+//	S>0:   skip_if (cond) S ; {jmp/skip/skip_if/fail/ret}...
 func bodyIsConstSelectOrControlOnly[W word.Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	var (
@@ -157,12 +157,9 @@ func bodyIsConstSelectOrControlOnly[W word.Word[W]](codes []Bytecode[W], i uint)
 	if s > 0 && taken <= n && isBodyControlOnly(codes[i+1:taken]) {
 		return true
 	}
+	// A skip of 1 guards a single opcode: wrapping cannot share the comparison.
 	if s == 1 {
-		if i+1 >= n {
-			return false
-		}
-		_, ldc := isLoadConst(codes[i+1])
-		return ldc
+		return i+1 < n
 	}
 	// S>=2: n single-target writes, skip n or jmp, n writes of the same registers.
 	nRegs := s - 1
@@ -200,21 +197,11 @@ func isSkipNOrJmp[W word.Word[W]](code Bytecode[W], n uint) bool {
 
 func isControlOnly[W word.Word[W]](code Bytecode[W]) bool {
 	switch code.(type) {
-	case *bytecode.Skip[W], *bytecode.SkipIf[W], *bytecode.Jmp[W], *bytecode.Fail[W]:
+	case *bytecode.Skip[W], *bytecode.SkipIf[W], *bytecode.Jmp[W], *bytecode.Fail[W], *bytecode.Ret[W]:
 		return true
 	default:
 		return false
 	}
-}
-
-// isLoadConst recognises a load-constant bytecode (as constructed by
-// bytecode.LoadConst), returning its single target register.
-func isLoadConst[W word.Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
-	if a, ok := code.(*bytecode.Arith[W]); ok &&
-		a.Op == bytecode.OP_ADD && len(a.Source) == 0 && len(a.Target) == 1 {
-		return a.Target[0], true
-	}
-	return 0, false
 }
 
 // isSingleTargetWrite reports a bytecode that writes exactly one register
