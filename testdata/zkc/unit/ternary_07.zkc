@@ -1,0 +1,15 @@
+pub input data(address:u8) -> (byte:u8)
+
+fn main() {
+    var cond:u8 = data[0]
+    var expected:u8 = data[1]
+
+    // Wide const-select diamond (u8, not u1): FactorSkipConditions must not
+    // wrap this in a second bit diamond.
+    var computed:u8 = cond != 0 ? 1:0
+
+    if computed != expected {
+        fail
+    }
+    return
+}
