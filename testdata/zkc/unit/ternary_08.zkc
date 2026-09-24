@@ -11,7 +11,7 @@ fn main() {
     // Nested if: outer skip is control-only.
     // Diamond shape here has S=2, body is a nested if so it's a control-only body. Do not factorizeSkipIf.
     var z:u8 = 0
-    if cond != 0 {outer
+    if cond != 0 {
         if cond == 1 {
             z = 1
         } else {

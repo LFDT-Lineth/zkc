@@ -149,6 +149,7 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers split.Al
 //	S>0:   skip_if (cond) S ; {jmp/skip/skip_if/fail/ret}...
 func bodyIsConstSelectOrControlOnly[W word.Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
+	//
 	var (
 		s     = uint(si.Skip)
 		taken = i + 1 + s
@@ -166,13 +167,16 @@ func bodyIsConstSelectOrControlOnly[W word.Word[W]](codes []Bytecode[W], i uint)
 	if s < 2 || taken+nRegs > n || !isSkipNOrJmp(codes[taken-1], nRegs) {
 		return false
 	}
+	//
 	for k := uint(0); k < nRegs; k++ {
 		lo, okLo := isSingleTargetWrite(codes[i+1+k])
 		hi, okHi := isSingleTargetWrite(codes[taken+k])
+		//
 		if !okLo || !okHi || lo != hi {
 			return false
 		}
 	}
+	//
 	return true
 }
 
@@ -182,6 +186,7 @@ func isBodyControlOnly[W word.Word[W]](codes []Bytecode[W]) bool {
 			return false
 		}
 	}
+	//
 	return true
 }
 
@@ -191,7 +196,9 @@ func isSkipNOrJmp[W word.Word[W]](code Bytecode[W], n uint) bool {
 	if skip, ok := code.(*bytecode.Skip[W]); ok {
 		return uint(skip.Skip) == n
 	}
+	//
 	_, jmp := code.(*bytecode.Jmp[W])
+	//
 	return jmp
 }
 
@@ -211,6 +218,7 @@ func isSingleTargetWrite[W word.Word[W]](code Bytecode[W]) (bytecode.RegisterId,
 	if len(defs) != 1 {
 		return 0, false
 	}
+	//
 	return defs[0], true
 }
 
