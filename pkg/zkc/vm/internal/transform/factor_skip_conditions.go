@@ -97,7 +97,7 @@ func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers split.Alloca
 
 		// Nothing to factorize if the skip only selects a constant (or is
 		// control-only): wrapping would insert a bit diamond for no sharing.
-		if bodyIsConstSelectDiamond(codes, uint(i)) {
+		if bodyIsConstSelectOrControlOnly(codes, uint(i)) {
 			factor[uint(i)] = false
 			continue
 		}
@@ -135,16 +135,17 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers split.Al
 	return false
 }
 
-// bodyIsConstSelectDiamond reports whether the SkipIf at index i guards only a
-// constant select of one register (any width), or a control-only body.  Those
-// shapes already materialise the branch; factoring them would add a bit diamond
-// for no shared writes.
+// bodyIsConstSelectOrControlOnly reports whether the SkipIf at index i guards
+// only a constant select of one register (any width), or a control-only body.
+// Those shapes already materialise the branch; factoring them would add a bit
+// diamond for no shared writes.
 //
 // Recognised layouts (S = skip amount):
 //
 //	S=1:  skip_if (cond) 1 ; {ldc z | jmp/skip/fail}
 //	S=2:  skip_if (cond) 2 ; z=k0 ; {skip 1 | jmp} ; z=k1
-func bodyIsConstSelectDiamond[W word.Word[W]](codes []Bytecode[W], i uint) bool {
+//	S>0:  skip_if (cond) S ; {jmp/skip/fail}...
+func bodyIsConstSelectOrControlOnly[W word.Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	var (
 		s     = uint(si.Skip)
@@ -152,13 +153,17 @@ func bodyIsConstSelectDiamond[W word.Word[W]](codes []Bytecode[W], i uint) bool 
 		n     = uint(len(codes))
 	)
 	//
+	if s > 0 && taken <= n && isBodyControlOnly(codes[i+1:taken]) {
+		return true
+	}
+	//
 	switch s {
 	case 1:
 		if i+1 >= n {
 			return false
 		}
 		_, ldc := isLoadConst(codes[i+1])
-		return ldc || isControlOnly(codes[i+1])
+		return ldc
 	case 2:
 		if taken >= n {
 			return false
@@ -170,6 +175,15 @@ func bodyIsConstSelectDiamond[W word.Word[W]](codes []Bytecode[W], i uint) bool 
 	default:
 		return false
 	}
+}
+
+func isBodyControlOnly[W word.Word[W]](codes []Bytecode[W]) bool {
+	for _, code := range codes {
+		if !isControlOnly(code) {
+			return false
+		}
+	}
+	return true
 }
 
 // isSkipOneOrJmp is the middle of an S=2 const-select diamond: skip the else
@@ -184,7 +198,7 @@ func isSkipOneOrJmp[W word.Word[W]](code Bytecode[W]) bool {
 
 func isControlOnly[W word.Word[W]](code Bytecode[W]) bool {
 	switch code.(type) {
-	case *bytecode.Skip[W], *bytecode.Jmp[W], *bytecode.Fail[W]:
+	case *bytecode.Skip[W], *bytecode.SkipIf[W], *bytecode.Jmp[W], *bytecode.Fail[W]:
 		return true
 	default:
 		return false
