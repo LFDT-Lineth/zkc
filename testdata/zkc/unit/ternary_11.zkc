@@ -1,0 +1,26 @@
+pub input data(address:u8) -> (byte:u8)
+
+fn main() {
+    var cond:u8 = data[0]
+    var expected_z:u8 = data[1]
+    var expected_w:u8 = data[2]
+    var z:u8
+    var w:u8
+
+    // Parallel const-select of two registers (skip amount 3): do not wrap.
+    if cond != 0 {
+        z = 1
+        w = 2
+    } else {
+        z = 0
+        w = 0
+    }
+
+    if z != expected_z {
+        fail
+    }
+    if w != expected_w {
+        fail
+    }
+    return
+}
