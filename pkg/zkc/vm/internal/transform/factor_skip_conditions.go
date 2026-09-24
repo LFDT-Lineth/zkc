@@ -95,11 +95,8 @@ func factorableSkips[W word.Word[W]](codes []Bytecode[W], registers split.Alloca
 			continue
 		}
 
-		// Nothing to factorize if the body is already a const-select diamond
-		// (z = cond ? k0 : k1), of any width.  Wrapping it would only insert a
-		// second diamond for no sharing: the skip guards just those two loads.
-		// Note that as we lowerSwitch later, this pattern can't arise from
-		// lowerSwitch, but only directly from .zkc (e.g. a ternary).
+		// Nothing to factorize if the skip only selects a constant (or is
+		// control-only): wrapping would insert a bit diamond for no sharing.
 		if bodyIsConstSelectDiamond(codes, uint(i)) {
 			factor[uint(i)] = false
 			continue
@@ -138,28 +135,50 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers split.Al
 	return false
 }
 
-// bodyIsConstSelectDiamond reports whether the SkipIf at index i heads a
-// diamond which merely selects between two constants for a single register
-// of any width (including native):
+// bodyIsConstSelectDiamond reports whether the SkipIf at index i guards only a
+// constant select of one register (any width), or a control-only body.  Those
+// shapes already materialise the branch; factoring them would add a bit diamond
+// for no shared writes.
 //
-//	skip_if (cond) 2
-//	z = k0
-//	skip 1
-//	z = k1
+// Recognised layouts (S = skip amount):
+//
+//	S=1:  skip_if (cond) 1 ; {ldc z | jmp/skip/fail}
+//	S=2:  skip_if (cond) 2 ; z=k0 ; skip 1 ; z=k1
 func bodyIsConstSelectDiamond[W word.Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
-	//
-	if si.Skip != 2 || i+3 >= uint(len(codes)) {
-		return false
-	}
-	//
 	var (
-		lo, okLo  = isLoadConst(codes[i+1])
-		mid, okSk = codes[i+2].(*bytecode.Skip[W])
-		hi, okHi  = isLoadConst(codes[i+3])
+		s     = uint(si.Skip)
+		taken = i + 1 + s
+		n     = uint(len(codes))
 	)
 	//
-	return okLo && okSk && okHi && mid.Skip == 1 && lo == hi
+	switch s {
+	case 1:
+		if i+1 >= n {
+			return false
+		}
+		_, ldc := isLoadConst(codes[i+1])
+		return ldc || isControlOnly(codes[i+1])
+	case 2:
+		if taken >= n {
+			return false
+		}
+		lo, okLo := isLoadConst(codes[i+1])
+		mid, okSk := codes[i+2].(*bytecode.Skip[W])
+		hi, okHi := isLoadConst(codes[taken])
+		return okLo && okSk && okHi && mid.Skip == 1 && lo == hi
+	default:
+		return false
+	}
+}
+
+func isControlOnly[W word.Word[W]](code Bytecode[W]) bool {
+	switch code.(type) {
+	case *bytecode.Skip[W], *bytecode.Jmp[W], *bytecode.Fail[W]:
+		return true
+	default:
+		return false
+	}
 }
 
 // isLoadConst recognises a load-constant bytecode (as constructed by
