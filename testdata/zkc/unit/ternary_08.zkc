@@ -6,9 +6,12 @@ fn main() {
     var exp_pair_z:u8 = data[2]
     var exp_pair_w:u8 = data[3]
 
+    // Diamond shape is : skip_if (cond) S ; {jmp/skip/fail}...
+
     // Nested if: outer skip is control-only.
+    // Diamond shape here has S=2, body is a nested if so it's a control-only body. Do not factorizeSkipIf.
     var z:u8 = 0
-    if cond != 0 {
+    if cond != 0 {outer
         if cond == 1 {
             z = 1
         } else {
@@ -21,7 +24,8 @@ fn main() {
         fail
     }
 
-    // Parallel const-select of two registers (S=3).
+    // Parallel const-select of two registers
+    // Diamond shape here has S=3, body has 2 load-consts and a skip 1. Do not factorizeSkipIf.
     var pz:u8
     var pw:u8
     if cond != 0 {
