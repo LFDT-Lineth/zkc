@@ -143,8 +143,9 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers split.Al
 // Recognised layouts (S = skip amount):
 //
 //	S=1:   skip_if (cond) 1 ; {ldc z | jmp/skip/fail}
-//	S>=2:  skip_if (cond) S ; (z_i=k_i)×n ; {skip n | jmp} ; (z_i=k_i')×n
-//	       with n = S-1 and matching target registers
+//	S>=2:  skip_if (cond) S ; (z_i=…)×n ; {skip n | jmp} ; (z_i=…)×n
+//	       with n = S-1 and matching target registers (ldc, mov, or other
+//	       single-target write)
 //	S>0:   skip_if (cond) S ; {jmp/skip/skip_if/fail}...
 func bodyIsConstSelectOrControlOnly[W word.Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
@@ -163,14 +164,14 @@ func bodyIsConstSelectOrControlOnly[W word.Word[W]](codes []Bytecode[W], i uint)
 		_, ldc := isLoadConst(codes[i+1])
 		return ldc
 	}
-	// S>=2: n load-consts, skip n or jmp, n load-consts on the same registers.
+	// S>=2: n single-target writes, skip n or jmp, n writes of the same registers.
 	nRegs := s - 1
 	if s < 2 || taken+nRegs > n || !isSkipNOrJmp(codes[taken-1], nRegs) {
 		return false
 	}
 	for k := uint(0); k < nRegs; k++ {
-		lo, okLo := isLoadConst(codes[i+1+k])
-		hi, okHi := isLoadConst(codes[taken+k])
+		lo, okLo := isSingleTargetWrite(codes[i+1+k])
+		hi, okHi := isSingleTargetWrite(codes[taken+k])
 		if !okLo || !okHi || lo != hi {
 			return false
 		}
@@ -213,8 +214,17 @@ func isLoadConst[W word.Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
 		a.Op == bytecode.OP_ADD && len(a.Source) == 0 && len(a.Target) == 1 {
 		return a.Target[0], true
 	}
-	//
 	return 0, false
+}
+
+// isSingleTargetWrite reports a bytecode that writes exactly one register
+// (ldc, mov, add, a one-result call, …).
+func isSingleTargetWrite[W word.Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
+	defs := code.Definitions()
+	if len(defs) != 1 {
+		return 0, false
+	}
+	return defs[0], true
 }
 
 // factorSkipIf expands an equality SkipIf into the diamond described on
