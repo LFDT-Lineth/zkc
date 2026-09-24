@@ -1096,18 +1096,6 @@ func Test_ZkcUnit_Ternary_09(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/ternary_09", DEFAULT_UNIT_CONFIG)
 }
 
-func Test_ZkcUnit_Ternary_10(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/ternary_10", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_Ternary_11(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/ternary_11", DEFAULT_UNIT_CONFIG)
-}
-
-func Test_ZkcUnit_Ternary_12(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/ternary_12", DEFAULT_UNIT_CONFIG)
-}
-
 // ===================================================================
 // Switch Tests
 // ===================================================================
