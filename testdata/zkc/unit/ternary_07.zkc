@@ -2,13 +2,29 @@ pub input data(address:u8) -> (byte:u8)
 
 fn main() {
     var cond:u8 = data[0]
-    var expected:u8 = data[1]
+    var exp_const:u8 = data[1]
+    var exp_jmp_z:u8 = data[2]
+    var exp_jmp_a:u8 = data[3]
 
-    // Wide const-select diamond (u8, not u1): FactorSkipConditions must not
-    // wrap this in a second bit diamond.
-    var computed:u8 = cond != 0 ? 1:0
+    // Wide const-select (S=2, skip 1).
+    var got_const:u8 = cond != 0 ? 1:0
+    if got_const != exp_const {
+        fail
+    }
 
-    if computed != expected {
+    // Then-arm has a later statement (S=2, jmp filler).
+    var z:u8
+    var a:u8 = 0
+    if cond != 0 {
+        z = 1
+        a = a + 1
+    } else {
+        z = 0
+    }
+    if z != exp_jmp_z {
+        fail
+    }
+    if a != exp_jmp_a {
         fail
     }
     return

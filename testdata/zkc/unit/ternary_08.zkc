@@ -2,15 +2,39 @@ pub input data(address:u8) -> (byte:u8)
 
 fn main() {
     var cond:u8 = data[0]
-    var expected:u8 = data[1]
-    var z:u8 = 0
+    var exp_nested:u8 = data[1]
+    var exp_pair_z:u8 = data[2]
+    var exp_pair_w:u8 = data[3]
 
-    // skip_if amount 1 (then-body on the next vector): do not wrap.
+    // Nested if: outer skip is control-only.
+    var z:u8 = 0
     if cond != 0 {
-        z = 1
+        if cond == 1 {
+            z = 1
+        } else {
+            z = 2
+        }
+    } else {
+        z = 0
+    }
+    if z != exp_nested {
+        fail
     }
 
-    if z != expected {
+    // Parallel const-select of two registers (S=3).
+    var pz:u8
+    var pw:u8
+    if cond != 0 {
+        pz = 1
+        pw = 2
+    } else {
+        pz = 0
+        pw = 0
+    }
+    if pz != exp_pair_z {
+        fail
+    }
+    if pw != exp_pair_w {
         fail
     }
     return
