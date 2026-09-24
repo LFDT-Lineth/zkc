@@ -142,9 +142,10 @@ func generatesInverse[W word.Word[W]](si *bytecode.SkipIf[W], registers split.Al
 //
 // Recognised layouts (S = skip amount):
 //
-//	S=1:  skip_if (cond) 1 ; {ldc z | jmp/skip/fail}
-//	S=2:  skip_if (cond) 2 ; z=k0 ; {skip 1 | jmp} ; z=k1
-//	S>0:  skip_if (cond) S ; {jmp/skip/fail}...
+//	S=1:   skip_if (cond) 1 ; {ldc z | jmp/skip/fail}
+//	S>=2:  skip_if (cond) S ; (z_i=k_i)×n ; {skip n | jmp} ; (z_i=k_i')×n
+//	       with n = S-1 and matching target registers
+//	S>0:   skip_if (cond) S ; {jmp/skip/skip_if/fail}...
 func bodyIsConstSelectOrControlOnly[W word.Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	var (
@@ -152,29 +153,29 @@ func bodyIsConstSelectOrControlOnly[W word.Word[W]](codes []Bytecode[W], i uint)
 		taken = i + 1 + s
 		n     = uint(len(codes))
 	)
-	//
 	if s > 0 && taken <= n && isBodyControlOnly(codes[i+1:taken]) {
 		return true
 	}
-	//
-	switch s {
-	case 1:
+	if s == 1 {
 		if i+1 >= n {
 			return false
 		}
 		_, ldc := isLoadConst(codes[i+1])
 		return ldc
-	case 2:
-		if taken >= n {
-			return false
-		}
-		lo, okLo := isLoadConst(codes[i+1])
-		okSkOrJmp := isSkipOneOrJmp(codes[i+2])
-		hi, okHi := isLoadConst(codes[taken])
-		return okLo && okHi && lo == hi && okSkOrJmp
-	default:
+	}
+	// S>=2: n load-consts, skip n or jmp, n load-consts on the same registers.
+	nRegs := s - 1
+	if s < 2 || taken+nRegs > n || !isSkipNOrJmp(codes[taken-1], nRegs) {
 		return false
 	}
+	for k := uint(0); k < nRegs; k++ {
+		lo, okLo := isLoadConst(codes[i+1+k])
+		hi, okHi := isLoadConst(codes[taken+k])
+		if !okLo || !okHi || lo != hi {
+			return false
+		}
+	}
+	return true
 }
 
 func isBodyControlOnly[W word.Word[W]](codes []Bytecode[W]) bool {
@@ -186,11 +187,11 @@ func isBodyControlOnly[W word.Word[W]](codes []Bytecode[W]) bool {
 	return true
 }
 
-// isSkipOneOrJmp is the middle of an S=2 const-select diamond: skip the else
-// ldc in-vector (skip 1) or by leaving the vector (jmp).
-func isSkipOneOrJmp[W word.Word[W]](code Bytecode[W]) bool {
+// isSkipNOrJmp is the middle of a parallel const-select: skip the else loads
+// in-vector (skip n) or by leaving the vector (jmp).
+func isSkipNOrJmp[W word.Word[W]](code Bytecode[W], n uint) bool {
 	if skip, ok := code.(*bytecode.Skip[W]); ok {
-		return skip.Skip == 1
+		return uint(skip.Skip) == n
 	}
 	_, jmp := code.(*bytecode.Jmp[W])
 	return jmp
