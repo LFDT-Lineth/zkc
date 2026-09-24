@@ -147,5 +147,5 @@ func (p *registerAllocator[W]) ZeroRegister() RegisterId {
 		}
 	}
 	// Allocate a new register.
-	return p.AllocateNamed("cst_0", util.Some[uint](0))
+	return p.AllocateNamed("$zero", util.Some[uint](0))
 }
