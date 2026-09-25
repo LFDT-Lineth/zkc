@@ -1,0 +1,23 @@
+pub input data(address:u8) -> (byte:u8)
+pub input expected(address:u1) -> (val:u8)
+
+// The read of data[x] must snapshot x: the later write to x is reached only
+// via the target of the conditional skip (i.e. not by falling through).
+fn main() {
+    var x:u8 = 0
+    var n:u8 = 0
+    var s:u8 = 0
+    while n<4 {
+        s = s + data[x]
+        if data[n + 4] == 0 {
+            n = n + 1
+        } else {
+            x = x + 1
+            n = n + 1
+        }
+    }
+    //
+    if s != expected[0] {
+        fail
+    }
+}

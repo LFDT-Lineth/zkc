@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
@@ -23,7 +24,7 @@ import (
 )
 
 // FlattenLookupAccess snapshots, into a fresh temporary, each call (or memory access) argument whose
-// register is also written at or after the call within the same vector.
+// register may be written at or after the call on some path through it within the same vector.
 //
 // The lookup gluing a call to its callee reads the argument and return columns
 // at the call's row.  If an argument register is also written elsewhere in the
@@ -32,9 +33,12 @@ import (
 // let the call read that instead.  Two situations require this:
 //
 //   - the argument is also a return of the call (e.g. "x = f(x)"); or
-//   - the argument coincides with a register written by a later instruction in
-//     the vector, e.g. the destination of the enclosing assignment in
-//     "x = f(x) + 1" (lowered to "$t = f(x); x = $t + 1").
+//   - the argument coincides with a register written by a later instruction on
+//     some path through the call, e.g. the destination of the enclosing
+//     assignment in "x = f(x) + 1" (lowered to "$t = f(x); x = $t + 1").
+//
+// A write lying on a path mutually exclusive with the call does not require a
+// snapshot, since the row which executes that write does not execute the call.
 //
 // We could avoid the temporary, but it would imply a lookup with a row shift,
 // which makes the prover's life harder.  This pass is therefore only meaningful
@@ -63,9 +67,9 @@ func flattenLookupAccessFunction[W word.Word[W]](fn *descriptor.Function[W]) *de
 	for i, vec := range vectors {
 		// Decide, for each call in this vector, which arguments must be
 		// snapshotted.  This needs the whole vector body (to know which registers
-		// are written at or after each call), which the Map closure cannot see one
-		// bytecode at a time.
-		snapshot := flattenableArgs(vec.Bytecodes)
+		// are written on paths through each call), which the Map closure cannot
+		// see one bytecode at a time.
+		snapshot := flattenableArgs(vec, alloc)
 		//
 		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
 			if flags, ok := snapshot[idx]; ok {
@@ -79,37 +83,71 @@ func flattenLookupAccessFunction[W word.Word[W]](fn *descriptor.Function[W]) *de
 	return descriptor.NewFunction(fn.Name(), alloc.Registers(), fn.Kind(), fn.Effects(), nvecs)
 }
 
-// flattenableArgs returns, for each call in the vector, the set of argument
-// positions whose register is written at or after the call.  Starting the scan
-// at the call itself captures both the call's own returns and any register
-// rewritten by a later bytecode.
-func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
-	snapshot := make(map[uint][]bool)
+// flattenableArgs returns, for each lookup in the vector requiring at least one
+// snapshot, the set of argument positions to snapshot.  An argument is flagged
+// when its register may be written at or after the lookup on some path through
+// it.  Starting at the lookup itself captures its own returns (e.g. "x = f(x)")
+// whilst, for later bytecodes, the reach map discards those lying on a mutually
+// exclusive path, such as the else branch in:
+//
+//	skip_if c != 0 2; read y = data[x]; ret; x = 1; ret
+//
+// Here, the write to x can never follow the read on the same row, so the
+// column for x always holds the address actually read.  Zero-width registers
+// carry no data and, hence, are never flagged.
+func flattenableArgs[W word.Word[W]](vec BytecodeVector[W], registers descriptor.RegisterMap[W]) map[uint][]bool {
+	var (
+		codes    = vec.Bytecodes
+		reaches  = vec.ReachMap()
+		snapshot = make(map[uint][]bool)
+	)
 	//
 	for i, code := range codes {
 		uses := lookupUses(code)
 		if uses == nil {
 			continue
 		}
-		// Collect the registers written from this call onwards.
-		written := make(map[bytecode.RegisterId]bool)
 		//
-		for _, later := range codes[i:] {
-			for _, r := range later.Definitions() {
-				written[r] = true
+		var (
+			args    = make([]bool, len(uses))
+			flagged = false
+		)
+		//
+		for j := i; j < len(codes); j++ {
+			// Ignore bytecodes not on any path through this lookup.
+			if !isReachableFrom(reaches, uint(i), uint(j)) {
+				continue
+			}
+			//
+			for k, use := range uses {
+				if isDefinedIn(use, codes[j], registers) {
+					args[k], flagged = true, true
+				}
 			}
 		}
-		// Flag each argument coinciding with such a write.
-		args := make([]bool, len(uses))
 		//
-		for j, use := range uses {
-			args[j] = written[use]
+		if flagged {
+			snapshot[uint(i)] = args
 		}
-		//
-		snapshot[uint(i)] = args
 	}
 	//
 	return snapshot
+}
+
+// isReachableFrom determines whether the bytecode at offset "to" lies on some
+// path through the bytecode at offset "from" (which trivially holds for the
+// bytecode itself).
+func isReachableFrom(reaches dfa.Result[dfa.Reaches], from, to uint) bool {
+	return to == from || reaches.StateOf(to).ReachableFrom(from)
+}
+
+// isDefinedIn determines whether the given register is written by the given
+// bytecode.  Zero-width registers carry no data and, hence, are never
+// considered written.
+func isDefinedIn[W word.Word[W]](reg bytecode.RegisterId, code Bytecode[W],
+	registers descriptor.RegisterMap[W]) bool {
+	//
+	return !bytecode.IsZeroWidth(registers.Register(reg)) && slices.Contains(code.Definitions(), reg)
 }
 
 // flattenLookupAccess expands a call, prefixing it with a snapshot ("tmp = arg") for
