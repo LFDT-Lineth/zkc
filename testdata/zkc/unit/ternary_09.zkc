@@ -1,0 +1,19 @@
+pub input data(address:u8) -> (byte:u8)
+
+fn main() {
+    var cond:u8 = data[0]
+    var expected:u8 = data[1]
+    var a:u8 = 1
+
+    // Diamond shape is : skip_if (cond) S ; {jmp/skip/fail}...
+
+    // Diamond shape here has S=1, body is a ret. Do not factorizeSkipIf.
+    if cond == 0 {
+        return
+    }
+
+    if a != expected {
+        fail
+    }
+    return
+}
