@@ -17,8 +17,6 @@ import (
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -43,7 +41,7 @@ type Constraint[F field.Element[F]] struct {
 }
 
 // NewConstraint creates a bus constraint, requiring all ports share one width.
-func NewConstraint[F field.Element[F]](handle string, sends []Port, receives []Port) Constraint[F] {
+func NewConstraint[F field.Element[F]](handle string, sends []Port, receives []Port) *Constraint[F] {
 	var width uint
 	// Take the width from whichever side has ports, rather than from the sends
 	// alone.  A bus missing one direction entirely is a user error reported by
@@ -56,14 +54,14 @@ func NewConstraint[F field.Element[F]](handle string, sends []Port, receives []P
 		}
 	}
 
-	return Constraint[F]{Handle: handle,
+	return &Constraint[F]{Handle: handle,
 		Sends:    sends,
 		Receives: receives,
 	}
 }
 
 // Consistent applies a number of internal consistency checks.
-func (p Constraint[F]) Consistent(sc schema.AnySchema[F]) []error {
+func (p *Constraint[F]) Consistent(sc schema.Schema[F]) []error {
 	var (
 		errors []error
 		width  uint
@@ -98,12 +96,12 @@ func (p Constraint[F]) Consistent(sc schema.AnySchema[F]) []error {
 }
 
 // Name returns a unique name for this constraint.
-func (p Constraint[F]) Name() string {
+func (p *Constraint[F]) Name() string {
 	return p.Handle
 }
 
 // Contexts returns the modules of all ports.
-func (p Constraint[F]) Contexts() []schema.ModuleId {
+func (p *Constraint[F]) Contexts() []schema.ModuleId {
 	var contexts []schema.ModuleId
 	//
 	for _, send := range p.Sends {
@@ -117,115 +115,18 @@ func (p Constraint[F]) Contexts() []schema.ModuleId {
 	return contexts
 }
 
-// Sets implementation for schema.Constraint interface.  A bus builds its own
-// multisets; the shared context only holds de-duplicating sets.
-func (p Constraint[F]) Sets() []schema.SetId {
-	return nil
-}
-
 // Bounds implementation for schema.Constraint interface.  Ports are made of
 // registers, hence well defined on every row.
 //
 //nolint:revive
-func (p Constraint[F]) Bounds(module uint) util.Bounds {
+func (p *Constraint[F]) Bounds(module uint) util.Bounds {
 	return util.EMPTY_BOUND
-}
-
-// Accepts checks whether the bus balances across a group of traces
-// judged together.
-func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], ctx schema.Context[F],
-) (failures []schema.Failure[F]) {
-	tally := hash.NewMap[hash.Array[F], int](32)
-	//
-	for _, tr := range trace {
-		p.accumulate(tr, p.Sends, tally, 1)
-		p.accumulate(tr, p.Receives, tally, -1)
-	}
-	// The bus balances exactly when every net count is zero.  Iteration
-	// order — hence which unbalanced message is reported — is unspecified.
-	for iter := tally.KeyValues(); iter.HasNext(); {
-		var pair = iter.Next()
-		//
-		if pair.Right != 0 {
-			var (
-				message  = pair.Left.Elements()
-				sent     = p.count(trace, p.Sends, message)
-				received = p.count(trace, p.Receives, message)
-			)
-			//
-			failures = append(failures, &Failure[F]{p.Handle, message, sent, received, p.Sends, p.Receives})
-		}
-	}
-	//
-	return failures
-}
-
-// accumulate adds the given sign to the tally for every selected row of each
-// port.
-func (p Constraint[F]) accumulate(tr trace.Shard[F], ports []Port, tally *Tally[F], sign int) {
-	// add is the tally update applied to each selected row.
-	var add = func(count int) int { return count + sign }
-	//
-	for _, port := range ports {
-		var trModule = tr.Module(port.Module)
-		// Allocate scratch space for this port.
-		var buffer = make([]F, port.Len())
-		//
-		for row := range trModule.Height() {
-			if isSelected(row, port.Selector, trModule) {
-				//
-				for i, rid := range port.Registers {
-					buffer[i] = trModule.Column(rid.Unwrap()).Get(row)
-				}
-				//
-				var key = hash.NewArray(buffer)
-				// Insert item whilst checking whether the buffer was consumed or not
-				if !tally.Update(key, add, sign) {
-					// Yes, buffer consumed.  Therefore, construct fresh buffer to avoid
-					// aliasing the value now stored in the hash set.
-					buffer = slices.Clone(buffer)
-				}
-			}
-		}
-	}
-}
-
-// count returns how many times the given message is contributed by the given
-// ports across all traces.  This rescans the traces, which is fine since it
-// only ever runs when reporting a failure.
-func (p Constraint[F]) count(traces trace.Trace[F], ports []Port, message []F) uint {
-	var n uint
-	//
-	for _, tr := range traces {
-		for _, port := range ports {
-			var trModule = tr.Module(port.Module)
-			//
-			for row := range trModule.Height() {
-				if isSelected(row, port.Selector, trModule) {
-					var matches = true
-					//
-					for i, rid := range port.Registers {
-						if !trModule.Column(rid.Unwrap()).Get(row).Equals(message[i]) {
-							matches = false
-							break
-						}
-					}
-					//
-					if matches {
-						n++
-					}
-				}
-			}
-		}
-	}
-	//
-	return n
 }
 
 // Lisp converts this constraint into an S-Expression.
 //
 //nolint:revive
-func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
+func (p *Constraint[F]) Lisp(mapping schema.Schema[F]) sexp.SExp {
 	var (
 		sends    = sexp.EmptyList()
 		receives = sexp.EmptyList()
@@ -245,12 +146,4 @@ func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
 		sends,
 		receives,
 	})
-}
-
-// isSelected determines whether or not the given row of the given vector is
-// selected.  A row without a selector is always selected; otherwise, it is
-// selected when its selector is non-zero.
-func isSelected[F field.Element[F]](k uint, id register.Id, trModule trace.Module[F]) bool {
-	// Otherwise, selected when selector non-zero.
-	return !trModule.Column(id.Unwrap()).Get(k).IsZero()
 }

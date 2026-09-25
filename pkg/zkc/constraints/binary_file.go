@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/checker"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -280,19 +280,23 @@ func (p *BinaryFile[F, W]) clearCachedArtifacts() {
 	p.cachedAirConstraints = util.None[air.Schema[F]]()
 }
 
-// Check a given trace against the AIR constraints embodied in this constraints
-// file, potentially producing one (or more) constraint failures.
-func (p *BinaryFile[F, W]) Check(config vm.TraceConfig, trace trace.Trace[F]) []schema.Failure[F] {
+// Check a given trace against the AIR constraints embodied in this binary file,
+// potentially producing one (or more) constraint failures and/or other kinds of
+// error.  The latter covers a range of error, including I/O errors, machine
+// failures (e.g. executing the fail instruction), and other internal failures.
+func (p *BinaryFile[F, W]) Check(config vm.TraceConfig, trace trace.LazyTrace[F]) ([]schema.Failure[F], []error) {
 	var (
-		sc    = p.AirConstraints()
 		stats = util.NewPerfStats()
+		// Construct constraint checker
+		checker = checker.New(p.AirConstraints()).
+			WithParallelism(config.Parallelism())
 	)
 	// Check constraints
-	failures := schema.Accepts(config.Parallelism(), sc, trace)
+	failures, errors := checker.CheckLazy(trace)
 	// Log stats
 	stats.Log("Constraint checking")
 	//
-	return failures
+	return failures, errors
 }
 
 // Execute executes the program embodied by these constraints in chunks of n
@@ -309,57 +313,33 @@ func (p *BinaryFile[F, W]) Execute(input map[string][]byte) (output map[string][
 	return output, errs
 }
 
-// Trace generates a suitable trace from the given inputs for the contraints
+// Trace generates a (lazy)) trace from the given inputs for the contraints
 // embodied in this file.  Inputs are given as byte arrays which are decoded via
 // vm.DecodeInputs() based on the register types of the corresponding memory.
-// This can return one (or more) errors if, for example, the input is malformed
-// (e.g. is missing expected fields and/or contains unexpected fields).
-// The raw (row-major) trace produced by the machine is also returned, since it
-// carries the original register / limb structure before AIR expansion (e.g. for
-// reporting statistics).  It is nil when execution fails.
+// Observe that, since a lazy trace is returned, this function does not actually
+// do any tracing.  Rather, tracing will happen on-demand as the lazy trace is
+// consumed.
+//
+// There two distinct failures modes here which are distinguished by the option.
+// If an unrecoverable error occurs, then None() is returned instead of a trace.
+// However, if a recoverable error occurs, then both trace.HasValue() and
+// len(errors) > 0 will hold at the same time.  An unrecoverable error indicates
+// it was not possible to generate a trace at all (e.g. inputs are malformed, or
+// some kind of internal failure arose during execution).  In contrast, a
+// recoverable error indicates the machine executed correctly but reached a
+// failure of some kind (e.g. it executed the fail instruction, or an arithmetic
+// overflow arose, etc).  In this case, the trace is returned so it can be used
+// (e.g. when testing to check that the constraints fail as they should, etc).
 func (p *BinaryFile[F, W]) Trace(input map[string][]byte, cfg vm.TraceConfig,
-) (output map[string][]byte, trace trace.Trace[F], errors []error) {
+) (output map[string][]byte, trace util.Option[trace.LazyTrace[F]], errors []error) {
 	//
 	var (
-		stats = util.NewPerfStats()
 		// Initialise trace builder from configuration
-		builder = vm.NewTraceBuilder[W, F, Tracer[F, W]](cfg, p.ExecutionProgram(), p.TracingProgram())
+		builder = vm.NewTraceBuilder[W, F, Tracer[F, W]](cfg,
+			p.ExecutionProgram(), p.TracingProgram(), p.AirConstraints())
 	)
-	// Execute machine in chunks of 1K steps
-	trace, output, errors = builder.BootAndTrace(input)
-	//
-	stats.Log(fmt.Sprintf("Trace generation (%d shards)", len(trace)))
-	//
-	if len(trace) > 0 {
-		var errs []error
-		// Construct trace builder
-		trace, errs = p.expandTrace(cfg, trace)
-		// Include any expansion errors
-		errors = append(errors, errs...)
-	}
-	//
-	return output, trace, errors
-}
-
-func (p *BinaryFile[F, W]) expandTrace(cfg vm.TraceConfig, tr trace.Trace[F]) (trace.Trace[F], []error) {
-	//
-	var (
-		stats       = util.NewPerfStats()
-		constraints = p.AirConstraints()
-		// Construct trace builder
-		builder = ir.NewTraceBuilder[F]().
-			// NOTE: never use validation, as it hides constraint failures.
-			WithValidation(false).
-			WithParallelism(cfg.Parallelism()).
-			WithExpansion(true).
-			WithPadding(cfg.PaddingStrategy())
-	)
-	// Apply trace expansion
-	etr, errors := builder.Build(constraints, tr)
-	//
-	stats.Log(fmt.Sprintf("Trace expansion (%d shards)", len(etr)))
-	//
-	return etr, errors
+	// Execute machine
+	return builder.BootAndTrace(input)
 }
 
 // ============================================================================

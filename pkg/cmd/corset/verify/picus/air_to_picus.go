@@ -61,25 +61,25 @@ func (p *AirPicusTranslator[F]) TranslateModule(i uint) {
 
 	// build PCL constraints from MIR constraints
 	for iter := airModule.Constraints(); iter.HasNext(); {
-		constraint := iter.Next().(air.Constraint[F])
+		constraint := iter.Next()
 		p.translateConstraint(constraint, picusModule, airModule)
 	}
 }
 
 // translateConstraints translates MIR constraints into PCL constraints.
 // The built constraints are implicitly added to `picusModule`
-func (p *AirPicusTranslator[F]) translateConstraint(c air.Constraint[F],
+func (p *AirPicusTranslator[F]) translateConstraint(c schema.Constraint[F],
 	picusModule *pcl.Module[F], airModule schema.Module[F],
 ) {
 	// Check what kind of constraint we have
 	switch v := c.(type) {
-	case air.VanishingConstraint[F]:
+	case *air.VanishingConstraint[F]:
 		p.translateVanishing(v, picusModule, airModule)
-	case air.LookupConstraint[F]:
+	case *air.LookupConstraint[F]:
 		p.translateLookup(v, picusModule)
-	case air.RangeConstraint[F]:
+	case *air.RangeConstraint[F]:
 		p.translateRangeConstraint(v, picusModule, airModule)
-	case air.BusConstraint[F]:
+	case *air.BusConstraint[F]:
 		panic("bus constraints are not supported by the Picus backend")
 	default:
 		panic(fmt.Sprintf("Unhandled constraint: %s", v.Name()))
@@ -87,50 +87,43 @@ func (p *AirPicusTranslator[F]) translateConstraint(c air.Constraint[F],
 }
 
 // translateRangeConstraint translates a MIR range constraint `r` to a PCL less than constraint.
-func (p *AirPicusTranslator[F]) translateRangeConstraint(r air.RangeConstraint[F],
+func (p *AirPicusTranslator[F]) translateRangeConstraint(r *air.RangeConstraint[F],
 	picusModule *pcl.Module[F], airModule schema.Module[F],
 ) {
-	var (
-		sources   = r.Unwrap().Sources
-		bitwidths = r.Unwrap().Bitwidths
-	)
-
-	for i, source := range sources {
-		expr := p.lowerRegister(source, 0, airModule)
-		// 1. Get the `big.Int` representation of the max unisgned value for a given bitwidth.
-		// 2. Create a field element from the big integer.
-		// 3. Construct a PCL constant from the field element.
-		upperBound := pcl.C(field.BigInt[F](*MaxValueBig(int(bitwidths[i]))))
-		// Add (assert (<= `expr` `upperBound`))
-		picusModule.AddLeqConstraint(expr, upperBound)
-	}
+	expr := p.lowerRegister(r.Source, 0, airModule)
+	// 1. Get the `big.Int` representation of the max unisgned value for a given bitwidth.
+	// 2. Create a field element from the big integer.
+	// 3. Construct a PCL constant from the field element.
+	upperBound := pcl.C(field.BigInt[F](*MaxValueBig(int(r.Bitwidth))))
+	// Add (assert (<= `expr` `upperBound`))
+	picusModule.AddLeqConstraint(expr, upperBound)
 }
 
 // translateVanishing translates an AIR vanishing constraint into a PCL constraint.
-func (p *AirPicusTranslator[F]) translateVanishing(v air.VanishingConstraint[F],
+func (p *AirPicusTranslator[F]) translateVanishing(v *air.VanishingConstraint[F],
 	picusModule *pcl.Module[F], airModule schema.Module[F],
 ) {
-	if v.Unwrap().Domain.HasValue() {
+	if v.Domain.HasValue() {
 		// TODO: need to handle this. Row specific constraints will require
 		// generating Picus modules which collec all constraints that apply
 		// to the specific row.
 		panic("row specific constraints are not supported!")
 	}
 	// We translate the logical term to a collection of Picus constraints
-	picusModule.Constraints = append(picusModule.Constraints, p.logicalTermToConstraint(v.Unwrap().Constraint, airModule))
+	picusModule.Constraints = append(picusModule.Constraints, p.logicalTermToConstraint(v.Constraint, airModule))
 }
 
 // translateLookup translates an AIR lookup constraint into a PCL constraint.
-func (p *AirPicusTranslator[F]) translateLookup(v air.LookupConstraint[F], picusModule *pcl.Module[F]) {
-	if len(v.Unwrap().Targets) == 1 {
-		target := v.Unwrap().Targets[0]
+func (p *AirPicusTranslator[F]) translateLookup(v *air.LookupConstraint[F], picusModule *pcl.Module[F]) {
+	if len(v.Targets) == 1 {
+		target := v.Targets[0]
 
 		targetModule := p.airSchema.Module(target.Module)
 		if targetModule.Name() != "u128" {
 			panic(fmt.Sprintf("Unhandled lookup target: %s", targetModule.Name()))
 		}
 
-		source := v.Unwrap().Sources[0]
+		source := v.Sources[0]
 		sourceModule := p.airSchema.Module(source.Module)
 		sourceTerm := p.lowerRegister(source.Ith(0), 0, sourceModule)
 		upperBound := pcl.C(field.BigInt[F](*MaxValueBig(128)))

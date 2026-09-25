@@ -22,6 +22,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -55,7 +56,7 @@ import (
 //
 // Lookups require a register (and not an expression) as the source selector,
 // so the path selector is materialised as a fresh 1-bit register (if it is not already).
-func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F, mir.Constraint[F]],
+func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F, schema.Constraint[F]],
 	ctx schema.ModuleId,
 	fn *vm.Function[W],
 	pcSelectors []register.Id,
@@ -172,7 +173,7 @@ outer:
 // the accessor's per-line is_pc_* selectors (empty for an atomic function).
 // A gating register always exists: every access is at least position-gated
 // (IS_PC_k for a multi-line function, $ret for a one-line function).
-func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
 	ret register.Id, oneHot []oneHotGroup) register.Id {
 	// Position register gating the rows of this access: the line's IS_PC_k
@@ -204,7 +205,7 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, mir.Constrain
 // expansion) with, and constrained to equal, the boolean value of the access's
 // (already position-gated) branch condition — so it is 1 exactly on the rows
 // which perform the access.
-func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+func newPathSelector[F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, oneHot []oneHotGroup,
 ) register.Id {
 	// Allocate the selector column.
@@ -214,7 +215,7 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]]
 	// Fill the flag selector during trace expansion with the boolean value of the condition.
 	mod.AddAssignments(assignment.NewComputedRegister(selId, pathSelectorComputation[F](cond, regs), ctx))
 	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.
-	mod.AddConstraints(mir.NewVanishingConstraint(
+	mod.AddConstraints(vanishing.NewConstraint(
 		fmt.Sprintf("lookup_sel_%d", selId.Unwrap()), ctx, util.None[int](),
 		pathSelectorConstraint[F](selId, cond, regs, oneHot)))
 	//
@@ -318,7 +319,7 @@ func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
 
 // emitCallLookup constructs and adds a single lookup constraint mapping the
 // caller's argument/return registers onto the callee's input/output registers.
-func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]], ctx schema.ModuleId,
+func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]], ctx schema.ModuleId,
 	pc uint, calleeId uint16, args, returns []register.Id, srcSelector register.Id, program vm.Program[W]) {
 	var (
 		callee     = program.Module(calleeId).(*vm.Function[W])
@@ -364,7 +365,7 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 		target = lookup.FilteredVector(uint(calleeId), retId, tgtIds...)
 	}
 	//
-	mod.AddConstraints(mir.NewLookupConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
+	mod.AddConstraints(lookup.NewConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
 }
 
 // emitCallBus constructs and adds the bus connecting every call site of a
@@ -378,7 +379,7 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.C
 // one row of each activation.  Since a global function cannot return, the
 // message consists of the callee's input registers alone; these are constant
 // throughout a frame and, hence, still hold the arguments on the $ret row.
-func (p *constraintTranslator[W, F]) emitCallBus(mod *schema.Table[F, mir.Constraint[F]],
+func (p *constraintTranslator[W, F]) emitCallBus(mod *schema.Table[F, schema.Constraint[F]],
 	calleeId vm.ModuleId, callee *vm.Function[W]) {
 	//
 	var (
@@ -404,7 +405,7 @@ func (p *constraintTranslator[W, F]) emitCallBus(mod *schema.Table[F, mir.Constr
 		}
 	}
 	//
-	mod.AddConstraints(mir.NewBusConstraint[F](handle, sends,
+	mod.AddConstraints(bus.NewConstraint[F](handle, sends,
 		[]mir.BusPort{bus.NewPort(uint(calleeId), retId, tgtIds...)}))
 }
 
@@ -423,7 +424,7 @@ func (p *constraintTranslator[W, F]) emitCallBus(mod *schema.Table[F, mir.Constr
 // For a WOM this lookup also enforces write-once consistency: the table holds
 // each address exactly once (address monotony), so two writes of different
 // values to the same address cannot both match a row.
-func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
+func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]],
 	ctx schema.ModuleId, pc, cc uint, memId uint16,
 	address, data []register.Id, srcSelector register.Id, program vm.Program[W]) {
 	var (
@@ -471,7 +472,7 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir
 		target = lookup.FilteredVector(uint(memId), accessId, tgtIds...)
 	}
 	//
-	mod.AddConstraints(mir.NewLookupConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
+	mod.AddConstraints(lookup.NewConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
 }
 
 // emitRamLookup constructs and adds the lookup constraint tying one read-write
@@ -487,7 +488,7 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir
 // Together with the table's local constraints this pins every access's row;
 // that VALUE_READ genuinely returns the last value written to the address
 // remains for the offline memory-checking bus (see translateReadWriteMemory).
-func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Constraint[F]],
+func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]],
 	ctx schema.ModuleId, pc, cc uint, rw *vm.BytecodeReadWrite[W],
 	srcSelector register.Id, program vm.Program[W]) {
 	//
@@ -528,5 +529,5 @@ func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, mir.Co
 		target = lookup.FilteredVector(uint(rw.Id), kind, tgtIds...)
 	)
 	//
-	mod.AddConstraints(mir.NewLookupConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
+	mod.AddConstraints(lookup.NewConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
 }

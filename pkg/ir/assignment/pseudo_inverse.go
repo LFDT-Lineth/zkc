@@ -57,7 +57,7 @@ func (e *PseudoInverse[F]) Bounds(mid schema.ModuleId) util.Bounds {
 }
 
 // Compute performs the inversion.
-func (e *PseudoInverse[F]) Compute(tr trace.Shard[F], schema schema.AnySchema[F]) ([]array.Array[F], error) {
+func (e *PseudoInverse[F]) Compute(tr trace.Shard[F], schema schema.Schema[F]) ([]array.Array[F], error) {
 	var (
 		trModule = tr.Module(e.Target.Module())
 		scModule = schema.Module(e.Target.Module())
@@ -76,7 +76,7 @@ func (e *PseudoInverse[F]) Compute(tr trace.Shard[F], schema schema.AnySchema[F]
 // consistent with its enclosing schema This provides a double check of certain
 // key properties, such as that registers used for assignments are valid,
 // etc.
-func (e *PseudoInverse[F]) Consistent(schema.AnySchema[F]) []error {
+func (e *PseudoInverse[F]) Consistent(schema.Schema[F]) []error {
 	return nil
 }
 
@@ -113,7 +113,7 @@ func (e *PseudoInverse[F]) RegistersWritten() []register.Ref {
 // Lisp converts this constraint into an S-Expression.
 //
 //nolint:revive
-func (e *PseudoInverse[F]) Lisp(schema schema.AnySchema[F]) sexp.SExp {
+func (e *PseudoInverse[F]) Lisp(schema schema.Schema[F]) sexp.SExp {
 	var (
 		module   = schema.Module(e.Target.Module())
 		target   = module.Register(e.Target.Register())

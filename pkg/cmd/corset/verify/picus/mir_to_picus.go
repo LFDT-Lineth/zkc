@@ -68,44 +68,41 @@ func (p *MirPicusTranslator[F]) TranslateModule(i uint) {
 
 	// build PCL constraints from MIR constraints
 	for iter := mirModule.Constraints(); iter.HasNext(); {
-		constraint := iter.Next().(mir.Constraint[F])
-		p.translateConstraint(constraint, picusModule, mirModule)
+		p.translateConstraint(iter.Next(), picusModule, mirModule)
 	}
 }
 
 // translateConstraint translates MIR constraints into PCL constraints.
 // The built constraints are implicitly added to `picusModule`
-func (p *MirPicusTranslator[F]) translateConstraint(c mir.Constraint[F],
+func (p *MirPicusTranslator[F]) translateConstraint(c schema.Constraint[F],
 	picusModule *pcl.Module[F], mirModule schema.Module[F],
 ) {
 	// Check what kind of constraint we have
-	switch v := c.Unwrap().(type) {
-	case mir.RangeConstraint[F]:
+	switch v := c.(type) {
+	case *mir.RangeConstraint[F]:
 		p.translateRangeConstraint(v, picusModule, mirModule)
-	case mir.VanishingConstraint[F]:
+	case *mir.VanishingConstraint[F]:
 		p.translateVanishing(v, picusModule, mirModule)
 	default:
-		panic(fmt.Sprintf("Unhandled constraint: %s", c.Unwrap()))
+		panic(fmt.Sprintf("Unhandled constraint: %s", c))
 	}
 }
 
 // translateRangeConstraint translates a MIR range constraint `r` to a PCL less than constraint.
-func (p *MirPicusTranslator[F]) translateRangeConstraint(r mir.RangeConstraint[F],
+func (p *MirPicusTranslator[F]) translateRangeConstraint(r *mir.RangeConstraint[F],
 	picusModule *pcl.Module[F], mirModule schema.Module[F],
 ) {
-	for i, source := range r.Sources {
-		expr := p.lowerRegister(source, 0, mirModule)
-		// 1. Get the `big.Int` representation of the max unisgned value for a given bitwidth.
-		// 2. Create a field element from the big integer.
-		// 3. Construct a PCL constant from the field element.
-		upperBound := pcl.C(field.BigInt[F](*MaxValueBig(int(r.Bitwidths[i]))))
-		// Add (assert (<= `expr` `upperBound`))
-		picusModule.AddLeqConstraint(expr, upperBound)
-	}
+	expr := p.lowerRegister(r.Source, 0, mirModule)
+	// 1. Get the `big.Int` representation of the max unisgned value for a given bitwidth.
+	// 2. Create a field element from the big integer.
+	// 3. Construct a PCL constant from the field element.
+	upperBound := pcl.C(field.BigInt[F](*MaxValueBig(int(r.Bitwidth))))
+	// Add (assert (<= `expr` `upperBound`))
+	picusModule.AddLeqConstraint(expr, upperBound)
 }
 
 // translateVanishing translates an MIR vanishing constraint into one or more PCL constraints.
-func (p *MirPicusTranslator[F]) translateVanishing(v mir.VanishingConstraint[F],
+func (p *MirPicusTranslator[F]) translateVanishing(v *mir.VanishingConstraint[F],
 	picusModule *pcl.Module[F], mirModule schema.Module[F],
 ) {
 	if v.Domain.HasValue() {

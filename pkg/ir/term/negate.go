@@ -55,10 +55,10 @@ func (p *Negate[F, T]) Bounds() util.Bounds {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Negate[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, uint, error) {
-	val, branch, err := p.Arg.TestAt(k, tr, sc)
+func (p *Negate[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, error) {
+	val, err := p.Arg.TestAt(k, tr, sc)
 	//
-	return !val, branch, err
+	return !val, err
 }
 
 // Lisp returns a lisp representation of this Negate, which is useful for

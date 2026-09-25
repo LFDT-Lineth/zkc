@@ -74,6 +74,8 @@ type CompileConfig struct {
 	mir bool
 	// indicates whether or not to print the Mid-level Intermediate Reprentation (AIR).
 	air bool
+	// indicates whether or not to show excetion (i.e. fast mode) program.
+	fast bool
 	// indicates whether or not to print summary statistics about the generated
 	// AIR schema.
 	stats bool
@@ -103,6 +105,7 @@ func runCompileCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 	config.raw = GetFlag(cmd, "raw")
 	config.mir = GetFlag(cmd, "mir")
 	config.air = GetFlag(cmd, "air")
+	config.fast = GetFlag(cmd, "fast")
 	config.stats = GetFlag(cmd, "stats")
 	config.order = GetString(cmd, "order")
 	config.skipArrows = GetFlag(cmd, "show-skips")
@@ -189,7 +192,7 @@ func printArtifacts[F field.Element[F], W vm.Word[W]](ast *ast.Program, bf *cons
 	if ir && config.raw {
 		// Raw IR
 		writeBytecodeProgram(config.verbose, ast, bf.RawProgram(), config)
-	} else if ir && config.build.fastMode {
+	} else if ir && config.fast {
 		// Execution IR
 		writeBytecodeProgram(config.verbose, ast, bf.ExecutionProgram(), config)
 	} else if ir {
@@ -809,16 +812,20 @@ func init() {
 	compileCmd.Flags().StringP("output", "o", "", "specify output file for writing binary constraints")
 	compileCmd.Flags().StringArrayP("define", "D", nil,
 		"define a metadata attribute (as \"key=value\") to embed in the binary output file")
-	compileCmd.PersistentFlags().Bool("ast", false, "Output Abstract Syntax Tree (AST)")
-	compileCmd.PersistentFlags().Bool("raw", false, "Output raw Intermediate (Bytecode) Representation (IR)")
-	compileCmd.PersistentFlags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
-	compileCmd.PersistentFlags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
-	compileCmd.PersistentFlags().Bool("stats", false, "Output summary statistics")
-	compileCmd.PersistentFlags().Bool("show-skips", true, "Show skip arrows explicitly")
-	compileCmd.PersistentFlags().String("order", "total",
+	compileCmd.Flags().Bool("ast", false, "Output Abstract Syntax Tree (AST)")
+	compileCmd.Flags().Bool("raw", false, "Output raw Intermediate (Bytecode) Representation (IR)")
+	compileCmd.Flags().Bool("mir", false, "Output Mid-Level Intermediate Representation (MIR)")
+	compileCmd.Flags().Bool("air", false, "Output Arithmetic Intermediate Representation (AIR)")
+	compileCmd.Flags().Bool("stats", false, "Output summary statistics")
+	compileCmd.Flags().Bool("fast", false, "Fast-mode execution (no tracing, no constraints)")
+	compileCmd.Flags().Bool("show-skips", true, "Show skip arrows explicitly")
+	compileCmd.Flags().String("order", "total",
 		"module ordering for --stats (name|total|complexity|lookups)")
 	// --order only affects the --stats output.
 	compileFlags.Require("order", "stats")
 	// --define only affects the binary output file.
 	compileFlags.Require("define", "output")
+	//
+	compileFlags.Exclude("fast", "mir")
+	compileFlags.Exclude("fast", "air")
 }

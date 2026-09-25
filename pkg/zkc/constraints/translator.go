@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -126,7 +127,7 @@ func (p *constraintTranslator[W, F]) translateModule(ctx schema.ModuleId, m vm.M
 
 func (p *constraintTranslator[W, F]) translateStaticMemory(_ schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
 	var (
-		mod     *schema.Table[F, mir.Constraint[F]]
+		mod     *schema.Table[F, schema.Constraint[F]]
 		name    = m.Name()
 		regs    = toRegisters(m.Registers())
 		inputs  = toRegisters(m.AddressRegisters())
@@ -168,7 +169,7 @@ func (p *constraintTranslator[W, F]) translateWriteOnceMemory(ctx schema.ModuleI
 func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.ModuleId, m *vm.Memory[W], name string,
 ) (mod mir.Module[F]) {
 	var (
-		memoryModule *schema.Table[F, mir.Constraint[F]]
+		memoryModule *schema.Table[F, schema.Constraint[F]]
 		regs         = toRegisters(m.Registers())
 	)
 
@@ -190,7 +191,7 @@ func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.Module
 		nextAccess         = mirc.Variable[F](access, 1, 1)
 		zero               = mirc.Number[F](0)
 		one                = mirc.Number[F](1)
-		constraints        = []mir.Constraint[F]{}
+		constraints        = []schema.Constraint[F]{}
 	)
 
 	// ================================================
@@ -203,10 +204,10 @@ func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.Module
 	// i.e. ACCESS bit monontony
 
 	// ACCESS[0] = 0
-	accessBitVanishesInPadding := mir.NewVanishingConstraint("access_bit_vanishes_in_padding", ctx, util.Some(0),
+	accessBitVanishesInPadding := vanishing.NewConstraint("access_bit_vanishes_in_padding", ctx, util.Some(0),
 		currAccess.Equals(zero).AsLogical())
 	// ACCESS[i - 1] = 1 => ACCESS[i] = 1
-	accessBitMonotony := mir.NewVanishingConstraint("access_bit_monotony", ctx, util.None[int](),
+	accessBitMonotony := vanishing.NewConstraint("access_bit_monotony", ctx, util.None[int](),
 		mirc.If(prevAccess.Equals(one), currAccess.Equals(one)).AsLogical())
 
 	constraints = append(constraints,
@@ -244,22 +245,22 @@ func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.Module
 // the first non-padding row, and increments by one across non-padding rows.
 func singleLineAddressConstraints[F field.Element[F]](
 	ctx schema.ModuleId, addrRegs []register.Register, currAccess, nextAccess, zero, one Expr[F],
-) []mir.Constraint[F] {
+) []schema.Constraint[F] {
 	var (
 		currAddr = mirc.Variable[F](register.NewId(0), addrRegs[0].Width(), 0)
 		nextAddr = mirc.Variable[F](register.NewId(0), addrRegs[0].Width(), 1)
 	)
 
-	return []mir.Constraint[F]{
+	return []schema.Constraint[F]{
 		// If ACCESS[i] = 0 Then ADDRESS[i] = 0
-		mir.NewVanishingConstraint("addresses_vanish_in_padding", ctx, util.None[int](),
+		vanishing.NewConstraint("addresses_vanish_in_padding", ctx, util.None[int](),
 			mirc.If(currAccess.Equals(zero), currAddr.Equals(zero)).AsLogical()),
 		// If ACCESS[i] = 0 ∧ ACCESS[i + 1] = 1 Then ADDRESS[i + 1] = 0
-		mir.NewVanishingConstraint("first_nontrivial_address_is_zero", ctx, util.None[int](),
+		vanishing.NewConstraint("first_nontrivial_address_is_zero", ctx, util.None[int](),
 			mirc.If(currAccess.Equals(zero),
 				mirc.If(nextAccess.NotEquals(zero), nextAddr.Equals(zero))).AsLogical()),
 		// If ACCESS[i] = 1 Then ADDRESS[i + 1] = 1 + ADDRESS[i]
-		mir.NewVanishingConstraint("address_monotony", ctx, util.None[int](),
+		vanishing.NewConstraint("address_monotony", ctx, util.None[int](),
 			mirc.If(currAccess.NotEquals(zero), nextAddr.Equals(currAddr.Add(one))).AsLogical()),
 	}
 }
@@ -277,8 +278,8 @@ func singleLineAddressConstraints[F field.Element[F]](
 //   - [k]ADDRESS[i-1] ≠ max, [k]ADDRESS[i] = 1 + [k]ADDRESS[i-1]   (carry stop)
 //   - [b]ADDRESS[i-1] = max, [b]ADDRESS[i] = 0    for k < b < L    (roll over)
 func multiLineAddressConstraints[F field.Element[F]](
-	ctx schema.ModuleId, memoryModule *schema.Table[F, mir.Constraint[F]], addrRegs []register.Register,
-	prevAccess, currAccess, zero, one Expr[F]) []mir.Constraint[F] {
+	ctx schema.ModuleId, memoryModule *schema.Table[F, schema.Constraint[F]], addrRegs []register.Register,
+	prevAccess, currAccess, zero, one Expr[F]) []schema.Constraint[F] {
 	var (
 		L            = uint(len(addrRegs))
 		prevAddrRegs = make([]Expr[F], L)
@@ -302,19 +303,19 @@ func multiLineAddressConstraints[F field.Element[F]](
 		addrLimbMaxValues[k] = mirc.BigNumber[F](addrRegs[k].MaxValue())
 	}
 
-	constraints := []mir.Constraint[F]{
+	constraints := []schema.Constraint[F]{
 		// Σ_k @k[i] = ACCESS[i-1] ∙ ACCESS[i]
-		mir.NewVanishingConstraint("at_flag_sum_equals_access_bit_product", ctx, util.None[int](),
+		vanishing.NewConstraint("at_flag_sum_equals_access_bit_product", ctx, util.None[int](),
 			mirc.Sum(atFlagVars).Equals(mirc.Product(prevAccess, currAccess)).AsLogical()),
 	}
 
 	for k := range L {
 		// if ACCESS[i] = 0 Then [k]ADDRESS[i] = 0
-		constraints = append(constraints, mir.NewVanishingConstraint(
+		constraints = append(constraints, vanishing.NewConstraint(
 			fmt.Sprintf("addr_%d_vanishes_in_padding", k), ctx, util.None[int](),
 			mirc.If(currAccess.Equals(zero), currAddrRegs[k].Equals(zero)).AsLogical()))
 		// if ACCESS[i-1] = 0 ∧ ACCESS[i] = 1 Then [k]ADDRESS[i] = 0
-		constraints = append(constraints, mir.NewVanishingConstraint(
+		constraints = append(constraints, vanishing.NewConstraint(
 			fmt.Sprintf("addr_%d_vanishes_on_first_non_padding_row", k), ctx, util.None[int](),
 			mirc.If(prevAccess.Equals(zero),
 				mirc.If(currAccess.Equals(one), currAddrRegs[k].Equals(zero))).AsLogical()))
@@ -322,8 +323,8 @@ func multiLineAddressConstraints[F field.Element[F]](
 
 	// Per-limb address-update constraints, all guarded by ACCESS[i-1] = 1 ∧ @k[i] = 1.
 	for k := range L {
-		guarded := func(name string, body Expr[F]) mir.Constraint[F] {
-			return mir.NewVanishingConstraint(name, ctx, util.None[int](),
+		guarded := func(name string, body Expr[F]) schema.Constraint[F] {
+			return vanishing.NewConstraint(name, ctx, util.None[int](),
 				mirc.If(prevAccess.Equals(one), mirc.If(atFlagVars[k].Equals(one), body)).AsLogical())
 		}
 

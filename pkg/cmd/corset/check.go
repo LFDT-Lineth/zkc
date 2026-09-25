@@ -24,10 +24,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/checker"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -218,7 +218,7 @@ func checkTraces[F field.Element[F]](traces []tr.Trace[F], stacker cmd_util.Sche
 
 // CheckTrace checks a given set of constraints against a given trace file using
 // a configured trace builder and check configuration.
-func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], builder ir.TraceBuilder[F],
+func CheckTrace[F field.Element[F]](ir string, schema sc.Schema[F], builder ir.TraceBuilder[F],
 	cfg CheckConfig, trace tr.Trace[F]) bool {
 	// begin performance measurement
 	var (
@@ -236,11 +236,18 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], builder i
 	if len(errs) > 0 {
 		return false
 	}
+	// Construct constraint checker
+	checker := checker.New(schema).
+		WithParallelism(builder.Parallelism())
 	//
 	stats = util.NewPerfStats()
 	// Check constraints
-	if errs := sc.Accepts(builder.Parallelism(), schema, trace); len(errs) > 0 {
-		ReportFailures(ir, mapping, cfg, trace, errs)
+	if fails, errs := checker.CheckStrict(trace); len(fails) > 0 || len(errs) > 0 {
+		// Report any constraint failures
+		ReportFailures(ir, mapping, cfg, fails)
+		// Report any unrecoverable errors
+		reportErrors(ir, errs)
+		// Done
 		return false
 	}
 	//
@@ -251,8 +258,8 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.AnySchema[F], builder i
 
 // ReportFailures reports constraint failures, whilst providing contextual
 // information (when requested).
-func ReportFailures[F field.Element[F]](ir string,
-	mapping module.LimbsMap, cfg CheckConfig, trace tr.Trace[F], failures []sc.Failure[F]) {
+func ReportFailures[F field.Element[F]](ir string, mapping module.LimbsMap, cfg CheckConfig,
+	failures []sc.Failure[F]) {
 	//
 	var errs = make([]error, len(failures))
 	//
@@ -264,38 +271,24 @@ func ReportFailures[F field.Element[F]](ir string,
 	// Second, produce report (if requested)
 	if cfg.Report {
 		for _, f := range failures {
-			reportFailure(f, trace, mapping, cfg)
+			reportFailure(f, mapping, cfg)
 		}
 	}
 }
 
 // Print a human-readable report detailing the given failure
-func reportFailure[F field.Element[F]](failure sc.Failure[F], trace tr.Trace[F], mapping module.LimbsMap,
-	cfg CheckConfig) {
+func reportFailure[F field.Element[F]](failure sc.Failure[F], mapping module.LimbsMap, cfg CheckConfig) {
 	// Identify all relevant cells
-	var cells = failure.RequiredCells(trace)
-	fmt.Printf("failing constraint %s:\n", failure.Handle())
+	var cells = failure.RequiredCells()
 	//
-	for i, shard := range trace {
-		// Filter out cells relevant to the given shard
-		var (
-			lsharded = array.Filter(cells, func(r tr.ShardedCellRef) bool {
-				return r.Shard == uint(i)
-			})
-			// Map to cell refs
-			lcells = array.Map(lsharded, func(_ uint, r tr.ShardedCellRef) tr.CellRef {
-				return r.Ref
-			})
-		)
-		// Check whether anything to report for this
-		if len(lcells) > 0 {
-			// Print out cells for the given shard.
-			reportRelevantCells(lcells, shard, mapping, cfg)
-		}
+	fmt.Printf("failing constraint %s:\n", failure.Handle())
+	// Check whether anything to report
+	if len(cells) > 0 {
+		reportRelevantCells(cells, failure.Trace(), mapping, cfg)
 	}
 }
 
-// Print a human-readable report detailing the given failure with a vanishing constraint.
+// Print a human-readable report detailing the given cells of a given shard.
 func reportRelevantCells[F field.Element[F]](cells []tr.CellRef, trace tr.Shard[F],
 	mapping module.LimbsMap, cfg CheckConfig) {
 	// Construct trace window

@@ -18,6 +18,10 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -89,35 +93,35 @@ func concretizeAssignment[F1 Element[F1], F2 Element[F2]](assign schema.Assignme
 // Constraints
 // ============================================================================
 
-func concretizeConstraints[F1 Element[F1], F2 Element[F2]](constraints []Constraint[F1]) []Constraint[F2] {
-	var rs = make([]Constraint[F2], len(constraints))
+func concretizeConstraints[F1 Element[F1], F2 Element[F2]](cs []schema.Constraint[F1]) []schema.Constraint[F2] {
+	var rs = make([]schema.Constraint[F2], len(cs))
 	//
-	for i, c := range constraints {
+	for i, c := range cs {
 		rs[i] = concretizeConstraint[F1, F2](c)
 	}
 	//
 	return rs
 }
 
-func concretizeConstraint[F1 Element[F1], F2 Element[F2]](constraint Constraint[F1]) Constraint[F2] {
+func concretizeConstraint[F1 Element[F1], F2 Element[F2]](constraint schema.Constraint[F1]) schema.Constraint[F2] {
 	//
-	switch c := constraint.Unwrap().(type) {
-	case BusConstraint[F1]:
+	switch c := constraint.(type) {
+	case *BusConstraint[F1]:
 		// NOTE: bus ports are made up of registers and, hence, are
 		// independent of the underlying field.
-		return NewBusConstraint[F2](c.Handle, c.Sends, c.Receives)
-	case LookupConstraint[F1]:
+		return bus.NewConstraint[F2](c.Handle, c.Sends, c.Receives)
+	case *LookupConstraint[F1]:
 		// NOTE: lookup vectors are made up of registers and, hence, are
 		// independent of the underlying field.
-		return NewLookupConstraint[F2](c.Handle, c.Targets, c.Sources)
-	case RangeConstraint[F1]:
+		return lookup.NewConstraint[F2](c.Handle, c.Targets, c.Sources)
+	case *RangeConstraint[F1]:
 		// NOTE: as for lookups, range constraints are made up of registers and,
 		// hence, are independent of the underlying field.
-		return NewRangeConstraint[F2](c.Handle, c.Context, c.Sources, c.Bitwidths)
-	case VanishingConstraint[F1]:
+		return ranged.NewConstraint[F2](c.Handle, c.Context, c.Source, c.Bitwidth)
+	case *VanishingConstraint[F1]:
 		term := concretizeLogicalTerm[F1, F2](c.Constraint)
 		//
-		return NewVanishingConstraint(c.Handle, c.Context, c.Domain, term)
+		return vanishing.NewConstraint(c.Handle, c.Context, c.Domain, term)
 	default:
 		panic("unreachable")
 	}

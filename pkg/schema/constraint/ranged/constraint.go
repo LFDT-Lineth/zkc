@@ -16,9 +16,7 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -40,35 +38,28 @@ type Constraint[F field.Element[F]] struct {
 	Context schema.ModuleId
 	// The registers whose values are being constrained to be within the given
 	// bound(s).
-	Sources []register.Id
+	Source register.Id
 	// The number of bits permitted for all values of the corresponding register.
 	// For example, with a bitwidth of 8, the maximum permitted value is 255.
-	Bitwidths []uint
+	Bitwidth uint
 }
 
 // NewConstraint constructs a new Range constraint
 func NewConstraint[F field.Element[F]](handle string, context schema.ModuleId,
-	registers []register.Id, bitwidths []uint) Constraint[F] {
-	return Constraint[F]{handle, context, registers, bitwidths}
+	register register.Id, bitwidth uint) *Constraint[F] {
+	return &Constraint[F]{handle, context, register, bitwidth}
 }
 
 // Consistent applies a number of internal consistency checks.  Whilst not
 // strictly necessary, these can highlight otherwise hidden problems as an aid
 // to debugging.
-func (p Constraint[F]) Consistent(schema schema.AnySchema[F]) []error {
-	var errors []error
-	//
-	if len(p.Bitwidths) != len(p.Sources) {
-		errors = append(errors,
-			fmt.Errorf("inconsistent number of registers (%d) and bitwdiths (%d)", len(p.Sources), len(p.Bitwidths)))
-	}
-	//
-	return errors
+func (p *Constraint[F]) Consistent(schema schema.Schema[F]) []error {
+	return nil
 }
 
 // Name returns a unique name for a given constraint.  This is useful
 // purely for identifying constraints in reports, etc.
-func (p Constraint[F]) Name() string {
+func (p *Constraint[F]) Name() string {
 	return p.Handle
 }
 
@@ -77,13 +68,8 @@ func (p Constraint[F]) Name() string {
 // evaluation context, though some (e.g. lookups) have more.  Note that all
 // constraints have at least one context (which we can call the "primary"
 // context).
-func (p Constraint[F]) Contexts() []schema.ModuleId {
+func (p *Constraint[F]) Contexts() []schema.ModuleId {
 	return []schema.ModuleId{p.Context}
-}
-
-// Sets implementation for schema.Constraint interface.
-func (p Constraint[F]) Sets() []schema.SetId {
-	return nil
 }
 
 // Bounds determines the well-definedness bounds for this constraint for both
@@ -92,71 +78,22 @@ func (p Constraint[F]) Sets() []schema.SetId {
 // well defined on every row.
 //
 //nolint:revive
-func (p Constraint[F]) Bounds(module uint) util.Bounds {
+func (p *Constraint[F]) Bounds(module uint) util.Bounds {
 	return util.EMPTY_BOUND
-}
-
-// Accepts checks whether a range constraint holds on every row of a table. If so, return
-// nil otherwise return an error.
-//
-//nolint:revive
-func (p Constraint[F]) Accepts(trace trace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F],
-) (failures []schema.Failure[F]) {
-	//
-	for shard, tr := range trace {
-		for i := range p.Sources {
-			if err := p.accepts(i, uint(shard), tr); err != nil {
-				failures = append(failures, err)
-			}
-		}
-	}
-	// done
-	return failures
 }
 
 // Lisp converts this schema element into a simple S-Expression, for example so
 // it can be printed.
 //
 //nolint:revive
-func (p Constraint[F]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
+func (p *Constraint[F]) Lisp(mapping schema.Schema[F]) sexp.SExp {
 	var (
 		module = mapping.Module(p.Context)
-		pairs  = make([]sexp.SExp, len(p.Sources))
 	)
-	//
-	for i, source := range p.Sources {
-		pairs[i] = sexp.NewList([]sexp.SExp{
-			sexp.NewSymbol(module.Register(source).Name()),
-			sexp.NewSymbol(fmt.Sprintf("u%d", p.Bitwidths[i])),
-		})
-	}
 	//
 	return sexp.NewList([]sexp.SExp{
 		sexp.NewSymbol("range"),
-		sexp.NewList(pairs),
+		sexp.NewSymbol(module.Register(p.Source).Name()),
+		sexp.NewSymbol(fmt.Sprintf("u%d", p.Bitwidth)),
 	})
-}
-
-// accepts checks the ith register of this constraint holds within its
-// corresponding bound on every row of the enclosing module.
-func (p Constraint[F]) accepts(i int, shard uint, tr trace.Shard[F]) schema.Failure[F] {
-	var (
-		trModule = tr.Module(p.Context)
-		handle   = constraint.DetermineHandle(p.Handle, p.Context, tr)
-		source   = p.Sources[i]
-		bitwidth = p.Bitwidths[i]
-		column   = trModule.Column(source.Unwrap())
-		// Compute 2^n
-		bound = field.TwoPowN[F](bitwidth)
-	)
-	// Iterate every row
-	for k := range trModule.Height() {
-		// Perform the range check
-		if column.Get(k).Cmp(bound) >= 0 {
-			// Evaluation failure
-			return &Failure[F]{handle, p.Context, source, bitwidth, k, shard}
-		}
-	}
-	// All good
-	return nil
 }

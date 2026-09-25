@@ -37,7 +37,7 @@ func PrintSchemas[F field.Element[F]](stack cmd_util.SchemaStack[F], textwidth u
 }
 
 // PrintAnySchema prints out all declarations included in a given schema
-func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, verbose bool) {
+func PrintAnySchema[F field.Element[F]](schema schema.Schema[F], width uint, verbose bool) {
 	first := true
 	// Print out each module, one by one.
 	for i := schema.Modules(); i.HasNext(); {
@@ -61,7 +61,7 @@ func PrintAnySchema[F field.Element[F]](schema schema.AnySchema[F], width uint, 
 // Legacy module
 // ==================================================================
 
-func printModule[F field.Element[F]](module schema.Module[F], sc schema.AnySchema[F], width uint, verbose bool) {
+func printModule[F field.Element[F]](module schema.Module[F], sc schema.Schema[F], width uint, verbose bool) {
 	var (
 		name      = module.Name()
 		formatter = sexp.NewFormatter(width, true)
@@ -203,10 +203,8 @@ func countRegisters[F field.Element[F]](module schema.Module[F], filter func(reg
 }
 
 func requiresSpacing[F field.Element[F]](c schema.Constraint[F]) bool {
-	if c, ok := c.(mir.Constraint[F]); ok {
-		if _, ok := c.Unwrap().(mir.VanishingConstraint[F]); ok {
-			return ok
-		}
+	if _, ok := c.(*mir.VanishingConstraint[F]); ok {
+		return ok
 	}
 	//
 	return false

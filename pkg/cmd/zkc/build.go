@@ -32,8 +32,6 @@ import (
 type BuildConfig struct {
 	// code configuration includes various things which can be turned off / on.
 	config codegen.Config
-	// fast mode determination
-	fastMode bool
 	// metadata to include in binary output file
 	metadata util.Option[[]byte]
 	// enable go code generator
