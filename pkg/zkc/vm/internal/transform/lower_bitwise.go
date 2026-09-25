@@ -14,7 +14,6 @@ package transform
 
 import (
 	"fmt"
-	"math/big"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -163,10 +162,8 @@ func lowerBitwiseShlShr[W word.Word[W]](
 func inlineBitwiseNot[W word.Word[W]](b *bytecode.Bitwise[W], registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		width, _ = maxBitwidthOf(registers.Registers(), b.Uses()...)
-		maskBig  = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), width), big.NewInt(1))
-		zeroW    W
-		mask     = zeroW.SetBigInt(maskBig)
 		zero     W
+		mask     = zero.Not(width)
 	)
 
 	maskReg := registers.Allocate("", util.Some(width))

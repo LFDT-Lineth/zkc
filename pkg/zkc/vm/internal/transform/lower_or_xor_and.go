@@ -171,32 +171,35 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 	// result is 0b1.. (c = 0b1.. for OR)
 	// - c is behaving as a NOT (0b1.. for XOR)
 	if b.Right.IsConstant() {
-		var registerWidth = b.Bitwidth
+		var (
+			zero W
+			c    = b.Right.AsConstant()
+			// mask is 2^w - 1 for the instruction's width w, computed within W
+			// (rather than a Go integer) so that it is exact at any width.
+			mask = zero.Not(uint(b.Bitwidth))
+		)
 
-		if resIsId(b.Op, registerWidth, uint(b.Right.AsConstant().Uint64())) {
-			return []Bytecode[W]{bytecode.AddConst(b.Target, []bytecode.RegisterId{b.Left}, word.Const64[W](0))}
+		if resIsId(b.Op, c, mask) {
+			return []Bytecode[W]{bytecode.AddConst(b.Target, []bytecode.RegisterId{b.Left}, zero)}
 		}
 
-		if resultIsNull(b.Op, uint(b.Right.AsConstant().Uint64())) {
+		if resultIsNull(b.Op, c) {
 			return []Bytecode[W]{
-				bytecode.LoadConst(b.Target, word.Const64[W](0))}
+				bytecode.LoadConst(b.Target, zero)}
 		}
 
-		if resultIsMax(b.Op, registerWidth, uint(b.Right.AsConstant().Uint64())) {
-			maxValue := (1 << registerWidth) - 1
-			//
+		if resultIsMax(b.Op, c, mask) {
 			return []Bytecode[W]{
-				bytecode.LoadConst(b.Target, word.Const64[W](uint64(maxValue)))}
+				bytecode.LoadConst(b.Target, mask)}
 		}
 
-		if resultIsNot(b.Op, registerWidth, uint(b.Right.AsConstant().Uint64())) {
+		if resultIsNot(b.Op, c, mask) {
 			maxReg := registers.Allocate("", util.Some(uint(b.Bitwidth)))
-			maxValue := (1 << registerWidth) - 1
 
 			// TODO: CSUB, see: https://github.com/LFDT-Lineth/zkc/issues/2062
 			return []Bytecode[W]{
-				bytecode.LoadConst(maxReg, word.Const64[W](uint64(maxValue))),
-				bytecode.SubConst(b.Target, []bytecode.RegisterId{maxReg, b.Left}, word.Const64[W](0)),
+				bytecode.LoadConst(maxReg, mask),
+				bytecode.SubConst(b.Target, []bytecode.RegisterId{maxReg, b.Left}, zero),
 			}
 		}
 	}
@@ -532,21 +535,24 @@ func (p *bitwiseHelperBuilder[W]) combineBit(op bytecode.Operation, lhs, rhs byt
 	}
 }
 
-func resIsId(op bytecode.Operation, registerWidth uint16, constant uint) bool {
+// resIsId reports whether constant c is the identity of op at the width whose
+// all-ones value is mask.
+func resIsId[W word.Word[W]](op bytecode.Operation, c, mask W) bool {
 	switch op {
 	case bytecode.OP_AND:
-		return constant == (1<<registerWidth)-1
+		return c.Cmp(mask) == 0
 	case bytecode.OP_OR, bytecode.OP_XOR:
-		return constant == 0
+		return c.Cmp64(0) == 0
 	default:
 		panic(fmt.Sprintf("unsupported bit combine opcode: %d", op))
 	}
 }
 
-func resultIsNull(op bytecode.Operation, constant uint) bool {
+// resultIsNull reports whether op with constant c always yields zero.
+func resultIsNull[W word.Word[W]](op bytecode.Operation, c W) bool {
 	switch op {
 	case bytecode.OP_AND:
-		return constant == 0
+		return c.Cmp64(0) == 0
 	case bytecode.OP_OR, bytecode.OP_XOR:
 		return false
 	default:
@@ -554,10 +560,11 @@ func resultIsNull(op bytecode.Operation, constant uint) bool {
 	}
 }
 
-func resultIsMax(op bytecode.Operation, registerWidth uint16, constant uint) bool {
+// resultIsMax reports whether op with constant c always yields mask.
+func resultIsMax[W word.Word[W]](op bytecode.Operation, c, mask W) bool {
 	switch op {
 	case bytecode.OP_OR:
-		return constant == (1<<registerWidth)-1
+		return c.Cmp(mask) == 0
 	case bytecode.OP_AND, bytecode.OP_XOR:
 		return false
 	default:
@@ -565,10 +572,11 @@ func resultIsMax(op bytecode.Operation, registerWidth uint16, constant uint) boo
 	}
 }
 
-func resultIsNot(op bytecode.Operation, registerWidth uint16, constant uint) bool {
+// resultIsNot reports whether op with constant c behaves as a bitwise NOT.
+func resultIsNot[W word.Word[W]](op bytecode.Operation, c, mask W) bool {
 	switch op {
 	case bytecode.OP_XOR:
-		return constant == (1<<registerWidth)-1
+		return c.Cmp(mask) == 0
 	case bytecode.OP_AND, bytecode.OP_OR:
 		return false
 	default:
