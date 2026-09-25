@@ -178,19 +178,15 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 		}
 
 		if resultIsNull(b.Op, uint(b.Right.AsConstant().Uint64())) {
-			zeroReg := registers.ZeroRegister()
-
 			return []Bytecode[W]{
-				bytecode.AddConst(b.Target, []bytecode.RegisterId{zeroReg}, word.Const64[W](0))}
+				bytecode.LoadConst(b.Target, word.Const64[W](0))}
 		}
 
 		if resultIsMax(b.Op, registerWidth, uint(b.Right.AsConstant().Uint64())) {
-			maxReg := registers.Allocate("", util.Some(uint(b.Bitwidth)))
 			maxValue := (1 << registerWidth) - 1
-
+			//
 			return []Bytecode[W]{
-				bytecode.LoadConst(maxReg, word.Const64[W](uint64(maxValue))),
-				bytecode.AddConst(b.Target, []bytecode.RegisterId{maxReg}, word.Const64[W](0))}
+				bytecode.LoadConst(b.Target, word.Const64[W](uint64(maxValue)))}
 		}
 
 		if resultIsNot(b.Op, registerWidth, uint(b.Right.AsConstant().Uint64())) {
