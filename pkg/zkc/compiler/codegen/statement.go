@@ -24,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/lval"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/stmt"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
@@ -35,6 +36,11 @@ type RegisterId = vm.RegisterId
 
 // Operand represents either a register operand, or a constant operand.
 type Operand[W vm.Word[W]] = vm.Operand[W]
+
+// RegisterPacket represents sets of registers defining a single target operand (e.g. x,
+// x::y, x::y::z).  Note that variables are stored in little endian form, hence
+// [x,y] == y::x, etc.
+type RegisterPacket []RegisterId
 
 // StmtCompiler provides a working environment for compiling individual statements
 // within a given function.  For example, it provides the ability to allocate
@@ -51,16 +57,14 @@ type StmtCompiler struct {
 	verbose bool
 }
 
+// Compile a given statement at a give PC position under a given mapping from
+// source-level declarations to bytecode module identifiers.
 func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) BytecodeVector {
 	var insns []Bytecode
 	//
 	switch s := s.(type) {
 	case *stmt.Assign[symbol.Resolved]:
-		targets, pre, post := p.mapLVals(mapping, s.Targets)
-		insns = p.compileRootExprs(s.Source, mapping, targets...)
-		// Configure pre/post instructions
-		insns = append(pre, insns...)
-		insns = append(insns, post...)
+		insns = p.compileAssignment(mapping, s.Targets, s.Source)
 	case *stmt.IfGoto[symbol.Resolved]:
 		return p.compileCondition(pc, s.Cond, mapping, s.Target)
 	case *stmt.Dispatch[symbol.Resolved]:
@@ -92,6 +96,99 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) Bytecod
 	return vm.NewBytecodeVector(insns...)
 }
 
+func (p *StmtCompiler) compileAssignment(mapping []uint, lhs []LVal, rhs Expr) []Bytecode {
+	var (
+		insns, pre, post []Bytecode
+		targets          []RegisterPacket
+	)
+	// Special case for memory writes
+	if p.isMemoryWrite(lhs) {
+		return p.compileMemoryWrite(mapping, lhs[0].(*lval.MemAccess[symbol.Resolved]), rhs)
+	}
+	// Consider right-hand side
+	switch rhs := rhs.(type) {
+	case *expr.TupleInitialiser[symbol.Resolved]:
+		util.Assert(len(lhs) == len(rhs.Exprs), "misaligned assignment")
+		//
+		for i := range lhs {
+			insns = append(insns, p.compileAssignment(mapping, lhs[i:i+1], rhs.Exprs[i])...)
+		}
+		//
+		return insns
+	default:
+		targets, pre, post = p.mapLValsToRegisters(mapping, lhs)
+		insns = p.compileRootExprs(rhs, mapping, targets...)
+	}
+	//
+	return append(pre, append(insns, post...)...)
+}
+
+func (p *StmtCompiler) isMemoryWrite(lhs []LVal) bool {
+	if len(lhs) == 1 {
+		_, ok := lhs[0].(*lval.MemAccess[symbol.Resolved])
+		//
+		return ok
+	}
+	//
+	return false
+}
+
+func (p *StmtCompiler) compileMemoryWrite(mapping []uint, lv *lval.MemAccess[symbol.Resolved], rhs Expr) []Bytecode {
+	var (
+		ext = p.components[lv.Name.Index].(*decl.ResolvedMemory)
+		// extract memory id
+		id = mapping[lv.Name.Index]
+		//
+		addressLines, pre = p.compileNonUniformArgs(mapping, lv.Args...)
+		// Allocate data lines
+		targets, post = p.compileMemoryWriteRhs(mapping, ext.Data, rhs)
+		//
+		insns = append(pre, post...)
+	)
+	// Sanity check
+	util.Assert(ext.IsWriteable(), "unwritable memory \"%s\" encountered", ext.Name())
+	// Emit the write bytecode.  The memory kind is resolved from the
+	// environment at encode time.
+	return append(insns, vm.MemWrite[vm.Uint](uint16(id), addressLines, targets))
+}
+
+func (p *StmtCompiler) compileMemoryWriteRhs(mapping []uint, lhs []variable.Descriptor[symbol.Resolved],
+	rhs Expr) ([]vm.RegisterId, []Bytecode) {
+	var (
+		targets []vm.RegisterId
+		insns   []Bytecode
+	)
+	//
+	switch rhs := rhs.(type) {
+	case *expr.TupleInitialiser[symbol.Resolved]:
+		util.Assert(len(lhs) == len(rhs.Exprs), "misaligned assignment")
+		//
+		for i := range lhs {
+			ith_regs, ith_insns := p.compileMemoryWriteRhs(mapping, lhs[i:i+1], rhs.Exprs[i])
+			targets = append(targets, ith_regs...)
+			insns = append(insns, ith_insns...)
+		}
+		//
+	default:
+		//
+		if la, ok := p.asLocalAccess(rhs); ok {
+			return append(targets, util.Cast[RegisterId](la.Variable)), nil
+		}
+		// Allocate data lines
+		targets = array.Map(lhs, func(_ uint, v VariableDescriptor) RegisterId {
+			return p.allocate(data.BitWidthOf(v.DataType, p.environment))
+		})
+		//
+		packets := array.Map(targets, func(_ uint, r RegisterId) RegisterPacket {
+			return []RegisterId{r}
+		})
+		//
+		insns = p.compileRootExprs(rhs, mapping, packets...)
+	}
+	//
+	return targets, insns
+}
+
 // Map lvals down to their corresponding registers.  For example, consider the
 // following:
 //
@@ -108,59 +205,62 @@ func (p *StmtCompiler) compileStatement(pc uint, mapping []uint, s Stmt) Bytecod
 //
 // Here, we have compiled out variable tmp into two registers, one for each
 // field.
-func (p *StmtCompiler) mapLVals(mapping []uint, lvals []LVal) ([][]vm.RegisterId, []Bytecode, []Bytecode) {
+func (p *StmtCompiler) mapLValsToRegisters(mapping []uint, lvals []LVal) ([]RegisterPacket, []Bytecode, []Bytecode) {
 	var (
-		regs                [][]vm.RegisterId
+		regs                []RegisterPacket
 		preInsns, postInsns []Bytecode
 	)
 	//
 	for _, lv := range lvals {
-		switch lv := lv.(type) {
-		case *lval.Discard[symbol.Resolved]:
-			// A discarded ("_") return value binds no register: the DISCARD
-			// pseudo register keeps the target list positionally aligned with
-			// the callee's outputs (resp. a static memory's data lines)
-			// without allocating anything.
-			regs = append(regs, []vm.RegisterId{vm.DISCARD})
-		case *lval.Variable[symbol.Resolved]:
-			var ids = make([]RegisterId, len(lv.Ids))
-
-			for j, id := range lv.Ids {
-				ids[j] = util.Cast[RegisterId](id)
-			}
-			// reverse ids as NewDestruct expects them in little endian order
-			ids = array.Reverse(ids)
-			//
-			regs = append(regs, ids)
-		case *lval.MemAccess[symbol.Resolved]:
-			var (
-				ext = p.components[lv.Name.Index].(*decl.ResolvedMemory)
-				// Determine vm module identifier
-				id = mapping[lv.Name.Index]
-			)
-			if !ext.IsWriteable() {
-				panic(fmt.Sprintf("unwritable memory \"%s\" encountered", ext.Name()))
-			}
-			//
-			dataLines := make([]RegisterId, len(ext.Data))
-			addressLines, pre := p.compileNonUniformArgs(mapping, lv.Args...)
-			// Allocate data lines as needed
-			for j, t := range ext.Data {
-				var bitwidth = data.BitWidthOf(t.DataType, p.environment)
-				//
-				dataLines[j] = p.allocate(bitwidth)
-				regs = append(regs, []vm.RegisterId{dataLines[j]})
-			}
-			//
-			preInsns = append(preInsns, pre...)
-			// Emit the write bytecode.  The memory kind is resolved from the
-			// environment at encode time; any outgoing cast checks on the data
-			// lines are inserted later by the check-cast pass.
-			postInsns = append(postInsns, vm.MemWrite[vm.Uint](uint16(id), addressLines, dataLines))
-		}
+		lvRegs, pre, post := p.mapLValToRegisters(mapping, lv)
+		//
+		regs = append(regs, lvRegs...)
+		preInsns = append(preInsns, pre...)
+		postInsns = append(postInsns, post...)
 	}
 	//
 	return regs, preInsns, postInsns
+}
+
+func (p *StmtCompiler) mapLValToRegisters(mapping []uint, lv LVal) ([]RegisterPacket, []Bytecode, []Bytecode) {
+	var packets []RegisterPacket
+	//
+	switch lv := lv.(type) {
+	case *lval.Discard[symbol.Resolved]:
+		// Map discard directly
+		return append(packets, []vm.RegisterId{vm.DISCARD}), nil, nil
+	case *lval.Variable[symbol.Resolved]:
+		// Map variable ids into register ids
+		var ids = array.Map(lv.Ids, func(_ uint, id variable.Id) vm.RegisterId {
+			return util.Cast[RegisterId](id)
+		})
+		// reverse ids into little endian order
+		return append(packets, array.Reverse(ids)), nil, nil
+	case *lval.MemAccess[symbol.Resolved]:
+		var (
+			ext = p.components[lv.Name.Index].(*decl.ResolvedMemory)
+			// Determine vm module identifier
+			id = mapping[lv.Name.Index]
+			// Allocate data lines
+			dataLines = array.Map(ext.Data, func(_ uint, v VariableDescriptor) RegisterId {
+				return p.allocate(data.BitWidthOf(v.DataType, p.environment))
+			})
+			// Map to packets
+			packets = array.Map(dataLines, func(_ uint, r RegisterId) RegisterPacket {
+				return []RegisterId{r}
+			})
+			//
+			addressLines, pre = p.compileNonUniformArgs(mapping, lv.Args...)
+		)
+		// Sanity check
+		util.Assert(ext.IsWriteable(), "unwritable memory \"%s\" encountered", ext.Name())
+		// Emit the write bytecode.  The memory kind is resolved from the
+		// environment at encode time; any outgoing cast checks on the data
+		// lines are inserted later by the check-cast pass.
+		return packets, pre, []Bytecode{vm.MemWrite[vm.Uint](uint16(id), addressLines, dataLines)}
+	default:
+		panic("unknown lval encountered")
+	}
 }
 
 func (p *StmtCompiler) compilePrintf(mapping []uint, chunks []stmt.FormattedChunk, args []Expr,
@@ -296,10 +396,8 @@ func (p *StmtCompiler) compileDispatch(s *stmt.Dispatch[symbol.Resolved], mappin
 	return vm.NewBytecodeVector(insns...)
 }
 
-func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...[]vm.RegisterId) []Bytecode {
+func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...RegisterPacket) []Bytecode {
 	switch e := e.(type) {
-	case *expr.TupleInitialiser[symbol.Resolved]:
-		return p.compileTupleInitialiser(e, mapping, targets...)
 	case *expr.DivMod[symbol.Resolved]:
 		return destructMultiway(p, e, mapping, targets, p.compileDivMod)
 	case *expr.ExternAccess[symbol.Resolved]:
@@ -338,13 +436,13 @@ func (p *StmtCompiler) compileRootExprs(e Expr, mapping []uint, targets ...[]vm.
 // A root expression is one which arises from a "concrete" target.  For example,
 // "e" is a root expression in "x = e", and also "x = 1 + f(e)".  But, e is not
 // a root expression in "x = 1 + e".
-func (p *StmtCompiler) compileRootExpr(e Expr, mapping []uint, targets []vm.RegisterId) []Bytecode {
+func (p *StmtCompiler) compileRootExpr(e Expr, mapping []uint, targets RegisterPacket) []Bytecode {
 	var bitwidth = data.BitWidthOf(e.Type(), p.environment)
 	//
 	return p.compileExpr(e, bitwidth, mapping, targets)
 }
 
-func (p *StmtCompiler) compileExpr(e Expr, bitwidth util.Option[uint], mapping []uint, targets []vm.RegisterId,
+func (p *StmtCompiler) compileExpr(e Expr, bitwidth util.Option[uint], mapping []uint, targets RegisterPacket,
 ) []Bytecode {
 	//
 	switch e := e.(type) {
@@ -441,7 +539,7 @@ func destructUnit[T any](p *StmtCompiler, args T, bitwidth uint, mapping []uint,
 	return append(insns, vm.AddVec[vm.Uint](targets, []RegisterId{tmp}))
 }
 
-func destructMultiway[T any](p *StmtCompiler, args T, mapping []uint, targets [][]vm.RegisterId, fn MultiTranslator[T],
+func destructMultiway[T Expr](p *StmtCompiler, rhs T, mapping []uint, targets []RegisterPacket, fn MultiTranslator[T],
 ) []Bytecode {
 	var tmps = make([]RegisterId, len(targets))
 	//
@@ -456,7 +554,7 @@ func destructMultiway[T any](p *StmtCompiler, args T, mapping []uint, targets []
 		}
 	}
 	// Translate expression
-	insns := fn(args, mapping, tmps)
+	insns := fn(rhs, mapping, tmps)
 	//  Generate destruct(s)
 	for i, v := range targets {
 		if len(v) != 1 {
@@ -509,22 +607,6 @@ func (p *StmtCompiler) compileTernary(e *expr.Ternary[symbol.Resolved], bitwidth
 	insns = append(insns, vm.Skip[vm.Uint](uint16(len(trueInsns))))
 	//
 	return append(insns, trueInsns...)
-}
-
-func (p *StmtCompiler) compileTupleInitialiser(e *expr.TupleInitialiser[symbol.Resolved], mapping []uint,
-	targets ...[]vm.RegisterId) (insns []Bytecode) {
-	// NOTE: we assume the right number of targets for the initialiser here, and
-	// that this was checked earlier in the pipeline.
-	for i, target := range targets {
-		var (
-			ith      = e.Exprs[i]
-			bitwidth = data.BitWidthOf(e.Type(), p.environment)
-		)
-		//
-		insns = append(insns, p.compileExpr(ith, bitwidth, mapping, target)...)
-	}
-	//
-	return insns
 }
 
 func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.Option[uint], mapping []uint,
@@ -640,9 +722,9 @@ func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved]
 	return append(insns, vm.Call[vm.Uint](id, arguments, returns))
 }
 
-func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, targets []vm.RegisterId,
+func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target RegisterPacket,
 ) []Bytecode {
-	return []Bytecode{vm.AssignV[vm.Uint](targets, util.Cast[RegisterId](e.Variable))}
+	return []Bytecode{vm.AssignV[vm.Uint](target, util.Cast[RegisterId](e.Variable))}
 }
 
 func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target RegisterId,
@@ -656,7 +738,7 @@ func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], 
 	return []Bytecode{vm.AddModP(target, reg, zero)}
 }
 
-func (p *StmtCompiler) compileArrayAccess(e *expr.ArrayAccess[symbol.Resolved], mapping []uint, targets []vm.RegisterId,
+func (p *StmtCompiler) compileArrayAccess(e *expr.ArrayAccess[symbol.Resolved], mapping []uint, target RegisterPacket,
 ) []Bytecode {
 	panic(fmt.Sprintf("unexpected ArrayAccess node reached codegen (variable %d)", e.Id))
 }
@@ -673,7 +755,7 @@ func (p *StmtCompiler) compileMemoryRead(e *expr.ExternAccess[symbol.Resolved], 
 	return append(insns, vm.MemRead[vm.Uint](id, address, data))
 }
 
-func (p *StmtCompiler) compileIntMul(args []Expr, bitwidth uint, mapping []uint, targets []vm.RegisterId,
+func (p *StmtCompiler) compileIntMul(args []Expr, bitwidth uint, mapping []uint, target RegisterPacket,
 ) []Bytecode {
 	//
 	var (
@@ -698,7 +780,7 @@ func (p *StmtCompiler) compileIntMul(args []Expr, bitwidth uint, mapping []uint,
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(util.Some(bitwidth), mapping, nargs...)
 	//
-	return append(insns, vm.MulVec(targets, sources, constant))
+	return append(insns, vm.MulVec(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target RegisterId,
@@ -848,7 +930,7 @@ func (p *StmtCompiler) compileBitwiseShift(
 	return insns
 }
 
-func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint, targets []vm.RegisterId,
+func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint, target RegisterPacket,
 ) []Bytecode {
 	//
 	var (
@@ -874,7 +956,7 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
 	// Done (subtraction never needs a cast check; cf. compileSub).
-	return append(insns, vm.SubVec(targets, sources, constant))
+	return append(insns, vm.SubVec(target, sources, constant))
 }
 
 func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target RegisterId) []Bytecode {
