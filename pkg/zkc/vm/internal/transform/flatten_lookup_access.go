@@ -65,7 +65,7 @@ func flattenLookupAccessFunction[W word.Word[W]](fn *descriptor.Function[W]) *de
 		// snapshotted.  This needs the whole vector body (to know which registers
 		// are written at or after each call), which the Map closure cannot see one
 		// bytecode at a time.
-		snapshot := flattenableArgs(vec.Bytecodes)
+		snapshot := flattenableArgs(&vec)
 		//
 		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
 			if flags, ok := snapshot[idx]; ok {
@@ -82,9 +82,16 @@ func flattenLookupAccessFunction[W word.Word[W]](fn *descriptor.Function[W]) *de
 // flattenableArgs returns, for each call in the vector, the set of argument
 // positions whose register is written at or after the call.  Starting the scan
 // at the call itself captures both the call's own returns and any register
-// rewritten by a later bytecode.
-func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
-	snapshot := make(map[uint][]bool)
+// rewritten by a later bytecode.  However, an argument which is definitely
+// written on every path reaching the call is never flagged: any later write on
+// a path through the call would be a write conflict, so the column already
+// holds the value passed.
+func flattenableArgs[W word.Word[W]](vec *BytecodeVector[W]) map[uint][]bool {
+	var (
+		codes    = vec.Bytecodes
+		writeMap = vec.WriteMap()
+		snapshot = make(map[uint][]bool)
+	)
 	//
 	for i, code := range codes {
 		uses := lookupUses(code)
@@ -99,11 +106,15 @@ func flattenableArgs[W word.Word[W]](codes []Bytecode[W]) map[uint][]bool {
 				written[r] = true
 			}
 		}
-		// Flag each argument coinciding with such a write.
-		args := make([]bool, len(uses))
+		// Flag each argument coinciding with such a write, unless it was
+		// definitely written before the call.
+		var (
+			args   = make([]bool, len(uses))
+			before = writeMap.StateOf(uint(i))
+		)
 		//
 		for j, use := range uses {
-			args[j] = written[use]
+			args[j] = written[use] && !before.DefinitelyAssigned(use)
 		}
 		//
 		snapshot[uint(i)] = args
