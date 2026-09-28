@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 )
 
 // RegisterId provides an useful alias
@@ -85,6 +86,12 @@ func (p Writes) Join(q Writes) Writes {
 // assigned.
 func (p Writes) MaybeAssigned(reg RegisterId) bool {
 	return p.maybeWrites.Contains(uint(reg))
+}
+
+// MaybeWrites provides an iterator over the register which may have been
+// written on entry to this state.
+func (p Writes) MaybeWrites() iter.Iterator[uint] {
+	return p.maybeWrites.Iter()
 }
 
 // MayAnybeAssigned determines whether or not any of the given registers may have been

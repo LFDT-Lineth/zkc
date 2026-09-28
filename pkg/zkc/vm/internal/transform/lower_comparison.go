@@ -103,9 +103,9 @@ func lowerRelationalSkipIf[W word.Word[W]](
 
 	zero := word.Const64[W](0)
 	// create temporary (throw away) register
-	lo := registers.Allocate("", util.Some(castBandWidth-1))
+	lo := registers.Allocate("lcm", util.Some(castBandWidth-1))
 	// create sign bit for comparison
-	sign := registers.Allocate("", util.Some[uint](1))
+	sign := registers.Allocate("lcm", util.Some[uint](1))
 	//
 	insns := []Bytecode[W]{
 		// sign::lo = lhs - rhs
@@ -170,9 +170,9 @@ func lowerRelationalSkipIfConst[W word.Word[W]](
 
 	zero := word.Const64[W](0)
 	// create temporary (throw away) register
-	lo := registers.Allocate("", util.Some(castBandWidth-1))
+	lo := registers.Allocate("lcm", util.Some(castBandWidth-1))
 	// create sign bit for comparison
-	sign := registers.Allocate("", util.Some[uint](1))
+	sign := registers.Allocate("lcm", util.Some[uint](1))
 	//
 	insns := []Bytecode[W]{
 		// sign::lo = lhs - constant

@@ -124,7 +124,7 @@ func factorLimbEqualityCode[W word.Word[W]](b Bytecode[W], registers split.Alloc
 	)
 	// Materialise each limb inequality into a fresh bit via a diamond.
 	for k := range n {
-		bits[k] = registers.Allocate("", util.Some[uint](1))
+		bits[k] = registers.Allocate("fle", util.Some[uint](1))
 		zeros[k] = zero
 		//
 		insns = append(insns,
