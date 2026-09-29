@@ -33,9 +33,9 @@ type SchemaStack[F field.Element[F]] struct {
 	// Source map for the schema which forms the top of this stack.
 	sourceMap util.Option[corset.SourceMap]
 	// The various (abstract) layers which are refined from the schema.
-	abstractSchemas []schema.AnySchema[word.BigEndian]
+	abstractSchemas []schema.Schema[word.BigEndian]
 	// The various (concrete) layers which are refined from the abstract layers.
-	concreteSchemas []schema.AnySchema[F]
+	concreteSchemas []schema.Schema[F]
 	// Register mapping used
 	mapping module.LimbsMap
 	// Name of IR used for corresponding schema
@@ -46,7 +46,7 @@ type SchemaStack[F field.Element[F]] struct {
 
 // AbstractSchemas returns the stack of abstract schemas according to the
 // selected layers, where higher-level layers come first.
-func (p *SchemaStack[F]) AbstractSchemas() []schema.AnySchema[word.BigEndian] {
+func (p *SchemaStack[F]) AbstractSchemas() []schema.Schema[word.BigEndian] {
 	return p.abstractSchemas
 }
 
@@ -69,14 +69,14 @@ func (p *SchemaStack[F]) HasConcreteSchema() bool {
 
 // ConcreteSchema returns the stack of concrete schemas according to the selected
 // layers, where higher-level layers come first.
-func (p *SchemaStack[F]) ConcreteSchema() schema.AnySchema[F] {
+func (p *SchemaStack[F]) ConcreteSchema() schema.Schema[F] {
 	var n = len(p.concreteSchemas) - 1
 	return p.concreteSchemas[n]
 }
 
 // ConcreteSchemaOf returns the schema associated with the given IR representation.  If
 // there is no match, this will panic.
-func (p *SchemaStack[F]) ConcreteSchemaOf(ir string) schema.AnySchema[F] {
+func (p *SchemaStack[F]) ConcreteSchemaOf(ir string) schema.Schema[F] {
 	m := len(p.abstractSchemas)
 	//
 	for i, n := range p.names[m:] {

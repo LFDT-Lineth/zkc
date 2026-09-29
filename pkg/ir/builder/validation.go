@@ -25,7 +25,7 @@ import (
 // TraceValidation validates that values held in trace columns match the
 // expected type.  This is really a sanity check that the trace is not
 // malformed.
-func TraceValidation[F field.Element[F]](config Config, schema sc.AnySchema[F], tr trace.Shard[F]) []error {
+func TraceValidation[F field.Element[F]](config Config, schema sc.Schema[F], tr trace.Shard[F]) []error {
 	var (
 		errors []error
 		// Flatten all columns
@@ -55,7 +55,7 @@ func TraceValidation[F field.Element[F]](config Config, schema sc.AnySchema[F], 
 	return append(errs, errors...)
 }
 
-func flattenTrace[F field.Element[F]](schema sc.AnySchema[F], tr trace.Shard[F]) ([]trace.ColumnRef, []error) {
+func flattenTrace[F field.Element[F]](schema sc.Schema[F], tr trace.Shard[F]) ([]trace.ColumnRef, []error) {
 	var (
 		errors []error
 		//

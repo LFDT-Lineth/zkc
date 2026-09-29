@@ -23,6 +23,7 @@ import (
 // ToJsonString converts a trace into a JSON string.
 func ToJsonString[F field.Element[F]](tr trace.Trace[F]) string {
 	var (
+		first   = true
 		builder strings.Builder
 	)
 	//
@@ -30,13 +31,20 @@ func ToJsonString[F field.Element[F]](tr trace.Trace[F]) string {
 		return toJsonString(tr[0])
 	}
 	//
-	for i, shard := range tr {
-		if i != 0 {
+	builder.WriteString("[")
+	//
+	for _, shard := range tr {
+		//
+		if !first {
 			builder.WriteString(", ")
 		}
 		//
+		first = false
+		//
 		builder.WriteString(toJsonString(shard))
 	}
+	//
+	builder.WriteString("]")
 	//
 	return builder.String()
 }

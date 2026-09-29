@@ -17,9 +17,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
@@ -27,7 +25,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -58,23 +55,11 @@ var executeFlags FlagChecks
 
 func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
-		errors []error
-		build  = GetBuildConfig[F](cmd, field)
-		// outputFile file for tracep
-		outputFile = GetString(cmd, "output")
-		// check constraints
-		check = GetFlag(cmd, "check")
-		// simple equivalence
-		tracing = !build.fastMode
-		//
-		trace   trace.Trace[F]
+		errors  []error
+		build   = GetBuildConfig[F](cmd, field)
 		input   map[string][]byte
 		outputs map[string][]byte
 	)
-	// Configure tracing
-	traceConfig := vm.DEFAULT_TRACE_CONFIG.
-		WithPadding(build.padding).
-		WithBatchSize(GetUint(cmd, "batch"))
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
 	// Build artifacts (compiles source files or loads a prebuilt binary).
@@ -85,9 +70,7 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 	// Parse an filter input file
 	input = filterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
 	// decide what is happening
-	if tracing {
-		outputs, trace, errors = binfile.Trace(input, traceConfig)
-	} else if build.gogen {
+	if build.gogen {
 		// Execute via native Go generated from the word machine.
 		outputs, errors = executeWithGogen(binfile.RawProgram(), input)
 	} else {
@@ -99,18 +82,6 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 	// Write outputs
 	for name, bytes := range outputs {
 		fmt.Printf("%s = 0x%s\n", name, hex.EncodeToString(bytes))
-	}
-	// write out trace (if requested)
-	if tracing && outputFile != "" {
-		// Write out trace file
-		WriteTraceFile(outputFile, trace)
-	}
-	// =====================================================
-	// Check Constraints
-	// =====================================================
-	if check && trace != nil {
-		// NOTE: check ==> tracing
-		checkConstraints(binfile, traceConfig, trace)
 	}
 	// =====================================================
 	// Report Execution Failures
@@ -125,26 +96,6 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 	}
 }
 
-func checkConstraints[F field.Element[F], W vm.Word[W]](binfile *constraints.BinaryFile[F, W],
-	cfg vm.TraceConfig, trace trace.Trace[F]) {
-	//
-	var checkConfig corset.CheckConfig
-	// Set sensible defaults (for now)
-	checkConfig.Report = true
-	checkConfig.ReportCellWidth = 32
-	checkConfig.ReportTitleWidth = 40
-	checkConfig.ReportPadding = 2
-	checkConfig.ReportLimbs = true
-	checkConfig.ReportComputed = true
-	checkConfig.AnsiEscapes = AnsiEscapes
-	// Construct limbs map
-	mapping := binfile.LimbsMap()
-	// Run the check
-	if failures := binfile.Check(cfg, trace); len(failures) > 0 {
-		corset.ReportFailures("AIR", mapping, checkConfig, trace, failures)
-	}
-}
-
 // ============================================================================
 // Misc
 // ============================================================================
@@ -152,14 +103,6 @@ func checkConstraints[F field.Element[F], W vm.Word[W]](binfile *constraints.Bin
 //nolint:errcheck
 func init() {
 	rootCmd.AddCommand(executeCmd)
-	executeCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
-	executeCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
-	executeCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
-	// Gogen only supports fast mode (for now).
-	executeFlags.Require("gogen", "fast")
-	// Fast mode cannot be used to check constraints (i.e. because it does not
-	// generate a trace).
-	executeFlags.Exclude("check", "fast")
 }
 
 // executeWithGogen executes the word machine by generating native Go, compiling

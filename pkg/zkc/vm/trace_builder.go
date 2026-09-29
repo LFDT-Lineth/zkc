@@ -13,8 +13,10 @@
 package vm
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/ir"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	log "github.com/sirupsen/logrus"
 )
@@ -42,17 +44,26 @@ type Tracer[W Word[W], F Element[F], T any] interface {
 // abstracts the myriad different ways this can be done (e.g. sharding,
 // parallelism, etc).
 type TraceBuilder[W Word[W], F field.Element[F], T Tracer[W, F, T], E Word[E]] struct {
-	config    TraceConfig
-	execution Program[E]
-	tracing   Program[W]
+	config      TraceConfig
+	builder     ir.TraceBuilder[F]
+	execution   Program[E]
+	tracing     Program[W]
+	constraints air.Schema[F]
 }
 
 // NewTraceBuilder constructs a default tracer builder which, most likely,
 // should be further configured before use.
 func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T], E Word[E]](config TraceConfig,
-	execution Program[E], tracing Program[W]) TraceBuilder[W, F, T, E] {
+	execution Program[E], tracing Program[W], constraints air.Schema[F]) TraceBuilder[W, F, T, E] {
 	//
-	return TraceBuilder[W, F, T, E]{config, execution, tracing}
+	builder := ir.NewTraceBuilder[F]().
+		// NOTE: never use validation, as it hides constraint failures.
+		WithValidation(false).
+		WithParallelism(false).
+		WithExpansion(true).
+		WithPadding(config.PaddingStrategy())
+		//
+	return TraceBuilder[W, F, T, E]{config, builder, execution, tracing, constraints}
 }
 
 // BootAndTrace generates a suitable trace from the given inputs for the contraints
@@ -60,61 +71,72 @@ func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T], E Word[E]](conf
 // the input is malformed (e.g. is missing expected fields and/or contains
 // unexpected fields).
 func (p TraceBuilder[W, F, T, E]) BootAndTrace(inputs map[string][]byte,
-) (shards trace.Trace[F], outputs map[string][]byte, errors []error) {
+) (outputs map[string][]byte, tr util.Option[trace.LazyTrace[F]], errors []error) {
 	// Check whether we have a sharding strategy
 	if p.config.shardingStrategy.IsEmpty() {
-		var tr trace.Shard[F]
-		// no strategy, therefore trace sequentially
-		tr, outputs, errors = BootAndTrace[W, F, T](p.tracing, inputs)
-		//
-		return trace.Trace[F]{tr}, outputs, errors
+		return p.bootAndTraceUnsharded(inputs)
 	}
 	// apply sharding strategy
 	return p.bootAndTraceShards(inputs)
 }
 
+// unsharded BootAndTrace simply traces directly.
+func (p TraceBuilder[W, F, T, E]) bootAndTraceUnsharded(inputs map[string][]byte,
+) (outputs map[string][]byte, tr util.Option[trace.LazyTrace[F]], errors []error) {
+	var (
+		shard util.Option[trace.Shard[F]]
+	)
+	// No strategy, therefore trace sequentially
+	shard, outputs, errors = BootAndTrace[W, F, T](p.tracing, inputs)
+	// Sanity check whether can continue or not
+	if shard.IsEmpty() {
+		// No, have an unrecoverable error
+		return outputs, util.None[trace.LazyTrace[F]](), errors
+	}
+	// Convert into a future
+	future := func() (util.Option[trace.Shard[F]], []error) {
+		// Perform trace expansion
+		var shard, errs = p.builder.BuildShard(p.constraints, shard.Unwrap())
+		// Repackage
+		return util.Some(shard), errs
+	}
+	// Done
+	return outputs, util.Some(trace.NewLazyTrace(future)), errors
+}
+
 // Sharded BootAndTrace performs sharding according to the given sharding
 // strategy.
 func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string][]byte,
-) (trace.Trace[F], map[string][]byte, []error) {
+) (map[string][]byte, util.Option[trace.LazyTrace[F]], []error) {
 	var (
+		//
 		strategy = p.config.shardingStrategy.Unwrap()
 		// fast mode execution to generate checkpoints
 		checkpoints, outputs, traceable, errors = BootAndCheckpoint(p.execution, inputs, strategy)
 		//
-		shards = make([]Shard[F], len(checkpoints))
+		futures []trace.Future[F]
 	)
 	// Sanity check
-	if traceable {
-		// Perform tracing in parallel (or sequentially)
-		results := p.traceCheckPoints(checkpoints)
-		// Collapse results and check traceability
-		for i, ith := range results {
-			errors = append(errors, ith.errors...)
-			// Record trace
-			shards[i] = ith.trace
-			// Record overall traceability
-			traceable = traceable && !shards[i].IsEmpty()
-		}
-	}
-	//
 	if !traceable {
-		return nil, outputs, errors
+		return outputs, util.None[trace.LazyTrace[F]](), errors
 	}
-	//
-	return shards, outputs, errors
+	// Perform tracing in parallel (or sequentially)
+	futures = p.traceCheckPoints(checkpoints)
+	// Done
+	return outputs, util.Some(trace.NewLazyTrace(futures...)), errors
 }
 
-func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint) (jobs []traceJob[F]) {
+func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint) (jobs []trace.Future[F]) {
 	var (
 		strategy = p.config.shardingStrategy.Unwrap()
-		// Construct tracing function
-		traceFn = func(i uint, cp CheckPoint) traceJob[F] {
-			var (
-				steps = strategy.shardSteps
-				trace Shard[F]
-				errs  []error
-			)
+		//
+		futures = make([]trace.Future[F], len(checkpoints))
+	)
+	//
+	for i, cp := range checkpoints {
+		// Construct ith tracing future
+		futures[i] = func() (util.Option[Shard[F]], []error) {
+			var steps = strategy.shardSteps
 			// Increment steps for all except first shard to account for the
 			// fact that restoring at the exact point the breakpoint was
 			// triggered will naturally trigger it again.
@@ -122,25 +144,23 @@ func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint) (jo
 				steps++
 			}
 			// Trace ith shard
-			steps, trace, errs = RestoreAndTraceFor[W, F, T](p.tracing, cp, strategy.shardFunction, steps)
+			steps, oshard, errs1 := RestoreAndTraceFor[W, F, T](p.tracing, cp, strategy.shardFunction, steps)
+			// Sanity check what happened
+			if oshard.IsEmpty() {
+				// Log failure
+				log.Error("[SHARD ", i, "] tracing failed (", steps, " steps)")
+				return util.None[Shard[F]](), errs1
+			}
+			// Perform trace expansion
+			shard, errs2 := p.builder.BuildShard(p.constraints, oshard.Unwrap())
 			// Log stats
-			log.Debug("[SHARD ", i, "] machine resumed execution (", steps, " steps)")
+			log.Debug("[SHARD ", i, "] traced execution (", steps, " steps)")
 			// Done
-			return traceJob[F]{trace, errs}
+			return util.Some(shard), append(errs1, errs2...)
 		}
-	)
-	//
-	if p.config.parallel {
-		// Perform tracing in parallel
-		return array.ParallelMap(checkpoints, traceFn)
 	}
-	// Perform tracing sequentially
-	return array.Map(checkpoints, traceFn)
-}
-
-type traceJob[F Element[F]] struct {
-	trace  Shard[F]
-	errors []error
+	//
+	return futures
 }
 
 // ============================================================================

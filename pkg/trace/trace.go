@@ -13,127 +13,96 @@
 package trace
 
 import (
-	"math"
-	"strings"
-
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
+
+// Future represents the (future) result of tracing a given shard, which may (or
+// may not) produce a value and can additionally produce one or more errors.
+type Future[F field.Element[F]] func() (util.Option[Shard[F]], []error)
 
 // Trace represents a complete (sharded) trace.  That is, an array of shards.
 type Trace[F field.Element[F]] []Shard[F]
 
-// Shard describes an immutable set of named modules whose data is organised by
-// columns.
-type Shard[F field.Element[F]] struct {
-	// Holds the set of modules in this trace.  The index of each module in this
-	// array uniquely identifies it, and is referred to as the "module index".
-	modules []Module[F]
+// LazyTrace represents a trace whose shards are loaded lazilty (i.e. on
+// demand).  The purpose of a lazy trace is to make it possible to consume (i.e.
+// process) the shards without holding all of them in memory at once.  The lazy
+// trace can be viewed as an array of "promises" or "futures".
+type LazyTrace[F field.Element[F]] struct {
+	// indicates whether or not to use parallelism
+	parallel bool
+	// array of future (or "promised") results.
+	futures []Future[F]
 }
 
-// NewShard constructs a new shard from a given set of module traces.
-func NewShard[F field.Element[F]](modules []Module[F]) Shard[F] {
-	return Shard[F]{modules}
+// NewLazyTrace constructs a lazy trace from zero or more futures.
+func NewLazyTrace[F field.Element[F]](futures ...Future[F]) LazyTrace[F] {
+	return LazyTrace[F]{true, futures}
 }
 
-// IsEmpty determines whether or not this shard is completely empty.
-func (p Shard[F]) IsEmpty() bool {
-	return p.modules == nil
-}
-
-// HasModule determines whether this trace has a module with the given name and,
-// if so, what its module index is.
-func (p Shard[F]) HasModule(name string) (uint, bool) {
-	for mid, mod := range p.modules {
-		if mod.Name() == name {
-			return uint(mid), true
-		}
-	}
-	//
-	return math.MaxUint, false
-}
-
-// Module returns a specific module in this trace.
-func (p Shard[F]) Module(module uint) Module[F] {
-	return p.modules[module]
-}
-
-// RawModule returns a specific (raw) module in this trace.
-func (p Shard[F]) RawModule(module uint) Module[F] {
-	return p.modules[module]
-}
-
-// Modules returns an iterator over the modules in this trace.
-func (p Shard[F]) Modules() iter.Iterator[Module[F]] {
-	it := iter.NewArrayIterator(p.modules)
-	//
-	return iter.NewCastIterator[Module[F], Module[F]](it)
-}
-
-// Width returns the number of modules in this trace.
-func (p Shard[F]) Width() uint {
-	return uint(len(p.modules))
-}
-
-func (p Shard[F]) String() string {
-	var id strings.Builder
-
-	id.WriteString("{")
-	//
-	for i, m := range p.modules {
-		if i != 0 {
-			id.WriteString(", ")
-		}
-		//
-		id.WriteString(m.String())
-	}
-	//
-	id.WriteString("}")
-	//
-	return id.String()
-}
-
-// ModuleDescriptor describes an individual module within a trace, including all
-// of its columns.
-type ModuleDescriptor struct {
-	Name string
-	// Descriptors for all columns
-	Columns []ColumnDescriptor
-	// Flag indicating replication (or not).
-	Replicated bool
-}
-
-// NewModuleDescriptor constructs a straightforward module descriptor (i.e. with
-// no additional metadata).
-func NewModuleDescriptor(name string, columns []ColumnDescriptor) ModuleDescriptor {
-	return ModuleDescriptor{name, columns, false}
-}
-
-// Width returns the number of columns in this module.
-func (p ModuleDescriptor) Width() uint {
-	return uint(len(p.Columns))
-}
-
-// WithReplication sets the replication metadata for this module to the given flag.
-func (p ModuleDescriptor) WithReplication(flag bool) ModuleDescriptor {
-	p.Replicated = flag
+// WithParallelism enables the use of parallelism for the various functions
+// which operate on this trace (e.g. Apply).
+func (p LazyTrace[F]) WithParallelism(enable bool) LazyTrace[F] {
+	p.parallel = enable
 	return p
 }
 
-// ColumnDescriptor describes an individual column in a trace module.
-type ColumnDescriptor struct {
-	// Column name.
-	Name string
-	// Column bitwidth.  If this is none, then this represents a "native column"
-	// (i.e. one backed by field elements).
-	Bitwidth util.Option[uint]
+// Len returns the number of remaining shards.
+func (p LazyTrace[F]) Len() uint {
+	return uint(len(p.futures))
 }
 
-// NewColumnDescriptor constructs a new column descriptor with the given name
-// and bitwidth.
-func NewColumnDescriptor(name string, bitwidth util.Option[uint]) ColumnDescriptor {
-	return ColumnDescriptor{name, bitwidth}
+// Apply the given handler to each shard in turn, where the handler's first
+// argument is the shard index.  This uses a parallel map by default (i.e.
+// unless parallelism is disabled) but computes each shard on-demand and then
+// discards it once the handler has finished.  Thus, only the current shards
+// being processed are held in memory at any given moment.
+//
+// There are two failure modes: recoverable and non-recoverable errors.  A
+// recoverable error indicates the machine encountered a failure (e.g. it
+// executed a fail instruction), but a shard was still constructed.  A
+// non-recoverable error indicates some other kind of abrupt internal or I/O
+// error arose, and no shard was produced.  Recoverable errors are instances of
+// *vm.Failure.  If no errors arose, the handler is called (in a non-determinic
+// order) on all shards. If only recoverable errors arose, then again the
+// handler is called on all shards. Otherwise, the handler is called only on
+// those shards which were actually produced.
+//
+// NOTE: at this time, early termination is not supported.  Thus, the handler is
+// always called on all shards which are produced, regardless of whether some
+// non-recoverable has already occurred.
+func (p LazyTrace[F]) Apply(handler func(uint, Shard[F])) []error {
+	var (
+		mapper = func(id uint, f Future[F]) []error {
+			var shard, errs = f()
+			// Apply handler (if applicable)
+			if shard.HasValue() {
+				handler(id, shard.Unwrap())
+			}
+			// Return any errors
+			return errs
+		}
+		//
+		errors [][]error
+	)
+	//
+	if p.parallel {
+		errors = array.ParallelMap(p.futures, mapper)
+	} else {
+		errors = array.Map(p.futures, mapper)
+	}
+	// Flattern error(s) into a single array.
+	return array.FlatMap(errors, func(es []error) []error { return es })
 }
 
-var traceBinaryMagic = []byte{'r', 't', 'r', 'a', 'c', 'e', 0, 2}
+// Get computes the ith shard in this array, or fails with one or more errors.
+// This is, in effect, a raw accessor which can be used instead of Apply() above
+// when more flexibility is required.  The shard is always returned unless an
+// unrecoverable error arises.  However, it is also possible that both
+// shard.HasValue() and len(errors) > 0 hold at the same time.  This happens
+// when  a recoverable error is encountered (see discussion of Apply() for more
+// on this).
+func (p LazyTrace[F]) Get(ith uint) (shard util.Option[Shard[F]], errors []error) {
+	return p.futures[ith]()
+}

@@ -56,7 +56,13 @@ func (p *InternalFailure[F]) Message() string {
 	return fmt.Sprintf("%s (row %d) - %s", p.handle, p.row, p.error)
 }
 
+// Trace implementation of schema.Failure interface.  Internal failures carry
+// no trace data, hence this is always the empty shard.
+func (p *InternalFailure[F]) Trace() trace.Shard[F] {
+	return trace.Shard[F]{}
+}
+
 // RequiredCells identifies the cells required to evaluate the failing constraint at the failing row.
-func (p *InternalFailure[F]) RequiredCells(_ trace.Trace[F]) set.AnySortedSet[trace.ShardedCellRef] {
+func (p *InternalFailure[F]) RequiredCells() set.AnySortedSet[trace.CellRef] {
 	return nil
 }

@@ -68,7 +68,7 @@ func (p *IfZero[F, S, T]) Bounds() util.Bounds {
 // EvalAt implementation for Evaluable interface.
 func (p *IfZero[F, S, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
 	// Evaluate condition
-	cond, _, err := p.Condition.TestAt(k, tr, sc)
+	cond, err := p.Condition.TestAt(k, tr, sc)
 	//
 	if err != nil {
 		var dummy F

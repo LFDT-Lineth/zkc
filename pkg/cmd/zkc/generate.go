@@ -120,8 +120,6 @@ func init() {
 	rootCmd.AddCommand(generateCmd)
 	generateCmd.Flags().StringP("output", "o", "", "specify output file for generated Go source (default stdout)")
 	generateCmd.Flags().String("pkg", "", "generated package name (default main, which carries the standalone harness)")
-	// Gogen only supports fast mode (for now).
-	generateFlags.Require("gogen", "fast")
 	// Gogen does not currently support splitting (for now)
 	generateFlags.Exclude("gogen", "split")
 }
