@@ -18,7 +18,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
-	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -48,20 +47,20 @@ type Constraint[F field.Element[F], T term.Testable[F]] struct {
 
 // NewConstraint constructs a new vanishing constraint
 func NewConstraint[F field.Element[F], T term.Testable[F]](handle string, context schema.ModuleId,
-	domain util.Option[int], constraint T) Constraint[F, T] {
-	return Constraint[F, T]{handle, context, domain, constraint}
+	domain util.Option[int], constraint T) *Constraint[F, T] {
+	return &Constraint[F, T]{handle, context, domain, constraint}
 }
 
 // Consistent applies a number of internal consistency checks.  Whilst not
 // strictly necessary, these can highlight otherwise hidden problems as an aid
 // to debugging.
-func (p Constraint[F, T]) Consistent(schema schema.AnySchema[F]) []error {
+func (p *Constraint[F, T]) Consistent(schema schema.Schema[F]) []error {
 	return constraint.CheckConsistent(p.Context, schema, p.Constraint)
 }
 
 // Name returns a unique name for a given constraint.  This is useful
 // purely for identifying constraints in reports, etc.
-func (p Constraint[F, T]) Name() string {
+func (p *Constraint[F, T]) Name() string {
 	return p.Handle
 }
 
@@ -70,13 +69,8 @@ func (p Constraint[F, T]) Name() string {
 // evaluation context, though some (e.g. lookups) have more.  Note that all
 // constraints have at least one context (which we can call the "primary"
 // context).
-func (p Constraint[F, T]) Contexts() []schema.ModuleId {
+func (p *Constraint[F, T]) Contexts() []schema.ModuleId {
 	return []schema.ModuleId{p.Context}
-}
-
-// Sets implementation for schema.Constraint interface.
-func (p Constraint[F, T]) Sets() []schema.SetId {
-	return nil
 }
 
 // Bounds determines the well-definedness bounds for this constraint for both
@@ -86,7 +80,7 @@ func (p Constraint[F, T]) Sets() []schema.SetId {
 // expression on that first row is also undefined (and hence must pass).
 //
 //nolint:revive
-func (p Constraint[F, T]) Bounds(module uint) util.Bounds {
+func (p *Constraint[F, T]) Bounds(module uint) util.Bounds {
 	if p.Context == module {
 		return p.Constraint.Bounds()
 	}
@@ -94,98 +88,10 @@ func (p Constraint[F, T]) Bounds(module uint) util.Bounds {
 	return util.EMPTY_BOUND
 }
 
-// Accepts checks whether a vanishing constraint evaluates to zero on every row
-// of a table.  If so, return nil otherwise return an error.
-//
-//nolint:revive
-func (p Constraint[F, T]) Accepts(tr trace.Trace[F], sc schema.AnySchema[F], _ schema.Context[F],
-) (failures []schema.Failure[F]) {
-	//
-	for i, ith := range tr {
-		if f := p.accepts(uint(i), ith, sc); f != nil {
-			failures = append(failures, f)
-		}
-	}
-	//
-	return failures
-}
-
-func (p Constraint[F, T]) accepts(shard uint, tr trace.Shard[F], sc schema.AnySchema[F]) schema.Failure[F] {
-	var (
-		// Handle is used for error reporting.
-		handle = constraint.DetermineHandle(p.Handle, p.Context, tr)
-		// Determine enclosing module
-		trModule = tr.Module(p.Context)
-		scModule = sc.Module(p.Context)
-	)
-	//
-	if p.Domain.IsEmpty() {
-		// Global Constraint
-		return HoldsGlobally(handle, p.Context, p.Constraint, shard, trModule, scModule)
-	}
-	// Extract domain
-	domain := p.Domain.Unwrap()
-	// Local constraint
-	var start uint
-	// Handle negative domains
-	if domain < 0 {
-		// Determine height of enclosing module
-		height := tr.Module(p.Context).Height()
-		// Negative rows calculated from end of trace.
-		start = height + uint(domain)
-	} else {
-		start = uint(domain)
-	}
-	// Check specific row
-	return HoldsLocally(start, handle, p.Constraint, p.Context, shard, trModule, scModule)
-}
-
-// HoldsGlobally checks whether a given expression vanishes (i.e. evaluates to
-// zero) for all rows of a trace.  If not, report an appropriate error.
-func HoldsGlobally[F field.Element[F], T term.Testable[F]](handle string, ctx schema.ModuleId, constraint T,
-	shard uint, trMod trace.Module[F], scMod schema.Module[F]) schema.Failure[F] {
-	//
-	var (
-		// Determine height of enclosing module
-		height = trMod.Height()
-		// Determine well-definedness bounds for this constraint
-		bounds = constraint.Bounds()
-	)
-	// Sanity check enough rows
-	if bounds.End < height {
-		// Check all in-bounds values
-		for k := bounds.Start; k < (height - bounds.End); k++ {
-			err := HoldsLocally(k, handle, constraint, ctx, shard, trMod, scMod)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	// Success
-	return nil
-}
-
-// HoldsLocally checks whether a given constraint holds (e.g. vanishes) on a
-// specific row of a trace. If not, report an appropriate error.
-func HoldsLocally[F field.Element[F], T term.Testable[F]](k uint, handle string, term T, ctx schema.ModuleId,
-	shard uint, trMod trace.Module[F], scMod schema.Module[F]) schema.Failure[F] {
-	//
-	ok, _, err := term.TestAt(k, trMod, scMod)
-	// Check for errors
-	if err != nil {
-		return constraint.NewInternalFailure[F](handle, ctx, k, err.Error())
-	} else if !ok {
-		// Evaluation failure
-		return &Failure[F]{handle, term, ctx, k, shard}
-	}
-	// Success
-	return nil
-}
-
 // Lisp converts this constraint into an S-Expression.
 //
 //nolint:revive
-func (p Constraint[F, T]) Lisp(mapping schema.AnySchema[F]) sexp.SExp {
+func (p *Constraint[F, T]) Lisp(mapping schema.Schema[F]) sexp.SExp {
 	var (
 		module  = mapping.Module(p.Context)
 		name    string

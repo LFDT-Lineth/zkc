@@ -24,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/checker"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -219,8 +220,8 @@ func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, op
 	}
 }
 
-func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf trace.Trace[F], id traceId,
-	schema sc.Schema[F, C]) {
+func checkTrace[F field.Element[F]](t *testing.T, tf trace.Trace[F], id traceId,
+	schema sc.Schema[F]) {
 	var (
 		// Map the legacy padding toggle onto a padding strategy.
 		paddingStrategy = ir.NaryRowPadding(0)
@@ -237,18 +238,23 @@ func checkTrace[F field.Element[F], C sc.Constraint[F]](t *testing.T, tf trace.T
 		WithParallelism(id.parallel).
 		WithBatchSize(128)
 	// Construct the trace
-	shards, errors := builder.Build(sc.Any(schema), tf)
+	shards, errors := builder.Build(schema, tf)
 	// Check for errors
 	if len(errors) > 0 {
 		t.Errorf("Trace expansion failed (%s): %s", id.String(), errors)
 		return
 	}
+	// Construct constraint checker
+	checker := checker.New(schema).
+		WithParallelism(id.parallel)
 	// Check Constraints
-	errs := sc.Accepts(id.parallel, schema, shards)
+	fails, errs := checker.CheckStrict(shards)
 	// Determine whether trace accepted or not.
-	accepted := len(errs) == 0
+	accepted := len(fails) == 0
 	// Process what happened versus what was supposed to happen.
-	if !accepted && id.expected {
+	if len(errs) > 0 {
+		t.Errorf("Checker panic (%s): %s", id.String(), errs)
+	} else if !accepted && id.expected {
 		//table.PrintTrace(tr)
 		t.Errorf("Trace rejected incorrectly (%s): %s", id.String(), errs)
 	} else if accepted && !id.expected {

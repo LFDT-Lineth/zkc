@@ -34,6 +34,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -85,17 +86,14 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		sharding = GetString(cmd, "sharding")
 		//
 		includes = GetStringArray(cmd, "include")
+		// Indicate as to whether trace was fully computed or not.
+		computed = false
 		//
-		trace   trace.Trace[F]
+		tr      trace.LazyTrace[F]
 		outputs map[string][]byte
 	)
 	// Sanity permitted flag combinations
 	checkFlags(cmd, traceFlags)
-	// Tracing always generates a trace, so fast mode is not supported.
-	if GetFlag(cmd, "fast") {
-		fmt.Println("error: \"trace\" does not support fast mode (use \"execute\" instead)")
-		os.Exit(1)
-	}
 	// Configure stats
 	statsCfg.human = !GetFlag(cmd, "raw")
 	statsCfg.maxCellWidth = GetUint(cmd, "cell-width")
@@ -121,7 +119,15 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	input := filterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
 	// Always trace (no fast mode).  The raw (row-major) trace is retained for
 	// statistics, since it carries the original register/limb structure.
-	outputs, trace, errors := binfile.Trace(input, traceConfig)
+	outputs, maybeTr, errors := binfile.Trace(input, traceConfig)
+	//
+	if maybeTr.IsEmpty() {
+		handleErrors(errors)
+	}
+	//
+	tr = maybeTr.Unwrap().
+		// Configure parallelism
+		WithParallelism(traceConfig.Parallelism())
 	// =====================================================
 	// Generate output
 	// =====================================================
@@ -131,44 +137,115 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	}
 	// print trace statistics (if requested).  Only meaningful when a trace was
 	// actually generated (i.e. no execution errors).
-	if stats && len(errors) == 0 {
-		printTraceStats(statsCfg, trace...)
-		printModuleStats(statsCfg, trace...)
+	if stats {
+		printStats(statsCfg, tr)
+		// Record that trace computed
+		computed = true
 	}
 	// print entire trace (if requested).  Unlike the inspector, there is no way
 	// to reveal a module which was hidden, so everything carrying data is shown
 	// (this excludes, for example, the static range-check tables).
-	if showTrace && trace != nil {
-		corset.PrintTrace(binfile.LimbsMap(), trace, false, 32, 128)
+	if showTrace {
+		corset.PrintTrace(binfile.LimbsMap(), collectShards(tr), false, 32, 128)
+		// Record that trace computed
+		computed = true
 	}
 	// write out trace (if requested)
 	if outputFile != "" {
 		// Write out trace file
-		WriteTraceFile(outputFile, trace)
+		WriteTraceFile(outputFile, collectShards(tr))
+		// Record that trace computed
+		computed = true
 	}
 	// =====================================================
 	// Check Constraints
 	// =====================================================
-	if check && trace != nil {
-		checkConstraints(binfile, traceConfig, trace)
+	if check {
+		checkConstraints(binfile, traceConfig, tr)
+		// Record that trace computed
+		computed = true
 	}
 	// =====================================================
 	// Inspect
 	// =====================================================
 	// Open the generated trace in the interactive inspector (if requested).  This
 	// takes over the terminal, so it runs last, after any stdout output above.
-	if inspect && len(trace) == 1 {
+	if inspect && tr.Len() == 1 {
+		shards := collectShards(tr)
 		// Real ZkC functions are public; synthetic modules (e.g. range-check
 		// tables) are private (hidden by default in the inspector).
-		errors = corset.InspectTrace(binfile.LimbsMap(), trace[0], publicModule, false, 32, 128)
-	} else if inspect && len(trace) > 0 {
+		errors = corset.InspectTrace(binfile.LimbsMap(), shards[0], publicModule, false, 32, 128)
+		// Record that trace computed
+		computed = true
+	} else if inspect && tr.Len() > 0 {
 		errors = append(errors, fmt.Errorf("cannot inspect multiple trace shards"))
+		// Prevent computing trace
+		computed = true
 	} else if inspect {
 		errors = append(errors, fmt.Errorf("cannot inspect zero trace shards"))
+		// Prevent computing trace
+		computed = true
+	}
+	// =====================================================
+	// Dummy Driver
+	// =====================================================
+	if !computed {
+		var stats = util.NewPerfStats()
+		// Dummy driver to ensure trace is fully computed, and any errors are
+		// reported.
+		errors = tr.Apply(func(id uint, _ trace.Shard[F]) {})
+		//
+		stats.Log("Trace generation")
 	}
 	// =====================================================
 	// Report Execution Failures
 	// =====================================================
+	handleErrors(errors)
+}
+
+func checkConstraints[F field.Element[F], W vm.Word[W]](binfile *constraints.BinaryFile[F, W],
+	cfg vm.TraceConfig, trace trace.LazyTrace[F]) {
+	//
+	var checkConfig corset.CheckConfig
+	// Set sensible defaults (for now)
+	checkConfig.Report = true
+	checkConfig.ReportCellWidth = 32
+	checkConfig.ReportTitleWidth = 40
+	checkConfig.ReportPadding = 2
+	checkConfig.ReportLimbs = true
+	checkConfig.ReportComputed = true
+	checkConfig.AnsiEscapes = AnsiEscapes
+	// Construct limbs map
+	mapping := binfile.LimbsMap()
+	// Run the check
+	failures, errors := binfile.Check(cfg, trace)
+	// Report failures first
+	if len(failures) > 0 {
+		corset.ReportFailures("AIR", mapping, checkConfig, failures)
+	}
+	// Report any errors arising
+	handleErrors(errors)
+}
+
+func collectShards[F field.Element[F]](tr trace.LazyTrace[F]) []trace.Shard[F] {
+	var (
+		stats = util.NewPerfStats()
+		//
+		shards = make([]trace.Shard[F], tr.Len())
+		// Collect all shards into the array
+		errors = tr.Apply(func(id uint, shard trace.Shard[F]) {
+			shards[id] = shard
+		})
+	)
+	//
+	stats.Log("Trace generation")
+	// Handle any errors arising
+	handleErrors(errors)
+	//
+	return shards
+}
+
+func handleErrors(errors []error) {
 	if len(errors) > 0 {
 		// Log errors
 		for _, e := range errors {
@@ -235,26 +312,64 @@ const (
 	oneG = oneM * oneK
 )
 
+type traceStatsConfig[F field.Element[F]] struct {
+	human        bool
+	summarisers  []ModuleSummariser[F]
+	sortedBy     util.Option[uint]
+	maxCellWidth uint
+}
+
+type shardStats struct {
+	cells uint64
+	bytes uint64
+}
+
+// printStats prints a per-module summary for a raw (row-major) trace, much
+// like the corset trace command's module listing.  For each module it reports
+// the column count, line (row) count, total bit-width, total cells, non-zero
+// cells and total bytes.  Native (field-element) limbs, which have no fixed
+// bit-width, are excluded from the bit-width and byte totals.
+func printStats[F field.Element[F]](cfg traceStatsConfig[F], tr trace.LazyTrace[F]) {
+	var (
+		stats  = make([]shardStats, tr.Len())
+		tables = make([]termio.FormattedTable, tr.Len())
+		// Generate all shards
+		errors = tr.Apply(func(id uint, shard trace.Shard[F]) {
+			// Record summary stats
+			stats[id] = getShardStats(shard)
+			// Build shard stats
+			tables[id] = *buildShardModuleStats(cfg, shard)
+		})
+	)
+	// Print overall summary stats
+	printSummaryStats(cfg, stats)
+	// Print individual shard stats (in order)
+	for _, tbl := range tables {
+		tbl.Print(AnsiEscapes)
+	}
+	//
+	handleErrors(errors)
+}
+
 // printTraceStats prints overall statistics for a raw (row-major) trace, much
 // like the corset "trace --stats" command.  It reports the total number of
 // traced cells (both human-readable and raw) plus a breakdown of columns by
 // bit-width.  Columns backed by field elements (i.e. native registers, which
 // have no fixed bit-width) are reported separately.
-func printTraceStats[F field.Element[F]](cfg traceStatsConfig[F], shards ...trace.Shard[F]) {
+func printSummaryStats[F field.Element[F]](cfg traceStatsConfig[F], stats []shardStats) {
 	// Render it.
-	tbl := termio.NewFormattedTable(3, uint(len(shards)+1))
+	tbl := termio.NewFormattedTable(3, uint(len(stats)+1))
 	//
 	tbl.SetRow(0, termio.NewText("shard"), termio.NewText("cells"), termio.NewText("bytes"))
 	tbl.SetRule(1)
 	//
-	for i, shard := range shards {
+	for i, shard := range stats {
 		var (
-			cells, bytes = getShardStats(shard)
-			sid          = fmt.Sprintf("%d", i)
+			sid = fmt.Sprintf("%d", i)
 		)
 		//
-		cs := humanCount(cfg.human, cells)
-		bs := humanCount(cfg.human, bytes)
+		cs := humanCount(cfg.human, shard.cells)
+		bs := humanCount(cfg.human, shard.bytes)
 		//
 		tbl.SetRow(uint(i+1), termio.NewText(sid), termio.NewText(cs), termio.NewText(bs))
 	}
@@ -263,7 +378,7 @@ func printTraceStats[F field.Element[F]](cfg traceStatsConfig[F], shards ...trac
 	tbl.Print(AnsiEscapes)
 }
 
-func getShardStats[F field.Element[F]](shard trace.Shard[F]) (uint64, uint64) {
+func getShardStats[F field.Element[F]](shard trace.Shard[F]) shardStats {
 	var (
 		cells uint64
 		bytes uint64
@@ -275,7 +390,7 @@ func getShardStats[F field.Element[F]](shard trace.Shard[F]) (uint64, uint64) {
 		bytes += moduleBytesSummariser(mod)
 	}
 	//
-	return cells, bytes
+	return shardStats{cells, bytes}
 }
 
 // humanCount formats a (potentially large) count using K/M/G suffixes, matching
@@ -293,25 +408,7 @@ func humanCount(enable bool, total uint64) string {
 	}
 }
 
-type traceStatsConfig[F field.Element[F]] struct {
-	human        bool
-	summarisers  []ModuleSummariser[F]
-	sortedBy     util.Option[uint]
-	maxCellWidth uint
-}
-
-// printModuleStats prints a per-module summary for a raw (row-major) trace, much
-// like the corset trace command's module listing.  For each module it reports
-// the column count, line (row) count, total bit-width, total cells, non-zero
-// cells and total bytes.  Native (field-element) limbs, which have no fixed
-// bit-width, are excluded from the bit-width and byte totals.
-func printModuleStats[F field.Element[F]](cfg traceStatsConfig[F], shards ...trace.Shard[F]) {
-	for _, shard := range shards {
-		printShardModuleStats(cfg, shard)
-	}
-}
-
-func printShardModuleStats[F field.Element[F]](cfg traceStatsConfig[F], shard trace.Shard[F]) {
+func buildShardModuleStats[F field.Element[F]](cfg traceStatsConfig[F], shard trace.Shard[F]) *termio.FormattedTable {
 	var (
 		n   = shard.Width()
 		tbl = termio.NewFormattedTable(uint(len(cfg.summarisers))+1, n+1)
@@ -339,9 +436,6 @@ func printShardModuleStats[F field.Element[F]](cfg traceStatsConfig[F], shard tr
 	}
 	//
 	tbl.SetMaxWidths(cfg.maxCellWidth)
-	// Separate the summary stats (above) from the per-module stats (below) with a
-	// horizontal rule as wide as the module table.
-	fmt.Println(strings.Repeat("-", int(tbl.PrintedWidth())))
 	// Sort modules (descending) by cell count, skipping the title row.
 	if cfg.sortedBy.HasValue() {
 		sorter := termio.NewTableSorter().
@@ -351,7 +445,9 @@ func printShardModuleStats[F field.Element[F]](cfg traceStatsConfig[F], shard tr
 		tbl.Sort(1, sorter)
 	}
 	//
-	tbl.Print(AnsiEscapes)
+	tbl.SetRule(n + 1)
+	//
+	return tbl
 }
 
 // ============================================================================

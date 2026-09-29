@@ -110,7 +110,6 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) BuildConfig {
 	var (
 		build                 BuildConfig
-		fastMode              = GetFlag(cmd, "fast")
 		maxStaticHeight       = GetUint(cmd, "max-static-height")
 		verbosity             = GetVerboseLevel(cmd)
 		padding               = GetString(cmd, "padding")
@@ -135,8 +134,6 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	default:
 		log.SetLevel(log.WarnLevel)
 	}
-	// Configure fast mode
-	build.fastMode = fastMode
 	// Configure padding strategy
 	build.padding = strategy
 	// Configure go generator
@@ -179,7 +176,6 @@ func init() {
 	rootCmd.Flags().Bool("version", false, "Report version of this executable")
 	//
 	rootCmd.PersistentFlags().Bool("show-static", false, "Show static tables in the MIR/AIR output")
-	rootCmd.PersistentFlags().BoolP("fast", "f", false, "Fast-mode execution (no tracing, no constraints)")
 	rootCmd.PersistentFlags().CountP("verbose", "v",
 		"verbosity: default NONE; -v (INFO) info logging, -vv (DEBUG) machine execution steps, "+
 			"-vvv (PRINTF) additionally all printf output")

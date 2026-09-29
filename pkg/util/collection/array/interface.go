@@ -47,6 +47,8 @@ type MutArray[T any] interface {
 	Append(T) MutArray[T]
 	// Returns current height of array being built
 	Height() uint
+	// Set value at given row
+	Set(uint, T)
 }
 
 // writeUvarint writes an unsigned varint into the given buffer.

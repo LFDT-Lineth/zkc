@@ -419,6 +419,15 @@ func FlatMap[S, T any](items []S, fn func(S) []T) []T {
 	return nitems
 }
 
+// Apply a function over every element of an array.  This may seem like a
+// slightly odd function, since its really just a for-loop.  However, the point
+// is that it provides mirror for ParallelApply.
+func Apply[S any](items []S, fn func(uint, S)) {
+	for i, t := range items {
+		fn(uint(i), t)
+	}
+}
+
 // Map an array from one type to another using a given mapping (or projection)
 // function.
 func Map[S, T any](items []S, mapping func(uint, S) T) []T {
@@ -431,13 +440,29 @@ func Map[S, T any](items []S, mapping func(uint, S) T) []T {
 	return nitems
 }
 
-// Apply a function over every element of an array.  This may seem like a
-// slightly odd function, since its really just a for-loop.  However, the point
-// is that it provides mirror for ParallelApply.
-func Apply[S any](items []S, fn func(uint, S)) {
-	for i, t := range items {
-		fn(uint(i), t)
+// Reduce (sequentially) reduces an array of items to a single item using a
+// given reduction function f().  The reduction is applied starting from the
+// least indices.  If len(items) == 0, the default T is returned.  If len(items)
+// == 1, items[0] is returned.  Otherwise, acc = f(items[0],items[1]) is
+// computed first, then acc = f(acc,items[2]), etc.
+func Reduce[T any](items []T, f func(T, T) T) T {
+	var acc T
+	//
+	if len(items) != 0 {
+		acc = items[0]
+		//
+		for _, v := range items[1:] {
+			acc = f(acc, v)
+		}
 	}
+	//
+	return acc
+}
+
+// MapReduce applies a Map over a given array of items, followed by a Reduce on
+// the result.
+func MapReduce[S, T any](items []S, mapping func(uint, S) T, reducer func(T, T) T) T {
+	return Reduce(Map(items, mapping), reducer)
 }
 
 // MergeSorted combines two sorted arrays whilst maintaining the sorted

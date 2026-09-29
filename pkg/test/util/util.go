@@ -117,6 +117,14 @@ func checkZkcModuleReachabilityFor[F field.Element[F], W vm.Word[W]](program ast
 	return errors
 }
 
+func failNow(t *testing.T, errs ...error) {
+	for _, err := range errs {
+		t.Errorf("unexpected tracing failure: %v", err)
+	}
+	//
+	t.FailNow()
+}
+
 func failIf[S, T any](t *testing.T, errs ...T) {
 	var failNow bool
 	//

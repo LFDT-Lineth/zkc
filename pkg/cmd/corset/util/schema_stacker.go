@@ -23,7 +23,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
-	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -175,7 +174,7 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 			//
 			stats.Log("arithmetizion")
 			//
-			stack.concreteSchemas = append(stack.concreteSchemas, schema.Any(airSchema))
+			stack.concreteSchemas = append(stack.concreteSchemas, airSchema)
 			stack.names = append(stack.names, "AIR")
 		}
 		// Assign source map used to build the stack
