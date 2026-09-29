@@ -20,6 +20,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -73,8 +74,7 @@ func (p *BitwidthGadget[F]) Constrain(ref register.Ref, bitwidth uint) {
 	case bitwidth <= p.maxRangeConstraint:
 		handle := fmt.Sprintf("%s:u%d", reg.Name(), bitwidth)
 		// Add range constraint
-		module.AddConstraint(air.NewRangeConstraint[F](handle, module.Id(),
-			[]register.Id{ref.Register()}, []uint{bitwidth}))
+		module.AddConstraint(ranged.NewConstraint[F](handle, module.Id(), ref.Register(), bitwidth))
 		// Done
 		return
 	default:
@@ -148,7 +148,7 @@ func (p *BitwidthGadget[F]) applyRecursiveBitwidthGadget(ref register.Ref, bitwi
 		sources = []lookup.Vector{lookup.UnfilteredVector(mod.Id(), ref.Register())}
 	)
 	//
-	mod.AddConstraint(air.NewLookupConstraint[F](lookupHandle, targets, sources))
+	mod.AddConstraint(lookup.NewConstraint[F](lookupHandle, targets, sources))
 	// Add column to assignment so its proof is included
 	typeModule := p.schema.Module(mid)
 	//
@@ -221,7 +221,7 @@ func (p *typeDecomposition[F]) AddSource(source register.Ref) {
 
 // Compute computes the values of columns defined by this assignment.
 // This requires computing the value of each byte column in the decomposition.
-func (p *typeDecomposition[F]) Compute(tr trace.Shard[F], schema sc.AnySchema[F],
+func (p *typeDecomposition[F]) Compute(tr trace.Shard[F], schema sc.Schema[F],
 ) ([]array.Array[F], error) {
 	// Read inputs
 	sources := assignment.ReadRegistersRef(tr, p.sources...)
@@ -245,7 +245,7 @@ func (p *typeDecomposition[F]) Bounds(_ sc.ModuleId) util.Bounds {
 // Consistent performs some simple checks that the given schema is consistent.
 // This provides a double check of certain key properties, such as that
 // registers used for assignments are large enough, etc.
-func (p *typeDecomposition[F]) Consistent(schema sc.AnySchema[F]) []error {
+func (p *typeDecomposition[F]) Consistent(schema sc.Schema[F]) []error {
 	return nil
 }
 
@@ -267,7 +267,7 @@ func (p *typeDecomposition[F]) RegistersWritten() []register.Ref {
 
 // Lisp converts this schema element into a simple S-Expression, for example
 // so it can be printed.
-func (p *typeDecomposition[F]) Lisp(schema sc.AnySchema[F]) sexp.SExp {
+func (p *typeDecomposition[F]) Lisp(schema sc.Schema[F]) sexp.SExp {
 	var (
 		targets = sexp.EmptyList()
 		sources = sexp.EmptyList()

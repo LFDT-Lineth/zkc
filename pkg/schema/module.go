@@ -67,7 +67,7 @@ type Module[F field.Element[F]] interface {
 	// Consistent applies a number of internal consistency checks.  Whilst not
 	// strictly necessary, these can highlight otherwise hidden problems as an aid
 	// to debugging.
-	Consistent(fieldWidth uint, schema AnySchema[F]) []error
+	Consistent(fieldWidth uint, schema Schema[F]) []error
 	// StaticContents returns the contents of this module, assuming it
 	// corresponds with a static reference table.  Each entry in the entries
 	// array returned should have Width() elements and correspond to a row in
@@ -126,7 +126,7 @@ func (p *Table[F, C]) Constraints() iter.Iterator[Constraint[F]] {
 // Consistent applies a number of internal consistency checks.  Whilst not
 // strictly necessary, these can highlight otherwise hidden problems as an aid
 // to debugging.
-func (p *Table[F, C]) Consistent(fieldWidth uint, schema AnySchema[F]) []error {
+func (p *Table[F, C]) Consistent(fieldWidth uint, schema Schema[F]) []error {
 	var errors []error
 	// Check constraints
 	for _, c := range p.constraints {

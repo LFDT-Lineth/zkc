@@ -62,11 +62,11 @@ func runVerifyCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	// Identify concrete (i.e. lowest) schema
 	schema := stack.ConcreteSchema()
 	//
-	switch v := schema.(type) {
-	case mir.Schema[F]:
+	switch stack.ConcreteIrName() {
+	case "MIR":
 		// only translate mir schema if explicitly specified
 		if mirEnable {
-			picusLowering := picus.NewMirPicusTranslator(v)
+			picusLowering := picus.NewMirPicusTranslator(schema.(mir.Schema[F]))
 			picusProgram := picusLowering.Translate()
 
 			if _, err := picusProgram.WriteTo(os.Stdout); err != nil {
@@ -74,14 +74,16 @@ func runVerifyCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 				os.Exit(1)
 			}
 		}
-	case air.Schema[F]:
-		picusLowering := picus.NewAirPicusTranslator(v)
+	case "AIR":
+		picusLowering := picus.NewAirPicusTranslator(schema.(air.Schema[F]))
 		picusProgram := picusLowering.Translate()
 
 		if _, err := picusProgram.WriteTo(os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing out Picus program: %v", err)
 			os.Exit(1)
 		}
+	default:
+		panic(fmt.Sprintf("unknown representation (%s)", stack.ConcreteIrName()))
 	}
 }
 

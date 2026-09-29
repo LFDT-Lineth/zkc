@@ -25,12 +25,12 @@ import (
 // BuildableModule embodies the notion of a module which can be initialised from
 // the various required components.  This provides a useful way for constructing
 // modules once all the various pieces of information have been finalised.
-type BuildableModule[F field.Element[F], C schema.Constraint[F], M any] interface {
+type BuildableModule[F field.Element[F], M any] interface {
 	Init(name module.Name, public, private, synthetic, native, static bool) M
 	// Add one or more assignments to this buildable module
 	AddAssignments(assignments ...schema.Assignment[F])
 	// Add one or more constraints to this buildable module
-	AddConstraints(constraints ...C)
+	AddConstraints(constraints ...schema.Constraint[F])
 	// Add one or more registers to this buildable module.
 	AddRegisters(registers ...register.Register)
 	// Set contents for static module
@@ -38,21 +38,21 @@ type BuildableModule[F field.Element[F], C schema.Constraint[F], M any] interfac
 }
 
 // BuildSchema builds all modules defined within a give SchemaBuilder instance.
-func BuildSchema[M BuildableModule[F, C, M], F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]](
-	p SchemaBuilder[F, C, T]) []M {
+func BuildSchema[M BuildableModule[F, M], F field.Element[F], T term.Expr[F, T]](
+	p SchemaBuilder[F, T]) []M {
 	//
 	var modules = make([]M, len(p.modules))
 	//
 	for i, m := range p.modules {
-		modules[i] = BuildModule[F, C, T, M](m)
+		modules[i] = BuildModule[F, T, M](m)
 	}
 	//
 	return modules
 }
 
 // BuildModule builds a module from a given ModuleBuilder instance.
-func BuildModule[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T], M BuildableModule[F, C, M]](
-	m ModuleBuilder[F, C, T]) M {
+func BuildModule[F field.Element[F], T term.Expr[F, T], M BuildableModule[F, M]](
+	m ModuleBuilder[F, T]) M {
 	//
 	var module M
 	// Build it
@@ -72,52 +72,43 @@ func BuildModule[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T], 
 // SchemaBuilder is a mechanism for constructing mixed schemas which attempts to
 // simplify the problem of mapping source-level names to e.g. module-specific
 // register indexes.
-type SchemaBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]] struct {
+type SchemaBuilder[F field.Element[F], T term.Expr[F, T]] struct {
 	// Modmap maps modules identifers to modules
 	modmap map[module.Name]uint
-	// Externs represent modules which have already been constructed.  These
-	// will be given the lower module identifiers, since they are already
-	// packaged and, hence, we must avoid breaking thein linkage.
-	externs []register.ConstMap
 	// Modules being constructed
-	modules []ModuleBuilder[F, C, T]
+	modules []ModuleBuilder[F, T]
 }
 
 // NewSchemaBuilder constructs a new schema builder with a given number of
 // externally defined modules.  Such modules are allocated module indices first.
-func NewSchemaBuilder[F field.Element[F], C schema.Constraint[F], T term.Expr[F, T]]() SchemaBuilder[F, C, T] {
+func NewSchemaBuilder[F field.Element[F], T term.Expr[F, T]]() SchemaBuilder[F, T] {
 	var (
 		modmap = make(map[module.Name]uint, 0)
 	)
 	//
-	return SchemaBuilder[F, C, T]{modmap, nil, nil}
+	return SchemaBuilder[F, T]{modmap, nil}
 }
 
 // NewModule constructs a new, empty module and returns its unique module
 // identifier.
-func (p *SchemaBuilder[F, C, T]) NewModule(name module.Name, public, private, synthetic, static, native bool,
+func (p *SchemaBuilder[F, T]) NewModule(name module.Name, public, private, synthetic, static, native bool,
 ) uint {
-	var mid = uint(len(p.externs) + len(p.modules))
+	var mid = uint(len(p.modules))
 	// Sanity check this module is not already declared
 	if _, ok := p.modmap[name]; ok {
 		panic(fmt.Sprintf("module \"%s\" already declared", name))
 	}
 	//
 	p.modules = append(p.modules,
-		NewModuleBuilder[F, C, T](name, mid, public, private, synthetic, static, native))
+		NewModuleBuilder[F, T](name, mid, public, private, synthetic, static, native))
 	p.modmap[name] = mid
 	//
 	return mid
 }
 
-// Externs provides direct access to the external modules.
-func (p *SchemaBuilder[F, C, T]) Externs() []register.ConstMap {
-	return p.externs
-}
-
 // HasModule checks whether a moduleregister of the given name exists already
 // and,if so, returns its index.
-func (p *SchemaBuilder[F, C, T]) HasModule(name module.Name) (uint, bool) {
+func (p *SchemaBuilder[F, T]) HasModule(name module.Name) (uint, bool) {
 	// Lookup module associated with this name
 	mid, ok := p.modmap[name]
 	// That's it.
@@ -125,18 +116,12 @@ func (p *SchemaBuilder[F, C, T]) HasModule(name module.Name) (uint, bool) {
 }
 
 // Module returns the builder for the given module based on its index.
-func (p *SchemaBuilder[F, C, T]) Module(mid uint) ModuleBuilder[F, C, T] {
-	var n uint = uint(len(p.externs))
-	// Sanity check
-	if mid < n {
-		return NewExternModuleBuilder[F, C, T](mid, p.externs[mid])
-	}
-	//
-	return p.modules[mid-n]
+func (p *SchemaBuilder[F, T]) Module(mid uint) ModuleBuilder[F, T] {
+	return p.modules[mid]
 }
 
 // ModuleOf returns the builder for the given module based on its name.
-func (p *SchemaBuilder[F, C, T]) ModuleOf(name module.Name) ModuleBuilder[F, C, T] {
+func (p *SchemaBuilder[F, T]) ModuleOf(name module.Name) ModuleBuilder[F, T] {
 	id, ok := p.modmap[name]
 	//
 	if ok {

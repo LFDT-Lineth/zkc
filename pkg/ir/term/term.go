@@ -103,10 +103,10 @@ type Testable[F field.Element[F]] interface {
 	Contextual
 	// TestAt evaluates this expression in a given tabular context and checks it
 	// against zero. Observe that if this expression is *undefined* within this
-	// context then it returns "nil".  An expression can be undefined for
+	// context then it returns an error.  An expression can be undefined for
 	// several reasons: firstly, if it accesses a row which does not exist (e.g.
 	// at index -1); secondly, if it accesses a register which does not exist.
-	TestAt(uint, trace.Module[F], register.Map) (bool, uint, error)
+	TestAt(uint, trace.Module[F], register.Map) (bool, error)
 	// Lisp converts this schema element into a simple S-Expression, for example
 	// so it can be printed.
 	Lisp(bool, register.Map) sexp.SExp
@@ -141,7 +141,7 @@ func ComplexityOfTerm[F field.Element[F], T Expr[F, T]](c T) uint {
 		var r = uint(0)
 		//
 		for _, arg := range t.Args {
-			r = max(r, ComplexityOfTerm[F](arg))
+			r = max(r, ComplexityOfTerm(arg))
 		}
 		//
 		return r
@@ -151,7 +151,7 @@ func ComplexityOfTerm[F field.Element[F], T Expr[F, T]](c T) uint {
 		var r = uint(0)
 		//
 		for _, arg := range t.Args {
-			r += ComplexityOfTerm[F](arg)
+			r += ComplexityOfTerm(arg)
 		}
 		//
 		return r
@@ -161,7 +161,7 @@ func ComplexityOfTerm[F field.Element[F], T Expr[F, T]](c T) uint {
 		var r = uint(0)
 		//
 		for _, arg := range t.Args {
-			r = max(r, ComplexityOfTerm[F](arg))
+			r = max(r, ComplexityOfTerm(arg))
 		}
 		//
 		return r

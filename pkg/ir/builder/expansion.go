@@ -26,7 +26,7 @@ import (
 // TraceExpansion expands a given trace according to a given schema. More
 // specifically, that means computing the actual values for any assignments.
 // This is done using a straightforward sequential algorithm.
-func TraceExpansion[F field.Element[F]](config Config, schema sc.AnySchema[F], tr trace.Shard[F],
+func TraceExpansion[F field.Element[F]](config Config, schema sc.Schema[F], tr trace.Shard[F],
 ) (trace.Shard[F], error) {
 	//
 	var (
@@ -46,7 +46,7 @@ func TraceExpansion[F field.Element[F]](config Config, schema sc.AnySchema[F], t
 // SequentialTraceExpansion expands a given trace according to a given schema.
 // More specifically, that means computing the actual values for any
 // assignments.  This is done using a straightforward sequential algorithm.
-func SequentialTraceExpansion[F field.Element[F]](schema sc.AnySchema[F], tr trace.Shard[F]) (trace.Shard[F], error) {
+func SequentialTraceExpansion[F field.Element[F]](schema sc.Schema[F], tr trace.Shard[F]) (trace.Shard[F], error) {
 	var (
 		err      error
 		expander = NewExpander(schema.Width(), schema.Assignments())
@@ -75,7 +75,7 @@ func SequentialTraceExpansion[F field.Element[F]](schema sc.AnySchema[F], tr tra
 // continuous approach.  This is for two reasons: firstly, the latter would
 // require locks that would slow down evaluation performance; secondly, the vast
 // majority of jobs are run in the very first wave.
-func ParallelTraceExpansion[F field.Element[F]](batchsize uint, schema sc.AnySchema[F], tr trace.Shard[F],
+func ParallelTraceExpansion[F field.Element[F]](batchsize uint, schema sc.Schema[F], tr trace.Shard[F],
 ) (trace.Shard[F], error) {
 	var (
 		batchNum = 0

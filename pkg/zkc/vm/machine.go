@@ -158,17 +158,16 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string][]byte, strategy 
 // the given strategy.  Two kinds of error can arise during this: (i) a
 // recognised machine failure which is expected under the right circumstances
 // (e.g. executing a fail instruction); (ii) an internal machine failure which
-// is not expected (and signals some kind of bug somewhere).  The traceable flag
-// holds when the given execution can be traced (i.e. when no errors in the
+// is not expected (and signals some kind of bug somewhere).  A shard is
+// returned when the given execution can be traced (i.e. when no errors in the
 // latter category arise).
 func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], input map[string][]byte,
-) (trace Shard[F], output map[string][]byte, errs []error) {
+) (trace util.Option[Shard[F]], output map[string][]byte, errs []error) {
 	//
 	var (
+		traceable bool
 		// constracter tracer
 		tracer T
-		//
-		traceable bool
 	)
 	// Initialise the tracer
 	tracer = tracer.Init(pr)
@@ -176,7 +175,7 @@ func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], inp
 	bci := constructTracingInterpreter(pr, tracer)
 	// Execute machine in chunks of 1K steps
 	if output, traceable, errs = BootAndExecute(bci, input, math.MaxUint); !traceable {
-		return Shard[F]{}, nil, errs
+		return util.None[Shard[F]](), nil, errs
 	}
 	//
 	var stats = util.NewPerfStats()
@@ -187,7 +186,7 @@ func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], inp
 	// Done
 	stats.Log("Trace processing")
 	// Success, build trace
-	return tracer.Build(), output, errs
+	return util.Some(tracer.Build()), output, errs
 }
 
 // RestoreAndTraceFor restores a machine from the given checkpoint and traces
@@ -198,13 +197,12 @@ func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], inp
 // traceable flag holds when the given execution can be traced (i.e. when no
 // errors in the latter category arise).
 func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], cp CheckPoint,
-	fn string, nsteps uint64) (steps uint64, trace Shard[F], errs []error) {
+	fn string, nsteps uint64) (steps uint64, trace util.Option[Shard[F]], errs []error) {
 	//
 	var (
+		traceable bool
 		// constracter tracer
 		tracer T
-		//
-		traceable bool
 	)
 	// Initialise the tracer
 	tracer = tracer.Init(pr)
@@ -212,20 +210,20 @@ func RestoreAndTraceFor[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W
 	bci := constructTraceForInterpreter(pr, fn, nsteps, tracer)
 	// Sanity check error arising construct the interpreter.
 	if bci == nil {
-		return 0, Shard[F]{}, []error{
+		return 0, util.None[Shard[F]](), []error{
 			fmt.Errorf("unknown function \"%s\"", fn),
 		}
 	}
 	// Execute the given machine
 	if steps, traceable, errs = RestoreAndExecute(bci, cp, math.MaxUint); !traceable {
-		return steps, Shard[F]{}, errs
+		return steps, util.None[Shard[F]](), errs
 	}
 	// Apply post processing
 	array.Apply(bci.ExtractMemory(), func(_ uint, p util.Pair[uint16, RuntimeMemory[W]]) {
 		tracer.TraceMemory(p.Left, p.Right, pr.Field())
 	})
 	//
-	return steps, tracer.Build(), errs
+	return steps, util.Some(tracer.Build()), errs
 }
 
 // RestoreAndExecute restores the given machine from a checkpoint, and continues

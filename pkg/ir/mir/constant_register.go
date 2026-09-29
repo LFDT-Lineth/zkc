@@ -15,6 +15,7 @@ package mir
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -52,7 +53,7 @@ func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.
 		assignment.NewComputedRegister[F](rid, term.Const[F, Term[F]](val), mid))
 	// add constraint
 	module.AddConstraints(
-		NewVanishingConstraint(val.String(), mid, util.None[int](),
+		vanishing.NewConstraint(val.String(), mid, util.None[int](),
 			term.Equals[F, LogicalTerm[F], Term[F]](
 				term.NewRegisterAccess[F, Term[F]](rid, reg.Width(), 0),
 				term.Const64[F, Term[F]](uint64(reg.ConstValue())))))
