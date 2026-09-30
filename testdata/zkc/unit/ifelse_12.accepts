@@ -1,0 +1,5 @@
+{ "data": "0x00_02_05_07", "expected": "0x07" }
+{ "data": "0x00_03_00_09", "expected": "0x0c" }
+{ "data": "0x01_02_05_07", "expected": "0x0a" }
+{ "data": "0x00_00_01_02", "expected": "0x00" }
+{ "data": "0x02_01_03_04", "expected": "0x06" }
