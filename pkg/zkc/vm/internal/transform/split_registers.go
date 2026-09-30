@@ -266,7 +266,22 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.Dispatch[W]:
 			return split.Dispatch(limbsMap, c)
 		case *bytecode.CheckCast[W]:
-			panic("CheckCast is not supposed to happen before splitting")
+			var (
+				bytecodes []Bytecode[W]
+				bitwidth  = limbsMap.Register(c.Target).Bitwidth().Unwrap()
+			)
+			// Split cast
+			for _, r := range split.ApplyLimbsMapReversed(limbsMap, c.Target) {
+				var (
+					ith       = limbsMap.Limb(r)
+					ith_width = min(bitwidth, ith.Bitwidth().Unwrap())
+				)
+				//
+				bytecodes = append(bytecodes, bytecode.NewCheckCast[W](r, util.Cast[uint16](ith_width)))
+				bitwidth -= ith_width
+			}
+			//
+			return bytecodes
 		default:
 			panic(fmt.Sprintf("unsupported bytecode (%T)", c))
 		}

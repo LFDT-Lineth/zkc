@@ -631,8 +631,12 @@ func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.
 		// uint upcast
 		return p.compileExpr(e.Expr, e_bitwidth, mapping, targets)
 	default:
+		var (
+			bytecodes = p.compileRootExpr(e.Expr, mapping, targets)
+			casts     = p.checkCast(targets, e_bitwidth)
+		)
 		// uint downcast (of some kind).
-		return p.compileRootExpr(e.Expr, mapping, targets)
+		return append(bytecodes, casts...)
 	}
 }
 
@@ -1215,4 +1219,46 @@ func (p *StmtCompiler) isConstantAccess(e Expr) bool {
 	_, ok = p.components[ne.Name.Index].(*decl.ResolvedConstant)
 	//
 	return ok
+}
+
+// checkCast adds a checkcast instruction if the bitwidth of the right-hand side
+// does not fit within the target register(s), resolving widths against the
+// given register map.
+func (p *StmtCompiler) checkCast(lhs []RegisterId, rhs util.Option[uint]) []Bytecode {
+	var (
+		last = len(lhs) - 1
+		// Determine bitwidth of lhs
+		bitwidth = BitwidthOf(p.registers, lhs...)
+		codes    []Bytecode
+	)
+	// Add case if either: (i) the rhs has no specific bitwidth; or (2) the
+	// bitwidth of the rhs overflows the lhs.
+	if bitwidth.HasValue() && (rhs.IsEmpty() || bitwidth.Unwrap() < rhs.Unwrap()) {
+		var (
+			last      = lhs[last]
+			lastWidth = util.Cast[uint16](p.registers[last].Bitwidth().Unwrap())
+		)
+		// yes
+		codes = append(codes, vm.CheckCast[vm.Uint](last, lastWidth))
+	}
+	//
+	return codes
+}
+
+// BitwidthOf returns the accumulated bitwidth of the given set of registers, or
+// none if there exists a native register.
+func BitwidthOf[W vm.Word[W]](regmap []vm.Register[W], regs ...RegisterId) util.Option[uint] {
+	var bitwidth uint
+	//
+	for _, r := range regs {
+		bw := regmap[r].Bitwidth()
+		//
+		if bw.IsEmpty() {
+			return bw
+		}
+		//
+		bitwidth += bw.Unwrap()
+	}
+	//
+	return util.Some(bitwidth)
 }

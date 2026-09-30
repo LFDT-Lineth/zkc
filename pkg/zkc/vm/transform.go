@@ -49,7 +49,7 @@ func TransformForExecutionRaw[W1 Word[W1], W2 Word[W2]](p Program[W1], word Word
 			InlineFunctions[W1](),
 			Vectorize[W1](),
 			SplitRegisters[W1](word),
-			InsertCheckCasts[W1](),
+			//InsertCheckCasts[W1](),
 		)
 	)
 	// Sanity check
@@ -83,7 +83,7 @@ func TransformForTracing[W1 Word[W1], W2 Word[W2]](p Program[W1], ignores ...str
 			LowerOrXorAnd[W1](),
 			FlattenLookupAccess[W1](),
 			AddRangeConstraints[W1](),
-			InsertCheckCasts[W1](),
+			//InsertCheckCasts[W1](),
 		)
 	)
 	// ignore requested stages
