@@ -313,8 +313,22 @@ func (p callRegisterReader[F]) RegisterWidths(ids ...register.Id) []uint {
 	return widths
 }
 
-func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
-	return mirc.Variable[F](id, p.regs[id.Unwrap()].Width(), 0)
+// ReadRegister constructs a suitable accessor for referring to a given register.
+// This applies forwarding as appropriate.
+func (p callRegisterReader[F]) ReadRegister(regId register.Id, forwarding bool) Expr[F] {
+	var (
+		reg = p.Register(regId)
+	)
+	//
+	if reg.IsInput() {
+		// Inputs don't need to refer back
+		return mirc.Variable[F](regId, bitwidthOf(reg), 0)
+	} else if forwarding {
+		// Forwarded
+		return mirc.Variable[F](regId, bitwidthOf(reg), 0)
+	}
+	// Not forwarded
+	return mirc.Variable[F](regId, bitwidthOf(reg), -1)
 }
 
 // emitCallLookup constructs and adds a single lookup constraint mapping the
