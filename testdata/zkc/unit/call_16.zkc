@@ -1,0 +1,32 @@
+pub input data(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+
+// Regression test for register allocation (see Test_ZkcBench_Keccak).  The
+// call to id() ends the first trace row, so b is tested (b == 0) in a later
+// row than the one it is written in.  Within that row, b is dead once tested
+// and the carry c is only written afterwards, hence liveness alone permits
+// coalescing b and c.  However, the selector gating the final call to id() is
+// computed from the row's (final) value of b.  When b == 0 and the addition
+// carries, coalescing makes that selector read the carry instead, breaking the
+// call lookup.
+fn main() {
+    var b:u1 = data[0] as u1
+    var x:u8 = data[1]
+    //
+    x = id(x)
+    //
+    if b == 0 {
+        var c:u1, z:u8
+        c::z = (x as u9) + 0x80
+        if c == 1 {
+            result[0] = z
+            return
+        }
+    }
+    //
+    result[0] = id(x)
+}
+
+fn id(x:u8) -> (y:u8) {
+    y = x
+}

@@ -1,0 +1,40 @@
+pub input data(address:u16) -> (byte:u8)
+pub output result(address:u16) -> (byte:u8)
+pub output result2(address:u16) -> (byte:u8)
+
+// Regression test for forwarding within the arithmetic (one-hot) form of a
+// lookup's source selector.  The write to result2 is reached from two arms of
+// the switch, so its selector is bound as a sum over the case bits, with d
+// guarding the first arm.  The call to g() ends the first row, hence d is not
+// forwarded on the switch's row and must be read from the previous row: the
+// current row reassigns d on both the writing and the returning path.
+fn main() {
+    result[0] = f(data[0], data[1] as u1)
+}
+
+fn f(x:u8, c:u1) -> (z:u8) {
+    var d:u1 = c
+    var v:u8 = x
+    z = 0
+    v = g(v)
+    switch v {
+        case 2: {
+            if d == 0 {
+                d = 1
+                return
+            }
+        }
+        case 3: {
+        }
+        default: {
+            return
+        }
+    }
+    result2[0] = v
+    z = v
+    d = 0
+}
+
+fn g(x:u8) -> (y:u8) {
+    y = x + 1
+}
