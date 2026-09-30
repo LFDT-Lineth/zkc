@@ -25,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
 )
 
 func init() {
@@ -79,6 +80,11 @@ func TestFitsWithin(t *testing.T) {
 		var e goldilocks.Element
 		return e.SetBytes(v.Bytes()).FitsWithin(w)
 	}, 63)
+	//
+	fits(t, "mamabear", func(v *big.Int, w uint) bool {
+		var e mamabear.Element
+		return e.SetBytes(v.Bytes()).FitsWithin(w)
+	}, 48)
 	// The modulus is 253 bits wide, so 252 is the largest width every value is
 	// guaranteed to be representable below.  This is the only field whose values
 	// span multiple limbs, hence the only one exercising the wide branches.

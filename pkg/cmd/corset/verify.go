@@ -25,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
 	"github.com/spf13/cobra"
 )
 
@@ -43,6 +44,7 @@ var verifyCmd = []FieldAgnosticCmd{
 	{field.GF_8209, runVerifyCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runVerifyCmd[koalabear.Element]},
 	{field.GOLDILOCKS_32, runVerifyCmd[goldilocks.Element]},
+	{field.MAMABEAR_32, runVerifyCmd[mamabear.Element]},
 	{field.BLS12_377, runVerifyCmd[bls12_377.Element]},
 }
 

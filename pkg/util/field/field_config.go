@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
 )
 
 // GF_251 is teany tiny prime field used exclusively for testing.
@@ -35,6 +36,11 @@ var KOALABEAR_24 = Config{"KOALABEAR_24", 30, 24}
 // GOLDILOCKS_32 corresponds to the Goldilocks field with a 32bit register size.
 var GOLDILOCKS_32 = Config{"GOLDILOCKS_32", 63, 32}
 
+// MAMABEAR_32 corresponds to the MamaBear field with a 32bit register size.
+// The modulus (2^49 - 2^34 + 1) is 49 bits wide, hence every 48bit value is
+// representable.
+var MAMABEAR_32 = Config{"MAMABEAR_32", 48, 32}
+
 // BLS12_377 is the defacto default field at this time.
 var BLS12_377 = Config{"BLS12_377", 252, 160}
 
@@ -45,6 +51,7 @@ var FIELD_CONFIGS = []Config{
 	KOALABEAR_16,
 	KOALABEAR_24,
 	GOLDILOCKS_32,
+	MAMABEAR_32,
 	BLS12_377,
 }
 
@@ -71,6 +78,8 @@ func (p Config) Modulus() *big.Int {
 		return big.NewInt(koalabear.Modulus)
 	case GOLDILOCKS_32:
 		return goldilocks.Modulus
+	case MAMABEAR_32:
+		return mamabear.Modulus
 	case BLS12_377:
 		return bls12_377.Modulus
 	default:
