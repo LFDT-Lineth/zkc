@@ -1,0 +1,20 @@
+pub input data(address:u8) -> (byte:u8)
+pub input expected(address:u1) -> (val:u8)
+
+// The read of data[x] need not snapshot x: the later write to x lies on the
+// mutually exclusive else branch, so never follows the read on the same row.
+fn main() {
+    var x:u8
+    var y:u8
+    if data[0] == 0 {
+        x = data[1]
+        y = data[x]
+    } else {
+        x = data[2]
+        y = x
+    }
+    //
+    if (y + x) != expected[0] {
+        fail
+    }
+}

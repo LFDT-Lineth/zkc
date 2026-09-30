@@ -424,6 +424,10 @@ func Test_ZkcUnit_IfElse_11(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/ifelse_11", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_IfElse_12(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ifelse_12", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Constant Tests
 // ===================================================================
@@ -624,6 +628,10 @@ func Test_ZkcUnit_While_03(t *testing.T) {
 
 func Test_ZkcUnit_While_04(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/while_04", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_While_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/while_05", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_For_01(t *testing.T) {

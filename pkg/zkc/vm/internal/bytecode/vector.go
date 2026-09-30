@@ -377,6 +377,24 @@ func (p *Vector[W]) WriteMap() dfa.Result[dfa.Writes] {
 	return dfa.Construct(dfa.Writes{}, p.Bytecodes, writeDfaTransfer[W])
 }
 
+// ReachMap constructs the reach map for this vector instruction.
+//
+// For each bytecode, the reach map records — on entry to that bytecode — which
+// preceding bytecodes lie on some path to it.  For example, consider the
+// following sequence:
+//
+// skip_if ... 1; y = 0; ret; y = 1; ret
+//
+// Here, the final return is reachable from the skip_if and "y = 1", but not
+// from "y = 0".  Unlike the write map, this relates bytecodes to each other
+// (rather than to registers) and, hence, can distinguish a write occurring
+// after some bytecode on the same path from one occurring on a mutually
+// exclusive path.  For example, this identifies whether a register read by one
+// bytecode is subsequently overwritten on the same path (i.e. a write-after-read).
+func (p *Vector[W]) ReachMap() dfa.Result[dfa.Reaches] {
+	return dfa.Construct(dfa.Reaches{}, p.Bytecodes, reachDfaTransfer[W])
+}
+
 // BranchTable returns the branch table for this vector instruction, and also
 // its write map (since this is needed to compute the branch table anway). The
 // branch table maps a _branch condition_ to each bytecode in the vector.  This
@@ -455,6 +473,49 @@ func writeDfaTransfer[W word.Word[W]](offset uint, code Bytecode[W],
 	arcs = append(arcs, dfa.NewTransfer(nState, offset+1))
 	//
 	return arcs
+}
+
+// reachDfaTransfer is the data-flow transfer function for the reaches analysis
+// over a bytecode vector.  Its control-flow arcs mirror those of
+// writeDfaTransfer, except that every successor is reached via this bytecode.
+func reachDfaTransfer[W word.Word[W]](offset uint, code Bytecode[W],
+	state dfa.Reaches) []dfa.Transfer[dfa.Reaches] {
+	//
+	var (
+		arcs   []dfa.Transfer[dfa.Reaches]
+		nState = state.Visit(offset)
+	)
+	//
+	switch code := code.(type) {
+	case *Fail[W], *Ret[W], *Jmp[W]:
+		// Control-flow terminators: no fall-through within the vector.
+		return nil
+	case *Skip[W]:
+		// Unconditional skip: control transfers only to the branch target.
+		return append(arcs, dfa.NewTransfer(nState, offset+uint(code.Skip)+1))
+	case *SkipIf[W]:
+		// Conditional skip: join into the branch target, then fall through.
+		arcs = append(arcs, dfa.NewTransfer(nState, offset+uint(code.Skip)+1))
+	case *Switch[W]:
+		// Multiway skip: join into each case's branch target; the
+		// fall-through is added below.
+		for _, c := range code.Cases {
+			arcs = append(arcs, dfa.NewTransfer(nState, offset+uint(c.Skip)+1))
+		}
+	case *Dispatch[W]:
+		// One-hot dispatch: join into each case's branch target; the
+		// fall-through is added below.
+		for _, c := range code.Cases {
+			arcs = append(arcs, dfa.NewTransfer(nState, offset+uint(c.Skip)+1))
+		}
+	case *Call[W]:
+		if code.Never {
+			// Control-flow terminator: no fall-through within vector
+			return nil
+		}
+	}
+	// Transfer to the following bytecode.
+	return append(arcs, dfa.NewTransfer(nState, offset+1))
 }
 
 // branchTableTransfer is the data-flow transfer function for the branch-table
