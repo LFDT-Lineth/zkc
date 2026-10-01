@@ -16,8 +16,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"reflect"
 
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -26,30 +26,53 @@ func validateBytecodeProgram[W word.Word[W]](program Program[W]) error {
 	var (
 		errs    []error
 		modules = program.Modules()
-		names   = make(map[string]uint)
 	)
 	// A module identifier is a uint16, so 2^16 distinct modules are addressable.
 	if uint64(len(modules)) > uint64(math.MaxUint16)+1 {
 		errs = append(errs, fmt.Errorf("program has too many modules (%d)", len(modules)))
 	}
-	// Validate module-level invariants before constructing any environments.
-	for mid, module := range modules {
-		if isNilInterface(module) {
-			errs = append(errs, fmt.Errorf("module %d is nil", mid))
-			continue
-		}
+	// Simple validations
+	errs = append(errs, validateModuleNames(program)...)
+	errs = append(errs, validateModuleWidths(program)...)
+	errs = append(errs, validateModuleZeroRegisters(program)...)
+	// Validate all bytecode vectors
+	errs = append(errs, validateFunctionBytecode(program)...)
+	// Join all errors together
+	return errors.Join(errs...)
+}
 
+// Ensure all module names are unique
+func validateModuleNames[W word.Word[W]](program Program[W]) (errs []error) {
+	var names = make(map[string]uint)
+	//
+	for mid, module := range program.Modules() {
 		if previous, ok := names[module.Name()]; ok {
 			errs = append(errs, fmt.Errorf("module %d (%s): duplicate name (first used by module %d)",
 				mid, module.Name(), previous))
 		} else {
 			names[module.Name()] = uint(mid)
 		}
+	}
+	//
+	return errs
+}
+
+// Ensure no module is wider than permitted
+func validateModuleWidths[W word.Word[W]](program Program[W]) (errs []error) {
+	for mid, module := range program.Modules() {
 		// Note: DISCARD cannot be a valid register identifier.
 		if uint64(module.Width()) > uint64(math.MaxUint16) {
 			errs = append(errs, fmt.Errorf("module %d (%s): too many registers (%d)",
 				mid, module.Name(), module.Width()))
 		}
+	}
+	//
+	return errs
+}
+
+// Ensure no module has more than one zero register
+func validateModuleZeroRegisters[W word.Word[W]](program Program[W]) (errs []error) {
+	for mid, module := range program.Modules() {
 		// At most one zero register should exist per module.
 		var zeros []string
 
@@ -64,36 +87,19 @@ func validateBytecodeProgram[W word.Word[W]](program Program[W]) error {
 				mid, module.Name(), zeros))
 		}
 	}
-
-	for mid, module := range modules {
-		if isNilInterface(module) {
-			continue
-		}
-
-		fn, ok := module.(*descriptor.Function[W])
-		if !ok || fn.IsNative() {
-			continue
-		}
-
-		env := program.EnvironmentOf(uint16(mid))
-
-		for pc, vector := range fn.Vectors() {
-			location := fmt.Sprintf("function %s, vector %d", fn.Name(), pc)
-			for _, err := range vector.Validate(program.Field(), env) {
-				errs = append(errs, fmt.Errorf("%s: %w", location, err))
-			}
-		}
-	}
-
-	return errors.Join(errs...)
+	//
+	return errs
 }
 
-func isNilInterface(value any) bool {
-	if value == nil {
-		return true
+// Ensure function bytecode is well-formed
+func validateFunctionBytecode[W word.Word[W]](program Program[W]) (errs []error) {
+	for mid, module := range program.Modules() {
+		if fn, ok := module.(*descriptor.Function[W]); ok && !fn.IsNative() {
+			var env = program.EnvironmentOf(uint16(mid))
+			// Validate the bytecode
+			errs = append(errs, bytecode.Validate(program.Field(), env, fn.Vectors())...)
+		}
 	}
-
-	reflected := reflect.ValueOf(value)
-
-	return reflected.Kind() == reflect.Pointer && reflected.IsNil()
+	//
+	return errs
 }
