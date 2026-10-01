@@ -70,10 +70,10 @@ func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F, schema.Cons
 	for pc, vec := range fn.Vectors() {
 		// Branch table giving the condition under which each code in this vector
 		// is reached.
-		_, branchTable := vec.BranchTable(field.RegisterWidth)
+		writeMap, branchTable := vec.BranchTable(field.RegisterWidth)
 		// One-hot register groups declared by the vector's Dispatch bytecodes,
 		// used to shorten the selector conditions below.
-		oneHot := collectOneHotGroups(vec.Bytecodes)
+		oneHot := collectOneHotGroups(vec.Bytecodes, writeMap)
 		// Group the lookup-emitting bytecodes by the branch condition under
 		// which they execute, so accesses sharing a condition share a single
 		// source selector (column).
@@ -192,8 +192,10 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, schema.Constr
 		return position
 	}
 	// Conditional access: fold the position atom (position != 0) into the
-	// condition and materialise it as a fresh path selector column.
-	posId := dfa.NewBranchId(false, util.Cast[vm.RegisterId](position.Unwrap()))
+	// condition and materialise it as a fresh path selector column.  The
+	// position register is a per-row control line, so it is read on the
+	// current row (i.e. as if forwarded), never the previous one.
+	posId := dfa.NewBranchId(true, util.Cast[vm.RegisterId](position.Unwrap()))
 	posAtom := logical.NotEqualsConst(posId, big.Int{})
 	cond = cond.And(logical.NewProposition(posAtom))
 	//
@@ -233,29 +235,24 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F, schema.Constraint[
 func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.BranchCondition,
 	regs []register.Register, oneHot []oneHotGroup) mir.LogicalTerm[F] {
 	var (
-		sel  = mirc.Variable[F](selId, 1, 0)
-		one  = mirc.Number[F](1)
-		zero = mirc.Number[F](0)
+		reader = callRegisterReader[F]{regs}
+		sel    = mirc.Variable[F](selId, 1, 0)
+		one    = mirc.Number[F](1)
+		zero   = mirc.Number[F](0)
 	)
 	//
 	if rest, pieces, ok := splitOneHotDisjunction(cond, oneHot); ok {
 		var (
-			remainder = mirc.TranslateBranchCondition(conditionOfAtoms(rest), callRegisterReader[F]{regs})
+			remainder = mirc.TranslateBranchCondition(conditionOfAtoms(rest), reader)
 			sum       Expr[F]
 		)
 		//
 		for i, piece := range pieces {
-			var (
-				ithBit = register.NewId(uint(piece.bit))
-				ith    = mirc.Variable[F](ithBit, 1, 0)
-			)
+			ith := mirc.ReadRegister(piece.bit, reader)
 			// Each guard tests a width-1 register against zero, so its 0/1
 			// indicator is the register itself (!=) or its complement (==).
 			for _, guard := range piece.guards {
-				var (
-					leftId = register.NewId(uint(guard.Left.Id))
-					factor = mirc.Variable[F](leftId, 1, 0)
-				)
+				factor := mirc.ReadRegister(guard.Left, reader)
 				//
 				if guard.Sign {
 					factor = one.Subtract(factor)
@@ -274,7 +271,7 @@ func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.Bran
 		return remainder.ThenElse(sel.Equals(sum), sel.Equals(zero)).AsLogical()
 	}
 	//
-	condition := mirc.TranslateBranchCondition(cond, callRegisterReader[F]{regs})
+	condition := mirc.TranslateBranchCondition(cond, reader)
 	//
 	return condition.ThenElse(sel.Equals(one), sel.Equals(zero)).AsLogical()
 }
@@ -292,9 +289,12 @@ func pathSelectorComputation[F field.Element[F]](cond dfa.BranchCondition, regs 
 	return term.IfElse(condition.AsLogical(), one, zero)
 }
 
-// callRegisterReader is a minimal mirc.RegisterReader over a register layout,
-// reading every branch register on the current row (shift 0): the row on which
-// the gated call fires holds the register's assigned value.
+// callRegisterReader is a minimal mirc.RegisterReader over a register layout.
+// A branch register is read on the row where the gated access fires: on the
+// current row if it is an input or forwarded (assigned earlier in the same
+// vector), and on the previous row otherwise, since the current row's column
+// may hold a later assignment (e.g. after register coalescing).  This mirrors
+// VectorInsnTranslator.ReadRegister.
 type callRegisterReader[F field.Element[F]] struct {
 	regs []register.Register
 }
@@ -313,8 +313,22 @@ func (p callRegisterReader[F]) RegisterWidths(ids ...register.Id) []uint {
 	return widths
 }
 
-func (p callRegisterReader[F]) ReadRegister(id register.Id, _ bool) Expr[F] {
-	return mirc.Variable[F](id, p.regs[id.Unwrap()].Width(), 0)
+// ReadRegister constructs a suitable accessor for referring to a given register.
+// This applies forwarding as appropriate.
+func (p callRegisterReader[F]) ReadRegister(regId register.Id, forwarding bool) Expr[F] {
+	var (
+		reg = p.Register(regId)
+	)
+	//
+	if reg.IsInput() {
+		// Inputs don't need to refer back
+		return mirc.Variable[F](regId, bitwidthOf(reg), 0)
+	} else if forwarding {
+		// Forwarded
+		return mirc.Variable[F](regId, bitwidthOf(reg), 0)
+	}
+	// Not forwarded
+	return mirc.Variable[F](regId, bitwidthOf(reg), -1)
 }
 
 // emitCallLookup constructs and adds a single lookup constraint mapping the
