@@ -1,10 +1,10 @@
 module github.com/LFDT-Lineth/zkc
 
-go 1.24.6
+go 1.25.7
 
 require (
-	github.com/consensys/bavard v0.1.31-0.20250406004941-2db259e4b582
-	github.com/consensys/gnark-crypto v0.18.1
+	github.com/consensys/bavard v0.2.2-0.20260118153501-cba9f5475432
+	github.com/consensys/gnark-crypto v0.21.1-0.20260929174810-6c95d03882e0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	go.lsp.dev/jsonrpc2 v0.10.0
@@ -14,7 +14,7 @@ require (
 )
 
 require (
-	github.com/bits-and-blooms/bitset v1.20.0 // indirect
+	github.com/bits-and-blooms/bitset v1.24.6 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.3.4 // indirect
@@ -23,6 +23,6 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
