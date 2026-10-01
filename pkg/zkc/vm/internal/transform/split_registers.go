@@ -338,7 +338,7 @@ func splitWrite[W word.Word[W]](limbsMap descriptor.LimbsMap[W], alloc split.All
 		// Address registers correspond to the memory's inputs, data registers to
 		// its outputs.
 		addr, pre1, post1 = alignArgsReturns(limbsMap, alloc, c.Address, mem.Inputs(), argAlignment)
-		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), retAlignment)
+		data, pre2, post2 = alignArgsReturns(limbsMap, alloc, c.Data, mem.Outputs(), argAlignment)
 		// The timestamp operand splits like any other caller register.
 		stamp = split.ApplyLimbsMap(limbsMap, c.Stamp...)
 		// Combine all together

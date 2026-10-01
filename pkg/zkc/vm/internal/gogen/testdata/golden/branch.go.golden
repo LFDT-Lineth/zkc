@@ -55,7 +55,6 @@ func fn_main() {
 	var r1 uint64 // y
 	var r2 uint64 // $2
 	var r3 uint64 // $3
-	var r4 uint64 // $4
 	// [0.0] ldc $2 = 0x0
 	r2 = 0
 	// [0.1] read x = data[$2]
@@ -94,16 +93,14 @@ L_0_6:
 L_0_8:
 	// [0.8] ldc $3 = 0x0
 	r3 = 0
-	// [0.9] mov $4 = y
-	r4 = r1
-	// [0.10] write result[$3] = $4
+	// [0.9] write result[$3] = y
 	{
 		start := r3
 		if start < uint64(len(mem_result)) {
 			fail("address already written for write-only memory result")
 		}
-		mem_result = memWrite(mem_result, start+0, r4)
+		mem_result = memWrite(mem_result, start+0, r1)
 	}
-	// [0.11] ret
+	// [0.10] ret
 	return
 }
