@@ -26,11 +26,13 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear2"
 )
 
 func init() {
 	// make sure the interface is adhered to.
 	_ = Element[koalabear.Element](koalabear.Element{})
+	_ = Element[mamabear2.Element](mamabear2.Element{})
 	_ = Element[bls12_377.Element](bls12_377.Element{})
 }
 
@@ -83,6 +85,11 @@ func TestFitsWithin(t *testing.T) {
 	//
 	fits(t, "mamabear", func(v *big.Int, w uint) bool {
 		var e mamabear.Element
+		return e.SetBytes(v.Bytes()).FitsWithin(w)
+	}, 48)
+	//
+	fits(t, "mamabear2", func(v *big.Int, w uint) bool {
+		var e mamabear2.Element
 		return e.SetBytes(v.Bytes()).FitsWithin(w)
 	}, 48)
 	// The modulus is 253 bits wide, so 252 is the largest width every value is

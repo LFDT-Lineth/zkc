@@ -24,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear2"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
@@ -92,6 +93,8 @@ func checkZkcModuleReachability(program ast.Program, srcmaps source.Maps[any],
 		return checkZkcModuleReachabilityFor[goldilocks.Element, vm.Uint64](program, srcmaps, vmProgram)
 	case field.MAMABEAR_32:
 		return checkZkcModuleReachabilityFor[mamabear.Element, vm.Uint64](program, srcmaps, vmProgram)
+	case field.MAMABEAR2_32:
+		return checkZkcModuleReachabilityFor[mamabear2.Element, vm.Uint64](program, srcmaps, vmProgram)
 	case field.BLS12_377:
 		return checkZkcModuleReachabilityFor[bls12_377.Element, vm.Uint128](program, srcmaps, vmProgram)
 	default:
@@ -212,6 +215,8 @@ func marshallUnmarshallMachine(m vm.Program[vm.Uint], f field.Config) vm.Program
 		return roundTripMachine[goldilocks.Element, vm.Uint64](m)
 	case field.MAMABEAR_32:
 		return roundTripMachine[mamabear.Element, vm.Uint64](m)
+	case field.MAMABEAR2_32:
+		return roundTripMachine[mamabear2.Element, vm.Uint64](m)
 	case field.BLS12_377:
 		return roundTripMachine[bls12_377.Element, vm.Uint128](m)
 	default:

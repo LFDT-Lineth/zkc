@@ -35,6 +35,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear2"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
@@ -92,6 +93,8 @@ func CheckWithFields(t *testing.T, test string, padding bool, fields ...field.Co
 			checkWithField[goldilocks.Element](t, test, padding, f)
 		case field.MAMABEAR_32:
 			checkWithField[mamabear.Element](t, test, padding, f)
+		case field.MAMABEAR2_32:
+			checkWithField[mamabear2.Element](t, test, padding, f)
 		case field.BLS12_377:
 			checkWithField[bls12_377.Element](t, test, padding, f)
 		default:

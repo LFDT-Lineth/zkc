@@ -27,6 +27,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear2"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
@@ -43,12 +44,17 @@ var (
 	ALL_FIELDS = []field.Config{field.BLS12_377,
 		field.GOLDILOCKS_32,
 		field.MAMABEAR_32,
+		field.MAMABEAR2_32,
 		field.KOALABEAR_24,
 		field.KOALABEAR_16,
 		field.GF_8209,
 		field.GF_251}
 	// DEFAULT_FIELDS set default fields for testing
-	DEFAULT_FIELDS = []field.Config{field.GOLDILOCKS_32, field.MAMABEAR_32, field.KOALABEAR_16, field.GF_8209}
+	DEFAULT_FIELDS = []field.Config{field.GOLDILOCKS_32,
+		field.MAMABEAR_32,
+		field.MAMABEAR2_32,
+		field.KOALABEAR_16,
+		field.GF_8209}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = TestConfig{
 		fields:            DEFAULT_FIELDS,
@@ -127,6 +133,8 @@ func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestVector) {
 		runExecutionTest[goldilocks.Element, vm.Uint64](t, p, test)
 	case field.MAMABEAR_32:
 		runExecutionTest[mamabear.Element, vm.Uint64](t, p, test)
+	case field.MAMABEAR2_32:
+		runExecutionTest[mamabear2.Element, vm.Uint64](t, p, test)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for execution")
@@ -186,6 +194,8 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestVector, f f
 		testConstraintsWithField[goldilocks.Element, vm.Uint64](t, p, test, traceCfg)
 	case field.MAMABEAR_32:
 		testConstraintsWithField[mamabear.Element, vm.Uint64](t, p, test, traceCfg)
+	case field.MAMABEAR2_32:
+		testConstraintsWithField[mamabear2.Element, vm.Uint64](t, p, test, traceCfg)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for tracing")

@@ -614,7 +614,7 @@ zkc compile [--field BLS12_377] [--ir] file.zkc ...
 zkc execute [--field BLS12_377] input.json file.zkc ...
 ```
 
-Available fields: `BLS12_377` (default), `GOLDILOCKS_32`, `MAMABEAR_32`, `KOALABEAR_16`, `GF_8209`, `GF_251`.
+Available fields: `BLS12_377` (default), `GOLDILOCKS_32`, `MAMABEAR_32`, `MAMABEAR2_32`, `KOALABEAR_16`, `GF_8209`, `GF_251`.
 
 ## Further Reading
 
