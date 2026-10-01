@@ -25,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear2"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -46,6 +47,7 @@ var debugCmds = []FieldAgnosticCmd{
 	{field.KOALABEAR_16, runDebugCmd[koalabear.Element]},
 	{field.GOLDILOCKS_32, runDebugCmd[goldilocks.Element]},
 	{field.MAMABEAR_32, runDebugCmd[mamabear.Element]},
+	{field.MAMABEAR2_32, runDebugCmd[mamabear2.Element]},
 	{field.BLS12_377, runDebugCmd[bls12_377.Element]},
 }
 
