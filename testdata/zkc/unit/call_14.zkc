@@ -1,0 +1,27 @@
+pub input data(address:u16) -> (byte:u8)
+pub output result(address:u16) -> (byte:u8)
+pub output result2(address:u16) -> (byte:u8)
+
+// Regression test for the position atom of a conditional lookup's source
+// selector.  The call to g() is gated on IS_PC_k; that selector line must be
+// read on the current row (never the previous row, as a non-forwarded branch
+// register would be).  Here the row after the conditional call is a
+// different code line on which y is still 1, so reading IS_PC_k from the
+// previous row would incorrectly fire the call lookup on that row too.
+fn main() {
+    result[0] = f(data[0] as u1)
+}
+
+fn f(x:u1) -> (z:u8) {
+    var y:u1 = x
+    z = 1
+    if y != 0 {
+        g(z)
+    }
+    y = 1
+    z = 7
+}
+
+fn g(x:u8) {
+    result2[0] = x
+}
