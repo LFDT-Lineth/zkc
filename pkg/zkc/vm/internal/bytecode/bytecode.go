@@ -217,6 +217,10 @@ type RegisterInfo interface {
 	// native register (which has no fixed bitwidth).  Used by Bytecode.Validate
 	// to detect width overflows.
 	Bitwidth() util.Option[uint]
+	// IsZeroWidth returns true for zero-width registers. Zero-width registers are registers
+	// that carry no data, so apparent reads and writes to a shared placeholder cannot
+	// conflict.
+	IsZeroWidth() bool
 }
 
 // ModuleInfo provides a minimal amount of information about a module in the

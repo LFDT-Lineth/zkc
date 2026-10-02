@@ -109,22 +109,6 @@ func (p *Vector[W]) String(env Environment[W]) string {
 	return builder.String()
 }
 
-func isUnsafeCall[W word.Word[W]](code Bytecode[W], env Environment[W]) bool {
-	call, ok := code.(*Call[W])
-	if !ok {
-		return false
-	}
-
-	module := env.Module(call.Target)
-	if module.IsEmpty() {
-		return false
-	}
-
-	callee := module.Unwrap()
-
-	return callee.IsFunction() && callee.HasUnsafeArgs()
-}
-
 func isNilBytecode[W word.Word[W]](code Bytecode[W]) bool {
 	if code == nil {
 		return true
@@ -133,14 +117,6 @@ func isNilBytecode[W word.Word[W]](code Bytecode[W]) bool {
 	value := reflect.ValueOf(code)
 
 	return value.Kind() == reflect.Pointer && value.IsNil()
-}
-
-// IsZeroWidth returns true for zero-width registers. Zero-width registers are registers
-// that carry no data, so apparent reads and writes to a shared placeholder cannot
-// conflict.
-func IsZeroWidth(reg RegisterInfo) bool {
-	width := reg.Bitwidth()
-	return width.HasValue() && width.Unwrap() == 0
 }
 
 // WriteMap constructs the write map for this vector instruction.

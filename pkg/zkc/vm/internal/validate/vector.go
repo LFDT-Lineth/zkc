@@ -10,7 +10,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package bytecode
+package validate
 
 import (
 	"errors"
@@ -18,20 +18,9 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/stack"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
-
-// Validate the body of a function against a given environment, returning errors
-// if it is no well-formed.
-func Validate[W word.Word[W]](field field.Config, env Environment[W], body []Vector[W]) (errs []error) {
-	var n = uint(len(body))
-	// Perform internal validations first
-	for _, vec := range body {
-		errs = append(errs, validateVector(field, env, vec, n)...)
-	}
-	//
-	return errs
-}
 
 // validateVector checks that a given vector instruction is well-formed: every
 // constituent bytecode must itself be well-formed, and there must be no
@@ -40,7 +29,7 @@ func Validate[W word.Word[W]](field field.Config, env Environment[W], body []Vec
 // A write conflict arises when a register is written which _may_ already have
 // been written on the same path; a read conflict arises when a register is read
 // which _may_ (but not _definitely_) have been written.
-func validateVector[W word.Word[W]](field FieldConfig, env Environment[W], vec Vector[W], nVecs uint) []error {
+func validateVector[W word.Word[W]](field field.Config, env Environment[W], vec Vector[W], nVecs uint) []error {
 	var (
 		errors, structureSafe      = validateStructure(env, vec, nVecs)
 		controlErrors, controlSafe = validateControlFlow(vec)
@@ -80,13 +69,52 @@ func validateStructure[W word.Word[W]](env Environment[W], vec Vector[W], nVecs 
 			}
 		}
 
-		if jump, ok := code.(*Jmp[W]); ok && uint(jump.Target) >= nVecs {
+		if jump, ok := code.(*bytecode.Jmp[W]); ok && uint(jump.Target) >= nVecs {
 			errors = append(errors, fmt.Errorf("bytecode has invalid jump target (%d)", jump.Target))
 			safe = false
 		}
 	}
 
 	return errors, safe
+}
+
+// validateReadWriteConflicts checks for ambiguous reads and writes along every
+// execution path through this vector.
+func validateReadWriteConflicts[W word.Word[W]](env Environment[W], vec Vector[W]) []error {
+	var (
+		errors   []error
+		writeMap = vec.WriteMap()
+	)
+	for i := range uint(len(vec.Bytecodes)) {
+		var (
+			ithState = writeMap.StateOf(i)
+			ith      = vec.Bytecodes[i]
+		)
+		// Sanity check for conflicting reads.
+		if !isUnsafeCall(ith, env) {
+			for _, r := range ith.Uses() {
+				var reg = env.Register(r)
+				//
+				if !reg.IsZeroWidth() && ithState.MaybeAssigned(r) && !ithState.DefinitelyAssigned(r) {
+					errors = append(errors,
+						fmt.Errorf("conflicting read on register \"%s\" in \"%s\"",
+							bytecode.RegisterToString(r, env), ith.String(env)))
+				}
+			}
+		}
+		// Sanity check for conflicting writes.
+		for _, r := range ith.Definitions() {
+			var reg = env.Register(r)
+			//
+			if !reg.IsZeroWidth() && ithState.MaybeAssigned(r) {
+				errors = append(errors,
+					fmt.Errorf("conflicting write on register \"%s\" in \"%s\"",
+						bytecode.RegisterToString(r, env), ith.String(env)))
+			}
+		}
+	}
+	//
+	return errors
 }
 
 // validateControlFlow checks the intra-vector control-flow graph.  Every skip
@@ -113,27 +141,27 @@ func validateControlFlow[W word.Word[W]](vec Vector[W]) ([]error, bool) {
 		}
 		//
 		switch bc := vec.Bytecodes[pc].(type) {
-		case *Fail[W], *Ret[W], *Jmp[W]:
+		case *bytecode.Fail[W], *bytecode.Ret[W], *bytecode.Jmp[W]:
 			// Terminate path:
-		case *Call[W]:
+		case *bytecode.Call[W]:
 			// Never calls are terminators
 			if !bc.Never {
 				worklist.Push(pc + 1)
 			}
-		case *Skip[W]:
+		case *bytecode.Skip[W]:
 			worklist.Push(pc + 1 + uint(bc.Skip))
-		case *SkipIf[W]:
+		case *bytecode.SkipIf[W]:
 			// Add skip target
 			worklist.Push(pc + 1 + uint(bc.Skip))
 			// Add fall-thru target
 			worklist.Push(pc + 1)
-		case *Switch[W]:
+		case *bytecode.Switch[W]:
 			for _, c := range bc.Cases {
 				worklist.Push(pc + 1 + uint(c.Skip))
 			}
 			// Add default target
 			worklist.Push(pc + 1)
-		case *Dispatch[W]:
+		case *bytecode.Dispatch[W]:
 			for _, c := range bc.Cases {
 				worklist.Push(pc + 1 + uint(c.Skip))
 			}
@@ -157,35 +185,18 @@ func validateControlFlow[W word.Word[W]](vec Vector[W]) ([]error, bool) {
 	return errs, safe
 }
 
-// validateReadWriteConflicts checks for ambiguous reads and writes along every
-// execution path through this vector.
-func validateReadWriteConflicts[W word.Word[W]](env Environment[W], vec Vector[W]) []error {
-	var (
-		errors   []error
-		writeMap = vec.WriteMap()
-	)
-	for i := range uint(len(vec.Bytecodes)) {
-		var (
-			ithState = writeMap.StateOf(i)
-			ith      = vec.Bytecodes[i]
-		)
-		// Sanity check for conflicting reads.
-		if !isUnsafeCall(ith, env) {
-			for _, r := range ith.Uses() {
-				if !IsZeroWidth(env.Register(r)) && ithState.MaybeAssigned(r) && !ithState.DefinitelyAssigned(r) {
-					errors = append(errors,
-						fmt.Errorf("conflicting read on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
-				}
-			}
-		}
-		// Sanity check for conflicting writes.
-		for _, r := range ith.Definitions() {
-			if !IsZeroWidth(env.Register(r)) && ithState.MaybeAssigned(r) {
-				errors = append(errors,
-					fmt.Errorf("conflicting write on register \"%s\" in \"%s\"", RegisterToString(r, env), ith.String(env)))
-			}
-		}
+func isUnsafeCall[W word.Word[W]](code Bytecode[W], env Environment[W]) bool {
+	call, ok := code.(*bytecode.Call[W])
+	if !ok {
+		return false
 	}
-	//
-	return errors
+
+	module := env.Module(call.Target)
+	if module.IsEmpty() {
+		return false
+	}
+
+	callee := module.Unwrap()
+
+	return callee.IsFunction() && callee.HasUnsafeArgs()
 }
