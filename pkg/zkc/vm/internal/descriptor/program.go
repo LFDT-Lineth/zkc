@@ -372,15 +372,6 @@ func (p moduleEnvironment[W]) RegisterCount() uint {
 	return p.modules[p.module].Width()
 }
 
-// VectorCount returns the number of vectors in the enclosing function.
-func (p moduleEnvironment[W]) VectorCount() uint {
-	if function, ok := p.modules[p.module].(*Function[W]); ok {
-		return uint(len(function.Vectors()))
-	}
-
-	return 0
-}
-
 // ValueOf implementation for the bytecode.Environment interface.  A module
 // environment describes a program's static structure and has no notion of a
 // register's runtime value, so it always returns None.  Environments used

@@ -147,7 +147,7 @@ func isReachableFrom(reaches dfa.Result[dfa.Reaches], from, to uint) bool {
 func isDefinedIn[W word.Word[W]](reg bytecode.RegisterId, code Bytecode[W],
 	registers descriptor.RegisterMap[W]) bool {
 	//
-	return !bytecode.IsZeroWidth(registers.Register(reg)) && slices.Contains(code.Definitions(), reg)
+	return !registers.Register(reg).IsZeroWidth() && slices.Contains(code.Definitions(), reg)
 }
 
 // flattenLookupAccess expands a call, prefixing it with a snapshot ("tmp = arg") for

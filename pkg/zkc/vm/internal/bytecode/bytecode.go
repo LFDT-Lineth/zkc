@@ -200,8 +200,6 @@ type Environment[W word.Word[W]] interface {
 	Register(id RegisterId) RegisterInfo
 	// RegisterCount returns the number of registers in the enclosing module.
 	RegisterCount() uint
-	// VectorCount returns the number of vectors in the enclosing function.
-	VectorCount() uint
 	// ValueOf optionally returns the current value held in the given register.
 	// This is used (for example) by the debugger to render register values
 	// inline within an instruction's string representation.  Environments which
@@ -219,6 +217,10 @@ type RegisterInfo interface {
 	// native register (which has no fixed bitwidth).  Used by Bytecode.Validate
 	// to detect width overflows.
 	Bitwidth() util.Option[uint]
+	// IsZeroWidth returns true for zero-width registers. Zero-width registers are registers
+	// that carry no data, so apparent reads and writes to a shared placeholder cannot
+	// conflict.
+	IsZeroWidth() bool
 }
 
 // ModuleInfo provides a minimal amount of information about a module in the
