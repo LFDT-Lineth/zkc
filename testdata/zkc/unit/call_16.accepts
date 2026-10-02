@@ -1,0 +1,11 @@
+;; b=0, no carry: falls through to the final call
+{ "data": "0x00_00", "result": "0x00" }
+{ "data": "0x00_7f", "result": "0x7f" }
+;; b=0, carry: returns z early (carry must not leak into the call selector)
+{ "data": "0x00_80", "result": "0x00" }
+{ "data": "0x00_ff", "result": "0x7f" }
+;; b=1: skips the addition entirely
+{ "data": "0x01_00", "result": "0x00" }
+{ "data": "0x01_7f", "result": "0x7f" }
+{ "data": "0x01_80", "result": "0x80" }
+{ "data": "0x01_ff", "result": "0xff" }

@@ -32,16 +32,20 @@ type oneHotGroup struct {
 	bits map[vm.RegisterId]bool
 	// dflt is the default register: 1 exactly when every bit is clear.
 	dflt vm.RegisterId
+	// writes is the write state on entry to the dispatch, determining whether
+	// a member is forwarded (assigned earlier in the vector) when read by a
+	// code following the dispatch — as the dispatch's own edge atoms are.
+	writes dfa.Writes
 }
 
 // collectOneHotGroups gathers the one-hot groups declared by the Dispatch
-// bytecodes of a vector.  The groups may only be used to rewrite branch
-// conditions drawn from that same vector, since the constraints backing the
-// one-hot invariant are emitted for its rows.
-func collectOneHotGroups[W vm.Word[W]](codes []vm.Bytecode[W]) []oneHotGroup {
+// bytecodes of a vector, given the vector's write map.  The groups may only be
+// used to rewrite branch conditions drawn from that same vector, since the
+// constraints backing the one-hot invariant are emitted for its rows.
+func collectOneHotGroups[W vm.Word[W]](codes []vm.Bytecode[W], writeMap dfa.Result[dfa.Writes]) []oneHotGroup {
 	var groups []oneHotGroup
 	//
-	for _, code := range codes {
+	for cc, code := range codes {
 		if d, ok := code.(*vm.BytecodeDispatch[W]); ok {
 			bits := make(map[vm.RegisterId]bool, len(d.Cases))
 			//
@@ -49,7 +53,7 @@ func collectOneHotGroups[W vm.Word[W]](codes []vm.Bytecode[W]) []oneHotGroup {
 				bits[c.Bit] = true
 			}
 			//
-			groups = append(groups, oneHotGroup{bits, d.Default})
+			groups = append(groups, oneHotGroup{bits, d.Default, writeMap.StateOf(uint(cc))})
 		}
 	}
 	//
@@ -187,11 +191,12 @@ func rewriteComplementDisjuncts(cond dfa.BranchCondition, g oneHotGroup) dfa.Bra
 }
 
 // oneHotPiece describes one disjunct of a one-hot disjunction split by
-// splitOneHotDisjunction: the group bit it tests, plus its guard atoms — the
-// disjunct's atoms beyond the shared remainder, each a width-1 register tested
-// against zero (so it admits an arithmetic 0/1 indicator).
+// splitOneHotDisjunction: the group member it tests (with its forwarding), plus
+// its guard atoms — the disjunct's atoms beyond the shared remainder, each a
+// width-1 register tested against zero (so it admits an arithmetic 0/1
+// indicator).
 type oneHotPiece struct {
-	bit    vm.RegisterId
+	bit    dfa.BranchId
 	guards []dfa.BranchEquality
 }
 
@@ -315,7 +320,7 @@ func splitDisjuncts(conjuncts []dfa.BranchConjunction, g oneHotGroup,
 	slices.SortFunc(ids, func(l, r vm.RegisterId) int { return cmp.Compare(l, r) })
 	//
 	for _, m := range ids {
-		pieces = append(pieces, oneHotPiece{bit: m, guards: byId[m]})
+		pieces = append(pieces, oneHotPiece{bit: g.branchId(m), guards: byId[m]})
 	}
 	//
 	return common, pieces, true
@@ -333,6 +338,13 @@ func (g oneHotGroup) members() map[vm.RegisterId]bool {
 	out[g.dflt] = true
 	//
 	return out
+}
+
+// branchId returns the branch id under which the given member is read by a
+// code following the dispatch: forwarded exactly when it may have been assigned
+// earlier in the vector.
+func (g oneHotGroup) branchId(m vm.RegisterId) dfa.BranchId {
+	return dfa.NewBranchId(g.writes.MaybeAssigned(m), m)
 }
 
 // isMember reports whether the given register is a member of the group (one
