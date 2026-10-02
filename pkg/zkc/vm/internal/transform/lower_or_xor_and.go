@@ -194,7 +194,7 @@ func lowerBitwiseAndOrXor[W word.Word[W]](
 		}
 
 		if resultIsNot(b.Op, c, mask) {
-			maxReg := registers.Allocate("", util.Some(uint(b.Bitwidth)))
+			maxReg := registers.Allocate("loxa", util.Some(uint(b.Bitwidth)))
 
 			// TODO: CSUB, see: https://github.com/LFDT-Lineth/zkc/issues/2062
 			return []Bytecode[W]{
@@ -245,7 +245,7 @@ func materialiseRight[W word.Word[W]](b *bytecode.Bitwise[W], registers split.Al
 		return b.Right.AsRegister(), nil
 	}
 	//
-	reg := registers.Allocate("", util.Some(uint(b.Bitwidth)))
+	reg := registers.Allocate("loxa", util.Some(uint(b.Bitwidth)))
 	//
 	return reg, []Bytecode[W]{bytecode.LoadConst(reg, b.Right.AsConstant())}
 }
@@ -266,9 +266,9 @@ func emitUnitBitwise[W word.Word[W]](op bytecode.Operation, registers split.Allo
 	case bytecode.OP_AND:
 		return []Bytecode[W]{bytecode.MulConst(target, []bytecode.RegisterId{left, right}, one)}
 	case bytecode.OP_OR:
-		oneReg := registers.Allocate("", bit)
-		na := registers.Allocate("", bit)
-		prod := registers.Allocate("", bit)
+		oneReg := registers.Allocate("loxa", bit)
+		na := registers.Allocate("loxa", bit)
+		prod := registers.Allocate("loxa", bit)
 		//
 		return []Bytecode[W]{
 			bytecode.LoadConst(oneReg, one),
@@ -277,11 +277,11 @@ func emitUnitBitwise[W word.Word[W]](op bytecode.Operation, registers split.Allo
 			bytecode.AddConst(target, []bytecode.RegisterId{left, prod}, zero),
 		}
 	case bytecode.OP_XOR:
-		oneReg := registers.Allocate("", bit)
-		nb := registers.Allocate("", bit)
-		na := registers.Allocate("", bit)
-		l := registers.Allocate("", bit)
-		r := registers.Allocate("", bit)
+		oneReg := registers.Allocate("loxa", bit)
+		nb := registers.Allocate("loxa", bit)
+		na := registers.Allocate("loxa", bit)
+		l := registers.Allocate("loxa", bit)
+		r := registers.Allocate("loxa", bit)
 		//
 		return []Bytecode[W]{
 			bytecode.LoadConst(oneReg, one),

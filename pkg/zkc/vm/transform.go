@@ -49,6 +49,7 @@ func TransformForExecutionRaw[W1 Word[W1], W2 Word[W2]](p Program[W1], word Word
 			InlineFunctions[W1](),
 			Vectorize[W1](),
 			SplitRegisters[W1](word),
+			AllocateRegisters[W1](),
 			InsertCheckCasts[W1](),
 		)
 	)
@@ -81,6 +82,7 @@ func TransformForTracing[W1 Word[W1], W2 Word[W2]](p Program[W1], ignores ...str
 			SplitRegisters[W1](p.Field()),
 			FactorLimbEqualities[W1](),
 			LowerOrXorAnd[W1](),
+			AllocateRegisters[W1](),
 			FlattenLookupAccess[W1](),
 			AddRangeConstraints[W1](),
 			InsertCheckCasts[W1](),
@@ -172,6 +174,8 @@ func (p TransformationPipeline[W]) Apply(program Program[W]) Program[W] {
 const (
 	// ADD_RANGE_CONSTRAINTS handle
 	ADD_RANGE_CONSTRAINTS = "add-range-constraints"
+	// ALLOCATE_REGISTERS handle
+	ALLOCATE_REGISTERS = "allocate-registers"
 	// FACTOR_LIMB_EQUALITIES handle
 	FACTOR_LIMB_EQUALITIES = "factor-limb-equalities"
 	// FACTOR_SKIP_CONDITIONS handle
@@ -205,6 +209,7 @@ const (
 // VALID_TRANSFORMS contains the complete set of valid transform handles.
 var VALID_TRANSFORMS = []string{
 	ADD_RANGE_CONSTRAINTS,
+	ALLOCATE_REGISTERS,
 	FACTOR_LIMB_EQUALITIES,
 	FACTOR_SKIP_CONDITIONS,
 	FLATTERN_LOOKUP_ACCESSES,
@@ -354,7 +359,7 @@ func Vectorize[W word.Word[W]]() Transform[W] {
 func FlattenLookupAccess[W word.Word[W]]() Transform[W] {
 	var (
 		transformer  = transform.FlattenLookupAccess[W]
-		precondition = after(SPLIT_REGISTERS)
+		precondition = after(SPLIT_REGISTERS, ALLOCATE_REGISTERS)
 	)
 	//
 	return Transform[W]{FLATTERN_LOOKUP_ACCESSES, precondition, transformer}
@@ -438,6 +443,18 @@ func AddRangeConstraints[W word.Word[W]]() Transform[W] {
 	)
 	//
 	return Transform[W]{ADD_RANGE_CONSTRAINTS, noPrecondition, transformer}
+}
+
+// AllocateRegisters attempts to reduce the number of registers allocated for
+// each function by coalescing them where possible.  This transform should
+// always run after register splitting in order to be most effective.
+func AllocateRegisters[W word.Word[W]]() Transform[W] {
+	var (
+		transformer  = transform.AllocateRegisters[W]
+		precondition = and(after(SPLIT_REGISTERS), before(FLATTERN_LOOKUP_ACCESSES))
+	)
+	//
+	return Transform[W]{ALLOCATE_REGISTERS, precondition, transformer}
 }
 
 // InsertCheckCasts inserts the width-check (CHECKCAST) bytecodes required by a
