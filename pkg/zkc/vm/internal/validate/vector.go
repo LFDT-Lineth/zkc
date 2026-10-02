@@ -29,7 +29,7 @@ import (
 // A write conflict arises when a register is written which _may_ already have
 // been written on the same path; a read conflict arises when a register is read
 // which _may_ (but not _definitely_) have been written.
-func validateVector[W word.Word[W]](field field.Config, env Environment[W], vec Vector[W], nVecs uint) []error {
+func validateVector[W word.Word[W]](field field.Config, env Environment[W], vec Vector[W], nVecs uint) ([]error, bool) {
 	var (
 		errors, structureSafe      = validateStructure(env, vec, nVecs)
 		controlErrors, controlSafe = validateControlFlow(vec)
@@ -44,10 +44,10 @@ func validateVector[W word.Word[W]](field field.Config, env Environment[W], vec 
 	// WriteMap assumes that every control-flow destination is in bounds and
 	// every bytecode is non-nil.
 	if !structureSafe || !controlSafe {
-		return errors
+		return errors, false
 	}
 
-	return append(errors, validateReadWriteConflicts(env, vec)...)
+	return append(errors, validateReadWriteConflicts(env, vec)...), true
 }
 
 // validateStructure checks every index which an environment lookup or jump
