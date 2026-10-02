@@ -25,33 +25,38 @@ type ForwardTransferFn[W word.Word[W], S any] = func(ProgramPoint, Bytecode[W], 
 // ensure that the given flow-set types do not lead not lead to non-termination
 // (e.g. have infinite ascending chains, etc) as, at this time, no widening
 // operator is supported.
-func ForwardDataFlowAnalysis[W word.Word[W], S FlowSet[S]](f descriptor.Function[W],
-	fn ForwardTransferFn[W, S], init S) FlowSets[S] {
+func ForwardDataFlowAnalysis[W word.Word[W], S FlowSet[S]](f descriptor.Function[W], init S,
+	fn ForwardTransferFn[W, S]) FlowSets[S] {
 	// Records the registers live before each bytecode.
 	var (
 		flowsets = FlowSets[S]{make(map[ProgramPoint]S)}
 		changed  = true
+		entry    ProgramPoint
 	)
+	// Initialise the flowsets
+	flowsets.sets[entry] = init
 	// Iterate to a fixed point
 	for changed {
 		// Reset changed status
 		changed = false
-		// Go through each vector, updating the liveness information which holds
+		// Go through each vector, updating the dataflow information which holds
 		// before each bytecode.
 		for i, v := range f.Vectors() {
-			var ith = v.Bytecodes
-			// Process in reverse order, as this better matches a backwards
-			// analysis.
-			for j := len(ith); j > 0; j-- {
+			for j, jth := range v.Bytecodes {
 				var (
 					// Construct program point for this bytecode
-					pp = ProgramPoint{Macro: uint(i), Micro: uint(j - 1)}
-					// Propagate liveness information backwards
-					tfs = fn(pp, ith[j-1], flowsets.Get(pp))
+					pp = ProgramPoint{Macro: uint(i), Micro: uint(j)}
+					// Propagate dataflow information forwards
+					in = flowsets.Get(pp)
 				)
-				// Merge in sets, and record whether anything changed
-				for _, t := range tfs {
-					changed = flowsets.Join(t.target, t.set) || changed
+				//
+				if !in.IsBottom() {
+					// Merge in sets, and record whether anything changed
+					for _, t := range fn(pp, jth, in) {
+						var c = flowsets.Join(t.target, t.set)
+						//
+						changed = changed || c
+					}
 				}
 			}
 		}

@@ -51,7 +51,9 @@ func NewTransfer[T any](state T, target ProgramPoint) Transfer[T] {
 // gleaned from analysing the given program.
 type FlowSet[S any] interface {
 	// Join another state into this state, producing a state representing both.
-	Join(other S) bool
+	Join(other S) (S, bool)
+	// IsBottom returns true when this flow state represents something which has not ne
+	IsBottom() bool
 }
 
 // FlowSets provides a generic representation of the "dataflow sets" computed by
@@ -71,10 +73,10 @@ func (p *FlowSets[S]) Get(pc ProgramPoint) S {
 func (p *FlowSets[S]) Join(pc ProgramPoint, in S) bool {
 	var (
 		set     = p.sets[pc]
-		changed = set.Join(in)
+		changed bool
 	)
 	// Update information
-	p.sets[pc] = set
+	p.sets[pc], changed = set.Join(in)
 	//
 	return changed
 }

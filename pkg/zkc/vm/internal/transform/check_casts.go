@@ -83,7 +83,7 @@ func castPacket[W word.Word[W]](b Bytecode[W], regmap descriptor.RegisterMap[W],
 		default:
 			return []Bytecode[W]{b}
 		}
-	case *bytecode.DivRem[W]:
+	case *bytecode.DivMod[W]:
 		// The operation width is that of the (uniform) operands, recovered from
 		// the dividend register; native dividends have no fixed width (-> 0).
 		var width util.Option[uint]

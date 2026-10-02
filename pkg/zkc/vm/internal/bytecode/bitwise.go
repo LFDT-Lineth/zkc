@@ -54,8 +54,8 @@ func (p *Bitwise[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Bitwise[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	var errors = validateOperands(env, p.Uses(), p.Definitions())
+func (p *Bitwise[W]) Validate(env Environment[W]) ([]error, bool) {
+	var errors, safe = validateOperands(env, p.Uses(), p.Definitions())
 	//
 	if p.Right.IsConstant() {
 		// Only AND/OR/XOR support a constant operand: NOT is unary, whilst
@@ -64,7 +64,7 @@ func (p *Bitwise[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 		case OP_AND, OP_OR, OP_XOR:
 			// permitted
 		default:
-			return append(errors, fmt.Errorf("constant operand invalid for %s", p.Op.Prefix()))
+			return append(errors, fmt.Errorf("constant operand invalid for %s", p.Op.Prefix())), false
 		}
 		//
 		if !p.Right.AsConstant().FitsWithin(uint(p.Bitwidth)) {
@@ -72,7 +72,7 @@ func (p *Bitwise[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 		}
 	}
 	//
-	return errors
+	return errors, safe
 }
 
 func (p *Bitwise[W]) String(env Environment[W]) string {

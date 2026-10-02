@@ -52,7 +52,7 @@ func (p *Debug[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Debug[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+func (p *Debug[W]) Validate(env Environment[W]) ([]error, bool) {
 	return validateOperands(env, p.Uses())
 }
 

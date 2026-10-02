@@ -496,7 +496,7 @@ func Intrinsic[W Word[W]](op bytecode.Operation, targets []bytecode.RegisterVect
 // register or constant divisor.  A source-level "/" or "%" directs the
 // unwanted result into a fresh scratch register.
 func DivMod[W Word[W]](quotient, remainder, dividend RegisterId, divisor Operand[W]) Bytecode[W] {
-	return bytecode.NewDivRem(quotient, remainder, dividend, divisor)
+	return bytecode.NewDivMod(quotient, remainder, dividend, divisor)
 }
 
 // Fail constructs a fail instruction carrying the given formatted message.

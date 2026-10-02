@@ -17,9 +17,7 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/stack"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // validateVector checks that a given vector instruction is well-formed: every
@@ -29,31 +27,35 @@ import (
 // A write conflict arises when a register is written which _may_ already have
 // been written on the same path; a read conflict arises when a register is read
 // which _may_ (but not _definitely_) have been written.
-func validateVector[W word.Word[W]](field field.Config, env Environment[W], vec Vector[W], nVecs uint) []error {
+func validateVector[W Word[W]](env Environment[W], vec Vector[W], nVecs uint) ([]error, bool) {
 	var (
 		errors, structureSafe      = validateStructure(env, vec, nVecs)
 		controlErrors, controlSafe = validateControlFlow(vec)
+		safe                       = structureSafe && controlSafe
 	)
 	//
 	errors = append(errors, controlErrors...)
 	// Validate individual bytecodes. Each bytecode checks its operands before
 	// performing any environment lookup.
 	for _, b := range vec.Bytecodes {
-		errors = append(errors, b.Validate(field, env)...)
+		var bErrs, bSafe = b.Validate(env)
+		//
+		errors = append(errors, bErrs...)
+		safe = safe && bSafe
 	}
-	// WriteMap assumes that every control-flow destination is in bounds and
-	// every bytecode is non-nil.
-	if !structureSafe || !controlSafe {
-		return errors
+	// If some stage returned an unsafe result, the don't attempt further checks
+	// (as these would panic on e.g. an invalid register ID, etc).
+	if !safe {
+		return errors, false
 	}
-
-	return append(errors, validateReadWriteConflicts(env, vec)...)
+	//
+	return append(errors, validateReadWriteConflicts(env, vec)...), true
 }
 
 // validateStructure checks every index which an environment lookup or jump
 // would dereference. The returned boolean indicates whether environment-
 // dependent bytecode validation and write-map construction are safe.
-func validateStructure[W word.Word[W]](env Environment[W], vec Vector[W], nVecs uint) ([]error, bool) {
+func validateStructure[W Word[W]](env Environment[W], vec Vector[W], nVecs uint) ([]error, bool) {
 	var (
 		errors []error
 		safe   = true
@@ -80,7 +82,7 @@ func validateStructure[W word.Word[W]](env Environment[W], vec Vector[W], nVecs 
 
 // validateReadWriteConflicts checks for ambiguous reads and writes along every
 // execution path through this vector.
-func validateReadWriteConflicts[W word.Word[W]](env Environment[W], vec Vector[W]) []error {
+func validateReadWriteConflicts[W Word[W]](env Environment[W], vec Vector[W]) []error {
 	var (
 		errors   []error
 		writeMap = vec.WriteMap()
@@ -121,7 +123,7 @@ func validateReadWriteConflicts[W word.Word[W]](env Environment[W], vec Vector[W
 // destination must exist, including destinations in unreachable code, and every
 // reachable path must end in a terminal bytecode.  This is implemented as
 // straightforward depth-first traversal of the vector's bytecodes.
-func validateControlFlow[W word.Word[W]](vec Vector[W]) ([]error, bool) {
+func validateControlFlow[W Word[W]](vec Vector[W]) ([]error, bool) {
 	var (
 		worklist stack.Worklist
 		errs     []error
@@ -176,6 +178,7 @@ func validateControlFlow[W word.Word[W]](vec Vector[W]) ([]error, bool) {
 	for i := range vec.Len() {
 		if !worklist.Visited(i) {
 			errs = append(errs, errors.New("vector has unreachable code"))
+			safe = false
 			// Only report one error, as likely there will be several
 			// instructions grouped together.
 			break
@@ -185,7 +188,7 @@ func validateControlFlow[W word.Word[W]](vec Vector[W]) ([]error, bool) {
 	return errs, safe
 }
 
-func isUnsafeCall[W word.Word[W]](code Bytecode[W], env Environment[W]) bool {
+func isUnsafeCall[W Word[W]](code Bytecode[W], env Environment[W]) bool {
 	call, ok := code.(*bytecode.Call[W])
 	if !ok {
 		return false

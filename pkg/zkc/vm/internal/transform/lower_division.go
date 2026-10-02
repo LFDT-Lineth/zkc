@@ -23,7 +23,7 @@ import (
 )
 
 // LowerDivisions rewrites INT_DIV and INT_REM bytecodes into a non-deterministic
-// hint followed by arithmetic validation (see expandDivRem for the emitted
+// hint followed by arithmetic validation (see expandDivMod for the emitted
 // sequence and the rationale for its structure):
 //
 //	Hint{DIV_HINT, q, r, w, x, y}   // prover fills quotient, remainder and range witness
@@ -63,11 +63,11 @@ func lowerDivisionFunction[W word.Word[W]](fn *descriptor.Function[W]) *descript
 }
 
 // lowerDivisionCode replaces a DIVMOD bytecode with the hint+validation
-// sequence (see expandDivRem).  The hint produces both quotient and remainder,
+// sequence (see expandDivMod).  The hint produces both quotient and remainder,
 // matching the bytecode's two targets exactly, so a source-level "/%" shares a
 // single block for the pair.
 func lowerDivisionCode[W word.Word[W]](b Bytecode[W], registers split.Allocator[W]) []Bytecode[W] {
-	dr, ok := b.(*bytecode.DivRem[W])
+	dr, ok := b.(*bytecode.DivMod[W])
 	if !ok {
 		return []Bytecode[W]{b}
 	}
@@ -80,7 +80,7 @@ func lowerDivisionCode[W word.Word[W]](b Bytecode[W], registers split.Allocator[
 		w  = registers.Allocate("w", util.Some(nY))
 	)
 	//
-	return expandDivRem(dr.Quotient, dr.Remainder, w, x, y, nX, nY, registers)
+	return expandDivMod(dr.Quotient, dr.Remainder, w, x, y, nX, nY, registers)
 }
 
 // divisorWidth returns the bitwidth of the given divisor operand: the declared
@@ -94,7 +94,7 @@ func divisorWidth[W word.Word[W]](y bytecode.Operand[W], registers split.Allocat
 	return registers.Register(y.AsRegister()).Bitwidth().Unwrap()
 }
 
-// expandDivRem builds the shared hint+validation sequence for both INT_DIV and
+// expandDivMod builds the shared hint+validation sequence for both INT_DIV and
 // INT_REM, given the (already allocated) quotient q, remainder r and range
 // witness w registers.  It emits:
 //
@@ -112,7 +112,7 @@ func divisorWidth[W word.Word[W]](y bytecode.Operand[W], registers split.Allocat
 // operands that borrow grows past the field register width.  A two-operand zero
 // assertion splits into independent per-limb equalities (see split.Subtraction),
 // which needs no borrows.
-func expandDivRem[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Operand[W], nX, nY uint,
+func expandDivMod[W word.Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Operand[W], nX, nY uint,
 	registers split.Allocator[W]) []Bytecode[W] {
 	var (
 		zero = word.Const64[W](0)

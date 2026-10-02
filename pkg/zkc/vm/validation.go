@@ -97,7 +97,7 @@ func validateFunctionBytecode[W word.Word[W]](program Program[W]) (errs []error)
 		if fn, ok := module.(*descriptor.Function[W]); ok && !fn.IsNative() {
 			var env = program.EnvironmentOf(uint16(mid))
 			// Validate the bytecode
-			errs = append(errs, validate.Function(program.Field(), env, *fn)...)
+			errs = append(errs, validate.Function(env, fn)...)
 		}
 	}
 	//

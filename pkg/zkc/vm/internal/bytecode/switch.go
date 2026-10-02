@@ -68,10 +68,11 @@ func (p *Switch[W]) Definitions() []RegisterId {
 // first match wins, a duplicate is unreachable and almost certainly a mistake)
 // and must fit within the source register's width.  A native source register
 // holds arbitrary-width values, so no value can overflow it.
-func (p *Switch[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	errors := validateOperands(env, p.Uses())
+func (p *Switch[W]) Validate(env Environment[W]) ([]error, bool) {
+	var errors, safe = validateOperands(env, p.Uses())
+	//
 	if len(errors) != 0 {
-		return errors
+		return errors, safe
 	}
 
 	var (
@@ -93,7 +94,7 @@ func (p *Switch[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 		}
 	}
 	//
-	return errors
+	return errors, safe
 }
 
 func (p *Switch[W]) String(_ Environment[W]) string {

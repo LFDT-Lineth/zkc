@@ -1089,8 +1089,8 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 		return g.emitConcat(c, fn, x)
 	case *bytecode.CheckCast[word.Uint]:
 		return g.emitCheckCast(c, fn, x)
-	case *bytecode.DivRem[word.Uint]:
-		return g.emitDivRem(c, fn, x)
+	case *bytecode.DivMod[word.Uint]:
+		return g.emitDivMod(c, fn, x)
 	case *bytecode.FieldArith[word.Uint]:
 		return g.emitFieldOp(c, fn, x)
 	case *bytecode.UintToField[word.Uint]:

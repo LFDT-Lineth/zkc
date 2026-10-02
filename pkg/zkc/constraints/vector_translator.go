@@ -174,6 +174,8 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			// recorded in the write map for constancy analysis; no polynomial
 			// constraint is generated here, since correctness is enforced by
 			// subsequent arithmetic checks.
+			util.Assert(c.Op == vm.DIV_HINT, "unexpected intrinsic bytecode")
+			//
 			continue
 		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeDispatch[W]:
 			// control flow is captured via the branch table; no constraint here

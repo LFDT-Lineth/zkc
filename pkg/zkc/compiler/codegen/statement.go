@@ -867,7 +867,7 @@ func divisorWidthOf(divisor vm.Operand[vm.Uint], bitwidth uint) util.Option[uint
 }
 
 // compileDivMod compiles the combined division/remainder ("/%") expression
-// into a single DivRem bytecode writing both the quotient (targets[0]) and the
+// into a single DivMod bytecode writing both the quotient (targets[0]) and the
 // remainder (targets[1]).
 func (p *StmtCompiler) compileDivMod(e *expr.DivMod[symbol.Resolved], mapping []uint, targets []RegisterId,
 ) []Bytecode {

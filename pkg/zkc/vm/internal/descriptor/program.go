@@ -131,6 +131,7 @@ func (p Program[W]) BreakPoints() []BreakPointLabel {
 // for working with bytecodes enclosed by that module, etc.
 func (p Program[W]) EnvironmentOf(mid uint16) bytecode.Environment[W] {
 	return &moduleEnvironment[W]{
+		p.field,
 		mid,
 		p.modules,
 	}
@@ -313,6 +314,7 @@ func (p *Program[W]) GobDecode(data []byte) error {
 // ============================================================================
 
 type moduleEnvironment[W word.Word[W]] struct {
+	field   field.Config
 	module  uint16
 	modules []Module[W]
 }
@@ -320,6 +322,11 @@ type moduleEnvironment[W word.Word[W]] struct {
 // Name returns the name of the enclosing function.
 func (p moduleEnvironment[W]) Name() string {
 	return p.modules[p.module].Name()
+}
+
+// Field returns the target field
+func (p moduleEnvironment[W]) Field() field.Config {
+	return p.field
 }
 
 // HasRegister checks whether a register with the given name exists and, if

@@ -32,8 +32,8 @@ func (p *Jmp[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Jmp[W]) Validate(_ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *Jmp[W]) Validate(_ Environment[W]) ([]error, bool) {
+	return nil, true
 }
 
 func (p *Jmp[W]) String(_ Environment[W]) string {

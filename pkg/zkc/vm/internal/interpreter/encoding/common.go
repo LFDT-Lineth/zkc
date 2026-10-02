@@ -437,8 +437,8 @@ func Encode[W word.Word[W]](b Bytecode[W], pc uint32, env Environment[W]) []uint
 		return CheckCast(b)
 	case *bytecode.Debug[W]:
 		return Debug(b, env)
-	case *bytecode.DivRem[W]:
-		return DivRem(b, env)
+	case *bytecode.DivMod[W]:
+		return DivMod(b, env)
 	case *bytecode.Intrinsic[W]:
 		return Intrinsic(b, env)
 	case *bytecode.Fail[W]:
