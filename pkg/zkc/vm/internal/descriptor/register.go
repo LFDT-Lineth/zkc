@@ -196,6 +196,14 @@ func (p Register[W]) IsStamp() bool {
 	return p.kind.stamp
 }
 
+// IsZeroWidth returns true for zero-width registers. Zero-width registers are registers
+// that carry no data, so apparent reads and writes to a shared placeholder cannot
+// conflict.
+func (p Register[W]) IsZeroWidth() bool {
+	width := p.Bitwidth()
+	return width.HasValue() && width.Unwrap() == 0
+}
+
 // Name returns the  name of this register
 func (p Register[W]) Name() string {
 	return p.name

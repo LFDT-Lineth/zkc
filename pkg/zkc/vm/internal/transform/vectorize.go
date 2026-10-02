@@ -393,7 +393,7 @@ func validateConflicts[W word.Word[W]](vec BytecodeVector[W], env bytecode.Envir
 		)
 		// Read After Write:
 		for _, r := range ith.Uses() {
-			if bytecode.IsZeroWidth(env.Register(r)) {
+			if env.Register(r).IsZeroWidth() {
 				continue
 			}
 
@@ -403,7 +403,7 @@ func validateConflicts[W word.Word[W]](vec BytecodeVector[W], env bytecode.Envir
 		}
 		// Write after Write:
 		for _, r := range ith.Definitions() {
-			if bytecode.IsZeroWidth(env.Register(r)) {
+			if env.Register(r).IsZeroWidth() {
 				continue
 			}
 

@@ -17,8 +17,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/validate"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -77,7 +77,7 @@ func validateModuleZeroRegisters[W word.Word[W]](program Program[W]) (errs []err
 		var zeros []string
 
 		for _, r := range module.Registers() {
-			if IsZeroWidth(r) {
+			if r.IsZeroWidth() {
 				zeros = append(zeros, r.Name())
 			}
 		}
@@ -97,7 +97,7 @@ func validateFunctionBytecode[W word.Word[W]](program Program[W]) (errs []error)
 		if fn, ok := module.(*descriptor.Function[W]); ok && !fn.IsNative() {
 			var env = program.EnvironmentOf(uint16(mid))
 			// Validate the bytecode
-			errs = append(errs, bytecode.Validate(program.Field(), env, fn.Vectors())...)
+			errs = append(errs, validate.Function(program.Field(), env, *fn)...)
 		}
 	}
 	//
