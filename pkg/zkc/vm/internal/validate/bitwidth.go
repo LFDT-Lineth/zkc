@@ -20,7 +20,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Bitwidth represents the (optional) bitwidth of a given register, where none
@@ -45,7 +44,7 @@ func undefinedBitwidth(bitwidth util.Option[uint]) Bitwidth {
 func definedBitwidth(bitwidth util.Option[uint]) Bitwidth {
 	return Bitwidth{
 		bitwidth: bitwidth,
-		current:  bitwidth,
+		current:  util.Some(bitwidth.UnwrapOr(0)),
 	}
 }
 
@@ -66,6 +65,12 @@ func (p Bitwidth) InBounds() bool {
 	}
 	// Native registers are always in bounds.
 	return true
+}
+
+// Assign the corresponding register a given width.
+func (p Bitwidth) Assign(width uint) Bitwidth {
+	p.current = util.Some(width)
+	return p
 }
 
 // Join another bitwidth entry into this, whilst reporting whether or not
@@ -93,7 +98,7 @@ type Bitwidths struct {
 	bitwidths []Bitwidth
 }
 
-func newBitwidths[W word.Word[W]](f descriptor.Function[W]) Bitwidths {
+func newBitwidths[W Word[W]](f descriptor.Function[W]) Bitwidths {
 	var bitwidths = make([]Bitwidth, f.Width())
 	//
 	for i, reg := range f.Registers() {
@@ -128,20 +133,51 @@ func (p Bitwidths) Join(other Bitwidths) (Bitwidths, bool) {
 		}
 	} else {
 		bitwidths = slices.Clone(other.bitwidths)
+		changed = true
 	}
 	// Done
 	return Bitwidths{bitwidths}, changed
 }
 
+// Assign a given set of bits across a given set of registers.
+func (p Bitwidths) Assign(lhs []RegisterId, rhs util.Option[uint]) Bitwidths {
+	var bitwidths = slices.Clone(p.bitwidths)
+	// Sanity check
+	util.Assert(!rhs.IsEmpty() || len(lhs) == 1, "cannot destruct native register")
+	//
+	if rhs.IsEmpty() {
+		bitwidths[lhs[0]] = p.bitwidths[lhs[0]].Assign(0)
+	} else {
+		var bitwidth = rhs.Unwrap()
+		//
+		for i, l := range lhs {
+			var bw uint
+			if i+1 == len(lhs) {
+				bw = bitwidth
+			} else {
+				// FIXME: does this make sense?
+				bw = p.bitwidths[l].bitwidth.Unwrap()
+			}
+			//
+			bitwidths[l] = p.bitwidths[l].Assign(bw)
+		}
+	}
+	//
+	return Bitwidths{bitwidths}
+}
+
 // validate the bitwidth of all registers within the function's control-flow
 // graph.  This employs a forward dataflow analysis to propagate bitwidth
 // information through the program.
-func validateRegisterBitwidth[W word.Word[W]](f descriptor.Function[W]) (errors []error) {
+func validateRegisterBitwidth[W Word[W]](f *descriptor.Function[W], env Environment[W]) (errors []error) {
 	var (
+		transferFn = func(pp ProgramPoint, bc Bytecode[W], in Bitwidths) []dfa.Transfer[Bitwidths] {
+			return transferRegisterWidths(pp, bc, in, f, env)
+		}
 		// Bitwidths on entry
-		init = newBitwidths(f)
+		init = newBitwidths(*f)
 		//
-		bitwidths = dfa.ForwardDataFlowAnalysis(f, init, transferRegisterWidths)
+		bitwidths = dfa.ForwardDataFlowAnalysis(*f, init, transferFn)
 	)
 	// Sanity check the bytecodes of each vector
 	for macro, vec := range f.Vectors() {
@@ -153,7 +189,7 @@ func validateRegisterBitwidth[W word.Word[W]](f descriptor.Function[W]) (errors 
 				widths = bitwidths.Get(pp)
 			)
 			// Check bitwidth of each used register is valid.
-			for _, r := range bytecodeUses(bc, f) {
+			for _, r := range bytecodeUses(bc, *f, env) {
 				var (
 					reg   = f.Register(r)
 					width = widths.bitwidths[r]
@@ -172,10 +208,17 @@ func validateRegisterBitwidth[W word.Word[W]](f descriptor.Function[W]) (errors 
 	return errors
 }
 
-func bytecodeUses[W word.Word[W]](bc Bytecode[W], f descriptor.Function[W]) []RegisterId {
-	// For a return bytecode, force the output registers of the enclosing
-	// function to be checked.
-	if _, ok := bc.(*bytecode.Ret[W]); ok {
+func bytecodeUses[W Word[W]](bc Bytecode[W], f descriptor.Function[W], env Environment[W]) []RegisterId {
+	switch bc := bc.(type) {
+	case *bytecode.Call[W]:
+		var f = env.Module(bc.Target).Unwrap().(*descriptor.Function[W])
+		// For an unsafe call, we don't check the argumetns
+		if f.HasUnsafeArgs() {
+			return nil
+		}
+	case *bytecode.Ret[W]:
+		// For a return bytecode, force the output registers of the enclosing
+		// function to be checked.
 		var rids = make([]RegisterId, f.NumOutputs())
 		//
 		for i := range f.NumOutputs() {
@@ -188,7 +231,9 @@ func bytecodeUses[W word.Word[W]](bc Bytecode[W], f descriptor.Function[W]) []Re
 	return bc.Uses()
 }
 
-func transferRegisterWidths[W word.Word[W]](pp ProgramPoint, bc Bytecode[W], in Bitwidths) []dfa.Transfer[Bitwidths] {
+func transferRegisterWidths[W Word[W]](pp ProgramPoint, bc Bytecode[W], in Bitwidths, f *descriptor.Function[W],
+	env Environment[W]) []dfa.Transfer[Bitwidths] {
+	//
 	var (
 		edges []dfa.Transfer[Bitwidths]
 		next  = pp.Skip(0)
@@ -232,16 +277,90 @@ func transferRegisterWidths[W word.Word[W]](pp ProgramPoint, bc Bytecode[W], in 
 		}
 		// Create fall-thru edge
 		edges = append(edges, dfa.NewTransfer(in, next))
-	default:
-		var bitwidths = slices.Clone(in.bitwidths)
-		// simple transfer function!!!
-		for _, r := range bc.Definitions() {
-			// FIXME: this is totally broken!!!
-			bitwidths[r] = definedBitwidth(bitwidths[r].bitwidth)
+	// Non-branching bytecodes
+	case *bytecode.Arith[W]:
+		edges = append(edges, transferArith(pp, bc, in, f))
+	case *bytecode.Bitwise[W]:
+		edges = append(edges, transferBitwise(pp, bc, in))
+	case *bytecode.Call[W]:
+		if !bc.Never {
+			edges = append(edges, transferCall(pp, bc, in, env))
 		}
+	case *bytecode.Debug[W]:
 		// Create fall-thru edge
-		edges = append(edges, dfa.NewTransfer(Bitwidths{bitwidths}, next))
+		edges = append(edges, dfa.NewTransfer(in, next))
+	case *bytecode.DivRem[W]:
+		edges = append(edges, transferDivRem(pp, bc, in))
+	case *bytecode.FieldArith[W]:
+		edges = append(edges, transferFieldArith(pp, bc, in))
+	case *bytecode.UintToField[W]:
+		edges = append(edges, transferUintToField(pp, bc, in))
+	case *bytecode.FieldToUint[W]:
+		edges = append(edges, transferFieldToUint(pp, bc, in))
+	case *bytecode.Intrinsic[W]:
+		edges = append(edges, transferIntrinsic(pp, bc, in))
+	case *bytecode.ReadWrite[W]:
+		edges = append(edges, transferReadWrite(pp, bc, in, env))
+	default:
+		panic("unknown bytecode encountered")
 	}
 	//
 	return edges
+}
+
+func transferArith[W Word[W]](pp ProgramPoint, bc *bytecode.Arith[W], in Bitwidths, env descriptor.RegisterMap[W]) dfa.Transfer[Bitwidths] {
+	var (
+		next    = pp.Skip(0)
+		bits    util.Option[uint]
+		sources = bc.Source
+	)
+	//
+	switch bc.Op {
+	case bytecode.OP_ADD:
+		bits = descriptor.CalculateAddBitwidth(sources, bc.Constant, env)
+	case bytecode.OP_MUL:
+		bits = descriptor.CalculateMulBitwidth(sources, bc.Constant, env)
+	case bytecode.OP_SUB:
+		bits = descriptor.CalculateSubBitwidth(sources, bc.Constant, env)
+	default:
+		panic("unknown arithmetic instruction")
+	}
+	//
+	return dfa.NewTransfer(in.Assign(bc.Target, bits), next)
+}
+
+func transferBitwise[W Word[W]](pp ProgramPoint, bc *bytecode.Bitwise[W], in Bitwidths) dfa.Transfer[Bitwidths] {
+	panic("got here")
+}
+
+func transferCall[W Word[W]](pp ProgramPoint, bc *bytecode.Call[W], in Bitwidths, env Environment[W],
+) dfa.Transfer[Bitwidths] {
+	panic("got here")
+}
+
+func transferDivRem[W Word[W]](pp ProgramPoint, bc *bytecode.DivRem[W], in Bitwidths) dfa.Transfer[Bitwidths] {
+	panic("got here")
+}
+
+func transferFieldArith[W Word[W]](pp ProgramPoint, bc *bytecode.FieldArith[W], in Bitwidths) dfa.Transfer[Bitwidths] {
+	panic("got here")
+}
+
+func transferUintToField[W Word[W]](pp ProgramPoint, bc *bytecode.UintToField[W], in Bitwidths,
+) dfa.Transfer[Bitwidths] {
+	panic("got here")
+}
+
+func transferFieldToUint[W Word[W]](pp ProgramPoint, bc *bytecode.FieldToUint[W], in Bitwidths,
+) dfa.Transfer[Bitwidths] {
+	panic("got here")
+}
+
+func transferIntrinsic[W Word[W]](pp ProgramPoint, bc *bytecode.Intrinsic[W], in Bitwidths) dfa.Transfer[Bitwidths] {
+	panic("got here")
+}
+
+func transferReadWrite[W Word[W]](pp ProgramPoint, bc *bytecode.ReadWrite[W], in Bitwidths, env Environment[W],
+) dfa.Transfer[Bitwidths] {
+	panic("got here")
 }

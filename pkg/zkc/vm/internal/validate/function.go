@@ -34,9 +34,12 @@ type Bytecode[W word.Word[W]] = bytecode.Bytecode[W]
 // ProgramPoint provides a convenient alias
 type ProgramPoint = descriptor.ProgramPoint
 
+// Word provides a convenient alias
+type Word[W any] = word.Word[W]
+
 // Function validates the body of a function against a given environment,
 // returning errors if it is no well-formed.
-func Function[W word.Word[W]](field field.Config, env Environment[W], f descriptor.Function[W]) (errs []error) {
+func Function[W Word[W]](field field.Config, env Environment[W], f *descriptor.Function[W]) (errs []error) {
 	var (
 		n    = uint(len(f.Vectors()))
 		safe = true
@@ -50,7 +53,7 @@ func Function[W word.Word[W]](field field.Config, env Environment[W], f descript
 	}
 	// valididate register bitwidths (if it is safe to do so).
 	if safe {
-		errs = append(errs, validateRegisterBitwidth(f)...)
+		errs = append(errs, validateRegisterBitwidth(f, env)...)
 	}
 	//
 	return errs
