@@ -36,6 +36,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear2"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio/widget"
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
@@ -61,6 +63,8 @@ var traceCmds = []FieldAgnosticCmd{
 	{field.GF_8209, runTraceCmd[gf8209.Element]},
 	{field.KOALABEAR_16, runTraceCmd[koalabear.Element]},
 	{field.GOLDILOCKS_32, runTraceCmd[goldilocks.Element]},
+	{field.MAMABEAR_32, runTraceCmd[mamabear.Element]},
+	{field.MAMABEAR2_32, runTraceCmd[mamabear2.Element]},
 	{field.BLS12_377, runTraceCmd[bls12_377.Element]},
 }
 

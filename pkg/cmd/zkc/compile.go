@@ -27,6 +27,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/goldilocks"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/koalabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear2"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
@@ -59,6 +61,8 @@ var compileCmds = []FieldAgnosticCmd{
 	{field.KOALABEAR_16, runCompileCmd[koalabear.Element, vm.Uint32]},
 	{field.KOALABEAR_24, runCompileCmd[koalabear.Element, vm.Uint32]},
 	{field.GOLDILOCKS_32, runCompileCmd[goldilocks.Element, vm.Uint64]},
+	{field.MAMABEAR_32, runCompileCmd[mamabear.Element, vm.Uint64]},
+	{field.MAMABEAR2_32, runCompileCmd[mamabear2.Element, vm.Uint64]},
 	{field.BLS12_377, runCompileCmd[bls12_377.Element, vm.Uint128]},
 }
 

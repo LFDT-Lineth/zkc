@@ -17,7 +17,7 @@ jobs:
     strategy:
       matrix:
         test: [corset-bench,corset-test,unit-test]
-        field: [BLS12_377,GOLDILOCKS_32,KOALABEAR_16]
+        field: [BLS12_377,MAMABEAR_32,KOALABEAR_16]
         exclude:
           - { field: KOALABEAR_16, test: unit-test }
       fail-fast: false
@@ -28,7 +28,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '>=1.24'
+          go-version: '>=1.27'
       - run: make ${{ matrix.test }}
         env:
           GOMAXPROCS: 8
@@ -40,9 +40,9 @@ jobs:
     strategy:
       matrix:
         test: [bench,util,unit,racer]
-        field: [GOLDILOCKS_32,KOALABEAR_16, GF_8209]
+        field: [MAMABEAR_32,KOALABEAR_16, GF_8209]
         exclude:
-          - { field: GOLDILOCKS_32, test: racer }
+          - { field: MAMABEAR_32, test: racer }
           - { field: GF_8209, test: racer }
       fail-fast: false
     runs-on: gha-lfdt-lineth-ss-ubuntu-24-amd64-large
@@ -52,7 +52,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '>=1.24'
+          go-version: '>=1.27'
       - run: make zkc-${{ matrix.test }}-test
         env:
           GOMAXPROCS: 8
