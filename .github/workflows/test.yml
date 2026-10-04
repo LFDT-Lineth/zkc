@@ -28,7 +28,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '>=1.24'
+          go-version: '>=1.27'
       - run: make ${{ matrix.test }}
         env:
           GOMAXPROCS: 8
@@ -52,7 +52,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '>=1.24'
+          go-version: '>=1.27'
       - run: make zkc-${{ matrix.test }}-test
         env:
           GOMAXPROCS: 8
