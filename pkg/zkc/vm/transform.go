@@ -348,14 +348,25 @@ func Vectorize[W word.Word[W]]() Transform[W] {
 	return Transform[W]{VECTORIZE, noPrecondition, transformer}
 }
 
-// FlattenLookupAccess introduces a tmp register to hold a call (or memory access) argument
-// when it's rewritten in the same vector:
-// 1. x = f(x)
-// 2. y = f(x); x = x + 1
-// As we want to avoid shift in lookups, we must keep the original value of x in a tmp register,
-// so that the call can be rewritten as:
-// 1. tmp = x; x = f(tmp)
-// 2. tmp = x; y = f(tmp); x = x + 1
+// FlattenLookupAccess adjusts the program (where necessary) to enforce an
+// invariant that call (or memory access) arguments refer to registers on the
+// current vector.  To do this the transform introduces temporary registers (as
+// required) to hold call (or memory access) arguments.  For example:
+//
+// > x = f(x)
+// > y = f(x); x = x + 1
+//
+// Here, in "y = f(x)", the variable x refers its value on the previous row.
+// Thus, the above is rewritten like so:
+//
+// > tmp = x; x = f(tmp)
+// > tmp = x; y = f(tmp); x = x + 1
+//
+// The reason for enforcing this invariant is to prevent shifts from apperaring
+// in lookup constraints (i.e. because lookup constraints do not support them).
+//
+// NOTE: this transform must run after allocate registers as the latter can
+// otherwise break the above invariant.
 func FlattenLookupAccess[W word.Word[W]]() Transform[W] {
 	var (
 		transformer  = transform.FlattenLookupAccess[W]
@@ -447,7 +458,10 @@ func AddRangeConstraints[W word.Word[W]]() Transform[W] {
 
 // AllocateRegisters attempts to reduce the number of registers allocated for
 // each function by coalescing them where possible.  This transform should
-// always run after register splitting in order to be most effective.
+// always run after register splitting in order to be most effective.  Also, the
+// transform must (currently) run after lookup flattening because, otherwise, it
+// can break the invariant enforced that call (or memory access) arguments refer
+// to registers on the current row.
 func AllocateRegisters[W word.Word[W]]() Transform[W] {
 	var (
 		transformer  = transform.AllocateRegisters[W]
