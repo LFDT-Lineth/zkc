@@ -595,8 +595,7 @@ func (s *zkcServer) Definition(
 ) ([]protocol.Location, error) {
 	s.mu.RLock()
 	text, ok := s.compiler.Source(params.TextDocument.URI.Filename())
-	program := s.compiler.Program()
-	srcmaps := s.compiler.SourceMaps()
+	program, srcmaps := s.compiler.ProgramFor(params.TextDocument.URI.Filename())
 	s.mu.RUnlock()
 
 	if !ok {
@@ -659,8 +658,7 @@ func (s *zkcServer) DocumentSymbol(
 ) ([]interface{}, error) {
 	s.mu.RLock()
 	_, ok := s.compiler.Source(params.TextDocument.URI.Filename())
-	program := s.compiler.Program()
-	srcmaps := s.compiler.SourceMaps()
+	program, srcmaps := s.compiler.ProgramFor(params.TextDocument.URI.Filename())
 	s.mu.RUnlock()
 
 	if !ok {
@@ -720,8 +718,7 @@ func (s *zkcServer) Formatting(
 func (s *zkcServer) Hover(_ context.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
 	s.mu.RLock()
 	text, ok := s.compiler.Source(params.TextDocument.URI.Filename())
-	program := s.compiler.Program()
-	srcmaps := s.compiler.SourceMaps()
+	program, srcmaps := s.compiler.ProgramFor(params.TextDocument.URI.Filename())
 	s.mu.RUnlock()
 
 	if !ok {
@@ -763,8 +760,7 @@ func (s *zkcServer) PrepareRename(
 ) (*protocol.Range, error) {
 	s.mu.RLock()
 	text, ok := s.compiler.Source(params.TextDocument.URI.Filename())
-	program := s.compiler.Program()
-	srcmaps := s.compiler.SourceMaps()
+	program, srcmaps := s.compiler.ProgramFor(params.TextDocument.URI.Filename())
 	s.mu.RUnlock()
 
 	if !ok {
@@ -794,8 +790,7 @@ func (s *zkcServer) References(
 ) ([]protocol.Location, error) {
 	s.mu.RLock()
 	text, ok := s.compiler.Source(params.TextDocument.URI.Filename())
-	program := s.compiler.Program()
-	srcmaps := s.compiler.SourceMaps()
+	program, srcmaps := s.compiler.ProgramFor(params.TextDocument.URI.Filename())
 	s.mu.RUnlock()
 
 	if !ok {
@@ -817,8 +812,7 @@ func (s *zkcServer) Rename(
 ) (*protocol.WorkspaceEdit, error) {
 	s.mu.RLock()
 	text, ok := s.compiler.Source(params.TextDocument.URI.Filename())
-	program := s.compiler.Program()
-	srcmaps := s.compiler.SourceMaps()
+	program, srcmaps := s.compiler.ProgramFor(params.TextDocument.URI.Filename())
 	s.mu.RUnlock()
 
 	if !ok {
@@ -840,7 +834,7 @@ func (s *zkcServer) SignatureHelp(
 ) (*protocol.SignatureHelp, error) {
 	s.mu.RLock()
 	text, ok := s.compiler.Source(params.TextDocument.URI.Filename())
-	program := s.compiler.Program()
+	program, _ := s.compiler.ProgramFor(params.TextDocument.URI.Filename())
 	s.mu.RUnlock()
 
 	if !ok {
