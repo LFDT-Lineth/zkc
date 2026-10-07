@@ -199,8 +199,8 @@ type zkcServer struct {
 	mu sync.RWMutex
 	// compiler holds the in-memory view of every .zkc file the server is
 	// tracking — those discovered under the workspace root at startup plus
-	// any opened by the editor since.  It is recompiled in full on each
-	// document change.
+	// any opened by the editor since.  On each document change, only the
+	// programs affected by the change are recompiled.
 	compiler *compiler.IncrementalCompiler
 	// dirtyDiagnostics is the set of file URIs for which the server most
 	// recently published a non-empty diagnostics list.  When a subsequent

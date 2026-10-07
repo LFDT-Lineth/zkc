@@ -13,8 +13,9 @@
 package compiler
 
 import (
+	"maps"
 	"path/filepath"
-	"sort"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -56,11 +57,11 @@ func RemovedFile(filename string) FileUpdate {
 // edited project without ever reading from disk: every file the compiler
 // considers must first be supplied via Apply.
 //
-// The supplied files may make up several independent programs (e.g. a
-// repository with many entry points).  Rather than compiling every file as a
-// single program, the compiler follows include directives between the files
-// it holds and compiles each entry point (a file which no other file includes)
-// together with the files it transitively includes.
+// The supplied files may make up several independent programs.  Every file
+// declaring a "main" function is the entry point of its own program, which
+// consists of that file plus every file it (transitively) includes.  Programs
+// are compiled separately, so declarations in one program never clash with
+// those in another.
 //
 // The compiler is not safe for concurrent use; callers are responsible for
 // serialising access (e.g. through a single document-update goroutine).
@@ -69,47 +70,59 @@ type IncrementalCompiler struct {
 	// maxStaticHeight bounds the number of rows any declared static table may
 	// occupy (see validate.StaticTableHeight).
 	maxStaticHeight uint
-	// files holds the current contents of every source file known to the
-	// compiler, keyed by filename.  This map is the sole source of truth:
-	// include directives are resolved against these files only, never against
-	// the filesystem, so any file that is not present here is treated as if it
-	// does not exist.
-	files map[string]string
-	// units holds the independently compiled programs produced by the most
-	// recent call to Apply.  It is replaced wholesale on each invocation
-	// rather than patched in-place.
-	units []compilationUnit
-	// fileUnit maps each filename to the index (into units) of the program
-	// used to answer queries about that file.
-	fileUnit map[string]int
+	// files holds every source file known to the compiler, keyed by filename.
+	// This map is the sole source of truth: include directives are resolved
+	// against these files only, never against the filesystem, so any file that
+	// is not present here is treated as if it does not exist.
+	files map[string]sourceFile
+	// programs holds one compiled program per entry point, keyed by the
+	// filename of the entry point.
+	programs map[string]*program
+	// entryOf maps each file to the entry point of the program used to answer
+	// queries about it (see ProgramFor).  Files reachable from no entry point
+	// are absent.
+	entryOf map[string]string
 }
 
-// compilationUnit is a single program: an entry point together with every file
-// it transitively includes.
-type compilationUnit struct {
-	// program is the AST of this unit.
-	program ast.Program
-	// srcmaps maps AST nodes of this unit back to the source spans they
-	// originated from.
+// sourceFile is a source file together with the result of parsing it.  Files
+// are parsed once, when they are supplied to Apply, and the result is reused by
+// every compilation until the file changes again.
+type sourceFile struct {
+	contents string
+	parsed   parser.UnlinkedSourceFile
+	// errors arising from parsing this file.
+	errors []source.SyntaxError
+	// entryPoint indicates this file declares a "main" function.
+	entryPoint bool
+}
+
+// program is the most recent compilation of a single entry point.
+type program struct {
+	// files reachable from the entry point (including itself), sorted.
+	files   []string
+	ast     ast.Program
 	srcmaps source.Maps[any]
+	// errors arising from resolving includes, linking and validating this
+	// program (parse errors are held by each sourceFile instead).
+	errors []source.SyntaxError
 }
 
 // Source returns the current contents of the file with the given filename
 // from the in-memory store.  The second return value is false when no such
 // file is known to the compiler.
 func (p *IncrementalCompiler) Source(filename string) (string, bool) {
-	contents, ok := p.files[filename]
-	return contents, ok
+	f, ok := p.files[filename]
+	return f.contents, ok
 }
 
-// ProgramFor returns the AST and source-span map of the program which contains
-// the given file, as produced by the most recent call to Apply.  When a file
-// is shared between several programs (e.g. a library), the first program (in
-// filename order of its entry point) is returned.  For a file which is not
-// part of any program, an empty program is returned.
+// ProgramFor returns the AST and source-span map of the program containing the
+// given file, as produced by the most recent call to Apply.  A file included by
+// several programs (e.g. a library) is answered from the first such program in
+// filename order of entry points.  A file reachable from no entry point yields
+// an empty program.
 func (p *IncrementalCompiler) ProgramFor(filename string) (ast.Program, source.Maps[any]) {
-	if i, ok := p.fileUnit[filename]; ok {
-		return p.units[i].program, p.units[i].srcmaps
+	if entry, ok := p.entryOf[filename]; ok {
+		return p.programs[entry].ast, p.programs[entry].srcmaps
 	}
 	//
 	return ast.Program{}, source.Maps[any]{}
@@ -124,47 +137,93 @@ func NewIncrementalCompiler() *IncrementalCompiler {
 	return &IncrementalCompiler{
 		field:           field.KOALABEAR_16,
 		maxStaticHeight: codegen.DEFAULT_MAX_STATIC_HEIGHT,
-		files:           make(map[string]string),
-		fileUnit:        make(map[string]int),
+		files:           make(map[string]sourceFile),
+		programs:        make(map[string]*program),
+		entryOf:         make(map[string]string),
 	}
 }
 
-// Apply a given set of updates to the internal state of this compiler.
+// Apply a given set of updates to the internal state of this compiler, and
+// return all errors for the files it holds.
 func (p *IncrementalCompiler) Apply(updates ...FileUpdate) []source.SyntaxError {
-	// Apply updates to the in-memory store.
+	changed := make(map[string]bool)
+	// Parse only the files that changed; all other files keep their parse.
 	for _, u := range updates {
+		// Skip updates which change nothing (e.g. opening a file whose contents
+		// were already discovered on disk).
+		if f, ok := p.files[u.filename]; ok && !u.removed && f.contents == u.contents {
+			continue
+		}
+		//
+		changed[u.filename] = true
+		//
 		if u.removed {
 			delete(p.files, u.filename)
 		} else {
-			p.files[u.filename] = u.contents
+			p.files[u.filename] = parseSourceFile(u.filename, u.contents)
 		}
 	}
 	//
 	var (
-		filenames        = p.sortedFilenames()
-		includes, errors = p.includeGraph(filenames)
-		units            []compilationUnit
-		fileUnit         = make(map[string]int)
-		seen             = make(map[syntaxErrorKey]bool)
+		filenames = slices.Sorted(maps.Keys(p.files))
+		canonical = make(map[string]string)
+		programs  = make(map[string]*program)
 	)
-	// Compile each entry point together with the files it includes.  A file
-	// shared between several entry points is compiled once per entry point,
-	// but any error it contains is reported only once.
-	for _, root := range entryPoints(filenames, includes) {
-		var (
-			closure     = includeClosure(root, includes)
-			unit, uerrs = p.compileUnit(closure)
-		)
+	//
+	for _, f := range filenames {
+		canonical[canonicalPath(f)] = f
+	}
+	// Recompute which files each entry point reaches.  This is cheap (it walks
+	// cached parses only) and must be done on every update, since adding or
+	// changing one file can alter the set of files another program includes.
+	for _, entry := range filenames {
+		if !p.files[entry].entryPoint {
+			continue
+		}
 		//
-		for _, f := range closure {
-			if _, ok := fileUnit[f]; !ok {
-				fileUnit[f] = len(units)
+		files, includeErrs := p.reachable(entry, canonical)
+		// Reuse the previous compilation unless one of its files changed, or it
+		// now consists of different files.
+		if prev, ok := p.programs[entry]; ok && slices.Equal(prev.files, files) &&
+			!slices.ContainsFunc(files, func(f string) bool { return changed[f] }) {
+			programs[entry] = prev
+		} else {
+			programs[entry] = p.compile(files, includeErrs)
+		}
+	}
+	// Programs whose entry point disappeared are dropped by replacing the map.
+	p.programs = programs
+	//
+	return p.index(filenames)
+}
+
+// index rebuilds the file-to-program mapping used by ProgramFor, and collects
+// the errors of every file and program.  A file shared by several programs is
+// compiled once per program, so the same error can be reported by each of them;
+// such duplicates are reported only once.
+func (p *IncrementalCompiler) index(filenames []string) []source.SyntaxError {
+	var (
+		errors []source.SyntaxError
+		seen   = make(map[syntaxErrorKey]bool)
+	)
+	//
+	p.entryOf = make(map[string]string)
+	// Parse errors are reported for every file, even those in no program.
+	for _, f := range filenames {
+		errors = append(errors, p.files[f].errors...)
+	}
+	// Visit entry points in filename order, so the first program containing a
+	// given file is deterministic.
+	for _, entry := range slices.Sorted(maps.Keys(p.programs)) {
+		prog := p.programs[entry]
+		//
+		for _, f := range prog.files {
+			if _, ok := p.entryOf[f]; !ok {
+				p.entryOf[f] = entry
 			}
 		}
-
-		units = append(units, unit)
-
-		for _, e := range uerrs {
+		//
+		for _, e := range prog.errors {
 			if key := keyOf(e); !seen[key] {
 				seen[key] = true
 
@@ -172,182 +231,133 @@ func (p *IncrementalCompiler) Apply(updates ...FileUpdate) []source.SyntaxError 
 			}
 		}
 	}
-	// Update internal program state.
-	p.units = units
-	p.fileUnit = fileUnit
 	//
 	return errors
 }
 
-// compileUnit compiles a given set of files as a single program.
-func (p *IncrementalCompiler) compileUnit(filenames []string) (compilationUnit, []source.SyntaxError) {
+// reachable returns the given entry point together with every file it
+// transitively includes, in sorted order.  Include patterns are globs relative
+// to the including file (as for the batch compiler, see
+// scanForFurtherSourceFiles) but are matched against the known files only,
+// given here by their canonical path.  An include matching no known file is
+// reported as an error.
+func (p *IncrementalCompiler) reachable(entry string, canonical map[string]string,
+) ([]string, []source.SyntaxError) {
 	var (
-		items  []parser.UnlinkedSourceFile
-		errors []source.SyntaxError
+		visited = map[string]bool{entry: true}
+		stack   = []string{entry}
+		errors  []source.SyntaxError
 	)
-	// Parse every file of this program.  Includes are not resolved against
-	// disk; the in-memory store is the sole source of truth.
-	for _, filename := range filenames {
+	// Depth-first walk over include declarations; the visited set ensures each
+	// file is considered once, even when includes form a cycle.
+	for len(stack) > 0 {
 		var (
-			srcfile  = source.NewSourceFile(filename, []byte(p.files[filename]))
-			cs, errs = parser.Parse(srcfile)
+			f      = stack[len(stack)-1]
+			parsed = p.files[f].parsed
+			dir    = filepath.Dir(f)
 		)
-		if len(cs.Declarations) > 0 {
-			items = append(items, cs)
-		}
-
-		errors = append(errors, errs...)
-	}
-	// Link assembly and resolve external accesses.
-	program, srcmaps, linkErrs := Link(items...)
-	errors = append(errors, linkErrs...)
-	// Capture variable declarations before flattening discards them (they are
-	// needed to anchor unused-variable errors on the original declaration).
-	decls := validate.CollectVariableDeclarations(program)
-	// Flatten block-level constructs (if/else, while, for) into flat if-goto form.
-	lower.Flatten(program, srcmaps)
-	// Well-formedness checks (assuming unlimited field width).  Any parse or
-	// link errors accumulated above mean the program is not well-formed, which
-	// some downstream checks rely upon.
-	errors = append(errors, validateProgram(program, p.field, srcmaps, len(errors) != 0, decls, p.maxStaticHeight)...)
-	//
-	return compilationUnit{program, srcmaps}, errors
-}
-
-// sortedFilenames returns the names of all known files in a deterministic order.
-func (p *IncrementalCompiler) sortedFilenames() []string {
-	filenames := make([]string, 0, len(p.files))
-	for f := range p.files {
-		filenames = append(filenames, f)
-	}
-
-	sort.Strings(filenames)
-
-	return filenames
-}
-
-// includeGraph determines, for each file, which of the known files it includes.
-// Include patterns are globs relative to the including file (as for the batch
-// compiler) and are matched against the in-memory store only.  An include which
-// matches nothing is reported as an error.
-func (p *IncrementalCompiler) includeGraph(filenames []string) (map[string][]string, []source.SyntaxError) {
-	var (
-		includes = make(map[string][]string)
-		errors   []source.SyntaxError
-		canon    = make(map[string]string)
-	)
-	//
-	for _, f := range filenames {
-		canon[canonicalPath(f)] = f
-	}
-	//
-	for _, f := range filenames {
-		cs, _ := parser.Parse(source.NewSourceFile(f, []byte(p.files[f])))
-		dir := filepath.Dir(f)
 		//
-		for _, d := range cs.Declarations {
+		stack = stack[:len(stack)-1]
+		//
+		for _, d := range parsed.Declarations {
 			inc, ok := d.(*decl.Include[symbol.Unresolved])
 			if !ok {
 				continue
 			}
 			//
-			pattern := canonicalPath(filepath.Join(dir, inc.Pattern()))
-			matched := false
+			var (
+				pattern = canonicalPath(filepath.Join(dir, inc.Pattern()))
+				msg     = "failed to match anything"
+			)
 			//
-			for key, target := range canon {
-				if ok, err := filepath.Match(pattern, key); err != nil {
-					errors = append(errors, *cs.SourceMap.SyntaxError(inc, err.Error()))
-					matched = true // already reported
-					//
+			for path, target := range canonical {
+				ok, err := filepath.Match(pattern, path)
+				if err != nil {
+					// Malformed pattern: report it rather than "no match".
+					msg = err.Error()
 					break
 				} else if ok {
-					matched = true
+					msg = ""
 
-					if target != f {
-						includes[f] = append(includes[f], target)
+					if !visited[target] {
+						visited[target] = true
+						stack = append(stack, target)
 					}
 				}
 			}
 			//
-			if !matched {
-				errors = append(errors, *cs.SourceMap.SyntaxError(inc, "failed to match anything"))
+			if msg != "" {
+				errors = append(errors, *parsed.SourceMap.SyntaxError(inc, msg))
 			}
 		}
 	}
 	//
-	return includes, errors
+	return slices.Sorted(maps.Keys(visited)), errors
 }
 
-// entryPoints determines the files from which programs are compiled.  These are
-// the files which no other file includes.  Files which are only reachable
-// through an include cycle have no such entry point, so (in filename order) the
-// first unreachable file of each cycle is used instead.
-func entryPoints(filenames []string, includes map[string][]string) []string {
+// compile links and validates a given set of (already parsed) files as a single
+// program.  Errors arising from resolving includes are supplied by the caller.
+func (p *IncrementalCompiler) compile(files []string, errors []source.SyntaxError) *program {
 	var (
-		included = make(map[string]bool)
-		reached  = make(map[string]bool)
-		roots    []string
+		items     []parser.UnlinkedSourceFile
+		hasErrors = len(errors) != 0
 	)
 	//
-	for _, targets := range includes {
-		for _, t := range targets {
-			included[t] = true
+	for _, f := range files {
+		sf := p.files[f]
+		hasErrors = hasErrors || len(sf.errors) != 0
+		//
+		if len(sf.parsed.Declarations) > 0 {
+			items = append(items, withOwnSourceMap(sf.parsed))
 		}
 	}
+	// Link assembly and resolve external accesses.
+	linked, srcmaps, linkErrs := Link(items...)
+	errors = append(errors, linkErrs...)
+	hasErrors = hasErrors || len(linkErrs) != 0
+	// Capture variable declarations before flattening discards them (they are
+	// needed to anchor unused-variable errors on the original declaration).
+	decls := validate.CollectVariableDeclarations(linked)
+	// Flatten block-level constructs (if/else, while, for) into flat if-goto form.
+	lower.Flatten(linked, srcmaps)
+	// Well-formedness checks (assuming unlimited field width).  Any parse or
+	// link errors accumulated above mean the program is not well-formed, which
+	// some downstream checks rely upon.
+	errors = append(errors, validateProgram(linked, p.field, srcmaps, hasErrors, decls, p.maxStaticHeight)...)
 	//
-	for _, f := range filenames {
-		if !included[f] {
-			roots = append(roots, f)
-
-			for _, r := range includeClosure(f, includes) {
-				reached[r] = true
-			}
-		}
-	}
-	//
-	for _, f := range filenames {
-		if !reached[f] {
-			roots = append(roots, f)
-
-			for _, r := range includeClosure(f, includes) {
-				reached[r] = true
-			}
-		}
-	}
-	//
-	return roots
+	return &program{files, linked, srcmaps, errors}
 }
 
-// includeClosure returns the given file together with every file it
-// transitively includes, in filename order.
-func includeClosure(root string, includes map[string][]string) []string {
-	var (
-		visited = map[string]bool{root: true}
-		stack   = []string{root}
-		closure []string
-	)
+// parseSourceFile parses a given file, and determines whether it is an entry
+// point.
+func parseSourceFile(filename, contents string) sourceFile {
+	parsed, errors := parser.Parse(source.NewSourceFile(filename, []byte(contents)))
+	entryPoint := false
 	//
-	for len(stack) > 0 {
-		f := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-
-		closure = append(closure, f)
-
-		for _, t := range includes[f] {
-			if !visited[t] {
-				visited[t] = true
-				stack = append(stack, t)
-			}
+	for _, d := range parsed.Declarations {
+		// TODO: https://github.com/LFDT-Lineth/zkc/issues/1869 parametrize "main" name
+		if fn, ok := d.(*decl.UnresolvedFunction); ok && fn.Name() == "main" {
+			entryPoint = true
 		}
 	}
+	//
+	return sourceFile{contents, parsed, errors, entryPoint}
+}
 
-	sort.Strings(closure)
-
-	return closure
+// withOwnSourceMap returns a copy of a parsed file with its own source map.
+// Linking and flattening add entries to the source maps they are given, so
+// linking cached parses directly would grow their maps on every recompilation.
+func withOwnSourceMap(f parser.UnlinkedSourceFile) parser.UnlinkedSourceFile {
+	srcmap := source.NewSourceMap[any](f.SourceMap.Source())
+	source.JoinMaps(srcmap, &f.SourceMap, func(node any) any { return node })
+	f.SourceMap = *srcmap
+	//
+	return f
 }
 
 // syntaxErrorKey identifies a syntax error independently of which program
-// reported it.
+// reported it (errors cannot be compared directly, since each program holds its
+// own copy of the source file they refer to).
 type syntaxErrorKey struct {
 	filename   string
 	start, end int
