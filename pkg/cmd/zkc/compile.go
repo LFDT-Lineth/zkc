@@ -738,9 +738,11 @@ type bytecodeRow struct {
 func regType[W vm.Word[W]](r vm.Register[W]) string {
 	if r.IsNative() {
 		return "𝔽"
+	} else if r.IsSafe() {
+		return fmt.Sprintf("u%d", r.Bitwidth().Unwrap())
 	}
 	//
-	return fmt.Sprintf("u%d", r.Bitwidth().Unwrap())
+	return fmt.Sprintf("u%d!", r.Bitwidth().Unwrap())
 }
 
 func writeBytecodeMemory[W vm.Word[W]](listing *bytecodeListing, m *vm.Memory[W]) {

@@ -72,8 +72,11 @@ func ToRegisters[W word.Word[W]](registers ...Register[W]) []register.Register {
 type Type struct {
 	// underlying register type
 	underlying register.Type
-	// stamp indicator
+	// flag to indicate whether this register is part of an synthetic stamp
+	// register (i.e. added by ThreadTimeStamps).
 	stamp bool
+	// safe registers have dedicated checks to enforce their bounds.
+	safe bool
 }
 
 // Cmp implementation for Comparable interface
@@ -118,27 +121,32 @@ func NewRegister[W word.Word[W]](kind Type, name string, bitwidth util.Option[ui
 
 // NewInputRegister constructs a new input register descriptor.
 func NewInputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	return NewRegister(Type{register.INPUT_REGISTER, false}, name, bitwidth, padding)
+	var safe = bitwidth.HasValue()
+	return NewRegister(Type{register.INPUT_REGISTER, false, safe}, name, bitwidth, padding)
 }
 
 // NewOutputRegister constructs a new output register descriptor.
 func NewOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	return NewRegister(Type{register.OUTPUT_REGISTER, false}, name, bitwidth, padding)
+	var safe = bitwidth.HasValue()
+	return NewRegister(Type{register.OUTPUT_REGISTER, false, safe}, name, bitwidth, padding)
 }
 
 // NewStampInputRegister constructs a new (stamp) input register descriptor.
 func NewStampInputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	return NewRegister(Type{register.INPUT_REGISTER, true}, name, bitwidth, padding)
+	var safe = bitwidth.HasValue()
+	return NewRegister(Type{register.INPUT_REGISTER, true, safe}, name, bitwidth, padding)
 }
 
 // NewStampOutputRegister constructs a new (stamp) output register descriptor.
 func NewStampOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	return NewRegister(Type{register.OUTPUT_REGISTER, true}, name, bitwidth, padding)
+	var safe = bitwidth.HasValue()
+	return NewRegister(Type{register.OUTPUT_REGISTER, true, safe}, name, bitwidth, padding)
 }
 
 // NewComputedRegister constructs a new computed (i.e. internal) register descriptor.
 func NewComputedRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	return NewRegister(Type{register.COMPUTED_REGISTER, false}, name, bitwidth, padding)
+	var safe = bitwidth.HasValue()
+	return NewRegister(Type{register.COMPUTED_REGISTER, false, safe}, name, bitwidth, padding)
 }
 
 // Bitwidth determines the bitwidth of this register (if applicable).  Observe
@@ -196,6 +204,12 @@ func (p Register[W]) IsStamp() bool {
 	return p.kind.stamp
 }
 
+// IsSafe determines whether the bitwidth of this register is "safe" --- i.e. is
+// guaranteed by a dedicated bounds check.
+func (p Register[W]) IsSafe() bool {
+	return p.kind.safe
+}
+
 // IsZeroWidth returns true for zero-width registers. Zero-width registers are registers
 // that carry no data, so apparent reads and writes to a shared placeholder cannot
 // conflict.
@@ -245,6 +259,10 @@ func (p *Register[W]) GobEncode() ([]byte, error) {
 	var buffer bytes.Buffer
 	gobEncoder := gob.NewEncoder(&buffer)
 	//
+	if err := gobEncoder.Encode(p.kind.safe); err != nil {
+		return nil, err
+	}
+	//
 	if err := gobEncoder.Encode(p.kind.stamp); err != nil {
 		return nil, err
 	}
@@ -274,6 +292,10 @@ func (p *Register[W]) GobDecode(data []byte) error {
 		buffer     = bytes.NewBuffer(data)
 		gobDecoder = gob.NewDecoder(buffer)
 	)
+	//
+	if err := gobDecoder.Decode(&p.kind.safe); err != nil {
+		return err
+	}
 	//
 	if err := gobDecoder.Decode(&p.kind.stamp); err != nil {
 		return err

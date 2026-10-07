@@ -50,7 +50,6 @@ func TransformForExecutionRaw[W1 Word[W1], W2 Word[W2]](p Program[W1], word Word
 			Vectorize[W1](),
 			SplitRegisters[W1](word),
 			AllocateRegisters[W1](),
-			InsertCheckCasts[W1](),
 		)
 	)
 	// Sanity check
@@ -85,7 +84,6 @@ func TransformForTracing[W1 Word[W1], W2 Word[W2]](p Program[W1], ignores ...str
 			AllocateRegisters[W1](),
 			FlattenLookupAccess[W1](),
 			AddRangeConstraints[W1](),
-			InsertCheckCasts[W1](),
 		)
 	)
 	// ignore requested stages
@@ -184,8 +182,6 @@ const (
 	FLATTERN_LOOKUP_ACCESSES = "flattern-lookup-accesses"
 	// INLINE_FUNCTIONS handle
 	INLINE_FUNCTIONS = "inline-functions"
-	// INSERT_CHECKCASTS handle
-	INSERT_CHECKCASTS = "insert-checkcasts"
 	// LOWER_BITWISE handle
 	LOWER_BITWISE = "lower-bitwise"
 	// LOWER_COMPARISONS handle
@@ -214,7 +210,6 @@ var VALID_TRANSFORMS = []string{
 	FACTOR_SKIP_CONDITIONS,
 	FLATTERN_LOOKUP_ACCESSES,
 	INLINE_FUNCTIONS,
-	INSERT_CHECKCASTS,
 	LOWER_BITWISE,
 	LOWER_COMPARISONS,
 	LOWER_DIVISIONS,
@@ -471,19 +466,6 @@ func AllocateRegisters[W word.Word[W]]() Transform[W] {
 	return Transform[W]{ALLOCATE_REGISTERS, precondition, transformer}
 }
 
-// InsertCheckCasts inserts the width-check (CHECKCAST) bytecodes required by a
-// bytecode program, returning the updated program.  Codegen emits operations
-// without casts; this pass adds the cast checks each operation needs (resolving
-// call / memory references against the program's module signatures) and rewrites
-// branch offsets accordingly.  It must run on a complete program.
-func InsertCheckCasts[W word.Word[W]]() Transform[W] {
-	var (
-		transformer = transform.InsertCheckCasts[W]
-	)
-	//
-	return Transform[W]{INSERT_CHECKCASTS, last, transformer}
-}
-
 func after(deps ...string) func(string, string, int, int, map[string]bool) {
 	return func(pipeline, name string, _ int, _ int, seen map[string]bool) {
 		for _, dep := range deps {
@@ -516,11 +498,4 @@ func and(conds ...func(string, string, int, int, map[string]bool)) func(string, 
 
 func noPrecondition(_, _ string, _, _ int, _ map[string]bool) {
 	// do nothing
-}
-
-func last(name, pipeline string, i, n int, _ map[string]bool) {
-	if i+1 != n {
-		panic(
-			fmt.Sprintf("transformation \"%s\" must run last in pipeline \"%s\"", name, pipeline))
-	}
 }

@@ -36,7 +36,7 @@ type (
 	Schema[F field.Element[F]] = schema.UniformSchema[F, Module[F]]
 	// Module captures the essence of a module at the AIR level.  Specifically, it
 	// is limited to only those constraint forms permitted at the AIR level.
-	Module[F field.Element[F]] = *schema.Table[F, schema.Constraint[F]]
+	Module[F field.Element[F]] = *schema.Table[F]
 	// Term represents the fundamental for arithmetic expressions in the AIR
 	// representation.  This should only support addition, subtraction and
 	// multiplication of constants and column accesses.  No other terms are

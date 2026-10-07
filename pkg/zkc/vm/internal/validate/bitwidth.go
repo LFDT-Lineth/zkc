@@ -27,6 +27,9 @@ import (
 // Bitwidth represents the (optional) bitwidth of a given register, where none
 // indicates a native (field) register.
 type Bitwidth struct {
+	// safe registers use dedicated bounds checks to enforce bitwidth and, as
+	// such, can be assumed to be always within bounds.
+	safe bool
 	// Declared bitwidth of this register.
 	bitwidth util.Option[uint]
 	// Current bitwidth of this register (zero if native), or none if is
@@ -35,16 +38,18 @@ type Bitwidth struct {
 }
 
 // Construct bitwidth for register which may not have been defined.
-func undefinedBitwidth(bitwidth util.Option[uint]) Bitwidth {
+func undefinedBitwidth(safe bool, bitwidth util.Option[uint]) Bitwidth {
 	return Bitwidth{
+		safe:     safe,
 		bitwidth: bitwidth,
 		current:  util.None[uint](),
 	}
 }
 
 // Construct bitwidth for register which has definitely been defined.
-func definedBitwidth(bitwidth util.Option[uint]) Bitwidth {
+func definedBitwidth(safe bool, bitwidth util.Option[uint]) Bitwidth {
 	return Bitwidth{
+		safe:     safe,
 		bitwidth: bitwidth,
 		current:  util.Some(bitwidth.UnwrapOr(0)),
 	}
@@ -71,7 +76,14 @@ func (p Bitwidth) InBounds() bool {
 
 // Assign the corresponding register a given width.
 func (p Bitwidth) Assign(width uint) Bitwidth {
+	// We can assume that unsafe registers never overflow their bounds, as they
+	// are guaranteed to have range constraints.
+	if p.safe && p.bitwidth.HasValue() {
+		width = min(width, p.bitwidth.Unwrap())
+	}
+	//
 	p.current = util.Some(width)
+	//
 	return p
 }
 
@@ -82,6 +94,10 @@ func (p Bitwidth) String() string {
 		})
 		//
 		actual = p.current.MapOr("?", func(bw uint) string {
+			if bw >= math.MaxUint16 {
+				return "?"
+			}
+			//
 			return fmt.Sprintf("u%d", bw)
 		})
 	)
@@ -119,9 +135,9 @@ func newBitwidths[W Word[W]](f descriptor.Function[W]) Bitwidths {
 	//
 	for i, reg := range f.Registers() {
 		if reg.IsInput() || reg.IsZeroWidth() {
-			bitwidths[i] = definedBitwidth(reg.Bitwidth())
+			bitwidths[i] = definedBitwidth(reg.IsSafe(), reg.Bitwidth())
 		} else {
-			bitwidths[i] = undefinedBitwidth(reg.Bitwidth())
+			bitwidths[i] = undefinedBitwidth(reg.IsSafe(), reg.Bitwidth())
 		}
 	}
 	//
@@ -241,9 +257,9 @@ func validateRegisterBitwidth[W Word[W]](f *descriptor.Function[W], env Environm
 				)
 				//
 				if !width.IsDefined() {
-					errors = append(errors, fmt.Errorf("register %s not defined at %s", reg.Name(), pp))
+					errors = append(errors, fmt.Errorf("register %s::%s not defined at %s", f.Name(), reg.Name(), pp))
 				} else if !width.InBounds() {
-					errors = append(errors, fmt.Errorf("register %s out-of-bounds at %s (%s)", reg.Name(), pp, width))
+					errors = append(errors, fmt.Errorf("register %s::%s out-of-bounds at %s (%s)", f.Name(), reg.Name(), pp, width))
 				}
 			}
 			// FIXME: sanity check return bytecodes

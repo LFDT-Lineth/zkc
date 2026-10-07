@@ -180,22 +180,25 @@ func NewStackFrame(fid uint16, fp uint32, pc uint32) StackFrame {
 // inputs before calling Execute.
 func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpreter[W] {
 	var (
-		prime    W
-		sroms    []StaticReadOnly[W]
-		roms     []ReadOnly[W]
-		woms     []WriteOnce[W]
-		rams     []RandomAccess[W]
-		prams    []PagedRandomAccess[W]
-		compiled = CompileProgram(program, tracing)
+		prime W
+		sroms []StaticReadOnly[W]
+		roms  []ReadOnly[W]
+		woms  []WriteOnce[W]
+		rams  []RandomAccess[W]
+		prams []PagedRandomAccess[W]
+		// insert necessary casts for bounds checking
+		nProgram = InsertCheckCasts(program)
+		//
+		compiled = CompileProgram(nProgram, tracing)
 	)
 	// sanity check prime fits within target word
-	if prime.Bandwidth() < program.Field().BandWidth {
+	if prime.Bandwidth() < nProgram.Field().BandWidth {
 		panic("insufficient bandwidth for prime field")
 	}
 	// Construct prime field
-	prime = prime.SetBigInt(program.Field().Modulus())
+	prime = prime.SetBigInt(nProgram.Field().Modulus())
 	// Initialise memories
-	for _, m := range program.Modules() {
+	for _, m := range nProgram.Modules() {
 		//
 		if m, ok := m.(*descriptor.Memory[W]); ok {
 			switch {

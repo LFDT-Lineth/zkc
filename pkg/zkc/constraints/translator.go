@@ -127,7 +127,7 @@ func (p *constraintTranslator[W, F]) translateModule(ctx schema.ModuleId, m vm.M
 
 func (p *constraintTranslator[W, F]) translateStaticMemory(_ schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
 	var (
-		mod     *schema.Table[F, schema.Constraint[F]]
+		mod     *schema.Table[F]
 		name    = m.Name()
 		regs    = toRegisters(m.Registers())
 		inputs  = toRegisters(m.AddressRegisters())
@@ -167,21 +167,21 @@ func (p *constraintTranslator[W, F]) translateWriteOnceMemory(ctx schema.ModuleI
 //   - read once memory
 //   - write once memory
 func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.ModuleId, m *vm.Memory[W], name string,
-) (mod mir.Module[F]) {
+) mir.Module[F] {
 	var (
-		memoryModule *schema.Table[F, schema.Constraint[F]]
-		regs         = toRegisters(m.Registers())
+		mod  *schema.Table[F]
+		regs = toRegisters(m.Registers())
 	)
 
 	// Initialise module and add all registers.  Note the ACCESS[0]=0 /
 	// addresses-vanish-in-padding constraints rely on the leading padding row
 	// inserted during trace expansion.  Memory modules are never native.
-	memoryModule = memoryModule.Init(name, m.IsPublic() && m.IsWriteOnly(), !m.IsPublic() && m.IsWriteOnly(),
+	mod = mod.Init(name, m.IsPublic() && m.IsWriteOnly(), !m.IsPublic() && m.IsWriteOnly(),
 		false, false, false)
-	memoryModule.AddRegisters(regs...)
+	mod.AddRegisters(regs...)
 
-	var access = register.NewId(memoryModule.Width())
-	memoryModule.AddRegisters(register.NewComputed(tracer.ACCESS_BIT_NAME, 1))
+	var access = register.NewId(mod.Width())
+	mod.AddRegisters(register.NewComputed(tracer.ACCESS_BIT_NAME, 1))
 
 	var (
 		addrRegs           = toRegisters(m.AddressRegisters())
@@ -228,16 +228,16 @@ func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.Module
 
 	if isMultiLineAddress {
 		constraints = append(constraints,
-			multiLineAddressConstraints(ctx, memoryModule, addrRegs, prevAccess, currAccess, zero, one)...)
+			multiLineAddressConstraints(ctx, mod, addrRegs, prevAccess, currAccess, zero, one)...)
 	} else {
 		constraints = append(constraints,
 			singleLineAddressConstraints(ctx, addrRegs, currAccess, nextAccess, zero, one)...)
 	}
 
-	memoryModule.AddConstraints(constraints...)
-	p.addRangeProofConstraints(memoryModule, ctx, memoryModule.Registers())
+	mod.AddConstraints(constraints...)
+	p.addRangeProofConstraints(mod, ctx)
 
-	return memoryModule
+	return mod
 }
 
 // singleLineAddressConstraints builds the []ADDRESS constraints for a memory
@@ -278,7 +278,7 @@ func singleLineAddressConstraints[F field.Element[F]](
 //   - [k]ADDRESS[i-1] ≠ max, [k]ADDRESS[i] = 1 + [k]ADDRESS[i-1]   (carry stop)
 //   - [b]ADDRESS[i-1] = max, [b]ADDRESS[i] = 0    for k < b < L    (roll over)
 func multiLineAddressConstraints[F field.Element[F]](
-	ctx schema.ModuleId, memoryModule *schema.Table[F, schema.Constraint[F]], addrRegs []register.Register,
+	ctx schema.ModuleId, memoryModule *schema.Table[F], addrRegs []register.Register,
 	prevAccess, currAccess, zero, one Expr[F]) []schema.Constraint[F] {
 	var (
 		L            = uint(len(addrRegs))

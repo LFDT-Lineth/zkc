@@ -19,7 +19,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
-	log "github.com/sirupsen/logrus"
 )
 
 // Environment provides a convenient alias
@@ -63,9 +62,7 @@ func Function[W Word[W]](env Environment[W], f *descriptor.Function[W]) (errs []
 	}
 	// valididate register bitwidths (if it is safe to do so).
 	if safe {
-		for _, warning := range validateRegisterBitwidth(f, env) {
-			log.Warn(warning)
-		}
+		errs = append(errs, validateRegisterBitwidth(f, env)...)
 	}
 	//
 	return errs
