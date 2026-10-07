@@ -100,6 +100,19 @@ func (p *Set) Contains(val uint) bool {
 	return (p.words[word] & mask) != 0
 }
 
+// Intersects checks whether this set intersects with the other
+func (p *Set) Intersects(q Set) bool {
+	var n = min(len(p.words), len(q.words))
+	//
+	for i := range n {
+		if p.words[i]&q.words[i] != 0 {
+			return true
+		}
+	}
+	//
+	return false
+}
+
 // Count returns the number of bits in the bitset which are set to one.
 func (p *Set) Count() uint {
 	count := uint(0)

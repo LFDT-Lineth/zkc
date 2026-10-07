@@ -203,7 +203,7 @@ func lowerSwitchCode[W word.Word[W]](pc uint, sw *bytecode.Switch[W], mapping []
 	// that at most one b_j is 1 (each being a bit itself).
 	//
 	var (
-		onereg = registers.Allocate("", util.Some[uint](1))
+		onereg = registers.Allocate("lsw", util.Some[uint](1))
 		bdef   = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_default", switchIndex), util.Some[uint](1))
 	)
 	// TODO: https://github.com/LFDT-Lineth/zkc/issues/2062

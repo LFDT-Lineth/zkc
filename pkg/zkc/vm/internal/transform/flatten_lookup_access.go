@@ -186,7 +186,7 @@ func snapshotUses[W word.Word[W]](uses []bytecode.RegisterId, snapshot []bool,
 	//
 	for i, use := range ids {
 		if snapshot[i] {
-			tmp := registers.Allocate("", registers.Register(use).Bitwidth())
+			tmp := registers.Allocate("fla", registers.Register(use).Bitwidth())
 			insns = append(insns, bytecode.Assign[W](tmp, use))
 			ids[i] = tmp
 		}

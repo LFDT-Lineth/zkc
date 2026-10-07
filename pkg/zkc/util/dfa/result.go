@@ -101,6 +101,11 @@ func (p *Result[T]) JoinInto(i uint, st T) {
 	p.states[i] = util.Some(nst)
 }
 
+// Len returns the number of stats in this result
+func (p *Result[T]) Len() uint {
+	return uint(len(p.states))
+}
+
 func (p *Result[T]) String(rmap func(RegisterId) string) string {
 	var builder strings.Builder
 	//
