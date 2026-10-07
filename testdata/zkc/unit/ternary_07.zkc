@@ -1,0 +1,35 @@
+pub input data(address:u8) -> (byte:u8)
+
+fn main() {
+    var cond:u8 = data[0]
+    var exp_const:u8 = data[1]
+    var exp_jmp_z:u8 = data[2]
+    var exp_jmp_a:u8 = data[3]
+
+    // Diamond shape is : skip_if (cond) S ; {jmp/skip/fail}...
+
+    // Wide const-select
+    // The target register is wide (not just u1). Do not factorizeSkipIf.
+    var got_const:u8 = cond != 0 ? 1:0
+    if got_const != exp_const {
+        fail
+    }
+
+    // Then-arm has a later statement
+    // Diamond shape here has S=2, body has a jmp filler. Do not factorizeSkipIf.
+    var z:u8
+    var a:u8 = 0
+    if cond != 0 {
+        z = 1
+        a = a + 1
+    } else {
+        z = 0
+    }
+    if z != exp_jmp_z {
+        fail
+    }
+    if a != exp_jmp_a {
+        fail
+    }
+    return
+}
