@@ -424,6 +424,17 @@ func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 	return NewArith(OP_SUB, targets, sources, constant)
 }
 
+// SubConstVec constructs a vectored subtraction instruction computing
+// "target = constant - source[0] ... - source[n]", where targets is a multi-limb
+// register vector.
+func SubConstVec[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	util.Assert(len(targets) > 0, "atleast one target required")
+	//
+	arith := NewArith(OP_SUB, targets, sources, constant)
+	arith.IsSubConst = true
+	return arith
+}
+
 // NewMemWrite constructs a memory-write instruction.  The data registers are
 // written to the row located at the address given by the address registers, in
 // the memory identified by id.  The kind of memory being written (write-once,

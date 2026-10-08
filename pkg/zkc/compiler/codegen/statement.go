@@ -953,10 +953,17 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 			panic("arithmetic underflow")
 		}
 	}
-	// Compile arguments
-	sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
-	// Done (subtraction never needs a cast check; cf. compileSub).
-	return append(insns, vm.SubVec(target, sources, constant))
+	// Check "substract from constant" case
+	if _, ok := p.asConstant(args[0]); ok {
+		// Compile arguments
+		sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
+		return append(insns, vm.SubConst(target, sources, constant))
+	} else {
+		// Compile arguments
+		sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
+		// Done (subtraction never needs a cast check; cf. compileSub).
+		return append(insns, vm.SubVec(target, sources, constant))
+	}
 }
 
 func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target RegisterId) []Bytecode {
