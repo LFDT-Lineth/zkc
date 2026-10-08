@@ -207,7 +207,7 @@ func applyGoGen(t *testing.T, test string, program vm.Program[vm.Uint], tests []
 		// Lower through the execution pipeline before handing to gogen.  GenerateGo
 		// requires Program[Uint] with registers no wider than 64 bits, so we split
 		// against a bounded word whilst staying in the Uint representation.
-		pG = vm.TransformForExecutionRaw[vm.Uint, vm.Uint](program, vm.WORD_UINT128)
+		pG = vm.TransformForExecutionRaw[vm.Uint, vm.Uint](program, vm.WORD_UINT128, vm.DEFAULT_TRANSFORMS)
 		// Build gogen program
 		gogen, gerr = buildGogenProgram(t, pG)
 	)

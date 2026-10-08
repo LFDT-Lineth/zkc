@@ -220,7 +220,8 @@ func printArtifacts[F field.Element[F], W vm.Word[W]](ast *ast.Program, bf *cons
 		// Register counts are reported before register splitting.  Splitting is
 		// the only field-specific transform that changes register widths, so
 		// transform program with splitting disabled to recover the pre-split widths.
-		preSplit := vm.TransformForTracing[vm.Uint, vm.Uint](bf.RawProgram(), "split-registers")
+		preSplit := vm.TransformForTracing[vm.Uint, vm.Uint](bf.RawProgram(),
+			vm.DEFAULT_TRANSFORMS.Ignore("split-registers"))
 		// Print stats
 		PrintCompileStats(bf.AirConstraints(), preSplit, config.order, config.statsMatrix)
 	}

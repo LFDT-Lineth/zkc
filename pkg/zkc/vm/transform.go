@@ -22,25 +22,34 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
+// TransformConfig provides a generic structure for controlling pipeline
+// transformations.
+type TransformConfig = transform.Config
+
+// DEFAULT_TRANSFORMS provides default configuration settings for the
+// pipeline transformations.
+var DEFAULT_TRANSFORMS = transform.DEFAULT_CONFIG
+
 // TransformForExecution applies a transformation pipeline suitable for (fast
-// mode) execution, whilst ignoring any pipeline stages requested (i.e. for
-// debugging).  The target word W2 determines the size at which to split
-// registers.
-func TransformForExecution[W1 Word[W1], W2 Word[W2]](p Program[W1], ignores ...string) Program[W2] {
+// mode) execution, whilst applying the given transformation configuration (e.g.
+// to ignore any pipeline stages requested for debugging, etc).  The target word
+// W2 determines the size at which to split registers.
+func TransformForExecution[W1 Word[W1], W2 Word[W2]](p Program[W1], config transform.Config) Program[W2] {
 	// Use target word to determine config
 	var targetWord W2
 	// Done
-	return TransformForExecutionRaw[W1, W2](p, targetWord.Config(), ignores...)
+	return TransformForExecutionRaw[W1, W2](p, targetWord.Config(), config)
 }
 
 // TransformForExecutionRaw applies a transformation pipeline suitable for (fast
-// mode) execution, whilst ignoring any pipeline stages requested (i.e. for
-// debugging).  Here, the target word configuration determines the register
-// width to split against, which is distinct from the word type W2 the program
-// is finally concretized into.  Observe that W2 must be large enough to hold
-// all values of the target word, otherwise this will panic.
+// mode) execution, whilst applying the given transformation configuration (e.g.
+// to ignore any pipeline stages requested for debugging, etc).  Here, the
+// target word configuration determines the register width to split against,
+// which is distinct from the word type W2 the program is finally concretized
+// into.  Observe that W2 must be large enough to hold all values of the target
+// word, otherwise this will panic.
 func TransformForExecutionRaw[W1 Word[W1], W2 Word[W2]](p Program[W1], word WordConfig,
-	ignores ...string) Program[W2] {
+	config transform.Config) Program[W2] {
 	//
 	var (
 		w2 W2
@@ -56,17 +65,16 @@ func TransformForExecutionRaw[W1 Word[W1], W2 Word[W2]](p Program[W1], word Word
 	if word.BandWidth > w2.Bandwidth() {
 		panic(fmt.Sprintf("%s does not fit within u%d", word.Name, w2.Bandwidth()))
 	}
-	// ignore requested stages
-	pipeline = pipeline.Ignore(ignores...)
 	// Apply pipeline transformations
-	program := pipeline.Apply(p)
+	program := pipeline.Apply(p, config)
 	// Concretize the program
 	return transform.ProgramToProgram[W1, W2](program)
 }
 
 // TransformForTracing applies a transformation pipeline suitable for tracing,
-// whilst ignoring any pipeline stages requested (i.e. for debugging).
-func TransformForTracing[W1 Word[W1], W2 Word[W2]](p Program[W1], ignores ...string) Program[W2] {
+// whilst applying the given transformation configuration (e.g. to ignore any
+// pipeline stages requested for debugging, etc).
+func TransformForTracing[W1 Word[W1], W2 Word[W2]](p Program[W1], config transform.Config) Program[W2] {
 	var (
 		pipeline = NewTransformationPipeline("tracing",
 			InlineFunctions[W1](),
@@ -86,10 +94,8 @@ func TransformForTracing[W1 Word[W1], W2 Word[W2]](p Program[W1], ignores ...str
 			AddRangeConstraints[W1](),
 		)
 	)
-	// ignore requested stages
-	pipeline = pipeline.Ignore(ignores...)
 	// Apply pipeline transformations
-	program := pipeline.Apply(p)
+	program := pipeline.Apply(p, config)
 	// Concretize the program
 	return transform.ProgramToProgram[W1, W2](program)
 }
@@ -156,14 +162,18 @@ func (p TransformationPipeline[W]) Ignore(ignores ...string) TransformationPipel
 
 // Apply this transformation pipeline to a given program, producing a
 // transformed (but otherwise equivalent) program.
-func (p TransformationPipeline[W]) Apply(program Program[W]) Program[W] {
+func (p TransformationPipeline[W]) Apply(program Program[W], config transform.Config) Program[W] {
+	// Identify stages to be ignored
+	p = p.Ignore(config.Ignores...)
 	// Apply each transformation in turn.
 	for _, t := range p.transforms {
 		program = t.transformer(program)
 	}
 	// Validate program to catch any introduced corruption as early as possible.
-	if err := ValidateProgram(program); err != nil {
-		panic(err)
+	if config.Validation {
+		if err := ValidateProgram(program); err != nil {
+			panic(err)
+		}
 	}
 	//
 	return program
