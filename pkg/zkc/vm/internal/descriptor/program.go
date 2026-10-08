@@ -65,12 +65,12 @@ func (p ProgramPoint) String() string {
 }
 
 // BreakPointLabel identifies a single instruction breakpoint by the enclosing
-// function (Function) and the program counter within it (ProgramCounter).
+// function (Function) and the target vector within it (ProgramCounter).
 type BreakPointLabel struct {
 	// Function is the identifier of the enclosing function module.
 	Function uint16
-	// ProgramCounter identifies the instruction within that function.
-	ProgramCounter ProgramPoint
+	// ProgramCounter identifies the vector within that function.
+	ProgramCounter uint
 }
 
 // Program represents a bytecode program.  This representation is useful for
@@ -97,12 +97,12 @@ func NewProgram[W word.Word[W]](field field.Config, maxStaticHeight uint, module
 }
 
 // BreakPoint returns a copy of this program in which a breakpoint has been
-// registered against the instruction at the given PC location within the given
-// function.  When execution reaches that instruction, the breakpoint function
-// registered with the interpreter is triggered immediately before it executes.
-// Registering a breakpoint does not alter instruction offsets, so the returned
-// program shares the symbol and chunk side-tables with the original.
-func (p Program[W]) BreakPoint(fid uint16, pc ProgramPoint) Program[W] {
+// registered against the vector at a given location within the given function.
+// When execution reaches that vector, the breakpoint function registered with
+// the interpreter is triggered immediately before it executes. Registering a
+// breakpoint does not alter instruction offsets, so the returned program shares
+// the symbol and chunk side-tables with the original.
+func (p Program[W]) BreakPoint(fid uint16, pc uint) Program[W] {
 	// Copy the existing set, adding the new breakpoint.
 	var breakpoints = make(map[BreakPointLabel]bool, len(p.breakpoints)+1)
 	//

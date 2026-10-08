@@ -98,10 +98,9 @@ func fn_main() {
 	if r3 >= 1<<16 {
 		fail("bit overflow (value exceeds u16)")
 	}
-	// [0.7] check sum:u16
-	// [0.8] ldc $7 = 0x0
+	// [0.7] ldc $7 = 0x0
 	r7 = 0
-	// [0.9] write result[$7] = sum
+	// [0.8] write result[$7] = sum
 	{
 		start := r7
 		if start < uint64(len(mem_result)) {
@@ -109,15 +108,14 @@ func fn_main() {
 		}
 		mem_result = memWrite(mem_result, start+0, r3)
 	}
-	// [0.10] ldc $8 = 0x1
+	// [0.9] ldc $8 = 0x1
 	r8 = 1
-	// [0.11] mul $9 = sum*c
+	// [0.10] mul $9 = sum*c
 	r9 = r3 * r2
 	if r9 >= 1<<16 {
 		fail("bit overflow (value exceeds u16)")
 	}
-	// [0.12] check $9:u16
-	// [0.13] write result[$8] = $9
+	// [0.11] write result[$8] = $9
 	{
 		start := r8
 		if start < uint64(len(mem_result)) {
@@ -125,9 +123,9 @@ func fn_main() {
 		}
 		mem_result = memWrite(mem_result, start+0, r9)
 	}
-	// [0.14] ldc $10 = 0x2
+	// [0.12] ldc $10 = 0x2
 	r10 = 2
-	// [0.15] sub $11 = a-b
+	// [0.13] sub $11 = a-b
 	{
 		v, borrow := bits.Sub64(r0, r1, 0)
 		if borrow != 0 {
@@ -138,8 +136,7 @@ func fn_main() {
 			fail("bit overflow (value exceeds u16)")
 		}
 	}
-	// [0.16] check $11:u16
-	// [0.17] write result[$10] = $11
+	// [0.14] write result[$10] = $11
 	{
 		start := r10
 		if start < uint64(len(mem_result)) {
@@ -147,6 +144,6 @@ func fn_main() {
 		}
 		mem_result = memWrite(mem_result, start+0, r11)
 	}
-	// [0.18] ret
+	// [0.15] ret
 	return
 }

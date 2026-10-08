@@ -157,7 +157,7 @@ func NewBytecodeInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] 
 
 // CompileProgram compiles a program descriptor into an binary (i.e. executable)
 // bytecode program.
-func CompileProgram[W word.Word[W]](p Program[W]) BinaryProgram[W] {
+func CompileProgram[W word.Word[W]](p Program[W]) (BinaryProgram[W], Program[W]) {
 	return interpreter.CompileProgram(p, false)
 }
 

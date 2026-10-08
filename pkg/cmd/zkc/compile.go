@@ -565,8 +565,11 @@ func writeBytecodeProgram[W vm.Word[W]](binary bool, ast *ast.Program, program v
 	)
 	//
 	if binary {
+		var binp vm.BinaryProgram[W]
 		// Extract encoding for all bytecodes
-		bin = vm.CompileProgram(program).Encoding()
+		binp, program = vm.CompileProgram(program)
+		//
+		bin = binp.Encoding()
 		// Determine the widest encoding across the entire program, so the
 		// encoding column can be given a uniform width in every function.
 		for _, codes := range bin {

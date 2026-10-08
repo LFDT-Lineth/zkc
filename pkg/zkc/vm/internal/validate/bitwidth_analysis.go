@@ -16,216 +16,12 @@ import (
 	"fmt"
 	"math"
 	"reflect"
-	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 )
-
-// Bitwidth represents the (optional) bitwidth of a given register, where none
-// indicates a native (field) register.
-type Bitwidth struct {
-	// safe registers use dedicated bounds checks to enforce bitwidth and, as
-	// such, can be assumed to be always within bounds.
-	safe bool
-	// Declared bitwidth of this register.
-	bitwidth util.Option[uint]
-	// Current bitwidth of this register (zero if native), or none if is
-	// undefined.
-	current util.Option[uint]
-}
-
-// Construct bitwidth for register which may not have been defined.
-func undefinedBitwidth(safe bool, bitwidth util.Option[uint]) Bitwidth {
-	return Bitwidth{
-		safe:     safe,
-		bitwidth: bitwidth,
-		current:  util.None[uint](),
-	}
-}
-
-// Construct bitwidth for register which has definitely been defined.
-func definedBitwidth(safe bool, bitwidth util.Option[uint]) Bitwidth {
-	return Bitwidth{
-		safe:     safe,
-		bitwidth: bitwidth,
-		current:  util.Some(bitwidth.UnwrapOr(0)),
-	}
-}
-
-// IsDefined returns true if the corresponding register is definitely assigned
-// at the given point.
-func (p Bitwidth) IsDefined() bool {
-	return p.current.HasValue()
-}
-
-// InBounds returns true if the corresponding register holds a value within its
-// given bitwidth bounds at the given program point.
-func (p Bitwidth) InBounds() bool {
-	if p.current.IsEmpty() {
-		return false
-	} else if p.bitwidth.HasValue() {
-		// Bounds check
-		return p.current.Unwrap() <= p.bitwidth.Unwrap()
-	}
-	// Native registers are always in bounds.
-	return true
-}
-
-// Assign the corresponding register a given width.
-func (p Bitwidth) Assign(width uint) Bitwidth {
-	// We can assume that unsafe registers never overflow their bounds, as they
-	// are guaranteed to have range constraints.
-	if p.safe && p.bitwidth.HasValue() {
-		width = min(width, p.bitwidth.Unwrap())
-	}
-	//
-	p.current = util.Some(width)
-	//
-	return p
-}
-
-func (p Bitwidth) String() string {
-	var (
-		decl = p.bitwidth.MapOr("𝔽", func(bw uint) string {
-			return fmt.Sprintf("u%d", bw)
-		})
-		//
-		actual = p.current.MapOr("?", func(bw uint) string {
-			if bw >= math.MaxUint16 {
-				return "?"
-			}
-			//
-			return fmt.Sprintf("u%d", bw)
-		})
-	)
-	//
-	return fmt.Sprintf("%s :> %s", decl, actual)
-}
-
-// Join another bitwidth entry into this, whilst reporting whether or not
-// anything changed.
-func (p *Bitwidth) Join(o Bitwidth) bool {
-	var old = p.current
-	// sanity check
-	util.Assert(p.bitwidth == o.bitwidth, "malformed bitwidth flow set")
-	//
-	if p.current.HasValue() && o.current.HasValue() {
-		// definitely assigned
-		p.current = util.Some(max(p.current.Unwrap(), o.current.Unwrap()))
-	} else {
-		// not definitely assigned
-		p.current = util.None[uint]()
-	}
-	// Check for change
-	return old != p.current
-}
-
-// Bitwidths maps each register in a given function to an optional bitwidth.
-// This is none if the given register is not yet defined, otherwise it is the
-// maximum bitwidth on any path to the given program point.
-type Bitwidths struct {
-	bitwidths []Bitwidth
-}
-
-func newBitwidths[W Word[W]](f descriptor.Function[W]) Bitwidths {
-	var bitwidths = make([]Bitwidth, f.Width())
-	//
-	for i, reg := range f.Registers() {
-		if reg.IsInput() || reg.IsZeroWidth() {
-			bitwidths[i] = definedBitwidth(reg.IsSafe(), reg.Bitwidth())
-		} else {
-			bitwidths[i] = undefinedBitwidth(reg.IsSafe(), reg.Bitwidth())
-		}
-	}
-	//
-	return Bitwidths{bitwidths}
-}
-
-// IsBottom implementation for dfa.FlowSet interface.
-func (p Bitwidths) IsBottom() bool {
-	return p.bitwidths == nil
-}
-
-// Join implementation for dfa.FlowSet interface.
-func (p Bitwidths) Join(other Bitwidths) (Bitwidths, bool) {
-	var (
-		bitwidths []Bitwidth
-		changed   = false
-	)
-	//
-	if p.bitwidths != nil {
-		bitwidths = slices.Clone(p.bitwidths)
-		//
-		for i := range other.bitwidths {
-			c := bitwidths[i].Join(other.bitwidths[i])
-			changed = changed || c
-		}
-	} else {
-		bitwidths = slices.Clone(other.bitwidths)
-		changed = !other.IsBottom()
-	}
-	// Done
-	return Bitwidths{bitwidths}, changed
-}
-
-// Assign assigns a given number of bits of data from the right-hand side across
-// a given register on the left-hand side.
-func (p Bitwidths) Assign(lhs RegisterId, rhs util.Option[uint]) Bitwidths {
-	var bitwidths = slices.Clone(p.bitwidths)
-	//
-	if lhs == bytecode.DISCARD {
-		// do nothing since value is being discarded
-	} else if rhs.IsEmpty() {
-		// Native register
-		bitwidths[lhs] = p.bitwidths[lhs].Assign(0)
-	} else {
-		// Determine actual bits on the right-hand side
-		var bitwidth = rhs.Unwrap()
-		// Assign bits
-		bitwidths[lhs] = p.bitwidths[lhs].Assign(bitwidth)
-	}
-	//
-	return Bitwidths{bitwidths}
-}
-
-// AssignAll assigns a given number of bits of data from the right-hand side
-// across a given set of registers on the left-hand side.
-func (p Bitwidths) AssignAll(lhs []RegisterId, rhs util.Option[uint]) Bitwidths {
-	var bitwidths = slices.Clone(p.bitwidths)
-	// Sanity check
-	util.Assert(!rhs.IsEmpty() || len(lhs) == 1, "cannot destruct native register")
-	//
-	if rhs.IsEmpty() {
-		// Native register
-		bitwidths[lhs[0]] = p.bitwidths[lhs[0]].Assign(0)
-	} else {
-		var bitwidth = rhs.Unwrap()
-		//
-		for i, l := range lhs {
-			var bw uint
-			// NOTE: discard cannot (at this time) appear here.  This is because
-			// discard registers are currently only support for the target(s) of
-			// a call.
-			util.Assert(l != bytecode.DISCARD, "unexpected discard register")
-			//
-			if i+1 == len(lhs) {
-				bw = bitwidth
-			} else {
-				// FIXME: does this make sense?
-				bw = p.bitwidths[l].bitwidth.Unwrap()
-			}
-			//
-			bitwidths[l] = p.bitwidths[l].Assign(bw)
-			// Reduce bitwidth by amount assigned to register
-			bitwidth -= min(bitwidth, bw)
-		}
-	}
-	//
-	return Bitwidths{bitwidths}
-}
 
 // validate the bitwidth of all registers within the function's control-flow
 // graph.  This employs a forward dataflow analysis to propagate bitwidth
@@ -246,53 +42,34 @@ func validateRegisterBitwidth[W Word[W]](f *descriptor.Function[W], env Environm
 			var (
 				// Program point for this bytecode
 				pp = ProgramPoint{Macro: uint(macro), Micro: uint(micro)}
-				// Register bitwdiths at this program point
+				// Register bitwidths at this program point
 				widths = bitwidths.Get(pp)
 			)
 			// Check bitwidth of each used register is valid.
-			for _, r := range bytecodeUses(bc, *f, env) {
+			for _, r := range accessesOf(bc, f, env) {
 				var (
-					reg   = f.Register(r)
-					width = widths.bitwidths[r]
+					err   error
+					loc   = fmt.Sprintf("function %s[%s]", f.Name(), pp)
+					reg   = f.Register(r.id)
+					width = widths.bitwidths[r.id]
 				)
 				//
 				if !width.IsDefined() {
-					errors = append(errors, fmt.Errorf("register %s::%s not defined at %s", f.Name(), reg.Name(), pp))
-				} else if !width.InBounds() {
-					errors = append(errors, fmt.Errorf("register %s::%s out-of-bounds at %s (%s)", f.Name(), reg.Name(), pp, width))
+					err = fmt.Errorf("%s: register %s not defined", loc, reg.Name())
+				} else if r.check && !width.InBounds(r.expected) {
+					var aStr = accessString(r.expected, width.current.Unwrap())
+					//
+					err = fmt.Errorf("%s: register %s out-of-bounds (%s)", loc, reg.Name(), aStr)
+				} else {
+					continue
 				}
+				//
+				errors = append(errors, err)
 			}
-			// FIXME: sanity check return bytecodes
 		}
 	}
 	//
 	return errors
-}
-
-func bytecodeUses[W Word[W]](bc Bytecode[W], f descriptor.Function[W], env Environment[W]) []RegisterId {
-	switch bc := bc.(type) {
-	case *bytecode.CheckCast[W]:
-		// Ignore checkcast opcode, since this is an actual check.
-		return nil
-	case *bytecode.Call[W]:
-		var f = env.Module(bc.Target).Unwrap().(*descriptor.Function[W])
-		// For an unsafe call, we don't check the argumetns
-		if f.HasUnsafeArgs() {
-			return nil
-		}
-	case *bytecode.Ret[W]:
-		// For a return bytecode, force the output registers of the enclosing
-		// function to be checked.
-		var rids = make([]RegisterId, f.NumOutputs())
-		//
-		for i := range f.NumOutputs() {
-			rids[i] = RegisterId(i + f.NumInputs())
-		}
-		//
-		return rids
-	}
-	//
-	return bc.Uses()
 }
 
 func transferRegisterWidths[W Word[W]](pp ProgramPoint, bc Bytecode[W], in Bitwidths, f *descriptor.Function[W],
@@ -443,10 +220,14 @@ func transferCheckCast[W Word[W]](pp ProgramPoint, bc *bytecode.CheckCast[W], in
 		current  = in.bitwidths[bc.Target].current
 		bitwidth = uint(bc.Bitwidth)
 	)
-	// Intersect incoming bitwidth
-	if current.HasValue() {
-		bitwidth = min(current.Unwrap(), bitwidth)
+	// Sanity check register is defined.
+	if current.IsEmpty() {
+		return dfa.NewTransfer(in, next)
 	}
+	// Sanity check
+	util.Assert(current.Unwrap().HasValue(), "invalid checkcast on native register")
+	// Intersect incoming bitwidth
+	bitwidth = min(current.Unwrap().Unwrap(), bitwidth)
 	// Update bitwidth for variable
 	in = in.Assign(bc.Target, util.Some(bitwidth))
 	//
@@ -556,4 +337,22 @@ func transferReadWrite[W Word[W]](pp ProgramPoint, bc *bytecode.ReadWrite[W], in
 	}
 	//
 	return dfa.NewTransfer(in, next)
+}
+
+func accessString(target, actual util.Option[uint]) string {
+	var (
+		tgt = target.MapOr("𝔽", func(bw uint) string {
+			return fmt.Sprintf("u%d", bw)
+		})
+		//
+		act = actual.MapOr("𝔽", func(bw uint) string {
+			if bw >= math.MaxUint16 {
+				return "?"
+			}
+			//
+			return fmt.Sprintf("u%d", bw)
+		})
+	)
+	//
+	return fmt.Sprintf("%s :> %s", tgt, act)
 }

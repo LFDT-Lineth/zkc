@@ -47,10 +47,16 @@ func Function[W Word[W]](env Environment[W], f *descriptor.Function[W]) (errs []
 		safe = true
 	)
 	// Perform internal validations first
-	for _, vec := range f.Vectors() {
-		var es, s = validateVector(env, vec, n)
+	for i, vec := range f.Vectors() {
+		var (
+			loc   = fmt.Sprintf("function %s[%d]", f.Name(), i)
+			es, s = validateVector(env, vec, n)
+		)
 		//
-		errs = append(errs, es...)
+		for _, e := range es {
+			errs = append(errs, fmt.Errorf("%s: %w", loc, e))
+		}
+		//
 		safe = safe && s
 	}
 	// Validate inter-vector control flow (if it is safe to do so).
@@ -95,9 +101,11 @@ func validateReachability[W Word[W]](f *descriptor.Function[W]) ([]error, bool) 
 	// Sanity check that there are no unreachable vectors.
 	for i := range uint(len(vectors)) {
 		if !worklist.Visited(i) {
+			// Construct error
+			err := fmt.Errorf("function %s has unreachable vector (%d)", f.Name(), i)
 			// Only report one error, as likely there will be several vectors
 			// grouped together.
-			return []error{fmt.Errorf("function has unreachable vector (%d)", i)}, false
+			return []error{err}, false
 		}
 	}
 	//

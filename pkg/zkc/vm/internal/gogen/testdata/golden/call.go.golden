@@ -86,7 +86,6 @@ func fn_inc(r0 uint64) uint64 {
 	if r1 >= 1<<8 {
 		fail("bit overflow (value exceeds u8)")
 	}
-	// [0.1] check r:u8
-	// [0.2] ret
+	// [0.1] ret
 	return r1
 }
