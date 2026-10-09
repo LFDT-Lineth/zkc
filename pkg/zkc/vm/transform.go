@@ -22,25 +22,34 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
+// TransformConfig provides a generic structure for controlling pipeline
+// transformations.
+type TransformConfig = transform.Config
+
+// DEFAULT_TRANSFORMS provides default configuration settings for the
+// pipeline transformations.
+var DEFAULT_TRANSFORMS = transform.DEFAULT_CONFIG
+
 // TransformForExecution applies a transformation pipeline suitable for (fast
-// mode) execution, whilst ignoring any pipeline stages requested (i.e. for
-// debugging).  The target word W2 determines the size at which to split
-// registers.
-func TransformForExecution[W1 Word[W1], W2 Word[W2]](p Program[W1], ignores ...string) Program[W2] {
+// mode) execution, whilst applying the given transformation configuration (e.g.
+// to ignore any pipeline stages requested for debugging, etc).  The target word
+// W2 determines the size at which to split registers.
+func TransformForExecution[W1 Word[W1], W2 Word[W2]](p Program[W1], config transform.Config) Program[W2] {
 	// Use target word to determine config
 	var targetWord W2
 	// Done
-	return TransformForExecutionRaw[W1, W2](p, targetWord.Config(), ignores...)
+	return TransformForExecutionRaw[W1, W2](p, targetWord.Config(), config)
 }
 
 // TransformForExecutionRaw applies a transformation pipeline suitable for (fast
-// mode) execution, whilst ignoring any pipeline stages requested (i.e. for
-// debugging).  Here, the target word configuration determines the register
-// width to split against, which is distinct from the word type W2 the program
-// is finally concretized into.  Observe that W2 must be large enough to hold
-// all values of the target word, otherwise this will panic.
+// mode) execution, whilst applying the given transformation configuration (e.g.
+// to ignore any pipeline stages requested for debugging, etc).  Here, the
+// target word configuration determines the register width to split against,
+// which is distinct from the word type W2 the program is finally concretized
+// into.  Observe that W2 must be large enough to hold all values of the target
+// word, otherwise this will panic.
 func TransformForExecutionRaw[W1 Word[W1], W2 Word[W2]](p Program[W1], word WordConfig,
-	ignores ...string) Program[W2] {
+	config transform.Config) Program[W2] {
 	//
 	var (
 		w2 W2
@@ -50,24 +59,22 @@ func TransformForExecutionRaw[W1 Word[W1], W2 Word[W2]](p Program[W1], word Word
 			Vectorize[W1](),
 			SplitRegisters[W1](word),
 			AllocateRegisters[W1](),
-			InsertCheckCasts[W1](),
 		)
 	)
 	// Sanity check
 	if word.BandWidth > w2.Bandwidth() {
 		panic(fmt.Sprintf("%s does not fit within u%d", word.Name, w2.Bandwidth()))
 	}
-	// ignore requested stages
-	pipeline = pipeline.Ignore(ignores...)
 	// Apply pipeline transformations
-	program := pipeline.Apply(p)
+	program := pipeline.Apply(p, config)
 	// Concretize the program
 	return transform.ProgramToProgram[W1, W2](program)
 }
 
 // TransformForTracing applies a transformation pipeline suitable for tracing,
-// whilst ignoring any pipeline stages requested (i.e. for debugging).
-func TransformForTracing[W1 Word[W1], W2 Word[W2]](p Program[W1], ignores ...string) Program[W2] {
+// whilst applying the given transformation configuration (e.g. to ignore any
+// pipeline stages requested for debugging, etc).
+func TransformForTracing[W1 Word[W1], W2 Word[W2]](p Program[W1], config transform.Config) Program[W2] {
 	var (
 		pipeline = NewTransformationPipeline("tracing",
 			InlineFunctions[W1](),
@@ -85,13 +92,10 @@ func TransformForTracing[W1 Word[W1], W2 Word[W2]](p Program[W1], ignores ...str
 			AllocateRegisters[W1](),
 			FlattenLookupAccess[W1](),
 			AddRangeConstraints[W1](),
-			InsertCheckCasts[W1](),
 		)
 	)
-	// ignore requested stages
-	pipeline = pipeline.Ignore(ignores...)
 	// Apply pipeline transformations
-	program := pipeline.Apply(p)
+	program := pipeline.Apply(p, config)
 	// Concretize the program
 	return transform.ProgramToProgram[W1, W2](program)
 }
@@ -158,14 +162,18 @@ func (p TransformationPipeline[W]) Ignore(ignores ...string) TransformationPipel
 
 // Apply this transformation pipeline to a given program, producing a
 // transformed (but otherwise equivalent) program.
-func (p TransformationPipeline[W]) Apply(program Program[W]) Program[W] {
+func (p TransformationPipeline[W]) Apply(program Program[W], config transform.Config) Program[W] {
+	// Identify stages to be ignored
+	p = p.Ignore(config.Ignores...)
 	// Apply each transformation in turn.
 	for _, t := range p.transforms {
 		program = t.transformer(program)
 	}
 	// Validate program to catch any introduced corruption as early as possible.
-	if err := ValidateProgram(program); err != nil {
-		panic(err)
+	if config.Validation {
+		if err := ValidateProgram(program); err != nil {
+			panic(err)
+		}
 	}
 	//
 	return program
@@ -184,8 +192,6 @@ const (
 	FLATTERN_LOOKUP_ACCESSES = "flattern-lookup-accesses"
 	// INLINE_FUNCTIONS handle
 	INLINE_FUNCTIONS = "inline-functions"
-	// INSERT_CHECKCASTS handle
-	INSERT_CHECKCASTS = "insert-checkcasts"
 	// LOWER_BITWISE handle
 	LOWER_BITWISE = "lower-bitwise"
 	// LOWER_COMPARISONS handle
@@ -214,7 +220,6 @@ var VALID_TRANSFORMS = []string{
 	FACTOR_SKIP_CONDITIONS,
 	FLATTERN_LOOKUP_ACCESSES,
 	INLINE_FUNCTIONS,
-	INSERT_CHECKCASTS,
 	LOWER_BITWISE,
 	LOWER_COMPARISONS,
 	LOWER_DIVISIONS,
@@ -471,19 +476,6 @@ func AllocateRegisters[W word.Word[W]]() Transform[W] {
 	return Transform[W]{ALLOCATE_REGISTERS, precondition, transformer}
 }
 
-// InsertCheckCasts inserts the width-check (CHECKCAST) bytecodes required by a
-// bytecode program, returning the updated program.  Codegen emits operations
-// without casts; this pass adds the cast checks each operation needs (resolving
-// call / memory references against the program's module signatures) and rewrites
-// branch offsets accordingly.  It must run on a complete program.
-func InsertCheckCasts[W word.Word[W]]() Transform[W] {
-	var (
-		transformer = transform.InsertCheckCasts[W]
-	)
-	//
-	return Transform[W]{INSERT_CHECKCASTS, last, transformer}
-}
-
 func after(deps ...string) func(string, string, int, int, map[string]bool) {
 	return func(pipeline, name string, _ int, _ int, seen map[string]bool) {
 		for _, dep := range deps {
@@ -516,11 +508,4 @@ func and(conds ...func(string, string, int, int, map[string]bool)) func(string, 
 
 func noPrecondition(_, _ string, _, _ int, _ map[string]bool) {
 	// do nothing
-}
-
-func last(name, pipeline string, i, n int, _ map[string]bool) {
-	if i+1 != n {
-		panic(
-			fmt.Sprintf("transformation \"%s\" must run last in pipeline \"%s\"", name, pipeline))
-	}
 }

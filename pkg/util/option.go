@@ -67,14 +67,23 @@ func (o Option[T]) UnwrapOr(value T) T {
 	return value
 }
 
-// MapOption maps an option from one type to another using a given mapping
-// function.
-func MapOption[S any, T any](opt Option[S], fn func(S) T) Option[T] {
-	if opt.IsEmpty() {
-		return None[T]()
+// Map maps an option of one type to an option of another.
+func (o Option[T]) Map[S any](fn func(T) S) Option[S] {
+	if o.IsEmpty() {
+		return None[S]()
 	}
 	//
-	return Some[T](fn(opt.Unwrap()))
+	return Some[S](fn(o.value))
+}
+
+// MapOr maps the value in this option to another type using either: a default
+// value (if this option is empty); or, a mapping function (otherwise).
+func (o Option[T]) MapOr[S any](def S, fn func(T) S) S {
+	if o.IsEmpty() {
+		return def
+	}
+	//
+	return fn(o.value)
 }
 
 // ============================================================================

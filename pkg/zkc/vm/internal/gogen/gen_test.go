@@ -471,9 +471,9 @@ func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) vm.Pro
 	} else if fastMode {
 		// NOTE: the program stays in the Uint representation (GenerateGo
 		// requires it), but its registers are split against a bounded word.
-		return vm.TransformForExecutionRaw[vm.Uint, vm.Uint](p, vm.WORD_UINT128)
+		return vm.TransformForExecutionRaw[vm.Uint, vm.Uint](p, vm.WORD_UINT128, vm.DEFAULT_TRANSFORMS)
 	} else {
-		return vm.TransformForTracing[vm.Uint, vm.Uint](p)
+		return vm.TransformForTracing[vm.Uint, vm.Uint](p, vm.DEFAULT_TRANSFORMS)
 	}
 }
 

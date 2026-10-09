@@ -180,13 +180,13 @@ func NewStackFrame(fid uint16, fp uint32, pc uint32) StackFrame {
 // inputs before calling Execute.
 func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpreter[W] {
 	var (
-		prime    W
-		sroms    []StaticReadOnly[W]
-		roms     []ReadOnly[W]
-		woms     []WriteOnce[W]
-		rams     []RandomAccess[W]
-		prams    []PagedRandomAccess[W]
-		compiled = CompileProgram(program, tracing)
+		prime       W
+		sroms       []StaticReadOnly[W]
+		roms        []ReadOnly[W]
+		woms        []WriteOnce[W]
+		rams        []RandomAccess[W]
+		prams       []PagedRandomAccess[W]
+		compiled, _ = CompileProgram(program, tracing)
 	)
 	// sanity check prime fits within target word
 	if prime.Bandwidth() < program.Field().BandWidth {
@@ -1172,7 +1172,7 @@ func (p *Interpreter[W]) executeCat_2n1(pc uint32, codes []uint32, stack []W) (u
 	)
 	//
 	stack[t0] = value.Slice(w0)
-	stack[t1] = value.Shr64(uint64(w0)).Slice(bitwidthOf(regs, t1))
+	stack[t1] = value.Shr64(uint64(w0))
 	//
 	return pc + n, nil
 }
@@ -1190,7 +1190,7 @@ func (p *Interpreter[W]) executeCat_1n(pc uint32, codes []uint32, stack []W) (ui
 		value          = stack[rs]
 	)
 	//
-	for targets.HasNext() {
+	for targets.Count() > 1 {
 		var (
 			target = targets.Next()
 			width  = bitwidthOf(regs, target)
@@ -1199,6 +1199,8 @@ func (p *Interpreter[W]) executeCat_1n(pc uint32, codes []uint32, stack []W) (ui
 		stack[target] = value.Slice(width)
 		value = value.Shr64(uint64(width))
 	}
+	// Final assignment
+	stack[targets.Next()] = value
 	//
 	return pc + n, nil
 }

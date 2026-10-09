@@ -46,34 +46,31 @@ func (p *Call[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Call[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	errors := validateOperands(env, p.Arguments, p.Returns)
+func (p *Call[W]) Validate(env Environment[W]) ([]error, bool) {
+	var (
+		extra        error
+		errors, safe = validateOperands(env, p.Arguments, p.Returns)
+	)
 
-	module := env.Module(p.Target)
-	if module.IsEmpty() {
-		return append(errors, fmt.Errorf("call target %d does not exist", p.Target))
+	if module := env.Module(p.Target); module.IsEmpty() {
+		extra = fmt.Errorf("call target %d does not exist", p.Target)
+	} else if callee := module.Unwrap(); !callee.IsFunction() {
+		extra = fmt.Errorf("call target %d (%s) is not a function", p.Target, callee.Name())
+	} else if len(p.Arguments) != int(callee.NumInputs()) {
+		extra = fmt.Errorf("call to %s expects %d arguments (found %d)",
+			callee.Name(), callee.NumInputs(), len(p.Arguments))
+	} else if len(p.Returns) > int(callee.NumOutputs()) {
+		extra = fmt.Errorf("call to %s provides only %d returns (found %d)",
+			callee.Name(), callee.NumOutputs(), len(p.Returns))
+	} else if slices.Contains(p.Arguments, DISCARD) {
+		extra = fmt.Errorf("call to %s discards an argument", callee.Name())
 	}
-
-	callee := module.Unwrap()
-	if !callee.IsFunction() {
-		return append(errors, fmt.Errorf("call target %d (%s) is not a function", p.Target, callee.Name()))
+	// Sanity check whether additional error arose
+	if extra == nil {
+		return errors, safe
 	}
-
-	if len(p.Arguments) != int(callee.NumInputs()) {
-		errors = append(errors, fmt.Errorf("call to %s expects %d arguments (found %d)",
-			callee.Name(), callee.NumInputs(), len(p.Arguments)))
-	}
-
-	if len(p.Returns) > int(callee.NumOutputs()) {
-		errors = append(errors, fmt.Errorf("call to %s provides only %d returns (found %d)",
-			callee.Name(), callee.NumOutputs(), len(p.Returns)))
-	}
-	// Only returns can be discarded.
-	if slices.Contains(p.Arguments, DISCARD) {
-		errors = append(errors, fmt.Errorf("call to %s discards an argument", callee.Name()))
-	}
-
-	return errors
+	//
+	return append(errors, extra), false
 }
 
 func (p *Call[W]) String(env Environment[W]) string {

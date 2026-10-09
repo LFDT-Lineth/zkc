@@ -150,9 +150,13 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 		inputs, _ = vm.FilterInputs(p, test.data)
 		// construct binary file
 		binf = constraints.NewBinaryFile[F, W](nil, nil, p)
+		// Execute the test
+		actuals, errs = binf.Execute(inputs)
+		// Record whether test accepted or not.
+		accepted = len(errs) == 0
 	)
-	//
-	if actuals, errs := binf.Execute(inputs); len(errs) == 0 {
+	// Check what happened
+	if accepted {
 		// Check outputs line up
 		for name, actual := range actuals {
 			if expected, ok := test.data[name]; ok {
@@ -168,16 +172,13 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 			t.Errorf("test (%s:%d) has incorrect output (expected %d outputs, got %d)",
 				test.filename, test.line, p.Outputs().Count(), len(actuals))
 		}
-	} else {
-		// Determine whether test accepted or not.
-		accepted := len(errs) == 0
-		// Process what happened versus what was supposed to happen.
-		if !accepted && test.expected {
-			t.Errorf("test incorrectly (%s:%d): %s", test.filename, test.line, errs)
-		} else if accepted && !test.expected {
-			//printTrace(tr)
-			t.Errorf("test incorrectly (%s:%d)", test.filename, test.line)
-		}
+	}
+	// Process what happened versus what was supposed to happen.
+	if !accepted && test.expected {
+		t.Errorf("test rejected incorrectly (%s:%d): %s", test.filename, test.line, errs)
+	} else if accepted && !test.expected {
+		//printTrace(tr)
+		t.Errorf("test accepted incorrectly (%s:%d)", test.filename, test.line)
 	}
 }
 
@@ -213,31 +214,27 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 		// decode inputs / outputs
 		inputs, _ = vm.FilterInputs(p, test.data)
 		// generate trace
-		_, tr, errs = binf.Trace(inputs, traceCfg)
+		_, tr, traceErrors = binf.Trace(inputs, traceCfg)
 	)
 	// Check whether a trace was actually generated.
 	if tr.IsEmpty() {
-		failNow(t, errs...)
+		failNow(t, traceErrors...)
 	}
 	// Check constraints
-	failures, errors := binf.Check(traceCfg, tr.Unwrap())
+	failures, checkErrors := binf.Check(traceCfg, tr.Unwrap())
 	// Fail automatically on any internal error arising during tracing
-	failIfNot[*vm.Failure](t, errors...)
-	// Check for unexpected failures errors
-	if test.expected {
-		// Fail on any machine failure, since this test was not expected to
-		// generate any failures.
-		failIf[*vm.Failure](t, errs...)
-	}
+	failIfNot[*vm.Failure](t, traceErrors...)
+	failIfNot[*vm.Failure](t, checkErrors...)
 	// Fail automatically on any internal arising during constraint checking
 	failIf[*constraint.InternalFailure[F]](t, failures...)
 	// Determine whether trace accepted or not.
-	accepted := len(failures) == 0
+	traceAccepted := len(checkErrors) == 0 && len(traceErrors) == 0
+	constraintsAccepted := len(failures) == 0
 	// Process what happened versus what was supposed to happen.
-	if !accepted && test.expected {
-		t.Errorf("Trace rejected incorrectly (%s:%d): %s", test.filename, test.line, failures)
-	} else if accepted && !test.expected {
-		//printTrace(tr)
+	if test.expected && (!constraintsAccepted || !traceAccepted) {
+		t.Errorf("Trace rejected incorrectly (%s:%d): %v %v %v", test.filename,
+			test.line, failures, traceErrors, checkErrors)
+	} else if !test.expected && (traceAccepted || constraintsAccepted) {
 		t.Errorf("Trace accepted incorrectly (%s:%d)", test.filename, test.line)
 	}
 }

@@ -1,0 +1,8 @@
+pub input in(addr:u4) -> (b:u8)
+pub output out(addr:u4) -> (b:u8)
+
+fn main() {
+    var x:u8 = in[0]
+    //
+    out[x as u4] = x
+}

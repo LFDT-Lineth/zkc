@@ -103,7 +103,7 @@ type ramLayout struct {
 func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleId, m *vm.Memory[W]) mir.Module[F] {
 	//
 	var (
-		mod    *schema.Table[F, schema.Constraint[F]]
+		mod    *schema.Table[F]
 		regs   = toRegisters(m.Registers())
 		layout = computeRamLayout(m, p.program.Field())
 	)
@@ -137,7 +137,7 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 	// value / timestamp-written columns pinned by the caller lookup — are not
 	// otherwise constrained.  1-bit columns (phase bits, carries) get an r*r==r
 	// constraint; wider columns a range-table lookup.
-	p.addRangeProofConstraints(mod, ctx, mod.Registers())
+	p.addRangeProofConstraints(mod, ctx)
 	//
 	return mod
 }
@@ -225,7 +225,7 @@ func widthsOf[W vm.Word[W]](regs []vm.Register[W]) []uint {
 
 // addLimbRegisters appends one computed register per given limb width, named
 // "<prefix><k>".
-func addLimbRegisters[F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]],
+func addLimbRegisters[F field.Element[F]](mod *schema.Table[F],
 	prefix string, widths []uint) {
 	//
 	for k, w := range widths {
@@ -236,7 +236,7 @@ func addLimbRegisters[F field.Element[F]](mod *schema.Table[F, schema.Constraint
 // addCarryRegisters appends n single-bit computed carry registers named
 // "<prefix><k>".  A carry out of a two-operand limb addition is always in {0,1},
 // so one bit suffices.
-func addCarryRegisters[F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]],
+func addCarryRegisters[F field.Element[F]](mod *schema.Table[F],
 	prefix string, n int) {
 	//
 	for k := 0; k < n; k++ {

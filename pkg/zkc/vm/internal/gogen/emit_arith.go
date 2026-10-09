@@ -428,9 +428,9 @@ func (g *generator) emitMul(c *code, srcs []operand, konst operand, store storeV
 	return inner
 }
 
-// emitDivRem emits DIV / REM / divmod (executeDiv/Rem): a zero divisor fails,
+// emitDivMod emits DIV / REM / divmod (executeDiv/Rem): a zero divisor fails,
 // otherwise each present target receives the plain Go quotient / remainder.
-func (g *generator) emitDivRem(c *code, fn *descFunction, x *bytecode.DivRem[word.Uint]) error {
+func (g *generator) emitDivMod(c *code, fn *descFunction, x *bytecode.DivMod[word.Uint]) error {
 	lhs, err := g.registerOperand(fn, x.Dividend)
 	if err != nil {
 		return err

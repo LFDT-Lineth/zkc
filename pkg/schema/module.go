@@ -87,7 +87,7 @@ type Module[F field.Element[F]] interface {
 // and Y (in that order) where both are to be halfed.  Then, the result is X'0,
 // X'1, Y'0. Y'1 (in that order).  Hence, predicting the new register indices is
 // relatively straightforward.
-type Table[F field.Element[F], C Constraint[F]] struct {
+type Table[F field.Element[F]] struct {
 	name           module.Name
 	public         bool
 	private        bool
@@ -95,7 +95,7 @@ type Table[F field.Element[F], C Constraint[F]] struct {
 	native         bool
 	static         bool
 	registers      []register.Register
-	constraints    []C
+	constraints    []Constraint[F]
 	assignments    []Assignment[F]
 	staticContents [][]F
 }
@@ -105,28 +105,27 @@ type Table[F field.Element[F], C Constraint[F]] struct {
 // the ZkC pipeline should ever pass true.  The static flag indicates that this
 // module is a static reference table whose contents are fixed at compile time
 // and are populated separately via SetStaticContents.
-func (p *Table[F, C]) Init(name module.Name, public, private, synthetic, native, static bool,
-) *Table[F, C] {
-	return &Table[F, C]{name, public, private, synthetic, native, static, nil, nil, nil, nil}
+func (p *Table[F]) Init(name module.Name, public, private, synthetic, native, static bool,
+) *Table[F] {
+	return &Table[F]{name, public, private, synthetic, native, static, nil, nil, nil, nil}
 }
 
 // Assignments provides access to those assignments defined as part of this
 // table.
-func (p *Table[F, C]) Assignments() iter.Iterator[Assignment[F]] {
+func (p *Table[F]) Assignments() iter.Iterator[Assignment[F]] {
 	return iter.NewArrayIterator(p.assignments)
 }
 
 // Constraints provides access to those constraints associated with this
 // module.
-func (p *Table[F, C]) Constraints() iter.Iterator[Constraint[F]] {
-	arrIter := iter.NewArrayIterator(p.constraints)
-	return iter.NewCastIterator[C, Constraint[F]](arrIter)
+func (p *Table[F]) Constraints() iter.Iterator[Constraint[F]] {
+	return iter.NewArrayIterator(p.constraints)
 }
 
 // Consistent applies a number of internal consistency checks.  Whilst not
 // strictly necessary, these can highlight otherwise hidden problems as an aid
 // to debugging.
-func (p *Table[F, C]) Consistent(fieldWidth uint, schema Schema[F]) []error {
+func (p *Table[F]) Consistent(fieldWidth uint, schema Schema[F]) []error {
 	var errors []error
 	// Check constraints
 	for _, c := range p.constraints {
@@ -142,7 +141,7 @@ func (p *Table[F, C]) Consistent(fieldWidth uint, schema Schema[F]) []error {
 
 // HasRegister checks whether a register with the given name exists and, if
 // so, returns its register identifier.  Otherwise, it returns false.
-func (p *Table[F, C]) HasRegister(name string) (register.Id, bool) {
+func (p *Table[F]) HasRegister(name string) (register.Id, bool) {
 	for i := range p.Width() {
 		if p.registers[i].Name() == name {
 			return register.NewId(i), true
@@ -153,44 +152,44 @@ func (p *Table[F, C]) HasRegister(name string) (register.Id, bool) {
 }
 
 // Name returns the module name.
-func (p *Table[F, C]) Name() module.Name {
+func (p *Table[F]) Name() module.Name {
 	return p.name
 }
 
 // IsPublicOutput identifies whether or not this module represents a public
 // output (e.g. a public ZkC output memory) and, hence, is externally visible.
-func (p *Table[F, C]) IsPublicOutput() bool {
+func (p *Table[F]) IsPublicOutput() bool {
 	return p.public
 }
 
 // IsPrivateOutput identifies whether or not this module represents a private
 // output.  A module cannot be both a public and private output.
-func (p *Table[F, C]) IsPrivateOutput() bool {
+func (p *Table[F]) IsPrivateOutput() bool {
 	return p.private
 }
 
 // IsSynthetic modules are generated during compilation, rather than being
 // provided by the user.
-func (p *Table[F, C]) IsSynthetic() bool {
+func (p *Table[F]) IsSynthetic() bool {
 	return p.synthetic
 }
 
 // IsNative reports whether this module corresponds to a function backed by
 // a native circuit (i.e. declared with the @native annotation in ZkC).
-func (p *Table[F, C]) IsNative() bool {
+func (p *Table[F]) IsNative() bool {
 	return p.native
 }
 
 // IsStatic reports whether this module is a static reference table whose
 // contents are fixed at compile time.
-func (p *Table[F, C]) IsStatic() bool {
+func (p *Table[F]) IsStatic() bool {
 	return p.static
 }
 
 // StaticContents returns the contents of this static reference table.  It
 // panics if invoked on a non-static module, since no contents are stored in
 // that case.
-func (p *Table[F, C]) StaticContents() [][]F {
+func (p *Table[F]) StaticContents() [][]F {
 	if !p.static {
 		panic(fmt.Sprintf("module \"%s\" is not static", p.name))
 	}
@@ -200,38 +199,38 @@ func (p *Table[F, C]) StaticContents() [][]F {
 
 // RawAssignments provides raw access to those assignments defined as part of this
 // table.
-func (p *Table[F, C]) RawAssignments() []Assignment[F] {
+func (p *Table[F]) RawAssignments() []Assignment[F] {
 	return p.assignments
 }
 
 // RawConstraints provides raw access to those constraints associated with this
 // module.
-func (p *Table[F, C]) RawConstraints() []C {
+func (p *Table[F]) RawConstraints() []Constraint[F] {
 	return p.constraints
 }
 
 // Register returns the given register in this table.
-func (p *Table[F, C]) Register(id register.Id) register.Register {
+func (p *Table[F]) Register(id register.Id) register.Register {
 	return p.registers[id.Unwrap()]
 }
 
 // Registers returns an iterator over the underlying registers of this schema.
 // Specifically, the index of a register in this array is its register index.
-func (p *Table[F, C]) Registers() []register.Register {
+func (p *Table[F]) Registers() []register.Register {
 	return p.registers
 }
 
 // Width returns the number of registers in this Table.
-func (p *Table[F, C]) Width() uint {
+func (p *Table[F]) Width() uint {
 	return uint(len(p.registers))
 }
 
-func (p *Table[F, C]) String() string {
+func (p *Table[F]) String() string {
 	return register.MapToString(p)
 }
 
 // ConstRegister implementation for register.ConstMap interface
-func (p *Table[F, C]) ConstRegister(constant uint8) register.Id {
+func (p *Table[F]) ConstRegister(constant uint8) register.Id {
 	var (
 		name  = fmt.Sprintf("%d", constant)
 		nregs = uint(len(p.registers))
@@ -251,24 +250,24 @@ func (p *Table[F, C]) ConstRegister(constant uint8) register.Id {
 // ============================================================================
 
 // AddAssignments adds a new assignments to this table.
-func (p *Table[F, C]) AddAssignments(assignments ...Assignment[F]) {
+func (p *Table[F]) AddAssignments(assignments ...Assignment[F]) {
 	p.assignments = append(p.assignments, assignments...)
 }
 
 // AddConstraints adds new constraints to this table.
-func (p *Table[F, C]) AddConstraints(constraints ...C) {
+func (p *Table[F]) AddConstraints(constraints ...Constraint[F]) {
 	p.constraints = append(p.constraints, constraints...)
 }
 
 // AddRegisters adds new registers to this table.
-func (p *Table[F, C]) AddRegisters(registers ...register.Register) {
+func (p *Table[F]) AddRegisters(registers ...register.Register) {
 	// Add registers
 	p.registers = append(p.registers, registers...)
 }
 
 // SetStaticContents sets the contents of this static reference table.  It
 // panics if invoked on a non-static module.
-func (p *Table[F, C]) SetStaticContents(contents [][]F) {
+func (p *Table[F]) SetStaticContents(contents [][]F) {
 	if !p.static {
 		panic(fmt.Sprintf("module \"%s\" is not static", p.name))
 	}

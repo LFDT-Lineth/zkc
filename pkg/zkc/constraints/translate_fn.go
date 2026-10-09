@@ -30,7 +30,7 @@ import (
 
 func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *vm.Function[W]) mir.Module[F] {
 	var (
-		mod     *schema.Table[F, schema.Constraint[F]]
+		mod     *schema.Table[F]
 		name    = fn.Name()
 		regs    = toRegisters(fn.Registers())
 		framing Framing[F]
@@ -112,7 +112,7 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 	// that will be introduced later will be already range-proved (as a product of bit registers).
 	// Note that registers coming from control flow have been added to the module before this point,
 	// so they will be range-proved as well.
-	p.addRangeProofConstraints(mod, ctx, mod.Registers())
+	p.addRangeProofConstraints(mod, ctx, fn.Registers()...)
 	// Emit lookup constraints for any function calls and memory accesses made
 	// by this function (recording send ports for calls into global functions).
 	p.addLookups(mod, ctx, fn, pcSelectors, ret)

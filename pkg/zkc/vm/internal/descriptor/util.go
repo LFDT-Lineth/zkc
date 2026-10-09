@@ -49,7 +49,7 @@ func CalculateAddBitwidth[W word.Word[W]](sources []RegisterId, constant W, env 
 		max = CalculateMaximumValue(constant, sources, env, acc)
 	)
 	//
-	return util.MapOption(max, func(val big.Int) uint { return uint(val.BitLen()) })
+	return max.Map(func(val big.Int) uint { return uint(val.BitLen()) })
 }
 
 // CalculateSubBitwidth computes the minimal bitwidth required to hold the
@@ -88,7 +88,7 @@ func CalculateMulBitwidth[W word.Word[W]](sources []RegisterId, constant W, env 
 		max = CalculateMaximumValue(constant, sources, env, acc)
 	)
 	//
-	return util.MapOption(max, func(val big.Int) uint { return uint(val.BitLen()) })
+	return max.Map(func(val big.Int) uint { return uint(val.BitLen()) })
 }
 
 // CalculateMaximumValue computes the largest value which can be produced by the

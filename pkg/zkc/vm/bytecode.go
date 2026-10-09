@@ -142,11 +142,6 @@ type BytecodeEnvironment[W Word[W]] = bytecode.Environment[W]
 // enclosing function.
 type RegisterInfo = bytecode.RegisterInfo
 
-// IsZeroWidth returns true for zero-width registers.
-func IsZeroWidth(reg RegisterInfo) bool {
-	return bytecode.IsZeroWidth(reg)
-}
-
 // Failure indicates a recognised machine failure arose, such as attempting to
 // execute a fail instruction.  Such a machine failure is distinct from some
 // kind of internal failure which is not expected to even happen (i.e. unless
@@ -162,7 +157,7 @@ func NewBytecodeInterpreter[W word.Word[W]](program Program[W]) *Interpreter[W] 
 
 // CompileProgram compiles a program descriptor into an binary (i.e. executable)
 // bytecode program.
-func CompileProgram[W word.Word[W]](p Program[W]) BinaryProgram[W] {
+func CompileProgram[W word.Word[W]](p Program[W]) (BinaryProgram[W], Program[W]) {
 	return interpreter.CompileProgram(p, false)
 }
 
@@ -501,7 +496,7 @@ func Intrinsic[W Word[W]](op bytecode.Operation, targets []bytecode.RegisterVect
 // register or constant divisor.  A source-level "/" or "%" directs the
 // unwanted result into a fresh scratch register.
 func DivMod[W Word[W]](quotient, remainder, dividend RegisterId, divisor Operand[W]) Bytecode[W] {
-	return bytecode.NewDivRem(quotient, remainder, dividend, divisor)
+	return bytecode.NewDivMod(quotient, remainder, dividend, divisor)
 }
 
 // Fail constructs a fail instruction carrying the given formatted message.

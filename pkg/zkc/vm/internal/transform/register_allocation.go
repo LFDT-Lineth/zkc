@@ -307,7 +307,7 @@ func extractRegisterVectors[W word.Word[W]](b Bytecode[W]) []bytecode.RegisterVe
 		}
 	case *bytecode.Debug[W]:
 		return bc.Sources
-	case *bytecode.DivRem[W]:
+	case *bytecode.DivMod[W]:
 		if bc.Divisor.IsRegisterVector() {
 			vecs = append(vecs, bc.Divisor.AsRegisterVector())
 		}

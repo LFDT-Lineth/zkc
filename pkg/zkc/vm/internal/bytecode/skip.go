@@ -32,8 +32,8 @@ func (p *Skip[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Skip[W]) Validate(_ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *Skip[W]) Validate(_ Environment[W]) ([]error, bool) {
+	return nil, true
 }
 
 func (p *Skip[W]) String(_ Environment[W]) string {

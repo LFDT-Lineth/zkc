@@ -50,7 +50,7 @@ func (p *Arith[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *Arith[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+func (p *Arith[W]) Validate(env Environment[W]) ([]error, bool) {
 	return validateOperands(env, p.Source, p.Target)
 }
 

@@ -1,0 +1,9 @@
+pub input data(addr:u16) -> (b:u16)
+
+fn main() {
+    var x:u16 = data[0]
+    var hi:u4
+    var lo:u8
+    // single source split across two targets (CAT_2n1)
+    hi::lo = x as u12
+}
