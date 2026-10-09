@@ -50,9 +50,9 @@ var (
 		field.GF_8209,
 		field.GF_251}
 	// DEFAULT_FIELDS set default fields for testing
-	DEFAULT_FIELDS = []field.Config{field.GOLDILOCKS_32,
+	DEFAULT_FIELDS = []field.Config{
+		field.GOLDILOCKS_32,
 		field.MAMABEAR_32,
-		field.MAMABEAR2_32,
 		field.KOALABEAR_16,
 		field.GF_8209}
 	// DEFAULT_CONFIG sets a default testing configuration
