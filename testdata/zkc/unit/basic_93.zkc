@@ -1,0 +1,6 @@
+pub input in(addr:u4) -> (b:u8)
+
+fn main() {
+    var x:u8 = in[0]
+    var r:u8 = in[x as u4]
+}

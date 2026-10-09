@@ -1,0 +1,11 @@
+pub input data(addr:u16) -> (b:u128)
+
+fn main() {
+    var x:u128 = data[0]
+    var one:u16 = 1
+    var r:u64
+    //
+    r = (x << one) as u64
+    //
+    printf "r=%x\n", r
+}

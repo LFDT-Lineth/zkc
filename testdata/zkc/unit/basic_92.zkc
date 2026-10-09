@@ -1,0 +1,12 @@
+pub input data(addr:u16) -> (b:u8)
+
+fn main() {
+    var x_hi:u8 = data[0]
+    var x_lo:u8 = data[1]
+    var y:u8 = data[2]
+    var x:u16 = x_hi::x_lo
+    //
+    if (x as u8) == y {
+        fail
+    }
+}

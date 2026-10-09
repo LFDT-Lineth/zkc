@@ -80,31 +80,22 @@ func castPacket[W word.Word[W]](b Bytecode[W], regmap descriptor.RegisterMap[W],
 	//
 	switch b := b.(type) {
 	case *bytecode.Arith[W]:
-		return arithCasts(b, regmap)
+		checks = arithCasts(b, regmap)
 	case *bytecode.Bitwise[W]:
-		// AND/OR/XOR cast their result down to the target width; SHL/SHR/NOT do not.
-		switch b.Op {
-		case bytecode.OP_AND, bytecode.OP_OR, bytecode.OP_XOR:
-			checks = checkCast(regmap, util.Some(uint(b.Bitwidth)), b.Target)
-		}
+		checks = checkCast(regmap, util.Some(uint(b.Bitwidth)), b.Target)
+	case *bytecode.Cat[W]:
+		checks = catCasts(b, regmap)
 	case *bytecode.DivMod[W]:
-		var width util.Option[uint]
-		// Determine operation width
-		if dividend := regmap.Register(b.Dividend); !dividend.IsNative() {
-			width = dividend.Bitwidth()
-		}
-		// Add checks for quotient and remainder
-		checks = checkCast(regmap, width, b.Quotient)
-		checks = append(checks, checkCast(regmap, width, b.Remainder)...)
+		checks = divCasts(b, regmap)
 	case *bytecode.Call[W]:
 		var callee = modules[b.Target]
 		//
-		checks = addIncomingCheckCasts(regmap, callee.Outputs(), b.Returns)
+		checks = addArgumentCasts(regmap, callee.Outputs(), b.Returns)
 	case *bytecode.ReadWrite[W]:
 		var callee = modules[b.Id]
 		// Only memory reads require check casts
 		if !b.Write {
-			checks = addIncomingCheckCasts(regmap, callee.Outputs(), b.Data)
+			checks = addArgumentCasts(regmap, callee.Outputs(), b.Data)
 		}
 	}
 	//
@@ -131,7 +122,28 @@ func arithCasts[W word.Word[W]](b *bytecode.Arith[W], regmap descriptor.Register
 		panic("unknown arithmetic instruction")
 	}
 	//
-	return prepend(b, checkCast(regmap, bits, b.Target...))
+	return checkCast(regmap, bits, b.Target...)
+}
+
+func catCasts[W word.Word[W]](b *bytecode.Cat[W], regmap descriptor.RegisterMap[W]) []Bytecode[W] {
+	var (
+		// Determine size of rhs
+		bits = descriptor.BitwidthOf(regmap, b.Sources...)
+	)
+	// Add casts as appropriate
+	return checkCast(regmap, bits, b.Targets...)
+}
+
+func divCasts[W word.Word[W]](b *bytecode.DivMod[W], regmap descriptor.RegisterMap[W]) []Bytecode[W] {
+	var width util.Option[uint]
+	// Determine operation width
+	if dividend := regmap.Register(b.Dividend); !dividend.IsNative() {
+		width = dividend.Bitwidth()
+	}
+	// Add checks for quotient and remainder
+	checks := checkCast(regmap, width, b.Quotient)
+	// Done
+	return append(checks, checkCast(regmap, width, b.Remainder)...)
 }
 
 // prepend returns the operation followed by its (possibly empty) trailing cast
@@ -140,14 +152,14 @@ func prepend[W word.Word[W]](op Bytecode[W], casts []Bytecode[W]) []Bytecode[W] 
 	return append([]Bytecode[W]{op}, casts...)
 }
 
-// AddIncomingCheckCasts emits a CHECKCAST for every target register which is
+// addArgumentCasts emits a CHECKCAST for every target register which is
 // narrower than the corresponding source register, where sources are values
 // arriving in this frame from another module (e.g. a memory's data registers,
 // or a callee's return registers).  This mirrors the width check the slow
 // machine performs on every register write (frame.Store / frameCopyFrom).  The
 // targets are resolved against the given register map (the frame's own
 // registers).
-func addIncomingCheckCasts[W word.Word[W]](regmap descriptor.RegisterMap[W], sources []descriptor.Register[W],
+func addArgumentCasts[W word.Word[W]](regmap descriptor.RegisterMap[W], sources []descriptor.Register[W],
 	targets []RegisterId) []Bytecode[W] {
 	var codes []Bytecode[W]
 	//
