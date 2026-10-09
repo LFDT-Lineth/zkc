@@ -376,6 +376,51 @@ func Test_ZkcUnit_Basic_88(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_88", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Basic_91(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_91", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_92(t *testing.T) {
+	t.Skip("#2031 mismatched limbs")
+	checkZkcUnit(t, "zkc/unit/basic_92", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_93(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_93", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_94(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_94", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_95(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_95", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_96(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_96", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_97(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_97", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_98(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_98", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_99(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_99", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_100(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_100", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_101(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_101", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // If-Else-If Tests
 // ===================================================================

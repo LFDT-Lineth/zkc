@@ -165,7 +165,8 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	// Check Constraints
 	// =====================================================
 	if check {
-		checkConstraints(binfile, traceConfig, tr)
+		// Run check constraints whilst retaining all errors
+		errors = append(errors, checkConstraints(binfile, traceConfig, tr)...)
 		// Record that trace computed
 		computed = true
 	}
@@ -178,7 +179,9 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		shards := collectShards(tr)
 		// Real ZkC functions are public; synthetic modules (e.g. range-check
 		// tables) are private (hidden by default in the inspector).
-		errors = corset.InspectTrace(binfile.LimbsMap(), shards[0], publicModule, false, 32, 128)
+		errs := corset.InspectTrace(binfile.LimbsMap(), shards[0], publicModule, false, 32, 128)
+		// Include all errors
+		errors = append(errors, errs...)
 		// Record that trace computed
 		computed = true
 	} else if inspect && tr.Len() > 0 {
@@ -197,7 +200,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		var stats = util.NewPerfStats()
 		// Dummy driver to ensure trace is fully computed, and any errors are
 		// reported.
-		errors = tr.Apply(func(id uint, _ trace.Shard[F]) {})
+		errors = append(errors, tr.Apply(func(id uint, _ trace.Shard[F]) {})...)
 		//
 		stats.Log("Trace generation")
 	}
@@ -208,7 +211,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 }
 
 func checkConstraints[F field.Element[F], W vm.Word[W]](binfile *constraints.BinaryFile[F, W],
-	cfg vm.TraceConfig, trace trace.LazyTrace[F]) {
+	cfg vm.TraceConfig, trace trace.LazyTrace[F]) []error {
 	//
 	var checkConfig corset.CheckConfig
 	// Set sensible defaults (for now)
@@ -226,9 +229,11 @@ func checkConstraints[F field.Element[F], W vm.Word[W]](binfile *constraints.Bin
 	// Report failures first
 	if len(failures) > 0 {
 		corset.ReportFailures("AIR", mapping, checkConfig, failures)
+		// Append an error to force a non-zero exit code
+		errors = append(errors, fmt.Errorf("constraint failures (%d)", len(failures)))
 	}
-	// Report any errors arising
-	handleErrors(errors)
+	// Return any errors arising
+	return errors
 }
 
 func collectShards[F field.Element[F]](tr trace.LazyTrace[F]) []trace.Shard[F] {
