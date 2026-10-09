@@ -1,0 +1,19 @@
+pub input data(address:u2) -> (word:u64)
+
+// Regression test: a concatenation whose operands straddle register limbs
+// (u40::u8::u16 into a u64).  On fields with a 48-bit bandwidth and 32-bit
+// registers (e.g. MAMABEAR_32), splitting assigned only the u8::u16 operands to
+// the low u32 limb of the target, placing the u40 operand at bit 32 instead of
+// bit 24 (and overflowing the high u32 limb).
+fn main() {
+    var x:u40 = data[0] as u40
+    var y:u8 = data[1] as u8
+    var z:u16 = data[2] as u16
+    var expected:u64 = data[3]
+    //
+    var actual:u64 = x::y::z
+    //
+    if actual != expected {
+        fail
+    }
+}
