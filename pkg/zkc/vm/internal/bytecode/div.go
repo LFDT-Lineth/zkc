@@ -18,11 +18,11 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// DivRem computes the (truncated) integer quotient and remainder of a
+// DivMod computes the (truncated) integer quotient and remainder of a
 // register by a divisor which is either a register or a constant.  Both
 // results are always computed and written: a source-level "/" or "%" simply
 // directs the unwanted result into a fresh scratch register.
-type DivRem[W word.Word[W]] struct {
+type DivMod[W word.Word[W]] struct {
 	// Quotient receives the division result.
 	Quotient RegisterId
 	// Remainder receives the remainder.
@@ -34,7 +34,7 @@ type DivRem[W word.Word[W]] struct {
 }
 
 // Uses implementation for Bytecode interface.
-func (p *DivRem[W]) Uses() []RegisterId {
+func (p *DivMod[W]) Uses() []RegisterId {
 	if p.Divisor.IsConstant() {
 		return []RegisterId{p.Dividend}
 	}
@@ -43,13 +43,13 @@ func (p *DivRem[W]) Uses() []RegisterId {
 }
 
 // Definitions implementation for Bytecode interface.
-func (p *DivRem[W]) Definitions() []RegisterId {
+func (p *DivMod[W]) Definitions() []RegisterId {
 	return []RegisterId{p.Quotient, p.Remainder}
 }
 
 // Validate implementation for Bytecode interface.
-func (p *DivRem[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	errs := validateOperands(env, p.Uses(), p.Definitions())
+func (p *DivMod[W]) Validate(env Environment[W]) ([]error, bool) {
+	errs, safe := validateOperands(env, p.Uses(), p.Definitions())
 	//
 	if p.Divisor.IsConstant() {
 		// Already rejected by codegen rejects it upfront, check that it's not introduced
@@ -59,10 +59,10 @@ func (p *DivRem[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 		}
 	}
 	//
-	return errs
+	return errs, safe
 }
 
-func (p *DivRem[W]) String(mapping Environment[W]) string {
+func (p *DivMod[W]) String(mapping Environment[W]) string {
 	return fmt.Sprintf("%s, %s = %s /%% %s",
 		RegisterToString(p.Quotient, mapping),
 		RegisterToString(p.Remainder, mapping),

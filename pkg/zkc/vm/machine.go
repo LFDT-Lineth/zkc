@@ -117,7 +117,7 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string][]byte, strategy 
 	}
 	// Register a breakpoint at fn's entry and build an interpreter for the
 	// result, so the breakpointer fires each time fn is entered.
-	bci := NewBytecodeInterpreter(pr.BreakPoint(fid, ProgramPoint{Macro: 0, Micro: 0}))
+	bci := NewBytecodeInterpreter(pr.BreakPoint(fid, 0))
 	// Write a checkpoint as a hex string, one per line.  The counter governs how
 	// frequently this actually fires: it triggers every interval entries of fn.
 	bci.BreakPointer(func(_ uint32) bool {
@@ -427,7 +427,7 @@ func constructTraceForInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr
 		return nil
 	}
 	// Register breakpoint at start of target function.
-	pr = pr.BreakPoint(funId, ProgramPoint{Macro: 0, Micro: 0})
+	pr = pr.BreakPoint(funId, 0)
 	// Construct interpreter with breakpoint
 	var (
 		// Construct tracing interpreter

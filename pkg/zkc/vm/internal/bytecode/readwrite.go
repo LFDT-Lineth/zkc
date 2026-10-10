@@ -64,41 +64,36 @@ func (p *ReadWrite[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *ReadWrite[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	errors := validateOperands(env, p.Address, p.Data, p.Stamp)
+func (p *ReadWrite[W]) Validate(env Environment[W]) ([]error, bool) {
+	var (
+		extra        error
+		errors, safe = validateOperands(env, p.Address, p.Data, p.Stamp)
+	)
 
-	module := env.Module(p.Id)
-	if module.IsEmpty() {
-		return append(errors, fmt.Errorf("memory target %d does not exist", p.Id))
-	}
-
-	memory := module.Unwrap()
-	if !memory.IsMemory() {
-		return append(errors, fmt.Errorf("memory target %d (%s) is not a memory", p.Id, memory.Name()))
-	}
-
-	if p.Write && memory.IsReadOnly() {
-		errors = append(errors, fmt.Errorf("cannot write to read-only memory %s", memory.Name()))
+	if module := env.Module(p.Id); module.IsEmpty() {
+		extra = fmt.Errorf("memory target %d does not exist", p.Id)
+	} else if memory := module.Unwrap(); !memory.IsMemory() {
+		extra = fmt.Errorf("memory target %d (%s) is not a memory", p.Id, memory.Name())
+	} else if p.Write && memory.IsReadOnly() {
+		extra = fmt.Errorf("cannot write to read-only memory %s", memory.Name())
 	} else if !p.Write && memory.IsWriteOnly() {
-		errors = append(errors, fmt.Errorf("cannot read from write-only memory %s", memory.Name()))
-	}
-
-	if len(p.Address) != int(memory.NumInputs()) {
-		errors = append(errors, fmt.Errorf("memory %s expects %d address registers (found %d)",
-			memory.Name(), memory.NumInputs(), len(p.Address)))
-	}
-
-	if len(p.Data) != int(memory.NumOutputs()) {
-		errors = append(errors, fmt.Errorf("memory %s expects %d data registers (found %d)",
-			memory.Name(), memory.NumOutputs(), len(p.Data)))
-	}
-	// Only the data lines of a read can be discarded.
-	if slices.Contains(p.Address, DISCARD) || slices.Contains(p.Stamp, DISCARD) ||
+		extra = fmt.Errorf("cannot read from write-only memory %s", memory.Name())
+	} else if len(p.Address) != int(memory.NumInputs()) {
+		extra = fmt.Errorf("memory %s expects %d address registers (found %d)",
+			memory.Name(), memory.NumInputs(), len(p.Address))
+	} else if len(p.Data) != int(memory.NumOutputs()) {
+		extra = fmt.Errorf("memory %s expects %d data registers (found %d)",
+			memory.Name(), memory.NumOutputs(), len(p.Data))
+	} else if slices.Contains(p.Address, DISCARD) || slices.Contains(p.Stamp, DISCARD) ||
 		(p.Write && slices.Contains(p.Data, DISCARD)) {
-		errors = append(errors, fmt.Errorf("memory %s access discards an operand", memory.Name()))
+		extra = fmt.Errorf("memory %s access discards an operand", memory.Name())
 	}
-
-	return errors
+	// Sanity check whether additional error arose
+	if extra == nil {
+		return errors, safe
+	}
+	//
+	return append(errors, extra), false
 }
 
 func (p *ReadWrite[W]) String(env Environment[W]) string {

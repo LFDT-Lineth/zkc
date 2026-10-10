@@ -50,27 +50,31 @@ type ModuleId = bytecode.ModuleId
 // CompileProgram compiles a program descriptor into an executable (i.e.
 // compiled) bytecode program.  If tracing is enabled then a break point is set
 // for the terminal instruction(s) of each bytecode vector.
-func CompileProgram[W word.Word[W]](program descriptor.Program[W], tracing bool) encoding.Binary[W] {
+func CompileProgram[W word.Word[W]](program descriptor.Program[W], tracing bool,
+) (encoding.Binary[W], descriptor.Program[W]) {
+	//
 	var (
-		symtab             = initialiseSymbolTable(program)
-		bytecodes, changed = encodeBytecodes(program, &symtab, tracing)
+		nProgram           = InsertCheckCasts(program)
+		symtab             = initialiseSymbolTable(nProgram)
+		bytecodes, changed = encodeBytecodes(nProgram, &symtab, tracing)
 	)
 	// Encode the bytecodes
 	for changed {
 		// continue until we reach a fixed point
-		bytecodes, changed = encodeBytecodes(program, &symtab, tracing)
+		bytecodes, changed = encodeBytecodes(nProgram, &symtab, tracing)
 	}
 	// Flag every instruction at which a breakpoint has been registered by setting
 	// the BREAKPOINT modifier bit on its (resolved) first word.
 	for _, bp := range program.BreakPoints() {
 		var (
-			lab = Label{ModuleId: bp.Function, Point: bp.ProgramCounter}
+			pp  = descriptor.ProgramPoint{Macro: bp.ProgramCounter, Micro: 0}
+			lab = Label{ModuleId: bp.Function, Point: pp}
 		)
 		//
 		bytecodes[symtab.SymbolAt(lab).Offset] |= encoding.BREAKPOINT
 	}
 	// Done
-	return encoding.NewBinary(symtab, bytecodes)
+	return encoding.NewBinary(symtab, bytecodes), nProgram
 }
 
 // Determine a conservative mapping from bytecode labels to bytecode offsets,

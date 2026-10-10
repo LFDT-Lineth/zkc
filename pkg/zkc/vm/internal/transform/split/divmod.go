@@ -19,7 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// DivRem splits a DIVMOD instruction into a single WIDE_DIVMOD intrinsic
+// DivMod splits a DIVMOD instruction into a single WIDE_DIVMOD intrinsic
 // operating over the limb vectors of its operands.  Like a shift (see Shift),
 // a division cannot be decomposed into independent per-limb operations
 // because carries and borrows cross limb boundaries.  Instead the (possibly
@@ -35,7 +35,7 @@ import (
 //
 // where each operand is the limb vector of the original register (ordered
 // most-significant limb first, matching ApplyLimbsMap).
-func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.DivRem[W]) []Bytecode[W] {
+func DivMod[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.DivMod[W]) []Bytecode[W] {
 	var (
 		quotient            = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Quotient)...)
 		remainder           = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Remainder)...)
@@ -45,7 +45,7 @@ func DivRem[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.DivRe
 	// Check whether splitting actually required
 	if quotient.Len == 1 && remainder.Len == 1 && dividend.Len == 1 && divisorLen == 1 {
 		// No, splitting not technically required
-		return []Bytecode[W]{bytecode.NewDivRem(quotient.Base, remainder.Base, dividend.Base, divisor)}
+		return []Bytecode[W]{bytecode.NewDivMod(quotient.Base, remainder.Base, dividend.Base, divisor)}
 	}
 	// Yes, splitting is actually required.
 	return []Bytecode[W]{bytecode.NewIntrinsic(bytecode.WIDE_DIVMOD,

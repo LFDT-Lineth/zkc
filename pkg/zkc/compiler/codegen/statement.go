@@ -171,8 +171,8 @@ func (p *StmtCompiler) compileMemoryWriteRhs(mapping []uint, lhs []variable.Desc
 		//
 	default:
 		//
-		if la, ok := p.asLocalAccess(rhs); ok {
-			return append(targets, util.Cast[RegisterId](la.Variable)), nil
+		if la, bs := p.asLocalAccess(rhs); la.HasValue() {
+			return append(targets, la.Unwrap()), bs
 		}
 		// Allocate data lines
 		targets = array.Map(lhs, func(_ uint, v VariableDescriptor) RegisterId {
@@ -631,8 +631,12 @@ func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.
 		// uint upcast
 		return p.compileExpr(e.Expr, e_bitwidth, mapping, targets)
 	default:
+		var (
+			bytecodes = p.compileRootExpr(e.Expr, mapping, targets)
+			casts     = p.checkCast(targets, bitwidth, e_bitwidth)
+		)
 		// uint downcast (of some kind).
-		return p.compileRootExpr(e.Expr, mapping, targets)
+		return append(bytecodes, casts...)
 	}
 }
 
@@ -867,7 +871,7 @@ func divisorWidthOf(divisor vm.Operand[vm.Uint], bitwidth uint) util.Option[uint
 }
 
 // compileDivMod compiles the combined division/remainder ("/%") expression
-// into a single DivRem bytecode writing both the quotient (targets[0]) and the
+// into a single DivMod bytecode writing both the quotient (targets[0]) and the
 // remainder (targets[1]).
 func (p *StmtCompiler) compileDivMod(e *expr.DivMod[symbol.Resolved], mapping []uint, targets []RegisterId,
 ) []Bytecode {
@@ -1103,8 +1107,8 @@ func (p *StmtCompiler) compileNonUniformArgs(mapping []uint, exprs ...Expr) ([]R
 }
 
 func (p *StmtCompiler) compileArg(e Expr, bitwidth util.Option[uint], mapping []uint) (RegisterId, []Bytecode) {
-	if r, ok := p.asLocalAccess(e); ok {
-		return util.Cast[RegisterId](r.Variable), nil
+	if r, pre := p.asLocalAccess(e); r.HasValue() {
+		return r.Unwrap(), pre
 	}
 	//
 	target := p.allocate(bitwidth)
@@ -1188,9 +1192,9 @@ func (p *StmtCompiler) asConstant(e Expr) (vm.Uint, bool) {
 // do not cross the 𝔽/uint boundary.  A representation-changing cast is not
 // transparent — it must materialise a field-cast instruction — so it blocks
 // the peel.
-func (p *StmtCompiler) asLocalAccess(e Expr) (*expr.LocalAccess[symbol.Resolved], bool) {
+func (p *StmtCompiler) asLocalAccess(e Expr) (util.Option[vm.RegisterId], []Bytecode) {
 	if c, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
-		return c, true
+		return util.Some(util.Cast[RegisterId](c.Variable)), nil
 	} else if c, ok := e.(*expr.Cast[symbol.Resolved]); ok {
 		var (
 			outer = data.BitWidthOf(c.Type(), p.environment)
@@ -1198,11 +1202,16 @@ func (p *StmtCompiler) asLocalAccess(e Expr) (*expr.LocalAccess[symbol.Resolved]
 		)
 		//
 		if outer.IsEmpty() == inner.IsEmpty() {
-			return p.asLocalAccess(c.Expr)
+			if o, bs := p.asLocalAccess(c.Expr); o.HasValue() {
+				// Determine appropriate check casts
+				casts := p.checkCast([]RegisterId{o.Unwrap()}, outer, inner)
+				// Done
+				return o, append(bs, casts...)
+			}
 		}
 	}
 	//
-	return nil, false
+	return util.None[RegisterId](), nil
 }
 
 func (p *StmtCompiler) isConstantAccess(e Expr) bool {
@@ -1215,4 +1224,32 @@ func (p *StmtCompiler) isConstantAccess(e Expr) bool {
 	_, ok = p.components[ne.Name.Index].(*decl.ResolvedConstant)
 	//
 	return ok
+}
+
+// checkCast adds a checkcast instruction if the bitwidth of the right-hand side
+// does not fit within the target register(s), resolving widths against the
+// given register map.
+func (p *StmtCompiler) checkCast(targets []RegisterId, lhs util.Option[uint], rhs util.Option[uint]) []Bytecode {
+	var bytecodes []Bytecode
+	// Add case if either: (i) the rhs has no specific bitwidth; or (2) the
+	// bitwidth of the rhs overflows the lhs.
+	if lhs.HasValue() && (rhs.IsEmpty() || lhs.Unwrap() < rhs.Unwrap()) {
+		var bitwidth = lhs.Unwrap()
+		//
+		for _, target := range targets {
+			var (
+				declared_width = p.registers[target].Bitwidth().Unwrap()
+				cast_width     = min(bitwidth, declared_width)
+			)
+			// Add cast for registers whose casted width is below its
+			// declared width.
+			if cast_width < declared_width {
+				bytecodes = append(bytecodes, vm.CheckCast[vm.Uint](target, util.Cast[uint16](cast_width)))
+			}
+			// Decrease remaining bitwidth
+			bitwidth -= cast_width
+		}
+	}
+	//
+	return bytecodes
 }

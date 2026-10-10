@@ -55,7 +55,7 @@ func (p *SkipIf[W]) Definitions() []RegisterId {
 }
 
 // Validate implementation for Bytecode interface.
-func (p *SkipIf[W]) Validate(_ FieldConfig, env Environment[W]) []error {
+func (p *SkipIf[W]) Validate(env Environment[W]) ([]error, bool) {
 	if p.Right.IsRegisterVector() {
 		return validateOperands(env, p.Left.Registers(), p.Right.AsRegisterVector().Registers())
 	}

@@ -17,10 +17,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// DivRem encodes a combined division/remainder bytecode, writing both the
+// DivMod encodes a combined division/remainder bytecode, writing both the
 // quotient and the remainder.  A constant divisor selects the constant form
 // (DIVMODC) instead.
-func DivRem[W word.Word[W]](p *bytecode.DivRem[W], env Environment[W]) []uint32 {
+func DivMod[W word.Word[W]](p *bytecode.DivMod[W], env Environment[W]) []uint32 {
 	if p.Divisor.IsConstant() {
 		return encodeDivMod_C(p.Quotient, p.Remainder, p.Dividend, p.Divisor.AsConstant(), env)
 	}

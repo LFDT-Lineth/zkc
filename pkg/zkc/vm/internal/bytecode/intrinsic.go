@@ -87,8 +87,11 @@ func (p *Intrinsic[W]) Definitions() []RegisterId {
 
 // Validate implementation for Bytecode interface.  This checks that the number
 // of arguments and returns matches what the selected operation expects.
-func (p *Intrinsic[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	errs := validateOperands(env, p.Uses(), p.Definitions())
+func (p *Intrinsic[W]) Validate(env Environment[W]) ([]error, bool) {
+	var (
+		extras     []error
+		errs, safe = validateOperands(env, p.Uses(), p.Definitions())
+	)
 	// Constant sources must be a  value of any width.
 	for _, s := range p.Sources {
 		if s.IsConstant() && len(s.AsConstants()) != 1 {
@@ -99,41 +102,43 @@ func (p *Intrinsic[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 	switch p.Op {
 	case DIV_HINT:
 		if len(p.Sources) != 2 {
-			errs = append(errs, fmt.Errorf("div hint expects 2 arguments (found %d)", len(p.Sources)))
+			extras = append(extras, fmt.Errorf("div hint expects 2 arguments (found %d)", len(p.Sources)))
 		}
 		//
 		if len(p.Targets) != 3 {
-			errs = append(errs, fmt.Errorf("div hint expects 3 returns (found %d)", len(p.Targets)))
+			extras = append(extras, fmt.Errorf("div hint expects 3 returns (found %d)", len(p.Targets)))
 		}
 	case WIDE_SHL:
 		if len(p.Sources) != 2 {
-			errs = append(errs, fmt.Errorf("wide shl hint expects 2 arguments (found %d)", len(p.Sources)))
+			extras = append(extras, fmt.Errorf("wide shl hint expects 2 arguments (found %d)", len(p.Sources)))
 		}
 		//
 		if len(p.Targets) != 1 {
-			errs = append(errs, fmt.Errorf("wide shl hint expects 1 return (found %d)", len(p.Targets)))
+			extras = append(extras, fmt.Errorf("wide shl hint expects 1 return (found %d)", len(p.Targets)))
 		}
 	case WIDE_SHR:
 		if len(p.Sources) != 2 {
-			errs = append(errs, fmt.Errorf("wide shr hint expects 2 arguments (found %d)", len(p.Sources)))
+			extras = append(extras, fmt.Errorf("wide shr hint expects 2 arguments (found %d)", len(p.Sources)))
 		}
 		//
 		if len(p.Targets) != 1 {
-			errs = append(errs, fmt.Errorf("wide shr hint expects 1 return (found %d)", len(p.Targets)))
+			extras = append(extras, fmt.Errorf("wide shr hint expects 1 return (found %d)", len(p.Targets)))
 		}
 	case WIDE_DIVMOD:
 		if len(p.Sources) != 2 {
-			errs = append(errs, fmt.Errorf("wide divmod hint expects 2 arguments (found %d)", len(p.Sources)))
+			extras = append(extras, fmt.Errorf("wide divmod hint expects 2 arguments (found %d)", len(p.Sources)))
 		}
 		//
 		if len(p.Targets) != 2 {
-			errs = append(errs, fmt.Errorf("wide divmod hint expects 2 returns (found %d)", len(p.Targets)))
+			extras = append(extras, fmt.Errorf("wide divmod hint expects 2 returns (found %d)", len(p.Targets)))
 		}
 	default:
-		errs = append(errs, fmt.Errorf("unsupported hint operation (%d)", p.Op))
+		extras = append(extras, fmt.Errorf("unsupported hint operation (%d)", p.Op))
 	}
-	//
-	return errs
+	// Update safety information
+	safe = safe && len(extras) == 0
+	// Include extras
+	return append(errs, extras...), safe
 }
 
 func (p *Intrinsic[W]) String(env Environment[W]) string {

@@ -518,8 +518,8 @@ func substituteRegisters[W word.Word[W]](insn Bytecode[W], sub []bytecode.Regist
 		//
 		return bytecode.NewMemRead[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub),
 			substituteIds(insn.Stamp, sub))
-	case *bytecode.DivRem[W]:
-		return &bytecode.DivRem[W]{
+	case *bytecode.DivMod[W]:
+		return &bytecode.DivMod[W]{
 			Quotient:  substituteId(insn.Quotient, sub),
 			Remainder: substituteId(insn.Remainder, sub),
 			Dividend:  substituteId(insn.Dividend, sub),

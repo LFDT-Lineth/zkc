@@ -93,6 +93,12 @@ func (p Config) Modulus() *big.Int {
 	}
 }
 
+// BitLen returns the number of bits required to hold any element of this field.
+// This should equal Bandwidth+1.
+func (p Config) BitLen() uint {
+	return uint(p.Modulus().BitLen())
+}
+
 // GetConfig returns the field configuration corresponding with the given
 // name, or nil no such config exists.
 func GetConfig(name string) *Config {

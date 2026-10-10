@@ -180,13 +180,13 @@ func NewStackFrame(fid uint16, fp uint32, pc uint32) StackFrame {
 // inputs before calling Execute.
 func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpreter[W] {
 	var (
-		prime    W
-		sroms    []StaticReadOnly[W]
-		roms     []ReadOnly[W]
-		woms     []WriteOnce[W]
-		rams     []RandomAccess[W]
-		prams    []PagedRandomAccess[W]
-		compiled = CompileProgram(program, tracing)
+		prime       W
+		sroms       []StaticReadOnly[W]
+		roms        []ReadOnly[W]
+		woms        []WriteOnce[W]
+		rams        []RandomAccess[W]
+		prams       []PagedRandomAccess[W]
+		compiled, _ = CompileProgram(program, tracing)
 	)
 	// sanity check prime fits within target word
 	if prime.Bandwidth() < program.Field().BandWidth {

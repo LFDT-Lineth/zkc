@@ -174,6 +174,8 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			// recorded in the write map for constancy analysis; no polynomial
 			// constraint is generated here, since correctness is enforced by
 			// subsequent arithmetic checks.
+			util.Assert(c.Op == vm.DIV_HINT, "unexpected intrinsic bytecode")
+			//
 			continue
 		case *vm.BytecodeSkipIf[W], *vm.BytecodeSkip[W], *vm.BytecodeDispatch[W]:
 			// control flow is captured via the branch table; no constraint here
@@ -232,7 +234,7 @@ func (p *VectorInsnTranslator[W, F]) WithConstancyConstraints(writes dfa.Writes,
 			// I/O lines are never given constancy constraints (because they are
 			// always assigned in place).
 			continue
-		} else if vm.IsZeroWidth(reg) {
+		} else if reg.IsZeroWidth() {
 			// Zero-width registers carry no data, hence constancy constraints
 			// on them are meaningless.
 			continue

@@ -220,7 +220,8 @@ func printArtifacts[F field.Element[F], W vm.Word[W]](ast *ast.Program, bf *cons
 		// Register counts are reported before register splitting.  Splitting is
 		// the only field-specific transform that changes register widths, so
 		// transform program with splitting disabled to recover the pre-split widths.
-		preSplit := vm.TransformForTracing[vm.Uint, vm.Uint](bf.RawProgram(), "split-registers")
+		preSplit := vm.TransformForTracing[vm.Uint, vm.Uint](bf.RawProgram(),
+			vm.DEFAULT_TRANSFORMS.Ignore("split-registers"))
 		// Print stats
 		PrintCompileStats(bf.AirConstraints(), preSplit, config.order, config.statsMatrix)
 	}
@@ -565,8 +566,11 @@ func writeBytecodeProgram[W vm.Word[W]](binary bool, ast *ast.Program, program v
 	)
 	//
 	if binary {
+		var binp vm.BinaryProgram[W]
 		// Extract encoding for all bytecodes
-		bin = vm.CompileProgram(program).Encoding()
+		binp, program = vm.CompileProgram(program)
+		//
+		bin = binp.Encoding()
 		// Determine the widest encoding across the entire program, so the
 		// encoding column can be given a uniform width in every function.
 		for _, codes := range bin {
@@ -738,9 +742,11 @@ type bytecodeRow struct {
 func regType[W vm.Word[W]](r vm.Register[W]) string {
 	if r.IsNative() {
 		return "𝔽"
+	} else if r.IsSafe() {
+		return fmt.Sprintf("u%d", r.Bitwidth().Unwrap())
 	}
 	//
-	return fmt.Sprintf("u%d", r.Bitwidth().Unwrap())
+	return fmt.Sprintf("u%d!", r.Bitwidth().Unwrap())
 }
 
 func writeBytecodeMemory[W vm.Word[W]](listing *bytecodeListing, m *vm.Memory[W]) {

@@ -38,8 +38,8 @@ func (p *UintToField[W]) Definitions() []RegisterId {
 }
 
 // Validate implements Bytecode.
-func (p *UintToField[W]) Validate(_ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *UintToField[W]) Validate(_ Environment[W]) ([]error, bool) {
+	return nil, true
 }
 
 func (p *UintToField[W]) String(env Environment[W]) string {
@@ -72,8 +72,8 @@ func (p *FieldToUint[W]) Definitions() []RegisterId {
 }
 
 // Validate implements Bytecode.
-func (p *FieldToUint[W]) Validate(_ FieldConfig, _ Environment[W]) []error {
-	return nil
+func (p *FieldToUint[W]) Validate(_ Environment[W]) ([]error, bool) {
+	return nil, true
 }
 
 func (p *FieldToUint[W]) String(env Environment[W]) string {

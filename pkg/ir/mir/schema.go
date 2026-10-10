@@ -31,7 +31,7 @@ type (
 	ModuleBuilder[F field.Element[F]] = ir.ModuleBuilder[F, Term[F]]
 	// Module captures the essence of a module at the MIR level.  Specifically, it
 	// is limited to only those constraint forms permitted at the MIR level.
-	Module[F field.Element[F]] = *schema.Table[F, schema.Constraint[F]]
+	Module[F field.Element[F]] = *schema.Table[F]
 	// Schema captures the notion of an MIR schema which is uniform and consists of
 	// MIR modules only.
 	Schema[F field.Element[F]] = schema.UniformSchema[F, Module[F]]

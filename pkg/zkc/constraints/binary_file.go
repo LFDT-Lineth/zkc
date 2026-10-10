@@ -79,11 +79,9 @@ type BinaryFile[F field.Element[F], W vm.Word[W]] struct {
 	attributes []Attribute
 	// Program is the high-level representation of the "constraints".
 	program vm.Program[vm.Uint]
-	// Ignores identifies pipeline stages which should be explicitly ignored
-	// when compiling downstream components (e.g. program for tracing, etc).
-	// Observe this is a property of how the artifacts below are compiled,
-	// rather than of the file itself, and is therefore not serialised.
-	ignores []string
+	// transformation configuration manages how the bytecode program is lowered
+	// into its final form (either for fast-mode execution, or tracing).
+	transformConfig vm.TransformConfig
 	// cache (fast mode) execution program
 	cachedExecutionProgram util.Option[vm.Program[vm.Uint128]]
 	// cache tracing program
@@ -101,7 +99,7 @@ type BinaryFile[F field.Element[F], W vm.Word[W]] struct {
 // none).  The field type parameter F determines the field against which the
 // program's field configuration is checked on deserialisation, and for which
 // constraints are subsequently generated.  No pipeline stages are ignored when
-// compiling the derived artifacts --- see WithIgnores for that.
+// compiling the derived artifacts --- see WithTransformConfig for that.
 func NewBinaryFile[F field.Element[F], W vm.Word[W]](metadata []byte, attributes []Attribute,
 	program vm.Program[vm.Uint]) *BinaryFile[F, W] {
 	//
@@ -118,7 +116,7 @@ func NewBinaryFile[F field.Element[F], W vm.Word[W]](metadata []byte, attributes
 		header:                 Header{ZKC_EXEC, BINFILE_MAJOR_VERSION, BINFILE_MINOR_VERSION, metadata},
 		attributes:             attributes,
 		program:                program,
-		ignores:                nil,
+		transformConfig:        vm.DEFAULT_TRANSFORMS,
 		cachedExecutionProgram: util.None[vm.Program[vm.Uint128]](),
 		cachedTracingProgram:   util.None[vm.Program[W]](),
 		cachedMirConstraints:   util.None[mir.Schema[F]](),
@@ -126,14 +124,13 @@ func NewBinaryFile[F field.Element[F], W vm.Word[W]](metadata []byte, attributes
 	}
 }
 
-// WithIgnores configures the set of pipeline stages to ignore when compiling
-// the artifacts derived from the raw program (i.e. the tracing / execution
-// programs and the MIR / AIR constraints).  Since this changes how those
-// artifacts are compiled, anything already cached against the previous set of
-// ignores is discarded.  This returns the receiver, allowing it to be chained
-// onto NewBinaryFile.
-func (p *BinaryFile[F, W]) WithIgnores(ignores ...string) *BinaryFile[F, W] {
-	p.ignores = ignores
+// WithTransformConfig allows the default transform configuration to be
+// overridden (e.g. for specifying which pipeline stages to ignore, etc).  Since
+// this changes how those artifacts are compiled, anything already cached
+// against the previous transform config is discarded.  This returns the
+// receiver, allowing it to be chained onto NewBinaryFile.
+func (p *BinaryFile[F, W]) WithTransformConfig(config vm.TransformConfig) *BinaryFile[F, W] {
+	p.transformConfig = config
 	// Discard artifacts compiled under the previous set of ignores.
 	p.clearCachedArtifacts()
 	//
@@ -191,7 +188,7 @@ func (p *BinaryFile[F, W]) TracingProgram() vm.Program[W] {
 		var (
 			stats = util.NewPerfStats()
 			// Lower bytecode program
-			program = vm.TransformForTracing[vm.Uint, W](p.program, p.ignores...)
+			program = vm.TransformForTracing[vm.Uint, W](p.program, p.transformConfig)
 		)
 		// Cache lowered program
 		p.cachedTracingProgram = util.Some(program)
@@ -214,7 +211,7 @@ func (p *BinaryFile[F, W]) ExecutionProgram() vm.Program[vm.Uint128] {
 		var (
 			stats = util.NewPerfStats()
 			// Lower bytecode program
-			program = vm.TransformForExecution[vm.Uint, vm.Uint128](p.program, p.ignores...)
+			program = vm.TransformForExecution[vm.Uint, vm.Uint128](p.program, p.transformConfig)
 		)
 		// Cache lowered program
 		p.cachedExecutionProgram = util.Some(program)
@@ -392,7 +389,7 @@ func (p *BinaryFile[F, W]) UnmarshalBinary(data []byte) error {
 				// Discard the ignores configured against the previous program,
 				// since they are a property of how that program was to be
 				// compiled (see WithIgnores).
-				p.ignores = nil
+				p.transformConfig = vm.DEFAULT_TRANSFORMS
 				// Discard anything cached against the previous program, since
 				// this file now describes a different one.
 				p.clearCachedArtifacts()

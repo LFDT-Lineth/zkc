@@ -243,10 +243,10 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		// =======================================================
 		// Misc bytecodes
 		// =======================================================
-		case *bytecode.DivRem[W]:
+		case *bytecode.DivMod[W]:
 			// NOTE: only relevant for splitting fast mode (i.e. non-lowered)
 			// bytecode.
-			return split.DivRem(limbsMap, c)
+			return split.DivMod(limbsMap, c)
 		case *bytecode.FieldArith[W]:
 			return []Bytecode[W]{splitFieldArith(limbsMap, c)}
 		case *bytecode.UintToField[W]:
@@ -266,7 +266,7 @@ func splitBytecode[W word.Word[W]](limbsMap descriptor.LimbsMap[W], mods []descr
 		case *bytecode.Dispatch[W]:
 			return split.Dispatch(limbsMap, c)
 		case *bytecode.CheckCast[W]:
-			panic("CheckCast is not supposed to happen before splitting")
+			return split.CheckCast(limbsMap, c)
 		default:
 			panic(fmt.Sprintf("unsupported bytecode (%T)", c))
 		}

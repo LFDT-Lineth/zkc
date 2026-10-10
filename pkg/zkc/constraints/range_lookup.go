@@ -91,14 +91,20 @@ func indexRangeTables[W vm.Word[W], F field.Element[F]](program vm.Program[W], m
 // call and memory lookups, where they stand in for limbs that must be zero.
 // Without this constraint, a prover could assign them arbitrary values and
 // thereby bypass the implied range check on the narrower side of the lookup.
-func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[F, schema.Constraint[F]],
-	ctx schema.ModuleId, regs []register.Register) {
+func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[F], ctx schema.ModuleId,
+	regs ...vm.Register[W]) {
 	// TODO: lots of perf possible here, see
 	// https://github.com/LFDT-Lineth/zkc/issues/1907
 	// https://github.com/LFDT-Lineth/zkc/issues/1911
-	for i, reg := range regs {
-		// Native registers are not range-checked.
+	for i, reg := range mod.Registers() {
 		if reg.IsNative() {
+			// Native registers are not range-checked.
+			continue
+		} else if i < len(regs) && !regs[i].IsSafe() {
+			// Unsafe registers are not ranged checked.  This may seem
+			// counter-intuitive, but its simply because "safe" registers are
+			// defined as those which are ranged checked (hence guaranteed to be
+			// safe).
 			continue
 		}
 		// Zero-width registers can only hold zero, enforced with r == 0.

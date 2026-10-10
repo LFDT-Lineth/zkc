@@ -56,7 +56,7 @@ import (
 //
 // Lookups require a register (and not an expression) as the source selector,
 // so the path selector is materialised as a fresh 1-bit register (if it is not already).
-func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F, schema.Constraint[F]],
+func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F],
 	ctx schema.ModuleId,
 	fn *vm.Function[W],
 	pcSelectors []register.Id,
@@ -173,7 +173,7 @@ outer:
 // the accessor's per-line is_pc_* selectors (empty for an atomic function).
 // A gating register always exists: every access is at least position-gated
 // (IS_PC_k for a multi-line function, $ret for a one-line function).
-func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]], ctx schema.ModuleId,
+func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
 	ret register.Id, oneHot []oneHotGroup) register.Id {
 	// Position register gating the rows of this access: the line's IS_PC_k
@@ -207,7 +207,7 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F, schema.Constr
 // expansion) with, and constrained to equal, the boolean value of the access's
 // (already position-gated) branch condition — so it is 1 exactly on the rows
 // which perform the access.
-func newPathSelector[F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]], ctx schema.ModuleId,
+func newPathSelector[F field.Element[F]](mod *schema.Table[F], ctx schema.ModuleId,
 	regs []register.Register, cond dfa.BranchCondition, oneHot []oneHotGroup,
 ) register.Id {
 	// Allocate the selector column.
@@ -333,7 +333,7 @@ func (p callRegisterReader[F]) ReadRegister(regId register.Id, forwarding bool) 
 
 // emitCallLookup constructs and adds a single lookup constraint mapping the
 // caller's argument/return registers onto the callee's input/output registers.
-func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]], ctx schema.ModuleId,
+func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F], ctx schema.ModuleId,
 	pc uint, calleeId uint16, args, returns []register.Id, srcSelector register.Id, program vm.Program[W]) {
 	var (
 		callee     = program.Module(calleeId).(*vm.Function[W])
@@ -393,7 +393,7 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, schem
 // one row of each activation.  Since a global function cannot return, the
 // message consists of the callee's input registers alone; these are constant
 // throughout a frame and, hence, still hold the arguments on the $ret row.
-func (p *constraintTranslator[W, F]) emitCallBus(mod *schema.Table[F, schema.Constraint[F]],
+func (p *constraintTranslator[W, F]) emitCallBus(mod *schema.Table[F],
 	calleeId vm.ModuleId, callee *vm.Function[W]) {
 	//
 	var (
@@ -438,7 +438,7 @@ func (p *constraintTranslator[W, F]) emitCallBus(mod *schema.Table[F, schema.Con
 // For a WOM this lookup also enforces write-once consistency: the table holds
 // each address exactly once (address monotony), so two writes of different
 // values to the same address cannot both match a row.
-func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]],
+func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F],
 	ctx schema.ModuleId, pc, cc uint, memId uint16,
 	address, data []register.Id, srcSelector register.Id, program vm.Program[W]) {
 	var (
@@ -502,7 +502,7 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, sch
 // Together with the table's local constraints this pins every access's row;
 // that VALUE_READ genuinely returns the last value written to the address
 // remains for the offline memory-checking bus (see translateReadWriteMemory).
-func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F, schema.Constraint[F]],
+func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F],
 	ctx schema.ModuleId, pc, cc uint, rw *vm.BytecodeReadWrite[W],
 	srcSelector register.Id, program vm.Program[W]) {
 	//

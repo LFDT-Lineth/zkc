@@ -172,10 +172,12 @@ type Bytecode[W word.Word[W]] interface {
 	// Definitions returns the set of registers defined (i.e. written) by this
 	// bytecode.
 	Definitions() []RegisterId
-	// Validate checks that this bytecode is well-formed, returning any errors
-	// found (or nil when it is well-formed).  Field is the surrounding field
-	// configuration and env resolves register and module information.
-	Validate(field FieldConfig, env Environment[W]) []error
+	// Validate checks that this bytecode is well-formed for a given field
+	// configuration and enclosing environment. This returns any errors found
+	// (or nil if it is well-formed) and a "safety" indication as to whether or
+	// not the structure is "in tact".  For example, if an invalid register ID
+	// is found, then the structure is unsafe.
+	Validate(env Environment[W]) ([]error, bool)
 	// String returns a suitable string representation of this bytecode.
 	String(Environment[W]) string
 }
@@ -187,6 +189,8 @@ type Bytecode[W word.Word[W]] interface {
 type Environment[W word.Word[W]] interface {
 	// Name returns the name of the enclosing function.
 	Name() string
+	// Field returns the target field
+	Field() field.Config
 	// HasModule checks whether a module with the given name exists and, if so,
 	// returns its module identifier. Otherwise, it returns none.
 	HasModule(name string) util.Option[ModuleId]
@@ -200,8 +204,6 @@ type Environment[W word.Word[W]] interface {
 	Register(id RegisterId) RegisterInfo
 	// RegisterCount returns the number of registers in the enclosing module.
 	RegisterCount() uint
-	// VectorCount returns the number of vectors in the enclosing function.
-	VectorCount() uint
 	// ValueOf optionally returns the current value held in the given register.
 	// This is used (for example) by the debugger to render register values
 	// inline within an instruction's string representation.  Environments which
@@ -219,6 +221,10 @@ type RegisterInfo interface {
 	// native register (which has no fixed bitwidth).  Used by Bytecode.Validate
 	// to detect width overflows.
 	Bitwidth() util.Option[uint]
+	// IsZeroWidth returns true for zero-width registers. Zero-width registers are registers
+	// that carry no data, so apparent reads and writes to a shared placeholder cannot
+	// conflict.
+	IsZeroWidth() bool
 }
 
 // ModuleInfo provides a minimal amount of information about a module in the
@@ -246,7 +252,7 @@ type ModuleInfo interface {
 
 // validateOperands ensures that every register operand exists in the enclosing
 // module. Repeated operands are reported at most once.
-func validateOperands[W word.Word[W]](env Environment[W], operands ...[]RegisterId) []error {
+func validateOperands[W word.Word[W]](env Environment[W], operands ...[]RegisterId) ([]error, bool) {
 	var (
 		errors []error
 		seen   = make(map[RegisterId]bool)
@@ -265,8 +271,8 @@ func validateOperands[W word.Word[W]](env Environment[W], operands ...[]Register
 			}
 		}
 	}
-
-	return errors
+	//
+	return errors, len(errors) == 0
 }
 
 // ============================================================================
@@ -473,11 +479,11 @@ func NewDebug[W word.Word[W]](chunks []FormattedChunk, sources []RegisterId) *De
 	})}
 }
 
-// NewDivRem constructs a division/remainder instruction computing both the
+// NewDivMod constructs a division/remainder instruction computing both the
 // quotient and the remainder of "dividend / divisor" for a register or
 // constant divisor.
-func NewDivRem[W word.Word[W]](quotient, remainder, dividend RegisterId, divisor Operand[W]) *DivRem[W] {
-	return &DivRem[W]{Quotient: quotient, Remainder: remainder, Dividend: dividend, Divisor: divisor}
+func NewDivMod[W word.Word[W]](quotient, remainder, dividend RegisterId, divisor Operand[W]) *DivMod[W] {
+	return &DivMod[W]{Quotient: quotient, Remainder: remainder, Dividend: dividend, Divisor: divisor}
 }
 
 // NewFail constructs a fail instruction carrying the given formatted message.
@@ -532,7 +538,7 @@ func RegisterGobTypes[W word.Word[W]]() {
 	gob.Register(&Cat[W]{})
 	gob.Register(&CheckCast[W]{})
 	gob.Register(&Debug[W]{})
-	gob.Register(&DivRem[W]{})
+	gob.Register(&DivMod[W]{})
 	gob.Register(&Fail[W]{})
 	gob.Register(&FieldArith[W]{})
 	gob.Register(&UintToField[W]{})

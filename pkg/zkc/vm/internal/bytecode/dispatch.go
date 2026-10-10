@@ -74,10 +74,11 @@ func (p *Dispatch[W]) Definitions() []RegisterId {
 // Validate implementation for Bytecode interface.  Every register examined by
 // a dispatch must be a 1-bit register: the branch conditions derived from this
 // bytecode are only meaningful (and sound) over bits.
-func (p *Dispatch[W]) Validate(_ FieldConfig, env Environment[W]) []error {
-	errors := validateOperands(env, p.Uses())
+func (p *Dispatch[W]) Validate(env Environment[W]) ([]error, bool) {
+	errors, safe := validateOperands(env, p.Uses())
+	//
 	if len(errors) != 0 {
-		return errors
+		return errors, safe
 	}
 	//
 	for _, r := range p.Uses() {
@@ -87,7 +88,7 @@ func (p *Dispatch[W]) Validate(_ FieldConfig, env Environment[W]) []error {
 		}
 	}
 	//
-	return errors
+	return errors, safe
 }
 
 func (p *Dispatch[W]) String(env Environment[W]) string {

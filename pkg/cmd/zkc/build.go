@@ -38,8 +38,8 @@ type BuildConfig struct {
 	gogen bool
 	// padding strategy
 	padding ir.PaddingStrategy
-	// ignored pipeline stages
-	ignores []string
+	// transform configuration
+	transformConfig vm.TransformConfig
 }
 
 // Build applies a build configuration with a given set of source files.
@@ -66,7 +66,7 @@ func Build[F field.Element[F], W vm.Word[W]](build BuildConfig, args ...string,
 		)
 		// Single (binary) file supplied
 		return nil, constraints.NewBinaryFile[F, W](metadata, binf.Attributes(), binf.RawProgram()).
-			WithIgnores(build.ignores...)
+			WithTransformConfig(build.transformConfig)
 	}
 	// Compile source files, or print errors
 	prog := CompileSourceFiles(build.config.GetField(), build.config.GetMaxStaticHeight(), args...)
@@ -83,5 +83,5 @@ func Build[F field.Element[F], W vm.Word[W]](build BuildConfig, args ...string,
 	}
 	//
 	return &prog, constraints.NewBinaryFile[F, W](build.metadata.UnwrapOr(nil), nil, raw).
-		WithIgnores(build.ignores...)
+		WithTransformConfig(build.transformConfig)
 }

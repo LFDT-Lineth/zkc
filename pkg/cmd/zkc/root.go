@@ -112,17 +112,26 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 		build                 BuildConfig
 		maxStaticHeight       = GetUint(cmd, "max-static-height")
 		verbosity             = GetVerboseLevel(cmd)
+		validation            = GetFlag(cmd, "validation")
 		padding               = GetString(cmd, "padding")
 		strategy, strategy_ok = ir.GetPaddingStrategy(padding)
 		ignores               = GetStringArray(cmd, "ignore")
+		transformConfig       = vm.DEFAULT_TRANSFORMS
 	)
-	//
-	validateIgnores(ignores)
 	//
 	if !strategy_ok {
 		fmt.Printf("padding strategy %s unsupported\n", padding)
 		os.Exit(2)
 	}
+	//
+	validateIgnores(ignores)
+
+	// Mark pipeline stages to be ignore
+	for _, ignore := range ignores {
+		transformConfig = transformConfig.Ignore(ignore)
+	}
+	// Enable / disable validation for pipeline stages
+	transformConfig = transformConfig.Validate(validation)
 	// Configure log level.  NONE keeps only warnings/errors, INFO adds ordinary
 	// info logging, and DEBUG (and above) raises logrus to its debug level so
 	// the machine execution steps (logged via PerfStats.Log) are surfaced.
@@ -138,12 +147,13 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	build.padding = strategy
 	// Configure go generator
 	build.gogen = GetFlag(cmd, "gogen")
-	// Configure ignored pipeline stages
-	build.ignores = ignores
+	// Configure transformation pipeline
+	build.transformConfig = transformConfig
 	// Configure compiler config
 	build.config = codegen.DEFAULT_CONFIG.
 		Field(field).
 		MaxStaticHeight(maxStaticHeight).
+		Validation(validation).
 		Verbose(verbosity >= VERBOSE_PRINTF)
 	//
 	return build
@@ -179,6 +189,7 @@ func init() {
 	rootCmd.PersistentFlags().CountP("verbose", "v",
 		"verbosity: default NONE; -v (INFO) info logging, -vv (DEBUG) machine execution steps, "+
 			"-vvv (PRINTF) additionally all printf output")
+	rootCmd.PersistentFlags().Bool("validation", true, "Enable bytecode validation")
 	rootCmd.PersistentFlags().StringArrayP("ignore", "X", nil, "Ignore pipeline stage")
 	rootCmd.PersistentFlags().Bool("inline", true, "Apply inlining of #[inline] functions")
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
