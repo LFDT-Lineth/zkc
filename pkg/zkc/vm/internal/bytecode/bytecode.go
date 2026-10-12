@@ -182,49 +182,43 @@ type Bytecode[W word.Word[W]] interface {
 	String(Environment[W]) string
 }
 
+// RegisterMap provides a generic interface for entities which hold information
+// about registers.
+type RegisterMap[W word.Word[W]] interface {
+	// Name returns the name given to the enclosing entity (i.e. module or
+	// function).
+	Name() string
+	// HasRegister checks whether a register with the given name exists and, if
+	// so, returns its register identifier.  Otherwise, it returns false.
+	HasRegister(name string) util.Option[RegisterId]
+	// Access a given register in this module.
+	Register(RegisterId) Register[W]
+	// Registers providers access to the underlying registers of this map.
+	Registers() []Register[W]
+	// Width returns the number of registers in this map
+	Width() uint
+}
+
 // Environment provides a mechanism to allow Bytecode functions access to
 // information about the enclosing environment.  For example, to generate a
 // suitable string for a given instruction, it is useful to know the names of
 // registers in the enclosing function, etc.
 type Environment[W word.Word[W]] interface {
-	// Name returns the name of the enclosing function.
-	Name() string
+	RegisterMap[W]
 	// Field returns the target field
 	Field() field.Config
 	// HasModule checks whether a module with the given name exists and, if so,
 	// returns its module identifier. Otherwise, it returns none.
 	HasModule(name string) util.Option[ModuleId]
-	// HasRegister checks whether a register with the given name exists and, if
-	// so, returns its register identifier.  Otherwise, it returns none.
-	HasRegister(name string) util.Option[RegisterId]
 	// Module returns information about the given module, or none if it does not
 	// exist.
 	Module(id ModuleId) util.Option[ModuleInfo]
-	// Register returns the ith register used in this module.
-	Register(id RegisterId) RegisterInfo
-	// RegisterCount returns the number of registers in the enclosing module.
-	RegisterCount() uint
 	// ValueOf optionally returns the current value held in the given register.
 	// This is used (for example) by the debugger to render register values
 	// inline within an instruction's string representation.  Environments which
 	// have no notion of a "current value" (i.e. those used outside of a concrete
 	// execution context) return None.
 	ValueOf(id RegisterId) util.Option[W]
-}
-
-// RegisterInfo provides a minimal amount of information about a register in the
-// enclosing function.
-type RegisterInfo interface {
-	// Name returns the  name of this register
-	Name() string
-	// Bitwidth returns the bitwidth of this register, or the empty option for a
-	// native register (which has no fixed bitwidth).  Used by Bytecode.Validate
-	// to detect width overflows.
-	Bitwidth() util.Option[uint]
-	// IsZeroWidth returns true for zero-width registers. Zero-width registers are registers
-	// that carry no data, so apparent reads and writes to a shared placeholder cannot
-	// conflict.
-	IsZeroWidth() bool
 }
 
 // ModuleInfo provides a minimal amount of information about a module in the
@@ -266,7 +260,7 @@ func validateOperands[W word.Word[W]](env Environment[W], operands ...[]Register
 			}
 
 			seen[id] = true
-			if uint(id) >= env.RegisterCount() {
+			if uint(id) >= env.Width() {
 				errors = append(errors, fmt.Errorf("register %d does not exist", id))
 			}
 		}

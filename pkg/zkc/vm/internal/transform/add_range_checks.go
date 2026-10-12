@@ -16,7 +16,9 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -31,7 +33,7 @@ const (
 	rangeHiName    = "hi"
 )
 
-// AddRangeConstraints adds, for every distinct register width occurring in the
+// AddRangeChecks adds, for every distinct register width occurring in the
 // program, a "range" module which acts as the recipient of a range-proof lookup
 // for registers of that width.  Two flavours of range module are generated:
 //
@@ -46,7 +48,7 @@ const (
 // Native (field-element) registers are not ranged-checked.
 //
 // NOTE: this transform must run after register splitting.
-func AddRangeConstraints[W Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
+func AddRangeChecks[W Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		modules = program.Modules()
 		// maxStaticWidth is the largest X for which 2^X <= maxStaticHeight (the
@@ -56,7 +58,7 @@ func AddRangeConstraints[W Word[W]](program descriptor.Program[W]) descriptor.Pr
 		maxStaticWidth = math.FloorLog2(program.MaxStaticHeight())
 	)
 	// First step, generate the range modules for every width which occurs on some register.
-	var extra = generateRangeModules(modules, maxStaticWidth)
+	var extra = generateRangeModules(modules, program.Field(), maxStaticWidth)
 
 	// Second step, call range_uX for every registers.
 	modules = addRangeCalls(modules, extra, maxStaticWidth)
@@ -66,11 +68,11 @@ func AddRangeConstraints[W Word[W]](program descriptor.Program[W]) descriptor.Pr
 		program.MaxStaticHeight(), append(slices.Clone(modules), extra...)...)
 }
 
-func generateRangeModules[W Word[W]](modules []descriptor.Module[W],
+func generateRangeModules[W Word[W]](modules []descriptor.Module[W], field field.Config,
 	maxStaticWidth uint) []descriptor.Module[W] {
 	var (
 		// Every width requiring a range module, mapped to its decomposition.
-		splits = neededRangeWidths(modules, maxStaticWidth)
+		splits = neededRangeWidths(modules, field, maxStaticWidth)
 		// Freshly generated range modules.
 		extra []descriptor.Module[W]
 		// Widths in ascending order, for deterministic output.
@@ -121,7 +123,7 @@ type rangeSplit struct {
 // directly on some register, closed under the destructuring of wide widths
 // (> maxStaticWidth); each wide width is mapped to the (lo, hi) halves it is destructured
 // into, while leaf widths (<= maxStaticWidth) map to the zero split.
-func neededRangeWidths[W Word[W]](modules []descriptor.Module[W],
+func neededRangeWidths[W Word[W]](modules []descriptor.Module[W], field field.Config,
 	maxStaticWidth uint) map[uint]rangeSplit {
 	var (
 		// Final decompositions, keyed by width (one entry per dequeued width).
@@ -148,12 +150,27 @@ func neededRangeWidths[W Word[W]](modules []descriptor.Module[W],
 		// Seed from the PC register, which is added later while lowering to mir
 		// (see translateFunction). It exists only for non-atomic, non-native
 		// functions, and the PC bit width must match the one chosen there.
-		if fn, ok := mod.(*Function[W]); ok && !fn.IsNative() && !fn.IsOneLine() {
-			add(fn.PcWidth())
+		switch mod := mod.(type) {
+		case *Function[W]:
+			if !mod.IsNative() && !mod.IsOneLine() {
+				add(mod.PcWidth())
+			}
+		case *descriptor.Memory[W]:
+			// TODO: the need for this highlights some problems with the current
+			// implementation of memory.  Specifically, that some columns are
+			// omitted from the memory descriptor, leading to awkward situations
+			// like this.
+			if width := mod.StampWidth(); width.HasValue() && mod.IsReadWrite() {
+				for _, w := range register.LimbWidths(field.RegisterWidth, width.Unwrap()) {
+					add(w)
+				}
+			}
 		}
 		// Seed from every register of every module.
 		for _, r := range mod.Registers() {
-			add(registerWidthOrZero(r))
+			if r.IsSafe() {
+				add(registerWidthOrZero(r))
+			}
 		}
 	}
 	// Destructure each width wider than the static limit, pulling in its halves.
@@ -310,11 +327,11 @@ func rangeCheck[W Word[W]](id uint, r bytecode.RegisterId, w uint,
 	return bytecode.CallFun[W](uint16(id), []bytecode.RegisterId{r}, nil)
 }
 
-// addRangeCalls range-checks every register of every function module: a block of
-// range-checks is inserted before each row-terminating bytecode (Ret or Jmp — a
-// Fail row is rejected so needs no check), so that every row of every register
-// column is checked.  Non-function modules carry no bytecodes to host the checks
-// and are left unchanged.
+// addRangeCalls range-checks every safe register of every function module: a
+// block of range-checks is inserted before each row-terminating bytecode (Ret
+// or Jmp — a Fail row is rejected so needs no check), so that every row of
+// every safe register column is checked.  Non-function modules carry no
+// bytecodes to host the checks and are left unchanged.
 func addRangeCalls[W Word[W]](modules []descriptor.Module[W],
 	rangeModules []descriptor.Module[W],
 	maxStaticWidth uint) []descriptor.Module[W] {
@@ -336,8 +353,8 @@ func addRangeCalls[W Word[W]](modules []descriptor.Module[W],
 	return out
 }
 
-// addRangeChecks inserts a range-check of each register before every Ret / Jmp
-// terminator in each vector of the given function.  Vector.Map remaps skip
+// addRangeChecks inserts a range-check of each safe register before every Ret /
+// Jmp terminator in each vector of the given function.  Vector.Map remaps skip
 // offsets, so a skip which targeted the terminator instead lands on the first
 // check and falls through to it.
 func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
@@ -346,7 +363,7 @@ func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
 	if !ok || fn.IsNative() {
 		return mod
 	}
-	// Build the check block: one range-check per register.
+	// Build the check block: one range-check per safe register.
 	var checks []Bytecode[W]
 	//
 	for j, r := range fn.Registers() {
@@ -354,9 +371,12 @@ func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
 		// to populate the range module.
 		// For registers of width <= maxStaticWidth, the range check is done via a static table,
 		// and the lookup is added when generating constraints.
-		if w := registerWidthOrZero(r); w > maxStaticWidth {
-			checks = append(checks, rangeCheck[W](idOf[rangeModuleName(w)], bytecode.RegisterId(j), w,
-				maxStaticWidth))
+		if w := registerWidthOrZero(r); r.IsSafe() && w > maxStaticWidth {
+			mid, ok := idOf[rangeModuleName(w)]
+			// Sanity check module was found
+			util.Assert(ok, "missing range module for u%d", w)
+			//
+			checks = append(checks, rangeCheck[W](mid, bytecode.RegisterId(j), w, maxStaticWidth))
 		}
 	}
 	//

@@ -64,7 +64,7 @@ func validateStructure[W Word[W]](env Environment[W], vec Vector[W], nVecs uint)
 	for _, code := range vec.Bytecodes {
 		for _, registers := range [][]RegisterId{code.Uses(), code.Definitions()} {
 			for _, id := range registers {
-				if uint(id) >= env.RegisterCount() {
+				if uint(id) >= env.Width() {
 					errors = append(errors, fmt.Errorf("bytecode uses invalid register (%d)", id))
 					safe = false
 				}

@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -170,7 +171,7 @@ func SplitIntoLimbs[W word.Word[W]](maxWidth uint, r Register[W]) []Register[W] 
 	}
 	// Non-native register can be split, so proceed.
 	var (
-		bitwidth = r.bitwidth.Unwrap()
+		bitwidth = r.Bitwidth().Unwrap()
 		limbs    []Register[W]
 		// Split padding value
 		padding = SplitConstant(r.Padding(), maxWidth)
@@ -187,7 +188,7 @@ func SplitIntoLimbs[W word.Word[W]](maxWidth uint, r Register[W]) []Register[W] 
 			ith_padding = padding[i]
 		}
 		// construct limt
-		limbs = append(limbs, NewRegister(r.kind, ith_name, util.Some(ith_width), ith_padding))
+		limbs = append(limbs, bytecode.NewRegister(r.Kind(), ith_name, util.Some(ith_width), ith_padding))
 		//
 		bitwidth -= ith_width
 	}

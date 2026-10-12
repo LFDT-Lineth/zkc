@@ -29,7 +29,7 @@ import (
 func validateRegisterBitwidth[W Word[W]](f *descriptor.Function[W], env Environment[W]) (errors []error) {
 	var (
 		transferFn = func(pp ProgramPoint, bc Bytecode[W], in Bitwidths) []dfa.Transfer[Bitwidths] {
-			return transferRegisterWidths(pp, bc, in, f, env)
+			return transferRegisterWidths(pp, bc, in, env)
 		}
 		// Bitwidths on entry
 		init = newBitwidths(*f)
@@ -72,8 +72,8 @@ func validateRegisterBitwidth[W Word[W]](f *descriptor.Function[W], env Environm
 	return errors
 }
 
-func transferRegisterWidths[W Word[W]](pp ProgramPoint, bc Bytecode[W], in Bitwidths, f *descriptor.Function[W],
-	env Environment[W]) []dfa.Transfer[Bitwidths] {
+func transferRegisterWidths[W Word[W]](pp ProgramPoint, bc Bytecode[W], in Bitwidths, env Environment[W],
+) []dfa.Transfer[Bitwidths] {
 	//
 	var (
 		edges []dfa.Transfer[Bitwidths]
@@ -120,7 +120,7 @@ func transferRegisterWidths[W Word[W]](pp ProgramPoint, bc Bytecode[W], in Bitwi
 		edges = append(edges, dfa.NewTransfer(in, next))
 	// Non-branching bytecodes
 	case *bytecode.Arith[W]:
-		edges = append(edges, transferArith(pp, bc, in, f))
+		edges = append(edges, transferArith(pp, bc, in, env))
 	case *bytecode.Bitwise[W]:
 		edges = append(edges, transferBitwise(pp, bc, in))
 	case *bytecode.Call[W]:
@@ -128,7 +128,7 @@ func transferRegisterWidths[W Word[W]](pp ProgramPoint, bc Bytecode[W], in Bitwi
 			edges = append(edges, transferCall(pp, bc, in, env))
 		}
 	case *bytecode.Cat[W]:
-		edges = append(edges, transferCat(pp, bc, in, f))
+		edges = append(edges, transferCat(pp, bc, in, env))
 	case *bytecode.CheckCast[W]:
 		edges = append(edges, transferCheckCast(pp, bc, in))
 	case *bytecode.Debug[W]:
@@ -154,7 +154,7 @@ func transferRegisterWidths[W Word[W]](pp ProgramPoint, bc Bytecode[W], in Bitwi
 	return edges
 }
 
-func transferArith[W Word[W]](pp ProgramPoint, bc *bytecode.Arith[W], in Bitwidths, env descriptor.RegisterMap[W],
+func transferArith[W Word[W]](pp ProgramPoint, bc *bytecode.Arith[W], in Bitwidths, env Environment[W],
 ) dfa.Transfer[Bitwidths] {
 	var (
 		next    = pp.Skip(0)
@@ -211,12 +211,12 @@ func transferCall[W Word[W]](pp ProgramPoint, bc *bytecode.Call[W], in Bitwidths
 	return dfa.NewTransfer(in, next)
 }
 
-func transferCat[W Word[W]](pp ProgramPoint, bc *bytecode.Cat[W], in Bitwidths, rmap descriptor.RegisterMap[W],
+func transferCat[W Word[W]](pp ProgramPoint, bc *bytecode.Cat[W], in Bitwidths, env bytecode.Environment[W],
 ) dfa.Transfer[Bitwidths] {
 	var (
 		next = pp.Skip(0)
 		// Determine bitwidth of right-hand side
-		bitwidth = descriptor.BitwidthOf(rmap, bc.Sources...)
+		bitwidth = descriptor.BitwidthOf(env, bc.Sources...)
 	)
 	//
 	return dfa.NewTransfer(in.AssignAll(bc.Targets, bitwidth), next)

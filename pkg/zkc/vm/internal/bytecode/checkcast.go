@@ -41,7 +41,19 @@ func (p *CheckCast[W]) Definitions() []RegisterId {
 
 // Validate implementation for Bytecode interface.
 func (p *CheckCast[W]) Validate(env Environment[W]) ([]error, bool) {
-	return validateOperands(env, p.Uses())
+	var (
+		errors, safe = validateOperands(env, p.Uses())
+		bitwidth     = env.Register(p.Target).Bitwidth()
+	)
+	//
+	if bitwidth.IsEmpty() {
+		return append(errors, fmt.Errorf("invalid checkcast on native register %d", p.Target)), false
+	} else if uint(p.Bitwidth) >= bitwidth.Unwrap() {
+		errors = append(errors,
+			fmt.Errorf("checkcast to u%d does not refine u%d for register %d", bitwidth.Unwrap(), p.Bitwidth, p.Target))
+	}
+	//
+	return errors, safe
 }
 
 func (p *CheckCast[W]) String(env Environment[W]) string {

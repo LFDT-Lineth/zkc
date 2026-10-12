@@ -90,12 +90,12 @@ func castPacket[W word.Word[W]](b Bytecode[W], regmap descriptor.RegisterMap[W],
 	case *bytecode.Call[W]:
 		var callee = modules[b.Target]
 		//
-		checks = addArgumentCasts(regmap, callee.Outputs(), b.Returns)
+		checks = addTargetCasts(regmap, callee.Outputs(), b.Returns)
 	case *bytecode.ReadWrite[W]:
 		var callee = modules[b.Id]
 		// Only memory reads require check casts
 		if !b.Write {
-			checks = addArgumentCasts(regmap, callee.Outputs(), b.Data)
+			checks = addTargetCasts(regmap, callee.Outputs(), b.Data)
 		}
 	}
 	//
@@ -152,14 +152,14 @@ func prepend[W word.Word[W]](op Bytecode[W], casts []Bytecode[W]) []Bytecode[W] 
 	return append([]Bytecode[W]{op}, casts...)
 }
 
-// addArgumentCasts emits a CHECKCAST for every target register which is
+// addTargetCasts emits a CHECKCAST for every target register which is
 // narrower than the corresponding source register, where sources are values
 // arriving in this frame from another module (e.g. a memory's data registers,
 // or a callee's return registers).  This mirrors the width check the slow
 // machine performs on every register write (frame.Store / frameCopyFrom).  The
 // targets are resolved against the given register map (the frame's own
 // registers).
-func addArgumentCasts[W word.Word[W]](regmap descriptor.RegisterMap[W], sources []descriptor.Register[W],
+func addTargetCasts[W word.Word[W]](regmap descriptor.RegisterMap[W], sources []descriptor.Register[W],
 	targets []RegisterId) []Bytecode[W] {
 	var codes []Bytecode[W]
 	//

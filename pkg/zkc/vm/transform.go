@@ -91,7 +91,8 @@ func TransformForTracing[W1 Word[W1], W2 Word[W2]](p Program[W1], config transfo
 			LowerOrXorAnd[W1](),
 			AllocateRegisters[W1](),
 			FlattenLookupAccess[W1](),
-			AddRangeConstraints[W1](),
+			ReduceRangeChecks[W1](),
+			AddRangeChecks[W1](),
 		)
 	)
 	// Apply pipeline transformations
@@ -180,8 +181,8 @@ func (p TransformationPipeline[W]) Apply(program Program[W], config transform.Co
 }
 
 const (
-	// ADD_RANGE_CONSTRAINTS handle
-	ADD_RANGE_CONSTRAINTS = "add-range-constraints"
+	// ADD_RANGE_CHECKS handle
+	ADD_RANGE_CHECKS = "add-range-checks"
 	// ALLOCATE_REGISTERS handle
 	ALLOCATE_REGISTERS = "allocate-registers"
 	// FACTOR_LIMB_EQUALITIES handle
@@ -204,6 +205,8 @@ const (
 	LOWER_ORXORAND = "lower-orxorand"
 	// LOWER_SWITCH handle
 	LOWER_SWITCH = "lower-switch"
+	// REDUCE_RANGE_CHECKS handle
+	REDUCE_RANGE_CHECKS = "reduce-range-checks"
 	// SPLIT_REGISTERS handle
 	SPLIT_REGISTERS = "split-registers"
 	// THREAD_TIMESTAMPS handle
@@ -214,7 +217,7 @@ const (
 
 // VALID_TRANSFORMS contains the complete set of valid transform handles.
 var VALID_TRANSFORMS = []string{
-	ADD_RANGE_CONSTRAINTS,
+	ADD_RANGE_CHECKS,
 	ALLOCATE_REGISTERS,
 	FACTOR_LIMB_EQUALITIES,
 	FACTOR_SKIP_CONDITIONS,
@@ -226,6 +229,7 @@ var VALID_TRANSFORMS = []string{
 	LOWER_FIELDCASTS,
 	LOWER_ORXORAND,
 	LOWER_SWITCH,
+	REDUCE_RANGE_CHECKS,
 	SPLIT_REGISTERS,
 	THREAD_TIMESTAMPS,
 	VECTORIZE,
@@ -258,7 +262,7 @@ func LowerBitwise[W word.Word[W]]() Transform[W] {
 func LowerOrXorAnd[W word.Word[W]]() Transform[W] {
 	var (
 		transformer  = transform.LowerOrXorAnd[W]
-		precondition = and(after(SPLIT_REGISTERS), before("add-range-constraints"))
+		precondition = and(after(SPLIT_REGISTERS), before(ADD_RANGE_CHECKS))
 	)
 	//
 	return Transform[W]{LOWER_ORXORAND, precondition, transformer}
@@ -407,7 +411,7 @@ func FactorSkipConditions[W word.Word[W]]() Transform[W] {
 func FactorLimbEqualities[W word.Word[W]]() Transform[W] {
 	var (
 		transformer  = transform.FactorLimbEqualities[W]
-		precondition = and(after(SPLIT_REGISTERS), before("add-range-constraints"))
+		precondition = and(after(SPLIT_REGISTERS), before(ADD_RANGE_CHECKS))
 	)
 	//
 	return Transform[W]{FACTOR_LIMB_EQUALITIES, precondition, transformer}
@@ -450,15 +454,32 @@ func SplitRegisters[W word.Word[W]](field field.Config) Transform[W] {
 	return Transform[W]{SPLIT_REGISTERS, noPrecondition, transformer}
 }
 
-// AddRangeConstraints adds a range-proof constraint for each register in the program.
+// AddRangeChecks adds a range-proof constraint for each register in the program.
 // This is done by adding lookups from each (non-constant) register to a precomputed
 // table of all valid values for that register width.
-func AddRangeConstraints[W word.Word[W]]() Transform[W] {
+func AddRangeChecks[W word.Word[W]]() Transform[W] {
 	var (
-		transformer = transform.AddRangeConstraints[W]
+		transformer = transform.AddRangeChecks[W]
 	)
 	//
-	return Transform[W]{ADD_RANGE_CONSTRAINTS, noPrecondition, transformer}
+	return Transform[W]{ADD_RANGE_CHECKS, noPrecondition, transformer}
+}
+
+// ReduceRangeChecks attempts to (safely) reduce the number of registers which
+// require explicit range checks.  The reason for doing this is to reduce the
+// number range check checks required at the constraints level, leading to
+// improved performance.  This is a safety-critical step from an overall
+// perspective, since it could lead to an under-constrained system.  The
+// existing register bitwidth validation attempts to mitigate the risk here by
+// (independently) triggering failures when a register has its range check
+// eliminated incorrectly.
+func ReduceRangeChecks[W word.Word[W]]() Transform[W] {
+	var (
+		transformer  = transform.ReduceRangeChecks[W]
+		precondition = and(before(ADD_RANGE_CHECKS), after(ALLOCATE_REGISTERS))
+	)
+	//
+	return Transform[W]{REDUCE_RANGE_CHECKS, precondition, transformer}
 }
 
 // AllocateRegisters attempts to reduce the number of registers allocated for

@@ -92,8 +92,7 @@ func Vectorize[W Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 
 // vectorizeFunction applies the per-function vectorisation pass, returning a new
 // function whose code is the merged-and-pruned result.
-func vectorizeFunction[W Word[W]](fn *Function[W], env Environment[W],
-) *Function[W] {
+func vectorizeFunction[W Word[W]](fn *Function[W], env Environment[W]) *Function[W] {
 	var (
 		original = fn.Vectors()
 		n        = uint(len(original))
@@ -128,8 +127,7 @@ func vectorizeFunction[W Word[W]](fn *Function[W], env Environment[W],
 
 // vectorizeInstruction greedily absorbs the targets of jumps in the vector at pc
 // until no further merging is legal.
-func vectorizeInstruction[W Word[W]](pc uint, code []BytecodeVector[W], env Environment[W],
-) BytecodeVector[W] {
+func vectorizeInstruction[W Word[W]](pc uint, code []BytecodeVector[W], env Environment[W]) BytecodeVector[W] {
 	var (
 		vec     = code[pc]
 		changed = true

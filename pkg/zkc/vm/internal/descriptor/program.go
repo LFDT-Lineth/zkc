@@ -369,13 +369,18 @@ func (p moduleEnvironment[W]) Module(id ModuleId) util.Option[bytecode.ModuleInf
 	return util.Some[bytecode.ModuleInfo](module)
 }
 
-// Register returns the ith register used in this module.
-func (p moduleEnvironment[W]) Register(id RegisterId) bytecode.RegisterInfo {
+// Register returns the ith register used in the enclosing module.
+func (p moduleEnvironment[W]) Register(id RegisterId) Register[W] {
 	return p.modules[p.module].Register(id)
 }
 
-// RegisterCount returns the number of registers in the enclosing module.
-func (p moduleEnvironment[W]) RegisterCount() uint {
+// Registers returns the set of registers declared in the enclosing module.
+func (p moduleEnvironment[W]) Registers() []Register[W] {
+	return p.modules[p.module].Registers()
+}
+
+// Width returns the number of registers in the enclosing module.
+func (p moduleEnvironment[W]) Width() uint {
 	return p.modules[p.module].Width()
 }
 
