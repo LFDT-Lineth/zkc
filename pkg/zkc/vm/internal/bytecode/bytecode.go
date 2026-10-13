@@ -291,7 +291,7 @@ func validateOperands[W word.Word[W]](env Environment[W], operands ...[]Register
 // AddConst constructs an addition instruction computing
 // "target = sum(sources) + constant" into a single target register.
 func AddConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_ADD, []RegisterId{target}, sources, constant)
+	return NewArith(OP_ADD, []RegisterId{target}, sources, constant, false)
 }
 
 // AddVec constructs a vectored addition instruction computing
@@ -302,14 +302,14 @@ func AddVec[W word.Word[W]](targets []RegisterId, sources []RegisterId) *Arith[W
 	//
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
-	return NewArith(OP_ADD, targets, sources, zero)
+	return NewArith(OP_ADD, targets, sources, zero, false)
 }
 
 // AddVecConst constructs a vectored addition instruction computing
 // "targets = sum(sources) + constant", where targets is a multi-limb register
 // vector.
 func AddVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_ADD, targets, sources, constant)
+	return NewArith(OP_ADD, targets, sources, constant, false)
 }
 
 // Assign constructs a move instruction which copies the source register into the
@@ -317,7 +317,7 @@ func AddVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 func Assign[W word.Word[W]](target RegisterId, source RegisterId) *Arith[W] {
 	var zero W
 	//
-	return NewArith(OP_ADD, []RegisterId{target}, []RegisterId{source}, zero)
+	return NewArith(OP_ADD, []RegisterId{target}, []RegisterId{source}, zero, false)
 }
 
 // AssignV constructs a concatenation instruction which joins the source
@@ -366,7 +366,7 @@ func NewSkipIf[W word.Word[W]](op Condition, skip uint16, left RegisterVector, r
 // given constant to the target register.
 // TODO: constant register, see: https://github.com/LFDT-Lineth/zkc/issues/1838
 func LoadConst[W word.Word[W]](target RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_ADD, []RegisterId{target}, nil, constant)
+	return NewArith(OP_ADD, []RegisterId{target}, nil, constant, false)
 }
 
 // LoadConstVec constructs a load-constant (LDC) instruction which assigns the
@@ -374,7 +374,7 @@ func LoadConst[W word.Word[W]](target RegisterId, constant W) *Arith[W] {
 func LoadConstVec[W word.Word[W]](targets []RegisterId, constant W) *Arith[W] {
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
-	return NewArith(OP_ADD, targets, nil, constant)
+	return NewArith(OP_ADD, targets, nil, constant, false)
 }
 
 // MultiwaySkip constructs a multiway-skip (SMW) instruction which dispatches on
@@ -387,7 +387,7 @@ func MultiwaySkip[W word.Word[W]](source RegisterId, cases []SwitchCase[W]) *Swi
 // MulConst constructs a multiplication instruction computing
 // "target = product(sources) * constant" into a single target register.
 func MulConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_MUL, []RegisterId{target}, sources, constant)
+	return NewArith(OP_MUL, []RegisterId{target}, sources, constant, false)
 }
 
 // MulVecConst constructs a vectored multiplication instruction computing
@@ -398,10 +398,10 @@ func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 	//
 	if len(sources) == 0 {
 		// Bypass multiplication
-		return NewArith(OP_ADD, targets, nil, constant)
+		return NewArith(OP_ADD, targets, nil, constant, false)
 	}
 	//
-	return NewArith(OP_MUL, targets, sources, constant)
+	return NewArith(OP_MUL, targets, sources, constant, false)
 }
 
 // NewMemRead constructs a memory-read instruction.  The data registers receive
@@ -418,7 +418,7 @@ func NewMemRead[W word.Word[W]](id uint16, address []RegisterId, data []Register
 // SubConst constructs a subtraction instruction computing
 // "target = sources[0] - ... - constant" into a single target register.
 func SubConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_SUB, []RegisterId{target}, sources, constant)
+	return NewArith(OP_SUB, []RegisterId{target}, sources, constant, false)
 }
 
 // SubVecConst constructs a vectored subtraction instruction computing
