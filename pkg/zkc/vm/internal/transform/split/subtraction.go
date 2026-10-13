@@ -113,11 +113,11 @@ func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Al
 		// Create "fake" register to use for addition
 		tmpReg, nmapping = allocateTemporary(bitwidth, mapping, alloc)
 		// Create addition for splitting
-		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source[1:], insn.Constant)
+		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source[1:], insn.Constant, false)
 		// Split the addition
 		pre = Addition(nmapping, alloc, fakeAdd)
 		// create new subtraction
-		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg}, zero)
+		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg}, zero, false)
 	)
 	//
 	return pre, sub, nmapping
