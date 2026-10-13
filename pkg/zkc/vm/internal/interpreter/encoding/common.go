@@ -373,6 +373,8 @@ const (
 	// WIDE_MUL_nm (multiplication with vector target) instruction [must
 	// follow WIDE_SUB_nm]
 	WIDE_MUL_nm
+	// WIDE_CSUB (subtract from constant) instruction
+	WIDE_CSUB
 	// WIDE_DIVMOD (combined division / remainder) instruction
 	WIDE_DIVMOD
 	// WIDE_DIVMODC (combined division / remainder by pooled constant)

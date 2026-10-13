@@ -122,7 +122,7 @@ func (p programToProgram[W1, W2]) lowerBytecode(b bytecode.Bytecode[W1]) bytecod
 	switch b := b.(type) {
 	// Word-typed bytecodes carry a W-typed constant and must be re-typed.
 	case *bytecode.Arith[W1]:
-		return bytecode.NewArith(b.Op, b.Target, b.Source, p.convertConstant(b.Constant))
+		return bytecode.NewArith(b.Op, b.Target, b.Source, p.convertConstant(b.Constant), b.IsSubConst)
 	case *bytecode.FieldArith[W1]:
 		return bytecode.NewFieldArith(b.Op, b.Target, b.Sources, p.convertConstant(b.Constant))
 	case *bytecode.Switch[W1]:
