@@ -112,25 +112,32 @@ func (p *InstructionTranslator[W, F]) translateMul(targets, sources []vm.Registe
 }
 
 func (p *InstructionTranslator[W, F]) translateSub(targets, sources []vm.RegisterId,
-	constant W) Expr[F] {
+	constant W, isSubConst bool) Expr[F] {
 	var (
 		minusOne           = mirc.BigNumber[F](big.NewInt(-1))
 		lhs                = p.WriteAndShiftRegisters(targets...)
 		rhs      []Expr[F] = make([]Expr[F], len(sources))
+		c                  = constant.BigInt()
 	)
-	//
+	// Fill the rhs with the sources
 	for i := range len(sources) {
-		if i == 0 {
+		if !isSubConst && i == 0 {
 			rhs[i] = p.ReadRegister(sources[i])
 		} else {
 			rhs[i] = mirc.Product(minusOne, p.ReadRegister(sources[i]))
 		}
 	}
-	// Optimise case where coeff == 0
-	if constant.Cmp64(0) != 0 {
-		var c = constant.BigInt()
-		//
-		rhs = append(rhs, mirc.BigNumber[F](c.Neg(c)))
+	// optimise case where constant == 0
+	if constant.Cmp64(0) != 0  {
+		if isSubConst {
+			// Case c - x0 - x1 - x2 - ... - xn
+			// Add the constant to the rhs
+			rhs = append(rhs, mirc.BigNumber[F](c))
+		} else {
+			// Case x0 - x1 - x2 - ... - xn - c
+			// Add the constant * (-1) to the rhs and 
+			rhs = append(rhs, mirc.BigNumber[F](c.Neg(c)))
+		}
 	}
 	//
 	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
@@ -194,7 +201,7 @@ func (p *InstructionTranslator[W, F]) translateFieldMul(target vm.RegisterId, so
 func (p *InstructionTranslator[W, F]) translateFieldSub(target vm.RegisterId, sources []vm.RegisterId,
 	constant W) Expr[F] {
 	// NOTE: safe to reuse normal (unsigned) sub translation here
-	return p.translateSub([]vm.RegisterId{target}, sources, constant)
+	return p.translateSub([]vm.RegisterId{target}, sources, constant, false)
 }
 
 // translateConcat translates a concatenation assignment (BIT_CONCAT) which
