@@ -372,7 +372,7 @@ func splitSkipIf[W Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.SkipIf[
 // Argument alignment is concerned with ensuring the number of arguments matches
 // the number of declared parameters.  For example, consider this case:
 //
-// fn f(x:u16) { g(x as u32) }
+// fn f(x:u16) { g(x) }
 // fn g(y:u32) { ... }
 //
 // Splitting to a maximum of u16 registers, then the following bytecode is
@@ -383,13 +383,13 @@ func splitSkipIf[W Word[W]](limbsMap descriptor.LimbsMap[W], c *bytecode.SkipIf[
 //
 // Conversly, consider the opposite:
 //
-// fn f(x:u32) { g(x as u16) }
+// fn f(x:u32) { check x:u16; g(x) }
 // fn g(y:u16) { ... }
 //
 // Again, splitting to a maximum of u16 registers, then the following bytecode
 // is produced:
 //
-// fn f(x'1:u16,x'0:u16) { g(x'0); check x'1 == 0 }
+// fn f(x'1:u16,x'0:u16) { check x'1:u0; g(x'0) }
 // fn g(y:u16) { ... }
 func argAlignment[W Word[W]](local []RegisterId, remote []Register[W], alloc split.Allocator[W],
 ) (nlocals []RegisterId, pre, post []Bytecode[W]) {
@@ -410,16 +410,15 @@ func argAlignment[W Word[W]](local []RegisterId, remote []Register[W], alloc spl
 			local = append(local, zreg)
 		}
 	} else if m > n {
-		// More locals than remotes.  In this case, ensure all surplus locals
-		// are zero.
-		for _, s := range local[n:] {
-			pre = append(pre, bytecode.NewCheckCast[W](s, 0))
-		}
-		// discard surplus
+		// More locals than remotes.  This case should only arise if a cast were
+		// used at the source-level.  Furthermore, that cast (after splitting)
+		// would already ensure the given limb has the correct width at this
+		// point.  Hence, we do not need to do anything other than discard the
+		// surplus locals.
 		local = local[:n]
 	}
 	//
-	return local, pre, post
+	return local, nil, post
 }
 
 // Argument alignment is concerned with ensuring the number of arguments matches
