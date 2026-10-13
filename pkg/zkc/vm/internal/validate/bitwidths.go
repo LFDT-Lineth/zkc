@@ -139,9 +139,16 @@ func newBitwidths[W Word[W]](f descriptor.Function[W]) Bitwidths {
 	var bitwidths = make([]Bitwidth, f.Width())
 	//
 	for i, reg := range f.Registers() {
-		if reg.IsInput() || reg.IsZeroWidth() {
+		switch {
+		case reg.IsInput():
 			bitwidths[i] = definedBitwidth(reg.IsSafe(), reg.Bitwidth())
-		} else {
+		case reg.IsZeroWidth() && reg.IsSafe():
+			bitwidths[i] = definedBitwidth(true, reg.Bitwidth())
+		case reg.IsZeroWidth():
+			// TODO: this is a temporary fix until constant registers are
+			// available (#2236)
+			bitwidths[i] = undefinedBitwidth(false, reg.Bitwidth()).Assign(MAX_UINTWIDTH)
+		default:
 			bitwidths[i] = undefinedBitwidth(reg.IsSafe(), reg.Bitwidth())
 		}
 	}
