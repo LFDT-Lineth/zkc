@@ -132,7 +132,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 				} else if isSbb {
 					panic("subtract with borrow bytecode missing sign bit")
 				} else {
-					local = it.translateSub(c.Target, c.Source, c.Constant)
+					local = it.translateSub(c.Target, c.Source, c.Constant, c.IsSubConst)
 				}
 			default:
 				panic("unknown arithmetic operation")
