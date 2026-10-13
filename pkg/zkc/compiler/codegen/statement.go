@@ -934,6 +934,11 @@ func (p *StmtCompiler) compileBitwiseShift(
 	return insns
 }
 
+// compileIntSub handles 2 forms
+// x0 - constant1 - constant2 ... - constantN
+// eg: x - 255 - 3
+// constant1 - x0 - constant2 ... - constantN
+// eg: 255 - x - 3
 func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint, target RegisterPacket,
 ) []Bytecode {
 	//
@@ -942,7 +947,7 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 		constant vm.Uint
 		nargs    []Expr
 	)
-	//
+	// Fold all but first constants together 
 	for i, e := range args {
 		var overflow bool
 
@@ -958,16 +963,27 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 		}
 	}
 	// Check "substract from constant" case
-	if _, ok := p.asConstant(args[0]); ok {
-		// Compile arguments
-		sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
-		return append(insns, vm.SubConst(target, sources, constant))
-	} else {
-		// Compile arguments
-		sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
-		// Done (subtraction never needs a cast check; cf. compileSub).
-		return append(insns, vm.SubVec(target, sources, constant))
+	// first arg is a constant
+	if c, ok := p.asConstant(args[0]); ok {
+		// check the sign of first arg minus the folded constant
+		// eg: 255 - 3
+		folded, underflow := c.Sub(constant)
+		if !underflow && folded.FitsWithin(bitwidth) {
+			// 255 - 3, with nothing left to subtract: just load 252.
+			if len(nargs) == 1 {
+				return p.compileIntConst(folded, mapping, target)
+			}
+			sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
+			return append(insns, vm.SubConst(target, sources, folded))
+		}
 	}
+	// first arg is a register
+	// eg: x - 255 - 3
+	// Compile arguments
+	sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
+	// Done (subtraction never needs a cast check; cf. compileSub).
+	return append(insns, vm.SubVec(target, sources, constant))
+
 }
 
 func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target RegisterId) []Bytecode {
