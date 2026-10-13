@@ -91,7 +91,7 @@ func remapSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *byte
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.NewArith(bytecode.OP_SUB, targets, sources, insn.Constant),
+		bytecode.NewArith(bytecode.OP_SUB, targets, sources, insn.Constant, insn.IsSubConst),
 	}
 }
 

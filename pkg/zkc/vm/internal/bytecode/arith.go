@@ -23,11 +23,12 @@ import (
 
 // NewArith constructs a new arithmetic instruction computing
 // "targets = sources[0] op sources[1] op ... op constant".
-func NewArith[W word.Word[W]](op Operation, targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+// isSubConst is a flag for subtraction instructions indicating whether the constant is a subtraction constant.
+func NewArith[W word.Word[W]](op Operation, targets []RegisterId, sources []RegisterId, constant W, isSubConst bool) *Arith[W] {
 	util.Assert(len(targets) > 0, "missing target register(s)")
 	util.Assert(len(sources) > 0 || op == OP_ADD, "missing source register(s)")
 	//
-	return &Arith[W]{op, constant, sources, targets, false}
+	return &Arith[W]{op, constant, sources, targets, isSubConst}
 }
 
 // Arith (arithmetic) instruction encodes a wide range of related arithmetic
@@ -84,18 +85,24 @@ func (p *Arith[W]) String(env Environment[W]) string {
 	default:
 		prefix = p.Op.Prefix()
 	}
-	//
+	// left hand side
 	builder.WriteString(prefix)
 	builder.WriteString(" ")
 	builder.WriteString(RegistersToString(array.Reverse(p.Target), env, "::"))
 	builder.WriteString(" = ")
-	builder.WriteString(RegistersToString(p.Source, env, p.Op.Symbol()))
-	//
-	if len(p.Source) == 0 {
+	// right hand side
+	if p.IsSubConst {
 		builder.WriteString(cstr)
-	} else if !cz {
 		builder.WriteString(p.Op.Symbol())
-		builder.WriteString(cstr)
+		builder.WriteString(RegistersToString(p.Source, env, p.Op.Symbol()))
+	} else {
+		builder.WriteString(RegistersToString(p.Source, env, p.Op.Symbol()))
+		if len(p.Source) == 0 {
+			builder.WriteString(cstr)
+		} else if !cz {
+			builder.WriteString(p.Op.Symbol())
+			builder.WriteString(cstr)
+		}
 	}
 	//
 	return builder.String()

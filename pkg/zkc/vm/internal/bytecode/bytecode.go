@@ -427,7 +427,7 @@ func SubConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant 
 func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
-	return NewArith(OP_SUB, targets, sources, constant)
+	return NewArith(OP_SUB, targets, sources, constant, false)
 }
 
 // SubConstVec constructs a vectored subtraction instruction computing
@@ -436,8 +436,7 @@ func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 func SubConstVec[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
-	arith := NewArith(OP_SUB, targets, sources, constant)
-	arith.IsSubConst = true
+	arith := NewArith(OP_SUB, targets, sources, constant, true)
 	return arith
 }
 
