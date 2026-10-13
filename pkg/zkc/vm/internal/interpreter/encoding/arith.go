@@ -38,7 +38,7 @@ func Arith[W word.Word[W]](p bytecode.Arith[W], env Environment[W]) []uint32 {
 	case n == 1 && m == 1 && cz:
 		return encodeMove_1s1(p.Source[0], p.Target[0])
 	case n == 1 && m == 1:
-		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant, env)
+		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant, p.IsSubConst, env)
 	case n == 2 && m == 1 && cz:
 		return encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
 	case n == 2 && m == 1 && p.Op != bytecode.OP_SUB:
@@ -147,20 +147,26 @@ func encodeArith_2n1c[W word.Word[W]](aop bytecode.Operation, rs0, rs1, rd uint1
 	// one-source instruction operating in place on the target.
 	codes := encodeArith_2n1(aop, rs0, rs1, rd)
 	//
-	return append(codes, encodeArith_1n1c(aop, rd, rd, constant, env)...)
+	return append(codes, encodeArith_1n1c(aop, rd, rd, constant, false, env)...)
 }
 
 // encodeArith_1n1c encodes a one-source, one-target arithmetic-with-constant
 // instruction (ADDC/SUBC/MULC).
-func encodeArith_1n1c[W word.Word[W]](aop bytecode.Operation, rs, rd uint16, constant W,
+func encodeArith_1n1c[W word.Word[W]](aop bytecode.Operation, rs, rd uint16, constant W, isSubConst bool,
 	env Environment[W]) []uint32 {
 	//
-	var opcode = ADDC + uint32(aop-bytecode.OP_ADD)
+	var offset uint32
+	if isSubConst {
+		offset = 6 // skip ADDC, SUBC, MULC, ADD_nm, SUB_nm, MUL_nm
+	} else {
+		offset = uint32(aop - bytecode.OP_ADD)
+	}
+	var opcode = ADDC + offset
 	// The wide (pooled) form carries a constant of arbitrary width; the narrow
 	// form only a u8 immediate.
 	if IsWideRegisters(rs, rd) || constant.Cmp64(0xff) > 0 {
 		return []uint32{
-			uint32(env.ConstantIndex(constant))<<16 | (WIDE_ADDC+uint32(aop-bytecode.OP_ADD))<<8 | WIDE,
+			uint32(env.ConstantIndex(constant))<<16 | (WIDE_ADDC+offset)<<8 | WIDE,
 			uint32(rd) | uint32(rs)<<16,
 		}
 	}

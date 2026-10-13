@@ -661,6 +661,8 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			p.pc, err = p.executeSub_nm(p.pc, bytecodes, pool, frame)
 		case encoding.MUL_nm:
 			p.pc, err = p.executeMul_nm(p.pc, bytecodes, pool, frame)
+		case encoding.CSUB:
+			p.pc, err = p.executeSub_1c1n(p.pc, bytecodes, pool, frame)
 		case encoding.DIVMOD:
 			p.pc, err = p.executeDivMod(p.pc, bytecodes, frame)
 		case encoding.DIVMODC:
@@ -806,6 +808,8 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		pc, err = p.executeSub_nm(pc, codes, pool, stack)
 	case encoding.WIDE_MUL_nm:
 		pc, err = p.executeMul_nm(pc, codes, pool, stack)
+	case encoding.WIDE_CSUB:
+		pc, err = p.executeSub_1c1n(pc, codes, pool, stack)
 	case encoding.WIDE_DIVMOD:
 		pc, err = p.executeDivMod(pc, codes, stack)
 	case encoding.WIDE_DIVMODC:
@@ -2218,6 +2222,36 @@ func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, pool []W, st
 		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
 		val                 = stack[rs]
 		res, underflow      = val.Sub(constant)
+	)
+	//
+	if underflow {
+		// Mirror descriptor.CalculateSubBitwidth: one is subtracted from the
+		// constant because negative values do not need to encode zero, so a
+		// power-of-two constant does not cost an extra bit.  (The constant is
+		// at least one here — a zero constant cannot underflow.)
+		cm1, _ := constant.Sub64(1)
+		//
+		var (
+			module   = p.program.Module(p.fid)
+			rd_width = module.Register(rd).Bitwidth().Unwrap()
+			rs_width = module.Register(rs).Bitwidth().Unwrap()
+			bitwidth = max(rd_width, 1+max(rs_width, cm1.BitLen()))
+		)
+		// slice enough values
+		res = res.Slice(bitwidth)
+	}
+	//
+	stack[rd] = res
+	//
+	return pc + n, nil
+}
+
+// executeSub_1c1n implements CSUB: stack[rd] = constant - stack[rs].
+func (p *Interpreter[W]) executeSub_1c1n(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
+	var (
+		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+		val                 = stack[rs]
+		res, underflow      = constant.Sub(val)
 	)
 	//
 	if underflow {
