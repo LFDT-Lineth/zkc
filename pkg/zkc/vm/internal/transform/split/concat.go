@@ -13,6 +13,9 @@
 package split
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -124,7 +127,6 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 	targets, sources []RegisterId) ([]partCat, []Bytecode[W]) {
 	//
 	var (
-		limbsMap = mapping.LimbsRegisterMap()
 		// Split all source registers
 		sourceLimbs = applyLimbsMapReversed(mapping, sources...)
 		// Split all target registers
@@ -133,35 +135,49 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 		targetStack = RegisterStack[W]{targetLimbs, alloc, nil}
 		// Initialise source register stack
 		sourceStack = RegisterStack[W]{sourceLimbs, alloc, nil}
+		// Offset overhang / underhang between chunks
+		overhang, underhang uint
 		//
-		codes []partCat
+		chunks []partCat
 	)
 	// Keep going whilst we still have source registers
 	for sourceStack.Size() > 0 {
 		var (
-			rhs      = sourceStack.SelectUpto(mapping.BandWidth())
-			bitwidth = concatRhsBitwidth(rhs, limbsMap)
-			// Keep target limbs intact.  Splitting a target to match the RHS
-			// exactly introduces a reconstruction bytecode which can sit after a
-			// large control-flow join and make its path condition prohibitively
-			// expensive to lower.  Any mismatch between the LHS and RHS widths
-			// is resolved afterwards by insertConcatCarryLines.
-			lhs = targetStack.SelectUpto(bitwidth)
+			// Select source registers for this chunk.
+			rhs = sourceStack.SelectUpto(mapping.BandWidth() - overhang)
+			// Calculate bitwidth of selected source registers (including overhang)
+			rhsBitwidth = descriptor.BitwidthOf(alloc, rhs...).Unwrap() + overhang
+			// Select target registers for this chunk.
+			lhs = targetStack.SelectUpto(rhsBitwidth - underhang)
+			// Calculate bitwidth of selected target registers
+			lhsBitwidth = descriptor.BitwidthOf(alloc, lhs...).Unwrap() + underhang
 		)
+		// //
+		// fmt.Printf("[CHUNK %d] %s = %s\n", len(chunks),
+		// 	limbsToString(alloc, targetLimbs...),
+		// 	limbsToString(alloc, sourceLimbs...))
 		// allocate selected targets
-		codes = append(codes, partCat{targets: lhs, sources: rhs})
+		chunks = append(chunks, partCat{targets: lhs, sources: rhs})
+		// update overhang
+		if rhsBitwidth > lhsBitwidth {
+			overhang = rhsBitwidth - lhsBitwidth
+			underhang = 0
+		} else {
+			overhang = 0
+			underhang = lhsBitwidth - rhsBitwidth
+		}
 	}
 	// Handle cases where we have more targets than necessary.  This can arise
 	// under normal circumstances, such as when assigning a small constant to a
 	// wide target register.  In this case, we simple assign each target in this
 	// "overhang" to zero.
 	for targetStack.Size() > 0 {
-		codes = append(codes, partCat{targets: []RegisterId{targetStack.Pop()}})
+		chunks = append(chunks, partCat{targets: []RegisterId{targetStack.Pop()}})
 	}
 	// Assert that we never create bytecodes for source registers.
 	util.Assert(len(sourceStack.post) == 0, "internal failure")
 	//
-	return codes, targetStack.post
+	return chunks, targetStack.post
 }
 
 // insertConcatCarryLines resolves width mismatches between each chunk's LHS
@@ -180,7 +196,7 @@ func insertConcatCarryLines[W word.Word[W]](alloc Allocator[W], chunks []partCat
 			// Determine bitwidth of left-hand side
 			lhs = descriptor.BitwidthOf(alloc, chunks[i].targets...).Unwrap()
 			// Determine bitwidth of right-hand side
-			rhs = concatRhsBitwidth(chunks[i].sources, alloc)
+			rhs = descriptor.BitwidthOf(alloc, chunks[i].sources...).Unwrap()
 		)
 		// Check whether carry required.  NOTE: a chunk whose target limbs are
 		// exhausted has a zero-width left-hand side.  In such case, there is no
@@ -217,18 +233,6 @@ func insertConcatCarryLines[W word.Word[W]](alloc Allocator[W], chunks []partCat
 	return chunks
 }
 
-func concatRhsBitwidth[W word.Word[W]](chunk []RegisterId, mapping descriptor.RegisterMap[W]) uint {
-	var bitwidth uint
-	//
-	for _, r := range chunk {
-		var reg = mapping.Register(r)
-		//
-		bitwidth += reg.Bitwidth().Unwrap()
-	}
-	//
-	return bitwidth
-}
-
 // concatAssignment lowers a chunk back into a concrete assignment instruction.
 func concatAssignment[W word.Word[W]](chunk partCat) Bytecode[W] {
 	var zero W
@@ -238,4 +242,19 @@ func concatAssignment[W word.Word[W]](chunk partCat) Bytecode[W] {
 	}
 	// Done
 	return bytecode.AssignV[W](chunk.targets, chunk.sources...)
+}
+
+// nolint
+func limbsToString[W word.Word[W]](mapping descriptor.RegisterMap[W], limbs ...RegisterId) string {
+	var builder strings.Builder
+	//
+	for i, limb := range limbs {
+		if i != 0 {
+			builder.WriteString("::")
+		}
+		//
+		fmt.Fprintf(&builder, "%s[%d]", mapping.Register(limb).Name(), limb)
+	}
+	//
+	return builder.String()
 }
