@@ -135,7 +135,7 @@ func (p *InstructionTranslator[W, F]) translateSub(targets, sources []vm.Registe
 			rhs = append(rhs, mirc.BigNumber[F](c))
 		} else {
 			// Case x0 - x1 - x2 - ... - xn - c
-			// Add the constant * (-1) to the rhs and 
+			// Add the constant * (-1) to the rhs 
 			rhs = append(rhs, mirc.BigNumber[F](c.Neg(c)))
 		}
 	}
