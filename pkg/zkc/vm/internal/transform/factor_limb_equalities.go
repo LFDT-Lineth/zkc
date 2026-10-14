@@ -64,7 +64,7 @@ import (
 // lowering, which factoring into bits would defeat.
 //
 // NOTE: this transform must run after SplitRegisters (multi-limb comparisons
-// only exist post-split) and before AddRangeConstraints (which constrains the
+// only exist post-split) and before AddRangeChecks (which constrains the
 // fresh 1-bit registers to be binary).
 func FactorLimbEqualities[W Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	out := slices.Clone(program.Modules())

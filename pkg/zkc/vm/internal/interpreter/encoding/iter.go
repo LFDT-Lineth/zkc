@@ -47,6 +47,11 @@ func NewWideOperands(n, len uint, data []uint32) Operands {
 	}
 }
 
+// Count returns how many items remain.
+func (p *Operands) Count() uint {
+	return p.count
+}
+
 // HasNext determines whether there are any more operands in this iterator.
 func (p *Operands) HasNext() bool {
 	return p.count != 0

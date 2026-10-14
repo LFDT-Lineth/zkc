@@ -102,7 +102,7 @@ func (p programToProgram[W1, W2]) lowerRegisters(regs []descriptor.Register[W1])
 		// Sanity-check register width against W2.
 		p.checkRegisterWidth(r)
 		//
-		out[i] = descriptor.NewRegister(r.Kind(), r.Name(), r.Bitwidth(), p.convertConstant(r.Padding()))
+		out[i] = bytecode.NewRegister(r.Kind(), r.Name(), r.Bitwidth(), p.convertConstant(r.Padding()))
 	}
 	//
 	return out

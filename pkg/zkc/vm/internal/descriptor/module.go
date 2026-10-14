@@ -16,6 +16,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -65,7 +66,7 @@ func newModuleBase[W word.Word[W]](name string, registers []Register[W]) moduleB
 		numOutputs = array.CountMatching(registers, func(r Register[W]) bool { return r.IsOutput() })
 	)
 	// Check registers sorted as: inputs, outputs then internal.
-	if !set.IsSorted(registers, func(r Register[W]) Type { return r.kind }) {
+	if !set.IsSorted(registers, func(r Register[W]) bytecode.Type { return r.Kind() }) {
 		panic("function registers ordered incorrectly")
 	}
 	// All good

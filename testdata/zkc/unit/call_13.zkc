@@ -18,5 +18,9 @@ fn f(x:u1) -> (z:u16) {
 }
 
 fn g(x:u16) -> (y:u16) {
-    fail
+    if x == 1 {
+        fail
+    }
+    //
+    y = x
 }

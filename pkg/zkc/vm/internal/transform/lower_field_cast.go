@@ -51,8 +51,7 @@ func LowerFieldCasts[W Word[W]](program descriptor.Program[W]) descriptor.Progra
 	return descriptor.NewProgram(program.Field(), program.MaxStaticHeight(), append(modules, helpers.modules...)...)
 }
 
-func lowerFieldCastFunction[W Word[W]](fn *Function[W], helpers *fieldCastHelpers[W],
-) *Function[W] {
+func lowerFieldCastFunction[W Word[W]](fn *Function[W], helpers *fieldCastHelpers[W]) *Function[W] {
 	var (
 		registers = fn.Registers()
 		vectors   = make([]BytecodeVector[W], len(fn.Vectors()))
