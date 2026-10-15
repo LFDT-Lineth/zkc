@@ -213,6 +213,8 @@ const (
 	MUL_nm
 	// CSUB (subtract from constant) instruction
 	CSUB
+	// CSUB_nm (subtract from constant with vector target) instruction
+	CSUB_nm
 	// DIVMOD (combined division / remainder) instruction
 	DIVMOD
 	// DIVMODC (combined division / remainder by constant) instruction
@@ -375,6 +377,8 @@ const (
 	WIDE_MUL_nm
 	// WIDE_CSUB (subtract from constant) instruction
 	WIDE_CSUB
+	// WIDE_CSUB_nm (subtract from constant with vector target) instruction [must follow WIDE_CSUB]
+	WIDE_CSUB_nm
 	// WIDE_DIVMOD (combined division / remainder) instruction
 	WIDE_DIVMOD
 	// WIDE_DIVMODC (combined division / remainder by pooled constant)

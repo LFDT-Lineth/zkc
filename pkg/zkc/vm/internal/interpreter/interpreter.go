@@ -663,6 +663,8 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			p.pc, err = p.executeMul_nm(p.pc, bytecodes, pool, frame)
 		case encoding.CSUB:
 			p.pc, err = p.executeSub_1c1n(p.pc, bytecodes, pool, frame)
+		case encoding.CSUB_nm:
+			p.pc, err = p.executeCSub_nm(p.pc, bytecodes, pool, frame)
 		case encoding.DIVMOD:
 			p.pc, err = p.executeDivMod(p.pc, bytecodes, frame)
 		case encoding.DIVMODC:
@@ -810,6 +812,8 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		pc, err = p.executeMul_nm(pc, codes, pool, stack)
 	case encoding.WIDE_CSUB:
 		pc, err = p.executeSub_1c1n(pc, codes, pool, stack)
+	case encoding.WIDE_CSUB_nm:
+		pc, err = p.executeCSub_nm(pc, codes, pool, stack)
 	case encoding.WIDE_DIVMOD:
 		pc, err = p.executeDivMod(pc, codes, stack)
 	case encoding.WIDE_DIVMODC:
@@ -2311,6 +2315,37 @@ func (p *Interpreter[W]) executeSub_2n1(pc uint32, codes []uint32, stack []W) (u
 // across a vector target using the same low-limb-first rule as the word
 // machine, reporting an error on underflow.
 func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
+	var (
+		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm(pc, codes, pool)
+		val                                     W
+		acc                                     W
+		underflow                               bool
+	)
+	// Seed initial value
+	val = stack[sources.Next()]
+	// Subtract rest from it
+	for sources.HasNext() {
+		var src = sources.Next()
+		//
+		if acc, underflow = acc.Add(stack[src]); underflow {
+			return pc, p.failure("arithmetic underflow")
+		}
+	}
+	//
+	if acc, underflow = acc.Add(constant); underflow {
+		return pc, p.failure("arithmetic underflow")
+	} else if val, underflow = val.Sub(acc); underflow {
+		val = val.Slice(bitwidth)
+	}
+	//
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid).Registers(), targets, val, stack)
+}
+
+// executeCSub_nm implements CSUB_nm: it seeds the value from the first source,
+// subtracts the remaining sources and the constant, and stores the result
+// across a vector target using the same low-limb-first rule as the word
+// machine, reporting an error on underflow.
+func (p *Interpreter[W]) executeCSub_nm(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
 		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm(pc, codes, pool)
 		val                                     W
