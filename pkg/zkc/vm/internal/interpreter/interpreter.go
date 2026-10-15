@@ -2341,10 +2341,11 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, pool []W, stac
 	return pc + n, p.storeAcross(pc, p.program.Module(p.fid).Registers(), targets, val, stack)
 }
 
-// executeCSub_nm implements CSUB_nm: it seeds the value from the first source,
-// subtracts the remaining sources and the constant, and stores the result
-// across a vector target using the same low-limb-first rule as the word
-// machine, reporting an error on underflow.
+// executeCSub_nm implements CSUB_nm: it seeds the value from the constant,
+// subtracts every source, and stores the result across a vector target using
+// the same low-limb-first rule as the word machine. Summing the sources
+// reports an error when that sum overflows the word; a subtraction that
+// underflows is wrapped to the instruction bitwidth.
 func (p *Interpreter[W]) executeCSub_nm(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
 		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm(pc, codes, pool)
@@ -2353,8 +2354,8 @@ func (p *Interpreter[W]) executeCSub_nm(pc uint32, codes []uint32, pool []W, sta
 		underflow                               bool
 	)
 	// Seed initial value
-	val = stack[sources.Next()]
-	// Subtract rest from it
+	val = constant
+	// Subtract sources from it
 	for sources.HasNext() {
 		var src = sources.Next()
 		//
@@ -2363,9 +2364,7 @@ func (p *Interpreter[W]) executeCSub_nm(pc uint32, codes []uint32, pool []W, sta
 		}
 	}
 	//
-	if acc, underflow = acc.Add(constant); underflow {
-		return pc, p.failure("arithmetic underflow")
-	} else if val, underflow = val.Sub(acc); underflow {
+	if val, underflow = val.Sub(acc); underflow {
 		val = val.Slice(bitwidth)
 	}
 	//
