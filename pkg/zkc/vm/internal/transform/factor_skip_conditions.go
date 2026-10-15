@@ -95,8 +95,9 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 			continue
 		}
 
-		// Nothing to factorize if the body is control-only, a single opcode, or a
-		// paired write of the same registers on both arms.
+		// Optimization to avoid factoring if the body is control-only, a single opcode, or a
+		// paired write of the same registers on both arms. The extra bit is an added register and
+		// in some cases also adds complexity due to the extra constraints on the bit.
 		if bodyIsControlOneOpcodeOrPairedWrite(codes, uint(i)) {
 			factor[uint(i)] = false
 			continue
