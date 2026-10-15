@@ -1,0 +1,5 @@
+fn main() {
+    var a:u8 = 1
+    var b:u8 = 2
+    var c:u8 = 3 - a - b
+}
