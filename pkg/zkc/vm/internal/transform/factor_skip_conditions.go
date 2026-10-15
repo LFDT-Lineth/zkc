@@ -95,9 +95,9 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 			continue
 		}
 
-		// Nothing to factorize if the skip only selects a constant (or is
-		// control-only): wrapping would insert a bit diamond for no sharing.
-		if bodyIsConstSelectOrControlOnly(codes, uint(i)) {
+		// Nothing to factorize if the body is control-only, a single opcode, or a
+		// paired write of the same registers on both arms.
+		if bodyIsControlOneOpcodeOrPairedWrite(codes, uint(i)) {
 			factor[uint(i)] = false
 			continue
 		}
@@ -135,19 +135,18 @@ func generatesInverse[W Word[W]](si *bytecode.SkipIf[W], registers split.Allocat
 	return false
 }
 
-// bodyIsConstSelectOrControlOnly reports whether the SkipIf at index i guards
-// only a constant select of one register (any width), or a control-only body.
-// Those shapes already materialise the branch; factoring them would add a bit
-// diamond for no shared writes.
+// bodyIsControlOneOpcodeOrPairedWrite reports whether the SkipIf at index i guards
+// a control-only span, a single opcode, or a paired write.  A paired write assigns
+// each register once on the taken arm and once on the other, in the same order.
 //
 // Recognised layouts (S = skip amount):
 //
-//	S=1:   skip_if (cond) 1 ; <one opcode>   // one write or control (jmp/ret/fail/…)
-//	S>=2:  skip_if (cond) S ; (z_i=…)×n ; {skip n | jmp} ; (z_i=…)×n
-//	       with n = S-1 and matching target registers (ldc, mov, or other
-//	       single-target write)
 //	S>0:   skip_if (cond) S ; {jmp/skip/skip_if/fail/ret}...
-func bodyIsConstSelectOrControlOnly[W Word[W]](codes []Bytecode[W], i uint) bool {
+//	S=1:   skip_if (cond) 1 ; <one opcode>
+//	S>=2:  skip_if (cond) S ; (z_i=…)×n ; {skip n | jmp} ; (z_i=…)×n
+//	       with n = S-1.  The k-th write on each side targets the same register
+//	       and has a single target (ldc, mov, add, …).
+func bodyIsControlOneOpcodeOrPairedWrite[W Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	//
 	var (
@@ -209,16 +208,6 @@ func isControlOnly[W word.Word[W]](code Bytecode[W]) bool {
 	default:
 		return false
 	}
-}
-
-// isLoadConst recognises a load-constant bytecode (as constructed by
-// bytecode.LoadConst), returning its single target register.
-func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
-	if a, ok := code.(*bytecode.Arith[W]); ok &&
-		a.Op == bytecode.OP_ADD && len(a.Source) == 0 && len(a.Target) == 1 {
-		return a.Target[0], true
-	}
-	return 0, false
 }
 
 // isSingleTargetWrite reports a bytecode that writes exactly one register
