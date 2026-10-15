@@ -7,7 +7,7 @@ fn main() {
 
     // Diamond shape is : skip_if (cond) S ; {jmp/skip/fail}...
 
-    // Diamond shape here has S=1, body is a ret. Do not factorizeSkipIf.
+    // Diamond shape here has S=1, body is a ret. Do not factorableSkips.
     if cond == 0 {
         return
     }

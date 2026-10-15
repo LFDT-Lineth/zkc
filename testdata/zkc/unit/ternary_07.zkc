@@ -9,14 +9,14 @@ fn main() {
     // Diamond shape is : skip_if (cond) S ; {jmp/skip/fail}...
 
     // Wide const-select
-    // The target register is wide (not just u1). Do not factorizeSkipIf.
+    // The target register is wide (not just u1). Do not factorableSkips.
     var got_const:u8 = cond != 0 ? 1:0
     if got_const != exp_const {
         fail
     }
 
     // Then-arm has a later statement
-    // Diamond shape here has S=2, body has a jmp filler. Do not factorizeSkipIf.
+    // Diamond shape here has S=2, body has a jmp filler. Preferable not to factorableSkips.
     var z:u8
     var a:u8 = 0
     if cond != 0 {
