@@ -90,7 +90,7 @@ func Concat[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 	// Split into the initial set of chunks.
 	var chunks, context = initialiseConcatChunks(mapping, alloc, insn.Targets, insn.Sources)
 	// Next, add carry and borrow lines as needed
-	chunks = insertConcatCarryLines(alloc, chunks)
+	chunks = insertConcatCarryLines(mapping, alloc, chunks)
 	// Convert chunks into assignments
 	return append(orderConcatAssignments[W](chunks), context...)
 }
@@ -148,14 +148,21 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 			// Calculate bitwidth of selected source registers (including overhang)
 			rhsBitwidth = descriptor.BitwidthOf(alloc, rhs...).Unwrap() + overhang
 			// Select target registers for this chunk.
-			lhs = targetStack.SelectUpto(rhsBitwidth - underhang)
+			lhs = targetStack.SelectUpto(mapping.BandWidth() - underhang)
 			// Calculate bitwidth of selected target registers
 			lhsBitwidth = descriptor.BitwidthOf(alloc, lhs...).Unwrap() + underhang
 		)
-		// //
+		//
+		//fmt.Printf("overhang u%d; underhang u%d; rhs u%d, lhs u%d\n", overhang, underhang, rhsBitwidth, lhsBitwidth)
+		// Basic sanity checks
+		util.Assert(mapping.BandWidth() > overhang, "overhang overflow")
+		util.Assert(rhsBitwidth >= underhang, "underhang overflow")
+		util.Assert(mapping.BandWidth() >= rhsBitwidth, "rhs overflow")
+		util.Assert(mapping.BandWidth() >= lhsBitwidth, "lhs overflow")
+		//
 		// fmt.Printf("[CHUNK %d] %s = %s\n", len(chunks),
-		// 	limbsToString(alloc, targetLimbs...),
-		// 	limbsToString(alloc, sourceLimbs...))
+		// 	limbsToString(alloc, lhs...),
+		// 	limbsToString(alloc, rhs...))
 		// allocate selected targets
 		chunks = append(chunks, partCat{targets: lhs, sources: rhs})
 		// update overhang
@@ -189,7 +196,7 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 // by the next chunk as its least significant target.  The final chunk is
 // skipped, since there is no next chunk: overflow there is the discarded top
 // bits, and a shortfall is zero-filled.
-func insertConcatCarryLines[W word.Word[W]](alloc Allocator[W], chunks []partCat) []partCat {
+func insertConcatCarryLines[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], chunks []partCat) []partCat {
 	//
 	for i := range len(chunks) {
 		var (
@@ -208,6 +215,8 @@ func insertConcatCarryLines[W word.Word[W]](alloc Allocator[W], chunks []partCat
 				// allocate new carry line
 				carry = alloc.Allocate("c", util.Some(bitwidth))
 			)
+			// Sanity check
+			util.Assert(bitwidth < mapping.BandWidth(), "carry overflow")
 			// insert carry line.  Observe that, since the carry holds the
 			// overflowing (most significant) bits of this chunk, it becomes
 			// the least significant limb of the next chunk.
@@ -219,6 +228,8 @@ func insertConcatCarryLines[W word.Word[W]](alloc Allocator[W], chunks []partCat
 				// allocate new borrow line
 				borrow = alloc.Allocate("b", util.Some(bitwidth))
 			)
+			// Sanity check
+			util.Assert(bitwidth < mapping.BandWidth(), "borrow overflow")
 			// insert borrow line.  Observe that, since the borrow supplies the
 			// missing (most significant) bits of this chunk, it is assigned
 			// from the least significant bits of the next chunk.  The next
@@ -257,4 +268,12 @@ func limbsToString[W word.Word[W]](mapping descriptor.RegisterMap[W], limbs ...R
 	}
 	//
 	return builder.String()
+}
+
+func sub(x, y uint) uint {
+	if x >= y {
+		return x - y
+	}
+	//
+	return 0
 }
