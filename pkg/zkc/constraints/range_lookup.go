@@ -101,10 +101,8 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 			// Native registers are not range-checked.
 			continue
 		} else if i < len(regs) && !regs[i].IsSafe() {
-			// Unsafe registers are not ranged checked.  This may seem
-			// counter-intuitive, but its simply because "safe" registers are
-			// defined as those which are ranged checked (hence guaranteed to be
-			// safe).
+			// The condition "if i < len(regs)" ensures that ALL registers (like PC, etc) 
+			// added are range-checked. Note that len(mod.Registers()) >= len(regs)
 			continue
 		}
 		// Zero-width registers can only hold zero, enforced with r == 0.
