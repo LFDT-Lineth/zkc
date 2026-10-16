@@ -13,6 +13,9 @@
 package split
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -25,6 +28,9 @@ import (
 type partCat struct {
 	targets []RegisterId
 	sources []RegisterId
+	// borrows indicates the most significant source of this chunk is a borrow
+	// line written by the next chunk, which must therefore be executed first.
+	borrows bool
 }
 
 // Concat splits a concatenation instruction into one (or more) instructions,
@@ -61,14 +67,57 @@ type partCat struct {
 //	}
 //
 // Here, we can see that two carry registers, c0 and c1 have been introduced.
+// Finally, a chunk's target limbs can be wider than its sources, as in this
+// example (assuming u32 registers and a bandwidth of u48):
+//
+//	fn (x:u40, y:u8, z:u16) -> (a:u64) {
+//	  a = x::y::z
+//	}
+//
+// Splitting gives the following:
+//
+//	fn (x1:u8, x0:u32, y:u8, z:u16) -> (a1,a0:u32) {
+//	  var b0:u8
+//	  a1::b0 = x1::x0
+//	  a0 = b0::y::z
+//	}
+//
+// Here, the borrow b0 supplies the missing top bits of the first chunk from the
+// bottom of the next.  Since b0 is written by the second chunk, it is executed
+// first.
 func Concat[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 	insn *bytecode.Cat[W]) []Bytecode[W] {
 	// Split into the initial set of chunks.
 	var chunks, context = initialiseConcatChunks(mapping, alloc, insn.Targets, insn.Sources)
-	// Next, add carry lines as needed
-	chunks = insertConcatCarryLines(alloc, chunks)
+	// Next, add carry and borrow lines as needed
+	chunks = insertConcatCarryLines(mapping, alloc, chunks)
 	// Convert chunks into assignments
-	return append(array.Map(chunks, concatAssignment[W]), context...)
+	return append(orderConcatAssignments[W](chunks), context...)
+}
+
+// orderConcatAssignments lowers chunks into assignments ordered such that every
+// carry or borrow line is written before it is read.  Carries flow upwards from
+// a chunk to the next, whilst borrows flow downwards.  Hence, each maximal run
+// of chunks linked by borrows is emitted in reverse, whilst runs themselves are
+// emitted in order.
+func orderConcatAssignments[W word.Word[W]](chunks []partCat) []Bytecode[W] {
+	var codes = make([]Bytecode[W], 0, len(chunks))
+	//
+	for start := 0; start < len(chunks); {
+		var end = start
+		// Find end of run
+		for chunks[end].borrows {
+			end++
+		}
+		// Emit run in reverse
+		for i := end; i >= start; i-- {
+			codes = append(codes, concatAssignment[W](chunks[i]))
+		}
+		//
+		start = end + 1
+	}
+	//
+	return codes
 }
 
 // initialiseAddChunks splits the addition sources and constant into
@@ -78,7 +127,6 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 	targets, sources []RegisterId) ([]partCat, []Bytecode[W]) {
 	//
 	var (
-		limbsMap = mapping.LimbsRegisterMap()
 		// Split all source registers
 		sourceLimbs = applyLimbsMapReversed(mapping, sources...)
 		// Split all target registers
@@ -87,48 +135,75 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 		targetStack = RegisterStack[W]{targetLimbs, alloc, nil}
 		// Initialise source register stack
 		sourceStack = RegisterStack[W]{sourceLimbs, alloc, nil}
+		// Offset overhang / underhang between chunks
+		overhang, underhang uint
 		//
-		codes []partCat
+		chunks []partCat
 	)
 	// Keep going whilst we still have source registers
 	for sourceStack.Size() > 0 {
 		var (
-			rhs      = sourceStack.SelectUpto(mapping.BandWidth())
-			bitwidth = concatRhsBitwidth(rhs, limbsMap)
-			// Keep target limbs intact.  Splitting a target to match the RHS
-			// exactly introduces a reconstruction bytecode which can sit after a
-			// large control-flow join and make its path condition prohibitively
-			// expensive to lower.
-			lhs = targetStack.SelectUpto(bitwidth)
+			// Select source registers for this chunk.
+			rhs = sourceStack.SelectUpto(mapping.BandWidth() - overhang)
+			// Calculate bitwidth of selected source registers (including overhang)
+			rhsBitwidth = descriptor.BitwidthOf(alloc, rhs...).Unwrap() + overhang
+			// Select target registers for this chunk.
+			lhs = targetStack.SelectUpto(mapping.BandWidth() - underhang)
+			// Calculate bitwidth of selected target registers
+			lhsBitwidth = descriptor.BitwidthOf(alloc, lhs...).Unwrap() + underhang
 		)
+		//
+		//fmt.Printf("overhang u%d; underhang u%d; rhs u%d, lhs u%d\n", overhang, underhang, rhsBitwidth, lhsBitwidth)
+		// Basic sanity checks
+		util.Assert(mapping.BandWidth() > overhang, "overhang overflow")
+		util.Assert(rhsBitwidth >= underhang, "underhang overflow")
+		util.Assert(mapping.BandWidth() >= rhsBitwidth, "rhs overflow")
+		util.Assert(mapping.BandWidth() >= lhsBitwidth, "lhs overflow")
+		//
+		// fmt.Printf("[CHUNK %d] %s = %s\n", len(chunks),
+		// 	limbsToString(alloc, lhs...),
+		// 	limbsToString(alloc, rhs...))
 		// allocate selected targets
-		codes = append(codes, partCat{lhs, rhs})
+		chunks = append(chunks, partCat{targets: lhs, sources: rhs})
+		// update overhang
+		if rhsBitwidth > lhsBitwidth {
+			overhang = rhsBitwidth - lhsBitwidth
+			underhang = 0
+		} else {
+			overhang = 0
+			underhang = lhsBitwidth - rhsBitwidth
+		}
 	}
 	// Handle cases where we have more targets than necessary.  This can arise
 	// under normal circumstances, such as when assigning a small constant to a
 	// wide target register.  In this case, we simple assign each target in this
 	// "overhang" to zero.
 	for targetStack.Size() > 0 {
-		codes = append(codes, partCat{[]RegisterId{targetStack.Pop()}, nil})
+		chunks = append(chunks, partCat{targets: []RegisterId{targetStack.Pop()}})
 	}
 	// Assert that we never create bytecodes for source registers.
 	util.Assert(len(sourceStack.post) == 0, "internal failure")
 	//
-	return codes, targetStack.post
+	return chunks, targetStack.post
 }
 
-// insertConcatCarryLines allocates carry registers for chunks whose RHS
-// produces more bits than its LHS can hold, splicing each carry into the
-// current chunk's LHS and the next chunk's RHS.  The final chunk is skipped
-// since its overflow represents the top bits with no successor to absorb it.
-func insertConcatCarryLines[W word.Word[W]](alloc Allocator[W], chunks []partCat) []partCat {
+// insertConcatCarryLines resolves width mismatches between each chunk's LHS
+// and RHS by threading an intermediate register into the next chunk.  When the
+// RHS produces more bits than the LHS can hold, a carry takes the overflowing
+// (most significant) bits of the RHS and passes them up as the least
+// significant source of the next chunk.  When the LHS is wider than the RHS, a
+// borrow fills the missing (most significant) bits of the RHS, and is written
+// by the next chunk as its least significant target.  The final chunk is
+// skipped, since there is no next chunk: overflow there is the discarded top
+// bits, and a shortfall is zero-filled.
+func insertConcatCarryLines[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], chunks []partCat) []partCat {
 	//
 	for i := range len(chunks) {
 		var (
 			// Determine bitwidth of left-hand side
 			lhs = descriptor.BitwidthOf(alloc, chunks[i].targets...).Unwrap()
 			// Determine bitwidth of right-hand side
-			rhs = concatRhsBitwidth(chunks[i].sources, alloc)
+			rhs = descriptor.BitwidthOf(alloc, chunks[i].sources...).Unwrap()
 		)
 		// Check whether carry required.  NOTE: a chunk whose target limbs are
 		// exhausted has a zero-width left-hand side.  In such case, there is no
@@ -140,31 +215,37 @@ func insertConcatCarryLines[W word.Word[W]](alloc Allocator[W], chunks []partCat
 				// allocate new carry line
 				carry = alloc.Allocate("c", util.Some(bitwidth))
 			)
+			// Sanity check
+			util.Assert(bitwidth < mapping.BandWidth(), "carry overflow")
 			// insert carry line.  Observe that, since the carry holds the
 			// overflowing (most significant) bits of this chunk, it becomes
 			// the least significant limb of the next chunk.
 			chunks[i].targets = append(chunks[i].targets, carry)
 			chunks[i+1].sources = array.Prepend(carry, chunks[i+1].sources)
+		} else if lhs > rhs && i+1 < len(chunks) && len(chunks[i+1].sources) > 0 {
+			var (
+				bitwidth = lhs - rhs
+				// allocate new borrow line
+				borrow = alloc.Allocate("b", util.Some(bitwidth))
+			)
+			// Sanity check
+			util.Assert(bitwidth < mapping.BandWidth(), "borrow overflow")
+			// insert borrow line.  Observe that, since the borrow supplies the
+			// missing (most significant) bits of this chunk, it is assigned
+			// from the least significant bits of the next chunk.  The next
+			// chunk must have sources, otherwise the borrow is always zero and
+			// the shortfall is simply zero-filled instead.
+			chunks[i].sources = append(chunks[i].sources, borrow)
+			chunks[i].borrows = true
+			chunks[i+1].targets = array.Prepend(borrow, chunks[i+1].targets)
 		}
 	}
 	//
 	return chunks
 }
 
-func concatRhsBitwidth[W word.Word[W]](chunk []RegisterId, mapping descriptor.RegisterMap[W]) uint {
-	var bitwidth uint
-	//
-	for _, r := range chunk {
-		var reg = mapping.Register(r)
-		//
-		bitwidth += reg.Bitwidth().Unwrap()
-	}
-	//
-	return bitwidth
-}
-
-// addAssignment lowers a chunk back into a concrete unsigned-add instruction.
-func concatAssignment[W word.Word[W]](_ uint, chunk partCat) Bytecode[W] {
+// concatAssignment lowers a chunk back into a concrete assignment instruction.
+func concatAssignment[W word.Word[W]](chunk partCat) Bytecode[W] {
 	var zero W
 
 	if len(chunk.sources) == 0 {
@@ -172,4 +253,27 @@ func concatAssignment[W word.Word[W]](_ uint, chunk partCat) Bytecode[W] {
 	}
 	// Done
 	return bytecode.AssignV[W](chunk.targets, chunk.sources...)
+}
+
+// nolint
+func limbsToString[W word.Word[W]](mapping descriptor.RegisterMap[W], limbs ...RegisterId) string {
+	var builder strings.Builder
+	//
+	for i, limb := range limbs {
+		if i != 0 {
+			builder.WriteString("::")
+		}
+		//
+		fmt.Fprintf(&builder, "%s[%d]", mapping.Register(limb).Name(), limb)
+	}
+	//
+	return builder.String()
+}
+
+func sub(x, y uint) uint {
+	if x >= y {
+		return x - y
+	}
+	//
+	return 0
 }

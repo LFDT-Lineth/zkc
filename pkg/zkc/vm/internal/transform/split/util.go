@@ -113,33 +113,6 @@ func newLimbMatrix[W word.Word[W]](regs []RegisterId, mapping descriptor.LimbsMa
 	}
 }
 
-// SelectLimbs consumes as many register limbs as possible which fit within the
-// given bitwidth, returning the selection along with what's left.  This
-// function will always select at least one limb and (in this case only) the
-// selected bitwidth can exceed that requested.
-func selectLimbs[W word.Word[W]](bitwidth uint, targets []RegisterId, mapping descriptor.RegisterMap[W],
-) (selected []RegisterId, remainder []RegisterId) {
-	//
-	var lhs []RegisterId
-	// Always force at least one register to be selected
-	if targetWidth(targets, mapping) > bitwidth {
-		return []RegisterId{targets[0]}, targets[1:]
-	}
-	// Add more registers only if there is space.
-	for targetWidth(targets, mapping) <= bitwidth {
-		var (
-			next  = targets[0]
-			width = mapping.Register(next).Bitwidth().Unwrap()
-		)
-		//
-		lhs = append(lhs, next)
-		targets = targets[1:]
-		bitwidth = bitwidth - width
-	}
-	//
-	return lhs, targets
-}
-
 // RegisterStack abstracts a set of concatenated registers, and provides
 // mechanism to extract them on a bit-by-bit basis.
 type RegisterStack[W word.Word[W]] struct {
@@ -184,7 +157,7 @@ func (p *RegisterStack[W]) SelectExact(nbits uint) (res []RegisterId) {
 
 // SelectUpto selects upto n bits from the stack, but it does not need to be
 // exact.
-func (p *RegisterStack[W]) SelectUpto(nbits uint) (res []RegisterId) {
+func (p *RegisterStack[W]) SelectUpto2(nbits uint) (res []RegisterId) {
 	// Sanity check that we cannot see any native registers here.
 	util.Assert(!descriptor.HasNativeRegisterId(p.stack, p.alloc), "native registers not supported here")
 	//
@@ -193,8 +166,78 @@ func (p *RegisterStack[W]) SelectUpto(nbits uint) (res []RegisterId) {
 	} else {
 		res = []RegisterId{p.alloc.ZeroRegister()}
 	}
+	//
+	return res
+}
+
+// SelectUpto selects upto n bits from the stack, but it does not need to be
+// exact.
+func (p *RegisterStack[W]) SelectOneUpto(bitwidth uint) (res []RegisterId) {
+	// Sanity check that we cannot see any native registers here.
+	util.Assert(!descriptor.HasNativeRegisterId(p.stack, p.alloc), "native registers not supported here")
+	//
+	if len(p.stack) == 0 {
+		return []RegisterId{p.alloc.ZeroRegister()}
+	} else if targetWidth(p.stack, p.alloc) > bitwidth {
+		// Always force at least one register to be selected
+		res = p.stack[0:1]
+		p.stack = p.stack[1:]
+		//
+		return res
+	}
+	// Add more registers only if there is space.
+	return p.SelectUpto(bitwidth)
+}
+
+// SelectUpto selects upto n bits from the stack, but it does not need to be
+// exact.
+func (p *RegisterStack[W]) SelectUpto(bitwidth uint) (res []RegisterId) {
+	// Sanity check that we cannot see any native registers here.
+	util.Assert(!descriptor.HasNativeRegisterId(p.stack, p.alloc), "native registers not supported here")
+	// Add more registers only if there is space.
+	for targetWidth(p.stack, p.alloc) <= bitwidth {
+		var (
+			next  = p.stack[0]
+			width = p.alloc.Register(next).Bitwidth().Unwrap()
+		)
+		//
+		res = append(res, next)
+		p.stack = p.stack[1:]
+		bitwidth = bitwidth - width
+	}
+	//
+	//util.Assert(descriptor.BitwidthOf(p.alloc, res...).Unwrap() <= nbits, "select upto failed")
 	// Done
 	return res
+}
+
+// SelectLimbs consumes as many register limbs as possible which fit within the
+// given bitwidth, returning the selection along with what's left.  This
+// function will always select at least one limb and (in this case only) the
+// selected bitwidth can exceed that requested.
+//
+// nolint
+func selectLimbs[W word.Word[W]](bitwidth uint, targets []RegisterId, mapping descriptor.RegisterMap[W],
+) (selected []RegisterId, remainder []RegisterId) {
+	//
+	var lhs []RegisterId
+	// Always force at least one register to be selected
+	if targetWidth(targets, mapping) > bitwidth {
+		return []RegisterId{targets[0]}, targets[1:]
+	}
+	// Add more registers only if there is space.
+	for targetWidth(targets, mapping) <= bitwidth {
+		var (
+			next  = targets[0]
+			width = mapping.Register(next).Bitwidth().Unwrap()
+		)
+		//
+		lhs = append(lhs, next)
+		targets = targets[1:]
+		bitwidth = bitwidth - width
+	}
+	//
+	return lhs, targets
 }
 
 // selectAlignedTargetLimbs selects n registers from the given array of target

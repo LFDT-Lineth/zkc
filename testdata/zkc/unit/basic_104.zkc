@@ -1,0 +1,16 @@
+pub input data(address:u2) -> (word:u64)
+
+fn main() {
+    var x:u20 = data[0] as u20
+    var y:u30 = data[1] as u30
+    var a_exp:u1 = data[2] as u1
+    var b_exp:u49 = data[3] as u49
+    //
+    var a:u1
+    var b:u49
+    b::a = y::x
+    //
+    if a != a_exp || b != b_exp {
+        fail
+    }
+}

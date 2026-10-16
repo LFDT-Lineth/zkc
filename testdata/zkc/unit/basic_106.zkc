@@ -1,0 +1,32 @@
+pub input data(address:u2) -> (word:u64)
+
+fn main() {
+    var a:u64 = data[0]
+    var r:u64 = data[1]
+    var lo1:u8
+    var hi1:u40
+    var lo2:u8
+    var hi2:u56
+    var t1:u64
+    var t2:u64
+    //
+    lo1,hi1 = f(a as u48)
+    lo2,hi2 = g(a)
+    //
+    t1 = (hi1::lo1) as u64
+    t2 = hi2::lo2
+    //
+    if r != t1 || r != t2 {
+        fail
+    }
+}
+
+// trip KOALABEAR_24
+fn f(x:u48) -> (lo:u8,hi:u40) {
+   hi::lo = x
+}
+
+// trip MAMABEAR_32
+fn g(x:u64) -> (lo:u8,hi:u56) {
+   hi::lo = x
+}
