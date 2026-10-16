@@ -95,10 +95,10 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 			continue
 		}
 
-		// Nothing to factorize if the body of the skip is a bit equality like b = x == 0 ? 1 :0.
-		// Note that as we lowerSwitch later, this pattern can't arise from lowerSwitch, but only
-		// directly from .zkc program or other lowering steps (FactorLimbEqualities ...)
-		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
+		// Optimization to avoid factoring if the body is control-only, a single opcode, or a
+		// paired write of the same registers on both arms. The extra bit is an added register and
+		// in some cases also adds complexity due to the extra constraints on the bit.
+		if bodyIsControlOneOpcodeOrPairedWrite(codes, uint(i)) {
 			factor[uint(i)] = false
 			continue
 		}
@@ -136,44 +136,90 @@ func generatesInverse[W Word[W]](si *bytecode.SkipIf[W], registers split.Allocat
 	return false
 }
 
-// bodyContainsOnlyBitEquality reports whether the SkipIf at index i heads a diamond
-// which merely selects between two constants for a single 1-bit register:
+// bodyIsControlOneOpcodeOrPairedWrite reports whether the SkipIf at index i guards
+// a control-only span, a single opcode, or a paired write.  A paired write assigns
+// each register once on the taken arm and once on the other, in the same order.
 //
-//	skip_if (cond) 2
-//	b = k0
-//	skip 1
-//	b = k1
-func bodyContainsOnlyBitEquality[W Word[W]](codes []Bytecode[W], i uint, registers split.Allocator[W]) bool {
+// Recognised layouts (S = skip amount):
+//
+//	S>0:   skip_if (cond) S ; {jmp/skip/skip_if/fail/ret}...
+//	S=1:   skip_if (cond) 1 ; <one opcode>
+//	S>=2:  skip_if (cond) S ; (z_i=…)×n ; {skip n | jmp} ; (z_i=…)×n
+//	       with n = S-1.  The k-th write on each side targets the same register
+//	       and has a single target (ldc, mov, add, …).
+func bodyIsControlOneOpcodeOrPairedWrite[W Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	//
-	if si.Skip != 2 || i+3 >= uint(len(codes)) {
-		return false
-	}
-	//
 	var (
-		lo, okLo  = isLoadConst(codes[i+1])
-		mid, okSk = codes[i+2].(*bytecode.Skip[W])
-		hi, okHi  = isLoadConst(codes[i+3])
+		s     = uint(si.Skip)
+		taken = i + 1 + s
+		n     = uint(len(codes))
 	)
-	//
-	if !okLo || !okSk || !okHi || mid.Skip != 1 || lo != hi {
+	if s > 0 && taken <= n && isBodyControlOnly(codes[i+1:taken]) {
+		return true
+	}
+	// A skip of 1 guards a single opcode: wrapping cannot share the comparison.
+	if s == 1 {
+		return i+1 < n
+	}
+	// S>=2: n single-target writes, skip n or jmp, n writes of the same registers.
+	nRegs := s - 1
+	if s < 2 || taken+nRegs > n || !isSkipNOrJmp(codes[taken-1], nRegs) {
 		return false
 	}
 	//
-	bit := registers.Register(lo)
+	for k := uint(0); k < nRegs; k++ {
+		lo, okLo := isSingleTargetWrite(codes[i+1+k])
+		hi, okHi := isSingleTargetWrite(codes[taken+k])
+		//
+		if !okLo || !okHi || lo != hi {
+			return false
+		}
+	}
 	//
-	return !bit.IsNative() && bit.Bitwidth().Unwrap() == 1
+	return true
 }
 
-// isLoadConst recognises a load-constant bytecode (as constructed by
-// bytecode.LoadConst), returning its single target register.
-func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
-	if a, ok := code.(*bytecode.Arith[W]); ok &&
-		a.Op == bytecode.OP_ADD && len(a.Source) == 0 && len(a.Target) == 1 {
-		return a.Target[0], true
+func isBodyControlOnly[W word.Word[W]](codes []Bytecode[W]) bool {
+	for _, code := range codes {
+		if !isControlOnly(code) {
+			return false
+		}
 	}
 	//
-	return 0, false
+	return true
+}
+
+// isSkipNOrJmp is the middle of a parallel const-select: skip the else loads
+// in-vector (skip n) or by leaving the vector (jmp).
+func isSkipNOrJmp[W word.Word[W]](code Bytecode[W], n uint) bool {
+	if skip, ok := code.(*bytecode.Skip[W]); ok {
+		return uint(skip.Skip) == n
+	}
+	//
+	_, jmp := code.(*bytecode.Jmp[W])
+	//
+	return jmp
+}
+
+func isControlOnly[W word.Word[W]](code Bytecode[W]) bool {
+	switch code.(type) {
+	case *bytecode.Skip[W], *bytecode.SkipIf[W], *bytecode.Jmp[W], *bytecode.Fail[W], *bytecode.Ret[W]:
+		return true
+	default:
+		return false
+	}
+}
+
+// isSingleTargetWrite reports a bytecode that writes exactly one register
+// (ldc, mov, add, a one-result call, …).
+func isSingleTargetWrite[W word.Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
+	defs := code.Definitions()
+	if len(defs) != 1 {
+		return 0, false
+	}
+	//
+	return defs[0], true
 }
 
 // factorSkipIf expands an equality SkipIf into the diamond described on
