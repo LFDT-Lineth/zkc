@@ -1,0 +1,14 @@
+pub input data(address:u2) -> (word:u64)
+
+fn main() {
+    var a:u8 = data[0] as u8
+    var b:u39 = data[1] as u39
+    var c:u16 = data[2] as u16
+    var expected:u63 = data[3] as u63
+    //
+    var actual:u63 = c::b::a
+    //
+    if actual != expected {
+        fail
+    }
+}

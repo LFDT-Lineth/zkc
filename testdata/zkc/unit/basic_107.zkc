@@ -1,0 +1,24 @@
+pub input data(address:u2) -> (word:u64)
+
+fn main() {
+    var x:u64 = data[0]
+    var r:u64 = data[1]
+    var a:u8,b:u24,c:u16
+    var t1:u24,t2:u24
+    var act:u64
+    //
+    c::b::a = (x as u48)
+    //
+    t2,t1 = f(a,b,c)
+    //
+    act = (t2::t1) as u64
+    //
+    if r != act {
+        fail
+    }
+}
+
+// trip KOALABEAR_24
+fn f(a:u8, b:u24, c:u16) -> (x1:u24,x0:u24) {
+   x1::x0 = c::b::a
+}

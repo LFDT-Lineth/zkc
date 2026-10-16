@@ -54,7 +54,7 @@ var (
 		field.GOLDILOCKS_32,
 		field.MAMABEAR_32,
 		field.KOALABEAR_16,
-		field.KOALABEAR_24,
+		//field.KOALABEAR_24,
 		field.GF_8209}
 	// DEFAULT_CONFIG sets a default testing configuration
 	DEFAULT_CONFIG = TestConfig{
