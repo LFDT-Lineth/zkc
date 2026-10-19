@@ -166,6 +166,7 @@ func inlineBitwiseNot[W Word[W]](b *bytecode.Bitwise[W], registers split.Allocat
 		mask  = zero.Not(width)
 	)
 	return []Bytecode[W]{
+		// CSUB with constant = mask
 		bytecode.SubConstVec([]bytecode.RegisterId{b.Target}, []bytecode.RegisterId{b.Left}, mask),
 	}
 }
