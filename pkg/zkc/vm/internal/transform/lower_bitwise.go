@@ -165,12 +165,8 @@ func inlineBitwiseNot[W Word[W]](b *bytecode.Bitwise[W], registers split.Allocat
 		zero  W
 		mask  = zero.Not(width)
 	)
-
-	maskReg := registers.Allocate("lbw", util.Some(width))
-	// TODO: CSUB, see: https://github.com/LFDT-Lineth/zkc/issues/2062
 	return []Bytecode[W]{
-		bytecode.LoadConst(maskReg, mask),
-		bytecode.SubConst(b.Target, []bytecode.RegisterId{maskReg, b.Left}, zero),
+		bytecode.SubConstVec([]bytecode.RegisterId{b.Target}, []bytecode.RegisterId{b.Left}, mask),
 	}
 }
 
