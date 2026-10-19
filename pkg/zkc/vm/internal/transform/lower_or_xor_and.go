@@ -198,12 +198,8 @@ func lowerBitwiseAndOrXor[W Word[W]](
 		}
 
 		if resultIsNot(b.Op, c, mask) {
-			maxReg := registers.Allocate("loxa", util.Some(uint(b.Bitwidth)))
-
-			// TODO: CSUB, see: https://github.com/LFDT-Lineth/zkc/issues/2062
 			return []Bytecode[W]{
-				bytecode.LoadConst(maxReg, mask),
-				bytecode.SubConst(b.Target, []bytecode.RegisterId{maxReg, b.Left}, zero),
+				bytecode.CSubConst(b.Target, []bytecode.RegisterId{b.Left}, mask),
 			}
 		}
 	}
