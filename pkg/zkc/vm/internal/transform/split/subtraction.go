@@ -91,7 +91,7 @@ func remapSubtraction[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Arith[
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.NewArith(bytecode.OP_SUB, targets, sources, insn.Constant, insn.IsSubConst),
+		bytecode.NewArith(bytecode.OP_SUB, targets, sources, insn.Constant),
 	}
 }
 
@@ -117,6 +117,8 @@ func breakupSubtraction[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W],
 		// Split the addition
 		pre = Addition(nmapping, alloc, fakeAdd)
 		// create new subtraction
+		// https://github.com/LFDT-Lineth/zkc/issues/2287
+		// TODO check if we need to use OP_CSUB here
 		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg}, zero, false)
 	)
 	//
