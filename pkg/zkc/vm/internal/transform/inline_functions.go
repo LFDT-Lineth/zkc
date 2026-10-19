@@ -493,7 +493,7 @@ func buildInlinedBody[W Word[W]](callee *Function[W], shadows []bytecode.Registe
 func substituteRegisters[W Word[W]](insn Bytecode[W], sub []bytecode.RegisterId) Bytecode[W] {
 	switch insn := insn.(type) {
 	case *bytecode.Arith[W]:
-		return bytecode.NewArith(insn.Op, substituteIds(insn.Target, sub), substituteIds(insn.Source, sub), insn.Constant, insn.IsSubConst)
+		return bytecode.NewArith(insn.Op, substituteIds(insn.Target, sub), substituteIds(insn.Source, sub), insn.Constant)
 	case *bytecode.Bitwise[W]:
 		return bytecode.NewBitwise(insn.Op, substituteId(insn.Target, sub), substituteId(insn.Left, sub),
 			substituteOperandVector(insn.Right, sub), insn.Bitwidth)
