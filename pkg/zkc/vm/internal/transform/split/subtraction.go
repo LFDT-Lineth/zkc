@@ -47,6 +47,7 @@ type partSub[W word.Word[W]] struct {
 // to that of Addition: when a chunk's right-hand side produces more bits than
 // its left-hand side can hold, a borrow register is allocated and spliced into
 // the current chunk's LHS and the next chunk's RHS.
+// https://github.com/LFDT-Lineth/zkc/issues/2287
 func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
 	var pre []Bytecode[W]
@@ -84,6 +85,7 @@ func requiresBreakup[W word.Word[W]](insn *bytecode.Arith[W]) bool {
 }
 
 // Remap a subtraction which does not require real splitting.
+// https://github.com/LFDT-Lineth/zkc/issues/2287
 func remapSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Arith[W]) []Bytecode[W] {
 	var (
 		targets = applyLimbsMapReversed(mapping, insn.Target...)
@@ -117,6 +119,8 @@ func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Al
 		// Split the addition
 		pre = Addition(nmapping, alloc, fakeAdd)
 		// create new subtraction
+		// https://github.com/LFDT-Lineth/zkc/issues/2287
+		// TODO check if we need to use OP_CSUB here
 		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg}, zero, false)
 	)
 	//

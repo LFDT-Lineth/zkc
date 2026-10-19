@@ -24,11 +24,11 @@ import (
 // NewArith constructs a new arithmetic instruction computing
 // "targets = sources[0] op sources[1] op ... op constant".
 // isSubConst is a flag for subtraction instructions indicating whether the constant is a subtraction constant.
-func NewArith[W word.Word[W]](op Operation, targets []RegisterId, sources []RegisterId, constant W, isSubConst bool) *Arith[W] {
+func NewArith[W word.Word[W]](op Operation, targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
 	util.Assert(len(targets) > 0, "missing target register(s)")
 	util.Assert(len(sources) > 0 || op == OP_ADD, "missing source register(s)")
 	//
-	return &Arith[W]{op, constant, sources, targets, isSubConst}
+	return &Arith[W]{op, constant, sources, targets}
 }
 
 // Arith (arithmetic) instruction encodes a wide range of related arithmetic
@@ -38,7 +38,6 @@ type Arith[W word.Word[W]] struct {
 	Constant W
 	Source   []RegisterId
 	Target   []RegisterId
-	IsSubConst bool
 }
 
 // IsUnit returns true if this is a "unit" operation.  That is, an assignment of
@@ -49,6 +48,8 @@ func (p *Arith[W]) IsUnit() bool {
 		return len(p.Source) == 1 && p.Constant.Cmp64(0) == 0
 	case OP_MUL:
 		return len(p.Source) == 1 && p.Constant.Cmp64(1) == 0
+	case OP_CSUB:
+		return false
 	}
 	//
 	panic("unknown arithmetic operator")
@@ -97,7 +98,7 @@ func (p *Arith[W]) String(env Environment[W]) string {
 	builder.WriteString(RegistersToString(array.Reverse(p.Target), env, "::"))
 	builder.WriteString(" = ")
 	// right hand side
-	if p.IsSubConst {
+	if p.Op == OP_CSUB {
 		builder.WriteString(cstr)
 		builder.WriteString(p.Op.Symbol())
 		builder.WriteString(RegistersToString(p.Source, env, p.Op.Symbol()))

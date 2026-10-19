@@ -596,6 +596,8 @@ const (
 	OP_ADD = bytecode.OP_ADD
 	// OP_SUB integer subtraction.
 	OP_SUB = bytecode.OP_SUB
+	// OP_CSUB integer subtraction from constant.
+	OP_CSUB = bytecode.OP_CSUB
 	// OP_MUL integer multiplication.
 	OP_MUL = bytecode.OP_MUL
 	// OP_AND bitwise conjunction.
