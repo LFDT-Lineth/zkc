@@ -116,14 +116,20 @@ func (p *InstructionTranslator[W, F]) translateSub(targets, sources []vm.Registe
 	var (
 		minusOne           = mirc.BigNumber[F](big.NewInt(-1))
 		lhs                = p.WriteAndShiftRegisters(targets...)
-		rhs      []Expr[F] = make([]Expr[F], len(sources))
+		rhs      []Expr[F] 
 	)
 	//
 	for i := range len(sources) {
 		if i == 0 {
-			rhs[i] = p.ReadRegister(sources[i])
+			reg := p.reader.Register(register.NewId(uint(sources[i])))
+			isZeroRegister := reg.WidthOrNative() == 0
+			// Optimize case where the first source is a zero register
+			// 0 - x0 - x1 - x2 - ... - xn - c
+			if !isZeroRegister {
+				rhs = append(rhs, p.ReadRegister(sources[i]))
+			}
 		} else {
-			rhs[i] = mirc.Product(minusOne, p.ReadRegister(sources[i]))
+			rhs = append(rhs, mirc.Product(minusOne, p.ReadRegister(sources[i])))
 		}
 	}
 	// Optimise case where coeff == 0
