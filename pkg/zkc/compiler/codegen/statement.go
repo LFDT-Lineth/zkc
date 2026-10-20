@@ -943,11 +943,11 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 ) []Bytecode {
 	//
 	var (
-		bw       = util.Some(bitwidth)
+		bw               = util.Some(bitwidth)
 		trailingConstant vm.Uint
-		nargs    []Expr
+		nargs            []Expr
 	)
-	// Fold all but first constants together 
+	// Fold all but first constants together
 	for i, e := range args {
 		var overflow bool
 
@@ -962,7 +962,7 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 			panic("arithmetic underflow")
 		}
 	}
-	// Check "substract from constant" case, eg: 255 - x - 3
+	// Check "subtract from constant" case, eg: 255 - x - 3
 	// first arg is a constant c0
 	if c0, ok := p.asConstant(args[0]); ok {
 		// check the sign of c0 - trailingConstant
@@ -974,7 +974,9 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 				// 255 - 3, with nothing left to subtract: just load 252.
 				return p.compileIntConst(folded, mapping, target)
 			}
+
 			sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
+
 			return append(insns, vm.SubConst(target, sources, folded))
 		} else {
 			// if the result is negative, SUB case with register 0 and the folded constant
@@ -982,8 +984,11 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 			sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
 			regZero := p.allocate(util.Some[uint](0))
 			sources = append([]vm.RegisterId{regZero}, sources...)
+
 			var zero vm.Uint
+
 			positiveFolded, _ := zero.Sub(folded)
+
 			return append(insns, vm.SubVec(target, sources, positiveFolded))
 		}
 	}
@@ -993,7 +998,6 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 	sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
 	// Done (subtraction never needs a cast check; cf. compileSub).
 	return append(insns, vm.SubVec(target, sources, trailingConstant))
-
 }
 
 func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target RegisterId) []Bytecode {
@@ -1184,6 +1188,7 @@ func (p *StmtCompiler) allocate(bitwidth util.Option[uint]) RegisterId {
 			}
 		}
 	}
+
 	var (
 		n       = len(p.registers)
 		name    = fmt.Sprintf("$%d", n)

@@ -155,8 +155,10 @@ func encodeArith_2n1c[W word.Word[W]](aop bytecode.Operation, rs0, rs1, rd uint1
 func encodeArith_1n1c[W word.Word[W]](aop bytecode.Operation, rs, rd uint16, constant W,
 	env Environment[W]) []uint32 {
 	//
-	var offset = uint32(aop - bytecode.OP_ADD)
-	var opcode = ADDC + uint32(aop - bytecode.OP_ADD)
+	var (
+		offset = uint32(aop - bytecode.OP_ADD)
+		opcode = ADDC + uint32(aop-bytecode.OP_ADD)
+	)
 	// The wide (pooled) form carries a constant of arbitrary width; the narrow
 	// form only a u8 immediate.
 	if IsWideRegisters(rs, rd) || constant.Cmp64(0xff) > 0 {

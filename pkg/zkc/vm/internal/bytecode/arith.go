@@ -104,6 +104,7 @@ func (p *Arith[W]) String(env Environment[W]) string {
 		builder.WriteString(RegistersToString(p.Source, env, p.Op.Symbol()))
 	} else {
 		builder.WriteString(RegistersToString(p.Source, env, p.Op.Symbol()))
+
 		if len(p.Source) == 0 {
 			builder.WriteString(cstr)
 		} else if !cz {
