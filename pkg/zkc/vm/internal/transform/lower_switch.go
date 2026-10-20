@@ -124,10 +124,10 @@ const (
 	// skip.
 	caseSize = 4
 	// trailerSize is the number of bytecodes emitted after the
-	// diamonds: the one-register load, the subtraction deriving the default
+	// diamonds: the subtraction deriving the default
 	// bit, and the final dispatch (which is always the last
 	// code of the packet).
-	trailerSize = 3
+	trailerSize = 2
 )
 
 // switchPacketSize returns the number of bytecodes in the replacement packet
