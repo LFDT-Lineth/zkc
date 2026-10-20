@@ -125,10 +125,10 @@ const (
 	OP_ADD Operation = iota
 	// OP_SUB integer subtraction from source
 	OP_SUB
-	// OP_CSUB integer subtraction from constant
-	OP_CSUB
 	// OP_MUL integer multiplication
 	OP_MUL
+	// OP_CSUB integer subtraction from constant
+	OP_CSUB
 	// OP_AND bitwise conjunction.
 	OP_AND
 	// OP_OR bitwise disjunction.

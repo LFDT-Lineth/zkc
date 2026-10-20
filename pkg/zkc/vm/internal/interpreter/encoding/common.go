@@ -203,18 +203,18 @@ const (
 	ADDC
 	// SUBC (subtract with constant) instruction
 	SUBC
-	// CSUB (subtract from constant) instruction
-	CSUB
 	// MULC (multiply with constant) instruction
 	MULC
+	// CSUB (subtract from constant) instruction
+	CSUB
 	// ADD_nm (addition with vector target) instruction
 	ADD_nm
 	// SUB_nm (subtraction with vector target) instruction [must follow ADD_nm]
 	SUB_nm
-	// CSUB_nm (subtract from constant with vector target) instruction [must follow SUB_nm]
-	CSUB_nm
-	// MUL_nm (multiplication with vector target) instruction [must follow CSUB_nm]
+	// MUL_nm (multiplication with vector target) instruction [must follow SUB_nm]
 	MUL_nm
+	// CSUB_nm (subtract from constant with vector target) instruction [must follow MUL_nm]
+	CSUB_nm
 	// DIVMOD (combined division / remainder) instruction
 	DIVMOD
 	// DIVMODC (combined division / remainder by constant) instruction
@@ -365,20 +365,20 @@ const (
 	WIDE_ADDC
 	// WIDE_SUBC (subtract with constant) instruction
 	WIDE_SUBC
-	// WIDE_CSUB (subtract from constant) instruction
-	WIDE_CSUB
 	// WIDE_MULC (multiply with constant) instruction
 	WIDE_MULC
+	// WIDE_CSUB (subtract from constant) instruction
+	WIDE_CSUB
 	// WIDE_ADD_nm (addition with vector target) instruction
 	WIDE_ADD_nm
 	// WIDE_SUB_nm (subtraction with vector target) instruction [must follow
 	// WIDE_ADD_nm]
 	WIDE_SUB_nm
-	// WIDE_CSUB_nm (subtract from constant with vector target) instruction [must follow WIDE_SUB_nm]
-	WIDE_CSUB_nm
 	// WIDE_MUL_nm (multiplication with vector target) instruction [must
-	// follow WIDE_CSUB_nm]
+	// follow WIDE_SUB_nm]
 	WIDE_MUL_nm
+	// WIDE_CSUB_nm (subtract from constant with vector target) instruction [must follow WIDE_MUL_nm]
+	WIDE_CSUB_nm
 	// WIDE_DIVMOD (combined division / remainder) instruction
 	WIDE_DIVMOD
 	// WIDE_DIVMODC (combined division / remainder by pooled constant)
