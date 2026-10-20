@@ -114,9 +114,9 @@ func (p *InstructionTranslator[W, F]) translateMul(targets, sources []vm.Registe
 func (p *InstructionTranslator[W, F]) translateSub(targets, sources []vm.RegisterId,
 	constant W) Expr[F] {
 	var (
-		minusOne           = mirc.BigNumber[F](big.NewInt(-1))
-		lhs                = p.WriteAndShiftRegisters(targets...)
-		rhs      []Expr[F] 
+		minusOne = mirc.BigNumber[F](big.NewInt(-1))
+		lhs      = p.WriteAndShiftRegisters(targets...)
+		rhs      []Expr[F]
 	)
 	//
 	for i := range len(sources) {
@@ -142,7 +142,6 @@ func (p *InstructionTranslator[W, F]) translateSub(targets, sources []vm.Registe
 	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
 }
 
-
 func (p *InstructionTranslator[W, F]) translateCSub(targets, sources []vm.RegisterId,
 	constant W) Expr[F] {
 	var (
@@ -155,7 +154,7 @@ func (p *InstructionTranslator[W, F]) translateCSub(targets, sources []vm.Regist
 		rhs[i] = mirc.Product(minusOne, p.ReadRegister(sources[i]))
 	}
 	// optimise case where constant == 0
-	if constant.Cmp64(0) != 0  {
+	if constant.Cmp64(0) != 0 {
 		// Case c - x0 - x1 - x2 - ... - xn
 		// Add the constant to the rhs
 		rhs = append(rhs, mirc.BigNumber[F](constant.BigInt()))
