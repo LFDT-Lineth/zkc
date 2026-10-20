@@ -944,7 +944,7 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 	//
 	var (
 		bw       = util.Some(bitwidth)
-		constant vm.Uint
+		trailingConstant vm.Uint
 		nargs    []Expr
 	)
 	// Fold all but first constants together 
@@ -952,29 +952,39 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 		var overflow bool
 
 		if c, ok := p.asConstant(e); ok && i > 0 {
-			constant, overflow = constant.Add(c)
+			trailingConstant, overflow = trailingConstant.Add(c)
 		} else {
 			nargs = append(nargs, e)
 		}
 		// NOTE: this error should be caught and reported earlier in the
 		// pipeline.
-		if overflow || !constant.FitsWithin(bitwidth) {
+		if overflow || !trailingConstant.FitsWithin(bitwidth) {
 			panic("arithmetic underflow")
 		}
 	}
-	// Check "substract from constant" case
-	// first arg is a constant
-	if c, ok := p.asConstant(args[0]); ok {
-		// check the sign of first arg minus the folded constant
-		// eg: 255 - 3
-		folded, underflow := c.Sub(constant)
+	// Check "substract from constant" case, eg: 255 - x - 3
+	// first arg is a constant c0
+	if c0, ok := p.asConstant(args[0]); ok {
+		// check the sign of c0 - trailingConstant
+		folded, underflow := c0.Sub(trailingConstant)
 		if !underflow && folded.FitsWithin(bitwidth) {
-			// 255 - 3, with nothing left to subtract: just load 252.
+			// if the result is positive, CSUB case with the folded constant
+			// folded - x0 - x1 - x2 - ... - xn
 			if len(nargs) == 1 {
+				// 255 - 3, with nothing left to subtract: just load 252.
 				return p.compileIntConst(folded, mapping, target)
 			}
 			sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
 			return append(insns, vm.SubConst(target, sources, folded))
+		} else {
+			// if the result is negative, SUB case with register 0 and the folded constant
+			// 0 - x0 - x1 - x2 - ... - xn - folded
+			sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
+			regZero := p.allocate(util.Some[uint](0))
+			sources = append([]vm.RegisterId{regZero}, sources...)
+			var zero vm.Uint
+			positiveFolded, _ := zero.Sub(folded)
+			return append(insns, vm.SubVec(target, sources, positiveFolded))
 		}
 	}
 	// first arg is a register
@@ -982,7 +992,7 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
 	// Done (subtraction never needs a cast check; cf. compileSub).
-	return append(insns, vm.SubVec(target, sources, constant))
+	return append(insns, vm.SubVec(target, sources, trailingConstant))
 
 }
 
@@ -1165,6 +1175,15 @@ func (p *StmtCompiler) evalConstant(e Expr) vm.Uint {
 }
 
 func (p *StmtCompiler) allocate(bitwidth util.Option[uint]) RegisterId {
+	// A zero-width register is the shared zero register. Reuse it so a module
+	// does not end up with more than one.
+	if bitwidth.HasValue() && bitwidth.Unwrap() == 0 {
+		for i, r := range p.registers {
+			if r.IsZeroWidth() {
+				return util.Cast[RegisterId](uint(i))
+			}
+		}
+	}
 	var (
 		n       = len(p.registers)
 		name    = fmt.Sprintf("$%d", n)
