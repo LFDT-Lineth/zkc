@@ -561,6 +561,7 @@ func NewRet[W word.Word[W]]() *Ret[W] {
 // IsUnusedConstant checks whether a given constant is the "identity element".
 // This depends on the arithmetic operation in question.  For example, for
 // addition and subtraction, this is zero.  But, for multiplication it is one.
+// For a substraction from a constant, it is false.
 func IsUnusedConstant[W word.Word[W]](op Operation, constant W) bool {
 	switch op {
 	case OP_ADD, OP_ADDMOD_P:
@@ -570,11 +571,15 @@ func IsUnusedConstant[W word.Word[W]](op Operation, constant W) bool {
 	case OP_MUL, OP_MULMOD_P:
 		return constant.Cmp64(1) == 0
 	case OP_CSUB:
-		// TODO check
 		return false
 	default:
 		panic("unknown arithmetic operation")
 	}
+}
+
+// IsSubstractOperation checks whether a given operation is a substraction operation.
+func IsSubstractOperation(op Operation) bool {
+	return op == OP_SUB || op == OP_CSUB
 }
 
 // RegisterGobTypes registers every concrete Bytecode[W] implementation with the
