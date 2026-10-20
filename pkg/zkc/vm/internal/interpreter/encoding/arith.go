@@ -41,8 +41,8 @@ func Arith[W word.Word[W]](p bytecode.Arith[W], env Environment[W]) []uint32 {
 		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant, env)
 	case n == 2 && m == 1 && cz:
 		return encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
-	case n == 2 && m == 1 && p.Op != bytecode.OP_SUB:
-		// SUB is excluded: the two-step pairing wraps each step separately,
+	case n == 2 && m == 1 && !bytecode.IsSubstractOperation(p.Op):
+		// SUB and CSUB are excluded: the two-step pairing wraps each step separately,
 		// which is not equivalent to the single wrap (at CalculateSubBitwidth
 		// width) that the vectored form performs when the first step
 		// underflows.  See encodeArith_2n1c.
