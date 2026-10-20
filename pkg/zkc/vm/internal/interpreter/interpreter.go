@@ -658,6 +658,8 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			p.pc, err = p.executeSub_2n1(p.pc, bytecodes, frame)
 		case encoding.SUBC:
 			p.pc, err = p.executeSub_1n1c(p.pc, bytecodes, pool, frame)
+		case encoding.CSUB:
+			p.pc, err = p.executeCSub_1c1n(p.pc, bytecodes, pool, frame)
 		case encoding.MUL_2n1:
 			p.pc, err = p.executeMul_2n1(p.pc, bytecodes, frame)
 		case encoding.MULC:
@@ -668,8 +670,6 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			p.pc, err = p.executeSub_nm(p.pc, bytecodes, pool, frame)
 		case encoding.MUL_nm:
 			p.pc, err = p.executeMul_nm(p.pc, bytecodes, pool, frame)
-		case encoding.CSUB:
-			p.pc, err = p.executeSub_1c1n(p.pc, bytecodes, pool, frame)
 		case encoding.CSUB_nm:
 			p.pc, err = p.executeCSub_nm(p.pc, bytecodes, pool, frame)
 		case encoding.DIVMOD:
@@ -818,7 +818,7 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 	case encoding.WIDE_MUL_nm:
 		pc, err = p.executeMul_nm(pc, codes, pool, stack)
 	case encoding.WIDE_CSUB:
-		pc, err = p.executeSub_1c1n(pc, codes, pool, stack)
+		pc, err = p.executeCSub_1c1n(pc, codes, pool, stack)
 	case encoding.WIDE_CSUB_nm:
 		pc, err = p.executeCSub_nm(pc, codes, pool, stack)
 	case encoding.WIDE_DIVMOD:
@@ -2299,8 +2299,8 @@ func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, pool []W, st
 	return pc + n, nil
 }
 
-// executeSub_1c1n implements CSUB: stack[rd] = constant - stack[rs].
-func (p *Interpreter[W]) executeSub_1c1n(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
+// executeCSub_1c1n implements CSUB: stack[rd] = constant - stack[rs].
+func (p *Interpreter[W]) executeCSub_1c1n(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
 		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
 		val                 = stack[rs]
@@ -2489,7 +2489,7 @@ func executeWriteRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	// One logical access = one timestamp shared by every data lane (see
 	// executeReadRam_sn for the ndata == 0 note).
 	ram.Tick()
-	//
+	//okay so for now, i think
 	for data.HasNext() {
 		//nolint
 		ram.Write(address, stack[data.Next()])
