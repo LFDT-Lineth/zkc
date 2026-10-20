@@ -1,0 +1,8 @@
+pub input data(addr:u16) -> (b:u16)
+
+fn main() {
+    var x:u16 = data[0]
+    var r:u8
+    //
+    r = (~x) as u8
+}
