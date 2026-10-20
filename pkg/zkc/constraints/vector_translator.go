@@ -135,7 +135,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 					local = it.translateSub(c.Target, c.Source, c.Constant)
 				}
 			case vm.OP_CSUB:
-				local = it.translateCSub(c.Target, c.Source, c.Constant)	
+				local = it.translateCSub(c.Target, c.Source, c.Constant)
 			default:
 				panic("unknown arithmetic operation")
 			}
