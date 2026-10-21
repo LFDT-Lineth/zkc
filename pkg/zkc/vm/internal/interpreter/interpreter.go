@@ -2259,18 +2259,16 @@ func (p *Interpreter[W]) executeCSub_1c1n(pc uint32, codes []uint32, pool []W, s
 	)
 	//
 	if underflow {
-		// Mirror descriptor.CalculateSubBitwidth: one is subtracted from the
-		// constant because negative values do not need to encode zero, so a
-		// power-of-two constant does not cost an extra bit.  (The constant is
-		// at least one here — a zero constant cannot underflow.)
-		cm1, _ := constant.Sub64(1)
-		//
+		// Mirror descriptor.CalculateCSubBitwidth. The source is the
+		// subtrahend, so a zero constant still underflows.
 		var (
 			module   = p.program.Module(p.fid)
 			rd_width = module.Register(rd).Bitwidth().Unwrap()
-			rs_width = module.Register(rs).Bitwidth().Unwrap()
-			bitwidth = max(rd_width, 1+max(rs_width, cm1.BitLen()))
+			bitwidth = descriptor.CalculateCSubBitwidth(
+				[]descriptor.RegisterId{rs}, constant, module).Unwrap()
 		)
+		//
+		bitwidth = max(rd_width, bitwidth)
 		// slice enough values
 		res = res.Slice(bitwidth)
 	}
