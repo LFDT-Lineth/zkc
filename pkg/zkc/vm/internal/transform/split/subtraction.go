@@ -51,15 +51,17 @@ type partSub[W word.Word[W]] struct {
 func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
 	var pre []Bytecode[W]
-	//
 
+	// Switch CSUB back to SUB if it requires splitting
+	// Splitting CSUB is not supported yet
+	// https://github.com/LFDT-Lineth/zkc/issues/2287
 	if insn.Op == bytecode.OP_CSUB && requiresSplitting(mapping, insn) {
 		var loads []Bytecode[W]
 		//
 		loads, insn, mapping = csubAsSub(mapping, alloc, insn)
 		pre = append(pre, loads...)
 	}
-
+	//
 	if !requiresSplitting(mapping, insn) {
 		return remapSubtraction(mapping, insn)
 	} else if requiresBreakup(insn) {
@@ -69,6 +71,9 @@ func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator
 	return append(pre, splitSubtraction(mapping, alloc, insn)...)
 }
 
+// csubAsSub CSUB instruction goes back to a SUB instruction and a load
+// https://github.com/LFDT-Lineth/zkc/issues/2062 will remove that handler and
+// handle splitting for CSUB
 func csubAsSub[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) ([]Bytecode[W], *bytecode.Arith[W], descriptor.LimbsMap[W]) {
 	var (
