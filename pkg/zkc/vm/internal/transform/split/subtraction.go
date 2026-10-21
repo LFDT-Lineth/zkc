@@ -47,20 +47,9 @@ type partSub[W word.Word[W]] struct {
 // to that of Addition: when a chunk's right-hand side produces more bits than
 // its left-hand side can hold, a borrow register is allocated and spliced into
 // the current chunk's LHS and the next chunk's RHS.
-// https://github.com/LFDT-Lineth/zkc/issues/2287
 func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
 	var pre []Bytecode[W]
-
-	// Switch CSUB back to SUB if it requires splitting
-	// Splitting CSUB is not supported yet
-	// https://github.com/LFDT-Lineth/zkc/issues/2287
-	if insn.Op == bytecode.OP_CSUB && requiresSplitting(mapping, insn) {
-		var loads []Bytecode[W]
-		//
-		loads, insn, mapping = csubAsSub(mapping, alloc, insn)
-		pre = append(pre, loads...)
-	}
 	//
 	if !requiresSplitting(mapping, insn) {
 		return remapSubtraction(mapping, insn)
@@ -69,29 +58,6 @@ func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator
 	}
 	//
 	return append(pre, splitSubtraction(mapping, alloc, insn)...)
-}
-
-// csubAsSub CSUB instruction goes back to a SUB instruction and a load
-// https://github.com/LFDT-Lineth/zkc/issues/2062 will remove that handler and
-// handle splitting for CSUB
-func csubAsSub[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
-) ([]Bytecode[W], *bytecode.Arith[W], descriptor.LimbsMap[W]) {
-	var (
-		zero              W
-		minuend, nmapping = allocateTemporary(insn.Constant.BitLen(), mapping, alloc)
-		climbs            = descriptor.SplitConstant(insn.Constant, mapping.RegisterWidth())
-		limbs             = nmapping.LimbIds(minuend)
-		loads             = make([]Bytecode[W], len(limbs))
-	)
-	//
-	for i, limb := range limbs {
-		loads[i] = bytecode.LoadConst(limb, climbs[i])
-	}
-	//
-	sub := bytecode.NewArith(bytecode.OP_SUB, insn.Target,
-		append([]bytecode.RegisterId{minuend}, insn.Source...), zero)
-	//
-	return loads, sub, nmapping
 }
 
 // Check whether this subtraction actually requires splitting or not.  This is
@@ -118,7 +84,6 @@ func requiresBreakup[W word.Word[W]](insn *bytecode.Arith[W]) bool {
 }
 
 // Remap a subtraction which does not require real splitting.
-// https://github.com/LFDT-Lineth/zkc/issues/2287
 func remapSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Arith[W]) []Bytecode[W] {
 	var (
 		targets = applyLimbsMapReversed(mapping, insn.Target...)
@@ -143,6 +108,25 @@ func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Al
 ) ([]Bytecode[W], *bytecode.Arith[W], descriptor.LimbsMap[W]) {
 	var (
 		zero W
+		bitwidth uint
+		sub *bytecode.Arith[W]
+		tmpReg RegisterId
+		nmapping descriptor.LimbsMap[W]
+		pre []Bytecode[W]
+		fakeAdd *bytecode.Arith[W]
+	)
+	if insn.Op == bytecode.OP_CSUB {	
+		// Determine bitwidth of temporary register
+		bitwidth = descriptor.CalculateAddBitwidth(insn.Source, zero, mapping).Unwrap()
+		// Create "fake" register to use for addition
+		tmpReg, nmapping = allocateTemporary(bitwidth, mapping, alloc)
+		// Sum the sources only
+		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source, zero)
+		// Split the addition
+		pre = Addition(nmapping, alloc, fakeAdd)
+		// create new subtraction
+		sub = bytecode.NewArith(bytecode.OP_CSUB, insn.Target, []bytecode.RegisterId{tmpReg}, insn.Constant)
+	} else {
 		// Determine bitwidth of temporary register
 		bitwidth = descriptor.CalculateAddBitwidth(insn.Source[1:], insn.Constant, mapping).Unwrap()
 		// Create "fake" register to use for addition
@@ -151,11 +135,9 @@ func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Al
 		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source[1:], insn.Constant)
 		// Split the addition
 		pre = Addition(nmapping, alloc, fakeAdd)
-		// create new subtraction
-		// https://github.com/LFDT-Lineth/zkc/issues/2287
-		// TODO check if we need to use OP_CSUB here
+        // create new subtraction
 		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg}, zero)
-	)
+	}
 	//
 	return pre, sub, nmapping
 }
@@ -178,6 +160,11 @@ func splitSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allo
 	if !isZeroDifference(mapping, insn) {
 		// Next, add borrow lines as needed
 		chunks = insertSubBorrowLines(alloc, chunks)
+	}
+	// Handle CSUB case
+	if insn.Op == bytecode.OP_CSUB {
+		return append(array.Map(chunks, csubAssignment[W]), context...)
+
 	}
 	// Convert chunks into assignments
 	return append(array.Map(chunks, subAssignment[W]), context...)
@@ -281,7 +268,7 @@ func insertSubBorrowLines[W word.Word[W]](alloc Allocator[W], chunks []partSub[W
 	return chunks
 }
 
-// subAssignment lowers a chunk back into a concrete unsigned-subtract
+// subAssignment lowers a chunk back into a concrete unsigned vectorMinusConstant
 // instruction.
 func subAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
 	var zero W
@@ -291,4 +278,16 @@ func subAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
 	}
 	// Done
 	return bytecode.SubVecConst(chunk.targets, chunk.sources, chunk.constant)
+}
+
+// csubAssignment lowers a chunk back into a concrete unsigned constantMinusVector
+// instruction.
+func csubAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
+	var zero W
+	// Check for non-subtraction case
+	if len(chunk.sources) == 0 {
+		return bytecode.LoadConstVec(chunk.targets, zero)
+	}
+	// Done
+	return bytecode.SubConstVec(chunk.targets, chunk.sources, chunk.constant)
 }
