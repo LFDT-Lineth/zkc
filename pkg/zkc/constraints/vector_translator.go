@@ -135,7 +135,19 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 					local = it.translateSub(c.Target, c.Source, c.Constant)
 				}
 			case vm.OP_CSUB:
-				local = it.translateCSub(c.Target, c.Source, c.Constant)
+				var (
+					// Determine whether this is a subtract with borrow
+					isSbb        = vm.IsSubtractWithBorrow(*c, p.enclosing)
+					hasSignedBit = hasSignedBit(c.Target, p.enclosing)
+				)
+				//
+				if isSbb && hasSignedBit {
+					local = it.translateSignedCSub(c.Target, c.Source, c.Constant)
+				} else if isSbb {
+					panic("subtract from constant with borrow bytecode missing sign bit")
+				} else {
+					local = it.translateCSub(c.Target, c.Source, c.Constant)
+				}
 			default:
 				panic("unknown arithmetic operation")
 			}

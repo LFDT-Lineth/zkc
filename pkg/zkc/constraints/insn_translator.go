@@ -190,6 +190,31 @@ func (p *InstructionTranslator[W, F]) translateSignedSub(targets, sources []vm.R
 	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
 }
 
+
+func (p *InstructionTranslator[W, F]) translateSignedCSub(targets, sources []vm.RegisterId,
+	constant W) Expr[F] {
+	var (
+		minusOne           = mirc.BigNumber[F](big.NewInt(-1))
+		lhs                = p.WriteAndShiftRegisters(targets...)
+		rhs      []Expr[F] = make([]Expr[F], len(sources))
+	)
+	//
+	// Fill the rhs with the sources
+	for i := range len(sources) {
+		rhs[i] = mirc.Product(minusOne, p.ReadRegister(sources[i]))
+	}
+	// optimise case where constant == 0
+	if constant.Cmp64(0) != 0 {
+		// Case c - x0 - x1 - x2 - ... - xn
+		// Add the constant to the rhs
+		rhs = append(rhs, mirc.BigNumber[F](constant.BigInt()))
+	}
+	// Rebalance equation
+	lhs, rhs = rebalanceSubtraction(lhs, rhs)
+	// Done
+	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
+}
+
 // Consider an assignment b, X := Y - 1.  This should be translated into the
 // constraint: X + 1 == Y + 256.b (assuming b is u1, and X/Y are u8).
 func rebalanceSubtraction[F field.Element[F]](lhs []Expr[F], rhs []Expr[F]) ([]Expr[F], []Expr[F]) {
