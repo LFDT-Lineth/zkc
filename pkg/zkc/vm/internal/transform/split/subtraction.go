@@ -107,15 +107,15 @@ func remapSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *byte
 func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) ([]Bytecode[W], *bytecode.Arith[W], descriptor.LimbsMap[W]) {
 	var (
-		zero W
+		zero     W
 		bitwidth uint
-		sub *bytecode.Arith[W]
-		tmpReg RegisterId
+		sub      *bytecode.Arith[W]
+		tmpReg   RegisterId
 		nmapping descriptor.LimbsMap[W]
-		pre []Bytecode[W]
-		fakeAdd *bytecode.Arith[W]
+		pre      []Bytecode[W]
+		fakeAdd  *bytecode.Arith[W]
 	)
-	if insn.Op == bytecode.OP_CSUB {	
+	if insn.Op == bytecode.OP_CSUB {
 		// Determine bitwidth of temporary register
 		bitwidth = descriptor.CalculateAddBitwidth(insn.Source, zero, mapping).Unwrap()
 		// Create "fake" register to use for addition
@@ -135,7 +135,7 @@ func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Al
 		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source[1:], insn.Constant)
 		// Split the addition
 		pre = Addition(nmapping, alloc, fakeAdd)
-        // create new subtraction
+		// create new subtraction
 		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg}, zero)
 	}
 	//
