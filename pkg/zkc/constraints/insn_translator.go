@@ -190,7 +190,6 @@ func (p *InstructionTranslator[W, F]) translateSignedSub(targets, sources []vm.R
 	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
 }
 
-
 func (p *InstructionTranslator[W, F]) translateSignedCSub(targets, sources []vm.RegisterId,
 	constant W) Expr[F] {
 	var (

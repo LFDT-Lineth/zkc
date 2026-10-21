@@ -140,11 +140,9 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 					isSbb        = vm.IsSubtractWithBorrow(*c, p.enclosing)
 					hasSignedBit = hasSignedBit(c.Target, p.enclosing)
 				)
-				//
+				// Rebalance only when splitting appended a u1 borrow
 				if isSbb && hasSignedBit {
 					local = it.translateSignedCSub(c.Target, c.Source, c.Constant)
-				} else if isSbb {
-					panic("subtract from constant with borrow bytecode missing sign bit")
 				} else {
 					local = it.translateCSub(c.Target, c.Source, c.Constant)
 				}
