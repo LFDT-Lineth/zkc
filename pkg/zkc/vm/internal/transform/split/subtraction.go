@@ -52,6 +52,14 @@ func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator
 ) []Bytecode[W] {
 	var pre []Bytecode[W]
 	//
+
+	if insn.Op == bytecode.OP_CSUB && requiresSplitting(mapping, insn) {
+		var loads []Bytecode[W]
+		//
+		loads, insn, mapping = csubAsSub(mapping, alloc, insn)
+		pre = append(pre, loads...)
+	}
+
 	if !requiresSplitting(mapping, insn) {
 		return remapSubtraction(mapping, insn)
 	} else if requiresBreakup(insn) {
@@ -59,6 +67,26 @@ func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator
 	}
 	//
 	return append(pre, splitSubtraction(mapping, alloc, insn)...)
+}
+
+func csubAsSub[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
+) ([]Bytecode[W], *bytecode.Arith[W], descriptor.LimbsMap[W]) {
+	var (
+		zero              W
+		minuend, nmapping = allocateTemporary(insn.Constant.BitLen(), mapping, alloc)
+		climbs            = descriptor.SplitConstant(insn.Constant, mapping.RegisterWidth())
+		limbs             = nmapping.LimbIds(minuend)
+		loads             = make([]Bytecode[W], len(limbs))
+	)
+	//
+	for i, limb := range limbs {
+		loads[i] = bytecode.LoadConst(limb, climbs[i])
+	}
+	//
+	sub := bytecode.NewArith(bytecode.OP_SUB, insn.Target,
+		append([]bytecode.RegisterId{minuend}, insn.Source...), zero)
+	//
+	return loads, sub, nmapping
 }
 
 // Check whether this subtraction actually requires splitting or not.  This is
