@@ -164,7 +164,6 @@ func splitSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allo
 	// Handle CSUB case
 	if insn.Op == bytecode.OP_CSUB {
 		return append(array.Map(chunks, csubAssignment[W]), context...)
-
 	}
 	// Convert chunks into assignments
 	return append(array.Map(chunks, subAssignment[W]), context...)
