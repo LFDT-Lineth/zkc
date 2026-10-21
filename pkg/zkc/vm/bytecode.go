@@ -230,8 +230,13 @@ func NewStampOutputRegister[W word.Word[W]](name string, bitwidth util.Option[ui
 func IsSubtractWithBorrow[W word.Word[W]](code BytecodeArith[W], env descriptor.RegisterMap[W]) bool {
 	var (
 		lhsBitwidth = descriptor.BitwidthOf(env, code.Target...).Unwrap()
-		rhsBitwidth = descriptor.CalculateSubBitwidth(code.Source, code.Constant, env).Unwrap()
+		rhsBitwidth uint
 	)
+	if code.Op == OP_CSUB {
+		rhsBitwidth = descriptor.CalculateCSubBitwidth(code.Source, code.Constant, env).Unwrap()
+	} else {
+		rhsBitwidth = descriptor.CalculateSubBitwidth(code.Source, code.Constant, env).Unwrap()
+	}
 	//
 	return lhsBitwidth >= rhsBitwidth
 }
