@@ -381,8 +381,8 @@ func Test_ZkcUnit_Basic_89(t *testing.T) {
 }
 
 // Test CSUB cases
-func Test_ZkcUnit_Basic_91(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_91", DEFAULT_UNIT_CONFIG)
+func Test_ZkcUnit_Basic_101(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_101", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_91(t *testing.T) {
