@@ -2438,7 +2438,7 @@ func executeWriteRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	// One logical access = one timestamp shared by every data lane (see
 	// executeReadRam_sn for the ndata == 0 note).
 	ram.Tick()
-	//okay so for now, i think
+	//
 	for data.HasNext() {
 		//nolint
 		ram.Write(address, stack[data.Next()])
