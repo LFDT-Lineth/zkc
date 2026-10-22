@@ -95,21 +95,15 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 			continue
 		}
 
-		// Optimization to avoid factoring if the body is 
+		// Optimization to avoid factoring if the body is
 		// - a single bit equality
-		// - a control-only body
-		// - a nested if body
+		// - a control-only body (condition returns, nested if)
 		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
 			factor[uint(i)] = false
 			continue
 		}
 
 		if bodyIsControlOnly(codes, uint(i)) {
-			factor[uint(i)] = false
-			continue
-		}
-
-		if bodyIsNestedIf(codes, uint(i)) {
 			factor[uint(i)] = false
 			continue
 		}
@@ -217,9 +211,17 @@ func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
 	return 0, false
 }
 
-
 // bodyIsControlOnly reports whether the SkipIf at index i guards only control
 // opcodes (jmp, skip, skip_if, fail, ret).
+// Example: nested if
+//	skip_if (cond) S
+//	skip_if (cond) 1
+//	jmp
+//	jmp
+//	jmp
+// Example: condition returns
+//	skip_if (cond) S
+//	return
 func bodyIsControlOnly[W Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	//
@@ -229,34 +231,6 @@ func bodyIsControlOnly[W Word[W]](codes []Bytecode[W], i uint) bool {
 	)
 	//
 	return s > 0 && taken <= uint(len(codes)) && isBodyControlOnly(codes[i+1:taken])
-}
-
-// bodyIsNestedIf reports whether the SkipIf at index i is the outer skip of a
-// nested if. The outer body is control-only and holds an inner SkipIf whose
-// body is control-only too:
-//
-//	skip_if (cond) S
-//	skip_if (cond) 1
-//	jmp
-//	jmp
-//	jmp
-func bodyIsNestedIf[W Word[W]](codes []Bytecode[W], i uint) bool {
-	// The outer body is control-only
-	if !bodyIsControlOnly(codes, i) {
-		return false
-	}
-	//
-	si := codes[i].(*bytecode.SkipIf[W])
-	taken := i + 1 + uint(si.Skip)
-	//
-	for j := i + 1; j < taken; j++ {
-		// The inner body is control-only
-		if _, ok := codes[j].(*bytecode.SkipIf[W]); ok && bodyIsControlOnly(codes, j) {
-			return true
-		}
-	}
-	//
-	return false
 }
 
 func isBodyControlOnly[W word.Word[W]](codes []Bytecode[W]) bool {
@@ -277,7 +251,6 @@ func isControlOnly[W word.Word[W]](code Bytecode[W]) bool {
 		return false
 	}
 }
-
 
 // factorSkipIf expands an equality SkipIf into the diamond described on
 // FactorSkipConditions.  The condition of the inner skip is preserved
