@@ -214,12 +214,15 @@ func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
 // bodyIsControlOnly reports whether the SkipIf at index i guards only control
 // opcodes (jmp, skip, skip_if, fail, ret).
 // Example: nested if
+//
 //	skip_if (cond) S
 //	skip_if (cond) 1
 //	jmp
 //	jmp
 //	jmp
+//
 // Example: condition returns
+//
 //	skip_if (cond) S
 //	return
 func bodyIsControlOnly[W Word[W]](codes []Bytecode[W], i uint) bool {
