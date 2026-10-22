@@ -3,11 +3,19 @@ pub input data(address:u8) -> (byte:u8)
 fn main() {
     var cond:u8 = data[0]
     var expected:u8 = data[1]
+    var valueTrue:u1 = data[2] as u1
+    var valueFalse:u1 = data[3] as u1
+    var expectedBit:u1 = data[4] as u1
     var a:u8 = 1
 
-    // Diamond shape is : skip_if (cond) S ; {jmp/skip/fail}...
+    // Register mux into a bit. FactorSkipConditions must not wrap this.
+    var computedResult:u1 = cond != 0 ? valueTrue:valueFalse
+    
+    if computedResult != expectedBit {
+        fail
+    }
 
-    // Diamond shape here has S=1, body is a ret. Do not factorableSkips.
+    // Body is control-only. FactorSkipConditions must not wrap this.
     if cond == 0 {
         return
     }

@@ -147,16 +147,17 @@ func generatesInverse[W Word[W]](si *bytecode.SkipIf[W], registers split.Allocat
 	return false
 }
 
-// bodyContainsOnlyBitEquality reports whether the SkipIf at index i heads a
-// one-register select:
+// bodyContainsOnlyBitEquality reports whether the SkipIf at index i selects a
+// single bit:
 //
 //	skip_if (cond) 2
 //	z = a
 //	skip 1
 //	z = b
 //
-// `a` and `b` are either both constants (ldc) or both registers (mov), as in
-// `z = cond != 0 ? t : f`. Either shape is left unfactored only when z is a bit.
+// Both arms are constant loads, as in `z = cond != 0 ? 1 : 0`, or both are
+// register copies, as in `z = cond != 0 ? t : f`. This matches only when z is
+// a u1.
 func bodyContainsOnlyBitEquality[W Word[W]](codes []Bytecode[W], i uint, registers split.Allocator[W]) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	//
@@ -218,9 +219,7 @@ func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
 
 
 // bodyIsControlOnly reports whether the SkipIf at index i guards only control
-// opcodes (jmp, skip, skip_if, fail, ret), as a nested if does:
-//
-//	skip_if (cond) S ; {jmp/skip/skip_if/fail/ret}...
+// opcodes (jmp, skip, skip_if, fail, ret).
 func bodyIsControlOnly[W Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	//
@@ -242,6 +241,7 @@ func bodyIsControlOnly[W Word[W]](codes []Bytecode[W], i uint) bool {
 //	jmp
 //	jmp
 func bodyIsNestedIf[W Word[W]](codes []Bytecode[W], i uint) bool {
+	// The outer body is control-only
 	if !bodyIsControlOnly(codes, i) {
 		return false
 	}
@@ -250,6 +250,7 @@ func bodyIsNestedIf[W Word[W]](codes []Bytecode[W], i uint) bool {
 	taken := i + 1 + uint(si.Skip)
 	//
 	for j := i + 1; j < taken; j++ {
+		// The inner body is control-only
 		if _, ok := codes[j].(*bytecode.SkipIf[W]); ok && bodyIsControlOnly(codes, j) {
 			return true
 		}
