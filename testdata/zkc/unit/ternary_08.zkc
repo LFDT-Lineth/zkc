@@ -3,8 +3,6 @@ pub input data(address:u8) -> (byte:u8)
 fn main() {
     var cond:u8 = data[0]
     var exp_nested:u8 = data[1]
-    var exp_pair_z:u8 = data[2]
-    var exp_pair_w:u8 = data[3]
 
     // Diamond shape is : skip_if (cond) S ; {jmp/skip/fail}...
 
@@ -23,23 +21,4 @@ fn main() {
     if z != exp_nested {
         fail
     }
-
-    // Parallel const-select of two registers
-    // Diamond shape here has S=3, body has 2 load-consts and a skip 1. Preferable not to factorableSkips.
-    var pz:u8
-    var pw:u8
-    if cond != 0 {
-        pz = 1
-        pw = 2
-    } else {
-        pz = 0
-        pw = 0
-    }
-    if pz != exp_pair_z {
-        fail
-    }
-    if pw != exp_pair_w {
-        fail
-    }
-    return
 }

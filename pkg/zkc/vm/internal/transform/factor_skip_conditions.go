@@ -98,7 +98,22 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 		// Optimization to avoid factoring if the body is control-only, a single opcode, or a
 		// paired write of the same registers on both arms. The extra bit is an added register and
 		// in some cases also adds complexity due to the extra constraints on the bit.
-		if bodyIsControlOneOpcodeOrPairedWrite(codes, uint(i)) {
+		// if bodyIsControlOneOpcodeOrPairedWrite(codes, uint(i)) {
+		// 	factor[uint(i)] = false
+		// 	continue
+		// }
+
+		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
+			factor[uint(i)] = false
+			continue
+		}
+
+		if bodyIsControlOnly(codes, uint(i)) {
+			factor[uint(i)] = false
+			continue
+		}
+
+		if bodyIsNestedIf(codes, uint(i)) {
 			factor[uint(i)] = false
 			continue
 		}
@@ -134,6 +149,75 @@ func generatesInverse[W Word[W]](si *bytecode.SkipIf[W], registers split.Allocat
 	}
 
 	return false
+}
+
+// bodyContainsOnlyBitEquality reports whether the SkipIf at index i heads a
+// one-register select:
+//
+//	skip_if (cond) 2
+//	z = a
+//	skip 1
+//	z = b
+//
+// `a` and `b` are either both constants (ldc) or both registers (mov), as in
+// `z = cond != 0 ? t : f`. Either shape is left unfactored only when z is a bit.
+func bodyContainsOnlyBitEquality[W Word[W]](codes []Bytecode[W], i uint, registers split.Allocator[W]) bool {
+	si := codes[i].(*bytecode.SkipIf[W])
+	//
+	if si.Skip != 2 || i+3 >= uint(len(codes)) {
+		return false
+	}
+	//
+	var (
+		lo, constLo, okLo = isSelectArm(codes[i+1])
+		mid, okSk         = codes[i+2].(*bytecode.Skip[W])
+		hi, constHi, okHi = isSelectArm(codes[i+3])
+	)
+	//
+	if !okLo || !okSk || !okHi || mid.Skip != 1 || lo != hi || constLo != constHi {
+		return false
+	}
+	//
+	reg := registers.Register(lo)
+	//
+	return !reg.IsNative() && reg.Bitwidth().Unwrap() == 1
+}
+
+// isSelectArm reports a one-register select arm: a constant load, or a register
+// copy. constArm is true for the load.
+func isSelectArm[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool, bool) {
+	if id, ok := isLoadConst(code); ok {
+		return id, true, true
+	}
+	//
+	if id, ok := isMove(code); ok {
+		return id, false, true
+	}
+	//
+	return 0, false, false
+}
+
+// isMove recognises a register copy (as constructed by bytecode.Assign),
+// returning its single target register.
+func isMove[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
+	a, ok := code.(*bytecode.Arith[W])
+	//
+	if !ok || a.Op != bytecode.OP_ADD || len(a.Target) != 1 || len(a.Source) != 1 || a.Constant.Cmp64(0) != 0 {
+		return 0, false
+	}
+	//
+	return a.Target[0], true
+}
+
+// isLoadConst recognises a load-constant bytecode (as constructed by
+// bytecode.LoadConst), returning its single target register.
+func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
+	if a, ok := code.(*bytecode.Arith[W]); ok &&
+		a.Op == bytecode.OP_ADD && len(a.Source) == 0 && len(a.Target) == 1 {
+		return a.Target[0], true
+	}
+	//
+	return 0, false
 }
 
 // bodyIsControlOneOpcodeOrPairedWrite reports whether the SkipIf at index i guards
@@ -178,6 +262,47 @@ func bodyIsControlOneOpcodeOrPairedWrite[W Word[W]](codes []Bytecode[W], i uint)
 	}
 	//
 	return true
+}
+
+// bodyIsControlOnly reports whether the SkipIf at index i guards only control
+// opcodes (jmp, skip, skip_if, fail, ret), as a nested if does:
+//
+//	skip_if (cond) S ; {jmp/skip/skip_if/fail/ret}...
+func bodyIsControlOnly[W Word[W]](codes []Bytecode[W], i uint) bool {
+	si := codes[i].(*bytecode.SkipIf[W])
+	//
+	var (
+		s     = uint(si.Skip)
+		taken = i + 1 + s
+	)
+	//
+	return s > 0 && taken <= uint(len(codes)) && isBodyControlOnly(codes[i+1:taken])
+}
+
+// bodyIsNestedIf reports whether the SkipIf at index i is the outer skip of a
+// nested if. The outer body is control-only and holds an inner SkipIf whose
+// body is control-only too:
+//
+//	skip_if (cond) S
+//	skip_if (cond) 1
+//	jmp
+//	jmp
+//	jmp
+func bodyIsNestedIf[W Word[W]](codes []Bytecode[W], i uint) bool {
+	if !bodyIsControlOnly(codes, i) {
+		return false
+	}
+	//
+	si := codes[i].(*bytecode.SkipIf[W])
+	taken := i + 1 + uint(si.Skip)
+	//
+	for j := i + 1; j < taken; j++ {
+		if _, ok := codes[j].(*bytecode.SkipIf[W]); ok && bodyIsControlOnly(codes, j) {
+			return true
+		}
+	}
+	//
+	return false
 }
 
 func isBodyControlOnly[W word.Word[W]](codes []Bytecode[W]) bool {
