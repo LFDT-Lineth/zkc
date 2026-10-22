@@ -10,7 +10,7 @@ fn main() {
 
     // Register mux into a bit. FactorSkipConditions must not wrap this.
     var computedResult:u1 = cond != 0 ? valueTrue:valueFalse
-    
+
     if computedResult != expectedBit {
         fail
     }

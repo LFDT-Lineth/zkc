@@ -5,7 +5,7 @@ fn main() {
     var exp_nested:u8 = data[1]
 
     // Nested if : FactorSkipConditions must not wrap this.
-     var z:u8 = 0
+    var z:u8 = 0
     if cond != 0 {
         if cond == 1 {
             z = 1
