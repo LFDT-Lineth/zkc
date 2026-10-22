@@ -95,14 +95,10 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 			continue
 		}
 
-		// Optimization to avoid factoring if the body is control-only, a single opcode, or a
-		// paired write of the same registers on both arms. The extra bit is an added register and
-		// in some cases also adds complexity due to the extra constraints on the bit.
-		// if bodyIsControlOneOpcodeOrPairedWrite(codes, uint(i)) {
-		// 	factor[uint(i)] = false
-		// 	continue
-		// }
-
+		// Optimization to avoid factoring if the body is 
+		// - a single bit equality
+		// - a control-only body
+		// - a nested if body
 		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
 			factor[uint(i)] = false
 			continue
@@ -220,49 +216,6 @@ func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
 	return 0, false
 }
 
-// bodyIsControlOneOpcodeOrPairedWrite reports whether the SkipIf at index i guards
-// a control-only span, a single opcode, or a paired write.  A paired write assigns
-// each register once on the taken arm and once on the other, in the same order.
-//
-// Recognised layouts (S = skip amount):
-//
-//	S>0:   skip_if (cond) S ; {jmp/skip/skip_if/fail/ret}...
-//	S=1:   skip_if (cond) 1 ; <one opcode>
-//	S>=2:  skip_if (cond) S ; (z_i=…)×n ; {skip n | jmp} ; (z_i=…)×n
-//	       with n = S-1.  The k-th write on each side targets the same register
-//	       and has a single target (ldc, mov, add, …).
-func bodyIsControlOneOpcodeOrPairedWrite[W Word[W]](codes []Bytecode[W], i uint) bool {
-	si := codes[i].(*bytecode.SkipIf[W])
-	//
-	var (
-		s     = uint(si.Skip)
-		taken = i + 1 + s
-		n     = uint(len(codes))
-	)
-	if s > 0 && taken <= n && isBodyControlOnly(codes[i+1:taken]) {
-		return true
-	}
-	// A skip of 1 guards a single opcode: wrapping cannot share the comparison.
-	if s == 1 {
-		return i+1 < n
-	}
-	// S>=2: n single-target writes, skip n or jmp, n writes of the same registers.
-	nRegs := s - 1
-	if s < 2 || taken+nRegs > n || !isSkipNOrJmp(codes[taken-1], nRegs) {
-		return false
-	}
-	//
-	for k := uint(0); k < nRegs; k++ {
-		lo, okLo := isSingleTargetWrite(codes[i+1+k])
-		hi, okHi := isSingleTargetWrite(codes[taken+k])
-		//
-		if !okLo || !okHi || lo != hi {
-			return false
-		}
-	}
-	//
-	return true
-}
 
 // bodyIsControlOnly reports whether the SkipIf at index i guards only control
 // opcodes (jmp, skip, skip_if, fail, ret), as a nested if does:
@@ -315,18 +268,6 @@ func isBodyControlOnly[W word.Word[W]](codes []Bytecode[W]) bool {
 	return true
 }
 
-// isSkipNOrJmp is the middle of a parallel const-select: skip the else loads
-// in-vector (skip n) or by leaving the vector (jmp).
-func isSkipNOrJmp[W word.Word[W]](code Bytecode[W], n uint) bool {
-	if skip, ok := code.(*bytecode.Skip[W]); ok {
-		return uint(skip.Skip) == n
-	}
-	//
-	_, jmp := code.(*bytecode.Jmp[W])
-	//
-	return jmp
-}
-
 func isControlOnly[W word.Word[W]](code Bytecode[W]) bool {
 	switch code.(type) {
 	case *bytecode.Skip[W], *bytecode.SkipIf[W], *bytecode.Jmp[W], *bytecode.Fail[W], *bytecode.Ret[W]:
@@ -336,16 +277,6 @@ func isControlOnly[W word.Word[W]](code Bytecode[W]) bool {
 	}
 }
 
-// isSingleTargetWrite reports a bytecode that writes exactly one register
-// (ldc, mov, add, a one-result call, …).
-func isSingleTargetWrite[W word.Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
-	defs := code.Definitions()
-	if len(defs) != 1 {
-		return 0, false
-	}
-	//
-	return defs[0], true
-}
 
 // factorSkipIf expands an equality SkipIf into the diamond described on
 // FactorSkipConditions.  The condition of the inner skip is preserved
