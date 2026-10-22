@@ -1,26 +1,15 @@
-pub input data(address:u8) -> (byte:u8)
+pub input data(address:u8) -> (byte:u1)
 
 fn main() {
-    var cond:u8 = data[0]
-    var expected:u8 = data[1]
-    var valueTrue:u1 = data[2] as u1
-    var valueFalse:u1 = data[3] as u1
-    var expectedBit:u1 = data[4] as u1
-    var a:u8 = 1
+    var cond:u1 = data[0]
+    var valueTrue:u1 = data[1]
+    var valueFalse:u1 = data[2]
+    var expectedBit:u1 = data[3]
 
     // Register mux into a bit. FactorSkipConditions must not wrap this.
     var computedResult:u1 = cond != 0 ? valueTrue:valueFalse
 
     if computedResult != expectedBit {
-        fail
-    }
-
-    // Body is control-only. FactorSkipConditions must not wrap this.
-    if cond == 0 {
-        return
-    }
-
-    if a != expected {
         fail
     }
     return

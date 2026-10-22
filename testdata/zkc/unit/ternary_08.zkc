@@ -3,6 +3,8 @@ pub input data(address:u8) -> (byte:u8)
 fn main() {
     var cond:u8 = data[0]
     var exp_nested:u8 = data[1]
+    var expected:u8 = data[2]
+    var a:u8 = 1
 
     // Nested if : FactorSkipConditions must not wrap this.
     var z:u8 = 0
@@ -18,4 +20,14 @@ fn main() {
     if z != exp_nested {
         fail
     }
+
+    // Body is control-only. FactorSkipConditions must not wrap this.
+    if cond == 0 {
+        return
+    }
+
+    if a != expected {
+        fail
+    }
+    return
 }
