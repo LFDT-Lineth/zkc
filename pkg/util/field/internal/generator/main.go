@@ -11,7 +11,7 @@ import (
 	"github.com/consensys/bavard"
 )
 
-const copyrightHolder = "Consensys Software Inc."
+const copyrightHolder = "Consensys Incorporated"
 
 //go:generate go run main.go
 func main() {
