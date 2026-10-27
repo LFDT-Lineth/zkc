@@ -18,6 +18,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
@@ -64,8 +65,8 @@ type ProgramPoint = descriptor.ProgramPoint
 // internal machine failure which is not expected (and signals some kind of bug
 // somewhere).  The traceable flag holds when the given execution can be traced
 // (i.e. when no errors in the latter category arise).
-func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint64,
-) (output map[string][]byte, traceable bool, errs []error) {
+func BootAndExecute[W Word[W], M Core[W]](m M, input map[string]bit.Array, n uint64,
+) (output map[string]bit.Array, traceable bool, errs []error) {
 	//
 	var (
 		steps  uint64
@@ -97,8 +98,8 @@ func BootAndExecute[W Word[W], M Core[W]](m M, input map[string][]byte, n uint64
 // checkpoints it according to a given strategy.  This produces some number of
 // checkpoints, the final outputs, an indication as to whether this execution can
 // be traced, and any errors arising.
-func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string][]byte, strategy ShardingStrategy,
-) (checkpoints []CheckPoint, outputs map[string][]byte, traceable bool, errors []error) {
+func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strategy ShardingStrategy,
+) (checkpoints []CheckPoint, outputs map[string]bit.Array, traceable bool, errors []error) {
 	var (
 		err   error
 		steps uint64
@@ -161,8 +162,8 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string][]byte, strategy 
 // is not expected (and signals some kind of bug somewhere).  A shard is
 // returned when the given execution can be traced (i.e. when no errors in the
 // latter category arise).
-func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], input map[string][]byte,
-) (trace util.Option[Shard[F]], output map[string][]byte, errs []error) {
+func BootAndTrace[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], input map[string]bit.Array,
+) (trace util.Option[Shard[F]], output map[string]bit.Array, errs []error) {
 	//
 	var (
 		traceable bool
@@ -274,9 +275,9 @@ func ExecuteAll[W Word[W], M Core[W]](machine M, n uint64) (uint64, error) {
 
 // FilterInputs restricts the given set of (parsed) inputs to the program's
 // declared input memories.
-func FilterInputs[W Word[W], T any](p Program[W], input map[string][]T) (map[string][]T, []string) {
+func FilterInputs[W Word[W], T any](p Program[W], input map[string]T) (map[string]T, []string) {
 	var (
-		inputs  = make(map[string][]T)
+		inputs  = make(map[string]T)
 		ignores []string
 	)
 	//
@@ -299,7 +300,7 @@ func FilterInputs[W Word[W], T any](p Program[W], input map[string][]T) (map[str
 // DecodeInputsOutputs decodes  given set of input and output bytes
 // appropriately for the given machine.  If there are unknown or conflicting
 // inputs, then errors are returned.
-func DecodeInputsOutputs[W Word[W]](program descriptor.Program[W], data map[string][]byte,
+func DecodeInputsOutputs[W Word[W]](program descriptor.Program[W], data map[string]bit.Array,
 ) (inputs, outputs map[string][]W, errs []error) {
 	//
 	var visited = make(map[string]bool)
@@ -343,7 +344,7 @@ func DecodeInputsOutputs[W Word[W]](program descriptor.Program[W], data map[stri
 // DecodeInputs configures a given set of input bytes appropriately for the
 // given machine.  If there are unknown or conflicting inputs, then errors are
 // returned.
-func DecodeInputs[W Word[W], C Core[W]](m C, input map[string][]byte) (map[string][]W, []error) {
+func DecodeInputs[W Word[W], C Core[W]](m C, input map[string]bit.Array) (map[string][]W, []error) {
 	var (
 		visited = make(map[string]bool)
 		inputs  = make(map[string][]W)
@@ -376,8 +377,8 @@ func DecodeInputs[W Word[W], C Core[W]](m C, input map[string][]byte) (map[strin
 
 // EncodeOutputs extract the output from a given machine and encodes it into
 // byte arrays.
-func EncodeOutputs[W Word[W], M Core[W]](m M) map[string][]byte {
-	var outputs = make(map[string][]byte)
+func EncodeOutputs[W Word[W], M Core[W]](m M) map[string]bit.Array {
+	var outputs = make(map[string]bit.Array)
 	// scan modules
 	// scan output modules
 	for iter := m.Outputs(); iter.HasNext(); {

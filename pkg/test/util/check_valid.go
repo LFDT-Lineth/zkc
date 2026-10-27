@@ -13,8 +13,6 @@
 package util
 
 import (
-	"bytes"
-	"encoding/hex"
 	"fmt"
 	"testing"
 
@@ -162,9 +160,9 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 		for name, actual := range actuals {
 			if expected, ok := test.data[name]; ok {
 				//
-				if !bytes.Equal(expected, actual) {
+				if !expected.Equals(actual) {
 					t.Errorf("test (%s:%d) has incorrect output (expected 0x%s, actual 0x%s)",
-						test.filename, test.line, hex.EncodeToString(expected), hex.EncodeToString(actual))
+						test.filename, test.line, expected.String(), actual.String())
 				}
 			}
 		}

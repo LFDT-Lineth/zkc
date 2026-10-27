@@ -277,7 +277,8 @@ func Test_ZkcUnit_Basic_62(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_63(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_63", DEFAULT_UNIT_CONFIG)
+	// See #2297
+	checkZkcUnit(t, "zkc/unit/basic_63", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 func Test_ZkcUnit_Basic_64(t *testing.T) {

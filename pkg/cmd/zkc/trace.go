@@ -13,7 +13,6 @@
 package zkc
 
 import (
-	"encoding/hex"
 	"fmt"
 	"os"
 	"slices"
@@ -25,6 +24,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -92,7 +92,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		computed = false
 		//
 		tr      trace.LazyTrace[F]
-		outputs map[string][]byte
+		outputs map[string]bit.Array
 	)
 	// Sanity permitted flag combinations
 	checkFlags(cmd, traceFlags)
@@ -134,8 +134,8 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	// Generate output
 	// =====================================================
 	// Write outputs
-	for name, bytes := range outputs {
-		fmt.Printf("%s = 0x%s\n", name, hex.EncodeToString(bytes))
+	for name, bits := range outputs {
+		fmt.Printf("%s = 0x%s\n", name, bits.String())
 	}
 	// print trace statistics (if requested).  Only meaningful when a trace was
 	// actually generated (i.e. no execution errors).

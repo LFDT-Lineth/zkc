@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/zkc"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -44,7 +45,7 @@ type TestVector struct {
 	// indicates whether this test is expected to pass or fail.
 	expected bool
 	// raw data obtained from JSON
-	data map[string][]byte
+	data map[string]bit.Array
 }
 
 // CompileZkc compiles a single zkc source file, potentially producing errors.
@@ -199,7 +200,7 @@ func compileTestProgram(testfile, ext string, cfg codegen.Config) (vm vm.Program
 	return vm, nil
 }
 
-func decodeInputsOutputs[W vm.Word[W]](t *testing.T, p vm.Program[W], data map[string][]byte,
+func decodeInputsOutputs[W vm.Word[W]](t *testing.T, p vm.Program[W], data map[string]bit.Array,
 ) (inputs map[string][]W, outputs map[string][]W) {
 	inputs, outputs, errs := vm.DecodeInputsOutputs(p, data)
 	//

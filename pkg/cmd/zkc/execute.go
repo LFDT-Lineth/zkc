@@ -13,12 +13,12 @@
 package zkc
 
 import (
-	"encoding/hex"
 	"fmt"
 	"os"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
@@ -59,8 +59,8 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 	var (
 		errors  []error
 		build   = GetBuildConfig[F](cmd, field)
-		input   map[string][]byte
-		outputs map[string][]byte
+		input   map[string]bit.Array
+		outputs map[string]bit.Array
 	)
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
@@ -82,8 +82,8 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 	// Generate output
 	// =====================================================
 	// Write outputs
-	for name, bytes := range outputs {
-		fmt.Printf("%s = 0x%s\n", name, hex.EncodeToString(bytes))
+	for name, bits := range outputs {
+		fmt.Printf("%s = 0x%s\n", name, bits.String())
 	}
 	// =====================================================
 	// Report Execution Failures
@@ -110,7 +110,7 @@ func init() {
 // executeWithGogen executes the word machine by generating native Go, compiling
 // it, and running the resulting binary as a subprocess — the same path the
 // gogen differential tests take, exposed here as the "--gogen" execution mode.
-func executeWithGogen(program vm.Program[vm.Uint], input map[string][]byte) (map[string][]byte, []error) {
+func executeWithGogen(program vm.Program[vm.Uint], input map[string]bit.Array) (map[string]bit.Array, []error) {
 	var (
 		stats = util.NewPerfStats()
 	)

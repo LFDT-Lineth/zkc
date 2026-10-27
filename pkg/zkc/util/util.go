@@ -13,32 +13,33 @@
 package util
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 )
 
 // ParseJsonInputFile parses a json input file into an input / output mapping,
 // as suitable for booting a machine with.  This can fail with a parsing error.
-func ParseJsonInputFile(bytes []byte) (map[string][]byte, error) {
+func ParseJsonInputFile(bytes []byte) (map[string]bit.Array, error) {
 	var (
 		rawData map[string]string
-		data    map[string][]byte
+		data    map[string]bit.Array
 		err     error
 	)
 	// Unmarshall data
 	if err = json.Unmarshal(bytes, &rawData); err == nil {
 		// Parse data
-		data = make(map[string][]byte)
+		data = make(map[string]bit.Array)
 		// Initialise data
 		for k, v := range rawData {
 			// Replace occurrences of "_"
 			w := strings.ReplaceAll(v, "_", "")
 			//
 			if strings.HasPrefix(w, "0x") {
-				data[k], err = hex.DecodeString(w[2:])
+				data[k], err = bit.ParseArray(w[2:])
 			} else if strings.HasPrefix(w, "0b") {
 				bits := w[2:]
 				//
@@ -53,14 +54,10 @@ func ParseJsonInputFile(bytes []byte) (map[string][]byte, error) {
 				val.Lsh(&val, uint(nbytes*8-len(bits)))
 				buf := make([]byte, nbytes)
 				val.FillBytes(buf)
-				data[k] = buf
-			} else if w != "" {
-				var val big.Int
-				if _, ok := val.SetString(w, 10); !ok {
-					return nil, fmt.Errorf("malformed numeric literal \"%s\"", w)
-				}
 				//
-				data[k] = val.Bytes()
+				data[k] = bit.NewArray(buf, uint(len(bits)), bit.BigEndian)
+			} else if w != "" {
+				return nil, fmt.Errorf("malformed numeric literal \"%s\"", w)
 			}
 			//
 			if err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -74,8 +75,8 @@ func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T], E Word[E]](conf
 // embodied in this file.  This can return one (or more) errors if, for example,
 // the input is malformed (e.g. is missing expected fields and/or contains
 // unexpected fields).
-func (p TraceBuilder[W, F, T, E]) BootAndTrace(inputs map[string][]byte,
-) (outputs map[string][]byte, tr util.Option[trace.LazyTrace[F]], errors []error) {
+func (p TraceBuilder[W, F, T, E]) BootAndTrace(inputs map[string]bit.Array,
+) (outputs map[string]bit.Array, tr util.Option[trace.LazyTrace[F]], errors []error) {
 	// Check whether we have a sharding strategy
 	if p.config.shardingStrategy.IsEmpty() {
 		return p.bootAndTraceUnsharded(inputs)
@@ -85,8 +86,8 @@ func (p TraceBuilder[W, F, T, E]) BootAndTrace(inputs map[string][]byte,
 }
 
 // unsharded BootAndTrace simply traces directly.
-func (p TraceBuilder[W, F, T, E]) bootAndTraceUnsharded(inputs map[string][]byte,
-) (outputs map[string][]byte, tr util.Option[trace.LazyTrace[F]], errors []error) {
+func (p TraceBuilder[W, F, T, E]) bootAndTraceUnsharded(inputs map[string]bit.Array,
+) (outputs map[string]bit.Array, tr util.Option[trace.LazyTrace[F]], errors []error) {
 	var (
 		shard util.Option[trace.Shard[F]]
 	)
@@ -110,8 +111,8 @@ func (p TraceBuilder[W, F, T, E]) bootAndTraceUnsharded(inputs map[string][]byte
 
 // Sharded BootAndTrace performs sharding according to the given sharding
 // strategy.
-func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string][]byte,
-) (map[string][]byte, util.Option[trace.LazyTrace[F]], []error) {
+func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string]bit.Array,
+) (map[string]bit.Array, util.Option[trace.LazyTrace[F]], []error) {
 	var (
 		//
 		strategy = p.config.shardingStrategy.Unwrap()
@@ -194,7 +195,7 @@ func replicateOutputs(cp CheckPoint, outputs [][]byte) {
 // differ: EncodeBytes packs cells tightly by bitwidth, whereas checkpoint pages
 // (see WriteOnce.Checkpoint / Pack) use a whole number of bytes per cell.
 // Hence, the outputs are decoded back into words and repacked.
-func indexOutputs[W word.Word[W]](p Program[W], outputs map[string][]byte) [][]byte {
+func indexOutputs[W word.Word[W]](p Program[W], outputs map[string]bit.Array) [][]byte {
 	var indexed = make([][]byte, len(p.Modules()))
 
 	for mid, m := range p.Modules() {
