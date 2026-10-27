@@ -46,9 +46,10 @@ var rootCmd = &cobra.Command{
 				// so the Go toolchain recorded the module version.
 				fmt.Printf("%s", info.Main.Version)
 			} else {
-				// Unknown, e.g. "go run" or "go build cmd/go-corset/main.go": building
-				// from a file path records no module version.
-				fmt.Printf("(unknown version)")
+				// Unknown, e.g. "go build cmd/go-corset/main.go": building from a
+				// file path records no module version.  Report "(devel)", as Go
+				// itself does for "go run ./cmd/go-corset".
+				fmt.Printf("(devel)")
 			}
 
 			fmt.Println()

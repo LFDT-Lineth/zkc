@@ -51,15 +51,16 @@ var rootCmd = &cobra.Command{
 
 			if Version != "" {
 				// Built via "make"
-				fmt.Printf("\"%s\"", Version)
+				fmt.Printf("%s", Version)
 			} else if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
 				// Built as a package (e.g. "go install" or "go build ./cmd/zkc"),
 				// so the Go toolchain recorded the module version.
-				fmt.Printf("\"%s\"", info.Main.Version)
+				fmt.Printf("%s", info.Main.Version)
 			} else {
-				// Unknown, e.g. "go run" or "go build cmd/zkc/main.go": building
-				// from a file path records no module version.
-				fmt.Printf("(unknown version)")
+				// Unknown, e.g. "go build cmd/zkc/main.go": building from a file
+				// path records no module version.  Report "(devel)", as Go itself
+				// does for "go run ./cmd/zkc".
+				fmt.Printf("(devel)")
 			}
 
 			fmt.Println()
