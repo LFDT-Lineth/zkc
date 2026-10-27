@@ -5,6 +5,7 @@ output WOM(address_1:u2, address_2:u6) -> (value:u4)
 fn main<>() {
     var r:u4 = 7
     WOM[0, 16] = f(r)
+    WOM[0, 17] = 0
 }
 
 fn f<>(r:u4) -> (x:u4) {

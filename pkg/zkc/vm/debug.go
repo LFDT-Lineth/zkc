@@ -16,6 +16,7 @@ import (
 	"math"
 	"slices"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
 )
@@ -27,7 +28,7 @@ import (
 // register values).  This is the execution primitive underlying the `zkc debug`
 // command: it uses the interpreter's breakpoint facility (enabled by running in
 // tracing mode) so that a breakpoint fires as each vector completes.
-func BootAndDebug[W Word[W]](program Program[W], in map[string][]byte, observer func(State[W])) []error {
+func BootAndDebug[W Word[W]](program Program[W], in map[string]bit.Array, observer func(State[W])) []error {
 	// Construct a tracing interpreter, which registers a breakpoint at the
 	// terminal of every bytecode vector.
 	bci := interpreter.New(program, true)

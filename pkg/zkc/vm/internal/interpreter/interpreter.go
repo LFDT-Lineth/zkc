@@ -2318,12 +2318,9 @@ func (p *Interpreter[W]) executeWriteWom_sn(pc uint32, codes []uint32, stack []W
 	address = decodeAddress(addr, wom.Descriptor(), stack)
 	//
 	for data.HasNext() {
-		// Sanity check
-		if !wom.CanWrite(address) {
-			return pc, p.failure("address %x already written for write-only memory %s", address, wom.descriptor.Name())
+		if err := wom.Write(address, stack[data.Next()]); err != nil {
+			return pc, p.failure("%v", err)
 		}
-		//nolint
-		wom.Write(address, stack[data.Next()])
 		//
 		address++
 	}

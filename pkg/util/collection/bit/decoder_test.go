@@ -47,13 +47,16 @@ func Test_BitDecoder_04(t *testing.T) {
 
 func checkDecoder[T comparable](t *testing.T, width uint, input []byte, output []T, decoder func([]byte) T) {
 	var (
+		n = uint(len(input) * 8)
+		// construct array of given size
+		bits = NewArray(input, n, BigEndian)
 		// Determine expected residue (i.e. bits left)
-		residue = uint(len(input)*8) % width
+		residue = n % width
 	)
 	//
 	t.Parallel()
 	//
-	actual, remainder := DecodeArray(width, input, decoder)
+	actual, remainder := bits.Decode(0, width, BigEndian, decoder)
 	// Check correct residue
 	if residue != remainder {
 		t.Errorf("incorrect number of residual bits (expected %v, received %v)", residue, remainder)

@@ -1,0 +1,19 @@
+// Output replication with a sub-byte data register.  The output written in
+// shard i must be visible (replicated) in every other shard, and the
+// replicated bytes must round-trip the nibble-packed external encoding.
+input data(addr:u8) -> (b:u4)
+output out(addr:u8) -> (b:u4)
+
+fn main() {
+    var n:u8 = data[0] as u8
+    copy!(0, n)
+}
+
+#[global]
+fn copy(i:u8, n:u8) -> ! {
+    if i == n {
+        done
+    }
+    out[i] = data[i + 1]
+    copy!(i + 1, n)
+}

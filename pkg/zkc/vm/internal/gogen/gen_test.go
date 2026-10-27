@@ -29,6 +29,7 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler"
@@ -844,7 +845,10 @@ func TestGenDifferential(t *testing.T) {
 }
 
 func TestMainHarnessRejectsBadInputNames(t *testing.T) {
-	src, err := vm.GenerateGo(compileUint(t, doubleSrc, false), vm.GoGenConfig{})
+	var (
+		data     = bit.NewArray(nil, 0, bit.BigEndian)
+		src, err = vm.GenerateGo(compileUint(t, doubleSrc, false), vm.GoGenConfig{})
+	)
 	if err != nil {
 		t.Fatalf("GenerateGo: %v", err)
 	}
@@ -853,11 +857,11 @@ func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 
 	for _, tc := range []struct {
 		name string
-		in   map[string][]byte
+		in   map[string]bit.Array
 		want string
 	}{
-		{"missing", map[string][]byte{}, `missing input "data"`},
-		{"unknown", map[string][]byte{"data": {3}, "extra": {1}}, `unknown input "extra"`},
+		{"missing", map[string]bit.Array{}, `missing input "data"`},
+		{"unknown", map[string]bit.Array{"data": data, "extra": data}, `unknown input "extra"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, errored, err := gogen.Run(prog, tc.in, io.Discard)
@@ -890,7 +894,7 @@ func inputName(in map[string][]uint64) string {
 // memories as bytes and whether execution errored.  Sharing the bytes (rather
 // than the raw cells) guarantees both executors see identical, width-valid
 // inputs — see encodeInputs.
-func referenceRun(t *testing.T, p vm.Program[vm.Uint], in map[string][]byte) (map[string][]byte, bool) {
+func referenceRun(t *testing.T, p vm.Program[vm.Uint], in map[string]bit.Array) (map[string]bit.Array, bool) {
 	t.Helper()
 
 	var (
@@ -955,7 +959,7 @@ func buildGeneratedProgram(t *testing.T, src string) (string, error) {
 // runProgram runs the compiled program on packed-byte inputs (see encodeInputs),
 // returning its output memories as bytes and whether it reported an execution
 // error.
-func runProgram(t *testing.T, prog string, in map[string][]byte) (map[string][]byte, bool) {
+func runProgram(t *testing.T, prog string, in map[string]bit.Array) (map[string]bit.Array, bool) {
 	t.Helper()
 
 	out, errored, err := gogen.Run(prog, in, io.Discard)
@@ -971,8 +975,8 @@ func runProgram(t *testing.T, prog string, in map[string][]byte) (map[string][]b
 // width: the byte encoding carries exactly that many bits, so an out-of-width
 // cell is not expressible — masking yields the canonical input both executors
 // then consume identically.
-func encodeInputs(p vm.Program[vm.Uint], in map[string][]uint64) map[string][]byte {
-	out := map[string][]byte{}
+func encodeInputs(p vm.Program[vm.Uint], in map[string][]uint64) map[string]bit.Array {
+	out := map[string]bit.Array{}
 
 	for it := p.Inputs(); it.HasNext(); {
 		m := it.Next()

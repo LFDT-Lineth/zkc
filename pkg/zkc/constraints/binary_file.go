@@ -27,6 +27,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/typed"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	tracer "github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/trace"
@@ -300,7 +301,7 @@ func (p *BinaryFile[F, W]) Check(config vm.TraceConfig, trace trace.LazyTrace[F]
 // steps at a time, producing any outputs arising.  Execution is faster than
 // trace because it does not record any internal information about the trace ---
 // it simply extracts the outputs at the end.
-func (p *BinaryFile[F, W]) Execute(input map[string][]byte) (output map[string][]byte, errs []error) {
+func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array) (output map[string]bit.Array, errs []error) {
 	var (
 		bci = vm.NewBytecodeInterpreter(p.ExecutionProgram())
 	)
@@ -327,8 +328,8 @@ func (p *BinaryFile[F, W]) Execute(input map[string][]byte) (output map[string][
 // failure of some kind (e.g. it executed the fail instruction, or an arithmetic
 // overflow arose, etc).  In this case, the trace is returned so it can be used
 // (e.g. when testing to check that the constraints fail as they should, etc).
-func (p *BinaryFile[F, W]) Trace(input map[string][]byte, cfg vm.TraceConfig,
-) (output map[string][]byte, trace util.Option[trace.LazyTrace[F]], errors []error) {
+func (p *BinaryFile[F, W]) Trace(input map[string]bit.Array, cfg vm.TraceConfig,
+) (output map[string]bit.Array, trace util.Option[trace.LazyTrace[F]], errors []error) {
 	//
 	var (
 		// Initialise trace builder from configuration

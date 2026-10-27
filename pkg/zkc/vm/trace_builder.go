@@ -17,7 +17,12 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -70,8 +75,8 @@ func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T], E Word[E]](conf
 // embodied in this file.  This can return one (or more) errors if, for example,
 // the input is malformed (e.g. is missing expected fields and/or contains
 // unexpected fields).
-func (p TraceBuilder[W, F, T, E]) BootAndTrace(inputs map[string][]byte,
-) (outputs map[string][]byte, tr util.Option[trace.LazyTrace[F]], errors []error) {
+func (p TraceBuilder[W, F, T, E]) BootAndTrace(inputs map[string]bit.Array,
+) (outputs map[string]bit.Array, tr util.Option[trace.LazyTrace[F]], errors []error) {
 	// Check whether we have a sharding strategy
 	if p.config.shardingStrategy.IsEmpty() {
 		return p.bootAndTraceUnsharded(inputs)
@@ -81,8 +86,8 @@ func (p TraceBuilder[W, F, T, E]) BootAndTrace(inputs map[string][]byte,
 }
 
 // unsharded BootAndTrace simply traces directly.
-func (p TraceBuilder[W, F, T, E]) bootAndTraceUnsharded(inputs map[string][]byte,
-) (outputs map[string][]byte, tr util.Option[trace.LazyTrace[F]], errors []error) {
+func (p TraceBuilder[W, F, T, E]) bootAndTraceUnsharded(inputs map[string]bit.Array,
+) (outputs map[string]bit.Array, tr util.Option[trace.LazyTrace[F]], errors []error) {
 	var (
 		shard util.Option[trace.Shard[F]]
 	)
@@ -106,8 +111,8 @@ func (p TraceBuilder[W, F, T, E]) bootAndTraceUnsharded(inputs map[string][]byte
 
 // Sharded BootAndTrace performs sharding according to the given sharding
 // strategy.
-func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string][]byte,
-) (map[string][]byte, util.Option[trace.LazyTrace[F]], []error) {
+func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string]bit.Array,
+) (map[string]bit.Array, util.Option[trace.LazyTrace[F]], []error) {
 	var (
 		//
 		strategy = p.config.shardingStrategy.Unwrap()
@@ -115,18 +120,21 @@ func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string][]byte,
 		checkpoints, outputs, traceable, errors = BootAndCheckpoint(p.execution, inputs, strategy)
 		//
 		futures []trace.Future[F]
+		//
+
 	)
 	// Sanity check
 	if !traceable {
 		return outputs, util.None[trace.LazyTrace[F]](), errors
 	}
 	// Perform tracing in parallel (or sequentially)
-	futures = p.traceCheckPoints(checkpoints)
+	futures = p.traceCheckPoints(checkpoints, indexOutputs(p.tracing, outputs))
 	// Done
 	return outputs, util.Some(trace.NewLazyTrace(futures...)), errors
 }
 
-func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint) (jobs []trace.Future[F]) {
+func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint, outputs [][]byte,
+) (jobs []trace.Future[F]) {
 	var (
 		strategy = p.config.shardingStrategy.Unwrap()
 		//
@@ -143,6 +151,8 @@ func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint) (jo
 			if i != 0 {
 				steps++
 			}
+			// Replicate outputs
+			replicateOutputs(cp, outputs)
 			// Trace ith shard
 			steps, oshard, errs1 := RestoreAndTraceFor[W, F, T](p.tracing, cp, strategy.shardFunction, steps)
 			// Sanity check what happened
@@ -161,6 +171,43 @@ func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint) (jo
 	}
 	//
 	return futures
+}
+
+// replicateOutputs overwrites the checkpointed contents of every output memory
+// with the (final) replicated output, so that each shard observes the complete
+// output from the start.  The outputs must already be in checkpoint page
+// format (see indexOutputs).
+func replicateOutputs(cp CheckPoint, outputs [][]byte) {
+	var memories = cp.Memories()
+	// Overwrite contents of output memories replicated output.
+	for i, mem := range memories {
+		var mid = mem.ModuleId()
+		//
+		if bytes := outputs[mid]; bytes != nil {
+			page := checkpoint.NewPage(0, bytes)
+			memories[i] = checkpoint.NewMemory(mid, 0, page)
+		}
+	}
+}
+
+// indexOutputs converts the (byte-encoded) outputs produced by EncodeOutputs
+// into checkpoint page format, indexed by module identifier.  The two encodings
+// differ: EncodeBytes packs cells tightly by bitwidth, whereas checkpoint pages
+// (see WriteOnce.Checkpoint / Pack) use a whole number of bytes per cell.
+// Hence, the outputs are decoded back into words and repacked.
+func indexOutputs[W word.Word[W]](p Program[W], outputs map[string]bit.Array) [][]byte {
+	var indexed = make([][]byte, len(p.Modules()))
+
+	for mid, m := range p.Modules() {
+		if m, ok := m.(*descriptor.Memory[W]); ok && m.IsWriteOnly() {
+			if bytes, ok := outputs[m.Name()]; ok {
+				words := DecodeBytes(bytes, *m)
+				indexed[mid] = interpreter.Pack(p.Field(), m.DataRegisters(), words)
+			}
+		}
+	}
+	//
+	return indexed
 }
 
 // ============================================================================

@@ -23,6 +23,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -35,7 +36,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func filterInputs[W vm.Word[W], T any](p vm.Program[W], input map[string][]T) map[string][]T {
+func filterInputs[W vm.Word[W], T any](p vm.Program[W], input map[string]T) map[string]T {
 	inputs, ignored := vm.FilterInputs(p, input)
 	//
 	for _, field := range ignored {
@@ -94,9 +95,9 @@ func writeMemProfile(cmd *cobra.Command) {
 // ParseInputFile parses a given input file (which is currently assumed to be
 // JSON).  An input file contains the input bytes for each ROM in the given
 // program.
-func ParseInputFile(filename string) map[string][]byte {
+func ParseInputFile(filename string) map[string]bit.Array {
 	var (
-		inputFile map[string][]byte
+		inputFile map[string]bit.Array
 		// Read input file
 		fn, fileBytes, err = file.ReadAndUncompress(filename)
 	)

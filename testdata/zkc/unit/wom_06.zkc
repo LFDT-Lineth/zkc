@@ -1,0 +1,9 @@
+// Rewriting a cell with the same value is permitted (the constraints cannot
+// distinguish it from the original write), but a different value is not.
+input data(addr:u8) -> (b:u8)
+output WOM(addr:u8) -> (b:u8)
+
+fn main() {
+    WOM[0] = 1
+    WOM[0] = data[0]
+}

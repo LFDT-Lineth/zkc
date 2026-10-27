@@ -576,6 +576,18 @@ func (g *generator) emitMemHelpers(c *code) {
 		c.line("")
 	}
 
+	// womWrite backs write-once (WOM) outputs: a cell already holding a
+	// different value fails, matching the VM's WriteOnce.Write.
+	if len(g.outputs) > 0 {
+		c.line("func womWrite(s []uint64, addr uint64, v uint64, msg string) []uint64 {")
+		c.line("if addr < uint64(len(s)) && s[addr] != v {")
+		c.line("fail(msg)")
+		c.line("}")
+		c.line("return memWrite(s, addr, v)")
+		c.line("}")
+		c.line("")
+	}
+
 	// memGet reads RAM scratch: an unwritten cell reads 0, matching the VM's
 	// zero-initialised RandomAccess memory.
 	if len(g.rams) > 0 {

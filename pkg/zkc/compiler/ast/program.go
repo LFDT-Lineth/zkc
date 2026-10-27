@@ -11,13 +11,9 @@
 package ast
 
 import (
-	"fmt"
-
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/data"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/decl"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/symbol"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast/variable"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
@@ -60,107 +56,6 @@ func NewProgram(components []decl.Resolved, srcmaps source.Maps[any]) Program {
 // Environment creates a fresh environment for this program
 func (p *Program) Environment() Environment {
 	return NewEnvironment(p.declarations...)
-}
-
-// DecodeInputsOutputs configures a given set of input / output bytes appropriately
-// for the boot program, whilst separating inputs from outputs.  If there are
-// unknown or conflicting inputs / outputs, then errors are returned.
-func (p *Program) DecodeInputsOutputs(input map[string][]byte) (inputs, outputs map[string][]vm.Uint, errs []error) {
-	//
-	var (
-		visited = make(map[string]bool)
-		env     = p.Environment()
-	)
-	// Initialise inputs / outputs
-	inputs = make(map[string][]vm.Uint)
-	outputs = make(map[string][]vm.Uint)
-	// Initialise components
-	for _, c := range p.declarations {
-		switch c := c.(type) {
-		case *decl.ResolvedFunction:
-			// ignore
-		case *decl.ResolvedConstant:
-			// ignore
-		case *decl.ResolvedTypeAlias:
-			// ignore
-		case *decl.ResolvedMemory:
-			// Record this memory has seen
-			visited[c.Name()] = true
-			//
-			switch c.Kind {
-			case decl.PRIVATE_READ_ONLY_MEMORY, decl.PUBLIC_READ_ONLY_MEMORY:
-				if bytes, ok := input[c.Name()]; ok {
-					inputs[c.Name()] = data.DecodeAll(variable.DescriptorsToType(c.Data...), bytes, env)
-				}
-			case decl.PRIVATE_WRITE_ONCE_MEMORY, decl.PUBLIC_WRITE_ONCE_MEMORY:
-				if bytes, ok := input[c.Name()]; ok {
-					outputs[c.Name()] = data.DecodeAll(variable.DescriptorsToType(c.Data...), bytes, env)
-				}
-			default:
-				if _, ok := input[c.Name()]; ok {
-					errs = append(errs, fmt.Errorf("unexpected input \"%s\"", c.Name()))
-				}
-			}
-		default:
-			panic(fmt.Sprintf("unknown declaration %s", c.Name()))
-		}
-	}
-	// Sanity check for extraneous inputs
-	for k := range input {
-		if _, ok := visited[k]; !ok {
-			errs = append(errs, fmt.Errorf("unknown input/output \"%s\"", k))
-		}
-	}
-	//
-	return inputs, outputs, errs
-}
-
-// EncodeInputsOutputs encodes a given set of input / output word values back
-// into raw bytes, producing the inverse of DecodeInputsOutputs.  If there are
-// unknown or conflicting entries, then errors are returned.
-func (p *Program) EncodeInputsOutputs(values map[string][]vm.Uint) (map[string][]byte, []error) {
-	var (
-		visited = make(map[string]bool)
-		env     = p.Environment()
-		errs    []error
-	)
-
-	result := make(map[string][]byte)
-
-	for _, c := range p.declarations {
-		switch c := c.(type) {
-		case *decl.ResolvedFunction:
-			// ignore
-		case *decl.ResolvedConstant:
-			// ignore
-		case *decl.ResolvedTypeAlias:
-			// ignore
-		case *decl.ResolvedMemory:
-			visited[c.Name()] = true
-
-			switch c.Kind {
-			case decl.PRIVATE_READ_ONLY_MEMORY, decl.PUBLIC_READ_ONLY_MEMORY,
-				decl.PRIVATE_WRITE_ONCE_MEMORY, decl.PUBLIC_WRITE_ONCE_MEMORY:
-				if words, ok := values[c.Name()]; ok {
-					result[c.Name()] = data.EncodeAll(variable.DescriptorsToType(c.Data...), words, env)
-				}
-			default:
-				if _, ok := values[c.Name()]; ok {
-					errs = append(errs, fmt.Errorf("unexpected input/output \"%s\"", c.Name()))
-				}
-			}
-		default:
-			panic(fmt.Sprintf("unknown declaration %s", c.Name()))
-		}
-	}
-	// Sanity check for extraneous entries
-	for k := range values {
-		if _, ok := visited[k]; !ok {
-			errs = append(errs, fmt.Errorf("unknown input/output \"%s\"", k))
-		}
-	}
-
-	return result, errs
 }
 
 // Compile attempts to compile a given high-level program into a low-level

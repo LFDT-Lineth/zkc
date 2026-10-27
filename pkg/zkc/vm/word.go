@@ -89,7 +89,7 @@ func Const64[W Word[W]](val uint64) W {
 // | 0x3 | 0x1 | 0xf | 0x0 | 0x0 | 0xe | 0x1 | 0xd |
 //
 // If the input array is not a multiple of the bitwidth
-func DecodeBytes[W Word[W]](bytes []byte, geometry descriptor.Memory[W]) []W {
+func DecodeBytes[W Word[W]](bits bit.Array, geometry descriptor.Memory[W]) []W {
 	var (
 		registers = geometry.Outputs()
 		bitwidth  = descriptor.BitwidthOfRegisters(registers...).Unwrap()
@@ -98,7 +98,7 @@ func DecodeBytes[W Word[W]](bytes []byte, geometry descriptor.Memory[W]) []W {
 		buffer []byte
 	)
 	// Decode array into
-	values, _ := bit.DecodeArray(bitwidth, bytes, func(bytes []byte) (ints []big.Int) {
+	values, _ := bits.Decode(0, bitwidth, bit.BigEndian, func(bytes []byte) (ints []big.Int) {
 		var (
 			reader = bit.NewReader(bytes)
 		)
@@ -140,7 +140,7 @@ func DecodeBytes[W Word[W]](bytes []byte, geometry descriptor.Memory[W]) []W {
 // |  00  |  01  |  02  |  03  |
 // +------+------+------+------+
 // | 0x31 | 0xf0 | 0x0e | 0x1d |
-func EncodeBytes[W Word[W]](values []W, geometry descriptor.Memory[W]) []byte {
+func EncodeBytes[W Word[W]](values []W, geometry descriptor.Memory[W]) (result bit.Array) {
 	var (
 		registers = geometry.Outputs()
 		nRegs     = uint(len(registers))
@@ -161,10 +161,6 @@ func EncodeBytes[W Word[W]](values []W, geometry descriptor.Memory[W]) []byte {
 	for i := (nRounds * nRegs); i < nElems; i++ {
 		totalBits += registers[i].Bitwidth().Unwrap()
 	}
-	// Determine required size result buffer
-	totalBytes := (totalBits + 7) / 8
-	// Allocate result buffer
-	result := make([]byte, totalBytes)
 	//
 	for i := 0; i < len(values); {
 		for j := 0; j < len(registers) && i < len(values); j++ {
@@ -175,7 +171,7 @@ func EncodeBytes[W Word[W]](values []W, geometry descriptor.Memory[W]) []byte {
 			)
 			//
 			EncodeUnsignedInt(width, val.BigInt(), buf)
-			bit.BigEndianCopy(buf, 0, result, bitOffset, width)
+			result.Append(bitOffset, buf, width, bit.BigEndian)
 			bitOffset += width
 			i = i + 1
 		}

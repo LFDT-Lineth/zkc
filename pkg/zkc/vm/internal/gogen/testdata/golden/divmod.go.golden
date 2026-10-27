@@ -25,6 +25,13 @@ func memWrite(s []uint64, addr uint64, v uint64) []uint64 {
 	return s
 }
 
+func womWrite(s []uint64, addr uint64, v uint64, msg string) []uint64 {
+	if addr < uint64(len(s)) && s[addr] != v {
+		fail(msg)
+	}
+	return memWrite(s, addr, v)
+}
+
 // Run executes the program on the given input memories, returning its
 // output memories, or an error if the execution fails (a rejected trace).
 func Run(in map[string][]uint64) (out map[string][]uint64, err error) {
@@ -91,10 +98,7 @@ func fn_main() {
 	// [0.6] write result[$4] = $5
 	{
 		start := r4
-		if start < uint64(len(mem_result)) {
-			fail("address already written for write-only memory result")
-		}
-		mem_result = memWrite(mem_result, start+0, r5)
+		mem_result = womWrite(mem_result, start+0, r5, "address already written for write-only memory result")
 	}
 	// [0.7] ldc $7 = 0x1
 	r7 = 1
@@ -107,10 +111,7 @@ func fn_main() {
 	// [0.9] write result[$7] = $8
 	{
 		start := r7
-		if start < uint64(len(mem_result)) {
-			fail("address already written for write-only memory result")
-		}
-		mem_result = memWrite(mem_result, start+0, r8)
+		mem_result = womWrite(mem_result, start+0, r8, "address already written for write-only memory result")
 	}
 	// [0.10] ret
 	return

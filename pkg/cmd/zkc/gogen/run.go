@@ -14,12 +14,13 @@ package gogen
 
 import (
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os/exec"
 	"strings"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 )
 
 // Run executes a built gogen program on the given input memories, returning
@@ -35,7 +36,7 @@ import (
 // to stderr; callers pass the sink they want those statements forwarded to
 // (os.Stderr for `exec --gogen`, io.Discard for differential tests, which
 // compare outputs rather than messages).
-func Run(prog string, in map[string][]byte, stderr io.Writer) (map[string][]byte, bool, error) {
+func Run(prog string, in map[string]bit.Array, stderr io.Writer) (map[string]bit.Array, bool, error) {
 	inJSON, err := MarshalInputs(in)
 	if err != nil {
 		return nil, false, err
@@ -47,10 +48,10 @@ func Run(prog string, in map[string][]byte, stderr io.Writer) (map[string][]byte
 // MarshalInputs renders input memories as the JSON the generated harness reads:
 // one "0x…" hex string per memory.  Benchmarks pre-marshal once so the timed
 // loop measures the executor, not the marshalling.
-func MarshalInputs(in map[string][]byte) ([]byte, error) {
+func MarshalInputs(in map[string]bit.Array) ([]byte, error) {
 	raw := make(map[string]string, len(in))
-	for name, bytes := range in {
-		raw[name] = "0x" + hex.EncodeToString(bytes)
+	for name, bits := range in {
+		raw[name] = "0x" + bits.String()
 	}
 
 	return json.Marshal(raw)
@@ -66,7 +67,7 @@ func MarshalInputs(in map[string][]byte) ([]byte, error) {
 // That stream is forwarded to the caller-supplied stderr sink — so `exec
 // --gogen` surfaces those statements as the interpreter paths do — while also
 // being captured to enrich any harness-level error.
-func RunRaw(prog string, inJSON []byte, stderr io.Writer) (map[string][]byte, bool, error) {
+func RunRaw(prog string, inJSON []byte, stderr io.Writer) (map[string]bit.Array, bool, error) {
 	var stdout, captured bytes.Buffer
 
 	cmd := exec.Command(prog)
@@ -87,10 +88,10 @@ func RunRaw(prog string, inJSON []byte, stderr io.Writer) (map[string][]byte, bo
 		return nil, false, fmt.Errorf("decoding generated output %q: %v", stdout.String(), err)
 	}
 
-	out := make(map[string][]byte, len(raw))
+	out := make(map[string]bit.Array, len(raw))
 
 	for name, s := range raw {
-		bytes, err := hex.DecodeString(strings.TrimPrefix(s, "0x"))
+		bytes, err := bit.ParseArray(strings.TrimPrefix(s, "0x"))
 		if err != nil {
 			return nil, false, fmt.Errorf("decoding generated output %q: %v", name, err)
 		}
