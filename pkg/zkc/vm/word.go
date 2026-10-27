@@ -140,6 +140,9 @@ func DecodeBytes[W Word[W]](bits bit.Array, geometry descriptor.Memory[W]) []W {
 // |  00  |  01  |  02  |  03  |
 // +------+------+------+------+
 // | 0x31 | 0xf0 | 0x0e | 0x1d |
+//
+// NOTE: for an empty set of values, this ensures the resulting bit.Array holds
+// the empty (i.e. non-nil) slice.
 func EncodeBytes[W Word[W]](values []W, geometry descriptor.Memory[W]) (result bit.Array) {
 	var (
 		registers = geometry.Outputs()
@@ -161,7 +164,9 @@ func EncodeBytes[W Word[W]](values []W, geometry descriptor.Memory[W]) (result b
 	for i := (nRounds * nRegs); i < nElems; i++ {
 		totalBits += registers[i].Bitwidth().Unwrap()
 	}
-	//
+	// Construct resulting bit array, whilst guaranteeing it is never nil.
+	result = bit.ZeroArray(totalBits)
+	// Assign each round
 	for i := 0; i < len(values); {
 		for j := 0; j < len(registers) && i < len(values); j++ {
 			var (
@@ -171,7 +176,7 @@ func EncodeBytes[W Word[W]](values []W, geometry descriptor.Memory[W]) (result b
 			)
 			//
 			EncodeUnsignedInt(width, val.BigInt(), buf)
-			result.Append(bitOffset, buf, width, bit.BigEndian)
+			result.Write(bitOffset, buf, width, bit.BigEndian)
 			bitOffset += width
 			i = i + 1
 		}
