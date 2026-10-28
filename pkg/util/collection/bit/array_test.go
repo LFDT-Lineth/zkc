@@ -34,11 +34,11 @@ func Test_BitArray_Zero_00(t *testing.T) {
 }
 
 func Test_BitArray_Zero_01(t *testing.T) {
-	checkArray(t, ZeroArray(1), 1, []byte{0}, "00:1")
+	checkArray(t, ZeroArray(1), 1, []byte{0}, "00~1")
 }
 
 func Test_BitArray_Zero_02(t *testing.T) {
-	checkArray(t, ZeroArray(7), 7, []byte{0}, "00:7")
+	checkArray(t, ZeroArray(7), 7, []byte{0}, "00~7")
 }
 
 func Test_BitArray_Zero_03(t *testing.T) {
@@ -46,11 +46,11 @@ func Test_BitArray_Zero_03(t *testing.T) {
 }
 
 func Test_BitArray_Zero_04(t *testing.T) {
-	checkArray(t, ZeroArray(9), 9, []byte{0, 0}, "0000:1")
+	checkArray(t, ZeroArray(9), 9, []byte{0, 0}, "0000~1")
 }
 
 func Test_BitArray_Zero_05(t *testing.T) {
-	checkArray(t, ZeroArray(17), 17, []byte{0, 0, 0}, "000000:1")
+	checkArray(t, ZeroArray(17), 17, []byte{0, 0, 0}, "000000~1")
 }
 
 func Test_BitArray_FromBytes_00(t *testing.T) {
@@ -68,12 +68,12 @@ func Test_BitArray_New_00(t *testing.T) {
 
 // Construction clears any unused bits in the final byte (big endian).
 func Test_BitArray_New_01(t *testing.T) {
-	checkArray(t, NewArray([]byte{0xff, 0xff}, 11, BigEndian), 11, []byte{0xff, 0xe0}, "ffe0:3")
+	checkArray(t, NewArray([]byte{0xff, 0xff}, 11, BigEndian), 11, []byte{0xff, 0xe0}, "ffe0~3")
 }
 
 // Construction clears any unused bits in the final byte (little endian).
 func Test_BitArray_New_02(t *testing.T) {
-	checkArray(t, NewArray([]byte{0xff, 0xff}, 11, LittleEndian), 11, []byte{0xff, 0x07}, "ff07:3")
+	checkArray(t, NewArray([]byte{0xff, 0xff}, 11, LittleEndian), 11, []byte{0xff, 0x07}, "ff07~3")
 }
 
 // ===================================================================
@@ -89,22 +89,22 @@ func Test_BitArray_Parse_01(t *testing.T) {
 }
 
 func Test_BitArray_Parse_02(t *testing.T) {
-	checkParseArray(t, "bf1230:5", []byte{0xbf, 0x12, 0x30}, 21)
+	checkParseArray(t, "bf1230~5", []byte{0xbf, 0x12, 0x30}, 21)
 }
 
 func Test_BitArray_Parse_03(t *testing.T) {
-	checkParseArray(t, "f8:5", []byte{0xf8}, 5)
+	checkParseArray(t, "f8~5", []byte{0xf8}, 5)
 }
 
 func Test_BitArray_Parse_Invalid(t *testing.T) {
 	for _, text := range []string{
 		"zz",     // not hex
-		"ff:0",   // mask out of range
-		"ff:8",   // mask out of range
-		"ff:1:2", // too many parts
-		":3",     // mask without data
-		"ff:3",   // unused bits are set
-		"f8:4",   // unused bits are set
+		"ff~0",   // mask out of range
+		"ff~8",   // mask out of range
+		"ff~1~2", // too many parts
+		"~3",     // mask without data
+		"ff~3",   // unused bits are set
+		"f8~4",   // unused bits are set
 	} {
 		if _, err := ParseArray(text); err == nil {
 			t.Errorf("expected error parsing %q", text)
@@ -144,18 +144,18 @@ func Test_BitArray_Append_00(t *testing.T) {
 	var arr Array
 	// 101
 	arr.Append([]byte{0xa0}, 3, BigEndian)
-	checkArray(t, arr, 3, []byte{0xa0}, "a0:3")
+	checkArray(t, arr, 3, []byte{0xa0}, "a0~3")
 	// 101 11111
 	arr.Append([]byte{0xff}, 5, BigEndian)
 	checkArray(t, arr, 8, []byte{0xbf}, "bf")
 	// 101 11111 00010010 00110
 	arr.Append([]byte{0x12, 0x34}, 13, BigEndian)
-	checkArray(t, arr, 21, []byte{0xbf, 0x12, 0x30}, "bf1230:5")
+	checkArray(t, arr, 21, []byte{0xbf, 0x12, 0x30}, "bf1230~5")
 	// Read chunks back
 	checkRead(t, arr, 3, 5, BigEndian, []byte{0xf8})
 	checkRead(t, arr, 8, 13, BigEndian, []byte{0x12, 0x30})
 	// Cross check against parser
-	if parsed, err := ParseArray("bf1230:5"); err != nil || !parsed.Equals(arr) {
+	if parsed, err := ParseArray("bf1230~5"); err != nil || !parsed.Equals(arr) {
 		t.Errorf("expected %v, received %v (%v)", arr, parsed, err)
 	}
 }
@@ -164,13 +164,13 @@ func Test_BitArray_Append_01(t *testing.T) {
 	var arr Array
 	// 101
 	arr.Append([]byte{0x05}, 3, LittleEndian)
-	checkArray(t, arr, 3, []byte{0x05}, "05:3")
+	checkArray(t, arr, 3, []byte{0x05}, "05~3")
 	// 11111 101
 	arr.Append([]byte{0x1f}, 5, LittleEndian)
 	checkArray(t, arr, 8, []byte{0xfd}, "fd")
 	// 11111 101 | 00010010 | 10100
 	arr.Append([]byte{0x12, 0x34}, 13, LittleEndian)
-	checkArray(t, arr, 21, []byte{0xfd, 0x12, 0x14}, "fd1214:5")
+	checkArray(t, arr, 21, []byte{0xfd, 0x12, 0x14}, "fd1214~5")
 	// Read chunks back
 	checkRead(t, arr, 3, 5, LittleEndian, []byte{0x1f})
 	checkRead(t, arr, 8, 13, LittleEndian, []byte{0x12, 0x14})

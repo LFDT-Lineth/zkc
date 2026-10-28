@@ -116,7 +116,7 @@ func NewArray(bytes []byte, nbits uint, order Order) Array {
 // this array (assuming a BigEndian ordering), or returns an error.
 func ParseArray(text string) (Array, error) {
 	var (
-		splits    = strings.Split(text, ":")
+		splits    = strings.Split(text, "~")
 		data, err = hex.DecodeString(splits[0])
 		nbits     = uint(len(data) * 8)
 	)
@@ -124,18 +124,18 @@ func ParseArray(text string) (Array, error) {
 	if err != nil {
 		return Array{}, err
 	} else if len(splits) > 2 {
-		return Array{}, fmt.Errorf("malformed (extended) hex string: \"%s\"", text)
+		return Array{}, fmt.Errorf("malformed extended hex string: \"%s\"", text)
 	} else if len(splits) != 1 {
 		var mask uint64
 		// parse mask
 		if mask, err = strconv.ParseUint(splits[1], 10, 3); err != nil {
 			return Array{}, err
 		} else if len(data) == 0 {
-			return Array{}, fmt.Errorf("malformed (extended) hex string: \"%s\"", text)
+			return Array{}, fmt.Errorf("malformed extended hex string: \"%s\"", text)
 		} else if mask > 7 || mask == 0 {
-			return Array{}, fmt.Errorf("malformed (extended) hex string: \"%s\"", text)
+			return Array{}, fmt.Errorf("malformed extended hex string (invalid mask): \"%s\"", text)
 		} else if rest := data[len(data)-1] << mask; rest != 0 {
-			return Array{}, fmt.Errorf("malformed (extended) hex string: \"%s\"", text)
+			return Array{}, fmt.Errorf("malformed extended hex string (non-zero masked bits): \"%s\"", text)
 		}
 		//
 		nbits = nbits - 8 + uint(mask)
@@ -189,7 +189,7 @@ func (p Array) String() string {
 	)
 	//
 	if tail != 0 {
-		return fmt.Sprintf("%s:%d", hex, tail)
+		return fmt.Sprintf("%s~%d", hex, tail)
 	}
 	//
 	return hex

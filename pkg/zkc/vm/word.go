@@ -16,6 +16,7 @@ import (
 	"math"
 	"math/big"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -74,7 +75,19 @@ func Const64[W Word[W]](val uint64) W {
 // Decoding
 // ============================================================================
 
-// DecodeBytes decodes the given set of bytes as big integer values according to
+// BitsAligned simple checks that the given number of bits is a multiple of the
+// bitwidth for a given row (i.e. the sum of the bitwidth of all registers).
+func BitsAligned[W Word[W]](bits bit.Array, geometry descriptor.Memory[W]) bool {
+	var (
+		registers = geometry.Outputs()
+		bitwidth  = descriptor.BitwidthOfRegisters(registers...).Unwrap()
+		nRows     = bits.Len() / bitwidth
+	)
+	// Check alignment
+	return (nRows * bitwidth) == bits.Len()
+}
+
+// DecodeBits decodes the given set of bits as big integer values according to
 // the given register type(s).  Observe that values are assumed to be packed tightly
 // (i.e. without any padding).  Consider the following input byte array:
 //
@@ -88,8 +101,9 @@ func Const64[W Word[W]](val uint64) W {
 // +-----+-----+-----+-----+-----+-----+-----+-----+
 // | 0x3 | 0x1 | 0xf | 0x0 | 0x0 | 0xe | 0x1 | 0xd |
 //
-// If the input array is not a multiple of the bitwidth
-func DecodeBytes[W Word[W]](bits bit.Array, geometry descriptor.Memory[W]) []W {
+// NOTE: if the number of bits provided is not a multiple of the bitwidth, this
+// will panic (i.e. no partial rows).
+func DecodeBits[W Word[W]](bits bit.Array, geometry descriptor.Memory[W]) []W {
 	var (
 		registers = geometry.Outputs()
 		bitwidth  = descriptor.BitwidthOfRegisters(registers...).Unwrap()
@@ -97,6 +111,8 @@ func DecodeBytes[W Word[W]](bits bit.Array, geometry descriptor.Memory[W]) []W {
 		// reading bits of the given data types.
 		buffer []byte
 	)
+	// Sanity check no partial rows
+	util.Assert(BitsAligned(bits, geometry), "cannot decode partial row")
 	// Decode array into
 	values, _ := bits.Decode(0, bitwidth, bit.BigEndian, func(bytes []byte) (ints []big.Int) {
 		var (
@@ -127,8 +143,8 @@ func DecodeBytes[W Word[W]](bits bit.Array, geometry descriptor.Memory[W]) []W {
 	})
 }
 
-// EncodeBytes encodes the given set of word values as packed bytes according to
-// the given registers type(s). This is the inverse of DecodeAll.  Consider the
+// EncodeBits encodes the given set of word values as packed bytes according to
+// the given registers type(s). This is the inverse of DecodeBits.  Consider the
 // following input array of u4 values:
 //
 // |  0  |  1  |  2  |  3  |  4  |  5  |  6  |  7  |
@@ -142,8 +158,10 @@ func DecodeBytes[W Word[W]](bits bit.Array, geometry descriptor.Memory[W]) []W {
 // | 0x31 | 0xf0 | 0x0e | 0x1d |
 //
 // NOTE: for an empty set of values, this ensures the resulting bit.Array holds
-// the empty (i.e. non-nil) slice.
-func EncodeBytes[W Word[W]](values []W, geometry descriptor.Memory[W]) (result bit.Array) {
+// the empty (i.e. non-nil) slice.  Also, this will panic if the number of
+// values is not a multiple of the geometry width (i.e. no trailing partial
+// row).
+func EncodeBits[W Word[W]](values []W, geometry descriptor.Memory[W]) (result bit.Array) {
 	var (
 		registers = geometry.Outputs()
 		nRegs     = uint(len(registers))
@@ -160,10 +178,8 @@ func EncodeBytes[W Word[W]](values []W, geometry descriptor.Memory[W]) (result b
 		// Initial total bits calculation
 		totalBits = nRounds * bitwidth
 	)
-	// Update total bits calc for odd number of elements.
-	for i := (nRounds * nRegs); i < nElems; i++ {
-		totalBits += registers[i].Bitwidth().Unwrap()
-	}
+	// Sanity check no partial row
+	util.Assert(nRounds*nRegs == nElems, "cannot encode partial row")
 	// Construct resulting bit array, whilst guaranteeing it is never nil.
 	result = bit.ZeroArray(totalBits)
 	// Assign each round

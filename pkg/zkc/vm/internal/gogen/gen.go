@@ -509,7 +509,7 @@ func (g *generator) emitImports(c *code) {
 	deps := []string{}
 	if g.pkg == "main" {
 		deps = append(deps,
-			`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strings"`)
+			`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strconv"`, `"strings"`)
 	}
 
 	if g.usesBits {
@@ -520,11 +520,7 @@ func (g *generator) emitImports(c *code) {
 		deps = append(deps, `"slices"`)
 	}
 	// Optional generated helpers add their own imports. Package main already
-	// imports bufio/os/fmt/math/big for its harness, but never strconv.
-	if g.usesHelper(helperDbgU) {
-		deps = append(deps, `"strconv"`)
-	}
-
+	// imports bufio/os/fmt/math/big for its harness
 	if g.pkg != "main" {
 		if g.usesHelper(helperDbgWriter) {
 			deps = append(deps, `"bufio"`, `"os"`)
@@ -537,6 +533,10 @@ func (g *generator) emitImports(c *code) {
 		if g.usesHelper(helperDbgB) || g.usesHelper(helperU128) ||
 			g.usesHelper(helperCatU64) || g.usesHelper(helperWideInt) {
 			deps = append(deps, `"math/big"`)
+		}
+
+		if g.usesHelper(helperDbgU) {
+			deps = append(deps, `"strconv"`)
 		}
 	}
 
@@ -639,26 +639,61 @@ func parseInput(s string) []byte {
 	s = strings.ReplaceAll(s, "_", "")
 	switch {
 	case strings.HasPrefix(s, "0x"):
-		b, err := hex.DecodeString(s[2:])
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "decode:", err)
-			os.Exit(2)
-		}
-		return b
+		// NOTE: a known issue exists here (#2297) for inputs which are not byte-aligned.
+		data, _ := parseExtendedHexString(s[2:])
+		return data
 	case s == "":
 		return nil
 	default:
 		var v big.Int
 		if _, ok := v.SetString(s, 10); !ok {
-			fmt.Fprintln(os.Stderr, "malformed numeric literal:", s)
+			fmt.Fprintln(os.Stderr, "malformed numeric literal: ", s)
 			os.Exit(2)
 		}
 		return v.Bytes()
 	}
 }
 
+// parseExtendedHexString parses a hex in the extended format (i.e. where "~" is
+// used to indicated masked trailing bits).
+func parseExtendedHexString(s string) ([]byte, uint) {
+	var (
+		splits    = strings.Split(s, "~")
+		data, err = hex.DecodeString(splits[0])
+		nbits     = uint(len(data) * 8)
+	)
+	//
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(2)
+	} else if len(splits) > 2 {
+		fmt.Fprintln(os.Stderr, "malformed extended hex string: ", s)
+		os.Exit(2)
+	} else if len(splits) != 1 {
+		var mask uint64
+		// parse mask
+		if mask, err = strconv.ParseUint(splits[1], 10, 3); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(2)
+		} else if len(data) == 0 {
+			fmt.Fprintln(os.Stderr, "malformed extended hex string: ", s)
+			os.Exit(2)
+		} else if mask > 7 || mask == 0 {
+			fmt.Fprintln(os.Stderr, "malformed extended hex string (invalid mask): ", s)
+			os.Exit(2)
+		} else if rest := data[len(data)-1] << mask; rest != 0 {
+			fmt.Fprintln(os.Stderr, "malformed extended hex string (non-zero masked bits): ", s)
+			os.Exit(2)
+		}
+		//
+		nbits = nbits - 8 + uint(mask)
+	}
+	//
+	return data, nbits
+}
+
 // encodeBytes packs one value per data line into a tightly-packed big-endian
-// bit stream, cycling through the line widths; a mirror of the VM's EncodeBytes
+// bit stream, cycling through the line widths; a mirror of the VM's EncodeBits
 // and the inverse of decodeBytes.
 func encodeBytes(values []uint64, widths []uint) []byte {
 	var totalBits uint
@@ -685,7 +720,7 @@ func encodeBytes(values []uint64, widths []uint) []byte {
 // preallocates the output (the cell count is known from the byte length and the
 // round width), so it does not grow-and-copy while decoding.
 const genericDecodeBytes = `// decodeBytes unpacks a tightly-packed big-endian bit stream into one value per
-// data line, cycling through the line widths; a mirror of the VM's DecodeBytes
+// data line, cycling through the line widths; a mirror of the VM's DecodeBits
 // and the inverse of encodeBytes.
 func decodeBytes(data []byte, widths []uint) []uint64 {
 	var round uint

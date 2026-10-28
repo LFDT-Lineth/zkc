@@ -995,7 +995,7 @@ func encodeInputs(p vm.Program[vm.Uint], in map[string][]uint64) map[string]bit.
 		k := 0
 		// Split each logical value across its row's limb registers, most-
 		// significant limb first (matching DataRegisters / the Base=MSB split
-		// convention), so EncodeBytes/DecodeBytes round-trip the full value
+		// convention), so EncodeBits/DecodeBits round-trip the full value
 		// rather than truncating it to the first limb.
 		for _, v := range cells {
 			hi := rowWidth
@@ -1014,7 +1014,7 @@ func encodeInputs(p vm.Program[vm.Uint], in map[string][]uint64) map[string]bit.
 			}
 		}
 
-		out[m.Name()] = vm.EncodeBytes(words, m)
+		out[m.Name()] = vm.EncodeBits(words, m)
 	}
 
 	return out

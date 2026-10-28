@@ -48,7 +48,7 @@ func ParseJsonInputFile(bytes []byte) (map[string]bit.Array, error) {
 					return nil, fmt.Errorf("malformed numeric literal \"%s\"", w)
 				}
 				// Pack the bits MSB-first, left-aligned within whole bytes (the
-				// order DecodeBytes expects).  The digit count therefore fixes the
+				// order DecodeBits expects).  The digit count therefore fixes the
 				// bit width, so e.g. a u12 value must be written with 12 digits.
 				nbytes := (len(bits) + 7) / 8
 				val.Lsh(&val, uint(nbytes*8-len(bits)))
