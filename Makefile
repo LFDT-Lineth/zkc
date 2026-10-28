@@ -1,5 +1,5 @@
 GOCORSET_VERSION:=$(shell git describe --always --tags)
-GOCORSET_VERSION_PATH:="github.com/LFDT-Lineth/zkc/pkg/cmd"
+GOCORSET_VERSION_PATH:="github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
 GOLANGCI_VERSION:=2.14.0
 PROJECT_NAME:=go-corset
 GOPATH_BIN:=$(shell go env GOPATH)/bin

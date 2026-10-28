@@ -9,7 +9,14 @@ JSON-RPC 2.0, which makes it compatible with any LSP-capable editor.
 First, build the `zkc` binary:
 
 ```shell
-go build -o bin/zkc cmd/zkc/main.go
+make build-zkc
+```
+
+or, without `make`, build the package (not the `main.go` file, so that
+`zkc --version` can report the version):
+
+```shell
+go build -o bin/zkc ./cmd/zkc
 ```
 
 Then copy (or symlink) it somewhere on your `$PATH`, for example:
