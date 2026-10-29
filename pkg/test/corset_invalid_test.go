@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/test/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // ===================================================================
@@ -372,7 +373,7 @@ func checkCorsetInvalid(t *testing.T, test string) {
 func compileCorsetFile(srcfile source.File) []source.SyntaxError {
 	var corsetConfig corset.CompilationConfig
 	//
-	_, _, errors := corset.CompileSourceFile(corsetConfig, srcfile)
+	_, _, errors := corset.CompileSourceFile[word.BigEndian](corsetConfig, srcfile)
 	//
 	return errors
 }
