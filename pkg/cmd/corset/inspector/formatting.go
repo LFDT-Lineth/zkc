@@ -16,25 +16,26 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // NewFormatter constructs a new cell formatter
-func NewFormatter() view.TraceFormatting {
-	return &inspectorFormatter{nil}
+func NewFormatter[F field.Element[F]]() view.TraceFormatting[F] {
+	return &inspectorFormatter[F]{nil}
 }
 
-type inspectorFormatter struct {
-	module view.ModuleData
+type inspectorFormatter[F field.Element[F]] struct {
+	module view.ModuleData[F]
 }
 
 // ColumnTitle implementation for ModuleFormatting interface
-func (p *inspectorFormatter) ColumnTitle(_ uint, text string) termio.FormattedText {
+func (p *inspectorFormatter[F]) ColumnTitle(_ uint, text string) termio.FormattedText {
 	return termio.NewFormattedText(text, termio.NewAnsiEscape().FgColour(termio.TERM_BLUE))
 }
 
 // ColumnTitle implementation for ModuleFormatting interface
-func (p *inspectorFormatter) RowTitle(col view.SourceColumnId, text string) termio.FormattedText {
+func (p *inspectorFormatter[F]) RowTitle(col view.SourceColumnId, text string) termio.FormattedText {
 	var ansiEscape termio.AnsiEscape
 	//
 	if p.module.SourceColumn(col).Computed {
@@ -47,7 +48,7 @@ func (p *inspectorFormatter) RowTitle(col view.SourceColumnId, text string) term
 }
 
 // Cell implementation for ModuleFormatting interface
-func (p *inspectorFormatter) Cell(col view.SourceColumn, row uint, text string) termio.FormattedText {
+func (p *inspectorFormatter[F]) Cell(col view.SourceColumn, row uint, text string) termio.FormattedText {
 	// Check whether a given column is "active" in a given row.  Columns which
 	// are in perspectives are considered active only when their selectors are
 	// enabled.
@@ -60,7 +61,7 @@ func (p *inspectorFormatter) Cell(col view.SourceColumn, row uint, text string) 
 }
 
 // Module implementation for TraceFormatting interface
-func (p *inspectorFormatter) Module(mod view.ModuleData) view.ModuleFormatting {
+func (p *inspectorFormatter[F]) Module(mod view.ModuleData[F]) view.ModuleFormatting {
 	var q = *p
 	//
 	q.module = mod

@@ -58,7 +58,7 @@ func (p *Add[F, T]) ApplyShift(shift int) T {
 func (p *Add[F, T]) Bounds() util.Bounds { return util.BoundsForArray(p.Args) }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Add[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *Add[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map[F]) (F, error) {
 	// Evaluate first argument
 	val, err := p.Args[0].EvalAt(k, tr, sc)
 	// Continue evaluating the rest
@@ -73,7 +73,7 @@ func (p *Add[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, erro
 }
 
 // Lisp implementation for Lispifiable interface.
-func (p *Add[F, T]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (p *Add[F, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	return lispOfTerms(global, mapping, "+", p.Args)
 }
 

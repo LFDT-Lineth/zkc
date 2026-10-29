@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/big"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -34,50 +35,56 @@ var (
 // multiple columns as a result of subdivision to ensure field agnosticity.
 // Hence, why they are referred to as registers rather than columns --- they are
 // similar, but not identical, concepts.
-type Register struct {
+type Register[F field.Element[F]] struct {
 	// Kind of register (input / output)
 	kind Type
 	// Given name of this register.
 	name string
 	// Width (in bits) of this register
 	width uint
+	// Padding value of this register
+	padding F
 }
 
 // New constructs a new register of a given kind (i.e. input, output or
 // computed) with the given name and bitwidth.
-func New(kind Type, name string, bitwidth uint) Register {
-	return Register{kind, name, bitwidth}
+func New[F field.Element[F]](kind Type, name string, bitwidth uint) Register[F] {
+	var padding F
+	return Register[F]{kind, name, bitwidth, padding}
 }
 
 // NewNative constructs a new "native" register.  That is, a register backed by
 // a field element rather than a fixed-width unsigned integer.  Such registers
 // have no fixed bitwidth and can hold any value representable in the
 // underlying field.
-func NewNative(kind Type, name string) Register {
-	return New(kind, name, math.MaxUint)
+func NewNative[F field.Element[F]](kind Type, name string) Register[F] {
+	return New[F](kind, name, math.MaxUint)
 }
 
 // NewInput constructs a new input register with the given name and
 // bitwidth.
-func NewInput(name string, bitwidth uint) Register {
-	return Register{INPUT_REGISTER, name, bitwidth}
+func NewInput[F field.Element[F]](name string, bitwidth uint) Register[F] {
+	var padding F
+	return Register[F]{INPUT_REGISTER, name, bitwidth, padding}
 }
 
 // NewOutput constructs a new output register with the given name and
 // bitwidth.
-func NewOutput(name string, bitwidth uint) Register {
-	return Register{OUTPUT_REGISTER, name, bitwidth}
+func NewOutput[F field.Element[F]](name string, bitwidth uint) Register[F] {
+	var padding F
+	return Register[F]{OUTPUT_REGISTER, name, bitwidth, padding}
 }
 
 // NewComputed constructs a new computed register with the given name and
 // bitwidth.
-func NewComputed(name string, bitwidth uint) Register {
-	return Register{COMPUTED_REGISTER, name, bitwidth}
+func NewComputed[F field.Element[F]](name string, bitwidth uint) Register[F] {
+	var padding F
+	return Register[F]{COMPUTED_REGISTER, name, bitwidth, padding}
 }
 
 // Bound returns the first value which cannot be represented by the given
 // bitwidth.  For example, the bound of an 8bit register is 256.
-func (p *Register) Bound() *big.Int {
+func (p *Register[F]) Bound() *big.Int {
 	if p.IsNative() {
 		panic(fmt.Sprintf("Bound() called on native register %q", p.name))
 	}
@@ -91,48 +98,49 @@ func (p *Register) Bound() *big.Int {
 }
 
 // IsInput determines whether or not this is an input register
-func (p *Register) IsInput() bool {
+func (p *Register[F]) IsInput() bool {
 	return p.kind == INPUT_REGISTER
 }
 
 // IsInputOutput determines whether or not this is an input or output register
-func (p *Register) IsInputOutput() bool {
+func (p *Register[F]) IsInputOutput() bool {
 	return p.IsInput() || p.IsOutput()
 }
 
 // IsOutput determines whether or not this is an output register
-func (p *Register) IsOutput() bool {
+func (p *Register[F]) IsOutput() bool {
 	return p.kind == OUTPUT_REGISTER
 }
 
-// IsComputed determines whether or not this is a computed register.  Observer
-// that "zero" registers are included in this, since they are neither input nor
-// output registers.
-func (p *Register) IsComputed() bool {
-	return p.kind == COMPUTED_REGISTER || p.IsConstant()
+// IsComputed determines whether or not this is a computed register.
+func (p *Register[F]) IsComputed() bool {
+	return p.kind == COMPUTED_REGISTER
 }
 
 // IsConstant determines whether or not this is a constant register, or not.
 // Observe that constant registers are considered to be computed registers.
-func (p *Register) IsConstant() bool {
-	return false
+func (p *Register[F]) IsConstant() bool {
+	return p.kind == CONSTANT_REGISTER
 }
 
-// Constant returns the constant value associated with this register.
-func (p *Register) Constant[F field.Element[F]]() F {
-	panic("todo")
+// Constant returns the constant value associated with this register (or panics
+// if this is not a constant register).  Observe that the value returned is
+// identical to the padding value of this register.
+func (p *Register[F]) Constant() F {
+	util.Assert(p.kind == CONSTANT_REGISTER, "register not constant")
+	return p.padding
 }
 
 // IsNative determines whether or not this is a "native" register.  That is, a
 // register backed by a field element rather than a fixed-width unsigned
 // integer.
-func (p *Register) IsNative() bool {
+func (p *Register[F]) IsNative() bool {
 	return p.width == math.MaxUint
 }
 
 // MaxValue returns the largest value expressible in this register (i.e. Bound() -
 // 1).  For example, the max value of an 8bit register is 255.
-func (p *Register) MaxValue() *big.Int {
+func (p *Register[F]) MaxValue() *big.Int {
 	if p.IsNative() {
 		panic(fmt.Sprintf("MaxValue() called on native register %q", p.name))
 	}
@@ -144,17 +152,22 @@ func (p *Register) MaxValue() *big.Int {
 }
 
 // Kind returns the type of this register
-func (p Register) Kind() Type {
+func (p Register[F]) Kind() Type {
 	return p.kind
 }
 
 // Name returns the (unqualified) name of this register
-func (p Register) Name() string {
+func (p Register[F]) Name() string {
 	return p.name
 }
 
+// Padding returns the padding value associated with this register.
+func (p *Register[F]) Padding() F {
+	return p.padding
+}
+
 // QualifiedName returns the fully qualified name of this register
-func (p Register) QualifiedName(mod Map) string {
+func (p Register[F]) QualifiedName(mod Map[F]) string {
 	var (
 		name    = p.name
 		modName = mod.Name()
@@ -167,7 +180,7 @@ func (p Register) QualifiedName(mod Map) string {
 	return name
 }
 
-func (p Register) String() string {
+func (p Register[F]) String() string {
 	if p.IsNative() {
 		return fmt.Sprintf("%s:𝔽", p.name)
 	}
@@ -178,7 +191,7 @@ func (p Register) String() string {
 // Width determines the bitwidth of this register.  This panics if called on a
 // native register, since such registers have no fixed bitwidth.  Callers should
 // guard with IsNative() if the register may be native.
-func (p Register) Width() uint {
+func (p Register[F]) Width() uint {
 	if p.IsNative() {
 		panic(fmt.Sprintf("Width() called on native register %q", p.name))
 	}
@@ -187,7 +200,7 @@ func (p Register) Width() uint {
 }
 
 // WidthOrNative returns the bitwidth of this register, or math.MaxUint if it is a native register.
-func (p Register) WidthOrNative() uint {
+func (p Register[F]) WidthOrNative() uint {
 	if p.IsNative() {
 		return math.MaxUint
 	}
@@ -205,7 +218,7 @@ func (p Register) WidthOrNative() uint {
 const nativeWidthSentinel uint16 = 0xFFFF
 
 // MarshalBinary converts a register into binary data
-func (p *Register) MarshalBinary() (data []byte, err error) {
+func (p *Register[F]) MarshalBinary() (data []byte, err error) {
 	var (
 		buffer = bytes.NewBuffer(data)
 		width  uint16
@@ -229,11 +242,12 @@ func (p *Register) MarshalBinary() (data []byte, err error) {
 		return nil, err
 	}
 	// Success
-	return buffer.Bytes(), nil
+	//return buffer.Bytes(), nil
+	panic("serialise padding")
 }
 
 // UnmarshalBinary unmarshals a register
-func (p *Register) UnmarshalBinary(data []byte) error {
+func (p *Register[F]) UnmarshalBinary(data []byte) error {
 	var (
 		buffer = bytes.NewBuffer(data)
 		kind   uint8
@@ -241,7 +255,7 @@ func (p *Register) UnmarshalBinary(data []byte) error {
 		name   []byte
 		err    error
 	)
-	// Register kind
+	// Register[F] kind
 	if err := binary.Read(buffer, binary.BigEndian, &kind); err != nil {
 		return err
 	}
@@ -318,7 +332,7 @@ func ToString(rid Id) string {
 // WidthOfRegisters returns the combined bitwidth of the given
 // registers.  For example, suppose we have three registers: x:u8, y:u8, z:u11.
 // Then the combined width is 8+8+11=27.
-func WidthOfRegisters(regs []Register, rids []Id) uint {
+func WidthOfRegisters[F field.Element[F]](regs []Register[F], rids []Id) uint {
 	var (
 		width uint
 	)

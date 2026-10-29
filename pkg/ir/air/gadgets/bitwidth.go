@@ -167,9 +167,9 @@ func (p *BitwidthGadget[F]) constructTypeProof(handle module.Name, bitwidth uint
 		coeff = field.TwoPowN[F](loWidth)
 	)
 	// Construct registers and their decompositions
-	vid := module.NewRegister(register.NewComputed("V", bitwidth))
-	vidLo := module.NewRegister(register.NewComputed("V'0", loWidth))
-	vidHi := module.NewRegister(register.NewComputed("V'1", hiWidth))
+	vid := module.NewRegister(register.NewComputed[F]("V", bitwidth))
+	vidLo := module.NewRegister(register.NewComputed[F]("V'0", loWidth))
+	vidHi := module.NewRegister(register.NewComputed[F]("V'1", hiWidth))
 	// Ensure lo/hi are decomposition of original
 	module.AddConstraint(
 		air.NewVanishingConstraint("decomposition", mid, util.None[int](),

@@ -151,8 +151,8 @@ func (p *BinaryFile[F, W]) Header() Header {
 
 // LimbsMap provides a mapping from top-level registers to register limbs.  This
 // is useful to understand the mapping before / after register splitting.
-func (p *BinaryFile[F, W]) LimbsMap() module.LimbsMap {
-	return newLimbsMap(p.program.Field(), p.program.Modules()...)
+func (p *BinaryFile[F, W]) LimbsMap() module.LimbsMap[F] {
+	return newLimbsMap[vm.Uint, F](p.program.Field(), p.program.Modules()...)
 }
 
 // Field returns the field configuration for which this binary file is compiled.

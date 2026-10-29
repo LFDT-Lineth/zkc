@@ -44,9 +44,9 @@ type Builder[F field.Element[F]] struct {
 	// Limbs mapping identifies how source-level registers are mapped into
 	// limbs.  This is necessary in order to reconstruct source-level column
 	// data from the trace.
-	mapping module.LimbsMap
+	mapping module.LimbsMap[F]
 	// Formatting to use
-	formatting TraceFormatting
+	formatting TraceFormatting[F]
 	// Optional source map information.  This is primarily used to determine
 	srcmap util.Option[corset.SourceMap]
 	// Optional predicate determining whether a given module is publicly visible.
@@ -57,9 +57,9 @@ type Builder[F field.Element[F]] struct {
 }
 
 // NewBuilder constructs a default builder.
-func NewBuilder[F field.Element[F]](mapping module.LimbsMap) Builder[F] {
+func NewBuilder[F field.Element[F]](mapping module.LimbsMap[F]) Builder[F] {
 	return Builder[F]{util.None[CellRefSet](), false, false, 16, 16, mapping,
-		DefaultFormatter(), util.None[corset.SourceMap](), util.None[func(string) bool]()}
+		DefaultFormatter[F](), util.None[corset.SourceMap](), util.None[func(string) bool]()}
 }
 
 // WithCellWidth sets the maximum width of any cell in the view.
@@ -100,7 +100,7 @@ func (p Builder[F]) WithComputed(computed bool) Builder[F] {
 }
 
 // WithFormatting determines what formatting to use when rendering this view.
-func (p Builder[F]) WithFormatting(formatting TraceFormatting) Builder[F] {
+func (p Builder[F]) WithFormatting(formatting TraceFormatting[F]) Builder[F] {
 	var builder = p
 	//
 	builder.formatting = formatting
@@ -130,8 +130,8 @@ func (p Builder[F]) WithVisibility(public func(string) bool) Builder[F] {
 }
 
 // Build the viewing window for this trace.
-func (p Builder[F]) Build(trace tr.Shard[F]) TraceView {
-	var windows []ModuleView
+func (p Builder[F]) Build(trace tr.Shard[F]) TraceView[F] {
+	var windows []ModuleView[F]
 	//
 	srcmap, enums := extractSourceMap(p.srcmap)
 	//
@@ -157,7 +157,7 @@ func (p Builder[F]) Build(trace tr.Shard[F]) TraceView {
 		})
 	}
 	//
-	return &traceView{windows}
+	return &traceView[F]{windows}
 }
 
 func extractSourceMap(optSrcmap util.Option[corset.SourceMap]) (map[string]corset.SourceModule, []corset.Enumeration) {
@@ -180,7 +180,7 @@ func extractSourceMap(optSrcmap util.Option[corset.SourceMap]) (map[string]corse
 }
 
 func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], limbs bool, computed bool,
-	srcmap map[string]corset.SourceModule, mapping register.LimbsMap) (bool, []SourceColumn) {
+	srcmap map[string]corset.SourceModule, mapping register.LimbsMap[F]) (bool, []SourceColumn) {
 	//
 	var (
 		public  = true
@@ -229,8 +229,8 @@ func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], limbs bool, co
 // based on the corset source mapping.  This is particularly useful when you
 // want to show the original name for a column (e.g. when its in a perspective),
 // rather than the raw register name.
-func extractSourceColumns(path file.Path, selector util.Option[string], limbs bool,
-	columns []corset.SourceColumn, submodules []corset.SourceModule, mapping register.LimbsMap) []SourceColumn {
+func extractSourceColumns[F field.Element[F]](path file.Path, selector util.Option[string], limbs bool,
+	columns []corset.SourceColumn, submodules []corset.SourceModule, mapping register.LimbsMap[F]) []SourceColumn {
 	//
 	var srcColumns []SourceColumn
 	//

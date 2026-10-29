@@ -52,7 +52,7 @@ type Schema[F field.Element[F]] interface {
 	// schema.
 	Modules() iter.Iterator[Module[F]]
 	// Access a given register in this schema.
-	Register(register.Ref) register.Register
+	Register(register.Ref) register.Register[F]
 	// Returns the number of modules in this schema.
 	Width() uint
 }

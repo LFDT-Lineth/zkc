@@ -58,7 +58,7 @@ func applyPseudoInverseGadget[F field.Element[F]](e air.Term[F], module air.Modu
 	// Add new column (if it does not already exist)
 	if !ok {
 		// Add computed register.
-		index = module.NewRegister(register.NewComputed(name, bitwidth))
+		index = module.NewRegister(register.NewComputed[F](name, bitwidth))
 		target := register.NewRef(module.Id(), index)
 		// Add inverse assignment
 		module.AddAssignment(assignment.NewPseudoInverse(target, e))
@@ -86,7 +86,7 @@ type pseudoInverse[F field.Element[F]] struct {
 
 // EvalAt computes the multiplicative inverse of a given expression at a given
 // row in the table.
-func (e *pseudoInverse[F]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
+func (e *pseudoInverse[F]) EvalAt(k uint, tr trace.Module[F], sc register.Map[F]) (F, error) {
 	// Convert expression into something which can be evaluated, then evaluate
 	// it.
 	val, err := e.Expr.EvalAt(k, tr, sc)
@@ -115,7 +115,7 @@ func (e *pseudoInverse[F]) RequiredCells(row int, mid trace.ModuleId) *set.AnySo
 
 // Lisp converts this schema element into a simple S-Expression, for example
 // so it can be printed.
-func (e *pseudoInverse[F]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (e *pseudoInverse[F]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	return sexp.NewList([]sexp.SExp{
 		sexp.NewSymbol("inv"),
 		e.Expr.Lisp(global, mapping),

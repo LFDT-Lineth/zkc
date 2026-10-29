@@ -174,7 +174,7 @@ outer:
 // A gating register always exists: every access is at least position-gated
 // (IS_PC_k for a multi-line function, $ret for a one-line function).
 func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F], ctx schema.ModuleId,
-	regs []register.Register, cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
+	regs []register.Register[F], cond dfa.BranchCondition, pc uint, pcSelectors []register.Id,
 	ret register.Id, oneHot []oneHotGroup) register.Id {
 	// Position register gating the rows of this access: the line's IS_PC_k
 	// selector for a multi-line function, or $ret for an atomic one (defining
@@ -208,12 +208,12 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F], ctx schema.M
 // (already position-gated) branch condition — so it is 1 exactly on the rows
 // which perform the access.
 func newPathSelector[F field.Element[F]](mod *schema.Table[F], ctx schema.ModuleId,
-	regs []register.Register, cond dfa.BranchCondition, oneHot []oneHotGroup,
+	regs []register.Register[F], cond dfa.BranchCondition, oneHot []oneHotGroup,
 ) register.Id {
 	// Allocate the selector column.
 	selId := register.NewId(mod.Width())
 	//
-	mod.AddRegisters(register.NewComputed(fmt.Sprintf("$lookup_sel_%d", selId.Unwrap()), 1))
+	mod.AddRegisters(register.NewComputed[F](fmt.Sprintf("$lookup_sel_%d", selId.Unwrap()), 1))
 	// Fill the flag selector during trace expansion with the boolean value of the condition.
 	mod.AddAssignments(assignment.NewComputedRegister(selId, pathSelectorComputation[F](cond, regs), ctx))
 	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.
@@ -233,7 +233,7 @@ func newPathSelector[F field.Element[F]](mod *schema.Table[F], ctx schema.Module
 //
 //	if rest { sel == Σᵢ bitᵢ·⟦guardsᵢ⟧ } else { sel == 0 }
 func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.BranchCondition,
-	regs []register.Register, oneHot []oneHotGroup) mir.LogicalTerm[F] {
+	regs []register.Register[F], oneHot []oneHotGroup) mir.LogicalTerm[F] {
 	var (
 		reader = callRegisterReader[F]{regs}
 		sel    = mirc.Variable[F](selId, 1, 0)
@@ -278,7 +278,7 @@ func pathSelectorConstraint[F field.Element[F]](selId register.Id, cond dfa.Bran
 
 // pathSelectorComputation builds the trace-expansion computation for a path
 // selector: the boolean value of the branch condition (1 when taken, else 0).
-func pathSelectorComputation[F field.Element[F]](cond dfa.BranchCondition, regs []register.Register,
+func pathSelectorComputation[F field.Element[F]](cond dfa.BranchCondition, regs []register.Register[F],
 ) mir.Term[F] {
 	var (
 		condition = mirc.TranslateBranchCondition(cond, callRegisterReader[F]{regs})
@@ -296,10 +296,10 @@ func pathSelectorComputation[F field.Element[F]](cond dfa.BranchCondition, regs 
 // may hold a later assignment (e.g. after register coalescing).  This mirrors
 // VectorInsnTranslator.ReadRegister.
 type callRegisterReader[F field.Element[F]] struct {
-	regs []register.Register
+	regs []register.Register[F]
 }
 
-func (p callRegisterReader[F]) Register(id register.Id) register.Register {
+func (p callRegisterReader[F]) Register(id register.Id) register.Register[F] {
 	return p.regs[id.Unwrap()]
 }
 
@@ -337,7 +337,7 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F], ctx 
 	pc uint, calleeId uint16, args, returns []register.Id, srcSelector register.Id, program vm.Program[W]) {
 	var (
 		callee     = program.Module(calleeId).(*vm.Function[W])
-		calleeRegs = toRegisters(callee.Registers())
+		calleeRegs = toRegisters[W, F](callee.Registers())
 		handle     = fmt.Sprintf("call_%d_%d_%d", ctx, pc, calleeId)
 		discard    = register.NewId(uint(vm.DISCARD))
 		// Source ids: the caller's argument registers followed by its (bound)
@@ -443,7 +443,7 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F],
 	address, data []register.Id, srcSelector register.Id, program vm.Program[W]) {
 	var (
 		mem     = program.Module(memId).(*vm.Memory[W])
-		memRegs = toRegisters(mem.Registers())
+		memRegs = toRegisters[W, F](mem.Registers())
 		// The bytecode index (cc) disambiguates two accesses to the same memory
 		// on the same code line.
 		handle  = fmt.Sprintf("memory_%d_%d_%d_%d", ctx, pc, cc, memId)

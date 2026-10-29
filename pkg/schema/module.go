@@ -25,8 +25,8 @@ import (
 type ModuleId = uint
 
 // ModuleView provides access to certain structural information about a module.
-type ModuleView interface {
-	register.Map
+type ModuleView[F field.Element[F]] interface {
+	register.Map[F]
 	// Module name
 	Name() module.Name
 	// IsPublicOutput indicates whether or not this module represents a public
@@ -56,7 +56,7 @@ type ModuleView interface {
 // Module represents a "table" within a schema which contains zero or more rows
 // for a given set of registers.
 type Module[F field.Element[F]] interface {
-	ModuleView
+	ModuleView[F]
 	// Assignments returns an iterator over the assignments of this module.
 	// These are the computations used to assign values to all computed columns
 	// in this module.
@@ -94,7 +94,7 @@ type Table[F field.Element[F]] struct {
 	synthetic      bool
 	native         bool
 	static         bool
-	registers      []register.Register
+	registers      []register.Register[F]
 	constraints    []Constraint[F]
 	assignments    []Assignment[F]
 	staticContents [][]F
@@ -198,13 +198,13 @@ func (p *Table[F]) StaticContents() [][]F {
 }
 
 // Register returns the given register in this table.
-func (p *Table[F]) Register(id register.Id) register.Register {
+func (p *Table[F]) Register(id register.Id) register.Register[F] {
 	return p.registers[id.Unwrap()]
 }
 
 // Registers returns an iterator over the underlying registers of this schema.
 // Specifically, the index of a register in this array is its register index.
-func (p *Table[F]) Registers() []register.Register {
+func (p *Table[F]) Registers() []register.Register[F] {
 	return p.registers
 }
 
@@ -232,7 +232,7 @@ func (p *Table[F]) AddConstraints(constraints ...Constraint[F]) {
 }
 
 // AddRegisters adds new registers to this table.
-func (p *Table[F]) AddRegisters(registers ...register.Register) {
+func (p *Table[F]) AddRegisters(registers ...register.Register[F]) {
 	// Add registers
 	p.registers = append(p.registers, registers...)
 }

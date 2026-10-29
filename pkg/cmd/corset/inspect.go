@@ -130,7 +130,7 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 // The optional "public" predicate determines which modules are publicly visible
 // (shown by default); when nil, all modules are public.  Callers use this to
 // hide synthetic modules such as range-check tables.
-func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace trace.Shard[F],
+func InspectTrace[F field.Element[F]](mapping module.LimbsMap[F], trace trace.Shard[F],
 	public func(string) bool, limbs bool, cellWidth, titleWidth uint) []error {
 	//
 	term, err := termio.NewTerminal()
@@ -141,7 +141,7 @@ func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace trace.Shard
 	builder := view.NewBuilder[F](mapping).
 		WithTitleWidth(titleWidth).
 		WithCellWidth(cellWidth).
-		WithFormatting(inspector.NewFormatter()).
+		WithFormatting(inspector.NewFormatter[F]()).
 		WithLimbs(limbs).
 		WithComputed(true)
 	// Apply the visibility predicate (if any).
@@ -161,7 +161,7 @@ func InspectTrace[F field.Element[F]](mapping module.LimbsMap, trace trace.Shard
 }
 
 // Inspect a given trace using a given schema.
-func inspect[F field.Element[F]](mapping module.LimbsMap, srcmap *corset.SourceMap, trace trace.Shard[F],
+func inspect[F field.Element[F]](mapping module.LimbsMap[F], srcmap *corset.SourceMap, trace trace.Shard[F],
 	limbs bool, cellWidth, titleWidth uint) []error {
 	// Construct inspector window
 	inspector := construct(mapping, trace, srcmap, limbs, cellWidth, titleWidth)
@@ -173,8 +173,8 @@ func inspect[F field.Element[F]](mapping module.LimbsMap, srcmap *corset.SourceM
 	return inspector.Start()
 }
 
-func construct[F field.Element[F]](mapping module.LimbsMap, trace trace.Shard[F], srcmap *corset.SourceMap, limbs bool,
-	cellWidth, titleWidth uint) *inspector.Inspector {
+func construct[F field.Element[F]](mapping module.LimbsMap[F], trace trace.Shard[F], srcmap *corset.SourceMap, limbs bool,
+	cellWidth, titleWidth uint) *inspector.Inspector[F] {
 	//
 	term, err := termio.NewTerminal()
 	// Check whether successful
@@ -183,7 +183,7 @@ func construct[F field.Element[F]](mapping module.LimbsMap, trace trace.Shard[F]
 			WithSourceMap(*srcmap).
 			WithTitleWidth(titleWidth).
 			WithCellWidth(cellWidth).
-			WithFormatting(inspector.NewFormatter()).
+			WithFormatting(inspector.NewFormatter[F]()).
 			WithLimbs(limbs).
 			WithComputed(true).
 			Build(trace)

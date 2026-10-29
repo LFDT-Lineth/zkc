@@ -510,7 +510,7 @@ func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.Module
 // whilst 255 - x lies in [0, 255].  A non-negative orientation allows the term
 // to be summed with other non-negative terms into a single constraint (see
 // nextSumConjunct) and avoids unnecessary squaring during normalisation.
-func orientedSubtract[F field.Element[F]](lhs, rhs air.Term[F], regs register.Map) air.Term[F] {
+func orientedSubtract[F field.Element[F]](lhs, rhs air.Term[F], regs register.Map[F]) air.Term[F] {
 	var (
 		diff   = term.Subtract(lhs, rhs)
 		values = valueRangeOf(diff, regs)
@@ -638,7 +638,7 @@ func simplify[F field.Element[F]](terms []air.Term[F]) []air.Term[F] {
 	return nterms
 }
 
-func (p *AirLowering[F]) nextSumConjunct(regs register.Map, terms []air.Term[F]) (n uint) {
+func (p *AirLowering[F]) nextSumConjunct(regs register.Map[F], terms []air.Term[F]) (n uint) {
 	//
 	var (
 		sum big.Int
@@ -707,7 +707,7 @@ type nonZeroCheck[F field.Element[F]] struct {
 // non-zero check on x itself; and "x ≠ 2^w-1", which is a non-zero check on
 // the complement 2^w-1 - x.
 // Note that it heavily relies on the assumption that the register's range constraints are sound.
-func isNonZeroCheck[F field.Element[F]](t LogicalTerm[F], regs register.Map) (nonZeroCheck[F], bool) {
+func isNonZeroCheck[F field.Element[F]](t LogicalTerm[F], regs register.Map[F]) (nonZeroCheck[F], bool) {
 	ne, ok := t.(*NotEqual[F])
 	//
 	if !ok {
@@ -783,7 +783,7 @@ func disjunction[F field.Element[F]](terms ...[]air.Term[F]) []air.Term[F] {
 	return nterms
 }
 
-func valueRangeOf[F field.Element[F]](term air.Term[F], regs register.Map) util_math.Interval {
+func valueRangeOf[F field.Element[F]](term air.Term[F], regs register.Map[F]) util_math.Interval {
 	switch t := term.(type) {
 	case *air.Add[F]:
 		var res util_math.Interval

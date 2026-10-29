@@ -35,14 +35,14 @@ type ModuleConfig interface {
 // or not register limbs are shown, and provides a mechanism for querying
 // whether a given cell is "active" or not.  Specifically, cells in a
 // perspective are not active when that perspective is not active.
-type ModuleView interface {
+type ModuleView[F field.Element[F]] interface {
 	widget.TableSource
 	// Config returns config settings for this module.
 	Config() ModuleConfig
 	// Data abstracts the raw data of the underlying module.
-	Data() ModuleData
+	Data() ModuleData[F]
 	// Filter this view to produce a more focused view.
-	Filter(ModuleFilter) ModuleView
+	Filter(ModuleFilter) ModuleView[F]
 	// Return offset position within module
 	Offset() (uint, uint)
 	// Set offset position within module
@@ -76,12 +76,12 @@ func (p *moduleView[F]) Config() ModuleConfig {
 }
 
 // Data returns an abtract view of the data for given register
-func (p *moduleView[F]) Data() ModuleData {
+func (p *moduleView[F]) Data() ModuleData[F] {
 	return p.data
 }
 
 // Filter columns in this module
-func (p *moduleView[F]) Filter(filter ModuleFilter) ModuleView {
+func (p *moduleView[F]) Filter(filter ModuleFilter) ModuleView[F] {
 	var q = *p
 	//
 	q.window = p.data.Filter(filter)

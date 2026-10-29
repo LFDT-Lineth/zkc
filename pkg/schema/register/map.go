@@ -15,11 +15,13 @@ package register
 import (
 	"fmt"
 	"strings"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Map provides a generic interface for entities which hold information
 // about registers.
-type Map interface {
+type Map[F field.Element[F]] interface {
 	fmt.Stringer
 	// Name returns the name given to the enclosing entity (i.e. module or
 	// function).
@@ -28,14 +30,14 @@ type Map interface {
 	// so, returns its register identifier.  Otherwise, it returns false.
 	HasRegister(name string) (Id, bool)
 	// Access a given register in this module.
-	Register(Id) Register
+	Register(Id) Register[F]
 	// Registers providers access to the underlying registers of this map.
-	Registers() []Register
+	Registers() []Register[F]
 }
 
 // MapToString provides a default method for converting a register map
 // into a simple string representation.
-func MapToString(p Map) string {
+func MapToString[F field.Element[F]](p Map[F]) string {
 	var builder strings.Builder
 	//
 	builder.WriteString("{")
@@ -56,20 +58,20 @@ func MapToString(p Map) string {
 }
 
 // ArrayMap constructs a register map from an array of registers.
-func ArrayMap(name string, regs ...Register) Map {
-	return &arrayMap{name, regs}
+func ArrayMap[F field.Element[F]](name string, regs ...Register[F]) Map[F] {
+	return &arrayMap[F]{name, regs}
 }
 
-type arrayMap struct {
+type arrayMap[F field.Element[F]] struct {
 	name string
-	regs []Register
+	regs []Register[F]
 }
 
-func (p *arrayMap) Name() string {
+func (p *arrayMap[F]) Name() string {
 	return p.name
 }
 
-func (p *arrayMap) HasRegister(name string) (Id, bool) {
+func (p *arrayMap[F]) HasRegister(name string) (Id, bool) {
 	for i, r := range p.regs {
 		if r.Name() == name {
 			return NewId(uint(i)), true
@@ -79,14 +81,14 @@ func (p *arrayMap) HasRegister(name string) (Id, bool) {
 	return UnusedId(), false
 }
 
-func (p *arrayMap) Register(id Id) Register {
+func (p *arrayMap[F]) Register(id Id) Register[F] {
 	return p.regs[id.Unwrap()]
 }
 
-func (p *arrayMap) Registers() []Register {
+func (p *arrayMap[F]) Registers() []Register[F] {
 	return p.regs
 }
 
-func (p *arrayMap) String() string {
+func (p *arrayMap[F]) String() string {
 	return MapToString(p)
 }
