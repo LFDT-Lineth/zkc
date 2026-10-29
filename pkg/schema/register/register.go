@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 var (
@@ -73,22 +75,6 @@ func NewComputed(name string, bitwidth uint) Register {
 	return Register{COMPUTED_REGISTER, name, bitwidth}
 }
 
-// NewConst constructs a new "constant register".  That is a register which
-// always holds a constant value.  Currently, only constants 0 or 1 are
-// supported.
-func NewConst(value uint8) Register {
-	var name = fmt.Sprintf("%d", value)
-	//
-	switch value {
-	case 0:
-		return Register{ZERO_REGISTER, name, 0}
-	case 1:
-		return Register{ONE_REGISTER, name, 1}
-	default:
-		panic(fmt.Sprintf("unsupported constant register (%d)", value))
-	}
-}
-
 // Bound returns the first value which cannot be represented by the given
 // bitwidth.  For example, the bound of an 8bit register is 256.
 func (p *Register) Bound() *big.Int {
@@ -123,12 +109,18 @@ func (p *Register) IsOutput() bool {
 // that "zero" registers are included in this, since they are neither input nor
 // output registers.
 func (p *Register) IsComputed() bool {
-	return p.kind == COMPUTED_REGISTER || p.IsU1Const()
+	return p.kind == COMPUTED_REGISTER || p.IsConstant()
 }
 
-// IsU1Const determines whether or not this is a constant "zero" or "one" register
-func (p *Register) IsU1Const() bool {
-	return p.kind == ZERO_REGISTER || p.kind == ONE_REGISTER
+// IsConstant determines whether or not this is a constant register, or not.
+// Observe that constant registers are considered to be computed registers.
+func (p *Register) IsConstant() bool {
+	return false
+}
+
+// Constant returns the constant value associated with this register.
+func (p *Register) Constant[F field.Element[F]]() F {
+	panic("todo")
 }
 
 // IsNative determines whether or not this is a "native" register.  That is, a
@@ -136,18 +128,6 @@ func (p *Register) IsU1Const() bool {
 // integer.
 func (p *Register) IsNative() bool {
 	return p.width == math.MaxUint
-}
-
-// ConstValue determines the constant value for a given constant register.
-func (p *Register) ConstValue() uint8 {
-	switch p.kind {
-	case ZERO_REGISTER:
-		return 0
-	case ONE_REGISTER:
-		return 1
-	default:
-		panic("register not constant")
-	}
 }
 
 // MaxValue returns the largest value expressible in this register (i.e. Bound() -
