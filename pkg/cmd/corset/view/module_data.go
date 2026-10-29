@@ -28,8 +28,7 @@ import (
 
 // SourceColumnId abstracts the idea of a source-level column declaration.  Due
 // to register allocation, we can have multiple source-level columns mapped to
-// the same register; likewise, due to register splitting, we can have one
-// register mapping to multiple limbs.
+// the same register.
 type SourceColumnId = register.Id
 
 // SourceColumn provides key information to the inspector about source-level
@@ -46,8 +45,6 @@ type SourceColumn struct {
 	Selector util.Option[string]
 	// RegisterId to which this column was allocated.
 	Register register.Id
-	// Limbs making up the register to which this column is allocated.
-	Limbs []register.Id
 	// rendered column data
 	data []util.Option[string]
 }
@@ -57,11 +54,11 @@ type SourceColumn struct {
 // ============================================================================
 
 // ModuleData abstracts the raw data of a module.
-type ModuleData[F field.Element[F]] interface {
+type ModuleData interface {
 	// Id returns the module identifier
 	Id() sc.ModuleId
-	// Access abtract data for given set of register limbs register
-	DataOf([]register.LimbId) RegisterView
+	// Access abtract data for given register
+	DataOf(register.Id) RegisterView
 	// Dimensions returns width and height of data
 	Dimensions() (uint, uint)
 	// Determine whether a given source column is active on a given row.  A
@@ -70,8 +67,6 @@ type ModuleData[F field.Element[F]] interface {
 	IsActive(SourceColumn, uint) bool
 	// Determines whether or not this module is externally visible.
 	IsPublic() bool
-	// Mapping returns the register limbs map being used by this module view.
-	Mapping() register.LimbsMap[F]
 	// Name returns the name of the given module
 	Name() module.Name
 	// HasSourceColumn is useful for querying whether a source column exists
@@ -90,8 +85,6 @@ type moduleData[F field.Element[F]] struct {
 	id sc.ModuleId
 	// Height of module
 	height uint
-	// Mapping registers <-> limbs
-	mapping register.LimbsMap[F]
 	// Enumeration values
 	enumerations []corset.Enumeration
 	// public modifier
@@ -104,10 +97,10 @@ type moduleData[F field.Element[F]] struct {
 	rows []SourceColumn
 }
 
-func newModuleData[F field.Element[F]](id sc.ModuleId, mapping register.LimbsMap[F], trace trace.Module[F], public bool,
+func newModuleData[F field.Element[F]](id sc.ModuleId, trace trace.Module[F], public bool,
 	enums []corset.Enumeration, rows []SourceColumn) *moduleData[F] {
 	//
-	return &moduleData[F]{id, trace.Height(), mapping, enums, public, trace, nil, rows}
+	return &moduleData[F]{id, trace.Height(), enums, public, trace, nil, rows}
 }
 
 // CellAt returns the contents of a specific cell in this table.
@@ -115,7 +108,7 @@ func (p *moduleData[F]) CellAt(col uint, row uint) string {
 	var (
 		src  = &p.rows[row]
 		n    = uint(len(src.data))
-		view = p.DataOf(src.Limbs)
+		view = p.DataOf(src.Register)
 	)
 	// Check whether need to resize
 	if n <= col {
@@ -161,7 +154,7 @@ func (p *moduleData[F]) IsActive(col SourceColumn, row uint) bool {
 	// Extract relevant selector
 	selector := p.SourceColumnOf(col.Selector.Unwrap())
 	// Extract selector's value on this row
-	val := p.DataOf(selector.Limbs).Get(row)
+	val := p.DataOf(selector.Register).Get(row)
 	// Check whether selector is active (or not)
 	return val.BitLen() != 0
 }
@@ -201,10 +194,10 @@ func (p *moduleData[F]) SourceColumnOf(name string) SourceColumn {
 	panic(fmt.Sprintf("unknown source column %s", name))
 }
 
-// Data returns an abtract view of the data for a set of register limbs.
-func (p *moduleData[F]) DataOf(limbs []register.LimbId) RegisterView {
+// Data returns an abtract view of the data for a register.
+func (p *moduleData[F]) DataOf(regId register.Id) RegisterView {
 	return &registerView[F]{
-		p.trace, limbs, p.mapping,
+		p.trace, regId,
 	}
 }
 
@@ -237,7 +230,7 @@ func (p *moduleData[F]) Filter(filter ModuleFilter) Window {
 	for i, ith := range p.rows {
 		// Construct source column id
 		sid := register.NewId(uint(i))
-		// If any limb is included, the whole limb is included.
+		// Include column if not filtered out.
 		if filter.Column(ith) {
 			nrows = append(nrows, sid)
 		}
@@ -255,11 +248,6 @@ func (p *moduleData[F]) Id() sc.ModuleId {
 
 func (p *moduleData[F]) IsPublic() bool {
 	return p.public
-}
-
-// Mapping returns the register-limbs mapping used within this view.
-func (p *moduleData[F]) Mapping() register.LimbsMap[F] {
-	return p.mapping
 }
 
 // Name return name of this module

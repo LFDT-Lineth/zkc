@@ -16,26 +16,25 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // NewFormatter constructs a new cell formatter
-func NewFormatter[F field.Element[F]]() view.TraceFormatting[F] {
-	return &inspectorFormatter[F]{nil}
+func NewFormatter() view.TraceFormatting {
+	return &inspectorFormatter{nil}
 }
 
-type inspectorFormatter[F field.Element[F]] struct {
-	module view.ModuleData[F]
+type inspectorFormatter struct {
+	module view.ModuleData
 }
 
 // ColumnTitle implementation for ModuleFormatting interface
-func (p *inspectorFormatter[F]) ColumnTitle(_ uint, text string) termio.FormattedText {
+func (p *inspectorFormatter) ColumnTitle(_ uint, text string) termio.FormattedText {
 	return termio.NewFormattedText(text, termio.NewAnsiEscape().FgColour(termio.TERM_BLUE))
 }
 
 // ColumnTitle implementation for ModuleFormatting interface
-func (p *inspectorFormatter[F]) RowTitle(col view.SourceColumnId, text string) termio.FormattedText {
+func (p *inspectorFormatter) RowTitle(col view.SourceColumnId, text string) termio.FormattedText {
 	var ansiEscape termio.AnsiEscape
 	//
 	if p.module.SourceColumn(col).Computed {
@@ -48,12 +47,12 @@ func (p *inspectorFormatter[F]) RowTitle(col view.SourceColumnId, text string) t
 }
 
 // Cell implementation for ModuleFormatting interface
-func (p *inspectorFormatter[F]) Cell(col view.SourceColumn, row uint, text string) termio.FormattedText {
+func (p *inspectorFormatter) Cell(col view.SourceColumn, row uint, text string) termio.FormattedText {
 	// Check whether a given column is "active" in a given row.  Columns which
 	// are in perspectives are considered active only when their selectors are
 	// enabled.
 	if p.module.IsActive(col, row) {
-		val := p.module.DataOf(col.Limbs).Get(row)
+		val := p.module.DataOf(col.Register).Get(row)
 		return termio.NewFormattedText(text, cellColour(val))
 	}
 	//
@@ -61,7 +60,7 @@ func (p *inspectorFormatter[F]) Cell(col view.SourceColumn, row uint, text strin
 }
 
 // Module implementation for TraceFormatting interface
-func (p *inspectorFormatter[F]) Module(mod view.ModuleData[F]) view.ModuleFormatting {
+func (p *inspectorFormatter) Module(mod view.ModuleData) view.ModuleFormatting {
 	var q = *p
 	//
 	q.module = mod

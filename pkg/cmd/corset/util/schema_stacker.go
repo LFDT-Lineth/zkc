@@ -23,7 +23,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -61,6 +60,8 @@ type SchemaStacker[F field.Element[F]] struct {
 	// Source map for the schema above, which maps registers and constraints
 	// back to their original source-level declarations.
 	sourceMap util.Option[corset.SourceMap]
+	// Field config
+	field field.Config
 }
 
 // NewSchemaStack constructs a new, but empty stack of schemas.
@@ -71,6 +72,13 @@ func NewSchemaStack[F field.Element[F]]() *SchemaStacker[F] {
 // WithCorsetConfig determines the compilation configuration to use for Corset.
 func (p SchemaStacker[F]) WithCorsetConfig(config corset.CompilationConfig) SchemaStacker[F] {
 	p.corsetConfig = config
+	//
+	return p
+}
+
+// WithFieldConfig determines the field configuration to use for Corset.
+func (p SchemaStacker[F]) WithFieldConfig(config field.Config) SchemaStacker[F] {
+	p.field = config
 	//
 	return p
 }
@@ -121,7 +129,7 @@ func (p SchemaStacker[F]) SourceMap() (*corset.SourceMap, bool) {
 
 // Field returns the field configuration used within this schema stack.
 func (p SchemaStacker[F]) Field() field.Config {
-	return p.corsetConfig.Field
+	return p.field
 }
 
 // Read reads one or more constraints files into this stack.
@@ -150,11 +158,8 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 		stats := util.NewPerfStats()
 		// Read out the (abstract) schema
 		mirSchema = p.schema.Unwrap()
-		// Construct a trivial (unsplit) register mapping, since registers are
-		// no longer subdivided into limbs.
+		//
 		stats.Log("translation")
-		// Record mapping
-		stack.mapping = module.IdentityMap[F](mirSchema.Modules().Collect()...)
 		// Copy over builder
 		stack.traceBuilder = p.traceBuilder
 		// Include Mid-level IR layer (if requested)

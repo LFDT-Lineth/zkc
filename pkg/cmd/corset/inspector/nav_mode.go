@@ -14,18 +14,17 @@ package inspector
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
-// NavigationMode[F] is the default mode of the inspector.  In this mode, the user
+// NavigationMode is the default mode of the inspector.  In this mode, the user
 // is navigating the trace in the normal fashion.
-type NavigationMode[F field.Element[F]] struct {
+type NavigationMode struct {
 }
 
 // Activate navigation mode by setting the command bar to show the navigation
 // commands.
-func (p *NavigationMode[F]) Activate(parent *Inspector[F]) {
+func (p *NavigationMode) Activate(parent *Inspector) {
 	parent.cmdBar.Clear()
 	parent.cmdBar.AddLeft(termio.NewColouredText("[g]", termio.TERM_YELLOW))
 	parent.cmdBar.AddLeft(termio.NewText("oto :: "))
@@ -54,13 +53,13 @@ func (p *NavigationMode[F]) Activate(parent *Inspector[F]) {
 }
 
 // Clock navitation mode, which does nothing at this time.
-func (p *NavigationMode[F]) Clock(parent *Inspector[F]) {
+func (p *NavigationMode) Clock(parent *Inspector) {
 
 }
 
 // KeyPressed in navigation mode, which either adjusts our view of the trace
 // table or fires off some command.
-func (p *NavigationMode[F]) KeyPressed(parent *Inspector[F], key uint16) bool {
+func (p *NavigationMode) KeyPressed(parent *Inspector, key uint16) bool {
 	var (
 		module   = parent.CurrentModule()
 		col, row = module.view.Offset()
@@ -130,15 +129,15 @@ func (p *NavigationMode[F]) KeyPressed(parent *Inspector[F], key uint16) bool {
 	return false
 }
 
-func (p *NavigationMode[F]) gotoInputMode(parent *Inspector[F]) Mode[F] {
+func (p *NavigationMode) gotoInputMode(parent *Inspector) Mode {
 	prompt := termio.NewColouredText("[history ↑/↓] row? ", termio.TERM_YELLOW)
 	history := parent.CurrentModule().targetRowHistory
 	history_index := uint(len(history))
 	//
-	return newInputMode[F](prompt, history_index, history, newUintHandler(parent.gotoRow))
+	return newInputMode(prompt, history_index, history, newUintHandler(parent.gotoRow))
 }
 
-func (p *NavigationMode[F]) filterInputMode(parent *Inspector[F]) Mode[F] {
+func (p *NavigationMode) filterInputMode(parent *Inspector) Mode {
 	prompt := termio.NewColouredText("[history ↑/↓] regex? ", termio.TERM_YELLOW)
 	// Determine current active filter
 	filter := parent.CurrentModule().columnFilter
@@ -149,10 +148,10 @@ func (p *NavigationMode[F]) filterInputMode(parent *Inspector[F]) Mode[F] {
 		history_index--
 	}
 	//
-	return newInputMode[F](prompt, history_index, history, newRegexHandler(parent.filterColumns))
+	return newInputMode(prompt, history_index, history, newRegexHandler(parent.filterColumns))
 }
 
-func (p *NavigationMode[F]) scanInputMode(parent *Inspector[F]) Mode[F] {
+func (p *NavigationMode) scanInputMode(parent *Inspector) Mode {
 	var (
 		promptText   = "[history ↑/↓] where $=row, expression? "
 		promptLength = len([]rune(promptText))
@@ -163,10 +162,6 @@ func (p *NavigationMode[F]) scanInputMode(parent *Inspector[F]) Mode[F] {
 		data         = parent.CurrentModule().view.Data()
 	)
 	// Identify available columns
-	for _, c := range data.Mapping().Registers() {
-		columns.Insert(c.Name())
-	}
-	//
 	for _, c := range data.SourceColumns() {
 		columns.Insert(c.Name)
 	}
@@ -175,5 +170,5 @@ func (p *NavigationMode[F]) scanInputMode(parent *Inspector[F]) Mode[F] {
 		return columns.Contains(col) || col == "$"
 	}
 	// Construct input mode
-	return newInputMode[F](prompt, historyIndex, history, newQueryHandler(env, parent.matchQuery, promptLength))
+	return newInputMode(prompt, historyIndex, history, newQueryHandler(env, parent.matchQuery, promptLength))
 }

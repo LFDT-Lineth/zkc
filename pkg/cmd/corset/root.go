@@ -140,8 +140,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 	}
 	// Initial corset compilation configuration
 	corsetConfig.EnforceTypes = GetFlag(cmd, "enforce-types")
-	corsetConfig.EnforceLimbTypes = GetFlag(cmd, "enforce-limb-types")
-	corsetConfig.Field = *fieldConfig
 	// Sanity check MIR optimisation level
 	if optimisation >= uint(len(mir.OPTIMISATION_LEVELS)) {
 		fmt.Printf("invalid optimisation level %d\n", optimisation)
@@ -168,7 +166,8 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 	// Configure the stack
 	stacker = stacker.
 		WithCorsetConfig(corsetConfig).
-		WithOptimisationConfig(mir.OPTIMISATION_LEVELS[optimisation])
+		WithOptimisationConfig(mir.OPTIMISATION_LEVELS[optimisation]).
+		WithFieldConfig(*fieldConfig)
 	//
 	if mirEnable {
 		stacker = stacker.WithLayer(cmd_util.MIR_LAYER)
@@ -205,7 +204,6 @@ func init() {
 	rootCmd.Flags().Bool("version", false, "Report version of this executable")
 	// Corset compilation config
 	rootCmd.PersistentFlags().Bool("enforce-types", true, "enforce all register types")
-	rootCmd.PersistentFlags().Bool("enforce-limb-types", true, "enforce types for limbs arising from split registers")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
 	rootCmd.PersistentFlags().UintP("opt", "O", 1, "set optimisation level")
 	// Assembly lowering config

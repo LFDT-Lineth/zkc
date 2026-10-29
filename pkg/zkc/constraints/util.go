@@ -15,9 +15,7 @@ package constraints
 import (
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	pow "github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
@@ -122,24 +120,4 @@ func fillAddressLines[F field.Element[F]](address uint64, row []F, lines []regis
 		// Shift down address
 		acc = acc.Shr64(bitwidth)
 	}
-}
-
-// newLimbsMap constructs the register → limb mapping for a given (pre-split)
-// program, mirroring exactly how register splitting lays out limbs within each
-// module.
-func newLimbsMap[W vm.Word[W], F field.Element[F]](config field.Config, modules ...vm.Module[W]) module.LimbsMap[F] {
-	var ms []register.LimbsMap[F] = array.Map(modules, func(_ uint, m vm.Module[W]) register.LimbsMap[F] {
-		var (
-			regs  = m.Registers()
-			limbs = make([][]register.Limb[F], len(regs))
-		)
-		// Split registers into limbs
-		for i, r := range regs {
-			limbs[i] = toRegisters[W, F](vm.SplitIntoLimbs(config.RegisterWidth, r))
-		}
-		// Construct limbs map
-		return register.NewLimbsMap(m.Name(), toRegisters[W, F](regs), limbs)
-	})
-	//
-	return module.NewLimbsMap(ms...)
 }

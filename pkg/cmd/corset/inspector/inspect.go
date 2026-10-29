@@ -48,13 +48,13 @@ const TEXT_INPUT_MODE = 2
 const STATUS_MODE = 3
 
 // Inspector provides the necessary package
-type Inspector[F field.Element[F]] struct {
+type Inspector struct {
 	width  uint
 	height uint
 	//
 	term *termio.Terminal
 	// Module states
-	modules []ModuleState[F]
+	modules []ModuleState
 	// true means show all modules
 	visibility bool
 	// Widgets
@@ -66,28 +66,28 @@ type Inspector[F field.Element[F]] struct {
 	// The stack of "modes" in which the inspector is operating.  The root modes
 	// is the first in the stack.  When this is terminated, then the inspector
 	// closes.
-	modes []Mode[F]
+	modes []Mode
 }
 
 // Mode identifies a mode in which the inspector is operating.  The
 // default mode is for navigating the trace, but other modes are available for
 // receiving input from the user or displaying error messages, etc.
-type Mode[F field.Element[F]] interface {
+type Mode interface {
 	// Activate is called when this mode becomes active.  This happens when the
 	// mode is first entered, but can also happen subsequently when a child mode
 	// exits and results in this mode being reactivated.
-	Activate(*Inspector[F])
+	Activate(*Inspector)
 	// Clock is called on every clock tick.  This gives the mode an opportunity
 	// to do something if it wishes to.
-	Clock(*Inspector[F])
+	Clock(*Inspector)
 	// KeyPressed in the inspector and received by this mode.
-	KeyPressed(*Inspector[F], uint16) bool
+	KeyPressed(*Inspector, uint16) bool
 }
 
 // NewInspector constructs a new inspector on given terminal.
-func NewInspector[F field.Element[F]](term *termio.Terminal, trace view.TraceView[F]) *Inspector[F] {
+func NewInspector[F field.Element[F]](term *termio.Terminal, trace view.TraceView) *Inspector {
 	var (
-		states     = make([]ModuleState[F], 0)
+		states     = make([]ModuleState, 0)
 		numVisible = 0
 	)
 	// Sort into alpabetical order
@@ -120,10 +120,10 @@ func NewInspector[F field.Element[F]](term *termio.Terminal, trace view.TraceVie
 	//
 	tabs, table, cmdbar, statusbar := initInspectorWidgets(term, states, numVisible == 0)
 	//
-	inspector := &Inspector[F]{0, 0, term, states, numVisible == 0, tabs, table, cmdbar, statusbar, 0, nil}
+	inspector := &Inspector{0, 0, term, states, numVisible == 0, tabs, table, cmdbar, statusbar, 0, nil}
 	table.SetSource(inspector)
 	// Put the inspector into default mode.
-	inspector.EnterMode(&NavigationMode[F]{})
+	inspector.EnterMode(&NavigationMode{})
 	//
 	if numVisible == 0 {
 		inspector.statusClk = 10
@@ -135,7 +135,7 @@ func NewInspector[F field.Element[F]](term *termio.Terminal, trace view.TraceVie
 }
 
 // Clock the inspector
-func (p *Inspector[F]) Clock() error {
+func (p *Inspector) Clock() error {
 	dirty := false
 	mode := len(p.modes) - 1
 	nWidth, nHeight := p.term.GetSize()
@@ -164,28 +164,28 @@ func (p *Inspector[F]) Clock() error {
 }
 
 // Render the inspector to the given terminal
-func (p *Inspector[F]) Render() error {
+func (p *Inspector) Render() error {
 	return p.term.Render()
 }
 
 // Close the inspector.
-func (p *Inspector[F]) Close() error {
+func (p *Inspector) Close() error {
 	return p.term.Restore()
 }
 
 // CurrentModule returns the currently selected module
-func (p *Inspector[F]) CurrentModule() *ModuleState[F] {
+func (p *Inspector) CurrentModule() *ModuleState {
 	if p.tabs.HasSelected() {
 		mid := p.tabs.Selected()
 		//
 		return &p.modules[mid]
 	}
 	//
-	return &ModuleState[F]{view: &emptyModuleView[F]{}}
+	return &ModuleState{view: &emptyModuleView{}}
 }
 
 // EnterMode pushes a new mode onto the mode stack.
-func (p *Inspector[F]) EnterMode(mode Mode[F]) {
+func (p *Inspector) EnterMode(mode Mode) {
 	// Append mode to stack of active modes
 	p.modes = append(p.modes, mode)
 	// Activate mode
@@ -193,7 +193,7 @@ func (p *Inspector[F]) EnterMode(mode Mode[F]) {
 }
 
 // KeyPressed allows the inspector to react to a key being pressed by the user.
-func (p *Inspector[F]) KeyPressed(key uint16) bool {
+func (p *Inspector) KeyPressed(key uint16) bool {
 	var n = len(p.modes) - 1
 	//
 	if p.modes[n].KeyPressed(p, key) {
@@ -210,14 +210,14 @@ func (p *Inspector[F]) KeyPressed(key uint16) bool {
 
 // SetStatus puts a message on the status bar.  Messages remain visible for some
 // number of clock cycles.
-func (p *Inspector[F]) SetStatus(msg termio.FormattedText) {
+func (p *Inspector) SetStatus(msg termio.FormattedText) {
 	p.statusBar.Clear()
 	p.statusBar.AddLeft(msg)
 	p.statusClk = 5
 }
 
 // change cell width in current module
-func (p *Inspector[F]) changeCellWidth(direction bool) {
+func (p *Inspector) changeCellWidth(direction bool) {
 	// Action change
 	width := p.CurrentModule().view.Config().CellWidth()
 	//
@@ -233,7 +233,7 @@ func (p *Inspector[F]) changeCellWidth(direction bool) {
 }
 
 // change cell width in current module
-func (p *Inspector[F]) changeTitleWidth(direction bool) {
+func (p *Inspector) changeTitleWidth(direction bool) {
 	// Action change
 	width := p.CurrentModule().view.Config().TitleWidth()
 	//
@@ -249,7 +249,7 @@ func (p *Inspector[F]) changeTitleWidth(direction bool) {
 }
 
 // Actions goto row mode
-func (p *Inspector[F]) gotoRow(row uint) termio.FormattedText {
+func (p *Inspector) gotoRow(row uint) termio.FormattedText {
 	// Action change
 	row = p.CurrentModule().gotoRow(row)
 	//
@@ -257,7 +257,7 @@ func (p *Inspector[F]) gotoRow(row uint) termio.FormattedText {
 }
 
 // filter columns based on a regex
-func (p *Inspector[F]) filterColumns(regex *regexp.Regexp) termio.FormattedText {
+func (p *Inspector) filterColumns(regex *regexp.Regexp) termio.FormattedText {
 	row, _ := p.CurrentModule().view.Offset()
 	filter := p.CurrentModule().columnFilter
 	filter.Regex = regex
@@ -266,7 +266,7 @@ func (p *Inspector[F]) filterColumns(regex *regexp.Regexp) termio.FormattedText 
 	return p.gotoRow(row)
 }
 
-func (p *Inspector[F]) clearColumnFilter() bool {
+func (p *Inspector) clearColumnFilter() bool {
 	row, _ := p.CurrentModule().view.Offset()
 	filter := p.CurrentModule().columnFilter
 	filter.Regex = nil
@@ -276,7 +276,7 @@ func (p *Inspector[F]) clearColumnFilter() bool {
 	return true
 }
 
-func (p *Inspector[F]) toggleColumnFilter() bool {
+func (p *Inspector) toggleColumnFilter() bool {
 	var (
 		row, _ = p.CurrentModule().view.Offset()
 		filter = p.CurrentModule().columnFilter
@@ -303,7 +303,7 @@ func (p *Inspector[F]) toggleColumnFilter() bool {
 	return true
 }
 
-func (p *Inspector[F]) nextScanResult(forwards bool) {
+func (p *Inspector) nextScanResult(forwards bool) {
 	var (
 		current = p.CurrentModule()
 		msg     termio.FormattedText
@@ -322,13 +322,13 @@ func (p *Inspector[F]) nextScanResult(forwards bool) {
 	p.SetStatus(msg)
 }
 
-func (p *Inspector[F]) matchQuery(query *Query) termio.FormattedText {
+func (p *Inspector) matchQuery(query *Query) termio.FormattedText {
 	var col, _ = p.CurrentModule().view.Offset()
 	//
 	return p.CurrentModule().matchQuery(col, true, query)
 }
 
-func (p *Inspector[F]) toggleModuleVisibility() {
+func (p *Inspector) toggleModuleVisibility() {
 	p.visibility = !p.visibility
 	p.tabs = initInspectorTabs(p.visibility, p.modules)
 	p.term.Set(0, p.tabs)
@@ -339,7 +339,7 @@ func (p *Inspector[F]) toggleModuleVisibility() {
 // ==================================================================
 
 // Dimensions implementation for the TableSource interface
-func (p *Inspector[F]) Dimensions() (uint, uint) {
+func (p *Inspector) Dimensions() (uint, uint) {
 	module := p.CurrentModule()
 	//
 	return module.view.Dimensions()
@@ -347,7 +347,7 @@ func (p *Inspector[F]) Dimensions() (uint, uint) {
 
 // ColumnWidth gets the width of a given column in the main table of the
 // inspector.  Note that columns here are table columns, not trace columns.
-func (p *Inspector[F]) ColumnWidth(col uint) uint {
+func (p *Inspector) ColumnWidth(col uint) uint {
 	module := p.CurrentModule()
 	//
 	return module.view.ColumnWidth(col)
@@ -355,7 +355,7 @@ func (p *Inspector[F]) ColumnWidth(col uint) uint {
 
 // CellAt returns the contents of a given cell in the main table of the
 // inspector.
-func (p *Inspector[F]) CellAt(col, row uint) termio.FormattedText {
+func (p *Inspector) CellAt(col, row uint) termio.FormattedText {
 	// Determine currently selected module
 	var (
 		state         = p.CurrentModule()
@@ -370,7 +370,7 @@ func (p *Inspector[F]) CellAt(col, row uint) termio.FormattedText {
 }
 
 // Start provides a read / update / render loop.
-func (p *Inspector[F]) Start() []error {
+func (p *Inspector) Start() []error {
 	var errors []error
 	// Start clock timer
 	clk := time.NewTicker(500 * time.Millisecond)
@@ -410,8 +410,8 @@ func (p *Inspector[F]) Start() []error {
 // Helpers
 // ==================================================================
 
-func initInspectorWidgets[F field.Element[F]](term *termio.Terminal, states []ModuleState[F], showAllModules bool) (tabs *widget.Tabs[uint],
-	table *widget.Table, cmdbar *widget.TextLine, statusbar *widget.TextLine) {
+func initInspectorWidgets(term *termio.Terminal, states []ModuleState, showAllModules bool,
+) (tabs *widget.Tabs[uint], table *widget.Table, cmdbar *widget.TextLine, statusbar *widget.TextLine) {
 	//
 	tabs = initInspectorTabs(showAllModules, states)
 	table = widget.NewTable(nil)
@@ -428,7 +428,7 @@ func initInspectorWidgets[F field.Element[F]](term *termio.Terminal, states []Mo
 	return tabs, table, cmdbar, statusbar
 }
 
-func initInspectorTabs[F field.Element[F]](showAllModules bool, states []ModuleState[F]) *widget.Tabs[uint] {
+func initInspectorTabs(showAllModules bool, states []ModuleState) *widget.Tabs[uint] {
 	var tabs []util.Pair[string, module.Id]
 
 	for i, state := range states {
@@ -443,50 +443,50 @@ func initInspectorTabs[F field.Element[F]](showAllModules bool, states []ModuleS
 
 // Empty ModuleView is required for the unusual case that there are no modules
 // currently visible.  This can arise if there are no public modules at all.
-type emptyModuleView[F field.Element[F]] struct {
+type emptyModuleView struct {
 }
 
 // Config implementation for ModuleView interface.
-func (p *emptyModuleView[F]) Config() view.ModuleConfig {
+func (p *emptyModuleView) Config() view.ModuleConfig {
 	panic("unsupported operation")
 }
 
 // Data implementation for ModuleView interface.
-func (p *emptyModuleView[F]) Data() view.ModuleData[F] {
+func (p *emptyModuleView) Data() view.ModuleData {
 	panic("unsupported operation")
 }
 
 // Filter implementation for ModuleView interface.
-func (p *emptyModuleView[F]) Filter(view.ModuleFilter) view.ModuleView[F] {
+func (p *emptyModuleView) Filter(view.ModuleFilter) view.ModuleView {
 	return p
 }
 
 // Offset implementation for ModuleView interface.
-func (p *emptyModuleView[F]) Offset() (uint, uint) {
+func (p *emptyModuleView) Offset() (uint, uint) {
 	return 0, 0
 }
 
 // Goto implementation for ModuleView interface.
-func (p *emptyModuleView[F]) Goto(uint, uint) {
+func (p *emptyModuleView) Goto(uint, uint) {
 
 }
 
 // Window implementation for ModuleView interface.
-func (p *emptyModuleView[F]) Window() view.Window {
+func (p *emptyModuleView) Window() view.Window {
 	panic("unsupported operation")
 }
 
 // ColumnWidth implementation for TableSource interface.
-func (p *emptyModuleView[F]) ColumnWidth(col uint) uint {
+func (p *emptyModuleView) ColumnWidth(col uint) uint {
 	return 0
 }
 
 // Dimensions implementation for TableSource interface.
-func (p *emptyModuleView[F]) Dimensions() (uint, uint) {
+func (p *emptyModuleView) Dimensions() (uint, uint) {
 	return 0, 0
 }
 
 // CellAt implementation for TableSource interface.
-func (p *emptyModuleView[F]) CellAt(col, row uint) termio.FormattedText {
+func (p *emptyModuleView) CellAt(col, row uint) termio.FormattedText {
 	return termio.NewText("")
 }

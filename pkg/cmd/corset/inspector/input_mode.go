@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/bexp"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
@@ -27,7 +26,7 @@ import (
 
 // InputMode is where the user is entering some information (e.g. row for
 // executing a goto command).
-type InputMode[F field.Element[F], T any] struct {
+type InputMode[T any] struct {
 	// prompt to show user
 	prompt termio.FormattedText
 	// input text being accumulated whilst in input mode.
@@ -51,8 +50,8 @@ type InputHandler[T any] interface {
 	Apply(T) termio.FormattedText
 }
 
-func newInputMode[F field.Element[F], T any](prompt termio.FormattedText, index uint, history []string,
-	handler InputHandler[T]) *InputMode[F, T] {
+func newInputMode[T any](prompt termio.FormattedText, index uint, history []string,
+	handler InputHandler[T]) *InputMode[T] {
 	var input []byte
 	// Determine whether to show item from history
 	if index >= uint(len(history)) {
@@ -61,12 +60,12 @@ func newInputMode[F field.Element[F], T any](prompt termio.FormattedText, index 
 		input = []byte(history[index])
 	}
 	// Done
-	return &InputMode[F, T]{prompt, input, 0, history, index, handler}
+	return &InputMode[T]{prompt, input, 0, history, index, handler}
 }
 
 // Activate navigation mode by setting the command bar to show the navigation
 // commands.
-func (p *InputMode[F, T]) Activate(parent *Inspector[F]) {
+func (p *InputMode[T]) Activate(parent *Inspector) {
 	parent.cmdBar.Clear()
 	parent.cmdBar.AddLeft(p.prompt)
 	// Add current filter
@@ -97,13 +96,13 @@ func (p *InputMode[F, T]) Activate(parent *Inspector[F]) {
 }
 
 // Clock navitation mode, which does nothing at this time.
-func (p *InputMode[F, T]) Clock(parent *Inspector[F]) {
+func (p *InputMode[T]) Clock(parent *Inspector) {
 	// Nothing to do.
 }
 
 // KeyPressed in input mode simply updates the input, or exits the mode if
 // either "ESC" or enter are pressed.
-func (p *InputMode[F, T]) KeyPressed(parent *Inspector[F], key uint16) bool {
+func (p *InputMode[T]) KeyPressed(parent *Inspector, key uint16) bool {
 	switch {
 	case key == termio.ESC:
 		return true
@@ -156,7 +155,7 @@ func (p *InputMode[F, T]) KeyPressed(parent *Inspector[F], key uint16) bool {
 }
 
 // Delete character at cursor position
-func (p *InputMode[F, T]) deleteCharacterAtCursor() {
+func (p *InputMode[T]) deleteCharacterAtCursor() {
 	if p.cursor > 0 {
 		p.cursor--
 		p.input = array.RemoveAt(p.input, p.cursor)
@@ -164,7 +163,7 @@ func (p *InputMode[F, T]) deleteCharacterAtCursor() {
 }
 
 // Insert character at cursor position
-func (p *InputMode[F, T]) insertCharacterAtCursor(char byte) {
+func (p *InputMode[T]) insertCharacterAtCursor(char byte) {
 	p.input = array.InsertAt(p.input, char, p.cursor)
 	// advance cursor
 	p.cursor++

@@ -31,10 +31,7 @@ var (
 // Register represents a specific register in the schema that, eventually, will
 // be mapped to one (or more) columns in the trace.  Observe that multiple
 // registers can end up being mapped to the same column via "register
-// allocation".  Likewise, a single register can end up being mapped across
-// multiple columns as a result of subdivision to ensure field agnosticity.
-// Hence, why they are referred to as registers rather than columns --- they are
-// similar, but not identical, concepts.
+// allocation".
 type Register[F field.Element[F]] struct {
 	// Kind of register (input / output)
 	kind Type
@@ -118,7 +115,6 @@ func (p *Register[F]) IsComputed() bool {
 }
 
 // IsConstant determines whether or not this is a constant register, or not.
-// Observe that constant registers are considered to be computed registers.
 func (p *Register[F]) IsConstant() bool {
 	return p.kind == CONSTANT_REGISTER
 }
@@ -233,7 +229,7 @@ func (p *Register[F]) MarshalBinary() (data []byte, err error) {
 	} else {
 		width = uint16(p.width)
 	}
-	//
+	// Bitwidth
 	if err := binary.Write(buffer, binary.BigEndian, width); err != nil {
 		return nil, err
 	}
@@ -241,19 +237,23 @@ func (p *Register[F]) MarshalBinary() (data []byte, err error) {
 	if err := writeByteArray(buffer, []byte(p.name)); err != nil {
 		return nil, err
 	}
+	// Write padding
+	if err := writeByteArray(buffer, p.padding.Bytes()); err != nil {
+		return nil, err
+	}
 	// Success
-	//return buffer.Bytes(), nil
-	panic("serialise padding")
+	return buffer.Bytes(), nil
 }
 
 // UnmarshalBinary unmarshals a register
 func (p *Register[F]) UnmarshalBinary(data []byte) error {
 	var (
-		buffer = bytes.NewBuffer(data)
-		kind   uint8
-		width  uint16
-		name   []byte
-		err    error
+		buffer  = bytes.NewBuffer(data)
+		kind    uint8
+		width   uint16
+		name    []byte
+		padding []byte
+		err     error
 	)
 	// Register[F] kind
 	if err := binary.Read(buffer, binary.BigEndian, &kind); err != nil {
@@ -267,6 +267,10 @@ func (p *Register[F]) UnmarshalBinary(data []byte) error {
 	if name, err = readByteArray(buffer); err != nil {
 		return err
 	}
+	// Read register padding
+	if padding, err = readByteArray(buffer); err != nil {
+		return err
+	}
 	//
 	p.kind = Type{kind}
 	if width == nativeWidthSentinel {
@@ -276,6 +280,7 @@ func (p *Register[F]) UnmarshalBinary(data []byte) error {
 	}
 	//
 	p.name = string(name)
+	p.padding = p.padding.SetBytes(padding)
 	// Success!
 	return nil
 }

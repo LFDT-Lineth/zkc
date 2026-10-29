@@ -18,10 +18,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // SchemaStack is an abstraction for working with a stack of schemas, where each
@@ -32,22 +30,12 @@ import (
 type SchemaStack[F field.Element[F]] struct {
 	// Source map for the schema which forms the top of this stack.
 	sourceMap util.Option[corset.SourceMap]
-	// The various (abstract) layers which are refined from the schema.
-	abstractSchemas []schema.Schema[word.BigEndian]
 	// The various (concrete) layers which are refined from the abstract layers.
 	concreteSchemas []schema.Schema[F]
-	// Register mapping used
-	mapping module.LimbsMap[F]
 	// Name of IR used for corresponding schema
 	names []string
 	// Configuration for trace expansion
 	traceBuilder ir.TraceBuilder[F]
-}
-
-// AbstractSchemas returns the stack of abstract schemas according to the
-// selected layers, where higher-level layers come first.
-func (p *SchemaStack[F]) AbstractSchemas() []schema.Schema[word.BigEndian] {
-	return p.abstractSchemas
 }
 
 // SourceMap returns the source map for the schema representing the top of this
@@ -77,9 +65,7 @@ func (p *SchemaStack[F]) ConcreteSchema() schema.Schema[F] {
 // ConcreteSchemaOf returns the schema associated with the given IR representation.  If
 // there is no match, this will panic.
 func (p *SchemaStack[F]) ConcreteSchemaOf(ir string) schema.Schema[F] {
-	m := len(p.abstractSchemas)
-	//
-	for i, n := range p.names[m:] {
+	for i, n := range p.names {
 		if n == ir {
 			return p.concreteSchemas[i]
 		}
@@ -88,17 +74,11 @@ func (p *SchemaStack[F]) ConcreteSchemaOf(ir string) schema.Schema[F] {
 	panic(fmt.Sprintf("schema for %s not found", ir))
 }
 
-// RegisterMapping returns the register mapping used to split registers
-// according to the given field configuration.
-func (p *SchemaStack[F]) RegisterMapping() module.LimbsMap[F] {
-	return p.mapping
-}
-
 // ConcreteIrName returns a human-readable anacronym of the IR used to generate the
 // corresponding SCHEMA.
 func (p *SchemaStack[F]) ConcreteIrName() string {
 	var n = len(p.concreteSchemas) - 1
-	return p.names[len(p.abstractSchemas)+n]
+	return p.names[n]
 }
 
 // TraceBuilder returns a configured trace builder.

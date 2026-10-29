@@ -47,7 +47,7 @@ type partSub[W word.Word[W]] struct {
 // to that of Addition: when a chunk's right-hand side produces more bits than
 // its left-hand side can hold, a borrow register is allocated and spliced into
 // the current chunk's LHS and the next chunk's RHS.
-func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
+func Subtraction[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
 	var pre []Bytecode[W]
 	//
@@ -65,7 +65,7 @@ func Subtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator
 // broken up.  A subtraction only requires splitting if it contains a source
 // register or constant which must be split, or its right-hand side exceeds the
 // target bandwidth.
-func requiresSplitting[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Arith[W]) bool {
+func requiresSplitting[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Arith[W]) bool {
 	var bitwidth = descriptor.BitwidthOf(mapping, insn.Target...).Unwrap()
 	//
 	for _, source := range insn.Source {
@@ -84,7 +84,7 @@ func requiresBreakup[W word.Word[W]](insn *bytecode.Arith[W]) bool {
 }
 
 // Remap a subtraction which does not require real splitting.
-func remapSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Arith[W]) []Bytecode[W] {
+func remapSubtraction[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Arith[W]) []Bytecode[W] {
 	var (
 		targets = applyLimbsMapReversed(mapping, insn.Target...)
 		sources = applyLimbsMapReversed(mapping, insn.Source...)
@@ -104,8 +104,8 @@ func remapSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *byte
 //
 // t = c + d
 // a = b - t
-func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
-) ([]Bytecode[W], *bytecode.Arith[W], descriptor.LimbsMap[W]) {
+func breakupSubtraction[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
+) ([]Bytecode[W], *bytecode.Arith[W], LimbsMap[W]) {
 	var (
 		zero W
 		// Determine bitwidth of temporary register
@@ -123,7 +123,7 @@ func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Al
 	return pre, sub, nmapping
 }
 
-func splitSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
+func splitSubtraction[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
 	// NOTE: by breaking up subtractions, we guarantee here that there at most
 	// two source limbs.
@@ -150,7 +150,7 @@ func splitSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allo
 // the form "0 = a - b": a zero-width target subtracting exactly two operands with no
 // constant.  Such an assertion (a == b) decomposes into independent per-limb equalities
 // and therefore needs no borrow chain (see Subtraction).
-func isZeroDifference[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Arith[W]) bool {
+func isZeroDifference[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Arith[W]) bool {
 	if len(insn.Source) != 2 || insn.Constant.Cmp64(0) != 0 {
 		return false
 	}

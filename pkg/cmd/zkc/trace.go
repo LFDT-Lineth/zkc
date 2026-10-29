@@ -34,7 +34,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/mamabear2"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 	log "github.com/sirupsen/logrus"
@@ -148,7 +147,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	// to reveal a module which was hidden, so everything carrying data is shown
 	// (this excludes, for example, the static range-check tables).
 	if showTrace {
-		corset.PrintTrace(binfile.LimbsMap(), collectShards(tr), false, 32, 128)
+		corset.PrintTrace(collectShards(tr), 32, 128)
 		// Record that trace computed
 		computed = true
 	}
@@ -177,7 +176,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		shards := collectShards(tr)
 		// Real ZkC functions are public; synthetic modules (e.g. range-check
 		// tables) are private (hidden by default in the inspector).
-		errs := corset.InspectTrace(binfile.LimbsMap(), shards[0], publicModule, false, 32, 128)
+		errs := corset.InspectTrace(shards[0], publicModule, 32, 128)
 		// Include all errors
 		errors = append(errors, errs...)
 		// Record that trace computed
@@ -217,16 +216,13 @@ func checkConstraints[F field.Element[F], W vm.Word[W]](binfile *constraints.Bin
 	checkConfig.ReportCellWidth = 32
 	checkConfig.ReportTitleWidth = 40
 	checkConfig.ReportPadding = 2
-	checkConfig.ReportLimbs = true
 	checkConfig.ReportComputed = true
 	checkConfig.AnsiEscapes = AnsiEscapes
-	// Construct limbs map
-	mapping := binfile.LimbsMap()
 	// Run the check
 	failures, errors := binfile.Check(cfg, trace)
 	// Report failures first
 	if len(failures) > 0 {
-		corset.ReportFailures("AIR", mapping, checkConfig, failures)
+		corset.ReportFailures("AIR", checkConfig, failures)
 		// Append an error to force a non-zero exit code
 		errors = append(errors, fmt.Errorf("constraint failures (%d)", len(failures)))
 	}
@@ -533,15 +529,12 @@ func moduleUniqueSummariser[F field.Element[F]](mod trace.Module[F]) uint64 {
 
 func uniqueElementsSummariser[F field.Element[F]](data array.Array[F]) uint64 {
 	//
-	elems := hash.NewSet[word.BigEndian](data.Len() / 2)
+	elems := hash.NewSet[F](data.Len() / 2)
 	// Add all the elements
 	for i := uint(0); i < data.Len(); i++ {
-		var (
-			ith  = data.Get(i)
-			word word.BigEndian
-		)
+		var ith = data.Get(i)
 		//
-		elems.Insert(word.SetBytes(ith.Bytes()))
+		elems.Insert(ith)
 	}
 	// Done
 	return uint64(elems.Size())

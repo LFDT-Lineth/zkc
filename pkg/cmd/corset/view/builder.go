@@ -14,7 +14,6 @@ package view
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -27,26 +26,17 @@ import (
 type CellRefSet = set.AnySortedSet[tr.CellRef]
 
 // Builder is responsible for building the viewing window for a trace.
-type Builder[F field.Element[F]] struct {
+type Builder struct {
 	// Optional set of cells on which the constructed view should focus.
-	// Observe that cells refer to trace cells (i.e. which are in terms of
-	// limbs, not source columns).
 	cells util.Option[CellRefSet]
-	// Limbs indicates whether or not to show the raw limbs, or the combined
-	// source-level register.
-	limbs bool
 	// Computed indicates whether or not to show (low-level) computed registers
 	computed bool
 	// Default cell width to use
 	cellWidth uint
 	// Default title width to use
 	titleWidth uint
-	// Limbs mapping identifies how source-level registers are mapped into
-	// limbs.  This is necessary in order to reconstruct source-level column
-	// data from the trace.
-	mapping module.LimbsMap[F]
 	// Formatting to use
-	formatting TraceFormatting[F]
+	formatting TraceFormatting
 	// Optional source map information.  This is primarily used to determine
 	srcmap util.Option[corset.SourceMap]
 	// Optional predicate determining whether a given module is publicly visible.
@@ -57,13 +47,13 @@ type Builder[F field.Element[F]] struct {
 }
 
 // NewBuilder constructs a default builder.
-func NewBuilder[F field.Element[F]](mapping module.LimbsMap[F]) Builder[F] {
-	return Builder[F]{util.None[CellRefSet](), false, false, 16, 16, mapping,
-		DefaultFormatter[F](), util.None[corset.SourceMap](), util.None[func(string) bool]()}
+func NewBuilder() Builder {
+	return Builder{util.None[CellRefSet](), false, 16, 16,
+		DefaultFormatter(), util.None[corset.SourceMap](), util.None[func(string) bool]()}
 }
 
 // WithCellWidth sets the maximum width of any cell in the view.
-func (p Builder[F]) WithCellWidth(cellWidth uint) Builder[F] {
+func (p Builder) WithCellWidth(cellWidth uint) Builder {
 	var builder = p
 	//
 	builder.cellWidth = cellWidth
@@ -72,7 +62,7 @@ func (p Builder[F]) WithCellWidth(cellWidth uint) Builder[F] {
 }
 
 // WithTitleWidth sets the maximum width of any row title in the view.
-func (p Builder[F]) WithTitleWidth(titleWidth uint) Builder[F] {
+func (p Builder) WithTitleWidth(titleWidth uint) Builder {
 	var builder = p
 	//
 	builder.titleWidth = titleWidth
@@ -80,18 +70,8 @@ func (p Builder[F]) WithTitleWidth(titleWidth uint) Builder[F] {
 	return builder
 }
 
-// WithLimbs determines whether to show columns as raw limbs, or as combined
-// source-level registers.
-func (p Builder[F]) WithLimbs(limbs bool) Builder[F] {
-	var builder = p
-	//
-	builder.limbs = limbs
-	//
-	return builder
-}
-
 // WithComputed determines whether to show low-level computed registers.
-func (p Builder[F]) WithComputed(computed bool) Builder[F] {
+func (p Builder) WithComputed(computed bool) Builder {
 	var builder = p
 	//
 	builder.computed = computed
@@ -100,7 +80,7 @@ func (p Builder[F]) WithComputed(computed bool) Builder[F] {
 }
 
 // WithFormatting determines what formatting to use when rendering this view.
-func (p Builder[F]) WithFormatting(formatting TraceFormatting[F]) Builder[F] {
+func (p Builder) WithFormatting(formatting TraceFormatting) Builder {
 	var builder = p
 	//
 	builder.formatting = formatting
@@ -110,7 +90,7 @@ func (p Builder[F]) WithFormatting(formatting TraceFormatting[F]) Builder[F] {
 
 // WithSourceMap applies source-mapping information to the view.  The main
 // benefit of this is that it includes display modifiers.
-func (p Builder[F]) WithSourceMap(srcmap corset.SourceMap) Builder[F] {
+func (p Builder) WithSourceMap(srcmap corset.SourceMap) Builder {
 	var builder = p
 	//
 	builder.srcmap = util.Some(srcmap)
@@ -121,7 +101,7 @@ func (p Builder[F]) WithSourceMap(srcmap corset.SourceMap) Builder[F] {
 // WithVisibility applies a predicate determining whether a given module is
 // publicly visible.  When set, it overrides the public flag otherwise derived
 // from the source map (or the default).
-func (p Builder[F]) WithVisibility(public func(string) bool) Builder[F] {
+func (p Builder) WithVisibility(public func(string) bool) Builder {
 	var builder = p
 	//
 	builder.visibility = util.Some(public)
@@ -130,26 +110,24 @@ func (p Builder[F]) WithVisibility(public func(string) bool) Builder[F] {
 }
 
 // Build the viewing window for this trace.
-func (p Builder[F]) Build(trace tr.Shard[F]) TraceView[F] {
-	var windows []ModuleView[F]
+func (p Builder) Build[F field.Element[F]](trace tr.Shard[F]) TraceView {
+	var windows []ModuleView
 	//
 	srcmap, enums := extractSourceMap(p.srcmap)
 	//
-	for i := range p.mapping.Width() {
+	for i := range trace.Width() {
 		trMod := trace.Module(i)
-		scMod := p.mapping.Module(i)
 		//
-		public, columns := extractSourceMapData(trMod, p.limbs, p.computed, srcmap, scMod)
+		public, columns := extractSourceMapData(trMod, p.computed, srcmap)
 		// Override visibility with the caller-supplied predicate (if any).
 		if p.visibility.HasValue() {
 			public = p.visibility.Unwrap()(trMod.Name())
 		}
 		//
-		data := newModuleData(i, scMod, trMod, public, enums, columns)
+		data := newModuleData(i, trMod, public, enums, columns)
 		// construct initial module view
 		windows = append(windows, &moduleView[F]{
 			window:     data.Window(),
-			limbs:      p.limbs,
 			cellWidth:  p.cellWidth,
 			titleWidth: p.titleWidth,
 			formatting: p.formatting.Module(data),
@@ -157,7 +135,7 @@ func (p Builder[F]) Build(trace tr.Shard[F]) TraceView[F] {
 		})
 	}
 	//
-	return &traceView[F]{windows}
+	return &traceView{windows}
 }
 
 func extractSourceMap(optSrcmap util.Option[corset.SourceMap]) (map[string]corset.SourceModule, []corset.Enumeration) {
@@ -179,8 +157,8 @@ func extractSourceMap(optSrcmap util.Option[corset.SourceMap]) (map[string]corse
 	return mapping, enums
 }
 
-func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], limbs bool, computed bool,
-	srcmap map[string]corset.SourceModule, mapping register.LimbsMap[F]) (bool, []SourceColumn) {
+func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], computed bool,
+	srcmap map[string]corset.SourceModule) (bool, []SourceColumn) {
 	//
 	var (
 		public  = true
@@ -193,12 +171,10 @@ func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], limbs bool, co
 		public = m.Public
 		// Extract column info
 		columns = extractSourceColumns(file.NewAbsolutePath(""),
-			m.Selector, limbs, m.Columns, m.Submodules, mapping)
+			m.Selector, m.Columns, m.Submodules)
 		// Mark all as seen
 		for _, column := range columns {
-			for _, limb := range column.Limbs {
-				seen[limb.Unwrap()] = true
-			}
+			seen[column.Register.Unwrap()] = true
 		}
 	}
 	//
@@ -216,7 +192,6 @@ func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], limbs bool, co
 					Computed: true,
 					Selector: util.None[string](),
 					Register: rid,
-					Limbs:    []register.Id{rid},
 				})
 			}
 		}
@@ -229,8 +204,8 @@ func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], limbs bool, co
 // based on the corset source mapping.  This is particularly useful when you
 // want to show the original name for a column (e.g. when its in a perspective),
 // rather than the raw register name.
-func extractSourceColumns[F field.Element[F]](path file.Path, selector util.Option[string], limbs bool,
-	columns []corset.SourceColumn, submodules []corset.SourceModule, mapping register.LimbsMap[F]) []SourceColumn {
+func extractSourceColumns(path file.Path, selector util.Option[string],
+	columns []corset.SourceColumn, submodules []corset.SourceModule) []SourceColumn {
 	//
 	var srcColumns []SourceColumn
 	//
@@ -238,37 +213,21 @@ func extractSourceColumns[F field.Element[F]](path file.Path, selector util.Opti
 		//
 		name := path.Extend(col.Name).String()[1:]
 		//
-		if limbs {
-			for _, lid := range mapping.LimbIds(col.Register.Register()) {
-				limb := mapping.Limb(lid)
-				//
-				srcColumns = append(srcColumns, SourceColumn{
-					Name:     limb.Name(),
-					Display:  col.Display,
-					Computed: col.Computed,
-					Selector: selector,
-					Register: col.Register.Register(),
-					Limbs:    []register.Id{lid},
-				})
-			}
-		} else {
-			srcColumns = append(srcColumns, SourceColumn{
-				Name:     name,
-				Display:  col.Display,
-				Computed: col.Computed,
-				Selector: selector,
-				Register: col.Register.Register(),
-				Limbs:    mapping.LimbIds(col.Register.Register()),
-			})
-		}
+		srcColumns = append(srcColumns, SourceColumn{
+			Name:     name,
+			Display:  col.Display,
+			Computed: col.Computed,
+			Selector: selector,
+			Register: col.Register.Register(),
+		})
 	}
 	//
 	for _, submod := range submodules {
 		// Curiously, it only makes sense to recurse on virtual modules here.
 		if submod.Virtual {
 			subpath := path.Extend(submod.Name)
-			subSrcColumns := extractSourceColumns(*subpath, submod.Selector, limbs,
-				submod.Columns, submod.Submodules, mapping)
+			subSrcColumns := extractSourceColumns(*subpath, submod.Selector,
+				submod.Columns, submod.Submodules)
 			//
 			srcColumns = append(srcColumns, subSrcColumns...)
 		}
