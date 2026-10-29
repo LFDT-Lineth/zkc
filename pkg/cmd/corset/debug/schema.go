@@ -105,9 +105,9 @@ func printModule[F field.Element[F]](module schema.Module[F], sc schema.Schema[F
 	//
 	fmt.Println()
 	// Print inputs / outputs
-	printRegisters(module, "inputs", func(r register.Register) bool { return r.IsInput() })
-	printRegisters(module, "outputs", func(r register.Register) bool { return r.IsOutput() })
-	printRegisters(module, "computed", func(r register.Register) bool { return r.IsComputed() })
+	printRegisters(module, "inputs", func(r register.Register[F]) bool { return r.IsInput() })
+	printRegisters(module, "outputs", func(r register.Register[F]) bool { return r.IsOutput() })
+	printRegisters(module, "computed", func(r register.Register[F]) bool { return r.IsComputed() })
 	// Print static contents (if applicable)
 	printStaticContents(module, verbose)
 	// Print computations
@@ -162,7 +162,7 @@ func printStaticContents[F field.Element[F]](module schema.Module[F], verbose bo
 	}
 }
 
-func printRegisters[F field.Element[F]](module schema.Module[F], prefix string, filter func(register.Register) bool) {
+func printRegisters[F field.Element[F]](module schema.Module[F], prefix string, filter func(register.Register[F]) bool) {
 	var (
 		regT string
 	)
@@ -190,7 +190,7 @@ func printRegisters[F field.Element[F]](module schema.Module[F], prefix string, 
 	}
 }
 
-func countRegisters[F field.Element[F]](module schema.Module[F], filter func(register.Register) bool) uint {
+func countRegisters[F field.Element[F]](module schema.Module[F], filter func(register.Register[F]) bool) uint {
 	var count = uint(0)
 	//
 	for _, r := range module.Registers() {

@@ -31,7 +31,7 @@ type RegisterView interface {
 type registerView[F field.Element[F]] struct {
 	trace   trace.Module[F]
 	limbs   []register.LimbId
-	mapping register.LimbsMap
+	mapping register.LimbsMap[F]
 }
 
 func (p *registerView[F]) BitWidth() uint {

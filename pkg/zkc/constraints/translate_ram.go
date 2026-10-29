@@ -104,7 +104,7 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 	//
 	var (
 		mod    *schema.Table[F]
-		regs   = toRegisters(m.Registers())
+		regs   = toRegisters[W, F](m.Registers())
 		layout = computeRamLayout(m, p.program.Field())
 	)
 	// Initialise module.  Note a leading padding row exists (EXEC == 0 there),
@@ -114,8 +114,8 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 	mod.AddRegisters(regs...)
 	// Append the synthetic columns, in the order fixed by computeRamLayout.
 	mod.AddRegisters(
-		register.NewComputed(tracer.RAM_EXEC_NAME, 1),
-		register.NewComputed(tracer.RAM_IS_WRITE_NAME, 1),
+		register.NewComputed[F](tracer.RAM_EXEC_NAME, 1),
+		register.NewComputed[F](tracer.RAM_IS_WRITE_NAME, 1),
 	)
 	addLimbRegisters(mod, tracer.RAM_VALUE_READ_PREFIX, layout.dataWidths)
 	addLimbRegisters(mod, tracer.RAM_TS_WRITTEN_PREFIX, layout.tsWidths)
@@ -123,8 +123,8 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 	addLimbRegisters(mod, tracer.RAM_TS_DELTA_PREFIX, layout.tsWidths)
 	addCarryRegisters(mod, tracer.RAM_TS_CARRY_PREFIX, len(layout.tsCarry))
 	mod.AddRegisters(
-		register.NewComputed(tracer.RAM_EXEC_WRITE_NAME, 1),
-		register.NewComputed(tracer.RAM_EXEC_READ_NAME, 1),
+		register.NewComputed[F](tracer.RAM_EXEC_WRITE_NAME, 1),
+		register.NewComputed[F](tracer.RAM_EXEC_READ_NAME, 1),
 	)
 	addLimbRegisters(mod, tracer.RAM_TEMPORAL_TS_PREFIX, layout.tsWidths)
 	addCarryRegisters(mod, tracer.RAM_TEMPORAL_TS_CARRY_PREFIX, len(layout.temporalTsCarry))
@@ -229,7 +229,7 @@ func addLimbRegisters[F field.Element[F]](mod *schema.Table[F],
 	prefix string, widths []uint) {
 	//
 	for k, w := range widths {
-		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), w))
+		mod.AddRegisters(register.NewComputed[F](tracer.RamLimbName(prefix, uint(k)), w))
 	}
 }
 
@@ -240,7 +240,7 @@ func addCarryRegisters[F field.Element[F]](mod *schema.Table[F],
 	prefix string, n int) {
 	//
 	for k := 0; k < n; k++ {
-		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), 1))
+		mod.AddRegisters(register.NewComputed[F](tracer.RamLimbName(prefix, uint(k)), 1))
 	}
 }
 

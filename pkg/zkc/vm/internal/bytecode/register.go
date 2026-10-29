@@ -19,6 +19,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	lword "github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -186,7 +187,7 @@ func (p Register[W]) Padding() W {
 }
 
 // ToRawRegister converts a register descriptor into a schema register
-func (p Register[W]) ToRawRegister() register.Register {
+func (p Register[W]) ToRawRegister[F field.Element[F]]() register.Register[F] {
 	var (
 		bitwidth uint = math.MaxUint
 	)
@@ -200,7 +201,7 @@ func (p Register[W]) ToRawRegister() register.Register {
 		panic("non-zero padding unsupported")
 	}
 	//
-	return register.New(p.kind.underlying, p.Name(), bitwidth)
+	return register.New[F](p.kind.underlying, p.Name(), bitwidth)
 }
 
 // ============================================================================

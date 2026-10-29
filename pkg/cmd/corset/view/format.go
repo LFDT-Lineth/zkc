@@ -18,12 +18,13 @@ import (
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // TraceFormatting provides a top-level notion of formatting
-type TraceFormatting interface {
-	Module(ModuleData) ModuleFormatting
+type TraceFormatting[F field.Element[F]] interface {
+	Module(ModuleData[F]) ModuleFormatting
 }
 
 // ModuleFormatting provides a generic mechanism for applying formatting to
@@ -38,29 +39,29 @@ type ModuleFormatting interface {
 }
 
 // DefaultFormatter returns a default formatting
-func DefaultFormatter() TraceFormatting {
-	return &defaultFormatter{}
+func DefaultFormatter[F field.Element[F]]() TraceFormatting[F] {
+	return &defaultFormatter[F]{}
 }
 
-type defaultFormatter struct{}
+type defaultFormatter[F field.Element[F]] struct{}
 
 // ColumnTitle implementation for Formatting interface
-func (p *defaultFormatter) ColumnTitle(_ uint, text string) termio.FormattedText {
+func (p *defaultFormatter[F]) ColumnTitle(_ uint, text string) termio.FormattedText {
 	return termio.NewText(text)
 }
 
 // ColumnTitle implementation for Formatting interface
-func (p *defaultFormatter) Module(ModuleData) ModuleFormatting {
+func (p *defaultFormatter[F]) Module(ModuleData[F]) ModuleFormatting {
 	return p
 }
 
 // ColumnTitle implementation for Formatting interface
-func (p *defaultFormatter) RowTitle(_ register.Id, text string) termio.FormattedText {
+func (p *defaultFormatter[F]) RowTitle(_ register.Id, text string) termio.FormattedText {
 	return termio.NewText(text)
 }
 
 // Cell implementation for Formatting interface
-func (p *defaultFormatter) Cell(_ SourceColumn, _ uint, text string) termio.FormattedText {
+func (p *defaultFormatter[F]) Cell(_ SourceColumn, _ uint, text string) termio.FormattedText {
 	return termio.NewText(text)
 }
 
@@ -69,18 +70,18 @@ func (p *defaultFormatter) Cell(_ SourceColumn, _ uint, text string) termio.Form
 // ============================================================================
 
 // NewCellFormatter constructs a new cell formatter
-func NewCellFormatter(cells CellRefSet, ansiEscapes bool) TraceFormatting {
-	return &cellFormatter{nil, cells, ansiEscapes}
+func NewCellFormatter[F field.Element[F]](cells CellRefSet, ansiEscapes bool) TraceFormatting[F] {
+	return &cellFormatter[F]{nil, cells, ansiEscapes}
 }
 
-type cellFormatter struct {
-	data        ModuleData
+type cellFormatter[F field.Element[F]] struct {
+	data        ModuleData[F]
 	cells       CellRefSet
 	ansiEscapes bool
 }
 
 // ColumnTitle implementation for Formatting interface
-func (p *cellFormatter) ColumnTitle(_ uint, text string) termio.FormattedText {
+func (p *cellFormatter[F]) ColumnTitle(_ uint, text string) termio.FormattedText {
 	if p.ansiEscapes {
 		return termio.NewFormattedText(text, termio.NewAnsiEscape().FgColour(termio.TERM_WHITE))
 	}
@@ -89,7 +90,7 @@ func (p *cellFormatter) ColumnTitle(_ uint, text string) termio.FormattedText {
 }
 
 // ColumnTitle implementation for ModuleFormatting interface
-func (p *cellFormatter) RowTitle(_ SourceColumnId, text string) termio.FormattedText {
+func (p *cellFormatter[F]) RowTitle(_ SourceColumnId, text string) termio.FormattedText {
 	if p.ansiEscapes {
 		return termio.NewFormattedText(text, termio.NewAnsiEscape().FgColour(termio.TERM_WHITE))
 	}
@@ -98,7 +99,7 @@ func (p *cellFormatter) RowTitle(_ SourceColumnId, text string) termio.Formatted
 }
 
 // Module implementation for TraceFormatting interface
-func (p *cellFormatter) Module(mod ModuleData) ModuleFormatting {
+func (p *cellFormatter[F]) Module(mod ModuleData[F]) ModuleFormatting {
 	var q = *p
 	//
 	q.data = mod
@@ -107,7 +108,7 @@ func (p *cellFormatter) Module(mod ModuleData) ModuleFormatting {
 }
 
 // Cell implementation for ModuleFormatting interface
-func (p *cellFormatter) Cell(col SourceColumn, row uint, text string) termio.FormattedText {
+func (p *cellFormatter[F]) Cell(col SourceColumn, row uint, text string) termio.FormattedText {
 	// Check each limb in turn
 	if !p.data.IsActive(col, row) {
 		if p.ansiEscapes {

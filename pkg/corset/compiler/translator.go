@@ -143,13 +143,13 @@ func (t *translator[F]) translateModule(name string) {
 			// Identify enclosing MIR module
 			module = t.schema.ModuleOf(regInfo.Context.ModuleName())
 			//
-			reg register.Register
+			reg register.Register[F]
 		)
 		// Declare corresponding register
 		if regInfo.IsInput() {
-			reg = register.NewInput(regInfo.Name(), regInfo.Bitwidth)
+			reg = register.NewInput[F](regInfo.Name(), regInfo.Bitwidth)
 		} else {
-			reg = register.NewComputed(regInfo.Name(), regInfo.Bitwidth)
+			reg = register.NewComputed[F](regInfo.Name(), regInfo.Bitwidth)
 		}
 		// Add the register
 		module.NewRegister(reg)
@@ -845,7 +845,7 @@ func (t *translator[F]) registerOf(path *file.Path, shift int) *mir.RegisterAcce
 }
 
 // RegisterAccessOf returns a register accessor for the register with the given name.
-func RegisterAccessOf[F field.Element[F]](module register.Map, name string, shift int) *mir.RegisterAccess[F] {
+func RegisterAccessOf[F field.Element[F]](module register.Map[F], name string, shift int) *mir.RegisterAccess[F] {
 	// Lookup register associated with this name
 	var (
 		rid, _ = module.HasRegister(name)

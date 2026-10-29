@@ -71,7 +71,7 @@ var traceCmds = []FieldAgnosticCmd{
 func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	var (
 		traces []tr.Trace[F]
-		cfg    TraceConfig
+		cfg    TraceConfig[F]
 		err    error
 	)
 	// Configure log level
@@ -179,8 +179,8 @@ func init() {
 
 // TraceConfig packages together useful things for the various supported
 // options.
-type TraceConfig struct {
-	mapping      module.LimbsMap
+type TraceConfig[F field.Element[F]] struct {
+	mapping      module.LimbsMap[F]
 	sourceMap    *corset.SourceMap
 	maxCellWidth uint
 	//nolint
@@ -208,7 +208,7 @@ type TraceConfig struct {
 	stats bool
 }
 
-func constructTraceFilter[F field.Element[F]](cfg TraceConfig, trace tr.Shard[F]) view.TraceFilter {
+func constructTraceFilter[F field.Element[F]](cfg TraceConfig[F], trace tr.Shard[F]) view.TraceFilter {
 	return view.NewTraceFilter(func(mid module.Id) view.ModuleFilter {
 		return view.NewModuleFilter(cfg.startRow, cfg.endRow, func(col view.SourceColumn) bool {
 			// Construct fully qualified name
@@ -238,7 +238,7 @@ func expandTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.S
 	return traces, errors
 }
 
-func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {
+func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], trace tr.Trace[F]) {
 	for i, shard := range trace {
 		//
 		if len(trace) > 0 {
@@ -284,7 +284,7 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig, trace tr.Trace[F]) {
 // produces the same output as "go-corset trace --print".  Every module holding
 // data is printed, since (unlike the inspector) there is no way to reveal one
 // which was hidden.
-func PrintTrace[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F],
+func PrintTrace[F field.Element[F]](mapping module.LimbsMap[F], trace tr.Trace[F],
 	limbs bool, cellWidth, titleWidth uint) {
 	for _, shard := range trace {
 		// Build the viewing window (no source map, so show computed registers).
@@ -298,7 +298,7 @@ func PrintTrace[F field.Element[F]](mapping module.LimbsMap, trace tr.Trace[F],
 	}
 }
 
-func printTrace(window view.TraceView) {
+func printTrace[F field.Element[F]](window view.TraceView[F]) {
 	// Print all windows
 	for i := range window.Width() {
 		var (
@@ -327,10 +327,10 @@ func printTrace(window view.TraceView) {
 	}
 }
 
-func listModules(cfg TraceConfig, window view.TraceView) {
+func listModules[F field.Element[F]](cfg TraceConfig[F], window view.TraceView[F]) {
 	var (
 		//
-		summarisers = moduleSumarisers
+		summarisers = moduleSummarisers[F]()
 		m           = 1 + uint(len(summarisers))
 		n           = window.Width()
 		// Go!
@@ -344,7 +344,7 @@ func listModules(cfg TraceConfig, window view.TraceView) {
 	for i := range n {
 		var (
 			mod = window.Module(i)
-			row = summariseModule(mod, moduleSumarisers)
+			row = summariseModule(mod, summarisers)
 		)
 		// Set row
 		tbl.SetRow(i+1, row...)
@@ -357,7 +357,7 @@ func listModules(cfg TraceConfig, window view.TraceView) {
 	tbl.Print(true)
 }
 
-func listColumns(cfg TraceConfig, window view.TraceView) {
+func listColumns[F field.Element[F]](cfg TraceConfig[F], window view.TraceView[F]) {
 	var (
 		summarisers = selectColumnSummarisers(cfg.includes)
 		m           = 1 + uint(len(summarisers))
@@ -464,7 +464,7 @@ func flattenIncludes(includes []string) []string {
 	return includes
 }
 
-func summariseModule(mod view.ModuleView, summarisers []ModuleSummariser) []termio.FormattedText {
+func summariseModule[F field.Element[F]](mod view.ModuleView[F], summarisers []ModuleSummariser[F]) []termio.FormattedText {
 	var (
 		m   = 1 + uint(len(summarisers))
 		row = make([]termio.FormattedText, m)
@@ -496,9 +496,12 @@ func summariseColumn(module module.Name, name string, column view.RegisterView,
 	return row
 }
 
-func summaryStats(window view.TraceView) {
-	m := uint(len(trSummarisers))
-	tbl := termio.NewFormattedTable(2, m)
+func summaryStats[F field.Element[F]](window view.TraceView[F]) {
+	var (
+		trSummarisers = trSummarisers[F]()
+		m             = uint(len(trSummarisers))
+		tbl           = termio.NewFormattedTable(2, m)
+	)
 	// Go!
 	for i := uint(0); i < m; i++ {
 		ith := trSummarisers[i]
@@ -510,11 +513,11 @@ func summaryStats(window view.TraceView) {
 	tbl.Print(true)
 }
 
-func totalActiveRegisters(trace view.TraceView) uint {
+func totalActiveRegisters[F field.Element[F]](trace view.TraceView[F]) uint {
 	var count = 0
 	//
 	for i := range trace.Width() {
-		count += len(activeRegisters(trace.Module(i)))
+		count += len(activeRegisters[F](trace.Module(i)))
 	}
 	//
 	return uint(count)
@@ -526,22 +529,24 @@ func totalActiveRegisters(trace view.TraceView) uint {
 
 // ModuleSummariser abstracts the notion of a function which summarises the
 // contents of a given column.
-type ModuleSummariser struct {
+type ModuleSummariser[F field.Element[F]] struct {
 	name        string
 	description string
-	summary     func(view.ModuleView) string
+	summary     func(view.ModuleView[F]) string
 }
 
-var moduleSumarisers = []ModuleSummariser{
-	{"columns", "column count for module", moduleColumnSummariser},
-	{"lines", "line count for module", moduleLineSummariser},
-	{"bitwidth", "bitwidth of module", moduleBitwidthSummariser},
-	{"cells", "total number of cells traced for module", moduleCellSummariser},
-	{"nonzero", "total number of nonzero cells traced for module", moduleNonZeroCounter},
-	{"bytes", "total number of bytes traced for module", moduleBytesSummariser},
+func moduleSummarisers[F field.Element[F]]() []ModuleSummariser[F] {
+	return []ModuleSummariser[F]{
+		{"columns", "column count for module", moduleColumnSummariser},
+		{"lines", "line count for module", moduleLineSummariser},
+		{"bitwidth", "bitwidth of module", moduleBitwidthSummariser},
+		{"cells", "total number of cells traced for module", moduleCellSummariser},
+		{"nonzero", "total number of nonzero cells traced for module", moduleNonZeroCounter},
+		{"bytes", "total number of bytes traced for module", moduleBytesSummariser},
+	}
 }
 
-func moduleCellSummariser(mod view.ModuleView) string {
+func moduleCellSummariser[F field.Element[F]](mod view.ModuleView[F]) string {
 	var (
 		data    = mod.Data()
 		mapping = data.Mapping()
@@ -555,11 +560,11 @@ func moduleCellSummariser(mod view.ModuleView) string {
 	return fmt.Sprintf("%d", count)
 }
 
-func moduleColumnSummariser(mod view.ModuleView) string {
+func moduleColumnSummariser[F field.Element[F]](mod view.ModuleView[F]) string {
 	return fmt.Sprintf("%d", len(activeRegisters(mod)))
 }
 
-func moduleLineSummariser(mod view.ModuleView) string {
+func moduleLineSummariser[F field.Element[F]](mod view.ModuleView[F]) string {
 	var (
 		data     = mod.Data()
 		width, _ = data.Dimensions()
@@ -568,7 +573,7 @@ func moduleLineSummariser(mod view.ModuleView) string {
 	return fmt.Sprintf("%d", width)
 }
 
-func moduleBitwidthSummariser(mod view.ModuleView) string {
+func moduleBitwidthSummariser[F field.Element[F]](mod view.ModuleView[F]) string {
 	var (
 		total   = uint(0)
 		data    = mod.Data()
@@ -582,7 +587,7 @@ func moduleBitwidthSummariser(mod view.ModuleView) string {
 	return fmt.Sprintf("%d", total)
 }
 
-func moduleBytesSummariser(mod view.ModuleView) string {
+func moduleBytesSummariser[F field.Element[F]](mod view.ModuleView[F]) string {
 	var (
 		total   = uint(0)
 		data    = mod.Data()
@@ -604,7 +609,7 @@ func moduleBytesSummariser(mod view.ModuleView) string {
 	return fmt.Sprintf("%d", total)
 }
 
-func moduleNonZeroCounter(mod view.ModuleView) string {
+func moduleNonZeroCounter[F field.Element[F]](mod view.ModuleView[F]) string {
 	var (
 		count   = uint(0)
 		data    = mod.Data()
@@ -618,7 +623,7 @@ func moduleNonZeroCounter(mod view.ModuleView) string {
 	return fmt.Sprintf("%d", count)
 }
 
-func activeRegisters(mod view.ModuleView) []register.Id {
+func activeRegisters[F field.Element[F]](mod view.ModuleView[F]) []register.Id {
 	var (
 		window    = mod.Window()
 		_, height = window.Dimensions()
@@ -752,22 +757,24 @@ func nonZeroCount(data view.RegisterView) uint {
 // Trace Summarisers
 // ============================================================================
 
-type traceSummariser struct {
+type traceSummariser[F field.Element[F]] struct {
 	name    string
-	summary func(view.TraceView) string
+	summary func(view.TraceView[F]) string
 }
 
-var trSummarisers []traceSummariser = []traceSummariser{
-	{"Cells", trCellCountSummariser},
-	{"Cells (raw)", trRawCellCountSummariser},
-	trWidthSummariser(1, 8),
-	trWidthSummariser(9, 16),
-	trWidthSummariser(17, 32),
-	trWidthSummariser(33, 128),
-	trWidthSummariser(129, 256),
+func trSummarisers[F field.Element[F]]() []traceSummariser[F] {
+	return []traceSummariser[F]{
+		{"Cells", trCellCountSummariser},
+		{"Cells (raw)", trRawCellCountSummariser},
+		trWidthSummariser[F](1, 8),
+		trWidthSummariser[F](9, 16),
+		trWidthSummariser[F](17, 32),
+		trWidthSummariser[F](33, 128),
+		trWidthSummariser[F](129, 256),
+	}
 }
 
-func trRawCellCount(trace view.TraceView) uint {
+func trRawCellCount[F field.Element[F]](trace view.TraceView[F]) uint {
 	total := uint(0)
 	//
 	for i := range trace.Width() {
@@ -785,7 +792,7 @@ func trRawCellCount(trace view.TraceView) uint {
 	return total
 }
 
-func trRawCellCountSummariser(trace view.TraceView) string {
+func trRawCellCountSummariser[F field.Element[F]](trace view.TraceView[F]) string {
 	total := trRawCellCount(trace)
 	return fmt.Sprintf("%d", total)
 }
@@ -794,7 +801,7 @@ const one_K = 1000
 const one_M = one_K * one_K
 const one_G = one_M * one_M
 
-func trCellCountSummariser(trace view.TraceView) string {
+func trCellCountSummariser[F field.Element[F]](trace view.TraceView[F]) string {
 	total := trRawCellCount(trace)
 	//
 	switch {
@@ -812,10 +819,10 @@ func trCellCountSummariser(trace view.TraceView) string {
 	}
 }
 
-func trWidthSummariser(lowWidth uint, highWidth uint) traceSummariser {
-	return traceSummariser{
+func trWidthSummariser[F field.Element[F]](lowWidth uint, highWidth uint) traceSummariser[F] {
+	return traceSummariser[F]{
 		name: fmt.Sprintf("Columns (%d..%d bits)", lowWidth, highWidth),
-		summary: func(tr view.TraceView) string {
+		summary: func(tr view.TraceView[F]) string {
 			count := 0
 
 			for i := range tr.Width() {

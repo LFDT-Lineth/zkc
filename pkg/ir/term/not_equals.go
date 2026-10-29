@@ -74,7 +74,7 @@ func (p *NotEqual[F, S, T]) Negate() S {
 }
 
 // TestAt implementation for Testable interface.
-func (p *NotEqual[F, S, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, error) {
+func (p *NotEqual[F, S, T]) TestAt(k uint, tr trace.Module[F], sc register.Map[F]) (bool, error) {
 	lhs, err1 := p.Lhs.EvalAt(k, tr, sc)
 	rhs, err2 := p.Rhs.EvalAt(k, tr, sc)
 	// error check
@@ -89,7 +89,7 @@ func (p *NotEqual[F, S, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) 
 
 // Lisp returns a lisp representation of this NotEqual, which is useful for
 // debugging.
-func (p *NotEqual[F, S, T]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (p *NotEqual[F, S, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	var (
 		l = p.Lhs.Lisp(global, mapping)
 		r = p.Rhs.Lisp(global, mapping)

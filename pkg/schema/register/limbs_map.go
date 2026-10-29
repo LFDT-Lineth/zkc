@@ -15,11 +15,13 @@ package register
 import (
 	"fmt"
 	"strings"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Limb is just an alias for Register, but it helps to clarify when we are
 // referring to a register after subdivision.
-type Limb = Register
+type Limb[F field.Element[F]] = Register[F]
 
 // LimbId is just an alias for register.RegisterId, but it helps to clarify when we are
 // referring to a register after subdivision.
@@ -28,8 +30,8 @@ type LimbId = Id
 // LimbsMap provides a high-level mapping of all registers before and
 // after subdivision occurs within a given module.  That is, it maps a given
 // register to those limbs into which it was subdivided.
-type LimbsMap interface {
-	Map
+type LimbsMap[F field.Element[F]] interface {
+	Map[F]
 	// Limbs identifies the limbs into which a given register is divided.
 	// Observe that limbs are ordered by their position in the original
 	// register.  In particular, the first limb (i.e. at index 0) is always
@@ -37,13 +39,13 @@ type LimbsMap interface {
 	LimbIds(Id) []LimbId
 	// Limbs returns information about a given limb (i.e. a register which
 	// exists after the split).
-	Limb(LimbId) Limb
+	Limb(LimbId) Limb[F]
 	// Limbs returns all limbs in the mapping.
-	Limbs() []Limb
+	Limbs() []Limb[F]
 	// LimbsMap returns a register map for the limbs themselves.  This is useful
 	// where we need a register map over the limbs, rather than the original
 	// registers.
-	LimbsMap() Map
+	LimbsMap() Map[F]
 }
 
 // NewLimbsMap constructs a register map for a given module from its registers
@@ -53,10 +55,10 @@ type LimbsMap interface {
 // the limbs of each register appear in register order, most significant limb
 // first (see descriptor.NewLimbsMap).  Hence, for a register whose limbs occupy
 // identifiers n..n+k, LimbIds returns n+k..n (least significant first).
-func NewLimbsMap(name string, registers []Register, limbs [][]Limb) limbsMap {
+func NewLimbsMap[F field.Element[F]](name string, registers []Register[F], limbs [][]Limb[F]) limbsMap[F] {
 	var (
 		mapping = make([][]LimbId, len(registers))
-		flat    []Limb
+		flat    []Limb[F]
 	)
 	// Sanity check
 	if len(registers) != len(limbs) {
@@ -77,15 +79,15 @@ func NewLimbsMap(name string, registers []Register, limbs [][]Limb) limbsMap {
 		}
 	}
 	//
-	return limbsMap{name, registers, flat, mapping}
+	return limbsMap[F]{name, registers, flat, mapping}
 }
 
 // IdentityMap constructs an identity mapping which maps each register to
 // itself, etc.
-func IdentityMap[F any](module Map) limbsMap {
+func IdentityMap[F field.Element[F]](module Map[F]) limbsMap[F] {
 	var (
 		regs    = module.Registers()
-		limbs   []Limb
+		limbs   []Limb[F]
 		mapping = make([][]LimbId, len(regs))
 	)
 	// Split up limbs
@@ -95,7 +97,7 @@ func IdentityMap[F any](module Map) limbsMap {
 		mapping[i] = []Id{NewId(uint(i))}
 	}
 	// Done
-	return limbsMap{
+	return limbsMap[F]{
 		module.Name(),
 		regs,
 		limbs,
@@ -114,47 +116,47 @@ func IdentityMap[F any](module Map) limbsMap {
 // be many limbs for a single register above.  It should always be the case that
 // the total width of limbs matches that of the original register.  Furthermore,
 // if the original register was computed, then the limbs should be also, etc.
-type limbsMap struct {
+type limbsMap[F field.Element[F]] struct {
 	// Name of the module to which this mapping corresponds
 	name string
 	// Set of registers in the original schema (i.e. as they were before the
 	// split)
-	registers []Register
+	registers []Register[F]
 	// Set of "limbs" (i.e registers) in the split schema.
-	limbs []Limb
+	limbs []Limb[F]
 	// Mapping for each register above to its corresponding set of limbs.
 	mapping [][]LimbId
 }
 
 // Limbs implementation for the register.Map interface
-func (p limbsMap) LimbIds(reg Id) []LimbId {
+func (p limbsMap[F]) LimbIds(reg Id) []LimbId {
 	return p.mapping[reg.Unwrap()]
 }
 
 // Limb implementation for the register.Map interface
-func (p limbsMap) Limb(reg LimbId) Limb {
+func (p limbsMap[F]) Limb(reg LimbId) Limb[F] {
 	return p.limbs[reg.Unwrap()]
 }
 
 // Limbs implementation for the register.Map interface
-func (p limbsMap) Limbs() []Limb {
+func (p limbsMap[F]) Limbs() []Limb[F] {
 	return p.limbs
 }
 
 // LimbsMap implementation for the register.Map interface
-func (p limbsMap) LimbsMap() Map {
-	return limbsMap{
+func (p limbsMap[F]) LimbsMap() Map[F] {
+	return limbsMap[F]{
 		p.name, p.limbs, nil, nil,
 	}
 }
 
 // Name implementation for register.Map interface
-func (p limbsMap) Name() string {
+func (p limbsMap[F]) Name() string {
 	return p.name
 }
 
 // RegisterOf determines a register's ID based on its name.
-func (p limbsMap) RegisterOf(name string) Id {
+func (p limbsMap[F]) RegisterOf(name string) Id {
 	for i, reg := range p.registers {
 		if reg.Name() == name {
 			return NewId(uint(i))
@@ -165,7 +167,7 @@ func (p limbsMap) RegisterOf(name string) Id {
 }
 
 // HasRegister implementation for RegisterMap interface.
-func (p limbsMap) HasRegister(name string) (Id, bool) {
+func (p limbsMap[F]) HasRegister(name string) (Id, bool) {
 	for i, reg := range p.registers {
 		if reg.Name() == name {
 			return NewId(uint(i)), true
@@ -176,17 +178,17 @@ func (p limbsMap) HasRegister(name string) (Id, bool) {
 }
 
 // Register implementation for RegisterMap interface.
-func (p limbsMap) Register(rid Id) Register {
+func (p limbsMap[F]) Register(rid Id) Register[F] {
 	return p.registers[rid.Unwrap()]
 }
 
 // Registers implementation for RegisterMap interface.
-func (p limbsMap) Registers() []Register {
+func (p limbsMap[F]) Registers() []Register[F] {
 	return p.registers
 }
 
-func (p limbsMap) String() string {
-	return LimbsMapToString(p)
+func (p limbsMap[F]) String() string {
+	return LimbsMapToString[F](p)
 }
 
 // ============================================================================
@@ -195,7 +197,7 @@ func (p limbsMap) String() string {
 
 // WidthsOfLimbs returns the limb bitwidths corresponding to a given set of
 // identifiers.
-func WidthsOfLimbs(mapping LimbsMap, lids []LimbId) []uint {
+func WidthsOfLimbs[F field.Element[F]](mapping LimbsMap[F], lids []LimbId) []uint {
 	var (
 		widths []uint = make([]uint, len(lids))
 	)
@@ -208,9 +210,9 @@ func WidthsOfLimbs(mapping LimbsMap, lids []LimbId) []uint {
 }
 
 // LimbsOf returns those limbs corresponding to a given set of identifiers.
-func LimbsOf(mapping LimbsMap, lids []LimbId) []Limb {
+func LimbsOf[F field.Element[F]](mapping LimbsMap[F], lids []LimbId) []Limb[F] {
 	var (
-		limbs []Limb = make([]Limb, len(lids))
+		limbs []Limb[F] = make([]Limb[F], len(lids))
 	)
 	//
 	for i, lid := range lids {
@@ -223,7 +225,7 @@ func LimbsOf(mapping LimbsMap, lids []LimbId) []Limb {
 // ApplyLimbsMap applies a given mapping to a set of registers producing a
 // corresponding set of limbs.  In essence, each register is convert to its
 // limbs in turn, and these are all appended together in order of ococurence.
-func ApplyLimbsMap(mapping LimbsMap, rids ...Id) []LimbId {
+func ApplyLimbsMap[F field.Element[F]](mapping LimbsMap[F], rids ...Id) []LimbId {
 	var limbs []LimbId
 	//
 	for _, rid := range rids {
@@ -235,7 +237,7 @@ func ApplyLimbsMap(mapping LimbsMap, rids ...Id) []LimbId {
 
 // LimbsMapToString provides a default method for converting a register
 // limbs map into a simple string representation.
-func LimbsMapToString(p LimbsMap) string {
+func LimbsMapToString[F field.Element[F]](p LimbsMap[F]) string {
 	var builder strings.Builder
 	//
 	builder.WriteString("{")

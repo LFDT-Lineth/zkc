@@ -262,7 +262,7 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.Schema[F], builder ir.T
 
 // ReportFailures reports constraint failures, whilst providing contextual
 // information (when requested).
-func ReportFailures[F field.Element[F]](ir string, mapping module.LimbsMap, cfg CheckConfig,
+func ReportFailures[F field.Element[F]](ir string, mapping module.LimbsMap[F], cfg CheckConfig,
 	failures []sc.Failure[F]) {
 	//
 	var errs = make([]error, len(failures))
@@ -281,7 +281,7 @@ func ReportFailures[F field.Element[F]](ir string, mapping module.LimbsMap, cfg 
 }
 
 // Print a human-readable report detailing the given failure
-func reportFailure[F field.Element[F]](failure sc.Failure[F], mapping module.LimbsMap, cfg CheckConfig) {
+func reportFailure[F field.Element[F]](failure sc.Failure[F], mapping module.LimbsMap[F], cfg CheckConfig) {
 	// Identify all relevant cells
 	var cells = failure.RequiredCells()
 	//
@@ -294,14 +294,14 @@ func reportFailure[F field.Element[F]](failure sc.Failure[F], mapping module.Lim
 
 // Print a human-readable report detailing the given cells of a given shard.
 func reportRelevantCells[F field.Element[F]](cells []tr.CellRef, trace tr.Shard[F],
-	mapping module.LimbsMap, cfg CheckConfig) {
+	mapping module.LimbsMap[F], cfg CheckConfig) {
 	// Construct trace window
 	builder := view.NewBuilder[F](mapping).
 		WithLimbs(cfg.ReportLimbs).
 		WithComputed(cfg.ReportComputed).
 		WithCellWidth(cfg.ReportCellWidth).
 		WithTitleWidth(cfg.ReportTitleWidth).
-		WithFormatting(view.NewCellFormatter(cells, cfg.AnsiEscapes))
+		WithFormatting(view.NewCellFormatter[F](cells, cfg.AnsiEscapes))
 		//
 	if cfg.CorsetSourceMap != nil {
 		builder = builder.WithSourceMap(*cfg.CorsetSourceMap)

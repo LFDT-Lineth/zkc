@@ -37,7 +37,7 @@ type SchemaStack[F field.Element[F]] struct {
 	// The various (concrete) layers which are refined from the abstract layers.
 	concreteSchemas []schema.Schema[F]
 	// Register mapping used
-	mapping module.LimbsMap
+	mapping module.LimbsMap[F]
 	// Name of IR used for corresponding schema
 	names []string
 	// Configuration for trace expansion
@@ -90,7 +90,7 @@ func (p *SchemaStack[F]) ConcreteSchemaOf(ir string) schema.Schema[F] {
 
 // RegisterMapping returns the register mapping used to split registers
 // according to the given field configuration.
-func (p *SchemaStack[F]) RegisterMapping() module.LimbsMap {
+func (p *SchemaStack[F]) RegisterMapping() module.LimbsMap[F] {
 	return p.mapping
 }
 

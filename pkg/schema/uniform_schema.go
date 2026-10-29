@@ -88,7 +88,7 @@ func (p UniformSchema[F, M]) RawModules() []M {
 }
 
 // Register returns the given register in this schema.
-func (p UniformSchema[F, M]) Register(ref register.Ref) register.Register {
+func (p UniformSchema[F, M]) Register(ref register.Ref) register.Register[F] {
 	return p.Module(ref.Module()).Register(ref.Register())
 }
 
