@@ -22,6 +22,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -51,9 +52,9 @@ func concretizeModule[F1 Element[F1], F2 Element[F2]](m Module[F1]) Module[F2] {
 	var (
 		r Module[F2]
 		// Concreteize Assignments
-		assignments = concretizeAssignments[F1, F2](m.RawAssignments())
+		assignments = concretizeAssignments[F1, F2](m.Assignments())
 		// Concreteize Constraints
-		constraints = concretizeConstraints[F1, F2](m.RawConstraints())
+		constraints = concretizeConstraints[F1, F2](m.Constraints())
 	)
 	// Initialise new module
 	r = r.Init(m.Name(), m.IsPublicOutput(), m.IsPrivateOutput(), m.IsSynthetic(), m.IsNative(),
@@ -74,11 +75,12 @@ func concretizeModule[F1 Element[F1], F2 Element[F2]](m Module[F1]) Module[F2] {
 // Assignments
 // ============================================================================
 
-func concretizeAssignments[F1 Element[F1], F2 Element[F2]](assigns []schema.Assignment[F1]) []schema.Assignment[F2] {
-	var rs = make([]schema.Assignment[F2], len(assigns))
+func concretizeAssignments[F1 Element[F1], F2 Element[F2]](assigns iter.Iterator[schema.Assignment[F1]],
+) []schema.Assignment[F2] {
+	var rs = make([]schema.Assignment[F2], assigns.Count())
 	//
-	for i, a := range assigns {
-		rs[i] = concretizeAssignment[F1, F2](a)
+	for i := 0; assigns.HasNext(); i++ {
+		rs[i] = concretizeAssignment[F1, F2](assigns.Next())
 	}
 	//
 	return rs
@@ -93,11 +95,12 @@ func concretizeAssignment[F1 Element[F1], F2 Element[F2]](assign schema.Assignme
 // Constraints
 // ============================================================================
 
-func concretizeConstraints[F1 Element[F1], F2 Element[F2]](cs []schema.Constraint[F1]) []schema.Constraint[F2] {
-	var rs = make([]schema.Constraint[F2], len(cs))
+func concretizeConstraints[F1 Element[F1], F2 Element[F2]](cs iter.Iterator[schema.Constraint[F1]],
+) []schema.Constraint[F2] {
+	var rs = make([]schema.Constraint[F2], cs.Count())
 	//
-	for i, c := range cs {
-		rs[i] = concretizeConstraint[F1, F2](c)
+	for i := 0; cs.HasNext(); i++ {
+		rs[i] = concretizeConstraint[F1, F2](cs.Next())
 	}
 	//
 	return rs

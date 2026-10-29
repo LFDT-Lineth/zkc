@@ -51,10 +51,6 @@ type ModuleBuilder[F field.Element[F], T term.Expr[F, T]] interface {
 	// NewRegisters declares zero or more new registers within the module being
 	// built.  This will panic if a register of the same name already exists.
 	NewRegisters(registers ...register.Register) []register.Id
-	// ZeroRegister returns an ID for the "zero register".  That is, a register
-	// which is always zero.  If no such register exists already, one is
-	// created.
-	ConstRegister(constant uint8) register.Id
 	// SetStaticContents sets the contents of this static reference table.  It
 	// panics if invoked on a non-static module.
 	SetStaticContents(contents [][]F)
@@ -230,17 +226,6 @@ func (p *internalModuleBuilder[F, T]) RegisterAccessOf(name string, shift int) *
 
 func (p *internalModuleBuilder[F, T]) String() string {
 	return register.MapToString(p)
-}
-
-// ZeroRegister implementation for ModuleBuilder interface.
-func (p *internalModuleBuilder[F, T]) ConstRegister(constant uint8) register.Id {
-	var name = fmt.Sprintf("%d", constant)
-	// Check whether register already exists
-	if rid, ok := p.HasRegister(name); ok {
-		return rid
-	}
-	// If not, create a new one.
-	return p.NewRegister(register.NewConst(constant))
 }
 
 func (p *internalModuleBuilder[F, T]) SetStaticContents(contents [][]F) {
