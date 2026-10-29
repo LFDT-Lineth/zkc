@@ -19,7 +19,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // InitialiseConstantRegisters initialises any constant registers declared
@@ -35,7 +34,7 @@ func InitialiseConstantRegisters[F Element[F]](offset uint, modules []Module[F])
 		// Consider each register in turn
 		for r, reg := range mod.Registers() {
 			var rid = register.NewId(uint(r))
-			if reg.IsU1Const() {
+			if reg.IsConstant() {
 				initialiseConstantRegister(rid, mid, mod)
 			}
 		}
@@ -43,10 +42,10 @@ func InitialiseConstantRegisters[F Element[F]](offset uint, modules []Module[F])
 }
 
 // Lower a constant register (currently only zero is supported).
-func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.Id, module Module[F]) {
+func initialiseConstantRegister[F Element[F]](rid register.Id, mid module.Id, module Module[F]) {
 	var (
 		reg = module.Register(rid)
-		val = field.Uint64[F](uint64(reg.ConstValue()))
+		val = reg.Constant[F]()
 	)
 	// Add assignment for filling said computed column
 	module.AddAssignments(
@@ -56,5 +55,5 @@ func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.
 		vanishing.NewConstraint(val.String(), mid, util.None[int](),
 			term.Equals[F, LogicalTerm[F], Term[F]](
 				term.NewRegisterAccess[F, Term[F]](rid, reg.Width(), 0),
-				term.Const64[F, Term[F]](uint64(reg.ConstValue())))))
+				term.Const[F, Term[F]](reg.Constant[F]()))))
 }

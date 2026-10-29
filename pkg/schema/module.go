@@ -197,18 +197,6 @@ func (p *Table[F]) StaticContents() [][]F {
 	return p.staticContents
 }
 
-// RawAssignments provides raw access to those assignments defined as part of this
-// table.
-func (p *Table[F]) RawAssignments() []Assignment[F] {
-	return p.assignments
-}
-
-// RawConstraints provides raw access to those constraints associated with this
-// module.
-func (p *Table[F]) RawConstraints() []Constraint[F] {
-	return p.constraints
-}
-
 // Register returns the given register in this table.
 func (p *Table[F]) Register(id register.Id) register.Register {
 	return p.registers[id.Unwrap()]
@@ -227,22 +215,6 @@ func (p *Table[F]) Width() uint {
 
 func (p *Table[F]) String() string {
 	return register.MapToString(p)
-}
-
-// ConstRegister implementation for register.ConstMap interface
-func (p *Table[F]) ConstRegister(constant uint8) register.Id {
-	var (
-		name  = fmt.Sprintf("%d", constant)
-		nregs = uint(len(p.registers))
-	)
-	// Check whether register already exists
-	if rid, ok := p.HasRegister(name); ok {
-		return rid
-	}
-	// Allocate constant register
-	p.registers = append(p.registers, register.NewConst(constant))
-	//
-	return register.NewId(nregs)
 }
 
 // ============================================================================
