@@ -19,7 +19,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/inspector"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -72,7 +71,6 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	}
 	//
 	validate := GetFlag(cmd, "validate")
-	showLimbs := GetFlag(cmd, "show-limbs")
 	cellWidth := GetUint(cmd, "cell-width")
 	titleWidth := GetUint(cmd, "title-width")
 	// Read in constraint files
@@ -108,9 +106,8 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	}
 	//
 	if len(errors) == 0 {
-		mapping := module.IdentityMap[F](schema.Modules().Collect()...)
 		// Run the inspector.
-		errors = inspect(mapping, srcmap, trace, showLimbs, cellWidth, titleWidth)
+		errors = inspect(srcmap, trace, cellWidth, titleWidth)
 	}
 	// Sanity check what happened
 	if len(errors) > 0 {
@@ -130,19 +127,18 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 // The optional "public" predicate determines which modules are publicly visible
 // (shown by default); when nil, all modules are public.  Callers use this to
 // hide synthetic modules such as range-check tables.
-func InspectTrace[F field.Element[F]](mapping module.LimbsMap[F], trace trace.Shard[F],
-	public func(string) bool, limbs bool, cellWidth, titleWidth uint) []error {
+func InspectTrace[F field.Element[F]](trace trace.Shard[F],
+	public func(string) bool, cellWidth, titleWidth uint) []error {
 	//
 	term, err := termio.NewTerminal()
 	if err != nil {
 		return []error{err}
 	}
 	// Build the viewing window (no source map, so show computed registers).
-	builder := view.NewBuilder[F](mapping).
+	builder := view.NewBuilder().
 		WithTitleWidth(titleWidth).
 		WithCellWidth(cellWidth).
-		WithFormatting(inspector.NewFormatter[F]()).
-		WithLimbs(limbs).
+		WithFormatting(inspector.NewFormatter()).
 		WithComputed(true)
 	// Apply the visibility predicate (if any).
 	if public != nil {
@@ -151,7 +147,7 @@ func InspectTrace[F field.Element[F]](mapping module.LimbsMap[F], trace trace.Sh
 	//
 	window := builder.Build(trace)
 	// Construct the inspector.
-	insp := inspector.NewInspector(term, window)
+	insp := inspector.NewInspector[F](term, window)
 	// Render it.
 	if err := insp.Render(); err != nil {
 		return []error{err}
@@ -161,10 +157,10 @@ func InspectTrace[F field.Element[F]](mapping module.LimbsMap[F], trace trace.Sh
 }
 
 // Inspect a given trace using a given schema.
-func inspect[F field.Element[F]](mapping module.LimbsMap[F], srcmap *corset.SourceMap, trace trace.Shard[F],
-	limbs bool, cellWidth, titleWidth uint) []error {
+func inspect[F field.Element[F]](srcmap *corset.SourceMap, trace trace.Shard[F],
+	cellWidth, titleWidth uint) []error {
 	// Construct inspector window
-	inspector := construct(mapping, trace, srcmap, limbs, cellWidth, titleWidth)
+	inspector := construct(trace, srcmap, cellWidth, titleWidth)
 	// Render inspector
 	if err := inspector.Render(); err != nil {
 		return []error{err}
@@ -173,22 +169,21 @@ func inspect[F field.Element[F]](mapping module.LimbsMap[F], srcmap *corset.Sour
 	return inspector.Start()
 }
 
-func construct[F field.Element[F]](mapping module.LimbsMap[F], trace trace.Shard[F], srcmap *corset.SourceMap, limbs bool,
-	cellWidth, titleWidth uint) *inspector.Inspector[F] {
+func construct[F field.Element[F]](trace trace.Shard[F], srcmap *corset.SourceMap,
+	cellWidth, titleWidth uint) *inspector.Inspector {
 	//
 	term, err := termio.NewTerminal()
 	// Check whether successful
 	if err == nil {
-		window := view.NewBuilder[F](mapping).
+		window := view.NewBuilder().
 			WithSourceMap(*srcmap).
 			WithTitleWidth(titleWidth).
 			WithCellWidth(cellWidth).
-			WithFormatting(inspector.NewFormatter[F]()).
-			WithLimbs(limbs).
+			WithFormatting(inspector.NewFormatter()).
 			WithComputed(true).
 			Build(trace)
 		// Construct inspector state
-		return inspector.NewInspector(term, window)
+		return inspector.NewInspector[F](term, window)
 	}
 
 	fmt.Println(error.Error(err))
@@ -200,7 +195,6 @@ func construct[F field.Element[F]](mapping module.LimbsMap[F], trace trace.Shard
 //nolint:errcheck
 func init() {
 	rootCmd.AddCommand(inspectCmd)
-	inspectCmd.Flags().Bool("show-limbs", false, "specify whether to show register limbs")
 	inspectCmd.Flags().Uint("cell-width", 32, "specify maximum display width for a cell")
 	inspectCmd.Flags().Uint("title-width", 128, "specify maximum display width for a column title")
 }

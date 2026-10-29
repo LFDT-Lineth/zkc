@@ -16,19 +16,18 @@ import (
 	"slices"
 
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // TraceView provides an abstract view of a trace.  As such, it may not include
 // all modules found in a trace; rather it may include some subset matching a
 // predicate, or only those which are publically visible, etc.
-type TraceView[F field.Element[F]] interface {
+type TraceView interface {
 	// Filter this view to produce a more focused view.
-	Filter(TraceFilter) TraceView[F]
+	Filter(TraceFilter) TraceView
 	// Access ith module view
-	Module(uint) ModuleView[F]
+	Module(uint) ModuleView
 	// Sort the modules of this view
-	Sort(func(sc.ModuleId, sc.ModuleId) int) TraceView[F]
+	Sort(func(sc.ModuleId, sc.ModuleId) int) TraceView
 	// Determine number of modules in this view
 	Width() uint
 }
@@ -37,13 +36,13 @@ type TraceView[F field.Element[F]] interface {
 // Implementation
 // ============================================================================
 
-type traceView[F field.Element[F]] struct {
-	modules []ModuleView[F]
+type traceView struct {
+	modules []ModuleView
 }
 
 // Filter implementation for TraceView interface
-func (p *traceView[F]) Filter(filter TraceFilter) TraceView[F] {
-	var modules []ModuleView[F]
+func (p *traceView) Filter(filter TraceFilter) TraceView {
+	var modules []ModuleView
 	//
 	for _, m := range p.modules {
 		if cf := filter.Module(m.Data().Id()); cf != nil {
@@ -51,25 +50,25 @@ func (p *traceView[F]) Filter(filter TraceFilter) TraceView[F] {
 		}
 	}
 	//
-	return &traceView[F]{modules}
+	return &traceView{modules}
 }
 
 // Module implementation for TraceView interface
-func (p *traceView[F]) Module(ith uint) ModuleView[F] {
+func (p *traceView) Module(ith uint) ModuleView {
 	return p.modules[ith]
 }
 
-func (p *traceView[F]) Sort(cmp func(l, r sc.ModuleId) int) TraceView[F] {
+func (p *traceView) Sort(cmp func(l, r sc.ModuleId) int) TraceView {
 	var nmodules = slices.Clone(p.modules)
 	//
-	slices.SortFunc(nmodules, func(l, r ModuleView[F]) int {
+	slices.SortFunc(nmodules, func(l, r ModuleView) int {
 		return cmp(l.Data().Id(), r.Data().Id())
 	})
 	//
-	return &traceView[F]{nmodules}
+	return &traceView{nmodules}
 }
 
 // Width implementation for TraceView interface
-func (p *traceView[F]) Width() uint {
+func (p *traceView) Width() uint {
 	return uint(len(p.modules))
 }

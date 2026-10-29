@@ -419,11 +419,10 @@ func getSchemaStack[F field.Element[F]](field field.Config, filenames ...string,
 		stack        cmd_util.SchemaStacker[F]
 		corsetConfig corset.CompilationConfig
 	)
-	// Configure corset for testing
-	corsetConfig.Field = field
 	//
 	stack = stack.
 		WithCorsetConfig(corsetConfig).
+		WithFieldConfig(field).
 		WithLayer(cmd_util.MIR_LAYER).
 		WithLayer(cmd_util.AIR_LAYER)
 	// Read in all specified constraint files.

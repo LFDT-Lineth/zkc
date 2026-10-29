@@ -36,21 +36,3 @@ type Map[F field.Element[F], T register.Map[F]] interface {
 	// Returns number of modules in this map
 	Width() uint
 }
-
-// NewMap constructs a new module map
-func NewMap[F field.Element[F], T register.Map[F]](modules []T) Map[F, T] {
-	return limbsMap[F, T]{modules}
-}
-
-// Apply converts a module map of one kind into a module map of another kind.
-func Apply[F field.Element[F], S, T register.Map[F]](mapping Map[F, S], fn func(S) T) Map[F, T] {
-	var (
-		mods = make([]T, mapping.Width())
-	)
-	//
-	for i := range mapping.Width() {
-		mods[i] = fn(mapping.Module(i))
-	}
-	//
-	return NewMap(mods)
-}
