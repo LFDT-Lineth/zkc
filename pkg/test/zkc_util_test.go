@@ -195,8 +195,7 @@ func Test_ZkcUtil_Sharding_04(t *testing.T) {
 }
 
 func Test_ZkcUtil_Sharding_05(t *testing.T) {
-	// See #2297
-	checkZkcUtil(t, "zkc/util/sharding_05", DEFAULT_UTIL_CONFIG.Sharding("copy", 1).GoGen(false))
+	checkZkcUtil(t, "zkc/util/sharding_05", DEFAULT_UTIL_CONFIG.Sharding("copy", 1))
 }
 
 // ===================================================================
