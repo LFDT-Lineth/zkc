@@ -28,7 +28,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -58,7 +57,7 @@ type SchemaStacker[F field.Element[F]] struct {
 	layers bit.Set
 	// Schema represents the top of this stack.  This is "abstract" in the sense
 	// that registers have not yet been split to fit the target field.
-	schema util.Option[mir.Schema[word.BigEndian]]
+	schema util.Option[mir.Schema[F]]
 	// Source map for the schema above, which maps registers and constraints
 	// back to their original source-level declarations.
 	sourceMap util.Option[corset.SourceMap]
@@ -127,7 +126,7 @@ func (p SchemaStacker[F]) Field() field.Config {
 
 // Read reads one or more constraints files into this stack.
 func (p SchemaStacker[F]) Read(filenames ...string) SchemaStacker[F] {
-	schema, srcmap := CompileSourceFiles(p.corsetConfig, filenames)
+	schema, srcmap := CompileSourceFiles[F](p.corsetConfig, filenames)
 	p.schema = util.Some(schema)
 	p.sourceMap = util.Some(srcmap)
 	//
@@ -142,7 +141,7 @@ func (p SchemaStacker[F]) TraceBuilder() ir.TraceBuilder[F] {
 // Build a fresh SchemaStack from this stacker.
 func (p SchemaStacker[F]) Build() SchemaStack[F] {
 	var (
-		absSchema mir.Schema[word.BigEndian]
+		mirSchema mir.Schema[F]
 		airSchema air.Schema[F]
 		stack     SchemaStack[F]
 	)
@@ -150,11 +149,7 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 	if p.schema.HasValue() {
 		stats := util.NewPerfStats()
 		// Read out the (abstract) schema
-		absSchema = p.schema.Unwrap()
-		//
-		stats.Log("concretization")
-		// Concretize schema for the target field.
-		mirSchema := mir.Concretize[word.BigEndian, F](absSchema.RawModules())
+		mirSchema = p.schema.Unwrap()
 		// Construct a trivial (unsplit) register mapping, since registers are
 		// no longer subdivided into limbs.
 		stats.Log("translation")
@@ -191,15 +186,15 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 // can be compiled with (or without) the standard library.  Generally speaking,
 // you want to compile with the standard library.  However, some internal tests
 // are run without including the standard library to minimise the surface area.
-func CompileSourceFiles(config corset.CompilationConfig, filenames []string,
-) (mir.Schema[word.BigEndian], corset.SourceMap) {
+func CompileSourceFiles[F field.Element[F]](config corset.CompilationConfig, filenames []string,
+) (mir.Schema[F], corset.SourceMap) {
 	//
 	var (
 		err      error
 		errors   []source.SyntaxError
 		srcmap   corset.SourceMap
 		srcfiles []source.File
-		schema   mir.Schema[word.BigEndian]
+		schema   mir.Schema[F]
 	)
 	//
 	if len(filenames) == 0 {
@@ -227,7 +222,7 @@ func CompileSourceFiles(config corset.CompilationConfig, filenames []string,
 		srcfiles[i] = *source.NewSourceFile(n, bytes)
 	}
 	// Parse and compile source files
-	schema, srcmap, errors = corset.CompileSourceFiles(config, srcfiles)
+	schema, srcmap, errors = corset.CompileSourceFiles[F](config, srcfiles)
 	// Check for any errors
 	if len(errors) == 0 {
 		return schema, srcmap
