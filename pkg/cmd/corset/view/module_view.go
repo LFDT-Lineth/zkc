@@ -31,18 +31,18 @@ type ModuleConfig interface {
 }
 
 // ModuleView abstracts an underlying trace module.  For example, it manages the
-// way that column data is displayed (e.g. in hex or in decimal, etc), whether
-// or not register limbs are shown, and provides a mechanism for querying
-// whether a given cell is "active" or not.  Specifically, cells in a
-// perspective are not active when that perspective is not active.
-type ModuleView[F field.Element[F]] interface {
+// way that column data is displayed (e.g. in hex or in decimal, etc), and
+// provides a mechanism for querying whether a given cell is "active" or not.
+// Specifically, cells in a perspective are not active when that perspective is
+// not active.
+type ModuleView interface {
 	widget.TableSource
 	// Config returns config settings for this module.
 	Config() ModuleConfig
 	// Data abstracts the raw data of the underlying module.
-	Data() ModuleData[F]
+	Data() ModuleData
 	// Filter this view to produce a more focused view.
-	Filter(ModuleFilter) ModuleView[F]
+	Filter(ModuleFilter) ModuleView
 	// Return offset position within module
 	Offset() (uint, uint)
 	// Set offset position within module
@@ -58,9 +58,6 @@ type ModuleView[F field.Element[F]] interface {
 type moduleView[F field.Element[F]] struct {
 	// width of all cells / titles
 	cellWidth, titleWidth uint
-	// Limbs indicates whether or not to show the raw limbs, or the combined
-	// source-level register.
-	limbs bool
 	// Formatting for this module
 	formatting ModuleFormatting
 	// viewport within module data
@@ -76,12 +73,12 @@ func (p *moduleView[F]) Config() ModuleConfig {
 }
 
 // Data returns an abtract view of the data for given register
-func (p *moduleView[F]) Data() ModuleData[F] {
+func (p *moduleView[F]) Data() ModuleData {
 	return p.data
 }
 
 // Filter columns in this module
-func (p *moduleView[F]) Filter(filter ModuleFilter) ModuleView[F] {
+func (p *moduleView[F]) Filter(filter ModuleFilter) ModuleView {
 	var q = *p
 	//
 	q.window = p.data.Filter(filter)

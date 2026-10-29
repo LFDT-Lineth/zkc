@@ -15,7 +15,6 @@ package split
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -36,7 +35,7 @@ import (
 //
 // where each operand is the limb vector of the original register (ordered
 // most-significant limb first, matching ApplyLimbsMap).
-func Shift[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Bitwise[W]) []Bytecode[W] {
+func Shift[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Bitwise[W]) []Bytecode[W] {
 	var op bytecode.Operation
 	//
 	switch insn.Op {

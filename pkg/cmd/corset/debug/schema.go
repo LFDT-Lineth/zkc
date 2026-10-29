@@ -26,11 +26,6 @@ import (
 // PrintSchemas is responsible for printing out a human-readable description of
 // a given schema.
 func PrintSchemas[F field.Element[F]](stack cmd_util.SchemaStack[F], textwidth uint, verbose bool) {
-	//
-	for _, schema := range stack.AbstractSchemas() {
-		PrintAnySchema(schema, textwidth, verbose)
-	}
-	//
 	if stack.HasConcreteSchema() {
 		PrintAnySchema(stack.ConcreteSchema(), textwidth, verbose)
 	}
@@ -162,7 +157,8 @@ func printStaticContents[F field.Element[F]](module schema.Module[F], verbose bo
 	}
 }
 
-func printRegisters[F field.Element[F]](module schema.Module[F], prefix string, filter func(register.Register[F]) bool) {
+func printRegisters[F field.Element[F]](module schema.Module[F], prefix string,
+	filter func(register.Register[F]) bool) {
 	var (
 		regT string
 	)

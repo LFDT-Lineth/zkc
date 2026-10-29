@@ -82,7 +82,7 @@ type partCat struct {
 // Here, the borrow b0 supplies the missing top bits of the first chunk from the
 // bottom of the next.  Since b0 is written by the second chunk, it is executed
 // first.
-func Concat[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
+func Concat[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W],
 	insn *bytecode.Cat[W]) []Bytecode[W] {
 	// Split into the initial set of chunks.
 	var chunks, context = initialiseConcatChunks(mapping, alloc, insn.Targets, insn.Sources)
@@ -120,7 +120,7 @@ func orderConcatAssignments[W word.Word[W]](chunks []partCat, alloc Allocator[W]
 // initialiseConcatChunks splits the addition sources and constant into
 // least-significant-first chunks, then assigns target limbs to each chunk
 // according to the number of bits the corresponding RHS can produce.
-func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
+func initialiseConcatChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W],
 	targets, sources []RegisterId) ([]partCat, []Bytecode[W]) {
 	//
 	var (
@@ -197,7 +197,7 @@ func initialiseConcatChunks[W word.Word[W]](mapping descriptor.LimbsMap[W], allo
 // chunk as its least significant target.  The last real chunk (and everything
 // after it) is skipped, since there is no value in adding carry lines: overflow
 // there is the discarded top bits, and a shortfall is zero-filled.
-func insertConcatCarryLines[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], chunks []partCat,
+func insertConcatCarryLines[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], chunks []partCat,
 ) []partCat {
 	var (
 		nChunks = uint(len(chunks))

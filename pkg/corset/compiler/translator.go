@@ -36,11 +36,6 @@ import (
 type Config struct {
 	// Enforce all types by default
 	EnforceTypes bool
-	// Enforce types for all limbs arising from splitting registers
-	EnforceLimbTypes bool
-	// Target field configuration.  This is only used to assist in reporting
-	// errors which are specific to the given field configuration.
-	Field field.Config
 }
 
 // equateZero constructs the logical term which holds when the given term
@@ -163,9 +158,7 @@ func (t *translator[F]) translateModule(name string) {
 // when the compiler is configured to enforce types more broadly.
 func (t *translator[F]) translateTypeConstraints(reg Register, mod mir.ModuleBuilder[F]) {
 	var (
-		regWidth = reg.Bitwidth
-		required = reg.MustProve || t.config.EnforceTypes ||
-			(t.config.EnforceLimbTypes && regWidth > t.config.Field.RegisterWidth)
+		required = reg.MustProve || t.config.EnforceTypes
 	)
 	// Apply provability (if it is required)
 	if required {
@@ -425,10 +418,10 @@ func (t *translator[F]) translateBuses() []SyntaxError {
 	return errors
 }
 
-// translateBus checks that the ports of one bus agree (same column count,
-// regular limb decompositions, both directions present) and constructs the
-// corresponding constraint.  The constraint is added to the first port's
-// module; placement is cosmetic, but must be deterministic.
+// translateBus checks that the ports of one bus agree (same column count, both
+// directions present) and constructs the corresponding constraint.  The
+// constraint is added to the first port's module; placement is cosmetic, but
+// must be deterministic.
 func (t *translator[F]) translateBus(busName string, ports []busPort[F]) []SyntaxError {
 	var (
 		errors          []SyntaxError

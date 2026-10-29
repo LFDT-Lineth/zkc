@@ -19,23 +19,21 @@ import (
 	"regexp"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // ModuleState provides state regarding how to display the trace for a given
 // module, including related aspects like filter histories, etc.
-type ModuleState[F field.Element[F]] struct {
+type ModuleState struct {
 	// public indicates whether or not this module is externally visible.
 	public bool
 	// Active module view
-	view view.ModuleView[F]
+	view view.ModuleView
 	// History for goto row commands
 	targetRowHistory []string
 	// Active column filter
-	columnFilter SourceColumnFilter[F]
+	columnFilter SourceColumnFilter
 	// Set of column filters used (regexes only).
 	columnFilterHistory []string
 	// History for scan commands
@@ -46,7 +44,7 @@ type ModuleState[F field.Element[F]] struct {
 
 // SourceColumnFilter packages up everything needed for filtering columns in a
 // given module.
-type SourceColumnFilter[F field.Element[F]] struct {
+type SourceColumnFilter struct {
 	// Regex filters columns based on whether their name matches the regex or
 	// not.
 	Regex *regexp.Regexp
@@ -54,12 +52,10 @@ type SourceColumnFilter[F field.Element[F]] struct {
 	Computed bool
 	// UserDefined filters columns based on whether they are non-computed columns.
 	UserDefined bool
-	// Register mappin
-	Mapping register.Map[F]
 }
 
 // Column matches this filter against a given column.
-func (p *SourceColumnFilter[F]) Column(col view.SourceColumn) bool {
+func (p *SourceColumnFilter) Column(col view.SourceColumn) bool {
 	//
 	if p.Regex == nil || p.Regex.MatchString(col.Name) {
 		if p.Computed && col.Computed {
@@ -73,24 +69,23 @@ func (p *SourceColumnFilter[F]) Column(col view.SourceColumn) bool {
 }
 
 // Range imoplementation for ModuleFilter interface.
-func (p *SourceColumnFilter[F]) Range() (start, end uint) {
+func (p *SourceColumnFilter) Range() (start, end uint) {
 	return 0, math.MaxUint
 }
 
-func newModuleState[F field.Element[F]](view view.ModuleView[F]) ModuleState[F] {
-	var state ModuleState[F]
+func newModuleState(view view.ModuleView) ModuleState {
+	var state ModuleState
 	//
 	state.public = view.Data().IsPublic()
 	state.view = view
 	// Include all columns initially
 	state.columnFilter.Computed = true
 	state.columnFilter.UserDefined = true
-	state.columnFilter.Mapping = view.Data().Mapping().LimbsMap()
 	//
 	return state
 }
 
-func (p *ModuleState[F]) gotoRow(ncol uint) uint {
+func (p *ModuleState) gotoRow(ncol uint) uint {
 	col, row := p.view.Offset()
 	//
 	p.view.Goto(ncol, row)
@@ -106,7 +101,7 @@ func (p *ModuleState[F]) gotoRow(ncol uint) uint {
 
 // Apply a new column filter to the module view.  This determines which columns
 // are currently visible.
-func (p *ModuleState[F]) applyColumnFilter(filter SourceColumnFilter[F], history bool) {
+func (p *ModuleState) applyColumnFilter(filter SourceColumnFilter, history bool) {
 	p.view = p.view.Filter(&filter)
 	// Save active filter
 	p.columnFilter = filter
@@ -122,7 +117,7 @@ func (p *ModuleState[F]) applyColumnFilter(filter SourceColumnFilter[F], history
 
 // Evaluate a query on the current module using those values from the given
 // trace, looking for the first row where the query holds.
-func (p *ModuleState[F]) matchQuery(col uint, forwards bool, query *Query) termio.FormattedText {
+func (p *ModuleState) matchQuery(col uint, forwards bool, query *Query) termio.FormattedText {
 	var (
 		width, _ = p.view.Data().Dimensions()
 		// Construct query environment
@@ -175,38 +170,23 @@ func historyAppend[T comparable](history []T, item T) []T {
 }
 
 // Build an environment suitable for querying from a given module's data.
-func buildEnvironment[F field.Element[F]](data view.ModuleData[F]) QueryEnv {
-	var (
-		mapping = data.Mapping()
-	)
+func buildEnvironment(data view.ModuleData) QueryEnv {
 	//
 	return func(col string, row uint) (big.Int, bool) {
-		var (
-			limbs []register.LimbId
-			ok    bool
-			id    register.Id
-		)
+		var ok bool
 		// Look in the register mapping first
-		if id, ok = mapping.HasRegister(col); ok {
-			limbs = mapping.LimbIds(id)
-		} else {
-			var (
-				srcId  view.SourceColumnId
-				srcCol view.SourceColumn
-			)
-			// Failed, so try for a source column.
-			if srcId, ok = data.HasSourceColumn(col); !ok {
-				// give up
-				panic(fmt.Sprintf("unknown column \"%s\"", col))
-			}
-			// Extract source column
-			srcCol = data.SourceColumn(srcId)
-			// Extract underlying register id
-			limbs = srcCol.Limbs
-			// Check whether source column actually active
-			ok = data.IsActive(srcCol, row)
+		var (
+			srcId  view.SourceColumnId
+			srcCol view.SourceColumn
+		)
+		// Failed, so try for a source column.
+		if srcId, ok = data.HasSourceColumn(col); !ok {
+			// give up
+			panic(fmt.Sprintf("unknown column \"%s\"", col))
 		}
-		//
-		return data.DataOf(limbs).Get(row), ok
+		// Extract source column
+		srcCol = data.SourceColumn(srcId)
+		// Check whether source column actually active
+		return data.DataOf(srcCol.Register).Get(row), data.IsActive(srcCol, row)
 	}
 }
