@@ -25,11 +25,11 @@ import (
 
 // ToRegisters converts an array of register descriptors into an array of scheme
 // registers.
-func toRegisters[W vm.Word[W]](registers []vm.Register[W]) []register.Register {
-	var regs = make([]register.Register, len(registers))
+func toRegisters[W vm.Word[W], F field.Element[F]](registers []vm.Register[W]) []register.Register[F] {
+	var regs = make([]register.Register[F], len(registers))
 	//
 	for i, r := range registers {
-		regs[i] = r.ToRawRegister()
+		regs[i] = r.ToRawRegister[F]()
 	}
 	//
 	return regs
@@ -51,7 +51,7 @@ func toFieldElements[W vm.Word[W], F field.Element[F]](contents []W) []F {
 }
 
 // FoldContents folds the contents of a memory into a multi-dimensional representation.
-func foldContents[F field.Element[F]](inputs, outputs []register.Register, contents []F) [][]F {
+func foldContents[F field.Element[F]](inputs, outputs []register.Register[F], contents []F) [][]F {
 	var (
 		nInputs  = len(inputs)
 		nOutputs = len(outputs)
@@ -102,7 +102,7 @@ func padStaticTables[F field.Element[F]](rows [][]F) [][]F {
 	return rows
 }
 
-func fillAddressLines[F field.Element[F]](address uint64, row []F, lines []register.Register) {
+func fillAddressLines[F field.Element[F]](address uint64, row []F, lines []register.Register[F]) {
 	// Least signicant word first
 	var acc vm.Uint64
 	// Initialise accumulator
@@ -127,18 +127,18 @@ func fillAddressLines[F field.Element[F]](address uint64, row []F, lines []regis
 // newLimbsMap constructs the register → limb mapping for a given (pre-split)
 // program, mirroring exactly how register splitting lays out limbs within each
 // module.
-func newLimbsMap[W vm.Word[W]](config field.Config, modules ...vm.Module[W]) module.LimbsMap {
-	var ms []register.LimbsMap = array.Map(modules, func(_ uint, m vm.Module[W]) register.LimbsMap {
+func newLimbsMap[W vm.Word[W], F field.Element[F]](config field.Config, modules ...vm.Module[W]) module.LimbsMap[F] {
+	var ms []register.LimbsMap[F] = array.Map(modules, func(_ uint, m vm.Module[W]) register.LimbsMap[F] {
 		var (
 			regs  = m.Registers()
-			limbs = make([][]register.Limb, len(regs))
+			limbs = make([][]register.Limb[F], len(regs))
 		)
 		// Split registers into limbs
 		for i, r := range regs {
-			limbs[i] = toRegisters(vm.SplitIntoLimbs(config.RegisterWidth, r))
+			limbs[i] = toRegisters[W, F](vm.SplitIntoLimbs(config.RegisterWidth, r))
 		}
 		// Construct limbs map
-		return register.NewLimbsMap(m.Name(), toRegisters(regs), limbs)
+		return register.NewLimbsMap(m.Name(), toRegisters[W, F](regs), limbs)
 	})
 	//
 	return module.NewLimbsMap(ms...)

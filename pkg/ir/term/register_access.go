@@ -115,7 +115,7 @@ func (p *RegisterAccess[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *RegisterAccess[F, T]) EvalAt(k uint, module trace.Module[F], _ register.Map) (F, error) {
+func (p *RegisterAccess[F, T]) EvalAt(k uint, module trace.Module[F], _ register.Map[F]) (F, error) {
 	var (
 		err    error
 		row    = uint(int(k) + p.shift)
@@ -136,7 +136,7 @@ func (p *RegisterAccess[F, T]) IsDefined() bool {
 }
 
 // Lisp implementation for Lispifiable interface.
-func (p *RegisterAccess[F, T]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (p *RegisterAccess[F, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	var name string
 	// Generate name, whilst allowing for schema to be nil.
 	if mapping != nil && global {

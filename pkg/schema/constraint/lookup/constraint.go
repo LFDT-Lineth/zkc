@@ -125,11 +125,11 @@ func (p *Constraint[F]) Lisp(mapping schema.Schema[F]) sexp.SExp {
 	)
 	// Iterate source registers
 	for _, ith := range p.Sources {
-		sources.Append(ith.Lisp(mapping.Module(ith.Module)))
+		sources.Append(ith.Lisp[F](mapping.Module(ith.Module)))
 	}
 	// Iterate target registers
 	for _, ith := range p.Targets {
-		targets.Append(ith.Lisp(mapping.Module(ith.Module)))
+		targets.Append(ith.Lisp[F](mapping.Module(ith.Module)))
 	}
 	// Done
 	return sexp.NewList([]sexp.SExp{

@@ -31,7 +31,7 @@ type Geometry struct {
 // NewGeometry returns the calculated "geometry" for this lookup.  That
 // is, for each source/target pair, the maximum bitwidth of any source or target
 // value.
-func NewGeometry[F field.Element[F], T register.Map](c Constraint[F], mapping module.Map[T]) Geometry {
+func NewGeometry[F field.Element[F], T register.Map[F]](c Constraint[F], mapping module.Map[F, T]) Geometry {
 	//
 	var geometry []uint = make([]uint, c.Sources[0].Len())
 	// Include sources
@@ -46,7 +46,7 @@ func NewGeometry[F field.Element[F], T register.Map](c Constraint[F], mapping mo
 	return Geometry{geometry}
 }
 
-func updateGeometry[T register.Map](geometry []uint, source Vector, mapping module.Map[T]) {
+func updateGeometry[F field.Element[F], T register.Map[F]](geometry []uint, source Vector, mapping module.Map[F, T]) {
 	//
 	var (
 		regmap = mapping.Module(source.Module)

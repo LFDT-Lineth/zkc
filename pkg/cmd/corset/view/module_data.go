@@ -57,7 +57,7 @@ type SourceColumn struct {
 // ============================================================================
 
 // ModuleData abstracts the raw data of a module.
-type ModuleData interface {
+type ModuleData[F field.Element[F]] interface {
 	// Id returns the module identifier
 	Id() sc.ModuleId
 	// Access abtract data for given set of register limbs register
@@ -71,7 +71,7 @@ type ModuleData interface {
 	// Determines whether or not this module is externally visible.
 	IsPublic() bool
 	// Mapping returns the register limbs map being used by this module view.
-	Mapping() register.LimbsMap
+	Mapping() register.LimbsMap[F]
 	// Name returns the name of the given module
 	Name() module.Name
 	// HasSourceColumn is useful for querying whether a source column exists
@@ -91,7 +91,7 @@ type moduleData[F field.Element[F]] struct {
 	// Height of module
 	height uint
 	// Mapping registers <-> limbs
-	mapping register.LimbsMap
+	mapping register.LimbsMap[F]
 	// Enumeration values
 	enumerations []corset.Enumeration
 	// public modifier
@@ -104,7 +104,7 @@ type moduleData[F field.Element[F]] struct {
 	rows []SourceColumn
 }
 
-func newModuleData[F field.Element[F]](id sc.ModuleId, mapping register.LimbsMap, trace trace.Module[F], public bool,
+func newModuleData[F field.Element[F]](id sc.ModuleId, mapping register.LimbsMap[F], trace trace.Module[F], public bool,
 	enums []corset.Enumeration, rows []SourceColumn) *moduleData[F] {
 	//
 	return &moduleData[F]{id, trace.Height(), mapping, enums, public, trace, nil, rows}
@@ -258,7 +258,7 @@ func (p *moduleData[F]) IsPublic() bool {
 }
 
 // Mapping returns the register-limbs mapping used within this view.
-func (p *moduleData[F]) Mapping() register.LimbsMap {
+func (p *moduleData[F]) Mapping() register.LimbsMap[F] {
 	return p.mapping
 }
 

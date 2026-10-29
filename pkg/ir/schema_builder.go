@@ -32,7 +32,7 @@ type BuildableModule[F field.Element[F], M any] interface {
 	// Add one or more constraints to this buildable module
 	AddConstraints(constraints ...schema.Constraint[F])
 	// Add one or more registers to this buildable module.
-	AddRegisters(registers ...register.Register)
+	AddRegisters(registers ...register.Register[F])
 	// Set contents for static module
 	SetStaticContents(contents [][]F)
 }

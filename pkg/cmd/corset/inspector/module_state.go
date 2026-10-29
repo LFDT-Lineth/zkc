@@ -21,20 +21,21 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
 // ModuleState provides state regarding how to display the trace for a given
 // module, including related aspects like filter histories, etc.
-type ModuleState struct {
+type ModuleState[F field.Element[F]] struct {
 	// public indicates whether or not this module is externally visible.
 	public bool
 	// Active module view
-	view view.ModuleView
+	view view.ModuleView[F]
 	// History for goto row commands
 	targetRowHistory []string
 	// Active column filter
-	columnFilter SourceColumnFilter
+	columnFilter SourceColumnFilter[F]
 	// Set of column filters used (regexes only).
 	columnFilterHistory []string
 	// History for scan commands
@@ -45,7 +46,7 @@ type ModuleState struct {
 
 // SourceColumnFilter packages up everything needed for filtering columns in a
 // given module.
-type SourceColumnFilter struct {
+type SourceColumnFilter[F field.Element[F]] struct {
 	// Regex filters columns based on whether their name matches the regex or
 	// not.
 	Regex *regexp.Regexp
@@ -54,11 +55,11 @@ type SourceColumnFilter struct {
 	// UserDefined filters columns based on whether they are non-computed columns.
 	UserDefined bool
 	// Register mappin
-	Mapping register.Map
+	Mapping register.Map[F]
 }
 
 // Column matches this filter against a given column.
-func (p *SourceColumnFilter) Column(col view.SourceColumn) bool {
+func (p *SourceColumnFilter[F]) Column(col view.SourceColumn) bool {
 	//
 	if p.Regex == nil || p.Regex.MatchString(col.Name) {
 		if p.Computed && col.Computed {
@@ -72,12 +73,12 @@ func (p *SourceColumnFilter) Column(col view.SourceColumn) bool {
 }
 
 // Range imoplementation for ModuleFilter interface.
-func (p *SourceColumnFilter) Range() (start, end uint) {
+func (p *SourceColumnFilter[F]) Range() (start, end uint) {
 	return 0, math.MaxUint
 }
 
-func newModuleState(view view.ModuleView) ModuleState {
-	var state ModuleState
+func newModuleState[F field.Element[F]](view view.ModuleView[F]) ModuleState[F] {
+	var state ModuleState[F]
 	//
 	state.public = view.Data().IsPublic()
 	state.view = view
@@ -89,7 +90,7 @@ func newModuleState(view view.ModuleView) ModuleState {
 	return state
 }
 
-func (p *ModuleState) gotoRow(ncol uint) uint {
+func (p *ModuleState[F]) gotoRow(ncol uint) uint {
 	col, row := p.view.Offset()
 	//
 	p.view.Goto(ncol, row)
@@ -105,7 +106,7 @@ func (p *ModuleState) gotoRow(ncol uint) uint {
 
 // Apply a new column filter to the module view.  This determines which columns
 // are currently visible.
-func (p *ModuleState) applyColumnFilter(filter SourceColumnFilter, history bool) {
+func (p *ModuleState[F]) applyColumnFilter(filter SourceColumnFilter[F], history bool) {
 	p.view = p.view.Filter(&filter)
 	// Save active filter
 	p.columnFilter = filter
@@ -121,7 +122,7 @@ func (p *ModuleState) applyColumnFilter(filter SourceColumnFilter, history bool)
 
 // Evaluate a query on the current module using those values from the given
 // trace, looking for the first row where the query holds.
-func (p *ModuleState) matchQuery(col uint, forwards bool, query *Query) termio.FormattedText {
+func (p *ModuleState[F]) matchQuery(col uint, forwards bool, query *Query) termio.FormattedText {
 	var (
 		width, _ = p.view.Data().Dimensions()
 		// Construct query environment
@@ -174,7 +175,7 @@ func historyAppend[T comparable](history []T, item T) []T {
 }
 
 // Build an environment suitable for querying from a given module's data.
-func buildEnvironment(data view.ModuleData) QueryEnv {
+func buildEnvironment[F field.Element[F]](data view.ModuleData[F]) QueryEnv {
 	var (
 		mapping = data.Mapping()
 	)

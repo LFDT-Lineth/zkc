@@ -17,30 +17,31 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // LimbsMap provides a high-level mapping of all registers across all
 // modules before and after subdivision occurs.
-type LimbsMap = Map[register.LimbsMap]
+type LimbsMap[F field.Element[F]] = Map[F, register.LimbsMap[F]]
 
 // NewLimbsMap constructs a new schema mapping for a given schema and
 // parameter combination.  This determines, amongst other things,  the
 // composition of limbs for all registers in the schema.
-func NewLimbsMap(modules ...register.LimbsMap) LimbsMap {
-	return limbsMap[register.LimbsMap]{modules}
+func NewLimbsMap[F field.Element[F]](modules ...register.LimbsMap[F]) LimbsMap[F] {
+	return limbsMap[F, register.LimbsMap[F]]{modules}
 }
 
 // IdentityMap constructs a "identity" mapping which maps each register to
 // itself.
-func IdentityMap[F any, M register.Map](modules ...M) LimbsMap {
-	var mappings []register.LimbsMap
+func IdentityMap[F field.Element[F], M register.Map[F]](modules ...M) LimbsMap[F] {
+	var mappings []register.LimbsMap[F]
 	//
 	for _, m := range modules {
 		regmap := register.IdentityMap[F](m)
 		mappings = append(mappings, regmap)
 	}
 	//
-	return limbsMap[register.LimbsMap]{mappings}
+	return limbsMap[F, register.LimbsMap[F]]{mappings}
 }
 
 // ============================================================================
@@ -49,17 +50,17 @@ func IdentityMap[F any, M register.Map](modules ...M) LimbsMap {
 
 // limbsMap provides a straightforward implementation of the schema.LimbMap
 // interface.
-type limbsMap[T register.Map] struct {
+type limbsMap[F field.Element[F], T register.Map[F]] struct {
 	modules []T
 }
 
 // Module implementation for register.RegisterMappings interface
-func (p limbsMap[T]) Module(mid Id) T {
+func (p limbsMap[F, T]) Module(mid Id) T {
 	return p.modules[mid]
 }
 
 // ModuleOf implementation for register.RegisterMappings interface
-func (p limbsMap[T]) ModuleOf(name Name) T {
+func (p limbsMap[F, T]) ModuleOf(name Name) T {
 	for _, m := range p.modules {
 		if m.Name() == name {
 			return m
@@ -70,11 +71,11 @@ func (p limbsMap[T]) ModuleOf(name Name) T {
 }
 
 // Width returns the number of modules in this map
-func (p limbsMap[T]) Width() uint {
+func (p limbsMap[F, T]) Width() uint {
 	return uint(len(p.modules))
 }
 
-func (p limbsMap[T]) String() string {
+func (p limbsMap[F, T]) String() string {
 	var builder strings.Builder
 	//
 	builder.WriteString("[")

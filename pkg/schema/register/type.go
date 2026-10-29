@@ -40,6 +40,9 @@ var (
 	// COMPUTED_REGISTER signals a register whose values are computed from one
 	// (or more) assignments during trace expansion.
 	COMPUTED_REGISTER = Type{uint8(2)}
+	// CONSTANT_REGISTER signals a register whose value is a constant across all
+	// traces.
+	CONSTANT_REGISTER = Type{uint8(3)}
 )
 
 // ============================================================================

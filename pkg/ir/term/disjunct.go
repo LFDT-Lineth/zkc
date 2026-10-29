@@ -84,7 +84,7 @@ func (p *Disjunct[F, S]) Negate() S {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Disjunct[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, error) {
+func (p *Disjunct[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map[F]) (bool, error) {
 	//
 	for _, disjunct := range p.Args {
 		val, err := disjunct.TestAt(k, tr, sc)
@@ -102,7 +102,7 @@ func (p *Disjunct[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bo
 
 // Lisp returns a lisp representation of this equation, which is useful for
 // debugging.
-func (p *Disjunct[F, T]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (p *Disjunct[F, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	if len(p.Args) == 0 {
 		return sexp.NewSymbol("⊥")
 	}

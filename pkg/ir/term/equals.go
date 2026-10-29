@@ -62,7 +62,7 @@ func (p *Equal[F, S, T]) Bounds() util.Bounds {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Equal[F, S, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, error) {
+func (p *Equal[F, S, T]) TestAt(k uint, tr trace.Module[F], sc register.Map[F]) (bool, error) {
 	lhs, err1 := p.Lhs.EvalAt(k, tr, sc)
 	rhs, err2 := p.Rhs.EvalAt(k, tr, sc)
 	// error check
@@ -77,7 +77,7 @@ func (p *Equal[F, S, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bo
 
 // Lisp returns a lisp representation of this Equal, which is useful for
 // debugging.
-func (p *Equal[F, S, T]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (p *Equal[F, S, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	var (
 		l = p.Lhs.Lisp(global, mapping)
 		r = p.Rhs.Lisp(global, mapping)
