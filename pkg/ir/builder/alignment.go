@@ -41,17 +41,17 @@ type Config struct {
 	Padding PaddingStrategy
 }
 
-// AlignAndPad performs "trace alignment" on a given trace file.  That is, it
-// ensures: firstly, the order in which modules occur in the trace file matches
-// (i.e. aligns with) those in the given schema; secondly, it ensures that the
-// columns within each module match (i.e. align with) those of the corresponding
-// schema module.  If any columns or modules are missing, then one or more
-// errors will be reported.
+// Align performs "trace alignment" on a given trace file.  That is, it ensures:
+// firstly, the order in which modules occur in the trace file matches (i.e.
+// aligns with) those in the given schema; secondly, it ensures that the columns
+// within each module match (i.e. align with) those of the corresponding schema
+// module.  If any columns or modules are missing, then one or more errors will
+// be reported.
 //
 // NOTE: alignment is impacted by whether or not the trace is being expanded or
 // not. Specifically, expanding traces don't need to include data for computed
 // columns, since these will be added during expansion.
-func AlignAndPad[F field.Element[F]](config Config, schema sc.Schema[F], tr trace.Shard[F],
+func Align[F field.Element[F]](config Config, schema sc.Schema[F], tr trace.Shard[F],
 ) (trace.Shard[F], []error) {
 	//
 	var (
@@ -97,11 +97,6 @@ func AlignAndPad[F field.Element[F]](config Config, schema sc.Schema[F], tr trac
 			errors = append(errors, fmt.Errorf("unknown module '%s' in trace", ith.Name()))
 		}
 	}
-	// Pad modules as required
-	padded, errs := padModules(config, schema, modules)
-	modules = padded
-	//
-	errors = append(errors, errs...)
 	// Done
 	return trace.NewShard(modules), errors
 }
@@ -169,7 +164,10 @@ func alignModule[F field.Element[F]](config Config, scMod sc.Module[F], trMod tr
 		if reg.IsInputOutput() && col == nil && height != 0 {
 			errors = append(errors,
 				fmt.Errorf("missing input/output column '%s' from module '%s' of trace", reg.Name(), scMod.Name()))
-		} else if !config.Expanding && col == nil {
+		} else if reg.IsConstant() && col != nil {
+			errors = append(errors,
+				fmt.Errorf("found constant column '%s' from module '%s' in trace", reg.Name(), scMod.Name()))
+		} else if !config.Expanding && !reg.IsConstant() && col == nil {
 			errors = append(errors,
 				fmt.Errorf("missing computed column '%s' from module '%s' of expanded trace", reg.Name(), scMod.Name()))
 		}

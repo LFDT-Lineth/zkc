@@ -45,7 +45,7 @@ func NewConstraint[F field.Element[F]](handle string, sends []Port, receives []P
 	var width uint
 	// Take the width from whichever side has ports, rather than from the sends
 	// alone.  A bus missing one direction entirely is a user error reported by
-	// Consistent, so it must not panic here.
+	// the Corset translator, so it must not panic here.
 	for i, ith := range slices.Concat(sends, receives) {
 		if i == 0 {
 			width = ith.Len()
@@ -64,9 +64,6 @@ func NewConstraint[F field.Element[F]](handle string, sends []Port, receives []P
 func (p *Constraint[F]) Validate(sc schema.Schema[F]) {
 	var width uint
 	//
-	util.Assert(len(p.Sends) != 0, "bus %q has receives but no sends", p.Handle)
-	util.Assert(len(p.Receives) != 0, "bus %q has sends but no receives", p.Handle)
-	//
 	for i, port := range slices.Concat(p.Sends, p.Receives) {
 		var mod = sc.Module(port.Module)
 		//
@@ -74,7 +71,6 @@ func (p *Constraint[F]) Validate(sc schema.Schema[F]) {
 			width = port.Len()
 		}
 		//
-		util.Assert(port.Len() != 0, "bus %q has an empty port", p.Handle)
 		util.Assert(port.Len() == width, "bus %q has ports of differing widths (%d vs %d)", p.Handle, width, port.Len())
 		util.Assert(mod.Register(port.Selector).Width() == 1, "bus %q has a non-binary selector", p.Handle)
 	}

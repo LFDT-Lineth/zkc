@@ -119,11 +119,9 @@ func validateColumnBitWidth[F field.Element[F]](rid register.Id, smod sc.Module[
 		col = tmod.Column(rid.Unwrap())
 	)
 	// Sanity check bitwidth can be checked.
-	if reg.IsNative() {
-		// This indicates a column which has no fixed bitwidth but, rather, uses
-		// the entire field element.  The only situation this arises in practice
-		// is for columns holding the multiplicative inverse of some other
-		// column.
+	if reg.IsNative() || reg.IsConstant() {
+		// This indicates a column for which it doesn't make sense to validate
+		// the bitwidth.
 		return nil
 	} else if smod.IsStatic() {
 		// Static modules always have empty columns in the trace.

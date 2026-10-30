@@ -23,6 +23,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
+	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -42,9 +43,9 @@ import (
 var traceCmd = &cobra.Command{
 	Use:   "trace [flags] trace_file [constraint_file(s)]",
 	Short: "Operate on a trace file.",
-	Long: `Operate on a trace file, such as converting
-	it from one format (e.g. lt) to another (e.g. json),
-	or filtering out modules, or listing columns, etc.`,
+	Long: `Operate on a trace file, such as printing
+	it or converting it from one format (e.g. lt)
+	to another (e.g. json).`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runFieldAgnosticCmd(cmd, args, traceCmds)
 	},
@@ -92,8 +93,6 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	if err != nil {
 		panic(err)
 	}
-	//
-	cfg.sortColumn = GetUint(cmd, "sort")
 	// Read in constraint files
 	stacker := *getSchemaStack[F](cmd, SCHEMA_OPTIONAL, args[1:]...)
 	stack := stacker.Build()
@@ -121,7 +120,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 		traces, tp_errors = expandTraces(traces, stack, builder)
 		// Print trace info
 		for _, tf := range traces {
-			printTraceInfo(cfg, tf)
+			printTraceInfo(cfg, stack, tf)
 		}
 		// Report any propagation errors
 		for _, err := range tp_errors {
@@ -131,7 +130,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 		// Use raw trace
 		for _, tf := range traces {
 			// Print what we have
-			printTraceInfo(cfg, tf)
+			printTraceInfo(cfg, stack, tf)
 		}
 	}
 	// Write out results (if requested)
@@ -143,7 +142,6 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 func init() {
 	rootCmd.AddCommand(traceCmd)
 	traceCmd.Flags().BoolP("print", "p", false, "print entire trace file")
-	traceCmd.Flags().Uint("sort", 0, "sort table column")
 	traceCmd.Flags().Uint("start", 0, "filter out rows below this")
 	traceCmd.Flags().Uint("end", math.MaxUint, "filter out this and all following rows")
 	traceCmd.Flags().Uint("cell-width", 32, "specify maximum display width for a cell")
@@ -166,8 +164,6 @@ type TraceConfig[F field.Element[F]] struct {
 	maxTitleWidth uint
 	// Indicate whether or not to show low-level registers in trace.
 	showComputed bool
-	// Column to sort on
-	sortColumn uint
 	// Start/end row for trace view
 	startRow uint
 	endRow   uint
@@ -207,7 +203,7 @@ func expandTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.S
 	return traces, errors
 }
 
-func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], trace tr.Trace[F]) {
+func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], stack cmd_util.SchemaStack[F], trace tr.Trace[F]) {
 	for i, shard := range trace {
 		//
 		if len(trace) > 0 {
@@ -216,13 +212,17 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], trace tr.Trace[F]) {
 			fmt.Println(strings.Repeat("-", int(80)))
 		}
 		// Construct trace window
-		view := view.NewBuilder().
+		view := view.NewBuilder[F]().
 			WithCellWidth(cfg.maxCellWidth).
 			WithTitleWidth(cfg.maxTitleWidth).
 			WithComputed(cfg.showComputed)
 		// Add source map (if applicable)
 		if cfg.sourceMap != nil {
 			view = view.WithSourceMap(*cfg.sourceMap)
+		}
+		// Add schema (if applicable)
+		if stack.HasConcreteSchema() {
+			view = view.WithSchema(stack.ConcreteSchema())
 		}
 		// Construct viewing window
 		window := view.Build(shard)
@@ -240,13 +240,14 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], trace tr.Trace[F]) {
 // produces the same output as "go-corset trace --print".  Every module holding
 // data is printed, since (unlike the inspector) there is no way to reveal one
 // which was hidden.
-func PrintTrace[F field.Element[F]](trace tr.Trace[F], cellWidth, titleWidth uint) {
+func PrintTrace[F field.Element[F]](schema sc.Schema[F], trace tr.Trace[F], cellWidth, titleWidth uint) {
 	for _, shard := range trace {
 		// Build the viewing window (no source map, so show computed registers).
-		builder := view.NewBuilder().
+		builder := view.NewBuilder[F]().
 			WithCellWidth(cellWidth).
 			WithTitleWidth(titleWidth).
-			WithComputed(true)
+			WithComputed(true).
+			WithSchema(schema)
 		//
 		printTrace(builder.Build(shard))
 	}

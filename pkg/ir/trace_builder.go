@@ -145,13 +145,17 @@ func (tb TraceBuilder[F]) BuildShard(schema sc.Schema[F], tf trace.Shard[F]) (tr
 			Padding:   tb.paddingStrategy,
 		}
 	)
-	// Apply trace alignment and padding
-	if atr, errs = builder.AlignAndPad(config, schema, tf); len(errs) > 0 {
+	// Apply trace alignment
+	if atr, errs = builder.Align(config, schema, tf); len(errs) > 0 {
 		return atr, errs
 	}
 	// Apply trace expansion (if requested)
 	if tb.expand {
 		var err error
+		// Pad trace
+		if atr, errs = builder.Pad(config, schema, atr); len(errs) > 0 {
+			return atr, errs
+		}
 		// Expand trace
 		if atr, err = builder.TraceExpansion(config, schema, atr); err != nil {
 			return atr, append(errs, err)

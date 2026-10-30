@@ -33,12 +33,11 @@ type registerView[F field.Element[F]] struct {
 
 func (p *registerView[F]) Get(row uint) big.Int {
 	var (
-		data    = p.trace.Column(p.regId.Unwrap())
-		element = data.Get(row)
-		val     big.Int
+		data = p.trace.Column(p.regId.Unwrap())
+		val  big.Int
 	)
 	// Construct value from field element
-	val.SetBytes(element.Bytes())
+	val.SetBytes(data.Get(row).Bytes())
 	//
 	return val
 }

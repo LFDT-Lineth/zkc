@@ -68,9 +68,7 @@ func (p ConstantArray[T]) Get(index uint) T {
 // Pad implementation for MutArray interface.  The receiver is left
 // unmodified.
 func (p ConstantArray[T]) Pad(n uint, val T) Array[T] {
-	var zero T
-	//
-	if !p.value.Equals(zero) {
+	if !p.value.Equals(val) {
 		return NewPaddedArray(p).Pad(n, val)
 	}
 	//
