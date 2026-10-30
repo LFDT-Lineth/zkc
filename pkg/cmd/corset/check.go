@@ -25,7 +25,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/checker"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -89,7 +88,6 @@ func runCheckCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 
 	cfg.Report = GetFlag(cmd, "report")
 	cfg.ReportPadding = GetUint(cmd, "report-context")
-	cfg.ReportLimbs = GetFlag(cmd, "show-limbs")
 	cfg.ReportComputed = GetFlag(cmd, "show-computed")
 	cfg.ReportCellWidth = GetUint(cmd, "report-cellwidth")
 	cfg.ReportTitleWidth = GetUint(cmd, "report-titlewidth")
@@ -165,8 +163,6 @@ type CheckConfig struct {
 	ReportCellWidth uint
 	// Specifies the width of a column title to show.
 	ReportTitleWidth uint
-	// Specifies whether or not to show raw limbs
-	ReportLimbs bool
 	// Specifies whether or not to show raw computed registers
 	ReportComputed bool
 	// Enable ansi escape codes in reports
@@ -226,9 +222,8 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.Schema[F], builder ir.T
 	cfg CheckConfig, trace tr.Trace[F]) bool {
 	// begin performance measurement
 	var (
-		mapping = module.IdentityMap[F](schema.Modules().Collect()...)
-		stats   = util.NewPerfStats()
-		errs    []error
+		stats = util.NewPerfStats()
+		errs  []error
 	)
 	//
 	trace, errs = builder.Build(schema, trace)
@@ -248,7 +243,7 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.Schema[F], builder ir.T
 	// Check constraints
 	if fails, errs := checker.CheckStrict(trace); len(fails) > 0 || len(errs) > 0 {
 		// Report any constraint failures
-		ReportFailures(ir, mapping, cfg, fails)
+		ReportFailures(ir, schema, cfg, fails)
 		// Report any unrecoverable errors
 		reportErrors(ir, errs)
 		// Done
@@ -262,8 +257,7 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.Schema[F], builder ir.T
 
 // ReportFailures reports constraint failures, whilst providing contextual
 // information (when requested).
-func ReportFailures[F field.Element[F]](ir string, mapping module.LimbsMap, cfg CheckConfig,
-	failures []sc.Failure[F]) {
+func ReportFailures[F field.Element[F]](ir string, schema sc.Schema[F], cfg CheckConfig, failures []sc.Failure[F]) {
 	//
 	var errs = make([]error, len(failures))
 	//
@@ -275,29 +269,28 @@ func ReportFailures[F field.Element[F]](ir string, mapping module.LimbsMap, cfg 
 	// Second, produce report (if requested)
 	if cfg.Report {
 		for _, f := range failures {
-			reportFailure(f, mapping, cfg)
+			reportFailure(f, schema, cfg)
 		}
 	}
 }
 
 // Print a human-readable report detailing the given failure
-func reportFailure[F field.Element[F]](failure sc.Failure[F], mapping module.LimbsMap, cfg CheckConfig) {
+func reportFailure[F field.Element[F]](failure sc.Failure[F], schema sc.Schema[F], cfg CheckConfig) {
 	// Identify all relevant cells
 	var cells = failure.RequiredCells()
 	//
 	fmt.Printf("failing constraint %s:\n", failure.Handle())
 	// Check whether anything to report
 	if len(cells) > 0 {
-		reportRelevantCells(cells, failure.Trace(), mapping, cfg)
+		reportRelevantCells(cells, schema, failure.Trace(), cfg)
 	}
 }
 
 // Print a human-readable report detailing the given cells of a given shard.
-func reportRelevantCells[F field.Element[F]](cells []tr.CellRef, trace tr.Shard[F],
-	mapping module.LimbsMap, cfg CheckConfig) {
+func reportRelevantCells[F field.Element[F]](cells []tr.CellRef, schema sc.Schema[F], trace tr.Shard[F],
+	cfg CheckConfig) {
 	// Construct trace window
-	builder := view.NewBuilder[F](mapping).
-		WithLimbs(cfg.ReportLimbs).
+	builder := view.NewBuilder(schema).
 		WithComputed(cfg.ReportComputed).
 		WithCellWidth(cfg.ReportCellWidth).
 		WithTitleWidth(cfg.ReportTitleWidth).
@@ -348,7 +341,6 @@ func init() {
 	checkCmd.Flags().Bool("report", false, "report details of failure for debugging")
 	checkCmd.Flags().Uint("report-context", 2, "specify number of rows to show eitherside of failure in report")
 	checkCmd.Flags().Bool("show-computed", false, "show (low-level) computed registers")
-	checkCmd.Flags().Bool("show-limbs", false, "specify whether to show register limbs in report")
 	checkCmd.Flags().Uint("report-cellwidth", 32, "specify max number of bytes to show in a given cell in report")
 	checkCmd.Flags().Uint("report-titlewidth", 40, "specify maximum width of column titles in report")
 	//

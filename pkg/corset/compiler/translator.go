@@ -30,53 +30,27 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // Config encapsulates various options which can affect compilation.
 type Config struct {
 	// Enforce all types by default
 	EnforceTypes bool
-	// Enforce types for all limbs arising from splitting registers
-	EnforceLimbTypes bool
-	// Target field configuration.  This is only used to assist in reporting
-	// errors which are specific to the given field configuration.
-	Field field.Config
 }
-
-// SchemaBuilder is used within this translator for building the final MIR
-// schema.
-type SchemaBuilder = mir.SchemaBuilder[word.BigEndian]
-
-// ModuleBuilder is used within this translator for building the various modules
-// which are contained within the MIR schema.
-type ModuleBuilder = mir.ModuleBuilder[word.BigEndian]
-
-// mirTerm provides a convenient shorthand for the arithmetic terms produced by
-// this translator.
-type mirTerm = mir.Term[word.BigEndian]
-
-// mirLogicalTerm provides a convenient shorthand for the logical terms produced
-// by this translator.
-type mirLogicalTerm = mir.LogicalTerm[word.BigEndian]
-
-// mirRegisterAccess provides a convenient shorthand for a register access, as
-// required (for example) by lookup and range constraints.
-type mirRegisterAccess = mir.RegisterAccess[word.BigEndian]
 
 // equateZero constructs the logical term which holds when the given term
 // evaluates to zero.  This is used for guards and perspective selectors, both of
 // which are "active" exactly when non-zero.  A nil term signals that translation
 // failed and, hence, nil is returned (with the corresponding errors having been
 // reported already).
-func equateZero(value mirTerm) mirLogicalTerm {
+func equateZero[F field.Element[F]](value mir.Term[F]) mir.LogicalTerm[F] {
 	if value == nil {
 		return nil
 	}
 	//
-	zero := term.Const64[word.BigEndian, mirTerm](0)
+	zero := term.Const64[F, mir.Term[F]](0)
 	//
-	return term.Equals[word.BigEndian, mirLogicalTerm](value, zero)
+	return term.Equals[F, mir.LogicalTerm[F]](value, zero)
 }
 
 // TranslateCircuit translates the components of a Corset circuit and add them
@@ -85,33 +59,33 @@ func equateZero(value mirTerm) mirLogicalTerm {
 // easily.  Thus, whilst syntax errors can be returned here, this should never
 // happen.  The mechanism is supported, however, to simplify development of new
 // features, etc.
-func TranslateCircuit(
+func TranslateCircuit[F field.Element[F]](
 	env Environment,
 	srcmap *source.Maps[ast.Node],
 	circuit *ast.Circuit,
-	config Config) (mir.Schema[word.BigEndian], []SyntaxError) {
+	config Config) (mir.Schema[F], []SyntaxError) {
 	//
-	builder := ir.NewSchemaBuilder[word.BigEndian, mirTerm]()
-	t := translator{env, srcmap, builder, config, make(map[string][]busPort), nil}
+	builder := ir.NewSchemaBuilder[F, mir.Term[F]]()
+	t := translator[F]{env, srcmap, builder, config, make(map[string][]busPort[F]), nil}
 	// Allocate all modules into schema
 	t.translateModules(circuit)
 	// Translate everything else
 	if errs := t.translateDeclarations(circuit); len(errs) > 0 {
-		return mir.Schema[word.BigEndian]{}, errs
+		return mir.Schema[F]{}, errs
 	}
 	// Merge send / receive ports into bus constraints, now all are known.
 	if errs := t.translateBuses(); len(errs) > 0 {
-		return mir.Schema[word.BigEndian]{}, errs
+		return mir.Schema[F]{}, errs
 	}
 	// Build concrete modules from schema
-	modules := ir.BuildSchema[mir.Module[word.BigEndian]](t.schema)
+	modules := ir.BuildSchema[mir.Module[F]](t.schema)
 	// Finally, construct the asm program
 	return schema.NewUniformSchema(modules), nil
 }
 
 // Translator packages up information necessary for translating a circuit into
 // the schema form required for the MIR level.
-type translator struct {
+type translator[F field.Element[F]] struct {
 	// Environment is needed for determining the identifiers for modules and
 	// registers.
 	env Environment
@@ -120,30 +94,30 @@ type translator struct {
 	// highlights of the relevant source line(s) in question.
 	srcmap *source.Maps[ast.Node]
 	// Represents the schema being constructed by this translator.
-	schema SchemaBuilder
+	schema mir.SchemaBuilder[F]
 	// compilation configuration
 	config Config
 	// Ports declared by defsend / defrecv, keyed by bus name, pending the
 	// per-bus merge (see translateBuses).
-	busPorts map[string][]busPort
+	busPorts map[string][]busPort[F]
 	// Bus names in order of first declaration, for deterministic output.
 	busOrder []string
 }
 
 // busPort is one translated defsend / defrecv declaration, awaiting the
 // per-bus merge.
-type busPort struct {
+type busPort[F field.Element[F]] struct {
 	// decl is the source declaration, for error reporting.
 	decl *ast.DefSendReceive
 	// module in which the port resides.
-	module ModuleBuilder
+	module mir.ModuleBuilder[F]
 	// port as it will appear in the bus constraint.
 	port mir.BusPort
 	// widths of the port's registers, for regularity checking.
 	widths []uint
 }
 
-func (t *translator) translateModules(circuit *ast.Circuit) {
+func (t *translator[F]) translateModules(circuit *ast.Circuit) {
 	// Add root module
 	t.translateModule("")
 	// Add nested modules
@@ -153,7 +127,7 @@ func (t *translator) translateModules(circuit *ast.Circuit) {
 }
 
 // Translate the given Corset module into its corresponding HIR module.
-func (t *translator) translateModule(name string) {
+func (t *translator[F]) translateModule(name string) {
 	// Always include module (even if empty).
 	t.schema.NewModule(name, true, false, false, false, false)
 	// Process each register in turn.
@@ -164,13 +138,24 @@ func (t *translator) translateModule(name string) {
 			// Identify enclosing MIR module
 			module = t.schema.ModuleOf(regInfo.Context.ModuleName())
 			//
-			reg register.Register
+			reg register.Register[F]
+			//
+			padding F
 		)
+		// Initialise padding value
+		padding = field.BigInt[F](regInfo.Padding)
 		// Declare corresponding register
-		if regInfo.IsInput() {
-			reg = register.NewInput(regInfo.Name(), regInfo.Bitwidth)
-		} else {
-			reg = register.NewComputed(regInfo.Name(), regInfo.Bitwidth)
+		switch regInfo.Kind {
+		case ast.INPUT_COLUMN, ast.UNSPECIFIED:
+			reg = register.NewInput[F](regInfo.Name(), regInfo.Bitwidth, padding)
+		case ast.OUTPUT_COLUMN:
+			reg = register.NewOutput[F](regInfo.Name(), regInfo.Bitwidth, padding)
+		case ast.COMPUTED_COLUMN:
+			reg = register.NewComputed[F](regInfo.Name(), regInfo.Bitwidth, padding)
+		case ast.CONSTANT_COLUMN:
+			reg = register.NewConstant[F](regInfo.Name(), regInfo.Bitwidth, padding)
+		default:
+			panic("unknown register kind")
 		}
 		// Add the register
 		module.NewRegister(reg)
@@ -182,25 +167,23 @@ func (t *translator) translateModule(name string) {
 // Translate the type constraint applicable for the given register (if any).
 // This is required when the register's source column is marked provable, or
 // when the compiler is configured to enforce types more broadly.
-func (t *translator) translateTypeConstraints(reg Register, mod ModuleBuilder) {
+func (t *translator[F]) translateTypeConstraints(reg Register, mod mir.ModuleBuilder[F]) {
 	var (
-		regWidth = reg.Bitwidth
-		required = reg.MustProve || t.config.EnforceTypes ||
-			(t.config.EnforceLimbTypes && regWidth > t.config.Field.RegisterWidth)
+		required = (reg.MustProve || t.config.EnforceTypes) && reg.Kind != ast.CONSTANT_COLUMN
 	)
 	// Apply provability (if it is required)
 	if required {
 		// Determine register being constrained
 		rid, _ := mod.HasRegister(reg.Name())
 		// Add appropriate type constraint
-		constraint := ranged.NewConstraint[word.BigEndian](reg.Name(), mod.Id(), rid, reg.Bitwidth)
+		constraint := ranged.NewConstraint[F](reg.Name(), mod.Id(), rid, reg.Bitwidth)
 		//
 		mod.AddConstraint(constraint)
 	}
 }
 
 // Translate all assignment or constraint declarations in the circuit.
-func (t *translator) translateDeclarations(circuit *ast.Circuit) []SyntaxError {
+func (t *translator[F]) translateDeclarations(circuit *ast.Circuit) []SyntaxError {
 	rootPath := file.NewAbsolutePath()
 	errors := t.translateDeclarationsInModule(rootPath, circuit.Declarations)
 	// Translate each module
@@ -215,7 +198,7 @@ func (t *translator) translateDeclarations(circuit *ast.Circuit) []SyntaxError {
 
 // Translate all assignment or constraint declarations in a given module within
 // the circuit.
-func (t *translator) translateDeclarationsInModule(path file.Path, decls []ast.Declaration) []SyntaxError {
+func (t *translator[F]) translateDeclarationsInModule(path file.Path, decls []ast.Declaration) []SyntaxError {
 	var errors []SyntaxError
 	//
 	for _, d := range decls {
@@ -227,7 +210,7 @@ func (t *translator) translateDeclarationsInModule(path file.Path, decls []ast.D
 }
 
 // Translate an assignment or constraint declaration which occurs within a given module.
-func (t *translator) translateDeclaration(decl ast.Declaration, path file.Path) []SyntaxError {
+func (t *translator[F]) translateDeclaration(decl ast.Declaration, path file.Path) []SyntaxError {
 	var errors []SyntaxError
 	//
 	switch d := decl.(type) {
@@ -252,7 +235,7 @@ func (t *translator) translateDeclaration(decl ast.Declaration, path file.Path) 
 }
 
 // Translate a "defconstraint" declaration.
-func (t *translator) translateDefConstraint(decl *ast.DefConstraint) []SyntaxError {
+func (t *translator[F]) translateDefConstraint(decl *ast.DefConstraint) []SyntaxError {
 	var (
 		module = t.moduleOf(decl.Constraint.Context())
 		// Translate expr body
@@ -282,7 +265,7 @@ func (t *translator) translateDefConstraint(decl *ast.DefConstraint) []SyntaxErr
 }
 
 // Translate a "deflookup" declaration.
-func (t *translator) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
+func (t *translator[F]) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 	var (
 		errors                 []SyntaxError
 		srcContext, tgtContext ast.Context
@@ -318,7 +301,7 @@ func (t *translator) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 			module = t.moduleOf(tgtContext)
 		}
 		// Add translated constraint
-		module.AddConstraint(lookup.NewConstraint[word.BigEndian](decl.Handle, targets, sources))
+		module.AddConstraint(lookup.NewConstraint[F](decl.Handle, targets, sources))
 	}
 	// Done
 	return errors
@@ -328,12 +311,12 @@ func (t *translator) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 // sources or its targets) into a corresponding lookup vector.  Since a lookup
 // vector is made up of registers, this also returns the bitwidth of each
 // register in the vector.
-func (t *translator) translateDefLookupSources(selector ast.TypedSymbol,
+func (t *translator[F]) translateDefLookupSources(selector ast.TypedSymbol,
 	sources []ast.TypedSymbol) (lookup.Vector, []uint, ast.Context, []SyntaxError) {
 	// Determine context of ith set of targets
 	var (
 		context, j = ast.ContextOfSymbols(sources...)
-		sel        *mirRegisterAccess
+		sel        *mir.RegisterAccess[F]
 	)
 	// Include selector (when present)
 	if selector != nil {
@@ -385,10 +368,10 @@ func (t *translator) translateDefLookupSources(selector ast.TypedSymbol,
 // Translate a "defsend" or "defrecv" declaration into a pending bus port.
 // The bus constraints themselves are only constructed once every port is
 // known (see translateBuses).
-func (t *translator) translateDefSendReceive(decl *ast.DefSendReceive) []SyntaxError {
+func (t *translator[F]) translateDefSendReceive(decl *ast.DefSendReceive) []SyntaxError {
 	var (
 		context, j = ast.ContextOfSymbols(decl.Columns...)
-		sel        *mirRegisterAccess
+		sel        *mir.RegisterAccess[F]
 	)
 	//
 	context = context.Join(ast.ContextOfSymbol(decl.Selector))
@@ -427,7 +410,7 @@ func (t *translator) translateDefSendReceive(decl *ast.DefSendReceive) []SyntaxE
 		t.busOrder = append(t.busOrder, decl.Bus)
 	}
 	//
-	t.busPorts[decl.Bus] = append(t.busPorts[decl.Bus], busPort{decl, module, port, widths})
+	t.busPorts[decl.Bus] = append(t.busPorts[decl.Bus], busPort[F]{decl, module, port, widths})
 	//
 	return nil
 }
@@ -436,7 +419,7 @@ func (t *translator) translateDefSendReceive(decl *ast.DefSendReceive) []SyntaxE
 // constraint per bus.  This runs after all declarations have been translated
 // (a bus's ports can be declared anywhere), and only when they translated
 // cleanly.
-func (t *translator) translateBuses() []SyntaxError {
+func (t *translator[F]) translateBuses() []SyntaxError {
 	var errors []SyntaxError
 	//
 	for _, busName := range t.busOrder {
@@ -446,11 +429,11 @@ func (t *translator) translateBuses() []SyntaxError {
 	return errors
 }
 
-// translateBus checks that the ports of one bus agree (same column count,
-// regular limb decompositions, both directions present) and constructs the
-// corresponding constraint.  The constraint is added to the first port's
-// module; placement is cosmetic, but must be deterministic.
-func (t *translator) translateBus(busName string, ports []busPort) []SyntaxError {
+// translateBus checks that the ports of one bus agree (same column count, both
+// directions present) and constructs the corresponding constraint.  The
+// constraint is added to the first port's module; placement is cosmetic, but
+// must be deterministic.
+func (t *translator[F]) translateBus(busName string, ports []busPort[F]) []SyntaxError {
 	var (
 		errors          []SyntaxError
 		sends, receives []mir.BusPort
@@ -486,17 +469,17 @@ func (t *translator) translateBus(busName string, ports []busPort) []SyntaxError
 		return errors
 	}
 	//
-	first.module.AddConstraint(bus.NewConstraint[word.BigEndian](busName, sends, receives))
+	first.module.AddConstraint(bus.NewConstraint[F](busName, sends, receives))
 	//
 	return nil
 }
 
 // translateLookupColumns translates the column accesses making up one side of a
 // lookup into their corresponding register accesses.
-func (t *translator) translateLookupColumns(columns []ast.TypedSymbol) ([]*mirRegisterAccess, []SyntaxError) {
+func (t *translator[F]) translateLookupColumns(columns []ast.TypedSymbol) ([]*mir.RegisterAccess[F], []SyntaxError) {
 	var (
 		errors   []SyntaxError
-		accesses = make([]*mirRegisterAccess, len(columns))
+		accesses = make([]*mir.RegisterAccess[F], len(columns))
 	)
 	//
 	for i, column := range columns {
@@ -514,7 +497,7 @@ func (t *translator) translateLookupColumns(columns []ast.TypedSymbol) ([]*mirRe
 
 // registersOfAccesses determines the registers underlying a given set of
 // register accesses, along with the bitwidth of each.
-func registersOfAccesses(accesses []*mirRegisterAccess) ([]register.Id, []uint) {
+func registersOfAccesses[F field.Element[F]](accesses []*mir.RegisterAccess[F]) ([]register.Id, []uint) {
 	var (
 		registers = make([]register.Id, len(accesses))
 		widths    = make([]uint, len(accesses))
@@ -532,7 +515,7 @@ func registersOfAccesses(accesses []*mirRegisterAccess) ([]register.Id, []uint) 
 // checkLookupVector sanity checks one side of a lookup.  Since the registers
 // making up a lookup vector are unsigned by construction, all that remains is
 // to check the selector (when present) is binary.
-func (t *translator) checkLookupVector(sel *mirRegisterAccess, selector ast.TypedSymbol) []SyntaxError {
+func (t *translator[F]) checkLookupVector(sel *mir.RegisterAccess[F], selector ast.TypedSymbol) []SyntaxError {
 	//
 	var errors []SyntaxError
 	// Check selector is binary
@@ -551,7 +534,7 @@ func (t *translator) checkLookupVector(sel *mirRegisterAccess, selector ast.Type
 }
 
 // Translate a "definrange" declaration.
-func (t *translator) translateDefInRange(decl *ast.DefInRange) []SyntaxError {
+func (t *translator[F]) translateDefInRange(decl *ast.DefInRange) []SyntaxError {
 	var module = t.moduleOf(ast.ContextOfSymbol(decl.Column))
 	// Translate constrained column.  NOTE: no sanity check on the sign of the
 	// resulting register is required, since registers are unsigned by
@@ -560,18 +543,18 @@ func (t *translator) translateDefInRange(decl *ast.DefInRange) []SyntaxError {
 	//
 	if len(errors) == 0 {
 		// Add translated constraint
-		module.AddConstraint(ranged.NewConstraint[word.BigEndian]("", module.Id(), access.Register(), decl.Bitwidth))
+		module.AddConstraint(ranged.NewConstraint[F]("", module.Id(), access.Register(), decl.Bitwidth))
 	}
 	// Done
 	return errors
 }
 
 // Translate a sequence of zero or more expressions enclosed in a given module.
-func (t *translator) translateExpressions(module ModuleBuilder, shift int,
-	exprs ...ast.Expr) ([]mirTerm, []SyntaxError) {
+func (t *translator[F]) translateExpressions(module mir.ModuleBuilder[F], shift int,
+	exprs ...ast.Expr) ([]mir.Term[F], []SyntaxError) {
 	//
 	errors := []SyntaxError{}
-	nexprs := make([]mirTerm, len(exprs))
+	nexprs := make([]mir.Term[F], len(exprs))
 	// Iterate each expression in turn
 	for i, e := range exprs {
 		var errs []SyntaxError
@@ -586,7 +569,8 @@ func (t *translator) translateExpressions(module ModuleBuilder, shift int,
 // Translate an expression situated in a given context.  The context is
 // necessary to resolve unqualified names (e.g. for register access, function
 // invocations, etc).
-func (t *translator) translateExpression(expr ast.Expr, module ModuleBuilder, shift int) (mirTerm, []SyntaxError) {
+func (t *translator[F]) translateExpression(expr ast.Expr, module mir.ModuleBuilder[F], shift int,
+) (mir.Term[F], []SyntaxError) {
 	switch e := expr.(type) {
 	case *ast.ArrayAccess:
 		// Lookup underlying register info.  NOTE: a nil access signals that
@@ -609,9 +593,9 @@ func (t *translator) translateExpression(expr ast.Expr, module ModuleBuilder, sh
 			panic("signed constant encountered")
 		}
 		// Initialise field from bigint
-		val := field.BigInt[word.BigEndian](e.Val)
+		val := field.BigInt[F](e.Val)
 		//
-		return term.Const[word.BigEndian, mirTerm](val), nil
+		return term.Const[F, mir.Term[F]](val), nil
 	case *ast.If:
 		// NOTE: conditionals are only permitted at the logical level, since MIR
 		// arithmetic terms cannot contain them.
@@ -634,7 +618,8 @@ func (t *translator) translateExpression(expr ast.Expr, module ModuleBuilder, sh
 	}
 }
 
-func (t *translator) translateShift(expr *ast.Shift, mod ModuleBuilder, shift int) (mirTerm, []SyntaxError) {
+func (t *translator[F]) translateShift(expr *ast.Shift, mod mir.ModuleBuilder[F], shift int,
+) (mir.Term[F], []SyntaxError) {
 	constant := expr.Shift.AsConstant()
 	// Determine the shift constant
 	if constant == nil {
@@ -646,7 +631,7 @@ func (t *translator) translateShift(expr *ast.Shift, mod ModuleBuilder, shift in
 	return t.translateExpression(expr.Arg, mod, shift+int(constant.Int64()))
 }
 
-func (t *translator) translateVariableAccess(expr *ast.VariableAccess, shift int) (mirTerm, []SyntaxError) {
+func (t *translator[F]) translateVariableAccess(expr *ast.VariableAccess, shift int) (mir.Term[F], []SyntaxError) {
 	if _, ok := expr.Binding().(*ast.ColumnBinding); ok {
 		// NOTE: a nil access signals that translation failed and, hence, the
 		// errors have been reported already.
@@ -658,20 +643,20 @@ func (t *translator) translateVariableAccess(expr *ast.VariableAccess, shift int
 		return access, errs
 	} else if binding, ok := expr.Binding().(*ast.ConstantBinding); ok {
 		// Initialise field from bigint
-		constant := field.BigInt[word.BigEndian](*binding.Value.AsConstant())
+		constant := field.BigInt[F](*binding.Value.AsConstant())
 		//
-		return term.Const[word.BigEndian, mirTerm](constant), nil
+		return term.Const[F, mir.Term[F]](constant), nil
 	}
 	// error
 	return nil, t.srcmap.SyntaxErrors(expr, "unbound variable")
 }
 
 // Translate a sequence of zero or more logical expressions enclosed in a given module.
-func (t *translator) translateLogicals(module ModuleBuilder, shift int,
-	exprs ...ast.Expr) ([]mirLogicalTerm, []SyntaxError) {
+func (t *translator[F]) translateLogicals(module mir.ModuleBuilder[F], shift int,
+	exprs ...ast.Expr) ([]mir.LogicalTerm[F], []SyntaxError) {
 	//
 	errors := []SyntaxError{}
-	logicals := make([]mirLogicalTerm, len(exprs))
+	logicals := make([]mir.LogicalTerm[F], len(exprs))
 	// Iterate each expression in turn
 	for i, e := range exprs {
 		var errs []SyntaxError
@@ -686,8 +671,8 @@ func (t *translator) translateLogicals(module ModuleBuilder, shift int,
 // Translate an optional expression in a given context.  That is an expression
 // which maybe nil (i.e. doesn't exist).  In such case, nil is returned (i.e.
 // without any errors).
-func (t *translator) translateOptionalLogical(expr ast.Expr, module ModuleBuilder,
-	shift int) (mirLogicalTerm, []SyntaxError) {
+func (t *translator[F]) translateOptionalLogical(expr ast.Expr, module mir.ModuleBuilder[F],
+	shift int) (mir.LogicalTerm[F], []SyntaxError) {
 	//
 	if expr != nil {
 		return t.translateLogical(expr, module, shift)
@@ -699,7 +684,8 @@ func (t *translator) translateOptionalLogical(expr ast.Expr, module ModuleBuilde
 // Translate an expression situated in a given context.  The context is
 // necessary to resolve unqualified names (e.g. for register access, function
 // invocations, etc).
-func (t *translator) translateLogical(expr ast.Expr, mod ModuleBuilder, shift int) (mirLogicalTerm, []SyntaxError) {
+func (t *translator[F]) translateLogical(expr ast.Expr, mod mir.ModuleBuilder[F], shift int,
+) (mir.LogicalTerm[F], []SyntaxError) {
 	switch e := expr.(type) {
 	case *ast.Connective:
 		args, errs := t.translateLogicals(mod, shift, e.Args...)
@@ -720,9 +706,9 @@ func (t *translator) translateLogical(expr ast.Expr, mod ModuleBuilder, shift in
 		//
 		switch e.Kind {
 		case ast.EQUALS:
-			return term.Equals[word.BigEndian, mirLogicalTerm](lhs, rhs), nil
+			return term.Equals[F, mir.LogicalTerm[F]](lhs, rhs), nil
 		case ast.NOT_EQUALS:
-			return term.NotEquals[word.BigEndian, mirLogicalTerm](lhs, rhs), nil
+			return term.NotEquals[F, mir.LogicalTerm[F]](lhs, rhs), nil
 		default:
 			panic("unreachable")
 		}
@@ -741,7 +727,8 @@ func (t *translator) translateLogical(expr ast.Expr, mod ModuleBuilder, shift in
 	}
 }
 
-func (t *translator) translateIte(expr *ast.If, module ModuleBuilder, shift int) (mirLogicalTerm, []SyntaxError) {
+func (t *translator[F]) translateIte(expr *ast.If, module mir.ModuleBuilder[F], shift int,
+) (mir.LogicalTerm[F], []SyntaxError) {
 	// Translate condition as a logical
 	cond, errs := t.translateLogical(expr.Condition, module, shift)
 	// Translate optional true / false branches
@@ -763,8 +750,8 @@ func (t *translator) translateIte(expr *ast.If, module ModuleBuilder, shift int)
 	return term.IfThenElse(cond, truebranch, falsebranch), nil
 }
 
-func (t *translator) translateLogicalShift(expr *ast.Shift, mod ModuleBuilder,
-	shift int) (mirLogicalTerm, []SyntaxError) {
+func (t *translator[F]) translateLogicalShift(expr *ast.Shift, mod mir.ModuleBuilder[F],
+	shift int) (mir.LogicalTerm[F], []SyntaxError) {
 	//
 	constant := expr.Shift.AsConstant()
 	// Determine the shift constant
@@ -778,7 +765,7 @@ func (t *translator) translateLogicalShift(expr *ast.Shift, mod ModuleBuilder,
 }
 
 // Determine the underlying register for a symbol which represents a register access.
-func (t *translator) registerOfRegisterAccess(symbol ast.Symbol, shift int) (*mirRegisterAccess, []SyntaxError) {
+func (t *translator[F]) registerOfRegisterAccess(symbol ast.Symbol, shift int) (*mir.RegisterAccess[F], []SyntaxError) {
 	switch e := symbol.(type) {
 	case *ast.ArrayAccess:
 		return t.registerOfArrayAccess(e, shift)
@@ -789,8 +776,8 @@ func (t *translator) registerOfRegisterAccess(symbol ast.Symbol, shift int) (*mi
 	return nil, t.srcmap.SyntaxErrors(symbol, "invalid register access")
 }
 
-func (t *translator) registerOfVariableAccess(expr *ast.VariableAccess,
-	shift int) (*mirRegisterAccess, []SyntaxError) {
+func (t *translator[F]) registerOfVariableAccess(expr *ast.VariableAccess,
+	shift int) (*mir.RegisterAccess[F], []SyntaxError) {
 	//
 	if binding, ok := expr.Binding().(*ast.ColumnBinding); ok {
 		// Lookup register binding
@@ -800,7 +787,8 @@ func (t *translator) registerOfVariableAccess(expr *ast.VariableAccess,
 	return nil, t.srcmap.SyntaxErrors(expr, "invalid register access")
 }
 
-func (t *translator) registerOfArrayAccess(expr *ast.ArrayAccess, shift int) (*mirRegisterAccess, []SyntaxError) {
+func (t *translator[F]) registerOfArrayAccess(expr *ast.ArrayAccess, shift int,
+) (*mir.RegisterAccess[F], []SyntaxError) {
 	var (
 		errors []SyntaxError
 		min    uint = 0
@@ -836,7 +824,7 @@ func (t *translator) registerOfArrayAccess(expr *ast.ArrayAccess, shift int) (*m
 }
 
 // Determine the appropriate name for a given module based on a module context.
-func (t *translator) moduleOf(context ast.Context) ModuleBuilder {
+func (t *translator[F]) moduleOf(context ast.Context) mir.ModuleBuilder[F] {
 	if context.IsVoid() {
 		// NOTE: the intuition behind the choice to return nil here is allow for
 		// situations where there is no context (e.g. constant expressions,
@@ -849,7 +837,7 @@ func (t *translator) moduleOf(context ast.Context) ModuleBuilder {
 }
 
 // Map columns to appropriate module register identifiers.
-func (t *translator) registerOf(path *file.Path, shift int) *mirRegisterAccess {
+func (t *translator[F]) registerOf(path *file.Path, shift int) *mir.RegisterAccess[F] {
 	// Determine register id
 	rid := t.env.RegisterOf(path)
 	//
@@ -857,16 +845,16 @@ func (t *translator) registerOf(path *file.Path, shift int) *mirRegisterAccess {
 	// Lookup corresponding module builder
 	module := t.moduleOf(reg.Context)
 	//
-	return RegisterAccessOf(module, reg.Name(), shift)
+	return RegisterAccessOf[F](module, reg.Name(), shift)
 }
 
 // RegisterAccessOf returns a register accessor for the register with the given name.
-func RegisterAccessOf(module register.Map, name string, shift int) *mirRegisterAccess {
+func RegisterAccessOf[F field.Element[F]](module register.Map[F], name string, shift int) *mir.RegisterAccess[F] {
 	// Lookup register associated with this name
 	var (
 		rid, _ = module.HasRegister(name)
 		reg    = module.Register(rid)
 	)
 	//
-	return term.RawRegisterAccess[word.BigEndian, mirTerm](rid, reg.Width(), shift)
+	return term.RawRegisterAccess[F, mir.Term[F]](rid, reg.Width(), shift)
 }

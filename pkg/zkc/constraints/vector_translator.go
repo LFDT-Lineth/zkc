@@ -310,8 +310,8 @@ func (p *VectorInsnTranslator[W, F]) ReadRegister(regId register.Id, forwarding 
 }
 
 // Register implementation for RegisterReader interface
-func (p *VectorInsnTranslator[W, F]) Register(reg register.Id) register.Register {
-	return p.enclosing.Registers()[reg.Unwrap()].ToRawRegister()
+func (p *VectorInsnTranslator[W, F]) Register(reg register.Id) register.Register[F] {
+	return p.enclosing.Registers()[reg.Unwrap()].ToRawRegister[F]()
 }
 
 // sourceWidths returns the bit widths of the given source registers, in order.
@@ -354,7 +354,7 @@ func hasSignedBit[W vm.Word[W]](target []vm.RegisterId, enclosing vm.Module[W]) 
 	return enclosing.Register(last).Bitwidth().UnwrapOr(0) == 1
 }
 
-func bitwidthOf(reg register.Register) uint {
+func bitwidthOf[F field.Element[F]](reg register.Register[F]) uint {
 	if reg.IsNative() {
 		return math.MaxUint
 	}

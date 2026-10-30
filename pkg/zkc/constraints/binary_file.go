@@ -24,7 +24,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/checker"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -147,12 +146,6 @@ func (p *BinaryFile[F, W]) Attributes() []Attribute {
 // optional metadata.
 func (p *BinaryFile[F, W]) Header() Header {
 	return p.header
-}
-
-// LimbsMap provides a mapping from top-level registers to register limbs.  This
-// is useful to understand the mapping before / after register splitting.
-func (p *BinaryFile[F, W]) LimbsMap() module.LimbsMap {
-	return newLimbsMap(p.program.Field(), p.program.Modules()...)
 }
 
 // Field returns the field configuration for which this binary file is compiled.

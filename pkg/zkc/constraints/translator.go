@@ -129,9 +129,9 @@ func (p *constraintTranslator[W, F]) translateStaticMemory(_ schema.ModuleId, m 
 	var (
 		mod     *schema.Table[F]
 		name    = m.Name()
-		regs    = toRegisters(m.Registers())
-		inputs  = toRegisters(m.AddressRegisters())
-		outputs = toRegisters(m.DataRegisters())
+		regs    = toRegisters[W, F](m.Registers())
+		inputs  = toRegisters[W, F](m.AddressRegisters())
+		outputs = toRegisters[W, F](m.DataRegisters())
 		// Convert the static contents from words into field elements.
 		contents        = toFieldElements[W, F](m.StaticContents())
 		paddedHeight    = util_math.NextPowerOfTwo(m.StaticHeight())
@@ -170,7 +170,9 @@ func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.Module
 ) mir.Module[F] {
 	var (
 		mod  *schema.Table[F]
-		regs = toRegisters(m.Registers())
+		regs = toRegisters[W, F](m.Registers())
+		// Default padding
+		padding F
 	)
 
 	// Initialise module and add all registers.  Note the ACCESS[0]=0 /
@@ -181,10 +183,10 @@ func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.Module
 	mod.AddRegisters(regs...)
 
 	var access = register.NewId(mod.Width())
-	mod.AddRegisters(register.NewComputed(tracer.ACCESS_BIT_NAME, 1))
+	mod.AddRegisters(register.NewComputed[F](tracer.ACCESS_BIT_NAME, 1, padding))
 
 	var (
-		addrRegs           = toRegisters(m.AddressRegisters())
+		addrRegs           = toRegisters[W, F](m.AddressRegisters())
 		isMultiLineAddress = m.NumInputs() > 1
 		prevAccess         = mirc.Variable[F](access, 1, -1)
 		currAccess         = mirc.Variable[F](access, 1, 0)
@@ -244,7 +246,7 @@ func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.Module
 // with a single address register: the address vanishes in padding, is zero on
 // the first non-padding row, and increments by one across non-padding rows.
 func singleLineAddressConstraints[F field.Element[F]](
-	ctx schema.ModuleId, addrRegs []register.Register, currAccess, nextAccess, zero, one Expr[F],
+	ctx schema.ModuleId, addrRegs []register.Register[F], currAccess, nextAccess, zero, one Expr[F],
 ) []schema.Constraint[F] {
 	var (
 		currAddr = mirc.Variable[F](register.NewId(0), addrRegs[0].Width(), 0)
@@ -278,12 +280,13 @@ func singleLineAddressConstraints[F field.Element[F]](
 //   - [k]ADDRESS[i-1] ≠ max, [k]ADDRESS[i] = 1 + [k]ADDRESS[i-1]   (carry stop)
 //   - [b]ADDRESS[i-1] = max, [b]ADDRESS[i] = 0    for k < b < L    (roll over)
 func multiLineAddressConstraints[F field.Element[F]](
-	ctx schema.ModuleId, memoryModule *schema.Table[F], addrRegs []register.Register,
+	ctx schema.ModuleId, memoryModule *schema.Table[F], addrRegs []register.Register[F],
 	prevAccess, currAccess, zero, one Expr[F]) []schema.Constraint[F] {
 	var (
 		L            = uint(len(addrRegs))
 		prevAddrRegs = make([]Expr[F], L)
 		currAddrRegs = make([]Expr[F], L)
+		padding      F
 	)
 	for k := range L {
 		prevAddrRegs[k] = mirc.Variable[F](register.NewId(k), addrRegs[k].Width(), -1)
@@ -298,7 +301,7 @@ func multiLineAddressConstraints[F field.Element[F]](
 	)
 	for k := range L {
 		atFlag := register.NewId(memoryModule.Width())
-		memoryModule.AddRegisters(register.NewComputed(tracer.AtFlagName(k), 1))
+		memoryModule.AddRegisters(register.NewComputed[F](tracer.AtFlagName(k), 1, padding))
 		atFlagVars[k] = mirc.Variable[F](atFlag, 1, 0)
 		addrLimbMaxValues[k] = mirc.BigNumber[F](addrRegs[k].MaxValue())
 	}

@@ -13,41 +13,10 @@
 package constraint
 
 import (
-	"fmt"
-
-	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
-
-// CheckConsistent performs a simple consistency check for terms in a given
-// module.  Specifically, to check that: (1) the module exists; (2) all used
-// registers existing with then given module.
-func CheckConsistent[F field.Element[F], E term.Contextual](module uint, schema schema.Schema[F], terms ...E,
-) []error {
-	var errs []error
-	// Sanity check module
-	if module >= schema.Width() {
-		errs = append(errs, fmt.Errorf("invalid module (%d >= %d)", module, schema.Width()))
-	} else {
-		for _, term := range terms {
-			var (
-				regs = term.RequiredRegisters()
-				mod  = schema.Module(module)
-			)
-			// Sanity check referenced registers
-			for iter := regs.Iter(); iter.HasNext(); {
-				reg := iter.Next()
-				if reg >= mod.Width() {
-					errs = append(errs, fmt.Errorf("invalid register access in %s (%d >= %d)", mod.Name(), reg, mod.Width()))
-				}
-			}
-		}
-	}
-	//
-	return errs
-}
 
 // DetermineHandle is a very simple helper which determines a suitable qualified
 // name for the given constraint handle.

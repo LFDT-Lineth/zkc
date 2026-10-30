@@ -24,11 +24,14 @@ type PaddedArray[T word.Word[T], S Array[T]] struct {
 	// start identifies the first non-padding (i.e. real) row in this array.
 	// Every row below start is padding and, therefore, implicitly zero.
 	start uint
+	// padding value to use
+	padding T
 }
 
 // NewPaddedArray constructs a new word array with a given capacity.
 func NewPaddedArray[T word.Word[T], S Array[T]](data S) PaddedArray[T, S] {
-	return PaddedArray[T, S]{data, 0}
+	var val T
+	return PaddedArray[T, S]{data, 0, val}
 }
 
 // Bytes implementation for Array interface
@@ -48,10 +51,8 @@ func (p PaddedArray[T, S]) BitWidth() uint {
 
 // Get returns the field element at the given index in this array.
 func (p PaddedArray[T, S]) Get(index uint) T {
-	var b T
-	//
 	if index < p.start {
-		return b
+		return p.padding
 	}
 	//
 	return p.data.Get(index - p.start)
@@ -59,8 +60,8 @@ func (p PaddedArray[T, S]) Get(index uint) T {
 
 // Pad returns a copy of this array with n copies of the given padding value
 // prepended, and m copies appended.  The receiver is left unmodified.
-func (p PaddedArray[T, S]) Pad(n uint) Array[T] {
-	return PaddedArray[T, S]{p.data, p.start + n}
+func (p PaddedArray[T, S]) Pad(n uint, val T) Array[T] {
+	return PaddedArray[T, S]{p.data, p.start + n, val}
 }
 
 func (p PaddedArray[T, S]) String() string {

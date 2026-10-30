@@ -62,7 +62,7 @@ func (p *Mul[F, T]) ApplyShift(shift int) T {
 func (p *Mul[F, T]) Bounds() util.Bounds { return util.BoundsForArray(p.Args) }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Mul[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *Mul[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map[F]) (F, error) {
 	// Evaluate first argument
 	val, err := p.Args[0].EvalAt(k, tr, sc)
 	// Continue evaluating the rest
@@ -88,7 +88,7 @@ func (p *Mul[F, T]) IsDefined() bool {
 }
 
 // Lisp implementation for Lispifiable interface.
-func (p *Mul[F, T]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (p *Mul[F, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	return lispOfTerms(global, mapping, "*", p.Args)
 }
 

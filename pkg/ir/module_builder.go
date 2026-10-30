@@ -31,7 +31,7 @@ import (
 // useful to try and simplify it where possible.
 type ModuleBuilder[F field.Element[F], T term.Expr[F, T]] interface {
 	fmt.Stringer
-	schema.ModuleView
+	schema.ModuleView[F]
 	// AddAssignment adds a new assignment to this module.  Assignments are
 	// responsible for computing the values of computed columns.
 	AddAssignment(assignment schema.Assignment[F])
@@ -47,14 +47,10 @@ type ModuleBuilder[F field.Element[F], T term.Expr[F, T]] interface {
 	IsExtern() bool
 	// NewRegister declares a new register within the module being built.  This will
 	// panic if a register of the same name already exists.
-	NewRegister(reg register.Register) register.Id
+	NewRegister(reg register.Register[F]) register.Id
 	// NewRegisters declares zero or more new registers within the module being
 	// built.  This will panic if a register of the same name already exists.
-	NewRegisters(registers ...register.Register) []register.Id
-	// ZeroRegister returns an ID for the "zero register".  That is, a register
-	// which is always zero.  If no such register exists already, one is
-	// created.
-	ConstRegister(constant uint8) register.Id
+	NewRegisters(registers ...register.Register[F]) []register.Id
 	// SetStaticContents sets the contents of this static reference table.  It
 	// panics if invoked on a non-static module.
 	SetStaticContents(contents [][]F)
@@ -95,7 +91,7 @@ type internalModuleBuilder[F field.Element[F], T term.Expr[F, T]] struct {
 	// Maps register names (including aliases) to the register number.
 	regmap map[string]uint
 	// Registers declared for this module
-	registers []register.Register
+	registers []register.Register[F]
 	// Constraints for this module
 	constraints []schema.Constraint[F]
 	// Assignments for computed registers
@@ -182,7 +178,7 @@ func (p *internalModuleBuilder[F, T]) Name() module.Name {
 }
 
 // NewRegister implementation for ModuleBuilder interface.
-func (p *internalModuleBuilder[F, T]) NewRegister(reg register.Register) register.Id {
+func (p *internalModuleBuilder[F, T]) NewRegister(reg register.Register[F]) register.Id {
 	// Determine identifier
 	id := uint(len(p.registers))
 	// Sanity check
@@ -197,7 +193,7 @@ func (p *internalModuleBuilder[F, T]) NewRegister(reg register.Register) registe
 }
 
 // NewRegisters implementation for ModuleBuilder interface.
-func (p *internalModuleBuilder[F, T]) NewRegisters(registers ...register.Register) []register.Id {
+func (p *internalModuleBuilder[F, T]) NewRegisters(registers ...register.Register[F]) []register.Id {
 	var ids = make([]register.Id, len(registers))
 	//
 	for i, r := range registers {
@@ -208,12 +204,12 @@ func (p *internalModuleBuilder[F, T]) NewRegisters(registers ...register.Registe
 }
 
 // Register implementation for register.Map interface.
-func (p *internalModuleBuilder[F, T]) Register(rid register.Id) register.Register {
+func (p *internalModuleBuilder[F, T]) Register(rid register.Id) register.Register[F] {
 	return p.registers[rid.Unwrap()]
 }
 
 // Registers implementation for register.Map interface.
-func (p *internalModuleBuilder[F, T]) Registers() []register.Register {
+func (p *internalModuleBuilder[F, T]) Registers() []register.Register[F] {
 	return p.registers
 }
 
@@ -230,17 +226,6 @@ func (p *internalModuleBuilder[F, T]) RegisterAccessOf(name string, shift int) *
 
 func (p *internalModuleBuilder[F, T]) String() string {
 	return register.MapToString(p)
-}
-
-// ZeroRegister implementation for ModuleBuilder interface.
-func (p *internalModuleBuilder[F, T]) ConstRegister(constant uint8) register.Id {
-	var name = fmt.Sprintf("%d", constant)
-	// Check whether register already exists
-	if rid, ok := p.HasRegister(name); ok {
-		return rid
-	}
-	// If not, create a new one.
-	return p.NewRegister(register.NewConst(constant))
 }
 
 func (p *internalModuleBuilder[F, T]) SetStaticContents(contents [][]F) {

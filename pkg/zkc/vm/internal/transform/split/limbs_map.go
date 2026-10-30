@@ -9,7 +9,7 @@
 // specific language governing permissions and limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-package descriptor
+package split
 
 import (
 	"strings"
@@ -17,12 +17,19 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Limb is simply a regsiter descriptor being used specifically to represent a
 // limb of some register after splitting.
-type Limb[W word.Word[W]] = Register[W]
+type Limb[W word.Word[W]] = descriptor.Register[W]
+
+// Register provides a useful alias
+type Register[W word.Word[W]] = descriptor.Register[W]
+
+// RegisterMap provides a useful alias
+type RegisterMap[W word.Word[W]] = descriptor.RegisterMap[W]
 
 // LimbId is a register ID used to represent a "limb".
 type LimbId = RegisterId
@@ -69,7 +76,7 @@ func NewLimbsMap[W word.Word[W]](word word.Config, field field.Config, m Registe
 	for i, r := range regs {
 		var (
 			// Initial split with least significant limb first
-			ls = SplitIntoLimbs(word.RegisterWidth, r)
+			ls = descriptor.SplitIntoLimbs(word.RegisterWidth, r)
 			// Reverse split so most significant comes first
 			rls = array.Reverse(ls)
 		)

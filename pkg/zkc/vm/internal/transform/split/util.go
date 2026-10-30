@@ -26,9 +26,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
-// LimbsMap provides a useful alias
-type LimbsMap[W word.Word[W]] descriptor.LimbsMap[W]
-
 // ApplyLimbsMap maps a set of (bytecode) registers onto their corresponding
 // limb registers.  Observe that this splits the limbs in "declaration order"
 // (also known as "big endian" ordering). For example, consider this
@@ -42,7 +39,7 @@ type LimbsMap[W word.Word[W]] descriptor.LimbsMap[W]
 //
 // Observe that x'1 is the most significant limb of x, etc.  Thus, given the
 // array "[x,y,r]", this function returns "[x'1,x'0,y'1,y'0,r'1,r'0]"
-func ApplyLimbsMap[W word.Word[W]](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
+func ApplyLimbsMap[W word.Word[W]](limbsMap LimbsMap[W], rids ...RegisterId) []RegisterId {
 	var limbIds []RegisterId
 	//
 	for _, r := range rids {
@@ -58,7 +55,7 @@ func ApplyLimbsMap[W word.Word[W]](limbsMap descriptor.LimbsMap[W], rids ...Regi
 // corresponding limb registers.  Observe that this splits the limbs according
 // to their natural (or little endian) ordering.  Thus, given the array
 // "[x,y,r]", this function returns "[x'0,x'1,y'0,y'1,r'0,r'1]".
-func applyLimbsMapReversed[W word.Word[W]](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
+func applyLimbsMapReversed[W word.Word[W]](limbsMap LimbsMap[W], rids ...RegisterId) []RegisterId {
 	var limbIds []RegisterId
 	//
 	for _, r := range rids {
@@ -71,17 +68,17 @@ func applyLimbsMapReversed[W word.Word[W]](limbsMap descriptor.LimbsMap[W], rids
 // ApplyLimbsMapReversed is the exported entry point for applyLimbsMapReversed,
 // used by field-cast splitting (UintToField / FieldToUint) in the transform
 // package, where the uint operand must be split into little-endian limb order.
-func ApplyLimbsMapReversed[W word.Word[W]](limbsMap descriptor.LimbsMap[W], rids ...RegisterId) []RegisterId {
+func ApplyLimbsMapReversed[W word.Word[W]](limbsMap LimbsMap[W], rids ...RegisterId) []RegisterId {
 	return applyLimbsMapReversed(limbsMap, rids...)
 }
 
 type limbMatrix[W word.Word[W]] struct {
-	mapping       descriptor.LimbsMap[W]
+	mapping       LimbsMap[W]
 	chunks        [][]util.Option[RegisterId]
 	width, height int
 }
 
-func newLimbMatrix[W word.Word[W]](regs []RegisterId, mapping descriptor.LimbsMap[W]) *limbMatrix[W] {
+func newLimbMatrix[W word.Word[W]](regs []RegisterId, mapping LimbsMap[W]) *limbMatrix[W] {
 	var (
 		nregs  = len(regs)
 		nlimbs int
@@ -224,8 +221,8 @@ func targetWidth[W word.Word[W]](targets []RegisterId, mapping descriptor.Regist
 	return mapping.Register(targets[0]).Bitwidth().Unwrap()
 }
 
-func allocateTemporary[W word.Word[W]](bitwidth uint, mapping descriptor.LimbsMap[W], alloc Allocator[W],
-) (RegisterId, descriptor.LimbsMap[W]) {
+func allocateTemporary[W word.Word[W]](bitwidth uint, mapping LimbsMap[W], alloc Allocator[W],
+) (RegisterId, LimbsMap[W]) {
 	var (
 		zero      W
 		temp      = descriptor.NewComputedRegister("", util.Some(bitwidth), zero)
@@ -248,7 +245,7 @@ func allocateTemporary[W word.Word[W]](bitwidth uint, mapping descriptor.LimbsMa
 // the register is imaginary as, after splitting, only the limbs will remain ---
 // and they are real.
 type limbsMapWrapper[W word.Word[W]] struct {
-	descriptor.LimbsMap[W]
+	LimbsMap[W]
 	// the imaginary mapping
 	id    RegisterId
 	reg   descriptor.Register[W]
@@ -256,7 +253,7 @@ type limbsMapWrapper[W word.Word[W]] struct {
 }
 
 // Limbs implementation for the LimbsMap interface
-func (p limbsMapWrapper[W]) LimbIds(reg RegisterId) []descriptor.LimbId {
+func (p limbsMapWrapper[W]) LimbIds(reg RegisterId) []LimbId {
 	if reg == p.id {
 		return p.limbs
 	}
@@ -265,7 +262,7 @@ func (p limbsMapWrapper[W]) LimbIds(reg RegisterId) []descriptor.LimbId {
 }
 
 // Register implementation for the LimbsMap interface
-func (p limbsMapWrapper[W]) Register(reg descriptor.LimbId) descriptor.Limb[W] {
+func (p limbsMapWrapper[W]) Register(reg LimbId) Limb[W] {
 	if reg == p.id {
 		return p.reg
 	}
@@ -274,12 +271,12 @@ func (p limbsMapWrapper[W]) Register(reg descriptor.LimbId) descriptor.Limb[W] {
 }
 
 // Limb implementation for the LimbsMap interface
-func (p limbsMapWrapper[W]) Limb(reg descriptor.LimbId) descriptor.Limb[W] {
+func (p limbsMapWrapper[W]) Limb(reg LimbId) Limb[W] {
 	panic("unsupported operation")
 }
 
 // Limbs implementation for the LimbsMap interface
-func (p limbsMapWrapper[W]) Limbs() []descriptor.Limb[W] {
+func (p limbsMapWrapper[W]) Limbs() []Limb[W] {
 	panic("unsupported operation")
 }
 
@@ -289,6 +286,6 @@ func (p limbsMapWrapper[W]) LimbsRegisterMap() descriptor.RegisterMap[W] {
 }
 
 // Registers implementation for the LimbsMap interface
-func (p limbsMapWrapper[W]) Registers() []descriptor.Limb[W] {
+func (p limbsMapWrapper[W]) Registers() []Limb[W] {
 	panic("unsupported operation")
 }

@@ -24,7 +24,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // SyntaxError defines the kind of errors that can be reported by this compiler.
@@ -39,27 +38,27 @@ type CompilationConfig = compiler.Config
 // CompileSourceFiles compiles one or more source files into a schema.  This
 // process can fail if the source files are mal-formed, or contain syntax errors
 // or other forms of error (e.g. type errors).
-func CompileSourceFiles(config CompilationConfig, srcfiles []source.File,
-) (mir.Schema[word.BigEndian], SourceMap, []SyntaxError) {
+func CompileSourceFiles[F field.Element[F]](config CompilationConfig, srcfiles []source.File,
+) (mir.Schema[F], SourceMap, []SyntaxError) {
 	// Parse all source files.
 	circuit, srcmap, errs := compiler.ParseSourceFiles(srcfiles, config)
 	// Check for parsing errors
 	if errs != nil {
-		return mir.Schema[word.BigEndian]{}, SourceMap{}, errs
+		return mir.Schema[F]{}, SourceMap{}, errs
 	}
 	// Compile each module into the schema
 	comp := NewCompiler(circuit, srcmap)
 	//
-	return comp.Compile(config)
+	return comp.Compile[F](config)
 }
 
 // CompileSourceFile compiles exactly one source file into a schema.  This is
 // really helper function for e.g. the testing environment.   This process can
 // fail if the source file is mal-formed, or contains syntax errors or other
 // forms of error (e.g. type errors).
-func CompileSourceFile(config CompilationConfig, srcfile source.File,
-) (mir.Schema[word.BigEndian], SourceMap, []SyntaxError) {
-	return CompileSourceFiles(config, []source.File{srcfile})
+func CompileSourceFile[F field.Element[F]](config CompilationConfig, srcfile source.File,
+) (mir.Schema[F], SourceMap, []SyntaxError) {
+	return CompileSourceFiles[F](config, []source.File{srcfile})
 }
 
 // Compiler packages up everything needed to compile a given set of module
@@ -86,7 +85,7 @@ func NewCompiler(circuit ast.Circuit, srcmaps *source.Maps[ast.Node]) *Compiler 
 // ways if the given modules are malformed in some way.  For example, if some
 // expression refers to a non-existent module or column, or is not well-typed,
 // etc.
-func (p *Compiler) Compile(config compiler.Config) (mir.Schema[word.BigEndian], SourceMap, []SyntaxError) {
+func (p *Compiler) Compile[F field.Element[F]](config compiler.Config) (mir.Schema[F], SourceMap, []SyntaxError) {
 	var (
 		scope  *compiler.ModuleScope
 		errors []SyntaxError
@@ -97,22 +96,15 @@ func (p *Compiler) Compile(config compiler.Config) (mir.Schema[word.BigEndian], 
 	errors = append(errors, compiler.TypeCheckCircuit(p.srcmap, &p.circuit)...)
 	// Catch errors
 	if len(errors) > 0 {
-		return mir.Schema[word.BigEndian]{}, SourceMap{}, errors
+		return mir.Schema[F]{}, SourceMap{}, errors
 	}
 	// Convert global scope into an environment by allocating all columns.
 	environment := compiler.NewGlobalEnvironment(scope)
 	// Translate everything and add it to the schema.
-	schema, errs := compiler.TranslateCircuit(environment, p.srcmap, &p.circuit, config)
+	schema, errs := compiler.TranslateCircuit[F](environment, p.srcmap, &p.circuit, config)
 	// Sanity check for errors
 	if len(errs) > 0 {
-		return mir.Schema[word.BigEndian]{}, SourceMap{}, errs
-	} else if cerrs := schema.Consistent(math.MaxUint); len(cerrs) > 0 {
-		// Should be unreachable.
-		for _, err := range cerrs {
-			fmt.Println(err.Error())
-		}
-		//
-		panic("inconsistent schema?")
+		return mir.Schema[F]{}, SourceMap{}, errs
 	}
 	// Construct source map
 	source_map := constructSourceMap(&schema, scope, environment)
@@ -120,14 +112,14 @@ func (p *Compiler) Compile(config compiler.Config) (mir.Schema[word.BigEndian], 
 	return schema, *source_map, errs
 }
 
-func constructSourceMap(schema schema.Schema[word.BigEndian], scope *compiler.ModuleScope,
+func constructSourceMap[F field.Element[F]](schema schema.Schema[F], scope *compiler.ModuleScope,
 	env compiler.GlobalEnvironment) *SourceMap {
 	//
 	enumerations := []Enumeration{OPCODE_ENUMERATION}
 	return &SourceMap{constructSourceModule(schema, scope, env), enumerations}
 }
 
-func constructSourceModule(schema schema.Schema[word.BigEndian], scope *compiler.ModuleScope,
+func constructSourceModule[F field.Element[F]](schema schema.Schema[F], scope *compiler.ModuleScope,
 	env compiler.GlobalEnvironment) SourceModule {
 	//
 	var (
@@ -147,7 +139,7 @@ func constructSourceModule(schema schema.Schema[word.BigEndian], scope *compiler
 		srcCol := SourceColumn{name,
 			col.Bitwidth,
 			col.MustProve,
-			col.Computed,
+			col.Kind == ast.COMPUTED_COLUMN || col.Kind == ast.CONSTANT_COLUMN,
 			display,
 			ref}
 		columns = append(columns, srcCol)

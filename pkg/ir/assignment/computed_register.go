@@ -99,12 +99,11 @@ func (p *ComputedRegister[F, E]) Compute(tr trace.Shard[F], schema sc.Schema[F],
 	return []array.Array[F]{data.Build()}, nil
 }
 
-// Consistent performs some simple checks that the given assignment is
-// consistent with its enclosing schema This provides a double check of certain
-// key properties, such as that registers used for assignments are valid,
-// etc.
-func (p *ComputedRegister[F, E]) Consistent(schema sc.Schema[F]) []error {
-	return nil
+// Validate performs some simple checks that the given assignment is consistent
+// with its enclosing schema This provides a double check of certain key
+// properties, such as that registers used for assignments are valid, etc.
+func (p *ComputedRegister[F, E]) Validate(schema sc.Schema[F]) {
+
 }
 
 // RegistersExpanded identifies registers expanded by this assignment.

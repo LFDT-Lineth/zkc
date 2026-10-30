@@ -13,6 +13,7 @@
 package compiler
 
 import (
+	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
@@ -146,22 +147,16 @@ func (p *GlobalEnvironment) initModules(modules []*ModuleScope) {
 func (p *GlobalEnvironment) initColumnsAndRegisters(modules []*ModuleScope) {
 	p.columnMap = make(map[string]uint)
 	p.registers = make([]Register, 0)
-	// Allocate input columns first.
-	for _, m := range modules {
-		for _, col := range m.DestructuredColumns() {
-			if !col.Computed {
-				p.allocateRegister(col)
-			}
-		}
-	}
-	// Allocate assignments second.
-	for _, m := range modules {
-		for _, col := range m.DestructuredColumns() {
-			if col.Computed {
-				p.allocateRegister(col)
-			}
-		}
-	}
+	// Allocate input columns first, whilst treating unspecified columns as
+	// input columns.
+	p.allocateByKind(ast.INPUT_COLUMN, modules)
+	p.allocateByKind(ast.UNSPECIFIED, modules)
+	// Allocate output columns second.
+	p.allocateByKind(ast.OUTPUT_COLUMN, modules)
+	// Allocate computed columns before constant columns
+	p.allocateByKind(ast.COMPUTED_COLUMN, modules)
+	// Allocate constant columns last
+	p.allocateByKind(ast.CONSTANT_COLUMN, modules)
 }
 
 // Allocate a source-level column into this environment.  Since a source-level
@@ -174,4 +169,14 @@ func (p *GlobalEnvironment) allocateRegister(source Register) {
 	p.registers = append(p.registers, source)
 	// Map column to register
 	p.columnMap[source.Path.String()] = regId
+}
+
+func (p *GlobalEnvironment) allocateByKind(kind uint8, modules []*ModuleScope) {
+	for _, m := range modules {
+		for _, col := range m.DestructuredColumns() {
+			if col.Kind == kind {
+				p.allocateRegister(col)
+			}
+		}
+	}
 }

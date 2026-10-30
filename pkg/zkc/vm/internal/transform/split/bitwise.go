@@ -35,7 +35,7 @@ import (
 //
 // The same limb-wise decomposition applies to OR and XOR.  Thus, we can see
 // that splitting bitwise operations is relatively straightforward.
-func Bitwise[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Bitwise[W],
+func Bitwise[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn *bytecode.Bitwise[W],
 ) []Bytecode[W] {
 	if insn.Right.IsConstant() {
 		return bitwiseConst(mapping, alloc, insn)
@@ -84,7 +84,7 @@ func Bitwise[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W],
 	return bytecodes
 }
 
-func newBitwiseBytecode[W word.Word[W]](op bytecode.Operation, mapping descriptor.LimbsMap[W], target RegisterId,
+func newBitwiseBytecode[W word.Word[W]](op bytecode.Operation, mapping LimbsMap[W], target RegisterId,
 	sources ...RegisterId) Bytecode[W] {
 	//
 	var bitwidth uint
@@ -152,7 +152,7 @@ func newNotBytecode[W word.Word[W]](bitwidth uint, target RegisterId, source Reg
 // limb at a given position, its (zero-extended) limb yields "0 op climb", which
 // has no register to read and so is loaded directly — the analog of the
 // one-source cases in newAndBytecode et al.
-func bitwiseConst[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Bitwise[W],
+func bitwiseConst[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn *bytecode.Bitwise[W],
 ) []Bytecode[W] {
 	var (
 		zero      W

@@ -15,12 +15,11 @@ package split
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Switch splits a switch instruction.
-func Switch[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Switch[W],
+func Switch[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Switch[W],
 ) []Bytecode[W] {
 	var limbs = ApplyLimbsMap(mapping, insn.Source)
 	//
@@ -34,7 +33,7 @@ func Switch[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Switc
 // Dispatch splits a (one-hot) dispatch instruction.  Every register examined
 // by a dispatch is a 1-bit register and hence never splits; only the register
 // identifiers need remapping into the split layout.
-func Dispatch[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Dispatch[W],
+func Dispatch[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Dispatch[W],
 ) []Bytecode[W] {
 	ncases := make([]bytecode.DispatchCase, len(insn.Cases))
 	//
@@ -47,7 +46,7 @@ func Dispatch[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.Dis
 
 // onlyLimb maps a register which cannot split (e.g. a 1-bit register) into its
 // single limb within the split layout.
-func onlyLimb[W word.Word[W]](mapping descriptor.LimbsMap[W], reg bytecode.RegisterId) bytecode.RegisterId {
+func onlyLimb[W word.Word[W]](mapping LimbsMap[W], reg bytecode.RegisterId) bytecode.RegisterId {
 	var limbs = ApplyLimbsMap(mapping, reg)
 	//
 	if len(limbs) != 1 {

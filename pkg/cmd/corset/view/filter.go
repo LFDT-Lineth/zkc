@@ -179,14 +179,11 @@ func (p *traceCellFilter) addCell(cell tr.CellRef) {
 }
 
 func (p *moduleCellFilter) Column(col SourceColumn) bool {
-	// Look to see whether any limb is in this column, or not.
-	for _, lid := range col.Limbs {
-		if uint(len(p.columns)) > lid.Unwrap() {
-			var bits bit.Set = p.columns[lid.Unwrap()]
-			//
-			if bits.Count() != 0 {
-				return true
-			}
+	if uint(len(p.columns)) > col.Register.Unwrap() {
+		var bits bit.Set = p.columns[col.Register.Unwrap()]
+		//
+		if bits.Count() != 0 {
+			return true
 		}
 	}
 	//

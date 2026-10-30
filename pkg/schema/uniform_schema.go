@@ -29,7 +29,13 @@ type UniformSchema[F field.Element[F], M Module[F]] struct {
 
 // NewUniformSchema constructs a new schema comprising the given modules.
 func NewUniformSchema[F field.Element[F], M Module[F]](modules []M) UniformSchema[F, M] {
-	return UniformSchema[F, M]{modules}
+	var schema = UniformSchema[F, M]{modules}
+	// Check modules
+	for _, m := range modules {
+		m.Validate(schema)
+	}
+	//
+	return schema
 }
 
 // Assignments returns an iterator over the assignments of this schema
@@ -37,19 +43,6 @@ func NewUniformSchema[F field.Element[F], M Module[F]](modules []M) UniformSchem
 // in this schema.
 func (p UniformSchema[F, M]) Assignments() iter.Iterator[Assignment[F]] {
 	return assignmentsOf(p.modules)
-}
-
-// Consistent applies a number of internal consistency checks.  Whilst not
-// strictly necessary, these can highlight otherwise hidden problems as an aid
-// to debugging.
-func (p UniformSchema[F, M]) Consistent(fieldWidth uint) []error {
-	var errors []error
-	// Check modules
-	for _, m := range p.modules {
-		errors = append(errors, m.Consistent(fieldWidth, p)...)
-	}
-	// Done
-	return errors
 }
 
 // Constraints returns an iterator over all constraints defined in this
@@ -88,7 +81,7 @@ func (p UniformSchema[F, M]) RawModules() []M {
 }
 
 // Register returns the given register in this schema.
-func (p UniformSchema[F, M]) Register(ref register.Ref) register.Register {
+func (p UniformSchema[F, M]) Register(ref register.Ref) register.Register[F] {
 	return p.Module(ref.Module()).Register(ref.Register())
 }
 

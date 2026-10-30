@@ -110,7 +110,7 @@ func (p *Ite[F, S]) Negate() S {
 }
 
 // TestAt implementation for Testable interface.
-func (p *Ite[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, error) {
+func (p *Ite[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map[F]) (bool, error) {
 	// Evaluate condition
 	cond, err := p.Condition.TestAt(k, tr, sc)
 	//
@@ -126,7 +126,7 @@ func (p *Ite[F, T]) TestAt(k uint, tr trace.Module[F], sc register.Map) (bool, e
 }
 
 // Lisp implementation for Lispifiable interface.
-func (p *Ite[F, T]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (p *Ite[F, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	// Translate Condition
 	condition := p.Condition.Lisp(global, mapping)
 	// Dispatch on type
