@@ -54,8 +54,8 @@ type SchemaStacker[F field.Element[F]] struct {
 	traceBuilder ir.TraceBuilder[F]
 	// Layers identifies which layers are included in the stack.
 	layers bit.Set
-	// Schema represents the top of this stack.  This is "abstract" in the sense
-	// that registers have not yet been split to fit the target field.
+	// Schema represents the top of this stack, as compiled for the target
+	// field.
 	schema util.Option[mir.Schema[F]]
 	// Source map for the schema above, which maps registers and constraints
 	// back to their original source-level declarations.
@@ -156,10 +156,8 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 	//
 	if p.schema.HasValue() {
 		stats := util.NewPerfStats()
-		// Read out the (abstract) schema
+		// Read out the schema
 		mirSchema = p.schema.Unwrap()
-		//
-		stats.Log("translation")
 		// Copy over builder
 		stack.traceBuilder = p.traceBuilder
 		// Include Mid-level IR layer (if requested)

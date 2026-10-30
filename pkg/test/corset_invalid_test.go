@@ -91,6 +91,31 @@ func Test_Invalid_Basic_19(t *testing.T) {
 func Test_Invalid_Basic_20(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/basic_invalid_20")
 }
+
+func Test_Invalid_Basic_21(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/basic_invalid_21")
+}
+
+func Test_Invalid_Basic_22(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/basic_invalid_22")
+}
+
+func Test_Invalid_Basic_23(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/basic_invalid_23")
+}
+
+func Test_Invalid_Basic_24(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/basic_invalid_24")
+}
+
+func Test_Invalid_Basic_25(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/basic_invalid_25")
+}
+
+func Test_Invalid_Basic_26(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/basic_invalid_26")
+}
+
 func Test_Invalid_Logic_01(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/logic_invalid_01")
 }
@@ -262,6 +287,10 @@ func Test_Invalid_Range_05(t *testing.T) {
 
 func Test_Invalid_Range_06(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/range_invalid_06")
+}
+
+func Test_Invalid_Range_07(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/range_invalid_07")
 }
 
 // ===================================================================

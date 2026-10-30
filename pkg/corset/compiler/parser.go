@@ -333,20 +333,19 @@ func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, compu
 	e sexp.SExp) (*ast.DefColumn, *SyntaxError) {
 	//
 	var (
-		zero  big.Int
 		error *SyntaxError
 		// Initial binding with defaults
 		binding = ast.ColumnBinding{
 			ColumnContext: context,
-			Kind:          ast.NOT_COMPUTED,
+			Kind:          ast.UNSPECIFIED,
 			MustProve:     p.config.EnforceTypes,
-			Padding:       zero,
+			Padding:       util.None[big.Int](),
 			Display:       "hex",
 		}
 	)
 	// Update computed status
 	if computed {
-		binding.Kind = ast.COMPUTED
+		binding.Kind = ast.COMPUTED_COLUMN
 	}
 	// Check whether extended declaration or not.
 	if l := e.AsList(); l != nil {
@@ -429,13 +428,47 @@ func (p *Parser) parseColumnDeclarationAttributes(node sexp.SExp, binding ast.Co
 			}
 			// skip dimension
 			i++
+		case ":input":
+			{
+				if binding.Kind != ast.UNSPECIFIED {
+					return binding, p.translator.SyntaxError(ith, "invalid input column")
+				}
+
+				binding.Kind = ast.INPUT_COLUMN
+			}
+		case ":output":
+			{
+				if binding.Kind != ast.UNSPECIFIED {
+					return binding, p.translator.SyntaxError(ith, "invalid output column")
+				}
+
+				binding.Kind = ast.OUTPUT_COLUMN
+			}
+		case ":constant":
+			{
+				if binding.Kind != ast.UNSPECIFIED {
+					return binding, p.translator.SyntaxError(ith, "invalid constant column")
+				} else if i+1 == len(attrs) {
+					return binding, p.translator.SyntaxError(ith, "missing constant value")
+				} else if binding.Padding.HasValue() {
+					return binding, p.translator.SyntaxError(ith, "multiple constant/padding values")
+				} else if binding.Padding, err = p.parsePaddingValue(attrs[i+1]); err != nil {
+					return binding, err
+				}
+				//
+				binding.Kind = ast.CONSTANT_COLUMN
+				// skip constant
+				i++
+			}
 		case ":padding":
 			if i+1 == len(attrs) {
 				return binding, p.translator.SyntaxError(ith, "missing padding value")
+			} else if binding.Padding.HasValue() {
+				return binding, p.translator.SyntaxError(ith, "multiple constant/padding values")
 			} else if binding.Padding, err = p.parsePaddingValue(attrs[i+1]); err != nil {
 				return binding, err
 			}
-			// skip dimension
+			// skip padding value
 			i++
 		default:
 			if binding.DataType, binding.MustProve, err = p.parseType(ith); err != nil {
@@ -453,7 +486,7 @@ func (p *Parser) parseColumnDeclarationAttributes(node sexp.SExp, binding ast.Co
 	return binding, nil
 }
 
-func (p *Parser) parsePaddingValue(s sexp.SExp) (big.Int, *SyntaxError) {
+func (p *Parser) parsePaddingValue(s sexp.SExp) (util.Option[big.Int], *SyntaxError) {
 	var (
 		err     error
 		ok      bool
@@ -461,16 +494,16 @@ func (p *Parser) parsePaddingValue(s sexp.SExp) (big.Int, *SyntaxError) {
 	)
 	//
 	if symbol := s.AsSymbol(); symbol == nil {
-		return padding, p.translator.SyntaxError(s, "invalid padding value")
+		return util.None[big.Int](), p.translator.SyntaxError(s, "invalid padding value")
 	} else if padding, ok, err = parseConstant(symbol.Value); err != nil {
-		return padding, p.translator.SyntaxError(s, err.Error())
+		return util.None[big.Int](), p.translator.SyntaxError(s, err.Error())
 	} else if !ok {
-		return padding, p.translator.SyntaxError(s, "invalid padding value")
+		return util.None[big.Int](), p.translator.SyntaxError(s, "invalid padding value")
 	} else if padding.Sign() < 0 {
-		return padding, p.translator.SyntaxError(s, "negative padding value")
+		return util.None[big.Int](), p.translator.SyntaxError(s, "negative padding value")
 	}
 	//
-	return padding, nil
+	return util.Some(padding), nil
 }
 
 func (p *Parser) parseArrayDimension(s sexp.SExp) (uint, uint, *SyntaxError) {

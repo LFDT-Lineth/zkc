@@ -16,13 +16,13 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
-// PaddedArray implements an array of single bit words simply using an underlying
-// array of packed bytes.  That is, where eight bits are packed into a single
-// byte.
+// PaddedArray wraps an underlying array with a number of (front) padding rows,
+// all of which hold the same padding value.  This avoids copying the
+// underlying array when padding is applied.
 type PaddedArray[T word.Word[T], S Array[T]] struct {
 	data S
 	// start identifies the first non-padding (i.e. real) row in this array.
-	// Every row below start is padding and, therefore, implicitly zero.
+	// Every row below start is padding and, therefore, holds the padding value.
 	start uint
 	// padding value to use
 	padding T
@@ -44,9 +44,15 @@ func (p PaddedArray[T, S]) Len() uint {
 	return p.data.Len() + p.start
 }
 
-// BitWidth returns the width (in bits) of elements in this array.
+// BitWidth returns the width (in bits) of elements in this array.  Since the
+// padding value need not fit within the bitwidth of the underlying array, this
+// is the maximum of the two.
 func (p PaddedArray[T, S]) BitWidth() uint {
-	return 1
+	if p.start == 0 {
+		return p.data.BitWidth()
+	}
+	//
+	return max(p.data.BitWidth(), uint(p.padding.BigInt().BitLen()))
 }
 
 // Get returns the field element at the given index in this array.
@@ -59,9 +65,14 @@ func (p PaddedArray[T, S]) Get(index uint) T {
 }
 
 // Pad returns a copy of this array with n copies of the given padding value
-// prepended, and m copies appended.  The receiver is left unmodified.
+// prepended.  The receiver is left unmodified.
 func (p PaddedArray[T, S]) Pad(n uint, val T) Array[T] {
-	return PaddedArray[T, S]{p.data, p.start + n, val}
+	if p.start == 0 || p.padding.Equals(val) {
+		return PaddedArray[T, S]{p.data, p.start + n, val}
+	}
+	// Existing padding uses a different value, hence must be retained beneath
+	// the new padding.
+	return PaddedArray[T, Array[T]]{p, n, val}
 }
 
 func (p PaddedArray[T, S]) String() string {

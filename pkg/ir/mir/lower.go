@@ -21,7 +21,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	air_gadgets "github.com/LFDT-Lineth/zkc/pkg/ir/air/gadgets"
-	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
@@ -155,9 +154,6 @@ func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.
 		reg = module.Register(rid)
 		val = reg.Constant()
 	)
-	// Add assignment for filling said computed column
-	module.AddAssignment(
-		assignment.NewComputedRegister(rid, term.Const[F, Term[F]](val), mid))
 	// add constraint
 	module.AddConstraint(
 		air.NewVanishingConstraint(val.String(), mid, util.None[int](),
@@ -543,8 +539,6 @@ func (p *AirLowering[F]) lowerTermTo(e Term[F], airModule air.ModuleBuilder[F]) 
 	case *Sub[F]:
 		args := p.lowerTerms(e.Args, airModule)
 		return term.Subtract(args...)
-	case *VectorAccess[F]:
-		return p.lowerVectorAccess(e, airModule)
 	default:
 		name := reflect.TypeOf(e).Name()
 		panic(fmt.Sprintf("unknown MIR expression \"%s\"", name))
@@ -560,39 +554,6 @@ func (p *AirLowering[F]) lowerTerms(exprs []Term[F], airModule air.ModuleBuilder
 	}
 
 	return nexprs
-}
-
-func (p *AirLowering[F]) lowerVectorAccess(e *VectorAccess[F], airModule air.ModuleBuilder[F]) air.Term[F] {
-	var (
-		terms []air.Term[F] = make([]air.Term[F], len(e.Vars))
-		shift               = uint(0)
-	)
-	//
-	for i, v := range e.Vars {
-		var (
-			limb  = airModule.Register(v.Register())
-			width = limb.Width()
-			ith   *air.ColumnAccess[F]
-		)
-		// Ensure limbwidth normalised
-		ith = term.RawRegisterAccess[F, air.Term[F]](v.Register(), width, v.RelativeShift())
-		// Apply shift
-		terms[i] = term.Product(shiftTerm(ith, shift))
-		//
-		shift = shift + width
-	}
-	//
-	return term.Sum(terms...)
-}
-
-func shiftTerm[F field.Element[F]](expr air.Term[F], width uint) air.Term[F] {
-	if width == 0 {
-		return expr
-	}
-	// Compute 2^width
-	n := field.TwoPowN[F](width)
-	//
-	return term.Product(term.Const[F, air.Term[F]](n), expr)
 }
 
 func (p *AirLowering[F]) normalise(arg air.Term[F], airModule air.ModuleBuilder[F]) air.Term[F] {

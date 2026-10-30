@@ -54,12 +54,13 @@ func NewConstraint[F field.Element[F], T term.Testable[F]](handle string, contex
 // Specifically, to check that: (1) the module exists; (2) all used registers
 // existing with then given module.
 func (p *Constraint[F, T]) Validate(schema schema.Schema[F]) {
+	// Sanity check module
+	util.Assert(p.Context < schema.Width(), "invalid module (%d >= %d)", p.Context, schema.Width())
+	//
 	var (
 		regs = p.Constraint.RequiredRegisters()
 		mod  = schema.Module(p.Context)
 	)
-	// Sanity check module
-	util.Assert(p.Context < schema.Width(), "invalid module (%d >= %d)", p.Context, schema.Width())
 	// Sanity check referenced registers
 	for iter := regs.Iter(); iter.HasNext(); {
 		reg := iter.Next()

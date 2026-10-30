@@ -19,20 +19,21 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
-// padModules pads every (non-static) module in mods up to its target height,
-// as determined by the padding strategy in the given config.  Static
+// Pad pads every (non-static) module in the given shard up to its target
+// height, as determined by the padding strategy in the given config.  Static
 // reference tables are left completely untouched, since their (fixed)
 // contents are determined entirely by the schema and never need padding.
 //
 // Every non-static module is always detached from whatever trace alignModule
 // aligned it from, even when no padding is actually required (i.e. when the
 // computed front padding is zero): alignModule may have aliased its columns
-// directly from the trace given to AlignAndPad, and that trace can be shared
-// with (and reused by) the caller, so the modules returned from here must
-// never retain that aliasing.
-func padModules[F field.Element[F]](config Config, schema sc.Schema[F], mods []trace.Module[F],
-) ([]trace.Module[F], []error) {
+// directly from the trace given to Align, and that trace can be shared with
+// (and reused by) the caller, so the modules returned from here must never
+// retain that aliasing.
+func Pad[F field.Element[F]](config Config, schema sc.Schema[F], tr trace.Shard[F],
+) (trace.Shard[F], []error) {
 	var (
+		mods = tr.Modules().Collect()
 		// Determine the set of minimal trace sizes
 		minimums      = determineMinimumTraceHeight(schema)
 		columns, errs = flattenTrace(schema, trace.NewShard(mods))
@@ -45,8 +46,10 @@ func padModules[F field.Element[F]](config Config, schema sc.Schema[F], mods []t
 	} else {
 		data = array.Map(columns, mapfn)
 	}
-	//
-	return rebuildModules(mods, columns, data), errs
+	// Rebuild modules
+	mods = rebuildModules(mods, columns, data)
+	// Construct new shard
+	return trace.NewShard(mods), errs
 }
 
 // paddingMapFn constructs the per-column function used to pad a single column

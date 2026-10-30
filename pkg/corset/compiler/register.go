@@ -16,6 +16,7 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
@@ -34,20 +35,14 @@ type Register struct {
 	Bitwidth uint
 	// Provability requirement for this register.
 	MustProve bool
-	// Determines whether this is a Computed column.
-	Computed bool
+	// Determines kind of column (e.g. input, computed, etc)
+	Kind uint8
 	// Determines value used for padding
-	Padding big.Int
+	Padding util.Option[big.Int]
 	// Display modifier
 	Display string
 	// Cached name
 	cached_name *string
-}
-
-// IsInput determines whether or not this register represents an input column,
-// or not.
-func (r *Register) IsInput() bool {
-	return !r.Computed
 }
 
 // Name returns the given name for this register.

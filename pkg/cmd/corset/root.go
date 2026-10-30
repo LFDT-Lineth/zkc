@@ -135,9 +135,6 @@ func getSchemaStack[F field.Element[F]](cmd *cobra.Command, mode uint, filenames
 		fieldConfig.BandWidth = GetUint(cmd, "field-width")
 	}
 
-	if cmd.Flags().Lookup("register-width").Changed {
-		fieldConfig.RegisterWidth = GetUint(cmd, "register-width")
-	}
 	// Initial corset compilation configuration
 	corsetConfig.EnforceTypes = GetFlag(cmd, "enforce-types")
 	// Sanity check MIR optimisation level
@@ -210,7 +207,6 @@ func init() {
 	rootCmd.PersistentFlags().Bool("vectorize", true, "Apply instruction vectorization")
 	rootCmd.PersistentFlags().String("field", "BLS12_377", "prime field to use throughout")
 	rootCmd.PersistentFlags().Uint("field-width", 252, "maximum usable bitwidth of underlying field element")
-	rootCmd.PersistentFlags().Uint("register-width", 160, "maximum bitwidth for registers")
 	// Schema stack
 	rootCmd.PersistentFlags().Bool("air", false, "include constraints at AIR level")
 	rootCmd.PersistentFlags().Bool("mir", false, "include constraints at MIR level")

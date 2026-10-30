@@ -45,8 +45,7 @@ type Register[F field.Element[F]] struct {
 
 // New constructs a new register of a given kind (i.e. input, output or
 // computed) with the given name and bitwidth.
-func New[F field.Element[F]](kind Type, name string, bitwidth uint) Register[F] {
-	var padding F
+func New[F field.Element[F]](kind Type, name string, bitwidth uint, padding F) Register[F] {
 	return Register[F]{kind, name, bitwidth, padding}
 }
 
@@ -54,8 +53,8 @@ func New[F field.Element[F]](kind Type, name string, bitwidth uint) Register[F] 
 // a field element rather than a fixed-width unsigned integer.  Such registers
 // have no fixed bitwidth and can hold any value representable in the
 // underlying field.
-func NewNative[F field.Element[F]](kind Type, name string) Register[F] {
-	return New[F](kind, name, math.MaxUint)
+func NewNative[F field.Element[F]](kind Type, name string, padding F) Register[F] {
+	return New(kind, name, math.MaxUint, padding)
 }
 
 // NewInput constructs a new input register with the given name and

@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/inspector"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
+	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -107,7 +108,7 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	//
 	if len(errors) == 0 {
 		// Run the inspector.
-		errors = inspect(srcmap, trace, cellWidth, titleWidth)
+		errors = inspect(schema, srcmap, trace, cellWidth, titleWidth)
 	}
 	// Sanity check what happened
 	if len(errors) > 0 {
@@ -127,7 +128,7 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 // The optional "public" predicate determines which modules are publicly visible
 // (shown by default); when nil, all modules are public.  Callers use this to
 // hide synthetic modules such as range-check tables.
-func InspectTrace[F field.Element[F]](trace trace.Shard[F],
+func InspectTrace[F field.Element[F]](schema sc.Schema[F], trace trace.Shard[F],
 	public func(string) bool, cellWidth, titleWidth uint) []error {
 	//
 	term, err := termio.NewTerminal()
@@ -135,11 +136,12 @@ func InspectTrace[F field.Element[F]](trace trace.Shard[F],
 		return []error{err}
 	}
 	// Build the viewing window (no source map, so show computed registers).
-	builder := view.NewBuilder().
+	builder := view.NewBuilder[F]().
 		WithTitleWidth(titleWidth).
 		WithCellWidth(cellWidth).
 		WithFormatting(inspector.NewFormatter()).
-		WithComputed(true)
+		WithComputed(true).
+		WithSchema(schema)
 	// Apply the visibility predicate (if any).
 	if public != nil {
 		builder = builder.WithVisibility(public)
@@ -157,10 +159,10 @@ func InspectTrace[F field.Element[F]](trace trace.Shard[F],
 }
 
 // Inspect a given trace using a given schema.
-func inspect[F field.Element[F]](srcmap *corset.SourceMap, trace trace.Shard[F],
+func inspect[F field.Element[F]](schema sc.Schema[F], srcmap *corset.SourceMap, trace trace.Shard[F],
 	cellWidth, titleWidth uint) []error {
 	// Construct inspector window
-	inspector := construct(trace, srcmap, cellWidth, titleWidth)
+	inspector := construct(schema, trace, srcmap, cellWidth, titleWidth)
 	// Render inspector
 	if err := inspector.Render(); err != nil {
 		return []error{err}
@@ -169,18 +171,19 @@ func inspect[F field.Element[F]](srcmap *corset.SourceMap, trace trace.Shard[F],
 	return inspector.Start()
 }
 
-func construct[F field.Element[F]](trace trace.Shard[F], srcmap *corset.SourceMap,
+func construct[F field.Element[F]](schema sc.Schema[F], trace trace.Shard[F], srcmap *corset.SourceMap,
 	cellWidth, titleWidth uint) *inspector.Inspector {
 	//
 	term, err := termio.NewTerminal()
 	// Check whether successful
 	if err == nil {
-		window := view.NewBuilder().
+		window := view.NewBuilder[F]().
 			WithSourceMap(*srcmap).
 			WithTitleWidth(titleWidth).
 			WithCellWidth(cellWidth).
 			WithFormatting(inspector.NewFormatter()).
 			WithComputed(true).
+			WithSchema(schema).
 			Build(trace)
 		// Construct inspector state
 		return inspector.NewInspector[F](term, window)

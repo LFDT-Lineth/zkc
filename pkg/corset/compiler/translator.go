@@ -15,6 +15,7 @@ package compiler
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"reflect"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
@@ -128,6 +129,7 @@ func (t *translator[F]) translateModules(circuit *ast.Circuit) {
 
 // Translate the given Corset module into its corresponding HIR module.
 func (t *translator[F]) translateModule(name string) {
+	var zero big.Int
 	// Always include module (even if empty).
 	t.schema.NewModule(name, true, false, false, false, false)
 	// Process each register in turn.
@@ -143,12 +145,19 @@ func (t *translator[F]) translateModule(name string) {
 			padding F
 		)
 		// Initialise padding value
-		padding = field.BigInt[F](regInfo.Padding)
+		padding = field.BigInt[F](regInfo.Padding.UnwrapOr(zero))
 		// Declare corresponding register
-		if regInfo.IsInput() {
+		switch regInfo.Kind {
+		case ast.INPUT_COLUMN, ast.UNSPECIFIED:
 			reg = register.NewInput[F](regInfo.Name(), regInfo.Bitwidth, padding)
-		} else {
+		case ast.OUTPUT_COLUMN:
+			reg = register.NewOutput[F](regInfo.Name(), regInfo.Bitwidth, padding)
+		case ast.COMPUTED_COLUMN:
 			reg = register.NewComputed[F](regInfo.Name(), regInfo.Bitwidth, padding)
+		case ast.CONSTANT_COLUMN:
+			reg = register.NewConstant[F](regInfo.Name(), regInfo.Bitwidth, padding)
+		default:
+			panic("unknown register kind")
 		}
 		// Add the register
 		module.NewRegister(reg)
@@ -162,7 +171,7 @@ func (t *translator[F]) translateModule(name string) {
 // when the compiler is configured to enforce types more broadly.
 func (t *translator[F]) translateTypeConstraints(reg Register, mod mir.ModuleBuilder[F]) {
 	var (
-		required = reg.MustProve || t.config.EnforceTypes
+		required = (reg.MustProve || t.config.EnforceTypes) && reg.Kind != ast.CONSTANT_COLUMN
 	)
 	// Apply provability (if it is required)
 	if required {

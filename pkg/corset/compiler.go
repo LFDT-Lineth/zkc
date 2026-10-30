@@ -139,7 +139,7 @@ func constructSourceModule[F field.Element[F]](schema schema.Schema[F], scope *c
 		srcCol := SourceColumn{name,
 			col.Bitwidth,
 			col.MustProve,
-			col.Computed,
+			col.Kind == ast.COMPUTED_COLUMN || col.Kind == ast.CONSTANT_COLUMN,
 			display,
 			ref}
 		columns = append(columns, srcCol)

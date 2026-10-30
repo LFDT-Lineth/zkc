@@ -190,18 +190,16 @@ func (p Register[W]) Padding() W {
 func (p Register[W]) ToRawRegister[F field.Element[F]]() register.Register[F] {
 	var (
 		bitwidth uint = math.MaxUint
+		padding  F
 	)
 	// Determine bitwidth (if applicable)
 	if !p.IsNative() {
 		bitwidth = p.Bitwidth().Unwrap()
-	} else if p.Padding().Cmp64(0) != 0 {
-		// NOTE: this is a stop-gap measure to ensure no padding values are
-		// dropped.  Eventually, the notion of padding would be dropped entirely
-		// from the concept of a register.
-		panic("non-zero padding unsupported")
 	}
+	// Copy padding
+	padding = padding.SetBytes(p.padding.BigInt().Bytes())
 	//
-	return register.New[F](p.kind.underlying, p.Name(), bitwidth)
+	return register.New(p.kind.underlying, p.Name(), bitwidth, padding)
 }
 
 // ============================================================================
