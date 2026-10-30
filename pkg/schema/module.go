@@ -17,9 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -127,9 +125,6 @@ func (p *Table[F]) Constraints() iter.Iterator[Constraint[F]] {
 // Validate applies a number of internal consistency checks can highlight
 // otherwise hidden problems as an aid to debugging.
 func (p *Table[F]) Validate(schema Schema[F]) {
-	// Santiy check registers sorted as: inputs, outputs, computed and finally constants.
-	util.Assert(set.IsSorted(p.registers, func(r register.Register[F]) register.Type { return r.Kind() }),
-		"function registers ordered incorrectly")
 	// Check constraints
 	for _, c := range p.constraints {
 		c.Validate(schema)

@@ -27,16 +27,25 @@ type RegisterView interface {
 }
 
 type registerView[F field.Element[F]] struct {
-	trace trace.Module[F]
-	regId register.Id
+	trace   trace.Module[F]
+	regId   register.Id
+	mapping register.Map[F]
 }
 
 func (p *registerView[F]) Get(row uint) big.Int {
 	var (
 		data    = p.trace.Column(p.regId.Unwrap())
-		element = data.Get(row)
+		element F
 		val     big.Int
 	)
+	//
+	if data == nil {
+		reg := p.mapping.Register(p.regId)
+		// Assume constant column
+		element = reg.Constant()
+	} else {
+		element = data.Get(row)
+	}
 	// Construct value from field element
 	val.SetBytes(element.Bytes())
 	//

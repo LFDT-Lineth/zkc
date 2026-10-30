@@ -14,6 +14,7 @@ package view
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -26,7 +27,7 @@ import (
 type CellRefSet = set.AnySortedSet[tr.CellRef]
 
 // Builder is responsible for building the viewing window for a trace.
-type Builder struct {
+type Builder[F field.Element[F]] struct {
 	// Optional set of cells on which the constructed view should focus.
 	cells util.Option[CellRefSet]
 	// Computed indicates whether or not to show (low-level) computed registers
@@ -35,6 +36,8 @@ type Builder struct {
 	cellWidth uint
 	// Default title width to use
 	titleWidth uint
+	// Schema for the trace being viewed
+	schema schema.Schema[F]
 	// Formatting to use
 	formatting TraceFormatting
 	// Optional source map information.  This is primarily used to determine
@@ -47,13 +50,13 @@ type Builder struct {
 }
 
 // NewBuilder constructs a default builder.
-func NewBuilder() Builder {
-	return Builder{util.None[CellRefSet](), false, 16, 16,
+func NewBuilder[F field.Element[F]](schema schema.Schema[F]) Builder[F] {
+	return Builder[F]{util.None[CellRefSet](), false, 16, 16, schema,
 		DefaultFormatter(), util.None[corset.SourceMap](), util.None[func(string) bool]()}
 }
 
 // WithCellWidth sets the maximum width of any cell in the view.
-func (p Builder) WithCellWidth(cellWidth uint) Builder {
+func (p Builder[F]) WithCellWidth(cellWidth uint) Builder[F] {
 	var builder = p
 	//
 	builder.cellWidth = cellWidth
@@ -62,7 +65,7 @@ func (p Builder) WithCellWidth(cellWidth uint) Builder {
 }
 
 // WithTitleWidth sets the maximum width of any row title in the view.
-func (p Builder) WithTitleWidth(titleWidth uint) Builder {
+func (p Builder[F]) WithTitleWidth(titleWidth uint) Builder[F] {
 	var builder = p
 	//
 	builder.titleWidth = titleWidth
@@ -71,7 +74,7 @@ func (p Builder) WithTitleWidth(titleWidth uint) Builder {
 }
 
 // WithComputed determines whether to show low-level computed registers.
-func (p Builder) WithComputed(computed bool) Builder {
+func (p Builder[F]) WithComputed(computed bool) Builder[F] {
 	var builder = p
 	//
 	builder.computed = computed
@@ -80,7 +83,7 @@ func (p Builder) WithComputed(computed bool) Builder {
 }
 
 // WithFormatting determines what formatting to use when rendering this view.
-func (p Builder) WithFormatting(formatting TraceFormatting) Builder {
+func (p Builder[F]) WithFormatting(formatting TraceFormatting) Builder[F] {
 	var builder = p
 	//
 	builder.formatting = formatting
@@ -90,7 +93,7 @@ func (p Builder) WithFormatting(formatting TraceFormatting) Builder {
 
 // WithSourceMap applies source-mapping information to the view.  The main
 // benefit of this is that it includes display modifiers.
-func (p Builder) WithSourceMap(srcmap corset.SourceMap) Builder {
+func (p Builder[F]) WithSourceMap(srcmap corset.SourceMap) Builder[F] {
 	var builder = p
 	//
 	builder.srcmap = util.Some(srcmap)
@@ -101,7 +104,7 @@ func (p Builder) WithSourceMap(srcmap corset.SourceMap) Builder {
 // WithVisibility applies a predicate determining whether a given module is
 // publicly visible.  When set, it overrides the public flag otherwise derived
 // from the source map (or the default).
-func (p Builder) WithVisibility(public func(string) bool) Builder {
+func (p Builder[F]) WithVisibility(public func(string) bool) Builder[F] {
 	var builder = p
 	//
 	builder.visibility = util.Some(public)
@@ -110,13 +113,14 @@ func (p Builder) WithVisibility(public func(string) bool) Builder {
 }
 
 // Build the viewing window for this trace.
-func (p Builder) Build[F field.Element[F]](trace tr.Shard[F]) TraceView {
+func (p Builder[F]) Build(trace tr.Shard[F]) TraceView {
 	var windows []ModuleView
 	//
 	srcmap, enums := extractSourceMap(p.srcmap)
 	//
 	for i := range trace.Width() {
 		trMod := trace.Module(i)
+		scMod := p.schema.Module(i)
 		//
 		public, columns := extractSourceMapData(trMod, p.computed, srcmap)
 		// Override visibility with the caller-supplied predicate (if any).
@@ -124,7 +128,7 @@ func (p Builder) Build[F field.Element[F]](trace tr.Shard[F]) TraceView {
 			public = p.visibility.Unwrap()(trMod.Name())
 		}
 		//
-		data := newModuleData(i, trMod, public, enums, columns)
+		data := newModuleData(i, scMod, trMod, public, enums, columns)
 		// construct initial module view
 		windows = append(windows, &moduleView[F]{
 			window:     data.Window(),

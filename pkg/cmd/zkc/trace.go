@@ -147,7 +147,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	// to reveal a module which was hidden, so everything carrying data is shown
 	// (this excludes, for example, the static range-check tables).
 	if showTrace {
-		corset.PrintTrace(collectShards(tr), 32, 128)
+		corset.PrintTrace(binfile.AirConstraints(), collectShards(tr), 32, 128)
 		// Record that trace computed
 		computed = true
 	}
@@ -176,7 +176,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		shards := collectShards(tr)
 		// Real ZkC functions are public; synthetic modules (e.g. range-check
 		// tables) are private (hidden by default in the inspector).
-		errs := corset.InspectTrace(shards[0], publicModule, 32, 128)
+		errs := corset.InspectTrace(binfile.AirConstraints(), shards[0], publicModule, 32, 128)
 		// Include all errors
 		errors = append(errors, errs...)
 		// Record that trace computed
@@ -222,7 +222,7 @@ func checkConstraints[F field.Element[F], W vm.Word[W]](binfile *constraints.Bin
 	failures, errors := binfile.Check(cfg, trace)
 	// Report failures first
 	if len(failures) > 0 {
-		corset.ReportFailures("AIR", checkConfig, failures)
+		corset.ReportFailures("AIR", binfile.AirConstraints(), checkConfig, failures)
 		// Append an error to force a non-zero exit code
 		errors = append(errors, fmt.Errorf("constraint failures (%d)", len(failures)))
 	}

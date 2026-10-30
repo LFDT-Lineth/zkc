@@ -23,6 +23,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
 	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
+	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -121,7 +122,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 		traces, tp_errors = expandTraces(traces, stack, builder)
 		// Print trace info
 		for _, tf := range traces {
-			printTraceInfo(cfg, tf)
+			printTraceInfo(cfg, stack, tf)
 		}
 		// Report any propagation errors
 		for _, err := range tp_errors {
@@ -131,7 +132,7 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 		// Use raw trace
 		for _, tf := range traces {
 			// Print what we have
-			printTraceInfo(cfg, tf)
+			printTraceInfo(cfg, stack, tf)
 		}
 	}
 	// Write out results (if requested)
@@ -207,7 +208,7 @@ func expandTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.S
 	return traces, errors
 }
 
-func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], trace tr.Trace[F]) {
+func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], stack cmd_util.SchemaStack[F], trace tr.Trace[F]) {
 	for i, shard := range trace {
 		//
 		if len(trace) > 0 {
@@ -216,7 +217,7 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], trace tr.Trace[F]) {
 			fmt.Println(strings.Repeat("-", int(80)))
 		}
 		// Construct trace window
-		view := view.NewBuilder().
+		view := view.NewBuilder[F](stack.ConcreteSchema()).
 			WithCellWidth(cfg.maxCellWidth).
 			WithTitleWidth(cfg.maxTitleWidth).
 			WithComputed(cfg.showComputed)
@@ -240,10 +241,10 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], trace tr.Trace[F]) {
 // produces the same output as "go-corset trace --print".  Every module holding
 // data is printed, since (unlike the inspector) there is no way to reveal one
 // which was hidden.
-func PrintTrace[F field.Element[F]](trace tr.Trace[F], cellWidth, titleWidth uint) {
+func PrintTrace[F field.Element[F]](schema sc.Schema[F], trace tr.Trace[F], cellWidth, titleWidth uint) {
 	for _, shard := range trace {
 		// Build the viewing window (no source map, so show computed registers).
-		builder := view.NewBuilder().
+		builder := view.NewBuilder[F](schema).
 			WithCellWidth(cellWidth).
 			WithTitleWidth(titleWidth).
 			WithComputed(true)

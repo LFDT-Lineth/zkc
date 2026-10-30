@@ -154,9 +154,6 @@ func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.
 		reg = module.Register(rid)
 		val = reg.Constant()
 	)
-	// Add assignment for filling said computed column
-	// module.AddAssignment(
-	// 	assignment.NewComputedRegister(rid, term.Const[F, Term[F]](val), mid))
 	// add constraint
 	module.AddConstraint(
 		air.NewVanishingConstraint(val.String(), mid, util.None[int](),

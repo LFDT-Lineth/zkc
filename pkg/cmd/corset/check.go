@@ -243,7 +243,7 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.Schema[F], builder ir.T
 	// Check constraints
 	if fails, errs := checker.CheckStrict(trace); len(fails) > 0 || len(errs) > 0 {
 		// Report any constraint failures
-		ReportFailures(ir, cfg, fails)
+		ReportFailures(ir, schema, cfg, fails)
 		// Report any unrecoverable errors
 		reportErrors(ir, errs)
 		// Done
@@ -257,7 +257,7 @@ func CheckTrace[F field.Element[F]](ir string, schema sc.Schema[F], builder ir.T
 
 // ReportFailures reports constraint failures, whilst providing contextual
 // information (when requested).
-func ReportFailures[F field.Element[F]](ir string, cfg CheckConfig, failures []sc.Failure[F]) {
+func ReportFailures[F field.Element[F]](ir string, schema sc.Schema[F], cfg CheckConfig, failures []sc.Failure[F]) {
 	//
 	var errs = make([]error, len(failures))
 	//
@@ -269,27 +269,28 @@ func ReportFailures[F field.Element[F]](ir string, cfg CheckConfig, failures []s
 	// Second, produce report (if requested)
 	if cfg.Report {
 		for _, f := range failures {
-			reportFailure(f, cfg)
+			reportFailure(f, schema, cfg)
 		}
 	}
 }
 
 // Print a human-readable report detailing the given failure
-func reportFailure[F field.Element[F]](failure sc.Failure[F], cfg CheckConfig) {
+func reportFailure[F field.Element[F]](failure sc.Failure[F], schema sc.Schema[F], cfg CheckConfig) {
 	// Identify all relevant cells
 	var cells = failure.RequiredCells()
 	//
 	fmt.Printf("failing constraint %s:\n", failure.Handle())
 	// Check whether anything to report
 	if len(cells) > 0 {
-		reportRelevantCells(cells, failure.Trace(), cfg)
+		reportRelevantCells(cells, schema, failure.Trace(), cfg)
 	}
 }
 
 // Print a human-readable report detailing the given cells of a given shard.
-func reportRelevantCells[F field.Element[F]](cells []tr.CellRef, trace tr.Shard[F], cfg CheckConfig) {
+func reportRelevantCells[F field.Element[F]](cells []tr.CellRef, schema sc.Schema[F], trace tr.Shard[F],
+	cfg CheckConfig) {
 	// Construct trace window
-	builder := view.NewBuilder().
+	builder := view.NewBuilder(schema).
 		WithComputed(cfg.ReportComputed).
 		WithCellWidth(cfg.ReportCellWidth).
 		WithTitleWidth(cfg.ReportTitleWidth).

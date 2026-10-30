@@ -85,6 +85,8 @@ type moduleData[F field.Element[F]] struct {
 	id sc.ModuleId
 	// Height of module
 	height uint
+	// Mapping registers
+	mapping register.Map[F]
 	// Enumeration values
 	enumerations []corset.Enumeration
 	// public modifier
@@ -97,10 +99,10 @@ type moduleData[F field.Element[F]] struct {
 	rows []SourceColumn
 }
 
-func newModuleData[F field.Element[F]](id sc.ModuleId, trace trace.Module[F], public bool,
+func newModuleData[F field.Element[F]](id sc.ModuleId, mapping register.Map[F], trace trace.Module[F], public bool,
 	enums []corset.Enumeration, rows []SourceColumn) *moduleData[F] {
 	//
-	return &moduleData[F]{id, trace.Height(), enums, public, trace, nil, rows}
+	return &moduleData[F]{id, trace.Height(), mapping, enums, public, trace, nil, rows}
 }
 
 // CellAt returns the contents of a specific cell in this table.
@@ -197,7 +199,7 @@ func (p *moduleData[F]) SourceColumnOf(name string) SourceColumn {
 // Data returns an abtract view of the data for a register.
 func (p *moduleData[F]) DataOf(regId register.Id) RegisterView {
 	return &registerView[F]{
-		p.trace, regId,
+		p.trace, regId, p.mapping,
 	}
 }
 
