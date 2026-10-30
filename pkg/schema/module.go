@@ -132,11 +132,11 @@ func (p *Table[F]) Validate(schema Schema[F]) {
 		"function registers ordered incorrectly")
 	// Check constraints
 	for _, c := range p.constraints {
-		c.Consistent(schema)
+		c.Validate(schema)
 	}
 	// Check assignments
 	for _, a := range p.assignments {
-		a.Consistent(schema)
+		a.Validate(schema)
 	}
 }
 

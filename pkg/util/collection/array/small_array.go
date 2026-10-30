@@ -69,8 +69,8 @@ func (p SmallArray[K, T]) Get(index uint) T {
 
 // Pad returns a copy of this array with n copies of the given padding value
 // prepended, and m copies appended.  The receiver is left unmodified.
-func (p SmallArray[K, T]) Pad(n uint) Array[T] {
-	return NewPaddedArray(p).Pad(n)
+func (p SmallArray[K, T]) Pad(n uint, val T) Array[T] {
+	return NewPaddedArray(p).Pad(n, val)
 }
 
 func (p SmallArray[K, T]) String() string {

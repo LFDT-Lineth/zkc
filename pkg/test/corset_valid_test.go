@@ -63,6 +63,10 @@ func Test_Valid_Basic_11(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/basic_11", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
+func Test_Valid_Basic_12(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/basic_12", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
 // ===================================================================
 // Constants Tests
 // ===================================================================

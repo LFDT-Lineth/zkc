@@ -72,11 +72,11 @@ func NewConstraint[F field.Element[F]](handle string, targets []Vector, sources 
 	}
 }
 
-// Consistent applies a number of internal consistency checks.  Whilst not
+// Validate applies a number of internal consistency checks.  Whilst not
 // strictly necessary, these can highlight otherwise hidden problems as an aid
 // to debugging.
-func (p *Constraint[F]) Consistent(_ schema.Schema[F]) []error {
-	return nil
+func (p *Constraint[F]) Validate(_ schema.Schema[F]) {
+
 }
 
 // Name returns a unique name for a given constraint.  This is useful

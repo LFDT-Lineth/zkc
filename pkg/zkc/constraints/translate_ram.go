@@ -106,6 +106,8 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 		mod    *schema.Table[F]
 		regs   = toRegisters[W, F](m.Registers())
 		layout = computeRamLayout(m, p.program.Field())
+		// Default padding
+		padding F
 	)
 	// Initialise module.  Note a leading padding row exists (EXEC == 0 there),
 	// emitted by the tracer (see traceReadWriteMemory).  A read-write memory is
@@ -114,8 +116,8 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 	mod.AddRegisters(regs...)
 	// Append the synthetic columns, in the order fixed by computeRamLayout.
 	mod.AddRegisters(
-		register.NewComputed[F](tracer.RAM_EXEC_NAME, 1),
-		register.NewComputed[F](tracer.RAM_IS_WRITE_NAME, 1),
+		register.NewComputed[F](tracer.RAM_EXEC_NAME, 1, padding),
+		register.NewComputed[F](tracer.RAM_IS_WRITE_NAME, 1, padding),
 	)
 	addLimbRegisters(mod, tracer.RAM_VALUE_READ_PREFIX, layout.dataWidths)
 	addLimbRegisters(mod, tracer.RAM_TS_WRITTEN_PREFIX, layout.tsWidths)
@@ -123,8 +125,8 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 	addLimbRegisters(mod, tracer.RAM_TS_DELTA_PREFIX, layout.tsWidths)
 	addCarryRegisters(mod, tracer.RAM_TS_CARRY_PREFIX, len(layout.tsCarry))
 	mod.AddRegisters(
-		register.NewComputed[F](tracer.RAM_EXEC_WRITE_NAME, 1),
-		register.NewComputed[F](tracer.RAM_EXEC_READ_NAME, 1),
+		register.NewComputed[F](tracer.RAM_EXEC_WRITE_NAME, 1, padding),
+		register.NewComputed[F](tracer.RAM_EXEC_READ_NAME, 1, padding),
 	)
 	addLimbRegisters(mod, tracer.RAM_TEMPORAL_TS_PREFIX, layout.tsWidths)
 	addCarryRegisters(mod, tracer.RAM_TEMPORAL_TS_CARRY_PREFIX, len(layout.temporalTsCarry))
@@ -227,9 +229,13 @@ func widthsOf[W vm.Word[W]](regs []vm.Register[W]) []uint {
 // "<prefix><k>".
 func addLimbRegisters[F field.Element[F]](mod *schema.Table[F],
 	prefix string, widths []uint) {
+	var (
+		// Default padding
+		padding F
+	)
 	//
 	for k, w := range widths {
-		mod.AddRegisters(register.NewComputed[F](tracer.RamLimbName(prefix, uint(k)), w))
+		mod.AddRegisters(register.NewComputed[F](tracer.RamLimbName(prefix, uint(k)), w, padding))
 	}
 }
 
@@ -238,9 +244,13 @@ func addLimbRegisters[F field.Element[F]](mod *schema.Table[F],
 // so one bit suffices.
 func addCarryRegisters[F field.Element[F]](mod *schema.Table[F],
 	prefix string, n int) {
+	var (
+		// Default padding
+		padding F
+	)
 	//
 	for k := 0; k < n; k++ {
-		mod.AddRegisters(register.NewComputed[F](tracer.RamLimbName(prefix, uint(k)), 1))
+		mod.AddRegisters(register.NewComputed[F](tracer.RamLimbName(prefix, uint(k)), 1, padding))
 	}
 }
 
