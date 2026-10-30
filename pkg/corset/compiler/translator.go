@@ -139,12 +139,16 @@ func (t *translator[F]) translateModule(name string) {
 			module = t.schema.ModuleOf(regInfo.Context.ModuleName())
 			//
 			reg register.Register[F]
+			//
+			padding F
 		)
+		// Initialise padding value
+		padding = field.BigInt[F](regInfo.Padding)
 		// Declare corresponding register
 		if regInfo.IsInput() {
-			reg = register.NewInput[F](regInfo.Name(), regInfo.Bitwidth)
+			reg = register.NewInput[F](regInfo.Name(), regInfo.Bitwidth, padding)
 		} else {
-			reg = register.NewComputed[F](regInfo.Name(), regInfo.Bitwidth)
+			reg = register.NewComputed[F](regInfo.Name(), regInfo.Bitwidth, padding)
 		}
 		// Add the register
 		module.NewRegister(reg)

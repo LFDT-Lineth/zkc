@@ -33,7 +33,7 @@ type Array[T any] interface {
 	Len() uint
 	// Pad returns a copy of this array padding with n zero values prepended.
 	// The receiver is left unmodified.
-	Pad(uint) Array[T]
+	Pad(uint, T) Array[T]
 }
 
 // MutArray provides a generice interface to an array of elements.  Typically, we

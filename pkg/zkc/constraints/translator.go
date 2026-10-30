@@ -171,6 +171,8 @@ func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.Module
 	var (
 		mod  *schema.Table[F]
 		regs = toRegisters[W, F](m.Registers())
+		// Default padding
+		padding F
 	)
 
 	// Initialise module and add all registers.  Note the ACCESS[0]=0 /
@@ -181,7 +183,7 @@ func (p *constraintTranslator[W, F]) translateAccessOnceMemory(ctx schema.Module
 	mod.AddRegisters(regs...)
 
 	var access = register.NewId(mod.Width())
-	mod.AddRegisters(register.NewComputed[F](tracer.ACCESS_BIT_NAME, 1))
+	mod.AddRegisters(register.NewComputed[F](tracer.ACCESS_BIT_NAME, 1, padding))
 
 	var (
 		addrRegs           = toRegisters[W, F](m.AddressRegisters())
@@ -284,6 +286,7 @@ func multiLineAddressConstraints[F field.Element[F]](
 		L            = uint(len(addrRegs))
 		prevAddrRegs = make([]Expr[F], L)
 		currAddrRegs = make([]Expr[F], L)
+		padding      F
 	)
 	for k := range L {
 		prevAddrRegs[k] = mirc.Variable[F](register.NewId(k), addrRegs[k].Width(), -1)
@@ -298,7 +301,7 @@ func multiLineAddressConstraints[F field.Element[F]](
 	)
 	for k := range L {
 		atFlag := register.NewId(memoryModule.Width())
-		memoryModule.AddRegisters(register.NewComputed[F](tracer.AtFlagName(k), 1))
+		memoryModule.AddRegisters(register.NewComputed[F](tracer.AtFlagName(k), 1, padding))
 		atFlagVars[k] = mirc.Variable[F](atFlag, 1, 0)
 		addrLimbMaxValues[k] = mirc.BigNumber[F](addrRegs[k].MaxValue())
 	}

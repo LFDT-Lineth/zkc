@@ -54,11 +54,13 @@ func applyPseudoInverseGadget[F field.Element[F]](e air.Term[F], module air.Modu
 		index, ok = module.HasRegister(name)
 		// Indicate column has "field element width".
 		bitwidth uint = math.MaxUint
+		// Default padding
+		zero F
 	)
 	// Add new column (if it does not already exist)
 	if !ok {
 		// Add computed register.
-		index = module.NewRegister(register.NewComputed[F](name, bitwidth))
+		index = module.NewRegister(register.NewComputed[F](name, bitwidth, zero))
 		target := register.NewRef(module.Id(), index)
 		// Add inverse assignment
 		module.AddAssignment(assignment.NewPseudoInverse(target, e))

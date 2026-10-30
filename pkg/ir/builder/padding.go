@@ -60,12 +60,14 @@ func paddingMapFn[F field.Element[F]](config Config, schema sc.Schema[F], mods [
 	return func(_ uint, p trace.ColumnRef) array.Array[F] {
 		var (
 			mid   = p.Module()
-			col   = mods[mid].Column(p.Column().Unwrap())
+			cid   = p.Column()
+			trCol = mods[mid].Column(cid.Unwrap())
 			scMod = schema.Module(mid)
+			scCol = scMod.Register(cid)
 		)
 		//
-		if col == nil || scMod.IsStatic() {
-			return col
+		if trCol == nil || scMod.IsStatic() {
+			return trCol
 		}
 		//
 		var (
@@ -79,7 +81,7 @@ func paddingMapFn[F field.Element[F]](config Config, schema sc.Schema[F], mods [
 			front = target - height
 		}
 		//
-		return col.Pad(front)
+		return trCol.Pad(front, scCol.Padding())
 	}
 }
 

@@ -41,10 +41,10 @@ type Assignment[F field.Element[F]] interface {
 	// computed already).  Computed columns do not exist in the original trace,
 	// but are added during trace expansion to form the final trace.
 	Compute(trace.Shard[F], Schema[F]) ([]array.Array[F], error)
-	// Consistent applies a number of internal consistency checks.  Whilst not
-	// strictly necessary, these can highlight otherwise hidden problems as an aid
-	// to debugging.
-	Consistent(Schema[F]) []error
+	// Validate applies a number of internal consistency checks.  Whilst not
+	// strictly necessary, these can highlight otherwise hidden problems as an
+	// aid to debugging.
+	Validate(Schema[F])
 	// Identifier registers which are expanded by this assignment.  A register
 	// is expanded when its length maybe changed.  For example, when going from
 	// a trace which contains only rows of input/output values to a trace where

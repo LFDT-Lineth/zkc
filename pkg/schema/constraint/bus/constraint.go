@@ -60,39 +60,24 @@ func NewConstraint[F field.Element[F]](handle string, sends []Port, receives []P
 	}
 }
 
-// Consistent applies a number of internal consistency checks.
-func (p *Constraint[F]) Consistent(sc schema.Schema[F]) []error {
-	var (
-		errors []error
-		width  uint
-	)
+// Validate applies a number of internal consistency checks.
+func (p *Constraint[F]) Validate(sc schema.Schema[F]) {
+	var width uint
 	//
-	if len(p.Sends) == 0 {
-		errors = append(errors, fmt.Errorf("bus %q has receives but no sends", p.Handle))
-	}
-	//
-	if len(p.Receives) == 0 {
-		errors = append(errors, fmt.Errorf("bus %q has sends but no receives", p.Handle))
-	}
+	util.Assert(len(p.Sends) != 0, "bus %q has receives but no sends", p.Handle)
+	util.Assert(len(p.Receives) != 0, "bus %q has sends but no receives", p.Handle)
 	//
 	for i, port := range slices.Concat(p.Sends, p.Receives) {
 		var mod = sc.Module(port.Module)
 		//
-		if port.Len() == 0 {
-			errors = append(errors, fmt.Errorf("bus %q has an empty port", p.Handle))
-		} else if i == 0 {
+		if i == 0 {
 			width = port.Len()
-		} else if port.Len() != width {
-			errors = append(errors,
-				fmt.Errorf("bus %q has ports of differing widths (%d vs %d)", p.Handle, width, port.Len()))
 		}
 		//
-		if mod.Register(port.Selector).Width() != 1 {
-			errors = append(errors, fmt.Errorf("bus %q has a non-binary selector", p.Handle))
-		}
+		util.Assert(port.Len() != 0, "bus %q has an empty port", p.Handle)
+		util.Assert(port.Len() == width, "bus %q has ports of differing widths (%d vs %d)", p.Handle, width, port.Len())
+		util.Assert(mod.Register(port.Selector).Width() == 1, "bus %q has a non-binary selector", p.Handle)
 	}
-	//
-	return errors
 }
 
 // Name returns a unique name for this constraint.

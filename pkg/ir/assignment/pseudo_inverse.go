@@ -72,12 +72,11 @@ func (e *PseudoInverse[F]) Compute(tr trace.Shard[F], schema schema.Schema[F]) (
 	return []array.Array[F]{data}, err
 }
 
-// Consistent performs some simple checks that the given assignment is
+// Validate performs some simple checks that the given assignment is
 // consistent with its enclosing schema This provides a double check of certain
 // key properties, such as that registers used for assignments are valid,
 // etc.
-func (e *PseudoInverse[F]) Consistent(schema.Schema[F]) []error {
-	return nil
+func (e *PseudoInverse[F]) Validate(schema.Schema[F]) {
 }
 
 // RegistersExpanded identifies registers expanded by this assignment.

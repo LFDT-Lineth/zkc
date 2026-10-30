@@ -165,11 +165,13 @@ func (p *BitwidthGadget[F]) constructTypeProof(handle module.Name, bitwidth uint
 		loWidth, hiWidth = determineLimbSplit(bitwidth)
 		// Compute 2^loWidth to use as coefficient
 		coeff = field.TwoPowN[F](loWidth)
+		// Default padding
+		zero F
 	)
 	// Construct registers and their decompositions
-	vid := module.NewRegister(register.NewComputed[F]("V", bitwidth))
-	vidLo := module.NewRegister(register.NewComputed[F]("V'0", loWidth))
-	vidHi := module.NewRegister(register.NewComputed[F]("V'1", hiWidth))
+	vid := module.NewRegister(register.NewComputed[F]("V", bitwidth, zero))
+	vidLo := module.NewRegister(register.NewComputed[F]("V'0", loWidth, zero))
+	vidHi := module.NewRegister(register.NewComputed[F]("V'1", hiWidth, zero))
 	// Ensure lo/hi are decomposition of original
 	module.AddConstraint(
 		air.NewVanishingConstraint("decomposition", mid, util.None[int](),
@@ -242,11 +244,10 @@ func (p *typeDecomposition[F]) Bounds(_ sc.ModuleId) util.Bounds {
 	return util.EMPTY_BOUND
 }
 
-// Consistent performs some simple checks that the given schema is consistent.
+// Validate performs some simple checks that the given schema is consistent.
 // This provides a double check of certain key properties, such as that
 // registers used for assignments are large enough, etc.
-func (p *typeDecomposition[F]) Consistent(schema sc.Schema[F]) []error {
-	return nil
+func (p *typeDecomposition[F]) Validate(schema sc.Schema[F]) {
 }
 
 // RegistersExpanded identifies registers expanded by this assignment.
