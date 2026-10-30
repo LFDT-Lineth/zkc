@@ -39,6 +39,8 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 		// $ret register, used to guard lookup for OLI.
 		// TODO: see https://github.com/LFDT-Lineth/zkc/issues/1975
 		ret register.Id
+		// Default padding
+		padding F
 	)
 	// Initialise module
 	mod = mod.Init(name, false, false, false, fn.IsNative(), false)
@@ -58,14 +60,14 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 			pc          = register.NewId(mod.Width() + 1)
 		)
 		// Create return line
-		mod.AddRegisters(register.NewComputed[F](tracer.RET_NAME, 1))
+		mod.AddRegisters(register.NewComputed[F](tracer.RET_NAME, 1, padding))
 		// Create program counter
-		mod.AddRegisters(register.NewComputed[F](tracer.PC_NAME, fn.PcWidth()))
+		mod.AddRegisters(register.NewComputed[F](tracer.PC_NAME, fn.PcWidth(), padding))
 		// Add IS_PC_<k> program counter selectors (one per code line)
 		pcSelectors = make([]register.Id, len(fn.Vectors()))
 		for c := range pcSelectors {
 			pcSelectors[c] = register.NewId(mod.Width())
-			mod.AddRegisters(register.NewComputed[F](tracer.SelectorName(uint(c)), 1))
+			mod.AddRegisters(register.NewComputed[F](tracer.SelectorName(uint(c)), 1, padding))
 		}
 		// Initialise multi-line framing
 		framing, constraints = initMultiLineFraming[F](ctx, pc, ret, pcSelectors, regs, len(fn.Vectors()))
@@ -74,7 +76,7 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 	} else {
 		framing = mirc.NewAtomicFraming[F]()
 
-		mod.AddRegisters(register.NewComputed[F](tracer.RET_NAME, 1))
+		mod.AddRegisters(register.NewComputed[F](tracer.RET_NAME, 1, padding))
 	}
 	// Translate all bytecode vectors
 	for pc, vec := range fn.Vectors() {

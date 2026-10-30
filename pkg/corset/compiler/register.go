@@ -13,6 +13,8 @@
 package compiler
 
 import (
+	"math/big"
+
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
@@ -34,6 +36,8 @@ type Register struct {
 	MustProve bool
 	// Determines whether this is a Computed column.
 	Computed bool
+	// Determines value used for padding
+	Padding big.Int
 	// Display modifier
 	Display string
 	// Cached name

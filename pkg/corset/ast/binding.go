@@ -13,6 +13,8 @@
 package ast
 
 import (
+	"math/big"
+
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
@@ -58,6 +60,8 @@ type ColumnBinding struct {
 	MustProve bool
 	// Determines the kind of this column.
 	Kind uint8
+	// Padding value (defaults to 0)
+	Padding big.Int
 	// Display modifier
 	Display string
 }

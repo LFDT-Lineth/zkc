@@ -60,22 +60,19 @@ func NewNative[F field.Element[F]](kind Type, name string) Register[F] {
 
 // NewInput constructs a new input register with the given name and
 // bitwidth.
-func NewInput[F field.Element[F]](name string, bitwidth uint) Register[F] {
-	var padding F
+func NewInput[F field.Element[F]](name string, bitwidth uint, padding F) Register[F] {
 	return Register[F]{INPUT_REGISTER, name, bitwidth, padding}
 }
 
 // NewOutput constructs a new output register with the given name and
 // bitwidth.
-func NewOutput[F field.Element[F]](name string, bitwidth uint) Register[F] {
-	var padding F
+func NewOutput[F field.Element[F]](name string, bitwidth uint, padding F) Register[F] {
 	return Register[F]{OUTPUT_REGISTER, name, bitwidth, padding}
 }
 
 // NewComputed constructs a new computed register with the given name and
 // bitwidth.
-func NewComputed[F field.Element[F]](name string, bitwidth uint) Register[F] {
-	var padding F
+func NewComputed[F field.Element[F]](name string, bitwidth uint, padding F) Register[F] {
 	return Register[F]{COMPUTED_REGISTER, name, bitwidth, padding}
 }
 
@@ -83,6 +80,8 @@ func NewComputed[F field.Element[F]](name string, bitwidth uint) Register[F] {
 // and constant value.  NOTE: this will panic if the constant value does not fit
 // within the specified bitwidth.
 func NewConstant[F field.Element[F]](name string, bitwidth uint, constant F) Register[F] {
+	util.Assert(constant.FitsWithin(bitwidth), "constant %s out-of-bounds for u%d", constant.String(), bitwidth)
+	//
 	return Register[F]{CONSTANT_REGISTER, name, bitwidth, constant}
 }
 

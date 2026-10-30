@@ -17,7 +17,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -51,11 +50,21 @@ func NewConstraint[F field.Element[F], T term.Testable[F]](handle string, contex
 	return &Constraint[F, T]{handle, context, domain, constraint}
 }
 
-// Consistent applies a number of internal consistency checks.  Whilst not
-// strictly necessary, these can highlight otherwise hidden problems as an aid
-// to debugging.
-func (p *Constraint[F, T]) Consistent(schema schema.Schema[F]) []error {
-	return constraint.CheckConsistent(p.Context, schema, p.Constraint)
+// Validate performs a simple consistency check for terms in a given module.
+// Specifically, to check that: (1) the module exists; (2) all used registers
+// existing with then given module.
+func (p *Constraint[F, T]) Validate(schema schema.Schema[F]) {
+	var (
+		regs = p.Constraint.RequiredRegisters()
+		mod  = schema.Module(p.Context)
+	)
+	// Sanity check module
+	util.Assert(p.Context < schema.Width(), "invalid module (%d >= %d)", p.Context, schema.Width())
+	// Sanity check referenced registers
+	for iter := regs.Iter(); iter.HasNext(); {
+		reg := iter.Next()
+		util.Assert(reg < mod.Width(), "invalid register access in %s (%d >= %d)", mod.Name(), reg, mod.Width())
+	}
 }
 
 // Name returns a unique name for a given constraint.  This is useful

@@ -210,10 +210,14 @@ func lookupSourceSelector[F field.Element[F]](mod *schema.Table[F], ctx schema.M
 func newPathSelector[F field.Element[F]](mod *schema.Table[F], ctx schema.ModuleId,
 	regs []register.Register[F], cond dfa.BranchCondition, oneHot []oneHotGroup,
 ) register.Id {
-	// Allocate the selector column.
-	selId := register.NewId(mod.Width())
+	var (
+		// Allocate the selector column.
+		selId = register.NewId(mod.Width())
+		// Default padding
+		padding F
+	)
 	//
-	mod.AddRegisters(register.NewComputed[F](fmt.Sprintf("$lookup_sel_%d", selId.Unwrap()), 1))
+	mod.AddRegisters(register.NewComputed[F](fmt.Sprintf("$lookup_sel_%d", selId.Unwrap()), 1, padding))
 	// Fill the flag selector during trace expansion with the boolean value of the condition.
 	mod.AddAssignments(assignment.NewComputedRegister(selId, pathSelectorComputation[F](cond, regs), ctx))
 	// Bind it for soundness: $lookup_sel == 1 exactly when the condition holds.

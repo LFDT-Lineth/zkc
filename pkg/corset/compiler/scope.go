@@ -407,6 +407,7 @@ func (p *ModuleScope) destructureAtomicColumn(column *ast.ColumnBinding, ctx fil
 		bitwidth,
 		column.MustProve,
 		column.IsComputed(),
+		column.Padding,
 		column.Display,
 		nil}
 	//
