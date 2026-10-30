@@ -105,13 +105,6 @@ func (p *Compiler) Compile[F field.Element[F]](config compiler.Config) (mir.Sche
 	// Sanity check for errors
 	if len(errs) > 0 {
 		return mir.Schema[F]{}, SourceMap{}, errs
-	} else if cerrs := schema.Consistent(math.MaxUint); len(cerrs) > 0 {
-		// Should be unreachable.
-		for _, err := range cerrs {
-			fmt.Println(err.Error())
-		}
-		//
-		panic("inconsistent schema?")
 	}
 	// Construct source map
 	source_map := constructSourceMap(&schema, scope, environment)

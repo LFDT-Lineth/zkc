@@ -17,7 +17,9 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -64,10 +66,10 @@ type Module[F field.Element[F]] interface {
 	// Constraints provides access to those constraints associated with this
 	// module.
 	Constraints() iter.Iterator[Constraint[F]]
-	// Consistent applies a number of internal consistency checks.  Whilst not
+	// Validate applies a number of internal consistency checks.  Whilst not
 	// strictly necessary, these can highlight otherwise hidden problems as an aid
 	// to debugging.
-	Consistent(fieldWidth uint, schema Schema[F]) []error
+	Validate(schema Schema[F])
 	// StaticContents returns the contents of this module, assuming it
 	// corresponds with a static reference table.  Each entry in the entries
 	// array returned should have Width() elements and correspond to a row in
@@ -122,21 +124,20 @@ func (p *Table[F]) Constraints() iter.Iterator[Constraint[F]] {
 	return iter.NewArrayIterator(p.constraints)
 }
 
-// Consistent applies a number of internal consistency checks.  Whilst not
-// strictly necessary, these can highlight otherwise hidden problems as an aid
-// to debugging.
-func (p *Table[F]) Consistent(fieldWidth uint, schema Schema[F]) []error {
-	var errors []error
+// Validate applies a number of internal consistency checks can highlight
+// otherwise hidden problems as an aid to debugging.
+func (p *Table[F]) Validate(schema Schema[F]) {
+	// Santiy check registers sorted as: inputs, outputs, computed and finally constants.
+	util.Assert(set.IsSorted(p.registers, func(r register.Register[F]) register.Type { return r.Kind() }),
+		"function registers ordered incorrectly")
 	// Check constraints
 	for _, c := range p.constraints {
-		errors = append(errors, c.Consistent(schema)...)
+		c.Consistent(schema)
 	}
 	// Check assignments
 	for _, a := range p.assignments {
-		errors = append(errors, a.Consistent(schema)...)
+		a.Consistent(schema)
 	}
-	// Done
-	return errors
 }
 
 // HasRegister checks whether a register with the given name exists and, if
