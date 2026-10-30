@@ -115,15 +115,20 @@ func (p *RegisterAccess[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *RegisterAccess[F, T]) EvalAt(k uint, module trace.Module[F], _ register.Map[F]) (F, error) {
+func (p *RegisterAccess[F, T]) EvalAt(k uint, module trace.Module[F], rmap register.Map[F]) (F, error) {
 	var (
 		err    error
 		row    = uint(int(k) + p.shift)
 		column = module.Column(p.register.Unwrap())
 		val    F
 	)
-	// Bounds check
-	if row < column.Len() {
+
+	if column == nil {
+		var reg = rmap.Register(p.register)
+		// Assume constant register
+		val = reg.Constant()
+	} else if row < column.Len() {
+		// Bounds check
 		val = column.Get(row)
 	}
 	//

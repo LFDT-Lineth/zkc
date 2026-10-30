@@ -203,7 +203,7 @@ func init() {
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.Flags().Bool("version", false, "Report version of this executable")
 	// Corset compilation config
-	rootCmd.PersistentFlags().Bool("enforce-types", true, "enforce all register types")
+	rootCmd.PersistentFlags().Bool("enforce-types", false, "enforce all register types")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "increase logging verbosity")
 	rootCmd.PersistentFlags().UintP("opt", "O", 1, "set optimisation level")
 	// Assembly lowering config

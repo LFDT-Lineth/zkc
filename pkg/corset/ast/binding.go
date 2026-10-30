@@ -23,8 +23,6 @@ import (
 type Binding interface {
 	// Determine whether this binding is finalised or not.
 	IsFinalised() bool
-	// Determine whether this binding can be defined recursively or not.
-	IsRecursive() bool
 }
 
 // ============================================================================
@@ -32,18 +30,16 @@ type Binding interface {
 // ============================================================================
 
 const (
-	// NOT_COMPUTED signals a column is not a computed column.
-	NOT_COMPUTED = 0
-	// COMPUTED signals a column is a (non-recursive) computed column.
-	COMPUTED = 1
-	// COMPUTED_FWD signals a column is a (forward recursive) computed column.
-	// This means its value is computed starting from the first row (hence it
-	// cannot use a forward shift in its declaration).
-	COMPUTED_FWD = 2
-	// COMPUTED_BWD signals a column is a (backward recursive) computed column.
-	// This means its value is computed starting from the last row (hence it
-	// cannot use a backward shift in its declaration).
-	COMPUTED_BWD = 3
+	// INPUT_COLUMN signals a column is an input column.
+	INPUT_COLUMN = 0
+	// OUTPUT_COLUMN signals a column is an output column.
+	OUTPUT_COLUMN = 1
+	// COMPUTED_COLUMN signals a column is a computed column.
+	COMPUTED_COLUMN = 2
+	// CONSTANT_COLUMN signals a column is a constant column.
+	CONSTANT_COLUMN = 3
+	// UNSPECIFIED signals a column is not a computed column.
+	UNSPECIFIED = 0xff
 )
 
 // ColumnBinding represents something bound to a given column.
@@ -73,17 +69,12 @@ func (p *ColumnBinding) AbsolutePath() *file.Path {
 
 // IsComputed checks whether this binding is for a computed column (or not).
 func (p *ColumnBinding) IsComputed() bool {
-	return p.Kind != NOT_COMPUTED
+	return p.Kind == COMPUTED_COLUMN
 }
 
 // IsFinalised checks whether this binding has been finalised yet or not.
 func (p *ColumnBinding) IsFinalised() bool {
 	return true
-}
-
-// IsRecursive implementation for Binding interface.
-func (p *ColumnBinding) IsRecursive() bool {
-	return p.Kind == COMPUTED_FWD || p.Kind == COMPUTED_BWD
 }
 
 // Context returns the module in which this column was declared.

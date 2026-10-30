@@ -169,7 +169,10 @@ func alignModule[F field.Element[F]](config Config, scMod sc.Module[F], trMod tr
 		if reg.IsInputOutput() && col == nil && height != 0 {
 			errors = append(errors,
 				fmt.Errorf("missing input/output column '%s' from module '%s' of trace", reg.Name(), scMod.Name()))
-		} else if !config.Expanding && col == nil {
+		} else if reg.IsConstant() && col != nil {
+			errors = append(errors,
+				fmt.Errorf("found constant column '%s' from module '%s' in trace", reg.Name(), scMod.Name()))
+		} else if !config.Expanding && !reg.IsConstant() && col == nil {
 			errors = append(errors,
 				fmt.Errorf("missing computed column '%s' from module '%s' of expanded trace", reg.Name(), scMod.Name()))
 		}

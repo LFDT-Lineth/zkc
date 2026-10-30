@@ -21,7 +21,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	air_gadgets "github.com/LFDT-Lineth/zkc/pkg/ir/air/gadgets"
-	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
@@ -156,8 +155,8 @@ func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.
 		val = reg.Constant()
 	)
 	// Add assignment for filling said computed column
-	module.AddAssignment(
-		assignment.NewComputedRegister(rid, term.Const[F, Term[F]](val), mid))
+	// module.AddAssignment(
+	// 	assignment.NewComputedRegister(rid, term.Const[F, Term[F]](val), mid))
 	// add constraint
 	module.AddConstraint(
 		air.NewVanishingConstraint(val.String(), mid, util.None[int](),
