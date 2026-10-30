@@ -313,10 +313,12 @@ func DecodeInputsOutputs[W Word[W]](program descriptor.Program[W], data map[stri
 		// Record visited information
 		visited[input.Name()] = true
 		//
-		if bytes, ok := data[input.Name()]; ok {
-			inputs[input.Name()] = DecodeBytes(bytes, input)
-		} else {
+		if bits, ok := data[input.Name()]; !ok {
 			errs = append(errs, fmt.Errorf("missing input \"%s\"", input.Name()))
+		} else if !BitsAligned(bits, input) {
+			errs = append(errs, fmt.Errorf("input \"%s\" has an incomplete row", input.Name()))
+		} else {
+			inputs[input.Name()] = DecodeBits(bits, input)
 		}
 	}
 	// scan output modules
@@ -325,10 +327,12 @@ func DecodeInputsOutputs[W Word[W]](program descriptor.Program[W], data map[stri
 		// Record visited information
 		visited[output.Name()] = true
 		//
-		if bytes, ok := data[output.Name()]; ok {
-			outputs[output.Name()] = DecodeBytes(bytes, output)
+		if bits, ok := data[output.Name()]; !ok {
+			errs = append(errs, fmt.Errorf("missing output \"%s\"", output.Name()))
+		} else if !BitsAligned(bits, output) {
+			errs = append(errs, fmt.Errorf("output \"%s\" has an incomplete row", output.Name()))
 		} else {
-			errs = append(errs, fmt.Errorf("missing input/output \"%s\"", output.Name()))
+			outputs[output.Name()] = DecodeBits(bits, output)
 		}
 	}
 	// sanity check for extraneous inputs
@@ -359,10 +363,12 @@ func DecodeInputs[W Word[W], C Core[W]](m C, input map[string]bit.Array) (map[st
 		// Record visited information
 		visited[name] = true
 		//
-		if bytes, ok := input[name]; ok {
-			inputs[name] = DecodeBytes(bytes, *c.Descriptor())
-		} else {
+		if bytes, ok := input[name]; !ok {
 			errs = append(errs, fmt.Errorf("missing input \"%s\"", name))
+		} else if !BitsAligned(bytes, *c.Descriptor()) {
+			errs = append(errs, fmt.Errorf("input \"%s\" has an incomplete row", name))
+		} else {
+			inputs[name] = DecodeBits(bytes, *c.Descriptor())
 		}
 	}
 	// sanity check for extraneous inputs
@@ -387,7 +393,7 @@ func EncodeOutputs[W Word[W], M Core[W]](m M) map[string]bit.Array {
 			name   = output.Descriptor().Name()
 		)
 		//
-		outputs[name] = EncodeBytes(output.Contents(), *output.Descriptor())
+		outputs[name] = EncodeBits(output.Contents(), *output.Descriptor())
 	}
 	//
 	return outputs

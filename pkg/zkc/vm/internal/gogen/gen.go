@@ -509,7 +509,7 @@ func (g *generator) emitImports(c *code) {
 	deps := []string{}
 	if g.pkg == "main" {
 		deps = append(deps,
-			`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strings"`)
+			`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strconv"`, `"strings"`)
 	}
 
 	if g.usesBits {
@@ -520,11 +520,7 @@ func (g *generator) emitImports(c *code) {
 		deps = append(deps, `"slices"`)
 	}
 	// Optional generated helpers add their own imports. Package main already
-	// imports bufio/os/fmt/math/big for its harness, but never strconv.
-	if g.usesHelper(helperDbgU) {
-		deps = append(deps, `"strconv"`)
-	}
-
+	// imports bufio/os/fmt/math/big for its harness
 	if g.pkg != "main" {
 		if g.usesHelper(helperDbgWriter) {
 			deps = append(deps, `"bufio"`, `"os"`)
@@ -537,6 +533,10 @@ func (g *generator) emitImports(c *code) {
 		if g.usesHelper(helperDbgB) || g.usesHelper(helperU128) ||
 			g.usesHelper(helperCatU64) || g.usesHelper(helperWideInt) {
 			deps = append(deps, `"math/big"`)
+		}
+
+		if g.usesHelper(helperDbgU) {
+			deps = append(deps, `"strconv"`)
 		}
 	}
 
@@ -635,32 +635,75 @@ func (g *generator) emitMemHelpers(c *code) {
 const conversionHelpers = `// parseInput decodes an input memory's encoding: a hex string ("0x…", with "_"
 // separators allowed) or a decimal literal — the same encoding ParseJsonInputFile
 // accepts, so a file feeding "zkc exec" feeds this program unchanged.
-func parseInput(s string) []byte {
+func parseInput(s string) ([]byte, uint) {
 	s = strings.ReplaceAll(s, "_", "")
 	switch {
 	case strings.HasPrefix(s, "0x"):
-		b, err := hex.DecodeString(s[2:])
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "decode:", err)
-			os.Exit(2)
-		}
-		return b
+		return parseExtendedHexString(s[2:])
 	case s == "":
-		return nil
+		return nil, 0
 	default:
 		var v big.Int
 		if _, ok := v.SetString(s, 10); !ok {
-			fmt.Fprintln(os.Stderr, "malformed numeric literal:", s)
+			fmt.Fprintln(os.Stderr, "malformed numeric literal: ", s)
 			os.Exit(2)
 		}
-		return v.Bytes()
+		bytes := v.Bytes()
+		return bytes, uint(len(bytes)) * 8
 	}
 }
 
+// hexString renders nbits of data in the extended hex format (the inverse of
+// parseExtendedHexString).
+func hexString(data []byte, nbits uint) string {
+	if tail := nbits % 8; tail != 0 {
+		return fmt.Sprintf("0x%s~%d", hex.EncodeToString(data), tail)
+	}
+	return "0x" + hex.EncodeToString(data)
+}
+
+// parseExtendedHexString parses a hex in the extended format (i.e. where "~" is
+// used to indicated masked trailing bits).
+func parseExtendedHexString(s string) ([]byte, uint) {
+	var (
+		splits    = strings.Split(s, "~")
+		data, err = hex.DecodeString(splits[0])
+		nbits     = uint(len(data) * 8)
+	)
+	//
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(2)
+	} else if len(splits) > 2 {
+		fmt.Fprintln(os.Stderr, "malformed extended hex string: ", s)
+		os.Exit(2)
+	} else if len(splits) != 1 {
+		var mask uint64
+		// parse mask
+		if mask, err = strconv.ParseUint(splits[1], 10, 3); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(2)
+		} else if len(data) == 0 {
+			fmt.Fprintln(os.Stderr, "malformed extended hex string: ", s)
+			os.Exit(2)
+		} else if mask > 7 || mask == 0 {
+			fmt.Fprintln(os.Stderr, "malformed extended hex string (invalid mask): ", s)
+			os.Exit(2)
+		} else if rest := data[len(data)-1] << mask; rest != 0 {
+			fmt.Fprintln(os.Stderr, "malformed extended hex string (non-zero masked bits): ", s)
+			os.Exit(2)
+		}
+		//
+		nbits = nbits - 8 + uint(mask)
+	}
+	//
+	return data, nbits
+}
+
 // encodeBytes packs one value per data line into a tightly-packed big-endian
-// bit stream, cycling through the line widths; a mirror of the VM's EncodeBytes
+// bit stream, cycling through the line widths; a mirror of the VM's EncodeBits
 // and the inverse of decodeBytes.
-func encodeBytes(values []uint64, widths []uint) []byte {
+func encodeBytes(values []uint64, widths []uint) ([]byte, uint) {
 	var totalBits uint
 	for i := range values {
 		totalBits += widths[i%len(widths)]
@@ -676,7 +719,7 @@ func encodeBytes(values []uint64, widths []uint) []byte {
 		}
 		off += w
 	}
-	return out
+	return out, totalBits
 }
 `
 
@@ -685,9 +728,9 @@ func encodeBytes(values []uint64, widths []uint) []byte {
 // preallocates the output (the cell count is known from the byte length and the
 // round width), so it does not grow-and-copy while decoding.
 const genericDecodeBytes = `// decodeBytes unpacks a tightly-packed big-endian bit stream into one value per
-// data line, cycling through the line widths; a mirror of the VM's DecodeBytes
+// data line, cycling through the line widths; a mirror of the VM's DecodeBits
 // and the inverse of encodeBytes.
-func decodeBytes(data []byte, widths []uint) []uint64 {
+func decodeBytes(data []byte, total uint, widths []uint) []uint64 {
 	var round uint
 	for _, w := range widths {
 		round += w
@@ -695,9 +738,12 @@ func decodeBytes(data []byte, widths []uint) []uint64 {
 	if round == 0 {
 		return nil
 	}
-	total := uint(len(data)) * 8
+	if total%round != 0 {
+		fmt.Fprintln(os.Stderr, "decode: partial row")
+		os.Exit(2)
+	}
 	out := make([]uint64, 0, int(total/round)*len(widths))
-	for off := uint(0); total-off >= round; {
+	for off := uint(0); off < total; {
 		for _, w := range widths {
 			var v uint64
 			for i := uint(0); i < w; i++ {
@@ -716,7 +762,11 @@ func decodeBytes(data []byte, widths []uint) []uint64 {
 // cell per input byte.  This is the common case (byte-oriented input), and the
 // direct byte widen avoids the generic decoder's per-bit inner loop.
 const decodeU8Helper = `// decodeU8 unpacks a single-u8-line byte blob into one cell per input byte.
-func decodeU8(data []byte) []uint64 {
+func decodeU8(data []byte, nbits uint) []uint64 {
+	if nbits%8 != 0 {
+		fmt.Fprintln(os.Stderr, "decode: partial row")
+		os.Exit(2)
+	}
 	out := make([]uint64, len(data))
 	for i, b := range data {
 		out[i] = uint64(b)
@@ -777,11 +827,12 @@ func (g *generator) emitMainHarness(c *code) {
 		c.linef(`fmt.Fprintf(os.Stderr, "decode: missing input %%q\n", %q)`, m.name)
 		c.line("os.Exit(2)")
 		c.line("}")
-
+		c.line("data, nbits := parseInput(rawInput)")
+		//
 		if isSingleU8(m.dataWidths) {
-			c.linef("in[%q] = decodeU8(parseInput(rawInput))", m.name)
+			c.linef("in[%q] = decodeU8(data, nbits)", m.name)
 		} else {
-			c.linef("in[%q] = decodeBytes(parseInput(rawInput), %s)", m.name, widthsLiteral(m.dataWidths))
+			c.linef("in[%q] = decodeBytes(data, nbits, %s)", m.name, widthsLiteral(m.dataWidths))
 		}
 
 		c.linef("delete(raw, %q)", m.name)
@@ -811,8 +862,7 @@ func (g *generator) emitMainHarness(c *code) {
 	c.line("enc := map[string]string{}")
 
 	for _, m := range g.outputs {
-		c.linef(`enc[%q] = "0x" + hex.EncodeToString(encodeBytes(out[%q], %s))`,
-			m.name, m.name, widthsLiteral(m.dataWidths))
+		c.linef(`enc[%q] = hexString(encodeBytes(out[%q], %s))`, m.name, m.name, widthsLiteral(m.dataWidths))
 	}
 
 	c.line("if err := json.NewEncoder(os.Stdout).Encode(enc); err != nil {")

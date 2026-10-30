@@ -67,6 +67,25 @@ type Array struct {
 	size uint
 }
 
+// ArrayFromBytes constructs a bit array from a given byte slice, such that
+// every bit of every byte is included in the resulting array.
+func ArrayFromBytes(bytes ...byte) Array {
+	// NOTE: the ordering actually doesn't matter here since all bits are
+	// included in the resulting array.
+	return NewArray(bytes, uint(len(bytes))*8, BigEndian)
+}
+
+// ZeroArray constructs an array holding a given number of (zeroed) bits.
+// Observe that this construct guarantees the result of Bytes() is not nil.
+func ZeroArray(nbits uint) Array {
+	var (
+		// Determine how many bytes required
+		nbytes = BytesRequiredFor(nbits)
+	)
+	//
+	return Array{make([]byte, nbytes), nbits}
+}
+
 // NewArray constructs a new array containing the first n bits from a given
 // slice of bytes.  Observe that this does not clone the slice in question and,
 // hence, operations on this array may mutate the slice.
@@ -97,7 +116,7 @@ func NewArray(bytes []byte, nbits uint, order Order) Array {
 // this array (assuming a BigEndian ordering), or returns an error.
 func ParseArray(text string) (Array, error) {
 	var (
-		splits    = strings.Split(text, ":")
+		splits    = strings.Split(text, "~")
 		data, err = hex.DecodeString(splits[0])
 		nbits     = uint(len(data) * 8)
 	)
@@ -105,18 +124,18 @@ func ParseArray(text string) (Array, error) {
 	if err != nil {
 		return Array{}, err
 	} else if len(splits) > 2 {
-		return Array{}, fmt.Errorf("malformed (extended) hex string: \"%s\"", text)
+		return Array{}, fmt.Errorf("malformed extended hex string: \"%s\"", text)
 	} else if len(splits) != 1 {
 		var mask uint64
 		// parse mask
 		if mask, err = strconv.ParseUint(splits[1], 10, 3); err != nil {
 			return Array{}, err
 		} else if len(data) == 0 {
-			return Array{}, fmt.Errorf("malformed (extended) hex string: \"%s\"", text)
+			return Array{}, fmt.Errorf("malformed extended hex string: \"%s\"", text)
 		} else if mask > 7 || mask == 0 {
-			return Array{}, fmt.Errorf("malformed (extended) hex string: \"%s\"", text)
+			return Array{}, fmt.Errorf("malformed extended hex string (invalid mask): \"%s\"", text)
 		} else if rest := data[len(data)-1] << mask; rest != 0 {
-			return Array{}, fmt.Errorf("malformed (extended) hex string: \"%s\"", text)
+			return Array{}, fmt.Errorf("malformed extended hex string (non-zero masked bits): \"%s\"", text)
 		}
 		//
 		nbits = nbits - 8 + uint(mask)
@@ -125,11 +144,12 @@ func ParseArray(text string) (Array, error) {
 	return Array{data, nbits}, nil
 }
 
-// Append the first n bits of data from the given slice into this array at the
-// given offset assuming a given bit ordering, whilst expanding this array as
-// required.
-func (p *Array) Append(offset uint, buf []byte, nbits uint, order Order) {
+// Append the first n bits of data from the given slice onto the end of this
+// array (i.e. starting at bit offset Len()) assuming a given bit ordering,
+// whilst expanding this array as required.
+func (p *Array) Append(buf []byte, nbits uint, order Order) {
 	var (
+		offset = p.size
 		// Determine how many bytes are required in total
 		totalBytes = BytesRequiredFor(p.size + nbits)
 		// Determine how many additional bytes required
@@ -144,25 +164,32 @@ func (p *Array) Append(offset uint, buf []byte, nbits uint, order Order) {
 }
 
 // Bytes returns a slice to the internal bytes making up this this array.
-func (p *Array) Bytes() []byte {
+// Observe that this can return nil if this array was constructed with a nil
+// slice.
+func (p Array) Bytes() []byte {
 	return p.data
 }
 
 // Equals checks whether this array matches another array identically.
-func (p *Array) Equals(o Array) bool {
+func (p Array) Equals(o Array) bool {
 	return p.size == o.size && bytes.Equal(p.data, o.data)
+}
+
+// Len returns the number of bits held in this array.
+func (p Array) Len() uint {
+	return p.size
 }
 
 // String returns an extended hex string representation of this array
 // (excluding "0x") assuming a BigEndian ordering.
-func (p *Array) String() string {
+func (p Array) String() string {
 	var (
 		tail = p.size % 8
 		hex  = hex.EncodeToString(p.data)
 	)
 	//
 	if tail != 0 {
-		return fmt.Sprintf("%s:%d", hex, tail)
+		return fmt.Sprintf("%s~%d", hex, tail)
 	}
 	//
 	return hex
@@ -170,7 +197,7 @@ func (p *Array) String() string {
 
 // Read n bits of data into the given slice from this array starting at the
 // given offset, assuming a given bit ordering.
-func (p *Array) Read(offset uint, buf []byte, nbits uint, order Order) {
+func (p Array) Read(offset uint, buf []byte, nbits uint, order Order) {
 	if order {
 		BigEndianCopy(p.data, offset, buf, 0, nbits)
 	} else {
@@ -180,7 +207,7 @@ func (p *Array) Read(offset uint, buf []byte, nbits uint, order Order) {
 
 // Write the first n bits of data from the given slice into this array starting
 // at the given offset, assuming a given bit ordering.
-func (p *Array) Write(offset uint, buf []byte, nbits uint, order Order) {
+func (p Array) Write(offset uint, buf []byte, nbits uint, order Order) {
 	util.Assert(offset+nbits <= p.size, "write out-of-bounds")
 	//
 	if order {
@@ -208,7 +235,7 @@ func (p *Array) Write(offset uint, buf []byte, nbits uint, order Order) {
 //
 // NOTE: the array parsed into the decoder function is reused across different
 // elements and, hence, the decoder function should clone it if necessary.
-func (p *Array) Decode[T any](offset, bitwidth uint, order Order, decoder func([]byte) T) ([]T, uint) {
+func (p Array) Decode[T any](offset, bitwidth uint, order Order, decoder func([]byte) T) ([]T, uint) {
 	var (
 		// Calculate size of final array
 		nelems = (p.size - offset) / bitwidth

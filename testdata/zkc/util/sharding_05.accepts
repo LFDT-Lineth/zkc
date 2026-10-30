@@ -1,4 +1,4 @@
-{ "data": "0x1a", "out": "0xa0:4" }
+{ "data": "0x1a", "out": "0xa0~4" }
 { "data": "0x2ab0", "out": "0xab" }
-{ "data": "0x3abc", "out": "0xabc0:4" }
+{ "data": "0x3abc", "out": "0xabc0~4" }
 { "data": "0x4abcd0", "out": "0xabcd" }

@@ -192,7 +192,7 @@ func replicateOutputs(cp CheckPoint, outputs [][]byte) {
 
 // indexOutputs converts the (byte-encoded) outputs produced by EncodeOutputs
 // into checkpoint page format, indexed by module identifier.  The two encodings
-// differ: EncodeBytes packs cells tightly by bitwidth, whereas checkpoint pages
+// differ: EncodeBits packs cells tightly by bitwidth, whereas checkpoint pages
 // (see WriteOnce.Checkpoint / Pack) use a whole number of bytes per cell.
 // Hence, the outputs are decoded back into words and repacked.
 func indexOutputs[W word.Word[W]](p Program[W], outputs map[string]bit.Array) [][]byte {
@@ -201,7 +201,7 @@ func indexOutputs[W word.Word[W]](p Program[W], outputs map[string]bit.Array) []
 	for mid, m := range p.Modules() {
 		if m, ok := m.(*descriptor.Memory[W]); ok && m.IsWriteOnly() {
 			if bytes, ok := outputs[m.Name()]; ok {
-				words := DecodeBytes(bytes, *m)
+				words := DecodeBits(bytes, *m)
 				indexed[mid] = interpreter.Pack(p.Field(), m.DataRegisters(), words)
 			}
 		}
