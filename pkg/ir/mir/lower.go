@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	air_gadgets "github.com/LFDT-Lineth/zkc/pkg/ir/air/gadgets"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
@@ -150,19 +151,19 @@ func (p *AirLowering[F]) LowerModule(index uint) {
 
 // Lower a constant register.
 func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.Id, module air.ModuleBuilder[F]) {
-	// var (
-	// 	reg = module.Register(rid)
-	// 	val = reg.ConstValue()
-	// )
-	// // Add assignment for filling said computed column
-	// module.AddAssignment(
-	// 	assignment.NewComputedRegister[F](rid, term.Const[F, Term[F]](val), mid))
-	// // add constraint
-	// module.AddConstraint(
-	// 	air.NewVanishingConstraint(val.String(), mid, util.None[int](),
-	// 		orientedSubtract(
-	// 			term.NewRegisterAccess[F, air.Term[F]](rid, reg.Width(), 0),
-	// 			term.Const[F, air.Term[F]](reg.Constant()), module)))
+	var (
+		reg = module.Register(rid)
+		val = reg.Constant()
+	)
+	// Add assignment for filling said computed column
+	module.AddAssignment(
+		assignment.NewComputedRegister(rid, term.Const[F, Term[F]](val), mid))
+	// add constraint
+	module.AddConstraint(
+		air.NewVanishingConstraint(val.String(), mid, util.None[int](),
+			orientedSubtract(
+				term.NewRegisterAccess[F, air.Term[F]](rid, reg.Width(), 0),
+				term.Const[F, air.Term[F]](reg.Constant()), module)))
 }
 
 // Lower a constraint to the AIR level.

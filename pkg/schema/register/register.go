@@ -79,6 +79,13 @@ func NewComputed[F field.Element[F]](name string, bitwidth uint) Register[F] {
 	return Register[F]{COMPUTED_REGISTER, name, bitwidth, padding}
 }
 
+// NewConstant constructs a new constant register with the given name, bitwidth
+// and constant value.  NOTE: this will panic if the constant value does not fit
+// within the specified bitwidth.
+func NewConstant[F field.Element[F]](name string, bitwidth uint, constant F) Register[F] {
+	return Register[F]{CONSTANT_REGISTER, name, bitwidth, constant}
+}
+
 // Bound returns the first value which cannot be represented by the given
 // bitwidth.  For example, the bound of an 8bit register is 256.
 func (p *Register[F]) Bound() *big.Int {
