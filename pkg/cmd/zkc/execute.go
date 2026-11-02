@@ -36,6 +36,7 @@ var executeCmd = &cobra.Command{
 	Short:   "Execute a zkc program.",
 	Long:    `Execute a zkc program to produce a set of outputs a from given a set of inputs.`,
 	Aliases: []string{"exec"},
+	Args:    cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		runFieldAgnosticCmd(cmd, args, executeCmds)
 	},
