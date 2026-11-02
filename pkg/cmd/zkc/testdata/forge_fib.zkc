@@ -1,0 +1,16 @@
+pub input in(addr:u1) -> (n:u8) // ROM 
+pub output out(addr:u1) -> (f:u32) // WOM
+
+fn main() {
+    var n:u8 = in[0]
+    fib!(n, 0, 1)
+}
+
+#[global]
+fn fib(n:u8, a:u32, b:u32) -> ! {
+  if n == 0 {
+    out[0] = a
+    done 
+  }
+  fib!(n-1, b, a+b)
+}
