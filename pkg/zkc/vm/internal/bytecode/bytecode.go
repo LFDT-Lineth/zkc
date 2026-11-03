@@ -578,8 +578,8 @@ func IsUnusedConstant[W word.Word[W]](op Operation, constant W) bool {
 	}
 }
 
-// IsSubstractOperation checks whether a given operation is a subtraction operation.
-func IsSubstractOperation(op Operation) bool {
+// IsSubtractOperation checks whether a given operation is a subtraction operation.
+func IsSubtractOperation(op Operation) bool {
 	return op == OP_SUB || op == OP_CSUB
 }
 
