@@ -39,8 +39,6 @@ type Register struct {
 	Kind uint8
 	// Determines value used for padding
 	Padding util.Option[big.Int]
-	// Display modifier
-	Display string
 	// Cached name
 	cached_name *string
 }

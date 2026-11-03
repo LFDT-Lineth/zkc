@@ -59,8 +59,6 @@ type ColumnBinding struct {
 	Kind uint8
 	// Padding value (defaults to 0)
 	Padding util.Option[big.Int]
-	// Display modifier
-	Display string
 }
 
 // AbsolutePath returns the fully resolved (absolute) path of the column in question.

@@ -21,7 +21,6 @@ import (
 
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
-	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
@@ -64,9 +63,10 @@ var traceCmds = []FieldAgnosticCmd{
 
 func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	var (
-		traces []tr.Trace[F]
-		cfg    TraceConfig[F]
-		err    error
+		traces    []tr.Trace[F]
+		cfg       TraceConfig[F]
+		tp_errors []error
+		err       error
 	)
 	// Configure log level
 	if GetFlag(cmd, "verbose") {
@@ -97,11 +97,6 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	stacker := *getSchemaStack[F](cmd, SCHEMA_OPTIONAL, args[1:]...)
 	stack := stacker.Build()
 	builder := stack.TraceBuilder().WithPadding(padding)
-	//
-	if stacker.HasSchema() {
-		// Extract debug information (if available)
-		cfg.sourceMap, _ = stacker.SourceMap()
-	}
 	// Parse trace file(s)
 	if batched {
 		// batched mode
@@ -114,25 +109,12 @@ func runTraceCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	if builder.Expanding() && !stack.HasConcreteSchema() {
 		fmt.Println("must specify one of --mir/air")
 		os.Exit(2)
-	} else if builder.Expanding() {
-		var tp_errors []error
-		// Expand all the traces
+	} else if builder.Expanding() || stack.HasConcreteSchema() {
+		// Expand / align traces when schema available
 		traces, tp_errors = expandTraces(traces, stack, builder)
-		// Print trace info
-		for _, tf := range traces {
-			printTraceInfo(cfg, stack, tf)
-		}
-		// Report any propagation errors
-		for _, err := range tp_errors {
-			log.Errorln(err)
-		}
-	} else {
-		// Use raw trace
-		for _, tf := range traces {
-			// Print what we have
-			printTraceInfo(cfg, stack, tf)
-		}
 	}
+	//
+	printTracesInfo(cfg, stack, traces, tp_errors...)
 	// Write out results (if requested)
 	if output != "" {
 		writeBatchedTracesFile(output, traces...)
@@ -158,7 +140,6 @@ func init() {
 // TraceConfig packages together useful things for the various supported
 // options.
 type TraceConfig[F field.Element[F]] struct {
-	sourceMap    *corset.SourceMap
 	maxCellWidth uint
 	//nolint
 	maxTitleWidth uint
@@ -203,23 +184,26 @@ func expandTraces[F field.Element[F]](traceFiles []tr.Trace[F], stack cmd_util.S
 	return traces, errors
 }
 
+func printTracesInfo[F field.Element[F]](cfg TraceConfig[F], stack cmd_util.SchemaStack[F], traces []tr.Trace[F],
+	errors ...error) {
+	// Print trace info
+	for _, tf := range traces {
+		printTraceInfo(cfg, stack, tf)
+	}
+	// Report any propagation errors
+	for _, err := range errors {
+		log.Errorln(err)
+	}
+}
+
 func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], stack cmd_util.SchemaStack[F], trace tr.Trace[F]) {
 	for i, shard := range trace {
 		//
-		if len(trace) > 0 {
-			fmt.Println()
-			fmt.Printf("Shard #%d\n", i)
-			fmt.Println(strings.Repeat("-", int(80)))
-		}
 		// Construct trace window
 		view := view.NewBuilder[F]().
 			WithCellWidth(cfg.maxCellWidth).
 			WithTitleWidth(cfg.maxTitleWidth).
 			WithComputed(cfg.showComputed)
-		// Add source map (if applicable)
-		if cfg.sourceMap != nil {
-			view = view.WithSourceMap(*cfg.sourceMap)
-		}
 		// Add schema (if applicable)
 		if stack.HasConcreteSchema() {
 			view = view.WithSchema(stack.ConcreteSchema())
@@ -230,6 +214,12 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], stack cmd_util.Schem
 		window = window.Filter(constructTraceFilter(cfg, shard))
 		// Print full trace (if requested)
 		if cfg.trace {
+			if len(trace) > 0 {
+				fmt.Println()
+				fmt.Printf("Shard #%d\n", i)
+				fmt.Println(strings.Repeat("-", int(80)))
+			}
+			//
 			printTrace(window)
 		}
 	}

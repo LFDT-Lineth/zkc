@@ -339,7 +339,6 @@ func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, compu
 			Kind:          ast.UNSPECIFIED,
 			MustProve:     p.config.EnforceTypes,
 			Padding:       util.None[big.Int](),
-			Display:       "hex",
 		}
 	)
 	// Update computed status
@@ -396,25 +395,6 @@ func (p *Parser) parseColumnDeclarationAttributes(node sexp.SExp, binding ast.Co
 		}
 		//
 		switch symbol.Value {
-		case ":display":
-			// skip these for now, as they are only relevant to the inspector.
-			if i+1 == len(attrs) {
-				return binding, p.translator.SyntaxError(ith, "incomplete display definition")
-			} else if attrs[i+1].AsSymbol() == nil {
-				return binding, p.translator.SyntaxError(ith, "malformed display definition")
-			}
-			//
-			binding.Display = attrs[i+1].AsSymbol().String(false)
-			// Check what display attribute we have
-			switch binding.Display {
-			case ":dec", ":hex", ":bytes", ":opcode":
-				binding.Display = binding.Display[1:]
-				// all good
-				i = i + 1
-			default:
-				// not good
-				return binding, p.translator.SyntaxError(ith, "unknown display definition")
-			}
 		case ":input":
 			{
 				if binding.Kind != ast.UNSPECIFIED {
@@ -489,29 +469,6 @@ func (p *Parser) parsePaddingValue(s sexp.SExp) (util.Option[big.Int], *SyntaxEr
 	}
 	//
 	return util.Some(padding), nil
-}
-
-func (p *Parser) parseArrayDimension(s sexp.SExp) (uint, uint, *SyntaxError) {
-	dim := s.AsArray()
-	//
-	if dim == nil || dim.Get(0).AsSymbol() == nil || dim.Len() != 1 {
-		return 0, 0, p.translator.SyntaxError(s, "invalid array dimension")
-	} else {
-		// Check for interval dimensions
-		split := strings.Split(dim.Get(0).AsSymbol().Value, ":")
-		//
-		if len(split) == 0 || len(split) > 2 {
-			return 0, 0, p.translator.SyntaxError(s, "invalid array dimension")
-		} else if m, ok_m := strconv.Atoi(split[0]); len(split) == 1 && m >= 0 && ok_m == nil {
-			return uint(1), uint(m), nil
-		} else if ok_m != nil || m < 0 {
-			//unlikely scenarios
-		} else if n, ok_n := strconv.Atoi(split[1]); len(split) == 2 && n >= 0 && ok_n == nil {
-			return uint(m), uint(n), nil
-		}
-	}
-	//
-	return 0, 0, p.translator.SyntaxError(s, "invalid array dimension")
 }
 
 // Parse a constant declaration

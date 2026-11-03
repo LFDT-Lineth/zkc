@@ -16,6 +16,7 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
 
@@ -48,15 +49,8 @@ func (p *inspectorFormatter) RowTitle(col view.SourceColumnId, text string) term
 
 // Cell implementation for ModuleFormatting interface
 func (p *inspectorFormatter) Cell(col view.SourceColumn, row uint, text string) termio.FormattedText {
-	// Check whether a given column is "active" in a given row.  Columns which
-	// are in perspectives are considered active only when their selectors are
-	// enabled.
-	if p.module.IsActive(col, row) {
-		val := p.module.DataOf(col.Register).Get(row)
-		return termio.NewFormattedText(text, cellColour(val))
-	}
-	//
-	return termio.NewColouredText(text, termio.TERM_BLACK)
+	val := p.module.DataOf(col.Register).Get(row)
+	return termio.NewFormattedText(text, cellColour(val))
 }
 
 // Module implementation for TraceFormatting interface
@@ -71,12 +65,16 @@ func (p *inspectorFormatter) Module(mod view.ModuleData) view.ModuleFormatting {
 // This algorithm is based on that used in the original tool.  To understand
 // this algorithm, you need to look at the 256 colour table for ANSI escape
 // codes.  It actually does make sense, even if it doesn't appear to.
-func cellColour(val big.Int) termio.AnsiEscape {
+func cellColour(maybe util.Option[big.Int]) termio.AnsiEscape {
+	var (
+		val = maybe.UnwrapOr(*biZero)
+		col = uint(0)
+	)
+	//
 	if val.Cmp(biZero) == 0 {
 		return termio.NewAnsiEscape().FgColour(termio.TERM_WHITE)
 	}
 	// Compute a simple hash of the bytes making up the value in question.
-	col := uint(0)
 	for _, b := range val.Bytes() {
 		col = col ^ uint(b)
 	}

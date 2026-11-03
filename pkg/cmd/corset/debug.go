@@ -17,7 +17,6 @@ import (
 	"os"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
-	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/bls12_377"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -61,34 +60,17 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 		log.SetLevel(log.DebugLevel)
 	}
 
-	srcmapOnly := GetFlag(cmd, "source-map")
 	showStatic := GetFlag(cmd, "show-static")
 	textWidth := GetUint(cmd, "textwidth")
 	// Read in constraint files
 	stacker := *getSchemaStack[F](cmd, SCHEMA_DEFAULT_MIR, args...)
 	stack := stacker.Build()
 	// Print source map (if requested)
-	if srcmapOnly {
-		printSourceMap(&stack)
-	} else {
-		debug.PrintSchemas(stack, textWidth, showStatic)
-	}
+	debug.PrintSchemas(stack, textWidth, showStatic)
 }
 
 func init() {
 	rootCmd.AddCommand(debugCmd)
-	debugCmd.Flags().Bool("source-map", false, "Print source map information")
 	debugCmd.Flags().Bool("show-static", false, "Show static tables when printing schemas")
 	debugCmd.Flags().Uint("textwidth", 130, "Set maximum textwidth to use")
-}
-
-func printSourceMap[F field.Element[F]](stack *cmd_util.SchemaStack[F]) {
-	srcmap, ok := stack.SourceMap()
-	// Sanity check debug information is available.
-	if !ok {
-		fmt.Println("constraints missing source map")
-		os.Exit(1)
-	}
-	//
-	debug.PrintSourceMap(srcmap)
 }

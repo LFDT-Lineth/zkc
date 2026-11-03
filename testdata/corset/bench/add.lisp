@@ -4,7 +4,7 @@
   (STAMP :i32)
   (CT_MAX :byte)
   (CT :byte)
-  (INST :byte :display :opcode)
+  (INST :byte)
   (ARG_1_HI :i128)
   (ARG_1_LO :i128)
   (ARG_2_HI :i128)

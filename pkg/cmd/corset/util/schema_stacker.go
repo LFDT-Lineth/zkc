@@ -57,9 +57,6 @@ type SchemaStacker[F field.Element[F]] struct {
 	// Schema represents the top of this stack, as compiled for the target
 	// field.
 	schema util.Option[mir.Schema[F]]
-	// Source map for the schema above, which maps registers and constraints
-	// back to their original source-level declarations.
-	sourceMap util.Option[corset.SourceMap]
 	// Field config
 	field field.Config
 }
@@ -115,18 +112,6 @@ func (p SchemaStacker[F]) HasSchema() bool {
 	return p.schema.HasValue()
 }
 
-// SourceMap returns the source map for the schema representing the top of this
-// stack, along with an indication of whether one is available.
-func (p SchemaStacker[F]) SourceMap() (*corset.SourceMap, bool) {
-	if !p.sourceMap.HasValue() {
-		return nil, false
-	}
-	//
-	srcmap := p.sourceMap.Unwrap()
-	//
-	return &srcmap, true
-}
-
 // Field returns the field configuration used within this schema stack.
 func (p SchemaStacker[F]) Field() field.Config {
 	return p.field
@@ -134,9 +119,8 @@ func (p SchemaStacker[F]) Field() field.Config {
 
 // Read reads one or more constraints files into this stack.
 func (p SchemaStacker[F]) Read(filenames ...string) SchemaStacker[F] {
-	schema, srcmap := CompileSourceFiles[F](p.corsetConfig, filenames)
+	schema := CompileSourceFiles[F](p.corsetConfig, filenames)
 	p.schema = util.Some(schema)
-	p.sourceMap = util.Some(srcmap)
 	//
 	return p
 }
@@ -175,8 +159,6 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 			stack.concreteSchemas = append(stack.concreteSchemas, airSchema)
 			stack.names = append(stack.names, "AIR")
 		}
-		// Assign source map used to build the stack
-		stack.sourceMap = p.sourceMap
 	}
 	//
 	return stack
@@ -190,12 +172,11 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 // you want to compile with the standard library.  However, some internal tests
 // are run without including the standard library to minimise the surface area.
 func CompileSourceFiles[F field.Element[F]](config corset.CompilationConfig, filenames []string,
-) (mir.Schema[F], corset.SourceMap) {
+) mir.Schema[F] {
 	//
 	var (
 		err      error
 		errors   []source.SyntaxError
-		srcmap   corset.SourceMap
 		srcfiles []source.File
 		schema   mir.Schema[F]
 	)
@@ -225,10 +206,10 @@ func CompileSourceFiles[F field.Element[F]](config corset.CompilationConfig, fil
 		srcfiles[i] = *source.NewSourceFile(n, bytes)
 	}
 	// Parse and compile source files
-	schema, srcmap, errors = corset.CompileSourceFiles[F](config, srcfiles)
+	schema, errors = corset.CompileSourceFiles[F](config, srcfiles)
 	// Check for any errors
 	if len(errors) == 0 {
-		return schema, srcmap
+		return schema
 	}
 	// Report errors
 	for _, err := range errors {
@@ -237,7 +218,7 @@ func CompileSourceFiles[F field.Element[F]](config corset.CompilationConfig, fil
 	// Fail
 	os.Exit(4)
 	// unreachable
-	return schema, srcmap
+	return schema
 }
 
 // Look through the list of filenames and identify any which are directories.

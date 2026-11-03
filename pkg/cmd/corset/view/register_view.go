@@ -17,12 +17,13 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // RegisterView provides an abstract view of a given column.
 type RegisterView interface {
-	Get(uint) big.Int
+	Get(uint) util.Option[big.Int]
 	Len() uint
 }
 
@@ -31,15 +32,20 @@ type registerView[F field.Element[F]] struct {
 	regId register.Id
 }
 
-func (p *registerView[F]) Get(row uint) big.Int {
+func (p *registerView[F]) Get(row uint) util.Option[big.Int] {
 	var (
 		data = p.trace.Column(p.regId.Unwrap())
 		val  big.Int
 	)
-	// Construct value from field element
-	val.SetBytes(data.Get(row).Bytes())
+	// Sanity check something is there
+	if data != nil {
+		// Construct value from field element
+		val.SetBytes(data.Get(row).Bytes())
+		//
+		return util.Some(val)
+	}
 	//
-	return val
+	return util.None[big.Int]()
 }
 
 func (p *registerView[F]) Len() uint {

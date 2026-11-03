@@ -390,7 +390,6 @@ func (p *ModuleScope) destructureAtomicColumn(column *ast.ColumnBinding, ctx fil
 		column.MustProve,
 		column.Kind,
 		column.Padding,
-		column.Display,
 		nil}
 	//
 	return []Register{source}

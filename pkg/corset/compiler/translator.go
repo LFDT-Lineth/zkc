@@ -771,8 +771,7 @@ func (t *translator[F]) translateLogicalShift(expr *ast.Shift, mod mir.ModuleBui
 
 // Determine the underlying register for a symbol which represents a register access.
 func (t *translator[F]) registerOfRegisterAccess(symbol ast.Symbol, shift int) (*mir.RegisterAccess[F], []SyntaxError) {
-	switch e := symbol.(type) {
-	case *ast.VariableAccess:
+	if e, ok := symbol.(*ast.VariableAccess); ok {
 		return t.registerOfVariableAccess(e, shift)
 	}
 	//
