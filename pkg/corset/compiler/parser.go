@@ -186,7 +186,6 @@ func NewParser(srcfile source.File, srcmap *source.Map[sexp.SExp], config Config
 	p.AddListRule("if", ifParserRule(parser))
 	p.AddRecursiveListRule("shift", shiftParserRule)
 	p.AddDefaultListRule(unknownExpressionParserRule(parser))
-	p.AddDefaultRecursiveArrayRule(arrayAccessParserRule)
 	//
 	return parser
 }
@@ -386,11 +385,7 @@ func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, compu
 func (p *Parser) parseColumnDeclarationAttributes(node sexp.SExp, binding ast.ColumnBinding,
 	attrs []sexp.SExp) (ast.ColumnBinding, *SyntaxError) {
 	//
-	var (
-		array_min uint
-		array_max uint
-		err       *SyntaxError
-	)
+	var err *SyntaxError
 
 	for i := 0; i < len(attrs); i++ {
 		ith := attrs[i]
@@ -420,14 +415,6 @@ func (p *Parser) parseColumnDeclarationAttributes(node sexp.SExp, binding ast.Co
 				// not good
 				return binding, p.translator.SyntaxError(ith, "unknown display definition")
 			}
-		case ":array":
-			if i+1 == len(attrs) {
-				return binding, p.translator.SyntaxError(ith, "missing array dimension")
-			} else if array_min, array_max, err = p.parseArrayDimension(attrs[i+1]); err != nil {
-				return binding, err
-			}
-			// skip dimension
-			i++
 		case ":input":
 			{
 				if binding.Kind != ast.UNSPECIFIED {
@@ -479,8 +466,6 @@ func (p *Parser) parseColumnDeclarationAttributes(node sexp.SExp, binding ast.Co
 	// Done
 	if binding.DataType == nil {
 		return binding, p.translator.SyntaxError(node, "column is untyped")
-	} else if array_max != 0 {
-		binding.DataType = ast.NewArrayType(binding.DataType, array_min, array_max)
 	}
 	// Success!
 	return binding, nil
@@ -1121,20 +1106,6 @@ func varAccessParserRule(col string) (ast.Expr, bool, error) {
 	}
 	//
 	return ast.NewVariableAccess(path, nil), true, nil
-}
-
-func arrayAccessParserRule(name string, args []ast.Expr) (ast.Expr, error) {
-	if len(args) != 1 {
-		return nil, errors.New("malformed array access")
-	}
-	// Handle qualified accesses (where permitted)
-	// Attempt to split column name into module / column pair.
-	path, err := parseQualifiableName(name)
-	if err != nil {
-		return nil, err
-	}
-	//
-	return &ast.ArrayAccess{Name: path, Arg: args[0], ArrayBinding: nil}, nil
 }
 
 func addParserRule(_ string, args []ast.Expr) (ast.Expr, error) {

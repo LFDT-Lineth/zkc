@@ -374,27 +374,9 @@ func (p *ModuleScope) destructureColumn(column *ast.ColumnBinding, ctx file.Path
 	// Check for base base
 	if int_t, ok := datatype.(*ast.IntType); ok {
 		return p.destructureAtomicColumn(column, ctx, path, int_t.BitWidth())
-	} else if arraytype, ok := datatype.(*ast.ArrayType); ok {
-		// For now, assume must be an array
-		return p.destructureArrayColumn(column, ctx, path, arraytype)
 	} else {
 		panic(fmt.Sprintf("unknown type encountered: %v", datatype))
 	}
-}
-
-// Allocate an array type
-func (p *ModuleScope) destructureArrayColumn(col *ast.ColumnBinding, ctx file.Path, path file.Path,
-	arrtype *ast.ArrayType) []Register {
-	//
-	var sources []Register
-	// Allocate n columns
-	for i := arrtype.MinIndex(); i <= arrtype.MaxIndex(); i++ {
-		ith_name := fmt.Sprintf("%s_%d", path.Tail(), i)
-		ith_path := path.Parent().Extend(ith_name)
-		sources = append(sources, p.destructureColumn(col, ctx, *ith_path, arrtype.Element())...)
-	}
-	//
-	return sources
 }
 
 // Destructure atomic column

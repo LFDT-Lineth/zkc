@@ -4,22 +4,24 @@
     (X :i8@prove)
     (Y :i8@prove)
     ;; Bytes
-    (XS :i4@prove :array [2])
-    (YS :i4@prove :array [2])
+    (XS_1 :i4@prove)
+    (XS_2 :i4@prove)
+    (YS_1 :i4@prove)
+    (YS_2 :i4@prove)
     ;; Carry flag
     (CARRY :binary@prove))
 
 ;; Byte decompositions
 (defconstraint decompositions-x ()
-   (== X (+ (* 16 [XS 2]) [XS 1])))
+   (== X (+ (* 16 XS_2) XS_1)))
 
 (defconstraint decompositions-y ()
-   (== Y (+ (* 16 [YS 2]) [YS 1])))
+   (== Y (+ (* 16 YS_2) YS_1)))
 
 ;; Constraint on lower half
 (defconstraint low4 (:guard ST)
-  (== (+ (* 16 CARRY) (- [XS 1] [YS 1] 1)) 0))
+  (== (+ (* 16 CARRY) (- XS_1 YS_1 1)) 0))
 
 ;; Constraint on upper half
 (defconstraint high4 (:guard ST)
-  (== (- [XS 2] [YS 2] CARRY) 0))
+  (== (- XS_2 YS_2 CARRY) 0))
