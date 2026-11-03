@@ -1061,16 +1061,12 @@ func (p *Parser) parseType(term sexp.SExp) (ast.Type, bool, *SyntaxError) {
 	var datatype ast.Type
 	// See what we've got.
 	switch parts[0] {
-	case ":bool":
-		datatype = ast.BOOL_TYPE
 	case ":binary":
 		datatype = ast.NewUintType(1)
 	case ":byte":
 		datatype = ast.NewUintType(8)
 	case ":int":
 		datatype = ast.UINT_TYPE
-	case ":any":
-		datatype = ast.ANY_TYPE
 	default:
 		// Handle generic types like i16, i128, etc.
 		str := parts[0]
