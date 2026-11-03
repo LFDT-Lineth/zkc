@@ -6,10 +6,11 @@ fn main() {
     // Empty body. FactorSkipConditions must not wrap this.
     if cond != 0 {
     }
+    if cond == 0 {
+    }
 
     // Return. FactorSkipConditions must not wrap this.
     if cond != 0 {
         return
     }
-    fail
 }
