@@ -116,6 +116,16 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strate
 			fmt.Errorf("unknown function \"%s\"", strategy.shardFunction),
 		}
 	}
+	// A checkpoint records no call stack, so each shard restarts at an entry
+	// to the shard function with no caller to return into.  This is only
+	// sound for #[global] functions, which never return and whose calls
+	// cross shards over the bus.  Any other function can yield an incomplete
+	// trace (or failing call lookups), so refuse it up front.
+	if fn, ok := pr.Module(fid).(*Function[W]); !ok || !fn.Kind().IsGlobal() {
+		return nil, nil, false, []error{
+			fmt.Errorf("cannot shard on \"%s\" (shard function must be #[global])", strategy.shardFunction),
+		}
+	}
 	// Register a breakpoint at fn's entry and build an interpreter for the
 	// result, so the breakpointer fires each time fn is entered.
 	bci := NewBytecodeInterpreter(pr.BreakPoint(fid, 0))
