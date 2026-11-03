@@ -29,11 +29,12 @@ import (
 type SyntaxError = source.SyntaxError
 
 // TypeCheckCircuit performs a type checking pass over the circuit to ensure
-// types are used correctly.
-func TypeCheckCircuit(srcmap *source.Maps[ast.Node],
-	circuit *ast.Circuit) []SyntaxError {
+// types are used correctly.  The modulus identifies the prime field being
+// targeted, and is used to check padding (or constant) values are
+// representable within that field.
+func TypeCheckCircuit(srcmap *source.Maps[ast.Node], circuit *ast.Circuit, modulus *big.Int) []SyntaxError {
 	// Construct fresh typeChecker
-	p := typeChecker{srcmap}
+	p := typeChecker{srcmap, modulus}
 	// typeCheck all declarations
 	return p.typeCheckDeclarations(circuit)
 }
@@ -44,6 +45,8 @@ type typeChecker struct {
 	// source files.  This is needed when reporting syntax errors to generate
 	// highlights of the relevant source line(s) in question.
 	srcmap *source.Maps[ast.Node]
+	// Modulus of the prime field being targeted.
+	modulus *big.Int
 }
 
 // typeCheck all assignment or constraint declarations in the circuit.
@@ -116,6 +119,16 @@ func (p *typeChecker) typeCheckDefColumnsInModule(decl *ast.DefColumns) []Syntax
 			// Perform subtype check
 			if !paddingIsSubtypeOf(padding, declaredType) {
 				msg := fmt.Sprintf("expected %s, found %s", declaredType.String(), paddingType.String())
+				errors = append(errors, *p.srcmap.SyntaxError(c, msg))
+			} else if padding.Cmp(p.modulus) >= 0 {
+				// Value would silently wrap around the field modulus otherwise.
+				kind := "padding"
+				//
+				if binding.Kind == ast.CONSTANT_COLUMN {
+					kind = "constant"
+				}
+				//
+				msg := fmt.Sprintf("%s value exceeds field modulus", kind)
 				errors = append(errors, *p.srcmap.SyntaxError(c, msg))
 			}
 		}
