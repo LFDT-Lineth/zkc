@@ -97,13 +97,13 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 
 		// Optimization to avoid factoring if the body is
 		// - a single bit equality
-		// - a control-only body (condition returns, nested if)
+		// - a branch end (return, fail, or an empty skip)
 		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
 			factor[uint(i)] = false
 			continue
 		}
 
-		if bodyIsControlOnly(codes, uint(i)) {
+		if bodyIsBranchEnd(codes, uint(i)) {
 			factor[uint(i)] = false
 			continue
 		}
@@ -211,21 +211,18 @@ func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
 	return 0, false
 }
 
-// bodyIsControlOnly reports whether the SkipIf at index i guards only control
-// opcodes (jmp, skip, skip_if, fail, ret).
-// Example: nested if
+// bodyIsBranchEnd reports whether the SkipIf at index i guards only a branch
+// end: a skip, a fail, or a return.
 //
-//	skip_if (cond) S
 //	skip_if (cond) 1
-//	jmp
-//	jmp
-//	jmp
-//
-// Example: condition returns
-//
-//	skip_if (cond) S
 //	return
-func bodyIsControlOnly[W Word[W]](codes []Bytecode[W], i uint) bool {
+//
+//	skip_if (cond) 1
+//	fail
+//
+//	skip_if (cond) 1
+//	skip 0
+func bodyIsBranchEnd[W Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	//
 	var (
@@ -233,12 +230,12 @@ func bodyIsControlOnly[W Word[W]](codes []Bytecode[W], i uint) bool {
 		taken = i + 1 + s
 	)
 	//
-	return s > 0 && taken <= uint(len(codes)) && isBodyControlOnly(codes[i+1:taken])
+	return s > 0 && taken <= uint(len(codes)) && isBodyBranchEnd(codes[i+1:taken])
 }
 
-func isBodyControlOnly[W word.Word[W]](codes []Bytecode[W]) bool {
+func isBodyBranchEnd[W word.Word[W]](codes []Bytecode[W]) bool {
 	for _, code := range codes {
-		if !isControlOnly(code) {
+		if !isBranchEnd(code) {
 			return false
 		}
 	}
@@ -246,9 +243,11 @@ func isBodyControlOnly[W word.Word[W]](codes []Bytecode[W]) bool {
 	return true
 }
 
-func isControlOnly[W word.Word[W]](code Bytecode[W]) bool {
+// isBranchEnd reports a skip, fail, or return. A jump or another skip_if leads
+// into a write or a nested condition, so it is not a branch end.
+func isBranchEnd[W word.Word[W]](code Bytecode[W]) bool {
 	switch code.(type) {
-	case *bytecode.Skip[W], *bytecode.SkipIf[W], *bytecode.Jmp[W], *bytecode.Fail[W], *bytecode.Ret[W]:
+	case *bytecode.Skip[W], *bytecode.Fail[W], *bytecode.Ret[W]:
 		return true
 	default:
 		return false

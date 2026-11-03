@@ -1,0 +1,15 @@
+pub input data(address:u8) -> (byte:u8)
+
+fn main() {
+    var cond:u8 = data[0]
+
+    // Empty body. FactorSkipConditions must not wrap this.
+    if cond != 0 {
+    }
+
+    // Return. FactorSkipConditions must not wrap this.
+    if cond != 0 {
+        return
+    }
+    fail
+}
