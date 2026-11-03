@@ -1,0 +1,26 @@
+;; odd only cases
+{"data": "0x00", "check":"0x80~1"}
+{"data": "0x01_01", "check":"0x80~1"}
+{"data": "0x01_03", "check":"0x80~1"}
+{"data": "0x01_05", "check":"0x80~1"}
+{"data": "0x01_83", "check":"0x80~1"}
+{"data": "0x02_0101", "check":"0x80~1"}
+{"data": "0x02_0103", "check":"0x80~1"}
+{"data": "0x02_0301", "check":"0x80~1"}
+{"data": "0x03_010101", "check":"0x80~1"}
+{"data": "0x03_010305", "check":"0x80~1"}
+{"data": "0x03_812305", "check":"0x80~1"}
+;; mixed cases
+{"data": "0x01_00", "check":"0x00~1"}
+{"data": "0x01_02", "check":"0x00~1"}
+{"data": "0x01_04", "check":"0x00~1"}
+{"data": "0x01_06", "check":"0x00~1"}
+{"data": "0x01_82", "check":"0x00~1"}
+{"data": "0x02_0102", "check":"0x00~1"}
+{"data": "0x02_0201", "check":"0x00~1"}
+{"data": "0x02_0104", "check":"0x00~1"}
+{"data": "0x02_0406", "check":"0x00~1"}
+{"data": "0x03_010201", "check":"0x00~1"}
+{"data": "0x03_010308", "check":"0x00~1"}
+{"data": "0x03_822305", "check":"0x00~1"}
+{"data": "0x05_0001020001", "check":"0x00~1"}
