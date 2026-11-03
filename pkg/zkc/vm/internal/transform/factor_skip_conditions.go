@@ -96,7 +96,7 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 		}
 
 		// Optimization to avoid factoring if the body is
-		// - a single bit equality
+		// - a single bit equality (with arms constant or register copies)
 		// - a branch end (return, fail, or an empty skip)
 		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
 			factor[uint(i)] = false
@@ -212,16 +212,7 @@ func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
 }
 
 // bodyIsBranchEnd reports whether the SkipIf at index i guards only a branch
-// end: a skip, a fail, or a return.
-//
-//	skip_if (cond) 1
-//	return
-//
-//	skip_if (cond) 1
-//	fail
-//
-//	skip_if (cond) 1
-//	skip 0
+// end: a skip (empty body), a fail, or a return.
 func bodyIsBranchEnd[W Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	//
@@ -243,8 +234,7 @@ func isBodyBranchEnd[W word.Word[W]](codes []Bytecode[W]) bool {
 	return true
 }
 
-// isBranchEnd reports a skip, fail, or return. A jump or another skip_if leads
-// into a write or a nested condition, so it is not a branch end.
+// isBranchEnd reports a skip, fail, or return.
 func isBranchEnd[W word.Word[W]](code Bytecode[W]) bool {
 	switch code.(type) {
 	case *bytecode.Skip[W], *bytecode.Fail[W], *bytecode.Ret[W]:
