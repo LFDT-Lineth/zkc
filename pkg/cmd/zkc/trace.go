@@ -48,6 +48,7 @@ var traceCmd = &cobra.Command{
 
 This is equivalent to "execute" but always generates a trace: it does not
 support fast mode or checkpointing.`,
+	Args: cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		runFieldAgnosticCmd(cmd, args, traceCmds)
 	},
