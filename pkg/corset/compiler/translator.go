@@ -594,6 +594,10 @@ func (t *translator[F]) translateExpression(expr ast.Expr, module mir.ModuleBuil
 			// integers.
 			panic("signed constant encountered")
 		}
+		// Sanity check constant is representable in the field
+		if e.Val.Cmp(field.Zero[F]().Modulus()) >= 0 {
+			return nil, t.srcmap.SyntaxErrors(expr, "constant exceeds field modulus")
+		}
 		// Initialise field from bigint
 		val := field.BigInt[F](e.Val)
 		//
@@ -644,8 +648,17 @@ func (t *translator[F]) translateVariableAccess(expr *ast.VariableAccess, shift 
 		//
 		return access, errs
 	} else if binding, ok := expr.Binding().(*ast.ConstantBinding); ok {
+		var value = binding.Value.AsConstant()
+		// Sanity check constant is representable in the field
+		if value.Sign() < 0 {
+			msg := fmt.Sprintf("constant %s is negative", expr.Name.Tail())
+			return nil, t.srcmap.SyntaxErrors(expr, msg)
+		} else if value.Cmp(field.Zero[F]().Modulus()) >= 0 {
+			msg := fmt.Sprintf("constant %s exceeds field modulus", expr.Name.Tail())
+			return nil, t.srcmap.SyntaxErrors(expr, msg)
+		}
 		// Initialise field from bigint
-		constant := field.BigInt[F](*binding.Value.AsConstant())
+		constant := field.BigInt[F](*value)
 		//
 		return term.Const[F, mir.Term[F]](constant), nil
 	}

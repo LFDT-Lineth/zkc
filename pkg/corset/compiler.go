@@ -89,11 +89,13 @@ func (p *Compiler) Compile[F field.Element[F]](config compiler.Config) (mir.Sche
 	var (
 		scope  *compiler.ModuleScope
 		errors []SyntaxError
+		// Used only to determine the field modulus
+		element F
 	)
 	// Resolve variables (via nested scopes)
 	scope, errors = compiler.ResolveCircuit(p.srcmap, &p.circuit)
 	// Type check circuit.
-	errors = append(errors, compiler.TypeCheckCircuit(p.srcmap, &p.circuit)...)
+	errors = append(errors, compiler.TypeCheckCircuit(p.srcmap, &p.circuit, element.Modulus())...)
 	// Catch errors
 	if len(errors) > 0 {
 		return mir.Schema[F]{}, SourceMap{}, errors
