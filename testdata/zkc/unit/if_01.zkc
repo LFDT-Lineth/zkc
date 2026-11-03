@@ -13,4 +13,6 @@ fn main() {
     if cond != 0 {
         return
     }
+
+    fail
 }
