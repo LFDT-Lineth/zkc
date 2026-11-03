@@ -1,4 +1,4 @@
-;;error:4:22-26:unknown type
+;;error:4:22-26:unknown attribute
 (module mmio)
 
 (defcolumns (COUNTER :dac))
