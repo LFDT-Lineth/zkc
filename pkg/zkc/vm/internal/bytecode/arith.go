@@ -23,7 +23,6 @@ import (
 
 // NewArith constructs a new arithmetic instruction computing
 // "targets = sources[0] op sources[1] op ... op constant".
-// isSubConst is a flag for subtraction instructions indicating whether the constant is a subtraction constant.
 func NewArith[W word.Word[W]](op Operation, targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
 	util.Assert(len(targets) > 0, "missing target register(s)")
 	util.Assert(len(sources) > 0 || op == OP_ADD, "missing source register(s)")
