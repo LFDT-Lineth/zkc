@@ -144,18 +144,30 @@ func (p Checker[F]) processShard(id uint, shard Shard[F]) (res Result[F]) {
 	//
 	res.state = make([]State[F], len(p.constraints))
 	//
-	for i, c := range p.constraints {
-		var (
-			fails []Failure[F]
-			err   error
-		)
-		// Process ith constraint
-		res.state[i], fails, err = processor.processConstraint(c)
+	// Constraints within a shard are independent (the context is built up
+	// front and only read), so check them concurrently when parallelism is
+	// enabled.  Results are kept in constraint order, so the output is
+	// deterministic either way.
+	check := func(_ uint, c Constraint[F]) constraintResult[F] {
+		state, fails, err := processor.processConstraint(c)
+		return constraintResult[F]{state, fails, err}
+	}
+	//
+	var results []constraintResult[F]
+	//
+	if p.parallel {
+		results = array.ParallelMap(p.constraints, check)
+	} else {
+		results = array.Map(p.constraints, check)
+	}
+	//
+	for i, r := range results {
+		res.state[i] = r.state
 		// Append any failures arising
-		res.failures = append(res.failures, fails...)
+		res.failures = append(res.failures, r.failures...)
 		// Append error if arising
-		if err != nil {
-			res.errors = append(res.errors, err)
+		if r.err != nil {
+			res.errors = append(res.errors, r.err)
 		}
 	}
 	// Log stats
@@ -170,6 +182,13 @@ func (p Checker[F]) buildShardContext(shard Shard[F]) Context[F] {
 	}
 	//
 	return seqBuildContext(shard, p.schema)
+}
+
+// constraintResult holds the outcome of checking one constraint on one shard.
+type constraintResult[F field.Element[F]] struct {
+	state    State[F]
+	failures []Failure[F]
+	err      error
 }
 
 // Result represents the result from processing a given shard.
