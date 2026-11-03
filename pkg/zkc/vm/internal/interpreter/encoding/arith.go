@@ -139,7 +139,7 @@ func DecodeArith_2n1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) 
 func encodeArith_2n1c[W word.Word[W]](aop bytecode.Operation, rs0, rs1, rd uint16, constant W,
 	env Environment[W]) []uint32 {
 	// Sanity check
-	if aop == bytecode.OP_SUB {
+	if bytecode.IsSubtractOperation(aop) {
 		panic("two-step encoding unsound for subtraction")
 	}
 	// There is no 2-source-plus-constant instruction form, so compute
