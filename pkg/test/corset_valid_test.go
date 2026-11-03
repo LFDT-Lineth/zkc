@@ -591,34 +591,6 @@ func Test_Valid_Bus_06(t *testing.T) {
 }
 
 // ===================================================================
-// Arrays
-// ===================================================================
-
-func Test_Valid_Array_01(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Array_03(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Array_04(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Array_05(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Array_06(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Array_07(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_07", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-// ===================================================================
 // Standard Library Tests
 // ===================================================================
 

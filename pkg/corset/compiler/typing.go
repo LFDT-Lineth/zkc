@@ -117,7 +117,7 @@ func (p *typeChecker) typeCheckDefColumnsInModule(decl *ast.DefColumns) []Syntax
 				paddingType  = ast.NewUintType(uint(padding.BitLen()))
 			)
 			// Perform subtype check
-			if !paddingIsSubtypeOf(padding, declaredType) {
+			if !paddingType.SubtypeOf(declaredType) {
 				msg := fmt.Sprintf("expected %s, found %s", declaredType.String(), paddingType.String())
 				errors = append(errors, *p.srcmap.SyntaxError(c, msg))
 			} else if padding.Cmp(p.modulus) >= 0 {
@@ -135,20 +135,6 @@ func (p *typeChecker) typeCheckDefColumnsInModule(decl *ast.DefColumns) []Syntax
 	}
 	//
 	return errors
-}
-
-func paddingIsSubtypeOf(padding big.Int, declared ast.Type) bool {
-	//
-	switch t := declared.(type) {
-	case *ast.IntType:
-		var paddingType = ast.NewUintType(uint(padding.BitLen()))
-		// Perform subtype check
-		return paddingType.SubtypeOf(declared)
-	case *ast.ArrayType:
-		return paddingIsSubtypeOf(padding, t.Element())
-	default:
-		return false
-	}
 }
 
 // ast.Type check one or more constant definitions within a given module.
@@ -291,8 +277,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 	)
 	//
 	switch e := expr.(type) {
-	case *ast.ArrayAccess:
-		result, errors = p.typeCheckArrayAccessInModule(e)
 	case *ast.Add:
 		types, errors = p.typeCheckExpressionsInModule(ast.UINT_TYPE, e.Args, true)
 		result = typeOfSum(types...)
@@ -335,23 +319,6 @@ func (p *typeChecker) typeCheckExpressionInModule(expected ast.Type, expr ast.Ex
 	}
 	//
 	return result, errors
-}
-
-// ast.Type check an array access expression.  The main thing is to check that the
-// column being accessed was originally defined as an array column.
-func (p *typeChecker) typeCheckArrayAccessInModule(expr *ast.ArrayAccess) (ast.Type, []SyntaxError) {
-	// ast.Type check index expression
-	_, errs := p.typeCheckExpressionInModule(ast.UINT_TYPE, expr.Arg, true)
-	// NOTE: following cast safe because resolver already checked them.
-	if binding, ok := expr.Binding().(*ast.ColumnBinding); !ok || !expr.IsResolved() {
-		// NOTE: we don't return an error here, since this case would have already
-		// been caught by the resolver and we don't want to double up on errors.
-		return nil, nil
-	} else if arr_t, ok := binding.DataType.(*ast.ArrayType); !ok {
-		return nil, append(errs, *p.srcmap.SyntaxError(expr, "expected array column"))
-	} else {
-		return arr_t.Element(), errs
-	}
 }
 
 // ast.Type an if condition contained within some expression which, in turn, is
