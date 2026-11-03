@@ -41,8 +41,8 @@ func Arith[W word.Word[W]](p bytecode.Arith[W], env Environment[W]) []uint32 {
 		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant, env)
 	case n == 2 && m == 1 && cz:
 		return encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
-	case n == 2 && m == 1 && p.Op != bytecode.OP_SUB:
-		// SUB is excluded: the two-step pairing wraps each step separately,
+	case n == 2 && m == 1 && !bytecode.IsSubtractOperation(p.Op):
+		// SUB and CSUB are excluded: the two-step pairing wraps each step separately,
 		// which is not equivalent to the single wrap (at CalculateSubBitwidth
 		// width) that the vectored form performs when the first step
 		// underflows.  See encodeArith_2n1c.
@@ -139,7 +139,7 @@ func DecodeArith_2n1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) 
 func encodeArith_2n1c[W word.Word[W]](aop bytecode.Operation, rs0, rs1, rd uint16, constant W,
 	env Environment[W]) []uint32 {
 	// Sanity check
-	if aop == bytecode.OP_SUB {
+	if bytecode.IsSubtractOperation(aop) {
 		panic("two-step encoding unsound for subtraction")
 	}
 	// There is no 2-source-plus-constant instruction form, so compute
@@ -155,12 +155,15 @@ func encodeArith_2n1c[W word.Word[W]](aop bytecode.Operation, rs0, rs1, rd uint1
 func encodeArith_1n1c[W word.Word[W]](aop bytecode.Operation, rs, rd uint16, constant W,
 	env Environment[W]) []uint32 {
 	//
-	var opcode = ADDC + uint32(aop-bytecode.OP_ADD)
+	var (
+		offset = uint32(aop - bytecode.OP_ADD)
+		opcode = ADDC + uint32(aop-bytecode.OP_ADD)
+	)
 	// The wide (pooled) form carries a constant of arbitrary width; the narrow
 	// form only a u8 immediate.
 	if IsWideRegisters(rs, rd) || constant.Cmp64(0xff) > 0 {
 		return []uint32{
-			uint32(env.ConstantIndex(constant))<<16 | (WIDE_ADDC+uint32(aop-bytecode.OP_ADD))<<8 | WIDE,
+			uint32(env.ConstantIndex(constant))<<16 | (WIDE_ADDC+offset)<<8 | WIDE,
 			uint32(rd) | uint32(rs)<<16,
 		}
 	}
@@ -384,8 +387,10 @@ func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterI
 		panic("wide vector arithmetic not supported")
 	}
 	//
+	var offset = uint32(aop - bytecode.OP_ADD)
+	//
 	var (
-		opcode = ADD_nm + uint32(aop-bytecode.OP_ADD)
+		opcode = ADD_nm + offset
 		bw     = uint32(bitwidth) << 24
 		nsrc   = uint32(len(sources)) << 16
 		ntgt   = uint32(len(targets)) << 8
@@ -395,7 +400,7 @@ func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterI
 	//
 	if IsWideRegisters(regs...) {
 		codes := []uint32{
-			bw | nsrc | (WIDE_ADD_nm+uint32(aop-bytecode.OP_ADD))<<8 | WIDE,
+			bw | nsrc | (WIDE_ADD_nm+offset)<<8 | WIDE,
 			uint32(len(targets))<<16 | cid,
 		}
 		//
@@ -450,6 +455,8 @@ func calculateArithBitwidth[W word.Word[W]](aop bytecode.Operation, sources []Re
 		bitwidth = descriptor.CalculateAddBitwidth(sources, constant, env)
 	case bytecode.OP_SUB:
 		bitwidth = descriptor.CalculateSubBitwidth(sources, constant, env)
+	case bytecode.OP_CSUB:
+		bitwidth = descriptor.CalculateCSubBitwidth(sources, constant, env)
 	case bytecode.OP_MUL:
 		bitwidth = descriptor.CalculateMulBitwidth(sources, constant, env)
 	default:

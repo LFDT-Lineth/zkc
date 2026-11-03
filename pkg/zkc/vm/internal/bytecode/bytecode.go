@@ -71,7 +71,7 @@ func (p Operation) Symbol() string {
 	switch p {
 	case OP_ADD:
 		return "+"
-	case OP_SUB:
+	case OP_SUB, OP_CSUB:
 		return "-"
 	case OP_MUL:
 		return "*"
@@ -99,6 +99,8 @@ func (p Operation) Prefix() string {
 		return "add"
 	case OP_SUB:
 		return "sub"
+	case OP_CSUB:
+		return "csub"
 	case OP_MUL:
 		return "mul"
 	case OP_AND:
@@ -121,10 +123,12 @@ func (p Operation) Prefix() string {
 const (
 	// OP_ADD integer addition
 	OP_ADD Operation = iota
-	// OP_SUB integer subtraction
+	// OP_SUB integer subtraction from source
 	OP_SUB
 	// OP_MUL integer multiplication
 	OP_MUL
+	// OP_CSUB integer subtraction from constant
+	OP_CSUB
 	// OP_AND bitwise conjunction.
 	OP_AND
 	// OP_OR bitwise disjunction.
@@ -459,6 +463,23 @@ func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 	return NewArith(OP_SUB, targets, sources, constant)
 }
 
+// CSubConst constructs subtraction instruction computing from a constant
+// "target = constant - source[0] ... - source[n]" into a single target register.
+func CSubConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	return NewArith(OP_CSUB, []RegisterId{target}, sources, constant)
+}
+
+// SubConstVec constructs a vectored subtraction instruction computing from a constant
+// "targets = constant - source[0] ... - source[n]", where targets is a multi-limb
+// register vector.
+func SubConstVec[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+	util.Assert(len(targets) > 0, "atleast one target required")
+	//
+	arith := NewArith(OP_CSUB, targets, sources, constant)
+
+	return arith
+}
+
 // NewMemWrite constructs a memory-write instruction.  The data registers are
 // written to the row located at the address given by the address registers, in
 // the memory identified by id.  The kind of memory being written (write-once,
@@ -541,6 +562,7 @@ func NewRet[W word.Word[W]]() *Ret[W] {
 // IsUnusedConstant checks whether a given constant is the "identity element".
 // This depends on the arithmetic operation in question.  For example, for
 // addition and subtraction, this is zero.  But, for multiplication it is one.
+// For a subtraction from a constant, it is false.
 func IsUnusedConstant[W word.Word[W]](op Operation, constant W) bool {
 	switch op {
 	case OP_ADD, OP_ADDMOD_P:
@@ -549,9 +571,16 @@ func IsUnusedConstant[W word.Word[W]](op Operation, constant W) bool {
 		return constant.Cmp64(0) == 0
 	case OP_MUL, OP_MULMOD_P:
 		return constant.Cmp64(1) == 0
+	case OP_CSUB:
+		return false
 	default:
 		panic("unknown arithmetic operation")
 	}
+}
+
+// IsSubtractOperation checks whether a given operation is a subtraction operation.
+func IsSubtractOperation(op Operation) bool {
+	return op == OP_SUB || op == OP_CSUB
 }
 
 // RegisterGobTypes registers every concrete Bytecode[W] implementation with the

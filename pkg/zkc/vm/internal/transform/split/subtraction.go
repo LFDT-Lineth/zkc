@@ -91,7 +91,7 @@ func remapSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *byte
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.NewArith(bytecode.OP_SUB, targets, sources, insn.Constant),
+		bytecode.NewArith(insn.Op, targets, sources, insn.Constant),
 	}
 }
 
@@ -107,7 +107,26 @@ func remapSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *byte
 func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) ([]Bytecode[W], *bytecode.Arith[W], descriptor.LimbsMap[W]) {
 	var (
-		zero W
+		zero     W
+		bitwidth uint
+		sub      *bytecode.Arith[W]
+		tmpReg   RegisterId
+		nmapping descriptor.LimbsMap[W]
+		pre      []Bytecode[W]
+		fakeAdd  *bytecode.Arith[W]
+	)
+	if insn.Op == bytecode.OP_CSUB {
+		// Determine bitwidth of temporary register
+		bitwidth = descriptor.CalculateAddBitwidth(insn.Source, zero, mapping).Unwrap()
+		// Create "fake" register to use for addition
+		tmpReg, nmapping = allocateTemporary(bitwidth, mapping, alloc)
+		// Sum the sources only
+		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source, zero)
+		// Split the addition
+		pre = Addition(nmapping, alloc, fakeAdd)
+		// create new subtraction
+		sub = bytecode.NewArith(bytecode.OP_CSUB, insn.Target, []bytecode.RegisterId{tmpReg}, insn.Constant)
+	} else {
 		// Determine bitwidth of temporary register
 		bitwidth = descriptor.CalculateAddBitwidth(insn.Source[1:], insn.Constant, mapping).Unwrap()
 		// Create "fake" register to use for addition
@@ -118,7 +137,7 @@ func breakupSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Al
 		pre = Addition(nmapping, alloc, fakeAdd)
 		// create new subtraction
 		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg}, zero)
-	)
+	}
 	//
 	return pre, sub, nmapping
 }
@@ -141,6 +160,10 @@ func splitSubtraction[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allo
 	if !isZeroDifference(mapping, insn) {
 		// Next, add borrow lines as needed
 		chunks = insertSubBorrowLines(alloc, chunks)
+	}
+	// Handle CSUB case
+	if insn.Op == bytecode.OP_CSUB {
+		return append(array.Map(chunks, csubAssignment[W]), context...)
 	}
 	// Convert chunks into assignments
 	return append(array.Map(chunks, subAssignment[W]), context...)
@@ -244,7 +267,7 @@ func insertSubBorrowLines[W word.Word[W]](alloc Allocator[W], chunks []partSub[W
 	return chunks
 }
 
-// subAssignment lowers a chunk back into a concrete unsigned-subtract
+// subAssignment lowers a chunk back into a concrete unsigned vectorMinusConstant
 // instruction.
 func subAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
 	var zero W
@@ -254,4 +277,16 @@ func subAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
 	}
 	// Done
 	return bytecode.SubVecConst(chunk.targets, chunk.sources, chunk.constant)
+}
+
+// csubAssignment lowers a chunk back into a concrete unsigned constantMinusVector
+// instruction.
+func csubAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
+	var zero W
+	// Check for non-subtraction case
+	if len(chunk.sources) == 0 {
+		return bytecode.LoadConstVec(chunk.targets, zero)
+	}
+	// Done
+	return bytecode.SubConstVec(chunk.targets, chunk.sources, chunk.constant)
 }

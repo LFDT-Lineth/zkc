@@ -111,19 +111,62 @@ func (p *InstructionTranslator[W, F]) translateMul(targets, sources []vm.Registe
 	return mirc.Sum(lhs).Equals(mirc.Product(rhs...))
 }
 
-func (p *InstructionTranslator[W, F]) translateSub(targets, sources []vm.RegisterId,
+// translateSub dispatches a subtraction. A subtract-with-borrow that carries a
+// sign bit uses the signed form; any other subtraction uses the unsigned form.
+func (p *InstructionTranslator[W, F]) translateSub(code *vm.BytecodeArith[W], enclosing vm.Module[W],
+) Expr[F] {
+	var (
+		// Determine whether this is a subtract with borrow
+		isSbb        = vm.IsSubtractWithBorrow(*code, enclosing)
+		hasSignedBit = hasSignedBit(code.Target, enclosing)
+	)
+	//
+	if isSbb && hasSignedBit {
+		return p.translateSignedSub(code.Target, code.Source, code.Constant)
+	} else if isSbb {
+		panic("subtract with borrow bytecode missing sign bit")
+	}
+	//
+	return p.translateUnsignedSub(code.Target, code.Source, code.Constant)
+}
+
+// translateCSub dispatches a constant subtraction. A subtract-with-borrow that
+// carries a sign bit uses the signed form; any other subtraction uses the
+// unsigned form.
+func (p *InstructionTranslator[W, F]) translateCSub(code *vm.BytecodeArith[W], enclosing vm.Module[W],
+) Expr[F] {
+	var (
+		// Determine whether this is a subtract with borrow
+		isSbb        = vm.IsSubtractWithBorrow(*code, enclosing)
+		hasSignedBit = hasSignedBit(code.Target, enclosing)
+	)
+	// Rebalance only when splitting appended a u1 borrow
+	if isSbb && hasSignedBit {
+		return p.translateSignedCSub(code.Target, code.Source, code.Constant)
+	}
+	//
+	return p.translateUnsignedCSub(code.Target, code.Source, code.Constant)
+}
+
+func (p *InstructionTranslator[W, F]) translateUnsignedSub(targets, sources []vm.RegisterId,
 	constant W) Expr[F] {
 	var (
-		minusOne           = mirc.BigNumber[F](big.NewInt(-1))
-		lhs                = p.WriteAndShiftRegisters(targets...)
-		rhs      []Expr[F] = make([]Expr[F], len(sources))
+		minusOne = mirc.BigNumber[F](big.NewInt(-1))
+		lhs      = p.WriteAndShiftRegisters(targets...)
+		rhs      []Expr[F]
 	)
 	//
 	for i := range len(sources) {
 		if i == 0 {
-			rhs[i] = p.ReadRegister(sources[i])
+			reg := p.reader.Register(register.NewId(uint(sources[i])))
+			isZeroRegister := reg.WidthOrNative() == 0
+			// Optimize case where the first source is a zero register
+			// 0 - x0 - x1 - x2 - ... - xn - c
+			if !isZeroRegister {
+				rhs = append(rhs, p.ReadRegister(sources[i]))
+			}
 		} else {
-			rhs[i] = mirc.Product(minusOne, p.ReadRegister(sources[i]))
+			rhs = append(rhs, mirc.Product(minusOne, p.ReadRegister(sources[i])))
 		}
 	}
 	// Optimise case where coeff == 0
@@ -131,6 +174,27 @@ func (p *InstructionTranslator[W, F]) translateSub(targets, sources []vm.Registe
 		var c = constant.BigInt()
 		//
 		rhs = append(rhs, mirc.BigNumber[F](c.Neg(c)))
+	}
+	//
+	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
+}
+
+func (p *InstructionTranslator[W, F]) translateUnsignedCSub(targets, sources []vm.RegisterId,
+	constant W) Expr[F] {
+	var (
+		minusOne           = mirc.BigNumber[F](big.NewInt(-1))
+		lhs                = p.WriteAndShiftRegisters(targets...)
+		rhs      []Expr[F] = make([]Expr[F], len(sources))
+	)
+	// Fill the rhs with the sources
+	for i := range len(sources) {
+		rhs[i] = mirc.Product(minusOne, p.ReadRegister(sources[i]))
+	}
+	// optimise case where constant == 0
+	if constant.Cmp64(0) != 0 {
+		// Case c - x0 - x1 - x2 - ... - xn
+		// Add the constant to the rhs
+		rhs = append(rhs, mirc.BigNumber[F](constant.BigInt()))
 	}
 	//
 	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
@@ -156,6 +220,30 @@ func (p *InstructionTranslator[W, F]) translateSignedSub(targets, sources []vm.R
 		var c = constant.BigInt()
 		//
 		rhs = append(rhs, mirc.BigNumber[F](c.Neg(c)))
+	}
+	// Rebalance equation
+	lhs, rhs = rebalanceSubtraction(lhs, rhs)
+	// Done
+	return mirc.Sum(lhs).Equals(mirc.Sum(rhs))
+}
+
+func (p *InstructionTranslator[W, F]) translateSignedCSub(targets, sources []vm.RegisterId,
+	constant W) Expr[F] {
+	var (
+		minusOne           = mirc.BigNumber[F](big.NewInt(-1))
+		lhs                = p.WriteAndShiftRegisters(targets...)
+		rhs      []Expr[F] = make([]Expr[F], len(sources))
+	)
+	//
+	// Fill the rhs with the sources
+	for i := range len(sources) {
+		rhs[i] = mirc.Product(minusOne, p.ReadRegister(sources[i]))
+	}
+	// optimise case where constant == 0
+	if constant.Cmp64(0) != 0 {
+		// Case c - x0 - x1 - x2 - ... - xn
+		// Add the constant to the rhs
+		rhs = append(rhs, mirc.BigNumber[F](constant.BigInt()))
 	}
 	// Rebalance equation
 	lhs, rhs = rebalanceSubtraction(lhs, rhs)
@@ -194,7 +282,7 @@ func (p *InstructionTranslator[W, F]) translateFieldMul(target vm.RegisterId, so
 func (p *InstructionTranslator[W, F]) translateFieldSub(target vm.RegisterId, sources []vm.RegisterId,
 	constant W) Expr[F] {
 	// NOTE: safe to reuse normal (unsigned) sub translation here
-	return p.translateSub([]vm.RegisterId{target}, sources, constant)
+	return p.translateUnsignedSub([]vm.RegisterId{target}, sources, constant)
 }
 
 // translateConcat translates a concatenation assignment (BIT_CONCAT) which

@@ -230,8 +230,13 @@ func NewStampOutputRegister[W word.Word[W]](name string, bitwidth util.Option[ui
 func IsSubtractWithBorrow[W word.Word[W]](code BytecodeArith[W], env descriptor.RegisterMap[W]) bool {
 	var (
 		lhsBitwidth = descriptor.BitwidthOf(env, code.Target...).Unwrap()
-		rhsBitwidth = descriptor.CalculateSubBitwidth(code.Source, code.Constant, env).Unwrap()
+		rhsBitwidth uint
 	)
+	if code.Op == OP_CSUB {
+		rhsBitwidth = descriptor.CalculateCSubBitwidth(code.Source, code.Constant, env).Unwrap()
+	} else {
+		rhsBitwidth = descriptor.CalculateSubBitwidth(code.Source, code.Constant, env).Unwrap()
+	}
 	//
 	return lhsBitwidth >= rhsBitwidth
 }
@@ -438,6 +443,13 @@ func SubVec[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) B
 	return bytecode.SubVecConst(targets, sources, constant)
 }
 
+// SubConst constructs a vectored subtraction instruction computing
+// "targets = constant - sources[0] - ... - sources[n]", where targets is a multi-limb
+// register vector.
+func SubConst[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) Bytecode[W] {
+	return bytecode.SubConstVec(targets, sources, constant)
+}
+
 // MemWrite constructs a memory-write instruction.  The data registers are
 // written to the row located at the address given by the address registers, in
 // the memory identified by id.  The kind of memory being written (write-once,
@@ -589,6 +601,8 @@ const (
 	OP_ADD = bytecode.OP_ADD
 	// OP_SUB integer subtraction.
 	OP_SUB = bytecode.OP_SUB
+	// OP_CSUB integer subtraction from constant.
+	OP_CSUB = bytecode.OP_CSUB
 	// OP_MUL integer multiplication.
 	OP_MUL = bytecode.OP_MUL
 	// OP_AND bitwise conjunction.

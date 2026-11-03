@@ -124,10 +124,10 @@ const (
 	// skip.
 	caseSize = 4
 	// trailerSize is the number of bytecodes emitted after the
-	// diamonds: the one-register load, the subtraction deriving the default
+	// diamonds: the subtraction deriving the default
 	// bit, and the final dispatch (which is always the last
 	// code of the packet).
-	trailerSize = 3
+	trailerSize = 2
 )
 
 // switchPacketSize returns the number of bytecodes in the replacement packet
@@ -203,16 +203,12 @@ func lowerSwitchCode[W Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 	// that at most one b_j is 1 (each being a bit itself).
 	//
 	var (
-		onereg = registers.Allocate("lsw", util.Some[uint](1))
-		bdef   = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_default", switchIndex), util.Some[uint](1))
+		bdef = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_default", switchIndex), util.Some[uint](1))
 	)
-	// TODO: https://github.com/LFDT-Lineth/zkc/issues/2062
-	// use CSUB to save 1 register to load one
+
 	codes = append(codes,
-		// one = 1
-		bytecode.LoadConst(onereg, one),
 		// b_default = one - b_0 - ... - b_{n-1}
-		bytecode.SubConst(bdef, append([]descriptor.RegisterId{onereg}, bits...), zero))
+		bytecode.CSubConst(bdef, bits, one))
 	// Dispatch on the bits, in case order.
 	var (
 		// New position of the dispatch bytecode itself.

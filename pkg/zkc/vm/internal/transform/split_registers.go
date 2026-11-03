@@ -218,7 +218,7 @@ func splitBytecode[W Word[W]](limbsMap descriptor.LimbsMap[W], mods []descriptor
 			switch c.Op {
 			case bytecode.OP_ADD:
 				return split.Addition(limbsMap, alloc, c)
-			case bytecode.OP_SUB:
+			case bytecode.OP_SUB, bytecode.OP_CSUB:
 				return split.Subtraction(limbsMap, alloc, c)
 			case bytecode.OP_MUL:
 				return split.Multiplication(limbsMap, alloc, c)

@@ -66,6 +66,15 @@ func (g *generator) emitArith(c *code, fn *descFunction, x *bytecode.Arith[word.
 		wrap = max(wrap, store.total)
 
 		return g.emitSub(c, srcs, konst, store, wrap)
+	case bytecode.OP_CSUB:
+		wrap, err := g.csubWrapWidth(fn, x.Source, x.Constant)
+		if err != nil {
+			return err
+		}
+		// Same widening as SUB: the arithmetic width is at least the target width.
+		wrap = max(wrap, store.total)
+
+		return g.emitCSub(c, srcs, konst, store, wrap)
 	case bytecode.OP_MUL:
 		return g.emitMul(c, srcs, konst, store)
 	default:
@@ -195,6 +204,40 @@ func (g *generator) subWrapWidth(fn *descFunction, sources []regId, constant wor
 	rhsMax.Sub(rhsMax, big.NewInt(1))
 	// Include an additional bit for the sign
 	return 1 + max(lhs, uint(rhsMax.BitLen())), nil
+}
+
+// csubWrapWidth mirrors subWrapWidth: the width of constant - sources.
+func (g *generator) csubWrapWidth(fn *descFunction, sources []regId, constant word.Uint) (uint, error) {
+	lhs := uint(constant.BigInt().BitLen())
+	rhsMax := big.NewInt(0)
+
+	for _, id := range sources {
+		w, err := g.regWidth(fn, id)
+		if err != nil {
+			return 0, err
+		}
+
+		rhsMax.Add(rhsMax, widthMax(w))
+	}
+	// Negative values do not need to represent zero.
+	rhsMax.Sub(rhsMax, big.NewInt(1))
+
+	return 1 + max(lhs, uint(rhsMax.BitLen())), nil
+}
+
+// emitCSub emits `target = const - sources[0] - sources[1] - …`.
+// The constant is the minuend, including when it is zero.
+func (g *generator) emitCSub(c *code, srcs []operand, konst operand, store storeView, wrap uint) error {
+	var zero word.Uint
+
+	zeroOp, err := constOperand(zero)
+	if err != nil {
+		return err
+	}
+	// emitSub subtracts srcs[1:] and a non-zero trailing constant from srcs[0].
+	// A zero trailing constant adds no further subtrahend, so this is
+	// const - every source, wrapped modulo 2^wrap.
+	return g.emitSub(c, append([]operand{konst}, srcs...), zeroOp, store, wrap)
 }
 
 // emitSub emits `target = sources[0] - sources[1] - … - const`, matching
