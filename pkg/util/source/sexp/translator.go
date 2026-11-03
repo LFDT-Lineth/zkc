@@ -30,11 +30,6 @@ type SymbolRule[T comparable] func(string) (T, bool, error)
 // form.
 type ListRule[T comparable] func(*List) (T, []source.SyntaxError)
 
-// ArrayRule is an array translator which is responsible converting an array
-// with a given sequence of zero or more arguments into an expression type T.
-// Observe that the arguments are already translated into the correct form.
-type ArrayRule[T comparable] func(*Array) (T, []source.SyntaxError)
-
 // BinaryRule is a binary translator is a wrapper for translating lists which must
 // have exactly two symbol arguments.  The wrapper takes care of
 // ensuring sufficient arguments are given, etc.
@@ -57,10 +52,6 @@ type Translator[T comparable] struct {
 	lists map[string]ListRule[T]
 	// Fallback rule for generic user-defined lists.
 	list_default ListRule[T]
-	// Rules for parsing arrays
-	arrays map[string]ArrayRule[T]
-	// Fallback rule for generic user-defined arrays.
-	array_default ArrayRule[T]
 	// Rules for parsing symbols
 	symbols []SymbolRule[T]
 	// Maps S-Expressions to their spans in the original source file.  This is
@@ -74,13 +65,12 @@ type Translator[T comparable] struct {
 // NewTranslator constructs a new Translator instance.
 func NewTranslator[T comparable](srcfile *source.File, srcmap *source.Map[SExp]) *Translator[T] {
 	return &Translator[T]{
-		srcfile:       srcfile,
-		lists:         make(map[string]ListRule[T]),
-		list_default:  nil,
-		array_default: nil,
-		symbols:       make([]SymbolRule[T], 0),
-		old_srcmap:    srcmap,
-		new_srcmap:    source.NewSourceMap[T](srcmap.Source()),
+		srcfile:      srcfile,
+		lists:        make(map[string]ListRule[T]),
+		list_default: nil,
+		symbols:      make([]SymbolRule[T], 0),
+		old_srcmap:   srcmap,
+		new_srcmap:   source.NewSourceMap[T](srcmap.Source()),
 	}
 }
 
@@ -121,13 +111,6 @@ func (p *Translator[T]) AddDefaultListRule(rule ListRule[T]) {
 	p.list_default = rule
 }
 
-// AddDefaultRecursiveArrayRule adds a default recursive rule to be applied when no
-// other recursive rules apply.
-func (p *Translator[T]) AddDefaultRecursiveArrayRule(t RecursiveRule[T]) {
-	// Construct a recursive list translator as a wrapper around a generic list translator.
-	p.array_default = p.createRecursiveArrayRule(t)
-}
-
 func (p *Translator[T]) createRecursiveListRule(t RecursiveRule[T]) ListRule[T] {
 	// Construct a recursive list translator as a wrapper around a generic list translator.
 	return func(l *List) (T, []source.SyntaxError) {
@@ -138,43 +121,6 @@ func (p *Translator[T]) createRecursiveListRule(t RecursiveRule[T]) ListRule[T] 
 		// Extract the "head" of the list.
 		if len(l.Elements) == 0 || l.Elements[0].AsSymbol() == nil {
 			return empty, p.SyntaxErrors(l, "invalid list")
-		}
-		// Extract expression name
-		head := (l.Elements[0].(*Symbol)).Value
-		// Translate arguments
-		args := make([]T, len(l.Elements)-1)
-		//
-		for i, s := range l.Elements[1:] {
-			var errs []source.SyntaxError
-			//
-			args[i], errs = translateSExp(p, s)
-			errors = append(errors, errs...)
-		}
-		// Apply constructor
-		term, err := t(head, args)
-		// Check error
-		if err != nil {
-			errors = append(errors, *p.SyntaxError(l, err.Error()))
-		}
-		// Check for error
-		if len(errors) == 0 {
-			return term, nil
-		}
-		// Error case
-		return empty, errors
-	}
-}
-
-func (p *Translator[T]) createRecursiveArrayRule(t RecursiveRule[T]) ArrayRule[T] {
-	// Construct a recursive list translator as a wrapper around a generic list translator.
-	return func(l *Array) (T, []source.SyntaxError) {
-		var (
-			empty  T
-			errors []source.SyntaxError
-		)
-		// Extract the "head" of the list.
-		if len(l.Elements) == 0 || l.Elements[0].AsSymbol() == nil {
-			return empty, p.SyntaxErrors(l, "invalid array")
 		}
 		// Extract expression name
 		head := (l.Elements[0].(*Symbol)).Value
@@ -331,46 +277,16 @@ func translateSExpList[T comparable](p *Translator[T], l *List) (T, []source.Syn
 	return node, errors
 }
 
-// Translate an array of S-Expressions into a unary, binary or n-ary
-// expression of some kind.  This type of expression is determined by
-// the first element of the list.  The remaining elements are treated
-// as arguments which are first recursively translated.
+// Translate an array of S-Expressions.  No array forms are currently
+// supported, hence this always reports a syntax error.
 func translateSExpArray[T comparable](p *Translator[T], l *Array) (T, []source.SyntaxError) {
-	var (
-		empty  T
-		node   T
-		errors []source.SyntaxError
-	)
-	// Sanity check this list makes sense
+	var empty T
+	// Sanity check this array makes sense
 	if len(l.Elements) == 0 || l.Elements[0].AsSymbol() == nil {
 		return empty, p.SyntaxErrors(l, "invalid array")
 	}
-	// Extract expression name
-	name := (l.Elements[0].(*Symbol)).Value
-	// Lookup appropriate translator
-	t := p.arrays[name]
-	// Check whether we found one.
-	if t != nil {
-		node, errors = (t)(l)
-	} else if p.array_default != nil {
-		node, err := (p.array_default)(l)
-		// Update source mapping
-		if err == nil {
-			map2sexp(p, node, l)
-		}
-		// Done
-		return node, err
-	} else {
-		// Default fall back
-		return empty, p.SyntaxErrors(l, "unknown array encountered")
-	}
-	// Map source node
-	if len(errors) == 0 {
-		// Update source mapping
-		map2sexp(p, node, l)
-	}
-	// Done
-	return node, errors
+	//
+	return empty, p.SyntaxErrors(l, "unknown array encountered")
 }
 
 // Add a mapping from a given item to the S-expression from which it was

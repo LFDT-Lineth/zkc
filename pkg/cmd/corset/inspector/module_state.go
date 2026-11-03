@@ -189,7 +189,7 @@ func buildEnvironment(data view.ModuleData) QueryEnv {
 		}
 		// Extract source column
 		srcCol = data.SourceColumn(srcId)
-		// Check whether source column actually active
+		// Extract cell value (which may be missing, e.g. for a raw trace)
 		cell := data.DataOf(srcCol.Register).Get(row)
 		//
 		if cell.IsEmpty() {

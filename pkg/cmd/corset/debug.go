@@ -65,7 +65,7 @@ func runDebugCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	// Read in constraint files
 	stacker := *getSchemaStack[F](cmd, SCHEMA_DEFAULT_MIR, args...)
 	stack := stacker.Build()
-	// Print source map (if requested)
+	// Print schemas
 	debug.PrintSchemas(stack, textWidth, showStatic)
 }
 

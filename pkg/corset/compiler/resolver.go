@@ -17,7 +17,6 @@ import (
 	"reflect"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -34,10 +33,10 @@ type DeclPredicate = array.Predicate[ast.Declaration]
 // etc.
 func ResolveCircuit(srcmap *source.Maps[ast.Node], circuit *ast.Circuit) (*ModuleScope, []SyntaxError) {
 	// Construct top-level scope
-	scope := NewModuleScope(true)
+	scope := NewModuleScope()
 	// Register modules
 	for _, m := range circuit.Modules {
-		scope.Declare(m.Name, util.None[string](), true)
+		scope.Declare(m.Name)
 	}
 	// Construct resolver
 	r := resolver{srcmap}

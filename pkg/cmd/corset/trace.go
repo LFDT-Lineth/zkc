@@ -214,7 +214,7 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], stack cmd_util.Schem
 		window = window.Filter(constructTraceFilter(cfg, shard))
 		// Print full trace (if requested)
 		if cfg.trace {
-			if len(trace) > 0 {
+			if len(trace) > 1 {
 				fmt.Println()
 				fmt.Printf("Shard #%d\n", i)
 				fmt.Println(strings.Repeat("-", int(80)))
@@ -232,7 +232,7 @@ func printTraceInfo[F field.Element[F]](cfg TraceConfig[F], stack cmd_util.Schem
 // which was hidden.
 func PrintTrace[F field.Element[F]](schema sc.Schema[F], trace tr.Trace[F], cellWidth, titleWidth uint) {
 	for _, shard := range trace {
-		// Build the viewing window (no source map, so show computed registers).
+		// Build the viewing window (showing all registers, including computed).
 		builder := view.NewBuilder[F]().
 			WithCellWidth(cellWidth).
 			WithTitleWidth(titleWidth).

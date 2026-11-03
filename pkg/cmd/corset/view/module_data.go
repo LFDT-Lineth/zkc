@@ -64,8 +64,6 @@ type ModuleData interface {
 	HasSourceColumn(name string) (SourceColumnId, bool)
 	// SourceColumn returns the source column associated with a given id.
 	SourceColumn(col SourceColumnId) SourceColumn
-	// SourceColumnOf returns the source column associated with a given name.
-	SourceColumnOf(name string) SourceColumn
 	// SourceColumns returns the set of all known source columns.
 	SourceColumns() []SourceColumn
 }
@@ -142,8 +140,8 @@ func (p *moduleData[F]) SourceColumn(col SourceColumnId) SourceColumn {
 	return p.rows[col.Unwrap()]
 }
 
-// SourceColumnOf returns the source column associated with the given source
-// column name.  This will panic if the given source column does not exist.
+// HasSourceColumn determines whether a source column exists with the given
+// name and, if so, returns its identifier.
 func (p *moduleData[F]) HasSourceColumn(name string) (SourceColumnId, bool) {
 	for i, col := range p.rows {
 		if col.Name == name {
@@ -152,18 +150,6 @@ func (p *moduleData[F]) HasSourceColumn(name string) (SourceColumnId, bool) {
 	}
 
 	return register.UnusedId(), false
-}
-
-// SourceColumnOf returns the source column associated with the given source
-// column name.  This will panic if the given source column does not exist.
-func (p *moduleData[F]) SourceColumnOf(name string) SourceColumn {
-	for _, col := range p.rows {
-		if col.Name == name {
-			return col
-		}
-	}
-	//
-	panic(fmt.Sprintf("unknown source column %s", name))
 }
 
 // Data returns an abtract view of the data for a register.

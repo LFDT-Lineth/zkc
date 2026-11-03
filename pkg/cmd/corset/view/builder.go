@@ -118,7 +118,7 @@ func (p Builder[F]) Build(trace tr.Shard[F]) TraceView {
 func (p Builder[F]) buildWithSchema(schema sc.Schema[F], trace tr.Shard[F]) TraceView {
 	var windows []ModuleView
 	// Assign all constant columns (if applicable)
-	trace = sc.AssignConstantColumns(p.schema.Unwrap(), trace)
+	trace = sc.AssignConstantColumns(schema, trace)
 	//
 	for i := range trace.Width() {
 		var (
@@ -127,10 +127,10 @@ func (p Builder[F]) buildWithSchema(schema sc.Schema[F], trace tr.Shard[F]) Trac
 			columns []SourceColumn
 		)
 		//
-		for i := range trMod.Width() {
+		for j := range trMod.Width() {
 			var (
-				rid   = register.NewId(i)
-				trCol = trMod.Descriptor().Columns[i]
+				rid   = register.NewId(j)
+				trCol = trMod.Descriptor().Columns[j]
 				scCol = scMod.Register(rid)
 			)
 			//
@@ -165,10 +165,10 @@ func (p Builder[F]) buildWithoutSchema(trace tr.Shard[F]) TraceView {
 			trMod   = trace.Module(i)
 			columns []SourceColumn
 		)
-		for i := range trMod.Width() {
+		for j := range trMod.Width() {
 			var (
-				ith = trMod.Descriptor().Columns[i]
-				rid = register.NewId(i)
+				ith = trMod.Descriptor().Columns[j]
+				rid = register.NewId(j)
 			)
 			//
 			columns = append(columns, SourceColumn{
