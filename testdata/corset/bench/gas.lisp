@@ -15,7 +15,7 @@
   (OUT_OF_GAS_EXCEPTION                 :binary@prove)
   (WCP_ARG1_LO                          :i128)
   (WCP_ARG2_LO                          :i128)
-  (WCP_INST                             :byte@prove :display :opcode)
+  (WCP_INST                             :byte@prove)
   (WCP_RES                              :binary@prove))
 
 (module gas)

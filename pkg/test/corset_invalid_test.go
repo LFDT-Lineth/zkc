@@ -278,10 +278,6 @@ func Test_Invalid_Type_06(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/type_invalid_06")
 }
 
-func Test_Invalid_Type_14(t *testing.T) {
-	checkCorsetInvalid(t, "corset/invalid/type_invalid_14")
-}
-
 // ===================================================================
 // Range Constraints
 // ===================================================================
@@ -399,7 +395,7 @@ func checkCorsetInvalid(t *testing.T, test string) {
 func compileCorsetFile(srcfile source.File) []source.SyntaxError {
 	var corsetConfig corset.CompilationConfig
 	//
-	_, _, errors := corset.CompileSourceFile[bls12_377.Element](corsetConfig, srcfile)
+	_, errors := corset.CompileSourceFile[bls12_377.Element](corsetConfig, srcfile)
 	//
 	return errors
 }

@@ -360,10 +360,6 @@ func Test_Valid_Type_09(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/type_09", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Valid_Type_10(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/type_10", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
 func Test_Valid_Type_11(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/type_11", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }

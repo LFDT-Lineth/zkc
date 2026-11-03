@@ -108,13 +108,7 @@ func (p *cellFormatter) Module(mod ModuleData) ModuleFormatting {
 
 // Cell implementation for ModuleFormatting interface
 func (p *cellFormatter) Cell(col SourceColumn, row uint, text string) termio.FormattedText {
-	if !p.data.IsActive(col, row) {
-		if p.ansiEscapes {
-			return termio.NewColouredText(text, termio.TERM_BLACK)
-		}
-		//
-		return termio.NewText("")
-	} else if containsCell(p.data.Id(), col, row, p.cells) {
+	if containsCell(p.data.Id(), col, row, p.cells) {
 		if p.ansiEscapes {
 			return termio.NewFormattedText(text, termio.NewAnsiEscape().FgColour(termio.TERM_RED))
 		}

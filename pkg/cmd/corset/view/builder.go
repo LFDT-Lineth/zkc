@@ -13,14 +13,12 @@
 package view
 
 import (
-	"github.com/LFDT-Lineth/zkc/pkg/corset"
-	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	tr "github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
 // CellRefSet defines a type for sets of cell references.
@@ -39,20 +37,17 @@ type Builder[F field.Element[F]] struct {
 	// Formatting to use
 	formatting TraceFormatting
 	// Schema for the trace being viewed
-	schema util.Option[schema.Schema[F]]
-	// Optional source map information.  This is primarily used to determine
-	srcmap util.Option[corset.SourceMap]
+	schema util.Option[sc.Schema[F]]
 	// Optional predicate determining whether a given module is publicly visible.
-	// When set, it overrides the public flag otherwise derived from the source
-	// map (or the default).  This is used by callers without a source map (e.g.
-	// zkc) to hide synthetic modules such as range-check tables.
+	// When not set, all modules are considered public.  This is used by callers
+	// (e.g. zkc) to hide synthetic modules such as range-check tables.
 	visibility util.Option[func(string) bool]
 }
 
 // NewBuilder constructs a default builder.
 func NewBuilder[F field.Element[F]]() Builder[F] {
-	return Builder[F]{util.None[CellRefSet](), false, 16, 16, DefaultFormatter(),
-		util.None[schema.Schema[F]](), util.None[corset.SourceMap](), util.None[func(string) bool]()}
+	return Builder[F]{util.None[CellRefSet](), false, 16, 16, DefaultFormatter(), util.None[sc.Schema[F]](),
+		util.None[func(string) bool]()}
 }
 
 // WithCellWidth sets the maximum width of any cell in the view.
@@ -93,7 +88,7 @@ func (p Builder[F]) WithFormatting(formatting TraceFormatting) Builder[F] {
 
 // WithSchema applies schema information to the view.  The main
 // benefit of this is that it offers support for constant-columns.
-func (p Builder[F]) WithSchema(schema schema.Schema[F]) Builder[F] {
+func (p Builder[F]) WithSchema(schema sc.Schema[F]) Builder[F] {
 	var builder = p
 	//
 	builder.schema = util.Some(schema)
@@ -101,19 +96,8 @@ func (p Builder[F]) WithSchema(schema schema.Schema[F]) Builder[F] {
 	return builder
 }
 
-// WithSourceMap applies source-mapping information to the view.  The main
-// benefit of this is that it includes display modifiers.
-func (p Builder[F]) WithSourceMap(srcmap corset.SourceMap) Builder[F] {
-	var builder = p
-	//
-	builder.srcmap = util.Some(srcmap)
-	//
-	return builder
-}
-
 // WithVisibility applies a predicate determining whether a given module is
-// publicly visible.  When set, it overrides the public flag otherwise derived
-// from the source map (or the default).
+// publicly visible.  When not set, all modules are considered public.
 func (p Builder[F]) WithVisibility(public func(string) bool) Builder[F] {
 	var builder = p
 	//
@@ -124,25 +108,42 @@ func (p Builder[F]) WithVisibility(public func(string) bool) Builder[F] {
 
 // Build the viewing window for this trace.
 func (p Builder[F]) Build(trace tr.Shard[F]) TraceView {
-	var windows []ModuleView
-	//
-	srcmap, enums := extractSourceMap(p.srcmap)
-	//
 	if p.schema.HasValue() {
-		// Assign all constant columns (if applicable)
-		trace = schema.AssignConstantColumns(p.schema.Unwrap(), trace)
+		return p.buildWithSchema(p.schema.Unwrap(), trace)
 	}
 	//
+	return p.buildWithoutSchema(trace)
+}
+
+func (p Builder[F]) buildWithSchema(schema sc.Schema[F], trace tr.Shard[F]) TraceView {
+	var windows []ModuleView
+	// Assign all constant columns (if applicable)
+	trace = sc.AssignConstantColumns(p.schema.Unwrap(), trace)
+	//
 	for i := range trace.Width() {
-		trMod := trace.Module(i)
+		var (
+			trMod   = trace.Module(i)
+			scMod   = schema.Module(i)
+			columns []SourceColumn
+		)
 		//
-		public, columns := extractSourceMapData(trMod, p.computed, srcmap)
-		// Override visibility with the caller-supplied predicate (if any).
-		if p.visibility.HasValue() {
-			public = p.visibility.Unwrap()(trMod.Name())
+		for i := range trMod.Width() {
+			var (
+				rid   = register.NewId(i)
+				trCol = trMod.Descriptor().Columns[i]
+				scCol = scMod.Register(rid)
+			)
+			//
+			if !scCol.IsComputed() || p.computed {
+				columns = append(columns, SourceColumn{
+					Name:     trCol.Name,
+					Computed: scCol.IsComputed(),
+					Register: rid,
+				})
+			}
 		}
 		//
-		data := newModuleData(i, trMod, public, enums, columns)
+		data := newModuleData(i, trMod, p.isPublic(trMod.Name()), columns)
 		// construct initial module view
 		windows = append(windows, &moduleView[F]{
 			window:     data.Window(),
@@ -156,104 +157,47 @@ func (p Builder[F]) Build(trace tr.Shard[F]) TraceView {
 	return &traceView{windows}
 }
 
-func extractSourceMap(optSrcmap util.Option[corset.SourceMap]) (map[string]corset.SourceModule, []corset.Enumeration) {
-	var (
-		mapping = make(map[string]corset.SourceModule)
-		enums   []corset.Enumeration
-	)
-
-	if optSrcmap.HasValue() {
-		var srcmap = optSrcmap.Unwrap()
-		//
-		for _, module := range srcmap.Flatten(concreteModules) {
-			mapping[module.Name] = module
-		}
-		//
-		enums = srcmap.Enumerations
-	}
+func (p Builder[F]) buildWithoutSchema(trace tr.Shard[F]) TraceView {
+	var windows []ModuleView
 	//
-	return mapping, enums
-}
-
-func extractSourceMapData[F field.Element[F]](trMod tr.Module[F], computed bool,
-	srcmap map[string]corset.SourceModule) (bool, []SourceColumn) {
-	//
-	var (
-		public  = true
-		columns []SourceColumn
-		seen    = make(map[uint]bool)
-		name    = trMod.Name()
-	)
-	//
-	if m, ok := srcmap[name]; ok {
-		public = m.Public
-		// Extract column info
-		columns = extractSourceColumns(file.NewAbsolutePath(""),
-			m.Selector, m.Columns, m.Submodules)
-		// Mark all as seen
-		for _, column := range columns {
-			seen[column.Register.Unwrap()] = true
-		}
-	}
-	//
-	if computed {
-		// Add any registers not already seen
+	for i := range trace.Width() {
+		var (
+			trMod   = trace.Module(i)
+			columns []SourceColumn
+		)
 		for i := range trMod.Width() {
-			ith := trMod.Descriptor().Columns[i]
+			var (
+				ith = trMod.Descriptor().Columns[i]
+				rid = register.NewId(i)
+			)
 			//
-			if _, ok := seen[i]; !ok {
-				rid := register.NewId(i)
-				//
-				columns = append(columns, SourceColumn{
-					Name:     ith.Name,
-					Display:  0,
-					Computed: true,
-					Selector: util.None[string](),
-					Register: rid,
-				})
-			}
+			columns = append(columns, SourceColumn{
+				Name:     ith.Name,
+				Computed: false,
+				Register: rid,
+			})
 		}
-	}
-	//
-	return public, columns
-}
-
-// ExtractSourceColumns extracts source column descriptions for a given module
-// based on the corset source mapping.  This is particularly useful when you
-// want to show the original name for a column (e.g. when its in a perspective),
-// rather than the raw register name.
-func extractSourceColumns(path file.Path, selector util.Option[string],
-	columns []corset.SourceColumn, submodules []corset.SourceModule) []SourceColumn {
-	//
-	var srcColumns []SourceColumn
-	//
-	for _, col := range columns {
 		//
-		name := path.Extend(col.Name).String()[1:]
-		//
-		srcColumns = append(srcColumns, SourceColumn{
-			Name:     name,
-			Display:  col.Display,
-			Computed: col.Computed,
-			Selector: selector,
-			Register: col.Register.Register(),
+		data := newModuleData(i, trMod, p.isPublic(trMod.Name()), columns)
+		// construct initial module view
+		windows = append(windows, &moduleView[F]{
+			window:     data.Window(),
+			cellWidth:  p.cellWidth,
+			titleWidth: p.titleWidth,
+			formatting: p.formatting.Module(data),
+			data:       data,
 		})
 	}
 	//
-	for _, submod := range submodules {
-		// Curiously, it only makes sense to recurse on virtual modules here.
-		if submod.Virtual {
-			subpath := path.Extend(submod.Name)
-			subSrcColumns := extractSourceColumns(*subpath, submod.Selector,
-				submod.Columns, submod.Submodules)
-			//
-			srcColumns = append(srcColumns, subSrcColumns...)
-		}
-	}
-	//
-	return srcColumns
+	return &traceView{windows}
 }
 
-func concreteModules(m *corset.SourceModule) bool {
-	return !m.Virtual
+// Determine whether a given module is publicly visible.  Modules are public by
+// default, unless a visibility predicate is given.
+func (p Builder[F]) isPublic(name string) bool {
+	if p.visibility.HasValue() {
+		return p.visibility.Unwrap()(name)
+	}
+	//
+	return true
 }
