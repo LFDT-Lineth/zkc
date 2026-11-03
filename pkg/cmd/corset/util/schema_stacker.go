@@ -165,12 +165,12 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 }
 
 // CompileSourceFiles accepts a set of source (i.e. lisp) files and compiles
-// them into a single schema, along with its corresponding source map.  Any
-// directories given in the list of filenames are recursively expanded first.
-// This can result, for example, in a syntax error, etc.  NOTES: source files
-// can be compiled with (or without) the standard library.  Generally speaking,
-// you want to compile with the standard library.  However, some internal tests
-// are run without including the standard library to minimise the surface area.
+// them into a single schema.  Any directories given in the list of filenames
+// are recursively expanded first.  This can result, for example, in a syntax
+// error, etc.  NOTES: source files can be compiled with (or without) the
+// standard library.  Generally speaking, you want to compile with the standard
+// library.  However, some internal tests are run without including the
+// standard library to minimise the surface area.
 func CompileSourceFiles[F field.Element[F]](config corset.CompilationConfig, filenames []string,
 ) mir.Schema[F] {
 	//

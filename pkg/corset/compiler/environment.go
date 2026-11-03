@@ -132,12 +132,10 @@ func (p *GlobalEnvironment) initModules(modules []*ModuleScope) {
 	p.moduleMap = make(map[string]uint)
 	// Allocate submodules one-by-one
 	for _, m := range modules {
-		if !m.Virtual() {
-			name := m.path.String()
-			mid := uint(len(p.modules))
-			p.modules = append(p.modules, name)
-			p.moduleMap[name] = mid
-		}
+		name := m.path.String()
+		mid := uint(len(p.modules))
+		p.modules = append(p.modules, name)
+		p.moduleMap[name] = mid
 	}
 }
 

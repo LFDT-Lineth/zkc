@@ -113,10 +113,10 @@ func runInspectCmd[F field.Element[F]](cmd *cobra.Command, args []string) {
 	}
 }
 
-// InspectTrace opens the given trace in the interactive inspector using the
-// supplied register mapping, without requiring a corset source map.  Columns are
-// shown as computed (low-level) registers.  This is intended for callers (e.g.
-// the zkc toolchain) which generate a trace but have no source map available.
+// InspectTrace opens the given trace in the interactive inspector.  All
+// registers (including computed registers) are shown.  This is intended for
+// callers (e.g. the zkc toolchain) which generate a trace and want to inspect
+// it directly.
 //
 // The optional "public" predicate determines which modules are publicly visible
 // (shown by default); when nil, all modules are public.  Callers use this to
@@ -128,7 +128,7 @@ func InspectTrace[F field.Element[F]](schema sc.Schema[F], trace trace.Shard[F],
 	if err != nil {
 		return []error{err}
 	}
-	// Build the viewing window (no source map, so show computed registers).
+	// Build the viewing window (showing all registers, including computed).
 	builder := view.NewBuilder[F]().
 		WithTitleWidth(titleWidth).
 		WithCellWidth(cellWidth).
