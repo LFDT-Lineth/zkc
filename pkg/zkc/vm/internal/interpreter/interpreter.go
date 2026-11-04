@@ -324,6 +324,8 @@ func (p *Interpreter[W]) Reset(fid uint16) {
 	p.dataStack.Clear()
 	// allocate space for the given function
 	p.dataStack.Alloc(p.program.Module(fid).Width())
+	//
+	p.cache.Reset()
 }
 
 // Inputs implementation of Core interface.  The inputs are the non-static
@@ -914,10 +916,10 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 	// perform cache lookup
 	if p.tryCachedCall(fid, calleeFp, width, numArgs) {
 		// Skip to next instruction
-		p.pc = p.pc + n
+		p.pc = pc + n
 	} else {
 		// save function pointer and return address
-		p.callStack.Push(NewStackFrame(p.fid, p.fp, p.pc+n))
+		p.callStack.Push(NewStackFrame(p.fid, p.fp, pc+n))
 		//
 		p.fid = fid
 		p.fp = calleeFp
@@ -948,7 +950,7 @@ func (p *Interpreter[W]) executeEnter_2(pc uint32, codes []uint32, stack []W) er
 		p.pc = pc + n
 	} else {
 		// save function pointer and return address
-		p.callStack.Push(NewStackFrame(p.fid, p.fp, p.pc+n))
+		p.callStack.Push(NewStackFrame(p.fid, p.fp, pc+n))
 		//
 		p.fid = fid
 		p.fp = calleeFp

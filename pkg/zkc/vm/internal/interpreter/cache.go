@@ -51,6 +51,18 @@ func newFunctionCallCache[W word.Word[W]](program descriptor.Program[W], tracing
 	return FunctionCallCache[W]{program, cache}
 }
 
+// Reset evicts every cached invocation.  Cached results are only valid within a
+// single execution: a cacheable function may read input (ROM) memory, whose
+// contents are set afresh by each Boot / Restore.  Hence, this must be called
+// whenever the machine is reset to a new entry point.
+func (p *FunctionCallCache[W]) Reset() {
+	for i, cache := range p.cache {
+		if cache != nil {
+			p.cache[i] = hash.NewMap[hash.Array[W], []W](128)
+		}
+	}
+}
+
 // Get checks whether a matching invocation of the given function is stored in
 // the cache and, if so, returns this. NOTE: the returned array (if present) is
 // owned by the cache, and hence, should be copied into its final destination to
