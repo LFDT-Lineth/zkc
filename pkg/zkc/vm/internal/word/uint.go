@@ -89,6 +89,16 @@ func (p Uint) Cmp64(o uint64) int {
 	return 1
 }
 
+// Equals implementation for Word interface.
+func (p Uint) Equals(o Uint) bool {
+	return p.Cmp(o) == 0
+}
+
+// Hash implementation for Word interface.
+func (p Uint) Hash() uint64 {
+	panic("unsupported operation")
+}
+
 // Div implementation for Word interface.
 func (p Uint) Div(w Uint) Uint {
 	if w.value.Sign() == 0 {

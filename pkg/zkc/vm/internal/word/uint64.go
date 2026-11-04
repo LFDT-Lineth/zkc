@@ -87,6 +87,16 @@ func (p Uint64) Cmp64(o uint64) int {
 	return cmp.Compare(p.value, o)
 }
 
+// Equals implementation for Word interface.
+func (p Uint64) Equals(o Uint64) bool {
+	return p.value == o.value
+}
+
+// Hash implementation for Word interface.
+func (p Uint64) Hash() uint64 {
+	return p.value
+}
+
 // Div implementation for Word interface.
 func (p Uint64) Div(w Uint64) Uint64 {
 	return Uint64{p.value / w.value}

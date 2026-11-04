@@ -120,6 +120,26 @@ func (p Uint128) Cmp64(o uint64) int {
 	return cmp.Compare(p.lo, o)
 }
 
+// Equals implementation for Word interface.
+func (p Uint128) Equals(o Uint128) bool {
+	return p.hi == o.hi && p.lo == o.lo
+}
+
+// Hash implementation for Word interface.
+func (p Uint128) Hash() uint64 {
+	const golden = 0x9e3779b97f4a7c15
+	//
+	h := p.lo ^ (p.hi + golden + (p.lo << 6) + (p.lo >> 2))
+	// Mix bits (SplitMix64 finalizer)
+	h ^= h >> 30
+	h *= 0xbf58476d1ce4e5b9
+	h ^= h >> 27
+	h *= 0x94d049bb133111eb
+	h ^= h >> 31
+	//
+	return h
+}
+
 // Div implementation for Word interface.
 func (p Uint128) Div(w Uint128) Uint128 {
 	if w.isZero() {
