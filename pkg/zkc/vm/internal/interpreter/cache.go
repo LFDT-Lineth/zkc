@@ -17,6 +17,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/heap"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -30,31 +31,36 @@ type funCache[W word.Word[W]] = hash.Map[hash.Array[W], []W]
 // for a given program.  A secondary purpose is to improving tracing performance
 // by avoiding needless (expensive) executions.
 type FunctionCallCache[W word.Word[W]] struct {
-	cache []*funCache[W]
+	program descriptor.Program[W]
+	cache   []*funCache[W]
 }
 
-func newFunctionCallCache[W word.Word[W]](program descriptor.Program[W]) FunctionCallCache[W] {
+func newFunctionCallCache[W word.Word[W]](program descriptor.Program[W], tracing bool) FunctionCallCache[W] {
 	var (
 		cache = make([]*funCache[W], len(program.Modules()))
 	)
-	//
-	for i, m := range program.Modules() {
-		if f, ok := m.(*descriptor.Function[W]); ok && isCacheable(f) {
-			cache[i] = hash.NewMap[hash.Array[W], []W](128)
+	// Only employ the cache when tracing
+	if tracing {
+		for i, m := range program.Modules() {
+			if f, ok := m.(*descriptor.Function[W]); ok && isCacheable(f) {
+				cache[i] = hash.NewMap[hash.Array[W], []W](128)
+			}
 		}
 	}
 	//
-	return FunctionCallCache[W]{cache}
+	return FunctionCallCache[W]{program, cache}
 }
 
 // Get checks whether a matching invocation of the given function is stored in
 // the cache and, if so, returns this. NOTE: the returned array (if present) is
 // owned by the cache, and hence, should be copied into its final destination to
 // avoid aliasing.
-func (p *FunctionCallCache[W]) Get(fid uint16, args []W) util.Option[[]W] {
+func (p *FunctionCallCache[W]) Get(fid uint16, fp uint32, nArgs uint32, dataStack heap.Heap[W]) util.Option[[]W] {
 	var fidCache = p.cache[fid]
 	//
 	if fidCache != nil {
+		var args = dataStack.Slice(uint(fp), uint(fp+nArgs))
+		//
 		if returns, ok := fidCache.Get(hash.NewArray(args)); ok {
 			return util.Some(returns)
 		}
@@ -65,21 +71,30 @@ func (p *FunctionCallCache[W]) Get(fid uint16, args []W) util.Option[[]W] {
 
 // Insert allocates an invocation of the given function into the cache.  NOTE: both
 // input arrays are cloned by this function and, hence, are not aliased.
-func (p *FunctionCallCache[W]) Insert(fid uint16, args []W, returns []W) {
+func (p *FunctionCallCache[W]) Insert(fid uint16, fp uint32, dataStack heap.Heap[W]) {
 	var fidCache = p.cache[fid]
 	//
 	if fidCache != nil {
+		var (
+			callee = p.program.Module(fid)
+			nArgs  = callee.NumInputs()
+			nRets  = callee.NumOutputs()
+			// Slice out the current arguments / returns
+			args = dataStack.Slice(uint(fp), uint(fp)+nArgs)
+			rets = dataStack.Slice(uint(fp)+nArgs, uint(fp)+nArgs+nRets)
+		)
 		// Clone arguments
 		args = slices.Clone(args)
 		// Clone returns
-		returns = slices.Clone(returns)
+		rets = slices.Clone(rets)
 		// Insert into cache
-		fidCache.Insert(hash.NewArray(args), returns)
+		fidCache.Insert(hash.NewArray(args), rets)
 	}
 }
 
 // Determine whether a given function should be considered suibable for caching
 // or not.
 func isCacheable[W word.Word[W]](f *descriptor.Function[W]) bool {
-	return !f.Kind().IsGlobal() && len(f.Effects()) == 0
+	return !f.Kind().IsGlobal() && !f.Kind().IsNative() &&
+		len(f.Effects()) == 0 && f.NumInputs() <= 8
 }
