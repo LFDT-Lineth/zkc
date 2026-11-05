@@ -28,7 +28,7 @@ type funCache[W word.Word[W]] = hash.Map[hash.Array[W], []W]
 // FunctionCallCache provides a simple cache for memoising function calls.  That
 // is, caching the return values computed for the given inputs.  The primary
 // purpose of such a cache is to eliminate duplicate rows in the execution trace
-// for a given program.  A secondary purpose is to improving tracing performance
+// for a given program.  A secondary purpose is to improve tracing performance
 // by avoiding needless (expensive) executions.
 type FunctionCallCache[W word.Word[W]] struct {
 	program descriptor.Program[W]
@@ -42,7 +42,7 @@ func newFunctionCallCache[W word.Word[W]](program descriptor.Program[W], tracing
 	// Only employ the cache when tracing
 	if tracing {
 		for i, m := range program.Modules() {
-			if f, ok := m.(*descriptor.Function[W]); ok && isCacheable(f) {
+			if f, ok := m.(*descriptor.Function[W]); ok && f.IsCacheable() {
 				cache[i] = hash.NewMap[hash.Array[W], []W](128)
 			}
 		}
@@ -102,11 +102,4 @@ func (p *FunctionCallCache[W]) Insert(fid uint16, fp uint32, dataStack heap.Heap
 		// Insert into cache
 		fidCache.Insert(hash.NewArray(args), rets)
 	}
-}
-
-// Determine whether a given function should be considered suibable for caching
-// or not.
-func isCacheable[W word.Word[W]](f *descriptor.Function[W]) bool {
-	return !f.Kind().IsGlobal() && !f.Kind().IsNative() &&
-		len(f.Effects()) == 0 && f.NumInputs() <= 8
 }

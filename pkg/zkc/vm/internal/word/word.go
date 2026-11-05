@@ -64,9 +64,9 @@ type Word[W any] interface {
 	Cmp(y W) int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 	Cmp64(y uint64) int
-	// Equals implementation of Hasher interface
+	// Equals implementation of Hasher interface.
 	Equals(y W) bool
-	// Hash implementation of Hasher interfac
+	// Hash implementation of Hasher interface.
 	Hash() uint64
 	// Div divides this word by another.  Panics on division by zero.
 	Div(W) W
