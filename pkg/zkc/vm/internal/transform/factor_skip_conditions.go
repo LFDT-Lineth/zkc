@@ -97,7 +97,7 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 
 		// Optimization to avoid factoring if the body is
 		// - a single bit equality (with arms constant or register copies)
-		// - a branch end (return, fail, or an empty skip)
+		// - a fail, or a return or empty skip with nothing after it
 		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
 			factor[uint(i)] = false
 			continue
@@ -211,17 +211,47 @@ func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
 	return 0, false
 }
 
-// bodyIsBranchEnd reports whether the SkipIf at index i guards only a branch
-// end: a skip (empty body), a fail, or a return.
+// bodyIsBranchEnd reports whether the SkipIf at index i should stay unfactored.
+// A fail aborts, so later writes are plain equalities and the comparison is not
+// copied onto them. A return or an empty skip only qualifies when nothing
+// follows it except the function epilogue: writes after a return are guarded
+// and would each repeat the comparison.
 func bodyIsBranchEnd[W Word[W]](codes []Bytecode[W], i uint) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	//
 	var (
 		s     = uint(si.Skip)
 		taken = i + 1 + s
+		body  = []Bytecode[W]{}
 	)
 	//
-	return s > 0 && taken <= uint(len(codes)) && isBodyBranchEnd(codes[i+1:taken])
+	if s == 0 || taken > uint(len(codes)) {
+		return false
+	}
+	//
+	body = codes[i+1 : taken]
+	if !isBodyBranchEnd(body) {
+		return false
+	} else if containsFail(body) {
+		return true
+	}
+	//
+	return isBodyBranchEnd(codes[taken:])
+}
+
+func containsFail[W Word[W]](codes []Bytecode[W]) bool {
+	for _, code := range codes {
+		if isFail(code) {
+			return true
+		}
+	}
+	//
+	return false
+}
+
+func isFail[W Word[W]](code Bytecode[W]) bool {
+	_, ok := code.(*bytecode.Fail[W])
+	return ok
 }
 
 func isBodyBranchEnd[W word.Word[W]](codes []Bytecode[W]) bool {
