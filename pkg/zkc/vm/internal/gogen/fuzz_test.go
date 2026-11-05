@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/gogen"
 )
 
 // TestGenFuzz drives the differential corpus with pseudo-random inputs (a
@@ -52,7 +52,7 @@ func TestGenFuzz(t *testing.T) {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
 				m := compileUint(t, tc.src, shape.fastMode)
 
-				src, err := vm.GenerateGo(m, vm.GoGenConfig{})
+				src, err := gogen.Generate(m, gogen.Config{})
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}

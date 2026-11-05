@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
@@ -53,7 +52,7 @@ func runGogenExecutionTest(t *testing.T, program vm.Program[vm.Uint], prog strin
 
 	// Discard the program's debug/fail output: this cross-check compares the
 	// output memories and accept/reject verdict, not the printed messages.
-	got, errored, runErr := gogen.Run(prog, gogenInputs(program, test.data), io.Discard)
+	got, errored, runErr := vm.Run(prog, gogenInputs(program, test.data), io.Discard)
 	if runErr != nil {
 		t.Errorf("[gogen]%s:%d run: %v", test.filename, test.line, runErr)
 		return

@@ -28,7 +28,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -36,6 +35,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/gogen"
 )
 
 // tutorialSrc mirrors pkg/zkc/tutorial: branchless u16 arithmetic with single
@@ -514,7 +514,7 @@ func TestGenValidGo(t *testing.T) {
 	for name, src := range srcs {
 		for _, shape := range shapes {
 			t.Run(name+"/"+shape.name, func(t *testing.T) {
-				out, err := vm.GenerateGo(compileUint(t, src, shape.fastMode), vm.GoGenConfig{})
+				out, err := gogen.Generate(compileUint(t, src, shape.fastMode), gogen.Config{})
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}
@@ -813,7 +813,7 @@ func TestGenDifferential(t *testing.T) {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
 				p := compileUint(t, tc.src, shape.fastMode)
 
-				src, err := vm.GenerateGo(p, vm.GoGenConfig{})
+				src, err := gogen.Generate(p, gogen.Config{})
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}
@@ -847,7 +847,7 @@ func TestGenDifferential(t *testing.T) {
 func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 	var (
 		data     = bit.NewArray(nil, 0, bit.BigEndian)
-		src, err = vm.GenerateGo(compileUint(t, doubleSrc, false), vm.GoGenConfig{})
+		src, err = gogen.Generate(compileUint(t, doubleSrc, false), gogen.Config{})
 	)
 	if err != nil {
 		t.Fatalf("GenerateGo: %v", err)
@@ -864,7 +864,7 @@ func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 		{"unknown", map[string]bit.Array{"data": data, "extra": data}, `unknown input "extra"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, errored, err := gogen.Run(prog, tc.in, io.Discard)
+			_, errored, err := vm.Run(prog, tc.in, io.Discard)
 			if err == nil {
 				t.Fatal("expected harness error")
 			}
@@ -962,7 +962,7 @@ func buildGeneratedProgram(t *testing.T, src string) (string, error) {
 func runProgram(t *testing.T, prog string, in map[string]bit.Array) (map[string]bit.Array, bool) {
 	t.Helper()
 
-	out, errored, err := gogen.Run(prog, in, io.Discard)
+	out, errored, err := vm.Run(prog, in, io.Discard)
 	if err != nil {
 		t.Fatalf("running generated program: %v", err)
 	}
@@ -1091,14 +1091,14 @@ func compileUintVerbose(t testing.TB, src string) vm.Program[vm.Uint] {
 func runStderr(t *testing.T, p vm.Program[vm.Uint], in map[string][]uint64) (stderr string, exitErr bool) {
 	t.Helper()
 
-	src, err := vm.GenerateGo(p, vm.GoGenConfig{})
+	src, err := gogen.Generate(p, gogen.Config{})
 	if err != nil {
 		t.Fatalf("GenerateGo: %v", err)
 	}
 
 	prog := buildProgram(t, src)
 
-	inJSON, err := gogen.MarshalInputs(encodeInputs(p, in))
+	inJSON, err := vm.MarshalInputs(encodeInputs(p, in))
 	if err != nil {
 		t.Fatalf("marshal inputs: %v", err)
 	}

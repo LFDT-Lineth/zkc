@@ -16,8 +16,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -62,9 +60,18 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 		build   = GetBuildConfig[F](cmd, field)
 		input   map[string]bit.Array
 		outputs map[string]bit.Array
+		// extract checkpointing config
+		checkpointing = GetString(cmd, "checkpointing")
 	)
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
+	//
+	execConfig := vm.DEFAULT_EXECUTION_CONFIG.
+		WithGoGen(build.gogen)
+	// Including checkpointing configuration (if this makes sense).
+	if checkpointing != "" {
+		execConfig = execConfig.WithCheckpointing(parseShardingConfig(checkpointing))
+	}
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	_, binfile := Build[F, W](build, args[1:]...)
 	// =====================================================
@@ -73,12 +80,7 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 	// Parse an filter input file
 	input = filterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
 	// decide what is happening
-	if build.gogen {
-		// Execute via native Go generated from the word machine.
-		outputs, errors = executeWithGogen(binfile.RawProgram(), input)
-	} else {
-		outputs, errors = binfile.Execute(input)
-	}
+	outputs, errors = binfile.Execute(input, execConfig)
 	// =====================================================
 	// Generate output
 	// =====================================================
@@ -105,41 +107,6 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 
 //nolint:errcheck
 func init() {
+	executeCmd.Flags().String("checkpointing", "", "specify checkpointing strategy")
 	rootCmd.AddCommand(executeCmd)
-}
-
-// executeWithGogen executes the word machine by generating native Go, compiling
-// it, and running the resulting binary as a subprocess — the same path the
-// gogen differential tests take, exposed here as the "--gogen" execution mode.
-func executeWithGogen(program vm.Program[vm.Uint], input map[string]bit.Array) (map[string]bit.Array, []error) {
-	var (
-		stats = util.NewPerfStats()
-	)
-	// Generate native Go source for the word machine.
-	src, err := vm.GenerateGo(program, vm.GoGenConfig{})
-	if err != nil {
-		return nil, []error{err}
-	}
-	// Compile the generated source to a temporary executable.
-	prog, cleanup, err := gogen.Build(src)
-	if err != nil {
-		return nil, []error{err}
-	}
-	// Log result
-	stats.Log(fmt.Sprintf("compiling binary %s", prog))
-	//
-	defer cleanup()
-	// Run the compiled program, passing only the machine's declared inputs (the
-	// generated harness rejects unknown keys).  Forward its debug/printf and
-	// fail output to our stderr so those statements are surfaced to the user.
-	outputs, errored, err := gogen.Run(prog, input, os.Stderr)
-	//
-	switch {
-	case err != nil:
-		return nil, []error{err}
-	case errored:
-		return nil, []error{fmt.Errorf("execution rejected (trace rejected)")}
-	}
-	//
-	return outputs, nil
 }

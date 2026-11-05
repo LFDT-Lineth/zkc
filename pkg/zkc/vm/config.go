@@ -33,6 +33,49 @@ func NewShardingStrategy(fun string, n uint64) ShardingStrategy {
 	return ShardingStrategy{fun, n}
 }
 
+// ============================================================================
+// ExecutionConfig
+// ============================================================================
+
+// ExecutionConfig provides necessary configuration options for fast-mode execution.
+type ExecutionConfig struct {
+	// Specified whether or not to use gogen
+	gogen bool
+	// Specifies whether or not to use a sharding strategy.
+	shardingStrategy util.Option[ShardingStrategy]
+}
+
+// DEFAULT_EXECUTION_CONFIG defines a default configuration for fast-mode execution.
+var DEFAULT_EXECUTION_CONFIG = ExecutionConfig{
+	gogen: false,
+}
+
+// GoGen determines whether (or not) gogen should be used for fast-mode
+// execution.
+func (tb ExecutionConfig) GoGen() bool {
+	return tb.gogen
+}
+
+// WithGoGen updates the configuration given to enable (or disable) gogen for
+// fast-mode execution.
+func (tb ExecutionConfig) WithGoGen(flag bool) ExecutionConfig {
+	tb.gogen = flag
+	//
+	return tb
+}
+
+// WithCheckpointing updates the configuration to employ a specific checking
+// strategy.  Otherwise, by default, no sharding is performed.
+func (tb ExecutionConfig) WithCheckpointing(strategy ShardingStrategy) ExecutionConfig {
+	tb.shardingStrategy = util.Some(strategy)
+	//
+	return tb
+}
+
+// ============================================================================
+// TraceConfig
+// ============================================================================
+
 // TraceConfig provides the necessary configuration for the trace generation.
 type TraceConfig struct {
 	// Determines whether or not trace expansion should be performed in
