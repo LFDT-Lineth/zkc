@@ -139,6 +139,9 @@ type Interpreter[W word.Word[W]] struct {
 	// (Large) paged random-access memories which may be freely read and
 	// written.
 	prams []PagedRandomAccess[W]
+	// Function call cache is used to implement memoisation of appropriate
+	// functions.
+	cache FunctionCallCache[W]
 	// Optional callback invoked whenever a breakpoint is reached, i.e. an
 	// instruction flagged with the BREAKPOINT modifier bit (see BreakPoint) is
 	// about to execute.  The callback typically snapshots the current machine
@@ -187,6 +190,7 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 		rams        []RandomAccess[W]
 		prams       []PagedRandomAccess[W]
 		compiled, _ = CompileProgram(program, tracing)
+		cache       = newFunctionCallCache(program, tracing)
 	)
 	// sanity check prime fits within target word
 	if prime.Bandwidth() < program.Field().BandWidth {
@@ -238,6 +242,7 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 		woms:    woms,
 		rams:    rams,
 		prams:   prams,
+		cache:   cache,
 		// Default breakpointer: a no-op.  A real handler is installed via
 		// BreakPointer when tracing / debugging (see BootAndTrace, BootAndDebug).
 		// Note that failures route through this handler too (see failure), so it
@@ -319,6 +324,8 @@ func (p *Interpreter[W]) Reset(fid uint16) {
 	p.dataStack.Clear()
 	// allocate space for the given function
 	p.dataStack.Alloc(p.program.Module(fid).Width())
+	//
+	p.cache.Reset()
 }
 
 // Inputs implementation of Core interface.  The inputs are the non-static
@@ -893,21 +900,31 @@ func (p *Interpreter[W]) initialise(input map[string][]W) {
 func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) error {
 	var (
 		width, target, args, n = encoding.DecodeEnter_n(pc, codes)
+		// Cache number of arguments
+		numArgs = uint32(args.Count())
 		// determine callee frame pointer
 		calleeFp = p.fp + uint32(len(stack))
+		//
+		fid = p.program.FunctionAt(target).ModuleId
 	)
 	// allocate callee frame
 	p.dataStack.Alloc(uint(width))
-	// save function pointer and return address
-	p.callStack.Push(NewStackFrame(p.fid, p.fp, p.pc+n))
 	// copy arguments into callee frame
 	for i := uint(calleeFp); args.HasNext(); i++ {
 		p.dataStack.Set(i, stack[args.Next()])
 	}
-	//
-	p.fid = p.program.FunctionAt(target).ModuleId
-	p.fp = calleeFp
-	p.pc = target
+	// perform cache lookup
+	if p.tryCachedCall(fid, calleeFp, width, numArgs) {
+		// Skip to next instruction
+		p.pc = pc + n
+	} else {
+		// save function pointer and return address
+		p.callStack.Push(NewStackFrame(p.fid, p.fp, pc+n))
+		//
+		p.fid = fid
+		p.fp = calleeFp
+		p.pc = target
+	}
 	//
 	return nil
 }
@@ -920,19 +937,49 @@ func (p *Interpreter[W]) executeEnter_2(pc uint32, codes []uint32, stack []W) er
 		width, target, arg, n = encoding.DecodeEnter_2(pc, codes)
 		// determine callee frame pointer
 		calleeFp = p.fp + uint32(len(stack))
+		//
+		fid = p.program.FunctionAt(target).ModuleId
 	)
 	// allocate callee frame
 	p.dataStack.Alloc(uint(width))
-	// save function pointer and return address
-	p.callStack.Push(NewStackFrame(p.fid, p.fp, p.pc+n))
 	// copy the one argument into the callee frame
 	p.dataStack.Set(uint(calleeFp), stack[arg])
-	//
-	p.fid = p.program.FunctionAt(target).ModuleId
-	p.fp = calleeFp
-	p.pc = target
+	// perform cache lookup
+	if p.tryCachedCall(fid, calleeFp, width, 1) {
+		// Skip to next instruction
+		p.pc = pc + n
+	} else {
+		// save function pointer and return address
+		p.callStack.Push(NewStackFrame(p.fid, p.fp, pc+n))
+		//
+		p.fid = fid
+		p.fp = calleeFp
+		p.pc = target
+	}
 	//
 	return nil
+}
+
+// Check whether a call to the given function with the given arguments has been
+// cached and, if so, skip that call altogether by reusing the cache returns.
+func (p *Interpreter[W]) tryCachedCall(fid uint16, fp uint32, width uint16, nArgs uint32) bool {
+	if cachedReturns := p.cache.Get(fid, fp, nArgs, p.dataStack); cachedReturns.HasValue() {
+		var (
+			returns = cachedReturns.Unwrap()
+			offset  = uint(fp + nArgs)
+		)
+		// Configure return pointer / width
+		p.rp = fp + nArgs
+		p.rw = uint32(width)
+		// copy returns into callee frame
+		for i, r := range returns {
+			p.dataStack.Set(offset+uint(i), r)
+		}
+		// cache hit
+		return true
+	}
+	// cache miss
+	return false
 }
 
 // executeTailCall_n implements TAILCALL_n: a call to a no-return function,
@@ -1019,8 +1066,10 @@ func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error
 		frame             = p.callStack.Pop()
 		width, roffset, _ = encoding.DecodeRet1(pc, codes)
 	)
+	// Update cache
+	p.cache.Insert(p.fid, p.fp, p.dataStack)
 	//
-	p.fid = frame.FunctionId // FIXME: remove
+	p.fid = frame.FunctionId
 	p.rp = p.fp + roffset
 	p.rw = uint32(width)
 	p.fp = frame.FramePointer

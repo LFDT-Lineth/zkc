@@ -43,7 +43,15 @@ type Function[W word.Word[W]] struct {
 // NewFunction constructs a new function with the given components.
 func NewFunction[W word.Word[W]](name string, registers []Register[W], kind FunctionKind,
 	effects []ModuleId, code []bytecode.Vector[W]) *Function[W] {
-	return &Function[W]{newModuleBase(name, registers), kind, effects, code}
+	var base = newModuleBase(name, registers)
+	// NOTE: this manages the cacheability setting for this function.  For now,
+	// it is a rough heuristic.  Eventually, this could include support for
+	// dedicated annotations which enable caching, etc.  Either way, global or
+	// native functions should never be cached.
+	kind = kind.WithCacheable(!kind.IsGlobal() && !kind.IsNative() &&
+		len(effects) == 0 && base.numInputs <= 8)
+	//
+	return &Function[W]{base, kind, effects, code}
 }
 
 // Kind returns the execution kind of this function.
@@ -79,6 +87,12 @@ func (p *Function[W]) InputsExStamps() []Register[W] {
 	return array.Filter(p.registers[:p.numInputs], func(r Register[W]) bool {
 		return !r.IsStamp()
 	})
+}
+
+// IsCacheable returns true if caching (i.e. memoisation) of this function is
+// permitted.
+func (p *Function[W]) IsCacheable() bool {
+	return p.kind.cacheable
 }
 
 // IsOneLine determines whether or not this function contains a single "line"

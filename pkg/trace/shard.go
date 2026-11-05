@@ -107,6 +107,18 @@ func NewModuleDescriptor(name string, columns []ColumnDescriptor) ModuleDescript
 	return ModuleDescriptor{name, columns, false}
 }
 
+// ColumnOf searches for a column with the given name, returning its index (or
+// false if none found).
+func (p ModuleDescriptor) ColumnOf(name string) (uint, bool) {
+	for i, col := range p.Columns {
+		if col.Name == name {
+			return uint(i), true
+		}
+	}
+	//
+	return 0, false
+}
+
 // Width returns the number of columns in this module.
 func (p ModuleDescriptor) Width() uint {
 	return uint(len(p.Columns))

@@ -13,12 +13,15 @@
 package util
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
@@ -236,4 +239,73 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 	} else if !test.expected && (traceAccepted || constraintsAccepted) {
 		t.Errorf("Trace accepted incorrectly (%s:%d)", test.filename, test.line)
 	}
+	// Run duplication check
+	if len(traceErrors) == 0 {
+		runTraceDedupTest(t, binf.TracingProgram(), test, tr.Unwrap())
+	}
+}
+
+func runTraceDedupTest[F field.Element[F], W vm.Word[W]](t *testing.T, tp vm.Program[W], test TestVector,
+	tr trace.LazyTrace[F]) {
+	//
+	errs := tr.Apply(func(_ uint, shard trace.Shard[F]) {
+		for i, m := range tp.Modules() {
+			if f, ok := m.(*vm.Function[W]); ok && f.IsCacheable() {
+				runFunctionDedupTest(t, f, test, shard.Module(uint(i)))
+			}
+		}
+	})
+	//
+	if len(errs) != 0 {
+		t.Errorf("Internal failure (%s:%d) %v", test.filename, test.line, errors.Join(errs...))
+	}
+}
+
+// For a given function, check that every frame is for a unique set of
+// arguments.
+func runFunctionDedupTest[F field.Element[F], W vm.Word[W]](t *testing.T, fn *vm.Function[W], test TestVector,
+	tr trace.Module[F]) {
+	//
+	var (
+		instances = hash.NewSet[hash.Array[F]](128)
+		// Lookup column for return line
+		retLine, retOk = tr.Descriptor().ColumnOf("$ret")
+	)
+	//
+	if !retOk {
+		t.Errorf("Trace for function missing return line (%s:%d:%s)", test.filename, test.line, fn.Name())
+		t.FailNow()
+	}
+	// Iterate all rows of the function
+	for row := range tr.Height() {
+		// Determine whether or not this is a characterising row.
+		instance := determineFunctionInstance(row, retLine, fn, tr)
+		// Add instance, checking whether it was already contained (or not).
+		if instance != nil && instances.Insert(hash.NewArray(instance)) {
+			// Yes, found a duplicate instance
+			t.Errorf("Trace has duplicate function call (%s:%d:%s)", test.filename, test.line, fn.Name())
+		}
+	}
+}
+
+// Determine the instance (i.e. input arguments) for this row.  For a padding
+// row, this returns nil.  For a one-line function, it returns set of input
+// arguments.  For a multi-line function, on the last row it returns the set of
+// input arguments; otherwise it returns nil.   Put differently, it returns the
+// set of inputs only when the return line is high.
+func determineFunctionInstance[F field.Element[F], W vm.Word[W]](row, retLine uint, fn *vm.Function[W],
+	tr trace.Module[F]) []F {
+	// Check if return line is low
+	if tr.Column(retLine).Get(row).Cmp64(0) == 0 {
+		// yes, so this row does not characterise an instance of the function.
+		return nil
+	}
+	// Allocate space for row
+	var buffer = make([]F, fn.NumInputs())
+	//
+	for i := range fn.NumInputs() {
+		buffer[i] = tr.Column(i).Get(row)
+	}
+	//
+	return buffer
 }
