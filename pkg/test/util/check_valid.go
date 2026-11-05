@@ -153,7 +153,7 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 		// construct binary file
 		binf = constraints.NewBinaryFile[F, W](nil, nil, p)
 		// Execute the test
-		actuals, errs = binf.Execute(inputs)
+		actuals, errs = binf.Execute(inputs, vm.DEFAULT_EXECUTION_CONFIG)
 		// Record whether test accepted or not.
 		accepted = len(errs) == 0
 	)

@@ -20,6 +20,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/gogen"
 )
 
 // fieldTestProgram hand-builds a word machine exercising the WordTypeF mod-P ops
@@ -108,7 +109,7 @@ func fieldTestProgram[W vm.Word[W]]() vm.Program[W] {
 func TestGenFieldOps(t *testing.T) {
 	const koalabear = 0x7f000001 // 2^31 - 2^24 + 1
 
-	src, err := vm.GenerateGo(fieldTestProgram[vm.Uint](), vm.GoGenConfig{})
+	src, err := gogen.Generate(fieldTestProgram[vm.Uint](), gogen.Config{})
 	if err != nil {
 		t.Fatalf("GenerateGo: %v", err)
 	}

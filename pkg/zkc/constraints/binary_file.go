@@ -294,12 +294,17 @@ func (p *BinaryFile[F, W]) Check(config vm.TraceConfig, trace trace.LazyTrace[F]
 // steps at a time, producing any outputs arising.  Execution is faster than
 // trace because it does not record any internal information about the trace ---
 // it simply extracts the outputs at the end.
-func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array) (output map[string]bit.Array, errs []error) {
-	var (
-		bci = vm.NewBytecodeInterpreter(p.ExecutionProgram())
-	)
-	// Boot and execute fast machine
-	output, _, errs = vm.BootAndExecute(bci, input, math.MaxUint)
+func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array, config vm.ExecutionConfig,
+) (output map[string]bit.Array, errs []error) {
+	if config.GoGen() {
+		// Fast-mode execution via gogen
+		output, errs = vm.BootAndExecuteWithGogen(p.RawProgram(), input)
+	} else {
+		// Fast-mode execution via interpreter
+		var bci = vm.NewBytecodeInterpreter(p.ExecutionProgram())
+		// Boot and execute fast machine
+		output, _, errs = vm.BootAndExecute(bci, input, math.MaxUint)
+	}
 	//
 	return output, errs
 }

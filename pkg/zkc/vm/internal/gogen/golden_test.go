@@ -18,7 +18,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/gogen"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files from current generator output")
@@ -50,7 +50,7 @@ func TestGolden(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// The importable-package artefact (no JSON harness): the shape a
 			// `zkc generate` consumer would review.
-			src, err := vm.GenerateGo(compileUint(t, tc.src, true), vm.GoGenConfig{Package: "golden"})
+			src, err := gogen.Generate(compileUint(t, tc.src, true), gogen.Config{Package: "golden"})
 			if err != nil {
 				t.Fatalf("GenerateGo: %v", err)
 			}
