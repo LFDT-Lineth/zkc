@@ -66,7 +66,7 @@ func factorSkipConditionsFunction[W Word[W]](fn *Function[W]) *Function[W] {
 		// Decide up-front which SkipIf codes in this vector are worth factoring.
 		// This needs the whole vector body (to size each branch), which the Map
 		// closure cannot see one bytecode at a time.
-		factor := factorableSkips(vec.Bytecodes, alloc)
+		factor := factorableSkips(vec.Bytecodes, vectors, alloc)
 		//
 		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
 			if factor[idx] {
@@ -81,7 +81,7 @@ func factorSkipConditionsFunction[W Word[W]](fn *Function[W]) *Function[W] {
 }
 
 // factorableSkips returns the set of code indices holding a SkipIf worth factoring.
-func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W]) map[uint]bool {
+func factorableSkips[W Word[W]](codes []Bytecode[W], vectors []BytecodeVector[W], registers split.Allocator[W]) map[uint]bool {
 	factor := make(map[uint]bool)
 	//
 	for i, code := range codes {
@@ -98,12 +98,18 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 		// Optimization to avoid factoring if the body is
 		// - a single bit equality (with arms constant or register copies)
 		// - a fail, or a return or empty skip with nothing after it
+		// - writes followed by a return, with nothing after the if
 		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
 			factor[uint(i)] = false
 			continue
 		}
 
 		if bodyIsBranchEnd(codes, uint(i)) {
+			factor[uint(i)] = false
+			continue
+		}
+
+		if bodyIsWriteThenReturn(codes, uint(i), vectors) {
 			factor[uint(i)] = false
 			continue
 		}
@@ -231,6 +237,54 @@ func bodyIsBranchEnd[W Word[W]](codes []Bytecode[W], i uint) bool {
 	body := codes[i+1 : taken]
 	//
 	return isBodyBranchEnd(body) && (containsFail(body) || isBodyBranchEnd(codes[taken:]))
+}
+
+// bodyIsWriteThenReturn reports an if with no else, whose body writes and then
+// returns, with nothing after the if (else it is considered an else branch).
+// target is one or more writes followed by a return. 
+func bodyIsWriteThenReturn[W Word[W]](codes []Bytecode[W], i uint, vectors []BytecodeVector[W]) bool {
+	si := codes[i].(*bytecode.SkipIf[W])
+	//
+	if si.Skip != 1 || i+1 >= uint(len(codes)) {
+		return false
+	}
+	//
+	jmp, ok := codes[i+1].(*bytecode.Jmp[W])
+	//
+	if !ok || uint(jmp.Target) >= uint(len(vectors)) || !isBodyBranchEnd(codes[i+2:]) {
+		return false
+	}
+	//
+	return isWriteThenReturn(vectors[jmp.Target].Bytecodes)
+}
+
+// isWriteThenReturn reports one or more register writes followed by a return.
+func isWriteThenReturn[W Word[W]](codes []Bytecode[W]) bool {
+	if len(codes) < 2 || !isRet(codes[len(codes)-1]) {
+		return false
+	}
+	//
+	for _, code := range codes[:len(codes)-1] {
+		if !isWrite(code) {
+			return false
+		}
+	}
+	//
+	return true
+}
+
+func isRet[W Word[W]](code Bytecode[W]) bool {
+	ret, ok := code.(*bytecode.Ret[W])
+	//
+	return ok && !ret.Done
+}
+
+// isWrite reports a register assignment. Loads, copies and arithmetic all
+// lower to an addition.
+func isWrite[W Word[W]](code Bytecode[W]) bool {
+	_, ok := code.(*bytecode.Arith[W])
+	//
+	return ok
 }
 
 func containsFail[W Word[W]](codes []Bytecode[W]) bool {

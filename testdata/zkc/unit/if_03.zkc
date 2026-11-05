@@ -1,7 +1,7 @@
-pub input data(address:u8) -> (byte:u8)
+pub input data(address:u8) -> (byte:u32)
 
 fn main() {
-    var cond:u8 = data[0]
+    var cond:u32 = data[0]
 
     // Empty body. Nothing after the if.
     // FactorSkipConditions must not wrap this.
