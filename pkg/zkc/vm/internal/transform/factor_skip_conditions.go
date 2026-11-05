@@ -222,21 +222,15 @@ func bodyIsBranchEnd[W Word[W]](codes []Bytecode[W], i uint) bool {
 	var (
 		s     = uint(si.Skip)
 		taken = i + 1 + s
-		body  = []Bytecode[W]{}
 	)
 	//
 	if s == 0 || taken > uint(len(codes)) {
 		return false
 	}
 	//
-	body = codes[i+1 : taken]
-	if !isBodyBranchEnd(body) {
-		return false
-	} else if containsFail(body) {
-		return true
-	}
+	body := codes[i+1 : taken]
 	//
-	return isBodyBranchEnd(codes[taken:])
+	return isBodyBranchEnd(body) && (containsFail(body) || isBodyBranchEnd(codes[taken:]))
 }
 
 func containsFail[W Word[W]](codes []Bytecode[W]) bool {
