@@ -481,6 +481,22 @@ func Test_ZkcUnit_Basic_114(t *testing.T) {
 }
 
 // ===================================================================
+// If Tests
+// ===================================================================
+
+func Test_ZkcUnit_If_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/if_01", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_If_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/if_02", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_If_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/if_03", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
 // If-Else-If Tests
 // ===================================================================
 
@@ -1221,6 +1237,10 @@ func Test_ZkcUnit_Ternary_05(t *testing.T) {
 
 func Test_ZkcUnit_Ternary_06(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/ternary_06", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Ternary_07(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/ternary_07", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================
