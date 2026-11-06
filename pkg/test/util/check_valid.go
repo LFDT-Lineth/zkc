@@ -78,12 +78,8 @@ func CheckValid(t *testing.T, zkcfile string, config TestConfig) {
 	// work is serialised across every file in the suite.
 	t.Parallel()
 	//
-	var (
-		// generate actual tests for the given file.
-		testcases = config.GenerateTests(t, zkcfile)
-	)
 	// Check for each field requested
-	for _, test := range testcases {
+	for _, test := range config.GenerateTests(t, zkcfile) {
 		t.Run(fmt.Sprintf("%s", test.Handle()), func(t *testing.T) {
 			t.Parallel()
 			//

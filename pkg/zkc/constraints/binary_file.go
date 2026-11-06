@@ -296,6 +296,8 @@ func (p *BinaryFile[F, W]) Check(config vm.TraceConfig, trace trace.LazyTrace[F]
 // it simply extracts the outputs at the end.
 func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array, config vm.ExecutionConfig,
 ) (output map[string]bit.Array, errs []error) {
+	// TODO: currently, for gogen execution it compiles (and deletes) the gogen
+	// binary every time, which is not optimal.
 	if config.GoGen() {
 		// Fast-mode execution via gogen
 		output, errs = vm.BootAndExecuteWithGogen(p.RawProgram(), input)

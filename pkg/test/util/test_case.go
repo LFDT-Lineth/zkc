@@ -43,7 +43,7 @@ type TestCase struct {
 	// sharding configuration
 	sharding util.Option[vm.ShardingStrategy]
 	// check gogen
-	gogen util.Option[string]
+	gogen util.Option[vm.GoGenBinary]
 }
 
 // NewTestCase constructs a new test case
@@ -94,7 +94,7 @@ func (p TestCase) Handle() string {
 }
 
 // GoGen turns on gogen with the given binary
-func (p TestCase) GoGen(binary string) TestCase {
+func (p TestCase) GoGen(binary vm.GoGenBinary) TestCase {
 	p.gogen = util.Some(binary)
 	return p
 }
