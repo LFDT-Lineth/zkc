@@ -16,6 +16,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
@@ -83,7 +84,7 @@ func (p *Vector) Len() uint {
 }
 
 // Lisp returns a textual representation of this vector.
-func (p *Vector) Lisp(mapping register.Map) sexp.SExp {
+func (p *Vector) Lisp[F field.Element[F]](mapping register.Map[F]) sexp.SExp {
 	var terms = sexp.EmptyList()
 	//
 	if p.HasSelector() {
@@ -101,6 +102,6 @@ func (p *Vector) Lisp(mapping register.Map) sexp.SExp {
 
 // lispOfRegister returns a textual representation of a given register in a
 // given module.
-func lispOfRegister(rid register.Id, mapping register.Map) sexp.SExp {
+func lispOfRegister[F field.Element[F]](rid register.Id, mapping register.Map[F]) sexp.SExp {
 	return sexp.NewSymbol(mapping.Register(rid).QualifiedName(mapping))
 }

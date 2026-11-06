@@ -63,6 +63,22 @@ func Test_Valid_Basic_11(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/basic_11", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
+func Test_Valid_Basic_12(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/basic_12", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Basic_13(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/basic_13", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Basic_14(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/basic_14", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Basic_15(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/basic_15", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
 // ===================================================================
 // Constants Tests
 // ===================================================================
@@ -547,6 +563,10 @@ func Test_Valid_Lookup_29(t *testing.T) {
 }
 func Test_Valid_Lookup_30(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/lookup_30", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_31(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_31", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 // ===================================================================

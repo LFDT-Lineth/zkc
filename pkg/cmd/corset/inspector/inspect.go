@@ -22,6 +22,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio/widget"
 )
@@ -84,7 +85,7 @@ type Mode interface {
 }
 
 // NewInspector constructs a new inspector on given terminal.
-func NewInspector(term *termio.Terminal, trace view.TraceView) *Inspector {
+func NewInspector[F field.Element[F]](term *termio.Terminal, trace view.TraceView) *Inspector {
 	var (
 		states     = make([]ModuleState, 0)
 		numVisible = 0
@@ -409,8 +410,8 @@ func (p *Inspector) Start() []error {
 // Helpers
 // ==================================================================
 
-func initInspectorWidgets(term *termio.Terminal, states []ModuleState, showAllModules bool) (tabs *widget.Tabs[uint],
-	table *widget.Table, cmdbar *widget.TextLine, statusbar *widget.TextLine) {
+func initInspectorWidgets(term *termio.Terminal, states []ModuleState, showAllModules bool,
+) (tabs *widget.Tabs[uint], table *widget.Table, cmdbar *widget.TextLine, statusbar *widget.TextLine) {
 	//
 	tabs = initInspectorTabs(showAllModules, states)
 	table = widget.NewTable(nil)

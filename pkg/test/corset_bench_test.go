@@ -60,8 +60,10 @@ func Test_Bench_Fields(t *testing.T) {
 // u128, etc).  This distinguishes them from those tests above, which often user
 // small registers (e.g. u16).
 
+// NOTE: add is not tested for KOALABEAR_16 because its constant THETA (2^128)
+// exceeds the field modulus.
 func Test_Bench_Add(t *testing.T) {
-	util.CheckCorset(t, "corset/bench/add", field.BLS12_377, field.KOALABEAR_16)
+	util.CheckCorset(t, "corset/bench/add", field.BLS12_377)
 }
 
 func Test_Bench_Euc(t *testing.T) {

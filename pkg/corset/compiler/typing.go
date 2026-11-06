@@ -14,6 +14,7 @@ package compiler
 
 import (
 	"fmt"
+	"math/big"
 	"reflect"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
@@ -28,11 +29,12 @@ import (
 type SyntaxError = source.SyntaxError
 
 // TypeCheckCircuit performs a type checking pass over the circuit to ensure
-// types are used correctly.
-func TypeCheckCircuit(srcmap *source.Maps[ast.Node],
-	circuit *ast.Circuit) []SyntaxError {
+// types are used correctly.  The modulus identifies the prime field being
+// targeted, and is used to check padding (or constant) values are
+// representable within that field.
+func TypeCheckCircuit(srcmap *source.Maps[ast.Node], circuit *ast.Circuit, modulus *big.Int) []SyntaxError {
 	// Construct fresh typeChecker
-	p := typeChecker{srcmap}
+	p := typeChecker{srcmap, modulus}
 	// typeCheck all declarations
 	return p.typeCheckDeclarations(circuit)
 }
@@ -43,6 +45,8 @@ type typeChecker struct {
 	// source files.  This is needed when reporting syntax errors to generate
 	// highlights of the relevant source line(s) in question.
 	srcmap *source.Maps[ast.Node]
+	// Modulus of the prime field being targeted.
+	modulus *big.Int
 }
 
 // typeCheck all assignment or constraint declarations in the circuit.
@@ -77,14 +81,13 @@ func (p *typeChecker) typeCheckDeclaration(decl ast.Declaration) []SyntaxError {
 	//
 	switch d := decl.(type) {
 	case *ast.DefColumns:
-		// ignore
+		errors = p.typeCheckDefColumnsInModule(d)
 	case *ast.DefConst:
 		errors = p.typeCheckDefConstInModule(d)
 	case *ast.DefConstraint:
 		errors = p.typeCheckDefConstraint(d)
 	case *ast.DefInRange:
-		// Nothing to check, since the constrained column is a column access
-		// whose type is already known.
+		errors = p.typeCheckDefInRangeInModule(d)
 	case *ast.DefLookup:
 		errors = p.typeCheckDefLookup(d)
 	case *ast.DefSendReceive:
@@ -97,6 +100,55 @@ func (p *typeChecker) typeCheckDeclaration(decl ast.Declaration) []SyntaxError {
 	}
 	//
 	return errors
+}
+
+// ast.Type check the padding (or constant) values of one or more column
+// definitions within a given module.
+func (p *typeChecker) typeCheckDefColumnsInModule(decl *ast.DefColumns) []SyntaxError {
+	var errors []SyntaxError
+	//
+	for _, c := range decl.Columns {
+		var binding = c.Binding().(*ast.ColumnBinding)
+		// Check padding if given
+		if binding.Padding.HasValue() {
+			var (
+				padding      = binding.Padding.Unwrap()
+				declaredType = binding.DataType
+				paddingType  = ast.NewUintType(uint(padding.BitLen()))
+			)
+			// Perform subtype check
+			if !paddingIsSubtypeOf(padding, declaredType) {
+				msg := fmt.Sprintf("expected %s, found %s", declaredType.String(), paddingType.String())
+				errors = append(errors, *p.srcmap.SyntaxError(c, msg))
+			} else if padding.Cmp(p.modulus) >= 0 {
+				// Value would silently wrap around the field modulus otherwise.
+				kind := "padding"
+				//
+				if binding.Kind == ast.CONSTANT_COLUMN {
+					kind = "constant"
+				}
+				//
+				msg := fmt.Sprintf("%s value exceeds field modulus", kind)
+				errors = append(errors, *p.srcmap.SyntaxError(c, msg))
+			}
+		}
+	}
+	//
+	return errors
+}
+
+func paddingIsSubtypeOf(padding big.Int, declared ast.Type) bool {
+	//
+	switch t := declared.(type) {
+	case *ast.IntType:
+		var paddingType = ast.NewUintType(uint(padding.BitLen()))
+		// Perform subtype check
+		return paddingType.SubtypeOf(declared)
+	case *ast.ArrayType:
+		return paddingIsSubtypeOf(padding, t.Element())
+	default:
+		return false
+	}
 }
 
 // ast.Type check one or more constant definitions within a given module.
@@ -124,6 +176,20 @@ func (p *typeChecker) typeCheckDefConstraint(decl *ast.DefConstraint) []SyntaxEr
 	_, constraint_errors := p.typeCheckExpressionInModule(ast.BOOL_TYPE, decl.Constraint, false)
 	// Combine errors
 	return append(constraint_errors, guard_errors...)
+}
+
+// typeCheck a "definrange" declaration.  Range constraints on constant columns
+// are rejected.  Non-column bindings (e.g. a defconst) are skipped here, since
+// the resolver already reports them.
+func (p *typeChecker) typeCheckDefInRangeInModule(decl *ast.DefInRange) []SyntaxError {
+	var errors []SyntaxError
+	//
+	if binding, ok := decl.Column.Binding().(*ast.ColumnBinding); ok && binding.IsConstant() {
+		msg := "range constraint for constant column"
+		errors = append(errors, *p.srcmap.SyntaxError(decl.Column, msg))
+	}
+	//
+	return errors
 }
 
 // typeCheck a "deflookup" declaration.

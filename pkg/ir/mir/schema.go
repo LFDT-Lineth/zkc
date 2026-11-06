@@ -82,8 +82,6 @@ type (
 	Mul[F field.Element[F]] = term.Mul[F, Term[F]]
 	// Sub represents the subtraction over zero or more expressions.
 	Sub[F field.Element[F]] = term.Sub[F, Term[F]]
-	// VectorAccess represents a compound variable
-	VectorAccess[F field.Element[F]] = term.VectorAccess[F, Term[F]]
 )
 
 // Following types capture permitted logical forms at the MIR level.

@@ -1,0 +1,14 @@
+//error:7:1-12:module "g" unreachable via lookups from entry point "main"
+// zero-arity global functions which are only called recursively.
+pub input data(address:u16) -> (byte:u8)
+pub output result(address:u16) -> (byte:u8)
+
+#[global]
+fn g() -> ! {
+    g!()
+}
+
+fn main() {
+    result[0] = data[0]
+    return
+}

@@ -52,7 +52,7 @@ func (p *inspectorFormatter) Cell(col view.SourceColumn, row uint, text string) 
 	// are in perspectives are considered active only when their selectors are
 	// enabled.
 	if p.module.IsActive(col, row) {
-		val := p.module.DataOf(col.Limbs).Get(row)
+		val := p.module.DataOf(col.Register).Get(row)
 		return termio.NewFormattedText(text, cellColour(val))
 	}
 	//

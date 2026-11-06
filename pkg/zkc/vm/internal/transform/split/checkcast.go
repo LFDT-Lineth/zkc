@@ -15,12 +15,11 @@ package split
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // CheckCast splits a CheckCast bytecode into one or more CheckCasts.
-func CheckCast[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.CheckCast[W]) []Bytecode[W] {
+func CheckCast[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.CheckCast[W]) []Bytecode[W] {
 	var (
 		bytecodes []Bytecode[W]
 		bitwidth  = uint(insn.Bitwidth)

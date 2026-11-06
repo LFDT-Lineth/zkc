@@ -26,11 +26,6 @@ import (
 // PrintSchemas is responsible for printing out a human-readable description of
 // a given schema.
 func PrintSchemas[F field.Element[F]](stack cmd_util.SchemaStack[F], textwidth uint, verbose bool) {
-	//
-	for _, schema := range stack.AbstractSchemas() {
-		PrintAnySchema(schema, textwidth, verbose)
-	}
-	//
 	if stack.HasConcreteSchema() {
 		PrintAnySchema(stack.ConcreteSchema(), textwidth, verbose)
 	}
@@ -105,9 +100,10 @@ func printModule[F field.Element[F]](module schema.Module[F], sc schema.Schema[F
 	//
 	fmt.Println()
 	// Print inputs / outputs
-	printRegisters(module, "inputs", func(r register.Register) bool { return r.IsInput() })
-	printRegisters(module, "outputs", func(r register.Register) bool { return r.IsOutput() })
-	printRegisters(module, "computed", func(r register.Register) bool { return r.IsComputed() })
+	printRegisters(module, "inputs", func(r register.Register[F]) bool { return r.IsInput() })
+	printRegisters(module, "outputs", func(r register.Register[F]) bool { return r.IsOutput() })
+	printRegisters(module, "computed", func(r register.Register[F]) bool { return r.IsComputed() })
+	printRegisters(module, "constant", func(r register.Register[F]) bool { return r.IsConstant() })
 	// Print static contents (if applicable)
 	printStaticContents(module, verbose)
 	// Print computations
@@ -162,7 +158,8 @@ func printStaticContents[F field.Element[F]](module schema.Module[F], verbose bo
 	}
 }
 
-func printRegisters[F field.Element[F]](module schema.Module[F], prefix string, filter func(register.Register) bool) {
+func printRegisters[F field.Element[F]](module schema.Module[F], prefix string,
+	filter func(register.Register[F]) bool) {
 	var (
 		regT string
 	)
@@ -181,7 +178,11 @@ func printRegisters[F field.Element[F]](module schema.Module[F], prefix string, 
 				// construct name string whilst applying quotes when necessary.
 				name := sexp.NewSymbol(r.Name()).String(true)
 				//
-				fmt.Printf("   (%s %s)", name, regT)
+				if r.IsConstant() || r.Padding().Cmp64(0) != 0 {
+					fmt.Printf("   (%s %s %s)", name, regT, r.Padding())
+				} else {
+					fmt.Printf("   (%s %s)", name, regT)
+				}
 			}
 		}
 		//
@@ -190,7 +191,7 @@ func printRegisters[F field.Element[F]](module schema.Module[F], prefix string, 
 	}
 }
 
-func countRegisters[F field.Element[F]](module schema.Module[F], filter func(register.Register) bool) uint {
+func countRegisters[F field.Element[F]](module schema.Module[F], filter func(register.Register[F]) bool) uint {
 	var count = uint(0)
 	//
 	for _, r := range module.Registers() {

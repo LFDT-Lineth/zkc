@@ -144,7 +144,7 @@ func (p *ModuleScope) isVisibleInner(path file.Path) (found, visible bool) {
 		return submod.isVisibleInner(*path.Dehead())
 	} else if index, ok := p.ids[id]; ok && path.Depth() == 1 {
 		box := p.bindings[index]
-		return true, !box.open || box.binding.IsRecursive()
+		return true, !box.open
 	}
 	// give up
 	return false, false
@@ -406,7 +406,8 @@ func (p *ModuleScope) destructureAtomicColumn(column *ast.ColumnBinding, ctx fil
 		path,
 		bitwidth,
 		column.MustProve,
-		column.IsComputed(),
+		column.Kind,
+		column.Padding,
 		column.Display,
 		nil}
 	//

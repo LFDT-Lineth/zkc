@@ -16,6 +16,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -58,9 +59,9 @@ func BitwidthOfRegisters[W word.Word[W]](regs ...Register[W]) util.Option[uint] 
 
 // ToRegisters converts an array of register descriptors into an array of scheme
 // registers.
-func ToRegisters[W word.Word[W]](registers ...Register[W]) []register.Register {
+func ToRegisters[W word.Word[W], F field.Element[F]](registers ...Register[W]) []register.Register[F] {
 	return array.Map(registers,
-		func(_ uint, r Register[W]) register.Register { return r.ToRawRegister() })
+		func(_ uint, r Register[W]) register.Register[F] { return r.ToRawRegister[F]() })
 }
 
 // RegisterMap provides a generic interface for entities which hold information

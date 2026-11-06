@@ -46,7 +46,7 @@ func (p *Norm[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Norm[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *Norm[F, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map[F]) (F, error) {
 	// Check whether argument evaluates to zero or not.
 	val, err := p.Arg.EvalAt(k, tr, sc)
 	// Normalise value (if necessary)
@@ -65,7 +65,7 @@ func (p *Norm[F, T]) IsDefined() bool {
 }
 
 // Lisp implementation for Lispifiable interface.
-func (p *Norm[F, T]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (p *Norm[F, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	arg := p.Arg.Lisp(global, mapping)
 	return sexp.NewList([]sexp.SExp{sexp.NewSymbol("~"), arg})
 }

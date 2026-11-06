@@ -1835,7 +1835,7 @@ func intrinsicVectorWidth[W word.Word[W]](regs []descriptor.Register[W], iter *e
 // next (base, len) pair in the iterator.  A constant operand reads its (single
 // limb, see split.SplitOperand) value from the constant pool.  For a register
 // vector: register splitting lays limbs out most-significant first (see
-// descriptor.NewLimbsMap), so the lowest-indexed register (base) holds the
+// split.NewLimbsMap), so the lowest-indexed register (base) holds the
 // most-significant limb.  The value is therefore accumulated from the
 // most-significant limb down, shifting the running value up by each limb's
 // width before folding the limb in.
@@ -1997,7 +1997,7 @@ func executeSkipIf_rcv[W word.Word[W], F util.Comparator[W]](pc uint32, codes []
 // to the following bytecode.
 //
 // Register splitting lays limbs out most-significant first (see
-// descriptor.NewLimbsMap and split.ApplyLimbsMap), so the lowest-indexed
+// split.NewLimbsMap and split.ApplyLimbsMap), so the lowest-indexed
 // register (base) holds the most-significant limb.  The comparison therefore
 // scans from the most-significant limb (base) downwards, skipping past equal
 // limbs until the first difference (or the least-significant limb) decides.

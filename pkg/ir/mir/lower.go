@@ -25,6 +25,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
@@ -138,6 +139,27 @@ func (p *AirLowering[F]) LowerModule(index uint) {
 	for iter := mirModule.Constraints(); iter.HasNext(); {
 		p.lowerConstraintToAir(iter.Next(), airModule)
 	}
+	// Initialise constraints for constant registers
+	for r, reg := range airModule.Registers() {
+		var rid = register.NewId(uint(r))
+		if reg.IsConstant() {
+			initialiseConstantRegister(rid, index, airModule)
+		}
+	}
+}
+
+// Lower a constant register.
+func initialiseConstantRegister[F field.Element[F]](rid register.Id, mid module.Id, module air.ModuleBuilder[F]) {
+	var (
+		reg = module.Register(rid)
+		val = reg.Constant()
+	)
+	// add constraint
+	module.AddConstraint(
+		air.NewVanishingConstraint(val.String(), mid, util.None[int](),
+			orientedSubtract(
+				term.NewRegisterAccess[F, air.Term[F]](rid, reg.Width(), 0),
+				term.Const[F, air.Term[F]](reg.Constant()), module)))
 }
 
 // Lower a constraint to the AIR level.
@@ -485,7 +507,7 @@ func (p *AirLowering[F]) lowerNonEqualityTo(e *NotEqual[F], airModule air.Module
 // whilst 255 - x lies in [0, 255].  A non-negative orientation allows the term
 // to be summed with other non-negative terms into a single constraint (see
 // nextSumConjunct) and avoids unnecessary squaring during normalisation.
-func orientedSubtract[F field.Element[F]](lhs, rhs air.Term[F], regs register.Map) air.Term[F] {
+func orientedSubtract[F field.Element[F]](lhs, rhs air.Term[F], regs register.Map[F]) air.Term[F] {
 	var (
 		diff   = term.Subtract(lhs, rhs)
 		values = valueRangeOf(diff, regs)
@@ -517,8 +539,6 @@ func (p *AirLowering[F]) lowerTermTo(e Term[F], airModule air.ModuleBuilder[F]) 
 	case *Sub[F]:
 		args := p.lowerTerms(e.Args, airModule)
 		return term.Subtract(args...)
-	case *VectorAccess[F]:
-		return p.lowerVectorAccess(e, airModule)
 	default:
 		name := reflect.TypeOf(e).Name()
 		panic(fmt.Sprintf("unknown MIR expression \"%s\"", name))
@@ -534,39 +554,6 @@ func (p *AirLowering[F]) lowerTerms(exprs []Term[F], airModule air.ModuleBuilder
 	}
 
 	return nexprs
-}
-
-func (p *AirLowering[F]) lowerVectorAccess(e *VectorAccess[F], airModule air.ModuleBuilder[F]) air.Term[F] {
-	var (
-		terms []air.Term[F] = make([]air.Term[F], len(e.Vars))
-		shift               = uint(0)
-	)
-	//
-	for i, v := range e.Vars {
-		var (
-			limb  = airModule.Register(v.Register())
-			width = limb.Width()
-			ith   *air.ColumnAccess[F]
-		)
-		// Ensure limbwidth normalised
-		ith = term.RawRegisterAccess[F, air.Term[F]](v.Register(), width, v.RelativeShift())
-		// Apply shift
-		terms[i] = term.Product(shiftTerm(ith, shift))
-		//
-		shift = shift + width
-	}
-	//
-	return term.Sum(terms...)
-}
-
-func shiftTerm[F field.Element[F]](expr air.Term[F], width uint) air.Term[F] {
-	if width == 0 {
-		return expr
-	}
-	// Compute 2^width
-	n := field.TwoPowN[F](width)
-	//
-	return term.Product(term.Const[F, air.Term[F]](n), expr)
 }
 
 func (p *AirLowering[F]) normalise(arg air.Term[F], airModule air.ModuleBuilder[F]) air.Term[F] {
@@ -613,7 +600,7 @@ func simplify[F field.Element[F]](terms []air.Term[F]) []air.Term[F] {
 	return nterms
 }
 
-func (p *AirLowering[F]) nextSumConjunct(regs register.Map, terms []air.Term[F]) (n uint) {
+func (p *AirLowering[F]) nextSumConjunct(regs register.Map[F], terms []air.Term[F]) (n uint) {
 	//
 	var (
 		sum big.Int
@@ -682,7 +669,7 @@ type nonZeroCheck[F field.Element[F]] struct {
 // non-zero check on x itself; and "x ≠ 2^w-1", which is a non-zero check on
 // the complement 2^w-1 - x.
 // Note that it heavily relies on the assumption that the register's range constraints are sound.
-func isNonZeroCheck[F field.Element[F]](t LogicalTerm[F], regs register.Map) (nonZeroCheck[F], bool) {
+func isNonZeroCheck[F field.Element[F]](t LogicalTerm[F], regs register.Map[F]) (nonZeroCheck[F], bool) {
 	ne, ok := t.(*NotEqual[F])
 	//
 	if !ok {
@@ -758,7 +745,7 @@ func disjunction[F field.Element[F]](terms ...[]air.Term[F]) []air.Term[F] {
 	return nterms
 }
 
-func valueRangeOf[F field.Element[F]](term air.Term[F], regs register.Map) util_math.Interval {
+func valueRangeOf[F field.Element[F]](term air.Term[F], regs register.Map[F]) util_math.Interval {
 	switch t := term.(type) {
 	case *air.Add[F]:
 		var res util_math.Interval

@@ -51,10 +51,10 @@ type Evaluable[F field.Element[F]] interface {
 	// undefined for several reasons: firstly, if it accesses a
 	// row which does not exist (e.g. at index -1); secondly, if
 	// it accesses a register which does not exist.
-	EvalAt(uint, trace.Module[F], register.Map) (F, error)
+	EvalAt(uint, trace.Module[F], register.Map[F]) (F, error)
 	// Lisp converts this schema element into a simple S-Expression, for example
 	// so it can be printed.
-	Lisp(bool, register.Map) sexp.SExp
+	Lisp(bool, register.Map[F]) sexp.SExp
 	// ValueRange returns the interval of values that this term can evaluate to.
 	// For terms accessing registers, this is determined by the declared width of
 	// the register.
@@ -106,10 +106,10 @@ type Testable[F field.Element[F]] interface {
 	// context then it returns an error.  An expression can be undefined for
 	// several reasons: firstly, if it accesses a row which does not exist (e.g.
 	// at index -1); secondly, if it accesses a register which does not exist.
-	TestAt(uint, trace.Module[F], register.Map) (bool, error)
+	TestAt(uint, trace.Module[F], register.Map[F]) (bool, error)
 	// Lisp converts this schema element into a simple S-Expression, for example
 	// so it can be printed.
-	Lisp(bool, register.Map) sexp.SExp
+	Lisp(bool, register.Map[F]) sexp.SExp
 }
 
 // Logical represents a term which can be tested for truth or falsehood.

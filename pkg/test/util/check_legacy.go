@@ -229,13 +229,14 @@ func checkTraces[F field.Element[F]](t *testing.T, test string, padding bool, op
 func checkTrace[F field.Element[F]](t *testing.T, tf trace.Trace[F], id traceId,
 	schema sc.Schema[F]) {
 	var (
-		// Map the legacy padding toggle onto a padding strategy.
+		// Map the legacy padding toggle onto a default padding strategy.
 		paddingStrategy = ir.NaryRowPadding(0)
 	)
 	//
 	if id.padding {
 		paddingStrategy = ir.NextPowerOfTwoPadding
 	}
+	//
 	// Construct builder
 	builder := ir.NewTraceBuilder[F]().
 		WithExpansion(id.expand).
@@ -316,6 +317,7 @@ var LEGACY_TESTFILE_EXTENSIONS []LegacyTestConfig = []LegacyTestConfig{
 	{"expanded.bls12_377.accepts", true, false, false, "BLS12_377", defaultOptLevel},
 	{"bls12_377.accepts", true, true, true, "BLS12_377", allOptLevels},
 	{"koalabear_16.accepts", true, true, true, "KOALABEAR_16", allOptLevels},
+	{"expanded.koalabear_16.accepts", true, false, false, "KOALABEAR_16", defaultOptLevel},
 	{"gf_8209.accepts", true, true, true, "GF_8209", allOptLevels},
 	{"bls12_377.accepts.bz2", true, true, true, "BLS12_377", allOptLevels},
 	{"koalabear_16.accepts.bz2", true, true, true, "KOALABEAR_16", allOptLevels},
@@ -419,11 +421,10 @@ func getSchemaStack[F field.Element[F]](field field.Config, filenames ...string,
 		stack        cmd_util.SchemaStacker[F]
 		corsetConfig corset.CompilationConfig
 	)
-	// Configure corset for testing
-	corsetConfig.Field = field
 	//
 	stack = stack.
 		WithCorsetConfig(corsetConfig).
+		WithFieldConfig(field).
 		WithLayer(cmd_util.MIR_LAYER).
 		WithLayer(cmd_util.AIR_LAYER)
 	// Read in all specified constraint files.

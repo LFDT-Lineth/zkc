@@ -13,6 +13,8 @@
 package schema
 
 import (
+	"math"
+
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -41,10 +43,10 @@ type Assignment[F field.Element[F]] interface {
 	// computed already).  Computed columns do not exist in the original trace,
 	// but are added during trace expansion to form the final trace.
 	Compute(trace.Shard[F], Schema[F]) ([]array.Array[F], error)
-	// Consistent applies a number of internal consistency checks.  Whilst not
-	// strictly necessary, these can highlight otherwise hidden problems as an aid
-	// to debugging.
-	Consistent(Schema[F]) []error
+	// Validate applies a number of internal consistency checks.  Whilst not
+	// strictly necessary, these can highlight otherwise hidden problems as an
+	// aid to debugging.
+	Validate(Schema[F])
 	// Identifier registers which are expanded by this assignment.  A register
 	// is expanded when its length maybe changed.  For example, when going from
 	// a trace which contains only rows of input/output values to a trace where
@@ -59,4 +61,37 @@ type Assignment[F field.Element[F]] interface {
 	// Lisp converts this schema element into a simple S-Expression, for example
 	// so it can be printed.
 	Lisp(Schema[F]) sexp.SExp
+}
+
+// AssignConstantColumns assigns out any constant column in the given shard an appropriate backing array.
+func AssignConstantColumns[F field.Element[F]](schema Schema[F], shard trace.Shard[F]) trace.Shard[F] {
+	var mapper = func(mid, cid uint, data array.Array[F]) array.Array[F] {
+		// look for empty column
+		if data == nil {
+			var (
+				trMod = shard.Module(mid)
+				trCol = trMod.Descriptor().Columns[cid]
+			)
+			// Map column (if it exists, otherwise ignore)
+			if mid, ok := schema.HasModule(trMod.Name()); ok {
+				var scMod = schema.Module(mid)
+				// Extract constant value
+				if rid, ok := scMod.HasRegister(trCol.Name); ok {
+					var (
+						scCol = scMod.Register(rid)
+
+						bitwidth = trCol.Bitwidth.UnwrapOr(math.MaxUint)
+					)
+					// Sanity check this is a constant register
+					if scCol.IsConstant() {
+						return array.NewConstantArray(trMod.Height(), bitwidth, scCol.Constant())
+					}
+				}
+			}
+		}
+		//
+		return data
+	}
+	//
+	return trace.MapShard(shard, mapper)
 }

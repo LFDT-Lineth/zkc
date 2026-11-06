@@ -66,7 +66,7 @@ func (p *IfZero[F, S, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *IfZero[F, S, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F, error) {
+func (p *IfZero[F, S, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map[F]) (F, error) {
 	// Evaluate condition
 	cond, err := p.Condition.TestAt(k, tr, sc)
 	//
@@ -81,7 +81,7 @@ func (p *IfZero[F, S, T]) EvalAt(k uint, tr trace.Module[F], sc register.Map) (F
 }
 
 // Lisp implementation for Lispifiable interface.
-func (p *IfZero[F, S, T]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (p *IfZero[F, S, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	// Translate Condition
 	condition := p.Condition.Lisp(global, mapping)
 	// Dispatch on type

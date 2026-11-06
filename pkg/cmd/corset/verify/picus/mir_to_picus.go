@@ -8,6 +8,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -58,6 +59,11 @@ func (p *MirPicusTranslator[F]) TranslateModule(i uint) {
 	picusModule := p.picusProgram.AddModule(mirModule.Name())
 	// register inputs and outputs from MIR inputs/outputs
 	for _, register := range mirModule.Registers() {
+		// constant registers are only pinned to their value during MIR->AIR lowering, hence would otherwise be
+		// translated as unconstrained variables.
+		util.Assert(!register.IsConstant(), "picus translator does not currently support constant columns (%q)",
+			register.Name())
+		//
 		picusVar := pcl.V[F](register.Name())
 		if register.IsInput() {
 			picusModule.AddInput(picusVar)
