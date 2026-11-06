@@ -98,9 +98,6 @@ mid-level representation using `--mir`.
 
 Useful options here include:
 
-- `--source-map` will show the source map for the given constraints
-  (columns, constants, etc).
-
 - `--show-static` will include static tables when printing schemas.
 
 ### Inspect

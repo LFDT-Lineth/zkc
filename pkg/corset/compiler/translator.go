@@ -14,7 +14,6 @@ package compiler
 
 import (
 	"fmt"
-	"math"
 	"math/big"
 	"reflect"
 
@@ -574,15 +573,6 @@ func (t *translator[F]) translateExpressions(module mir.ModuleBuilder[F], shift 
 func (t *translator[F]) translateExpression(expr ast.Expr, module mir.ModuleBuilder[F], shift int,
 ) (mir.Term[F], []SyntaxError) {
 	switch e := expr.(type) {
-	case *ast.ArrayAccess:
-		// Lookup underlying register info.  NOTE: a nil access signals that
-		// translation failed and, hence, the errors have been reported already.
-		access, errs := t.registerOfRegisterAccess(e, shift)
-		if access == nil {
-			return nil, errs
-		}
-		//
-		return access, errs
 	case *ast.Add:
 		args, errs := t.translateExpressions(module, shift, e.Args...)
 		return term.Sum(args...), errs
@@ -781,10 +771,7 @@ func (t *translator[F]) translateLogicalShift(expr *ast.Shift, mod mir.ModuleBui
 
 // Determine the underlying register for a symbol which represents a register access.
 func (t *translator[F]) registerOfRegisterAccess(symbol ast.Symbol, shift int) (*mir.RegisterAccess[F], []SyntaxError) {
-	switch e := symbol.(type) {
-	case *ast.ArrayAccess:
-		return t.registerOfArrayAccess(e, shift)
-	case *ast.VariableAccess:
+	if e, ok := symbol.(*ast.VariableAccess); ok {
 		return t.registerOfVariableAccess(e, shift)
 	}
 	//
@@ -800,42 +787,6 @@ func (t *translator[F]) registerOfVariableAccess(expr *ast.VariableAccess,
 	}
 	//
 	return nil, t.srcmap.SyntaxErrors(expr, "invalid register access")
-}
-
-func (t *translator[F]) registerOfArrayAccess(expr *ast.ArrayAccess, shift int,
-) (*mir.RegisterAccess[F], []SyntaxError) {
-	var (
-		errors []SyntaxError
-		min    uint = 0
-		max    uint = math.MaxUint
-	)
-	// Lookup the register
-	binding, ok := expr.Binding().(*ast.ColumnBinding)
-	// Did we find it?
-	if !ok {
-		errors = append(errors, *t.srcmap.SyntaxError(expr.Arg, "invalid array index encountered during translation"))
-	} else if arrType, ok := binding.DataType.(*ast.ArrayType); ok {
-		min = arrType.MinIndex()
-		max = arrType.MaxIndex()
-	}
-	// Array index should be statically known
-	index := expr.Arg.AsConstant()
-	//
-	if index == nil {
-		errors = append(errors, *t.srcmap.SyntaxError(expr.Arg, "expected constant array index"))
-	} else if i := uint(index.Uint64()); i < min || i > max {
-		errors = append(errors, *t.srcmap.SyntaxError(expr.Arg, "array index out-of-bounds"))
-	}
-	// Error check
-	if len(errors) > 0 {
-		return nil, errors
-	}
-	// Construct real register name
-	path := &binding.Path
-	name := fmt.Sprintf("%s_%d", path.Tail(), index.Uint64())
-	path = path.Parent().Extend(name)
-	//
-	return t.registerOf(path, shift), errors
 }
 
 // Determine the appropriate name for a given module based on a module context.

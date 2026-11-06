@@ -31,10 +31,8 @@ type ModuleConfig interface {
 }
 
 // ModuleView abstracts an underlying trace module.  For example, it manages the
-// way that column data is displayed (e.g. in hex or in decimal, etc), and
-// provides a mechanism for querying whether a given cell is "active" or not.
-// Specifically, cells in a perspective are not active when that perspective is
-// not active.
+// way that column data is displayed, including the current viewport and any
+// filtering applied.
 type ModuleView interface {
 	widget.TableSource
 	// Config returns config settings for this module.

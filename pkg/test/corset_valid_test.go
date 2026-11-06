@@ -360,10 +360,6 @@ func Test_Valid_Type_09(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/type_09", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Valid_Type_10(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/type_10", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
 func Test_Valid_Type_11(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/type_11", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
@@ -588,34 +584,6 @@ func Test_Valid_Bus_05(t *testing.T) {
 
 func Test_Valid_Bus_06(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/bus_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-// ===================================================================
-// Arrays
-// ===================================================================
-
-func Test_Valid_Array_01(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Array_03(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Array_04(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Array_05(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Array_06(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
-func Test_Valid_Array_07(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/array_07", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 // ===================================================================

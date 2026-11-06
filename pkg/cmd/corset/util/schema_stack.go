@@ -15,10 +15,8 @@ package util
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
@@ -28,26 +26,12 @@ import (
 // Intermediate Representation is a refinement of the Mid-level Intermediate
 // Representation, etc.
 type SchemaStack[F field.Element[F]] struct {
-	// Source map for the schema which forms the top of this stack.
-	sourceMap util.Option[corset.SourceMap]
 	// The various (concrete) layers which are refined from the abstract layers.
 	concreteSchemas []schema.Schema[F]
 	// Name of IR used for corresponding schema
 	names []string
 	// Configuration for trace expansion
 	traceBuilder ir.TraceBuilder[F]
-}
-
-// SourceMap returns the source map for the schema representing the top of this
-// stack, along with an indication of whether one is available.
-func (p *SchemaStack[F]) SourceMap() (*corset.SourceMap, bool) {
-	if !p.sourceMap.HasValue() {
-		return nil, false
-	}
-	//
-	srcmap := p.sourceMap.Unwrap()
-	//
-	return &srcmap, true
 }
 
 // HasConcreteSchema returns true if there is at least one concrete schema..

@@ -21,7 +21,6 @@ import (
 
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/corset/util"
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
-	"github.com/LFDT-Lineth/zkc/pkg/corset"
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/checker"
@@ -146,8 +145,6 @@ func writeMemProfile(cmd *cobra.Command) {
 
 // CheckConfig encapsulates certain parameters to be used when checking traces.
 type CheckConfig struct {
-	// Corset source mapping (maybe nil if non available).
-	CorsetSourceMap *corset.SourceMap
 	// Specifies whether to use Coverage testing and, if so, where to write the
 	// Coverage data.
 	Coverage util.Option[string]
@@ -176,8 +173,6 @@ func checkWithLegacyPipeline[F field.Element[F]](cfg CheckConfig, batched bool, 
 	var traces []tr.Trace[F]
 	//
 	stats := util.NewPerfStats()
-	// Extract debug information (if available)
-	cfg.CorsetSourceMap, _ = schemas.SourceMap()
 	//
 	stats.Log("Reading constraints file")
 	// Parse trace file(s)
@@ -296,10 +291,6 @@ func reportRelevantCells[F field.Element[F]](cells []tr.CellRef, schema sc.Schem
 		WithTitleWidth(cfg.ReportTitleWidth).
 		WithFormatting(view.NewCellFormatter(cells, cfg.AnsiEscapes)).
 		WithSchema(schema)
-		//
-	if cfg.CorsetSourceMap != nil {
-		builder = builder.WithSourceMap(*cfg.CorsetSourceMap)
-	}
 	// Build window
 	window := builder.Build(trace)
 	// Focus window on those cells relevant to the failure

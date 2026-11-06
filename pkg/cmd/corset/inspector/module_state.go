@@ -173,7 +173,10 @@ func historyAppend[T comparable](history []T, item T) []T {
 func buildEnvironment(data view.ModuleData) QueryEnv {
 	//
 	return func(col string, row uint) (big.Int, bool) {
-		var ok bool
+		var (
+			ok   bool
+			zero big.Int
+		)
 		// Look in the register mapping first
 		var (
 			srcId  view.SourceColumnId
@@ -186,7 +189,13 @@ func buildEnvironment(data view.ModuleData) QueryEnv {
 		}
 		// Extract source column
 		srcCol = data.SourceColumn(srcId)
-		// Check whether source column actually active
-		return data.DataOf(srcCol.Register).Get(row), data.IsActive(srcCol, row)
+		// Extract cell value (which may be missing, e.g. for a raw trace)
+		cell := data.DataOf(srcCol.Register).Get(row)
+		//
+		if cell.IsEmpty() {
+			return zero, false
+		}
+		//
+		return cell.Unwrap(), true
 	}
 }
