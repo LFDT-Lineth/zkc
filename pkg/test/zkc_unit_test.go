@@ -50,6 +50,7 @@ func Test_ZkcUnit_Basic_05(t *testing.T) {
 func Test_ZkcUnit_Basic_06(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_06", DEFAULT_UNIT_CONFIG)
 }
+
 func Test_ZkcUnit_Basic_07(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_07", DEFAULT_UNIT_CONFIG)
 }
@@ -942,6 +943,14 @@ func Test_ZkcUnit_Shift_13(t *testing.T) {
 // a mix of shr and shl with small & big shifted and shifting value
 func Test_ZkcUnit_Shift_14(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/shift_14", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
+// [#Native] Tests
+// ===================================================================
+// TODO: https://github.com/LFDT-Lineth/zkc/issues/2326 reenbale gogen once this is fixed
+func Test_ZkcUnit_Native_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/native_01", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 // ===================================================================

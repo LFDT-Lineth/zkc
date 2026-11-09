@@ -1,0 +1,17 @@
+// Test for a native function: y = x * x
+
+pub input data(address:u16) -> (word:u16)
+
+#[native]
+fn square(x:u16) -> (y:u32) {
+    y = (x as u32) * (x as u32)
+}
+
+fn main() {
+    var x:u16 = data[0]
+    var r:u32 = square(x)
+
+    if (r != (x as u32 * x as u32)) {
+        fail
+    }
+}
